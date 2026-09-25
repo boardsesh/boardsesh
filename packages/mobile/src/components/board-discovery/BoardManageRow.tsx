@@ -2,13 +2,14 @@ import { memo, useEffect, useMemo, useRef } from 'react';
 import { AccessibilityInfo, Platform, Pressable, View, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { UserBoard } from '@boardsesh/shared-schema';
-import { toBoardName } from '@boardsesh/board-config';
+import { boardRowSubtitle, toBoardName } from '@boardsesh/board-config';
 import { BoardImageNative } from '../BoardImageNative';
-import { boardRowSubtitle } from './board-labels';
 import { BoardOfflineToggle } from './BoardOfflineToggle';
 import type { BoardDownloadNotice, BoardDownloadProgress, BoardDownloadState } from './board-offline-state';
 import { OfflineDownloadProgressBar } from './OfflineDownloadProgressBar';
 import { getBoardRenderData } from '../../lib/board-details';
+import { useSprayWallToken } from '../../lib/spray/use-spray-wall-token';
+import { useSprayLabelOptions } from '../../lib/spray/use-spray-label-options';
 import { formatBytes } from '../../lib/format-bytes';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
@@ -86,12 +87,18 @@ function BoardManageRowComponent({
   const { systemColors, brandColors } = useTheme();
 
   const boardName = toBoardName(board.boardType);
+  // Every wall in Manage Boards, not just the active one. A non-active spray wall
+  // would otherwise read `getBoardRenderData() === null`, draw the generic icon,
+  // and never ask for its photo or subscribe to its arrival — so a climber with
+  // two walls would see one photo and one icon, permanently.
+  const sprayToken = useSprayWallToken(boardName, board.layoutId);
   const renderData = useMemo(() => {
     if (!boardName) return null;
     const setIdValues = board.setIds.split(',').map(Number).filter(Number.isFinite);
     if (setIdValues.length === 0) return null;
     return getBoardRenderData({ boardName, layoutId: board.layoutId, sizeId: board.sizeId, setIds: setIdValues });
-  }, [boardName, board.layoutId, board.sizeId, board.setIds]);
+    // `sprayToken` recomputes this when the wall lands or is reset.
+  }, [boardName, board.layoutId, board.sizeId, board.setIds, sprayToken]);
 
   // Board art isn't square; fit it inside the square thumb at its native aspect
   // (passing height:'100%' would override BoardImageNative's aspectRatio and stretch it).
@@ -107,7 +114,10 @@ function BoardManageRowComponent({
   // Followed: whose board it is — the group header only says "Following", it
   // names nobody, and the picker's cards never show an owner either, so this is
   // the one place in the app that answers "whose board is this".
-  const subtitle = isOwned ? boardRowSubtitle(board) : (board.ownerDisplayName ?? boardRowSubtitle(board));
+  const labelOptions = useSprayLabelOptions();
+  const subtitle = isOwned
+    ? boardRowSubtitle(board, labelOptions)
+    : (board.ownerDisplayName ?? boardRowSubtitle(board, labelOptions));
 
   // Live bootstrap always wins over persisted history: the engine may retry a
   // scope whose previous run selected a paged fallback, and showing both would

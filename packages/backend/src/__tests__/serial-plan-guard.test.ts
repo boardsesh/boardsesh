@@ -139,9 +139,11 @@ describe('withSerialPlan', () => {
 
 describe('getSetterStats guard (#4105)', () => {
   it('issues the guard before the board_climbs aggregate', async () => {
-    // This query hash-joins board_climbs x board_climb_stats over a whole layout
-    // and groups by setter. It fires from the same search drawer as searchClimbs,
-    // so it kept exhausting /dev/shm after #3856 guarded the search paths.
+    // This query scans board_climbs over a whole layout and groups by setter.
+    // It fires from the same search drawer as searchClimbs, so it kept exhausting
+    // /dev/shm after #3856 guarded the search paths. It no longer joins
+    // board_climb_stats (#5404), but a seq scan feeding a HashAggregate is still a
+    // shape the planner parallelizes, so the guard stays.
     const { fakeDb, callOrder, executedStatements, queries } = createFakeDb();
 
     await getSetterStats(fakeDb as unknown as DbInstance, {
@@ -169,6 +171,25 @@ describe('getSetterStats guard (#4105)', () => {
     );
 
     expect(callOrder).toEqual(['execute', 'select']);
+    expect(renderedGuards(executedStatements)[0]).toMatch(GUARD_PATTERN);
+  });
+
+  it('still guards the Woods branch that LEFT JOINs the browsed-angle stats row (#5642)', async () => {
+    // Without the "Other angles" opt-in a Woods count probes board_climb_stats at
+    // the browsed angle. One more primary-key join on the same layout scan makes
+    // a parallel plan no less likely, so the guard has to cover it too.
+    const { fakeDb, callOrder, executedStatements, queries } = createFakeDb();
+
+    await getSetterStats(fakeDb as unknown as DbInstance, {
+      board_name: 'woods',
+      layout_id: 1,
+      size_id: 1,
+      set_ids: [1],
+      angle: 25,
+    });
+
+    expect(callOrder).toEqual(['execute', 'select']);
+    expect(queries[0].table).toBe('board_climbs');
     expect(renderedGuards(executedStatements)[0]).toMatch(GUARD_PATTERN);
   });
 });

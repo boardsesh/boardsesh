@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll } from 'vite-plus/test';
+import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll, vi } from 'vite-plus/test';
 import Redis from 'ioredis';
 import { v4 as uuidv4 } from 'uuid';
 import { eq, sql } from 'drizzle-orm';
@@ -33,6 +33,8 @@ import { boardPresenceMutations } from '../graphql/resolvers/board-presence/muta
 import { SYSTEM_BOARD_OWNER_ID } from '../graphql/resolvers/board-presence/shared';
 import { roomManager } from '../services/room-manager';
 import { socialBoardMutations } from '../graphql/resolvers/social/boards';
+import * as boardQueuePreviewService from '../services/board-queue-preview';
+import { createBarrier } from './helpers/concurrency';
 
 const TEST_USER_ID = 'board-queue-preview-test-user';
 const TEST_BOARD_PATH = 'queue-preview-test/1/10/1,2/40';
@@ -693,26 +695,36 @@ describe('board-queue-preview live producer', () => {
     const { boardId } = await makePreviewableSession();
     const boardKey = String(boardId);
     expect(pubsub.getBoardQueuePreviewSubscriberCount(boardKey)).toBe(0);
-
+    const snapshot = await getBoardQueuePreviewSnapshot(boardId);
+    const seedStarted = createBarrier();
+    const finishSeed = createBarrier();
+    const seedLookup = vi
+      .spyOn(boardQueuePreviewService, 'getBoardQueuePreviewSnapshot')
+      .mockImplementationOnce(async () => {
+        seedStarted.release();
+        await finishSeed.promise;
+        return snapshot;
+      });
     const iterator = boardQueuePreviewSubscriptions.boardQueuePreview.subscribe(undefined, { boardId }, anonCtx());
-    // Start the generator: it eagerly subscribes to the channel, then awaits
-    // the seed snapshot (DB work).
-    const nextPromise = iterator.next();
-    // Queue `.return()` immediately — async-generator requests are processed
-    // in order, so this deterministically lands while the first step (which
-    // includes the seed computation) is still running: exactly what
-    // graphql-ws does when the client disconnects during setup. The queued
-    // return completes at the seed yield, BEFORE the streaming loop starts —
-    // without the resolver's finally-cleanup, the eager iterator would never
-    // be closed and the channel subscription would leak permanently.
-    const returnPromise = iterator.return?.(undefined);
+    try {
+      const nextPromise = iterator.next();
+      await seedStarted.promise;
+      expect(pubsub.getBoardQueuePreviewSubscriberCount(boardKey)).toBe(1);
 
-    const [seedResult, returnResult] = await Promise.all([nextPromise, returnPromise]);
-    // The in-flight seed still resolves the pending next()…
-    expect(seedResult.done).toBe(false);
-    expect(returnResult?.done).toBe(true);
-    // …but the generator must have unsubscribed on its way out.
-    expect(pubsub.getBoardQueuePreviewSubscriberCount(boardKey)).toBe(0);
+      // Disconnect must complete and unsubscribe before the blocked seed resolves.
+      const returnResult = await iterator.return();
+      expect(returnResult.done).toBe(true);
+      expect((await nextPromise).done).toBe(true);
+      expect(pubsub.getBoardQueuePreviewSubscriberCount(boardKey)).toBe(0);
+
+      finishSeed.release();
+      expect((await iterator.next()).done).toBe(true);
+      expect(pubsub.getBoardQueuePreviewSubscriberCount(boardKey)).toBe(0);
+    } finally {
+      finishSeed.release();
+      await iterator.return();
+      seedLookup.mockRestore();
+    }
   });
 });
 

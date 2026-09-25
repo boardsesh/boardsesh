@@ -1,7 +1,9 @@
 import { useCallback, useMemo, useState } from 'react';
+import dayjs from 'dayjs';
 import { deriveProfileViewModel, type UnifiedTimeframeType, type PeriodComparisonMode } from '@boardsesh/profile-stats';
 import { useGradeFormat } from '../../../hooks/use-grade-format';
 import { useOfflineQueryState } from '../../../hooks/use-offline-query-state';
+import { nowMs } from '../../clock';
 import { useAllBoardsTicks, useUserProfileStats, useUserClimbPercentile } from './use-you-data';
 
 /**
@@ -44,6 +46,11 @@ export function useYouProfileData(userId: string | undefined) {
         gradeFormat,
         profileStats: profileStatsQuery.data ?? null,
         comparisonMode,
+        // `nowMs()` returns the screenshot-mode frozen clock when set (see
+        // lib/clock.ts), so timeframe filtering, the activity heatmap window,
+        // and the period comparison card all agree on one "now" per render —
+        // same as the real wall clock did before this was threaded through.
+        now: dayjs(nowMs()),
       }),
     [allBoardsTicks, selectedBoard, timeframe, fromDate, toDate, gradeFormat, profileStatsQuery.data, comparisonMode],
   );

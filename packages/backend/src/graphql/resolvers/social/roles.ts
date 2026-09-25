@@ -34,6 +34,30 @@ export async function requireAdmin(ctx: ConnectionContext, boardType?: string | 
 }
 
 /**
+ * Non-throwing check: may this caller run the live, uncached catalogue queries
+ * (the similar-climbs Jaccard CTE today; the hold heatmap next) against
+ * Postgres? Everyone else is served precomputed or on-device answers.
+ *
+ * Admin (global or scoped to the board) today. Supporters are meant to join
+ * here, in this one place, so every gated resolver widens together.
+ * Anonymous callers are never granted it and cost no query.
+ */
+export async function hasCatalogQueryAccess(ctx: ConnectionContext, boardType?: string | null): Promise<boolean> {
+  if (!ctx.isAuthenticated || !ctx.userId) return false;
+  return hasAdmin(ctx.userId, boardType);
+}
+
+/**
+ * Throwing twin of {@link hasCatalogQueryAccess}, for resolvers (or input
+ * shapes) that have no precomputed answer to fall back to.
+ */
+export async function requireCatalogQueryAccess(ctx: ConnectionContext, boardType?: string | null): Promise<void> {
+  if (!(await hasCatalogQueryAccess(ctx, boardType))) {
+    throw new Error('This live catalogue query is limited to admins');
+  }
+}
+
+/**
  * A community role row reduced to what authorization checks need: the role name
  * and its board-type scope (null = global, applies to every board type).
  *

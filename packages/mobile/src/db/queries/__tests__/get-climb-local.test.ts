@@ -91,3 +91,83 @@ describe('getClimbLocal — Boardsesh grade join', () => {
     expect(climb?.boardseshConfidence).toBeNull();
   });
 });
+
+describe('getClimbLocal — spray-wall hold integrity', () => {
+  let db: TestSqliteDb;
+
+  beforeEach(async () => {
+    db = createTestDatabase();
+    await runMigrations(db);
+  });
+
+  it('carries missing_hold_count through to the climb', async () => {
+    // The detail screen is where the lost-holds badge is drawn, and it is a
+    // different read from the list — the filter tests cover `searchClimbsLocal`
+    // and would not notice this column being dropped from the projection here.
+    await insertClimb(db, 'broken');
+    await db.runAsync('UPDATE board_climbs SET missing_hold_count = 2 WHERE uuid = ?', ['broken']);
+
+    const climb = await getClimbLocal(db, { boardName: 'kilter', layoutId: 1, angle: 40, climbUuid: 'broken' });
+
+    expect(climb?.missingHoldCount).toBe(2);
+  });
+
+  it('reads null for a climb no reset has touched', async () => {
+    // Nullable on purpose, matching the server: "no reset has taken anything off
+    // this climb" and "this is not a spray climb" are the same NULL, and neither
+    // is the statement "0 holds lost".
+    await insertClimb(db, 'intact');
+
+    const climb = await getClimbLocal(db, { boardName: 'kilter', layoutId: 1, angle: 40, climbUuid: 'intact' });
+
+    expect(climb?.missingHoldCount).toBeNull();
+  });
+});
+
+// Issue #5642. A Woods list is restricted to the browsed angle unless the climber
+// opts in, but the detail read stays cross-angle on Woods: a climb set at another
+// angle still reaches it (a name search, an opted-in list, a playlist) and must
+// open with its set-angle grade, badged, rather than a blank one.
+describe('getClimbLocal — cross-angle detail on an angle-bound board', () => {
+  let db: TestSqliteDb;
+
+  async function insertSetAngleClimb(uuid: string, boardType: string, setAngle: number): Promise<void> {
+    await db.runAsync(
+      `INSERT INTO board_climbs
+        (uuid, board_type, layout_id, name, description, is_listed, is_draft, is_hidden, frames_count, frames, angle, created_at, updated_at)
+       VALUES (?, ?, 1, ?, '', 1, 0, 0, 1, '', ?, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`,
+      [uuid, boardType, `Climb ${uuid}`, setAngle],
+    );
+    await db.runAsync(
+      `INSERT INTO board_climb_stats
+        (board_type, climb_uuid, angle, display_difficulty, difficulty_average, quality_average, ascensionist_count, updated_at)
+       VALUES (?, ?, ?, 20, 20, 4, 500, '2026-01-01T00:00:00Z')`,
+      [boardType, uuid, setAngle],
+    );
+  }
+
+  beforeEach(async () => {
+    db = createTestDatabase();
+    await runMigrations(db);
+  });
+
+  it('opens a Woods climb set at 40° with its 40° grade when read at 30°', async () => {
+    await insertSetAngleClimb('woods-40', 'woods', 40);
+
+    const climb = await getClimbLocal(db, { boardName: 'woods', layoutId: 1, angle: 30, climbUuid: 'woods-40' });
+
+    expect(climb?.angle).toBe(30);
+    expect(climb?.statsAngle).toBe(40);
+    expect(climb?.ascensionist_count).toBe(500);
+    expect(climb?.difficulty).not.toBe('');
+  });
+
+  it('keeps a Kilter climb pinned to the browsed angle', async () => {
+    await insertSetAngleClimb('kilter-40', 'kilter', 40);
+
+    const climb = await getClimbLocal(db, { boardName: 'kilter', layoutId: 1, angle: 30, climbUuid: 'kilter-40' });
+
+    expect(climb?.statsAngle).toBeNull();
+    expect(climb?.ascensionist_count).toBe(0);
+  });
+});

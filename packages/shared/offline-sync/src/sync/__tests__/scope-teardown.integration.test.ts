@@ -32,6 +32,8 @@ import {
 import { createTestDatabase, type TestSqliteDb } from '../../testing/sqlite-test-db';
 import { TABLE_CONFIGS, USER_DATA_TABLES } from '../table-config';
 import type { OfflineBoardScope } from '../../offline-board-key';
+import { holdIndexKey, type HoldRowParser } from '../../holds-index/hold-index';
+import { expectPostingsMatchHoldSets } from '../../holds-index/__tests__/hold-index-fixtures';
 
 const SCOPE: OfflineBoardScope = { boardType: 'kilter', layoutId: 1, sizeId: 5 };
 const SCOPE_KEY = 'kilter:1:5';
@@ -594,5 +596,103 @@ describe('global purges', () => {
     expect(await climbCountFor('kilter')).toBe(0);
     expect(await climbCountFor('tension')).toBe(0);
     expect(await isScopeDownloadComplete(db, TENSION_SCOPE_KEY)).toBe(false);
+  });
+});
+
+// The device-derived holds index rides the same two invariants: its rows die with
+// their climbs (children first), and its watermark dies with the scope's other
+// markers — a re-download re-imports climbs with their OLD sync_seq, which a
+// surviving watermark would put behind it forever. Postings are per layout, so a
+// removal clears the whole layout's index and every sibling's watermark, and the
+// survivor rebuilds on its next cycle.
+describe('the holds index across a board removal', () => {
+  const SIBLING: OfflineBoardScope = { boardType: 'kilter', layoutId: 1, sizeId: 6 };
+  const SIBLING_KEY = 'kilter:1:6';
+  const HEAD = { updatedAt: '2026-05-02T00:00:00Z', syncSeq: '99' };
+
+  const parseHoldRows: HoldRowParser = (_boardType, frames) =>
+    [...frames.matchAll(/p(\d+)r(\d+)/g)].map((match) => ({ holdId: Number(match[1]), holdState: 'HAND' }));
+
+  const climbDoc = (uuid: string, sizes: number[], syncSeq: number) => ({
+    ...CLIMB_DOC,
+    uuid,
+    compatible_size_ids: sizes,
+    frames: 'p1r13p2r13',
+    sync_seq: String(syncSeq),
+  });
+  const DOCS = [climbDoc('only-5', [5], 10), climbDoc('shared', [5, 6], 11), climbDoc('only-6', [6], 12)];
+
+  /** Serves every climb of the requested size on the first page, and empty tails. */
+  function catalogFetch(): GraphqlFetchMock {
+    const fetchMock = vi.fn(async (query: string, variables?: Record<string, unknown>) => {
+      if (query.includes('syncDeletions')) return { syncDeletions: { deletions: [], cursor: HEAD, hasMore: false } };
+      if (query.includes('syncClimbs')) {
+        const documents = variables?.cursor
+          ? []
+          : DOCS.filter((doc) => doc.compatible_size_ids.includes(Number(variables?.sizeId)));
+        return { syncClimbs: { documents, cursor: HEAD, hasMore: false } };
+      }
+      for (const config of Object.values(TABLE_CONFIGS)) {
+        if (query.includes(config.queryName)) {
+          return { [config.queryName]: { documents: [], cursor: HEAD, hasMore: false } };
+        }
+      }
+      throw new Error(`Unexpected query: ${query}`);
+    });
+    return fetchMock as unknown as GraphqlFetchMock;
+  }
+
+  async function holdClimbs(): Promise<string[]> {
+    const rows = await db.getAllAsync<{ uuid: string }>(
+      `SELECT hic.uuid FROM board_climb_hold_sets hs JOIN holds_index_climbs hic ON hic.id = hs.climb_id
+       ORDER BY hic.uuid`,
+    );
+    return rows.map((row) => row.uuid);
+  }
+
+  async function postingCount(): Promise<number> {
+    return (await db.getFirstAsync<{ n: number }>('SELECT COUNT(*) AS n FROM board_climb_hold_postings'))?.n ?? 0;
+  }
+
+  async function syncMetaValue(key: string): Promise<string | null> {
+    return (
+      (await db.getFirstAsync<{ value: string }>('SELECT value FROM sync_meta WHERE key = ?', [key]))?.value ?? null
+    );
+  }
+
+  it('is built by the pull cycle, dies with the scope, and comes back whole on re-download', async () => {
+    const options = { enabledBoards: [SCOPE_KEY, SIBLING_KEY], holdIndex: { parseHoldRows } };
+    await pullSync(db, queryClient, catalogFetch(), options);
+    expect(await isScopeDownloadComplete(db, SCOPE_KEY)).toBe(true);
+    expect(await holdClimbs()).toEqual(['only-5', 'only-6', 'shared']);
+    expect(await syncMetaValue(holdIndexKey(SCOPE_KEY))).not.toBeNull();
+
+    await removeBoardScopeData({ db, scope: SCOPE, scopeKey: SCOPE_KEY, retainedScopes: [SIBLING] });
+
+    // The layout's index goes whole, with BOTH scopes' watermarks.
+    expect(await holdClimbs()).toEqual([]);
+    expect(await postingCount()).toBe(0);
+    expect(await syncMetaValue(holdIndexKey(SCOPE_KEY))).toBeNull();
+    expect(await syncMetaValue(holdIndexKey(SIBLING_KEY))).toBeNull();
+
+    // The survivor rebuilds on its own next cycle.
+    await pullSync(db, queryClient, catalogFetch(), { enabledBoards: [SIBLING_KEY], holdIndex: { parseHoldRows } });
+    expect(await holdClimbs()).toEqual(['only-6', 'shared']);
+    expect(await syncMetaValue(holdIndexKey(SIBLING_KEY))).not.toBeNull();
+
+    // And the removed board comes back whole on re-download.
+    await pullSync(db, queryClient, catalogFetch(), options);
+    expect(await holdClimbs()).toEqual(['only-5', 'only-6', 'shared']);
+    await expectPostingsMatchHoldSets(db, 'kilter', 1);
+  });
+
+  it('removes every row of a layout nobody retains', async () => {
+    await pullSync(db, queryClient, catalogFetch(), { enabledBoards: [SCOPE_KEY], holdIndex: { parseHoldRows } });
+    expect(await holdClimbs()).toEqual(['only-5', 'shared']);
+
+    await removeBoardScopeData({ db, scope: SCOPE, scopeKey: SCOPE_KEY, retainedScopes: [] });
+
+    expect(await holdClimbs()).toEqual([]);
+    expect(await postingCount()).toBe(0);
   });
 });

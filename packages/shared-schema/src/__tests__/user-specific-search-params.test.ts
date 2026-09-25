@@ -11,6 +11,7 @@ describe('USER_SPECIFIC_SEARCH_PARAMS', () => {
   it('lists every auth-gated search filter', () => {
     expect([...USER_SPECIFIC_SEARCH_PARAMS].sort()).toEqual(
       [
+        'onlyFollowedAuthors',
         'hideAttempted',
         'hideCompleted',
         'showOnlyAttempted',

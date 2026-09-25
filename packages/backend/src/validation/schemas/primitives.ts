@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { SUPPORTED_BOARDS, SESSION_NOTES_MAX_LENGTH } from '@boardsesh/shared-schema';
+import { AURORA_BOARDS, SUPPORTED_BOARDS, SESSION_NOTES_MAX_LENGTH } from '@boardsesh/shared-schema';
 
 /**
  * UUID validation schema
@@ -76,6 +76,22 @@ export const AvatarUrlSchema = z
  */
 export const BoardNameSchema = z.enum(SUPPORTED_BOARDS, {
   error: `Board name must be ${SUPPORTED_BOARDS.join(', ')}`,
+});
+
+/**
+ * A board with an Aurora account behind it — the six in `AURORA_BOARDS`.
+ *
+ * Deliberately NOT `BoardNameSchema`. Anything that reaches an Aurora-only map
+ * (`HOST_BASES`, `API_HOSTS`, `WEB_HOSTS`) must be narrowed here first: those
+ * maps are `Record<AuroraBoardName, string>`, so a code-driven board type indexes
+ * them to `undefined` and the client builds `https://undefined.com` — a real,
+ * registered host — and posts the user's username and password to it.
+ *
+ * `BoardNameSchema` cannot be tightened instead: every other board-typed input
+ * in the app legitimately accepts the code-driven boards.
+ */
+export const AuroraBoardNameSchema = z.enum(AURORA_BOARDS, {
+  error: `Board name must be an Aurora board: ${AURORA_BOARDS.join(', ')}`,
 });
 
 /**

@@ -1,9 +1,21 @@
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
-import { derivePlayDrawerLightbulbPressAction } from '../play-drawer/lightbulb-control';
+import { trackBoardConnectTapped, type BoardConnectSurface } from '../../lib/analytics-board-connect';
+import {
+  derivePlayDrawerLightbulbPressAction,
+  type PlayDrawerLightbulbPressAction,
+} from '../play-drawer/lightbulb-control';
 import { useBoardConnectionState } from './use-board-connection-state';
 
+/** Which bulb was tapped, for Board Connect Tapped. */
+export type LightbulbSurface = Extract<
+  BoardConnectSurface,
+  'play_drawer' | 'toolbar' | 'app_bar' | 'board_control_indicator' | 'first_connect_card' | 'first_connect_pill'
+>;
+
 type UseLightbulbControlOptions = {
+  /** Required so every bulb reports where a connect tap came from. */
+  surface: LightbulbSurface;
   /**
    * Opens the BLE controls sheet (Re-light / Turn off all lights / Disconnect).
    * Wired to the returned `onLongPress` so every lightbulb shares one gesture
@@ -11,6 +23,26 @@ type UseLightbulbControlOptions = {
    * opens the labelled controls. Omit on surfaces with no long-press affordance.
    */
   onOpenControls?: () => void;
+  /**
+   * Put the climb this surface is displaying onto the wall a session peer is
+   * driving, by making it the session's current climb. The holder's auto-sender
+   * writes whatever is current (see the peer-held wall LED link in
+   * `queue-provider`), so this lights the climb over THEIR Bluetooth link
+   * without this device touching BLE at all.
+   *
+   * Supplied only by surfaces that have a displayed climb to relay (PlayDrawer).
+   * Omitted on the toolbar and app-bar bulbs, which have none.
+   */
+  onRelayToHolder?: () => void;
+  /**
+   * Whether `onRelayToHolder` would actually put something on the wall right
+   * now. Passed EXPLICITLY rather than inferred from `onRelayToHolder != null`:
+   * PlayDrawer's handler is a stable callback that is always non-null, so
+   * inferring made `canRelay` permanently true there and the press action
+   * claimed 'relay' for taps that could only early-return (claude-review, #5123).
+   * Defaults to "yes if a handler was supplied" for surfaces with no such state.
+   */
+  canRelay?: boolean;
 };
 
 export type LightbulbControl = {
@@ -29,8 +61,39 @@ export type LightbulbControl = {
   localConnected: boolean;
   /** A connect/disconnect is in flight — the bulb pulses while pending. */
   pending: boolean;
-  /** Connect (relighting the remembered board) / disconnect toggle. */
+  /**
+   * Connect (relighting the remembered board) / disconnect toggle — or, while a
+   * session peer authoritatively holds the board, the relay described on
+   * `onRelayToHolder`.
+   */
   onPress: () => void;
+  /**
+   * The connect `onPress` runs for a `'connect'` press action, on its own and
+   * awaitable: logs Board Connect Tapped, arms the undo toast, and relights the
+   * remembered board (or opens the picker when none is remembered). Resolves
+   * with whether the link came up; false with no board selected, and false
+   * without starting anything unless `pressAction` is `'connect'` (a connect in
+   * flight, a peer holding the wall, a wall with no lights). Pass `surface`
+   * when a connect starts from a different control than this hook's own (the
+   * play drawer's bulb shown as the connect-step pill). The connect-step card
+   * awaits it to know when to offer "Try again", so the card, the pill and
+   * every bulb share this one connect path.
+   */
+  connect: (surface?: LightbulbSurface) => Promise<boolean>;
+  /**
+   * What a tap will actually do, resolved from the same ladder `onPress` runs.
+   * Exposed so each bulb can LABEL itself honestly: before this, all three
+   * surfaces derived "Connect to board" from `localConnected` alone, so in the
+   * peer-held state the label promised a connect that the tap no longer does.
+   */
+  pressAction: PlayDrawerLightbulbPressAction;
+  /**
+   * A session peer authoritatively holds the board. Exposed alongside
+   * `pressAction` because `'noop'` is ambiguous on its own — it also covers "no
+   * board selected" and "a connect is in flight" — and only this pairing tells a
+   * label the difference between "nothing to do" and "someone else is driving".
+   */
+  holderIsAuthoritative: boolean;
   /**
    * Long-press: opens the BLE controls sheet when this device holds the link.
    * No-op when disconnected (short press connects) or when no `onOpenControls`
@@ -55,22 +118,53 @@ export type LightbulbControl = {
  * (`useOptionalBluetoothContext`, the raw board-presence context); the session
  * controls and board-presence controls are always present under the tab tree.
  */
-export function useLightbulbControl(options: UseLightbulbControlOptions = {}): LightbulbControl {
-  const { onOpenControls } = options;
+export function useLightbulbControl(options: UseLightbulbControlOptions): LightbulbControl {
+  const { surface, onOpenControls, onRelayToHolder, canRelay = onRelayToHolder != null } = options;
   // Ownership/lit derivation is shared with the Live Activity bridge via this
   // hook so the in-app bulb and the lock-screen bulb can never disagree.
-  const { bluetooth, lit, localConnected, pending, ledless, wallHeldLocally } = useBoardConnectionState();
+  const { bluetooth, lit, localConnected, pending, ledless, wallHeldLocally, holderIsAuthoritative } =
+    useBoardConnectionState();
+
+  const pressAction = useMemo(
+    () =>
+      derivePlayDrawerLightbulbPressAction({
+        hasBluetooth: bluetooth != null,
+        isBluetoothConnected: bluetooth?.isConnected ?? false,
+        isBluetoothLoading: bluetooth?.loading ?? false,
+        ledless,
+        wallHeld: wallHeldLocally,
+        holderIsAuthoritative,
+        canRelay,
+      }),
+    [bluetooth, holderIsAuthoritative, canRelay, ledless, wallHeldLocally],
+  );
+
+  // Bluetooth Connection Success / Failed record the outcome a few hundred ms
+  // later. The tap itself is tracked too (#5654): a tap that dies at a denied
+  // permission or a radio that's off never reaches either outcome event, so
+  // without it "tapped connect" couldn't be told apart from "never tried".
+  const connect = useCallback(
+    async (surfaceOverride?: LightbulbSurface): Promise<boolean> => {
+      // The same gate onPress applies, so a caller that skips its own check
+      // can't open a second link while one is pending or a peer holds the wall.
+      if (!bluetooth || pressAction !== 'connect') return false;
+      const reconnectSerial = bluetooth.reconnectSerialForCurrentBoard ?? undefined;
+      const reconnectDeviceId = bluetooth.reconnectDeviceIdForCurrentBoard ?? undefined;
+      trackBoardConnectTapped({
+        surface: surfaceOverride ?? surface,
+        boardName: bluetooth.boardName,
+        reconnect: reconnectSerial !== undefined || reconnectDeviceId !== undefined,
+      });
+      bluetooth.armUndoWallChangeToast();
+      // Reconnect straight to the same board — by serial (Aurora) or device id
+      // (MoonBoard). With neither remembered, the adapter opens the picker.
+      return bluetooth.connect(undefined, undefined, reconnectSerial, reconnectDeviceId);
+    },
+    [bluetooth, pressAction, surface],
+  );
 
   const onPress = useCallback(() => {
     if (!bluetooth) return;
-    const pressAction = derivePlayDrawerLightbulbPressAction({
-      // Guaranteed non-null by the guard above.
-      hasBluetooth: true,
-      isBluetoothConnected: bluetooth.isConnected,
-      isBluetoothLoading: bluetooth.loading,
-      ledless: bluetooth.ledless,
-      wallHeld: bluetooth.virtualWallHeld,
-    });
     if (pressAction === 'noop') return;
 
     if (pressAction === 'disconnect') {
@@ -96,23 +190,19 @@ export function useLightbulbControl(options: UseLightbulbControlOptions = {}): L
       return;
     }
 
+    // A peer is driving: light the climb through their link instead of opening
+    // a second one the board will not accept. No BLE is touched here.
+    if (pressAction === 'relay') {
+      onRelayToHolder?.();
+      return;
+    }
+
     // connect — relight the remembered board for the current config. The board
     // auto-pushes the displayed climb on connect, which reports to board presence
     // and makes this device the holder; on disconnect the bluetooth provider
     // fires the release itself, so we don't report here.
-    // The connect ATTEMPT is not tracked — Bluetooth Connection Success / Failed
-    // record the outcome a few hundred ms later, which is the question the BLE
-    // health dashboard actually asks.
-    bluetooth.armUndoWallChangeToast();
-    // Reconnect straight to the same board — by serial (Aurora) or device id
-    // (MoonBoard). With neither remembered, the adapter opens the picker.
-    void bluetooth.connect(
-      undefined,
-      undefined,
-      bluetooth.reconnectSerialForCurrentBoard ?? undefined,
-      bluetooth.reconnectDeviceIdForCurrentBoard ?? undefined,
-    );
-  }, [bluetooth]);
+    void connect();
+  }, [bluetooth, pressAction, onRelayToHolder, connect]);
 
   const onLongPress = useCallback(() => {
     // Long-press is a power-user shortcut into the controls sheet; only meaningful
@@ -122,5 +212,17 @@ export function useLightbulbControl(options: UseLightbulbControlOptions = {}): L
     onOpenControls?.();
   }, [localConnected, onOpenControls]);
 
-  return { bluetooth, lit, localConnected, pending, onPress, onLongPress, ledless, wallHeldLocally };
+  return {
+    bluetooth,
+    lit,
+    localConnected,
+    pending,
+    onPress,
+    connect,
+    onLongPress,
+    ledless,
+    wallHeldLocally,
+    pressAction,
+    holderIsAuthoritative,
+  };
 }

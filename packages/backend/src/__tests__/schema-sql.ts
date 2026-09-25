@@ -3,6 +3,23 @@
  * template DB) and by worker-db (to hydrate newly-minted per-worker DBs).
  */
 
+import { readFileSync } from 'node:fs';
+
+// Exercise the generated migration instead of maintaining a second detection schema.
+const detectionSchema = readFileSync(
+  new URL('../../../db/drizzle/0234_shallow_the_phantom.sql', import.meta.url),
+  'utf8',
+);
+const placesSchema = readFileSync(new URL('../../../db/drizzle/0235_places_search.sql', import.meta.url), 'utf8');
+const climbNeighborsSchema = readFileSync(
+  new URL('../../../db/drizzle/0236_climb_neighbors.sql', import.meta.url),
+  'utf8',
+);
+const climbNeighborResumableBuildsSchema = readFileSync(
+  new URL('../../../db/drizzle/0237_climb_neighbor_resumable_builds.sql', import.meta.url),
+  'utf8',
+);
+
 export const schemaSQL = `
   DROP TABLE IF EXISTS "board_session_queues" CASCADE;
   DROP TABLE IF EXISTS "session_health_kit_workouts" CASCADE;
@@ -209,6 +226,7 @@ export const schemaSQL = `
     "published_at" text,
     "hold_fingerprint" text,
     "characteristics" text[],
+    "missing_hold_count" integer,
     "updated_at" timestamp DEFAULT now() NOT NULL,
     "sync_seq" bigserial NOT NULL
   );
@@ -953,6 +971,9 @@ export const schemaSQL = `
     "id" bigserial PRIMARY KEY NOT NULL,
     "board_id" bigint NOT NULL REFERENCES "user_boards"("id") ON DELETE CASCADE,
     "board_type" text NOT NULL,
+    "source" text DEFAULT 'boardsesh' NOT NULL,
+    "external_occurrence_key" text,
+    "external_display_name" text,
     "climb_uuid" text NOT NULL,
     "angle" integer NOT NULL,
     "user_id" text REFERENCES "users"("id") ON DELETE SET NULL,
@@ -969,6 +990,25 @@ export const schemaSQL = `
   CREATE UNIQUE INDEX IF NOT EXISTS "board_climb_events_board_seq_unique" ON "board_climb_events" ("board_id", "seq");
   CREATE INDEX IF NOT EXISTS "board_climb_events_session_idx" ON "board_climb_events" ("session_id");
   CREATE INDEX IF NOT EXISTS "board_climb_events_board_climb_idx" ON "board_climb_events" ("board_id", "climb_uuid");
+  DROP TABLE IF EXISTS "kilter_wall_sources";
+CREATE TABLE "kilter_wall_sources" (
+	"source_key" text PRIMARY KEY NOT NULL,
+	"source_board_uuid" text NOT NULL,
+	"gym_uuid" text NOT NULL,
+	"product_layout_uuid" text NOT NULL,
+	"wall_uuid" text NOT NULL,
+	"layout_id" integer NOT NULL,
+	"size_id" integer NOT NULL,
+	"set_ids" text NOT NULL,
+	"is_listed" boolean DEFAULT true NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL
+);
+
+ALTER TABLE "kilter_wall_sources" ADD CONSTRAINT "kilter_wall_sources_source_board_uuid_user_boards_uuid_fk" FOREIGN KEY ("source_board_uuid") REFERENCES "public"."user_boards"("uuid") ON DELETE cascade ON UPDATE no action;
+CREATE INDEX "kilter_wall_sources_board_idx" ON "kilter_wall_sources" USING btree ("source_board_uuid");
+CREATE UNIQUE INDEX "board_climb_events_external_occurrence_unique" ON "board_climb_events" USING btree ("source","external_occurrence_key");
+CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USING btree ("board_id","confirmed_at","seq");
+
 
   DROP TABLE IF EXISTS "integration_exports" CASCADE;
   DROP TABLE IF EXISTS "integration_credentials" CASCADE;
@@ -1648,6 +1688,155 @@ export const schemaSQL = `
           ))
     EXECUTE FUNCTION set_board_climb_stats_sync_fields();
 
+  -- ============================================
+  -- Spray walls (SW-04 #5437, read by SW-05 #5438)
+  -- ============================================
+  -- Mirrors packages/db/src/schema/app/spray-walls.ts. The FKs BETWEEN the spray
+  -- tables and onto user_boards are real, because the resolver behaviour under
+  -- test depends on them: removed_version_id is ON DELETE RESTRICT precisely so
+  -- deleting a version cannot resurrect the holds it removed, and
+  -- spray_walls.board_uuid is ON DELETE RESTRICT because a wall is only ever
+  -- soft-deleted.
+  --
+  -- Dropped first: worker databases are reused across runs, so a bare
+  -- CREATE ... IF NOT EXISTS would leave a previous shape in place and any change
+  -- here would never land.
+  DROP TABLE IF EXISTS "spray_wall_reports" CASCADE;
+  DROP TABLE IF EXISTS "spray_climb_lineage" CASCADE;
+  DROP TABLE IF EXISTS "spray_wall_holds" CASCADE;
+  DROP TABLE IF EXISTS "spray_wall_versions" CASCADE;
+  DROP TABLE IF EXISTS "spray_walls" CASCADE;
+
+  DO $$ BEGIN
+    CREATE TYPE spray_wall_version_status AS ENUM ('draft', 'published', 'superseded');
+  EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+  DO $$ BEGIN
+    CREATE TYPE spray_hold_source AS ENUM ('manual', 'auto');
+  EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+  -- ONE sequence value is BOTH a layout id and a size id; the other hands out a
+  -- number that is BOTH a board_holes id and a board_placements id. Both stop at
+  -- int4 max, because every catalogue id column they feed is an integer: a default
+  -- bigint sequence would hand out a value those columns cannot store, and the
+  -- failure would land on a climber creating a wall instead of at the draw.
+  CREATE SEQUENCE IF NOT EXISTS "spray_wall_catalog_id_seq" START WITH 1 INCREMENT BY 1 MAXVALUE 2147483647;
+  CREATE SEQUENCE IF NOT EXISTS "spray_hold_catalog_id_seq" START WITH 1 INCREMENT BY 1 MAXVALUE 2147483647;
+
+  CREATE TABLE IF NOT EXISTS "spray_walls" (
+    "id" bigserial PRIMARY KEY NOT NULL,
+    "board_uuid" text NOT NULL UNIQUE REFERENCES "user_boards"("uuid") ON DELETE RESTRICT,
+    "layout_id" integer NOT NULL UNIQUE,
+    "reference_width" integer,
+    "reference_height" integer,
+    "current_version_id" bigint,
+    "hold_count" integer DEFAULT 0 NOT NULL,
+    -- The key of this wall's photo copy in the PUBLIC media bucket, non-null
+    -- exactly while the wall is public (migration 0229, SW-14).
+    "public_photo_key" text,
+    "created_at" timestamp DEFAULT now() NOT NULL,
+    "updated_at" timestamp DEFAULT now() NOT NULL,
+    "deleted_at" timestamp,
+    -- SW-17 moderation: a hidden wall reads exactly like a private one for
+    -- everybody but its owner. Independent of deleted_at; both can be set.
+    "hidden_at" timestamp,
+    "hidden_by" text REFERENCES "users"("id") ON DELETE SET NULL,
+    -- SW-17 retention: when the purge swept this wall's storage prefix. Explicit
+    -- state, because a purged wall's row is never deleted and a wall can own
+    -- objects no version row names (an abandoned wizard upload).
+    "photos_purged_at" timestamp
+  );
+
+  CREATE TABLE IF NOT EXISTS "spray_wall_versions" (
+    "id" bigserial PRIMARY KEY NOT NULL,
+    "wall_id" bigint NOT NULL REFERENCES "spray_walls"("id") ON DELETE CASCADE,
+    "version_number" integer NOT NULL,
+    "status" spray_wall_version_status DEFAULT 'draft' NOT NULL,
+    "photo_key" text,
+    "photo_width" integer,
+    "photo_height" integer,
+    "anchors" jsonb,
+    "homography" jsonb,
+    "notes" text,
+    "created_by" text REFERENCES "users"("id") ON DELETE SET NULL,
+    "published_at" timestamp,
+    "created_at" timestamp DEFAULT now() NOT NULL,
+    "updated_at" timestamp DEFAULT now() NOT NULL
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS "spray_wall_versions_wall_version_idx"
+    ON "spray_wall_versions" ("wall_id", "version_number");
+
+  -- Added after both tables exist: the FK is circular (a wall points at its
+  -- published version, a version belongs to a wall).
+  ALTER TABLE "spray_walls"
+    ADD CONSTRAINT "spray_walls_current_version_id_spray_wall_versions_id_fk"
+    FOREIGN KEY ("current_version_id") REFERENCES "spray_wall_versions"("id") ON DELETE SET NULL;
+  CREATE INDEX IF NOT EXISTS "spray_walls_current_version_idx" ON "spray_walls" ("current_version_id");
+  -- SW-17: the retention purge's candidate read — the oldest soft-deleted walls
+  -- that still have a photo. Partial, because deleted_at IS NULL is almost the
+  -- whole table.
+  CREATE INDEX IF NOT EXISTS "spray_walls_deleted_at_idx"
+    ON "spray_walls" ("deleted_at") WHERE "deleted_at" IS NOT NULL AND "photos_purged_at" IS NULL;
+
+  CREATE TABLE IF NOT EXISTS "spray_wall_holds" (
+    "wall_id" bigint NOT NULL REFERENCES "spray_walls"("id") ON DELETE CASCADE,
+    "hold_id" integer NOT NULL,
+    "cx" integer NOT NULL,
+    "cy" integer NOT NULL,
+    "r" integer NOT NULL,
+    "outline" jsonb,
+    "installed_version_id" bigint NOT NULL REFERENCES "spray_wall_versions"("id") ON DELETE CASCADE,
+    "removed_version_id" bigint REFERENCES "spray_wall_versions"("id") ON DELETE RESTRICT,
+    "moved_from_hold_id" integer,
+    "source" spray_hold_source DEFAULT 'manual' NOT NULL,
+    "confidence" real,
+    "created_at" timestamp DEFAULT now() NOT NULL,
+    "updated_at" timestamp DEFAULT now() NOT NULL,
+    PRIMARY KEY ("wall_id", "hold_id")
+  );
+  CREATE INDEX IF NOT EXISTS "spray_wall_holds_alive_idx"
+    ON "spray_wall_holds" ("wall_id", "removed_version_id");
+  -- Remix walks the other way — "what replaced the hold this climb lost?" — and
+  -- almost every row has no predecessor, so the index is partial.
+  CREATE INDEX IF NOT EXISTS "spray_wall_holds_moved_from_idx"
+    ON "spray_wall_holds" ("moved_from_hold_id") WHERE "moved_from_hold_id" IS NOT NULL;
+
+  CREATE TABLE IF NOT EXISTS "spray_climb_lineage" (
+    "child_uuid" text PRIMARY KEY NOT NULL,
+    "parent_uuid" text NOT NULL,
+    -- RESTRICT, like the removal FK above: cascading here would delete the
+    -- lineage row a remix's screen shows when the version it was rebuilt on went
+    -- away, silently orphaning the child from its parent.
+    "wall_version_id" bigint NOT NULL REFERENCES "spray_wall_versions"("id") ON DELETE RESTRICT,
+    "created_at" timestamp DEFAULT now() NOT NULL,
+    CONSTRAINT "spray_climb_lineage_child_fk" FOREIGN KEY ("child_uuid")
+      REFERENCES "board_climbs"("uuid") ON DELETE CASCADE ON UPDATE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS "spray_climb_lineage_parent_idx" ON "spray_climb_lineage" ("parent_uuid");
+
+  DO $$ BEGIN
+    CREATE TYPE spray_wall_report_reason AS ENUM ('inappropriate', 'not_a_wall', 'personal_info', 'other');
+  EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+  -- SW-17: the report queue. Deliberately not the climb-proposal vote machinery —
+  -- a wall photograph is somebody's home and the question has one right answer, so
+  -- the outcome is an admin reading a list, not a weighted threshold.
+  CREATE TABLE IF NOT EXISTS "spray_wall_reports" (
+    "id" bigserial PRIMARY KEY NOT NULL,
+    "wall_id" bigint NOT NULL REFERENCES "spray_walls"("id") ON DELETE CASCADE,
+    "reporter_id" text REFERENCES "users"("id") ON DELETE SET NULL,
+    "reason" spray_wall_report_reason NOT NULL,
+    "created_at" timestamp DEFAULT now() NOT NULL,
+    "reviewed_at" timestamp,
+    "reviewed_by" text REFERENCES "users"("id") ON DELETE SET NULL
+  );
+  -- One report per climber per wall: a second reportSprayWall is an idempotent
+  -- no-op, and this index is what makes it one.
+  CREATE UNIQUE INDEX IF NOT EXISTS "spray_wall_reports_wall_reporter_idx"
+    ON "spray_wall_reports" ("wall_id", "reporter_id") WHERE "reporter_id" IS NOT NULL;
+  CREATE INDEX IF NOT EXISTS "spray_wall_reports_pending_idx"
+    ON "spray_wall_reports" ("created_at") WHERE "reviewed_at" IS NULL;
+
   CREATE OR REPLACE FUNCTION set_updated_at() RETURNS TRIGGER AS $$
   BEGIN
     NEW.updated_at = NOW();
@@ -1666,4 +1855,14 @@ export const schemaSQL = `
             'aurora_type','aurora_id','aurora_synced_at','aurora_sync_error',
             'kilter_type','kilter_id','kilter_synced_at','kilter_sync_error']))
     EXECUTE FUNCTION set_updated_at();
+
+  DROP TABLE IF EXISTS spray_wall_detections;
+  DROP TYPE IF EXISTS spray_detection_status;
+  ${detectionSchema}
+  CREATE EXTENSION IF NOT EXISTS pg_trgm;
+  DROP TABLE IF EXISTS places, place_imports;
+  ${placesSchema}
+  DROP TABLE IF EXISTS board_climb_neighbors, board_climb_neighbor_runs, board_climb_neighbor_group_runs;
+  ${climbNeighborsSchema}
+  ${climbNeighborResumableBuildsSchema}
 `;

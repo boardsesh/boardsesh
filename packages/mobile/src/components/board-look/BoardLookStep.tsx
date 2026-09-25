@@ -269,15 +269,15 @@ export function BoardLookStep({
   // look they are about to commit to.
   const ctaLabel =
     selectedId === 'custom'
-      ? t('mobile.more.boardLook.intro.customCta')
-      : t('mobile.more.boardLook.intro.saveNamed', { look: selectedLabel });
+      ? t('mobile.settings.boardLook.intro.customCta')
+      : t('mobile.settings.boardLook.intro.saveNamed', { look: selectedLabel });
 
   return (
     <View style={[styles.root, { backgroundColor, paddingTop: insets.top }]} accessibilityViewIsModal>
       <View style={styles.header}>
-        <Text variant="title1">{t('mobile.more.boardLook.intro.title')}</Text>
+        <Text variant="title1">{t('mobile.settings.boardLook.intro.title')}</Text>
         <Text variant="subheadline" color={bodyColor} style={styles.description}>
-          {t('mobile.more.boardLook.intro.subtitle')}
+          {t('mobile.settings.boardLook.intro.subtitle')}
         </Text>
       </View>
 
@@ -321,10 +321,10 @@ export function BoardLookStep({
             makes committing to one cheap. */}
         <View style={styles.footnotes}>
           <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.footnote}>
-            {t('mobile.more.boardLook.intro.accessibilityNote')}
+            {t('mobile.settings.boardLook.intro.accessibilityNote')}
           </Text>
           <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.footnote}>
-            {t('mobile.more.boardLook.intro.changeLaterNote')}
+            {t('mobile.settings.boardLook.intro.changeLaterNote')}
           </Text>
         </View>
         <Button

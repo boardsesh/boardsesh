@@ -167,6 +167,37 @@ describe('reportHandledError', () => {
     });
   });
 
+  it('reports a GRAPHQL_VALIDATION_FAILED rejection as a warning fingerprinted by its message (#5370)', () => {
+    // Yoga's HTTP validation plugin: HTTP 400 with the code on each error.
+    const validationFailed = Object.assign(new Error('Cannot query field "otaPreviewChannels" on type "Query".'), {
+      response: {
+        status: 400,
+        errors: [
+          {
+            message: 'Cannot query field "otaPreviewChannels" on type "Query".',
+            extensions: { code: 'GRAPHQL_VALIDATION_FAILED', http: { status: 400 } },
+          },
+        ],
+      },
+    });
+    reportHandledError(validationFailed, { tags: { source: 'react-query', kind: 'query' } });
+    expect(mockedCaptureToSentry).toHaveBeenCalledWith(validationFailed, {
+      level: 'warning',
+      tags: { source: 'react-query', kind: 'query', schema_mismatch: true },
+      fingerprint: ['graphql-validation-failed', 'Cannot query field "otaPreviewChannels" on type "Query".'],
+    });
+  });
+
+  it('bounds the validation message used in the fingerprint', () => {
+    const longMessage = `Cannot query field "x" on type "Query". Did you mean ${'"y", '.repeat(100)}?`;
+    const validationFailed = Object.assign(new Error(longMessage), {
+      response: { status: 400, errors: [{ message: longMessage, extensions: { code: 'GRAPHQL_VALIDATION_FAILED' } }] },
+    });
+    reportHandledError(validationFailed);
+    const fingerprint = mockedCaptureToSentry.mock.calls[0]?.[1]?.fingerprint;
+    expect(fingerprint?.[1]).toHaveLength(200);
+  });
+
   it('catches a RATE_LIMITED error via direct extensions before the network check', () => {
     // No `response` at all here, so if the rate-limit guard didn't run first this
     // would otherwise fall into isNetworkError's "no numeric status" branch.

@@ -1,6 +1,6 @@
 import type { MetadataRoute } from 'next';
 import { absoluteUrl } from '@/app/lib/seo/base-url';
-import { AI_CRAWLER_TOKENS } from './lib/crawler-policy';
+import { BLOCKED_CRAWLER_TOKENS } from './lib/crawler-policy';
 
 export default function robots(): MetadataRoute.Robots {
   return {
@@ -22,7 +22,7 @@ export default function robots(): MetadataRoute.Robots {
         disallow: ['/api/', '/auth/', '/settings'],
       },
       {
-        userAgent: [...AI_CRAWLER_TOKENS, 'Google-Extended'],
+        userAgent: [...BLOCKED_CRAWLER_TOKENS, 'Google-Extended'],
         disallow: '/',
       },
     ],

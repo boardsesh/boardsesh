@@ -7,6 +7,7 @@ import { Text } from '../Text';
 import { useTheme } from '../../providers/theme-provider';
 import { blendOpaque } from '../../theme/colors';
 import { borderRadius, spacing } from '../../theme/tokens';
+import { nowDate } from '../../lib/clock';
 
 const ROWS = 7;
 const CELL_GAP = 3;
@@ -67,7 +68,7 @@ export function ActivityHeatmap({ heatmap }: ActivityHeatmapProps) {
   // "Today" via a LOCAL date string (NOT toISOString, which is UTC) so the
   // current-day ring lands on the right cell across time zones.
   const todayKey = useMemo(() => {
-    const now = new Date();
+    const now = nowDate();
     const month = String(now.getMonth() + 1).padStart(2, '0');
     const dayOfMonth = String(now.getDate()).padStart(2, '0');
     return `${now.getFullYear()}-${month}-${dayOfMonth}`;

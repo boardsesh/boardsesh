@@ -38,6 +38,7 @@ import WarningOutlined from '@mui/icons-material/WarningOutlined';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR } from '@boardsesh/shared-schema/sync-error-codes';
+import { boardTypeLabel } from '@boardsesh/board-constants';
 import { ConfirmPopover } from '@/app/components/ui/confirm-popover';
 import type { AuroraCredentialStatus } from '@/app/lib/aurora-credentials/client';
 import type { AuroraBoardName } from '@boardsesh/shared-schema';
@@ -118,7 +119,7 @@ export function BoardCredentialCard({
   userEmail,
 }: BoardCredentialCardProps) {
   const { t } = useTranslation('settings');
-  const boardName = boardType.charAt(0).toUpperCase() + boardType.slice(1);
+  const boardName = boardTypeLabel(boardType);
   const totalUnsynced = unsyncedCounts.ascents + unsyncedCounts.climbs;
   const isExpired = credential?.syncStatus === 'expired';
   const cardTitle =

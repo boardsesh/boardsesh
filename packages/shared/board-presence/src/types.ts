@@ -13,12 +13,13 @@ import type { BoardConnectionHolder, BoardPresenceClimb, BoardPresenceStats } fr
 /**
  * The wall's "now playing" state, driven by the per-board presence stream.
  *
- * - `currentClimb`: the climb currently lit on the wall, or `null` if cleared.
+ * - `currentClimb`: the most recently reported display across Boardsesh and Kilter,
+ *   or `null` if cleared. Kilter is an inferred wall state, not a BLE confirmation.
  * - `previousClimb`: the climb that was current before the latest set/clear,
  *   so the UI can offer an Undo affordance.
  * - `history`: newest-first list of climbs that have been on the wall, capped
  *   at {@link HISTORY_CAP}.
- * - `lastSeq`: the highest per-board sequence number applied so far. Used to
+ * - `lastSeq`: the highest native set/clear sequence number applied so far. Used to
  *   dedup the late-joiner backfill against the live stream and to reject
  *   out-of-order Redis messages.
  */
@@ -26,7 +27,10 @@ export type BoardPresenceState = {
   currentClimb: BoardPresenceClimb | null;
   previousClimb: BoardPresenceClimb | null;
   history: BoardPresenceClimb[];
+  /** Highest native set/clear sequence; Kilter import sequences never advance it. */
   lastSeq: number;
+  /** Latest accepted native clear, used to reject imports displayed before it. */
+  lastClearedAt: string | null;
   /**
    * The board's durable stat snapshot (sends/climbers/hardest/top), pushed live
    * over the same subscription as climb events. Null until the first seed/push.
@@ -60,6 +64,7 @@ export type BoardPresenceAction =
   | { type: 'APPLY_CLIMB_SET'; payload: BoardPresenceClimb }
   | { type: 'APPLY_CLIMB_CLEARED'; payload: { clearedAt: string; seq: number } }
   | { type: 'BACKFILL_HISTORY'; payload: BoardPresenceClimb[] }
+  | { type: 'MERGE_HISTORY'; payload: BoardPresenceClimb[] }
   // Live stats push from the subscription (the freshly recomputed snapshot).
   | { type: 'APPLY_STATS_UPDATED'; payload: { stats: BoardPresenceStats; seq: number } }
   // One-time initial fetch seed; only fills the tiles before any live push.

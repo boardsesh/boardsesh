@@ -28,25 +28,36 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import {
   boardHistoryEntryKey,
+  mergeBoardHistory,
   useBoardHistoryPagination,
   useBoardPresenceActions,
   useBoardPresenceCurrent,
   useBoardPresenceFeed,
 } from '@boardsesh/board-presence-react';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
-import type { BoardName, BoardPresenceClimb, BoardPresenceHardestSend, Climb } from '@boardsesh/shared-schema';
+import type {
+  BoardName,
+  BoardPresenceClimb,
+  BoardPresenceHardestSend,
+  Climb,
+  UserBoard,
+} from '@boardsesh/shared-schema';
 import { Text } from '../Text';
+import { GymWallSwitcher } from './GymWallSwitcher';
+import { useGymBoards } from '../../lib/graphql/hooks/use-gym-boards';
 import { Icon } from '../Icon';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { ClimbListRow, type ClimbListRowRenderContentArgs } from '../ClimbListRow';
 import { PressableAvatar } from '../PressableAvatar';
 import { BoardDriverAvatar } from './BoardDriverAvatar';
+import { BoardLiveSessionsBlock } from '../live-sessions/BoardLiveSessionsBlock';
 import { AccessoryClimbThumbnail } from '../queue-control/AccessoryClimbThumbnail';
 import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
 import { useBoardPresenceControls } from '../../providers/board-presence-provider';
 import { track } from '../../lib/analytics';
 import type { BoardConfig } from '../../providers/drawer-host-provider';
+import type { DismissAndWaitResult } from '../../providers/sheet-presentation-provider';
 import { useGradeFormat } from '../../hooks/use-grade-format';
 import { useDisplayGrade } from '../../hooks/use-display-grade';
 import { offlineAwareRequest } from '../../lib/graphql/offline-request';
@@ -157,8 +168,25 @@ export type NowOnTheWallPanelProps = {
   boardConfig: BoardConfig | null;
   /** Sheet only: when set, the header renders a close chevron that calls this. */
   onClose?: () => void;
+  /**
+   * Sheet only: dismiss and resolve once the dismiss has settled. Routes pushed
+   * from inside the sheet (the live-session join preview) wait on this so a
+   * native modal never starts presenting while the sheet is still leaving.
+   */
+  dismissAndWait?: () => Promise<DismissAndWaitResult>;
   /** Open the existing board switcher from the footer control. */
   onSwitchBoard: () => void;
+  /**
+   * The board the climber is on. Sheet variant only: it is what names the gym
+   * whose other boards the switcher lists.
+   */
+  activeBoard?: UserBoard | null;
+  /**
+   * Hop to another board at the same gym. Sheet variant only — the same panel
+   * renders the iPad wall kiosk, and a board switcher on a display mounted to a
+   * wall lets a passer-by repoint the gym's screen with no way back.
+   */
+  onSelectGymWall?: (board: UserBoard) => void;
   /** Activate/open a climb from the wall feed. The panel closes itself after this (sheet). */
   onClimbPress?: (action: BoardSheetClimbAction) => void;
   /** Swipe action: append this wall-feed climb to the queue. */
@@ -175,7 +203,10 @@ function NowOnTheWallPanelComponent(
     boardLabel,
     boardConfig,
     onClose,
+    dismissAndWait,
     onSwitchBoard,
+    activeBoard,
+    onSelectGymWall,
     onClimbPress,
     onAddToQueue,
     onOpenPlaylist,
@@ -184,6 +215,21 @@ function NowOnTheWallPanelComponent(
   ref: Ref<NowOnTheWallPanelHandle>,
 ) {
   const { t } = useTranslation('session');
+  // Same cached roster the switcher above reads — a second subscriber, not a
+  // second request. Null for the column variant so the iPad kiosk never fetches
+  // a list it is not allowed to show.
+  const { data: gymBoardsForFooter } = useGymBoards(
+    variant === 'sheet' && onSelectGymWall ? (activeBoard?.gymUuid ?? null) : null,
+  );
+  const hasGymSiblings = (gymBoardsForFooter ?? []).some((board) => board.uuid !== activeBoard?.uuid);
+  // The gym's other boards are a disclosure, not a permanent block. Measured on
+  // an iPhone 17 Pro, the always-on list was 226-250pt of the ~305pt a climber
+  // can actually see at the first detent — so the sheet opened on a board
+  // switcher instead of on the wall feed it exists for. Collapsed on every
+  // presentation; the header title is what opens it.
+  const [gymWallsExpanded, setGymWallsExpanded] = useState(false);
+  const canSwitchGymWall = variant === 'sheet' && onSelectGymWall != null && hasGymSiblings;
+  const toggleGymWalls = useCallback(() => setGymWallsExpanded((open) => !open), []);
   const insets = useSafeAreaInsets();
   const { systemColors, brandColors } = useTheme();
   const { showToast } = useToast();
@@ -200,7 +246,11 @@ function NowOnTheWallPanelComponent(
   const boardConfigSignatureRef = useRef(boardConfigSignature);
   boardConfigSignatureRef.current = boardConfigSignature;
 
-  const { currentClimb } = useBoardPresenceCurrent();
+  const { currentClimb, holder } = useBoardPresenceCurrent();
+  // Whoever is connected to the board now, not whoever lit the last climb: that
+  // climber may have left an hour ago.
+  const holderName = holder?.displayName?.trim() || null;
+  const holderUserId = holder?.userId ?? null;
   const { history, stats } = useBoardPresenceFeed();
   const { refresh } = useBoardPresenceActions();
   const { boardId: boardPresenceBoardId } = useBoardPresenceControls();
@@ -210,8 +260,10 @@ function NowOnTheWallPanelComponent(
   // via context), so show the spinner briefly, then clear it.
   const [isRefreshing, setIsRefreshing] = useState(false);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const durableRefreshRef = useRef<(() => void) | undefined>(undefined);
   const handleRefresh = useCallback(() => {
     refresh('manual');
+    durableRefreshRef.current?.();
     setIsRefreshing(true);
     if (refreshTimerRef.current) {
       clearTimeout(refreshTimerRef.current);
@@ -249,27 +301,24 @@ function NowOnTheWallPanelComponent(
     },
     [boardPresenceBoardId],
   );
-  const { olderHistory, isLoadingOlder, hasMore, loadOlder } = useBoardHistoryPagination(
+  const { olderHistory, isLoadingOlder, hasMore, loadOlder, refreshHistory, loadError } = useBoardHistoryPagination(
     undefined,
     handleHistoryPageLoaded,
   );
-  // The hook dedupes each page only at resolve time; the live window can gain
-  // lower seqs AFTERWARDS (backfill / pull-to-refresh merge — seam 2 in the
-  // hook's header), so re-filter here or overlapping entries would render
-  // twice with duplicate list keys. Filter against the FULL feed history, not
-  // `visibleHistory`: the current climb is excluded from the list but its key
-  // must still suppress a durable copy of it leaking in from a page.
+  durableRefreshRef.current = refreshHistory;
+  // Keep richer live entries and hide the current climb's durable copy.
+  // Imported arrival sequences do not determine display chronology.
   const combinedHistory = useMemo(() => {
     if (olderHistory.length === 0) return visibleHistory;
     const liveKeys = new Set(history.map(boardHistoryEntryKey));
     const dedupedOlder = olderHistory.filter((climb) => !liveKeys.has(boardHistoryEntryKey(climb)));
-    return dedupedOlder.length === 0 ? visibleHistory : [...visibleHistory, ...dedupedOlder];
+    return mergeBoardHistory(visibleHistory, dedupedOlder);
   }, [visibleHistory, history, olderHistory]);
 
   // FlatList fires onEndReached immediately when the content is shorter than
   // the viewport, so without this gate every presentation of a quiet wall
-  // would auto-fire a durable history fetch (guaranteed-rejected for
-  // logged-out users). Require a real user scroll first.
+  // would drain durable pages after the automatic first page.
+  // Require a real user scroll before loading another page.
   const hasUserScrolledRef = useRef(false);
   const handleScrollBeginDrag = useCallback(() => {
     hasUserScrolledRef.current = true;
@@ -470,6 +519,18 @@ function NowOnTheWallPanelComponent(
     onClose?.();
   }, [invalidatePendingActions, onClose]);
 
+  // True once the sheet is gone and a route may be pushed; false when the
+  // handoff was aborted (the sheet's owner went away mid-dismiss).
+  const leaveSheet = useCallback(async (): Promise<boolean> => {
+    invalidatePendingActions();
+    if (!dismissAndWait) {
+      onClose?.();
+      return true;
+    }
+    const result = await dismissAndWait();
+    return result.status === 'dismissed';
+  }, [invalidatePendingActions, dismissAndWait, onClose]);
+
   // A ref, not a dep: a list `.length` in a callback's deps rebuilds it on every
   // page of history (docs/react-native-performance.md).
   const historyCountRef = useRef(combinedHistory.length);
@@ -558,6 +619,11 @@ function NowOnTheWallPanelComponent(
     const hardestSendGrade = resolveGrade({ difficulty: stats?.hardestSend?.grade ?? '' });
     return (
       <View>
+        {/* First in the header, above the hero: the disclosure opens directly
+            under the title that opened it. */}
+        {canSwitchGymWall && gymWallsExpanded && onSelectGymWall ? (
+          <GymWallSwitcher activeBoard={activeBoard ?? null} onSelectBoard={onSelectGymWall} />
+        ) : null}
         {canUseInteractiveRows && rowBoard && currentClimb ? (
           <InteractiveHeroRow
             climb={currentClimb}
@@ -587,6 +653,17 @@ function NowOnTheWallPanelComponent(
             gradeColor={heroGrade.color}
           />
         )}
+        {/* Sheet only: the column variant is also the wall-mounted iPad kiosk,
+            where a passer-by's "Join" or "Start" would act on the kiosk's
+            account. */}
+        {variant === 'sheet' ? (
+          <BoardLiveSessionsBlock
+            boardId={boardPresenceBoardId}
+            holderName={holderName}
+            holderUserId={holderUserId}
+            onBeforeNavigate={leaveSheet}
+          />
+        ) : null}
         {stats ? (
           // testID anchors the store-screenshot flow: the stats only exist once the
           // wall history has landed, and this block is on screen at the top of the
@@ -663,6 +740,15 @@ function NowOnTheWallPanelComponent(
     handleInteractiveOpenActions,
     heroActionLoading,
     onClimbPress,
+    variant,
+    activeBoard,
+    onSelectGymWall,
+    canSwitchGymWall,
+    gymWallsExpanded,
+    boardPresenceBoardId,
+    holderName,
+    holderUserId,
+    leaveSheet,
   ]);
 
   const listEmpty = useMemo(
@@ -670,7 +756,9 @@ function NowOnTheWallPanelComponent(
       <View>
         {currentClimb ? null : (
           <View style={styles.empty}>
-            <Icon name="lightbulb" size={36} color={systemColors.tertiaryLabel} />
+            {/* secondaryLabel, not tertiary: on a glass sheet this sits over the
+                blurred climb list, and tertiary is under the contrast floor. */}
+            <Icon name="lightbulb" size={36} color={systemColors.secondaryLabel} />
             <Text variant="headline" color={systemColors.label} style={styles.emptyTitle}>
               {t('mobile.boardPresence.emptyTitle')}
             </Text>
@@ -679,27 +767,9 @@ function NowOnTheWallPanelComponent(
             </Text>
           </View>
         )}
-        {/* A wall that's been quiet longer than the Redis window's TTL has an
-            EMPTY live window but durable boardHistory rows. An empty list
-            can't scroll, so the scroll-gated onEndReached above can never
-            fire — this button is then the only path into the durable log
-            (the hook supports a cursor-less first page). */}
-        {hasMore ? (
-          <Pressable
-            onPress={loadOlder}
-            disabled={isLoadingOlder}
-            accessibilityRole="button"
-            accessibilityLabel={t('mobile.boardPresence.loadMore')}
-            style={styles.emptyLoadMore}
-          >
-            <Text variant="subheadline" color={brandColors.primary}>
-              {isLoadingOlder ? t('mobile.boardPresence.loadingMore') : t('mobile.boardPresence.loadMore')}
-            </Text>
-          </Pressable>
-        ) : null}
       </View>
     ),
-    [currentClimb, systemColors, t, hasMore, isLoadingOlder, loadOlder, brandColors.primary],
+    [currentClimb, systemColors, t],
   );
 
   const listFooter = useMemo(
@@ -708,8 +778,19 @@ function NowOnTheWallPanelComponent(
         <View style={styles.historyFooter}>
           <ActivityIndicator size="small" accessibilityLabel={t('mobile.boardPresence.loadingMore')} />
         </View>
+      ) : hasMore ? (
+        <Pressable
+          onPress={loadOlder}
+          accessibilityRole="button"
+          accessibilityLabel={loadError ? t('mobile.boardPresence.retryHistory') : t('mobile.boardPresence.loadMore')}
+          style={styles.historyFooter}
+        >
+          <Text variant="subheadline" color={brandColors.primary}>
+            {loadError ? t('mobile.boardPresence.retryHistory') : t('mobile.boardPresence.loadMore')}
+          </Text>
+        </Pressable>
       ) : null,
-    [isLoadingOlder, t],
+    [isLoadingOlder, t, hasMore, loadOlder, loadError, brandColors.primary],
   );
 
   const listContentContainerStyle = useMemo(() => ({ paddingBottom: spacing[4] }), []);
@@ -746,7 +827,35 @@ function NowOnTheWallPanelComponent(
         <Text variant="title3" color={systemColors.label} numberOfLines={1} style={styles.headerTitle}>
           {boardLabel ?? t('mobile.boardPresence.title')}
         </Text>
-        <View pointerEvents="none" style={styles.headerAction} />
+        {canSwitchGymWall ? (
+          // Mirrors the close control on the left, in the slot that was already
+          // a dead spacer holding the title centred — so the switch costs no
+          // vertical space at all. A transfer glyph, not a caret: this moves you
+          // to another board rather than revealing more of this one.
+          <Pressable
+            onPress={toggleGymWalls}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: gymWallsExpanded }}
+            accessibilityLabel={t('mobile.boardPresence.gymWalls.headerSwitcherAria', {
+              board: boardLabel ?? '',
+            })}
+            accessibilityHint={t(
+              gymWallsExpanded
+                ? 'mobile.boardPresence.gymWalls.headerSwitcherHintClose'
+                : 'mobile.boardPresence.gymWalls.headerSwitcherHintOpen',
+            )}
+            style={styles.headerAction}
+          >
+            <Icon
+              name="transfer"
+              size={20}
+              color={gymWallsExpanded ? brandColors.primary : systemColors.secondaryLabel}
+            />
+          </Pressable>
+        ) : (
+          <View pointerEvents="none" style={styles.headerAction} />
+        )}
       </View>
 
       {variant === 'sheet' ? (
@@ -791,13 +900,26 @@ function NowOnTheWallPanelComponent(
         onPress={handleSwitchBoard}
         accessibilityRole="button"
         accessibilityLabel={t('mobile.boardPresence.switchBoardAria')}
-        style={[styles.footer, { borderTopColor: systemColors.separator, paddingBottom: footerBottomPadding }]}
+        style={[
+          styles.footer,
+          {
+            borderTopColor: systemColors.separator,
+            paddingBottom: footerBottomPadding,
+            // The sheet's ground is the native material now, so a pinned footer
+            // without a plate has the history list scrolling visibly under its
+            // text. Both shared sheet wrappers plate their pinned footers for
+            // this reason.
+            backgroundColor: systemColors.secondaryBackground,
+          },
+        ]}
       >
         <View style={[styles.footerIcon, { backgroundColor: systemColors.secondaryBackground }]}>
           <Icon name="transfer" size={20} color={systemColors.label} />
         </View>
         <View style={styles.footerText}>
           <Text variant="body" color={systemColors.label}>
+            {/* Stays "Switch board": the gym's own boards live behind the header
+                title now, so this is the way out to every board anywhere. */}
             {t('mobile.boardPresence.switchBoard')}
           </Text>
           {boardLabel ? (
@@ -806,7 +928,7 @@ function NowOnTheWallPanelComponent(
             </Text>
           ) : null}
         </View>
-        <Icon name="chevron.right" size={16} color={systemColors.tertiaryLabel} />
+        <Icon name="chevron.right" size={16} color={systemColors.secondaryLabel} />
       </Pressable>
     </>
   );
@@ -1065,6 +1187,11 @@ function HistoryRowContent({
         <Text variant="subheadline" color={labelColor} numberOfLines={1} style={styles.historyName}>
           {climb.name ?? ''}
         </Text>
+        {climb.source === 'kilter' ? (
+          <Text variant="caption1" color={secondaryColor}>
+            {t('mobile.boardPresence.kilterHistorySource')}
+          </Text>
+        ) : null}
         {litBy ? (
           <View style={styles.historyDriverRow}>
             {/* Past send — no Bluetooth glyph (nobody's driving it now); just a
@@ -1454,10 +1581,6 @@ const styles = StyleSheet.create({
   historyFooter: {
     paddingVertical: spacing[5],
     alignItems: 'center',
-  },
-  emptyLoadMore: {
-    alignItems: 'center',
-    paddingVertical: spacing[3],
   },
   footer: {
     flexDirection: 'row',

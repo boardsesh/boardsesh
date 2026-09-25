@@ -46,6 +46,21 @@ const mockIsServerUnavailableError = isServerUnavailableError as ReturnType<type
 const mockIsServerFailureSignal = isServerFailureSignal as ReturnType<typeof vi.fn>;
 const mockGetErrorStatus = getErrorStatus as ReturnType<typeof vi.fn>;
 
+// The suite mocks the classifier so each branch can be driven in isolation. The
+// #5295 cases below need the opposite: the REAL predicates, so the assertion is
+// that a genuine transport shape reaches the drainer's no-strike branch rather
+// than that a hand-set boolean does.
+const realClassification = await vi.importActual<typeof import('../error-classification')>('../error-classification');
+
+function useRealClassification(): void {
+  mockIsGraphQLEmptyResponseError.mockImplementation(realClassification.isGraphQLEmptyResponseError);
+  mockIsRetryable.mockImplementation(realClassification.isRetryable);
+  mockIsNetworkError.mockImplementation(realClassification.isNetworkError);
+  mockIsServerUnavailableError.mockImplementation(realClassification.isServerUnavailableError);
+  mockIsServerFailureSignal.mockImplementation(realClassification.isServerFailureSignal);
+  mockGetErrorStatus.mockImplementation(realClassification.getErrorStatus);
+}
+
 // Always online unless a test opts out — matches the onlineManager default and
 // keeps every existing drain-behaviour test running as before.
 const ONLINE = { isOnline: () => true } as const;
@@ -700,6 +715,83 @@ describe('drainMutationQueue', () => {
     expect(delays[0]).toBeLessThanOrEqual(100);
 
     randomSpy.mockRestore();
+  });
+
+  // Issue #5295: two transport shapes the classifier did not recognise reached
+  // the else-branch below `isRetryable` and were dead-lettered as
+  // `non_retryable` on attempt 0 of 10 — a logged send, gone. These run against
+  // the REAL classifier so the drainer branch, not a mock, is what is pinned.
+  describe('transport shapes that used to dead-letter a queued send (issue #5295)', () => {
+    it('leaves the row pending when fetch times out (TypeError: Network request timed out)', async () => {
+      useRealClassification();
+      const mutation = makeMutation({ id: 1 });
+      // No trailing empty peek: a network stop ends the cycle, so an unconsumed
+      // mockResolvedValueOnce would leak into the next test.
+      mockPeekPending.mockResolvedValueOnce([mutation]);
+      mockProcessMutation.mockRejectedValueOnce(new TypeError('Network request timed out'));
+      const onMutationDeadLettered = vi.fn();
+
+      await drainMutationQueue(mockDb, createMockQueryClient(), mockGraphqlFetch, {
+        ...ONLINE,
+        onMutationDeadLettered,
+      });
+
+      expect(mockRecordFailure).not.toHaveBeenCalled();
+      expect(mockMarkDeadLetter).not.toHaveBeenCalled();
+      expect(mockMarkCompleted).not.toHaveBeenCalled();
+      expect(onMutationDeadLettered).not.toHaveBeenCalled();
+      // One pass: the cycle ends to wait for reconnectivity.
+      expect(mockPeekPending).toHaveBeenCalledTimes(1);
+    });
+
+    it('leaves the row pending when an edge answers 404 instead of the GraphQL endpoint', async () => {
+      useRealClassification();
+      const mutation = makeMutation({ id: 1 });
+      mockPeekPending.mockResolvedValueOnce([mutation]);
+      mockProcessMutation.mockRejectedValueOnce(
+        Object.assign(new Error('Application not found: POST /graphql'), {
+          response: { status: 404, error: '{"code":404,"message":"Application not found"}' },
+        }),
+      );
+      const onMutationDeadLettered = vi.fn();
+      const confirmServerAvailability = vi.fn().mockResolvedValue(true);
+
+      await drainMutationQueue(mockDb, createMockQueryClient(), mockGraphqlFetch, {
+        ...ONLINE,
+        onMutationDeadLettered,
+        confirmServerAvailability,
+      });
+
+      // Same shape as the 503 case: the unavailable branch pre-empts both the
+      // health probe and the retry bookkeeping.
+      expect(confirmServerAvailability).not.toHaveBeenCalled();
+      expect(mockRecordFailure).not.toHaveBeenCalled();
+      expect(mockMarkDeadLetter).not.toHaveBeenCalled();
+      expect(mockMarkCompleted).not.toHaveBeenCalled();
+      expect(onMutationDeadLettered).not.toHaveBeenCalled();
+      expect(mockPeekPending).toHaveBeenCalledTimes(1);
+    });
+
+    it('still dead-letters a real 400 as non_retryable — default-retry did not become retry-everything', async () => {
+      useRealClassification();
+      const mutation = makeMutation({ id: 3, idempotency_key: 'invalid-tick', retry_count: 1 });
+      mockPeekPending.mockResolvedValueOnce([mutation]).mockResolvedValueOnce([]);
+      mockProcessMutation.mockRejectedValueOnce(
+        Object.assign(new Error('400 Bad Request'), { response: { status: 400 } }),
+      );
+      const onMutationDeadLettered = vi.fn();
+
+      await drainMutationQueue(mockDb, createMockQueryClient(), mockGraphqlFetch, {
+        ...ONLINE,
+        onMutationDeadLettered,
+      });
+
+      expect(mockMarkDeadLetter).toHaveBeenCalledWith(mockDb, 3, '400 Bad Request');
+      expect(mockRecordFailure).not.toHaveBeenCalled();
+      expect(onMutationDeadLettered).toHaveBeenCalledWith(
+        expect.objectContaining({ reason: 'non_retryable', retryCount: 1, status: 400 }),
+      );
+    });
   });
 
   // Issue #4862: a backend that is up but whose database is down answers every

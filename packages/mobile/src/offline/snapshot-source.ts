@@ -44,6 +44,7 @@ import { SNAPSHOT_BASE_URL } from '../lib/env';
 import { SNAPSHOT_DIR_NAME } from './snapshot-paths';
 import { reportHandledError } from '../lib/error-reporting';
 import { resolveSnapshotDownloadStrategy, type SnapshotDownloadStrategy } from './download-strategy';
+import { releaseDownloadTaskAfterNativeCompletion, retainDownloadTask } from './download-task-retention';
 import { reportArtifactTransfer, type ArtifactTransferOutcome } from './artifact-transfer-telemetry';
 
 // Fixed per platform for the lifetime of the bundle: iOS uses a background
@@ -338,6 +339,39 @@ async function runTransfer(args: {
     ...(args.signal ? { signal: args.signal } : {}),
     ...(args.onProgress ? { onProgress: args.onProgress } : {}),
   });
+  // Nothing releases the handle here, and nothing may (issue #5297).
+  //
+  // `release()` runs iOS's `sharedObjectWillRelease()`, which calls
+  // `downloadTask?.cancel()` with no completed-task guard
+  // (expo-file-system 57.0.6, ios/FileSystemDownloadTask.swift:313-316). The
+  // promise below settles from `didFinishDownloadingTo` (:363-404), but that
+  // pointer is only nilled later, by `didCompleteWithError`'s
+  // `defer { finishTask() }` (:406-408 → :308-324). Releasing on the settling
+  // tick therefore cancels a task Foundation is already tearing down, and the
+  // process dies with EXC_BAD_ACCESS mid-transfer — 6 production crashes over
+  // 15 days, each one costing the climber the whole ~100 MB download.
+  //
+  // Eager release bought nothing to begin with: expo's own
+  // `_runDownloadOperation` finally has already removed the progress
+  // subscription and the abort listener by the time `downloadAsync()` settles,
+  // and the native object retains no bulk memory — the bytes went straight to
+  // disk. Expo documents `release()` as being for objects that "exclusively
+  // retain some native memory", and only once "nothing else will use this
+  // object later on". Something does: the session delegate still calls
+  // `finishTask()` on it.
+  //
+  // Not calling `release()` is not enough on its own, though. Hermes collecting
+  // the handle runs the SAME `sharedObjectWillRelease()`, through the releaser
+  // the shared-object registry wires into the C++ native state's destructor,
+  // and nothing orders that collection after `didCompleteWithError`. So the
+  // handle is pinned for the whole transfer and released only well after it
+  // settles — see download-task-retention.ts for the ownership chain that makes
+  // GC reach the same unguarded cancel.
+  //
+  // Cancellation keeps exactly one owner: `args.signal`, which expo wires to
+  // `DownloadTask.cancel()`. That one is state-guarded, so it is a no-op once
+  // the transfer has completed, cancelled, or errored.
+  retainDownloadTask(task);
   try {
     const file = await task.downloadAsync();
     // `downloadAsync` resolves null ONLY when `pause()` was called, which we
@@ -346,9 +380,11 @@ async function runTransfer(args: {
     if (!file) throw new Error('snapshot download: transfer ended without a file');
     return file;
   } finally {
-    // Only after the promise settles: `release()` frees the native shared
-    // object, and `sharedObjectDidRelease` cancels an in-flight call.
-    task.release();
+    // Starts the countdown, never the release itself: the throw path settles
+    // from `didCompleteWithError`'s own `promise.reject(...)`, which runs
+    // before its `defer { finishTask() }`, so a failed transfer sits in the
+    // same window a successful one does.
+    releaseDownloadTaskAfterNativeCompletion(task);
   }
 }
 

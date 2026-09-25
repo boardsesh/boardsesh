@@ -3422,6 +3422,82 @@ export function loadOutlineCounts(): OutlineCountsTable {
 `;
 }
 
+/**
+ * The web shard index: the same key list, but every shard reached through
+ * `import()` instead of `require()`.
+ *
+ * Metro's `require` is synchronous, so the literal `require('./kilter/1-7.cjs')`
+ * calls in `shards.ts` put all 51 shards in the entry chunk even though the
+ * thunks around them are lazy. That is 4.4 MB of the browser app's 15.4 MB
+ * bundle for polygons the reader will never look at — a climber is on one wall,
+ * not fifty-one. `import()` makes Metro emit each shard as its own async chunk
+ * (`expo export --platform web` turns on `splitChunks`), so the browser fetches
+ * exactly the board it is drawing.
+ *
+ * Native keeps `shards.ts` untouched: Metro prefers `shards.web.ts` only when
+ * the platform is web, so the native dependency graph — and therefore the OTA
+ * fingerprint — does not move.
+ *
+ * `BOARD_ART_GEOMETRY_SHARDS` is deliberately empty here. Nothing on web can
+ * hand back a shard synchronously, and an empty map is what tells
+ * `loadBoardArtGeometry` to answer "not yet" instead of "no such shard". See the
+ * `pending` bookkeeping in ../loader.ts.
+ */
+function renderShardIndexWeb(results: ConfigResult[]): string {
+  const loaders = results.map((result) => `  '${result.key}': () => unwrap(import('./${result.key}.cjs')),`).join('\n');
+
+  return `${DO_NOT_EDIT}
+/// <reference types="node" />
+/**
+ * Web build of the per-config loader map for the traced board art. Generated
+ * alongside \`shards.ts\`; see \`renderShardIndexWeb\` in the generator for why the
+ * web target needs \`import()\` where native needs \`require\`.
+ *
+ * This file is structural apart from the key list, so regenerating with unchanged
+ * board data produces a byte-identical file and no spurious diff.
+ */
+
+import type { BoardArtGeometry, OutlineCountsTable, WallLightnessTable } from '../types';
+
+/* eslint-disable @typescript-eslint/no-require-imports */
+
+/**
+ * Metro wraps a \`.cjs\` shard's \`module.exports\` in a namespace object under
+ * \`default\` when it is reached through \`import()\`, but hands back the exports
+ * object itself when interop is off. Accept either rather than depending on which
+ * one this Metro version does.
+ */
+async function unwrap(loading: Promise<unknown>): Promise<BoardArtGeometry> {
+  const loaded = (await loading) as { default?: BoardArtGeometry } & BoardArtGeometry;
+  return loaded.default ?? loaded;
+}
+
+/**
+ * Empty on web: no shard can be produced synchronously here. Callers reach the
+ * art through \`prefetchBoardArtGeometry\` and then read it back from the loader's
+ * cache.
+ */
+export const BOARD_ART_GEOMETRY_SHARDS: Record<string, () => BoardArtGeometry> = {};
+
+/** One async chunk per board config. */
+export const BOARD_ART_GEOMETRY_SHARDS_ASYNC: Record<string, () => Promise<BoardArtGeometry>> | null = {
+${loaders}
+};
+
+/**
+ * Eager on web too: 2 numbers per config (about 3 KB all told), and the veil
+ * decision is made before any shard is needed.
+ */
+export const WALL_LIGHTNESS: WallLightnessTable = require('./wall-lightness.cjs') as WallLightnessTable;
+
+/** A generation record the gates pin, not something the renderer reads. 3 KB. */
+export function loadOutlineCounts(): OutlineCountsTable {
+  return require('./outline-counts.cjs') as OutlineCountsTable;
+}
+/* eslint-enable @typescript-eslint/no-require-imports */
+`;
+}
+
 // ---------------------------------------------------------------------------
 // Driver
 // ---------------------------------------------------------------------------
@@ -3586,7 +3662,9 @@ async function main(): Promise<number> {
   }
 
   if (filtered) {
-    console.log('[board-art-geometry] filtered run — wall-lightness.cjs, outline-counts.cjs and shards.ts left alone.');
+    console.log(
+      '[board-art-geometry] filtered run — wall-lightness.cjs, outline-counts.cjs, shards.ts and shards.web.ts left alone.',
+    );
   } else {
     if (writeOrCompare('wall-lightness.cjs', renderWallLightness(results), checkOnly, stale) === 'written') {
       written += 1;
@@ -3595,6 +3673,9 @@ async function main(): Promise<number> {
       written += 1;
     }
     if (writeOrCompare('shards.ts', renderShardIndex(results), checkOnly, stale) === 'written') written += 1;
+    if (writeOrCompare('shards.web.ts', renderShardIndexWeb(results), checkOnly, stale) === 'written') {
+      written += 1;
+    }
 
     // A config that leaves the catalogue leaves a shard behind that nothing
     // indexes; the drift gate has to see that too, or the tables and the index

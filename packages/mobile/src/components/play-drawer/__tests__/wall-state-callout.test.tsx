@@ -4,7 +4,7 @@
 // about which actions it offers in which state, and that it can always be closed.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render } from '@testing-library/react';
-import { createElement, type ReactNode } from 'react';
+import { createElement, forwardRef, type ReactNode } from 'react';
 
 const routerPush = vi.hoisted(() => vi.fn());
 const backHandler = vi.hoisted(() => ({
@@ -12,6 +12,10 @@ const backHandler = vi.hoisted(() => ({
   remove: vi.fn(),
 }));
 const setAccessibilityFocus = vi.hoisted(() => vi.fn());
+// Flips the react-native mock (and the accessibility-focus hook) into the
+// react-native-web shape for the "#5301 on web" describe block below, without
+// needing a separate copy of every other mock in this file.
+const wallStateCalloutPlatform = vi.hoisted(() => ({ web: false }));
 
 type ViewMockProps = { children?: ReactNode; style?: unknown; accessibilityViewIsModal?: boolean };
 type PressMockProps = {
@@ -22,8 +26,11 @@ type PressMockProps = {
 };
 
 vi.mock('react-native', () => ({
-  View: ({ children, accessibilityViewIsModal }: ViewMockProps) =>
-    createElement('div', { 'data-modal': accessibilityViewIsModal ? 'true' : '' }, children),
+  // Forwards the ref like the real View does, so bodyRef.current in the
+  // component under test is the actual DOM node the focus hook operates on.
+  View: forwardRef<HTMLDivElement, ViewMockProps>(({ children, accessibilityViewIsModal }, ref) =>
+    createElement('div', { ref, 'data-modal': accessibilityViewIsModal ? 'true' : '' }, children),
+  ),
   Pressable: ({ children, onPress, disabled, accessibilityLabel }: PressMockProps) =>
     createElement('button', { onClick: onPress, disabled, 'data-label': accessibilityLabel ?? '' }, children),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1, absoluteFill: {} },
@@ -34,9 +41,33 @@ vi.mock('react-native', () => ({
     },
   },
   AccessibilityInfo: { setAccessibilityFocus },
-  // A real node handle, so the focus call isn't skipped by the null guard.
-  findNodeHandle: () => 7,
+  // react-native-web 0.21.2's findNodeHandle is a bare, unconditional throw —
+  // see the "#5301 on web" describe block. Otherwise a real node handle, so
+  // the focus call isn't skipped by the null guard.
+  findNodeHandle: () => {
+    if (wallStateCalloutPlatform.web) {
+      throw new Error('findNodeHandle is not supported on web. Use the ref property on the component instead.');
+    }
+    return 7;
+  },
 }));
+
+// Routes the accessibility-focus effect to the same fork Metro would pick for
+// the current platform, so the "#5301 on web" tests below exercise the real
+// use-announce-body-focus.web.ts implementation instead of the native one.
+vi.mock('../use-announce-body-focus', async () => {
+  const native = await vi.importActual<typeof import('../use-announce-body-focus')>('../use-announce-body-focus');
+  const web = await vi.importActual<typeof import('../use-announce-body-focus.web')>('../use-announce-body-focus.web');
+  return {
+    useAnnounceBodyFocus: (
+      bodyRef: Parameters<typeof native.useAnnounceBodyFocus>[0],
+      enabled: Parameters<typeof native.useAnnounceBodyFocus>[1],
+    ) =>
+      wallStateCalloutPlatform.web
+        ? web.useAnnounceBodyFocus(bodyRef, enabled)
+        : native.useAnnounceBodyFocus(bodyRef, enabled),
+  };
+});
 
 vi.mock('react-native-reanimated', () => {
   const settleBuilder: Record<string, unknown> = {};
@@ -47,7 +78,13 @@ vi.mock('react-native-reanimated', () => {
     withInitialValues: (values: unknown) => ({ settle: values }),
   });
   return {
-    default: { View: ({ children }: ViewMockProps) => createElement('div', null, children) },
+    default: {
+      // Passes the live region through: the card must not carry one — the host
+      // speaks the notice's sentence itself (see PlayDrawer), and a region here
+      // would read the same moment out a second time.
+      View: ({ children, accessibilityLiveRegion }: ViewMockProps & { accessibilityLiveRegion?: string }) =>
+        createElement('div', { 'data-live-region': accessibilityLiveRegion ?? '' }, children),
+    },
     FadeIn: { duration: (ms: number) => ({ fadeIn: ms, easing: (curve: unknown) => ({ fadeIn: ms, easing: curve }) }) },
     FadeInUp: { springify: () => settleBuilder },
     useReducedMotion: () => false,
@@ -224,6 +261,114 @@ describe('WallStateCallout', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+// The same card, appearing on its own the first time a crew turns the drawer's
+// gestures into browsing. Nobody asked for it, so everything the tapped explainer
+// is allowed to claim — the modal region, the screen reader's focus, a scrim over
+// the board, the hardware back button — it must not.
+describe('WallStateCallout — the one-shot joined-a-crew notice', () => {
+  const renderNotice = (props: Partial<Parameters<typeof WallStateCallout>[0]> = {}) =>
+    renderCallout({ presentation: 'notice' as const, ...props });
+
+  it('states the browsing rule instead of the tapped state hint', () => {
+    const { container } = renderNotice({ state: 'browsing' });
+    expect(container.textContent).toContain('playView.wallState.joinedBrowseNotice');
+    expect(container.textContent).not.toContain('playView.wallState.browsingHint');
+  });
+
+  it('claims no modal region, so the drawer stays reachable behind it', () => {
+    const { container } = renderNotice();
+    expect(container.querySelector('[data-modal="true"]')).toBeNull();
+  });
+
+  it('offers no actions, even when the host has some to give', () => {
+    // A card the climber never opened must not put a live control under their
+    // thumb; the same actions stay one pill tap away in the explainer.
+    const { container } = renderNotice({ onBackToLive: vi.fn(), onBrowseFromHere: vi.fn() });
+    expect(labels(container)).not.toContain('playView.wallState.backToLive');
+    expect(container.textContent).not.toContain('playView.wallState.browseFromHere');
+  });
+
+  it('shows no driver row on the wall state', () => {
+    driverState.value = { driver: { userId: 'user-1', avatarUrl: null }, name: 'Ada', litAgo: '2m' };
+    const { container } = renderNotice({ state: 'onWall' });
+    expect(container.querySelector('[data-driver-avatar]')).toBeNull();
+  });
+
+  it('never yanks the screen reader off what it was reading, and never speaks twice', () => {
+    // The notice's sentence is announced by the host the moment it claims the
+    // card, on both platforms. A live region here would mean either a second
+    // reading of the same moment, or — since this card MOUNTS already holding its
+    // text, which is not a content change — nothing at all on Android.
+    const { container } = renderNotice();
+    expect(container.querySelector('[data-live-region="polite"]')).toBeNull();
+    expect(setAccessibilityFocus).not.toHaveBeenCalled();
+  });
+
+  it('leaves the hardware back button to the player underneath', () => {
+    renderNotice();
+    expect(backHandler.handler).toBeNull();
+  });
+
+  it('can be put away early by tapping it', () => {
+    const onDismiss = vi.fn();
+    const { container } = renderNotice({ onDismiss });
+    const [dismissButton] = [...container.querySelectorAll('button')];
+    dismissButton.click();
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it('dwells shorter than a card the climber asked for', () => {
+    vi.useFakeTimers();
+    try {
+      const onDismiss = vi.fn();
+      renderNotice({ onDismiss });
+
+      vi.advanceTimersByTime(4999);
+      expect(onDismiss).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1);
+      expect(onDismiss).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+// #5301: on app.boardsesh.com, tapping the wall-state pill mounted this card,
+// its mount effect called findNodeHandle, react-native-web's findNodeHandle is
+// an unconditional throw, and the root error boundary replaced the whole app
+// with the crash screen. 100% failure rate — it never once worked in a
+// browser. These tests run the SAME component tree through the mocked web
+// runtime (see wallStateCalloutPlatform above) to prove that no longer happens.
+describe('WallStateCallout on web (#5301)', () => {
+  beforeEach(() => {
+    wallStateCalloutPlatform.web = true;
+  });
+
+  afterEach(() => {
+    wallStateCalloutPlatform.web = false;
+  });
+
+  it('does not throw when the accessibility-focus effect runs', () => {
+    expect(() => renderCallout({ state: 'browsing' })).not.toThrow();
+  });
+
+  it('still renders the explainer sentence and actions', () => {
+    const { container } = renderCallout({ state: 'live', onBrowseFromHere: vi.fn() });
+    expect(container.textContent).toContain('playView.wallState.liveHint');
+    expect(container.textContent).toContain('playView.wallState.browseFromHere');
+  });
+
+  it('lands DOM focus on the body sentence instead of using AccessibilityInfo', () => {
+    const { container } = renderCallout({ state: 'browsing' });
+    // modalRegion div > card div (Animated.View) > body div (the ref target).
+    const body = container.querySelector('div[data-modal="true"] > div:nth-child(2) > div:first-child');
+    expect(body).not.toBeNull();
+    expect(document.activeElement).toBe(body);
+    // The native-only API is never reached on the web fork.
+    expect(setAccessibilityFocus).not.toHaveBeenCalled();
   });
 });
 

@@ -167,6 +167,7 @@ describe('getHoldDisplayColor', () => {
         'kilter:43',
         'moonboard:43',
         'soill:2',
+        'spray:2',
         'tension:2',
         'tension:6',
         'touchstone:2',

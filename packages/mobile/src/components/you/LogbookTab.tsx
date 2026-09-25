@@ -12,7 +12,6 @@ import {
   buildLogbookListRows,
   dedupeLogbookItems,
   shouldShowLogbookDividers,
-  logbookNoteIsVisible,
   pickBestGroupEntry,
   sumGroupTries,
   logbookDayKey,
@@ -30,6 +29,7 @@ import { SearchHeader, type SearchHeaderHandle } from '../SearchHeader';
 import { LogbookRow } from './LogbookRow';
 import { LogbookDayDivider, LogbookWallSubDivider } from './LogbookDayDivider';
 import { LogbookEditSheet } from './LogbookEditSheet';
+import { BoardLinkPrompt } from './BoardLinkPrompt';
 import { LogbookFilterSheet } from './LogbookFilterSheet';
 import { LogbookEntryChooserSheet } from './LogbookEntryChooserSheet';
 import { LogbookChipRow } from './LogbookChipRow';
@@ -44,6 +44,7 @@ import { openClimbInPlayDrawer } from '../../lib/open-climb-in-play-drawer';
 import { tickToClimb } from '../../lib/tick-to-climb';
 import { renderBoardToPlaylistConfig } from '../../lib/playlists/board-details-for-playlist';
 import { getLayoutDisplayName } from '@boardsesh/profile-stats';
+import { nowDate } from '../../lib/clock';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
 import { useFeatureFlag } from '../../providers/feature-flags-provider';
@@ -136,7 +137,7 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true }: Logbo
   // identity across renders (mirrors the filter sheet's `today`). Frozen at mount;
   // if the app sits open past midnight it's a day stale, which is harmless here and
   // matches the sheet.
-  const today = useMemo(() => new Date(), []);
+  const today = useMemo(() => nowDate(), []);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchHeaderRef = useRef<SearchHeaderHandle>(null);
 
@@ -547,6 +548,14 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true }: Logbo
       {/* Fixed top toolbar — all logbook actions concentrated here, below the
           floating chrome. Sibling of the list, so list virtualization is intact. */}
       <View style={[styles.toolbar, { paddingTop: topInset }]}>
+        <View style={styles.heading}>
+          <Text variant="title2" accessibilityRole="header">
+            {t('tabs.logbook')}
+          </Text>
+          <Text variant="footnote" color={systemColors.secondaryLabel}>
+            {t('mobile.filter.allBoards')}
+          </Text>
+        </View>
         {showSortChips ? (
           // iOS Liquid Glass: search sits on its own row, and the chip row below
           // carries the filter entry + sort + active-filter chips (so no separate
@@ -665,6 +674,7 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true }: Logbo
         </View>
       ) : (
         <FlashList
+          testID="logbook-screen"
           data={listRows}
           renderItem={renderItem}
           keyExtractor={keyExtractor}
@@ -689,6 +699,13 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true }: Logbo
               <Text variant="headline" style={styles.emptyTitle}>
                 {activeFilterCount > 0 || name ? t('mobile.logbook.emptyFiltered') : t('mobile.logbook.empty')}
               </Text>
+              {/* Unfiltered only: a logbook emptied by a filter says nothing about
+                  whether a board account is linked. */}
+              <BoardLinkPrompt
+                key={userId}
+                viewerIsOwner={viewerIsOwner}
+                hasNoSends={activeFilterCount === 0 && !name}
+              />
             </View>
           }
         />
@@ -740,6 +757,15 @@ const styles = StyleSheet.create({
   toolbar: {
     paddingHorizontal: spacing[4],
     paddingBottom: spacing[2],
+  },
+  heading: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    gap: spacing[2],
+    paddingTop: spacing[2],
+    paddingBottom: spacing[3],
   },
   toolbarRow: {
     flexDirection: 'row',

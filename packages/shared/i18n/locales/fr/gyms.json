@@ -17,6 +17,10 @@
       "description": "Tu cherches une board Tension près de chez toi ? Parcours les salles d'escalade qui ont une board Tension au mur et l'angle auquel elle est réglée."
     }
   },
+  "breadcrumb": {
+    "home": "Boardsesh",
+    "gyms": "Salles"
+  },
   "directory": {
     "all": {
       "h1": "Salles d'escalade avec des boards d'entraînement",
@@ -52,6 +56,7 @@
     "countHint": "Les chiffres comptent des salles, pas des boards : une salle avec trois murs Kilter compte une fois."
   },
   "search": {
+    "geoHint": "Localisation désactivée ? Saisis une ville. Aucune autorisation nécessaire.",
     "label": "Rechercher une salle",
     "placeholder": "Nom de la salle ou ville",
     "submit": "Rechercher"
@@ -60,16 +65,25 @@
     "heading_one": "{{formattedCount}} salle",
     "heading_other": "{{formattedCount}} salles",
     "emptyTitle": "Rien ne correspond pour l'instant",
-    "emptyBody": "Essaie une recherche plus courte, ou enlève le filtre de board et parcours toutes les salles."
+    "emptyBody": "Essaie une recherche plus courte, ou enlève le filtre de board et parcours toutes les salles.",
+    "emptyClearSearch": "Efface la recherche",
+    "emptyBrowseAll": "Parcours toutes les salles"
   },
   "error": {
     "title": "On n'arrive pas à charger la liste des salles pour le moment",
-    "body": "Quelque chose cloche de notre côté. Attends une minute et recharge, ou va directement sur la fiche d'une salle que tu connais."
+    "body": "Quelque chose cloche de notre côté. Attends une minute et recharge, ou va directement sur la fiche d'une salle que tu connais.",
+    "retry": "Recharge la liste",
+    "home": "Retour à Boardsesh"
   },
   "card": {
+    "claimed": "Revendiquée",
+    "unclaimed": "Non revendiquée",
     "boardChip": "{{board}} {{angle}}°",
-    "distance": "à {{distance}} km",
-    "claimCta": "C'est ta salle ?"
+    "distance": "à {{distance}} km"
+  },
+  "claim": {
+    "body": "C'est ta salle ? Revendique-la et c'est toi qui choisis les boards, les horaires et les liens affichés ici.",
+    "action": "Trouve ta salle"
   },
   "nearMe": {
     "cta": "Utiliser ma position",
@@ -116,5 +130,18 @@
     "kilter": "Salles avec une board Kilter",
     "moonboard": "Salles avec un MoonBoard",
     "tension": "Salles avec une board Tension"
+  },
+  "places": {
+    "loading": "Recherche de villes…",
+    "clear": "Effacer le lieu",
+    "open": "Afficher les lieux",
+    "close": "Masquer les lieux",
+    "hint": "Choisis une ville proposée ou cherche une salle par son nom.",
+    "empty": "Aucune ville trouvée. Tu peux toujours chercher une salle par son nom.",
+    "error": "Les suggestions de villes sont indisponibles. Tu peux toujours chercher une salle par son nom.",
+    "attribution": "Noms de lieux fournis par GeoNames",
+    "area": "Salles à moins de {{radius}} km de {{place}}",
+    "selectedArea": "la position sélectionnée",
+    "pinlessNotice": "Les résultats à proximité incluent uniquement les salles situées sur la carte."
   }
 }

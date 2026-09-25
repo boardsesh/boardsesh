@@ -31,6 +31,7 @@ vi.mock('react-i18next', () => ({
       ({
         'mobile.about.joinDiscord': 'Join Discord',
         'mobile.about.acknowledgementsLink': 'Acknowledgements',
+        'mobile.about.changelogLink': "What's New",
         'mobile.about.viewOnGithub': 'View on GitHub',
       })[key] ?? key,
   }),
@@ -118,6 +119,14 @@ describe('AboutScreen partnerships + acknowledgements', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Acknowledgements' }));
 
+    expect(routerMock.push).toHaveBeenCalledWith('/acknowledgements');
+  });
+
+  it("does not duplicate the root-menu What's New link", () => {
+    render(<AboutScreen />);
+
+    expect(screen.queryByRole('button', { name: "What's New" })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Acknowledgements' }));
     expect(routerMock.push).toHaveBeenCalledWith('/acknowledgements');
   });
 

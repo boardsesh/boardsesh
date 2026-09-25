@@ -9,10 +9,12 @@
  * (ships OTA in minutes) while a native change (deps, plugins, entitlements,
  * config) moves it (needs a new binary first).
  *
- * Verdict = DIFF vs origin/main, resolved in ONE job under identical env:
+ * Verdict = DIFF vs the PR's BASE branch (origin/main, or origin/release/next
+ * for a native change joining the release train), resolved in ONE job under
+ * identical env:
  *
- *   fingerprint(PR tree, platform) === fingerprint(main tree, platform)
- *     → ota-compatible            (no native delta vs main)
+ *   fingerprint(PR tree, platform) === fingerprint(base tree, platform)
+ *     → ota-compatible            (no native delta vs the base)
  *   …differ                       → native-change-required
  *   …either side unresolved       → unknown (neutral, never blocks)
  *
@@ -28,8 +30,12 @@
  * SECONDARY, informational signal ("already on a released build"), surfaced only
  * when confidently true.
  *
- * This never fails the PR: a native change is a legitimate outcome, not an error.
- * The signal is the comment / step-summary / check-run content, not pass/fail.
+ * This never fails the JOB. It does emit `check_conclusion=failure` for the one
+ * case the release train exists to prevent: a fingerprint-moving PR merging into
+ * `main`, which would strand the store fleet's OTA without ever building a
+ * replacement binary (native builds run from `release/next`). The owner's
+ * `allow-native-on-main` label turns that back into the neutral verdict. Every
+ * other outcome — including a native change into `release/next` — stays neutral.
  *
  * Usage:
  *   vp run check:mobile-ota-compat -- --write-env --base-dir <main-worktree> [--check-shipped-tags]
@@ -63,6 +69,46 @@ const MAX_DIFF_CONFIRMATIONS = 5;
 
 export type Platform = 'ios' | 'android';
 export type Verdict = 'ota-compatible' | 'native-change-required' | 'unknown';
+
+/** The branch native store candidates are cut from (docs/mobile-store-release.md). */
+export const RELEASE_BRANCH = 'release/next';
+
+/** Owner escape hatch: merge a fingerprint-moving PR straight into main anyway. */
+export const ALLOW_NATIVE_ON_MAIN_LABEL = 'allow-native-on-main';
+
+/**
+ * What a native-change PR into `main` is told. Native changes build from
+ * `release/next`; landing one on main strands the store fleet's OTA without ever
+ * producing a replacement binary, because main no longer runs the native builds.
+ */
+export const NATIVE_ON_MAIN_FAILURE =
+  `Native changes ship from ${RELEASE_BRANCH} — retarget this PR ` +
+  `(gh pr edit <n> --base ${RELEASE_BRANCH}) or add the ${ALLOW_NATIVE_ON_MAIN_LABEL} label`;
+
+export type CheckConclusion = 'neutral' | 'failure';
+
+export interface EnforcementInput {
+  overall: Verdict;
+  /** The PR's base branch ('main' when there is no PR). */
+  baseBranch: string;
+  /** Whether the PR carries the allow-native-on-main label. */
+  allowNativeOnMain: boolean;
+}
+
+/**
+ * PURE: does this verdict block the PR?
+ *
+ * ONLY one case fails: a confirmed native change merging into `main` without the
+ * owner's opt-out label. Everything else — a native change into the release
+ * train (that is what the train is for), an `unknown` (the resolver is ~5%
+ * flaky; never fail on a guess), an OTA-compatible PR — stays neutral, exactly
+ * as the check behaved before the train existed.
+ */
+export function deriveCheckConclusion({ overall, baseBranch, allowNativeOnMain }: EnforcementInput): CheckConclusion {
+  if (overall !== 'native-change-required') return 'neutral';
+  if (baseBranch !== 'main') return 'neutral';
+  return allowNativeOnMain ? 'neutral' : 'failure';
+}
 
 export const PLATFORMS: readonly Platform[] = ['ios', 'android'];
 
@@ -112,6 +158,10 @@ export interface OtaCompatResult {
 export interface CommentContext {
   sha: string;
   branch: string;
+  /** The PR's base branch — every fingerprint here is compared against it. */
+  baseBranch: string;
+  /** Whether the PR carries the allow-native-on-main label. */
+  allowNativeOnMain: boolean;
 }
 
 /** PURE: a single platform verdict from the PR and baseline fingerprints. */
@@ -209,20 +259,40 @@ const VERDICT_CELL: Record<Verdict, string> = {
 
 const HEADLINE: Record<Verdict, string> = {
   'ota-compatible':
-    '✅ **Ships over-the-air.** No native change versus `main` — this lands on existing builds via OTA.',
+    '✅ **Ships over-the-air.** No native change versus the base branch — this lands on existing builds via OTA.',
   'native-change-required':
     '⚠️ **Native change detected.** Merging starts new TestFlight/Play builds and temporarily stops the ' +
-    'current store fleet receiving later `main` OTAs until users install the replacement binary. ' +
-    '(Merge is not blocked — native changes are expected.)',
-  unknown: "ℹ️ **OTA compatibility unknown.** Couldn't establish a `main` baseline this run, so no verdict.",
+    'current store fleet receiving later production OTAs until users install the replacement binary.',
+  unknown: "ℹ️ **OTA compatibility unknown.** Couldn't establish a baseline this run, so no verdict.",
 };
 
-/** A short title for the non-blocking GitHub check-run. */
+/**
+ * PURE: the extra line a native-change PR gets, which depends entirely on where
+ * it is merging. Into the train it is routine; into main it is the thing the
+ * train exists to prevent.
+ */
+export function enforcementNote(input: EnforcementInput): string | null {
+  if (input.overall !== 'native-change-required') return null;
+  if (input.baseBranch === RELEASE_BRANCH) {
+    return `This is the right place for it: merging here starts the store builds from \`${RELEASE_BRANCH}\`.`;
+  }
+  if (input.baseBranch !== 'main') return null;
+  return input.allowNativeOnMain
+    ? `Allowed by the \`${ALLOW_NATIVE_ON_MAIN_LABEL}\` label — main will not build a replacement binary for it.`
+    : `❌ ${NATIVE_ON_MAIN_FAILURE}`;
+}
+
+/** A short title for the GitHub check-run. */
 export const CHECK_TITLE: Record<Verdict, string> = {
   'ota-compatible': 'OTA-compatible — rides existing builds',
   'native-change-required': 'Native change — current fleet OTA pauses until store update',
   unknown: 'OTA compatibility unknown (no baseline)',
 };
+
+/** PURE: the check-run title, which names the blocking reason when it blocks. */
+export function checkTitle(input: EnforcementInput): string {
+  return deriveCheckConclusion(input) === 'failure' ? NATIVE_ON_MAIN_FAILURE : CHECK_TITLE[input.overall];
+}
 
 /**
  * PURE: the fingerprint cell for one platform. Each hash is labelled (no bare
@@ -231,14 +301,14 @@ export const CHECK_TITLE: Record<Verdict, string> = {
  *   native     → PR `abc` · main `def`
  *   unknown    → `abc` (no baseline)  /  `—` (unresolved)
  */
-function fingerprintCell(entry: PlatformResult): string {
+function fingerprintCell(entry: PlatformResult, baseBranch: string): string {
   if (entry.verdict === 'ota-compatible') {
-    const cell = `\`${shortHash(entry.prFingerprint)}\` (matches \`main\`)`;
+    const cell = `\`${shortHash(entry.prFingerprint)}\` (matches \`${baseBranch}\`)`;
     // Secondary signal — only ever stated when confidently true.
     return entry.shippedTagExists ? `${cell} · already on a released build` : cell;
   }
   if (entry.verdict === 'native-change-required') {
-    return `PR \`${shortHash(entry.prFingerprint)}\` · main \`${shortHash(entry.baseFingerprint)}\``;
+    return `PR \`${shortHash(entry.prFingerprint)}\` · ${baseBranch} \`${shortHash(entry.baseFingerprint)}\``;
   }
   // unknown — name why we couldn't compare rather than show a bare em-dash pair.
   return entry.baseFingerprint
@@ -246,27 +316,34 @@ function fingerprintCell(entry: PlatformResult): string {
     : `\`${shortHash(entry.prFingerprint)}\` (no baseline)`;
 }
 
-function table(results: readonly PlatformResult[]): string {
+function table(results: readonly PlatformResult[], baseBranch: string = 'main'): string {
   const rows = results.map(
-    (entry) => `| ${PLATFORM_LABEL[entry.platform]} | ${VERDICT_CELL[entry.verdict]} | ${fingerprintCell(entry)} |`,
+    (entry) =>
+      `| ${PLATFORM_LABEL[entry.platform]} | ${VERDICT_CELL[entry.verdict]} | ${fingerprintCell(entry, baseBranch)} |`,
   );
   return ['| Platform | Verdict | Fingerprint |', '| --- | --- | --- |', ...rows].join('\n');
 }
 
 /** PURE: render the sticky PR comment markdown. */
 export function renderComment(result: OtaCompatResult, ctx: CommentContext): string {
+  const note = enforcementNote({
+    overall: result.overall,
+    baseBranch: ctx.baseBranch,
+    allowNativeOnMain: ctx.allowNativeOnMain,
+  });
   return [
     STICKY_MARKER,
     '### 📱 OTA compatibility',
     '',
     HEADLINE[result.overall],
+    ...(note ? ['', note] : []),
     '',
-    table(result.results),
+    table(result.results, ctx.baseBranch),
     '',
-    `Branch \`${ctx.branch}\` · commit \`${ctx.sha.slice(0, 7)}\`.`,
+    `Branch \`${ctx.branch}\` → \`${ctx.baseBranch}\` · commit \`${ctx.sha.slice(0, 7)}\`.`,
     '',
-    '<sub>Fingerprint is resolved per platform against `main`. iOS native builds run on `main` ' +
-      'only, so the iOS verdict is computed versus `main`’s tree. See `docs/mobile-ota-updates.md`.</sub>',
+    '<sub>Fingerprint is resolved per platform against this PR’s base branch. Native store builds run ' +
+      `from \`${RELEASE_BRANCH}\`. See \`docs/mobile-ota-updates.md\`.</sub>`,
   ].join('\n');
 }
 
@@ -348,6 +425,16 @@ interface Options {
   baseFingerprints: Partial<Record<Platform, string>>;
   writeEnvFiles: boolean;
   checkShippedTags: boolean;
+  /** The PR's base branch; 'main' when the push has no open PR. */
+  baseBranch: string;
+  /** Set when the PR carries the allow-native-on-main label. */
+  allowNativeOnMain: boolean;
+  /**
+   * Which platforms to resolve. A resolve is ~30s per tree per platform, so a
+   * caller that only cares about one (a single-platform OTA republish) should
+   * not pay for the other.
+   */
+  platforms: readonly Platform[];
 }
 
 export function parseArgs(argv: readonly string[], repoRoot: string): Options {
@@ -357,6 +444,9 @@ export function parseArgs(argv: readonly string[], repoRoot: string): Options {
     baseFingerprints: {},
     writeEnvFiles: false,
     checkShippedTags: false,
+    baseBranch: 'main',
+    allowNativeOnMain: false,
+    platforms: PLATFORMS,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index];
@@ -389,6 +479,24 @@ export function parseArgs(argv: readonly string[], repoRoot: string): Options {
       case '--check-shipped-tags':
         options.checkShippedTags = true;
         break;
+      case '--base-branch':
+        // An empty value (no open PR for this push) keeps the 'main' default
+        // rather than producing a baseless comparison.
+        options.baseBranch = next() || 'main';
+        break;
+      case '--allow-native-on-main':
+        options.allowNativeOnMain = true;
+        break;
+      case '--platform': {
+        // 'all' (or an empty value) keeps both — the same vocabulary the OTA
+        // workflow's own platform input uses.
+        const requested = next();
+        if (requested && requested !== 'all') {
+          if (requested !== 'ios' && requested !== 'android') throw new Error(`unknown platform: ${requested}`);
+          options.platforms = [requested];
+        }
+        break;
+      }
       default:
         throw new Error(`unknown argument: ${flag}`);
     }
@@ -397,6 +505,11 @@ export function parseArgs(argv: readonly string[], repoRoot: string): Options {
 }
 
 function emitGithubOutputs(result: OtaCompatResult, ctx: CommentContext): void {
+  const enforcement: EnforcementInput = {
+    overall: result.overall,
+    baseBranch: ctx.baseBranch,
+    allowNativeOnMain: ctx.allowNativeOnMain,
+  };
   const outputPath = process.env.GITHUB_OUTPUT;
   if (outputPath) {
     const verdictFor = (platform: Platform): Verdict =>
@@ -420,7 +533,9 @@ function emitGithubOutputs(result: OtaCompatResult, ctx: CommentContext): void {
         `fingerprint_android=${fingerprintFor('android', 'pr')}`,
         `base_fingerprint_ios=${fingerprintFor('ios', 'base')}`,
         `base_fingerprint_android=${fingerprintFor('android', 'base')}`,
-        `check_title=${CHECK_TITLE[result.overall]}`,
+        `base_branch=${ctx.baseBranch}`,
+        `check_conclusion=${deriveCheckConclusion(enforcement)}`,
+        `check_title=${checkTitle(enforcement)}`,
         `comment_b64=${commentB64}`,
         '',
       ].join('\n'),
@@ -440,7 +555,7 @@ export function main(argv: readonly string[] = process.argv.slice(2)): number {
     if (options.baseMobileDir) writeEnv(options.baseMobileDir);
   }
 
-  const results: PlatformResult[] = PLATFORMS.map((platform) => {
+  const results: PlatformResult[] = options.platforms.map((platform) => {
     // Re-read the baseline the same way each attempt: a provided value is fixed,
     // a worktree is re-resolved so a flaky baseline read can also self-correct.
     const readBaseFingerprint = (): string | null =>
@@ -475,17 +590,23 @@ export function main(argv: readonly string[] = process.argv.slice(2)): number {
   for (const entry of result.results) {
     console.log(
       `[mobile-ota-compat] ${PLATFORM_LABEL[entry.platform]}: ${entry.verdict} ` +
-        `(pr=${shortHash(entry.prFingerprint)} main=${shortHash(entry.baseFingerprint)})`,
+        `(pr=${shortHash(entry.prFingerprint)} ${options.baseBranch}=${shortHash(entry.baseFingerprint)})`,
     );
   }
   console.log(`[mobile-ota-compat] overall: ${result.overall}`);
 
-  emitGithubOutputs(result, {
+  const ctx: CommentContext = {
     sha: process.env.GITHUB_SHA ?? 'local',
     branch: process.env.GITHUB_REF_NAME ?? 'local',
-  });
+    baseBranch: options.baseBranch,
+    allowNativeOnMain: options.allowNativeOnMain,
+  };
+  emitGithubOutputs(result, ctx);
 
-  // Never fail the PR — a native change is legitimate. The signal is the content.
+  // Still exits 0. The enforcement verdict travels as `check_conclusion`, which
+  // the workflow puts on the check-run: failing the JOB here would red the whole
+  // push (including the comment + label steps that explain the verdict), and a
+  // resolver flake would take the branch down with it.
   return 0;
 }
 

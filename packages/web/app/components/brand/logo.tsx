@@ -32,7 +32,7 @@ const Logo = ({ size = 'md', showText = true, linkToHome = true }: LogoProps) =>
       }}
     >
       <Image
-        src={resolveShellStaticAssetUrl('/brand/boardsesh-mark.png')}
+        src={resolveShellStaticAssetUrl('/brand/boardsesh-mark.webp')}
         width={icon}
         height={icon}
         // i18n-ignore-next-line -- brand name, not translated

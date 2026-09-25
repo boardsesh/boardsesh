@@ -1,0 +1,54 @@
+.frame {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--separator);
+  border-radius: var(--border-radius-xl);
+  background: var(--semantic-surface);
+}
+
+.image {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.detail {
+  aspect-ratio: 1 / 1.08;
+}
+
+.detail .image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center top;
+}
+
+.detail[data-preview-platform='android'][data-marketing-shot='queue'] .image,
+.detail[data-preview-platform='android'][data-marketing-shot='wall-status'] .image {
+  object-position: center 16%;
+}
+
+.detail[data-preview-platform='android'][data-marketing-shot='profile'] .image {
+  object-position: center 50%;
+}
+
+.detail[data-preview-platform='ios'][data-marketing-shot='queue'] .image {
+  object-position: center 30%;
+}
+
+.detail[data-preview-platform='ios'][data-marketing-shot='profile'] .image {
+  object-position: center 38%;
+}
+
+.switch {
+  align-self: flex-start;
+  border-radius: var(--border-radius-full);
+  background: var(--semantic-surface);
+}
+
+.switch button {
+  min-height: 44px;
+  padding-inline: var(--spacing-4);
+  text-transform: none;
+  font-size: var(--font-size-sm);
+}

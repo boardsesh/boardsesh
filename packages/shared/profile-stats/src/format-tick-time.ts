@@ -60,8 +60,20 @@ export function parseTickTime(climbedAt: string): Dayjs {
   return dayjs.utc(requireString(climbedAt)).local();
 }
 
-export function formatTickRelativeTime(climbedAt: string): string {
-  return dayjs.utc(requireString(climbedAt)).fromNow();
+/**
+ * `nowMs` is optional and lets a caller pin "now" (e.g. the mobile app's
+ * screenshot-mode frozen clock, see `lib/clock.ts` in packages/mobile) so two
+ * renders of the same `climbedAt` produce identical text. Omitted, it behaves
+ * exactly as before: `.fromNow()` against the real wall clock.
+ */
+export function formatTickRelativeTime(climbedAt: string, nowMs?: number): string {
+  const target = dayjs.utc(requireString(climbedAt));
+  // `.fromNow()` compares against `dayjs.utc()` (UTC mode), not `dayjs()`
+  // (local mode) — `target.from(dayjs.utc(nowMs))` keeps this path exact
+  // parity with that, since dayjs's relativeTime diff reads calendar fields
+  // (month/year) off each side's own mode, and UTC vs. local can disagree on
+  // those fields for the same instant depending on the runtime's timezone.
+  return nowMs !== undefined ? target.from(dayjs.utc(nowMs)) : target.fromNow();
 }
 
 export function formatTickAbsoluteTime(climbedAt: string, format: string): string {

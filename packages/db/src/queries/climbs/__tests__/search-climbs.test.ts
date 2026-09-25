@@ -8,6 +8,7 @@ import type { DbInstance } from '../../../client/postgres';
 
 const baseInput = {
   statsDrivenSort: 'ascents' as const,
+  crossAngle: false,
   isDraftsQuery: false,
   projectsOnly: false,
   routesOnly: false,
@@ -87,6 +88,27 @@ void describe('chooseSearchPath', () => {
     });
   });
 
+  void describe('cross-angle stats (issue #5405)', () => {
+    void it('uses standard-only for ascents — the stats-driven INNER JOIN is what hides the climbs', () => {
+      assert.equal(chooseSearchPath({ ...baseInput, crossAngle: true }), 'standard-only');
+    });
+
+    void it('uses standard-only for quality too', () => {
+      assert.equal(chooseSearchPath({ ...baseInput, crossAngle: true, statsDrivenSort: 'quality' }), 'standard-only');
+    });
+
+    // The one input that returns stats-driven-only without cross-angle. A grade or
+    // ascent filter is exactly what a climber reaches for when the list looks short,
+    // so routing it back to the INNER JOIN would keep the bug alive behind a filter.
+    void it('uses standard-only even with stats filters active', () => {
+      assert.equal(chooseSearchPath({ ...baseInput, crossAngle: true, hasStatsFilters: true }), 'standard-only');
+    });
+
+    void it('leaves the path alone when cross-angle is off', () => {
+      assert.equal(chooseSearchPath({ ...baseInput, crossAngle: false }), 'stats-driven-with-fallback');
+    });
+  });
+
   void describe('precedence', () => {
     void it('projectsOnly trumps the hot path', () => {
       assert.equal(chooseSearchPath({ ...baseInput, projectsOnly: true, hasStatsFilters: false }), 'standard-only');
@@ -148,6 +170,11 @@ const dialect = new PgDialect();
 const GUARD_PATTERN = /SET LOCAL max_parallel_workers_per_gather\s*=\s*0/i;
 // The stats-presence ORDER BY key the stats-driven fallback prepends (issue #1971).
 const STATS_PRESENCE_KEY_PATTERN = /case when\s+"?board_climb_stats"?\."?climb_uuid"?\s+is null/i;
+// The browsed-angle restriction an angle-bound board gets without the opt-in
+// (issue #5642), as the dialect renders it: set here, no set angle, or a stats row
+// here — the last arm on the UNALIASED browsed-angle stats table.
+const BROWSED_ANGLE_RESTRICTION_PATTERN =
+  /\("board_climbs"\."angle" = \$\d+ or "board_climbs"\."angle" is null or "board_climb_stats"\."climb_uuid" is not null\)/i;
 
 /** Minimal row shape searchClimbs' row mapper reads; enough to identify a row by uuid. */
 function fakeRow(uuid: string): Record<string, unknown> {
@@ -160,6 +187,7 @@ function fakeRow(uuid: string): Record<string, unknown> {
     is_draft: false,
     is_hidden: false,
     angle: 40,
+    stats_angle: 40,
     ascensionist_count: null,
     difficulty_id: null,
     quality_average: null,
@@ -177,15 +205,13 @@ function fakeRow(uuid: string): Record<string, unknown> {
 }
 
 /** What one SELECT the code under test issued looked like. */
-type RecordedQuery = { table: string | null; orderBy: string[] };
+type RecordedQuery = { table: string | null; orderBy: string[]; joins: string[] };
 
 // Fake SearchDb: a minimal stand-in for a top-level Drizzle instance. Every
 // select chain method returns the same builder object, and awaiting it (via a
 // real `.then`) records that the query ran — so a test can assert the query
-// executed AFTER the SET LOCAL guard, not before or instead of it. Mirrors the
-// mock in packages/web/app/lib/db/queries/climbs/__tests__/holds-heatmap.test.ts,
-// adapted to node:test (no module mocking needed — searchClimbs takes `db` as
-// a plain parameter).
+// executed AFTER the SET LOCAL guard, not before or instead of it. No module
+// mocking is needed: searchClimbs takes `db` as a plain parameter.
 //
 // Each builder also records the table `from()` was called with and the RENDERED
 // ORDER BY fragments, so a test can assert on the SQL the code actually emitted
@@ -198,10 +224,18 @@ function createFakeSearchDb(scriptedRows: Record<string, unknown>[][] = []) {
   const whereClauses: string[] = [];
 
   const makeSelectBuilder = () => {
-    const recorded: RecordedQuery = { table: null, orderBy: [] };
+    const recorded: RecordedQuery = { table: null, orderBy: [], joins: [] };
     const builder: Record<string, unknown> = {};
-    for (const method of ['innerJoin', 'leftJoin', 'limit', 'offset', 'groupBy']) {
+    for (const method of ['limit', 'offset', 'groupBy']) {
       builder[method] = () => builder;
+    }
+    // Joined tables by their SQL name, so an ALIASED table (the set-angle stats
+    // row, #5405) is distinguishable from the unaliased one it aliases.
+    for (const method of ['innerJoin', 'leftJoin']) {
+      builder[method] = (source: unknown) => {
+        if (is(source, Table)) recorded.joins.push(getTableName(source));
+        return builder;
+      };
     }
     builder.from = (source: unknown) => {
       recorded.table = is(source, Table) ? getTableName(source) : null;
@@ -548,5 +582,185 @@ void describe('personal grades: the difficulty sort keys on the joined alias (#4
     await searchClimbs(fakeDb as unknown as DbInstance, SEARCH_PARAMS, personalSearch);
 
     assert.doesNotMatch(queries[0].orderBy.join(' | '), /my_grade/i);
+  });
+});
+
+// Issue #5405. A Woods climb has exactly one stats row, at its set angle, so the
+// stats-driven INNER JOIN at the browsed angle returned only the climbs set there
+// — 653 of 5,392 at 30° — and the fallback's stats-presence key would have kept
+// them ahead anyway. Cross-angle drops both mechanisms. Since #5642 it is an
+// opt-in on Woods too (or a by-name search), and the default is the browsed-angle
+// restriction instead.
+void describe('cross-angle stats (issue #5405)', () => {
+  const WOODS_PARAMS: BoardRouteParams = { ...SEARCH_PARAMS, board_name: 'woods', size_id: 1, set_ids: [1] };
+
+  void it('issues one LEFT-JOIN query with no stats-driven pass, on an opted-in angle-bound board', async () => {
+    const { fakeDb, queries, whereClauses } = createFakeSearchDb();
+
+    await searchClimbs(fakeDb as unknown as DbInstance, WOODS_PARAMS, {
+      page: 2,
+      pageSize: 2,
+      sortBy: 'ascents',
+      sortOrder: 'desc',
+      crossAngleStats: true,
+    });
+
+    assert.equal(queries.length, 1, 'cross-angle must not run the stats-driven pass at all');
+    assert.equal(queries[0].table, 'board_climbs');
+    assert.ok(
+      queries[0].joins.includes('stats_set_angle'),
+      `expected the set-angle stats join; saw: ${queries[0].joins.join(', ')}`,
+    );
+    // The key exists to pin stats-having climbs ahead of stats-less ones. Under
+    // cross-angle that is exactly the ordering the bug was made of.
+    assert.ok(
+      !queries[0].orderBy.some((fragment) => STATS_PRESENCE_KEY_PATTERN.test(fragment)),
+      `cross-angle must not carry the stats-presence key; saw: ${queries[0].orderBy.join(' | ')}`,
+    );
+    // An opted-in search wants every angle's climbs.
+    assert.doesNotMatch(whereClauses[0], BROWSED_ANGLE_RESTRICTION_PATTERN);
+  });
+
+  void it('keeps the stats-driven path and the second join off an Aurora board', async () => {
+    const { fakeDb, queries, whereClauses } = createFakeSearchDb();
+
+    await searchClimbs(fakeDb as unknown as DbInstance, SEARCH_PARAMS, {
+      page: 2,
+      pageSize: 2,
+      sortBy: 'ascents',
+      sortOrder: 'desc',
+    });
+
+    assert.equal(queries.length, 2, 'Aurora keeps the stats-driven pass plus its fallback');
+    assert.ok(
+      !queries.some((query) => query.joins.includes('stats_set_angle')),
+      'an Aurora search without the opt-in must emit no set-angle join',
+    );
+    // Aurora climbs are not angle-bound, so there is no angle for one to belong to.
+    for (const where of whereClauses) assert.doesNotMatch(where, BROWSED_ANGLE_RESTRICTION_PATTERN);
+  });
+
+  void it('takes the opt-in on an Aurora board', async () => {
+    const { fakeDb, queries, whereClauses } = createFakeSearchDb();
+
+    await searchClimbs(fakeDb as unknown as DbInstance, SEARCH_PARAMS, {
+      page: 0,
+      pageSize: 2,
+      sortBy: 'ascents',
+      sortOrder: 'desc',
+      crossAngleStats: true,
+    });
+
+    assert.equal(queries.length, 1);
+    assert.ok(queries[0].joins.includes('stats_set_angle'));
+    assert.doesNotMatch(whereClauses[0], BROWSED_ANGLE_RESTRICTION_PATTERN);
+  });
+
+  // A grade or ascent filter is what a climber reaches for when the list looks
+  // short, and it is the one input that routed to stats-driven-only. It must not
+  // send a cross-angle search back through the INNER JOIN.
+  void it('stays on the LEFT-JOIN path with a grade filter active', async () => {
+    const { fakeDb, queries } = createFakeSearchDb();
+
+    await searchClimbs(fakeDb as unknown as DbInstance, WOODS_PARAMS, {
+      page: 0,
+      pageSize: 2,
+      sortBy: 'ascents',
+      sortOrder: 'desc',
+      minGrade: 10,
+      maxGrade: 20,
+      crossAngleStats: true,
+    });
+
+    assert.equal(queries.length, 1);
+    assert.equal(queries[0].table, 'board_climbs');
+    assert.ok(queries[0].joins.includes('stats_set_angle'));
+  });
+});
+
+// Issue #5642. Without the opt-in a Woods search keeps only the climbs that belong
+// to the browsed angle. It is an ordinary WHERE predicate, so the search takes the
+// normal stats-driven path plus fallback, and both queries have to carry it — or
+// the fallback page would list climbs the count badge never counted.
+void describe('browsed-angle restriction on an angle-bound board (issue #5642)', () => {
+  const WOODS_PARAMS: BoardRouteParams = { ...SEARCH_PARAMS, board_name: 'woods', size_id: 1, set_ids: [1] };
+  const ascentsPage = { page: 2, pageSize: 2, sortBy: 'ascents', sortOrder: 'desc' } as const;
+
+  void it('takes the stats-driven path plus fallback, with the restriction in both WHEREs', async () => {
+    const { fakeDb, queries, whereClauses } = createFakeSearchDb();
+
+    await searchClimbs(fakeDb as unknown as DbInstance, WOODS_PARAMS, ascentsPage);
+
+    assert.equal(queries.length, 2, 'a partial stats-driven page falls back, exactly as on Aurora');
+    assert.equal(queries[0].table, 'board_climb_stats');
+    assert.equal(queries[1].table, 'board_climbs');
+    assert.ok(
+      !queries.some((query) => query.joins.includes('stats_set_angle')),
+      'the restriction reads the browsed angle only; there is no set-angle row to join',
+    );
+    assert.equal(whereClauses.length, 2);
+    for (const where of whereClauses) assert.match(where, BROWSED_ANGLE_RESTRICTION_PATTERN);
+    // The fallback is still the prefix-compatible continuation of the stats-driven
+    // pages: every stats-having climb passes the restriction's stats arm, so the
+    // stats-having prefix is the same set in the same order.
+    assert.ok(STATS_PRESENCE_KEY_PATTERN.test(queries[1].orderBy[0] ?? ''));
+  });
+
+  void it('treats an explicit false exactly like an omitted field', async () => {
+    const omitted = createFakeSearchDb();
+    await searchClimbs(omitted.fakeDb as unknown as DbInstance, WOODS_PARAMS, ascentsPage);
+    const explicitFalse = createFakeSearchDb();
+    await searchClimbs(explicitFalse.fakeDb as unknown as DbInstance, WOODS_PARAMS, {
+      ...ascentsPage,
+      crossAngleStats: false,
+    });
+
+    // The mobile count preview and the web SSR page omit the field while the list
+    // sends `false`; the two must describe one list.
+    assert.deepEqual(explicitFalse.whereClauses, omitted.whereClauses);
+    assert.deepEqual(explicitFalse.queries, omitted.queries);
+  });
+
+  void it('stays restricted on the standard-only path too', async () => {
+    const { fakeDb, queries, whereClauses } = createFakeSearchDb();
+
+    await searchClimbs(fakeDb as unknown as DbInstance, WOODS_PARAMS, {
+      ...ascentsPage,
+      sortBy: 'difficulty',
+    });
+
+    assert.equal(queries.length, 1);
+    assert.equal(queries[0].table, 'board_climbs');
+    assert.match(whereClauses[0], BROWSED_ANGLE_RESTRICTION_PATTERN);
+  });
+
+  // Somebody typing a climb's name wants that climb whatever angle it was set at,
+  // graded by the row at that angle — the same exception the community-hidden
+  // filter makes for a name search.
+  void it('lets a by-name search reach every angle, resolved cross-angle', async () => {
+    const { fakeDb, queries, whereClauses } = createFakeSearchDb();
+
+    await searchClimbs(fakeDb as unknown as DbInstance, WOODS_PARAMS, { ...ascentsPage, name: 'Crimp' });
+
+    assert.equal(queries.length, 1, 'a name search on Woods is cross-angle, so it skips the stats-driven pass');
+    assert.ok(queries[0].joins.includes('stats_set_angle'));
+    assert.doesNotMatch(whereClauses[0], BROWSED_ANGLE_RESTRICTION_PATTERN);
+  });
+
+  void it("shows a user's own drafts list whatever angle each draft was saved at", async () => {
+    const { fakeDb, whereClauses } = createFakeSearchDb();
+
+    await searchClimbs(fakeDb as unknown as DbInstance, WOODS_PARAMS, { ...ascentsPage, onlyDrafts: true }, 'user-1');
+
+    assert.equal(whereClauses.length, 1, 'a drafts query is standard-only');
+    assert.doesNotMatch(whereClauses[0], BROWSED_ANGLE_RESTRICTION_PATTERN);
+  });
+
+  void it('does not exempt onlyDrafts without a user — that is not a drafts query', async () => {
+    const { fakeDb, whereClauses } = createFakeSearchDb();
+
+    await searchClimbs(fakeDb as unknown as DbInstance, WOODS_PARAMS, { ...ascentsPage, onlyDrafts: true });
+
+    for (const where of whereClauses) assert.match(where, BROWSED_ANGLE_RESTRICTION_PATTERN);
   });
 });

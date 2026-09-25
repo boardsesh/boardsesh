@@ -14,8 +14,8 @@
 import type { AppFeedbackPlatform, AppFeedbackSource, FeedbackContextInput } from '@boardsesh/shared-schema';
 import { redactSensitiveText } from '@boardsesh/text-redaction';
 import { GITHUB_API, ensureLabels, githubHeaders, resolveGithubToken, resolveGithubRepo } from '../lib/github-client';
+import { GithubRequestError, readGithubErrorDetail } from '../lib/github-error';
 import { screenshotMarkdownSection } from './feedback-screenshot-urls';
-import { logger } from '../utils/logger';
 
 const TITLE_LIMIT = 120;
 
@@ -158,18 +158,33 @@ export function buildFeedbackIssue(payload: FeedbackIssuePayload): FeedbackIssue
 }
 
 /**
- * Create a GitHub issue from a bug report. Never throws. Returns the created
- * issue's number + html_url, or null when it no-ops or fails:
- *  - non-bug (rating) source → null,
- *  - the GitHub App unconfigured (local dev) → null,
- *  - any API error → logged and null.
+ * What became of a bug report's mirror.
+ *
+ * `skipped` is a rating, which never becomes an issue and is not a drop.
+ * Everything else that is not `created` IS a drop the caller has to report:
+ * `unconfigured` is the shape of the 3h23m window where the App was live in
+ * production but not yet installed on the repo and 19 reports filed nothing.
  */
-export async function createFeedbackGithubIssue(payload: FeedbackIssuePayload): Promise<CreatedIssue | null> {
+export type FeedbackIssueOutcome =
+  | { status: 'created'; issue: CreatedIssue }
+  | { status: 'skipped' }
+  | { status: 'unconfigured' }
+  | { status: 'unexpected-response' }
+  | { status: 'rejected'; cause: unknown };
+
+/**
+ * Create a GitHub issue from a bug report. Never throws.
+ *
+ * Returns an outcome rather than `CreatedIssue | null`: `null` meant five
+ * different things, three of which were a report quietly going nowhere, and the
+ * resolver could not tell them apart well enough to say what had been lost.
+ */
+export async function createFeedbackGithubIssue(payload: FeedbackIssuePayload): Promise<FeedbackIssueOutcome> {
   const draft = buildFeedbackIssue(payload);
-  if (!draft) return null;
+  if (!draft) return { status: 'skipped' };
 
   const token = await resolveGithubToken();
-  if (!token) return null;
+  if (!token) return { status: 'unconfigured' };
 
   // Via the shared resolver, not `process.env.X ?? default`: a dashboard hands
   // back '' for a variable someone cleared, which `??` would honour and turn
@@ -177,8 +192,7 @@ export async function createFeedbackGithubIssue(payload: FeedbackIssuePayload): 
   const repo = resolveGithubRepo();
   const [owner, name] = repo.split('/');
   if (!owner || !name) {
-    logger.error(`[GitHub feedback] Invalid feedback repo "${repo}" (expected owner/name)`);
-    return null;
+    return { status: 'rejected', cause: new Error(`invalid feedback repo "${repo}" (expected owner/name)`) };
   }
 
   try {
@@ -191,19 +205,19 @@ export async function createFeedbackGithubIssue(payload: FeedbackIssuePayload): 
     });
 
     if (!response.ok) {
-      const errorText = await response.text().catch(() => '<unreadable>');
-      logger.error(`[GitHub feedback] Create issue failed: ${response.status} ${errorText}`);
-      return null;
+      // Through the shared reader so the body is redacted rather than dumped —
+      // and so the status, request id and GitHub's own message reach the
+      // reporter instead of dying in a log line here.
+      const detail = await readGithubErrorDetail(response);
+      return { status: 'rejected', cause: new GithubRequestError('POST', `/repos/${repo}/issues`, detail) };
     }
 
     const created = (await response.json()) as { number?: number; html_url?: string };
     if (typeof created.number !== 'number' || typeof created.html_url !== 'string') {
-      logger.error('[GitHub feedback] Create issue returned an unexpected response shape');
-      return null;
+      return { status: 'unexpected-response' };
     }
-    return { number: created.number, htmlUrl: created.html_url };
+    return { status: 'created', issue: { number: created.number, htmlUrl: created.html_url } };
   } catch (error) {
-    logger.error('[GitHub feedback] Create issue error:', error);
-    return null;
+    return { status: 'rejected', cause: error };
   }
 }

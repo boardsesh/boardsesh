@@ -1,16 +1,16 @@
 {
   "metadata": {
     "library": {
-      "title": "Discover Climbing Playlists",
-      "description": "Discover public climbing playlists and manage your own after signing in."
+      "title": "Climbing playlists for Kilter, Tension and MoonBoard",
+      "description": "Public climbing playlists built by climbers, plus sets Boardsesh rebuilds every night. Open one in the app and climb it."
     },
     "detail": {
       "fallbackTitle": "Playlist",
       "fallbackDescription": "See the climbs in this playlist on Boardsesh.",
       "privateTitle": "Private Playlist",
       "privateDescription": "This playlist is private.",
-      "climbCountDescription_one": "A climbing playlist on Boardsesh with {{count}} climb.",
-      "climbCountDescription_other": "A climbing playlist on Boardsesh with {{count}} climbs.",
+      "generatedDescription_one": "{{count}} {{board}} climb in {{name}}. Open the playlist in Boardsesh and climb it.",
+      "generatedDescription_other": "{{count}} {{board}} climbs in {{name}}. Open the playlist in Boardsesh and climb them.",
       "ogAlt": "The {{name}} playlist on Boardsesh"
     }
   },
@@ -18,18 +18,13 @@
     "signInBanner": {
       "title": "Sign in to use your library",
       "description": "Track your sends and manage playlists.",
-      "cta": "Sign In",
-      "modalTitle": "Sign in to Boardsesh",
-      "modalDescription": "Sign in to track your climbs and manage playlists."
+      "cta": "Sign In"
     },
     "sections": {
-      "jumpBackIn": "Jump Back In",
       "pinned": "Pinned",
-      "discover": "Discover",
       "forYou": "For You",
       "community": "Community Playlists"
     },
-    "showMore": "Show more",
     "communityByline": "{{creatorName}} - {{climbCount}}",
     "allPlaylists": {
       "title": "My Playlists",
@@ -93,8 +88,7 @@
     "empty": {
       "title": "No playlists yet",
       "description": "Save your projects and go-to sends into a playlist so they're easy to find.",
-      "createCta": "Create playlist",
-      "cta": "Build a playlist in the app"
+      "createCta": "Create playlist"
     },
     "createFab": {
       "ariaLabel": "Create playlist"
@@ -221,5 +215,23 @@
     "selectBoardForPlaylist": "Select a board before creating a playlist",
     "createdPlaylistToast": "Created playlist \"{{name}}\"",
     "createPlaylistFailed": "Failed to create playlist"
+  },
+  "directory": {
+    "h1": "Playlists to work through",
+    "lead_one": "Open one in the app and climb it. {{formattedCount}} public playlist to pick from.",
+    "lead_other": "Open one in the app and climb it. {{formattedCount}} public playlists to pick from.",
+    "leadNoCount": "Open one in the app and climb it.",
+    "curated": {
+      "title": "Rebuilt every night",
+      "lead": "Crowd favorites, fresh climbs and hidden gems for each board, from what people have been sending."
+    },
+    "community": {
+      "title": "Saved by climbers",
+      "lead": "Ordered by how many climbers saved each one."
+    },
+    "empty": {
+      "title": "No public playlists yet",
+      "body": "Build one in the app and it shows up here."
+    }
   }
 }

@@ -35,7 +35,17 @@ vi.mock('@/app/components/i18n/locale-link', () => ({
 }));
 
 /** Every static entry in `app/sitemap.ts`. */
-const SITEMAP_PATHS = ['/', '/about', '/help', '/docs', '/playlists', '/aurora-migration', '/legal', '/privacy'];
+const SITEMAP_PATHS = [
+  '/',
+  '/about',
+  '/support',
+  '/help',
+  '/docs',
+  '/playlists',
+  '/aurora-migration',
+  '/legal',
+  '/privacy',
+];
 
 /**
  * Every path the footer links to — a superset of `SITEMAP_PATHS`.
@@ -66,6 +76,7 @@ describe('SiteFooter server-rendered HTML', () => {
     for (const key of [
       'footer.links.home',
       'footer.links.about',
+      'footer.links.support',
       'footer.links.help',
       'footer.links.docs',
       'footer.links.playlists',

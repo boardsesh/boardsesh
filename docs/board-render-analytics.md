@@ -53,6 +53,11 @@ event's name.
 | `Board Look Step Resolved`     | `outcome` (`'saved'` \| `'customized'` \| `'skipped'`), `selected_option`, `cards_viewed`, `ms_to_resolve` | The same step — exactly once per Shown, including the unmount-without-choosing path |
 | `Board Render Failed`          | `surface`, `stage`, `failure_kind`, `error_code`, `render_width`, `frames_length`, `failures_this_session`, plus `lit_count` / `unmatched_count` on the config stage, plus `stall_state` / `queue_depth` / `dispatched_count` / `ms_waiting` on `render_stalled` | `noteRenderFailure` in `packages/mobile/src/hooks/use-native-climb-render.ts` — the hold-match check before the render, the native render's `.catch` (real failures and the capability fallbacks), `reportOverlayLoadFailure` (every expo-image load failure), the paint watchdog, and the render stall watchdog |
 
+A sixth board-look event, `Board Look Step Evaluated`, is not in this table on
+purpose. It describes a device, not a render: it carries no common props and
+does not go through a builder in `board-render-events.ts`. See "Log-only since
+#5654" under the board-look step below.
+
 ### The common properties every event carries
 
 Built by `buildBoardRenderTelemetryProps(effective, context)`:
@@ -440,6 +445,10 @@ climb-view events safe to delete. If a dashboard is ever built:
    - The board-look funnel: `Board Look Step Resolved` outcomes as a share of
      `Board Look Step Shown`, split by `selected_option` and `cards_viewed`.
      This pair is self-denominating, so it is the one true rate on this page.
+     While the launch gate is log-only (#5654, below), every Shown comes from
+     the More tab's replay row, so the funnel is climbers who went looking, not
+     the audience the launch step would reach. That audience is
+     `Board Look Step Evaluated` with `outcome = 'would_present'`.
    - `Board Render Settings Changed` and `Board Render Preset Applied` counts,
      split by `field` / `preset_id` — which knobs climbers actually touch after
      the step.
@@ -485,6 +494,56 @@ mandatory in #4961 — there is no decline button, and the one-shot "seen" flag
 is written only on an answer — so a `skipped` is a genuine abandon: a
 force-quit or a nav-away, and that climber is asked again next launch. Read it
 as a drop, and expect the same device to produce a later Shown.
+
+### Log-only since #5654
+
+The launch gate that shows this step (`BoardLookStepGate`) never ran from 2.2.0
+until #5654: its `ready` input was frozen at `false` behind `DatabaseProvider`.
+The fix woke it up in log-only mode (`present={false}` from `OnboardingGate`),
+because nobody has decided yet whether the step should reach the climbers it
+would now wake up for. So the gate evaluates and pushes nothing, and
+`Board Look Step Shown` / `Resolved` only come from the step opened by hand
+(More tab, replay the board-look question) until presenting is turned back on.
+
+What the gate does send is `Board Look Step Evaluated`:
+
+| Property  | Values |
+| --------- | ------ |
+| `outcome` | `would_present` \| `skipped` |
+| `reason`  | `never_asked` (would present) \| `look_chosen` \| `step_seen` |
+
+- **Once per device, not per launch.** Nothing marks the step seen while it is
+  never shown, so nearly every climber would qualify again on every launch. The
+  AsyncStorage marker `boardLookStepEvaluationLogged` spends the one report,
+  written before the event is sent (a crash in between loses a report rather
+  than repeating one forever). Emitted by
+  `packages/mobile/src/lib/board-render/board-look-step-evaluation-log.ts`.
+- **Only settled verdicts report.** A launch the step would sit out for the
+  moment (a deep link, a blocked route) says nothing about the climber, and
+  neither does a verdict still waiting on a read, so the device waits for a
+  launch that does.
+- **No common render props, and no builder.** The question is "how many devices
+  would get the step", which has no board, layout or render mode in it, and the
+  gate decides before any board is drawn. It lives beside the other board-look
+  names in `SHARED_EVENTS` and nowhere in `board-render-events.ts`.
+- **`would_present` is an upper bound.** Log-only mode skips the example-climb
+  query and the renderer capability probe, the two expensive checks, so a
+  device that would fail either one still counts.
+- **Native builds only.** The Expo browser build sends nothing
+  (`packages/mobile/src/lib/launch-gate-reporting.web.ts`): its launch URL is
+  always the page, so every launch reads as a deep link and only `look_chosen`
+  could ever settle there.
+- **New accounts report `step_seen`.** `OnboardingGate` marks the step seen for
+  any account at most 7 days old before it releases this gate (#5654). A new
+  account's stored mode is `default`, which already draws Aura, and the step's
+  question is for climbers who knew the old look. So `would_present` counts
+  existing climbers only, and a new account never gets the step on its first
+  bind, whichever way it binds. Two edges follow from the marker living on the
+  device, not the account: on a shared phone a new second account retires the
+  step for the older account too, and a device that already stores Classic
+  keeps Classic for the new account (the step never asks a stored mode other
+  than `default`, mark or no mark). With `first-board-picker-kill` on, the gate
+  does not write the mark.
 
 ### One cost worth knowing about
 

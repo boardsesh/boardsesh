@@ -10,6 +10,7 @@ import {
   CACHE_RULE_PHASE,
   DYNAMIC_REDIRECT_RULE_PHASE,
   RATE_LIMIT_RULE_PHASE,
+  RESPONSE_HEADER_RULE_PHASE,
   SSL_MODE_STRENGTH,
   WAF_RULE_PHASE,
   ZONE_NAME,
@@ -18,15 +19,22 @@ import type {
   CacheRuleDesired,
   DnsRecordDesired,
   R2BucketDesired,
+  R2Cors,
   RateLimitRuleDesired,
   RedirectRuleDesired,
+  ResponseHeaderRuleDesired,
   SslDesired,
   SslMode,
   WafRuleDesired,
 } from './config';
 
 /** Anything this tool owns inside a ruleset phase. Identity is the description marker. */
-export type ManagedRuleDesired = CacheRuleDesired | WafRuleDesired | RateLimitRuleDesired | RedirectRuleDesired;
+export type ManagedRuleDesired =
+  | CacheRuleDesired
+  | WafRuleDesired
+  | RateLimitRuleDesired
+  | RedirectRuleDesired
+  | ResponseHeaderRuleDesired;
 
 /** A DNS record as Cloudflare returns it. Which fields are owned depends on the desired record's management mode. */
 export interface LiveDnsRecord {
@@ -80,13 +88,28 @@ export interface LiveState {
    * the rate-limit phase for a zone that has never had one.
    */
   rules: Record<ManagedRuleResource, RulesetRule[]>;
+  /**
+   * Phases this token could not read, and which must therefore be planned as
+   * "unknown" rather than "empty".
+   *
+   * Only ever populated for phases the registry marks `optional`. Without this,
+   * a 403 would read as an empty phase, the diff would say "will create", and
+   * the apply would then PUT into the same phase and 403 again — turning a
+   * missing scope into a failed production deploy instead of a warning.
+   */
+  unavailableRulePhases?: ReadonlySet<ManagedRuleResource>;
   sslMode: string;
   /** Zone-wide flattening overrides per-record settings and breaks Tigris CNAME verification. */
   flattenAllCnames: boolean;
 }
 
 /** One planned-change kind per managed ruleset phase. */
-export type ManagedRuleResource = 'cache-rule' | 'waf-rule' | 'rate-limit-rule' | 'redirect-rule';
+export type ManagedRuleResource =
+  | 'cache-rule'
+  | 'waf-rule'
+  | 'rate-limit-rule'
+  | 'redirect-rule'
+  | 'response-header-rule';
 
 /**
  * Every ruleset phase this tool owns, in one place.
@@ -107,6 +130,17 @@ export interface ManagedRulePhase {
   readonly label: string;
   readonly selectLive: (live: LiveState) => RulesetRule[];
   readonly selectDesired: (desired: DesiredRuleSets) => readonly ManagedRuleDesired[];
+  /**
+   * Whether a token that cannot read this phase should be tolerated.
+   *
+   * False for every phase that predates the scope it needs, so a token losing a
+   * long-held scope still fails loudly. True only while a NEW scope is being
+   * rolled out: `cf:apply --apply` runs on every production deploy, so a phase
+   * added before its scope exists would take www off the deploy train. This is
+   * the same "skip it and say so" concession the R2 read makes, and for the same
+   * reason — the two can then be granted in either order.
+   */
+  readonly optional?: boolean;
 }
 
 /** The subset of the desired state that the phase registry selects from. */
@@ -115,6 +149,7 @@ export interface DesiredRuleSets {
   wafRules: WafRuleDesired[];
   rateLimitRules: RateLimitRuleDesired[];
   redirectRules: RedirectRuleDesired[];
+  responseHeaderRules: ResponseHeaderRuleDesired[];
 }
 
 export const MANAGED_RULE_PHASES = [
@@ -124,6 +159,8 @@ export const MANAGED_RULE_PHASES = [
     label: 'Cache rule',
     selectLive: (live) => live.rules['cache-rule'],
     selectDesired: (desired) => desired.cacheRules,
+    // Long-standing scope: a token that loses it must fail, not degrade.
+    optional: false,
   },
   {
     resource: 'waf-rule',
@@ -131,6 +168,8 @@ export const MANAGED_RULE_PHASES = [
     label: 'WAF rule',
     selectLive: (live) => live.rules['waf-rule'],
     selectDesired: (desired) => desired.wafRules,
+    // Long-standing scope: a token that loses it must fail, not degrade.
+    optional: false,
   },
   {
     resource: 'rate-limit-rule',
@@ -138,6 +177,8 @@ export const MANAGED_RULE_PHASES = [
     label: 'Rate-limit rule',
     selectLive: (live) => live.rules['rate-limit-rule'],
     selectDesired: (desired) => desired.rateLimitRules,
+    // Long-standing scope: a token that loses it must fail, not degrade.
+    optional: false,
   },
   {
     resource: 'redirect-rule',
@@ -145,6 +186,18 @@ export const MANAGED_RULE_PHASES = [
     label: 'Redirect rule',
     selectLive: (live) => live.rules['redirect-rule'],
     selectDesired: (desired) => desired.redirectRules,
+    // Long-standing scope: a token that loses it must fail, not degrade.
+    optional: false,
+  },
+  {
+    resource: 'response-header-rule',
+    phase: RESPONSE_HEADER_RULE_PHASE,
+    label: 'Response header rule',
+    selectLive: (live) => live.rules['response-header-rule'],
+    selectDesired: (desired) => desired.responseHeaderRules,
+    // Remove once Zone.Transform Rules Edit is confirmed on the production
+    // token. Until then this phase must not be able to fail a deploy.
+    optional: true,
   },
 ] as const satisfies readonly ManagedRulePhase[];
 
@@ -483,15 +536,60 @@ export function diffSslMode(desiredMode: SslMode, liveMode: string, allowZoneSsl
 export interface LiveR2Bucket {
   name: string;
   exists: boolean;
-  customDomains: string[];
+  customDomains: { domain: string; enabled: boolean }[];
+  /** Whether Cloudflare's independent public `r2.dev` URL is enabled. */
+  r2DevDomainEnabled: boolean;
+  /**
+   * The bucket's CORS rules, or null when they could not be read (the token
+   * lacks the scope, or the account 404s a bucket that has never had a policy).
+   * Null means "unknown", never "empty" — the difference decides whether a diff
+   * can be trusted.
+   */
+  cors: R2Cors | null;
+  /**
+   * How many CORS rules the bucket actually has.
+   *
+   * Tracked separately because `cors` above carries only the first one, and a
+   * converge that compared one rule and then wrote one rule would silently
+   * delete the rest. See diffR2Bucket.
+   */
+  corsRuleCount?: number;
+}
+
+/**
+ * True when the bucket carries CORS rules this repo does not describe.
+ *
+ * The write is a whole-policy PUT, so converging such a bucket would delete the
+ * rules it does not know about. Exported and used by BOTH the diff and the apply
+ * on purpose: the apply re-derives what to do from (desired, live) rather than
+ * from the plan, so a blocked CORS change is not enough on its own — a
+ * non-blocked change on the same bucket (an unattached custom domain, say) still
+ * routes through `applyR2Bucket` and would perform the write the block exists to
+ * prevent. One predicate, both callers, no way for them to disagree.
+ */
+export function r2CorsHasUnmanagedRules(desired: R2BucketDesired, live: LiveR2Bucket): boolean {
+  return Boolean(desired.cors) && (live.corsRuleCount ?? 0) > 1;
+}
+
+/** Same policy, ignoring order within each list. */
+export function r2CorsMatches(live: R2Cors | null, desired: R2Cors): boolean {
+  if (!live) return false;
+  const sameList = (a: readonly string[], b: readonly string[]) =>
+    a.length === b.length && [...a].sort().join(',') === [...b].sort().join(',');
+  return (
+    sameList(live.allowedOrigins, desired.allowedOrigins) &&
+    sameList(live.allowedMethods, desired.allowedMethods) &&
+    live.maxAgeSeconds === desired.maxAgeSeconds
+  );
 }
 
 /**
  * Diff one declared R2 bucket against the account.
  *
- * Three outcomes, and the third is the point of this function:
+ * Four outcomes, and the last two are the point of this function:
  *  - the bucket is missing            → create it
  *  - it is public and lacks its domain → attach it
+ *  - its public r2.dev URL is enabled → disable it
  *  - it is declared private but HAS a domain → BLOCKED, never auto-removed
  *
  * Detaching a domain is left to a human because the tool cannot tell an
@@ -514,30 +612,77 @@ export function diffR2Bucket(desired: R2BucketDesired, live: LiveR2Bucket | null
     return changes;
   }
 
-  const domains = live.customDomains;
+  const enabledDomains = live.customDomains.filter((entry) => entry.enabled).map((entry) => entry.domain);
 
-  if (desired.customDomain === null) {
-    if (domains.length > 0) {
-      changes.push({
+  if (desired.customDomain === null && enabledDomains.length > 0) {
+    return [
+      {
         resource: 'r2-bucket',
         r2BucketName: desired.name,
-        summary: `R2 ${desired.name}: declared PRIVATE but serves ${domains.join(', ')}`,
+        summary: `R2 ${desired.name}: declared PRIVATE but serves ${enabledDomains.join(', ')}`,
         detail:
           'R2 has no object ACLs and no bucket policies, so a custom domain publishes every object in the bucket. ' +
-          'This bucket holds user data exports. Remove the domain in the Cloudflare dashboard, or change the ' +
+          'Remove the domain in the Cloudflare dashboard, or change the ' +
           'declaration if it is now meant to be public.',
         blocked: true,
-      });
-    }
+      },
+    ];
+  }
+
+  if (!desired.r2DevDomainEnabled && live.r2DevDomainEnabled) {
+    changes.push({
+      resource: 'r2-bucket',
+      r2BucketName: desired.name,
+      summary: `R2 ${desired.name}: will disable public r2.dev URL`,
+      detail: 'The managed development URL bypasses the custom-domain cache and access rules.',
+    });
+  }
+
+  if (desired.customDomain === null) {
     return changes;
   }
 
-  if (!domains.includes(desired.customDomain)) {
+  const desiredDomain = live.customDomains.find((entry) => entry.domain === desired.customDomain);
+  if (!desiredDomain) {
     changes.push({
       resource: 'r2-bucket',
       r2BucketName: desired.name,
       summary: `R2 ${desired.name}: will attach ${desired.customDomain}`,
-      detail: domains.length > 0 ? `already serves: ${domains.join(', ')}` : undefined,
+      detail: enabledDomains.length > 0 ? `already serves: ${enabledDomains.join(', ')}` : undefined,
+    });
+  } else if (!desiredDomain.enabled) {
+    changes.push({
+      resource: 'r2-bucket',
+      r2BucketName: desired.name,
+      summary: `R2 ${desired.name}: will enable ${desired.customDomain}`,
+    });
+  }
+
+  // CORS is only converged where it is declared. An undeclared policy is left
+  // exactly as it is: this tool should not be able to clear a policy that was
+  // deliberately set somewhere else.
+  if (r2CorsHasUnmanagedRules(desired, live)) {
+    // The write is a whole-policy PUT, so converging a bucket that carries rules
+    // this repo does not know about would delete them. Shout instead — the same
+    // choice the private-bucket check above makes.
+    changes.push({
+      resource: 'r2-bucket',
+      r2BucketName: desired.name,
+      summary: `R2 ${desired.name}: has ${live.corsRuleCount} CORS rules; this tool manages a single-rule policy`,
+      detail:
+        'Converging would replace all of them with the declared rule and drop the others. Reconcile them in the ' +
+        'Cloudflare dashboard, or fold what they allow into PUBLIC_READ_CORS.',
+      blocked: true,
+    });
+  } else if (desired.cors && !r2CorsMatches(live.cors, desired.cors)) {
+    changes.push({
+      resource: 'r2-bucket',
+      r2BucketName: desired.name,
+      summary: `R2 ${desired.name}: will set CORS (${desired.cors.allowedMethods.join(',')} from ${desired.cors.allowedOrigins.join(',')})`,
+      detail:
+        live.cors === null
+          ? 'no CORS policy read back from the bucket'
+          : `live: ${live.cors.allowedMethods.join(',')} from ${live.cors.allowedOrigins.join(',')}, max-age ${live.cors.maxAgeSeconds}`,
     });
   }
 
@@ -580,7 +725,9 @@ export function buildPlan(
   // Driven by MANAGED_RULE_PHASES so the plan can never cover fewer phases than
   // the apply writes, or vice versa.
   const ruleChanges = MANAGED_RULE_PHASES.flatMap((phase) =>
-    diffManagedRules(phase.selectLive(live), phase.selectDesired(desired), phase.resource),
+    live.unavailableRulePhases?.has(phase.resource)
+      ? []
+      : diffManagedRules(phase.selectLive(live), phase.selectDesired(desired), phase.resource),
   );
 
   const sslChange = diffSslMode(desired.ssl.mode, live.sslMode, options.allowZoneSsl);

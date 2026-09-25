@@ -12,6 +12,7 @@ import {
 } from '@boardsesh/board-constants/product-sizes';
 import {
   getLayoutById,
+  spraySizeIdForLayout,
   MOONBOARD_LAYOUTS,
   MOONBOARD_SETS,
   MOONBOARD_SIZE,
@@ -50,7 +51,22 @@ function isWoodsLayoutId(layoutId: number): boolean {
   return layoutId === WOODS_LAYOUTS.woods.id;
 }
 
+/**
+ * A spray wall has nothing to cascade.
+ *
+ * Its layout is created at runtime when the owner photographs the wall, its size
+ * id is that same number, and its one synthetic hold set is fixed — so there is
+ * no list for a builder to offer and no choice for a climber to make. Empty at
+ * every rung, explicitly, rather than by falling through to the generated Aurora
+ * tables and getting an empty array by accident: the accident would turn into a
+ * wrong answer the moment those tables learned the word `spray`.
+ */
+function isSprayBoard(boardName: BoardName): boolean {
+  return boardName === 'spray';
+}
+
 export function getBoardLayouts(boardName: BoardName): LayoutData[] {
+  if (isSprayBoard(boardName)) return [];
   if (boardName === 'moonboard') {
     return Object.values(MOONBOARD_LAYOUTS).map((layout) => ({
       id: layout.id,
@@ -73,6 +89,7 @@ export function getBoardLayouts(boardName: BoardName): LayoutData[] {
 }
 
 export function getBoardSizesForLayoutId(boardName: BoardName, layoutId: number): ProductSizeData[] {
+  if (isSprayBoard(boardName)) return [];
   if (boardName === 'moonboard') {
     return getMoonBoardLayoutKey(layoutId) ? [MOONBOARD_PRODUCT_SIZE] : [];
   }
@@ -88,6 +105,7 @@ export function getBoardSizesForLayoutId(boardName: BoardName, layoutId: number)
 }
 
 export function getBoardSetsForLayoutAndSize(boardName: BoardName, layoutId: number, sizeId: number): SetData[] {
+  if (isSprayBoard(boardName)) return [];
   if (boardName === 'moonboard') {
     const layoutKey = getMoonBoardLayoutKey(layoutId);
     if (!layoutKey || sizeId !== MOONBOARD_SIZE.id) return [];
@@ -103,6 +121,9 @@ export function getBoardSetsForLayoutAndSize(boardName: BoardName, layoutId: num
 }
 
 export function getDefaultBoardSizeForLayout(boardName: BoardName, layoutId: number): number | null {
+  // A wall's size id IS its layout id (`spraySizeIdForLayout`), so the default is
+  // the only value there has ever been.
+  if (isSprayBoard(boardName)) return spraySizeIdForLayout(layoutId);
   if (boardName === 'moonboard') {
     return getMoonBoardLayoutKey(layoutId) ? MOONBOARD_SIZE.id : null;
   }

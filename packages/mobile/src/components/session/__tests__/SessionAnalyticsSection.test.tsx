@@ -10,7 +10,12 @@ type ChartBar = { key: string; label: string; segments: Array<{ value: number; k
 // are real grade-coloured bars and that there's exactly one chart (no second
 // flash-vs-redpoint chart). buildSessionGradeBars/gradeBadgeColor stay real so
 // the colours under test are the production ones.
-const chart = vi.hoisted(() => ({ renderCount: 0, bars: null as ChartBar[] | null, legendCount: 0 }));
+const chart = vi.hoisted(() => ({
+  renderCount: 0,
+  bars: null as ChartBar[] | null,
+  legendCount: 0,
+  accessibilityLabel: '',
+}));
 
 vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
@@ -20,7 +25,11 @@ vi.mock('react-native', () => ({
   PlatformColor: (name: string) => name,
 }));
 
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string, options?: { count?: number }) => (options?.count == null ? key : `${key}:${options.count}`),
+  }),
+}));
 vi.mock('../../Card', () => ({
   Card: ({ children }: { children?: ReactNode }) => createElement('div', { 'data-testid': 'chart-card' }, children),
 }));
@@ -28,10 +37,19 @@ vi.mock('../../SectionHeader', () => ({
   SectionHeader: ({ title }: { title: string }) => createElement('div', { 'data-testid': 'section-header' }, title),
 }));
 vi.mock('../../you/YouCharts', () => ({
-  StackedBarChart: ({ bars, legend }: { bars: ChartBar[] | null; legend?: unknown[] }) => {
+  StackedBarChart: ({
+    bars,
+    legend,
+    accessibilityLabel,
+  }: {
+    bars: ChartBar[] | null;
+    legend?: unknown[];
+    accessibilityLabel: string;
+  }) => {
     chart.renderCount += 1;
     chart.bars = bars;
     chart.legendCount = legend?.length ?? 0;
+    chart.accessibilityLabel = accessibilityLabel;
     return createElement('div', { 'data-testid': 'stacked-bar-chart' });
   },
 }));
@@ -70,6 +88,7 @@ describe('SessionAnalyticsSection', () => {
 
     // No legend — the grade hue + x-axis label carry it.
     expect(chart.legendCount).toBe(0);
+    expect(chart.accessibilityLabel).toBe('V4: detail.sendsCount:5');
   });
 
   it('renders nothing when the distribution is empty', () => {

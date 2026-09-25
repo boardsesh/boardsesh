@@ -34,8 +34,10 @@ Postgres and left V2 running untouched while its fleet drained. The URL cutover 
   stranded install is store-side only.
 - V3 is the Railway service `boardsesh-ota-v3` (image `ghcr.io/mercuretechnologies/xprem:v3.1.2` —
   see [Versions](#versions-the-cli-pin-and-the-server-image)), backed by a dedicated Railway Postgres
-  and a Tigris bucket `boardsesh-ota-v3`. Railway currently pulls that exact release through the
-  **pre-rename** repository path (`ghcr.io/mercuretechnologies/expo-open-ota`, same tag) — upstream
+  and the S3-compatible bucket `boardsesh-ota-v3`. Verify its current provider through the storage
+  migration gate below; the bucket name alone does not distinguish R2 from Tigris. Railway currently
+  pulls that exact release through the **pre-rename** repository path
+  (`ghcr.io/mercuretechnologies/expo-open-ota`, same tag) — upstream
   renamed expo-open-ota → xprem at v3.1.0 and still publishes both names, so a Railway service that
   doesn't say `xprem` is not a sign the server is behind. Branch surfing answering on the live server
   confirms the running build: that route first shipped in v3.1.2-beta2.
@@ -149,8 +151,25 @@ instead of throwing. For `@expo/ui` sheets the guard lives in `patches/@expo%2Fu
 
 ## Publishing a production update
 
-**Automatic.** Every push to `main` that touches the mobile app runs
-`.github/workflows/mobile-ota-production.yml`, which publishes a production OTA. Because
+**Automatic.** Every push to `main` **or `release/next`** that touches the mobile
+app runs `.github/workflows/mobile-ota-production.yml`, which publishes a
+production OTA. `main` serves the store fleet; `release/next` (the release train,
+see `docs/mobile-store-release.md`) serves the testers running the train's
+TestFlight / Play-internal binary, so they get JS as fast as everyone else —
+including after a `main` → `release/next` sync.
+
+**The train's publish is fingerprint-guarded.** xprem serves whichever update has
+the newest `commitTime` *for a given runtimeVersion*. While the train's
+fingerprint still equals main's — that is, before any native change has landed on
+it — a publish from the train would be handed to the entire store fleet, silently
+replacing main's JS with the train's. So the train workflow resolves `origin/main`
+in a sibling worktree and skips any platform whose fingerprint still matches
+main's, with a `::warning::` saying so. It fails closed: an unresolvable or flaky
+comparison publishes nothing. The train therefore starts publishing only once it
+carries a native change, which is also exactly when it has its own fingerprint and
+its own binaries to serve. Everything else in that workflow stays main-only: the
+changelog regeneration and push-back, the Sentry release, the health probe and the
+Discord notification. Because
 runtimeVersion is a fingerprint, this is safe to run on every push: a native change publishes an
 OTA whose fingerprint no current binary has yet, so it only lands once the matching store build
 ships. Until the server is wired (no `EXPO_UPDATES_URL` variable or committed cert), the workflow
@@ -198,10 +217,11 @@ the first platform's source maps before they reached Sentry.
 
 ### The throttle, and what actually fixes it
 
-Tigris answers a too-fast run of asset PUTs with `503 <Code>SlowDown</Code>` on the
-`boardsesh-ota-v3` bucket. Three things multiply into that, and it is worth keeping them apart —
-an earlier version of this doc said waiting was the only lever we had, which stopped being true on
-2026-08-19.
+The original Tigris-backed setup answered a too-fast run of asset PUTs with
+`503 <Code>SlowDown</Code>` on the `boardsesh-ota-v3` bucket. Three things multiply into that, and it
+is worth keeping them apart — an earlier version of this doc said waiting was the only lever we had,
+which stopped being true on 2026-08-19. The upload-rate cap remains a portable guard; verify the live
+provider through the storage migration gate below.
 
 **How much we upload.** One export is 380 assets, and 356 of them are the board-background images
 `require()`d by `packages/mobile/src/lib/board-backgrounds-manifest.ts` — 94% of the asset count.
@@ -331,6 +351,21 @@ client requesting an unmapped channel gets `No branch mapping found`. Mapping is
 
 ### Fingerprint parity — the one rule that matters
 
+**Browser-data updates can change the native fingerprint.** On 19 September 2026,
+the Next.js update in #4982 also refreshed `baseline-browser-mapping` from 2.11.17
+to 2.11.24 and `caniuse-lite` from 1.0.30001809 to 1.0.30001810. Expo loads these
+through its config plugins and includes their files as `expoConfigPlugins`
+fingerprint sources. Those were the only source differences between the approved
+iOS 2.5.0 runtime (`b71bdb600c5a`) and main (`b1058ef575fa`). No mobile native
+feature caused that drift.
+
+Main pins both datasets to the approved versions in `pnpm-workspace.yaml`, while
+keeping Next.js 16.3.5. Advance these dependencies on `release/next` alongside a
+new native build. Do not exclude their files from fingerprinting or override the
+runtime hash to force an OTA through. Compare actual fingerprint sources when a
+web dependency update unexpectedly changes mobile compatibility; a matching PR
+and main hash alone does not prove that either matches the App Store binary.
+
 The published runtimeVersion must equal the one the native build baked into the binary, or the OTA
 silently never lands — and the publish must run the **`fingerprint` policy** (resolve the _current_
 commit's hash), never a fixed value, so a native change moves the runtimeVersion and old binaries are
@@ -438,14 +473,49 @@ it can't silently drop out of one channel (which would revert that channel to th
 
 ## Native releases and build gating
 
-`main` owns both production OTA delivery and automatic native TestFlight and
-Play-internal builds. All mobile changes target `main`. A native change moves the
-fingerprint requested by production OTA, so installed binaries on the previous
-fingerprint stop receiving new bundles from `main` until users install the
-replacement store release. Prepare the version and localized release notes
-before the final native change, keep the release focused, and move both store
-builds through QA and review promptly. Keep backend changes compatible with the
+Two branches, two jobs. `main` owns production OTA delivery to the **store
+fleet**; `release/next` — the release train — owns the automatic native TestFlight
+and Play-internal builds, and publishes OTAs to the binaries it produces. Regular
+changes target `main`; every change that moves the native fingerprint targets
+`release/next`. The PR-time OTA compatibility check enforces that: a
+fingerprint-moving PR into `main` fails its check-run unless it carries the
+`allow-native-on-main` label, because main no longer builds a replacement binary
+for it. The train's fingerprint tags (`fingerprint-<platform>-<hash>`) therefore
+come from `release/next` builds. Full lifecycle, including the sync and merge-back
+commands: `docs/mobile-store-release.md`.
+
+A native change moves the fingerprint requested by production OTA, so installed
+binaries on the previous fingerprint stop receiving new bundles until users
+install the replacement store release. That gap closes at merge-back: once
+`release/next` merges into `main`, main's fingerprint equals the shipped binaries'
+again and main's publisher serves the new fleet. Prepare the version and localized
+release notes before the final native change, keep the release focused, and move
+both store builds through QA and review promptly. Keep backend changes compatible with the
 currently shipped app until the replacement has been adopted.
+
+### GraphQL schema changes: installed builds keep querying old fields
+
+Every installed bundle, including old store builds and `pr-*` preview branches pointed at
+production, keeps sending the queries it shipped with. Two rules follow (#5370):
+
+- **Backend first.** Deploy a new field before the OTA that queries it. An OTA that lands first
+  fails those requests until the backend catches up.
+- **Never remove what installed builds still query.** Mark the field `@deprecated` and remove it
+  only after those builds are gone: the store release that stopped querying it has been out for a
+  full adoption cycle, and PostHog's `OTA Update Status` event, grouped by `runtimeVersion` (see
+  [OTA observability](#ota-observability-adoption--funnel)), shows no meaningful traffic on older
+  fingerprints. After the removal, watch Sentry for `schema_mismatch:true` events naming the field. CI's `codegen-drift` job runs
+  `packages/shared-schema/scripts/check-breaking-changes.ts`, which fails a PR whose generated SDL
+  removes a field, argument, type or enum value (or adds a required argument / input field)
+  against the base branch. A deliberate removal opts out with the `schema-breaking-ok` label;
+  adding a label does not re-trigger CI, so re-run the job afterwards.
+
+When a mismatch does reach a phone, the mobile client does not retry the request
+(`GRAPHQL_VALIDATION_FAILED` fails the same way every time) and reports it to Sentry at `warning`
+level, tagged `schema_mismatch: true` and fingerprinted by the validation message. Each mismatch is
+its own Sentry issue; the `ota_channel` tag shows which bundle sent it. Before that change, all of
+them landed in catch-all issues on the GraphQL client frame (BOARDSESH-CJ / BOARDSESH-7H), which
+still collect unrelated request failures and must not be resolved as "the schema issue".
 
 The native builds (`ios-testflight-rn`, ~60 min on macOS;
 `android-apk-rn`, on Linux) only run when the fingerprint changes. A JS/TS-only
@@ -566,8 +636,9 @@ native Android fingerprint input; iOS explicitly removes it. Both the pinned
 before drafting, it rechecks that `main` and the selected tags have not moved.
 
 **Fail-safe.** If the gate can't resolve the fingerprint, it builds. A manual
-`workflow_dispatch` from `main` can force a build. Automatic store uploads never
-run from an arbitrary feature branch.
+`workflow_dispatch` from `release/next` — or from `main`, which is the hotfix
+rebuild after a merge-back — can force a build. Automatic store uploads run only
+from `release/next`, and never from an arbitrary feature branch.
 
 **Manual overrides.**
 
@@ -575,7 +646,7 @@ run from an arbitrary feature branch.
   `mobile-ota-backport.yml` with the accepted release anchor and the JS-only fix
   commits. The workflow rejects a cherry-pick that moves the anchor fingerprint.
 - **Force a rebuild of a fingerprint that already has a tag.** Dispatch the
-  platform workflow from `main`.
+  platform workflow from `release/next` (or from `main` after a merge-back).
   Manual dispatch bypasses the fingerprint gate. The protected fingerprint tag
   stays at the first build that established it, while the successful rebuild gets
   a fresh build-number tag. Do not delete or move the fingerprint tag.
@@ -590,6 +661,47 @@ run from an arbitrary feature branch.
 Resolve the current fingerprint locally to predict what the gate will see: `cd packages/mobile &&
 vp exec expo-updates runtimeversion:resolve --platform ios` (add the Production env to match CI
 exactly — see the parity check above).
+
+## Publish ordering: an OTA must not outrun the backend schema
+
+A fingerprint says nothing about the **backend**. An OTA whose JS sends a new GraphQL argument or
+field only works once the live backend serves that schema. `mobile-ota-production.yml` and
+`production-deploy.yml` both run off the same push to `main`, and the OTA is usually faster. It
+happened on 2026-09-08 (#5370):
+
+| time (UTC) | event |
+| --- | --- |
+| 21:36 | #5283 (schema + client in one commit) OTA published |
+| 21:55 | backend with the new argument finishes deploying |
+
+For those 19 minutes updated phones got `GRAPHQL_VALIDATION_FAILED`.
+
+The `await-backend-schema` job now runs before `publish`. Every 60 seconds it:
+
+1. Takes `need`, the last commit at or before the OTA's commit that touched
+   `packages/shared-schema/src/schema`.
+2. Fetches `origin/main` and reads `release` from `https://ws.boardsesh.com/health`. A 503 still
+   carries `release`; an unstamped build reports `development`, which never passes.
+3. **Passes** when `release` is a full SHA that contains `need` (`git merge-base --is-ancestor`), or
+   when `git diff release OTA-commit -- packages/shared-schema/src/schema` is empty. The second rule
+   covers a deploy hold or a rollback where the backend is behind but its schema is the same.
+4. **Keeps waiting** only while `production-deploy.yml` has a queued, in-progress or waiting run on
+   `main`, for at most 60 minutes. For the first 3 minutes it also waits when no deploy is listed,
+   because GitHub can register the deploy run a little after the OTA run.
+
+The decision is the pure function in `scripts/mobile-ota-backend-gate.ts`, unit-tested in
+`scripts/mobile-ota-backend-gate.test.ts`.
+
+**It fails open.** On the 60-minute cap, with no deploy running, or if the gate job itself breaks,
+the OTA publishes anyway: the job writes a `::warning::`, a line in the run summary, and a Discord
+post to the deploy channel, and `publish` runs with `if: !cancelled()`. Holding mobile back behind a
+wedged backend deploy (see `docs/production-deploy.md`) would be worse than the window it closes.
+A republish dispatched by a native build (`expect_fingerprint` set) skips the wait; its JS was
+already gated when the push to `main` published it.
+
+The gate job has no `environment:`, so it adds no approval step, and it adds no workflow-level env
+(that block is locked by `scripts/mobile-ci-env-parity.test.ts`). It narrows the window. Schema
+changes still have to stay backward-compatible for the store fleet.
 
 ## Backporting a JS fix to an approved release (release anchors)
 
@@ -897,10 +1009,18 @@ This is the runbook that stood up the live V3 server; it's here for the record a
 replacement. `vp run mobile:ota-setup` scripts the in-repo phases; the cloud actions (bucket,
 Postgres, server, DNS) stay manual. Run it with no argument for the ordered runbook.
 
-1. **Storage bucket** — an empty S3-compatible bucket `boardsesh-ota-v3` (Boardsesh uses Tigris,
-   `t3.storage.dev`, region `auto`) + a scoped key. Keep it portable (see the object-storage rules
-   in `CLAUDE.md`). Preflight put/get/CopyObject/delete (retry with `AWS_S3_FORCE_PATH_STYLE=true`
-   if CopyObject fails).
+> **Storage migration gate:** `infra/cloudflare/config.ts` declares `boardsesh-ota-v3` as a private R2 bucket with
+> no custom domain and with `r2.dev` disabled. That desired state does not prove which provider Railway currently
+> uses, because `AWS_BASE_ENDPOINT` and its credentials remain live secrets. Inspect the production service before
+> calling the OTA bucket migrated. If `AWS_BASE_ENDPOINT` still points at Tigris, rotate the endpoint and credentials
+> to the scoped R2 key, then require `/hc` and `/ready` to return 200, publish a test update, and download/install it
+> from a production-configured client. See `docs/cloudflare.md` → **R2 buckets**; no live provider is inferred from
+> the declaration alone.
+
+1. **Storage bucket** — an empty S3-compatible bucket `boardsesh-ota-v3` plus a scoped key. The original setup used
+   Tigris (`t3.storage.dev`, region `auto`); the migration target is the private R2 bucket above. Keep it portable
+   (see the object-storage rules in `CLAUDE.md`). Preflight put/get/CopyObject/delete (retry with
+   `AWS_S3_FORCE_PATH_STYLE=true` if CopyObject fails).
 2. **Postgres** — a dedicated Railway Postgres. **Create the database before first boot** (the
    server runs migrations but never creates the DB itself, else SQLSTATE `3D000`), and use an
    internal URL with explicit `sslmode` in `DB_URL`. **Enable backups + uptime monitoring and keep a
@@ -918,7 +1038,8 @@ Postgres, server, DNS) stay manual. Run it with no argument for the ordered runb
    - `BASE_URL` = `https://updates.boardsesh.com`
    - `JWT_SECRET` = random string
    - `STORAGE_MODE` = `s3`, plus `S3_BUCKET_NAME` (`boardsesh-ota-v3`), `AWS_REGION` (`auto`),
-     `AWS_BASE_ENDPOINT` (the Tigris endpoint), and `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`
+     `AWS_BASE_ENDPOINT` (the selected S3-compatible account endpoint), and
+     `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`
    - `CACHE_MODE` = `local` (fine at one replica)
    - `DB_URL` + `DB_KEYS_MASTER_KEY_B64` (from steps 2–3)
    - `USE_DASHBOARD=true`, `ADMIN_EMAIL` (a bare address), and a policy-compliant `ADMIN_PASSWORD`
@@ -1148,12 +1269,74 @@ above — no per-tester build. Workflow: `.github/workflows/mobile-ota-preview.y
 
 - **Reconcile, then publish.** Every same-repository PR synchronization runs, even after the last
   mobile file leaves the diff. A no-longer-mobile revision removes its preview. A mobile revision
-  first deletes the mutable `pr-<number>` branch, then runs `eoas publish --branch pr-<number>` for
-  each compatible platform. That reset prevents an older compatible update from remaining surfable
-  when a newer commit is native-only on one or both platforms. The production channel stays baked in
-  app config and no same-named channel or map job is created. Xprem exposes the branch through
-  `/branch_lists` when it matches the production channel's `pr-*` surfing pattern and the running
-  binary's exact runtimeVersion/platform.
+  runs `eoas publish --branch pr-<number>` for each compatible platform. The production channel stays
+  baked in app config and no same-named channel or map job is created. Xprem exposes the branch
+  through `/branch_lists` when it matches the production channel's `pr-*` surfing pattern and the
+  running binary's exact runtimeVersion/platform.
+- **The branch is reset only for a native change.** The reset exists to stop an older compatible
+  update staying surfable when a newer commit turns native-only on one or both platforms. Only a
+  revision that can move the native fingerprint can do that, so the gate scans the PR diff for
+  fingerprint paths (`packages/mobile/app.config.ts`, `fingerprint.config.js`, `plugins/`, `modules/`,
+  `locales/`, `targets/`, `ios/`, `android/`, `packages/mobile/package.json`, `patches/`, the root
+  manifest and lockfile — every extra source `packages/mobile/fingerprint.config.js` declares) and emits
+  `needs_reset`. A JS-only revision — a test-only commit, a copy fix — skips the reset entirely and
+  its new update supersedes the old one in place, so the preview never leaves the picker. A native
+  revision still resets, and the `notify` job says so on the PR before the branch goes away: the
+  publish takes roughly 12 minutes, and re-running the workflow by hand only starts that wait over.
+  `needs_reset` defaults to true, so anything the gate cannot resolve keeps the old behaviour.
+  Because a skipped job would otherwise skip its dependents, `publish` guards with `!cancelled()`
+  and blocks only on `needs.reset.result == 'failure'`.
+- **A revision that publishes nothing leaves the last good bundle up.** With no reset, a JS-only PR
+  that falls behind a native change on `main` publishes neither platform and `pr-<number>` keeps
+  serving the last revision that did publish — better for a tester than an empty branch, but the
+  sticky comment says which, so an unchanged picker entry is not read as "this commit is live".
+- **An identical export is skipped, and the publish says so.** Xprem refuses to create an update whose
+  bundle matches one already in storage (`There is no change in the update for android, ignored` /
+  `No changes found in the update, nothing to deploy`) and `eoas` exits **0** either way. Ordinarily
+  that is right — the identical update is still on the branch. It is only dangerous next to a reset,
+  which is how #5417 lost its Android preview: a comment-only commit left the Android bundle
+  unchanged, the reset had already deleted `pr-5417`, and the skipped publish never recreated it. The
+  branch was iOS-only from then on and the row simply was not in the Android picker — not greyed out,
+  absent, because `/branch_lists` is filtered per platform. `mobile:publish` now scans for that notice
+  and reports `android=no-change` instead of `android=success`. Since `needs_reset` (above) this pairing
+  can no longer arise from a JS-only push.
+- **The publish verifies its own work.** After every platform reports success, `mobile:publish` asks
+  `/branch_lists` — the same unauthenticated question the in-app picker asks — whether `pr-<number>` is
+  actually offered to that platform's fingerprint. **Two independent signals are required to fail the
+  job**: the platform reported `no-change` (nothing was created) AND the server answered and did not
+  list the branch. That pairing is the #5417 signature. A platform that DID create an update but whose
+  branch the probe cannot find only warns — the update exists, so the probe is far likelier to be
+  measuring the wrong thing than to have found a hole.
+  The runtimeVersion is resolved **inside the publish step, under that platform's own env**, and this
+  is the subtle part: `GOOGLE_MAPS_API_KEY` is an Android-only fingerprint input, so the compatibility
+  check — which has no key, and whose header says its absolute hashes are meaningless for exactly this
+  reason — resolves a *different* Android hash. Passing that one in failed a healthy publish in run
+  34796068541. Skipped entirely outside CI, where a locally resolved fingerprint is not the one any
+  binary runs. Two independent, bounded resolves must agree before their result is cached for
+  the platform. A mismatch or failed confirmation reports that the runtime cannot be checked;
+  it cannot combine with `no-change` to fail the publish. The preview timeout budget includes
+  both 60-second resolver caps once per platform, even when a later probe reuses the cached result.
+  Shared with `vp run mobile:ota-surf-doctor` through `scripts/lib/ota-branch-probe.ts`, so the
+  diagnostic and the publisher can never disagree about what "surfable" means. The probe re-asks on a
+  miss (~31 s across five waits) before failing: the branch list lags a finished publish by up to the
+  15 s the sticky comment already warns testers about, and a red X on a working preview would teach
+  people to ignore the check. A branch that is listed is listed on the first probe, so a healthy
+  publish never waits. It fails only on a server that ANSWERED about this exact
+  runtimeVersion and platform and did not list the branch; an unreachable server or a
+  channel with surfing switched off are facts about the server, not about this publish,
+  and degrade to "cannot check" alongside the missing-fingerprint case.
+- **Branch availability can avoid another export after a finalize 524.** `markUpdateAsUploaded` regularly outlives
+  Cloudflare's 100 s origin cap on `updates.boardsesh.com`, and the proxy answers 524 after the assets
+  are already uploaded — the update has usually landed. The retry wrapper recognises that one endpoint
+  and probes the branch before spending another attempt: if the branch is offered for this runtime,
+  the wrapper accepts the attempt and skips another export. This checks availability only: an older
+  update on the same branch can satisfy it, so it does not prove this attempt's bundle is live.
+  That probe runs a short schedule (~3s of waits), with the retry ladder behind it; a negative
+  answer costs another attempt rather than immediately failing the job.
+  #5422 burned **2h09m over six attempts** re-bundling ~5300 modules to
+  reach the same timeout, which the in-app picker showed as "building" for the whole time (the chip
+  reads the `pr-preview` deployment, which the publish job holds open). Any other 5xx, and a 524 seen
+  next to permanent-error evidence, still walk the full backoff ladder.
 - **Source maps stay local to the runner.** The shared publisher generates external maps for these
   exports, but the preview workflow intentionally has no `SENTRY_AUTH_TOKEN` and never uploads them.
   It runs PR-authored code, so granting a Sentry upload credential would cross the preview security
@@ -1223,7 +1406,8 @@ above — no per-tester build. Workflow: `.github/workflows/mobile-ota-preview.y
   GitHub **Deployment** to the `pr-preview` environment so the PR shows a green "ready" marker; the
   cleanup marks it inactive on close.
 - **Cleanup + storage.** The per-PR concurrency lane serializes reset/publish/close so a late upload
-  cannot recreate a branch after cleanup. On PR close, or whenever the current diff no longer affects
+  cannot recreate a branch after cleanup. `publish` keeps the `needs: [gate, reset]` edge even when
+  the reset is skipped, so it still queues behind an in-flight reset. On PR close, or whenever the current diff no longer affects
   mobile, `pr-<number>` is deleted via `scripts/ota-preview-cleanup.ts delete --branch pr-<number>`.
   The trusted fork follow-up performs the same reconciliation for fork pushes and closes. A daily
   sweep reaps preview branches whose PR is no longer open and fails red on an unavailable or

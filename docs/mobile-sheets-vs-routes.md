@@ -184,8 +184,8 @@ tracks the resting detent instead of leaving dead space under the footer at the 
 | ---------------------- | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
 | _(none — pushed)_      | Full-screen, slides in from the side, back-navigable | A deep destination, **or** a full-screen interactive board (pan/pinch) where a modal's pan would fight the gestures                      | session detail; `holds` / `zone` / `setters` filters                                                           |
 | **`modal`**            | pageSheet card with a top gap, dimmed parent behind  | A self-contained flow launched from a tab; a card is fine                                                                                | `boards`, `share-beta`, `join`                                                                                 |
-| **`transparentModal`** | Transparent — the live screen behind stays visible   | A drawer-as-route that should show the screen behind it, **or** a full-screen cover that must NOT disturb the screen behind (see rule 2) | `create-climb` (shows the climbs list, dimmed); the **player** (with an opaque backing to read as full-screen) |
-| **`fullScreenModal`**  | Opaque full-screen cover                             | An immersive full-screen flow that is **not** presented over the iOS 26 native tab bar                                                   | `onboarding`                                                                                                   |
+| **`transparentModal`** | Transparent — the live screen behind stays visible   | A drawer-as-route that should show the screen behind it, **or** a full-screen cover that must NOT disturb the screen behind (see rule 2) | `create-climb` (shows the climbs list, dimmed); the **player** and **`onboarding`** (each with an opaque backing to read as full-screen) |
+| **`fullScreenModal`**  | Opaque full-screen cover                             | An immersive full-screen flow that is **not** presented over the iOS 26 native tab bar                                                   | none today (`onboarding` moved to `transparentModal` in #5654)                                                                        |
 
 ## The decision tree
 
@@ -219,9 +219,13 @@ Is it a secondary surface OVER the current screen, or its own full surface?
    (not stack several), it can stay a sheet and instead **suspend → push a route → re-present**:
    set its controlled `open` to `false` (a coordinator self-dismiss, so it doesn't unmount and
    the draft survives), `router.push` the sub-route, and flip `open` back to `true` on a
-   `useFocusEffect` when the screen re-focuses (covers Done _and_ swipe-back). The sub-route
-   hands its result back through a tiny pub/sub handoff. This is how `ClimbFilterSheet` opens the
-   `setters` / `holds` / `zone` filters.
+   `useFocusEffect` when the screen re-focuses (covers the back chevron _and_ swipe-back). The
+   sub-route hands its result back through a tiny pub/sub handoff. This is how `ClimbFilterSheet`
+   opens the `setters` / `holds` / `zone` filters. The sheet's own Apply commits in its close
+   callback, which fires after the native slide-down, so the parent never unmounts the sheet
+   mid-animation. A sub-route can also commit directly: the setters route's "Show N climbs" button
+   sends its handoff with `apply: true`, and the sheet calls `onApply` then `onDismiss` itself,
+   because a suspended sheet has no native close to wait for.
 
 2. **Never `fullScreenModal` over the iOS 26 `NativeTabs`.** A `fullScreenModal` snapshots the
    presenting tab view controller for its transition; the native bottom-accessory glass platter
@@ -393,6 +397,14 @@ defer the heavy content one `requestAnimationFrame` — the present runs nativel
 content fills in mid-slide. See `app/play.tsx`. Don't use `InteractionManager` for this: it
 waits out the whole transition and is disabled in screenshot mode.
 
+The player board also waits for the scroll viewport, title header, and Logbook header
+measurements before its one-frame defer starts. The carousel keeps its flex container
+mounted for measurement, but mounts images and prefetch only after it can contain-fit the
+board. Give both the image and zoom wrapper explicit dimensions: a cached image painted
+at an implicit size can visibly grow when layout corrects it during the native slide.
+Keep this measurement gate in screenshot mode too. Once mounted, ordinary resizing and
+climb changes reuse the carousel without restarting the opening placeholder.
+
 ## Worked examples
 
 - **Queue / Board / LogAscent / Angle / ClimbActions / AddBetaVideo** — secondary, opened on
@@ -402,7 +414,7 @@ waits out the whole transition and is disabled in screenshot mode.
   `onAddBetaVideo`), so `PlayDrawer` mounts its own copy and the root `DrawerHostProvider` mounts
   the other.
 - **Moderation feed** (`app/moderation.tsx`) — root-stack `modal` card, so it presents above the
-  player as well as from the More tab and from a proposal notification in either tab. It lived in
+  player as well as from Settings and from a proposal notification in either tab. It lived in
   both tab stacks first, and that was wrong: the play drawer's Community section links into it, and
   `/play` is itself a root `transparentModal`, so a tab-stack push landed *beneath* the player (the
   rule-1 trap above). The deep-link param is `proposalUuid`, plus `climbUuid` / `boardType` when the
@@ -416,20 +428,41 @@ waits out the whole transition and is disabled in screenshot mode.
 - **Setters / hold / zone filters** — opened from the climb filter sheet, which suspends and
   pushes them (rule 1, the suspend→push→re-present pattern). Hold/zone are full-screen interactive
   boards → pushed routes (rule 3); setters is a searchable list route.
-- **Onboarding** — immersive cover, not over the live tab bar → `fullScreenModal`.
+- **Onboarding** (the walkthrough, replayed from Settings) — an immersive cover presented
+  over the live tabs, so `transparentModal` + an opaque backing, like the player (rule 2). It was a
+  `fullScreenModal` until #5654. Like the player it counts as a tabs-chrome route
+  (`isTabsChromeRoute`), so the bottom accessory stays mounted under it rather than detaching
+  while the bar is still up.
+- **First-board picker** (#5654) — what the launch gate opens for a new account with no board. Not
+  a new surface: the existing `boards` `modal` card with `?source=onboarding&firstBoard=1`, which
+  swaps the discovery tiles for "Where do you climb?". A card over the tabs, so rule 2 is not in
+  play.
 - **Crowdsourced-QA verdict sheet** (`QaVerdictSheet`) — opened from a user-drawer row, so it
   follows the same root-hosting rule as `FeedbackSheet`: mounted at the `UserDrawerProvider` root,
   **never** inside the `user-drawer` transparentModal route, and presented only through the route's
   `close(after)` once that route's view controller is gone (#3211). Its two QA screens
   (`app/qa/pick`, `app/qa/brief`) are plain `modal` cards — self-contained flows, so rule 1 applies
   unchanged.
-- **Board look** (`app/(tabs)/profile/board-look/{index,custom,accessibility}`) — a settings parent
-  and two leaves, all **pushed routes registered flat in the profile stack**, with no nested
+- **Settings** (`app/settings/`) — a pushed ROOT destination with its own `_layout`, covering the
+  tab bar like `about` / `changelog`. It lived at `(tabs)/profile/more`, and that was
+  the bug: opening it from the user drawer switched to the You tab and left `more` on that tab's
+  stack, so the next tap on You reopened Settings instead of the profile. A tab's stack is the
+  tab's own history — put a surface there only if it is genuinely part of that tab. Two
+  consequences worth knowing before you add a row: the first screen of a root group still shows a
+  back chevron (the root stack hands its `HeaderBackContext` down), and a `router.push` aimed at a
+  TAB route from inside Settings stacks a SECOND `(tabs)` instance over it — use `router.dismissTo`
+  for those (the "Notifications" and "Playlists" rows both do), which pops back to the tabs already
+  below and drops Settings on the way. Same rule for a root route Settings pushes that exits to a
+  tab: `onboarding`'s replay exits `dismissTo` rather than `replace` for exactly this reason, and
+  `dismissTo` is the verb to reach for because it also behaves on a cold deep link — it replaces
+  the current screen when the route it names isn't in the stack to pop back to.
+- **Board look** (`app/settings/board-look/{index,custom,accessibility}`) — a settings parent
+  and two leaves, all **pushed routes registered flat in the settings stack**, with no nested
   `_layout` of their own. The parent asks one question (which look?) over a rail of renders of your
   own board; each leaf holds what you can tune about the answer. Flat rather than nested because a
-  nested navigator inside a tab stack costs you the back-swipe, the inherited header and the native
-  tab bar's own behaviour for nothing — the depth is already expressed by the route names. Reach for
-  the same shape for any settings screen that grows sub-pages.
+  nested navigator costs you the back-swipe and the inherited header for nothing — the depth is
+  already expressed by the route names. Reach for the same shape for any settings screen that grows
+  sub-pages.
 - **Canonical climb URLs** (`app/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/{list,view,play}`
   and `app/b/[board_slug]/...`) — a third category the decision tree above doesn't cover:
   **redirectors**, not surfaces. They exist so the browser build serves the same URLs the Next.js

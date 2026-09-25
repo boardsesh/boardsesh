@@ -359,6 +359,14 @@ export const boardClimbs = pgTable(
     // migration — like compatible_size_ids' GIN index (migration 0073), kept out
     // of the schema so drizzle-kit generate never emits a destructive diff for it.
     characteristics: text('characteristics').array(),
+    // Spray walls only: how many of this climb's holds have come off the wall
+    // (`spray_wall_holds.removed_version_id IS NOT NULL`). NULL on every other
+    // board type, and 0 on an intact spray climb. Materialised rather than
+    // derived because climb integrity has to be filterable in the mobile SQLite
+    // mirror too, and that mirror carries no `board_climb_holds` table to join.
+    // Recomputed per wall by `recomputeMissingHoldCounts` (SW-04) whenever a
+    // reset commits.
+    missingHoldCount: integer('missing_hold_count'),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
     syncSeq: bigserial('sync_seq', { mode: 'number' }).notNull(),
   },
@@ -540,6 +548,13 @@ export const boardClimbIngestSkips = pgTable(
     lastSeenAt: timestamp('last_seen_at').defaultNow().notNull(),
     // Stamped when a later sync managed to ingest this climb.
     resolvedAt: timestamp('resolved_at'),
+    // Stamped when an operator writes a climb off (an AI test upload, holes that
+    // exist on no board) so it stops crowding the open backlog. Independent of
+    // resolved_at: the sync keeps trying, and a climb a parser fix later ingests
+    // still gets resolved. Only the reject/unreject CLI writes these — the
+    // catalog sync's re-skip upsert leaves them alone.
+    rejectedAt: timestamp('rejected_at'),
+    rejectedReason: text('rejected_reason'),
   },
   (table) => ({
     pk: primaryKey({ columns: [table.boardType, table.climbUuid] }),

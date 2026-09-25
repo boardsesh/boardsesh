@@ -1,0 +1,417 @@
+appId: com.boardsesh.app
+name: help screenshots
+---
+# Raw screens for the /help pages on boardsesh.com.
+#
+# Not a store flow. `--flow help` is not `app-store`, so `collectScreenshots`
+# (scripts/mobile-screenshots.ts) skips the `screenshot:frame` pass entirely and
+# writes these PNGs straight to app-stores/apple/screenshots/<locale>/<device>/ —
+# no device frame, no caption bar, no entry in the recipe table in
+# scripts/lib/screenshot-presentation.ts. That is deliberate: a help page draws
+# its own callouts around the screen, so the capture has to be the bare screen.
+# The same branch turns off `requireRenderLine`, because several shots here never
+# mount a board.
+#
+# The fourteen `takeScreenshot:` names below are a CONTRACT — the help pages
+# reference the files by name. Renumbering or renaming one silently breaks a page
+# image. The numbers are the help pages' DISPLAY order, not capture order (the
+# same split app-store.yaml documents for its own set).
+#
+# Capture mechanism (same as app-store.yaml, same reason): Maestro's
+# accessibility tree on this iOS 26 / RN Fabric build only exposes native text
+# inputs + system dialogs — plain Views/Text/pressables and gesture rows do NOT
+# surface, so app controls can't be matched by id/text. Every screen is reached
+# by deep link (com.boardsesh.app://...), including screenshot-mode query params
+# the build only honours when EXPO_PUBLIC_SCREENSHOT_MODE=1 (see
+# packages/mobile/src/lib/screenshot-mode.ts):
+#     ://profile?screenshotTab=sessions   -> Sessions tab; auto-opens the newest session
+#     ://profile?screenshotTab=logbook    -> profile Logbook tab
+#     ://climbs?screenshotOpenBoardSheet=1 -> opens the board sheet over the climb list
+#     ://climbs?screenshotOpenFirst=1     -> auto-opens the first climb's play drawer
+#     ://climbs?screenshotOpenClimbActions=1 -> opens the long-press reaction menu
+#     ://climbs?screenshotOpenPreview=1   -> play drawer in its browse/preview state
+#     ://share-beta?screenshotShareBeta=1 -> the share matcher, on the account's own beta
+#     ://profile?screenshotBetaShelf=1    -> pushes the signed-in climber's beta grid
+# There are NO coordinate taps. That is also why 11-climb-actions needs a param of
+# its own: the menu behind it is a 400ms long-press on a climb ROW, and the row is
+# one of the elements the tree does not expose, so there is nothing to press.
+#
+# The two filter sub-routes (://climbs/holds, ://climbs/zone) are normally PUSHED
+# by ClimbFilterSheet with the sheet's board config as route params, and a deep
+# link carries none of them. Rather than hardcode board ids here — the capture
+# account's walls drift, which is the whole reason SCREENSHOT_BOARDS pins them by
+# NAME — those screens fall back to the ACTIVE board in screenshot mode
+# (useScreenshotBoardParams, src/hooks/use-screenshot-board-params.ts). The active
+# board is the one ScreenshotBoardAutoActivator activated on boot from
+# SCREENSHOT_BOARDS[0], so holds/zone/setters render the same wall as the board
+# shots at the end of this flow. Nothing in this file names a board.
+#
+# The same rule governs the two beta shots. 14-beta-shelf's real route is keyed by
+# user id, and 13-share-beta's real entry point is an OS share-sheet hand-off
+# carrying a post URL — neither an id nor someone's reel belongs in this file, and
+# a hardcoded one drifts (or rots) exactly like a board id. Both params resolve
+# "me" inside the app instead: the profile's own id, and the account's own most
+# recent beta video. Nothing here is staged — both screens do their real work on
+# real data.
+#
+# Order (copied from app-store.yaml, for the same two reasons):
+# - For any screen visited twice, the PLAIN visit runs BEFORE the screenshot-param
+#   visit, so no stale param leaks into it. That is why 01-discover precedes
+#   02-playlist-detail, and why the two ://climbs param visits are last.
+# - Anything that opens a drawer or overlay goes LAST, because it covers the whole
+#   app and would bleed into every shot after it. The tail is 09-board-sheet (a
+#   sheet over the climb list), then the three drawer shots: 10-board-view,
+#   11-climb-actions, 12-preview.
+#
+#   Each of those four is preceded by a throwaway ://home hop, and that is load
+#   bearing. A deep link to the route that is ALREADY current does not remount it
+#   — expo-router calls setParams on the mounted screen — so the previous shot's
+#   overlay is still up when the next param lands. Without the hop the run came
+#   back with all four byte-identical: the board sheet from 09 covering 10, 11 and
+#   12. Leaving the climbs route is what closes the overlay. (The run's own
+#   duplicate check is what caught it, and still guards this.)
+#
+#   The two beta shots are plain screens and sit just before that tail;
+#   13-share-beta is a root modal, so 14-beta-shelf's tab navigation is what
+#   dismisses it.
+#
+# The screenshot build auto-signs-in on boot and lands straight on home (no login
+# screen); the orchestrator waits for home (the `$screen /home` log) before running
+# Maestro, so the flow opens right into the shots.
+
+# No `setOrientation` here, deliberately. `${MAESTRO_DEVICE_ORIENTATION}` is
+# substituted by `renderMaestroFlowForIosDevice` on the iOS path ONLY; no Android
+# runner passes it, so the placeholder would reach Maestro unresolved and kill the
+# flow on its first step. The existing Android flows dodge that by each having a
+# `-android.yaml` of their own — this is the first flow with only a shared file, so
+# it is the first one Android can fall through to. Help shots are iPhone portrait,
+# which is the simulator's default, so the step buys nothing anyway.
+
+# Dismiss expo-dev-client's one-time "This is the developer menu" sheet.
+#
+# The capture app is a Debug DEV-CLIENT, and the first time one runs against a
+# given simulator the dev menu presents this onboarding sheet over the app. It is
+# a native modal, so it is one of the few things Maestro's accessibility tree DOES
+# expose — and it sits above every screen until something taps Continue. Left in,
+# it covers the entire flow: a full 14-shot run came back with the sheet over all
+# fourteen frames, the last four byte-identical because the sheet was the only
+# thing on screen that ever changed.
+#
+# Optional, because a simulator that has already seen it never shows it again —
+# which is exactly why it is easy to miss locally and then fail on the fresh
+# simulator every CI run gets.
+- tapOn:
+    text: 'Continue'
+    optional: true
+- waitForAnimationToEnd
+
+# Prime the "Open in 'Boardsesh'?" dialog. simctl openurl of the custom scheme
+# makes iOS re-pop that confirmation on the first one or two in-session deep links
+# (inconsistently — en-US saw it once, es twice) and it BLOCKS the navigation until
+# tapped. Dismiss it on throwaway /home navigations BEFORE any capture, so no shot
+# can catch the popup and every real openLink below navigates cleanly. The first
+# openurl always pops it (wait + tap); the repeat mops up any re-prompts (optional,
+# after a settle so the dialog has appeared). iOS then remembers it.
+#
+# Both prime steps are OPTIONAL: on a fresh simulator (every CI run) the first
+# openurl always pops the dialog, but a reused local simulator may already remember
+# the confirm from an earlier run and never pop it — a hard wait here failed the
+# whole flow on exactly that (the repeat below still mops up any late re-prompts).
+- openLink: com.boardsesh.app://home
+- extendedWaitUntil:
+    visible: 'Open'
+    timeout: 12000
+    optional: true
+- tapOn:
+    text: 'Open'
+    optional: true
+- waitForAnimationToEnd
+- repeat:
+    times: 3
+    commands:
+      - openLink: com.boardsesh.app://home
+      - waitForAnimationToEnd
+      - tapOn:
+          text: 'Open'
+          optional: true
+      - waitForAnimationToEnd
+
+# Discover — the playlist library: the smart "Your Picks" row plus the account's
+# saved playlists. First, so the plain visit precedes the playlist-detail push
+# below and Discover is shot in its list state, not scrolled to a card.
+- openLink: com.boardsesh.app://discover
+- tapOn:
+    text: 'Open'
+    optional: true
+- waitForAnimationToEnd
+- takeScreenshot: 01-discover
+
+# Playlist detail — a smart playlist (crowd favourites) with its climb grid.
+# Computed relative to the ACTIVE board, so it needs the boot auto-activation to
+# have landed; by this point it has (home and Discover both rendered). Two
+# settle-waits: one for the hero/gradient, one for the grid rows, since the grid
+# fills after the header (Maestro has no sleep; tune if a capture lands early).
+- openLink: com.boardsesh.app://discover/smart/RECOMMENDED_CROWD_FAVORITES
+- tapOn:
+    text: 'Open'
+    optional: true
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- takeScreenshot: 02-playlist-detail
+
+# Share-beta matcher — where a link shared in from Instagram or TikTok gets
+# matched against the climber's recent ascents. Deep-linked with no URL: the
+# screen re-shares the account's OWN most recent beta video (see share-beta.tsx),
+# so the post on screen is the account's, not a stranger's, and no URL is pinned
+# in this file to rot. Three settles: the own-beta lookup, then the link preview
+# (thumbnail + caption), then the caption-match query that fills "Suggested".
+# It is a `presentation: 'modal'` route, so whatever ran before it shows in the
+# sliver iOS leaves at the top; the playlist detail above is a calm backdrop for
+# that. 14-beta-shelf's tab navigation is what dismisses it.
+- openLink: com.boardsesh.app://share-beta?screenshotShareBeta=1
+- tapOn:
+    text: 'Open'
+    optional: true
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- takeScreenshot: 13-share-beta
+
+# Beta shelf — the climber's own beta videos. The param resolves the signed-in
+# id and pushes `/users/[userId]/beta`, the full grid behind the profile shelf's
+# "See all" (the shelf itself sits mid-way down a virtualized profile list with
+# no stable anchor to scroll to). This also navigates the tab stack, which is what
+# dismisses the share-beta modal above.
+- openLink: com.boardsesh.app://profile?screenshotBetaShelf=1
+- tapOn:
+    text: 'Open'
+    optional: true
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- takeScreenshot: 14-beta-shelf
+
+
+# Session detail — the Sessions sub-tab auto-opens the newest session's recap in
+# screenshot mode (summary + grade chart + leaderboard/roster + ticks). Two
+# settle-waits bracket the two navigations this really is: the feed load, then the
+# detail push on top of it.
+- openLink: com.boardsesh.app://profile?screenshotTab=sessions
+- tapOn:
+    text: 'Open'
+    optional: true
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- takeScreenshot: 04-session-detail
+
+# Hold-type filter — the full-screen interactive board where a hold is tapped to
+# include/exclude a hold type. Deep-linked with no params, so the screen takes its
+# board from the active wall (see the header note). The board's holds come from the
+# bundled catalogue, not the network, but the layout still lays out after first
+# paint — hence the settle.
+- openLink: com.boardsesh.app://climbs/holds
+- tapOn:
+    text: 'Open'
+    optional: true
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- takeScreenshot: 05-holds-filter
+
+# Zone filter — the same full-screen board with the draggable region box over it.
+# The box starts at its default extent (buildDefaultZone) because the deep link
+# carries no `zoneBox`, which is exactly the state a help page wants to explain.
+- openLink: com.boardsesh.app://climbs/zone
+- tapOn:
+    text: 'Open'
+    optional: true
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- takeScreenshot: 06-zone-filter
+
+# Setters — the setter list with per-row follow buttons. Unlike holds/zone this one
+# QUERIES (setterStats, keyed on the board), and the query stays disabled while the
+# board name is empty, so it too depends on the active-board fallback. The extra
+# settle covers the list arriving after the header.
+- openLink: com.boardsesh.app://climbs/setters
+- tapOn:
+    text: 'Open'
+    optional: true
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- takeScreenshot: 07-setters
+
+# Logbook — the climbing history, every logged send. The screenshot-mode param
+# selects the Logbook sub-tab; the plain ://profile visit is not needed here (no
+# help page shows the progress tab), and this is the last param-free profile visit
+# either way.
+- openLink: com.boardsesh.app://profile?screenshotTab=logbook
+- tapOn:
+    text: 'Open'
+    optional: true
+- waitForAnimationToEnd
+- takeScreenshot: 08-logbook
+
+
+# Home runs LAST of the plain shots, and that placement is deliberate.
+#
+# Its live-sessions assert is the only gate in this flow that depends on a
+# graphql-ws SUBSCRIPTION rather than a query. Under --fixtures replay the rail
+# is fixture-fed and the assert passes; under --fixtures record it goes through
+# the proxy and fails often (three consecutive runs died here). Maestro stops at
+# the first failed assert, so wherever this shot sits, everything after it is
+# unreachable on a record run — which means those screens never get their
+# fixtures recorded, and the NEXT replay then serves them empty. That is how
+# 07-setters came back "No setters yet" and 13-share-beta came back with an
+# empty ascent list, from a flow where every step reported COMPLETED.
+#
+# Keeping it last costs nothing (the shot itself is unaffected by order) and
+# means one record pass can top up every other screen. Put new plain shots
+# ABOVE it, not below.
+
+# Home — the global "Everyone" feed with the live-sessions rail. The home screen
+# defaults to that feed in screenshot mode (see home/index.tsx) for a livelier
+# shot than the test user's own crew.
+#
+# The live rail settles INDEPENDENTLY of the session feed, so `waitForAnimationToEnd`
+# alone can snap while the rail is still a skeleton. Wait the skeleton out, then
+# assert the rail did not land in its error or offline state — a help page showing
+# "couldn't load" teaches the wrong thing, and both states are pixel-stable enough
+# that nothing else would catch them. Verbatim from app-store.yaml, including the
+# 90s timeout: the rail is a graphql-ws subscription and a cold one is slow.
+- openLink: com.boardsesh.app://home
+- tapOn:
+    text: 'Open'
+    optional: true
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    notVisible:
+      id: 'live-sessions-skeleton'
+    timeout: 90000
+- assertNotVisible:
+    id: 'live-sessions-error'
+- assertNotVisible:
+    id: 'live-sessions-offline'
+- takeScreenshot: 03-home-live
+
+
+# Board sheet — the board picker / BLE board sheet over the climb list.
+# It overlays the climb list, so it opens the overlay tail — anything shot after
+# it would risk carrying an overlay. It opens over ://climbs, so the plain
+# climb-list state is already spent by this point; nothing below needs it.
+# Clear whatever overlay the previous shot left up.
+#
+# A repeat deep link to a route that is ALREADY the current route does not
+# remount it — expo-router calls setParams on the mounted screen — so the sheet
+# or drawer the last shot opened is still sitting there when the next param
+# arrives. A full 14-shot run came back with 09/10/11/12 byte-identical for
+# exactly that reason: the board sheet from 09 covered the three drawer shots
+# after it, and the run's own duplicate check caught it.
+#
+# Bouncing through ://home leaves the climbs route, which tears the overlay down,
+# so the next ://climbs link mounts clean. Each of the four params has its own
+# one-shot latch in climbs/index.tsx, so re-entering the route re-arms nothing
+# that has already fired.
+- openLink: com.boardsesh.app://home
+- waitForAnimationToEnd
+- openLink: com.boardsesh.app://climbs?screenshotOpenBoardSheet=1
+- tapOn:
+    text: 'Open'
+    optional: true
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- takeScreenshot: 09-board-sheet
+
+# Board view — the wall lit with a climb and the play drawer open. First of the
+# three drawer shots that close the flow: the drawer overlays the whole app, so
+# nothing that isn't itself an overlay may follow it. The screenshot-mode param
+# opens the first climb's drawer (no coordinate tap); the second settle is the
+# drawer's own animation after the list has resolved.
+# Clear whatever overlay the previous shot left up.
+#
+# A repeat deep link to a route that is ALREADY the current route does not
+# remount it — expo-router calls setParams on the mounted screen — so the sheet
+# or drawer the last shot opened is still sitting there when the next param
+# arrives. A full 14-shot run came back with 09/10/11/12 byte-identical for
+# exactly that reason: the board sheet from 09 covered the three drawer shots
+# after it, and the run's own duplicate check caught it.
+#
+# Bouncing through ://home leaves the climbs route, which tears the overlay down,
+# so the next ://climbs link mounts clean. Each of the four params has its own
+# one-shot latch in climbs/index.tsx, so re-entering the route re-arms nothing
+# that has already fired.
+- openLink: com.boardsesh.app://home
+- waitForAnimationToEnd
+- openLink: com.boardsesh.app://climbs?screenshotOpenFirst=1
+- tapOn:
+    text: 'Open'
+    optional: true
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- takeScreenshot: 10-board-view
+
+# Preview runs BEFORE the reaction menu, and the order is not cosmetic.
+#
+# ClimbReactionMenu renders inside a react-native `Modal` (with a
+# `FullWindowOverlay` on iOS), which sits ABOVE the navigator rather than
+# inside it — so unlike the play drawer, navigating away does not dismiss it.
+# The ://home hop each of these shots opens with cannot clear it. With the menu
+# shot first, the preview shot photographed the menu again: two captures a
+# single byte apart, which only the duplicate check told apart from a real pair.
+# The play drawer IS a route, so it dismisses normally and can safely precede
+# anything. Keep the modal-backed shot last.
+
+# Preview — the play drawer in its browse state: the Browsing pill, the viewfinder
+# brackets and the commit row, i.e. what you get from the menu's "Preview" action
+# without lighting the wall. The effect behind the param also turns `lightOnSwipe`
+# off and marks the one-shot browse notice seen (see climbs/index.tsx), so the shot
+# is the steady state rather than a first-run card. Last, because the drawer covers
+# everything.
+# Clear whatever overlay the previous shot left up.
+#
+# A repeat deep link to a route that is ALREADY the current route does not
+# remount it — expo-router calls setParams on the mounted screen — so the sheet
+# or drawer the last shot opened is still sitting there when the next param
+# arrives. A full 14-shot run came back with 09/10/11/12 byte-identical for
+# exactly that reason: the board sheet from 09 covered the three drawer shots
+# after it, and the run's own duplicate check caught it.
+#
+# Bouncing through ://home leaves the climbs route, which tears the overlay down,
+# so the next ://climbs link mounts clean. Each of the four params has its own
+# one-shot latch in climbs/index.tsx, so re-entering the route re-arms nothing
+# that has already fired.
+- openLink: com.boardsesh.app://home
+- waitForAnimationToEnd
+- openLink: com.boardsesh.app://climbs?screenshotOpenPreview=1
+- tapOn:
+    text: 'Open'
+    optional: true
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- takeScreenshot: 12-preview
+
+# Climb actions — the long-press reaction menu over the first climb row: preview,
+# add to queue, add to playlist, favourite, log a tick, share, and the rest. The
+# most-missed interaction in the app, which is why the help pages teach it and why
+# it needed the param above. Two settles: the list has to have real rows before
+# the menu opens over them, and the menu animates in.
+# Clear whatever overlay the previous shot left up.
+#
+# A repeat deep link to a route that is ALREADY the current route does not
+# remount it — expo-router calls setParams on the mounted screen — so the sheet
+# or drawer the last shot opened is still sitting there when the next param
+# arrives. A full 14-shot run came back with 09/10/11/12 byte-identical for
+# exactly that reason: the board sheet from 09 covered the three drawer shots
+# after it, and the run's own duplicate check caught it.
+#
+# Bouncing through ://home leaves the climbs route, which tears the overlay down,
+# so the next ://climbs link mounts clean. Each of the four params has its own
+# one-shot latch in climbs/index.tsx, so re-entering the route re-arms nothing
+# that has already fired.
+- openLink: com.boardsesh.app://home
+- waitForAnimationToEnd
+- openLink: com.boardsesh.app://climbs?screenshotOpenClimbActions=1
+- tapOn:
+    text: 'Open'
+    optional: true
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- takeScreenshot: 11-climb-actions

@@ -23,6 +23,7 @@ const CLIMB_SEARCH_FIELDS = `
   boardType
   layoutId
   angle
+  statsAngle
   ascensionist_count
   difficulty
   quality_average
@@ -40,6 +41,7 @@ const CLIMB_SEARCH_FIELDS = `
   boardseshConfidence
   description
   compatibleSizeIds
+  missingHoldCount
 `;
 
 // Full fragment for single-climb views that need all fields
@@ -53,6 +55,7 @@ const CLIMB_DETAIL_FIELDS = `
   boardType
   layoutId
   angle
+  statsAngle
   ascensionist_count
   difficulty
   quality_average
@@ -71,6 +74,7 @@ const CLIMB_DETAIL_FIELDS = `
   boardseshDifficulty
   boardseshConfidence
   compatibleSizeIds
+  missingHoldCount
 `;
 
 export const SEARCH_CLIMBS = gql`
@@ -150,6 +154,7 @@ export type ClimbSearchInputVariables = {
     sortSeed?: string;
     name?: string;
     setter?: string[];
+    onlyFollowedAuthors?: boolean;
     onlyTallClimbs?: boolean;
     onlyWideClimbs?: boolean;
     onlyWithBetaVideos?: boolean;

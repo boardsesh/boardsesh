@@ -45,7 +45,8 @@ const bluetooth = vi.hoisted(() => {
       disconnect: vi.fn(async () => {}),
       sendFramesToBoard: vi.fn(async () => true as boolean | undefined),
       pickerState: null as PickerState | null,
-      reconnectSerialForCurrentBoard: null,
+      reconnectSerialForCurrentBoard: null as string | null,
+      reconnectDeviceIdForCurrentBoard: null as string | null,
       connectInitialSendRef: {
         current: null as {
           frames: string;
@@ -77,6 +78,7 @@ const presence = vi.hoisted(() => ({
 
 type PickerSheetProps = {
   onSelect: (deviceId: string) => void;
+  onScanAgain?: () => void;
 };
 
 const pickerSheet = vi.hoisted(() => ({
@@ -693,6 +695,118 @@ function makeBoardItem(uuid: string, boardType: string | undefined, layoutId: nu
     },
   };
 }
+
+// #5654: "Scan again" in a picker whose scan found nothing. The adapter's
+// connect owns that scan, so the provider cancels the picker and queues a fresh
+// connect through the pending auto-connect slot once the cancelled one settles.
+describe('BluetoothProvider picker Scan again', () => {
+  beforeEach(() => {
+    analytics.track.mockClear();
+    pickerSheet.props = null;
+    resolvedBoards.value = new Map();
+    bluetooth.state.isConnected = false;
+    bluetooth.state.loading = false;
+    bluetooth.state.pickerState = null;
+    bluetooth.state.reconnectSerialForCurrentBoard = null;
+    bluetooth.state.reconnectDeviceIdForCurrentBoard = null;
+    bluetooth.state.connect.mockClear();
+    bluetooth.state.connect.mockResolvedValue(true);
+    presence.enabled = false;
+    presence.boardId = null;
+    presence.currentClimb = null;
+    queue.currentClimbQueueItem = null;
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  function makeEmptyPickerState(): PickerState {
+    return { devices: [], isScanning: false, handleSelect: vi.fn(), handleCancel: vi.fn() };
+  }
+
+  function rerenderSettled(rerender: (ui: ReactNode) => void, props: BoardProps) {
+    // The cancelled connect settles: its picker is gone and `loading` clears.
+    bluetooth.state.pickerState = null;
+    bluetooth.state.loading = false;
+    rerender(createElement(BluetoothProvider, { ...props, children: createElement('div', null) }));
+  }
+
+  it('cancels the empty picker, then connects again once the cancelled connect settles', async () => {
+    const pickerState = makeEmptyPickerState();
+    bluetooth.state.pickerState = pickerState;
+    bluetooth.state.loading = true;
+
+    const { rerender } = renderProvider(KILTER_PROPS);
+    act(() => pickerSheet.props?.onScanAgain?.());
+
+    expect(pickerState.handleCancel).toHaveBeenCalledOnce();
+    // connect() bails while the old one is in flight, so it must wait.
+    expect(bluetooth.state.connect).not.toHaveBeenCalled();
+    expect(analytics.track).toHaveBeenCalledWith('Board Connect Tapped', {
+      surface: 'picker_scan_again',
+      boardName: 'kilter',
+      reconnect: false,
+    });
+
+    rerenderSettled(rerender, KILTER_PROPS);
+
+    await waitFor(() => {
+      expect(bluetooth.state.connect).toHaveBeenCalledWith(undefined, undefined, undefined);
+    });
+    expect(bluetooth.state.connect).toHaveBeenCalledOnce();
+  });
+
+  it('does nothing when Scan again lands after the picker already closed', async () => {
+    bluetooth.state.pickerState = makeEmptyPickerState();
+    bluetooth.state.loading = true;
+
+    const { rerender } = renderProvider(KILTER_PROPS);
+    const scanAgainFromClosedPicker = pickerSheet.props?.onScanAgain;
+    expect(scanAgainFromClosedPicker).toBeDefined();
+
+    // The climber cancelled the picker and its connect settled before the tap.
+    rerenderSettled(rerender, KILTER_PROPS);
+    act(() => scanAgainFromClosedPicker?.());
+    await act(async () => {});
+
+    expect(bluetooth.state.connect).not.toHaveBeenCalled();
+    expect(analytics.track).not.toHaveBeenCalledWith('Board Connect Tapped', expect.anything());
+  });
+
+  // A remembered target would run the silent 10 s auto-select with the sheet
+  // closed before the picker came back. The climber asked for the list again.
+  const rememberedTargets: Array<
+    [string, { reconnectSerialForCurrentBoard?: string; reconnectDeviceIdForCurrentBoard?: string }, BoardProps]
+  > = [
+    ['an Aurora serial', { reconnectSerialForCurrentBoard: 'SN-1' }, KILTER_PROPS],
+    [
+      'a MoonBoard device id',
+      { reconnectDeviceIdForCurrentBoard: 'moon-1' },
+      { boardName: 'moonboard', layoutId: 2, sizeId: 1, setIds: '1' },
+    ],
+  ];
+  it.each(rememberedTargets)(
+    'reopens the picker straight away even with %s remembered',
+    async (_label, remembered, props) => {
+      bluetooth.state.pickerState = makeEmptyPickerState();
+      bluetooth.state.loading = true;
+      Object.assign(bluetooth.state, remembered);
+
+      const { rerender } = renderProvider(props);
+      act(() => pickerSheet.props?.onScanAgain?.());
+      rerenderSettled(rerender, props);
+
+      await waitFor(() => {
+        expect(bluetooth.state.connect).toHaveBeenCalledWith(undefined, undefined, undefined);
+      });
+      expect(analytics.track).toHaveBeenCalledWith(
+        'Board Connect Tapped',
+        expect.objectContaining({ surface: 'picker_scan_again', reconnect: false }),
+      );
+    },
+  );
+});
 
 describe('BluetoothProvider spill skip', () => {
   beforeEach(() => {

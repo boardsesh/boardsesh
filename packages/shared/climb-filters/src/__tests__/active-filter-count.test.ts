@@ -35,6 +35,12 @@ describe('countActiveFilters', () => {
     expect(countActiveFilters(filters)).toBe(countActiveFiltersBeyondGrade(filters));
   });
 
+  it('counts the other-angles switch as one filter', () => {
+    const filters = { ...DEFAULT_CLIMB_FILTER_STATE, includeOtherAngles: true };
+    expect(countActiveFiltersBeyondGrade(filters)).toBe(1);
+    expect(countActiveFilters({ ...filters, minGrade: 10 })).toBe(2);
+  });
+
   it('includes board filters alongside grade', () => {
     const filters = { ...DEFAULT_CLIMB_FILTER_STATE, minGrade: 10 };
     expect(countActiveFilters(filters, { onlyBenchmarks: true })).toBe(2);

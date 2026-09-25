@@ -10,7 +10,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import type { OfflineDatabase } from '../database';
 
-type SqlBindValue = string | number | null;
+type SqlBindValue = string | number | null | Uint8Array;
 
 // expo-sqlite accepts both `(sql, [a, b])` and `(sql, a, b)`; mirror that so call
 // sites (the variadic migration runner and the array-passing offline hooks) both

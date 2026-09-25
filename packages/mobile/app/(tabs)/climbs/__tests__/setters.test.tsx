@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent } from '@testing-library/react';
+import { render, fireEvent, act, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
 type SetterStat = { setterUsername: string; climbCount: number };
 
 // Captured cleanup from the screen's useFocusEffect, so a test can simulate the
-// screen losing focus (Done / swipe-back) and assert the handoff fires.
+// screen losing focus (back / swipe-back) and assert the handoff fires.
 const focus = vi.hoisted(() => ({ cleanup: null as null | (() => void) }));
 // Mutable route params, so each test can vary the seeded selection.
 const params = vi.hoisted(() => ({
@@ -17,25 +17,67 @@ const params = vi.hoisted(() => ({
     setIds: '1,2',
     angle: '40',
     setters: undefined as string | undefined,
+    countInput: undefined as string | undefined,
   },
 }));
 const emitMock = vi.hoisted(() => vi.fn());
 // Captures navigation.setOptions calls so tests can assert the headerRight
-// "Clear all" shows only while setters are selected.
-const navMock = vi.hoisted(() => ({ setOptions: vi.fn() }));
+// "Clear all" shows only while setters are selected; goBack is the footer's pop.
+const navMock = vi.hoisted(() => ({
+  setOptions: vi.fn(),
+  goBack: vi.fn(),
+  push: vi.fn(),
+  addListener: vi.fn((_event: string, handler: () => void) => {
+    focus.cleanup = handler;
+    return () => {};
+  }),
+}));
+const followMock = vi.hoisted(() => vi.fn());
+const authorQuery = vi.hoisted(() => ({ failed: false, refetch: vi.fn() }));
+vi.mock('../../../../src/providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: true }) }));
+vi.mock('../../../../src/lib/graphql/hooks/use-followed-authors', () => ({
+  useFollowedAuthors: () => ({
+    data: authorQuery.failed ? undefined : { setterUsernames: ['alice'], users: [] },
+    setterNames: new Set(['alice']),
+    isError: authorQuery.failed,
+    refetch: authorQuery.refetch,
+  }),
+  useToggleAuthorFollow: () => ({ mutateAsync: followMock }),
+}));
 const setterStats = vi.hoisted(() => ({
   data: [
     { setterUsername: 'alice', climbCount: 5 },
     { setterUsername: 'bob', climbCount: 3 },
   ] as SetterStat[],
+  following: [{ setterUsername: 'alice', climbCount: 5 }] as SetterStat[],
+  inputs: [] as Record<string, unknown>[],
+  failed: false,
+  refetch: vi.fn(),
 }));
+// The count query: returns a count only while enabled, like the real hook, and
+// records the input so tests can assert what the footer counts.
+const countQuery = vi.hoisted(() => {
+  const state = { count: 42 as number | undefined, isPlaceholderData: false };
+  return {
+    state,
+    hook: vi.fn((_input: Record<string, unknown>, enabled: boolean) => ({
+      data: enabled ? state.count : undefined,
+      isPlaceholderData: enabled && state.isPlaceholderData,
+    })),
+  };
+});
 
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string, options?: { count?: number }) => (options?.count != null ? `${key}:${options.count}` : key),
+  }),
+}));
 
 vi.mock('expo-router', () => ({
   useLocalSearchParams: () => params.value,
   // The screen drives the native header (title + headerRight) through setOptions.
   useNavigation: () => navMock,
+  useRouter: () => navMock,
   // Run the effect immediately and stash its cleanup so the test can fire it.
   useFocusEffect: (effect: () => void | (() => void)) => {
     const cleanup = effect();
@@ -69,7 +111,16 @@ vi.mock('@shopify/flash-list', () => ({
 }));
 
 vi.mock('../../../../src/lib/graphql/hooks', () => ({
-  useSetterStats: () => ({ data: setterStats.data, isLoading: false }),
+  useSetterStats: (input: Record<string, unknown>) => {
+    setterStats.inputs.push(input);
+    return {
+      data: input.onlyFollowedAuthors ? setterStats.following : setterStats.data,
+      isLoading: false,
+      isError: setterStats.failed,
+      refetch: setterStats.refetch,
+    };
+  },
+  useSearchClimbsCount: countQuery.hook,
 }));
 
 vi.mock('../../../../src/lib/setter-filter-handoff', () => ({ emitSetterFilterSelection: emitMock }));
@@ -97,21 +148,25 @@ vi.mock('../../../../src/theme/tokens', () => ({
 
 vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  KeyboardAvoidingView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  Platform: { OS: 'ios' },
   Pressable: ({
     children,
     onPress,
     accessibilityLabel,
     accessibilityRole,
+    disabled,
   }: {
     children?: ReactNode | ((state: { pressed: boolean }) => ReactNode);
     onPress?: () => void;
     accessibilityLabel?: string;
     accessibilityRole?: string;
+    disabled?: boolean;
   }) => {
     const renderedChildren = typeof children === 'function' ? children({ pressed: false }) : children;
     return createElement(
       'button',
-      { onClick: onPress, 'aria-label': accessibilityLabel, 'data-role': accessibilityRole },
+      { onClick: onPress, disabled, 'aria-label': accessibilityLabel, 'data-role': accessibilityRole },
       renderedChildren,
     );
   },
@@ -139,14 +194,67 @@ vi.mock('../../../../src/components/ActivityIndicator', () => ({
   ActivityIndicator: () => createElement('div', { 'data-spinner': 'true' }),
 }));
 vi.mock('../../../../src/components/Icon', () => ({ Icon: () => null }));
+vi.mock('../../../../src/components/Button', () => ({
+  Button: ({ title, onPress }: { title: string; onPress?: () => void }) =>
+    createElement('button', { onClick: onPress }, title),
+}));
+vi.mock('../../../../src/components/SegmentedControl', () => ({
+  SegmentedControl: ({
+    options,
+    selectedKey,
+    onSelect,
+  }: {
+    options: { key: string; label: string }[];
+    selectedKey: string;
+    onSelect: (key: string) => void;
+  }) => (
+    <div>
+      {options.map((option) => (
+        <button key={option.key} aria-pressed={selectedKey === option.key} onClick={() => onSelect(option.key)}>
+          {option.label}
+        </button>
+      ))}
+    </div>
+  ),
+}));
 
 import SettersFilterScreen from '../setters';
 
+// The sheet's count input for its draft, as the filter sheet serializes it.
+const sheetCountInput = {
+  boardName: 'kilter',
+  layoutId: 1,
+  sizeId: 10,
+  setIds: '1,2',
+  angle: 40,
+  page: 0,
+  pageSize: 1,
+  sortBy: 'ascents',
+  sortOrder: 'desc',
+  minGrade: 16,
+  setter: ['bob'],
+};
+
 beforeEach(() => {
+  authorQuery.failed = false;
+  authorQuery.refetch.mockClear();
+  setterStats.failed = false;
+  setterStats.refetch.mockClear();
+  setterStats.inputs = [];
+  setterStats.following = [{ setterUsername: 'alice', climbCount: 5 }];
+  followMock.mockReset();
+  followMock.mockResolvedValue(undefined);
   emitMock.mockClear();
   navMock.setOptions.mockClear();
+  navMock.goBack.mockClear();
+  countQuery.hook.mockClear();
+  countQuery.state.count = 42;
+  countQuery.state.isPlaceholderData = false;
   focus.cleanup = null;
+  params.value.boardName = 'kilter';
+  params.value.sizeId = '10';
   params.value.setters = undefined;
+  params.value.countInput = JSON.stringify(sheetCountInput);
 });
 
 // The headerRight the screen last handed the native header via setOptions.
@@ -155,7 +263,49 @@ function lastHeaderRight(): unknown {
   return lastOptions?.headerRight;
 }
 
+function lastCountCall() {
+  const lastCall = countQuery.hook.mock.calls.at(-1);
+  if (!lastCall) throw new Error('The count query was never called');
+  return { input: lastCall[0], enabled: lastCall[1] };
+}
+
 describe('SettersFilterScreen', () => {
+  it.each([false, true])(
+    'explains missing author data and retries the failed queries (stats error: %s)',
+    (statsFailed) => {
+      authorQuery.failed = true;
+      setterStats.failed = statsFailed;
+      const { getByText, queryByText } = render(<SettersFilterScreen />);
+      expect(getByText('authors.syncNeeded')).not.toBeNull();
+      expect(queryByText('authors.follow')).toBeNull();
+      fireEvent.click(getByText('authors.retry'));
+      expect(authorQuery.refetch).toHaveBeenCalledTimes(1);
+      expect(setterStats.refetch).toHaveBeenCalledTimes(statsFailed ? 1 : 0);
+    },
+  );
+  it('shows both scopes and filters without changing the selected setters', () => {
+    const { getByText, queryByText, getByLabelText } = render(<SettersFilterScreen />);
+    fireEvent.click(getByLabelText('bob'));
+    fireEvent.click(getByText('authors.following'));
+    expect(getByText('authors.following').getAttribute('aria-pressed')).toBe('true');
+    expect(getByText('authors.allSetters').getAttribute('aria-pressed')).toBe('false');
+    expect(queryByText('bob')).toBeNull();
+    expect(getByText('alice')).not.toBeNull();
+    expect(setterStats.inputs.at(-1)?.onlyFollowedAuthors).toBe(true);
+    expect(lastCountCall().input.setter).toEqual(['bob']);
+    expect(followMock).not.toHaveBeenCalled();
+    fireEvent.click(getByText('authors.allSetters'));
+    expect(getByText('bob')).not.toBeNull();
+    expect(setterStats.inputs.at(-1)?.onlyFollowedAuthors).toBeUndefined();
+  });
+  it('explains why a followed user’s setter appears without a direct setter follow', () => {
+    setterStats.following = [{ setterUsername: 'linked', climbCount: 4 }];
+    const { getByText } = render(<SettersFilterScreen />);
+    fireEvent.click(getByText('authors.following'));
+    expect(getByText('linked')).not.toBeNull();
+    expect(getByText('authors.viaUserFollow')).not.toBeNull();
+    expect(getByText('authors.followingHint')).not.toBeNull();
+  });
   it('shows the headerRight Clear all only while setters are selected', () => {
     const { getByLabelText } = render(<SettersFilterScreen />);
 
@@ -167,7 +317,7 @@ describe('SettersFilterScreen', () => {
     expect(lastHeaderRight()).toBeTypeOf('function');
   });
 
-  it('hands the selected setters back when the screen loses focus', () => {
+  it('hands the selected setters back without apply when the screen is removed', () => {
     const { getByLabelText } = render(<SettersFilterScreen />);
 
     fireEvent.click(getByLabelText('alice'));
@@ -176,7 +326,74 @@ describe('SettersFilterScreen', () => {
     focus.cleanup?.();
 
     expect(emitMock).toHaveBeenCalledTimes(1);
-    expect(emitMock).toHaveBeenCalledWith(['alice']);
+    // Exactly one argument: back keeps the picks as a sheet draft.
+    expect(emitMock.mock.calls[0]).toEqual([['alice']]);
+    expect(navMock.goBack).not.toHaveBeenCalled();
+  });
+
+  it('opens a setter playlist without handing the filter draft back', () => {
+    const { getByText } = render(<SettersFilterScreen />);
+    fireEvent.click(getByText('alice'));
+    expect(navMock.push).toHaveBeenCalledWith({
+      pathname: '/(tabs)/climbs/setter/[username]',
+      params: { username: 'alice' },
+    });
+    expect(emitMock).not.toHaveBeenCalled();
+  });
+
+  it('follows an accountless setter from its row', async () => {
+    const { getByText } = render(<SettersFilterScreen />);
+    fireEvent.click(getByText('authors.follow'));
+    expect(followMock).toHaveBeenCalledWith({ kind: 'setter', identifier: 'bob', follow: true });
+    await waitFor(() =>
+      expect((getByText('authors.follow').closest('button') as HTMLButtonElement).disabled).toBe(false),
+    );
+  });
+
+  it('gates only pending setters and keeps independent requests locked until each settles', async () => {
+    let resolveBob!: () => void;
+    let resolveAlice!: () => void;
+    followMock.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveBob = resolve;
+        }),
+    );
+    followMock.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveAlice = resolve;
+        }),
+    );
+    const { getByText } = render(<SettersFilterScreen />);
+    const bob = getByText('authors.follow').closest('button') as HTMLButtonElement;
+    const alice = getByText('authors.unfollow').closest('button') as HTMLButtonElement;
+    fireEvent.click(bob);
+    expect(bob.disabled).toBe(true);
+    expect(alice.disabled).toBe(false);
+    fireEvent.click(alice);
+    expect(alice.disabled).toBe(true);
+    fireEvent.click(bob);
+    expect(followMock).toHaveBeenCalledTimes(2);
+    await act(async () => resolveAlice());
+    expect(alice.disabled).toBe(false);
+    expect(bob.disabled).toBe(true);
+    await act(async () => resolveBob());
+    expect(bob.disabled).toBe(false);
+  });
+
+  it('names the setter in each accessible follow action', () => {
+    const { getByRole } = render(<SettersFilterScreen />);
+    expect(getByRole('button', { name: 'authors.unfollow: alice' })).not.toBeNull();
+    expect(getByRole('button', { name: 'authors.follow: bob' })).not.toBeNull();
+  });
+
+  it('shows mutation failure and unlocks its setter for retry', async () => {
+    followMock.mockRejectedValueOnce(new Error('Offline write failed'));
+    const { getByText, findByText } = render(<SettersFilterScreen />);
+    fireEvent.click(getByText('authors.follow'));
+    expect(await findByText('authors.followError')).not.toBeNull();
+    expect((getByText('authors.follow').closest('button') as HTMLButtonElement).disabled).toBe(false);
   });
 
   it('seeds the selection from the route param', () => {
@@ -205,5 +422,131 @@ describe('SettersFilterScreen', () => {
     focus.cleanup?.();
 
     expect(emitMock).toHaveBeenCalledWith([]);
+  });
+
+  describe('Show N climbs footer', () => {
+    it('labels the footer with the live count', () => {
+      const { getByText } = render(<SettersFilterScreen />);
+
+      expect(getByText('mobile.filter.showCount:42')).not.toBeNull();
+      expect(lastCountCall().enabled).toBe(true);
+    });
+
+    it('shows the plain Apply label while the held count still belongs to the previous picks', () => {
+      countQuery.state.isPlaceholderData = true;
+      const { getByText, queryByText } = render(<SettersFilterScreen />);
+
+      expect(getByText('mobile.filter.apply')).not.toBeNull();
+      expect(queryByText('mobile.filter.showCount:42')).toBeNull();
+    });
+
+    it.each([
+      ['missing', undefined],
+      ['not JSON', 'not-json'],
+      ['missing board fields', JSON.stringify({ boardName: 'kilter' })],
+      ['an array', JSON.stringify([sheetCountInput])],
+    ])('falls back to the plain Apply label when the count input is %s', (_label, countInput) => {
+      params.value.countInput = countInput;
+      const { getByText, queryByText } = render(<SettersFilterScreen />);
+
+      expect(getByText('mobile.filter.apply')).not.toBeNull();
+      expect(queryByText('mobile.filter.showCount:42')).toBeNull();
+      expect(lastCountCall().enabled).toBe(false);
+    });
+
+    it('counts the picked setters on top of the sheet draft, and omits setter when none are picked', () => {
+      params.value.setters = JSON.stringify(['bob']);
+      const { getByLabelText } = render(<SettersFilterScreen />);
+
+      fireEvent.click(getByLabelText('alice'));
+      expect(lastCountCall().input).toEqual({ ...sheetCountInput, setter: ['bob', 'alice'] });
+
+      fireEvent.click(getByLabelText('alice'));
+      fireEvent.click(getByLabelText('bob'));
+      const { setter: _sheetSetters, ...draftWithoutSetters } = sheetCountInput;
+      expect(lastCountCall().input).toEqual(draftWithoutSetters);
+      expect(lastCountCall().input).not.toHaveProperty('setter');
+    });
+
+    it('applies with the picks and pops the route', () => {
+      const { getByLabelText, getByText } = render(<SettersFilterScreen />);
+
+      fireEvent.click(getByLabelText('alice'));
+      fireEvent.click(getByText('mobile.filter.showCount:42'));
+
+      expect(emitMock).toHaveBeenCalledTimes(1);
+      expect(emitMock).toHaveBeenCalledWith(['alice'], { apply: true });
+      expect(navMock.goBack).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not hand the selection back again when the pop blurs the screen, or on a second tap', () => {
+      const { getByLabelText, getByText } = render(<SettersFilterScreen />);
+
+      fireEvent.click(getByLabelText('alice'));
+      fireEvent.click(getByText('mobile.filter.showCount:42'));
+      fireEvent.click(getByText('mobile.filter.showCount:42'));
+      focus.cleanup?.();
+
+      expect(emitMock).toHaveBeenCalledTimes(1);
+      expect(navMock.goBack).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // Issue #5642: a Woods list keeps only the browsed angle's climbs unless the
+  // draft's "Other angles" switch is on, so the picker has to count the same
+  // climbs — or it offers a setter whose climbs the list cannot show.
+  describe('Other angles', () => {
+    const woodsCountInput = { ...sheetCountInput, boardName: 'woods', sizeId: 1 };
+
+    beforeEach(() => {
+      params.value.boardName = 'woods';
+      params.value.sizeId = '1';
+    });
+
+    it('asks for every angle on Woods when the draft has the switch on', () => {
+      params.value.countInput = JSON.stringify({ ...woodsCountInput, crossAngleStats: true });
+      render(<SettersFilterScreen />);
+
+      expect(setterStats.inputs.at(-1)?.crossAngleStats).toBe(true);
+      // The footer counts the same opted-in search the sheet would apply.
+      expect(lastCountCall().input.crossAngleStats).toBe(true);
+    });
+
+    it('leaves it out on Woods while the switch is off, so the picker counts this angle only', () => {
+      params.value.countInput = JSON.stringify(woodsCountInput);
+      render(<SettersFilterScreen />);
+
+      expect(setterStats.inputs.at(-1)).not.toHaveProperty('crossAngleStats');
+    });
+
+    it('keeps the switch when the picker narrows to followed setters', () => {
+      params.value.countInput = JSON.stringify({ ...woodsCountInput, crossAngleStats: true });
+      const { getByText } = render(<SettersFilterScreen />);
+
+      fireEvent.click(getByText('authors.following'));
+
+      expect(setterStats.inputs.at(-1)).toMatchObject({ onlyFollowedAuthors: true, crossAngleStats: true });
+    });
+
+    it('makes a flipped switch a different setter query', () => {
+      params.value.countInput = JSON.stringify(woodsCountInput);
+      const { rerender } = render(<SettersFilterScreen />);
+      const switchedOff = setterStats.inputs.at(-1);
+
+      params.value.countInput = JSON.stringify({ ...woodsCountInput, crossAngleStats: true });
+      rerender(<SettersFilterScreen />);
+
+      // The input object is the query key, so a differing input is a refetch.
+      expect(setterStats.inputs.at(-1)).toEqual({ ...switchedOff, crossAngleStats: true });
+    });
+
+    it('never sends it off an angle-bound board, so a Kilter query key is unchanged', () => {
+      params.value.boardName = 'kilter';
+      params.value.sizeId = '10';
+      params.value.countInput = JSON.stringify({ ...sheetCountInput, crossAngleStats: true });
+      render(<SettersFilterScreen />);
+
+      expect(setterStats.inputs.at(-1)).not.toHaveProperty('crossAngleStats');
+    });
   });
 });

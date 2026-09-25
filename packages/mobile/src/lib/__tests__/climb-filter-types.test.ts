@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { statusForAuth, DEFAULT_FILTERS, type ClimbFilters } from '../climb-filter-types';
+import { statusForAuth, filtersForBoard, DEFAULT_FILTERS, type ClimbFilters } from '../climb-filter-types';
 
 // statusForAuth is the auth-gating invariant behind the native status Picker: a
 // signed-out user can't pick "drafts", so a persisted drafts status is coerced to
@@ -55,5 +55,27 @@ describe('statusForAuth', () => {
   it('leaves the personal rating filters alone when signed in (same reference)', () => {
     const filters: ClimbFilters = { ...DEFAULT_FILTERS, minUserRating: 4 };
     expect(statusForAuth(filters, true)).toBe(filters);
+  });
+});
+
+// Recent pills are shared across boards, and only Woods shows the Other angles
+// switch. A Woods pill replayed on Kilter must not carry the flag over: there it
+// would have no switch to turn it off and would opt into the slow cross-angle query.
+describe('filtersForBoard', () => {
+  const withOtherAngles: ClimbFilters = { ...DEFAULT_FILTERS, minGrade: 10, includeOtherAngles: true };
+
+  it('keeps the other-angles switch on an angle-bound board (same reference)', () => {
+    expect(filtersForBoard(withOtherAngles, 'woods')).toBe(withOtherAngles);
+  });
+
+  it('drops the other-angles switch on a board without it, keeping every other filter', () => {
+    const result = filtersForBoard(withOtherAngles, 'kilter');
+    expect('includeOtherAngles' in result).toBe(false);
+    expect(result).toEqual({ ...DEFAULT_FILTERS, minGrade: 10 });
+  });
+
+  it('returns the same reference when there is nothing to drop', () => {
+    const filters: ClimbFilters = { ...DEFAULT_FILTERS, minGrade: 10 };
+    expect(filtersForBoard(filters, 'kilter')).toBe(filters);
   });
 });

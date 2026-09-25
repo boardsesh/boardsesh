@@ -1,0 +1,32 @@
+# Cloudflare Pages static file for the standalone Expo web export
+# (app.boardsesh.com). Copied into the publish dir by production-deploy.yml
+# alongside _headers / _redirects / _routes.json.
+#
+# Why this file has to exist as a real file: _redirects ends in the SPA
+# catch-all `/*  /index.html  200`, and Pages matches real files before that
+# catch-all. Without a robots.txt on disk, a request for /robots.txt falls
+# through to the shell — measured on 2026-09-11, https://app.boardsesh.com/
+# robots.txt returned the app's index.html. A crawler reading HTML where robots
+# syntax should be finds no rules at all and crawls the whole SPA.
+#
+# That is not free. The browser app boots and issues GraphQL against
+# ws.boardsesh.com, so every crawled route costs a backend query, not just a
+# static fetch. A 3-minute sample of boardsesh-backend on 2026-09-10 had
+# Applebot sending 173 of the 436 /graphql requests on the service.
+#
+# Disallow rather than relying on the existing `X-Robots-Tag: noindex` in
+# _headers. The two do different jobs: noindex stops a page being listed but
+# only after the crawler has fetched and rendered it, which is the entire cost.
+# Disallow stops the fetch. The usual caveat — that a disallowed URL can stay
+# indexed without content because the crawler never sees the noindex — does not
+# bite here: this host has been noindex since it launched (see
+# docs/expo-web-deployment.md, "Scope: what the browser app is"), so there is
+# nothing in an index to remove.
+#
+# There is no carve-out for share unfurlers on purpose. The export is one static
+# shell with a generic <title> and no per-route Open Graph tags, so an unfurler
+# that crawled it would render a generic card. Climb share cards are served from
+# https://ws.boardsesh.com/og/climb and never touch this host.
+
+User-agent: *
+Disallow: /

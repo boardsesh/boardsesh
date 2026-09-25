@@ -144,6 +144,56 @@ recomputed from the rows it actually holds. A board type that must NOT move the
 existing ordinals needs an explicit rank in that sort — `boardCount` and
 `isBetterConfig` cannot deliver it, since neither is consulted across groups.
 
+## Public spray walls
+
+A spray wall is a climber's own wall, so SW-03 kept the whole board type out of
+both shards. SW-16 (#5449) narrowed that to one exception: the **climbs** of a
+wall whose owner marked it public are submitted for crawling. Everything else
+about the exclusion stands.
+
+Where the walls come from: `spray-wall-configs.ts`, a second config source next
+to the MoonBoard one and behind the same two caches. A wall has no
+`board_product_sizes_layouts_sets` row that `getAllBoardConfigsOrThrow()` would
+return — the rows it does have are deliberately `is_listed = false` — so this
+asks its own question instead of changing what the home rail reads. A wall
+qualifies only when all of this is true:
+
+- `user_boards.is_public` is set. That is the owner's own decision and the only
+  consent that exists. `is_unlisted` is not a second door: unlisted means
+  "reachable if you have the link", and a sitemap is the opposite of being
+  handed a link.
+- `spray_walls.current_version_id` is not null, so the wall has a published
+  photo. A draft wall has no holds anyone but its owner can set on.
+- Neither `user_boards.deleted_at` nor `spray_walls.deleted_at` is set.
+- The wall has a `user_boards.slug`, and at least one listed, non-draft,
+  non-hidden climb.
+
+The URLs are the `/b/{slug}/{angle}/view/{name}-{uuid}` shape, not the
+config-tuple tree. `/spray/...` is not routed on www at all, so those URLs would
+404; the slug front door is where a spray climb page already sends its own
+canonical, built with the same `constructBoardSlugViewUrl` and the same resolved
+climb name, so the submitted URL and the page's canonical are byte-identical.
+The slug travels on the config as `sprayWallSlug`, and `isIndexableClimbConfig`
+treats its presence as the permission: a spray config without one is dropped,
+whoever built it.
+
+`buildChosenSubquery` in `climb-query.ts` carries
+`sprayClimbVisibilityCondition(..., null)` as a belt underneath that. It is not
+the gate that decides anything in normal operation — the config source is — but
+if a private wall's layout ever reached a group, the query returns no rows
+instead of the wall's whole catalogue. The `null` is the viewer: a sitemap has
+no reader to be, so only walls an anonymous visitor could already see may appear.
+
+`/sitemaps/boards.xml` is unchanged. A wall has no `/b/{slug}/{angle}/list` page
+on www, so there is no board URL to emit and `getBoardsShardConfigsOrThrow()`
+never calls the spray source.
+
+Expect most walls to contribute nothing. A wall's climbs clear
+`TIER_2_MIN_ASCENTS` (10 ascents at the published angle) like every other climb
+in the shard, and a home wall rarely has ten people logging the same problem.
+That is the tier-2 rule working, not a bug in this source — the walls that do
+clear it are gym spray walls with real traffic.
+
 ## One rule picks the published angle
 
 The angle is a path segment (`/{board}/{layout}/{size}/{sets}/{angle}/view/…`),

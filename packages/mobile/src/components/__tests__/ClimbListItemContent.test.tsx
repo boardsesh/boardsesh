@@ -348,3 +348,50 @@ describe('ClimbListItemContent personal grade', () => {
     expect(iconNames(container)).toContain('person');
   });
 });
+
+// SW-13 (#5446): a spray wall reset under a climb. The row has to say so, or the
+// climber taps into a problem whose holds are no longer bolted to the wall.
+describe('ClimbListItemContent lost-holds chip', () => {
+  beforeEach(() => {
+    resolveGrade.mockReturnValue({ label: 'V4', color: '#111111', isBoardsesh: false });
+  });
+
+  const chipIcon = (container: HTMLElement) => container.querySelector('[data-icon="frame.remove"]');
+
+  const renderWith = (missingHoldCount: number | null | undefined) =>
+    render(
+      <ClimbListItemContent
+        climb={{ ...baseClimb, missingHoldCount }}
+        boardName="kilter"
+        layoutId={1}
+        sizeId={1}
+        setIds="1"
+        angle={40}
+      />,
+    );
+
+  it('marks a climb that lost holds', () => {
+    const { container } = renderWith(3);
+    expect(chipIcon(container)).not.toBeNull();
+    expect(container.textContent).toContain('mobile.lostHolds.chip');
+  });
+
+  it('leaves a climb with every hold still on the wall unmarked', () => {
+    // The mutation guard: `> 0`, not `>= 0`. Every climb on every catalogue board
+    // reports 0 here, so a relaxed predicate would badge the entire database.
+    expect(chipIcon(renderWith(0).container)).toBeNull();
+  });
+
+  it('leaves a catalogue-board climb (null) unmarked', () => {
+    expect(chipIcon(renderWith(null).container)).toBeNull();
+  });
+
+  it('leaves a queue row without the field unmarked rather than guessing', () => {
+    expect(chipIcon(renderWith(undefined).container)).toBeNull();
+  });
+
+  it('stays in the row neutral grey — colour is the grade’s alone', () => {
+    const { container } = renderWith(1);
+    expect(chipIcon(container)?.getAttribute('data-color')).toBe('#8E8E93');
+  });
+});

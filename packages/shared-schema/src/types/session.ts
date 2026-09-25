@@ -68,6 +68,56 @@ export type UpdateSessionResult = {
   sessionId: string;
   name?: string | null;
   notes?: string | null;
+  isPublic: boolean;
+};
+
+/** Why a live session was listed for the viewer. */
+export type LiveSessionReason = 'FOLLOWING_USER' | 'FOLLOWED_BOARD' | 'SELECTED_BOARD';
+
+/** A climber on a live session card. */
+export type LiveSessionUser = {
+  userId: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+};
+
+/** A live session's board — only when the viewer may see it. */
+export type LiveSessionBoard = {
+  uuid: string;
+  name: string;
+  slug: string | null;
+  boardType: string;
+  gymName: string | null;
+};
+
+/** The climb on the wall in a live session, redacted to catalog fields. */
+export type LiveSessionClimb = {
+  name: string;
+  grade: string | null;
+};
+
+/** A session happening right now (followedLiveSessions / boardLiveSessions). */
+export type LiveSession = {
+  sessionId: string;
+  name: string | null;
+  goal: string | null;
+  color: string | null;
+  startedAt: string;
+  lastActivity: string;
+  host: LiveSessionUser | null;
+  participants: LiveSessionUser[];
+  participantCount: number;
+  followedParticipantIds: string[];
+  viewerIsMember: boolean;
+  isPublic: boolean;
+  board: LiveSessionBoard | null;
+  boardType: string | null;
+  angle: number | null;
+  sendCount: number;
+  flashCount: number;
+  hardestSendGrade: string | null;
+  currentClimb: LiveSessionClimb | null;
+  reasons: LiveSessionReason[];
 };
 
 /** Max length of a session title (name), enforced by validation on write. */

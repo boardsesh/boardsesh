@@ -1,0 +1,77 @@
+/*
+ * One reserved slot per result.
+ *
+ * Rows measured 109px, 154px and 155px on production depending on whether a
+ * gym has an address, a distance, both or neither, so the board chips stepped
+ * down the page and the list read as ragged rather than scannable. The column
+ * layout plus `margin-top: auto` on the chip row is what does the aligning:
+ * min-height alone reserves the space but leaves the chips hugging the text.
+ *
+ * The number is the tallest row's own content, in scale units rather than the
+ * measured pixels: the 44px name target, one location line, the chip row, and
+ * the row's padding.
+ */
+.row {
+  list-style: none;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: calc(var(--spacing-16) * 2 + var(--spacing-6));
+  padding: var(--spacing-4) 0;
+  border-bottom: 1px solid var(--separator);
+}
+
+.row:first-child {
+  border-top: 1px solid var(--separator);
+}
+
+.heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--spacing-3);
+}
+
+.heading h3 {
+  flex: 1 1 220px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.heading h3 a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+
+.heading > :last-child {
+  flex-shrink: 0;
+  align-self: center;
+}
+
+.location {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-1);
+  margin-top: var(--spacing-1);
+}
+
+.location svg {
+  flex-shrink: 0;
+}
+
+.location p {
+  overflow-wrap: anywhere;
+}
+
+.details {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--spacing-2) var(--spacing-4);
+  /* Bottom of the reserved slot, so every row's chips share one baseline. */
+  margin-top: auto;
+  padding-top: var(--spacing-2);
+}

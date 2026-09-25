@@ -1,12 +1,14 @@
 import { Stack } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useStackScreenOptions } from '../../../src/hooks/use-stack-screen-options';
+import { usePopToTopOnTabBlur } from '../../../src/hooks/use-pop-to-top-on-tab-blur';
 import { NativeTabContentInsetProbe } from '../../../src/components/navigation/NativeTabContentInsetProbe';
 import { BoardArtVisibilityProvider } from '../../../src/providers/board-art-visibility-provider';
 
 export default function ClimbsLayout() {
   const { t } = useTranslation('common');
   const screenOptions = useStackScreenOptions();
+  usePopToTopOnTabBlur('climbs');
 
   return (
     <BoardArtVisibilityProvider tab="climbs">
@@ -68,7 +70,8 @@ export default function ClimbsLayout() {
             // Setter search/multi-select for the climb filter. A pushed route (not a
             // stacked sheet) because native sheets can't stack above the filter sheet.
             // Native header (title + back chevron), opaque so the search bar sits below
-            // the bar; headerRight "Clear all" set per-screen.
+            // the bar; headerRight "Clear all" set per-screen. The screen's pinned
+            // "Show N climbs" footer applies; back keeps the picks as a sheet draft.
             title: t('mobile.nav.setters'),
             headerTransparent: false,
           }}

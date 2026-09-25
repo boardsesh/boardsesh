@@ -197,8 +197,12 @@ describe('parseBoardRoutePath', () => {
 describe('round-trip across every real board config', () => {
   // MoonBoard and Woods are code-driven boards: they have no generated
   // LAYOUTS/SETS rows, so this catalogue-walking loop finds nothing for them.
-  // Their readable URLs are covered by their own round-trip cases.
-  const auroraBoards = SUPPORTED_BOARDS.filter((boardName) => boardName !== 'moonboard' && boardName !== 'woods');
+  // Their readable URLs are covered by their own round-trip cases. Spray is
+  // excluded for a stronger reason — it has no readable URL at all, which
+  // `the spray board` describe block below pins.
+  const auroraBoards = SUPPORTED_BOARDS.filter(
+    (boardName) => boardName !== 'moonboard' && boardName !== 'woods' && boardName !== 'spray',
+  );
 
   /**
    * Exact round-trip: every real board config produces a URL that parses back to
@@ -705,5 +709,39 @@ describe("the Kilter 12 x 14 'Commerical' spelling correction (#4554)", () => {
 
   it('routes the corrected slug to the same board', () => {
     expect(parseBoardListPath('/kilter/original/12x14-commercial/screw_bolt/40/list')?.sizeId).toBe(7);
+  });
+});
+
+describe('the spray board', () => {
+  // A spray wall's layout and size are created at runtime from one climber's own
+  // wall, so there is no layout name, size name or hold-set name to slug. The
+  // numeric path is the canonical one, and there is no readable form to parse.
+  const SPRAY = { boardName: 'spray', layoutId: 900, sizeId: 900, setIds: '1', angle: 40 } as const;
+
+  it('emits the numeric climb-view path, never a readable one', () => {
+    expect(buildReadableClimbViewPath({ ...SPRAY, climbUuid: CLIMB_UUID, climbName: 'Blue Traverse' })).toBe(
+      `/spray/900/900/1/40/view/blue-traverse-${CLIMB_UUID}`,
+    );
+    expect(tryBuildReadableClimbViewPath({ ...SPRAY, climbUuid: CLIMB_UUID })).toBeNull();
+  });
+
+  it('emits the numeric list path, never a readable one', () => {
+    expect(buildReadableClimbListPath(SPRAY)).toBe('/spray/900/900/1/40/list');
+    expect(tryBuildReadableClimbListPath(SPRAY)).toBeNull();
+  });
+
+  it('still parses its own numeric paths back to the same config', () => {
+    expect(parseBoardListPath('/spray/900/900/1/40/list')).toEqual(SPRAY);
+    expect(parseClimbRoutePath(`/spray/900/900/1/40/view/${CLIMB_UUID}`)).toEqual({
+      ...SPRAY,
+      climbUuid: CLIMB_UUID,
+      surface: 'view',
+    });
+  });
+
+  it('resolves no slug-shaped segments, because it never built any', () => {
+    expect(
+      resolveBoardSegmentsToIds({ boardName: 'spray', layoutSlug: 'my-wall', sizeSlug: 'my-wall', setSlug: 'holds' }),
+    ).toBeNull();
   });
 });

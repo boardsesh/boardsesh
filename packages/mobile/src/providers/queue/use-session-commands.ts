@@ -20,6 +20,7 @@ import {
   clearStoredSessionId,
   setStoredCreatedSessionId,
   setStoredSessionId,
+  setStoredSessionVisibility,
 } from '../../lib/session-store';
 import { clearStoredQueueSnapshot } from '../../lib/queue-snapshot-store';
 import { track } from '../../lib/analytics';
@@ -121,6 +122,10 @@ export function useSessionCommands({
               ...(config?.goal ? { goal: config.goal } : {}),
               ...(config?.color ? { color: config.color } : {}),
               ...(config?.isPermanent ? { isPermanent: config.isPermanent } : {}),
+              // Absent means public server-side. Sending the key only for a
+              // private session keeps the default Start input identical to what
+              // older backends accept.
+              ...(config?.isPublic === false ? { isPublic: false } : {}),
             },
           });
           const newId = response.createSession.id;
@@ -137,6 +142,15 @@ export function useSessionCommands({
             await setStoredCreatedSessionId(newId);
           } catch (provenanceError) {
             if (__DEV__) console.warn('[queue] created-session provenance write failed', provenanceError);
+          }
+          // What the creator chose, so the in-session switch can show it while
+          // the `session` query still returns null (empty roster right after
+          // Start). Best-effort like the provenance above: losing it only hides
+          // the switch until the server can answer.
+          try {
+            await setStoredSessionVisibility(newId, config?.isPublic !== false);
+          } catch (visibilityError) {
+            if (__DEV__) console.warn('[queue] session visibility write failed', visibilityError);
           }
           // Seed the session with the locally-built queue BEFORE setSessionId
           // mounts the queueUpdates subscription — the subscription's FullSync
@@ -189,7 +203,12 @@ export function useSessionCommands({
               : null;
           reportError(error, {
             tags: { source: 'createSession' },
-            extra: { boardPath, httpStatus, discoverable: config?.discoverable ?? false },
+            extra: {
+              boardPath,
+              httpStatus,
+              discoverable: config?.discoverable ?? false,
+              isPublic: config?.isPublic !== false,
+            },
           });
           // Against a local backend (dev) errors aren't masked, so surface the
           // real server message to speed up diagnosis; shipped builds keep the

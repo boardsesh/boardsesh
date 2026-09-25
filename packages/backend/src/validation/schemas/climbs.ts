@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { CONFIDENCE, MAX_SEARCH_PAGE } from '@boardsesh/db/queries';
 import { CLIMB_CHARACTERISTICS, TOGGLEABLE_CLIMB_CHARACTERISTICS } from '@boardsesh/shared-schema';
-import { ExternalUUIDSchema, BoardNameSchema } from './primitives';
+import { ClimbUuidSchema, ExternalUUIDSchema, BoardNameSchema, UUIDSchema } from './primitives';
 import { BOARD_ANGLE_VALIDATION_MESSAGE, isBoardAngleSupported } from './board-angles';
 
 // Cap holdsFilter entries: each ANY entry becomes a LIKE scan over board_climbs.frames
@@ -128,6 +128,11 @@ export const ClimbInputSchema = z.object({
   // (their hold ids overlap as different holds). Bounded: a board type has a
   // handful of product sizes, never dozens.
   compatibleSizeIds: z.array(z.number().int()).max(50).nullish(),
+  // How many of this climb's holds a spray-wall reset has taken off. Round-trips
+  // through the queue because a broken climb is still queueable and still
+  // playable, and the peer showing it has to be able to say why the board is
+  // drawing fewer holds than the setter painted. Null on every catalogue board.
+  missingHoldCount: z.number().int().min(0).nullish(),
 });
 
 /**
@@ -165,11 +170,15 @@ export const ClimbQueueItemSchema = z.object({
  * Climb search input validation schema
  */
 export const ClimbSearchInputSchema = z.object({
+  onlyFollowedAuthors: z.boolean().optional(),
   boardName: BoardNameSchema,
   layoutId: z.number().int().positive('Layout ID must be positive'),
   sizeId: z.number().int().positive('Size ID must be positive'),
   setIds: z.string().min(1, 'Set IDs cannot be empty'),
   angle: z.number().int(),
+  // Spray only, and a CAPABILITY rather than a filter: it never reaches the search
+  // predicate, only the read gate (`sprayLayoutIsReadableWithCapability`).
+  sprayWallUuid: UUIDSchema.optional(),
   page: z.number().int().min(0).max(MAX_SEARCH_PAGE, 'Page number too large').optional(),
   pageSize: z.number().int().min(1).max(100, 'Page size cannot exceed 100').optional(),
   gradeAccuracy: z.string().optional(),
@@ -230,6 +239,14 @@ export const ClimbSearchInputSchema = z.object({
   useMyGrades: z.boolean().optional(),
   onlyDrafts: z.boolean().optional(),
   projectsOnly: z.boolean().optional(),
+  // Spray-wall hold integrity. No `.default()` — ANY and an omitted value are the
+  // same thing (no predicate), and a default here would apply for real, since
+  // searchClimbs uses this schema's parsed return.
+  holdIntegrity: z.enum(['ANY', 'INTACT', 'BROKEN']).optional(),
+  crossAngleStats: z.boolean().optional(),
+  // No default: omitted means UPSTREAM, and mapSearchInputToParams collapses an
+  // explicit UPSTREAM to undefined so the search-cache key does not change.
+  gradeSource: z.enum(['UPSTREAM', 'BOARDSESH']).optional(),
   // No default here on purpose: omitted means "no climb-type constraint"
   // (both boulders and routes match), not "boulders-only". searchClimbs (see
   // packages/backend/src/graphql/resolvers/climbs/queries.ts) now uses the
@@ -300,15 +317,36 @@ export const SaveClimbInputSchema = z
     frames: z.string().min(1).max(10000),
     framesCount: z.number().int().min(1).optional(),
     // Upper bound so a client bug can't publish a route that sits on one frame
-    // for hours. 30s is well past the 10s ceiling the authoring control offers,
-    // so it rejects nonsense without second-guessing a deliberate slow route or
-    // a pace synced in from Aurora. 0 stays legal: it means "use the default".
-    framesPace: z.number().int().min(0).max(30_000).optional(),
+    // for hours. 60s is both the slowest pace the authoring control offers and
+    // the slowest one the synced Aurora catalogue actually holds, so it rejects
+    // nonsense without truncating a deliberate endurance route. 0 stays legal:
+    // it means "use the default".
+    framesPace: z.number().int().min(0).max(60_000).optional(),
     angle: z.number().int().min(-5).max(90),
     characteristics: ToggleableCharacteristicsSchema,
     noMatch: RuleFlagSchema,
     anyFeet: RuleFlagSchema,
     sizeId: ClimbSizeIdSchema,
+    // The setter's own grade, mirroring SaveMoonBoardClimbInputSchema. REQUIRED to
+    // publish on a spray wall — that board has `crowdGrade: false`, so nothing will
+    // ever converge on a consensus difficulty and this is the only grade the climb
+    // will have. Ignored on every other board, where the grade comes from ticks or
+    // the Aurora sync; the RESOLVER decides that, not this schema, because the
+    // requirement depends on the wall rather than on the shape of the input.
+    userGrade: z.string().max(20).optional(),
+    // The spray wall's uuid, as an unlisted wall's share link carries it. Only
+    // consulted for `boardType: 'spray'`, and only for a caller who is neither the
+    // owner nor a gym member — the `layoutId` above comes out of a sequence, so it
+    // is not a secret and cannot authorize a write on its own. Validated as a uuid
+    // here and matched against the wall in the resolver, which is where the wall
+    // data lives.
+    sprayWallUuid: UUIDSchema.optional(),
+    // The spray climb this one was remixed from. Shape only here: whether the
+    // parent exists, is on the SAME wall, and is visible to the caller are all
+    // wall questions, answered in the resolver where the wall data lives.
+    // `ClimbUuidSchema`, not `UUIDSchema`: a climb uuid is Aurora's 32-hex form,
+    // not an RFC-4122 one, and every Boardsesh-authored climb follows it.
+    remixOfClimbUuid: ClimbUuidSchema.optional(),
   })
   .refine((input) => isBoardAngleSupported(input.boardType, input.angle), {
     message: BOARD_ANGLE_VALIDATION_MESSAGE,
@@ -326,14 +364,23 @@ export const UpdateClimbInputSchema = z
     isDraft: z.boolean().optional(),
     framesCount: z.number().int().min(1).optional(),
     // Upper bound so a client bug can't publish a route that sits on one frame
-    // for hours. 30s is well past the 10s ceiling the authoring control offers,
-    // so it rejects nonsense without second-guessing a deliberate slow route or
-    // a pace synced in from Aurora. 0 stays legal: it means "use the default".
-    framesPace: z.number().int().min(0).max(30_000).optional(),
+    // for hours. 60s is both the slowest pace the authoring control offers and
+    // the slowest one the synced Aurora catalogue actually holds, so it rejects
+    // nonsense without truncating a deliberate endurance route. 0 stays legal:
+    // it means "use the default".
+    framesPace: z.number().int().min(0).max(60_000).optional(),
     characteristics: ToggleableCharacteristicsSchema,
     noMatch: RuleFlagSchema,
     anyFeet: RuleFlagSchema,
     sizeId: ClimbSizeIdSchema,
+    // Needed to publish a spray DRAFT that was created without a grade. The
+    // resolver accepts a grade from here OR from the stats row saveClimb seeded,
+    // so a client that already supplied one at creation need not repeat it.
+    userGrade: z.string().max(20).optional(),
+    // See SaveClimbInputSchema: the share-link capability for an unlisted spray
+    // wall. An edit needs it for the same reason a create does — the wall is
+    // resolved from the stored climb's `layoutId`, which is not a secret.
+    sprayWallUuid: UUIDSchema.optional(),
   })
   .refine((input) => isBoardAngleSupported(input.boardType, input.angle), {
     message: BOARD_ANGLE_VALIDATION_MESSAGE,
@@ -384,6 +431,7 @@ export const CheckMoonBoardClimbDuplicatesInputSchema = z.object({
 });
 
 export const SetterStatsInputSchema = z.object({
+  onlyFollowedAuthors: z.boolean().optional(),
   boardName: BoardNameSchema,
   layoutId: z.number().int().positive('Layout ID must be positive'),
   sizeId: z.number().int().positive('Size ID must be positive'),
@@ -392,6 +440,9 @@ export const SetterStatsInputSchema = z.object({
   // sends the live angle here.
   angle: z.number().int().min(-90).max(90),
   search: z.string().max(200).optional(),
+  // Only Woods reads it: without it a setter is counted for the browsed angle's
+  // climbs alone, the same restriction the list applies (#5642).
+  crossAngleStats: z.boolean().optional(),
 });
 
 export const SimilarClimbsInputSchema = z

@@ -1,4 +1,20 @@
 export const socialTypeDefs = /* GraphQL */ `
+  type FollowedBoardAccount {
+    boardType: String!
+    username: String!
+  }
+
+  type FollowedAuthorUser {
+    userId: ID!
+    boardAccounts: [FollowedBoardAccount!]!
+  }
+
+  "Complete snapshot of the authenticated viewer's followed authors."
+  type FollowedAuthors {
+    setterUsernames: [String!]!
+    users: [FollowedAuthorUser!]!
+  }
+
   # ============================================
   # Social Enums
   # ============================================

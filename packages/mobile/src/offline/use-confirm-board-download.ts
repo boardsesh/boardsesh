@@ -14,7 +14,7 @@
 
 import { useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSQLiteContext } from 'expo-sqlite';
+import { useOfflineDatabase } from '../db/use-offline-database';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import {
   estimateScopeDownload,
@@ -32,9 +32,32 @@ import { useBoardDownloads, type ToggleSource } from './use-board-downloads';
 import { useSnapshotManifest } from './use-snapshot-manifest';
 import { notifyBootstrapMetadataChanged } from '../sync';
 
+/**
+ * Bytes the device-derived holds index adds per downloaded climb (similar
+ * climbs and the heatmap read it). Measured: ~67 MB of index for the 295k
+ * climbs of one Kilter size scope.
+ */
+export const HOLD_INDEX_BYTES_PER_CLIMB = 230;
+
+/**
+ * The download quote plus a second line for the space the holds index will
+ * take on the phone. Only with a row count to multiply: no count, no guess.
+ */
+export function withHoldIndexLine(
+  message: string,
+  climbCount: number | null | undefined,
+  indexLine: (bytes: number) => string,
+): string {
+  if (!climbCount || climbCount <= 0) return message;
+  return `${message}\n\n${indexLine(climbCount * HOLD_INDEX_BYTES_PER_CLIMB)}`;
+}
+
 export function useConfirmBoardDownload() {
   const { t, i18n } = useTranslation('boards');
-  const db = useSQLiteContext();
+  // Not `useSQLiteContext()` directly: a dead-handle recovery opens a REPLACEMENT
+  // connection without the provider ever re-rendering, so the context value would
+  // still be the wrapper around the dead native instance (#5410).
+  const db = useOfflineDatabase();
   const confirm = useConfirm();
   const { enableBoardsOffline, armBoardsOffline } = useBoardDownloads();
   // A ref, not a dep: the manifest arrives asynchronously and must not rebuild
@@ -98,7 +121,11 @@ export function useConfirmBoardDownload() {
         title: t('mobile.offline.enableTitle', { name: board.name }),
         message:
           estimate.kind === 'snapshot'
-            ? t('mobile.offline.enableMessageWithSize', { size: formatBytes(estimate.bytes, i18n.language) })
+            ? withHoldIndexLine(
+                t('mobile.offline.enableMessageWithSize', { size: formatBytes(estimate.bytes, i18n.language) }),
+                estimate.climbCount,
+                (bytes) => t('mobile.offline.enableIndexLine', { index: formatBytes(bytes, i18n.language) }),
+              )
             : t('mobile.offline.enableMessage'),
         confirmLabel: t('mobile.offline.enableConfirm'),
         cancelLabel: t('mobile.manage.cancel'),

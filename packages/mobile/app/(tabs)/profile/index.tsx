@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import type { BottomSheet } from '@expo/ui/community/bottom-sheet';
 import { useProfile, useYouProfileData } from '../../../src/lib/graphql/hooks';
 import { useTheme } from '../../../src/providers/theme-provider';
@@ -30,7 +30,10 @@ export default function YouScreen() {
   const youData = useYouProfileData(userId);
 
   const filterSheetRef = useRef<BottomSheet | null>(null);
-  const { screenshotTab } = useLocalSearchParams<{ screenshotTab?: string }>();
+  const { screenshotTab, screenshotBetaShelf } = useLocalSearchParams<{
+    screenshotTab?: string;
+    screenshotBetaShelf?: string;
+  }>();
   const [activeTab, setActiveTab] = useState<ProfileTabKey>(() =>
     process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' && isProfileTabKey(screenshotTab) ? screenshotTab : 'progress',
   );
@@ -41,6 +44,23 @@ export default function YouScreen() {
     if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1') return;
     setActiveTab(isProfileTabKey(screenshotTab) ? screenshotTab : 'progress');
   }, [screenshotTab]);
+
+  // Screenshot mode: open the climber's OWN beta grid — the "See all" target of
+  // the profile beta shelf (`ProfileBetaShelf` -> `/users/[userId]/beta`). The
+  // capture can't deep-link that route directly: it is keyed by user id, and an
+  // id baked into a flow YAML is the same drift trap `SCREENSHOT_BOARDS` exists
+  // to avoid. Resolving it here means the flow says only "me". Pushed rather
+  // than scrolled to the shelf itself, which sits mid-way down a virtualized
+  // profile list with no stable anchor to scroll to. One-shot, and gated on the
+  // param so every other `/profile` shot is untouched. Dead-strips in normal
+  // builds.
+  const screenshotBetaPushedRef = useRef(false);
+  useEffect(() => {
+    if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1' || !screenshotBetaShelf) return;
+    if (!userId || screenshotBetaPushedRef.current) return;
+    screenshotBetaPushedRef.current = true;
+    router.push({ pathname: '/users/[userId]/beta', params: { userId } });
+  }, [screenshotBetaShelf, userId]);
 
   // The measured chrome height insets each sub-tab's scroll content; seed it to
   // the safe-area top plus the islands row + segmented control so the first paint
@@ -58,20 +78,16 @@ export default function YouScreen() {
   return (
     <View style={[styles.container, { backgroundColor: systemColors.background }]}>
       <View style={styles.page}>
-        {activeTab === 'progress' ? <ProgressTab data={youData} topInset={chromeHeight} userId={userId} /> : null}
+        {activeTab === 'progress' ? (
+          <ProgressTab data={youData} topInset={chromeHeight} userId={userId} onOpenFilters={openFilters} />
+        ) : null}
         {activeTab === 'sessions' ? <SessionsTab userId={userId} topInset={chromeHeight} /> : null}
         {activeTab === 'logbook' ? <LogbookTab userId={userId} topInset={chromeHeight} /> : null}
         {activeTab === 'climbs' ? <ProfileClimbsTab userId={userId} topInset={chromeHeight} /> : null}
         {activeTab === 'social' ? <SocialTab userId={userId} topInset={chromeHeight} /> : null}
       </View>
 
-      <ProfileTopChrome
-        activeTab={activeTab}
-        onSelectTab={handleSelectTab}
-        hasActiveFilters={youData.hasActiveFilters}
-        onOpenFilters={openFilters}
-        onHeightChange={setChromeHeight}
-      />
+      <ProfileTopChrome activeTab={activeTab} onSelectTab={handleSelectTab} onHeightChange={setChromeHeight} />
 
       <YouFilterSheet
         sheetRef={filterSheetRef}

@@ -20,19 +20,6 @@ export type HoldRenderData = {
   r: number;
 };
 
-export type HeatmapData = {
-  holdId: number;
-  totalUses: number;
-  startingUses: number;
-  totalAscents: number;
-  handUses: number;
-  footUses: number;
-  finishUses: number;
-  averageDifficulty: number | null;
-  userAscents?: number;
-  userAttempts?: number;
-};
-
 // Thumbnail render width (px). Defined in @boardsesh/board-render (shared with
 // the backend OG renderer); re-exported here so importers keep the same path.
 export { THUMBNAIL_WIDTH } from '@boardsesh/board-render';

@@ -104,9 +104,9 @@ function requireDockerContextFile(failures, repoRoot, dockerfilePath) {
 
   // patchedDependencies are resolved during install, so the patch files must be
   // copied into the install layer or `pnpm install --frozen-lockfile` fails.
-  if (Object.keys(getPatchedDependencies(repoRoot)).length > 0) {
-    requiredPreInstallCopies.push('COPY manifests/patches ./patches');
-  }
+  const patchDirectories = [...new Set(Object.values(getPatchedDependencies(repoRoot)).map(posix.dirname))];
+  const patchCopies = patchDirectories.map((directory) => `COPY manifests/${directory} ./${directory}`);
+  requiredPreInstallCopies.push(...patchCopies);
 
   for (const copyLine of requiredPreInstallCopies) {
     const copyIndex = indexOfInstruction(dockerfileContents, copyLine);
@@ -141,7 +141,7 @@ function requireDockerContextFile(failures, repoRoot, dockerfilePath) {
           'otherwise the fetch layer keys on all 49 workspace manifests and one version bump re-downloads everything',
       );
     }
-    for (const preFetchCopy of [manifestRootCopy, 'COPY manifests/patches ./patches']) {
+    for (const preFetchCopy of [manifestRootCopy, ...patchCopies]) {
       const preFetchIndex = indexOfInstruction(dockerfileContents, preFetchCopy);
       if (preFetchIndex !== -1 && preFetchIndex > fetchIndex) {
         failures.push(`${dockerfilePath}: ${preFetchCopy} must appear before \`pnpm fetch\``);
@@ -188,7 +188,10 @@ function requireDockerContextFile(failures, repoRoot, dockerfilePath) {
 function verifyGeneratedContext(failures, repoRoot, serviceName, outputRoot) {
   const outputDir = join(outputRoot, serviceName);
   const result = createServiceDockerContext({ serviceName, repoRoot, outputDir });
-  const expectedManifestPaths = getWorkspacePackageJsonPaths(repoRoot);
+  const expectedManifestPaths = [
+    ...getWorkspacePackageJsonPaths(repoRoot),
+    ...Object.values(getPatchedDependencies(repoRoot)).filter((patchPath) => patchPath.startsWith('packages/')),
+  ];
   const actualManifestPaths = listFiles(join(result.outputDir, 'manifests', 'packages')).map((filePath) =>
     posix.join('packages', filePath),
   );

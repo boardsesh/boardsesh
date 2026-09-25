@@ -9,6 +9,7 @@ import type {
   BoardName,
 } from '@/app/lib/types';
 import { getLayoutBySlug, getSizeBySlug, getSetsBySlug } from './slug-utils';
+import { boardHasDeepConfigRoute } from './board-route-paths';
 import {
   isNumericId,
   extractUuidFromSlug,
@@ -73,6 +74,10 @@ export async function parseBoardRouteParamsWithSlugs<T extends BoardRouteParamet
   const parsedBoardName = toBoardName(board_name);
   const parsedAngle = parsedBoardName ? parseBoardAngleSegment(parsedBoardName, angle) : null;
   if (!parsedBoardName || parsedAngle === null) {
+    return notFound();
+  }
+  // Spray walls have no deep catalogue route — see `boardHasDeepConfigRoute`.
+  if (!boardHasDeepConfigRoute(parsedBoardName)) {
     return notFound();
   }
   const isFullyNumericFormat = hasOnlyNumericBoardRouteSegments(params);
@@ -290,6 +295,12 @@ async function parseRouteParamsImpl<T extends BoardRouteParameters>(
   const boardName = toBoardName(params.board_name);
   const angle = boardName ? parseBoardAngleSegment(boardName, params.angle) : null;
   if (!boardName || angle === null) {
+    return notFound();
+  }
+  // Repeated here rather than left to `parseBoardRouteParamsWithSlugs`: an
+  // all-numeric path (`/spray/900/900/1/40/list`) never reaches that function,
+  // and a spray URL is numeric by construction — it has no slugs.
+  if (!boardHasDeepConfigRoute(boardName)) {
     return notFound();
   }
   const isNumericFormat = hasOnlyNumericBoardRouteSegments(params);

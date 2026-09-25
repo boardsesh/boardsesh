@@ -1,16 +1,16 @@
 {
   "metadata": {
     "library": {
-      "title": "Découvrez des playlists d'escalade",
-      "description": "Parcourez des playlists publiques et gérez les vôtres une fois connecté."
+      "title": "Playlists d'escalade pour Kilter, Tension et MoonBoard",
+      "description": "Des playlists publiques créées par des grimpeurs, plus celles que Boardsesh refait chaque nuit. Ouvre-la dans l'app et grimpe-la."
     },
     "detail": {
       "fallbackTitle": "Playlist",
       "fallbackDescription": "Découvre les blocs de cette playlist sur Boardsesh.",
       "privateTitle": "Playlist privée",
       "privateDescription": "Cette playlist est privée.",
-      "climbCountDescription_one": "Une playlist de grimpe sur Boardsesh avec {{count}} bloc.",
-      "climbCountDescription_other": "Une playlist de grimpe sur Boardsesh avec {{count}} blocs.",
+      "generatedDescription_one": "{{count}} bloc {{board}} dans {{name}}. Ouvre la playlist dans Boardsesh et enchaîne-le.",
+      "generatedDescription_other": "{{count}} blocs {{board}} dans {{name}}. Ouvre la playlist dans Boardsesh et enchaîne-les.",
       "ogAlt": "La playlist {{name}} sur Boardsesh"
     }
   },
@@ -18,18 +18,13 @@
     "signInBanner": {
       "title": "Connectez-vous pour utiliser votre bibliothèque",
       "description": "Suivez vos croix et gérez vos playlists.",
-      "cta": "Se connecter",
-      "modalTitle": "Se connecter à Boardsesh",
-      "modalDescription": "Connectez-vous pour suivre vos blocs et gérer vos playlists."
+      "cta": "Se connecter"
     },
     "sections": {
-      "jumpBackIn": "Reprendre",
       "pinned": "Épinglées",
-      "discover": "Découvrir",
       "forYou": "Pour vous",
       "community": "Playlists de la communauté"
     },
-    "showMore": "Voir plus",
     "communityByline": "{{creatorName}} - {{climbCount}}",
     "allPlaylists": {
       "title": "Mes listes",
@@ -93,8 +88,7 @@
     "empty": {
       "title": "Aucune playlist pour l'instant",
       "description": "Enregistre tes projets et tes voies préférées dans une playlist pour les retrouver vite.",
-      "createCta": "Créer une playlist",
-      "cta": "Créer une playlist dans l'app"
+      "createCta": "Créer une playlist"
     },
     "createFab": {
       "ariaLabel": "Créer une playlist"
@@ -221,5 +215,23 @@
     "selectBoardForPlaylist": "Choisissez une board avant de créer une playlist",
     "createdPlaylistToast": "Playlist « {{name}} » créée",
     "createPlaylistFailed": "Impossible de créer la playlist"
+  },
+  "directory": {
+    "h1": "Des playlists à enchaîner",
+    "lead_one": "Ouvre-la dans l'app et grimpe-la. {{formattedCount}} playlist publique au choix.",
+    "lead_other": "Ouvre-la dans l'app et grimpe-la. {{formattedCount}} playlists publiques au choix.",
+    "leadNoCount": "Ouvre-la dans l'app et grimpe-la.",
+    "curated": {
+      "title": "Refaites chaque nuit",
+      "lead": "Les incontournables, les nouveautés et les pépites de chaque board, d'après ce que les grimpeurs enchaînent."
+    },
+    "community": {
+      "title": "Enregistrées par les grimpeurs",
+      "lead": "Classées selon le nombre de grimpeurs qui les ont enregistrées."
+    },
+    "empty": {
+      "title": "Pas encore de playlists publiques",
+      "body": "Crée-en une dans l'app et elle apparaîtra ici."
+    }
   }
 }

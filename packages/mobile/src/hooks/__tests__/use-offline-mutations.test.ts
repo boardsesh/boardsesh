@@ -47,8 +47,10 @@ vi.mock('@react-native-community/netinfo', () => ({
 // The reporter itself is unit-tested in offline/__tests__/outbox-telemetry.test.ts;
 // here we prove the write primitives feed it the right enqueue outcome.
 const reportEnqueueSuppressedMock = vi.hoisted(() => vi.fn());
+const reportEnqueueRevivedMock = vi.hoisted(() => vi.fn());
 vi.mock('../../offline/outbox-telemetry', () => ({
   reportEnqueueSuppressed: reportEnqueueSuppressedMock,
+  reportEnqueueRevived: reportEnqueueRevivedMock,
 }));
 
 // The retry ladder emits one analytics event per contended write; the event's
@@ -71,9 +73,11 @@ import {
   favoriteRemoveKey,
   useOfflineFollowUser,
   useOfflineUnfollowUser,
+  writeAuthorFollowLocal,
   type SaveTickInput,
 } from '../use-offline-mutations';
-import { runMigrations, type GraphQLFetch } from '@boardsesh/offline-sync';
+import { getDeadLetterCount, runMigrations, stampLocalUserId, type GraphQLFetch } from '@boardsesh/offline-sync';
+import { readAuthorSnapshot, saveAuthorSnapshot } from '../../db/queries/followed-authors-local';
 import { createTestDatabase, __resetDrainerStateForTests, type TestSqliteDb } from '@boardsesh/offline-sync/testing';
 
 type Row = Record<string, unknown>;
@@ -132,6 +136,7 @@ beforeEach(async () => {
   invalidateQueries.mockClear();
   reportEnqueueSuppressedMock.mockClear();
   notifyOutboxChangedMock.mockClear();
+  reportEnqueueRevivedMock.mockClear();
   __resetDrainerStateForTests();
   db = createTestDatabase();
   await runMigrations(db);
@@ -139,6 +144,59 @@ beforeEach(async () => {
 
 afterEach(() => {
   __resetDrainerStateForTests();
+});
+
+describe('writeAuthorFollowLocal', () => {
+  it.each(['setter', 'user'] as const)(
+    'keeps the final %s follow after follow/unfollow/follow offline',
+    async (kind) => {
+      await stampLocalUserId(db, 'viewer');
+      await saveAuthorSnapshot(db, 'viewer', { authors: { setterUsernames: [], users: [] }, incompleteUserIds: [] });
+      await writeAuthorFollowLocal(db, 'viewer', kind, 'target', true);
+      await writeAuthorFollowLocal(db, 'viewer', kind, 'target', false);
+      await writeAuthorFollowLocal(db, 'viewer', kind, 'target', true);
+      const table = kind === 'setter' ? 'setter_follows' : 'user_follows';
+      expect(await db.getAllAsync<Row>(`SELECT follower_id FROM ${table}`)).toEqual([{ follower_id: 'viewer' }]);
+      const pending = await db.getAllAsync<Row>('SELECT table_name, operation FROM pending_mutations');
+      expect(pending).toEqual([{ table_name: table, operation: 'create' }]);
+      const snapshot = await readAuthorSnapshot(db, 'viewer');
+      if (kind === 'setter') expect(snapshot?.authors.setterUsernames).toEqual(['target']);
+      else expect(snapshot?.authors.users[0].userId).toBe('target');
+    },
+  );
+  it('queues a corrective unfollow and updates the local snapshot', async () => {
+    await stampLocalUserId(db, 'viewer');
+    await writeAuthorFollowLocal(db, 'viewer', 'setter', 'target', true);
+    await writeAuthorFollowLocal(db, 'viewer', 'setter', 'target', false);
+    expect(await db.getAllAsync<Row>('SELECT * FROM setter_follows')).toEqual([]);
+    expect(await db.getAllAsync<Row>('SELECT operation FROM pending_mutations')).toEqual([{ operation: 'delete' }]);
+    expect((await readAuthorSnapshot(db, 'viewer'))?.authors.setterUsernames).toEqual([]);
+  });
+  it('removes a linked user locally with the queued setter unfollow', async () => {
+    await stampLocalUserId(db, 'viewer');
+    await db.runAsync(
+      "INSERT INTO user_follows (following_id, follower_id, created_at, updated_at) VALUES ('friend', 'viewer', '2026-09-01', '2026-09-01')",
+    );
+    await saveAuthorSnapshot(db, 'viewer', {
+      authors: {
+        setterUsernames: ['linked'],
+        users: [{ userId: 'friend', boardAccounts: [{ boardType: 'kilter', username: 'linked' }] }],
+      },
+      incompleteUserIds: [],
+    });
+    expect(await writeAuthorFollowLocal(db, 'viewer', 'setter', 'linked', false)).toEqual(['friend']);
+    expect(await db.getAllAsync<Row>('SELECT * FROM user_follows')).toEqual([]);
+    expect((await readAuthorSnapshot(db, 'viewer'))?.authors).toEqual({ setterUsernames: [], users: [] });
+    expect(await db.getAllAsync<Row>('SELECT table_name, operation FROM pending_mutations')).toEqual([
+      { table_name: 'setter_follows', operation: 'delete' },
+    ]);
+  });
+  it('does not write follows or outbox rows under another account', async () => {
+    await stampLocalUserId(db, 'someone-else');
+    await expect(writeAuthorFollowLocal(db, 'viewer', 'setter', 'target', true)).rejects.toThrow('another account');
+    expect(await db.getAllAsync<Row>('SELECT * FROM setter_follows')).toEqual([]);
+    expect(await db.getAllAsync<Row>('SELECT * FROM pending_mutations')).toEqual([]);
+  });
 });
 
 describe('writeTickLocal', () => {
@@ -350,6 +408,7 @@ describe('retry ladder across every local write', () => {
     await addFavoriteLocal(withFailingTransactions(db, 1, LOCK_MESSAGE), favorite);
 
     expect(reportEnqueueSuppressedMock).not.toHaveBeenCalled();
+    expect(reportEnqueueRevivedMock).not.toHaveBeenCalled();
   });
 });
 
@@ -481,46 +540,56 @@ describe('useOfflineUnfollowUser', () => {
   });
 });
 
-// Issue #4315. `enqueue` is INSERT OR IGNORE against a UNIQUE idempotency key,
-// and the cancel DELETEs in these primitives match only status = 'pending'. So
-// once a favorite/follow key dead-letters it owns that key forever: every later
-// tap writes the local row, gets silently dropped at enqueue time, and produces
-// no queue row to drain and therefore no dead-letter event anywhere. Making the
-// swallow countable is the point; reviving the row is a separate behaviour
-// change with its own issue.
-describe('enqueue suppressed by a dead-lettered key', () => {
+// Issue #4331. `enqueue` is INSERT OR IGNORE against a UNIQUE idempotency key,
+// so a dead-lettered favorite/follow used to own that key forever: every later
+// tap wrote the local row, was dropped at enqueue time, and produced no queue
+// row to drain — the heart stayed filled and the server never heard about it.
+// These call sites now opt into `reviveDeadLetter`, and their cancel DELETEs
+// clear a dead-lettered OPPOSITE key as well as a pending one.
+describe('a dead-lettered key no longer swallows the next write', () => {
   const favorite = { boardName: 'kilter', climbUuid: 'climb-9', angle: 40 };
 
   async function deadLetterExistingRow(idempotencyKey: string) {
-    await db.runAsync("UPDATE pending_mutations SET status = 'dead_letter' WHERE idempotency_key = ?", [
-      idempotencyKey,
-    ]);
+    await db.runAsync(
+      "UPDATE pending_mutations SET status = 'dead_letter', retry_count = 3, last_error = ? WHERE idempotency_key = ?",
+      [LOCK_MESSAGE, idempotencyKey],
+    );
   }
 
-  it('reports when a favorite add is swallowed by a dead-lettered row', async () => {
+  function readRow(idempotencyKey: string) {
+    return db.getFirstAsync<Row>('SELECT * FROM pending_mutations WHERE idempotency_key = ?', [idempotencyKey]);
+  }
+
+  it('a repeat favorite add revives the row instead of vanishing', async () => {
     await addFavoriteLocal(db, favorite);
     await deadLetterExistingRow(favoriteAddKey(favorite));
     reportEnqueueSuppressedMock.mockClear();
 
     await addFavoriteLocal(db, favorite);
 
-    expect(reportEnqueueSuppressedMock).toHaveBeenCalledWith('user_favorites', 'create', 'dead_letter');
-    // The local row still exists, so the UI shows a favorite that will never sync.
+    expect(reportEnqueueRevivedMock).toHaveBeenCalledWith('user_favorites', 'create');
+    expect(reportEnqueueSuppressedMock).not.toHaveBeenCalled();
+    expect(await readRow(favoriteAddKey(favorite))).toMatchObject({
+      status: 'pending',
+      retry_count: 0,
+      last_error: null,
+    });
     const rows = await db.getAllAsync<Row>('SELECT * FROM user_favorites');
     expect(rows).toHaveLength(1);
   });
 
-  it('reports when a favorite remove is swallowed', async () => {
+  it('a repeat favorite remove revives its own key', async () => {
     await removeFavoriteLocal(db, favorite);
     await deadLetterExistingRow(favoriteRemoveKey(favorite));
     reportEnqueueSuppressedMock.mockClear();
 
     await removeFavoriteLocal(db, favorite);
 
-    expect(reportEnqueueSuppressedMock).toHaveBeenCalledWith('user_favorites', 'delete', 'dead_letter');
+    expect(reportEnqueueRevivedMock).toHaveBeenCalledWith('user_favorites', 'delete');
+    expect(await readRow(favoriteRemoveKey(favorite))).toMatchObject({ status: 'pending' });
   });
 
-  it('reports when a follow is swallowed', async () => {
+  it('a repeat follow revives its own key', async () => {
     const followUser = useOfflineFollowUser(db, parkedGraphqlFetch);
     await followUser('user-42');
     await deadLetterExistingRow('add:user_follows:user-42');
@@ -528,7 +597,39 @@ describe('enqueue suppressed by a dead-lettered key', () => {
 
     await followUser('user-42');
 
-    expect(reportEnqueueSuppressedMock).toHaveBeenCalledWith('user_follows', 'create', 'dead_letter');
+    expect(reportEnqueueRevivedMock).toHaveBeenCalledWith('user_follows', 'create');
+    expect(await readRow('add:user_follows:user-42')).toMatchObject({ status: 'pending' });
+  });
+
+  it('a repeat unfollow revives its own key', async () => {
+    const unfollowUser = useOfflineUnfollowUser(db, parkedGraphqlFetch);
+    await unfollowUser('user-42');
+    await deadLetterExistingRow('del:user_follows:user-42');
+    reportEnqueueSuppressedMock.mockClear();
+
+    await unfollowUser('user-42');
+
+    expect(reportEnqueueRevivedMock).toHaveBeenCalledWith('user_follows', 'delete');
+    expect(await readRow('del:user_follows:user-42')).toMatchObject({ status: 'pending' });
+  });
+
+  // A dead letter is not in flight, so the cancel DELETE may clear it. Leaving
+  // it behind would keep the "Sync issues" badge lit for an action the user has
+  // since reversed — and poison the key on the next toggle back.
+  it('removing a favorite clears a dead-lettered add, and adding clears a dead-lettered remove', async () => {
+    await addFavoriteLocal(db, favorite);
+    await deadLetterExistingRow(favoriteAddKey(favorite));
+
+    await removeFavoriteLocal(db, favorite);
+
+    expect(await readRow(favoriteAddKey(favorite))).toBeNull();
+    expect(await getDeadLetterCount(db)).toBe(0);
+
+    await deadLetterExistingRow(favoriteRemoveKey(favorite));
+    await addFavoriteLocal(db, favorite);
+
+    expect(await readRow(favoriteRemoveKey(favorite))).toBeNull();
+    expect(await getDeadLetterCount(db)).toBe(0);
   });
 
   it('reports a live pending duplicate as pending, not as a loss', async () => {
@@ -538,10 +639,12 @@ describe('enqueue suppressed by a dead-lettered key', () => {
     await addFavoriteLocal(db, favorite);
 
     expect(reportEnqueueSuppressedMock).toHaveBeenCalledWith('user_favorites', 'create', 'pending');
+    expect(reportEnqueueRevivedMock).not.toHaveBeenCalled();
   });
 
   it('never fires on a fresh insert', async () => {
     await addFavoriteLocal(db, favorite);
     expect(reportEnqueueSuppressedMock).not.toHaveBeenCalled();
+    expect(reportEnqueueRevivedMock).not.toHaveBeenCalled();
   });
 });

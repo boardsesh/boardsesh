@@ -1,4 +1,27 @@
 {
+  "authors": {
+    "selectHint": "Check a box to filter climbs. Tap a name to browse.",
+    "selectedCount": "{{count}} selected",
+    "viaUserFollow": "Via a person you follow",
+    "followingHint": "Includes linked accounts of people you follow. Follow saves a setter directly.",
+    "follow": "Follow",
+    "unfollow": "Unfollow",
+    "following": "Following",
+    "allSetters": "All setters",
+    "followingClimbs": "Climbs by people I follow",
+    "playlistSubtitle": "All climbs on this board · Newest first",
+    "signIn": "Sign in to follow this setter",
+    "syncNeeded": "Connect once to sync your follows and linked setters.",
+    "followError": "Couldn't update this follow. Try again.",
+    "loadError": "Couldn't load these climbs.",
+    "empty": "No climbs by this setter on this board yet.",
+    "chooseBoard": "Choose a board",
+    "retry": "Try again",
+    "newClimb": "New climb",
+    "newClimbCount_one": "1 new climb",
+    "newClimbCount_other": "{{count}} new climbs",
+    "seeAllClimbs": "See all {{count}}"
+  },
   "sends_one": "{{formattedCount}} send",
   "sends_other": "{{formattedCount}} sends",
   "metadata": {
@@ -143,6 +166,11 @@
       "body": "Nobody's climbed this at this angle yet — the grade is worked out from how it goes at the other one.",
       "bodyRange": "Nobody's climbed this at this angle yet — likely {{low}}–{{high}}, worked out from how it goes at the other angle."
     },
+    "moonboardWideAngle": {
+      "label": "Rough estimate",
+      "body": "Nobody's climbed this angle yet — this is a rough estimate based on how other boards typically change at steeper or shallower angles.",
+      "bodyRange": "Nobody's climbed this angle yet — likely {{low}}–{{high}}, a rough estimate based on how other boards typically change at steeper or shallower angles."
+    },
     "dumbbell": {
       "legendBoardsesh": "Boardsesh grade",
       "legendCrowd": "Old grade",
@@ -183,6 +211,12 @@
     "namePlaceholder": "Climb name",
     "descriptionPlaceholder": "Add beta or notes about your climb...",
     "dismiss": "Dismiss",
+    "cannotOpen": {
+      "boardCannotAuthor": "You can't set climbs on this board yet.",
+      "boardConfigIncomplete": "The board details are missing or invalid. Pick the board again to set your climb.",
+      "noUsableBoard": "Pick a board first, then set your climb.",
+      "boardTypeUnsupported": "This app version can't set climbs on that board yet. Pick another board."
+    },
     "alerts": {
       "publishDuplicateNamed": "This hold pattern matches \"{{name}}\". Toggle Draft to save it without publishing, or change a hold.",
       "publishDuplicateUnnamed": "This hold pattern matches an existing climb. Toggle Draft to save it without publishing, or change a hold.",
@@ -334,13 +368,18 @@
     },
     "emptyState": {
       "noBoard": {
-        "title": "Follow your wall",
-        "subtitle": "Pick the board you climb on to browse its problems and see what's lit on it right now.",
+        "title": "Pick your board",
+        "subtitle": "Choose the wall you climb on to browse its climbs and light them up.",
         "cta": "Find my board"
       },
       "noClimbs": {
         "title": "No climbs found",
         "subtitle": "Try adjusting your board settings"
+      },
+      "unsetWall": {
+        "title": "No one's set on this wall yet",
+        "subtitle": "Pick your holds, name it, and the wall has its first climb.",
+        "cta": "Set the first climb"
       },
       "noMatches": {
         "title": "No matches",
@@ -360,6 +399,10 @@
       "offlineCatalogQueued": {
         "title": "Queued for download",
         "subtitle": "{{name}} downloads the moment you're back online, and these climbs turn up in search."
+      },
+      "boardRestoreFailed": {
+        "title": "Couldn’t restore your board",
+        "description": "Try again to get back to your climbs."
       }
     },
     "detail": {
@@ -429,10 +472,15 @@
         "sort": "Sort"
       },
       "popularity": "Popularity",
-      "shape": "Shape",
       "collection": {
         "label": "Collection",
         "any": "Any"
+      },
+      "holdIntegrity": {
+        "label": "Holds",
+        "any": "All",
+        "intact": "Intact only",
+        "broken": "Lost holds"
       },
       "pin": "Pin to shortcuts",
       "unpin": "Remove from shortcuts",
@@ -440,6 +488,7 @@
       "benchmark": "Benchmarks",
       "showCount_one": "Show {{count}} climb",
       "showCount_other": "Show {{count}} climbs",
+      "countNote": "Each climb counts once, not once per angle.",
       "sort": {
         "ascents": "Ascents",
         "quality": "Quality",
@@ -480,12 +529,16 @@
       "tall": "Tall climbs only",
       "tallClimbs": "Tall climbs",
       "tallDescription": "Reach the top of the wall",
+      "tallLockedHint": "Locked. Long-press the Tall chip to unlock.",
       "wide": "Wide climbs only",
       "wideClimbs": "Wide climbs",
       "wideDescription": "Use the 10x10 side expansion",
+      "wideLockedHint": "Locked. Long-press the Wide chip to unlock.",
       "betaVideos": "Beta videos only",
       "betaVideosShort": "🎥 Beta",
       "betaVideosDescription": "Only climbs with a beta video",
+      "otherAngles": "Other angles",
+      "otherAnglesDescription": "Show climbs set at a different angle",
       "searchSetters": "Search setters",
       "noSetters": "No setters yet",
       "clearAll": "Clear all",
@@ -520,7 +573,9 @@
       "chips": {
         "filtersWithCount": "Filters · {{count}}",
         "tall": "Tall",
-        "wide": "Wide"
+        "wide": "Wide",
+        "lock": "Lock",
+        "unlock": "Unlock"
       },
       "removeFilterAria": "Remove {{filter}}"
     },
@@ -557,7 +612,9 @@
         "footless": "Footless",
         "footlessKickboard": "Footless + KB",
         "noKickboard": "No KB"
-      }
+      },
+      "setAngleMarker": "{{angle}}°",
+      "setAngleMarkerAria": "Grade and sends are from {{angle}} degrees"
     },
     "climbRules": {
       "matchingAllowed": "Matching allowed",
@@ -597,8 +654,19 @@
       "chip": "Hidden",
       "banner": "Hidden by the community"
     },
+    "lostHolds": {
+      "chip_one": "{{count}} hold gone",
+      "chip_other": "{{count}} holds gone",
+      "chipAria_one": "{{count}} hold is no longer on the wall",
+      "chipAria_other": "{{count}} holds are no longer on the wall",
+      "banner_one": "{{count}} hold on this climb is gone",
+      "banner_other": "{{count}} holds on this climb are gone",
+      "bannerBody": "Remix it onto what's on the wall now.",
+      "remix": "Remix it"
+    },
     "climbActions": {
       "preview": "Preview",
+      "playNext": "Play next",
       "copyLink": "Copy link",
       "linkCopied": "Link copied",
       "nameCopied": "Name copied",
@@ -611,7 +679,8 @@
       "edit": "Edit climb",
       "editEntry": "Edit logbook entry",
       "report": "Report climb",
-      "closeOverlay": "Close climb actions"
+      "closeOverlay": "Close climb actions",
+      "openQueue": "Open the queue"
     },
     "create": {
       "brush": {
@@ -706,7 +775,8 @@
         }
       },
       "publish": {
-        "blocked": "Add a start and a finish hold to publish"
+        "blocked": "Add a start and a finish hold to publish",
+        "gradeBlocked": "Pick your grade to publish"
       },
       "wallSizeMismatch": "Switch your active board to this Woods size to light it.",
       "routeMenu": {
@@ -714,6 +784,11 @@
         "makeRoute": "Make it a route",
         "makeBoulder": "Make it a boulder",
         "makeBoulderBlocked": "Make it a boulder — delete frames first"
+      },
+      "grade": {
+        "label": "Your grade",
+        "required": "Needed to publish",
+        "optional": "Optional on a draft"
       }
     },
     "holdFilter": {
@@ -764,6 +839,29 @@
     },
     "setterNotes": {
       "title": "Setter's notes"
+    },
+    "heatmap": {
+      "show": "Show hold heatmap",
+      "hide": "Hide hold heatmap",
+      "modeLabel": "Color holds by",
+      "modes": {
+        "uses": "Most used",
+        "ascents": "Most sent",
+        "difficulty": "Grade"
+      },
+      "legendLow": "Fewer",
+      "legendHigh": "More",
+      "legendEasy": "Easier",
+      "legendHard": "Harder",
+      "filtered": "Filtered · {{summary}}",
+      "wholeBoard": "Whole board",
+      "wholeBoardHint": "Counts every climb on the board instead",
+      "useFiltersHint": "Counts only the climbs your filters match",
+      "filterUnsupported": "The heatmap can't follow a hold filter yet. Tap the chip to see the whole board.",
+      "empty": "No climbs match these filters.",
+      "loadFailed": "Couldn't load the heatmap. Try again in a moment.",
+      "needsDownload": "Download this board to see where the climbs are.",
+      "unavailable": "Heatmap isn't available right now."
     }
   },
   "frontDoor": {
@@ -799,18 +897,48 @@
     },
     "beta": {
       "heading": "Beta videos",
-      "empty": "No beta filmed yet."
+      "empty": "No beta filmed yet.",
+      "unavailable": "Beta didn't load this time. Reload the page to try again."
     },
     "community": {
       "heading": "Community"
     },
     "similar": {
-      "heading": "Climbs like this one"
+      "heading": "Climbs like this one",
+      "unavailable": "Climbs like this one didn't load. Trying again…"
     },
     "cta": {
       "climbThis": "Climb this",
       "ariaLabel": "Open {{climbName}} in the Boardsesh app",
       "helper": "Opens the app, lights the holds, logs the send."
+    }
+  },
+  "spray": {
+    "unknownGrade": "Ungraded",
+    "unknownSetter": "an unknown setter",
+    "heading": "{{climbName}} — {{grade}}",
+    "summary": "On {{wallName}}, a spray wall at {{angle}}° with {{holdCount}} holds.",
+    "setterLine": "Set by {{setter}}. {{ascents}} ascents logged.",
+    "ascentsLine": "{{ascents}} ascents logged.",
+    "setterNotesHeading": "Setter notes",
+    "keepLookingHeading": "Keep looking",
+    "setterLink": "More climbs by {{setter}}",
+    "gymsLink": "Find a gym with boards",
+    "homeLink": "Boardsesh home",
+    "photoAlt": "{{climbName}}, {{grade}}, lit up on the {{wallName}} spray wall",
+    "noPhoto": "This wall has no photo to show yet.",
+    "metadata": {
+      "title": "{{climbName}} {{grade}} on {{wallName}} | Spray Wall",
+      "description": "{{climbName}}, {{grade}}, on the {{wallName}} spray wall at {{angle}}°, set by {{setter}}. See the holds on the wall photo."
+    },
+    "wall": {
+      "summary": "A spray wall at {{angle}}° with {{holdCount}} holds.",
+      "photoAlt": "The {{wallName}} spray wall",
+      "openInApp": "Open this wall in the Boardsesh app to browse its climbs, set your own and log your sends.",
+      "metadata": {
+        "title": "{{wallName}} | Spray Wall",
+        "description": "{{wallName}}, a spray wall at {{angle}}°. See the wall and open it in the Boardsesh app."
+      }
     }
   }
 }

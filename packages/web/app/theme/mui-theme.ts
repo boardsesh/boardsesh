@@ -1,5 +1,5 @@
 import { createTheme, type ThemeOptions, type Components, type Theme } from '@mui/material/styles';
-import { themeTokens, darkTokens } from './theme-config';
+import { themeTokens } from './theme-config';
 
 // Velvet Send adds two brand channels MUI doesn't ship by default:
 // - `primaryFill`: the FILLED-surface violet (button bg + white text). Kept separate
@@ -484,34 +484,19 @@ const sharedOptions: Partial<ThemeOptions> = {
   },
 };
 
-const lightShadows = [
-  'none',
-  themeTokens.shadows.xs,
-  themeTokens.shadows.sm,
-  themeTokens.shadows.sm,
-  themeTokens.shadows.md,
-  themeTokens.shadows.md,
-  themeTokens.shadows.lg,
-  themeTokens.shadows.lg,
-  themeTokens.shadows.xl,
-  ...Array(16).fill(themeTokens.shadows.xl),
-] as unknown as typeof createTheme extends (o: { shadows?: infer S }) => unknown ? S : never;
-
-// Dark mode component overrides. Input fields now ride the shared `--input-*` CSS vars
-// (elevated violet #2F234A, violet focus ring) — no dark-only input block remains. Two
-// dark-only concerns stay:
+// Two things a dark palette needs from MUI that the shared overrides don't cover:
 // (1) MUI v7 composites a white elevation overlay onto every Paper in dark mode via
 //     `backgroundImage`. Kill it, or dialog paper drifts to ~#49415B where secondary
 //     text fails AA.
-// (2) Pin the floating surfaces (dialog/drawer/menu/popover) to the elevated dark
-//     surface (#2F234A) with a hairline separator border, so they read as one
-//     deliberate Velvet layer instead of an elevation-tinted grey.
-const darkElevatedPaper = {
-  backgroundColor: darkTokens.semantic.surfaceElevated,
+// (2) Pin the floating surfaces (dialog/drawer/menu/popover) to the elevated surface
+//     (#2F234A) with a hairline separator border, so they read as one deliberate
+//     Velvet layer instead of an elevation-tinted grey.
+const elevatedPaper = {
+  backgroundColor: themeTokens.semantic.surfaceElevated,
   border: '1px solid var(--separator)',
 } as const;
 
-const darkComponents: Components<Theme> = {
+const components: Components<Theme> = {
   ...sharedComponents,
   MuiPaper: {
     styleOverrides: {
@@ -524,7 +509,7 @@ const darkComponents: Components<Theme> = {
     styleOverrides: {
       paper: {
         borderRadius: themeTokens.borderRadius.lg,
-        ...darkElevatedPaper,
+        ...elevatedPaper,
       },
     },
   },
@@ -535,7 +520,7 @@ const darkComponents: Components<Theme> = {
       ...sharedComponents.MuiDrawer?.styleOverrides,
       paper: {
         borderRadius: themeTokens.borderRadius.lg,
-        ...darkElevatedPaper,
+        ...elevatedPaper,
       },
     },
   },
@@ -543,7 +528,7 @@ const darkComponents: Components<Theme> = {
     styleOverrides: {
       paper: {
         borderRadius: themeTokens.borderRadius.md,
-        ...darkElevatedPaper,
+        ...elevatedPaper,
       },
     },
   },
@@ -551,7 +536,7 @@ const darkComponents: Components<Theme> = {
     styleOverrides: {
       paper: {
         borderRadius: themeTokens.borderRadius.md,
-        ...darkElevatedPaper,
+        ...elevatedPaper,
       },
     },
   },
@@ -561,51 +546,50 @@ const darkComponents: Components<Theme> = {
     styleOverrides: {
       paper: {
         borderRadius: themeTokens.borderRadius.md,
-        ...darkElevatedPaper,
+        ...elevatedPaper,
       },
     },
   },
 };
 
-const darkShadows = [
+const shadows = [
   'none',
-  darkTokens.shadows.xs,
-  darkTokens.shadows.sm,
-  darkTokens.shadows.sm,
-  darkTokens.shadows.md,
-  darkTokens.shadows.md,
-  darkTokens.shadows.lg,
-  darkTokens.shadows.lg,
-  darkTokens.shadows.xl,
-  ...Array(16).fill(darkTokens.shadows.xl),
+  themeTokens.shadows.xs,
+  themeTokens.shadows.sm,
+  themeTokens.shadows.sm,
+  themeTokens.shadows.md,
+  themeTokens.shadows.md,
+  themeTokens.shadows.lg,
+  themeTokens.shadows.lg,
+  themeTokens.shadows.xl,
+  ...Array(16).fill(themeTokens.shadows.xl),
 ] as unknown as typeof createTheme extends (o: { shadows?: infer S }) => unknown ? S : never;
 
-function buildTheme(mode: 'light' | 'dark'): Theme {
-  const isDark = mode === 'dark';
-  const brand = isDark ? darkTokens.colors : themeTokens.colors;
-  const neutral = isDark ? darkTokens.neutral : themeTokens.neutral;
-  const semantic = isDark ? darkTokens.semantic : themeTokens.semantic;
-  const statusLight = isDark
-    ? darkTokens.statusBg
-    : {
-        success: themeTokens.colors.successBg,
-        error: themeTokens.colors.errorBg,
-        warning: themeTokens.colors.warningBg,
-      };
+function buildTheme(): Theme {
+  const brand = themeTokens.colors;
+  const { neutral, semantic } = themeTokens;
+  const statusLight = {
+    success: brand.successBg,
+    error: brand.errorBg,
+    warning: brand.warningBg,
+  };
 
   const base = createTheme({
     ...sharedOptions,
     palette: {
-      mode,
+      // Stays hardcoded. MUI derives getContrastText, its alpha overlays, and the
+      // Skeleton / Backdrop / Rating defaults from palette.mode — dropping it is a
+      // silent restyle, not a simplification.
+      mode: 'dark',
       // primary.main is the FOREGROUND violet (links, text/outlined buttons, selection
       // controls, tab indicator all read palette.primary.main). FILL goes to the
-      // augmented `primaryFill` channel below. contrastText is the text colour when
-      // primary is ever used as a background: white on the light #6D28D9, dark on the
-      // lifted dark #A78BFA — set explicitly so MUI's getContrastText never warns.
+      // augmented `primaryFill` channel below. contrastText is the INK on the lifted
+      // foreground violet, and that ink is dark: white on #A78BFA is 2.5:1. Set
+      // explicitly so MUI's getContrastText never warns.
       primary: {
         main: brand.primary,
         dark: brand.primaryActive,
-        contrastText: isDark ? themeTokens.colors.onAccent : themeTokens.colors.onPrimary,
+        contrastText: brand.onAccent,
       },
       secondary: {
         main: brand.secondary,
@@ -641,8 +625,8 @@ function buildTheme(mode: 'light' | 'dark'): Theme {
         selected: semantic.selected,
       },
     },
-    shadows: isDark ? darkShadows : lightShadows,
-    components: isDark ? darkComponents : sharedComponents,
+    shadows,
+    components,
   });
 
   // Augment the custom brand channels into full PaletteColors (fills in `light`, keeps
@@ -671,8 +655,6 @@ function buildTheme(mode: 'light' | 'dark'): Theme {
   });
 }
 
-export const lightTheme = buildTheme('light');
-export const darkTheme = buildTheme('dark');
-
-// Backward compat — existing imports of `muiTheme` continue to work
-export const muiTheme = lightTheme;
+// The one theme. Named for what it is rather than a bare `theme`, which would
+// collide with the `({ theme }) => …` callback parameter in every `sx` block.
+export const darkTheme = buildTheme();

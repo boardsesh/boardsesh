@@ -3,6 +3,13 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
 import type { GymDirectoryCard } from '@boardsesh/graphql/operations';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
+import { parseDirectoryQuery } from '../directory-facets';
+
+vi.mock('@/app/components/i18n/locale-link', () => ({
+  default: React.forwardRef<HTMLAnchorElement, React.ComponentProps<'a'>>(function Link(props, ref) {
+    return <a ref={ref} {...props} />;
+  }),
+}));
 
 vi.mock('react-i18next', () => ({
   useTranslation: (ns?: string) => ({
@@ -89,7 +96,6 @@ function renderNearMe(searchQuery = '') {
       boardTypes={['kilter']}
       searchQuery={searchQuery}
       locale="en-US"
-      viewerState="signed-out"
       browsePins={[]}
       browsePinnedCount={15}
       browseShownCount={24}
@@ -131,6 +137,33 @@ beforeEach(() => {
 });
 
 describe('browse mode', () => {
+  it('uses server-rendered place results and radius links without requesting device location', () => {
+    render(
+      <GymDirectoryNearMe
+        boardTypes={['kilter']}
+        searchQuery=""
+        locale="en-US"
+        browsePins={[]}
+        browsePinnedCount={2}
+        browseShownCount={2}
+        selectedArea={{
+          facet: 'kilter',
+          query: parseDirectoryQuery('kilter', { place: 'Sydney', lat: '-33.86', lng: '151.2', radius: '50' }),
+        }}
+      >
+        <div data-testid="city-results">Sydney gyms</div>
+      </GymDirectoryNearMe>,
+    );
+    expect(screen.getByTestId('city-results')).toBeTruthy();
+    expect(screen.getByText('Gyms within 50 km of Sydney')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Clear place' }).getAttribute('href')).toBe('/gyms/kilter');
+    expect(screen.getByRole('link', { name: '100 km' }).getAttribute('href')).toBe(
+      '/gyms/kilter?place=Sydney&lat=-33.86&lng=151.2&radius=100',
+    );
+    expect(screen.queryByRole('button', { name: 'Use my location' })).toBeNull();
+    expect(lastQueryOptions?.enabled).toBe(false);
+    expect(geolocation.requestPermission).not.toHaveBeenCalled();
+  });
   it('renders the server list untouched and no near-me notice', () => {
     renderNearMe();
 

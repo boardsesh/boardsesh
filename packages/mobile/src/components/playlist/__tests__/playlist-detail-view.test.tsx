@@ -1,13 +1,20 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { Climb } from '@boardsesh/queue';
+import type { Climb as SchemaClimb } from '@boardsesh/shared-schema';
 
-const ctrl = vi.hoisted(() => ({ back: vi.fn(), variant: 'liquidGlass' as 'liquidGlass' | 'material' }));
+const ctrl = vi.hoisted(() => ({
+  back: vi.fn(),
+  variant: 'liquidGlass' as 'liquidGlass' | 'material',
+  addToQueue: vi.fn(),
+  openAddToPlaylist: vi.fn(),
+  openClimbActions: vi.fn(),
+}));
 
 type CapturedClimbListRowProps = {
-  climb: { uuid: string; name: string };
+  climb: SchemaClimb;
   boardName: string;
   layoutId: number;
   sizeId: number;
@@ -15,6 +22,8 @@ type CapturedClimbListRowProps = {
   angle: number;
   unsupported?: boolean;
   onPress?: (climb: { uuid: string; name: string }) => void;
+  onAddToQueue?: (climb: SchemaClimb) => void;
+  onOpenPlaylist?: (climb: SchemaClimb) => void;
 };
 
 type CapturedPlaylistEditClimbRowProps = {
@@ -157,8 +166,16 @@ vi.mock('../../../providers/theme-provider', () => ({
 }));
 
 vi.mock('../../../providers/drawer-host-provider', () => ({
-  useDrawerHost: () => ({ boardConfig: null }),
+  useDrawerHost: () => ({
+    boardConfig: null,
+    openClimbActions: ctrl.openClimbActions,
+    openAddToPlaylist: ctrl.openAddToPlaylist,
+  }),
 }));
+vi.mock('../../../providers/queue-provider', () => ({
+  useQueueActions: () => ({ addToQueue: ctrl.addToQueue }),
+}));
+vi.mock('expo-crypto', () => ({ randomUUID: () => 'queued-climb-uuid' }));
 
 vi.mock('../../../hooks/use-bottom-chrome-metrics', () => ({
   useBottomChromeMetrics: () => ({ scrollBottomPadding: 0 }),
@@ -353,6 +370,9 @@ function makeProps(overrides: Partial<PlaylistDetailViewProps> = {}): PlaylistDe
 describe('PlaylistDetailView', () => {
   beforeEach(() => {
     ctrl.back.mockClear();
+    ctrl.addToQueue.mockClear();
+    ctrl.openAddToPlaylist.mockClear();
+    ctrl.openClimbActions.mockClear();
     ctrl.variant = 'liquidGlass';
     capturedClimbRows.length = 0;
     capturedEditRows.length = 0;
@@ -370,6 +390,40 @@ describe('PlaylistDetailView', () => {
     const { container } = render(<PlaylistDetailView {...makeProps()} />);
     fireEvent.click(container.querySelector('[data-icon="back"]') as HTMLElement);
     expect(ctrl.back).toHaveBeenCalledTimes(1);
+  });
+
+  // ── Screenshot-mode page cap ────────────────────────────────────────────────
+  //
+  // Both lists behind this view page through @boardsesh/playlists-react, which
+  // web consumes and which must not read a mobile build flag — so unlike the
+  // app's own infinite queries, `hasNextPage` stays TRUE here and the cap lives
+  // in this component's own end-reach handler.
+
+  describe('screenshot-mode page cap', () => {
+    const originalScreenshotMode = process.env.EXPO_PUBLIC_SCREENSHOT_MODE;
+
+    afterEach(() => {
+      if (originalScreenshotMode === undefined) delete process.env.EXPO_PUBLIC_SCREENSHOT_MODE;
+      else process.env.EXPO_PUBLIC_SCREENSHOT_MODE = originalScreenshotMode;
+    });
+
+    it('pages on end-reach in a normal build', () => {
+      delete process.env.EXPO_PUBLIC_SCREENSHOT_MODE;
+      const fetchNextPage = vi.fn();
+      const { container } = render(<PlaylistDetailView {...makeProps({ hasNextPage: true, fetchNextPage })} />);
+      fireEvent.click(container.querySelector('[data-list="true"]') as HTMLElement);
+      expect(fetchNextPage).toHaveBeenCalledTimes(1);
+    });
+
+    it('never pages past the first page in screenshot mode', () => {
+      process.env.EXPO_PUBLIC_SCREENSHOT_MODE = '1';
+      const fetchNextPage = vi.fn();
+      // hasNextPage is deliberately true: the shared hook still reports more,
+      // which is exactly why the handler has to be the thing that stops.
+      const { container } = render(<PlaylistDetailView {...makeProps({ hasNextPage: true, fetchNextPage })} />);
+      fireEvent.click(container.querySelector('[data-list="true"]') as HTMLElement);
+      expect(fetchNextPage).not.toHaveBeenCalled();
+    });
   });
 
   // ── Action threading ────────────────────────────────────────────────────────
@@ -517,6 +571,56 @@ describe('PlaylistDetailView', () => {
       angle: 35,
       unsupported: true,
     });
+  });
+
+  it('queues only the swiped climb without activating the playlist', () => {
+    const onActivateClimb = vi.fn();
+    render(<PlaylistDetailView {...makeProps({ climbs: [KILTER_CLIMB, TENSION_CLIMB], onActivateClimb })} />);
+
+    const tensionRow = capturedClimbRows[1]!;
+    expect(tensionRow.onAddToQueue).toBeTypeOf('function');
+    tensionRow.onAddToQueue?.(tensionRow.climb);
+
+    expect(ctrl.addToQueue).toHaveBeenCalledExactlyOnceWith({
+      uuid: 'queued-climb-uuid',
+      suggested: undefined,
+      climb: expect.objectContaining({ uuid: 'tension-row', boardType: 'tension', layoutId: 9, angle: 35 }),
+    });
+    expect(onActivateClimb).not.toHaveBeenCalled();
+  });
+
+  it('opens Add to Playlist using each swiped row’s resolved board', () => {
+    render(
+      <PlaylistDetailView
+        {...makeProps({
+          climbs: [KILTER_CLIMB, TENSION_CLIMB],
+          renderBoard: { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20', angle: 45 },
+        })}
+      />,
+    );
+
+    for (const row of capturedClimbRows) {
+      expect(row.onOpenPlaylist).toBeTypeOf('function');
+      row.onOpenPlaylist?.(row.climb);
+      expect(ctrl.openAddToPlaylist).toHaveBeenLastCalledWith(row.climb, {
+        boardName: row.boardName,
+        layoutId: row.layoutId,
+        sizeId: row.sizeId,
+        setIds: row.setIds,
+        angle: row.angle,
+      });
+    }
+    expect(ctrl.openAddToPlaylist).toHaveBeenCalledTimes(2);
+    expect(ctrl.addToQueue).not.toHaveBeenCalled();
+  });
+
+  it('keeps edit mode on reorder/remove rows without swipe actions', () => {
+    render(<PlaylistDetailView {...makeProps({ climbs: [KILTER_CLIMB], editMode: true })} />);
+
+    expect(capturedClimbRows).toHaveLength(0);
+    expect(capturedEditRows).toHaveLength(1);
+    expect(ctrl.addToQueue).not.toHaveBeenCalled();
+    expect(ctrl.openAddToPlaylist).not.toHaveBeenCalled();
   });
 
   it('shows an indicator for climbs whose render board cannot be resolved', () => {

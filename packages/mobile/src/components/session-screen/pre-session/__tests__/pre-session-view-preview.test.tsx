@@ -57,6 +57,8 @@ const bottomChrome = vi.hoisted(() => ({
   },
 }));
 
+vi.mock('../../RestTimerArmRow', () => ({ RestTimerArmRow: () => null }));
+vi.mock('../../SessionVisibilityRow', () => ({ SessionVisibilityRow: () => null }));
 vi.mock('react-native', () => ({
   View: ({ children, testID }: { children?: ReactNode; testID?: string }) =>
     createElement('div', testID ? { 'data-testid': testID } : null, children),

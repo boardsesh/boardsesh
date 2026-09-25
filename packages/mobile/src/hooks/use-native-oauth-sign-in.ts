@@ -3,6 +3,7 @@ import { Platform } from 'react-native';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { useAuth } from '../providers/auth-provider';
 import { track } from '../lib/analytics';
+import { useTrackLoginSucceeded } from '../lib/login-analytics';
 import { reportError } from '../lib/error-reporting';
 import {
   classifyNativeAuthFailureReason,
@@ -29,12 +30,13 @@ type Options = {
  * so the two can't drift (telemetry, error classification, Sentry tags, and the
  * double-tap guard all live here once). Apple/Google "sign up" is the same
  * find-or-create flow as sign-in, so the only difference between the two callers
- * is the `is_registration` analytics tag. `setError` is injected because login
- * shares one error region with credentials sign-in while register has its own.
+ * is the `is_registration` analytics tag. `setError` is injected because each
+ * screen shows Apple/Google failures in its own region under those buttons.
  */
 export function useNativeOAuthSignIn({ isRegistration = false, setError }: Options) {
   const { signInWithApple, signInWithGoogle, signInWithGoogleWeb, signInWithAppleWeb } = useAuth();
   const { t } = useTranslation('auth');
+  const trackLoginSucceeded = useTrackLoginSucceeded();
   const [inProgress, setInProgress] = useState(false);
   const inProgressRef = useRef(false);
 
@@ -64,6 +66,9 @@ export function useNativeOAuthSignIn({ isRegistration = false, setError }: Optio
       setInProgress(true);
       setError(null);
       const registrationProps = isRegistration ? { is_registration: true } : {};
+      // Login Succeeded only: it fires after a wait, so PostHog's session
+      // `$screen_name` has usually moved on by then (see login-analytics.ts).
+      const signInScreen = isRegistration ? 'register' : 'login';
       const primaryFlow = Platform.OS === 'web' ? 'web' : 'native';
       track(SHARED_EVENTS.LoginAttempted, { auth_method: provider, flow: primaryFlow, ...registrationProps });
       // duration_ms separates a human dismissing the system sheet (seconds) from
@@ -118,10 +123,11 @@ export function useNativeOAuthSignIn({ isRegistration = false, setError }: Optio
           return;
         }
         if (fallback.success) {
-          track(SHARED_EVENTS.LoginSucceeded, {
+          trackLoginSucceeded({
             auth_method: provider,
             flow: 'web_fallback',
             fallback_mechanism: 'browser_deeplink',
+            screen: signInScreen,
             ...registrationProps,
           });
           setError(null);
@@ -181,7 +187,7 @@ export function useNativeOAuthSignIn({ isRegistration = false, setError }: Optio
           return;
         }
         if (result.success) {
-          track(SHARED_EVENTS.LoginSucceeded, { auth_method: provider, flow: primaryFlow, ...registrationProps });
+          trackLoginSucceeded({ auth_method: provider, flow: primaryFlow, screen: signInScreen, ...registrationProps });
           // AuthProvider flips isAuthenticated and the redirect handles navigation.
           return;
         }
@@ -271,7 +277,16 @@ export function useNativeOAuthSignIn({ isRegistration = false, setError }: Optio
         setInProgress(false);
       }
     },
-    [isRegistration, setError, signInWithApple, signInWithGoogle, signInWithGoogleWeb, signInWithAppleWeb, t],
+    [
+      isRegistration,
+      setError,
+      signInWithApple,
+      signInWithGoogle,
+      signInWithGoogleWeb,
+      signInWithAppleWeb,
+      t,
+      trackLoginSucceeded,
+    ],
   );
 
   return { signIn, inProgress };

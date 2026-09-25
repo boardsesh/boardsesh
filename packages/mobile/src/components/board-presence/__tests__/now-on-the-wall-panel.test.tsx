@@ -4,11 +4,13 @@ import { createElement, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BoardPresenceClimb, BoardPresenceStats, Climb } from '@boardsesh/shared-schema';
 import type { NowOnTheWallPanelProps } from '../NowOnTheWallPanel';
+import type { DismissAndWaitResult } from '../../../providers/sheet-presentation-provider';
 
 const presence = vi.hoisted(() => ({
   currentClimb: null as BoardPresenceClimb | null,
   history: [] as BoardPresenceClimb[],
   stats: null as BoardPresenceStats | null,
+  holder: null as { userId?: string | null; displayName?: string | null } | null,
   refresh: vi.fn(),
 }));
 
@@ -66,6 +68,26 @@ type ClimbListRowMockProps = {
   onOpenPlaylist?: () => void;
   onOpenActions?: () => void;
 };
+
+// The gym roster is a React Query hook and this harness mounts no QueryClient.
+// Undefined is the single-board gym, which is what most of these tests describe.
+const gymRoster = vi.hoisted(() => ({ boards: undefined as unknown[] | undefined }));
+vi.mock('../../../lib/graphql/hooks/use-gym-boards', () => ({
+  useGymBoards: () => ({ data: gymRoster.boards }),
+}));
+// Self-subscribing (React Query, Reanimated, expo-router); its own suite covers
+// what it draws. Here: where it mounts and what the panel hands it.
+const liveSessionsBlock = vi.hoisted(() => ({ props: [] as Array<Record<string, unknown>> }));
+vi.mock('../../live-sessions/BoardLiveSessionsBlock', () => ({
+  BoardLiveSessionsBlock: (props: Record<string, unknown>) => {
+    liveSessionsBlock.props.push(props);
+    return createElement('div', { 'data-live-sessions-block': 'true' });
+  },
+}));
+// The list itself has its own suite; here we only care whether it is on screen.
+vi.mock('../GymWallSwitcher', () => ({
+  GymWallSwitcher: () => createElement('div', { 'data-gym-wall-switcher': 'true' }),
+}));
 
 vi.mock('react-native', () => {
   const flattenStyle = (style: unknown): Record<string, unknown> => {
@@ -144,6 +166,7 @@ vi.mock('@boardsesh/board-presence-react', () => ({
     currentClimb: presence.currentClimb,
     previousClimb: null,
     undoTarget: null,
+    holder: presence.holder,
     isLive: true,
   }),
   useBoardPresenceFeed: () => ({ history: presence.history, stats: presence.stats }),
@@ -308,6 +331,7 @@ function panelElement(overrides: Partial<NowOnTheWallPanelProps> = {}) {
 describe('NowOnTheWallPanel', () => {
   beforeEach(() => {
     presence.currentClimb = null;
+    presence.holder = null;
     presence.history = [];
     presence.stats = null;
     safeArea.insets = { top: 0, bottom: 0, left: 0, right: 0 };
@@ -317,6 +341,49 @@ describe('NowOnTheWallPanel', () => {
     presence.refresh.mockClear();
     // mockReset, not mockClear: the tap-ordering test installs an implementation.
     analytics.track.mockReset();
+  });
+
+  it('mounts the live-sessions block in the sheet with the board id and whoever holds the board now', () => {
+    liveSessionsBlock.props = [];
+    // The last climb was lit by someone who has since left; the holder is who is here.
+    presence.currentClimb = {
+      climbUuid: 'climb-1',
+      name: 'Legion',
+      grade: 'V3',
+      sentAt: '2026-09-16T10:00:00.000Z',
+      seq: 4,
+      sentByDisplayName: 'Old Lighter',
+      sentByUserId: 'old',
+    };
+    presence.holder = { userId: 'jonah', displayName: '  Jonah W. ' };
+    const { container } = render(panelElement({ variant: 'sheet' }));
+    expect(container.querySelector('[data-live-sessions-block]')).not.toBeNull();
+    expect(liveSessionsBlock.props.at(-1)).toEqual(
+      expect.objectContaining({ boardId: 123, holderName: 'Jonah W.', holderUserId: 'jonah' }),
+    );
+  });
+
+  it('gives the block no name when nobody holds the board', () => {
+    liveSessionsBlock.props = [];
+    render(panelElement({ variant: 'sheet' }));
+    expect(liveSessionsBlock.props.at(-1)).toEqual(expect.objectContaining({ holderName: null, holderUserId: null }));
+  });
+
+  it('closes the sheet and waits for it to settle before the block routes away', async () => {
+    liveSessionsBlock.props = [];
+    const dismissAndWait = vi.fn(async (): Promise<DismissAndWaitResult> => ({ status: 'dismissed' }));
+    render(panelElement({ variant: 'sheet', dismissAndWait }));
+    const leave = liveSessionsBlock.props.at(-1)?.onBeforeNavigate as () => Promise<boolean>;
+    await expect(leave()).resolves.toBe(true);
+    expect(dismissAndWait).toHaveBeenCalledTimes(1);
+
+    dismissAndWait.mockResolvedValueOnce({ status: 'aborted' });
+    await expect(leave()).resolves.toBe(false);
+  });
+
+  it('keeps the live-sessions block off the column variant (the wall kiosk)', () => {
+    const { container } = render(panelElement({ variant: 'column' }));
+    expect(container.querySelector('[data-live-sessions-block]')).toBeNull();
   });
 
   it('adds the bottom safe-area inset to the switch-board footer in both sheet and inline variants', () => {
@@ -434,5 +501,68 @@ describe('NowOnTheWallPanel', () => {
         size: 34,
       }),
     );
+  });
+});
+
+// QA declined the first cut because the gym's boards were always on screen: on
+// an iPhone 17 Pro the list was most of what a climber could see at the first
+// detent, so the sheet opened on a board switcher instead of on the wall feed it
+// exists for. It is a disclosure now, and the sheet's own title opens it.
+describe('NowOnTheWallPanel gym board disclosure', () => {
+  const sibling = {
+    uuid: 'tension',
+    boardType: 'tension',
+    layoutId: 8,
+    sizeId: 7,
+    setIds: '5,6',
+    angle: 25,
+    gymUuid: 'gym-1',
+  };
+
+  function headerTitle(container: HTMLElement): HTMLElement | null {
+    return container.querySelector('[aria-label^="mobile.boardPresence.gymWalls.headerSwitcherAria"]');
+  }
+
+  it('stays collapsed when the sheet opens', () => {
+    gymRoster.boards = [sibling];
+
+    const { container } = render(panelElement({ onSelectGymWall: noop }));
+
+    expect(headerTitle(container)).toBeTruthy();
+    expect(container.querySelector('[data-gym-wall-switcher]')).toBeNull();
+  });
+
+  it('opens the list from the header title, and closes it again', () => {
+    gymRoster.boards = [sibling];
+
+    const { container } = render(panelElement({ onSelectGymWall: noop }));
+    const title = headerTitle(container) as HTMLElement;
+
+    fireEvent.click(title);
+    expect(container.querySelector('[data-gym-wall-switcher]')).toBeTruthy();
+
+    fireEvent.click(headerTitle(container) as HTMLElement);
+    expect(container.querySelector('[data-gym-wall-switcher]')).toBeNull();
+  });
+
+  // One board at the gym: the title is plain text again, exactly as before this
+  // feature existed.
+  it('leaves the title inert when there is nothing to switch to', () => {
+    gymRoster.boards = [];
+
+    const { container } = render(panelElement({ onSelectGymWall: noop }));
+
+    expect(headerTitle(container)).toBeNull();
+  });
+
+  // The same panel draws the iPad wall kiosk. A board switcher on a display
+  // mounted to a wall lets a passer-by repoint the gym's screen with no way back.
+  it('never offers the switch on the inline kiosk column', () => {
+    gymRoster.boards = [sibling];
+
+    const { container } = render(panelElement({ variant: 'column', onSelectGymWall: noop }));
+
+    expect(headerTitle(container)).toBeNull();
+    expect(container.querySelector('[data-gym-wall-switcher]')).toBeNull();
   });
 });

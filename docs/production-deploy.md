@@ -30,6 +30,43 @@ Instant Rollback probe — was deleted on 2026-09-02. See
 history and [Rollback runbook](#rollback-runbook-web-on-railway) for what
 replaced Instant Rollback.
 
+## Serial-plan verification after migrations
+
+**Disabled on 2026-09-25 pending [#5767](https://github.com/boardsesh/boardsesh/issues/5767)** (`if: false` on the job; production still resolves the setting to `2`, and the job made every deploy run red while the deploys succeeded). The paragraph below describes it as designed.
+
+After a successful `migrate`, `verify-serial-plan` checks whether application
+connections resolve `max_parallel_workers_per_gather` to `0` (#5352). It uses
+`DATABASE_URL` from the `Production` environment. When the value is already `0`,
+it issues no DDL. Otherwise, an optional `ADMIN_DATABASE_URL` may apply the
+database default, provided it reaches the same live PostgreSQL server and
+database as the application connection. A maintenance-database or different
+server URL is refused before any DDL. The job then
+checks again through a new application connection.
+The application probe stays in an open transaction while the admin probe and
+ALTER share another, including when either URL passes through a transaction pooler.
+
+Missing privileges or a still-nonzero runtime value make this job fail and
+print the operator remediation. Existing role overrides or pooled server
+connections can retain their prior value after the database default changes;
+confirm the application's `/health/db` reading after connections have cycled.
+The database ownership contract for the migration role stays unchanged. See
+[the database connectivity runbook](db-connectivity.md#why-the-migration-cannot-apply-in-production-5352-round-5b)
+for the local check-only command and the separately authorized operator action.
+
+The deploy jobs continue independently after migration. `notify-failure`
+includes verification failures, and `notify-success` waits for verification and
+suppresses the success announcement if it fails or is cancelled. The overall
+workflow remains active until this job finishes, so it still occupies the
+`production-deploy` concurrency group. Its `Production` environment gate can
+also park a run; the same [watchdog](#the-watchdog) rules apply. Configuring the
+optional administrator secret or manually changing production defaults remains
+an operator action; refreshing this PR does not perform either.
+
+Replacing the database has a separate
+[verify-before-cutover requirement](db-connectivity.md#preserving-the-default-through-a-database-restore).
+A restored migration ledger does not reapply database defaults, and a restore
+without `--create` must explicitly set and verify them before receiving traffic.
+
 ## Web deploy targets
 
 Railway is the only web deployer (image `ghcr.io/boardsesh/boardsesh-web`,
@@ -532,6 +569,25 @@ web deploy targets:
 | `SENTRY_AUTH_TOKEN`         | secret | Source-map upload during the web image build.                                    |
 | `SMOKE_KIOSK_GYM_SLUG`      | var    | Fixture the post-deploy smoke reads.                                             |
 | `SMOKE_EMBED_BOARD_UUID`    | var    | Fixture the post-deploy smoke reads.                                             |
+
+### Runtime variables on the Railway web service
+
+The table above is **build-time** configuration: GitHub reads it, and the
+`NEXT_PUBLIC_*` entries are inlined into the web image as it is built. Anything
+set on the Railway `web` service itself is **runtime** configuration — read per
+request, changeable without a rebuild.
+
+| Name                 | Kind   | Purpose                                                                            |
+| -------------------- | ------ | ---------------------------------------------------------------------------------- |
+| `STRIPE_DONATE_URL`  | var    | Stripe Payment Link behind the one-time donation rail on `/support`. Unset hides the rail. |
+
+`STRIPE_DONATE_URL` has no `NEXT_PUBLIC_` prefix on purpose. A prefixed name is
+inlined at build time, and neither `Dockerfile.web` nor `production-deploy.yml`
+passes one as a build arg — so a `NEXT_PUBLIC_STRIPE_DONATE_URL` could never be
+set in production at all. `/support` reads it from a server component, so the
+unprefixed name resolves from the service environment on every request. It must
+be an `https://` URL; anything else is treated as unset and the rail stays
+hidden rather than linking somewhere unintended.
 
 `RAILWAY_TOKEN` must be a project token created for the Boardsesh project's
 Production environment, not a personal or team API token. The rollback helper

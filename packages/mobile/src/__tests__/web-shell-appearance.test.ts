@@ -13,6 +13,28 @@ describe('Expo web HTML appearance shell', () => {
     expect(shellSource).toMatch(/#root\s*\{[\s\S]*?background-color:\s*#000000;[\s\S]*?\}/);
   });
 
+  it('paints a loading state, not an empty black rectangle', () => {
+    // The shell is what the browser has while it downloads and evaluates the
+    // entry bundle — tens of seconds on a cold cache over mobile data. #root was
+    // empty, so that whole window rendered as a black page and read as a broken
+    // app. These children are dropped by React on first commit (Expo's web entry
+    // uses createRoot, which clears the container), so they are safe to ship and
+    // need no teardown.
+    expect(shellSource).toMatch(/<div id="root">[\s\S]*<div id="boot-paint">/);
+    expect(shellSource).toMatch(/#boot-paint\s*\{/);
+
+    // No script and no external reference: a boot paint that has to fetch
+    // something cannot paint before the thing it is covering for.
+    const bootPaintMarkup = shellSource.slice(shellSource.indexOf('<div id="root">'));
+    expect(bootPaintMarkup).not.toMatch(/<script/i);
+    expect(bootPaintMarkup).not.toMatch(/(src|href)=/i);
+  });
+
+  it('holds the boot animation still for reduced-motion readers', () => {
+    // An indeterminate bar with no end can run for half a minute here.
+    expect(shellSource).toMatch(/@media \(prefers-reduced-motion: reduce\)[\s\S]*?animation: none;/);
+  });
+
   it('keeps exactly one manifest link, at the dev/Metro-proxy href', () => {
     // /app/manifest.json is the DEV value: Metro serves public/ from its server
     // root, and next.config.mjs rewrites /app/manifest.json to Metro's

@@ -10,18 +10,20 @@ The scheduler triggers web `/api/internal/*` routes and the backend's
 `refreshGymActivityStats` GraphQL mutation over HTTP with
 `Authorization: Bearer $CRON_SECRET`. Job implementations stay in their owning service.
 
-That's not laziness — two of the three job families can't run outside Next:
+That's not laziness: `profile-percentiles` ends with
+`revalidateTag(USER_CLIMB_PERCENTILE_CACHE_TAG)`, which is not reachable from a
+plain Node process, so the routes stay the single implementation and only the
+trigger moves.
 
-- `prewarm-heatmap` warms `cachedGetHoldHeatmapData`, a Next cache entry whose
-  key has to match a real first-visit request byte for byte.
-- `profile-percentiles` ends with `revalidateTag(USER_CLIMB_PERCENTILE_CACHE_TAG)`.
-
-Neither is reachable from a plain Node process, so the routes stay the single
-implementation and only the trigger moves.
+The five weekly `prewarm-heatmap-*` jobs are gone: the web hold-heatmap route
+they warmed was retired, and hold heatmaps now run on the climber's downloaded
+board in the app. Their Sentry monitors (`scheduler-prewarm-heatmap-*`) get no
+more check-ins; delete them in Sentry after the deploy, or each one raises a
+missed-occurrence issue.
 
 ## Job ownership
 
-All nine jobs. `packages/scheduler/src/__tests__/registry.test.ts` pins each
+All five jobs. `packages/scheduler/src/__tests__/registry.test.ts` pins each
 row's path and slot as data, and asserts `packages/web/vercel.json` declares no
 `crons` key at all — so a schedule reappearing there (which would double-fire
 the route, Vercel and Railway both) reds CI.
@@ -29,18 +31,10 @@ the route, Vercel and Railway both) reds CI.
 | Job                          | Path                                        | Schedule (UTC) | `timeoutMs` | Sentry monitor slug                    |
 | ---------------------------- | ------------------------------------------- | -------------- | ----------- | -------------------------------------- |
 | `cleanup`                    | `/api/internal/cleanup`                     | `0 5 * * *`    | 120 s       | `scheduler-cleanup`                    |
-| `prewarm-heatmap-kilter`     | `/api/internal/prewarm-heatmap/kilter`      | `0 4 * * 0`    | 15 min      | `scheduler-prewarm-heatmap-kilter`     |
-| `prewarm-heatmap-tension`    | `/api/internal/prewarm-heatmap/tension`     | `15 4 * * 0`   | 15 min      | `scheduler-prewarm-heatmap-tension`    |
-| `prewarm-heatmap-decoy`      | `/api/internal/prewarm-heatmap/decoy`       | `30 4 * * 0`   | 15 min      | `scheduler-prewarm-heatmap-decoy`      |
-| `prewarm-heatmap-touchstone` | `/api/internal/prewarm-heatmap/touchstone`  | `45 4 * * 0`   | 15 min      | `scheduler-prewarm-heatmap-touchstone` |
-| `prewarm-heatmap-grasshopper`| `/api/internal/prewarm-heatmap/grasshopper` | `0 5 * * 0`    | 15 min      | `scheduler-prewarm-heatmap-grasshopper`|
 | `profile-percentiles`        | `/api/internal/profile-percentiles`         | `0 6 * * 0`    | 15 min      | `scheduler-profile-percentiles`        |
 | `refresh-sitemap-climbs`     | `/api/internal/refresh-sitemap-climbs`      | `0 */6 * * *`  | 15 min      | `scheduler-refresh-sitemap-climbs`     |
 | `refresh-gym-activity-stats` | Backend `/graphql`: `refreshGymActivityStats` | `30 6 * * *` | 15 min | `scheduler-refresh-gym-activity-stats` |
-
-**The 15-minute stagger between the prewarms is a rate limit, not cosmetics.**
-Each one fans out heatmap aggregates against the same Postgres; collapsing them
-onto one minute puts five boards' worth of that load on the database at once.
+| `purge-spray-wall-photos`    | Backend `/graphql`: `purgeDeletedSprayWallPhotos` | `0 7 * * *` | 10 min | `scheduler-purge-spray-wall-photos`    |
 
 **`refresh-sitemap-climbs` is the one job that missed the migration.** Vercel
 fired it at `0 */6 * * *` from 2026-08-22 until the climb-sitemap pause deleted
@@ -72,6 +66,44 @@ Successful responses and backend logs expose `scanDurationMs` (guard counts),
 `writeDurationMs` (cache rebuild), and `durationMs` (whole operation including
 lock acquisition and commit). Failed-run logs also carry these timings.
 
+### Spray wall photo retention
+
+`purge-spray-wall-photos` deletes the photographs of spray walls their owners
+soft-deleted more than 30 days ago (`SPRAY_WALL_PHOTO_RETENTION_DAYS`; see
+[spray-walls.md](./spray-walls.md) → "Retention"). 07:00 UTC, half an hour after
+the gym activity rebuild so the two daily jobs never share a tick.
+
+Like `refresh-gym-activity-stats`, the work is a cron-authenticated backend
+mutation and the job holds only the schedule: the scheduler has no database
+client and no storage credentials, and giving it either would put the private
+photo bucket behind a second service. Same failure handling — a non-2xx or
+GraphQL errors inside an HTTP 200 are both a failed run, and only 502/503 is
+retried once after two seconds, because those are "a deploy is in flight" rather
+than "the server said no".
+
+It is overlap-safe the way `JobDefinition` requires, without a lock: the mutation
+deletes objects and then clears `photo_key`, so a second run meeting a first
+re-lists prefixes that are already empty, deletes nothing twice, and never fails
+on a missing object. One wall's storage failure is logged and skipped rather than
+failing the batch; the next run picks it up.
+
+Ten minutes rather than the 15 the long jobs get. Nothing here scans a large
+table — the candidate query is an index read on the partial index
+`spray_walls_deleted_at_idx` (`WHERE deleted_at IS NOT NULL`), batched at 200
+walls — so the bound is object-storage latency, and a wedged endpoint should not
+hold a worker until the next day's tick.
+
+Manual run: `scheduler run purge-spray-wall-photos`, or POST to the backend
+`/graphql` with `Authorization: Bearer $CRON_SECRET`:
+
+```json
+{"query":"mutation { purgeDeletedSprayWallPhotos { wallsPurged objectsDeleted wallsConsidered durationMs } }"}
+```
+
+`wallsConsidered` is how many walls past the window still had a photo key when
+the run started, so a run that reports `wallsPurged: 0, wallsConsidered: 0` has
+nothing to do — not a failure.
+
 ### Gym activity backend cutover
 
 Deploy the backend with the scheduler's existing `CRON_SECRET` before deploying
@@ -101,10 +133,26 @@ scheduler's `timeoutMs` becomes the only bound.
 `packages/web/vercel.json` itself stays until the Phase 4 scrub; it is not
 deleted now that the last cron has left it.
 
+### GitHub Actions acknowledgement refresh
+
+`refresh-acknowledgements.yml` remains a GitHub Actions job because it reads
+GitHub contributors and Sponsors, then commits the bundled mobile snapshot.
+It runs each Monday at 07:00 UTC and uses the Boardsesh Repo Bot installation
+token for both the GraphQL requests and its protected-`main` commit. The App
+needs repository Contents: write plus Organization Members: read; the latter
+authorizes `sponsorshipsAsMaintainer`, including the private-sponsor total.
+
+The job runs the acknowledgement generator in strict mode. A missing GitHub
+source, malformed GraphQL response, or unavailable private-sponsor count fails
+the run before the committed snapshot changes. Successful and failed runs post
+their outcome to the deployments Discord channel through the Production-scoped
+`DISCORD_DEPLOY_WEBHOOK` secret. The legacy `ACKNOWLEDGEMENTS_GH_TOKEN` remains
+unused and may be retained until its normal secret-rotation review.
+
 ### Not in scope
 
 - The GitHub-Actions-scheduled jobs (`refresh-recommendations`,
-  `refresh-climb-grades`, `refresh-content-model`, `refresh-hold-features`,
+  `refresh-climb-grades`, `refresh-climb-neighbors`, `refresh-content-model`, `refresh-hold-features`,
   `export-board-snapshots`, `refresh-acknowledgements`) are a separate thing.
 - **`user-sync-cron` (#1875) needs no decision — the route is gone.**
   `git grep user-sync-cron` returns only three prose mentions
@@ -178,7 +226,7 @@ Do it in this order, or the job silently stops running:
 
 Between steps 1 and 3 both schedulers may fire the job. That is safe for every
 job: `cleanup` deletes rows older than a fixed age in deadline-bounded batches,
-each `prewarm-heatmap` writes the same cache entry twice, `profile-percentiles`
+`profile-percentiles`
 is an idempotent recompute-and-upsert, and `refresh-sitemap-climbs` declines the
 second writer on its advisory lock.
 
@@ -187,8 +235,6 @@ Consequences, in order of how long you can ignore them:
 
 - `cleanup` — 180-day feed-item and 90-day notification retention pauses.
   Delete-by-age, so it catches up on its next run. Harmless for weeks.
-- `prewarm-heatmap-*` — the first visitor to each board/angle pays the cold
-  query instead of hitting a warm cache. Slow, not broken.
 - `profile-percentiles` — the "top N%" figure on profiles goes a week stale.
 - `refresh-sitemap-climbs` — the climb sitemap store's `<lastmod>` values drift.
   The `after()` self-heal on `/sitemap.xml` still repopulates a missing or 48-h-old
@@ -213,12 +259,11 @@ expression and UTC timezone, so Sentry knows when the next check-in is due and
 raises an issue when one does not arrive:
 
 - `checkinMargin: 5` minutes late before an occurrence counts as missed —
-  enough to ride out a Railway deploy swap, well inside the 15-minute prewarm
-  stagger.
+  enough to ride out a Railway deploy swap.
 - `maxRuntime` = the job's `timeoutMs` rounded up to minutes, plus one.
-- `failureIssueThreshold: 1`, `recoveryThreshold: 1`. These jobs are weekly;
-  waiting for a second consecutive failure means hearing about a broken prewarm
-  a fortnight late.
+- `failureIssueThreshold: 1`, `recoveryThreshold: 1`. Some of these jobs are
+  weekly; waiting for a second consecutive failure means hearing about a broken
+  weekly job a fortnight late.
 
 Sentry creates each monitor from its first check-in — there is nothing to
 provision in the dashboard. Slugs are `scheduler-<job name>` and are pinned in

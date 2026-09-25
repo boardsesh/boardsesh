@@ -5,6 +5,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import React from 'react';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 import MarketingHeader from '../marketing-header';
+import { APP_URL } from '@/app/lib/app-origin';
 
 /**
  * Successor to `global-header/__tests__/global-header.test.tsx`.
@@ -123,6 +124,20 @@ describe('MarketingHeader', () => {
     expect(screen.queryByPlaceholderText('What do you want to climb?')).toBeNull();
   });
 
+  it('keeps the genuine mark and wordmark together on home and inner pages', () => {
+    for (const pathname of ['/', '/about', '/settings']) {
+      mockPathname = pathname;
+      const { unmount } = render(<MarketingHeader />);
+      const brandLink = screen.getByLabelText('Boardsesh home');
+      const mark = brandLink.querySelector('img');
+      expect(brandLink.textContent).toBe('Boardsesh');
+      expect(mark?.getAttribute('src')).toContain('boardsesh-mark');
+      expect(mark?.getAttribute('alt')).toBe('');
+      expect(mark?.getAttribute('loading')).toBe('eager');
+      unmount();
+    }
+  });
+
   // -----------------------------------------------------------------------
   // Primary nav
   //
@@ -137,7 +152,7 @@ describe('MarketingHeader', () => {
 
     for (const [label, pathname] of [
       ['the default header', '/some-page'],
-      ['the transparent home header', '/'],
+      ['the home header', '/'],
     ] as const) {
       it(`carries the four nav links on ${label}`, () => {
         mockPathname = pathname;
@@ -169,7 +184,7 @@ describe('MarketingHeader', () => {
     // The narrow-viewport treatment is a menu button, not a second set of
     // always-rendered anchors: the inline row is the crawlable copy and it is
     // hidden with CSS rather than unmounted, so it is present here too.
-    it('offers a menu button whose items repeat the same four destinations', () => {
+    it('offers the four destinations and the mobile app hand-off in its menu', () => {
       render(<MarketingHeader />);
 
       const menuButton = screen.getByLabelText('Open menu');
@@ -181,7 +196,7 @@ describe('MarketingHeader', () => {
       const menuItemHrefs = screen
         .getAllByRole('menuitem')
         .map((item) => item.closest('a')?.getAttribute('href') ?? item.getAttribute('href'));
-      expect(menuItemHrefs).toEqual(NAV_PATHS);
+      expect(menuItemHrefs).toEqual([...NAV_PATHS, APP_URL]);
     });
 
     // The centred and brand-only variants own their whole bar — a profile
@@ -376,7 +391,7 @@ describe('MarketingHeader', () => {
       mockPathname = '/aurora-migration';
       render(<MarketingHeader />);
 
-      expect(screen.getByText('Aurora Migration')).toBeTruthy();
+      expect(screen.getByText('Bring your logbook')).toBeTruthy();
       expect(screen.getByTestId('back-button').getAttribute('data-fallback')).toBe('/');
     });
   });

@@ -76,6 +76,7 @@
     "metaTitle": "Salle d'escalade {{gymName}}",
     "metaDescription": "Découvre les boards et le mur en direct de {{gymName}} sur Boardsesh.",
     "breadcrumbHome": "Boardsesh",
+    "breadcrumbGyms": "Salles",
     "manageGym": "Gérer la salle",
     "seeOnTheWall": "Voir ce qui est sur le mur",
     "boardsHeading": "Boards",
@@ -135,7 +136,13 @@
       "independence": "Boardsesh est une appli indépendante. Elle n'est ni affiliée à Aurora Climbing, à Moon Climbing ou à un fabricant de boards, ni approuvée par eux.",
       "printAction": "Imprimer cette affiche",
       "backToGym": "Retour à la salle"
-    }
+    },
+    "sprayWallsHeading": "Murs spray",
+    "sprayWallCount_one": "{{count}} mur",
+    "sprayWallCount_other": "{{count}} murs",
+    "sprayWallsIntro": "Les murs spray de cette salle, prise par prise. Ouvre-en un pour voir ce qui y a été ouvert.",
+    "sprayWallPhotoAlt": "Photo de {{wallName}}",
+    "sprayWallMeta": "{{angle}}° · {{holds}} prises"
   },
   "manage": {
     "welcome": {

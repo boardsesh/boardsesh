@@ -283,8 +283,8 @@ async function main() {
               const { climb, missingPlacementIds, totalPlacements, ascents } = entry;
               console.info(
                 `      "${climb.name || '(unnamed)'}" — ${ascents.toLocaleString()} ascents` +
-                  ` | compatible_size_ids: ${climb.compatible_size_ids ?? 'NULL'}` +
-                  ` | required_set_ids: ${climb.required_set_ids ?? 'NULL'}` +
+                  ` | compatible_size_ids: ${String(climb.compatible_size_ids ?? 'NULL')}` +
+                  ` | required_set_ids: ${String(climb.required_set_ids ?? 'NULL')}` +
                   ` | ${missingPlacementIds.length}/${totalPlacements} missing`,
               );
             }

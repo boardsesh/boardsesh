@@ -3,8 +3,11 @@ import type { ConnectionContext, SyncResult, SyncDeletionsResult, SyncCursorInpu
 import { isSizeScopedBoard } from '@boardsesh/board-config';
 import { db } from '../../../db/client';
 import { rowsFromResult } from '@boardsesh/db/client';
-import { withSerialPlan, type SerialPlanDb } from '@boardsesh/db/queries';
+import { withSerialPlan, aliveHolds, type SerialPlanDb } from '@boardsesh/db/queries';
+import { isS3Configured, presignGetObject } from '../../../storage/s3';
+import { logger } from '../../../utils/logger';
 import { requireAuthenticated } from '../shared/helpers';
+import { isSprayBoardType, sprayLayoutIsReadable } from '../climbs/spray-read-access';
 import { normalizeRow, toIso, type RawRow } from './row-normalize';
 import {
   validateInput,
@@ -114,6 +117,19 @@ async function runSyncPage(params: {
     cursor: nextCursor,
     hasMore: rows.length === limit,
   };
+}
+
+/**
+ * An empty page that still advances nothing — what a sync resolver returns when the
+ * caller may not read the scope it asked for.
+ *
+ * Deliberately a normal empty page rather than an error: the offline engine drains
+ * these in a loop and an error would retry forever, and a distinguishable response
+ * would tell a caller which layout ids are private spray walls.
+ */
+function emptySyncPage(cursor: SyncCursorInput | null | undefined): SyncResult {
+  const { ts, seq } = cursorBounds(cursor);
+  return { documents: [], cursor: { updatedAt: ts, syncSeq: seq }, hasMore: false };
 }
 
 /**
@@ -251,6 +267,77 @@ async function runScopedBoardRefSyncPage(params: {
       limit,
     }),
   );
+}
+
+/**
+ * A wall's alive holds, in the shape the offline mirror stores and the mobile
+ * render path reads back: canonical centre, radius and silhouette.
+ *
+ * Internal ids stay on the server. `installed_version_id` / `removed_version_id`
+ * are the wall's own history bookkeeping and a device that holds only the
+ * published generation has nothing to do with them; `moved_from_hold_id` belongs
+ * to remix, which is a network operation.
+ */
+type CanonicalSprayHold = {
+  id: number;
+  cx: number;
+  cy: number;
+  r: number;
+  outline: number[] | null;
+};
+
+/**
+ * Fill in the two fields a single SELECT cannot produce: the wall's holds and a
+ * presigned URL for its photo.
+ *
+ * `holds` is fetched through `aliveHolds` rather than re-expressed as a JSON
+ * aggregate in the page query on purpose. "Which holds are on the wall right
+ * now" is a three-way range test over version status that took a long docblock
+ * to get right (an abandoned draft's additions AND its removals both have to be
+ * ignored), and a second copy of it in SQL would be a second chance to get it
+ * wrong — a wall whose offline copy disagreed with the server would draw holds
+ * that are not there. One extra round trip is the right price: a readable page
+ * carries at most one wall, because the visibility gate below answers an empty
+ * page unless the caller named a layout, and a layout is exactly one wall.
+ *
+ * `photo_url` is a TRANSIENT field — it is not a local column, the device hands
+ * it to its photo store and drops it (`TableSyncConfig.transientColumns`). The
+ * bucket is private and the signature lapses in fifteen minutes, so nothing may
+ * persist it; `photo_key` is the identity that survives.
+ */
+async function enrichSprayWallDocument(document: RawRow): Promise<RawRow> {
+  // `spray_walls.id` is both the cursor's seq component and the wall id
+  // `aliveHolds` takes — the page selects it once, as `sync_seq`.
+  const wallId = Number(document.sync_seq);
+  const versionNumber = document.current_version_number == null ? undefined : Number(document.current_version_number);
+
+  // No published version means no generation to be alive at. `aliveHolds` would
+  // answer [] for it anyway; skipping the query says so without asking.
+  const holds: CanonicalSprayHold[] =
+    versionNumber === undefined
+      ? []
+      : (await aliveHolds(db, wallId, versionNumber)).map((hold) => ({
+          id: hold.holdId,
+          cx: hold.cx,
+          cy: hold.cy,
+          r: hold.r,
+          outline: hold.outline ?? null,
+        }));
+
+  let photoUrl: string | null = null;
+  const photoKey = typeof document.photo_key === 'string' ? document.photo_key : null;
+  if (photoKey && isS3Configured('private')) {
+    try {
+      photoUrl = (await presignGetObject('private', photoKey)).url;
+    } catch (error) {
+      // A wall that syncs its holds and not its photo still renders a board with
+      // an empty background, and the renderer re-asks for a signature on demand.
+      // Failing the page would cost the holds too.
+      logger.warn('Failed to presign a spray wall photo for sync', { photoKey }, error);
+    }
+  }
+
+  return { ...document, holds, photo_url: photoUrl };
 }
 
 export const syncQueries = {
@@ -441,11 +528,22 @@ export const syncQueries = {
       layoutId: lid,
       sizeId: sid,
     } = prepareBoardSync(ctx, cursor, limit, boardType, layoutId, sizeId);
+
+    // The board scope here is `board_type` + an optional `layout_id` and NOTHING
+    // else — no `is_listed`, no `is_draft` — because this is a full row mirror for
+    // the offline database. On the eight catalogue boards that is correct; on spray
+    // it is the highest-fidelity leak in the API, because one authenticated account
+    // could walk `layoutId` 1..N and pull every column of every private wall's
+    // climbs. An unreadable scope returns an ordinary empty page.
+    if (isSprayBoardType(validBoardType) && !(await sprayLayoutIsReadable(validBoardType, lid, ctx.userId))) {
+      return emptySyncPage(cursor);
+    }
+
     return runSyncPage({
       selectList: sql`uuid, board_type, layout_id, setter_id, setter_username, name, description,
         hsm, edge_left, edge_right, edge_bottom, edge_top, angle, frames_count, frames_pace, frames,
         is_draft, is_listed, is_hidden, created_at, published_at, user_id, required_set_ids, compatible_size_ids,
-        characteristics, hold_fingerprint, updated_at, sync_seq`,
+        characteristics, hold_fingerprint, missing_hold_count, updated_at, sync_seq`,
       fromClause: sql`board_climbs`,
       scope: boardClimbsScope(validBoardType, lid, sid),
       updatedAtColumn: sql`updated_at`,
@@ -485,6 +583,14 @@ export const syncQueries = {
       layoutId: lid,
       sizeId: sid,
     } = prepareBoardSync(ctx, cursor, limit, boardType, layoutId, sizeId);
+
+    // Same enumeration as `syncClimbs`: this scope reaches `board_climbs` by
+    // layout to decide which rows belong to the pull, so a private spray wall
+    // would hand over its climbs' stats (and grades) to any account that guessed
+    // the layout id.
+    if (isSprayBoardType(validBoardType) && !(await sprayLayoutIsReadable(validBoardType, lid, ctx.userId))) {
+      return emptySyncPage(cursor);
+    }
 
     return runScopedBoardRefSyncPage({
       table: sql`board_climb_stats`,
@@ -534,6 +640,14 @@ export const syncQueries = {
       sizeId: sid,
     } = prepareBoardSync(ctx, cursor, limit, boardType, layoutId, sizeId);
 
+    // Same enumeration as `syncClimbs`: this scope reaches `board_climbs` by
+    // layout to decide which rows belong to the pull, so a private spray wall
+    // would hand over its climbs' stats (and grades) to any account that guessed
+    // the layout id.
+    if (isSprayBoardType(validBoardType) && !(await sprayLayoutIsReadable(validBoardType, lid, ctx.userId))) {
+      return emptySyncPage(cursor);
+    }
+
     return runScopedBoardRefSyncPage({
       table: sql`board_climb_grades`,
       climbUuidColumn: sql`board_climb_grades.climb_uuid`,
@@ -547,6 +661,108 @@ export const syncQueries = {
       cursor,
       limit: lim,
     });
+  },
+
+  /**
+   * Pull the spray wall at a layout (board data, per-board). Local PK =
+   * `layout_id`. Seq = `spray_walls.id`.
+   *
+   * ## What it carries
+   *
+   * Everything the mobile render path needs to draw a wall with no signal: the
+   * wall's name and canonical frame, the published version number, the holds
+   * alive at that version, that version's homography, and the private-bucket
+   * `photo_key` plus a short-lived presigned URL the device turns into bytes on
+   * disk. The photo is the one piece that is not a row.
+   *
+   * ## Visibility
+   *
+   * The by-layout rule — owner, gym member, or a PUBLIC wall — through the same
+   * `sprayLayoutIsReadable` gate `syncClimbs`, `syncClimbStats` and
+   * `syncClimbGrades` carry, and the decision is deliberately the same in all
+   * four: **unlisted is not an exemption here.** Unlisted means "reachable by
+   * uuid", and a layout id is not a uuid — it comes out of
+   * `spray_wall_catalog_id_seq`, i.e. 1, 2, 3 — so honouring unlisted on this key
+   * would let one authenticated account walk the sequence and collect a live
+   * presigned photograph of every unlisted home wall in the database. A client
+   * that "already knows the layout" knows nothing: the id is the guess. The uuid
+   * path that DOES honour unlisted is `sprayWall(uuid:)` / `sprayWallRenderData`,
+   * where the capability is the uuid itself. Keep this in step with
+   * `viewerCanSeeSprayWallByLayout`.
+   *
+   * An unreadable (or unscoped, or non-spray) request is an ordinary empty page,
+   * never an error and never a different shape, so nothing here tells a caller
+   * which layout ids are private walls.
+   *
+   * Soft-deleted walls are excluded; migration 0228's tombstone trigger is what
+   * removes them from a device that already has one.
+   */
+  syncSprayWalls: async (
+    _: unknown,
+    {
+      boardType,
+      layoutId,
+      sizeId,
+      cursor,
+      limit,
+    }: {
+      boardType: string;
+      layoutId?: number | null;
+      sizeId?: number | null;
+      cursor?: SyncCursorInput | null;
+      limit: number;
+    },
+    ctx: ConnectionContext,
+  ): Promise<SyncResult> => {
+    // `sizeId` is validated and then deliberately unused: a wall IS its own size
+    // (`spraySizeIdForLayout`), so `layout_id` already identifies it and there is
+    // no size dimension to filter on. Clients still send it because the scope key
+    // carries it for every board type; a wrong value here changes nothing rather
+    // than silently narrowing the page. Said in the SDL too, so a caller can tell
+    // without reading this.
+    const {
+      limit: lim,
+      boardType: validBoardType,
+      layoutId: lid,
+    } = prepareBoardSync(ctx, cursor, limit, boardType, layoutId, sizeId);
+
+    // Only spray has walls, and `sprayLayoutIsReadable` answers false without a
+    // layout id — there is no wall an unscoped pull could be checked against.
+    // Both land on the same empty page.
+    if (!isSprayBoardType(validBoardType) || !(await sprayLayoutIsReadable(validBoardType, lid, ctx.userId))) {
+      return emptySyncPage(cursor);
+    }
+
+    // NO `withSerialPlan` here, unlike syncClimbStats / syncClimbGrades. Their
+    // guard exists because those pages walk a reference table in cursor order and
+    // probe 375k-row board_climbs through a correlated EXISTS — a shape production
+    // plans as a Gather Merge, which has exhausted Postgres's DSM during sync
+    // bursts (Sentry BOARDSESH-AK). This page is a unique-index lookup on
+    // `spray_walls.layout_id` joined to two rows, returning at most one; there is
+    // no plan a parallel worker would be chosen for. If this query ever grows a
+    // scan — every wall for a board type, a join onto climbs — wrap it, because
+    // `runSyncPage` silently defaults to the bare pool and the omission is
+    // invisible.
+    const page = await runSyncPage({
+      // `ub.name` is the wall's name: a wall's name, angle, visibility and gym
+      // all live on the user_boards row, so nothing about a wall is stored twice.
+      selectList: sql`sw.layout_id, sw.board_uuid, ub.name, sw.reference_width, sw.reference_height,
+        cv.version_number AS current_version_number, cv.photo_key, cv.homography,
+        sw.updated_at, sw.id AS sync_seq`,
+      fromClause: sql`spray_walls sw
+        JOIN user_boards ub ON ub.uuid = sw.board_uuid
+        LEFT JOIN spray_wall_versions cv ON cv.id = sw.current_version_id`,
+      scope: sql`sw.layout_id = ${lid} AND sw.deleted_at IS NULL AND ub.deleted_at IS NULL`,
+      updatedAtColumn: sql`sw.updated_at`,
+      seqColumn: sql`sw.id`,
+      cursor,
+      limit: lim,
+    });
+
+    // `SyncResult.documents` is `unknown[]` on the wire (opaque JSON), but every
+    // element here came out of `runSyncPage`, which builds them as RawRow.
+    const documents = await Promise.all(page.documents.map((document) => enrichSprayWallDocument(document as RawRow)));
+    return { ...page, documents };
   },
 
   /**

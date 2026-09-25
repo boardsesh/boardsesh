@@ -6,15 +6,34 @@ token setup, CI auto-apply, and the Pages deploy of `app.boardsesh.com`.
 
 ## R2 buckets
 
-`infra/cloudflare/config.ts` declares the R2 buckets alongside the zone, and `vp run cf:apply` converges them: it creates a declared bucket that is missing and attaches its custom domain. See `docs/user-media-storage.md` for what lives in each one.
+`infra/cloudflare/config.ts` declares the R2 buckets alongside the zone, and `vp run cf:apply` converges them: it creates a declared bucket that is missing and attaches its custom domain.
 
-**`customDomain` is the whole access-control story.** R2 implements no object ACLs and no bucket policies, so there is no way to make one prefix of a bucket private — attaching a custom domain publishes every object in it. `boardsesh-user-private` holds user data exports and is declared `customDomain: null`; if it is ever found serving a domain, the apply reports it `BLOCKED` and stops rather than detaching it on its own. Buckets are created when absent and never deleted by this tool.
+- `boardsesh-user-media` serves public user media at `media.boardsesh.com`.
+- `boardsesh-user-private` holds exports and OCR submissions without a domain.
+- `boardsesh-static-assets` stages the repo image catalogue at `assets-r2.boardsesh.com`.
+- `boardsesh-board-snapshots` stages mobile bootstrap data at `snapshots.boardsesh.com`.
+- `boardsesh-ota-v3` is the private R2 target for XPRem. Verify Railway's live
+  storage endpoint before treating the service as migrated.
+
+See `docs/user-media-storage.md`, `docs/static-assets.md`, `docs/board-snapshots.md`, and
+`docs/mobile-ota-updates.md` for the storage-specific contracts and cutover runbooks.
+
+**R2 has two independent public access paths.** A custom domain and the managed `r2.dev` development URL can each
+publish every object in a bucket. The config disables `r2.dev` for every declared bucket; production public buckets
+use only their custom domain. `boardsesh-user-private` and `boardsesh-ota-v3` also declare `customDomain: null`.
+The apply disables a drifted `r2.dev` URL automatically, but reports an unexpected custom domain as `BLOCKED`
+instead of detaching a hostname during a routine converge. Buckets are created when absent and never deleted.
 
 ### Token scopes
 
 R2 is **account**-scoped, unlike everything else here, so managing it needs two things the zone work does not:
 
 - `CLOUDFLARE_ACCOUNT_ID` in the environment. Without it, R2 is skipped with a notice.
+- `Zone.Transform Rules Edit` on `CLOUDFLARE_API_TOKEN`, for the assets CORS
+  response-header rule (`http_response_headers_transform`). Without it the
+  earlier phases still apply and this one 403s — the same partial-convergence
+  shape as the WAF and rate-limit phases. **Editing a token replaces all of its
+  policies, so re-add every existing scope in the same edit.**
 - `Account.Workers R2 Storage:Edit` on `CLOUDFLARE_API_TOKEN`. Without it, the R2 read fails authorization and is skipped with a warning — the zone config still applies.
 
 Both degrade to "skip and say so" rather than failing, so the secret and the scope can be added in either order without a window where production deploys break. Attaching a custom domain needs **both** the R2 scope and zone access, because the call takes a `zoneId`: an R2-only token can create the bucket but cannot resolve the zone.
@@ -22,6 +41,15 @@ Both degrade to "skip and say so" rather than failing, so the secret and the sco
 > **Editing the token replaces ALL of its policies.** Re-add every existing scope in the same edit — the `Zone.*` list above and `Account.Cloudflare Pages Edit`. A rotation that granted only the zone scopes is what took `app.boardsesh.com` off the deploy train on 2026-08-25, and it presents as `Authentication error [code: 10000]` while `wrangler whoami` still succeeds.
 
 ## assets.boardsesh.com DNS-only Tigris domain
+
+> **Migrating.** This hostname is moving to an R2 custom domain, which will make
+> it proxied and take the DNS record out of `dnsRecords` entirely — R2 owns the
+> record, exactly as it already does for `media.boardsesh.com`. The bucket, its
+> CORS policy, the edge cache rule and the CORS response-header rule are already
+> declared and converge today against the staging hostname
+> `assets-r2.boardsesh.com`. Everything below describes the state until the flip.
+> The cutover, the measurements behind it, and the CORS/`Vary` hazard it has to
+> solve first are in [static-assets.md](./static-assets.md#moving-to-r2-in-progress).
 
 The public static-assets hostname is repo-managed DNS. `vp run cf:apply` creates
 and maintains this complete record (not just its proxy flag):
@@ -54,6 +82,51 @@ One-time setup order:
    if absent and corrects its target, type, TTL, or proxy status if they drift.
 4. Wait for Tigris to report the custom domain and certificate active, then run
    the verification commands below before publishing the first catalog.
+
+## pgdr.boardsesh.com, the DR standby's route to the primary
+
+The homelab PostgreSQL DR standby reaches the production primary through this
+name. `vp run cf:apply` creates and maintains the complete record:
+
+```text
+pgdr.boardsesh.com CNAME iriguchi.proxy.rlwy.net
+TTL: automatic (Cloudflare API value 1)
+Proxy status: DNS only
+CNAME flattening: disabled
+```
+
+**Keep it DNS-only.** This carries the PostgreSQL wire protocol on a high port.
+Cloudflare's proxy handles neither raw TCP nor a non-HTTP port, so orange-clouding
+this record stops replication outright rather than degrading it.
+
+The record exists so the standby can verify a certificate against a name we
+control. Railway allocates a random high port for a TCP proxy and can reassign
+the proxy hostname; a certificate issued for `*.proxy.rlwy.net` would be an
+identity claim over a name someone else administers, and would need reissuing
+whenever Railway moved it. With this record in front, that becomes a DNS edit.
+
+Two things this record does **not** do. It does not terminate TLS — the primary
+presents its own certificate end-to-end and the standby checks it with
+`sslmode=verify-full` against this name, so the record is pure indirection. And
+it cannot carry the port: DNS has no field for one, so the port lives in the
+standby's `primary_conninfo`. If Railway ever recreates the proxy, the new port
+is a reviewed change in the ansible role plus a pgpass remint, not a DNS edit.
+
+The standby side, including the certificate contract, is
+`docs/BOARDSESH_POSTGRES_DR.md` in `blackheathdc-ansible`.
+
+Verify:
+
+```bash
+dig +short pgdr.boardsesh.com            # expect the Railway proxy address
+openssl s_client -starttls postgres -connect pgdr.boardsesh.com:17963 \
+  -CAfile <ca.crt> -verify_hostname pgdr.boardsesh.com -verify_return_error </dev/null
+```
+
+`-verify_return_error` is not optional if you act on the exit status. Without it
+`s_client` prints the verification failure and still exits 0 — measured against
+this endpoint: an untrusted chain reports `Verify return code: 18` and exits 0,
+and a hostname mismatch exits 0 too. With the flag both exit 1.
 
 ## www.boardsesh.com DNS, and the origin flip
 
@@ -335,22 +408,142 @@ back because GraphQL, WebSockets, and `/og` share that hostname.
 - **Crawler rules** — two rules in `http_request_firewall_custom`, in this order:
   1. `skip` (all remaining custom rules) for search engines and share-card
      unfurlers. Brave runs its **own** index rather than reselling Bing or
-     Google, so it is allowlisted explicitly.
+     Google, so it is allowlisted explicitly. **Scoped to `GET`.** `skip` with
+     `ruleset: current` walks an agent past every later rule in the ruleset,
+     which is what a search engine needs for reads and what nothing needs for a
+     write. Applebot executes our JavaScript and was measured on 2026-09-10
+     sending 190 of its 253 www requests as `POST /monitoring` (the Sentry
+     tunnel); the method gate is what keeps the ruleset composable so a rule
+     aimed at bot writes can still reach it.
   2. `block` for commercial SEO/backlink crawlers (Ahrefs, Semrush, DataForSEO,
      MJ12, DotBot, BLEXBot, Barkrowler, serpstat, Seznam, Zoominfo, Screaming
      Frog). Each was verified reaching our origin on 2026-08-24. They sell
      backlink data and send Boardsesh no traffic. The same rule also blocks
-     automated AI training and search crawlers, using the shared tokens in
-     `packages/web/app/lib/crawler-policy.ts`. Google, Bing, Yandex, Brave and
-     share-card unfurlers remain allowed. Human-triggered AI fetchers are not
-     added to this automated-crawler list.
+     automated AI training and search crawlers and **Yandex**, using the shared
+     tokens in `packages/web/app/lib/crawler-policy.ts`. Google, Bing,
+     DuckDuckGo, Apple, Brave, Baidu, Qwant and the share-card unfurlers remain
+     allowed. Human-triggered AI fetchers
+     are not added to this automated-crawler list.
 
-  Web middleware rejects those AI agents before page rendering, including on
+  **Yandex moved from the allow list to the block list on 2026-09-11.** It was
+  added to the allow list four days earlier, in the AI-crawler commit, with no
+  stated reason. Production HTTP logs made the case against it: in a 5-minute
+  sample of `boardsesh-web` (2026-09-10 14:25 UTC, n=501) YandexBot was **36%**
+  of all requests against **3.6%** for real browsers, 171 of its 181 requests
+  were climb-view pages, and it averaged 510 ms per request against Applebot's
+  222 ms — the costliest crawler we carried, per page fetched. Boardsesh is an
+  English-language climbing site and Yandex returns no measurable traffic
+  against that. The rate limit could not reach it either: the Free plan caps the
+  period at 10 s and Yandex ran ~34 requests/min, nowhere near 60-per-10 s.
+
+  `COST_BLOCKED_CRAWLER_TOKENS` spells out `yandexbot` and
+  `yandexrenderresourcesbot` rather than a bare `yandex` on purpose. Yandex
+  Browser (`YaBrowser/…`) and Yandex's in-app search (`YandexSearch/…`) are real
+  people, and a substring match would block every one of them. Tests in
+  `scripts/cloudflare-apply.test.ts` and `packages/web/app/__tests__/middleware.test.ts`
+  pin both directions.
+
+  Web middleware rejects every blocked agent before page rendering, including on
   the direct Railway hostname. Robots.txt publishes the same opt-out plus
   `Google-Extended` (a robots-only token). Production logs on 2026-09-07 showed
   GPTBot using the Railway hostname and Claude-SearchBot reaching www despite
   synthetic Cloudflare probes returning 403; the managed AI block alone is
   insufficient. UA rules only catch agents that identify themselves.
+
+  **The other two hosts serve a robots.txt of their own now.** Until 2026-09-11
+  neither did, and Cloudflare's managed preamble carries no `Disallow`, so both
+  read as "crawl everything":
+  - `app.boardsesh.com` answered `/robots.txt` with the app shell, because
+    `_redirects` ends in an SPA catch-all and no real file existed to match
+    first. The file is `deploy/app-subdomain/robots.txt`, copied into the
+    published export by `production-deploy.yml`.
+  - `ws.boardsesh.com` had no route at all. It is served by
+    `packages/backend/src/handlers/robots.ts`, and it is a **deny-list**
+    (`/graphql`, `/api/`, `/health`, `/board-credentials/`) rather than
+    `Disallow: /` with carve-outs. That host is mostly an image CDN: `/og/climb`
+    is every climb page's `og:image`, `/render/board` its LCP image, and
+    `/static/*` serves avatars, gym logos, gym photos and beta thumbnails — all
+    of which a blanket block would have taken out by omission. Naming what to
+    refuse means a new image route is crawlable by default and only a new API
+    route needs a line. The render paths are edge-cached here anyway, so crawler
+    traffic to them is largely absorbed before it reaches the origin.
+
+  Both matter because the browser app issues GraphQL against `ws`, so a crawler
+  rendering the SPA turns one page fetch into a backend query: a 3-minute sample
+  of `boardsesh-backend` on 2026-09-10 had Applebot issuing 173 of the 436
+  `/graphql` requests on the service.
+
+  3. `managed_challenge` on the scraped surfaces (`/list`, `/setter/`), **last**. Climb pages are deliberately excluded — see the shareability rule below. This is the only
+     rule that can catch an ordinary browser string, so every agent we have a
+     verdict on has to be judged before it.
+
+  **The challenge exists because the biggest remaining population has no name.**
+  A 3.6-minute sample of production on 2026-09-11, taken after the #5385 gates
+  deployed, found nine ordinary Chrome, Edge and Safari user agents at roughly
+  45 requests each, walking 350 climb pages across all four locales — 84% of
+  what was left. No allow or block list reaches a rotating UA, and the rate
+  limit cannot either: it runs about 12 requests a minute per agent against a
+  Free-plan floor of 60 per 10 s (~360/min), and lowering the threshold that far
+  would take out a gym behind one NAT.
+
+  What separates it from a person is JavaScript. In that sample those nine
+  agents fetched 350 HTML pages and **zero** JS — not one `/_next/static` chunk,
+  not one Sentry tunnel POST. The single real visitor in the window did the
+  mirror image: 33 chunks, no climb pages. A managed challenge is exactly that
+  test, so it needs no list to maintain.
+
+  Two consequences worth knowing. `baiduspider` and `qwantify` had to join the
+  allow list in the same change — they send people back (Baidu 7, Qwant 1 over
+  30 days) and were relying on passing by default, which ends the moment an
+  unlisted agent gets challenged. And a first-time human landing on a climb page
+  from search now gets one sub-second check before a `cf_clearance` cookie
+  covers them.
+
+  Note the plan asymmetry: `managed_challenge` is refused in the **rate-limit**
+  phase on Free (see below) but accepted on a **custom rule**, which is why the
+  mitigation lives here rather than on the rate limit.
+
+  Caching cannot substitute for this. The scraper walks unique URLs, so every
+  request is a cache miss by construction — an edge cache only helps repeats.
+
+  **Broadened three hours after it shipped, because the farm moved rather than
+  left.** The first rule covered `/view/` only. A sample at 08:34-08:53 UTC the
+  same day (n=501) found the same nine rotating strings sending **zero**
+  climb-view requests and instead 102 `/setter/` and 67 `/list` — 81% of its
+  remaining traffic, with `/list` the expensive half at 395 ms average against
+  `/setter/`'s 167 ms. Expect this again: the surface list is the part of this
+  rule that needs re-checking after each change, not the mechanism.
+
+  The **homepage is deliberately still open**. The farm hit it 8 times in that
+  window, and it is the page a real first-time visitor is most likely to reach
+  before any `cf_clearance` cookie exists.
+
+  **Climb pages came back out of the challenge the same day, because it broke
+  link previews.** A climb page is the thing people share, and an unfurler reads
+  its `og:image` tag. **No unfurler executes JavaScript**, so a managed challenge
+  is an unconditional fail for every one of them. Measured on a live climb page
+  on 2026-09-11: Slackbot, Discordbot, Twitterbot, facebookexternalhit, WhatsApp
+  and Applebot passed only because they sit on `CRAWLER_ALLOW_TOKENS`, while
+  Signal, Bluesky, Mastodon, Teams and a plain Safari string all returned
+  `403 cf-mitigated: challenge` and never saw the tag. The `/og/climb` endpoint
+  itself was fine throughout — the break was that nothing could read the page
+  pointing at it.
+
+  **The rule to carry forward: never JavaScript-challenge a surface you want
+  people to share.** Naming every unfurler that will ever exist is not a list
+  anyone can finish. The allow list was widened anyway (Signal, Bluesky,
+  Mastodon, Teams, Skype, Reddit and the common embed services) so the frequent
+  ones survive if `/view/` is ever re-challenged, and
+  `cloudflare-apply.test.ts` pins all of them — but the durable answer is to
+  keep shareable surfaces out of the rule.
+
+  Dropping `/view/` cost nothing: the farm had already abandoned it by the 08:34
+  sample. If it returns there, the lever is a non-JavaScript signal, not this
+  one.
+
+  The rule's description string still reads `boardsesh:climb-view-challenge`
+  even though it now covers three surfaces. That is the never-rename contract:
+  renaming the marker orphans the live rule and creates a second one beside it.
 
   **Order is load-bearing and enforced by the tool.** `upsertCacheRule` rewrites
   our rules as one contiguous group in declared order, because a rule-by-rule

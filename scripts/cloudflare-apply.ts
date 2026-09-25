@@ -54,12 +54,15 @@ import type {
   DnsRecordDesired,
   FullyManagedDnsRecordDesired,
   R2BucketDesired,
+  R2Cors,
   SslMode,
 } from '../infra/cloudflare/config';
 import {
   MANAGED_RULE_PHASES,
   buildPlan,
   diffR2Bucket,
+  r2CorsHasUnmanagedRules,
+  r2CorsMatches,
   resolveRulePhase,
   upsertCacheRule,
 } from '../infra/cloudflare/plan';
@@ -76,6 +79,7 @@ const TOKEN_SCOPES = [
   'Zone.WAF Edit              — create/update the two crawler rules',
   'Zone.Rate Limit Edit       — create/update the climb-view rate-limit rule (http_ratelimit phase)',
   'Zone.Dynamic Redirect Edit — create/update the apex → www redirect (http_request_dynamic_redirect phase)',
+  'Zone.Transform Rules Edit  — create/update the assets CORS response-header rule\n                               (http_response_headers_transform phase)',
   'Zone.Zone Settings Read    — read the SSL/TLS mode',
   'Zone.Zone Settings Edit    — ONLY needed with --allow-zone-ssl (to set the zone SSL mode)',
   'Account.Workers R2 Storage Edit — create R2 buckets + attach their custom domains (Read is not enough:\n                               it detects drift but cannot converge it). Needs CLOUDFLARE_ACCOUNT_ID too.',
@@ -227,6 +231,20 @@ interface R2CustomDomainListing {
   domains?: { domain: string; enabled?: boolean }[];
 }
 
+interface R2ManagedDomain {
+  domain: string;
+  enabled: boolean;
+}
+
+/** Cloudflare's R2 CORS shape: GET and PUT both use it. */
+interface R2CorsListing {
+  rules?: {
+    allowed?: { origins?: string[]; methods?: string[]; headers?: string[] };
+    exposeHeaders?: string[];
+    maxAgeSeconds?: number;
+  }[];
+}
+
 /**
  * Read the account's R2 buckets and the custom domain attached to each declared one.
  *
@@ -241,6 +259,17 @@ interface R2CustomDomainListing {
  */
 export function isAuthorizationError(error: unknown): boolean {
   return error instanceof CloudflareApiRequestError && (error.status === 401 || error.status === 403);
+}
+
+/**
+ * True for "that resource does not exist yet".
+ *
+ * Distinguished from an authorization failure because for CORS they mean the
+ * same thing operationally (no policy to read) but not diagnostically: a 404 is
+ * the normal state of a brand-new bucket, a 403 is a token that needs a scope.
+ */
+export function isNotFoundError(error: unknown): boolean {
+  return error instanceof CloudflareApiRequestError && error.status === 404;
 }
 
 /**
@@ -278,21 +307,86 @@ async function fetchR2State(
   const state = new Map<string, LiveR2Bucket>();
   for (const bucket of desired) {
     if (!existing.has(bucket.name)) {
-      state.set(bucket.name, { name: bucket.name, exists: false, customDomains: [] });
+      state.set(bucket.name, {
+        name: bucket.name,
+        exists: false,
+        customDomains: [],
+        r2DevDomainEnabled: false,
+        cors: null,
+      });
       continue;
     }
-    const domains = await cfRequest<R2CustomDomainListing>(
-      token,
-      'GET',
-      `/accounts/${accountId}/r2/buckets/${encodeURIComponent(bucket.name)}/domains/custom`,
-    );
+    const bucketPath = `/accounts/${accountId}/r2/buckets/${encodeURIComponent(bucket.name)}`;
+    const [domains, managedDomain, corsState] = await Promise.all([
+      cfRequest<R2CustomDomainListing>(token, 'GET', `${bucketPath}/domains/custom`),
+      cfRequest<R2ManagedDomain>(token, 'GET', `${bucketPath}/domains/managed`),
+      bucket.cors ? fetchR2Cors(token, accountId, bucket.name) : Promise.resolve(null),
+    ]);
     state.set(bucket.name, {
       name: bucket.name,
       exists: true,
-      customDomains: (domains.domains ?? []).map((entry) => entry.domain),
+      customDomains: (domains.domains ?? []).map((entry) => ({
+        domain: entry.domain,
+        enabled: entry.enabled ?? true,
+      })),
+      r2DevDomainEnabled: managedDomain.enabled,
+      ...(corsState ? { cors: corsState.cors, corsRuleCount: corsState.ruleCount } : { cors: null }),
     });
   }
   return state;
+}
+
+/**
+ * Read a bucket's CORS policy, or null if it has none / cannot be read.
+ *
+ * A bucket that has never been given a policy answers 404 here, which is a
+ * normal state and not an error — it is exactly what the new bucket looks like
+ * before the first apply. Authorization failures degrade the same way the rest
+ * of the R2 path does (see fetchR2State): report null, let the diff say "will
+ * set", and let the PUT be the thing that fails loudly if the scope is missing.
+ */
+async function fetchR2Cors(
+  token: string,
+  accountId: string,
+  bucketName: string,
+): Promise<{ cors: R2Cors | null; ruleCount: number }> {
+  try {
+    const response = await cfRequest<R2CorsListing>(
+      token,
+      'GET',
+      `/accounts/${accountId}/r2/buckets/${encodeURIComponent(bucketName)}/cors`,
+    );
+    const rule = response.rules?.[0];
+    if (!rule) return { cors: null, ruleCount: 0 };
+    return {
+      cors: {
+        allowedOrigins: rule.allowed?.origins ?? [],
+        allowedMethods: (rule.allowed?.methods ?? []) as R2Cors['allowedMethods'],
+        maxAgeSeconds: rule.maxAgeSeconds ?? 0,
+      },
+      // Reported so diffR2Bucket can refuse to collapse a multi-rule policy into
+      // the single rule this tool writes.
+      ruleCount: response.rules?.length ?? 0,
+    };
+  } catch (error) {
+    if (isNotFoundError(error) || isAuthorizationError(error)) return { cors: null, ruleCount: 0 };
+    throw error;
+  }
+}
+
+async function putR2Cors(token: string, accountId: string, bucketName: string, cors: R2Cors): Promise<void> {
+  await cfRequest(token, 'PUT', `/accounts/${accountId}/r2/buckets/${encodeURIComponent(bucketName)}/cors`, {
+    rules: [
+      {
+        allowed: {
+          origins: [...cors.allowedOrigins],
+          methods: [...cors.allowedMethods],
+        },
+        maxAgeSeconds: cors.maxAgeSeconds,
+      },
+    ],
+  });
+  console.log(`[cf-apply] set CORS on R2 bucket ${bucketName}`);
 }
 
 async function applyR2Bucket(
@@ -312,14 +406,44 @@ async function applyR2Bucket(
     return;
   }
 
-  if (desired.customDomain && !live.customDomains.includes(desired.customDomain)) {
-    await cfRequest(
-      token,
-      'POST',
-      `/accounts/${accountId}/r2/buckets/${encodeURIComponent(desired.name)}/domains/custom`,
-      { domain: desired.customDomain, zoneId, enabled: true },
+  const bucketPath = `/accounts/${accountId}/r2/buckets/${encodeURIComponent(desired.name)}`;
+
+  if (!desired.r2DevDomainEnabled && live.r2DevDomainEnabled) {
+    await cfRequest(token, 'PUT', `${bucketPath}/domains/managed`, { enabled: false });
+    console.log(`[cf-apply] disabled public r2.dev URL for R2 bucket ${desired.name}`);
+  }
+
+  if (desired.customDomain) {
+    const liveDomain = live.customDomains.find((entry) => entry.domain === desired.customDomain);
+    if (!liveDomain) {
+      await cfRequest(token, 'POST', `${bucketPath}/domains/custom`, {
+        domain: desired.customDomain,
+        zoneId,
+        enabled: true,
+      });
+      console.log(`[cf-apply] attached ${desired.customDomain} to R2 bucket ${desired.name}`);
+    } else if (!liveDomain.enabled) {
+      await cfRequest(token, 'PUT', `${bucketPath}/domains/custom/${encodeURIComponent(desired.customDomain)}`, {
+        enabled: true,
+      });
+      console.log(`[cf-apply] enabled ${desired.customDomain} on R2 bucket ${desired.name}`);
+    }
+  }
+
+  // Guarded here as well as in the diff, not instead of it. This function is
+  // reached for ANY non-blocked change on the bucket — attaching a custom domain,
+  // typically — so checking only in the diff would let a domain change carry the
+  // CORS write past the block and delete rules this repo does not own.
+  if (r2CorsHasUnmanagedRules(desired, live)) {
+    console.warn(
+      `[cf-apply] SKIPPED CORS on ${desired.name}: bucket has ${live.corsRuleCount} rules and this tool ` +
+        'writes a single-rule policy. Reconcile them in the Cloudflare dashboard first.',
     );
-    console.log(`[cf-apply] attached ${desired.customDomain} to R2 bucket ${desired.name}`);
+    return;
+  }
+
+  if (desired.cors && !r2CorsMatches(live.cors, desired.cors)) {
+    await putR2Cors(token, accountId, desired.name, desired.cors);
   }
 }
 
@@ -333,7 +457,12 @@ async function fetchDnsRecord(token: string, zoneId: string, name: string): Prom
 }
 
 /** A phase's entrypoint ruleset. Returns an empty rule set when the phase has no ruleset yet (404). */
-async function fetchPhaseRules(token: string, zoneId: string, phase: string): Promise<RulesetRule[]> {
+async function fetchPhaseRules(
+  token: string,
+  zoneId: string,
+  phase: string,
+  optional = false,
+): Promise<RulesetRule[] | null> {
   try {
     const ruleset = await cfRequest<{ id: string; rules?: RulesetRule[] }>(
       token,
@@ -344,6 +473,10 @@ async function fetchPhaseRules(token: string, zoneId: string, phase: string): Pr
   } catch (error) {
     // A phase with no ruleset 404s on the entrypoint — that's an empty rule set, not a failure.
     if (error instanceof CloudflareApiRequestError && error.status === 404) return [];
+    // `null` = "could not read", which is NOT the same as "empty" and must not
+    // be diffed as if it were. Only phases the registry marks optional get this;
+    // everything else still fails loudly on a lost scope.
+    if (optional && isAuthorizationError(error)) return null;
     throw error;
   }
 }
@@ -378,7 +511,7 @@ async function fetchLiveState(
     // the diff comparing against an empty array it never fetched.
     Promise.all(
       MANAGED_RULE_PHASES.map(
-        async (phase) => [phase.resource, await fetchPhaseRules(token, zoneId, phase.phase)] as const,
+        async (phase) => [phase.resource, await fetchPhaseRules(token, zoneId, phase.phase, phase.optional)] as const,
       ),
     ),
     fetchSslMode(token, zoneId),
@@ -387,7 +520,20 @@ async function fetchLiveState(
   // Built straight from the registry: no second place that has to learn about a
   // new phase. The cast is sound because ALL_PHASES_REGISTERED in plan.ts fails
   // the build if a resource has no registry entry, so every key is present.
-  const rules = Object.fromEntries(phaseRules) as LiveState['rules'];
+  const unavailableRulePhases = new Set(
+    phaseRules.filter(([, liveRules]) => liveRules === null).map(([resource]) => resource),
+  );
+  for (const resource of unavailableRulePhases) {
+    const phase = MANAGED_RULE_PHASES.find((candidate) => candidate.resource === resource);
+    console.warn(
+      `[cf-apply] Token cannot read the ${phase?.phase ?? resource} phase — skipping ${resource}. ` +
+        'Zone config for every other phase was still applied. Grant the matching scope (keeping every existing ' +
+        'one: editing a token REPLACES all its policies) to manage it here.',
+    );
+  }
+  const rules = Object.fromEntries(
+    phaseRules.map(([resource, liveRules]) => [resource, liveRules ?? []]),
+  ) as LiveState['rules'];
   const dnsRecords: Record<string, LiveDnsRecord | null> = {};
   for (const [desiredRecord, liveRecord] of fetchedDnsRecords) {
     if (!liveRecord && desiredRecord.management === 'proxied-only') {
@@ -398,7 +544,7 @@ async function fetchLiveState(
     }
     dnsRecords[desiredRecord.name] = liveRecord;
   }
-  return { dnsRecords, rules, sslMode, flattenAllCnames };
+  return { dnsRecords, rules, sslMode, flattenAllCnames, unavailableRulePhases };
 }
 
 export function fullyManagedDnsBody(desired: FullyManagedDnsRecordDesired): Record<string, unknown> {
@@ -542,6 +688,8 @@ export async function runCloudflareApply(argv: string[] = process.argv.slice(2))
   // leaves the zone partially converged. Safe because the plan is ordered
   // (SSL -> cache rule -> proxied flip last) and re-running converges the rest.
   const appliedPhases = new Set<string>();
+  // Each bucket is fully converged on its first planned attribute.
+  const appliedR2Buckets = new Set<string>();
   for (const change of changes) {
     if (change.blocked) {
       console.warn(`[cf-apply] SKIPPED (blocked): ${change.summary}`);
@@ -553,7 +701,13 @@ export async function runCloudflareApply(argv: string[] = process.argv.slice(2))
     if (change.resource === 'r2-bucket') {
       const bucket = desiredR2Buckets.find((candidate) => candidate.name === change.r2BucketName);
       if (!bucket || !accountId || !r2State) throw new Error(`Unresolvable R2 change: ${change.summary}`);
+      if (appliedR2Buckets.has(bucket.name)) {
+        console.log(`[cf-apply] skipped: ${change.summary} (${bucket.name} already converged)`);
+        continue;
+      }
       await applyR2Bucket(token, accountId, zoneId, bucket, r2State.get(bucket.name) ?? null);
+      appliedR2Buckets.add(bucket.name);
+      console.log(`[cf-apply] applied: ${change.summary}`);
       continue;
     }
 

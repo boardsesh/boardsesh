@@ -164,6 +164,125 @@ CREATE TABLE IF NOT EXISTS board_climb_stats (
 );
 `;
 
+/**
+ * One spray wall: the geometry and photo identity a garage wall needs in order
+ * to draw itself with no signal (issue #5448).
+ *
+ * Deliberately NOT part of `SCHEMA_STATEMENTS`. Like `board_climb_grades`, this
+ * table arrives in a later migration (v8) rather than by editing v1's shipped
+ * statement list. The DDL text still lives here because this file is the one
+ * home for on-device DDL; `migrations.ts` imports it.
+ *
+ * `layout_id` is the primary key because that is what the rest of the mirror
+ * already knows a wall by: `board_climbs.layout_id`, the offline board scope key
+ * `spray:<layoutId>:<layoutId>`, and the single-segment `record_id` that
+ * migration 0228's tombstone trigger writes. A wall is exactly one layout, so it
+ * is a natural key and a tombstone needs no re-encoding.
+ *
+ * `holds` and `homography` are JSON strings (the manifest's rule for arrays and
+ * JSON): respectively the holds ALIVE at `current_version_number`, and that
+ * version's row-major 3x3 photo→canonical matrix. The photo itself is not here —
+ * `photo_key` names a file the photo store keeps on disk, because a
+ * multi-megabyte JPEG has no business in a SQLite row, and the presigned URL it
+ * is fetched with is short-lived and is never persisted at all.
+ */
+export const SPRAY_WALLS = `
+CREATE TABLE IF NOT EXISTS spray_walls (
+  layout_id INTEGER PRIMARY KEY,
+  board_uuid TEXT,
+  name TEXT,
+  reference_width INTEGER,
+  reference_height INTEGER,
+  current_version_number INTEGER,
+  photo_key TEXT,
+  holds TEXT,
+  homography TEXT,
+  updated_at TEXT,
+  sync_seq INTEGER
+);
+`.trim();
+
+/**
+ * The device-derived holds index (holds-index/). Three tables, all built on the
+ * phone from `board_climbs.frames`, never synced, never tombstoned, never shipped
+ * in a snapshot artifact. The byte formats are in holds-index/query.ts.
+ *
+ * Packed blobs rather than one row per hold: a Kilter download is ~3.8M
+ * hold rows, which as rows costs ~370 MB on the phone.
+ *
+ * Two rules for this DDL text, both enforced by the snapshot export
+ * (`boardSnapshotDdlStatements`, which picks the artifact's DDL out of MIGRATIONS
+ * with a word-boundary regex on `board_climbs`): no SQL comments, which could name
+ * `board_climbs`, and no `REFERENCES board_climbs`. Commentary stays here in TS.
+ *
+ * Deliberately NOT part of `SCHEMA_STATEMENTS`: they arrive in migration v10.
+ */
+
+/**
+ * A stable local integer id per climb uuid, so a posting is 4 bytes per climb
+ * instead of a 36-character uuid. Rows are only ever `INSERT OR IGNORE`d, and
+ * `AUTOINCREMENT` means a deleted id is never handed out again: an id that a
+ * stale posting still names can never come to mean a different climb.
+ */
+export const HOLDS_INDEX_CLIMBS = `
+CREATE TABLE IF NOT EXISTS holds_index_climbs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  uuid TEXT NOT NULL UNIQUE
+);
+`.trim();
+
+/** One row per indexed climb: its holds, sorted, 5 bytes each (uint32 hold id + uint8 role). */
+export const BOARD_CLIMB_HOLD_SETS = `
+CREATE TABLE IF NOT EXISTS board_climb_hold_sets (
+  climb_id INTEGER PRIMARY KEY,
+  holds BLOB NOT NULL
+);
+`.trim();
+
+/**
+ * One row per (board, layout, hold): the sorted uint32 local ids of the indexed
+ * climbs that use it. Per LAYOUT, shared by every downloaded size of it.
+ */
+export const BOARD_CLIMB_HOLD_POSTINGS = `
+CREATE TABLE IF NOT EXISTS board_climb_hold_postings (
+  board_type TEXT NOT NULL,
+  layout_id INTEGER NOT NULL,
+  hold_id INTEGER NOT NULL,
+  climb_ids BLOB NOT NULL,
+  PRIMARY KEY (board_type, layout_id, hold_id)
+) WITHOUT ROWID;
+`.trim();
+
+/**
+ * `board_climbs` by change counter within a layout. The holds index builder
+ * reads climbs in `sync_seq` order from a per-scope watermark, and its
+ * "is the index behind?" probe is `sync_seq > ? LIMIT 1`; without this index
+ * both sort the whole layout on every call.
+ *
+ * It names `board_climbs`, which the snapshot export's table match would pull
+ * into every artifact, where it is dead weight (the import copies rows out of
+ * the attached artifact and never queries it by `sync_seq`). It is therefore in
+ * DEVICE_ONLY_STATEMENTS below, which the export leaves out.
+ */
+export const INDEX_CLIMBS_SYNC_SEQ = `
+CREATE INDEX IF NOT EXISTS idx_climbs_sync_seq ON board_climbs (board_type, layout_id, sync_seq);
+`.trim();
+
+/**
+ * Tables the device builds for itself and that must never leave it: not synced
+ * (no `TABLE_CONFIGS` entry), not in a snapshot artifact. The snapshot export
+ * refuses to emit DDL naming one of these, and the explicit sign-out wipe clears
+ * them alongside the board tables.
+ */
+export const DEVICE_ONLY_TABLES = ['holds_index_climbs', 'board_climb_hold_sets', 'board_climb_hold_postings'] as const;
+
+/**
+ * Migration statements the device needs but a snapshot artifact must not carry,
+ * although they touch an artifact table. The export drops these by exact text,
+ * so moving one requires no artifact format change.
+ */
+export const DEVICE_ONLY_STATEMENTS: readonly string[] = [INDEX_CLIMBS_SYNC_SEQ];
+
 // --- Sync bookkeeping ---------------------------------------------------------
 // checkpoints.ts reads/writes sync_meta(key, value); it has no CREATE TABLE of
 // its own, so the table is created here.

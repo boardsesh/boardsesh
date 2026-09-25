@@ -88,8 +88,16 @@ import { WOODS_LAYOUTS, WOODS_SETS, WOODS_SIZES } from '@/app/lib/woods-config';
  * `@boardsesh/board-constants`' layout and set tables, so `getAllLayouts('woods')`
  * is empty and this loop would walk zero tuples while still reporting green. Its
  * arm is `Woods board URL segments` at the bottom of this file.
+ *
+ * Spray is split out for a stronger reason: it carries no catalogue rows either,
+ * and it has no readable URL at all. `boardHasDeepConfigRoute('spray')` is false,
+ * so `/spray/...` 404s on www rather than round-tripping — pinned by
+ * `board-route-paths.test.ts` and by the `the spray board` cases in
+ * `@boardsesh/play-view`'s `readable-url-utils.test.ts`.
  */
-const auroraBoards = SUPPORTED_BOARDS.filter((boardName) => boardName !== 'moonboard' && boardName !== 'woods');
+const auroraBoards = SUPPORTED_BOARDS.filter(
+  (boardName) => boardName !== 'moonboard' && boardName !== 'woods' && boardName !== 'spray',
+);
 
 /**
  * Tuples each board carries today. Asserted per board inside the round-trip
@@ -364,7 +372,7 @@ describe('MoonBoard catalogue round-trip (the static tables, through the same ww
       0,
     );
     expect(walked).toBe(291);
-    expect([...auroraBoards, 'moonboard', 'woods'].sort()).toEqual([...SUPPORTED_BOARDS].sort());
+    expect([...auroraBoards, 'moonboard', 'woods', 'spray'].sort()).toEqual([...SUPPORTED_BOARDS].sort());
   });
 });
 

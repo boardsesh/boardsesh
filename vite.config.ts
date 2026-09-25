@@ -35,7 +35,22 @@ export default defineConfig({
     // has content the formatter can get wrong, so `.md` is out of scope —
     // mirrored in .prettierignore because a full-repo `vp check` only honours
     // that file for some path forms.
-    ignore: ['design/**', '**/generated/**', '**/board-controller/**', 'CHANGELOG.md', '**/*.md'],
+    // ml/holds writes its JSON artefacts from Python (`json.dumps(indent=2)` in
+    // eval.py and the data/ scripts), so a formatted copy would be undone by the
+    // next regeneration and re-red CI. Mirrored in .prettierignore.
+    // The hold-detection parity fixtures are written by the same Python
+    // (`packages/shared/hold-detection/scripts/capture-fixture-outputs.py`,
+    // `json.dumps(indent=2)`), for the same reason: a formatted copy would be
+    // undone by the next regeneration and re-red CI. Mirrored in .prettierignore.
+    ignore: [
+      'design/**',
+      '**/generated/**',
+      '**/board-controller/**',
+      'CHANGELOG.md',
+      '**/*.md',
+      'ml/holds/**/*.json',
+      'packages/shared/hold-detection/src/__tests__/fixtures/*.json',
+    ],
   },
   lint: {
     // Keep this list in lock-step with `ignorePatterns` in .oxlintrc.json.
@@ -125,10 +140,13 @@ export default defineConfig({
       './packages/moonboard-sync/vite.config.ts',
       './packages/sync-runtime/vite.config.ts',
       './packages/scheduler/vite.config.ts',
+      './packages/hold-detector/vite.config.ts',
       './packages/crypto/vite.config.ts',
       './packages/shared/ble-protocol/vite.config.ts',
       './packages/shared/board-config/vite.config.ts',
       './packages/shared/board-art-geometry/vite.config.ts',
+      './packages/shared/hold-detection/vite.config.ts',
+      './packages/shared/spray-wall-geometry/vite.config.ts',
       './packages/shared/board-look/vite.config.ts',
       './packages/shared/board-render/vite.config.ts',
       './packages/shared/velvet-tokens/vite.config.ts',
@@ -215,6 +233,15 @@ export default defineConfig({
         command: 'pnpm --filter @boardsesh/db run db:verify-journal',
         cache: false,
       },
+      // Asserts that application sessions start with max_parallel_workers_per_gather=0
+      // (#5352), and applies the database default when ADMIN_DATABASE_URL owns the
+      // database. Exits 1 when neither holds — migration 0225 cannot fix it, because
+      // ALTER DATABASE needs ownership the migration role deliberately does not have.
+      // Add `-- --check-only` to report without ever issuing DDL.
+      'db:verify-serial-plan': {
+        command: 'pnpm --filter @boardsesh/db run db:verify-serial-plan',
+        cache: false,
+      },
       'db:studio': {
         command: 'pnpm --filter @boardsesh/db run db:studio',
         dependsOn: ['db:up'],
@@ -260,6 +287,13 @@ export default defineConfig({
         command: 'pnpm --filter @boardsesh/db run db:refresh-climb-grades',
         // No db:up dependency: this often targets a remote DB_URL and supports
         // read-only validation/dry-runs before writing published grade rows.
+        cache: false,
+      },
+      'db:refresh-climb-neighbors': {
+        command: 'pnpm --filter @boardsesh/db run db:refresh-climb-neighbors',
+        // Same reasoning as db:refresh-climb-grades: often a remote DB_URL, and
+        // --dry-run writes nothing. Forward flags with
+        // `vp run db:refresh-climb-neighbors -- --board=kilter --full`.
         cache: false,
       },
       'db:refresh-moonboard-angle-estimates': {
@@ -361,6 +395,10 @@ export default defineConfig({
       // Booting local Docker first would only get in the way of that run.
       'db:import-woods-catalog': {
         command: 'pnpm --filter @boardsesh/db run db:import-woods-catalog',
+        cache: false,
+      },
+      'db:import-places': {
+        command: 'pnpm --filter @boardsesh/db run db:import-places',
         cache: false,
       },
       // Regenerates the committed MoonBoard cell->set map from the per-set board
@@ -520,6 +558,35 @@ export default defineConfig({
       },
       'check:i18n': {
         command: 'tsx packages/web/scripts/check-untranslated-strings.ts',
+        cache: false,
+      },
+      // Render design previews, publish them to dev storage, and update links.
+      'design:mockups': {
+        command: 'tsx packages/web/scripts/capture-design-mockups.ts',
+        cache: false,
+      },
+      'design:publish': {
+        command: 'tsx scripts/publish-design-previews.ts',
+        cache: false,
+      },
+      // Help-page screenshots. The raw PNGs are gitignored device captures, so
+      // `help:publish-shots` puts them in the dev bucket for review and keeps
+      // docs/help-screenshots.{json,md} pointing at them; `help:convert-shots`
+      // turns the same directory into the committed webp assets the page ships.
+      'help:publish-shots': {
+        command: 'tsx scripts/publish-help-shots.ts',
+        cache: false,
+      },
+      'help:convert-shots': {
+        command: 'tsx scripts/convert-help-shots.ts',
+        cache: false,
+      },
+      // Silent screen recordings, for the gestures a still cannot teach. The raw
+      // .mov files are gitignored device captures under .boardsesh/help-clips/raw;
+      // this writes the committed mp4/webm pair plus a webp poster frame.
+      // Recording contract and size budget: docs/help-clips.md.
+      'help:convert-clips': {
+        command: 'tsx scripts/help-convert-clips.ts',
         cache: false,
       },
       // Two-way i18n guard: catalog keys with no reference, code references with
@@ -756,6 +823,12 @@ export default defineConfig({
         command: 'pnpm --filter @boardsesh/board-render run typecheck',
         dependsOn: ['build:constants'],
       },
+      'typecheck:hold-detection': {
+        command: 'pnpm --filter @boardsesh/hold-detection run typecheck',
+      },
+      'typecheck:spray-wall-geometry': {
+        command: 'pnpm --filter @boardsesh/spray-wall-geometry run typecheck',
+      },
       'typecheck:board-art-geometry': {
         command: 'pnpm --filter @boardsesh/board-art-geometry run typecheck',
         dependsOn: ['build:constants'],
@@ -800,6 +873,10 @@ export default defineConfig({
       'typecheck:mobile': {
         command: 'pnpm --filter @boardsesh/mobile run typecheck',
         dependsOn: ['build:shared', 'build:constants', 'mobile:web-runtime:install'],
+      },
+      'typecheck:hold-detector': {
+        command: 'pnpm --filter @boardsesh/hold-detector run typecheck',
+        dependsOn: ['build:db', 'build:shared'],
       },
       'typecheck:kilter': {
         command: 'pnpm --filter @boardsesh/kilter-sync run typecheck',
@@ -882,6 +959,9 @@ export default defineConfig({
           'typecheck:board-config',
           'typecheck:board-render',
           'typecheck:board-art-geometry',
+          'typecheck:hold-detection',
+          'typecheck:hold-detector',
+          'typecheck:spray-wall-geometry',
           'typecheck:play-view',
           'typecheck:playback-react',
           'typecheck:profile-stats',
@@ -1017,6 +1097,36 @@ export default defineConfig({
         command: 'tsx scripts/mobile-screenshots.ts',
         cache: false,
       },
+      // The record/replay backend the store capture points the app at, so the
+      // screenshots are a pure function of the JS bundle rather than of what
+      // PROD happened to answer. See docs/mobile-screenshot-fixtures.md.
+      'mobile:screenshot-backend': {
+        command: 'tsx scripts/screenshot-backend.ts',
+        cache: false,
+      },
+      // Fold the per-shard fixture sets a recording fan-out produced into the
+      // single snapshot published to dev storage. See docs/mobile-screenshot-fixtures.md.
+      'mobile:screenshot-fixtures-fetch': {
+        command: 'tsx scripts/screenshot-fixtures-fetch.ts',
+        cache: false,
+      },
+      'mobile:screenshot-fixtures-publish': {
+        command: 'tsx scripts/screenshot-fixtures-publish.ts',
+        cache: false,
+      },
+      'mobile:screenshot-fixtures-merge': {
+        command: 'tsx scripts/screenshot-fixtures-merge.ts',
+        cache: false,
+      },
+      // Replace every climber but the recording account with a stable stand-in
+      // across an already-recorded set. The recorder does this itself now; this
+      // is the one-off for a set recorded before it did (and the `--check` a
+      // downloaded recording artifact should pass). See
+      // docs/mobile-screenshot-fixtures.md.
+      'mobile:screenshot-fixtures-pseudonymise': {
+        command: 'tsx scripts/screenshot-fixtures-pseudonymise.ts',
+        cache: false,
+      },
       'mobile:build-sim-app': {
         command: 'tsx scripts/mobile-build-sim-app.ts',
         cache: false,
@@ -1039,6 +1149,38 @@ export default defineConfig({
       },
       'check:screenshot-dimensions': {
         command: 'tsx scripts/assert-screenshot-dimensions.ts',
+        cache: false,
+      },
+      // Content gate run right after the dimension gate in ios-finalize, before the
+      // automatic App Store Connect upload: an absolute byte floor plus a ratio
+      // against the last published baseline (scripts/assert-screenshot-content.ts),
+      // mirroring the blank/mid-load checks the Android capture job already has.
+      'screenshot:frame': {
+        command: 'tsx scripts/frame-screenshots.ts',
+        cache: false,
+      },
+      'screenshot:assert-content': {
+        command: 'tsx scripts/assert-screenshot-content.ts',
+        cache: false,
+      },
+      // Probe gate for the iOS screenshot fan-out: compares one freshly captured
+      // shard against the stored baseline (scripts/compare-screenshots.ts).
+      'screenshot:compare': {
+        command: 'tsx scripts/compare-screenshots.ts',
+        cache: false,
+      },
+      // Packs / publishes / fetches the `screenshots-baseline` prerelease assets
+      // the compare above reads (scripts/screenshot-baseline.ts).
+      'screenshot:baseline': {
+        command: 'tsx scripts/screenshot-baseline.ts',
+        cache: false,
+      },
+      // Decides whether the probe's single pixel-compared shard should be
+      // overridden and the full 12-shard capture forced anyway, based on
+      // changed-file paths the probe shard itself can't see (locale-only or
+      // iPad-only changes). See scripts/screenshot-probe-scope.ts.
+      'screenshot:probe-scope': {
+        command: 'tsx scripts/screenshot-probe-scope.ts',
         cache: false,
       },
       'mobile:publish': {

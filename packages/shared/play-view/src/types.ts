@@ -41,5 +41,11 @@ export type NavigationState = {
   canPrevious: boolean;
   nextItem: ClimbQueueItem | null;
   prevItem: ClimbQueueItem | null;
+  /**
+   * How many climbs after the current one a forward swipe can still visit. With
+   * an active board supplied this excludes queued climbs that board cannot draw,
+   * so "N left" counts swipes rather than rows. Board-blind callers get the
+   * plain remaining count they always had.
+   */
   remainingCount: number;
 };

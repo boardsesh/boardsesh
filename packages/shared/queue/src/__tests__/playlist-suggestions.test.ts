@@ -3,6 +3,7 @@ import {
   mergeUniquePlaylistClimbs,
   playlistSuggestionSourceMatches,
   pruneSuggestedQueueItemsAfterCurrent,
+  reanchorPlaylistSuggestionSource,
 } from '../playlist-suggestions';
 import type { Climb, ClimbQueueItem, PlaylistSuggestionSource } from '../types';
 
@@ -103,5 +104,43 @@ describe('pruneSuggestedQueueItemsAfterCurrent', () => {
 
     const result = pruneSuggestedQueueItemsAfterCurrent(queue, notInQueue);
     expect(result).toBe(queue);
+  });
+});
+
+describe('reanchorPlaylistSuggestionSource', () => {
+  const source = (activatedClimbUuid: string, uuids: string[]): PlaylistSuggestionSource => ({
+    playlistUuid: 'list-1',
+    activatedClimbUuid,
+    boardKey: 'kilter:1:10:1,2',
+    climbs: uuids.map((uuid) => makeClimb(uuid)),
+  });
+
+  // The bug this exists for: a climber browses a track from `a` to `d` and puts
+  // `d` up. Committing with the source still anchored on `a` aims "next" at `b` —
+  // a climb they swiped past three gestures ago.
+  it('moves the anchor to the climb actually being committed', () => {
+    const reanchored = reanchorPlaylistSuggestionSource(source('a', ['a', 'b', 'c', 'd']), 'd');
+    expect(reanchored?.activatedClimbUuid).toBe('d');
+    expect(reanchored?.climbs.map((climb) => climb.uuid)).toEqual(['a', 'b', 'c', 'd']);
+  });
+
+  it('returns the SAME reference when the anchor is already right', () => {
+    // Identity matters: this feeds a context value and a re-anchor that always
+    // allocated would churn every consumer on each commit.
+    const original = source('a', ['a', 'b']);
+    expect(reanchorPlaylistSuggestionSource(original, 'a')).toBe(original);
+  });
+
+  it('leaves a source alone when the climb is not in it', () => {
+    // Anchoring on a climb the source does not contain makes `activatedIndex`
+    // -1, which reads the whole list as exhausted — worse than a stale anchor.
+    const original = source('a', ['a', 'b']);
+    expect(reanchorPlaylistSuggestionSource(original, 'zz')).toBe(original);
+  });
+
+  it('handles a missing source or climb uuid', () => {
+    expect(reanchorPlaylistSuggestionSource(null, 'a')).toBeNull();
+    const original = source('a', ['a']);
+    expect(reanchorPlaylistSuggestionSource(original, undefined)).toBe(original);
   });
 });

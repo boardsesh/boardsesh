@@ -22,6 +22,21 @@ export const DiscoverPlaylistCard = memo(function DiscoverPlaylistCard({
   return <PlaylistCard {...display} onPress={handleOpen} onTogglePin={onPin ? handlePin : undefined} />;
 });
 
+export type DiscoverSetterPlaylistCardProps = CardDisplayProps & {
+  username: string;
+  onOpen: (username: string) => void;
+};
+
+/** Setter shelves use usernames for navigation and do not support playlist pins. */
+export const DiscoverSetterPlaylistCard = memo(function DiscoverSetterPlaylistCard({
+  username,
+  onOpen,
+  ...display
+}: DiscoverSetterPlaylistCardProps) {
+  const handleOpen = useCallback(() => onOpen(username), [onOpen, username]);
+  return <PlaylistCard {...display} onPress={handleOpen} />;
+});
+
 export type DiscoverSmartPlaylistCardProps = CardDisplayProps & {
   smartType: SmartPlaylistType;
   onOpen: (smartType: SmartPlaylistType) => void;

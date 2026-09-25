@@ -1,5 +1,6 @@
 import { useContext, useEffect, useState } from 'react';
 import { BoardPresenceCurrentContext } from '@boardsesh/board-presence-react';
+import { nowMs } from '../../lib/clock';
 
 /** Holder is "idle" once nothing has changed on the wall for this long. */
 const IDLE_THRESHOLD_MS = 15 * 60 * 1000;
@@ -42,12 +43,12 @@ export function useBoardDriver(): BoardDriver | null {
   const current = useContext(BoardPresenceCurrentContext);
   const holder = current?.holder ?? null;
   const currentClimb = current?.currentClimb ?? null;
-  const [now, setNow] = useState(() => Date.now());
+  const [now, setNow] = useState(() => nowMs());
 
   const present = holder !== null || currentClimb !== null;
   useEffect(() => {
     if (!present) return;
-    const interval = setInterval(() => setNow(Date.now()), IDLE_RECHECK_MS);
+    const interval = setInterval(() => setNow(nowMs()), IDLE_RECHECK_MS);
     return () => clearInterval(interval);
   }, [present]);
 

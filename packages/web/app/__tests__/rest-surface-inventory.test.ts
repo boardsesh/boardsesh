@@ -1,7 +1,8 @@
 /**
- * The standing inventory oracle for issue #1889 (REST surface audit: 40
- * routes classified after the board renderer moved to Railway in #4715 and
- * the Railway healthcheck route landed in #3798).
+ * The standing inventory oracle for issue #1889 (REST surface audit: 38
+ * routes classified after the board renderer moved to Railway in #4715, the
+ * Railway healthcheck route landed in #3798, and the hold-heatmap route and
+ * its prewarm cron were retired).
  *
  * A classification table living only in an issue body or a doc goes stale the
  * moment a route is added or removed without anyone re-reading it — exactly
@@ -75,7 +76,6 @@ const VERDICTS: Record<string, Verdict> = {
   // in packages/web/vercel.json any more; `classifies every scheduler cron
   // target as an external surface` pins that below.
   'app/api/internal/cleanup/route.ts': 'keep-external',
-  'app/api/internal/prewarm-heatmap/[board_name]/route.ts': 'keep-external',
   'app/api/internal/profile-percentiles/route.ts': 'keep-external',
   // Now a scheduler cron target like the three above: the `refresh-sitemap-climbs`
   // job fires it every six hours (#4648). Still reachable by hand for the initial
@@ -107,7 +107,7 @@ const VERDICTS: Record<string, Verdict> = {
   'app/api/og/session/route.tsx': 'keep-caller',
   'app/api/og/setter/route.tsx': 'keep-caller',
 
-  // --- /api/v1/* (10) — published in the OpenAPI doc rendered at the
+  // --- /api/v1/* (11) — published in the OpenAPI doc rendered at the
   // indexable, sitemapped /docs and served as a crawlable /openapi.json.
   // "No in-repo caller" is the intended steady state of a published API. ---
   'app/api/v1/[board_name]/grades/route.ts': 'keep-external',
@@ -116,10 +116,15 @@ const VERDICTS: Record<string, Verdict> = {
   'app/api/v1/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/[climb_uuid]/route.ts': 'keep-external',
   'app/api/v1/[board_name]/climb-stats/[climb_uuid]/route.ts': 'keep-external',
   'app/api/v1/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/setters/route.ts': 'keep-external',
-  'app/api/v1/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/heatmap/route.ts': 'keep-external',
   'app/api/v1/[board_name]/slugs/layout/[slug]/route.ts': 'keep-external',
   'app/api/v1/[board_name]/slugs/size/[layout_id]/[slug]/route.ts': 'keep-external',
   'app/api/v1/[board_name]/slugs/sets/[layout_id]/[size_id]/[slug]/route.ts': 'keep-external',
+  // The odd one out on this list, and it has an in-repo caller: the spray climb
+  // page points an UNLISTED wall's photo at it. It has to be a route rather than
+  // a URL in the HTML because the underlying object is behind a fifteen-minute
+  // signature while the page carries a 24-hour CDN `s-maxage`, so the signature
+  // is minted per image fetch and this answers `no-store` every time.
+  'app/api/v1/spray-walls/[wall_uuid]/photo/route.ts': 'keep-caller',
 };
 
 function collectRouteFiles(dir: string, out: string[] = []): string[] {
@@ -155,18 +160,13 @@ function readCronPaths(): string[] {
  */
 const SCHEDULER_CRON_PATHS: readonly string[] = [
   '/api/internal/cleanup',
-  '/api/internal/prewarm-heatmap/kilter',
-  '/api/internal/prewarm-heatmap/tension',
-  '/api/internal/prewarm-heatmap/decoy',
-  '/api/internal/prewarm-heatmap/touchstone',
-  '/api/internal/prewarm-heatmap/grasshopper',
   '/api/internal/profile-percentiles',
   '/api/internal/refresh-sitemap-climbs',
 ];
 
 /**
- * Resolve a scheduled URL (`/api/internal/prewarm-heatmap/kilter`) to the route
- * key that serves it (`app/api/internal/prewarm-heatmap/[board_name]/route.ts`),
+ * Resolve a scheduled URL (`/api/internal/cleanup`) to the route key that
+ * serves it (`app/api/internal/cleanup/route.ts`),
  * treating a `[param]` segment as a wildcard. Returns undefined when no route
  * file can serve the schedule at all.
  */
@@ -251,6 +251,6 @@ describe('REST surface inventory (issue #1889)', () => {
   it('counts exactly the audited surface', () => {
     // Guards the headline number in issue #1889 itself — a change here means
     // the issue body needs a fresh audit pass, not a quiet reclassification.
-    expect(derived.size).toBe(39);
+    expect(derived.size).toBe(38);
   });
 });

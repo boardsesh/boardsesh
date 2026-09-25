@@ -9,6 +9,9 @@ import {
   findPreviousQueueItemWithSuggestions,
   computeNavigationStateWithSuggestions,
   findUpcomingQueueItemsWithSuggestions,
+  selectNextQueueItemWithSuggestions,
+  resolveNavigationSuggestionSource,
+  anchoredSuggestionSource,
 } from '../queue-navigation';
 
 function makeClimb(uuid: string): Climb {
@@ -430,10 +433,12 @@ describe('computeNavigationStateWithSuggestions', () => {
     expect(state.nextItem?.climb.uuid).toBe('y');
     expect(state.nextItem?.suggested).toBe(true);
     // `x` is first in the list and first in the queue, so there is nothing to
-    // swipe back to on either side; remainingCount stays queue-based.
+    // swipe back to on either side.
     expect(state.canPrevious).toBe(false);
     expect(state.prevItem).toBeNull();
-    expect(state.remainingCount).toBe(0);
+    // One forward swipe is available — onto `y` — so "1 left" is the honest
+    // count even though the queue tail is empty (issue #5403).
+    expect(state.remainingCount).toBe(1);
   });
 
   it('lights up canPrevious from the list predecessor for a queued climb mid-list (#4829)', () => {
@@ -450,8 +455,8 @@ describe('computeNavigationStateWithSuggestions', () => {
     expect(state.prevItem?.suggested).toBe(true);
     expect(state.canNext).toBe(true);
     expect(state.nextItem?.climb.uuid).toBe('w2');
-    // Queue-based: nothing after `w1` in the queue.
-    expect(state.remainingCount).toBe(0);
+    // Nothing after `w1` in the queue, but `w2` is one swipe away down the list.
+    expect(state.remainingCount).toBe(1);
   });
 
   it('lights up both directions for a view-only preview (orphan current in the playlist)', () => {
@@ -565,5 +570,408 @@ describe('findUpcomingQueueItemsWithSuggestions', () => {
       'b',
       'c',
     ]);
+  });
+});
+
+// --- Board-aware forward navigation (issue #5099) ---------------------------
+//
+// After a board switch the queue still holds the previous board's climbs. A
+// forward swipe must walk past them instead of handing back a climb that draws
+// nothing on screen and lights nothing on the wall.
+
+const TENSION_BOARD = { boardName: 'tension' as const, layoutId: 8 };
+
+function climbOnBoard(uuid: string, boardType: string, layoutId: number): Climb {
+  return { ...makeClimb(uuid), boardType, layoutId };
+}
+
+function queueItemOnBoard(uuid: string, boardType: string, layoutId: number): ClimbQueueItem {
+  return { uuid: `item-${uuid}`, climb: climbOnBoard(uuid, boardType, layoutId) };
+}
+
+describe('selectNextQueueItemWithSuggestions board awareness', () => {
+  it('skips queued climbs the active board cannot draw and reports how many', () => {
+    const queue = [
+      queueItemOnBoard('current', 'tension', 8),
+      queueItemOnBoard('kilter-1', 'kilter', 1),
+      queueItemOnBoard('kilter-2', 'kilter', 1),
+      queueItemOnBoard('tension-2', 'tension', 8),
+    ];
+    const selection = selectNextQueueItemWithSuggestions(queue, queue[0], null, TENSION_BOARD);
+    expect(selection.item?.uuid).toBe('item-tension-2');
+    expect(selection.skippedItems.map((item) => item.uuid)).toEqual(['item-kilter-1', 'item-kilter-2']);
+  });
+
+  it('never skips a climb with no board metadata (fails open)', () => {
+    const queue = [queueItemOnBoard('current', 'tension', 8), makeItem('unknown')];
+    const selection = selectNextQueueItemWithSuggestions(queue, queue[0], null, TENSION_BOARD);
+    expect(selection.item).toBe(queue[1]);
+    expect(selection.skippedItems).toEqual([]);
+  });
+
+  it('never skips anything when no active board is supplied', () => {
+    const queue = [queueItemOnBoard('current', 'tension', 8), queueItemOnBoard('kilter-1', 'kilter', 1)];
+    const selection = selectNextQueueItemWithSuggestions(queue, queue[0], null);
+    expect(selection.item).toBe(queue[1]);
+    expect(selection.skippedItems).toEqual([]);
+  });
+
+  it('never skips a same-layout different-size climb (identity matching only)', () => {
+    // Woods 8x10 vs 12x12: same board name + layout, different size. Those still
+    // render — on the correctly sized board — so they must stay swipe targets.
+    const queue = [
+      queueItemOnBoard('current', 'tension', 8),
+      { uuid: 'item-upsized', climb: { ...climbOnBoard('upsized', 'tension', 8), compatibleSizeIds: [99] } },
+    ];
+    const selection = selectNextQueueItemWithSuggestions(queue, queue[0], null, TENSION_BOARD);
+    expect(selection.item?.uuid).toBe('item-upsized');
+    expect(selection.skippedItems).toEqual([]);
+  });
+
+  it('follows the active list before scanning an off-board queue tail', () => {
+    // The exact #5099 shape: every remaining queued climb belongs to the board
+    // the climber left, so `next` must re-anchor onto the feed rather than
+    // returning null and dead-ending the swipe.
+    const anchor = climbOnBoard('current', 'tension', 8);
+    const feedClimb = climbOnBoard('feed-1', 'tension', 8);
+    const queue = [
+      itemFor(anchor),
+      queueItemOnBoard('kilter-1', 'kilter', 1),
+      queueItemOnBoard('kilter-2', 'kilter', 1),
+    ];
+    const source = makeSource(anchor, [anchor, feedClimb]);
+    const selection = selectNextQueueItemWithSuggestions(queue, queue[0], source, TENSION_BOARD);
+    expect(selection.item?.climb.uuid).toBe('feed-1');
+    expect(selection.item?.uuid).toBe(getPlaylistPeekQueueItemUuid('feed-1'));
+    // List-first navigation never considered the queue tail, so no skip notice.
+    expect(selection.skippedItems).toEqual([]);
+  });
+
+  it('returns no item when the tail is off-board and there is no feed to fall back on', () => {
+    const queue = [queueItemOnBoard('current', 'tension', 8), queueItemOnBoard('kilter-1', 'kilter', 1)];
+    const selection = selectNextQueueItemWithSuggestions(queue, queue[0], null, TENSION_BOARD);
+    expect(selection.item).toBeNull();
+    expect(selection.skippedItems).toHaveLength(1);
+  });
+
+  it('skips from the head of the queue when there is no current item', () => {
+    const queue = [queueItemOnBoard('kilter-1', 'kilter', 1), queueItemOnBoard('tension-1', 'tension', 8)];
+    const selection = selectNextQueueItemWithSuggestions(queue, null, null, TENSION_BOARD);
+    expect(selection.item?.uuid).toBe('item-tension-1');
+    expect(selection.skippedItems.map((item) => item.uuid)).toEqual(['item-kilter-1']);
+  });
+
+  it('leaves the suggestion branch board-blind (the wrong-board preview relies on it)', () => {
+    // The play drawer feeds a preview source that is bound to another board on
+    // purpose. Filtering here would break that read-only browse.
+    const previewClimb = climbOnBoard('kilter-preview', 'kilter', 1);
+    const nextPreviewClimb = climbOnBoard('kilter-next', 'kilter', 1);
+    const source = makeSource(previewClimb, [previewClimb, nextPreviewClimb]);
+    const selection = selectNextQueueItemWithSuggestions([], itemFor(previewClimb), source, TENSION_BOARD);
+    expect(selection.item?.climb.uuid).toBe('kilter-next');
+    expect(selection.skippedItems).toEqual([]);
+  });
+});
+
+describe('computeNavigationStateWithSuggestions board awareness', () => {
+  it('points canNext at the climb the swipe actually lands on', () => {
+    const queue = [
+      queueItemOnBoard('current', 'tension', 8),
+      queueItemOnBoard('kilter-1', 'kilter', 1),
+      queueItemOnBoard('tension-2', 'tension', 8),
+    ];
+    const state = computeNavigationStateWithSuggestions(queue, queue[0], null, TENSION_BOARD);
+    expect(state.canNext).toBe(true);
+    expect(state.nextItem?.uuid).toBe('item-tension-2');
+  });
+
+  it('counts only the climbs a swipe can still reach in remainingCount', () => {
+    const queue = [
+      queueItemOnBoard('current', 'tension', 8),
+      queueItemOnBoard('kilter-1', 'kilter', 1),
+      queueItemOnBoard('kilter-2', 'kilter', 1),
+      queueItemOnBoard('tension-2', 'tension', 8),
+    ];
+    // Three rows sit after the current one, but only one is a swipe target.
+    expect(computeNavigationStateWithSuggestions(queue, queue[0], null, TENSION_BOARD).remainingCount).toBe(1);
+  });
+
+  it('keeps the plain remaining count for a board-blind caller', () => {
+    const queue = [
+      queueItemOnBoard('current', 'tension', 8),
+      queueItemOnBoard('kilter-1', 'kilter', 1),
+      queueItemOnBoard('tension-2', 'tension', 8),
+    ];
+    expect(computeNavigationStateWithSuggestions(queue, queue[0], null).remainingCount).toBe(2);
+    expect(computeNavigationState(queue, queue[0]).remainingCount).toBe(2);
+  });
+
+  it('counts an off-board current climb from the head of the tail', () => {
+    const queue = [
+      queueItemOnBoard('kilter-current', 'kilter', 1),
+      queueItemOnBoard('tension-1', 'tension', 8),
+      queueItemOnBoard('kilter-2', 'kilter', 1),
+    ];
+    expect(computeNavigationStateWithSuggestions(queue, queue[0], null, TENSION_BOARD).remainingCount).toBe(1);
+  });
+
+  it('leaves backward navigation alone', () => {
+    const queue = [
+      queueItemOnBoard('kilter-1', 'kilter', 1),
+      queueItemOnBoard('current', 'tension', 8),
+      queueItemOnBoard('kilter-2', 'kilter', 1),
+    ];
+    const state = computeNavigationStateWithSuggestions(queue, queue[1], null, TENSION_BOARD);
+    expect(state.prevItem?.uuid).toBe('item-kilter-1');
+    expect(state.canPrevious).toBe(true);
+  });
+});
+
+it('prefetches the same reachable climbs as board-aware forward navigation', () => {
+  const queue = [
+    queueItemOnBoard('current', 'tension', 8),
+    queueItemOnBoard('kilter-1', 'kilter', 1),
+    queueItemOnBoard('kilter-2', 'kilter', 1),
+    queueItemOnBoard('tension-1', 'tension', 8),
+    queueItemOnBoard('tension-2', 'tension', 8),
+  ];
+  expect(findUpcomingQueueItemsWithSuggestions(queue, queue[0], null, 2, TENSION_BOARD)).toEqual([queue[3], queue[4]]);
+});
+
+describe('a suggestion track belongs to one lineage (#5403)', () => {
+  const previewedClimb = makeClimb('previewed');
+  const leftoverNeighbour = makeClimb('leftover-neighbour');
+
+  it('never lends the committed track to a source-less preview', () => {
+    // The trap: the leftover track DOES contain the previewed climb, so a
+    // membership check alone would hand it over. A pinned preview is a different
+    // lineage regardless — it navigates its own track or none.
+    const leftover = makeSource(previewedClimb, [previewedClimb, leftoverNeighbour]);
+    expect(
+      resolveNavigationSuggestionSource({
+        previewItem: itemFor(previewedClimb),
+        previewSource: null,
+        committedItem: itemFor(previewedClimb),
+        committedSource: leftover,
+      }),
+    ).toBeNull();
+  });
+
+  it('uses the track the preview was opened with', () => {
+    const own = makeSource(previewedClimb, [previewedClimb, makeClimb('own-neighbour')]);
+    const leftover = makeSource(previewedClimb, [previewedClimb, leftoverNeighbour]);
+    expect(
+      resolveNavigationSuggestionSource({
+        previewItem: itemFor(previewedClimb),
+        previewSource: own,
+        committedItem: itemFor(previewedClimb),
+        committedSource: leftover,
+      }),
+    ).toBe(own);
+  });
+
+  it('keeps the committed track while it anchors the committed climb', () => {
+    const committed = makeClimb('committed');
+    const track = makeSource(committed, [committed, makeClimb('after')]);
+    expect(
+      resolveNavigationSuggestionSource({
+        previewItem: null,
+        previewSource: null,
+        committedItem: itemFor(committed),
+        committedSource: track,
+      }),
+    ).toBe(track);
+  });
+
+  it('drops a committed track the current climb has moved off', () => {
+    const elsewhere = makeClimb('elsewhere');
+    const track = makeSource(makeClimb('anchor'), [makeClimb('anchor'), makeClimb('after')]);
+    expect(
+      resolveNavigationSuggestionSource({
+        previewItem: null,
+        previewSource: null,
+        committedItem: itemFor(elsewhere),
+        committedSource: track,
+      }),
+    ).toBeNull();
+  });
+
+  it('keeps a track with nothing to anchor against, so an empty queue can seed from it', () => {
+    const first = makeClimb('first');
+    const track = makeSource(first, [first, makeClimb('second')]);
+    expect(anchoredSuggestionSource(track, null)).toBe(track);
+  });
+});
+
+describe("the end of the climber's own list (#5403)", () => {
+  it('dead-ends instead of continuing, and says 0 left', () => {
+    const last = makeClimb('last');
+    const track = makeSource(makeClimb('first'), [makeClimb('first'), last]);
+    const queue = [itemFor(last)];
+    const state = computeNavigationStateWithSuggestions(queue, queue[0], track);
+    expect(state.canNext).toBe(false);
+    expect(state.nextItem).toBeNull();
+    expect(state.remainingCount).toBe(0);
+  });
+
+  it('stops the prefetch walk there too', () => {
+    const last = makeClimb('last');
+    const track = makeSource(makeClimb('first'), [makeClimb('first'), last]);
+    const queue = [itemFor(last)];
+    expect(findUpcomingQueueItemsWithSuggestions(queue, queue[0], track, 5)).toEqual([]);
+  });
+});
+
+// --- Reachable walls at the same gym ----------------------------------------
+//
+// The #5099 skip was written for a queue tail from a board somewhere else. At a
+// gym with two walls the same rule deletes half a deliberately mixed session, so
+// a climb the climber can walk to is a navigation target instead.
+
+describe('selectNextQueueItemWithSuggestions reachable walls', () => {
+  const kilterIsReachable = (climb: Climb) => climb.boardType === 'kilter';
+
+  it('stops on a climb from another wall at this gym instead of skipping it', () => {
+    const queue = [
+      queueItemOnBoard('current', 'tension', 8),
+      queueItemOnBoard('kilter-1', 'kilter', 1),
+      queueItemOnBoard('tension-2', 'tension', 8),
+    ];
+
+    const selection = selectNextQueueItemWithSuggestions(queue, queue[0], null, TENSION_BOARD, kilterIsReachable);
+
+    expect(selection.item?.uuid).toBe('item-kilter-1');
+    expect(selection.skippedItems).toEqual([]);
+  });
+
+  it('still skips a climb from a board that is not at this gym', () => {
+    const queue = [
+      queueItemOnBoard('current', 'tension', 8),
+      queueItemOnBoard('moon-1', 'moonboard', 6),
+      queueItemOnBoard('tension-2', 'tension', 8),
+    ];
+
+    const selection = selectNextQueueItemWithSuggestions(queue, queue[0], null, TENSION_BOARD, kilterIsReachable);
+
+    expect(selection.item?.uuid).toBe('item-tension-2');
+    expect(selection.skippedItems.map((item) => item.uuid)).toEqual(['item-moon-1']);
+  });
+
+  // Order is the climber's, not ours: a wall they can walk to that comes first
+  // wins over something drawable here that comes later.
+  it('prefers an earlier reachable climb over a later compatible one', () => {
+    const queue = [
+      queueItemOnBoard('current', 'tension', 8),
+      queueItemOnBoard('kilter-1', 'kilter', 1),
+      queueItemOnBoard('tension-2', 'tension', 8),
+      queueItemOnBoard('kilter-2', 'kilter', 1),
+    ];
+
+    const selection = selectNextQueueItemWithSuggestions(queue, queue[0], null, TENSION_BOARD, kilterIsReachable);
+
+    expect(selection.item?.uuid).toBe('item-kilter-1');
+  });
+
+  it('walks past unreachable climbs to a reachable one further along', () => {
+    const queue = [
+      queueItemOnBoard('current', 'tension', 8),
+      queueItemOnBoard('moon-1', 'moonboard', 6),
+      queueItemOnBoard('kilter-1', 'kilter', 1),
+    ];
+
+    const selection = selectNextQueueItemWithSuggestions(queue, queue[0], null, TENSION_BOARD, kilterIsReachable);
+
+    expect(selection.item?.uuid).toBe('item-kilter-1');
+    expect(selection.skippedItems.map((item) => item.uuid)).toEqual(['item-moon-1']);
+  });
+
+  // The predicate is additive: without it the #5099 behaviour must be unchanged,
+  // which is what keeps every existing caller safe.
+  it('behaves exactly as before when no predicate is supplied', () => {
+    const queue = [
+      queueItemOnBoard('current', 'tension', 8),
+      queueItemOnBoard('kilter-1', 'kilter', 1),
+      queueItemOnBoard('tension-2', 'tension', 8),
+    ];
+
+    const withoutPredicate = selectNextQueueItemWithSuggestions(queue, queue[0], null, TENSION_BOARD);
+    const withNothingReachable = selectNextQueueItemWithSuggestions(queue, queue[0], null, TENSION_BOARD, () => false);
+
+    expect(withoutPredicate.item?.uuid).toBe('item-tension-2');
+    expect(withNothingReachable.item?.uuid).toBe('item-tension-2');
+    expect(withNothingReachable.skippedItems.map((item) => item.uuid)).toEqual(['item-kilter-1']);
+  });
+
+  // The forward/backward disagreement that mattered: a climb the climber could
+  // walk to was skipped going forward but landed on going back.
+  it('reaches the same-gym climb in both directions', () => {
+    const queue = [
+      queueItemOnBoard('current', 'tension', 8),
+      queueItemOnBoard('kilter-1', 'kilter', 1),
+      queueItemOnBoard('tension-2', 'tension', 8),
+    ];
+
+    const forward = selectNextQueueItemWithSuggestions(queue, queue[0], null, TENSION_BOARD, kilterIsReachable);
+    const backward = findPreviousQueueItemWithSuggestions(queue, queue[2], null);
+
+    expect(forward.item?.uuid).toBe('item-kilter-1');
+    expect(backward?.uuid).toBe('item-kilter-1');
+  });
+});
+
+// The drawer's Next affordance, its peek and its "N left" are computed here, and
+// they have to describe the swipe that `nextClimb` actually performs. Before the
+// predicate reached these, a queue whose only remaining climb was on the board
+// across the room reported canNext:false — so the gesture was disabled and the
+// climb this feature exists to reach could not be reached forward at all.
+describe('computeNavigationStateWithSuggestions reachable walls', () => {
+  const kilterIsReachable = (climb: Climb) => climb.boardType === 'kilter';
+
+  it('can advance onto a climb at another board in this gym', () => {
+    const queue = [queueItemOnBoard('current', 'tension', 8), queueItemOnBoard('kilter-1', 'kilter', 1)];
+
+    const state = computeNavigationStateWithSuggestions(queue, queue[0], null, TENSION_BOARD, kilterIsReachable);
+
+    expect(state.canNext).toBe(true);
+    expect(state.nextItem?.uuid).toBe('item-kilter-1');
+  });
+
+  it('still cannot advance onto a board that is not at this gym', () => {
+    const queue = [queueItemOnBoard('current', 'tension', 8), queueItemOnBoard('moon-1', 'moonboard', 6)];
+
+    const state = computeNavigationStateWithSuggestions(queue, queue[0], null, TENSION_BOARD, kilterIsReachable);
+
+    expect(state.canNext).toBe(false);
+  });
+
+  // The peek names the climb the swipe lands on. Disagreement here is how a
+  // climber is shown one climb and handed another.
+  it('peeks the climb the swipe will actually land on', () => {
+    const queue = [
+      queueItemOnBoard('current', 'tension', 8),
+      queueItemOnBoard('kilter-1', 'kilter', 1),
+      queueItemOnBoard('tension-2', 'tension', 8),
+    ];
+
+    const state = computeNavigationStateWithSuggestions(queue, queue[0], null, TENSION_BOARD, kilterIsReachable);
+    const landed = selectNextQueueItemWithSuggestions(queue, queue[0], null, TENSION_BOARD, kilterIsReachable);
+
+    expect(state.nextItem?.uuid).toBe(landed.item?.uuid);
+  });
+
+  it('counts a reachable climb in what is left', () => {
+    const queue = [queueItemOnBoard('current', 'tension', 8), queueItemOnBoard('kilter-1', 'kilter', 1)];
+
+    const withPredicate = computeNavigationStateWithSuggestions(
+      queue,
+      queue[0],
+      null,
+      TENSION_BOARD,
+      kilterIsReachable,
+    );
+    const without = computeNavigationStateWithSuggestions(queue, queue[0], null, TENSION_BOARD);
+
+    expect(withPredicate.remainingCount).toBe(1);
+    expect(without.remainingCount).toBe(0);
   });
 });

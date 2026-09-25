@@ -16,6 +16,8 @@ import FrontDoorBreadcrumb from './front-door-breadcrumb';
 
 type StaticListFrontDoorProps = {
   boardDetails: BoardDetails;
+  /** Navigation identity; metadata continues to canonicalise by configuration. */
+  boardSlug?: string;
   angle: number;
   climbs: Climb[];
   hasMore: boolean;
@@ -115,6 +117,7 @@ const emptyStateSx = {
  */
 export default async function StaticListFrontDoor({
   boardDetails,
+  boardSlug,
   angle,
   climbs,
   hasMore,
@@ -136,7 +139,7 @@ export default async function StaticListFrontDoor({
 
   return (
     <Box component="main" sx={containerSx}>
-      <ClimbListJsonLd climbs={climbs} boardDetails={boardDetails} page={page} locale={locale} />
+      <ClimbListJsonLd climbs={climbs} boardDetails={boardDetails} page={page} />
 
       <FrontDoorBreadcrumb
         boardName={boardName}
@@ -156,6 +159,7 @@ export default async function StaticListFrontDoor({
 
       <StaticClimbList
         climbs={climbs}
+        boardSlug={boardSlug}
         boardDetails={boardDetails}
         virtualize={false}
         // Keep the leading rows on plain image layers rather than the canvas

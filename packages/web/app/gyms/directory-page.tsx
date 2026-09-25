@@ -3,16 +3,21 @@ import React from 'react';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
 import Chip from '@mui/material/Chip';
-import Container from '@mui/material/Container';
 import Typography from '@mui/material/Typography';
 import MuiLink from '@mui/material/Link';
+import SearchOutlined from '@mui/icons-material/SearchOutlined';
+import WarningAmberOutlined from '@mui/icons-material/WarningAmberOutlined';
 import type { GymClaimViewerState } from '@boardsesh/analytics';
 import { getPosthogDistinctId } from '@/app/lib/feature-flags/server-distinct-id';
 import { getServerTranslation } from '@/app/lib/i18n/server';
+import { localeHref } from '@/app/lib/i18n/locale-href';
 import { createNoIndexMetadata } from '@/app/lib/seo/metadata';
 import I18nProvider from '@/app/components/providers/i18n-provider';
 import LocaleLink from '@/app/components/i18n/locale-link';
+import { PageCard, PageShell, StatePanel } from '@/app/components/ui/page-shell';
+import { filterChipSx } from '@/app/components/ui/filter-chip';
 import { themeTokens } from '@/app/theme/theme-config';
 import {
   BOARD_FACETS,
@@ -37,6 +42,7 @@ import {
 } from './directory-copy';
 import { fetchDirectoryPage, fetchFacetCounts } from './directory-data';
 import GymDirectoryCard from './gym-directory-card';
+import GymDirectoryClaimLink from './gym-directory-claim-link';
 import GymDirectoryNearMe from './gym-directory-near-me';
 import GymDirectoryPagination from './gym-directory-pagination';
 import GymDirectorySearchForm from './gym-directory-search-form';
@@ -105,17 +111,36 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
   if (!pageResult.ok || !facetCountsResult.ok) {
     return (
       <I18nProvider locale={locale} namespaces={['common', 'gyms']}>
-        <Container maxWidth="lg" sx={{ py: 4, pt: 'calc(var(--global-header-height) + 32px)' }}>
-          <Typography variant="h3" component="h1" sx={{ fontWeight: themeTokens.typography.fontWeight.bold, mb: 2 }}>
-            {facetHeading(t, facet)}
-          </Typography>
-          <Typography variant="subtitle1" sx={{ fontWeight: themeTokens.typography.fontWeight.semibold }}>
-            {t('error.title')}
-          </Typography>
-          <Typography variant="body1" color="text.secondary" sx={{ mt: 0.5, maxWidth: '68ch' }}>
-            {t('error.body')}
-          </Typography>
-        </Container>
+        {/* The h1 survives an outage — a test asserts the page still says what
+            it is — but the count-bearing lead does not, because there are no
+            counts to state. */}
+        <PageShell
+          width="wide"
+          title={facetHeading(t, facet)}
+          breadcrumb={
+            <DirectoryBreadcrumb facet={facet} homeLabel={t('breadcrumb.home')} gymsLabel={t('breadcrumb.gyms')} />
+          }
+        >
+          <StatePanel
+            tone="warning"
+            icon={<WarningAmberOutlined />}
+            title={t('error.title')}
+            body={t('error.body')}
+            actions={
+              <>
+                {/* A plain anchor, not a LocaleLink: this button's whole job is
+                    to fetch the page again, and a soft navigation to the URL
+                    the visitor is already on is a no-op. */}
+                <Button variant="contained" color="primaryFill" href={localeHref(FACET_BASE_PATHS[facet], locale)}>
+                  {t('error.retry')}
+                </Button>
+                <Button variant="outlined" component={LocaleLink} href="/">
+                  {t('error.home')}
+                </Button>
+              </>
+            }
+          />
+        </PageShell>
       </I18nProvider>
     );
   }
@@ -160,58 +185,79 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
         />
       )}
 
-      <Container maxWidth="lg" sx={{ py: 4, pt: 'calc(var(--global-header-height) + 32px)' }}>
-        <Typography variant="h3" component="h1" sx={{ fontWeight: themeTokens.typography.fontWeight.bold, mb: 2 }}>
-          {facetHeading(t, facet)}
-        </Typography>
-
-        <Typography variant="body1" sx={{ mb: 1.5, maxWidth: '68ch' }}>
-          {facetLead(t, facet, facetCounts, formatNumber)}
-        </Typography>
-        <Typography variant="body1" sx={{ mb: 3, maxWidth: '68ch' }}>
+      {/* PageShell owns the fixed-header clearance and the 1200px measure, so
+          no page file hand-rolls the header offset any more. */}
+      <PageShell
+        width="wide"
+        title={facetHeading(t, facet)}
+        lead={facetLead(t, facet, facetCounts, formatNumber)}
+        breadcrumb={
+          <DirectoryBreadcrumb facet={facet} homeLabel={t('breadcrumb.home')} gymsLabel={t('breadcrumb.gyms')} />
+        }
+      >
+        <Typography variant="body1" color="text.secondary" sx={{ mb: 3, maxWidth: '68ch' }}>
           {facetDetail(t, facet, facetCounts, formatNumber)}
         </Typography>
 
-        <GymDirectorySearchForm facet={facet} query={query} locale={locale} />
+        {/* The anchor the closing claim prompt jumps back to. Same clearance
+            the shell gives every other anchored block, so the fixed header does
+            not land on top of the search field. */}
+        <PageCard
+          id="gym-directory-search"
+          sx={{
+            mb: 4,
+            '& form': { mb: 1.5 },
+            scrollMarginTop: 'calc(var(--global-header-height) + var(--spacing-4))',
+          }}
+        >
+          <GymDirectorySearchForm facet={facet} query={query} locale={locale} />
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+            {t('search.geoHint')}
+          </Typography>
 
-        <Box component="section" sx={{ mb: 3 }}>
-          <Typography
-            variant="subtitle2"
-            component="h2"
-            sx={{ fontWeight: themeTokens.typography.fontWeight.semibold, mb: 1 }}
-          >
-            {t('facets.heading')}
-          </Typography>
-          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-            {DIRECTORY_FACETS.map((candidate) => (
-              <Chip
-                key={candidate}
-                clickable
-                component={LocaleLink}
-                href={buildFacetSwitchHref(candidate, query)}
-                label={facetChipLabel(t, candidate, facetCounts, formatNumber)}
-                color={candidate === facet ? 'primary' : 'default'}
-                variant={candidate === facet ? 'filled' : 'outlined'}
-                sx={{ borderRadius: `${themeTokens.borderRadius.full}px` }}
-              />
-            ))}
+          <Box component="section">
+            <Typography
+              variant="subtitle2"
+              component="h2"
+              sx={{ fontWeight: themeTokens.typography.fontWeight.semibold, mb: 1 }}
+            >
+              {t('facets.heading')}
+            </Typography>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+              {DIRECTORY_FACETS.map((candidate) => {
+                const isCurrentFacet = candidate === facet;
+                return (
+                  <Chip
+                    key={candidate}
+                    clickable
+                    component={LocaleLink}
+                    href={buildFacetSwitchHref(candidate, query)}
+                    aria-current={isCurrentFacet ? 'page' : undefined}
+                    label={facetChipLabel(t, candidate, facetCounts, formatNumber)}
+                    variant="outlined"
+                    sx={filterChipSx({ selected: isCurrentFacet })}
+                  />
+                );
+              })}
+            </Box>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+              {t('facets.countHint')}
+            </Typography>
           </Box>
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-            {t('facets.countHint')}
-          </Typography>
-        </Box>
+        </PageCard>
 
         {/* The map column and near-me mode wrap the results block rather than
             sitting above it: the map is a second COLUMN beside this list at
             960px and up, and near-me swaps the list out for its own. The list
             stays first in the DOM either way. */}
         <GymDirectoryNearMe
+          key={buildFacetSwitchHref(facet, query)}
+          selectedArea={origin ? { facet, query } : undefined}
           boardTypes={query.boardTypes}
           // Threaded through, not dropped: the search box keeps rendering what
           // was typed, so near-me has to keep applying it.
           searchQuery={query.query}
           locale={locale}
-          viewerState={viewerState}
           browsePins={toMapPins(pageResult.gyms)}
           browsePinnedCount={browseCoverage.pinned}
           browseShownCount={browseCoverage.total}
@@ -228,39 +274,61 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
           </Typography>
 
           {pageResult.gyms.length === 0 ? (
-            <Box sx={{ py: 4 }}>
-              <Typography variant="subtitle1" sx={{ fontWeight: themeTokens.typography.fontWeight.semibold }}>
-                {t('results.emptyTitle')}
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                {t('results.emptyBody')}
-              </Typography>
-            </Box>
+            /* A legitimate 200 on page one, so it gets a designed answer rather
+               than two bare lines: the card surface, a muted glyph, and two ways
+               out. Each action only renders when it would actually change the
+               query — on a bare `/gyms` there is nothing to clear and nothing
+               wider to browse. */
+            <StatePanel
+              tone="brand"
+              icon={<SearchOutlined />}
+              title={t('results.emptyTitle')}
+              body={t('results.emptyBody')}
+              actions={
+                <>
+                  {query.query.length > 0 && (
+                    <Button variant="outlined" component={LocaleLink} href={FACET_BASE_PATHS[facet]}>
+                      {t('results.emptyClearSearch')}
+                    </Button>
+                  )}
+                  {(facet !== 'all' || query.boardTypes.length > 0) && (
+                    <Button variant="contained" color="primaryFill" component={LocaleLink} href={FACET_BASE_PATHS.all}>
+                      {t('results.emptyBrowseAll')}
+                    </Button>
+                  )}
+                </>
+              }
+            />
           ) : (
             <Box
               component="ul"
               sx={{
                 display: 'grid',
-                // Three at wide widths, same as before the map existed. This is
-                // the surface whose whole job is surfacing gyms, so more of
-                // them above the fold wins over a grid that never reflows —
-                // the one-off shift when somebody opens the map on a narrow
-                // screen is the cheaper cost. The near-me grid stays at two,
-                // because it genuinely renders beside an open map.
-                gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(3, 1fr)' },
-                gap: 2,
+                gridTemplateColumns: 'minmax(0, 1fr)',
+                gap: 0,
                 m: 0,
                 p: 0,
               }}
             >
               {pageResult.gyms.map((gym) => (
-                <GymDirectoryCard key={gym.uuid} gym={gym} origin={origin} viewerState={viewerState} locale={locale} />
+                <GymDirectoryCard key={gym.uuid} gym={gym} origin={origin} locale={locale} />
               ))}
             </Box>
           )}
 
           <GymDirectoryPagination facet={facet} query={query} totalCount={pageResult.totalCount} />
         </GymDirectoryNearMe>
+
+        {/* ONE claim prompt for the page, below the list. It used to sit on
+            every unclaimed row, so the page said "Is this your gym?" 24 times
+            and the phrase read as a defect on each listing instead of an offer
+            to one owner. Suppressed on an empty page: there is nothing to
+            claim, and the search that found nothing is the thing to fix. */}
+        {pageResult.gyms.length > 0 && (
+          <Box component="section" sx={{ mt: 4 }}>
+            <GymDirectoryClaimLink viewerState={viewerState} />
+          </Box>
+        )}
 
         <Box component="section" sx={{ mt: 5 }}>
           <Typography
@@ -277,7 +345,7 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
                   component={LocaleLink}
                   href={FACET_BASE_PATHS[candidate]}
                   underline="hover"
-                  sx={{ color: 'var(--color-primary)' }}
+                  sx={{ color: 'var(--color-primary)', display: 'inline-flex', alignItems: 'center', minHeight: 44 }}
                 >
                   {facetLinkLabel(t, candidate)}
                 </MuiLink>
@@ -285,11 +353,59 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
             ))}
           </Box>
         </Box>
-      </Container>
+      </PageShell>
     </I18nProvider>
   );
 }
 
+/**
+ * Home > Gyms, as real anchors.
+ *
+ * Both crumbs are passed in already resolved, and both `t()` call sites that
+ * produce them are literal keys — a computed `t(crumb)` is a hard lint failure
+ * and would hide the two catalog entries from the orphan checker.
+ */
+function DirectoryBreadcrumb({
+  facet,
+  homeLabel,
+  gymsLabel,
+}: {
+  facet: DirectoryFacet;
+  homeLabel: string;
+  gymsLabel: string;
+}) {
+  return (
+    <Box component="nav" sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+      <MuiLink component={LocaleLink} href="/" underline="hover" sx={{ color: 'var(--color-primary)' }}>
+        {homeLabel}
+      </MuiLink>
+      <Box component="span" aria-hidden="true" sx={{ color: 'var(--neutral-400)' }}>
+        ›
+      </Box>
+      {facet === 'all' ? (
+        <Box component="span" aria-current="page">
+          {gymsLabel}
+        </Box>
+      ) : (
+        <MuiLink
+          component={LocaleLink}
+          href={FACET_BASE_PATHS.all}
+          underline="hover"
+          sx={{ color: 'var(--color-primary)' }}
+        >
+          {gymsLabel}
+        </MuiLink>
+      )}
+    </Box>
+  );
+}
+
+/**
+ * The empty and the outage panel, which are the same object with a different
+ * glyph tone: a card surface, a ringed glyph, one line of what happened, and
+ * the ways out. Neither branch had a design before — zero results rendered two
+ * bare lines and a failed fetch rendered three.
+ */
 // Re-exported so the four route files import their whole contract from one
 // module. `BOARD_FACETS` is the list #4381's sitemap will enumerate.
 export { BOARD_FACETS, FACET_BASE_PATHS };

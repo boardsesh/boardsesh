@@ -8,7 +8,15 @@ import { eq } from 'drizzle-orm';
 
 import { auroraCredentials } from '@boardsesh/db/schema';
 import { SyncRunner } from '../runner';
-import { isKilterSkipReason, KILTER_SKIP_REASONS, loadBacklog } from '../sync';
+import {
+  describeBacklogStatus,
+  findUnmatchedClimbUuids,
+  isKilterSkipReason,
+  KILTER_SKIP_REASONS,
+  loadBacklog,
+  rejectSkips,
+  unrejectSkips,
+} from '../sync';
 import { KILTER_BOARD_TYPE } from '../api/types';
 
 const program = new Command();
@@ -172,52 +180,113 @@ program
     }
   });
 
-program
+const backlogCommand = program
   .command('backlog')
   .description('Report climbs the catalog sync could not ingest (board_climb_ingest_skips)')
   .option('--reason <reason>', `filter to one reason: ${KILTER_SKIP_REASONS.join(' | ')}`)
   .option('--limit <n>', 'maximum rows to print (default 50)', '50')
   .option('--include-resolved', 'also show climbs a later run recovered')
+  .option('--include-rejected', 'also show climbs an operator rejected')
   .option('--raw', 'print each climb’s verbatim upstream hold string')
-  .action(async (opts: { reason?: string; limit: string; includeResolved?: boolean; raw?: boolean }) => {
-    const limit = Number(opts.limit);
-    if (!Number.isInteger(limit) || limit <= 0) {
-      console.error(`Invalid --limit value: ${opts.limit}. Expected a positive integer.`);
-      process.exitCode = 1;
-      return;
-    }
-    // Reject a typo outright — filtering on an unknown reason would otherwise
-    // print "nothing skipped", which is exactly the wrong answer to get wrong.
-    if (opts.reason !== undefined && !isKilterSkipReason(opts.reason)) {
-      console.error(`Unknown --reason "${opts.reason}". Expected one of: ${KILTER_SKIP_REASONS.join(', ')}.`);
-      process.exitCode = 1;
-      return;
-    }
-    const client = postgres(getDatabaseUrl(), { max: 1, prepare: false });
-    try {
-      const rows = await loadBacklog(drizzle(client), {
-        boardType: KILTER_BOARD_TYPE,
-        reason: opts.reason,
-        limit,
-        includeResolved: opts.includeResolved ?? false,
-      });
-      if (rows.length === 0) {
-        console.log('No unmapped climbs recorded. Nothing is being silently dropped.');
+  .action(
+    async (opts: {
+      reason?: string;
+      limit: string;
+      includeResolved?: boolean;
+      includeRejected?: boolean;
+      raw?: boolean;
+    }) => {
+      const limit = Number(opts.limit);
+      if (!Number.isInteger(limit) || limit <= 0) {
+        console.error(`Invalid --limit value: ${opts.limit}. Expected a positive integer.`);
+        process.exitCode = 1;
         return;
       }
-      const counts = new Map<string, number>();
-      for (const row of rows) counts.set(row.reason, (counts.get(row.reason) ?? 0) + 1);
-      console.log(`${rows.length} climb(s): ${[...counts].map(([reason, count]) => `${count} ${reason}`).join(', ')}`);
-      for (const row of rows) {
-        const status = row.resolvedAt ? `resolved ${row.resolvedAt.toISOString()}` : 'open';
-        console.log(
-          `  ${row.climbUuid}  ${row.reason}${row.detail ? ` (${row.detail})` : ''}  frames=${row.framesCount ?? '?'}  layout=${row.layoutId ?? '?'}/${row.sourceLayoutUuid ?? '?'}  ${status}`,
-        );
-        console.log(`      ${row.climbName ?? '(unnamed)'} — ${row.setterUsername ?? 'unknown setter'}`);
-        if (opts.raw) console.log(`      ${row.rawHolds}`);
+      // Reject a typo outright — filtering on an unknown reason would otherwise
+      // print "nothing skipped", which is exactly the wrong answer to get wrong.
+      if (opts.reason !== undefined && !isKilterSkipReason(opts.reason)) {
+        console.error(`Unknown --reason "${opts.reason}". Expected one of: ${KILTER_SKIP_REASONS.join(', ')}.`);
+        process.exitCode = 1;
+        return;
       }
+      const client = postgres(getDatabaseUrl(), { max: 1, prepare: false });
+      try {
+        const rows = await loadBacklog(drizzle(client), {
+          boardType: KILTER_BOARD_TYPE,
+          reason: opts.reason,
+          limit,
+          includeResolved: opts.includeResolved ?? false,
+          includeRejected: opts.includeRejected ?? false,
+        });
+        if (rows.length === 0) {
+          console.log('No unmapped climbs recorded. Nothing is being silently dropped.');
+          return;
+        }
+        const counts = new Map<string, number>();
+        for (const row of rows) counts.set(row.reason, (counts.get(row.reason) ?? 0) + 1);
+        console.log(
+          `${rows.length} climb(s): ${[...counts].map(([reason, count]) => `${count} ${reason}`).join(', ')}`,
+        );
+        for (const row of rows) {
+          const status = describeBacklogStatus(row);
+          console.log(
+            `  ${row.climbUuid}  ${row.reason}${row.detail ? ` (${row.detail})` : ''}  frames=${row.framesCount ?? '?'}  layout=${row.layoutId ?? '?'}/${row.sourceLayoutUuid ?? '?'}  ${status}`,
+          );
+          console.log(`      ${row.climbName ?? '(unnamed)'} — ${row.setterUsername ?? 'unknown setter'}`);
+          if (opts.raw) console.log(`      ${row.rawHolds}`);
+        }
+      } catch (err) {
+        console.error('✗ Failed to read the ingest backlog:', err instanceof Error ? err.message : err);
+        process.exitCode = 1;
+      } finally {
+        await client.end();
+      }
+    },
+  );
+
+/** A uuid that matched no row is a typo, not a no-op — say so and fail. */
+function reportUnmatchedClimbUuids(requestedUuids: string[], matchedUuids: string[]): void {
+  const unmatchedUuids = findUnmatchedClimbUuids(requestedUuids, matchedUuids);
+  if (unmatchedUuids.length === 0) return;
+  console.error(`No backlog row for: ${unmatchedUuids.join(', ')}`);
+  process.exitCode = 1;
+}
+
+backlogCommand
+  .command('reject <climbUuids...>')
+  .description('Write climbs off so they drop out of the open backlog (nothing is deleted)')
+  // --note, not --reason: the parent `backlog` command already uses --reason for
+  // the skip-reason filter, so reusing that name here would read as the filter.
+  .requiredOption('--note <text>', 'why these climbs are being written off (stored on the row)')
+  .action(async (climbUuids: string[], opts: { note: string }) => {
+    const client = postgres(getDatabaseUrl(), { max: 1, prepare: false });
+    try {
+      const matchedUuids = await rejectSkips(drizzle(client), KILTER_BOARD_TYPE, climbUuids, opts.note);
+      console.log(
+        `Rejected ${matchedUuids.length} climb(s)${matchedUuids.length > 0 ? `: ${matchedUuids.join(', ')}` : ''}`,
+      );
+      reportUnmatchedClimbUuids(climbUuids, matchedUuids);
     } catch (err) {
-      console.error('✗ Failed to read the ingest backlog:', err instanceof Error ? err.message : err);
+      console.error('✗ Failed to reject backlog rows:', err instanceof Error ? err.message : err);
+      process.exitCode = 1;
+    } finally {
+      await client.end();
+    }
+  });
+
+backlogCommand
+  .command('unreject <climbUuids...>')
+  .description('Undo a rejection, putting the climbs back in the open backlog')
+  .action(async (climbUuids: string[]) => {
+    const client = postgres(getDatabaseUrl(), { max: 1, prepare: false });
+    try {
+      const matchedUuids = await unrejectSkips(drizzle(client), KILTER_BOARD_TYPE, climbUuids);
+      console.log(
+        `Un-rejected ${matchedUuids.length} climb(s)${matchedUuids.length > 0 ? `: ${matchedUuids.join(', ')}` : ''}`,
+      );
+      reportUnmatchedClimbUuids(climbUuids, matchedUuids);
+    } catch (err) {
+      console.error('✗ Failed to un-reject backlog rows:', err instanceof Error ? err.message : err);
       process.exitCode = 1;
     } finally {
       await client.end();

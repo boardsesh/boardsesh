@@ -21,9 +21,6 @@ import type {
   DeleteHoldOutlineOverrideInput,
 } from '@boardsesh/shared-schema';
 import {
-  SIMILAR_CLIMBS_QUERY,
-  type SimilarClimbsVariables,
-  type SimilarClimbsResponse,
   CLIMB_STATS_HISTORY,
   type ClimbStatsHistoryResponse,
   BOARDSESH_GRADE,
@@ -43,6 +40,7 @@ import { getGradesForBoard, toBoardName } from '@boardsesh/board-config';
 import { useBoardAdapter } from '@boardsesh/board-react';
 import {
   myBoardsQueryKey,
+  GYM_BOARDS_QUERY_KEY,
   CLIMB_QUERY_KEY,
   SEARCH_CLIMBS_QUERY_KEY,
   INFINITE_SEARCH_CLIMBS_QUERY_KEY,
@@ -99,8 +97,12 @@ import {
   type RecordBoardOpenedMutationResponse,
   type GetBoardBySlugQueryResponse,
 } from '@boardsesh/graphql/operations/boards';
+import { UPDATE_SPRAY_WALL } from '@boardsesh/graphql/operations/spray-walls';
+import type { SprayWall, UpdateSprayWallInput } from '@boardsesh/graphql/generated/graphql';
 import { getHttpClient } from '../client';
+import { useStoredUserId } from '../../../hooks/use-current-user-id';
 import { withHoldOutlineOverride, withoutHoldOutlineOverride } from './hold-outline-cache';
+import { useGradeSourceSearchInput } from './search-grade-source';
 import {
   matchesAdvertisedType,
   sharedAdvertisedBoardType,
@@ -148,11 +150,9 @@ import {
   type EndSessionMutationResponse,
   type ToggleFavoriteMutationVariables,
   type ToggleFavoriteMutationResponse,
-  GET_PROFILE_ADMIN_FLAG,
   GET_HOLD_OUTLINES,
   UPSERT_HOLD_OUTLINE_OVERRIDE,
   DELETE_HOLD_OUTLINE_OVERRIDE,
-  type GetProfileAdminFlagQueryResponse,
   type HoldOutlinesQueryResponse,
   type UpsertHoldOutlineOverrideMutationResponse,
   type DeleteHoldOutlineOverrideMutationResponse,
@@ -268,6 +268,10 @@ export async function fetchBoardByUuid(boardUuid: string): Promise<UserBoard | n
 // source, which Rolldown's scan refuses; see the `hooks-dual-write` exclusion in
 // packages/mobile/vite.config.ts). Re-exported so callers keep one import path.
 export { fetchAllMyBoards } from './fetch-all-my-boards';
+
+// `useGymBoards` is split out for that same reason — it has its own suite —
+// and re-exported here so gym callers keep one import path.
+export { useGymBoards } from './use-gym-boards';
 
 /**
  * A single gym by uuid, including the viewer's `canEdit` flag. Backs the
@@ -559,6 +563,40 @@ export function useUpdateBoard() {
 }
 
 /**
+ * Change a spray wall's own fields — name, description, gym, angle and, the point
+ * of it, its VISIBILITY.
+ *
+ * Visibility on a wall does not go through `updateBoard`: the server refuses a
+ * visibility change on a spray board there (`SPRAY_WALL_VISIBILITY_ELSEWHERE`)
+ * because flipping a wall public is not a board-row edit — it publishes the
+ * wall's photo to the open web and starts pushing its climbs into feeds, and only
+ * the owner may do it (`SPRAY_WALL_VISIBILITY_OWNER_ONLY`, which the edit screen
+ * surfaces inline).
+ *
+ * `uuid` here is the wall's uuid, which IS its board uuid — so the same
+ * invalidations as `useUpdateBoard`: the roster rows and the single-board cache
+ * both carry `isPublic` / `isUnlisted`, and the wall finder's lists and pins show
+ * or hide the wall on the strength of them.
+ */
+export function useUpdateSprayWall() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: UpdateSprayWallInput) => {
+      const response = await getHttpClient().request<{ updateSprayWall: SprayWall }>(UPDATE_SPRAY_WALL, { input });
+      return response.updateSprayWall;
+    },
+    onSuccess: (updated) => {
+      void queryClient.invalidateQueries({ queryKey: ['myBoards'] });
+      void queryClient.invalidateQueries({ queryKey: ['board', updated.uuid] });
+      void queryClient.invalidateQueries({ queryKey: ['nearbyBoards'] });
+      void queryClient.invalidateQueries({ queryKey: ['searchBoards'] });
+      void queryClient.invalidateQueries({ queryKey: ['sprayWall', updated.uuid] });
+      void queryClient.invalidateQueries({ queryKey: ['sprayWallByLayout', updated.layoutId] });
+    },
+  });
+}
+
+/**
  * Edit a gym the viewer can edit (owner, gym admin, or community admin/leader
  * for one of its board types — the server enforces the access check). Invalidate
  * the single-gym cache plus the nearby-gym search results so the wall finder's
@@ -601,7 +639,7 @@ export function useLinkBoardToGym() {
       void queryClient.invalidateQueries({ queryKey: ['myBoards'] });
       void queryClient.invalidateQueries({ queryKey: ['nearbyBoards'] });
       void queryClient.invalidateQueries({ queryKey: ['nearbyGyms'] });
-      void queryClient.invalidateQueries({ queryKey: ['gymBoards'] });
+      void queryClient.invalidateQueries({ queryKey: GYM_BOARDS_QUERY_KEY });
     },
   });
 }
@@ -897,41 +935,51 @@ export function useAngles(boardName: string, layoutId: number) {
 // ============================================
 
 export function useSearchClimbs(
-  input: ClimbSearchInput,
+  requestedInput: ClimbSearchInput,
   enabled = true,
   options?: { staleTime?: number; gcTime?: number },
 ) {
+  // Grade filter follows the grade the rows are labelled with — see withGradeSource.
+  const input = useGradeSourceSearchInput(requestedInput);
+  const { userId } = useStoredUserId(!!input.onlyFollowedAuthors);
   // Keyed on input only — offlineAwareRequest is local-first and picks the source
   // live; a completed board sync invalidates ['searchClimbs'] to refresh it.
   return useQuery({
-    queryKey: [...SEARCH_CLIMBS_QUERY_KEY, input],
+    queryKey: [...SEARCH_CLIMBS_QUERY_KEY, input, ...(input.onlyFollowedAuthors ? [userId] : [])],
     queryFn: () => offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input }),
     select: (data) => data.searchClimbs,
-    enabled,
+    enabled: enabled && (!input.onlyFollowedAuthors || !!userId),
+    networkMode: input.onlyFollowedAuthors ? 'always' : undefined,
     // undefined → React Query's defaults.
     staleTime: options?.staleTime,
     gcTime: options?.gcTime,
   });
 }
 
-export function useSearchClimbsCount(input: ClimbSearchInput, enabled = true) {
+export function useSearchClimbsCount(requestedInput: ClimbSearchInput, enabled = true) {
+  // Same grade source as the list it counts, so "Show N" matches what Apply shows.
+  const input = useGradeSourceSearchInput(requestedInput);
+  const { userId } = useStoredUserId(!!input.onlyFollowedAuthors);
   return useQuery({
-    queryKey: [...SEARCH_CLIMBS_COUNT_QUERY_KEY, input],
+    queryKey: [...SEARCH_CLIMBS_COUNT_QUERY_KEY, input, ...(input.onlyFollowedAuthors ? [userId] : [])],
     queryFn: () => offlineAwareRequest<SearchClimbsCountQueryResponse>(SEARCH_CLIMBS_COUNT, { input }),
     select: (data) => data.searchClimbs.totalCount,
-    enabled,
+    enabled: enabled && (!input.onlyFollowedAuthors || !!userId),
+    networkMode: input.onlyFollowedAuthors ? 'always' : undefined,
     // Hold the last count while a new filter set is in flight so the bar /
     // "Show N" button doesn't flicker to blank on every filter change.
-    placeholderData: (previous) => previous,
+    placeholderData: input.onlyFollowedAuthors ? undefined : (previous) => previous,
   });
 }
 
 export function useSetterStats(input: SetterStatsInput, enabled = true) {
+  const { userId } = useStoredUserId(!!input.onlyFollowedAuthors);
   return useQuery({
-    queryKey: ['setterStats', input],
-    queryFn: () => getHttpClient().request<GetSetterStatsQueryResponse>(GET_SETTER_STATS, { input }),
+    queryKey: ['setterStats', input, ...(input.onlyFollowedAuthors ? [userId] : [])],
+    queryFn: () => offlineAwareRequest<GetSetterStatsQueryResponse>(GET_SETTER_STATS, { input }),
     select: (data) => data.setterStats,
-    enabled,
+    enabled: enabled && (!input.onlyFollowedAuthors || !!userId),
+    networkMode: input.onlyFollowedAuthors ? 'always' : undefined,
     staleTime: 5 * 60 * 1000,
   });
 }
@@ -1177,13 +1225,10 @@ export function useFavoriteStatus(
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   GET_BETA_LINKS,
-  GET_RECENT_BETA_LINKS,
   GET_USER_BETA_LINKS,
   ATTACH_BETA_LINK,
   type GetBetaLinksQueryResponse,
   type GetBetaLinksQueryVariables,
-  type GetRecentBetaLinksQueryResponse,
-  type GetRecentBetaLinksQueryVariables,
   type GetUserBetaLinksQueryResponse,
   type GetUserBetaLinksQueryVariables,
   type RecentBetaLinkGqlRow,
@@ -1197,29 +1242,6 @@ export type RecentBetaVideo = Omit<RecentBetaLinkGqlRow, 'betaLink'> & {
   betaLink: BetaLink;
 };
 
-/**
- * Narrow recent beta-link rows to beta videos, dedupe by stable video identity,
- * and cap the shelf at `limit`. The backend applies the requested board/layout
- * scope before its result limit, so filtering here would reintroduce starvation.
- * Exported for tests; production callers go through `useRecentBetaLinks`.
- */
-export function selectRecentBetaVideos(rows: RecentBetaLinkGqlRow[], limit: number): RecentBetaVideo[] {
-  const seenIdentities = new Set<string>();
-  const videos: RecentBetaVideo[] = [];
-
-  for (const row of rows) {
-    const betaLink = mapBetaLink(row.betaLink);
-    if (!isBetaVideoUrl(betaLink.link)) continue;
-    const identity = betaLinkIdentity(betaLink.link);
-    if (seenIdentities.has(identity)) continue;
-    seenIdentities.add(identity);
-    videos.push({ ...row, betaLink });
-    if (videos.length >= limit) break;
-  }
-
-  return videos;
-}
-
 export function useBetaLinks(boardType: string, climbUuid: string, enabled = true) {
   return useQuery({
     queryKey: ['betaLinks', boardType, climbUuid],
@@ -1229,24 +1251,6 @@ export function useBetaLinks(boardType: string, climbUuid: string, enabled = tru
         climbUuid,
       }),
     select: (data) => dedupeBetaLinks(mapBetaLinks(data.betaLinks)),
-    enabled,
-    staleTime: 5 * 60 * 1000,
-  });
-}
-
-export function useRecentBetaLinks(limit = 20, boardType?: string | null, layoutId?: number | null, enabled = true) {
-  return useQuery({
-    queryKey: ['recentBetaLinks', limit, boardType ?? null, layoutId ?? null],
-    queryFn: () =>
-      getHttpClient().request<GetRecentBetaLinksQueryResponse, GetRecentBetaLinksQueryVariables>(
-        GET_RECENT_BETA_LINKS,
-        {
-          limit,
-          boardType,
-          layoutId,
-        },
-      ),
-    select: (data) => selectRecentBetaVideos(data.recentBetaLinks, limit),
     enabled,
     staleTime: 5 * 60 * 1000,
   });
@@ -1390,30 +1394,9 @@ export function useUserBetaLinks(
 // Similar Climbs + Community stats (play drawer)
 // ============================================
 
-/**
- * Position-only Jaccard similar climbs for a saved climb. `climbUuid` null
- * disables the query (e.g. before a climb is selected).
- */
-export function useSimilarClimbs(
-  boardName: string,
-  climbUuid: string | null,
-  layoutId: number,
-  angle: number,
-  limit = 12,
-) {
-  return useQuery({
-    queryKey: ['similarClimbs', boardName, climbUuid, layoutId, angle, limit],
-    queryFn: () => {
-      const variables: SimilarClimbsVariables = {
-        input: { boardType: boardName, layoutId, climbUuid: climbUuid!, angle, limit },
-      };
-      return getHttpClient().request<SimilarClimbsResponse>(SIMILAR_CLIMBS_QUERY, variables);
-    },
-    select: (data) => data.similarClimbs,
-    enabled: !!climbUuid,
-    staleTime: 5 * 60 * 1000,
-  });
-}
+// Own module: it pulls in the offline source hook (expo-sqlite), which the
+// barrel's unit tests mock out the same way as the other submodules.
+export { useSimilarClimbs } from './use-similar-climbs';
 
 /**
  * Last-12-months stats snapshots for a climb, one row per (angle, snapshot).
@@ -1497,7 +1480,6 @@ export function useAttachBetaLink() {
       }),
     onSuccess: (_data, vars) => {
       void queryClient.invalidateQueries({ queryKey: ['betaLinks', vars.boardType, vars.climbUuid] });
-      void queryClient.invalidateQueries({ queryKey: ['recentBetaLinks'] });
     },
   });
 }
@@ -1527,8 +1509,6 @@ export {
   useUserClimbs,
   useVote,
   useBulkVoteSummaries,
-  useChunkedBulkVoteSummaries,
-  useGroupedBulkVoteSummaries,
   useComments,
   useAddComment,
 } from './use-social';
@@ -1550,27 +1530,9 @@ export {
 // Hold Outline Overrides (admin outline editor)
 // ============================================
 
-/**
- * Is the viewer an admin? Its own query document, not a field on `useProfile`.
- *
- * `UserProfile.isAdmin` reaches production in a backend deploy that lands after
- * this JS does, so asking for it inside `GET_PROFILE` would fail that whole
- * query — and blank the You tab — for every user until the two lined up. Here a
- * miss is contained: the query errors, `data` stays undefined, and the flag
- * reads false. Fail-closed is the right default for an admin gate anyway.
- */
-export function useIsAdmin(options?: { enabled?: boolean }): { isAdmin: boolean; isLoading: boolean } {
-  const query = useQuery({
-    queryKey: ['profileAdminFlag'],
-    queryFn: () => getHttpClient().request<GetProfileAdminFlagQueryResponse>(GET_PROFILE_ADMIN_FLAG),
-    select: (data) => data.profile?.isAdmin ?? false,
-    enabled: options?.enabled ?? true,
-    // One retry only: an old backend rejects this document every time, and the
-    // gate should settle to "no" quickly rather than spin.
-    retry: 1,
-  });
-  return { isAdmin: query.data ?? false, isLoading: query.isLoading };
-}
+// Own module so hooks outside this barrel (useCatalogQuerySource) can use it
+// without importing the barrel that imports them.
+export { useIsAdmin } from './use-is-admin';
 
 export type HoldOutlineConfigKey = { boardName: string; layoutId: number; sizeId: number };
 

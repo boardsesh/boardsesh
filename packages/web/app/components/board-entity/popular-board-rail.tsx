@@ -2,99 +2,98 @@
 
 import React from 'react';
 import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
 import MuiLink from '@mui/material/Link';
 import Typography from '@mui/material/Typography';
 import { useTranslation } from 'react-i18next';
+import { boardTypeLabel } from '@boardsesh/board-constants';
+import type { BoardDiscoveryBoard } from '@boardsesh/shared-schema';
 import LocaleLink from '@/app/components/i18n/locale-link';
-import BoardRenderer from '@/app/components/board-renderer/board-renderer';
-import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
-import { getDefaultAngleForBoard } from '@/app/lib/board-config-for-playlist';
-import { popularConfigListUrl } from '@/app/lib/url-utils';
-import { formatCount } from '@/app/lib/format-climb-stats';
-import type { BoardDetails, BoardName } from '@/app/lib/types';
-import type { PopularBoardConfig } from '@boardsesh/shared-schema';
+import { sectionHeadingTypeClassName } from '@/app/components/ui/page-shell';
+import { APP_URL } from '@/app/lib/app-origin';
+import PhysicalBoardPreview from './physical-board-preview';
 import styles from './popular-board-rail.module.css';
 
-/**
- * The home page's board rail: one real `<a href>` per popular config, server
- * rendered.
- *
- * Deliberately not wrapped in `dynamic(…, { ssr: false })` and not gated on a
- * client-only hook — SSR-emitted anchors are the whole point. The homepage is
- * the strongest internal-link source www has, and until this shipped there was
- * no crawlable path from `/` to any board's climbs at all.
- *
- * `displayName` is the anchor text, so no `aria-label` and no `title`: either
- * would override richer text a crawler and a screen reader both already get.
- */
-
-function resolveBoardDetails(config: PopularBoardConfig): BoardDetails | null {
-  try {
-    return getBoardDetailsForBoard({
-      board_name: config.boardType as BoardName,
-      layout_id: config.layoutId,
-      size_id: config.sizeId,
-      set_ids: config.setIds,
-    });
-  } catch {
-    // A config the static hold tables don't resolve (a new layout, a size the
-    // generated data hasn't caught up with) drops out of the rail rather than
-    // taking the whole homepage down with it.
-    return null;
-  }
-}
-
-export type PopularBoardRailProps = {
-  configs: PopularBoardConfig[];
-};
-
-export default function PopularBoardRail({ configs }: PopularBoardRailProps) {
-  const { t } = useTranslation('boards');
-
-  // Resolve first, render second. `getPopularBoardConfigs()` returns [] when the
-  // backend is unreachable, and a config the static hold tables don't resolve
-  // drops out one by one — so the guard counts the cards that will actually
-  // paint, not the configs that came in. Guarding on the input array would ship
-  // a lone section heading over an empty grid the day every config drops.
-  const cards = configs.flatMap((config) => {
-    const boardDetails = resolveBoardDetails(config);
-    return boardDetails ? [{ config, boardDetails }] : [];
-  });
-
-  if (cards.length === 0) return null;
+/** Named physical installations, ranked by board-local climbers on the backend.
+ * Public links retain the slug; the app action opens that same existing UUID.
+ * Neither path offers a generic configuration or creates a replacement board. */
+export default function PopularBoardRail({ boards }: { boards: BoardDiscoveryBoard[] }) {
+  const { t, i18n } = useTranslation('marketing');
+  if (boards.length === 0) return null;
+  const numberFormat = new Intl.NumberFormat(i18n.language);
 
   return (
-    <Box component="section">
-      <Typography variant="body2" component="h2" className={styles.title}>
-        {t('discovery.popular.title')}
+    <Box component="section" className={styles.section} data-testid="physical-board-rail">
+      <Typography variant="h3" component="h2" className={`${sectionHeadingTypeClassName} ${styles.title}`}>
+        {t('home.boards.title')}
       </Typography>
-      <div className={styles.grid}>
-        {cards.map(({ config, boardDetails }) => {
-          const href = popularConfigListUrl(config, getDefaultAngleForBoard(config.boardType));
+      <Typography component="p" className={styles.lead}>
+        {t('home.boards.lead')}
+      </Typography>
+      <Box component="ul" className={styles.grid}>
+        {boards.map((board) => {
+          const boardPath = `/b/${encodeURIComponent(board.slug)}`;
+          const previewAngle = board.currentClimb?.angle ?? board.angle;
+          const appPath = `${boardPath}/${previewAngle}/list`;
+          /* Plenty of boards are named after the gym they live in, and printing
+             the same words twice reads as a bug. The gym link is the card's only
+             /gym/ anchor either way, so relabel it with the location when the
+             two names match rather than dropping the second line. */
+          const gymLabel = board.gymName === board.name ? (board.locationName ?? board.gymName) : board.gymName;
           return (
-            <MuiLink
-              key={`${config.boardType}-${config.layoutId}-${config.sizeId}-${config.setIds.join(',')}`}
-              component={LocaleLink}
-              href={href}
-              prefetch={false}
-              underline="none"
-              color="inherit"
-              className={styles.card}
-            >
-              <div className={styles.thumb}>
-                <BoardRenderer mirrored={false} boardDetails={boardDetails} thumbnail fillHeight />
-              </div>
-              <div className={styles.name}>{config.displayName}</div>
-              <div className={styles.meta}>
-                {t('discovery.popular.meta', {
-                  boards: formatCount(config.boardCount),
-                  sends: formatCount(config.totalAscents),
-                })}
-              </div>
-            </MuiLink>
+            <Box component="li" key={board.uuid} className={styles.card}>
+              <Box className={styles.identity}>
+                <Typography component="h3" className={styles.name}>
+                  <MuiLink component={LocaleLink} href={boardPath} underline="hover" color="inherit">
+                    {board.name}
+                  </MuiLink>
+                </Typography>
+                <MuiLink
+                  component={LocaleLink}
+                  href={`/gym/${encodeURIComponent(board.gymSlug)}`}
+                  underline="hover"
+                  className={styles.gym}
+                >
+                  {gymLabel}
+                </MuiLink>
+                {board.locationName && board.locationName !== gymLabel && (
+                  <Typography component="p" className={styles.location}>
+                    {board.locationName}
+                  </Typography>
+                )}
+              </Box>
+              <PhysicalBoardPreview board={board} label={t('home.boards.preview', { board: board.name })} />
+              <Box className={styles.details}>
+                <Typography component="p" className={styles.meta}>
+                  {t('home.boards.typeAngle', {
+                    board: boardTypeLabel(board.boardType),
+                    angle: previewAngle,
+                  })}
+                </Typography>
+                {board.uniqueClimbers > 0 && (
+                  <Typography component="p" className={styles.meta}>
+                    {t('home.boards.climbers', {
+                      count: board.uniqueClimbers,
+                      formattedCount: numberFormat.format(board.uniqueClimbers),
+                    })}
+                  </Typography>
+                )}
+                {board.currentClimb?.name && (
+                  <Typography component="p" className={styles.selection}>
+                    {t('home.boards.selectedClimb', { climb: board.currentClimb.name })}
+                  </Typography>
+                )}
+              </Box>
+              <Button href={`${APP_URL}${appPath}`} variant="outlined" className={styles.open}>
+                {t('home.boards.open')}
+              </Button>
+            </Box>
           );
         })}
-      </div>
+      </Box>
+      <Typography component="p" className={styles.ranking}>
+        {t('home.boards.ranking')}
+      </Typography>
     </Box>
   );
 }

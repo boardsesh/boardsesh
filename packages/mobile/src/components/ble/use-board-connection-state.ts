@@ -40,6 +40,18 @@ export type BoardConnectionState = {
   lit: boolean;
   /** Display name of the peer driving the wall (heldByPeer only), else null. */
   holderDisplayName: string | null;
+  /**
+   * A session peer holds the link per the AUTHORITATIVE board-presence holder —
+   * server-owned and seq-gated, with a compare-and-delete broadcast on
+   * disconnect and a WS-drop backstop. Deliberately excludes the `heldByPeer`
+   * readings that come from the best-effort `isSessionWallLit` fallback, which
+   * has no reconciliation and can stick `true`.
+   *
+   * Only this signal is allowed to suppress the lightbulb's connect
+   * (`derivePlayDrawerLightbulbPressAction`): acting on the stuck-prone flag
+   * would leave a climber unable to connect at all.
+   */
+  holderIsAuthoritative: boolean;
 };
 
 /**
@@ -99,6 +111,12 @@ export function useBoardConnectionState(): BoardConnectionState {
 
   // Only heldByPeer has a named "other" driver worth surfacing.
   const holderDisplayName = inAppBoardConnection === 'heldByPeer' ? (holder?.displayName ?? null) : null;
+  // The provider remembers local ownership even when no lightbulb is mounted.
+  // A delayed release must not turn a reconnect into a relay to our own dead link.
+  // Presence identifies accounts, not devices, so a second device on the same
+  // account can conservatively fall back to connecting after a local hold.
+  const holderIsStaleSelf = holderUserId !== null && holderUserId === bluetooth?.lastLocalHolderUserId;
+  const holderIsAuthoritative = sessionHolderPresent && !localConnected && !holderIsStaleSelf;
 
   return useMemo(
     () => ({
@@ -114,6 +132,7 @@ export function useBoardConnectionState(): BoardConnectionState {
       canDriveWall,
       lit: inAppBoardConnection !== 'disconnected',
       holderDisplayName,
+      holderIsAuthoritative,
     }),
     [
       bluetooth,
@@ -127,6 +146,7 @@ export function useBoardConnectionState(): BoardConnectionState {
       wallHeldByOtherUser,
       canDriveWall,
       holderDisplayName,
+      holderIsAuthoritative,
     ],
   );
 }

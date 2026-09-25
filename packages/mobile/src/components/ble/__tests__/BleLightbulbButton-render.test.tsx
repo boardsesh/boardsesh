@@ -35,6 +35,7 @@ vi.mock('react-native', () => ({
       children,
     ),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles },
+  Platform: { OS: 'ios' },
 }));
 
 vi.mock('react-native-reanimated', () => ({

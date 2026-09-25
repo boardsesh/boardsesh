@@ -41,6 +41,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { commandExists, runCapture, runInherit, sleepSeconds } from './lib/exec';
+import { DEFAULT_SCREENSHOT_FIXTURES_DIR } from './lib/screenshot-fixtures';
 import {
   METRO_PORT,
   homeReadyMarkerCount,
@@ -114,7 +115,7 @@ interface ShotsOptions {
   shutdown: boolean;
   /** Inject EXPO_PUBLIC_SCREENSHOT_MODE (auto-login, locked theme) into the Metro bundle. */
   screenshotMode: boolean;
-  flow: 'app-store' | 'onboarding' | null;
+  flow: 'app-store' | 'onboarding' | 'help' | null;
   appPath: string | null;
   backend: 'prod' | 'local';
   device: string;
@@ -179,7 +180,10 @@ function parseShotsArgs(argv: readonly string[]): ShotsOptions {
         index++;
         break;
       case '--flow':
-        options.flow = expectEnum(flag, value, ['app-store', 'onboarding']) as 'app-store' | 'onboarding';
+        options.flow = expectEnum(flag, value, ['app-store', 'onboarding', 'help']) as
+          | 'app-store'
+          | 'onboarding'
+          | 'help';
         index++;
         break;
       case '--backend':
@@ -349,7 +353,13 @@ function effectiveSettle(options: ShotsOptions, screen: string | null): number {
 
 function runFlow(udid: string, options: ShotsOptions, env: NodeJS.ProcessEnv): void {
   ensureMaestro('--flow needs it to drive the committed Maestro flow.');
-  const flowFile = join(MAESTRO_DIR, options.flow === 'onboarding' ? 'onboarding.yaml' : 'app-store.yaml');
+  // Resolve by flow NAME rather than a two-way ternary, so a new flow (`help`)
+  // picks up its own YAML instead of silently running the store flow. iOS has
+  // no `-ios` variants committed today; the probe keeps the same precedence as
+  // the orchestrator's `flowFileForPlatform`.
+  const flowName = options.flow ?? 'app-store';
+  const iosFlowFile = join(MAESTRO_DIR, `${flowName}-ios.yaml`);
+  const flowFile = existsSync(iosFlowFile) ? iosFlowFile : join(MAESTRO_DIR, `${flowName}.yaml`);
   if (!existsSync(flowFile)) throw new Error(`flow not found: ${flowFile}`);
   const email = process.env.SCREENSHOT_USER_EMAIL ?? DEFAULT_USER_EMAIL;
   const password = process.env.SCREENSHOT_USER_PASSWORD ?? DEFAULT_USER_PASSWORD;
@@ -403,6 +413,13 @@ function screenshotEnvOptions(options: ShotsOptions): ScreenshotOptions {
     appPath: options.appPath,
     // iOS is always a dev-client; the flag is Android-only (see mobile-screenshots.ts).
     devClient: false,
+    // Ad-hoc dev shots always talk to a real backend: fixtures exist for the
+    // store capture's determinism, and a one-off shot wants live data.
+    fixtures: 'off',
+    fixturesDir: DEFAULT_SCREENSHOT_FIXTURES_DIR,
+    fresh: false,
+    pseudonymise: true,
+    frozenNow: null,
     shutdown: false,
     orientation: null,
   };

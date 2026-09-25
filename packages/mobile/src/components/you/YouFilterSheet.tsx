@@ -2,7 +2,7 @@ import { type RefObject, useMemo } from 'react';
 import { View, StyleSheet } from 'react-native';
 import type { BottomSheet } from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
-import { BOARD_TYPES, type UnifiedTimeframeType } from '@boardsesh/profile-stats';
+import { BOARD_FILTER_TYPES, type UnifiedTimeframeType } from '@boardsesh/profile-stats';
 import { formatBoardDisplayName } from '@boardsesh/board-config';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
@@ -33,7 +33,9 @@ export function YouFilterSheet({
   const { t } = useTranslation('you');
   const { systemColors, brandColors } = useTheme();
 
-  const boardOptions = useMemo(() => ['all', ...BOARD_TYPES], []);
+  // BOARD_FILTER_TYPES, not BOARD_TYPES: the wider list is what the You screen
+  // FETCHES so no ascent is dropped, this is what the filter OFFERS.
+  const boardOptions = useMemo(() => ['all', ...BOARD_FILTER_TYPES], []);
   const timeframeOptions = useMemo<{ key: UnifiedTimeframeType; label: string }[]>(
     () => [
       { key: 'all', label: t('mobile.filter.all') },
@@ -48,6 +50,9 @@ export function YouFilterSheet({
     <Sheet
       ref={sheetRef}
       snapPoints={['55%']}
+      // Android's fixed partial detent strands the footer below the form.
+      // Fit its bounded content there; iOS keeps the requested 55% detent.
+      androidContentSized
       scrollable
       footer={<Button title={t('mobile.filter.done')} onPress={() => sheetRef.current?.close()} />}
     >

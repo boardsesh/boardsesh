@@ -225,6 +225,7 @@ jobs:
               # with readFileSync, so a change to a SUITE has no other path into
               # CI on a PR either.
               - 'scripts/__tests__/production-deploy-web-targets.test.ts'
+              - 'scripts/__tests__/production-deploy-serial-plan.test.ts'
               - 'scripts/__tests__/static-asset-deploy-origin.test.ts'
               - 'scripts/cloudflare-apply.test.ts'
               # Reads ci.yml, which reaches this job via rootCi; named here so
@@ -273,12 +274,10 @@ jobs:
             #     pnpm-workspace.yaml, the root package.json, and patches/**
             #     (pnpm resolves patchedDependencies
             #     before the deps stage can install at all).
-            #   * the three repo-root scripts services.web.extraSourceFiles
-            #     copies into the context. Only tailscale-hostname.ts is
-            #     load-bearing (packages/web/scripts imports it and Next's
-            #     production type-check compiles that directory); the other two
-            #     are listed because the context copies them and W-26/#4442 will
-            #     drop the set together.
+            #   * the repo-root scripts services.web.extraSourceFiles copies
+            #     into the context. packages/web/scripts imports the hostname
+            #     and design preview helpers, and Next's production type-check
+            #     compiles that directory. Keep every copied input covered.
             #   * the generator itself. A cheap contract test below verifies
             #     vite.config.ts still maps `docker-context:web` to it, so an
             #     unrelated task edit does not launch this four-minute build.
@@ -337,6 +336,7 @@ jobs:
               - 'packages/shared/queue/**'
               - 'packages/shared/queue-react/**'
               - 'packages/shared/queue-runtime/**'
+              - 'packages/shared/spray-wall-geometry/**'
               - 'packages/shared/static-assets/**'
               - 'packages/shared/velvet-tokens/**'
               - 'packages/shared/watch-pairing/**'
@@ -351,6 +351,8 @@ jobs:
               - 'scripts/build-expo-web-export.sh'
               - 'scripts/lib/patch-expo-web-pwa-manifest.mjs'
               - 'scripts/lib/tailscale-hostname.ts'
+              - 'scripts/lib/design-previews.ts'
+              - 'scripts/lib/dev-object-store.ts'
               - '.github/workflows/ci.yml'
               - 'scripts/__tests__/ci-docker-web-workflow.test.ts'
             rootCi:
@@ -401,6 +403,7 @@ jobs:
               - 'packages/db/scripts/moonboard-helpers.ts'
               - 'packages/db/src/testing/moonboard-residual-dedup-replay.ts'
               - 'packages/db/src/testing/moonboard-angle-dedup-replay.ts'
+              - 'packages/db/src/queries/climb-stats/__tests__/moonboard-snapped-angle-repair.integration.test.ts'
               - 'packages/db/src/queries/climb-stats/__tests__/moonboard-residual-dedup-replay.integration.test.ts'
               # Defines the test:migration-journal script this job's new step
               # invokes, so editing it has to run the job that depends on it.
@@ -411,8 +414,17 @@ jobs:
               # blind spot deploy-config, listing-guards and pg18-artifacts each
               # document. This job runs it unfiltered instead.
               - 'scripts/__tests__/db-trigger-search-path.test.ts'
+              # The serial-plan default (#5352): node:test files outside
+              # Vitest's module graph, and the integration half needs this job's
+              # PostgreSQL service to build the production role shape.
+              - 'packages/db/scripts/serial-plan-default.ts'
+              - 'packages/db/scripts/serial-plan-default.test.ts'
+              - 'packages/db/scripts/serial-plan-default.integration.test.ts'
+              - 'packages/db/scripts/verify-serial-plan.ts'
             staticAssets:
               - 'packages/web/public/images/**/*.webp'
+              - 'packages/web/public/videos/**/*.mp4'
+              - 'packages/web/public/videos/**/*.webm'
               - 'packages/web/public/brand/boardsesh-mark.png'
               - 'packages/web/public/icons/*.png'
               - 'packages/web/app/favicon.ico'
@@ -702,6 +714,7 @@ jobs:
           scripts/moonboard-reconciliation-report.test.ts
           scripts/report-moonboard-reconciliation.test.ts
           scripts/moonboard-reconciliation-report.integration.test.ts
+          src/queries/climb-stats/__tests__/moonboard-snapped-angle-repair.integration.test.ts
           src/queries/climb-stats/__tests__/moonboard-residual-dedup-replay.integration.test.ts
       # A trigger function with no pinned search_path cannot resolve an
       # unqualified type or table while pg_restore holds search_path at '',
@@ -711,6 +724,22 @@ jobs:
       # catalog counterpart runs in test-dev-db via scripts/dev-db-image-smoke.sh.
       - name: Every trigger function pins search_path
         run: vp test run --project scripts scripts/__tests__/db-trigger-search-path.test.ts
+      # #5352: `ALTER DATABASE ... SET max_parallel_workers_per_gather = 0` needs
+      # database ownership, which the production migration role deliberately does
+      # not have — so migration 0225 was a silent no-op there. The integration
+      # half builds the production role shape (NOLOGIN owner that does not own
+      # the database, reached by SET ROLE from a restricted login) on this job's
+      # PostgreSQL service and proves the refusal is surfaced, not swallowed.
+      - name: Serial-plan default is applied, or the failure is surfaced
+        working-directory: packages/db
+        env:
+          SERIAL_PLAN_DB_URL: postgres://postgres:postgres@localhost:5432/postgres
+          # Use the service's matching clients for the actual archive/restore regression.
+          SERIAL_PLAN_PG_CONTAINER: ${{ job.services.postgres.id }}
+        run: >-
+          vp exec tsx --test
+          scripts/serial-plan-default.test.ts
+          scripts/serial-plan-default.integration.test.ts
 
   codegen-drift:
     needs: [changes]
@@ -739,6 +768,19 @@ jobs:
             echo "::error::Generated GraphQL files are out of date. Run 'vp run codegen' locally and commit the result."
             exit 1
           fi
+      # Installed app builds keep sending the queries they shipped with, so a
+      # removed field, argument, type or enum value fails their requests with
+      # GRAPHQL_VALIDATION_FAILED (#5370). Runs after the drift check, so the
+      # committed SDL compared here is the regenerated one. A deliberate removal
+      # opts out with the `schema-breaking-ok` label; adding a label does not
+      # re-trigger this workflow, so re-run the job (or push) afterwards.
+      - name: Block client-breaking schema changes
+        if: github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'schema-breaking-ok')
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$BASE_REF"
+          node --import tsx packages/shared-schema/scripts/check-breaking-changes.ts --base-ref FETCH_HEAD
 
   # No `if:` path gate and no `needs: [changes]` on purpose. The version is derived
   # from the whole board catalogue plus the compiled renderer and every board photo
@@ -856,6 +898,7 @@ jobs:
         run: >-
           vp test run --project scripts
           scripts/__tests__/production-deploy-web-targets.test.ts
+          scripts/__tests__/production-deploy-serial-plan.test.ts
           scripts/__tests__/static-asset-deploy-origin.test.ts
           scripts/cloudflare-apply.test.ts
           scripts/__tests__/ci-docker-web-workflow.test.ts
@@ -1081,7 +1124,7 @@ jobs:
         include: ${{ fromJSON(github.event_name != 'pull_request' && '[{"shard":1,"total":2},{"shard":2,"total":2}]' || '[{"shard":1,"total":1}]') }}
     services:
       postgres:
-        image: ghcr.io/boardsesh/boardsesh-postgres-postgis@sha256:4ebf346a8407761a86cb21998a81b4848080ed1d2fd72afdcf968eda02b12713
+        image: ghcr.io/boardsesh/boardsesh-postgres-postgis@sha256:98ed9b18b9ef23d4f0aec136bab51b600b8343a19b5f39c78c2c8deab1e96c91
         credentials:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
@@ -1148,7 +1191,22 @@ jobs:
         run: |
           mkdir -p packages/backend/test-results
           if [ "$EVENT_NAME" = "pull_request" ]; then
-            vp test run --project backend --changed "origin/$BASE_REF" \
+            # A change to the dependency graph itself has no module-graph edge
+            # to any spec, so `--changed` selects nothing that exercises it.
+            # #5299 patched the postgres driver every backend test runs
+            # against and this job still picked only the one new spec --
+            # ~4,500 tests never touched the patched driver. Drop the filter
+            # when the install inputs move. A shallow fetch can leave no merge
+            # base; `|| true` then keeps today's filtered behaviour.
+            selection="--changed origin/$BASE_REF"
+            changed_files=$(git diff --name-only "origin/$BASE_REF"...HEAD || true)
+            if printf '%s\n' "$changed_files" |
+              grep -qE '^(pnpm-workspace\.yaml|pnpm-lock\.yaml|patches/|packages/[^/]+/patches/)'; then
+              echo "::notice title=Full backend suite::install inputs changed; running the whole backend project, not --changed"
+              selection=""
+            fi
+            # shellcheck disable=SC2086 # $selection is an intentionally split flag pair
+            vp test run --project backend $selection \
               --shard=${{ matrix.shard }}/${{ matrix.total }} \
               --reporter=verbose --reporter=github-actions \
               --reporter=junit --outputFile.junit=./packages/backend/test-results/junit-backend-${{ matrix.shard }}.xml
@@ -1228,7 +1286,7 @@ jobs:
     timeout-minutes: 20
     services:
       postgres:
-        image: ghcr.io/boardsesh/boardsesh-dev-db@sha256:f776350fa627c626f4d70bbf6bb0451e27ff6b1c8ccf6d02220e0b2d261ee058
+        image: ghcr.io/boardsesh/boardsesh-dev-db@sha256:fa657078da26276b47ccb6f78f7227b6f6d84a1379bca9313cc1c5d9ece26139
         credentials:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}

@@ -157,11 +157,21 @@ export function usePlaybackEngine({
   // Reset to frame 0 + paused whenever the underlying climb changes. A frame
   // disagreement is per-climb (it comes out of how each side read THIS climb's
   // frames), so it clears here too.
+  //
+  // `speed` resets with them, so every climb opens at the pace its setter
+  // authored. It used to leak across a swipe, which was survivable while the
+  // control read "1.5x" — the same multiplier on the next route. Now that the
+  // control reads seconds a frame, a leaked multiplier would show up as a
+  // DIFFERENT number of seconds on the next route (0.5x is 1.5s at a 750ms pace
+  // and 24s at a 12s one), which is exactly the ambiguity the seconds control
+  // exists to remove. Peer convergence runs in its own effect after this one and
+  // still wins, so party playback is unaffected.
   const framesKey = frameStrings.join('|');
   useEffect(() => {
     clearTimer();
     setFrameIndex(0);
     setIsPlaying(false);
+    setSpeedState(1);
     updatePeerFrameMismatch(false);
   }, [framesKey, updatePeerFrameMismatch]);
 

@@ -66,6 +66,9 @@ vi.mock('../graphql/resolvers/shared/render-board', () => ({
 
 vi.mock('@boardsesh/db/queries', () => ({
   getSessionHealthExport: mockState.getSessionHealthExport,
+  // The spray wall visibility predicate. These tests mock the query builder, so the
+  // fragment is never rendered — the module just has to export it.
+  sprayClimbVisibilityCondition: () => ({ __sprayVisibility: true }),
 }));
 
 // Mock drizzle-orm functions to prevent errors from passing mock schema objects

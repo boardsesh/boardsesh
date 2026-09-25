@@ -29,8 +29,25 @@ export const DEFAULT_SEARCH_CACHE_TTL = 86400;
  * setter's prose ("Kick board is off. No matching."), so ~14.9k climbs flip from
  * false to true (#5127). Without the bump a cached v6 page keeps serving the
  * missing glyph for the full 24h TTL.
+ * v8: search rows now carry `statsAngle`, and on Woods and MoonBoard the result
+ * set itself changed — those boards resolve stats through the climb's own set
+ * angle, so browsing 30° on Woods returns 5,392 climbs instead of the 653 set
+ * there (#5405). The key hashes the search params, but nothing in them moved for
+ * those boards: the server flips cross-angle on from the board capability, so a
+ * cached v7 page would keep serving the truncated list for the full 24h TTL.
+ * v9: search rows now carry `missingHoldCount`, the spray-wall integrity number a
+ * list row badges a climb from (SW-12, #5445). The key hashes the search params,
+ * and a search that does not filter on integrity has no param that moved — so a
+ * cached v8 page would serve rows with the field absent and every climb on a wall
+ * that has just been reset would read as intact for the full 24h TTL.
+ *
+ * Not bumped for #5642, which narrowed Woods searches back to the browsed angle
+ * unless `crossAngleStats` opts in: Woods has not been cacheable since #4750
+ * (`isCacheableBoard` in the climbs resolver), so no cached page describes it,
+ * and every cacheable board resolves exactly as before. The v8 note above
+ * predates that exclusion.
  */
-export const CACHE_VERSION = 'v7';
+export const CACHE_VERSION = 'v9';
 
 /**
  * Recursively sorts the keys of an object so that JSON.stringify produces

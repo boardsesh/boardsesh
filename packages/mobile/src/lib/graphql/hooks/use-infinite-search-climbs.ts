@@ -1,8 +1,27 @@
-import { useInfiniteQuery, type InfiniteData } from '@tanstack/react-query';
+import { useMemo } from 'react';
+import { useInfiniteQuery, type InfiniteData, type QueryKey } from '@tanstack/react-query';
 import type { ClimbSearchInput } from '@boardsesh/shared-schema';
+import { getBoardCapabilities } from '@boardsesh/board-config';
+import { useFeatureFlag } from '../../../providers/feature-flags-provider';
 import { offlineAwareRequest } from '../offline-request';
 import { SEARCH_CLIMBS, type SearchClimbsQueryResponse } from '../operations';
 import { INFINITE_SEARCH_CLIMBS_QUERY_KEY } from '../query-keys';
+import { useStoredUserId } from '../../../hooks/use-current-user-id';
+import { screenshotModeNextPageParam } from '../../screenshot-mode';
+import { useGradeSourceSearchInput } from './search-grade-source';
+
+type SearchClimbsBoardScope = Pick<ClimbSearchInput, 'boardName' | 'layoutId' | 'sizeId' | 'setIds'>;
+
+export type InfiniteSearchClimbsOptions = {
+  staleTime?: number;
+  gcTime?: number;
+  /**
+   * Keep the previous results on screen (as placeholder data) while a new
+   * search on the SAME board loads, instead of dropping to no data. A board
+   * switch still starts empty so the wrong board's climbs never show.
+   */
+  keepPreviousResults?: boolean;
+};
 
 // Map the raw pages down to their `searchClimbs` payload so consumers keep
 // seeing `pages[i].climbs`. Module scope (stable identity) so React Query's
@@ -19,20 +38,94 @@ function getSearchClimbsQueryKey(input: ClimbSearchInput) {
   return [...INFINITE_SEARCH_CLIMBS_QUERY_KEY, queryInput] as const;
 }
 
+function isRecord(candidate: unknown): candidate is Record<string, unknown> {
+  return typeof candidate === 'object' && candidate !== null && !Array.isArray(candidate);
+}
+
+/**
+ * The `placeholderData` rule behind `keepPreviousResults`. React Query v5 hands
+ * it the last query that had data (raw, pre-`select`) and that query; the data
+ * is kept only when that query searched the same board, layout, size and sets.
+ */
+export function keepSameBoardSearchResults<TData>(
+  boardScope: SearchClimbsBoardScope,
+  previousData: TData | undefined,
+  previousQueryKey: QueryKey | undefined,
+): TData | undefined {
+  if (previousData === undefined || !previousQueryKey) return undefined;
+  if (previousQueryKey[0] !== INFINITE_SEARCH_CLIMBS_QUERY_KEY[0]) return undefined;
+  const previousInput = previousQueryKey[INFINITE_SEARCH_CLIMBS_QUERY_KEY.length];
+  if (!isRecord(previousInput)) return undefined;
+  const isSameBoard =
+    previousInput.boardName === boardScope.boardName &&
+    previousInput.layoutId === boardScope.layoutId &&
+    previousInput.sizeId === boardScope.sizeId &&
+    previousInput.setIds === boardScope.setIds;
+  return isSameBoard ? previousData : undefined;
+}
+
 export function useInfiniteSearchClimbs(
   input: ClimbSearchInput,
   enabled = true,
-  options?: { staleTime?: number; gcTime?: number },
+  options?: InfiniteSearchClimbsOptions,
 ) {
+  const { boardName, layoutId, sizeId, setIds } = input;
+  const { userId } = useStoredUserId(!!input.onlyFollowedAuthors);
+  const keepPreviousResults = options?.keepPreviousResults === true && !input.onlyFollowedAuthors;
+  // Memoized per board on purpose. While a placeholder is showing, React Query
+  // reuses it without calling this function again as long as its identity is
+  // unchanged. A board switch must therefore mint a new function, or the old
+  // board's rows would stay up until the new board's first page lands.
+  const placeholderData = useMemo(() => {
+    if (!keepPreviousResults) return undefined;
+    const boardScope: SearchClimbsBoardScope = { boardName, layoutId, sizeId, setIds };
+    return (
+      previousData: InfiniteData<SearchClimbsQueryResponse, number> | undefined,
+      previousQuery: { queryKey: QueryKey } | undefined,
+    ) => keepSameBoardSearchResults(boardScope, previousData, previousQuery?.queryKey);
+  }, [keepPreviousResults, boardName, layoutId, sizeId, setIds]);
+
+  // Resolved here rather than at the call sites: this is the one choke point both
+  // the climbs tab and the board preview go through, it rides `offlineAwareRequest`
+  // into the on-device search for free, and putting it on the input means the query
+  // key rotates by itself when the flag or the filter flips. Always an explicit
+  // boolean, so the server never has to guess what an absent value meant.
+  //
+  // On an angle-bound board (Woods) the climber decides: the "Other angles" filter
+  // switch sets `input.crossAngleStats` through `toClimbSearchInput`, and off (the
+  // default) keeps the list to climbs set at the browsed angle. The flag is ignored
+  // there, so the list always matches the switch the climber can see.
+  //
+  // Everywhere else the flag can also turn it on. Unresolved reads as off, which is
+  // the shipped behaviour for every board this flag can move — nothing to invert.
+  // `useFeatureFlag` runs on every board so the hook order never changes.
+  //
+  // It is deliberately NOT part of the placeholder's board scope above: flipping it
+  // keeps the previous rows on screen while the re-ranked page loads, which is the
+  // same board and the right behaviour.
+  const crossAngleStatsFlagOn = useFeatureFlag('cross-angle-stats') === true;
+  const crossAngleStatsRequested = input.crossAngleStats === true;
+  const crossAngleStats = getBoardCapabilities(boardName).angleBoundClimbs
+    ? crossAngleStatsRequested
+    : crossAngleStatsRequested || crossAngleStatsFlagOn;
+  // The grade source rides the input the same way, so flipping "Show Boardsesh
+  // grades" rotates the query key and refetches (issue #5643). Like the flag
+  // above it stays out of the placeholder's board scope.
+  const searchInput: ClimbSearchInput = useGradeSourceSearchInput({ ...input, crossAngleStats });
   return useInfiniteQuery({
-    queryKey: getSearchClimbsQueryKey(input),
+    queryKey: [...getSearchClimbsQueryKey(searchInput), ...(input.onlyFollowedAuthors ? [userId] : [])],
     initialPageParam: 0,
     queryFn: ({ pageParam }) =>
-      offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: { ...input, page: pageParam } }),
+      offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, {
+        input: { ...searchInput, page: pageParam },
+      }),
     // getNextPageParam receives RAW pre-select pages in React Query v5.
-    getNextPageParam: (lastPage, allPages) => (lastPage.searchClimbs.hasMore ? allPages.length : undefined),
+    getNextPageParam: (lastPage, allPages) =>
+      screenshotModeNextPageParam(lastPage.searchClimbs.hasMore ? allPages.length : undefined, allPages.length),
     select: selectSearchClimbPages,
-    enabled,
+    placeholderData,
+    enabled: enabled && (!input.onlyFollowedAuthors || !!userId),
+    networkMode: input.onlyFollowedAuthors ? 'always' : undefined,
     staleTime: options?.staleTime,
     gcTime: options?.gcTime,
   });

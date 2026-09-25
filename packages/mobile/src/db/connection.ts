@@ -18,24 +18,46 @@ import {
   configureMainConnection,
   vacuumDatabase,
   BOARD_DATA_TABLES,
+  DEVICE_ONLY_TABLES,
+  clearBoardTypeHoldIndex,
   getUnfinishedDownloadScopeKeys,
   claimAbandonedDownloadTerminal,
   purgeNamespaceForScopeKey,
+  scopeSyncMetaKeys,
+  offlineBoardKey,
 } from '@boardsesh/offline-sync';
+import { spraySizeIdForLayout } from '@boardsesh/board-config';
+import { SPRAY_PHOTO_PENDING_PREFIX } from '../offline/spray-photo-retry';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { reportError } from '../lib/error-reporting';
 import { track } from '../lib/analytics';
 import { setSchemaReady } from './schema-ready';
+import { pinDatabase } from './connection-pin';
+import { registerDeadHandleRecovery, type DeadHandleOrigin } from './dead-handle';
+import type { SqliteHandleFailure } from '@boardsesh/offline-sync';
 import { markStartup } from '../lib/profiling/startup-profile';
 import { measureDatabaseBytes } from './storage-usage';
 
-export const DATABASE_NAME = 'boardsesh.db';
+// Defined in its own leaf module so `connection-pin.ts` can read it without an
+// import cycle back through this file. Re-exported here so every existing import
+// site keeps working.
+export { DATABASE_NAME } from './database-name';
 
 // Tables that hold the signed-in user's own data. Cleared on sign-out so the
 // next account on the device never sees the previous user's ticks, playlists,
 // follows, or not-yet-synced writes. Board reference data (board_climbs,
 // board_climb_stats) is deliberately excluded — it is the expensive shared
-// cache and is identical regardless of who is logged in.
+// cache and is identical regardless of who is logged in. Except for spray: see
+// SPRAY_SCOPED_BOARD_TABLES below, which clears those tables' spray rows only.
+//
+// `spray_walls` is the ONE piece of board reference data that is cleared here
+// (issue #5448), because the sentence above is false for it: a wall is not
+// identical regardless of who is logged in, it is a photograph of somebody's
+// garage that the server only handed over because THIS climber owns the wall, is
+// a member of its gym, or the wall is public. Leaving the row behind on a shared
+// phone would give the next account the wall's name, geometry and every hold on
+// it — and `clearStoredSprayPhotos` takes the picture itself for the same
+// reason. Re-downloading it costs one page, not a catalogue crawl.
 const USER_DATA_TABLES_TO_CLEAR = [
   'boardsesh_ticks',
   'playlists',
@@ -43,19 +65,52 @@ const USER_DATA_TABLES_TO_CLEAR = [
   'user_favorites',
   'user_follows',
   'setter_follows',
+  'followed_author_snapshots',
   'playlist_follows',
   'pending_mutations',
+  'spray_walls',
 ] as const;
+
+/** The wire value for the spray board type, as every scope key and resolver spells it. */
+const SPRAY_BOARD_TYPE = 'spray';
+
+// The per-board reference tables whose SPRAY rows are cleared on sign-out too
+// (#5448). The wall row is not the only private thing a mirrored wall leaves
+// behind: these three hold its climbs' names, descriptions, frames, grades and
+// stats, and `searchClimbsLocal` serves board reference data with no owner stamp
+// — deliberately, because a Kilter catalogue is shared. So the rows for the one
+// board type where that is false have to go with the wall. Only `board_type =
+// 'spray'` is touched; the catalogue download the wipe exists to protect is not.
+const SPRAY_SCOPED_BOARD_TABLES = ['board_climbs', 'board_climb_stats', 'board_climb_grades'] as const;
 
 let databaseHandle: SQLiteDatabase | null = null;
 
+const handleListeners = new Set<() => void>();
+
+/**
+ * Subscribe to handle CHANGES, including a non-null to non-null swap.
+ *
+ * `subscribeSchemaReady` cannot serve this: it only fires when readiness flips, so a
+ * dead-handle recovery replacing one live connection with another is invisible to
+ * it — and the consumers that take their database from `useSQLiteContext()` would
+ * keep writing through the dead one (#5410).
+ */
+export function subscribeDatabaseHandle(listener: () => void): () => void {
+  handleListeners.add(listener);
+  return () => {
+    handleListeners.delete(listener);
+  };
+}
+
 export function setDatabaseHandle(db: SQLiteDatabase | null): void {
+  const changed = databaseHandle !== db;
   databaseHandle = db;
   // The handle is only ever published once migrations have run, so it doubles as
   // the schema-readiness signal for the `useSQLiteContext()` consumers that can't
   // see this handle at all. Driving the store from here — rather than letting
   // callers poke it — keeps the two from ever disagreeing.
   setSchemaReady(db !== null);
+  if (changed) for (const listener of handleListeners) listener();
 }
 
 export function getDatabaseHandle(): SQLiteDatabase | null {
@@ -63,29 +118,82 @@ export function getDatabaseHandle(): SQLiteDatabase | null {
 }
 
 /**
- * How many times the whole setup sequence is attempted before giving up, and the
- * hard wall-clock ceiling across all of them.
+ * Retracts the published handle when the connection behind it is being closed.
  *
- * Sized against the longest writer that can legitimately hold the file while the app
- * starts: `vacuumDatabase` documents an exclusive lock of 5-20s on a 200-400MB
- * database, and a snapshot import is the same order. 30s therefore outlasts a genuine
- * one, while anything still locked past it is wedged rather than busy — further
- * retries would only burn battery on a launch that has already fallen back to
- * network-only. The delays are the gaps BETWEEN attempts; the deadline is checked
- * before each sleep so a slow attempt cannot overrun the window.
+ * `SQLiteProvider`'s effect teardown calls `db.closeAsync()`, and until #5292 nothing
+ * told this module about it: `getDatabaseHandle()` kept serving the closed connection
+ * and every local read threw `Access to closed resource` (~249 users/30d). Called from
+ * the provider's own teardown so the handle goes null BEFORE the close lands, rather
+ * than leaving a window where a non-React reader (sync scheduler, mutation drainer)
+ * picks up a dead connection.
+ *
+ * Identity-checked: an effect cleanup can run after a newer connection has already
+ * published itself, and retracting unconditionally would switch offline storage off
+ * for a database that is perfectly alive.
  */
-const MAX_INIT_ATTEMPTS = 5;
-const MAX_INIT_WINDOW_MS = 30_000;
+export function releaseDatabaseHandle(db: SQLiteDatabase): void {
+  if (databaseHandle === db) setDatabaseHandle(null);
+}
+
+/**
+ * The gaps BETWEEN attempts, in two phases. Exported so the retry tests advance their
+ * fake clock by the real gap rather than mirroring these numbers in a literal that
+ * silently drifts from them.
+ *
+ * FAST (#4104) — sized for a writer that is merely in the way: a tick commit, a
+ * checkpoint stamp, one `SNAPSHOT_IMPORT_BATCH_ROWS` import batch. Almost every
+ * contended launch is won here, and the whole ladder fits in 17.5s.
+ */
+export const INIT_RETRY_DELAYS_MS = [500, 2_000, 5_000, 10_000];
+
+/**
+ * SLOW (#4314) — the gaps that follow, reached ONLY by lock contention.
+ *
+ * The fast ladder stops at 17.5s of gaps, so the chain used to give up around 30s.
+ * That was sized against `vacuumDatabase`'s documented 5-20s exclusive lock, but the
+ * writer that actually loses this window in the field is a board-data snapshot
+ * import: `Offline Board Download Completed.importMs` runs to 253,939ms at the top of
+ * the 30-day distribution, an order of magnitude past the old ceiling. Every
+ * phase-tagged `kind: 'sqlite-init'` report on 2.4.0 has the same shape —
+ * `retryable: true`, `attempts: 4`, `elapsedMs: 29,875` — i.e. the chain spent its
+ * entire window waiting out a real lock and then walked away.
+ *
+ * Walking away was permanent. `SQLiteProvider` calls `onInit` exactly once per
+ * connection, so once the chain returned there was nothing left to try again: the
+ * handle stayed null and offline storage was off for the REST OF THE SESSION, over a
+ * database that became writable a minute or two later. These four gaps carry the
+ * chain to ~227.5s of waiting (~272s with every attempt blocking its full
+ * `busy_timeout`), which covers that 253,939ms tail.
+ *
+ * It costs a healthy launch nothing. Only a failure `classifySqliteLockError` calls
+ * contention gets here — a full disk or a corrupt file still ends the chain on
+ * attempt 1 — and a blocked attempt is an idle await, not a spin.
+ */
+export const INIT_LOCK_RETRY_DELAYS_MS = [30_000, 60_000, 60_000, 60_000];
+
+const INIT_ALL_RETRY_DELAYS_MS = [...INIT_RETRY_DELAYS_MS, ...INIT_LOCK_RETRY_DELAYS_MS];
+
+/**
+ * How many times the whole setup sequence is attempted before giving up, and the hard
+ * wall-clock ceiling across all of them.
+ *
+ * The attempt count is derived from the ladder so the two can never disagree. The
+ * ceiling is the backstop for an attempt that is itself slow — every gap plus a full
+ * `busy_timeout` on all nine attempts still lands inside it — so the ladder, not the
+ * clock, is what normally ends the chain. It is checked before each sleep, so a slow
+ * attempt cannot overrun the window.
+ */
+const MAX_INIT_ATTEMPTS = INIT_ALL_RETRY_DELAYS_MS.length + 1;
+const MAX_INIT_WINDOW_MS = 360_000;
 /**
  * How many times a superseded attempt may be refunded (see the restart branch in
  * `beginInitialization`). Each refund needs its own remount — the retry immediately
  * retargets onto the connection that superseded it — so this only exists to stop a
- * pathological remount loop from keeping one chain alive forever.
+ * pathological remount loop from keeping one chain alive forever. Hitting it ends the
+ * chain with nothing published and a Sentry report (see `reportSupersededExhaustion`),
+ * not with the superseded connection presented as ready.
  */
 const MAX_SUPERSEDED_RESTARTS = 3;
-// Exported so the retry tests advance their fake clock by the real gap rather than
-// mirroring these numbers in a literal that silently drifts from them.
-export const INIT_RETRY_DELAYS_MS = [500, 2_000, 5_000, 10_000];
 
 /**
  * Single-flight guard spanning the ENTIRE init lifecycle, background retries
@@ -114,6 +222,25 @@ let activeInitialization: Promise<void> | null = null;
 let latestDatabase: SQLiteDatabase | null = null;
 
 /**
+ * Exit protocol for the init chain: whatever is published when a chain stops must be
+ * a connection `SQLiteProvider` still owns.
+ *
+ * The single gated publish in `beginInitialization` is what makes this hold, so today
+ * this never has anything to retract. It is called at every terminal `return` anyway
+ * because the failure it backstops is silent and expensive: a superseded handle reads
+ * as `isSchemaReady() === true` while every query throws `Access to closed resource`,
+ * and the chain that left it there has already dropped `activeInitialization`, so
+ * nothing retries until the next remount (#5366). A second publish site added later —
+ * the retry ladder and its wake path are both being retuned (#4314) — would be caught
+ * here instead of shipping as #5292 for a third time.
+ */
+function retractSupersededHandle(): void {
+  if (databaseHandle !== null && latestDatabase !== null && databaseHandle !== latestDatabase) {
+    setDatabaseHandle(null);
+  }
+}
+
+/**
  * At most one recovery event per process. A launch can only recover once, but the
  * chain can restart after an exhausted window (`activeInitialization` is cleared),
  * and one launch must not emit two.
@@ -139,8 +266,52 @@ type InitOutcome =
 // shapes differ per platform and are only knowable from telemetry, so they need a
 // test pinning the literal strings Sentry carries.
 
-function delay(durationMs: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, durationMs));
+/**
+ * Ends the backoff the chain is currently parked in. Non-null ONLY while a sleep is in
+ * flight — `sleepUntilRetry` sets it as it parks and clears it on the way out, so a
+ * wake that arrives during an attempt finds nothing to do and cannot make the loop
+ * run that attempt twice. At most one sleeper exists: `activeInitialization`
+ * single-flights the chain, and every path that clears it has already returned.
+ */
+let wakeFromBackoff: (() => void) | null = null;
+
+/**
+ * The gap between two attempts, endable early.
+ *
+ * The slow #4314 gaps run to a minute, and a `SQLiteProvider` remount arriving inside
+ * one used to be invisible to the chain: `initializeDatabase` moves `latestDatabase`
+ * and hands the remount the already-resolved launch gate, so the replacement provider
+ * renders with a null handle and `schemaReady` false until the sleep runs out — over a
+ * fresh connection that would work right now. The wake exists so that lands on the
+ * NEXT loop iteration instead, which reads `latestDatabase` and retargets through the
+ * path that already exists rather than a second one.
+ *
+ * It shortens a wait; it does not buy an attempt. The budget slot was already spent
+ * before the sleep and `supersededRestarts` is untouched, so a remount loop cannot
+ * keep one chain alive past `MAX_INIT_ATTEMPTS`.
+ */
+function sleepUntilRetry(durationMs: number): Promise<void> {
+  return new Promise((resolve) => {
+    // Both exits null the slot, so "set" and "parked" are the same state. That is what
+    // makes the no-double-run property above STRUCTURAL rather than accidental: there
+    // is no window where a wake could reach a chain that is mid-attempt.
+    //
+    // A left-behind resolver would in fact be inert — it closes over its own timer and
+    // its own promise, both already settled by the time it could be called again, and
+    // the next sleep overwrites the slot regardless. Mutation-tested: dropping either
+    // assignment changes no observable behaviour. They are kept because the invariant,
+    // not the assignment, is the thing this function's callers rely on.
+    const timer = setTimeout(() => {
+      wakeFromBackoff = null;
+      resolve();
+    }, durationMs);
+
+    wakeFromBackoff = () => {
+      clearTimeout(timer);
+      wakeFromBackoff = null;
+      resolve();
+    };
+  });
 }
 
 /**
@@ -186,9 +357,42 @@ async function readJournalMode(db: SQLiteDatabase): Promise<string> {
  * layout, size) scope.
  */
 export function initializeDatabase(db: SQLiteDatabase): Promise<void> {
+  const replacesTheOneInFlight = latestDatabase !== null && latestDatabase !== db;
+  // Once a replacement is live, a later provider connection is a wrapper around the
+  // SAME DEAD NATIVE INSTANCE — `openDatabaseAsync` is still served it from the cache
+  // — so retargeting onto it would publish a dead handle as ready. Pin it (its
+  // collection would free the dead binding a second time) and leave the replacement
+  // in place (#5410).
+  if (recoveredDatabase !== null) {
+    pinDatabase(db);
+    return activeInitialization ?? Promise.resolve();
+  }
+  // Reassigning `latestDatabase` below is what makes the PREVIOUS wrapper collectable,
+  // and on Android collecting any wrapper for this file frees the native handle the
+  // live connection is still using (#5410). The outgoing one was pinned by its own
+  // call to this function, so only the incoming one needs pinning here.
+  //
+  // Deliberately overlapping with the two pins in `database-provider.tsx`: today
+  // `onInit` is this function's only caller, so removing any ONE of the three leaves
+  // every wrapper pinned and the suite green. That redundancy is the point — this is
+  // the module that owns the overwrite hazard, and `initializeDatabase` is a public
+  // export, so a second caller must not have to remember the provider's pin.
+  pinDatabase(db);
   // Recorded on EVERY call, including the remount that only gets the shared promise
   // back, so the in-flight chain can retarget onto the live connection.
   latestDatabase = db;
+  // A second connection arriving means `SQLiteProvider` has torn the previous one
+  // down — its teardown closes it (expo-sqlite `build/hooks.js`), and the close can
+  // land before or after this call. Retract synchronously, before the first await, so
+  // from the instant `onInit` runs for the new connection no reader can be handed the
+  // old one (#5292). The chain below republishes once the new connection's migrations
+  // are in place.
+  if (databaseHandle !== null && databaseHandle !== db) setDatabaseHandle(null);
+  // Whatever lock the chain is sitting out belongs to a connection that no longer
+  // exists, so the rest of the gap buys nothing — and at the slow #4314 gaps it costs
+  // this mount up to a minute of null handle. End the sleep and let the loop retarget.
+  // A no-op unless the chain is actually parked (see `wakeFromBackoff`).
+  if (replacesTheOneInFlight) wakeFromBackoff?.();
   activeInitialization ??= beginInitialization(db);
   return activeInitialization;
 }
@@ -196,6 +400,12 @@ export function initializeDatabase(db: SQLiteDatabase): Promise<void> {
 /**
  * Runs the setup sequence once. Never throws — the caller decides whether the
  * failure is worth another attempt.
+ *
+ * Deliberately does NOT publish the handle. It cannot tell whether the connection it
+ * just prepared is still the live one, and a remount landing during the winning
+ * attempt has already had `SQLiteProvider` close it — publishing from here handed
+ * every reader a closed connection (#5366). `beginInitialization` owns the single
+ * publish, where the supersede check already lives.
  */
 async function attemptInitialization(db: SQLiteDatabase): Promise<InitOutcome> {
   let phase: InitPhase = 'wal';
@@ -209,9 +419,6 @@ async function attemptInitialization(db: SQLiteDatabase): Promise<InitOutcome> {
     await ensureMutationQueueTable(db);
     phase = 'migrations';
     await runMigrations(db);
-    // Published only once the schema is actually in place: a handle whose migrations
-    // never ran would hand every consumer a database with no tables.
-    setDatabaseHandle(db);
     return { status: 'ready' };
   } catch (error) {
     const { locked, code } = classifySqliteLockError(error);
@@ -235,6 +442,11 @@ function beginInitialization(db: SQLiteDatabase): Promise<void> {
   });
 
   void (async () => {
+    // A dead-handle recovery retargets the whole lifecycle onto a replacement
+    // connection and starts its own chain. This chain must then stop, even if it is
+    // parked in a 60s retry gap — two chains running migrations against one file is
+    // the contention the ladder exists to survive, self-inflicted (#5410).
+    const epoch = chainEpoch;
     const startedAt = Date.now();
     const deadline = startedAt + MAX_INIT_WINDOW_MS;
     // What the last failed attempt tripped over, so a recovery can say which step
@@ -255,6 +467,10 @@ function beginInitialization(db: SQLiteDatabase): Promise<void> {
       // handle was cleared outright.
       const target = latestDatabase ?? db;
       const outcome = await attemptInitialization(target);
+      if (epoch !== chainEpoch) {
+        releaseLaunch();
+        return;
+      }
       attempts += 1;
 
       // Unblock the provider once, whatever the first attempt did.
@@ -264,6 +480,50 @@ function beginInitialization(db: SQLiteDatabase): Promise<void> {
       }
 
       if (outcome.status === 'ready') {
+        // A remount landed while this attempt was in flight, so `SQLiteProvider` has
+        // already closed the connection it just prepared — its teardown runs before the
+        // replacement reaches `initializeDatabase`, so a superseded target is a CLOSED
+        // target.
+        const superseded = latestDatabase !== null && latestDatabase !== target;
+        // THE publish, and the only one in the lifecycle. Two conditions, both
+        // load-bearing: the schema is actually in place (a handle whose migrations never
+        // ran hands every consumer a database with no tables), and this connection is
+        // still the live one. Publishing a superseded target is #5292's exact symptom —
+        // `Access to closed resource` on every local read — reintroduced by #5292's own
+        // fix, because neither exit below retracted it (#5366). Keeping it here rather
+        // than inside `attemptInitialization` means no return path can leave a closed
+        // connection published: there is only one place that could have published it.
+        if (!superseded) setDatabaseHandle(target);
+        // The remount was handed this (about to resolve) promise and nothing else will
+        // initialize its connection, so retarget here instead of returning and leaving
+        // offline storage dead for the session. Spends a superseded refund, not retry
+        // budget: no lock was contended, the file is simply behind a newer connection.
+        if (superseded && supersededRestarts < MAX_SUPERSEDED_RESTARTS) {
+          markStartup('sqlite.recovery.start');
+          supersededRestarts += 1;
+          continue;
+        }
+        // Drop the single-flight guard on the way out. Holding it past a successful
+        // chain is what made #5292 permanent: the next mount was handed this resolved
+        // promise, `setDatabaseHandle` never ran again, and the handle stayed pinned to
+        // a connection `SQLiteProvider` had since closed. Nothing awaits between here
+        // and the `return`, so no mount can slip in after the clear and be stranded.
+        activeInitialization = null;
+        if (superseded) {
+          // Out of refunds with the live connection never initialized: a remount loop
+          // outran the chain. Offline storage is off for the session — nothing is
+          // published, `isSchemaReady()` is false — and only another mount can restart
+          // it, so it has to be visible. Falling through to the success path published
+          // the closed connection as ready and reported nothing at all (#5366).
+          if (attempts > 1) markStartup('sqlite.recovery.end', 'error');
+          retractSupersededHandle();
+          reportSupersededExhaustion({
+            attempts,
+            elapsedMs: Date.now() - startedAt,
+            restarts: supersededRestarts,
+          });
+          return;
+        }
         if (attempts > 1) markStartup('sqlite.recovery.end', 'ready');
         // Only a chain that survived a GENUINE lock failure recovered from
         // contention. A chain whose only failure was against a superseded (closed)
@@ -311,7 +571,7 @@ function beginInitialization(db: SQLiteDatabase): Promise<void> {
       }
 
       budgetSpent += 1;
-      const retryDelayMs = INIT_RETRY_DELAYS_MS[budgetSpent - 1];
+      const retryDelayMs = INIT_ALL_RETRY_DELAYS_MS[budgetSpent - 1];
       const outOfRoad =
         (!outcome.retryable && !superseded) ||
         budgetSpent === MAX_INIT_ATTEMPTS ||
@@ -348,11 +608,16 @@ function beginInitialization(db: SQLiteDatabase): Promise<void> {
             extra: { attempts, retryable: outcome.retryable, elapsedMs: Date.now() - startedAt },
           });
         }
+        // Last thing before the chain stops, and after the awaited read-back above, so
+        // a remount landing during it is accounted for: nothing that survives this
+        // return may point at a connection `SQLiteProvider` has closed (#5366).
+        retractSupersededHandle();
         return;
       }
 
       markStartup('sqlite.recovery.start');
-      await delay(retryDelayMs);
+      await sleepUntilRetry(retryDelayMs);
+      if (epoch !== chainEpoch) return;
     }
   })();
 
@@ -383,6 +648,156 @@ function reportInitRecovered(properties: {
 }
 
 /**
+ * Report a chain that ran out of superseded-connection refunds without ever reaching
+ * the live database.
+ *
+ * The outcome is the same dead offline storage a give-up leaves — no handle, no schema
+ * readiness, every local read on the network path — so it needs the same visibility.
+ * Until #5366 this exit reported nothing at all: it fell through to the success path,
+ * published the closed connection, and looked from telemetry like a clean launch.
+ *
+ * Deliberately NOT `kind: 'sqlite-init'`. That aggregate is the lock-contention signal
+ * #4314 reads to decide whether the lock problem is fixed, and there is no lock in
+ * this failure — it is a remount loop outrunning one chain, and mixing the two is what
+ * made the closed-handle artefacts unreadable in the first place.
+ */
+function reportSupersededExhaustion(details: { attempts: number; elapsedMs: number; restarts: number }): void {
+  reportError(new Error('SQLite init ran out of superseded-connection restarts'), {
+    tags: { source: 'offline-sync', kind: 'sqlite-init-superseded' },
+    extra: details,
+  });
+}
+
+/**
+ * Dead-handle recovery (#5410).
+ *
+ * A collected JS wrapper can free the native binding of the connection everything
+ * else is still using. `connection-pin.ts` is what stops that happening; this is the
+ * safety net for a path it misses, because the alternative is a climber whose
+ * offline storage is dead until they force-quit.
+ */
+
+/**
+ * The replacement, once one exists. Never cleared and never closed — a wrapper we
+ * dropped would be collectable, which is the bug we are recovering from.
+ */
+let recoveredDatabase: SQLiteDatabase | null = null;
+
+/**
+ * How the replacement is opened. Injected rather than imported, because `./reopen`
+ * imports expo-sqlite for REAL and this module is loaded by node-env suites that
+ * cannot parse react-native's Flow source (see the note in `./testing`).
+ */
+let openReplacement: (() => Promise<SQLiteDatabase>) | null = null;
+
+/** Wired from `database-provider.tsx`, which already depends on expo-sqlite. */
+export function registerReplacementOpener(opener: () => Promise<SQLiteDatabase>): void {
+  openReplacement = opener;
+}
+
+/** Single-flight: ten consumers hitting the dead handle at once must open one connection. */
+let activeRecovery: Promise<void> | null = null;
+let recoveryCount = 0;
+let lastRecoveryStartedAt = 0;
+
+/**
+ * Two attempts per process, 30s apart. Same shape as `MAX_SUPERSEDED_RESTARTS`: the
+ * cap exists so a misclassified error cannot put the app in a re-open loop, not
+ * because a third attempt would be wrong.
+ */
+const MAX_DEAD_HANDLE_RECOVERIES = 2;
+/** Exported so the single-flight test steps past the gate by the real interval
+ * rather than mirroring the number in a literal that silently drifts from it. */
+export const MIN_RECOVERY_INTERVAL_MS = 30_000;
+
+/**
+ * Bumped by a recovery so a chain parked in a retry gap cannot wake up and run a
+ * second migration against the replacement.
+ */
+let chainEpoch = 0;
+
+function recoverDeadDatabaseHandle(shape: Exclude<SqliteHandleFailure, null>, origin: DeadHandleOrigin): void {
+  // FIRST, and synchronously. Every `getDatabaseHandle()` reader re-reads per call,
+  // so this alone stops the storm: they fall back to the network instead of throwing
+  // again, and `setSchemaReady(false)` stops the scheduler and the drainer. It is
+  // worth doing even if the re-open below never succeeds.
+  setDatabaseHandle(null);
+
+  if (activeRecovery !== null) return;
+  if (recoveryCount >= MAX_DEAD_HANDLE_RECOVERIES) return;
+  if (lastRecoveryStartedAt !== 0 && Date.now() - lastRecoveryStartedAt < MIN_RECOVERY_INTERVAL_MS) return;
+  const opener = openReplacement;
+  if (opener === null) return;
+
+  recoveryCount += 1;
+  lastRecoveryStartedAt = Date.now();
+  const startedAt = Date.now();
+  // Invalidate every in-flight chain HERE, synchronously, not after the re-open
+  // resolves. A chain whose attempt completes during the `await opener()` below would
+  // otherwise still read the old epoch, decide it was not superseded — `latestDatabase`
+  // has not moved yet either — and publish the connection we have just declared dead,
+  // overwriting the replacement a moment later. Bumping before the first await closes
+  // that window: from this point no chain started earlier can publish anything.
+  chainEpoch += 1;
+  markStartup('sqlite.deadhandle.start');
+  reportError(new Error(`SQLite native handle lost (${shape})`), {
+    tags: { source: 'offline-sync', kind: 'sqlite-dead-handle', phase: 'detected', shape, origin },
+    extra: { recoveries: recoveryCount },
+  });
+
+  activeRecovery = (async () => {
+    try {
+      const replacement = await opener();
+      pinDatabase(replacement);
+      recoveredDatabase = replacement;
+      // Retarget the ladder rather than inventing a second one: this gets WAL, the
+      // busy timeout, the queue table, migrations, the lock backoff — and the SINGLE
+      // publish site, so `retractSupersededHandle`'s invariant still holds. The epoch
+      // was already bumped synchronously above, so nothing older can race this.
+      activeInitialization = null;
+      latestDatabase = replacement;
+      wakeFromBackoff?.();
+      activeInitialization = beginInitialization(replacement);
+      await activeInitialization;
+      markStartup('sqlite.deadhandle.end', 'ready');
+      reportError(new Error('SQLite native handle recovered'), {
+        tags: { source: 'offline-sync', kind: 'sqlite-dead-handle', phase: 'reopened', shape, origin },
+        extra: { recoveries: recoveryCount, elapsedMs: Date.now() - startedAt },
+      });
+      track(SHARED_EVENTS.OfflineSqliteHandleRecovered, {
+        shape,
+        origin,
+        recoveries: recoveryCount,
+        elapsedMs: Date.now() - startedAt,
+        recovered: getDatabaseHandle() !== null,
+      });
+    } catch (error) {
+      markStartup('sqlite.deadhandle.end', 'error');
+      reportError(error, {
+        tags: { source: 'offline-sync', kind: 'sqlite-dead-handle', phase: 'failed', shape, origin },
+        extra: { recoveries: recoveryCount, elapsedMs: Date.now() - startedAt },
+      });
+    } finally {
+      activeRecovery = null;
+    }
+  })();
+}
+
+// Registered on module load so the wiring cannot be forgotten by a caller, and
+// cannot arrive after the first failure.
+registerDeadHandleRecovery(recoverDeadDatabaseHandle);
+
+/** Test-only. Drops the recovery state so a suite can drive it more than once. */
+export function resetDeadHandleRecoveryForTests(): void {
+  recoveredDatabase = null;
+  openReplacement = null;
+  activeRecovery = null;
+  recoveryCount = 0;
+  lastRecoveryStartedAt = 0;
+  chainEpoch = 0;
+}
+
+/**
  * Test-only: drops the single-flight guard so each test can drive a fresh
  * initialization. Production has exactly one database for the process lifetime.
  *
@@ -394,6 +809,9 @@ export function resetDatabaseInitializationForTests(): void {
   activeInitialization = null;
   latestDatabase = null;
   hasReportedRecovery = false;
+  // A chain a test walked away from must not be reachable from the next one's first
+  // `initializeDatabase` call.
+  wakeFromBackoff = null;
 }
 
 /**
@@ -415,16 +833,77 @@ export function resetDatabaseInitializationForTests(): void {
  * here along with their local rows — sign-out is an explicit "this account is done
  * on this device" signal, so dropping unsynced writes is the documented behaviour
  * rather than a data-loss bug.
+ *
+ * Spray is the exception the docblock above has to make room for (#5448): a wall
+ * is not "identical regardless of who is logged in", so its rows ARE deleted —
+ * the `spray_walls` row AND that wall's climbs, stats and grades, which carry
+ * the wall's climb names, descriptions, frames and grades. Leaving those behind
+ * would hand them to the next account straight out of SQLite: `searchClimbsLocal`
+ * reads board reference data, so no owner stamp gates it, and the offline engine
+ * serves it ahead of the network. Only spray rows go; the catalogue download this
+ * wipe exists to protect is untouched.
+ *
+ * The markers describing them cannot be kept either. A cursor that outlived its
+ * row is worse than no cursor at all — the sync resolvers page on a strict `>`,
+ * so one would resume PAST the deleted rows and an unchanged wall would never be
+ * offered again. The wall would be missing until its owner next touched it on the
+ * server. So each spray scope goes whole, in the same transaction; the next
+ * sign-in re-downloads one wall, which is a page, not a catalogue.
+ *
+ * The photographs are the caller's half: `clearStoredSprayPhotos` wipes the whole
+ * store next to this call, which is strictly more than these rows name and so
+ * also reclaims a file some earlier failed wipe orphaned.
  */
 export async function clearUserData(db: SQLiteDatabase): Promise<void> {
   await db.withExclusiveTransactionAsync(async (txn) => {
     // Sign-out teardown runs on its own connection concurrently with in-flight sync
     // reads/writes; wait for the lock instead of failing instantly (BOARDSESH-A9).
     await applyBusyTimeout(txn);
+
+    // Read BEFORE the deletes: the spray scopes whose markers must not outlive
+    // their rows. A layout with climbs but no wall row is real — a download
+    // interrupted between the two tables — so the climbs decide too, not just
+    // the wall.
+    const sprayLayouts = await txn.getAllAsync<{ layout_id: number }>(
+      `SELECT layout_id FROM spray_walls
+       UNION
+       SELECT DISTINCT layout_id FROM board_climbs WHERE board_type = ? AND layout_id IS NOT NULL`,
+      [SPRAY_BOARD_TYPE],
+    );
+
     for (const table of USER_DATA_TABLES_TO_CLEAR) {
       await txn.runAsync(`DELETE FROM ${table}`);
     }
+    // The device-derived holds index carries the walls' climbs' holds, so it goes
+    // too: hold sets, postings, local ids and watermarks. First, because it finds
+    // the wall's climbs through board_climbs.
+    await clearBoardTypeHoldIndex(txn, SPRAY_BOARD_TYPE);
+    for (const table of SPRAY_SCOPED_BOARD_TABLES) {
+      await txn.runAsync(`DELETE FROM ${table} WHERE board_type = ?`, [SPRAY_BOARD_TYPE]);
+    }
     await deleteUserCheckpoints(txn);
+
+    for (const { layout_id: layoutId } of sprayLayouts) {
+      // A wall's scope key is `spray:<layoutId>:<layoutId>` — a wall is its own
+      // size (`spraySizeIdForLayout`). `scopeSyncMetaKeys` is the same list
+      // `removeBoardScopeData` clears, so the two cannot drift: checkpoints for
+      // every per-board table, the refresh state, and every lifecycle marker.
+      const scopeKey = offlineBoardKey({
+        boardType: SPRAY_BOARD_TYPE,
+        layoutId,
+        sizeId: spraySizeIdForLayout(layoutId),
+      });
+      for (const key of scopeSyncMetaKeys(scopeKey)) {
+        await txn.runAsync('DELETE FROM sync_meta WHERE key = ?', [key]);
+      }
+    }
+
+    // The pending-photo markers, which `scopeSyncMetaKeys` does not know about —
+    // it is derived from the scope key and this one is keyed by layout id. Every
+    // wall row is gone by now, so every marker describes a wall that is not here;
+    // a stale attempt count would otherwise carry into the next download of the
+    // same wall and could spend its retry budget before the first try.
+    await txn.runAsync('DELETE FROM sync_meta WHERE key LIKE ?', [`${SPRAY_PHOTO_PENDING_PREFIX}%`]);
   });
 }
 
@@ -542,7 +1021,16 @@ export async function purgeLocalDataForSignOut(
       'SELECT EXISTS(SELECT 1 FROM board_climbs LIMIT 1) AS has_rows',
     );
     hadDownloads = (downloadRow?.has_rows ?? 0) === 1;
-    for (const table of [...USER_DATA_TABLES_TO_CLEAR, ...BOARD_DATA_TABLES]) {
+    // De-duplicated: `spray_walls` is in BOTH lists — it is per-board in
+    // TABLE_CONFIGS and the one board table the selective wipe also clears
+    // (#5448) — so a plain concatenation ran its DELETE twice. Harmless today,
+    // and exactly the kind of thing that stops being harmless when someone adds
+    // a count or a trigger to this loop.
+    //
+    // DEVICE_ONLY_TABLES (the derived holds index) is spread for the same reason
+    // BOARD_DATA_TABLES is: it is built from the catalog this wipe deletes, and it
+    // is deliberately NOT in TABLE_CONFIGS, so BOARD_DATA_TABLES cannot cover it.
+    for (const table of new Set([...USER_DATA_TABLES_TO_CLEAR, ...BOARD_DATA_TABLES, ...DEVICE_ONLY_TABLES])) {
       await txn.runAsync(`DELETE FROM ${table}`);
     }
     await deleteAllSyncMeta(txn);

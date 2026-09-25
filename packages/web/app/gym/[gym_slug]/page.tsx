@@ -1,7 +1,6 @@
 import React from 'react';
 import type { Metadata } from 'next';
 import { notFound, permanentRedirect } from 'next/navigation';
-import Container from '@mui/material/Container';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import MuiLink from '@mui/material/Link';
@@ -15,14 +14,17 @@ import ScheduleOutlined from '@mui/icons-material/ScheduleOutlined';
 import type { Gym, MyGymClaim, UserBoard } from '@boardsesh/shared-schema';
 import {
   GET_GYM_PENDING_CLAIM,
-  GET_GYM_BOARDS,
+  GET_GYM_BOARDS_FOR_LISTING,
   GET_GYM_KIOSK,
+  GET_GYM_SPRAY_WALLS,
   type GetGymPendingClaimQueryResponse,
   type GetGymBoardsQueryResponse,
+  type GetGymSprayWallsQueryResponse,
+  type GymSprayWallListing,
   type GetGymKioskQueryResponse,
   type GymKioskOperationResult,
 } from '@boardsesh/graphql/operations';
-import { boardTypeLabel } from '@boardsesh/board-constants';
+import { disambiguateBoardSubtitles, stripGymNamePrefix } from '@boardsesh/board-config';
 import { parseGymQrLanding } from '@boardsesh/analytics';
 import { gymQrAttributionQuery } from '@/app/lib/gym-attribution';
 import { getServerAuthToken } from '@/app/lib/auth/server-auth';
@@ -30,11 +32,13 @@ import { executeAuthenticatedGraphQL } from '@/app/lib/graphql/server-graphql';
 import { getLocale } from '@/app/lib/i18n/get-locale';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { createPageMetadata, createNoIndexMetadata, absoluteUrl } from '@/app/lib/seo/metadata';
+import { gymIsIndexableVenue } from '@/app/lib/seo/gym-index-eligibility';
 import { JsonLd } from '@/app/lib/seo/json-ld';
 import { safeExternalHref } from '@/app/lib/safe-external-url';
 import { themeTokens } from '@/app/theme/theme-config';
 import I18nProvider from '@/app/components/providers/i18n-provider';
 import LocaleLink from '@/app/components/i18n/locale-link';
+import { PageShell } from '@/app/components/ui/page-shell';
 import GymStatChip from '@/app/components/gym-entity/gym-stat-chip';
 import CommentSection from '@/app/components/social/comment-section';
 import GymPageManageButton from './gym-page-manage-button';
@@ -49,6 +53,7 @@ import { formatHoursConfirmedDate } from './gym-hours-display';
 import GymPageCtaLink from './gym-page-cta-link';
 import GymInstallCta from './gym-install-cta';
 import GymQrLandingTracker from './gym-qr-landing-tracker';
+import styles from './gym-page.module.css';
 import { fetchGymBySlug, isGymViewable } from './fetch-gym-by-slug';
 import { getPublicBackendHttpUrl } from '@/app/lib/backend-url';
 import { resolveGymLogoDisplayUrl, resolveGymPhotoDisplayUrl } from '@/app/lib/gym-logo-display-url';
@@ -100,12 +105,71 @@ async function fetchDefaultKiosk(gymSlug: string, token: string | undefined): Pr
 
 async function fetchGymBoards(gymUuid: string, token: string | undefined): Promise<UserBoard[]> {
   try {
-    const response = await executeAuthenticatedGraphQL<GetGymBoardsQueryResponse>(GET_GYM_BOARDS, { gymUuid }, token);
+    const response = await executeAuthenticatedGraphQL<GetGymBoardsQueryResponse>(
+      GET_GYM_BOARDS_FOR_LISTING,
+      { gymUuid },
+      token,
+    );
     return response.gymBoards ?? [];
   } catch (error) {
     console.error('fetchGymBoards failed:', error);
     return [];
   }
+}
+
+/**
+ * The gym's spray walls, as its members and the open web respectively may see them.
+ *
+ * Its own query and its own catch, like every other section on this page: a
+ * backend that has not deployed `gymSprayWalls` yet must cost this page its wall
+ * list and nothing else. Folding the selection into `fetchGymBySlug` would 404
+ * the whole gym.
+ *
+ * `null` — not `[]` — when the ask itself failed, and the difference matters for
+ * exactly one window: web deploys ahead of backend, `gymSprayWalls` is not a
+ * field yet, and the caller is about to strip every spray wall out of the boards
+ * section on the promise that the section below shows them instead. An empty
+ * list makes that promise and breaks it, so a gym's walls disappear from the page
+ * altogether until the backend catches up. `null` says "could not ask", and the
+ * caller leaves the walls where they already were.
+ */
+async function fetchGymSprayWalls(gymUuid: string, token: string | undefined): Promise<GymSprayWallListing[] | null> {
+  try {
+    const response = await executeAuthenticatedGraphQL<GetGymSprayWallsQueryResponse>(
+      GET_GYM_SPRAY_WALLS,
+      { gymUuid },
+      token,
+    );
+    return response.gymSprayWalls ?? [];
+  } catch (error) {
+    console.error('fetchGymSprayWalls failed:', error);
+    return null;
+  }
+}
+
+/**
+ * Where a gym's spray-wall row links.
+ *
+ * `createSprayWall` mints a slug for every wall, so a null one is a data-integrity
+ * problem rather than a case to design for — but the row still renders: a gym
+ * member can see this wall, and dropping it would be a worse answer than a link to
+ * the gym they are already on. The dev-only warning is the whole point of the
+ * branch, so the broken row gets found instead of quietly degrading in production.
+ *
+ * No `?wall=` capability param, and none is needed: `gymSprayWalls` gates on
+ * `viewerCanSeeSprayWallByLayout`, which has no unlisted exemption, so an unlisted
+ * wall is never in this list. Every wall here is public — `/b/{slug}` resolves it
+ * for anybody — or private to a gym member, whom the server recognises by their
+ * session. The param is for the share link `buildSprayWallShareUrl` produces
+ * (`packages/mobile/src/lib/spray/spray-share.ts`), which is the one place an
+ * unlisted wall is handed out.
+ */
+function sprayWallHref(sprayWall: GymSprayWallListing, gymSlug: Gym['slug']): string {
+  if (sprayWall.board.slug) return `/b/${sprayWall.board.slug}`;
+  if (process.env.NODE_ENV === 'development') {
+    console.warn(`gym spray wall ${sprayWall.uuid} has no board slug; linking to the gym instead`);
+  }
+  return `/gym/${gymSlug}`;
 }
 
 /**
@@ -148,21 +212,36 @@ export async function generateMetadata(props: GymRouteProps): Promise<Metadata> 
   // imageHeight for a user photo — we don't know its aspect ratio, and a wrong
   // one makes scrapers crop it.
   const photoSrc = resolveGymPhotoSrc(gym);
-  const options = {
+  const shareCard = photoSrc
+    ? {
+        imagePath: photoSrc,
+        imageAlt: t('gymPage.photoAlt', { gymName: gym.name }),
+        imageWidth: null,
+        imageHeight: null,
+      }
+    : {};
+
+  // A gym that isn't a public venue — a private listing, or a climber's personal
+  // home wall (see `gymIsIndexableVenue`) — gets `noindex, follow` AND NO
+  // `path`. Dropping `path` is the load-bearing half: `createNoIndexMetadata`
+  // delegates to `createPageMetadata`, which emits `alternates.canonical` plus
+  // the four-locale `hreflang` cluster whenever a path is present. A noindexed
+  // page that still advertises its three locale twins republishes the very
+  // cluster we are removing, and hands a crawler three more URLs each time it
+  // fetches one. The page keeps serving 200 and stays crawlable on purpose —
+  // `noindex` only works on a URL Google is still allowed to fetch. The sibling
+  // `/gym/[gym_slug]/poster` has taken the same no-`path` route since it landed.
+  if (!gymIsIndexableVenue(gym)) {
+    return createNoIndexMetadata({ title, description, locale, ...shareCard });
+  }
+
+  return createPageMetadata({
     title,
     description,
     path: `/gym/${gym_slug}`,
     locale,
-    ...(photoSrc
-      ? {
-          imagePath: photoSrc,
-          imageAlt: t('gymPage.photoAlt', { gymName: gym.name }),
-          imageWidth: null,
-          imageHeight: null,
-        }
-      : {}),
-  };
-  return gym.isPublic ? createPageMetadata(options) : createNoIndexMetadata(options);
+    ...shareCard,
+  });
 }
 
 export default async function GymPage(props: GymRouteProps) {
@@ -195,7 +274,32 @@ export default async function GymPage(props: GymRouteProps) {
 
   const locale = await getLocale();
   const [{ t }, { t: tBoards }] = await Promise.all([getServerTranslation('kiosk'), getServerTranslation('boards')]);
-  const [kiosk, boards] = await Promise.all([fetchDefaultKiosk(gym_slug, token), fetchGymBoards(gym.uuid, token)]);
+  const [kiosk, allBoards, gymSprayWalls] = await Promise.all([
+    fetchDefaultKiosk(gym_slug, token),
+    fetchGymBoards(gym.uuid, token),
+    fetchGymSprayWalls(gym.uuid, token),
+  ]);
+  const sprayWalls = gymSprayWalls ?? [];
+
+  // Spray walls come back in `gymBoards` too — they are ordinary `user_boards`
+  // rows under the ninth board type — and they get their own section below, with
+  // the photo and the hold count a wall is actually recognised by. Filtered out
+  // here so the same wall is not listed twice, and BEFORE the subtitles are
+  // built: those are index-aligned with the list they describe.
+  //
+  // Only when the wall list actually answered. `gymSprayWalls` returning null
+  // means the question could not be asked at all — the deploy window where web
+  // is ahead of backend — and filtering on that would take the walls out of the
+  // boards section without the section below putting them back, which is worse
+  // than listing them the old way for a few minutes.
+  const boards = gymSprayWalls ? allBoards.filter((board) => board.boardType !== 'spray') : allBoards;
+
+  // Two boards run by the same gym used to read identically here — "Kilter ·
+  // 40°" twice, under two rows the setter had also named the same thing (issue
+  // #5272). The shared labels pull them apart on whatever actually differs
+  // (wall, size, layout, angle), scoped to this one gym: the heading above
+  // already says which gym this is, so the rows lead with the wall instead.
+  const boardSubtitles = disambiguateBoardSubtitles(boards, { scope: 'within-gym' });
 
   // Stored logo/photo paths are backend-relative; resolve for the browser (also
   // keeps the JSON-LD image absolute, as schema.org expects). The logo has NO
@@ -243,7 +347,12 @@ export default async function GymPage(props: GymRouteProps) {
   // Prefer the real photo for search-result thumbnails; fall back to the logo.
   const structuredDataImage = photoSrc ?? logoSrc;
 
-  const jsonLd = gym.isPublic
+  // `SportsActivityLocation` is markup about a PLACE the public can climb at, so
+  // it rides the same rule as the index directive rather than a bare `isPublic`
+  // check: a climber's home wall is not a venue, and describing one as an
+  // activity location — under a name that is usually the owner's own — is both
+  // wrong structured data and the same leak in a second format.
+  const jsonLd = gymIsIndexableVenue(gym)
     ? {
         '@context': 'https://schema.org',
         '@type': 'SportsActivityLocation',
@@ -260,130 +369,110 @@ export default async function GymPage(props: GymRouteProps) {
     <I18nProvider locale={locale} namespaces={['common', 'boards', 'kiosk']}>
       {qrLanding && <GymQrLandingTracker gymSlug={gym_slug} medium={qrLanding.medium} />}
       {jsonLd && <JsonLd data={jsonLd} />}
-      <Container maxWidth="md" sx={{ py: 4, pt: 'calc(var(--global-header-height) + 32px)' }}>
-        <Box sx={{ mb: 2 }}>
-          <MuiLink component={LocaleLink} href="/" underline="hover" sx={{ color: 'var(--color-primary)' }}>
-            {t('gymPage.breadcrumbHome')}
-          </MuiLink>
-        </Box>
-
-        {/* Owner-uploaded wall/board shot. Gyms without one simply don't render
-            this — no placeholder art, and no effect on ranking or visibility
-            anywhere; most of the long tail will never upload a photo. */}
-        {photoSrc && (
-          <Box
-            component="img"
-            src={photoSrc}
-            alt={t('gymPage.photoAlt', { gymName: gym.name })}
-            sx={{
-              width: '100%',
-              aspectRatio: '16 / 9',
-              objectFit: 'cover',
-              borderRadius: 2,
-              display: 'block',
-              mb: 3,
-            }}
-          />
-        )}
-
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap', mb: 2 }}>
-          {logoSrc && (
-            <Box
-              component="img"
-              src={logoSrc}
-              alt={gym.name}
-              sx={{ width: 72, height: 72, borderRadius: 2, objectFit: 'contain', flexShrink: 0 }}
-            />
-          )}
-          <Box sx={{ flex: 1, minWidth: 0 }}>
-            <Typography variant="h3" component="h1" sx={{ fontWeight: themeTokens.typography.fontWeight.bold }}>
-              {gym.name}
-            </Typography>
-            {gym.address && (
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5 }}>
-                <LocationOnOutlined sx={{ fontSize: 18, color: themeTokens.neutral[400] }} />
-                <Typography variant="body1" color="text.secondary">
-                  {gym.address}
-                </Typography>
+      {/* PageShell owns the fixed-header clearance and the page measure, so the
+          hand-rolled Container and its header offset are gone. The h1 is the
+          shell's title now, which puts it above the wall shot rather than
+          beside the logo — the name is what someone scanning a poster is
+          looking for, and it is the first thing rendered either way. */}
+      <PageShell
+        width="wide"
+        title={gym.name}
+        breadcrumb={
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+            <MuiLink component={LocaleLink} href="/" underline="hover" sx={{ color: 'var(--color-primary)' }}>
+              {t('gymPage.breadcrumbHome')}
+            </MuiLink>
+            <Box component="span" aria-hidden="true" sx={{ color: 'var(--neutral-400)' }}>
+              ›
+            </Box>
+            {/* The directory is how most people got here — a poster scan lands
+                on this page with no other way back into the gym list. */}
+            <MuiLink component={LocaleLink} href="/gyms" underline="hover" sx={{ color: 'var(--color-primary)' }}>
+              {t('gymPage.breadcrumbGyms')}
+            </MuiLink>
+          </Box>
+        }
+      >
+        <Box className={styles.identity}>
+          <Box className={styles.summary}>
+            {(logoSrc || gym.address) && (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap', mb: 3 }}>
+                {logoSrc && (
+                  <Box
+                    component="img"
+                    src={logoSrc}
+                    alt={gym.name}
+                    sx={{
+                      width: 72,
+                      height: 72,
+                      borderRadius: 'var(--border-radius-lg)',
+                      objectFit: 'contain',
+                      flexShrink: 0,
+                      backgroundColor: 'var(--semantic-surface)',
+                      border: '1px solid var(--separator)',
+                    }}
+                  />
+                )}
+                {gym.address && (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                    <LocationOnOutlined sx={{ fontSize: 18, color: themeTokens.neutral[400] }} />
+                    <Typography variant="body1" color="text.secondary">
+                      {gym.address}
+                    </Typography>
+                  </Box>
+                )}
               </Box>
             )}
-          </Box>
-        </Box>
 
-        {gym.description && (
-          <Typography variant="body1" sx={{ mb: 3, color: themeTokens.neutral[700] }}>
-            {gym.description}
-          </Typography>
-        )}
-
-        {hoursText && (
-          <Box sx={{ mb: 3 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
-              <ScheduleOutlined sx={{ fontSize: 18, color: themeTokens.neutral[400] }} />
-              <Typography
-                variant="subtitle1"
-                component="h2"
-                sx={{ fontWeight: themeTokens.typography.fontWeight.semibold }}
-              >
-                {t('gymPage.hoursHeading')}
-              </Typography>
-            </Box>
-            {/* The gym types its own line breaks; keep them instead of collapsing
-                a week of hours into one run-on paragraph. */}
-            <Typography variant="body1" sx={{ whiteSpace: 'pre-line', color: themeTokens.neutral[700] }}>
-              {hoursText}
-            </Typography>
-            {hoursConfirmedDate && (
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-                {t('gymPage.hoursConfirmed', { date: hoursConfirmedDate })}
+            {gym.description && (
+              <Typography variant="body1" sx={{ mb: 3, maxWidth: '68ch', color: themeTokens.neutral[700] }}>
+                {gym.description}
               </Typography>
             )}
-          </Box>
-        )}
 
-        <Box sx={{ display: 'flex', gap: 2.5, flexWrap: 'wrap', mb: 3 }}>
-          <GymStatChip
-            icon={<FitnessCenterOutlined sx={{ fontSize: 18 }} />}
-            value={gym.boardCount}
-            label={tBoards('gymEntity.stats.boards')}
-          />
-          <GymStatChip
-            icon={<PersonOutlined sx={{ fontSize: 18 }} />}
-            value={gym.memberCount}
-            label={tBoards('gymEntity.stats.members')}
-          />
-          <GymStatChip
-            icon={<PeopleOutlined sx={{ fontSize: 18 }} />}
-            value={gym.followerCount}
-            label={tBoards('gymEntity.stats.followers')}
-          />
-          <GymStatChip
-            icon={<ChatBubbleOutlined sx={{ fontSize: 18 }} />}
-            value={gym.commentCount}
-            label={tBoards('gymEntity.stats.comments')}
-          />
-        </Box>
+            <Box sx={{ display: 'flex', gap: 2.5, flexWrap: 'wrap', mb: 3 }}>
+              <GymStatChip
+                icon={<FitnessCenterOutlined sx={{ fontSize: 18 }} />}
+                value={gym.boardCount}
+                label={tBoards('gymEntity.stats.boards')}
+              />
+              <GymStatChip
+                icon={<PersonOutlined sx={{ fontSize: 18 }} />}
+                value={gym.memberCount}
+                label={tBoards('gymEntity.stats.members')}
+              />
+              <GymStatChip
+                icon={<PeopleOutlined sx={{ fontSize: 18 }} />}
+                value={gym.followerCount}
+                label={tBoards('gymEntity.stats.followers')}
+              />
+              <GymStatChip
+                icon={<ChatBubbleOutlined sx={{ fontSize: 18 }} />}
+                value={gym.commentCount}
+                label={tBoards('gymEntity.stats.comments')}
+              />
+            </Box>
 
-        <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', mb: 3 }}>
-          <GymFollowButton gymUuid={gym.uuid} ownerId={gym.ownerId} isFollowedByMe={gym.isFollowedByMe} />
-          {/* Both CTAs render through a client island purely so the click is
+            <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', mb: 3 }}>
+              <GymFollowButton gymUuid={gym.uuid} ownerId={gym.ownerId} isFollowedByMe={gym.isFollowedByMe} />
+              {/* Both CTAs render through a client island purely so the click is
               counted. The island keeps the same anchor and the same real href;
               the label is translated here on the server, so no i18n key moves. */}
-          {kiosk && (
-            <GymPageCtaLink
-              cta="kiosk"
-              gymUuid={gym.uuid}
-              href={`/kiosk/${gym_slug}`}
-              label={t('gymPage.seeOnTheWall')}
-            />
-          )}
-          {websiteHref && (
-            <GymPageCtaLink cta="website" gymUuid={gym.uuid} href={websiteHref} label={t('gymPage.visitWebsite')} />
-          )}
-          {gym.canEdit && <GymPageManageButton gymSlug={gym_slug} />}
-        </Box>
+              {kiosk && (
+                <GymPageCtaLink
+                  cta="kiosk"
+                  gymUuid={gym.uuid}
+                  href={`/kiosk/${gym_slug}`}
+                  label={t('gymPage.seeOnTheWall')}
+                />
+              )}
+              {websiteHref && (
+                <GymPageCtaLink cta="website" gymUuid={gym.uuid} href={websiteHref} label={t('gymPage.visitWebsite')} />
+              )}
+              {gym.canEdit && <GymPageManageButton gymSlug={gym_slug} />}
+            </Box>
 
-        {/* The install CTA a poster scan lands on. `gym.slug || gym_slug` is the
+            {/* The install CTA a poster scan lands on. `gym.slug || gym_slug` is the
             canonical slug: a merged twin's URL 308s onto `gym.slug` above, and a
             slug-less legacy gym has no canonical to fall back to, so the two
             paths have to agree on one campaign string per gym.
@@ -391,116 +480,255 @@ export default async function GymPage(props: GymRouteProps) {
             truthiness check, so an empty-string slug reaches here having skipped
             the 308. `??` would pass it straight through and name the campaign
             `gym-`, collecting every such gym's installs in one bucket. */}
-        <Box sx={{ mb: 3 }}>
-          <Typography
-            variant="subtitle1"
-            component="h2"
-            sx={{ fontWeight: themeTokens.typography.fontWeight.semibold, mb: 0.5 }}
-          >
-            {t('gymPage.install.heading')}
-          </Typography>
-          <Typography variant="body2" sx={{ mb: 1.5, color: themeTokens.neutral[700] }}>
-            {t('gymPage.install.body', { gymName: gym.name })}
-          </Typography>
-          <GymInstallCta
-            gymSlug={gym.slug || gym_slug}
-            googlePlayLabel={t('gymPage.install.googlePlay')}
-            appStoreLabel={t('gymPage.install.appStore')}
-          />
+            <Box sx={{ mb: 3 }}>
+              <Typography
+                variant="subtitle1"
+                component="h2"
+                sx={{ fontWeight: themeTokens.typography.fontWeight.semibold, mb: 0.5 }}
+              >
+                {t('gymPage.install.heading')}
+              </Typography>
+              <Typography variant="body2" sx={{ mb: 1.5, maxWidth: '68ch', color: themeTokens.neutral[700] }}>
+                {t('gymPage.install.body', { gymName: gym.name })}
+              </Typography>
+              <GymInstallCta
+                gymSlug={gym.slug || gym_slug}
+                googlePlayLabel={t('gymPage.install.googlePlay')}
+                appStoreLabel={t('gymPage.install.appStore')}
+              />
+            </Box>
+          </Box>
+          {/* Owner-uploaded wall/board shot. Gyms without one simply don't render
+            this — no placeholder art, and no effect on ranking or visibility
+            anywhere; most of the long tail will never upload a photo. */}
+          {photoSrc && (
+            <Box
+              component="img"
+              src={photoSrc}
+              alt={t('gymPage.photoAlt', { gymName: gym.name })}
+              className={styles.photo}
+              sx={{
+                width: '100%',
+                aspectRatio: '16 / 9',
+                objectFit: 'cover',
+                borderRadius: 'var(--border-radius-lg)',
+                border: '1px solid var(--separator)',
+                display: 'block',
+              }}
+            />
+          )}
         </Box>
 
-        {/* Self-gating: GymOwnerPrompts renders nothing for a non-editor (or a
+        <Box className={styles.layout}>
+          <Box component="section" className={styles.boards}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+              <FitnessCenterOutlined sx={{ fontSize: 20, color: themeTokens.neutral[400] }} />
+              <Typography
+                variant="h5"
+                component="h2"
+                sx={{
+                  fontSize: { xs: 28, md: 32 },
+                  lineHeight: 1.25,
+                  fontWeight: themeTokens.typography.fontWeight.semibold,
+                }}
+              >
+                {t('gymPage.boardsHeading')}
+              </Typography>
+              {boards.length > 0 && (
+                <Typography variant="body2" color="text.secondary">
+                  {t('gymPage.boardCount', { count: boards.length })}
+                </Typography>
+              )}
+            </Box>
+
+            {/* Together with the breadcrumb above, this keeps the page at ≥2
+            crawlable internal links even for a gym with no boards or kiosk. */}
+            {boards.length === 0 ? (
+              <Typography variant="body2" color="text.secondary">
+                {t('gymPage.noBoardsYet')}
+              </Typography>
+            ) : (
+              <Box
+                component="ul"
+                sx={{ listStyle: 'none', p: 0, m: 0, display: 'flex', flexDirection: 'column', gap: 1 }}
+              >
+                {boards.map((board, boardIndex) => (
+                  <Box component="li" key={board.uuid}>
+                    <MuiLink
+                      component={LocaleLink}
+                      href={`/b/${board.slug}`}
+                      underline="hover"
+                      sx={{ display: 'inline-flex', alignItems: 'baseline', gap: 1, color: 'var(--color-primary)' }}
+                    >
+                      <Typography component="span" sx={{ fontWeight: themeTokens.typography.fontWeight.semibold }}>
+                        {stripGymNamePrefix(board.name, gym.name)}
+                      </Typography>
+                      <Typography component="span" variant="body2" color="text.secondary">
+                        {boardSubtitles[boardIndex]}
+                      </Typography>
+                    </MuiLink>
+                  </Box>
+                ))}
+              </Box>
+            )}
+
+            {sprayWalls.length > 0 && (
+              <>
+                <Divider sx={{ my: 4 }} />
+
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+                  <Typography
+                    variant="h5"
+                    component="h2"
+                    sx={{
+                      fontSize: { xs: 28, md: 32 },
+                      lineHeight: 1.25,
+                      fontWeight: themeTokens.typography.fontWeight.semibold,
+                    }}
+                  >
+                    {t('gymPage.sprayWallsHeading')}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    {t('gymPage.sprayWallCount', { count: sprayWalls.length })}
+                  </Typography>
+                </Box>
+
+                <Typography variant="body2" sx={{ mb: 2, maxWidth: '68ch', color: themeTokens.neutral[700] }}>
+                  {t('gymPage.sprayWallsIntro')}
+                </Typography>
+
+                <Box
+                  component="ul"
+                  sx={{ listStyle: 'none', p: 0, m: 0, display: 'flex', flexDirection: 'column', gap: 2 }}
+                >
+                  {sprayWalls.map((sprayWall) => (
+                    <Box component="li" key={sprayWall.uuid} sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                      {/* Only a PUBLIC wall has a photo here: `publicPhotoUrl` is the
+                      copy in the world-readable bucket, and it is null for every
+                      other wall. A gym member reading their gym's private wall
+                      gets the name and the hold count, which is the row this
+                      page is allowed to render for a photograph nobody outside
+                      the gym may see. */}
+                      {sprayWall.publicPhotoUrl && (
+                        <Box
+                          component="img"
+                          src={sprayWall.publicPhotoUrl}
+                          alt={t('gymPage.sprayWallPhotoAlt', { wallName: sprayWall.board.name })}
+                          sx={{
+                            width: 96,
+                            height: 72,
+                            objectFit: 'cover',
+                            borderRadius: 1,
+                            display: 'block',
+                            flexShrink: 0,
+                          }}
+                        />
+                      )}
+                      <Box>
+                        <MuiLink
+                          component={LocaleLink}
+                          href={sprayWallHref(sprayWall, gym.slug)}
+                          underline="hover"
+                          sx={{ color: 'var(--color-primary)', fontWeight: themeTokens.typography.fontWeight.semibold }}
+                        >
+                          {stripGymNamePrefix(sprayWall.board.name, gym.name)}
+                        </MuiLink>
+                        <Typography variant="body2" color="text.secondary">
+                          {t('gymPage.sprayWallMeta', {
+                            angle: sprayWall.board.angle,
+                            holds: sprayWall.holdCount,
+                          })}
+                        </Typography>
+                      </Box>
+                    </Box>
+                  ))}
+                </Box>
+              </>
+            )}
+          </Box>
+          <Box className={styles.details}>
+            {hoursText && (
+              <Box sx={{ mb: 3 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
+                  <ScheduleOutlined sx={{ fontSize: 18, color: themeTokens.neutral[400] }} />
+                  <Typography
+                    variant="subtitle1"
+                    component="h2"
+                    sx={{ fontWeight: themeTokens.typography.fontWeight.semibold }}
+                  >
+                    {t('gymPage.hoursHeading')}
+                  </Typography>
+                </Box>
+                {/* The gym types its own line breaks; keep them instead of collapsing
+                a week of hours into one run-on paragraph. */}
+                <Typography
+                  variant="body1"
+                  sx={{ whiteSpace: 'pre-line', maxWidth: '68ch', color: themeTokens.neutral[700] }}
+                >
+                  {hoursText}
+                </Typography>
+                {hoursConfirmedDate && (
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                    {t('gymPage.hoursConfirmed', { date: hoursConfirmedDate })}
+                  </Typography>
+                )}
+              </Box>
+            )}
+
+            {/* Self-gating: GymOwnerPrompts renders nothing for a non-editor (or a
             fully set-up gym), so the canEdit prop stays honest instead of being
             shadowed by an always-true outer guard. */}
-        <GymOwnerPrompts
-          gymSlug={gym_slug}
-          canEdit={gym.canEdit}
-          hasBoards={boards.length > 0}
-          hasHours={Boolean(hoursText)}
-          hasDescription={Boolean(gym.description?.trim())}
-          hasKiosk={kiosk !== null}
-          hasBranding={Boolean(
-            gym.logoUrl || gym.brandPrimaryColor || gym.brandAccentColor || gym.brandBackgroundColor,
-          )}
-        />
+            <GymOwnerPrompts
+              gymSlug={gym_slug}
+              canEdit={gym.canEdit}
+              hasBoards={boards.length > 0}
+              hasHours={Boolean(hoursText)}
+              hasDescription={Boolean(gym.description?.trim())}
+              hasKiosk={kiosk !== null}
+              hasBranding={Boolean(
+                gym.logoUrl || gym.brandPrimaryColor || gym.brandAccentColor || gym.brandBackgroundColor,
+              )}
+            />
 
-        {/* `viewerState` is the server's answer, taken from the request cookie
+            {/* `viewerState` is the server's answer, taken from the request cookie
             above — reading it in the island with useSession() would report the
             pre-hydration `loading` state as signed-out on exactly the taps this
             event cares about. The `isPublic` clause is spelled out rather than
             leaning on `isGymViewable`: a private gym reaches this line only via
             its own editors, and the anonymous arm has to stay impossible there
             even if the viewability rule is loosened later. */}
-        {claimSurface.kind === 'cta' ? (
-          <GymClaimCta
-            gymUuid={gym.uuid}
-            gymName={gym.name}
-            gymSlug={gym_slug}
-            website={gym.website}
-            viewerState={claimSurface.viewerState}
-            claimParam={claimParam}
-          />
-        ) : (
-          /* No call-out to clear the return-from-auth param, so clear it here:
+            {claimSurface.kind === 'cta' ? (
+              <GymClaimCta
+                gymUuid={gym.uuid}
+                gymName={gym.name}
+                gymSlug={gym_slug}
+                website={gym.website}
+                viewerState={claimSurface.viewerState}
+                claimParam={claimParam}
+              />
+            ) : (
+              /* No call-out to clear the return-from-auth param, so clear it here:
              an owner or community leader who signed in and turned out to
              already cover this gym — or an anonymous visitor on a gym someone
              already runs — would otherwise sit on a live `?claim=1`. A returning
              claimant whose claim is already queued lands here too: the notice
              replaces the dialog `?claim=1` would have re-opened. */
-          <>
-            {claimSurface.kind === 'pending' && pendingClaim && <GymClaimPendingNotice method={pendingClaim.method} />}
-            <GymClaimParamCleanup claimParam={claimParam} />
-          </>
-        )}
+              <>
+                {claimSurface.kind === 'pending' && pendingClaim && (
+                  <GymClaimPendingNotice method={pendingClaim.method} />
+                )}
+                <GymClaimParamCleanup claimParam={claimParam} />
+              </>
+            )}
 
-        <GymReportDuplicateCta
-          gymUuid={gym.uuid}
-          gymName={gym.name}
-          latitude={gym.latitude}
-          longitude={gym.longitude}
-        />
-
-        <Divider sx={{ mb: 3 }} />
-
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
-          <FitnessCenterOutlined sx={{ fontSize: 20, color: themeTokens.neutral[400] }} />
-          <Typography variant="h5" component="h2" sx={{ fontWeight: themeTokens.typography.fontWeight.bold }}>
-            {t('gymPage.boardsHeading')}
-          </Typography>
-          {boards.length > 0 && (
-            <Typography variant="body2" color="text.secondary">
-              {t('gymPage.boardCount', { count: boards.length })}
-            </Typography>
-          )}
-        </Box>
-
-        {/* Together with the breadcrumb above, this keeps the page at ≥2
-            crawlable internal links even for a gym with no boards or kiosk. */}
-        {boards.length === 0 ? (
-          <Typography variant="body2" color="text.secondary">
-            {t('gymPage.noBoardsYet')}
-          </Typography>
-        ) : (
-          <Box component="ul" sx={{ listStyle: 'none', p: 0, m: 0, display: 'flex', flexDirection: 'column', gap: 1 }}>
-            {boards.map((board) => (
-              <Box component="li" key={board.uuid}>
-                <MuiLink
-                  component={LocaleLink}
-                  href={`/b/${board.slug}`}
-                  underline="hover"
-                  sx={{ display: 'inline-flex', alignItems: 'baseline', gap: 1, color: 'var(--color-primary)' }}
-                >
-                  <Typography component="span" sx={{ fontWeight: themeTokens.typography.fontWeight.semibold }}>
-                    {board.name}
-                  </Typography>
-                  <Typography component="span" variant="body2" color="text.secondary">
-                    {`${boardTypeLabel(board.boardType)} · ${board.angle}°`}
-                  </Typography>
-                </MuiLink>
-              </Box>
-            ))}
+            <GymReportDuplicateCta
+              gymUuid={gym.uuid}
+              gymName={gym.name}
+              latitude={gym.latitude}
+              longitude={gym.longitude}
+            />
           </Box>
-        )}
+        </Box>
 
         <Divider sx={{ my: 4 }} />
 
@@ -511,7 +739,7 @@ export default async function GymPage(props: GymRouteProps) {
             {t('gymPage.explorePlaylists')}
           </MuiLink>
         </Box>
-      </Container>
+      </PageShell>
     </I18nProvider>
   );
 }

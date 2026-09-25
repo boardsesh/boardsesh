@@ -1,22 +1,45 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import type { UserBoard } from '@boardsesh/shared-schema';
 
 const setActiveBoardMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const adoptFoundBoardMock = vi.hoisted(() => vi.fn());
+const willFollowFoundBoardMock = vi.hoisted(() => vi.fn((): boolean => true));
 const dismissToMock = vi.hoisted(() => vi.fn());
+const replaceMock = vi.hoisted(() => vi.fn());
+const linkState = vi.hoisted(() => ({
+  enabled: false,
+  offline: false,
+  authenticated: true,
+  answered: false,
+  credentials: [] as { boardType: string }[] | undefined,
+}));
+const readAnswered = vi.hoisted(() => vi.fn());
 const showToastMock = vi.hoisted(() => vi.fn());
 const trackMock = vi.hoisted(() => vi.fn());
 const hapticMock = vi.hoisted(() => vi.fn());
 const markOnboardingSeenMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const setBoardRevealTipPendingMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const reportErrorMock = vi.hoisted(() => vi.fn());
+const adoptOptionsSeen = vi.hoisted(() => ({ value: undefined as { offerOffline?: boolean } | undefined }));
+// What the next render's adoption hooks hand back, when a test swaps them to
+// stand in for a viewer id that loaded between renders.
+const nextViewerCallbacks = vi.hoisted(() => ({
+  adopt: undefined as ((board: UserBoard) => void) | undefined,
+  willFollow: undefined as ((board: UserBoard) => boolean) | undefined,
+}));
 
-vi.mock('expo-router', () => ({ useRouter: () => ({ dismissTo: dismissToMock }) }));
+vi.mock('expo-router', () => ({ useRouter: () => ({ dismissTo: dismissToMock, replace: replaceMock }) }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../../graphql/use-active-board', () => ({ useSetActiveBoard: () => setActiveBoardMock }));
-vi.mock('../../board-discovery/use-adopt-found-board', () => ({ useAdoptFoundBoard: () => adoptFoundBoardMock }));
+vi.mock('../../board-discovery/use-adopt-found-board', () => ({
+  useAdoptFoundBoard: (options?: { offerOffline?: boolean }) => {
+    adoptOptionsSeen.value = options;
+    return nextViewerCallbacks.adopt ?? adoptFoundBoardMock;
+  },
+  useWillFollowFoundBoard: () => nextViewerCallbacks.willFollow ?? willFollowFoundBoardMock,
+}));
 vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: showToastMock }) }));
 vi.mock('../../haptics', () => ({ hapticSelection: hapticMock }));
 vi.mock('../../analytics', () => ({ track: trackMock }));
@@ -25,6 +48,13 @@ vi.mock('../../onboarding/onboarding-storage', () => ({
   setBoardRevealTipPending: setBoardRevealTipPendingMock,
 }));
 vi.mock('../../error-reporting', () => ({ reportError: reportErrorMock }));
+vi.mock('../../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: linkState.authenticated }) }));
+vi.mock('../../../providers/feature-flags-provider', () => ({ useFeatureFlag: () => linkState.enabled }));
+vi.mock('../../../hooks/use-is-offline', () => ({ useIsOffline: () => linkState.offline }));
+vi.mock('../../integrations/use-board-account-credentials', () => ({
+  useBoardAccountCredentials: () => ({ data: linkState.credentials }),
+}));
+vi.mock('../../onboarding/link-step-answered', () => ({ hasAnsweredLinkStep: readAnswered }));
 
 import { useActivateBoard, type ActivateBoardOptions } from '../use-activate-board';
 
@@ -38,7 +68,14 @@ function activate(options: Partial<ActivateBoardOptions> = {}) {
 describe('useActivateBoard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    adoptOptionsSeen.value = undefined;
+    nextViewerCallbacks.adopt = undefined;
+    nextViewerCallbacks.willFollow = undefined;
+    dismissToMock.mockReset();
+    Object.assign(linkState, { enabled: false, offline: false, authenticated: true, answered: false, credentials: [] });
+    readAnswered.mockImplementation(async () => linkState.answered);
     setActiveBoardMock.mockResolvedValue(undefined);
+    willFollowFoundBoardMock.mockReturnValue(true);
     markOnboardingSeenMock.mockResolvedValue(undefined);
     setBoardRevealTipPendingMock.mockResolvedValue(undefined);
   });
@@ -108,6 +145,75 @@ describe('useActivateBoard', () => {
     expect(adoptFoundBoardMock).not.toHaveBeenCalled();
   });
 
+  describe('optional linking on every onboarding activation path', () => {
+    it.each(['picker', 'builder', 'carousel'] as const)('offers linking after a successful %s bind', async (entry) => {
+      linkState.enabled = true;
+      const navigate = entry === 'carousel' ? vi.fn() : undefined;
+      const result = activate({
+        source: 'onboarding',
+        navigate,
+        writeFailure: entry === 'builder' ? 'rethrow' : 'toast',
+      });
+      await act(async () => {});
+      await result.current(BOARD);
+      expect(replaceMock).toHaveBeenCalledExactlyOnceWith({
+        pathname: '/onboarding',
+        params: { step: 'link', boardType: 'kilter' },
+      });
+      expect(dismissToMock).not.toHaveBeenCalled();
+      if (navigate) expect(navigate).not.toHaveBeenCalled();
+      expect(adoptFoundBoardMock).toHaveBeenCalledWith(BOARD);
+    });
+
+    it.each(['offline', 'linked', 'answered', 'unknown', 'unsupported', 'ordinary', 'disabled'] as const)(
+      'keeps the normal destination when %s',
+      async (reason) => {
+        linkState.enabled = reason !== 'disabled';
+        linkState.offline = reason === 'offline';
+        linkState.answered = reason === 'answered';
+        linkState.credentials = reason === 'unknown' ? undefined : reason === 'linked' ? [{ boardType: 'kilter' }] : [];
+        const result = activate({ source: reason === 'ordinary' ? undefined : 'onboarding' });
+        await act(async () => {});
+        await result.current(reason === 'unsupported' ? { ...BOARD, boardType: 'moonboard' } : BOARD);
+        expect(replaceMock).not.toHaveBeenCalled();
+        expect(dismissToMock).toHaveBeenCalledWith('/(tabs)/climbs');
+      },
+    );
+
+    it('uses eligibility updated while the download offer is open', async () => {
+      linkState.enabled = true;
+      let finishDownload: (() => void) | undefined;
+      const onBound = vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            finishDownload = resolve;
+          }),
+      );
+      const { result, rerender } = renderHook(() =>
+        useActivateBoard({ source: 'onboarding', returnTo: '/(tabs)/climbs', onBound }),
+      );
+      await act(async () => {});
+      const activation = result.current(BOARD);
+      await waitFor(() => expect(onBound).toHaveBeenCalled());
+      linkState.offline = true;
+      rerender();
+      finishDownload?.();
+      await activation;
+      expect(replaceMock).not.toHaveBeenCalled();
+      expect(dismissToMock).toHaveBeenCalledWith('/(tabs)/climbs');
+    });
+
+    it('does not offer linking after the builder fails to persist the board', async () => {
+      linkState.enabled = true;
+      setActiveBoardMock.mockRejectedValue(new Error('storage full'));
+      const result = activate({ source: 'onboarding', writeFailure: 'rethrow' });
+      await act(async () => {});
+      await expect(result.current(BOARD)).rejects.toThrow('storage full');
+      expect(replaceMock).not.toHaveBeenCalled();
+      expect(dismissToMock).not.toHaveBeenCalled();
+    });
+  });
+
   describe('an ordinary board switch', () => {
     it('fires no onboarding side effects', async () => {
       const result = activate();
@@ -116,6 +222,11 @@ describe('useActivateBoard', () => {
       expect(trackMock).not.toHaveBeenCalled();
       expect(setBoardRevealTipPendingMock).not.toHaveBeenCalled();
       expect(markOnboardingSeenMock).not.toHaveBeenCalled();
+    });
+
+    it('lets adoption offer the offline download', () => {
+      activate();
+      expect(adoptOptionsSeen.value).toEqual({ offerOffline: true });
     });
   });
 
@@ -143,6 +254,15 @@ describe('useActivateBoard', () => {
       expect(dismissToMock).toHaveBeenCalled();
       await waitFor(() => expect(reportErrorMock).toHaveBeenCalled());
     });
+
+    // The onboarding step makes its own offer in onBound; a second "Download X?"
+    // from adoption would be the first thing a newcomer sees on Climbs.
+    it('still follows the board but tells adoption not to ask about offline', async () => {
+      const result = activate({ source: 'onboarding' });
+      expect(adoptOptionsSeen.value).toEqual({ offerOffline: false });
+      await result.current(BOARD);
+      expect(adoptFoundBoardMock).toHaveBeenCalledWith(BOARD);
+    });
   });
 
   describe('onBound', () => {
@@ -155,6 +275,60 @@ describe('useActivateBoard', () => {
       await result.current(BOARD);
 
       expect(order).toEqual(['bind', 'onBound', 'navigate']);
+    });
+
+    // The pick event rides onBound, so it has to learn where the tap came from
+    // and whether this bind put the board in Your boards (#5654).
+    it('hears where the board was picked and whether the bind follows it', async () => {
+      const onBound = vi.fn((): Promise<void> => Promise.resolve());
+      const result = activate({ onBound });
+
+      await result.current(BOARD, { pickSource: 'nearby' });
+
+      expect(willFollowFoundBoardMock).toHaveBeenCalledWith(BOARD);
+      expect(onBound).toHaveBeenCalledWith(BOARD, { pickSource: 'nearby', followed: true });
+    });
+
+    it('reports no follow for a board that is already theirs, and no pick source when none was given', async () => {
+      willFollowFoundBoardMock.mockReturnValue(false);
+      const onBound = vi.fn((): Promise<void> => Promise.resolve());
+      const result = activate({ onBound });
+
+      await result.current(BOARD);
+
+      expect(onBound).toHaveBeenCalledWith(BOARD, { pickSource: undefined, followed: false });
+    });
+
+    // `followed` is read before navigation and adoption runs after it. A viewer id
+    // that loads in between re-renders the hook, but the bind already in flight
+    // must adopt with the pair it reported, or the event could say "followed"
+    // for a follow adoption then skips.
+    it('adopts for the same viewer the pick event answered for, even when it loads mid-bind', async () => {
+      const laterAdopt = vi.fn();
+      const onBound = vi.fn((): Promise<void> => Promise.resolve());
+      const { result, rerender } = renderHook(() => useActivateBoard({ returnTo: '/(tabs)/climbs', onBound }));
+      onBound.mockImplementation(() => {
+        nextViewerCallbacks.adopt = laterAdopt;
+        nextViewerCallbacks.willFollow = () => false;
+        rerender();
+        return Promise.resolve();
+      });
+
+      await result.current(BOARD);
+
+      expect(onBound).toHaveBeenCalledWith(BOARD, { pickSource: undefined, followed: true });
+      expect(adoptFoundBoardMock).toHaveBeenCalledWith(BOARD);
+      expect(laterAdopt).not.toHaveBeenCalled();
+    });
+
+    // Adoption is skipped for on-device rows, so nothing is followed.
+    it('reports no follow when the rows came from the on-device snapshots', async () => {
+      const onBound = vi.fn((): Promise<void> => Promise.resolve());
+      const result = activate({ onBound, isLocalOnly: true });
+
+      await result.current(BOARD, { pickSource: 'offline' });
+
+      expect(onBound).toHaveBeenCalledWith(BOARD, { pickSource: 'offline', followed: false });
     });
 
     // The board IS bound by this point. Refusing to navigate over a failed extra

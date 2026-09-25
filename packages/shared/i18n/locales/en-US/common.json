@@ -10,8 +10,8 @@
       "viewProfile": "View {{name}}'s profile",
       "thisClimber": "this climber"
     },
-    "more": {
-      "title": "More",
+    "settings": {
+      "title": "Settings",
       "library": "Library",
       "development": "Development",
       "dev": {
@@ -386,11 +386,20 @@
       },
       "previews": {
         "title": "Previews",
+        "promptOnLaunchTitle": "Show previews on launch",
+        "promptOnLaunchSubtitle": "Applies the next time you launch Boardsesh",
         "pickTitle": "Test a PR preview",
         "pickSubtitle": "Try a change before it ships and tell us how it went",
         "testPlanTitle": "Test plan #{{prNumber}}",
         "testPlanSubtitle": "What to try on the preview you're running"
       }
+    },
+    "sendRecovery": {
+      "title_one": "1 send is on its way",
+      "title_other": "{{count}} sends are on their way",
+      "body_one": "You logged it, but it never reached us. We found it and put it back in the queue. It goes up as soon as you're online, so there's no need to log it again.",
+      "body_other": "You logged them, but they never reached us. We found them and put them back in the queue. They go up as soon as you're online, so there's no need to log them again.",
+      "dismiss": "Got it"
     },
     "about": {
       "title": "About",
@@ -409,9 +418,7 @@
       "partnerTitle": "Partner with us officially",
       "partnerBody": "Boardsesh works with Kilter, Tension, and MoonBoard from the outside. If you build boards and want to make something official together, we're keen to talk.",
       "acknowledgementsLink": "Acknowledgements",
-      "acknowledgementsLinkBody": "The people behind Boardsesh",
-      "changelogLink": "What's New",
-      "changelogLinkBody": "Recent updates and fixes"
+      "acknowledgementsLinkBody": "The people behind Boardsesh"
     },
     "acknowledgements": {
       "title": "Acknowledgements",
@@ -422,7 +429,8 @@
       "sponsorsBody": "Climbers keeping the lights on through GitHub Sponsors.",
       "sponsorsEmpty": "No sponsors yet — want to be the first?",
       "privateSponsorsThanks": "and {{count}} more sponsoring privately — thank you too",
-      "becomeSponsor": "Become a sponsor",
+      "becomeSponsor": "Support Boardsesh",
+      "supportFallback": "Boardsesh is free and community-funded. {{url}}",
       "poweredByTitle": "Powered by",
       "xpremBody": "Mercure Technologies gave Boardsesh an enterprise license for xprem, the server behind our over-the-air updates. It's why fixes reach your phone without waiting on an app store review, and why you can try a preview build from What's New.",
       "personalTitle": "Personal thanks",
@@ -467,7 +475,16 @@
         "workout": "Build a workout: Volume, Pyramid, Ladder or Grade Focus. Set a grade, preview the burns, send them one at a time.",
         "crew": "Climbing with people? Start a session and share one queue. Anyone sends the next burn, no passing the phone.",
         "record": "Your sends chart out here on Progress: grade spread and hardest send. Import your Kilter and Tension logbook from Aurora to start with your history.",
-        "accessory": "The bar at the bottom is always what's on the board. Flip climbs from there."
+        "accessory": "The bar at the bottom is always what's on the board. Flip climbs from there.",
+        "climbsTab": "To get back to your climbs, tap the magnifier in the tab bar."
+      },
+      "link": {
+        "title": "Bring your {{boardName}} sends with you",
+        "body": "Your {{boardName}} account and Boardsesh are separate, even if you use the same email. Link your account to sync available sends into your logbook. Sync timing and history vary.",
+        "footnote": "Linking asks for your {{boardName}} username, not your email.",
+        "continue": "Link my {{boardName}} account",
+        "skip": "Not now",
+        "skipHint": "You can do this any time in Settings › Connected apps."
       }
     },
     "nav": {
@@ -556,7 +573,7 @@
       "serverTitle": "Can't reach Boardsesh right now",
       "serverBody": "This one needs our server. Downloaded boards still browse, search and log, and your sends wait on your phone.",
       "offlineModeTitle": "Offline mode is on",
-      "offlineModeBody": "This one needs a connection. Turn Offline mode off from the banner or in More to load it.",
+      "offlineModeBody": "This one needs a connection. Turn Offline mode off from the banner or in Settings to load it.",
       "errorTitle": "Couldn't load this",
       "errorBody": "That didn't come through. Give it another go.",
       "retry": "Try again"
@@ -607,7 +624,7 @@
     "statistics": "Statistics",
     "sessions": "Sessions",
     "createdClimbs": "Created Climbs",
-    "auroraMigration": "Aurora Migration",
+    "auroraMigration": "Bring your logbook",
     "startClimbing": "Start climbing",
     "signIn": "Sign in",
     "nav": {
@@ -860,16 +877,17 @@
     "fallbackCta": "Open the store page instead"
   },
   "footer": {
-    "tagline": "Find climbs, share them, and see what's on your gym's wall. The climbing happens in the app.",
+    "tagline": "Your boards. One app. Switch boards without switching apps.",
     "navLabel": "Footer",
     "trademarkNote": "Works with Kilter, Tension and MoonBoard. Not affiliated with Aurora Climbing or Moon Climbing.",
     "links": {
       "home": "Home",
       "about": "About",
+      "support": "Support Boardsesh",
       "help": "Help",
       "docs": "Developer docs",
       "playlists": "Playlists",
-      "auroraMigration": "Aurora migration",
+      "auroraMigration": "Bring your logbook",
       "legal": "Legal",
       "privacy": "Privacy",
       "gymsKilter": "Gyms with a Kilter board",

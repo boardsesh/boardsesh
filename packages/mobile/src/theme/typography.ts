@@ -160,3 +160,13 @@ export type TextVariant = keyof typeof textStyles;
  * platter. Surfaces that can grow with their content keep the 1.5× default.
  */
 export const CHROME_LABEL_MAX_FONT_SCALE = 1.2;
+
+/**
+ * Max Dynamic Type multiplier for the rest-timer sheet's hero clock. Higher than
+ * the chrome cap (the sheet grows with its content, so the digits can afford to
+ * get bigger) but not the global 1.5×: at 34pt the widest reading the clock can
+ * produce is a signed hour-long overrun, `-1:02:34`, and 1.5× puts that past the
+ * width of a 375pt screen. 1.3× keeps the longest string on one line on the
+ * narrowest phone we support.
+ */
+export const REST_CLOCK_MAX_FONT_SCALE = 1.3;

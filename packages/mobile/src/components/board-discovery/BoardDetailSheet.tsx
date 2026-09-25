@@ -1,6 +1,7 @@
-import { useEffect, useRef } from 'react';
-import { View, StyleSheet, type ColorValue } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { View, Pressable, StyleSheet, type ColorValue } from 'react-native';
 import BottomSheet from '@expo/ui/community/bottom-sheet';
+import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { Sheet } from '../Sheet';
@@ -12,6 +13,9 @@ import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { getBoardDetailFields, isActiveBoard } from './board-detail-fields';
+import { sprayDetailRows, sprayShareTarget, type SprayDetailRow, type SprayShareTarget } from './spray-detail-rows';
+import { SPRAY_DETAIL_ROWS_ENABLED } from '../../lib/spray/spray-routes';
+import { BoardShareSheet } from './BoardShareSheet';
 
 type BoardDetailSheetProps = {
   board: UserBoard | null;
@@ -24,7 +28,32 @@ export function BoardDetailSheet({ board, visible, onClose, onSetActive }: Board
   const { systemColors } = useTheme();
   const { t } = useTranslation('boards');
   const { data: activeBoard } = useActiveBoard();
+  const router = useRouter();
   const sheetRef = useRef<BottomSheet>(null);
+
+  // Empty for every board that is not a spray wall the viewer may edit, which is
+  // what keeps this a no-op on the eight catalogue boards — and empty for ALL of
+  // them until the two screens the rows lead to exist. See
+  // `SPRAY_DETAIL_ROWS_ENABLED`; the gate below is live and tested either way.
+  const wallRows = useMemo(() => (SPRAY_DETAIL_ROWS_ENABLED ? sprayDetailRows(board) : []), [board]);
+
+  // Null on a catalogue board and on a PRIVATE wall — a private wall's link
+  // resolves for nobody, so the row is absent rather than disabled. The edit
+  // screen is where a wall is made shareable.
+  const shareTarget = useMemo(() => sprayShareTarget(board), [board]);
+  const [shareOpen, setShareOpen] = useState(false);
+  const openShare = useCallback(() => setShareOpen(true), []);
+  const closeShare = useCallback(() => setShareOpen(false), []);
+
+  // Close first, then navigate: the sheet is always mounted and these rows push a
+  // full route, so leaving it open would stack a screen under an open sheet.
+  const openWallRow = useCallback(
+    (href: string) => {
+      onClose();
+      router.push(href);
+    },
+    [onClose, router],
+  );
 
   // Always-mounted sheet: open/close imperatively off the visible+board state.
   // Selecting a different board while the sheet is open re-runs snapToIndex(0)
@@ -51,23 +80,62 @@ export function BoardDetailSheet({ board, visible, onClose, onSetActive }: Board
   ) : null;
 
   return (
-    <Sheet
-      ref={sheetRef}
-      snapPoints={['55%', '90%']}
-      onClose={onClose}
-      scrollable
-      contentContainerStyle={styles.content}
-      footer={footer}
-    >
-      {board ? <BoardDetailBody board={board} systemColors={systemColors} t={t} /> : null}
-    </Sheet>
+    <>
+      <Sheet
+        ref={sheetRef}
+        snapPoints={['55%', '90%']}
+        onClose={onClose}
+        scrollable
+        contentContainerStyle={styles.content}
+        footer={footer}
+      >
+        {board ? (
+          <BoardDetailBody
+            board={board}
+            systemColors={systemColors}
+            t={t}
+            wallRows={wallRows}
+            onOpenWallRow={openWallRow}
+            shareTarget={shareTarget}
+            onOpenShare={openShare}
+          />
+        ) : null}
+      </Sheet>
+      {/* A sibling of the detail sheet, not a child: it is its own native sheet,
+        and the coordinator serialises the two presentations. */}
+      {shareOpen && board && shareTarget ? (
+        <BoardShareSheet
+          visible
+          onDismiss={closeShare}
+          shareUrl={shareTarget.url}
+          wallName={board.name}
+          visibility={shareTarget.visibility}
+        />
+      ) : null}
+    </>
   );
 }
 
 type SystemColors = ReturnType<typeof useTheme>['systemColors'];
 type TFn = ReturnType<typeof useTranslation>['t'];
 
-function BoardDetailBody({ board, systemColors, t }: { board: UserBoard; systemColors: SystemColors; t: TFn }) {
+function BoardDetailBody({
+  board,
+  systemColors,
+  t,
+  wallRows,
+  onOpenWallRow,
+  shareTarget,
+  onOpenShare,
+}: {
+  board: UserBoard;
+  systemColors: SystemColors;
+  t: TFn;
+  wallRows: SprayDetailRow[];
+  onOpenWallRow: (href: string) => void;
+  shareTarget: SprayShareTarget | null;
+  onOpenShare: () => void;
+}) {
   const { subLocation, setNames, sizeText } = getBoardDetailFields(board);
 
   return (
@@ -121,7 +189,93 @@ function BoardDetailBody({ board, systemColors, t }: { board: UserBoard; systemC
           {board.description}
         </Text>
       ) : null}
+
+      {/* Wall maintenance, owner/editor only. Empty on every catalogue board, so
+          the card and its separator never render there. Literal translation keys
+          per row — a computed `t(row.key)` is rejected by the i18n linter and
+          hides the string from the catalogue scanners either way. */}
+      {shareTarget ? (
+        <View style={[styles.wallRows, { backgroundColor: systemColors.tertiaryBackground }]}>
+          <WallRow
+            icon="share"
+            label={t('mobile.boardDetail.spray.shareLink')}
+            hint={
+              shareTarget.visibility === 'public'
+                ? t('mobile.boardDetail.spray.shareLinkPublicHint')
+                : t('mobile.boardDetail.spray.shareLinkUnlistedHint')
+            }
+            showSeparator={false}
+            systemColors={systemColors}
+            onPress={onOpenShare}
+          />
+        </View>
+      ) : null}
+
+      {wallRows.length > 0 ? (
+        <View style={[styles.wallRows, { backgroundColor: systemColors.tertiaryBackground }]}>
+          {wallRows.map((row, index) => (
+            <WallRow
+              key={row.key}
+              icon={row.icon}
+              label={
+                row.key === 'editHolds'
+                  ? t('mobile.boardDetail.spray.editHolds')
+                  : t('mobile.boardDetail.spray.newPhoto')
+              }
+              hint={
+                row.key === 'editHolds'
+                  ? t('mobile.boardDetail.spray.editHoldsHint')
+                  : t('mobile.boardDetail.spray.newPhotoHint')
+              }
+              showSeparator={index > 0}
+              systemColors={systemColors}
+              onPress={() => onOpenWallRow(row.href)}
+            />
+          ))}
+        </View>
+      ) : null}
     </>
+  );
+}
+
+function WallRow({
+  icon,
+  label,
+  hint,
+  showSeparator,
+  systemColors,
+  onPress,
+}: {
+  icon: SprayDetailRow['icon'];
+  label: string;
+  hint: string;
+  showSeparator: boolean;
+  systemColors: SystemColors;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityHint={hint}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.wallRow,
+        showSeparator ? { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: systemColors.separator } : null,
+        pressed ? { opacity: 0.6 } : null,
+      ]}
+    >
+      <Icon name={icon} size={20} color={systemColors.secondaryLabel} />
+      <View style={styles.wallRowText}>
+        <Text variant="body" color={systemColors.label}>
+          {label}
+        </Text>
+        <Text variant="caption1" color={systemColors.secondaryLabel}>
+          {hint}
+        </Text>
+      </View>
+      <Icon name="chevron.right" size={16} color={systemColors.tertiaryLabel} />
+    </Pressable>
   );
 }
 
@@ -203,6 +357,22 @@ const styles = StyleSheet.create({
   },
   specValue: {
     flex: 1,
+  },
+  wallRows: {
+    borderRadius: borderRadius.lg,
+    overflow: 'hidden',
+  },
+  wallRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[3],
+    paddingHorizontal: spacing[4],
+    // 44pt minimum tap target with room for the two-line label.
+    paddingVertical: spacing[3],
+  },
+  wallRowText: {
+    flex: 1,
+    gap: spacing[1],
   },
   activePill: {
     flexDirection: 'row',

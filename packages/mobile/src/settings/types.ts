@@ -1,3 +1,4 @@
+import type { RestTimerMode } from '../lib/rest-timer';
 import type { UserBoard } from '@boardsesh/shared-schema';
 
 export type AppSettings = {
@@ -61,14 +62,36 @@ export type AppSettings = {
   /** Light the connected board when tapping a climb to select it from a climbs list. */
   lightOnClimbTap: boolean;
   keepScreenAwake: boolean;
+  /**
+   * Rest timer (#5378) — the shape of the timer, not whether it is armed.
+   * Arming is deliberately in-memory (see `rest-timer-store.ts`): a flag set
+   * three weeks ago must never silently start moving someone's wall on app open.
+   */
+  restTimerTargetSeconds: number | null;
+  /** Advance the queue (and so light the next climb) when the target lands. */
+  restTimerAutoAdvance: boolean;
+  /** `afterTick` re-anchors on every tick; `onTheMinute` holds a fixed cadence. */
+  restTimerMode: RestTimerMode;
   theme: 'system' | 'light' | 'dark';
   hapticFeedbackEnabled: boolean;
   notifySessionInvites: boolean;
   notifyClimbComments: boolean;
   /** One-shot: the "kiosk setup lives on the big screen" hint has been seen on My gyms. */
   kioskHintSeen: boolean;
+  /**
+   * One-shot: the play drawer has explained that navigation is view-only while
+   * board lighting is off for swipes/taps. Persisted because the setting behind
+   * it is — an in-memory claim would re-explain it on every cold start.
+   */
+  browseNoticeSeen: boolean;
   /** Show the live bottom-chrome geometry overlay (dev / preview / pr-channel only). */
   bottomChromeDiagnostics: boolean;
+  /**
+   * Crowdsourced QA: automatically offer the PR picker or current preview's
+   * brief on a cold start. Opt-in because the manual Previews entry stays
+   * available without interrupting every launch.
+   */
+  qaPromptOnLaunch: boolean;
   /**
    * Crowdsourced QA: the `<branch>:<updateId>` whose test plan has already been
    * shown on launch. Keyed on the bundle, not the branch, so the author's next

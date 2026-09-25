@@ -10,6 +10,7 @@ import { useActiveBoard, useSetActiveBoard } from '../lib/graphql/use-active-boa
 import { resolveScreenshotBoard } from '../lib/screenshot-board-selection';
 import { useScreenshotBoards } from '../hooks/use-screenshot-boards';
 import { useAuth } from '../providers/auth-provider';
+import { SCREENSHOT_NOW_MS } from '../lib/screenshot-mode';
 import type { ClimbSearchInput } from '@boardsesh/shared-schema';
 
 // Query-key placeholder for the frames before the active board resolves. The
@@ -58,6 +59,17 @@ export function ScreenshotBoardAutoActivator(): null {
   const screenshotBoards = useScreenshotBoards(isAuthenticated);
   const setActiveBoard = useSetActiveBoard();
 
+  // Logged once at boot so a screenshot run's Metro-teed output says whether
+  // relative timestamps are pinned (EXPO_PUBLIC_SCREENSHOT_NOW parsed) or
+  // still reading the real wall clock — see lib/clock.ts.
+  useEffect(() => {
+    console.log(
+      SCREENSHOT_NOW_MS !== null
+        ? `[screenshot] clock: frozen at ${new Date(SCREENSHOT_NOW_MS).toISOString()}`
+        : '[screenshot] clock: live',
+    );
+  }, []);
+
   useEffect(() => {
     if (!isAuthenticated || activeBoard) return;
     // Slot 0 of SCREENSHOT_BOARDS — the wall every board-backed shot but the
@@ -97,7 +109,7 @@ export function ScreenshotBoardAutoActivator(): null {
     if (!activeBoard || !seedClimbs || seedClimbs.length === 0) return;
     // Logged for the same Metro-tee debuggability as the activation above.
     console.log(`[screenshot] wall seed published from auto-activator (${seedClimbs.length} climbs)`);
-    publishScreenshotWallClimbs(buildScreenshotWallSeed(seedClimbs, activeBoard.angle ?? null), null);
+    publishScreenshotWallClimbs(buildScreenshotWallSeed(seedClimbs, activeBoard.angle ?? null, activeBoard), null);
   }, [wallSeedSearch, activeBoard]);
 
   return null;

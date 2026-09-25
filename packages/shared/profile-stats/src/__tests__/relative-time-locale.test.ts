@@ -43,3 +43,23 @@ describe('setRelativeTimeLocale', () => {
     expect(formatTickRelativeTime(minutesAgo(6))).toBe('6 minutes ago');
   });
 });
+
+describe('formatTickRelativeTime with an explicit nowMs', () => {
+  it('renders against the pinned instant instead of the real wall clock', () => {
+    // Mobile's screenshot-mode frozen clock (packages/mobile/src/lib/clock.ts)
+    // passes this so two captures of the same seeded tick render identical text
+    // no matter when the capture actually runs.
+    const frozenNow = Date.parse('2026-01-15T12:00:00.000Z');
+    const climbedAt = '2026-01-15T09:00:00.000';
+    expect(formatTickRelativeTime(climbedAt, frozenNow)).toBe('3 hours ago');
+  });
+
+  it('is deterministic across repeated calls, unlike the real-clock default', () => {
+    const frozenNow = Date.parse('2026-01-15T12:00:00.000Z');
+    const climbedAt = '2026-01-15T11:59:00.000';
+    const first = formatTickRelativeTime(climbedAt, frozenNow);
+    const second = formatTickRelativeTime(climbedAt, frozenNow);
+    expect(first).toBe(second);
+    expect(first).toBe('a minute ago');
+  });
+});

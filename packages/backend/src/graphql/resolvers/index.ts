@@ -1,9 +1,13 @@
 // eslint-disable-next-line import/no-named-as-default -- `graphql-type-json` exports both default and named `GraphQLJSON`; default is the canonical scalar.
 import GraphQLJSON from 'graphql-type-json';
+import type { ConnectionContext } from '@boardsesh/shared-schema';
 
 // Import domain resolvers
 import { boardQueries } from './board/queries';
 import { holdOutlineMutations, holdOutlineQueries } from './board/hold-outline-overrides';
+import { sprayWallMutations, sprayWallQueries } from './board/spray-walls';
+import { sprayDetectionMutations, sprayDetectionQueries } from './board/spray-detection';
+import { sprayWallModerationMutations, sprayWallModerationQueries } from './board/spray-wall-moderation';
 import { tickQueries } from './ticks/queries';
 import { tickMutations } from './ticks/mutations';
 import { climbStatsSubscriptions } from './ticks/climb-stats-subscriptions';
@@ -18,6 +22,7 @@ import { favoriteMutations } from './favorites/mutations';
 import { playlistQueries } from './playlists/queries';
 import { playlistMutations } from './playlists/mutations';
 import { sessionQueries } from './sessions/queries';
+import { liveSessionQueries } from './sessions/live-sessions';
 import { sessionMutations } from './sessions/mutations';
 import { pushTokenMutations } from './sessions/push-tokens';
 import { sessionSubscriptions } from './sessions/subscriptions';
@@ -34,11 +39,16 @@ import { setterFollowQueries, setterFollowMutations } from './social/setter-foll
 import { socialFeedQueries } from './social/feed';
 import { activityFeedQueries } from './social/activity-feed';
 import { sessionFeedQueries } from './social/session-feed';
+import { followedAuthorQueries } from './social/followed-authors';
+import { crewFeedQueries } from './social/crew-feed';
 import { sessionEditMutations } from './social/session-mutations';
 import { socialCommentQueries, socialCommentMutations } from './social/comments';
 import { socialVoteQueries, socialVoteMutations } from './social/votes';
 import { socialBoardQueries, socialBoardMutations } from './social/boards';
+import { boardDiscoveryQueries } from './social/board-discovery';
+import { communityStatsQueries } from './social/community-stats';
 import { socialGymQueries, socialGymMutations } from './social/gyms';
+import { placeQueries } from './social/places';
 import { gymActivityStatsMutations } from './social/gym-activity-stats';
 import { socialGymMatchQueries } from './social/gym-matching';
 import { socialGymStrayBoardQueries, socialGymStrayBoardMutations } from './social/gym-stray-boards';
@@ -71,6 +81,7 @@ import { betaLinkQueries } from './beta-videos/queries';
 import { instagramBetaImportQueries } from './beta-videos/instagram-beta-import';
 import { syncQueries } from './sync/queries';
 import { resolveClimbNoMatch } from './shared/helpers';
+import { resolveClimbLostHolds, type ClimbLostHoldsParent } from './climbs/lost-holds';
 
 export const resolvers = {
   // Scalar types
@@ -79,8 +90,12 @@ export const resolvers = {
   // Root operation types
   Query: {
     ...sessionQueries,
+    ...liveSessionQueries,
     ...boardQueries,
     ...holdOutlineQueries,
+    ...sprayWallQueries,
+    ...sprayDetectionQueries,
+    ...sprayWallModerationQueries,
     ...climbQueries,
     ...tickQueries,
     ...userQueries,
@@ -95,7 +110,10 @@ export const resolvers = {
     ...socialCommentQueries,
     ...socialVoteQueries,
     ...socialBoardQueries,
+    ...boardDiscoveryQueries,
+    ...communityStatsQueries,
     ...socialGymQueries,
+    ...placeQueries,
     ...socialGymMatchQueries,
     ...socialGymStrayBoardQueries,
     ...socialGymKioskQueries,
@@ -106,6 +124,8 @@ export const resolvers = {
     ...socialGymOwnerReassignQueries,
     ...activityFeedQueries,
     ...sessionFeedQueries,
+    ...followedAuthorQueries,
+    ...crewFeedQueries,
     ...socialNotificationQueries,
     ...socialProposalQueries,
     ...socialRoleQueries,
@@ -123,6 +143,9 @@ export const resolvers = {
   Mutation: {
     ...sessionMutations,
     ...holdOutlineMutations,
+    ...sprayWallMutations,
+    ...sprayDetectionMutations,
+    ...sprayWallModerationMutations,
     ...pushTokenMutations,
     ...queueMutations,
     ...tickMutations,
@@ -185,6 +208,17 @@ export const resolvers = {
       description?: string | null;
       boardType?: string | null;
     }) => resolveClimbNoMatch(climb.boardType, climb.characteristics, climb.description),
+
+    // Spray only, and only for a climb whose materialised `missingHoldCount`
+    // says it lost something — see resolveClimbLostHolds. Per-climb by design:
+    // a list must not select it.
+    //
+    // `ctx` is not optional here: these rows are the geometry of somebody's
+    // garage, the parent may be a synthetic `ClimbInput` a caller sent back
+    // through the queue, and the wall's visibility is decided against the
+    // climb's own row with the viewer this request actually has.
+    lostHolds: (climb: ClimbLostHoldsParent, _args: unknown, ctx: ConnectionContext) =>
+      resolveClimbLostHolds(climb, ctx),
   },
 
   // Union type resolvers

@@ -33,6 +33,7 @@ import {
   type QaPullRequest,
   type VerdictCommentPayload,
 } from '../github-qa';
+import { githubErrorDetailOf } from '../../lib/github-error';
 import { logger } from '../../utils/logger';
 
 const PR_BODY = [
@@ -95,10 +96,14 @@ const githubPull = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-const jsonResponse = (body: unknown, status = 200): Response =>
+// `headers` is part of the stub because a failed call now reads
+// `x-github-request-id` and the rate-limit pair off the response — that trio is
+// what makes a rejected mirror explainable after the fact (#5294).
+const jsonResponse = (body: unknown, status = 200, headers: Record<string, string> = {}): Response =>
   ({
     ok: status >= 200 && status < 300,
     status,
+    headers: new Headers(headers),
     json: async () => body,
     text: async () => JSON.stringify(body),
   }) as Response;
@@ -676,8 +681,8 @@ describe('postVerdictComment', () => {
     );
 
     await expect(postVerdictComment(4792, 'body')).resolves.toEqual({
-      id: 987,
-      htmlUrl: 'https://github.com/boardsesh/boardsesh/pull/4792#issuecomment-987',
+      status: 'posted',
+      comment: { id: 987, htmlUrl: 'https://github.com/boardsesh/boardsesh/pull/4792#issuecomment-987' },
     });
     expect(fetchMock.mock.calls[0][0]).toBe('https://api.github.com/repos/boardsesh/boardsesh/issues/4792/comments');
     expect((fetchMock.mock.calls[0][1] as RequestInit).method).toBe('POST');
@@ -687,15 +692,34 @@ describe('postVerdictComment', () => {
     installationToken = undefined;
     vi.spyOn(logger, 'warn').mockImplementation(() => logger);
 
-    await expect(postVerdictComment(4792, 'body')).resolves.toBeNull();
+    await expect(postVerdictComment(4792, 'body')).resolves.toEqual({ status: 'unconfigured' });
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('returns null instead of throwing when GitHub rejects the write', async () => {
-    vi.spyOn(logger, 'error').mockImplementation(() => logger);
-    fetchMock.mockResolvedValue(jsonResponse({ message: 'forbidden' }, 403));
+  it('reports the rejection with GitHub status, request id and message instead of throwing', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({ message: 'Resource not accessible by integration' }, 403, {
+        'x-github-request-id': 'C4E0:1F2A:9B',
+        'x-ratelimit-remaining': '4998',
+      }),
+    );
 
-    await expect(postVerdictComment(4792, 'body')).resolves.toBeNull();
+    const outcome = await postVerdictComment(4792, 'body');
+    expect(outcome.status).toBe('rejected');
+
+    // The half of #5294 that made the 403 unrecoverable: a bare status told
+    // nobody whether the App was under-scoped or rate-limited.
+    const detail = githubErrorDetailOf(outcome.status === 'rejected' ? outcome.cause : null);
+    expect(detail?.status).toBe(403);
+    expect(detail?.requestId).toBe('C4E0:1F2A:9B');
+    expect(detail?.rateLimitRemaining).toBe('4998');
+    expect(detail?.body).toContain('Resource not accessible by integration');
+  });
+
+  it('flags a 2xx that did not carry a comment', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ ok: true }));
+
+    await expect(postVerdictComment(4792, 'body')).resolves.toEqual({ status: 'unexpected-response' });
   });
 });
 
@@ -733,14 +757,31 @@ describe('applyQaLabel', () => {
       init?.method === 'DELETE' ? jsonResponse({ message: 'label not found' }, 404) : jsonResponse({}),
     );
 
-    await expect(applyQaLabel(4792, 'approved')).resolves.toBeUndefined();
+    await expect(applyQaLabel(4792, 'approved')).resolves.toEqual({ status: 'applied' });
   });
 
   it('makes no request at all when no token is configured', async () => {
     installationToken = undefined;
     vi.spyOn(logger, 'warn').mockImplementation(() => logger);
 
-    await applyQaLabel(4792, 'approved');
+    await expect(applyQaLabel(4792, 'approved')).resolves.toEqual({ status: 'unconfigured' });
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('reports a rejected label swap with the cause attached', async () => {
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) =>
+      init?.method === 'POST' && url.endsWith('/issues/4792/labels')
+        ? jsonResponse({ message: 'Resource not accessible by integration' }, 403, {
+            'x-github-request-id': 'AA11:BB22:CC',
+          })
+        : jsonResponse({}),
+    );
+
+    const outcome = await applyQaLabel(4792, 'approved');
+    expect(outcome.status).toBe('rejected');
+    const detail = githubErrorDetailOf(outcome.status === 'rejected' ? outcome.cause : null);
+    expect(detail?.status).toBe(403);
+    expect(detail?.requestId).toBe('AA11:BB22:CC');
+    expect(detail?.body).toContain('Resource not accessible by integration');
   });
 });

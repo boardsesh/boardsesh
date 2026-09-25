@@ -22,8 +22,10 @@ type Climb {
   description: String
   "Encoded hold positions and colors for lighting up the board"
   frames: String!
-  "Board angle in degrees when this climb was set"
+  "The angle the climber is browsing at. Named for the set angle historically, but every producer stamps the browsed angle here, and ticks, the queue and the BLE spill guard all key on that. See statsAngle for where the numbers below came from."
   angle: Int!
+  "The angle the grade, ascents and quality on this climb were actually read from. Equals angle normally; differs when the browsed angle had no stats row and the climb own set angle supplied them: in a search that set ClimbSearchInput.crossAngleStats (issue #5405), in a by-name search on Woods, and on the Woods climb detail read (issue #5642). Null when the climb has no stats at any angle, i.e. a genuine project. Display only: show it beside the grade when it differs, never key on it. Deliberately absent from ClimbInput, so a queued climb carries no set-angle marker, because adding a field there means changing four lists at once (see queue-climb-field-contract.test.ts) and the marker is not worth that."
+  statsAngle: Int
   "Number of people who have completed this climb"
   ascensionist_count: Int!
   "Difficulty grade of the climb (e.g., 'V5', '6B+')"
@@ -62,7 +64,7 @@ type Climb {
   framesPace: Int
   "Boardsesh grade on the shared difficulty scale (COALESCE of the cross-board universal grade and the within-board local grade), for this climb at its angle. Null when no grade row exists (e.g. MoonBoard, or too few ascents) — the UI keeps the Aurora grade."
   boardseshDifficulty: Float
-  "Boardsesh grade confidence tier: 'confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate' | 'moonboard_angle_estimate'. Both estimate tiers cover an angle with no ascents: cross_angle_estimate is projected from the climb's other angles, moonboard_angle_estimate is a MoonBoard grade transposed from the board's other fixed angle. Null when no grade row exists."
+  "Boardsesh grade confidence tier: 'confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate' | 'moonboard_angle_estimate' | 'moonboard_wide_angle_estimate'. All three estimate tiers cover an angle with no ascents: cross_angle_estimate is projected from the climb's other angles, moonboard_angle_estimate is a MoonBoard grade transposed from the board's other fixed angle, and moonboard_wide_angle_estimate is a MoonBoard grade borrowed from another board's angle-effect shape (moonboard-wide-angles flag angles). Null when no grade row exists."
   boardseshConfidence: String
   "The signed-in climber's OWN grade for this climb at this angle: the difficulty of their latest tick that carries one, clamped to the boulder scale. Populated only when the search asked for useMyGrades — that search's filter and difficulty sort key off exactly this value (falling back to the crowd's grade where it is null), so a row can never disagree with its own position in the list. Never round-tripped through the party queue: it is one climber's private opinion, not a property of the climb."
   myDifficulty: Int
@@ -78,6 +80,62 @@ type Climb {
   apart (see canAddClimbToBoard rule 5).
   """
   compatibleSizeIds: [Int!]
+  """
+  How many of this climb's holds are no longer on the wall.
+
+  Spray walls only — null on every catalogue board, where holds do not come off.
+  0 is an intact climb; anything higher is a climb that survived a reset minus
+  some holds, which stays findable, gets a badge and can be remixed. Materialised
+  on `board_climbs` rather than joined, because the offline mirror has no
+  `board_climb_holds` table to join through.
+  """
+  missingHoldCount: Int
+  """
+  The holds this climb was set on that are no longer on the wall, carrying the
+  geometry they had while they were — so a client can draw ghost rings where
+  they used to be and the climber can see what the reset took.
+
+  Spray walls only: null on every catalogue board, where holds do not come off,
+  and null on a climb that has lost nothing, so the common case costs no query.
+  An empty list means the climb's holds are all still there but the server did
+  look.
+
+  Coordinates are the wall's canonical frame — the same frame
+  `SprayWallRenderData.holds` uses — so the two sets draw on one photo without
+  conversion. `removedVersion` is the generation that took each hold off.
+
+  Resolved per climb, with its own query. A list must not select it; it is for a
+  single-climb surface — the play drawer and the remix editor.
+  """
+  lostHolds: [SprayWallHold!]
+}
+
+"""
+Whether a climb still has every hold it was set on.
+
+ANY is the default and adds no filter at all. INTACT keeps climbs that have lost
+nothing; BROKEN keeps only the ones that have. Meaningful on spray walls, where a
+reset takes holds off the wall; on a catalogue board every climb is INTACT, so
+BROKEN there is an empty result rather than an error.
+"""
+enum HoldIntegrityFilter {
+  ANY
+  INTACT
+  BROKEN
+}
+
+"""
+Which grade the grade-range filter reads.
+
+UPSTREAM is the default: the board's own catalogue grade (display_difficulty),
+falling back to the Boardsesh grade only when a climb has no stats row at that
+angle. BOARDSESH reads the model-generated Boardsesh grade first and falls back to
+the upstream grade, so a climber who sees Boardsesh grades on the list gets the
+rows whose label is in range.
+"""
+enum ClimbGradeSource {
+  UPSTREAM
+  BOARDSESH
 }
 
 """
@@ -118,10 +176,12 @@ input ClimbInput {
   framesPace: Int
   "Boardsesh grade on the shared difficulty scale for this climb+angle. Round-tripped through the queue so party peers render the grade without a refetch."
   boardseshDifficulty: Float
-  "Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate' | 'moonboard_angle_estimate'), round-tripped through the queue. Neither estimate tier may be treated as ascent-backed."
+  "Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate' | 'moonboard_angle_estimate' | 'moonboard_wide_angle_estimate'), round-tripped through the queue. No estimate tier may be treated as ascent-backed."
   boardseshConfidence: String
   "Product sizes this climb fits on. Round-tripped through the queue so a party peer on a different-sized wall can tell the climb doesn't fit theirs — on Woods the two sizes' hold ids overlap, so this is the only signal that separates them."
   compatibleSizeIds: [Int!]
+  "How many of this climb's holds are no longer on the wall after a spray-wall reset. Round-tripped through the queue because a broken climb stays queueable and stays playable, and the peer showing it has to be able to say so — a queued row that dropped this would be the one surface pretending the climb was whole. Null on every catalogue board."
+  missingHoldCount: Int
 }
 
 # ============================================
@@ -169,6 +229,8 @@ input ClimbSearchInput {
   setIds: String!
   "Board angle in degrees"
   angle: Int!
+  "A spray wall's uuid, presented as a capability. Only meaningful when boardName is 'spray': an UNLISTED wall's climbs are listable by a caller holding its uuid, the same way saveClimb accepts it as the right to set on one. A private wall does not open for it, and a uuid naming another wall is ignored."
+  sprayWallUuid: String
   "Page number for pagination (1-indexed)"
   page: Int
   "Number of results per page"
@@ -193,6 +255,8 @@ input ClimbSearchInput {
   name: String
   "Filter by setter usernames"
   setter: [String!]
+  "Only climbs by followed setters or followed users, including linked board accounts. Requires authentication."
+  onlyFollowedAuthors: Boolean
   "Filter by setter ID"
   setterId: Int
   "Only show benchmark climbs"
@@ -223,6 +287,12 @@ input ClimbSearchInput {
   onlyDrafts: Boolean
   "Show only unclimbed projects (climbs with 0 ascents)"
   projectsOnly: Boolean
+  "Keep only intact climbs, only climbs that have lost a hold, or everything (the default)."
+  holdIntegrity: HoldIntegrityFilter
+  "Resolve each climb's grade and ascents through its own set angle when the browsed angle has no stats row, instead of ranking it below every climb that does have one (issue #5405). Opt-in on every board; omitted means off. On Woods, whose climbs are bound to the angle they were set at, off also narrows the list to the climbs for the browsed angle: set there, with no set angle recorded, or with stats there (issue #5642). A name search on Woods resolves across angles either way, so a climb is findable by name at any angle."
+  crossAngleStats: Boolean
+  "Which grade minGrade and maxGrade are compared against. Omitted means UPSTREAM, the grade older app builds filter on. Send BOARDSESH when the list shows Boardsesh grades, so the filter matches the labels."
+  gradeSource: ClimbGradeSource
   "Include single-frame climbs (boulders). Omitting both boulders and routes matches all climb types; set boulders=true with routes=false (or omit routes) to filter to boulders only."
   boulders: Boolean
   "Include multi-frame climbs (routes). Omitting both boulders and routes matches all climb types; set routes=true with boulders=false (or omit boulders) to filter to routes only."
@@ -250,6 +320,8 @@ Input for fetching setter usernames with their climb counts.
 Used to power the setter filter autocomplete in the search drawer.
 """
 input SetterStatsInput {
+  "Restrict counts and usernames to followed authors. Requires authentication."
+  onlyFollowedAuthors: Boolean
   "Board type (e.g., 'kilter', 'tension')"
   boardName: String!
   "Layout ID"
@@ -258,15 +330,18 @@ input SetterStatsInput {
   sizeId: Int!
   "Comma-separated set IDs"
   setIds: String!
-  "Board angle in degrees"
+  "Board angle in degrees. Ignored on every board whose climbs are not bound to one angle: the setter list is the same at every angle there (#5404). On Woods it is the browsed angle, and the counts cover only the climbs for it unless crossAngleStats is set (#5642)."
   angle: Int!
   "Case-insensitive substring filter on setter username (for autocomplete)"
   search: String
+  "Count every climb whatever angle it was set at. Mirrors ClimbSearchInput.crossAngleStats, and only changes anything on Woods, whose climbs are bound to the angle they were set at: omitted or false, a setter is counted only for the climbs the default list shows at this angle (set there, with no set angle recorded, or with stats there), so the picker never offers a setter whose climbs the list cannot show (#5642). Send true when the search it filters has the Other angles switch on."
+  crossAngleStats: Boolean
 }
 
 """
 A setter username paired with the number of climbs they've authored
-for a given board configuration and angle.
+for a given board configuration. Angle-independent everywhere but Woods,
+where it follows SetterStatsInput.crossAngleStats.
 """
 type SetterStat {
   "Setter's username"
@@ -517,6 +592,8 @@ input CreateSessionInput {
   boardIds: [Int!]
   "Hex color for multi-session display"
   color: String
+  "Whether the session shows up in live-sessions listings and on public board queue previews. Absent or null means public. Joining by invite link works either way."
+  isPublic: Boolean
 }
 
 # ============================================
@@ -624,6 +701,8 @@ input UpdateSessionInput {
   name: String
   "New end-of-session recap. Omit to leave unchanged; null or empty string clears it."
   notes: String
+  "New visibility. Omit or null to leave unchanged. Private hides the session from live-sessions listings and public board queue previews; joining by invite link still works."
+  isPublic: Boolean
 }
 
 """
@@ -636,6 +715,111 @@ type UpdateSessionResult {
   name: String
   "Canonical session recap after the update (null when cleared)"
   notes: String
+  "Canonical visibility after the update"
+  isPublic: Boolean!
+}
+
+# ============================================
+# Live Sessions
+# ============================================
+
+"""
+Why a live session was listed for this viewer.
+"""
+enum LiveSessionReason {
+  "The viewer follows the session's creator or somebody on its live roster"
+  FOLLOWING_USER
+  "The session is on a board the viewer follows"
+  FOLLOWED_BOARD
+  "The session is on the board the viewer asked about"
+  SELECTED_BOARD
+}
+
+"""
+A climber shown on a live session card.
+"""
+type LiveSessionUser {
+  "Database user id"
+  userId: ID!
+  "Profile display name, falling back to the account name"
+  displayName: String
+  "Profile avatar, falling back to the account image"
+  avatarUrl: String
+}
+
+"""
+The board a live session is on. Only returned when the viewer may see the
+board: it is not deleted, and it is public or the viewer owns it.
+"""
+type LiveSessionBoard {
+  "Board uuid (user_boards.uuid)"
+  uuid: ID!
+  "Board name"
+  name: String!
+  "Board slug for /b/<slug> links"
+  slug: String
+  "Board type (kilter, tension, moonboard, ...)"
+  boardType: String!
+  "Name of the gym the board belongs to, when it has one and shows its location"
+  gymName: String
+}
+
+"""
+The climb currently on the wall in a live session. Redacted to catalog
+fields; only returned for public sessions.
+"""
+type LiveSessionClimb {
+  "Climb name"
+  name: String!
+  "Grade label"
+  grade: String
+}
+
+"""
+A session that is happening right now: explicitly started, not ended, and
+with somebody connected (or a dormant session touched in the last 20 minutes).
+"""
+type LiveSession {
+  "Session id — pass to joinSession"
+  sessionId: ID!
+  "Session name"
+  name: String
+  "Session goal text"
+  goal: String
+  "Hex color for multi-session display"
+  color: String
+  "When the session was started (ISO 8601)"
+  startedAt: String!
+  "Last durable activity on the session (ISO 8601)"
+  lastActivity: String!
+  "The climber who started the session"
+  host: LiveSessionUser
+  "Signed-in climbers on the live roster, followed climbers first, at most 5"
+  participants: [LiveSessionUser!]!
+  "Distinct participants on the live roster, including anonymous ones"
+  participantCount: Int!
+  "User ids on the live roster that the viewer follows"
+  followedParticipantIds: [ID!]!
+  "Whether the viewer started this session or is on its live roster"
+  viewerIsMember: Boolean!
+  "Whether the session is public"
+  isPublic: Boolean!
+  "The session's board, when the viewer may see it"
+  board: LiveSessionBoard
+  "Board type from the session's board path or board"
+  boardType: String
+  "Board angle from the session's board path or board"
+  angle: Int
+  "Logged sends (flash + send) in the session"
+  sendCount: Int!
+  "Logged flashes in the session"
+  flashCount: Int!
+  "Grade of the hardest logged send"
+  hardestSendGrade: String
+  "The climb on the wall right now (public sessions only)"
+  currentClimb: LiveSessionClimb
+  "Why this session was listed"
+  reasons: [LiveSessionReason!]!
 }
 
 """
@@ -803,7 +987,7 @@ type BoardseshGrade {
   gradeLow: Float
   "High end of the 95% band on the surfaced grade"
   gradeHigh: Float
-  "Confidence tier: confirmed | provisional | setter_only | cross_angle_estimate (projected from the climb's other angles) | moonboard_angle_estimate (a MoonBoard grade transposed from the board's other fixed angle) — neither estimate tier has ascents here"
+  "Confidence tier: confirmed | provisional | setter_only | cross_angle_estimate (projected from the climb's other angles) | moonboard_angle_estimate (a MoonBoard grade transposed from the board's other fixed angle) | moonboard_wide_angle_estimate (a MoonBoard grade borrowed from another board's angle-effect shape) — no estimate tier has ascents here"
   confidence: String!
   "Ascent count that produced this row"
   ascensionistCount: Int!
@@ -832,7 +1016,7 @@ type BoardseshGradeForAngle {
   gradeLow: Float
   "High end of the 95% band on the surfaced grade"
   gradeHigh: Float
-  "Confidence tier: confirmed | provisional | setter_only | cross_angle_estimate (projected from the climb's other angles) | moonboard_angle_estimate (a MoonBoard grade transposed from the board's other fixed angle) — neither estimate tier has ascents here"
+  "Confidence tier: confirmed | provisional | setter_only | cross_angle_estimate (projected from the climb's other angles) | moonboard_angle_estimate (a MoonBoard grade transposed from the board's other fixed angle) | moonboard_wide_angle_estimate (a MoonBoard grade borrowed from another board's angle-effect shape) — no estimate tier has ascents here"
   confidence: String!
   "Ascent count that produced this row"
   ascensionistCount: Int!
@@ -943,15 +1127,16 @@ input DeleteAccountInput {
 # ============================================
 
 """
-Input for toggling a climb as favorite.
+Input for toggling a climb as favorite. Favorites are keyed by climb UUID —
+a climb stays hearted whichever board config or angle you switch to.
 """
 input ToggleFavoriteInput {
-  "Board type"
-  boardName: String!
+  "Legacy storage hint; ignored for favorite identity. Kept for shipped clients."
+  boardName: String
   "Climb UUID to favorite/unfavorite"
   climbUuid: String!
-  "Board angle"
-  angle: Int!
+  "Legacy storage hint; ignored for favorite identity. Kept for shipped clients."
+  angle: Int
 }
 
 """
@@ -966,24 +1151,24 @@ type ToggleFavoriteResult {
 Input for adding a climb to favorites (idempotent, sync-safe).
 """
 input AddFavoriteInput {
-  "Board type"
-  boardName: String!
+  "Legacy storage hint; ignored for favorite identity. Kept for shipped clients."
+  boardName: String
   "Climb UUID to favorite"
   climbUuid: String!
-  "Board angle"
-  angle: Int!
+  "Legacy storage hint; ignored for favorite identity. Kept for shipped clients."
+  angle: Int
 }
 
 """
 Input for removing a climb from favorites (idempotent, sync-safe).
 """
 input RemoveFavoriteInput {
-  "Board type"
-  boardName: String!
+  "Legacy storage hint; ignored for favorite identity. Kept for shipped clients."
+  boardName: String
   "Climb UUID to unfavorite"
   climbUuid: String!
-  "Board angle"
-  angle: Int!
+  "Legacy storage hint; ignored for favorite identity. Kept for shipped clients."
+  angle: Int
 }
 
 # ============================================
@@ -1032,7 +1217,7 @@ type Tick {
   effectiveDifficulty: Int
   "Boardsesh grade on the shared difficulty scale (COALESCE of the cross-board universal grade and the within-board local grade), for this climb at the tick's angle. Null when no grade row exists. Fills the gap only for ungraded ascents: the user's own tick grade always wins, and the UI keeps the legacy consensus when this is null or 'setter_only'."
   boardseshDifficulty: Float
-  "Boardsesh grade confidence tier: 'confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate' | 'moonboard_angle_estimate'. Both estimate tiers are for an angle nobody has climbed and must not prefill a climber's first grade. Null when no grade row exists."
+  "Boardsesh grade confidence tier: 'confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate' | 'moonboard_angle_estimate' | 'moonboard_wide_angle_estimate'. All three estimate tiers are for an angle nobody has climbed and must not prefill a climber's first grade. Null when no grade row exists."
   boardseshConfidence: String
   "Whether this is a benchmark climb"
   isBenchmark: Boolean!
@@ -1173,6 +1358,62 @@ input AttachBetaLinkInput {
   tickUuid: ID
 }
 
+input CrewFeedInput {
+  cursor: String
+  limit: Int
+  """
+  IANA zone the per-setter day boundary is drawn in (e.g. "Australia/Sydney").
+  A climb published at 23:00 local belongs to that local day, not to whatever
+  UTC calls it. Defaults to UTC when absent or unrecognised.
+  """
+  timeZone: String
+  """
+  Opt in to CrewClimbGroupItem. Off by default: a client that predates the
+  member has no fragment for it, so the item would arrive as a bare __typename
+  and crash its feed list. An unasked client gets one CrewClimbItem per climb.
+  """
+  groupClimbs: Boolean
+}
+
+type CrewSessionItem {
+  id: ID!
+  occurredAt: String!
+  session: SessionFeedItem!
+}
+
+type CrewClimbItem {
+  id: ID!
+  occurredAt: String!
+  climb: ActivityFeedItem!
+}
+
+"""
+Several climbs one setter published on one local day, newest first.
+
+Sent only when the client asked with CrewFeedInput.groupClimbs, and only for
+two or more climbs — a lone climb stays a CrewClimbItem. An unasked client
+gets one CrewClimbItem per climb instead, because a client that predates this
+member does not ignore it: with no fragment for it the item arrives as a bare
+__typename and its feed list throws on the missing payload.
+"""
+type CrewClimbGroupItem {
+  id: ID!
+  "When the newest climb in the group was published."
+  occurredAt: String!
+  "At most 10, newest first. totalCount says how many there really are."
+  climbs: [ActivityFeedItem!]!
+  "Every climb in the group, including the ones past the 10-climb cap."
+  totalCount: Int!
+}
+
+union CrewFeedItem = CrewSessionItem | CrewClimbItem | CrewClimbGroupItem
+
+type CrewFeedResult {
+  items: [CrewFeedItem!]!
+  cursor: String
+  hasMore: Boolean!
+}
+
 # ============================================
 # Activity Feed Types
 # ============================================
@@ -1239,7 +1480,7 @@ type AscentFeedItem {
   consensusDifficultyName: String
   "Boardsesh grade on the shared difficulty scale (COALESCE of the cross-board universal grade and the within-board local grade) for this ascent's climb at its angle. Null when no grade row exists. Use boardseshConfidence to distinguish trusted, setter-only, and projected values."
   boardseshDifficulty: Float
-  "Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate' | 'moonboard_angle_estimate'). Both estimate tiers are for an angle nobody has climbed and are not ascent-backed. Null when no grade row exists."
+  "Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate' | 'moonboard_angle_estimate' | 'moonboard_wide_angle_estimate'). All three estimate tiers are for an angle nobody has climbed and are not ascent-backed. Null when no grade row exists."
   boardseshConfidence: String
   "Average quality rating from all users"
   qualityAverage: Float
@@ -1519,6 +1760,8 @@ type ActivityFeedItem {
   boardType: String
   "Layout ID"
   layoutId: Int
+  "Board geometry for this climb, including its compatible size"
+  renderBoard: RenderBoardConfig
   "Grade name"
   gradeName: String
   "Ascent status (flash, send, attempt)"
@@ -1527,6 +1770,10 @@ type ActivityFeedItem {
   angle: Int
   "Encoded hold frames for thumbnail"
   frames: String
+  "Setter notes shown in the play drawer"
+  description: String
+  "Authored playback pace (ms) for a multi-frame climb"
+  framesPace: Int
   "Setter username"
   setterUsername: String
   "Comment body preview"
@@ -1543,6 +1790,10 @@ type ActivityFeedItem {
   difficultyName: String
   "Quality rating"
   quality: Int
+  "Community ascent count for this climb at its resolved angle"
+  ascensionistCount: Int
+  "Blended community star average (1-5) at the resolved angle"
+  qualityAverage: Float
   "Number of attempts"
   attemptCount: Int
   "User comment on the ascent"
@@ -1642,7 +1893,7 @@ type SessionFeedTickHighlight {
   difficultyName: String
   "Boardsesh grade on the shared difficulty scale for this tick's climb at its angle. Null when no grade row exists. Use boardseshConfidence to distinguish trusted, setter-only, and projected values."
   boardseshDifficulty: Float
-  "Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate' | 'moonboard_angle_estimate'). Both estimate tiers are for an angle nobody has climbed and are not ascent-backed. Null when no grade row exists."
+  "Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate' | 'moonboard_angle_estimate' | 'moonboard_wide_angle_estimate'). All three estimate tiers are for an angle nobody has climbed and are not ascent-backed. Null when no grade row exists."
   boardseshConfidence: String
   quality: Int
   isMirror: Boolean!
@@ -1721,7 +1972,7 @@ type SessionDetailTick {
   difficultyName: String
   "Boardsesh grade on the shared difficulty scale for this tick's climb at its angle. Null when no grade row exists. Use boardseshConfidence to distinguish trusted, setter-only, and projected values."
   boardseshDifficulty: Float
-  "Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate' | 'moonboard_angle_estimate'). Both estimate tiers are for an angle nobody has climbed and are not ascent-backed. Null when no grade row exists."
+  "Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate' | 'moonboard_angle_estimate' | 'moonboard_wide_angle_estimate'). All three estimate tiers are for an angle nobody has climbed and are not ascent-backed. Null when no grade row exists."
   boardseshConfidence: String
   quality: Int
   isMirror: Boolean!
@@ -2158,9 +2409,15 @@ input DiscoverPlaylistsInput {
   name: String
   "Filter by creator IDs"
   creatorIds: [ID!]
+  "Exclude these creators. The viewer's own playlists, for a discovery surface."
+  excludeCreatorIds: [ID!]
+  "Only playlists with at least this many climbs"
+  minClimbs: Int
+  "Only playlists with at most this many climbs. A 600-climb list is an export, not a playlist."
+  maxClimbs: Int
   "Filter by generated recommendation status"
   generatedRecommendation: Boolean
-  "Sort by: 'recent' (default) or 'popular'"
+  "Sort by: 'recent' (default) or 'popular' (climbers who pinned or followed it, then size)"
   sortBy: String
   "Page number"
   page: Int
@@ -2330,6 +2587,57 @@ type SmartPlaylistCount {
   type: SmartPlaylistType!
   "Number of climbs the smart playlist would contain"
   count: Int!
+}
+
+"A redacted snapshot of the last confirmed climb while its sender still holds the board."
+type BoardDiscoveryClimb {
+  uuid: ID!
+  name: String
+  frames: String!
+  angle: Int!
+}
+
+"""
+Headline usage numbers for the marketing site.
+
+Counted from board_climb_events, which records every climb pushed to a board's
+LEDs and is dwell-gated at ~60s of presence — so these are climbs someone stood
+in front of, not app-swiping noise. Deliberately NOT counted from ticks, whose
+board attribution was under 1% before 2026-04 and would shrink the number the
+further back it reached.
+"""
+type CommunityStats {
+  "Distinct climbers who lit a climb on a real board in the last 30 days."
+  climbersLast30Days: Int!
+  "Climbs lit on real boards in the last 30 days."
+  litLast30Days: Int!
+  computedAt: String!
+}
+
+"A public, listed physical board at a public gym. No owner or controller identity is exposed."
+type BoardDiscoveryBoard {
+  uuid: ID!
+  slug: String!
+  name: String!
+  boardType: String!
+  layoutId: Int!
+  sizeId: Int!
+  setIds: String!
+  angle: Int!
+  gymUuid: ID!
+  gymName: String!
+  gymSlug: String!
+  locationName: String
+  "Distinct climbers with a send or flash recorded on this physical board."
+  uniqueClimbers: Int!
+  "Null when there is no verified live holder, including unavailable Redis. Not a live subscription."
+  currentClimb: BoardDiscoveryClimb
+}
+
+input BoardDiscoveryInput {
+  gymUuid: ID
+  "Maximum number of boards, from 1 to 12 (default 8)."
+  limit: Int
 }
 
 # ============================================
@@ -2757,6 +3065,17 @@ input PopularBoardConfigsInput {
   offset: Int
 }
 
+"A city or town from the locally hosted GeoNames gazetteer."
+type PlaceSuggestion {
+  id: Int!
+  name: String!
+  region: String!
+  country: String!
+  countryCode: String!
+  latitude: Float!
+  longitude: Float!
+}
+
 # ============================================
 # Gym Entity Types
 # ============================================
@@ -3135,6 +3454,8 @@ input SearchGymsInput {
   multiBoardTypeOnly: Boolean
   "Only gyms that have a URL slug, i.e. that can be linked to at /gym/[slug]. Opt-in: omitting it leaves the emitted SQL untouched for existing callers."
   requireSlug: Boolean
+  "Show claimed gyms first, preserving the existing order within each group. Opt-in; other callers keep their current ordering."
+  prioritizeClaimed: Boolean
   "Latitude for proximity search"
   latitude: Float
   "Longitude for proximity search"
@@ -4287,6 +4608,22 @@ type ReportClimbResult {
   proposal: Proposal!
 }
 
+type FollowedBoardAccount {
+  boardType: String!
+  username: String!
+}
+
+type FollowedAuthorUser {
+  userId: ID!
+  boardAccounts: [FollowedBoardAccount!]!
+}
+
+"Complete snapshot of the authenticated viewer's followed authors."
+type FollowedAuthors {
+  setterUsernames: [String!]!
+  users: [FollowedAuthorUser!]!
+}
+
 # ============================================
 # Social Enums
 # ============================================
@@ -4826,6 +5163,31 @@ input SaveClimbInput {
   anyFeet: Boolean
   "Physical board size the climb is set on. Required on Woods (1 = 8x10, 2 = 12x12), where the two walls number their holds from their own origins. Ignored on boards that derive size compatibility from the hold bounding box."
   sizeId: Int
+  "The setter's own grade, seeded into board_climb_stats.display_difficulty. REQUIRED to publish on a spray wall, which has no crowd grade to fall back on; ignored elsewhere, where the grade comes from ticks or the Aurora sync."
+  userGrade: String
+  """
+  The spray wall this climb is being set on, as the share link carries it.
+
+  Only meaningful for `boardType: "spray"`, and only needed by a caller who is
+  neither the wall's owner nor a member of its gym: the wall's `layoutId` above
+  comes out of a sequence, so it is not a secret and cannot authorize a write on
+  its own. The wall's uuid IS the capability an UNLISTED wall's share link hands
+  out, so presenting it is what lets the crew somebody shared their home wall
+  with set climbs on it. A PRIVATE wall refuses everyone but its owner and its
+  gym, uuid or not. Send it on every spray write; it costs nothing when the
+  caller is a principal.
+  """
+  sprayWallUuid: String
+  """
+  The spray wall climb this one was remixed from.
+
+  Writes a `spray_climb_lineage` row alongside the child, which is what the
+  child's screen reads to link back to the parent's ticks and grade history.
+  Only meaningful for `boardType: "spray"`, and the parent has to be a climb
+  on the SAME wall. The parent is kept even when it is no longer climbable —
+  that is usually why it was remixed.
+  """
+  remixOfClimbUuid: ID
 }
 
 """
@@ -4890,6 +5252,28 @@ input UpdateClimbInput {
   anyFeet: Boolean
   "Physical board size, where it is part of the climb's identity (Woods). Immutable — a size that differs from the stored one is rejected. Null or omitted keeps the stored size."
   sizeId: Int
+  """
+  The setter's own grade.
+
+  Needed to publish a DRAFT on a spray wall when the draft was created without
+  one: that board has no crowd grade to converge on, so a grade has to come from
+  either the stats row `saveClimb` already seeded or from this field. Ignored
+  on every other board, where the grade comes from ticks or the Aurora sync.
+  """
+  userGrade: String
+  """
+  The spray wall this climb is being set on, as the share link carries it.
+
+  Only meaningful for `boardType: "spray"`, and only needed by a caller who is
+  neither the wall's owner nor a member of its gym: the wall's `layoutId` above
+  comes out of a sequence, so it is not a secret and cannot authorize a write on
+  its own. The wall's uuid IS the capability an UNLISTED wall's share link hands
+  out, so presenting it is what lets the crew somebody shared their home wall
+  with set climbs on it. A PRIVATE wall refuses everyone but its owner and its
+  gym, uuid or not. Send it on every spray write; it costs nothing when the
+  caller is a principal.
+  """
+  sprayWallUuid: String
 }
 
 type UpdateClimbResult {
@@ -4934,6 +5318,22 @@ input SimilarClimbsInput {
   climbUuid: ID
   "Raw frames string for an in-progress climb that hasn't been saved yet."
   frames: String
+}
+
+"One hold's usage across the climbs a search matches (the hold heatmap)."
+type HoldStat {
+  "Renderer/frame hold id (MoonBoard cell ids included)."
+  holdId: Int!
+  "Climbs that use the hold."
+  totalUses: Int!
+  startingUses: Int!
+  handUses: Int!
+  footUses: Int!
+  finishUses: Int!
+  "Sum of those climbs' ascent counts at the browsed angle."
+  totalAscents: Int!
+  "Average display difficulty of those climbs; null when none has a grade."
+  averageDifficulty: Float
 }
 
 type SimilarClimb {
@@ -5400,6 +5800,567 @@ input DeleteHoldOutlineOverrideInput {
 }
 
 """
+Lifecycle of one wall photo.
+
+DRAFT is being edited and is invisible to climbers; PUBLISHED is the generation
+climbs are set against; SUPERSEDED is what the previous PUBLISHED becomes when a
+reset commits (SW-12).
+"""
+enum SprayWallVersionStatus {
+  DRAFT
+  PUBLISHED
+  SUPERSEDED
+}
+
+"Where a hold's geometry came from: a detector run, or a human's hand."
+enum SprayHoldSource {
+  MANUAL
+  AUTO
+}
+
+"""
+A wall photo, behind short-lived presigned URLs.
+
+Spray-wall photos live in the PRIVATE bucket, never the public `media` one:
+the photograph is of somebody's home, and `media` is world-readable under
+guessable keys (`docs/user-media-storage.md`). So there is no stable URL to
+store on a row — every read mints a fresh signature, and `expiresAt` is when
+the one in hand stops working.
+"""
+type SprayWallPhoto {
+  "Presigned GET for the full-size photo. Valid until expiresAt; never cache it past that."
+  url: String!
+  "Presigned GET for the largest stored resize variant, for list rows and the compare view."
+  thumbUrl: String
+  "Pixel width of the stored photo, after sharp's EXIF-orientation rotate."
+  width: Int
+  "Pixel height of the stored photo, after sharp's EXIF-orientation rotate."
+  height: Int
+  "ISO 8601 expiry of the signatures above."
+  expiresAt: String!
+}
+
+"""
+One hold across its whole life. Coordinates are in the wall's canonical frame
+(`SprayWall.referenceWidth` / `referenceHeight`), which version 1 defines from
+its own photo — there are no real-world wall dimensions anywhere.
+"""
+type SprayWallHold {
+  "The wall's board_placements id AND its board_holes id — the number a climb's frames string carries."
+  id: Int!
+  cx: Int!
+  cy: Int!
+  r: Int!
+  "Flat implicitly-closed ring [x0, y0, x1, y1, ...] in units of this hold's own radius, relative to its centre. Null falls back to the circle (cx, cy, r) describes."
+  outline: [Float!]
+  "Version number that put this hold on the wall."
+  installedVersion: Int!
+  "Version number that took it off, or null while it is still there."
+  removedVersion: Int
+  "The hold this one replaced, when a reset review linked a move."
+  movedFromHoldId: Int
+  source: SprayHoldSource!
+  "Detector confidence 0-1 for AUTO holds; null when a human drew it."
+  confidence: Float
+}
+
+"One photograph of the wall, with the geometry that maps it onto the canonical frame."
+type SprayWallVersion {
+  id: ID!
+  "1-based and dense per wall."
+  number: Int!
+  status: SprayWallVersionStatus!
+  """
+  The photo, or null when it cannot be served right now.
+
+  Nullable rather than required even though every version is created WITH a
+  photo: the URLs are minted per read, so a backend with no `private` bucket
+  configured — or a row whose key was cleared by hand — has nothing to hand back.
+  Non-null here would turn that into a hard error on the whole `versions` list
+  instead of one absent photo, which is the wrong failure for a field a client
+  already has to re-fetch when it expires.
+  """
+  photo: SprayWallPhoto
+  "The wall's four corners in THIS photo's pixels, TL/TR/BR/BL, as [[x, y], ...]. Null means the photo frame is the quad."
+  anchors: JSON
+  """
+  Row-major 3x3 photo→canonical homography, nine floats.
+
+  The IDENTITY matrix when no anchors were solved for this version — either none
+  were tapped, or the four that were do not describe a usable quadrilateral. Null
+  only for a row written before the homography existed; treat null as the identity.
+  """
+  homography: [Float!]
+  "What changed in this reset, in the wall owner's own words."
+  notes: String
+  publishedAt: String
+  createdAt: String!
+  "Holds this version put on the wall."
+  addedHoldCount: Int!
+  "Holds this version took off the wall."
+  removedHoldCount: Int!
+}
+
+"""
+A climber's own wall: one runtime-created catalogue layout under the `spray`
+board type. Its owner, name, angle, visibility and gym live on the
+`user_boards` row `board` returns — nothing about a wall is stored twice.
+"""
+type SprayWall {
+  uuid: ID!
+  board: UserBoard!
+  "The wall's board_layouts id. Also its board_product_sizes id: a wall has exactly one size, itself."
+  layoutId: Int!
+  "Always equal to layoutId. Returned so a client never has to know the equality."
+  sizeId: Int!
+  "The canonical frame in pixels, derived from the version-1 photo. Null until the first photo lands."
+  referenceWidth: Int
+  referenceHeight: Int
+  "The published version climbers see. Null until the first publish."
+  currentVersion: SprayWallVersion
+  "Every version, newest first. Drafts are only visible to the owner."
+  versions: [SprayWallVersion!]!
+  "Holds alive on the current version."
+  holdCount: Int!
+  """
+  A stable, unsigned URL for the wall photo — public walls only, null for every
+  other wall.
+
+  A public wall has to show up on a web gym page that a logged-out climber
+  reads, and nobody there can hold a fifteen-minute signature. So going public
+  COPIES the current photo into the world-readable `media` bucket under an
+  unguessable random key and serves that; going private deletes the object and
+  nulls this. Null on a public wall means nothing has been published yet, or the
+  copy has not been made.
+  """
+  publicPhotoUrl: String
+
+  """
+  Whether the viewer may edit this wall's holds and photos.
+
+  True for the owner, and — because the rule is `requireBoardEditAccess`
+  unchanged — also for the owner or an admin of the gym the wall is attached to,
+  and for a community admin/leader on a PUBLIC wall. A gym `editor` is not among
+  them: they can edit the gym's page and not a wall's holds.
+  """
+  viewerCanEdit: Boolean!
+  """
+  When an admin hid this wall, ISO 8601, or null for the overwhelmingly common
+  case.
+
+  Only ever non-null for the wall's OWNER: a hidden wall reads exactly like a
+  private one to everybody else, so nobody else can resolve it to ask. The
+  owner's app shows a notice off this field — a wall that vanished without a
+  word would look like data loss.
+  """
+  hiddenAt: String
+}
+
+"""
+Everything a renderer needs for one wall at one version: the photo, the
+geometry that maps it, and the holds alive at that version.
+
+No image is ever warped — the client maps holds through the INVERSE of
+`homography` at draw time.
+"""
+type SprayWallRenderData {
+  wall: SprayWall!
+  versionNumber: Int!
+  "The canonical frame's width, i.e. the coordinate space cx/cy/r live in."
+  boardWidth: Int!
+  "The canonical frame's height."
+  boardHeight: Int!
+  photo: SprayWallPhoto!
+  homography: [Float!]!
+  holds: [SprayWallHold!]!
+}
+
+input CreateSprayWallInput {
+  "What the climber calls the wall. Becomes the board name, the catalogue row names and the slug."
+  name: String!
+  "Fixed for the wall's life: stats are keyed by angle and a spray wall does not adjust."
+  angle: Int!
+  description: String
+  "Private by default. A public wall is listed; an unlisted one is reachable by uuid only."
+  isPublic: Boolean
+  isUnlisted: Boolean
+  "Attach the wall to a gym the caller may link boards to."
+  gymUuid: ID
+  locationName: String
+  latitude: Float
+  longitude: Float
+  hideLocation: Boolean
+}
+
+input CreateSprayWallVersionInput {
+  wallUuid: ID!
+  "photoId from POST /api/spray-wall-photos."
+  photoId: ID!
+  "The wall's four corners in this photo's pixels, TL/TR/BR/BL, as [[x, y], ...]. Omit to use the photo frame."
+  anchors: JSON
+  notes: String
+}
+
+"""
+One hold as the editor sends it. Coordinates are canonical-frame pixels.
+
+`id` names an existing hold on the wall (a geometry correction); omit it and
+the server allocates a new catalogue id. The server validates SHAPE only — the
+ring contract, the caps and that an id is alive on the version — and never
+re-runs detection: it is the owner's wall.
+"""
+input SprayWallHoldInput {
+  id: Int
+  cx: Int!
+  cy: Int!
+  r: Int!
+  "Flat implicitly-closed ring in radius units, 3-150 points, every coordinate within 4 radii."
+  outline: [Float!]
+  source: SprayHoldSource
+  confidence: Float
+  movedFromHoldId: Int
+}
+
+input UpsertSprayWallHoldsInput {
+  wallUuid: ID!
+  "The DRAFT version being edited. Published versions are immutable."
+  versionId: ID!
+  holds: [SprayWallHoldInput!]!
+}
+
+input RemoveSprayWallHoldsInput {
+  wallUuid: ID!
+  versionId: ID!
+  holdIds: [Int!]!
+}
+
+input PublishSprayWallVersionInput {
+  versionId: ID!
+}
+
+input UpdateSprayWallInput {
+  uuid: ID!
+  name: String
+  description: String
+  """
+  Make the wall world-readable. This is the switch that turns a private wall into
+  a shared one, so it is also what starts publishing its climbs to feeds.
+  """
+  isPublic: Boolean
+  "Reachable by uuid — the share link — and listed nowhere."
+  isUnlisted: Boolean
+  "Attach the wall to a gym the caller may link boards to, or pass null to detach."
+  gymUuid: ID
+  """
+  Correct the wall's angle.
+
+  Only while the wall has NO published version — stats are keyed by angle, so
+  moving it afterwards would orphan every tick and stat already recorded. Rejected
+  rather than cascaded.
+  """
+  angle: Int
+}
+
+type SprayDetectionCandidate {
+  cx: Float!
+  cy: Float!
+  r: Float!
+  confidence: Float!
+  outline: [Float!]
+}
+type SprayDetectionResult {
+  width: Int!
+  height: Int!
+  candidates: [SprayDetectionCandidate!]!
+}
+type SprayWallDetection {
+  id: ID!
+  wallUuid: ID!
+  versionId: ID!
+  status: String!
+  modelVersion: String!
+  result: SprayDetectionResult
+  error: String
+  createdAt: String!
+  finishedAt: String
+}
+input RequestSprayWallDetectionInput {
+  wallUuid: ID!
+  versionId: ID!
+}
+extend type Query {
+  sprayWallDetection(id: ID!): SprayWallDetection
+  sprayWallDetectionForVersion(wallUuid: ID!, versionId: ID!): SprayWallDetection
+}
+extend type Mutation {
+  requestSprayWallDetection(input: RequestSprayWallDetectionInput!): SprayWallDetection!
+  retrySprayWallDetection(id: ID!): SprayWallDetection!
+}
+
+"""
+One hold the client found in the NEW photo, already mapped through that photo's
+homography into the wall's canonical frame.
+
+The server never re-runs detection on these (epic decision 2026-09-14): it is
+the owner's wall. What it does with them is match them against the holds that
+are on the wall today, which is a question about two coordinate sets and not
+about whether a blob is a hold.
+"""
+input SprayWallDetectionInput {
+  cx: Int!
+  cy: Int!
+  r: Int!
+  "Flat implicitly-closed ring in radius units, same contract as SprayWallHold.outline."
+  outline: [Float!]
+  """
+  Optional colour descriptor (a Lab triple, or Lab plus a hue histogram).
+
+  **Accepted and currently ignored.** The matcher can only compare colours when
+  BOTH sides carry a descriptor of the same length, and the holds already on the
+  wall carry none — `spray_wall_holds` has nowhere to put one. So a reset today
+  is decided on geometry alone, whatever is sent here. The field stays so a
+  client need not change when SW-12b (#5485) gives a stored hold a descriptor.
+  """
+  colour: [Float!]
+  source: SprayHoldSource
+  confidence: Float
+}
+
+input ProposeSprayWallResetInput {
+  wallUuid: ID!
+  """
+  The DRAFT version whose photo these detections came from.
+
+  It must carry anchors: the canonical frame is version 1's photo frame forever,
+  so from version 2 on the four corners are the only thing that says where this
+  photograph's pixels sit in it.
+  """
+  versionId: ID!
+  "Every hold found in the new photo, in the wall's canonical frame."
+  detections: [SprayWallDetectionInput!]!
+}
+
+"A hold the matcher believes is still on the wall, and which detection it matched."
+type SprayWallResetKeptHold {
+  holdId: Int!
+  "Index into the `detections` array that was submitted."
+  detectionIndex: Int!
+  "1 - match cost, clamped to 0..1. 1 is a perfect overlap of identical colours."
+  confidence: Float!
+}
+
+"""
+A removed hold paired with the nearest added detection.
+
+Strictly a suggestion — the proposal still reports the pair as one removal and
+one addition, because a hold that moved is not the hold a climb used any more.
+Confirming one writes `movedFromHoldId` so remix can offer the successor.
+"""
+type SprayWallMoveSuggestion {
+  movedFromHoldId: Int!
+  detectionIndex: Int!
+  "Centre-to-centre distance in canonical pixels."
+  distance: Float!
+}
+
+"""
+What a reset would do, computed and thrown away. `proposeSprayWallReset`
+writes nothing at all — the owner reviews this and `commitSprayWallVersion`
+is what lands it.
+"""
+type SprayWallResetProposal {
+  "The draft version number the proposal was computed against."
+  versionNumber: Int!
+  kept: [SprayWallResetKeptHold!]!
+  "Hold ids with no detection inside the gates: these came off the wall."
+  removed: [Int!]!
+  "Indices into `detections` that matched nothing already on the wall."
+  added: [Int!]!
+  "Kept hold ids a human should look at — a second detection was nearly as good a match."
+  lowConfidence: [Int!]!
+  "How many climbs on this wall use at least one of the removed holds."
+  climbsAffected: Int!
+  movesSuggested: [SprayWallMoveSuggestion!]!
+  """
+  The new photo's aspect ratio differs from the wall's canonical frame by more
+  than a tenth.
+
+  A WARNING and never a block (epic decision 2026-09-14). A phone held the other
+  way up, or a step back from the wall, changes the framing without changing the
+  wall — the anchors are what put the two photos in one frame, and they have
+  already been applied by the time these detections arrive.
+  """
+  aspectMismatch: Boolean!
+}
+
+"Keep this hold, optionally refreshing its silhouette from the new photo."
+input SprayWallKeptDecisionInput {
+  holdId: Int!
+  """
+  The detection this hold matched.
+
+  Only the OUTLINE is taken from it. `cx` / `cy` / `r` stay exactly as
+  published: every climb on the wall renders from those numbers, so nudging a
+  kept hold by the few pixels two photographs disagree by would move the climbs
+  with it. A silhouette is a picture of the hold, not a position, so a sharper
+  one from the newer photo is free.
+  """
+  detection: SprayWallDetectionInput
+}
+
+"Put this detection on the wall as a new hold, with a new catalogue id."
+input SprayWallAddedDecisionInput {
+  detection: SprayWallDetectionInput!
+  """
+  The hold this one replaced, when the review confirmed a move.
+
+  It has to be in this commit's `removed` list: a move is one removal and one
+  addition in the same reset. A predecessor that is still on the wall, or one an
+  earlier reset already took off, is refused — either would leave remix offering
+  an unrelated hold as a successor, with nothing to notice it afterwards.
+  """
+  movedFromHoldId: Int
+}
+
+"""
+The reviewed outcome of a reset. Re-validated against the wall's current state
+inside the commit transaction — a proposal computed ten minutes ago against a
+generation that has since been published is rejected, not applied.
+"""
+input CommitSprayWallVersionInput {
+  wallUuid: ID!
+  "The DRAFT version this reset lands as. It must carry anchors (see ProposeSprayWallResetInput)."
+  versionId: ID!
+  kept: [SprayWallKeptDecisionInput!]!
+  "Hold ids that came off the wall."
+  removed: [Int!]!
+  added: [SprayWallAddedDecisionInput!]!
+}
+
+"What a committed reset changed."
+type SprayWallResetResult {
+  "The version, now PUBLISHED."
+  version: SprayWallVersion!
+  """
+  Holds still on the wall from the previous generation.
+
+  The holds that were alive minus the ones this commit removed — NOT the length
+  of the `kept` list. An alive hold the decisions never mention simply stays,
+  so a client that lists only the holds it had something to say about would
+  otherwise be told most of its wall had vanished.
+  """
+  keptCount: Int!
+  "Holds this commit took off the wall."
+  removedCount: Int!
+  "Holds this commit put on the wall."
+  addedCount: Int!
+  "Climbs whose `missingHoldCount` moved as a result."
+  climbsChanged: Int!
+}
+
+"""
+A remix starting point: the parent climb with every hold it has since lost
+stripped out of its frames.
+
+Nothing is written by asking for one. Pass `parentUuid` back as
+`SaveClimbInput.remixOfClimbUuid` and the lineage row is written with the
+child.
+"""
+type SprayRemixSeed {
+  "The climb being remixed."
+  parentUuid: ID!
+  parentName: String!
+  layoutId: Int!
+  angle: Int!
+  "The parent's frames with the lost holds removed. Empty when nothing survived."
+  frames: String!
+  "Holds the parent used that are no longer on the wall."
+  lostHoldIds: [Int!]!
+  "Holds of the parent that are still there."
+  keptHoldIds: [Int!]!
+  """
+  Successors the reset review linked for the lost holds, in hold-id order.
+
+  At most one per entry in `lostHoldIds`: a commit refuses two additions
+  naming the same `movedFromHoldId`, and where the ordinary hold editor has
+  left a second claim on one predecessor, the more recently installed hold
+  wins. So this is a set of successors, not a
+  ranking: there is no "best" suggestion to put first. It is NOT positionally
+  aligned with `lostHoldIds` either, because a lost hold may have no successor
+  at all; pair them by reading `movedFromHoldId` off the holds themselves.
+
+  A remix wants somewhere to start, and `moved_from_hold_id` is the only
+  record of which of today's holds replaced one of yesterday's.
+  """
+  suggestedHoldIds: [Int!]!
+}
+
+"""
+Why a climber reported a wall. A closed set — there is no free-text field
+anywhere in the report path.
+"""
+enum SprayWallReportReason {
+  "The photograph or the wall's name is not something we should be serving."
+  INAPPROPRIATE
+  "Not a climbing wall at all."
+  NOT_A_WALL
+  "Somebody's face, address or documents are in the frame."
+  PERSONAL_INFO
+  OTHER
+}
+
+"""
+What the report did. `ALREADY_REPORTED` is the answer to a second report from
+the same climber: their first one still stands, and nothing about the queue's
+state leaks back to them.
+"""
+enum SprayWallReportStatus {
+  CREATED
+  ALREADY_REPORTED
+}
+
+type SprayWallReportResult {
+  status: SprayWallReportStatus!
+}
+
+input ReportSprayWallInput {
+  wallUuid: ID!
+  reason: SprayWallReportReason!
+}
+
+input SetSprayWallHiddenInput {
+  uuid: ID!
+  hidden: Boolean!
+}
+
+"The outcome of the admin switch, thin on purpose: a moderation tool, not a wall read."
+type SprayWallModerationResult {
+  uuid: ID!
+  layoutId: Int!
+  hidden: Boolean!
+  hiddenAt: String
+}
+
+"One pending report, for the admin queue."
+type SprayWallReport {
+  id: ID!
+  wallUuid: ID!
+  layoutId: Int!
+  reason: SprayWallReportReason!
+  "Whether the wall is hidden right now."
+  hidden: Boolean!
+  createdAt: String!
+}
+
+"What one purge run cleared. Photographs only — no wall row is ever deleted."
+type SprayWallPhotoPurgeResult {
+  wallsPurged: Int!
+  objectsDeleted: Int!
+  wallsConsidered: Int!
+  durationMs: Int!
+}
+
+"""
 Root query type for all read operations.
 """
 type Query {
@@ -5426,6 +6387,24 @@ type Query {
   Requires authentication.
   """
   mySessions: [DiscoverableSession!]!
+
+  """
+  Sessions climbing right now that the viewer has a reason to care about:
+  started or joined by someone they follow, on a board they follow, on
+  `boardUuid` when given, or their own. Private sessions only appear to the
+  people in them. Viewer's own sessions first, then sessions with followed
+  climbers, then bigger crews, then most recent. Requires authentication.
+  `limit` defaults to 10, max 20.
+  """
+  followedLiveSessions(boardUuid: ID, limit: Int): [LiveSession!]!
+
+  """
+  Sessions climbing right now on one board. Same access rule as
+  `boardHistory`: anonymous callers only reach public and system-shared
+  boards and only see public sessions; followed-climber reasons need
+  authentication.
+  """
+  boardLiveSessions(boardId: Int!): [LiveSession!]!
 
   """
   Get a session summary (stats, grade distribution, participants).
@@ -5488,8 +6467,18 @@ type Query {
     true position-exact matches.
   The duplicate-publish gate uses state-aware (hold_id, hold_state)
   matching separately — see findExactDuplicateMatch.
+  Admins get the live query. Everyone else reads the nightly precomputed
+  index (top 25 per climb at 0.5 and above), and a frames-only lookup
+  (no climbUuid) is admin-only. See docs/similar-climbs.md.
   """
   similarClimbs(input: SimilarClimbsInput!): [SimilarClimb!]!
+
+  """
+  Per-hold usage over the climbs a search matches (the hold heatmap). Admin
+  only: every other climber gets the same aggregate on device from the
+  downloaded board, so this live path never serves the public.
+  """
+  holdHeatmap(input: ClimbSearchInput!): [HoldStat!]!
 
   """
   Get a single climb by its UUID.
@@ -5524,17 +6513,20 @@ type Query {
   Get the Boardsesh grade for a climb at a specific angle. When that angle
   has no ascents, the climb's other angles are projected onto it and the
   result comes back tiered cross_angle_estimate — or, on MoonBoard, tiered
-  moonboard_angle_estimate, transposed from the board's other fixed angle.
-  Returns null when none of those exist (too few ascents, or fewer than two
-  other ascent-backed angles to project from).
+  moonboard_angle_estimate (transposed from the board's other fixed angle)
+  or moonboard_wide_angle_estimate (borrowed from another board's
+  angle-effect shape, at a moonboard-wide-angles flag angle). Returns null
+  when none of those exist (too few ascents, or fewer than two other
+  ascent-backed angles to project from).
   """
   boardseshGrade(boardName: String!, climbUuid: String!, angle: Int!): BoardseshGrade
 
   """
   Get the Boardsesh grade for a climb at every angle, ordered by angle
   ascending: the computed grades, plus a cross_angle_estimate for each board
-  angle nobody has climbed (moonboard_angle_estimate on MoonBoard). Empty
-  when the climb has no grades at all (e.g. too few ascents).
+  angle nobody has climbed (moonboard_angle_estimate or
+  moonboard_wide_angle_estimate on MoonBoard). Empty when the climb has no
+  grades at all (e.g. too few ascents).
   """
   boardseshGradesForAngles(boardName: String!, climbUuid: String!): [BoardseshGradeForAngle!]!
 
@@ -5574,7 +6566,7 @@ type Query {
   Check which climbs from a list are favorited by the current user.
   Returns array of favorited climb UUIDs.
   """
-  favorites(boardName: String!, climbUuids: [String!]!, angle: Int!): [String!]!
+  favorites(boardName: String, climbUuids: [String!]!, angle: Int): [String!]!
 
   """
   Get count of favorited climbs per board for the current user.
@@ -5813,6 +6805,10 @@ type Query {
   Requires authentication.
   """
   activityFeed(input: ActivityFeedInput): ActivityFeedResult!
+  "Complete followed-author snapshot for the authenticated viewer."
+  followedAuthors: FollowedAuthors!
+  "Sessions and the last 30 days of published climbs from followed authors."
+  crewFeed(input: CrewFeedInput): CrewFeedResult!
 
   """
   Get trending feed of recent activity (public, no auth required).
@@ -5841,6 +6837,10 @@ type Query {
   before the live `boardNowPlaying` subscription takes over.
   """
   boardRecentClimbs(boardId: Int!): [BoardPresenceClimb!]!
+  "Merged native and imported recent displays, used to infer the current climb by display time."
+  boardRecentHistory(boardId: Int!): [BoardPresenceClimb!]!
+  "Chronological durable history with an opaque, board-scoped pagination cursor."
+  boardHistoryPage(boardId: Int!, limit: Int, before: String): BoardHistoryPage!
 
   """
   Durable history of what was pushed to a board (survives past the 1 week
@@ -5956,6 +6956,12 @@ type Query {
   """
   searchBoards(input: SearchBoardsInput!): UserBoardConnection!
 
+  "Public physical boards ranked by distinct climbers before limiting; optionally within one public gym."
+  boardDiscovery(input: BoardDiscoveryInput): [BoardDiscoveryBoard!]!
+
+  "Headline usage numbers for the marketing site. Public, cached, no auth."
+  communityStats: CommunityStats!
+
   """
   Get popular board configurations ranked by climb count.
   """
@@ -6000,6 +7006,8 @@ type Query {
   Search public gyms.
   """
   searchGyms(input: SearchGymsInput!): GymConnection!
+  "City/town suggestions; query must contain 3–80 characters. At most five results."
+  searchPlaces(query: String!): [PlaceSuggestion!]!
 
   """
   Live gyms that resemble one the user is about to create, so they can view or
@@ -6106,6 +7114,84 @@ type Query {
   board). Read-only; the editor renders both and offers a revert.
   """
   holdOutlines(input: HoldOutlineConfigInput!): BoardHoldOutlines!
+
+  # ============================================
+  # Spray Wall Queries
+  # ============================================
+
+  """
+  One spray wall by uuid (the `user_boards` uuid it is keyed on).
+
+  Visible to the owner, to a member of the gym the wall is attached to, and to
+  anyone at all when the wall is public or unlisted — an unlisted wall is
+  reachable by uuid and nowhere else. Null when the wall does not exist, is
+  deleted, or the viewer may not see it: the three are deliberately
+  indistinguishable, so a private wall's existence does not leak.
+  """
+  sprayWall(uuid: ID!): SprayWall
+
+  """
+  The spray wall occupying a catalogue layout id, for a client holding only a
+  board config. Same visibility rules as `sprayWall`.
+  """
+  sprayWallByLayout(layoutId: Int!): SprayWall
+
+  """
+  Everything needed to render a wall at one version: the photo, the homography
+  and the holds alive at that version. Omit `version` for the published one.
+
+  A version the viewer may not see (a draft on somebody else's wall) is null,
+  as is a wall with nothing published yet.
+  """
+  sprayWallRenderData(uuid: ID!, version: Int): SprayWallRenderData
+
+  "Every wall the caller owns, newest first. Includes walls with no published version."
+  mySprayWalls: [SprayWall!]!
+
+  """
+  Spray wall reports still waiting on a decision, newest first. Community admins
+  only (`spray`-scoped or global). Pass a wall uuid to read just that wall's.
+  """
+  sprayWallReports(uuid: ID): [SprayWallReport!]!
+
+  """
+  What a reset WOULD do: match the detections from a new photo against the
+  holds on the wall today and report kept / removed / added.
+
+  Writes nothing — not one row — so a client may call it as often as the owner
+  drags a hold around. The detections are expected in the wall's CANONICAL
+  frame, i.e. already mapped through the draft version's own homography, which
+  is the only reason two photographs taken from different spots can be compared
+  at all. Editor only, since a proposal describes an unpublished draft.
+  """
+  proposeSprayWallReset(input: ProposeSprayWallResetInput!): SprayWallResetProposal
+
+  """
+  A remix starting point: a climb on a spray wall with every hold it has since
+  lost stripped out of its frames.
+
+  Gated by exactly the rule `saveClimb` applies to a spray climb write: the
+  owner, a member of the wall's gym, or anyone on a public wall — plus the
+  share-link capability, which is `sprayWallUuid`. Send the wall's uuid and an
+  UNLISTED wall opens up, the same way it does for setting a climb on it; a
+  PRIVATE wall refuses everyone but its principals, uuid or not. Null when the
+  climb is not on a spray wall, or when the viewer may not see the wall — the two
+  are indistinguishable on purpose.
+
+  The PARENT is shown even when it is no longer climbable (epic decision
+  2026-09-14): a climb that lost three holds is exactly the one worth remixing.
+  """
+  remixClimb(parentUuid: ID!, sprayWallUuid: ID): SprayRemixSeed
+
+  """
+  Every spray wall attached to a gym that the caller may see, by wall name.
+
+  NOT the same rule as `sprayWall`: a listing is enumerable, so the unlisted
+  exemption does not apply. Gym members see the gym's walls including private
+  ones; everyone else — logged out included, which is how the web gym page reads
+  this — sees only public walls. An unknown gym is an empty list, not an error.
+  """
+  gymSprayWalls(gymUuid: ID!): [SprayWall!]!
 
   # ============================================
   # Gym Kiosk Queries
@@ -6331,6 +7417,29 @@ type Query {
   Optional layoutId/sizeId scope grades to the climbs of that layout/size via board_climbs.
   """
   syncClimbGrades(
+    boardType: String!
+    layoutId: Int
+    sizeId: Int
+    cursor: SyncCursorInput
+    limit: Int! = 500
+  ): SyncResult!
+
+  """
+  Pull the spray wall at a layout, changed since the cursor (reference data).
+
+  Carries the wall's canonical frame, its published version number, the holds
+  alive at that version, that version's homography, and the private-bucket
+  photo key plus a short-lived presigned URL for the bytes. Gated on the
+  by-layout visibility rule — owner, gym member, or a public wall — so an
+  unlisted wall does NOT resolve here: a layout id comes out of a sequence and
+  is not the capability a wall uuid is. An unreadable, unscoped or non-spray
+  request gets an ordinary empty page rather than an error; an UNAUTHENTICATED
+  one is rejected, like every other sync pull.
+
+  sizeId is accepted for symmetry with the other per-board pulls and is a
+  no-op: a wall is its own size, so layoutId already names exactly one wall.
+  """
+  syncSprayWalls(
     boardType: String!
     layoutId: Int
     sizeId: Int
@@ -6984,6 +8093,126 @@ type Mutation {
   nothing to remove.
   """
   deleteHoldOutlineOverride(input: DeleteHoldOutlineOverrideInput!): Boolean!
+
+  # ============================================
+  # Spray Wall Mutations
+  # ============================================
+
+  """
+  Create a spray wall: a `user_boards` row plus the three catalogue rows the
+  wall's own layout needs, all unlisted.
+
+  LEDs are never on a spray wall, and the flag is not accepted from the client:
+  there is no firmware to encode for, so the row is always written
+  `hasLeds: false` and the LED-less play path (#4585) is the one it takes.
+  The angle is fixed here for the wall's life. Capped at
+  `MAX_SPRAY_WALLS_PER_USER` walls per owner.
+  """
+  createSprayWall(input: CreateSprayWallInput!): SprayWall!
+
+  """
+  Rename a wall, change its description, share it, attach it to a gym, or correct
+  its angle. Owner only (through the same gate as every other wall mutation).
+
+  Sharing is the point: without this a wall created private — which is the
+  default, because a wall is somebody's home — could never be shown to anybody.
+  """
+  updateSprayWall(input: UpdateSprayWallInput!): SprayWall!
+
+  """
+  Attach a photo to the wall as a new DRAFT version, and compute its
+  photo→canonical homography from the anchors by 4-point DLT.
+
+  Version 1 defines the wall's canonical frame from the photo itself — the
+  anchor quad's bounding rectangle, or the photo's own pixel box when no
+  anchors were tapped. There are no user-entered wall dimensions. Owner only.
+  """
+  createSprayWallVersion(input: CreateSprayWallVersionInput!): SprayWallVersion!
+
+  """
+  Add or correct holds on a DRAFT version. A hold with no `id` is allocated a
+  new catalogue id (one `board_holes` + one `board_placements` row sharing
+  it); a hold with one has its geometry rewritten, and it must be alive on the
+  version. Owner only, and never on a published version.
+  """
+  upsertSprayWallHolds(input: UpsertSprayWallHoldsInput!): [SprayWallHold!]!
+
+  """
+  Take holds off the wall as of a DRAFT version.
+
+  A hold installed BY that draft is deleted outright — it was never on the real
+  wall. One installed earlier is stamped removed, never deleted: a climb set on
+  it has to stay findable and countable. Owner only.
+  """
+  removeSprayWallHolds(input: RemoveSprayWallHoldsInput!): Int!
+
+  """
+  Land a reviewed reset: apply the decisions and publish the draft, in ONE
+  transaction under the wall lock.
+
+  Removed holds are stamped, never deleted — the climbs set on them stay
+  findable and countable. Added holds get a fresh catalogue pair and, where the
+  review confirmed a move, a `movedFromHoldId` back to the hold they replaced.
+  Kept holds keep their published position and take only a fresher silhouette.
+  The previous generation is superseded and every climb on the wall has its
+  `missingHoldCount` re-materialised, which is what makes the badge, the
+  Intact / Lost holds filter and the remix prompt agree. Owner only.
+  """
+  commitSprayWallVersion(input: CommitSprayWallVersionInput!): SprayWallResetResult!
+
+  """
+  Publish a draft version: it becomes the generation climbers set against, the
+  previous published version is superseded, and the wall's hold count and
+  catalogue image are refreshed. Owner only.
+  """
+  publishSprayWallVersion(input: PublishSprayWallVersionInput!): SprayWallVersion!
+
+  """
+  Abandon a draft version, restoring the wall to the published generation.
+
+  A wall carries at most ONE open draft, so this is the other way out of one
+  besides publishing. The draft is DELETED rather than marked: its removals are
+  un-marked and the holds it added are dropped, catalogue rows included, which is
+  safe precisely because a draft has never been published and no climb can
+  reference its work. Owner only.
+  """
+  discardSprayWallVersion(input: PublishSprayWallVersionInput!): Boolean!
+
+  """
+  Soft-delete a wall. The catalogue rows and every climb ever set on it stay
+  behind — a deleted wall stops being reachable, it does not un-set the climbs.
+  Owner only.
+  """
+  deleteSprayWall(uuid: ID!): Boolean!
+
+  """
+  Report a spray wall. Any signed-in climber who can see it, once per wall.
+
+  Nothing is hidden automatically — the outcome of a report is an admin reading
+  it. A second report from the same climber answers `ALREADY_REPORTED` and
+  writes nothing, and a wall the caller cannot see answers "not found", exactly
+  like a uuid that is not a wall.
+  """
+  reportSprayWall(input: ReportSprayWallInput!): SprayWallReportResult!
+
+  """
+  Hide or unhide a wall. Community admins only (`spray`-scoped or global).
+
+  A hidden wall reads exactly like a PRIVATE one for everybody but its owner,
+  who keeps seeing it with a notice. Reversible, and it destroys nothing: the
+  photographs, the holds and every climb set on the wall stay where they are.
+  """
+  setSprayWallHidden(input: SetSprayWallHiddenInput!): SprayWallModerationResult!
+
+  """
+  Delete the photographs of walls soft-deleted more than 30 days ago
+  (`SPRAY_WALL_PHOTO_RETENTION_DAYS`). Cron-authenticated; the scheduler's
+  `purge-spray-wall-photos` job is the only caller.
+
+  Photographs only. The catalogue rows and every climb ever set on the wall stay
+  behind, because other people's ticks point at them.
+  """
+  purgeDeletedSprayWallPhotos(limit: Int): SprayWallPhotoPurgeResult!
 
   """
   Report that two gym listings are the same gym (any signed-in user). Surfaces the
@@ -8200,6 +9429,8 @@ A climb reported as lit on a physical board. Denormalised for display (mirrors
 the ESP32 LedUpdate payload) plus server-derived attribution and ordering.
 """
 type BoardPresenceClimb {
+  "Origin of the display: boardsesh or kilter. Missing means boardsesh."
+  source: String
   "UUID of the climb lit on the wall"
   climbUuid: String!
   "Queue item UUID that triggered the send, if any (disambiguates duplicates)"
@@ -8306,7 +9537,22 @@ type BoardConnectionChanged {
 """
 Union of board-presence events streamed by `boardNowPlaying`.
 """
-union BoardPresenceEvent = BoardClimbSet | BoardClimbCleared | BoardStatsUpdated | BoardConnectionChanged
+type BoardHistoryUpdated {
+  climbs: [BoardPresenceClimb!]!
+  seq: Int!
+}
+
+type BoardHistoryPage {
+  entries: [BoardPresenceClimb!]!
+  nextCursor: String
+}
+
+union BoardPresenceEvent =
+  | BoardClimbSet
+  | BoardClimbCleared
+  | BoardStatsUpdated
+  | BoardConnectionChanged
+  | BoardHistoryUpdated
 
 """
 The first climber to send the hardest grade logged on this wall.
@@ -8432,11 +9678,11 @@ NOTE on gate 2: this deliberately widens `isPublic`'s meaning from
 (user-approved product decision). `is_public` is the ONLY session
 visibility knob: `discoverable` controls nearby-search listing, not
 privacy — every session is joinable by anyone with its link, and no
-invite/approval mechanism exists. Today nothing sets `is_public = false`
-(`CreateSessionInput` has no such field), so every session on an
-anon-readable board is previewable after its first wall report; the gate is
-enforced now so the contract already holds when a session-privacy control
-ships.
+invite/approval mechanism exists. A creator sets `is_public = false`
+through `CreateSessionInput.isPublic` or `UpdateSessionInput.isPublic`;
+that hides the session's queue here and drops it from the live-sessions
+listings (`followedLiveSessions` / `boardLiveSessions`) for everyone
+who is not in it.
 
 Every item is redacted to climb-catalog fields only (see
 `BoardQueuePreviewItem`) — no addedBy/tickedBy/user identities ever leave

@@ -25,6 +25,17 @@ export const BOARDSESH_TIER = {
    * own predicate and its own copy rather than being folded in.
    */
   moonboardAngleEstimate: 'moonboard_angle_estimate',
+  /**
+   * MoonBoard only, and rougher still: an angle outside the board's own two
+   * fixed angles (25° / 40°), reachable only via the `moonboard-wide-angles`
+   * feature flag. MoonBoard has almost no real evidence at these angles yet,
+   * so the number is transported using another board's fitted angle-effect
+   * SHAPE rather than anything measured on MoonBoard itself at that angle —
+   * a cross-board borrow, not a same-board transform like
+   * `moonboardAngleEstimate`, so it gets its own predicate and its own,
+   * more hedged copy.
+   */
+  moonboardWideAngleEstimate: 'moonboard_wide_angle_estimate',
 } as const;
 
 /** True when a grade came from a projection rather than ascents at this angle. */
@@ -37,9 +48,17 @@ export function isMoonboardAngleEstimate(confidence: string | null | undefined):
   return confidence === BOARDSESH_TIER.moonboardAngleEstimate;
 }
 
-/** True for either tier that stands in for an angle nobody has climbed. */
+/** True when a MoonBoard grade at a `moonboard-wide-angles` angle was borrowed
+ *  from another board's fitted angle-effect shape (no same-board evidence). */
+export function isMoonboardWideAngleEstimate(confidence: string | null | undefined): boolean {
+  return confidence === BOARDSESH_TIER.moonboardWideAngleEstimate;
+}
+
+/** True for any tier that stands in for an angle nobody has climbed. */
 export function isEstimatedGrade(confidence: string | null | undefined): boolean {
-  return isCrossAngleEstimate(confidence) || isMoonboardAngleEstimate(confidence);
+  return (
+    isCrossAngleEstimate(confidence) || isMoonboardAngleEstimate(confidence) || isMoonboardWideAngleEstimate(confidence)
+  );
 }
 
 /**
@@ -78,10 +97,11 @@ export function deriveLogbookGradeDisplay(
  *    shared scale aligns with integer difficulty ids, so rounding lands on a
  *    real grade bucket).
  *  - Boardsesh grade null, or confidence `setter_only` /
- *    `cross_angle_estimate` / `moonboard_angle_estimate` → the legacy consensus.
+ *    `cross_angle_estimate` / `moonboard_angle_estimate` /
+ *    `moonboard_wide_angle_estimate` → the legacy consensus.
  *  - No consensus either → null (the row shows no crowd grade).
  *
- * Both estimate tiers are excluded because this value is presented as the
+ * All estimate tiers are excluded because this value is presented as the
  * CROWD's grade for an ascent, and an angle nobody has climbed has no crowd.
  * A logbook row has nowhere to put an "estimated" marker, so the honest
  * fallback is the legacy consensus. (The detail view, which does have room to
@@ -110,6 +130,34 @@ export function resolveCrowdDifficulty(
     return Math.round(fields.boardseshDifficulty);
   }
   return fields.consensusDifficulty ?? null;
+}
+
+/**
+ * Which number a client renders as THE Boardsesh grade: the cross-board
+ * standardized `universalGrade` when the model could anchor one, falling back
+ * to the within-board `localGrade` only for the small boards that never earn
+ * an anchor (Decoy, Grasshopper, So iLL, Touchstone — see
+ * docs/boardsesh-grade.md §3 "Cross-board offset"). Mirrors the model's own
+ * definition of the surfaced grade (`packages/db/src/queries/grade-model/blend.ts`,
+ * the `surfaced` value returned by `computePosteriorGrade`) and every
+ * server-side expression, which flattens the same pair into
+ * `boardseshDifficulty` via `COALESCE(universal_grade, local_grade)`
+ * (`packages/backend/src/graphql/resolvers/shared/sql-expressions.ts`,
+ * `packages/db/src/queries/climbs/search-climbs.ts`).
+ *
+ * `localGrade` must never be picked first: on Kilter the cross-board offset
+ * is about −1.2 grade points, so a local-first client reads Kilter climbs
+ * roughly a half-to-full V-grade softer than every universal-first client —
+ * exactly the bug in issue #4414, where web's now-deleted climb-detail
+ * renderer computed `localGrade ?? universalGrade` while mobile (and every
+ * server path) computed the reverse. Tension is the offset origin (offset 0),
+ * which is why that divergence showed up on Kilter and not on Tension.
+ */
+export function surfacedBoardseshGrade(grade: {
+  universalGrade?: number | null;
+  localGrade?: number | null;
+}): number | null {
+  return grade.universalGrade ?? grade.localGrade ?? null;
 }
 
 /**

@@ -37,6 +37,22 @@ describe('boardChips', () => {
     ).toEqual(['kilter', 'tension', 'moonboard']);
   });
 
+  it('renders no chip for a gym-linked spray wall', () => {
+    // A spray wall is its owner's wall, not something a visitor can turn up and
+    // climb on, so it must be DROPPED — not merely ordered last, which is all an
+    // unranked board type gets (see the next case).
+    expect(boardChips([{ boardType: 'spray', angle: 40 }])).toEqual([]);
+  });
+
+  it("drops the spray wall while keeping the gym's real boards", () => {
+    expect(
+      boardChips([
+        { boardType: 'spray', angle: 40 },
+        { boardType: 'kilter', angle: 40 },
+      ]).map((chip) => chip.boardType),
+    ).toEqual(['kilter']);
+  });
+
   it('sorts a board type it has never heard of last instead of first', () => {
     expect(
       boardChips([

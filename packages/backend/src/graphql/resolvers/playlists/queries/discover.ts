@@ -1,4 +1,4 @@
-import { eq, and, or, isNull, inArray, desc, sql, isNotNull } from 'drizzle-orm';
+import { eq, and, or, isNull, inArray, notInArray, desc, sql, isNotNull } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -81,6 +81,9 @@ export const discoverPlaylists = async (
       angle?: number | null;
       name?: string;
       creatorIds?: string[];
+      excludeCreatorIds?: string[];
+      minClimbs?: number;
+      maxClimbs?: number;
       sortBy?: 'recent' | 'popular';
       generatedRecommendation?: boolean | null;
       page?: number;
@@ -108,6 +111,12 @@ export const discoverPlaylists = async (
   if (input.creatorIds && input.creatorIds.length > 0) {
     conditions.push(inArray(dbSchema.playlistOwnership.userId, input.creatorIds));
   }
+  // The viewer's own playlists on a discovery surface. This used to be filtered
+  // CLIENT-side, which meant an owner's playlists still occupied server page
+  // slots and silently shrank the grid they were removed from.
+  if (input.excludeCreatorIds && input.excludeCreatorIds.length > 0) {
+    conditions.push(notInArray(dbSchema.playlistOwnership.userId, input.excludeCreatorIds));
+  }
   if (input.generatedRecommendation != null) {
     conditions.push(
       input.generatedRecommendation
@@ -129,16 +138,62 @@ export const discoverPlaylists = async (
 
   const whereClause = and(...conditions, eq(dbSchema.playlistOwnership.role, 'owner'));
 
-  const countResult = await publicPlaylistCountQuery().where(whereClause);
-  const totalCount = countResult[0]?.count || 0;
+  // A size band, not just a floor. The floor drops one-climb scratch lists; the
+  // ceiling drops the 600-climb "favorites" dumps that are a data export with a
+  // playlist's name on it, and which a climb-count sort put at the very top.
+  const havingParts = [];
+  if (input.minClimbs != null) {
+    havingParts.push(sql`count(DISTINCT ${dbSchema.playlistClimbs.id}) >= ${input.minClimbs}`);
+  }
+  if (input.maxClimbs != null) {
+    havingParts.push(sql`count(DISTINCT ${dbSchema.playlistClimbs.id}) <= ${input.maxClimbs}`);
+  }
+  const havingClause = havingParts.length > 0 ? and(...havingParts) : undefined;
+
+  // How many DISTINCT climbers kept this playlist. Both tables carry a unique
+  // (user, playlist) constraint, so a plain count IS a distinct-user count, and
+  // both are indexed on the playlist column.
+  const engagement = sql`(
+    (SELECT count(*) FROM ${dbSchema.userPlaylistPins} WHERE ${dbSchema.userPlaylistPins.playlistId} = ${dbSchema.playlists.id})
+    + (SELECT count(*) FROM ${dbSchema.playlistFollows} WHERE ${dbSchema.playlistFollows.playlistUuid} = ${dbSchema.playlists.uuid})
+  )`;
+
+  // The count has to see the HAVING too, or the page reports a total it will
+  // never show. `count(DISTINCT id)` cannot carry a HAVING on its own — it has no
+  // GROUP BY — so when a size band is in play the rows are grouped first and the
+  // groups counted.
+  const totalCount = havingClause
+    ? ((
+        await db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(
+            db
+              .select({ id: dbSchema.playlists.id })
+              .from(dbSchema.playlists)
+              .innerJoin(dbSchema.playlistOwnership, eq(dbSchema.playlistOwnership.playlistId, dbSchema.playlists.id))
+              .innerJoin(dbSchema.playlistClimbs, eq(dbSchema.playlistClimbs.playlistId, dbSchema.playlists.id))
+              .innerJoin(dbSchema.users, eq(dbSchema.users.id, dbSchema.playlistOwnership.userId))
+              .where(whereClause)
+              .groupBy(dbSchema.playlists.id)
+              .having(havingClause)
+              .as('banded'),
+          )
+      )[0]?.count ?? 0)
+    : ((await publicPlaylistCountQuery().where(whereClause))[0]?.count ?? 0);
 
   const results = await publicPlaylistBaseQuery()
     .where(whereClause)
     .groupBy(...PUBLIC_PLAYLIST_GROUP_BY)
+    .having(havingClause)
     .orderBy(
-      input.sortBy === 'popular'
-        ? desc(sql`count(DISTINCT ${dbSchema.playlistClimbs.id})`)
-        : desc(dbSchema.playlists.createdAt),
+      // 'popular' used to mean count(climbs) DESC — biggest, not popular. It is
+      // now what climbers actually kept, with size as the tiebreak. That tiebreak
+      // is load-bearing while pins are scarce: at 106 pins across 829 public
+      // playlists most rows tie at zero engagement, and this degrades to exactly
+      // the old ordering rather than going arbitrary.
+      ...(input.sortBy === 'popular'
+        ? [desc(engagement), desc(sql`count(DISTINCT ${dbSchema.playlistClimbs.id})`)]
+        : [desc(dbSchema.playlists.createdAt)]),
       desc(dbSchema.playlists.updatedAt),
       desc(dbSchema.playlists.id),
     )

@@ -1,5 +1,5 @@
 import { and, count, eq, isNull, ne, sql } from 'drizzle-orm';
-import { AuroraClimbingClient } from '@boardsesh/aurora-sync/api';
+import { AuroraClimbingClient, assertAuroraBoardName } from '@boardsesh/aurora-sync/api';
 import { decrypt, encrypt } from '@boardsesh/crypto';
 import { auroraCredentials, boardClimbs, boardseshTicks, userBoardMappings } from '@boardsesh/db/schema';
 import { AURORA_BOARDS, type AuroraBoardName } from '@boardsesh/shared-schema';
@@ -317,6 +317,12 @@ export async function saveAuroraCredential(input: {
   username: string;
   password: string;
 }): Promise<AuroraCredentialStatus> {
+  // Before ANY network call. `assertAuroraBoardName` lives next to `HOST_BASES`
+  // in @boardsesh/aurora-sync, so the GraphQL edge and the sync runner share one
+  // definition. Belt to `AuroraBoardNameSchema`'s braces: the schema stops a bad
+  // value at the edge, this stops one that reaches the service another way.
+  assertAuroraBoardName(input.boardType);
+
   if (input.boardType === KILTER_BOARD_TYPE) {
     throw new Error('Kilter accounts use OAuth');
   }
@@ -426,11 +432,12 @@ export async function saveAuroraCredential(input: {
   };
 }
 
-async function revokeKilterRefreshToken(userId: string): Promise<boolean> {
-  const [credential] = await db
+async function revokeKilterRefreshToken(userId: string, credentialDb: Pick<typeof db, 'select'>): Promise<boolean> {
+  const [credential] = await credentialDb
     .select({ encryptedRefreshToken: auroraCredentials.encryptedRefreshToken })
     .from(auroraCredentials)
     .where(and(eq(auroraCredentials.userId, userId), eq(auroraCredentials.boardType, KILTER_BOARD_TYPE)))
+    .for('update')
     .limit(1);
 
   if (!credential?.encryptedRefreshToken || !KILTER_OAUTH_CLIENT_ID) return true;
@@ -538,6 +545,7 @@ export async function saveKilterCredential(input: {
       });
     }
   });
+  await notifyKilterCredentialChange();
 }
 
 /**
@@ -592,20 +600,31 @@ export async function deleteAuroraCredential(
   userId: string,
   boardType: AuroraBoardName,
 ): Promise<DeleteAuroraCredentialResult> {
-  const localRevocationSucceeded = boardType === KILTER_BOARD_TYPE ? await revokeKilterRefreshToken(userId) : true;
-
-  await db.transaction(async (tx) => {
+  const localRevocationSucceeded = await db.transaction(async (tx) => {
+    const revoked = boardType === KILTER_BOARD_TYPE ? await revokeKilterRefreshToken(userId, tx) : true;
     await tx
       .delete(auroraCredentials)
       .where(and(eq(auroraCredentials.userId, userId), eq(auroraCredentials.boardType, boardType)));
     await tx
       .delete(userBoardMappings)
       .where(and(eq(userBoardMappings.userId, userId), eq(userBoardMappings.boardType, boardType)));
+    return revoked;
   });
+  if (boardType === KILTER_BOARD_TYPE) await notifyKilterCredentialChange();
 
   if (!localRevocationSucceeded) {
     return { success: false, localCleared: true, reason: 'revocation_failed' };
   }
 
   return { success: true };
+}
+
+async function notifyKilterCredentialChange(): Promise<void> {
+  if (process.env.KILTER_LIVE_SYNC_ENABLED !== '1') return;
+  try {
+    const { kilterLiveSync } = await import('./kilter-live-sync');
+    await kilterLiveSync.credentialsChanged();
+  } catch {
+    logger.warn('[KilterLive] Credential change notification failed');
+  }
 }

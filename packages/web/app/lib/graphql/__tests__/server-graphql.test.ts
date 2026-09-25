@@ -35,32 +35,34 @@ describe('server-graphql helpers', () => {
 
       const result = await serverPlaylist('auth-token', 'pl-1');
 
-      expect(result).toEqual(playlist);
+      expect(result).toEqual({ status: 'found', playlist });
       expect(requestMock).toHaveBeenCalledTimes(1);
     });
 
-    it('returns null and logs when the GraphQL request throws', async () => {
+    it('reports `unavailable`, not `missing`, and logs when the GraphQL request throws', async () => {
+      // The distinction is load-bearing: the page route 404s on `missing`, so
+      // collapsing a network failure into it would 404 a live playlist.
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
       requestMock.mockRejectedValueOnce(new Error('network down'));
 
       const result = await serverPlaylist('auth-token', 'pl-1');
 
-      expect(result).toBeNull();
+      expect(result).toEqual({ status: 'unavailable' });
       expect(errorSpy).toHaveBeenCalledWith('serverPlaylist failed:', expect.any(Error));
       errorSpy.mockRestore();
     });
 
-    it('returns null without logging when the GraphQL response is { playlist: null } (not-found)', async () => {
+    it('reports `missing` without logging when the GraphQL response is { playlist: null }', async () => {
       // The backend returns a 200 + `{ playlist: null }` for an unknown UUID
-      // rather than throwing. We must surface that as `null` so the page
-      // route can render the not-found state — and NOT log it as a failure,
-      // since "playlist doesn't exist" is a normal user outcome.
+      // rather than throwing. We must surface that as `missing` so the page
+      // route can answer a 404 — and NOT log it as a failure, since "playlist
+      // doesn't exist" is a normal user outcome.
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
       requestMock.mockResolvedValueOnce({ playlist: null });
 
       const result = await serverPlaylist('auth-token', 'missing-uuid');
 
-      expect(result).toBeNull();
+      expect(result).toEqual({ status: 'missing' });
       expect(errorSpy).not.toHaveBeenCalled();
       errorSpy.mockRestore();
     });

@@ -4,6 +4,7 @@ import {
   climbConfigKey,
   deriveAcceptedConfigs,
   decideAdd,
+  isClimbOnReachableBoard,
   type ClimbBoardCompatibility,
   type ClimbBoardIdentityLike,
 } from '../cross-board';
@@ -181,5 +182,94 @@ describe('decideAdd', () => {
         classify: classifyStub('unknown'),
       }),
     ).toEqual({ kind: 'add', reason: 'unknown' });
+  });
+});
+
+// --- Walls at the same gym ---------------------------------------------------
+//
+// The prompt exists to stop a foreign climb landing by accident. At a gym with
+// two walls, queueing from the wall beside you is the deliberate act, so the
+// prompt is friction at exactly the wrong moment.
+
+describe('decideAdd reachable walls', () => {
+  const KILTER_ACTIVE = { boardName: 'kilter' as const, layoutId: 1 };
+  const TENSION_CLIMB = { boardType: 'tension', layoutId: 8 };
+  const alwaysIncompatible = () => 'incompatible' as const;
+
+  it('adds without prompting when the climb is on another wall at this gym', () => {
+    const decision = decideAdd({
+      climb: TENSION_CLIMB,
+      activeConfig: KILTER_ACTIVE,
+      acceptedConfigKeys: new Set(['kilter:1']),
+      reachableConfigKeys: new Set(['tension:8']),
+      classify: alwaysIncompatible,
+    });
+
+    expect(decision).toEqual({ kind: 'add', reason: 'same-gym' });
+  });
+
+  it('still prompts for a board that is not at this gym', () => {
+    const decision = decideAdd({
+      climb: TENSION_CLIMB,
+      activeConfig: KILTER_ACTIVE,
+      acceptedConfigKeys: new Set(['kilter:1']),
+      reachableConfigKeys: new Set(['moonboard:6']),
+      classify: alwaysIncompatible,
+    });
+
+    expect(decision.kind).toBe('confirm');
+  });
+
+  it('behaves exactly as before when no reachable set is supplied', () => {
+    const decision = decideAdd({
+      climb: TENSION_CLIMB,
+      activeConfig: KILTER_ACTIVE,
+      acceptedConfigKeys: new Set(['kilter:1']),
+      classify: alwaysIncompatible,
+    });
+
+    expect(decision.kind).toBe('confirm');
+  });
+
+  // A board already in the queue short-circuits first, so the reason stays the
+  // one that explains itself: they said yes to this board already.
+  it('reports already-mixed ahead of same-gym', () => {
+    const decision = decideAdd({
+      climb: TENSION_CLIMB,
+      activeConfig: KILTER_ACTIVE,
+      acceptedConfigKeys: new Set(['kilter:1', 'tension:8']),
+      reachableConfigKeys: new Set(['tension:8']),
+      classify: alwaysIncompatible,
+    });
+
+    expect(decision).toEqual({ kind: 'add', reason: 'already-mixed' });
+  });
+});
+
+// Four surfaces navigate, describe, schedule and light by this answer. If they
+// disagree the app contradicts itself — the drawer promises a climb the sender
+// walks past, or the beat calls the queue ended while a swipe would advance.
+describe('isClimbOnReachableBoard', () => {
+  const reachable = new Set(['tension:8']);
+
+  it('is true for a climb on a board at this gym', () => {
+    expect(isClimbOnReachableBoard({ boardType: 'tension', layoutId: 8 }, reachable)).toBe(true);
+  });
+
+  it('is false for a climb on a board that is not', () => {
+    expect(isClimbOnReachableBoard({ boardType: 'moonboard', layoutId: 6 }, reachable)).toBe(false);
+  });
+
+  // Same fail-open stance as the compatibility classifier: unknown means don't
+  // act, never "act as though it's reachable".
+  it('is false for a climb carrying no board metadata', () => {
+    expect(isClimbOnReachableBoard({}, reachable)).toBe(false);
+    expect(isClimbOnReachableBoard({ boardType: 'tension' }, reachable)).toBe(false);
+    expect(isClimbOnReachableBoard({ layoutId: 8 }, reachable)).toBe(false);
+  });
+
+  it('is false when nothing is in reach', () => {
+    expect(isClimbOnReachableBoard({ boardType: 'tension', layoutId: 8 }, undefined)).toBe(false);
+    expect(isClimbOnReachableBoard({ boardType: 'tension', layoutId: 8 }, new Set())).toBe(false);
   });
 });

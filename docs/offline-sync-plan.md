@@ -261,7 +261,8 @@ async function drainMutationQueue(db: SQLiteDatabase) {
           }
           break; // stop processing, retry later
         }
-        // Non-retryable (validation error, 404, 409): move to dead letter
+        // Non-retryable — a permanent server verdict on this request (400,
+        // 409, 422). NOT 404: see the classifier note below.
         await db.runAsync(`UPDATE pending_mutations SET status = 'dead_letter', last_error = ? WHERE id = ?`, [
           error.message,
           mutation.id,
@@ -353,6 +354,16 @@ async function processMutation(mutation: PendingMutation) {
 }
 ```
 
+The shipped classifier
+(`packages/shared/offline-sync/src/mutation-queue/error-classification.ts`) inverts that sketch's
+last default. The sketch dead-letters anything it does not recognise; the real one **retries anything
+it does not recognise**, and only `isPermanentRejection` blocks a replay — a resolved
+400 / 403 / 405 / 409 / 410 / 413 / 415 / 422, or, on an HTTP 200, a `BAD_USER_INPUT` /
+`GRAPHQL_VALIDATION_FAILED` / `BAD_REQUEST` / `FORBIDDEN` extension code. 404 is in neither set: this
+client posts GraphQL to one endpoint and a GraphQL server reports not-found as HTTP 200 with an
+`errors` array, so a 404 can only be an edge/proxy routing failure and joins 502/503/504 in
+`isServerUnavailableError`. See "Drainer safety" below.
+
 ### Queue trigger points
 
 | Trigger           | When                                    |
@@ -369,6 +380,25 @@ Each mutation gets a client-generated UUID as an idempotency key. The backend's 
 ### Dead letter handling
 
 Mutations that exceed `MAX_RETRY_COUNT` or fail with non-retryable errors are moved to `status = 'dead_letter'`. The app shows a badge/indicator when dead-letter mutations exist. Users can view failed mutations and choose to retry or discard them. This prevents silent data loss — the user always knows if a tick didn't sync.
+
+#### The one-time recovery of the #5295 dead letters (#5335)
+
+Before the classifier fix above, two transport failures resolved as non-retryable and dead-lettered a queued send on attempt 0 of 10: whatwg-fetch's `Network request timed out`, and a Railway edge 404 whose body carried no GraphQL `errors` array. Roughly 17 climbers were left with a row holding a send they logged and believe is recorded. The fix stops new losses; it does not give those rows back, so recovery is its own decision — taken 2026-09-08 in favour of a one-time automatic requeue that the climber is told about.
+
+It is schema migration **6**, and every property it needs falls out of being one:
+
+- **Once per install** — the version stamp. No separate marker to keep, and no way to run it twice.
+- **Interruption-safe** — its data step shares the migration's exclusive transaction, so a killed app rolls the rows and the stamp back together. A row is always `pending` or `dead_letter`, never a third thing.
+- **Narrow** — `isRecoverableTransportDeadLetter` matches the RECORDED ERROR and nothing else. Not age, not table, not `retry_count`. The timeout is an equality match and the 404 an anchored `GraphQL Error (Code: 404)` prefix, because a graphql-request `ClientError` message embeds the whole request: a substring search would let a tick comment talk a 400 rejection into a replay. A row a server permanently rejected comes out untouched, which is what keeps this from being "revive everything".
+- **Reuses the row transition** — `retryDeadLetter`, the same statement More → Sync issues → Retry has always used, so the automatic recovery cannot drift from the manual one.
+
+It must land **with or after** the classifier fix. Revived rows meeting the old classifier would dead-letter again on the first hiccup.
+
+**Telling the climber.** The migration leaves a `sync_meta` note (`dead-letter-recovery-notice`) holding how many sends it put back, and only when that is at least one — a fresh install owes nobody a notice. `SendRecoveryGate`, a launch gate mounted after `OnboardingGate` and `QaTesterGate`, delivers it once as a dismissable modal route, clearing the note before it navigates, and emits `Offline Send Recovery Shown { recoveredCount }`. That event is the only way the recovery is measurable in the field: the rows it moves stop being dead letters, so nothing else can count them afterwards. Until #5654 the gate never ran: its `ready` prop was frozen at `false` behind `DatabaseProvider`, so the note sat undelivered on every device that had one. It now reads readiness from `LaunchReadyProvider`, waits for the feature flags to resolve, and stands down under the `send-recovery-gate-kill` flag, which leaves the note owed rather than consuming it.
+
+The copy says the sends are **on their way**, not that they were recovered. At the moment the notice shows, the requeued rows may still be in flight, and a climber told "3 sends recovered" who then finds one still pending has been lied to. "On their way" is true when it is shown and cannot be falsified by a later failure — and with default-retry a failure now leaves the row pending rather than dead-lettering it, so the promise holds.
+
+The accepted cost: a climber who already re-logged a lost send by hand can end up with two ticks. The server-side `idempotency_key` limits duplicates but cannot eliminate this one, because a hand re-log is a genuinely different mutation. The notice is what makes that duplicate explicable rather than baffling.
 
 ## Sync pull — incremental updates
 
@@ -499,9 +529,36 @@ dropped from error reporting (a local decision, not a failure); the store emits 
 `Backend Reachability Changed` event per real edge instead.
 
 **Drainer safety.** The shared classifier now treats the masked `INTERNAL_SERVER_ERROR` shape as
-retryable, 502/503/504 as a network stop (no `retry_count` strike), and a 500 asks the store's deduped
-probe (`DrainOptions.confirmServerAvailability`) before charging the mutation; a probe that rejects is
-itself "server down". The backend also answers connection-class DB failures with an honest 503.
+retryable, 404/502/503/504 as a network stop (no `retry_count` strike), and a 500 asks the store's
+deduped probe (`DrainOptions.confirmServerAvailability`) before charging the mutation; a probe that
+rejects is itself "server down". The backend also answers connection-class DB failures with an honest
+503.
+
+**Default-retry (#5295).** `isRetryable` no longer dead-letters an error it cannot place. It returns
+`!isPermanentRejection(error)`, so only a server's permanent verdict on this exact request stops a
+replay. That verdict is read two ways, because GraphQL has no way to put one in the status line: a
+resolved 400 / 403 / 405 / 409 / 410 / 413 / 415 / 422, or — on an HTTP 200 — one of the
+`PERMANENT_GRAPHQL_ERROR_CODES` (`BAD_USER_INPUT`, `GRAPHQL_VALIDATION_FAILED`, `BAD_REQUEST`,
+`FORBIDDEN`) in the `errors` array. A code on a **non-2xx** response is ignored: that body is an edge
+error page, not a resolver's answer. `RATE_LIMITED` is deliberately absent — it is a "later", not a
+"never" (#4711) — and so is the masked `INTERNAL_SERVER_ERROR`, decided retryable before this check
+runs (#4862). An unrecognised code stays retryable; default-retry still governs the unknown. The old
+`status === null → dead-letter` default lost a queued write on attempt 0 of 10 four separate times
+(#4099 truncated 2xx body, #4027 bare NSURL prose, #4711 string `RATE_LIMITED`, #5295
+`TypeError: Network request timed out`), and each fix taught the classifier one more shape rather
+than changing the default. Being wrong the new way is bounded: `recordFailure` flips the row to
+`dead_letter` in the same atomic UPDATE that passes `max_retries`, so a genuine bad payload still
+surfaces — as `retries_exhausted` after ten attempts instead of `non_retryable` after one.
+
+Two precision layers sit in front of that backstop so the common shapes cost zero strikes rather than
+ten: `network request timed out` is a transport marker (whatwg-fetch's `xhr.ontimeout` sibling of
+`network request failed`), and an edge 404 is a server-unavailable verdict. Both reach the drainer's
+`networkStop`, which leaves the row pending and drains it on reconnect — the backstop alone would let
+a row burn all ten strikes inside one cycle's 30 s-capped backoff, in under a minute.
+
+Rows already at `status='dead_letter'` from those shapes are **not** revived by the classifier change.
+`retryDeadLetter` (`mutation-queue/queue.ts`) and the More → Sync issues → Retry button are the manual
+path.
 
 **What the climber sees.** One bottom banner (`components/connectivity/ConnectivityBanner.tsx`,
 folded into the bottom-chrome geometry so FABs, snackbars and toasts stack above it): "We're having
@@ -511,7 +568,9 @@ Syncing N changes…" → "All synced" on recovery. `OfflineState` gained the `b
 `backend-outage-detection` mobile flag (default on) is the kill switch: off disables the flip and the
 short-circuit, keeps the timeouts. A dev/tester-only More → Development row, **Force server
 unreachable**, pins the store for QA (`BACKEND_URL` is inlined at build time, so there is no other way
-to simulate an outage on a device).
+to simulate an outage on a device). The banner itself never painted in production until #5654: its
+`ready` prop was frozen at `false` behind `DatabaseProvider`. It now reads readiness from
+`LaunchReadyProvider`, and `connectivity-banner-kill` hides it without touching the detection above.
 
 **Offline mode.** The climber's own switch, first row of More → Offline ("Offline mode"), with two
 shortcuts on the banner: "Stay offline" during an outage, "Go online" to leave. It is a persisted MMKV
@@ -545,7 +604,7 @@ User data (ticks, playlists, favorites, follows) syncs on native with no per-boa
 
 **Turning the toggle off does not delete anything** — the rows and checkpoints are the expensive shared cache, so re-enabling resumes from the checkpoint instead of re-crawling. Reclaiming that disk space is a separate, explicit action: **More → Storage** (`StorageSettingsScreen`), which lists every scope that has rows (not just the enabled ones — a forced sign-out clears `syncEnabledBoards` while deliberately keeping the rows, and a kill-switch rollback leaves rows with the toggle unavailable, so "has rows, not enabled" is a real state, never an orphan to auto-reap). Removal goes through `removeOfflineBoard` (`packages/mobile/src/offline/remove-offline-board.ts`) → `removeBoardScopeData` (`@boardsesh/offline-sync`'s `sync/scope-teardown.ts`), which drops the scope's rows **and every `sync_meta` marker describing them in one exclusive transaction**: a surviving checkpoint would make the strict-`>` delta pull resume past the deleted rows and never revisit them, permanently gutting the catalog while `scope-complete:` still advertised it as whole. See that module's header for the full hazard list. A full `VACUUM` afterwards is what actually returns the pages to the filesystem (`db/vacuum.ts`).
 
-**Local-first browse (live).** Climb **search + count + detail** are **local-first**: whenever the active board's exact scope is downloaded and the filters are on-device-expressible, they read local `board_climbs`/`board_climb_stats` (`search-climbs-local.ts` / `get-climb-local.ts`, mirroring the server's LEFT-JOIN standard search) **even while online** — a local query is far faster than a network round-trip. Freshness comes from the background sync (foreground + reconnect), which invalidates `['searchClimbs']`/`['climb']` after each pull so the next local read reflects new data; a downloaded board reads local regardless of connectivity, so connectivity isn't part of the query key. The **network** is used only when there's no usable local data: the board isn't downloaded, or the filter needs a table we don't sync. **Limitations:** filters needing un-synced tables — hold-state (STARTING/HAND/FOOT/FINISH), zone, tall/wide, beta-video — and the drafts path always go to the network (online) or are unavailable (offline); name search is ASCII-case-insensitive only; climb-detail satellites (comments, beta links, similar climbs, stats history) are network-only and absent offline. Trade-off: on a downloaded board, online reads reflect the last sync rather than the live server (acceptable for a climb catalog; the sync keeps it current).
+**Local-first browse (live).** Climb **search + count + detail** are **local-first**: whenever the active board's exact scope is downloaded and the filters are on-device-expressible, they read local `board_climbs`/`board_climb_stats` (`search-climbs-local.ts` / `get-climb-local.ts`, mirroring the server's LEFT-JOIN standard search) **even while online** — a local query is far faster than a network round-trip. Freshness comes from the background sync (foreground + reconnect), which invalidates `['searchClimbs']`/`['climb']` after each pull so the next local read reflects new data; a downloaded board reads local regardless of connectivity, so connectivity isn't part of the query key. The **network** is used only when there's no usable local data: the board isn't downloaded, or the filter needs a table we don't sync. **Limitations:** filters needing un-synced tables — hold-state (STARTING/HAND/FOOT/FINISH), zone, tall/wide, beta-video — and the drafts path always go to the network (online) or are unavailable (offline); name search is ASCII-case-insensitive only; climb-detail satellites (comments, beta links, stats history) are network-only and absent offline. **Similar climbs** is the exception: it is **local-only** — answered from the downloaded board's device-derived holds index, online and offline, and never from the network for non-admins (a board that is not downloaded gets a download offer instead; see `docs/offline-reads.md`, "Expensive catalogue reads are local-only"). Trade-off: on a downloaded board, online reads reflect the last sync rather than the live server (acceptable for a climb catalog; the sync keeps it current).
 
 ```typescript
 const enabledBoards = getMMKVPreference<string[]>('sync_boards') ?? [];
@@ -903,7 +962,7 @@ whether offline storage comes up at all.
 | --------------------------------------------------------- | ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
 | Startup DDL (`ensureMutationQueueTable`, `runMigrations`) | the app's main connection                                   | milliseconds on a warm install; the full migration set on an upgrade                                                                           |
 | Snapshot import (`bootstrapScopeFromSnapshot`)            | its own native connection (`withExclusiveTransactionAsync`) | one `BEGIN EXCLUSIVE` covering `reconcileScope` + `importScope` ONLY — the artifact is already downloaded to disk before the transaction opens |
-| Paged crawl (`pull-client`)                               | its own native connection                                   | one short exclusive transaction per page, with a 5s `busy_timeout`, so a contender can win in the gaps                                         |
+| Paged crawl (`pull-client`)                               | its own native connection                                   | one short exclusive transaction per page, opened `BEGIN IMMEDIATE` with a 5s `busy_timeout`, so a contender can win in the gaps               |
 | `VACUUM` / teardown deletes                               | the main connection                                         | 5-20s on a 200-400MB file                                                                                                                      |
 
 `OfflineBoardDownloadCompleted.durationMs` is **not** a lock-hold measurement. It is
@@ -912,6 +971,28 @@ artifact download as well as the import — mostly network. Sizing a retry windo
 it overstates the real contention by an order of magnitude. The measurement that
 does describe the lock is `Offline SQLite Init Recovered`'s `elapsedMs`: how long a
 launch that lost the lock took to win it back.
+
+**What happens when the pull loses it anyway** (issue #5302)
+
+Every write transaction in `pull-client` — the page upsert, the deletions page, the
+refresh tail — goes through `runPullWrite`, which does two things the raw
+`withExclusiveTransactionAsync` call did not:
+
+- Opens the transaction with `beginImmediateWrite`, not a bare `applyBusyTimeout`.
+  Expo's wrapper opens a DEFERRED `BEGIN`, which picks its lock from whichever
+  statement runs first, and the refresh tail's first statement is a `getCheckpoint`
+  SELECT. That made it a READ transaction whose later write had to upgrade, and
+  SQLite does not run the busy handler on an upgrade (#4332 measured it failing in
+  ~1ms against a 5,000ms `busy_timeout`). `BEGIN IMMEDIATE` makes the wait real.
+- Wraps it in `runLocalWriteWithRetry` at background sizing
+  (`OFFLINE_BACKGROUND_WRITE_*`: 3 attempts, 250ms gap, 20s budget, the full 5s
+  `busy_timeout` on every attempt). Before this, a single lost lock threw out of
+  `upsertDocuments` → `syncTable` → `pullSync` and ended the CYCLE — every later
+  table skipped, no checkpoint advanced, no `scope-complete:` marker — so the board
+  stayed stale until the next 30s wake met the same contention.
+
+A recovered lock reports nothing. One the ladder cannot win still surfaces as a
+failed cycle through `warnCycleError`, so a genuinely wedged database stays visible.
 
 **Why the launch gate opens before the schema is ready**
 
@@ -945,6 +1026,93 @@ closes the connection the chain captured and opens a new one. The retry chain is
 single-flight for the process but retargets onto the latest connection on every
 attempt; a failure against a superseded handle is a lifecycle artefact and is
 deliberately not reported to error tracking.
+
+A superseded target is therefore a CLOSED one, which fixes where the handle may be
+published: only from the ready branch in `beginInitialization`, and only when
+`latestDatabase` still names the target. That is the single publish site in the
+lifecycle — publishing from anywhere that cannot see the supersede check served a
+closed connection with `isSchemaReady()` true, which is #5292's symptom list on every
+local read (#5366). A chain that runs out of superseded refunds ends with nothing
+published and reports under its own `kind: 'sqlite-init-superseded'`, kept out of the
+`sqlite-init` aggregate because no lock was contended in that failure.
+
+The retraction hung off the provider (`DatabaseHandleLifecycle`) does NOT beat the
+close: expo-sqlite enters `closeAsync()` synchronously from the parent's cleanup, which
+React runs before this child's. What it buys is the window after the unmount commit —
+queries already in flight are carried by the process-lifetime reference (#5300).
+
+### When the native handle dies under us (#5410)
+
+Everything above is about a connection that is LOCKED, or one the provider CLOSED.
+There is a third failure, and on Android it was the largest of the three:
+BOARDSESH-G1, 239 users and 2593 events over 30 days, every SQLite consumer dead at
+once until the climber force-quits.
+
+**The mechanism.** Opening `boardsesh.db` a second time with equal options does not
+open a second connection. Android's constructor finds the cached `NativeDatabase` and
+hands the same instance back:
+
+```kotlin
+findCachedDatabase { it.databasePath == databasePath && it.openOptions == options
+                     && !options.useNewConnection }?.let { it.addRef(); return@Constructor it }
+```
+
+expo-modules-core's `SharedObjectRegistry.add()` then registers that one native object
+again under a fresh id, minting an independent C++ `NativeState` for the new JS
+wrapper. `~NativeState` runs the releaser, so garbage-collecting **any** wrapper calls
+`sharedObjectDidRelease()` → `ref.close()` → `mHybridData.resetNative()` on the
+connection every other wrapper is still using. `NativeDatabase.kt` neither consults its
+refcount nor sets `isClosed` there, so `maybeThrowForClosedDatabase` still waves the
+next call through and `sqlite3_prepare_v2` dereferences a freed pointer.
+
+Refcounting does not protect against this. #5300's retention pin keeps `sqlite3_close`
+from running; it has nothing to say about reachability. iOS is unaffected —
+`SharedObjectRegistry.swift` reuses the id and native state for a second registration,
+and the iOS `NativeDatabase` does not override `sharedObjectDidRelease` — so this is an
+Android-only parity gap, filed upstream. It is not patchable here: `patches/` is hashed
+into the native fingerprint, so a patched fix could not reach the affected users by OTA.
+
+**Prevention.** `db/connection-pin.ts` holds every wrapper for this file strongly for
+the life of the process, so none can ever be collected. Four funnels feed it: the
+provider's `onInit`, `DatabaseHandleLifecycle`'s effect, `initializeDatabase` (where
+reassigning `latestDatabase` is what makes the previous wrapper collectable), and the
+dev lock holder. Transaction connections are refused — `useNewConnection` bypasses the
+cache, so their release is already correct and pinning them would leak one object per
+offline write. The set is strong and never evicted on purpose; a weak container is the
+bug, and the entry you evict may be the one whose collection kills the live connection.
+
+This is ORTHOGONAL to the retraction machinery above. That is about liveness (never
+hand a reader a closed connection); this is about reachability (never let a wrapper be
+collected). Both are needed.
+
+**Recovery.** `classifySqliteHandleError` (`@boardsesh/offline-sync`) tells the dead
+shape apart from a lock — conjunctively, needing the expo-sqlite rejection frame AND
+the `NullPointerException`, because a bare NPE is the most common native error there
+is. Detection hangs off `reportError` via `db/dead-handle.ts`, a registration seam that
+exists because error-reporting → connection → error-reporting would be a cycle.
+
+Recovery retracts the handle synchronously first, which alone stops the storm, then
+opens a replacement and retargets the existing init ladder onto it — so migrations, the
+lock backoff and the single publish site are all reused. A chain epoch stops a ladder
+parked in a retry gap from waking up and migrating the replacement a second time.
+
+The replacement MUST be opened with `useNewConnection: true`. A plain re-open is served
+the same dead instance: nothing closed it, so its refcount never reached zero and
+`removeCachedDatabase` never evicted it. Draining the refcount by repeated `closeAsync`
+was rejected — JS cannot read the count, so the stopping rule would be "call it until it
+throws", and the throw is the bug being recovered from.
+
+Because the provider never re-renders during a recovery, its context value still points
+at the dead instance. Consumers that take their database from `useSQLiteContext()` must
+therefore go through `useOfflineDatabase()` instead, which prefers the published handle
+and falls back to the provider's. Writers still gate on `useOfflineSchemaReady()`; that
+hook decides WHICH connection, not WHETHER.
+
+Bounded at two recoveries per process, 30s apart. Telemetry: Sentry
+`kind: 'sqlite-dead-handle'` with `phase: detected | reopened | failed`, and
+`Offline SQLite Handle Recovered` in PostHog. Deliberately kept out of the
+`sqlite-init` aggregate, whose `elapsedMs` distribution sizes the retry window and
+would be corrupted by a mid-session failure that is not contention at all.
 
 ## What stays the same
 

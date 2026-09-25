@@ -3,6 +3,8 @@
 // board_id (userBoards.id), resolved from the BLE serial.
 
 export type BoardPresenceClimb = {
+  /** Missing on older servers means a native Boardsesh display. */
+  source?: 'boardsesh' | 'kilter' | null;
   climbUuid: string;
   queueItemUuid?: string | null;
   name?: string | null;
@@ -63,7 +65,19 @@ export type BoardConnectionChanged = {
   seq: number;
 };
 
-export type BoardPresenceEvent = BoardClimbSet | BoardClimbCleared | BoardStatsUpdated | BoardConnectionChanged;
+export type BoardHistoryUpdated = {
+  __typename: 'BoardHistoryUpdated';
+  climbs: BoardPresenceClimb[];
+  seq: number;
+};
+export type BoardHistoryPage = { entries: BoardPresenceClimb[]; nextCursor: string | null };
+
+export type BoardPresenceEvent =
+  | BoardClimbSet
+  | BoardClimbCleared
+  | BoardStatsUpdated
+  | BoardConnectionChanged
+  | BoardHistoryUpdated;
 
 export type BoardPresenceHardestSend = {
   climbUuid: string;

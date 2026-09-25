@@ -76,6 +76,7 @@
     "metaTitle": "Kletterhalle {{gymName}}",
     "metaDescription": "Sieh dir die Boards und die Live-Wand von {{gymName}} auf Boardsesh an.",
     "breadcrumbHome": "Boardsesh",
+    "breadcrumbGyms": "Hallen",
     "manageGym": "Halle verwalten",
     "seeOnTheWall": "Sieh, was an der Wand hängt",
     "boardsHeading": "Boards",
@@ -135,7 +136,13 @@
       "independence": "Boardsesh ist eine unabhängige App. Sie ist weder mit Aurora Climbing, Moon Climbing oder einem anderen Board-Hersteller verbunden noch wird sie von ihnen unterstützt.",
       "printAction": "Poster drucken",
       "backToGym": "Zurück zur Halle"
-    }
+    },
+    "sprayWallsHeading": "Spray Walls",
+    "sprayWallCount_one": "{{count}} Wand",
+    "sprayWallCount_other": "{{count}} Wände",
+    "sprayWallsIntro": "Die Spray Walls dieser Halle, Griff für Griff. Öffne eine und sieh, was dort geschraubt wurde.",
+    "sprayWallPhotoAlt": "Foto von {{wallName}}",
+    "sprayWallMeta": "{{angle}}° · {{holds}} Griffe"
   },
   "manage": {
     "welcome": {

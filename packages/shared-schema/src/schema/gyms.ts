@@ -1,4 +1,15 @@
 export const gymsTypeDefs = /* GraphQL */ `
+  "A city or town from the locally hosted GeoNames gazetteer."
+  type PlaceSuggestion {
+    id: Int!
+    name: String!
+    region: String!
+    country: String!
+    countryCode: String!
+    latitude: Float!
+    longitude: Float!
+  }
+
   # ============================================
   # Gym Entity Types
   # ============================================
@@ -377,6 +388,8 @@ export const gymsTypeDefs = /* GraphQL */ `
     multiBoardTypeOnly: Boolean
     "Only gyms that have a URL slug, i.e. that can be linked to at /gym/[slug]. Opt-in: omitting it leaves the emitted SQL untouched for existing callers."
     requireSlug: Boolean
+    "Show claimed gyms first, preserving the existing order within each group. Opt-in; other callers keep their current ordering."
+    prioritizeClaimed: Boolean
     "Latitude for proximity search"
     latitude: Float
     "Longitude for proximity search"

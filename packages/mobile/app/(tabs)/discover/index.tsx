@@ -14,6 +14,7 @@ import {
   useSmartPlaylistCounts,
   usePlaylistMutations,
 } from '@boardsesh/playlists-react';
+import { getBoardCapabilities } from '@boardsesh/board-config';
 import type { DiscoverablePlaylist, Playlist, SmartPlaylistType } from '@boardsesh/graphql/operations/playlists';
 import { Text } from '../../../src/components/Text';
 import { Icon } from '../../../src/components/Icon';
@@ -23,9 +24,12 @@ import { useConnectivity } from '../../../src/lib/connectivity/use-connectivity'
 import { offlineReasonFor } from '../../../src/hooks/use-offline-query-state';
 import { Button } from '../../../src/components/Button';
 import { SectionHeader } from '../../../src/components/SectionHeader';
-import { HorizontalScrollSection } from '../../../src/components/HorizontalScrollSection';
 import { PlaylistFormSheet, type PlaylistFormValues } from '../../../src/components/playlist';
-import { DiscoverPlaylistCard, DiscoverSmartPlaylistCard } from '../../../src/components/playlist/DiscoverPlaylistCard';
+import {
+  DiscoverPlaylistCard,
+  DiscoverSetterPlaylistCard,
+  DiscoverSmartPlaylistCard,
+} from '../../../src/components/playlist/DiscoverPlaylistCard';
 import { PlaylistShelf } from '../../../src/components/playlist/PlaylistShelf';
 import { DiscoverTopChrome } from '../../../src/components/chrome';
 import { SMART_PLAYLISTS, type SmartPlaylistPresentation } from '../../../src/lib/smart-playlists';
@@ -34,7 +38,7 @@ import { useTheme } from '../../../src/providers/theme-provider';
 import { useToast } from '../../../src/providers/toast-provider';
 import { reportHandledError } from '../../../src/lib/error-reporting';
 import { useAuthToken } from '../../../src/lib/graphql/use-auth-token';
-import { useProfile } from '../../../src/lib/graphql/hooks';
+import { useProfile, useSetterStats } from '../../../src/lib/graphql/hooks';
 import { useActiveBoard } from '../../../src/lib/graphql/use-active-board';
 import { useBottomChromeMetrics } from '../../../src/hooks/use-bottom-chrome-metrics';
 import { iconMap } from '../../../src/components/icon-map';
@@ -42,6 +46,7 @@ import { selectByVariant } from '../../../src/theme/variants';
 import { iosSystemColors } from '../../../src/theme/ios-colors';
 import { spacing } from '../../../src/theme/tokens';
 import { MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT } from '../../../src/theme/layout';
+import { screenshotModeLoadMore } from '../../../src/lib/screenshot-mode';
 
 const FOR_YOU_SMART_PLAYLIST_TYPES: SmartPlaylistType[] = [
   'LIKED_CLIMBS',
@@ -55,6 +60,16 @@ const FOR_YOU_SMART_PLAYLIST_TYPES: SmartPlaylistType[] = [
 ];
 
 const NO_RECENT_PLAYLIST_CANDIDATES: Playlist[] = [];
+
+type ForYouCard =
+  | { kind: 'smart'; preset: SmartPlaylistPresentation; count: number }
+  | { kind: 'setter'; username: string; count: number };
+
+function forYouCardKey(card: ForYouCard): string {
+  return card.kind === 'smart' ? `smart:${card.preset.type}` : `setter:${card.username}`;
+}
+
+function noMoreForYouCards() {}
 
 const PINNED_SMART_PLAYLISTS_STORAGE_PREFIX = 'boardsesh_pinned_smart_playlists_v1';
 
@@ -116,6 +131,25 @@ export default function DiscoverLibrary() {
   // not-yet-onboarded user still sees community playlists.
   const filterBoardType = activeBoard?.boardType;
   const filterLayoutId = activeBoard?.layoutId;
+  const followedSettersEnabled = isAuthenticated && !!userId && !!activeBoard && !activeBoardLoading;
+  const followedSettersInput = useMemo(
+    () => ({
+      boardName: activeBoard?.boardType ?? '',
+      layoutId: activeBoard?.layoutId ?? 0,
+      sizeId: activeBoard?.sizeId ?? 0,
+      setIds: activeBoard?.setIds ?? '',
+      angle: activeBoard?.angle ?? 0,
+      onlyFollowedAuthors: true,
+      // A row opens the setter's page, which lists every angle on an angle-bound
+      // board (`setterPlaylistInput`, #5642), so the count beside it has to as well.
+      ...(activeBoard && getBoardCapabilities(activeBoard.boardType).angleBoundClimbs ? { crossAngleStats: true } : {}),
+    }),
+    [activeBoard],
+  );
+  const followedSetters = useSetterStats(followedSettersInput, followedSettersEnabled);
+  const followedSettersLoading = followedSettersEnabled && followedSetters.isLoading;
+  const followedSettersError = followedSettersEnabled && followedSetters.isError;
+  const refetchFollowedSetters = followedSetters.refetch;
 
   // Measured top-chrome height so the scroll content clears the floating islands
   // (seeded to the safe-area top + a row, like the Climbs list).
@@ -265,6 +299,16 @@ export default function DiscoverLibrary() {
     }).filter((entry): entry is { preset: (typeof SMART_PLAYLISTS)[number]; count: number } => entry !== null);
   }, [pinnedSmartPlaylistTypes, smartCounts, smartCountsByType, userId]);
 
+  const forYouCards = useMemo<ForYouCard[]>(
+    () => [
+      ...forYouSmartCards.map((card) => ({ kind: 'smart' as const, ...card })),
+      ...(followedSettersEnabled ? (followedSetters.data ?? []) : [])
+        .filter((setter) => setter.climbCount > 0)
+        .map((setter) => ({ kind: 'setter' as const, username: setter.setterUsername, count: setter.climbCount })),
+    ],
+    [forYouSmartCards, followedSetters.data, followedSettersEnabled],
+  );
+
   const pinnedSmartPlaylistTypeSet = useMemo(() => new Set(pinnedSmartPlaylistTypes), [pinnedSmartPlaylistTypes]);
 
   const pinnedSmartCards = useMemo(() => {
@@ -310,6 +354,42 @@ export default function DiscoverLibrary() {
   const goToSmartPlaylist = useCallback((smartPlaylistType: SmartPlaylistType) => {
     router.push(`/(tabs)/discover/smart/${smartPlaylistType}`);
   }, []);
+
+  const goToSetterPlaylist = useCallback((username: string) => {
+    router.push({ pathname: '/(tabs)/climbs/setter/[username]', params: { username } });
+  }, []);
+
+  const renderForYouCard = useCallback(
+    ({ item: card, index }: ListRenderItemInfo<ForYouCard>) =>
+      card.kind === 'setter' ? (
+        <DiscoverSetterPlaylistCard
+          username={card.username}
+          name={card.username}
+          climbCount={card.count}
+          variant="scroll"
+          index={index}
+          onOpen={goToSetterPlaylist}
+        />
+      ) : (
+        <DiscoverSmartPlaylistCard
+          smartType={card.preset.type}
+          name={t(card.preset.titleI18nKey)}
+          climbCount={card.count}
+          color={card.preset.color}
+          icon={card.preset.icon}
+          variant="scroll"
+          index={index}
+          onOpen={goToSmartPlaylist}
+          isPinned={pinnedSmartPlaylistTypeSet.has(card.preset.type)}
+          onPin={smartPinsHydrated ? handleToggleSmartPin : undefined}
+        />
+      ),
+    [goToSetterPlaylist, goToSmartPlaylist, handleToggleSmartPin, pinnedSmartPlaylistTypeSet, smartPinsHydrated, t],
+  );
+  const forYouInvalidation = useMemo(
+    () => ({ pinnedSmartPlaylistTypeSet, smartPinsHydrated, t }),
+    [pinnedSmartPlaylistTypeSet, smartPinsHydrated, t],
+  );
 
   const { showToast } = useToast();
   const { createPlaylist, pinPlaylist, unpinPlaylist } = usePlaylistMutations();
@@ -451,7 +531,8 @@ export default function DiscoverLibrary() {
       }
       refetchUser();
       refetchPinned();
-    }, [refetchUser, refetchPinned]),
+      if (followedSettersEnabled) void refetchFollowedSetters();
+    }, [refetchUser, refetchPinned, followedSettersEnabled, refetchFollowedSetters]),
   );
 
   const showSignInPrompt = !isAuthenticated && !authLoading;
@@ -460,19 +541,20 @@ export default function DiscoverLibrary() {
   // — show a retry rather than the "no playlists yet" empty state, which would
   // mislead a user who actually has playlists into thinking they have none.
   const showLoadError =
-    (userError || smartCountsError || communityError) &&
+    (userError || smartCountsError || communityError || followedSettersError) &&
     userPlaylists.length === 0 &&
     !hasVisiblePinnedItems &&
-    forYouSmartCards.length === 0 &&
+    forYouCards.length === 0 &&
     communityItems.length === 0 &&
-    !userLoading;
+    !userLoading &&
+    !followedSettersLoading;
 
-  // Every section here is network-only, and under `networkMode: 'offlineFirst'`
+  // Network-only sections under `networkMode: 'offlineFirst'`
   // an offline fetch pauses rather than failing — so `showLoadError` never fires
   // and the hub renders "No playlists yet" to someone who has plenty.
   const { effectiveOffline, reason: connectivityReason } = useConnectivity();
   const hasAnyDiscoverContent =
-    hasVisiblePinnedItems || userPlaylists.length > 0 || forYouSmartCards.length > 0 || communityItems.length > 0;
+    hasVisiblePinnedItems || userPlaylists.length > 0 || forYouCards.length > 0 || communityItems.length > 0;
   const showOfflineState = effectiveOffline && !hasAnyDiscoverContent && !showSignInPrompt && !showLoadError;
   // The placard hard-coded "offline" here, so a Boardsesh outage told a climber
   // with full bars that they had no signal. One shared ladder does the mapping,
@@ -483,7 +565,17 @@ export default function DiscoverLibrary() {
     if (userError) refetchUser();
     if (smartCountsError) void refetchSmartCounts();
     if (communityError) refetchCommunity();
-  }, [userError, smartCountsError, communityError, refetchUser, refetchSmartCounts, refetchCommunity]);
+    if (followedSettersError) void refetchFollowedSetters();
+  }, [
+    userError,
+    smartCountsError,
+    communityError,
+    followedSettersError,
+    refetchUser,
+    refetchSmartCounts,
+    refetchCommunity,
+    refetchFollowedSetters,
+  ]);
 
   return (
     <View style={styles.flex}>
@@ -570,32 +662,26 @@ export default function DiscoverLibrary() {
             loading={userLoading && unpinnedUserPlaylists.length === 0}
             isLoadingMore={userLoadingMore}
             hasMore={userHasMore || userLoadMoreError}
-            onEndReached={userLoadMoreError ? retryLoadMoreUser : loadMoreUser}
+            onEndReached={screenshotModeLoadMore(userLoadMoreError ? retryLoadMoreUser : loadMoreUser)}
             items={unpinnedUserPlaylists}
             renderItem={renderOwnedPlaylist}
             keyExtractor={playlistKey}
           />
         ) : null}
 
-        {/* For You — the same smart-playlist cards as web, in mobile product order. */}
-        {isAuthenticated && userId && (smartCountsLoading || forYouSmartCards.length > 0) ? (
-          <HorizontalScrollSection title={t('library.sections.forYou')} loading={smartCountsLoading}>
-            {forYouSmartCards.map(({ preset, count }, index) => (
-              <DiscoverSmartPlaylistCard
-                smartType={preset.type}
-                key={preset.type}
-                name={t(preset.titleI18nKey)}
-                climbCount={count}
-                color={preset.color}
-                icon={preset.icon}
-                variant="scroll"
-                index={index}
-                onOpen={goToSmartPlaylist}
-                isPinned={pinnedSmartPlaylistTypeSet.has(preset.type)}
-                onPin={smartPinsHydrated ? handleToggleSmartPin : undefined}
-              />
-            ))}
-          </HorizontalScrollSection>
+        {/* For You — personal smart playlists, then followed setters on this board. */}
+        {isAuthenticated && userId && (smartCountsLoading || followedSettersLoading || forYouCards.length > 0) ? (
+          <PlaylistShelf
+            title={t('library.sections.forYou')}
+            loading={(smartCountsLoading || followedSettersLoading) && forYouCards.length === 0}
+            isLoadingMore={(smartCountsLoading || followedSettersLoading) && forYouCards.length > 0}
+            hasMore={false}
+            onEndReached={noMoreForYouCards}
+            items={forYouCards}
+            renderItem={renderForYouCard}
+            keyExtractor={forYouCardKey}
+            extraData={forYouInvalidation}
+          />
         ) : null}
 
         {/* Community Playlists — user-made public playlists. */}
@@ -605,7 +691,7 @@ export default function DiscoverLibrary() {
             loading={communityLoading && communityItems.length === 0}
             isLoadingMore={communityLoadingMore}
             hasMore={communityHasMore}
-            onEndReached={loadMoreCommunity}
+            onEndReached={screenshotModeLoadMore(loadMoreCommunity)}
             items={communityItems}
             renderItem={renderCommunityPlaylist}
             keyExtractor={playlistKey}
@@ -644,12 +730,13 @@ export default function DiscoverLibrary() {
         isAuthenticated &&
         !userLoading &&
         !smartCountsLoading &&
+        !followedSettersLoading &&
         !communityLoading &&
         !profileLoading &&
         !showLoadError &&
         !hasVisiblePinnedItems &&
         userPlaylists.length === 0 &&
-        forYouSmartCards.length === 0 &&
+        forYouCards.length === 0 &&
         communityItems.length === 0 ? (
           <View style={styles.emptyContainer}>
             <Icon name="playlist" size={48} color={iosSystemColors.systemGray4} />
@@ -670,7 +757,7 @@ export default function DiscoverLibrary() {
         (authLoading || tokenLoading) &&
         !hasVisiblePinnedItems &&
         userPlaylists.length === 0 &&
-        forYouSmartCards.length === 0 &&
+        forYouCards.length === 0 &&
         communityItems.length === 0 ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" />

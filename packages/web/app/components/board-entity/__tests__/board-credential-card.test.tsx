@@ -7,12 +7,13 @@
  * it is the one sync-error code that must never be shown raw.
  */
 import { describe, it, expect, vi } from 'vite-plus/test';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import React from 'react';
 import { DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR } from '@boardsesh/shared-schema/sync-error-codes';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 import { BoardCredentialCard } from '../board-credential-card';
 import type { AuroraCredentialStatus } from '@/app/lib/aurora-credentials/client';
+import type { AuroraBoardName } from '@boardsesh/shared-schema';
 
 vi.mock('react-i18next', () => ({
   useTranslation: (ns?: string) => ({
@@ -35,10 +36,10 @@ function credentialWith(overrides: Partial<AuroraCredentialStatus> = {}): Aurora
   };
 }
 
-function renderCard(credential: AuroraCredentialStatus | null) {
+function renderCard(credential: AuroraCredentialStatus | null, boardType: AuroraBoardName = 'tension') {
   return render(
     <BoardCredentialCard
-      boardType="tension"
+      boardType={boardType}
       variant="aurora"
       credential={credential}
       unsyncedCounts={{ ascents: 0, climbs: 0 }}
@@ -94,5 +95,13 @@ describe('BoardCredentialCard', () => {
     renderCard(credentialWith({ syncError: 'legacy free text failure' }));
 
     expect(screen.getByText('legacy free text failure')).toBeTruthy();
+  });
+
+  it('uses the canonical So iLL name in the card and unlink confirmation', () => {
+    renderCard(credentialWith({ boardType: 'soill' }), 'soill');
+
+    expect(screen.getByText('So iLL Board')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: tFromCatalog('settings', 'aurora.card.unlink') }));
+    expect(screen.getByText('Are you sure you want to unlink your So iLL account?')).toBeTruthy();
   });
 });

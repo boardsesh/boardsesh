@@ -298,6 +298,41 @@ describe('ClimbActionsSheet controlled visible (always-mounted toggle)', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  // #5654: while the connect-step pill has the second row's right end, the play
+  // drawer moves share and the queue in here.
+  it('shows the queue and share rows only when the host wires them', () => {
+    render(<ClimbActionsSheet visible={true} {...baseProps} />);
+    expect(screen.queryByText('mobile.climbActions.openQueue')).toBeNull();
+    expect(screen.queryByText('share.actionLabel')).toBeNull();
+  });
+
+  it('opens the queue only once this sheet has gone', async () => {
+    const order: string[] = [];
+    sheet.dismissAndWait.mockImplementationOnce(async () => {
+      order.push('sheet dismissed');
+      return { status: 'dismissed' };
+    });
+    const onClose = vi.fn(() => order.push('closed'));
+    const onOpenQueue = vi.fn(() => order.push('queue opened'));
+    render(<ClimbActionsSheet visible={true} {...baseProps} onClose={onClose} onOpenQueue={onOpenQueue} />);
+
+    fireEvent.click(screen.getByText('mobile.climbActions.openQueue'));
+
+    await waitFor(() => expect(onOpenQueue).toHaveBeenCalledTimes(1));
+    expect(order).toEqual(['sheet dismissed', 'closed', 'queue opened']);
+  });
+
+  it('shares from the share row and closes', () => {
+    const onShare = vi.fn();
+    const onClose = vi.fn();
+    render(<ClimbActionsSheet visible={true} {...baseProps} onClose={onClose} onShare={onShare} />);
+
+    fireEvent.click(screen.getByText('share.actionLabel'));
+
+    expect(onShare).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
   it('hides the Edit entry row unless onEditEntry is provided', () => {
     render(<ClimbActionsSheet visible={true} {...baseProps} />);
     expect(screen.queryByText('mobile.climbActions.editEntry')).toBeNull();
@@ -339,6 +374,9 @@ describe('ClimbActionsSheet create-climb navigation (Remix / Edit)', () => {
         forkFrames: 'p1r12',
         forkName: 'Test Climb',
         forkDescription: '',
+        // The parent's grade rides along so a remix on a board that publishes
+        // with the setter's own grade (a spray wall) opens at it (#5443).
+        forkDifficulty: 'V4',
         boardName: 'kilter',
         layoutId: '1',
         sizeId: '10',

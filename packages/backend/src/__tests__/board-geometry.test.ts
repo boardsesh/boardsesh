@@ -1,7 +1,12 @@
 import { gunzipSync } from 'node:zlib';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { handleBoardGeometry, isBoardGeometryPath, resetBoardGeometryCache } from '../handlers/board-geometry';
+import {
+  handleBoardGeometry,
+  isBoardGeometryPath,
+  resetBoardGeometryCache,
+  getBoardGeometryCacheStats,
+} from '../handlers/board-geometry';
 import { loadBoardArtGeometry } from '@boardsesh/board-art-geometry';
 import { RateLimitError } from '../utils/rate-limiter';
 import { checkRateLimitRedis } from '../utils/redis-rate-limiter';
@@ -66,6 +71,19 @@ describe('isBoardGeometryPath', () => {
 });
 
 describe('GET /render/geometry', () => {
+  it('does not retain arbitrary missing geometry IDs', async () => {
+    for (let layoutId = 10_000; layoutId < 11_000; layoutId++) {
+      const response = await callGeometry(`board_name=kilter&layout_id=${layoutId}&size_id=999`, {
+        'accept-encoding': 'gzip',
+      });
+      expect(response.status).toBe(200);
+      expect(decode(response)).toEqual({});
+    }
+    expect(getBoardGeometryCacheStats().entries).toBe(0);
+    await callGeometry('board_name=kilter&layout_id=1&size_id=10');
+    expect(getBoardGeometryCacheStats().entries).toBe(1);
+  });
+
   it('hands over the traced art for one board config', async () => {
     const response = await callGeometry('board_name=kilter&layout_id=1&size_id=10');
     expect(response.status).toBe(200);

@@ -28,6 +28,11 @@ vi.mock('@/app/lib/backend-url', () => ({
 
 const { generateMetadata } = await import('../page');
 
+// The base fixture is a GEOCODED commercial gym, because that is the only kind
+// of gym this page still offers to the index. A pin-less row is a climber's home
+// wall (see `gymIsIndexableVenue`) and goes `noindex, follow` with no canonical
+// and no hreflang cluster — so every canonical/alternate assertion below would
+// pass vacuously without these coordinates.
 function gym(slug: string, overrides: Partial<Gym> = {}): Gym {
   return {
     uuid: `uuid-${slug}`,
@@ -36,6 +41,8 @@ function gym(slug: string, overrides: Partial<Gym> = {}): Gym {
     isPublic: true,
     canEdit: false,
     description: 'A big gym',
+    latitude: 48.1351,
+    longitude: 11.582,
     ...overrides,
   } as unknown as Gym;
 }
@@ -94,6 +101,57 @@ describe('gym page metadata', () => {
     const metadata = await metadataFor('private-gym', {});
 
     expect(metadata.robots).toEqual({ index: false, follow: true });
+    // A private gym USED to keep its canonical and its hreflang cluster: it was
+    // noindexed with a `path`. It no longer is, and that change is deliberate —
+    // an owner's unpublished listing should advertise no locale twins either.
+    expect(metadata.alternates).toBeUndefined();
+  });
+
+  it('indexes a public gym that carries a pin', async () => {
+    executeAuthenticatedGraphQL.mockResolvedValue({ gymBySlug: gym('geocoded-gym') });
+
+    const metadata = await metadataFor('geocoded-gym', {});
+
+    expect(metadata.robots).toBeUndefined();
+    expect(metadata.alternates?.canonical).toBe('/gym/geocoded-gym');
+  });
+
+  // A public gym with no coordinates is a climber's personal home wall: the
+  // Aurora sync geocodes every commercial gym it writes, and 1,053 of these
+  // names begin with the owner's own display name.
+  it('keeps a pin-less home wall out of the index', async () => {
+    executeAuthenticatedGraphQL.mockResolvedValue({
+      gymBySlug: gym('home-wall', { latitude: null, longitude: null }),
+    });
+
+    const metadata = await metadataFor('home-wall', {});
+
+    expect(metadata.robots).toEqual({ index: false, follow: true });
+  });
+
+  it('publishes no canonical and no hreflang cluster for a home wall', async () => {
+    executeAuthenticatedGraphQL.mockResolvedValue({
+      gymBySlug: gym('home-wall-alternates', { latitude: null, longitude: null }),
+    });
+
+    const metadata = await metadataFor('home-wall-alternates', {});
+
+    // Both halves matter. A canonical re-nominates the page as the one to index,
+    // and a four-locale hreflang block republishes the three locale twins we are
+    // removing — on a page that just said `noindex`.
+    expect(metadata.alternates).toBeUndefined();
+    expect(metadata.openGraph?.url).toBeUndefined();
+  });
+
+  it('treats half a pin as no pin', async () => {
+    executeAuthenticatedGraphQL.mockResolvedValue({
+      gymBySlug: gym('half-pin', { latitude: 48.1351, longitude: null }),
+    });
+
+    const metadata = await metadataFor('half-pin', {});
+
+    expect(metadata.robots).toEqual({ index: false, follow: true });
+    expect(metadata.alternates).toBeUndefined();
   });
 });
 

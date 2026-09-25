@@ -1,6 +1,15 @@
 import { toFlatFrames as toFlatFramesShared } from '@boardsesh/board-constants/hold-states';
 import { BOARD_FIELD_COLORS } from '@boardsesh/board-look';
 import type { RenderMode } from '@boardsesh/board-render/render-config';
+// Leaf subpath for the same reason as the version constant below: `validation`
+// carries zod and nothing else, while the barrel would drag the sharp pipeline
+// into the client bundle.
+import {
+  MAX_CARD_NAME_CODEPOINTS,
+  MAX_CARD_SETTER_CODEPOINTS,
+  OG_CARD_GRADE_PATTERN,
+  normalizeOgCardText,
+} from '@boardsesh/board-render/validation';
 // Leaf subpath, not the package barrel: this module compiles into the client
 // bundle, and the barrel pulls in the render pipeline. The generated constant
 // has no imports at all.
@@ -305,7 +314,27 @@ export const buildOverlayPreloadUrls = (
  * "helpfully" add `v` here. The fallback branch goes through
  * `buildBoardRenderUrl` and is versioned like every other web producer.
  */
-export const buildOgBoardRenderUrl = (boardDetails: BoardDetails, frames: string) => {
+export type OgClimbCardIdentity = {
+  /** Climb name as displayed. */
+  name?: string | null;
+  /** Grade label, e.g. `7a/V6`. */
+  grade?: string | null;
+  /** Setter's display name. */
+  setter?: string | null;
+  /** Wall angle in degrees. */
+  angle?: number | null;
+};
+
+const toCardGrade = (grade: string | null | undefined): string | undefined => {
+  const trimmed = grade?.trim();
+  return trimmed && OG_CARD_GRADE_PATTERN.test(trimmed) ? trimmed : undefined;
+};
+
+export const buildOgBoardRenderUrl = (
+  boardDetails: BoardDetails,
+  frames: string,
+  identity: OgClimbCardIdentity = {},
+) => {
   const flatFrames = toFlatFrames(frames, boardDetails.board_name);
   const backendOrigin = getPublicBackendHttpUrl();
 
@@ -324,6 +353,24 @@ export const buildOgBoardRenderUrl = (boardDetails: BoardDetails, frames: string
       render_mode: 'aura',
       field_color: AURA_FIELD_COLOR,
     });
+
+    // The climb's identity, drawn in the card's right-hand column. Normalised
+    // here as well as on the server so the URL and the pixels agree, and an
+    // empty field is omitted rather than sent as `s=` — an empty param would
+    // still change the URL, and the URL is the cache key.
+    const identityParams: [string, string | undefined][] = [
+      ['n', normalizeOgCardText(identity.name ?? '', MAX_CARD_NAME_CODEPOINTS)],
+      // Matched against the server's own pattern, not just trimmed. A grade the
+      // schema rejects is a 400, and a 400 is no card at all — so an
+      // unrecognised grade costs the grade, never the image.
+      ['g', toCardGrade(identity.grade)],
+      ['s', normalizeOgCardText(identity.setter ?? '', MAX_CARD_SETTER_CODEPOINTS)],
+      ['angle', identity.angle === null || identity.angle === undefined ? undefined : String(identity.angle)],
+    ];
+    for (const [key, value] of identityParams) {
+      if (value) backendParams.set(key, value);
+    }
+
     return `${backendOrigin}/og/climb?${backendParams}`;
   }
 
@@ -369,3 +416,40 @@ export const getImageUrl = (imageUrl: string, board: BoardName, thumbnail?: bool
 
 export const getBoardImageDimensions = (board: BoardName, firstImage: string) =>
   BOARD_IMAGE_DIMENSIONS[board][firstImage];
+
+/**
+ * OG card image for a climb on a spray wall.
+ *
+ * Its own builder rather than a branch in `buildOgBoardRenderUrl`, because the
+ * catalogue builder needs a `BoardDetails` and a wall has none: there is no
+ * layout, size or set art to address. A wall's card is composed by the backend
+ * from the wall's public photo copy and the holds the frames light up, so the
+ * only parameters that mean anything are the layout id and the frames. The
+ * others are sent because `ogClimbQuerySchema` requires them, and a wall's size
+ * id is always its layout id with one synthetic hold set.
+ *
+ * Returns `null` when the backend origin cannot be resolved. There is no
+ * fallback: the web board-render route draws from the bundled catalogue art and
+ * could not produce a wall's card, and a URL that renders a blank board is
+ * worse in a share sheet than no `og:image` at all.
+ */
+export const buildSprayOgImageUrl = (layoutId: number, frames: string): string | null => {
+  const backendOrigin = getPublicBackendHttpUrl();
+  if (!backendOrigin) return null;
+
+  // `ogClimbQuerySchema` requires `frames`, so a climb with none would publish an
+  // `og:image` that answers 400. No card at all is the better share sheet.
+  const flatFrames = toFlatFrames(frames, 'spray');
+  if (!flatFrames) return null;
+
+  const backendParams = new URLSearchParams({
+    board_name: 'spray',
+    layout_id: String(layoutId),
+    // A wall's size id IS its layout id, and its one synthetic hold set is 1.
+    size_id: String(layoutId),
+    set_ids: '1',
+    frames: flatFrames,
+    format: 'jpeg',
+  });
+  return `${backendOrigin}/og/climb?${backendParams}`;
+};

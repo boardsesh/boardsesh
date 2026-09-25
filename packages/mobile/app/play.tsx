@@ -51,9 +51,11 @@ export default function PlayScreen() {
     isAngleAdjustable,
     boardMismatch,
     mismatchBoardLabel,
+    reachableBoardKeys,
     onAngleChange,
     onSwitchBoard,
     onPlayDrawerClosed,
+    onPlayDrawerTargetConsumed,
     playTarget,
   } = usePlayDrawerRoute();
   const { boardConfig: storedBoardConfig, openPlayDrawer, openClimbActions, openLogAscent } = useDrawerHost();
@@ -94,6 +96,19 @@ export default function PlayScreen() {
   const onClosedRef = useRef(onPlayDrawerClosed);
   onClosedRef.current = onPlayDrawerClosed;
   useEffect(() => () => onClosedRef.current(), []);
+
+  // Tell the host which target this route has actually applied. The close above
+  // is only allowed to clear that one — a target written by a tap that landed
+  // during the dismiss window never reaches this effect (the route is already
+  // unmounting), so it survives and the next mount serves the tap instead of
+  // swallowing it. Runs in the same commit as PlayDrawer's own apply effect.
+  const onTargetConsumedRef = useRef(onPlayDrawerTargetConsumed);
+  onTargetConsumedRef.current = onPlayDrawerTargetConsumed;
+  const playTargetNonce = playTarget?.nonce;
+  useEffect(() => {
+    if (playTargetNonce == null) return;
+    onTargetConsumedRef.current(playTargetNonce);
+  }, [playTargetNonce]);
 
   // The queue renders climbs against the stored active board (thumbnails + tick),
   // same as the host's instance.
@@ -156,6 +171,7 @@ export default function PlayScreen() {
             isAngleAdjustable={isAngleAdjustable}
             onOpenQueue={presentQueue}
             boardMismatch={boardMismatch}
+            reachableBoardKeys={reachableBoardKeys}
             mismatchBoardLabel={mismatchBoardLabel}
             onSwitchBoard={onSwitchBoard}
             onOpenClimbActions={openPlayerClimbActions}

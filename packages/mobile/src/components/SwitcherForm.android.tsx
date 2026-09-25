@@ -195,7 +195,9 @@ function renderRow(row: SwitcherRow, errorColor: string): ReactNode {
       return (
         <Row key={row.key} modifiers={[fillMaxWidth(), ROW_PADDING]} verticalAlignment="center">
           {row.busy ? (
-            <CircularProgressIndicator modifiers={[size(20, 20), padding(0, 0, spacing[3], 0)]} strokeWidth={2} />
+            // Padding before size, not after — see Button.android.tsx for why
+            // the reverse order draws the indicator shrunk and off-centre.
+            <CircularProgressIndicator modifiers={[padding(0, 0, spacing[3], 0), size(20, 20)]} strokeWidth={2} />
           ) : null}
           <Text style={{ typography: 'bodySmall' }} modifiers={[alpha(0.6)]}>
             {row.label}

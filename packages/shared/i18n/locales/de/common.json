@@ -10,8 +10,8 @@
       "viewProfile": "Profil von {{name}} ansehen",
       "thisClimber": "dieser Person"
     },
-    "more": {
-      "title": "Mehr",
+    "settings": {
+      "title": "Einstellungen",
       "library": "Bibliothek",
       "development": "Entwicklung",
       "dev": {
@@ -386,11 +386,20 @@
       },
       "previews": {
         "title": "Vorschauen",
+        "promptOnLaunchTitle": "Vorschauen beim Start anzeigen",
+        "promptOnLaunchSubtitle": "Gilt ab dem nächsten Start von Boardsesh",
         "pickTitle": "PR-Vorschau testen",
         "pickSubtitle": "Probier eine Änderung vor dem Release und sag uns, wie sie läuft",
         "testPlanTitle": "Testplan #{{prNumber}}",
         "testPlanSubtitle": "Was du in der laufenden Vorschau ausprobieren sollst"
       }
+    },
+    "sendRecovery": {
+      "title_one": "1 Begehung ist unterwegs",
+      "title_other": "{{count}} Begehungen sind unterwegs",
+      "body_one": "Du hast sie eingetragen, aber bei uns ist sie nie angekommen. Wir haben sie gefunden und zurück in die Warteschlange gelegt. Sobald du online bist, wird sie übertragen, du musst sie also nicht noch einmal eintragen.",
+      "body_other": "Du hast sie eingetragen, aber bei uns sind sie nie angekommen. Wir haben sie gefunden und zurück in die Warteschlange gelegt. Sobald du online bist, werden sie übertragen, du musst sie also nicht noch einmal eintragen.",
+      "dismiss": "Alles klar"
     },
     "about": {
       "title": "Über",
@@ -409,9 +418,7 @@
       "partnerTitle": "Offiziell mit uns zusammenarbeiten",
       "partnerBody": "Boardsesh arbeitet von außen mit Kilter, Tension und MoonBoard. Wenn du Boards baust und etwas Offizielles zusammen machen willst, reden wir gern.",
       "acknowledgementsLink": "Danksagungen",
-      "acknowledgementsLinkBody": "Die Menschen hinter Boardsesh",
-      "changelogLink": "Neuigkeiten",
-      "changelogLinkBody": "Aktuelle Updates und Fixes"
+      "acknowledgementsLinkBody": "Die Menschen hinter Boardsesh"
     },
     "acknowledgements": {
       "title": "Danksagungen",
@@ -422,7 +429,8 @@
       "sponsorsBody": "Kletterer*innen, die über GitHub Sponsors das Licht anlassen.",
       "sponsorsEmpty": "Noch keine Sponsoren — willst du den Anfang machen?",
       "privateSponsorsThanks": "und {{count}} weitere, die privat sponsern — auch euch danke",
-      "becomeSponsor": "Sponsor werden",
+      "becomeSponsor": "Boardsesh unterstützen",
+      "supportFallback": "Boardsesh ist kostenlos und wird von der Community finanziert. {{url}}",
       "poweredByTitle": "Läuft mit",
       "xpremBody": "Mercure Technologies hat Boardsesh eine Enterprise-Lizenz für xprem geschenkt, den Server hinter unseren Over-the-Air-Updates. Deshalb landen Fixes auf deinem Handy, ohne auf eine Store-Prüfung zu warten, und deshalb kannst du unter Neuigkeiten eine Vorschau ausprobieren.",
       "personalTitle": "Persönlicher Dank",
@@ -467,7 +475,16 @@
         "workout": "Bau ein Workout: Volumen, Pyramide, Leiter oder Grad-Fokus. Grad setzen, Runs vorab ansehen, einen nach dem anderen toppen.",
         "crew": "Kletterst du mit anderen? Startet eine Session und teilt euch eine Warteschlange. Jede*r legt den nächsten Run auf, ohne das Handy weiterzureichen.",
         "record": "Deine Begehungen landen unter Fortschritt im Diagramm: Gradverteilung und schwerste Begehung. Importier dein Kilter- und Tension-Routenbuch aus Aurora und starte mit deiner Historie.",
-        "accessory": "Die Leiste unten zeigt immer, was auf dem Board liegt. Von dort wechselst du Boulder."
+        "accessory": "Die Leiste unten zeigt immer, was auf dem Board liegt. Von dort wechselst du Boulder.",
+        "climbsTab": "Um zu deinen Bouldern zurückzukommen, tipp in der Tab-Leiste auf die Lupe."
+      },
+      "link": {
+        "title": "Nimm deine {{boardName}}-Begehungen mit",
+        "body": "Dein {{boardName}}-Konto und Boardsesh sind getrennt, auch mit derselben E-Mail-Adresse. Verknüpfe dein Konto, um verfügbare Begehungen mit deinem Routenbuch zu synchronisieren. Dauer und verfügbarer Verlauf variieren.",
+        "footnote": "Zum Verknüpfen brauchst du deinen {{boardName}}-Benutzernamen, nicht deine E-Mail.",
+        "continue": "Mein {{boardName}}-Konto verknüpfen",
+        "skip": "Jetzt nicht",
+        "skipHint": "Du kannst das jederzeit unter Einstellungen › Verbundene Apps machen."
       }
     },
     "nav": {
@@ -556,7 +573,7 @@
       "serverTitle": "Boardsesh ist gerade nicht erreichbar",
       "serverBody": "Dafür brauchen wir unseren Server. Heruntergeladene Boards kannst du weiter durchstöbern, durchsuchen und Begehungen eintragen, und deine Begehungen warten auf deinem Handy.",
       "offlineModeTitle": "Offline-Modus ist an",
-      "offlineModeBody": "Dafür brauchst du eine Verbindung. Schalte den Offline-Modus im Hinweis oder unter Mehr aus, um es zu laden.",
+      "offlineModeBody": "Dafür brauchst du eine Verbindung. Schalte den Offline-Modus im Hinweis oder unter „Einstellungen“ aus, um es zu laden.",
       "errorTitle": "Konnte nicht geladen werden",
       "errorBody": "Das ist nicht durchgekommen. Versuch es noch mal.",
       "retry": "Erneut versuchen"
@@ -607,7 +624,7 @@
     "statistics": "Statistiken",
     "sessions": "Sessions",
     "createdClimbs": "Gebaute Boulder",
-    "auroraMigration": "Aurora-Migration",
+    "auroraMigration": "Routenbuch mitnehmen",
     "startClimbing": "Loslegen",
     "signIn": "Anmelden",
     "nav": {
@@ -860,16 +877,17 @@
     "fallbackCta": "Stattdessen die Store-Seite öffnen"
   },
   "footer": {
-    "tagline": "Finde Boulder, teile sie und sieh, was am Board deiner Halle hängt. Geklettert wird in der App.",
+    "tagline": "Deine Boards. Eine App. Wechsle das Board, ohne die App zu wechseln.",
     "navLabel": "Fußzeile",
     "trademarkNote": "Kompatibel mit Kilter, Tension und MoonBoard. Nicht mit Aurora Climbing oder Moon Climbing verbunden.",
     "links": {
       "home": "Startseite",
       "about": "Über uns",
+      "support": "Boardsesh unterstützen",
       "help": "Hilfe",
       "docs": "Doku",
       "playlists": "Playlists",
-      "auroraMigration": "Aurora-Migration",
+      "auroraMigration": "Routenbuch mitnehmen",
       "legal": "Impressum",
       "privacy": "Datenschutz",
       "gymsKilter": "Hallen mit einem Kilter Board",

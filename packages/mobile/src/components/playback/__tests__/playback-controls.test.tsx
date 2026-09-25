@@ -98,9 +98,15 @@ vi.mock('react-native-gesture-handler', () => {
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     // Interpolating (rather than the usual identity `t`) so the per-frame chip
-    // labels are distinguishable — they all share one key.
-    t: (key: string, options?: { index?: number; total?: number }) =>
-      options ? `${key}:${options.index}/${options.total}` : key,
+    // labels are distinguishable — they all share one key. The pace label is the
+    // one key that interpolates something else, so it gets its own shape.
+    t: (key: string, options?: { index?: number; total?: number; count?: number }) => {
+      if (!options) return key;
+      // `count` drives i18next pluralisation, so the real `t` resolves a
+      // `_one`/`_other` sibling; the shape below is enough to assert the value.
+      if (options.count !== undefined) return `${key}:${options.count}`;
+      return `${key}:${options.index}/${options.total}`;
+    },
   }),
 }));
 
@@ -157,21 +163,19 @@ type ControlsProps = Parameters<typeof PlaybackControls>[0];
 
 function renderControls(overrides: Partial<ControlsProps> = {}) {
   const onSeek = vi.fn();
-  const onSpeedChange = vi.fn();
-  const onPaceChange = vi.fn();
+  const onPaceSecondsChange = vi.fn();
   const onAddFrame = vi.fn();
   const { container } = render(
     createElement(PlaybackControls, {
       frameIndex: 0,
       frameCount: 4,
       isPlaying: false,
-      speed: 1,
-      paceMs: 750,
+      paceSeconds: 0.75,
+      magnetSeconds: 0.75,
       onPlay: vi.fn(),
       onPause: vi.fn(),
       onSeek,
-      onSpeedChange,
-      onPaceChange,
+      onPaceSecondsChange,
       ...overrides,
     } as ControlsProps),
   );
@@ -182,8 +186,7 @@ function renderControls(overrides: Partial<ControlsProps> = {}) {
   return {
     container,
     onSeek,
-    onSpeedChange,
-    onPaceChange,
+    onPaceSecondsChange,
     onAddFrame,
     strip,
     chips,
@@ -191,7 +194,7 @@ function renderControls(overrides: Partial<ControlsProps> = {}) {
     editPair: container.querySelector('[data-testid="playback-frame-edit-pair"]') as HTMLElement | null,
     addFrame: container.querySelector('[data-testid="playback-add-frame"]') as HTMLButtonElement | null,
     deleteFrame: container.querySelector('[data-testid="playback-delete-frame"]') as HTMLButtonElement | null,
-    pill: container.querySelector('[data-label^="playView.speed,"]') as HTMLButtonElement | null,
+    pill: container.querySelector('[data-label^="playView.pace,"]') as HTMLButtonElement | null,
   };
 }
 
@@ -210,14 +213,16 @@ describe('PlaybackControls — play drawer (no creator props)', () => {
     expect(container.textContent).toContain('1 / 4');
   });
 
-  it('shows the multiplier, not seconds, and drives onSpeedChange', () => {
-    const { pill, onSpeedChange, onPaceChange } = renderControls({ speed: 1, paceMs: 750 });
+  it('reads seconds a frame, the same unit the creator authors in', () => {
+    // The reader used to see a ×multiplier here. It said nothing on its own:
+    // 0.5× is 1.5s a frame on a route paced at 750ms and 24s on one paced at
+    // 12s, which is why climbers asked for a real unit (#4633).
+    const { pill, onPaceSecondsChange } = renderControls({ paceSeconds: 0.75 });
 
-    expect(pill?.getAttribute('data-label')).toBe('playView.speed, 1×');
+    expect(pill?.getAttribute('data-label')).toBe('playView.pace, playView.paceValueA11y:0.8');
     pill?.click();
-    // 1× → the next preset above it.
-    expect(onSpeedChange).toHaveBeenCalledWith(1.5);
-    expect(onPaceChange).not.toHaveBeenCalled();
+    // 0.75s → the next preset above it.
+    expect(onPaceSecondsChange).toHaveBeenCalledWith(1);
   });
 
   it('hands prev/play/next to one cluster at a single height', () => {
@@ -344,44 +349,63 @@ describe('PlaybackControls — creator frame strip', () => {
 });
 
 describe('PlaybackControls — seconds-per-frame pill', () => {
-  it('renders the authored pace, trimming a trailing zero', () => {
-    expect(renderControls({ paceMs: 800, paceUnit: 'seconds' }).pill?.getAttribute('data-label')).toBe(
-      'playView.speed, 0.8s',
-    );
-    expect(renderControls({ paceMs: 3000, paceUnit: 'seconds' }).pill?.getAttribute('data-label')).toBe(
-      'playView.speed, 3s',
-    );
-    expect(renderControls({ paceMs: 1500, paceUnit: 'seconds' }).pill?.getAttribute('data-label')).toBe(
-      'playView.speed, 1.5s',
-    );
+  const labelFor = (paceSeconds: number) => renderControls({ paceSeconds }).pill?.textContent;
+
+  it('renders the pace, trimming a trailing zero', () => {
+    expect(labelFor(0.8)).toBe('0.8s');
+    expect(labelFor(3)).toBe('3s');
+    expect(labelFor(1.5)).toBe('1.5s');
   });
 
-  it('cycles the pace presets on tap and reports milliseconds', () => {
-    const fromDefault = renderControls({ paceMs: 800, paceUnit: 'seconds' });
-    fromDefault.pill?.click();
-    expect(fromDefault.onPaceChange).toHaveBeenCalledWith(1500);
+  it('drops the decimal past ten seconds, so the pill never outgrows its slot', () => {
+    // The pill's width is a layout contract — a fifth glyph would walk the whole
+    // transport row sideways mid-drag.
+    expect(labelFor(12.4)).toBe('12s');
+    expect(labelFor(60)).toBe('60s');
+    expect(labelFor(9.9)).toBe('9.9s');
+  });
 
-    const fromTop = renderControls({ paceMs: 5000, paceUnit: 'seconds' });
+  it('cycles the presets on tap, wrapping past the slowest', () => {
+    const fromDefault = renderControls({ paceSeconds: 0.8 });
+    fromDefault.pill?.click();
+    expect(fromDefault.onPaceSecondsChange).toHaveBeenCalledWith(1);
+
+    const fromTop = renderControls({ paceSeconds: 20 });
     fromTop.pill?.click();
     // Past the slowest preset it wraps to the fastest rather than sticking.
-    expect(fromTop.onPaceChange).toHaveBeenCalledWith(500);
+    expect(fromTop.onPaceSecondsChange).toHaveBeenCalledWith(0.5);
+  });
+
+  it('reaches the slow end of the range the catalogue actually uses', () => {
+    // Roughly half of all synced multi-frame routes are paced slower than 10s a
+    // frame. A preset list that stopped short of them would make the pill
+    // useless on exactly the routes the seconds unit was asked for.
+    const midRange = renderControls({ paceSeconds: 12 });
+    midRange.pill?.click();
+    expect(midRange.onPaceSecondsChange).toHaveBeenCalledWith(20);
   });
 
   it('cycles back into the legal range from a pace outside it', () => {
-    // A climb saved with a nonsense pace (or one authored before the range
-    // existed) must not strand the pill: the next tap lands on a real preset.
-    const tooFast = renderControls({ paceMs: 50, paceUnit: 'seconds' });
+    // A climb saved with a nonsense pace (or one synced from a slower setter)
+    // must not strand the pill: the next tap lands on a real preset.
+    const tooFast = renderControls({ paceSeconds: 0.05 });
     tooFast.pill?.click();
-    expect(tooFast.onPaceChange).toHaveBeenCalledWith(500);
+    expect(tooFast.onPaceSecondsChange).toHaveBeenCalledWith(0.5);
 
-    const tooSlow = renderControls({ paceMs: 60_000, paceUnit: 'seconds' });
+    const tooSlow = renderControls({ paceSeconds: 120 });
     tooSlow.pill?.click();
-    expect(tooSlow.onPaceChange).toHaveBeenCalledWith(500);
+    expect(tooSlow.onPaceSecondsChange).toHaveBeenCalledWith(0.5);
   });
 
-  it('leaves onSpeedChange alone in seconds mode', () => {
-    const { pill, onSpeedChange } = renderControls({ paceMs: 800, paceUnit: 'seconds' });
-    pill?.click();
-    expect(onSpeedChange).not.toHaveBeenCalled();
+  it('never commits a pace outside the range, whatever it was handed', () => {
+    // The commit path clamps, so a stored pace the slider cannot express can be
+    // displayed honestly without becoming authorable.
+    for (const paceSeconds of [0.01, 0.3, 45, 600]) {
+      const { pill, onPaceSecondsChange } = renderControls({ paceSeconds });
+      pill?.click();
+      const [committed] = onPaceSecondsChange.mock.calls[0] as [number];
+      expect(committed).toBeGreaterThanOrEqual(0.3);
+      expect(committed).toBeLessThanOrEqual(60);
+    }
   });
 });

@@ -28,7 +28,10 @@ vi.mock('../../../providers/theme-provider', () => ({
   }),
 }));
 vi.mock('../../../lib/haptics', () => ({ hapticLight: vi.fn() }));
-vi.mock('@boardsesh/profile-stats', () => ({ formatTickRelativeTime: () => 'now' }));
+// CommentSheet calls the mobile wrapper (`lib/format-relative-time.ts`), which
+// itself imports these from @boardsesh/profile-stats — tickTimeMs only gates
+// the empty-string guard, so any finite return keeps it a no-op.
+vi.mock('@boardsesh/profile-stats', () => ({ formatTickRelativeTime: () => 'now', tickTimeMs: () => 0 }));
 
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },

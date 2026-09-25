@@ -12,6 +12,7 @@
  */
 
 import type { BoardPresenceClimb } from '@boardsesh/shared-schema';
+import { compareBoardDisplayTimes, mergeBoardHistory } from './history';
 import type { BoardPresenceState, BoardPresenceAction } from './types';
 
 /** Newest-first history is capped so a long session can't grow unbounded. */
@@ -22,6 +23,7 @@ export const initialBoardPresenceState: BoardPresenceState = {
   previousClimb: null,
   history: [],
   lastSeq: 0,
+  lastClearedAt: null,
   stats: null,
   lastStatsSeq: 0,
   holder: null,
@@ -57,107 +59,85 @@ function historyHasEntry(history: BoardPresenceClimb[], climb: BoardPresenceClim
  * those fields.
  */
 function mergeHistory(existing: BoardPresenceClimb[], incoming: BoardPresenceClimb[]): BoardPresenceClimb[] {
-  const byKey = new Map<string, BoardPresenceClimb>();
-  for (const climb of existing) {
-    byKey.set(`${climb.climbUuid}:${climb.seq}`, climb);
+  return mergeBoardHistory(existing, incoming, HISTORY_CAP);
+}
+
+/**
+ * Native sequence numbers order native sets/clears. Imported sequence numbers
+ * describe arrival, so they never advance that cursor. Across sources, the
+ * latest display timestamp wins; native wins an exact timestamp tie.
+ */
+function updateWallFromHistory(
+  state: BoardPresenceState,
+  history: BoardPresenceClimb[],
+  lastSeq: number,
+  lastClearedAt = state.lastClearedAt,
+): BoardPresenceState {
+  const native =
+    history.find((climb) => climb.source !== 'kilter' && climb.seq === lastSeq) ??
+    (state.currentClimb?.source !== 'kilter' && state.currentClimb?.seq === lastSeq ? state.currentClimb : null);
+  const imported = history.find(
+    (climb) =>
+      climb.source === 'kilter' &&
+      Number.isFinite(Date.parse(climb.sentAt)) &&
+      (lastClearedAt === null ||
+        (Number.isFinite(Date.parse(lastClearedAt)) && compareBoardDisplayTimes(climb.sentAt, lastClearedAt) > 0)),
+  );
+  const currentClimb =
+    imported && (!native || compareBoardDisplayTimes(imported.sentAt, native.sentAt) > 0) ? imported : native;
+  if (
+    history === state.history &&
+    currentClimb === state.currentClimb &&
+    lastSeq === state.lastSeq &&
+    lastClearedAt === state.lastClearedAt
+  ) {
+    return state;
   }
-  for (const climb of incoming) {
-    const key = `${climb.climbUuid}:${climb.seq}`;
-    if (!byKey.has(key)) {
-      byKey.set(key, climb);
-    }
-  }
-  const merged = Array.from(byKey.values())
-    .sort((left, right) => right.seq - left.seq)
-    .slice(0, HISTORY_CAP);
-  if (merged.length === existing.length && merged.every((entry, index) => entry === existing[index])) {
-    return existing;
-  }
-  return merged;
+  return {
+    ...state,
+    history,
+    currentClimb,
+    previousClimb: currentClimb === state.currentClimb ? state.previousClimb : state.currentClimb,
+    lastSeq,
+    lastClearedAt,
+  };
 }
 
 export function boardPresenceReducer(state: BoardPresenceState, action: BoardPresenceAction): BoardPresenceState {
   switch (action.type) {
+    case 'MERGE_HISTORY': {
+      const history = mergeHistory(state.history, action.payload);
+      const lastSeq = action.payload.reduce(
+        (highest, climb) => (climb.source === 'kilter' ? highest : Math.max(highest, climb.seq)),
+        state.lastSeq,
+      );
+      return updateWallFromHistory(state, history, lastSeq);
+    }
     case 'APPLY_CLIMB_SET': {
       const incomingClimb = action.payload;
 
-      // Dedup + ordering: a stale live event must not regress the wall, but if
-      // Redis delivers a real older set after a newer one, keep it in history.
+      // A stale native set can fill history, but cannot regress native wall state.
       if (incomingClimb.seq <= state.lastSeq) {
-        if (historyHasEntry(state.history, incomingClimb)) {
-          return state;
-        }
-        const mergedHistory = mergeHistory(state.history, [incomingClimb]);
-        if (mergedHistory === state.history) {
-          return state;
-        }
-        return {
-          ...state,
-          history: mergedHistory,
-        };
+        if (historyHasEntry(state.history, incomingClimb)) return state;
+        const history = mergeHistory(state.history, [incomingClimb]);
+        return history === state.history ? state : { ...state, history };
       }
-
-      if (historyHasEntry(state.history, incomingClimb)) {
-        return state;
-      }
-
-      return {
-        ...state,
-        currentClimb: incomingClimb,
-        previousClimb: state.currentClimb,
-        history: [incomingClimb, ...state.history].slice(0, HISTORY_CAP),
-        lastSeq: Math.max(state.lastSeq, incomingClimb.seq),
-      };
+      return updateWallFromHistory(state, mergeHistory(state.history, [incomingClimb]), incomingClimb.seq);
     }
 
     case 'APPLY_CLIMB_CLEARED': {
-      // Only honour a clear that is strictly newer than everything applied so
-      // far; a stale/duplicate clear must not wipe a climb set after it.
-      if (action.payload.seq <= state.lastSeq) {
-        return state;
-      }
-
-      return {
-        ...state,
-        currentClimb: null,
-        previousClimb: state.currentClimb,
-        lastSeq: action.payload.seq,
-      };
+      if (action.payload.seq <= state.lastSeq) return state;
+      // Import arrival order cannot tell whether Kilter displayed a climb before
+      // or after this clear. Keep its timestamp even after a later native set.
+      return updateWallFromHistory(state, state.history, action.payload.seq, action.payload.clearedAt);
     }
 
     case 'BACKFILL_HISTORY': {
-      const backfill = action.payload;
-      if (backfill.length === 0) {
-        return state;
-      }
-
-      const mergedHistory = mergeHistory(state.history, backfill);
-      const highestSeq = backfill.reduce((highest, climb) => Math.max(highest, climb.seq), state.lastSeq);
-
-      // The newest-by-seq item across the merged history is the candidate for
-      // "current". Adopt only when it is newer than every sequence already
-      // applied, because `lastSeq` also tracks clears. This prevents an older
-      // backfill from resurrecting a wall that was cleared while catch-up was
-      // in flight.
-      const newestHistoryClimb = mergedHistory[0] ?? null;
-      const shouldAdoptHistoryClimb = newestHistoryClimb !== null && newestHistoryClimb.seq > state.lastSeq;
-
-      // Nothing actually changed: the merge produced the same history array
-      // (by reference — every entry already present) and the seq cursor + the
-      // adoption decision are also unchanged. Returning `state` lets a
-      // foreground/reconnect catch-up that finds nothing new be a total render
-      // no-op instead of a full-list re-render.
-      if (mergedHistory === state.history && highestSeq === state.lastSeq && !shouldAdoptHistoryClimb) {
-        return state;
-      }
-
-      return {
-        ...state,
-        currentClimb: shouldAdoptHistoryClimb ? newestHistoryClimb : state.currentClimb,
-        previousClimb: shouldAdoptHistoryClimb ? state.currentClimb : state.previousClimb,
-        history: mergedHistory,
-        lastSeq: highestSeq,
-      };
+      const backfill = action.payload.filter((climb) => climb.source !== 'kilter');
+      if (backfill.length === 0) return state;
+      const history = mergeHistory(state.history, backfill);
+      const lastSeq = backfill.reduce((highest, climb) => Math.max(highest, climb.seq), state.lastSeq);
+      return updateWallFromHistory(state, history, lastSeq);
     }
 
     case 'APPLY_STATS_UPDATED': {

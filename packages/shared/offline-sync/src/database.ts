@@ -14,7 +14,9 @@
 // array form; the variadic overload exists so expo's `SQLiteDatabase` remains
 // structurally assignable.
 
-export type SqlValue = string | number | null;
+// Uint8Array is a BLOB, both as a bind and as a column value (expo-sqlite and
+// node:sqlite agree). Only the holds index stores blobs.
+export type SqlValue = string | number | null | Uint8Array;
 
 export type SqlRunResult = {
   changes: number;

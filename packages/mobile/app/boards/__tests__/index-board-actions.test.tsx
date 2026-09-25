@@ -6,7 +6,7 @@
 // three things that move: the per-card ownership action, Edit/Done, and the fact
 // that a picker opened mid-session must still switch boards when the identity
 // lookup fails.
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { UserBoard } from '@boardsesh/shared-schema';
@@ -43,6 +43,11 @@ const forgetOfflineBoardMock = vi.hoisted(() => vi.fn());
 // The last props the carousel was handed, so ownership can be asserted on the
 // ITEMS (stamped once at list build) rather than inferred from what rendered.
 const carouselProps = vi.hoisted(() => ({ last: null as CarouselProps | null }));
+const trackMock = vi.hoisted(() => vi.fn());
+// The Bluetooth quickstart sheet's props, so a scan pick can be driven directly.
+const bluetoothSheetProps = vi.hoisted(() => ({
+  last: null as { onSelect: (board: UserBoard) => void } | null,
+}));
 
 const state = vi.hoisted(() => ({
   source: undefined as string | undefined,
@@ -50,6 +55,8 @@ const state = vi.hoisted(() => ({
   storedUserId: undefined as string | undefined,
   activeBoard: undefined as unknown,
   myBoards: [] as unknown[],
+  nearbyBoards: [] as unknown[],
+  willFollow: false,
   deletePending: null as string | null,
   unfollowPending: null as string | null,
 }));
@@ -103,6 +110,7 @@ vi.mock('react-i18next', () => ({
         'mobile.discovery.findNearby': 'Find nearby',
         'mobile.discovery.bluetooth': 'Bluetooth',
         'mobile.discovery.findGym': 'Find a gym',
+        'mobile.discovery.addWallTile': 'Spray wall',
         'mobile.manage.edit': 'Edit',
         'mobile.manage.done': 'Done',
         'mobile.manage.editAria': 'Edit {{name}}',
@@ -146,7 +154,10 @@ vi.mock('../../../src/lib/graphql/hooks', () => ({
     refetch: vi.fn(),
   }),
   usePopularBoardConfigs: () => ({ data: { configs: [] } }),
-  useNearbyBoards: () => ({ data: undefined, isLoading: false }),
+  useNearbyBoards: () => ({
+    data: state.nearbyBoards.length > 0 ? { boards: state.nearbyBoards } : undefined,
+    isLoading: false,
+  }),
   useProfile: () => ({ data: state.profile }),
   useDeleteBoard: () => ({
     mutateAsync: deleteBoardMock,
@@ -175,9 +186,20 @@ vi.mock('../../../src/hooks/use-current-user-id', () => ({
 
 vi.mock('../../../src/lib/board-discovery/use-adopt-found-board', () => ({
   useAdoptFoundBoard: () => vi.fn().mockResolvedValue(undefined),
+  useWillFollowFoundBoard: () => () => state.willFollow,
 }));
 vi.mock('../../../src/lib/use-device-location', () => ({
   useDeviceLocation: () => ({ status: 'idle', coords: undefined, request: vi.fn() }),
+}));
+// Keep the activation/link decision real while replacing credential and preference I/O.
+vi.mock('../../../src/hooks/use-is-offline', () => ({
+  useIsOffline: () => false,
+}));
+vi.mock('../../../src/lib/integrations/use-board-account-credentials', () => ({
+  useBoardAccountCredentials: () => ({ data: [] }),
+}));
+vi.mock('../../../src/lib/onboarding/link-step-answered', () => ({
+  hasAnsweredLinkStep: vi.fn(async () => false),
 }));
 vi.mock('../../../src/providers/auth-provider', () => ({
   useAuth: () => ({ isAuthenticated: true, refreshAuthState: vi.fn() }),
@@ -191,7 +213,7 @@ vi.mock('../../../src/lib/haptics', () => ({ hapticSelection: vi.fn() }));
 vi.mock('../../../src/lib/onboarding/onboarding-storage', () => ({
   setBoardRevealTipPending: vi.fn().mockResolvedValue(undefined),
 }));
-vi.mock('../../../src/lib/analytics', () => ({ track: vi.fn() }));
+vi.mock('../../../src/lib/analytics', () => ({ track: trackMock }));
 vi.mock('../../../src/hooks/use-bottom-chrome-metrics', () => ({
   useBottomChromeMetrics: () => ({ scrollBottomPadding: 0 }),
 }));
@@ -209,7 +231,15 @@ vi.mock('../../../src/components/offline/OfflineCatalogCta', () => ({ OfflineCat
 vi.mock('../../../src/offline/use-confirm-board-download', () => ({
   useConfirmBoardDownload: () => ({ confirmAndDownload: vi.fn(async () => true), armWithoutConfirm: vi.fn() }),
 }));
-vi.mock('../../../src/providers/feature-flags-provider', () => ({ useOfflineDownloadsEnabled: () => true }));
+// The spray-wall tile is behind its own flag (epic #5346, SW-09). Off by default
+// so the existing cases keep describing the board row they were written for; the
+// tile's own describe block below flips it.
+const flagState = { sprayWalls: false };
+vi.mock('../../../src/providers/feature-flags-provider', () => ({
+  useFeatureFlag: () => false,
+  useOfflineDownloadsEnabled: () => true,
+  useSprayWallsEnabled: () => flagState.sprayWalls,
+}));
 vi.mock('../../../src/offline/use-downloaded-scope-keys', () => ({ useDownloadedScopeKeys: () => ({ data: [] }) }));
 vi.mock('../../../src/offline/use-offline-catalog-state', () => ({ useOfflineCatalogState: () => null }));
 vi.mock('../../../src/offline/use-remember-downloaded-boards', () => ({ useRememberDownloadedBoards: vi.fn() }));
@@ -232,11 +262,17 @@ vi.mock('../../../src/components/ActivityIndicator', () => ({
   ActivityIndicator: () => createElement('div', { 'data-testid': 'spinner' }),
 }));
 vi.mock('../../../src/components/board-discovery/BoardModeCard', () => ({
-  BoardModeCard: ({ label }: { label: string }) => createElement('div', { 'data-mode-card': label }, label),
+  BoardModeCard: ({ label, onPress }: { label: string; onPress?: () => void }) =>
+    createElement('button', { 'data-mode-card': label, onClick: onPress, type: 'button' }, label),
 }));
 vi.mock('../../../src/components/board-discovery/BluetoothQuickstartSheet', () => ({
-  BluetoothQuickstartSheet: () => null,
+  BluetoothQuickstartSheet: (props: { onSelect: (board: UserBoard) => void }) => {
+    bluetoothSheetProps.last = props;
+    return null;
+  },
 }));
+// First-board mode (#5654) has its own suite, index-first-board.test.tsx.
+vi.mock('../../../src/components/board-discovery/FirstBoardChoice', () => ({ FirstBoardChoice: () => null }));
 // Captures the props rather than rendering a card, so the item flags and the
 // resolved per-card action are both assertable.
 vi.mock('../../../src/components/board-discovery/BoardCarousel', () => ({
@@ -269,11 +305,14 @@ beforeEach(() => {
   unfollowBoardMock.mockResolvedValue(undefined);
   confirmMock.mockResolvedValue(true);
   carouselProps.last = null;
+  bluetoothSheetProps.last = null;
   state.source = undefined;
   state.profile = { id: 'me' };
   state.storedUserId = undefined;
   state.activeBoard = undefined;
   state.myBoards = [myWall, gymBoard];
+  state.nearbyBoards = [];
+  state.willFollow = false;
   state.deletePending = null;
   state.unfollowPending = null;
 });
@@ -634,5 +673,75 @@ describe('identity resolution never blocks the switcher', () => {
     render(createElement(BoardSelection));
 
     expect(screen.getByRole('button', { name: 'edit Marco garage' })).toBeTruthy();
+  });
+});
+
+describe('the spray-wall tile', () => {
+  afterEach(() => {
+    flagState.sprayWalls = false;
+  });
+
+  it('is absent while the flag is off', () => {
+    render(createElement(BoardSelection));
+    expect(screen.queryByText('Spray wall')).toBeNull();
+  });
+
+  it('renders next to the other mode cards when the flag is on', () => {
+    flagState.sprayWalls = true;
+    render(createElement(BoardSelection));
+    expect(screen.getByText('Spray wall')).toBeTruthy();
+    // Next to the create tile, not instead of it: the two answer different
+    // questions (this harness leaves an unmapped key as itself).
+    expect(screen.getByText('mobile.discovery.createTile')).toBeTruthy();
+  });
+});
+
+// `Board Picker Selection Completed` names the list the board was tapped in, so a
+// pick from Near you or the Bluetooth scan can be told apart from a switch
+// between boards the climber already has (#5654).
+describe('where a pick came from', () => {
+  const nearbyWall = board({ uuid: 'nearby', name: 'Crux Kilter', ownerId: 'setter-1', isFollowedByMe: false });
+
+  it('tags a Near you card as nearby, and says the pick followed it', async () => {
+    state.nearbyBoards = [nearbyWall];
+    state.willFollow = true;
+    render(createElement(BoardSelection));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Crux Kilter' }));
+
+    await waitFor(() =>
+      expect(trackMock).toHaveBeenCalledWith(
+        'Board Picker Selection Completed',
+        expect.objectContaining({ pickSource: 'nearby', followed: true }),
+      ),
+    );
+    expect(setActiveBoardMock).toHaveBeenCalledWith(expect.objectContaining({ uuid: 'nearby' }));
+  });
+
+  it('tags a board the Bluetooth scan found as bluetooth', async () => {
+    render(createElement(BoardSelection));
+
+    bluetoothSheetProps.last?.onSelect(nearbyWall);
+
+    await waitFor(() =>
+      expect(trackMock).toHaveBeenCalledWith(
+        'Board Picker Selection Completed',
+        expect.objectContaining({ pickSource: 'bluetooth' }),
+      ),
+    );
+  });
+
+  // Without `source` a gym picked on the map during onboarding would never close
+  // out first-run; without `from` the map would count a second picker opening.
+  it('hands the gym finder its source and says the picker opened it', () => {
+    state.source = 'onboarding';
+    render(createElement(BoardSelection));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Find a gym' }));
+
+    expect(routerMock.push).toHaveBeenCalledWith({
+      pathname: '/gyms',
+      params: { returnTo: '/(tabs)/climbs', source: 'onboarding', from: 'picker' },
+    });
   });
 });

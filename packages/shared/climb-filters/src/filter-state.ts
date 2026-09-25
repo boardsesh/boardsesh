@@ -28,6 +28,19 @@ export const STATUS_FILTER_VALUES = ['any', 'drafts', 'established', 'projects']
 export type StatusFilter = (typeof STATUS_FILTER_VALUES)[number];
 
 /**
+ * Whether a climb still has every hold it was set on — the spray-wall reset
+ * filter (SW-12).
+ *
+ * 'any' is the default and sends nothing. 'intact' and 'broken' map onto
+ * `ClimbSearchInput.holdIntegrity`, whose SQL lives in @boardsesh/db
+ * create-climb-filters.ts (`holdIntegrityCondition`) and reads the materialised
+ * `board_climbs.missing_hold_count`. Only a spray wall ever has a broken climb;
+ * on a catalogue board 'broken' is an honest empty list.
+ */
+export const HOLD_INTEGRITY_VALUES = ['any', 'intact', 'broken'] as const;
+export type HoldIntegrityFilterValue = (typeof HOLD_INTEGRITY_VALUES)[number];
+
+/**
  * In-app climb filter state, shared between web and mobile.
  *
  * This is a subset of {@link ClimbSearchInput} that excludes board-renderer
@@ -46,9 +59,15 @@ export type ClimbFilterState = {
   minRating?: number;
   gradeAccuracy?: GradeAccuracyValue;
   setter?: string[];
+  onlyFollowedAuthors?: boolean;
   onlyTallClimbs?: boolean;
   onlyWideClimbs?: boolean;
   onlyWithBetaVideos?: boolean;
+  // Also list climbs set at another angle, graded and ranked at their own set
+  // angle. Only angle-bound boards (Woods, `angleBoundClimbs` in
+  // @boardsesh/board-config) offer the switch; there the browsed angle alone is
+  // the default. Maps to ClimbSearchInput.crossAngleStats.
+  includeOtherAngles?: boolean;
   // Climb-type toggles. Default is boulders-only (routes hidden) — see
   // DEFAULT_CLIMB_FILTER_STATE. Both-on or both-off means "no preference" and
   // maps to no frames_count constraint (both-on sends explicit boulders:
@@ -68,6 +87,9 @@ export type ClimbFilterState = {
   // those. Both are auth-gated backend-side, like the four tick flags above.
   minUserRating?: number;
   onlyRatedByMe?: boolean;
+  // Spray-wall hold integrity. Undefined and 'any' both mean no filter, so the
+  // default state carries neither.
+  holdIntegrity?: HoldIntegrityFilterValue;
 };
 
 export const DEFAULT_CLIMB_FILTER_STATE: ClimbFilterState = {
@@ -92,15 +114,18 @@ export function hasActiveClimbFilters(state: ClimbFilterState): boolean {
   if (state.minRating != null) return true;
   if (state.gradeAccuracy != null) return true;
   if (state.setter != null && state.setter.length > 0) return true;
+  if (state.onlyFollowedAuthors) return true;
   if (state.onlyTallClimbs) return true;
   if (state.onlyWideClimbs) return true;
   if (state.onlyWithBetaVideos) return true;
+  if (state.includeOtherAngles) return true;
   if (state.hideAttempted) return true;
   if (state.hideCompleted) return true;
   if (state.showOnlyAttempted) return true;
   if (state.showOnlyCompleted) return true;
   if (state.minUserRating != null) return true;
   if (state.onlyRatedByMe) return true;
+  if (state.holdIntegrity != null && state.holdIntegrity !== 'any') return true;
   // Default is boulders-only, so "active" means routes turned on or boulders off.
   if ((state.boulders ?? true) !== true) return true;
   if ((state.routes ?? false) !== false) return true;
@@ -192,15 +217,25 @@ export function toClimbSearchInput(
   if (state.minRating != null) input.minRating = state.minRating;
   if (state.gradeAccuracy != null) input.gradeAccuracy = state.gradeAccuracy;
   if (state.setter != null && state.setter.length > 0) input.setter = state.setter;
+  if (state.onlyFollowedAuthors) input.onlyFollowedAuthors = true;
   if (state.onlyTallClimbs) input.onlyTallClimbs = true;
   if (state.onlyWideClimbs) input.onlyWideClimbs = true;
   if (state.onlyWithBetaVideos) input.onlyWithBetaVideos = true;
+  // Off is omitted, not sent as false: an angle-bound board already treats an
+  // absent value as "browsed angle only", and omitting keeps the cache key of
+  // the everyday search unchanged.
+  if (state.includeOtherAngles) input.crossAngleStats = true;
   if (state.hideAttempted) input.hideAttempted = true;
   if (state.hideCompleted) input.hideCompleted = true;
   if (state.showOnlyAttempted) input.showOnlyAttempted = true;
   if (state.showOnlyCompleted) input.showOnlyCompleted = true;
   if (state.minUserRating != null) input.minUserRating = state.minUserRating;
   if (state.onlyRatedByMe) input.onlyRatedByMe = true;
+  // 'any' is the absence of a filter, so it is omitted rather than sent — the
+  // backend treats an absent value and ANY identically, and omitting keeps the
+  // search-cache key stable for the overwhelmingly common unfiltered search.
+  if (state.holdIntegrity === 'intact') input.holdIntegrity = 'INTACT';
+  if (state.holdIntegrity === 'broken') input.holdIntegrity = 'BROKEN';
 
   // Personal grades (#4796, #4828): the climber's own grade drives the grade
   // range and the difficulty sort, so a climb they re-graded lands in the band

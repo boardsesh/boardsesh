@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: ghcr.io/boardsesh/boardsesh-dev-db@sha256:f776350fa627c626f4d70bbf6bb0451e27ff6b1c8ccf6d02220e0b2d261ee058
+    image: ghcr.io/boardsesh/boardsesh-dev-db@sha256:fa657078da26276b47ccb6f78f7227b6f6d84a1379bca9313cc1c5d9ece26139
     shm_size: '256mb'
     command: postgres -c listen_addresses='*' -c max_connections=300 -c log_min_messages=warning
     # PostgreSQL 18 changed the storage contract: PGDATA is

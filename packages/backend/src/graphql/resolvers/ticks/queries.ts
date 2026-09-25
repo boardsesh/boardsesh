@@ -9,6 +9,7 @@ import {
 } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
+import { sprayClimbVisibilityCondition, sprayReferenceVisibilityCondition } from '@boardsesh/db/queries';
 import { toConfidenceTier, notAuroraTwinDuplicate, withSerialPlan } from '@boardsesh/db/queries';
 import { requireAuthenticated, applyRateLimit, validateInput, resolveClimbNoMatch } from '../shared/helpers';
 import { fetchOwnerBoards, toTickBoardCandidate } from '../shared/render-board';
@@ -33,7 +34,7 @@ const BOARDSESH_GRADE_TICK_JOIN = boardseshGradeTickJoin({
 });
 import type { z } from 'zod';
 import { GetTicksInputSchema, BoardNameSchema, AscentFeedInputSchema } from '../../../validation/schemas';
-import { escapeLikePattern } from '../../../utils/like-pattern';
+import { climbNameLikePattern } from '@boardsesh/climb-filters';
 import { extractInstagramHandle } from '../beta-videos/queries';
 
 // Benchmark resolution shared by the flat and grouped ascent feeds: a climb
@@ -149,16 +150,28 @@ function buildAscentTickConditions(validated: AscentFeedFilterInput, userId: str
 }
 
 /** Conditions that need the canonical board_climbs join (layout + name search). */
-function buildAscentClimbConditions(validated: AscentFeedFilterInput) {
+function buildAscentClimbConditions(validated: AscentFeedFilterInput, viewerUserId: string | null | undefined) {
   return [
+    // These feeds are unauthenticated and take `boardTypes` / `layoutIds` from the
+    // caller, so without this anyone could read a climber's ticks on their own
+    // private spray wall — climb name, frames and the wall's layout id — which is
+    // exactly what the epic decided against ("private-wall ticks are the owner's
+    // logbook alone"). A no-op on the other eight board types.
+    sprayClimbVisibilityCondition(
+      { boardType: dbSchema.boardClimbs.boardType, layoutId: dbSchema.boardClimbs.layoutId },
+      viewerUserId,
+    ),
     ...(validated.layoutIds && validated.layoutIds.length > 0
       ? [inArray(dbSchema.boardClimbs.layoutId, validated.layoutIds)]
       : []),
+    // The same pattern climb search uses, so a name that finds a climb also finds
+    // it in the logbook: apostrophe/quote and dash variants fold, the user's own
+    // `%`/`_` stay literal (#5353). The comment arm shares it for the same reason.
     ...(validated.climbName
       ? [
           or(
-            ilike(dbSchema.boardClimbs.name, `%${escapeLikePattern(validated.climbName)}%`),
-            ilike(dbSchema.boardseshTicks.comment, `%${escapeLikePattern(validated.climbName)}%`),
+            ilike(dbSchema.boardClimbs.name, climbNameLikePattern(validated.climbName)),
+            ilike(dbSchema.boardseshTicks.comment, climbNameLikePattern(validated.climbName)),
           ),
         ]
       : []),
@@ -366,8 +379,15 @@ export const tickQueries = {
   /**
    * Get ticks for a specific user (public query, no authentication required)
    */
-  userTicks: async (_: unknown, { userId, boardType }: { userId: string; boardType: string }): Promise<unknown[]> => {
+  userTicks: async (
+    _: unknown,
+    { userId, boardType }: { userId: string; boardType: string },
+    ctx?: ConnectionContext,
+  ): Promise<unknown[]> => {
     validateInput(BoardNameSchema, boardType, 'boardType');
+    // Public query, no authentication required — so an absent context is an
+    // ANONYMOUS reader, never a hopeful value.
+    const viewerUserId = ctx?.isAuthenticated ? (ctx.userId ?? null) : null;
 
     const conditions = [
       eq(dbSchema.boardseshTicks.userId, userId),
@@ -376,6 +396,15 @@ export const tickQueries = {
       // the You page's send totals and grade charts via deriveProfileViewModel,
       // so a twin left in here inflates every one of those numbers.
       notAuroraTwinDuplicate(dbSchema.boardseshTicks),
+      // This is a stranger's logbook, read without signing in, and it carries the
+      // climb uuid, the tick's own comment and the climb's layout id. A spray
+      // climb is an ordinary `board_climbs` row, so without this a private wall's
+      // send log was public. Column form because `board_climbs` is LEFT JOINed
+      // below, and `IS DISTINCT FROM` keeps a tick whose climb row is missing.
+      sprayClimbVisibilityCondition(
+        { boardType: dbSchema.boardClimbs.boardType, layoutId: dbSchema.boardClimbs.layoutId },
+        viewerUserId,
+      ),
     ];
 
     // Fetch ticks with layoutId from unified board_climbs table. We surface
@@ -618,7 +647,7 @@ export const tickQueries = {
       .leftJoin(dbSchema.boardClimbGrades, BOARDSESH_GRADE_TICK_JOIN);
 
     // Full conditions including climb name filter (requires JOIN)
-    const allConditions = [...tickConditions, ...buildAscentClimbConditions(validatedInput)];
+    const allConditions = [...tickConditions, ...buildAscentClimbConditions(validatedInput, ctx?.userId)];
 
     // Get total count
     const countQuery = db
@@ -903,7 +932,7 @@ export const tickQueries = {
     const limit = validatedInput.limit ?? 20;
     const offset = validatedInput.offset ?? 0;
     const tickConditions = buildAscentTickConditions(validatedInput, userId);
-    const climbConditions = buildAscentClimbConditions(validatedInput);
+    const climbConditions = buildAscentClimbConditions(validatedInput, ctx?.userId);
     const groupFilterConditions = [...tickConditions, ...climbConditions];
 
     // boardsesh_ticks.climbed_at is `timestamp without time zone` storing the
@@ -1341,6 +1370,7 @@ export const tickQueries = {
   userProfileStats: async (
     _: unknown,
     { userId }: { userId: string },
+    ctx?: ConnectionContext,
   ): Promise<{
     totalDistinctClimbs: number;
     layoutStats: Array<{
@@ -1355,6 +1385,11 @@ export const tickQueries = {
     if (!userId || typeof userId !== 'string' || userId.trim() === '') {
       return { totalDistinctClimbs: 0, layoutStats: [] };
     }
+
+    // Same rule as `userTicks`: a profile is readable without signing in, and
+    // `layoutStats` names a LAYOUT ID — which is exactly the enumerable key every
+    // other spray gate protects.
+    const viewerUserId = ctx?.isAuthenticated ? (ctx.userId ?? null) : null;
 
     const boardTypes = SUPPORTED_BOARDS;
     const layoutStatsMap: Record<
@@ -1381,6 +1416,13 @@ export const tickQueries = {
         eq(dbSchema.boardseshTicks.userId, userId),
         eq(dbSchema.boardseshTicks.boardType, boardType),
         ne(dbSchema.boardseshTicks.status, 'attempt'),
+        // REFERENCE form, not the column form: `baseConditions` is shared with the
+        // third query below, which selects distinct climb uuids straight off
+        // `boardsesh_ticks` and joins `board_climbs` not at all.
+        sprayReferenceVisibilityCondition(
+          { boardType: dbSchema.boardseshTicks.boardType, climbUuid: dbSchema.boardseshTicks.climbUuid },
+          viewerUserId,
+        ),
       );
 
       // Run three queries for this board type:

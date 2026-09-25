@@ -27,9 +27,9 @@ test.describe('app.boardsesh.com boots', () => {
 
     await page.goto('/', { waitUntil: 'domcontentloaded' });
 
-    // The shell ships `<div id="root"></div>` empty; anything inside it is
-    // proof the bundle downloaded, evaluated and rendered. This is the check
-    // that separates "assets serve" from "the app works".
+    // The shell ships a static boot paint inside #root, so "has a child" is no
+    // longer proof of anything. `expectMounted` waits for that placeholder to be
+    // replaced, which is what separates "assets serve" from "the app works".
     const root = page.locator('#root');
     await expect(root).toBeAttached();
     await expectMounted(page, 60_000, diagnostics);

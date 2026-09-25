@@ -15,7 +15,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useFocusEffect } from 'expo-router';
-import { useSQLiteContext } from 'expo-sqlite';
+import { useOfflineDatabase } from '../../db/use-offline-database';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   getDownloadedScopeKeys,
@@ -77,7 +77,10 @@ export function StorageSettingsScreen() {
   const { systemColors } = useTheme();
   const confirm = useConfirm();
   const { showToast } = useToast();
-  const db = useSQLiteContext();
+  // Not `useSQLiteContext()` directly: a dead-handle recovery opens a REPLACEMENT
+  // connection without the provider ever re-rendering, so the context value would
+  // still be the wrapper around the dead native instance (#5410).
+  const db = useOfflineDatabase();
   // Live as soon as the launch gate opens — after the first init attempt, whatever
   // it did — so on a contended launch this connection has no tables yet. Folded into
   // the query KEY below rather than gating the query: a failed measurement renders
@@ -139,7 +142,7 @@ export function StorageSettingsScreen() {
   );
 
   const unknownScopeLabel = useCallback(
-    (parts: { layoutId: number; sizeId: number }) => t('mobile.more.storage.unknownScope', parts),
+    (parts: { layoutId: number; sizeId: number }) => t('mobile.settings.storage.unknownScope', parts),
     [t],
   );
 
@@ -154,13 +157,13 @@ export function StorageSettingsScreen() {
           ...board,
           title: label.title,
           subtitle: label.subtitle,
-          caption: t('mobile.more.storage.rowCaption', {
+          caption: t('mobile.settings.storage.rowCaption', {
             size: formatStorageSize(board.estimatedBytes),
             count: board.climbCount,
           }),
           statusLabel: enabledSet.has(board.scopeKey)
-            ? t('mobile.more.storage.keptOffline')
-            : t('mobile.more.storage.notKeptOffline'),
+            ? t('mobile.settings.storage.keptOffline')
+            : t('mobile.settings.storage.notKeptOffline'),
         },
       ];
     });
@@ -191,12 +194,12 @@ export function StorageSettingsScreen() {
         // boards it deliberately spared. 'deferred' is silent — the reclaimable
         // banner below offers the manual Compact.
         const compacted = await compactOfflineDatabase(db, { deferWhileSyncing: true });
-        if (compacted === 'not-truncated') showToast(t('mobile.more.storage.compactFailed'), 'error');
+        if (compacted === 'not-truncated') showToast(t('mobile.settings.storage.compactFailed'), 'error');
         await refetch();
         return true;
       } catch (error) {
         reportError(error, { tags: { source: 'offline-sync', kind: 'scope-teardown' } });
-        showToast(t('mobile.more.storage.removeError'), 'error');
+        showToast(t('mobile.settings.storage.removeError'), 'error');
         return false;
       }
     },
@@ -209,10 +212,10 @@ export function StorageSettingsScreen() {
       if (!board) return;
       hapticLight();
       const confirmed = await confirm({
-        title: t('mobile.more.storage.removeTitle', { name: board.title }),
-        message: t('mobile.more.storage.removeMessage', { size: formatStorageSize(board.estimatedBytes) }),
-        confirmLabel: t('mobile.more.storage.removeConfirm'),
-        cancelLabel: t('mobile.more.storage.cancel'),
+        title: t('mobile.settings.storage.removeTitle', { name: board.title }),
+        message: t('mobile.settings.storage.removeMessage', { size: formatStorageSize(board.estimatedBytes) }),
+        confirmLabel: t('mobile.settings.storage.removeConfirm'),
+        cancelLabel: t('mobile.settings.storage.cancel'),
         destructive: true,
       });
       if (!confirmed) return;
@@ -229,12 +232,12 @@ export function StorageSettingsScreen() {
   const handleRemoveAll = useCallback(async () => {
     hapticLight();
     const confirmed = await confirm({
-      title: t('mobile.more.storage.removeAllTitle'),
-      message: t('mobile.more.storage.removeAllMessage', {
+      title: t('mobile.settings.storage.removeAllTitle'),
+      message: t('mobile.settings.storage.removeAllMessage', {
         size: formatStorageSize(rows.reduce((sum, row) => sum + row.estimatedBytes, 0)),
       }),
-      confirmLabel: t('mobile.more.storage.removeAllConfirm'),
-      cancelLabel: t('mobile.more.storage.cancel'),
+      confirmLabel: t('mobile.settings.storage.removeAllConfirm'),
+      cancelLabel: t('mobile.settings.storage.cancel'),
       destructive: true,
     });
     if (!confirmed) return;
@@ -259,7 +262,7 @@ export function StorageSettingsScreen() {
       // deferring: they resume from their checkpoints next foreground with no
       // burned bootstrap attempt.
       const compacted = await compactOfflineDatabase(db, { deferWhileSyncing: false });
-      if (compacted === 'not-truncated') showToast(t('mobile.more.storage.compactFailed'), 'error');
+      if (compacted === 'not-truncated') showToast(t('mobile.settings.storage.compactFailed'), 'error');
       await refetch();
     } finally {
       setIsCompacting(false);
@@ -272,10 +275,10 @@ export function StorageSettingsScreen() {
   const handleClearCachedImages = useCallback(async () => {
     hapticLight();
     const confirmed = await confirm({
-      title: t('mobile.more.storage.clearCachedImagesTitle'),
-      message: t('mobile.more.storage.clearCachedImagesMessage', { size: formatStorageSize(cachedImageBytes) }),
-      confirmLabel: t('mobile.more.storage.clearCachedImagesConfirm'),
-      cancelLabel: t('mobile.more.storage.cancel'),
+      title: t('mobile.settings.storage.clearCachedImagesTitle'),
+      message: t('mobile.settings.storage.clearCachedImagesMessage', { size: formatStorageSize(cachedImageBytes) }),
+      confirmLabel: t('mobile.settings.storage.clearCachedImagesConfirm'),
+      cancelLabel: t('mobile.settings.storage.cancel'),
       destructive: true,
     });
     if (!confirmed) return;
@@ -288,13 +291,13 @@ export function StorageSettingsScreen() {
       // measurement immediately contradicts.
       showToast(
         result.photoCacheCleared
-          ? t('mobile.more.storage.clearCachedImagesDone')
-          : t('mobile.more.storage.clearCachedImagesPartial'),
+          ? t('mobile.settings.storage.clearCachedImagesDone')
+          : t('mobile.settings.storage.clearCachedImagesPartial'),
         result.photoCacheCleared ? 'success' : 'warning',
       );
     } catch (error) {
       reportError(error, { tags: { source: 'offline-sync', kind: 'cache-clear' } });
-      showToast(t('mobile.more.storage.clearCachedImagesError'), 'error');
+      showToast(t('mobile.settings.storage.clearCachedImagesError'), 'error');
     } finally {
       setIsClearingCache(false);
       await refetch();
@@ -319,13 +322,13 @@ export function StorageSettingsScreen() {
       <View style={[styles.centered, { backgroundColor: systemColors.background }]}>
         <Icon name="error" size={40} color={iosSystemColors.systemRed} />
         <Text variant="headline" style={styles.stateTitle}>
-          {t('mobile.more.storage.errorTitle')}
+          {t('mobile.settings.storage.errorTitle')}
         </Text>
         <Text variant="subheadline" style={styles.stateSubtitle}>
-          {t('mobile.more.storage.errorSubtitle')}
+          {t('mobile.settings.storage.errorSubtitle')}
         </Text>
         <Button
-          title={t('mobile.more.storage.errorRetry')}
+          title={t('mobile.settings.storage.errorRetry')}
           variant="outlined"
           loading={isRefetching}
           onPress={() => void refetch()}
@@ -350,10 +353,10 @@ export function StorageSettingsScreen() {
       <View style={[styles.centered, { backgroundColor: systemColors.background }]}>
         <Icon name="boards" size={48} color={systemColors.tertiaryLabel} />
         <Text variant="headline" style={styles.stateTitle}>
-          {t('mobile.more.storage.emptyTitle')}
+          {t('mobile.settings.storage.emptyTitle')}
         </Text>
         <Text variant="subheadline" style={styles.stateSubtitle}>
-          {t('mobile.more.storage.emptySubtitle')}
+          {t('mobile.settings.storage.emptySubtitle')}
         </Text>
       </View>
     );
@@ -366,13 +369,13 @@ export function StorageSettingsScreen() {
       contentContainerStyle={[styles.content, { paddingBottom: bottomChrome.scrollBottomPadding + spacing[4] }]}
     >
       <Text variant="footnote" style={[styles.intro, { color: systemColors.secondaryLabel }]}>
-        {t('mobile.more.storage.intro')}
+        {t('mobile.settings.storage.intro')}
       </Text>
 
       {/* The flag is a kill switch; someone rolled back still has the gigabytes. */}
       {!offlineEnabled ? (
         <Text variant="footnote" style={[styles.intro, { color: systemColors.secondaryLabel }]}>
-          {t('mobile.more.storage.offNote')}
+          {t('mobile.settings.storage.offNote')}
         </Text>
       ) : null}
 
@@ -380,14 +383,14 @@ export function StorageSettingsScreen() {
           approximate per-board figures below are never read as summing into it. */}
       <Card style={styles.card}>
         <ListRow
-          title={t('mobile.more.storage.totalLabel')}
+          title={t('mobile.settings.storage.totalLabel')}
           haptic={false}
           showSeparator={measurement.freeBytes !== null}
           trailing={<Text variant="body">{formatStorageSize(measurement.totalBytes)}</Text>}
         />
         {measurement.freeBytes !== null ? (
           <ListRow
-            title={t('mobile.more.storage.freeLabel')}
+            title={t('mobile.settings.storage.freeLabel')}
             haptic={false}
             showSeparator={false}
             trailing={
@@ -403,16 +406,16 @@ export function StorageSettingsScreen() {
           actionable thing on the screen isn't below the fold on a long list. */}
       {hasReclaimable ? (
         <>
-          <SectionHeader title={t('mobile.more.storage.reservedHeader')} />
+          <SectionHeader title={t('mobile.settings.storage.reservedHeader')} />
           <Card style={styles.card}>
             <View style={styles.reserved}>
               <Text variant="subheadline">
-                {t('mobile.more.storage.reservedNote', {
+                {t('mobile.settings.storage.reservedNote', {
                   size: formatStorageSize(measurement.reclaimableBytes),
                 })}
               </Text>
               <Button
-                title={t('mobile.more.storage.compact', {
+                title={t('mobile.settings.storage.compact', {
                   size: formatStorageSize(measurement.reclaimableBytes),
                 })}
                 variant="outlined"
@@ -431,17 +434,17 @@ export function StorageSettingsScreen() {
           directory isn't one we recognise — the button still works. */}
       {cachedImages ? (
         <>
-          <SectionHeader title={t('mobile.more.storage.cachedImagesHeader')} />
+          <SectionHeader title={t('mobile.settings.storage.cachedImagesHeader')} />
           <Card style={styles.card}>
             <ListRow
-              title={t('mobile.more.storage.cachedImagesArtLabel')}
+              title={t('mobile.settings.storage.cachedImagesArtLabel')}
               haptic={false}
               showSeparator={cachedImages.photoBytes !== null}
               trailing={<Text variant="body">{formatStorageSize(cachedImages.artBytes)}</Text>}
             />
             {cachedImages.photoBytes !== null ? (
               <ListRow
-                title={t('mobile.more.storage.cachedImagesPhotosLabel')}
+                title={t('mobile.settings.storage.cachedImagesPhotosLabel')}
                 haptic={false}
                 showSeparator={false}
                 trailing={<Text variant="body">{formatStorageSize(cachedImages.photoBytes)}</Text>}
@@ -449,10 +452,10 @@ export function StorageSettingsScreen() {
             ) : null}
           </Card>
           <Text variant="caption1" style={[styles.note, { color: systemColors.tertiaryLabel }]}>
-            {t('mobile.more.storage.cachedImagesNote')}
+            {t('mobile.settings.storage.cachedImagesNote')}
           </Text>
           <Button
-            title={t('mobile.more.storage.clearCachedImages')}
+            title={t('mobile.settings.storage.clearCachedImages')}
             variant="outlined"
             loading={isClearingCache}
             disabled={removingScopeKey !== null || isRemovingAll || isCompacting}
@@ -466,11 +469,11 @@ export function StorageSettingsScreen() {
           the list is empty but there's still something to do. */}
       {rows.length === 0 ? (
         <Text variant="footnote" style={[styles.note, { color: systemColors.secondaryLabel }]}>
-          {t('mobile.more.storage.emptySubtitle')}
+          {t('mobile.settings.storage.emptySubtitle')}
         </Text>
       ) : (
         <>
-          <SectionHeader title={t('mobile.more.storage.boardsHeader')} />
+          <SectionHeader title={t('mobile.settings.storage.boardsHeader')} />
           <Card style={styles.card}>
             {rows.map((row, index) => (
               <StorageBoardRow
@@ -480,8 +483,8 @@ export function StorageSettingsScreen() {
                 subtitle={row.subtitle}
                 caption={row.caption}
                 statusLabel={row.statusLabel}
-                removeLabel={t('mobile.more.storage.remove')}
-                removeAccessibilityLabel={t('mobile.more.storage.removeAria', { name: row.title })}
+                removeLabel={t('mobile.settings.storage.remove')}
+                removeAccessibilityLabel={t('mobile.settings.storage.removeAria', { name: row.title })}
                 isRemoving={removingScopeKey === row.scopeKey}
                 isDisabled={isBusy}
                 showSeparator={index < rows.length - 1}
@@ -491,11 +494,11 @@ export function StorageSettingsScreen() {
           </Card>
 
           <Text variant="caption1" style={[styles.note, { color: systemColors.tertiaryLabel }]}>
-            {t('mobile.more.storage.estimateNote')}
+            {t('mobile.settings.storage.estimateNote')}
           </Text>
 
           <Button
-            title={t('mobile.more.storage.removeAll')}
+            title={t('mobile.settings.storage.removeAll')}
             variant="text"
             role="destructive"
             loading={isRemovingAll}

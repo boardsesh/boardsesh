@@ -15,23 +15,39 @@ import {
   initialState,
   createQueueSyncCoordinator,
   generateClientId,
-  isPlaylistPeekQueueItemUuid,
   playlistSuggestionSourceMatches,
+  getQueueBoardKey,
+  isPlaylistPeekQueueItemUuid,
   decideAdd,
   deriveAcceptedConfigs,
+  isClimbOnReachableBoard,
+  planPlayNext,
+  playNextInsertPosition,
 } from '@boardsesh/queue';
 import type {
+  Climb,
   QueueSearchParams,
   ClimbQueueItem,
   PlaylistSuggestionSource,
+  QueueAddPlacement,
   SetCurrentClimbOptions,
 } from '@boardsesh/queue';
-import { countDistinctSessionUsers, createJoinSessionTracker, type QueueSyncGate } from '@boardsesh/queue-runtime';
+import {
+  countDistinctSessionUsers,
+  countSessionPeers,
+  createJoinSessionTracker,
+  type QueueSyncGate,
+} from '@boardsesh/queue-runtime';
 import { useQueueMutations, type PublishPlaybackStateInput } from '@boardsesh/queue-react';
 import type { QueueItemAttribution } from '@boardsesh/queue-react/queue-item-input';
 import type { PlaybackStateChangedEvent, SessionUser } from '@boardsesh/shared-schema';
 import { execute, isRateLimitedError } from '@boardsesh/graphql-client';
-import { classifyClimbBoardCompatibility, toBoardName } from '@boardsesh/board-config';
+import {
+  canAddClimbToBoard,
+  classifyClimbBoardCompatibility,
+  toBoardName,
+  type ActiveBoardForCompatibility,
+} from '@boardsesh/board-config';
 import { buildSessionBoardPath } from '../lib/boards/session-board-path';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { JOIN_SESSION, UPDATE_USERNAME } from '@boardsesh/graphql/operations/queue-session';
@@ -44,9 +60,17 @@ import {
 } from '../lib/graphql/operations';
 import { getStoredActiveBoard } from '../lib/active-board-store';
 import { useActiveBoard, useSetActiveBoard } from '../lib/graphql/use-active-board';
-import { findPreviousQueueItemWithSuggestions, findNextQueueItemWithSuggestions } from '@boardsesh/play-view';
+import {
+  anchoredSuggestionSource,
+  findPreviousQueueItemWithSuggestions,
+  selectNextQueueItemWithSuggestions,
+  shouldDefaultToBrowse,
+} from '@boardsesh/play-view';
+import { useSharedSessionBrowseEnabled } from './feature-flags-provider';
+import { useReachableBoardKeys } from './queue/use-reachable-board-keys';
 import { toClimbQueueItem } from '../lib/queue-conversion';
-import { climbToQueueItem, toQueueItemWireInput, isClimbResolved } from '../lib/climb-to-queue-item';
+import { getPlaylistRenderBoardTarget } from '../lib/playlists/playlist-climb-render-board';
+import { resolveCommittableQueueItem, toQueueItemWireInput, isClimbResolved } from '../lib/climb-to-queue-item';
 import { track, registerRenderSuperProperties } from '../lib/analytics';
 import {
   requestedBoardRenderMode,
@@ -68,6 +92,7 @@ import {
   QueueSessionControlContext,
   QueueSessionIdContext,
   QueueLiveStatsContext,
+  QueueSharedSessionContext,
   QueueActiveClimbContext,
   QueueHasActiveClimbContext,
   QueueDataContext,
@@ -77,12 +102,18 @@ import {
   type QueueSessionControlContextValue,
   type QueueSessionIdContextValue,
   type QueueLiveStatsContextValue,
+  type QueueSharedSessionContextValue,
   type QueueActiveClimbContextValue,
   type QueueHasActiveClimbContextValue,
   type QueueDataContextValue,
   type QueueActionsContextValue,
   type QueuePlaylistSuggestionContextValue,
+  type QueueReorderSource,
 } from './queue/queue-contexts';
+import {
+  createBoardFeedSuggestionSource,
+  normalizeBoardSuggestionSource,
+} from '../lib/playlists/board-feed-suggestion-source';
 import { useCrossBoardAddGate } from './queue/use-cross-board-add-gate';
 import { useQueueRegrade } from './queue/use-queue-regrade';
 import { useQueueResolveClimbs } from './queue/use-queue-resolve-climbs';
@@ -101,13 +132,31 @@ export {
   useQueueSessionControls,
   useQueueSessionId,
   useQueueLiveStats,
+  useIsSharedSession,
   useActiveClimbUuid,
   useHasActiveClimb,
   useQueueData,
   useQueueActions,
   usePlaylistSuggestionSource,
 } from './queue/queue-contexts';
-export type { StartSessionConfig } from './queue/queue-contexts';
+export type { StartSessionConfig, QueueReorderSource } from './queue/queue-contexts';
+
+/**
+ * The board identity the compatibility helpers need, or undefined when we can't
+ * name the active board (an unrecognised `boardType`, or none picked yet).
+ *
+ * Identity only — board name + layout. A same-layout different-size climb still
+ * renders on its own board, so neither the add gate nor the swipe skip should
+ * act on it; hold-id and size containment stay in `canAddClimbToBoard`.
+ * `undefined` fails open everywhere it is used.
+ */
+function toActiveBoardCompatibilityConfig(
+  activeBoard: { boardType: string; layoutId: number } | null | undefined,
+): ActiveBoardForCompatibility | undefined {
+  if (!activeBoard) return undefined;
+  const activeBoardName = toBoardName(activeBoard.boardType);
+  return activeBoardName ? { boardName: activeBoardName, layoutId: activeBoard.layoutId } : undefined;
+}
 
 // A party-session queue/wall mutation that fails because the backend throttled
 // it (RATE_LIMITED) is transient — the optimistic state already applied and a
@@ -139,6 +188,19 @@ const defaultSearchParams: QueueSearchParams = {};
 
 // Stable empty Set so the no-session case never publishes a fresh identity.
 const EMPTY_USER_ID_SET: ReadonlySet<string> = new Set<string>();
+
+/**
+ * How long a peer must stay on the roster before their presence turns the
+ * climber's gestures into browsing.
+ *
+ * Sized against what it is filtering, not against a feel target: the roster
+ * blips this exists to absorb are a reconnect landing before the previous
+ * connection's `UserLeft`, which resolves in well under a second once the
+ * server catches up. Three seconds clears that with room to spare and is still
+ * short enough that a climber who genuinely walks up with a friend never
+ * notices the gate arriving late.
+ */
+export const SHARED_SESSION_DWELL_MS = 3_000;
 
 export function QueueProvider({ children }: { children: ReactNode }) {
   const authTransportRevision = useAuthTransportRevision();
@@ -236,7 +298,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // to the live angle, and so inbound SessionBoardPathChanged events can write
   // the new angle back. `setActiveBoard` is stable; keep a ref for the WS
   // handler so the subscription effect doesn't re-subscribe on board changes.
-  const { data: activeBoard } = useActiveBoard();
+  const { data: activeBoard, isPending: isActiveBoardPending } = useActiveBoard();
   const setActiveBoard = useSetActiveBoard();
   const setActiveBoardRef = useRef(setActiveBoard);
   setActiveBoardRef.current = setActiveBoard;
@@ -248,12 +310,133 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // creates/syncs a session — killing swipe-through-playlist. Web keeps it
   // outside the reducer for the same reason. The ref mirrors it so the
   // imperative nextClimb path reads the latest value.
-  const [playlistSuggestionSource, setPlaylistSuggestionSourceState] = useState<PlaylistSuggestionSource | null>(null);
+  const [rawPlaylistSuggestionSource, setPlaylistSuggestionSourceState] = useState<PlaylistSuggestionSource | null>(
+    null,
+  );
+  // The board key a suggestion source must carry to still be usable. Angle is
+  // absent by construction (`getQueueBoardKey` excludes it), so tilting the wall
+  // keeps the feed alive; a layout, size or set change retires it.
+  const activeBoardKey = useMemo(
+    () =>
+      activeBoard
+        ? getQueueBoardKey({
+            board_name: activeBoard.boardType,
+            layout_id: activeBoard.layoutId,
+            size_id: activeBoard.sizeId,
+            set_ids: activeBoard.setIds,
+          })
+        : null,
+    [activeBoard],
+  );
+  // Issue #5099: a source stamped with the board the climber just left kept
+  // feeding `next` that board's climbs, which draw nothing here and light
+  // nothing on the wall — and, because a committed peek is appended to the
+  // queue, left a foreign-board climb behind on every swipe.
+  //
+  // Derived during render rather than cleared in an effect: `nextClimb` reads
+  // `playlistSuggestionSourceRef`, which is assigned during render too, so an
+  // effect would leave one committed render where a swipe still walks the old
+  // board's list. Keyed on the board VALUE, so it covers every `setActiveBoard`
+  // call site rather than the one activation helper, and an unknown active board
+  // fails open.
+  //
+  // Masked rather than cleared, so switching straight back returns the climber
+  // to the list they were browsing. One slot, one source — holding a source per
+  // board would need state that outlives the snapshot we persist.
+  //
+  // Masking is the whole of it. A board switch used to REPLACE the masked source
+  // with the board's popular-by-ascents feed so a swipe had somewhere to go; that
+  // fed climbers climbs they had filtered out and never asked for (issue #5403).
+  // A swipe now stops at the end of the climber's own list instead.
+  //
+  // The mask is also where the source stops steering swipes once the climber
+  // moves off its list. Plenty of paths move the current climb without going
+  // through `setCurrentClimb` — a crew member's CurrentClimbChanged, a widget
+  // Next/Previous tap, joining a session already parked on a climb — and a
+  // source that no longer holds the current climb would keep aiming next/prev at
+  // a list nobody is on. `anchoredSuggestionSource` is the same predicate the
+  // play drawer resolves with, applied here during render so it holds for every
+  // writer at once. It used to be an effect, which left one render in which a
+  // swipe walked the stale list (issue #5403). The state is left alone: return
+  // to a climb on the list and the track is live again.
+  const currentClimbItemForSource = state.currentClimbQueueItem;
+  const currentClimbForSource = currentClimbItemForSource?.climb;
+  const playlistSuggestionSource = useMemo(() => {
+    const anchored = anchoredSuggestionSource(rawPlaylistSuggestionSource, currentClimbItemForSource);
+    if (!anchored || !activeBoard || activeBoardKey == null) return anchored;
+    if (anchored.boardKey !== activeBoardKey) return null;
+    const target = getPlaylistRenderBoardTarget({
+      boardName: activeBoard.boardType,
+      layoutId: activeBoard.layoutId,
+      sizeId: activeBoard.sizeId,
+      setIds: activeBoard.setIds,
+      angle: activeBoard.angle,
+    });
+    const normalized = normalizeBoardSuggestionSource(anchored, (climb) => canAddClimbToBoard(climb, target).ok);
+    // Old mixed snapshots can also have a foreign current climb. Preserve its
+    // position as an anchor, never as a successor, so the surviving list is reachable.
+    if (
+      currentClimbForSource &&
+      normalized !== anchored &&
+      anchored.climbs.some(({ uuid }) => uuid === currentClimbForSource.uuid) &&
+      !normalized.climbs.some(({ uuid }) => uuid === currentClimbForSource.uuid)
+    ) {
+      // Despite the helper's name, the climbs here are `normalized.climbs` —
+      // the climber's OWN source masked down to this board, never a popular
+      // feed. Nothing outside their list can enter through this call.
+      return createBoardFeedSuggestionSource({
+        anchorClimb: currentClimbForSource,
+        feedClimbs: normalized.climbs,
+        boardKey: activeBoardKey,
+      });
+    }
+    return normalized;
+  }, [rawPlaylistSuggestionSource, activeBoard, activeBoardKey, currentClimbItemForSource, currentClimbForSource]);
   const playlistSuggestionSourceRef = useRef<PlaylistSuggestionSource | null>(null);
   playlistSuggestionSourceRef.current = playlistSuggestionSource;
+
+  // A held track stopped steering swipes: the climber still has a source, but the
+  // mask above resolved it to null, so next/prev fall back to the queue (#5402).
+  //
+  // Edge-triggered on the SOURCE, not on the state. The mask is a memo, so a
+  // state-shaped check would fire once per render for as long as the climber sat
+  // on an off-list climb. Keying on the source identity also covers the two ways
+  // out of dormancy: the track reviving (the climber swipes back onto the list —
+  // #5403 leaves the state in place, so this is no longer one-way) and a fresh
+  // selection replacing it. Either way the next dormancy is a new episode.
+  //
+  // Consequence for anyone querying this: it counts EPISODES, not climbers. One
+  // climber wandering off their list four times is four rows.
+  const dormantForSourceRef = useRef<PlaylistSuggestionSource | null>(null);
+  useEffect(() => {
+    if (!rawPlaylistSuggestionSource || playlistSuggestionSource) {
+      dormantForSourceRef.current = null;
+      return;
+    }
+    if (dormantForSourceRef.current === rawPlaylistSuggestionSource) return;
+    dormantForSourceRef.current = rawPlaylistSuggestionSource;
+    // Three ways the mask nulls a held source, kept apart rather than pooled:
+    // pooling distinct causes into one bucket is what made BOARDSESH-AK
+    // unreadable (#4737). Board first, since an off-board source is masked before
+    // the anchor question is even asked.
+    const onThisBoard = activeBoardKey != null && rawPlaylistSuggestionSource.boardKey === activeBoardKey;
+    const currentUuid = currentClimbForSource?.uuid;
+    const leftTrack =
+      currentUuid != null && !rawPlaylistSuggestionSource.climbs.some(({ uuid }) => uuid === currentUuid);
+    track(SHARED_EVENTS.QueueSwipeTrackDormant, {
+      reason: !onThisBoard ? 'board_switched' : leftTrack ? 'current_climb_left_track' : 'nothing_drawable_on_board',
+      boardName: activeBoardRef.current?.boardType ?? null,
+      trackLength: rawPlaylistSuggestionSource.climbs.length,
+      msSinceSelection: suggestionSourceSelectedAtRef.current
+        ? Date.now() - suggestionSourceSelectedAtRef.current
+        : null,
+    });
+  }, [rawPlaylistSuggestionSource, playlistSuggestionSource, activeBoardKey, currentClimbForSource]);
   const { showToast } = useToast();
   const { showQueueAddedSnackbar } = useQueueSnackbar();
   const { t } = useTranslation('session');
+  // The cross-board strings live beside the BLE spill-skip notice they mirror.
+  const { t: tSettings } = useTranslation('settings');
 
   // The signed-in user's display name + avatar (undefined while signed out or
   // still loading). Sent with JOIN_SESSION so the backend roster shows real
@@ -325,6 +508,23 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // callbacks on every board switch — mirror it into a ref the handlers read.
   const activeBoardRef = useRef(activeBoard);
   activeBoardRef.current = activeBoard;
+
+  // The other walls at this gym. A queued climb on one of them is somewhere the
+  // climber can walk to, so it stays a swipe target instead of being skipped
+  // past (#5099's skip was written for a board in another city) and it no longer
+  // raises the cross-board add prompt — mixing walls at a multi-wall gym is the
+  // deliberate act that prompt exists to catch the ACCIDENT of.
+  const reachableBoardKeys = useReachableBoardKeys(activeBoard);
+  // One stable identity per roster, because this feeds the forward-selection
+  // memo that decides the next swipe target.
+  const isReachableClimb = useMemo(() => {
+    if (reachableBoardKeys.size === 0) return undefined;
+    return (climb: Climb) => isClimbOnReachableBoard(climb, reachableBoardKeys);
+  }, [reachableBoardKeys]);
+  const isReachableClimbRef = useRef(isReachableClimb);
+  isReachableClimbRef.current = isReachableClimb;
+  const reachableBoardKeysRef = useRef(reachableBoardKeys);
+  reachableBoardKeysRef.current = reachableBoardKeys;
 
   // Board-render A/B telemetry (issue #2202). QueueProvider mounts once near
   // the app root, so this is the one place that registers `render_mode` /
@@ -652,6 +852,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     currentClimbQueueItem: state.currentClimbQueueItem,
     playlistSuggestionSource,
     setPlaylistSuggestionSourceState,
+    activeBoardSettled: !isActiveBoardPending,
   });
 
   // Explicit session lifecycle commands: create (Start button), join, end, clear.
@@ -914,10 +1115,19 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // The committed half of an add. Everything here re-reads live state, so it is
   // safe to run after an await on the cross-board prompt.
   const commitQueueAdd = useCallback(
-    (rawItem: ClimbQueueItem) => {
+    (rawItem: ClimbQueueItem, placement: QueueAddPlacement = 'end') => {
       // Whoever tapped "add" owns this climb — stamp identity before the dispatch
       // so the local queue and the broadcast carry the same object (#3995).
       const item = attributeNewItem(rawItem);
+      // Derive the landing slot ONCE, here, from live state — this runs after the
+      // cross-board prompt's await, so a queue that moved while the dialog was up
+      // can't leave the position stale. The same number then goes to the local
+      // dispatch AND the broadcast, so this client and its peers can't disagree
+      // about where the climb landed. `undefined` means append.
+      const position =
+        placement === 'next'
+          ? playNextInsertPosition(stateRef.current.queue, stateRef.current.currentClimbQueueItem)
+          : undefined;
       // Optimistic local dispatch is the source of truth for the user's queue.
       // The server echoes this item via the WS subscription, but
       // DELTA_ADD_QUEUE_ITEM dedupes by uuid so the echo is a no-op. The shared
@@ -925,7 +1135,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       // it never creates one). That sync is best-effort: a solo user with no
       // session, an offline phone, or a transient WS error must NOT see "Action
       // failed" when the local queue is already correct. Dev-log only.
-      dispatch({ type: 'DELTA_ADD_QUEUE_ITEM', payload: { item } });
+      dispatch({ type: 'DELTA_ADD_QUEUE_ITEM', payload: { item, position } });
       // partyMode matches web's self-track (QueueContext.tsx): the crew roster
       // holds more than one distinct human. Without it the suppressed self-echo
       // would take `partyMode: true` with it and a PostHog breakdown on
@@ -937,20 +1147,21 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         addedFromTab: 'mobile',
         currentQueueLength: stateRef.current.queue.length + 1,
         partyMode: countDistinctSessionUsers(sessionRuntimeStateRef.current?.users) > 1,
+        placement,
       });
       // No unresolved-climb guard here: addToQueue is only ever called with a
       // fully-resolved climb from search / detail / playlist (a real user tap),
       // never a peer placeholder. The re-broadcast vectors that need guarding are
       // setCurrentClimb (next/previousClimb can land on an unhydrated peer item)
       // and setQueue (whole-queue replace) — see #2527.
-      mutations.addQueueItem(item).catch((error) => {
+      mutations.addQueueItem(item, position).catch((error) => {
         if (__DEV__) console.warn('[queue] addQueueItem sync failed', error);
         // In a party session the add never reached peers — reconcile against the
         // server so this client doesn't silently diverge. Solo is a true no-op.
         reconcileFailedContentMutation(error);
       });
       // Surface the "Climb added to queue · Open" snackbar for every add path.
-      showQueueAddedSnackbar();
+      showQueueAddedSnackbar({ kind: placement === 'next' ? 'playNext' : 'added' });
     },
     [attributeNewItem, mutations, reconcileFailedContentMutation, showQueueAddedSnackbar],
   );
@@ -965,11 +1176,9 @@ export function QueueProvider({ children }: { children: ReactNode }) {
    * same-board path never awaits anything, so a normal add costs nothing extra.
    */
   const addToQueue = useCallback(
-    async (rawItem: ClimbQueueItem): Promise<'added' | 'cancelled'> => {
+    async (rawItem: ClimbQueueItem, options?: { placement?: QueueAddPlacement }): Promise<'added' | 'cancelled'> => {
       const activeBoard = activeBoardRef.current;
-      const activeBoardName = activeBoard ? toBoardName(activeBoard.boardType) : null;
-      const activeConfig =
-        activeBoardName && activeBoard ? { boardName: activeBoardName, layoutId: activeBoard.layoutId } : undefined;
+      const activeConfig = toActiveBoardCompatibilityConfig(activeBoard);
       // `stateRef.current` is reassigned during render, so between a dispatch
       // and its commit this reads the pre-add queue — a second add from the
       // same foreign board inside that sub-frame window would prompt twice.
@@ -983,6 +1192,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         climb: rawItem.climb,
         activeConfig,
         acceptedConfigKeys: deriveAcceptedConfigs(stateRef.current.queue, activeConfig),
+        reachableConfigKeys: reachableBoardKeysRef.current,
         classify: classifyClimbBoardCompatibility,
       });
 
@@ -1011,7 +1221,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      commitQueueAdd(rawItem);
+      commitQueueAdd(rawItem, options?.placement ?? 'end');
       return 'added';
     },
     [commitQueueAdd, requestCrossBoardAdd, setSessionBoardPath],
@@ -1047,7 +1257,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   );
 
   const reorderQueue = useCallback(
-    (uuid: string, oldIndex: number, newIndex: number) => {
+    (uuid: string, oldIndex: number, newIndex: number, options?: { source?: QueueReorderSource }) => {
       // Optimistic local reorder; the reducer re-validates uuid-at-oldIndex so
       // the server's QueueReordered echo is a safe no-op.
       const previousQueue = stateRef.current.queue;
@@ -1060,6 +1270,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         newIndex,
         partyMode: sessionIdRef.current !== null,
         reorderedBy: 'self',
+        source: options?.source ?? 'drag',
       });
       mutations.reorderQueueItem(uuid, oldIndex, newIndex).catch((error) => {
         if (__DEV__) console.warn('[queue] reorderQueueItem sync failed; rolling back', error);
@@ -1072,6 +1283,47 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       });
     },
     [mutations, showToast, t],
+  );
+
+  /**
+   * Jump a climb to the slot right behind the one on the wall.
+   *
+   * Three shapes, decided by `planPlayNext` against live state:
+   * - not queued yet → a positional add (the cross-board gate still runs first,
+   *   and `commitQueueAdd` re-derives the index after it, so a prompt that sat
+   *   open while the queue moved can't land the climb in a stale slot)
+   * - queued elsewhere → a MOVE, never a duplicate: a second copy would leave
+   *   the crew deleting the stale one by hand
+   * - already up next (or already on the wall) → no mutation, but still confirm.
+   *   Silence would read as a dead button.
+   */
+  const playNext = useCallback(
+    async ({
+      item,
+      queueItemUuid,
+    }: {
+      item: ClimbQueueItem;
+      queueItemUuid?: string;
+    }): Promise<'added' | 'moved' | 'unchanged' | 'cancelled'> => {
+      const plan = planPlayNext(stateRef.current.queue, stateRef.current.currentClimbQueueItem, {
+        queueItemUuid,
+        climbUuid: item.climb.uuid,
+      });
+
+      if (plan.kind === 'move') {
+        reorderQueue(plan.uuid, plan.oldIndex, plan.newIndex, { source: 'play-next' });
+        showQueueAddedSnackbar({ kind: 'playNext' });
+        return 'moved';
+      }
+
+      if (plan.kind === 'unchanged') {
+        showQueueAddedSnackbar({ kind: 'playNext' });
+        return 'unchanged';
+      }
+
+      return addToQueue(item, { placement: 'next' });
+    },
+    [addToQueue, reorderQueue, showQueueAddedSnackbar],
   );
 
   const clearQueue = useCallback(() => {
@@ -1401,6 +1653,15 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         climbUuid: item.climb.uuid,
         layoutId: activeBoardRef.current?.layoutId,
         source: 'mobile',
+        // Which crew's wall just moved, and how many people were watching it.
+        // The preview-first work turns this event into the ONE deliberate act
+        // that drives a shared wall (every browse-shaped gesture stopped firing
+        // it), so without these two the "did people stop stepping on each
+        // other" question has no numerator. `sessionId` is a room id, not a
+        // person; the count is distinct humans, matching how `partyMode` is
+        // stamped on Climb Added to Queue rather than raw connection rows.
+        sessionId: sessionIdRef.current,
+        participantCount: countDistinctSessionUsers(sessionRuntimeStateRef.current?.users),
       });
       // Activating a climb slots it right after the current climb (issue #2217),
       // pushing the current climb into history — matching the local "set climb
@@ -1416,35 +1677,138 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     [dispatchSetCurrent],
   );
 
+  // One skip run gets one notice. A held swipe can fire nextClimb twice for the
+  // same current item before the dispatch commits — that is one run — so latch
+  // it here and clear the latch whenever the current climb changes, which is the
+  // only thing that makes a genuinely new run possible. (Keying the latch on the
+  // item swiped away FROM would go silent on forward-back-forward, and would
+  // collapse every no-current-climb run onto one key.)
+  //
+  // The latch is also what makes it safe that the forward selection is computed
+  // TWICE per swipe against two different snapshots: `forwardSelection` below is
+  // a useMemo over reactive state (it drives the dead-end notice), while
+  // `nextClimb` recomputes from refs at gesture time (it must act on the very
+  // latest queue, not on a render that may be a tick behind). The two can
+  // disagree in the window between a dispatch and its commit, so whichever
+  // reaches a skip run first reports it and the other stays quiet.
+  const currentQueueItemUuid = state.currentClimbQueueItem?.uuid;
+  const skipRunReportedForCurrentRef = useRef(false);
+  useEffect(() => {
+    skipRunReportedForCurrentRef.current = false;
+  }, [currentQueueItemUuid]);
+
+  const trackClimbsSkippedOnBoard = useCallback(
+    (skippedItems: ClimbQueueItem[], landedOn: ClimbQueueItem | null, trigger: 'swipe' | 'queue_dead_end') => {
+      const [firstSkipped] = skippedItems;
+      track(SHARED_EVENTS.QueueClimbSkippedOnBoardSwitch, {
+        boardName: activeBoardRef.current?.boardType,
+        layoutId: activeBoardRef.current?.layoutId,
+        sizeId: activeBoardRef.current?.sizeId,
+        skippedCount: skippedItems.length,
+        skippedClimbUuid: firstSkipped.climb.uuid,
+        skippedClimbBoardType: firstSkipped.climb.boardType,
+        skippedClimbLayoutId: firstSkipped.climb.layoutId ?? undefined,
+        advancedToClimbUuid: landedOn?.climb.uuid ?? null,
+        advancedToSuggestion: landedOn ? isPlaylistPeekQueueItemUuid(landedOn.uuid) : false,
+        trigger,
+        inSession: sessionIdRef.current != null,
+      });
+    },
+    [],
+  );
+
+  /**
+   * Tell the climber a forward swipe walked past queued climbs this board can't
+   * draw (issue #5099), and record it. Called for every forward navigation; a
+   * run that skipped nothing reports nothing.
+   */
+  const reportClimbsSkippedOnBoardSwitch = useCallback(
+    (skippedItems: ClimbQueueItem[], landedOn: ClimbQueueItem | null) => {
+      if (skippedItems.length === 0 || skipRunReportedForCurrentRef.current) return;
+      skipRunReportedForCurrentRef.current = true;
+      trackClimbsSkippedOnBoard(skippedItems, landedOn, 'swipe');
+      showToast(
+        tSettings('boardConfigMismatch.skippedOnBoardSwitchToast', {
+          count: skippedItems.length,
+          name: skippedItems[0].climb.name,
+        }),
+        'info',
+      );
+    },
+    [showToast, tSettings, trackClimbsSkippedOnBoard],
+  );
+
+  // The swipe path cannot explain itself when the swipe is the thing that is
+  // disabled: with every remaining queued climb off-board and no feed to fall
+  // through to, `canNext` is false, so neither the gesture nor the Next button
+  // ever calls nextClimb and the climber gets a dead swipe with no reason —
+  // exactly the dead end that most needs explaining. So report the STATE here
+  // rather than the action that cannot happen.
+  //
+  // Once per board, re-armed the moment forward navigation works again.
+  //
+  // Only when climbs were actually SKIPPED. Simply reaching the end of the
+  // climber's own list is not a dead end worth a message: nothing vanished, and
+  // a notice there would fire on every list end to explain a rule the climber
+  // wrote themselves (issue #5403). "0 left" beside a disabled Next says it.
+  const deadEndReportedBoardKeyRef = useRef<string | null>(null);
+  const forwardSelection = useMemo(
+    () =>
+      selectNextQueueItemWithSuggestions(
+        state.queue,
+        state.currentClimbQueueItem,
+        playlistSuggestionSource,
+        toActiveBoardCompatibilityConfig(activeBoard),
+        isReachableClimb,
+      ),
+    [state.queue, state.currentClimbQueueItem, playlistSuggestionSource, activeBoard, isReachableClimb],
+  );
+  useEffect(() => {
+    const { item, skippedItems } = forwardSelection;
+    if (item !== null || skippedItems.length === 0) {
+      deadEndReportedBoardKeyRef.current = null;
+      return;
+    }
+    if (deadEndReportedBoardKeyRef.current === activeBoardKey) return;
+    deadEndReportedBoardKeyRef.current = activeBoardKey;
+    // A swipe from here can add nothing to this; don't let it repeat the news.
+    skipRunReportedForCurrentRef.current = true;
+    trackClimbsSkippedOnBoard(skippedItems, null, 'queue_dead_end');
+    showToast(
+      tSettings('boardConfigMismatch.queueOffBoardToast', {
+        count: skippedItems.length,
+        name: skippedItems[0].climb.name,
+      }),
+      'info',
+    );
+  }, [forwardSelection, activeBoardKey, showToast, tSettings, trackClimbsSkippedOnBoard]);
+
   const nextClimb = useCallback(() => {
     const { queue, currentClimbQueueItem } = stateRef.current;
-    const nextItem = findNextQueueItemWithSuggestions(
+    const activeConfig = toActiveBoardCompatibilityConfig(activeBoardRef.current);
+    const { item: nextItem, skippedItems } = selectNextQueueItemWithSuggestions(
       queue,
       currentClimbQueueItem,
       playlistSuggestionSourceRef.current,
+      activeConfig,
+      isReachableClimbRef.current,
     );
+    // Reported before the bail-out: a swipe that skipped everything and landed
+    // nowhere is exactly when the climber most needs to know why. (The gesture
+    // is normally disabled in that state — see the dead-end effect above — but
+    // the Next button and the widget path can still land here.)
+    reportClimbsSkippedOnBoardSwitch(skippedItems, nextItem);
     if (!nextItem) return;
-    if (isPlaylistPeekQueueItemUuid(nextItem.uuid)) {
-      // Mirror web: turn the transient peek into a real queue item with a fresh
-      // uuid so the synthetic `playlist-peek:<uuid>` never reaches the WS
-      // mutation (toQueueItemInput sends item.uuid verbatim). suggested:true so
-      // suggestion pruning still treats it as suggestion-origin. The peek climb
-      // is the queue package's wide Climb; climbToQueueItem only reads the
-      // ClimbInput subset, so the cast is runtime-safe.
-      const realItem = climbToQueueItem(nextItem.climb as unknown as Parameters<typeof climbToQueueItem>[0], {
-        suggested: true,
-      });
-      // insertAfterCurrent mirrors the server, which ALWAYS slots a
-      // shouldAddToQueue climb right after the current one
-      // (setCurrentClimbAndPublish, issue #2217). Since swipes went list-first
-      // (#4829) the current climb is no longer always the queue tail, where
-      // appending happened to agree — appending from mid-queue would diverge
-      // from the server's order and trip the ordered-hash watchdog.
-      dispatchSetCurrent(realItem, true, undefined, true);
-    } else {
-      dispatchSetCurrent(nextItem, false);
-    }
-  }, [dispatchSetCurrent]);
+    // Mirror web: a transient `playlist-peek:<uuid>` must never reach the WS
+    // mutation (toQueueItemInput sends item.uuid verbatim). The laundering lives
+    // in `resolveCommittableQueueItem` so the play drawer's commit button —
+    // which can now pin a peek while browsing a shared session — applies exactly
+    // the same rule. A converted peek was never in the queue, so it has to be
+    // added; a real item is already there.
+    const { item, converted } = resolveCommittableQueueItem(nextItem);
+    // New suggestions must match the server's insertion immediately after current.
+    dispatchSetCurrent(item, converted, undefined, converted);
+  }, [dispatchSetCurrent, reportClimbsSkippedOnBoardSwitch]);
 
   const previousClimb = useCallback(() => {
     const { queue, currentClimbQueueItem } = stateRef.current;
@@ -1457,18 +1821,9 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       playlistSuggestionSourceRef.current,
     );
     if (!prevItem) return;
-    if (isPlaylistPeekQueueItemUuid(prevItem.uuid)) {
-      const realItem = climbToQueueItem(prevItem.climb as unknown as Parameters<typeof climbToQueueItem>[0], {
-        suggested: true,
-      });
-      // Insert after current, like the server does — see nextClimb. It's why
-      // swiping back then forward lands on the item we just committed
-      // (findNextQueueItemWithSuggestions dedupes against BOTH neighbours)
-      // instead of appending the same climb twice.
-      dispatchSetCurrent(realItem, true, undefined, true);
-    } else {
-      dispatchSetCurrent(prevItem, false);
-    }
+    const { item, converted } = resolveCommittableQueueItem(prevItem);
+    // Match nextClimb and the server: suggestions insert immediately after current.
+    dispatchSetCurrent(item, converted, undefined, converted);
   }, [dispatchSetCurrent]);
 
   // Optimistic dispatch for widget Next/Previous taps. The native widget intent
@@ -1530,7 +1885,11 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     return true;
   }, []);
 
+  // When the track the climber is currently walking was selected. Only the
+  // dormancy event below reads it, to say how long the track stayed live (#5402).
+  const suggestionSourceSelectedAtRef = useRef<number | null>(null);
   const setPlaylistSuggestionSource = useCallback((source: PlaylistSuggestionSource | null) => {
+    suggestionSourceSelectedAtRef.current = source ? Date.now() : null;
     setPlaylistSuggestionSourceState(source);
   }, []);
 
@@ -1545,35 +1904,16 @@ export function QueueProvider({ children }: { children: ReactNode }) {
 
   // Moving off the list hands swipes back to the queue. Swipes are list-first
   // (issue #4829): while the current climb is in `playlistSuggestionSource.climbs`
-  // next/previous walk that ordered list. But plenty of things move the current
-  // climb without going through `setCurrentClimb` — a crew member's
-  // CurrentClimbChanged, a widget Next/Previous tap (dispatchWidgetNavigation),
-  // or joining a session that's already parked on a climb. If any of them lands
-  // on a climb outside the list, a stale source would keep steering swipes into
-  // a list the climber isn't on, so drop it and fall back to plain queue
-  // navigation.
+  // next/previous walk that ordered list. Plenty of things move the current climb
+  // without going through `setCurrentClimb` — a crew member's CurrentClimbChanged,
+  // a widget Next/Previous tap, or joining a session already parked on a climb.
   //
-  // Local paths that legitimately keep the source all land on a climb that IS in
-  // the list — activation, a committed peek, a snapshot restore, setQueue with a
-  // matching source — so they're untouched. A null current (or a still-thin peer
-  // climb with no uuid) is a no-op: the source outlives an empty queue.
-  //
-  // This works on the provider's useState copy, which is the only one mobile
-  // reads; the reducer's SET_PLAYLIST_SUGGESTION_SOURCE field is written for
-  // persistence but never read back for navigation.
-  //
-  // Effect, not synchronous: between a peer's CurrentClimbChanged landing in the
-  // reducer and this effect running after the next render,
-  // `playlistSuggestionSourceRef` still holds the old list. A swipe inside that
-  // single render window walks the stale list one more step. It needs a swipe
-  // and a peer event in the same frame, so it is accepted rather than plumbed
-  // through the reducer.
-  const currentListClimbUuid = state.currentClimbQueueItem?.climb?.uuid;
-  useEffect(() => {
-    if (!playlistSuggestionSource || !currentListClimbUuid) return;
-    if (playlistSuggestionSource.climbs.some(({ uuid }) => uuid === currentListClimbUuid)) return;
-    setPlaylistSuggestionSourceState(null);
-  }, [currentListClimbUuid, playlistSuggestionSource]);
+  // That guard used to live here as an effect, which left one render in which a
+  // swipe walked the stale list. It now lives in
+  // `resolveNavigationSuggestionSource` (@boardsesh/play-view), evaluated during
+  // render at the point of use, so it holds for every writer at once and needs no
+  // render window (issue #5403). The source is left in place; navigation simply
+  // stops consulting it while it does not anchor the current climb.
 
   const publishPlaybackState = useCallback(
     (input: PublishPlaybackStateInput) => mutations.publishPlaybackState(input),
@@ -1588,6 +1928,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   const actionsValue = useMemo<QueueActionsContextValue>(
     () => ({
       addToQueue,
+      playNext,
       removeFromQueue,
       reorderQueue,
       clearQueue,
@@ -1615,6 +1956,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     }),
     [
       addToQueue,
+      playNext,
       removeFromQueue,
       reorderQueue,
       clearQueue,
@@ -1689,6 +2031,57 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     [liveStats, sessionUsers],
   );
 
+  // "Is anyone else here" — the gate that turns swipes and list taps into
+  // browsing instead of wall control. Derived here rather than in the drawer and
+  // the climb list so those two hot surfaces subscribe to a boolean that flips
+  // only across the solo ↔ crew boundary: the ≤1/2s stats push and every
+  // presence delta recreate `sessionUsers`, and re-rendering board art or a
+  // virtualized list twice a second for an answer that didn't change is exactly
+  // the provider-value churn the perf checklist bans.
+  //
+  // Counts PEERS (excluding this client's own entries), not roster participants
+  // — see `countSessionPeers` for why the participant count turned lone climbers
+  // into crews, and why connected and reconnecting peers are kept apart.
+  const sharedBrowseEnabled = useSharedSessionBrowseEnabled();
+  const sessionActive = sessionId != null;
+  const { connected: connectedPeerCount, reconnecting: reconnectingPeerCount } = countSessionPeers(sessionUsers, {
+    // `participantId` IS the signed-in user's uuid for an authenticated
+    // client and the connection id for an anonymous one — either way it is
+    // the key this client's own roster entry carries, which is all the
+    // self-exclusion needs.
+    participantId: sessionRuntimeState.participantId,
+  });
+  // Arms the gate: someone else is here with a live socket.
+  const crewPresentNow = shouldDefaultToBrowse({ sessionActive, connectedPeerCount });
+  // Holds the gate: someone else is here, live or inside the server's reconnect
+  // grace window. A peer whose wifi flapped has not left — their seat and their
+  // wall stakes are still on the roster — so the gate must not hand the wall
+  // back for the seconds their socket is down. This never ARMS anything: a
+  // reconnecting-only roster (a lone climber's own dying connection) reads as no
+  // crew, which is what keeps the lone climber's board theirs.
+  const crewHoldingNow = sessionActive && connectedPeerCount + reconnectingPeerCount > 0;
+  // Hold a newly-arrived crew for a dwell before acting on it, and drop it the
+  // instant it is gone. The asymmetry is deliberate. Arming late costs a climber a
+  // couple of seconds of ordinary wall control while a peer settles; arming on a
+  // one-frame roster blip costs them the wall until they find a button they have
+  // no reason to look for. Releasing is immediate for the same reason — being
+  // left alone must give the board straight back.
+  const [crewDwellElapsed, setCrewDwellElapsed] = useState(false);
+  useEffect(() => {
+    if (!crewHoldingNow) {
+      setCrewDwellElapsed(false);
+      return;
+    }
+    // Live peer: start (or restart) the arming dwell. Reconnecting-only: neither
+    // arm nor release — whatever the gate was, it stays, until the peer is back
+    // (this effect re-runs with a live peer) or evicted (`crewHoldingNow` drops).
+    if (!crewPresentNow) return;
+    const timer = setTimeout(() => setCrewDwellElapsed(true), SHARED_SESSION_DWELL_MS);
+    return () => clearTimeout(timer);
+  }, [crewPresentNow, crewHoldingNow]);
+  const isSharedSession = sharedBrowseEnabled && crewHoldingNow && crewDwellElapsed;
+  const sharedSessionValue = useMemo<QueueSharedSessionContextValue>(() => ({ isSharedSession }), [isSharedSession]);
+
   const playlistSuggestionValue = useMemo<QueuePlaylistSuggestionContextValue>(
     () => ({ playlistSuggestionSource }),
     [playlistSuggestionSource],
@@ -1739,17 +2132,19 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     <QueueSessionControlContext.Provider value={sessionControlValue}>
       <QueueSessionIdContext.Provider value={sessionIdValue}>
         <QueueLiveStatsContext.Provider value={liveStatsValue}>
-          <QueueActionsContext.Provider value={actionsValue}>
-            <QueuePlaylistSuggestionContext.Provider value={playlistSuggestionValue}>
-              <QueueActiveClimbContext.Provider value={activeClimbValue}>
-                <QueueHasActiveClimbContext.Provider value={hasActiveClimbValue}>
-                  <QueueDataContext.Provider value={queueDataValue}>
-                    <QueueContext.Provider value={contextValue}>{children}</QueueContext.Provider>
-                  </QueueDataContext.Provider>
-                </QueueHasActiveClimbContext.Provider>
-              </QueueActiveClimbContext.Provider>
-            </QueuePlaylistSuggestionContext.Provider>
-          </QueueActionsContext.Provider>
+          <QueueSharedSessionContext.Provider value={sharedSessionValue}>
+            <QueueActionsContext.Provider value={actionsValue}>
+              <QueuePlaylistSuggestionContext.Provider value={playlistSuggestionValue}>
+                <QueueActiveClimbContext.Provider value={activeClimbValue}>
+                  <QueueHasActiveClimbContext.Provider value={hasActiveClimbValue}>
+                    <QueueDataContext.Provider value={queueDataValue}>
+                      <QueueContext.Provider value={contextValue}>{children}</QueueContext.Provider>
+                    </QueueDataContext.Provider>
+                  </QueueHasActiveClimbContext.Provider>
+                </QueueActiveClimbContext.Provider>
+              </QueuePlaylistSuggestionContext.Provider>
+            </QueueActionsContext.Provider>
+          </QueueSharedSessionContext.Provider>
         </QueueLiveStatsContext.Provider>
       </QueueSessionIdContext.Provider>
     </QueueSessionControlContext.Provider>

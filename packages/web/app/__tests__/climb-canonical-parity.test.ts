@@ -71,8 +71,8 @@ vi.mock('@/app/lib/data/queries', () => ({
 }));
 
 vi.mock('@/app/lib/data/front-door-data.server', () => ({
-  getFrontDoorSimilarClimbs: vi.fn(async () => []),
-  getFrontDoorBetaLinks: vi.fn(async () => []),
+  getFrontDoorSimilarClimbs: vi.fn(async () => ({ status: 'loaded', items: [] })),
+  getFrontDoorBetaLinks: vi.fn(async () => ({ status: 'loaded', items: [] })),
 }));
 
 vi.mock('@/app/lib/data/list-page-data.server', () => ({

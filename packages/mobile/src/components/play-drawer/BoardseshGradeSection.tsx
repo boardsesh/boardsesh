@@ -169,9 +169,11 @@ export const BoardseshGradeSection = memo(function BoardseshGradeSection({
   const noCrowdGrade = !getBoardCapabilities(boardName).crowdGrade;
   // MoonBoard is the exception that still has a row worth fetching: a problem
   // graded at only one of the board's two fixed angles carries a
-  // `moonboard_angle_estimate` at the other. That is not a crowd grade — the
-  // capability stays false — so only the singular grade is fetched, never the
-  // crowd history or the per-angle series behind the dumbbell.
+  // `moonboard_angle_estimate` at the other, and a `moonboard-wide-angles`
+  // angle outside both carries a rougher `moonboard_wide_angle_estimate`.
+  // Neither is a crowd grade — the capability stays false — so only the
+  // singular grade is fetched, never the crowd history or the per-angle
+  // series behind the dumbbell.
   const isMoonboard = boardName.toLowerCase() === 'moonboard';
   const fetchGrade = !noCrowdGrade || isMoonboard;
   const {
@@ -274,6 +276,35 @@ export const BoardseshGradeSection = memo(function BoardseshGradeSection({
             {view.range
               ? t('boardseshGrade.moonboardAngle.bodyRange', { low: view.range.low, high: view.range.high })
               : t('boardseshGrade.moonboardAngle.body')}
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (view.kind === 'moonboardWideAngleEstimate') {
+    // A MoonBoard problem shown at a `moonboard-wide-angles` angle outside the
+    // board's own two fixed angles. Same muted, `≈`-marked, seal-free
+    // treatment, but its own, more hedged sentence: MoonBoard has almost no
+    // real evidence at this angle, so the number was borrowed from how OTHER
+    // boards typically change at this kind of angle — not measured on
+    // MoonBoard itself. No dumbbell — MoonBoard has no crowd series.
+    return (
+      <View style={styles.container}>
+        <View style={styles.singleHero}>
+          <Text variant="caption1" color={iosSystemColors.systemGray}>
+            {t('boardseshGrade.moonboardWideAngle.label')}
+          </Text>
+          <Text variant="title1" style={[styles.gradeValue, styles.estimateGrade, { color: view.grade.color }]}>
+            {`${ESTIMATE_PREFIX}${view.grade.label}`}
+          </Text>
+        </View>
+        <View style={styles.row}>
+          <Icon name="angle" size={18} color={iosSystemColors.systemGray} />
+          <Text variant="footnote" color={iosSystemColors.systemGray} style={styles.flexText}>
+            {view.range
+              ? t('boardseshGrade.moonboardWideAngle.bodyRange', { low: view.range.low, high: view.range.high })
+              : t('boardseshGrade.moonboardWideAngle.body')}
           </Text>
         </View>
       </View>

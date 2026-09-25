@@ -10,6 +10,7 @@ import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { PressableSurface } from '../PressableSurface';
 import { useTheme } from '../../providers/theme-provider';
+import type { IconName } from '../icon-map';
 import { TICK_GUTTER } from './tick-sheet-metrics';
 
 const DESTRUCTIVE_ROW_HEIGHT = 44;
@@ -19,12 +20,18 @@ type TickDestructiveRowProps = {
   label: string;
   onPress: () => void;
   disabled?: boolean;
+  /** The glyph beside the label. Defaults to the delete bin — the row's original
+   *  and still most common job. A row that ENDS something rather than deleting it
+   *  (the rest timer's "Turn off") passes its own, because the bin promises a
+   *  record is about to disappear. */
+  icon?: IconName;
 };
 
 export const TickDestructiveRow = React.memo(function TickDestructiveRow({
   label,
   onPress,
   disabled = false,
+  icon = 'delete',
 }: TickDestructiveRowProps) {
   const { systemColors, brandColors, spacing, opacity } = useTheme();
 
@@ -39,7 +46,7 @@ export const TickDestructiveRow = React.memo(function TickDestructiveRow({
         accessibilityState={{ disabled }}
         style={[styles.row, { gap: spacing[3] }, disabled ? { opacity: opacity.disabled } : null]}
       >
-        <Icon name="delete" size={DELETE_ICON_SIZE} color={brandColors.error} />
+        <Icon name={icon} size={DELETE_ICON_SIZE} color={brandColors.error} />
         <Text variant="body" color={systemColors.label}>
           {label}
         </Text>

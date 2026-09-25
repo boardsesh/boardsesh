@@ -1,3 +1,4 @@
+import { sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
 import { eq, and, inArray, sql } from 'drizzle-orm';
 import { type Climb, type BoardName } from '@boardsesh/shared-schema';
 import { db } from '../../../../db/client';
@@ -10,6 +11,14 @@ const DEFAULT_ANGLE = 40;
 export type ClimbRef = { climbUuid: string; boardType: string };
 
 export type HydrateClimbsOptions = {
+  /**
+   * Who is asking, for the spray wall visibility rule.
+   *
+   * Omitted means anonymous, which is the safe default: only PUBLIC spray walls'
+   * climbs hydrate. Every caller that has a viewer should pass it, or a wall's own
+   * owner will not see their own climbs in a smart playlist.
+   */
+  viewerUserId?: string | null;
   /**
    * Per-ref angle override (e.g. a playlistClimbs.angle that should win over
    * the climb's stats angle). Map keys are `${boardType}:${climbUuid}`.
@@ -105,6 +114,11 @@ export async function hydrateClimbsByRefs(refs: ClimbRef[], options?: HydrateCli
       // the only field that stops an 8x10 climb reading as an exact fit on a
       // 12x12 wall whose hold ids happen to cover the same numbers.
       compatible_size_ids: tables.climbs.compatibleSizeIds,
+      // How many of the climb's holds have come off the wall. Spray walls only —
+      // NULL on every catalogue board, where holds do not come off — and the badge,
+      // the Intact / Lost holds filter and the remix prompt all read it, so a
+      // projection without it tells a climber that a climb they cannot do is fine.
+      missing_hold_count: tables.climbs.missingHoldCount,
       // Structured climb rules ('no_match', 'any_feet', 'campus', method_*). The
       // play drawer states both Woods rules from this array and every board draws
       // its glyphs from it, so a playlist climb without it reads as "not
@@ -158,7 +172,18 @@ export async function hydrateClimbsByRefs(refs: ClimbRef[], options?: HydrateCli
         eq(boardClimbGrades.angle, tables.climbStats.angle),
       ),
     )
-    .where(inArray(tables.climbs.uuid, uuids));
+    .where(
+      and(
+        inArray(tables.climbs.uuid, uuids),
+        // The smart-playlist logbook types hydrate straight from a user's ticks, so
+        // without this a private spray wall's climbs arrive with name, frames and
+        // setter. A no-op on the other eight board types.
+        sprayClimbVisibilityCondition(
+          { boardType: tables.climbs.boardType, layoutId: tables.climbs.layoutId },
+          options?.viewerUserId ?? null,
+        ),
+      ),
+    );
 
   // Climb UUIDs can collide across boards in principle, so key by both.
   const rowsByKey = new Map<string, (typeof rows)[number]>();
@@ -170,6 +195,12 @@ export async function hydrateClimbsByRefs(refs: ClimbRef[], options?: HydrateCli
   for (const ref of refs) {
     const key = `${ref.boardType}:${ref.climbUuid}`;
     const row = rowsByKey.get(key);
+    // A ref with no row is dropped, which is why the visibility predicate above is
+    // the SECOND line of defence and not the first: this hydrator runs AFTER the
+    // caller has taken its page, so a ref filtered only here shrinks that page while
+    // the caller's `totalCount` stays as it was. Every caller therefore carries the
+    // same rule in the query that paginates (`playlist-climbs.ts`,
+    // `smart-playlists.ts`), and this one only catches a ref that slipped through.
     if (!row) continue;
     const override = options?.angleOverrides?.get(key);
     // Prefer the angle the stats row was actually joined at, so the returned
@@ -192,8 +223,12 @@ export async function hydrateClimbsByRefs(refs: ClimbRef[], options?: HydrateCli
       framesCount: row.frames_count ?? null,
       framesPace: row.frames_pace ?? null,
       compatibleSizeIds: row.compatible_size_ids ?? null,
+      missingHoldCount: row.missing_hold_count ?? null,
       characteristics: row.characteristics ?? null,
       angle,
+      // The angle the stats row resolved to. It can differ from `angle` above,
+      // which a caller-supplied wall angle overrides with the live board angle.
+      statsAngle: row.statsAngle ?? null,
       ascensionist_count: Number(row.ascensionist_count || 0),
       difficulty: getGradeLabel(row.difficulty_id),
       quality_average: row.quality_average?.toString() || '0',

@@ -224,7 +224,8 @@ function BluetoothProbe() {
 function providerElement({
   hasLeds = false,
   boardUuid = 'board-uuid-1',
-}: { hasLeds?: boolean; boardUuid?: string } = {}) {
+  showProbe = true,
+}: { hasLeds?: boolean; boardUuid?: string; showProbe?: boolean } = {}) {
   return createElement(BluetoothProvider, {
     boardName: 'kilter',
     layoutId: 1,
@@ -232,7 +233,7 @@ function providerElement({
     setIds: '1,20',
     boardUuid,
     hasLeds,
-    children: createElement(BluetoothProbe, null) as ReactNode,
+    children: showProbe ? (createElement(BluetoothProbe, null) as ReactNode) : null,
   });
 }
 
@@ -297,6 +298,48 @@ describe('BluetoothProvider — taking a wall with no LED light kit', () => {
   afterEach(() => {
     vi.useRealTimers();
     cleanup();
+  });
+
+  it('remembers local ownership for controls mounted only after the BLE drop', () => {
+    presence.holder = { userId: 'me' };
+    bluetooth.state.isConnected = true;
+    const view = renderProvider({ hasLeds: true, showProbe: false });
+    expect(capturedBluetooth).toBeNull();
+
+    bluetooth.state.isConnected = false;
+    view.rerender(providerElement({ hasLeds: true, showProbe: false }));
+    view.rerender(providerElement({ hasLeds: true }));
+
+    expect(capturedBluetooth?.isConnected).toBe(false);
+    expect(capturedBluetooth?.lastLocalHolderUserId).toBe('me');
+  });
+
+  it.each(['board', 'session'] as const)('forgets a disconnected self-hold immediately on %s change', (scope) => {
+    presence.holder = { userId: 'me' };
+    bluetooth.state.isConnected = true;
+    const view = renderProvider({ hasLeds: true });
+    bluetooth.state.isConnected = false;
+    view.rerender(providerElement({ hasLeds: true }));
+    expect(capturedBluetooth?.lastLocalHolderUserId).toBe('me');
+
+    if (scope === 'board') presence.boardId = 99;
+    else queue.sessionId = 'session-2';
+    view.rerender(providerElement({ hasLeds: true }));
+
+    expect(capturedBluetooth?.lastLocalHolderUserId).toBeNull();
+  });
+
+  it.each(['board', 'session'] as const)('records an unchanged connected holder in the new %s scope', (scope) => {
+    presence.holder = { userId: 'me' };
+    bluetooth.state.isConnected = true;
+    const view = renderProvider({ hasLeds: true });
+    if (scope === 'board') presence.boardId = 99;
+    else queue.sessionId = 'session-2';
+    view.rerender(providerElement({ hasLeds: true }));
+    bluetooth.state.isConnected = false;
+    view.rerender(providerElement({ hasLeds: true }));
+
+    expect(capturedBluetooth?.lastLocalHolderUserId).toBe('me');
   });
 
   it('reports the current climb with no Bluetooth write at all', async () => {

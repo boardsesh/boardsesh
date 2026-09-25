@@ -7,6 +7,11 @@ import type { UserBoard } from '@boardsesh/shared-schema';
 // Controllable active-board read. The whole point of the regression is the
 // async undefined -> board transition, so the test drives it explicitly.
 const activeBoard = vi.hoisted(() => ({ data: undefined as UserBoard | undefined }));
+// The gym roster behind this is a React Query hook reaching the GraphQL client,
+// which pulls react-native's Flow source into a harness that mocks it narrowly.
+// An empty set is "no other board in reach" — the behaviour these tests describe.
+vi.mock('../queue/use-reachable-board-keys', () => ({ useReachableBoardKeys: () => new Set<string>() }));
+
 vi.mock('../../lib/graphql/use-active-board', () => ({
   useActiveBoard: () => ({ data: activeBoard.data }),
 }));

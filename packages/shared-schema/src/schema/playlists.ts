@@ -338,9 +338,15 @@ export const playlistsTypeDefs = /* GraphQL */ `
     name: String
     "Filter by creator IDs"
     creatorIds: [ID!]
+    "Exclude these creators. The viewer's own playlists, for a discovery surface."
+    excludeCreatorIds: [ID!]
+    "Only playlists with at least this many climbs"
+    minClimbs: Int
+    "Only playlists with at most this many climbs. A 600-climb list is an export, not a playlist."
+    maxClimbs: Int
     "Filter by generated recommendation status"
     generatedRecommendation: Boolean
-    "Sort by: 'recent' (default) or 'popular'"
+    "Sort by: 'recent' (default) or 'popular' (climbers who pinned or followed it, then size)"
     sortBy: String
     "Page number"
     page: Int

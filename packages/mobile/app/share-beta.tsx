@@ -23,6 +23,7 @@ import {
   useAttachBetaLink,
   useBetaLinkPreview,
 } from '../src/lib/graphql/hooks';
+import { useScreenshotOwnBetaLink } from '../src/hooks/use-screenshot-own-beta-link';
 import { extractGraphqlMessage } from '../src/lib/graphql/extract-error-message';
 import { track } from '../src/lib/analytics';
 import {
@@ -47,7 +48,12 @@ const SEARCH_DEBOUNCE_MS = 300;
  * arrives as a route param so this screen is decoupled from the native module.
  */
 export default function ShareBetaScreen() {
-  const { link } = useLocalSearchParams<{ link: string }>();
+  // `link` is what the share target hands over. `screenshotShareBeta` is the
+  // capture's way in — see the resolver below.
+  const { link: sharedLink, screenshotShareBeta } = useLocalSearchParams<{
+    link?: string;
+    screenshotShareBeta?: string;
+  }>();
   const { t } = useTranslation('session');
   const { systemColors, brandColors } = useTheme();
   const insets = useSafeAreaInsets();
@@ -56,6 +62,14 @@ export default function ShareBetaScreen() {
   const { showToast } = useToast();
   const { data: profile } = useProfile();
   const attach = useAttachBetaLink();
+
+  // Screenshot mode: a Maestro flow can't perform an iOS share-sheet hand-off, so
+  // the capture reaches this screen by deep link and the screen re-shares a beta
+  // video the account already owns. Returns '' in every normal build, and the
+  // whole fetch dead-strips with it — see the hook for why this is not
+  // `useUserBetaLinks(..., enabled)`.
+  const screenshotOwnBetaLink = useScreenshotOwnBetaLink(profile?.id, !!screenshotShareBeta);
+  const link = sharedLink ?? screenshotOwnBetaLink;
 
   // Best-effort: fetch the reel's thumbnail + caption so we can preview the post
   // and auto-match the climb. Never blocks the manual picker.
@@ -86,10 +100,14 @@ export default function ShareBetaScreen() {
   }, [link]);
 
   // Nothing to attach (shouldn't happen — the provider validates first); just
-  // dismiss rather than show a dead screen.
+  // dismiss rather than show a dead screen. In screenshot mode an empty link
+  // means the account's own beta link is still resolving above, not that there
+  // is nothing to attach, so hold the screen instead of popping it.
   useEffect(() => {
-    if (!link) router.back();
-  }, [link, router]);
+    if (link) return;
+    if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' && screenshotShareBeta) return;
+    router.back();
+  }, [link, router, screenshotShareBeta]);
 
   // statusMode 'both' so projects/attempts show too (people post beta of climbs
   // they're still working). climbName filters the user's *logged* climbs when

@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useId, useMemo, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { BoardName, Climb } from '@boardsesh/shared-schema';
 import {
+  paceSecondsForSpeed,
+  speedForPaceSeconds,
   useClimbFrames,
   usePlaybackEngine,
   type ExternalPlaybackState,
@@ -12,6 +14,8 @@ import { track } from '../../lib/analytics';
 import { useQueueActions } from '../../providers/queue-provider';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
 import { useBleFrameWriter } from '../../lib/ble/use-ble-frame-writer';
+// The seconds range and its clamp live beside the control that offers them.
+import { clampPaceSeconds } from '../playback/playback-speed-report';
 
 type UseMobilePlaybackInput = {
   climb: Climb | null | undefined;
@@ -21,14 +25,24 @@ type UseMobilePlaybackInput = {
   /** Gates the BLE write loop only; the peer subscription stays armed regardless. */
   isOpen: boolean;
   /**
-   * True while the drawer shows a preview: playback keeps animating ON-SCREEN,
-   * but no frame reaches a connected wall. Without this, merely opening a
-   * preview of a multi-frame climb replaces the physical wall — the exact
-   * promise the Browsing chrome makes ("the wall stays put") broken by the
-   * writer below. The live climb's frames resume flowing when the preview
-   * clears (the climb-change reset re-arms the first-frame flush).
+   * The climb on screen is a PREVIEW — not what the wall or the shared queue is
+   * on. Playback then animates locally and reaches nothing outside the phone:
+   * no BLE frame writes (the wall keeps the live climb's frames; they resume
+   * when the preview clears — the climb-change reset re-arms the first-frame
+   * flush) and no playback broadcast (a peer following a route the crew never
+   * agreed to play would be the same intrusion one hop further out). Inbound
+   * peer state stays subscribed: watching what the crew is doing is exactly
+   * what browsing is. Required, not defaulted — every call site must decide.
    */
-  suppressWallWrites: boolean;
+  viewOnly: boolean;
+  /**
+   * The climb on screen belongs to a DIFFERENT board than the connected one, so
+   * its hold ids address the wrong wall and a frame write would light the wrong
+   * holds (#5099). Frames only: the playback state still reaches the crew — it is
+   * this wall that cannot show it, not the route that is private. Optional
+   * because most call sites have no board to disagree with.
+   */
+  suppressWallWrites?: boolean;
   /**
    * Fired once per user-initiated `play()` on a route. Analytics seam: mobile
    * has no analytics transport yet, so the play drawer leaves this undefined.
@@ -47,8 +61,13 @@ export type UseMobilePlaybackOutput = {
   /** Current frame's flat BLE string — feed to the board renderer override. */
   currentFrameString: string;
   isPlaying: boolean;
-  speed: number;
-  /** Native per-frame pace (ms) — lets the UI glide a progress cue at the playback cadence. */
+  /**
+   * Seconds the current frame is held for — the authored pace seen through the
+   * playback multiplier, which is the only form of it a climber should ever be
+   * shown. The multiplier stays the wire format for party sync.
+   */
+  paceSeconds: number;
+  /** Native per-frame pace (ms) — the pace this climb's setter authored. */
   paceMs: number;
   /**
    * True while a party peer is counting this climb's frames differently to us
@@ -59,7 +78,8 @@ export type UseMobilePlaybackOutput = {
   play: () => void;
   pause: () => void;
   seek: (frameIndex: number) => void;
-  setSpeed: (speed: number) => void;
+  /** Plays this climb at `seconds` a frame. Clamped into the control's range. */
+  setPaceSeconds: (seconds: number) => void;
 };
 
 /**
@@ -74,7 +94,8 @@ export function useMobilePlayback({
   boardName,
   mirrored,
   isOpen,
-  suppressWallWrites,
+  viewOnly,
+  suppressWallWrites = false,
   onRoutePlayed,
 }: UseMobilePlaybackInput): UseMobilePlaybackOutput {
   const { subscribeToPlaybackEvents, publishPlaybackState } = useQueueActions();
@@ -112,9 +133,17 @@ export function useMobilePlayback({
     return unsubscribe;
   }, [climbUuid, subscribeToPlaybackEvents]);
 
+  // Read through a ref so the engine keeps ONE `onLocalStateChange` identity for
+  // the drawer's lifetime — a preview being pinned must not look to the engine
+  // like a new listener.
+  const viewOnlyRef = useRef(viewOnly);
+  viewOnlyRef.current = viewOnly;
+
   const handleLocalStateChange = useCallback(
     (next: LocalPlaybackState) => {
       if (!climbUuid) return;
+      // Browsing broadcasts nothing (see `viewOnly`).
+      if (viewOnlyRef.current) return;
       void publishPlaybackState({
         climbUuid,
         frameIndex: next.frameIndex,
@@ -158,7 +187,8 @@ export function useMobilePlayback({
   // the wall through exactly the same latest-wins drain (#4634).
   const { currentFrameString, isAnimatable } = playback;
   const bluetoothConnected = bluetooth?.isConnected ?? false;
-  const wallFrame = !isOpen || suppressWallWrites || !isAnimatable || !bluetoothConnected ? null : currentFrameString;
+  const wallFrame =
+    viewOnly || !isOpen || suppressWallWrites || !isAnimatable || !bluetoothConnected ? null : currentFrameString;
   useBleFrameWriter({
     frame: wallFrame,
     send: bluetooth?.sendFramesToBoard,
@@ -173,6 +203,17 @@ export function useMobilePlayback({
     playback.play();
   }, [playback, onRoutePlayed]);
 
+  // The climber picks seconds a frame; the engine and the wire still speak
+  // multiplier. Converting here rather than broadcasting an overridden pace is
+  // what keeps a party in step — see `speedForPaceSeconds`.
+  const { setSpeed } = playback;
+  const setPaceSeconds = useCallback(
+    (seconds: number) => {
+      setSpeed(speedForPaceSeconds(paceMs, clampPaceSeconds(seconds)));
+    },
+    [setSpeed, paceMs],
+  );
+
   // Memoise the output so a frame tick doesn't hand the play drawer a new object
   // every render (parity with web's use-drawer-playback). `playback` is already
   // a stable useMemo from the engine and `play` is a stable useCallback.
@@ -183,14 +224,14 @@ export function useMobilePlayback({
       frameIndex: playback.frameIndex,
       currentFrameString: playback.currentFrameString,
       isPlaying: playback.isPlaying,
-      speed: playback.speed,
+      paceSeconds: paceSecondsForSpeed(paceMs, playback.speed),
       paceMs,
       peerFrameMismatch: playback.peerFrameMismatch,
       play,
       pause: playback.pause,
       seek: playback.seek,
-      setSpeed: playback.setSpeed,
+      setPaceSeconds,
     }),
-    [playback, frameStrings.length, paceMs, play],
+    [playback, frameStrings.length, paceMs, play, setPaceSeconds],
   );
 }

@@ -6,6 +6,11 @@
   "main": "src/index.ts",
   "types": "src/index.ts",
   "exports": {
+    "./job-queue-schema": {
+      "types": "./src/job-queue-schema.ts",
+      "import": "./src/job-queue-schema.ts",
+      "default": "./src/job-queue-schema.ts"
+    },
     ".": {
       "types": "./src/index.ts",
       "import": "./src/index.ts",
@@ -85,10 +90,12 @@
     "lint-fix": "vp lint --fix",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx scripts/migrate.ts",
+    "db:import-places": "tsx scripts/import-places.ts",
     "test": "tsx --test 'scripts/**/*.test.ts' 'src/**/*.test.ts'",
     "test:explain": "tsx --test src/queries/climbs/__tests__/search-climbs-explain.integration.test.ts",
     "test:migration-journal": "tsx --test scripts/migration-journal-verification.integration.test.ts",
     "db:verify-journal": "tsx scripts/verify-migration-journal.ts",
+    "db:verify-serial-plan": "tsx scripts/verify-serial-plan.ts",
     "db:studio": "drizzle-kit studio",
     "db:import-moonboard": "tsx scripts/import-moonboard-problems.ts",
     "db:import-moonboard-2024": "tsx scripts/import-moonboard-2024.ts",
@@ -108,7 +115,9 @@
     "db:dedupe-serial-boards": "tsx scripts/dedupe-serial-boards.ts",
     "db:dedupe-beta-links": "tsx scripts/dedupe-beta-links.ts",
     "db:refresh-climb-grades": "tsx scripts/refresh-climb-grades.ts",
+    "db:refresh-climb-neighbors": "tsx scripts/refresh-climb-neighbors.ts",
     "db:refresh-moonboard-angle-estimates": "tsx scripts/refresh-moonboard-angle-estimates.ts",
+    "db:refresh-moonboard-wide-angle-estimates": "tsx scripts/refresh-moonboard-wide-angle-estimates.ts",
     "db:seed-social": "tsx scripts/seed-social.ts",
     "db:create-test-user": "tsx scripts/create-test-user.ts",
     "db:seed-beta-links": "tsx scripts/seed-dev-beta-links.ts",
@@ -118,10 +127,12 @@
   "dependencies": {
     "@boardsesh/board-config": "workspace:*",
     "@boardsesh/board-constants": "workspace:*",
+    "@boardsesh/climb-filters": "workspace:*",
     "@boardsesh/kiosk": "workspace:*",
     "@boardsesh/shared-schema": "workspace:*",
     "@boardsesh/sync-runtime": "workspace:*",
     "drizzle-orm": "^0.45.2",
+    "pg-boss": "12.33.0",
     "postgres": "^3.4.9",
     "uuid": "^14.0.1"
   },

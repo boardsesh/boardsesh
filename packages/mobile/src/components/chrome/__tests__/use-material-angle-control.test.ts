@@ -5,12 +5,17 @@ import type { UserBoard } from '@boardsesh/shared-schema';
 
 type Board = Pick<UserBoard, 'angle' | 'isAngleAdjustable' | 'boardType' | 'layoutId'>;
 
-const ctrl = vi.hoisted(() => ({ board: null as Board | null, setActiveBoard: vi.fn() }));
+const ctrl = vi.hoisted(() => ({ board: null as Board | null, setBoardAngle: vi.fn() }));
 const haptics = vi.hoisted(() => ({ light: vi.fn() }));
 
 vi.mock('../../../lib/graphql/use-active-board', () => ({
   useActiveBoard: () => ({ data: ctrl.board }),
-  useSetActiveBoard: () => ctrl.setActiveBoard,
+}));
+// The angle write itself lives in useSetBoardAngle (which also records the angle
+// against the board, so it survives switching walls). This hook's job is to
+// delegate; that hook has its own tests.
+vi.mock('../../../lib/boards/use-set-board-angle', () => ({
+  useSetBoardAngle: () => ctrl.setBoardAngle,
 }));
 vi.mock('../../../lib/haptics', () => ({ hapticLight: haptics.light }));
 
@@ -21,7 +26,7 @@ const adjustableBoard: Board = { angle: 40, isAngleAdjustable: true, boardType: 
 describe('useMaterialAngleControl', () => {
   beforeEach(() => {
     ctrl.board = null;
-    ctrl.setActiveBoard.mockReset();
+    ctrl.setBoardAngle.mockReset();
     haptics.light.mockReset();
   });
 
@@ -67,24 +72,24 @@ describe('useMaterialAngleControl', () => {
     expect(result.current.visible).toBe(false);
   });
 
-  it('persists a new angle via setActiveBoard', () => {
+  it('persists a new angle via setBoardAngle', () => {
     ctrl.board = adjustableBoard;
     const { result } = renderHook(() => useMaterialAngleControl());
     act(() => result.current.change(45));
-    expect(ctrl.setActiveBoard).toHaveBeenCalledWith({ ...adjustableBoard, angle: 45 });
+    expect(ctrl.setBoardAngle).toHaveBeenCalledWith(adjustableBoard, 45);
   });
 
   it('ignores a no-op change to the current angle', () => {
     ctrl.board = adjustableBoard;
     const { result } = renderHook(() => useMaterialAngleControl());
     act(() => result.current.change(40));
-    expect(ctrl.setActiveBoard).not.toHaveBeenCalled();
+    expect(ctrl.setBoardAngle).not.toHaveBeenCalled();
   });
 
   it('ignores a change for a fixed-angle board', () => {
     ctrl.board = { ...adjustableBoard, isAngleAdjustable: false };
     const { result } = renderHook(() => useMaterialAngleControl());
     act(() => result.current.change(45));
-    expect(ctrl.setActiveBoard).not.toHaveBeenCalled();
+    expect(ctrl.setBoardAngle).not.toHaveBeenCalled();
   });
 });

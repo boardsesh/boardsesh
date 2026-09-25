@@ -5,7 +5,7 @@
 // keeps each platform's @expo/ui native tree — which resolves native views at
 // module load — off the other platform's bundle.
 //
-// The route screen (app/(tabs)/profile/more.tsx) keeps every hook, route guard,
+// The route screen (app/settings/index.tsx) keeps every hook, route guard,
 // conditional (auth / tester / dev / preview-build) and i18n `t()` call, then
 // builds this plain view-model and hands it to <MoreForm />. The native tree
 // renders strings + invokes the row handlers only — all derived copy and haptics

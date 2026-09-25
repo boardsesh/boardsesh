@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 import {
   classifyChangedFiles,
@@ -164,6 +167,9 @@ void test('treats the production workflow and its detector as affecting every ta
 void test('keeps production deploy unit tests CI-only', () => {
   for (const filePath of [
     'scripts/__tests__/docker-build-release-stamp.test.ts',
+    // Reads production-deploy.yml as text to pin the verify-serial-plan wiring
+    // (#5352); runs in CI's deploy-config job and ships nothing.
+    'scripts/__tests__/production-deploy-serial-plan.test.ts',
     'scripts/production-backend-smoke.test.mjs',
     'scripts/production-deploy-changes.test.mjs',
     // Both belong to the dual web deploy path. Neither is shipped code — the
@@ -222,9 +228,34 @@ void test('treats every input of the app.boardsesh.com export as app-affecting',
 void test('publishes cataloged static images but excludes retained board PNG sources', () => {
   assert.equal(classifyChangedFiles(['packages/web/public/images/kilter/wall.webp']).staticAssets, true);
   assert.equal(classifyChangedFiles(['packages/web/public/images/kilter/wall.png']).staticAssets, false);
-  assert.equal(classifyChangedFiles(['packages/web/public/brand/boardsesh-mark.png']).staticAssets, true);
+  assert.equal(classifyChangedFiles(['packages/web/public/videos/help/swipe.mp4']).staticAssets, true);
+  assert.equal(classifyChangedFiles(['packages/web/public/videos/help/swipe.webm']).staticAssets, true);
+  assert.equal(classifyChangedFiles(['packages/web/public/videos/help/raw.mov']).staticAssets, false);
+  assert.equal(classifyChangedFiles(['packages/web/public/brand/boardsesh-mark.webp']).staticAssets, true);
   assert.equal(classifyChangedFiles(['packages/web/app/favicon.ico']).staticAssets, true);
   assert.equal(classifyChangedFiles(['scripts/upload-static-assets.ts']).staticAssets, true);
+});
+
+void test('names only files that exist, for every exact path the classifier matches', () => {
+  // The classifier decides whether a commit deploys static assets by comparing
+  // changed paths against literal strings. Nothing links those strings to the
+  // repo, so deleting or renaming a file elsewhere leaves a clause that can
+  // never fire again — and the deploy it used to trigger silently stops
+  // happening. That is exactly how the brand mark went stale: the file became
+  // `.webp` and this clause kept naming the `.png`.
+  //
+  // Only quoted paths with a file extension are checked. The directory-prefix
+  // clauses (`startsWith`) and the bare script names are matched by shape
+  // rather than identity and are covered by the assertions above.
+  const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+  const classifier = readFileSync(join(repoRoot, 'scripts/production-deploy-changes.mjs'), 'utf8');
+  const quotedPaths = [...classifier.matchAll(/filePath === '([^']+\.[A-Za-z0-9]+)'/g)].map((match) => match[1]);
+
+  assert.ok(quotedPaths.length > 5, 'the classifier no longer compares exact paths the way this test reads it');
+
+  const missing = quotedPaths.filter((filePath) => !existsSync(join(repoRoot, filePath)));
+
+  assert.deepEqual(missing, [], `the classifier names files that do not exist: ${missing.join(', ')}`);
 });
 
 void test('treats every deployed Cloudflare Pages config file as app-affecting', () => {

@@ -13,7 +13,7 @@ import {
  * `useHoldColorOverrides().setRoleOverride` — the same store a manual colour
  * pick writes to — so it reaches the physical board's LEDs exactly like setting
  * each colour by hand. The settings screen says so in the UI copy
- * (`mobile.more.boardLook.accessibility.cvdPalette.note`); this module doesn't
+ * (`mobile.settings.boardLook.accessibility.cvdPalette.note`); this module doesn't
  * touch Bluetooth at all.
  *
  * Every palette below is validated (not just eyeballed) against
@@ -53,19 +53,19 @@ export type CvdPalettePreset = {
 export const CVD_PALETTE_PRESETS: readonly CvdPalettePreset[] = [
   {
     id: 'protanopia',
-    labelI18nKey: 'mobile.more.boardLook.accessibility.cvdPalette.presets.protanopia',
+    labelI18nKey: 'mobile.settings.boardLook.accessibility.cvdPalette.presets.protanopia',
     cvdType: 'protanopia',
     roles: { STARTING: '#0072b2', HAND: '#e69f00', FINISH: '#cc79a7', FOOT: '#f0e442' },
   },
   {
     id: 'deuteranopia',
-    labelI18nKey: 'mobile.more.boardLook.accessibility.cvdPalette.presets.deuteranopia',
+    labelI18nKey: 'mobile.settings.boardLook.accessibility.cvdPalette.presets.deuteranopia',
     cvdType: 'deuteranopia',
     roles: { STARTING: '#0072b2', HAND: '#e69f00', FINISH: '#cc79a7', FOOT: '#f0e442' },
   },
   {
     id: 'tritanopia',
-    labelI18nKey: 'mobile.more.boardLook.accessibility.cvdPalette.presets.tritanopia',
+    labelI18nKey: 'mobile.settings.boardLook.accessibility.cvdPalette.presets.tritanopia',
     cvdType: 'tritanopia',
     roles: { STARTING: '#0e9e77', HAND: '#d95f02', FINISH: '#ca2270', FOOT: '#9acd32' },
   },

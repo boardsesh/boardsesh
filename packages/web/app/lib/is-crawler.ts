@@ -121,3 +121,33 @@ export const CRAWLER_USER_AGENT_PATTERN = new RegExp(
 export function isCrawlerUserAgent(userAgentHeader: string | null | undefined): boolean {
   return userAgentHeader ? CRAWLER_USER_AGENT_PATTERN.test(userAgentHeader) : false;
 }
+
+/**
+ * The one real-user agent `CRAWLER_USER_AGENT_PATTERN` misclassifies: Yandex's
+ * in-app search browser spells itself `YandexSearch`, which contains Next's
+ * `yandex` token. Documented and pinned by the "inherits one Yandex false
+ * positive from Next" case in `__tests__/is-crawler.test.ts`.
+ *
+ * Yandex Browser proper is not here — it spells itself `YaBrowser`, which the
+ * pattern never matched.
+ */
+const CRAWLER_FALSE_POSITIVE_PATTERN = /YandexSearch/i;
+
+/**
+ * `isCrawlerUserAgent` minus its known false positive.
+ *
+ * Which of the two you want depends on what a false positive costs. For the
+ * locale gates the cost lands on the visitor as a default-locale 200 for the
+ * URL they asked for — the bot branch's deliberate behaviour, not an error — so
+ * the superset is fine there and staying aligned with Next is worth more.
+ *
+ * Where a false positive costs us *observability of a real session*, it is not.
+ * `instrumentation-client.ts` uses this one: misclassifying a Yandex Search
+ * visitor there silently drops their errors and diagnostics, and we would never
+ * know we had lost them.
+ */
+export function isAutomatedCrawlerUserAgent(userAgentHeader: string | null | undefined): boolean {
+  if (!userAgentHeader) return false;
+  if (CRAWLER_FALSE_POSITIVE_PATTERN.test(userAgentHeader)) return false;
+  return CRAWLER_USER_AGENT_PATTERN.test(userAgentHeader);
+}

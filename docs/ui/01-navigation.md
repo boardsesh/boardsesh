@@ -45,34 +45,81 @@ There are **5 tabs** (the web has a 6th "Create" tab but it is between Discover 
 - **Create tab**: Same fallback logic as Climbs tab but navigates to the `/create` variant of the URL. Opens Board Selector Drawer with `isCreateClimbFlow=true` when no board context.
 - **You tab**: If `sessionStatus !== 'loading'` and user is not authenticated, prevents navigation and opens auth modal with title `bottomTabBar.youSignInTitle` and description `bottomTabBar.youSignInDescription`. On auth success, navigates to `/you`.
 
-#### Mobile: dual tab bar variants
+#### Mobile: library entry and tab variants
 
-The mobile tab bar has two distinct implementations chosen by the active UI variant (set in the More tab under "UI Style"):
+The mobile tabs remain **Home, Climbs, Session, Discover, You**, in that order.
+Session keeps the `/record` route; only its visible navigation label changes.
+An ordinary launch and untargeted post-login entry select **Climbs**, using the
+stored active board. Selecting the initial tab does not reorder the bar. Explicit
+deep links, session joins and warm resumes retain their own destinations.
+Screenshot mode intentionally starts on Home to preserve the capture readiness contract.
 
-**Liquid Glass variant** (default on iOS 26+):
+- **Native iPhone:** Liquid Glass on iOS 26 uses `NativeTabs`. Climbs retains
+  `role="search"` and its native bottom search field. The queue accessory,
+  session/connection badge and scroll minimization retain their current behavior.
+- **Other phones:** Material and older-iOS Liquid Glass use JS `Tabs` with
+  `MaterialTabBar`. Tablet sidebars retain their existing order and panes.
+- **Session setup:** Browse climbs opens the selected board's library
+  directly, without rewriting the board selection.
+  Change board is a separate action; its picker returns to Session. First-time
+  board selection still finishes on Climbs. Start opens Climbs after creating the
+  session and appending any generated workout; a failed start stays on Session.
+  The board card uses separate full-width Browse climbs and Change board rows;
+  a small selected-board thumbnail leads Browse climbs and board details wrap
+  beneath its label. Both rows disappear once the session is running; the Climbs
+  tab remains available. During Start, the setup form remains
+  visible and Start stays disabled until the native tab leaves Session, so live
+  settings never flash during the handoff. Switching tabs manually while creation
+  is pending cancels the automatic redirect, while session and queue creation finish.
+- **Restoring a board:** local disk reads and bounded retries run independently
+  of internet connectivity. Pending reads show loading; failed reads offer Retry.
+  Only a successful read returning no board permits setup or a Choose board prompt.
+  Existing saved-board and account-isolation rules remain in force. Filters keep
+  their existing persistence; scroll position is retained within the running app,
+  not restored across process restarts.
 
-- Uses `expo-router/unstable-native-tabs` `NativeTabs` — a native UIKit tab bar.
-- 5 tabs: Boards, Climbs, Record, Discover, Profile.
-- Tab icons: SF Symbols (`sf=`) on iOS, Material Design strings (`md=`) on Android.
-- Record tab shows a `NativeTabs.Trigger.Badge` with `brandColors.success` background when a board is Bluetooth-connected or a session is live.
-- `QueueBottomAccessory` mounts as a `NativeTabs.BottomAccessory` platter (current climb + tick) — this native accessory is Liquid Glass–only.
-- `minimizeBehavior="onScrollDown"` hides the bar while scrolling the climbs list (requires the `react-native-screens` patch at `patches/react-native-screens@4.25.2.patch`).
+The picker emits `Board Picker Opened` once after the active-board read settles
+and `Board Picker Selection Completed` after an existing-board selection is
+persisted. `sameBoard` compares UUIDs; `sameConfig` compares board type, layout,
+size and hold sets. A failed restoration records unknown (`null`) rather than
+claiming there was no board. `source` distinguishes onboarding, explicit Session
+returns, and other picker entries; `returnTo` records the destination.
+`pickSource` names the list the board was tapped in (`your_boards`, `nearby`,
+`offline`, `bluetooth` or `gym_finder`) and `followed` says whether the pick
+added it to Your boards. The gym finder binds through the same `useActivateBoard`
+path, so its picks report this event (and close out onboarding when the picker
+forwarded `source=onboarding`). Pushed from the picker's "Find gym" (which adds
+`from=picker`), it reports no opening of its own, because the picker already
+did, and its picks carry the picker's `source`. Opened on its own from Home or
+My gyms, it reports its own opening, and both events say `source: gym_finder`,
+so those picks never count against the picker's openings. Creation
+flows retain their existing creation/activation events. Screen-event deduplication
+is unchanged, so these events diagnose reselection without restoring a per-screen
+navigation stream. They do not establish a retrospective before/after baseline.
 
-**Material variant**:
+A pick follows the board unless the climber built it (`ownerId` matches them) or
+already follows it. `UserBoard.isOwned` plays no part: it is the creator's "a
+real wall" flag and is true for almost every board built in the app, which is
+why, before #5654, a gym or community board someone else built was bound but
+never followed, and the picker said "No boards yet" on the next open. Someone
+else's private board is never followed, because the server refuses it, and a
+signed-out climber follows nothing.
 
-- Uses Expo Router `<Tabs>` with a custom JS tab bar (`MaterialTabBar`, `packages/mobile/src/components/navigation/MaterialTabBar.tsx`).
-- Same 5 tabs as the Liquid Glass variant.
-- Tab icons: `MaterialCommunityIcons` (active/inactive glyph pairs, e.g. `view-dashboard` / `view-dashboard-outline`).
-- Record tab shows a badge dot (`tabBarBadge`) styled with `brandColors.success` when the same conditions apply.
-- The climb/tick chrome uses `PersistentQueueBar` as a docked opaque active-context bar above the tab bar instead of the native `BottomAccessory`.
-- Opaque elevated surface with an M3 tonal active-indicator pill behind the focused icon.
+Because nearly every board someone else built now counts as new to the climber,
+adoption's "Download X?" dialog only appears on picks from the picker and the
+gym finder. The onboarding bind (which makes its own offer) and the play
+drawer's wall switch pass `offerOffline: false`: they still follow the board,
+and the "keep boards offline" setting still downloads it, but they never ask.
 
-`_layout.tsx` reads `variant` directly from `useTheme()` (the stored UI-variant preference) and renders the appropriate navigator. `useEffectiveSurfaceMode()` is a separate hook used by surface-rendering components such as `GlassSurface` to apply the a11y (`reduceTransparency`) overlay on top of the stored preference.
-
-**Mobile tab set differs from the web table above:** The 5 mobile tabs are Boards, Climbs, Record, Discover, Profile. Climbs is the default route (`unstable_settings.initialRouteName = 'climbs'`); there is no separate "Create" or "Feed" tab.
-
-- **Board selection is a full-screen modal** (`app/boards/`), not the web's `BoardSelectorDrawer`. The board pill in the Climbs / Discover top chrome opens it (`/boards`).
-- **No board context shows a CTA, not a selector.** On a cold start with no active board the Climbs list renders a "select a board" prompt rather than auto-opening a drawer; tapping it routes to the `/boards` modal.
+The app also follows the board it launched on, once per account and board
+(`Active Board Follow Healed`), when the server says it is neither the climber's
+nor followed. It started as the repair for picks made before #5654, but it is a
+lasting rule: it covers every board the app launches on, including boards bound
+without a pick at all (a party session join, a `/b/` or climb deep link, the
+Bluetooth mismatch switch, the drawer's board switch). So a friend's wall you
+joined a session on shows up in Your boards after the next launch. The
+`active-board-follow-heal-kill` mobile flag turns it off fleet-wide; the heal
+waits for flags to resolve, so the switch holds from the next launch.
 
 ### Header Patterns
 

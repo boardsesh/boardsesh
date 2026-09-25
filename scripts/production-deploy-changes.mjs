@@ -59,6 +59,7 @@ function isProductionDeployWatchdogFile(filePath) {
 function isProductionDeployTestFile(filePath) {
   return (
     filePath === 'scripts/__tests__/docker-build-release-stamp.test.ts' ||
+    filePath === 'scripts/__tests__/production-deploy-serial-plan.test.ts' ||
     filePath === 'scripts/production-backend-smoke.test.mjs' ||
     filePath === 'scripts/production-deploy-changes.test.mjs' ||
     filePath === 'scripts/production-web-deploy-targets.test.mjs' ||
@@ -84,7 +85,8 @@ function isCloudflareAffecting(filePath) {
 function isStaticAssetsAffecting(filePath) {
   return (
     (filePath.startsWith('packages/web/public/images/') && filePath.endsWith('.webp')) ||
-    filePath === 'packages/web/public/brand/boardsesh-mark.png' ||
+    (filePath.startsWith('packages/web/public/videos/') && (filePath.endsWith('.mp4') || filePath.endsWith('.webm'))) ||
+    filePath === 'packages/web/public/brand/boardsesh-mark.webp' ||
     (filePath.startsWith('packages/web/public/icons/') && filePath.endsWith('.png')) ||
     filePath === 'packages/web/app/favicon.ico' ||
     filePath === 'packages/web/app/icon.png' ||

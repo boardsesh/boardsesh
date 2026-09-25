@@ -300,11 +300,25 @@ describe('authored pace reaches the queue and the server', () => {
     createClimb.frameCount = 2;
     const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard }));
 
-    act(() => result.current.setFramesPace(50_000));
-    expect(result.current.framesPaceMs).toBe(10_000);
+    act(() => result.current.setFramesPace(120_000));
+    expect(result.current.framesPaceMs).toBe(60_000);
 
     act(() => result.current.setFramesPace(10));
     expect(result.current.framesPaceMs).toBe(300);
+  });
+
+  it('lets a setter author the slow paces the catalogue is full of', () => {
+    // Roughly half of all synced multi-frame routes are paced slower than 10s a
+    // frame — endurance laps, not animation. The ceiling used to sit at 10s, so
+    // a setter could not author one and re-saving a synced one sped it up.
+    createClimb.frameCount = 2;
+    const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard }));
+
+    act(() => result.current.setFramesPace(20_000));
+    expect(result.current.framesPaceMs).toBe(20_000);
+
+    act(() => result.current.setFramesPace(60_000));
+    expect(result.current.framesPaceMs).toBe(60_000);
   });
 
   it('publishes no pace on a boulder, whatever the control last held', async () => {

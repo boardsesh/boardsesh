@@ -7,12 +7,15 @@ export * from './comments-votes';
 export * from './boards';
 export * from './board-presence';
 export * from './gyms';
+export * from './places';
 export * from './gym-kiosks';
 export * from './notifications';
 export * from './activity-feed';
 export * from './new-climb-feed';
+export * from './hold-heatmap';
 export * from './sessions';
 export * from './create-session';
+export * from './live-sessions';
 export * from './climb-stats-history';
 export * from './climb-stats-for-angles';
 export * from './boardsesh-grade';
@@ -22,6 +25,7 @@ export * from './beta-links';
 export * from './integrations';
 export * from './location-sync-admin';
 export * from './gym-owner-reassign';
+export * from './spray-walls';
 // queue-session.ts is intentionally NOT re-exported here: its CREATE_SESSION,
 // END_SESSION etc. collide with the per-feature operations above. Import it
 // directly via `@boardsesh/graphql/operations/queue-session`.

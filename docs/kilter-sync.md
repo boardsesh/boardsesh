@@ -156,11 +156,11 @@ Implemented in [`packages/kilter-sync/src/sync/catalog-sync.ts`](../packages/kil
 
 1. **Reference pull** (`sync/reference-pull.ts`) over PowerSync `global` + `global_gyms` → `products`, `product_layouts`, `holds`, `difficulty_grades`. The `product_layouts` list is the set of `productLayoutUuid`s to fetch; the others drive a reconcile/verify pass.
 2. **Layout resolve** (`sync/layout-resolver.ts`): each Grips `productLayoutUuid` (a small int-string like `"27"`) → the integer `board_layouts.id`, by product name. Grips ships finer layout granularity than the legacy catalog, so many Grips layouts collapse onto one `board_layouts` row (six "Kilter Board Original" variants → `layout_id=1`). Resolutions persist to `board_layout_aliases`. Products with multiple board layouts (Tycho) or unknown to board\_\* ("UP Board") resolve to null → skipped and reported.
-3. **Catalog REST pull**, grouped by resolved `board_layouts.id` so the existing catalog loads once per board layout: `GET /api/climbs/all/{productLayoutUuid}` (full per-layout array, no pagination) + `GET /api/climb-stat/all/{productLayoutUuid}`.
+3. **Catalog REST pull**, grouped by resolved `board_layouts.id` so the existing catalog loads once per board layout: `GET /api/climbs/all/{productLayoutUuid}` (full per-layout array, no pagination) + `GET /api/climb-stat/all/{productLayoutUuid}`. `--layouts` scopes which layouts are *pulled*, but not the hole→placement preload the reroute resolver needs: every listed layout still resolves, so a scoped run also persists those layout aliases and reports unmapped layouts from outside the filter.
 4. **Parse + remap** (`sync/catalog-parse.ts`): Grips `climb_concat` is `h{holeId}p{code}[s{start}][e{end}]`; the legacy catalog stores `frames` as `p{placementId}r{code}`. `board_placements(layout_id, hole_id) → id` (unique per layout) bridges the two, so `climb_concat` is rewritten to the canonical Aurora frames format and routed through the existing `convertLitUpHoldsStringToMap`. This guarantees byte-identical `board_climb_holds` / `hold_fingerprint` to the legacy data (verified 366/366 in Phase 0).
 5. **Dedup** (see [Climb dedup](#climb-dedup)) — **UUID-first** (Grips inherited Aurora's climb UUIDs, so ~80% of climbs already exist as their own canonical), then hold-fingerprint for new UUIDs.
 6. **Upsert** `board_climbs` (new canonicals only) + `board_climb_holds` + `board_climb_aliases`, then `board_climb_stats`, writing the Grips count into `upstream_ascensionist_count` (see below). Setter notifications fire for newly-inserted canonicals (`sync/notifications.ts`, ported from aurora-sync).
-7. **Deletion reconciliation** (`sync/deletions.ts`) via `GET /api/climbs/delteduuids` — gated, report-only by default.
+7. **Deletion reconciliation** (`sync/deletions.ts`) via `GET /api/climbs/delteduuids` — gated, report-only by default. The deletion list is fetched **once per run**, right after the skip backlog is loaded, and shared with the identity re-list in step 5. A failed or empty fetch leaves it null, which disables both (see [Climb dedup](#climb-dedup)) — an absent list is not evidence that nothing was deleted.
 
 ### Verified REST/PowerSync contract (Phase 0, 2026-06-02)
 
@@ -174,6 +174,55 @@ The endpoint paths read off the APK were partly wrong; verified live against a r
 | Reference | PowerSync `global` / `global_gyms`            | `product_layouts` carries `product_layout_uuid` + `product_name` + edges                                                              |
 
 Wire JSON is **camelCase**. Across 19 listed layouts the catalog is ~424k climbs (all distinct; each climb has exactly one layout); ~80% already exist in `board_climbs` by UUID (case-insensitive).
+
+### Why Kilter's app shows more climbs than Boardsesh
+
+Climbers compare the two apps and see Kilter's number at roughly double ours: about 36k climbs on an 8x12 Kilter Homewall Full Ride in Kilter's app, about 18k in Boardsesh. Both apps have the same climbs. The difference is the counting unit.
+
+- **Boardsesh counts climbs.** The "Show N climbs" total comes from [`packages/backend/src/db/queries/climbs/count-climbs.ts`](../packages/backend/src/db/queries/climbs/count-climbs.ts). It LEFT JOINs `board_climb_stats` on its key at the one angle being browsed (`climb_uuid`, `board_type`, `angle`), so each climb contributes one row and `count(*)` is a count of distinct climbs.
+- **Kilter's app looks like it counts (climb, angle) pairs.** We measured our own data, not their code. Counting our stat rows one per (climb, angle) gives 36,000 on the 8x12, which is what their app shows, and 49,892 on the 10x12 against the ~50.6k reported there — within about 1.5%. That is what a per-(climb, angle) count does. A climb with stats at 40° and at 45° is two entries, so the ratio depends on how spread out a board's ascents are.
+
+Measured on prod, 2026-09-15, Kilter Homewall (`layout_id = 8`), `is_listed AND NOT is_draft AND NOT is_hidden`, all frame counts on both sides:
+
+| Size | `size_id` | Distinct climbs | `board_climb_stats` rows | Rows per climb | Kilter's app |
+| --- | --- | --- | --- | --- | --- |
+| 8x12 Full Ride | 23 | 18,335 | 36,000 | 1.96x | ~36k |
+| 10x12 Full Ride | 25 | 28,671 | 49,892 | 1.74x | ~50.6k |
+
+One caveat on the row counts: a few stat rows exist only because someone logged a tick in Boardsesh, not because Kilter sent them. Those are the rows with `upstream_synced_at IS NULL` — 114 of the 36,000 on the 8x12 (0.3%) and 216 of the 49,892 on the 10x12. Too few to move the ratio, but the row count is not purely Kilter's own data.
+
+To re-check, run both queries read-only and swap the `size_id`. They share the same climb predicates, so the only difference is what gets counted. Distinct climbs:
+
+```sql
+SELECT count(*)
+FROM board_climbs c
+WHERE c.board_type = 'kilter'
+  AND c.layout_id = 8
+  AND c.compatible_size_ids @> ARRAY[23]::int[]
+  AND c.is_listed = true
+  AND c.is_draft = false
+  AND c.is_hidden = false;
+```
+
+The same climbs counted once per angle:
+
+```sql
+SELECT count(*)
+FROM board_climbs c
+JOIN board_climb_stats s
+  ON s.board_type = c.board_type
+ AND s.climb_uuid = c.uuid
+WHERE c.board_type = 'kilter'
+  AND c.layout_id = 8
+  AND c.compatible_size_ids @> ARRAY[23]::int[]
+  AND c.is_listed = true
+  AND c.is_draft = false
+  AND c.is_hidden = false;
+```
+
+The in-app filter defaults to boulders only (`frames_count = 1 OR frames_count IS NULL`, from `createClimbFilters`), so the button reads a little lower than the table: 18,296 climbs over 35,843 stat rows on the 8x12, and 28,602 over 49,693 on the 10x12. Add `AND (c.frames_count = 1 OR c.frames_count IS NULL)` to both queries to reproduce those. Picking "Both" under Climb Type adds the routes back.
+
+Climbers see this explained in two places: the Help page section at `/help#climb-counts`, and a one-line note under the Show button in the mobile filter sheet on Kilter boards.
 
 ### Cooldown + piggyback
 
@@ -234,19 +283,34 @@ A climb the sync reads but cannot turn into a `board_climbs` row is recorded in 
 
 Rows are upserted on `(board_type, climb_uuid)`: re-skipping refreshes `last_seen_at` and re-opens the row, and a climb a later run manages to ingest gets `resolved_at` stamped. Nothing is ever deleted, so the table doubles as the record of what a parser fix recovered. `climbsUnmapped`, `skipsRecorded`, and `skipsResolved` all land in the per-run summary log.
 
+#### Mis-tagged layouts (the reroute fallback)
+
+Kilter sometimes files a climb under the wrong product layout, so every hole in its `climb_concat` misses on the layout we resolved and the climb lands here as `unplaceable_hole` with no way out — eight live climbs on 2026-09-15 (five tagged Original that place on Homewall, three the other way round).
+
+When **exactly one other layout decodes the whole concat** (`findUniqueDecodableLayout`), the climb is held aside rather than skipped, and a final pass — after every layout group, before the backlog is written — ingests it onto that layout. The pass loads narrowly (the candidate UUIDs on any layout, plus fingerprint matches on the target), dedupes by UUID then fingerprint like any other climb, and stages with rerouting disabled so nothing can hop twice. It falls back to the original skip row when the UUID already lives on a third layout, and a per-layout failure degrades to the backlog instead of failing the catalog run. Two decodable layouts, or any failure that isn't `unplaceable_hole`, is never rerouted — the target would be a guess. Rerouted climbs count in `climbsRerouted`; their stats are replayed from the source layout only when the climb is its own canonical on the target. If it instead folds onto a canonical that already exists there, the duplicate's stat rows are logged and then **dropped rather than summed**, so that canonical's `upstream_ascensionist_count` stays understated by the duplicate's ascents — unlike an ordinary fold, which sums them. Summing them here needs the ingest/stats phase split tracked in [#5510](https://github.com/boardsesh/boardsesh/issues/5510) (a second partial upsert would resolve to `GREATEST(stored, incoming)`, not the total); none of the eight climbs in today's backlog fold, so nothing is understated right now.
+
+#### Rejected skips
+
+A climb nobody will ever ingest — five of the sixteen stuck rows were AI test uploads referencing holes that exist on no board — can be written off with `rejected_at` / `rejected_reason`. That only hides it from the open report: nothing is deleted, the sync keeps trying (`loadOpenSkips` still returns rejected rows, so `resolved_at` still stamps if it ever decodes), and the re-skip upsert deliberately leaves both columns out of its `ON CONFLICT` set so a later run can't clear someone's call.
+
 Read it with:
 
 ```bash
 vp exec kilter-sync backlog                                    # open skips, grouped by reason
 vp exec kilter-sync backlog --reason unparsable_concat --raw   # with the raw payloads
 vp exec kilter-sync backlog --include-resolved
+vp exec kilter-sync backlog --include-rejected                 # also the ones written off
+vp exec kilter-sync backlog reject <uuid…> --note "AI test climb: holes that exist on no board"
+vp exec kilter-sync backlog unreject <uuid…>
 ```
+
+`reject` takes `--note`, not `--reason`: the parent `backlog` command already uses `--reason` for the skip-reason filter, so reusing that name on the subcommand would read as that filter. A UUID matching no row is named and sets exit code 1, so a typo can't look like a successful write-off.
 
 A non-zero `unparsable_concat` count is the signal that Kilter changed the encoding — and the raw payloads needed to decode the new form are already sitting in the table.
 
 ### Remaining known gap
 
-- **Post-2024 hold-set placements.** A handful of climbs use holds whose `board_placements` rows postdate the legacy snapshot (`board_shared_syncs` shows placements last synced 2024-06-22). The holds exist in `board_holes` but aren't placed on the layout, so the hole→placement remap fails and the climb lands in the backlog as `unplaceable_hole`. Refreshing `board_placements` (needs the `mounting_holes` PowerSync bucket) is a follow-up.
+- **Post-2024 hold-set placements (Grips layout 30).** Three climbs use holes (ids 4488–4556) whose `board_placements` rows postdate the legacy snapshot (`board_shared_syncs` shows placements last synced 2024-06-22). The holds exist in `board_holes` but aren't placed on the layout, so the hole→placement remap fails and the climb lands in the backlog as `unplaceable_hole`. Fixing it needs the `mounting_holes` PowerSync bucket, a size-30 `board_product_sizes` row and regenerated board-constants — tracked in [#5505](https://github.com/boardsesh/boardsesh/issues/5505).
 
 ### Setter notifications and recovered climbs
 
@@ -288,6 +352,18 @@ Kilter's catalog has duplicate climbs at different UUIDs with identical hold lay
 2. **Fingerprint hit** — a new UUID whose `(layout_id, fingerprint)` matches an existing or already-seen-this-run canonical becomes an alias (`board_climb_aliases`), not a new row.
 3. **Miss** — insert a new canonical row + a self-alias.
 
+### Re-listing a climb Kilter still lists
+
+Both dedup paths can re-list a synced canonical we previously unlisted, because the incoming climb is live-listed in the current catalog pull. They are protected differently:
+
+- **Fold path** — a listed Grips climb fingerprint-matched the canonical. The fold leaves it with ≥2 aliases: the folded one, plus its self-alias, which the fold stages into the same batch for the ~6k canonicals that never got one. The same cycle's deletion pass then classifies it as `skippedCanonicalWithAliases` and never re-unlists it. That staged self-alias is what makes the invariant hold — without it the canonical misses the alias-graph lookup, the direct-uuid fallback unlists it again in the same cycle, and the next fold re-lists it: a flip-flop costing a `sync_seq` bump per cycle.
+- **Identity path** — Kilter served the same UUID from `/climbs/all`. That argument does **not** hold here: the canonical usually has only its own self-alias, so the deletion pass would re-unlist it and the two would fight every cycle. `decideIdentityRelist` keeps them apart, using the run's single `/delteduuids` fetch:
+  - UUID on the deletion list → blocked, counted in `relistsBlockedByDeletionHistory`;
+  - no deletion list at all (fetch failed, or empty) → nothing re-listed through this path, and reconciliation is skipped too;
+  - drafts, user-authored climbs and already-listed climbs need nothing.
+
+Why the guard is load-bearing: on 2026-09-15 Kilter's `/climbs/all` still returned 124 climbs that the same run's deletion pass unlisted, so an unguarded re-list would flip them back every cycle and churn offline sync's `sync_seq`. What it lets through is the genuinely stale unlistings — ~24 climbs carrying the 2026-07-07 Aurora migration baseline as their `updated_at`, invisible in search ever since. Both paths report in `canonicalsRelisted`.
+
 **Stats accumulation (worked example).** Two listed climbs `A` (count 18) and `B` (count 5) with identical holds collapse onto one canonical: `A` is canonical with `upstream_ascensionist_count = 18`, `B` aliases to `A` and its 5 ascents accumulate → 23. The accumulation is computed **in memory per `(canonical, angle)` and written as an overwrite** (not `+=`), so re-running recomputes the same 23 — idempotent. If the same source climb stat appears through multiple Grips `product_layout_uuid`s that collapse to one Boardsesh layout, it is counted once by `(source climb UUID, angle)`. Display fields (`difficulty/quality/fa`) come only from the canonical climb's own stat row.
 
 ### `ascensionist_count` — one upstream column plus Boardsesh
@@ -311,6 +387,7 @@ A single Boardsesh layout maps to several Grips `product_layout_uuid`s (size var
 
 - **Dry-run is the default and is read-only.** It reports `changedKilterRows`, `maxKilterDrop` / `maxKilterRise` (largest per-row decrease/increase), `statsDeduped`, `statsUnresolved`, and a `topBefore` list. Review these before applying — a large `maxKilterDrop` can also signal a partial Grips fetch (delisted climbs, rate-limit truncation), so treat it as a stop-and-investigate signal rather than blindly applying.
 - **`--apply` writes inside a single transaction** (overwrite + materialized-total recompute are atomic) and prints `topAfter`. A fetch error aborts before any write, since writes only run after the full fetch loop completes.
+- A climb the live sync **rerouted** to another layout is still tagged upstream with the layout it came from, so `repair-stats` fetches its stats under a layout whose canonical map doesn't contain it and counts it in `statsUnresolved`. A handful of those is expected, not a fault.
 - Run it with the **daemon paused** so a concurrent catalog sync doesn't interleave, and run it **unscoped** (no `--layouts`) for the production cleanup — the materialized-total recompute pass touches all Kilter rows, so a scoped run can leave inconsistent state. Rows for climbs Grips no longer lists aren't re-fetched, so this tool does not correct delisted-climb inflation.
 
 An applied repair that changes 500 or more rows is picked up by the live board-snapshot threshold scan and
@@ -349,6 +426,7 @@ The catalog-relevant schema (`board_climbs.hold_fingerprint` + index, `board_cli
 | ------ | ----------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
 | new    | `board_layout_aliases (board_type, layout_uuid PK, layout_id FK→board_layouts, source, first/last_seen_at)` | Persists the Grips `product_layout_uuid` → integer `layout_id` mapping; reused by the per-user paths.                                           |
 | new    | `board_climb_stats.quality_normalized boolean NOT NULL DEFAULT false` (migration `0115`)                    | Tracks whether `quality_average` is on the canonical 1–5 scale; gates the one-time 1–3→1–5 backfill (`0116`). Transitional — drop in follow-up. |
+| new    | `board_climb_ingest_skips.rejected_at timestamp` + `rejected_reason text` (migration `0229`)                | Operator write-off for a skipped climb that will never ingest. Written only by `backlog reject` / `backlog unreject`; the sync's re-skip upsert leaves both alone. |
 
 ## OAuth handshake
 

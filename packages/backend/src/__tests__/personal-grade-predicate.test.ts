@@ -7,7 +7,8 @@ import {
   buildPersonalGradeJoinTarget,
   effectiveDifficultySql,
   personalGradeColumnSql,
-  crowdGradeSql,
+  gradeValueSql,
+  effectiveStatsColumn,
   clampToBoulderScaleSql,
   PERSONAL_GRADE_ALIAS,
   PERSONAL_GRADE_MIN_ID,
@@ -21,7 +22,8 @@ import { BOULDER_GRADES } from '@boardsesh/board-constants/boulder-grade-mapping
 /**
  * Personal grades (#4796 / #4828) are a rule, not a query: "the difficulty of
  * the climber's LATEST graded tick for (user, board_type, climb_uuid, angle),
- * clamped, falling back to the crowd's rounded display difficulty".
+ * clamped, falling back to whatever the search keys on without it" — the
+ * grade-source-aware `gradeValueSql` (#5643).
  *
  * The failure this file guards is a row that READS V10 while a V9-V11 filter
  * hides it — which is what happens the moment one read path states the rule
@@ -30,9 +32,10 @@ import { BOULDER_GRADES } from '@boardsesh/board-constants/boulder-grade-mapping
  * and the sort still keyed `display_difficulty`.
  *
  * So this suite renders SQL and compares STRINGS rather than trusting that the
- * call sites happen to call the same helper. `getClimbWhereConditions()` is
- * what both searchClimbs paths and countClimbs spread into their own `and(...)`,
- * so rendering it here is rendering exactly what those queries send. The
+ * call sites happen to call the same helper. `getClimbWhereConditions()` and
+ * `getClimbStatsConditions()` are what both searchClimbs paths and countClimbs
+ * spread into their own `and(...)`, so rendering them here is rendering exactly
+ * what those queries send. The
  * end-to-end "the count agrees with the list" check is DB-backed and lives in
  * climb-queries.test.ts — asserting it here would only be this file rendering
  * the same builder twice.
@@ -82,9 +85,12 @@ function search(overrides: Partial<ClimbSearchParams> = {}): ClimbSearchParams {
   return { page: 0, pageSize: 20, sortBy: 'difficulty', sortOrder: 'asc', ...overrides };
 }
 
+/** The crowd grade the personal COALESCE falls back to, with no grade source and no cross-angle. */
+const CROWD_GRADE = gradeValueSql(effectiveStatsColumn('displayDifficulty', false), undefined);
+
 function renderedWhere(searchParams: ClimbSearchParams, userId: string | undefined): string {
   const filters = createClimbFilters(boardParams, searchParams, userId);
-  return render(and(...filters.getClimbWhereConditions())!);
+  return render(and(...filters.getClimbWhereConditions(), ...filters.getClimbStatsConditions())!);
 }
 
 describe('personal grade rule: one predicate, every site', () => {
@@ -101,7 +107,7 @@ describe('personal grade rule: one predicate, every site', () => {
         minGrade: boundCase.minGrade,
         maxGrade: boundCase.maxGrade,
       });
-      const sharedPredicate = personalGradeRangeCondition(boundCase.minGrade, boundCase.maxGrade)!;
+      const sharedPredicate = personalGradeRangeCondition(CROWD_GRADE, boundCase.minGrade, boundCase.maxGrade)!;
       const expectedShape = normalizeSql(render(sharedPredicate));
 
       it('the filter builder emits exactly the shared predicate', () => {
@@ -109,7 +115,7 @@ describe('personal grade rule: one predicate, every site', () => {
       });
 
       it('filters on the same COALESCE the sort orders by', () => {
-        expect(expectedShape).toContain(normalized(effectiveDifficultySql()));
+        expect(expectedShape).toContain(normalized(effectiveDifficultySql(CROWD_GRADE)));
       });
 
       it('names the joined subquery, so it cannot bind to a stray "difficulty" column', () => {
@@ -175,7 +181,7 @@ describe('personal grade rule: one predicate, every site', () => {
   });
 
   // The WHERE names an alias no other join introduces, so a query that spreads
-  // getClimbWhereConditions() without joining this would not even parse. Ship
+  // getClimbStatsConditions() without joining this would not even parse. Ship
   // the two together or not at all.
   it('offers the join exactly when the predicate needs it', () => {
     const on = createClimbFilters(boardParams, search({ useMyGrades: true, minGrade: 22 }), USER_ID);
@@ -192,34 +198,51 @@ describe('personal grade rule: one predicate, every site', () => {
   it('still offers the join when no grade bounds are set', () => {
     const filters = createClimbFilters(boardParams, search({ useMyGrades: true }), USER_ID);
     expect(filters.getPersonalGradeJoin()).not.toBeNull();
-    expect(filters.personalGradeConditions).toEqual([]);
+    expect(filters.gradeRangeConditions).toEqual([]);
   });
 
   it('takes the personal-grade bounds OUT of the crowd stats conditions', () => {
     // Both applying would AND two different grades together and hide exactly the
     // climbs whose grades disagree — the set the feature exists for.
     const withPersonal = createClimbFilters(boardParams, search({ useMyGrades: true, minGrade: 22 }), USER_ID);
-    expect(withPersonal.getClimbStatsConditions()).toEqual([]);
+    expect(withPersonal.getClimbStatsConditions()).toHaveLength(1);
+    expect(normalized(withPersonal.getClimbStatsConditions()[0])).toContain('coalesce("my_grade"."difficulty"');
 
     const withoutPersonal = createClimbFilters(boardParams, search({ minGrade: 22 }), USER_ID);
     expect(withoutPersonal.getClimbStatsConditions()).toHaveLength(1);
+    expect(normalized(withoutPersonal.getClimbStatsConditions()[0])).not.toContain('my_grade');
   });
 
-  // Putting the predicate in climbStatsConditions would flip searchClimbs onto
-  // the stats-driven INNER JOIN and drop every personally-graded climb with no
-  // stats row at this angle — from the list AND the count.
+  // Counting the predicate as a required stats filter would flip searchClimbs
+  // onto the stats-driven INNER JOIN and drop every personally-graded climb with
+  // no stats row at this angle — from the list AND the count. It rides with the
+  // crowd grade range, which is exempt from that routing for the same reason.
   it('keeps the predicate out of the stats-driven routing signal', () => {
     const filters = createClimbFilters(boardParams, search({ useMyGrades: true, minGrade: 22, maxGrade: 28 }), USER_ID);
-    expect(filters.getClimbStatsConditions()).toEqual([]);
-    expect(filters.personalGradeConditions).toHaveLength(1);
+    expect(filters.hasRequiredStatsFilters()).toBe(false);
+    expect(filters.climbStatsConditions).toEqual([]);
+    expect(filters.gradeRangeConditions).toHaveLength(1);
+  });
+
+  // The personal rule is layered ON TOP of the grade source (#5643): a climb the
+  // climber never graded must still be filtered on the Boardsesh grade when that
+  // is the source, not silently on display_difficulty.
+  it('falls back to the grade-source-aware crowd grade', () => {
+    const filters = createClimbFilters(
+      boardParams,
+      search({ useMyGrades: true, minGrade: 22, gradeSource: 'boardsesh' }),
+      USER_ID,
+    );
+    const boardseshCrowd = gradeValueSql(effectiveStatsColumn('displayDifficulty', false), 'boardsesh');
+    expect(normalized(filters.gradeRangeConditions[0])).toContain(normalized(effectiveDifficultySql(boardseshCrowd)));
   });
 
   it('is inert without a userId, so an anonymous search keeps the crowd filter', () => {
     const anonymous = createClimbFilters(boardParams, search({ useMyGrades: true, minGrade: 22 }), undefined);
     expect(anonymous.getPersonalGradeScope()).toBeNull();
     expect(anonymous.getPersonalGradeJoin()).toBeNull();
-    expect(anonymous.personalGradeConditions).toEqual([]);
-    expect(normalized(and(...anonymous.getClimbStatsConditions())!)).toContain(normalized(crowdGradeSql()));
+    expect(normalized(and(...anonymous.getClimbStatsConditions())!)).not.toContain('my_grade');
+    expect(normalized(and(...anonymous.getClimbStatsConditions())!)).toContain(normalized(CROWD_GRADE));
   });
 
   it('is inert on a drafts query, which skips the whole grade filter anyway', () => {
@@ -231,20 +254,20 @@ describe('personal grade rule: one predicate, every site', () => {
     expect(drafts.isOnlyDrafts).toBe(true);
     expect(drafts.getPersonalGradeScope()).toBeNull();
     expect(drafts.getPersonalGradeJoin()).toBeNull();
-    expect(drafts.personalGradeConditions).toEqual([]);
+    expect(normalized(and(...drafts.getClimbStatsConditions())!)).not.toContain('my_grade');
   });
 
   it('emits nothing when neither bound is set', () => {
-    expect(personalGradeRangeCondition(undefined, undefined)).toBeNull();
-    expect(createClimbFilters(boardParams, search({ useMyGrades: true }), USER_ID).personalGradeConditions).toEqual([]);
+    expect(personalGradeRangeCondition(CROWD_GRADE, undefined, undefined)).toBeNull();
+    expect(createClimbFilters(boardParams, search({ useMyGrades: true }), USER_ID).gradeRangeConditions).toEqual([]);
   });
 
   // Derived, not hardcoded: extending BOULDER_GRADES has to move the clamp.
   it('derives the clamp bounds from BOULDER_GRADES', () => {
     expect(PERSONAL_GRADE_MIN_ID).toBe(BOULDER_GRADES[0].difficulty_id);
     expect(PERSONAL_GRADE_MAX_ID).toBe(BOULDER_GRADES[BOULDER_GRADES.length - 1].difficulty_id);
-    const clamped = clampToBoulderScaleSql(crowdGradeSql());
-    expect(normalized(clamped)).toContain('least(greatest(round(');
+    const clamped = clampToBoulderScaleSql(CROWD_GRADE);
+    expect(normalized(clamped)).toContain('least(greatest(coalesce(round(');
     expect(dialect.sqlToQuery(clamped).params).toEqual([PERSONAL_GRADE_MIN_ID, PERSONAL_GRADE_MAX_ID]);
   });
 });

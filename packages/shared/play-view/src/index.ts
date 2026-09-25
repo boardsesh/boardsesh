@@ -7,6 +7,7 @@ export * from './tick-utils';
 export * from './quick-tick-state';
 export * from './board-utils';
 export * from './climb-rules';
+export * from './browse-defaults';
 export * from './swipe-carousel';
 export * from './wall-confirm-bus';
 export * from './wall-confirm-fallback';

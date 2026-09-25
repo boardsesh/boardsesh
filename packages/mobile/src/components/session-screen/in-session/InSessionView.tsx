@@ -11,7 +11,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import type { ClimbQueueItem } from '@boardsesh/queue';
 import type { SessionDetailTick, SessionFeedParticipant } from '@boardsesh/shared-schema';
 import { getGradeTextColor } from '@boardsesh/play-view';
-import { formatTickRelativeTime, tickTimeMs } from '@boardsesh/profile-stats';
+import { tickTimeMs } from '@boardsesh/profile-stats';
 import { countDistinctSessionUsers } from '@boardsesh/queue-runtime';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { Card } from '../../Card';
@@ -33,6 +33,7 @@ import { climbToQueueItem } from '../../../lib/climb-to-queue-item';
 import { setDraftComment, clearDraftComment } from '../../../lib/session-comment-draft-store';
 import { renderBoardToPlaylistConfig } from '../../../lib/playlists/board-details-for-playlist';
 import { tickToClimb } from '../../../lib/tick-to-climb';
+import { formatRelativeTime } from '../../../lib/format-relative-time';
 import { openClimbInPlayDrawer } from '../../../lib/open-climb-in-play-drawer';
 import { useGradeFormat } from '../../../hooks/use-grade-format';
 import { useBottomChromeMetrics } from '../../../hooks/use-bottom-chrome-metrics';
@@ -46,11 +47,14 @@ import { reportHandledError } from '../../../lib/error-reporting';
 import { track } from '../../../lib/analytics';
 import { useToast } from '../../../providers/toast-provider';
 import { RecordTopChrome } from '../RecordTopChrome';
+import { useSessionBoardNavigation } from '../use-session-board-navigation';
 import { SessionTitleSheet } from '../SessionTitleSheet';
 import { useSessionExitOptions } from '../use-session-exit-options';
 import { SessionAnalytics } from './SessionAnalytics';
+import { RestTimerArmRow } from '../RestTimerArmRow';
 import { SessionLeaderboard } from './SessionLeaderboard';
 import { SessionPresenceRow } from './SessionPresenceRow';
+import { SessionVisibilityControl } from './SessionVisibilityControl';
 import { sortHardestSends, type HardestSend } from './hardest-sends';
 
 type InSessionViewProps = {
@@ -166,7 +170,7 @@ const SessionHistoryRow = memo(function SessionHistoryRow({
   const subtitleParts = [
     participant?.displayName ?? null,
     status === 'flash' ? null : t('detail.attemptCount', { count: tick.attemptCount }),
-    formatTickRelativeTime(tick.climbedAt),
+    formatRelativeTime(tick.climbedAt),
   ].filter((part): part is string => !!part);
   const subtitle = subtitleParts.join(' · ');
   const rawGradeLabel = tick.difficultyName ?? null;
@@ -259,6 +263,7 @@ export function InSessionView({
   const insets = useSafeAreaInsets();
   const bottomChrome = useBottomChromeMetrics();
   const router = useRouter();
+  const { openBoardSwitcher } = useSessionBoardNavigation();
   const queryClient = useQueryClient();
   const { openPlayDrawer } = useDrawerHost();
   const { showToast } = useToast();
@@ -442,9 +447,6 @@ export function InSessionView({
     },
     [scrollOffset],
   );
-  const handleOpenBoardSwitcher = useCallback(() => {
-    router.push('/boards');
-  }, [router]);
   // Measured chrome height (incl. the top safe-area inset) so the list pads its
   // top by it. Only used when the floating chrome renders (tab mode).
   const [chromeHeight, setChromeHeight] = useState(() => insets.top + 56);
@@ -640,6 +642,17 @@ export function InSessionView({
         gradeDistribution={gradeDistribution}
       />
 
+      {/* Turn the rest timer on for the session you're in (#5378), and see it
+          without leaving the Record tab. */}
+      <RestTimerArmRow />
+
+      {/* "Show this session live", creator only. Renders nothing for joiners. */}
+      <SessionVisibilityControl
+        sessionId={sessionId ?? null}
+        selfUserId={selfUserId}
+        startedOnThisDevice={startedOnThisDevice}
+      />
+
       <View>
         {/* SectionHeader self-insets 16px; the list already pads 16, so bleed the
             header back by 16 to keep its label flush with the screen gutter. */}
@@ -702,7 +715,7 @@ export function InSessionView({
         <RecordTopChrome
           title={sessionTitle}
           onEditTitle={canEditTitle ? openTitleSheet : undefined}
-          onOpenBoardSwitcher={handleOpenBoardSwitcher}
+          onOpenBoardSwitcher={openBoardSwitcher}
           onHeightChange={setChromeHeight}
           onShare={onShare}
           onEndSession={onRequestEndSession}

@@ -66,7 +66,13 @@ export type OfflineConnectivityReason = 'offline_mode' | 'device_offline' | 'bac
 // The read that crossed the rung. Descriptive only — it is NOT part of the
 // dedupe key, so this is "the surface that happened to trip the counter", not an
 // exhaustive list of surfaces the user browsed.
-export type OfflineReadSurface = 'search' | 'climb_detail' | 'grade';
+export type OfflineReadSurface =
+  | 'search'
+  | 'climb_detail'
+  | 'grade'
+  | 'setter_stats'
+  | 'similar_climbs'
+  | 'hold_heatmap';
 
 // Why an offline read came back empty.
 //   board_not_downloaded — nothing local for this board scope. The audience #4318 exists to convert.

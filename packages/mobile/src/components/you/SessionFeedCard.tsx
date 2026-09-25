@@ -10,7 +10,6 @@ import type {
   SessionFeedTickHighlight,
   SocialEntityType,
 } from '@boardsesh/shared-schema';
-import { formatTickRelativeTime } from '@boardsesh/profile-stats';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { type IconName } from '../icon-map';
@@ -25,6 +24,7 @@ import { mapBetaLink } from '../../lib/beta-video-url';
 import { openValidatedUrl } from '../../lib/open-external-link';
 import { getBoardConfigForPlaylist } from '../../lib/playlists/board-details-for-playlist';
 import { tickToClimb } from '../../lib/tick-to-climb';
+import { formatRelativeTime } from '../../lib/format-relative-time';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
 import { useGradeFormat } from '../../hooks/use-grade-format';
@@ -97,7 +97,7 @@ export const SessionFeedCard = memo(function SessionFeedCard({
 
   const primaryBoard = session.boardTypes[0] ?? null;
   const metaLine = compactJoin([
-    formatTickRelativeTime(session.lastTickAt),
+    formatRelativeTime(session.lastTickAt),
     session.durationMinutes != null && session.durationMinutes > 0 ? formatDuration(session.durationMinutes) : null,
     primaryBoard,
   ]);

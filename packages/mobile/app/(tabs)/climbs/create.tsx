@@ -1,30 +1,29 @@
 import { useMemo } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
-import {
-  getBoardCapabilities,
-  SUPPORTED_BOARDS,
-  WOODS_ANGLES,
-  WOODS_LAYOUTS,
-  woodsSizeIdToDimension,
-} from '@boardsesh/board-config';
-import type { BoardName, UserBoard } from '@boardsesh/shared-schema';
+import { useTranslation } from 'react-i18next';
+import { getBoardCapabilities, WOODS_ANGLES, WOODS_LAYOUTS, woodsSizeIdToDimension } from '@boardsesh/board-config';
+// The schema includes spray walls; the board-picker list deliberately excludes them.
+import { SUPPORTED_BOARDS, type BoardName, type UserBoard } from '@boardsesh/shared-schema';
 import { CreateClimbScreen } from '../../../src/components/create-climb/CreateClimbScreen';
 import { ActivityIndicator } from '../../../src/components/ActivityIndicator';
 import { useActiveBoard } from '../../../src/lib/graphql/use-active-board';
 import { createClimbScreenKey } from '../../../src/lib/create-climb-screen-key';
 import { useUnsupportedBoardExit } from '../../../src/lib/routing/use-unsupported-board-exit';
+import { useSprayWallToken } from '../../../src/lib/spray/use-spray-wall-token';
 
 type CreateClimbParams = {
-  boardName?: string;
-  layoutId?: string;
-  sizeId?: string;
-  setIds?: string;
-  angle?: string;
+  boardName?: string | string[];
+  layoutId?: string | string[];
+  sizeId?: string | string[];
+  setIds?: string | string[];
+  angle?: string | string[];
   forkFrames?: string;
   forkName?: string;
   forkDescription?: string;
   forkCharacteristics?: string;
+  /** The source climb's grade, as a name on the shared scale ("6c/V5"). */
+  forkDifficulty?: string;
   editClimbUuid?: string;
 };
 
@@ -36,24 +35,11 @@ type EditorBoard = {
   angle: number;
 };
 
-/**
- * Narrow an untrusted board name to a supported one, or `undefined`.
- *
- * `useLocalSearchParams` is untrusted input on this route: the app's
- * universal-link entry is a wildcard, so `…/climbs/create?boardName=<anything>`
- * can open it cold from outside the app. The value used to be cast straight to
- * `BoardName` and indexed into `STATE_TO_PRIMARY_CODE`, which throws during
- * render on the remix/edit path (#3804). Treating an unsupported value as absent
- * makes it fall back to the active board, exactly like a missing param.
- *
- * A board that cannot have climbs set on it (the climbCreation capability) is
- * NOT handled here — it would look identical to a typo and fall back to some
- * other board's wall, which is not what a link naming that board asked for.
- * `CreateClimbRoute` checks it separately and leaves the route.
- */
-function supportedBoardName(candidate: string | undefined): BoardName | undefined {
-  if (candidate == null) return undefined;
-  return (SUPPORTED_BOARDS as readonly string[]).includes(candidate) ? (candidate as BoardName) : undefined;
+/** Unknown names fall back to the active board without carrying their geometry. */
+function supportedBoardName(candidate: unknown): BoardName | undefined {
+  return typeof candidate === 'string' && (SUPPORTED_BOARDS as readonly string[]).includes(candidate)
+    ? (candidate as BoardName)
+    : undefined;
 }
 
 /** The active board as an editor tuple, or null when its board name isn't one we support. */
@@ -65,18 +51,12 @@ function activeBoardTuple(activeBoard: UserBoard | null | undefined): EditorBoar
   return { boardName, layoutId, sizeId, setIds, angle };
 }
 
-/**
- * Can the editor actually open on this exact tuple?
- *
- * Two separate questions, both of which used to be one board-name check:
- *  - does the board allow authoring at all (the capability), and
- *  - is the SIZE one the board really has. That second one only bites on Woods,
- *    whose two sizes number their holds from their own origins (8x10: 0-484,
- *    12x12: 0-893). A link carrying any other size id resolves to no hold table,
- *    which would otherwise render an empty wall you can paint nothing on.
- */
+/** Validate stored/link geometry and the Woods sizes supported by its hold tables. */
 function isAuthorableBoard(board: EditorBoard | null): board is EditorBoard {
   if (!board) return false;
+  if (!Number.isFinite(board.layoutId) || !Number.isFinite(board.sizeId) || !Number.isFinite(board.angle)) return false;
+  // Woods and spray walls do not require catalogue hold sets, so an empty string is valid.
+  if (typeof board.setIds !== 'string') return false;
   if (!getBoardCapabilities(board.boardName).climbCreation) return false;
   if (board.boardName === 'woods') {
     return (
@@ -88,28 +68,48 @@ function isAuthorableBoard(board: EditorBoard | null): board is EditorBoard {
   return true;
 }
 
-/**
- * Resolve the board the editor opens on.
- *
- * The board name and its geometry travel as ONE tuple. A link that names a
- * supported board wins, and the active board fills in the parts the link left
- * out ONLY when it is that same board — carrying a link's `layoutId`/`sizeId`/
- * `setIds`/`angle` onto a *different* board would paint a wall the link never
- * described. A link that names nothing usable falls back to the active board
- * whole, which is how the bare-open (FAB, no params) case resolves.
- */
+function numericParam(parameter: string | string[] | undefined, fallback: number | undefined): number | undefined {
+  if (parameter == null) return fallback;
+  return typeof parameter === 'string' && parameter.trim() !== '' ? Number(parameter) : NaN;
+}
+
+/** A named board can borrow missing geometry only from the same active board. */
 function resolveEditorBoard(params: CreateClimbParams, activeBoard: UserBoard | null | undefined): EditorBoard | null {
   const activeTuple = activeBoardTuple(activeBoard);
   const boardName = supportedBoardName(params.boardName);
   if (!boardName || !getBoardCapabilities(boardName).climbCreation) return activeTuple;
 
   const sameBoard = boardName === activeTuple?.boardName ? activeTuple : null;
-  const layoutId = params.layoutId ? Number(params.layoutId) : sameBoard?.layoutId;
-  const sizeId = params.sizeId ? Number(params.sizeId) : sameBoard?.sizeId;
+  const layoutId = numericParam(params.layoutId, sameBoard?.layoutId);
+  const sizeId = numericParam(params.sizeId, sameBoard?.sizeId);
   const setIds = params.setIds ?? sameBoard?.setIds;
-  const angle = params.angle ? Number(params.angle) : sameBoard?.angle;
-  if (layoutId == null || sizeId == null || setIds == null || angle == null) return null;
+  const angle = numericParam(params.angle, sameBoard?.angle);
+  if (layoutId == null || sizeId == null || typeof setIds !== 'string' || angle == null) return null;
   return { boardName, layoutId, sizeId, setIds, angle };
+}
+
+type CreateExitReason = 'boardCannotAuthor' | 'boardConfigIncomplete' | 'boardTypeUnsupported' | 'noUsableBoard';
+
+/** Resolve failures separately from a pending active-board read. */
+function createExitReason(
+  params: CreateClimbParams,
+  activeBoard: UserBoard | null | undefined,
+  activeBoardPending: boolean,
+  resolvedBoard: EditorBoard | null,
+): CreateExitReason | null {
+  const linkedBoard = supportedBoardName(params.boardName);
+  if (linkedBoard != null && !getBoardCapabilities(linkedBoard).climbCreation) return 'boardCannotAuthor';
+
+  if (resolvedBoard != null) {
+    if (!getBoardCapabilities(resolvedBoard.boardName).climbCreation) return 'boardCannotAuthor';
+    return isAuthorableBoard(resolvedBoard) ? null : 'boardConfigIncomplete';
+  }
+
+  // An errored query also has undefined data; only isPending means keep waiting.
+  if (activeBoardPending) return null;
+  if (linkedBoard != null) return 'boardConfigIncomplete';
+  if (activeBoard != null) return 'boardTypeUnsupported';
+  return 'noUsableBoard';
 }
 
 /**
@@ -119,31 +119,46 @@ function resolveEditorBoard(params: CreateClimbParams, activeBoard: UserBoard | 
  */
 export default function CreateClimbRoute() {
   const params = useLocalSearchParams<CreateClimbParams>();
-  const { data: activeBoard } = useActiveBoard();
+  const { data: activeBoard, isPending: activeBoardPending } = useActiveBoard();
+  const { t } = useTranslation('climbs');
 
   const resolvedBoard = useMemo(() => resolveEditorBoard(params, activeBoard), [params, activeBoard]);
 
-  // A board config the editor can't open has nowhere to land: it cannot paint
-  // the holds, and silently swapping in a different board would set the climb on
-  // the wrong wall. Leave the route rather than render a spinner that never
-  // resolves.
-  //
-  // Checked on the LINK first (not just the resolved tuple), because a link that
-  // names an uncreatable board must not fall through to the active board's wall —
-  // it asked for that one. Then on the resolved tuple, which catches an
-  // uncreatable or wrong-sized ACTIVE board by the same rule. `resolvedBoard`
-  // being null while `activeBoard` is still undefined is the loading case, where
-  // the spinner is the right answer, so it is deliberately not an exit.
-  const linkNamesUncreatableBoard = params.boardName != null && !getBoardCapabilities(params.boardName).climbCreation;
-  const resolvedBoardUnusable = resolvedBoard != null && !isAuthorableBoard(resolvedBoard);
-  const namedBoardMissingGeometry =
-    supportedBoardName(params.boardName) != null && resolvedBoard == null && activeBoard !== undefined;
-  const cannotCreateHere = linkNamesUncreatableBoard || resolvedBoardUnusable || namedBoardMissingGeometry;
-  useUnsupportedBoardExit(cannotCreateHere);
+  // `createClimbScreenKey` folds the spray wall's VERSION in, but it reads that
+  // out of a module-level registry — and on a cold spray entry (a share link, a
+  // remix of somebody else's wall climb) the wall lands after this route has
+  // already rendered. Nothing here would re-render, so the screen would keep the
+  // `-sv0` key: its editor never remounts, never re-runs the version-keyed draft
+  // restore, and autosaves into a slot the loader's superseded-draft sweep has
+  // been and gone past. Subscribing here is what makes the key move when the wall
+  // arrives. `''` for every catalogue board.
+  useSprayWallToken(resolvedBoard?.boardName, resolvedBoard?.layoutId);
 
-  const board = cannotCreateHere ? null : resolvedBoard;
+  const exitReason = useMemo(
+    () => createExitReason(params, activeBoard, activeBoardPending, resolvedBoard),
+    [params, activeBoard, activeBoardPending, resolvedBoard],
+  );
+  const exitMessage = useMemo(() => {
+    switch (exitReason) {
+      case 'boardCannotAuthor':
+        return t('createClimbForm.cannotOpen.boardCannotAuthor');
+      case 'boardConfigIncomplete':
+        return t('createClimbForm.cannotOpen.boardConfigIncomplete');
+      case 'boardTypeUnsupported':
+        return t('createClimbForm.cannotOpen.boardTypeUnsupported');
+      case 'noUsableBoard':
+        return t('createClimbForm.cannotOpen.noUsableBoard');
+      default:
+        return undefined;
+    }
+  }, [exitReason, t]);
+  useUnsupportedBoardExit(exitReason != null, exitMessage);
 
-  if (!board) {
+  // Leave the climb list visible under the transparent modal while it dismisses.
+  if (exitReason != null) return null;
+
+  // The only honest spinner left: the active-board query hasn't answered yet.
+  if (!resolvedBoard) {
     return (
       <View style={styles.loading}>
         <ActivityIndicator size="large" />
@@ -158,12 +173,13 @@ export default function CreateClimbRoute() {
     // holds that don't exist on the new layout/size. Angle is excluded so a
     // session-sync angle change doesn't wipe an in-progress paint.
     <CreateClimbScreen
-      key={createClimbScreenKey(params.editClimbUuid, board, params.forkFrames)}
-      board={board}
+      key={createClimbScreenKey(params.editClimbUuid, resolvedBoard, params.forkFrames)}
+      board={resolvedBoard}
       forkFrames={params.forkFrames}
       forkName={params.forkName}
       forkDescription={params.forkDescription}
       forkCharacteristics={params.forkCharacteristics}
+      forkDifficulty={params.forkDifficulty}
       editClimbUuid={params.editClimbUuid}
     />
   );

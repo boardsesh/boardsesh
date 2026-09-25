@@ -32,6 +32,9 @@ const PICKER_STATES_BY_BOARD: Record<BoardName, readonly HoldFilterType[]> = {
   moonboard: ['STARTING', 'HAND', 'FINISH'],
   // Woods climbs use all four setting roles (Start / Hand / Finish / Foot).
   woods: SETTER_STATE_ORDER,
+  // Spray-wall climbs use all four too — the holds are a climber's own, so
+  // nothing rules a role out the way MoonBoard's footless format does.
+  spray: SETTER_STATE_ORDER,
 };
 
 /** Plain-white swatch colour for the `ANY` wildcard (no LED colour of its own). */

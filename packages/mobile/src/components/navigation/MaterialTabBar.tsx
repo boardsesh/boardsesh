@@ -14,14 +14,15 @@ import { isLiveTabBadge } from './tab-badge';
  * Material 3 bottom navigation bar — the JS tab bar for the Material UI variant
  * (the Liquid Glass variant uses the native `NativeTabs` instead). Built from the
  * existing design tokens so it reads as the same product: an opaque elevated
- * surface, a tonal active-indicator pill behind the focused icon, label below,
- * and a status dot for the Record tab. Icons/labels/badges come from each
- * screen's React Navigation options, so this stays a generic custom tab bar.
+ * surface, a tonal circular active indicator behind the focused icon, label
+ * below, and a status dot for the Record tab. Icons/labels/badges come from
+ * each screen's React Navigation options, so this stays a generic custom tab
+ * bar.
  */
 export function MaterialTabBar({ state, descriptors, navigation, insets }: BottomTabBarProps) {
   const { systemColors, brandColors, m3 } = useTheme();
   // M3 navigation bar roles: the focused destination's icon sits on a
-  // secondaryContainer active-indicator pill (onSecondaryContainer glyph), its
+  // secondaryContainer active-indicator circle (onSecondaryContainer glyph), its
   // label lifts to onSurface, and inactive destinations use onSurfaceVariant for
   // both icon and label. These read correctly on the tonal M3 surface in both
   // schemes (the Paper palette resolves per scheme) — no manual alpha tinting.
@@ -87,7 +88,12 @@ export function MaterialTabBar({ state, descriptors, navigation, insets }: Botto
             accessibilityLabel={label}
             style={styles.item}
           >
-            <View style={[styles.indicator, focused && { backgroundColor: indicatorColor }]}>
+            <View style={styles.indicator}>
+              {/* Opacity toggle, not a color swap — Android needs radius+color set together from mount. */}
+              <View
+                testID="indicator"
+                style={[styles.indicatorFill, { backgroundColor: indicatorColor, opacity: focused ? 1 : 0 }]}
+              />
               {options.tabBarIcon?.({ focused, color: iconColor, size: 24 })}
               {options.tabBarBadge != null ? (
                 <View
@@ -137,13 +143,21 @@ const styles = StyleSheet.create({
     paddingTop: 6,
     gap: 4,
   },
-  // M3 active-indicator pill — fixed size, tonal fill only when focused.
+  // Active-indicator circle — fixed size, centers the icon over the fill layer below.
   indicator: {
     width: material.navBar.activeIndicatorWidth,
     height: material.navBar.activeIndicatorHeight,
-    borderRadius: material.navBar.activeIndicatorRadius,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  // The tonal fill itself — color is constant, only opacity toggles with focus.
+  indicatorFill: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: material.navBar.activeIndicatorRadius,
   },
   badge: {
     position: 'absolute',

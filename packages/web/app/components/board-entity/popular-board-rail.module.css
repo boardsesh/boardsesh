@@ -1,87 +1,124 @@
-/* Matches the inset the homepage's other section labels use (the "Recent
-   beta" and "Get started" headers in home-page-content.tsx / home-recent-
-   beta-section.tsx both set `px: 0.5`, i.e. --spacing-1 on both sides) so all
-   three line up under the same left edge instead of drifting by a stray
-   magic number. */
-.title {
-  color: var(--neutral-400);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  font-size: var(--font-size-xs);
-  font-weight: 600;
-  margin-bottom: var(--spacing-2);
-  padding: 0 var(--spacing-1);
+.section {
+  min-width: 0;
 }
 
-/* An intentional grid, not a scroll rail: everything is on screen and in the
-   server HTML, so there is nothing to scroll to reveal.
+/* Type and colour come from `sectionHeadingTypeClassName`; only the rhythm to
+   the lead below is this rail's business. */
+.section .title {
+  margin-bottom: var(--spacing-3);
+}
 
-   `auto-fill` keeps the column *count* responsive on its own. What needed
-   bounding is the card: with bare `minmax(120px, 1fr)` columns the same board
-   thumbnail measured 184px on a 412px phone (2 columns) and 124.7px at 430px
-   (3 columns) — the narrower screen drew the bigger tile.
+.section .lead {
+  max-width: 60ch;
+  color: var(--neutral-500);
+  margin-bottom: var(--spacing-6);
+  line-height: 1.6;
+}
 
-   Capping the *column* at `minmax(120px, 160px)` fixes the size but stops the
-   grid filling its container: every column is exactly 160px, so all the
-   leftover piles up past the last one (measured 144px of dead space at a
-   1024px viewport, 66px at 430px) and the rail stops short of the page gutter
-   its sibling homepage sections run to. So cap the *card* instead and leave
-   the columns on `1fr`: the grid still fills the container, and slack only
-   shows up where a card has hit its 160px ceiling.
+.section .ranking {
+  color: var(--neutral-500);
+  font-size: var(--font-size-sm);
+  line-height: 1.6;
+  margin-top: var(--spacing-2);
+}
 
-   Measured in Chromium at 375/390/412/430/768/1024/1280/1440 (homepage box
-   model, main px: 2): card 124.7-160px, and at most 12px of slack per edge —
-   against 124.7-184px unbounded, or 144px dead at one edge when the column is
-   what's capped. */
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-  gap: var(--spacing-3);
-  justify-items: center;
+  grid-auto-flow: column;
+  grid-template-rows: auto auto 1fr auto;
+  grid-auto-columns: 268px;
+  gap: var(--spacing-4);
+  min-width: 0;
+  width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scroll-snap-type: x proximity;
+  scrollbar-width: thin;
+  scrollbar-color: var(--separator) transparent;
+  list-style: none;
+  margin: 0;
+  padding: var(--spacing-1) 0 var(--spacing-4);
 }
 
 .card {
-  display: block;
-  width: 100%;
-  max-width: 160px;
-  color: inherit;
-  text-decoration: none;
+  display: grid;
+  grid-template-rows: subgrid;
+  grid-row: span 4;
+  gap: var(--spacing-4);
+  min-width: 0;
+  padding: var(--spacing-5);
+  background: var(--semantic-surface);
+  border: 1px solid var(--separator);
+  border-radius: var(--border-radius-xl);
+  scroll-snap-align: start;
 }
 
-.thumb {
-  aspect-ratio: 1;
-  border-radius: 8px;
-  overflow: hidden;
+.identity {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  background-color: var(--semantic-surface);
-  margin-bottom: var(--spacing-2);
-  transition: box-shadow 150ms ease;
-  box-shadow:
-    var(--shadow-xs),
-    inset 0 1px 0 rgba(255, 255, 255, 0.5),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.15);
+  flex-direction: column;
+  gap: var(--spacing-1);
+  align-self: start;
 }
 
-.card:hover .thumb {
-  box-shadow: var(--shadow-md);
-}
-
-.name {
-  font-size: 14px;
-  font-weight: 500;
+/* `grid-template-rows: subgrid` makes every card as tall as the tallest, so a
+   three-line board name bought all eight cards a blank third line. Two is the
+   cap; the full name stays in the link the row points at. */
+.card .name {
+  margin: 0;
   color: var(--neutral-900);
-  white-space: nowrap;
+  font-size: var(--font-size-xl);
+  font-weight: 600;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
 }
 
-.meta {
-  font-size: 12px;
+/* Card title and subtitle, not standalone controls: a 44px box on each added
+   ~20px of nothing to the gym line. Padding gives the same pointer slack.
+   The title link stays inline so the clamp above still counts its lines. */
+.card .name a {
+  padding-block: var(--spacing-1);
+}
+
+.card .gym {
+  display: inline-flex;
+  align-items: center;
+  padding-block: var(--spacing-1);
+  color: var(--color-primary);
+  font-size: var(--font-size-sm);
+}
+
+.card .location,
+.card .meta,
+.card .selection {
   color: var(--neutral-500);
-  margin-top: 2px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+}
+
+.details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+}
+
+.card .selection {
+  margin-top: var(--spacing-1);
+  font-size: var(--font-size-sm);
+}
+
+.card .open {
+  margin-top: auto;
+  align-self: flex-start;
+  min-height: 44px;
+}
+
+@media (max-width: 760px) {
+  .grid {
+    grid-auto-columns: min(280px, 90%);
+  }
 }

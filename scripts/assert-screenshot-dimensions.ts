@@ -149,6 +149,12 @@ export function findGooglePlayOffenders(deviceSlug: string, files: readonly PngF
     });
   }
 
+  return [...offenders, ...findGooglePlayImageOffenders(files)];
+}
+
+/** Raw composition sources share Play's image rules, but are not a listing. */
+export function findGooglePlayImageOffenders(files: readonly PngFile[]): Offender[] {
+  const offenders: Offender[] = [];
   for (const file of files) {
     let dimensions: Dimensions;
     try {

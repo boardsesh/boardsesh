@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from 'react';
-import { useSQLiteContext } from 'expo-sqlite';
+import { useOfflineDatabase } from '../db/use-offline-database';
 import { useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { notifyBootstrapMetadataChanged, notifyScopeDownloadComplete, setSyncProgress } from '../sync';
@@ -10,7 +10,7 @@ import {
   type GraphQLFetch,
 } from '@boardsesh/offline-sync';
 import { startSyncScheduler, drainMutationQueue, startBackgroundTracking } from '../offline/offline-sync-adapter';
-import { reportOutboxBacklogOnce } from '../offline/outbox-telemetry';
+import { recoverAndReportOutboxOnce } from '../offline/outbox-telemetry';
 import { sweepDelistedDownloadTerminals } from '../offline/abandoned-download-terminals';
 import { getSetting } from '../settings';
 import { setupNotificationHandlers } from '../notifications';
@@ -21,8 +21,10 @@ import { useAuth } from '../providers/auth-provider';
 import { useSnapshotSource } from '../offline/use-snapshot-source';
 import { useStoredUserId } from '../hooks/use-current-user-id';
 import { clearUserData } from '../db/connection';
+import { clearStoredSprayPhotos } from '../lib/spray/spray-photo-store';
 import { reportError } from '../lib/error-reporting';
 import { useOfflineSchemaReady } from '../db/use-offline-schema-ready';
+import { AUTHOR_QUERY_KEYS, loadFollowedAuthors, useFollowedAuthors } from '../lib/graphql/hooks/use-followed-authors';
 
 /**
  * Publishes the permanently enabled native offline engine to the module-level
@@ -53,7 +55,13 @@ export function OfflineEngineFlagSync() {
  * host app — offline sync is best-effort and must not take the UI down with it.
  */
 export function OfflineSyncBridge() {
-  const db = useSQLiteContext();
+  // Keep the query observed for reconnect/pull invalidations. The owner effect
+  // below explicitly repeats any pre-schema warm-up so it also reaches SQLite.
+  useFollowedAuthors();
+  // Not `useSQLiteContext()` directly: a dead-handle recovery opens a REPLACEMENT
+  // connection without the provider ever re-rendering, so the context value would
+  // still be the wrapper around the dead native instance (#5410).
+  const db = useOfflineDatabase();
   const queryClient = useQueryClient();
   const { isAuthenticated } = useAuth();
   const snapshotSource = useSnapshotSource();
@@ -112,19 +120,37 @@ export function OfflineSyncBridge() {
           // narrow it to.
           beginGlobalPurge();
           await clearUserData(db);
+          // The rows named a photograph each, and this recovery exists precisely
+          // because the sign-out that should have run did not (#5448). Wiping the
+          // rows and leaving the files would keep the other account's wall
+          // decodable with nothing on disk left to say whose it was.
+          clearStoredSprayPhotos();
           if (cancelled) return;
         }
         if (ownership !== 'ok') await stampLocalUserId(db, localUserId);
+        if (cancelled) return;
+        // A screen may already have fetched authors before SQLite was ready.
+        // Load again after the owner stamp, even when that query is still fresh,
+        // so an empty follow list also gets its complete offline snapshot.
+        await queryClient.cancelQueries({ queryKey: ['followedAuthors', localUserId], exact: true });
+        if (cancelled) return;
+        const authors = await loadFollowedAuthors(localUserId);
+        if (!cancelled) {
+          queryClient.setQueryData(['followedAuthors', localUserId], authors);
+          for (const key of AUTHOR_QUERY_KEYS) {
+            if (key !== 'followedAuthors') void queryClient.invalidateQueries({ queryKey: [key] });
+          }
+        }
       } catch (error) {
         if (__DEV__) {
-          console.warn('[OfflineSyncBridge] failed to stamp the local user-data owner:', error);
+          console.warn('[OfflineSyncBridge] failed to prepare local user data:', error);
         }
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [db, isAuthenticated, localUserId, schemaReady]);
+  }, [db, isAuthenticated, localUserId, schemaReady, queryClient]);
 
   // The download funnel's launch backstop (issue #4452). Every in-session
   // de-listing path reports its own terminal now — the My Boards toggle-off and
@@ -150,15 +176,16 @@ export function OfflineSyncBridge() {
   // see startBackgroundTracking's doc.
   useEffect(() => startBackgroundTracking(), []);
 
-  // How much unsynced work this launch inherited. reportOutboxBacklogOnce
-  // self-guards against this effect re-running on auth changes and swallows its
-  // own errors.
+  // How much unsynced work this launch inherited — and, in the same pass, the
+  // dead letters a lost local write lock manufactured put back in the queue
+  // (#4331). recoverAndReportOutboxOnce self-guards against this effect re-running
+  // on auth changes and swallows its own errors.
   // Gated on the schema like every other db effect: pending_mutations does not
   // exist yet on a contended launch, and a gauge that throws there would report
   // no backlog rather than the backlog it could not read.
   useEffect(() => {
     if (!isAuthenticated || !schemaReady) return;
-    void reportOutboxBacklogOnce(db);
+    void recoverAndReportOutboxOnce(db);
   }, [db, isAuthenticated, schemaReady]);
 
   // Push-then-pull sync loop (foreground + reconnect triggers). Returns its own

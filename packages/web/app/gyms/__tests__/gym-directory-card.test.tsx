@@ -42,16 +42,8 @@ function gym(overrides: Partial<GymDirectoryCardData> = {}): GymDirectoryCardDat
 async function renderCard(props: {
   gym?: Partial<GymDirectoryCardData>;
   origin?: { latitude: number; longitude: number } | null;
-  viewerState?: 'signed-in' | 'signed-out';
 }) {
-  return render(
-    <GymDirectoryCard
-      gym={gym(props.gym)}
-      origin={props.origin ?? null}
-      viewerState={props.viewerState ?? 'signed-out'}
-      locale="en-US"
-    />,
-  );
+  return render(<GymDirectoryCard gym={gym(props.gym)} origin={props.origin ?? null} locale="en-US" />);
 }
 
 beforeEach(() => {
@@ -64,6 +56,16 @@ beforeEach(() => {
 });
 
 describe('GymDirectoryCard', () => {
+  it('labels a claimed gym', async () => {
+    await renderCard({ gym: { isClaimed: true } });
+    expect(screen.getByText('Claimed')).toBeTruthy();
+  });
+
+  it('labels an unclaimed gym', async () => {
+    await renderCard({});
+    expect(screen.getByText('Unclaimed')).toBeTruthy();
+  });
+
   it('links the gym name with a real href a crawler can follow', async () => {
     await renderCard({});
     const link = screen.getByRole('link', { name: 'Boulderwelt München Ost' });
@@ -124,24 +126,17 @@ describe('GymDirectoryCard', () => {
     expect(screen.getByText('Tension')).toBeTruthy();
   });
 
-  it('offers the claim prompt on an unclaimed gym', async () => {
+  it('carries no claim prompt of its own — the page has one, under the list', async () => {
+    // It used to render on every unclaimed row, which is most rows, so a page
+    // of 24 gyms asked "Is this your gym?" 24 times.
     await renderCard({ gym: { isClaimed: false } });
-    expect(screen.getByRole('link', { name: 'Is this your gym?' })).toBeTruthy();
+    expect(screen.queryByText(/Is this your gym\?/)).toBeNull();
   });
 
-  it('drops the claim prompt once a gym is claimed, and changes nothing else', async () => {
+  it('renders the same card claimed or not, apart from the badge', async () => {
     await renderCard({ gym: { isClaimed: true, address: 'Hansastraße 15, München' } });
-    expect(screen.queryByRole('link', { name: 'Is this your gym?' })).toBeNull();
-    // Unclaimed and claimed gyms render the same card otherwise: same heading
-    // link, same address line, no badge, no demotion.
+    // Same heading link, same address line, no demotion.
     expect(screen.getByRole('link', { name: 'Boulderwelt München Ost' })).toBeTruthy();
     expect(screen.getByText('Hansastraße 15, München')).toBeTruthy();
-  });
-
-  it('uses isClaimed, not the viewer-scoped canClaim, so anonymous visitors see the prompt', async () => {
-    // `canClaim` is false for every signed-out viewer — i.e. the directory's
-    // whole audience — so gating on it would hide this from everyone.
-    await renderCard({ gym: { isClaimed: false }, viewerState: 'signed-out' });
-    expect(screen.getByRole('link', { name: 'Is this your gym?' })).toBeTruthy();
   });
 });

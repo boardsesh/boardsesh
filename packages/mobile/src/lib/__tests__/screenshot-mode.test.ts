@@ -11,6 +11,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 const SCREENSHOT_ENV_KEYS = [
   'EXPO_PUBLIC_SCREENSHOT_MODE',
   'EXPO_PUBLIC_SCREENSHOT_LOCALE',
+  'EXPO_PUBLIC_SCREENSHOT_NOW',
   'EXPO_PUBLIC_SCREENSHOT_THEME',
   'EXPO_PUBLIC_SCREENSHOT_VARIANT',
   'EXPO_PUBLIC_SCREENSHOT_WORKOUT',
@@ -53,7 +54,7 @@ describe('screenshot-mode', () => {
   it('pins Aura and the store boards by default, so CI needs no env to get them', async () => {
     const screenshotMode = await import('../screenshot-mode');
     expect(screenshotMode.SCREENSHOT_RENDER_MODE).toBe('aura');
-    expect(screenshotMode.SCREENSHOT_BOARDS).toEqual(["Marco's Board", 'High Point Climbing Orlando']);
+    expect(screenshotMode.SCREENSHOT_BOARDS).toEqual(['Boardsesh HQ', 'High Point Climbing Orlando']);
   });
 
   it('takes a render mode and a board list from the run', async () => {
@@ -69,7 +70,7 @@ describe('screenshot-mode', () => {
     process.env.EXPO_PUBLIC_SCREENSHOT_BOARDS = ' | ';
     const screenshotMode = await import('../screenshot-mode');
     expect(screenshotMode.SCREENSHOT_RENDER_MODE).toBe('aura');
-    expect(screenshotMode.SCREENSHOT_BOARDS).toEqual(["Marco's Board", 'High Point Climbing Orlando']);
+    expect(screenshotMode.SCREENSHOT_BOARDS).toEqual(['Boardsesh HQ', 'High Point Climbing Orlando']);
   });
 
   it('keeps the locale override null when screenshot mode is off, even with a locale set', async () => {
@@ -90,5 +91,104 @@ describe('screenshot-mode', () => {
     process.env.EXPO_PUBLIC_SCREENSHOT_LOCALE = 'zz-not-a-locale';
     const screenshotMode = await import('../screenshot-mode');
     expect(screenshotMode.SCREENSHOT_LOCALE_OVERRIDE).toBeNull();
+  });
+
+  it('keeps the frozen clock null when screenshot mode is off, even with NOW set', async () => {
+    process.env.EXPO_PUBLIC_SCREENSHOT_NOW = '2026-01-15T12:00:00.000Z';
+    const screenshotMode = await import('../screenshot-mode');
+    expect(screenshotMode.SCREENSHOT_NOW_MS).toBeNull();
+  });
+
+  it('freezes the clock to the parsed instant only when screenshot mode is on', async () => {
+    process.env.EXPO_PUBLIC_SCREENSHOT_MODE = '1';
+    process.env.EXPO_PUBLIC_SCREENSHOT_NOW = '2026-01-15T12:00:00.000Z';
+    const screenshotMode = await import('../screenshot-mode');
+    expect(screenshotMode.SCREENSHOT_NOW_MS).toBe(Date.parse('2026-01-15T12:00:00.000Z'));
+  });
+
+  it('ignores an unparseable NOW even in screenshot mode', async () => {
+    process.env.EXPO_PUBLIC_SCREENSHOT_MODE = '1';
+    process.env.EXPO_PUBLIC_SCREENSHOT_NOW = 'not-a-date';
+    const screenshotMode = await import('../screenshot-mode');
+    expect(screenshotMode.SCREENSHOT_NOW_MS).toBeNull();
+  });
+
+  it('leaves infinite lists paging normally outside screenshot mode', async () => {
+    const { screenshotModeNextPageParam } = await import('../screenshot-mode');
+    expect(screenshotModeNextPageParam(20, 1)).toBe(20);
+    expect(screenshotModeNextPageParam('eyJvIjo4MH0', 4)).toBe('eyJvIjo4MH0');
+    // A list that has genuinely run out still stops.
+    expect(screenshotModeNextPageParam(undefined, 3)).toBeUndefined();
+  });
+
+  it('stops an infinite list after its first page in screenshot mode', async () => {
+    process.env.EXPO_PUBLIC_SCREENSHOT_MODE = '1';
+    const { screenshotModeNextPageParam } = await import('../screenshot-mode');
+    // Nothing is capped before the first page has landed.
+    expect(screenshotModeNextPageParam(20, 0)).toBe(20);
+    // React Query asks with allPages.length === 1 once page one is in.
+    expect(screenshotModeNextPageParam(20, 1)).toBeUndefined();
+    expect(screenshotModeNextPageParam('eyJvIjo4MH0', 4)).toBeUndefined();
+  });
+
+  it('leaves a hand-rolled pager alone outside screenshot mode', async () => {
+    const { screenshotModeLoadMore } = await import('../screenshot-mode');
+    const loadMore = vi.fn();
+    const wrapped = screenshotModeLoadMore(loadMore);
+    // The same function back, so a memoized list prop keeps its identity.
+    expect(wrapped).toBe(loadMore);
+    wrapped();
+    expect(loadMore).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps real randomness in a normal build', async () => {
+    const { screenshotModeRandom } = await import('../screenshot-mode');
+    // The real thing, not a wrapper: nothing about a shipped build should be
+    // reproducible, and identity is the cheapest way to say so.
+    expect(screenshotModeRandom()).toBe(Math.random);
+  });
+
+  it('draws the same sequence every capture in screenshot mode', async () => {
+    process.env.EXPO_PUBLIC_SCREENSHOT_MODE = '1';
+    const { screenshotModeRandom } = await import('../screenshot-mode');
+    expect(screenshotModeRandom()).not.toBe(Math.random);
+    const first = Array.from({ length: 6 }, screenshotModeRandom());
+    const second = Array.from({ length: 6 }, screenshotModeRandom());
+    expect(first).toEqual(second);
+  });
+
+  it('turns a hand-rolled pager into a no-op in screenshot mode', async () => {
+    process.env.EXPO_PUBLIC_SCREENSHOT_MODE = '1';
+    const { screenshotModeLoadMore } = await import('../screenshot-mode');
+    const loadMore = vi.fn();
+    const wrapped = screenshotModeLoadMore(loadMore);
+    wrapped();
+    wrapped();
+    expect(loadMore).not.toHaveBeenCalled();
+    // One shared no-op, so wrapping twice does not hand a list a fresh closure.
+    expect(screenshotModeLoadMore(vi.fn())).toBe(wrapped);
+  });
+
+  it('keeps a Reanimated entering animation outside screenshot mode', async () => {
+    const { screenshotModeEntering } = await import('../screenshot-mode');
+    const fadeIn = { duration: 180 };
+    expect(screenshotModeEntering(fadeIn)).toBe(fadeIn);
+  });
+
+  it('drops the entering animation in screenshot mode so the first frame is the resting state', async () => {
+    process.env.EXPO_PUBLIC_SCREENSHOT_MODE = '1';
+    const { screenshotModeEntering } = await import('../screenshot-mode');
+    expect(screenshotModeEntering({ duration: 180 })).toBeUndefined();
+  });
+
+  it('keeps the dynamic color outside screenshot mode', async () => {
+    const { screenshotModeStaticColor } = await import('../screenshot-mode');
+    expect(screenshotModeStaticColor('platform-separator', '#38383A')).toBe('platform-separator');
+  });
+
+  it('swaps in the static color in screenshot mode so a translucent native tone cannot still be settling', async () => {
+    process.env.EXPO_PUBLIC_SCREENSHOT_MODE = '1';
+    const { screenshotModeStaticColor } = await import('../screenshot-mode');
+    expect(screenshotModeStaticColor('platform-separator', '#38383A')).toBe('#38383A');
   });
 });

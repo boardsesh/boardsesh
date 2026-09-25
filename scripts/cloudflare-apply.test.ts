@@ -3,7 +3,7 @@
 import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { diffR2Bucket } from '../infra/cloudflare/plan';
+import { diffR2Bucket, r2CorsHasUnmanagedRules } from '../infra/cloudflare/plan';
 import { CloudflareApiRequestError, isAuthorizationError } from './cloudflare-apply';
 import {
   APEX_HOSTNAME,
@@ -11,8 +11,11 @@ import {
   APEX_REDIRECT_RULE_DESCRIPTION,
   ASSETS_CNAME_TARGET,
   ASSETS_HOSTNAME,
+  ASSETS_STAGING_HOSTNAME,
+  SNAPSHOTS_HOSTNAME,
   desiredR2Buckets,
   BACKEND_BOARD_RENDER_CACHE_RULE_DESCRIPTION,
+  BOARD_CONTENT_CHALLENGE_RULE_DESCRIPTION,
   BOARD_RENDER_CACHE_RULE_DESCRIPTION,
   CACHE_RULE_DESCRIPTION,
   CRAWLER_ALLOW_RULE_DESCRIPTION,
@@ -21,6 +24,8 @@ import {
   CRAWLER_BLOCK_TOKENS,
   CLIMB_VIEW_PATH_SEGMENT,
   CLIMB_VIEW_RATE_LIMIT_RULE_DESCRIPTION,
+  DR_PRIMARY_CNAME_TARGET,
+  DR_PRIMARY_HOSTNAME,
   DYNAMIC_REDIRECT_RULE_PHASE,
   LIST_PAGE_PATH_SUFFIX,
   RATE_LIMIT_RULE_PHASE,
@@ -28,6 +33,7 @@ import {
   RSC_REQUEST_HEADER_NAME,
   SESSION_COOKIE_NAME_SUBSTRING,
   WWW_HOSTNAME,
+  WWW_HTML_CACHE_EXCLUDED_BOARDS,
   WWW_HTML_CACHE_LOCALE_PREFIXES,
   WWW_HTML_CACHE_ROOT_SEGMENTS,
   WWW_HTML_CACHE_RULE_DESCRIPTION,
@@ -36,7 +42,12 @@ import {
   buildWwwHtmlCachePathPrefixes,
   desiredCloudflareState,
 } from '../infra/cloudflare/config';
-import type { DnsRecordDesired, FullyManagedDnsRecordDesired } from '../infra/cloudflare/config';
+import type {
+  DnsRecordDesired,
+  FullyManagedDnsRecordDesired,
+  R2BucketDesired,
+  R2Cors,
+} from '../infra/cloudflare/config';
 import {
   MANAGED_RULE_PHASES,
   buildPlan,
@@ -78,6 +89,7 @@ const wsDnsRecord = requiredDnsRecord(WS_HOSTNAME);
 const assetsDnsRecord = requiredFullyManagedDnsRecord(ASSETS_HOSTNAME);
 const wwwDnsRecord = requiredFullyManagedDnsRecord(WWW_HOSTNAME);
 const apexDnsRecord = requiredFullyManagedDnsRecord(APEX_HOSTNAME);
+const drPrimaryDnsRecord = requiredFullyManagedDnsRecord(DR_PRIMARY_HOSTNAME);
 /** The og cache rule — the one the pre-existing cases in this file were written against. */
 const ogCacheRule = desired.cacheRules[0];
 
@@ -133,6 +145,19 @@ function liveAssetsDnsRecord(overrides: Partial<LiveDnsRecord> = {}): LiveDnsRec
     ttl: assetsDnsRecord.ttl,
     proxied: assetsDnsRecord.proxied,
     settings: assetsDnsRecord.settings,
+    ...overrides,
+  };
+}
+
+function liveDrPrimaryDnsRecord(overrides: Partial<LiveDnsRecord> = {}): LiveDnsRecord {
+  return {
+    id: 'dr-primary-dns-record-id',
+    name: drPrimaryDnsRecord.name,
+    type: drPrimaryDnsRecord.type,
+    content: drPrimaryDnsRecord.content,
+    ttl: drPrimaryDnsRecord.ttl,
+    proxied: drPrimaryDnsRecord.proxied,
+    settings: drPrimaryDnsRecord.settings,
     ...overrides,
   };
 }
@@ -225,6 +250,7 @@ function inSyncDnsRecords(): LiveState['dnsRecords'] {
     [assetsDnsRecord.name]: liveAssetsDnsRecord(),
     [wwwDnsRecord.name]: liveWwwDnsRecord(),
     [apexDnsRecord.name]: liveApexDnsRecord(),
+    [drPrimaryDnsRecord.name]: liveDrPrimaryDnsRecord(),
   };
 }
 
@@ -463,6 +489,31 @@ describe('buildPlan', () => {
     expect(dnsChange?.blocked).toBeUndefined();
   });
 
+  // The first apply after this record is declared is a create, and the DR standby
+  // cannot verify a certificate for a name that does not resolve -- so the create
+  // must be planned, and must not be held back behind the zone-wide SSL change the
+  // way a proxied record is.
+  it('creates the DR primary record when the zone does not have it yet', () => {
+    const drifted: LiveState = {
+      ...inSyncLiveState(),
+      dnsRecords: { ...inSyncDnsRecords(), [drPrimaryDnsRecord.name]: null },
+      sslMode: 'full',
+    };
+    const changes = buildPlan(desired, drifted, { allowZoneSsl: false });
+    const dnsChanges = changes.filter((change) => change.resource === 'dns');
+
+    expect(dnsChanges.map((change) => change.dnsName)).toEqual([DR_PRIMARY_HOSTNAME]);
+    expect(dnsChanges[0]?.blocked).toBeUndefined();
+    expect(dnsChanges[0]?.summary).toContain('missing — will create');
+    // What the apply would actually create, read off the plan rather than off the
+    // constant it was built from. Orange-clouding this record would break
+    // replication outright: Cloudflare's proxy carries neither raw TCP nor a
+    // non-HTTP port.
+    expect(dnsChanges[0]?.detail).toContain(`CNAME ${DR_PRIMARY_HOSTNAME} → ${DR_PRIMARY_CNAME_TARGET}`);
+    expect(dnsChanges[0]?.detail).toContain('proxied false');
+    expect(dnsChanges[0]?.detail).toContain('CNAME flattening disabled');
+  });
+
   it('plans multiple DNS records independently and does not SSL-block a DNS-only create', () => {
     const drifted: LiveState = {
       ...inSyncLiveState(),
@@ -485,6 +536,22 @@ describe('buildPlan', () => {
     const flattenedZone: LiveState = { ...inSyncLiveState(), flattenAllCnames: true };
 
     expect(() => buildPlan(desired, flattenedZone, { allowZoneSsl: false })).toThrow('Disable "Flatten all CNAMEs"');
+  });
+});
+
+describe('pgdr.boardsesh.com desired state', () => {
+  it('declares the exact DNS-only CNAME to the Railway TCP proxy', () => {
+    expect(drPrimaryDnsRecord).toEqual({
+      management: 'full',
+      name: 'pgdr.boardsesh.com',
+      type: 'CNAME',
+      content: 'iriguchi.proxy.rlwy.net',
+      ttl: 1,
+      proxied: false,
+      settings: {
+        flatten_cname: false,
+      },
+    });
   });
 });
 
@@ -516,9 +583,37 @@ describe('assets.boardsesh.com desired state', () => {
     });
   });
 
-  it('keeps DNS record identities unique and adds no assets cache rule', () => {
+  it('keeps DNS record identities unique', () => {
     expect(new Set(desired.dnsRecords.map((record) => record.name)).size).toBe(desired.dnsRecords.length);
-    expect(desired.cacheRules.every((rule) => !rule.expression.includes(ASSETS_HOSTNAME))).toBe(true);
+  });
+
+  it('now declares an assets cache rule, which the DNS-only record made pointless', () => {
+    // The inverse of this used to be asserted here, and was correct while the
+    // record was grey-clouded: traffic never reached Cloudflare's proxy, so a
+    // cache rule could not match. It becomes load-bearing at the flip, and is
+    // declared ahead of it so the rule is already converged when the hostname
+    // starts resolving to R2.
+    const assetsRule = desired.cacheRules.find((rule) => rule.expression.includes(ASSETS_HOSTNAME));
+    expect(assetsRule?.action_parameters.cache).toBe(true);
+    expect(assetsRule?.action_parameters.edge_ttl?.mode).toBe('bypass_by_default');
+    expect(assetsRule?.action_parameters.browser_ttl?.mode).toBe('respect_origin');
+  });
+
+  it('sets the CORS header unconditionally at the edge, on both hostnames', () => {
+    // The bug this prevents, measured 2026-09-15:
+    //   Tigris  → `access-control-allow-origin: *` on every response.
+    //   R2      → ACAO only when the request carried `Origin`.
+    // The same objects are loaded as <img> (no Origin) and via fetch() by the
+    // board-render worker. One cache key, and Cloudflare does not key on Vary
+    // below Enterprise, so the <img> copy can be served to the fetch() and fail
+    // CORS — silently, for a year, behind `immutable`.
+    const corsRule = desired.responseHeaderRules.find((rule) => rule.expression.includes(ASSETS_HOSTNAME));
+    expect(corsRule?.expression).toContain(ASSETS_STAGING_HOSTNAME);
+    expect(corsRule?.action_parameters.headers['access-control-allow-origin']).toEqual({
+      operation: 'set',
+      value: '*',
+    });
+    expect(corsRule?.enabled).toBe(true);
   });
 });
 
@@ -602,6 +697,7 @@ describe('www.boardsesh.com under Cloudflare management (#4655)', () => {
       wafRules: [],
       rateLimitRules: [],
       redirectRules: [],
+      responseHeaderRules: [],
       ssl: desired.ssl,
     };
     const flattenedZone: LiveState = {
@@ -721,12 +817,29 @@ describe('www cost-control rules (#4650)', () => {
   it('lowercases the user agent in every WAF expression', () => {
     // Cloudflare's `contains` is CASE-SENSITIVE. Without lower(), the rule installs
     // cleanly and matches nothing — the worst kind of failure, because it looks done.
+    // Not every rule matches on user agent — the climb-view challenge is
+    // path-only, because the population it exists for rotates its UA. The
+    // invariant is narrower than "every rule names an agent": every READ of the
+    // header must be a lowered one.
     for (const rule of desired.wafRules) {
-      const comparisons = rule.expression.split(' or ');
-      expect(comparisons.length).toBeGreaterThan(0);
-      for (const comparison of comparisons) {
-        expect(comparison).toMatch(/^lower\(http\.user_agent\) contains "[^A-Z]*"$/);
+      const comparisons = [...rule.expression.matchAll(/lower\(http\.user_agent\) contains "([^"]*)"/g)];
+      for (const [, token] of comparisons) {
+        expect(token).toBe(token.toLowerCase());
       }
+      // Every read of the header must be a lowered one. Counting occurrences
+      // rather than splitting on ' or ' is what makes this hold when an
+      // expression is wrapped — the allow rule gates its alternation on
+      // http.request.method, and a split would leave the first and last
+      // fragments carrying the wrapper.
+      const headerReads = rule.expression.split('http.user_agent').length - 1;
+      expect(headerReads).toBe(comparisons.length);
+    }
+
+    // And the guard must not pass by matching nothing: the two rules that are
+    // ABOUT user agents still have to carry lowered comparisons.
+    for (const description of [CRAWLER_ALLOW_RULE_DESCRIPTION, CRAWLER_BLOCK_RULE_DESCRIPTION]) {
+      const rule = desired.wafRules.find((candidate) => candidate.description === description);
+      expect(rule?.expression).toMatch(/lower\(http\.user_agent\) contains "/);
     }
   });
 
@@ -742,6 +855,11 @@ describe('www cost-control rules (#4650)', () => {
       'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/126.0.0.0 Safari/537.36',
       'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
       'Twitterbot/1.0',
+      // Real people on Yandex's browser and in-app search. They share the
+      // `yandex` substring with the crawler and are the reason
+      // COST_BLOCKED_CRAWLER_TOKENS spells out the two bot tokens in full.
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 YaBrowser/23.9.1.962 Yowser/2.5 Safari/537.36',
+      'Mozilla/5.0 (Linux; Android 13; SM-A536B) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/106.0.0.0 Mobile Safari/537.36 YandexSearch/1.0',
     ];
     for (const userAgent of allowedUserAgents) {
       for (const token of CRAWLER_BLOCK_TOKENS) {
@@ -763,6 +881,8 @@ describe('www cost-control rules (#4650)', () => {
       'Mozilla/5.0 (compatible; MJ12bot/v1.4.8; http://mj12bot.com/)',
       'Mozilla/5.0 (compatible; DotBot/1.2; +https://opensiteexplorer.org/dotbot;)',
       'Screaming Frog SEO Spider/21.4',
+      'Mozilla/5.0 (compatible; YandexBot/3.0; +http://yandex.com/bots)',
+      'Mozilla/5.0 (compatible; YandexRenderResourcesBot/1.0; +http://yandex.com/bots)',
     ];
     for (const userAgent of blockedUserAgents) {
       const matched = CRAWLER_BLOCK_TOKENS.some((token) => userAgent.toLowerCase().includes(token));
@@ -775,6 +895,145 @@ describe('www cost-control rules (#4650)', () => {
       for (const allowToken of CRAWLER_ALLOW_TOKENS) {
         expect(blockToken.includes(allowToken) || allowToken.includes(blockToken)).toBe(false);
       }
+    }
+  });
+
+  it('skips the ruleset only for GET, so a bot POST stays governable', () => {
+    // `skip` with `ruleset: current` takes an allow-listed agent past every
+    // later rule in the ruleset. Scoping it to GET keeps that protection for
+    // reads while leaving writes reachable — Applebot executes our JavaScript
+    // and was measured POSTing 190 of its 253 www requests to the Sentry
+    // tunnel on 2026-09-10.
+    expect(allowRule?.expression.startsWith('(http.request.method eq "GET" and (')).toBe(true);
+    expect(allowRule?.expression.endsWith('))')).toBe(true);
+    for (const token of CRAWLER_ALLOW_TOKENS) {
+      expect(allowRule?.expression).toContain(`lower(http.user_agent) contains "${token}"`);
+    }
+  });
+
+  it('challenges every surface the farm moved to, and not the homepage', () => {
+    // Parses the SHIPPED expression rather than restating its logic. A helper
+    // that re-implemented the three clauses would pass no matter what the rule
+    // actually said, which is the failure mode worth guarding against here.
+    const expression = desired.wafRules.find(
+      (rule) => rule.description === BOARD_CONTENT_CHALLENGE_RULE_DESCRIPTION,
+    )!.expression;
+
+    const containsTokens = [...expression.matchAll(/http\.request\.uri\.path contains "([^"]+)"/g)].map(
+      ([, token]) => token,
+    );
+    const endsWithTokens = [...expression.matchAll(/ends_with\(http\.request\.uri\.path, "([^"]+)"\)/g)].map(
+      ([, token]) => token,
+    );
+    // If the expression ever stops using these two forms this test would start
+    // passing vacuously, so assert it still parses into something.
+    expect(containsTokens.length + endsWithTokens.length).toBeGreaterThan(0);
+
+    const challenged = (path: string): boolean =>
+      containsTokens.some((token) => path.includes(token)) || endsWithTokens.some((token) => path.endsWith(token));
+
+    // What the farm actually fetched in the 2026-09-11 08:34-08:53 window,
+    // after the /view/-only rule pushed it off climb pages: 102 /setter/,
+    // 67 /list.
+    for (const path of [
+      '/de/tension/two-mirror/12-high-x-12-wide/wood_plastic/50/list',
+      '/kilter/original/12x12-square/screw_bolt/40/list',
+      '/setter/someclimber',
+      '/fr/setter/someclimber',
+    ]) {
+      expect(challenged(path), `${path} must be challenged`).toBe(true);
+    }
+
+    // Climb pages must NOT be challenged. They are the surface people share,
+    // and an unfurler reading og:image executes no JavaScript, so a challenge
+    // is an unconditional fail for every one of them — that is how previews
+    // broke on 2026-09-11. Naming every unfurler is not a finishable list, so
+    // shareable surfaces stay out of this rule.
+    for (const path of [
+      '/kilter/original/12x12-square/screw_bolt/40/view/some-climb',
+      '/de/kilter/original/12x12-square/screw_bolt/40/view/some-climb',
+      '/b/kilter-original-12x12/40/view/some-climb',
+    ]) {
+      expect(challenged(path), `${path} must stay shareable`).toBe(false);
+    }
+
+    // The homepage stays open on purpose — it is where a real first-time
+    // visitor lands before any clearance cookie exists, and the farm hit it
+    // 8 times against 169 for the surfaces above.
+    for (const path of ['/', '/about', '/legal', '/gyms']) {
+      expect(challenged(path), `${path} must stay open`).toBe(false);
+    }
+  });
+
+  it('lets every link unfurler past the ruleset, challenge or not', () => {
+    // The 2026-09-11 regression in one assertion. An unfurler reads og:image
+    // and executes no JavaScript, so if it is not on the allow list (whose
+    // action is `skip`) a managed challenge fails it outright and the share
+    // preview goes blank. Measured that day: Signal, Bluesky, Mastodon and
+    // Teams all returned `403 cf-mitigated: challenge` on a live climb page.
+    const unfurlers: [string, string][] = [
+      ['Slack', 'Slackbot-LinkExpanding 1.0 (+https://api.slack.com/robots)'],
+      ['Discord', 'Mozilla/5.0 (compatible; Discordbot/2.0; +https://discordapp.com)'],
+      ['Twitter', 'Twitterbot/1.0'],
+      ['Facebook', 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)'],
+      ['WhatsApp', 'WhatsApp/2.23.20.0'],
+      ['Telegram', 'TelegramBot (like TwitterBot)'],
+      ['LinkedIn', 'LinkedInBot/1.0'],
+      ['Signal', 'SignalBot/1.0'],
+      ['Bluesky', 'Bluesky Cardyb/1.1'],
+      ['Mastodon', 'Mastodon/4.2.1 (+https://mastodon.social/)'],
+      ['Teams', 'Mozilla/5.0 (compatible; MicrosoftPreview/2.0; +https://aka.ms/MicrosoftPreview)'],
+      ['Skype', 'SkypeUriPreview Preview/0.5'],
+      ['Reddit', 'Mozilla/5.0 (compatible; redditbot/1.0)'],
+    ];
+    for (const [label, userAgent] of unfurlers) {
+      const matched = CRAWLER_ALLOW_TOKENS.some((token) => userAgent.toLowerCase().includes(token));
+      expect(matched, `${label} must be allow-listed or its link previews break`).toBe(true);
+    }
+  });
+
+  it('balances its parentheses', () => {
+    // A stray paren installs nothing and the deploy still goes green.
+    const expression = desired.wafRules.find(
+      (rule) => rule.description === BOARD_CONTENT_CHALLENGE_RULE_DESCRIPTION,
+    )!.expression;
+    const opens = expression.split('(').length - 1;
+    const closes = expression.split(')').length - 1;
+    expect(opens).toBe(closes);
+  });
+
+  it('challenges the scraped surfaces, and does it last', () => {
+    // The scraper this exists for rotates ordinary Chrome/Edge/Safari strings,
+    // so no token list reaches it. What separates it from a person is that it
+    // executes no JavaScript — 350 climb pages and zero `/_next/static` chunks
+    // in a 2026-09-11 sample — and a managed challenge is exactly that test.
+    const challengeRule = desired.wafRules.find(
+      (rule) => rule.description === BOARD_CONTENT_CHALLENGE_RULE_DESCRIPTION,
+    );
+    expect(challengeRule?.action).toBe('managed_challenge');
+    expect(challengeRule?.expression).toContain(`http.host eq "${WWW_HOSTNAME}"`);
+    // Never the climb-view surface: see the shareability case above.
+    expect(challengeRule?.expression).not.toContain('/view/');
+
+    // Last, because it is the only rule that can catch a real browser string.
+    // Anything we have a verdict on must be judged before it.
+    expect(desired.wafRules.indexOf(challengeRule!)).toBe(desired.wafRules.length - 1);
+    expect(desired.wafRules.indexOf(challengeRule!)).toBeGreaterThan(desired.wafRules.indexOf(blockRule!));
+  });
+
+  it('never challenges an engine that sends people back', () => {
+    // The allow rule skips the whole ruleset, so an allow-listed agent cannot
+    // reach the challenge. That is load-bearing for SEO and it is why Baidu and
+    // Qwant had to be added: they were passing by default, which stops working
+    // the moment an unlisted agent gets challenged.
+    const challengeIndex = desired.wafRules.findIndex(
+      (rule) => rule.description === BOARD_CONTENT_CHALLENGE_RULE_DESCRIPTION,
+    );
+    expect(desired.wafRules.indexOf(allowRule!)).toBeLessThan(challengeIndex);
+    expect(allowRule?.action).toBe('skip');
+    expect(allowRule?.action_parameters).toEqual({ ruleset: 'current' });
+    for (const sendsTraffic of ['googlebot', 'bingbot', 'duckduckbot', 'bravebot', 'baiduspider', 'qwantify']) {
+      expect(CRAWLER_ALLOW_TOKENS).toContain(sendsTraffic);
     }
   });
 
@@ -810,6 +1069,9 @@ describe('managed rule ordering and foreign-rule safety', () => {
     expect(rules.map((rule) => rule.description)).toEqual([
       CRAWLER_ALLOW_RULE_DESCRIPTION,
       CRAWLER_BLOCK_RULE_DESCRIPTION,
+      // Last on purpose: it is the only rule that can catch an ordinary browser
+      // string, so both UA verdicts must be reached first.
+      BOARD_CONTENT_CHALLENGE_RULE_DESCRIPTION,
     ]);
     // The pre-existing rule keeps its Cloudflare-assigned id rather than being
     // recreated, so its analytics and history survive.
@@ -1300,6 +1562,7 @@ describe('the apply loop, driven end to end against a stubbed Cloudflare API', (
       [WS_HOSTNAME]: [liveDnsRecord()],
       [ASSETS_HOSTNAME]: [liveAssetsDnsRecord()],
       [WWW_HOSTNAME]: [liveWwwDnsRecord()],
+      [DR_PRIMARY_HOSTNAME]: [liveDrPrimaryDnsRecord()],
       // The apex carries the mail and verification records every zone has.
       // Cloudflare returns them from the same by-name lookup, and they must not
       // make the address record look ambiguous and fail the whole run.
@@ -1335,6 +1598,24 @@ describe('the apply loop, driven end to end against a stubbed Cloudflare API', (
       if (url.pathname === '/client/v4/zones/zone-1/settings/ssl') return envelope({ id: 'ssl', value: 'strict' });
       if (url.pathname === '/client/v4/zones/zone-1/dns_settings') return envelope({ flatten_all_cnames: false });
       if (url.pathname.includes('/rulesets/phases/')) return envelope({ id: 'ruleset-id', rules: [] });
+      // R2 is only fetched when CLOUDFLARE_ACCOUNT_ID is set.
+      if (url.pathname.endsWith('/r2/buckets')) {
+        return envelope({ buckets: desiredR2Buckets.map((bucket) => ({ name: bucket.name })) });
+      }
+      if (url.pathname.endsWith('/domains/custom')) return envelope({ domains: [] });
+      if (url.pathname.endsWith('/domains/managed')) {
+        if (method === 'GET') return envelope({ bucketId: 'bucket-id', domain: 'example.r2.dev', enabled: true });
+        return envelope({ bucketId: 'bucket-id', domain: 'example.r2.dev', enabled: false });
+      }
+      if (url.pathname.endsWith('/cors')) {
+        // GET returns 404 before a CORS policy exists; PUT creates it.
+        if (method === 'GET') {
+          return new Response(JSON.stringify({ success: false, errors: [{ code: 10_006, message: 'not found' }] }), {
+            status: 404,
+          });
+        }
+        return envelope({});
+      }
       throw new Error(`Unstubbed Cloudflare request: ${method} ${url.pathname}`);
     });
 
@@ -1364,6 +1645,38 @@ describe('the apply loop, driven end to end against a stubbed Cloudflare API', (
     // One PUT per phase, not one per drifted rule — the rulesets API only offers
     // a whole-phase write.
     expect(written).toHaveLength(MANAGED_RULE_PHASES.length);
+  });
+
+  it('converges each R2 bucket once, however many attributes drifted', async () => {
+    const requests = stubCloudflareApi(dnsResponses(liveApexDnsRecord()));
+    vi.stubEnv('CLOUDFLARE_ACCOUNT_ID', 'account-1');
+
+    expect(await runCloudflareApply(['--apply'])).toBe(0);
+
+    const attaches = requests.filter(
+      (request) => request.method === 'POST' && request.pathname.endsWith('/domains/custom'),
+    );
+    const assetsAttaches = attaches.filter((request) => request.pathname.includes('/boardsesh-static-assets/'));
+    expect(assetsAttaches).toHaveLength(1);
+    expect(assetsAttaches[0].body).toMatchObject({ domain: ASSETS_STAGING_HOSTNAME });
+    const publicBuckets = desiredR2Buckets.filter((bucket) => bucket.customDomain !== null);
+    expect(attaches).toHaveLength(publicBuckets.length);
+
+    const managedDomainPuts = requests.filter(
+      (request) => request.method === 'PUT' && request.pathname.endsWith('/domains/managed'),
+    );
+    expect(managedDomainPuts).toHaveLength(desiredR2Buckets.length);
+    expect(managedDomainPuts.every((request) => request.body?.enabled === false)).toBe(true);
+
+    const corsPuts = requests.filter((request) => request.method === 'PUT' && request.pathname.endsWith('/cors'));
+    expect(corsPuts).toHaveLength(desiredR2Buckets.filter((bucket) => bucket.cors).length);
+
+    const assetChangeLogs = vi
+      .mocked(console.log)
+      .mock.calls.map(([message]) => message)
+      .filter((message) => typeof message === 'string' && message.includes('R2 boardsesh-static-assets:'));
+    expect(assetChangeLogs.filter((message) => message.startsWith('[cf-apply] applied:'))).toHaveLength(1);
+    expect(assetChangeLogs.filter((message) => message.startsWith('[cf-apply] skipped:'))).toHaveLength(2);
   });
 
   it('sends the apex redirect rule verbatim in the dynamic-redirect PUT', async () => {
@@ -1504,12 +1817,20 @@ describe('www list + climb-view HTML cache rule (#4652)', () => {
       '',
       ...supportedLocales.filter((locale) => locale !== defaultLocale).map((locale) => `/${locale}`),
     ]);
-    // `b` is the slug tree's root and has no board of its own.
-    expect([...WWW_HTML_CACHE_ROOT_SEGMENTS]).toEqual(['b', ...schemaBoards]);
+    // `b` is the slug tree's root and has no board of its own. A board www never
+    // serves on the numeric path (a spray wall, private by default) is excluded
+    // on purpose: edge-caching it would leak one visitor's wall page to the next.
+    const excluded: readonly string[] = WWW_HTML_CACHE_EXCLUDED_BOARDS;
+    const servedBoards = schemaBoards.filter((board) => !excluded.includes(board));
+    expect(servedBoards.length).toBeLessThan(schemaBoards.length);
+    expect([...WWW_HTML_CACHE_ROOT_SEGMENTS]).toEqual(['b', ...servedBoards]);
 
     for (const localePrefix of WWW_HTML_CACHE_LOCALE_PREFIXES) {
-      for (const rootSegment of ['b', ...schemaBoards]) {
+      for (const rootSegment of ['b', ...servedBoards]) {
         expect(expression).toContain(`starts_with(http.request.uri.path, "${localePrefix}/${rootSegment}/")`);
+      }
+      for (const board of excluded) {
+        expect(expression).not.toContain(`starts_with(http.request.uri.path, "${localePrefix}/${board}/")`);
       }
     }
   });
@@ -1595,7 +1916,9 @@ describe('www list + climb-view HTML cache rule (#4652)', () => {
 
   it('keeps the og rule first, so the older fixtures still address it by index', () => {
     expect(desired.cacheRules[0].description).toBe(CACHE_RULE_DESCRIPTION);
-    expect(desired.cacheRules.at(-1)?.description).toBe(WWW_HTML_CACHE_RULE_DESCRIPTION);
+    // Both rules are present; neither position is load-bearing beyond index 0,
+    // which the fixtures above depend on. A new rule goes on the end.
+    expect(desired.cacheRules.map((rule) => rule.description)).toContain(WWW_HTML_CACHE_RULE_DESCRIPTION);
   });
 
   it('still has an origin that sets the header this rule exists to honour', () => {
@@ -1609,12 +1932,59 @@ describe('www list + climb-view HTML cache rule (#4652)', () => {
   });
 });
 
-describe('diffR2Bucket', () => {
-  const MEDIA = { name: 'boardsesh-user-media', customDomain: 'media.boardsesh.com' } as const;
-  const PRIVATE = { name: 'boardsesh-user-private', customDomain: null } as const;
+describe('a rule phase this token cannot read', () => {
+  it('is skipped rather than planned as empty', () => {
+    // The failure this prevents: a 403 read as "phase has no rules" makes the
+    // diff say "will create", the apply then PUTs into the same phase and 403s
+    // again — and `cf:apply --apply` runs on EVERY production deploy, so a
+    // missing scope would take www off the deploy train rather than print a
+    // warning. Same concession the R2 read already makes, for the same reason.
+    const live: LiveState = {
+      dnsRecords: inSyncDnsRecords(),
+      rules: emptyRules(),
+      sslMode: 'strict',
+      flattenAllCnames: false,
+      unavailableRulePhases: new Set(['response-header-rule' as const]),
+    };
 
-  function live(name: string, customDomains: string[] = []) {
-    return { name, exists: true, customDomains };
+    const changes = buildPlan(desired, live, { allowZoneSsl: false });
+    expect(changes.some((change) => change.resource === 'response-header-rule')).toBe(false);
+    // Every other phase still plans normally — this is a per-phase concession,
+    // not a global one.
+    expect(changes.some((change) => change.resource === 'cache-rule')).toBe(true);
+  });
+
+  it('marks only the newly-added phase optional', () => {
+    // A phase that predates the scope it needs must still fail loudly when the
+    // scope is lost; only the one being rolled out is allowed to degrade.
+    const optional = MANAGED_RULE_PHASES.filter((phase) => phase.optional).map((phase) => phase.resource);
+    expect(optional).toEqual(['response-header-rule']);
+  });
+});
+
+describe('diffR2Bucket', () => {
+  const MEDIA = {
+    name: 'boardsesh-user-media',
+    customDomain: 'media.boardsesh.com',
+    r2DevDomainEnabled: false,
+  } as const;
+  const PRIVATE = { name: 'boardsesh-user-private', customDomain: null, r2DevDomainEnabled: false } as const;
+
+  function live(
+    name: string,
+    customDomains: string[] = [],
+    cors: R2Cors | null = null,
+    corsRuleCount = cors ? 1 : 0,
+    r2DevDomainEnabled = false,
+  ) {
+    return {
+      name,
+      exists: true,
+      customDomains: customDomains.map((domain) => ({ domain, enabled: true })),
+      r2DevDomainEnabled,
+      cors,
+      corsRuleCount,
+    };
   }
 
   it('plans a create when the bucket is absent', () => {
@@ -1627,7 +1997,15 @@ describe('diffR2Bucket', () => {
 
   it('does not plan the domain in the same pass as the create', () => {
     // The domain call needs the bucket to exist; the next run attaches it.
-    expect(diffR2Bucket(MEDIA, { name: MEDIA.name, exists: false, customDomains: [] })).toHaveLength(1);
+    expect(
+      diffR2Bucket(MEDIA, {
+        name: MEDIA.name,
+        exists: false,
+        customDomains: [],
+        r2DevDomainEnabled: false,
+        cors: null,
+      }),
+    ).toHaveLength(1);
   });
 
   it('attaches a missing custom domain to a public bucket', () => {
@@ -1638,6 +2016,24 @@ describe('diffR2Bucket', () => {
 
   it('is a no-op once the public bucket serves its domain', () => {
     expect(diffR2Bucket(MEDIA, live(MEDIA.name, ['media.boardsesh.com']))).toEqual([]);
+  });
+
+  it('enables a declared custom domain that is attached but disabled', () => {
+    const disabledDomain = {
+      ...live(MEDIA.name),
+      customDomains: [{ domain: 'media.boardsesh.com', enabled: false }],
+    };
+    const changes = diffR2Bucket(MEDIA, disabledDomain);
+    expect(changes).toHaveLength(1);
+    expect(changes[0].summary).toContain('will enable media.boardsesh.com');
+  });
+
+  it('disables the independent r2.dev URL on every declared bucket', () => {
+    for (const desiredBucket of [MEDIA, PRIVATE]) {
+      const changes = diffR2Bucket(desiredBucket, live(desiredBucket.name, [], null, 0, true));
+      expect(changes.some((change) => change.summary.includes('will disable public r2.dev URL'))).toBe(true);
+      expect(changes.find((change) => change.summary.includes('r2.dev'))?.blocked).toBeUndefined();
+    }
   });
 
   it('is a no-op for a private bucket with no domain', () => {
@@ -1652,7 +2048,80 @@ describe('diffR2Bucket', () => {
     expect(changes).toHaveLength(1);
     expect(changes[0].blocked).toBe(true);
     expect(changes[0].summary).toContain('declared PRIVATE but serves oops.boardsesh.com');
-    expect(changes[0].detail).toContain('user data exports');
+    expect(changes[0].detail).toContain('custom domain publishes every object');
+  });
+
+  it('reports only the private-domain block when r2.dev is also enabled', () => {
+    const changes = diffR2Bucket(PRIVATE, live(PRIVATE.name, ['oops.boardsesh.com'], null, 0, true));
+    expect(changes).toHaveLength(1);
+    expect(changes[0].blocked).toBe(true);
+    expect(changes[0].summary).not.toContain('r2.dev');
+  });
+
+  const ASSETS = {
+    name: 'boardsesh-static-assets',
+    customDomain: 'assets-r2.boardsesh.com',
+    r2DevDomainEnabled: false,
+    cors: { allowedOrigins: ['*'], allowedMethods: ['GET', 'HEAD'], maxAgeSeconds: 86_400 },
+  } as const satisfies R2BucketDesired;
+
+  it('plans CORS when the bucket has none', () => {
+    // The state a freshly created bucket is in. Without this the catalogue would
+    // move to a host that answers board-background fetches with no ACAO header.
+    const changes = diffR2Bucket(ASSETS, live(ASSETS.name, [ASSETS.customDomain]));
+    expect(changes).toHaveLength(1);
+    expect(changes[0].summary).toContain('will set CORS');
+    expect(changes[0].detail).toContain('no CORS policy');
+  });
+
+  it('is a no-op once CORS matches, regardless of list order', () => {
+    const reordered = { allowedOrigins: ['*'], allowedMethods: ['HEAD', 'GET'], maxAgeSeconds: 86_400 } as const;
+    expect(diffR2Bucket(ASSETS, live(ASSETS.name, [ASSETS.customDomain], reordered))).toEqual([]);
+  });
+
+  it('plans CORS again when the live policy has drifted', () => {
+    const drifted = {
+      allowedOrigins: ['https://www.boardsesh.com'],
+      allowedMethods: ['GET', 'HEAD'],
+      maxAgeSeconds: 86_400,
+    } as const;
+    const changes = diffR2Bucket(ASSETS, live(ASSETS.name, [ASSETS.customDomain], drifted));
+    expect(changes).toHaveLength(1);
+    expect(changes[0].detail).toContain('https://www.boardsesh.com');
+  });
+
+  it('BLOCKS rather than collapsing a multi-rule CORS policy', () => {
+    // The write is a whole-policy PUT. Comparing rules[0] and then writing one
+    // rule would delete every other rule the bucket carried, silently, on the
+    // first converge that saw a mismatch.
+    const first = { allowedOrigins: ['*'], allowedMethods: ['GET', 'HEAD'], maxAgeSeconds: 86_400 } as const;
+    const changes = diffR2Bucket(ASSETS, live(ASSETS.name, [ASSETS.customDomain], first, 3));
+    expect(changes).toHaveLength(1);
+    expect(changes[0].blocked).toBe(true);
+    expect(changes[0].summary).toContain('has 3 CORS rules');
+  });
+
+  it('reports unmanaged CORS rules through one predicate the apply shares', () => {
+    // The apply re-derives what to do from (desired, live) rather than walking
+    // the plan, so a blocked CORS change alone does not stop the write: a
+    // NON-blocked change on the same bucket (an unattached custom domain) still
+    // routes through applyR2Bucket. Both callers ask this, so they cannot drift.
+    const policy = { allowedOrigins: ['*'], allowedMethods: ['GET', 'HEAD'], maxAgeSeconds: 86_400 } as const;
+    expect(r2CorsHasUnmanagedRules(ASSETS, live(ASSETS.name, [], policy, 3))).toBe(true);
+    expect(r2CorsHasUnmanagedRules(ASSETS, live(ASSETS.name, [], policy, 1))).toBe(false);
+    // Undeclared CORS is never "unmanaged rules" — there is nothing to overwrite.
+    expect(r2CorsHasUnmanagedRules(MEDIA, live(MEDIA.name, [], policy, 3))).toBe(false);
+  });
+
+  it('leaves an undeclared CORS policy alone', () => {
+    // `cors` omitted means "not managed here", not "no CORS". This tool must not
+    // be able to clear a policy something else set deliberately.
+    const someoneElses = {
+      allowedOrigins: ['https://example.com'],
+      allowedMethods: ['GET'],
+      maxAgeSeconds: 10,
+    } as const;
+    expect(diffR2Bucket(MEDIA, live(MEDIA.name, ['media.boardsesh.com'], someoneElses))).toEqual([]);
   });
 
   it('never plans a delete, whatever the live state', () => {
@@ -1674,9 +2143,59 @@ describe('desiredR2Buckets', () => {
     expect(exportsBucket?.customDomain).toBeNull();
   });
 
-  it('gives exactly one bucket a public domain', () => {
-    const publicBuckets = desiredR2Buckets.filter((bucket) => bucket.customDomain !== null);
-    expect(publicBuckets.map((bucket) => bucket.name)).toEqual(['boardsesh-user-media']);
+  it('never gives the private bucket a public domain', () => {
+    // The assertion that matters is about `boardsesh-user-private`, not about a
+    // count: R2 has no object ACLs, so a custom domain on that bucket would
+    // publish every user data export in it. Public buckets are expected to grow.
+    const byName = new Map(desiredR2Buckets.map((bucket) => [bucket.name, bucket]));
+    expect(byName.get('boardsesh-user-private')?.customDomain).toBeNull();
+    expect(byName.get('boardsesh-user-media')?.customDomain).toBe('media.boardsesh.com');
+  });
+
+  it('keeps the static-assets bucket on its staging hostname until the flip', () => {
+    // assets.boardsesh.com is still the Tigris CNAME. Declaring it here before
+    // the publisher has proved R2 would attach the live hostname to an empty
+    // bucket and 404 every board image.
+    const assets = desiredR2Buckets.find((bucket) => bucket.name === 'boardsesh-static-assets');
+    expect(assets?.customDomain).toBe(ASSETS_STAGING_HOSTNAME);
+    expect(assets?.customDomain).not.toBe(ASSETS_HOSTNAME);
+  });
+
+  it('declares CORS on the bucket the board workers fetch from', () => {
+    // Measured 2026-09-15: Tigris returns `access-control-allow-origin: *` on
+    // every response; R2 returns no ACAO at all without a policy. Moving the
+    // catalogue without this would break every board background fetch.
+    const assets = desiredR2Buckets.find((bucket) => bucket.name === 'boardsesh-static-assets');
+    expect(assets?.cors?.allowedMethods).toEqual(['GET', 'HEAD']);
+    // '*' rather than an origin list, deliberately — Cloudflare does not key its
+    // cache on Vary below Enterprise, so a per-origin answer would be served to
+    // whichever origin lost the race. See PUBLIC_READ_CORS.
+    expect(assets?.cors?.allowedOrigins).toEqual(['*']);
+  });
+
+  it('prepares public snapshots and keeps OTA objects private', () => {
+    const snapshots = desiredR2Buckets.find((bucket) => bucket.name === 'boardsesh-board-snapshots');
+    const ota = desiredR2Buckets.find((bucket) => bucket.name === 'boardsesh-ota-v3');
+
+    expect(snapshots?.customDomain).toBe(SNAPSHOTS_HOSTNAME);
+    expect(snapshots?.cors).toEqual({
+      allowedOrigins: ['*'],
+      allowedMethods: ['GET', 'HEAD'],
+      maxAgeSeconds: 86_400,
+    });
+    expect(ota?.customDomain).toBeNull();
+  });
+
+  it('caches snapshot paths and sets CORS independently of request headers', () => {
+    const cacheRule = desired.cacheRules.find((rule) => rule.expression.includes(SNAPSHOTS_HOSTNAME));
+    const corsRule = desired.responseHeaderRules.find((rule) => rule.expression.includes(SNAPSHOTS_HOSTNAME));
+
+    expect(cacheRule?.expression).toContain('starts_with(http.request.uri.path, "/board-snapshots/")');
+    expect(cacheRule?.action_parameters.edge_ttl?.mode).toBe('bypass_by_default');
+    expect(corsRule?.action_parameters.headers['access-control-allow-origin']).toEqual({
+      operation: 'set',
+      value: '*',
+    });
   });
 });
 

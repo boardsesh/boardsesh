@@ -1,6 +1,7 @@
 import { db } from '../../../db/client';
 import { sessions } from '../../../db/schema';
 import * as dbSchema from '@boardsesh/db/schema';
+import { sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
 import { eq, and, inArray, sql, desc, isNotNull } from 'drizzle-orm';
 import type { SessionHealthExport, SessionSummary } from '@boardsesh/shared-schema';
 import { rowsFromResult } from '@boardsesh/db/client';
@@ -12,8 +13,18 @@ import { logger } from '../../../utils/logger';
 /**
  * Generate a summary for a session including grade distribution,
  * hardest climb, participant stats, and duration.
+ *
+ * `viewerUserId` is the climber the summary is being rendered FOR, and it is the
+ * spray-wall gate's viewer. Passing null (the default) withholds every non-public
+ * wall's climb, which was the only behaviour available before and dropped the
+ * OWNER's own sends from their own session summary — the hardest send of a garage
+ * session is usually on the garage wall. Callers that know the viewer must pass
+ * them; callers that genuinely have none (a background job) keep the strict rule.
  */
-export async function generateSessionSummary(sessionId: string): Promise<SessionSummary | null> {
+export async function generateSessionSummary(
+  sessionId: string,
+  viewerUserId: string | null = null,
+): Promise<SessionSummary | null> {
   // Fetch session metadata using Drizzle ORM
   const sessionRows = await db.select().from(sessions).where(eq(sessions.id, sessionId)).limit(1);
 
@@ -116,6 +127,15 @@ export async function generateSessionSummary(sessionId: string): Promise<Session
           eq(dbSchema.boardseshTicks.sessionId, sessionId),
           inArray(dbSchema.boardseshTicks.status, ['flash', 'send']),
           isNotNull(dbSchema.boardseshTicks.difficulty),
+          // The hardest-send rows carry the climb's name and frames, and the
+          // summary is keyed on a session id alone — session access is not wall
+          // access. A no-op on the other eight board types. The viewer is the
+          // climber the summary is for, so their own wall's sends are theirs to
+          // see; a null viewer still sees only PUBLIC walls.
+          sprayClimbVisibilityCondition(
+            { boardType: dbSchema.boardClimbs.boardType, layoutId: dbSchema.boardClimbs.layoutId },
+            viewerUserId,
+          ),
         ),
       )
       .orderBy(desc(dbSchema.boardseshTicks.difficulty))

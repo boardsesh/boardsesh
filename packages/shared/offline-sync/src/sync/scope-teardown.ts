@@ -62,6 +62,15 @@ import {
 } from './bootstrap-retry';
 import { BOARD_DATA_TABLES } from './table-config';
 import { schemaRefreshKey } from './schema-refresh';
+import { clearLayoutHoldIndex, holdIndexKey } from '../holds-index/hold-index';
+
+/**
+ * The one board type that has a `spray_walls` row. A literal rather than an
+ * import from `@boardsesh/board-config`: this package is deliberately dependency-
+ * free apart from its own seams, and the string is already the wire value every
+ * sync resolver and every scope key uses.
+ */
+const SPRAY_BOARD_TYPE = 'spray';
 
 /** One scope's measured footprint. `estimatedBytes` is an apportionment — see getScopeUsage. */
 export type ScopeUsage = {
@@ -81,6 +90,11 @@ export type ScopeTeardownResult = {
   climbsDeleted: number;
   statsDeleted: number;
   gradesDeleted: number;
+  /**
+   * The `spray_walls` row this scope owned, if any (issue #5448). 0 for every
+   * catalogue board — only a spray scope can have one, and only ever one.
+   */
+  sprayWallsDeleted: number;
   /** False when a retained sibling shares every row, so nothing was deletable. */
   removedAnyRows: boolean;
 };
@@ -125,6 +139,10 @@ export function scopeSyncMetaKeys(scopeKey: string): string[] {
     // give it a clean counter, and a stale one over emptied tables would keep
     // the scope on the grades crawl for no reason.
     `${GRADES_BOOTSTRAP_ATTEMPTS_PREFIX}${scopeKey}`,
+    // The device-derived holds index's watermark. Load-bearing like a
+    // checkpoint: a re-download re-imports climbs with their OLD sync_seq, and a
+    // surviving watermark would put every one of them behind it — never indexed.
+    holdIndexKey(scopeKey),
   ];
 }
 
@@ -261,8 +279,22 @@ export async function removeBoardScopeData(params: {
    * has to happen here and nowhere else.
    */
   onDownloadAbandoned?: (info: AbandonedDownloadInfo) => void;
+  /**
+   * Delete the wall photograph this scope's `spray_walls` row named (#5448).
+   *
+   * Injected, like every other platform I/O in this package: the engine has no
+   * filesystem. Called AFTER the transaction commits, with the key read inside
+   * it — so a rolled-back teardown never deletes a photo for a row that is still
+   * there, and a photo that outlives its row cannot happen the other way either
+   * (the file is unreachable the moment the row is gone, so deleting it late is
+   * only ever a delay, never a wrong answer).
+   *
+   * Omitted on a platform with no photo store (web, tests that do not care). The
+   * row still goes; only the bytes are left, and there are none there.
+   */
+  removeSprayPhoto?: (photoKey: string) => void | Promise<void>;
 }): Promise<ScopeTeardownResult> {
-  const { db, scope, scopeKey, retainedScopes, onDownloadAbandoned } = params;
+  const { db, scope, scopeKey, retainedScopes, onDownloadAbandoned, removeSprayPhoto } = params;
 
   // READ BEFORE THE TRANSACTION. `scope-started:` and `scope-complete:` are two
   // of the rows `clearScopeSyncMeta` is about to delete, and they are the only
@@ -285,12 +317,20 @@ export async function removeBoardScopeData(params: {
   // Without this guard the predicate below would drop the size clause and delete the
   // whole layout out from under a still-enabled board.
   if (!isSizeScopedBoard(scope.boardType) && retainedSizeIds.length > 0) {
-    return { climbsDeleted: 0, statsDeleted: 0, gradesDeleted: 0, removedAnyRows: false };
+    return { climbsDeleted: 0, statsDeleted: 0, gradesDeleted: 0, sprayWallsDeleted: 0, removedAnyRows: false };
   }
 
   // The transaction task returns void (the OfflineDatabase seam mirrors expo-sqlite's
   // shape), so the counts are captured here and read after it commits.
-  let result: ScopeTeardownResult = { climbsDeleted: 0, statsDeleted: 0, gradesDeleted: 0, removedAnyRows: false };
+  let result: ScopeTeardownResult = {
+    climbsDeleted: 0,
+    statsDeleted: 0,
+    gradesDeleted: 0,
+    sprayWallsDeleted: 0,
+    removedAnyRows: false,
+  };
+  // Read inside the transaction, used after it — see `removeSprayPhoto`.
+  let removedPhotoKey: string | null = null;
 
   await db.withExclusiveTransactionAsync(async (txn) => {
     // These deletes take seconds on a 40k-climb layout; don't lose the BEGIN
@@ -327,7 +367,33 @@ export async function removeBoardScopeData(params: {
       `DELETE FROM board_climb_grades WHERE board_type = ? AND climb_uuid IN (${climbUuids})`,
       [scope.boardType, ...predicateParams],
     );
+    // The derived holds index, before the climbs (its hold sets are found
+    // through them). Its postings are per LAYOUT and shared with any retained
+    // sibling size, so the whole layout's index goes, with every sibling's
+    // watermark: a survivor rebuilds on its next cycle rather than keep postings
+    // that name climbs deleted here. Not counted in the result: the index is
+    // rebuilt from frames, never downloaded.
+    await clearLayoutHoldIndex(txn, scope.boardType, scope.layoutId);
     const climbs = await txn.runAsync(`DELETE FROM board_climbs WHERE ${sql}`, predicateParams);
+
+    // The wall itself (#5448). Guarded on the board type, NOT merely on the
+    // layout id: `spray_walls.layout_id` lives in the spray sequence's id space,
+    // and Kilter layout 1 is a different thing from wall 1 — an unguarded delete
+    // would take a wall off the device because somebody removed a catalogue
+    // board that happens to share a number.
+    //
+    // The photo key is read first, in the same transaction, because after the
+    // DELETE nothing on the device knows which file belonged to this wall.
+    let sprayWalls = 0;
+    if (scope.boardType === SPRAY_BOARD_TYPE) {
+      const wallRow = await txn.getFirstAsync<{ photo_key: string | null }>(
+        'SELECT photo_key FROM spray_walls WHERE layout_id = ?',
+        [scope.layoutId],
+      );
+      removedPhotoKey = wallRow?.photo_key ?? null;
+      const wallDelete = await txn.runAsync('DELETE FROM spray_walls WHERE layout_id = ?', [scope.layoutId]);
+      sprayWalls = wallDelete.changes;
+    }
 
     await clearScopeSyncMeta(txn, scopeKey);
 
@@ -335,9 +401,21 @@ export async function removeBoardScopeData(params: {
       climbsDeleted: climbs.changes,
       statsDeleted: stats.changes,
       gradesDeleted: grades.changes,
-      removedAnyRows: climbs.changes + stats.changes + grades.changes > 0,
+      sprayWallsDeleted: sprayWalls,
+      removedAnyRows: climbs.changes + stats.changes + grades.changes + sprayWalls > 0,
     };
   });
+
+  // After the commit, for the reason on `removeSprayPhoto`. Never fatal: the row
+  // is gone either way, and the caller asked for a board to be removed, not for a
+  // filesystem error.
+  if (removedPhotoKey && removeSprayPhoto) {
+    try {
+      await removeSprayPhoto(removedPhotoKey);
+    } catch {
+      // A file that would not delete is reclaimed by the next prune.
+    }
+  }
 
   // AFTER the commit, deliberately: a cycle torn down by this same purge is
   // still unwinding while the transaction holds its lock, and reporting first

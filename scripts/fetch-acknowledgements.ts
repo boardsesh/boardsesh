@@ -5,18 +5,17 @@
  * contributor + sponsor lists shown on the mobile Acknowledgements screen.
  *
  * Contributors come from paginated GraphQL over the repo's pull requests + issues
- * (public data, no special scope). Sponsors come from the GitHub GraphQL API for
- * the `boardsesh` org, which needs an authenticated token with sponsors /
- * `read:org` scope — locally that's your `gh` keyring; in CI it's the
- * ACKNOWLEDGEMENTS_GH_TOKEN secret. The default Actions `GITHUB_TOKEN` can read
- * contributors but NOT org sponsors.
+ * and sponsors come from the GitHub GraphQL API for the `boardsesh` org. Locally
+ * this uses your `gh` keyring. In CI it uses the Boardsesh Repo Bot installation
+ * token, whose read-only Organization Members permission permits the sponsors
+ * query and whose repository permission permits the contributor query.
  *
- * Degrades gracefully: if a fetch fails (offline, `gh` missing, no sponsor
- * scope) the existing committed JSON for that section is kept and the script
- * still exits 0, so it never breaks a build or CI run. `generatedAt` only moves
- * when the data actually changes, keeping the committed file churn-free.
+ * Local runs degrade gracefully: if a fetch fails, the existing committed JSON
+ * for that section is kept. CI passes --strict, which fails before writing if
+ * any source cannot refresh. `generatedAt` only moves when the data actually
+ * changes, keeping the committed file churn-free.
  *
- * Usage: vp run generate:acknowledgements
+ * Usage: vp run generate:acknowledgements [--strict]
  */
 
 import { execFileSync } from 'node:child_process';
@@ -25,8 +24,10 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   aggregateContributors,
+  resolveAcknowledgements,
   transformSponsors,
   type AcknowledgementsData,
+  type AcknowledgementsRefreshMode,
   type AuthorRef,
   type Contributor,
   type Sponsor,
@@ -39,6 +40,7 @@ const SPONSOR_ORG = 'boardsesh';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const OUTPUT_PATH = resolve(here, '../packages/mobile/src/data/acknowledgements.generated.json');
+const refreshMode: AcknowledgementsRefreshMode = process.argv.includes('--strict') ? 'strict' : 'best-effort';
 
 function gh(args: string[]): string {
   return execFileSync('gh', args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
@@ -79,6 +81,14 @@ type AuthorConnection = {
   nodes?: { author?: AuthorNode | null }[];
 };
 
+type GraphQlResponse = { errors?: { message?: string }[] };
+
+function throwOnGraphQlErrors(response: GraphQlResponse): void {
+  if (!response.errors?.length) return;
+  const messages = response.errors.map((error) => error.message ?? 'unknown GraphQL error').join('; ');
+  throw new Error(`GitHub GraphQL query failed: ${messages}`);
+}
+
 function fetchAuthors(query: string, connectionKey: 'pullRequests' | 'issues'): AuthorRef[] {
   const authors: AuthorRef[] = [];
   let cursor: string | null = null;
@@ -86,9 +96,15 @@ function fetchAuthors(query: string, connectionKey: 'pullRequests' | 'issues'): 
   for (let page = 0; page < 200; page += 1) {
     const args = ['api', 'graphql', '-f', `query=${query}`, '-f', `owner=${REPO_OWNER}`, '-f', `name=${REPO_NAME}`];
     if (cursor) args.push('-f', `cursor=${cursor}`);
-    const response = JSON.parse(gh(args)) as { data?: { repository?: Record<string, AuthorConnection> } };
+    const response = JSON.parse(gh(args)) as GraphQlResponse & {
+      data?: { repository?: Record<string, AuthorConnection> };
+    };
+    throwOnGraphQlErrors(response);
     const connection = response.data?.repository?.[connectionKey];
-    for (const node of connection?.nodes ?? []) {
+    if (!connection?.pageInfo || !Array.isArray(connection.nodes)) {
+      throw new Error(`GitHub did not return a valid ${connectionKey} connection.`);
+    }
+    for (const node of connection.nodes) {
       const author = node.author;
       if (author?.login) {
         authors.push({
@@ -100,10 +116,13 @@ function fetchAuthors(query: string, connectionKey: 'pullRequests' | 'issues'): 
         });
       }
     }
-    if (!connection?.pageInfo?.hasNextPage || !connection.pageInfo.endCursor) break;
+    if (!connection.pageInfo.hasNextPage) return authors;
+    if (!connection.pageInfo.endCursor) {
+      throw new Error(`GitHub reported another ${connectionKey} page without a cursor.`);
+    }
     cursor = connection.pageInfo.endCursor;
   }
-  return authors;
+  throw new Error(`GitHub ${connectionKey} pagination exceeded the 200-page safety limit.`);
 }
 
 function fetchContributors(): Contributor[] | null {
@@ -137,8 +156,8 @@ const PUBLIC_SPONSORS_QUERY = `query($login: String!, $cursor: String) {
   }
 }`;
 
-// includePrivate:true returns the FULL count (public + private) but only when the
-// token belongs to the org maintainer (the refresh secret does). private = all − public.
+// includePrivate:true returns the FULL count (public + private) to the Repo Bot,
+// whose Organization Members permission grants it sponsor visibility. private = all − public.
 const ALL_SPONSOR_COUNT_QUERY = `query($login: String!) {
   organization(login: $login) {
     sponsorshipsAsMaintainer(first: 1, activeOnly: false, includePrivate: true) {
@@ -147,7 +166,7 @@ const ALL_SPONSOR_COUNT_QUERY = `query($login: String!) {
   }
 }`;
 
-function fetchSponsorData(): { sponsors: Sponsor[]; privateCount: number } | null {
+function fetchSponsorData(): { sponsors: Sponsor[] | null; privateCount: number | null } {
   type PublicConnection = {
     totalCount?: number;
     pageInfo?: { hasNextPage?: boolean; endCursor?: string };
@@ -161,35 +180,48 @@ function fetchSponsorData(): { sponsors: Sponsor[]; privateCount: number } | nul
     for (let page = 0; page < 200; page += 1) {
       const args = ['api', 'graphql', '-f', `query=${PUBLIC_SPONSORS_QUERY}`, '-f', `login=${SPONSOR_ORG}`];
       if (cursor) args.push('-f', `cursor=${cursor}`);
-      const response = JSON.parse(gh(args)) as {
+      const response = JSON.parse(gh(args)) as GraphQlResponse & {
         data?: { organization?: { sponsorshipsAsMaintainer?: PublicConnection } };
       };
+      throwOnGraphQlErrors(response);
       const connection = response.data?.organization?.sponsorshipsAsMaintainer;
-      if (!connection) break;
+      if (!connection?.pageInfo || !Array.isArray(connection.nodes)) {
+        throw new Error('GitHub did not return a valid public sponsors connection.');
+      }
       publicCount = connection.totalCount ?? publicCount;
-      for (const node of connection.nodes ?? []) rawNodes.push(node);
-      if (!connection.pageInfo?.hasNextPage || !connection.pageInfo.endCursor) break;
+      for (const node of connection.nodes) rawNodes.push(node);
+      if (!connection.pageInfo.hasNextPage) break;
+      if (!connection.pageInfo.endCursor) {
+        throw new Error('GitHub reported another public sponsors page without a cursor.');
+      }
       cursor = connection.pageInfo.endCursor;
+      if (page === 199) {
+        throw new Error('GitHub public sponsor pagination exceeded the 200-page safety limit.');
+      }
     }
   } catch (error) {
     console.warn(`[acknowledgements] sponsors fetch failed, keeping existing list: ${String(error)}`);
-    return null;
+    return { sponsors: null, privateCount: null };
   }
 
   const sponsors = transformSponsors(rawNodes);
   publicCount = publicCount || sponsors.length;
 
-  // Private count is best-effort: it needs the org-maintainer token, so any
-  // failure just means we don't show the anonymous count rather than failing.
-  let privateCount = 0;
+  // Local runs retain the existing anonymous count when it is unavailable.
+  // Scheduled strict runs reject that partial refresh in resolveAcknowledgements.
+  let privateCount: number | null = null;
   try {
     const response = JSON.parse(
       gh(['api', 'graphql', '-f', `query=${ALL_SPONSOR_COUNT_QUERY}`, '-f', `login=${SPONSOR_ORG}`]),
-    ) as { data?: { organization?: { sponsorshipsAsMaintainer?: { totalCount?: number } } } };
-    const allCount = response.data?.organization?.sponsorshipsAsMaintainer?.totalCount ?? publicCount;
+    ) as GraphQlResponse & { data?: { organization?: { sponsorshipsAsMaintainer?: { totalCount?: number } } } };
+    throwOnGraphQlErrors(response);
+    const allCount = response.data?.organization?.sponsorshipsAsMaintainer?.totalCount;
+    if (typeof allCount !== 'number') {
+      throw new Error('GitHub did not return a total sponsorship count.');
+    }
     privateCount = Math.max(0, allCount - publicCount);
   } catch (error) {
-    console.warn(`[acknowledgements] private sponsor count unavailable (needs org-maintainer token): ${String(error)}`);
+    console.warn(`[acknowledgements] private sponsor count unavailable, keeping the existing count: ${String(error)}`);
   }
 
   return { sponsors, privateCount };
@@ -197,10 +229,18 @@ function fetchSponsorData(): { sponsors: Sponsor[]; privateCount: number } | nul
 
 function main(): void {
   const existing = readExisting();
-  const contributors = fetchContributors() ?? existing.contributors;
-  const sponsorData = fetchSponsorData();
-  const sponsors = sponsorData?.sponsors ?? existing.sponsors;
-  const privateSponsorCount = sponsorData?.privateCount ?? existing.privateSponsorCount ?? 0;
+  const refreshedContributors = fetchContributors();
+  const refreshedSponsors = fetchSponsorData();
+  const acknowledgements = resolveAcknowledgements(
+    existing,
+    {
+      contributors: refreshedContributors,
+      sponsors: refreshedSponsors.sponsors,
+      privateSponsorCount: refreshedSponsors.privateCount,
+    },
+    refreshMode,
+  );
+  const { contributors, sponsors, privateSponsorCount } = acknowledgements;
 
   // Keep generatedAt stable when nothing changed so the committed file (and the
   // refresh workflow's "commit only if changed") stays quiet on no-op runs.
@@ -213,9 +253,9 @@ function main(): void {
     });
   const generatedAt = dataChanged || !existing.generatedAt ? new Date().toISOString() : existing.generatedAt;
 
-  const data: AcknowledgementsData = { generatedAt, contributors, sponsors, privateSponsorCount };
+  const generatedAcknowledgements: AcknowledgementsData = { generatedAt, contributors, sponsors, privateSponsorCount };
   mkdirSync(dirname(OUTPUT_PATH), { recursive: true });
-  writeFileSync(OUTPUT_PATH, `${JSON.stringify(data, null, 2)}\n`);
+  writeFileSync(OUTPUT_PATH, `${JSON.stringify(generatedAcknowledgements, null, 2)}\n`);
   console.log(
     `[acknowledgements] wrote ${contributors.length} contributors, ${sponsors.length} public sponsors, ${privateSponsorCount} private`,
   );

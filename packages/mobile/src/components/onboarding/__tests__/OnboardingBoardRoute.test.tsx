@@ -16,7 +16,7 @@ const envCtrl = vi.hoisted(() => ({
   offlineState: 'off' as string,
 }));
 
-const replaceMock = vi.hoisted(() => vi.fn());
+const dismissToMock = vi.hoisted(() => vi.fn());
 const pushMock = vi.hoisted(() => vi.fn());
 const confirmAndDownloadMock = vi.hoisted(() => vi.fn().mockResolvedValue(true));
 const activateBoardMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
@@ -27,7 +27,7 @@ const nudgeMocks = vi.hoisted(() => ({
   trackNudgeDismissed: vi.fn(),
 }));
 
-vi.mock('expo-router', () => ({ router: { replace: replaceMock, push: pushMock } }));
+vi.mock('expo-router', () => ({ router: { dismissTo: dismissToMock, push: pushMock } }));
 vi.mock('../OnboardingBoardStep', () => ({
   OnboardingBoardStep: (props: OnboardingBoardStepProps) => {
     stepCtrl.props = props;
@@ -101,6 +101,7 @@ async function runOnBound(board: UserBoard = BOARD) {
 describe('OnboardingBoardRoute', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    activateBoardMock.mockReset().mockResolvedValue(undefined);
     confirmAndDownloadMock.mockResolvedValue(true);
     boardsCtrl.boards = [BOARD];
     boardsCtrl.isLoading = false;
@@ -117,8 +118,26 @@ describe('OnboardingBoardRoute', () => {
     renderRoute();
 
     expect(activateOptionsCtrl.last?.source).toBe('onboarding');
-    (activateOptionsCtrl.last?.navigate as () => void)();
-    expect(replaceMock).toHaveBeenCalledWith('/(tabs)/climbs');
+    (activateOptionsCtrl.last!.navigate as () => void)();
+    expect(dismissToMock).toHaveBeenCalledWith('/(tabs)/climbs');
+  });
+
+  it('keeps the pending selection until activation completes', async () => {
+    let finishBinding!: () => void;
+    activateBoardMock.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishBinding = resolve;
+        }),
+    );
+    renderRoute();
+    stepCtrl.props?.onSelect(BOARD);
+    stepCtrl.props?.onSelect({ ...BOARD, uuid: 'board-2', boardType: 'tension' } as UserBoard);
+    expect(activateBoardMock).toHaveBeenCalledExactlyOnceWith(BOARD);
+    finishBinding();
+    await waitFor(() => expect(activateBoardMock).toHaveBeenCalledTimes(1));
+    stepCtrl.props?.onSelect(BOARD);
+    expect(activateBoardMock).toHaveBeenCalledTimes(2);
   });
 
   describe('the download offer', () => {
@@ -229,7 +248,7 @@ describe('OnboardingBoardRoute', () => {
       renderRoute();
 
       stepCtrl.props?.onSkipUnusable?.();
-      expect(replaceMock).toHaveBeenCalledWith('/(tabs)/climbs');
+      expect(dismissToMock).toHaveBeenCalledWith('/(tabs)/climbs');
     });
 
     // Captive-portal or gym wifi with a dead upstream reports ONLINE while every

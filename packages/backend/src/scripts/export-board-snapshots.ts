@@ -36,6 +36,8 @@ import { join } from 'node:path';
 import type { Sql, TransactionSql } from 'postgres';
 import {
   MIGRATIONS,
+  DEVICE_ONLY_STATEMENTS,
+  DEVICE_ONLY_TABLES,
   LATEST_SCHEMA_VERSION,
   TABLE_CONFIGS,
   toSqliteValue,
@@ -226,10 +228,29 @@ export function boardSnapshotDdlStatements(
   const referencesSnapshotTable = (statement: string): boolean =>
     tables.some((table) => new RegExp(`\\b${table}\\b`).test(statement));
 
+  // The device builds some tables for itself (the derived holds index) and they
+  // must never reach a public artifact. The word-boundary match above keeps them
+  // out today only because their DDL never names a snapshot table; this makes it
+  // a hard failure instead of a convention.
+  const referencedDeviceOnlyTable = (statement: string): string | undefined =>
+    DEVICE_ONLY_TABLES.find((table) => new RegExp(`\\b${table}\\b`).test(statement));
+
+  const deviceOnlyStatements = new Set(DEVICE_ONLY_STATEMENTS.map((statement) => statement.trim()));
   const statements: string[] = [];
   for (const migration of [...MIGRATIONS].sort((left, right) => left.version - right.version)) {
     for (const statement of migration.statements) {
-      if (referencesSnapshotTable(statement)) statements.push(statement.trim());
+      if (!referencesSnapshotTable(statement)) continue;
+      // Statements the device needs but an artifact must not carry (the holds
+      // index's sync_seq index on board_climbs): dropped by exact text.
+      if (deviceOnlyStatements.has(statement.trim())) continue;
+      const deviceOnlyTable = referencedDeviceOnlyTable(statement);
+      if (deviceOnlyTable) {
+        throw new Error(
+          `boardSnapshotDdlStatements: migration v${migration.version} statement names device-only table ` +
+            `${deviceOnlyTable}, which must never ship in a snapshot artifact`,
+        );
+      }
+      statements.push(statement.trim());
     }
   }
   statements.push(SNAPSHOT_META_DDL);
@@ -238,7 +259,27 @@ export function boardSnapshotDdlStatements(
 
 // --- Postgres discovery + streaming ------------------------------------------
 
-/** Every (board_type, layout_id) pair that has at least one climb. */
+/**
+ * Board types this job must never publish a snapshot for.
+ *
+ * Snapshots go to a PUBLIC bucket under guessable keys
+ * (`<prefix>/<board>/<layout>/*.db`), and each one carries every climb of that
+ * `(board_type, layout_id)` partition. A spray wall's partition is one
+ * climber's private wall — an explicitly private-by-default surface whose photo
+ * is behind a 15-minute presigned URL — so publishing its climbs would hand out
+ * exactly the data the private bucket exists to withhold.
+ *
+ * This is an exclusion by board TYPE rather than a per-wall visibility check on
+ * purpose: `is_public` on a wall governs who may view it in the app, and a
+ * nightly dump of every public wall's climbs to an unauthenticated bucket is not
+ * something a climber opted into by sharing a link.
+ */
+const SNAPSHOT_EXCLUDED_BOARD_TYPES: ReadonlySet<string> = new Set(['spray']);
+
+/**
+ * Every (board_type, layout_id) pair that has at least one climb, minus the
+ * board types {@link SNAPSHOT_EXCLUDED_BOARD_TYPES} withholds.
+ */
 export async function discoverLayoutPairs(sqlClient: Sql, filter?: Partial<LayoutPair>): Promise<LayoutPair[]> {
   const boardCondition = filter?.boardType ? sqlClient`board_type = ${filter.boardType}` : sqlClient`TRUE`;
   const layoutCondition = filter?.layoutId != null ? sqlClient`layout_id = ${filter.layoutId}` : sqlClient`TRUE`;
@@ -248,7 +289,11 @@ export async function discoverLayoutPairs(sqlClient: Sql, filter?: Partial<Layou
     WHERE ${boardCondition} AND ${layoutCondition}
     ORDER BY board_type, layout_id
   `;
-  return rows.map((row) => ({ boardType: String(row.board_type), layoutId: Number(row.layout_id) }));
+  // Filtered here rather than in the SQL predicate so an explicit
+  // `--board-type spray` on the CLI is excluded too, not just a full sweep.
+  return rows
+    .map((row) => ({ boardType: String(row.board_type), layoutId: Number(row.layout_id) }))
+    .filter((pair) => !SNAPSHOT_EXCLUDED_BOARD_TYPES.has(pair.boardType));
 }
 
 function assertSafeColumns(columns: readonly string[]): void {

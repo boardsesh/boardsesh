@@ -742,6 +742,7 @@ describe('self-hosted OTA publisher and workflow contracts', () => {
     expect(snapshotStep).toContain('scripts/mobile-publish.ts');
     expect(snapshotStep).toContain('scripts/lib/eoas.ts');
     expect(snapshotStep).toContain('scripts/lib/mobile-publish-retry.ts');
+    expect(snapshotStep).toContain('scripts/lib/ota-branch-probe.ts');
     expect(snapshotStep).toContain('scripts/mobile-upload-sourcemaps.ts');
     const trustedPublisher = readRepositoryFile('scripts/mobile-publish.ts');
     expect(trustedPublisher).toContain("'vp exec'");
@@ -752,6 +753,7 @@ describe('self-hosted OTA publisher and workflow contracts', () => {
     expect(overlayStep).toContain(
       'cp "$tooling_root/scripts/lib/mobile-publish-retry.ts" scripts/lib/mobile-publish-retry.ts',
     );
+    expect(overlayStep).toContain('cp "$tooling_root/scripts/lib/ota-branch-probe.ts" scripts/lib/ota-branch-probe.ts');
     expect(overlayStep).toContain(
       'git add scripts/mobile-publish.ts scripts/lib/eoas.ts scripts/lib/mobile-publish-retry.ts',
     );

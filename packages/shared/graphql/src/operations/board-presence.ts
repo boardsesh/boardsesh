@@ -11,6 +11,7 @@
 // subscription, the recent-climbs query, and anywhere a climb is rendered on
 // the wall feed so every surface decodes the same shape.
 const BOARD_PRESENCE_CLIMB_FIELDS = `
+  source
   climbUuid
   queueItemUuid
   name
@@ -57,6 +58,10 @@ export const BOARD_NOW_PLAYING = `
   subscription BoardNowPlaying($boardId: Int!) {
     boardNowPlaying(boardId: $boardId) {
       __typename
+      ... on BoardHistoryUpdated {
+        seq
+        climbs { ${BOARD_PRESENCE_CLIMB_FIELDS} }
+      }
       ... on BoardClimbSet {
         climb {
           ${BOARD_PRESENCE_CLIMB_FIELDS}
@@ -81,6 +86,21 @@ export const BOARD_NOW_PLAYING = `
         }
         seq
       }
+    }
+  }
+`;
+
+export const BOARD_RECENT_HISTORY = `
+  query BoardRecentHistory($boardId: Int!) {
+    boardRecentHistory(boardId: $boardId) { ${BOARD_PRESENCE_CLIMB_FIELDS} }
+  }
+`;
+
+export const BOARD_HISTORY_PAGE = `
+  query BoardHistoryPage($boardId: Int!, $limit: Int, $before: String) {
+    boardHistoryPage(boardId: $boardId, limit: $limit, before: $before) {
+      entries { ${BOARD_PRESENCE_CLIMB_FIELDS} }
+      nextCursor
     }
   }
 `;

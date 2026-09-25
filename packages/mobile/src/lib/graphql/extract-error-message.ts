@@ -1,3 +1,5 @@
+import { hasGraphqlErrorCode } from '@boardsesh/offline-sync/error-classification';
+
 // graphql-request throws ClientError-shaped errors carrying response.errors[].
 // Surface the first server message when present so backend guidance reaches the
 // user verbatim (e.g. "This Instagram post isn't available", "already attached
@@ -27,6 +29,18 @@ export function extractGraphqlMessage(error: unknown): string | null {
   return null;
 }
 
+/**
+ * The first GraphQL error's `extensions.code`, or null.
+ *
+ * A code, never the message text: the server's prose is not a contract and is
+ * not translated, so a client that string-matches it stops recognising the case
+ * the first time somebody rewords an error.
+ */
+export function extractGraphqlCode(error: unknown): string | null {
+  const code = getGraphqlErrors(error)[0]?.extensions?.code;
+  return typeof code === 'string' ? code : null;
+}
+
 export function isGraphqlRateLimitedError(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false;
 
@@ -34,6 +48,63 @@ export function isGraphqlRateLimitedError(error: unknown): boolean {
   if (directExtensions?.code === 'RATE_LIMITED') return true;
 
   return getGraphqlErrors(error).some((graphqlError) => graphqlError.extensions?.code === 'RATE_LIMITED');
+}
+
+const GRAPHQL_VALIDATION_FAILED = 'GRAPHQL_VALIDATION_FAILED';
+
+// Sentry fingerprint entries must stay short. Validation messages are built by
+// graphql-js from the schema and our own static query documents ('Cannot query
+// field "x" on type "Y".'), never from variables, but a "Did you mean" list can
+// run long, so cap it.
+const MAX_VALIDATION_MESSAGE_LENGTH = 200;
+
+/**
+ * The backend rejected the request document itself: it asks for a field,
+ * argument or type the running schema does not have. This is a schema mismatch
+ * between this bundle and the backend (an OTA that shipped before its backend
+ * change, or a field removed while installed builds still query it). Retrying
+ * cannot help, and Yoga tags every such error GRAPHQL_VALIDATION_FAILED.
+ */
+export function isGraphqlValidationFailedError(error: unknown): boolean {
+  return hasGraphqlErrorCode(error, GRAPHQL_VALIDATION_FAILED);
+}
+
+const MAX_CAUSE_DEPTH = 5;
+
+// Walks the same shapes `hasGraphqlErrorCode` accepts (a bounded `.cause`
+// chain, a top-level `errors` array, graphql-request's `response.errors`, and a
+// re-thrown GraphQLError carrying `extensions` itself), so an error the
+// predicate matches never reads back as 'unknown'.
+function findValidationFailedMessage(error: unknown, depth: number): string | null {
+  if (!error || typeof error !== 'object') return null;
+  const record = error as { errors?: unknown; extensions?: GraphqlErrorLike['extensions']; message?: unknown };
+
+  const candidates = [
+    ...(Array.isArray(record.errors) ? (record.errors as GraphqlErrorLike[]) : []),
+    ...getGraphqlErrors(error),
+  ];
+  const validationError = candidates.find(
+    (graphqlError) => graphqlError?.extensions?.code === GRAPHQL_VALIDATION_FAILED,
+  );
+  if (typeof validationError?.message === 'string' && validationError.message.length > 0)
+    return validationError.message;
+
+  if (record.extensions?.code === GRAPHQL_VALIDATION_FAILED && typeof record.message === 'string' && record.message) {
+    return record.message;
+  }
+
+  const cause = (error as { cause?: unknown }).cause;
+  if (depth < MAX_CAUSE_DEPTH && cause !== undefined && cause !== error) {
+    return findValidationFailedMessage(cause, depth + 1);
+  }
+  return null;
+}
+
+/** The first validation message, bounded for use as a Sentry fingerprint. */
+export function readGraphqlValidationFailedMessage(error: unknown): string {
+  const message = findValidationFailedMessage(error, 0);
+  if (!message) return 'unknown';
+  return message.slice(0, MAX_VALIDATION_MESSAGE_LENGTH);
 }
 
 // The backend's `requireAuthenticated` guard throws this exact message (a plain
@@ -80,6 +151,21 @@ export function isExpectedBetaValidationError(error: unknown): boolean {
     (graphqlError) =>
       typeof graphqlError.extensions?.code === 'string' &&
       EXPECTED_BETA_VALIDATION_CODES.has(graphqlError.extensions.code),
+  );
+}
+
+/**
+ * The wall's owner, and only the wall's owner, may change who can see it.
+ *
+ * A gym admin or a community moderator can rename a wall and re-gym it, but
+ * flipping it public publishes the climber's own photograph to the open web and
+ * starts pushing their climbs into feeds — so the server rejects that with
+ * `SPRAY_WALL_VISIBILITY_OWNER_ONLY` and the edit screen says so in words next to
+ * the control, rather than failing the whole save.
+ */
+export function isSprayWallVisibilityOwnerOnlyError(error: unknown): boolean {
+  return getGraphqlErrors(error).some(
+    (graphqlError) => graphqlError.extensions?.code === 'SPRAY_WALL_VISIBILITY_OWNER_ONLY',
   );
 }
 

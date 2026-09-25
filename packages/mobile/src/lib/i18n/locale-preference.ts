@@ -6,16 +6,17 @@
 //
 // Mobile-only on purpose: the web app carries locale in the URL prefix + a
 // cookie (a different shape), so this does NOT live in
-// `@boardsesh/key-value-storage`. The storage key uses only [\w.-] to satisfy
-// expo-secure-store's validator (`:` and other punctuation throw at the
-// platform boundary), matching THEME_OVERRIDE_KEY's constraint.
+// `@boardsesh/key-value-storage`. The key literal itself lives in
+// ./locale-preference-key so the migration key list can read it without pulling
+// in i18next and the catalogs through ./config.
 
 import { SUPPORTED_LOCALES, type Locale } from '@boardsesh/i18n';
 import { secureStorePreferences } from '../preferences/secure-store-adapter';
 import { SCREENSHOT_LOCALE_OVERRIDE } from '../screenshot-mode';
 import { detectDeviceLocale } from './config';
+import { LOCALE_OVERRIDE_KEY } from './locale-preference-key';
 
-export const LOCALE_OVERRIDE_KEY = 'locale_override';
+export { LOCALE_OVERRIDE_KEY };
 
 export type LocaleOverride = 'system' | Locale;
 

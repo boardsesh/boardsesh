@@ -31,6 +31,11 @@ const consumeFreshOAuthPendingMock = vi.hoisted(() => vi.fn());
 const consumeWebOAuthReturnProviderMock = vi.hoisted(() => vi.fn());
 const trackMock = vi.hoisted(() => vi.fn());
 const resetActiveBoardSelfHealValidationCacheMock = vi.hoisted(() => vi.fn());
+const linkEmptyDismissalMocks = vi.hoisted(() => ({
+  clear: vi.fn(async () => {}),
+  resume: vi.fn(),
+  suspend: vi.fn(),
+}));
 
 // expo-router and react-native both reach for the native runtime; stub the
 // thin surface AuthProvider consumes. `useSegments` returning `[]` keeps the
@@ -69,6 +74,12 @@ vi.mock('../../components/AppLoadingSplash', () => ({
 vi.mock('../../lib/screenshot-mode', () => ({
   SCREENSHOT_USER_EMAIL: 'screenshots@example.com',
   SCREENSHOT_USER_PASSWORD: 'screenshot-password',
+}));
+
+vi.mock('../../lib/onboarding/onboarding-storage', () => ({
+  clearLinkEmptyPromptDismissal: linkEmptyDismissalMocks.clear,
+  resumeLinkEmptyDismissalWrites: linkEmptyDismissalMocks.resume,
+  suspendLinkEmptyDismissalWrites: linkEmptyDismissalMocks.suspend,
 }));
 
 vi.mock('../../lib/auth-token-events', () => ({
@@ -115,6 +126,9 @@ beforeEach(() => {
   routerState.segments = [];
   appStateState.listener = null;
   redirectMock.mockReset();
+  linkEmptyDismissalMocks.clear.mockReset().mockResolvedValue(undefined);
+  linkEmptyDismissalMocks.resume.mockReset();
+  linkEmptyDismissalMocks.suspend.mockReset();
   isAuthCredentialGenerationCurrentMock.mockReset();
   isAuthCredentialGenerationCurrentMock.mockReturnValue(true);
   authTokenEventsState.listener = null;
@@ -285,7 +299,15 @@ const getDatabaseHandleMock = vi.fn((): unknown => null);
 // Two different wipes: the selective one (downloaded board catalogs kept) and the
 // full one an explicit sign-out runs. Which one a given path picks is the regression
 // guard of issue #3621, so both are recorded rather than stubbed anonymously.
-const clearUserDataMock = vi.hoisted(() => vi.fn(async () => {}));
+const clearStoredSprayPhotosMock = vi.hoisted(() => vi.fn(() => {}));
+// The wall photographs live on the filesystem, not in SQLite, so the row wipe
+// cannot take them — sign-out has to call this too or the previous account's
+// picture stays decodable on a shared phone (#5448).
+vi.mock('../../lib/spray/spray-photo-store', () => ({
+  clearStoredSprayPhotos: clearStoredSprayPhotosMock,
+}));
+
+const clearUserDataMock = vi.hoisted(() => vi.fn(async (): Promise<void> => {}));
 const purgeLocalDataForSignOutMock = vi.hoisted(() =>
   vi.fn(async () => ({ pendingDiscarded: 0, deadLettersDiscarded: 0, hadDownloads: false, vacuumed: true })),
 );
@@ -752,6 +774,68 @@ describe('AuthProvider.register', () => {
   });
 });
 
+// The signed-out screens mount profile readers too, and the backend answers a
+// request with no token with `profile: null`. With the 5 min staleTime that
+// answer outlived the sign-in, so every reader in the new session saw "nobody"
+// (#5654: the first-run gate's account age was null for fresh sign-ups).
+describe('AuthProvider sign-in and the cached signed-out profile', () => {
+  beforeEach(() => {
+    getAuthTokenMock.mockReset();
+    isTokenExpiringSoonMock.mockReset();
+    isTokenExpiringSoonMock.mockResolvedValue(false);
+    clearStoredSessionIdMock.mockReset();
+    clearStoredSessionIdMock.mockResolvedValue(undefined);
+    clearStoredActiveBoardMock.mockReset();
+    clearStoredActiveBoardMock.mockResolvedValue(undefined);
+  });
+
+  function renderWithProfileCache(queryClient: QueryClient) {
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>{children}</AuthProvider>
+      </QueryClientProvider>
+    );
+    return renderHook(() => useAuth(), { wrapper });
+  }
+
+  it('invalidates the profile the login screen cached once the climber signs in', async () => {
+    // On the login screen, so the signed-out provider still renders its children.
+    routerState.segments = ['auth', 'login'];
+    getAuthTokenMock.mockResolvedValueOnce(null).mockResolvedValue('jwt-token');
+    authSignInWithCredentialsMock.mockResolvedValue({ success: true });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    queryClient.setQueryData(['profile'], { profile: null });
+
+    const { result } = renderWithProfileCache(queryClient);
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.isAuthenticated).toBe(false);
+    expect(queryClient.getQueryState(['profile'])?.isInvalidated).toBe(false);
+
+    const { signInWithCredentials } = result.current;
+    await act(async () => {
+      await signInWithCredentials('climber@example.com', 'password');
+    });
+
+    expect(queryClient.getQueryState(['profile'])?.isInvalidated).toBe(true);
+  });
+
+  it('leaves a signed-in profile alone when the session is only re-checked', async () => {
+    getAuthTokenMock.mockResolvedValue('jwt-token');
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+    const { result } = renderWithProfileCache(queryClient);
+    await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+    queryClient.setQueryData(['profile'], { profile: { id: 'user-1' } });
+
+    await act(async () => {
+      await result.current.refreshAuthState();
+    });
+
+    expect(result.current.isAuthenticated).toBe(true);
+    expect(queryClient.getQueryState(['profile'])?.isInvalidated).toBe(false);
+  });
+});
+
 describe('AuthProvider browser-fallback foreground checks', () => {
   beforeEach(() => {
     platformState.OS = 'android';
@@ -985,6 +1069,7 @@ describe('AuthProvider Expo-web OAuth completion', () => {
       expect(trackMock).toHaveBeenCalledWith('Login Succeeded', {
         auth_method: 'apple',
         flow: 'web',
+        screen: 'register',
         is_registration: true,
       }),
     );
@@ -1171,6 +1256,8 @@ describe('AuthProvider sign-out offline data wipe', () => {
     authSignOutMock.mockReset();
     getDatabaseHandleMock.mockReset();
     clearUserDataMock.mockClear();
+    clearUserDataMock.mockResolvedValue(undefined);
+    clearStoredSprayPhotosMock.mockClear();
     purgeLocalDataForSignOutMock.mockClear();
     purgeLocalDataForSignOutMock.mockResolvedValue({
       pendingDiscarded: 0,
@@ -1219,6 +1306,62 @@ describe('AuthProvider sign-out offline data wipe', () => {
 
     expect(purgeLocalDataForSignOutMock).toHaveBeenCalledTimes(1);
     expect(clearUserDataMock).not.toHaveBeenCalled();
+  });
+
+  // Both branches, because the row wipe has two and a photograph left behind by
+  // either one is the same leak. The selective branch is the one a forced
+  // sign-out takes, which is the common case.
+  it('deletes the stored wall photographs on an explicit sign-out', async () => {
+    const result = await renderSignedIn();
+
+    await act(async () => {
+      await result.current.signOut();
+    });
+
+    expect(clearStoredSprayPhotosMock).toHaveBeenCalled();
+  });
+
+  it('deletes the stored wall photographs when a 401 forces a sign-out', async () => {
+    await renderSignedIn();
+    await waitFor(() => expect(setOnForcedSignOutMock).toHaveBeenCalled());
+    const forceSignOut = setOnForcedSignOutMock.mock.calls.at(-1)?.[0] as (() => void) | undefined;
+
+    await act(async () => {
+      forceSignOut?.();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(clearUserDataMock).toHaveBeenCalled());
+    expect(clearStoredSprayPhotosMock).toHaveBeenCalled();
+  });
+
+  // The database cleanup is the one step here that is EXPECTED to fail — a
+  // locked database is the documented case — and the photographs are the half
+  // that cannot be recovered afterwards: once `spray_walls` is gone, nothing on
+  // disk names the files.
+  it('still deletes the photographs when the explicit wipe rejects', async () => {
+    purgeLocalDataForSignOutMock.mockRejectedValue(new Error('database is locked'));
+    const result = await renderSignedIn();
+
+    await act(async () => {
+      await result.current.signOut();
+    });
+
+    expect(clearStoredSprayPhotosMock).toHaveBeenCalled();
+  });
+
+  it('still deletes the photographs when the selective wipe rejects', async () => {
+    clearUserDataMock.mockRejectedValue(new Error('database is locked'));
+    await renderSignedIn();
+    await waitFor(() => expect(setOnForcedSignOutMock).toHaveBeenCalled());
+    const forceSignOut = setOnForcedSignOutMock.mock.calls.at(-1)?.[0] as (() => void) | undefined;
+
+    await act(async () => {
+      forceSignOut?.();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(clearStoredSprayPhotosMock).toHaveBeenCalled());
   });
 
   it('wipes the downloaded catalogs when the account is deleted', async () => {
@@ -1549,19 +1692,32 @@ describe('AuthProvider forced sign-out registration', () => {
     const { result } = renderHook(() => useAuth(), { wrapper });
     await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
 
+    let finishDismissalClear!: () => void;
+    linkEmptyDismissalMocks.clear.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishDismissalClear = resolve;
+        }),
+    );
     webSessionIdentityState.userId = 'user-2';
     webSessionIdentityState.authSessionId = 'login-2';
     act(() => authTokenEventsState.listener?.(null, 'remote'));
 
     await waitFor(() => expect(clearStoredSessionIdMock).toHaveBeenCalledOnce());
+    // B must remain unpublished while A's shared dismissal clear is pending.
+    expect(userStorageOwnerState.current).toBeNull();
+    expect(linkEmptyDismissalMocks.resume).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      finishDismissalClear();
+    });
     const previousOwner = { userId: 'user-1', authSessionId: 'login-1' };
     expect(clearStoredSessionIdMock).toHaveBeenCalledWith(previousOwner);
     expect(clearStoredActiveBoardMock).toHaveBeenCalledWith(previousOwner);
     expect(clearStoredQueueSnapshotMock).toHaveBeenCalledWith(previousOwner);
     expect(resetActiveBoardSelfHealValidationCacheMock).toHaveBeenCalledOnce();
+    await waitFor(() => expect(userStorageOwnerState.current).toEqual({ userId: 'user-2', authSessionId: 'login-2' }));
     expect(queryClient.getQueryData(['userPlaylists'])).toBeUndefined();
-    await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
-    expect(userStorageOwnerState.current).toEqual({ userId: 'user-2', authSessionId: 'login-2' });
+    expect(linkEmptyDismissalMocks.resume).toHaveBeenCalledTimes(2);
   });
 
   it('hides and cleans A when B is confirmed but the backend token bridge is unavailable', async () => {
@@ -1600,6 +1756,8 @@ describe('AuthProvider forced sign-out registration', () => {
     act(() => authTokenEventsState.listener?.(null, 'remote'));
 
     await waitFor(() => expect(clearStoredSessionIdMock).toHaveBeenCalledOnce());
+    expect(linkEmptyDismissalMocks.suspend).toHaveBeenCalledOnce();
+    expect(linkEmptyDismissalMocks.clear).toHaveBeenCalledOnce();
     expect(clearStoredActiveBoardMock).toHaveBeenCalledOnce();
     expect(queryClient.getQueryData(['userPlaylists'])).toBeUndefined();
     expect(authSignOutMock).not.toHaveBeenCalled();
@@ -2376,7 +2534,7 @@ describe('native auth gate parity (this PR auto-OTAs to the store fleet)', () =>
 
     renderGate();
 
-    await waitFor(() => expect(redirectMock).toHaveBeenCalledWith('/(tabs)/home'));
+    await waitFor(() => expect(redirectMock).toHaveBeenCalledWith('/(tabs)/climbs'));
     expect(redirectMock).not.toHaveBeenCalledWith(next);
     expect(redirectMock).not.toHaveBeenCalledWith(expect.stringContaining('next='));
   });

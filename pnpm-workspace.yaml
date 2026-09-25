@@ -41,9 +41,16 @@ enableGlobalVirtualStore: false
 virtualStoreDirMaxLength: 120
 
 overrides:
+  # Expo loads these browser datasets through its config plugins and hashes them.
+  # Keep main on the App Store 2.5.0 runtime; advance these only on release/next.
+  baseline-browser-mapping: 2.11.17
+  caniuse-lite: 1.0.30001809
+  # Remove only when an upstream release passes the disconnect/recovery tests (#5299).
+  postgres: 3.4.9
   react-native-screens: 4.26.2
 
 patchedDependencies:
+  'postgres@3.4.9': packages/db/patches/postgres@3.4.9.patch
   'react-native-ble-plx@3.5.1': patches/react-native-ble-plx@3.5.1.patch
   '@expo/fingerprint@0.20.11': patches/@expo__fingerprint@0.20.11.patch
   '@expo/ui@57.0.14': patches/@expo__ui@57.0.14.patch
@@ -75,3 +82,5 @@ allowBuilds:
   tree-sitter-json: false
   # Browser downloads are performed explicitly only where they are needed.
   playwright: false
+  # CPU binaries are bundled; the install hook only fetches optional GPU providers.
+  onnxruntime-node: false

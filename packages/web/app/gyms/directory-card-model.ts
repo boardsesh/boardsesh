@@ -1,5 +1,5 @@
 import type { GymBoardSummary } from '@boardsesh/shared-schema';
-import { BOARD_TYPE_LABELS } from '@boardsesh/board-constants';
+import { CATALOGUE_BOARD_TYPES, isCatalogueBoardType } from '@boardsesh/board-constants';
 import { distanceKm } from './directory-facets';
 
 /** One board chip: a board type and the angle that wall is set at. */
@@ -11,7 +11,9 @@ export type BoardChip = {
   angle: number;
 };
 
-const BOARD_TYPE_ORDER = Object.keys(BOARD_TYPE_LABELS);
+// Catalogue boards only. A gym card's chips name the boards a climber can turn
+// up and climb on; a spray wall is its owner's, not the gym's directory entry.
+const BOARD_TYPE_ORDER = CATALOGUE_BOARD_TYPES;
 
 /**
  * Collapse `boardSummaries` into the chips a card renders.
@@ -29,6 +31,12 @@ export function boardChips(summaries: readonly GymBoardSummary[] | null | undefi
   const unique = new Map<string, BoardChip>();
   for (const summary of summaries) {
     const boardType = summary.boardType;
+    // Dropped before dedup, not merely sorted last: a gym-linked spray wall is
+    // its owner's wall, and a chip saying "Spray wall" on a gym's directory card
+    // advertises something a visitor cannot turn up and climb on. Ordering alone
+    // would still render it (an unranked type sorts to the end, it does not
+    // disappear).
+    if (!isCatalogueBoardType(boardType)) continue;
     const angle = Number.isFinite(summary.angle) ? Math.round(summary.angle) : 0;
     const key = `${boardType}-${angle}`;
     if (!unique.has(key)) {

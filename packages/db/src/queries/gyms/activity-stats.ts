@@ -76,6 +76,7 @@ export async function countGymsWithActivity(db: GymActivityStatsDb): Promise<num
     FROM board_climb_events e
     JOIN gym_boards gb ON gb.board_id = e.board_id
     JOIN gyms g ON g.id = gb.gym_id AND g.deleted_at IS NULL
+    WHERE e.source = 'boardsesh'
   `,
   );
   return Number(rows[0]?.gym_count ?? 0);
@@ -115,6 +116,7 @@ export async function rebuildGymActivityStats(tx: GymActivityStatsDb): Promise<n
         MAX(e.confirmed_at) AS last_active_at
       FROM board_climb_events e
       JOIN gym_boards gb ON gb.board_id = e.board_id
+      WHERE e.source = 'boardsesh'
       GROUP BY gb.gym_id
     )
     INSERT INTO gym_activity_stats (

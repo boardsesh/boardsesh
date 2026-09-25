@@ -201,6 +201,8 @@ The web and mobile queue providers are thin wrappers around a small stack of sha
 2. **Subscriber** — dedicated to ioredis pub/sub mode (enters special subscribe-only mode)
 3. **Stream Consumer** — dedicated to EventBroker's blocking `XREADGROUP BLOCK 5000` loop, preventing it from starving the publisher connection
 
+The pub/sub adapter shares its subscriber connection with Kilter live sync. It only parses its eight event-channel prefixes; Kilter live control messages use a different channel and payload format. Invalid event-channel envelopes are dropped and counted under `subscriptions.redisMessageRejects` in the backend runtime sample. An event with no `instanceId` is delivered, while an event from this instance is skipped.
+
 `RedisClientManager.onRedisReady` runs registered recovery handlers after all three connections are ready and before request handlers see Redis as connected. A handler registered during an in-flight readiness pass joins that same barrier; one registered after Redis is connected runs immediately. Failures are isolated so Redis can still become available. Duplicate-gym report claims drain generation-stamped snapshots through the end of readiness recovery, including claims accepted while an earlier Redis write is awaiting a response. Request-path retries remain opportunistic and back off to once per minute during a persistent partition.
 
 ### Live climb-stat stream
@@ -650,7 +652,7 @@ Sessions support the following configurable properties set at creation time:
 | `goal`        | `String?` | Free-text session goal (max 500 chars), displayed in the session header                |
 | `color`       | `String?` | Hex color code for multi-session display (e.g., `#FF5722`)                             |
 | `isPermanent` | `Boolean` | Optional flag for long-lived kiosk-style sessions, persisted with the session metadata |
-| `isPublic`    | `Boolean` | Whether the session appears in discovery (default: true)                               |
+| `isPublic`    | `Boolean` | Whether strangers see it in live listings and kiosk previews (default: true; see below) |
 | `boardIds`    | `[Int]?`  | Multi-board support — links session to specific boards within a gym                    |
 
 ### Session Ending and Summaries
@@ -706,6 +708,48 @@ The `session(sessionId)` query serves two audiences with one payload shape, spli
 - **Empty live roster** returns `null` before any membership check runs (the dormant-session contract `sessionStatus` disambiguates, above).
 
 The compat matrix is pinned by `packages/backend/src/__tests__/session-query-gate.test.ts`.
+
+### Live sessions (`followedLiveSessions` / `boardLiveSessions`)
+
+Two queries list sessions happening right now: Home's "Climbing now" rail (`followedLiveSessions(boardUuid, limit)`, signed-in only, limit 10 by default and 20 at most) and a board's presence sheet (`boardLiveSessions(boardId)`). Both run one pipeline in `services/live-sessions.ts`; tests are in `live-sessions.test.ts`.
+
+**Candidates.** One Drizzle query: `origin = 'explicit'`, `status = 'active'`, `endedAt IS NULL`, `lastActivity` within 4 hours, newest 50. The arm filters go into the same `WHERE`, so 50 unrelated sessions can never push a relevant one past the cap:
+
+- social arm (Home only): the viewer or someone they follow created the session, or has a `board_session_participants` row in it. A row only counts when its `joined_at` falls inside the same 4-hour window. Participant rows are never deleted, so without that limit sessions they left long ago could fill the 50-row cap;
+- board arm: the session points at a followed board, the `boardUuid` board, or `boardId` through any source in the resolution order below. A followed or selected spray wall only counts while the viewer can still read it, so a wall that goes private or is hidden by an admin stops listing sessions for anyone but its owner;
+- visibility: `isPublic`, or the viewer created it or has a participant row written inside the window. Anonymous callers get `isPublic` only.
+
+**Liveness.** `roomManager.getSessionConnectionLiveness` (`room-manager/session-liveness.ts`, whose signals `findNearbySessions` reads too) reads live connection counts and Redis key existence for every candidate, without touching a roster. A session stays when it has at least 1 live connection, or when `lastActivity` is under 20 minutes old and its Redis session key still exists. `nearbySessions` applies no 20-minute limit. Rosters (`getSessionUsers`) are read only for the sessions that pass this check, and on the board sheet only for sessions on that board. `participantCount` is the roster length.
+
+**Membership and reasons.** `viewerIsMember` means the viewer created the session or is on the live roster. Participant rows are permanent, so the live roster decides: a followed climber who left no longer lists the session (`FOLLOWING_USER`), and a private session drops out for a viewer who left it. `FOLLOWED_BOARD` and `SELECTED_BOARD` come from the resolved board. Home also lists the viewer's own live sessions with no reason. Sort: member first, then sessions with followed climbers on the roster, then bigger rosters, then newest `lastActivity`.
+
+**Board resolution** (`resolveLiveSessionBoards`), first hit wins:
+
+1. newest `boardsesh_ticks.board_id`;
+2. `board_sessions.board_id` (almost always null: `ensureSessionRecordExists` never sets it);
+3. a `/b/<slug>/<angle>` board path, matched to `user_boards.slug`;
+4. the Redis session→board binding written by `commitBoardClimb`;
+5. a config path (`/<type>/<layout>/<size>/<sets>/<angle>`), matched to a live board with the same type, layout, size and normalised set ids that the session creator owns. If they own none, a board they follow (`board_follows`) is used instead. Mobile's `buildSessionBoardPath` gives any non-gym LED board this path shape, a followed friend's wall included, so without step 5 the session names no board until the first tick or wall send. Owned boards always win over followed ones. When several boards in that group match, the one the creator ticked on most recently wins. With no single most recent board, the session stays unresolved. A board the creator neither owns nor follows is never chosen. Step 5 comes after Redis because it is a guess, and the Redis binding places the session correctly once a climb is sent.
+
+Steps 1–3 take two batched queries. Redis is asked only about sessions they left unresolved, and step 5 is two parallel queries covering everything Redis left: owned boards through the owner index, followed boards through the follower index. A tie-break query runs only when a creator has several identical boards. The candidate query's board filter includes the step-5 shape too: type, layout and size come from the path, and the creator must own the board or follow it (one probe on the unique follow index). A session started on a followed board by its owner or one of its followers therefore makes the 50-row cap before its first tick. `board_climb_events` is not a source: it has a `session_id` column, but `reportBoardClimb` writes null there today. Once it carries the session, its newest event belongs first in this list.
+
+**What a card shows.** `board` is null unless the board is not deleted and is public or system-shared (`isRowAnonReadable`) or owned by the viewer. On top of that:
+
+- an unlisted board is only named to a viewer who already holds it: they follow it, selected it, or are on its `boardLiveSessions` sheet;
+- a spray wall has to pass its own read rule;
+- `gymName` is null when the board hides its location, unless the viewer owns it.
+
+A private board's name never leaves the server. `boardType` and `angle` come from the board path, then the board row. `sendCount`, `flashCount` and `hardestSendGrade` come from one grouped ticks query that ranks sends the same way as the session feed. The grade uses the board's own grade name, for the logged difficulty or else the consensus grade (`difficultyNameWithFallbackExpr`), and only falls back to the shared labels when the board has no row for that grade. `currentClimb` goes through the board queue preview redaction (`toBoardQueuePreviewItem`). Only public sessions with a known board type that is not spray get one. `boardLiveSessions` uses the same gate as `boardHistory`: anonymous callers only reach public or system-shared boards, and a private board is masked as NOT_FOUND.
+
+**Privacy switch.** `CreateSessionInput.isPublic` and `UpdateSessionInput.isPublic` (creator only; absent or null leaves it unchanged). A private session:
+
+- is hidden from both live listings for anyone not in it;
+- is hidden from the board queue preview (`resolvePublicPreviewSessionForBoard`). Flipping an active session re-resolves the preview (`republishBoardQueuePreviewsForSession`) for its Redis-bound board and its `board_id` column, the preview's durable fallback. Kiosks then clear or move to another public session when the session goes private, and re-seed when it goes public. A visibility-only edit leaves `lastActivity` alone, so a dormant session is not listed as climbing again;
+- can still be joined by invite link: `joinSession` never reads `is_public`, and the `session` query returns its invite preview as before.
+
+Nothing else reads `board_sessions.is_public`. `nearbySessions` filters on `discoverable`, and the session feed shows ended private sessions like any other. The row has to be private from its first insert, because `ensureSessionRecordExists` uses `ON CONFLICT DO NOTHING`. On the WebSocket path, `createSession` passes `isPublic` into the creator's join. On the HTTP path (mobile), which otherwise writes no row until the WebSocket join, `createSession` inserts the row up front when `isPublic` is false. That join then restores the row instead of creating it, and mobile seeds its queue with `setQueue` after joining, so seeding still works.
+
+**No migration.** Every column this needs already exists: `board_sessions.is_public` defaults to `true`, and the arm sources are all indexed, including participants and ticks by session and board follows by user. Listing sessions is a read over existing tables plus Redis presence.
 
 ### Multi-Board Sessions
 
@@ -817,6 +861,59 @@ The session's `boardPath` is the route string the host first joined / created on
 
 ## Queue State Synchronization
 
+### The browse gate: browsing emits nothing
+
+Since #4281, a member of a session with **2+ distinct users** who is merely browsing
+climbs on mobile emits **no queue traffic at all** — no `CurrentClimbChanged`, no
+`QueueItemAdded`, no playback broadcasts. Browse-shaped gestures (swipes, climb-list
+taps, similar-climb taps, fresh drawer opens) pin a local view-only preview; only the
+explicit "Put on the wall" commit produces wire events, which then look exactly like
+any deliberate `setCurrentClimb`. This is a **sender-side** contract: receivers cannot
+distinguish an old client's browse noise from a real commit (slim payloads carry no
+intent flag — see the documented rejection in `sync-coordinator.ts`), so any future
+change to the message flow must preserve "browsing emits nothing" at the origin rather
+than trying to filter it downstream. The receiving side's auto-insert of every inbound
+current climb (issue #2217 behaviour) is only correct because of this contract.
+
+**Who counts as a crew** (`countSessionPeers` in `@boardsesh/queue-runtime`, read by
+mobile's `queue-provider.tsx`). The gate is behind the PostHog flag
+`shared-session-browse` (read `=== true`; off means every gesture drives the wall as
+it always did) and counts **peers**, never roster participants — the roster always
+contains you. It splits peers by `connectionState`:
+
+- **Arm** on `connected` peers only, after a 3s dwell (`SHARED_SESSION_DWELL_MS`), so a
+  one-frame roster blip never costs a lone climber their board.
+- **Hold** an armed gate while any peer is `connected` **or** `RECONNECTING`. A peer
+  inside the 60s grace window (see Grace Window above) is still crew; releasing the
+  instant their socket flapped made the climber's next swipe commit to the shared
+  queue, with the arming dwell then owed on top. A `RECONNECTING`-only roster never
+  arms anything, which is what keeps an authenticated client's own parked entry from
+  reading as a crew. Release is immediate once the last peer is evicted (`UserLeft`)
+  or the session ends.
+
+While browsing, the drawer keeps its own playlist suggestion source. A peer can
+commit a climb outside that playlist, which clears the provider's source for live
+queue navigation; the browsing drawer still walks its original list in both
+directions. The first crew swipe snapshots that source, and committing or returning
+to live clears the snapshot.
+
+### Continuing after a board switch
+
+The mobile provider masks a suggestion source during render when its board key
+no longer matches the active board. A matching key is not sufficient for older
+saved playlists: their climbs are also checked against the active board's layout,
+size and installed holds before navigation reads them. The queue itself is not
+rewritten.
+
+A board switch re-anchors continuation onto the active board's popular feed,
+sharing the queue sheet's React Query entry. A synthetic first anchor preserves
+the old current climb so the next swipe reaches the new board's first suggestion.
+The dead-end notice waits for the feed to settle and any usable source to be
+installed. Forward navigation and prefetch follow the active list first, then
+skip incompatible board identities in the queue tail; previous navigation still
+allows history. The drawer's separate browse source and explicit wall commit gate
+continue to apply in shared sessions.
+
 ### Event Types
 
 | Event                 | Description             | Fields                                                       |
@@ -881,6 +978,8 @@ When the item is no longer in the local queue at send time, `packages/shared/que
 | a **peer** removed the item mid-back-off                                  | send, no `position` |
 
 The last row is a known gap, not an oversight: a peer's removal arrives as a server delta and is indistinguishable from a sync at that layer, so the add fires and can resurrect a climb the peer just deleted. Closing it needs a delta-origin signal the mutations factory does not have.
+
+Mobile's **Play next** is the other client-initiated user of `position`. It sends `currentIndex + 1`, or `0` in the two cases where there is no current index to count from. Those two are not the same: with **no current climb at all** the head genuinely is next, because `findNextQueueItemWithSuggestions` returns `queue[0]` when the current item is `null`. With a current climb that is **set but absent from the queue** — an uncommitted playlist peek, or a slot a peer removed — `0` is only the best available landing slot; that function falls through to the playlist peek and never consults `queue[0]`, so forward navigation will not reach the climb until the current item rejoins the queue. The head still beats appending, which would bury it. The index is derived in `queue-provider.tsx` from live state at commit time, after the cross-board prompt resolves, and the same number goes to both the local `DELTA_ADD_QUEUE_ITEM` and the broadcast, so the origin and its peers cannot disagree about where the climb landed. A Play next on a climb **already in the queue** takes `reorderQueueItem` instead — it moves the existing slot rather than leaving a duplicate for the crew to delete. The move index is direction-aware, because the resolver splices the item out before inserting it: pulling a history item forward targets `currentIndex`, not `currentIndex + 1`. The placement maths is one pure function, `planPlayNext` in `@boardsesh/queue`. Overshoot clamps to an append here too.
 
 The server-sync row is the one that matters most. The burst's head activation is itself an add, so the server answers it with `FullSync` (published with no `clientId`, so the origin cannot suppress its own echo), which `INITIAL_QUEUE_DATA` applies by **replacing** the local queue. A rate-limited drain rejects seconds later, by which time the pending item's optimistic slot is already gone. Skipping on mere absence would make the whole recovery inert in exactly the interleaving it exists for.
 
@@ -1078,6 +1177,25 @@ The `EVENTS_REPLAY` query uses the same GraphQL aliases as `queueUpdates` (`adde
 ## Failure States and Recovery
 
 ### 1. Client Disconnection
+
+Backend callback subscriptions use `withSubscriptionCleanup`. Native async
+generators queue `return()` behind an outstanding `next()`; on a quiet feed,
+that used to prevent both unsubscribe and graphql-ws's `onDisconnect` from
+running. The wrapper owns the underlying source outside the generator, closes
+it immediately on cancellation, and settles pending reads even during snapshot
+loading. Late subscription setup is closed on arrival. Resolver failures still
+reach GraphQL; initial snapshots, sequence filters, and per-event visibility
+checks retain their existing behavior. Controller transformations consume a
+bounded queue of relevant raw events, so stalled reads cannot accumulate an
+unbounded promise chain or let playback noise evict LED changes. Controller
+overflow evicts the oldest queue-only event first, protecting pending climb,
+full-sync, and clearing LED updates from queue-mutation bursts. Retained events
+stay in FIFO order; even an all-LED burst remains capped at 1,000 events by
+dropping its oldest event when no queue-only event is available.
+
+The 60-second persistence flush does not clear session grace timers. Empty
+local rooms expire after their grace window and do not refresh Redis TTLs;
+shutdown owns explicit disposal of session and participant timers.
 
 ```mermaid
 sequenceDiagram
@@ -2252,3 +2370,11 @@ still implements its controlled `forcedActiveKey` mode, exercised by its own uni
 tests. It survives because `social/proposal-section.tsx` still renders the
 component (in uncontrolled mode); removing the controlled path is a separate
 cleanup, not part of the climbing teardown.
+
+### Kilter live history
+
+With `KILTER_LIVE_SYNC_ENABLED=1`, authenticated `boardNowPlaying` subscribers with linked Kilter accounts keep one cluster-coordinated REST poller alive for an exactly mapped public Kilter wall. Viewer leases renew every 15 seconds and expire after 60 seconds; polling starts immediately and repeats after 30–35 seconds. Subscription cancellation, socket close, unlink, and shutdown release eligibility. No upstream activity is published.
+
+`BoardHistoryUpdated { climbs, seq }` merges imported history without changing current climb, holder, queue, or statistics. `boardRecentHistory` merges recent native/imported history; `boardHistoryPage(boardId, limit, before)` returns durable chronological `entries` and opaque `nextCursor`. Both carry the same board access checks as existing presence reads. Legacy `boardRecentClimbs` and `boardHistory` remain native-only.
+
+The shared pagination hook loads one first durable page independently of Redis history, retries failures, and refreshes on reconnect/pull-to-refresh. See [Kilter live integration](kilter-live-history.md) for source matching, occurrence identity, credentials, and deployment order.

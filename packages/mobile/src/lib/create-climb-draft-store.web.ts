@@ -1,6 +1,7 @@
 import { getPreference, removePreference, removePreferencesMatching, setPreference } from './preference-store';
 import type { UserStorageOwner } from './user-storage-owner';
 import { userScopedStorageKey } from './user-storage-owner.web';
+import { sprayCacheToken } from './spray/spray-wall-registry';
 
 /** Which authoring mode wrote this slot. Diagnostic only — the key decides. */
 export type CreateClimbDraftOrigin = 'new' | 'edit' | 'fork';
@@ -23,6 +24,8 @@ export type CreateClimbDraft = {
   campus?: boolean;
   /** "Any feet" toggle. Optional for drafts created before this field. */
   anyFeet?: boolean;
+  /** The setter's own grade as a difficulty id, on a board that publishes with one. See the native fork. */
+  setterGradeDifficultyId?: number | null;
   /** Route mode. See the native fork for why inferring it from frame count isn't enough. */
   routeMode?: boolean;
   /** Authored per-frame pace in ms — the published climb's `frames_pace`. See the native fork. */
@@ -44,7 +47,16 @@ export function createClimbDraftKey(config: {
   setIds: string;
   angle: number;
 }): string {
-  return `${config.boardName}:${config.layoutId}:${config.sizeId}:${config.setIds}:${config.angle}`;
+  const spray = sprayCacheToken(config.boardName, config.layoutId);
+  return `${config.boardName}:${config.layoutId}:${config.sizeId}${spray}:${config.setIds}:${config.angle}`;
+}
+
+/** See the native fork. */
+export function clearSupersededSprayDrafts(layoutId: number, currentVersionToken: string): Promise<void> {
+  const wallPrefix = `${KEY_PREFIX}spray:${layoutId}:${layoutId}`;
+  return removePreferencesMatching(
+    (key) => key.startsWith(wallPrefix) && !key.startsWith(`${wallPrefix}${currentVersionToken}:`),
+  );
 }
 
 /** See the native fork — one deterministic slot per authoring mode. */

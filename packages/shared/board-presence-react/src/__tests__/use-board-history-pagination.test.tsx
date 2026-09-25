@@ -207,9 +207,9 @@ describe('useBoardHistoryPagination', () => {
     expect(fetchHistory).toHaveBeenCalledTimes(1);
   });
 
-  it('flips hasMore false and stops silently on a rejected fetch', async () => {
+  it('keeps a failed page retryable without advancing its cursor', async () => {
     const { client, fetchHistory } = makeClient();
-    fetchHistory.mockRejectedValueOnce(new Error('boardHistory requires auth'));
+    fetchHistory.mockRejectedValueOnce(new Error('network unavailable'));
     const resultBox: ResultBox = { current: null };
 
     render(
@@ -220,12 +220,15 @@ describe('useBoardHistoryPagination', () => {
       resultBox.current?.loadOlder();
     });
 
-    expect(resultBox.current?.hasMore).toBe(false);
+    expect(resultBox.current?.hasMore).toBe(true);
+    expect(resultBox.current?.loadError).toBe(true);
     expect(resultBox.current?.isLoadingOlder).toBe(false);
     expect(resultBox.current?.olderHistory).toEqual([]);
 
-    act(() => resultBox.current?.loadOlder());
-    expect(fetchHistory).toHaveBeenCalledTimes(1);
+    fetchHistory.mockResolvedValueOnce([]);
+    await act(async () => resultBox.current?.loadOlder());
+    expect(fetchHistory).toHaveBeenCalledTimes(2);
+    expect(resultBox.current?.loadError).toBe(false);
   });
 
   it('resets paging state on a board switch', async () => {
@@ -388,5 +391,49 @@ describe('useBoardHistoryPagination', () => {
     });
 
     expect(onPageLoaded).toHaveBeenCalledWith({ pageSize: 2, returnedCount: 1 });
+  });
+});
+
+describe('durable chronological pages', () => {
+  it('loads the newest page automatically without anchoring to sparse Redis history', async () => {
+    const fetchHistoryPage = vi
+      .fn<NonNullable<BoardPresenceClient['fetchHistoryPage']>>()
+      .mockResolvedValueOnce({ entries: [climb('recent', 10), climb('middle', 9)], nextCursor: 'opaque-page-two' })
+      .mockResolvedValueOnce({ entries: [climb('old', 1)], nextCursor: null });
+    const { client, fetchHistory } = makeClient({ fetchHistoryPage });
+    const resultBox: ResultBox = { current: null };
+    await act(async () => {
+      render(
+        <TestHarness boardId={1} client={client} history={[climb('old', 1)]} pageSize={2} resultBox={resultBox} />,
+      );
+    });
+    expect(fetchHistoryPage).toHaveBeenCalledExactlyOnceWith(1, { limit: 2, before: undefined });
+    expect(fetchHistory).not.toHaveBeenCalled();
+    expect(resultBox.current?.olderHistory.map((entry) => entry.seq)).toEqual([10, 9]);
+    await act(async () => resultBox.current?.loadOlder());
+    expect(fetchHistoryPage).toHaveBeenLastCalledWith(1, { limit: 2, before: 'opaque-page-two' });
+    expect(resultBox.current?.olderHistory.map((entry) => entry.seq)).toEqual([10, 9, 1]);
+    expect(resultBox.current?.hasMore).toBe(false);
+  });
+
+  it('retries failed first pages and refreshes after exhaustion', async () => {
+    const fetchHistoryPage = vi
+      .fn<NonNullable<BoardPresenceClient['fetchHistoryPage']>>()
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce({ entries: [climb('old', 1)], nextCursor: null })
+      .mockResolvedValueOnce({ entries: [climb('new', 2), climb('old', 1)], nextCursor: null });
+    const { client } = makeClient({ fetchHistoryPage });
+    const resultBox: ResultBox = { current: null };
+    await act(async () => {
+      render(<TestHarness boardId={1} client={client} history={[]} resultBox={resultBox} />);
+    });
+    expect(resultBox.current?.loadError).toBe(true);
+    expect(resultBox.current?.hasMore).toBe(true);
+    await act(async () => resultBox.current?.loadOlder());
+    expect(resultBox.current?.hasMore).toBe(false);
+    await act(async () => resultBox.current?.refreshHistory());
+    expect(fetchHistoryPage).toHaveBeenLastCalledWith(1, { limit: 50, before: undefined });
+    expect(resultBox.current?.olderHistory.map((entry) => entry.seq)).toEqual([2, 1]);
+    expect(resultBox.current?.loadError).toBe(false);
   });
 });

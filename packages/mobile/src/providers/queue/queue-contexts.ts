@@ -5,11 +5,15 @@ import type {
   QueueAction,
   ClimbQueueItem,
   PlaylistSuggestionSource,
+  QueueAddPlacement,
   SetCurrentClimbOptions,
 } from '@boardsesh/queue';
 import type { PublishPlaybackStateInput } from '@boardsesh/queue-react';
 import type { PlaybackStateChangedEvent, SessionSummary, SessionUser, UserBoard } from '@boardsesh/shared-schema';
 import type { SessionLiveStatsEvent } from '../../lib/graphql/operations';
+
+/** What triggered a queue reorder — attribution for `SHARED_EVENTS.QueueReordered`. */
+export type QueueReorderSource = 'drag' | 'play-next';
 
 export type StartSessionConfig = {
   name?: string;
@@ -17,6 +21,12 @@ export type StartSessionConfig = {
   color?: string;
   discoverable?: boolean;
   isPermanent?: boolean;
+  /**
+   * "Show this session live". Defaults to public; only an explicit `false`
+   * reaches the server, so a session started with the switch on sends the same
+   * input it always did.
+   */
+  isPublic?: boolean;
 };
 
 type QueueContextValue = {
@@ -40,10 +50,32 @@ type QueueContextValue = {
    * board and the climber backed out of the cross-board prompt — callers that
    * sequence something on the add (activating the climb, closing a sheet)
    * should await it; fire-and-forget callers can `void` it.
+   *
+   * `placement: 'next'` slots it right behind the climb on the wall instead of
+   * at the bottom. The index is derived inside the provider from live state, so
+   * a cross-board prompt can't stale it. Most callers want the default `'end'`.
    */
-  addToQueue: (item: ClimbQueueItem) => Promise<'added' | 'cancelled'>;
+  addToQueue: (item: ClimbQueueItem, options?: { placement?: QueueAddPlacement }) => Promise<'added' | 'cancelled'>;
+  /**
+   * Jump a climb to the slot right behind the current one.
+   *
+   * A climb that is already in the queue MOVES rather than being duplicated, so
+   * the crew isn't left deleting a stale copy further down. Pass
+   * `queueItemUuid` when the action came from a queue row — it names the exact
+   * slot, which matters when the same climb is queued twice.
+   *
+   * - `'added'` — it wasn't queued, so it was inserted
+   * - `'moved'` — it was queued elsewhere and jumped the line
+   * - `'unchanged'` — it was already up next (or is the climb on the wall)
+   * - `'cancelled'` — the climber backed out of the cross-board prompt
+   */
+  playNext: (target: {
+    item: ClimbQueueItem;
+    queueItemUuid?: string;
+  }) => Promise<'added' | 'moved' | 'unchanged' | 'cancelled'>;
   removeFromQueue: (uuid: string) => void;
-  reorderQueue: (uuid: string, oldIndex: number, newIndex: number) => void;
+  /** `source` is analytics attribution only — a drag in the queue sheet vs a Play next. */
+  reorderQueue: (uuid: string, oldIndex: number, newIndex: number, options?: { source?: QueueReorderSource }) => void;
   clearQueue: () => void;
   /** Replace the entire queue (optimistic local UPDATE_QUEUE + best-effort party sync). */
   setQueue: (queue: ClimbQueueItem[], currentClimbQueueItem?: ClimbQueueItem | null) => void;
@@ -143,6 +175,7 @@ export const QueueContext = createContext<QueueContextValue | null>(null);
  * - useQueueSessionId(): rare session-id changes for structural chrome.
  * - useQueueSessionControls(): session id, serial/wall controls, and the member-userId set for party surfaces.
  * - useQueueLiveStats(): high-frequency live stats and roster updates.
+ * - useIsSharedSession(): "is anyone else here" — browse-by-default gating.
  * - useActiveClimbUuid(): row-level active-climb highlighting.
  * - useHasActiveClimb(): presence-only bottom chrome metrics.
  * - usePlaylistSuggestionSource(): playlist peek/suggestion navigation.
@@ -206,6 +239,25 @@ type QueueLiveStatsContextValue = {
 };
 
 export const QueueLiveStatsContext = createContext<QueueLiveStatsContextValue | null>(null);
+
+/**
+ * "Is anyone else in this session with me" — a single boolean whose identity
+ * flips ONLY across the solo ↔ crew boundary (`shouldDefaultToBrowse`).
+ *
+ * Its consumers are the surfaces that decide whether a gesture browses or takes
+ * the wall: the play drawer's swipes and the climb list's row taps. Both are
+ * hot — the climb list re-renders a virtualized FlashList, the drawer re-renders
+ * board art — so neither can subscribe to {@link QueueLiveStatsContext}, whose
+ * value is recreated by every ≤1/2s `SessionStatsUpdated` push and by every
+ * presence delta. Deriving the boolean HERE means a fifth climber joining, a
+ * peer's presence flapping, or a stats push costs those surfaces nothing: the
+ * value only changes when the answer does.
+ */
+type QueueSharedSessionContextValue = {
+  isSharedSession: boolean;
+};
+
+export const QueueSharedSessionContext = createContext<QueueSharedSessionContextValue | null>(null);
 
 /**
  * Active-climb selector context. Changes identity ONLY when the active climb's
@@ -295,6 +347,17 @@ export function useQueueLiveStats(): QueueLiveStatsContextValue {
   return context;
 }
 
+/**
+ * True when a party session is joined AND at least one other climber is on the
+ * roster — the condition under which browse-shaped gestures default to
+ * view-only. See {@link QueueSharedSessionContext}.
+ */
+export function useIsSharedSession(): boolean {
+  const context = useContext(QueueSharedSessionContext);
+  if (!context) throw new Error('useIsSharedSession must be used within QueueProvider');
+  return context.isSharedSession;
+}
+
 export function useActiveClimbUuid(): string | null {
   const context = useContext(QueueActiveClimbContext);
   if (!context) throw new Error('useActiveClimbUuid must be used within QueueProvider');
@@ -335,6 +398,7 @@ export type {
   QueueSessionControlContextValue,
   QueueSessionIdContextValue,
   QueueLiveStatsContextValue,
+  QueueSharedSessionContextValue,
   QueueActiveClimbContextValue,
   QueueHasActiveClimbContextValue,
   QueueDataContextValue,

@@ -37,8 +37,14 @@ import {
   getDatabaseHandle,
   initializeDatabase,
   INIT_RETRY_DELAYS_MS,
+  INIT_LOCK_RETRY_DELAYS_MS,
   setDatabaseHandle,
+  releaseDatabaseHandle,
+  registerReplacementOpener,
+  resetDeadHandleRecoveryForTests,
+  MIN_RECOVERY_INTERVAL_MS,
 } from '../connection';
+import { noteDatabaseHandleFailure } from '../dead-handle';
 import { isSchemaReady } from '../schema-ready';
 import { resetDatabaseInitializationForTests } from '../testing';
 import {
@@ -52,9 +58,11 @@ import {
   markScopeDownloadComplete,
   isScopeDownloadComplete,
   getDownloadedScopeKeys,
+  scopeSyncMetaKeys,
   BOARD_DATA_TABLES,
 } from '@boardsesh/offline-sync';
 import { createTestDatabase, type TestSqliteDb } from '@boardsesh/offline-sync/testing';
+import { SPRAY_PHOTO_PENDING_PREFIX } from '../../offline/spray-photo-retry';
 
 let db: TestSqliteDb & SQLiteDatabase;
 
@@ -126,12 +134,39 @@ describe('clearUserData', () => {
     await enqueue(db, 'boardsesh_ticks', 'create', { climbUuid: 'climb-1' }, 'tick-1');
     await setCheckpoint(db, getCheckpointKey('boardsesh_ticks'), { updatedAt: now, syncSeq: '5' });
 
+    // A downloaded spray wall: board reference data by table, but private by
+    // nature — a photograph of somebody's garage — so it is the one board table
+    // this wipe takes (#5448).
+    await db.runAsync(`INSERT INTO spray_walls (layout_id, board_uuid, photo_key) VALUES (?, ?, ?)`, [
+      4,
+      'board-4',
+      'spray-walls/wall-4/photo-1.jpg',
+    ]);
+
     // Board reference data that must survive the wipe.
     await db.runAsync(`INSERT INTO board_climbs (uuid, board_type) VALUES (?, ?)`, ['climb-1', 'kilter']);
     await db.runAsync(
       `INSERT INTO board_climb_stats (board_type, climb_uuid, angle, ascensionist_count) VALUES (?, ?, ?, ?)`,
       ['kilter', 'climb-1', 40, 12],
     );
+
+    // The wall's CLIMBS are as private as the wall: names, descriptions and
+    // frames of somebody's garage, served by `searchClimbsLocal` with no owner
+    // stamp because board reference data is a shared cache everywhere else.
+    await db.runAsync(`INSERT INTO board_climbs (uuid, board_type, layout_id) VALUES (?, ?, ?)`, [
+      'spray-climb-1',
+      'spray',
+      4,
+    ]);
+    await db.runAsync(
+      `INSERT INTO board_climb_stats (board_type, climb_uuid, angle, ascensionist_count) VALUES (?, ?, ?, ?)`,
+      ['spray', 'spray-climb-1', 40, 3],
+    );
+    await db.runAsync(`INSERT INTO board_climb_grades (board_type, climb_uuid, angle) VALUES (?, ?, ?)`, [
+      'spray',
+      'spray-climb-1',
+      40,
+    ]);
 
     await clearUserData(db);
 
@@ -143,13 +178,68 @@ describe('clearUserData', () => {
     expect(await countRows('setter_follows')).toBe(0);
     expect(await countRows('playlist_follows')).toBe(0);
     expect(await getPendingCount(db)).toBe(0);
+    // The next account on this device must not read the previous one's wall —
+    // neither the wall row nor the climbs on it.
+    expect(await countRows('spray_walls')).toBe(0);
+    expect(await countRows('board_climb_grades')).toBe(0);
     expect(await getCheckpoint(db, getCheckpointKey('boardsesh_ticks'))).toBeNull();
 
-    // The expensive shared cache is deliberately retained.
+    // The expensive shared cache is deliberately retained — the kilter rows only.
     expect(await countRows('board_climbs')).toBe(1);
     expect(await countRows('board_climb_stats')).toBe(1);
+    expect((await db.getFirstAsync<{ board_type: string }>('SELECT board_type FROM board_climbs'))?.board_type).toBe(
+      'kilter',
+    );
   });
 
+  // The cursor must never outlive the row it describes. `syncSprayWalls` pages on
+  // a strict `>`, so a checkpoint left behind for a wall this wipe deleted would
+  // resume PAST that wall: an unchanged wall is never offered again, and its
+  // holds and photograph stay missing until the owner edits it on the server.
+  it('clears each deleted wall\u2019s scope markers, including a layout with climbs but no wall row', async () => {
+    await db.runAsync(`INSERT INTO spray_walls (layout_id, board_uuid, photo_key) VALUES (?, ?, ?)`, [
+      4,
+      'board-4',
+      'spray-walls/wall-4/photo-2.jpg',
+    ]);
+    // A download interrupted between the two tables: climbs on disk, no wall row.
+    // Its markers have to go too, or the next sign-in resumes past rows that are
+    // no longer there.
+    await db.runAsync(`INSERT INTO board_climbs (uuid, board_type, layout_id) VALUES (?, ?, ?)`, [
+      'spray-climb-7',
+      'spray',
+      7,
+    ]);
+    const orphanScopeKeys = scopeSyncMetaKeys('spray:7:7');
+    for (const key of orphanScopeKeys) {
+      await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [key, '1']);
+    }
+    const wallScopeKeys = scopeSyncMetaKeys('spray:4:4');
+    for (const key of wallScopeKeys) {
+      await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [key, '1']);
+    }
+    // Keyed by layout id, so `scopeSyncMetaKeys` cannot carry it. A stale attempt
+    // count would carry into the next download of the same wall and could spend
+    // the retry budget before the first try.
+    await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
+      `${SPRAY_PHOTO_PENDING_PREFIX}4`,
+      JSON.stringify({ photoKey: 'spray-walls/wall-4/photo-2.jpg', attempts: 8 }),
+    ]);
+    // A catalogue board's markers, which this wipe must still preserve.
+    await setCheckpoint(db, getCheckpointKey('board_climbs', 'kilter:1:1'), {
+      updatedAt: '2024-06-01T00:00:00Z',
+      syncSeq: '5',
+    });
+
+    await clearUserData(db);
+
+    for (const key of [...wallScopeKeys, ...orphanScopeKeys, `${SPRAY_PHOTO_PENDING_PREFIX}4`]) {
+      const row = await db.getFirstAsync<{ key: string }>('SELECT key FROM sync_meta WHERE key = ?', [key]);
+      expect(row, `${key} should be gone with the wall`).toBeNull();
+    }
+    expect(await countRows('board_climbs')).toBe(0);
+    expect(await getCheckpoint(db, getCheckpointKey('board_climbs', 'kilter:1:1'))).not.toBeNull();
+  });
   it('is a no-op on an already-empty database', async () => {
     await clearUserData(db);
 
@@ -412,6 +502,16 @@ describe('initializeDatabase lock contention (#4104)', () => {
   // and nothing else, and it keeps tracking if the backoff is ever retuned.
   const FIRST_RETRY_DELAY_MS = INIT_RETRY_DELAYS_MS[0];
 
+  // The fast ladder's gaps, plus a second to clear the attempt that follows the last
+  // of them. Advancing by exactly this leaves the chain where every phase-tagged
+  // sqlite-init report on 2.4.0 sits: the whole #4104 window spent on a real lock.
+  const FAST_LADDER_MS = INIT_RETRY_DELAYS_MS.reduce((total, gap) => total + gap, 0) + 1_000;
+  // Every gap in both ladders, so a test can drive the chain to its true end without
+  // mirroring the numbers.
+  const WHOLE_LADDER_MS =
+    [...INIT_RETRY_DELAYS_MS, ...INIT_LOCK_RETRY_DELAYS_MS].reduce((total, gap) => total + gap, 0) + 1_000;
+  const TOTAL_ATTEMPTS = INIT_RETRY_DELAYS_MS.length + INIT_LOCK_RETRY_DELAYS_MS.length + 1;
+
   // The failure report awaits a best-effort `PRAGMA journal_mode` read-back, so it
   // lands a microtask or two after the launch gate the test awaited. Wait for the
   // report itself rather than guessing a tick count.
@@ -434,7 +534,13 @@ describe('initializeDatabase lock contention (#4104)', () => {
   // `error` may be a function to vary the throw per failure (attempt N is contended,
   // attempt N+1 is a closed handle).
   function createContendedDatabase(
-    options: { error?: Error | ((failureCount: number) => Error); onFailure?: (failureCount: number) => void } = {},
+    options: {
+      error?: Error | ((failureCount: number) => Error);
+      onFailure?: (failureCount: number) => void;
+      // The same hook for an attempt that is going to SUCCEED: a remount landing
+      // during the winning attempt is the production case, not just the contended one.
+      onExec?: (source: string) => void;
+    } = {},
   ) {
     const { error = new Error(LOCK_ERROR_MESSAGE) } = options;
     const failureFor = (failureCount: number) => (typeof error === 'function' ? error(failureCount) : error);
@@ -443,6 +549,7 @@ describe('initializeDatabase lock contention (#4104)', () => {
 
     const wrapper = {
       execAsync: async (source: string): Promise<void> => {
+        options.onExec?.(source);
         if (locked && /pending_mutations/i.test(source)) {
           failures += 1;
           // Lets a test land a remount WHILE this attempt is in flight, which is the
@@ -484,9 +591,6 @@ describe('initializeDatabase lock contention (#4104)', () => {
   });
 
   it('does not block app launch on the retry, leaving the handle unpublished for now', async () => {
-    // This test deliberately walks away mid-chain, so the retry it leaves pending must
-    // sit on the fake clock: afterEach's useRealTimers() discards it, instead of a real
-    // timer firing into a later test and publishing a handle or reporting an error there.
     vi.useFakeTimers();
     const contended = createContendedDatabase();
 
@@ -501,6 +605,15 @@ describe('initializeDatabase lock contention (#4104)', () => {
     expect(getDatabaseHandle()).toBeNull();
     // A launch that is still retrying is not yet newsworthy.
     expect(reportErrorMock).not.toHaveBeenCalled();
+
+    // Let the chain END rather than walking away from it. `afterEach`'s
+    // `useRealTimers()` does NOT discard the retry this test leaves pending — it hands
+    // it to the real clock, where it goes on driving the module-level handle and the
+    // mocks into whichever test is running by then. That was survivable while the
+    // ladder ran out in 17.5s; it is not now that a lock keeps the chain alive for
+    // minutes (#4314). The unlock is the writer finishing, exactly as everywhere else.
+    contended.unlock();
+    await vi.advanceTimersByTimeAsync(FIRST_RETRY_DELAY_MS);
   });
 
   it('publishes the handle once a retry wins, instead of staying dead for the session', async () => {
@@ -656,11 +769,11 @@ describe('initializeDatabase lock contention (#4104)', () => {
     const contended = createContendedDatabase();
 
     await initializeDatabase(contended.db);
-    await vi.advanceTimersByTimeAsync(30_000);
+    await vi.advanceTimersByTimeAsync(WHOLE_LADDER_MS);
 
     const [, context] = reportErrorMock.mock.calls[0];
     expect(context.tags).toMatchObject({ sqlite_code: 5, journal_mode: 'wal' });
-    expect(context.extra).toMatchObject({ attempts: 5, retryable: true });
+    expect(context.extra).toMatchObject({ attempts: TOTAL_ATTEMPTS, retryable: true });
     expect(typeof context.extra.elapsedMs).toBe('number');
   });
 
@@ -699,15 +812,129 @@ describe('initializeDatabase lock contention (#4104)', () => {
     const contended = createContendedDatabase();
 
     await initializeDatabase(contended.db);
-    // Drive the whole backoff chain (500 + 2000 + 5000 + 10000 = 17.5s, inside the 30s ceiling).
-    await vi.advanceTimersByTimeAsync(30_000);
+    // Drive both ladders to their end — the fast #4104 gaps and the slow #4314 ones.
+    await vi.advanceTimersByTimeAsync(WHOLE_LADDER_MS);
 
-    expect(contended.failures()).toBe(5);
+    expect(contended.failures()).toBe(TOTAL_ATTEMPTS);
     expect(getDatabaseHandle()).toBeNull();
     expect(reportErrorMock).toHaveBeenCalledTimes(1);
     const [, context] = reportErrorMock.mock.calls[0];
     expect(context.tags).toMatchObject({ source: 'offline-sync', kind: 'sqlite-init', phase: 'queue-table' });
-    expect(context.extra).toMatchObject({ attempts: 5, retryable: true });
+    expect(context.extra).toMatchObject({ attempts: TOTAL_ATTEMPTS, retryable: true });
+  });
+
+  // #4314: the fast ladder is sized for a writer that is merely in the way, but the one
+  // that actually loses this window is a board-data snapshot import (`importMs` reaches
+  // 253,939ms). Every phase-tagged sqlite-init report on 2.4.0 reads `retryable: true`,
+  // `attempts: 4`, `elapsedMs: 29,875` — the whole window spent waiting out a real lock.
+  // The chain then RETURNED, and `SQLiteProvider` calls `onInit` once per connection, so
+  // nothing was left to try again: offline storage stayed off for the rest of the
+  // session over a database that became writable a minute later.
+  it('keeps retrying a lock that outlives the fast window, instead of dying for the session', async () => {
+    vi.useFakeTimers();
+    const contended = createContendedDatabase();
+
+    await initializeDatabase(contended.db);
+    await vi.advanceTimersByTimeAsync(FAST_LADDER_MS);
+
+    // The old ceiling. The lock is real and still held, so this is not the moment to
+    // declare the database unusable and file it in the sqlite-init aggregate.
+    expect(getDatabaseHandle()).toBeNull();
+    expect(reportErrorMock).not.toHaveBeenCalled();
+
+    // The import commits a minute in.
+    contended.unlock();
+    await vi.advanceTimersByTimeAsync(INIT_LOCK_RETRY_DELAYS_MS[0]);
+
+    expect(getDatabaseHandle()).toBe(contended.db);
+    expect(isSchemaReady()).toBe(true);
+    expect(reportErrorMock).not.toHaveBeenCalled();
+    // A launch that contended and came back is a recovery, not a failure — and it is
+    // the only signal that separates "fixed" from "still contending, just retrying its
+    // way out" once the fleet is on this build.
+    expect(trackMock).toHaveBeenCalledTimes(1);
+    expect(trackMock.mock.calls[0][1]).toMatchObject({ phase: 'queue-table', sqliteCode: 5 });
+  });
+
+  // The cost of the longer ladder, paid back. A remount inside a slow gap only moved
+  // `latestDatabase` and got the already-resolved launch gate, while the chain stayed
+  // parked in `delay()` — so the replacement provider rendered with a null handle and
+  // `schemaReady` false for up to a MINUTE over a connection that was usable
+  // immediately. At the old 17.5s ceiling that stranding cost seconds.
+  it('wakes the backoff when a replacement connection arrives, instead of sleeping out the gap', async () => {
+    vi.useFakeTimers();
+    const contended = createContendedDatabase();
+
+    await initializeDatabase(contended.db);
+    // Spend the fast ladder, which parks the chain in the first slow gap.
+    await vi.advanceTimersByTimeAsync(FAST_LADDER_MS);
+    expect(getDatabaseHandle()).toBeNull();
+
+    // SQLiteProvider remounts. Its connection is fine — whatever held the file is gone
+    // with the connection that waited on it.
+    const replacement = createContendedDatabase();
+    replacement.unlock();
+    await initializeDatabase(replacement.db);
+
+    // ONE tick of the fake clock, nowhere near the remaining gap. Reading the wake off
+    // the fake timer rather than a wall-clock wait keeps the assertion off the box's
+    // load: without the wake, the chain is still asleep here.
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(getDatabaseHandle()).toBe(replacement.db);
+    expect(isSchemaReady()).toBe(true);
+    // Retargeted, not retried: the stale connection is not touched again after the
+    // attempt that predates the remount.
+    expect(contended.failures()).toBe(INIT_RETRY_DELAYS_MS.length + 1);
+    expect(reportErrorMock).not.toHaveBeenCalled();
+  });
+
+  // The wake ends a SLEEP; it must not hand the loop a second go at an attempt that is
+  // still running. `wakeFromBackoff` is null outside the sleep, so a remount landing
+  // mid-attempt falls through to the retarget path the chain already had.
+  it('does not double-run an attempt when the remount lands while one is in flight', async () => {
+    vi.useFakeTimers();
+    const healthy = createContendedDatabase();
+    healthy.unlock();
+    const contended = createContendedDatabase({
+      onFailure: (failureCount) => {
+        if (failureCount === 1) void initializeDatabase(healthy.db);
+      },
+    });
+
+    await initializeDatabase(contended.db);
+    await vi.advanceTimersByTimeAsync(FIRST_RETRY_DELAY_MS);
+
+    expect(contended.failures()).toBe(1);
+    expect(getDatabaseHandle()).toBe(healthy.db);
+    expect(reportErrorMock).not.toHaveBeenCalled();
+  });
+
+  // A remount storm must not turn the ladder into a perpetual motion machine: a wake
+  // shortens a wait, it does not refund budget. The chain still ends inside
+  // MAX_INIT_ATTEMPTS and still reports exactly once.
+  it('spends the same budget however many remounts wake it', async () => {
+    vi.useFakeTimers();
+    // One connection per attempt the ladder allows: the first starts the chain, and
+    // every other one wakes it out of the gap it had just entered. If a wake refunded
+    // budget this would never run out.
+    const connections = Array.from({ length: TOTAL_ATTEMPTS }, () => createContendedDatabase());
+
+    await initializeDatabase(connections[0].db);
+    for (const connection of connections.slice(1)) {
+      await initializeDatabase(connection.db);
+      await vi.advanceTimersByTimeAsync(1);
+    }
+
+    const totalFailures = connections.reduce((total, connection) => total + connection.failures(), 0);
+    expect(totalFailures).toBe(TOTAL_ATTEMPTS);
+    expect(getDatabaseHandle()).toBeNull();
+    expect(reportErrorMock).toHaveBeenCalledTimes(1);
+    // And the chain is over rather than still parked, so nothing is left to fire into
+    // the next launch: no sleep survives the whole remaining ladder.
+    await vi.advanceTimersByTimeAsync(WHOLE_LADDER_MS);
+    expect(totalFailures).toBe(TOTAL_ATTEMPTS);
+    expect(reportErrorMock).toHaveBeenCalledTimes(1);
   });
 
   it('does not retry a failure that is not lock contention', async () => {
@@ -737,5 +964,575 @@ describe('initializeDatabase lock contention (#4104)', () => {
     await retryMount;
 
     expect(getDatabaseHandle()).toBe(healthy.db);
+  });
+
+  // #5292: the success-path counterpart to the exhausted-window case above. A chain
+  // that WON kept the single-flight guard forever, so the next mount was handed the
+  // resolved promise, the handle was never republished, and every local read went on
+  // hitting the connection SQLiteProvider had closed ("Access to closed resource",
+  // ~249 users/30d). The remount triggers are production ones — the root error
+  // boundary's retry, Android activity recreation — not just Fast Refresh.
+  it('re-publishes the connection a remount opened', async () => {
+    const first = createContendedDatabase();
+    first.unlock();
+    await initializeDatabase(first.db);
+    expect(getDatabaseHandle()).toBe(first.db);
+
+    // The remount: SQLiteProvider closed first.db and opened second.db, calling
+    // onInit again with it.
+    const second = createContendedDatabase();
+    second.unlock();
+    await initializeDatabase(second.db);
+
+    expect(getDatabaseHandle()).toBe(second.db);
+    expect(isSchemaReady()).toBe(true);
+  });
+
+  it('retracts the closed connection when the remount starts, not when its migrations land', async () => {
+    vi.useFakeTimers();
+    const first = createContendedDatabase();
+    first.unlock();
+    await initializeDatabase(first.db);
+    expect(getDatabaseHandle()).toBe(first.db);
+
+    // The replacement connection is contended, so its own init cannot publish for at
+    // least one backoff. The old handle still has to go the instant onInit is called
+    // for the new one: the teardown that closed first.db is landing right now, and
+    // the sync scheduler and mutation drainer read the handle from outside React,
+    // where nothing tells them a remount happened. Asserted BEFORE any await —
+    // republishing on success alone would leave that whole window serving a corpse.
+    const second = createContendedDatabase();
+    const remount = initializeDatabase(second.db);
+    expect(getDatabaseHandle()).toBeNull();
+    expect(isSchemaReady()).toBe(false);
+
+    await remount;
+    second.unlock();
+    await vi.advanceTimersByTimeAsync(FIRST_RETRY_DELAY_MS);
+
+    expect(getDatabaseHandle()).toBe(second.db);
+    expect(reportErrorMock).not.toHaveBeenCalled();
+  });
+
+  it('retargets when the remount lands during the attempt that wins', async () => {
+    const second = createContendedDatabase();
+    second.unlock();
+    let remounted = false;
+    // The remount lands mid-attempt, so this chain publishes a connection that is
+    // already being torn down. It has to notice on the way out and initialize the
+    // replacement itself: the remount was handed this promise, so nothing else will.
+    const first = createContendedDatabase({
+      // Fires on the mutation-queue DDL — the same seam the contended tests use, and
+      // late enough that `initializeDatabase` has finished assigning the single-flight
+      // guard, so this really is a remount arriving into a running chain.
+      onExec: (source) => {
+        if (remounted || !/pending_mutations/i.test(source)) return;
+        remounted = true;
+        void initializeDatabase(second.db);
+      },
+    });
+    first.unlock();
+
+    await initializeDatabase(first.db);
+    await vi.waitFor(() => {
+      expect(getDatabaseHandle()).toBe(second.db);
+    });
+
+    expect(isSchemaReady()).toBe(true);
+    expect(reportErrorMock).not.toHaveBeenCalled();
+    // Working around a remount is not recovering from contention — no lock was ever
+    // held, so the recovery event must stay quiet (#4325).
+    expect(trackMock).not.toHaveBeenCalled();
+  });
+
+  it('ignores a teardown for a connection a newer mount has already replaced', () => {
+    const first = createContendedDatabase();
+    const second = createContendedDatabase();
+    setDatabaseHandle(second.db);
+
+    // An effect cleanup can run after the replacement connection has published
+    // itself. Retracting unconditionally here would switch offline storage off for a
+    // database that is perfectly alive.
+    releaseDatabaseHandle(first.db);
+    expect(getDatabaseHandle()).toBe(second.db);
+    expect(isSchemaReady()).toBe(true);
+
+    // ...and the teardown that DOES own the published handle still retracts it.
+    releaseDatabaseHandle(second.db);
+    expect(getDatabaseHandle()).toBeNull();
+    expect(isSchemaReady()).toBe(false);
+  });
+
+  // #5366: the retarget path the fix above introduced published the connection it was
+  // retargeting AWAY from. `SQLiteProvider` closes a connection before the replacement
+  // reaches `initializeDatabase`, so a superseded target is a closed one — and every
+  // reader that took it got `Access to closed resource`, which is #5292's own symptom
+  // list (offline search, climb detail, local ticks) reintroduced by #5292's fix.
+  it('never serves the closed connection while it retargets onto the replacement', async () => {
+    vi.useFakeTimers();
+    // The replacement is lock-contended and never comes good, so the retarget spends
+    // the whole ladder — the window a reader lives in.
+    const handlesSeenDuringRetarget: unknown[] = [];
+    const second = createContendedDatabase({
+      onExec: () => {
+        handlesSeenDuringRetarget.push(getDatabaseHandle());
+      },
+    });
+
+    let remounted = false;
+    // The remount lands mid-attempt, so this connection is torn down and closed the
+    // moment its own setup succeeds.
+    const first = createContendedDatabase({
+      onExec: (source) => {
+        if (remounted || !/pending_mutations/i.test(source)) return;
+        remounted = true;
+        void initializeDatabase(second.db);
+      },
+    });
+    first.unlock();
+
+    await initializeDatabase(first.db);
+    await vi.advanceTimersByTimeAsync(WHOLE_LADDER_MS);
+
+    // The retarget really did run, and not one of its statements ran while a reader
+    // could have been handed the connection SQLiteProvider had already closed.
+    expect(handlesSeenDuringRetarget.length).toBeGreaterThan(0);
+    expect(handlesSeenDuringRetarget.every((handle) => handle === null)).toBe(true);
+
+    // ...and the chain that gave up on the replacement leaves nothing published, so a
+    // reader arriving after it falls back to the network instead of throwing.
+    expect(getDatabaseHandle()).toBeNull();
+    expect(isSchemaReady()).toBe(false);
+    // The give-up is reported as the ordinary lock failure it is — the closed
+    // connection never reaches Sentry as a sqlite-init artefact.
+    expect(reportErrorMock).toHaveBeenCalledTimes(1);
+    const [, context] = reportErrorMock.mock.calls[0];
+    expect(context.tags).toMatchObject({ kind: 'sqlite-init', sqlite_code: 5 });
+  });
+
+  // Where #5355 and #5371 actually meet, and the one path neither could have pinned:
+  // #5355 landed the interruptible backoff, #5371 landed the single gated publish, and
+  // each was reviewed against a tree without the other. A retarget the WAKE started,
+  // superseded again before it finishes, runs the publish gate on a connection the
+  // chain reached through the wake rather than through a slept-out gap — so it is the
+  // combination, not either change, that has to keep #5366's promise.
+  it('never publishes a woken retarget that is superseded before it finishes', async () => {
+    vi.useFakeTimers();
+    const contended = createContendedDatabase();
+
+    // What the chain ends up on. Every statement it runs must see a null handle: if the
+    // gate let the woken (and by then closed) retarget publish, that connection would
+    // already be on offer here.
+    const handlesSeenAfterSupersede: unknown[] = [];
+    const newest = createContendedDatabase({
+      onExec: () => {
+        handlesSeenAfterSupersede.push(getDatabaseHandle());
+      },
+    });
+    newest.unlock();
+
+    // The connection the wake retargets onto — closed out from under it by a third
+    // mount while its own setup is still running.
+    let supersededOnce = false;
+    const replacement = createContendedDatabase({
+      onExec: (source) => {
+        if (supersededOnce || !/pending_mutations/i.test(source)) return;
+        supersededOnce = true;
+        void initializeDatabase(newest.db);
+      },
+    });
+    replacement.unlock();
+
+    await initializeDatabase(contended.db);
+    // Park the chain in the first slow gap — the window a remount is invisible in
+    // without the wake, and the reason #5355 exists.
+    await vi.advanceTimersByTimeAsync(FAST_LADDER_MS);
+    expect(getDatabaseHandle()).toBeNull();
+
+    // The wake ends the gap and the loop retargets onto `replacement`.
+    await initializeDatabase(replacement.db);
+    await vi.advanceTimersByTimeAsync(1);
+
+    // The interleaving really happened: without this the assertions below hold
+    // vacuously against a chain that simply woke onto a connection nothing superseded.
+    expect(supersededOnce).toBe(true);
+    expect(handlesSeenAfterSupersede.length).toBeGreaterThan(0);
+    expect(handlesSeenAfterSupersede.every((handle) => handle === null)).toBe(true);
+    expect(getDatabaseHandle()).toBe(newest.db);
+    expect(isSchemaReady()).toBe(true);
+  });
+
+  // #5366: the other half. Once the refunds run out the guard used to fall through to
+  // the SUCCESS path, publishing the superseded connection as ready with no report at
+  // all — the same dead storage as a give-up, and less diagnosable than the bug #5336
+  // fixed.
+  it('reports rather than publishes when the superseded restarts run out', async () => {
+    // Five mounts, each superseding the one before mid-attempt: four refunds are
+    // asked for and only three exist.
+    const live = createContendedDatabase();
+    live.unlock();
+    // A handle published behind the chain's back, against a connection that is not the
+    // live one. Injected through the exported setter for the same reason the give-up
+    // twin below does it: with one gated publish nothing inside the lifecycle can reach
+    // this state, so the seam is what pins the retract on THIS exit as well. Without it
+    // the exhaustion path's `retractSupersededHandle()` can be deleted with the whole
+    // suite still green.
+    const stale = createContendedDatabase();
+    const supersedingChain = [live];
+    for (let index = 0; index < 4; index += 1) {
+      const next = supersedingChain[0];
+      // The mount that brings in `live` is the one that asks for the fourth refund, so
+      // its remount is the moment the stale handle has to be in place to be retracted.
+      const isLastRemount = index === 0;
+      let remounted = false;
+      const earlier = createContendedDatabase({
+        onExec: (source) => {
+          if (remounted || !/pending_mutations/i.test(source)) return;
+          remounted = true;
+          void initializeDatabase(next.db);
+          if (isLastRemount) setDatabaseHandle(stale.db);
+        },
+      });
+      earlier.unlock();
+      supersedingChain.unshift(earlier);
+    }
+
+    await initializeDatabase(supersedingChain[0].db);
+    await vi.waitFor(() => {
+      expect(reportErrorMock).toHaveBeenCalled();
+    });
+
+    // Nothing published: every connection this chain prepared was closed behind it,
+    // and the live one was never reached.
+    expect(getDatabaseHandle()).toBeNull();
+    expect(isSchemaReady()).toBe(false);
+    expect(reportErrorMock).toHaveBeenCalledTimes(1);
+    const [, context] = reportErrorMock.mock.calls[0];
+    // Its own kind: there was no lock here, and #4314 reads `sqlite-init` to decide
+    // whether the lock problem is fixed.
+    expect(context.tags).toMatchObject({ source: 'offline-sync', kind: 'sqlite-init-superseded' });
+    expect(context.extra).toMatchObject({ attempts: 4, restarts: 3 });
+    // Outrunning a remount loop is not recovering from contention.
+    expect(trackMock).not.toHaveBeenCalled();
+  });
+
+  // The readiness store is what `useSQLiteContext()` consumers gate their writes on,
+  // and they cannot see the handle at all. A null handle that still reads ready is the
+  // shape #5366 produced: `schemaReady: true` with every query throwing.
+  it('keeps schema readiness false for as long as the handle is null', async () => {
+    vi.useFakeTimers();
+    const contended = createContendedDatabase();
+
+    await initializeDatabase(contended.db);
+    expect(getDatabaseHandle()).toBeNull();
+    expect(isSchemaReady()).toBe(false);
+
+    // Still null after the whole window is spent, and still not ready.
+    await vi.advanceTimersByTimeAsync(WHOLE_LADDER_MS);
+    expect(getDatabaseHandle()).toBeNull();
+    expect(isSchemaReady()).toBe(false);
+
+    // ...and it only turns true against a handle a later mount actually publishes.
+    const healthy = createContendedDatabase();
+    healthy.unlock();
+    await initializeDatabase(healthy.db);
+    expect(getDatabaseHandle()).toBe(healthy.db);
+    expect(isSchemaReady()).toBe(true);
+  });
+
+  // The exit invariant behind the publish gate: a chain that stops must not leave a
+  // superseded connection published, whoever published it. Driven through the exported
+  // setter — the same seam the teardown test above uses — because with the single
+  // gated publish nothing inside the lifecycle can reach this state any more, and that
+  // is exactly the property a future second publish site would break.
+  it('retracts a superseded handle on the way out of a give-up', async () => {
+    vi.useFakeTimers();
+    const contended = createContendedDatabase();
+    const stale = createContendedDatabase();
+
+    await initializeDatabase(contended.db);
+
+    // Published behind the chain's back, against a connection that is not the live one.
+    setDatabaseHandle(stale.db);
+    expect(getDatabaseHandle()).toBe(stale.db);
+
+    await vi.advanceTimersByTimeAsync(WHOLE_LADDER_MS);
+
+    expect(getDatabaseHandle()).toBeNull();
+    expect(isSchemaReady()).toBe(false);
+  });
+
+  // #5410: a collected JS wrapper frees the native binding the live connection is
+  // still using. Prevention lives in `connection-pin.ts`; this is the safety net,
+  // and the thing it must get right is that a plain re-open is served the SAME dead
+  // instance, so the replacement has to be opened with `useNewConnection: true`.
+  describe('dead native handle recovery', () => {
+    const DEAD_HANDLE_MESSAGE =
+      "Call to function 'NativeDatabase.prepareAsync' has been rejected.\n→ Caused by: java.lang.NullPointerException: java.lang.NullPointerException";
+
+    /** A connection whose every call hits the freed pointer. */
+    function createDeadDatabase(): SQLiteDatabase {
+      const fail = async (): Promise<never> => {
+        throw new Error(DEAD_HANDLE_MESSAGE);
+      };
+      return {
+        execAsync: fail,
+        getFirstAsync: fail,
+        runAsync: fail,
+        withExclusiveTransactionAsync: fail,
+      } as unknown as SQLiteDatabase;
+    }
+
+    /** A live replacement over the real test database, plus the opener that yields it. */
+    function createReplacement() {
+      const calls: ({ useNewConnection?: boolean } | undefined)[] = [];
+      // How many init chains reached this connection. The epoch guards exist to keep
+      // it at one: two chains running migrations against one file is the contention
+      // the ladder exists to survive, self-inflicted.
+      let queueTableDdl = 0;
+      const replacement = {
+        execAsync: (source: string) => {
+          if (/CREATE TABLE IF NOT EXISTS pending_mutations/i.test(source)) queueTableDdl += 1;
+          return realDb.execAsync(source);
+        },
+        getFirstAsync: <T>(source: string, ...params: unknown[]) =>
+          realDb.getFirstAsync<T>(source, ...(params as never[])),
+        runAsync: (source: string, ...params: unknown[]) => realDb.runAsync(source, ...(params as never[])),
+        withExclusiveTransactionAsync: (task: (txn: unknown) => Promise<void>) =>
+          realDb.withExclusiveTransactionAsync(task as never),
+        options: { useNewConnection: true },
+        databasePath: 'boardsesh.db',
+      } as unknown as SQLiteDatabase;
+      const opener = vi.fn(async () => {
+        calls.push({ useNewConnection: true });
+        return replacement;
+      });
+      return { replacement, opener, calls, queueTableDdl: () => queueTableDdl };
+    }
+
+    beforeEach(() => {
+      resetDeadHandleRecoveryForTests();
+    });
+
+    afterEach(() => {
+      resetDeadHandleRecoveryForTests();
+    });
+
+    it('retracts the handle synchronously, before the re-open has resolved', () => {
+      const { opener } = createReplacement();
+      registerReplacementOpener(opener);
+      setDatabaseHandle(createDeadDatabase());
+
+      noteDatabaseHandleFailure(new Error(DEAD_HANDLE_MESSAGE), 'report');
+
+      // This alone stops the storm: every reader re-reads per call, so they fall back
+      // to the network instead of throwing again — worth it even if the re-open fails.
+      expect(getDatabaseHandle()).toBeNull();
+      expect(isSchemaReady()).toBe(false);
+    });
+
+    it('opens the replacement with useNewConnection, which is the whole escape', async () => {
+      const { opener } = createReplacement();
+      registerReplacementOpener(opener);
+
+      noteDatabaseHandleFailure(new Error(DEAD_HANDLE_MESSAGE), 'report');
+      await vi.waitFor(() => {
+        expect(getDatabaseHandle()).not.toBeNull();
+      });
+
+      // Without this flag the constructor is served the dead instance from
+      // `cachedDatabases` — its refcount never reached zero, so nothing evicted it.
+      expect(opener).toHaveBeenCalledTimes(1);
+    });
+
+    it('runs the migrations on the replacement rather than publishing a bare connection', async () => {
+      const { opener } = createReplacement();
+      registerReplacementOpener(opener);
+
+      noteDatabaseHandleFailure(new Error(DEAD_HANDLE_MESSAGE), 'report');
+      await vi.waitFor(() => {
+        expect(isSchemaReady()).toBe(true);
+      });
+
+      await expect(realDb.getFirstAsync('SELECT COUNT(*) AS n FROM pending_mutations')).resolves.toEqual({ n: 0 });
+    });
+
+    it('opens one connection however many consumers hit the dead handle at once', async () => {
+      const { opener } = createReplacement();
+      registerReplacementOpener(opener);
+
+      for (let consumer = 0; consumer < 10; consumer += 1) {
+        noteDatabaseHandleFailure(new Error(DEAD_HANDLE_MESSAGE), 'report');
+      }
+      await vi.waitFor(() => {
+        expect(getDatabaseHandle()).not.toBeNull();
+      });
+
+      expect(opener).toHaveBeenCalledTimes(1);
+    });
+
+    it('stops at the cap instead of re-opening forever when the replacement is dead too', async () => {
+      const opener = vi.fn(async () => createDeadDatabase());
+      registerReplacementOpener(opener);
+
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        noteDatabaseHandleFailure(new Error(DEAD_HANDLE_MESSAGE), 'report');
+        await vi.waitFor(() => {
+          expect(opener).toHaveBeenCalled();
+        });
+      }
+
+      // One per process here: the 30s interval gate holds the second attempt back.
+      expect(opener.mock.calls.length).toBeLessThanOrEqual(2);
+      expect(getDatabaseHandle()).toBeNull();
+    });
+
+    it('keeps the replacement when a later provider connection arrives', async () => {
+      const { opener, replacement } = createReplacement();
+      registerReplacementOpener(opener);
+
+      noteDatabaseHandleFailure(new Error(DEAD_HANDLE_MESSAGE), 'report');
+      await vi.waitFor(() => {
+        expect(getDatabaseHandle()).toBe(replacement);
+      });
+
+      // A remount's `openDatabaseAsync` is still served the dead native instance from
+      // the cache, so retargeting onto it would publish a dead handle as ready.
+      await initializeDatabase(createDeadDatabase());
+      expect(getDatabaseHandle()).toBe(replacement);
+      expect(isSchemaReady()).toBe(true);
+    });
+
+    it('reports the detection and the recovery under their own kind', async () => {
+      const { opener } = createReplacement();
+      registerReplacementOpener(opener);
+
+      noteDatabaseHandleFailure(new Error(DEAD_HANDLE_MESSAGE), 'report');
+      await vi.waitFor(() => {
+        expect(getDatabaseHandle()).not.toBeNull();
+      });
+
+      const kinds = reportErrorMock.mock.calls.map(([, context]) => context?.tags?.kind);
+      expect(kinds.filter((kind) => kind === 'sqlite-dead-handle')).toHaveLength(2);
+      expect(trackMock).toHaveBeenCalledWith(
+        SHARED_EVENTS.OfflineSqliteHandleRecovered,
+        expect.objectContaining({ shape: 'dead-native-handle', origin: 'report', recovered: true }),
+      );
+    });
+
+    it('opens one connection even once the interval gate would allow another', async () => {
+      // The cap and the 30s gate alone would hide a missing single-flight for a
+      // same-tick burst. Hold the opener open, step past the gate, and fire again:
+      // only `activeRecovery` can stop the second one.
+      let releaseOpen: (db: SQLiteDatabase) => void = () => {};
+      const pending = new Promise<SQLiteDatabase>((resolve) => {
+        releaseOpen = resolve;
+      });
+      const { replacement } = createReplacement();
+      const opener = vi.fn(() => pending);
+      registerReplacementOpener(opener);
+
+      noteDatabaseHandleFailure(new Error(DEAD_HANDLE_MESSAGE), 'report');
+      expect(opener).toHaveBeenCalledTimes(1);
+
+      vi.useFakeTimers();
+      vi.setSystemTime(Date.now() + MIN_RECOVERY_INTERVAL_MS + 1_000);
+      noteDatabaseHandleFailure(new Error(DEAD_HANDLE_MESSAGE), 'report');
+      expect(opener).toHaveBeenCalledTimes(1);
+      vi.useRealTimers();
+
+      releaseOpen(replacement);
+      await vi.waitFor(() => {
+        expect(getDatabaseHandle()).not.toBeNull();
+      });
+    });
+
+    it('stops the in-flight init chain instead of migrating the replacement twice', async () => {
+      // A chain parked in a retry gap must not wake up and run a second migration
+      // against the connection the recovery just published.
+      vi.useFakeTimers();
+      const contended = createContendedDatabase();
+      void initializeDatabase(contended.db);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(getDatabaseHandle()).toBeNull();
+
+      vi.useRealTimers();
+      const { opener, replacement } = createReplacement();
+      registerReplacementOpener(opener);
+      noteDatabaseHandleFailure(new Error(DEAD_HANDLE_MESSAGE), 'report');
+      await vi.waitFor(() => {
+        expect(getDatabaseHandle()).toBe(replacement);
+      });
+
+      // The old chain's target becomes healthy and its backoff elapses. It must stay
+      // stopped: the epoch moved on when the recovery retargeted the lifecycle.
+      contended.unlock();
+      vi.useFakeTimers();
+      await vi.advanceTimersByTimeAsync(INIT_RETRY_DELAYS_MS[0] + INIT_RETRY_DELAYS_MS[1] + 1_000);
+      vi.useRealTimers();
+
+      expect(getDatabaseHandle()).toBe(replacement);
+    });
+
+    it('stops a chain whose recovery landed mid-attempt, not only mid-backoff', async () => {
+      // The production case: the attempt is slow BECAUSE the file is contended, so
+      // the recovery lands while it is in flight rather than during a retry gap. The
+      // guard after the sleep cannot catch that one — the chain is already past it.
+      const { opener, replacement, queueTableDdl } = createReplacement();
+      let recoveryFired = false;
+      const contended = createContendedDatabase({
+        onFailure: () => {
+          if (recoveryFired) return;
+          recoveryFired = true;
+          registerReplacementOpener(opener);
+          noteDatabaseHandleFailure(new Error(DEAD_HANDLE_MESSAGE), 'report');
+        },
+      });
+
+      await initializeDatabase(contended.db);
+      await vi.waitFor(() => {
+        expect(getDatabaseHandle()).toBe(replacement);
+      });
+
+      // The superseded chain must not come back and publish its own target.
+      contended.unlock();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(getDatabaseHandle()).toBe(replacement);
+      // Both chains publish the same object, so the handle alone cannot tell them
+      // apart. The migration count can: the superseded chain must never have
+      // retargeted onto the replacement and run the DDL a second time.
+      expect(queueTableDdl()).toBe(1);
+    });
+
+    // NOT COVERED, and the one branch in this file that is not: an init attempt that
+    // is ALREADY IN FLIGHT when a recovery starts, and that then SUCCEEDS while the
+    // re-open is still resolving.
+    //
+    // It is not merely unexercised — instrumenting it found a real bug. The epoch used
+    // to be bumped inside the recovery's async body, after `await opener()`, so a chain
+    // completing in that window read the old epoch, found `latestDatabase` had not moved
+    // either, concluded it was not superseded, and published the connection we had just
+    // declared dead — overwriting the replacement a moment later. `getDatabaseHandle()`
+    // was measured as NOT the replacement. The bump is now synchronous, and the same
+    // instrumentation then showed the guard firing and the replacement published.
+    //
+    // So this branch is fixed and verified by hand, but it has no automated test. Five
+    // attempts to express it here all hang the event loop before the assertions, and
+    // three separate theories for why — the launch gate, leaked fake timers, and two
+    // overlapping migration chains sharing one node:sqlite handle — were each ruled out
+    // by measurement. The blocker is structural in this harness and still unidentified.
+    // Anyone touching the epoch logic should re-run that instrumentation by hand.
+
+    it('does not recover from a lock, which the existing ladder already handles', async () => {
+      const { opener } = createReplacement();
+      registerReplacementOpener(opener);
+      const live = createDeadDatabase();
+      setDatabaseHandle(live);
+
+      expect(noteDatabaseHandleFailure(new Error(LOCK_ERROR_MESSAGE), 'report')).toBe(false);
+
+      expect(opener).not.toHaveBeenCalled();
+      expect(getDatabaseHandle()).toBe(live);
+    });
   });
 });

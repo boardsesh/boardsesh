@@ -104,7 +104,16 @@ function _getCachedFn(boardName: BoardName, revalidate: number): CachedClimbSear
     // stats-less ones — cached truncated pages must not keep serving the old result.
     // v8: rows now carry compatibleSizeIds; a cached v7 row lacks it, which reads
     // as "no compatibility data" and switches the client-side size check off.
-    fn = unstable_cache(_executeClimbSearch, [`climb-search-v9:${boardName}`], {
+    // v10: Woods and MoonBoard now resolve stats through the climb's own set angle,
+    // so those boards return a different (much larger) result set at any angle the
+    // problem was not set at, and every row carries statsAngle (#5405). Nothing in
+    // the params JSON moved — the server decides it from the board — so a cached v9
+    // page would keep serving the truncated list.
+    // v11: Woods reverses that by default — a search without `crossAngleStats: true`
+    // (the SSR path never sends it) keeps only the climbs set at the browsed angle,
+    // with no set angle, or with stats there (#5642). The params JSON did not move
+    // for it either, so a cached v10 page would keep serving every angle's climbs.
+    fn = unstable_cache(_executeClimbSearch, [`climb-search-v11:${boardName}`], {
       revalidate,
       tags: ['climb-search', getBoardClimbSearchTag(boardName)],
     });

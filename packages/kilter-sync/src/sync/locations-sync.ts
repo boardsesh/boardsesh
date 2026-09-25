@@ -1,4 +1,6 @@
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
+import { inArray } from 'drizzle-orm';
+import { kilterWallSources, userBoards } from '@boardsesh/db/schema';
 import {
   resolveKilterInstallConfig,
   toLocationSyncLogger,
@@ -6,6 +8,7 @@ import {
   type PublicBoardLocationInput,
   type SizeEdgesInput,
   upsertPublicBoardLocations,
+  boardUuidForSource,
 } from '@boardsesh/location-sync';
 import type { KilterReferencePull, KilterRefGym, KilterRefProductLayout, KilterRefWall } from './reference-pull';
 import type { LayoutResolver } from './layout-resolver';
@@ -170,6 +173,45 @@ export async function syncKilterLocations(args: {
   const { records, skipped } = buildKilterLocationRecords(args.reference, args.resolver);
   const summary = await upsertPublicBoardLocations(args.db, records, {
     logger: toLocationSyncLogger(args.log),
+  });
+  // Persist selectors from the reference snapshot, never reconstruct a wall
+  // from layout/serial alone. Keep source rows so merge tombstones still resolve.
+  const validRecords = records.filter(
+    (record) => Number.isFinite(record.latitude) && Number.isFinite(record.longitude),
+  );
+  const boardUuids = validRecords.map((record) => boardUuidForSource(record.sourceKey));
+  const existingBoards = boardUuids.length
+    ? await args.db.select({ uuid: userBoards.uuid }).from(userBoards).where(inArray(userBoards.uuid, boardUuids))
+    : [];
+  const existingUuids = new Set(existingBoards.map((board) => board.uuid));
+  const wallsByKey = new Map(
+    args.reference.walls
+      .filter((wall) => wall.gymUuid)
+      .map((wall) => [`kilter:${wall.gymUuid}:${wall.wallUuid || wall.id}`, wall]),
+  );
+  await args.db.transaction(async (transaction) => {
+    await transaction.update(kilterWallSources).set({ isListed: false });
+    for (const record of validRecords) {
+      const wall = wallsByKey.get(record.sourceKey);
+      const sourceBoardUuid = boardUuidForSource(record.sourceKey);
+      if (!existingUuids.has(sourceBoardUuid) || !wall?.gymUuid || !wall.productLayoutUuid) continue;
+      const mapping = {
+        sourceKey: record.sourceKey,
+        sourceBoardUuid,
+        gymUuid: wall.gymUuid,
+        productLayoutUuid: wall.productLayoutUuid,
+        wallUuid: wall.wallUuid || wall.id,
+        layoutId: record.layoutId,
+        sizeId: record.sizeId,
+        setIds: record.setIds,
+        isListed: true,
+        updatedAt: new Date(),
+      };
+      await transaction
+        .insert(kilterWallSources)
+        .values(mapping)
+        .onConflictDoUpdate({ target: kilterWallSources.sourceKey, set: mapping });
+    }
   });
   // Merge the upsert-side skips (e.g. invalid coordinates) with the kilter-side
   // skips (unlisted / unmapped / unsupported) and dedupe — boardsSkipped tracks

@@ -4,6 +4,9 @@ import { act, render, waitFor } from '@testing-library/react';
 import { createElement, useLayoutEffect, useState } from 'react';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { buildBoardClimbTarget, type BoardRouteTarget } from '../board-route-target';
+import { createClimbHandoffIntent } from '../climb-handoff-intent';
+
+vi.mock('expo-crypto', () => ({ randomUUID: () => 'internal-tick-intent' }));
 
 const router = vi.hoisted(() => ({ replace: vi.fn(), back: vi.fn(), canGoBack: vi.fn(() => true), push: vi.fn() }));
 const openPlayDrawer = vi.hoisted(() => vi.fn());
@@ -151,16 +154,19 @@ function duplicateBoardRejection(existingBoardUuid: string) {
 function Harness({
   target,
   mode,
+  activationIntent,
   onHandedOff,
   anonymousClimbEnabled,
 }: {
   target: BoardRouteTarget | null;
   mode?: 'deep-link' | 'in-app';
+  activationIntent?: string | string[];
   onHandedOff?: () => void;
   anonymousClimbEnabled?: boolean;
 }) {
   const { status, climb, boardConfig, isAngleAdjustable } = useBoardRouteTarget(target, {
     mode,
+    activationIntent,
     onHandedOff,
     anonymousClimbEnabled,
   });
@@ -197,6 +203,8 @@ beforeEach(() => {
   // `clearAllMocks` wipes calls, not implementations — and one case below gives
   // `replace` a real one that unmounts the harness.
   router.replace.mockReset();
+  router.back.mockReset();
+  openClimbInPlayDrawer.mockReset();
   router.canGoBack.mockReturnValue(true);
   resolveBoardForSession.mockResolvedValue(RESOLVED_BOARD);
   fetchAllMyBoards.mockResolvedValue([]);
@@ -260,10 +268,20 @@ describe('useBoardRouteTarget', () => {
     expect(replaceOrder).toBeLessThan(openOrder);
   });
 
-  // The in-app pop is the mirror image: popping first would take the screen the
-  // drawer is supposed to return to with it.
-  it('opens the drawer before popping back for an in-app target', async () => {
+  // The in-app pop leaves FIRST, for the same reason the replace does: opening
+  // navigates to `/play`, and `back()` acts on whatever is on top. Asserted
+  // against a modelled stack rather than call order, because call order is
+  // exactly what the old, broken version got right — it opened the drawer and
+  // then popped it straight back off, stranding the redirector on its spinner.
+  it('pops the redirector without dismissing the drawer it just opened', async () => {
     climbQuery.current = { data: { uuid: CLIMB_UUID }, isError: false, isSuccess: true };
+    const stack = ['/(tabs)/climbs/[climbUuid]'];
+    openClimbInPlayDrawer.mockImplementation(() => {
+      stack.push('/play');
+    });
+    router.back.mockImplementation(() => {
+      stack.pop();
+    });
 
     render(
       createElement(Harness, {
@@ -273,9 +291,8 @@ describe('useBoardRouteTarget', () => {
     );
 
     await waitFor(() => expect(openClimbInPlayDrawer).toHaveBeenCalledTimes(1));
-    const [openOrder] = openClimbInPlayDrawer.mock.invocationCallOrder;
-    const [backOrder] = router.back.mock.invocationCallOrder;
-    expect(openOrder).toBeLessThan(backOrder);
+    expect(router.back).toHaveBeenCalled();
+    expect(stack).toEqual(['/play']);
   });
 
   // A second URL through the same mounted screen is what the web build does when
@@ -357,6 +374,50 @@ describe('useBoardRouteTarget', () => {
     expect(resolveBoardForSession).not.toHaveBeenCalled();
     expect(setActiveBoard).not.toHaveBeenCalled();
     expect(router.back).toHaveBeenCalled();
+  });
+
+  // #5254. The `ref` fallback is how a session / logbook tick with no `frames`
+  // finishes its open, and that tap meant "put this climb up". Forcing preview
+  // here made the same gesture light the wall or not depending on whether the
+  // tick payload happened to carry frames.
+  it('commits the climb when the opener asked for an active open', async () => {
+    climbQuery.current = { data: { uuid: CLIMB_UUID }, isError: false, isSuccess: true };
+
+    render(
+      createElement(Harness, {
+        target: { kind: 'climb', board: KILTER_BOARD, climbUuid: CLIMB_UUID } as BoardRouteTarget,
+        mode: 'in-app',
+        activationIntent: createClimbHandoffIntent({
+          kind: 'climb',
+          board: KILTER_BOARD,
+          climbUuid: CLIMB_UUID,
+        } as BoardRouteTarget),
+      }),
+    );
+
+    await waitFor(() => expect(openClimbInPlayDrawer).toHaveBeenCalledTimes(1));
+    expect(openClimbInPlayDrawer).toHaveBeenCalledWith(
+      { kind: 'climb', climb: { uuid: CLIMB_UUID }, boardConfig: KILTER_BOARD },
+      expect.anything(),
+      { preview: false },
+    );
+  });
+
+  // Preview stays the default for everything that does not ask: pasted URLs,
+  // and the `ref` callers that mean "show me this climb" (the moderation feed,
+  // notification rows, the create screen's duplicate viewer).
+  it('keeps the preview default for an in-app target that asks for nothing', async () => {
+    climbQuery.current = { data: { uuid: CLIMB_UUID }, isError: false, isSuccess: true };
+
+    render(
+      createElement(Harness, {
+        target: { kind: 'climb', board: KILTER_BOARD, climbUuid: CLIMB_UUID } as BoardRouteTarget,
+        mode: 'in-app',
+      }),
+    );
+
+    await waitFor(() => expect(openClimbInPlayDrawer).toHaveBeenCalledTimes(1));
+    expect(openClimbInPlayDrawer).toHaveBeenCalledWith(expect.anything(), expect.anything(), { preview: true });
   });
 
   // A cold deep-link open lands while the session round-trip is still in flight.

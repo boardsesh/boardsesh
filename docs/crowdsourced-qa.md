@@ -10,8 +10,9 @@ Three pieces, landing in this order:
    by CI.
 2. **The backend** (`qaPreviews` query, `submitQaVerdict` mutation): serves a PR's plan to the app
    and posts the verdict to GitHub.
-3. **The app** (ships with the next native build): a tester is asked on launch to pick a PR
-   preview, reads the plan, and files a verdict from the user drawer.
+3. **The app**: testers can enable **Show previews on launch** under **More → Previews** to be
+   asked to pick a PR at startup; this defaults to off. Anyone can open a preview manually,
+   read the plan, and file a verdict from the user drawer.
 
 The pick screen's spine is xprem's branch list, not GitHub: `listPrBranches` asks
 `GET /branch_lists?all=1` for **every** `pr-<n>` branch published for this build's exact
@@ -272,12 +273,19 @@ token could carry scopes on both.
 
 Every backend log line for this feature is tagged `[qa]`.
 
-- **A verdict is missing from a PR.** `SELECT * FROM qa_verdicts WHERE github_comment_id IS NULL` —
-  those rows were recorded but never mirrored. The row is the record; the comment is a copy. The
-  usual cause is a missing or under-scoped App installation (grep `[github-app]` for the mint
-  failure, then `[qa] no GitHub App token available`) or a 403 (`[qa] posting the verdict comment`).
-  There is no retry queue: fix the App credentials, and new verdicts mirror again. Older rows can be
-  replayed by hand from the table.
+- **A verdict is missing from a PR.** You should not find this out by noticing. Every dropped
+  mirror — comment or label — files a Sentry event, `GithubMirrorDropError`, tagged
+  `github_mirror.operation` / `.reason` / `.status` and scoped to the tester whose write was lost.
+  The event's `github_mirror` context names the `qa_verdicts` row, the PR, GitHub's request id and
+  its (redacted) response body, plus the exact replay query. Same line on the backend logger under
+  `[github-mirror]`.
+
+  The standing query still works and is the way to sweep for older rows:
+  `SELECT * FROM qa_verdicts WHERE github_comment_id IS NULL` — those rows were recorded but never
+  mirrored. The row is the record; the comment is a copy. The usual cause is a missing or
+  under-scoped App installation (grep `[github-app]` for the mint failure) or a 403.
+  There is no retry queue, by decision: fix the App credentials, and new verdicts mirror again.
+  Older rows are replayed by hand from the table.
 
 - **Every GitHub write stopped at once.** Almost always the App key: expired, revoked, or the App
   uninstalled from the repo. `[github-app] could not mint an installation token` names the status —

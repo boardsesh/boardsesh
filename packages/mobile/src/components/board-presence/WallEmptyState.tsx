@@ -9,6 +9,7 @@ import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider'
 import { useTheme } from '../../providers/theme-provider';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { hapticSelection } from '../../lib/haptics';
+import { trackBoardConnectTapped } from '../../lib/analytics-board-connect';
 import { spacing } from '../../theme/tokens';
 
 /**
@@ -37,7 +38,9 @@ function WallEmptyStateComponent() {
 
   const handleConnect = useCallback(() => {
     hapticSelection();
-    void bluetooth?.connect();
+    if (!bluetooth) return;
+    trackBoardConnectTapped({ surface: 'wall_empty_state', boardName: bluetooth.boardName, reconnect: false });
+    void bluetooth.connect();
   }, [bluetooth]);
 
   // No hapticSelection here: taking the wall is a state change, and

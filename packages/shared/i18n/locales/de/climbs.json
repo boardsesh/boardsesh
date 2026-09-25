@@ -1,4 +1,27 @@
 {
+  "authors": {
+    "selectHint": "Setze ein Häkchen, um Boulder zu filtern. Tippe zum Stöbern auf einen Namen.",
+    "selectedCount": "{{count}} ausgewählt",
+    "viaUserFollow": "Über eine Person, der du folgst",
+    "followingHint": "Enthält verknüpfte Konten von Personen, denen du folgst. Folgen speichert Routenbauer*innen direkt.",
+    "follow": "Folgen",
+    "unfollow": "Nicht mehr folgen",
+    "following": "Gefolgt",
+    "allSetters": "Alle Routenbauer*innen",
+    "followingClimbs": "Boulder von Leuten, denen ich folge",
+    "playlistSubtitle": "Alle Boulder auf diesem Board · Neueste zuerst",
+    "signIn": "Melde dich an, um zu folgen",
+    "syncNeeded": "Verbinde dich, um deine Abos und verknüpften Routenbauer*innen zu synchronisieren.",
+    "followError": "Folgen konnte nicht aktualisiert werden. Versuch es erneut.",
+    "loadError": "Diese Boulder konnten nicht geladen werden.",
+    "empty": "Noch keine Boulder von dieser Person auf diesem Board.",
+    "chooseBoard": "Wähle ein Board",
+    "retry": "Erneut versuchen",
+    "newClimb": "Neuer Boulder",
+    "newClimbCount_one": "1 neuer Boulder",
+    "newClimbCount_other": "{{count}} neue Boulder",
+    "seeAllClimbs": "Alle {{count}} ansehen"
+  },
   "sends_one": "{{formattedCount}} Begehung",
   "sends_other": "{{formattedCount}} Begehungen",
   "metadata": {
@@ -143,6 +166,11 @@
       "body": "In diesem Winkel hat es noch niemand getoppt – der Grad kommt daher, wie es im anderen Winkel geht.",
       "bodyRange": "In diesem Winkel hat es noch niemand getoppt – wahrscheinlich {{low}}–{{high}}, abgeleitet vom anderen Winkel."
     },
+    "moonboardWideAngle": {
+      "label": "Grobe Schätzung",
+      "body": "In diesem Winkel hat es noch niemand getoppt – das ist eine grobe Schätzung, abgeleitet davon, wie sich andere Boards je nach Winkel verändern.",
+      "bodyRange": "In diesem Winkel hat es noch niemand getoppt – wahrscheinlich {{low}}–{{high}}, eine grobe Schätzung, abgeleitet davon, wie sich andere Boards je nach Winkel verändern."
+    },
     "dumbbell": {
       "legendBoardsesh": "Boardsesh-Grad",
       "legendCrowd": "Alter Grad",
@@ -183,6 +211,12 @@
     "namePlaceholder": "Boulder-Name",
     "descriptionPlaceholder": "Beta oder Notizen zu deinem Boulder…",
     "dismiss": "Ausblenden",
+    "cannotOpen": {
+      "boardCannotAuthor": "An diesem Board kannst du noch keine Boulder bauen.",
+      "boardConfigIncomplete": "Die Board-Angaben fehlen oder sind ungültig. Wähl das Board erneut, um deinen Boulder zu bauen.",
+      "noUsableBoard": "Wähl erst ein Board, dann bau deinen Boulder.",
+      "boardTypeUnsupported": "Mit dieser App-Version kannst du an diesem Board noch keine Boulder bauen. Wähl ein anderes Board."
+    },
     "alerts": {
       "publishDuplicateNamed": "Dieses Griff-Muster passt zu „{{name}}“. Schalte auf Entwurf, um ihn ohne Veröffentlichung zu speichern, oder ändere einen Griff.",
       "publishDuplicateUnnamed": "Dieses Griff-Muster passt zu einem bestehenden Boulder. Schalte auf Entwurf, um ihn ohne Veröffentlichung zu speichern, oder ändere einen Griff.",
@@ -334,13 +368,18 @@
     },
     "emptyState": {
       "noBoard": {
-        "title": "Folge deiner Wand",
-        "subtitle": "Wähl das Board, an dem du kletterst, um seine Boulder zu durchstöbern und zu sehen, was gerade beleuchtet ist.",
+        "title": "Wähl dein Board",
+        "subtitle": "Such dir das Board aus, an dem du kletterst, um seine Boulder zu durchstöbern und sie am Board zu beleuchten.",
         "cta": "Mein Board finden"
       },
       "noClimbs": {
         "title": "Keine Boulder gefunden",
         "subtitle": "Pass deine Board-Einstellungen an"
+      },
+      "unsetWall": {
+        "title": "Hier hat noch niemand geschraubt",
+        "subtitle": "Wähl deine Griffe, gib dem Boulder einen Namen — fertig ist der erste.",
+        "cta": "Ersten Boulder schrauben"
       },
       "noMatches": {
         "title": "Keine Treffer",
@@ -360,6 +399,10 @@
       "offlineCatalogQueued": {
         "title": "Steht in der Warteschlange",
         "subtitle": "{{name}} lädt, sobald du wieder online bist, danach tauchen die Boulder in der Suche auf."
+      },
+      "boardRestoreFailed": {
+        "title": "Dein Board konnte nicht wiederhergestellt werden",
+        "description": "Versuch es erneut, um zu deinen Bouldern zurückzukehren."
       }
     },
     "detail": {
@@ -429,10 +472,15 @@
         "sort": "Sortierung"
       },
       "popularity": "Beliebtheit",
-      "shape": "Form",
       "collection": {
         "label": "Sammlung",
         "any": "Beliebig"
+      },
+      "holdIntegrity": {
+        "label": "Griffe",
+        "any": "Alle",
+        "intact": "Nur intakte",
+        "broken": "Fehlende Griffe"
       },
       "pin": "An Schnellzugriff anpinnen",
       "unpin": "Aus Schnellzugriff entfernen",
@@ -440,6 +488,7 @@
       "benchmark": "Benchmarks",
       "showCount_one": "{{count}} Boulder zeigen",
       "showCount_other": "{{count}} Boulder zeigen",
+      "countNote": "Jeder Boulder zählt nur einmal, nicht je Winkel.",
       "sort": {
         "ascents": "Begehungen",
         "quality": "Qualität",
@@ -480,12 +529,16 @@
       "tall": "Nur hohe Boulder",
       "tallClimbs": "Hohe Boulder",
       "tallDescription": "Reichen bis nach oben",
+      "tallLockedHint": "Gesperrt. Halte den Filter „Hoch“ gedrückt, um ihn zu entsperren.",
       "wide": "Nur breite Boulder",
       "wideClimbs": "Breite Boulder",
       "wideDescription": "Nutzen die 10x10-Seitenerweiterung",
+      "wideLockedHint": "Gesperrt. Halte den Filter „Breit“ gedrückt, um ihn zu entsperren.",
       "betaVideos": "Nur mit Beta-Video",
       "betaVideosShort": "🎥 Beta",
       "betaVideosDescription": "Nur Boulder mit Beta-Video",
+      "otherAngles": "Andere Winkel",
+      "otherAnglesDescription": "Zeigt Boulder, die in einem anderen Winkel geschraubt wurden",
       "searchSetters": "Routenbauer*innen suchen",
       "noSetters": "Noch keine Routenbauer*innen",
       "clearAll": "Alles zurücksetzen",
@@ -520,7 +573,9 @@
       "chips": {
         "filtersWithCount": "Filter · {{count}}",
         "tall": "Hoch",
-        "wide": "Breit"
+        "wide": "Breit",
+        "lock": "Sperren",
+        "unlock": "Entsperren"
       },
       "removeFilterAria": "{{filter}} entfernen"
     },
@@ -557,7 +612,9 @@
         "footless": "Ohne Füße",
         "footlessKickboard": "Ohne Füße + KB",
         "noKickboard": "Ohne KB"
-      }
+      },
+      "setAngleMarker": "{{angle}}°",
+      "setAngleMarkerAria": "Bewertung und Begehungen stammen von {{angle}} Grad"
     },
     "climbRules": {
       "matchingAllowed": "Matchen erlaubt",
@@ -597,8 +654,19 @@
       "chip": "Ausgeblendet",
       "banner": "Von der Community ausgeblendet"
     },
+    "lostHolds": {
+      "chip_one": "{{count}} Griff weg",
+      "chip_other": "{{count}} Griffe weg",
+      "chipAria_one": "{{count}} Griff ist nicht mehr an der Wand",
+      "chipAria_other": "{{count}} Griffe sind nicht mehr an der Wand",
+      "banner_one": "{{count}} Griff von diesem Boulder ist weg",
+      "banner_other": "{{count}} Griffe von diesem Boulder sind weg",
+      "bannerBody": "Remixe ihn mit dem, was jetzt an der Wand ist.",
+      "remix": "Remixen"
+    },
     "climbActions": {
       "preview": "Vorschau",
+      "playNext": "Als Nächstes dran",
       "copyLink": "Link kopieren",
       "linkCopied": "Link kopiert",
       "nameCopied": "Name kopiert",
@@ -611,7 +679,8 @@
       "edit": "Boulder bearbeiten",
       "editEntry": "Routenbuch-Eintrag bearbeiten",
       "report": "Boulder melden",
-      "closeOverlay": "Boulder-Aktionen schließen"
+      "closeOverlay": "Boulder-Aktionen schließen",
+      "openQueue": "Warteschlange öffnen"
     },
     "create": {
       "brush": {
@@ -706,7 +775,8 @@
         }
       },
       "publish": {
-        "blocked": "Füge einen Startgriff und einen Topgriff hinzu, um zu veröffentlichen"
+        "blocked": "Füge einen Startgriff und einen Topgriff hinzu, um zu veröffentlichen",
+        "gradeBlocked": "Wähle deine Schwierigkeit zum Veröffentlichen"
       },
       "wallSizeMismatch": "Wähle diese Woods-Größe als aktives Board, um es zu beleuchten.",
       "routeMenu": {
@@ -714,6 +784,11 @@
         "makeRoute": "Zur Route machen",
         "makeBoulder": "Zum Boulder machen",
         "makeBoulderBlocked": "Zum Boulder machen — erst Bilder löschen"
+      },
+      "grade": {
+        "label": "Deine Schwierigkeit",
+        "required": "Zum Veröffentlichen nötig",
+        "optional": "Bei einem Entwurf optional"
       }
     },
     "holdFilter": {
@@ -764,6 +839,29 @@
     },
     "setterNotes": {
       "title": "Notizen vom Routenbau"
+    },
+    "heatmap": {
+      "show": "Griff-Heatmap zeigen",
+      "hide": "Griff-Heatmap ausblenden",
+      "modeLabel": "Griffe färben nach",
+      "modes": {
+        "uses": "Meistgenutzt",
+        "ascents": "Meiste Begehungen",
+        "difficulty": "Grad"
+      },
+      "legendLow": "Weniger",
+      "legendHigh": "Mehr",
+      "legendEasy": "Leichter",
+      "legendHard": "Schwerer",
+      "filtered": "Gefiltert · {{summary}}",
+      "wholeBoard": "Ganzes Board",
+      "wholeBoardHint": "Zählt stattdessen jeden Boulder am Board",
+      "useFiltersHint": "Zählt nur die Boulder, die zu deinen Filtern passen",
+      "filterUnsupported": "Die Heatmap kann einem Griff-Filter noch nicht folgen. Tipp auf den Chip, um das ganze Board zu sehen.",
+      "empty": "Kein Boulder passt zu diesen Filtern.",
+      "loadFailed": "Die Heatmap konnte nicht geladen werden. Versuch es gleich noch mal.",
+      "needsDownload": "Lade dieses Board herunter, um zu sehen, wo die Boulder sind.",
+      "unavailable": "Die Heatmap ist gerade nicht verfügbar."
     }
   },
   "frontDoor": {
@@ -799,18 +897,48 @@
     },
     "beta": {
       "heading": "Beta-Videos",
-      "empty": "Noch keine Beta gefilmt."
+      "empty": "Noch keine Beta gefilmt.",
+      "unavailable": "Die Beta wurde nicht geladen. Lad die Seite neu, um es nochmal zu probieren."
     },
     "community": {
       "heading": "Community"
     },
     "similar": {
-      "heading": "Boulder wie dieser"
+      "heading": "Boulder wie dieser",
+      "unavailable": "Ähnliche Boulder wurden nicht geladen. Wird erneut geladen…"
     },
     "cta": {
       "climbThis": "Boulder jetzt",
       "ariaLabel": "{{climbName}} in der Boardsesh-App öffnen",
       "helper": "Öffnet die App, beleuchtet die Griffe, loggt die Begehung."
+    }
+  },
+  "spray": {
+    "unknownGrade": "Ohne Bewertung",
+    "unknownSetter": "unbekannter Hand",
+    "heading": "{{climbName}} — {{grade}}",
+    "summary": "An {{wallName}}, einer Spraywall mit {{angle}}° und {{holdCount}} Griffen.",
+    "setterLine": "Geschraubt von {{setter}}. {{ascents}} Begehungen erfasst.",
+    "ascentsLine": "{{ascents}} Begehungen erfasst.",
+    "setterNotesHeading": "Notizen der Routenbauer*in",
+    "keepLookingHeading": "Weiterstöbern",
+    "setterLink": "Mehr Boulder von {{setter}}",
+    "gymsLink": "Finde eine Halle mit Boards",
+    "homeLink": "Boardsesh-Startseite",
+    "photoAlt": "{{climbName}}, {{grade}}, markiert auf der Spraywall {{wallName}}",
+    "noPhoto": "Für diese Wand gibt es noch kein Foto.",
+    "metadata": {
+      "title": "{{climbName}} {{grade}} an {{wallName}} | Spraywall",
+      "description": "{{climbName}}, {{grade}}, an der Spraywall {{wallName}} mit {{angle}}°, geschraubt von {{setter}}. Sieh dir die Griffe auf dem Wandfoto an."
+    },
+    "wall": {
+      "summary": "Eine Spraywall mit {{angle}}° und {{holdCount}} Griffen.",
+      "photoAlt": "Die Spraywall {{wallName}}",
+      "openInApp": "Öffne diese Wand in der Boardsesh-App, um ihre Boulder zu sehen, eigene zu schrauben und deine Begehungen zu erfassen.",
+      "metadata": {
+        "title": "{{wallName}} | Spraywall",
+        "description": "{{wallName}}, eine Spraywall mit {{angle}}°. Sieh dir die Wand an und öffne sie in der Boardsesh-App."
+      }
     }
   }
 }

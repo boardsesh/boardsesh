@@ -172,6 +172,16 @@ class String {
         return pos == std::string::npos ? -1 : (int)pos;
     }
 
+    // Arduino's own String carries this overload; the mock did not, so any
+    // firmware that walks a path segment by segment could not be tested on the
+    // host at all.
+    int indexOf(char c, unsigned int fromIndex) const {
+        if (fromIndex >= data_.length())
+            return -1;
+        size_t pos = data_.find(c, fromIndex);
+        return pos == std::string::npos ? -1 : (int)pos;
+    }
+
     int indexOf(const String& str) const {
         size_t pos = data_.find(str.data_);
         return pos == std::string::npos ? -1 : (int)pos;

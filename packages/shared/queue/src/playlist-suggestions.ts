@@ -88,20 +88,29 @@ export function pruneSuggestedQueueItemsAfterCurrent(queue: ClimbQueue, currentI
 }
 
 /**
- * Insert a queue item immediately after the current item.
- * If the item already exists in the queue (by uuid), returns the original array.
- * If currentItem is null or not found, appends to the end.
+ * Re-anchor a suggestion source on the climb that is actually being committed.
+ *
+ * A source records the climb its pass STARTED from (`activatedClimbUuid`), and
+ * everything downstream — `getPlaylistSuggestedClimbs`, the peek walk in
+ * `findNextQueueItemWithSuggestions`, the remaining count — measures from there.
+ * That is right while the pass is walking forward from the tapped climb, and
+ * wrong the moment a climber browses from A to Z and puts Z up: committing Z
+ * with a source still anchored on A aims "next" at whatever followed A, which is
+ * a climb the climber walked past several swipes ago.
+ *
+ * Returns the source unchanged when there is nothing to fix — no source, already
+ * anchored here, or a climb the source does not contain (a peek from some other
+ * track), since anchoring on a climb that is not in `climbs` would make the
+ * whole list read as exhausted.
  */
-export function insertQueueItemAfterCurrent(
-  queue: ClimbQueue,
-  currentItem: ClimbQueueItem | null,
-  item: ClimbQueueItem,
-): ClimbQueue {
-  if (queue.some((queueItem) => queueItem.uuid === item.uuid)) return queue;
-
-  const currentIndex = currentItem ? queue.findIndex((queueItem) => queueItem.uuid === currentItem.uuid) : -1;
-  if (currentIndex === -1) return [...queue, item];
-  return [...queue.slice(0, currentIndex + 1), item, ...queue.slice(currentIndex + 1)];
+export function reanchorPlaylistSuggestionSource(
+  source: PlaylistSuggestionSource | null,
+  activatedClimbUuid: string | undefined,
+): PlaylistSuggestionSource | null {
+  if (!source || !activatedClimbUuid) return source;
+  if (source.activatedClimbUuid === activatedClimbUuid) return source;
+  if (!source.climbs.some((climb) => climb.uuid === activatedClimbUuid)) return source;
+  return { ...source, activatedClimbUuid };
 }
 
 /**
@@ -142,9 +151,12 @@ export function getQueueBoardKey(target: QueueBoardKeyTarget): string {
 /**
  * Construct a PlaylistSuggestionSource from the activated climb plus the
  * visible/fetched playlist climbs. The activated climb is always kept; every
- * other climb is kept only when `isClimbable(climb)` returns true. Web passes a
- * `canAddClimbToBoard`-backed predicate; mobile (single active board) can omit
- * it (defaults to keeping everything).
+ * other climb is kept only when `isClimbable(climb)` returns true.
+ *
+ * Mobile passes a `canAddClimbToBoard`-backed predicate (see
+ * `use-playlist-activation.ts`) so a mixed-board playlist can't feed `next` a
+ * climb the wall can't draw. Web has no consumer since the climbing UI moved to
+ * the Expo app in W-16 (#4435). Omitting the predicate keeps everything.
  */
 export function createPlaylistSuggestionSource({
   playlistUuid,

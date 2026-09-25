@@ -1,0 +1,235 @@
+/* The shared frame for every long-form page: /about, /help, /support, /legal,
+ * /privacy. Before this module each of those owned a near-duplicate copy of
+ * .pageLayout / .header / .content, and /legal imported /about's outright.
+ *
+ * Colours are CSS vars from app/components/index.css — never literals. */
+
+.pageShell {
+  /* The ONE place the fixed MarketingHeader's height is cleared. If you find
+     yourself adding var(--global-header-height) to a page, use this instead. */
+  padding-top: calc(var(--global-header-height) + var(--spacing-6));
+  padding-bottom: var(--spacing-16);
+  background: var(--semantic-background);
+  /* min-height, never margin: e2e/site-chrome.spec.ts measures
+     scrollHeight - footerBottom < 24, so a trailing margin reads as a dead
+     gutter under the footer. */
+  min-height: calc(100dvh - var(--global-header-height));
+}
+
+.inner {
+  margin: 0 auto;
+  padding: 0 var(--spacing-8);
+  width: 100%;
+}
+
+/* Reading measure for long-form copy. ~68ch is the comfortable line length; the
+   760px cap keeps it from stretching on a wide viewport at a large font size. */
+.prose {
+  max-width: min(68ch, 760px);
+}
+
+.wide {
+  max-width: 1200px;
+}
+
+.header {
+  margin-bottom: var(--spacing-8);
+}
+
+.headerCenter {
+  text-align: center;
+}
+
+.eyebrow {
+  display: block;
+  margin-bottom: var(--spacing-2);
+  color: var(--color-primary);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.breadcrumb {
+  margin-bottom: var(--spacing-4);
+  font-size: var(--font-size-sm);
+  color: var(--neutral-500);
+}
+
+.header .title {
+  margin: 0;
+  font-size: 40px;
+  line-height: 1.15;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+}
+
+.header .titleCompact {
+  font-size: 24px;
+}
+
+@media (max-width: 760px) {
+  .header .title {
+    font-size: 32px;
+  }
+
+  .header .titleCompact {
+    font-size: 21px;
+  }
+}
+
+.header .lead {
+  margin-top: var(--spacing-3);
+  color: var(--neutral-500);
+}
+
+/* ---- sections ---- */
+
+.section {
+  /* Anchored sections (e.g. /help#climb-counts) must clear the fixed header
+     when linked to directly. */
+  scroll-margin-top: calc(var(--global-header-height) + var(--spacing-4));
+}
+
+.section + .section {
+  margin-top: var(--spacing-8);
+}
+
+.section .sectionHeading {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  margin: 0 0 var(--spacing-3);
+}
+
+/* THE section-heading type ramp. One declaration, and the only one — there were
+   nine. `.sectionHeading` (the flex row) and this are applied together by
+   PageSection; the class is exported separately so a heading that CANNOT be a
+   PageSection child can still read the same ramp. The grid-spanning "Where to
+   start" heading is the case that needs it: a nested <section> would break its
+   `grid-column: 1 / -1`.
+
+   Note the breakpoint. The inline `sx` copies this replaces used MUI's `md`
+   (900px) while every CSS copy used 760px, so between those two widths the page
+   rendered headings at two different sizes depending on which copy styled them.
+   760px wins because it is what the primitive and the rest of the sheet use. */
+/* Doubled on purpose. MUI's Typography variant class is a single class, so a
+   single class here TIES it and loses on injection order — the heading silently
+   falls back to the h3 variant (24px/700). The rule this replaced was
+   `.section > h2`, whose descendant combinator out-specified MUI by accident;
+   `.x.x` does it on purpose and works for a standalone heading too. */
+.sectionHeadingType.sectionHeadingType {
+  font-size: 32px;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+.sectionIcon {
+  flex-shrink: 0;
+  font-size: 1.25em;
+}
+
+.toneBrand {
+  color: var(--color-primary);
+}
+
+.toneAccent {
+  color: var(--color-accent);
+}
+
+.toneNeutral {
+  color: var(--neutral-500);
+}
+
+.section .sectionLead {
+  margin: calc(-1 * var(--spacing-1)) 0 var(--spacing-4);
+  color: var(--neutral-500);
+}
+
+/* ---- prose ---- */
+
+.paragraph {
+  max-width: 68ch;
+  line-height: 1.65;
+}
+
+@media (max-width: 760px) {
+  .sectionHeadingType.sectionHeadingType {
+    font-size: 28px;
+  }
+}
+
+.paragraph + .paragraph {
+  margin-top: var(--spacing-3);
+}
+
+.list {
+  margin: var(--spacing-3) 0 0;
+  padding-left: var(--spacing-5);
+  display: grid;
+  gap: var(--spacing-2);
+}
+
+.list li {
+  padding-left: var(--spacing-1);
+}
+
+/* ---- cards ---- */
+
+.card {
+  border: 1px solid var(--separator);
+  border-radius: var(--border-radius-lg);
+  background: var(--semantic-surface);
+}
+
+/* Depth on near-black is a lighter violet, not a shadow. Use `elevated` for a
+   card that sits on top of another surface, or that has to be findable. */
+.cardElevated {
+  background: var(--semantic-surface-elevated);
+}
+
+.cardPaddingMd {
+  padding: var(--spacing-5);
+}
+
+.cardPaddingSm {
+  padding: var(--spacing-4);
+}
+
+.cardPaddingLg {
+  padding: var(--spacing-8);
+}
+
+.cardRadiusXl {
+  border-radius: var(--border-radius-xl);
+}
+
+@media (max-width: 600px) {
+  .inner {
+    padding: 0 var(--spacing-6);
+  }
+
+  .pageShell {
+    padding-bottom: var(--spacing-10);
+  }
+
+  .header {
+    margin-bottom: var(--spacing-6);
+  }
+
+  .section + .section {
+    margin-top: var(--spacing-6);
+  }
+
+  .cardPaddingMd {
+    padding: var(--spacing-4);
+  }
+}
+
+@media (max-width: 359px) {
+  .inner {
+    padding-inline: var(--spacing-4);
+  }
+}

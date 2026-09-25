@@ -1,9 +1,13 @@
 {
-  "discovery": {
-    "popular": {
-      "title": "Popular boards",
-      "meta": "{{boards}} boards · {{sends}} sends"
-    }
+  "sprayDetection": {
+    "queued": "Your photo is queued for hold recognition.",
+    "running": "Finding holds in your photo…",
+    "connection": "Can't reach your recognition job. Try again when you're connected.",
+    "failed": "We couldn't finish finding holds. Your photo is saved.",
+    "resumeHint": "You can leave and resume later. Your published wall stays unchanged.",
+    "retry": "Try again",
+    "manual": "Place holds myself",
+    "resume": "Resume this reset"
   },
   "mobile": {
     "edit": {
@@ -14,6 +18,7 @@
       "noAccess": "You don't have permission to edit this board",
       "back": "Go back",
       "configLockedHint": "You don't have permission to change this board's layout, size, or hold sets.",
+      "configLockedHintSpray": "A wall's layout is its photo. Shoot the wall again to change its holds.",
       "duplicate": {
         "title": "You already have this setup",
         "body": "This change makes the board match \"{{name}}\" — same layout, size and hold sets.",
@@ -78,6 +83,46 @@
     "errorRetry": "Try again",
     "boardSwitchError": "Couldn't save that board. Try again.",
     "onboardingPrompt": "Follow the wall you climb on — that's what turns its history on.",
+    "firstBoard": {
+      "title": "Where do you climb?",
+      "body": "Pick your board to load its climbs. When you're connected, tapping a climb lights it on the wall.",
+      "gym": "At a gym",
+      "gymHint": "Pick your gym's board",
+      "own": "My own board",
+      "ownHint": "Set up the board you have at home",
+      "sprayWall": "Add my spray wall",
+      "scan": "Scan for the board in front of me",
+      "scanFootnote": "MoonBoards and some Kilter boxes don't show up here yet.",
+      "searching": "Looking for boards near you…",
+      "nearbyEmpty": "Nothing within 20 km",
+      "nearbyError": "Couldn't load boards near you",
+      "findGymOnMap": "Find your gym on the map",
+      "locationOff": "Location is off",
+      "openSettings": "Open Settings",
+      "notNow": "Not now"
+    },
+    "firstConnect": {
+      "card": {
+        "title": "Light climbs on {{board}}",
+        "titleNoName": "Light climbs on your board",
+        "body": "Connect this phone to the board, then tap any climb to light it.",
+        "connect": "Connect",
+        "tryAgain": "Try again",
+        "noLights": "This wall has no lights",
+        "notNow": "Not now",
+        "connecting": "Connecting to {{board}}…",
+        "connectingNoName": "Connecting to your board…",
+        "failed": "Not connected to {{board}} yet. Try again when you're ready.",
+        "failedNoName": "Not connected to your board yet. Try again when you're ready."
+      },
+      "pill": "Light it on the board",
+      "confirm": {
+        "title": "Connected to {{board}}",
+        "titleNoName": "Connected to your board",
+        "body": "Tapping a climb in the list now lights it on the wall.",
+        "gotIt": "Got it"
+      }
+    },
     "discovery": {
       "findNearby": "Find nearby",
       "bluetooth": "Bluetooth",
@@ -97,7 +142,8 @@
       "pinAria": "Pin {{name}}",
       "unpinAria": "Unpin {{name}}",
       "pinnedBadgeAria": "Pinned",
-      "pinError": "Couldn't update your pinned boards"
+      "pinError": "Couldn't update your pinned boards",
+      "addWallTile": "Spray wall"
     },
     "create": {
       "screenTitle": "Set up your board",
@@ -171,6 +217,16 @@
         "sets": "Sets",
         "angle": "Angle",
         "adjustable": "adjustable"
+      },
+      "spray": {
+        "kind": "Spray wall",
+        "editHolds": "Edit holds",
+        "editHoldsHint": "Add, move or delete the holds on your wall.",
+        "newPhoto": "New photo",
+        "newPhotoHint": "Shoot the wall again after a reset.",
+        "shareLink": "Share link",
+        "shareLinkPublicHint": "Anyone can open this wall.",
+        "shareLinkUnlistedHint": "Only the climbers you send it to."
       }
     },
     "disambiguation": {
@@ -303,6 +359,7 @@
       "enableTitle": "Download {{name}}?",
       "enableMessage": "Downloads all this board's climbs so you can browse and log sends with no signal.",
       "enableMessageWithSize": "About {{size}}. Downloads all this board's climbs so you can browse and log sends with no signal.",
+      "enableIndexLine": "Up to about {{index}} on your phone for similar climbs.",
       "enableConfirm": "Download",
       "pickerNotice": "No signal — here are the boards you've downloaded.",
       "pickerNoticeUnreachable": "Can't reach your boards right now — here are the ones you've downloaded.",
@@ -335,6 +392,16 @@
           "title": "Climb where the wifi does not reach",
           "body": "Download a board once and its whole catalog lives on your phone — search, filters and logging sends all work in a basement gym with no bars.",
           "cta": "Pick a board to download"
+        },
+        "similarClimbs": {
+          "title": "Similar climbs live on your phone",
+          "body": "Download {{name}} to see climbs that share these holds",
+          "cta": "Download {{name}}"
+        },
+        "holdHeatmap": {
+          "title": "See where the climbs are",
+          "body": "Download {{name}} to light up the holds climbers use most",
+          "cta": "Download {{name}}"
         }
       }
     },
@@ -348,6 +415,26 @@
       "empty": "No gyms nearby",
       "sharedEditHint": "This gym's staff will be able to edit this board's details.",
       "linkError": "Couldn't link that gym. It may be too far from your board. Your other changes were saved."
+    },
+    "sprayShare": {
+      "title": "Share this wall",
+      "publicBody": "This wall is public, so anyone can open it, it shows on the gym page, and its climbs turn up in the feed.",
+      "unlistedBody": "Only the climbers you send this link to can open the wall. It isn't listed anywhere.",
+      "copyLink": "Copy link",
+      "share": "Share",
+      "copied": "Link copied",
+      "qrLabel": "QR code for {{name}}"
+    },
+    "sprayVisibility": {
+      "label": "Who can see it",
+      "private": "Private",
+      "unlisted": "Link only",
+      "public": "Public",
+      "privateHint": "Only you. Your wall photo stays in your account.",
+      "unlistedHint": "Anyone with the link gets in. The wall isn't listed on the gym page and its photo stays off the open web.",
+      "publicHint": "Anyone can find the wall. It shows on the gym page, its climbs turn up in the feed, and the wall photo goes on the open web.",
+      "ownerOnlyError": "Only the climber who set this wall up can change who sees it. Your other changes saved.",
+      "updateError": "Couldn't change who can see this wall. Try again."
     }
   },
   "boardEntity": {
@@ -685,5 +772,238 @@
     "sent": "Thanks, we'll take a look and merge them.",
     "alreadyReported": "You've already flagged this pair. We're on it.",
     "errorGeneric": "Something went wrong. Try again."
+  },
+  "sprayEditor": {
+    "tools": {
+      "label": "What your finger does",
+      "pan": "Pan",
+      "add": "Add",
+      "move": "Move",
+      "draw": "Draw"
+    },
+    "size": {
+      "s": "S",
+      "m": "M",
+      "l": "L",
+      "xl": "XL"
+    },
+    "threshold": {
+      "label": "Confidence cut-off",
+      "value": "Showing finds above {{percent}}%"
+    },
+    "counts": {
+      "alive_one": "{{count}} hold",
+      "alive_other": "{{count}} holds",
+      "pending": "{{value}} to review",
+      "hidden": "{{value}} hidden",
+      "unsaved": "{{value}} unsaved"
+    },
+    "actions": {
+      "merge": "Merge",
+      "delete": "Delete",
+      "undo": "Undo",
+      "redo": "Redo",
+      "accept": "Keep",
+      "reject": "Drop",
+      "acceptAll": "Keep all",
+      "save": "Save the wall"
+    },
+    "status": {
+      "readOnly": "This wall isn't yours to edit.",
+      "pan": "Drag to move the photo. Tap a hold to pick it.",
+      "add": "Tap bare wall for a hold, or draw round one.",
+      "move": "Drag a hold to where it really is.",
+      "draw": "Pick a hold, then draw its edge.",
+      "oneSelected": "Hold #{{id}} is picked.",
+      "twoSelected": "Two picked. Merge makes them one.",
+      "oneSelectedNew": "Your new hold is picked.",
+      "manySelected": "{{value}} holds picked. Delete takes them all off."
+    },
+    "errors": {
+      "nothingToMove": "Pick a hold first, then drag it.",
+      "pickOneToRedraw": "Pick one hold, then draw its edge.",
+      "mergeNeedsTwo": "Pick two holds to merge them.",
+      "tooManyHolds": "A wall carries up to {{max}} holds. Drop a few and save again.",
+      "saveFailed": "Saving the wall failed.",
+      "strokeNotClosed": "That loop missed the hold. Draw all the way round it.",
+      "strokeTooBig": "That loop is far bigger than a hold. Zoom in and trace the hold itself.",
+      "strokeTooDetailed": "That stroke has too much detail to store. Trace the edge in one pass.",
+      "strokeTooShort": "That stroke is too short. Draw a full loop round the hold.",
+      "allHoldsOffWall": "Those holds land off the wall. Move them back onto the photo and save again.",
+      "someHoldsOffWall_one": "{{count}} hold landed off the wall and wasn't saved.",
+      "someHoldsOffWall_other": "{{count}} holds landed off the wall and weren't saved."
+    },
+    "toast": {
+      "saved_one": "Saved {{count}} hold",
+      "saved_other": "Saved {{count}} holds"
+    },
+    "empty": {
+      "noPhoto": "This wall has no photo to edit yet."
+    }
+  },
+  "sprayWizard": {
+    "screenTitle": "Add a spray wall",
+    "stepCounter": "Step {{current}} of {{total}}",
+    "back": "Back",
+    "meta": {
+      "title": "What's this wall?",
+      "body": "Name it, say how steep it is, and choose who gets to see it.",
+      "namePlaceholder": "Garage wall",
+      "angle": "Angle",
+      "angleHint": "How far the wall leans back, in 5° steps. Fixed once you publish.",
+      "publicHint": "Off keeps the wall and its photo to you.",
+      "next": "Pick a photo",
+      "anglePreview": "Wall at {{angle}} degrees"
+    },
+    "photo": {
+      "title": "Photograph the wall",
+      "body": "Stand square on, shoot at 1x, and get the whole wall in frame. Every hold you set lives on these pixels.",
+      "library": "Choose a photo",
+      "camera": "Take a photo",
+      "pickAnother": "Choose a different photo",
+      "next": "Next",
+      "libraryDenied": "Boardsesh needs your photo library to add a wall.",
+      "cameraDenied": "Boardsesh needs your camera to photograph a wall.",
+      "failed": "That photo wouldn't open. Try another one."
+    },
+    "anchors": {
+      "title": "Mark the corners",
+      "body": "Drag the four rings onto the corners of the wall. Skip it if you shot square on.",
+      "hint": "Top left, top right, bottom right, bottom left.",
+      "crossed": "Those corners cross over each other. Put them round the wall in order.",
+      "cornerTopLeft": "Top left corner",
+      "cornerTopRight": "Top right corner",
+      "cornerBottomRight": "Bottom right corner",
+      "cornerBottomLeft": "Bottom left corner",
+      "use": "Use these corners",
+      "skip": "Skip for now",
+      "clear": "Start the corners again"
+    },
+    "upload": {
+      "title": "Uploading your photo",
+      "working": "Uploading your photo…",
+      "percent": "Uploaded {{percent}}%",
+      "failed": "The photo didn't make it up.",
+      "retry": "Try again",
+      "checkFailed": "Couldn't tell whether your photo made it. Try again when you've signal."
+    },
+    "detect": {
+      "title": "Looking for holds"
+    },
+    "review": {
+      "found": "{{value}} holds to check",
+      "nothingFound": "Nothing found. Draw the holds yourself.",
+      "manualOnly": "This build can't suggest holds. Draw them yourself.",
+      "detectionFailed": "Finding holds went wrong. Draw them yourself.",
+      "done": "Done"
+    },
+    "publish": {
+      "title": "Put it on your boards",
+      "body": "Your holds are saved. Publish the wall and you can start setting.",
+      "cta": "Add this wall",
+      "failed": "Publishing the wall failed."
+    },
+    "done": {
+      "body": "Setting your wall up…"
+    },
+    "leave": {
+      "title": "Leave this wall for now?",
+      "body": "Your wall and its photo are saved. Pick it up where you left off.",
+      "stay": "Keep going",
+      "go": "Leave"
+    },
+    "resume": {
+      "checking": "Looking for a wall you started…",
+      "title": "You've a wall on the go",
+      "body": "“{{name}}” isn't finished. Pick up where you left off, or start over.",
+      "pickUp": "Pick up where you left off",
+      "startOver": "Start over",
+      "checkFailed": "Couldn't check that wall. Try again.",
+      "retry": "Try again"
+    }
+  },
+  "sprayReset": {
+    "screenTitle": "Reset the wall",
+    "notYours": "This wall isn't yours to reset.",
+    "nothingPublished": "This wall isn't set up yet. Finish adding it first.",
+    "openDraft": {
+      "title": "There's a reset half done",
+      "body": "Your saved photo is ready to resume. Nothing on the published wall changes until you confirm the reset.",
+      "discard": "Throw it away and start again",
+      "discarded": "That reset is gone. Take a new photo.",
+      "discardFailed": "That reset wouldn't clear. Try again."
+    },
+    "photo": {
+      "title": "Photograph the wall again",
+      "body": "Stand where you stood the first time if you can. Same wall, new holds."
+    },
+    "anchors": {
+      "title": "Mark the corners",
+      "body": "Drag the four rings onto the corners of the wall. This one isn't optional — it's what lines your new photo up with every climb already on the wall.",
+      "use": "Use these corners",
+      "notConvex": "Those corners cross over each other. Put them round the wall in order."
+    },
+    "leave": {
+      "title": "Leave the reset?",
+      "body": "Your new photo stays as a draft. Nothing changes on the wall until you confirm."
+    },
+    "compare": {
+      "working": "Working out what changed…",
+      "unavailable": "We couldn't work out what changed on this wall.",
+      "counts": "{{kept}} kept · {{removed}} gone · {{added}} new",
+      "climbsAffected_one": "{{count}} climb loses a hold",
+      "climbsAffected_other": "{{count}} climbs lose holds",
+      "aspectWarning": "This photo is framed differently from the last one. Check the corners landed on the corners.",
+      "filterLabel": "Which rings to show",
+      "tapHint": "Tap any ring to change your mind about it.",
+      "confirm": "Confirm the reset",
+      "acceptMoves": "Take every suggested move",
+      "noDetections": "Nothing to compare",
+      "noDetectionsBody": "This phone couldn't spot the holds in your new photo, so there's nothing to check against. Your photo is saved as a draft."
+    },
+    "commit": {
+      "failed": "The reset didn't land. Nothing on the wall has changed."
+    },
+    "filter": {
+      "all": "All",
+      "kept": "Kept {{value}}",
+      "removed": "Gone {{value}}",
+      "new": "New {{value}}",
+      "unsure": "Unsure {{value}}"
+    },
+    "hold": {
+      "kept": "Hold {{id}} — still on the wall",
+      "removed": "Hold {{id}} — coming off",
+      "unsure": "Hold {{id}} — worth a look",
+      "stillHere": "It's still here",
+      "gone": "It's gone"
+    },
+    "detection": {
+      "new": "A hold that wasn't here before",
+      "rejected": "Not a hold",
+      "accept": "It's a hold",
+      "reject": "Not a hold"
+    },
+    "pairing": {
+      "start": "Same hold, moved here",
+      "prompt": "Tap the ring where that hold used to be.",
+      "cancel": "Never mind",
+      "paired": "Replaces hold {{id}}",
+      "unpair": "It's not that hold",
+      "useSuggestion": "Replaces hold {{id}}"
+    },
+    "done": {
+      "toast": "{{removed}} gone, {{added}} new, {{climbs}} climbs changed"
+    }
+  },
+  "sprayCaps": {
+    "holds": "A wall carries up to {{max}} holds. Drop a few and save again.",
+    "versions": "A wall keeps {{max}} resets, and this one has used them all.",
+    "walls": "You can keep {{max}} walls. Delete one to make room.",
+    "wallsHint": "You can keep up to {{max}} walls."
+  },
+  "sprayHidden": {
+    "body": "Someone reported it and we took it out of everyone else’s view. It’s still here for you, and nothing on it was deleted.",
+    "title": "This wall is hidden"
   }
 }

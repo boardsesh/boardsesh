@@ -23,6 +23,8 @@ type WebPlatformResolution = {
   platforms: NonNullable<ExpoConfig['platforms']>;
   web?: NonNullable<ExpoConfig['web']>;
   baseUrl?: string;
+  /** Merged into `extra.router`. Only ever populated on the web branch. */
+  router?: { asyncRoutes: boolean };
 };
 
 /** Keep web opt-in without adding any native fingerprint source files. */
@@ -49,6 +51,18 @@ export function resolveWebPlatforms(envValue: string | undefined): WebPlatformRe
     platforms: ['ios', 'android', 'web'],
     web: { output: 'single', bundler: 'metro' },
     baseUrl: webBaseUrl,
+    // Split each route into its own async chunk. `output: 'single'` decides the
+    // HTML shape (one SPA document), not the JS shape — without this every one
+    // of the ~60 screens under app/ rides in the entry bundle, including the
+    // dev-only ones (branch-switcher, dev-servers, feature-flags,
+    // sentry-diagnostics, the outline editor) that no app.boardsesh.com visitor
+    // can reach. `expo export --platform web` already turns on splitChunks, so
+    // the chunks land without any other change.
+    //
+    // Read only inside this web branch, like baseUrl above: a native build
+    // (BOARDSESH_WEB unset) must resolve a byte-identical config or its OTA
+    // fingerprint moves and the whole store fleet stops taking updates.
+    router: { asyncRoutes: true },
   };
 }
 
@@ -735,7 +749,18 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
     ],
     extra: {
       ...config.extra,
-      ...(webHeadOrigin ? { router: { headOrigin: webHeadOrigin } } : {}),
+      // One `router` key, two independent contributors: `headOrigin` needs
+      // EXPO_PUBLIC_WEB_URL, `asyncRoutes` only needs BOARDSESH_WEB. Spread
+      // together so setting one cannot drop the other — and omitted entirely
+      // off web, so native's `extra` is unchanged.
+      ...(webHeadOrigin || webPlatform.router
+        ? {
+            router: {
+              ...(webHeadOrigin ? { headOrigin: webHeadOrigin } : {}),
+              ...webPlatform.router,
+            },
+          }
+        : {}),
       // `eas` carries two unrelated things the SDKs read positionally: the EAS
       // project id, and the expo-observe endpoint. Kept in one spread so an
       // unset EAS_PROJECT_ID cannot take the observe endpoint down with it.

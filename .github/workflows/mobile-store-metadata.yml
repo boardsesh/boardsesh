@@ -30,9 +30,9 @@ name: Mobile Store Metadata
 # creates the App Store version for a release, because the automatic run below
 # skips iOS whenever no version is editable yet (see the ios metadata lane).
 #
-# Runs automatically when the committed listing assets change on main
-# (fastlane/metadata/**, fastlane/Fastfile, or app-stores/google/screenshots/**),
-# pushing to both stores. The Android screenshot set is refreshed by
+# Runs automatically when the committed listing assets change on main or
+# release/next (fastlane/metadata/**, fastlane/Fastfile, or
+# app-stores/google/screenshots/**), pushing to both stores. The Android screenshot set is refreshed by
 # mobile-screenshots-android.yml, which captures fresh shots and commits them
 # back to main — that commit re-triggers this workflow, which uploads them. Also
 # dispatchable by hand to push a single store on demand. A push build always
@@ -45,7 +45,10 @@ name: Mobile Store Metadata
 
 on:
   push:
-    branches: [main]
+    # Both lines: from main the lane targets main's version, from release/next the
+    # train's — the version comes from app.config.ts on the ref it checks out, and
+    # deliver/supply skip cleanly when no editable version exists for it.
+    branches: [main, release/next]
     paths:
       - 'fastlane/metadata/**'
       - 'fastlane/Fastfile'

@@ -118,7 +118,7 @@ the first `navigate` / `screenshot --to` may catch the dialog.
 | `--label <name>`       | `--to` value                 | Screenshot filename label.                                       |
 | `--out <dir>`          | `.boardsesh/ios-screenshots` | Output directory.                                                |
 | `--device "<name>"`    | `iPhone 16 Pro Max`          | Simulator to boot/attach to.                                     |
-| `--flow <name>`        | —                            | `app-store` / `onboarding` committed Maestro flow.               |
+| `--flow <name>`        | —                            | `app-store` / `onboarding` / `help` committed Maestro flow.      |
 | `--backend <env>`      | `prod`                       | `prod` / `local` (`local` needs `vp run dev`).                   |
 | `--app-path <app>`     | build/cached                 | Use a prebuilt `Boardsesh.app`.                                  |
 | `--settle <seconds>`   | `3` (`5` heavy)              | Wait after navigation before capture.                            |
@@ -142,3 +142,51 @@ the first `navigate` / `screenshot --to` may catch the dialog.
 - The `screenshot` / `navigate` / `shutdown` subcommands attach to the **already-booted**
   simulator from a background `run`; they don't restart Metro. "No booted simulator" means you
   haven't started `run` yet (or it died — check its output).
+
+## The `help` flow — captures for the boardsesh.com help pages
+
+`packages/mobile/.maestro/help.yaml` captures the fourteen screens the `/help` topic
+pages illustrate. It is not a store flow, so nothing is framed or captioned: a help page
+draws its own callouts, so the capture has to be the bare screen.
+
+```bash
+vp run mobile:screenshots -- --flow help --fixtures replay --platform ios \
+  --locales en-US --devices "iPhone 16 Pro Max" --app-path <Boardsesh.app>
+vp run help:publish-shots     # -> the dev bucket + docs/help-screenshots.md, for PR review
+vp run help:convert-shots     # -> packages/web/public/images/help/*.webp
+vp run generate:static-assets # the catalog the web app resolves those webp through
+```
+
+Captures land in **`app-stores/help/`**, not `app-stores/`. Every non-store flow gets its
+own root (`outputRootForFlow`, `scripts/mobile-screenshots.ts`) because
+`writeCapturedScreenshots` clears every PNG in its output directory before writing — while
+the roots were shared, a `--flow help` run replaced the committed App Store shard that the
+rolling screenshot baseline and `mobile-store-draft.yml` both read.
+
+The fourteen `takeScreenshot:` names are a contract: `packages/web/app/lib/help-screenshots.ts`
+and `scripts/lib/help-shots.ts` both key off them, so renaming one silently breaks a page image.
+
+### Three things that will bite you
+
+- **Maestro must be 2.6.1**, the version CI pins (`.github/actions/ios-screenshot-shard`).
+  2.10 moved `takeScreenshot` output out of the working directory into
+  `~/.maestro/tests/<run>/`, where the orchestrator does not look — so a run "succeeds",
+  collects nothing, and every guardrail that reads the capture directory (the duplicate
+  check, the dimension assert) silently passes over an empty set.
+- **Maestro needs a JDK**, and `scripts/lib/android-sdk.ts` only ever provisions a Linux
+  x64 one. On an Apple-silicon Mac, fetch a macOS aarch64 Temurin 21 and point `JAVA_HOME`
+  at it.
+- **A deep link to the route that is already current does not remount it** — expo-router
+  calls `setParams` on the mounted screen — so an overlay opened by one shot is still up
+  for the next. The four `://climbs` overlay shots each bounce through `://home` first for
+  exactly this reason; without it all four come back byte-identical.
+
+## Clips for the help pages
+
+Some help topics teach a gesture — a long press that raises a sheet, a swipe across a
+row, a drag over the board — and a still cannot hold one. Those are recorded here too,
+but with `xcrun simctl io <udid> recordVideo --codec h264 --force
+.boardsesh/help-clips/raw/<name>.mov` and a Ctrl-C to stop, rather than through Maestro:
+5–12 seconds, portrait, silent, named exactly as the clip table names it. The recording
+contract, the conversion command and the size budget are in
+[docs/help-clips.md](help-clips.md).

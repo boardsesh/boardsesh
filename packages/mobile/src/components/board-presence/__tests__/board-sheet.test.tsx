@@ -81,6 +81,20 @@ type ClimbListRowMockProps = {
   onOpenActions?: (climb?: { uuid?: string; name?: string }) => void;
   [key: string]: unknown;
 };
+// The footer's label asks whether this gym has other boards. That is a React
+// Query hook and these harnesses mount no QueryClient; an empty roster is the
+// single-board gym, which is what these tests describe.
+const surface = vi.hoisted(() => ({ mode: 'glass' as 'glass' | 'blur' | 'material' | 'solid' }));
+vi.mock('../../../hooks/use-effective-surface-mode', () => ({
+  useEffectiveSurfaceMode: () => surface.mode,
+}));
+
+// Self-subscribing (React Query, Reanimated, expo-router); covered by its own suite.
+vi.mock('../../live-sessions/BoardLiveSessionsBlock', () => ({ BoardLiveSessionsBlock: () => null }));
+vi.mock('../../../lib/graphql/hooks/use-gym-boards', () => ({
+  useGymBoards: () => ({ data: undefined }),
+}));
+
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios', select: (options: Record<string, unknown>) => options.ios ?? options.default },
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
@@ -210,7 +224,8 @@ vi.mock('@boardsesh/board-constants/grade-colors', () => ({
   DEFAULT_GRADE_COLOR: '#999999',
 }));
 
-vi.mock('@boardsesh/board-presence-react', () => ({
+vi.mock('@boardsesh/board-presence-react', async () => ({
+  ...(await vi.importActual<typeof import('@boardsesh/board-presence-react')>('@boardsesh/board-presence-react')),
   useBoardPresenceCurrent: () => ({
     currentClimb: presence.currentClimb,
     previousClimb: null,
@@ -229,6 +244,8 @@ vi.mock('@boardsesh/board-presence-react', () => ({
       isLoadingOlder: historyPagination.isLoadingOlder,
       hasMore: historyPagination.hasMore,
       loadOlder: historyPagination.loadOlder,
+      refreshHistory: vi.fn(),
+      loadError: false,
     };
   },
   boardHistoryEntryKey: (climb: BoardPresenceClimb) => `${climb.climbUuid}:${climb.seq}`,
@@ -434,7 +451,12 @@ describe('BoardSheet', () => {
     expect(sheetModal.dismiss).toHaveBeenCalled();
   });
 
-  it('passes the opaque themed surface to the native sheet', () => {
+  // The sheet used to pass its colour unconditionally. That was meant to darken
+  // Android, where omitting it falls through to Compose's default container —
+  // but with no guard it painted iOS too, with the Android fallback palette, so
+  // an iPhone got a flat panel where iOS 26 draws Liquid Glass.
+  it('hands the background back to the native sheet so it draws its own material', () => {
+    surface.mode = 'glass';
     render(
       createElement(BoardSheet, {
         boardLabel: 'Garage Wall',
@@ -444,7 +466,24 @@ describe('BoardSheet', () => {
       }),
     );
 
-    expect(sheetModal.backgroundStyle).toEqual({ backgroundColor: '#191422' });
+    expect(sheetModal.backgroundStyle).toBeUndefined();
+  });
+
+  it('keeps the themed surface where the sheet will not draw one', () => {
+    for (const mode of ['material', 'solid'] as const) {
+      surface.mode = mode;
+      const { unmount } = render(
+        createElement(BoardSheet, {
+          boardLabel: 'Garage Wall',
+          onClose: noop,
+          boardConfig,
+          onSwitchBoard: noop,
+        }),
+      );
+
+      expect(sheetModal.backgroundStyle).toEqual({ backgroundColor: '#191422' });
+      unmount();
+    }
   });
 
   it('forwards dismissAndWait through the imperative ref', async () => {

@@ -1,6 +1,7 @@
 import type { ConnectionContext, CommentEvent } from '@boardsesh/shared-schema';
 import { pubsub } from '../../../pubsub/index';
 import { createAsyncIterator } from '../shared/async-iterators';
+import { withSubscriptionCleanup } from '../shared/managed-subscription';
 import { SocialEntityTypeSchema } from '../../../validation/schemas';
 
 // Derive the allow-list from the shared Zod enum so it can never drift from
@@ -15,7 +16,8 @@ const MAX_ENTITY_ID_LENGTH = 256;
 
 export const socialCommentSubscriptions = {
   commentUpdates: {
-    subscribe: async function* (
+    subscribe: withSubscriptionCleanup(async function* (
+      lifetime,
       _: unknown,
       { entityType, entityId }: { entityType: string; entityId: string },
       _ctx: ConnectionContext,
@@ -30,13 +32,15 @@ export const socialCommentSubscriptions = {
 
       const entityKey = `${entityType}:${entityId}`;
 
-      const asyncIterator = await createAsyncIterator<CommentEvent>((push) => {
-        return pubsub.subscribeComments(entityKey, push);
-      });
+      const asyncIterator = await lifetime.own(
+        createAsyncIterator<CommentEvent>((push) => {
+          return pubsub.subscribeComments(entityKey, push);
+        }, `commentUpdates:${entityKey}`),
+      );
 
       for await (const event of asyncIterator) {
         yield { commentUpdates: event };
       }
-    },
+    }),
   },
 };

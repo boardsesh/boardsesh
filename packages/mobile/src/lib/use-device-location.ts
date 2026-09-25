@@ -20,9 +20,29 @@ export type DeviceLocation = {
   coords: Coords | null;
   /** Kick off the permission prompt + one-shot fix. Safe to call repeatedly. */
   request: () => Promise<void>;
+  /**
+   * Take a fresh fix once location is granted, for a climber who has moved
+   * since the first one. `request` never does: after a grant it is a no-op.
+   * Resolves `true` when the coordinates changed (a search keyed on them runs
+   * again by itself) and `false` when they did not, the fix failed, or there
+   * was nothing to refresh (not granted yet, or a request or refresh in
+   * flight). `status` reads `loading` while it runs.
+   */
+  refresh: () => Promise<boolean>;
 };
 
-export function useDeviceLocation(): DeviceLocation {
+export type DeviceLocationOptions = {
+  /**
+   * Let a request after a denial ask again instead of no-oping. Off by default,
+   * because a surface that cannot send the climber to Settings gains nothing from
+   * re-asking. The first-board picker (#5654) turns it on: it offers Open
+   * Settings, and a climber who comes back having allowed location should get
+   * their gyms from one more tap, not from reopening the screen.
+   */
+  retryAfterDenial?: boolean;
+};
+
+export function useDeviceLocation({ retryAfterDenial = false }: DeviceLocationOptions = {}): DeviceLocation {
   const [status, setStatus] = useState<LocationStatus>('idle');
   const [coords, setCoords] = useState<Coords | null>(null);
   // Once a request reaches a terminal state (granted / denied / unavailable),
@@ -30,6 +50,10 @@ export function useDeviceLocation(): DeviceLocation {
   // permission/location calls. iOS only shows the permission prompt once
   // anyway, so re-requesting after a denial would silently re-resolve denied.
   const settledRef = useRef(false);
+  const statusRef = useRef<LocationStatus>('idle');
+  statusRef.current = status;
+  const coordsRef = useRef<Coords | null>(null);
+  coordsRef.current = coords;
 
   const request = useCallback(async () => {
     if (settledRef.current) return;
@@ -40,6 +64,7 @@ export function useDeviceLocation(): DeviceLocation {
       const Location = await import('expo-location');
       const { status: permission } = await Location.requestForegroundPermissionsAsync();
       if (permission !== 'granted') {
+        if (retryAfterDenial) settledRef.current = false;
         setStatus('denied');
         return;
       }
@@ -57,7 +82,32 @@ export function useDeviceLocation(): DeviceLocation {
       settledRef.current = false;
       setStatus('unavailable');
     }
+  }, [retryAfterDenial]);
+
+  const refresh = useCallback(async () => {
+    // `loading` covers both a first request and another refresh in flight.
+    if (statusRef.current !== 'granted') return false;
+    statusRef.current = 'loading';
+    setStatus('loading');
+    try {
+      const Location = await import('expo-location');
+      const position = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      const { latitude, longitude } = position.coords;
+      const previous = coordsRef.current;
+      const moved = previous?.latitude !== latitude || previous?.longitude !== longitude;
+      if (moved) setCoords({ latitude, longitude });
+      return moved;
+    } catch {
+      // Keep the fix we had: it is still the best answer, and permission is
+      // still granted. The caller searches again from it.
+      return false;
+    } finally {
+      statusRef.current = 'granted';
+      setStatus('granted');
+    }
   }, []);
 
-  return { status, coords, request };
+  return { status, coords, request, refresh };
 }

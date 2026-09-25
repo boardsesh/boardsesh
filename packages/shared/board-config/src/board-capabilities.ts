@@ -34,6 +34,53 @@ export type BoardCapabilities = {
    */
   crowdGrade: boolean;
   /**
+   * A climb on this board carries its grade and its ascents at the ONE angle it
+   * was set at, so browsing any other angle finds no stats row for it. On Woods the
+   * shape is total: 5,392 listed climbs share 5,398 stats rows between them, so
+   * browsing 30° finds a row for 653 of them.
+   *
+   * What the queries do about it (`packages/db/src/queries/climbs/effective-stats.ts`
+   * and its offline mirror in `packages/mobile/src/db/queries/search-climbs-local.ts`):
+   *
+   *   - **Search is restricted to the browsed angle by default** (issue #5642): it
+   *     keeps a climb set at that angle, one with no set angle recorded, or one with
+   *     a stats row there. A climb set at 40° is a different problem, not the same
+   *     problem steeper, and a climber browsing 30° wants the 30° climbs.
+   *   - **`ClimbSearchInput.crossAngleStats: true` opts into #5413's resolution**
+   *     (issue #5405): every angle's climbs are listed, and each one is graded and
+   *     ranked by the row at its own set angle when the browsed angle has none. A
+   *     by-name search does the same by itself, so a climb is findable by name at
+   *     any angle. Omitted means off, on every board.
+   *   - **The climb detail read always resolves cross-angle**, so a climb opened at
+   *     an angle it was not set at shows its set-angle grade rather than a blank one.
+   *
+   * On a board where this is false none of the three applies: search reads the
+   * browsed angle only, lists every climb, and `crossAngleStats: true` is still the
+   * one way into cross-angle resolution.
+   *
+   * **True on Woods only.** MoonBoard has exactly the same shape — 4,832 of 38,642
+   * climbs on the 2016 layout have a row at 25° — and was held off while this flag
+   * forced cross-angle resolution, on cost. That resolution makes the sort key a
+   * conditional over two joined rows, which no index can be stored in, so the query
+   * loses the early termination that `board_climb_stats_ascents_covering_v2_idx`
+   * gives it and has to rank the whole layout. Measured on production:
+   *
+   *   woods layout 1 @30°       63 ms  ->   122 ms   (5.4k climbs)
+   *   moonboard layout 2 @25°  6.8 ms  ->   729 ms   (92k climbs)
+   *   moonboard layout 2 @40°  1.0 ms  ->   936 ms   (92k climbs)
+   *   kilter layout 1 @40°     1.6 ms  -> 5,587 ms   (320k climbs)
+   *
+   * Since #5642 the flag no longer forces that; turning MoonBoard on now would mean
+   * restricting its browse to the set angle by default, which is a product call
+   * nobody has made. The numbers still price `crossAngleStats: true` itself: regaining
+   * early termination needs two index-ordered streams merged at the page boundary,
+   * which needs a new `(board_type, ascensionist_count DESC, climb_uuid)` index
+   * because every existing ascent/quality index is prefixed `(board_type, angle, …)`.
+   * Until that lands, the mobile flag that opts non-Woods boards in MUST stay at 0%.
+   * Tracked in issue #5412.
+   */
+  angleBoundClimbs: boolean;
+  /**
    * New climbs can be set on the board from inside Boardsesh (create / fork /
    * edit).
    *
@@ -113,6 +160,7 @@ export type BoardCapabilities = {
  */
 const AURORA_CAPABILITIES: BoardCapabilities = {
   crowdGrade: true,
+  angleBoundClimbs: false,
   climbCreation: true,
   explicitClimbRules: false,
   multiFrameClimbs: true,
@@ -128,6 +176,8 @@ const AURORA_CAPABILITIES: BoardCapabilities = {
  */
 const MOONBOARD_CAPABILITIES: BoardCapabilities = {
   crowdGrade: false,
+  // Same angle-bound shape as Woods, still off — see the field's doc for why.
+  angleBoundClimbs: false,
   climbCreation: true,
   explicitClimbRules: false,
   multiFrameClimbs: true,
@@ -144,10 +194,42 @@ const MOONBOARD_CAPABILITIES: BoardCapabilities = {
  */
 const WOODS_CAPABILITIES: BoardCapabilities = {
   crowdGrade: false,
+  angleBoundClimbs: true,
   climbCreation: true,
   explicitClimbRules: true,
   multiFrameClimbs: false,
   nativeBoardControl: true,
+  auroraAppLink: false,
+};
+
+/**
+ * Spray walls: a climber's own wall, photographed rather than catalogued. Its
+ * holds live in `spray_wall_holds` and its catalogue layout is created at
+ * runtime, so it is the first board whose geometry is per-wall data.
+ *
+ * `climbCreation` is the whole point — a wall with no climbs on it is a photo.
+ * Everything else is false: there is no hardware (`nativeBoardControl` — no
+ * LEDs, no firmware, nothing to encode), no vendor site to deep-link to
+ * (`auroraAppLink`), no crowd grade model (`crowdGrade` — the setter's grade is
+ * required on publish instead), and no multi-frame climbs. `explicitClimbRules`
+ * stays false so a spray climb reads like a Kilter one: only the departures from
+ * the default are printed.
+ *
+ * Mirroring is off too, but that is `boardSupportsMirroring`'s answer, not a row
+ * here: a spray wall is a photograph of one physical wall and has no mirror
+ * geometry to reflect holds through.
+ */
+const SPRAY_CAPABILITIES: BoardCapabilities = {
+  crowdGrade: false,
+  // A wall's angle is fixed at creation, so every climb on it is set — and
+  // browsed — at that one angle. There is no other angle for a stats row to be
+  // missing at or for a climb to belong to, so neither the browsed-angle
+  // restriction nor the cross-angle fallback has anything to do here.
+  angleBoundClimbs: false,
+  climbCreation: true,
+  explicitClimbRules: false,
+  multiFrameClimbs: false,
+  nativeBoardControl: false,
   auroraAppLink: false,
 };
 
@@ -163,6 +245,7 @@ const CAPABILITIES_BY_BOARD: Record<BoardName, BoardCapabilities> = {
   soill: AURORA_CAPABILITIES,
   moonboard: MOONBOARD_CAPABILITIES,
   woods: WOODS_CAPABILITIES,
+  spray: SPRAY_CAPABILITIES,
 };
 
 /**

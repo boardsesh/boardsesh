@@ -8,54 +8,49 @@ import Animated, {
   withSpring,
   withTiming,
   withSequence,
-  runOnJS,
   type SharedValue,
 } from 'react-native-reanimated';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { GlassCluster } from '../GlassCluster';
+import { ValuePill } from '../ValuePill';
+import { ValueSlider } from '../ValueSlider';
 import type { IconName } from '../icon-map';
 import { useTheme } from '../../providers/theme-provider';
 import { hapticLight, hapticSelection, hapticSuccess } from '../../lib/haptics';
-// Aliased: this file reads scheme-aware brand from `useTheme()` for foregrounds
-// (slider/progress fills). `staticBrandColors` is intentionally the static set,
-// used only for the active speed pill — a FILL with white text that must stay
-// legible in both schemes (the lifted dark tint would fail white-on-fill).
-import { brandColors as staticBrandColors, withAlpha } from '../../theme/colors';
-import { iosSystemColors } from '../../theme/ios-colors';
+import { withAlpha } from '../../theme/colors';
 import { glassSize } from '../../theme/layout';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { springs, timing } from '../../theme/animations';
 import {
   clampPaceSeconds,
-  roundedReportPaceSeconds,
-  roundedReportSpeed,
-  shouldReportPaceSeconds,
-  shouldReportSpeed,
-  valueToTrackPosition,
+  paceNotch,
+  paceRatioForSeconds,
+  paceSecondsAtNotchOffset,
+  paceSecondsAtRatio,
+  roundPaceSeconds,
+  snapToMagnet,
   MAX_PACE_SECONDS,
   MIN_PACE_SECONDS,
 } from './playback-speed-report';
 
-// Continuous range; mirrors web's effective span. 1× is the natural default and
-// gets a gentle release-magnet (see commit()).
-const MIN_SPEED = 0.1;
-const MAX_SPEED = 10;
-const THUMB_SIZE = 20;
-const TRACK_HEIGHT = 6;
+/**
+ * Width floor for the pace pill, sized to the longest label the control can
+ * produce ("9.9s" — past ten seconds `roundPaceSeconds` drops the decimal, so
+ * "60s" is shorter), so stepping through the presets doesn't resize it and walk
+ * the transport row sideways.
+ */
+const PACE_PILL_MIN_WIDTH = 64;
 
-// Discrete speeds the pill cycles through on tap; long-press reveals the fine
+// Seconds-per-frame the pill cycles through on tap; long-press reveals the fine
 // slider for anything in between. Mirrors Apple Podcasts' tap-to-cycle control.
-const SPEED_STEPS = [0.5, 1, 1.5, 2, 3] as const;
-
-// Seconds-per-frame the pill cycles through when the creator is authoring the
-// climb's own pace rather than reading it through a multiplier.
-const PACE_STEPS = [0.5, 0.8, 1.5, 3, 5] as const;
-
-/** The pace the release-magnet pulls to — `DEFAULT_PACE_MS` (750ms) in seconds. */
-const MAGNET_PACE_SECONDS = 0.75;
+//
+// Spread across the whole 0.3-60s range rather than bunched at the fast end: the
+// catalogue's routes are paced from half a second to a minute a frame, and a
+// preset list that stopped at 5s left two thirds of the range reachable only by
+// dragging.
+const PACE_STEPS = [0.5, 1, 3, 10, 20] as const;
 
 // Frame-strip geometry. Chips read as chips at 32dp and reach the 44dp touch
 // floor through hitSlop, and the row is now exactly one chip tall: the 44 it used
@@ -69,11 +64,6 @@ const CHIP_GAP = spacing[2];
 const CHIP_STEP = CHIP_SIZE + CHIP_GAP;
 const UNDERLINE_HEIGHT = 2;
 
-/** Next preset strictly above `current`, wrapping to the slowest past the top. */
-function nextSpeedStep(current: number): number {
-  return SPEED_STEPS.find((step) => step > current + 0.001) ?? SPEED_STEPS[0];
-}
-
 /** Next pace preset strictly above `current` seconds, wrapping past the top. */
 function nextPaceStep(current: number): number {
   return PACE_STEPS.find((step) => step > current + 0.001) ?? PACE_STEPS[0];
@@ -81,22 +71,18 @@ function nextPaceStep(current: number): number {
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
-// Hoisted so the adjustable node isn't handed a fresh array every render.
-const ADJUSTABLE_ACTIONS = [{ name: 'increment' }, { name: 'decrement' }] as const;
-
-/**
- * How the pill reads and writes the cadence. 'multiplier' is the reader's lens
- * over whatever pace the setter authored; 'seconds' authors that pace directly.
- */
-type PaceUnit = 'multiplier' | 'seconds';
-
-type PlaybackControlsBaseProps = {
+type PlaybackControlsProps = {
   frameIndex: number;
   frameCount: number;
   isPlaying: boolean;
-  speed: number;
-  /** Native per-frame pace (ms) — glides the progress cue at the playback cadence. */
-  paceMs: number;
+  /**
+   * Seconds the current frame is held for — what the pill displays, what the
+   * slider edits, and what the progress cue glides at. The reader passes the
+   * authored pace seen through its playback multiplier; the setter passes the
+   * pace it is authoring. One number either way, so the two surfaces cannot
+   * disagree about what the control means.
+   */
+  paceSeconds: number;
   /**
    * A party peer is counting this route's frames differently, so their
    * playback isn't being followed. Renders a one-line passive notice.
@@ -121,43 +107,23 @@ type PlaybackControlsBaseProps = {
     /** Removes the active frame. No-ops at one frame; the button is disabled there. */
     onDeleteFrame: () => void;
   };
+  /**
+   * The pace a release near it snaps to, so one value on the track is easy to
+   * land on exactly. The reader passes the climb's authored pace (snapping back
+   * to what the setter intended); the setter passes the 750ms default.
+   */
+  magnetSeconds: number;
   onPlay: () => void;
   onPause: () => void;
   onSeek: (index: number) => void;
-  onSpeedChange: (speed: number) => void;
+  /** Commits a pace. Already clamped into range by the time it fires. */
+  onPaceSecondsChange: (seconds: number) => void;
 };
 
-/**
- * Which unit the pill reads and writes, paired with the callback that unit needs.
- *
- * A union rather than two independent optional props: in seconds mode the pill
- * authors the climb's own `frames_pace`, so a caller that asks for seconds and
- * forgets `onPaceChange` would render a control that silently discards every
- * change. That is exactly the bug this component's seconds mode exists to fix,
- * so the type refuses to express it.
- */
-type PaceControlProps =
-  /** The reader's lens over whatever pace the setter authored. Shows "1×". */
-  | { paceUnit?: 'multiplier'; onPaceChange?: never }
-  /** The setter authoring that pace directly. Shows "0.8s". */
-  | { paceUnit: 'seconds'; onPaceChange: (paceMs: number) => void };
-
-type PlaybackControlsProps = PlaybackControlsBaseProps & PaceControlProps;
-
-// Trim a trailing `.0` like web (7.0 → "7", 6.3 → "6.3").
-function formatSpeed(speed: number): string {
-  const rounded = Math.round(speed * 10) / 10;
-  return Number.isInteger(rounded) ? `${rounded}×` : `${rounded.toFixed(1)}×`;
-}
-
-/** The seconds-per-frame label, trimmed the way `formatSpeed` trims (3.0 → "3s"). */
+/** The pill label, at the precision `roundPaceSeconds` keeps (3.0 → "3s"). */
 function formatPace(seconds: number): string {
-  const rounded = Math.round(seconds * 10) / 10;
+  const rounded = roundPaceSeconds(seconds);
   return Number.isInteger(rounded) ? `${rounded}s` : `${rounded.toFixed(1)}s`;
-}
-
-function clamp01(value: number): number {
-  return Math.max(0, Math.min(1, value));
 }
 
 /** A frame-step button (chevron) — distinct from the action bar's climb-skip arrows. */
@@ -446,274 +412,63 @@ function FrameEditPair({
   );
 }
 
-/** Cadence pill: tap cycles through the presets, long-press reveals the fine slider. */
-function SpeedPill({
-  label,
-  active,
-  onCycle,
-  onToggleSlider,
-  accessibilityLabel,
-  accessibilityHint,
-}: {
-  label: string;
-  active: boolean;
-  onCycle: () => void;
-  onToggleSlider: () => void;
-  accessibilityLabel: string;
-  accessibilityHint: string;
-}) {
-  const { systemColors } = useTheme();
-  const scale = useSharedValue(1);
-  const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
-  return (
-    <AnimatedPressable
-      onPress={onCycle}
-      onLongPress={onToggleSlider}
-      delayLongPress={300}
-      onPressIn={() => {
-        scale.value = withSpring(0.92, springs.snappy);
-      }}
-      onPressOut={() => {
-        scale.value = withSpring(1, springs.snappy);
-      }}
-      hitSlop={8}
-      accessibilityRole="button"
-      accessibilityState={{ expanded: active }}
-      accessibilityLabel={accessibilityLabel}
-      accessibilityHint={accessibilityHint}
-      style={[
-        styles.speedPill,
-        { backgroundColor: active ? staticBrandColors.primary : systemColors.fill },
-        animatedStyle,
-      ]}
-    >
-      <Text variant="footnote" color={active ? iosSystemColors.white : systemColors.label} style={styles.speedPillText}>
-        {label}
-      </Text>
-    </AnimatedPressable>
-  );
-}
-
 /**
- * Hand-rolled cadence slider on reanimated + gesture-handler — no native slider
- * dependency (which would force a fresh build and break OTA updates). The thumb
- * tracks a shared value on the UI thread and grows on grab; the value is committed
- * once on release (one engine update / one party-sync broadcast), with a haptic
- * tick every 0.5 units and a magnet to the natural default. The live value is
- * reported up to the pill via `onLiveChange`.
+ * The pace slider: `ValueSlider` on the pace track.
  *
- * Both units share one slider: `unit` swaps the range (0.1–10× vs 0.3–10s), the
- * magnet target and the label, so the reader's multiplier and the setter's
- * seconds-per-frame can never drift into two different controls.
+ * A wrapper, not an implementation — the thumb, the gesture, the per-frame
+ * report gate and the cancelled-drag restore all live in the shared control,
+ * which the rest timer's rest-length slider uses too. What stays here is the
+ * only part that is about PACE: the log track, the ladder its haptics and its
+ * VoiceOver steps walk, the magnet target and the spoken label. Each of those is
+ * a reference into `playback-speed-report`, which stays the one place the pace
+ * maths lives — including why the track is logarithmic (see
+ * `paceSecondsAtRatio`: across a 200:1 range a linear one would bury every
+ * sub-second pace in its first half-percent).
  */
-function SpeedSlider({
+function PaceSlider({
   value,
-  unit,
+  magnetSeconds,
   onChange,
   onLiveChange,
 }: {
   value: number;
-  unit: PaceUnit;
+  magnetSeconds: number;
   onChange: (value: number) => void;
   onLiveChange: (value: number) => void;
 }) {
-  const theme = useTheme();
-  const { systemColors } = theme;
   const { t } = useTranslation('session');
-  const [trackWidth, setTrackWidth] = useState(0);
-  const usable = Math.max(0, trackWidth - THUMB_SIZE);
-  const inSeconds = unit === 'seconds';
-  const minValue = inSeconds ? MIN_PACE_SECONDS : MIN_SPEED;
-  const maxValue = inSeconds ? MAX_PACE_SECONDS : MAX_SPEED;
-  const position = useSharedValue(0);
-  const startPosition = useSharedValue(0);
-  const dragging = useSharedValue(false);
-  const thumbScale = useSharedValue(1);
-  const lastNotch = useSharedValue(-1);
-  // The last 0.1-rounded value pushed via `reportLive`, so the per-frame
-  // worklet skips the cross-thread `runOnJS` hop (and the PlaybackControls
-  // re-render it triggers) when the displayed value hasn't actually changed.
-  const lastReported = useSharedValue(-1);
-  // The committed value, mirrored for the worklet. Listing `value` in the pan
-  // gesture's deps instead would rebuild the whole gesture every time the pace
-  // changes — including on every commit the slider itself makes.
-  const committedPosition = useSharedValue(value);
-
-  const ratioToValue = useCallback(
-    (ratio: number) => Math.round((minValue + clamp01(ratio) * (maxValue - minValue)) * 10) / 10,
-    [minValue, maxValue],
+  // Gentle magnet to the pace that matters most on this surface, so it is easy
+  // to land on exactly. Judged on the DISPLAYED value and committing the
+  // un-rounded target — see `snapToMagnet` for why that is the only order that
+  // reaches a 750ms default.
+  const magnet = useCallback((rounded: number) => snapToMagnet(rounded, magnetSeconds), [magnetSeconds]);
+  // "Seconds per frame, 0.8 seconds" — the value is the duration alone, so the
+  // unit isn't announced twice.
+  const format = useCallback(
+    (seconds: number) => t('playView.paceValueA11y', { count: roundPaceSeconds(seconds) }),
+    [t],
   );
-
-  // Keep the thumb synced to the external value while not dragging (peer sync,
-  // commit echoes, resets). Skip until layout gives a real track width — otherwise
-  // `usable` is 0 and the thumb snaps to the left before jumping into place. Read
-  // the SharedValue with `.get()` (Reanimated JS-thread accessor), not `.value`.
-  useEffect(() => {
-    committedPosition.value = value;
-    if (usable <= 0 || dragging.get()) return;
-    position.value = valueToTrackPosition(value, minValue, maxValue, usable);
-  }, [value, usable, minValue, maxValue, position, dragging, committedPosition]);
-
-  const reportLive = useCallback(
-    (px: number) => onLiveChange(ratioToValue(usable > 0 ? px / usable : 0)),
-    [onLiveChange, ratioToValue, usable],
-  );
-  const commit = useCallback(
-    (px: number) => {
-      const raw = ratioToValue(usable > 0 ? px / usable : 0);
-      // Gentle magnet to the natural default — 1× for a reader, and 0.75s (the
-      // engine's DEFAULT_PACE_MS) for a setter — so it is easy to land on exactly.
-      const magnet = inSeconds ? MAGNET_PACE_SECONDS : 1;
-      const snapped = Math.abs(raw - magnet) <= 0.1 ? magnet : raw;
-      onLiveChange(snapped);
-      onChange(snapped);
-    },
-    [inSeconds, onChange, onLiveChange, ratioToValue, usable],
-  );
-
-  const pan = useMemo(
-    () =>
-      Gesture.Pan()
-        // Claim the touch only on horizontal intent; a vertical drag falls
-        // through to the BottomSheetScrollView (matches QueueItemRow).
-        .activeOffsetX([-10, 10])
-        .failOffsetY([-10, 10])
-        .onBegin(() => {
-          dragging.value = true;
-          startPosition.value = position.value;
-          thumbScale.value = withSpring(1.25, springs.snappy);
-          lastNotch.value =
-            Math.round((minValue + (usable > 0 ? position.value / usable : 0) * (maxValue - minValue)) * 2) / 2;
-          lastReported.value = inSeconds
-            ? roundedReportPaceSeconds(position.value, usable)
-            : roundedReportSpeed(position.value, usable);
-          runOnJS(hapticSelection)();
-        })
-        .onUpdate((event) => {
-          const next = Math.max(0, Math.min(usable, startPosition.value + event.translationX));
-          position.value = next;
-          // Tick once per 0.5 crossed, so the continuous slider feels notched.
-          const valueAtNext = minValue + (usable > 0 ? next / usable : 0) * (maxValue - minValue);
-          const notch = Math.round(valueAtNext * 2) / 2;
-          if (notch !== lastNotch.value) {
-            lastNotch.value = notch;
-            runOnJS(hapticSelection)();
-          }
-          // Gate the cross-thread report on the 0.1-rounded display value
-          // changing — without this it fires a runOnJS hop + a React setState
-          // (and a PlaybackControls re-render) on every drag frame.
-          const report = inSeconds
-            ? shouldReportPaceSeconds(next, usable, lastReported.value)
-            : shouldReportSpeed(next, usable, lastReported.value);
-          if (report.changed) {
-            lastReported.value = report.rounded;
-            runOnJS(reportLive)(next);
-          }
-        })
-        .onEnd(() => {
-          runOnJS(commit)(position.value);
-        })
-        .onFinalize((_event, success) => {
-          dragging.value = false;
-          thumbScale.value = withSpring(1, springs.snappy);
-          // A cancelled drag never reaches `onEnd`, so nothing commits — but the
-          // pill has been showing live values the whole way down and the prop it
-          // mirrors never moved, so the effect that syncs them won't re-fire.
-          // Without this the pill keeps reading a pace the climb does not have.
-          if (!success) {
-            const committed = committedPosition.value;
-            position.value = valueToTrackPosition(committed, minValue, maxValue, usable);
-            runOnJS(onLiveChange)(committed);
-          }
-        }),
-    [
-      usable,
-      inSeconds,
-      minValue,
-      maxValue,
-      position,
-      startPosition,
-      dragging,
-      thumbScale,
-      lastNotch,
-      lastReported,
-      committedPosition,
-      onLiveChange,
-      reportLive,
-      commit,
-    ],
-  );
-
-  // Tap-to-seek on the track.
-  const tap = useMemo(
-    () =>
-      Gesture.Tap().onEnd((event) => {
-        if (usable <= 0) return;
-        const next = Math.max(0, Math.min(usable, event.x - THUMB_SIZE / 2));
-        position.value = next;
-        runOnJS(reportLive)(next);
-        runOnJS(commit)(next);
-      }),
-    [usable, position, reportLive, commit],
-  );
-
-  const composed = useMemo(() => Gesture.Race(pan, tap), [pan, tap]);
-
-  const thumbStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: position.value }, { scale: thumbScale.value }],
-  }));
-  const fillStyle = useAnimatedStyle(() => ({ width: position.value + THUMB_SIZE / 2 }));
-
-  const handleLayout = useCallback((event: LayoutChangeEvent) => {
-    setTrackWidth(event.nativeEvent.layout.width);
-  }, []);
-
-  // A pan gesture is invisible to VoiceOver/TalkBack, so the whole track is
-  // published as one `adjustable` node with 0.5-step increment/decrement actions.
-  const adjustBy = useCallback(
-    (step: number) => {
-      const next = Math.min(maxValue, Math.max(minValue, Math.round((value + step) * 10) / 10));
-      onLiveChange(next);
-      onChange(next);
-    },
-    [value, minValue, maxValue, onChange, onLiveChange],
-  );
-
   return (
-    <GestureDetector gesture={composed}>
-      <View
-        style={styles.sliderTrackWrapper}
-        onLayout={handleLayout}
-        accessible
-        accessibilityRole="adjustable"
-        accessibilityLabel={t('playView.speed')}
-        accessibilityValue={{
-          text: inSeconds ? formatPace(value) : formatSpeed(value),
-          min: minValue,
-          max: maxValue,
-          now: value,
-        }}
-        accessibilityActions={ADJUSTABLE_ACTIONS}
-        onAccessibilityAction={({ nativeEvent }) => adjustBy(nativeEvent.actionName === 'increment' ? 0.5 : -0.5)}
-      >
-        {/* Android would otherwise publish each child of an adjustable composite
-            as its own node, so the slider reads as three unlabelled views. */}
-        <View
-          style={[styles.sliderTrack, { backgroundColor: systemColors.fill }]}
-          importantForAccessibility="no-hide-descendants"
-        />
-        <Animated.View
-          style={[styles.sliderFill, { backgroundColor: theme.brandColors.primary }, fillStyle]}
-          importantForAccessibility="no-hide-descendants"
-        />
-        {/* White fill alone is ~1.09:1 against the track — the brand ring is what
-            clears WCAG 1.4.11's 3:1 for a UI component, in both schemes. */}
-        <Animated.View
-          style={[styles.sliderThumb, { borderColor: theme.brandColors.primary }, thumbStyle]}
-          importantForAccessibility="no-hide-descendants"
-        />
-      </View>
-    </GestureDetector>
+    <ValueSlider
+      value={value}
+      min={MIN_PACE_SECONDS}
+      max={MAX_PACE_SECONDS}
+      ratioToValue={paceSecondsAtRatio}
+      valueToRatio={paceRatioForSeconds}
+      round={roundPaceSeconds}
+      // Ticks once per rung of the pace ladder crossed, so the slider feels
+      // notched at every magnitude rather than only at the fast end.
+      notch={paceNotch}
+      magnet={magnet}
+      format={format}
+      accessibilityLabel={t('playView.pace')}
+      // The same ladder for a user with no thumb. A fixed step would be wrong at
+      // one end or the other: 0.5s is half the range below a second, and 119
+      // swipes from 0.3s to a minute.
+      adjust={paceSecondsAtNotchOffset}
+      onLiveChange={onLiveChange}
+      onCommit={onChange}
+    />
   );
 }
 
@@ -728,27 +483,26 @@ function SpeedSlider({
  * glyph: this card is never the defining action on its sheet — Tick is, and in
  * the creator Save is — and the old glyph was the loudest thing on both.
  *
- * The cadence pill on the right cycles presets on tap and reveals the fine slider
+ * The pace pill on the right cycles presets on tap and reveals the fine slider
  * on long-press (Apple Podcasts style), keeping the resting state uncluttered.
- * Pass `frameEditing` and `paceUnit="seconds"` to turn the reader's transport into
- * the setter's: a frame strip in place of the counter, and seconds-per-frame in
- * place of the multiplier.
+ * It reads seconds a frame on both surfaces — the reader's old ×multiplier said
+ * nothing on its own, since 0.5× is 1.5s a frame on one route and 24s on the
+ * next. Pass `frameEditing` to turn the reader's transport into the setter's: a
+ * frame strip in place of the counter.
  */
 export function PlaybackControls({
   frameIndex,
   frameCount,
   isPlaying,
-  speed,
-  paceMs,
+  paceSeconds,
+  magnetSeconds,
   peerFrameMismatch = false,
   wallStateLabel = null,
   frameEditing,
-  paceUnit = 'multiplier',
-  onPaceChange,
   onPlay,
   onPause,
   onSeek,
-  onSpeedChange,
+  onPaceSecondsChange,
 }: PlaybackControlsProps) {
   const theme = useTheme();
   const { systemColors } = theme;
@@ -758,34 +512,28 @@ export function PlaybackControls({
   // Pause while playing; replay (restart from 0) at the end; otherwise play.
   const mainIcon: IconName = isPlaying ? 'pause' : atLastFrame ? 'refresh' : 'play.fill';
 
-  const inSeconds = paceUnit === 'seconds';
-  // The pill's committed value in the unit it displays: the reader sees the
-  // multiplier over the author's pace, the setter sees the pace itself.
-  const committedValue = inSeconds ? paceMs / 1000 : speed;
-
-  const [showSpeed, setShowSpeed] = useState(false);
+  const [showSlider, setShowSlider] = useState(false);
   // Pill shows the live value while dragging, the committed one otherwise.
-  const [liveValue, setLiveValue] = useState(committedValue);
+  const [liveValue, setLiveValue] = useState(paceSeconds);
   useEffect(() => {
-    setLiveValue(committedValue);
-  }, [committedValue]);
+    setLiveValue(paceSeconds);
+  }, [paceSeconds]);
 
   const commitValue = useCallback(
     (next: number) => {
-      if (inSeconds) onPaceChange?.(Math.round(clampPaceSeconds(next) * 1000));
-      else onSpeedChange(next);
+      onPaceSecondsChange(clampPaceSeconds(next));
     },
-    [inSeconds, onPaceChange, onSpeedChange],
+    [onPaceSecondsChange],
   );
   // Tap the pill to step through the presets (the common case); long-press
   // reveals the fine slider for anything in between.
   const cycleValue = useCallback(() => {
     hapticSelection();
-    commitValue(inSeconds ? nextPaceStep(committedValue) : nextSpeedStep(committedValue));
-  }, [commitValue, inSeconds, committedValue]);
-  const toggleSpeed = useCallback(() => {
+    commitValue(nextPaceStep(paceSeconds));
+  }, [commitValue, paceSeconds]);
+  const toggleSlider = useCallback(() => {
     hapticLight();
-    setShowSpeed((open) => !open);
+    setShowSlider((open) => !open);
   }, []);
 
   // Play glyph: press-scale × state-pop, combined into one transform.
@@ -813,9 +561,11 @@ export function PlaybackControls({
   const progress = useSharedValue(frameCount > 1 ? frameIndex / (frameCount - 1) : 0);
   useEffect(() => {
     const target = frameCount > 1 ? frameIndex / (frameCount - 1) : 0;
-    const glide = isPlaying ? Math.max(timing.instant, paceMs / Math.max(speed, 0.01)) : timing.fast;
+    // `paceSeconds` IS the frame interval, so the cue glides at exactly the
+    // cadence the engine steps at.
+    const glide = isPlaying ? Math.max(timing.instant, paceSeconds * 1000) : timing.fast;
     progress.value = withTiming(target, { duration: glide });
-  }, [frameIndex, frameCount, isPlaying, paceMs, speed, progress]);
+  }, [frameIndex, frameCount, isPlaying, paceSeconds, progress]);
   // transformOrigin must live in the animated style, not the static StyleSheet —
   // the latter isn't honoured for the Reanimated-driven scaleX, so the bar would
   // grow from center instead of left-to-right.
@@ -838,7 +588,7 @@ export function PlaybackControls({
     onSeek(frameIndex + 1);
   }, [onSeek, frameIndex]);
 
-  const pillLabel = inSeconds ? formatPace(liveValue) : formatSpeed(liveValue);
+  const pillLabel = formatPace(liveValue);
 
   return (
     <View
@@ -944,13 +694,18 @@ export function PlaybackControls({
         </GlassCluster>
 
         <View style={styles.sideRight}>
-          <SpeedPill
+          <ValuePill
             label={pillLabel}
-            active={showSpeed}
+            active={showSlider}
+            minWidth={PACE_PILL_MIN_WIDTH}
             onCycle={cycleValue}
-            onToggleSlider={toggleSpeed}
-            accessibilityLabel={`${t('playView.speed')}, ${pillLabel}`}
-            accessibilityHint={t('playView.speedHint')}
+            onToggleSlider={toggleSlider}
+            // "Seconds per frame, 0.8 seconds" — the value is the duration
+            // alone, so the unit isn't announced twice.
+            accessibilityLabel={`${t('playView.pace')}, ${t('playView.paceValueA11y', {
+              count: roundPaceSeconds(liveValue),
+            })}`}
+            accessibilityHint={t('playView.paceHint')}
           />
         </View>
       </View>
@@ -961,9 +716,14 @@ export function PlaybackControls({
         </Text>
       )}
 
-      {showSpeed && (
+      {showSlider && (
         <Animated.View entering={FadeIn.duration(timing.fast)} exiting={FadeOut.duration(timing.instant)}>
-          <SpeedSlider value={committedValue} unit={paceUnit} onChange={commitValue} onLiveChange={setLiveValue} />
+          <PaceSlider
+            value={paceSeconds}
+            magnetSeconds={magnetSeconds}
+            onChange={commitValue}
+            onLiveChange={setLiveValue}
+          />
         </Animated.View>
       )}
     </View>
@@ -1094,21 +854,6 @@ const styles = StyleSheet.create({
   counterCurrent: {
     fontWeight: '600',
   },
-  speedPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    // Wide enough for the longest label the pill cycles to ("0.8s"), so stepping
-    // through the presets doesn't resize it and walk the transport row sideways.
-    minWidth: 64,
-    // Meets the 44dp touch floor on its own now that the card has the room —
-    // it used to reach it only via hitSlop, which left the pill visually
-    // shorter than every control it shares the row with.
-    minHeight: 44,
-    paddingHorizontal: spacing[3],
-    paddingVertical: spacing[1],
-    borderRadius: borderRadius.full,
-  },
   wallStateChip: {
     paddingHorizontal: spacing[2],
     paddingVertical: spacing[1],
@@ -1117,38 +862,5 @@ const styles = StyleSheet.create({
   },
   mismatchNotice: {
     textAlign: 'center',
-  },
-  speedPillText: {
-    fontVariant: ['tabular-nums'],
-    fontWeight: '600',
-  },
-  sliderTrackWrapper: {
-    alignSelf: 'stretch',
-    height: 28,
-    justifyContent: 'center',
-  },
-  sliderTrack: {
-    height: TRACK_HEIGHT,
-    borderRadius: TRACK_HEIGHT / 2,
-  },
-  sliderFill: {
-    position: 'absolute',
-    left: 0,
-    height: TRACK_HEIGHT,
-    borderRadius: TRACK_HEIGHT / 2,
-  },
-  sliderThumb: {
-    position: 'absolute',
-    left: 0,
-    width: THUMB_SIZE,
-    height: THUMB_SIZE,
-    borderRadius: THUMB_SIZE / 2,
-    backgroundColor: iosSystemColors.white,
-    borderWidth: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowRadius: 3,
-    shadowOpacity: 0.2,
-    elevation: 2,
   },
 });

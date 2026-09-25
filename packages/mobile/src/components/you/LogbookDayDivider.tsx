@@ -9,6 +9,7 @@ import { spacing, borderRadius } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
 import { useGradeFormat } from '../../hooks/use-grade-format';
 import { selectByVariant } from '../../theme/variants';
+import { nowMs } from '../../lib/clock';
 
 // Off-grid on purpose: 8pt (spacing[2]) reads too tall around caption1 text in
 // the compact chip, 4pt too tight against the wash edge.
@@ -51,10 +52,10 @@ export const LogbookDayDivider = memo(function LogbookDayDivider({
   // midnight while re-rendering ONLY dividers — a tab-level `now` in
   // renderItem's deps would re-render every climb row on each focus for a
   // value none of them read.
-  const [now, setNow] = useState(() => Date.now());
+  const [now, setNow] = useState(() => nowMs());
   useFocusEffect(
     useCallback(() => {
-      setNow(Date.now());
+      setNow(nowMs());
     }, []),
   );
 
@@ -104,12 +105,19 @@ export const LogbookDayDivider = memo(function LogbookDayDivider({
       accessibilityLabel={accessibilityLabel}
       style={[styles.container, chipStyle]}
     >
-      <Text variant="caption1" color={labelColor} style={styles.label}>
-        {labelWithWall}
-      </Text>
-      {rollup ? (
-        <Text variant="caption1" color={labelColor} style={styles.rollup} numberOfLines={1}>
-          {rollup}
+      <View style={styles.dayRow}>
+        <Text variant="subheadline" color={systemColors.label} style={styles.label}>
+          {label}
+        </Text>
+        {rollup ? (
+          <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.rollup}>
+            {rollup}
+          </Text>
+        ) : null}
+      </View>
+      {wallLabel ? (
+        <Text variant="caption1" color={labelColor}>
+          {wallLabel}
         </Text>
       ) : null}
     </View>
@@ -118,7 +126,8 @@ export const LogbookDayDivider = memo(function LogbookDayDivider({
 
 /**
  * Wall anchor inside a MIXED day — one per consecutive same-wall run, so the
- * rows below it can drop board+angle from their own meta line. Quieter than
+ * rows below it can omit their repeated custom wall name. Board/layout and
+ * angle always remain on each row. Quieter than
  * the day divider on purpose: plain caption, no wash, not a rotor header (the
  * day keeps rotor jumping clean).
  */
@@ -135,6 +144,14 @@ export const LogbookWallSubDivider = memo(function LogbookWallSubDivider({ wallL
 
 const styles = StyleSheet.create({
   container: {
+    gap: spacing[1],
+    marginHorizontal: spacing[4],
+    marginTop: spacing[2],
+    marginBottom: spacing[1],
+    paddingHorizontal: spacing[3],
+    paddingVertical: DIVIDER_VERTICAL_PADDING,
+  },
+  dayRow: {
     flexDirection: 'row',
     // Wrap instead of colliding at accessibility type sizes — the rollup drops
     // below the day label when one line can't hold both.
@@ -142,11 +159,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     columnGap: spacing[2],
-    marginHorizontal: spacing[4],
-    marginTop: spacing[3],
-    marginBottom: spacing[1],
-    paddingHorizontal: spacing[3],
-    paddingVertical: DIVIDER_VERTICAL_PADDING,
   },
   label: {
     fontWeight: '600',

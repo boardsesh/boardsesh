@@ -89,6 +89,31 @@ export const newClimbFeedTypeDefs = /* GraphQL */ `
     anyFeet: Boolean
     "Physical board size the climb is set on. Required on Woods (1 = 8x10, 2 = 12x12), where the two walls number their holds from their own origins. Ignored on boards that derive size compatibility from the hold bounding box."
     sizeId: Int
+    "The setter's own grade, seeded into board_climb_stats.display_difficulty. REQUIRED to publish on a spray wall, which has no crowd grade to fall back on; ignored elsewhere, where the grade comes from ticks or the Aurora sync."
+    userGrade: String
+    """
+    The spray wall this climb is being set on, as the share link carries it.
+
+    Only meaningful for \`boardType: "spray"\`, and only needed by a caller who is
+    neither the wall's owner nor a member of its gym: the wall's \`layoutId\` above
+    comes out of a sequence, so it is not a secret and cannot authorize a write on
+    its own. The wall's uuid IS the capability an UNLISTED wall's share link hands
+    out, so presenting it is what lets the crew somebody shared their home wall
+    with set climbs on it. A PRIVATE wall refuses everyone but its owner and its
+    gym, uuid or not. Send it on every spray write; it costs nothing when the
+    caller is a principal.
+    """
+    sprayWallUuid: String
+    """
+    The spray wall climb this one was remixed from.
+
+    Writes a \`spray_climb_lineage\` row alongside the child, which is what the
+    child's screen reads to link back to the parent's ticks and grade history.
+    Only meaningful for \`boardType: "spray"\`, and the parent has to be a climb
+    on the SAME wall. The parent is kept even when it is no longer climbable —
+    that is usually why it was remixed.
+    """
+    remixOfClimbUuid: ID
   }
 
   """
@@ -153,6 +178,28 @@ export const newClimbFeedTypeDefs = /* GraphQL */ `
     anyFeet: Boolean
     "Physical board size, where it is part of the climb's identity (Woods). Immutable — a size that differs from the stored one is rejected. Null or omitted keeps the stored size."
     sizeId: Int
+    """
+    The setter's own grade.
+
+    Needed to publish a DRAFT on a spray wall when the draft was created without
+    one: that board has no crowd grade to converge on, so a grade has to come from
+    either the stats row \`saveClimb\` already seeded or from this field. Ignored
+    on every other board, where the grade comes from ticks or the Aurora sync.
+    """
+    userGrade: String
+    """
+    The spray wall this climb is being set on, as the share link carries it.
+
+    Only meaningful for \`boardType: "spray"\`, and only needed by a caller who is
+    neither the wall's owner nor a member of its gym: the wall's \`layoutId\` above
+    comes out of a sequence, so it is not a secret and cannot authorize a write on
+    its own. The wall's uuid IS the capability an UNLISTED wall's share link hands
+    out, so presenting it is what lets the crew somebody shared their home wall
+    with set climbs on it. A PRIVATE wall refuses everyone but its owner and its
+    gym, uuid or not. Send it on every spray write; it costs nothing when the
+    caller is a principal.
+    """
+    sprayWallUuid: String
   }
 
   type UpdateClimbResult {
@@ -197,6 +244,22 @@ export const newClimbFeedTypeDefs = /* GraphQL */ `
     climbUuid: ID
     "Raw frames string for an in-progress climb that hasn't been saved yet."
     frames: String
+  }
+
+  "One hold's usage across the climbs a search matches (the hold heatmap)."
+  type HoldStat {
+    "Renderer/frame hold id (MoonBoard cell ids included)."
+    holdId: Int!
+    "Climbs that use the hold."
+    totalUses: Int!
+    startingUses: Int!
+    handUses: Int!
+    footUses: Int!
+    finishUses: Int!
+    "Sum of those climbs' ascent counts at the browsed angle."
+    totalAscents: Int!
+    "Average display difficulty of those climbs; null when none has a grade."
+    averageDifficulty: Float
   }
 
   type SimilarClimb {

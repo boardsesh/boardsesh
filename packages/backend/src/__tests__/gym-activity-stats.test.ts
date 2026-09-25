@@ -18,6 +18,9 @@ vi.mock('@boardsesh/db/queries', () => ({
   GYM_ACTIVITY_REFRESH_LOCK_KEY: 0x67796d61,
   countGymsWithActivity: mocks.count,
   rebuildGymActivityStats: mocks.rebuild,
+  // The spray wall visibility predicate. These tests mock the query builder, so the
+  // fragment is never rendered — the module just has to export it.
+  sprayClimbVisibilityCondition: () => ({ __sprayVisibility: true }),
 }));
 vi.mock('../middleware/auth', () => ({ validateToken: mocks.validateToken }));
 // Keep the real HTTP transport, context builder, schema and refresh resolver;

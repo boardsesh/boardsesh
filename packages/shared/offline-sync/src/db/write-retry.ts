@@ -58,6 +58,35 @@ import { isDatabaseLockedError } from './lock-errors';
  */
 export const OFFLINE_LOCAL_WRITE_BUDGET_MS = 9000;
 
+/**
+ * The same ladder, sized for a write NOBODY IS WAITING ON: a sync pull's page
+ * upsert, its deletions page, its refresh tail (issue #5302).
+ *
+ * Three numbers, and why they differ from the foreground ones above:
+ *  - ATTEMPTS (3, not 2). The foreground ladder is short because a second failed
+ *    attempt has to give the log-ascent sheet its thread back. A pull page has no
+ *    sheet behind it; the only cost of another attempt is that this cycle finishes
+ *    a few seconds later, against the alternative of the WHOLE cycle aborting and
+ *    the climber's downloaded board staying stale for at least 30 seconds.
+ *  - BUSY TIMEOUT (the full OFFLINE_DB_BUSY_TIMEOUT_MS on every attempt, applied by
+ *    the caller). The foreground ladder shortens attempt 2 to 1.5s as a "did the
+ *    lock clear in the gap" probe. Shortening it here would only make the pull give
+ *    up sooner on a holder it can afford to outwait.
+ *  - DELAY (250ms, not 150ms). The holders a pull meets are not the ~340ms tick
+ *    writes the foreground ladder was measured against — `removeBoardScopeData`
+ *    holds an exclusive transaction for seconds (pull-client.ts says so where it
+ *    guards the scope-complete write), and a snapshot import batch is the other
+ *    documented long holder. A slightly longer gap costs a background writer
+ *    nothing and gives a real holder room to commit.
+ *
+ * Worst case 5000 + 250 + 5000 + 250 + 5000 = 15.5s, inside the budget below and
+ * comfortably inside the scheduler's 30s cycle-error retry, so a ladder that
+ * exhausts still lands before the wake that would have re-run the cycle anyway.
+ */
+export const OFFLINE_BACKGROUND_WRITE_MAX_ATTEMPTS = 3;
+export const OFFLINE_BACKGROUND_WRITE_RETRY_DELAY_MS = 250;
+export const OFFLINE_BACKGROUND_WRITE_BUDGET_MS = 20_000;
+
 /** What the ladder did, reported once per write whose first attempt threw. */
 export type LocalWriteRetryOutcome = {
   /** How many attempts ran, 1-based. `1` means the error was not retryable. */

@@ -22,6 +22,7 @@ type TestBoardBanner = {
 
 type CapturedActivationOptions = {
   viewOnlyBoard?: TestRenderBoard | ((climb: Climb) => TestRenderBoard | null) | null;
+  previewOnly?: boolean;
 };
 
 // The metadata query goes through getHttpClient().request — mock it so we can
@@ -138,6 +139,10 @@ vi.mock('../../../../src/providers/theme-provider', () => ({
 }));
 const authMock = vi.hoisted(() => ({ isAuthenticated: true }));
 vi.mock('../../../../src/providers/auth-provider', () => ({ useAuth: () => authMock }));
+// Whether anyone else is in the session — what turns a row tap from "replace the
+// crew's queue and take the wall" into "show me this climb".
+const sessionMock = vi.hoisted(() => ({ isShared: false }));
+vi.mock('../../../../src/providers/queue-provider', () => ({ useIsSharedSession: () => sessionMock.isShared }));
 vi.mock('../../../../src/providers/toast-provider', () => ({ useToast: () => toast }));
 vi.mock('../../../../src/lib/playlists/use-playlist-activation', () => ({
   usePlaylistActivation: (options: CapturedActivationOptions) => {
@@ -301,6 +306,7 @@ beforeEach(() => {
   toast.showToast.mockClear();
   playlistMocks.allClimbs = [];
   playlistMocks.activationOptions = null;
+  sessionMock.isShared = false;
   playlistMocks.renderBoardResult = { renderBoard: null, banner: null };
   commentsMock.calls = [];
   commentsMock.totalCount = 0;
@@ -408,6 +414,28 @@ describe('PlaylistDetail metadata error handling', () => {
       layoutId: 9,
       angle: 35,
     });
+  });
+
+  // A row tap on this screen activates with `replaceQueueOnActivate` — the
+  // loudest write in the app, since it swaps everyone's queue for the playlist
+  // order and takes the wall. In a crew that cannot be what tapping a row to look
+  // at a climb means, so the tap browses instead.
+  it('browses a row tap in a crew instead of replacing everyone’s queue', async () => {
+    sessionMock.isShared = true;
+    requestMock.mockResolvedValue({ playlist: makePlaylist() });
+
+    renderDetail();
+
+    await waitFor(() => expect(playlistMocks.activationOptions?.previewOnly).toBe(true));
+  });
+
+  it('leaves a solo row tap activating the playlist as before', async () => {
+    requestMock.mockResolvedValue({ playlist: makePlaylist() });
+
+    renderDetail();
+
+    await waitFor(() => expect(playlistMocks.activationOptions).not.toBeNull());
+    expect(playlistMocks.activationOptions?.previewOnly).toBe(false);
   });
 });
 

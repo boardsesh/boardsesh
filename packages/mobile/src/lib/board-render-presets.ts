@@ -73,27 +73,27 @@ export const BOARD_RENDER_PRESET_VALUES = {
 export const BOARD_RENDER_PRESETS: readonly BoardRenderPreset[] = [
   {
     id: 'aura',
-    labelI18nKey: 'mobile.more.boardLook.presets.aura',
+    labelI18nKey: 'mobile.settings.boardLook.presets.aura',
     values: { mode: 'aura', boardsesh: boardseshPreset(BOARD_RENDER_PRESET_VALUES.aura) },
   },
   {
     id: 'aura-bold',
-    labelI18nKey: 'mobile.more.boardLook.presets.auraBold',
+    labelI18nKey: 'mobile.settings.boardLook.presets.auraBold',
     values: { mode: 'aura', boardsesh: boardseshPreset(BOARD_RENDER_PRESET_VALUES['aura-bold']) },
   },
   {
     id: 'aura-subtle',
-    labelI18nKey: 'mobile.more.boardLook.presets.auraSubtle',
+    labelI18nKey: 'mobile.settings.boardLook.presets.auraSubtle',
     values: { mode: 'aura', boardsesh: boardseshPreset(BOARD_RENDER_PRESET_VALUES['aura-subtle']) },
   },
   {
     id: 'modern-classic',
-    labelI18nKey: 'mobile.more.boardLook.presets.modernClassic',
+    labelI18nKey: 'mobile.settings.boardLook.presets.modernClassic',
     values: { mode: 'aura', boardsesh: boardseshPreset(BOARD_RENDER_PRESET_VALUES['modern-classic']) },
   },
   {
     id: 'max-contrast',
-    labelI18nKey: 'mobile.more.boardLook.presets.maxContrast',
+    labelI18nKey: 'mobile.settings.boardLook.presets.maxContrast',
     values: { mode: 'aura', boardsesh: boardseshPreset(BOARD_RENDER_PRESET_VALUES['max-contrast']) },
   },
 ] as const;

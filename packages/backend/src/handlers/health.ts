@@ -37,6 +37,7 @@ export async function handleHealthCheck(req: IncomingMessage, res: ServerRespons
     error: database.error,
     connectRetries: retries.count,
     lastConnectRetryAt: retries.lastRetryAt,
+    maxParallelWorkersPerGather: database.maxParallelWorkersPerGather,
   };
   const deploymentIdentity = {
     deploymentId: process.env.RAILWAY_DEPLOYMENT_ID?.trim() || 'unknown',
@@ -78,6 +79,13 @@ export async function handleHealthCheck(req: IncomingMessage, res: ServerRespons
  * `healthcheckPath` — this is the endpoint to point an external monitor or a
  * Sentry cron at, so a database outage pages someone instead of restarting a
  * backend that cannot fix it.
+ *
+ * `database.maxParallelWorkersPerGather` is the recurrence signal for the
+ * parallel-query DSM exhaustion of #5352: anything other than `"0"` in
+ * production means migration 0225's database default did not land, and SQLSTATE
+ * 53100 can come back. It reports the value the backend's own pool actually
+ * sees, which is the only reading that matters — a setting that is present in
+ * `pg_db_role_setting` but not on the app's connections would be no fix at all.
  */
 export async function handleDatabaseHealthCheck(req: IncomingMessage, res: ServerResponse): Promise<void> {
   if (!applyCorsHeaders(req, res)) return;
@@ -99,6 +107,7 @@ export async function handleDatabaseHealthCheck(req: IncomingMessage, res: Serve
         error: database.error,
         connectRetries: retries.count,
         lastConnectRetryAt: retries.lastRetryAt,
+        maxParallelWorkersPerGather: database.maxParallelWorkersPerGather,
       },
     }),
   );

@@ -37,6 +37,8 @@ jobs:
 
       - name: Run Claude Code Review
         id: claude-review
+        # Claude's provider-side allowance can be exhausted; this advisory review must not block a PR.
+        continue-on-error: true
         uses: anthropics/claude-code-action@v1.0.142
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}

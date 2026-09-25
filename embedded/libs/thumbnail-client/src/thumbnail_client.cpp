@@ -78,15 +78,33 @@ bool parseIntegerSegment(const char* value, int& output) {
     return true;
 }
 
+// Matches MAX_SET_IDS in packages/shared/board-render/src/validation.ts. The
+// widest shipped config is Decoy layout 2 / size 1 at 19 hold sets; at the old
+// 16 this function parsed the first 16, sorted those, and wrote them back —
+// silently dropping three sets and rendering a Decoy board missing its art.
+static const int MAX_SET_IDS = 24;
+
 void sortSetIds(char* setIds) {
     if (!setIds || setIds[0] == '\0') return;
 
-    static const int MAX_SET_IDS = 16;
     int parsedSetIds[MAX_SET_IDS];
     int parsedSetCount = 0;
 
     const char* cursor = setIds;
-    while (*cursor && parsedSetCount < MAX_SET_IDS) {
+    while (*cursor) {
+        // Leave the string alone rather than truncate it. Sorting here only
+        // aligns the request with the server's cache key; the server
+        // canonicalises set ids itself, so an unsorted list still renders the
+        // right board, while a short one does not.
+        //
+        // `extractConfigKey` in embedded/projects/board-controller takes the
+        // same way out past its own cap. The two are separate binaries with no
+        // include between them, so the shared reasoning only survives by being
+        // written down in both places — and a truncating "fix" to either one
+        // reads as a tidy-up until a wide board renders wrong.
+        if (parsedSetCount >= MAX_SET_IDS) {
+            return;
+        }
         char* end = nullptr;
         long parsed = strtol(cursor, &end, 10);
         if (end == cursor) {
@@ -113,7 +131,7 @@ void sortSetIds(char* setIds) {
         parsedSetIds[sortIndex + 1] = currentSetId;
     }
 
-    char sortedSetIds[64];
+    char sortedSetIds[MAX_ROUTE_SEGMENT];
     sortedSetIds[0] = '\0';
     size_t used = 0;
     for (int i = 0; i < parsedSetCount; i++) {
@@ -125,8 +143,8 @@ void sortSetIds(char* setIds) {
         used += static_cast<size_t>(written);
     }
 
-    strncpy(setIds, sortedSetIds, 63);
-    setIds[63] = '\0';
+    strncpy(setIds, sortedSetIds, sizeof(sortedSetIds) - 1);
+    setIds[sizeof(sortedSetIds) - 1] = '\0';
 }
 
 bool isQuerySafe(char value) {
@@ -200,7 +218,7 @@ bool parseBoardRenderRoute(const char* boardPath, BoardRenderRoute& route) {
         cursor++;
     }
 
-    char segments[5][64];
+    char segments[5][MAX_ROUTE_SEGMENT];
     memset(segments, 0, sizeof(segments));
     int segmentCount = 0;
     const char* segmentStart = cursor;

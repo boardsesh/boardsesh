@@ -4,6 +4,7 @@ import { isValidCronExpression } from '../cron/expression';
 import { assertValidTimeZone } from '../cron/zoned-time';
 import { findJob, JOBS, VERCEL_OWNED_CRON_PATHS } from '../jobs/registry';
 import { refreshGymActivityStats } from '../jobs/refresh-gym-activity-stats';
+import { purgeSprayWallPhotos } from '../jobs/purge-spray-wall-photos';
 
 type VercelConfig = { crons?: { path: string; schedule: string }[] };
 
@@ -26,11 +27,6 @@ const vercelCronPaths = (vercelConfig.crons ?? []).map((cron) => cron.path);
  */
 const VERCEL_SCHEDULES: readonly (readonly [job: string, path: string, schedule: string])[] = [
   ['cleanup', '/api/internal/cleanup', '0 5 * * *'],
-  ['prewarm-heatmap-kilter', '/api/internal/prewarm-heatmap/kilter', '0 4 * * 0'],
-  ['prewarm-heatmap-tension', '/api/internal/prewarm-heatmap/tension', '15 4 * * 0'],
-  ['prewarm-heatmap-decoy', '/api/internal/prewarm-heatmap/decoy', '30 4 * * 0'],
-  ['prewarm-heatmap-touchstone', '/api/internal/prewarm-heatmap/touchstone', '45 4 * * 0'],
-  ['prewarm-heatmap-grasshopper', '/api/internal/prewarm-heatmap/grasshopper', '0 5 * * 0'],
   ['profile-percentiles', '/api/internal/profile-percentiles', '0 6 * * 0'],
   ['refresh-sitemap-climbs', '/api/internal/refresh-sitemap-climbs', '0 */6 * * *'],
 ];
@@ -96,15 +92,6 @@ describe('job registry', () => {
     expect(actual).toEqual(VERCEL_SCHEDULES.map((row) => [...row]));
   });
 
-  it('keeps the five heatmap prewarms staggered rather than firing them together', () => {
-    // Five boards' worth of heatmap aggregates against one Postgres. The
-    // stagger is the rate limit, so a schedule collapsed onto a single minute
-    // is a regression even though every individual job still "runs weekly".
-    const prewarmSlots = JOBS.filter((job) => job.name.startsWith('prewarm-heatmap-')).map((job) => job.schedule);
-    expect(new Set(prewarmSlots).size).toBe(prewarmSlots.length);
-    expect(prewarmSlots).toHaveLength(5);
-  });
-
   it('runs the gym activity refresh directly against GraphQL at 06:30 UTC', () => {
     expect(findJob('refresh-gym-activity-stats')).toMatchObject({
       schedule: '30 6 * * *',
@@ -113,6 +100,20 @@ describe('job registry', () => {
       run: refreshGymActivityStats,
     });
     expect(findJob('refresh-gym-activity-stats')?.webPath).toBeUndefined();
+  });
+
+  it('runs the spray wall photo purge directly against GraphQL at 07:00 UTC', () => {
+    // Pinned as data, like every row above: the 30-day retention window is only
+    // as real as the job that acts on it, and a purge silently dropped from the
+    // registry would leave photographs of people's homes in the bucket forever.
+    // 07:00, not 06:30, so it never shares a tick with the gym activity rebuild.
+    expect(findJob('purge-spray-wall-photos')).toMatchObject({
+      schedule: '0 7 * * *',
+      timezone: 'UTC',
+      timeoutMs: 600_000,
+      run: purgeSprayWallPhotos,
+    });
+    expect(findJob('purge-spray-wall-photos')?.webPath).toBeUndefined();
   });
 
   it('gives the long jobs more than the 300s Vercel capped them at', () => {

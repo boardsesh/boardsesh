@@ -1,7 +1,7 @@
 import dayjs from 'dayjs';
 import isoWeek from 'dayjs/plugin/isoWeek';
 import isSameOrBefore from 'dayjs/plugin/isSameOrBefore';
-import { type GradeDisplayFormat } from '@boardsesh/play-view';
+import { formatGradeByDifficultyId, type GradeDisplayFormat } from '@boardsesh/play-view';
 import { parseTickTime, tickTimeMs } from './format-tick-time';
 import { difficultyMapping, getDifficultyMapping, sortGrades } from './grade-mapping';
 import { BOARD_TYPES, getLayoutKey, getLayoutDisplayName, parseLayoutKey, sortLayoutKeys } from './layouts';
@@ -37,13 +37,18 @@ function gradeIdForEntry(entry: LogbookEntry): number | null {
 
 // ── Timeframe filtering ─────────────────────────────────────────────
 
+/**
+ * `now` defaults to the real wall clock; pass a fixed instant for deterministic
+ * tests or the mobile screenshot-mode frozen clock (see `derive-view-model.ts`'s
+ * `now` field, threaded down from `lib/clock.ts` on mobile).
+ */
 export function filterLogbookByTimeframe(
   logbook: LogbookEntry[],
   timeframe: UnifiedTimeframeType,
   fromDate: string,
   toDate: string,
+  now: dayjs.Dayjs = dayjs(),
 ): LogbookEntry[] {
-  const now = dayjs();
   switch (timeframe) {
     case 'today':
       return logbook.filter((entry) => parseTickTime(entry.climbed_at).isSame(now, 'day'));
@@ -70,12 +75,16 @@ export function filterLogbookByTimeframe(
 
 // ── Aggregated stacked bars (grade x layout, for stats summary) ─────
 
+/** `now` defaults to the real wall clock; pass the same pinned instant given to
+ *  `filteredLogbook`'s `filterLogbookByTimeframe` call so this card's timeframe
+ *  window agrees with the rest of the page (see `derive-view-model.ts`). */
 export function buildAggregatedStackedBars(
   allBoardsTicks: Record<string, LogbookEntry[]>,
   timeframe: UnifiedTimeframeType,
   gradeFormat: GradeDisplayFormat = 'v-grade',
   fromDate?: string,
   toDate?: string,
+  now: dayjs.Dayjs = dayjs(),
 ): RawStackedBars | null {
   const mapping = getDifficultyMapping(gradeFormat);
   const layoutGradeClimbs: Record<string, Record<string, Set<string>>> = {};
@@ -84,7 +93,7 @@ export function buildAggregatedStackedBars(
 
   BOARD_TYPES.forEach((boardType) => {
     const ticks = allBoardsTicks[boardType] || [];
-    const filteredTicks = filterLogbookByTimeframe(ticks, timeframe, fromDate ?? '', toDate ?? '');
+    const filteredTicks = filterLogbookByTimeframe(ticks, timeframe, fromDate ?? '', toDate ?? '', now);
 
     filteredTicks.forEach((entry) => {
       const gradeId = gradeIdForEntry(entry);
@@ -260,15 +269,17 @@ export function buildFlashRedpointBars(
   }));
 }
 
+/** `now` defaults to the real wall clock; see `buildAggregatedStackedBars`. */
 export function buildAggregatedFlashRedpointBars(
   allBoardsTicks: Record<string, LogbookEntry[]>,
   timeframe: UnifiedTimeframeType,
   gradeFormat: GradeDisplayFormat = 'v-grade',
   fromDate?: string,
   toDate?: string,
+  now: dayjs.Dayjs = dayjs(),
 ): RawGroupedBar[] | null {
   const allEntries = BOARD_TYPES.flatMap((boardType) =>
-    filterLogbookByTimeframe(allBoardsTicks[boardType] || [], timeframe, fromDate ?? '', toDate ?? ''),
+    filterLogbookByTimeframe(allBoardsTicks[boardType] || [], timeframe, fromDate ?? '', toDate ?? '', now),
   );
 
   return buildFlashRedpointBars(allEntries, gradeFormat);
@@ -287,18 +298,20 @@ function vGradeToPoints(vGrade: string): number {
   return Math.max(num, 1);
 }
 
+/** `now` defaults to the real wall clock; see `buildAggregatedStackedBars`. */
 export function buildVPointsTimeline(
   allBoardsTicks: Record<string, LogbookEntry[]>,
   timeframe: UnifiedTimeframeType,
   fromDate?: string,
   toDate?: string,
+  now: dayjs.Dayjs = dayjs(),
 ): RawVPointsTimeline | null {
   // Collect entries per layout, filter by timeframe, exclude attempts
   const entriesByLayout: Record<string, LogbookEntry[]> = {};
 
   BOARD_TYPES.forEach((boardType) => {
     const ticks = allBoardsTicks[boardType] || [];
-    const filtered = filterLogbookByTimeframe(ticks, timeframe, fromDate ?? '', toDate ?? '').filter(
+    const filtered = filterLogbookByTimeframe(ticks, timeframe, fromDate ?? '', toDate ?? '', now).filter(
       (e) => e.difficulty !== null && e.status !== 'attempt',
     );
 
@@ -412,12 +425,14 @@ export function buildStatisticsSummary(
     .map((stats) => {
       const exactPercentage = totalAscents > 0 ? (stats.distinctClimbCount / totalAscents) * 100 : 0;
       const grades: Record<string, number> = {};
+      let hardestDifficulty: number | null = null;
       stats.gradeCounts.forEach(({ grade, count }) => {
-        const difficultyNum = parseInt(grade, 10);
-        if (!isNaN(difficultyNum)) {
+        const difficultyNum = Number(grade);
+        if (grade.trim() !== '' && Number.isInteger(difficultyNum) && count > 0) {
           const gradeName = mapping[difficultyNum];
           if (gradeName) {
             grades[gradeName] = (grades[gradeName] || 0) + count;
+            if (hardestDifficulty == null || difficultyNum > hardestDifficulty) hardestDifficulty = difficultyNum;
           }
         }
       });
@@ -428,13 +443,21 @@ export function buildStatisticsSummary(
         displayName: getLayoutDisplayName(stats.boardType, stats.layoutId),
         count: stats.distinctClimbCount,
         grades,
+        hardestSend:
+          hardestDifficulty == null
+            ? null
+            : {
+                difficulty: hardestDifficulty,
+                label: formatGradeByDifficultyId(hardestDifficulty, gradeFormat) ?? mapping[hardestDifficulty],
+                status: 'send' as const,
+              },
         exactPercentage,
         percentage: Math.floor(exactPercentage),
         remainder: exactPercentage - Math.floor(exactPercentage),
       };
     })
     .filter((layout) => layout.count > 0)
-    .sort((a, b) => b.count - a.count);
+    .sort((a, b) => b.count - a.count || a.layoutKey.localeCompare(b.layoutKey));
 
   // Distribute remaining percentage points using largest remainder method
   const totalFloored = layoutsWithExactPercentages.reduce((sum, l) => sum + l.percentage, 0);
@@ -453,7 +476,7 @@ export function buildStatisticsSummary(
 
 // ── Activity heatmap (GitHub-style calendar) ────────────────────────
 
-const HEATMAP_WEEKS = 53;
+export const HEATMAP_WEEKS = 53;
 
 /**
  * Per-day ascent counts over a trailing, week-aligned window ending this week —

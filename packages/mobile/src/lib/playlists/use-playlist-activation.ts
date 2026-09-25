@@ -126,6 +126,17 @@ export type UsePlaylistActivationOptions = {
    * when that row should activate normally.
    */
   viewOnlyBoard?: PlaylistRenderBoard | ViewOnlyBoardResolver | null;
+  /**
+   * When true, a tap is view-only on the ACTIVE board: the drawer opens on the
+   * tapped climb with this list seeded as its swipe track, and the queue is not
+   * touched until the climber puts a climb up from the commit row.
+   *
+   * Same landing as `viewOnlyBoard`, different reason — that one is "this climb
+   * is on a board you're not on", this one is "there are other climbers in this
+   * session, so a row tap must not take their wall". Read live at tap time, so a
+   * crew forming or breaking up between render and tap is honoured.
+   */
+  previewOnly?: boolean;
   /** Logged when the async suggestion refresh fails (non-abort). */
   refreshErrorMessage: string;
   /** Replace the user's queue with the playlist order instead of suggestion-fallback navigation. */
@@ -206,6 +217,7 @@ export function usePlaylistActivation({
   allClimbs,
   fetchPage,
   viewOnlyBoard,
+  previewOnly = false,
   refreshErrorMessage,
   replaceQueueOnActivate = false,
 }: UsePlaylistActivationOptions): PlaylistActivationResult {
@@ -231,6 +243,13 @@ export function usePlaylistActivation({
   const playlistSuggestionSource = usePlaylistSuggestionSource();
   const playlistSuggestionSourceRef = useRef(playlistSuggestionSource);
   playlistSuggestionSourceRef.current = playlistSuggestionSource;
+
+  // Mirrored, not a dependency: `previewOnly` tracks whether anyone else is in
+  // the session, and threading it through the callback's deps would churn the
+  // identity of every climb row's onPress the moment a crew forms — for a value
+  // the callback only needs at tap time.
+  const previewOnlyRef = useRef(previewOnly);
+  previewOnlyRef.current = previewOnly;
 
   // The climbs the screen has loaded, mirrored into a ref so the empty-fetch
   // canary below can read them without putting `allClimbs` in
@@ -287,10 +306,27 @@ export function usePlaylistActivation({
     [setCurrentClimb, setPlaylistSuggestionSource, refreshPlaylistSuggestionSource],
   );
 
+  // Built once per active board, not per climb: `canAddClimbToBoard` caches its
+  // valid-hold-id Set against the target OBJECT, so a fresh target per call
+  // would rebuild that Set for every climb in the feed.
+  const activeBoardTarget = useMemo(
+    () =>
+      activeBoard
+        ? getPlaylistRenderBoardTarget({
+            boardName: activeBoard.boardType,
+            layoutId: activeBoard.layoutId,
+            sizeId: activeBoard.sizeId,
+            setIds: activeBoard.setIds,
+            angle: activeBoard.angle,
+          })
+        : null,
+    [activeBoard],
+  );
+
   const resolveTarget = useCallback(
     (climb: Climb) => {
       void climb;
-      if (!activeBoard) return null;
+      if (!activeBoard || !activeBoardTarget) return null;
       return {
         boardKey: getQueueBoardKey({
           board_name: activeBoard.boardType,
@@ -300,11 +336,24 @@ export function usePlaylistActivation({
         }),
         boardName: activeBoard.boardType,
         angle: activeBoard.angle,
-        // Single active board on mobile — every loaded climb is climbable.
-        isClimbable: () => true,
+        // Keep climbs this board cannot draw out of the swipe order. The
+        // playlist-detail screens run the resolver in all-boards mode on
+        // purpose, so `allClimbs` — which seeds the synchronous source before
+        // the board-scoped refresh lands — carries other board types, other
+        // layouts and climbs whose holds don't exist on this size.
+        //
+        // `canAddClimbToBoard`, not identity matching: identity can't see the
+        // two cases that render plausibly while lighting the wrong holds —
+        // Woods numbers each size's holds from its own origin (so an 8x10
+        // climb's ids all exist on a 12x12 as different holds) and MoonBoard's
+        // render data covers the whole grid whichever add-on sets are bolted
+        // on. It is the same predicate the playlist rows dim on and the row
+        // render board resolves through, so what you see, what you swipe to and
+        // what lights up stay one answer. Missing hold data fails open.
+        isClimbable: (candidate: Climb) => canAddClimbToBoard(candidate, activeBoardTarget).ok,
       };
     },
-    [activeBoard],
+    [activeBoard, activeBoardTarget],
   );
 
   const fetchClimbsForBoard = useCallback(
@@ -412,13 +461,12 @@ export function usePlaylistActivation({
           });
         }
         // Canary. A board-scoped fetch that comes back empty for a playlist the
-        // detail list has already rendered climbable rows for degrades into a
-        // perfectly plausible one-item queue (buildPlaylistQueue appends the
-        // tapped climb), with no error anywhere — which is exactly how #3891's
-        // MoonBoard size filter stayed invisible for months. Sentry-only, once
-        // per playlist per session, so the next instance of that class pages us
-        // instead of a user. Gated on climbs this board CAN render, so a playlist
-        // full of off-board climbs (legitimately empty here) stays silent.
+        // detail list has already rendered climbable rows for used to degrade
+        // into a plausible one-item queue with no error anywhere — exactly how
+        // #3891's MoonBoard size filter stayed invisible for months. Report it
+        // Sentry-only, once per playlist per session, and gate on climbs this
+        // board CAN render so an off-board playlist stays silent. The fresh list
+        // remains authoritative: a shorter result may reflect a real removal.
         if (
           climbs.length === 0 &&
           // A capped or repeating drain is a different, already-reported fault.
@@ -564,6 +612,36 @@ export function usePlaylistActivation({
         return Promise.resolve();
       }
 
+      // Browse-only tap on the ACTIVE board (a shared session). Same landing as
+      // the wrong-board branch above — drawer opens on the tapped climb, queue
+      // untouched — with two differences: no board override (this climb is on the
+      // board the climber is standing at), and the suggestion source is keyed to
+      // the ACTIVE board so the drawer's swipes walk this list instead of the
+      // queue. Ordered ahead of `replaceQueueOnActivate` deliberately: replacing a
+      // crew's whole queue is the loudest write in the app, and a row tap must
+      // never be it.
+      if (previewOnlyRef.current) {
+        const target = resolveTarget(climb);
+        openPlayDrawer(schemaClimb, {
+          previewQueueItem: climbToQueueItem(schemaClimb),
+          // A null target (no resolvable board) deliberately degrades to a
+          // trackless preview: the tapped climb still shows, swipes just walk
+          // the queue instead of this list — the same fallback the wrong-board
+          // branch above has always had. It should be unreachable here (the
+          // gate only fires in a shared session, where an active board
+          // resolved), so degrading beats blocking the tap on a broken invariant.
+          playlistSuggestionSource: target
+            ? createPlaylistSuggestionSource({
+                playlistUuid: sourceId,
+                activatedClimb: climb,
+                climbs: allClimbs,
+                boardKey: target.boardKey,
+              })
+            : null,
+        });
+        return Promise.resolve();
+      }
+
       // Replace-on-activate (playlist/circuit detail): swap the whole queue for the
       // playlist order so previous/next walk the circuit. Replacement clears future
       // queue items, so warn first when any exist; otherwise seed the queue with the
@@ -581,8 +659,24 @@ export function usePlaylistActivation({
           }
           const item = climbToQueueItem(schemaClimb);
           setQueue([item], item);
-          // Same as the full replacement below: the queue is the list from here.
-          setPlaylistSuggestionSource(null);
+          // The detail screen already has an ordered playlist window in memory.
+          // Seed it as the player's swipe track before opening the drawer, so
+          // previous/next and board swipes work on its first frame without
+          // pretending those browsable neighbours are queued climbs.
+          //
+          // A one-item queue with a null track made navigation depend entirely on
+          // the follow-up network drain. A slow, cancelled, or stuck refresh
+          // therefore left both arrow buttons disabled indefinitely even though
+          // the adjacent rows were already visible on the playlist screen.
+          setPlaylistSuggestionSource(
+            createPlaylistSuggestionSource({
+              playlistUuid: sourceId,
+              activatedClimb: climb,
+              climbs: loadedClimbsRef.current,
+              boardKey: target.boardKey,
+              isClimbable: target.isClimbable,
+            }),
+          );
           openPlayDrawer(schemaClimb, { committedExternally: true });
           return replaceQueueWithPlaylist(climb, { previewQueueItem: item });
         }

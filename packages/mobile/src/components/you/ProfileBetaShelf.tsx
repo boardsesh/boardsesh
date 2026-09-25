@@ -6,6 +6,7 @@ import { HorizontalScrollSection } from '../HorizontalScrollSection';
 import { BetaVideoCard, BETA_CARD_COMPACT_HEIGHT } from '../play-drawer/BetaVideoCard';
 import { useUserBetaLinks } from '../../lib/graphql/hooks';
 import { useBetaShelfCollapse } from '../../lib/beta-shelf-collapse';
+import { screenshotModeLoadMore } from '../../lib/screenshot-mode';
 
 type ProfileBetaShelfProps = {
   /** The climber whose beta videos to show (own id on the You tab). */
@@ -45,7 +46,7 @@ export const ProfileBetaShelf = memo(function ProfileBetaShelf({ userId }: Profi
       onActionPress={hasVideos ? handleSeeAll : undefined}
       loading={isLoading && !hasVideos}
       isLoadingMore={isLoadingMore}
-      onEndReached={loadMore}
+      onEndReached={screenshotModeLoadMore(loadMore)}
       minHeight={BETA_CARD_COMPACT_HEIGHT}
       disclosure={{ expanded, onToggle: toggle }}
     >

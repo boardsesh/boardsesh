@@ -161,3 +161,16 @@ describe('PlaylistDetailContent surviving surfaces', () => {
     expect(screen.getByTestId('multiboard-climb-list')).toBeTruthy();
   });
 });
+
+describe('PlaylistDetailContent heading outline', () => {
+  it('gives the page exactly one h1, and it holds the playlist name', () => {
+    // 3,320 sitemapped playlist URLs shipped with no h1 at all — the name was
+    // an h2 under nothing. Google reads a page with no top-level heading as a
+    // page about nothing.
+    const { container } = renderDetail();
+
+    const topLevelHeadings = container.querySelectorAll('h1');
+    expect(topLevelHeadings).toHaveLength(1);
+    expect(topLevelHeadings[0].textContent).toBe(mockPlaylist.name);
+  });
+});

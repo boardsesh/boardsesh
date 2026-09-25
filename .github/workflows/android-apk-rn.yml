@@ -10,7 +10,12 @@ name: Android Play Internal Deploy (React Native)
 
 on:
   push:
-    branches: [main]
+    # Native store candidates are cut from the release train, not main. Regular
+    # (JS-only) work keeps landing on main; a PR that moves the native fingerprint
+    # targets release/next, and merging it there is what starts a store build.
+    # A workflow_dispatch from main is still allowed (a hotfix rebuild after a
+    # merge-back) — see the job gates below. docs/mobile-store-release.md.
+    branches: [release/next]
     paths:
       - 'packages/mobile/**'
       - 'packages/shared/**'
@@ -109,9 +114,10 @@ jobs:
   # binary via EXPO_UPDATES_FINGERPRINT_OVERRIDE and tags it, so binary-rv == tag
   # == the OTA-published rv by construction. See docs/mobile-ota-updates.md.
   gate:
-    # Automatic and manual uploads come only from main; arbitrary refs never
-    # receive signing keys.
-    if: github.ref == 'refs/heads/main'
+    # Automatic uploads come only from the release train; a manual dispatch may
+    # also come from main (the hotfix rebuild after a merge-back). Arbitrary refs
+    # never receive signing keys.
+    if: github.ref == 'refs/heads/release/next' || (github.event_name == 'workflow_dispatch' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release/next'))
     # The maps key affects the fingerprint, so both gate and build use the same
     # Production environment.
     environment: Production
@@ -132,7 +138,7 @@ jobs:
         run: |
           set -euo pipefail
           [ -n "$GOOGLE_PLAY_SERVICE_ACCOUNT_JSON" ] || {
-            echo "::error::Missing GOOGLE_PLAY_SERVICE_ACCOUNT_JSON; a main build must reach Play internal before it can be tagged."
+            echo "::error::Missing GOOGLE_PLAY_SERVICE_ACCOUNT_JSON; a release-train build must reach Play internal before it can be tagged."
             exit 1
           }
 
@@ -250,7 +256,14 @@ jobs:
           java-version: '21'
 
       - name: Setup Android SDK
+        # `packages: ''` is REQUIRED, not tidiness. setup-android@v3's default is
+        # `tools platform-tools`, and Google removed the obsolete `tools` package from
+        # the SDK repository, so the default now dies on `Warning: Failed to find
+        # package 'tools'` before any SDK component is installed. The next step
+        # installs what the build actually needs.
         uses: android-actions/setup-android@v3
+        with:
+          packages: ''
 
       - name: Accept licenses and install SDK components
         run: |
@@ -662,7 +675,7 @@ jobs:
             echo "DISCORD_DEPLOY_WEBHOOK not set — skipping notification"
             exit 0
           fi
-          CONTENT=$(printf '📱 **Android main uploaded to Play internal** on `%s`\n• version: %s\n• versionCode: %s\n<%s>' \
+          CONTENT=$(printf '📱 **Android release candidate uploaded to Play internal** on `%s`\n• version: %s\n• versionCode: %s\n<%s>' \
             "${COMMIT_SHA:0:7}" "$BOARDSESH_MOBILE_VERSION" "$VERSION_CODE" "$RUN_URL")
           jq -n --arg content "$CONTENT" '{content: $content, allowed_mentions: {parse: []}}' \
             | curl -sS --fail-with-body -X POST -H "Content-Type: application/json" -d @- "$DISCORD_DEPLOY_WEBHOOK" || \
@@ -679,7 +692,7 @@ jobs:
             echo "DISCORD_DEPLOY_WEBHOOK not set — skipping notification"
             exit 0
           fi
-          CONTENT=$(printf '🚨 **Android main Play upload failed** on `%s`\n<%s>' \
+          CONTENT=$(printf '🚨 **Android release-candidate Play upload failed** on `%s`\n<%s>' \
             "${COMMIT_SHA:0:7}" "$RUN_URL")
           jq -n --arg content "$CONTENT" '{content: $content, allowed_mentions: {parse: []}}' \
             | curl -sS --fail-with-body -X POST -H "Content-Type: application/json" -d @- "$DISCORD_DEPLOY_WEBHOOK" || \
@@ -851,7 +864,9 @@ jobs:
       # while we were building is already older than it and would never apply.
       # Dispatched per-platform: iOS and Android resolve different fingerprints, so
       # one republish cannot cover the other. Non-blocking — the Play upload has
-      # already succeeded.
+      # already succeeded. Dispatched against the branch that BUILT
+      # (github.ref_name): a train binary's fingerprint only exists on
+      # release/next, so a `--ref main` dispatch could never reach it.
       - name: Republish the production OTA so it outranks this build
         if: env.FINGERPRINT_ANDROID != ''
         continue-on-error: true
@@ -860,7 +875,7 @@ jobs:
         run: |
           set -euo pipefail
           gh workflow run mobile-ota-production.yml \
-            --ref main \
+            --ref "${{ github.ref_name }}" \
             -f platform=android \
             -f expect_fingerprint="$FINGERPRINT_ANDROID"
           echo "::notice::Dispatched a production OTA republish for Android fingerprint $FINGERPRINT_ANDROID."
@@ -871,9 +886,12 @@ jobs:
           GH_TOKEN: ${{ steps.tag_token.outputs.token }}
         run: |
           set -euo pipefail
-          if [ "$GITHUB_REF" != 'refs/heads/main' ]; then
+          # The release train publishes the beta; a manual dispatch from main (the
+          # post-merge-back hotfix rebuild) is trusted too. Nothing else is.
+          if [ "$GITHUB_REF" != 'refs/heads/release/next' ] && \
+             { [ "$GITHUB_REF" != 'refs/heads/main' ] || [ "$GITHUB_EVENT_NAME" != 'workflow_dispatch' ]; }; then
             echo 'publish=false' >> "$GITHUB_OUTPUT"
-            echo '::notice::Only trusted main builds publish the Android beta prerelease.'
+            echo '::notice::Only trusted release/next builds (or a main dispatch) publish the Android beta prerelease.'
             exit 0
           fi
 
@@ -903,7 +921,7 @@ jobs:
           target_commitish: ${{ github.sha }}
           name: Boardsesh Android Beta v${{ env.BOARDSESH_MOBILE_VERSION }} (${{ env.VERSION_CODE }})
           body: |
-            Signed Android beta from `main` at commit `${{ github.sha }}`.
+            Signed Android beta from `release/next` at commit `${{ github.sha }}`.
 
             - Package: `com.boardsesh.app`
             - Architecture: arm64-v8a (modern physical Android devices)

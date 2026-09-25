@@ -90,10 +90,21 @@ export function formatDiagnostics(diagnostics: BootDiagnostics): string {
 export async function expectMounted(page: Page, timeout: number, diagnostics: BootDiagnostics) {
   const root = page.locator('#root');
   try {
+    // `#boot-paint` is the static loading state the HTML shell ships INSIDE
+    // #root (packages/mobile/public/index.html). React's createRoot clears the
+    // container on first commit, so its disappearance is the mount signal.
+    //
+    // This has to come first. The old check was "#root has any child", which
+    // was proof of mount only while the shell shipped #root empty — once it
+    // carries a boot paint, that assertion passes against markup the server
+    // sent, before a line of JS has run, and the whole smoke silently stops
+    // testing anything. Waiting for the placeholder to GO is strictly stronger:
+    // it proves React not only mounted but replaced what was there.
+    await expect(page.locator('#boot-paint')).toBeHidden({ timeout });
     await expect(root.locator('> *').first()).toBeAttached({ timeout });
   } catch (cause) {
     throw new Error(
-      `#root never received a child — the bundle did not mount.\n\n${formatDiagnostics(diagnostics)}\n\n${String(cause)}`,
+      `#root still shows the boot paint — the bundle did not mount.\n\n${formatDiagnostics(diagnostics)}\n\n${String(cause)}`,
     );
   }
 }

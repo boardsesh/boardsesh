@@ -167,6 +167,7 @@ export type SearchRequest = {
   // note there). Declared only so USER_SPECIFIC_SEARCH_PARAMS stays indexable
   // against this shape.
   useMyGrades?: boolean;
+  onlyFollowedAuthors?: boolean;
   onlyDrafts: boolean;
   projectsOnly: boolean;
   // Climb-type filter (defaults: boulders=true, routes=false). Both true → no

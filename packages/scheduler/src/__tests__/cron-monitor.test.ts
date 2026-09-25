@@ -38,7 +38,7 @@ const defineJob = (overrides: Partial<JobDefinition> = {}): JobDefinition => ({
 describe('monitorSlugForJob', () => {
   it('prefixes the job name so scheduler monitors are identifiable in Sentry', () => {
     expect(monitorSlugForJob('cleanup')).toBe('scheduler-cleanup');
-    expect(monitorSlugForJob('prewarm-heatmap-kilter')).toBe('scheduler-prewarm-heatmap-kilter');
+    expect(monitorSlugForJob('profile-percentiles')).toBe('scheduler-profile-percentiles');
   });
 
   it('pins the exact slug of every registered job', () => {
@@ -47,14 +47,10 @@ describe('monitorSlugForJob', () => {
     // start a fresh one, so every live slug is pinned as data.
     expect(JOBS.map((job) => monitorSlugForJob(job.name))).toEqual([
       'scheduler-cleanup',
-      'scheduler-prewarm-heatmap-kilter',
-      'scheduler-prewarm-heatmap-tension',
-      'scheduler-prewarm-heatmap-decoy',
-      'scheduler-prewarm-heatmap-touchstone',
-      'scheduler-prewarm-heatmap-grasshopper',
       'scheduler-profile-percentiles',
       'scheduler-refresh-sitemap-climbs',
       'scheduler-refresh-gym-activity-stats',
+      'scheduler-purge-spray-wall-photos',
     ]);
   });
 });
@@ -72,9 +68,9 @@ describe('monitorConfigForJob', () => {
     // Pinned as literals on purpose. Asserting `config.schedule.value ===
     // job.schedule` would derive both sides from the same field and pass no
     // matter what the schedule became — it would only prove the function
-    // copies a string. Seven of these are the slots Vercel used and the eighth
-    // is the six-hourly sitemap refresh #4648 brought back, so a registry
-    // schedule edited without a deliberate change here reds, and Sentry can
+    // copies a string. Most of these are the slots Vercel used, plus the
+    // six-hourly sitemap refresh #4648 brought back, so a registry schedule
+    // edited without a deliberate change here reds, and Sentry can
     // never be left waiting on a minute the ticker does not fire.
     const configBySlug = Object.fromEntries(JOBS.map((job) => [monitorSlugForJob(job.name), monitorConfigForJob(job)]));
 
@@ -82,14 +78,10 @@ describe('monitorConfigForJob', () => {
       Object.fromEntries(Object.entries(configBySlug).map(([slug, config]) => [slug, config.schedule.value])),
     ).toEqual({
       'scheduler-cleanup': '0 5 * * *',
-      'scheduler-prewarm-heatmap-kilter': '0 4 * * 0',
-      'scheduler-prewarm-heatmap-tension': '15 4 * * 0',
-      'scheduler-prewarm-heatmap-decoy': '30 4 * * 0',
-      'scheduler-prewarm-heatmap-touchstone': '45 4 * * 0',
-      'scheduler-prewarm-heatmap-grasshopper': '0 5 * * 0',
       'scheduler-profile-percentiles': '0 6 * * 0',
       'scheduler-refresh-sitemap-climbs': '0 */6 * * *',
       'scheduler-refresh-gym-activity-stats': '30 6 * * *',
+      'scheduler-purge-spray-wall-photos': '0 7 * * *',
     });
 
     for (const config of Object.values(configBySlug)) {
@@ -102,8 +94,8 @@ describe('monitorConfigForJob', () => {
   });
 
   it('alerts on the first failure and clears on the first success', () => {
-    // These jobs are weekly. A threshold of 2 would mean hearing about a broken
-    // prewarm a fortnight after it broke.
+    // Some of these jobs are weekly. A threshold of 2 would mean hearing about a
+    // broken weekly job a fortnight after it broke.
     const config = monitorConfigForJob(defineJob());
     expect(config.failureIssueThreshold).toBe(1);
     expect(config.recoveryThreshold).toBe(1);
@@ -119,8 +111,8 @@ describe('monitorConfigForJob', () => {
   it('leaves room for a late check-in without swallowing an outage', () => {
     const config = monitorConfigForJob(defineJob());
     expect(config.checkinMargin).toBeGreaterThan(0);
-    // Must stay under the 15-minute stagger between the heatmap prewarms, or a
-    // late kilter run would still be "on time" when tension is already due.
+    // A quarter-hour of grace would hide a stalled container for as long as it
+    // took to notice by hand.
     expect(config.checkinMargin).toBeLessThan(15);
   });
 });

@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { useBoardDriver, type BoardDriver } from '../board-presence/use-board-driver';
 import { compactAgoParts } from '../../lib/format-relative-time';
+import { nowMs } from '../../lib/clock';
 
 export type WallDriver = {
   /** Raw board-presence driver, or null when the wall is genuinely free. */
@@ -34,7 +35,7 @@ export function useWallDriver(): WallDriver {
 
   let litAgo: string | null = null;
   if (isStale && driver?.lastSentAtMs != null) {
-    const { unit, count } = compactAgoParts(driver.lastSentAtMs, Date.now());
+    const { unit, count } = compactAgoParts(driver.lastSentAtMs, nowMs());
     litAgo =
       unit === 'now'
         ? t('mobile.boardPresence.litAgoNow')

@@ -158,10 +158,10 @@ describe('pickBoardLookSuggestion', () => {
     // Naming it exactly is what makes the banner credible rather than creepy.
     const contrastOn = { increaseContrast: 'on', grayscale: 'off', ready: true } as const;
     expect(pickBoardLookSuggestion(eligible({ signals: contrastOn, platform: 'ios' }))?.titleI18nKey).toBe(
-      'mobile.more.boardLook.suggestion.increaseContrast.titleIos',
+      'mobile.settings.boardLook.suggestion.increaseContrast.titleIos',
     );
     expect(pickBoardLookSuggestion(eligible({ signals: contrastOn, platform: 'android' }))?.titleI18nKey).toBe(
-      'mobile.more.boardLook.suggestion.increaseContrast.titleAndroid',
+      'mobile.settings.boardLook.suggestion.increaseContrast.titleAndroid',
     );
     expect(pickBoardLookSuggestion(eligible({ signals: contrastOn, platform: 'web' }))).toBeNull();
   });

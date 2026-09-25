@@ -1,5 +1,15 @@
 // Gym entity types
 
+export type PlaceSuggestion = {
+  id: number;
+  name: string;
+  region: string;
+  country: string;
+  countryCode: string;
+  latitude: number;
+  longitude: number;
+};
+
 /**
  * Max length of the free-text opening-hours line, shared by the backend
  * validator and every client that renders the field. A client capping below the
@@ -304,6 +314,8 @@ export type SearchGymsInput = {
   radiusKm?: number;
   /** Only gyms with a slug, i.e. linkable at /gym/[slug]. Opt-in; omitting it leaves the emitted SQL unchanged. */
   requireSlug?: boolean;
+  /** Claimed gyms first, then the existing newest-first or proximity order. */
+  prioritizeClaimed?: boolean;
   limit?: number;
   offset?: number;
 };

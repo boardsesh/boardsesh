@@ -129,6 +129,8 @@ export function findCharacteristicConflict(
   return conflict ? { token: CLIMB_CHARACTERISTICS.ANY_FEET, conflictsWith: conflict } : null;
 }
 
+const NON_AURORA_NO_MATCH_BOARD_TYPES: ReadonlySet<string> = new Set(['moonboard', 'woods', 'spray']);
+
 /**
  * Whether a board's `no_match` can still be carried by the description alone.
  *
@@ -138,10 +140,13 @@ export function findCharacteristicConflict(
  * description when `characteristics` is NULL. The code-driven boards never had
  * the convention: on MoonBoard a description starting with "no match" is user
  * prose, and on Woods a NULL `characteristics` means "rules unknown until the
- * catalog repair fills them in", not "no rules the description forgot".
+ * catalog repair fills them in", not "no rules the description forgot". Spray
+ * climbs are authored in Boardsesh and always write their rules as
+ * `characteristics`, so a spray description beginning "no match" is the setter's
+ * own words too.
  */
 export function usesAuroraNoMatchDescription(boardType: string): boolean {
-  return boardType !== 'moonboard' && boardType !== 'woods';
+  return !NON_AURORA_NO_MATCH_BOARD_TYPES.has(boardType);
 }
 
 /**

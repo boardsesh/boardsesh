@@ -17,14 +17,29 @@ const scriptPath = fileURLToPath(import.meta.url);
 const defaultRepoRoot = resolve(dirname(scriptPath), '..');
 
 const services = {
+  'hold-detector': {
+    dockerfile: 'Dockerfile.hold-detector',
+    rootPackageName: '@boardsesh/hold-detector',
+  },
   backend: {
     dockerfile: 'Dockerfile.backend',
     rootPackageName: 'boardsesh-backend',
     // The OG climb renderer (GET /og/climb) composites board photos onto the
-    // social card, so the backend image needs the board images tree (~70MB).
+    // social card, so the backend image needs the board images tree.
     // The prebuilt .wasm rides in automatically via the
     // @boardsesh/board-renderer-wasm workspace-dep walk.
     extraSourceDirs: ['packages/web/public/images'],
+    // WebP only. Every board photo is committed twice — a `.png` and the `.webp`
+    // that `packages/web/scripts/convert-to-webp.sh` makes from it — and the
+    // renderer reads only the WebP: `getBackgroundRelPaths` runs every catalogue
+    // filename through `toWebpPath`, and `resolveArtPath`'s only fallback is
+    // `.dark.webp` to `.webp`, never to a PNG. The CDN catalog agrees: 396 WebP
+    // board images in it and zero PNGs.
+    //
+    // The PNGs stay in the repo because they are the source that script converts
+    // from. They just have no business in a runtime image, where they were 52 MB
+    // of the ~74 MB tree, pulled on every deploy and never opened.
+    extraSourceDirExcludeExtensions: ['.png'],
   },
   web: {
     dockerfile: 'Dockerfile.web',
@@ -44,6 +59,9 @@ const services = {
       'scripts/build-expo-web-export.sh',
       'scripts/lib/patch-expo-web-pwa-manifest.mjs',
       'scripts/lib/tailscale-hostname.ts',
+      // The design capture script is also included by Next's type-check.
+      'scripts/lib/design-previews.ts',
+      'scripts/lib/dev-object-store.ts',
     ],
   },
   sync: {
@@ -374,26 +392,34 @@ function copyFileCreatingParent(sourcePath, destinationPath) {
   copyFileSync(sourcePath, destinationPath);
 }
 
-function shouldSkipSourceEntry(entryName, entryRelativePath, repoRelativePath, isDirectory) {
+function shouldSkipSourceEntry(entryName, entryRelativePath, repoRelativePath, isDirectory, excludeExtensions = []) {
   if (ignoredFileNames.has(entryName)) return true;
   if (isDirectory && ignoredDirectoryNames.has(entryName)) return true;
   if (ignoredRepoRelativePaths.has(repoRelativePath)) return true;
   if (entryRelativePath.endsWith('.tsbuildinfo')) return true;
+  if (!isDirectory && excludeExtensions.some((extension) => entryName.endsWith(extension))) return true;
   return false;
 }
 
-function copyDirectory(sourceDirectory, destinationDirectory, repoRoot, rootSourceDirectory = sourceDirectory) {
+function copyDirectory(
+  sourceDirectory,
+  destinationDirectory,
+  repoRoot,
+  rootSourceDirectory = sourceDirectory,
+  excludeExtensions = [],
+) {
   mkdirSync(destinationDirectory, { recursive: true });
 
   for (const entry of readdirSync(sourceDirectory, { withFileTypes: true })) {
     const sourcePath = join(sourceDirectory, entry.name);
     const relativeSourcePath = toPosix(relative(rootSourceDirectory, sourcePath));
     const repoRelativePath = toPosix(relative(repoRoot, sourcePath));
-    if (shouldSkipSourceEntry(entry.name, relativeSourcePath, repoRelativePath, entry.isDirectory())) continue;
+    if (shouldSkipSourceEntry(entry.name, relativeSourcePath, repoRelativePath, entry.isDirectory(), excludeExtensions))
+      continue;
 
     const destinationPath = join(destinationDirectory, entry.name);
     if (entry.isDirectory()) {
-      copyDirectory(sourcePath, destinationPath, repoRoot, rootSourceDirectory);
+      copyDirectory(sourcePath, destinationPath, repoRoot, rootSourceDirectory, excludeExtensions);
     } else if (entry.isSymbolicLink()) {
       mkdirSync(dirname(destinationPath), { recursive: true });
       symlinkSync(readlinkSync(sourcePath), destinationPath);
@@ -478,7 +504,13 @@ function createServiceDockerContext({ serviceName, repoRoot = defaultRepoRoot, o
     if (!existsSync(absoluteExtraSourceDir)) {
       throw new Error(`${serviceName} extra source directory ${extraSourceDir} is missing`);
     }
-    copyDirectory(absoluteExtraSourceDir, join(absoluteOutputDir, 'source', extraSourceDir), absoluteRepoRoot);
+    copyDirectory(
+      absoluteExtraSourceDir,
+      join(absoluteOutputDir, 'source', extraSourceDir),
+      absoluteRepoRoot,
+      absoluteExtraSourceDir,
+      service.extraSourceDirExcludeExtensions ?? [],
+    );
   }
 
   return {
@@ -526,6 +558,7 @@ if (process.argv[1] === scriptPath) {
 }
 
 export {
+  copyDirectory,
   createServiceDockerContext,
   expandWorkspacePattern,
   getPatchedDependencies,

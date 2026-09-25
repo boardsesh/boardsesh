@@ -99,6 +99,13 @@ export function useCreateClimbNavigation({
           // to the legacy `No match` description prefix, and `"[]"` (a source
           // whose rules are all at their defaults) must not read as absent.
           ...(climb.characteristics ? { forkCharacteristics: JSON.stringify(climb.characteristics) } : {}),
+          // The source's grade, as the canonical scale name ("6c/V5"). A board
+          // that publishes with the setter's own grade (a spray wall) has nowhere
+          // else to get one, so without this a remix of a graded climb opens
+          // ungraded and is blocked from publishing until the setter finds the
+          // grade again. Omitted when the source carries none, which reads as
+          // "nothing to inherit" rather than "ungraded on purpose".
+          ...(climb.difficulty ? { forkDifficulty: climb.difficulty } : {}),
           ...boardParams(resolveClimbRenderBoard(climb, board)?.boardConfig ?? board),
         },
         onActionAccepted,

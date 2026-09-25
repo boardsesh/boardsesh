@@ -1,7 +1,19 @@
-import { sql } from 'drizzle-orm';
+import { and, sql } from 'drizzle-orm';
 import { db } from '../../client';
 import { UNIFIED_TABLES, type BoardName } from '../util/table-select';
-import { getClimbStars, getGradeLabel, toConfidenceTier, resolveCanonicalClimbUuid } from '@boardsesh/db/queries';
+import {
+  getClimbStars,
+  getGradeLabel,
+  toConfidenceTier,
+  resolveCanonicalClimbUuid,
+  boardClimbStatsAtSetAngle,
+  effectiveStatsColumn,
+  gradeJoinAngleSql,
+  resolveDetailCrossAngleStats,
+  resolvedStatsAngleSql,
+  setAngleStatsJoinConditions,
+  type StatsColumnKey,
+} from '@boardsesh/db/queries';
 import { boardClimbGrades } from '@boardsesh/db/schema';
 import type { Climb } from '@boardsesh/shared-schema';
 import { logger } from '../../../utils/logger';
@@ -25,56 +37,91 @@ export const getClimbByUuid = async (params: GetClimbParams): Promise<Climb | nu
     // not render an empty husk.
     const climbUuid = await resolveCanonicalClimbUuid(db, params.board_name, params.climb_uuid);
 
+    // The detail path resolves stats cross-angle (issue #5405): the row at the
+    // browsed angle, else the row at the climb's own set angle. It has no search
+    // input to opt in with, so the only door here is the board being angle-bound
+    // by nature. Unlike search, which on Woods is restricted to the browsed angle
+    // unless it opts in (issue #5642), the detail read stays on for Woods: a climb
+    // reached at another angle — a by-name search, an opted-in list, a playlist —
+    // must open with its set-angle grade rather than a blank one.
+    const crossAngle = resolveDetailCrossAngleStats(params);
+    const statsColumn = (columnKey: StatsColumnKey) => effectiveStatsColumn(columnKey, crossAngle);
+
     // Direct-by-UUID lookups intentionally do NOT filter `framesCount = 1`.
     // Search/dedupe still skip multi-frame climbs, but the player needs to
     // be able to render variable-speed Aurora routes when navigated to by URL.
-    const result = await db
-      .select({
-        uuid: tables.climbs.uuid,
-        setter_username: tables.climbs.setterUsername,
-        user_id: tables.climbs.userId,
-        name: tables.climbs.name,
-        description: tables.climbs.description,
-        frames: tables.climbs.frames,
-        frames_count: tables.climbs.framesCount,
-        frames_pace: tables.climbs.framesPace,
-        angle: sql<number>`COALESCE(${tables.climbStats.angle}, ${params.angle})`,
-        ascensionist_count: sql<number>`COALESCE(${tables.climbStats.ascensionistCount}, 0)`,
-        difficulty_id: sql<number | null>`ROUND(${tables.climbStats.displayDifficulty}::numeric, 0)`,
-        quality_average: sql<number>`ROUND(${tables.climbStats.qualityAverage}::numeric, 2)`,
-        difficulty_error: sql<number>`ROUND(${tables.climbStats.difficultyAverage}::numeric - ${tables.climbStats.displayDifficulty}::numeric, 2)`,
-        benchmark_difficulty: tables.climbStats.benchmarkDifficulty,
-        is_draft: tables.climbs.isDraft,
-        // Selected, never filtered on. Opening a hidden climb by uuid keeps
-        // working — a shared link, the setter's own climb, a moderator checking
-        // the hide landed — and the flag is what lets the client say so.
-        is_hidden: tables.climbs.isHidden,
-        created_at: tables.climbs.createdAt,
-        published_at: tables.climbs.publishedAt,
-        characteristics: tables.climbs.characteristics,
-        // The sizes this climb fits on — the queue judges size compatibility
-        // client-side, and on Woods it is the only signal separating the 8x10
-        // from the 12x12 (their hold ids overlap as different holds).
-        compatible_size_ids: tables.climbs.compatibleSizeIds,
-        // Boardsesh grade at the requested angle. The queue's angle-change refetch
-        // routes through this query, so the fresh grade rides along for free.
-        boardsesh_difficulty: sql<
-          number | null
-        >`COALESCE(${boardClimbGrades.universalGrade}, ${boardClimbGrades.localGrade})`,
-        boardsesh_confidence: boardClimbGrades.confidence,
-      })
+    const selectFields = {
+      uuid: tables.climbs.uuid,
+      setter_username: tables.climbs.setterUsername,
+      user_id: tables.climbs.userId,
+      name: tables.climbs.name,
+      description: tables.climbs.description,
+      frames: tables.climbs.frames,
+      frames_count: tables.climbs.framesCount,
+      frames_pace: tables.climbs.framesPace,
+      // The angle the stats below were actually read from — see ./effective-stats
+      // in @boardsesh/db. Display only: `angle` on the returned Climb stays the
+      // browsed angle.
+      stats_angle: resolvedStatsAngleSql(crossAngle),
+      ascensionist_count: sql<number>`COALESCE(${statsColumn('ascensionistCount')}, 0)`,
+      difficulty_id: sql<number | null>`ROUND(${statsColumn('displayDifficulty')}::numeric, 0)`,
+      quality_average: sql<number>`ROUND(${statsColumn('qualityAverage')}::numeric, 2)`,
+      // Two stats columns in one expression: both route through `statsColumn`,
+      // which shares a single row-presence probe, so the subtraction can never
+      // mix a browsed-angle display difficulty with a set-angle average.
+      difficulty_error: sql<number>`ROUND(${statsColumn('difficultyAverage')}::numeric - ${statsColumn('displayDifficulty')}::numeric, 2)`,
+      benchmark_difficulty: sql<number | null>`${statsColumn('benchmarkDifficulty')}`,
+      is_draft: tables.climbs.isDraft,
+      // Selected, never filtered on. Opening a hidden climb by uuid keeps
+      // working — a shared link, the setter's own climb, a moderator checking
+      // the hide landed — and the flag is what lets the client say so.
+      is_hidden: tables.climbs.isHidden,
+      created_at: tables.climbs.createdAt,
+      published_at: tables.climbs.publishedAt,
+      characteristics: tables.climbs.characteristics,
+      // The sizes this climb fits on — the queue judges size compatibility
+      // client-side, and on Woods it is the only signal separating the 8x10
+      // from the 12x12 (their hold ids overlap as different holds).
+      compatible_size_ids: tables.climbs.compatibleSizeIds,
+      // How many of the climb's holds have come off the wall. Spray walls only —
+      // NULL on every catalogue board, where holds do not come off — and the badge,
+      // the Intact / Lost holds filter and the remix prompt all read it, so a
+      // projection without it tells a climber that a climb they cannot do is fine.
+      missing_hold_count: tables.climbs.missingHoldCount,
+      // Boardsesh grade at the angle the stats resolved to (the requested angle
+      // unless cross-angle sent it to the set angle). The queue's angle-change
+      // refetch routes through this query, so the fresh grade rides along free.
+      boardsesh_difficulty: sql<
+        number | null
+      >`COALESCE(${boardClimbGrades.universalGrade}, ${boardClimbGrades.localGrade})`,
+      boardsesh_confidence: boardClimbGrades.confidence,
+    };
+
+    const withStatsJoin = db
+      .select(selectFields)
       .from(tables.climbs)
       .leftJoin(
         tables.climbStats,
         sql`${tables.climbStats.climbUuid} = ${tables.climbs.uuid}
         AND ${tables.climbStats.boardType} = ${params.board_name}
         AND ${tables.climbStats.angle} = ${params.angle}`,
-      )
+      );
+
+    // The climb's own set-angle row, joined only under cross-angle. Must come
+    // before the grades join: that join's ON clause names both stats aliases.
+    const withSetAngleJoin = crossAngle
+      ? withStatsJoin.leftJoin(boardClimbStatsAtSetAngle, and(...setAngleStatsJoinConditions(params.board_name)))
+      : withStatsJoin;
+
+    // Grade at the angle the stats resolved to, so the Boardsesh grade and the
+    // community difficulty beside it describe the same climb at the same angle.
+    // Without cross-angle this is the browsed angle, exactly as before.
+    const result = await withSetAngleJoin
       .leftJoin(
         boardClimbGrades,
         sql`${boardClimbGrades.climbUuid} = ${tables.climbs.uuid}
         AND ${boardClimbGrades.boardType} = ${params.board_name}
-        AND ${boardClimbGrades.angle} = ${params.angle}`,
+        AND ${boardClimbGrades.angle} = ${gradeJoinAngleSql(params.angle, crossAngle)}`,
       )
       .where(
         sql`${tables.climbs.boardType} = ${params.board_name}
@@ -101,6 +148,10 @@ export const getClimbByUuid = async (params: GetClimbParams): Promise<Climb | nu
       boardType: params.board_name,
       layoutId: params.layout_id,
       angle: Number(params.angle),
+      // Where the numbers below came from, which on an angle-bound board is not
+      // necessarily the angle above. Null when the climb has no stats row at
+      // either angle — a genuine project.
+      statsAngle: row.stats_angle ?? null,
       ascensionist_count: Number(row.ascensionist_count || 0),
       difficulty: getGradeLabel(row.difficulty_id),
       quality_average: row.quality_average?.toString() || '0',
@@ -116,6 +167,7 @@ export const getClimbByUuid = async (params: GetClimbParams): Promise<Climb | nu
       framesPace: row.frames_pace ?? null,
       characteristics: row.characteristics ?? null,
       compatibleSizeIds: row.compatible_size_ids ?? null,
+      missingHoldCount: row.missing_hold_count ?? null,
       boardseshDifficulty: row.boardsesh_difficulty == null ? null : Number(row.boardsesh_difficulty),
       boardseshConfidence: toConfidenceTier(row.boardsesh_confidence),
     };

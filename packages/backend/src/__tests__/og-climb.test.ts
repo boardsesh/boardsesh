@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import sharp from 'sharp';
-import { MAX_SET_IDS_LENGTH } from '@boardsesh/board-render';
+import { MAX_SET_IDS, MAX_SET_IDS_LENGTH } from '@boardsesh/board-render';
 import { RateLimitError } from '../utils/rate-limiter';
 
 // The handler under test talks to the board-render service and the Redis rate
@@ -19,9 +19,16 @@ vi.mock('../services/board-render', () => ({
 vi.mock('../utils/redis-rate-limiter', () => ({
   checkRateLimitRedis: vi.fn(async () => {}),
 }));
+// Spray cards (SW-16) talk to Postgres and the media bucket; the handler's own
+// branch is what is under test here.
+vi.mock('../services/spray-og-card', () => ({
+  createSprayOgCardDeps: vi.fn(() => ({})),
+  renderSprayOgCard: vi.fn(),
+}));
 
 import { handleOgClimb } from '../handlers/og-climb';
 import { RenderQueueSaturatedError, ensureBoardRendererAvailable, renderOgClimb } from '../services/board-render';
+import { renderSprayOgCard } from '../services/spray-og-card';
 import { checkRateLimitRedis } from '../utils/redis-rate-limiter';
 
 type MockRes = {
@@ -124,6 +131,19 @@ describe('handleOgClimb', () => {
       expect(checkRateLimitRedis).not.toHaveBeenCalled();
     });
 
+    it('rejects more distinct set_ids than the cap, not just an over-long string', async () => {
+      // The byte bound above and the count bound are different rejections, and
+      // only the byte one was covered. The count is the one that matters: it is
+      // what 400'd every Decoy climb when the cap was 10.
+      const res = await run({
+        ...validParams,
+        set_ids: Array.from({ length: MAX_SET_IDS + 1 }, (_, index) => index + 1).join(','),
+      });
+
+      expect(res.statusCode).toBe(400);
+      expect(renderOgClimb).not.toHaveBeenCalled();
+    });
+
     it('rejects missing or empty frames with 400 — a blank board must not get immutable 200 headers', async () => {
       const { frames: _omit, ...paramsWithoutFrames } = validParams;
       const missingFramesResponse = await run(paramsWithoutFrames);
@@ -186,6 +206,99 @@ describe('handleOgClimb', () => {
       const [callArgs] = vi.mocked(renderOgClimb).mock.calls[0];
       expect(callArgs.glyphs).toBe(true);
       expect(callArgs.fieldColor).toBe('#123456');
+    });
+  });
+
+  describe('climb identity on the card', () => {
+    it('renders the board alone when no identity params are sent', async () => {
+      // An already-shipped mobile binary builds the bare URL. It must keep
+      // getting a card, not a 400.
+      const res = await run(validParams);
+
+      expect(res.statusCode).toBe(200);
+      const [callArgs] = vi.mocked(renderOgClimb).mock.calls[0];
+      expect(callArgs.card?.name).toBeUndefined();
+      expect(callArgs.card?.grade).toBeUndefined();
+    });
+
+    it('passes the normalised identity to the renderer', async () => {
+      await run({ ...validParams, n: '  BING  BANG BOSH ', g: '7a/V6', s: 'Patrick Gosling', angle: '40' });
+      const [callArgs] = vi.mocked(renderOgClimb).mock.calls[0];
+
+      expect(callArgs.card?.name).toBe('BING BANG BOSH');
+      expect(callArgs.card?.grade).toBe('7a/V6');
+      expect(callArgs.card?.setter).toBe('Patrick Gosling');
+      expect(callArgs.card?.angle).toBe(40);
+    });
+
+    it('derives the board line from the config rather than taking it as a param', async () => {
+      await run({ ...validParams, n: 'Boulder 9' });
+
+      expect(vi.mocked(renderOgClimb).mock.calls[0][0].card?.boardLine).toContain('Kilter');
+    });
+
+    it('rejects an over-long name before any render work', async () => {
+      const res = await run({ ...validParams, n: 'a'.repeat(513) });
+
+      expect(res.statusCode).toBe(400);
+      expect(JSON.parse(res.body.toString()).details).toEqual(['n is too large']);
+      expect(renderOgClimb).not.toHaveBeenCalled();
+    });
+
+    it('rejects an over-long setter before any render work', async () => {
+      const res = await run({ ...validParams, s: 'a'.repeat(257) });
+
+      expect(res.statusCode).toBe(400);
+      expect(renderOgClimb).not.toHaveBeenCalled();
+    });
+
+    it('rejects free text in the grade slot and an out-of-range angle', async () => {
+      expect((await run({ ...validParams, g: '<b>V7</b>' })).statusCode).toBe(400);
+      expect((await run({ ...validParams, angle: '91' })).statusCode).toBe(400);
+      expect(renderOgClimb).not.toHaveBeenCalled();
+    });
+
+    it('keeps a name containing Pango markup, escaped rather than rejected', async () => {
+      // "Rock & Roll" is a plausible climb name. The escaping happens where the
+      // text meets Pango; the handler's job is not to lose the name.
+      await run({ ...validParams, n: 'Rock & Roll' });
+
+      expect(vi.mocked(renderOgClimb).mock.calls[0][0].card?.name).toBe('Rock & Roll');
+    });
+
+    it('names a font family rather than leaving Pango on its default', async () => {
+      // On the Alpine image `fc-match sans` resolves to the CJK font, which
+      // renders Latin in its own weaker glyphs and ignores weight="700" — the
+      // grade and the climb name would ship un-bold. Nothing in PR CI builds
+      // the backend image, so this assertion is the guard.
+      await run({ ...validParams, n: 'BING BANG BOSH', g: '7a/V6' });
+
+      expect(vi.mocked(renderOgClimb).mock.calls[0][0].card?.fontFamily).toBe('Noto Sans');
+    });
+
+    it('drops only the free-text fields when the kill switch is set', async () => {
+      // A grade is matched by an allow-list, not free text, so the switch that
+      // exists to turn off caller-supplied words must leave it alone.
+      vi.stubEnv('OG_CARD_TEXT_DISABLED', '1');
+      vi.resetModules();
+      const { handleOgClimb: gated } = await import('../handlers/og-climb');
+      const { req, url } = makeRequest({ ...validParams, n: 'BING BANG BOSH', s: 'someone', g: '7a/V6', angle: '40' });
+      const res = makeResponse();
+      await gated(req, res as unknown as ServerResponse, url);
+
+      const [callArgs] = vi.mocked(renderOgClimb).mock.calls[0];
+      expect(callArgs.card?.name).toBeUndefined();
+      expect(callArgs.card?.setter).toBeUndefined();
+      expect(callArgs.card?.grade).toBe('7a/V6');
+      expect(callArgs.card?.angle).toBe(40);
+      vi.unstubAllEnvs();
+      vi.resetModules();
+    });
+
+    it('keeps the non-Latin names the catalogue contains', async () => {
+      await run({ ...validParams, n: '\u30AB\u30C1\u30AB\u30C1' });
+
+      expect(vi.mocked(renderOgClimb).mock.calls[0][0].card?.name).toBe('\u30AB\u30C1\u30AB\u30C1');
     });
   });
 
@@ -293,6 +406,99 @@ describe('handleOgClimb', () => {
     it('sheds a saturated render queue with retryable, non-cacheable 503', async () => {
       vi.mocked(renderOgClimb).mockRejectedValueOnce(new RenderQueueSaturatedError());
       const res = await run(validParams);
+      expect(res.statusCode).toBe(503);
+      expect(res.headers['Retry-After']).toBe('5');
+      expect(res.headers['Cache-Control']).toBe('no-store');
+    });
+  });
+
+  // Spray walls, issue #5449. The card comes from the database rather than from
+  // the query string, so the answer is public-wall-or-404 and the bytes are
+  // never immutable.
+  describe('spray walls', () => {
+    const sprayParams = {
+      board_name: 'spray',
+      layout_id: '90001',
+      size_id: '90001',
+      set_ids: '1',
+      frames: 'p501r1p502r2',
+    };
+
+    it('serves a public wall with a daily, non-immutable cache policy', async () => {
+      vi.mocked(renderSprayOgCard).mockResolvedValueOnce({
+        kind: 'card',
+        buffer: Buffer.from([0xff, 0xd8, 0xff, 0x00]),
+        contentType: 'image/jpeg',
+        timings: { photoMs: 30, composeMs: 60 },
+      });
+
+      const res = await run(sprayParams);
+      expect(res.statusCode).toBe(200);
+      expect(res.headers['Content-Type']).toBe('image/jpeg');
+      // A reset re-points the photo under the same URL, so a year of immutable
+      // would pin last year's wall at the edge.
+      expect(String(res.headers['Cache-Control'])).not.toContain('immutable');
+      expect(String(res.headers['Cache-Control'])).toContain('s-maxage=86400');
+      expect(res.headers['Content-Length']).toBe(4);
+      expect(res.headers['X-Content-Type-Options']).toBe('nosniff');
+      expect(String(res.headers['Server-Timing'])).toContain('photo;dur=');
+      // The catalogue renderer has no part in this.
+      expect(renderOgClimb).not.toHaveBeenCalled();
+    });
+
+    it('answers a private wall with an uncacheable 404, not a 403', async () => {
+      vi.mocked(renderSprayOgCard).mockResolvedValueOnce({ kind: 'not-found' });
+
+      const res = await run(sprayParams);
+      expect(res.statusCode).toBe(404);
+      expect(JSON.parse(String(res.body))).toEqual({ error: 'Not found' });
+      // A wall made public tomorrow must not stay a 404 at the edge.
+      expect(res.headers['Cache-Control']).toBe('no-store');
+      expect(renderOgClimb).not.toHaveBeenCalled();
+    });
+
+    it('serves the card even when the WASM renderer never booted', async () => {
+      vi.mocked(ensureBoardRendererAvailable).mockResolvedValue(false);
+      vi.mocked(renderSprayOgCard).mockResolvedValueOnce({
+        kind: 'card',
+        buffer: Buffer.from([0xff, 0xd8, 0xff, 0x00]),
+        contentType: 'image/jpeg',
+        timings: { photoMs: 1, composeMs: 2 },
+      });
+
+      const res = await run(sprayParams);
+      expect(res.statusCode).toBe(200);
+    });
+
+    it('passes the layout id, frames and format straight through', async () => {
+      vi.mocked(renderSprayOgCard).mockResolvedValueOnce({
+        kind: 'card',
+        buffer: Buffer.from([0x89, 0x50, 0x4e, 0x47]),
+        contentType: 'image/png',
+        timings: { photoMs: 1, composeMs: 2 },
+      });
+
+      await run({ ...sprayParams, format: 'png' });
+      expect(vi.mocked(renderSprayOgCard).mock.calls[0][0]).toEqual({
+        layoutId: 90001,
+        frames: 'p501r1p502r2',
+        format: 'png',
+      });
+    });
+
+    it('answers 500 without saying whether the wall existed when the render throws', async () => {
+      vi.mocked(renderSprayOgCard).mockRejectedValueOnce(new Error('photo fetch exploded'));
+      const res = await run(sprayParams);
+      expect(res.statusCode).toBe(500);
+      expect(res.headers['Cache-Control']).toBe('no-store');
+    });
+
+    it('answers 503 with Retry-After when the shared render queue is saturated', async () => {
+      // The spray branch runs under the SAME cap as the catalogue path, so it
+      // saturates the same way and owes callers backpressure, not a 500 — an
+      // unfurler that retries is the whole point of the header.
+      vi.mocked(renderSprayOgCard).mockRejectedValueOnce(new RenderQueueSaturatedError());
+      const res = await run(sprayParams);
       expect(res.statusCode).toBe(503);
       expect(res.headers['Retry-After']).toBe('5');
       expect(res.headers['Cache-Control']).toBe('no-store');

@@ -217,6 +217,18 @@ export const HOLD_STATE_MAP: Record<BoardName, Record<HoldCode, HoldStateInfo>> 
     3: { name: 'FINISH', displayColor: '#FF0000', color: '#FF0000' },
     4: { name: 'STARTING', displayColor: '#00DD00', color: '#00FF00' },
   },
+  // Spray walls. A spray wall has no LEDs and no firmware, so nothing here ever
+  // goes on a wire — `color` is only the fallback `getHoldDisplayColor` reads
+  // when a role carries no `displayColor`. The codes are the Tension-style
+  // 1/2/3/4 because a wall's holds are ours, not a vendor's, and reusing the
+  // most common role numbering keeps the `p<id>r<code>` frames a spray climb
+  // stores readable next to every other board's.
+  spray: {
+    1: { name: 'STARTING', displayColor: '#00DD00', color: '#00FF00' },
+    2: { name: 'HAND', displayColor: '#4444FF', boardseshDisplayColor: AURA_HAND_CYAN, color: '#0000FF' },
+    3: { name: 'FINISH', displayColor: '#FF0000', color: '#FF0000' },
+    4: { name: 'FOOT', displayColor: '#FF00FF', color: '#FF00FF' },
+  },
 };
 
 // The canonical role code used when *writing* frame strings for each board.
@@ -238,6 +250,9 @@ export const STATE_TO_PRIMARY_CODE: Record<BoardName, Partial<Record<HoldState, 
   soill: { STARTING: 1, HAND: 2, FINISH: 3, FOOT: 4 },
   // Woods wire role codes (spec §6): Foot 1, Hand 2, Finish 3, Start 4.
   woods: { STARTING: 4, HAND: 2, FINISH: 3, FOOT: 1 },
+  // Spray walls: Tension-style codes. No wire format to match — see the
+  // `spray` note in HOLD_STATE_MAP.
+  spray: { STARTING: 1, HAND: 2, FINISH: 3, FOOT: 4 },
 };
 
 export type BoardRenderDefaults = {
@@ -479,6 +494,41 @@ export function encodeMapsToFramesString(maps: LitUpHoldsMap[], board: BoardName
  */
 export function isSentinelHoldState(state: string | null | undefined): boolean {
   return !state || state.includes('=');
+}
+
+/**
+ * One `board_climb_holds` row, as Postgres persists it and as the on-device
+ * holds index derives it.
+ */
+export type ClimbHoldRow = { holdId: number; holdState: HoldState };
+
+/**
+ * The per-hold rows of a climb, byte-for-byte what the server writes into
+ * `board_climb_holds`: walk the frames in order (`accumulateFramesToMaps`),
+ * keep the FIRST row seen for each hold, and drop the `{holdId}={code}`
+ * sentinel an unknown role code decodes to.
+ *
+ * First-wins is not a design choice, it is the server's quirk reproduced: the
+ * saves insert every frame's rows with `ON CONFLICT DO NOTHING` on
+ * `(board_type, climb_uuid, hold_id)`, so a hold that changes role in a later
+ * frame keeps its earlier role, and a hold an `x<id>` token turns off later
+ * keeps its row. The on-device index must agree with Postgres, or the same
+ * climb would score differently on the phone and on the web.
+ */
+export function parseFramesToHoldRows(board: BoardName, frames: string | null | undefined): ClimbHoldRow[] {
+  if (!frames) return [];
+  const rows: ClimbHoldRow[] = [];
+  const seen = new Set<number>();
+  for (const frameMap of accumulateFramesToMaps(frames, board)) {
+    for (const [holdIdKey, hold] of Object.entries(frameMap)) {
+      if (isSentinelHoldState(hold.state)) continue;
+      const holdId = Number(holdIdKey);
+      if (!Number.isFinite(holdId) || seen.has(holdId)) continue;
+      seen.add(holdId);
+      rows.push({ holdId, holdState: hold.state });
+    }
+  }
+  return rows;
 }
 
 /**

@@ -10,8 +10,8 @@
       "viewProfile": "Voir le profil de {{name}}",
       "thisClimber": "ce grimpeur"
     },
-    "more": {
-      "title": "Plus",
+    "settings": {
+      "title": "Paramètres",
       "library": "Bibliothèque",
       "development": "Développement",
       "dev": {
@@ -386,11 +386,20 @@
       },
       "previews": {
         "title": "Aperçus",
+        "promptOnLaunchTitle": "Afficher les aperçus au démarrage",
+        "promptOnLaunchSubtitle": "S'applique au prochain démarrage de Boardsesh",
         "pickTitle": "Tester un aperçu de PR",
         "pickSubtitle": "Essaie une nouveauté avant sa sortie et dis-nous ce que ça donne",
         "testPlanTitle": "Plan de test #{{prNumber}}",
         "testPlanSubtitle": "Ce qu'il faut essayer sur l'aperçu en cours"
       }
+    },
+    "sendRecovery": {
+      "title_one": "1 croix est en route",
+      "title_other": "{{count}} croix sont en route",
+      "body_one": "Tu l'as enregistrée, mais elle ne nous est jamais parvenue. On l'a retrouvée et remise dans la file. Elle partira dès que tu seras en ligne, pas besoin de l'enregistrer à nouveau.",
+      "body_other": "Tu les as enregistrées, mais elles ne nous sont jamais parvenues. On les a retrouvées et remises dans la file. Elles partiront dès que tu seras en ligne, pas besoin de les enregistrer à nouveau.",
+      "dismiss": "C'est noté"
     },
     "about": {
       "title": "À propos de Boardsesh",
@@ -409,9 +418,7 @@
       "partnerTitle": "Devenez partenaire officiel",
       "partnerBody": "Boardsesh fonctionne avec Kilter, Tension et MoonBoard depuis l'extérieur. Si vous fabriquez des boards et voulez construire quelque chose d'officiel ensemble, on serait ravis d'en parler.",
       "acknowledgementsLink": "Remerciements",
-      "acknowledgementsLinkBody": "Les personnes derrière Boardsesh",
-      "changelogLink": "Nouveautés",
-      "changelogLinkBody": "Dernières améliorations et corrections"
+      "acknowledgementsLinkBody": "Les personnes derrière Boardsesh"
     },
     "acknowledgements": {
       "title": "Remerciements",
@@ -422,7 +429,8 @@
       "sponsorsBody": "Les grimpeurs qui font vivre le projet via GitHub Sponsors.",
       "sponsorsEmpty": "Pas encore de sponsor — envie d'être le premier ?",
       "privateSponsorsThanks": "et {{count}} de plus en privé — merci à vous aussi",
-      "becomeSponsor": "Devenir sponsor",
+      "becomeSponsor": "Soutenir Boardsesh",
+      "supportFallback": "Boardsesh est gratuit et financé par la communauté. {{url}}",
       "poweredByTitle": "Propulsé par",
       "xpremBody": "Mercure Technologies a offert à Boardsesh une licence entreprise pour xprem, le serveur derrière nos mises à jour over-the-air. C'est grâce à lui que les correctifs arrivent sur votre téléphone sans attendre la validation du store, et que vous pouvez essayer une préversion depuis Nouveautés.",
       "personalTitle": "Remerciements personnels",
@@ -467,7 +475,16 @@
         "workout": "Monte une séance : Volume, Pyramide, Échelle ou Cotation ciblée. Fixe une cotation, prévisualise les voies, enchaîne-les une par une.",
         "crew": "Tu grimpes à plusieurs ? Lance une séance et partagez une file. N'importe qui allume la voie suivante, sans passer le téléphone.",
         "record": "Tes croix s'affichent ici dans Progression : éventail de cotations et ta plus grosse croix. Importe ton carnet Kilter et Tension depuis Aurora pour partir avec ton historique.",
-        "accessory": "La barre du bas montre toujours ce qui est sur le mur. Change de voie depuis là."
+        "accessory": "La barre du bas montre toujours ce qui est sur le mur. Change de voie depuis là.",
+        "climbsTab": "Pour revenir à tes blocs, touche la loupe dans la barre d'onglets."
+      },
+      "link": {
+        "title": "Emporte tes croix {{boardName}} avec toi",
+        "body": "Ton compte {{boardName}} et Boardsesh sont distincts, même si tu utilises le même e-mail. Lie ton compte pour synchroniser les croix disponibles avec ton carnet. Le délai de synchronisation et l’historique disponible varient.",
+        "footnote": "Pour lier ton compte, utilise ton identifiant {{boardName}}, pas ton e-mail.",
+        "continue": "Lier mon compte {{boardName}}",
+        "skip": "Pas maintenant",
+        "skipHint": "Tu peux le faire à tout moment dans Réglages › Apps connectées."
       }
     },
     "nav": {
@@ -556,7 +573,7 @@
       "serverTitle": "Impossible de joindre Boardsesh pour l'instant",
       "serverBody": "Il faut notre serveur pour ça. Les boards téléchargées se parcourent, se cherchent et s'enregistrent toujours, et tes croix attendent sur ton téléphone.",
       "offlineModeTitle": "Le mode hors ligne est activé",
-      "offlineModeBody": "Il faut une connexion pour ça. Désactive le mode hors ligne depuis le bandeau ou dans Plus pour le charger.",
+      "offlineModeBody": "Il faut une connexion pour ça. Désactive le mode hors ligne depuis le bandeau ou dans Paramètres pour le charger.",
       "errorTitle": "Impossible de charger ça",
       "errorBody": "Ça n'est pas passé. Réessaie.",
       "retry": "Réessayer"
@@ -607,7 +624,7 @@
     "statistics": "Statistiques",
     "sessions": "Sessions",
     "createdClimbs": "Blocs créés",
-    "auroraMigration": "Migration Aurora",
+    "auroraMigration": "Récupérer votre carnet",
     "startClimbing": "Commencer à grimper",
     "signIn": "Se connecter",
     "nav": {
@@ -860,16 +877,17 @@
     "fallbackCta": "Ouvrir la page du store"
   },
   "footer": {
-    "tagline": "Trouvez des blocs, partagez-les et voyez ce qu'il y a sur le mur de votre salle. On grimpe dans l'app.",
+    "tagline": "Tes boards. Une seule app. Change de board sans changer d’app.",
     "navLabel": "Pied de page",
     "trademarkNote": "Compatible Kilter, Tension et MoonBoard. Sans lien avec Aurora Climbing ni Moon Climbing.",
     "links": {
       "home": "Accueil",
       "about": "À propos",
+      "support": "Soutenir Boardsesh",
       "help": "Aide",
       "docs": "Doc développeur",
       "playlists": "Playlists",
-      "auroraMigration": "Migration Aurora",
+      "auroraMigration": "Récupérer ton carnet",
       "legal": "Mentions légales",
       "privacy": "Confidentialité",
       "gymsKilter": "Salles avec une board Kilter",

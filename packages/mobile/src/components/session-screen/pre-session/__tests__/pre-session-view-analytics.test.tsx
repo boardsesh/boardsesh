@@ -5,6 +5,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GeneratorSelection } from '../GeneratorPickerCard';
 
 const analytics = vi.hoisted(() => ({ track: vi.fn() }));
+const navigation = vi.hoisted(() => ({ push: vi.fn(), navigate: vi.fn() }));
+const screenState = vi.hoisted(() => ({ sessionId: null as string | null, isFocused: true }));
+const errors = vi.hoisted(() => ({ reportError: vi.fn(), showToast: vi.fn() }));
 
 const queue = vi.hoisted(() => ({
   startSession: vi.fn(async () => 'session-1' as string | null),
@@ -53,6 +56,30 @@ const picker = vi.hoisted(() => ({ onChange: null as ((selection: GeneratorSelec
 // Surfaces the Start button's onPress.
 const startButton = vi.hoisted(() => ({ onPress: null as (() => void) | null }));
 
+// Surfaces the "Show this session live" switch so the test can read and flip it.
+const visibilityRow = vi.hoisted(() => ({
+  isPublic: null as boolean | null,
+  disabled: false,
+  onChange: null as ((next: boolean) => void) | null,
+}));
+
+vi.mock('../../RestTimerArmRow', () => ({ RestTimerArmRow: () => null }));
+vi.mock('../../SessionVisibilityRow', () => ({
+  SessionVisibilityRow: ({
+    isPublic,
+    onChange,
+    disabled,
+  }: {
+    isPublic: boolean;
+    onChange: (next: boolean) => void;
+    disabled?: boolean;
+  }) => {
+    visibilityRow.isPublic = isPublic;
+    visibilityRow.disabled = disabled ?? false;
+    visibilityRow.onChange = onChange;
+    return null;
+  },
+}));
 vi.mock('../../../../lib/analytics', () => ({ track: analytics.track }));
 
 // Platform + PlatformColor are included so this mock is leak-safe for theme/
@@ -76,7 +103,8 @@ vi.mock('react-native-reanimated', () => ({
   useSharedValue: (value: number) => ({ value }),
 }));
 
-vi.mock('expo-router', () => ({ useRouter: () => ({ push: vi.fn() }) }));
+vi.mock('expo-router', () => ({ useRouter: () => navigation, useIsFocused: () => screenState.isFocused }));
+vi.mock('../../../../lib/error-reporting', () => ({ reportError: errors.reportError }));
 
 vi.mock('@shopify/flash-list', () => ({
   FlashList: ({
@@ -129,11 +157,19 @@ vi.mock('../../../../lib/graphql/use-active-board', () => ({ useActiveBoard: () 
 vi.mock('../../../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: true }) }));
 vi.mock('../../../../providers/queue-provider', () => ({
   useQueueActions: () => ({ startSession: queue.startSession, appendGeneratedSession: queue.appendGeneratedSession }),
+  useQueueSessionId: () => ({ sessionId: screenState.sessionId }),
+  useQueueLiveStats: () => ({ sessionUsers: [] }),
 }));
+vi.mock('../../in-session/InSessionView', () => ({
+  InSessionView: () => createElement('div', null, 'Live session settings'),
+}));
+vi.mock('../../SessionScreenHeader', () => ({ SessionScreenHeader: () => null }));
+vi.mock('../../InviteSheet', () => ({ InviteSheet: () => null }));
+vi.mock('../../use-session-exit-options', () => ({ useSessionExitOptions: () => ({ defaultMode: 'end' }) }));
 vi.mock('../../../../providers/drawer-host-provider', () => ({
   useDrawerHost: () => ({ openPlayDrawer: drawer.openPlayDrawer }),
 }));
-vi.mock('../../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
+vi.mock('../../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: errors.showToast }) }));
 vi.mock('../../../../hooks/use-bottom-chrome-metrics', () => ({
   useBottomChromeMetrics: () => ({
     insideTabs: true,
@@ -165,12 +201,19 @@ vi.mock('../../../../lib/onboarding/onboarding-storage', () => ({
 }));
 
 import { PreSessionView } from '../PreSessionView';
+import { SessionScreen } from '../../SessionScreen';
 
 beforeEach(() => {
   analytics.track.mockClear();
+  navigation.navigate.mockClear();
+  navigation.push.mockClear();
+  errors.reportError.mockClear();
+  errors.showToast.mockClear();
   queue.startSession.mockClear();
   queue.startSession.mockResolvedValue('session-1');
   queue.appendGeneratedSession.mockClear();
+  screenState.sessionId = null;
+  screenState.isFocused = true;
   activeBoard.data = { boardType: 'kilter', layoutId: 8, sizeId: 21, setIds: '1,2', angle: 40 };
   preview.result.items = previewRows as unknown[];
   preview.result.status = 'ready';
@@ -178,6 +221,9 @@ beforeEach(() => {
   preview.result.plannedSlots = previewRows.map((preview) => preview.slot);
   picker.onChange = null;
   startButton.onPress = null;
+  visibilityRow.isPublic = null;
+  visibilityRow.disabled = false;
+  visibilityRow.onChange = null;
 });
 
 describe('PreSessionView analytics', () => {
@@ -225,6 +271,10 @@ describe('PreSessionView analytics', () => {
     // current climb (it stays put unless nothing is active).
     expect(queue.appendGeneratedSession).toHaveBeenCalledTimes(1);
     expect(queue.appendGeneratedSession).toHaveBeenCalledWith(previewItems);
+    expect(navigation.navigate).toHaveBeenCalledExactlyOnceWith('/(tabs)/climbs');
+    expect(queue.appendGeneratedSession.mock.invocationCallOrder[0]).toBeLessThan(
+      navigation.navigate.mock.invocationCallOrder[0],
+    );
     expect(analytics.track).toHaveBeenCalledWith('Session Queue Generated', {
       workoutType: 'volume',
       boardName: 'kilter',
@@ -245,6 +295,7 @@ describe('PreSessionView analytics', () => {
 
     expect(queue.appendGeneratedSession).not.toHaveBeenCalled();
     expect(analytics.track).not.toHaveBeenCalledWith('Session Queue Generated', expect.anything());
+    expect(navigation.navigate).toHaveBeenCalledExactlyOnceWith('/(tabs)/climbs');
   });
 
   it('does not start a generated session while the preview is still loading', async () => {
@@ -276,5 +327,213 @@ describe('PreSessionView analytics', () => {
 
     expect(queue.startSession).not.toHaveBeenCalled();
     expect(queue.appendGeneratedSession).not.toHaveBeenCalled();
+    expect(navigation.navigate).not.toHaveBeenCalled();
+  });
+});
+
+describe('PreSessionView Start navigation', () => {
+  it('opens Climbs when session state replaces this screen before creation settles', async () => {
+    const creation = Promise.withResolvers<string | null>();
+    queue.startSession.mockReturnValueOnce(creation.promise);
+    const screen = render(createElement(PreSessionView));
+
+    await act(async () => startButton.onPress?.());
+    expect(navigation.navigate).not.toHaveBeenCalled();
+    screen.unmount();
+
+    await act(async () => creation.resolve('session-1'));
+
+    expect(navigation.navigate).toHaveBeenCalledExactlyOnceWith('/(tabs)/climbs');
+  });
+
+  it('stays on Session when creation returns no session', async () => {
+    queue.startSession.mockResolvedValue(null);
+    render(createElement(PreSessionView));
+
+    await act(async () => startButton.onPress?.());
+
+    expect(navigation.navigate).not.toHaveBeenCalled();
+    expect(queue.appendGeneratedSession).not.toHaveBeenCalled();
+  });
+
+  it('stays on Session and shows the error when creation rejects', async () => {
+    queue.startSession.mockRejectedValueOnce(new Error('Session unavailable'));
+    render(createElement(PreSessionView));
+
+    await act(async () => startButton.onPress?.());
+
+    expect(navigation.navigate).not.toHaveBeenCalled();
+    expect(errors.showToast).toHaveBeenCalledWith('mobile.session.preStartError', 'error');
+  });
+});
+
+describe('SessionScreen Start handoff', () => {
+  it('keeps setup visible until the native tab actually leaves Session', async () => {
+    const creation = Promise.withResolvers<string | null>();
+    queue.startSession.mockReturnValueOnce(creation.promise);
+    const screen = render(createElement(SessionScreen));
+
+    await act(async () => startButton.onPress?.());
+    screenState.sessionId = 'session-1';
+    screen.rerender(createElement(SessionScreen));
+    expect(screen.queryByText('Live session settings')).toBeNull();
+
+    await act(async () => creation.resolve('session-1'));
+    expect(navigation.navigate).toHaveBeenCalledExactlyOnceWith('/(tabs)/climbs');
+    // navigate() dispatches before native tabs commit the focus change.
+    expect(screen.queryByText('Live session settings')).toBeNull();
+    expect(visibilityRow.disabled).toBe(true);
+    await act(async () => startButton.onPress?.());
+    expect(queue.startSession).toHaveBeenCalledTimes(1);
+
+    screenState.isFocused = false;
+    screen.rerender(createElement(SessionScreen));
+    screenState.isFocused = true;
+    screen.rerender(createElement(SessionScreen));
+    expect(screen.getByText('Live session settings')).toBeTruthy();
+  });
+
+  it.each(['null', 'reject'] as const)('allows retry after a %s creation failure', async (failure) => {
+    if (failure === 'null') queue.startSession.mockResolvedValueOnce(null);
+    else queue.startSession.mockRejectedValueOnce(new Error('Session unavailable'));
+    const screen = render(createElement(SessionScreen));
+
+    await act(async () => startButton.onPress?.());
+    expect(navigation.navigate).not.toHaveBeenCalled();
+    expect(screen.queryByText('Live session settings')).toBeNull();
+
+    await act(async () => startButton.onPress?.());
+    expect(queue.startSession).toHaveBeenCalledTimes(2);
+    expect(navigation.navigate).toHaveBeenCalledExactlyOnceWith('/(tabs)/climbs');
+  });
+
+  it('keeps a created session visible if queue preparation fails', async () => {
+    const creation = Promise.withResolvers<string | null>();
+    queue.startSession.mockReturnValueOnce(creation.promise);
+    queue.appendGeneratedSession.mockImplementationOnce(() => {
+      throw new Error('Queue unavailable');
+    });
+    const screen = render(createElement(SessionScreen));
+    act(() =>
+      picker.onChange?.({
+        type: 'on',
+        options: {
+          type: 'volume',
+          targetGrade: 10,
+          warmUp: 'none',
+          mainSetClimbs: 20,
+          mainSetVariability: 0,
+          minAscents: 0,
+          minRating: 0,
+          onlyTallClimbs: false,
+          onlyWideClimbs: false,
+          climbBias: 'any',
+        },
+      }),
+    );
+    await act(async () => startButton.onPress?.());
+    screenState.sessionId = 'session-1';
+    screen.rerender(createElement(SessionScreen));
+    await act(async () => creation.resolve('session-1'));
+
+    expect(navigation.navigate).not.toHaveBeenCalled();
+    expect(errors.showToast).toHaveBeenCalledWith('mobile.session.preStartError', 'error');
+    expect(screen.getByText('Live session settings')).toBeTruthy();
+    expect(queue.startSession).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([false, true])('respects a manual tab switch (returned: %s)', async (returned) => {
+    const creation = Promise.withResolvers<string | null>();
+    queue.startSession.mockReturnValueOnce(creation.promise);
+    const screen = render(createElement(SessionScreen));
+    await act(async () => startButton.onPress?.());
+    screenState.isFocused = false;
+    screen.rerender(createElement(SessionScreen));
+    if (returned) {
+      screenState.isFocused = true;
+      screen.rerender(createElement(SessionScreen));
+    }
+    screenState.sessionId = 'session-1';
+    screen.rerender(createElement(SessionScreen));
+    await act(async () => creation.resolve('session-1'));
+
+    expect(navigation.navigate).not.toHaveBeenCalled();
+    expect(screen.getByText('Live session settings')).toBeTruthy();
+  });
+
+  it('does not redirect after leaving the session route entirely', async () => {
+    const creation = Promise.withResolvers<string | null>();
+    queue.startSession.mockReturnValueOnce(creation.promise);
+    const screen = render(createElement(SessionScreen));
+    await act(async () => startButton.onPress?.());
+    screen.unmount();
+    await act(async () => creation.resolve('session-1'));
+    expect(navigation.navigate).not.toHaveBeenCalled();
+  });
+
+  it('shows the created session when navigation itself fails', async () => {
+    const creation = Promise.withResolvers<string | null>();
+    queue.startSession.mockReturnValueOnce(creation.promise);
+    navigation.navigate.mockImplementationOnce(() => {
+      throw new Error('Navigation unavailable');
+    });
+    const screen = render(createElement(SessionScreen));
+    await act(async () => startButton.onPress?.());
+    screenState.sessionId = 'session-1';
+    screen.rerender(createElement(SessionScreen));
+    await act(async () => creation.resolve('session-1'));
+    expect(screen.getByText('Live session settings')).toBeTruthy();
+    expect(errors.showToast).toHaveBeenCalledWith('mobile.session.preStartError', 'error');
+  });
+});
+
+describe('PreSessionView "Show this session live" switch', () => {
+  it('starts on and starts a public session when left alone', async () => {
+    render(createElement(PreSessionView));
+    expect(visibilityRow.isPublic).toBe(true);
+
+    await act(async () => {
+      startButton.onPress?.();
+    });
+    await waitFor(() => expect(queue.startSession).toHaveBeenCalledWith({ isPublic: true }));
+    expect(analytics.track).not.toHaveBeenCalledWith('Session Visibility Changed', expect.anything());
+  });
+
+  it('fires "Session Visibility Changed" on toggle and starts a private session', async () => {
+    render(createElement(PreSessionView));
+
+    act(() => {
+      visibilityRow.onChange?.(false);
+    });
+    expect(visibilityRow.isPublic).toBe(false);
+    expect(analytics.track).toHaveBeenCalledWith('Session Visibility Changed', {
+      isPublic: false,
+      phase: 'pre_session',
+    });
+
+    await act(async () => {
+      startButton.onPress?.();
+    });
+    await waitFor(() => expect(queue.startSession).toHaveBeenCalledWith({ isPublic: false }));
+  });
+
+  it('locks the switch while the session is starting and fires nothing if it is flipped anyway', async () => {
+    // Start never settles, so the screen stays in its starting state.
+    queue.startSession.mockImplementation(() => new Promise<string | null>(() => {}));
+    render(createElement(PreSessionView));
+    expect(visibilityRow.disabled).toBe(false);
+
+    await act(async () => {
+      startButton.onPress?.();
+    });
+    await waitFor(() => expect(visibilityRow.disabled).toBe(true));
+    expect(navigation.navigate).not.toHaveBeenCalled();
+
+    act(() => {
+      visibilityRow.onChange?.(false);
+    });
+
+    expect(visibilityRow.isPublic).toBe(true);
+    expect(analytics.track).not.toHaveBeenCalledWith('Session Visibility Changed', expect.anything());
   });
 });

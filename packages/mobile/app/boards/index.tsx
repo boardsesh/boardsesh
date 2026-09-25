@@ -28,6 +28,7 @@ import { BoardCarousel } from '../../src/components/board-discovery/BoardCarouse
 import { BoardModeCard, type ModeCardState } from '../../src/components/board-discovery/BoardModeCard';
 import { BluetoothQuickstartSheet } from '../../src/components/board-discovery/BluetoothQuickstartSheet';
 import { userBoardsToItems, popularConfigToItem } from '../../src/components/board-discovery/board-items';
+import { useSprayLabelOptions } from '../../src/lib/spray/use-spray-label-options';
 import {
   boardCardAction,
   hoistActiveBoard,
@@ -44,12 +45,24 @@ import { useRememberDownloadedBoards } from '../../src/offline/use-remember-down
 import { useDownloadedScopeKeys } from '../../src/offline/use-downloaded-scope-keys';
 import { useConfirmBoardDownload } from '../../src/offline/use-confirm-board-download';
 import { useOfflineCatalogState } from '../../src/offline/use-offline-catalog-state';
-import { useOfflineDownloadsEnabled } from '../../src/providers/feature-flags-provider';
+import { useOfflineDownloadsEnabled, useSprayWallsEnabled } from '../../src/providers/feature-flags-provider';
 import { useBoardOfflineState } from '../../src/components/board-discovery/use-board-offline-state';
 import { OfflineCatalogCta } from '../../src/components/offline/OfflineCatalogCta';
 import { trackNudgeAccepted } from '../../src/lib/offline-nudges/nudge-analytics';
 import { resolveBoardReturnTo } from '../../src/lib/boards/board-return-to';
-import { useActivateBoard } from '../../src/lib/boards/use-activate-board';
+import { useActivateBoard, type BoardPickSource } from '../../src/lib/boards/use-activate-board';
+import { useBoardPickerAnalytics } from '../../src/lib/boards/use-board-picker-analytics';
+import {
+  BUILDER_PRESET_PARAM_VALUE,
+  isFirstBoardMode,
+  isNoBoardEntry,
+  type FirstBoardEntry,
+} from '../../src/lib/boards/first-board-mode';
+import { firstBoardGymState } from '../../src/lib/boards/first-board-gym-state';
+import { useFirstBoardPickerTracking } from '../../src/lib/onboarding/use-first-board-picker-tracking';
+import { FirstBoardChoice } from '../../src/components/board-discovery/FirstBoardChoice';
+import { NearbySearchStatus } from '../../src/components/board-discovery/NearbySearchStatus';
+import { openAppSettings } from '../../src/lib/open-app-settings';
 import { iosSystemColors } from '../../src/theme/ios-colors';
 import { spacing } from '../../src/theme/tokens';
 
@@ -62,11 +75,24 @@ export default function BoardSelection() {
   const { isAuthenticated, refreshAuthState } = useAuth();
   const bottomChrome = useBottomChromeMetrics();
   const router = useRouter();
-  const { returnTo, source } = useLocalSearchParams<{ returnTo?: string; source?: string }>();
+  const { returnTo, source, firstBoard } = useLocalSearchParams<{
+    returnTo?: string;
+    source?: string;
+    firstBoard?: string;
+  }>();
   const boardReturnTo = resolveBoardReturnTo(returnTo);
   // Arriving from the first-run framing screen: this is the activation flow, so
   // pre-resolve location, show the framing header, and tag the board-bind.
   const fromOnboarding = source === 'onboarding';
+  // Opened by the launch gate for a new account with no board (#5654): "Where do
+  // you climb?" and three ways to a board instead of the row of discovery tiles.
+  // Still an onboarding pick (`fromOnboarding`), so the bind closes out first-run
+  // and lands on Climbs exactly as the old board step did.
+  const firstBoardMode = isFirstBoardMode({ source, firstBoard });
+  // Climbs' "Pick your board" empty state (#5654). The same "Where do you
+  // climb?" block, for a climber with no boards at all, but an ordinary board
+  // switch rather than onboarding: see `firstBoardChoiceEntry` below.
+  const fromNoBoard = isNoBoardEntry({ source });
   const { t } = useTranslation('boards');
   // The drill-in reuses the manage screen's own title, so the two can never drift.
   const { t: tCommon } = useTranslation('common');
@@ -77,7 +103,14 @@ export default function BoardSelection() {
   // Clear the bottom tab bar and whichever queue controls are actually visible.
   const scrollBottomPadding = bottomChrome.scrollBottomPadding;
 
-  const { data: activeBoard } = useActiveBoard();
+  const { data: activeBoard, isError: boardRestoreFailed } = useActiveBoard();
+  const trackBoardSelection = useBoardPickerAnalytics({
+    activeBoard,
+    restoreFailed: boardRestoreFailed,
+    returnTo: boardReturnTo,
+    fromOnboarding,
+    fromNoBoard,
+  });
   const clearActiveBoard = useClearActiveBoard();
   const deleteBoard = useDeleteBoard();
   const unfollowBoard = useUnfollowBoard();
@@ -129,6 +162,27 @@ export default function BoardSelection() {
     isRefetching,
   } = useMyBoards(undefined, { enabled: isAuthenticated });
   const myBoards = boardConnection?.boards ?? EMPTY_BOARDS;
+
+  // Whether Climbs' no-board entry gets "Where do you climb?": only when the
+  // account has no boards at all. Someone whose active board was merely cleared
+  // (an unfollow, a sign-out) gets their list, which is one tap from Climbs.
+  // Decided once, from the first list that arrives, and then held: a pick from
+  // the block follows or creates a board, and the refetch that lands behind the
+  // dismissing modal must not swap the screen (or end its skip tracking early).
+  // Set during render, React's pattern for state derived from the first value
+  // of something, so the first frame is already the right branch.
+  const [noBoardChoice, setNoBoardChoice] = useState<boolean | null>(null);
+  if (fromNoBoard && noBoardChoice === null && boardConnection !== undefined) {
+    setNoBoardChoice(boardConnection.boards.length === 0);
+  }
+  const firstBoardChoiceEntry: FirstBoardEntry | null = firstBoardMode
+    ? 'launch_gate'
+    : noBoardChoice === true
+      ? 'no_board'
+      : null;
+  const showFirstBoardChoice = firstBoardChoiceEntry !== null;
+  const chooseFirstBoardPath = useFirstBoardPickerTracking(firstBoardChoiceEntry);
+
   // Keep the offline snapshots in step with the live list: renames, a backfill for
   // boards downloaded before this existed, and a prune of boards the server no longer
   // lists. No-ops while offline.
@@ -171,10 +225,18 @@ export default function BoardSelection() {
 
   const { data: popular } = usePopularBoardConfigs({ limit: 12 });
 
-  const location = useDeviceLocation();
+  // Both the "At a gym" choice and the Find nearby tile offer Open Settings after
+  // a denial, so a second tap has to be able to ask again: a climber coming back
+  // from Settings gets their gyms from that tap, not from reopening the picker.
+  const location = useDeviceLocation({ retryAfterDenial: true });
   // 20 km, not the hook's 1 km default — "nearby" should reach across town
   // (a gym a couple of streets away must still surface).
-  const { data: nearby, isLoading: isNearbyLoading } = useNearbyBoards(location.coords, 20);
+  const {
+    data: nearby,
+    isFetching: isNearbyFetching,
+    isError: isNearbyError,
+    refetch: refetchNearby,
+  } = useNearbyBoards(location.coords, 20);
 
   const bluetoothSheetRef = useRef<BottomSheet>(null);
   // State (not a ref) so the quickstart sheet re-renders and kicks off its scan
@@ -191,10 +253,15 @@ export default function BoardSelection() {
     source: fromOnboarding ? 'onboarding' : undefined,
     returnTo: boardReturnTo,
     isLocalOnly,
+    onBound: trackBoardSelection,
   });
 
   // Only the user's OWN boards carry a download state.
   const boardOfflineState = useBoardOfflineState();
+  // The translated word a spray-wall row leads with. One object for every list
+  // on this screen, so none of their memos churn.
+  const labelOptions = useSprayLabelOptions();
+
   const myBoardItems = useMemo(
     // The server now orders these: pinned first, then by when you last opened
     // the board, then never-opened by when you added it (#4884). All this adds
@@ -202,22 +269,22 @@ export default function BoardSelection() {
     // AsyncStorage on this device. `currentUserId` stamps `isViewerOwner` once
     // per list build so no row ever scans back into `myBoards` for it.
     () =>
-      userBoardsToItems(
-        hoistActiveBoard(myBoards, activeBoard?.uuid),
-        activeBoard?.uuid,
-        boardOfflineState,
+      userBoardsToItems(hoistActiveBoard(myBoards, activeBoard?.uuid), {
+        activeUuid: activeBoard?.uuid,
+        offlineStateFor: boardOfflineState,
         currentUserId,
         pinnedOverrides,
-      ),
-    [myBoards, activeBoard?.uuid, boardOfflineState, currentUserId, pinnedOverrides],
+        labelOptions,
+      }),
+    [myBoards, activeBoard?.uuid, boardOfflineState, currentUserId, pinnedOverrides, labelOptions],
   );
   const nearbyItems = useMemo(
-    () => userBoardsToItems(nearby?.boards ?? [], activeBoard?.uuid),
-    [nearby?.boards, activeBoard?.uuid],
+    () => userBoardsToItems(nearby?.boards ?? [], { activeUuid: activeBoard?.uuid, labelOptions }),
+    [nearby?.boards, activeBoard?.uuid, labelOptions],
   );
   const offlineItems = useMemo(
-    () => userBoardsToItems(offlineRows, activeBoard?.uuid),
-    [offlineRows, activeBoard?.uuid],
+    () => userBoardsToItems(offlineRows, { activeUuid: activeBoard?.uuid, labelOptions }),
+    [offlineRows, activeBoard?.uuid, labelOptions],
   );
   const popularItems = useMemo(
     () => (popular?.configs ?? []).map(popularConfigToItem).filter((item): item is DiscoveryBoardItem => item !== null),
@@ -226,9 +293,11 @@ export default function BoardSelection() {
 
   // myBoards / nearby items carry the original UserBoard via uuid; look it up to
   // activate. Popular/custom items have no UserBoard, so they go through the
-  // custom sheet (CREATE_BOARD) — see onSelectPopular.
-  const onSelectMyBoard = useCallback(
-    (item: DiscoveryBoardItem) => {
+  // custom sheet (CREATE_BOARD) — see onSelectPopular. `pickSource` is the
+  // section the card sits in, not the list the lookup happened to hit: a board
+  // you follow can also be Near you, and the event should say where you tapped.
+  const activateItem = useCallback(
+    (item: DiscoveryBoardItem, pickSource: BoardPickSource) => {
       const board =
         myBoards.find((b) => b.uuid === item.key) ??
         (nearby?.boards ?? []).find((b) => b.uuid === item.key) ??
@@ -236,7 +305,7 @@ export default function BoardSelection() {
         // network list — without this an offline tap is dead.
         offlineRows.find((b) => b.uuid === item.key);
       if (board) {
-        void activateBoard(board);
+        void activateBoard(board, { pickSource });
       } else {
         // The item's UserBoard should always be in one of the lists it came
         // from; if a refetch dropped it between render and tap, give feedback
@@ -246,10 +315,13 @@ export default function BoardSelection() {
     },
     [myBoards, nearby?.boards, offlineRows, activateBoard, showToast, t],
   );
+  const onSelectMyBoard = useCallback((item: DiscoveryBoardItem) => activateItem(item, 'your_boards'), [activateItem]);
+  const onSelectNearbyBoard = useCallback((item: DiscoveryBoardItem) => activateItem(item, 'nearby'), [activateItem]);
+  const onSelectOfflineBoard = useCallback((item: DiscoveryBoardItem) => activateItem(item, 'offline'), [activateItem]);
   const nearbySection =
     nearbyItems.length > 0 ? (
       <Section title={t('mobile.discovery.nearbyTitle')}>
-        <BoardCarousel items={nearbyItems} onSelect={onSelectMyBoard} />
+        <BoardCarousel items={nearbyItems} onSelect={onSelectNearbyBoard} />
       </Section>
     ) : null;
   // Tap-to-download, scoped to boards the user owns or follows. Gated on the
@@ -397,8 +469,7 @@ export default function BoardSelection() {
     },
     [runMyBoardAction],
   );
-  // Edit mode already disables the card body, but the handler guards it too: the
-  // same `onSelect` also serves Near you and the offline rows.
+  // Edit mode already disables the card body, but the handler guards it too.
   const onSelectMyBoardCard = useCallback(
     (item: DiscoveryBoardItem) => {
       if (isEditingBoards) return;
@@ -512,14 +583,30 @@ export default function BoardSelection() {
     ) : null;
 
   const requestLocation = location.request;
+  const refreshLocation = location.refresh;
+  const locationGranted = location.status === 'granted';
   // Onboarding handoff: pre-resolve location on mount so the Find Nearby card is
   // already loading instead of waiting for a tap the user might not discover.
+  // Not in first-board mode: there the question comes with its reason, on the
+  // "At a gym" tap, instead of as the first thing a newcomer sees.
   useEffect(() => {
-    if (fromOnboarding) void requestLocation();
-  }, [fromOnboarding, requestLocation]);
-  const onModeFindNearby = useCallback(() => {
-    void requestLocation();
-  }, [requestLocation]);
+    if (fromOnboarding && !firstBoardMode) void requestLocation();
+  }, [fromOnboarding, firstBoardMode, requestLocation]);
+  // Never a dead tap (#5654). With location allowed it takes a fresh fix: a
+  // climber who has moved since "Nothing within 20 km" gets a search from where
+  // they are now (new coordinates, so a new query), and one who has not gets
+  // the same search run again. Without a fix it asks for location again, which
+  // after a denial is how a climber back from Settings gets their gyms.
+  const searchNearby = useCallback(() => {
+    if (!locationGranted) {
+      void requestLocation();
+      return;
+    }
+    void refreshLocation().then((moved) => {
+      if (!moved) void refetchNearby();
+    });
+  }, [locationGranted, refetchNearby, refreshLocation, requestLocation]);
+  const onModeFindNearby = searchNearby;
 
   const onModeBluetooth = useCallback(() => {
     setBluetoothActive(true);
@@ -535,9 +622,21 @@ export default function BoardSelection() {
     router.push({ pathname: '/boards/create', params: { returnTo: boardReturnTo, source } });
   }, [router, boardReturnTo, source]);
 
-  const onModeFindGym = useCallback(() => {
-    router.push({ pathname: '/gyms', params: { returnTo: boardReturnTo } });
+  // The wall front door (epic #5346, SW-09). Flag-gated, and unresolved reads as
+  // off, so the tile never flickers into the row for the first frames of a cold
+  // open on a fleet the feature is dark for.
+  const sprayWallsEnabled = useSprayWallsEnabled();
+  const onModeAddWall = useCallback(() => {
+    router.push({ pathname: '/boards/spray/new', params: { returnTo: boardReturnTo } });
   }, [router, boardReturnTo]);
+
+  // `source` rides along for the same reason as the builder's: a board picked on
+  // the gym map during onboarding has to close out first-run too. It is the only
+  // way forward from "Location is off" and "Nothing within 20 km". `from=picker`
+  // tells the gym finder this picker already counted the opening.
+  const onModeFindGym = useCallback(() => {
+    router.push({ pathname: '/gyms', params: { returnTo: boardReturnTo, source, from: 'picker' } });
+  }, [router, boardReturnTo, source]);
 
   // A popular config has no UserBoard — open the builder pre-seeded with the
   // tapped config so the user names and creates it (the builder dedupes against
@@ -559,21 +658,66 @@ export default function BoardSelection() {
     [router, boardReturnTo, source],
   );
 
-  // Drive the Find Nearby card off both the location permission and the nearby
-  // query: loading while resolving the fix or fetching, 'done' once results are
-  // actually in (re-tapping would no-op, so show it complete), denied/unavailable
-  // on failure. A granted fix that returns *no* boards stays 'idle' rather than a
-  // ticked-but-empty 'done', which would look broken.
+  // First-board mode's three answers. Each one is the existing flow behind it,
+  // plus the choice event; see FirstBoardChoice.
+  const [gymChosen, setGymChosen] = useState(false);
+  const onFirstBoardGym = useCallback(() => {
+    chooseFirstBoardPath('gym');
+    setGymChosen(true);
+    searchNearby();
+  }, [chooseFirstBoardPath, searchNearby]);
+  // The builder opens preset with a layout and size, so a home-wall owner's
+  // Save works from the first frame instead of after finding the layout chip.
+  const onFirstBoardOwn = useCallback(() => {
+    chooseFirstBoardPath('own');
+    router.push({
+      pathname: '/boards/create',
+      params: { returnTo: boardReturnTo, source, preset: BUILDER_PRESET_PARAM_VALUE },
+    });
+  }, [chooseFirstBoardPath, router, boardReturnTo, source]);
+  const onFirstBoardScan = useCallback(() => {
+    chooseFirstBoardPath('scan');
+    onModeBluetooth();
+  }, [chooseFirstBoardPath, onModeBluetooth]);
+  // Climbs' no-board entry only, with the spray-walls flag on: the tile row it
+  // replaced carried the spray wall tile, and My own board's builder cannot
+  // make one. Not on the launch gate's showing, because the wall wizard binds
+  // without the onboarding `source` and so would leave first-run open.
+  const onFirstBoardSprayWall = useCallback(() => {
+    chooseFirstBoardPath('spray_wall');
+    onModeAddWall();
+  }, [chooseFirstBoardPath, onModeAddWall]);
+  const offerSprayWall = sprayWallsEnabled && firstBoardChoiceEntry === 'no_board';
+  const onFirstBoardGymMap = useCallback(() => {
+    chooseFirstBoardPath('gym_map');
+    onModeFindGym();
+  }, [chooseFirstBoardPath, onModeFindGym]);
+  const onOpenLocationSettings = useCallback(() => {
+    void openAppSettings();
+  }, []);
+  const onRetryNearby = useCallback(() => {
+    void refetchNearby();
+  }, [refetchNearby]);
+  // One reading of the nearby search for both layouts. The "At a gym" choice
+  // counts as asked once it is tapped; the Find nearby tile once location has
+  // been asked for at all (a tap, or the onboarding preload).
+  const nearbySearch = firstBoardGymState({
+    chosen: showFirstBoardChoice ? gymChosen : location.status !== 'idle',
+    locationStatus: location.status,
+    // Any request in flight, not only the first load: a retry after an error
+    // keeps the query in `error` while it runs, and should read as searching.
+    nearbyLoading: isNearbyFetching,
+    nearbyFailed: isNearbyError,
+    nearbyCount: nearbyItems.length,
+  });
+
+  // The Find nearby tile: loading while it asks, resolves the fix or fetches,
+  // 'done' once results are in (they show below it). Everything else stays
+  // tappable, and the panel under the row says what happened: location off,
+  // nothing within 20 km, or a failed lookup. It used to go dim and dead on a
+  // denial, and back to idle with no word on an empty result (#5654).
   const nearbyState: ModeCardState =
-    location.status === 'loading' || (location.status === 'granted' && isNearbyLoading)
-      ? 'loading'
-      : location.status === 'granted' && nearbyItems.length > 0
-        ? 'done'
-        : location.status === 'denied'
-          ? 'denied'
-          : location.status === 'unavailable'
-            ? 'unavailable'
-            : 'idle';
+    nearbySearch === 'searching' ? 'loading' : nearbySearch === 'found' ? 'done' : 'idle';
 
   // The offline branch must not be swallowed by the loading spinner: the very first
   // offline render is still "fetching" before the retryer pauses.
@@ -622,7 +766,7 @@ export default function BoardSelection() {
         </Text>
         {offlineItems.length > 0 ? (
           <Section title={t('mobile.discovery.yourBoardsTitle')}>
-            <BoardCarousel items={offlineItems} onSelect={onSelectMyBoard} />
+            <BoardCarousel items={offlineItems} onSelect={onSelectOfflineBoard} />
             {manageBoardsRow}
           </Section>
         ) : (
@@ -691,55 +835,96 @@ export default function BoardSelection() {
         contentContainerStyle={[styles.container, { paddingBottom: scrollBottomPadding }]}
         showsVerticalScrollIndicator={false}
       >
-        {fromOnboarding ? (
-          <Text variant="subheadline" style={styles.onboardingHeader}>
-            {t('mobile.onboardingPrompt')}
-          </Text>
-        ) : null}
+        {showFirstBoardChoice ? (
+          <>
+            <FirstBoardChoice
+              gymState={nearbySearch}
+              nearbyResults={nearbySection}
+              onGym={onFirstBoardGym}
+              onOwn={onFirstBoardOwn}
+              onScan={onFirstBoardScan}
+              onFindGymOnMap={onFirstBoardGymMap}
+              onOpenSettings={onOpenLocationSettings}
+              onRetryNearby={onRetryNearby}
+              onAddSprayWall={offerSprayWall ? onFirstBoardSprayWall : undefined}
+            />
+            {/* A new account can already have boards: one it built on the web,
+                or one it followed before a sign-out cleared the active board.
+                No Popular setups here: each of those cards builds a NEW public
+                board, which is how a gym climber ends up with a duplicate of
+                their gym's wall. My own board covers the home-wall case. */}
+            {myBoardsSection}
+          </>
+        ) : (
+          <>
+            {fromOnboarding ? (
+              <Text variant="subheadline" style={styles.onboardingHeader}>
+                {t('mobile.onboardingPrompt')}
+              </Text>
+            ) : null}
 
-        {/* Mode cards */}
-        <View style={styles.modeRow}>
-          <BoardModeCard
-            icon="location"
-            label={t('mobile.discovery.findNearby')}
-            sublabel={
-              nearbyState === 'denied'
-                ? t('mobile.discovery.locationDenied')
-                : nearbyState === 'done'
-                  ? t('mobile.discovery.nearbyShowing')
-                  : undefined
-            }
-            state={nearbyState}
-            onPress={onModeFindNearby}
-          />
-          <BoardModeCard icon="bluetooth" label={t('mobile.discovery.bluetooth')} onPress={onModeBluetooth} />
-          <BoardModeCard icon="pin" label={t('mobile.discovery.findGym')} onPress={onModeFindGym} />
-          {/* The tile is 84 dp wide (68 dp of text): "Create board" truncated in
-              en-US and in all three other locales. The `+` glyph and the row's
-              context carry the noun here; the full-width CTAs keep it. */}
-          <BoardModeCard icon="plus" label={t('mobile.discovery.createTile')} onPress={onModeCreate} />
-        </View>
+            {/* Mode cards */}
+            <View style={styles.modeRow}>
+              <BoardModeCard
+                icon="location"
+                label={t('mobile.discovery.findNearby')}
+                sublabel={
+                  nearbySearch === 'location_off'
+                    ? t('mobile.discovery.locationDenied')
+                    : nearbySearch === 'found'
+                      ? t('mobile.discovery.nearbyShowing')
+                      : undefined
+                }
+                state={nearbyState}
+                onPress={onModeFindNearby}
+              />
+              <BoardModeCard icon="bluetooth" label={t('mobile.discovery.bluetooth')} onPress={onModeBluetooth} />
+              <BoardModeCard icon="pin" label={t('mobile.discovery.findGym')} onPress={onModeFindGym} />
+              {/* The tile is 84 dp wide (68 dp of text): "Create board" truncated in
+                  en-US and in all three other locales. The `+` glyph and the row's
+                  context carry the noun here; the full-width CTAs keep it. */}
+              <BoardModeCard icon="plus" label={t('mobile.discovery.createTile')} onPress={onModeCreate} />
+              {/* Next to "Create board", because that is the question it answers: the
+                  other tile is for a catalogue board you pick a layout for, this one
+                  is for a wall you photograph. */}
+              {sprayWallsEnabled ? (
+                <BoardModeCard icon="camera" label={t('mobile.discovery.addWallTile')} onPress={onModeAddWall} />
+              ) : null}
+            </View>
 
-        {nearbySection}
-        {myBoardsSection}
+            {/* Find nearby's answer when it has no list to show. Not while it
+                searches: the tile's own spinner says that. */}
+            {nearbySearch !== 'searching' ? (
+              <NearbySearchStatus
+                state={nearbySearch}
+                onFindGymOnMap={onModeFindGym}
+                onOpenSettings={onOpenLocationSettings}
+                onRetryNearby={onRetryNearby}
+              />
+            ) : null}
 
-        {popularItems.length > 0 ? (
-          <Section title={t('mobile.discovery.popularTitle')}>
-            <BoardCarousel items={popularItems} onSelect={onSelectPopular} />
-          </Section>
-        ) : null}
+            {nearbySection}
+            {myBoardsSection}
 
-        {myBoardItems.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Text variant="headline" style={styles.emptyTitle}>
-              {t('mobile.emptyTitle')}
-            </Text>
-            <Text variant="subheadline" style={styles.emptySubtitle}>
-              {t('mobile.emptySubtitle')}
-            </Text>
-            <Button title={t('mobile.discovery.create')} onPress={onModeCreate} style={styles.emptyCta} />
-          </View>
-        ) : null}
+            {popularItems.length > 0 ? (
+              <Section title={t('mobile.discovery.popularTitle')}>
+                <BoardCarousel items={popularItems} onSelect={onSelectPopular} />
+              </Section>
+            ) : null}
+
+            {myBoardItems.length === 0 ? (
+              <View style={styles.emptyState}>
+                <Text variant="headline" style={styles.emptyTitle}>
+                  {t('mobile.emptyTitle')}
+                </Text>
+                <Text variant="subheadline" style={styles.emptySubtitle}>
+                  {t('mobile.emptySubtitle')}
+                </Text>
+                <Button title={t('mobile.discovery.create')} onPress={onModeCreate} style={styles.emptyCta} />
+              </View>
+            ) : null}
+          </>
+        )}
       </ScrollView>
 
       <BluetoothQuickstartSheet
@@ -748,7 +933,7 @@ export default function BoardSelection() {
         onClose={() => setBluetoothActive(false)}
         onSelect={(board) => {
           bluetoothSheetRef.current?.close();
-          void activateBoard(board);
+          void activateBoard(board, { pickSource: 'bluetooth' });
         }}
       />
     </>

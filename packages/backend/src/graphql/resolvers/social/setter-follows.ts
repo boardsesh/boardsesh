@@ -4,6 +4,7 @@ import { type ConnectionContext, type Climb, type BoardName, SUPPORTED_BOARDS } 
 import { executeRows } from '@boardsesh/db/client';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
+import { sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
 import { getClimbStars, getGradeLabel, toConfidenceTier } from '@boardsesh/db/queries';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
 import { fetchOwnerBoards } from '../shared/render-board';
@@ -32,11 +33,19 @@ const DEFAULT_ANGLE = 40;
  * against the setter, so there is no "it's your own draft" case to preserve:
  * the caller is always someone else looking at someone else's work.
  */
-function visibleSetterClimbConditions(username: string) {
+function visibleSetterClimbConditions(username: string, viewerUserId: string | null | undefined) {
   return [
     eq(dbSchema.boardClimbs.setterUsername, username),
     eq(dbSchema.boardClimbs.isListed, true),
     eq(dbSchema.boardClimbs.isDraft, false),
+    // The docblock above says `is_listed` IS the visibility rule here, and spray is
+    // the board that breaks that: a spray climb is stored listed, so without this a
+    // caller could name a setter, filter `boardType: "spray"`, and read the climbs
+    // they set on their own private home wall. A no-op on every other board type.
+    sprayClimbVisibilityCondition(
+      { boardType: dbSchema.boardClimbs.boardType, layoutId: dbSchema.boardClimbs.layoutId },
+      viewerUserId,
+    ),
   ];
 }
 
@@ -48,8 +57,8 @@ function visibleSetterClimbConditions(username: string) {
  * every climb has been hidden keeps their profile (with a zero count) so the
  * hide can be seen and appealed instead of the person 404ing off the site.
  */
-function listableSetterClimbConditions(username: string) {
-  return [...visibleSetterClimbConditions(username), eq(dbSchema.boardClimbs.isHidden, false)];
+function listableSetterClimbConditions(username: string, viewerUserId: string | null | undefined) {
+  return [...visibleSetterClimbConditions(username, viewerUserId), eq(dbSchema.boardClimbs.isHidden, false)];
 }
 
 export const setterFollowQueries = {
@@ -70,7 +79,7 @@ export const setterFollowQueries = {
         climbCount: sql<number>`count(*) FILTER (WHERE ${dbSchema.boardClimbs.isHidden} = false)::int`,
       })
       .from(dbSchema.boardClimbs)
-      .where(and(...visibleSetterClimbConditions(username)))
+      .where(and(...visibleSetterClimbConditions(username, ctx.userId)))
       .groupBy(dbSchema.boardClimbs.boardType);
 
     if (boardTypeResults.length === 0) {
@@ -146,7 +155,7 @@ export const setterFollowQueries = {
         offset?: number;
       };
     },
-    _ctx: ConnectionContext,
+    ctx: ConnectionContext,
   ) => {
     const validatedInput = validateInput(SetterClimbsInputSchema, input, 'input');
     const { username, boardType, layoutId, sortBy, limit, offset } = validatedInput;
@@ -155,7 +164,7 @@ export const setterFollowQueries = {
     // it hands back a fresh array today, so pushing into it works, but the
     // pattern only survives while that stays true — and `setterClimbsFull`
     // below already spreads.
-    const conditions = [...listableSetterClimbConditions(username)];
+    const conditions = [...listableSetterClimbConditions(username, ctx.userId)];
     if (boardType) {
       conditions.push(eq(dbSchema.boardClimbs.boardType, boardType));
     }
@@ -249,7 +258,7 @@ export const setterFollowQueries = {
         offset?: number;
       };
     },
-    _ctx: ConnectionContext,
+    ctx: ConnectionContext,
   ): Promise<{ climbs: Climb[]; totalCount: number; hasMore: boolean }> => {
     const validatedInput = validateInput(SetterClimbsFullInputSchema, input, 'input');
     const { username, boardType, sortBy, limit, offset } = validatedInput;
@@ -271,7 +280,7 @@ export const setterFollowQueries = {
       // again is how the next one gets added to three call sites and missed on
       // the fourth.
       const filterConditions: ReturnType<typeof eq>[] = [
-        ...listableSetterClimbConditions(username),
+        ...listableSetterClimbConditions(username, ctx.userId),
         eq(tables.climbs.boardType, boardName),
       ];
 
@@ -310,8 +319,15 @@ export const setterFollowQueries = {
           // needs it to tell Woods' two sizes apart (their hold ids overlap as
           // different holds).
           compatible_size_ids: tables.climbs.compatibleSizeIds,
+          // How many of the climb's holds have come off the wall — see get-climb.ts.
+          missing_hold_count: tables.climbs.missingHoldCount,
           // Structured climb rules — see the note in hydrate-climbs.ts (#5214).
           characteristics: tables.climbs.characteristics,
+          // The angle the stats row was joined at. Pinned to `angle` here, so it
+          // only ever repeats that value or comes back NULL when the climb has no
+          // stats at it — but the play drawer reads it on every Climb, so the
+          // specific-board mode has to state it rather than leave it undefined.
+          statsAngle: tables.climbStats.angle,
           ascensionist_count: tables.climbStats.ascensionistCount,
           difficulty_id: sql<number | null>`ROUND(${tables.climbStats.displayDifficulty}::numeric, 0)`,
           quality_average: sql<number>`ROUND(${tables.climbStats.qualityAverage}::numeric, 2)`,
@@ -362,8 +378,10 @@ export const setterFollowQueries = {
         framesCount: result.frames_count ?? null,
         framesPace: result.frames_pace ?? null,
         compatibleSizeIds: result.compatible_size_ids ?? null,
+        missingHoldCount: result.missing_hold_count ?? null,
         characteristics: result.characteristics ?? null,
         angle,
+        statsAngle: result.statsAngle ?? null,
         ascensionist_count: Number(result.ascensionist_count || 0),
         difficulty: getGradeLabel(result.difficulty_id),
         quality_average: result.quality_average?.toString() || '0',
@@ -387,7 +405,7 @@ export const setterFollowQueries = {
           boardType: dbSchema.boardClimbs.boardType,
         })
         .from(dbSchema.boardClimbs)
-        .where(and(...listableSetterClimbConditions(username)))
+        .where(and(...listableSetterClimbConditions(username, ctx.userId)))
         .groupBy(dbSchema.boardClimbs.boardType);
 
       const setterBoardTypes = boardTypeResults
@@ -402,7 +420,7 @@ export const setterFollowQueries = {
       const [countResult] = await db
         .select({ count: sql<number>`count(*)::int` })
         .from(dbSchema.boardClimbs)
-        .where(and(...listableSetterClimbConditions(username)));
+        .where(and(...listableSetterClimbConditions(username, ctx.userId)));
 
       const totalCount = Number(countResult?.count ?? 0);
 
@@ -420,6 +438,8 @@ export const setterFollowQueries = {
           frames_count: tables.climbs.framesCount,
           frames_pace: tables.climbs.framesPace,
           compatible_size_ids: tables.climbs.compatibleSizeIds,
+          // How many of the climb's holds have come off the wall — see get-climb.ts.
+          missing_hold_count: tables.climbs.missingHoldCount,
           // Structured climb rules — see the note in hydrate-climbs.ts (#5214).
           characteristics: tables.climbs.characteristics,
           statsAngle: tables.climbStats.angle,
@@ -461,7 +481,7 @@ export const setterFollowQueries = {
             eq(dbSchema.boardClimbGrades.angle, tables.climbStats.angle),
           ),
         )
-        .where(and(...listableSetterClimbConditions(username)))
+        .where(and(...listableSetterClimbConditions(username, ctx.userId)))
         .orderBy(
           sortBy === 'popular'
             ? sql`COALESCE(${tables.climbStats.ascensionistCount}, 0) DESC`
@@ -485,8 +505,10 @@ export const setterFollowQueries = {
           framesCount: result.frames_count ?? null,
           framesPace: result.frames_pace ?? null,
           compatibleSizeIds: result.compatible_size_ids ?? null,
+          missingHoldCount: result.missing_hold_count ?? null,
           characteristics: result.characteristics ?? null,
           angle: result.statsAngle ?? DEFAULT_ANGLE,
+          statsAngle: result.statsAngle ?? null,
           ascensionist_count: Number(result.ascensionist_count || 0),
           difficulty: getGradeLabel(result.difficulty_id),
           quality_average: result.quality_average?.toString() || '0',
@@ -513,7 +535,7 @@ export const setterFollowQueries = {
   userClimbs: async (
     _: unknown,
     { input }: { input: { userId: string; sortBy?: string; limit?: number; offset?: number } },
-    _ctx: ConnectionContext,
+    ctx: ConnectionContext,
   ): Promise<{ climbs: Climb[]; totalCount: number; hasMore: boolean }> => {
     const validatedInput = validateInput(UserClimbsInputSchema, input, 'input');
     const { userId, sortBy, limit, offset } = validatedInput;
@@ -553,7 +575,17 @@ export const setterFollowQueries = {
     // Someone whose climb was hidden by the community has to be able to see that
     // it happened — the row carries `is_hidden` so the UI can say so — rather than
     // watching it vanish from their profile with no explanation.
-    const whereCondition = and(ownershipCondition, eq(tables.climbs.isDraft, false));
+    // Scoped to no board type at all, so a spray climb rides along with every
+    // other board a climber has set on — including the layout id of their private
+    // wall. The condition is a no-op on the other eight board types.
+    const whereCondition = and(
+      ownershipCondition,
+      eq(tables.climbs.isDraft, false),
+      sprayClimbVisibilityCondition(
+        { boardType: tables.climbs.boardType, layoutId: tables.climbs.layoutId },
+        ctx.userId,
+      ),
+    );
 
     // 3. Get total count
     const [countResult] = await db
@@ -591,6 +623,7 @@ export const setterFollowQueries = {
       frames_count: number | null;
       frames_pace: number | null;
       compatible_size_ids: number[] | null;
+      missing_hold_count: number | null;
       characteristics: string[] | null;
       required_set_ids: number[] | null;
       is_hidden: boolean | null;
@@ -619,12 +652,17 @@ export const setterFollowQueries = {
           c.frames_count,
           c.frames_pace,
           c.compatible_size_ids,
+          c.missing_hold_count,
           c.characteristics,
           c.required_set_ids,
           c.is_hidden,
           c.created_at
         FROM board_climbs c
         WHERE ${ownershipSql} AND c.is_draft = false
+          -- The row list is built by this CTE, not by the drizzle whereCondition
+          -- used for the count above — so the spray rule has to be stated here too
+          -- or the count hides a private wall's climbs while the list returns them.
+          AND ${sprayClimbVisibilityCondition({ boardType: sql`c.board_type`, layoutId: sql`c.layout_id` }, ctx.userId)}
       ),
       best_angle AS (
         SELECT DISTINCT ON (stats.board_type, stats.climb_uuid)
@@ -653,6 +691,7 @@ export const setterFollowQueries = {
         owned_climbs.frames_count,
         owned_climbs.frames_pace,
         owned_climbs.compatible_size_ids,
+        owned_climbs.missing_hold_count,
         owned_climbs.characteristics,
         owned_climbs.required_set_ids,
         owned_climbs.is_hidden,
@@ -697,9 +736,11 @@ export const setterFollowQueries = {
         framesCount: result.frames_count ?? null,
         framesPace: result.frames_pace ?? null,
         compatibleSizeIds: result.compatible_size_ids ?? null,
+        missingHoldCount: result.missing_hold_count ?? null,
         characteristics: result.characteristics ?? null,
         is_hidden: result.is_hidden ?? false,
         angle: result.stats_angle ?? DEFAULT_ANGLE,
+        statsAngle: result.stats_angle ?? null,
         ascensionist_count: Number(result.ascensionist_count || 0),
         difficulty: getGradeLabel(result.difficulty_id),
         quality_average: result.quality_average?.toString() || '0',
@@ -928,7 +969,7 @@ export const setterFollowMutations = {
     const [exists] = await db
       .select({ count: count() })
       .from(dbSchema.boardClimbs)
-      .where(and(...visibleSetterClimbConditions(setterUsername)))
+      .where(and(...visibleSetterClimbConditions(setterUsername, myUserId)))
       .limit(1);
 
     if (Number(exists?.count ?? 0) === 0) {

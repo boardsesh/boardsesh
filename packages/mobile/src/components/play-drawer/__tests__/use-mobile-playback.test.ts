@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import type { BoardName, Climb, PlaybackStateChangedEvent } from '@boardsesh/shared-schema';
+import type { BoardName, Climb, LitUpHoldsMap, PlaybackStateChangedEvent } from '@boardsesh/shared-schema';
 
 // The orchestrator composes three I/O seams — the shared playback engine, the
 // queue provider (party-sync), and the optional Bluetooth context (BLE writes).
@@ -25,7 +25,7 @@ type EngineInput = {
 type SendCall = { frame: string; mirrored?: boolean; resolve: (value: boolean) => void };
 
 const mocks = vi.hoisted(() => ({
-  climbFrames: { frames: [] as unknown[], frameStrings: [] as string[], paceMs: 500 },
+  climbFrames: { frames: [] as LitUpHoldsMap[], frameStrings: [] as string[], paceMs: 500, count: 0 },
   // Mutable engine output — tests drive `currentFrameString` / `isAnimatable`
   // through `pushEngineFrame` and rerender to fire the BLE effect.
   //
@@ -65,7 +65,12 @@ const mocks = vi.hoisted(() => ({
   sendCalls: [] as SendCall[],
 }));
 
-vi.mock('@boardsesh/playback-react', () => ({
+// Partial: the two hooks are stubbed so a test can drive the engine, but the
+// pace constants and unit converters stay REAL. Stubbing those would let this
+// file agree with itself about a conversion the app does differently — the
+// bounds a pace is clamped into are the BLE writer's, not the test's.
+vi.mock('@boardsesh/playback-react', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@boardsesh/playback-react')>()),
   useClimbFrames: () => mocks.climbFrames,
   usePlaybackEngine: (input: EngineInput) => {
     mocks.lastEngineInput.current = input;
@@ -125,7 +130,7 @@ function playbackEvent(overrides: Partial<PlaybackStateChangedEvent> = {}): Play
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.climbFrames = { frames: [], frameStrings: ['F0', 'F1', 'F2'], paceMs: 500 };
+  mocks.climbFrames = { frames: [], frameStrings: ['F0', 'F1', 'F2'], paceMs: 500, count: 3 };
   mocks.playback.isAnimatable = false;
   mocks.playback.frameCount = 0;
   mocks.playback.frameIndex = 0;
@@ -145,19 +150,21 @@ beforeEach(() => {
   });
 });
 
-type PlaybackHarnessProps = { climb: Climb | null; suppressWallWrites?: boolean };
+type PlaybackGates = { viewOnly?: boolean; suppressWallWrites?: boolean };
+type PlaybackProps = { climb: Climb | null } & PlaybackGates;
 
-function renderPlayback(climb: Climb | null, options?: { suppressWallWrites?: boolean }) {
+function renderPlayback(climb: Climb | null, gates: PlaybackGates = {}) {
   return renderHook(
-    (props: PlaybackHarnessProps) =>
+    (props: PlaybackProps) =>
       useMobilePlayback({
         climb: props.climb,
         boardName: KILTER,
         mirrored: false,
         isOpen: true,
+        viewOnly: props.viewOnly ?? false,
         suppressWallWrites: props.suppressWallWrites ?? false,
       }),
-    { initialProps: { climb, suppressWallWrites: options?.suppressWallWrites } as PlaybackHarnessProps },
+    { initialProps: { climb, ...gates } },
   );
 }
 
@@ -172,6 +179,16 @@ function renderPlayback(climb: Climb | null, options?: { suppressWallWrites?: bo
  * "this is a route" — any non-empty frame — and the single-frame case passes it
  * explicitly.
  */
+/**
+ * Put the engine on a new multiplier the way the real one does — by handing back
+ * a FRESH memoised object. Mutating the stub in place would leave the hook's own
+ * `useMemo` (keyed on the engine's identity) holding the previous pace, so a
+ * test would read a number the app never shows.
+ */
+function setEngineSpeed(speed: number) {
+  mocks.playback = { ...mocks.playback, speed };
+}
+
 function pushEngineFrame(frame: string, isAnimatable: boolean = frame !== '') {
   mocks.playback.currentFrameString = frame;
   mocks.playback.isAnimatable = isAnimatable;
@@ -180,37 +197,31 @@ function pushEngineFrame(frame: string, isAnimatable: boolean = frame !== '') {
 
 /** Push a new current frame and rerender so the BLE effect re-evaluates. */
 async function setFrame(
-  rerender: (props: { climb: Climb | null; suppressWallWrites?: boolean }) => void,
+  rerender: (props?: PlaybackProps) => void,
   climb: Climb | null,
   frame: string,
-  options?: { isAnimatable?: boolean },
+  options: PlaybackGates & { isAnimatable?: boolean } = {},
 ) {
   await act(async () => {
-    pushEngineFrame(frame, options?.isAnimatable);
-    rerender({ climb });
+    pushEngineFrame(frame, options.isAnimatable);
+    rerender({ climb, viewOnly: options.viewOnly, suppressWallWrites: options.suppressWallWrites });
   });
 }
 
 describe('useMobilePlayback — BLE drain', () => {
   // The Browsing chrome promises "the wall stays put": while the drawer shows a
   // preview, playback animates on-screen but not one frame may reach the board.
-  it('suppressWallWrites keeps every frame off the wall, then resumes when it lifts', async () => {
+  it('viewOnly keeps every frame off the wall, then resumes when it lifts', async () => {
     const climb = climbWith('c1');
-    const { rerender } = renderPlayback(climb, { suppressWallWrites: true });
+    const { rerender } = renderPlayback(climb, { viewOnly: true });
 
-    await act(async () => {
-      pushEngineFrame('F0');
-      rerender({ climb, suppressWallWrites: true });
-    });
-    await act(async () => {
-      pushEngineFrame('F1');
-      rerender({ climb, suppressWallWrites: true });
-    });
+    await setFrame(rerender, climb, 'F0', { viewOnly: true });
+    await setFrame(rerender, climb, 'F1', { viewOnly: true });
     expect(mocks.bluetooth.sendFramesToBoard).not.toHaveBeenCalled();
 
     // Preview cleared (Back to live / commit): writes resume with the current frame.
     await act(async () => {
-      rerender({ climb, suppressWallWrites: false });
+      rerender({ climb, viewOnly: false });
     });
     expect(mocks.bluetooth.sendFramesToBoard).toHaveBeenCalledTimes(1);
     expect(mocks.sendCalls[0].frame).toBe('F1');
@@ -247,6 +258,23 @@ describe('useMobilePlayback — BLE drain', () => {
 
     expect(mocks.bluetooth.isConnected).toBe(true);
     expect(mocks.bluetooth.sendFramesToBoard).not.toHaveBeenCalled();
+  });
+
+  it('drops pending live frames when the drawer switches into preview', async () => {
+    const climb = climbWith('c1');
+    const { rerender } = renderPlayback(climb);
+    await setFrame(rerender, climb, 'F0');
+    await setFrame(rerender, climb, 'F1');
+    expect(mocks.sendCalls).toHaveLength(1);
+
+    await act(async () => {
+      rerender({ climb, viewOnly: true });
+    });
+    await act(async () => {
+      mocks.sendCalls[0].resolve(true);
+    });
+
+    expect(mocks.sendCalls.map(({ frame }) => frame)).toEqual(['F0']);
   });
 
   it('collapses overlapping frame writes to the latest (GATT-safe)', async () => {
@@ -332,6 +360,35 @@ describe('useMobilePlayback — BLE drain', () => {
     await setFrame(rerender, climb, 'F0');
     expect(mocks.bluetooth.sendFramesToBoard).not.toHaveBeenCalled();
   });
+
+  // The drawer can be BLE-connected, open, and animating a route while what's on
+  // screen is a preview — someone else's climb is lit, or the climber is looking
+  // ahead in a crew. Every other gate here is satisfied in that state, so this is
+  // the one that keeps a scrubbed preview off the wall.
+  it('writes nothing while the drawer is showing a preview', async () => {
+    const climb = climbWith('c1');
+    const { rerender } = renderPlayback(climb, { viewOnly: true });
+
+    await setFrame(rerender, climb, 'F0', { viewOnly: true });
+    expect(mocks.bluetooth.sendFramesToBoard).not.toHaveBeenCalled();
+  });
+
+  it('flushes the frame once the preview is committed', async () => {
+    // Leaving the preview must not leave the wall stuck on the last live frame:
+    // the gate suppresses writes, it doesn't poison the write trackers.
+    const climb = climbWith('c1');
+    const { rerender } = renderPlayback(climb, { viewOnly: true });
+
+    await setFrame(rerender, climb, 'F0', { viewOnly: true });
+    expect(mocks.bluetooth.sendFramesToBoard).not.toHaveBeenCalled();
+
+    await setFrame(rerender, climb, 'F0', { viewOnly: false });
+    expect(mocks.bluetooth.sendFramesToBoard).toHaveBeenCalledTimes(1);
+    expect(mocks.sendCalls[0].frame).toBe('F0');
+    await act(async () => {
+      mocks.sendCalls[0].resolve(true);
+    });
+  });
 });
 
 describe('useMobilePlayback — party-sync', () => {
@@ -361,7 +418,7 @@ describe('useMobilePlayback — party-sync', () => {
     expect(mocks.lastEngineInput.current?.externalState).not.toBeNull();
 
     act(() => {
-      rerender({ climb: climbWith('c2') });
+      rerender({ climb: climbWith('c2'), viewOnly: false });
     });
     expect(mocks.lastEngineInput.current?.externalState).toBeNull();
   });
@@ -417,10 +474,62 @@ describe('useMobilePlayback — party-sync', () => {
     // A publisher older than the field sends nothing; the engine must see null
     // rather than a stale count from the previous event.
     act(() => {
-      rerender({ climb: climbWith('c1') });
+      rerender({ climb: climbWith('c1'), viewOnly: false });
     });
     emitPlayback(playbackEvent({ climbUuid: 'c1', frameCount: undefined }));
     expect(mocks.lastEngineInput.current?.externalState?.frameCount).toBeNull();
+  });
+
+  // Browsing emits NOTHING on the wire. A published playback state is a write
+  // every peer on that climb follows — the wall one hop further out — so a
+  // preview being scrubbed must not reach the session at all.
+  it('publishes nothing while the drawer is showing a preview', () => {
+    renderPlayback(climbWith('c1'), { viewOnly: true });
+
+    act(() => {
+      mocks.lastEngineInput.current?.onLocalStateChange?.({
+        frameIndex: 1,
+        frameCount: 3,
+        isPlaying: true,
+        speed: 1,
+        paceMs: 500,
+        anchorTimestamp: 1700,
+        clientId: 'self',
+      });
+    });
+
+    expect(mocks.publishPlaybackState).not.toHaveBeenCalled();
+  });
+
+  // The two gates are not the same gate. A climb from another board is still
+  // the COMMITTED climb — peers on it with the right wall should follow the
+  // scrub, and their own `suppressWallWrites` protects their wall. Only this
+  // device's frames stay home (#5099); the crew still hears the playback.
+  it('still publishes while only wall writes are suppressed (board mismatch)', () => {
+    renderPlayback(climbWith('c1'), { suppressWallWrites: true });
+
+    act(() => {
+      mocks.lastEngineInput.current?.onLocalStateChange?.({
+        frameIndex: 1,
+        frameCount: 3,
+        isPlaying: true,
+        speed: 1,
+        paceMs: 500,
+        anchorTimestamp: 1700,
+        clientId: 'self',
+      });
+    });
+
+    expect(mocks.publishPlaybackState).toHaveBeenCalledTimes(1);
+  });
+
+  // Watching what the crew is doing is exactly what browsing IS, so the inbound
+  // half stays armed — only the outbound half is gated.
+  it('still follows a peer while showing a preview', () => {
+    renderPlayback(climbWith('c1'), { viewOnly: true });
+
+    emitPlayback(playbackEvent({ climbUuid: 'c1', clientId: 'peer-1' }));
+    expect(mocks.lastEngineInput.current?.externalState?.clientId).toBe('peer-1');
   });
 
   it('reports a peer frame-count disagreement to analytics', () => {
@@ -436,5 +545,76 @@ describe('useMobilePlayback — party-sync', () => {
       localFrameCount: 11,
       boardName: KILTER,
     });
+  });
+});
+
+// The climber picks seconds a frame. The engine and the wire still speak
+// multiplier, so this hook is the only place the two units meet — and party sync
+// only stays in step because the conversion happens on each phone against its
+// OWN copy of the authored pace.
+
+describe('useMobilePlayback — seconds a frame', () => {
+  it('reads the authored pace through the multiplier the engine is running', () => {
+    mocks.climbFrames = { frames: [], frameStrings: ['F0', 'F1', 'F2'], paceMs: 12_000, count: 3 };
+    setEngineSpeed(1);
+    const { result, rerender } = renderPlayback(climbWith('c1'));
+    expect(result.current.paceSeconds).toBe(12);
+
+    // The number the old multiplier pill could not tell you: half speed on a 12s
+    // route is 24s a frame, and on a 750ms one it is 1.5s.
+    setEngineSpeed(0.5);
+    rerender({ climb: climbWith('c1') });
+    expect(result.current.paceSeconds).toBe(24);
+  });
+
+  it('writes a pace back as the multiplier that produces it', () => {
+    mocks.climbFrames = { frames: [], frameStrings: ['F0', 'F1', 'F2'], paceMs: 800, count: 3 };
+    const { result } = renderPlayback(climbWith('c1'));
+
+    act(() => {
+      result.current.setPaceSeconds(4);
+    });
+    // 800ms at 0.2x is 4s a frame.
+    expect(mocks.playback.setSpeed).toHaveBeenLastCalledWith(0.2);
+  });
+
+  it('round-trips a chosen pace back out unchanged', () => {
+    mocks.climbFrames = { frames: [], frameStrings: ['F0', 'F1', 'F2'], paceMs: 750, count: 3 };
+    const { result, rerender } = renderPlayback(climbWith('c1'));
+
+    for (const seconds of [0.3, 0.75, 1, 5, 12, 60]) {
+      act(() => {
+        result.current.setPaceSeconds(seconds);
+      });
+      const [speed] = mocks.playback.setSpeed.mock.calls.at(-1) as [number];
+      setEngineSpeed(speed);
+      rerender({ climb: climbWith('c1') });
+      expect(result.current.paceSeconds).toBeCloseTo(seconds, 10);
+    }
+  });
+
+  it('holds a pace inside the range whatever it is handed', () => {
+    // The control clamps too, but this hook is the drawer's public seam and a
+    // pace outside the range would drive the BLE writer past its throughput
+    // floor — 0.2s a frame is where the Android GATT queue starts erroring.
+    mocks.climbFrames = { frames: [], frameStrings: ['F0', 'F1', 'F2'], paceMs: 750, count: 3 };
+    const { result } = renderPlayback(climbWith('c1'));
+
+    act(() => {
+      result.current.setPaceSeconds(0.01);
+    });
+    expect(mocks.playback.setSpeed).toHaveBeenLastCalledWith(750 / 300);
+
+    act(() => {
+      result.current.setPaceSeconds(600);
+    });
+    expect(mocks.playback.setSpeed).toHaveBeenLastCalledWith(750 / 60_000);
+  });
+
+  it('falls back to the default rather than dividing by a junk pace', () => {
+    mocks.climbFrames = { frames: [], frameStrings: ['F0', 'F1', 'F2'], paceMs: 750, count: 3 };
+    setEngineSpeed(0);
+    const { result } = renderPlayback(climbWith('c1'));
+    expect(result.current.paceSeconds).toBe(0.75);
   });
 });

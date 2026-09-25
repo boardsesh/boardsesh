@@ -48,7 +48,16 @@ export type ClimbListItemClimb = {
   /** Voted out of the browse lists by the community. Optional because the queue's
    *  own `Climb` type doesn't carry it — a queued row simply shows no chip. */
   is_hidden?: boolean | null;
+  /** How many of this climb's holds are no longer on the wall — a spray wall that
+   *  got reset under it (SW-13). Null on every catalogue board, where holds don't
+   *  come off. Optional for the same reason as `is_hidden` above: the queue's own
+   *  `Climb` type doesn't carry it, so a queued row simply shows no chip. */
+  missingHoldCount?: number | null;
   ascensionist_count?: number | null;
+  /** The angle the grade and send count above were read from. Present only on rows
+   *  that came through a cross-angle search (issue #5405); the queue's own `Climb`
+   *  does not carry it, so a queued row simply shows no marker. */
+  statsAngle?: number | null;
   quality_average: string;
   setter_username?: string | null;
   // Intrinsic climb attributes shown as grey glyphs after the name.
@@ -172,7 +181,7 @@ const HiddenChip = React.memo(function HiddenChip() {
 
   return (
     <View
-      style={[styles.hiddenChip, { backgroundColor: systemColors.fill }]}
+      style={[styles.nameRowChip, { backgroundColor: systemColors.fill }]}
       accessibilityRole="text"
       accessibilityLabel={t('mobile.hidden.chip')}
       testID="climb-row-hidden-chip"
@@ -180,6 +189,40 @@ const HiddenChip = React.memo(function HiddenChip() {
       <Icon name="visibility.off" size={11} color={systemColors.secondaryLabel} />
       <Text variant="caption2" numberOfLines={1} color={systemColors.secondaryLabel}>
         {t('mobile.hidden.chip')}
+      </Text>
+    </View>
+  );
+});
+
+/**
+ * "N holds gone" chip for a climb whose spray wall was reset under it (SW-13).
+ * It answers the question the row otherwise raises silently — why this climb no
+ * longer works — and points at the remix flow on the climb itself.
+ *
+ * Not props-free like `HiddenChip`: it carries the count. The prop is a single
+ * primitive, so `React.memo` still skips it on every unrelated parent re-render.
+ *
+ * Same neutral `fill` / `secondaryLabel` pair as `HiddenChip`, deliberately: the
+ * row's one colour signal is the grade (see the note above `ASCENT_STATUS_ICON`),
+ * and a warning-coloured chip here would compete with it.
+ */
+const LostHoldsChip = React.memo(function LostHoldsChip({ count }: { count: number }) {
+  const { t } = useTranslation('climbs');
+  const { systemColors } = useTheme();
+
+  return (
+    <View
+      style={[styles.nameRowChip, { backgroundColor: systemColors.fill }]}
+      accessibilityRole="text"
+      accessibilityLabel={t('mobile.lostHolds.chipAria', { count })}
+      testID="climb-row-lost-holds-chip"
+    >
+      {/* Renders ✕-in-circle on both platforms — a removal marker, which is what a
+          hold coming off the wall is. Named for the create-climb frame editor it
+          was added for; reused here rather than minting a near-identical glyph. */}
+      <Icon name="frame.remove" size={11} color={systemColors.secondaryLabel} />
+      <Text variant="caption2" numberOfLines={1} color={systemColors.secondaryLabel}>
+        {t('mobile.lostHolds.chip', { count })}
       </Text>
     </View>
   );
@@ -289,6 +332,7 @@ const LiveClimbGrade = React.memo(function LiveClimbGrade({
   const { resolveGrade } = useDisplayGrade();
   const { gradeFormat } = useGradeFormat();
   const { systemColors } = useTheme();
+  const { t } = useTranslation('climbs');
   const liveStats = useEffectiveClimbStats(boardName, layoutId, climb.uuid, angle, {
     ascensionistCount: climb.ascensionist_count,
     qualityAverage: climb.quality_average,
@@ -356,6 +400,27 @@ const LiveClimbGrade = React.memo(function LiveClimbGrade({
             {secondary}
           </Text>
         </View>
+      ) : null}
+      {/* The grade and the send count above came from a different angle than the one
+          on the wall — say so next to the number they qualify, not in the subtitle.
+          Deliberately uncoloured: in this row colour carries grade and nothing else.
+
+          `statsAngle` rides the search payload, while `liveStats` overlays the store
+          keyed on the BROWSED angle. Those only disagree after the climber logs the
+          first ever tick at the browsed angle on a climb whose numbers came from
+          another one: a canonical row appears at the browsed angle and the count
+          switches to it while this marker still names the old angle, until the next
+          search refetch resolves tier 1 and drops it. Narrow, self-correcting, and
+          not worth widening the shared hook's return to pre-empt. */}
+      {climb.statsAngle != null && climb.statsAngle !== angle ? (
+        <Text
+          variant="caption2"
+          numberOfLines={1}
+          accessibilityLabel={t('mobile.climbRow.setAngleMarkerAria', { angle: climb.statsAngle })}
+          style={[styles.consensusText, { color: systemColors.secondaryLabel }]}
+        >
+          {t('mobile.climbRow.setAngleMarker', { angle: climb.statsAngle })}
+        </Text>
       ) : null}
     </View>
   );
@@ -438,6 +503,9 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
             isNoMatch={climb.is_no_match}
           />
           {climb.is_hidden ? <HiddenChip /> : null}
+          {typeof climb.missingHoldCount === 'number' && climb.missingHoldCount > 0 ? (
+            <LostHoldsChip count={climb.missingHoldCount} />
+          ) : null}
         </View>
         {primarySubtitleOverride === undefined ? (
           <LiveClimbSubtitle
@@ -505,7 +573,8 @@ const styles = StyleSheet.create({
     // Shrink so the name (not the trailing attribute glyphs) absorbs truncation.
     flexShrink: 1,
   },
-  hiddenChip: {
+  // Shared by HiddenChip and LostHoldsChip — one chip shape in the name row.
+  nameRowChip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,

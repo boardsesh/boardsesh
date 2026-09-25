@@ -55,9 +55,11 @@ export function useGradeFormat() {
     [gradeFormat],
   );
 
+  // `true`: www renders one scheme. The shared softenColor() keeps its
+  // darkMode parameter — mobile still renders light.
   const getGradeColor = useCallback(
-    (difficulty: string | null | undefined, darkMode?: boolean): string | undefined => {
-      return getSoftGradeColorByFormat(difficulty, gradeFormat, darkMode);
+    (difficulty: string | null | undefined): string | undefined => {
+      return getSoftGradeColorByFormat(difficulty, gradeFormat, true);
     },
     [gradeFormat],
   );

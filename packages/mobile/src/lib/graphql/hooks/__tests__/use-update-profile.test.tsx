@@ -11,6 +11,7 @@ vi.mock('../../client', () => ({
   getHttpClient: () => ({ request: requestMock }),
 }));
 vi.mock('../use-infinite-search-climbs', () => ({ useInfiniteSearchClimbs: vi.fn() }));
+vi.mock('../use-similar-climbs', () => ({ useSimilarClimbs: vi.fn() }));
 vi.mock('../use-beta-link-preview', () => ({ useBetaLinkPreview: vi.fn() }));
 vi.mock('../use-mobile-climb-actions-data', () => ({ useMobileClimbActionsData: vi.fn() }));
 // The hooks barrel statically imports the offline-sync adapter, which imports
@@ -34,8 +35,6 @@ vi.mock('../use-social', () => ({
   useUserClimbs: vi.fn(),
   useVote: vi.fn(),
   useBulkVoteSummaries: vi.fn(),
-  useChunkedBulkVoteSummaries: vi.fn(),
-  useGroupedBulkVoteSummaries: vi.fn(),
   useComments: vi.fn(),
   useAddComment: vi.fn(),
 }));

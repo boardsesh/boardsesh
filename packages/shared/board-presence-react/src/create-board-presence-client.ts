@@ -21,6 +21,8 @@ import {
   BOARD_CLIMB_RECENT_SENDERS,
   BOARD_CONNECTION,
   BOARD_HISTORY,
+  BOARD_HISTORY_PAGE,
+  BOARD_RECENT_HISTORY,
   BOARD_NOW_PLAYING,
   BOARD_PRESENCE_STATS,
   BOARD_RECENT_CLIMBS,
@@ -36,6 +38,7 @@ import type {
   BoardClimbRecentSender,
   BoardConnectionHolder,
   BoardPresenceClimb,
+  BoardHistoryPage,
   BoardPresenceEvent,
   BoardPresenceStats,
   ClimbQueueItemInput,
@@ -141,6 +144,20 @@ export function createBoardPresenceClient(transport: BoardPresenceTransport): Fu
   // catch-up is safe — the hook's runCatchUp coalesces in-flight requests.
   let everConnected = false;
   return {
+    async fetchRecentHistory(boardId) {
+      const response = await transport.execute<{ boardRecentHistory: BoardPresenceClimb[] }>({
+        query: BOARD_RECENT_HISTORY,
+        variables: { boardId },
+      });
+      return response.boardRecentHistory;
+    },
+    async fetchHistoryPage(boardId, opts) {
+      const response = await transport.execute<{ boardHistoryPage: BoardHistoryPage }>({
+        query: BOARD_HISTORY_PAGE,
+        variables: { boardId, ...opts },
+      });
+      return response.boardHistoryPage;
+    },
     subscribeNowPlaying(boardId, onEvent, onError, onComplete) {
       return transport.subscribe<BoardNowPlayingData>(
         { query: BOARD_NOW_PLAYING, variables: { boardId } },

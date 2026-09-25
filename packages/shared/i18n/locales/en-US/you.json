@@ -19,8 +19,7 @@
       "weekly": {
         "sessions": "Sessions",
         "sends": "Sends",
-        "flashes": "Flashes",
-        "attempts": "Attempts"
+        "flashes": "Flashes"
       },
       "streak": "{{count}} week streak",
       "sectionToday": "Today",
@@ -29,9 +28,6 @@
       "emptyTitle": "No sessions yet",
       "emptyBody": "Start a session and your climbs land here.",
       "emptyCta": "Start a session"
-    },
-    "progress": {
-      "empty": "Nothing logged yet — your stats show up once you start ticking climbs."
     },
     "social": {
       "title": "Social",
@@ -168,6 +164,18 @@
         "editTitle": "Which entry to edit?",
         "deleteTitle": "Which entry to delete?"
       }
+    },
+    "boardLink": {
+      "title": "Missing your {{boardName}} sends?",
+      "titleGeneric": "Climbed on a board before?",
+      "body": "Signing in didn't connect your {{boardName}} account — they're two separate logins. Link it to start syncing your sends. They appear here as syncing finishes.",
+      "bodyGeneric": "Your Kilter or Tension account is a separate login from Boardsesh. Link it to start syncing your sends. They appear here as syncing finishes.",
+      "cta": "Link my {{boardName}} account",
+      "ctaGeneric": "Link a board account",
+      "moonboardTitle": "Bring your MoonBoard logbook over",
+      "moonboardBody": "Bring your MoonBoard history over by requesting your data from MoonBoard, then importing the file here.",
+      "moonboardCta": "Import my MoonBoard logbook",
+      "dismiss": "Not now"
     }
   }
 }

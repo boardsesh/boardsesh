@@ -20,6 +20,7 @@ import { render, act } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { Climb } from '@boardsesh/shared-schema';
 import type { ClimbQueueItem } from '@boardsesh/queue';
+import type { LayoutChangeEvent } from 'react-native';
 
 type Props = Record<string, unknown>;
 
@@ -33,7 +34,11 @@ const recorded = vi.hoisted(() => ({
   favoriteStatus: [] as Props[],
   playback: [] as Props[],
   angleSheet: [] as Props[],
+  lightbulb: [] as { canRelay?: boolean; onRelayToHolder?: () => void }[],
+  scroll: [] as Props[],
+  headerLayout: undefined as ((event: LayoutChangeEvent) => void) | undefined,
 }));
+const setCurrentClimb = vi.hoisted(() => vi.fn());
 const queueState = vi.hoisted(() => ({
   queue: [] as unknown[],
   currentClimbQueueItem: null as unknown,
@@ -52,7 +57,10 @@ const navigation = vi.hoisted(() => ({
 
 // --- Host platform -----------------------------------------------------------
 vi.mock('react-native', () => ({
-  View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  View: ({ children, onLayout }: { children?: ReactNode; onLayout?: (event: LayoutChangeEvent) => void }) => {
+    if (onLayout) recorded.headerLayout = onLayout;
+    return createElement('div', null, children);
+  },
   Pressable: ({ children, onPress }: { children?: ReactNode; onPress?: () => void }) =>
     createElement('button', { onClick: onPress }, children),
   StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1, absoluteFillObject: {} },
@@ -72,7 +80,10 @@ vi.mock('react-native-mmkv', () => {
   };
 });
 vi.mock('react-native-gesture-handler', () => ({
-  ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  ScrollView: ({ children, ...props }: { children?: ReactNode } & Props) => {
+    recorded.scroll.push(props);
+    return createElement('div', null, children);
+  },
   GestureDetector: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
 }));
 vi.mock('react-native-reanimated', () => ({
@@ -87,11 +98,30 @@ vi.mock('expo-crypto', () => ({ randomUUID: () => 'random-uuid' }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
 
+// The drawer reads the ACTIVE board — not the one it is drawing — to decide what
+// a forward swipe may land on (#5099, selection half). That is a React Query
+// hook, and this file mounts PlayDrawer with no QueryClientProvider. These cases
+// are about the RENDER board and drive navigation through the mock below, so the
+// answer here is inert; it just has to be the selected 12x12 rather than a
+// throw. Literal instead of a reference to TWELVE_BY_TWELVE because vi.mock
+// factories hoist above that const.
+vi.mock('../../../lib/graphql/use-active-board', () => ({
+  useActiveBoard: () => ({
+    data: { boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20', angle: 40 },
+    isPending: false,
+  }),
+}));
+
 // --- Shared packages ---------------------------------------------------------
 // Navigation is driven per-case so a peek can be aimed at another board.
 // `@boardsesh/board-config` and `lib/board-details` stay REAL: the resolver
 // reads real layouts, sizes and hold placements, which is the whole question.
-vi.mock('@boardsesh/play-view', () => ({
+vi.mock('@boardsesh/play-view', async (importOriginal) => ({
+  // Real: PlayDrawer calls this to resolve the navigation source (#5403); every
+  // case here drives navigation through the canned `navigation.state` above, so
+  // it only ever sees a null preview item and returns the (irrelevant) source.
+  resolveNavigationSuggestionSource: (await importOriginal<typeof import('@boardsesh/play-view')>())
+    .resolveNavigationSuggestionSource,
   findUpcomingQueueItemsWithSuggestions: () => prefetchWalk.items,
   computeNavigationStateWithSuggestions: () => navigation.state,
   boardSupportsMirroring: () => true,
@@ -106,6 +136,12 @@ vi.mock('@boardsesh/analytics', () => ({
 vi.mock('../../../lib/analytics', () => ({ track: vi.fn() }));
 
 // --- Children ----------------------------------------------------------------
+// The heatmap reads the saved search from secure storage and the offline
+// database; neither exists here, and the drawer only wires it.
+vi.mock('../heatmap/use-play-drawer-heatmap', () => ({
+  usePlayDrawerHeatmap: () => ({ enabled: false, isBusy: false, overlay: null, toggle: () => {} }),
+}));
+vi.mock('../heatmap/PlayDrawerHeatmapPanel', () => ({ PlayDrawerHeatmapPanel: () => null }));
 vi.mock('../DeferredBoard', () => ({
   DeferredBoard: (props: Props) => {
     recorded.board.push(props);
@@ -159,27 +195,42 @@ vi.mock('../AngleSelectorSheet', () => ({
   },
 }));
 vi.mock('../../ClimbActionsSheet', () => ({ ClimbActionsSheet: () => null }));
+// The lost-holds banner and the Remix handoff behind it, stubbed like every
+// other collaborator above. Both reach native modules this suite has no runtime
+// for — the banner through the design-system Button, the handoff through
+// Sentry — and neither is what is under test here.
+vi.mock('../LostHoldsBanner', () => ({ LostHoldsBanner: () => null }));
+vi.mock('../../create-climb/use-create-climb-navigation', () => ({
+  useCreateClimbNavigation: () => ({ openRemix: vi.fn(), openEdit: vi.fn(), resetActionGuard: vi.fn() }),
+}));
 vi.mock('../../AddBetaVideoSheet', () => ({ AddBetaVideoSheet: () => null }));
 vi.mock('../../report-climb/ReportClimbSheet', () => ({ ReportClimbSheet: () => null }));
 vi.mock('../../ble/BleControlSheetHost', () => ({ BleControlSheetHost: () => null }));
+vi.mock('../../queue-control/RestTimerPillHost', () => ({ RestTimerPillHost: () => null }));
 vi.mock('../../Icon', () => ({ Icon: () => null }));
 
 // --- Hooks / providers -------------------------------------------------------
 vi.mock('../../../providers/queue-provider', () => ({
   useQueueData: () => queueState,
   useQueueActions: () => ({
-    setCurrentClimb: vi.fn(),
+    setCurrentClimb,
     nextClimb: vi.fn(),
     previousClimb: vi.fn(),
     addToQueue: vi.fn(async () => 'added'),
   }),
   useQueueSessionId: () => ({ sessionId: null }),
+  // Solo for every case here: the crew gate is off, so gestures commit as they
+  // always have and the board question stays the only variable.
+  useIsSharedSession: () => false,
   usePlaylistSuggestionSource: () => null,
 }));
 vi.mock('../../../providers/bluetooth-provider', () => ({ useOptionalBluetoothContext: () => null }));
 vi.mock('../../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: true }) }));
 vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
 vi.mock('../../../lib/graphql/hooks', () => ({
+  // The preview angle re-anchor asks for the climb at the live angle; nothing
+  // here pins a preview at another angle, so it never resolves.
+  useClimb: () => ({ data: undefined }),
   useToggleFavorite: () => ({ mutate: vi.fn() }),
   useFavoriteStatus: (boardName: string, uuid: string | null, angle: number) => {
     recorded.favoriteStatus.push({ boardName, uuid, angle });
@@ -202,8 +253,14 @@ vi.mock('../use-drawer-dismiss-gesture', () => ({
   useDrawerDismissGesture: () => ({ gesture: { enabled: () => ({}) }, translateY: { value: 0 } }),
 }));
 vi.mock('../use-play-drawer-wake-lock', () => ({ usePlayDrawerWakeLock: () => undefined }));
+// The lit-climb read reaches board presence → the ws client → secure storage;
+// none of that is under test here, and the wall is dark for every case.
+vi.mock('../use-wall-climb', () => ({ useWallClimb: () => ({ uuid: null, name: null, sentAt: null }) }));
 vi.mock('../../ble/use-lightbulb-control', () => ({
-  useLightbulbControl: () => ({ lit: false, localConnected: false, pending: false, onPress: vi.fn() }),
+  useLightbulbControl: (options: { canRelay?: boolean; onRelayToHolder?: () => void }) => {
+    recorded.lightbulb.push(options);
+    return { lit: false, localConnected: false, pending: false, onPress: vi.fn() };
+  },
 }));
 vi.mock('../copy-climb-name', () => ({ copyClimbName: vi.fn() }));
 vi.mock('../../../lib/haptics', () => ({ hapticSuccess: vi.fn() }));
@@ -267,10 +324,70 @@ beforeEach(() => {
   recorded.favoriteStatus = [];
   recorded.playback = [];
   recorded.angleSheet = [];
+  recorded.lightbulb = [];
+  recorded.scroll = [];
+  recorded.headerLayout = undefined;
   queueState.queue = [];
   queueState.currentClimbQueueItem = null;
   navigation.state = { nextItem: null, prevItem: null, canNext: false, canPrevious: false };
   prefetchWalk.items = [];
+});
+
+describe('PlayDrawer relay board compatibility', () => {
+  it.each([
+    { climb: HOMEWALL_CLIMB, canRelay: false },
+    { climb: TWELVE_CLIMB, canRelay: true },
+  ])('allows relay=$canRelay for a preview on layout $climb.layoutId', ({ climb, canRelay }) => {
+    const previewQueueItem = queueItem(climb, 'preview-item');
+    render(
+      createElement(PlayDrawer, {
+        presentation: 'pane' as const,
+        boardConfig: TWELVE_BY_TWELVE,
+        openTarget: { climb, options: { previewQueueItem }, nonce: 1 },
+        onOpenQueue: vi.fn(),
+        // No explicit mismatch flag or overlay callback: the climb determines fit.
+      }),
+    );
+
+    const control = recorded.lightbulb.at(-1);
+    expect(control?.canRelay).toBe(canRelay);
+    act(() => control?.onRelayToHolder?.());
+    if (canRelay) expect(setCurrentClimb).toHaveBeenCalledWith(previewQueueItem, expect.anything());
+    else expect(setCurrentClimb).not.toHaveBeenCalled();
+  });
+});
+
+describe('PlayDrawer opening layout', () => {
+  it.each(['viewport-first', 'headers-first'])('waits for every layout measurement (%s)', (order) => {
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    renderDrawer(vi.fn());
+    expect(lastBoardProps().layoutReady).toBe(false);
+    const viewportLayout = recorded.scroll.at(-1)?.onLayout as (event: LayoutChangeEvent) => void;
+    const headerLayout = recorded.headerLayout;
+    const logbookLayout = recorded.deferredSections.at(-1)?.onLogbookHeaderLayout as (height: number) => void;
+    if (!headerLayout) throw new Error('Title header is not measured');
+    const event = (height: number) =>
+      ({ nativeEvent: { layout: { x: 0, y: 0, width: 390, height } } }) as LayoutChangeEvent;
+    const firstMeasurement =
+      order === 'viewport-first' ? () => viewportLayout(event(844)) : () => headerLayout(event(70));
+    const secondMeasurement =
+      order === 'viewport-first' ? () => headerLayout(event(70)) : () => viewportLayout(event(844));
+
+    act(firstMeasurement);
+    expect(lastBoardProps().layoutReady).toBe(false);
+    act(() => logbookLayout(44));
+    expect(lastBoardProps().layoutReady).toBe(false);
+    act(secondMeasurement);
+    expect(lastBoardProps().layoutReady).toBe(true);
+
+    act(() => viewportLayout(event(600)));
+    expect(lastBoardProps().layoutReady).toBe(true);
+    expect(recorded.scroll.at(-1)).toMatchObject({
+      showsVerticalScrollIndicator: false,
+      showsHorizontalScrollIndicator: false,
+      nestedScrollEnabled: true,
+    });
+  });
 });
 
 describe('PlayDrawer draws the climb on its own board (#5099)', () => {

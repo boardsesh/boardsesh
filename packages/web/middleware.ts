@@ -15,7 +15,7 @@ import {
   isSupportedLocale,
 } from './app/lib/i18n/config';
 import { detectLocale } from './app/lib/i18n/detect-locale';
-import { isBlockedAiCrawler } from './app/lib/crawler-policy';
+import { isBlockedCrawler } from './app/lib/crawler-policy';
 
 const SPECIAL_ROUTES = ['angles', 'grades']; // routes that don't need board validation
 
@@ -47,7 +47,7 @@ export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Cheap origin fallback for crawlers that bypass Cloudflare's public hostname.
-  if (isBlockedAiCrawler(request.headers.get('user-agent'))) {
+  if (isBlockedCrawler(request.headers.get('user-agent'))) {
     return new NextResponse(null, {
       status: 403,
       headers: { 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex, nofollow' },

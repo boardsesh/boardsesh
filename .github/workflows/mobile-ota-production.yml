@@ -1,8 +1,12 @@
 name: Mobile OTA Production (Self-Hosted)
 
 # Publishes a production OTA (JS bundle + manifest) to the self-hosted
-# expo-open-ota server on every push to main that touches the mobile app, and on
-# manual dispatch. Safe to auto-run because runtimeVersion uses the `fingerprint`
+# expo-open-ota server on every push to main or release/next that touches the
+# mobile app, and on manual dispatch from either. main serves the store fleet;
+# release/next serves the testers on the train's TestFlight / Play-internal
+# binary, and only once the train's fingerprint has moved away from main's (the
+# train guard below). Changelog push-back, the Sentry release, the health probe
+# and the Discord notification stay main-only. Safe to auto-run because runtimeVersion uses the `fingerprint`
 # policy: the update only reaches a binary whose native fingerprint matches, so a
 # native change yields a new fingerprint and the OTA simply isn't delivered to old
 # installs (they keep their embedded bundle until a store build with the new
@@ -28,7 +32,11 @@ run-name: >-
 
 on:
   push:
-    branches: [main]
+    # Both lines publish: main serves the store fleet, release/next serves the
+    # TestFlight / Play-internal testers running the train's binary. The train's
+    # publish is guarded so it can never take over main's runtimeVersion — see the
+    # "Skip platforms whose runtimeVersion main still owns" step below.
+    branches: [main, release/next]
     # Matches the native build workflows' trigger set (ios-testflight-rn.yml /
     # android-apk-rn.yml) so a native build and its OTA fire on the same changes.
     # packages/shared/** already covers queue / board-config / ble-protocol, which
@@ -44,6 +52,7 @@ on:
       - 'patches/**' # pnpm patches to mobile deps live in root patches/, not under packages/mobile/**
       - 'scripts/mobile-publish.ts'
       - 'scripts/lib/mobile-publish-retry.ts'
+      - 'scripts/lib/ota-branch-probe.ts'
       - 'scripts/lib/eoas.ts'
       - '.github/workflows/mobile-ota-production.yml'
   workflow_dispatch:
@@ -131,7 +140,120 @@ env:
   EXPO_PUBLIC_USE_RN_FETCH: '1'
 
 jobs:
+  # Holds the publish until the live backend serves the GraphQL schema this OTA
+  # queries (#5370). On 2026-09-08 #5283 changed the schema and the client in one
+  # commit; the OTA published at 21:36 UTC and the backend with the new argument
+  # finished deploying at 21:55, so updated phones got GRAPHQL_VALIDATION_FAILED
+  # for 19 minutes. production-deploy.yml runs off the same push, so the fix is
+  # to wait for it rather than race it.
+  #
+  # FAIL OPEN, always. Every path out of this job lets `publish` run: a pass, a
+  # 60-minute cap, no deploy running, or the job itself crashing (publish uses
+  # `!cancelled()`). A wedged backend deploy must not also freeze mobile, and a
+  # per-platform republish dispatched by a native build must never be stranded.
+  #
+  # Deliberately NOT `environment: Production`: it needs no secret beyond the
+  # repo-level Discord webhook, and a second environment gate would park every
+  # OTA behind a manual approval. No workflow-level env either — the shared env
+  # above is locked by scripts/mobile-ci-env-parity.test.ts.
+  await-backend-schema:
+    runs-on: ubuntu-latest
+    # The poll loop caps itself at 60 minutes; this is the backstop above it.
+    timeout-minutes: 75
+    permissions:
+      # actions: read for `gh run list` on production-deploy.yml.
+      actions: read
+      contents: read
+    steps:
+      # A republish dispatched by a native build re-ships JS main already
+      # published (and gated) on push. Skip every step so it goes straight to
+      # publish; the job still succeeds, so `publish` is not skipped with it.
+      - name: Skip for a native-build republish
+        if: github.event.inputs.expect_fingerprint != ''
+        env:
+          EXPECT_FINGERPRINT: ${{ github.event.inputs.expect_fingerprint }}
+        run: echo "::notice::Republish for fingerprint $EXPECT_FINGERPRINT — not waiting for the backend."
+
+      - name: Checkout repository
+        if: github.event.inputs.expect_fingerprint == ''
+        uses: actions/checkout@v4
+        with:
+          # Full history: merge-base and diff need both the OTA commit and the
+          # deployed release, which can be newer than this checkout.
+          fetch-depth: 0
+
+      - uses: voidzero-dev/setup-vp@v1
+        if: github.event.inputs.expect_fingerprint == ''
+        with:
+          node-version: '22.x'
+          cache: false
+
+      - name: Wait for the backend to serve this schema
+        if: github.event.inputs.expect_fingerprint == ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          # No `set -e`: every failure below degrades to "publish anyway".
+          set -uo pipefail
+          schema_path=packages/shared-schema/src/schema
+          need="$(git log -1 --format=%H "$GITHUB_SHA" -- "$schema_path" 2>/dev/null || true)"
+          echo "Schema commit this OTA needs: ${need:-<none>}"
+          start=$SECONDS
+          while :; do
+            elapsed=$((SECONDS - start))
+            git fetch --quiet origin main || echo "::warning::git fetch origin main failed; comparing against the local history."
+            # No -f: a 503 (Redis down) still carries `release`.
+            release="$(curl -sS --max-time 20 https://ws.boardsesh.com/health 2>/dev/null | jq -r '.release // empty' 2>/dev/null || true)"
+            is_ancestor=false
+            schema_diff_empty=false
+            if printf '%s' "$release" | grep -Eq '^[0-9a-f]{40}$' && git cat-file -e "${release}^{commit}" 2>/dev/null; then
+              [ -n "$need" ] && git merge-base --is-ancestor "$need" "$release" && is_ancestor=true
+              git diff --quiet "$release" "$GITHUB_SHA" -- "$schema_path" && schema_diff_empty=true
+            fi
+            running="$(gh run list -w production-deploy.yml -b main --limit 20 --json status \
+              -q '[.[] | select(.status == "queued" or .status == "in_progress" or .status == "waiting" or .status == "pending" or .status == "requested")] | length' \
+              2>/dev/null || echo 0)"
+            deploy_running=false
+            [ "${running:-0}" -gt 0 ] 2>/dev/null && deploy_running=true
+            verdict="$(node --experimental-strip-types scripts/mobile-ota-backend-gate.ts \
+              --need "$need" --release "$release" --is-ancestor "$is_ancestor" \
+              --schema-diff-empty "$schema_diff_empty" --deploy-running "$deploy_running" \
+              --elapsed-seconds "$elapsed" 2>/dev/null)"
+            decision="$(printf '%s\n' "$verdict" | sed -n 's/^decision=//p')"
+            reason="$(printf '%s\n' "$verdict" | sed -n 's/^reason=//p')"
+            echo "[$((elapsed / 60))m] ${decision:-<no verdict>}: ${reason:-decision script produced no output}"
+            case "$decision" in
+              pass)
+                echo "::notice::Backend is ready: $reason"
+                echo "Backend schema gate: **pass** after $((elapsed / 60)) min — $reason" >> "$GITHUB_STEP_SUMMARY"
+                exit 0
+                ;;
+              wait)
+                sleep 60
+                ;;
+              *)
+                reason="${reason:-the decision script failed to run}"
+                echo "::warning::Publishing without confirming the backend schema: $reason"
+                echo "Backend schema gate: **published without confirmation** after $((elapsed / 60)) min — $reason" >> "$GITHUB_STEP_SUMMARY"
+                if [ -n "${DISCORD_DEPLOY_WEBHOOK:-}" ]; then
+                  content="$(printf '⚠️ **Production OTA publishing before the backend confirmed its schema** on `%s`\n• %s\n<%s>' \
+                    "${GITHUB_SHA:0:7}" "$reason" "$RUN_URL")"
+                  jq -n --arg content "$content" '{content: $content, allowed_mentions: {parse: []}}' \
+                    | curl -sS --fail-with-body -X POST -H "Content-Type: application/json" -d @- "$DISCORD_DEPLOY_WEBHOOK" \
+                    || echo "::warning::Failed to post Discord notification (see status above)"
+                fi
+                exit 0
+                ;;
+            esac
+          done
+
   publish:
+    # Fail open: runs after the gate whatever its result, unless the run was
+    # cancelled. A gate that crashed or hit its job timeout still publishes.
+    needs: await-backend-schema
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     # Six attempts per platform can spend 34 minutes in backoff alone, and iOS
     # and Android each get that budget sequentially — a fully throttled run is
@@ -223,6 +345,68 @@ jobs:
           EXPO_PUBLIC_SNAPSHOT_BASE_URL=$EXPO_PUBLIC_SNAPSHOT_BASE_URL
           EXPO_PUBLIC_USE_RN_FETCH=$EXPO_PUBLIC_USE_RN_FETCH
           EOF
+
+      # ── Train guard (release/next only) ──────────────────────────────────────
+      # release/next publishes its own production OTA so the testers running the
+      # train's TestFlight / Play-internal binary get JS as quickly as main's fleet
+      # does. But xprem serves whichever update has the newest commitTime FOR A
+      # GIVEN runtimeVersion, so while the train's fingerprint still equals main's,
+      # an OTA published here would be handed to the entire store fleet — main's JS
+      # silently replaced by the train's. The train therefore only starts publishing
+      # once a native change has landed on it and moved its fingerprint away from
+      # main's. Until then the train's testers sit on main's runtimeVersion anyway,
+      # so main's publisher already serves them.
+      #
+      # The baseline is a sibling worktree of origin/main with its OWN install (the
+      # same shape mobile-ota-check.yml uses), carrying a byte-identical copy of the
+      # .env written above — the .env is hashed into the fingerprint, so anything
+      # else would make every comparison read "different".
+      - name: Materialize origin/main to compare against the train
+        if: steps.gate.outputs.configured == 'true' && github.ref == 'refs/heads/release/next'
+        run: |
+          set -euo pipefail
+          # No --depth: the job checks out with fetch-depth: 0, and a shallow
+          # fetch on top of a complete clone only confuses later history reads.
+          git fetch origin main
+          git worktree add "$RUNNER_TEMP/main-baseline" origin/main
+          (cd "$RUNNER_TEMP/main-baseline" && vp install --frozen-lockfile)
+          cp packages/mobile/.env "$RUNNER_TEMP/main-baseline/packages/mobile/.env"
+
+      # Resolves both trees per platform under the same per-platform env the publish
+      # steps use (iOS without GOOGLE_MAPS_API_KEY, Android with it — the key enters
+      # the resolved config and moves the hash). Fails CLOSED: the two `false`s are
+      # written first, so a resolve that errors, flakes to `unknown`, or dies
+      # mid-step leaves both platforms un-publishable rather than letting the train
+      # publish onto main's runtimeVersion.
+      - name: Skip platforms whose runtimeVersion main still owns
+        id: train_guard
+        if: steps.gate.outputs.configured == 'true' && github.ref == 'refs/heads/release/next'
+        env:
+          GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+        run: |
+          set -uo pipefail
+          {
+            echo 'publish_ios=false'
+            echo 'publish_android=false'
+          } >> "$GITHUB_OUTPUT"
+          set -e
+          # A resolve costs ~30s per tree per platform, and a single-platform
+          # republish has no use for the other one's verdict.
+          verdicts="$(vp run check:mobile-ota-compat -- --base-dir "$RUNNER_TEMP/main-baseline" --platform "$INPUT_PLATFORM")"
+          printf '%s\n' "$verdicts"
+          for pair in 'iOS:ios' 'Android:android'; do
+            label="${pair%%:*}"
+            key="${pair##*:}"
+            # A platform this run did not ask about produces no verdict line, so
+            # it simply keeps the fail-closed `false` and its publish step is
+            # already gated off by INPUT_PLATFORM anyway.
+            if [ "$INPUT_PLATFORM" != all ] && [ "$INPUT_PLATFORM" != "$key" ]; then continue; fi
+            if printf '%s\n' "$verdicts" | grep -q "^\[mobile-ota-compat\] ${label}: native-change-required"; then
+              echo "publish_${key}=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "::warning::main still owns the ${label} runtimeVersion, so the ${label} OTA is skipped for this train push — publishing it would hand the train's JS to the whole store fleet. The train starts publishing once a native change moves its fingerprint."
+            fi
+          done
 
       # Only for a republish dispatched by a native build. That build shipped a
       # binary with a known fingerprint and wants an OTA stamped after it, but by
@@ -366,7 +550,7 @@ jobs:
       # single `--platform all` publish with one env could only ever match one side.
       - name: Publish iOS OTA
         id: publish_ios
-        if: steps.gate.outputs.configured == 'true' && steps.generate.outcome == 'success' && steps.expect.outputs.mismatch != 'true' && (env.INPUT_PLATFORM == 'all' || env.INPUT_PLATFORM == 'ios')
+        if: steps.gate.outputs.configured == 'true' && steps.generate.outcome == 'success' && steps.expect.outputs.mismatch != 'true' && steps.train_guard.outputs.publish_ios != 'false' && (env.INPUT_PLATFORM == 'all' || env.INPUT_PLATFORM == 'ios')
         continue-on-error: true
         env:
           # V3 control-plane rejects Expo tokens; eoas publish authenticates with the
@@ -401,7 +585,7 @@ jobs:
 
       - name: Publish Android OTA
         id: publish_android
-        if: always() && steps.gate.outputs.configured == 'true' && steps.generate.outcome == 'success' && steps.expect.outputs.mismatch != 'true' && (env.INPUT_PLATFORM == 'all' || env.INPUT_PLATFORM == 'android')
+        if: always() && steps.gate.outputs.configured == 'true' && steps.generate.outcome == 'success' && steps.expect.outputs.mismatch != 'true' && steps.train_guard.outputs.publish_android != 'false' && (env.INPUT_PLATFORM == 'all' || env.INPUT_PLATFORM == 'android')
         continue-on-error: true
         env:
           EOO_TOKEN: ${{ secrets.EOO_TOKEN }}
@@ -433,6 +617,10 @@ jobs:
         env:
           IOS_OUTCOME: ${{ steps.publish_ios.outcome }}
           ANDROID_OUTCOME: ${{ steps.publish_android.outcome }}
+          # Empty on a main run (the guard step is skipped there); 'false' only
+          # when the train guard deliberately withheld that platform.
+          TRAIN_PUBLISH_IOS: ${{ steps.train_guard.outputs.publish_ios }}
+          TRAIN_PUBLISH_ANDROID: ${{ steps.train_guard.outputs.publish_android }}
         run: |
           set -euo pipefail
           ios_requested=false
@@ -443,6 +631,41 @@ jobs:
             android) android_requested=true ;;
             *) echo "::error::Unknown platform '$INPUT_PLATFORM'"; exit 1 ;;
           esac
+
+          # A platform the train guard withheld was never attempted, so its
+          # `skipped` outcome is the intended result, not a failure. Without this
+          # every train push before the first native change — and every
+          # main→release/next sync — would red the run, and a change that moves
+          # only one platform's fingerprint would red a run whose other publish
+          # succeeded.
+          # A warning, not a notice: a dispatched single-platform republish that
+          # ends here published nothing at all, and the native build that asked
+          # for it is waiting on an update its binary will never receive. Green is
+          # the right result — nothing failed — but it must not look like a
+          # successful publish in the run list.
+          if [ "$TRAIN_PUBLISH_IOS" = false ]; then
+            ios_requested=false
+            echo "::warning::iOS published nothing: main still owns the iOS runtimeVersion, so the train's fingerprint guard withheld it. Not counted toward this run's result."
+          fi
+          if [ "$TRAIN_PUBLISH_ANDROID" = false ]; then
+            android_requested=false
+            echo "::warning::Android published nothing: main still owns the Android runtimeVersion, so the train's fingerprint guard withheld it. Not counted toward this run's result."
+          fi
+
+          # Every requested platform was withheld: nothing was published, so both
+          # outputs must be FALSE and the step must stop here. `all_success=true`
+          # would be a vacuous claim that every platform shipped, and the steps
+          # that consume it act on that claim — the served-manifest verify would
+          # go looking for an update that was never published and fail the run.
+          # Falling through instead would compute all_success=true for the same
+          # reason (no requested platform left to contradict it), which is exactly
+          # what this branch exists to prevent.
+          if [ "$ios_requested" = false ] && [ "$android_requested" = false ]; then
+            echo "all_success=false" >> "$GITHUB_OUTPUT"
+            echo "any_success=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::main still owns the requested runtimeVersion(s) — nothing to publish from the train yet."
+            exit 0
+          fi
 
           all_success=true
           any_success=false

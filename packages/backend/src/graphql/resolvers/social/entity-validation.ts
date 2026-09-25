@@ -1,6 +1,7 @@
 import { eq, and, isNull } from 'drizzle-orm';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
+import { sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
 import type { SocialEntityType } from '@boardsesh/shared-schema';
 
 /**
@@ -22,7 +23,21 @@ export async function validateEntityExists(
           isListed: dbSchema.boardClimbs.isListed,
         })
         .from(dbSchema.boardClimbs)
-        .where(eq(dbSchema.boardClimbs.uuid, entityId))
+        .where(
+          and(
+            eq(dbSchema.boardClimbs.uuid, entityId),
+            // This function decides whether a climb is a commentable, votable
+            // entity, and `is_listed` was the whole visibility test — which a spray
+            // climb passes while belonging to somebody's private wall. Without this
+            // the comment thread on a private wall's climb is world-readable, and
+            // its existence is an oracle. Folded into the WHERE rather than checked
+            // after, so the "not found" below covers it with no second message.
+            sprayClimbVisibilityCondition(
+              { boardType: dbSchema.boardClimbs.boardType, layoutId: dbSchema.boardClimbs.layoutId },
+              viewerUserId,
+            ),
+          ),
+        )
         .limit(1);
       if (!climb) {
         throw new Error('Climb not found');

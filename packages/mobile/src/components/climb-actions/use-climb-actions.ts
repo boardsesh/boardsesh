@@ -22,7 +22,7 @@ import { SHARED_EVENTS } from '@boardsesh/analytics';
 import type { IconName } from '../icon-map';
 import { useCreateClimbNavigation, type DismissSurfaceAndWait } from '../create-climb/use-create-climb-navigation';
 import { useDrawerHost, boardConfigsMatch, type BoardConfig } from '../../providers/drawer-host-provider';
-import { useQueueActions, useQueueSessionId } from '../../providers/queue-provider';
+import { useQueueActions, useQueueSessionId, useActiveClimbUuid } from '../../providers/queue-provider';
 import { useToggleFavorite, useFavoriteStatus } from '../../lib/graphql/hooks';
 import { climbToQueueItem } from '../../lib/climb-to-queue-item';
 import { useTheme } from '../../providers/theme-provider';
@@ -33,6 +33,8 @@ import { track } from '../../lib/analytics';
 export type ClimbActionId =
   | 'preview'
   | 'queue'
+  | 'openQueue'
+  | 'playNext'
   | 'playlist'
   | 'favorite'
   | 'tick'
@@ -60,6 +62,12 @@ export type ClimbActionItem = {
 type UseClimbActionsArgs = {
   climb: Climb | null;
   boardConfig: BoardConfig | null;
+  /**
+   * The exact queue slot this menu was opened for, when the source is a queue
+   * row. Absent everywhere else (climb list, search, playlist, board sheet),
+   * which only knows the climb — "Play next" then resolves the slot itself.
+   */
+  queueItemUuid?: string;
   /** Signed-in user id — gates the owner-only Edit action. */
   currentUserId?: string | null;
   /** Gates the "Add beta video" action. */
@@ -109,6 +117,13 @@ type UseClimbActionsArgs = {
    * the menu is open can't retarget it. Omit it and reporting opens the root sheet.
    */
   onReportClimb?: (climb: Climb, boardConfig: BoardConfig) => void;
+  /**
+   * When provided, adds "Open the queue", which runs this once the menu has
+   * started closing. The play drawer passes its own queue opener while the
+   * connect-step pill (#5654) has taken the queue button's place in its second
+   * row; everywhere else the queue has its own button and this is omitted.
+   */
+  onOpenQueue?: () => void;
   /** Native BoardSheet / QueueSheet underneath the custom overlay, if any. */
   dismissSourceSheet?: DismissSurfaceAndWait;
   /** `/play`-owned native-stack close waiter; absent for every inline surface. */
@@ -128,6 +143,7 @@ function buildAuroraAppUrl(boardName: AuroraBoardName, climbUuid: string): strin
 export function useClimbActions({
   climb,
   boardConfig,
+  queueItemUuid,
   currentUserId,
   isAuthenticated,
   onEditEntry,
@@ -136,13 +152,14 @@ export function useClimbActions({
   onAddBetaVideo,
   onTick,
   onReportClimb,
+  onOpenQueue,
   dismissSourceSheet,
   dismissPlayerAndWait,
 }: UseClimbActionsArgs): ClimbActionItem[] {
   const { t } = useTranslation('climbs');
   const { openRemix, openEdit } = useCreateClimbNavigation({ dismissSourceSheet, dismissPlayerAndWait });
   const { actionColors } = useTheme();
-  const { addToQueue } = useQueueActions();
+  const { addToQueue, playNext } = useQueueActions();
   // The active session, so a tick logged from a climb-actions sheet lands on it.
   // Every other tick entry point (play drawer, queue bar, queue sheet) already
   // passes this; this one didn't, so ticking from the climbs list, board sheet,
@@ -151,6 +168,9 @@ export function useClimbActions({
   // QueueProvider mounts at the app root (`app/_layout.tsx`) and `sessionId`
   // lives in its own split context, so reading it here costs no extra renders.
   const { sessionId } = useQueueSessionId();
+  // Narrow selector context: its identity changes only when the climb on the
+  // wall changes, so gating the Play next row on it costs the menu nothing.
+  const activeClimbUuid = useActiveClimbUuid();
   const { mutate: toggleFavoriteMutate } = useToggleFavorite();
   const {
     openPlayDrawer,
@@ -244,6 +264,38 @@ export function useClimbActions({
         after();
       },
     });
+
+    if (onOpenQueue) {
+      items.push({
+        id: 'openQueue',
+        title: t('mobile.climbActions.openQueue'),
+        icon: 'queue',
+        color: accentColor,
+        run: () => {
+          // Close the menu first, like share: the queue sheet opens from the
+          // play route, under an overlay that is already on its way out.
+          after();
+          onOpenQueue();
+        },
+      });
+    }
+
+    // "Play next" is meaningless on the climb already on the wall, so it is hidden
+    // there rather than shown as a no-op.
+    if (climb.uuid !== activeClimbUuid) {
+      items.push({
+        id: 'playNext',
+        title: t('mobile.climbActions.playNext'),
+        icon: 'queue.next',
+        color: accentColor,
+        run: () => {
+          // Same fire-and-forget shape as the queue row above: the cross-board
+          // prompt sits above the dismissed sheet, so `after()` must not wait on it.
+          void playNext({ item: { uuid: randomUUID(), climb }, queueItemUuid });
+          after();
+        },
+      });
+    }
 
     items.push({
       id: 'playlist',
@@ -435,6 +487,8 @@ export function useClimbActions({
   }, [
     climb,
     boardConfig,
+    queueItemUuid,
+    activeClimbUuid,
     currentUserId,
     isAuthenticated,
     onEditEntry,
@@ -442,6 +496,7 @@ export function useClimbActions({
     onAddBetaVideo,
     onTick,
     onReportClimb,
+    onOpenQueue,
     moderationEnabled,
     dismissSourceSheet,
     dismissPlayerAndWait,
@@ -452,6 +507,7 @@ export function useClimbActions({
     openEdit,
     shareClimb,
     addToQueue,
+    playNext,
     toggleFavoriteMutate,
     isFavorited,
     openPlayDrawer,

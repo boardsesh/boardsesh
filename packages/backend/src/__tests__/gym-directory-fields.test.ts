@@ -93,6 +93,28 @@ beforeEach(async () => {
 });
 
 describe('searchGyms requireSlug', () => {
+  it('pages claimed gyms first and fills remaining places with unclaimed gyms', async () => {
+    const unclaimed = await insertGym({ ownerId: SYSTEM_OWNER, name: 'New unclaimed', createdAt: '2026-09-01' });
+    const claimedFirst = await insertGym({ ownerId: REAL_OWNER, name: 'Sparse claimed', createdAt: '2026-08-01' });
+    const claimedSecond = await insertGym({ ownerId: REAL_OWNER, name: 'Tied claimed', createdAt: '2026-08-01' });
+    // Equal timestamps deliberately exercise the ID tiebreaker, not insertion order.
+    const tiedClaims = [claimedFirst, claimedSecond].sort((left, right) => left.id - right.id).map((gym) => gym.uuid);
+    await insertGym({ ownerId: REAL_OWNER, name: 'Private', isPublic: false });
+    await insertGym({ ownerId: REAL_OWNER, name: 'No slug', slug: null });
+
+    const input = { requireSlug: true, prioritizeClaimed: true, limit: 2 };
+    const first = await searchDirectory(input);
+    const second = await searchDirectory({ ...input, offset: 2 });
+    expect(first.gyms.map((gym) => gym.uuid)).toEqual(tiedClaims);
+    expect(second.gyms.map((gym) => gym.uuid)).toEqual([unclaimed.uuid]);
+    expect(first.totalCount).toBe(3);
+    expect(first.hasMore).toBe(true);
+    expect(second.hasMore).toBe(false);
+
+    const defaultOrder = await searchDirectory({ requireSlug: true, limit: 3 });
+    expect(defaultOrder.gyms.map((gym) => gym.uuid)).toEqual([unclaimed.uuid, ...tiedClaims]);
+  });
+
   it('excludes both NULL and empty-string slugs, and drops totalCount by exactly the excluded count', async () => {
     const withSlug = await insertGym({ ownerId: REAL_OWNER, name: 'Slugged Gym', slug: 'slugged-gym' });
     const nullSlug = await insertGym({ ownerId: REAL_OWNER, name: 'Null Slug Gym', slug: null });

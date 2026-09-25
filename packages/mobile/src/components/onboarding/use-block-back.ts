@@ -6,7 +6,7 @@ import { useIsFocused } from 'expo-router';
  * Swallow the Android hardware back button while a mandatory onboarding step is
  * the screen in front of the climber.
  *
- * The onboarding route is registered `presentation: 'fullScreenModal'` with
+ * The onboarding route is registered `presentation: 'transparentModal'` with
  * `gestureEnabled: false` (app/_layout.tsx), which closes the iOS swipe-dismiss.
  * Android's hardware back is a separate exit and pops the screen regardless — so
  * without this, every "no way to skip" step still has one, and it is the exit

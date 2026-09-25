@@ -20,12 +20,15 @@ import {
   toFlatFrames,
 } from '@boardsesh/board-constants/hold-states';
 import {
+  boardArtGeometryPending,
   getWallLightness,
   isWithinSpillRange,
   loadBoardArtGeometry,
+  prefetchBoardArtGeometry,
   type BoardArtGeometry,
 } from '@boardsesh/board-art-geometry';
 import { getBoardRenderData } from '../lib/board-details';
+import { ensureSprayWallLoaded, sprayCacheToken, subscribeToSprayWalls } from '../lib/spray/spray-wall-registry';
 import {
   ensureBackgroundsCached,
   tryGetBackgroundPathsSync,
@@ -1183,7 +1186,11 @@ function getBoardHoldIds(
   setIds: string,
   setIdsArray: number[],
 ): Set<number> | null {
-  const boardKey = `${boardName}-${layoutId}-${sizeId}-${setIds}`;
+  // The spray token carries the wall version (`''` for every catalogue board).
+  // Without it a reset would be answered out of this Set with the hold ids that
+  // came OFF the wall, and the overlay's hold-match check would pass on holds
+  // that no longer exist.
+  const boardKey = `${boardName}-${layoutId}-${sizeId}-${setIds}${sprayCacheToken(boardName, layoutId)}`;
   const cached = boardHoldIdsCache.get(boardKey);
   if (cached) return cached;
 
@@ -1199,6 +1206,13 @@ function getBoardHoldIds(
   boardHoldIdsCache.set(boardKey, holdIds);
   return holdIds;
 }
+
+/**
+ * Test-only handle onto the hold-id lookup, so the cache key can be pinned
+ * directly. The effect that calls it in production is behind a native renderer
+ * and a mounted surface; the KEY is the part that has to be right.
+ */
+export const _getBoardHoldIdsForTests = getBoardHoldIds;
 
 /** Test-only handle so a suite can force a fresh board-hold lookup. */
 export function _resetBoardHoldIdsCacheForTests(): void {
@@ -1350,6 +1364,7 @@ export function buildCacheKey(
   filledStyle = false,
   renderWidth?: number,
   renderSignature = DEFAULT_HOLD_COLOR_SIGNATURE,
+  boardArtPending = false,
 ): string {
   // With no frames there are no lit holds to colour- or shape-override, so
   // that half of the signature is meaningless and collapses to the default —
@@ -1379,7 +1394,38 @@ export function buildCacheKey(
   // board width. The token tracks the requested width, not the clamped
   // output, so it stays stable for a given (board, renderWidth) pair.
   const width = renderWidth != null ? `${renderWidth}` : 'full';
-  return `v${RENDERER_VERSION}_${style}_w${width}_${boardName}_${layoutId}_${sizeId}_${canonicalSetIds}_${framesHash}`;
+  // Spray walls only: `sprayCacheToken` is `''` for every catalogue board, so no
+  // overlay PNG already on disk changes name and the warm-up scan still matches.
+  // For a wall it is `-sv<version>`, and it has to be here rather than folded
+  // into `sizeId` — a wall's size id is its layout id forever, and encoding the
+  // version there would leak into `compatible_size_ids`, the offline key,
+  // `board_sessions.board_path` and share URLs (`docs/spray-walls.md`). Drop this
+  // token and a reset serves the previous generation's overlay over the new
+  // photo, which is the whole failure this exists to prevent.
+  //
+  // It rides on the SET-IDS segment, not on `sizeId`: `overlayNameMatchesScope`
+  // matches `_{boardName}_{layoutId}_{sizeId}_` as a delimited run to reap one
+  // board's art, and splitting that run would make a wall unreapable.
+  const spray = sprayCacheToken(boardName, layoutId);
+  // Web only: Aura's traced silhouettes are a per-board `import()` chunk, so the
+  // first render of a board draws rings and a second one draws the art. Both are
+  // legitimate PNGs for the same climb, and they need separate names — every
+  // overlay store downstream is keyed by this string and none of them knows
+  // about geometry. The web renderer alone keeps three (`index.web.ts`: the
+  // in-session object-URL map, the Cache API copy that survives a reload, and
+  // the hook's own index), so an eviction from the hook's map is not enough:
+  // a shared key hands the recovery render the ring PNG straight back and the
+  // rings outlive the reload. `boardArtGeometryPending` is always false off web,
+  // where the shards are synchronous, so this token is empty on native and no
+  // PNG already on disk is renamed.
+  //
+  // Its own trailing segment, after the frames hash, so it composes with the
+  // spray token rather than displacing it: the `v${RENDERER_VERSION}_` prefix
+  // the warm-up scan matches on and the delimited
+  // `_{boardName}_{layoutId}_{sizeId}_` run `overlayNameMatchesScope` reaps by
+  // are both upstream of it and stay intact.
+  const boardArt = boardArtPending ? '_geopending' : '';
+  return `v${RENDERER_VERSION}_${style}_w${width}_${boardName}_${layoutId}_${sizeId}_${canonicalSetIds}${spray}_${framesHash}${boardArt}`;
 }
 
 /**
@@ -1407,7 +1453,11 @@ export function buildBoardKey(
   // near-black MoonBoard layers resolve to `.dark.webp` siblings in dark mode
   // (see background-image-cache.ts), so without this term a flip would leave
   // the previous scheme's paths on screen until some other prop changed.
-  return `${boardName}-${layoutId}-${sizeId}-${setIds}-${variant}-${colorScheme}`;
+  //
+  // The wall version is in it for a third instance of the same reason: a spray
+  // wall's background is a downloaded photograph named per version, so a reset
+  // that did not move this key would leave the previous photo on screen.
+  return `${boardName}-${layoutId}-${sizeId}-${setIds}-${variant}-${colorScheme}${sprayCacheToken(boardName, layoutId)}`;
 }
 
 function getBoardConfig(
@@ -1430,7 +1480,11 @@ function getBoardConfig(
   litHoldIds: Set<number> = new Set(),
 ) {
   const widthKey = renderWidth != null ? `${renderWidth}` : 'full';
-  const configKey = `${boardName}-${layoutId}-${sizeId}-${setIds}-${filledStyle ? 'f' : 's'}-w${widthKey}-${renderSignature}`;
+  // Spray token: the wall version, so a reset rebuilds the config (new hold
+  // positions, new photo dimensions, new runtime geometry) instead of reusing the
+  // entry the previous generation wrote.
+  const spray = sprayCacheToken(boardName, layoutId);
+  const configKey = `${boardName}-${layoutId}-${sizeId}${spray}-${setIds}-${filledStyle ? 'f' : 's'}-w${widthKey}-${renderSignature}`;
   let cached = boardConfigCache.get(configKey);
 
   if (!cached) {
@@ -1555,7 +1609,15 @@ function getBoardConfig(
     }
 
     cached = { configBase, setIdsArray, holds, boardseshGeometry };
-    boardConfigCache.set(configKey, cached);
+    // On web the traced art arrives as an async chunk. A config built before it
+    // lands is correct to render — the renderer rings each placement — but it is
+    // NOT correct to keep: `configKey` has no geometry term, so caching it here
+    // would pin the ring fallback for this board for the rest of the session.
+    // Skip the write; the re-render after the chunk resolves builds it again,
+    // this time with the silhouettes, and that one caches.
+    if (!boardsesh || !boardArtGeometryPending({ boardName, layoutId, sizeId })) {
+      boardConfigCache.set(configKey, cached);
+    }
   }
 
   // A classic config, a Boardsesh one on a board the tracer skipped, and Modern
@@ -1872,9 +1934,50 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     [effectiveOverrideSignature, boardRenderSignature],
   );
 
+  // The wall version for a spray board, `''` for every catalogue one.
+  //
+  // Subscribed rather than read, because it is the ONE builder input that is not
+  // a prop: `useSprayWall` writes it into a module-level registry, so nothing
+  // would re-render the surfaces that key off it. Without this a board mounted
+  // before the wall query landed keeps the `-sv0` key it computed — the effect
+  // below never re-runs and the wall stays blank for the life of the hook
+  // instance — and after a reset the memoised previous-version key survives,
+  // which is the stale overlay over the new photograph this whole slice exists
+  // to prevent. A primitive snapshot, so a re-render with no change is a no-op.
+  const sprayVersionToken = useSyncExternalStore(
+    subscribeToSprayWalls,
+    useCallback(() => sprayCacheToken(boardName, layoutId), [boardName, layoutId]),
+  );
+
+  // Subscribing says "wake me when the wall changes"; it does not say "fetch the
+  // wall". Only the ACTIVE board is asked for by name (`useSprayWall`, in the
+  // drawer host), so every surface drawing a climb from some OTHER wall — a
+  // logbook row, a feed card, a shared ascent, a playlist thumbnail — mounted a
+  // subscription that nothing would ever wake, and drew a placeholder for the
+  // session. This is the ask, in the one place every board-drawing surface
+  // already goes through. A Map lookup off spray, at most one request per wall.
+  useEffect(() => {
+    if (boardName === 'spray') ensureSprayWallLoaded(layoutId);
+    // `sprayVersionToken` is here because a RESET moves it, and a wall whose
+    // version changed under us is a wall worth asking about again. It says
+    // nothing about time — it is `-sv<version>` — so it cannot be what refreshes
+    // an expired presigned photo URL; `refreshSprayWall`, called by the photo
+    // cache when a signature has lapsed, is what does that.
+  }, [boardName, layoutId, sprayVersionToken]);
+
+  // Web only, `false` everywhere else: is this board's traced-art chunk still in
+  // flight? Read on every render rather than memoised, because the answer is not
+  // a prop — the chunk resolving is what flips it, and the recovery re-render
+  // below is what has to observe the flip. Two Map lookups, next to a key
+  // builder that already runs an fnv1a char-loop.
+  const boardArtChunkPending =
+    effectiveRenderSettings.mode === 'aura' && boardArtGeometryPending({ boardName, layoutId, sizeId });
+
   // Both keys feed cache lookups on every FlashList row recycle; buildCacheKey
   // runs an fnv1a char-loop over the frames string. Memoize on exactly the
   // builders' inputs — a stale key would collide two climbs' overlays.
+  // `sprayVersionToken` is in the deps for that reason: the builders read it out
+  // of the registry rather than off a prop.
   const currentCacheKey = useMemo(
     () =>
       buildCacheKey(
@@ -1886,12 +1989,24 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
         filledStyle,
         renderWidth,
         effectiveRenderSignature,
+        boardArtChunkPending,
       ),
-    [boardName, layoutId, sizeId, setIds, flatFrames, filledStyle, renderWidth, effectiveRenderSignature],
+    [
+      boardName,
+      layoutId,
+      sizeId,
+      setIds,
+      flatFrames,
+      filledStyle,
+      renderWidth,
+      effectiveRenderSignature,
+      sprayVersionToken,
+      boardArtChunkPending,
+    ],
   );
   const currentBoardKey = useMemo(
     () => buildBoardKey(boardName, layoutId, sizeId, setIds, variant, colorScheme),
-    [boardName, layoutId, sizeId, setIds, variant, colorScheme],
+    [boardName, layoutId, sizeId, setIds, variant, colorScheme, sprayVersionToken],
   );
 
   // Parsed set ids, reused by the lazy background initializer and the
@@ -2177,6 +2292,41 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       }
     }
 
+    // Aura draws traced hold silhouettes, which on web are a per-board async
+    // chunk rather than something already in the bundle. Start it, and bounce the
+    // effect once it resolves so the config rebuilds with the art. Until then the
+    // board still renders, with a ring at each placement radius.
+    //
+    // Ahead of the cached-overlay return below, deliberately. The ring PNG this
+    // effect draws on the first pass IS cached, under the `_geopending` key, so
+    // asking after that return would mean the second mount of a board whose
+    // chunk dropped short-circuits on its own ring and never re-downloads — the
+    // loader's three-attempt budget would be unreachable and one transient
+    // network blip would cost the silhouettes for the whole session. It also
+    // sits ahead of the `getNativeModule` check: a geometry chunk is a plain
+    // download with no renderer involved, and on a web build whose WASM never
+    // loaded there is no overlay to draw either way.
+    if (boardArtChunkPending) {
+      void prefetchBoardArtGeometry({ boardName, layoutId, sizeId }).then((geometry) => {
+        // A chunk that failed to download resolves `null` and leaves the key
+        // PENDING, so bouncing the effect here would re-enter this same branch,
+        // ask for the chunk again, and get `null` again: a download loop that
+        // ends only when something else changes. The ring art is already the
+        // right drawing for a board with no silhouettes, so keep it and let the
+        // next mount try the download again — `prefetchBoardArtGeometry` caps
+        // how many times one key may be re-fetched, and past that cap it answers
+        // `null` for good, which clears `boardArtChunkPending` and moves the key
+        // off `_geopending` to the clean name the ring then renders under.
+        if (!geometry) return;
+        // Nothing to evict: `boardArtChunkPending` is false from here on, so the
+        // re-render this bump causes moves `currentCacheKey` off the
+        // `_geopending` name the ring PNG was cached under. The geometry render
+        // is submitted under the clean key, which no store has an entry for, and
+        // the ring entry is simply never looked up again.
+        if (mountedRef.current) setRecoveryRequest((request) => request + 1);
+      });
+    }
+
     const cachedEntry = getRenderedOverlay(currentCacheKey);
     if (cachedEntry) {
       // Sync map already has it — make sure local state reflects that
@@ -2452,6 +2602,9 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     currentCacheKey,
+    // Redundant with `currentCacheKey`, which carries the `_geopending` token —
+    // listed so the branch's own input is visible where the effect declares it.
+    boardArtChunkPending,
     flatFrames,
     boardName,
     layoutId,

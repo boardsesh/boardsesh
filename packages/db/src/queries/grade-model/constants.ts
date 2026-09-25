@@ -12,11 +12,37 @@ export const GRADE_MODEL_VERSION = 'v2.1'; // v2.1: zero-evidence cross-angle pr
 
 /**
  * Boards whose upstream `difficulty_average` is a live crowd mean (fractional,
- * moves with ascents). MoonBoard is deliberately absent: its feed carries only
- * integer labels (average == display == benchmark byte-for-byte), so there is
- * no crowd signal to model — the UI shows "not standardized yet" instead.
+ * moves with ascents). MoonBoard is normally excluded here in production:
+ * its feed carries only integer labels (average == display == benchmark
+ * byte-for-byte), so there is no crowd signal to model.
+ *
+ * MoonBoard is included here now that its `difficulty_average` is sourced
+ * from the catalog's
+ * `userGrade` (a real, independent crowd signal — see
+ * moonboard-catalog-helpers.ts's userDifficultyId). This is what gives a
+ * `confirmed`/`provisional` grade to a climb graded at BOTH of its real
+ * angles (25°/40°) — the case neither of the two standalone MoonBoard jobs
+ * covers: moonboard-angle-model.ts's same-board transpose only targets a
+ * climb graded at exactly ONE real angle, and moonboard-wide-angle-model.ts
+ * only targets angles outside {25, 40}. All three write disjoint angles for
+ * any one climb by construction, so they never race.
+ *
+ * `CROSS_ANGLE_ESTIMATE_MIN_SIBLINGS` stays at 2 (never lowered) specifically
+ * so this does NOT also turn on `cross_angle_estimate` projection for
+ * MoonBoard — that path was the one with a real calibration gap when tried
+ * (95% band covered only 88% of held-out truth). Confirmed/provisional at a
+ * REAL angle needs no cross-angle projection at all, so this inclusion is
+ * safe on its own.
  */
-export const CROWD_MEAN_BOARDS = ['kilter', 'tension', 'grasshopper', 'decoy', 'soill', 'touchstone'] as const;
+export const CROWD_MEAN_BOARDS = [
+  'kilter',
+  'tension',
+  'grasshopper',
+  'decoy',
+  'soill',
+  'touchstone',
+  'moonboard',
+] as const;
 
 /**
  * Boards that get a cross-board `universal_grade`. Tension is the anchor
@@ -54,6 +80,12 @@ export const CONFIDENCE = {
   setterOnly: 'setter_only',
   crossAngleEstimate: 'cross_angle_estimate',
   moonboardAngleEstimate: 'moonboard_angle_estimate',
+  // A MoonBoard grade projected onto a `moonboard-wide-angles`-flag angle
+  // (anything other than the catalog's 25°/40°) using a borrowed cross-board
+  // angle-effect shape (see moonboard-wide-angle-model.ts) — rougher than
+  // moonboardAngleEstimate, which transposes between MoonBoard's own two real
+  // angles.
+  moonboardWideAngleEstimate: 'moonboard_wide_angle_estimate',
 } as const;
 export type ConfidenceTier = (typeof CONFIDENCE)[keyof typeof CONFIDENCE];
 
@@ -182,6 +214,12 @@ export const BEHAVIOR_MAX_BUCKET_TOP_USER_SHARE = 0.2;
  * as a Boardsesh grade. The posterior SD cap keeps a projection whose band would
  * span most of the grade scale off the screen entirely; the reader gets the
  * plain setter grade instead, exactly as today.
+ *
+ * (Tried dropping this to 1 to get MoonBoard through this gate — it worked,
+ * but loosening it is a GLOBAL change that also affects Kilter/Tension/etc,
+ * and MoonBoard's own projections came out overconfident (95% band covered
+ * only 88% of held-out truth vs 98.9%+ for the other boards). Left at 2; see
+ * moonboard-angle-model.ts for the scoped alternative that won instead.)
  */
 export const CROSS_ANGLE_ESTIMATE_MIN_SIBLINGS = 2;
 /**

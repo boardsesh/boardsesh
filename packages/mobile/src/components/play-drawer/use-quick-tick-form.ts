@@ -23,12 +23,18 @@ import {
   useSaveTick,
   logbookClimbAngleKey,
 } from '@boardsesh/board-react';
-import { toBoardName } from '@boardsesh/board-config';
+import { toBoardName, normaliseSetIds } from '@boardsesh/board-config';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { clampToNow, MAXIMUM_CLIMBED_AT_REFRESH_MS } from '../logbook/climbed-at';
+import { sameRenderBoard } from '../../lib/boards/climb-render-board';
 import { useGrades } from '../../lib/graphql/hooks';
+import { useActiveBoard } from '../../lib/graphql/use-active-board';
+import type { BoardConfig } from '../../providers/drawer-host-provider';
 import { useToast } from '../../providers/toast-provider';
 import { useOptionalRogueTimer } from '../../providers/rogue-timer-provider';
+import { getSetting } from '../../settings';
+import { nowMs } from '../../lib/clock';
+import { noteRestTimerTick } from '../../lib/rest-timer-store';
 import { useBoardPresenceControls } from '../../providers/board-presence-provider';
 import { useLocalPendingTicks } from '../../hooks/use-local-ticks';
 import { useIsOffline } from '../../hooks/use-is-offline';
@@ -129,6 +135,49 @@ export function useQuickTickForm({
   const { enabled: boardPresenceEnabled, boardId: boardPresenceBoardId } = useBoardPresenceControls();
   const { data: grades } = useGrades(boardName);
 
+  // The board this tick belongs to, read off the form's own board fields. The
+  // play drawer hands down the CLIMB's resolved render board (see
+  // `resolveClimbRenderBoard`), so a queued climb that belongs to another wall
+  // arrives here carrying THAT wall's layout, size and sets — not the one the
+  // climber is standing at.
+  const tickBoardConfig = useMemo<BoardConfig | null>(() => {
+    if (layoutId == null || sizeId == null || !setIds) return null;
+    return { boardName, layoutId, sizeId, setIds, angle };
+  }, [boardName, layoutId, sizeId, setIds, angle]);
+
+  // The wall board presence is bound to. `board-presence-provider` binds it from
+  // the stored active board — its uuid, or the serial of the board the climber
+  // connected to — so the presence boardId names that board and no other.
+  const { data: activeBoard } = useActiveBoard();
+  const activeBoardConfig = useMemo<BoardConfig | null>(
+    () =>
+      activeBoard
+        ? {
+            boardName: activeBoard.boardType,
+            layoutId: activeBoard.layoutId,
+            sizeId: activeBoard.sizeId,
+            setIds: activeBoard.setIds,
+            angle: activeBoard.angle,
+          }
+        : null,
+    [activeBoard],
+  );
+
+  // Which board id the tick is attributed to. The presence binding is the active
+  // board's, so it is this tick's board id only while the tick is FOR that board.
+  // Log a climb from another wall and the old code still stamped the active one,
+  // putting a problem nobody climbed there into that wall's "Now on the wall"
+  // feed — other climbers' data, not just the logger's.
+  //
+  // A resolved render board is a `BoardConfig`, which carries no board id of its
+  // own, so a foreign board sends no boardId at all and lets the server resolve
+  // the board from the tick's layout/size/sets instead. Never a guess, and never
+  // the active board.
+  const tickBoardId =
+    boardPresenceEnabled && boardPresenceBoardId != null && sameRenderBoard(tickBoardConfig, activeBoardConfig)
+      ? boardPresenceBoardId
+      : null;
+
   // Mobile's `Climb.userAscents`/`userAttempts` GraphQL fields aren't
   // populated server-side, so we read the user's accumulated logbook
   // (denormalised via `BoardProvider` → `useLogbook`) directly. Same
@@ -153,6 +202,29 @@ export function useQuickTickForm({
   const boardActions = useOptionalBoardActions();
   const boardLogbook = useOptionalBoardLogbook();
   const { data: localPendingTicks = 0 } = useLocalPendingTicks(climbUuid, boardName);
+
+  // The board the climber selected, sent so the tick attaches to THAT wall
+  // rather than to whatever the presence layer happens to be bound to. Every
+  // serial-less wall (all of MoonBoard) binds presence to one system-owned feed
+  // shared by that configuration globally, so without this the tick lands on
+  // the shared feed and the climber's own board reads as empty on Home (#5121).
+  //
+  // Guarded on a config match because the drawer sends the RENDER board's
+  // config for a climb that doesn't fit the selected wall, and the server drops
+  // a boardUuid whose config disagrees without falling back to anything
+  // (#4219) — sending it unguarded would leave those ticks with no board at all.
+  // Set ids are normalised rather than compared as strings, the way the
+  // server's own config gate does: the stored wall and the tick can name the
+  // same sets in a different order.
+  const selectedBoardUuid = useMemo(() => {
+    if (!activeBoard || layoutId == null || sizeId == null || !setIds) return null;
+    const isSelectedBoard =
+      activeBoard.boardType === boardName &&
+      activeBoard.layoutId === layoutId &&
+      activeBoard.sizeId === sizeId &&
+      normaliseSetIds(activeBoard.setIds) === normaliseSetIds(setIds);
+    return isSelectedBoard ? activeBoard.uuid : null;
+  }, [activeBoard, boardName, layoutId, sizeId, setIds]);
   // Read through a ref so the save handler's identity doesn't change on every
   // connectivity flip (the file's existing stable-identity idiom). A save that
   // fails while offline has already exhausted the local write, the retry ladder
@@ -280,6 +352,13 @@ export function useQuickTickForm({
       // Mirrors the server's flash-is-one-try rule; a no-op for every value the picker can show.
       const finalAttempts = clampAttempts(tickState.attemptCount, status);
 
+      // Hoisted out of the variables object so the rest timer anchors on the
+      // exact instant we send, rather than re-deriving one after onSuccess has
+      // already reset `hasEditedClimbedAtRef`.
+      // Untouched: log a fresh save-time "now". Edited: honour the pick
+      // (clamped, in case the sheet sat open past the chosen minute).
+      const climbedAtIso = (hasEditedClimbedAtRef.current ? clampToNow(climbedAt) : new Date()).toISOString();
+
       saveTick.mutate(
         {
           climbUuid,
@@ -292,14 +371,13 @@ export function useQuickTickForm({
           isBenchmark,
           baseAscensionistCount,
           comment,
-          // Untouched: log a fresh save-time "now". Edited: honour the pick
-          // (clamped, in case the sheet sat open past the chosen minute).
-          climbedAt: (hasEditedClimbedAtRef.current ? clampToNow(climbedAt) : new Date()).toISOString(),
+          climbedAt: climbedAtIso,
           ...(sessionId ? { sessionId } : {}),
           ...(layoutId != null ? { layoutId } : {}),
           ...(sizeId != null ? { sizeId } : {}),
           ...(setIds ? { setIds } : {}),
-          ...(boardPresenceEnabled && boardPresenceBoardId != null ? { boardId: boardPresenceBoardId } : {}),
+          ...(selectedBoardUuid ? { boardUuid: selectedBoardUuid } : {}),
+          ...(tickBoardId != null ? { boardId: tickBoardId } : {}),
         },
         {
           onSuccess: () => {
@@ -327,6 +405,13 @@ export function useQuickTickForm({
             // the wall (see RogueTimerProvider), so a passenger's tick can't
             // touch the timer. Fire-and-forget; never block the save flow.
             void startTimerStopwatch?.();
+            // Anchor the in-app rest timer on the same instant (#5378). No-op
+            // unless the climber armed it. This runs on the offline-queued
+            // delivery too, which is correct: a rest timer is about when YOU
+            // logged the send, not when the server heard about it. The outbox
+            // drainer replays without this hook, so a tick delivered twenty
+            // minutes later can never reset a live timer.
+            noteRestTimerTick(climbedAtIso, getSetting('restTimerMode'), nowMs());
             // Reset on commit so reopening the sheet on the same climb
             // doesn't show stale state from the just-saved tick.
             setTickState(createInitialTickState());
@@ -365,8 +450,8 @@ export function useQuickTickForm({
       layoutId,
       sizeId,
       setIds,
-      boardPresenceEnabled,
-      boardPresenceBoardId,
+      tickBoardId,
+      selectedBoardUuid,
       tickState,
       comment,
       climbedAt,

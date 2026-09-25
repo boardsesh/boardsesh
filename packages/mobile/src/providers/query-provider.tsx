@@ -4,7 +4,7 @@ import { QueryCache, QueryClient, QueryClientProvider, MutationCache, focusManag
 import { reportHandledError } from '../lib/error-reporting';
 import { isBackendUnavailableError } from '../lib/connectivity/backend-unavailable-error';
 import { startConnectivityStore } from '../lib/connectivity/start-connectivity';
-import { isGraphqlRateLimitedError } from '../lib/graphql/extract-error-message';
+import { isGraphqlRateLimitedError, isGraphqlValidationFailedError } from '../lib/graphql/extract-error-message';
 // From the leaf module, not `graphql/client`: the client statically imports the
 // auth interceptor and the whole secure-store chain behind it, which has no
 // business in the query provider's graph for a one-line predicate.
@@ -104,7 +104,12 @@ export function createQueryClient(): QueryClient {
         // not answering within 20s, and the connectivity store's own backoff
         // ladder is already asking whether it is back; three 20s hangs per query
         // on top of that is how an outage turns into a frozen app.
+        //
+        // A GRAPHQL_VALIDATION_FAILED rejection means the backend's schema lacks
+        // something this query asks for. The same document fails the same way
+        // every time, so retrying only delays the error state (#5370).
         retry: (failureCount, error) => {
+          if (isGraphqlValidationFailedError(error)) return false;
           if (isGraphqlRateLimitedError(error)) return false;
           if (isBackendUnavailableError(error)) return false;
           if (isGraphqlRequestTimeoutError(error)) return false;

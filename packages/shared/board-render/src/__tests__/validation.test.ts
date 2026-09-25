@@ -13,6 +13,7 @@ import {
   renderModeSchema,
   VALID_BOARD_NAMES,
   MAX_FRAMES_LENGTH,
+  MAX_SET_IDS,
   MAX_SET_IDS_LENGTH,
 } from '../validation';
 
@@ -152,7 +153,7 @@ describe('ogClimbQuerySchema', () => {
   });
 
   it('rejects more set_ids than MAX_SET_IDS', () => {
-    const tooManySetIds = Array.from({ length: 11 }, (_, index) => index + 1).join(',');
+    const tooManySetIds = Array.from({ length: MAX_SET_IDS + 1 }, (_, index) => index + 1).join(',');
     expect(ogClimbQuerySchema.safeParse({ ...valid, set_ids: tooManySetIds }).success).toBe(false);
   });
 

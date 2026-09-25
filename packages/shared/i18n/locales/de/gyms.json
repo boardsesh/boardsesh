@@ -17,6 +17,10 @@
       "description": "Du suchst ein Tension Board in deiner Nähe? Hier sind die Kletterhallen mit einem Tension Board an der Wand, samt dem Winkel, auf den es eingestellt ist."
     }
   },
+  "breadcrumb": {
+    "home": "Boardsesh",
+    "gyms": "Hallen"
+  },
   "directory": {
     "all": {
       "h1": "Kletterhallen mit Trainingsboards",
@@ -52,6 +56,7 @@
     "countHint": "Die Zahlen zählen Hallen, nicht Boards: Eine Halle mit drei Kilter-Wänden zählt einmal."
   },
   "search": {
+    "geoHint": "Standort deaktiviert? Gib einen Ort ein. Keine Berechtigung nötig.",
     "label": "Hallen suchen",
     "placeholder": "Name der Halle oder Ort",
     "submit": "Suchen"
@@ -60,16 +65,25 @@
     "heading_one": "{{formattedCount}} Halle",
     "heading_other": "{{formattedCount}} Hallen",
     "emptyTitle": "Dazu passt noch nichts",
-    "emptyBody": "Versuch eine kürzere Suche oder nimm den Board-Filter raus und stöber durch alle Hallen."
+    "emptyBody": "Versuch eine kürzere Suche oder nimm den Board-Filter raus und stöber durch alle Hallen.",
+    "emptyClearSearch": "Suche zurücksetzen",
+    "emptyBrowseAll": "Alle Hallen durchstöbern"
   },
   "error": {
     "title": "Wir kommen gerade nicht an die Hallenliste ran",
-    "body": "Bei uns hakt gerade was. Warte kurz und lad neu, oder geh direkt auf die Seite einer Halle, die du schon kennst."
+    "body": "Bei uns hakt gerade was. Warte kurz und lad neu, oder geh direkt auf die Seite einer Halle, die du schon kennst.",
+    "retry": "Liste neu laden",
+    "home": "Zurück zu Boardsesh"
   },
   "card": {
+    "claimed": "Beansprucht",
+    "unclaimed": "Nicht beansprucht",
     "boardChip": "{{board}} {{angle}}°",
-    "distance": "{{distance}} km entfernt",
-    "claimCta": "Ist das deine Halle?"
+    "distance": "{{distance}} km entfernt"
+  },
+  "claim": {
+    "body": "Ist das deine Halle? Beanspruche sie und du legst fest, welche Boards, Zeiten und Links hier stehen.",
+    "action": "Finde deine Halle"
   },
   "nearMe": {
     "cta": "Meinen Standort nutzen",
@@ -116,5 +130,18 @@
     "kilter": "Hallen mit einem Kilter Board",
     "moonboard": "Hallen mit einem MoonBoard",
     "tension": "Hallen mit einem Tension Board"
+  },
+  "places": {
+    "loading": "Orte werden gesucht…",
+    "clear": "Ort entfernen",
+    "open": "Orte anzeigen",
+    "close": "Orte ausblenden",
+    "hint": "Wähle einen vorgeschlagenen Ort oder suche eine Halle nach Namen.",
+    "empty": "Keine Orte gefunden. Du kannst weiterhin eine Halle nach Namen suchen.",
+    "error": "Ortsvorschläge sind nicht verfügbar. Du kannst weiterhin eine Halle nach Namen suchen.",
+    "attribution": "Ortsnamen von GeoNames",
+    "area": "Hallen im Umkreis von {{radius}} km um {{place}}",
+    "selectedArea": "den ausgewählten Standort",
+    "pinlessNotice": "Ergebnisse in der Nähe enthalten nur Hallen mit einem Kartenmarker."
   }
 }

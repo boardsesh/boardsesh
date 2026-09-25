@@ -12,7 +12,12 @@
 import type { GradeDisplayFormat } from '@boardsesh/play-view';
 import type { BoardseshGrade } from '@boardsesh/graphql/operations';
 import { getBoardCapabilities } from '@boardsesh/board-config';
-import { isCrossAngleEstimate, isMoonboardAngleEstimate } from '@boardsesh/logbook';
+import {
+  isCrossAngleEstimate,
+  isMoonboardAngleEstimate,
+  isMoonboardWideAngleEstimate,
+  surfacedBoardseshGrade,
+} from '@boardsesh/logbook';
 import {
   renderDifficulty,
   clampDifficultyId,
@@ -76,6 +81,25 @@ export type BoardseshGradeView =
        * the source angle is a setter's label too.
        */
       kind: 'moonboardAngleEstimate';
+      grade: RenderedGrade;
+      /** Raw primary grade float (drives the chart reference line). */
+      gradeValue: number;
+      /** Bounding grade labels, or null when the band is too wide/degenerate to print. */
+      range: { low: string; high: string } | null;
+      computedAt: string;
+    }
+  | {
+      /**
+       * MoonBoard only, and rougher: an angle outside the board's own two
+       * fixed angles (25°/40°), reachable via the `moonboard-wide-angles`
+       * feature flag. MoonBoard has almost no real evidence there yet, so
+       * this number was transported using another board's fitted
+       * angle-effect shape rather than anything measured on MoonBoard at
+       * this angle — a cross-board borrow, not the same-board transform
+       * `moonboardAngleEstimate` is. Rendered the same muted, `≈`-marked way,
+       * but with its own, more hedged copy.
+       */
+      kind: 'moonboardWideAngleEstimate';
       grade: RenderedGrade;
       /** Raw primary grade float (drives the chart reference line). */
       gradeValue: number;
@@ -178,13 +202,29 @@ export function buildBoardseshGradeView(
       };
     }
   }
+  // Same reasoning as moonboardAngleEstimate above, for a `moonboard-wide-angles`
+  // angle outside the board's own two fixed angles.
+  if (isMoonboardWideAngleEstimate(grade?.confidence)) {
+    const moonPrimary = grade?.localGrade ?? null;
+    const moonRendered = moonPrimary != null ? renderDifficulty(moonPrimary, gradeFormat) : null;
+    if (grade && moonPrimary != null && moonRendered) {
+      return {
+        kind: 'moonboardWideAngleEstimate',
+        grade: moonRendered,
+        gradeValue: moonPrimary,
+        range: buildEstimateRange(grade.gradeLow, grade.gradeHigh, gradeFormat),
+        computedAt: grade.computedAt,
+      };
+    }
+  }
   if (!getBoardCapabilities(boardName).crowdGrade) return { kind: 'noCrowdGrade', boardName: boardName.toLowerCase() };
   if (!grade) return { kind: 'setterOnly', grade: null, count: 0 };
 
   // Prefer the cross-board universal grade; fall back to the board-local grade
-  // (small boards that never earn a universal number).
+  // (small boards that never earn a universal number). Shared with web via
+  // @boardsesh/logbook so this rule can't diverge again — see #4414.
   const universal = grade.universalGrade != null;
-  const primary = grade.universalGrade ?? grade.localGrade;
+  const primary = surfacedBoardseshGrade(grade);
   const rendered = primary != null ? renderDifficulty(primary, gradeFormat) : null;
 
   if (grade.confidence === 'setter_only' || primary == null || !rendered) {
@@ -307,7 +347,8 @@ export function buildCorrection(
  * string leading with the correction. When a crowd label is supplied and it
  * differs from the confirmed cross-board grade, shows "{crowd} ▸ {bs} ✓"; a
  * confident cross-board grade alone reads "{bs} ✓"; provisional "{bs} ~";
- * an estimated angle (projected or MoonBoard-transposed) "≈{bs}"; local-only
+ * an estimated angle (projected, MoonBoard-transposed, or MoonBoard wide-angle
+ * cross-board borrow) "≈{bs}"; local-only
  * "{bs} · {localWord}". Null for a no-crowd-grade board / setter-only.
  */
 export function buildBoardseshGradeSummary(
@@ -331,6 +372,7 @@ export function buildBoardseshGradeSummary(
     }
     case 'crossAngle':
     case 'moonboardAngleEstimate':
+    case 'moonboardWideAngleEstimate':
       // No crowd number to compare against at an unclimbed angle, so the teaser
       // is just the marked estimate — never the ✓ seal or the correction arrow.
       return `${ESTIMATE_PREFIX}${view.grade.label}`;

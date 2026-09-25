@@ -78,9 +78,12 @@ export function deriveAcceptedConfigs(
   return accepted;
 }
 
-/** Add it now, and why — `already-mixed` means this board is already in the queue. */
+/**
+ * Add it now, and why — `already-mixed` means this board is already in the
+ * queue, `same-gym` that the climb is on another wall in the same room.
+ */
 export type AddDecision =
-  | { kind: 'add'; reason: 'compatible' | 'unknown' | 'already-mixed' }
+  | { kind: 'add'; reason: 'compatible' | 'unknown' | 'already-mixed' | 'same-gym' }
   | { kind: 'confirm'; climbConfigKey: string; climbBoardName: string; climbLayoutId: number };
 
 export type DecideAddInput<TBoard extends QueueBoardIdentity> = {
@@ -89,6 +92,16 @@ export type DecideAddInput<TBoard extends QueueBoardIdentity> = {
   activeConfig: TBoard | undefined;
   /** From `deriveAcceptedConfigs`. */
   acceptedConfigKeys: ReadonlySet<string>;
+  /**
+   * Board models standing at the same gym as the active board — walls the
+   * climber can reach on foot.
+   *
+   * Mixing boards at a multi-wall gym is the deliberate act, not the accident
+   * this prompt was written to catch, so asking "are you sure?" the first time
+   * someone queues from the wall beside them is friction at exactly the wrong
+   * moment. Omit it and the prompt behaves as it always has.
+   */
+  reachableConfigKeys?: ReadonlySet<string>;
   /** Injected — pass `classifyClimbBoardCompatibility` from `@boardsesh/board-config`. */
   classify: (activeConfig: TBoard | undefined, climb: ClimbBoardIdentityLike) => ClimbBoardCompatibility;
 };
@@ -100,6 +113,8 @@ export type DecideAddInput<TBoard extends QueueBoardIdentity> = {
  *   older queue items and party-synced climbs legitimately have none.
  * - `incompatible` but the climb's board is already in the queue → add, no
  *   prompt (the climber already said yes to this board).
+ * - `incompatible` but the climb's board is another wall at this gym → add, no
+ *   prompt. They can walk to it.
  * - `incompatible` and unrecognised board metadata (no `climbConfigKey`) → add.
  *   We'd have nothing to name in the prompt or remember afterwards.
  * - otherwise → confirm.
@@ -112,6 +127,7 @@ export function decideAdd<TBoard extends QueueBoardIdentity>({
   climb,
   activeConfig,
   acceptedConfigKeys,
+  reachableConfigKeys,
   classify,
 }: DecideAddInput<TBoard>): AddDecision {
   const compatibility = classify(activeConfig, climb);
@@ -124,6 +140,28 @@ export function decideAdd<TBoard extends QueueBoardIdentity>({
 
   const key = configKey({ boardName: climbBoardName, layoutId: climbLayoutId });
   if (acceptedConfigKeys.has(key)) return { kind: 'add', reason: 'already-mixed' };
+  if (reachableConfigKeys?.has(key)) return { kind: 'add', reason: 'same-gym' };
 
   return { kind: 'confirm', climbConfigKey: key, climbBoardName, climbLayoutId };
+}
+
+/**
+ * Is this climb on a board the climber can walk to?
+ *
+ * The one definition, because four surfaces have to agree on it or the app
+ * contradicts itself: the queue navigates by it, the play drawer's peek and
+ * "N left" describe that navigation, the rest-timer beat decides whether the
+ * queue has ended, and the Bluetooth auto-sender decides whether a climb it
+ * cannot write is a spill to walk past or a deliberate move to hold on.
+ *
+ * A climb with no board metadata is never reachable — same fail-open stance as
+ * the compatibility classifier, which treats unknown as "don't act".
+ */
+export function isClimbOnReachableBoard(
+  climb: ClimbBoardIdentityLike,
+  reachableConfigKeys: ReadonlySet<string> | undefined,
+): boolean {
+  if (!reachableConfigKeys || reachableConfigKeys.size === 0) return false;
+  const key = climbConfigKey(climb);
+  return key != null && reachableConfigKeys.has(key);
 }

@@ -46,7 +46,6 @@ vi.mock('@/app/components/i18n/locale-link', () => ({
 vi.mock('@/app/components/board-renderer/board-image-layers', () => ({ default: () => null }));
 vi.mock('@/app/components/board-renderer/board-canvas-renderer', () => ({ default: () => null }));
 vi.mock('@/app/lib/board-render-worker/worker-manager', () => ({ useCanvasRendererReady: () => false }));
-vi.mock('@/app/hooks/use-is-dark-mode', () => ({ useIsDarkMode: () => false }));
 vi.mock('@/app/hooks/use-grade-format', () => ({
   useGradeFormat: () => ({ formatGrade: (grade?: string) => grade, getGradeColor: () => undefined }),
 }));
@@ -117,6 +116,24 @@ function renderSeededList() {
 }
 
 describe('SimilarClimbsList server render', () => {
+  it('preserves the named board for compatible similar climbs', () => {
+    const html = renderToString(
+      <QueryClientProvider client={makeQueryClient()}>
+        <SimilarClimbsList
+          boardType="kilter"
+          boardSlug="gym-wall"
+          layoutId={1}
+          viewerBoardDetails={makeBoardDetails()}
+          climbUuid="ORIGIN-CLIMB"
+          angle={40}
+          initialClimbs={seededClimbs}
+        />
+      </QueryClientProvider>,
+    );
+    expect(html).toContain('href="/b/gym-wall/40/view/similar-boulder-0-SIMILAR0"');
+    expect(html.match(/href="\/b\/gym-wall\//g)).toHaveLength(seededClimbs.length);
+  });
+
   it('emits one crawlable anchor per seeded climb, not a spinner', () => {
     const html = renderSeededList();
 

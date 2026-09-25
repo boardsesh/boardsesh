@@ -116,6 +116,7 @@ describe('saveTick resolves an alias-borne climb UUID to the canonical', () => {
     await db.execute(sql`
       UPDATE board_climbs SET is_listed = false WHERE uuid = ${RETIRED}
     `);
+    await db.execute(sql`UPDATE board_climbs SET angle = 40 WHERE uuid = ${CANONICAL}`);
     await db.execute(sql`
       INSERT INTO board_climb_aliases (board_type, alias_uuid, canonical_uuid, source)
       VALUES
@@ -149,6 +150,23 @@ describe('saveTick resolves an alias-borne climb UUID to the canonical', () => {
 
     expect(result.climbUuid).toBe(CANONICAL);
     expect(await storedClimbUuids()).toEqual([CANONICAL]);
+  });
+
+  it('preserves 25 degrees when the canonical climb retains a legacy 40-degree angle', async () => {
+    const result = (await tickMutations.saveTick(
+      undefined,
+      { input: { ...tickInput(RETIRED), angle: 25 } },
+      authCtx(),
+    )) as { climbUuid: string; angle: number };
+
+    expect(result).toMatchObject({ climbUuid: CANONICAL, angle: 25 });
+    const stored = (await db.execute(sql`
+      SELECT climb_uuid, angle FROM boardsesh_ticks WHERE user_id = ${USER_ID}
+    `)) as unknown as Array<{ climb_uuid: string; angle: number }>;
+    const rows = Array.isArray(stored) ? stored : (stored as { rows: typeof stored }).rows;
+    expect(rows).toEqual([{ climb_uuid: CANONICAL, angle: 25 }]);
+    expect(queueClimbStatsRecomputeMock).toHaveBeenCalledExactlyOnceWith(BOARD, CANONICAL, 25);
+    expect(recomputeClimbStatsNowMock).toHaveBeenCalledExactlyOnceWith(BOARD, CANONICAL, 25);
   });
 
   // Landing the row on the canonical is only half of it: the recompute has to

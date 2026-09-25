@@ -10,10 +10,11 @@
 // notification-item component; if that ever gets extracted into a shared
 // package, this file moves as-is rather than being rewritten.
 //
-// Time formatting is NOT here: rows call `formatTickRelativeTime` from
-// `@boardsesh/profile-stats`. Web's `formatTimeAgo` ends in
-// `date.toLocaleDateString()`, which is exactly the Intl surface the mobile
-// lint config bans (Hermes ships without it).
+// Time formatting is NOT here: rows call `formatRelativeTime` from
+// `lib/format-relative-time.ts` (the frozen-clock-aware wrapper around
+// `@boardsesh/profile-stats`'s `formatTickRelativeTime`). Web's `formatTimeAgo`
+// ends in `date.toLocaleDateString()`, which is exactly the Intl surface the
+// mobile lint config bans (Hermes ships without it).
 
 import type { GroupedNotification, NotificationType } from '@boardsesh/shared-schema';
 import type { IconName } from '../icon-map';

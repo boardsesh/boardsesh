@@ -120,6 +120,21 @@ describe('sync-scheduler', () => {
     );
   });
 
+  it('forwards the holds index options to pullSync, or the scheduler path never builds the index', async () => {
+    const drainQueue: DrainQueue = vi.fn().mockResolvedValue(undefined);
+    const holdIndex = { parseHoldRows: () => [] };
+
+    triggerSync(mockDb, createMockQueryClient(), mockGraphqlFetch, getEnabledBoards, drainQueue, { holdIndex });
+    await flush();
+
+    expect(mockPullSync).toHaveBeenCalledWith(
+      mockDb,
+      expect.anything(),
+      mockGraphqlFetch,
+      expect.objectContaining({ holdIndex }),
+    );
+  });
+
   it('threads the connectivity probe into pullSync, and omits it when the caller has none (#4238)', async () => {
     const drainQueue: DrainQueue = vi.fn().mockResolvedValue(undefined);
     const isOnline = () => false;

@@ -1,5 +1,6 @@
 import type { OpaqueColorValue } from 'react-native';
 import type { IconName } from '../icon-map';
+import type { PlayDrawerLightbulbPressAction } from '../play-drawer/lightbulb-control';
 
 type BleLightbulbVisualStateInput = {
   isConnected: boolean;
@@ -65,4 +66,33 @@ export function getBleLightbulbAccessibilityHint(
   if (isScanning) return scanningAccessibilityHint;
   if (isWriting) return writingAccessibilityHint;
   return longPressAccessibilityHint;
+}
+
+/** Which sentence the bulb's accessibility label should carry. */
+export type BleLightbulbLabelKind = 'disconnect' | 'relay' | 'peerDriving' | 'connect' | 'takeWall' | 'releaseWall';
+
+/**
+ * The bulb's accessibility label, chosen from what a tap will ACTUALLY do.
+ *
+ * All three bulbs used to derive this from `localConnected` alone, so once the
+ * peer-held relay landed the label promised "Connect to board" for a tap that
+ * commits a preview to the shared queue, or does nothing at all (Fable review,
+ * PR #5123). `holderIsAuthoritative` disambiguates `'noop'`, which also covers
+ * "no board selected" and "a connect is already in flight" — neither of which
+ * should claim a peer is driving.
+ *
+ * Returns a KIND rather than a translated string so each surface keeps its own
+ * wording (the toolbar bulbs say `lightControl.disconnect` where the drawer says
+ * `ble.turnOff`), and because the i18n linter hard-fails on `t(variable)` — the
+ * keys have to stay literals at the call site.
+ */
+export function getBleLightbulbLabelKind(
+  pressAction: PlayDrawerLightbulbPressAction,
+  holderIsAuthoritative: boolean,
+): BleLightbulbLabelKind {
+  if (pressAction === 'takeWall' || pressAction === 'releaseWall') return pressAction;
+  if (pressAction === 'disconnect') return 'disconnect';
+  if (pressAction === 'relay') return 'relay';
+  if (pressAction === 'noop' && holderIsAuthoritative) return 'peerDriving';
+  return 'connect';
 }

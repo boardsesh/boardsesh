@@ -64,6 +64,8 @@ import { isOfflineEngineEnabled } from '../lib/offline-engine';
 import { takeDownloadTrigger } from '../settings';
 import { track } from '../lib/analytics';
 import { getSyncStatusSnapshot } from '../sync/sync-status';
+import { sprayWallDeletedSink, sprayWallPhotoSink } from './spray-photo-sink';
+import { holdIndexSyncOptions } from './hold-index-parser';
 
 // Exported so non-drain reporters can record the one dimension that decides
 // whether a failed local write actually lost data: a tick that falls through to
@@ -759,7 +761,13 @@ export function startSyncScheduler(
     onCoverageEvaluated: reportCoverageEvaluated,
     onBootstrapRetryScheduled: reportBootstrapRetryScheduled,
     onBootstrapPathRecovered: reportBootstrapPathRecovered,
+    // The wall photo is the one asset a row cannot carry; see spray-photo-sink.ts.
+    onDocumentsPulled: sprayWallPhotoSink,
+    onRowsDeleted: sprayWallDeletedSink,
     isOnUnmeteredNetwork,
+    // The device-derived holds index (similar climbs + hold heatmap on device),
+    // built at the end of each cycle; see hold-index-parser.ts.
+    holdIndex: holdIndexSyncOptions,
   });
 }
 
@@ -785,7 +793,13 @@ export function triggerSync(
     onCoverageEvaluated: reportCoverageEvaluated,
     onBootstrapRetryScheduled: reportBootstrapRetryScheduled,
     onBootstrapPathRecovered: reportBootstrapPathRecovered,
+    // The wall photo is the one asset a row cannot carry; see spray-photo-sink.ts.
+    onDocumentsPulled: sprayWallPhotoSink,
+    onRowsDeleted: sprayWallDeletedSink,
     isOnUnmeteredNetwork,
+    // The device-derived holds index (similar climbs + hold heatmap on device),
+    // built at the end of each cycle; see hold-index-parser.ts.
+    holdIndex: holdIndexSyncOptions,
   });
 }
 
@@ -807,6 +821,9 @@ export function pullSync(
     onBootstrapRetryScheduled: options?.onBootstrapRetryScheduled ?? reportBootstrapRetryScheduled,
     onBootstrapPathRecovered: options?.onBootstrapPathRecovered ?? reportBootstrapPathRecovered,
     isOnUnmeteredNetwork: options?.isOnUnmeteredNetwork ?? isOnUnmeteredNetwork,
+    onDocumentsPulled: options?.onDocumentsPulled ?? sprayWallPhotoSink,
+    onRowsDeleted: options?.onRowsDeleted ?? sprayWallDeletedSink,
+    holdIndex: options?.holdIndex ?? holdIndexSyncOptions,
     // Caller-provided error/drift/coverage reporters keep their existing
     // override semantics; scope completion is the one callback deliberately
     // composed because both telemetry and per-scope UI invalidation are required.

@@ -175,7 +175,13 @@ export function Button({
             <CircularProgressIndicator
               color={spinnerColor}
               strokeWidth={2}
-              modifiers={[size(config.iconSize, config.iconSize), padding(0, 0, 8, 0)]}
+              // Padding must come before size: `.size().padding()` shrinks the
+              // indicator into the padded remainder of its own fixed box
+              // (drawing it small and off-centre), while `.padding().size()`
+              // draws it full-size with the padding as true outer margin —
+              // matching how the sibling `Icon` (size PROP + external padding)
+              // renders.
+              modifiers={[padding(0, 0, 8, 0), size(config.iconSize, config.iconSize)]}
             />
           ) : iconSource ? (
             <Icon source={iconSource} size={config.iconSize} modifiers={[padding(0, 0, 8, 0)]} />

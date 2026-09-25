@@ -2,13 +2,13 @@ import { memo, useCallback, useMemo } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useRouter } from 'expo-router';
-import { formatTickRelativeTime } from '@boardsesh/profile-stats';
 import type { Comment } from '@boardsesh/shared-schema';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { PressableSurface } from '../PressableSurface';
 import { useClimbProposals } from '../../lib/graphql/hooks/use-climb-proposals';
 import { useComments } from '../../lib/graphql/hooks/use-social';
+import { formatRelativeTime } from '../../lib/format-relative-time';
 import { useClimbModerationEnabled } from '../../providers/feature-flags-provider';
 import { useGradeFormat } from '../../hooks/use-grade-format';
 import { useTheme } from '../../providers/theme-provider';
@@ -78,9 +78,7 @@ const ReasonRow = memo(function ReasonRow({ comment }: { comment: Comment }) {
   return (
     <View style={styles.reasonRow}>
       <Text variant="caption1" color={systemColors.secondaryLabel}>
-        {author
-          ? `${author} · ${formatTickRelativeTime(comment.createdAt)}`
-          : formatTickRelativeTime(comment.createdAt)}
+        {author ? `${author} · ${formatRelativeTime(comment.createdAt)}` : formatRelativeTime(comment.createdAt)}
       </Text>
       <Text variant="footnote">{comment.body}</Text>
     </View>

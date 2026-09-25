@@ -34,7 +34,7 @@
 //   Android    "Call to function 'NativeDatabase.prepareAsync' has been rejected.\n
 //               → Caused by: Error code : database is locked"   ← NO numeric code
 
-const MAX_CAUSE_DEPTH = 3;
+import { causeChain, messageOf } from './error-cause-walk';
 
 /** The stable, locale-independent identifiers for write-lock contention. */
 const LOCK_MARKERS = /database is locked|database table is locked|sqlite_busy|sqlite_locked/i;
@@ -50,16 +50,7 @@ const LOCK_MARKERS = /database is locked|database table is locked|sqlite_busy|sq
 const BUSY_CONTROL_BYTE = String.fromCharCode(5);
 const BUSY_RESULT_CODE = new RegExp(`error code\\s*(?:${BUSY_CONTROL_BYTE}|5)\\s*:`, 'i');
 
-function messageOf(error: unknown): string | null {
-  if (typeof error === 'string') return error;
-  if (error === null || typeof error !== 'object') return null;
-  const message = (error as { message?: unknown }).message;
-  return typeof message === 'string' ? message : null;
-}
-
-function isLockedAtDepth(error: unknown, depth: number): boolean {
-  if (error === null || error === undefined) return false;
-
+function isLockedLink(error: unknown): boolean {
   const message = messageOf(error);
   if (message !== null) {
     if (LOCK_MARKERS.test(message)) return true;
@@ -69,14 +60,9 @@ function isLockedAtDepth(error: unknown, depth: number): boolean {
     if (BUSY_RESULT_CODE.test(message) && /lock/i.test(message)) return true;
   }
 
-  if (typeof error === 'object') {
+  if (error !== null && typeof error === 'object') {
     const code = (error as { code?: unknown }).code;
     if (typeof code === 'string' && LOCK_MARKERS.test(code)) return true;
-
-    if (depth < MAX_CAUSE_DEPTH) {
-      const cause = (error as { cause?: unknown }).cause;
-      if (cause !== undefined && cause !== error && isLockedAtDepth(cause, depth + 1)) return true;
-    }
   }
 
   return false;
@@ -87,7 +73,7 @@ function isLockedAtDepth(error: unknown, depth: number): boolean {
  * write-lock contention rather than a broken database.
  */
 export function isDatabaseLockedError(error: unknown): boolean {
-  return isLockedAtDepth(error, 0);
+  return causeChain(error).some(isLockedLink);
 }
 
 /** SQLITE_BUSY — another connection holds the lock this statement needs. */

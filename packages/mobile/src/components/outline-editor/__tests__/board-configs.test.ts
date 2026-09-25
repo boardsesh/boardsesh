@@ -1,12 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import { BOARD_DISPLAY_ORDER } from '@boardsesh/shared-schema';
-import { outlineEditorLayouts, outlineEditorSetIds, outlineEditorSizes } from '../board-configs';
+import { OUTLINE_EDITOR_BOARDS, outlineEditorLayouts, outlineEditorSetIds, outlineEditorSizes } from '../board-configs';
 
 describe('outlineEditorLayouts', () => {
   it('lists at least one layout for every supported board', () => {
-    for (const boardName of BOARD_DISPLAY_ORDER) {
+    for (const boardName of OUTLINE_EDITOR_BOARDS) {
       expect(outlineEditorLayouts(boardName).length, boardName).toBeGreaterThan(0);
     }
+  });
+
+  it('leaves spray out — a wall has no bundled shard to trace', () => {
+    // Its holds are captured from the climber's own photo and edited in the wall
+    // hold editor (SW-08), so offering it here would open an empty picker.
+    expect(OUTLINE_EDITOR_BOARDS).not.toContain('spray');
+    expect([...OUTLINE_EDITOR_BOARDS, 'spray'].sort()).toEqual([...BOARD_DISPLAY_ORDER].sort());
+    expect(outlineEditorLayouts('spray')).toEqual([]);
   });
 
   it('covers MoonBoard and Woods, which carry no Aurora product-size rows', () => {
@@ -17,7 +25,7 @@ describe('outlineEditorLayouts', () => {
 
 describe('outlineEditorSizes', () => {
   it('lists at least one size for every board’s first layout', () => {
-    for (const boardName of BOARD_DISPLAY_ORDER) {
+    for (const boardName of OUTLINE_EDITOR_BOARDS) {
       const firstLayout = outlineEditorLayouts(boardName)[0];
       expect(outlineEditorSizes(boardName, firstLayout.id).length, boardName).toBeGreaterThan(0);
     }

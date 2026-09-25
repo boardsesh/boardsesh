@@ -80,13 +80,13 @@ describe('buildBoardLookModel — what the nav rows say is behind them', () => {
 
   it('says the tuning is yours once you are off every preset', () => {
     expect(navRow(makeInput({ matchingOptionId: 'custom' }), 'customLook').subtitle).toBe(
-      'mobile.more.boardLook.customLook.rowSubtitleCustom',
+      'mobile.settings.boardLook.customLook.rowSubtitleCustom',
     );
   });
 
   it('reports default markers when nothing has been customised', () => {
     expect(navRow(makeInput(), 'accessibility').subtitle).toBe(
-      'mobile.more.boardLook.accessibility.rowSubtitleDefault',
+      'mobile.settings.boardLook.accessibility.rowSubtitleDefault',
     );
   });
 
@@ -98,7 +98,7 @@ describe('buildBoardLookModel — what the nav rows say is behind them', () => {
 describe('buildBoardLookModel — the reset', () => {
   it('carries the note promising hold colours are left alone', () => {
     const reset = buildBoardLookModel(makeInput()).sections.at(-1);
-    expect(reset?.footer).toBe('mobile.more.boardLook.resetAllNote');
+    expect(reset?.footer).toBe('mobile.settings.boardLook.resetAllNote');
   });
 
   it('fires only the board-look reset', () => {

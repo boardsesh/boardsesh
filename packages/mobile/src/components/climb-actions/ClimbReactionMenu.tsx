@@ -28,6 +28,7 @@ import { BoardImageNative } from '../BoardImageNative';
 import { ClimbAttributeIcons } from '../ClimbAttributeIcons';
 import { InlinePlaylistPicker } from '../playlist/InlinePlaylistPicker';
 import { getBoardRenderData } from '../../lib/board-details';
+import { useSprayWallToken } from '../../lib/spray/use-spray-wall-token';
 import { formatSends, formatQuality } from '../../lib/format-climb-stats';
 import { useGradeFormat } from '../../hooks/use-grade-format';
 import { useTheme } from '../../providers/theme-provider';
@@ -49,6 +50,9 @@ const PRIMARY_ACTION_IDS: readonly ClimbActionId[] = ['tick', 'playlist', 'share
 type ClimbReactionMenuProps = {
   climb: Climb;
   boardConfig: BoardConfig;
+  /** Set only when the menu was opened from a queue row — names the exact slot
+   *  "Play next" should move, which matters when a climb is queued twice. */
+  queueItemUuid?: string;
   currentUserId?: string | null;
   isAuthenticated: boolean;
   onEditEntry?: () => void;
@@ -68,6 +72,9 @@ type ClimbReactionMenuProps = {
    *  sheet stacks above the `/play` modal (#3505). Receives the climb/board
    *  snapshot the menu was opened for. */
   onReportClimb?: (climb: Climb, boardConfig: BoardConfig) => void;
+  /** When provided, adds "Open the queue" (the play drawer, while the
+   *  connect-step pill has the queue button's place; #5654). */
+  onOpenQueue?: () => void;
   /** Native sheet underneath this custom overlay, if any. */
   dismissSourceSheet?: DismissSurfaceAndWait;
   /** Supplied only when this menu was opened from the `/play` route. */
@@ -145,12 +152,14 @@ function OverlayPortal({ children, onRequestClose }: { children: React.ReactNode
 export function ClimbReactionMenu({
   climb,
   boardConfig,
+  queueItemUuid,
   currentUserId,
   isAuthenticated,
   onEditEntry,
   onAddBetaVideo,
   onTick,
   onReportClimb,
+  onOpenQueue,
   dismissSourceSheet,
   dismissPlayerAndWait,
   reduceMotion,
@@ -242,6 +251,7 @@ export function ClimbReactionMenu({
   const actions = useClimbActions({
     climb,
     boardConfig,
+    queueItemUuid,
     currentUserId,
     isAuthenticated,
     onEditEntry,
@@ -250,6 +260,7 @@ export function ClimbReactionMenu({
     onAddBetaVideo,
     onTick,
     onReportClimb,
+    onOpenQueue,
     dismissSourceSheet,
     dismissPlayerAndWait,
   });
@@ -299,6 +310,9 @@ export function ClimbReactionMenu({
     };
   }, []);
 
+  // Subscribed above the memo, because this reads the registry synchronously and
+  // a spray climb opened before its wall landed would keep the `null` it saw.
+  const sprayToken = useSprayWallToken(boardConfig.boardName, boardConfig.layoutId);
   const boardRenderData = useMemo(() => {
     const setIdValues = boardConfig.setIds
       .split(',')
@@ -311,7 +325,8 @@ export function ClimbReactionMenu({
       sizeId: boardConfig.sizeId,
       setIds: setIdValues,
     });
-  }, [boardConfig]);
+    // `sprayToken` recomputes this when the wall lands or is reset.
+  }, [boardConfig, sprayToken]);
 
   // Board aspect (w/h), read once for the sizing math + the worklet below. Sanitised
   // to 1 for degenerate dims so the worklet can't collapse the art to a zero edge.

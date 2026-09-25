@@ -50,6 +50,7 @@ import {
   resolveBoardForSession,
 } from '../board-path-to-user-board';
 import { openClimbInPlayDrawer } from '../open-climb-in-play-drawer';
+import { consumeClimbHandoffIntent } from './climb-handoff-intent';
 
 /**
  * What the entry route should draw.
@@ -497,9 +498,15 @@ function resolveStatus({
  */
 export function useBoardRouteTarget(
   target: BoardRouteTarget | null,
-  options?: { mode?: BoardRouteMode; onHandedOff?: () => void; anonymousClimbEnabled?: boolean },
+  options?: {
+    mode?: BoardRouteMode;
+    activationIntent?: string | string[];
+    onHandedOff?: () => void;
+    anonymousClimbEnabled?: boolean;
+  },
 ): BoardRouteResult {
   const mode = options?.mode ?? 'deep-link';
+  const activationIntent = options?.activationIntent;
   const adoptsBoard = mode === 'deep-link';
   const router = useRouter();
   const { openPlayDrawer } = useDrawerHost();
@@ -647,25 +654,25 @@ export function useBoardRouteTarget(
     if (!climb || !boardConfig) return;
     handedOffRef.current = targetKey;
     onHandedOffRef.current?.();
-    // preview:true so a deep-linked climb doesn't disturb the queue — in a
-    // session it would change the shared current climb for everyone. The drawer
-    // shows a "Preview" badge with "Set active" to opt into playing it.
+    // Public URLs preview. Only the internal tick's one-use target-bound intent activates.
+    const activate = !adoptsBoard && consumeClimbHandoffIntent(activationIntent, target);
     const openDrawer = () =>
-      openClimbInPlayDrawer({ kind: 'climb', climb, boardConfig }, { openPlayDrawer, router }, { preview: true });
+      openClimbInPlayDrawer({ kind: 'climb', climb, boardConfig }, { openPlayDrawer, router }, { preview: !activate });
 
-    // Order matters and follows `canPop`. `openPlayDrawer` navigates to `/play`,
-    // so a screen that leaves by *replacing* itself must replace FIRST: replacing
-    // after the open would replace `/play` itself, the drawer would never appear,
-    // and the user would land on a bare Climbs tab. A screen that pops is the
-    // mirror image — popping first would take the screen the drawer is meant to
-    // return to with it — so it opens first.
-    if (!canPop) {
-      leave();
-      openDrawer();
-      return;
-    }
-    openDrawer();
+    // This screen gets out of the way FIRST, whichever way it leaves.
+    //
+    // `openPlayDrawer` ends in `router.navigate('/play')`, so after the open
+    // `/play` is the top of the stack — and both exits act on the top. Replacing
+    // after the open would replace `/play`, landing the user on a bare Climbs
+    // tab; popping after it would dismiss the drawer in the same frame it
+    // appeared, leaving this redirector on screen with `handedOffRef` already
+    // claimed, so the effect could never retry and the spinner never ended.
+    //
+    // Leaving first is safe for the pop as well: `/play` is a root
+    // `transparentModal` (see `app/_layout.tsx`), not a child of the stack this
+    // screen sits in, so popping this screen cannot take the drawer with it.
     leave();
+    openDrawer();
   }, [
     adoptsBoard,
     anonymousClimb,
@@ -674,6 +681,7 @@ export function useBoardRouteTarget(
     boardConfig,
     climb,
     openPlayDrawer,
+    activationIntent,
     router,
     target,
     targetKey,

@@ -56,21 +56,74 @@ export const TABLE_INVALIDATE_KEYS: Record<string, InvalidateKeys> = {
   //   overwritten by a network refetch that raced the drain.
   user_favorites: [['searchClimbs'], ['infiniteSearchClimbs'], ['favoriteStatus']],
 
-  user_follows: [['followers'], ['following']],
+  // Follow changes affect Following searches on every board. This platform-neutral
+  // table map knows query prefixes, not each client's filter-bearing key shape,
+  // so it deliberately invalidates unfiltered searches too. Only active queries
+  // refetch; inactive searches are marked stale until the next visit.
+  user_follows: [
+    ['publicProfile'],
+    ['searchUsers'],
+    ['followers'],
+    ['following'],
+    ['followedAuthors'],
+    ['crewFeed'],
+    ['setterStats'],
+    ['searchClimbs'],
+    ['infiniteSearchClimbs'],
+    ['searchClimbsCount'],
+  ],
 
-  // Deliberately empty, not a placeholder key. Nothing on mobile reads a setter's
-  // follow state yet — the setter surface shows ['setterStats'], which this table
-  // does not feed. The old ['setterFollows'] key looked like coverage and was
-  // not. Give this real keys when a follow-a-setter surface ships.
-  setter_follows: [],
+  // Following-only catalogue reads, Crew and the complete author snapshot.
+  // Setter identities can be accountless OR linked: followSetter/unfollowSetter
+  // also insert/delete user_follows for a linked Boardsesh account. Keep profile
+  // and user-follow queries fresh after that server-side side effect lands.
+  setter_follows: [
+    ['publicProfile'],
+    ['followers'],
+    ['following'],
+    ['searchUsers'],
+    ['followedAuthors'],
+    ['crewFeed'],
+    ['setterStats'],
+    ['searchClimbs'],
+    ['infiniteSearchClimbs'],
+    ['searchClimbsCount'],
+  ],
 
   // Playlist follow state is a field on the playlist detail row
   // (isFollowedByMe + followerCount on ['playlist', uuid]), not its own query.
   playlist_follows: [['playlist']],
 
-  // Board reference data: the list, the count, and the detail.
-  board_climbs: [['searchClimbs'], ['infiniteSearchClimbs'], ['searchClimbsCount'], ['climb']],
-  board_climb_stats: [['searchClimbs'], ['infiniteSearchClimbs'], ['searchClimbsCount'], ['climb']],
+  // Board reference data: the list, the count, the detail, and the setter picker
+  // (#5407 made ['setterStats'] a local read too — a sync that adds/removes
+  // climbs changes who's set on the board, so it must refresh alongside search).
+  //
+  // ['similarClimbs'] / ['holdHeatmap'] — answered on device from board_climbs
+  // joined to the derived holds index (holds-index/), so a climb arriving,
+  // changing or being hidden changes the strip and the heatmap.
+  board_climbs: [
+    ['searchClimbs'],
+    ['infiniteSearchClimbs'],
+    ['searchClimbsCount'],
+    ['climb'],
+    ['setterStats'],
+    ['similarClimbs'],
+    ['holdHeatmap'],
+  ],
+  // The setter picker reads stats too, on Woods only: a climb set at another angle
+  // counts toward its setter at the browsed angle once it has a stats row there
+  // (the browsed-angle restriction, #5642), so a stats pull can change a count.
+  // ['holdHeatmap'] too: stats colour the ascent and grade modes, and decide the
+  // climb set for minAscents / minRating / grade-range filters. Only an active
+  // query refetches, so this costs nothing unless the overlay is up.
+  board_climb_stats: [
+    ['searchClimbs'],
+    ['infiniteSearchClimbs'],
+    ['searchClimbsCount'],
+    ['climb'],
+    ['setterStats'],
+    ['holdHeatmap'],
+  ],
   // The stats keys plus the two grade-specific keys the play-drawer grade
   // section and the by-angle chart read.
   board_climb_grades: [
@@ -81,6 +134,22 @@ export const TABLE_INVALIDATE_KEYS: Record<string, InvalidateKeys> = {
     ['boardseshGrade'],
     ['boardseshGradesForAngles'],
   ],
+
+  // The device-derived holds index (holds-index/hold-index.ts). Not a synced
+  // table — nothing pulls or drains it — but the index builder invalidates
+  // through this map after a chunk changed rows, so it lives here with the rest.
+  board_climb_hold_sets: [['similarClimbs'], ['holdHeatmap']],
+
+  // Deliberately empty — not a placeholder.
+  //
+  // A wall's holds and photo are read back through the spray wall registry
+  // (`packages/mobile/src/lib/spray/spray-wall-registry.ts`, SW-07 / #5440),
+  // which is a plain map the render path reads synchronously and which carries
+  // its own subscription — there is no query key to bust. The climb-facing
+  // halves of a reset (the badge, the Intact / Lost-holds filter) ride on
+  // `board_climbs.missing_hold_count` and are already covered by that table's
+  // keys above. Give this real keys if a wall ever grows a React Query surface.
+  spray_walls: [],
 };
 
 /**

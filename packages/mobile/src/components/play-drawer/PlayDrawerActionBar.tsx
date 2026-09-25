@@ -4,7 +4,9 @@ import { useTranslation } from 'react-i18next';
 import { Icon } from '../Icon';
 import { Text } from '../Text';
 import { BleLightbulbButton } from '../ble/BleLightbulbButton';
+import type { BleLightbulbLabelKind } from '../ble/ble-lightbulb-button-state';
 import { LightbulbHolderBadge } from './LightbulbHolderBadge';
+import { FirstConnectPill } from './FirstConnectPill';
 import { PlayDrawerCommitBar } from './PlayDrawerCommitBar';
 import type { CommitBarMode, CommitButtonLabel } from './wall-state';
 import { ActionButton, SIZES, type ButtonSize, drawerActionBarStyles } from '../drawer-action-bar/DrawerActionBar';
@@ -36,6 +38,12 @@ type PlayDrawerActionBarProps = {
   lightbulbPending?: boolean;
   autoDisconnectWarning?: boolean;
   lightbulbAccessibilityLabel?: string;
+  /**
+   * Which sentence the bulb's label carries, resolved from what a tap actually
+   * does (`getBleLightbulbLabelKind`). Defaults to the old connected/not-connected
+   * split for callers that don't pass it.
+   */
+  lightbulbLabelKind?: BleLightbulbLabelKind;
   lightbulbLongPressAccessibilityHint?: string;
   lightbulbLongPressEnabled?: boolean;
   /**
@@ -44,6 +52,21 @@ type PlayDrawerActionBarProps = {
    * rather than at the call site (see `viewer`).
    */
   showLightbulb?: boolean;
+  /**
+   * The connect-step test's treatment (#5654, PR 7): the bulb leaves the first
+   * row and comes back as a labelled "Light it on the board" pill at the right
+   * end of the second row. Share and queue move into ⋯ (the host adds the queue
+   * to that menu), the heart and angle stay, and the tick keeps the hero slot.
+   * The host decides it (`useFirstConnectPill`); commit mode and an anonymous
+   * viewer still win here, like every other row rule.
+   */
+  connectPill?: boolean;
+  /**
+   * The pill's tap. Separate from `onLightbulb` so a connect from the pill is
+   * logged as the pill's (Board Connect Tapped `first_connect_pill`), not the
+   * bare bulb's. Falls back to `onLightbulb`.
+   */
+  onConnectPill?: () => void;
   /** Show the holder avatar pip on the lightbulb. Suppressed when the wall-state
    *  pill already carries the driver's face in the header, so the same face never
    *  appears twice in the drawer (see `shouldShowHolderBadge` in wall-state.ts). */
@@ -59,6 +82,11 @@ type PlayDrawerActionBarProps = {
   showBackToLive?: boolean;
   /** Commit-mode only: hidden when the displayed climb is already the lit one. */
   showPutOnWall?: boolean;
+  /** Commit-mode only: someone moved the wall mid-browse, so the pair swaps to
+   *  Keep theirs / Put mine up and the question floats above the row. */
+  showConfirm?: boolean;
+  /** Commit-mode only: the lit climb's name, for the confirm's question. */
+  wallClimbName?: string | null;
   /** Commit-mode only: "Put on the wall" vs "Set active" where no wall is reachable. */
   commitLabel?: CommitButtonLabel;
   onBackToLive?: () => void;
@@ -96,6 +124,11 @@ type PlayDrawerActionBarProps = {
   onTickPress: () => void;
   onTickLongPress: () => void;
   onOpenAngleSelector?: () => void;
+  /** The hold heatmap toggle. Omitted (or an anonymous viewer) → no button. */
+  onToggleHeatmap?: () => void;
+  heatmapActive?: boolean;
+  /** The heatmap's answer is on its way. */
+  heatmapBusy?: boolean;
 };
 
 export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
@@ -110,13 +143,18 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
   lightbulbPending = false,
   autoDisconnectWarning = false,
   lightbulbAccessibilityLabel,
+  lightbulbLabelKind,
   lightbulbLongPressAccessibilityHint,
   lightbulbLongPressEnabled = lightbulbActive,
   showLightbulb = true,
+  connectPill = false,
+  onConnectPill,
   showHolderBadge = true,
   secondaryMode = 'actions',
   showBackToLive = false,
   showPutOnWall = false,
+  showConfirm = false,
+  wallClimbName = null,
   commitLabel = 'putOnWall',
   onBackToLive,
   onCommit,
@@ -136,16 +174,37 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
   onTickPress,
   onTickLongPress,
   onOpenAngleSelector,
+  onToggleHeatmap,
+  heatmapActive = false,
+  heatmapBusy = false,
 }: PlayDrawerActionBarProps) {
   const { t } = useTranslation('session');
   const { t: tClimbs } = useTranslation('climbs');
   const { t: tSettings } = useTranslation('settings');
   const theme = useTheme();
+  // What the bulb says it does. Resolved here rather than inline in the JSX so
+  // the four cases read as four cases. Callers that don't pass a kind fall back
+  // to the old connected/not-connected split.
+  const resolvedLabelKind = lightbulbLabelKind ?? (lightbulbConnected ? 'disconnect' : 'connect');
+  const lightbulbLabel =
+    resolvedLabelKind === 'releaseWall'
+      ? tSettings('ble.releaseWall')
+      : resolvedLabelKind === 'takeWall'
+        ? tSettings('ble.takeWall')
+        : resolvedLabelKind === 'relay'
+          ? tSettings('ble.relayToWall')
+          : resolvedLabelKind === 'peerDriving'
+            ? tSettings('ble.peerDrivingBoard')
+            : resolvedLabelKind === 'disconnect'
+              ? tSettings('ble.turnOff')
+              : tSettings('ble.connectBoard');
   const isAnonymous = viewer === 'anonymous';
   // A signed-out reader has no queue to commit into and no wall to take, so the
   // suppression lives here with the rest of the `viewer` rules rather than only
   // in the resolver — the same shape as `showLightbulb` above.
   const inCommitMode = secondaryMode === 'commit' && !isAnonymous && onBackToLive != null && onCommit != null;
+  // The pill replaces the bulb only where the bulb would have been offered.
+  const showConnectPill = connectPill && showLightbulb && !isAnonymous && !inCommitMode;
 
   const handleSignIn = useCallback(() => {
     hapticMedium();
@@ -181,6 +240,11 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
     hapticMedium();
     onShare();
   }, [onShare]);
+
+  const handleToggleHeatmap = useCallback(() => {
+    hapticMedium();
+    onToggleHeatmap?.();
+  }, [onToggleHeatmap]);
 
   return (
     <View style={drawerActionBarStyles.container}>
@@ -248,7 +312,9 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
           />
         </View>
         <View style={drawerActionBarStyles.primarySlot}>
-          {showLightbulb && !isAnonymous ? (
+          {/* With the connect pill up, this slot stays empty: the bulb is the
+              pill in the row below, and the row keeps its five-slot spacing. */}
+          {showLightbulb && !isAnonymous && !showConnectPill ? (
             <>
               <BleLightbulbButton
                 isConnected={lightbulbActive}
@@ -257,10 +323,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
                 autoDisconnectWarning={autoDisconnectWarning}
                 onPress={onLightbulb}
                 onLongPress={lightbulbLongPressEnabled ? onLightbulbLongPress : undefined}
-                accessibilityLabel={
-                  lightbulbAccessibilityLabel ??
-                  (lightbulbConnected ? tSettings('ble.turnOff') : tSettings('ble.connectBoard'))
-                }
+                accessibilityLabel={lightbulbAccessibilityLabel ?? lightbulbLabel}
                 scanningAccessibilityHint={tSettings('ble.scanning')}
                 writingAccessibilityHint={tSettings('ble.writing')}
                 longPressAccessibilityHint={
@@ -295,6 +358,8 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
           <PlayDrawerCommitBar
             showBackToLive={showBackToLive}
             showPutOnWall={showPutOnWall}
+            showConfirm={showConfirm}
+            wallClimbName={wallClimbName}
             commitLabel={commitLabel}
             onBackToLive={onBackToLive}
             onCommit={onCommit}
@@ -327,6 +392,20 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
                 }
               />
             )}
+            {/* Where the climbs go on this board. A read, but it answers from a
+            downloaded board (or offers the download), which a signed-out reader
+            of the web export has no way to use. */}
+            {onToggleHeatmap && !isAnonymous && (
+              <ActionButton
+                size="sm"
+                iconName="flame"
+                onPress={handleToggleHeatmap}
+                active={heatmapActive}
+                activeColor={theme.brandColors.warning}
+                busy={heatmapActive && heatmapBusy}
+                accessibilityLabel={heatmapActive ? tClimbs('mobile.heatmap.hide') : tClimbs('mobile.heatmap.show')}
+              />
+            )}
             {/* The ellipsis opens queue / favourite / tick / playlist rows — every
             one of them an account action. */}
             {!isAnonymous && (
@@ -340,18 +419,25 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
 
             <View style={drawerActionBarStyles.spacer} />
 
-            {/* Share is a pure client action and the whole point of a read-only
-            climb page, so it stays. */}
-            <ShareButton size="sm" onPress={handleShare} accessibilityLabel={tClimbs('mobile.climbRow.share')} />
-            {/* A queue means nothing without a wall or a session, and the sheet it
-            opens is a write surface. */}
-            {!isAnonymous && (
-              <ActionButton
-                size="sm"
-                iconName="queue"
-                onPress={onOpenQueue}
-                accessibilityLabel={t('playView.actionBar.queueCountAria', { count: remainingQueueCount })}
-              />
+            {showConnectPill ? (
+              // Share and queue live in ⋯ while the pill is up.
+              <FirstConnectPill pending={lightbulbPending} onPress={onConnectPill ?? onLightbulb} />
+            ) : (
+              <>
+                {/* Share is a pure client action and the whole point of a read-only
+                climb page, so it stays. */}
+                <ShareButton size="sm" onPress={handleShare} accessibilityLabel={tClimbs('mobile.climbRow.share')} />
+                {/* A queue means nothing without a wall or a session, and the sheet it
+                opens is a write surface. */}
+                {!isAnonymous && (
+                  <ActionButton
+                    size="sm"
+                    iconName="queue"
+                    onPress={onOpenQueue}
+                    accessibilityLabel={t('playView.actionBar.queueCountAria', { count: remainingQueueCount })}
+                  />
+                )}
+              </>
             )}
           </>
         )}

@@ -9,6 +9,7 @@ import { ActivityIndicator } from '../ActivityIndicator';
 import { BoardCarousel } from '../board-discovery/BoardCarousel';
 import type { DiscoveryBoardItem } from '../board-discovery/BoardDiscoveryCard';
 import { userBoardsToItems } from '../board-discovery/board-items';
+import { useSprayLabelOptions } from '../../lib/spray/use-spray-label-options';
 import { sortViewerOwnedFirst } from '../board-discovery/board-card-actions';
 import { useBoardOfflineState } from '../board-discovery/use-board-offline-state';
 import { useOnboardingBoardCopy } from '../../lib/onboarding/use-onboarding-copy';
@@ -85,9 +86,16 @@ export function OnboardingBoardStep({
   useBlockBack();
 
   const boardOfflineState = useBoardOfflineState();
+  const labelOptions = useSprayLabelOptions();
   const items = useMemo(
-    () => userBoardsToItems(sortViewerOwnedFirst(boards, currentUserId), null, boardOfflineState, currentUserId),
-    [boards, boardOfflineState, currentUserId],
+    () =>
+      userBoardsToItems(sortViewerOwnedFirst(boards, currentUserId), {
+        activeUuid: null,
+        offlineStateFor: boardOfflineState,
+        currentUserId,
+        labelOptions,
+      }),
+    [boards, boardOfflineState, currentUserId, labelOptions],
   );
 
   // Both handlers resolve the item back to its UserBoard. A refetch that drops a

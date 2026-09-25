@@ -22,6 +22,12 @@ CHANGELOG.md
 # config (the CI PR-lint already skips `embedded/`).
 embedded/
 docs/embedded-architecture.md
+# Recorded screenshot fixtures (docs/mobile-screenshot-fixtures.md). The record
+# backend writes these files and `vp run mobile:screenshot-fixtures-merge`
+# rewrites the manifest; a formatting pass would put both permanently at odds
+# with what the next recording emits.
+packages/mobile/screenshot-fixtures/
+
 # Maestro flow yamls are consumed by the Maestro CLI and asserted VERBATIM by
 # scripts/__tests__/mobile-screenshots.test.ts (exact quote style included) —
 # a formatting pass that rewrites quotes breaks those tests.
@@ -44,3 +50,14 @@ packages/mobile/.maestro/
 # Per the note in vite.config.ts, path forms the glob list misses are handled
 # here reliably — this is one of them.
 packages/web/board-controller/
+
+# ml/holds JSON is written by Python (json.dumps) and regenerated on every
+# eval run; formatting it would be undone immediately. Mirrors the fmt ignore
+# list in vite.config.ts.
+ml/holds/**/*.json
+
+# The hold-detection parity oracle is written by the same kind of Python
+# (packages/shared/hold-detection/scripts/capture-fixture-outputs.py,
+# json.dumps(indent=2)) and regenerated whenever the model is retrained.
+# Mirrors the fmt ignore list in vite.config.ts.
+packages/shared/hold-detection/src/__tests__/fixtures/*.json

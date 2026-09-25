@@ -1,16 +1,16 @@
 {
   "metadata": {
     "library": {
-      "title": "Descubre playlists de escalada",
-      "description": "Descubre playlists públicas de escalada y gestiona las tuyas al iniciar sesión."
+      "title": "Playlists de escalada para Kilter, Tension y MoonBoard",
+      "description": "Playlists públicas creadas por escaladores, más las que Boardsesh rehace cada noche. Ábrela en la app y escálala."
     },
     "detail": {
       "fallbackTitle": "Playlist",
       "fallbackDescription": "Mira los bloques de esta playlist en Boardsesh.",
       "privateTitle": "Playlist privada",
       "privateDescription": "Esta playlist es privada.",
-      "climbCountDescription_one": "Una playlist de escalada en Boardsesh con {{count}} bloque.",
-      "climbCountDescription_other": "Una playlist de escalada en Boardsesh con {{count}} bloques.",
+      "generatedDescription_one": "{{count}} bloque de {{board}} en {{name}}. Abre la playlist en Boardsesh y escálalo.",
+      "generatedDescription_other": "{{count}} bloques de {{board}} en {{name}}. Abre la playlist en Boardsesh y escálalos.",
       "ogAlt": "La playlist {{name}} en Boardsesh"
     }
   },
@@ -18,18 +18,13 @@
     "signInBanner": {
       "title": "Inicia sesión para usar tu biblioteca",
       "description": "Registra tus encadenes y gestiona tus playlists.",
-      "cta": "Iniciar sesión",
-      "modalTitle": "Inicia sesión en Boardsesh",
-      "modalDescription": "Inicia sesión para registrar tus bloques y gestionar tus playlists."
+      "cta": "Iniciar sesión"
     },
     "sections": {
-      "jumpBackIn": "Continúa donde lo dejaste",
       "pinned": "Fijadas",
-      "discover": "Descubre",
       "forYou": "Para ti",
       "community": "Playlists de la comunidad"
     },
-    "showMore": "Ver más",
     "communityByline": "{{creatorName}} - {{climbCount}}",
     "allPlaylists": {
       "title": "Mis listas",
@@ -93,8 +88,7 @@
     "empty": {
       "title": "Aún no tienes playlists",
       "description": "Guarda tus proyectos y tus bloques favoritos en una playlist para tenerlos a mano.",
-      "createCta": "Crear playlist",
-      "cta": "Crear playlist en la app"
+      "createCta": "Crear playlist"
     },
     "createFab": {
       "ariaLabel": "Crear playlist"
@@ -221,5 +215,23 @@
     "selectBoardForPlaylist": "Selecciona un plafón antes de crear una playlist",
     "createdPlaylistToast": "Playlist «{{name}}» creada",
     "createPlaylistFailed": "No se pudo crear la playlist"
+  },
+  "directory": {
+    "h1": "Playlists para encadenar",
+    "lead_one": "Ábrela en la app y escálala. {{formattedCount}} playlist pública para elegir.",
+    "lead_other": "Ábrela en la app y escálala. {{formattedCount}} playlists públicas para elegir.",
+    "leadNoCount": "Ábrela en la app y escálala.",
+    "curated": {
+      "title": "Se rehacen cada noche",
+      "lead": "Las favoritas, los bloques nuevos y las joyas escondidas de cada plafón, a partir de lo que la gente encadena."
+    },
+    "community": {
+      "title": "Guardadas por escaladores",
+      "lead": "Ordenadas por cuántos escaladores las han guardado."
+    },
+    "empty": {
+      "title": "Todavía no hay playlists públicas",
+      "body": "Crea una en la app y aparecerá aquí."
+    }
   }
 }

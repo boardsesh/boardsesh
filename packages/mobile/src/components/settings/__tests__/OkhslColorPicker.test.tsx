@@ -195,10 +195,10 @@ vi.mock('../../../lib/okhsl', async (importOriginal) => {
 
 import { OkhslColorPicker } from '../OkhslColorPicker';
 
-const LIGHTNESS_LABEL = 'mobile.more.accessibility.sliders.lightness';
-const SATURATION_LABEL = 'mobile.more.accessibility.sliders.saturation';
-const HUE_LABEL = 'mobile.more.accessibility.sliders.hue';
-const HEX_LABEL = 'mobile.more.accessibility.hexLabel';
+const LIGHTNESS_LABEL = 'mobile.settings.accessibility.sliders.lightness';
+const SATURATION_LABEL = 'mobile.settings.accessibility.sliders.saturation';
+const HUE_LABEL = 'mobile.settings.accessibility.sliders.hue';
+const HEX_LABEL = 'mobile.settings.accessibility.hexLabel';
 // These are intentional visual-contract assertions: lightness and saturation
 // each sample 12 stops, while hue includes both endpoints with 13 stops.
 const EXPECTED_GRADIENT_STOP_COUNTS = [12, 12, 13] as const;

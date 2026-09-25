@@ -210,7 +210,10 @@
     "similarClimbs": {
       "title": "Escaladas similares",
       "empty": "No se encontraron escaladas similares",
-      "retry": "Reintentar"
+      "retry": "Reintentar",
+      "preparing": "Preparando bloques similares…",
+      "waitingForDownload": "Los bloques similares aparecen en cuanto termine de descargarse {{name}}.",
+      "downloadToSee": "Descarga este plafón para ver bloques similares"
     },
     "community": {
       "moderation": {
@@ -309,6 +312,51 @@
       "leaveInsteadAction": "Solo salir",
       "endSessionFailedLeft": "No se pudo terminar la sesión: has salido de ella."
     },
+    "restTimer": {
+      "armLabel": "Temporizador de descanso",
+      "armDescription": "Cronometra tu descanso tras cada encadene y pasa al siguiente bloque cuando se acabe.",
+      "waitingForTick": "Registra un bloque para empezar",
+      "targetLabel": "Descanso",
+      "targetAria": "Duración del descanso",
+      "off": "Desactivado",
+      "modeLabel": "Cadencia",
+      "modeAria": "Cadencia del temporizador de descanso",
+      "modeAfterTick": "Tras cada encadene",
+      "modeOnTheMinute": "Ritmo fijo",
+      "modeAfterTickHint": "Tu descanso empieza en cuanto registras un bloque.",
+      "modeOnTheMinuteHint": "El ritmo sigue su marcha, tardes lo que tardes en el bloque.",
+      "autoAdvance": "Pasar al siguiente bloque",
+      "autoAdvanceHint": "Lo enciende en el muro por ti.",
+      "autoAdvanceBlocked": "Solo quien controla el muro puede mover la cola.",
+      "pause": "Pausar",
+      "resume": "Reanudar",
+      "reset": "Reiniciar",
+      "resetAction": "Reiniciar el temporizador",
+      "turnOff": "Desactivar el temporizador",
+      "queueEnded": "Cola vacía",
+      "queueEndedToast": "No queda nada en la cola.",
+      "openHint": "Abre las opciones del temporizador",
+      "runningAria": "Temporizador de descanso, {{time}} desde tu último bloque",
+      "countdownAria": "Temporizador de descanso, quedan {{time}}",
+      "overrunAria": "Temporizador de descanso, {{time}} de más",
+      "noTickAria": "Temporizador de descanso activo, objetivo {{target}}, empieza cuando registres un bloque",
+      "pausedAria": "Temporizador de descanso en pausa en {{time}}",
+      "clockCaptionRest": "Descanso de {{target}}",
+      "clockCaptionCountUp": "Desde tu último bloque",
+      "clockCaptionPaused": "En pausa",
+      "clockCaptionOver": "Te pasaste del descanso",
+      "lengthOffFootnote": "Cuenta hacia arriba desde tu último bloque. Nada se mueve solo.",
+      "autoAdvanceFootnote": "Solo con Boardsesh abierto.",
+      "autoAdvanceNeedsLength": "Elige una duración de descanso para mover la cola automáticamente.",
+      "lengthPillAria": "Duración del descanso, {{value}}",
+      "lengthPillHint": "Añade 30 segundos. Mantén pulsado para elegir cualquier duración."
+    },
+    "sessionVisibility": {
+      "title": "Mostrar esta sesión en directo",
+      "descriptionOn": "Tu grupo y quienes escalan en este plafón pueden verla y unirse.",
+      "descriptionOff": "Solo quien tenga tu enlace de invitación puede unirse.",
+      "updateError": "No se pudo cambiar quién ve esta sesión. Inténtalo de nuevo."
+    },
     "queueSheet": {
       "emptyQueue": "Tu cola está vacía",
       "toggleHistory": "Mostrar historial",
@@ -317,6 +365,7 @@
     },
     "queueSnackbar": {
       "added": "Bloque añadido a la cola",
+      "playingNext": "El bloque va a continuación",
       "open": "Abrir",
       "openAria": "Abrir cola"
     },
@@ -394,7 +443,23 @@
         "previewTag": "Vista previa",
         "backToLive": "Volver al muro",
         "browseHistory": "Ver historial"
-      }
+      },
+      "gymWalls": {
+        "header": "Otros plafones en {{gym}}",
+        "headerNoGym": "Otros plafones aquí",
+        "sameClimbs": "Los mismos bloques que este plafón",
+        "rowAria": "Cambiar a {{board}}",
+        "showAll": "Ver los {{count}} plafones",
+        "switchFailed": "No se pudo cambiar a {{board}}. Inténtalo de nuevo.",
+        "angle": "{{angle}}°",
+        "angleFixed": "fijo a {{angle}}°",
+        "noLights": "sin luces",
+        "headerSwitcherAria": "Estás en {{board}}. Toca para cambiar a otro plafón de aquí.",
+        "headerSwitcherHintOpen": "Muestra los otros plafones de este rocódromo",
+        "headerSwitcherHintClose": "Oculta los otros plafones"
+      },
+      "kilterHistorySource": "Iluminado desde Kilter",
+      "retryHistory": "Volver a cargar el historial"
     },
     "toast": {
       "sessionEnded": "Sesión terminada",
@@ -409,7 +474,7 @@
       "renameNotAllowed": "Solo quien creó la sesión puede cambiarle el nombre.",
       "editTitleAria": "Editar el nombre de la sesión",
       "minimize": "Minimizar sesión",
-      "recordTab": "Grabar",
+      "recordTab": "Sesión",
       "returnToSession": "Volver a la sesión",
       "preBoardLabel": "Plafón",
       "preGeneratorLabel": "Entrenamiento",
@@ -453,7 +518,6 @@
       "preGeneratorTuning": "Ajustes",
       "preStart": "Empezar",
       "preStarting": "Empezando…",
-      "preNoBoard": "Elige un plafón para empezar",
       "preStartError": "No se pudo iniciar la sesión. Inténtalo de nuevo.",
       "preWorkoutPreviewTitle": "Vista previa del entrenamiento",
       "preWorkoutPreviewGenerating": "Creando tu entrenamiento…",
@@ -493,7 +557,11 @@
       "inviteCopied": "Enlace copiado",
       "inviteShare": "Compartir",
       "inStatsHardestEach": "Más difíciles",
-      "inviteAction": "Invitar"
+      "inviteAction": "Invitar",
+      "browseClimbs": "Explorar bloques",
+      "changeBoard": "Cambiar de plafón",
+      "chooseBoard": "Elegir plafón",
+      "noBoardSelected": "Ningún plafón seleccionado"
     }
   },
   "playView": {
@@ -531,8 +599,10 @@
     "play": "Reproducir",
     "pause": "Pausar",
     "replay": "Repetir",
-    "speed": "Velocidad de reproducción",
-    "speedHint": "Mantén pulsado para ajustar la velocidad",
+    "pace": "Segundos por fotograma",
+    "paceHint": "Mantén pulsado para ajustar",
+    "paceValueA11y_one": "{{count}} segundo",
+    "paceValueA11y_other": "{{count}} segundos",
     "peerFrameMismatch": "Reproduciendo por tu cuenta. Alguien de la sesión usa otra versión de la app que lee los fotogramas de esta vía de otra forma.",
     "shareError": "No se pudo compartir — inténtalo otra vez",
     "favoriteError": "No se pudieron actualizar tus favoritos — inténtalo otra vez",
@@ -553,7 +623,7 @@
     "tickBar": {
       "attemptLabel": "intento",
       "flashSaveLabel": "Flash",
-      "sendSaveLabel": "Envío",
+      "sendSaveLabel": "Encadenado",
       "starRating_one": "{{count}} estrella",
       "starRating_other": "{{count}} estrellas"
     }

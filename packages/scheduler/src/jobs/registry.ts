@@ -1,5 +1,6 @@
 import { triggerWebCron } from './trigger-web-cron';
 import { refreshGymActivityStats } from './refresh-gym-activity-stats';
+import { purgeSprayWallPhotos } from './purge-spray-wall-photos';
 import type { JobDefinition } from './types';
 
 /**
@@ -21,10 +22,10 @@ export const VERCEL_OWNED_CRON_PATHS: readonly string[] = [];
 const CLEANUP_TIMEOUT_MS = 120_000;
 
 /**
- * The heatmap prewarm and percentile routes both declare `maxDuration = 300`.
- * That number is not a measurement — it is Vercel's Pro ceiling, the largest
- * value the platform accepts, and both routes were pinned to it precisely
- * because there was nothing higher to ask for.
+ * The percentile route declares `maxDuration = 300`. That number is not a
+ * measurement — it is Vercel's Pro ceiling, the largest value the platform
+ * accepts, and the route was pinned to it precisely because there was nothing
+ * higher to ask for.
  *
  * A long-lived container has no such ceiling, so the scheduler grants the real
  * headroom the work wanted: 15 minutes. While web still serves from Vercel the
@@ -44,12 +45,30 @@ const WEEKLY_WARMUP_TIMEOUT_MS = 900_000;
  *
  * The route still exports `maxDuration = 300`, so on Vercel it would be cut off
  * first; off Vercel that export is inert and this is the only bound. 15 minutes
- * — the same headroom the weekly warm-ups get — leaves a cold, contended run
+ * — the same headroom the weekly percentile recompute gets — leaves a cold, contended run
  * room to finish rather than turning a slow refresh into a failed one, and a
  * genuinely wedged scan still cannot outlive the six-hour gap to the next tick.
  */
 const SITEMAP_REFRESH_TIMEOUT_MS = 900_000;
 const GYM_ACTIVITY_REFRESH_TIMEOUT_MS = 900_000;
+
+/**
+ * The spray wall photo purge lists and deletes object-storage keys for up to 200
+ * walls per run, one round trip per object. Nothing here scans a large table —
+ * the candidate query is an index read on `spray_walls_deleted_at_idx`, the
+ * partial index on `deleted_at IS NOT NULL` — so the bound is R2's latency, not
+ * the database's. Ten minutes is well past a realistic batch — the whole run is a
+ * few hundred DELETEs against R2 — and short enough that a wedged storage
+ * endpoint cannot hold a worker until the next day's tick.
+ *
+ * The deletes inside one wall's prefix are serial on purpose: a wall is a handful
+ * of objects (one photo plus one variant per version), 200 of them is still only
+ * hundreds of round trips, and fanning them out would trade a bounded run for R2
+ * rate-limit retries. A run that does not finish its batch is not a data loss —
+ * nothing was cleared for the walls it did not reach, so tomorrow's run takes
+ * them.
+ */
+const SPRAY_PHOTO_PURGE_TIMEOUT_MS = 600_000;
 
 export const JOBS: readonly JobDefinition[] = [
   {
@@ -64,55 +83,9 @@ export const JOBS: readonly JobDefinition[] = [
     run: triggerWebCron('/api/internal/cleanup'),
   },
 
-  // The five heatmap prewarms keep the 15-minute stagger vercel.json used.
-  // They are not independent of each other: each one hammers the same Postgres
-  // with a fan-out of heatmap aggregates, and firing them together would put
-  // five boards' worth of that load on the database at once. The stagger is the
-  // rate limit.
-  {
-    name: 'prewarm-heatmap-kilter',
-    schedule: '0 4 * * 0',
-    timezone: 'UTC',
-    timeoutMs: WEEKLY_WARMUP_TIMEOUT_MS,
-    webPath: '/api/internal/prewarm-heatmap/kilter',
-    run: triggerWebCron('/api/internal/prewarm-heatmap/kilter'),
-  },
-  {
-    name: 'prewarm-heatmap-tension',
-    schedule: '15 4 * * 0',
-    timezone: 'UTC',
-    timeoutMs: WEEKLY_WARMUP_TIMEOUT_MS,
-    webPath: '/api/internal/prewarm-heatmap/tension',
-    run: triggerWebCron('/api/internal/prewarm-heatmap/tension'),
-  },
-  {
-    name: 'prewarm-heatmap-decoy',
-    schedule: '30 4 * * 0',
-    timezone: 'UTC',
-    timeoutMs: WEEKLY_WARMUP_TIMEOUT_MS,
-    webPath: '/api/internal/prewarm-heatmap/decoy',
-    run: triggerWebCron('/api/internal/prewarm-heatmap/decoy'),
-  },
-  {
-    name: 'prewarm-heatmap-touchstone',
-    schedule: '45 4 * * 0',
-    timezone: 'UTC',
-    timeoutMs: WEEKLY_WARMUP_TIMEOUT_MS,
-    webPath: '/api/internal/prewarm-heatmap/touchstone',
-    run: triggerWebCron('/api/internal/prewarm-heatmap/touchstone'),
-  },
-  {
-    name: 'prewarm-heatmap-grasshopper',
-    schedule: '0 5 * * 0',
-    timezone: 'UTC',
-    timeoutMs: WEEKLY_WARMUP_TIMEOUT_MS,
-    webPath: '/api/internal/prewarm-heatmap/grasshopper',
-    run: triggerWebCron('/api/internal/prewarm-heatmap/grasshopper'),
-  },
   {
     name: 'profile-percentiles',
-    // Sunday 06:00 UTC — an hour after the last prewarm, so the recompute does
-    // not contend with the heatmap warm-up for database time.
+    // Sunday 06:00 UTC.
     schedule: '0 6 * * 0',
     timezone: 'UTC',
     timeoutMs: WEEKLY_WARMUP_TIMEOUT_MS,
@@ -162,6 +135,26 @@ export const JOBS: readonly JobDefinition[] = [
     timezone: 'UTC',
     timeoutMs: GYM_ACTIVITY_REFRESH_TIMEOUT_MS,
     run: refreshGymActivityStats,
+  },
+
+  // Storage retention for deleted spray walls (epic #5346 / SW-17): 30 days after
+  // an owner deletes a wall, its photographs go. Daily, because the window is
+  // measured in days and there is nothing to gain from checking more often.
+  //
+  // Overlap-safe, which JobDefinition requires: the mutation deletes objects and
+  // then clears `photo_key`, so a second run meeting a first re-lists prefixes
+  // that are already empty, deletes nothing twice, and never fails on a missing
+  // object.
+  {
+    name: 'purge-spray-wall-photos',
+    // 07:00 UTC — after the 06:30 gym activity rebuild rather than alongside it,
+    // so the two daily jobs never share a tick.
+    schedule: '0 7 * * *',
+    // Load-bearing for the same reason as every row above: a container's local
+    // zone is not guaranteed to be UTC.
+    timezone: 'UTC',
+    timeoutMs: SPRAY_PHOTO_PURGE_TIMEOUT_MS,
+    run: purgeSprayWallPhotos,
   },
 ];
 

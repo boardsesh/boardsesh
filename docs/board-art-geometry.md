@@ -372,6 +372,66 @@ so a ring an editor redraws is decimated by exactly the algorithm that produced 
 beside it. `scripts/generate-board-art-geometry.ts` still holds its own copy and switches to
 importing this one; until it does, a change to either has to be made to both.
 
+## Runtime geometry
+
+Everything above assumes a board whose art existed when the tables were generated.
+A **spray wall** does not: it is a photograph its owner took, its holds arrive from
+`sprayWallRenderData`, and its catalogue layout is created at runtime
+(`docs/spray-walls.md`). There is no shard for it and there never can be.
+
+So the loader takes a second source, consulted **before** the shards:
+
+```ts
+import {
+  registerRuntimeGeometry,
+  unregisterRuntimeGeometry,
+  getRuntimeGeometry,
+  boardArtGeometryKey,
+} from '@boardsesh/board-art-geometry';
+
+registerRuntimeGeometry(boardArtGeometryKey({ boardName: 'spray', layoutId, sizeId: layoutId }), {
+  outlines, // placementId -> flat ring in radius units, exactly as a shard stores it
+  silhouetteLightness: {},
+  ledBright: {},
+});
+```
+
+| Function | What it does |
+| --- | --- |
+| `registerRuntimeGeometry(key, geometry)` | Publishes geometry under a shard key, **replacing** whatever was there. |
+| `unregisterRuntimeGeometry(key)` | Withdraws it, so the key falls back to the shards (for a wall: to nothing). |
+| `getRuntimeGeometry(key)` | What is registered right now, or `null`. |
+
+**Who registers.** Only `packages/mobile/src/lib/spray/spray-wall-registry.ts`, from
+`registerSprayWall`. It maps the wall's canonical holds through the version's inverse
+homography into photo pixels first, so what lands here is in the same radius units,
+relative to the same centres, as any shard.
+
+Four things about the ordering are load-bearing.
+
+- **Runtime beats the shard cache, including a memoised `null`.** `loadBoardArtGeometry`
+  caches "absent from the catalogue" forever, which is true of a shard and false of a
+  wall — a surface that asked before the query landed would otherwise get rings for the
+  rest of the session.
+- **Registering replaces rather than merges.** A wall reset is a new hold generation, and
+  a hold that came off must disappear rather than linger because it was registered once.
+- **It cannot reach a shipped shard.** Registration is the caller's explicit act under a
+  key it chose; nothing merges into a catalogue board's table, and `unregisterRuntimeGeometry`
+  restores the catalogue answer.
+- **`boardArtGeometryPending` is false for a registered key.** The geometry is already in
+  hand, so nothing is in flight, and a consumer that skips its memo while a chunk downloads
+  does not skip it here.
+
+`clearBoardArtGeometryCache()` drops runtime registrations along with the shards. That is
+a test-only reset; production withdraws a wall by name.
+
+Consumers need no branch at all. `spray/<layoutId>-<sizeId>` is exactly what
+`boardArtGeometryKey` produces for a wall (whose size id *is* its layout id), so
+`use-native-climb-render.ts` and the backend's `board-geometry.ts` read a wall's true hold
+shapes through the `loadBoardArtGeometry` call they already make. Aura draws the
+silhouettes, classic draws rings, and a hold with no stored outline falls back to a ring
+like any untraced placement.
+
 ## Hand-corrected outlines (`hold_outline_overrides`)
 
 The tracer gets most holds right; the ones it does not are fixed as database rows rather
@@ -669,8 +729,8 @@ hand-marked hold — not a law. The loop to retune them:
 
 ### The editor that writes them
 
-The rows are drawn by hand in the Expo app, on two admin-only routes under the profile
-stack: `app/(tabs)/profile/outline-editor.tsx` picks a board, layout and size, and
+The rows are drawn by hand in the Expo app, on two admin-only routes under the settings
+stack: `app/settings/outline-editor.tsx` picks a board, layout and size, and
 `outline-canvas.tsx` opens the board with every placement's outline drawn over it —
 traced, overridden, missing, and a ghost of the shard outline still sitting under a
 differing override. The entry point is More → Development → Hold Outlines, gated
@@ -695,6 +755,63 @@ test, so the editor never rejects a ring the backend would have taken.
 A revert deletes the row immediately, but the deployed shard keeps its old traced outline
 until the next export, so what a corrected hold renders as in the meantime is the shard's
 version. The toolbar says so.
+
+#### The same editor, pointed at a spray wall
+
+SW-08 (#5441) gave the editor a second **target**. `outline-editor/editor-target.ts` names
+the two and what each may do — and it is one pure function, `editorTargetCapabilities`,
+because the gate, the toolbar, the SVG layer and the write path all branch on the same
+answer and a capability computed twice is a capability that will disagree with itself.
+
+| | `catalogue` | `sprayWall` |
+| --- | --- | --- |
+| Who | admin (`OutlineEditorGate`) | the wall's own edit rule (`SprayWall.viewerCanEdit`) |
+| Writes | `hold_outline_overrides` | `upsertSprayWallHolds` / `removeSprayWallHolds` on the draft version |
+| Kinds | silhouette + LED inner | silhouette only — a wall has no LEDs to annotate |
+| Holds | the manufacturer's; only the boundary is editable | the work itself: add, move, resize, delete, merge |
+| Finger draws | off (an iPad and a Pencil are the point) | on (a phone in a garage has no Pencil) |
+| Strings | hardcoded admin English | the i18n catalogs, all four locales |
+
+The catalogue path is untouched by all of it. `DrawStrokeOverlay`, `stroke.ts`,
+`OutlineSvgLayer` and `OutlineCanvasScreen` are the same files they were, which is what
+keeps the `manualActivation` + `pinchRef` coexistence and the round-trip ring algebra from
+drifting. The wall target reuses them rather than forking them: `SprayHoldEditorScreen`
+mounts the *same* `DrawStrokeOverlay`, and reads what a stroke MEANT through the active tool
+instead of changing what a stroke IS.
+
+That reading is `spray-hold-tools.ts`, and it is pure. `classifyStroke` answers tap or drag
+on the stroke's BOUNDING BOX rather than its endpoints — a loop drawn around a hold ends
+roughly where it began, and judging it by its endpoints would call every traced outline a
+tap. A tap places a circle at the wall's median hold radius; a loop goes through
+`buildOutlineRing` unchanged, so a wall gets exactly the ring a board would, with the centre
+at the polygon centroid and the radius the equivalent-area one. A merge is the convex hull
+of the two silhouettes — a real polygon union is a clipping library this app will not grow
+for one tool, and a hull always contains both holds, is always simple, and always contains
+its own centroid, so the ring contract is always satisfiable.
+
+State is one reducer with undo (`spray-hold-editor-reducer.ts`), modelled on `framesReducer`
+in `@boardsesh/create-climb-react`: a present, a capped past, a future, snapshot-based
+because a merge is not trivially invertible. Two rules in it are load-bearing rather than
+stylistic. A hold this session DREW is dropped outright on delete while one the wall already
+had is recorded for `removeSprayWallHolds` — the server's own split, because a climb set on
+an inherited hold has to stay findable. And a merge keeps the STORED hold as the survivor
+even when it is the second id selected, so the merge is a correction of a hold with history
+rather than a delete-plus-add that orphans every climb on it.
+
+The ring contract is imported, never restated. `outline-editor/ring-contract.ts` calls
+`isValidOutlineRing` — the same function the backend's `SprayOutlineRingSchema` refines on —
+and its test asserts sample-for-sample agreement rather than re-deriving the bounds, so a
+client cannot draw a silhouette its own validator accepts and the server refuses. A ring
+that does not survive a merge or a homography is dropped to `outline: null`, which is a hold
+with no traced silhouette rather than a hold with a broken one; losing the hold over its
+silhouette would be the worse answer.
+
+The one coordinate hop the catalogue target does not have is canonical: a wall's holds are
+stored once in the wall's own frame, while the editor draws on the untouched photograph.
+`lib/spray/spray-hold-canonical.ts` is the write half and `spray-hold-geometry.ts` (SW-07)
+the read half, and they are exact mirrors — the test that matters is the round trip, because
+the failure mode is a hold saved at the top of the wall coming back a hand's width to the
+left.
 
 ## Regenerating
 

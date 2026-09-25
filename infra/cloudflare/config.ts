@@ -1,6 +1,6 @@
 /// <reference types="node" />
 
-import { AI_CRAWLER_TOKENS } from '../../packages/web/app/lib/crawler-policy';
+import { BLOCKED_CRAWLER_TOKENS } from '../../packages/web/app/lib/crawler-policy';
 
 // Declarative desired-state for the Cloudflare-managed boardsesh.com zone. This
 // is plain typed data — no side effects, no API calls. scripts/cloudflare-apply.ts
@@ -44,6 +44,29 @@ export const ASSETS_CNAME_TARGET = 'boardsesh-static-assets.t3.tigrisbucket.io';
 
 /** Path prefix whose responses are immutable (`Cache-Control: … immutable`, 1y) and safe to edge-cache. */
 export const OG_PATH_PREFIX = '/og/';
+
+/**
+ * The name the homelab DR standby uses to reach the production PostgreSQL
+ * primary, fronting Railway's TCP proxy for that service.
+ *
+ * It exists so the standby can verify a certificate against a hostname we
+ * control. Railway only ever allocates a random high port for a TCP proxy and
+ * can reassign the proxy hostname, so a certificate issued for
+ * `*.proxy.rlwy.net` would be an identity claim over a name someone else
+ * administers, and would need reissuing whenever Railway moved it. With this
+ * record in front, that becomes a DNS edit instead.
+ *
+ * See docs/BOARDSESH_POSTGRES_DR.md in blackheathdc-ansible for the standby side.
+ */
+export const DR_PRIMARY_HOSTNAME = 'pgdr.boardsesh.com';
+
+/**
+ * Railway's TCP proxy host for the `PostGIS - PG18` service. The proxy routes by
+ * PORT rather than by hostname, so any name resolving to this address reaches
+ * the same database; the port lives in the standby's `primary_conninfo`, because
+ * DNS cannot carry one.
+ */
+export const DR_PRIMARY_CNAME_TARGET = 'iriguchi.proxy.rlwy.net';
 
 /** The marketing/SEO www origin whose crawl cost the rules below exist to cap. */
 export const WWW_HOSTNAME = 'www.boardsesh.com';
@@ -128,6 +151,15 @@ export const CRAWLER_ALLOW_RULE_DESCRIPTION =
   'boardsesh:allow-search-crawlers (managed by scripts/cloudflare-apply.ts)';
 export const CRAWLER_BLOCK_RULE_DESCRIPTION = 'boardsesh:block-seo-scrapers (managed by scripts/cloudflare-apply.ts)';
 
+/**
+ * Marker for the board-content managed-challenge rule. Same never-rename
+ * contract as above — the STRING still says `climb-view` because renaming it
+ * would orphan the live rule and create a second one beside it, even though the
+ * rule now also covers `/list` and `/setter/`.
+ */
+export const BOARD_CONTENT_CHALLENGE_RULE_DESCRIPTION =
+  'boardsesh:climb-view-challenge (managed by scripts/cloudflare-apply.ts)';
+
 /** Marker for the climb-view rate-limit rule. Same never-rename contract as above. */
 export const CLIMB_VIEW_RATE_LIMIT_RULE_DESCRIPTION =
   'boardsesh:climb-view-rate-limit (managed by scripts/cloudflare-apply.ts)';
@@ -158,6 +190,36 @@ export const RATE_LIMIT_RULE_PHASE = 'http_ratelimit';
  * empty phase and the first apply creates it.
  */
 export const DYNAMIC_REDIRECT_RULE_PHASE = 'http_request_dynamic_redirect';
+
+/**
+ * The rulesets phase that holds Response Header Transform Rules.
+ *
+ * Needed because R2 and Tigris disagree about CORS in a way Cloudflare's cache
+ * turns into a bug. Measured 2026-09-15:
+ *
+ *   assets.boardsesh.com (Tigris)  → `Access-Control-Allow-Origin: *` on EVERY
+ *                                    response, whether or not the request carried
+ *                                    an `Origin` header.
+ *   media.boardsesh.com  (R2)      → no ACAO header at all, on any request.
+ *
+ * R2 emits CORS headers only in response to a request that carries `Origin`
+ * (Cloudflare's R2 CORS docs are explicit about this). The same objects are
+ * loaded both ways: `<img src>` sends no `Origin`, while
+ * `ensureImagesPreloaded` in packages/web/app/lib/board-render-worker/worker-manager.ts
+ * does a real `fetch()` for every board background. One cache key, two possible
+ * bodies-with-different-headers, and the `<img>` one wins the race as often as
+ * not — after which the `fetch()` fails CORS against a response with no ACAO.
+ *
+ * That failure is swallowed (`console.warn('Failed to preload background image')`),
+ * so the symptom is boards quietly rendering without backgrounds, per-colo,
+ * pinned for a year by `Cache-Control: immutable`, with no purge tooling and no
+ * `Zone.Cache Purge` scope on this token.
+ *
+ * Setting the header unconditionally at the edge removes the variance entirely:
+ * every cached copy carries ACAO, so it does not matter which request shape
+ * populated it.
+ */
+export const RESPONSE_HEADER_RULE_PHASE = 'http_response_headers_transform';
 
 /** Cloudflare SSL/TLS modes ordered weakest → strongest, for the "is the live mode weaker?" check. */
 export const SSL_MODE_STRENGTH = ['off', 'flexible', 'full', 'strict'] as const;
@@ -242,7 +304,14 @@ export interface SslDesired {
 export interface WafRuleDesired {
   description: string;
   expression: string;
-  action: 'block' | 'skip';
+  /**
+   * `managed_challenge` is the softest of the three and the only one that can
+   * separate a headless fetcher from a person: passing it requires executing
+   * JavaScript, which a real browser does transparently. Unlike the rate-limit
+   * phase — where the Free plan refused it outright (see the note on
+   * RateLimitRuleDesired) — custom rules accept it on every plan.
+   */
+  action: 'block' | 'skip' | 'managed_challenge';
   action_parameters?: { ruleset: 'current' };
   enabled: boolean;
 }
@@ -306,6 +375,20 @@ export interface RedirectRuleDesired {
   enabled: boolean;
 }
 
+/**
+ * A Response Header Transform rule. `set` overwrites whatever the origin sent
+ * (or did not send), which is the point — see RESPONSE_HEADER_RULE_PHASE.
+ */
+export interface ResponseHeaderRuleDesired {
+  description: string;
+  expression: string;
+  action: 'rewrite';
+  action_parameters: {
+    headers: Record<string, { operation: 'set'; value: string }>;
+  };
+  enabled: boolean;
+}
+
 export interface CloudflareDesiredState {
   zoneName: string;
   dnsRecords: DnsRecordDesired[];
@@ -324,6 +407,8 @@ export interface CloudflareDesiredState {
   rateLimitRules: RateLimitRuleDesired[];
   /** Order is not significant: Cloudflare stops at the first matching redirect and there is only one. */
   redirectRules: RedirectRuleDesired[];
+  /** Order is not significant: matched by expression, like cache rules. */
+  responseHeaderRules: ResponseHeaderRuleDesired[];
   ssl: SslDesired;
 }
 
@@ -362,6 +447,16 @@ export const WWW_HTML_CACHE_LOCALE_PREFIXES = ['', '/es', '/fr', '/de'] as const
  * fails if a board is added there and not here — a missed board only costs the
  * cache, but it costs it silently.
  */
+/**
+ * Boards the schema knows but www never serves under `/{board}/…`, so they must
+ * NOT be edge-cached: a spray wall is a climber's own wall, private or unlisted
+ * by default, reached at `/b/{slug}` and 404ed on the numeric path (SW-03,
+ * #5453). Caching its HTML at the edge would serve one visitor's wall page —
+ * presigned photo URL included — to the next anonymous visitor. The test below
+ * expects every schema board here EXCEPT these.
+ */
+export const WWW_HTML_CACHE_EXCLUDED_BOARDS = ['spray'] as const;
+
 export const WWW_HTML_CACHE_ROOT_SEGMENTS = [
   'b',
   'kilter',
@@ -379,6 +474,14 @@ export const LIST_PAGE_PATH_SUFFIX = '/list';
 
 /** Path segment every climb-view URL shape shares, in both trees and all four locales. */
 export const CLIMB_VIEW_PATH_SEGMENT = '/view/';
+
+/**
+ * Setter front doors. A `contains` rather than a `starts_with` so the `/de`,
+ * `/es` and `/fr` twins are covered by the same clause — Cloudflare cannot
+ * strip a locale prefix, and enumerating the cross product here would drift
+ * from the locale list.
+ */
+export const SETTER_PATH_SEGMENT = '/setter/';
 
 /**
  * The substring shared by every name the NextAuth session cookie can carry.
@@ -468,7 +571,8 @@ export function buildWwwHtmlCachePathPrefixes(): string[] {
  */
 export const WWW_HTML_CACHE_EXPRESSION =
   `(http.host eq "${WWW_HOSTNAME}"` +
-  ` and (ends_with(http.request.uri.path, "${LIST_PAGE_PATH_SUFFIX}")` +
+  ` and (http.request.uri.path contains "${CLIMB_VIEW_PATH_SEGMENT}"` +
+  ` or ends_with(http.request.uri.path, "${LIST_PAGE_PATH_SUFFIX}")` +
   ` or http.request.uri.path contains "${CLIMB_VIEW_PATH_SEGMENT}")` +
   ` and (${buildWwwHtmlCachePathPrefixes()
     .map((pathPrefix) => `starts_with(http.request.uri.path, "${pathPrefix}")`)
@@ -497,8 +601,18 @@ export const CRAWLER_ALLOW_TOKENS = [
   'brave-search',
   'bravebot',
   'applebot',
-  'yandexbot',
-  // Share-card unfurlers. Blocking these breaks link previews, not crawling.
+  // Added 2026-09-11 with the climb-view challenge below. Both send people back
+  // (Baidu 7, Qwant 1 over 30 days) and neither was on either list, so they
+  // passed by default — which stopped working the moment an unlisted agent
+  // started getting challenged.
+  'baiduspider',
+  'qwantify',
+  // Share-card unfurlers. Blocking these breaks link previews, not crawling —
+  // and so does CHALLENGING them, which is how climb previews broke on
+  // 2026-09-11. None of these execute JavaScript, so a managed challenge is an
+  // unconditional fail for every one of them. Extended the same day from the
+  // original seven after Signal, Bluesky, Mastodon and Teams were all measured
+  // getting `403 cf-mitigated: challenge` on a climb page.
   'twitterbot',
   'facebookexternalhit',
   'slackbot',
@@ -506,6 +620,18 @@ export const CRAWLER_ALLOW_TOKENS = [
   'linkedinbot',
   'telegrambot',
   'whatsapp',
+  'signalbot',
+  'cardyb',
+  'mastodon',
+  'microsoftpreview',
+  'skypeuripreview',
+  'redditbot',
+  'pinterest',
+  'vkshare',
+  'embedly',
+  'iframely',
+  'nuzzel',
+  'quora link preview',
 ] as const;
 
 /**
@@ -517,6 +643,10 @@ export const CRAWLER_ALLOW_TOKENS = [
  * `dotbot/` keeps its slash because the bare token is short enough to collide with
  * an unrelated UA; the rest are distinctive on their own.
  *
+ * Yandex is here rather than in the allow list: 2026-09-10 origin logs put it at
+ * 36% of www requests against 3.6% for real browsers, on the most expensive SSR
+ * path we have. See COST_BLOCKED_CRAWLER_TOKENS in crawler-policy.ts.
+ *
  * AI training/search crawlers are explicit too: September 7 origin logs showed
  * Claude-SearchBot on www and GPTBot bypassing Cloudflare via the Railway domain,
  * despite synthetic probes receiving 403. The shared list also drives robots.txt
@@ -527,7 +657,7 @@ export const CRAWLER_ALLOW_TOKENS = [
  *   it is low volume, and excluding it is a values call rather than a cost one.
  */
 export const CRAWLER_BLOCK_TOKENS = [
-  ...AI_CRAWLER_TOKENS,
+  ...BLOCKED_CRAWLER_TOKENS,
   'ahrefsbot',
   'ahrefssiteaudit',
   'semrushbot',
@@ -551,7 +681,29 @@ export function buildUserAgentExpression(tokens: readonly string[]): string {
   return tokens.map((token) => `lower(http.user_agent) contains "${token}"`).join(' or ');
 }
 
-export const CRAWLER_ALLOW_EXPRESSION = buildUserAgentExpression(CRAWLER_ALLOW_TOKENS);
+/**
+ * Scoped to GET on purpose.
+ *
+ * The allow rule's action is `skip` with `ruleset: 'current'`, so an agent that
+ * matches it walks past every later rule in the WAF custom ruleset. That is the
+ * intent for reads — a search engine must never be caught by a rule aimed at
+ * scrapers — but it also meant an allow-listed agent could never be constrained
+ * on a write, and no rule added after this one would apply to it.
+ *
+ * A crawler has no legitimate POST. Applebot has one: it executes our
+ * JavaScript, and a 2026-09-10 sample of boardsesh-web caught it sending 190 of
+ * its 253 requests as `POST /monitoring` (the Sentry tunnel from
+ * next.config.mjs). The origin-side fix for that ships in
+ * instrumentation-client.ts; this gate is what keeps the ruleset composable, so
+ * the next rule aimed at bot writes is actually reachable.
+ *
+ * HEAD is not included: crawlers that HEAD a URL before fetching it are doing a
+ * read, but nothing in this ruleset blocks them today, so widening the skip
+ * would buy nothing.
+ */
+export const CRAWLER_ALLOW_EXPRESSION = `(http.request.method eq "GET" and (${buildUserAgentExpression(
+  CRAWLER_ALLOW_TOKENS,
+)}))`;
 export const CRAWLER_BLOCK_EXPRESSION = buildUserAgentExpression(CRAWLER_BLOCK_TOKENS);
 
 /**
@@ -574,7 +726,85 @@ export const CRAWLER_BLOCK_EXPRESSION = buildUserAgentExpression(CRAWLER_BLOCK_T
  * page are counted along with real page loads. That is why the threshold
  * below carries headroom rather than a tight ~60/min budget.
  */
-export const CLIMB_VIEW_RATE_LIMIT_EXPRESSION = `(http.host eq "${WWW_HOSTNAME}" and http.request.uri.path contains "/view/")`;
+export const CLIMB_VIEW_SURFACE_EXPRESSION = `(http.host eq "${WWW_HOSTNAME}" and http.request.uri.path contains "/view/")`;
+
+/** The rate limit and the challenge deliberately cover the same surface. */
+export const CLIMB_VIEW_RATE_LIMIT_EXPRESSION = CLIMB_VIEW_SURFACE_EXPRESSION;
+
+/**
+ * Managed-challenge the climb-view surface for anything the allow rule did not
+ * already wave through.
+ *
+ * **Why a challenge and not a UA rule or a tighter rate limit.** The population
+ * this exists for rotates user agents: a 3.6-minute sample of production on
+ * 2026-09-11 found nine ordinary Chrome, Edge and Safari strings at roughly 45
+ * requests each, walking 350 climb pages across all four locales. No allow or
+ * block list can name it. The rate limit cannot reach it either — it runs about
+ * 12 requests a minute per agent against a Free-plan floor of 60 per 10 s
+ * (~360/min), and lowering the threshold far enough to catch it would take out
+ * a gym behind one NAT, which is exactly the failure the rate-limit rule's own
+ * comment warns about.
+ *
+ * **What it can be caught by.** In that same sample those nine agents fetched
+ * 350 HTML pages and **zero** JavaScript — not one `/_next/static` chunk, not
+ * one Sentry tunnel POST. The one real visitor in the window did the mirror
+ * image: 33 chunks and no climb pages. A managed challenge is precisely that
+ * test, so it separates the two with no list to maintain.
+ *
+ * **Who never sees it.** The allow rule is first and its action is `skip` over
+ * the current ruleset, so every search engine and share unfurler on
+ * CRAWLER_ALLOW_TOKENS bypasses this. That is why `baiduspider` and `qwantify`
+ * were added there in the same change: they send people back and were relying
+ * on passing by default, which this rule ends.
+ *
+ * **What it costs.** A first-time human visitor landing on a climb page from
+ * search gets one sub-second check, then a `cf_clearance` cookie covers them.
+ * At roughly 30-50 real web visitors a day that is a small price for dropping
+ * the majority of origin renders.
+ *
+ * Deliberately NOT excluding signed-in visitors on a session-cookie check. The
+ * WAF can only test that a cookie NAME is present, so `Cookie:
+ * <session-name>=anything` would be a one-line bypass for the scraper. The
+ * clearance cookie already keeps a logged-in climber from being re-challenged.
+ *
+ * **Broadened from `/view/` alone to `/view/` + `/list` + `/setter/` three
+ * hours after it shipped, because the farm did not leave — it moved.** Same
+ * nine rotating strings, measured 2026-09-11 08:34-08:53 UTC (n=501): zero
+ * climb-view requests, and instead 102 `/setter/` and 67 `/list`, 81% of what
+ * it still sends. `/list` is the expensive half at 395 ms average against
+ * `/setter/`'s 167 ms.
+ *
+ * **Then `/view/` came back OUT the same day, because it broke link previews.**
+ * A climb page is the thing people share, and an unfurler reads its `og:image`
+ * tag. No unfurler executes JavaScript, so a managed challenge is an
+ * unconditional fail for every one of them — measured on a live climb page:
+ * Slackbot, Discordbot, Twitterbot, facebookexternalhit, WhatsApp and Applebot
+ * passed only because they are on CRAWLER_ALLOW_TOKENS, while Signal, Bluesky,
+ * Mastodon, Teams and a plain Safari string all got `403 cf-mitigated:
+ * challenge` and never saw the tag.
+ *
+ * That is structural, not a tuning problem: **you cannot JavaScript-challenge a
+ * page you want people to share**, because naming every unfurler that will ever
+ * exist is not a list anyone can finish. The allow list was widened anyway so
+ * the common ones survive if `/view/` is ever re-challenged, but the durable
+ * answer is to leave shareable surfaces out of this rule.
+ *
+ * It costs nothing today: the farm had already abandoned `/view/` entirely by
+ * the 08:34 sample. If it returns there, the lever is a non-JavaScript signal,
+ * not this one.
+ *
+ * The homepage is deliberately still NOT challenged. The farm hit it 8 times
+ * in that window, and it is the one page a real first-time visitor is most
+ * likely to land on before any clearance cookie exists.
+ *
+ * `/setter/` is a `contains`, not a `starts_with`, so the `/de`, `/es` and
+ * `/fr` twins come along; Cloudflare cannot strip a locale prefix. `/list`
+ * keeps `ends_with` to match the cache rule's definition of the same surface.
+ */
+export const BOARD_CONTENT_CHALLENGE_EXPRESSION =
+  `(http.host eq "${WWW_HOSTNAME}"` +
+  ` and (ends_with(http.request.uri.path, "${LIST_PAGE_PATH_SUFFIX}")` +
+  ` or http.request.uri.path contains "${SETTER_PATH_SEGMENT}"))`;
 
 /**
  * The apex, and only the apex. `http.host` is the request's Host header, so this
@@ -598,22 +828,114 @@ export const APEX_REDIRECT_TARGET_EXPRESSION = `concat("https://${WWW_HOSTNAME}"
 export const MEDIA_HOSTNAME = 'media.boardsesh.com';
 
 /**
+ * Where the R2 static-assets bucket is proved before `assets.boardsesh.com`
+ * points at it.
+ *
+ * The catalogue keys are `static/v1/<sha256>`: content-addressed, immutable,
+ * written only when missing and never deleted. So Tigris and R2 can hold the
+ * identical catalogue at the same time, and the publisher can upload and
+ * validate all 365 objects through this hostname — signed HEAD, public GET,
+ * SHA-256, MIME, cache headers, CORS — while every reader is still on Tigris.
+ * That dry run is what proves R2 before the cutover, not after.
+ */
+export const ASSETS_STAGING_HOSTNAME = 'assets-r2.boardsesh.com';
+
+/** Public R2 custom domain for the mobile board-snapshot artifacts. */
+export const SNAPSHOTS_HOSTNAME = 'snapshots.boardsesh.com';
+
+export const ASSETS_CACHE_RULE_DESCRIPTION = 'boardsesh:assets-edge-cache (managed by scripts/cloudflare-apply.ts)';
+
+/**
+ * Edge-cache the immutable asset catalogue.
+ *
+ * The objects already carry `public, max-age=31536000, immutable`, and most of
+ * them are `.webp`/`.png`, which Cloudflare caches by extension anyway. The rule
+ * exists for `static/v1/manifest.json`, whose extension is NOT on that default
+ * list, and because this zone has twice been bitten by relying on the default
+ * (the board-render route, and www's HTML). Declaring it is cheaper than
+ * rediscovering it.
+ *
+ * Covers the staging hostname as well, for the same reason as the CORS rule: a
+ * dry run that does not exercise edge caching has not rehearsed the thing the
+ * move is for. The publisher's `cf-cache-status` and `cache-control` assertions
+ * then mean the same thing on both hosts.
+ *
+ * The `/static/v1/` literal is repeated rather than imported: infra/cloudflare
+ * has no workspace dependencies, by design.
+ */
+export const ASSETS_CACHE_EXPRESSION =
+  `((http.host eq "${ASSETS_HOSTNAME}" or http.host eq "${ASSETS_STAGING_HOSTNAME}") ` +
+  `and starts_with(http.request.uri.path, "/static/v1/"))`;
+
+export const ASSETS_CORS_HEADER_RULE_DESCRIPTION =
+  'boardsesh:assets-cors-header (managed by scripts/cloudflare-apply.ts)';
+
+/**
+ * Both hostnames, so the rule is already live and proven on staging before
+ * `assets.boardsesh.com` ever resolves to R2.
+ *
+ * Harmless on `assets.boardsesh.com` today: that record is grey-clouded, so its
+ * traffic never reaches Cloudflare's proxy and the rule simply does not match.
+ * It starts applying at the moment of the flip, which is exactly when it is
+ * needed.
+ */
+export const ASSETS_CORS_HEADER_EXPRESSION = `(http.host eq "${ASSETS_HOSTNAME}" or http.host eq "${ASSETS_STAGING_HOSTNAME}")`;
+
+export const SNAPSHOTS_CACHE_RULE_DESCRIPTION =
+  'boardsesh:snapshots-edge-cache (managed by scripts/cloudflare-apply.ts)';
+export const SNAPSHOTS_CACHE_EXPRESSION =
+  `(http.host eq "${SNAPSHOTS_HOSTNAME}" ` + `and starts_with(http.request.uri.path, "/board-snapshots/"))`;
+export const SNAPSHOTS_CORS_HEADER_RULE_DESCRIPTION =
+  'boardsesh:snapshots-cors-header (managed by scripts/cloudflare-apply.ts)';
+export const SNAPSHOTS_CORS_HEADER_EXPRESSION = `http.host eq "${SNAPSHOTS_HOSTNAME}"`;
+
+/**
+ * CORS for public, immutable objects fetched directly by clients.
+ *
+ * `origins: ['*']` is deliberate, and tightening it to a list of our own origins
+ * would be a mistake. R2 echoes the matching origin back, so a list makes the
+ * response vary by request — and Cloudflare does not key its cache on `Vary`
+ * below Enterprise. One cached copy would then be served to every origin, which
+ * is either a CORS failure or a leak depending on which copy won. A constant `*`
+ * has no such variance. See RESPONSE_HEADER_RULE_PHASE for the other half of
+ * this problem.
+ */
+export const PUBLIC_READ_CORS: R2Cors = {
+  allowedOrigins: ['*'],
+  allowedMethods: ['GET', 'HEAD'],
+  maxAgeSeconds: 86_400,
+};
+
+/**
  * R2 buckets this repo owns, and whether each one is public.
  *
- * `customDomain` is the entire access-control story for an R2 bucket. R2
- * implements no object ACLs and no bucket policies, so there is no way to make
- * one prefix private: attaching a custom domain publishes EVERY object in the
- * bucket. That is why user data exports live in their own bucket rather than
- * under a prefix, and why `customDomain: null` is a hard assertion here rather
- * than a default — the apply fails if such a bucket ever grows a domain.
+ * R2 has two independent public access paths: custom domains and its managed
+ * `r2.dev` URL. It implements no object ACLs or bucket policies, so enabling
+ * either path publishes EVERY object in the bucket. Every declaration keeps
+ * `r2.dev` disabled; private buckets also declare no custom domain.
  *
  * Buckets are created when absent and NEVER deleted by this tool. Deleting
  * object storage is not something a converge loop should be able to do.
  */
+/** A bucket CORS policy, in the shape Cloudflare's R2 CORS API takes. */
+export interface R2Cors {
+  allowedOrigins: readonly string[];
+  allowedMethods: readonly ('GET' | 'HEAD' | 'PUT' | 'POST' | 'DELETE')[];
+  maxAgeSeconds: number;
+}
+
 export interface R2BucketDesired {
   name: string;
   /** Hostname serving this bucket publicly, or null when it must stay unreachable. */
   customDomain: string | null;
+  /** The development URL is never a supported public path; custom domains carry production traffic. */
+  r2DevDomainEnabled: false;
+  /**
+   * Bucket CORS policy. Omitted means "this repo does not manage CORS here" —
+   * NOT "no CORS" — so a bucket whose policy is set elsewhere is left alone
+   * rather than silently cleared.
+   */
+  cors?: R2Cors;
   /**
    * Cloudflare location hint, applied only at creation time and immutable
    * afterwards. Omitted lets Cloudflare choose on first write.
@@ -623,9 +945,34 @@ export interface R2BucketDesired {
 
 export const desiredR2Buckets: readonly R2BucketDesired[] = [
   // Avatars, gym images, beta-link thumbnails and every resize variant.
-  { name: 'boardsesh-user-media', customDomain: MEDIA_HOSTNAME },
+  { name: 'boardsesh-user-media', customDomain: MEDIA_HOSTNAME, r2DevDomainEnabled: false },
   // User data exports and MoonBoard OCR submissions. MUST stay domain-less.
-  { name: 'boardsesh-user-private', customDomain: null },
+  { name: 'boardsesh-user-private', customDomain: null, r2DevDomainEnabled: false },
+  // Repo-owned board art, icons and brand marks — the catalogue behind
+  // assets.boardsesh.com, moving off Tigris (which serves it HTTP/1.1 from a
+  // single region, measured 614 ms TTFB and 4.62 s for 24 images from Sydney,
+  // with no edge cache because a Tigris custom domain cannot be proxied).
+  //
+  // Still pointed at the staging hostname: this entry creates the bucket and
+  // lets the publisher prove it. `assets.boardsesh.com` moves in a separate
+  // change, after that dry run passes. See docs/static-assets.md.
+  {
+    name: 'boardsesh-static-assets',
+    customDomain: ASSETS_STAGING_HOSTNAME,
+    r2DevDomainEnabled: false,
+    cors: PUBLIC_READ_CORS,
+  },
+  // Mobile bootstrap databases and manifests. Readers stay on Tigris until a
+  // complete R2 export has passed the migration checks in docs/board-snapshots.md.
+  {
+    name: 'boardsesh-board-snapshots',
+    customDomain: SNAPSHOTS_HOSTNAME,
+    r2DevDomainEnabled: false,
+    cors: PUBLIC_READ_CORS,
+  },
+  // XPRem owns object access for OTA updates. The bucket must stay private;
+  // updates.boardsesh.com is the application endpoint, not an object domain.
+  { name: 'boardsesh-ota-v3', customDomain: null, r2DevDomainEnabled: false },
 ];
 
 export const desiredCloudflareState: CloudflareDesiredState = {
@@ -641,6 +988,28 @@ export const desiredCloudflareState: CloudflareDesiredState = {
       name: ASSETS_HOSTNAME,
       type: 'CNAME',
       content: ASSETS_CNAME_TARGET,
+      ttl: 1,
+      proxied: false,
+      settings: {
+        flatten_cname: false,
+      },
+    },
+    // The DR standby's route to the production primary. Fully managed and
+    // created when absent, exactly like assets above.
+    //
+    // `proxied: false` is load-bearing and not a preference: this carries the
+    // PostgreSQL wire protocol on a high port, and Cloudflare's proxy handles
+    // neither raw TCP nor a non-HTTP port. Orange-clouding it would stop
+    // replication outright.
+    //
+    // Nothing here terminates TLS. The primary presents its own certificate
+    // end-to-end and the standby verifies it with sslmode=verify-full against
+    // this name, so the record is pure indirection.
+    {
+      management: 'full',
+      name: DR_PRIMARY_HOSTNAME,
+      type: 'CNAME',
+      content: DR_PRIMARY_CNAME_TARGET,
       ttl: 1,
       proxied: false,
       settings: {
@@ -748,6 +1117,38 @@ export const desiredCloudflareState: CloudflareDesiredState = {
       },
       enabled: true,
     },
+    // Appended rather than prepended: two fixtures in
+    // scripts/cloudflare-apply.test.ts address the og rule by index 0. Cache
+    // rules are matched by expression and their order carries no meaning (see
+    // the field comment on cacheRules), so the end is the right place.
+    {
+      description: ASSETS_CACHE_RULE_DESCRIPTION,
+      expression: ASSETS_CACHE_EXPRESSION,
+      action: 'set_cache_settings',
+      action_parameters: {
+        cache: true,
+        // Same shape as every other rule here: honour the origin's own
+        // Cache-Control, so the audit manifest's `max-age=60, must-revalidate`
+        // is respected and an error response with no Cache-Control never enters
+        // the edge cache at all.
+        edge_ttl: { mode: 'bypass_by_default' },
+        // Pin the browser TTL to the origin header so a zone-level Browser
+        // Cache TTL cannot undercut the 1-year immutable max-age.
+        browser_ttl: { mode: 'respect_origin' },
+      },
+      enabled: true,
+    },
+    {
+      description: SNAPSHOTS_CACHE_RULE_DESCRIPTION,
+      expression: SNAPSHOTS_CACHE_EXPRESSION,
+      action: 'set_cache_settings',
+      action_parameters: {
+        cache: true,
+        edge_ttl: { mode: 'bypass_by_default' },
+        browser_ttl: { mode: 'respect_origin' },
+      },
+      enabled: true,
+    },
   ],
   wafRules: [
     // MUST stay first — see the ordering contract on CloudflareDesiredState.wafRules.
@@ -762,6 +1163,15 @@ export const desiredCloudflareState: CloudflareDesiredState = {
       description: CRAWLER_BLOCK_RULE_DESCRIPTION,
       expression: CRAWLER_BLOCK_EXPRESSION,
       action: 'block',
+      enabled: true,
+    },
+    // MUST stay last. It is the only rule here that can catch an ordinary
+    // browser string, so every agent we have an opinion about — allowed or
+    // blocked — has to be judged before it.
+    {
+      description: BOARD_CONTENT_CHALLENGE_RULE_DESCRIPTION,
+      expression: BOARD_CONTENT_CHALLENGE_EXPRESSION,
+      action: 'managed_challenge',
       enabled: true,
     },
   ],
@@ -807,6 +1217,30 @@ export const desiredCloudflareState: CloudflareDesiredState = {
           status_code: 301,
           target_url: { expression: APEX_REDIRECT_TARGET_EXPRESSION },
           preserve_query_string: true,
+        },
+      },
+      enabled: true,
+    },
+  ],
+  responseHeaderRules: [
+    {
+      description: ASSETS_CORS_HEADER_RULE_DESCRIPTION,
+      expression: ASSETS_CORS_HEADER_EXPRESSION,
+      action: 'rewrite',
+      action_parameters: {
+        headers: {
+          'access-control-allow-origin': { operation: 'set', value: '*' },
+        },
+      },
+      enabled: true,
+    },
+    {
+      description: SNAPSHOTS_CORS_HEADER_RULE_DESCRIPTION,
+      expression: SNAPSHOTS_CORS_HEADER_EXPRESSION,
+      action: 'rewrite',
+      action_parameters: {
+        headers: {
+          'access-control-allow-origin': { operation: 'set', value: '*' },
         },
       },
       enabled: true,

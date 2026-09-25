@@ -61,6 +61,14 @@ export type Climb = {
   // only field that stops an 8x10 climb lighting up wrong (canAddClimbToBoard
   // rule 5).
   compatibleSizeIds?: number[] | null;
+  // `board_climbs.missing_hold_count` — how many of this climb's holds are no
+  // longer on the wall after a spray-wall reset (SW-12). Null/undefined means
+  // "unknown", which every catalogue board is: holds do not come off a Kilter.
+  // Carried through the queue because a broken climb stays QUEUEABLE and stays
+  // playable — the play drawer says so from this number, and a queued row that
+  // dropped it would be the one surface that quietly pretended the climb was
+  // whole.
+  missingHoldCount?: number | null;
 };
 
 export type ClimbQueueItem = {

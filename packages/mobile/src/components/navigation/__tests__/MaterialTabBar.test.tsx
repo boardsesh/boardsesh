@@ -7,6 +7,9 @@ const ctrl = vi.hoisted(() => ({
   os: 'ios' as string,
 }));
 
+// Shared with the theme-provider mock below, so the assertion can't drift from it.
+const { FOCUSED_INDICATOR_COLOR } = vi.hoisted(() => ({ FOCUSED_INDICATOR_COLOR: '#4A4458' }));
+
 vi.mock('react-native', () => ({
   Platform: {
     get OS() {
@@ -106,7 +109,7 @@ vi.mock('../../../providers/theme-provider', () => ({
       onSecondaryContainer: '#E8DEF8',
       onSurface: '#E6E1E5',
       onSurfaceVariant: '#CAC4D0',
-      secondaryContainer: '#4A4458',
+      secondaryContainer: FOCUSED_INDICATOR_COLOR,
     },
   }),
 }));
@@ -120,10 +123,10 @@ vi.mock('../../../theme/colors', () => ({
 vi.mock('../../../theme/tokens', () => ({
   material: {
     navBar: {
-      surfaceElevation: 3,
-      activeIndicatorWidth: 64,
-      activeIndicatorHeight: 32,
-      activeIndicatorRadius: 16,
+      surfaceElevation: 2,
+      activeIndicatorWidth: 40,
+      activeIndicatorHeight: 40,
+      activeIndicatorRadius: 20,
     },
   },
 }));
@@ -240,6 +243,41 @@ describe('MaterialTabBar', () => {
       const style = queryByTestId('badge')?.getAttribute('data-style');
       expect(style).toContain('#047857');
       expect(style).not.toContain('#B45309');
+    });
+  });
+
+  describe('active indicator', () => {
+    // Toggling color instead of opacity made Android drop the borderRadius clip on focus.
+    it('gives every indicator the same tonal color, focused or not', () => {
+      const props = makeProps({ activeIndex: 0 });
+      const { getAllByTestId } = render(
+        <MaterialTabBar {...(props as unknown as Parameters<typeof MaterialTabBar>[0])} />,
+      );
+      const indicators = getAllByTestId('indicator');
+      for (const indicator of indicators) {
+        const style = indicator.getAttribute('data-style');
+        expect(style).toContain(`"backgroundColor":"${FOCUSED_INDICATOR_COLOR}"`);
+      }
+    });
+
+    it('hides the fill via opacity on unfocused tabs', () => {
+      const props = makeProps({ activeIndex: 0 });
+      const { getAllByTestId } = render(
+        <MaterialTabBar {...(props as unknown as Parameters<typeof MaterialTabBar>[0])} />,
+      );
+      const indicators = getAllByTestId('indicator');
+      const style = indicators[1].getAttribute('data-style');
+      expect(style).toContain('"opacity":0');
+    });
+
+    it('shows the fill via opacity on the focused tab', () => {
+      const props = makeProps({ activeIndex: 0 });
+      const { getAllByTestId } = render(
+        <MaterialTabBar {...(props as unknown as Parameters<typeof MaterialTabBar>[0])} />,
+      );
+      const indicators = getAllByTestId('indicator');
+      const style = indicators[0].getAttribute('data-style');
+      expect(style).toContain('"opacity":1');
     });
   });
 

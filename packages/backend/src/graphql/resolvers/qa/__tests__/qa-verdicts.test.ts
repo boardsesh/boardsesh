@@ -201,10 +201,14 @@ beforeEach(async () => {
   getHeadCommitDatesMock
     .mockReset()
     .mockImplementation(async (shas: string[]) => new Map(shas.map((sha) => [sha, '2026-08-26T09:00:00Z'])));
-  postVerdictCommentMock
-    .mockReset()
-    .mockResolvedValue({ id: 555, htmlUrl: 'https://github.com/boardsesh/boardsesh/pull/4792#issuecomment-555' });
-  applyQaLabelMock.mockReset().mockResolvedValue(undefined);
+  // The mirror functions answer with an outcome, not a bare comment / void —
+  // the resolver has to tell a posted comment from a dropped one to report the
+  // drop at all (#5294).
+  postVerdictCommentMock.mockReset().mockResolvedValue({
+    status: 'posted',
+    comment: { id: 555, htmlUrl: 'https://github.com/boardsesh/boardsesh/pull/4792#issuecomment-555' },
+  });
+  applyQaLabelMock.mockReset().mockResolvedValue({ status: 'applied' });
   testerRole.readFails = false;
 });
 
@@ -501,7 +505,10 @@ describe('submitQaVerdict', () => {
     });
     postVerdictCommentMock.mockImplementation(async () => {
       await postPending;
-      return { id: 556, htmlUrl: 'https://github.com/boardsesh/boardsesh/pull/4792#issuecomment-556' };
+      return {
+        status: 'posted',
+        comment: { id: 556, htmlUrl: 'https://github.com/boardsesh/boardsesh/pull/4792#issuecomment-556' },
+      };
     });
 
     const verdict = await qaMutations.submitQaVerdict(null, { input: validInput() }, authCtx(TESTER));
@@ -602,6 +609,22 @@ describe('submitQaVerdict', () => {
     expect(verdict.prNumber).toBe(4792);
     const row = await readVerdictRow(verdict.id);
     expect(row.github_comment_id).toBeNull();
+  });
+
+  // The regression CI caught on #5294's first push. The mirror block also owns
+  // the comment-id write-back and the label swap, so a mirror that answers with
+  // something unreadable must degrade to a reported drop — not to a TypeError
+  // that takes the rest of the block down with it.
+  it('carries on with the label swap when the comment mirror answers unreadably', async () => {
+    postVerdictCommentMock.mockResolvedValue(undefined);
+
+    await qaMutations.submitQaVerdict(null, { input: validInput() }, authCtx(TESTER));
+
+    // The label is the proof the block survived: it runs after the comment
+    // handling, so reaching it at all means nothing threw on the way.
+    await vi.waitFor(() => {
+      expect(applyQaLabelMock).toHaveBeenCalledWith(4792, 'approved');
+    });
   });
 
   it('records a comment that did post even when the label swap then blows up', async () => {

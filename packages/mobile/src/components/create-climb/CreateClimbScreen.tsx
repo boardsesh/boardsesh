@@ -10,11 +10,19 @@ import { useTheme } from '../../providers/theme-provider';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
 import { openClimbInPlayDrawer } from '../../lib/open-climb-in-play-drawer';
 import { getCreateBoardHolds } from '../../lib/create-board-holds';
+import { getDifficultyIdForGradeName } from '../../lib/grade-label';
+import { useSprayWall } from '../../lib/spray/use-spray-wall';
+import { useSprayWallToken } from '../../lib/spray/use-spray-wall-token';
+import { isSprayBoard, shouldAwaitWall } from './spray-climb-rules';
+import { ActivityIndicator } from '../ActivityIndicator';
 import { spacing } from '../../theme/tokens';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { HoldRoleSheet } from './HoldRoleSheet';
 import { CreateDrawer } from './CreateDrawer';
 import { useCreateClimbScreen, type CreateClimbBoard } from './use-create-climb-screen';
+import { useHoldHeatmap } from '../../lib/graphql/hooks/use-hold-heatmap';
+import { useCatalogQuerySourceState } from '../../lib/offline/use-catalog-query-source';
+import { heatmapSearchInput } from '../play-drawer/heatmap/heatmap-search-input';
 
 type CreateClimbScreenProps = {
   board: CreateClimbBoard;
@@ -23,6 +31,8 @@ type CreateClimbScreenProps = {
   forkDescription?: string;
   /** JSON-encoded `characteristics` of the climb being remixed (#4832). */
   forkCharacteristics?: string;
+  /** The remixed climb's grade, as a name on the shared scale ("6c/V5"). */
+  forkDifficulty?: string;
   editClimbUuid?: string;
 };
 
@@ -39,6 +49,7 @@ export function CreateClimbScreen({
   forkName,
   forkDescription,
   forkCharacteristics,
+  forkDifficulty,
   editClimbUuid,
 }: CreateClimbScreenProps) {
   const { t } = useTranslation('climbs');
@@ -59,18 +70,70 @@ export function CreateClimbScreen({
     });
   }, [router, board]);
 
+  // A spray wall's holds are runtime data, not a bundled table: on a cold open
+  // (a share link, a fork of somebody else's wall climb) the registry has nothing
+  // yet, `getCreateBoardHolds` answers null, and without this the editor would
+  // settle on "can't set climbs here" and never look again.
+  //
+  // The TOKEN, not the load state, is what everything downstream keys on: a
+  // revalidation that brings a new wall version keeps reporting `ready`, so the
+  // state alone would leave the editor painting the generation that just came off
+  // the wall — and autosaving into the slot that generation owned.
+  const sprayWallToken = useSprayWallToken(board.boardName, board.layoutId);
+  const sprayLayoutId = isSprayBoard(board.boardName) ? board.layoutId : null;
+  const { isLoading: sprayWallLoading } = useSprayWall(sprayLayoutId);
+
   const controller = useCreateClimbScreen({
     board,
     forkFrames,
     forkName,
     forkDescription,
     forkCharacteristics,
+    // Resolved here rather than in the controller so the route param stays a
+    // plain string: null for a grade the shared scale does not name, which opens
+    // the picker unset instead of snapping the remix to a neighbouring grade.
+    forkDifficultyId: getDifficultyIdForGradeName(forkDifficulty),
+    sprayWallToken,
     editClimbUuid,
     onPublished: () => router.back(),
     onStartedNewClimb: handleStartedNewClimb,
   });
 
   const [longPressHoldId, setLongPressHoldId] = useState<number | null>(null);
+
+  // The hold heatmap over the whole board (the create board has no list filters
+  // to follow): the downloaded board answers, or the admin resolver, or, for a
+  // board that is not on this phone, a line under the board saying so. Inline
+  // rather than a toast: toasts draw behind this native sheet.
+  const [heatmapActive, setHeatmapActive] = useState(false);
+  const heatmapInput = useMemo(
+    () =>
+      heatmapSearchInput(
+        {
+          boardName: board.boardName,
+          layoutId: board.layoutId,
+          sizeId: board.sizeId,
+          setIds: board.setIds,
+          angle: board.angle,
+        },
+        null,
+      ),
+    [board.boardName, board.layoutId, board.sizeId, board.setIds, board.angle],
+  );
+  const heatmapScope = useMemo(
+    () => ({ boardName: board.boardName, layoutId: board.layoutId, sizeId: board.sizeId }),
+    [board.boardName, board.layoutId, board.sizeId],
+  );
+  const { source: heatmapSource, isResolving: heatmapSourceResolving } = useCatalogQuerySourceState(heatmapScope);
+  const heatmap = useHoldHeatmap(heatmapInput, heatmapSource, heatmapActive && !heatmapSourceResolving);
+  const heatmapNotice = !heatmapActive
+    ? null
+    : heatmapSource === 'download' && !heatmapSourceResolving
+      ? t('mobile.heatmap.needsDownload')
+      : heatmap.isError
+        ? t('mobile.heatmap.loadFailed')
+        : null;
+  const toggleHeatmap = useCallback(() => setHeatmapActive((active) => !active), []);
 
   const boardHolds = useMemo(
     () =>
@@ -80,7 +143,7 @@ export function CreateClimbScreen({
         sizeId: board.sizeId,
         setIds: board.setIds.split(',').map(Number),
       }),
-    [board.boardName, board.layoutId, board.sizeId, board.setIds],
+    [board.boardName, board.layoutId, board.sizeId, board.setIds, sprayWallToken],
   );
 
   // Every dismiss path — chevron, pan-down, backdrop, hardware back — lands here.
@@ -145,6 +208,19 @@ export function CreateClimbScreen({
   // No hold geometry for this config, or a climb that doesn't belong on this
   // board size — either way there is no honest editor to draw, so say so rather
   // than seeding one with holds that mean something else on this wall.
+  // The wall is still on its way. A spinner, not the unavailable state: nothing
+  // has failed yet, and the editor opens the moment the holds arrive. See
+  // `shouldAwaitWall` for why a catalogue board never reaches it.
+  if (shouldAwaitWall(boardHolds != null, sprayLayoutId, sprayWallLoading)) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: systemColors.background }]} edges={['bottom']}>
+        <View style={styles.centered}>
+          <ActivityIndicator size="large" />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   if (!boardHolds || controller.editSizeMismatch) {
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: systemColors.background }]} edges={['bottom']}>
@@ -176,6 +252,11 @@ export function CreateClimbScreen({
         onLoadDraft={handleLoadDraft}
         onClose={handleClose}
         onViewDuplicate={handleViewDuplicate}
+        heatmapActive={heatmapActive}
+        heatmapBusy={heatmapActive && (heatmapSourceResolving || heatmap.isFetching)}
+        heatmapStatsByHoldId={heatmap.statsByHoldId}
+        heatmapNotice={heatmapNotice}
+        onToggleHeatmap={toggleHeatmap}
       />
 
       <HoldRoleSheet

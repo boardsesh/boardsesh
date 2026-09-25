@@ -2,6 +2,7 @@ import { eq, and, or, isNull, inArray, count, asc, sql } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
+import { sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
 import { GymStatsInputSchema } from '../../../validation/schemas';
 import {
@@ -132,7 +133,23 @@ export const socialGymInsightsQueries = {
           ),
         )
         .leftJoin(consensusGradeTable, consensusGradeJoinCondition)
-        .where(and(inGymBoards, flashOrSend, sql`${dbSchema.boardseshTicks.climbedAt} >= ${currentStart}`))
+        .where(
+          and(
+            inGymBoards,
+            flashOrSend,
+            sql`${dbSchema.boardseshTicks.climbedAt} >= ${currentStart}`,
+            // This is the only gym-insights query that returns a climb NAME, and
+            // the resolver has no gym-membership check — so a personal spray wall
+            // that happens to be attached to the gym would surface its climb names
+            // to anyone who can read the gym's insights. A no-op on the other eight
+            // board types. `null` viewer: membership is not established here, so
+            // only a PUBLIC wall's names appear.
+            sprayClimbVisibilityCondition(
+              { boardType: dbSchema.boardClimbs.boardType, layoutId: dbSchema.boardClimbs.layoutId },
+              null,
+            ),
+          ),
+        )
         .groupBy(
           dbSchema.boardseshTicks.climbUuid,
           dbSchema.boardseshTicks.boardType,

@@ -11,7 +11,7 @@ import { memo, useCallback, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { Proposal } from '@boardsesh/shared-schema';
-import { formatTickRelativeTime, getLayoutDisplayName } from '@boardsesh/profile-stats';
+import { getLayoutDisplayName } from '@boardsesh/profile-stats';
 import { rolesGrantAdminOrLeader, type CommunityRoleScope } from '@boardsesh/community-roles';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
@@ -33,6 +33,7 @@ import { useVoteOnProposal } from '../../lib/graphql/hooks/use-vote-on-proposal'
 import { useResolveProposal } from '../../lib/graphql/hooks/use-resolve-proposal';
 import { getBoardConfigForPlaylist } from '../../lib/playlists/board-details-for-playlist';
 import { hapticLight, hapticMedium } from '../../lib/haptics';
+import { formatRelativeTime } from '../../lib/format-relative-time';
 import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
 import { useConfirm } from '../../providers/dialog-provider';
@@ -239,7 +240,7 @@ export const ModerationProposalCard = memo(function ModerationProposalCard({
           <Avatar uri={proposal.proposerAvatarUrl} name={proposal.proposerDisplayName} size={22} />
           <Text variant="caption1" color={systemColors.tertiaryLabel} numberOfLines={1} style={styles.flex}>
             {proposal.proposerDisplayName ?? t('mobile.moderation.unknownClimber')} ·{' '}
-            {formatTickRelativeTime(proposal.createdAt)}
+            {formatRelativeTime(proposal.createdAt)}
           </Text>
         </View>
 

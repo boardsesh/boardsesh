@@ -864,6 +864,48 @@ describe('checkPatchInventory', () => {
     expect(errors[0]).toContain('4.25.2');
   });
 
+  const serverKey = 'postgres@3.4.9';
+  const serverPath = 'packages/db/patches/postgres@3.4.9.patch';
+
+  it('accepts the explicitly registered server patch outside native fingerprint inputs', () => {
+    expect(
+      checkPatchInventory({
+        ...base,
+        patchedDependencies: { ...base.patchedDependencies, [serverKey]: serverPath },
+        serverPatchPaths: [serverPath],
+      }),
+    ).toEqual([]);
+  });
+
+  it('rejects a missing server patch', () => {
+    expect(
+      checkPatchInventory({
+        ...base,
+        patchedDependencies: { ...base.patchedDependencies, [serverKey]: serverPath },
+      }),
+    ).toEqual([expect.stringContaining('server patch ' + serverPath + ' is missing')]);
+  });
+
+  it('rejects moving a server patch into native fingerprint inputs', () => {
+    expect(
+      checkPatchInventory({
+        ...base,
+        patchedDependencies: { ...base.patchedDependencies, [serverKey]: `patches/${serverKey}.patch` },
+        patchFilenames: [...base.patchFilenames, `${serverKey}.patch`],
+      }),
+    ).toEqual([expect.stringContaining('server patch must stay at'), expect.stringContaining('orphaned')]);
+  });
+
+  it('rejects moving a native patch outside the fingerprinted directory', () => {
+    expect(
+      checkPatchInventory({
+        ...base,
+        patchedDependencies: { [TABS_KEY]: `packages/db/patches/${TABS_KEY}.patch` },
+        serverPatchPaths: [`packages/db/patches/${TABS_KEY}.patch`],
+      }),
+    ).toEqual([expect.stringContaining('not in patches/')]);
+  });
+
   it('fails when a newly patched package has no rule and no allowlist entry', () => {
     const errors = checkPatchInventory({
       ...base,

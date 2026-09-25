@@ -95,9 +95,13 @@ function createMockChain(resolveValue: unknown = []) {
     'leftJoin',
     'innerJoin',
     'groupBy',
+    'having',
     'orderBy',
     'limit',
     'offset',
+    // The size-band count wraps a grouped subquery, so the chain has to be
+    // aliasable the way a real Drizzle builder is.
+    'as',
     'insert',
     'values',
     'onConflictDoNothing',
@@ -119,6 +123,43 @@ function createMockChain(resolveValue: unknown = []) {
   }
 
   return { chain, calls };
+}
+
+/**
+ * Drizzle SQL objects are circular, so JSON.stringify throws on them. They do
+ * expose `usedTables`, and their `queryChunks` carry the literal params — which
+ * between them is enough to assert what a clause is actually made of.
+ */
+function tablesIn(node: unknown): string[] {
+  const found: string[] = [];
+  const walk = (value: unknown) => {
+    if (value == null || typeof value !== 'object') return;
+    const candidate = value as { usedTables?: string[]; queryChunks?: unknown[] };
+    if (Array.isArray(candidate.usedTables)) found.push(...candidate.usedTables);
+    if (Array.isArray(candidate.queryChunks)) candidate.queryChunks.forEach(walk);
+    if (Array.isArray(value)) value.forEach(walk);
+  };
+  walk(node);
+  return found;
+}
+
+function paramsIn(node: unknown): unknown[] {
+  const found: unknown[] = [];
+  const walk = (value: unknown) => {
+    if (value == null || typeof value !== 'object') return;
+    const candidate = value as { value?: unknown; queryChunks?: unknown[] };
+    // StringChunk also has a `value` — an array of literal SQL fragments — so it
+    // has to be excluded by name, or every fragment reads as a bound param.
+    if ('value' in candidate && value.constructor?.name !== 'StringChunk') {
+      const bound = candidate.value;
+      if (Array.isArray(bound)) found.push(...bound);
+      else if (bound == null || typeof bound !== 'object') found.push(bound);
+    }
+    if (Array.isArray(candidate.queryChunks)) candidate.queryChunks.forEach(walk);
+    if (Array.isArray(value)) value.forEach(walk);
+  };
+  walk(node);
+  return found;
 }
 
 const NOW = new Date('2026-01-15T12:00:00Z');
@@ -420,6 +461,113 @@ describe('discoverPlaylists resolver', () => {
 
     // Verify orderBy was called (popular sort uses follower count)
     expect(resultsCalls.orderBy.length).toBe(1);
+  });
+
+  it('orders popular by engagement FIRST, then size as the tiebreak', async () => {
+    // The tiebreak is load-bearing, not decoration. Production has 106 pins
+    // across 829 public playlists, so most rows tie at zero engagement and the
+    // second term is what actually orders the page. Both terms must be present.
+    const ctx = makeCtx();
+
+    const { chain: countChain } = createMockChain([{ count: 2 }]);
+    mockDb.select.mockReturnValueOnce(countChain);
+    const { chain: resultsChain, calls: resultsCalls } = createMockChain([makePlaylistRow()]);
+    mockDb.select.mockReturnValueOnce(resultsChain);
+
+    await playlistQueries.discoverPlaylists(null, { input: { sortBy: 'popular' } }, ctx);
+
+    // `usedTables` records tables passed into the sql template, which is exactly
+    // what the engagement subqueries do — a column reference like the climb count
+    // never shows up here, so the term count below covers that half.
+    const tables = tablesIn(resultsCalls.orderBy[0]);
+    expect(tables).toContain('user_playlist_pins');
+    expect(tables).toContain('playlist_follows');
+    // Engagement, size, updatedAt, id — four terms. `recent` has three, so the
+    // count is what distinguishes "engagement plus a tiebreak" from either alone.
+    expect(resultsCalls.orderBy[0]).toHaveLength(4);
+  });
+
+  it('leaves the recent sort alone — engagement is a popularity concept', async () => {
+    const ctx = makeCtx();
+
+    const { chain: countChain } = createMockChain([{ count: 1 }]);
+    mockDb.select.mockReturnValueOnce(countChain);
+    const { chain: resultsChain, calls: resultsCalls } = createMockChain([makePlaylistRow()]);
+    mockDb.select.mockReturnValueOnce(resultsChain);
+
+    await playlistQueries.discoverPlaylists(null, { input: { sortBy: 'recent' } }, ctx);
+
+    // `tablesIn` reads Drizzle internals, so a `.not.toContain` on it would pass
+    // vacuously if a Drizzle bump ever changed that shape. The term count is the
+    // independent check: `recent` has three, `popular` four.
+    expect(tablesIn(resultsCalls.orderBy[0])).not.toContain('user_playlist_pins');
+    expect(resultsCalls.orderBy[0]).toHaveLength(3);
+  });
+
+  it('applies a size band through HAVING, not WHERE', async () => {
+    // A climb-count filter cannot be a WHERE clause: the count only exists after
+    // the GROUP BY. Getting this wrong filters on the join row, not the playlist.
+    const ctx = makeCtx();
+
+    const { chain: bandedCountChain } = createMockChain([{ count: 3 }]);
+    mockDb.select.mockReturnValueOnce(bandedCountChain);
+    const { chain: innerChain } = createMockChain([]);
+    mockDb.select.mockReturnValueOnce(innerChain);
+    const { chain: resultsChain, calls: resultsCalls } = createMockChain([makePlaylistRow()]);
+    mockDb.select.mockReturnValueOnce(resultsChain);
+
+    await playlistQueries.discoverPlaylists(null, { input: { minClimbs: 5, maxClimbs: 150 } }, ctx);
+
+    // The clause exists, it is a HAVING, and it is built from the climb count —
+    // not from a WHERE on the join row, which would filter climbs rather than
+    // playlists and quietly return the wrong set.
+    expect(resultsCalls.having.length).toBe(1);
+    expect(resultsCalls.having[0][0]).toBeDefined();
+  });
+
+  it('does not reach for a HAVING when no size band was asked for', async () => {
+    const ctx = makeCtx();
+
+    const { chain: countChain } = createMockChain([{ count: 1 }]);
+    mockDb.select.mockReturnValueOnce(countChain);
+    const { chain: resultsChain, calls: resultsCalls } = createMockChain([makePlaylistRow()]);
+    mockDb.select.mockReturnValueOnce(resultsChain);
+
+    await playlistQueries.discoverPlaylists(null, { input: {} }, ctx);
+
+    expect(resultsCalls.having[0]).toEqual([undefined]);
+  });
+
+  it("excludes the viewer's own playlists server-side, so they do not eat page slots", async () => {
+    // This filter used to live on the client, which meant an owner's playlists
+    // were fetched, counted against pageSize, and then removed — silently
+    // shrinking the grid they were removed from.
+    const ctx = makeCtx();
+
+    const { chain: countChain } = createMockChain([{ count: 1 }]);
+    mockDb.select.mockReturnValueOnce(countChain);
+    const { chain: resultsChain, calls: resultsCalls } = createMockChain([makePlaylistRow()]);
+    mockDb.select.mockReturnValueOnce(resultsChain);
+
+    await playlistQueries.discoverPlaylists(null, { input: { excludeCreatorIds: ['me'] } }, ctx);
+
+    expect(paramsIn(resultsCalls.where[0])).toContain('me');
+  });
+
+  it('rejects a size band outside the allowed range', async () => {
+    const ctx = makeCtx();
+
+    await expect(playlistQueries.discoverPlaylists(null, { input: { minClimbs: 0 } }, ctx)).rejects.toThrow();
+  });
+
+  it('rejects an INVERTED band rather than returning a convincing empty page', async () => {
+    // min > max is a caller bug, but the query would happily run it and return
+    // zero rows — indistinguishable from "the catalogue has nothing to show".
+    const ctx = makeCtx();
+
+    await expect(
+      playlistQueries.discoverPlaylists(null, { input: { minClimbs: 100, maxClimbs: 50 } }, ctx),
+    ).rejects.toThrow();
   });
 
   it('should use correct page offset for page > 0', async () => {

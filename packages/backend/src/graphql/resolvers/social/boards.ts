@@ -38,12 +38,14 @@ import {
   requireAnonReadableBoard,
 } from '../board-presence/shared';
 import { assertKnownBoardConfig } from '../board-presence/board-catalog';
+import { isSprayBoardType, sprayBoardRowIsReadable } from '../climbs/spray-read-access';
 import { publishBoardQueuePreviewTombstoneForBoard } from '../../../services/board-queue-preview';
 import { logger } from '../../../utils/logger';
 import { redisClientManager } from '../../../redis/client';
 import { isUniqueViolation } from '../../../utils/postgres-errors';
 import { REDISLESS_FALLBACK_TTL_MS, singleFlight } from '../../../utils/single-flight';
 import { lockAndAssertBoardSerialAvailable } from '../board-serial-write-lock';
+import { listableSprayWallCondition } from '../board/spray-wall-listing';
 
 // ============================================
 // Helpers
@@ -287,8 +289,14 @@ function boardIsRoleEditable(board: { isPublic: boolean; ownerId: string }): boo
  * Authorize editing a board: the caller must be the board owner, a community
  * admin/leader for the board's type (public/catalog boards only), or the
  * owner/admin of the board's linked gym. Throws when none apply.
+ *
+ * Exported so the spray wall API uses this rule UNCHANGED rather than growing a
+ * second one (epic decision 2026-09-14: ownership grants editing a wall, with no
+ * gym-`editor` extension — a gym editor can edit the gym's page and not a wall's
+ * holds). Keep it that way: a wall-specific relaxation here would widen every
+ * board's edit gate at the same time.
  */
-async function requireBoardEditAccess(
+export async function requireBoardEditAccess(
   ctx: ConnectionContext,
   board: typeof dbSchema.userBoards.$inferSelect,
 ): Promise<void> {
@@ -744,6 +752,10 @@ const BOARD_TYPE_LABELS: Record<string, string> = {
   grasshopper: 'Grasshopper',
   soill: 'So iLL',
   woods: 'Woods',
+  // Only ever a lookup here — `formatDisplayName` reads it for one board type.
+  // Spray configs never reach this map anyway: `runPopularConfigsQuery` drops
+  // them (see EXCLUDED_POPULAR_CONFIG_BOARD_TYPES).
+  spray: 'Spray wall',
 };
 
 const GENERIC_SETS = new Set(['bolt ons', 'screw ons', 'foot set', 'plastic', 'wood']);
@@ -853,6 +865,33 @@ async function getPopularConfigs(): Promise<CachedPopularConfig[]> {
   return singleFlight(POPULAR_CONFIGS_FLIGHT_KEY, runPopularConfigsQuery);
 }
 
+/**
+ * Board types that never appear in the popular-config list.
+ *
+ * This list is the www homepage board rail (`popular-board-rail.tsx`) and the
+ * mobile Boards tab (`usePopularBoardConfigs`), so a row here is a board offered
+ * to every visitor. A spray wall is one climber's own wall — private by default,
+ * created through the add-a-wall flow — so it is not a board anyone browses to.
+ *
+ * The display-filter `SUPPORTED_BOARDS` in `@boardsesh/board-config` makes the
+ * same exclusion for the pickers, but it is not the right list to import here:
+ * it also gates MoonBoard on a feature flag, and flipping that flag must not
+ * silently empty the rail of MoonBoard configs.
+ *
+ * SW-04 (#5437) must also create spray catalogue rows with `is_listed = false`
+ * on `board_layouts`, `board_product_sizes` and
+ * `board_product_sizes_layouts_sets`, so the query below never builds the
+ * expensive LATERAL for a wall in the first place. This filter is the belt to
+ * that suspenders: a single mis-seeded row must not put someone's wall on the
+ * homepage.
+ */
+const EXCLUDED_POPULAR_CONFIG_BOARD_TYPES: ReadonlySet<string> = new Set(['spray']);
+
+/** Whether one raw popular-config row may be published to the rail. */
+export function isPopularConfigRow(row: { board_type?: unknown }): boolean {
+  return !EXCLUDED_POPULAR_CONFIG_BOARD_TYPES.has(String(row.board_type));
+}
+
 async function runPopularConfigsQuery(): Promise<CachedPopularConfig[]> {
   const generationAtStart = fallbackGeneration;
 
@@ -898,6 +937,10 @@ async function runPopularConfigsQuery(): Promise<CachedPopularConfig[]> {
       FROM board_product_sizes_layouts_sets psls
       JOIN board_sets bs ON bs.board_type = psls.board_type AND bs.id = psls.set_id
       WHERE psls.is_listed = true
+        -- A spray wall is one climber's own wall, never a board on the rail.
+        -- Dropped here so the LATERAL climb count below is never built for one;
+        -- isPopularConfigRow repeats it on the way out.
+        AND psls.board_type <> 'spray'
       GROUP BY psls.board_type, psls.layout_id, psls.product_size_id
     ) configs
     JOIN board_layouts bl ON bl.board_type = configs.board_type AND bl.id = configs.layout_id
@@ -953,7 +996,7 @@ async function runPopularConfigsQuery(): Promise<CachedPopularConfig[]> {
 
   const rows = rowsFromResult<Record<string, unknown>>(result);
 
-  const configs: CachedPopularConfig[] = rows.map((row) => {
+  const configs: CachedPopularConfig[] = rows.filter(isPopularConfigRow).map((row) => {
     const boardType = row.board_type as string;
     const layoutName = (row.layout_name as string) ?? null;
     const sizeName = (row.size_name as string) ?? null;
@@ -1063,7 +1106,20 @@ export const socialBoardQueries = {
     const viewerId = ctx.isAuthenticated ? ctx.userId : undefined;
     // Gate before enrichment so a masked anonymous read never runs the
     // owner/count/follow lookups for a board it isn't allowed to see.
-    if (!viewerId && !isRowAnonReadable(canonical)) return null;
+    //
+    // A spray wall takes the wall's own rule INSTEAD of the anonymous mask, not
+    // after it. The mask refuses every non-public board to an anonymous caller,
+    // which is right for a piece of gym furniture and wrong here in both
+    // directions: it let a signed-in stranger into a PRIVATE wall (that is what
+    // the capability check below closes), and it kept an anonymous caller out of
+    // an UNLISTED one — even though the uuid they presented is the entire claim,
+    // 122 unguessable bits, and `sprayWall(uuid)` hands them the same wall. One
+    // rule per key: a uuid is a capability whether or not you are signed in.
+    if (isSprayBoardType(canonical.boardType)) {
+      if (!(await sprayBoardRowIsReadable(canonical, viewerId, 'capability'))) return null;
+    } else if (!viewerId && !isRowAnonReadable(canonical)) {
+      return null;
+    }
     return enrichBoard(canonical, viewerId);
   },
 
@@ -1081,6 +1137,9 @@ export const socialBoardQueries = {
     // Same anonymous mask as the active path and `board(boardUuid)`: following a
     // tombstone must not disclose a private survivor to an anonymous caller.
     if (!viewerId && !isRowAnonReadable(canonical)) return null;
+    // A spray wall's slug is derived from the wall's NAME, so it is a guess and
+    // not a capability: no unlisted exemption here, unlike `board(boardUuid)`.
+    if (!(await sprayBoardRowIsReadable(canonical, viewerId, 'enumerable'))) return null;
     return enrichBoard(canonical, viewerId);
   },
 
@@ -1092,8 +1151,10 @@ export const socialBoardQueries = {
    * convention: unlisted = link-only, never enumerated). A missing gym, or a
    * private gym seen by a non-editor, is masked as NOT_FOUND. Auth-optional and
    * rate-limited like the other anon board reads; the leaderboard embed reuses
-   * it without any auth. Boards are ordered by name. Populates each board's
-   * `boardId` (presence channel) via the shared enrichBoards visibility rule.
+   * it without any auth. Boards are ordered by name, then createdAt and uuid, so
+   * the walls a gym names identically keep a fixed position between refetches.
+   * Populates each board's `boardId` (presence channel) via the shared
+   * enrichBoards visibility rule.
    */
   gymBoards: async (_: unknown, { gymUuid }: { gymUuid: string }, ctx: ConnectionContext) => {
     // 30/min matches the board-presence anon family this query feeds
@@ -1124,7 +1185,14 @@ export const socialBoardQueries = {
       throw new GraphQLError('Gym not found', { extensions: { code: 'NOT_FOUND' } });
     }
 
-    const conditions = [eq(dbSchema.userBoards.gymId, gym.id), isNull(dbSchema.userBoards.deletedAt)];
+    const conditions = [
+      eq(dbSchema.userBoards.gymId, gym.id),
+      isNull(dbSchema.userBoards.deletedAt),
+      // A spray wall with nothing published yet is a board nobody can climb on —
+      // not even for the gym's admins, who do see the private rows below. Its
+      // owner sees it, so they can go and finish it (SW-14).
+      listableSprayWallCondition(viewerId),
+    ];
     // Non-editors (including anonymous) only see the gym's publicly LISTED
     // boards — isPublic AND NOT isUnlisted, mirroring searchBoards (unlisted =
     // reachable by direct link only, never enumerated). The leaderboard embed
@@ -1138,7 +1206,19 @@ export const socialBoardQueries = {
       .select()
       .from(dbSchema.userBoards)
       .where(and(...conditions))
-      .orderBy(asc(dbSchema.userBoards.name));
+      .orderBy(
+        asc(dbSchema.userBoards.name),
+        // Name alone is a PARTIAL order here. Walls at one gym routinely share a
+        // name: the Aurora wall crawl builds them as
+        // `${gymName} - ${wall.name || formatLocationBoardName(board)}`, so every
+        // unnamed wall of the same vendor collapses to one string (#5272). With
+        // ties, Postgres may return those rows in a different order per request,
+        // and the board switcher lists them as tappable rows — a row that moves
+        // between refetches is a mistap. Oldest wall first, then uuid, which is
+        // unique and so guarantees a total order.
+        asc(dbSchema.userBoards.createdAt),
+        asc(dbSchema.userBoards.uuid),
+      );
 
     return enrichBoards(
       boards.map((board) => ({ board })),
@@ -1324,7 +1404,11 @@ export const socialBoardQueries = {
     const ownerCondition = eq(dbSchema.userBoards.ownerId, userId);
     const followedCondition = followedUuids.length > 0 ? inArray(dbSchema.userBoards.uuid, followedUuids) : undefined;
     const matchCondition = followedCondition ? or(ownerCondition, followedCondition)! : ownerCondition;
-    const whereClause = and(matchCondition, isNull(dbSchema.userBoards.deletedAt));
+    // In the WHERE the COUNT and the paged read share, never a post-filter:
+    // dropping rows from the page alone would leave the count promising results
+    // the last page does not have. `userId` is the owner escape, so the caller's
+    // own half-built walls stay in their list (SW-14).
+    const whereClause = and(matchCondition, isNull(dbSchema.userBoards.deletedAt), listableSprayWallCondition(userId));
 
     const [countResult] = await db.select({ count: count() }).from(dbSchema.userBoards).where(whereClause);
 
@@ -1423,6 +1507,10 @@ export const socialBoardQueries = {
         eq(dbSchema.userBoards.isPublic, true),
         eq(dbSchema.userBoards.isUnlisted, false),
         isNull(dbSchema.userBoards.deletedAt),
+        // A wall can carry `is_public` before it has a published photo — the flag
+        // and the first publish are two separate moments — and search must not
+        // offer a board with no holds on it (SW-14).
+        listableSprayWallCondition(ctx.isAuthenticated ? ctx.userId : undefined),
         sql`${locationCol} IS NOT NULL`,
         sql`ST_DWithin(${locationCol}, ${userPoint}, ${radiusMeters})`,
         // Hide boards with hideLocation=true unless the board owner follows the searching user
@@ -1493,6 +1581,9 @@ export const socialBoardQueries = {
       eq(dbSchema.userBoards.isPublic, true),
       eq(dbSchema.userBoards.isUnlisted, false),
       isNull(dbSchema.userBoards.deletedAt),
+      // Same rule as the proximity path above: a public wall with nothing
+      // published is not a result (SW-14).
+      listableSprayWallCondition(ctx.isAuthenticated ? ctx.userId : undefined),
     ];
 
     if (boardType) {
@@ -2260,6 +2351,44 @@ export const socialBoardMutations = {
     if (validatedInput.locationName !== undefined) updateValues.locationName = validatedInput.locationName;
     if (validatedInput.latitude !== undefined) updateValues.latitude = validatedInput.latitude;
     if (validatedInput.longitude !== undefined) updateValues.longitude = validatedInput.longitude;
+    // A spray wall's visibility is not an ordinary board flag: flipping it public
+    // copies the wall photo into the world-readable bucket, and flipping it back
+    // deletes that copy and retracts the climbs already fanned out to feeds
+    // (`updateSprayWall`, SW-14). Letting it through here would set the flag and
+    // do none of that — a private wall whose photo is still on the open web, or a
+    // public one that has no photo to show. One door, and this is not it.
+    //
+    // Only a CHANGE is refused: the edit screen sends the board's current flags
+    // back unchanged with every rename, and failing those would make a wall
+    // unrenameable.
+    const changingVisibility =
+      (validatedInput.isPublic !== undefined && validatedInput.isPublic !== board.isPublic) ||
+      (validatedInput.isUnlisted !== undefined && validatedInput.isUnlisted !== board.isUnlisted);
+    if (board.boardType === 'spray' && changingVisibility) {
+      throw new GraphQLError("Change a spray wall's visibility on the wall itself", {
+        extensions: { code: 'SPRAY_WALL_VISIBILITY_ELSEWHERE' },
+      });
+    }
+
+    // The other two flags `createSprayWall` pins and this mutation would happily
+    // unpin (#5486). `has_leds` is the whole of the "no Bluetooth on a wall"
+    // contract: it routes the bulb down the take-the-wall path, keeps the device
+    // picker unmounted and the LED controls hidden, so a wall with it set offers a
+    // climber a Bluetooth scan for a photograph. `is_angle_adjustable` is the same
+    // shape of lie — a wall does not adjust, and every climb on it is recorded at
+    // the one angle it was photographed at.
+    //
+    // A CHANGE again, not the field's presence: a client that echoes the board
+    // back unchanged on a rename must not be refused.
+    const changingWallHardware =
+      (validatedInput.hasLeds !== undefined && validatedInput.hasLeds !== board.hasLeds) ||
+      (validatedInput.isAngleAdjustable !== undefined && validatedInput.isAngleAdjustable !== board.isAngleAdjustable);
+    if (board.boardType === 'spray' && changingWallHardware) {
+      throw new GraphQLError('A spray wall is a photograph — it has no lights and it does not adjust', {
+        extensions: { code: 'SPRAY_WALL_HAS_NO_HARDWARE' },
+      });
+    }
+
     if (validatedInput.isPublic !== undefined) updateValues.isPublic = validatedInput.isPublic;
     if (validatedInput.isUnlisted !== undefined) updateValues.isUnlisted = validatedInput.isUnlisted;
     if (validatedInput.hideLocation !== undefined) updateValues.hideLocation = validatedInput.hideLocation;

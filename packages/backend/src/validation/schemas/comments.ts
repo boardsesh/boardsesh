@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { BULK_VOTE_SUMMARY_CHUNK_SIZE } from '@boardsesh/shared-schema';
 
 /**
  * Social entity type validation schema
@@ -75,5 +76,7 @@ export const CommentsInputSchema = z.object({
 export const BulkVoteSummaryInputSchema = z.object({
   entityType: SocialEntityTypeSchema,
   // Empty arrays are a valid no-op: the resolver returns []. (No `.min(1)` here.)
-  entityIds: z.array(z.string().min(1).max(200)).max(100),
+  // The cap lives in @boardsesh/shared-schema so the clients that have to
+  // batch around it can't drift from what this rejects.
+  entityIds: z.array(z.string().min(1).max(200)).max(BULK_VOTE_SUMMARY_CHUNK_SIZE),
 });

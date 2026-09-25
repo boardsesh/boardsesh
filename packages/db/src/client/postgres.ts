@@ -165,12 +165,20 @@ function isPlaintextDevelopmentDatabase(connectionString: string): boolean {
 }
 
 function buildPoolOptions(connectionString: string) {
+  const options = basePoolOptions();
+  // Explicit verification must win over the legacy encryption-only default,
+  // including for localhost. An object also keeps NODE_TLS_REJECT_UNAUTHORIZED
+  // from weakening this pool. Both primary and replica use this factory.
+  const tlsModes = new URL(connectionString).searchParams.getAll('sslmode');
+  if (tlsModes.length > 1) throw new Error('Database URL must not repeat sslmode');
+  if (tlsModes.includes('verify-full')) {
+    return { ...options, ssl: { rejectUnauthorized: true } };
+  }
   // postgres-js does not enforce TLS unless told. Force SSL for non-local
   // hosts so a misconfigured DATABASE_URL (missing `?sslmode=require`) cannot
   // silently degrade to plaintext against Railway. Local docker and generated
   // tailnet dev DB URLs stay plain.
   const isLocal = LOCAL_HOST_PATTERN.test(connectionString) || isPlaintextDevelopmentDatabase(connectionString);
-  const options = basePoolOptions();
   return isLocal ? options : { ...options, ssl: 'require' as const };
 }
 

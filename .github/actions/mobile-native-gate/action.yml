@@ -1,8 +1,9 @@
 name: Mobile native-build gate
 description: >
   Decide whether a PR or branch push needs a native build. Skips when nothing
-  that can move the Expo fingerprint changed vs main, or when the fingerprint
-  itself is unchanged vs main — the PR/branch mirror of how main skips the native
+  that can move the Expo fingerprint changed vs the base branch, or when the
+  fingerprint itself is unchanged vs it — the PR/branch mirror of how a release
+  branch skips the native
   build for JS-only merges. Branch pushes are gated too: the push-triggered build
   predates OTA and no longer needs to run for JS-only changes. Runs on ubuntu for
   both platforms (the fingerprint resolve is file-hash based; it needs neither
@@ -20,6 +21,14 @@ inputs:
   platform:
     description: 'Expo platform to resolve the fingerprint for (android | ios).'
     required: true
+  base-ref:
+    description: >
+      Branch the change will merge into, diffed against. Callers pass
+      github.base_ref so a PR into release/next is compared with the train it is
+      joining, not with main — otherwise every train PR reads as a native change
+      merely because the train already carries one.
+    required: false
+    default: main
 outputs:
   should_build:
     description: 'true when the native build must run; false to skip it.'
@@ -46,6 +55,7 @@ runs:
       env:
         PLATFORM: ${{ inputs.platform }}
         EVENT: ${{ github.event_name }}
+        BASE_REF: ${{ inputs.base-ref || 'main' }}
       run: |
         # No `set -e`: this gate is deliberately fail-OPEN (an unexpected error
         # should build, never block a PR), and every decision path exits via
@@ -59,10 +69,10 @@ runs:
         # Manual dispatch has no base to diff against.
         [ "$EVENT" = "workflow_dispatch" ] && build "manual dispatch"
 
-        # Diff against main — base.sha for a PR merge ref, the merge target for a
-        # branch push. A shallow tip is enough: `git diff A B` compares the two
-        # trees directly (no merge-base needed).
-        git fetch --no-tags --depth=1 origin main 2>/dev/null || build "could not fetch main to diff against"
+        # Diff against the base branch — base.sha for a PR merge ref, the merge
+        # target for a branch push. A shallow tip is enough: `git diff A B`
+        # compares the two trees directly (no merge-base needed).
+        git fetch --no-tags --depth=1 origin "$BASE_REF" 2>/dev/null || build "could not fetch $BASE_REF to diff against"
         BASE_SHA="$(git rev-parse FETCH_HEAD)"
 
         changed() { git diff --name-only "$BASE_SHA" HEAD -- "$@" 2>/dev/null; }
@@ -83,7 +93,7 @@ runs:
               packages/mobile/fingerprint.config.js packages/mobile/plugins \
               packages/mobile/modules packages/mobile/locales packages/mobile/eas.json \
               packages/mobile/assets packages/mobile/targets patches)" ]; then
-          skip "no native-input files changed vs main"
+          skip "no native-input files changed vs $BASE_REF"
         fi
 
         # pnpm-workspace.yaml is screened alongside the lockfile because under pnpm
@@ -93,7 +103,7 @@ runs:
         #
         # A candidate changed, but that set includes pnpm-lock.yaml — which any
         # web/backend dep bump churns without touching the mobile native shape.
-        # Resolve the Expo fingerprint at HEAD and at main and skip when identical.
+        # Resolve the Expo fingerprint at HEAD and at the base and skip when equal.
         # Fail open: any resolve/install/worktree trouble builds.
         resolve_fp() {
           # $1 = repo root to resolve the fingerprint in.
@@ -118,7 +128,7 @@ runs:
         write_env .
         HEAD_FP="$(resolve_fp .)"
 
-        # Resolve the main fingerprint in an ISOLATED worktree so the primary
+        # Resolve the base fingerprint in an ISOLATED worktree so the primary
         # checkout is never mutated (head files, incl. this action, stay in place —
         # no ordering footgun for any later step). pnpm's content-addressed store is
         # shared across both trees AND it hardlinks into node_modules rather than
@@ -128,7 +138,7 @@ runs:
         BASE_PARENT="$(mktemp -d)"
         BASE_DIR="$BASE_PARENT/wt"
         git worktree add --detach "$BASE_DIR" "$BASE_SHA" 2>/dev/null || {
-          rm -rf "$BASE_PARENT"; build "could not materialise main to diff the fingerprint"; }
+          rm -rf "$BASE_PARENT"; build "could not materialise $BASE_REF to diff the fingerprint"; }
         write_env "$BASE_DIR"
         if ! ( cd "$BASE_DIR" && vp install --frozen-lockfile ); then
           git worktree remove --force "$BASE_DIR" 2>/dev/null || true; rm -rf "$BASE_PARENT"
@@ -140,7 +150,7 @@ runs:
 
         echo "platform=$PLATFORM head=$HEAD_FP base=$BASE_FP"
         if [ -n "$HEAD_FP" ] && [ -n "$BASE_FP" ] && [ "$HEAD_FP" = "$BASE_FP" ]; then
-          skip "$PLATFORM fingerprint unchanged vs main ($HEAD_FP)"
+          skip "$PLATFORM fingerprint unchanged vs $BASE_REF ($HEAD_FP)"
         else
           build "$PLATFORM fingerprint changed (base=$BASE_FP head=$HEAD_FP)"
         fi

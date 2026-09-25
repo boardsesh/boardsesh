@@ -89,6 +89,8 @@ function createFixtureRepo() {
   writeFixtureFile(repoRoot, 'scripts/build-expo-web-export.sh', '#!/usr/bin/env bash\n');
   writeFixtureFile(repoRoot, 'scripts/lib/patch-expo-web-pwa-manifest.mjs', 'export {};\n');
   writeFixtureFile(repoRoot, 'scripts/lib/tailscale-hostname.ts', 'export {};\n');
+  writeFixtureFile(repoRoot, 'scripts/lib/design-previews.ts', 'export {};\n');
+  writeFixtureFile(repoRoot, 'scripts/lib/dev-object-store.ts', 'export {};\n');
   // Same for the backend service's extraSourceDirs entry.
   writeFixtureFile(repoRoot, 'packages/web/public/images/stub.webp', '');
 
@@ -554,6 +556,35 @@ void test('rejects source package COPY instructions before pnpm install', () => 
 
     const failures = createServiceDeployInputFailures({ repoRoot });
     assert.match(failures.join('\n'), /appears before pnpm install/);
+  });
+});
+
+void test('copies server-only patches outside mobile fingerprint inputs before fetch', () => {
+  withFixtureRepo((repoRoot) => {
+    const patchPath = 'packages/db/patches/postgres@3.4.9.patch';
+    writeWorkspaceYaml(repoRoot, { patchedDependencies: { 'postgres@3.4.9': patchPath } });
+    writeFixtureFile(repoRoot, patchPath, 'diff\n');
+    const patchCopy = 'COPY manifests/packages/db/patches ./packages/db/patches';
+    assert.match(
+      createServiceDeployInputFailures({ repoRoot }).join('\n'),
+      /missing COPY manifests\/packages\/db\/patches/,
+    );
+
+    for (const dockerfile of ['Dockerfile.backend', 'Dockerfile.web', 'Dockerfile.sync']) {
+      writeFixtureFile(repoRoot, dockerfile, dockerfileLines([patchCopy]));
+    }
+    assert.deepEqual(createServiceDeployInputFailures({ repoRoot }), []);
+
+    // Copying all package manifests after fetch is too late for this patch.
+    writeFixtureFile(
+      repoRoot,
+      'Dockerfile.backend',
+      dockerfileLines().replace(
+        'COPY manifests/packages ./packages',
+        `${patchCopy}\nCOPY manifests/packages ./packages`,
+      ),
+    );
+    assert.match(createServiceDeployInputFailures({ repoRoot }).join('\n'), /patches must appear before `pnpm fetch`/);
   });
 });
 

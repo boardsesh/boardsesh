@@ -1,4 +1,5 @@
 import { formatTickRelativeTime, tickTimeMs } from '@boardsesh/profile-stats';
+import { nowMs } from './clock';
 
 // Locale-aware "5 minutes ago"-style formatting for ISO timestamps, shared by
 // any surface that shows recency (draft lists, the BLE device picker's
@@ -9,12 +10,19 @@ import { formatTickRelativeTime, tickTimeMs } from '@boardsesh/profile-stats';
 // the logbook/feed surfaces). It must NOT use Intl.RelativeTimeFormat: Hermes
 // ships an incomplete Intl without it, so constructing one throws a TypeError
 // that release builds promote to a native crash — Node-based tests never see it.
+//
+// This is the ONLY place under packages/mobile allowed to import
+// `formatTickRelativeTime` from `@boardsesh/profile-stats` directly — every
+// component that shows recency calls this wrapper instead, so `nowMs()`
+// (the screenshot-mode frozen clock, see lib/clock.ts) reaches every relative
+// timestamp through one door. Enforced by
+// `src/__tests__/relative-time-uses-frozen-clock.test.ts`.
 export function formatRelativeTime(iso: string | null | undefined): string {
   if (!iso) return '';
   // formatTickRelativeTime throws on empty input and renders "Invalid Date" for
   // unparseable strings, so validate first to keep the empty-string contract.
   if (!Number.isFinite(tickTimeMs(iso))) return '';
-  return formatTickRelativeTime(iso);
+  return formatTickRelativeTime(iso, nowMs());
 }
 
 export type CompactAgoUnit = 'now' | 'minutes' | 'hours' | 'days' | 'weeks';

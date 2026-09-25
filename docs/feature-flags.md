@@ -69,6 +69,10 @@ Read it like this:
 
 Locally it is the only way in: the browser PostHog client refuses to initialise off a production hostname, so on localhost there is no person and nothing to evaluate against.
 
+**Crawlers are in the same position, on purpose.** Since 2026-09-11 the client also refuses to initialise for a crawler user agent (`isAutomatedCrawlerUserAgent`, the same predicate the Sentry gate uses), so a crawler fetches no flags and every client flag reads as its shipped default. That is the intended answer for a crawler — it should see what an unflagged visitor sees — but it means "Googlebot renders the default UI" is correct behaviour, not a flag bug. Server flags are unaffected: `getPosthogDistinctId` returns `null` for anyone not signed in, so a crawler never had a person to evaluate against there either.
+
+The gate exists because crawlers were not a rounding error in this project. Applebot executes our JavaScript and holds no cookies, so every page load minted a fresh anonymous person and it parsed as "Safari / Mac OS X" — on 2026-09-10 that was 917 "people" against 29 real web visitors, roughly 90% of web product analytics. See the comment on `getPosthog()` in `packages/web/app/lib/analytics.ts` for the full measurement.
+
 In production it is the kill switch and the "I need this reachable now" lever — set it in the Vercel production environment and redeploy. It short-circuits before any network call, so it also keeps a flagged surface up during a PostHog outage. It outranks the dashboard silently, which is why the diagnostics endpoint always reports it.
 
 ## Adding a server flag
@@ -120,6 +124,84 @@ diagnostic) applies on native. The whole surface lives in three files:
   `useClimbModerationEnabled`, unresolved = enabled) that takes down the whole
   community-moderation surface at once: the "Report climb" action, the More-tab
   Moderation row, and the community moderation status on a climb.
+  `active-board-follow-heal-kill` is a kill switch (read through
+  `useActiveBoardFollowHealEnabled`, unresolved = enabled) for the silent
+  launch follow of the active board (#5654, `use-active-board-follow-heal.ts`).
+  Unlike most kill switches it is only read after `useFeatureFlagsResolved()`,
+  because the heal is a one-shot server write at launch: acting on the
+  unresolved first frame would send the follow before a set switch could stop
+  it.
+  Three more kill switches cover the launch surfaces #5654 woke up. From 2.2.0
+  until that fix, all of them sat behind a `ready` prop frozen at `false` under
+  `DatabaseProvider` (expo-sqlite's memo'd provider never re-renders its
+  children; see `packages/mobile/src/providers/launch-ready-context.tsx`), so
+  the OTA that fixed the wiring turned on features the fleet had never run.
+  `connectivity-banner-kill` hides the bottom connectivity banner
+  (`useConnectivityBannerEnabled`); outage detection itself stays on, since
+  that is `backend-outage-detection`. `qa-tester-gate-kill` stops the
+  tester-only launch prompt (`useQaTesterGateEnabled`). `send-recovery-gate-kill`
+  stops the one-time recovered-sends notice (`useSendRecoveryGateEnabled`); the
+  note stays owed in the database and the sends are requeued either way. All
+  three read unresolved as enabled, and all three surfaces wait for
+  `useFeatureFlagsResolved()` (at most 2 s) before they act, so a switch flipped
+  in PostHog lands before the push (`QaTesterGate`, `SendRecoveryGate`) or the
+  first paint (`ConnectivityBanner`) it exists to stop. That holds on a build
+  baked with `EXPO_PUBLIC_STRAVA_INTEGRATION` or `EXPO_PUBLIC_LOGBOOK_FILTERS`
+  too: the root layout passes that env bag with `staticFlagsAreFinal={false}`,
+  because it pins only its own keys, so the resolved hook still waits for
+  PostHog. Only a test's `flags` bag counts as final on the first frame. The
+  onboarding and board-look gates woke up in the same change but only
+  evaluate and log (`Onboarding Gate Evaluated`, `Board Look Step Evaluated`).
+  `first-board-picker-kill` (read through `useFirstBoardPickerEnabled`,
+  unresolved = enabled) covers the one thing the onboarding gate does present:
+  the board picker in first-board mode ("Where do you climb?") for an account
+  at most 7 days old with no board, at most twice per account. It ships to
+  every new account with no experiment, so this switch is the only way to take
+  it back without a release. With it on the gate logs `would_present` with
+  `picker_verdict: 'kill_switch'` and opens nothing, and it stops marking the
+  board-look step seen for new accounts, so a new account gets exactly what it
+  got before the picker. Find my board and every other way into the picker keep
+  working. The gate waits for
+  `useFeatureFlagsResolved()` before it decides, like the others.
+  `first-connect-cta-kill` (read through `useFirstConnectCtaEnabled`,
+  unresolved = enabled) takes down the connect-step A/B test (#5654, PR 7):
+  no new account is enrolled, and every enrolled one gets the plain bulb back
+  (no Climbs card, no "Light it on the board" pill, no first-connect
+  confirmation). The test deliberately assigns arms WITHOUT a PostHog flag: a
+  first launch has no cached flags, so a flag-driven arm could change under a
+  climber the moment it resolved. The arm is
+  `murmurHash3_32(concat(user_id, ':first-connect-cta-v1')) % 2` (1 =
+  treatment), computed on the phone, and only dealt on a production build
+  (not a dev build, an EAS preview or a `pr-*` OTA preview) whose installed
+  binary is 2.7.0 or later (`CONNECT_STEP_MIN_NATIVE_VERSION`): the code
+  reaches older binaries by OTA and stays inert there. Its QA override,
+  `first-connect-cta-arm` (variants `treatment` / `control`), is the one
+  catalog entry whose PostHog value is IGNORED: the enrolment reads the
+  on-device override store directly, so a flag of that name created in
+  PostHog cannot move real climbers between arms. Forcing an arm skips the
+  build, binary, age and never-connected checks, wipes the phone's
+  connect-step state, takes effect right away for the signed-in account
+  (`FirstConnectHost` re-enrols when the override changes), and tags the
+  exposure `arm_forced: true`.
+  `spray-walls` is a POSITIVE rollout flag (read through
+  `useSprayWallsEnabled`, unresolved = off) covering the whole spray wall
+  surface: the "Add a spray wall" tile on the boards picker and the
+  `/boards/spray/*` routes behind it. Off is the direction that matters — a tile
+  that flickers in for the first frames of a cold open is worse than one that
+  arrives a beat late.
+
+  **The rollout, and what gates each step.** Testers first (the on-device
+  override, More → Feature Flags), then 10 %, then everyone. Step 2 needs
+  `SPRAY_ROLLOUT_GATES.detectionCorrectionRate` ≤ 0.15 over `Spray Holds
+  Reviewed` where `hadCandidates` is true, plus `Spray Wall Upload Finished`
+  `outcome: 'ok'` ≥ 0.95; step 3 needs `SPRAY_ROLLOUT_GATES.resetCommitRate`
+  ≥ 0.6 — resets applied ÷ resets previewed, because an owner who previews a
+  reset and never applies it has been shown something they do not believe. Both
+  ratios are functions in `packages/shared/analytics/src/spray-wall-events.ts`
+  rather than prose in a dashboard description, so the doc and the code cannot
+  drift. Stepping back is just setting the flag false: nothing it gates writes
+  anything a rollback has to undo, and a wall already created stays created.
+  Full table: `docs/spray-walls.md` → "Rolling the flag out".
 - **Live read**: `readPosthogFeatureFlags` in `packages/mobile/src/lib/analytics.ts`.
 - **Dev override**: `packages/mobile/src/lib/feature-flag-overrides.ts` — an
   on-device `Record<string, boolean | string>`, persisted to AsyncStorage,
@@ -174,6 +256,29 @@ Two things to keep in mind when touching this:
   `undefined` forever. Under a strict `=== true` that is indistinguishable from
   a permanent "off", and a feature defaulted this way ships dead. Register the
   key in the catalog in the same change that first reads it.
+### Optional board-account linking during first-run
+
+`board-link-onboarding-step` is a positive mobile rollout flag: missing, unresolved,
+or false skips the extra step. Supported boards are Kilter, Tension, Decoy,
+Touchstone, Grasshopper and So iLL. The onboarding board picker also checks
+connectivity, no previous answer and a known empty credential list. Once
+binding and its optional download dialog finish, only a known eligible result
+opens the link card; unresolved eligibility continues to Climbs. Direct navigation
+to the link step also respects the flag and supported-board check.
+
+The card is optional. Linking and Not now record an answered marker in app-sandbox
+preferences; Android Back declines the card, or closes its credential dialog first.
+Closing the dialog without linking does not answer the card. A failed preference
+write is reported without blocking exit. MoonBoard retains its separate file-import
+flow. Linked accounts sync available history with variable timing; this step adds
+no complete-history or delivery-time guarantee.
+
+Testers can enable **Onboarding board-account link step** through the avatar →
+Settings → Feature Flags. Then use avatar → Settings → Replay walkthrough to
+reopen onboarding; replay does not clear an existing link-step answer.
+Production rollout is a separate action: compare board activations per tour start
+across cohorts and inspect prompt decline/abandonment before expanding exposure.
+This change does not enable the production flag.
 
 ### Boolean vs multivariate
 
@@ -208,6 +313,62 @@ flags existed. The on-device override widens the same way — `setOverride(key,
 value)` accepts `boolean | string`, and the Feature Flags screen renders a
 `select`-style row (Default + each declared variant) instead of the boolean
 On/Off segmented control whenever a definition has `variants`.
+
+### `donation-links` — the one flag whose targeting is a compliance boundary
+
+Almost every flag here decides whether a feature is visible. This one decides
+whether the app breaks a store policy, so it is worth reading before touching it
+in the dashboard.
+
+An external donation link is a rejection risk in both stores. Two narrow windows
+allow it: the **iOS US storefront** (external purchase links, allowed since May
+2025) and **Android in Australia** from **30 Sept 2026**. Outside them the
+compliant surface is unlinked text that merely names the website — the pattern
+StreetComplete ships and Google sanctions. The Acknowledgements screen renders
+exactly one of those two, and `useDonationLinksAllowed`
+(`packages/mobile/src/lib/donation-links.ts`) picks.
+
+**The two platforms are not equally protected, and the asymmetry is the whole
+point of this section.**
+
+- **iOS cannot be rolled out wrong.** Past the flag, the hook also requires an
+  App Store storefront of `USA`, read from the device through
+  `requireOptionalNativeModule('Storefront')`. A flag enabled worldwide still
+  shows a French iPhone the unlinked text. The module is a native change, so on
+  every binary that predates it — and in Expo Go, and on Android — the probe
+  returns null, which reads as not-allowed. That is the designed degradation.
+- **Android has no client guard at all.** Play exposes no storefront to the app,
+  so there is nothing on-device to check a country against. **The PostHog
+  targeting IS the guard**, and it has to be exactly:
+
+  > platform = Android **and** country = AU **and** date >= 2026-09-30
+
+  A percentage rollout on Android, or any country condition wider than AU, ships
+  a policy violation directly — nothing downstream will catch it.
+
+  **And the answer is sticky.** PostHog values persist on the device, so an
+  Android phone that resolved `true` while in an allowed country keeps the link
+  until its next flag reload somewhere else. Narrowing the targeting does not
+  reach back and correct a device already holding a `true`; plan the rollout
+  knowing a wrong answer outlives the config that produced it.
+
+**The tester override is disabled for it in production**, which is what
+`policyControlled: true` on a flag definition means. Ordinarily the on-device
+override is the highest-precedence layer — the whole point of the Feature Flags
+screen. Here that would be a hole: testers install the same store binaries as
+everyone else, so an override travels to a region where the behaviour it unlocks
+is not allowed, and it overrules PostHog, the only layer that knows where the
+device is. `applyOverridePolicy` in the provider therefore strips overrides for
+policy-controlled keys unless `isDevBuild()` — so QA can still force the CTA in a
+dev client, and a store build ignores the stored value. The tester row says so
+rather than showing a choice it is not honouring ("override ignored on this
+build"). Mark any future flag the same way if flipping it wrong is a policy
+violation rather than an early look at a feature.
+
+Everything else about the flag is ordinary: a POSITIVE rollout flag read as
+`=== true`, so unresolved, absent and off all land on the unlinked text, which
+is the safe answer in every region. It deliberately does not wait on
+`useFeatureFlagsResolved` — the first-frame render is already the compliant one.
 
 ### The board-render flags (issue #2202) — both retired
 

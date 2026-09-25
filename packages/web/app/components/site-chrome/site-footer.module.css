@@ -1,14 +1,15 @@
 .footer {
-  border-top: 1px solid var(--color-divider, rgba(0, 0, 0, 0.08));
-  margin-top: 48px;
-  padding: 32px 16px calc(24px + var(--safe-area-inset-bottom));
+  border-top: 1px solid var(--separator);
+  margin-top: var(--spacing-16);
+  padding: var(--spacing-12) var(--spacing-8) calc(var(--spacing-6) + var(--safe-area-inset-bottom));
+  background: color-mix(in srgb, var(--semantic-surface) 20%, var(--semantic-background));
 }
 
 .inner {
   display: flex;
   flex-direction: column;
-  gap: 24px;
-  max-width: 1120px;
+  gap: var(--spacing-10);
+  max-width: calc(1200px - var(--spacing-16));
   margin: 0 auto;
 }
 
@@ -16,25 +17,38 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 12px;
+  gap: var(--spacing-4);
+  max-width: 34ch;
 }
 
-/* Three named groups rather than one flat row: with twelve links the flat row
-   wrapped into an unscannable block, and "Find a gym" needs a heading a reader
-   can aim at. auto-fit collapses to two columns on a phone and three from the
-   900px breakpoint the row layout already uses — no JS, no fixed count. */
+/* Two discovery groups stay readable side by side; the legal links form a
+   compact lower row without losing their heading or crawlable anchors. */
 .links {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 24px 32px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--spacing-6) var(--spacing-8);
 }
 
 .linkGroup {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 8px;
+  gap: var(--spacing-1);
   min-width: 0;
+}
+
+.linkGroup:last-child {
+  grid-column: 1 / -1;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-2) var(--spacing-5);
+  padding-top: var(--spacing-4);
+  border-top: 1px solid var(--separator);
+}
+
+.linkGroup:last-child h2 {
+  flex-basis: 100%;
 }
 
 .bottom {
@@ -42,9 +56,11 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  max-width: 1120px;
-  margin: 24px auto 0;
+  gap: var(--spacing-3);
+  max-width: calc(1200px - var(--spacing-16));
+  margin: var(--spacing-10) auto 0;
+  padding-top: var(--spacing-6);
+  border-top: 1px solid var(--separator);
 }
 
 @media (min-width: 900px) {
@@ -56,8 +72,21 @@
   }
 
   .links {
-    grid-template-columns: repeat(3, minmax(150px, auto));
+    grid-template-columns: repeat(2, minmax(150px, auto));
     justify-content: flex-end;
-    max-width: 620px;
+    width: 50%;
+    max-width: 560px;
+  }
+}
+
+@media (max-width: 599px) {
+  .footer {
+    padding-inline: var(--spacing-6);
+  }
+}
+
+@media (max-width: 359px) {
+  .footer {
+    padding-inline: var(--spacing-4);
   }
 }

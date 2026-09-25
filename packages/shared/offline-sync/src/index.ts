@@ -36,7 +36,7 @@ export {
   discardDeadLetter,
   clearAll,
 } from './mutation-queue/queue';
-export type { PendingMutation, EnqueueResult, OutboxSummary } from './mutation-queue/queue';
+export type { PendingMutation, EnqueueResult, EnqueueOptions, OutboxSummary } from './mutation-queue/queue';
 export { parseQueueTimestamp, queueTimestampAgeDays } from './mutation-queue/queue-timestamps';
 export {
   drainMutationQueue,
@@ -64,6 +64,17 @@ export type {
   MutationDeadLetterReporter,
 } from './mutation-queue/drainer';
 export { ensureMutationQueueTable, MUTATION_QUEUE_SCHEMA } from './mutation-queue/schema';
+// --- One-time recovery of the sends #5295 threw away (issue #5335) ------------
+// `requeueTransportDeadLetters` is the migration's own data step and is NOT
+// exported: nothing outside the versioned migration may replay dead letters in
+// bulk. The app reads only the notice the migration left behind — how many sends
+// it put back, and whether the climber has been told yet.
+export {
+  readDeadLetterRecoveryNotice,
+  clearDeadLetterRecoveryNotice,
+  isRecoverableTransportDeadLetter,
+  DEAD_LETTER_RECOVERY_NOTICE_KEY,
+} from './mutation-queue/dead-letter-recovery';
 export { processMutation } from './mutation-queue/handlers';
 export type { GraphQLFetch } from './mutation-queue/handlers';
 export {
@@ -76,13 +87,25 @@ export {
   hasGraphqlErrorCode,
   isServerUnavailableError,
   isServerFailureSignal,
+  isPermanentRejection,
+  PERMANENT_REJECTION_STATUSES,
+  PERMANENT_GRAPHQL_ERROR_CODES,
 } from './mutation-queue/error-classification';
 
 // --- Pull sync -----------------------------------------------------------------
-export { pullSync, toSqliteValue, multiRowChunkSize, emptyScopeDownloadPhases } from './sync/pull-client';
+export {
+  pullSync,
+  toSqliteValue,
+  multiRowChunkSize,
+  emptyScopeDownloadPhases,
+  listSyncPullDocuments,
+} from './sync/pull-client';
 export type {
+  SyncPullDocument,
   SyncProgress,
   SyncOptions,
+  DocumentsPulledSink,
+  RowsDeletedSink,
   SchemaDriftReporter,
   BootstrapMetadataChangedInfo,
   BootstrapMetadataChangedReporter,
@@ -101,7 +124,40 @@ export type {
   BootstrapRetryWakeReporter,
   BootstrapPathRecoveredInfo,
   BootstrapPathRecoveredReporter,
+  HoldIndexSyncOptions,
 } from './sync/pull-client';
+
+// --- Device-derived holds index (hold heatmap + similar climbs on device) --------
+// Packed hold sets + per-hold postings built on the phone from
+// `board_climbs.frames`. Not synced tables; see holds-index/hold-index.ts for the
+// watermark and lock rules and holds-index/query.ts for the byte formats.
+export {
+  ensureHoldIndex,
+  isHoldIndexBehind,
+  holdIndexKey,
+  HOLD_INDEX_KEY_PREFIX,
+  HOLD_INDEX_CHUNK_CLIMBS,
+  HOLD_INDEX_INITIAL_CHUNK_CLIMBS,
+  HOLD_INDEX_GENERATION_PREFIX,
+  clearBoardTypeHoldIndex,
+} from './holds-index/hold-index';
+export type { HoldRow, HoldRowParser, EnsureHoldIndexOptions, EnsureHoldIndexResult } from './holds-index/hold-index';
+export {
+  HOLD_ROLE,
+  HOLD_ROLE_OTHER,
+  HOLD_SET_ENTRY_BYTES,
+  holdStateToRole,
+  encodeHoldSet,
+  decodeHoldSet,
+  decodeHoldSetIds,
+  holdSetSize,
+  encodePostings,
+  decodePostings,
+  getHoldSet,
+  findSimilarClimbCandidates,
+  aggregateHoldUsage,
+} from './holds-index/query';
+export type { HoldSetEntry, HoldRole, SimilarClimbCandidate, HoldUsage } from './holds-index/query';
 
 // --- Tombstone retention (issue #3474) --------------------------------------
 // The backend prune job imports SYNC_DELETIONS_RETENTION_DAYS from here so the
@@ -251,7 +307,7 @@ export type {
 
 // --- On-device schema ------------------------------------------------------------
 export { vacuumDatabase, measureReclaimableBytes } from './db/vacuum';
-export { SCHEMA_STATEMENTS } from './db/schema';
+export { SCHEMA_STATEMENTS, DEVICE_ONLY_TABLES, DEVICE_ONLY_STATEMENTS } from './db/schema';
 export { runMigrations, MIGRATIONS, LATEST_SCHEMA_VERSION } from './db/migrations';
 export { SnapshotSchemaCompatibilityError, type SchemaDriftReport } from './sync/schema-compatibility';
 export type { Migration } from './db/migrations';
@@ -278,6 +334,13 @@ export type { LocalWriteRetryOptions, LocalWriteRetryOutcome } from './db/write-
 // code, for callers that tag telemetry with it.
 export { isDatabaseLockedError, classifySqliteLockError } from './db/lock-errors';
 export type { SqliteLockClassification } from './db/lock-errors';
+
+// The other way a SQLite call fails: the native handle behind it is gone, not
+// busy (#5410). Deliberately a separate predicate from the lock one — a dead
+// handle carries no lock marker, so retrying the same connection can never win
+// and only a re-open recovers it.
+export { classifySqliteHandleError, isDeadDatabaseHandleError } from './db/handle-errors';
+export type { SqliteHandleFailure } from './db/handle-errors';
 
 // --- Offline-usage telemetry (issue #4317) ---------------------------------------
 // The rollup gate that turns "this read was served from the local DB" into a

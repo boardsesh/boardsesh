@@ -106,7 +106,7 @@ export function BoardLookScreen() {
         // Bring back what they tuned, THEN show them the knobs. Without the
         // restore, opening Custom would land them on whatever preset they were
         // on and quietly discard the look they built.
-        void restoreCustomLook().finally(() => router.push('/(tabs)/profile/board-look/custom'));
+        void restoreCustomLook().finally(() => router.push('/settings/board-look/custom'));
         return;
       }
       applyPreset(id);
@@ -149,8 +149,8 @@ export function BoardLookScreen() {
         boardseshRendererAvailable,
         requestedMode,
         t,
-        onOpenCustomLook: () => router.push('/(tabs)/profile/board-look/custom'),
-        onOpenAccessibility: () => router.push('/(tabs)/profile/board-look/accessibility'),
+        onOpenCustomLook: () => router.push('/settings/board-look/custom'),
+        onOpenAccessibility: () => router.push('/settings/board-look/accessibility'),
         onResetBoardLook: resetBoardLook,
         suggestion,
         onApplySuggestion: () => suggestion && settleSuggestion(suggestion.id, true),

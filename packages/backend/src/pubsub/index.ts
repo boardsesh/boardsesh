@@ -206,6 +206,20 @@ class PubSub {
     return this.redisAdapter?.getInstanceId() ?? null;
   }
 
+  getRuntimeStats() {
+    return {
+      queue: this.queueChannel.getRuntimeStats(),
+      session: this.sessionChannel.getRuntimeStats(),
+      notification: this.notificationChannel.getRuntimeStats(),
+      comment: this.commentChannel.getRuntimeStats(),
+      newClimb: this.newClimbChannel.getRuntimeStats(),
+      climbStats: this.climbStatsChannel.getRuntimeStats(),
+      boardPresence: this.boardPresenceChannel.getRuntimeStats(),
+      boardQueue: this.boardQueueChannel.getRuntimeStats(),
+      redisMessageRejects: this.redisAdapter?.getRejectedMessageCounts() ?? { invalidJson: 0, invalidEnvelope: 0 },
+    };
+  }
+
   /**
    * Register an external hook that fires after every queue event publish.
    * Multiple hooks may be registered (APNs Live Activity updates, the
@@ -579,6 +593,11 @@ class PubSub {
   /** Read a board's recent climbs, newest-first by seq (cap 50). Empty without Redis. */
   async getRecentBoardClimbs(boardId: string): Promise<BoardPresenceClimb[]> {
     return this.boardPresenceStore.getRecentBoardClimbs(boardId);
+  }
+
+  /** Redacted last-confirmed climb, only while its verified sender holds the board. */
+  async getBoardDiscoveryClimb(boardId: string) {
+    return this.boardPresenceStore.getBoardDiscoveryClimb(boardId);
   }
 
   /** Record that a user is connected to a board (proof-of-presence). TTL'd; a reconnect re-stamps. */

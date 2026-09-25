@@ -120,8 +120,8 @@ vi.mock('@/app/components/board-renderer/util', () => ({
   buildOverlayUrl: vi.fn(() => '/api/internal/board-render'),
 }));
 vi.mock('@/app/lib/data/front-door-data.server', () => ({
-  getFrontDoorSimilarClimbs: vi.fn(async () => []),
-  getFrontDoorBetaLinks: vi.fn(async () => []),
+  getFrontDoorSimilarClimbs: vi.fn(async () => ({ status: 'loaded', items: [] })),
+  getFrontDoorBetaLinks: vi.fn(async () => ({ status: 'loaded', items: [] })),
 }));
 vi.mock('@/app/components/climb-front-door/climb-front-door', () => ({ default: () => null }));
 

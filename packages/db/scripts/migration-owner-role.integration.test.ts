@@ -375,8 +375,20 @@ void test(
         DROP TABLE public.pg18_login_owned_rogue
       `);
 
+      // The replication layout: the owner role owns this database. Accepted.
       await adminPool.unsafe(`ALTER DATABASE ${quotedDatabaseName} OWNER TO ${ownerRole}`);
+      const ownerOwnedSession = await reserveMigrationOwnerSession(connectionPool, {
+        databaseName,
+        loginRole,
+        ownerRole,
+        snapshotFenceOwnerRole,
+      });
+      await ownerOwnedSession.close();
+
+      // Owning a second database is still rejected.
+      await adminPool.unsafe(`CREATE DATABASE pg18_owner_second_rogue OWNER ${ownerRole}`);
       await expectContractRejection(/restricted owner contract/);
+      await adminPool.unsafe('DROP DATABASE pg18_owner_second_rogue');
       await adminPool.unsafe(`ALTER DATABASE ${quotedDatabaseName} OWNER TO postgres`);
       // ALTER DATABASE ... OWNER rebuilds the database ACL. Restore the exact
       // non-grantable owner CREATE edge that the remaining contract checks

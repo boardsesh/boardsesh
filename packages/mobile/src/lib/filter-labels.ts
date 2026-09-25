@@ -53,6 +53,7 @@ export function buildFilterLabels(t: TFunction<'climbs'>): ClimbFilterLabels {
     // rating filters can't be read as two community thresholds.
     myRating: (count) => t('mobile.search.myRating', { count }),
     onlyRatedByMe: () => t('mobile.filter.ratedByMeShort'),
+    onlyFollowedAuthors: () => t('authors.followingClimbs'),
     more: (count) => t('mobile.search.more', { count }),
     // i18n-keep mobile.search.settersCount
     setters: (count) => t('mobile.search.settersCount', { count }),
@@ -63,6 +64,8 @@ export function buildFilterLabels(t: TFunction<'climbs'>): ClimbFilterLabels {
     tallOnly: () => t('mobile.filter.tallClimbs'),
     wideOnly: () => t('mobile.filter.wideClimbs'),
     betaOnly: () => t('mobile.filter.betaVideosShort'),
+    // Already short, so the switch row and the summary / token share one label.
+    otherAngles: () => t('mobile.filter.otherAngles'),
     // The community `projects` status now reads as "Unrepeated" (matching the
     // Popularity bucket that writes it), so it never collides with the personal
     // "Projects" progress value. Drafts/established keep their own status labels.

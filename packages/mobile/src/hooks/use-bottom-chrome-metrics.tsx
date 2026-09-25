@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, type ReactNode } from 'react';
+import { createContext, useContext, useMemo, useSyncExternalStore, type ReactNode } from 'react';
 import { useSegments } from 'expo-router';
 import { useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -6,6 +6,7 @@ import { useTheme } from '../providers/theme-provider';
 import { isAccessorySurfaceRoute, isTabsChromeRoute } from '../lib/route-segments';
 import { useNativeTabContentInsetBottom } from '../lib/native-tab-content-inset-store';
 import { useConnectivityBannerHeight } from '../lib/connectivity-banner-inset-store';
+import { getRestTimerState, subscribeRestTimer } from '../lib/rest-timer-store';
 import { useStickyAccessoryPresence } from './use-sticky-accessory-presence';
 import { isBottomAccessoryAvailable, useNativeTabBar } from './use-bottom-accessory';
 import { useDeviceLayout } from './use-device-layout';
@@ -14,6 +15,16 @@ import { shouldThrowOnMissingProvider } from './bottom-chrome-provider-gate';
 import { resolveDetailPaneSurface } from '../theme/size-class';
 import { SIDEBAR_WIDTH } from '../theme/layout';
 import { reportHandledError } from '../lib/error-reporting';
+
+// The rest-timer store publishes a whole state object, and this provider cares
+// about exactly one boolean of it. Hoisting the selector (and the server/web
+// snapshot) to module scope keeps their identities stable, so the subscription
+// is set up once and the provider re-renders only when `armed` itself flips —
+// never on the 1 Hz countdown churn the pill does locally.
+const getRestTimerArmed = () => getRestTimerState().armed;
+// Expo web renders the first pass on the server, where nothing has armed a timer
+// yet; the pill can only appear after hydration anyway.
+const getRestTimerArmedServerSnapshot = () => false;
 
 /**
  * Gathers the React inputs for the bottom-chrome geometry and delegates the
@@ -85,6 +96,12 @@ function useComputedBottomChromeMetrics(): BottomChromeMetrics {
   // the same number from ABOVE this provider. `0` while no banner is showing, so
   // the arithmetic below is unchanged in the ordinary case.
   const connectivityBannerHeight = useConnectivityBannerHeight();
+  // The floating rest-timer pill (issue #5378) sits between the queue chrome and
+  // the connectivity banner while the climber has the timer armed, so it has to
+  // be reserved for. `armed` is only ever set behind the feature flag, so reading
+  // it here needs no flag plumbing. A module store rather than context, for the
+  // same reason the two above are: the 1 Hz countdown must not re-render the app.
+  const restTimerArmed = useSyncExternalStore(subscribeRestTimer, getRestTimerArmed, getRestTimerArmedServerSnapshot);
 
   return useMemo(
     () =>
@@ -100,6 +117,7 @@ function useComputedBottomChromeMetrics(): BottomChromeMetrics {
         detailPaneOwnsQueue,
         measuredTabContentInsetBottom,
         connectivityBannerHeight,
+        restTimerArmed,
       }),
     [
       variant,
@@ -113,6 +131,7 @@ function useComputedBottomChromeMetrics(): BottomChromeMetrics {
       detailPaneOwnsQueue,
       measuredTabContentInsetBottom,
       connectivityBannerHeight,
+      restTimerArmed,
     ],
   );
 }

@@ -33,16 +33,29 @@ function isPathCrawlable(rules: ReturnType<typeof getRules>, url: string): boole
 }
 
 describe('robots', () => {
-  it('opts AI crawlers out without closing traditional search or share previews', () => {
+  it('opts blocked crawlers out without closing traditional search or share previews', () => {
     const rules = robots().rules;
     expect(Array.isArray(rules)).toBe(true);
     const allRules = Array.isArray(rules) ? rules : [rules];
-    const aiRule = allRules.find((rule) => toList(rule.userAgent).includes('gptbot'));
-    expect(aiRule?.disallow).toBe('/');
-    expect(aiRule?.allow).toBeUndefined();
-    expect(toList(aiRule?.userAgent)).toEqual(expect.arrayContaining(['claude-searchbot', 'Google-Extended']));
-    expect(toList(aiRule?.userAgent)).not.toContain('googlebot');
-    expect(toList(aiRule?.userAgent)).not.toContain('facebookexternalhit');
+    const blockedRule = allRules.find((rule) => toList(rule.userAgent).includes('gptbot'));
+    expect(blockedRule?.disallow).toBe('/');
+    expect(blockedRule?.allow).toBeUndefined();
+    expect(toList(blockedRule?.userAgent)).toEqual(expect.arrayContaining(['claude-searchbot', 'Google-Extended']));
+    expect(toList(blockedRule?.userAgent)).not.toContain('googlebot');
+    expect(toList(blockedRule?.userAgent)).not.toContain('facebookexternalhit');
+  });
+
+  it('names Yandex in the disallow group, so the block is declared and not only enforced', () => {
+    // robots.txt is the polite half of the Yandex block; the Cloudflare WAF
+    // rule and the middleware 403 are the enforcing halves. Declaring it here
+    // is what lets a well-behaved crawler stop before it costs us a render.
+    const rules = robots().rules;
+    const allRules = Array.isArray(rules) ? rules : [rules];
+    const blockedRule = allRules.find((rule) => toList(rule.userAgent).includes('gptbot'));
+    expect(toList(blockedRule?.userAgent)).toEqual(expect.arrayContaining(['yandexbot', 'yandexrenderresourcesbot']));
+    // Applebot stays out of it — it still indexes us. Only its writes are cut,
+    // and that happens in instrumentation-client.ts, not here.
+    expect(toList(blockedRule?.userAgent)).not.toContain('applebot');
   });
   it('allows crawling the root path', () => {
     const result = robots();

@@ -5,6 +5,7 @@ import { randomUUID } from 'crypto';
 import { mkdir, writeFile, unlink } from 'fs/promises';
 import { eq, and, isNull } from 'drizzle-orm';
 import { applyCorsHeaders } from './cors';
+import { guardUploadFileStream } from './http-utils';
 import { validateToken } from '../middleware/auth';
 import { isS3Configured, uploadToS3 } from '../storage/s3';
 import { MUTABLE_IMAGE_CACHE_CONTROL, writeImageVariants } from '../lib/image-resize';
@@ -267,6 +268,11 @@ export function createGymImageUploadHandler(
       });
 
       busboy.on('file', (name: string, stream: NodeJS.ReadableStream, info: { mimeType: string }) => {
+        // Before every early return: busboy destroys this stream with an error
+        // on any truncated part, and an unlistened one exits the process
+        // (#5359).
+        guardUploadFileStream(stream, { route: req.url ?? `/api/${config.storagePrefix}`, field: name });
+
         if (name !== config.fileFieldName) {
           stream.resume();
           return;

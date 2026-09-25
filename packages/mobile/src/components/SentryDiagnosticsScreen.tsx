@@ -111,7 +111,7 @@ export function SentryDiagnosticsScreen() {
       );
     }
     if (!profile?.isTester) {
-      return <Redirect href="/(tabs)/profile/more" />;
+      return <Redirect href="/settings" />;
     }
   }
 

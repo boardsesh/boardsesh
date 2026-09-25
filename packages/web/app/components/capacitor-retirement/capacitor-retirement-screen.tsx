@@ -44,7 +44,7 @@ export const CapacitorRetirementScreen: React.FC = () => {
     <div className={styles.overlay} role="dialog" aria-modal="true" aria-labelledby="capacitor-retirement-title">
       <div className={styles.panel}>
         <Image
-          src={resolveShellStaticAssetUrl('/brand/boardsesh-mark.png')}
+          src={resolveShellStaticAssetUrl('/brand/boardsesh-mark.webp')}
           width={72}
           height={72}
           alt=""

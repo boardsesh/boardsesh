@@ -10,6 +10,23 @@
 export const SHARED_EVENTS = {
   // Auth
   LoginAttempted: 'Login Attempted',
+  // Mobile also stamps three props on it (#5654):
+  // - `screen`: 'login' | 'register', the auth screen it fired from.
+  // - `is_new_account`: the account is at most 24 h old, compared in ms.
+  // - `account_age_hours`: whole hours since the account was created, rounded
+  //   down. This is the one definition of the prop for every event that
+  //   carries it (packages/mobile/src/lib/account-age.ts).
+  // The last two come from the profile's `createdAt`, because the native token
+  // responses carry no creation time, and are null when it can't be read. The
+  // read happens after the tokens land, so the event waits for it (up to 5 s)
+  // and is backdated to the moment sign-in succeeded. Backdating moves only the
+  // timestamp: session props such as `$screen_name` are read at capture, after
+  // the wait, so they usually name the first signed-in screen. Split by
+  // `screen`, not `$screen_name`. See packages/mobile/src/lib/login-analytics.ts.
+  // Two paths skip the wait and send the event without the age props: the Expo
+  // web Apple/Google cookie return (AuthProvider, `flow: 'web'`) carries only
+  // `screen`, and www's own Login Succeeded carries none of the three. So a
+  // missing prop means one of those paths; a failed profile read sends null.
   LoginSucceeded: 'Login Succeeded',
   LoginFailed: 'Login Failed',
   // A user dismissing the provider sheet or the browser is intent, not a failure.
@@ -17,13 +34,23 @@ export const SHARED_EVENTS = {
   LoginCancelled: 'Login Cancelled',
   Logout: 'Logout',
   // Fired once, immediately after a NEW account is created via credentials
-  // (both platforms). OAuth registration is indistinguishable from OAuth
-  // sign-in and stays tagged only via LoginSucceeded's `is_registration: true`
-  // — web has no separate OAuth-signup event either. Kept distinct from
+  // (both platforms). OAuth registration is the same call as OAuth sign-in, so
+  // it has no event of its own: LoginSucceeded's `is_registration: true` marks
+  // the register screen, and on mobile `is_new_account` marks an account the
+  // sign-in itself just created. Web has no OAuth-signup event either. Kept distinct from
   // LoginSucceeded so "created an account" and "successfully authenticated"
   // stay separately measurable — web's signup can require email verification
   // and never reach a LoginSucceeded in that same session.
   SignupCompleted: 'Signup Completed',
+  // Mobile-only: a tap on one of the ways in on the sign-in wall, fired before
+  // anything else happens, so a tap that goes nowhere still counts. Props:
+  // { option: 'apple' | 'google' | 'email_sign_in' | 'create_account' |
+  // 'forgot_password', screen: 'login' | 'register' }. `email_sign_in` fires
+  // when a filled-in form is submitted (button or keyboard). `register` only
+  // carries the Apple and Google taps; its email path is already covered by
+  // Login Attempted with `is_registration: true`. Built for the #5654 wall
+  // question: of the newcomers who never sign in, how many tapped anything.
+  AuthOptionTapped: 'Auth Option Tapped',
   // Queue / session
   AddToQueue: 'Add to Queue',
   ClimbAddedToQueue: 'Climb Added to Queue',
@@ -43,6 +70,25 @@ export const SHARED_EVENTS = {
   // added, and `method` already encoded what its `source` re-encoded. Round-trip
   // success stays a separate question — see `Wall Confirmed` / `Wall Confirm Timeout`.
   QueueNavigation: 'Queue Navigation',
+  // A held swipe track stopped steering next/prev, so swipes fall back to the
+  // queue. The climber still HAS a track; it just no longer anchors the climb
+  // they are on, or they walked onto another board. Since #5403 this is
+  // reversible — swiping back onto the list revives it — so the event is
+  // edge-triggered on the source and COUNTS EPISODES, NOT CLIMBERS. Any query on
+  // it needs a uniq(person_id) or a session grouping, never a raw count.
+  //
+  // Deliberately NOT a per-swipe event. Swipes are the primary navigation
+  // gesture and instrumenting every one would add six figures of events a month
+  // to a project already past its included tier. This fires only on the anomaly,
+  // which is rare by construction, and it is the signal that was missing when
+  // #5402 came in with nothing to mine.
+  //
+  // Props: { reason, boardName, trackLength, msSinceSelection }. `reason` is one
+  // of 'board_switched' | 'current_climb_left_track' | 'nothing_drawable_on_board',
+  // kept apart rather than pooled — see #4737 for what pooling distinct causes
+  // into one bucket costs. Counts and a reason string, never climb identity;
+  // whether a tick preceded it is a session + timestamp join against `Tick Logged`.
+  QueueSwipeTrackDormant: 'Queue Swipe Track Dormant',
   SetActiveClimb: 'Set Active Climb',
   SessionStarted: 'Session Started',
   SessionEnded: 'Session Ended',
@@ -116,6 +162,20 @@ export const SHARED_EVENTS = {
   WorkoutGenerated: 'Workout Generated',
   // Deep-link session join
   SessionJoined: 'Session Joined',
+  // Live sessions ("Climbing now" rail on Home, "Climbing here now" block in
+  // the board sheet). `surface` is 'home_rail' | 'board_sheet' on all four
+  // surface events. Funnel: Shelf Viewed { surface, count, state } → Card
+  // Tapped { surface, reason, viewerIsMember, participantCount } → Live Session
+  // Joined { source } (fired by the join screen, so it only counts joins that
+  // started on a live-session card). Start Session Prompt Tapped { surface,
+  // variant } is the empty-state invitation.
+  LiveSessionsShelfViewed: 'Live Sessions Shelf Viewed',
+  LiveSessionCardTapped: 'Live Session Card Tapped',
+  LiveSessionJoined: 'Live Session Joined',
+  StartSessionPromptTapped: 'Start Session Prompt Tapped',
+  // The creator's "show this session live" switch. { isPublic, phase:
+  // 'pre_session' | 'in_session' }.
+  SessionVisibilityChanged: 'Session Visibility Changed',
   // Canonical board URLs — the two halves of one funnel: www hands a reader
   // off at `Climb Handoff Clicked`, the app receives them at
   // `Board Route Handoff`. Both carry `environment: 'production-web'` for the
@@ -215,6 +275,46 @@ export const SHARED_EVENTS = {
   // `boardName` on the 'connect' surface only (the quickstart scan runs before
   // any board is chosen, so it has none to report).
   BluetoothPermissionDenied: 'Bluetooth Permission Denied',
+  // Mobile-only (#5654): a connect or the /boards quickstart scan stopped because
+  // Bluetooth can't be used, and the climber was told why. Fires with the alert or
+  // the sheet state, once per stop. Props: { reason, surface: 'connect' |
+  // 'quickstart_scan', platform }, plus `boardName` on 'connect'. `reason`:
+  //  - 'unauthorized': iOS Bluetooth permission is off for Boardsesh, or Android
+  //    has stopped showing its dialog ("never ask again"). The climber sees
+  //    "Bluetooth is blocked for Boardsesh" with Open Settings. An Android "Don't
+  //    allow" answered in the dialog is Bluetooth Permission Denied only, because
+  //    the next tap asks again. Android's never_ask_again counts only when it
+  //    came back inside 500 ms, i.e. with no dialog drawn: React Native also
+  //    reports it for a first dialog closed with back, which Android shows again.
+  //    A slow phone can miss that window, so this undercounts rather than
+  //    overcounts.
+  //  - 'powered_off': the radio is off.
+  //  - 'unsupported': the device has no Bluetooth LE, or (Expo web) the browser
+  //    has no Web Bluetooth.
+  //  - 'unknown': the connect or scan said Bluetooth is unavailable but the radio
+  //    state doesn't say why (still Unknown/Resetting, or it reads PoweredOn).
+  // The 'unauthorized' share of newcomer connect taps is the #5654 guardrail for
+  // moving the iOS Bluetooth prompt off app launch.
+  BluetoothUnavailable: 'Bluetooth Unavailable',
+  // Mobile-only (#5654): a climber tapped something that starts a Bluetooth
+  // connect. Fired on the tap, before permissions or scanning, so it also counts
+  // attempts that never reach Bluetooth Scan Started (denied, blocked, radio
+  // off). Props: { surface, boardName, reconnect }. `surface`: 'play_drawer' |
+  // 'toolbar' | 'app_bar' | 'board_control_indicator' | 'wall_empty_state' |
+  // 'wall_kiosk' | 'create_climb' | 'picker_scan_again' | 'notification' (the
+  // Android session notification's bulb) | 'first_connect_card' |
+  // 'first_connect_pill' (the connect-step test's card and labelled pill, #5654
+  // PR 7). `reconnect` is true when a remembered board is targeted (silent
+  // auto-select), false when the tap opens the device picker.
+  BoardConnectTapped: 'Board Connect Tapped',
+  // Mobile-only (#5654): the /boards Bluetooth quickstart scan ended. Before this
+  // the quickstart scanned without any event, so a climber who found their board
+  // through it never counted as having scanned. Fires once per scan that started
+  // the radio. Props: { outcome, found_count }. `outcome`: 'completed' (the 15 s
+  // window ran out), 'stopped' (the sheet closed or a board was picked first),
+  // 'error' (the scan errored). `found_count` is the number of distinct board
+  // serials heard, before GraphQL resolves them to boards.
+  BoardQuickstartScanFinished: 'Board Quickstart Scan Finished',
   // Fired once per device-picker session (on close) with tallies of how each
   // listed device's board preview resolved: saved board, recorded serial
   // config, current-board fallback, or no preview at all. Measures how often
@@ -266,6 +366,20 @@ export const SHARED_EVENTS = {
   // session, or no compatible climb left), active board config, and the skipped
   // climb's board config.
   BleQueueClimbSkipped: 'BLE Queue Climb Skipped',
+  // Queued climbs the ACTIVE board can't draw were passed over — typically the
+  // tail of the queue the climber left behind when they switched boards (issue
+  // #5099). Independent of Bluetooth: this fires whether or not a wall is
+  // connected, because the on-screen render is blank either way.
+  //
+  // `trigger` says which half fired it. 'swipe' is a forward navigation that
+  // walked past them; 'queue_dead_end' is the state notice for when NOTHING
+  // remaining is drawable — there the Next control is disabled, so no swipe can
+  // report it and the app tells the climber unprompted. Props: skippedCount,
+  // skippedClimbUuid + its board config (the first climb passed over),
+  // advancedToClimbUuid (null when nothing compatible remained),
+  // advancedToSuggestion (the swipe landed on the continuation feed rather than
+  // a queued climb), trigger, active board config, and inSession.
+  QueueClimbSkippedOnBoardSwitch: 'Queue Climb Skipped on Board Switch',
   // The "this controller belongs to another board setup" dialog was shown when a
   // scanned serial resolved to a different board config than the active one, and
   // how the user resolved it. Resolved `action`: 'cancel' | 'connect_anyway' |
@@ -333,6 +447,119 @@ export const SHARED_EVENTS = {
   // real activation metric (board history turns on here), distinct from tapping
   // through the framing screen. Props: { boardType, source: 'onboarding' }.
   OnboardingBoardActivated: 'Onboarding Board Activated',
+  // Mobile-only: what the launch-time first-run gate decided, and why (#5654).
+  // It exists because the gate went silent for 10 weeks with nothing to show
+  // for it. From 2.2.0 its `ready` input was frozen at false behind the database
+  // provider, and "never decided" looked exactly like "decided not to".
+  //
+  // One event per decision, plus `outcome: 'stalled'` from a 15 s watchdog that
+  // counts foreground time only and fires when the gate has not decided at all.
+  // The watchdog is the part that matters: it does not depend on the inputs
+  // that froze, so a repeat of that bug shows up as a `stalled` spike in a day.
+  //
+  // Props: { outcome: 'presented' | 'would_present' | 'skipped' | 'stalled',
+  // reason: 'new_account' | 'no_board' | 'has_board' | 'deep_link_segment' |
+  // 'launched_by_url' | 'launched_by_notification' | 'segment_after_reads' |
+  // 'not_ready' | 'board_unresolved' | 'reads_pending', step: 'first_board' |
+  // 'intro' | 'board' | null, had_board and seen_flag (boolean, or null when not read
+  // yet), account_age_hours (whole hours since the account was created; the
+  // gate waits up to 5 s for the profile, so null means that read failed or ran
+  // out of time), ota_is_embedded, trigger: 'cold_start' | 'remount' |
+  // 'account_switch', top_segment, ms_since_mount (from the mount, or from the
+  // switch on an `account_switch` decision), after_stall (true on a decision
+  // that landed after this mount already reported `stalled`, so one mount can
+  // send two events), picker_verdict: 'presented' | 'profile_unavailable' |
+  // 'not_new_account' | 'kill_switch' | 'offline' | 'shown_twice' |
+  // 'storage_error' | null (set on every decision for a climber with no
+  // board), picker_times_shown (how many times the picker had already opened
+  // for this account on this device, or null when not read) }.
+  //
+  // Native builds only. The Expo browser build sends nothing: its launch URL is
+  // always the page itself, so every launch would read as `launched_by_url`.
+  // The same goes for `Board Look Step Evaluated` below.
+  //
+  // `presented` (reason `new_account`, step `first_board`) is the one outcome
+  // that opens something: the board picker in first-board mode, for an account
+  // at most 7 days old with no board, at most twice per account. Everyone else
+  // without a board gets the log-only `would_present`, and `picker_verdict`
+  // says why the picker stayed shut. A returning climber's steady state (a
+  // board bound, seen flag not known to be false) is NOT sent, and neither is a
+  // signed-out launch on the login screen, so the decisions are newcomers,
+  // climbers without a board and anomalies. Stalls are sent for everyone, so
+  // read a stall rate against launches (`OTA Update Status`), not against this
+  // event's own count.
+  OnboardingGateEvaluated: 'Onboarding Gate Evaluated',
+  // Mobile-only: the board picker in first-board mode, the one the launch gate
+  // opens for a new account with no board (#5654), and that `Onboarding Gate
+  // Evaluated` logs as `presented`. It also fires `Board Picker Opened` with
+  // source 'onboarding' like any picker. These two answer what the newcomer did
+  // with it. The same "Where do you climb?" block also shows when a climber
+  // with no boards taps "Find my board" on Climbs; both events carry `entry`
+  // ('launch_gate' | 'no_board') to tell the two apart. Read the launch gate's
+  // skip rate on `entry = 'launch_gate'` only.
+  //
+  // FirstBoardPathChosen: a tap on one of its choices. Props: { path: 'gym' |
+  // 'own' | 'scan' | 'gym_map' | 'spray_wall', entry }. 'gym_map' is "Find your
+  // gym on the map", offered under At a gym. 'spray_wall' is "Add my spray
+  // wall", offered only on the 'no_board' entry with the spray-walls flag on. A
+  // climber can try several; each tap fires.
+  //
+  // FirstBoardPickerSkipped: the picker closed with no board bound, which is
+  // the skip rate the launch reads against. Props: { method: 'close_button' |
+  // 'dismissed' ('close_button' is the header X, "Not now" from the launch
+  // gate and Close from Climbs; 'dismissed' is a swipe down or Android back),
+  // secondsOpen, lastPath (the last choice tapped, or null), entry }. A bind
+  // from ANY path the picker leads to (the list, the builder, the gym map, the
+  // Bluetooth scan) counts as not skipped.
+  FirstBoardPathChosen: 'First Board Path Chosen',
+  FirstBoardPickerSkipped: 'First Board Picker Skipped',
+  // Mobile-only: the connect-step test (#5654, PR 7). The treatment puts a
+  // "Light climbs on {{board}}" card at the top of Climbs and turns the play
+  // view's bare bulb into a labelled "Light it on the board" pill; control
+  // keeps today's UI. Both arms get a one-time "Connected to {{board}}"
+  // confirmation after this phone's first successful connect.
+  //
+  // FirstRunExposed: the account joined the test. Fired ONCE per account per
+  // phone, in both arms, at the launch gate's post-login decision and before
+  // either arm shows anything different. Eligible: the native app (not the
+  // Expo browser build) on a production build (not dev, an EAS preview or a
+  // pr-* OTA preview) whose installed binary is 2.7.0 or later, signed in,
+  // account at most 7 days old, `first-connect-cta-kill` off, and a phone that
+  // has never connected to a board (nor remembers one). Props: {
+  // arm_connect_step: 'treatment' | 'control', arm_forced (true when the QA
+  // override in More → Feature Flags chose the arm; leave these out of the
+  // analysis), assignment_salt, user_id, account_age_hours, ota_is_embedded,
+  // native_version (the installed binary's version), ui_variant: 'liquidGlass'
+  // | 'material' | null, had_board }. The arm is
+  // murmurHash3_32(user_id + ':' + assignment_salt) % 2, 1 = treatment, so it
+  // can be recomputed in HogQL. `arm_connect_step` is also a super property
+  // from exposure on.
+  //
+  // FirstRunCardAction: a tap on the treatment's Climbs card. Props: { action:
+  // 'connect' | 'no_lights' | 'dismiss' | 'retry' }. 'dismiss' is the X ("Not
+  // now"), which hides the card for that launch only; the card shows on at most
+  // two launches. 'retry' is "Try again" after a connect that failed or was
+  // cancelled.
+  //
+  // BoardLightsDeclined: an enrolled climber (either arm) said the wall has no
+  // lights. It measures how many newcomers had no LED board to connect to, which
+  // bounds what any connect step can win. Props: { surface: 'climbs_card' |
+  // 'device_picker' }. 'device_picker' is the tap on the Bluetooth picker's own
+  // "This wall has no lights", on a phone that has never connected. Never
+  // writes the board's `hasLeds`.
+  FirstRunExposed: 'First Run Exposed',
+  FirstRunCardAction: 'First Run Card Action',
+  BoardLightsDeclined: 'Board Lights Declined',
+
+  // Mobile-only, iOS 26 Liquid Glass iPhones (#5654): the one-time tip "To get
+  // back to your climbs, tap the magnifier in the tab bar". There the Climbs tab
+  // is the tab bar's search-role magnifier, set apart from the other tabs, and
+  // newcomers who leave Climbs often never come back. Shown once per device, to
+  // an account at most 7 days old, the first time another tab is open. Read it
+  // with "left Climbs, never returned" by platform for the tab-label decision.
+  // Props: { fromTab: 'home' | 'record' | 'discover' | 'profile' | other tab
+  //          segment (where the climber was when it showed) }.
+  ClimbsTabTipShown: 'Climbs Tab Tip Shown',
   BetaVideoAdded: 'Beta Video Added',
   // Board ENTITY creation — adding a wall to your boards (distinct from the
   // board-presence events below, which are about being on one). Added with
@@ -340,12 +567,28 @@ export const SHARED_EVENTS = {
   // for weeks was invisible in both PostHog and error tracking.
   // Props: { boardType, layoutId, sizeId, setCount, angle, isOwned, isPublic,
   //          hasLocationName, hasCoords, hasGym, gymUuid, source,
-  //          allowedDuplicate }.
+  //          allowedDuplicate, preset, presetKept }.
+  // `preset` and `presetKept` are mobile builder only (#5654). `preset` is true
+  // when "My own board" opened the builder, asking for the board type's most
+  // used setup to be preselected. `presetKept` is true when the saved layout,
+  // size and sets are exactly that preselection, so nobody changed a chip below
+  // the board type: the watch on boards saved with a preselected setup nobody
+  // checked. A type the popular list does not carry (every MoonBoard today)
+  // gets no preselection, so its `presetKept` is always false.
   // `gymUuid` is the gym being ATTACHED, and is deliberately NOT the same thing
   // as the `gym_uuid` super property (mobile, packages/mobile/src/lib/analytics-gym.ts)
   // — that one carries the ACTIVE board's gym, and a board being created has not
   // become active yet. Read them together to see a climber adding a second wall
   // at a venue they already use.
+  //
+  // Spray walls add `resumed` (SW-09) and are the only board type that sets it.
+  // A wall can be built across two sittings, and a resumed run rejoins the flow
+  // past its meta step, so `hasLocationName` and `hasCoords` are ABSENT on those
+  // events rather than defaulted to false — the wall's board payload does not
+  // select the location fields, so the flow genuinely cannot answer. Split on
+  // `resumed` before reading either one, or the denominator silently drops the
+  // resumed population instead of being wrong about it. Every other property is
+  // read off the `user_boards` row and is correct on both paths.
   BoardCreated: 'Board Created',
   // Props: { boardType, source, error_reason: 'duplicate_config' | 'rate_limited'
   //          | 'auth' | 'board_limit' | 'exception' }. 'board_limit' is the
@@ -353,7 +596,8 @@ export const SHARED_EVENTS = {
   //          keeping out of the 'exception' bucket.
   BoardCreateFailed: 'Board Create Failed',
   // The user already owned this board, so nothing was created and we activated
-  // the existing one instead. Props: { boardType, source }.
+  // the existing one instead. Props: { boardType, source, preset, presetKept }
+  // (the last two mobile builder only, as on Board Created).
   BoardCreateReusedExisting: 'Board Create Reused Existing',
   // The duplicate choice prompt was shown. The watchdog for #4166 is that
   // Prompted >= ReusedExisting + Created{allowedDuplicate}: if prompts stop
@@ -364,12 +608,103 @@ export const SHARED_EVENTS = {
   // (there is no existing board to switch to), so they never convert to
   // ReusedExisting — split on `source` before reading that ratio.
   BoardDuplicatePrompted: 'Board Duplicate Prompted',
+  // Mobile-only (#5654): the board builder closed without a board. Of the
+  // newcomers who reached Climbs and never opened a climb, 41% opened it and
+  // 10% created a board, and nothing said where the rest stopped. Fired on the
+  // create screen's unmount unless a board was created, reused or followed on
+  // the way out.
+  // Props: { boardType, hadLayout, hadSize (what was selected when they left),
+  //          source: 'popular_seed' | 'scratch' (as on Board Created),
+  //          preset (opened from "My own board", which preselects the board
+  //          type's most used setup when the popular list carries the type, so
+  //          hadLayout/hadSize usually start true: split on it and boardType),
+  //          openedFrom: 'onboarding' | 'no_board' | 'board_picker' (the
+  //          picker path that opened it), submitAttempted (Save was tapped at
+  //          least once, so a server refusal or a duplicate prompt came first),
+  //          secondsOpen }.
+  BoardBuilderAbandoned: 'Board Builder Abandoned',
+  // Spray walls — the add-a-wall funnel (epic #5346, SW-09). Four steps, each
+  // fired once per wall, so the drop-off between them is readable without a
+  // per-gesture event: picking the photo, the upload landing, detection
+  // settling, and the holds being saved. `Board Created` with
+  // `boardType: 'spray'` closes the funnel and is the SAME event every other
+  // board type fires — a wall is a board, and a spray-only variant would hide
+  // walls from every board-creation number we already watch.
+  //
+  // Nothing here carries the photo, its URI or the wall's name: a wall photo is
+  // the inside of somebody's home.
+  // Props: { source: 'library' | 'camera' }.
+  SprayWallPhotoPicked: 'Spray Wall Photo Picked',
+  // Props: { outcome: 'ok' | 'failed', durationMs, determinate, attempt }.
+  // `determinate` says whether the upload could report bytes or fell back to an
+  // indeterminate bar — the two feel different to a climber on a slow link, and
+  // only one of them is fixable.
+  SprayWallUploadFinished: 'Spray Wall Upload Finished',
+  // Props: { outcome: 'ok' | 'unavailable' | 'failed', candidateCount, durationMs }.
+  // `unavailable` is the no-model branch (no inference runtime in this binary,
+  // or the weights would not download) and it is a SUCCESS for the flow: it
+  // lands in the editor in manual mode. Read it against `ok` to see what
+  // fraction of the fleet is placing every hold by hand.
+  SprayWallDetectionFinished: 'Spray Wall Detection Finished',
+  // Props: { holdCount, hadCandidates }. What the review step actually saved —
+  // the number the detector, and later the retrain flywheel (SW-20), is judged on.
+  SprayHoldsReviewed: 'Spray Holds Reviewed',
+  // Spray walls — the reset funnel (epic #5346, SW-13). Two events, because a
+  // reset is two decisions: looking at what the matcher found, and landing it.
+  // The gap between them is the number that says whether the compare screen is
+  // trusted — an owner who previews and never applies has been shown something
+  // they do not believe.
+  //
+  // Props: { keptCount, removedCount, addedCount, lowConfidenceCount,
+  // climbsAffected, aspectMismatch, detectionCount }. Nothing here identifies
+  // the wall or its photograph.
+  SprayWallResetPreviewed: 'Spray Wall Reset Previewed',
+  // Props: { keptCount, removedCount, addedCount, climbsChanged, moveCount }.
+  // The counts are the SERVER's, not the review's: an owner's decisions are
+  // re-validated under the wall lock, so what landed and what was confirmed can
+  // legitimately differ. `moveCount` is how many "same hold, moved here"
+  // pairings were confirmed — the only thing that makes remix able to suggest a
+  // successor months later.
+  SprayWallResetApplied: 'Spray Wall Reset Applied',
+  // Props: { lostHoldCount, source: 'play_drawer' }. Fired when a climber takes
+  // the remix offer on a climb that lost holds — the one number that says
+  // whether a broken climb is a dead end or a starting point. No successor
+  // count: `remixClimb`'s suggestions are not read on this path (see
+  // `use-spray-wall-reset.ts`), and a property that is always absent is worse
+  // than no property at all — it reads as "no successors were offered" rather
+  // than "nobody asked".
+  ClimbRemixedFromBroken: 'Climb Remixed From Broken',
   // Board presence — "now on the wall" (board-level collaboration, keyed on the
   // shared board_id resolved from the BLE serial). `boardId` is attached as an
   // event PROPERTY at the call sites — never the raw serial. Keep these to user
   // intent and explicit history actions; per-climb send/receive echoes are too
   // noisy for PostHog's event budget.
   BoardSheetOpened: 'Board Sheet Opened',
+  // The full board picker, once per presentation after the saved-board read.
+  // source: onboarding | no_board (Climbs' "Pick your board" empty state,
+  // #5654) | session | board_picker (other/unknown entry) | gym_finder (the
+  // gym map opened on its own, from Home or My gyms; the map pushed from the
+  // picker's "Find gym" reports no opening, the picker did).
+  // hadActiveBoard is null when storage could not be read, not false.
+  BoardPickerOpened: 'Board Picker Opened',
+  // Existing-board selection in that picker, only after a successful write.
+  // sameBoard compares UUIDs; sameConfig compares board type/layout/size/sets.
+  // source matches the opening that led here: a pick on the gym map pushed from
+  // the picker carries the picker's source, a pick on a map opened on its own
+  // carries gym_finder. pickSource: your_boards | nearby | offline | bluetooth |
+  // gym_finder | null (the list the board was tapped in). followed: the pick
+  // added the board to Your boards (#5654); false when it was already theirs,
+  // was someone else's private board, the viewer was signed out, or it came
+  // from the on-device rows shown with no connection.
+  // New-board creation/onboarding activation have their own existing events.
+  BoardPickerSelectionCompleted: 'Board Picker Selection Completed',
+  // The launch follow heal (#5654): fired when the app follows the board it
+  // launched on because the server says it is neither the climber's nor
+  // followed. Repairs picks made before picks followed boards, and keeps
+  // covering boards bound without a pick (session joins, deep links, the
+  // Bluetooth and drawer switches). At most once per user and board; off when
+  // the `active-board-follow-heal-kill` mobile flag is set. Props: { boardType, hasGym }.
+  ActiveBoardFollowHealed: 'Active Board Follow Healed',
   BoardHistoryViewed: 'Board History Viewed',
   // Fired from the switch-board control's own `onPress`, before any other work.
   // Deliberately redundant with BoardSwapInvokedFromSheet (which fires one call
@@ -381,11 +716,29 @@ export const SHARED_EVENTS = {
   // Props: { boardId?, historyCount }.
   BoardSwapTapped: 'Board Swap Tapped',
   BoardSwapInvokedFromSheet: 'Board Swap Invoked From Sheet',
+  // Closes the pair above: the swap actually landed (or didn't). Nine different
+  // code paths write the active board and, until these existed, none of them
+  // emitted anything — so "my board changed on its own" and "switching did
+  // nothing" were equally unfalsifiable. `source` is what drove the write, so a
+  // spike from one surface is attributable. Props:
+  // { source, toBoardUuid?, sameGym, sameConfig, hadBleLink, inSession }.
+  BoardSwapCompleted: 'Board Swap Completed',
+  // Props: { source, toBoardUuid?, reason }.
+  BoardSwapFailed: 'Board Swap Failed',
   // Fired each time "load older" resolves a page of durable history (past the
   // live feed's in-memory HISTORY_CAP window). Props:
   // { boardId?, pageSize: number, returnedCount: number }. `returnedCount <
   // pageSize` means that page was the last one.
   BoardHistoryPageLoaded: 'Board History Page Loaded',
+  // First-run prompt outcomes: { boardType, outcome: 'linked' | 'declined' | 'abandoned' }.
+  OnboardingLinkPromptShown: 'Onboarding Link Prompt Shown',
+  OnboardingLinkPromptResolved: 'Onboarding Link Prompt Resolved',
+  // Board credentials stay separate from external Integration* events/person counts.
+  // Props: { boardType, source: 'integrations' | 'onboarding' | 'progress_empty' | 'logbook_empty' }.
+  // Failed adds { reason: BoardAccountErrorCode }; settled submissions emit one terminal event.
+  BoardAccountLinkStarted: 'Board Account Link Started',
+  BoardAccountLinked: 'Board Account Linked',
+  BoardAccountLinkFailed: 'Board Account Link Failed',
   // External platform integrations (Apple Health, Strava). Props:
   // { integration: 'apple_health' | 'strava', trigger?: 'auto' | 'manual',
   //   enabled?: boolean }
@@ -425,8 +778,8 @@ export const SHARED_EVENTS = {
   // `trigger` distinguishes DELIBERATE taps from AUTOMATIC re-enables, which is
   // the whole point for discovery work: 'toggle' | 'download-all' (the My Boards
   // / More tap) vs 'auto-download-all' | 'adopt-auto' (a setting acting on its
-  // own), plus 'adopt-confirmed' | 'retry' | 'unknown'. 'unknown' is an explicit,
-  // expected value — the trigger is persisted per scope, but a scope enabled by
+  // own), plus 'adopt-confirmed' | 'retry' | 'onboarding' | 'similar_climbs' | 'hold_heatmap' | 'unknown'.
+  // 'unknown' is an explicit, expected value — the trigger is persisted per scope, but a scope enabled by
   // a build that predates this event has none.
   OfflineBoardDownloadStarted: 'Offline Board Download Started',
   // Fired once per board scope when its INITIAL download completes (every board
@@ -614,7 +967,7 @@ export const SHARED_EVENTS = {
   //   offlineEngineEnabled: boolean.
   OfflineArtifactTransfer: 'Offline Artifact Transfer',
   // A board's offline switch was flipped, either way. Props: { scopeKey,
-  // enabled: boolean, source: 'manage' | 'storage' | 'more' | 'adopt',
+  // enabled: boolean, source: 'manage' | 'storage' | 'more' | 'adopt' | 'onboarding' | 'play_drawer',
   // offlineEngineEnabled }. The enable half is the entry point #4318's discovery
   // nudges are measured against.
   OfflineBoardToggled: 'Offline Board Toggled',
@@ -639,11 +992,22 @@ export const SHARED_EVENTS = {
   // error }. The idempotency key is deliberately NOT a prop — it is a raw uuid
   // or a per-climb key, i.e. unbounded cardinality; it rides the Sentry event.
   OfflineMutationDeadLettered: 'Offline Mutation Dead Lettered',
+  // Offline sync — the one-time #5335 recovery put dead-lettered sends back on
+  // the queue and the climber was told. Fires when the notice is shown, once per
+  // device ever, and only for a device that actually had something to recover —
+  // so the total across the fleet IS how many climbers the recovery reached, and
+  // summing `recoveredCount` is how many sends it pulled out of the bin. Without
+  // it the recovery is unmeasurable: the rows it moves stop being dead letters,
+  // so no other event can ever count them. Props: { recoveredCount }.
+  OfflineSendRecoveryShown: 'Offline Send Recovery Shown',
   // Offline sync — how much unsynced work was already sitting in the outbox at
   // launch. Per-mutation events only count from ship day, so without this every
   // backlog that accumulated earlier is invisible. Fires at most once per app
   // launch, and only when something is queued. Props: { pendingCount,
-  // deadLetterCount, oldestPendingAgeDays, oldestDeadLetterAgeDays }.
+  // deadLetterCount, oldestPendingAgeDays, oldestDeadLetterAgeDays,
+  // deadLettersRevived }. The counts are what the launch INHERITED, read before
+  // the same pass revives lock-caused dead letters (#4331); `deadLettersRevived`
+  // is how many of that `deadLetterCount` it put back in the queue.
   OfflineOutboxBacklogDetected: 'Offline Outbox Backlog Detected',
   // Offline sync — sign-out deletes the whole outbox, dead letters included, so
   // this is the size of what the user just lost. Emitted before the analytics
@@ -654,8 +1018,17 @@ export const SHARED_EVENTS = {
   // dead-lettered row already owns that deterministic idempotency key
   // (favorites, follows). The user's repeat action is dropped at enqueue time,
   // so neither a drain nor a dead-letter event can ever report it. Props:
-  // { tableName, operation, existingStatus }.
+  // { tableName, operation, existingStatus }. Should now be unreachable from
+  // the favorite/follow call sites, which revive the dead letter instead
+  // (#4331) — a non-zero count there means a revive UPDATE didn't take.
   OfflineMutationEnqueueSuppressed: 'Offline Mutation Enqueue Suppressed',
+  // Offline sync — a repeat favorite/follow reclaimed the deterministic
+  // idempotency key its dead-lettered predecessor was holding: the row is back
+  // to pending, carrying the CURRENT intent, and drains normally. A recovery
+  // rather than a defect, so it carries no Sentry event. Props: { tableName,
+  // operation }. Its rate should roughly track how often those writes used to
+  // dead-letter.
+  OfflineMutationRevived: 'Offline Mutation Revived',
   // Offline sync — the FIRST attempt of a local SQLite write (tick, favorite,
   // follow) threw, so the retry ladder ran. Silent on a clean write, so its raw
   // count is the contention rate. `outcome: 'recovered'` means a later attempt
@@ -715,6 +1088,18 @@ export const SHARED_EVENTS = {
   // identical. `elapsedMs` is the contention-duration measurement — its
   // distribution is what sizes the retry window, which today is a guess.
   OfflineSqliteInitRecovered: 'Offline SQLite Init Recovered',
+  // Offline sync — the native SQLite handle was destroyed under us (#5410) and a
+  // replacement connection came up, so the session was saved instead of staying
+  // dead until the climber force-quit. Props: { shape: 'dead-native-handle' |
+  // 'closed', origin, recoveries, elapsedMs, recovered }.
+  //
+  // Deliberately NOT folded into OfflineSqliteInitRecovered: that one measures
+  // launch-time LOCK contention and its `elapsedMs` distribution is what sizes the
+  // retry window. A dead handle is not contention, happens mid-session, and mixing
+  // the two would corrupt the measurement this repo already depends on. This is the
+  // "how many sessions did we save" number; the `phase: 'failed'` Sentry reports are
+  // the ones we did not.
+  OfflineSqliteHandleRecovered: 'Offline SQLite Handle Recovered',
   // Offline sync — someone read climb data from the on-device database. THE
   // north-star signal for offline mode (issue #4317): weekly unique users firing
   // this with `lane in ('offline_local', 'network_error_local')`.
@@ -729,7 +1114,8 @@ export const SHARED_EVENTS = {
   //
   // Props: { lane: 'offline_local' | 'backend_unreachable_local' |
   //   'offline_mode_local' | 'network_error_local' | 'online_local',
-  //   surface: 'search' | 'climb_detail' | 'grade', boardName, readCount }.
+  //   surface: 'search' | 'climb_detail' | 'grade' | 'setter_stats' | 'similar_climbs' | 'hold_heatmap',
+  //   boardName, readCount }.
   // `lane` is the source: served while offline, served after the network threw
   // (a lying connection — real offline value), or the online flag-on latency
   // short-circuit (NOT offline usage; excluded from the north-star).
@@ -756,7 +1142,8 @@ export const SHARED_EVENTS = {
   // #4318 (discovery nudges) and #4002 (unsupported filters) exist to shrink.
   // Same rollup contract and same readCount semantics as Offline Read Served.
   // Props: { reason: 'board_not_downloaded' | 'filter_unsupported' |
-  //   'local_db_unavailable', surface: 'search' | 'climb_detail' | 'grade',
+  //   'local_db_unavailable', surface: 'search' | 'climb_detail' | 'grade' | 'setter_stats' |
+  //   'similar_climbs' | 'hold_heatmap',
   //   boardName, readCount }. `local_db_unavailable` means there was no database
   // handle to ask at all (init still retrying, or wedged — #4313 / #4314). The
   // board may well BE downloaded in that case, so it is deliberately NOT part of
@@ -820,7 +1207,8 @@ export const SHARED_EVENTS = {
   // rather than waiting to be found. One event trio across every nudge surface,
   // separated by `surface`, so the funnel reads shown → accepted → (#4316's
   // download started / OfflineBoardDownloadCompleted above). Props on all three:
-  // { surface: 'post_session' | 'no_catalog' | 'whats_new' | 'board_card',
+  // { surface: 'post_session' | 'no_catalog' | 'whats_new' | 'board_card' | 'onboarding'
+  //   | 'similar_climbs' | 'hold_heatmap',
   //   boardType, layoutId, scopeKey, downloadedBoardCount }.
   OfflineNudgeShown: 'Offline Nudge Shown',
   // Plus { armedOnly }: true when the accept could only ARM the scope, so the pull
@@ -861,6 +1249,19 @@ export const SHARED_EVENTS = {
   // the funnel can never read a climber who backed out as one who never arrived.
   BoardLookStepShown: 'Board Look Step Shown',
   BoardLookStepResolved: 'Board Look Step Resolved',
+  // What the launch-time board-look gate would have done, while it evaluates
+  // without presenting (#5654). It answers one question, how many devices would
+  // get the step, so it fires ONCE PER DEVICE and not per launch: while the step
+  // is never shown, nearly every climber qualifies again on every launch.
+  // Props: { outcome: 'would_present' | 'skipped', reason: 'never_asked' |
+  // 'look_chosen' | 'step_seen' }. Only those three settled verdicts report: a
+  // launch the step would sit out for the moment (a deep link, a blocked route)
+  // says nothing about the climber, so it waits for the next launch instead.
+  // Log-only mode skips the example-climb query and the renderer probe, so
+  // `would_present` is an upper bound on the audience the real step would reach.
+  // Native builds only, like `Onboarding Gate Evaluated`: in the Expo browser
+  // build every launch reads as a deep link, so only `look_chosen` could settle.
+  BoardLookStepEvaluated: 'Board Look Step Evaluated',
   // Connectivity (issue #4862) — a backend outage used to look like a broken
   // app: the ONLY connectivity signal was NetInfo's `isConnected`, so a dead
   // server read "online" and every screen answered with a spinner that never

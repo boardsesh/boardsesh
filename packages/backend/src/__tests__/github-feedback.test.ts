@@ -14,6 +14,7 @@ import {
   redactSensitiveText,
   type FeedbackIssuePayload,
 } from '../services/github-feedback';
+import { githubErrorDetailOf } from '../lib/github-error';
 
 const originalRepo = process.env.FEEDBACK_GITHUB_REPO;
 const originalQaRepo = process.env.QA_GITHUB_REPO;
@@ -165,16 +166,18 @@ describe('createFeedbackGithubIssue', () => {
     else process.env.QA_GITHUB_REPO = originalQaRepo;
   });
 
-  it('no-ops (returns null, no fetch) when the GitHub App is not configured', async () => {
+  it('reports an unconfigured App (and makes no request) rather than returning quietly', async () => {
     installationToken = undefined;
-    const result = await createFeedbackGithubIssue(bugPayload());
-    expect(result).toBeNull();
+    // `unconfigured`, not a bare null: this is the exact shape of the 3h23m
+    // window where the App was live before it was installed on the repo and 19
+    // bug reports stored a row and filed nothing (#5294).
+    await expect(createFeedbackGithubIssue(bugPayload())).resolves.toEqual({ status: 'unconfigured' });
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it('returns null for a rating source even when configured', async () => {
+  it('skips a rating source even when configured', async () => {
     const result = await createFeedbackGithubIssue(bugPayload({ source: 'prompt', rating: 5, comment: null }));
-    expect(result).toBeNull();
+    expect(result).toEqual({ status: 'skipped' });
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
@@ -184,7 +187,10 @@ describe('createFeedbackGithubIssue', () => {
 
     const result = await createFeedbackGithubIssue(bugPayload());
 
-    expect(result).toEqual({ number: 123, htmlUrl: 'https://github.com/boardsesh/boardsesh/issues/123' });
+    expect(result).toEqual({
+      status: 'created',
+      issue: { number: 123, htmlUrl: 'https://github.com/boardsesh/boardsesh/issues/123' },
+    });
     const issueCall = fetchSpy.mock.calls.find(([url]) => String(url).endsWith('/issues'));
     expect(issueCall).toBeTruthy();
     const [, init] = issueCall as [string, RequestInit];
@@ -192,20 +198,33 @@ describe('createFeedbackGithubIssue', () => {
     expect(init.body as string).not.toMatch(/user_id/);
   });
 
-  it('returns null (never throws) when the issue POST fails', async () => {
+  it('carries the status and GitHub message back when the issue POST fails', async () => {
     fetchSpy.mockImplementation((input: string | URL) => {
       const url = String(input);
       if (url.endsWith('/issues')) {
-        return Promise.resolve({ ok: false, status: 500, text: async () => 'boom', json: async () => ({}) });
+        return Promise.resolve(
+          new Response(JSON.stringify({ message: 'Not Found' }), {
+            status: 404,
+            headers: { 'x-github-request-id': 'D9F1:2233:44' },
+          }),
+        );
       }
-      return Promise.resolve({ ok: true, status: 201, text: async () => '', json: async () => ({}) });
+      return Promise.resolve(new Response('{}', { status: 201 }));
     });
 
-    await expect(createFeedbackGithubIssue(bugPayload())).resolves.toBeNull();
+    const outcome = await createFeedbackGithubIssue(bugPayload());
+
+    expect(outcome.status).toBe('rejected');
+    const detail = githubErrorDetailOf(outcome.status === 'rejected' ? outcome.cause : null);
+    expect(detail?.status).toBe(404);
+    expect(detail?.requestId).toBe('D9F1:2233:44');
+    expect(detail?.body).toContain('Not Found');
   });
 
-  it('returns null (never throws) when fetch rejects', async () => {
+  it('reports (never throws) when fetch rejects', async () => {
     fetchSpy.mockRejectedValue(new Error('network down'));
-    await expect(createFeedbackGithubIssue(bugPayload())).resolves.toBeNull();
+    const outcome = await createFeedbackGithubIssue(bugPayload());
+    expect(outcome.status).toBe('rejected');
+    expect((outcome as { cause: Error }).cause).toBeInstanceOf(Error);
   });
 });

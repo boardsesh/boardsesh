@@ -11,6 +11,7 @@ import type {
   BoardClimbRecentSender,
   BoardConnectionHolder,
   BoardPresenceClimb,
+  BoardHistoryPage,
   BoardPresenceEvent,
   BoardPresenceStats,
   ClimbQueueItemInput,
@@ -58,6 +59,8 @@ export interface BoardPresenceClient {
 
   /** Newest-first recent climbs, used to backfill history for a late joiner. */
   fetchRecentClimbs(boardId: number): Promise<BoardPresenceClimb[]>;
+  fetchRecentHistory?(boardId: number): Promise<BoardPresenceClimb[]>;
+  fetchHistoryPage?(boardId: number, opts?: { limit?: number; before?: string }): Promise<BoardHistoryPage>;
 
   /**
    * Durable, keyset-paged history of what was lit on the board, from the

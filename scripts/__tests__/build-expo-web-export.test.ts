@@ -22,8 +22,15 @@ const RENDERED_SHELL = `<!doctype html>
     <link rel="manifest" href="/app/manifest.json" />
     <link rel="icon" href="https://www.boardsesh.com/icons/icon-192.png" />
     <link rel="apple-touch-icon" href="https://www.boardsesh.com/icons/apple-touch-icon.png" />
+    <script>
+      window.addEventListener('unhandledrejection', function () {
+        sessionStorage.getItem('boardsesh:chunk-reload-at');
+      });
+    </script>
   </head>
-  <body><div id="root"></div></body>
+  <body><div id="root"></div>
+  <script src="/app/_expo/static/js/web/entry-stub.js" defer></script>
+  </body>
 </html>
 `;
 
@@ -63,6 +70,17 @@ cat > "$output_dir/manifest.json" <<'MANIFEST_EOF'
 ${PUBLIC_MANIFEST}MANIFEST_EOF
 touch "$output_dir/wasm/board_renderer_wasm.js"
 touch "$output_dir/wasm/board_renderer_wasm_bg.wasm"
+# The export script's eager-payload budget reads every <script src> in the shell
+# and the bytes behind it, so the stub has to emit a real chunk.
+printf 'globalThis.__stub=1;\\n' > "$output_dir/_expo/static/js/web/entry-stub.js"
+# Real Expo roots the script src at the export's baseUrl, so the stub must too —
+# otherwise the --subdomain case ships a shell pointing at /app/_expo/... and the
+# budget check correctly reports a reference with no file behind it.
+stub_base="\${BOARDSESH_WEB_BASE_URL:-/app}"
+[[ "$stub_base" == "/" ]] && stub_base=""
+stub_base="\${stub_base%/}"
+sed -i.bak "s#"/app/_expo/#"\${stub_base}/_expo/#g" "$output_dir/index.html"
+rm -f "$output_dir/index.html.bak"
 `;
 }
 
@@ -93,6 +111,10 @@ describe('build-expo-web-export.sh PWA manifest patching', () => {
 
     copyFileSync(sourceExportScript, fixtureExportScript);
     copyFileSync(sourcePatchScript, join(fixtureRoot, 'scripts', 'lib', 'patch-expo-web-pwa-manifest.mjs'));
+    copyFileSync(
+      join(repositoryRoot, 'scripts', 'lib', 'check-expo-web-eager-budget.mjs'),
+      join(fixtureRoot, 'scripts', 'lib', 'check-expo-web-eager-budget.mjs'),
+    );
     writeFileSync(
       join(fixtureRoot, 'packages', 'shared', 'static-assets', 'src', 'generated', 'catalog.json'),
       JSON.stringify(STATIC_ASSET_MANIFEST),
@@ -163,6 +185,16 @@ describe('build-expo-web-export.sh PWA manifest patching', () => {
       icons: Array<{ src: string }>;
     };
     expect(manifest.icons.every(({ src }) => src.startsWith('https://assets.boardsesh.com/static/v1/'))).toBe(true);
+  });
+
+  it('fails the export when the shell lost its inline chunk-recovery script', () => {
+    // #5611: that script is the only recovery for a failed root layout chunk.
+    writeVpStub(RENDERED_SHELL.replace(/    <script>[\s\S]*?<\/script>\n/, ''));
+
+    const result = runExport('--subdomain');
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('[build-expo-web-export] index.html lost the inline chunk-recovery script');
   });
 
   it('fails the export when the shell lost its manifest link', () => {

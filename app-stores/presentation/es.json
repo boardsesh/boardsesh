@@ -1,0 +1,74 @@
+{
+  "board": {
+    "headline": "Visualiza tu próximo movimiento",
+    "description": "Lee las presas, consulta el grado e ilumina tu bloque."
+  },
+  "boards": {
+    "headline": "Una app para tus plafones",
+    "description": "Compatible con Kilter y Tension, con todo tu historial junto."
+  },
+  "home": {
+    "headline": "Ponte al día con tu grupo",
+    "description": "Descubre las últimas sesiones y los bloques que están probando."
+  },
+  "climbs": {
+    "headline": "Encuentra tu próximo proyecto",
+    "description": "Busca bloques por grado, ángulo y mucho más."
+  },
+  "session": {
+    "headline": "Haz que cada sesión cuente",
+    "description": "Repasa tus bloques, intentos y encadenes."
+  },
+  "workout": {
+    "headline": "Dale un plan a tu sesión",
+    "description": "Prepara un entrenamiento para tu plafón y tu nivel."
+  },
+  "discover": {
+    "headline": "Descubre nuevos bloques",
+    "description": "Explora listas recomendadas y guardadas para tu plafón."
+  },
+  "playlist": {
+    "headline": "Reúne tus próximos bloques",
+    "description": "Abre una lista y escala sus bloques."
+  },
+  "logbook": {
+    "headline": "Recuerda cada encadene",
+    "description": "Guarda tus encadenes e intentos en un solo logbook."
+  },
+  "profile": {
+    "headline": "Todos tus plafones.\nUn perfil.",
+    "description": "Ve tus encadenes y tu progreso en cada plafón."
+  },
+  "wall": {
+    "headline": "Sigue la actividad de tu plafón",
+    "description": "Mira los encadenes recientes y las estadísticas de tu plafón."
+  },
+  "wallKiosk": {
+    "headline": "Déjalo junto al plafón.",
+    "description": "El bloque iluminado, legible desde la colchoneta."
+  },
+  "boardFamily": {
+    "headline": "Tus plafones. Una app.",
+    "description": "Cambia de plafón sin cambiar de app."
+  },
+  "liveQueue": {
+    "headline": "Tu grupo.\nUna cola en directo.",
+    "description": "Añade bloques con tu grupo a la misma cola."
+  },
+  "liveClimb": {
+    "headline": "Elige un bloque.\nTodos lo ven.",
+    "description": "El bloque actual se actualiza para todo el grupo de la sesión."
+  },
+  "wallStatus": {
+    "headline": "Mira qué hay en el muro.",
+    "description": "Ve qué bloque está iluminado mientras buscas el siguiente."
+  },
+  "moreBoards": {
+    "headline": "Más plafones. La misma app.",
+    "description": "Compatible con Woods Board, Grasshopper y MoonBoard 2024."
+  },
+  "crossBoardLogbook": {
+    "headline": "Todos tus plafones.\nUn logbook.",
+    "description": "Tus encadenes y sesiones de todos tus plafones, juntos."
+  }
+}

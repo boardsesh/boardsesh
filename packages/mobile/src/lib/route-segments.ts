@@ -12,6 +12,10 @@ type Segments = readonly string[];
 const TABS_GROUP = '(tabs)';
 const CLIMBS_TAB = 'climbs';
 const PLAYER_ROUTE = 'play';
+// The replayable walkthrough. Like the player, a transparentModal with an opaque
+// backing (docs/mobile-sheets-vs-routes.md rule 2), so where it IS over the live
+// tabs the tab bar never leaves while it is up.
+const ONBOARDING_ROUTE = 'onboarding';
 
 /** True when the focused route lives inside the bottom-tab navigator. */
 export function isTabsRoute(segments: Segments): boolean {
@@ -21,11 +25,32 @@ export function isTabsRoute(segments: Segments): boolean {
 /**
  * True when the native bottom tab CHROME (the tab bar) is present and STABLE — on any
  * route inside the tabs (including pushed sub-routes, which keep the tab bar), OR under
- * the player route (`/play`).
+ * the player route (`/play`) or the walkthrough (`/onboarding`).
  *
- * The player is a `transparentModal` (app/_layout.tsx): the tabs screen stays LIVE
- * behind it, so UIKit never snapshots the presenting view controller. That lets the
- * tab-bar metrics stay put across the player's open/close instead of churning.
+ * Both are `transparentModal`s (app/_layout.tsx): the tabs screen stays LIVE behind
+ * them, so UIKit never snapshots the presenting view controller. That lets the tab-bar
+ * metrics stay put across their open/close instead of churning. The walkthrough joined
+ * the player when it stopped being a `fullScreenModal` (#5654): unmounting the
+ * accessory under a transparent cover would detach it while the bar is still up, which
+ * is the #5055 failure below.
+ *
+ * The walkthrough's clause is now deliberately WIDER than the truth. Since Settings
+ * became a root destination, its replay rows push `/onboarding` over `/settings` —
+ * a root push that already covered the bar — so on that path this predicate drives a
+ * full `setBottomAccessory:` / `setBottomAccessory:nil` pair against a tab bar nobody
+ * can see: attached when the walkthrough opens over Settings, detached again when
+ * "Customize" pops back to Settings. (Leaving via `dismissTo('/(tabs)/climbs')` pops
+ * both root screens in one action, so the host never detaches there, and the
+ * walkthrough has no other exit — its gesture is off and each step swallows Android
+ * back.) The tab-bar height reserved meanwhile goes unread, since the walkthrough's
+ * steps consume no bottom chrome.
+ *
+ * That churn is the cheap side of the trade, and it happens entirely under cover:
+ * #5055 is a detach while the bar is ON SCREEN, which none of these transitions is.
+ * Narrowing the clause would buy the expensive side — the route is still reachable by
+ * deep link straight over the live tabs, and there the host WOULD detach with the bar
+ * up, which is #5055 exactly. Segments alone cannot tell the two entries apart, and
+ * this predicate is not worth making navigation-state-aware to save a hidden remount.
  *
  * Drives the tab-bar height/padding in `useBottomChromeMetrics`, and — through
  * `isAccessoryHostRoute`, which is this predicate under another name — the native
@@ -33,7 +58,7 @@ export function isTabsRoute(segments: Segments): boolean {
  * cannot drift apart without re-breaking #5055.
  */
 export function isTabsChromeRoute(segments: Segments): boolean {
-  return segments[0] === TABS_GROUP || segments[0] === PLAYER_ROUTE;
+  return segments[0] === TABS_GROUP || segments[0] === PLAYER_ROUTE || segments[0] === ONBOARDING_ROUTE;
 }
 
 /** True when the focused route is the Climbs tab (or one of its sub-routes). */

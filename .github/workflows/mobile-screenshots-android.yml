@@ -2,9 +2,58 @@ name: Mobile Screenshots (Android)
 
 # Captures native Play Store / onboarding screenshots from the RN app via Maestro
 # (scripts/mobile-screenshots.ts), uploads them as a build artifact, and posts the
-# set to the Discord deploy channel as a preview. Manual dispatch only for now —
-# never gates PRs. (An automatic trigger after each native build lands in a
-# later PR.)
+# set to the Discord deploy channel as a preview. Never gates PRs. There is no
+# cron.
+#
+# WHEN IT RUNS — two ways, and only these two:
+#   * automatically, after an Android Play internal deploy on the release train
+#     (`release/next`) that actually SHIPPED a binary (the `workflow_run` trigger
+#     plus the `gate` job below). Native store candidates are built from the
+#     train, never from main (#5477, docs/mobile-store-release.md §1-2), so the
+#     trigger follows the train and the checkout pins the deploy's own `head_sha`
+#     — the train commit the binary was built from;
+#   * on a manual `workflow_dispatch`, from any branch, with the inputs below.
+#
+# THE SHIPPED GATE. `conclusion == 'success'` is NOT proof a binary shipped: a
+# JS-only push finishes the deploy workflow with its build job SKIPPED (the
+# fingerprint gate saw that fingerprint already shipped) and the run still
+# concludes `success`. What proves it is the `fingerprint-android-<hash>` tag
+# android-apk-rn.yml forces onto its own $GITHUB_SHA right after a successful
+# Play upload. Verified against android-apk-rn.yml as it stands on main after
+# #5477: "Tag the uploaded Android build and fingerprint" still tags
+# `$GITHUB_SHA`, and its `record-candidate` job still runs only when
+# `build-and-release` succeeded with `candidate_ready == 'true'` (i.e. the Play
+# upload landed). That job hangs off `build-and-release`, whose gate now admits
+# BOTH a `release/next` push AND a `workflow_dispatch` from main (the
+# post-merge-back hotfix rebuild) — so a dispatched rebuild tags its own commit
+# exactly the same way, and this gate reads it the same way. The `gate` job asks
+# the API whether such a tag points at the triggering commit; `android` needs it.
+# A dispatch bypasses the gate — asking for a capture by hand IS the request.
+# Known gap: a forced rebuild of an
+# already-shipped fingerprint preserves the existing tag (it keeps pointing at
+# the first commit that shipped it), so that run reads as not-shipped. Dispatch
+# by hand when you want those pixels.
+#
+# SKIP PROPAGATION, traced by hand and pinned in
+# scripts/__tests__/mobile-screenshots-workflows.test.ts:
+#   * deploy failed/cancelled → `gate` is skipped by its conclusion guard →
+#     `android` is skipped with it (a skipped need skips a dependent job whose
+#     `if` carries no status function — and `android`'s carries none).
+#   * shipped=false → `gate` SUCCEEDS with shipped=false → `android` fails
+#     `needs.gate.outputs.shipped == 'true'` and is skipped; `gate` writes the
+#     reason to the step summary.
+#   * shipped=true, or any dispatch → `android` runs the whole capture.
+# The gate is a separate two-line job rather than a condition threaded through
+# `android`'s 21 steps. A per-step `if: shipped == 'true'` would actually be safe
+# on its own: per docs.github.com (Expressions -> Status check functions), "A
+# default status check of success() is applied unless you include one of these
+# functions" (success()/failure()/always()/cancelled()) — so a bare
+# `shipped == 'true'` still implicitly ANDs success(), same as writing
+# `success() && shipped == 'true'` by hand. The real case for a separate job is
+# cost, not correctness: one ~10s API call on a cheap ubuntu runner decides
+# whether the ~17-minute emulator job (KVM setup, Maestro install, AVD boot,
+# capture) is worth booting at all, instead of paying for all of that on every
+# JS-only push before discovering there was nothing to shoot.
 #
 # Split out from the old combined mobile-screenshots.yml so iOS and Android run
 # independently: an Android-only change reruns here in ~15-20 min without waiting
@@ -26,13 +75,28 @@ name: Mobile Screenshots (Android)
 # On a manual dispatch with `commit_to_main = true` it commits the captured set
 # back to main (app-stores/google/screenshots/pixel-2/) using the OTA push app
 # token; that commit re-triggers mobile-store-metadata.yml, the single uploader
-# (text + icon + screenshots together). A capture-only dispatch just captures +
-# uploads the artifact — it never commits, because the capture isn't
-# byte-deterministic (e.g. relative timestamps), so auto-committing would churn
-# the live listing on every run. Refresh the store by dispatching with
-# commit_to_main once the captured artifact looks right.
+# (text + icon + screenshots together). Everything else — a capture-only
+# dispatch AND every automatic run — just captures, posts the Discord preview and
+# uploads the artifact. Committing stays opt-in and dispatch-only because the
+# Android capture isn't byte-deterministic yet (e.g. relative timestamps), so an
+# automatic commit would churn the live listing on every native release; the
+# pixel compare that will make it safe lands with the Android compare gate.
+# Refresh the store by dispatching with commit_to_main once the captured
+# artifact looks right.
 
 on:
+  workflow_run:
+    # The name must match the deploy workflow's `name:` exactly;
+    # scripts/native-release-workflows.test.ts pins both sides.
+    workflows:
+      - Android Play Internal Deploy (React Native)
+    types: [completed]
+    # The release train is the only branch that builds a store candidate; main
+    # no longer deploys native at all. Kept in sync with the deploy workflows'
+    # own `push.branches` by scripts/__tests__/mobile-screenshots-workflows.test.ts,
+    # which reads that value rather than hard-coding one. Mirrors RELEASE_BRANCH
+    # below — `on:` cannot read `env`, so the literal lives in both places.
+    branches: [release/next]
   workflow_dispatch:
     inputs:
       flow:
@@ -58,25 +122,156 @@ on:
         description: 'Which walls the board-backed shots sit on, "|"-separated, in slot order (slot 0 = every board-backed shot). Empty = the app default. Each entry matches a board name or a layout name.'
         type: string
         default: ''
+      fixtures:
+        description: '"replay" (the default) serves the pinned fixture snapshot, so captures are deterministic. "record" proxies PROD and uploads the recorded fixtures as an artifact, to be merged with the iOS shards and committed. "live" talks straight to PROD with no fixtures — the old direct-to-PROD path, kept for debugging.'
+        type: choice
+        default: replay
+        options:
+          - replay
+          - record
+          - live
+      frozen_now:
+        description: 'Record only: ISO instant to freeze "now" at (e.g. 2026-09-08T12:00:00Z). Empty mints one from the current time. Optional even when recording alongside the iOS shards on the same run — the merge takes the max frozenNow across every shard regardless.'
+        type: string
+        default: ''
       commit_to_main:
         description: 'Commit the captured screenshots back to main (mobile-store-metadata.yml then uploads them to Google Play). Requires the app-store flow.'
         type: boolean
         default: false
 
+# Automatic runs share ONE group and never cancel each other: a capture in
+# flight always finishes (it may be mid-emulator, or mid-push to main), and
+# GitHub coalesces whatever queues behind it down to the newest. A capture-only
+# dispatch (commit_to_main left false) gets its own group keyed on the run id —
+# it never pushes, so it is safe to run alongside anything else and is never
+# cancelled by a native deploy landing mid-capture.
+#
+# The race this used to leave open is now closed: a dispatch with
+# `commit_to_main: true` joins the SAME group as automatic runs, because it can
+# reach the same write target automatic runs do — `git push origin HEAD:main`
+# for the screenshots commit — and that push is not transactional across two
+# concurrent runs. Two such writers could still overlap under the old per-run
+# grouping; the loser's push would simply be rejected and retried against the
+# new main (see the retry loop in "Commit screenshots to main" below), which
+# reordered which capture's pixels landed without corrupting the commit — but
+# serializing writers removes the reordering risk entirely rather than just
+# tolerating it.
 concurrency:
-  group: mobile-screenshots-android-${{ github.ref }}
-  cancel-in-progress: true
+  # A capture-only dispatch gets its own per-run group (harmless to run
+  # alongside anything else — it only reads). A dispatch that can WRITE to the
+  # shared target (commit_to_main, which feeds mobile-store-metadata.yml's
+  # Play upload) joins the same serial group as automatic runs instead: two
+  # such writers racing could commit out of order. `inputs.commit_to_main` is
+  # compared explicitly (never read bare) to stay null-tolerant on
+  # `workflow_run`, where `inputs` is null and the comparison reads false.
+  group: ${{ (github.event_name == 'workflow_run' || inputs.commit_to_main == true) && 'mobile-screenshots-android' || format('mobile-screenshots-android-dispatch-{0}', github.run_id) }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
 
+env:
+  # The branch that carries the store candidate, mirroring mobile-store-draft.yml.
+  # The `workflow_run` filter in `on:` above must match it; the contract test
+  # checks both against the deploy workflow. Note this is NOT where the captured
+  # screenshots are committed — `commit_to_main` pushes to main, where
+  # mobile-store-metadata.yml reads them from.
+  RELEASE_BRANCH: release/next
+
 jobs:
+  # One API call on a cheap ubuntu runner, deciding whether the emulator job
+  # below is worth booting at all. See the SHIPPED GATE note in the header for
+  # why the deploy run's `conclusion` is not enough, and why this is its own job.
+  gate:
+    # workflow_run fires on every completion; a failed or cancelled deploy has
+    # nothing to capture. Dispatch runs are always allowed. Same guard, same
+    # reasoning, as mobile-store-draft.yml's release-candidate job.
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      shipped: ${{ steps.shipped.outputs.shipped }}
+    env:
+      # The commit the captured pixels belong to: the deploy run's head commit on
+      # an automatic run, this run's own SHA on a dispatch. The capture job's
+      # checkout pins the same expression.
+      SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+      EVENT_NAME: ${{ github.event_name }}
+    steps:
+      # Replay needs no credentials. Live captures use the dedicated test account.
+      - name: Require credentials for live recording
+        if: ${{ (inputs.fixtures || 'replay') != 'replay' }}
+        env:
+          SCREENSHOT_USER_EMAIL: ${{ secrets.SCREENSHOT_USER_EMAIL }}
+          SCREENSHOT_USER_PASSWORD: ${{ secrets.SCREENSHOT_USER_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "$SCREENSHOT_USER_EMAIL" ] || [ -z "$SCREENSHOT_USER_PASSWORD" ]; then
+            echo "::error::SCREENSHOT_USER_EMAIL / SCREENSHOT_USER_PASSWORD are not set; record/live capture requires the dedicated screenshot account"
+            exit 1
+          fi
+
+      - name: Check that a binary shipped at this commit
+        id: shipped
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" != "workflow_run" ]; then
+            echo "shipped=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Manual dispatch of $SOURCE_SHA — capturing without the shipped-binary gate."
+            exit 0
+          fi
+          # android-apk-rn.yml tags with `git tag --force <tag> $GITHUB_SHA`, i.e. a
+          # LIGHTWEIGHT tag, so its ref's object.sha is normally already the commit.
+          # But a lightweight-only assumption is fragile — an annotated tag (made by
+          # hand, or by a future change to the deploy workflow) points at a TAG
+          # object instead, whose own sha is not a commit sha, and would read as
+          # "never shipped" even when it names the right commit. So read each ref's
+          # object type alongside its sha, and peel any "tag"-typed object through
+          # the Git Data API to the commit sha it points at before comparing. Read
+          # over the API: this job has no checkout. Assignment before use (no
+          # `local`) so `set -e` aborts the job on any API failure here — fail
+          # closed rather than mis-reading a real shipped commit as unshipped.
+          tagged_refs="$(gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/fingerprint-android-" \
+            --jq '.[] | "\(.object.type) \(.object.sha)"')"
+          shipped_commit_shas=""
+          while IFS=' ' read -r object_type object_sha; do
+            [ -n "$object_sha" ] || continue
+            if [ "$object_type" = "tag" ]; then
+              commit_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$object_sha" --jq .object.sha)"
+            else
+              commit_sha="$object_sha"
+            fi
+            shipped_commit_shas="$shipped_commit_shas
+          $commit_sha"
+          done <<<"$tagged_refs"
+          # Assign first, grep second, and via a herestring rather than a pipe:
+          # piping straight into `grep -q` lets grep close the pipe on its first
+          # match, and the SIGPIPE that then kills the producer would read as "not
+          # shipped" under `pipefail` — inverting the gate on exactly the runs that
+          # should capture.
+          if grep -qxF -- "$SOURCE_SHA" <<<"$shipped_commit_shas"; then
+            echo "shipped=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Android binary shipped at $SOURCE_SHA — capturing."
+          else
+            echo "shipped=false" >> "$GITHUB_OUTPUT"
+            echo "No Android binary shipped at $SOURCE_SHA (no fingerprint-android-* tag) — nothing to capture." >> "$GITHUB_STEP_SUMMARY"
+            echo "::notice::No Android binary shipped at $SOURCE_SHA (no fingerprint-android-* tag) — nothing to capture."
+          fi
+
   android:
+    needs: gate
+    # No status function here on purpose: a skipped or failed `gate` must skip
+    # this job too, which the implicit needs check already does.
+    if: needs.gate.outputs.shipped == 'true'
     # Gate the crown-jewel secret (OTA_PUSH_APP_PRIVATE_KEY — a GitHub App key on
-    # main's PR-bypass allowlist) behind the Production environment, whose main-only
-    # branch policy fences it off from a pushed branch. Only a commit_to_main
-    # dispatch mints/uses the token, so a capture-only dispatch resolves to '' (no
-    # environment) and never waits on a future required reviewer — see the
+    # main's PR-bypass allowlist) behind the Production environment, whose branch
+    # policy (main and release/next) fences it off from any other pushed branch.
+    # Only a commit_to_main dispatch mints/uses the token, so an automatic run and
+    # a capture-only dispatch both resolve to '' (no environment) and never wait on
+    # a future required reviewer — see the
     # conditional-vs-bare note at android-apk-rn.yml (gate job).
     environment: ${{ (github.event_name == 'workflow_dispatch' && inputs.commit_to_main) && 'Production' || '' }}
     runs-on: ubuntu-latest
@@ -92,7 +287,12 @@ jobs:
       # The commit (path app-stores/google/screenshots/**) re-triggers
       # mobile-store-metadata.yml, which uploads to Google Play. A capture-only
       # dispatch leaves this false so non-deterministic captures don't churn the
-      # live listing.
+      # live listing. The leading `github.event_name == 'workflow_dispatch'` is
+      # what makes an automatic run incapable of pushing: on `workflow_run` the
+      # whole expression short-circuits to the literal `false` (the `inputs`
+      # context is null there and is never even reached), so COMMIT_RUN is
+      # 'false' and the commit step's `if` cannot pass. Pinned by the contract
+      # test.
       COMMIT_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.commit_to_main }}
       EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: 401523882502-0f6d7te1vekvkpmg18t8di6l0ig560q7.apps.googleusercontent.com
       EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: 401523882502-h92kdkck1qhmdbgq7ltek87g4rg8rg3h.apps.googleusercontent.com
@@ -103,8 +303,6 @@ jobs:
       # calls as production during capture.
       EXPO_PUBLIC_USE_RN_FETCH: '1'
       SENTRY_DISABLE_AUTO_UPLOAD: 'true'
-      SCREENSHOT_USER_EMAIL: ${{ secrets.SCREENSHOT_USER_EMAIL || 'test@boardsesh.com' }}
-      SCREENSHOT_USER_PASSWORD: ${{ secrets.SCREENSHOT_USER_PASSWORD || 'test' }}
 
     steps:
       # Committing screenshots to main feeds them straight to the live Play
@@ -135,6 +333,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          # Capture the commit that shipped the binary, not whatever the release
+          # train has moved on to since the deploy finished.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
           # Full history so the screenshot push-back can reset onto the latest main.
           fetch-depth: 0
           # Persist the app token (when configured) so the push-back authenticates
@@ -157,7 +358,14 @@ jobs:
           java-version: '21'
 
       - name: Setup Android SDK
+        # `packages: ''` is REQUIRED, not tidiness. setup-android@v3's default is
+        # `tools platform-tools`, and Google removed the obsolete `tools` package from
+        # the SDK repository, so the default now dies on `Warning: Failed to find
+        # package 'tools'` before any SDK component is installed. The next step
+        # installs what the build actually needs.
         uses: android-actions/setup-android@v3
+        with:
+          packages: ''
 
       - name: Accept licenses and install SDK components
         run: |
@@ -183,9 +391,12 @@ jobs:
       # (android-apk-dev-client.yml) — no bundled JS, so no Gradle build on the
       # common path. It's used when the release's native tree provably matches
       # this commit: either the release was built from an ancestor of it with no
-      # native-input change since, or the release is a newer commit (every
-      # native deploy to main publishes a fresh release) with no native-input
-      # change between the two — see devApkFreshness. Otherwise (or if there's
+      # native-input change since, or the release is a newer commit (every push
+      # to main with a native-input change publishes a fresh one —
+      # android-apk-dev-client.yml still builds from main) with no native-input
+      # change between the two — see devApkFreshness. A train commit carrying a
+      # native change main has not taken yet therefore has no matching
+      # prerelease, and this step falls back to the local build below. Otherwise (or if there's
       # no release / download fails), the script warns and falls back to a
       # local `assembleDebug` build — that's why Java + the SDK stay installed
       # above. Writes `apk_path` / `apk_source` outputs. Checkout already uses
@@ -272,7 +483,13 @@ jobs:
           # give the emulator room and a bigger app heap.
           ram-size: 4096M
           heap-size: 1024M
-          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
+          # -timezone UTC pins the guest clock's zone, so the app's local-date
+          # derivations (day dividers, the activity heatmap's today cell) land on
+          # the same calendar day here as they do from the same frozen instant on
+          # a developer's machine. The iOS side pins the same thing per launch
+          # with SIMCTL_CHILD_TZ; the local emulator gets it in
+          # scripts/lib/android-emulator.ts.
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none -timezone UTC
           disable-animations: true
           script: bash "$GITHUB_WORKSPACE/scripts/ci-android-screenshot-capture.sh"
         env:
@@ -287,6 +504,23 @@ jobs:
           # retarget needs both sides to agree.
           SCREENSHOT_RENDER_MODE: ${{ inputs.render_mode || '' }}
           SCREENSHOT_BOARDS: ${{ inputs.boards || '' }}
+          # replay | record | live. `replay` (the default) and `record` are threaded
+          # through to --fixtures by ci-android-screenshot-capture.sh; `live` passes
+          # no --fixtures flag at all, so the capture talks straight to PROD exactly
+          # as it did before fixtures existed.
+          SCREENSHOT_FIXTURES: ${{ inputs.fixtures || 'replay' }}
+          # Record only: threaded through to --frozen-now by
+          # ci-android-screenshot-capture.sh. Empty = the orchestrator mints one.
+          SCREENSHOT_FROZEN_NOW: ${{ inputs.frozen_now || '' }}
+          # Scoped to THIS step, not the job: a replay run never signs in
+          # (the backend hands out a synthetic session for the recorded
+          # account), so it has no business seeing the credential at all — and
+          # a job-level secret is handed to every step, including the ones that
+          # push to main. Empty on replay; the real value on record/live, where
+          # the Maestro flow does sign in against PROD. The orchestrator falls
+          # back to its own defaults when these are empty.
+          SCREENSHOT_USER_EMAIL: ${{ (inputs.fixtures || 'replay') != 'replay' && secrets.SCREENSHOT_USER_EMAIL || '' }}
+          SCREENSHOT_USER_PASSWORD: ${{ (inputs.fixtures || 'replay') != 'replay' && secrets.SCREENSHOT_USER_PASSWORD || '' }}
 
       # Hard backstop against a blank capture (the play-drawer modal occasionally
       # didn't composite into adb screencap — a blank board-view hero even reached
@@ -303,32 +537,51 @@ jobs:
       # so the floor passed while the shots were wrong. The relative check below
       # catches that: a shot under 40% of the committed size for the same filename
       # fails the run even when it clears the absolute floor.
+      # Stash the freshly recorded fixture set outside the work tree the moment
+      # the capture ends, exactly as the commit step below stages the PNGs: that
+      # step's `git reset --hard origin/main` discards working-tree changes, so
+      # it would restore the COMMITTED fixture set over this run's `--fresh`
+      # recording and the artifact would silently be a union of the two.
+      - name: Stage recorded fixtures
+        if: ${{ always() && inputs.fixtures == 'record' }}
+        run: |
+          set -euo pipefail
+          staged="$RUNNER_TEMP/screenshot-fixtures"
+          rm -rf "$staged"
+          if [ ! -d packages/mobile/screenshot-fixtures ]; then
+            echo "::warning::no packages/mobile/screenshot-fixtures to stage — the capture recorded nothing."
+            exit 0
+          fi
+          cp -R packages/mobile/screenshot-fixtures "$staged"
+          echo "Staged $(find "$staged" -type f | wc -l) recorded file(s) in $staged."
+
+      # The Android half of a recording run. Merged with the iOS shard artifacts
+      # via `vp run mobile:screenshot-fixtures-merge` and published — see
+      # docs/mobile-screenshot-fixtures.md.
+      #
+      # Uploaded from a copy OUTSIDE the work tree, for the same reason the PNGs
+      # are staged: with commit_to_main the commit step below runs `git reset --hard
+      # origin/main`, which restores the COMMITTED fixture set over this run's
+      # `--fresh` recording. Uploading the work tree after that silently ships a
+      # union of the new recording and the old set, with the old manifest.
+      - name: Upload recorded fixtures
+        if: ${{ always() && inputs.fixtures == 'record' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshot-fixtures-android
+          path: ${{ runner.temp }}/screenshot-fixtures/**
+          if-no-files-found: warn
+          retention-days: 7
+
       - name: Assert screenshots are not blank
         if: ${{ inputs.flow != 'onboarding' }}
         run: |
           set -euo pipefail
-          shots_dir=app-stores/google/screenshots
-          min_bytes=61440
-          fail=0
-          while IFS= read -r -d '' shot; do
-            size=$(stat -c%s "$shot")
-            if [ "$size" -lt "$min_bytes" ]; then
-              echo "::error::Blank/near-empty screenshot: $shot is ${size} bytes (< ${min_bytes}); likely a failed modal capture."
-              fail=1
-            else
-              echo "ok: $shot (${size} bytes)"
-            fi
-
-            committed=$(git ls-tree -l HEAD -- "$shot" | awk '{print $4}')
-            if [ -n "$committed" ]; then
-              min_relative=$((committed * 40 / 100))
-              if [ "$size" -lt "$min_relative" ]; then
-                echo "::error::Mid-load capture: $shot is ${size} bytes, under 40% of the committed ${committed} bytes"
-                fail=1
-              fi
-            fi
-          done < <(find "$shots_dir" -type f -name '*.png' -print0)
-          [ "$fail" -eq 0 ] || exit 1
+          baseline="$RUNNER_TEMP/committed-screenshots"
+          mkdir -p "$baseline"
+          git archive HEAD app-stores/google/screenshots | tar -x -C "$baseline"
+          vp run screenshot:assert-content -- --dir app-stores/google/screenshots \
+            --baseline-dir "$baseline/app-stores/google/screenshots"
 
       - name: Assert screenshot dimensions
         # The onboarding flow captures different screens than the Play Store set, so
@@ -337,7 +590,8 @@ jobs:
         run: vp run check:screenshot-dimensions -- --platform android
 
       # Post the captured set to the Discord deploy channel — a visual preview of
-      # what a manual app-store dispatch captured before commit_to_main. Reuses the
+      # what this native release actually looks like, and of what a dispatch
+      # captured before commit_to_main. Reuses the
       # DISCORD_DEPLOY_WEBHOOK that the build/deploy jobs already post to. Discord
       # caps a webhook message at 10 files / 8MB; the 8-shot set is ~3.6MB, so it
       # fits one multipart POST. success() so we only ever post a validated capture
@@ -345,10 +599,16 @@ jobs:
       # later commit step runs after this, so its outcome can't suppress the
       # preview. Best-effort, so a webhook hiccup never fails the run.
       - name: Post screenshots to Discord
-        if: ${{ success() && inputs.flow != 'onboarding' }}
+        if: ${{ success() && inputs.flow != 'onboarding' && inputs.fixtures != 'record' }}
         env:
           DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          # workflow_run always resolves $GITHUB_REF_NAME to the DEFAULT branch
+          # (the branch the workflow file itself lives on), not the branch the
+          # capture ran against — it never names the commit that actually shipped.
+          # Name the captured commit instead on that trigger; keep the branch name
+          # (a human's own choice) for a dispatch.
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
         run: |
           set -uo pipefail
           if [ -z "${DISCORD_DEPLOY_WEBHOOK:-}" ]; then
@@ -370,8 +630,14 @@ jobs:
             file_args+=(-F "files[${index}]=@${shot}")
             index=$((index + 1))
           done
-          content=$(printf '📸 **Play Store screenshots** (%d shots) on `%s`\n<%s>' \
-            "${#shots[@]}" "$GITHUB_REF_NAME" "$RUN_URL")
+          if [ "$GITHUB_EVENT_NAME" = "workflow_run" ]; then
+            short_sha="${SOURCE_SHA:0:7}"
+            ref_label="commit \`${short_sha}\` (<https://github.com/${GITHUB_REPOSITORY}/commit/${SOURCE_SHA}>)"
+          else
+            ref_label="\`${GITHUB_REF_NAME}\`"
+          fi
+          content=$(printf '📸 **Play Store screenshots** (%d shots) on %s\n<%s>' \
+            "${#shots[@]}" "$ref_label" "$RUN_URL")
           payload=$(jq -nc --arg content "$content" '{content: $content, allowed_mentions: {parse: []}}')
           curl -sS --fail-with-body -X POST "$DISCORD_DEPLOY_WEBHOOK" \
             -F "payload_json=${payload}" \
@@ -395,14 +661,14 @@ jobs:
           # below (it discards working-tree changes) can't wipe them.
           staged="$RUNNER_TEMP/play-screenshots"
           rm -rf "$staged" && mkdir -p "$staged"
-          cp "$shots_dir"/*.png "$staged"/
+          cp "$shots_dir"/*.png "$shots_dir"/presentation.json "$staged"/
           for attempt in 1 2 3; do
             git fetch origin main
             # Land ONLY the screenshots on top of the latest main: hard-reset to
             # main, then re-apply the captured set.
             git reset --hard origin/main
             rm -rf "$shots_dir" && mkdir -p "$shots_dir"
-            cp "$staged"/*.png "$shots_dir"/
+            cp "$staged"/*.png "$staged"/presentation.json "$shots_dir"/
             git add "$shots_dir"
             if git diff --cached --quiet; then
               echo "Captured screenshots match main — nothing to commit."
@@ -417,6 +683,15 @@ jobs:
           done
           echo "::error::Could not push screenshots to main after 3 attempts."
           exit 1
+
+      - name: Upload native captures for review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: raw-android-screenshots
+          path: app-stores/google/raw-screenshots/**
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Upload screenshots artifact
         if: always()

@@ -1,9 +1,13 @@
 {
-  "discovery": {
-    "popular": {
-      "title": "Beliebte Boards",
-      "meta": "{{boards}} Boards · {{sends}} Begehungen"
-    }
+  "sprayDetection": {
+    "queued": "Dein Foto wartet auf die Grifferkennung.",
+    "running": "Griffe auf deinem Foto werden gesucht…",
+    "connection": "Die Grifferkennung ist nicht erreichbar. Versuch es mit Verbindung erneut.",
+    "failed": "Die Grifferkennung konnte nicht abgeschlossen werden. Dein Foto ist gespeichert.",
+    "resumeHint": "Du kannst später weitermachen. Deine veröffentlichte Wand bleibt unverändert.",
+    "retry": "Erneut versuchen",
+    "manual": "Griffe selbst platzieren",
+    "resume": "Dieses Zurücksetzen fortsetzen"
   },
   "mobile": {
     "edit": {
@@ -14,6 +18,7 @@
       "noAccess": "Du darfst dieses Board nicht bearbeiten",
       "back": "Zurück",
       "configLockedHint": "Du darfst Layout, Größe und Hold-Sets dieses Boards nicht ändern.",
+      "configLockedHintSpray": "Das Layout eines Boards ist sein Foto. Fotografiere es neu, um die Griffe zu ändern.",
       "duplicate": {
         "title": "Dieses Setup hast du schon",
         "body": "Mit dieser Änderung ist das Board identisch mit „{{name}}“ — gleiches Layout, gleiche Größe, gleiche Hold-Sets.",
@@ -78,6 +83,46 @@
     "errorRetry": "Nochmal versuchen",
     "boardSwitchError": "Dieses Board ließ sich nicht speichern. Versuch es nochmal.",
     "onboardingPrompt": "Folge der Wand, an der du kletterst — damit schaltest du ihre Historie frei.",
+    "firstBoard": {
+      "title": "Wo kletterst du?",
+      "body": "Wähl dein Board, um seine Boulder zu laden. Sobald du verbunden bist, tippst du einen Boulder an und er wird am Board beleuchtet.",
+      "gym": "In der Halle",
+      "gymHint": "Wähl das Board deiner Halle",
+      "own": "Mein eigenes Board",
+      "ownHint": "Richte das Board ein, das du zu Hause hast",
+      "sprayWall": "Meine Spraywand hinzufügen",
+      "scan": "Nach dem Board vor mir suchen",
+      "scanFootnote": "MoonBoards und manche Kilter-Boxen tauchen hier noch nicht auf.",
+      "searching": "Suche Boards in deiner Nähe…",
+      "nearbyEmpty": "Nichts im Umkreis von 20 km",
+      "nearbyError": "Boards in deiner Nähe konnten nicht geladen werden",
+      "findGymOnMap": "Finde deine Halle auf der Karte",
+      "locationOff": "Standort ist aus",
+      "openSettings": "Einstellungen öffnen",
+      "notNow": "Nicht jetzt"
+    },
+    "firstConnect": {
+      "card": {
+        "title": "{{board}}: Boulder beleuchten",
+        "titleNoName": "Boulder am Board beleuchten",
+        "body": "Verbinde dieses Handy mit dem Board und tippe dann einen Boulder an, um ihn zu beleuchten.",
+        "connect": "Verbinde das Board",
+        "tryAgain": "Nochmal versuchen",
+        "noLights": "Diese Wand hat kein Licht",
+        "notNow": "Nicht jetzt",
+        "connecting": "Verbinde mit {{board}}…",
+        "connectingNoName": "Verbinde mit deinem Board…",
+        "failed": "Noch keine Verbindung zu {{board}}. Versuch es nochmal, wenn du so weit bist.",
+        "failedNoName": "Noch keine Verbindung zu deinem Board. Versuch es nochmal, wenn du so weit bist."
+      },
+      "pill": "Am Board beleuchten",
+      "confirm": {
+        "title": "Mit {{board}} verbunden",
+        "titleNoName": "Mit deinem Board verbunden",
+        "body": "Tippst du jetzt einen Boulder in der Liste an, wird er am Board beleuchtet.",
+        "gotIt": "Verstanden"
+      }
+    },
     "discovery": {
       "findNearby": "In der Nähe suchen",
       "bluetooth": "Bluetooth",
@@ -97,7 +142,8 @@
       "pinAria": "{{name}} anpinnen",
       "unpinAria": "{{name}} abpinnen",
       "pinnedBadgeAria": "Angepinnt",
-      "pinError": "Deine angepinnten Boards ließen sich nicht aktualisieren"
+      "pinError": "Deine angepinnten Boards ließen sich nicht aktualisieren",
+      "addWallTile": "Spraywand"
     },
     "create": {
       "screenTitle": "Richte dein Board ein",
@@ -171,6 +217,16 @@
         "sets": "Sets",
         "angle": "Winkel",
         "adjustable": "verstellbar"
+      },
+      "spray": {
+        "kind": "Spraywall",
+        "editHolds": "Griffe bearbeiten",
+        "editHoldsHint": "Füge Griffe hinzu, verschiebe oder lösche sie.",
+        "newPhoto": "Neues Foto",
+        "newPhotoHint": "Fotografiere dein Board nach einem Umbau neu.",
+        "shareLink": "Link teilen",
+        "shareLinkPublicHint": "Jede*r kann dieses Board öffnen.",
+        "shareLinkUnlistedHint": "Nur die Leute, denen du den Link schickst."
       }
     },
     "disambiguation": {
@@ -303,6 +359,7 @@
       "enableTitle": "{{name}} herunterladen?",
       "enableMessage": "Lädt alle Boulder dieses Boards, damit du ohne Empfang stöbern und Begehungen eintragen kannst.",
       "enableMessageWithSize": "Etwa {{size}}. Lädt alle Boulder dieses Boards, damit du ohne Empfang stöbern und Begehungen eintragen kannst.",
+      "enableIndexLine": "Dazu bis zu etwa {{index}} auf deinem Handy für ähnliche Boulder.",
       "enableConfirm": "Herunterladen",
       "pickerNotice": "Kein Empfang — hier sind deine heruntergeladenen Boards.",
       "pickerNoticeUnreachable": "Deine Boards sind gerade nicht erreichbar — hier sind die heruntergeladenen.",
@@ -335,6 +392,16 @@
           "title": "Klettere, wo kein WLAN hinkommt",
           "body": "Lade ein Board einmal herunter und der ganze Katalog liegt auf deinem Handy: Suche, Filter und Begehungen eintragen funktionieren auch im Kellerraum ohne Empfang.",
           "cta": "Board zum Herunterladen wählen"
+        },
+        "similarClimbs": {
+          "title": "Ähnliche Boulder liegen auf deinem Handy",
+          "body": "Lade {{name}} herunter, um Boulder mit diesen Griffen zu sehen",
+          "cta": "{{name}} herunterladen"
+        },
+        "holdHeatmap": {
+          "title": "Sieh, wo die Boulder sind",
+          "body": "Lade {{name}} herunter, um die Griffe zu sehen, die Kletterer*innen am meisten nutzen",
+          "cta": "{{name}} herunterladen"
         }
       }
     },
@@ -348,6 +415,26 @@
       "empty": "Keine Hallen in der Nähe",
       "sharedEditHint": "Das Team dieser Halle kann die Details dieses Boards bearbeiten.",
       "linkError": "Diese Halle ließ sich nicht verknüpfen. Vielleicht ist sie zu weit von deinem Board entfernt. Deine übrigen Änderungen wurden gespeichert."
+    },
+    "sprayShare": {
+      "title": "Teil dieses Board",
+      "publicBody": "Dieses Board ist öffentlich: Jede*r kann es öffnen, es steht auf der Seite der Halle und seine Boulder landen im Feed.",
+      "unlistedBody": "Nur wer diesen Link von dir bekommt, kann das Board öffnen. Gelistet ist es nirgends.",
+      "copyLink": "Link kopieren",
+      "share": "Teilen",
+      "copied": "Link kopiert",
+      "qrLabel": "QR-Code für {{name}}"
+    },
+    "sprayVisibility": {
+      "label": "Wer es sehen kann",
+      "private": "Privat",
+      "unlisted": "Nur mit Link",
+      "public": "Öffentlich",
+      "privateHint": "Nur du. Das Foto von deinem Board bleibt in deinem Account.",
+      "unlistedHint": "Wer den Link hat, kommt rein. Das Board steht nicht auf der Seite der Halle und sein Foto bleibt aus dem offenen Web.",
+      "publicHint": "Jede*r kann das Board finden. Es steht auf der Seite der Halle, seine Boulder landen im Feed, und das Foto vom Board geht ins offene Web.",
+      "ownerOnlyError": "Nur wer dieses Board aufgebaut hat, kann ändern, wer es sieht. Deine anderen Änderungen sind gespeichert.",
+      "updateError": "Konnte nicht ändern, wer dieses Board sieht. Versuch es nochmal."
     }
   },
   "boardEntity": {
@@ -685,5 +772,238 @@
     "sent": "Danke, wir schauen es uns an und führen sie zusammen.",
     "alreadyReported": "Du hast dieses Paar schon gemeldet. Wir sind dran.",
     "errorGeneric": "Da ging etwas schief. Versuch es nochmal."
+  },
+  "sprayEditor": {
+    "tools": {
+      "label": "Was dein Finger macht",
+      "pan": "Schwenken",
+      "add": "Hinzufügen",
+      "move": "Verschieben",
+      "draw": "Zeichnen"
+    },
+    "size": {
+      "s": "S",
+      "m": "M",
+      "l": "L",
+      "xl": "XL"
+    },
+    "threshold": {
+      "label": "Konfidenz-Schwelle",
+      "value": "Zeigt Funde über {{percent}} %"
+    },
+    "counts": {
+      "alive_one": "{{count}} Griff",
+      "alive_other": "{{count}} Griffe",
+      "pending": "{{value}} zu prüfen",
+      "hidden": "{{value}} ausgeblendet",
+      "unsaved": "{{value}} nicht gespeichert"
+    },
+    "actions": {
+      "merge": "Zusammenführen",
+      "delete": "Löschen",
+      "undo": "Rückgängig",
+      "redo": "Wiederherstellen",
+      "accept": "Behalten",
+      "reject": "Verwerfen",
+      "acceptAll": "Alle behalten",
+      "save": "Wand speichern"
+    },
+    "status": {
+      "readOnly": "Diese Wand gehört dir nicht, du kannst sie nicht bearbeiten.",
+      "pan": "Zieh, um das Foto zu bewegen. Tippe einen Griff an, um ihn zu wählen.",
+      "add": "Tippe auf nackte Wand für einen Griff, oder zeichne um einen herum.",
+      "move": "Zieh einen Griff dahin, wo er wirklich ist.",
+      "draw": "Wähle einen Griff und zeichne seine Kante nach.",
+      "oneSelected": "Griff Nr. {{id}} ist gewählt.",
+      "twoSelected": "Zwei gewählt. Zusammenführen macht einen daraus.",
+      "oneSelectedNew": "Dein neuer Griff ist ausgewählt.",
+      "manySelected": "{{value}} Griffe ausgewählt. Löschen entfernt sie alle."
+    },
+    "errors": {
+      "nothingToMove": "Wähle erst einen Griff, dann zieh ihn.",
+      "pickOneToRedraw": "Wähle genau einen Griff und zeichne seine Kante nach.",
+      "mergeNeedsTwo": "Wähle zwei Griffe, um sie zusammenzuführen.",
+      "tooManyHolds": "Eine Wand trägt bis zu {{max}} Griffe. Verwirf ein paar und speichere erneut.",
+      "saveFailed": "Die Wand konnte nicht gespeichert werden.",
+      "strokeNotClosed": "Diese Schlaufe verfehlt den Griff. Zeichne einmal ganz herum.",
+      "strokeTooBig": "Diese Schlaufe ist viel größer als ein Griff. Zoom hinein und fahre den Griff selbst nach.",
+      "strokeTooDetailed": "Dieser Strich hat zu viele Details zum Speichern. Fahre die Kante in einem Zug nach.",
+      "strokeTooShort": "Dieser Strich ist zu kurz. Zeichne eine ganze Schlaufe um den Griff.",
+      "allHoldsOffWall": "Diese Griffe liegen außerhalb der Wand. Schieb sie zurück aufs Foto und speichere erneut.",
+      "someHoldsOffWall_one": "{{count}} Griff lag außerhalb der Wand und wurde nicht gespeichert.",
+      "someHoldsOffWall_other": "{{count}} Griffe lagen außerhalb der Wand und wurden nicht gespeichert."
+    },
+    "toast": {
+      "saved_one": "{{count}} Griff gespeichert",
+      "saved_other": "{{count}} Griffe gespeichert"
+    },
+    "empty": {
+      "noPhoto": "Diese Wand hat noch kein Foto zum Bearbeiten."
+    }
+  },
+  "sprayWizard": {
+    "screenTitle": "Spraywand hinzufügen",
+    "stepCounter": "Schritt {{current}} von {{total}}",
+    "back": "Zurück",
+    "meta": {
+      "title": "Was ist das für eine Wand?",
+      "body": "Gib ihr einen Namen, sag wie steil sie ist, und wähle, wer sie sehen darf.",
+      "namePlaceholder": "Garagenwand",
+      "angle": "Winkel",
+      "angleHint": "Wie weit die Wand überhängt, in 5°-Schritten. Nach dem Veröffentlichen fest.",
+      "publicHint": "Aus bleiben die Wand und ihr Foto nur bei dir.",
+      "next": "Foto wählen",
+      "anglePreview": "Wand mit {{angle}} Grad"
+    },
+    "photo": {
+      "title": "Fotografiere die Wand",
+      "body": "Stell dich frontal hin, fotografiere bei 1x und hol die ganze Wand ins Bild. Jeder Griff, den du setzt, lebt auf diesen Pixeln.",
+      "library": "Foto wählen",
+      "camera": "Foto aufnehmen",
+      "pickAnother": "Anderes Foto wählen",
+      "next": "Weiter",
+      "libraryDenied": "Boardsesh braucht deine Mediathek, um eine Wand hinzuzufügen.",
+      "cameraDenied": "Boardsesh braucht deine Kamera, um eine Wand zu fotografieren.",
+      "failed": "Dieses Foto lässt sich nicht öffnen. Nimm ein anderes."
+    },
+    "anchors": {
+      "title": "Markiere die Ecken",
+      "body": "Zieh die vier Ringe auf die Ecken der Wand. Überspring das, wenn du frontal fotografiert hast.",
+      "hint": "Oben links, oben rechts, unten rechts, unten links.",
+      "crossed": "Diese Ecken kreuzen sich. Setz sie der Reihe nach um die Wand.",
+      "cornerTopLeft": "Ecke oben links",
+      "cornerTopRight": "Ecke oben rechts",
+      "cornerBottomRight": "Ecke unten rechts",
+      "cornerBottomLeft": "Ecke unten links",
+      "use": "Diese Ecken nehmen",
+      "skip": "Erstmal überspringen",
+      "clear": "Ecken neu setzen"
+    },
+    "upload": {
+      "title": "Dein Foto wird hochgeladen",
+      "working": "Dein Foto wird hochgeladen…",
+      "percent": "{{percent}} % hochgeladen",
+      "failed": "Das Foto ist nicht durchgekommen.",
+      "retry": "Nochmal versuchen",
+      "checkFailed": "Unklar, ob dein Foto durchgekommen ist. Versuch es mit Empfang nochmal."
+    },
+    "detect": {
+      "title": "Suche nach Griffen"
+    },
+    "review": {
+      "found": "{{value}} Griffe zum Prüfen",
+      "nothingFound": "Nichts gefunden. Zeichne die Griffe selbst.",
+      "manualOnly": "Diese Version kann keine Griffe vorschlagen. Zeichne sie selbst.",
+      "detectionFailed": "Die Griffsuche ist schiefgegangen. Zeichne sie selbst.",
+      "done": "Fertig"
+    },
+    "publish": {
+      "title": "Ab zu deinen Boards",
+      "body": "Deine Griffe sind gespeichert. Veröffentliche die Wand und du kannst schrauben.",
+      "cta": "Diese Wand hinzufügen",
+      "failed": "Die Wand konnte nicht veröffentlicht werden."
+    },
+    "done": {
+      "body": "Deine Wand wird eingerichtet…"
+    },
+    "leave": {
+      "title": "Diese Wand erstmal liegen lassen?",
+      "body": "Deine Wand und ihr Foto sind gespeichert. Mach weiter, wo du aufgehört hast.",
+      "stay": "Weitermachen",
+      "go": "Verlassen"
+    },
+    "resume": {
+      "checking": "Suche nach einer angefangenen Wand…",
+      "title": "Du hast eine Wand offen",
+      "body": "„{{name}}“ ist nicht fertig. Mach weiter, wo du aufgehört hast, oder fang neu an.",
+      "pickUp": "Weitermachen",
+      "startOver": "Neu anfangen",
+      "checkFailed": "Diese Wand ließ sich nicht prüfen. Versuch es nochmal.",
+      "retry": "Nochmal versuchen"
+    }
+  },
+  "sprayReset": {
+    "screenTitle": "Wand zurücksetzen",
+    "notYours": "Diese Wand gehört dir nicht, du kannst sie nicht zurücksetzen.",
+    "nothingPublished": "Diese Wand ist noch nicht fertig eingerichtet. Schließ das Hinzufügen erst ab.",
+    "openDraft": {
+      "title": "Ein Zurücksetzen ist halb fertig",
+      "body": "Dein gespeichertes Foto wartet auf dich. Die veröffentlichte Wand ändert sich erst, wenn du das Zurücksetzen bestätigst.",
+      "discard": "Wegwerfen und neu anfangen",
+      "discarded": "Das Zurücksetzen ist weg. Mach ein neues Foto.",
+      "discardFailed": "Das Zurücksetzen ließ sich nicht löschen. Versuch es nochmal."
+    },
+    "photo": {
+      "title": "Fotografiere die Wand nochmal",
+      "body": "Stell dich hin, wo du beim ersten Mal standest, wenn es geht. Gleiche Wand, neue Griffe."
+    },
+    "anchors": {
+      "title": "Markiere die Ecken",
+      "body": "Zieh die vier Ringe auf die Ecken der Wand. Das ist nicht optional: nur so passt dein neues Foto zu jedem Boulder, der schon auf der Wand steht.",
+      "use": "Diese Ecken nehmen",
+      "notConvex": "Diese Ecken kreuzen sich. Setz sie der Reihe nach um die Wand."
+    },
+    "leave": {
+      "title": "Zurücksetzen verlassen?",
+      "body": "Dein neues Foto bleibt als Entwurf. An der Wand ändert sich nichts, bis du bestätigst."
+    },
+    "compare": {
+      "working": "Wir rechnen aus, was sich geändert hat…",
+      "unavailable": "Wir konnten nicht ausrechnen, was sich an dieser Wand geändert hat.",
+      "counts": "{{kept}} geblieben · {{removed}} weg · {{added}} neu",
+      "climbsAffected_one": "{{count}} Boulder verliert einen Griff",
+      "climbsAffected_other": "{{count}} Boulder verlieren Griffe",
+      "aspectWarning": "Dieses Foto ist anders gerahmt als das letzte. Prüf, ob die Ecken auf den Ecken liegen.",
+      "filterLabel": "Welche Ringe zeigen",
+      "tapHint": "Tipp auf einen Ring, um es dir anders zu überlegen.",
+      "confirm": "Zurücksetzen bestätigen",
+      "acceptMoves": "Alle vorgeschlagenen Umzüge übernehmen",
+      "noDetections": "Nichts zu vergleichen",
+      "noDetectionsBody": "Dieses Handy hat auf deinem neuen Foto keine Griffe gefunden, also gibt es nichts zu vergleichen. Dein Foto bleibt als Entwurf gespeichert."
+    },
+    "commit": {
+      "failed": "Das Zurücksetzen ist nicht durchgegangen. An der Wand hat sich nichts geändert."
+    },
+    "filter": {
+      "all": "Alle",
+      "kept": "Geblieben {{value}}",
+      "removed": "Weg {{value}}",
+      "new": "Neu {{value}}",
+      "unsure": "Unsicher {{value}}"
+    },
+    "hold": {
+      "kept": "Griff {{id}} — noch an der Wand",
+      "removed": "Griff {{id}} — kommt ab",
+      "unsure": "Griff {{id}} — schau nochmal hin",
+      "stillHere": "Er ist noch da",
+      "gone": "Er ist weg"
+    },
+    "detection": {
+      "new": "Ein Griff, der vorher nicht da war",
+      "rejected": "Kein Griff",
+      "accept": "Doch, ein Griff",
+      "reject": "Kein Griff"
+    },
+    "pairing": {
+      "start": "Gleicher Griff, hierher versetzt",
+      "prompt": "Tipp auf den Ring, wo dieser Griff vorher war.",
+      "cancel": "Doch nicht",
+      "paired": "Ersetzt Griff {{id}}",
+      "unpair": "Das ist nicht der Griff",
+      "useSuggestion": "Ersetzt Griff {{id}}"
+    },
+    "done": {
+      "toast": "{{removed}} weg, {{added}} neu, {{climbs}} Boulder geändert"
+    }
+  },
+  "sprayCaps": {
+    "holds": "Eine Wand trägt bis zu {{max}} Griffe. Verwirf ein paar und speichere erneut.",
+    "versions": "Eine Wand behält {{max}} Zurücksetzungen, und diese hat alle verbraucht.",
+    "walls": "Du kannst {{max}} Wände behalten. Lösch eine, um Platz zu schaffen.",
+    "wallsHint": "Du kannst bis zu {{max}} Wände behalten."
+  },
+  "sprayHidden": {
+    "body": "Jemand hat sie gemeldet und wir haben sie für alle anderen ausgeblendet. Für dich ist sie weiter da, und gelöscht wurde nichts.",
+    "title": "Diese Wand ist ausgeblendet"
   }
 }

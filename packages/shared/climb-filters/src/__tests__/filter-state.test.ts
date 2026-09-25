@@ -62,6 +62,8 @@ describe('hasActiveClimbFilters', () => {
     ['onlyTallClimbs', { onlyTallClimbs: true }],
     ['onlyWideClimbs', { onlyWideClimbs: true }],
     ['onlyWithBetaVideos', { onlyWithBetaVideos: true }],
+    // Counted, so the per-board last search keeps it instead of deleting the entry.
+    ['includeOtherAngles', { includeOtherAngles: true }],
     ['hideAttempted', { hideAttempted: true }],
     ['hideCompleted', { hideCompleted: true }],
     ['showOnlyAttempted', { showOnlyAttempted: true }],
@@ -167,6 +169,19 @@ describe('toClimbSearchInput', () => {
       showOnlyAttempted: true,
       showOnlyCompleted: true,
     });
+  });
+
+  it('asks for other-angle climbs through crossAngleStats when the switch is on', () => {
+    const result = toClimbSearchInput({ ...DEFAULT_CLIMB_FILTER_STATE, includeOtherAngles: true }, board, pagination);
+    expect(result.crossAngleStats).toBe(true);
+  });
+
+  it('omits crossAngleStats when the switch is off, rather than sending false', () => {
+    expect('crossAngleStats' in toClimbSearchInput(DEFAULT_CLIMB_FILTER_STATE, board, pagination)).toBe(false);
+    expect(
+      'crossAngleStats' in
+        toClimbSearchInput({ ...DEFAULT_CLIMB_FILTER_STATE, includeOtherAngles: false }, board, pagination),
+    ).toBe(false);
   });
 
   it('threads the random sort seed only when sorting randomly', () => {

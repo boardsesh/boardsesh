@@ -12,10 +12,10 @@
 //   • Single-select menus (Your progress, Popularity, Rating) close on pick by
 //     calling the renderItems `close()`; a keep-open menu would simply not call it
 //     (Compose has no menuActionDismissBehavior and doesn't auto-dismiss on click).
-//   • Shape is a single MENU chip grouping the independent Tall + Wide toggles (a
-//     climb can be both), like Popularity/Rating: tap opens a DropdownMenu with a
-//     checkable item per dimension. It renders only when the board size has a
-//     shorter/narrower sibling in its family (dimensionChips non-empty).
+//   • Tall / Wide are plain toggle chips (tap flips the filter). Unlike iOS there is
+//     no long-press Lock / Unlock: Compose's FilterChip always wires its own
+//     internal click, which eats a long-press before any `combinedClickable` can see
+//     it (#3319 / #3322), so the lock is iOS-only and a stored lock never acts here.
 //   • Single-choice (Popularity/Rating) skips the iOS string-tag Picker round-trip:
 //     each item's onClick closure carries the real `number | undefined` bucket.
 // Labels reuse FilterChipRow.logic so a filter is never worded two ways across
@@ -63,8 +63,6 @@ const ICON = {
   tune: require('../../../assets/material-icons/tune.xml') as ImageSourcePropType,
   history: require('../../../assets/material-icons/history.xml') as ImageSourcePropType,
   check: require('../../../assets/material-icons/check.xml') as ImageSourcePropType,
-  lock: require('../../../assets/material-icons/lock.xml') as ImageSourcePropType,
-  lockOpen: require('../../../assets/material-icons/lock_open.xml') as ImageSourcePropType,
 };
 
 // M3 chip/menu leading-icon size.
@@ -152,18 +150,16 @@ function MenuItem({
   checked,
   onClick,
   textColor,
-  enabled,
 }: {
   label: string;
   checked: boolean;
   onClick: () => void;
   textColor?: string;
-  enabled?: boolean;
 }) {
   const { systemColors } = useTheme();
   const itemColor = textColor ?? (systemColors.label as string);
   return (
-    <DropdownMenuItem onClick={onClick} enabled={enabled} elementColors={{ textColor: itemColor }}>
+    <DropdownMenuItem onClick={onClick} elementColors={{ textColor: itemColor }}>
       {checked ? (
         <DropdownMenuItem.LeadingIcon>
           <Icon source={ICON.check} size={ICON_SIZE} />
@@ -414,28 +410,20 @@ function FilterChipRowComponent({
             />
           ) : null}
 
-          {/* Shape — one chip grouping the independent Tall + Wide toggles (a climb
-            can be both). The menu stays open so both can be toggled. Shown only when
-            the board size has the expansion. */}
-          {pinnedChips.includes('shape') && dimensionChips.length > 0 ? (
-            <MenuChip
-              label={t('mobile.filter.shape')}
-              selected={dimensionChips.some((dimension) => dimension.active)}
-              colors={chipColors}
-              renderItems={() => (
-                <>
-                  {dimensionChips.map((dimension) => (
-                    <MenuItem
-                      key={dimension.key}
-                      label={dimension.key === 'tall' ? t('mobile.search.chips.tall') : t('mobile.search.chips.wide')}
-                      checked={dimension.active}
-                      onClick={dimension.onToggle}
-                    />
-                  ))}
-                </>
-              )}
-            />
-          ) : null}
+          {/* Tall / Wide — board-shape toggle chips, each pinned on its own and
+            present only on sizes with a shorter/narrower sibling. Tap flips the
+            filter (no lock on Android; see the file header). */}
+          {dimensionChips
+            .filter((dimension) => pinnedChips.includes(dimension.key))
+            .map((dimension) => (
+              <ActionChip
+                key={dimension.key}
+                label={dimension.key === 'tall' ? t('mobile.search.chips.tall') : t('mobile.search.chips.wide')}
+                selected={dimension.active}
+                colors={chipColors}
+                onPress={dimension.onToggle}
+              />
+            ))}
 
           {/* Beta videos — a plain on/off toggle (an action chip, no menu). Opt-in. */}
           {pinnedChips.includes('beta') ? (

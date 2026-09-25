@@ -9,6 +9,11 @@
 // on the edge back to reachable. Same harness as
 // queue-provider-backgrounded-join.test.tsx, with the AppState gate swapped
 // for a controllable connectivity store.
+// This transport-only harness mounts no React Query provider.
+vi.mock('../queue/use-board-continuation-feed', () => ({
+  useBoardContinuationFeed: () => ({ climbs: [], isSettled: true }),
+}));
+
 import { act, render, waitFor } from '@testing-library/react';
 import { createElement, useEffect } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -237,6 +242,14 @@ vi.mock('../party-profile-provider', () => ({
 vi.mock('../../lib/error-reporting', () => ({
   reportError: errorReporter.reportError,
   reportHandledError: errorReporter.reportHandledError,
+}));
+
+// The gym-sibling roster is a React Query hook and this harness mounts no
+// QueryClient. An empty set means "no other wall in reach", which is exactly the
+// pre-existing behaviour these tests were written against; the reachable-wall
+// rule has its own coverage in queue-provider-reachable-walls.test.tsx.
+vi.mock('../queue/use-reachable-board-keys', () => ({
+  useReachableBoardKeys: () => new Set<string>(),
 }));
 
 import { QueueProvider, useQueue } from '../queue-provider';

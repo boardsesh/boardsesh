@@ -8,7 +8,7 @@ import type { Climb } from '@boardsesh/queue';
 // replacement (replaceQueueOnActivate) and thread the queue-replace sheet through,
 // exactly like the regular playlist detail screen. The hook + sheet themselves are
 // unit-tested elsewhere; here we only assert the wiring.
-type CapturedOptions = { sourceId: string; replaceQueueOnActivate?: boolean };
+type CapturedOptions = { sourceId: string; replaceQueueOnActivate?: boolean; previewOnly?: boolean };
 
 const smartMocks = vi.hoisted(() => ({
   activationOptions: null as CapturedOptions | null,
@@ -83,6 +83,12 @@ vi.mock('../../../../../src/lib/smart-playlists', () => ({
 vi.mock('../../../../../src/lib/graphql/hooks', () => ({ useProfile: () => ({ data: { id: 'u-1' } }) }));
 vi.mock('../../../../../src/lib/graphql/use-auth-token', () => ({ useAuthToken: () => ({ isLoading: false }) }));
 vi.mock('../../../../../src/theme/ios-colors', () => ({ iosSystemColors: { systemGray4: '#C7C7CC' } }));
+// Whether anyone else is in the session — what decides between replacing the
+// crew's queue and simply showing the tapped climb.
+const sessionMock = vi.hoisted(() => ({ isShared: false }));
+vi.mock('../../../../../src/providers/queue-provider', () => ({
+  useIsSharedSession: () => sessionMock.isShared,
+}));
 
 import SmartPlaylistDetail from '../[type]';
 
@@ -99,5 +105,22 @@ describe('SmartPlaylistDetail queue replacement wiring', () => {
 
     fireEvent.click(container.querySelector('[data-activate]')!);
     expect(smartMocks.activate).toHaveBeenCalledWith({ uuid: 'c-1' });
+  });
+
+  // Same rule as the playlist detail screen: with a crew present, a row tap is a
+  // look — not a replacement of everyone's queue plus a wall grab.
+  it('browses a row tap in a crew instead of replacing everyone’s queue', () => {
+    sessionMock.isShared = true;
+    render(<SmartPlaylistDetail />);
+
+    expect(smartMocks.activationOptions?.previewOnly).toBe(true);
+  });
+
+  it('leaves a solo row tap replacing the queue as before', () => {
+    sessionMock.isShared = false;
+    render(<SmartPlaylistDetail />);
+
+    expect(smartMocks.activationOptions?.previewOnly).toBe(false);
+    expect(smartMocks.activationOptions?.replaceQueueOnActivate).toBe(true);
   });
 });

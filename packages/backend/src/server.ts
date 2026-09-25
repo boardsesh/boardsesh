@@ -13,6 +13,7 @@ import { handleSessionJoin } from './handlers/join';
 import { handleAvatarUpload } from './handlers/avatars';
 import { handleGymLogoUpload } from './handlers/gym-logos';
 import { handleGymPhotoDelete, handleGymPhotoUpload } from './handlers/gym-photos';
+import { handleSprayWallPhotoUpload } from './handlers/spray-wall-photos';
 import { handleFeedbackScreenshotUpload } from './handlers/feedback-screenshots';
 import {
   handleStaticAvatar,
@@ -22,12 +23,14 @@ import {
 } from './handlers/static';
 import { staticPathToMediaRedirect } from './lib/media-url';
 import { getMediaPublicBaseUrl } from './storage/s3';
+import { handleRobotsTxt } from './handlers/robots';
 import { handleOgClimb } from './handlers/og-climb';
 import { handleBoardRender, isBoardRenderPath } from './handlers/board-render';
 import { handleBoardGeometry, isBoardGeometryPath } from './handlers/board-geometry';
 import { initBoardRenderer } from './services/board-render';
 import { parseSizeParam } from './lib/image-resize';
 import { handleOcrTestDataUpload } from './handlers/ocr-test-data';
+import { handleSprayWallTestDataUpload } from './handlers/spray-wall-test-data';
 import { handlePosthogProxy } from './handlers/posthog';
 import { handleUserDataExport, handleUserDataExportDownload } from './handlers/user-data-export';
 import { pruneSyncDeletions } from './services/sync-deletions-prune';
@@ -76,8 +79,10 @@ import { startApnsHeartbeat, stopApnsHeartbeat } from './services/apns/heartbeat
 import { startApnsStaleTokenCleanup, stopApnsStaleTokenCleanup } from './services/apns/cleanup';
 import { buildContentStateFromQueueState } from './services/apns/content-state';
 import { allocateBoardPresenceSeq, resolveBoardHolder } from './graphql/resolvers/board-presence/shared';
+import { kilterLiveSync } from './services/kilter-live-sync';
 import { registerBoardQueuePreviewHook } from './services/board-queue-preview';
 import { logger, setInstanceIdProvider } from './utils/logger';
+import { startBackendMemoryMonitoring } from './services/memory-monitor';
 import { isClientAbortError } from './utils/http-errors';
 import { setDbConnectObserver } from '@boardsesh/db/client';
 import { isProductionSentryEnvironment, resolveSentryEnvironment } from '@boardsesh/db/client/config';
@@ -359,6 +364,13 @@ export async function startServer(): Promise<ServerResources> {
         return;
       }
 
+      // Close this host to crawlers. See handlers/robots.ts for what it was
+      // costing us while it answered with nothing.
+      if (pathname === '/robots.txt' && (req.method === 'GET' || req.method === 'HEAD')) {
+        handleRobotsTxt(req, res);
+        return;
+      }
+
       // Climb Open Graph share-card renderer (moved off Vercel; long-running
       // process warms WASM + caches rendered bytes in memory).
       if (pathname === '/og/climb' && (req.method === 'GET' || req.method === 'OPTIONS')) {
@@ -414,6 +426,14 @@ export async function startServer(): Promise<ServerResources> {
         return;
       }
 
+      // Spray wall photos go to the PRIVATE bucket behind presigned URLs, unlike
+      // the gym photos above — a wall photo is a picture of somebody's home.
+      // See handlers/spray-wall-photos.ts.
+      if (pathname === '/api/spray-wall-photos' && (req.method === 'POST' || req.method === 'OPTIONS')) {
+        await handleSprayWallPhotoUpload(req, res);
+        return;
+      }
+
       // Bug-report / QA-verdict screenshot upload (handle OPTIONS for CORS preflight)
       if (pathname === '/api/feedback-screenshots' && (req.method === 'POST' || req.method === 'OPTIONS')) {
         await handleFeedbackScreenshotUpload(req, res);
@@ -423,6 +443,12 @@ export async function startServer(): Promise<ServerResources> {
       // OCR test data upload endpoint (handle OPTIONS for CORS preflight)
       if (pathname === '/api/ocr-test-data' && (req.method === 'POST' || req.method === 'OPTIONS')) {
         await handleOcrTestDataUpload(req, res);
+        return;
+      }
+
+      // Spray-wall hold-detection corpus upload (handle OPTIONS for CORS preflight)
+      if (pathname === '/api/spray-wall-test-data' && (req.method === 'POST' || req.method === 'OPTIONS')) {
+        await handleSprayWallTestDataUpload(req, res);
         return;
       }
 
@@ -756,6 +782,7 @@ export async function startServer(): Promise<ServerResources> {
     logger.info(`  Gym photo upload: ${httpScheme}://0.0.0.0:${PORT}/api/gym-photos`);
     logger.info(`  Gym photo files: ${httpScheme}://0.0.0.0:${PORT}/static/gym-photos/`);
     logger.info(`  OCR test data: ${httpScheme}://0.0.0.0:${PORT}/api/ocr-test-data`);
+    logger.info(`  Spray wall test data: ${httpScheme}://0.0.0.0:${PORT}/api/spray-wall-test-data`);
     logger.info(`  PostHog proxy: ${httpScheme}://0.0.0.0:${PORT}/api/posthog/*`);
     logger.info(`  User data export: ${httpScheme}://0.0.0.0:${PORT}/api/user-data-export`);
     logger.info(`  Aurora credentials: ${httpScheme}://0.0.0.0:${PORT}/api/aurora-credentials`);
@@ -807,6 +834,7 @@ export async function startServer(): Promise<ServerResources> {
    */
   async function shutdownServices(): Promise<void> {
     eventBroker.shutdown();
+    await kilterLiveSync.shutdown().catch((error: unknown) => logger.warn('[KilterLive] Shutdown failed', { error }));
 
     // Detach the board-queue-preview producer first: it clears any pending
     // debounce timers, so no preview publish can race the Redis/DB teardown
@@ -855,6 +883,8 @@ export async function startServer(): Promise<ServerResources> {
       logger.error('[Server] Error during RoomManager shutdown:', error);
     }
   }
+
+  intervals.push(startBackendMemoryMonitoring());
 
   // Periodic flush as backup (every 60 seconds)
   const flushInterval = setInterval(async () => {

@@ -11,6 +11,7 @@ import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, applyRateLimit, validateInput, resolveClimbNoMatch } from '../shared/helpers';
 import { NewClimbFeedInputSchema, NewClimbSubscriptionInputSchema } from '../../../validation/schemas';
 import { climbStatsJoinConditions, resolvedClimbAngleSql } from '../../../db/queries/util/climb-stats-join';
+import { isSprayBoardType, sprayLayoutIsReadable } from '../climbs/spray-read-access';
 
 export const newClimbSubscriptionResolvers = {
   Query: {
@@ -18,10 +19,26 @@ export const newClimbSubscriptionResolvers = {
      * Public feed of newly created climbs for a board type + layout.
      * Offset-based pagination for simplicity.
      */
-    newClimbFeed: async (_: unknown, { input }: { input: NewClimbFeedInput }): Promise<NewClimbFeedResult> => {
+    newClimbFeed: async (
+      _: unknown,
+      { input }: { input: NewClimbFeedInput },
+      ctx: ConnectionContext,
+    ): Promise<NewClimbFeedResult> => {
       const validated = validateInput(NewClimbFeedInputSchema, input, 'input');
       const limit = validated.limit ?? 20;
       const offset = validated.offset ?? 0;
+
+      // This feed is anonymous, unpaginated-cheap, and filters on `board_type` +
+      // `layout_id` + `is_hidden` only — it does not even exclude drafts — so on a
+      // spray wall it was the cheapest way to read a stranger's private wall, its
+      // unpublished drafts included. An unreadable wall gets an ordinary empty
+      // page, so the response does not say which layout ids are private walls.
+      if (
+        isSprayBoardType(validated.boardType) &&
+        !(await sprayLayoutIsReadable(validated.boardType, validated.layoutId, ctx.userId))
+      ) {
+        return { items: [], totalCount: 0, hasMore: false };
+      }
 
       const climbs = await db
         .select({
@@ -58,6 +75,14 @@ export const newClimbSubscriptionResolvers = {
             // "What's new on this board" is a browse surface: a climb the
             // community hid never announces itself here.
             eq(dbSchema.boardClimbs.isHidden, false),
+            // …and neither does one its setter has not published. A draft is a
+            // climb nobody has decided to show yet; `is_listed = false` is the
+            // catalogue's own "withdrawn". This feed filtered on neither, so it
+            // announced both to anonymous callers — a spray wall's unfinished
+            // drafts included, on a PUBLIC wall the layout gate above waves
+            // through. Pre-existing for all eight catalogue boards.
+            eq(dbSchema.boardClimbs.isDraft, false),
+            eq(dbSchema.boardClimbs.isListed, true),
           ),
         )
         .orderBy(desc(dbSchema.boardClimbs.createdAt))
@@ -74,6 +99,8 @@ export const newClimbSubscriptionResolvers = {
             // Same predicate as the page above, so the count can't promise rows
             // the list will never hand back.
             eq(dbSchema.boardClimbs.isHidden, false),
+            eq(dbSchema.boardClimbs.isDraft, false),
+            eq(dbSchema.boardClimbs.isListed, true),
           ),
         );
 

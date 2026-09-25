@@ -98,6 +98,68 @@ describe('usePlaybackEngine', () => {
     expect(result.current.frameIndex).toBe(1);
   });
 
+  it('resets the speed when the climb changes, so each route opens at its own pace', () => {
+    // The control above this engine reads SECONDS a frame, derived from the
+    // climb's authored pace and this multiplier. Leaking a multiplier across a
+    // swipe would show up as a different number of seconds on the next route
+    // (0.5x is 1.5s at a 750ms pace and 24s at a 12s one) — exactly the
+    // ambiguity the seconds control exists to remove.
+    const first = decode(TENSION_FRAMES);
+    const second = decode('p500r1,p600r2,p700r3');
+    const { result, rerender } = renderHook(
+      ({ frames, frameStrings }) => usePlaybackEngine({ frames, frameStrings, paceMs: 800, clientId: 'a' }),
+      { initialProps: first },
+    );
+
+    act(() => {
+      result.current.setSpeed(2);
+      result.current.seek(2);
+      result.current.play();
+    });
+    expect(result.current.speed).toBe(2);
+
+    rerender(second);
+    expect(result.current.speed).toBe(1);
+    expect(result.current.frameIndex).toBe(0);
+    expect(result.current.isPlaying).toBe(false);
+
+    // And the reset is real, not just reported: the new climb ticks at its own
+    // pace rather than the halved one the previous route was running at.
+    act(() => {
+      result.current.play();
+    });
+    act(() => {
+      vi.advanceTimersByTime(400);
+    });
+    expect(result.current.frameIndex).toBe(0);
+    act(() => {
+      vi.advanceTimersByTime(400);
+    });
+    expect(result.current.frameIndex).toBe(1);
+  });
+
+  it('lets a peer set the speed on a climb we just switched to', () => {
+    // The reset above runs in its own effect. Peer convergence runs in a later
+    // one and has to still win, or joining a party mid-route would drop us back
+    // to the authored pace while the crew played at another.
+    const { frames, frameStrings } = decode(TENSION_FRAMES);
+    const peer = (overrides: Partial<ExternalPlaybackState> = {}): ExternalPlaybackState => ({
+      frameIndex: 0,
+      frameCount: 4,
+      isPlaying: false,
+      speed: 4,
+      paceMs: 800,
+      anchorTimestamp: Date.now(),
+      clientId: 'peer',
+      ...overrides,
+    });
+    const { result } = renderHook(
+      ({ externalState }) => usePlaybackEngine({ frames, frameStrings, paceMs: 800, clientId: 'a', externalState }),
+      { initialProps: { externalState: peer() } },
+    );
+    expect(result.current.speed).toBe(4);
+  });
+
   it('seek clamps to valid range and updates the frame string', () => {
     const { frames, frameStrings } = decode(TENSION_FRAMES);
     const { result } = renderHook(() => usePlaybackEngine({ frames, frameStrings, paceMs: 200, clientId: 'a' }));

@@ -506,9 +506,9 @@ export function OkhslColorPicker({ value, onChange }: OkhslColorPickerProps) {
   return (
     <View style={styles.container}>
       <ChannelSlider
-        label={t('mobile.more.accessibility.sliders.lightness')}
+        label={t('mobile.settings.accessibility.sliders.lightness')}
         valueText={`${Math.round(okhsl.l * 100)}%`}
-        accessibilityLabel={t('mobile.more.accessibility.sliders.lightness')}
+        accessibilityLabel={t('mobile.settings.accessibility.sliders.lightness')}
         ratio={okhsl.l}
         stops={lightnessStops}
         step={0.05}
@@ -518,9 +518,9 @@ export function OkhslColorPicker({ value, onChange }: OkhslColorPickerProps) {
         onDragEnd={finishGradientDrag}
       />
       <ChannelSlider
-        label={t('mobile.more.accessibility.sliders.saturation')}
+        label={t('mobile.settings.accessibility.sliders.saturation')}
         valueText={`${Math.round(okhsl.s * 100)}%`}
-        accessibilityLabel={t('mobile.more.accessibility.sliders.saturation')}
+        accessibilityLabel={t('mobile.settings.accessibility.sliders.saturation')}
         ratio={okhsl.s}
         stops={saturationStops}
         step={0.05}
@@ -530,9 +530,9 @@ export function OkhslColorPicker({ value, onChange }: OkhslColorPickerProps) {
         onDragEnd={finishGradientDrag}
       />
       <ChannelSlider
-        label={t('mobile.more.accessibility.sliders.hue')}
+        label={t('mobile.settings.accessibility.sliders.hue')}
         valueText={`${Math.round(okhsl.h)}°`}
-        accessibilityLabel={t('mobile.more.accessibility.sliders.hue')}
+        accessibilityLabel={t('mobile.settings.accessibility.sliders.hue')}
         ratio={okhsl.h / 360}
         stops={hueStops}
         step={1 / 36}
@@ -543,7 +543,7 @@ export function OkhslColorPicker({ value, onChange }: OkhslColorPickerProps) {
       />
       <View style={styles.hexRow}>
         <Text variant="subheadline" color={systemColors.secondaryLabel}>
-          {t('mobile.more.accessibility.hexLabel')}
+          {t('mobile.settings.accessibility.hexLabel')}
         </Text>
         <BottomSheetTextInput
           value={hexDraft}
@@ -552,14 +552,14 @@ export function OkhslColorPicker({ value, onChange }: OkhslColorPickerProps) {
           autoCorrect={false}
           maxLength={7}
           returnKeyType="done"
-          accessibilityLabel={t('mobile.more.accessibility.hexLabel')}
-          accessibilityHint={hexValid ? undefined : t('mobile.more.accessibility.invalidHex')}
+          accessibilityLabel={t('mobile.settings.accessibility.hexLabel')}
+          accessibilityHint={hexValid ? undefined : t('mobile.settings.accessibility.invalidHex')}
           style={hexInputStyle}
         />
       </View>
       {hexValid ? null : (
         <Text variant="footnote" color={ERROR_COLOR}>
-          {t('mobile.more.accessibility.invalidHex')}
+          {t('mobile.settings.accessibility.invalidHex')}
         </Text>
       )}
     </View>

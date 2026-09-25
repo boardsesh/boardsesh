@@ -1,7 +1,6 @@
 import type { UserBoard } from '@boardsesh/shared-schema';
-import { toBoardName } from '@boardsesh/board-config';
+import { boardPlaceLabel, toBoardName } from '@boardsesh/board-config';
 import { getProductSize } from '@boardsesh/board-constants';
-import { boardPlaceLabel } from './board-labels';
 
 export type BoardDetailFields = {
   /** Gym name if linked, else the free-text location, else undefined. */

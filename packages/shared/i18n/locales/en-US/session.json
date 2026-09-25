@@ -210,7 +210,10 @@
     "similarClimbs": {
       "title": "Similar Climbs",
       "empty": "No similar climbs found",
-      "retry": "Try again"
+      "retry": "Try again",
+      "preparing": "Preparing similar climbs…",
+      "waitingForDownload": "Similar climbs show up once {{name}} finishes downloading.",
+      "downloadToSee": "Download this board to see similar climbs"
     },
     "community": {
       "moderation": {
@@ -309,6 +312,51 @@
       "leaveInsteadAction": "Just leave instead",
       "endSessionFailedLeft": "Couldn't end the session — you've left it instead."
     },
+    "restTimer": {
+      "armLabel": "Rest timer",
+      "armDescription": "Time your rest after every send, and move to the next climb when it's up.",
+      "waitingForTick": "Log a climb to start",
+      "targetLabel": "Rest",
+      "targetAria": "Rest length",
+      "off": "Off",
+      "modeLabel": "Cadence",
+      "modeAria": "Rest timer cadence",
+      "modeAfterTick": "After each send",
+      "modeOnTheMinute": "On the minute",
+      "modeAfterTickHint": "Your rest starts the moment you log a climb.",
+      "modeOnTheMinuteHint": "The beat keeps its own time, however long the send takes.",
+      "autoAdvance": "Move to the next climb",
+      "autoAdvanceHint": "Lights it on the wall for you.",
+      "autoAdvanceBlocked": "Only the climber driving the wall can move the queue.",
+      "pause": "Pause",
+      "resume": "Resume",
+      "reset": "Reset",
+      "resetAction": "Reset timer",
+      "turnOff": "Turn off rest timer",
+      "queueEnded": "Queue's empty",
+      "queueEndedToast": "Nothing left in the queue.",
+      "openHint": "Opens rest timer options",
+      "runningAria": "Rest timer, {{time}} since your last climb",
+      "countdownAria": "Rest timer, {{time}} left",
+      "overrunAria": "Rest timer, {{time}} over your rest",
+      "noTickAria": "Rest timer on, {{target}} target, starts when you log a climb",
+      "pausedAria": "Rest timer paused at {{time}}",
+      "clockCaptionRest": "{{target}} rest",
+      "clockCaptionCountUp": "Since your last climb",
+      "clockCaptionPaused": "Paused",
+      "clockCaptionOver": "Over your rest",
+      "lengthOffFootnote": "Counting up from your last climb. Nothing moves on its own.",
+      "autoAdvanceFootnote": "Only while Boardsesh is open.",
+      "autoAdvanceNeedsLength": "Pick a rest length to move the queue automatically.",
+      "lengthPillAria": "Rest length, {{value}}",
+      "lengthPillHint": "Adds 30 seconds. Touch and hold to set any rest length."
+    },
+    "sessionVisibility": {
+      "title": "Show this session live",
+      "descriptionOn": "Your crew and climbers on this board can see it and join.",
+      "descriptionOff": "Only people with your invite link can join.",
+      "updateError": "Couldn't change who can see this session. Try again."
+    },
     "queueSheet": {
       "emptyQueue": "Your queue is empty",
       "toggleHistory": "Toggle history",
@@ -317,6 +365,7 @@
     },
     "queueSnackbar": {
       "added": "Climb added to queue",
+      "playingNext": "Climb is up next",
       "open": "Open",
       "openAria": "Open queue"
     },
@@ -394,7 +443,23 @@
         "previewTag": "Preview",
         "backToLive": "Back to live",
         "browseHistory": "Browse history"
-      }
+      },
+      "gymWalls": {
+        "header": "Other boards at {{gym}}",
+        "headerNoGym": "Other boards here",
+        "sameClimbs": "Same climbs as this board",
+        "rowAria": "Move to {{board}}",
+        "showAll": "Show all {{count}} boards",
+        "switchFailed": "Couldn't move to {{board}}. Try again.",
+        "angle": "{{angle}}°",
+        "angleFixed": "fixed at {{angle}}°",
+        "noLights": "no lights",
+        "headerSwitcherAria": "You're on {{board}}. Tap to move to another board here.",
+        "headerSwitcherHintOpen": "Shows the other boards at this gym",
+        "headerSwitcherHintClose": "Hides the other boards"
+      },
+      "kilterHistorySource": "Displayed via Kilter",
+      "retryHistory": "Try loading history again"
     },
     "toast": {
       "sessionEnded": "Session ended",
@@ -409,7 +474,7 @@
       "renameNotAllowed": "Only the session creator can rename it.",
       "editTitleAria": "Edit session name",
       "minimize": "Minimize session",
-      "recordTab": "Record",
+      "recordTab": "Session",
       "returnToSession": "Return to session",
       "preBoardLabel": "Board",
       "preGeneratorLabel": "Workout",
@@ -453,7 +518,6 @@
       "preGeneratorTuning": "Tuning",
       "preStart": "Start",
       "preStarting": "Starting…",
-      "preNoBoard": "Pick a board to start",
       "preStartError": "Couldn't start session. Try again.",
       "preWorkoutPreviewTitle": "Workout preview",
       "preWorkoutPreviewGenerating": "Building your workout…",
@@ -493,7 +557,11 @@
       "inviteCopied": "Link copied",
       "inviteShare": "Share",
       "inStatsHardestEach": "Hardest sends",
-      "inviteAction": "Invite"
+      "inviteAction": "Invite",
+      "browseClimbs": "Browse climbs",
+      "changeBoard": "Change board",
+      "chooseBoard": "Choose board",
+      "noBoardSelected": "No board selected"
     }
   },
   "playView": {
@@ -531,8 +599,10 @@
     "play": "Play",
     "pause": "Pause",
     "replay": "Replay",
-    "speed": "Playback speed",
-    "speedHint": "Long-press for fine speed control",
+    "pace": "Seconds per frame",
+    "paceHint": "Long-press to fine-tune",
+    "paceValueA11y_one": "{{count}} second",
+    "paceValueA11y_other": "{{count}} seconds",
     "peerFrameMismatch": "Playing on your own. Someone in the session is on a different app version that reads this route's frames differently.",
     "shareError": "Couldn't share — try again",
     "favoriteError": "Couldn't update your favorites — try again",

@@ -37,7 +37,7 @@
     "statistics": "Estadísticas",
     "sessions": "Sesiones",
     "createdClimbs": "Bloques creados",
-    "auroraMigration": "Migración de Aurora",
+    "auroraMigration": "Trae tu logbook",
     "startClimbing": "Empieza a escalar",
     "signIn": "Iniciar sesión",
     "nav": {
@@ -275,8 +275,8 @@
       "viewProfile": "Ver el perfil de {{name}}",
       "thisClimber": "este escalador"
     },
-    "more": {
-      "title": "Más",
+    "settings": {
+      "title": "Ajustes",
       "library": "Biblioteca",
       "development": "Desarrollo",
       "dev": {
@@ -651,11 +651,20 @@
       },
       "previews": {
         "title": "Vistas previas",
+        "promptOnLaunchTitle": "Mostrar vistas previas al iniciar",
+        "promptOnLaunchSubtitle": "Se aplica la próxima vez que inicies Boardsesh",
         "pickTitle": "Prueba una vista previa de PR",
         "pickSubtitle": "Prueba un cambio antes de que salga y cuéntanos qué tal",
         "testPlanTitle": "Plan de pruebas #{{prNumber}}",
         "testPlanSubtitle": "Qué probar en la vista previa que tienes abierta"
       }
+    },
+    "sendRecovery": {
+      "title_one": "1 encadene va de camino",
+      "title_other": "{{count}} encadenes van de camino",
+      "body_one": "Lo registraste, pero nunca llegó hasta nosotros. Lo hemos encontrado y lo hemos puesto de nuevo en la cola. Se subirá en cuanto tengas conexión, así que no hace falta que lo vuelvas a registrar.",
+      "body_other": "Los registraste, pero nunca llegaron hasta nosotros. Los hemos encontrado y los hemos puesto de nuevo en la cola. Se subirán en cuanto tengas conexión, así que no hace falta que los vuelvas a registrar.",
+      "dismiss": "Entendido"
     },
     "about": {
       "title": "Sobre Boardsesh",
@@ -674,9 +683,7 @@
       "partnerTitle": "Colabora oficialmente con nosotros",
       "partnerBody": "Boardsesh funciona con Kilter, Tension y MoonBoard desde fuera. Si fabricas plafones y quieres crear algo oficial juntos, nos encantaría hablar.",
       "acknowledgementsLink": "Agradecimientos",
-      "acknowledgementsLinkBody": "Las personas detrás de Boardsesh",
-      "changelogLink": "Novedades",
-      "changelogLinkBody": "Últimas mejoras y correcciones"
+      "acknowledgementsLinkBody": "Las personas detrás de Boardsesh"
     },
     "acknowledgements": {
       "title": "Agradecimientos",
@@ -687,7 +694,8 @@
       "sponsorsBody": "Escaladores que mantienen esto en marcha a través de GitHub Sponsors.",
       "sponsorsEmpty": "Aún no hay patrocinadores, ¿quieres ser el primero?",
       "privateSponsorsThanks": "y {{count}} más patrocinando en privado — gracias también",
-      "becomeSponsor": "Hazte patrocinador",
+      "becomeSponsor": "Apoya Boardsesh",
+      "supportFallback": "Boardsesh es gratis y lo financia la comunidad. {{url}}",
       "poweredByTitle": "Con tecnología de",
       "xpremBody": "Mercure Technologies le dio a Boardsesh una licencia enterprise de xprem, el servidor detrás de nuestras actualizaciones over-the-air. Por eso las correcciones llegan a tu móvil sin esperar la revisión de la tienda de apps, y por eso puedes probar una versión preliminar desde Novedades.",
       "personalTitle": "Agradecimientos personales",
@@ -732,7 +740,16 @@
         "workout": "Móntate un entreno: Volumen, Pirámide, Escalera o Grado fijo. Fija un grado, previsualiza las vías y mándalas pegada a pegada.",
         "crew": "¿Escalas con gente? Abre una sesión y compartid una cola: cualquiera manda la siguiente vía, sin ir pasando el móvil.",
         "record": "Tus encadenes salen aquí en Progreso: reparto de grados y tu vía más dura. Importa tu logbook de Kilter y Tension desde Aurora para empezar con tu historial.",
-        "accessory": "La barra de abajo siempre muestra lo que hay en el muro. Cambia de vía desde ahí."
+        "accessory": "La barra de abajo siempre muestra lo que hay en el muro. Cambia de vía desde ahí.",
+        "climbsTab": "Para volver a tus bloques, toca la lupa de la barra de pestañas."
+      },
+      "link": {
+        "title": "Trae contigo tus encadenes de {{boardName}}",
+        "body": "Tu cuenta de {{boardName}} y Boardsesh son independientes, aunque uses el mismo correo. Vincula tu cuenta para sincronizar los encadenes disponibles con tu logbook. El tiempo de sincronización y el historial disponible varían.",
+        "footnote": "Para vincular necesitas tu usuario de {{boardName}}, no tu correo.",
+        "continue": "Vincular mi cuenta de {{boardName}}",
+        "skip": "Ahora no",
+        "skipHint": "Puedes hacerlo cuando quieras en Ajustes › Apps conectadas."
       }
     },
     "nav": {
@@ -821,7 +838,7 @@
       "serverTitle": "Ahora mismo no podemos conectar con Boardsesh",
       "serverBody": "Esto necesita nuestro servidor. Los plafones descargados se siguen explorando, buscando y registrando, y tus encadenes esperan en el móvil.",
       "offlineModeTitle": "El modo sin conexión está activado",
-      "offlineModeBody": "Esto necesita conexión. Desactiva el modo sin conexión desde el aviso o en Más para cargarlo.",
+      "offlineModeBody": "Esto necesita conexión. Desactiva el modo sin conexión desde el aviso o en Ajustes para cargarlo.",
       "errorTitle": "No hemos podido cargarlo",
       "errorBody": "No ha llegado. Vuelve a intentarlo.",
       "retry": "Reintentar"
@@ -860,16 +877,17 @@
     "fallbackCta": "Abrir la página de la tienda"
   },
   "footer": {
-    "tagline": "Encuentra bloques, compártelos y mira qué hay en el plafón de tu rocódromo. La escalada pasa en la app.",
+    "tagline": "Tus plafones. Una app. Cambia de plafón sin cambiar de app.",
     "navLabel": "Pie de página",
     "trademarkNote": "Compatible con Kilter, Tension y MoonBoard. Sin relación con Aurora Climbing ni Moon Climbing.",
     "links": {
       "home": "Inicio",
       "about": "Sobre nosotros",
+      "support": "Apoya Boardsesh",
       "help": "Ayuda",
       "docs": "Documentación",
       "playlists": "Listas",
-      "auroraMigration": "Migración desde Aurora",
+      "auroraMigration": "Trae tu logbook",
       "legal": "Aviso legal",
       "privacy": "Privacidad",
       "gymsKilter": "Rocódromos con un plafón Kilter",

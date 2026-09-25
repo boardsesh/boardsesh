@@ -11,6 +11,7 @@ import { resolveCanonicalClimbUuid } from '@boardsesh/db/queries';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { pubsub } from '../../../pubsub/index';
+import { readBoardHistoryPage, readMergedRecentHistory } from '../../../services/board-history';
 import { applyRateLimit, validateInput } from '../shared/helpers';
 import { BoardClimbRecentSendersArgsSchema } from '../../../validation/schemas';
 import { parsePostgresUtcTimestamp } from '../../../utils/postgres-timestamps';
@@ -20,6 +21,7 @@ import {
   requireAnonReadableBoard,
   resolveBoardHolder,
 } from './shared';
+import { assertSprayBoardIsReadable } from '../climbs/spray-read-access';
 import { computeBoardPresenceStats, getCachedBoardPresenceStats, setCachedBoardPresenceStats } from './stats';
 
 const RECENT_CLIMB_SENDERS_LIMIT = 5;
@@ -33,6 +35,24 @@ const RECENT_CLIMB_SENDERS_LIMIT = 5;
 const RECENT_CLIMB_SENDERS_FETCH_LIMIT = RECENT_CLIMB_SENDERS_LIMIT + 3;
 
 export const boardPresenceQueries = {
+  boardRecentHistory: async (_: unknown, { boardId }: { boardId: number }, ctx: ConnectionContext) => {
+    await applyRateLimit(ctx, 60, 'boardRecentHistory');
+    const board = await requireActiveBoardWithVisibilityById(boardId);
+    assertAnonReadableBoard(board, ctx.userId);
+    await assertSprayBoardIsReadable(board, ctx.userId);
+    return readMergedRecentHistory(boardId);
+  },
+  boardHistoryPage: async (
+    _: unknown,
+    { boardId, limit, before }: { boardId: number; limit?: number | null; before?: string | null },
+    ctx: ConnectionContext,
+  ) => {
+    await applyRateLimit(ctx, 60, 'boardHistoryPage');
+    const board = await requireActiveBoardWithVisibilityById(boardId);
+    assertAnonReadableBoard(board, ctx.userId);
+    await assertSprayBoardIsReadable(board, ctx.userId);
+    return readBoardHistoryPage(boardId, limit ?? 50, before);
+  },
   /**
    * Backfill the recent "now on the wall" history for a board from the Redis
    * FIFO (last ~50, 1-week window). Used by late joiners before the live
@@ -53,7 +73,11 @@ export const boardPresenceQueries = {
     // fields the anon gate below needs (anonymous viewers only backfill
     // public / system-shared boards), instead of two round-trips for the same
     // row on every anonymous request.
-    assertAnonReadableBoard(await requireActiveBoardWithVisibilityById(boardId), ctx.userId);
+    const visibilityBoard = await requireActiveBoardWithVisibilityById(boardId);
+    assertAnonReadableBoard(visibilityBoard, ctx.userId);
+    // The anon gate above waves every authenticated caller through; a spray wall is
+    // somebody's home and needs the wall's own rule. See assertSprayBoardIsReadable.
+    await assertSprayBoardIsReadable(visibilityBoard, ctx.userId);
     return pubsub.getRecentBoardClimbs(String(boardId));
   },
 
@@ -89,7 +113,11 @@ export const boardPresenceQueries = {
     // fields the anon gate below needs (anonymous viewers only read public /
     // system-shared boards' history), instead of two round-trips for the same
     // row on every anonymous request.
-    assertAnonReadableBoard(await requireActiveBoardWithVisibilityById(boardId), ctx.userId);
+    const visibilityBoard = await requireActiveBoardWithVisibilityById(boardId);
+    assertAnonReadableBoard(visibilityBoard, ctx.userId);
+    // The anon gate above waves every authenticated caller through; a spray wall is
+    // somebody's home and needs the wall's own rule. See assertSprayBoardIsReadable.
+    await assertSprayBoardIsReadable(visibilityBoard, ctx.userId);
 
     // Parse + validate the cursor before it reaches SQL, so a malformed value
     // returns a clean error instead of a leaked Postgres parse error. Trim
@@ -106,7 +134,10 @@ export const boardPresenceQueries = {
     }
 
     const cappedLimit = Math.min(Math.max(limit ?? 50, 1), 100);
-    const boardMatch = eq(dbSchema.boardClimbEvents.boardId, boardId);
+    const boardMatch = and(
+      eq(dbSchema.boardClimbEvents.boardId, boardId),
+      eq(dbSchema.boardClimbEvents.source, 'boardsesh'),
+    );
     // Join the sender (nullable — a user can be deleted, leaving userId null) so
     // history rows carry the same display identity + profile link as the live
     // feed. Profile fields win over the auth-account name/image, matching the
@@ -170,6 +201,7 @@ export const boardPresenceQueries = {
     await applyRateLimit(ctx, 60, 'boardClimbRecentSenders');
     const board = await requireActiveBoardWithVisibilityById(boardId);
     assertAnonReadableBoard(board, ctx.userId);
+    await assertSprayBoardIsReadable(board, ctx.userId);
     const validated = validateInput(BoardClimbRecentSendersArgsSchema, { climbUuid, angle }, 'recent senders');
 
     const canonicalClimbUuid = await resolveCanonicalClimbUuid(db, board.boardType, validated.climbUuid);
@@ -270,6 +302,7 @@ export const boardPresenceQueries = {
     const board = await requireActiveBoardWithVisibilityById(boardId);
     // Anonymous viewers only read public / system-shared boards' stats.
     assertAnonReadableBoard(board, ctx.userId);
+    await assertSprayBoardIsReadable(board, ctx.userId);
 
     const cached = await getCachedBoardPresenceStats(boardId);
     if (cached) return cached;

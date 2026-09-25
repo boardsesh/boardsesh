@@ -1,4 +1,5 @@
 export * from './gyms';
+export * from './places';
 export * from './gym-activity-stats';
 export * from './gym-kiosks';
 export * from './gym-merge-audit';
@@ -30,6 +31,7 @@ export * from './hold-features';
 export * from './hold-outline-overrides';
 export * from './climb-embeddings';
 export * from './climb-similar';
+export * from './climb-neighbors';
 export * from './integration-exports';
 export * from './location-sync';
 export * from './location-sync-unfreeze-audit';
@@ -38,3 +40,4 @@ export * from './sync-daemon-leases';
 export * from './logbook-sync-skips';
 export * from './sitemap-shard-refreshes';
 export * from './sitemap-climb-urls';
+export * from './spray-walls';

@@ -1,0 +1,869 @@
+# App Store screenshots against recorded fixtures
+
+The store capture used to shoot the app against PROD, so every screenshot moved
+whenever the data behind it moved — a new tick in a shared feed, a resolver
+change, a rollout. The screenshot backend removes that: it records what PROD
+answered once, then replays those bytes for every later capture. The screenshots
+become a pure function of the JS bundle.
+
+The server is `scripts/lib/screenshot-backend.ts`; everything it keys, validates
+and logs is defined in the pure sibling `scripts/lib/screenshot-fixtures.ts`.
+
+## Storage
+
+Recorded backend responses are never committed. The public dev bucket stores an
+immutable compressed snapshot; `app-stores/screenshot-fixtures.json` pins its URL,
+SHA-256, compressed byte count, and file count. A checkout always fetches the same
+snapshot, without S3 credentials or production access.
+
+`vp run mobile:screenshot-fixtures-fetch` downloads and verifies it into
+`.boardsesh/screenshot-fixtures/<sha256>/`. Default replay captures, the standalone
+replay backend, and mobile test setup fetch automatically. A verified local cache
+works offline; altered extracted bytes are restored from the checked archive.
+A corrupt or unavailable snapshot fails instead of silently skipping drift tests.
+
+Recordings still go to ignored `packages/mobile/screenshot-fixtures/`, or an explicit
+`--fixtures-dir`. Downloads never touch that directory. Publish a sanitized merged
+recording with `vp run mobile:screenshot-fixtures-publish -- [recording-directory]`,
+then commit only the updated snapshot reference. Publishing uses the dedicated
+`DEV_*` S3 settings in ignored root `.env.local` and verifies the public download.
+It bundles only manifest-listed fixtures and rejects sensitive request variables
+or other climbers' unpseudonymised identity fields before upload.
+
+## The two modes
+
+**record** proxies the app's traffic to an upstream (PROD by default), streams
+the answer straight back, and writes a fixture for each new GraphQL key and each
+new `/static/*` asset. It records nothing for a non-200, for a body with no
+`data` key, or for a `200` carrying an `INTERNAL_SERVER_ERROR` extension — a
+broken answer is not a fixture. First recording of a key wins; a repeat logs
+`DUP` and is dropped, so the fixture set does not depend on scroll timing.
+
+**replay** never makes an outbound request. It answers every GraphQL POST from
+disk, hands out synthetic auth tokens for the recorded account, serves the
+recorded asset bytes, and 404s anything it has no handler for.
+
+Before it serves anything, replay **proves the fixture set readable**: every
+graphql fixture the manifest names is read and parsed and checked against the
+key it was filed under (`formatVersion`, `operationName`, `documentHash`,
+`variablesHash`, and a `response` that is actually there), and every static file
+is stat'd against its recorded byte count. Any problem and `listen()` rejects
+with one error listing every offending file — a capture is a long unattended
+run, so a fixture set that cannot be replayed has to fail at second zero, not
+halfway through. If a fixture goes missing or truncated *during* a run, the
+request answers the ordinary miss (200 + `errors`, or a `404` for an asset) and
+logs `reason=unreadable-fixture`; it is never a 500.
+
+A replay miss answers **HTTP 200 with a GraphQL `errors` array**, never a 5xx or
+an `INTERNAL_SERVER_ERROR` extension — those are what flip the app's
+connectivity store into "backend unreachable"
+(`packages/mobile/src/lib/graphql/client.ts`) and swap every screen for the
+connectivity banner, hiding the very miss the log is reporting. A 200 miss
+instead makes `graphql-request` throw a `ClientError`, which React Query
+reports as an errored query; `deriveOfflineQueryState`
+(`packages/mobile/src/hooks/use-offline-query-state.ts`) then renders that
+screen's own `OfflineState` placard with reason `error` — not an empty list.
+The placard stays visible in the capture, which is exactly what makes a miss
+noticeable at a glance, and the connectivity store itself is never tripped.
+
+## CLI
+
+```
+vp run mobile:screenshot-backend -- --mode replay
+vp run mobile:screenshot-backend -- --mode record --upstream https://ws.boardsesh.com --fresh
+```
+
+| Flag | Default |
+| --- | --- |
+| `--mode replay\|record` | required |
+| `--port <n>` | `BOARDSESH_SCREENSHOT_BACKEND_PORT`, else `8090` |
+| `--fixtures <dir>` | `packages/mobile/screenshot-fixtures` (relative to the repo root) |
+| `--upstream <url>` | `https://ws.boardsesh.com` — record only |
+| `--frozen-now <iso>` | record: the START instant (a FLOOR, not the final value — see "The frozen clock" below), defaults to now, to the second · replay: the manifest's `frozenNow` |
+| `--flow <name>` | `app-store` — record only |
+| `--fresh` | off — record only; discards the existing fixture set first |
+| `--no-pseudonymise` | off — record only; keeps other climbers' real names. Never publish a set recorded with it (see "What is pseudonymised") |
+
+It binds `0.0.0.0` so the iOS simulator (localhost) and the Android emulator
+(`adb reverse`) both reach it, prints its `READY` line to stdout, and stays up
+until SIGINT/SIGTERM. A recording run exits `1` if any fixture was refused for
+carrying a live token; a replay run exits `1` before binding the port if the
+startup check found a fixture it cannot replay, printing the list.
+
+## Routes
+
+| Route | replay | record |
+| --- | --- | --- |
+| `POST /graphql` | keyed lookup; a batch array is a `400` | proxied, then recorded |
+| `POST /auth/native/credentials` | synthetic tokens for the recorded email, `401` for any other | proxied; the returned tokens stay in memory |
+| `POST /auth/native/refresh` | synthetic tokens with a fresh expiry | proxied |
+| `GET /static/*` | recorded bytes + recorded `Content-Type` | fetched with `redirect: follow`, keyed by the ORIGINAL path |
+| `GET /health`, `/health/db` | `{"status":"healthy",...}` | same |
+| `GET /__screenshot-backend/status` | the counters | same |
+| WS upgrade on `/graphql` | manifest-listed GraphQL responses and initial subscription snapshots | inert graphql-ws: acks and pongs, never proxies or records responses |
+| anything else | `404` + `MISS route` | `404` + `MISS route` |
+
+The catch-all is deliberately **not** proxied in either mode. A call nobody
+handles is the one thing a capture has to learn about; proxying it would make a
+"replay" run quietly depend on PROD.
+
+WebSocket replay uses the same operation name, variables, document hash, response
+cache, and hit/miss gate as HTTP. Queries and mutations emit `next` followed by
+`complete`. Subscriptions emit their recorded initial snapshot once and remain
+open; reconnecting replays the same snapshot. They never connect to production
+or synthesize subsequent events. Screenshot documents start with their operation,
+optionally preceded by GraphQL comments.
+
+`QueueUpdates` and `SessionUpdates` require fixtures: missing snapshots fail the
+capture gate instead of silently showing an empty shared session. The existing
+passive subscriptions (climb statistics, notifications, comments, new climbs, and
+board presence updates) may remain silent when their operation has no fixture in
+the manifest. Once an operation has a fixture, a changed document or variables
+is a miss, including for passive subscriptions.
+
+Record mode still only acknowledges connections and pings over WebSocket. It
+does **not** record or proxy a live WebSocket stream. Initial subscription
+snapshots must be supplied in the sanitized fixture bundle using the ordinary
+GraphQL fixture format and manifest entries; payloads stay in object storage.
+
+An optional manifest `capture` object selects the existing Android campaign
+scenario automatically. The campaign bundle carries:
+
+```json
+{
+  "capture": {
+    "sharedSessionId": "00000000-0000-4000-8000-000000000101",
+    "profileSessionId": "00000000-0000-4000-8000-000000000102",
+    "boards": [
+      "Boardsesh HQ",
+      "High Point Climbing Orlando",
+      "Test User's MoonBoard 2016 Standard",
+      "Test User's Woods Original 12×12",
+      "Test User's Grasshopper 2020 GrandMaster",
+      "St Peters 2024 Moonboard"
+    ]
+  }
+}
+```
+
+Metadata alone does not create a session or make an arbitrary fixture set suitable
+for these captures. The current Maestro flow expects a session named
+`Friday board crew`, two connected test participants (Test User and Marco), six
+queue entries (`6 climbs`), and `Lightest Pair of Shorts` as the current climb.
+The flow accepts a populated roster (`[2-9] climbing`); the campaign bundle supplies
+the two approved test identities and their real avatars. The session preview,
+join response, `QueueUpdates` FullSync, `SessionUpdates` roster snapshot, and the
+queries used by those screens must all describe that same sanitized scenario.
+Changing the title, counts, or current climb requires updating the flow's visible
+anchors together with the bundle. WebSocket recording remains unsupported; supply
+these initial snapshots in the bundle explicitly.
+
+The optional `profileSessionId` selects a separate, populated historical recap.
+With six board selectors, Android adds `14-logbook` and `15-session-detail` to
+the raw captures. The final profile slide combines these with `06-profile`,
+placing the all-board logbook in front of the overview and recap. The listing
+still contains eight images. Older bundles without this field retain their
+single-screen profile slide. The recap ID must be a UUID; include its detail
+query and session vote summary in the same bundle.
+
+The history capture waits for visible Kilter, Tension, and MoonBoard row labels.
+Its demo chronology must agree across user ticks, grouped logbook entries,
+session feeds, and recap totals. Reuse recorded climb metadata at the correct
+angle. Moving a demo tick between dates also moves it out of its old session's
+totals; never stretch that session across the intervening months. Keep these
+changes in the sanitized fixture snapshot, not in production accounts.
+
+The session ID must be a UUID, and `boards` must contain at least two non-empty
+selectors without control characters or `|`. Selector order is significant:
+Kilter at index 0, Tension at index 1, MoonBoard 2016 at index 2, Woods Board at
+index 3, Grasshopper at index 4, and MoonBoard 2024 at index 5. Those
+selectors must resolve to boards and climb responses present in the same bundle.
+Android uses these boards unless `--boards` explicitly overrides them, and passes
+the session ID to Maestro as `SCREENSHOT_SHARED_SESSION_ID` plus the effective
+selector count as `SCREENSHOT_BOARD_COUNT`. No manual environment setup is needed.
+Legacy manifests and record mode pass an empty session ID, keeping the original
+eight-shot flow even when extra boards are configured. With a shared-session ID,
+the flow captures `10-wall-status` before joining the crew: it selects
+`Guessing Games` locally while the live header still says
+`On the wall: Lightest Pair of Shorts`. Board-presence fixtures and climb responses
+must support both states. It then joins the crew for `09-live-queue`.
+The queue sheet expands before capture to show
+five entries from the six-climb queue; the flow waits for the fifth climb, `Wax On`,
+while the header confirms `6 climbs`.
+
+Two configured boards produce ten raw inputs. A third adds MoonBoard 2016 for
+eleven. Six selectors enable all three additional compatibility captures
+(`11-woods-board-view`, `12-grasshopper-board-view`, and `13-moonboard-2024-view`)
+for fourteen inputs. Four or five selectors retain the eleven-input flow until
+the second compatibility group is complete. The fourteen-input recipe produces
+eight Google Play images: two compatibility frames, the shared queue, wall
+status, climb browsing, playlists, workout generator, and profile. The original
+Home and board-activity raw captures remain available but are not selected for
+this listing set. Smaller scenarios retain their earlier eight-output recipes.
+With `profileSessionId`, the six-board flow adds logbook and historical-session
+captures for sixteen raw inputs, still producing eight Google Play images.
+The profile capture starts at the all-board overview: the distinct-climb total,
+layout count, and first three ranked board rows. Additional layouts expand below
+these rows; filtered progress charts remain farther down the same page.
+The published profile scenario includes screenshot-only demo sends on Woods Board,
+Grasshopper, and MoonBoard 2024, using recorded climb metadata. Its nine-layout
+history is kept consistent across profile totals, account tick queries, and the
+offline sync snapshot; seeding this fixture does not write to the production account.
+The older eleven/twelve-input campaign remains readable with its separate
+current-climb/participant captures, but this flow no longer produces those shots.
+This metadata does not enable additional iOS shots.
+Sorting, snapshot uploads, and merges preserve it; merges reject conflicting
+scenario metadata instead of choosing a different shared session silently.
+
+## Keying
+
+A GraphQL fixture is identified by `(operationName, variablesHash)` and carries
+a `documentHash` alongside it.
+
+- `documentHash` = sha256 of the query with every whitespace run collapsed to a
+  single space. `graphql-request`'s `gql` tag sends its template verbatim, so the
+  raw bytes carry whatever the formatter last chose; hashing them directly would
+  invalidate the world on a reflow.
+- `variablesHash` = sha256 of the variables as canonical JSON: object keys
+  sorted at every depth, `undefined` properties dropped, arrays left in order.
+
+Splitting the two is what lets replay say `document-changed` (the query moved,
+re-record) instead of `no-fixture` (nobody ever recorded this).
+
+`IGNORED_VARIABLE_PATHS` excludes per-run client values from the variables hash —
+today the `token` of the four push-token mutations
+(`RegisterActivityPushToken` / `UnregisterActivityPushToken` from JS, and the
+`RegisterToken` / `UnregisterToken` the Live Activity module sends under its own
+names from Swift). **Only** client-generated values belong there (uuids, device
+tokens, wall-clock stamps), never a data-shaping input: stripping a filter or a
+cursor would collapse two different responses onto one fixture and the capture
+would silently shoot the wrong data. The same list is applied at record and
+replay, so the two can never disagree.
+
+**An ignored path is hashed out AND redacted.** Two steps, both at record time:
+the key ignores the value (so a later run sending a different token still hits
+the fixture), and the persisted `variables` carry the literal
+`<redacted:per-run>` in its place (so no client credential is published). The
+variable itself stays present — a fixture that dropped it would no longer show
+what the app sends. `findSensitiveVariableKeys` runs *after* that swap and skips
+a key already holding the literal, which is why an APNs push token is redacted
+rather than refusing the fixture, while any other `password` / `secret` /
+`token` / `credential` still refuses it outright.
+
+### Batched operations are keyed by membership, not by the exact id list
+
+Two operations carry a LIST OF IDS assembled at runtime, and for those an
+exact-variables key can never be stable:
+
+| Operation | ids at | items at | item id field |
+| --- | --- | --- | --- |
+| `ClimbStatsForClimbs` | `climbUuids` | `data.climbStatsForClimbs` | `climbUuid` |
+| `GetBulkVoteSummaries` | `input.entityIds` | `data.bulkVoteSummaries` | `entityId` |
+
+Both are viewport batches — `useQueries` over chunks of whatever rows had
+mounted when the batch flushed
+(`packages/mobile/src/lib/graphql/hooks/use-social.ts` for the vote summaries,
+`fetchClimbStatsForClimbs` in `packages/mobile/src/providers/board-adapter.tsx`
+for the stats). Replay answers instantly, so the app scrolls and flushes on a
+different schedule than the recording did and asks for id subsets the recording
+never sent as one batch. Android run 34240391447 failed on exactly that.
+
+So replay composes them. **The exact key is still tried first** — a batch that
+was recorded verbatim replays its own recorded bytes. Only when that misses does
+the backend build (lazily, once per operation) an index over EVERY recorded
+fixture of that operation, decomposed into `id -> its recorded items`, and answer
+with the items for the requested ids **in request order**, inside a recorded
+response's own envelope. It logs `HIT graphql <Op> <hash12> composed=<n>`, where
+`n` is the number of ids answered, and that counts as a GraphQL hit like any
+other.
+
+Two rules keep it honest:
+
+- **Everything outside the id list must match exactly.** The scope key is the
+  recorded document hash plus the canonical variables with the id path removed,
+  so a Kilter recording can never answer a Tension request and a fixture
+  recorded against an older selection set can never answer today's query.
+- **An id the recording asked for but the backend had nothing for is a recorded
+  fact, not a gap** — it composes to zero items.
+- **An id no recorded batch covers is TOLERATED**, as long as at least one
+  requested id was covered. The batch is answered with the items for the covered
+  ids and nothing for the rest, and the hit line carries
+  `uncovered=<m> ids=<up to 10>`.
+
+  The reasoning: the read coordinator eventually asks for stats for every row
+  that mounts, so every row VISIBLE while recording had its id in some recorded
+  batch. A replay shows the same viewport over the same data, so an id the set
+  does not know can only come from a row the recording never mounted — drawn
+  past the fold, or picked by something the capture does not pin (the workout
+  generator shuffles its grade pool, which is why run 34259455408 asked for a
+  different set on each attempt). Such a row is not in the frame; and even if it
+  were, `useEffectiveClimbStats` falls back to the search payload's own counts
+  when there is no canonical row, so it renders the numbers the list already
+  showed. "No row for this climb" is also exactly what the real server answers
+  for a climb with no stats, so the shape is honest.
+
+  Reported, not ignored: `findScreenshotBackendNotes` turns those lines into one
+  `NOTE:` per operation — *"answered N batch(es) with M uncovered id(s) — rows
+  mounted beyond the fold; re-record if a visible row shows blank stats"* —
+  printed by the capture and failing nothing.
+- **A batch where NOT ONE requested id was covered still misses**
+  (`reason=unrecorded-ids ids=<up to 10>`). That is not draw distance, it is a
+  screen the recording never reached, and the failure says so.
+
+#### The composer is the safety net, not the fix
+
+Composition can only re-assemble ids that were recorded SOMEWHERE. Run
+34248313427 hit the other half of the problem: three kilter and eight tension
+climbs were never in ANY recorded `ClimbStatsForClimbs` batch, because at record
+time their rows had not been drawn yet. The `SearchClimbs` page they sit on is
+byte-identical between the two runs — replay is just fast enough that FlashList
+mounts further down it.
+
+So screenshot mode makes the membership deterministic at the source, and the two
+operations get there differently:
+
+- **`GetBulkVoteSummaries` already was.** Its ids come from the whole loaded feed
+  (`sessions` flattened across pages in `SessionsTab.tsx` / `home/index.tsx`),
+  never from the mounted rows, so pinning the feed to one page
+  (`screenshotModeNextPageParam`) was enough — run 34248313427 logged no vote
+  misses at all.
+- **`ClimbStatsForClimbs` needed the batch widened.** `useEffectiveClimbStats`
+  queues one read per mounted row and the coordinator flushes whatever queued by
+  the end of the microtask. `useScreenshotClimbStatsPrefetch`
+  (`packages/mobile/src/hooks/`) instead asks for the whole loaded page in one
+  go through `prefetchClimbStatsForClimbs`
+  (`packages/shared/board-react/src/use-effective-climb-stats.ts`), as soon as
+  the search results land. Ids are de-duplicated and sorted, and each key is
+  retained for the duration — the coordinator drops a read whose key has no
+  mounted selector, which is exactly the not-yet-drawn rows this exists to
+  cover.
+
+The shared function is deliberately env-blind: `@boardsesh/board-react` is
+renderer-agnostic and knows nothing about screenshot mode. The mobile hook holds
+the inline `process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1'` gate and dead-strips
+from normal builds with the rest of screenshot mode.
+
+The composer stays either way, and it has to: the climbs screen is not the only
+surface that batches stats. Run 34259455408 missed on the workout generator's
+grade pool (`select-climbs-for-plan.ts`, `pageSize 50` / `sortBy quality`), which
+**shuffles** its candidates per fetch — so the recording and the replay pick
+different climbs however carefully the list is prefetched. Per-row sub-batches
+still fire too (a row that mounts before the prefetch resolves, the play drawer's
+single-climb read). Widening the batch shrinks the gap; the composer's tolerance
+for uncovered ids is what closes it.
+
+Adding one: read the operation document for the id list's path and the response
+list's own id field, add a row to `BATCHED_OPERATIONS` in
+`scripts/lib/screenshot-fixtures.ts`, and let the drift test check the paths
+against the pinned fixtures. Only add an operation whose response list is a
+per-id lookup — never one whose items depend on the batch as a whole (a ranking,
+a page, an aggregate over the set). If its ids come from mounted rows rather than
+from loaded data, widen the batch in screenshot mode too — the composer alone
+cannot cover an id nothing ever recorded.
+
+Static assets are keyed on the original pathname plus its query sorted into a
+stable order. PROD answers `/static/*` with a `302` to a CDN; the recorder
+follows it for the bytes but files them under what the app asked for.
+
+## On disk
+
+```
+packages/mobile/screenshot-fixtures/
+  manifest.json
+  graphql/<OperationName>/<variablesHash16>.json
+  static/<key16>.<ext>
+```
+
+A graphql fixture's filename is 16 hex characters of the variables hash —
+matching the static key length. Log lines still show the shorter 12-character
+`FIXTURE_HASH_DISPLAY_LENGTH` prefix; only the on-disk filename uses 16.
+
+`manifest.json` is rewritten after every new entry (temp file + rename), so a
+SIGTERM mid-capture still leaves a manifest that matches the files beside it. Its
+entries are sorted — graphql by operation then variables hash, static by path
+then query — so re-recording an unchanged capture produces no diff. Every
+`file` a manifest entry names is validated at load time: it must be a relative
+path with no `..` segment, no leading `/`, no backslash, and it must actually
+sit under `graphql/` or `static/` — a manifest that fails this refuses to load
+rather than let a recorded path read outside the fixtures directory. The
+server checks the same thing again immediately before it reads a fixture's
+bytes off disk, as a second line of defense.
+
+**Nothing header-derived is ever persisted.** Before a fixture is written its
+serialized body is checked against the jwt and refresh token the recorder saw on
+the proxied auth response; a match logs `REDACTED`, drops the fixture, and fails
+the run at exit. The same check runs against the request's own `variables`: any
+key that looks like `password`, `secret`, `token` or `credential` (at any depth,
+case-insensitively — see `findSensitiveVariableKeys`) is refused before the
+fixture is ever written, since a board-login mutation carries the climber's
+Aurora credentials as an ordinary variable, not a header (the exception is an
+ignored per-run path, already replaced by `<redacted:per-run>` — see Keying).
+Replay hands out a synthetic session instead, so a fixture set is safe to publish as a development snapshot.
+
+**The published snapshot includes `manifest.json`'s `accountEmail` in plain text.**
+Record fixtures only with the dedicated screenshots account
+(`test@boardsesh.com`), never a personal one — whatever email signs in during
+recording ends up readable in the public snapshot.
+
+`manifest.json` also carries **`accountUserId`**: the `sub` claim the recorder
+decoded (unverified, in memory) out of the live jwt the upstream returned. The
+id is written; the token never is. Replay needs it because the app reads its own
+user id back out of its session token (`userIdFromJwt`,
+`packages/mobile/src/lib/jwt-user-id.ts`) to decide what is "yours" while
+offline — so the synthetic session is a real jwt *shape*: three base64url
+segments, `alg: none`, the recorded id as `sub`, `iss: screenshot-replay`, and
+the literal `screenshot-replay` where a signature would be. The refresh token
+stays the constant `screenshot-replay-refresh`. Both are inert: nothing verifies
+them, because in replay nothing but the fixture set answers a request.
+
+## What is pseudonymised
+
+**Nobody but the recording account is identifiable in a published set.** The
+store flow walks public surfaces — Discover, the "Everyone" session feed, recent
+beta — so a recording that just wrote down what PROD answered would publish real
+climbers' names, handles and avatar URLs to a public repo. So the recorder
+rewrites them before a response is ever written (`pseudonymiseResponse`,
+`scripts/lib/screenshot-fixtures.ts`), and logs
+`PSEUDONYMISED graphql <Op> <hash12> persons=<n>` when it changed something.
+
+**The rule is narrow by design.** A field is personal only when it sits on an
+object that also carries the id key naming whose field it is — the pairs live in
+`PSEUDONYMISED_PERSON_FIELDS`:
+
+| id key | names | handles | avatars | emails |
+| --- | --- | --- | --- | --- |
+| `userId` | `displayName`, `userDisplayName`, `userName` | `username`, `handle`, `instagramHandle` | `avatarUrl`, `userAvatarUrl`, `userAvatar`, `profileImageUrl` | `email`, `userEmail` |
+| `ownerId` / `ownerUserId` | `ownerDisplayName`, `ownerName` | `ownerUsername`, `ownerHandle` | `ownerAvatarUrl`, `ownerAvatar` | `ownerEmail` |
+| `creatorId` | `creatorDisplayName`, `creatorName` | `creatorUsername`, `creatorHandle` | `creatorAvatarUrl`, `creatorAvatar` | `creatorEmail` |
+| `authorId` | `authorDisplayName`, `authorName` | `authorUsername`, `authorHandle` | `authorAvatarUrl`, `authorAvatar` | `authorEmail` |
+| `id`, `uuid` | `displayName` | `username`, `handle`, `instagramHandle` | `avatarUrl`, `profileImageUrl` | `email` |
+
+Nothing is matched on its name alone, which is what keeps a climb's `name`, a
+playlist's `name`, a board's `name`, a gym's `name` and a session's
+`sessionName` out of it — every one sits beside an `id`/`uuid` and none of them
+is a `displayName`. The groups are ordered, and the first whose id key is
+present claims a shared field name, so `displayName` on `{ id, userId,
+displayName }` is the commenter's, not the comment's.
+
+One field has no id to key on: a beta link's `foreignUsername`, the Instagram
+handle of whoever filmed the video (`PSEUDONYMISED_HANDLE_ONLY_KEYS`). There the
+handle IS the identity, so the pseudonym hashes from the handle itself.
+
+What each becomes:
+
+- **Display name** → `<Adjective> <Noun>` from a fixed 32 × 32 word list
+  (`PSEUDONYM_ADJECTIVES` / `PSEUDONYM_NOUNS`), picked by a stable hash of the
+  person's id. The same climber reads as the same person in every fixture, so a
+  session feed stays coherent.
+- **Handle** → `climber_<6 hex>`, same hash.
+- **Avatar / profile image URL** → `null`. Every one of these is a nullable
+  `String` in the schema and the app renders initials when it is null. If a
+  future avatar field is non-null, replace it with a same-shaped placeholder
+  string rather than making the fixture violate its own schema.
+- **Email** → `climber_<6 hex>@pseudonymised.invalid` (RFC 2606, can never
+  resolve).
+
+**Our own account's data is real.** The manifest's `accountUserId` is left
+untouched — the screenshots have to show a real signed-in climber, with the real
+display name and avatar the store listing is meant to show. The all-zero uuid
+(`NON_PERSON_USER_IDS`) is left alone too: it is what the backend puts on a
+board Boardsesh itself owns, not a person.
+
+**Additional approved test accounts.** A fixture manifest can carry
+`approvedTestUserIds`, an optional array of unique lowercase account UUIDs.
+Add an account only after explicit approval to display that test account's
+identity. Verify its ID against the actual account or public board-owner
+profile; a matching display name or email guess is insufficient. The recorder,
+publisher, drift check and rewrite command all use this same exact-ID allowlist.
+Other climbers, including nested people inside an approved user's response,
+remain pseudonymised. Wall-presence `sentByUserId` fields follow the same rule.
+Merging preserves one agreed allowlist alongside legacy shards and refuses
+conflicting nonempty allowlists rather than widening them. This metadata belongs
+in the CDN fixture manifest; no account-specific payload is committed to Git.
+
+**What is deliberately NOT rewritten**, because all three look like near misses:
+
+- `setterUsername` / `setter_username` / `faUsername`. Aurora's public
+  attribution on the CLIMB — the same string the Aurora apps and boardsesh.com's
+  public climb pages render — not a field on a person object. The object it sits
+  on carries the id of the climber who logged the tick, not of the setter, so
+  there is no id to hash a stable pseudonym from.
+- A beta link's `link` and `thumbnail`. A public Instagram post URL carries no
+  handle, and the recorded thumbnail fixture is keyed on its shortcode —
+  rewriting either would break the asset lookup for no privacy gain.
+- Bare user ids. They are opaque uuids, they are what the pseudonym hashes FROM,
+  and replay needs them to keep matching the ids the app reasons about.
+
+**The escape hatch.** `--no-pseudonymise` (on both
+`vp run mobile:screenshots -- --fixtures record` and
+`vp run mobile:screenshot-backend -- --mode record`) records real data. It is
+record-only — replay writes nothing — and a set recorded with it must never be
+published: the drift test's `carries no real climber but the recording account`
+check fails on it, naming the file and the field.
+
+**Rewriting a set that already exists.**
+`vp run mobile:screenshot-fixtures-pseudonymise` applies the same function to
+every graphql fixture's `response` in place (`--dir` to point it elsewhere,
+`--check` to report without writing). A fixture is keyed by its document and
+variables, never by its response, so nothing else moves — no hash, no filename,
+no manifest entry. The one manifest change it can make is dropping a
+`static/avatars/*` entry, since an avatar URL that is now `null` is an asset the
+app can no longer request. Exact `/static/avatars/<user-id>.jpg` assets for the
+recording account and explicitly approved test accounts are retained. It is
+idempotent, so running it twice is free.
+
+## Log grammar
+
+Every line is single-line and prefixed `[screenshot-backend]`.
+
+```
+READY mode=replay port=8090 fixtures=<dir> frozenNow=<iso> graphql=<n> static=<n>
+HIT graphql <Op> <hash12>
+HIT graphql <Op> <hash12> composed=<n>
+HIT graphql <Op> <hash12> composed=<n> uncovered=<m> ids=<id,id,…>
+HIT static <path?query>
+HIT auth credentials|refresh
+MISS graphql <Op> <hash12> reason=no-fixture|document-changed|anonymous-operation|unreadable-fixture variables=<canonical json>
+MISS graphql <Op> <hash12> reason=unrecorded-ids ids=<id,id,…> variables=<canonical json>
+MISS static <path?query>
+MISS route <METHOD> <path>
+MISS auth email=<e> expected=<e>
+RECORDED graphql <Op> <hash12> -> <relative file>
+RECORDED static <path?query> -> <relative file>
+DUP graphql <Op> <hash12>
+UPSTREAM-ERROR graphql <Op> status=<n>|code=INTERNAL_SERVER_ERROR
+REDACTED graphql <Op>
+PSEUDONYMISED graphql <Op> <hash12> persons=<n>
+NOTE graphql <Op> <note>
+WS connection_init ack
+WS subscribe <Op>
+WS error <message>
+```
+
+A `MISS graphql` line carries the **canonical variables** it missed on, stripped
+of the ignored paths exactly as the key was, elided past
+`MISS_VARIABLES_LOG_LIMIT` (600 characters) with `…`. Before that the line held
+only the 12-character hash, and diagnosing a CI failure meant brute-forcing the
+hash offline. `ids=` names up to `MISS_UNRECORDED_IDS_LOG_LIMIT` (10) of the
+requested ids no recorded batch covers, and appears only on
+`reason=unrecorded-ids`. Both tails are optional in the parser, so a log written
+by an older backend build still parses — an unparsed `MISS` would vanish from
+`findScreenshotBackendProblems` and pass a broken capture.
+
+Only a `HIT graphql` line counts toward the "the app never reached the replay
+backend" check — an app that only ever authenticated (`HIT auth`) never actually
+exercised a screen's data, so that alone must still fail the check. `WS error`
+is never a problem line — it logs a malformed frame the `ws` server rejected
+(bad RSV bits, an unmasked client frame, …) so it is visible in the log, but one
+bad client frame must not fail the capture or take the process down.
+
+`PSEUDONYMISED` is never a problem line either — it is the recorder replacing
+other climbers' names before writing (see "What is pseudonymised"), and
+`persons=` counts the DISTINCT people rewritten in that one response.
+
+`findScreenshotBackendProblems(logText, { mode })` turns that log into the list a
+capture run should fail on — one line per distinct problem, repeats collapsed
+into `×N`, each line ending in the fix. Replay fails on any `MISS`, and on a log
+with no `HIT graphql` at all (the app never reached the backend, even if it did
+authenticate). Record is *allowed* to miss — that is what recording is — so it
+fails only on `UPSTREAM-ERROR`, `MISS route` and `MISS auth`.
+
+## Running a capture against fixtures
+
+The orchestrator owns the backend's lifecycle: `--fixtures replay|record` starts
+it once per platform run, points the JS bundle at it, and stops it in the same
+`finally` that stops Metro.
+
+```
+vp run mobile:screenshots -- --fixtures replay --platform ios --devices common --locales all
+vp run mobile:screenshots -- --fixtures record --backend prod --platform ios --devices common --locales en-US --fresh
+```
+
+| Flag | What it does |
+| --- | --- |
+| `--fixtures off` | the default; the app talks to `--backend` and nothing changes |
+| `--fixtures record` | proxy `--backend` and write down every answer |
+| `--fixtures replay` | serve the recorded set; no outbound request is made |
+| `--fixtures-dir <path>` | where the set lives (default `packages/mobile/screenshot-fixtures`, relative to the repo root) |
+| `--fresh` | record only; discard the existing set first (consumed once per PROCESS — a `--platform all` run starts a backend per platform, and only the first one gets `--fresh`, so the second platform doesn't wipe the first's recording) |
+| `--frozen-now <iso>` | record only; override the minted instant instead of using now-to-the-second. Validated as a parseable ISO instant. Optional even for a multi-shard recording — the merge takes the max regardless (see "Recording a set" above). |
+
+`--backend` keeps its old meaning throughout: it names the UPSTREAM. A recording
+proxies it, a replay ignores it.
+
+With `--fixtures` on, Metro is started with
+
+```
+EXPO_PUBLIC_BACKEND_URL=http://localhost:8090
+EXPO_PUBLIC_WS_URL=ws://localhost:8090/graphql
+EXPO_PUBLIC_SCREENSHOT_NOW=<the set's frozenNow>
+```
+
+overriding whatever `--backend` would have set (`BOARDSESH_SCREENSHOT_BACKEND_PORT`
+moves the port). `EXPO_PUBLIC_WEB_URL` is deliberately left alone: the app's
+`/static/*` reads go through `EXPO_PUBLIC_BACKEND_URL`, not the web URL, which
+instead serves dev-only thumbnail routes and share links — redirecting it would
+make a `--backend local` fixtures capture fail on `MISS route` for every one of
+those, and would bake `localhost` share URLs into the bundle. On Android the
+backend port is reversed onto the emulator alongside Metro's, and `--fixtures`
+requires `--dev-client` — a standalone APK bakes its backend URL in at build
+time and cannot be redirected.
+
+### The frozen clock
+
+`frozenNow` is read from the manifest on a replay and minted (now, to the second,
+or overridden with `--frozen-now`) on a recording, and it reaches the app as
+`EXPO_PUBLIC_SCREENSHOT_NOW`. The app logs which clock it ended up on at boot:
+
+```
+[screenshot] clock: frozen at 2026-09-08T12:00:00.000Z
+[screenshot] clock: live
+```
+
+A capture fails, in EITHER mode, if that line says `live`, names an instant
+other than this run's frozen instant, or never appears — a bundle on the wall
+clock reading frozen bodies produces a complete, plausible store set whose
+relative timestamps drift a little further from the fixtures every day. Record
+mode carries a `frozenNow` too (minted, or overridden with `--frozen-now`), so
+there is always something for the app's boot line to be checked against.
+
+**The minted/overridden instant is a FLOOR, not the value the set ships with.**
+A recording is a long unattended run — one shard alone can take 20+ minutes —
+so an instant fixed at the START can end up earlier than a response recorded
+near the end; replaying that response would then render its own wall-clock
+content (a tick's `firstTickAt`, a session's timestamp) as being in the future.
+The app keeps running on the start instant for the whole recording (that run's
+own screenshots are not the product, so this never matters to what's on
+screen), but every time the backend writes the manifest it bumps the PERSISTED
+`frozenNow` past the newest response recorded so far — so nothing recorded ever
+renders in the future. `vp run mobile:screenshot-fixtures-merge` re-derives this
+per shard too before taking the max across every input (see "Recording a set"
+below), so a pre-fix or hand-edited input set can't slip through either.
+
+Timezone is pinned to UTC on both platforms, so a local capture and a CI capture
+derive the same calendar day from the same instant: iOS launches the app with
+`SIMCTL_CHILD_TZ=UTC`, and the emulator boots with `-timezone UTC` (in
+`mobile-screenshots-android.yml` for CI, `scripts/lib/android-emulator.ts`
+locally).
+
+### The miss gate
+
+After Maestro, the run reads the backend log from a per-capture baseline (one
+backend serves every device and locale, so the slice keeps device 2 from failing
+on device 1's misses) and prints each problem `findScreenshotBackendProblems`
+returns as
+
+```
+[mobile:screenshots] FAILED: no recorded response for GetClimb (variables 3f2a1b9c0d11 = {"boardName":"kilter","uuid":"…"}) — re-record with `…`
+```
+
+The variables of the FIRST occurrence of each problem are printed with it;
+repeats still collapse into `×N`.
+
+On a failed capture the orchestrator copies the backend log into
+`SCREENSHOT_DEBUG_DIR` as `screenshot-backend.log` (both platforms — see
+`preserveFailedRunArtifacts` in `scripts/mobile-screenshots.ts`), so the CI
+debug artifact carries the one file that says what the app actually asked for.
+The log itself lives in the OS temp dir, which no artifact upload sees.
+
+Any problem fails the run. A record run instead prints what it captured — new
+responses, the set's totals, hits and misses — and fails if any fixture was
+refused for carrying a live auth token, since that leaves a hole the NEXT
+capture would only discover as a replay miss.
+
+## Recording a set
+
+**Every list stops after its first page in screenshot mode.** How far a
+list pages is timing-dependent — against a live backend the flow moves on before
+much has prefetched, against an instant replay backend it scrolls further — so
+`screenshotModeNextPageParam` (`packages/mobile/src/lib/screenshot-mode.ts`)
+returns `undefined` for every page after the first while
+`EXPO_PUBLIC_SCREENSHOT_MODE` is on. A store screenshot never shows page two,
+and `hasNextPage` goes false with the param, so every `onEndReached` downstream
+stops firing too. The two lists behind `PlaylistDetailView` are capped at that
+component instead, because their hooks live in the renderer-agnostic
+`@boardsesh/playlists-react`, which web also consumes and which must not read a
+mobile build flag.
+
+A list that pages itself rather than through React Query —
+`useDiscoverPlaylists`, `useUserPlaylists`, `useUserBetaLinks`, each exposing a
+`loadMore` an `onEndReached` calls — is wrapped at the call site with
+`screenshotModeLoadMore`, which returns a shared no-op in screenshot mode. The
+drift test scans the source for a `useInfiniteQuery(` with no
+`screenshotModeNextPageParam` beside it, so a new list cannot quietly skip the
+cap; the two `@boardsesh/playlists-react` hooks are on its allowlist because
+`PlaylistDetailView` wraps its own end-reach handler in `screenshotModeLoadMore`
+instead.
+
+**The workout generator's shuffle is seeded in screenshot mode.** Its candidate
+pool is shuffled per grade and a refresh re-rolls a row out of it, so on
+`Math.random` the preview picks different climbs every run — the shot is not
+byte-stable, and the app asks the replay backend for stats on climbs the
+recording never fetched. `screenshotModeRandom()`
+(`packages/mobile/src/lib/screenshot-mode.ts`) hands `shuffleInPlace` /
+`pickRandomUnused` a `mulberry32` generator seeded from
+`SCREENSHOT_RANDOM_SEED`, fresh per call so no draw depends on how many came
+before it. **Moving that seed invalidates the recorded set** — the generator
+picks different climbs, and their stats were never recorded. Change it only
+alongside a re-record.
+
+A set recorded after this change therefore holds only first pages. The extra
+pages in the published set (`GetSessionGroupedFeed` up to cursor `{"o":60}`,
+`SearchClimbs` up to page 2) are harmless — they are simply never asked for.
+
+The same is true of the old per-row `ClimbStatsForClimbs` batches: a set recorded
+after the whole-list prefetch holds one wide batch per board instead, and the
+narrow ones left over from before just go unused.
+
+Record through the capture workflows, or a local Android emulator, then merge the shards.
+
+1. Dispatch **Mobile Screenshots (iOS)** with `fixtures = record` and
+   `locales = en-US`. Each shard records only its own traffic and uploads it as
+   `screenshot-fixtures-<job>-<locale>-<device-slug>` (7-day retention). Both capture
+   workflows expose an optional `frozen_now` dispatch input (an ISO instant;
+   empty mints one) that threads through to the backend's `--frozen-now` — this
+   is the START instant each shard runs on, not the final manifest value (see
+   "The frozen clock" above); set it the same on both dispatches if you want
+   every shard to start from the same instant, though it is optional: the merge
+   below takes the max of each shard's own FINALIZED `frozenNow` regardless.
+2. Dispatch **Mobile Screenshots (Android)** with `fixtures = record`. It uploads
+   `screenshot-fixtures-android`.
+3. Download every `screenshot-fixtures-*` artifact and unpack each into its own
+   directory.
+4. Fold them into one set:
+
+   ```
+   vp run mobile:screenshot-fixtures-merge -- --out packages/mobile/screenshot-fixtures ./artifacts/screenshot-fixtures-*
+   ```
+
+   The merge clears `graphql/`, `static/` and `manifest.json` under `--out`
+   first (bounded exactly like the backend's `--fresh`), so a key a re-record
+   stopped producing cannot linger as an orphan nothing replays.
+
+   The merge is a union. When two shards recorded the same key, their CONTENT
+   must be identical — a conflict is a CONTENT difference, never a
+   `recordedAt` difference. Every `graphql/<Op>/<hash>.json` fixture carries
+   its own top-level `recordedAt`, and shards recorded minutes apart from
+   live data will always disagree on that even when the response underneath
+   is identical, so it never counts. A genuine content difference IS real —
+   shards recorded minutes apart will legitimately disagree on a live feed
+   someone wrote to between recordings, or a counter that moved — and by
+   default (`--on-conflict fail`) the merge fails naming the key rather than
+   silently picking a winner, so that difference is always seen once.
+   `--on-conflict newest` is the documented resolution: it keeps whichever
+   shard recorded the key LATER (the newest data sits closest to the merged
+   set's frozen instant, itself the maximum `frozenNow` across every shard —
+   see below) and logs each resolution as a `CONFLICT` line naming the key,
+   which shard won, and both `recordedAt` instants. It also refuses sets
+   recorded as different accounts (`accountEmail` or `accountUserId`), against
+   different upstreams, or from different flows, and refuses any shard whose
+   `accountUserId` is empty (it never signed in, so nothing in it is trustworthy).
+   `upstream`, `accountEmail`, `accountUserId` and `flow` come from the first
+   input — the checks above already required every shard to agree on them.
+   `frozenNow` and `recordedAt`, instead, take the MAXIMUM across every input —
+   and before that max, each input's `frozenNow` is independently re-derived
+   against its own recorded responses (belt and braces on top of what the
+   backend already did while recording), so an input whose manifest carries a
+   `frozenNow` earlier than one of its own entries still can't win the max.
+   Recording several shards on the same instant (via `--frozen-now` /
+   `frozen_now`, above) is optional, since the merge takes care of this
+   regardless — this is what keeps a shard's own recorded data from rendering
+   as being from the future relative to the merged set's frozen "now".
+5. Publish the sanitized set and commit only its reference:
+
+   ```
+   vp run mobile:screenshot-fixtures-publish
+   ```
+
+   The command updates `app-stores/screenshot-fixtures.json` after verifying the
+   public upload. `packages/mobile/screenshot-fixtures/` stays ignored.
+
+Both workflows' `fixtures` input now defaults to `replay`, so an ordinary
+dispatch captures against the published set — CI never talks to PROD unless a
+dispatch explicitly asks it to. To refresh the set, dispatch again with
+`fixtures = record`, re-run steps 3-5 above, and commit the updated reference. `fixtures =
+live` is the old direct-to-PROD path (no fixtures at all), kept as an escape
+hatch for debugging against real data.
+
+### Refresh cadence and history
+
+**Re-record only when something forces it.** Two things do: the drift test fails
+(a document moved, or a recorded response no longer covers the current
+selection), or a screen in the store flow changed enough that its screenshots
+are wrong. Nothing else — not a stale-looking date, not a feed that has moved on
+in PROD. A replay capture is deterministic precisely because the set does not
+drift underneath it, and a re-record for its own sake costs a CI recording run
+and a fresh round of determinism checking.
+
+**A refresh publishes another immutable snapshot.** The local merge replaces its
+working files; publishing creates a content-hashed object and updates the small
+reference. Older checkouts retain their own reference and replay their own bytes.
+No recorded mock responses or binary assets are added to Git history.
+
+## The drift test
+
+`packages/mobile/src/lib/graphql/__tests__/screenshot-fixture-drift.test.ts` runs
+on every PR and keeps the published set honest. Its registry is every document
+the app can send: `packages/mobile/src/lib/graphql/operations.ts`, the operations
+mobile imports from `@boardsesh/graphql/operations*` (read out of source, so a
+padded namespace import can't weaken the check), and `listSyncPullDocuments()`.
+The source scan covers `packages/mobile/src` and `packages/mobile/app`, plus
+the `src` directory of every `@boardsesh/*-react` package mobile depends on
+(`packages/mobile/package.json`, resolved to `packages/shared/<name>/src`) —
+a shared hook package sends documents too (`@boardsesh/board-react`'s
+`use-logbook.ts` sends `GetTicks`, `@boardsesh/playlists-react` sends the
+playlist queries), so scanning only the two mobile roots would miss them.
+
+It asserts:
+
+- every one of those documents parses and validates against the shared schema —
+  a check nothing else did for mobile's own operations;
+- every manifest entry names an operation the app still sends, at the document
+  hash it was recorded with;
+- every fixture's `documentHash` / `variablesHash` recompute from its own `query`
+  and `variables`, so a hand-edited file is caught;
+- every field the current document selects is present in the recorded response
+  (`checkSelectionCoverage` beside the test walks the selection set — aliases are
+  response keys, lists recurse per element, a null parent is a complete answer,
+  `@skip`/`@include` are read off the fixture's variables, and an inline fragment
+  applies only when `__typename` says it does);
+- the store flow's spine — `GetProfile`, `GetMyBoards`, `SearchClimbs`,
+  `GetClimb`, `GetSessionGroupedFeed` — has a fixture;
+- no fixture holds a real person's name, handle, avatar or email for anyone but
+  the recording account (see "What is pseudonymised"). Of every failure in that
+  list this is the only one a re-record cannot undo — by the time it is noticed
+  the name is already in the public snapshot.
+
+Everything past the first bullet skips itself while there is no `manifest.json`.
+
+### When it fails
+
+- **"was recorded from a … document the app no longer sends"** — the query text
+  moved. Re-record.
+- **"is missing …, which the current … document selects"** — either the backend
+  stopped returning that field (fix the backend, then re-record) or the document
+  grew one after the set was recorded (re-record).
+- **"the file was edited by hand"** — a fixture's bytes and its hashes disagree.
+  Revert the edit or re-record; never patch a fixture by hand, the replay lookup
+  is keyed on those hashes.
+- **"still holds a real person's data at …"** — a fixture carries a real
+  climber's name, handle, avatar or email. Run
+  `vp run mobile:screenshot-fixtures-pseudonymise` and publish the sanitized snapshot; if the
+  set was recorded with `--no-pseudonymise`, do not publish it at all.
+- **"which the app no longer sends"** — a stale fixture for a deleted operation.
+  Delete it, or re-record with `--fresh`.
+- **"Mobile imports from …, which this test does not read"** — someone imported
+  from a new `@boardsesh/graphql/operations/*` module. Add it to
+  `SHARED_OPERATION_MODULES` in the test.
+- **"imports a namespace import / a default import / a re-export"** — someone
+  imported `@boardsesh/graphql/operations*` in a form the registry can't scan
+  (`import * as …`, a bare default import, or `export { … } from`). Rewrite it
+  as a named `import { … } from '@boardsesh/graphql/operations...'`.
+
+Re-recording always means the whole loop above, not a partial run: merging a
+freshly re-recorded shard against shards left over from an earlier session
+folds each shared key by CONTENT, not by when it was recorded — but a key
+behind a live feed or a counter genuinely can move between two recording
+sessions, and that surfaces as a real conflict (the merge's default fails
+naming it; `--on-conflict newest` would keep the fresher copy, but the other
+un-re-recorded shards' overlapping keys are still frozen at a stale instant).

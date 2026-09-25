@@ -1,21 +1,21 @@
 import { PostHog, type PostHogOptions } from 'posthog-react-native';
 import { getAnalyticsBootstrapId } from './analytics-bootstrap-id';
+import { resolveAnalyticsUserAgent } from './analytics-user-agent';
 import { resolveAppEnvironment } from './app-environment';
 
-// PostHog flags events with an empty User-Agent as bots, and the RN SDK sends no
-// UA it stores — so without this, real mobile traffic hides behind the bot filter.
-// Static, non-bot constant (not `react-native` Platform) to keep the RN Flow
-// barrel out of this module's graph, which would break the node-env test runner.
-export const MOBILE_USER_AGENT = 'Boardsesh Mobile';
-
-// Registers the non-bot User-Agent as a super property on every event. Exported
-// so the call site is unit-testable: getPostHogClient() returns null before
-// reaching its own call to this whenever analytics is disabled (no token, or
-// __DEV__ — both hold in the test env), so the live path can't run in tests.
-// Best-effort: a failure must never block analytics init.
+// Registers the User-Agent as a super property on every event: the static,
+// non-bot app constant on native, the real browser UA in the Expo browser app
+// (see analytics-user-agent.web.ts), and nothing at all when that browser has
+// no UA, so PostHog flags the event as it does on www. Exported so the call site is unit-testable:
+// getPostHogClient() returns null before reaching its own call to this whenever
+// analytics is disabled (no token, or __DEV__ — both hold in the test env), so
+// the live path can't run in tests. Best-effort: a failure must never block
+// analytics init.
 export function registerMobileUserAgent(client: Pick<PostHog, 'register'>): void {
+  const userAgent = resolveAnalyticsUserAgent();
+  if (!userAgent) return;
   try {
-    void Promise.resolve(client.register({ $raw_user_agent: MOBILE_USER_AGENT })).catch((error: unknown) => {
+    void Promise.resolve(client.register({ $raw_user_agent: userAgent })).catch((error: unknown) => {
       if (__DEV__) console.warn('[analytics] failed to register $raw_user_agent super property', error);
     });
   } catch (error) {

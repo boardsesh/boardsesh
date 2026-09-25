@@ -7,6 +7,7 @@ import type {
   ControllerQueueItem,
   ControllerQueueSync,
   ClimbQueueItem,
+  QueueEvent,
 } from '@boardsesh/shared-schema';
 import { buildBoardPath } from '@boardsesh/board-config';
 import { logger } from '../../../utils/logger';
@@ -16,6 +17,7 @@ import { eq } from 'drizzle-orm';
 import { pubsub } from '../../../pubsub/index';
 import { roomManager } from '../../../services/room-manager';
 import { createAsyncIterator } from '../shared/async-iterators';
+import { withSubscriptionCleanup } from '../shared/managed-subscription';
 import { getLedPlacements } from '@boardsesh/board-constants/led-placements';
 import {
   accumulateFramesToMaps,
@@ -134,7 +136,8 @@ export const controllerSubscriptions = {
    * 4. Send periodic pings to keep connection alive
    */
   controllerEvents: {
-    subscribe: async function* (
+    subscribe: withSubscriptionCleanup(async function* (
+      lifetime,
       _: unknown,
       { sessionId }: { sessionId: string },
       ctx: ConnectionContext,
@@ -216,64 +219,30 @@ export const controllerSubscriptions = {
         };
       };
 
-      // Create subscription to queue events
-      const asyncIterator = await createAsyncIterator<ControllerEvent>((push) => {
-        // Event queue to ensure events are processed and sent in order
-        // This prevents race conditions where QueueSync and LedUpdate arrive out of order
-        let eventQueue: Promise<void> = Promise.resolve();
-
-        // Subscribe to queue updates for this session
-        return pubsub.subscribeQueue(sessionId, (queueEvent) => {
-          // Handle queue modification events - send ControllerQueueSync
-          if (
-            queueEvent.__typename === 'QueueItemAdded' ||
-            queueEvent.__typename === 'QueueItemRemoved' ||
-            queueEvent.__typename === 'QueueReordered'
-          ) {
-            // Queue the async work to ensure ordering
-            eventQueue = eventQueue.then(async () => {
-              try {
-                const queueState = await roomManager.getQueueState(sessionId);
-                const queueSync = buildControllerQueueSync(queueState.queue, queueState.currentClimbQueueItem?.uuid);
-                push(queueSync);
-              } catch (error) {
-                logger.error(`[Controller] Error building queue sync:`, error);
-              }
-            });
-            return;
-          }
-
-          // Handle current climb changes and full sync
-          // Always send LedUpdate with clientId - ESP32 uses clientId to decide whether to disconnect BLE client
-          if (queueEvent.__typename === 'CurrentClimbChanged' || queueEvent.__typename === 'FullSync') {
-            // Extract clientId from the event (null for FullSync or system-initiated changes)
-            const eventClientId = queueEvent.__typename === 'CurrentClimbChanged' ? queueEvent.clientId : null;
-            const eventFrames = queueEvent.__typename === 'CurrentClimbChanged' ? queueEvent.frames : null;
-
-            const currentItem =
-              queueEvent.__typename === 'CurrentClimbChanged'
-                ? queueEvent.item
-                : queueEvent.state.currentClimbQueueItem;
-            const climb = currentItem?.climb;
-
-            // Queue the async work to ensure ordering
-            eventQueue = eventQueue.then(async () => {
-              try {
-                if (climb) {
-                  const ledUpdate = await buildLedUpdateWithNavigation(climb, currentItem?.uuid, eventClientId);
-                  push(ledUpdate);
-                } else {
-                  // No climb - could be clearing or unknown climb
-                  const ledUpdate = await buildLedUpdateWithNavigation(null, undefined, eventClientId, eventFrames);
-                  push(ledUpdate);
-                }
-              } catch (error) {
-                logger.error(`[Controller] Error building LED update:`, error);
-              }
-            });
-          }
-        });
-      });
+      // Queue raw events in the bounded iterator. Transform only when pulled,
+      // so slow queue reads cannot accumulate an unbounded chain of promises.
+      const asyncIterator = await lifetime.own(
+        createAsyncIterator<QueueEvent>(
+          (push) =>
+            pubsub.subscribeQueue(sessionId, (event) => {
+              // Playback/presence noise must not evict a pending LED change.
+              if (
+                event.__typename === 'QueueItemAdded' ||
+                event.__typename === 'QueueItemRemoved' ||
+                event.__typename === 'QueueReordered' ||
+                event.__typename === 'CurrentClimbChanged' ||
+                event.__typename === 'FullSync'
+              )
+                push(event);
+            }),
+          `controllerEvents:${sessionId}`,
+          {
+            // Queue-only churn must not evict the latest pending LED state
+            // while a preceding queue lookup is slow. Clearing is LED state too.
+            isPriority: (event) => event.__typename === 'CurrentClimbChanged' || event.__typename === 'FullSync',
+          },
+        ),
+      );
 
       // Send initial queue sync first (so ESP32 has queue state before LED update)
       const initialQueueState = await roomManager.getQueueState(sessionId);
@@ -296,7 +265,35 @@ export const controllerSubscriptions = {
       let lastSeenUpdate = Date.now();
       const LAST_SEEN_INTERVAL_MS = 60_000;
 
-      for await (const event of asyncIterator) {
+      for await (const queueEvent of asyncIterator) {
+        let event: ControllerEvent;
+        try {
+          if (
+            queueEvent.__typename === 'QueueItemAdded' ||
+            queueEvent.__typename === 'QueueItemRemoved' ||
+            queueEvent.__typename === 'QueueReordered'
+          ) {
+            const queueState = await roomManager.getQueueState(sessionId);
+            event = buildControllerQueueSync(queueState.queue, queueState.currentClimbQueueItem?.uuid);
+          } else if (queueEvent.__typename === 'CurrentClimbChanged' || queueEvent.__typename === 'FullSync') {
+            const currentItem =
+              queueEvent.__typename === 'CurrentClimbChanged'
+                ? queueEvent.item
+                : queueEvent.state.currentClimbQueueItem;
+            event = await buildLedUpdateWithNavigation(
+              currentItem?.climb,
+              currentItem?.uuid,
+              queueEvent.__typename === 'CurrentClimbChanged' ? queueEvent.clientId : null,
+              queueEvent.__typename === 'CurrentClimbChanged' ? queueEvent.frames : null,
+            );
+          } else {
+            continue;
+          }
+        } catch (error) {
+          logger.error('[Controller] Error building controller event:', error);
+          continue;
+        }
+        if (lifetime.closed) return;
         // Update lastSeenAt periodically (fire-and-forget, non-blocking)
         const now = Date.now();
         if (now - lastSeenUpdate > LAST_SEEN_INTERVAL_MS) {
@@ -309,7 +306,7 @@ export const controllerSubscriptions = {
 
         yield { controllerEvents: event };
       }
-    },
+    }),
   },
 };
 

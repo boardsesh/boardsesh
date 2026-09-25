@@ -33,13 +33,256 @@
         flex: 1;
         background-color: #000000;
       }
+
+      /* Boot paint. Everything below draws the loading state that #boot-paint
+         renders, and none of it survives first commit: Expo's web entry takes
+         the createRoot() branch (hydrate is only set by static rendering, and
+         this app is web.output 'single'), and createRoot clears the container's
+         existing children before it mounts. So this is a pure placeholder — no
+         teardown code, no extra request. (The one script in <head> never
+         touches it; its failure panel is a separate overlay, see below.)
+
+         Why it exists: the shell paints #000000 and #root was empty, so the page
+         was a black rectangle for as long as the JS bundle took to arrive and
+         evaluate. On a cold cache over mobile data that is tens of seconds, and
+         it reads as a broken app rather than a loading one. The shell is ~2 KB
+         and deliberately not immutable-cached, so it lands in one round trip. */
+      #boot-paint {
+        display: flex;
+        flex: 1;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 18px;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      }
+      #boot-paint b {
+        font-size: 19px;
+        font-weight: 600;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: #f4f1fb;
+      }
+      #boot-paint i {
+        display: block;
+        width: 132px;
+        height: 2px;
+        border-radius: 2px;
+        background-color: #2f234a;
+        overflow: hidden;
+      }
+      #boot-paint i::after {
+        content: '';
+        display: block;
+        width: 40%;
+        height: 100%;
+        border-radius: 2px;
+        background-color: #a78bfa;
+        animation: boot-paint-sweep 1.1s ease-in-out infinite;
+      }
+      @keyframes boot-paint-sweep {
+        0% {
+          transform: translateX(-100%);
+        }
+        100% {
+          transform: translateX(330%);
+        }
+      }
+      /* An indeterminate bar that never resolves is a vestibular trigger, and
+         this one can run for half a minute on a cold load. Hold it still and let
+         the wordmark carry the "loading" signal instead. */
+      @media (prefers-reduced-motion: reduce) {
+        #boot-paint i::after {
+          animation: none;
+          width: 100%;
+          opacity: 0.55;
+        }
+      }
+      /* The boot-failure panel the chunk-recovery script below paints. A fixed
+         overlay appended to <body>, never inside #root, so it cannot fight
+         React over the container; markRootLayoutLoaded() removes it. */
+      #boot-failure {
+        position: fixed;
+        inset: 0;
+        z-index: 2147483647;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 18px;
+        padding: 0 16px;
+        background-color: #000000;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      }
+      #boot-failure b {
+        font-size: 19px;
+        font-weight: 600;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: #f4f1fb;
+      }
+      #boot-failure p {
+        margin: 0;
+        max-width: 280px;
+        text-align: center;
+        font-size: 15px;
+        line-height: 1.4;
+        color: #f4f1fb;
+        opacity: 0.7;
+      }
+      #boot-failure button {
+        min-height: 44px;
+        padding: 0 24px;
+        border: 0;
+        border-radius: 12px;
+        background-color: #6d28d9;
+        color: #ffffff;
+        font: inherit;
+        font-weight: 700;
+      }
     </style>
+    <!-- Root-layout chunk recovery (#5611). Every route, the root _layout
+         included, is its own content-hashed chunk. When the ROOT layout chunk
+         fails to load, the error boundary that recovers every other route never
+         exists (it lives in that chunk), and the failure surfaces only as an
+         unhandled AsyncRequireError (expo-router loads every layout eagerly and
+         drops the promise).
+
+         The root layout sets window.__BOARDSESH_ROOT_LAYOUT_LOADED__ as it
+         evaluates (markRootLayoutLoaded in src/lib/chunk-load-recovery.web.ts).
+         While that flag is unset, this listener first sends a HEAD for the
+         failed chunk (3 s). Only an HTTP answer earns a reload, under the same
+         sessionStorage guard as that module: same keys, one reload per 60 s,
+         three per tab. No answer (captive portal, origin outage, a flaky in-app
+         browser that still claims to be online) means a reload would land on
+         the browser's network-error page, so it keeps the shell and does not
+         spend the guard. Whenever it may not reload (offline, no answer, guard
+         spent, storage blocked), it paints a Reload button over the page
+         instead of leaving it black. ES5 only: old in-app browsers run this
+         before any polyfill. Once the flag is set, the boundary owns every chunk failure and
+         this stands down. Kept inline because it has to run before the entry
+         bundle it guards; any CSP on the app subdomain must allow it
+         (deploy/app-subdomain/README.md). -->
+    <script>
+      (function () {
+        var GUARD_KEY = 'boardsesh:chunk-reload-at';
+        var COUNT_KEY = 'boardsesh:chunk-reload-count';
+        var WINDOW_MS = 60000;
+        var MAX_PER_TAB = 3;
+        function claimAutoReload() {
+          try {
+            var now = Date.now();
+            var count = Number(sessionStorage.getItem(COUNT_KEY)) || 0;
+            if (count >= MAX_PER_TAB) return false;
+            var last = Number(sessionStorage.getItem(GUARD_KEY));
+            if (last > 0 && now - last < WINDOW_MS) return false;
+            sessionStorage.setItem(GUARD_KEY, String(now));
+            sessionStorage.setItem(COUNT_KEY, String(count + 1));
+            return (
+              sessionStorage.getItem(GUARD_KEY) === String(now) &&
+              sessionStorage.getItem(COUNT_KEY) === String(count + 1)
+            );
+          } catch (storageError) {
+            return false;
+          }
+        }
+        var CHUNK_FAILURE_MESSAGE = /^Loading module (\S+) failed\./;
+        var PROBE_TIMEOUT_MS = 3000;
+        var MESSAGES = {
+          offline: "You're offline. Reconnect, then reload.",
+          unreachable: "Couldn't reach Boardsesh. Check your connection, then reload.",
+          exhausted: "Boardsesh didn't load. Reload to try again.",
+        };
+        var probing = false;
+        // Same reading as readChunkUrl in chunk-load-recovery.web.ts.
+        function readChunkUrl(reason) {
+          if (typeof reason.request === 'string' && reason.request) return reason.request;
+          var match = typeof reason.message === 'string' ? CHUNK_FAILURE_MESSAGE.exec(reason.message) : null;
+          return match ? match[1] : null;
+        }
+        // Ask the origin for the failed chunk again. Any HTTP answer (a 404 from
+        // a deploy that removed it, or a live chunk that simply did not arrive)
+        // means a reload can reach a fresh shell; no answer means a reload would
+        // land on the browser's network-error page, so keep this one instead.
+        function probeChunk(url, done) {
+          var settled = false;
+          function settle(answered) {
+            if (settled) return;
+            settled = true;
+            done(answered);
+          }
+          if (typeof fetch !== 'function') return settle(false);
+          var controller = typeof AbortController === 'function' ? new AbortController() : null;
+          setTimeout(function () {
+            if (controller) controller.abort();
+            settle(false);
+          }, PROBE_TIMEOUT_MS);
+          var init = { method: 'HEAD', cache: 'no-store' };
+          if (controller) init.signal = controller.signal;
+          function onAnswer() {
+            settle(true);
+          }
+          function onNoAnswer() {
+            settle(false);
+          }
+          fetch(url, init).then(onAnswer, onNoAnswer);
+        }
+        function showPanel(kind) {
+          var panel = document.getElementById('boot-failure');
+          if (!panel) {
+            panel = document.createElement('div');
+            panel.id = 'boot-failure';
+            panel.setAttribute('role', 'alert');
+            var wordmark = document.createElement('b');
+            wordmark.textContent = 'Boardsesh';
+            var reloadButton = document.createElement('button');
+            reloadButton.type = 'button';
+            reloadButton.textContent = 'Reload';
+            reloadButton.addEventListener('click', function () {
+              window.location.reload();
+            });
+            panel.appendChild(wordmark);
+            panel.appendChild(document.createElement('p'));
+            panel.appendChild(reloadButton);
+            document.body.appendChild(panel);
+          }
+          panel.setAttribute('data-kind', kind);
+          panel.getElementsByTagName('p')[0].textContent = MESSAGES[kind];
+        }
+        window.addEventListener('unhandledrejection', function (event) {
+          var reason = event && event.reason;
+          if (!reason || reason.name !== 'AsyncRequireError') return;
+          if (window.__BOARDSESH_ROOT_LAYOUT_LOADED__ === true) return;
+          if (navigator.onLine === false) return showPanel('offline');
+          // expo-router loads every layout at once, so one outage rejects
+          // several chunks together: one probe answers for all of them.
+          if (probing) return;
+          var chunkUrl = readChunkUrl(reason);
+          if (!chunkUrl) return showPanel('unreachable');
+          probing = true;
+          probeChunk(chunkUrl, function (answered) {
+            probing = false;
+            if (window.__BOARDSESH_ROOT_LAYOUT_LOADED__ === true) return;
+            if (!answered) return showPanel('unreachable');
+            if (claimAutoReload()) return window.location.reload();
+            showPanel('exhausted');
+          });
+        });
+      })();
+    </script>
   </head>
 
   <body>
     <!-- Use static rendering with Expo Router to support running without JavaScript. -->
     <noscript> You need to enable JavaScript to run this app. </noscript>
-    <!-- The root element for your Expo app. -->
-    <div id="root"></div>
+    <!-- The root element for your Expo app. Its children are the pre-JS loading
+         state (see #boot-paint in the stylesheet above); React drops them on
+         first commit. -->
+    <div id="root">
+      <div id="boot-paint">
+        <b>Boardsesh</b>
+        <i></i>
+      </div>
+    </div>
   </body>
 </html>

@@ -34,13 +34,23 @@ export function useWallStateAnnouncer({
   pillState: WallPillState;
   /** The displayed climb's name — rides the commit / back-to-live sentences. */
   climbName: string | null;
-}): { markLatchExit: (exit: WallLatchExit) => void } {
+}): { markLatchExit: (exit: WallLatchExit) => void; suppressBrowseAnnouncement: () => void } {
   const { t } = useTranslation('session');
   const previousStateRef = useRef<WallPillState | undefined>(undefined);
   const exitRef = useRef<WallLatchExit | null>(null);
+  const suppressBrowseRef = useRef(false);
 
   const markLatchExit = useCallback((exit: WallLatchExit) => {
     exitRef.current = exit;
+  }, []);
+
+  // The one-shot joined-a-crew notice says the same thing as the browse sentence,
+  // in more words, at the same moment — so when the host shows it, it speaks and
+  // this stands down. Checked at fire time rather than at schedule time because
+  // the host claims the notice in a LATER effect of the same commit: by then this
+  // effect has already scheduled its announcement.
+  const suppressBrowseAnnouncement = useCallback(() => {
+    suppressBrowseRef.current = true;
   }, []);
 
   const sentences = useMemo(
@@ -62,14 +72,19 @@ export function useWallStateAnnouncer({
     previousStateRef.current = pillState;
     const exit = exitRef.current;
     exitRef.current = null;
+    // A new transition, so any suppression left over from the last one is spent.
+    suppressBrowseRef.current = false;
 
     const announcement = resolveWallStateAnnouncement({ previous, next: pillState, exit });
     if (announcement === null) return;
 
     const text = sentencesRef.current[announcement];
-    const handle = setTimeout(() => AccessibilityInfo.announceForAccessibility(text), ANNOUNCE_DEBOUNCE_MS);
+    const handle = setTimeout(() => {
+      if (announcement === 'browse' && suppressBrowseRef.current) return;
+      AccessibilityInfo.announceForAccessibility(text);
+    }, ANNOUNCE_DEBOUNCE_MS);
     return () => clearTimeout(handle);
   }, [pillState]);
 
-  return { markLatchExit };
+  return { markLatchExit, suppressBrowseAnnouncement };
 }

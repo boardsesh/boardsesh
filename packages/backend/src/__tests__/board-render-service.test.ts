@@ -172,6 +172,44 @@ describe('board renderer memory and concurrency core', () => {
     expect(service.buildBoardRenderByteCacheKey(versionAlias)).toBe(baseKey);
   });
 
+  it('keys OG cards by the identity drawn on them', () => {
+    const og = { ...standardParams, isOgVariant: true };
+    const withName = { ...og, card: { name: 'BING BANG BOSH', grade: '7a/V6' } };
+    const otherName = { ...og, card: { name: 'Small Cheese', grade: '7a/V6' } };
+
+    expect(service.buildBoardRenderByteCacheKey(withName)).not.toBe(service.buildBoardRenderByteCacheKey(og));
+    expect(service.buildBoardRenderByteCacheKey(withName)).not.toBe(service.buildBoardRenderByteCacheKey(otherName));
+  });
+
+  it('cannot collide across a different split of the same identity fields', () => {
+    // The key is ':'-joined and a climb name may contain a colon. Hashing the
+    // fields as structured data is what stops "7a: the sequel" with no setter
+    // from keying identically to a different name/setter split.
+    const og = { ...standardParams, isOgVariant: true };
+    const oneWay = { ...og, card: { name: '7a', setter: 'the sequel' } };
+    const otherWay = { ...og, card: { name: '7a:the sequel', setter: undefined } };
+
+    expect(service.buildBoardRenderByteCacheKey(oneWay)).not.toBe(service.buildBoardRenderByteCacheKey(otherWay));
+  });
+
+  it('keys a card with only blank identity fields as one with none', () => {
+    const og = { ...standardParams, isOgVariant: true };
+
+    expect(service.buildBoardRenderByteCacheKey({ ...og, card: { name: '', setter: '' } })).toBe(
+      service.buildBoardRenderByteCacheKey(og),
+    );
+  });
+
+  it('leaves non-OG board-render keys unchanged by card text', () => {
+    // `/render/board` never draws the column, so its cached bytes must not be
+    // invalidated by a card param riding along on the params object.
+    const standard = service.buildBoardRenderByteCacheKey(standardParams);
+
+    expect(service.buildBoardRenderByteCacheKey({ ...standardParams, card: { name: 'BING BANG BOSH' } })).toBe(
+      standard,
+    );
+  });
+
   it('keys an unnamed field colour the same as an explicit light one', () => {
     // Both draw the same pixels — the light field is what "unset" means — so
     // minting two cache entries for them would be paying twice for one render.

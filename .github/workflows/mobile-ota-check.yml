@@ -3,11 +3,12 @@ name: Mobile OTA Compatibility (PR Signal)
 # A fast, reliable PR signal: does this mobile change ride over-the-air on
 # existing app binaries, or does it force a new TestFlight/Play build? It resolves
 # the Expo runtimeVersion `fingerprint` for iOS + Android on the branch AND on
-# origin/main (in one job, under identical env), then compares per platform —
-# equal = JS-only (ships OTA), different = native change (needs a new binary).
-# Informational only: a native change is legitimate, so the check stays neutral
-# and never blocks merge. Verdict lands as a sticky PR comment + a neutral
-# "OTA compatibility" check-run. See docs/mobile-ota-updates.md.
+# its PR's BASE branch (in one job, under identical env), then compares per
+# platform — equal = JS-only (ships OTA), different = native change (needs a new
+# binary). Mostly informational: the verdict lands as a sticky PR comment and an
+# "OTA compatibility" check-run. The ONLY blocking case is a native change
+# merging into `main`, which the release train exists to prevent (the
+# `allow-native-on-main` label waives it). See docs/mobile-ota-updates.md.
 #
 # Push-on-branch (not pull_request) so it has the token to comment + post a check
 # and — unlike a workflow_dispatch-only file — runs on its own feature branch
@@ -15,7 +16,9 @@ name: Mobile OTA Compatibility (PR Signal)
 
 on:
   push:
-    branches-ignore: [main]
+    # release/next is excluded alongside main: it is a merge target, not a PR
+    # branch, and the native build workflows already own every push to it.
+    branches-ignore: [main, release/next]
     # Mirror the native build / OTA-publish triggers (ios-testflight-rn.yml /
     # android-apk-rn.yml / mobile-ota-production.yml) so the signal reacts to
     # exactly what moves the fingerprint. packages/shared/** already covers
@@ -32,6 +35,29 @@ on:
       - '.github/workflows/mobile-ota-check.yml'
       # The check's own logic — so changes to it re-run and self-validate.
       - 'scripts/mobile-ota-compat-check.ts'
+  # The verdict depends on the PR's base branch and its labels, neither of which
+  # a push changes — so the two remediations this check prints (retarget the PR,
+  # or add the allow-native-on-main label) would otherwise leave a stale red
+  # check-run behind, with no way to re-run it but an empty commit. `edited` is
+  # the event a base change raises; `labeled`/`unlabeled` cover the waiver.
+  #
+  # The paths filter applies to label events too, so labelling a PR that touches
+  # none of these files does NOT re-run the check. That is correct rather than a
+  # gap: a PR with no mobile paths has no fingerprint verdict to revise, and can
+  # never have been failed by this check in the first place.
+  pull_request:
+    types: [opened, reopened, edited, labeled, unlabeled]
+    paths:
+      - 'packages/mobile/**'
+      - 'packages/shared/**'
+      - 'packages/board-constants/**'
+      - 'packages/shared-schema/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'patches/**'
+      - '.github/workflows/mobile-ota-check.yml'
+      - 'scripts/mobile-ota-compat-check.ts'
   workflow_dispatch:
 
 permissions:
@@ -40,7 +66,10 @@ permissions:
   checks: write # neutral check-run
 
 concurrency:
-  group: mobile-ota-check-${{ github.ref }}
+  # The HEAD BRANCH, not github.ref: a push is `refs/heads/<branch>` while a
+  # pull_request is `refs/pull/<n>/merge`, and the two events must share one lane
+  # or a retarget could race the push that triggered the stale verdict.
+  group: mobile-ota-check-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 # ─── SHARED BUILD ENV (workflow-level) ───────────────────────────────────────
@@ -74,6 +103,33 @@ env:
 
 jobs:
   ota-check:
+    # Three gates on the pull_request path. None of them touches the push path,
+    # which keeps serving every branch it served before:
+    #
+    #   * A fork PR gets a read-only token, so the comment / label / check-run
+    #     steps would all 403. The push path never ran for forks either (their
+    #     pushes land on the fork, not here), so fork coverage is unchanged.
+    #   * Dependabot's PRs get that same read-only token even though the head
+    #     branch is in this repository, so the writes would fail with "Resource
+    #     not accessible by integration" — turning the weekly root dependency PR
+    #     (it touches pnpm-lock.yaml, which is in the paths filter) into a failed
+    #     workflow with no verdict attached.
+    #   * `edited` fires on every title and body edit, not just a base change, and
+    #     this job is a ~20-minute two-install fingerprint resolve. Only a base
+    #     change can move the verdict, and GitHub reports that as
+    #     `changes.base` — so an `edited` without one is dropped.
+    #
+    #     `changes.base != null` is the whole test, and it leans on one documented
+    #     expression rule: an absent property is null (so a title-only edit is
+    #     dropped), while the present `changes.base` OBJECT is not (so a retarget
+    #     runs). Don't "simplify" it to `changes.base.ref != ''` — on a title-only
+    #     edit that dereferences a missing property and evaluates to the same ''
+    #     on both sides of the comparison, which would let every edit through.
+    if: >-
+      github.event_name != 'pull_request' ||
+      (github.event.pull_request.head.repo.fork != true &&
+       github.actor != 'dependabot[bot]' &&
+       (github.event.action != 'edited' || github.event.changes.base != null))
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -81,8 +137,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          # Need origin/main reachable for the baseline worktree, and the tags for
-          # the secondary "already on a released build" lookup.
+          # The PR's HEAD commit, not the synthetic merge ref a pull_request event
+          # checks out by default: the fingerprint must be resolved from the tree
+          # the author actually pushed, the same one the push path sees.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          # Need the base branch reachable for the baseline worktree, and the tags
+          # for the secondary "already on a released build" lookup.
           fetch-depth: 0
           fetch-tags: true
 
@@ -94,50 +154,84 @@ jobs:
       - name: Install dependencies (PR tree)
         run: vp install --frozen-lockfile
 
+      # One PR lookup for the whole job, over both event paths. The baseline is
+      # the branch this PR will actually merge into — comparing a release-train PR
+      # against main would report the train's own native change as if this PR
+      # introduced it. A bare branch push with no open PR falls back to main,
+      # which is what it would merge into anyway.
+      - name: Resolve the PR context
+        id: base
+        uses: actions/github-script@v7
+        env:
+          HEAD_BRANCH: ${{ github.head_ref || github.ref_name }}
+        with:
+          script: |
+            // A pull_request event carries the PR; a push has to look it up by head.
+            const pr =
+              context.payload.pull_request ??
+              (
+                await github.rest.pulls.list({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  head: `${context.repo.owner}:${process.env.HEAD_BRANCH}`,
+                  state: 'open',
+                })
+              ).data[0];
+            core.setOutput('number', pr?.number ?? '');
+            core.setOutput('ref', pr?.base?.ref ?? 'main');
+            core.setOutput(
+              'allow_native_on_main',
+              pr?.labels?.some((label) => label.name === 'allow-native-on-main') ? 'true' : '',
+            );
+
       # Materialize origin/main as a sibling worktree with its OWN node_modules so
       # the baseline resolves against main's exact dependency tree. The verdict is
       # the PR-vs-main fingerprint diff; resolving both here, same job + same env,
       # is what makes that diff robust to env imperfections.
-      - name: Materialize origin/main baseline
+      - name: Materialize the base-branch baseline
+        env:
+          BASE_REF: ${{ steps.base.outputs.ref }}
         run: |
-          git fetch origin main --depth=1
-          git worktree add "$RUNNER_TEMP/main-baseline" origin/main
+          set -euo pipefail
+          git fetch origin "$BASE_REF" --depth=1
+          git worktree add "$RUNNER_TEMP/base-baseline" "origin/$BASE_REF"
 
-      - name: Install dependencies (main baseline)
-        working-directory: ${{ runner.temp }}/main-baseline
+      - name: Install dependencies (base baseline)
+        working-directory: ${{ runner.temp }}/base-baseline
         run: vp install --frozen-lockfile
 
-      - name: Resolve fingerprints and compare vs main
+      - name: Resolve fingerprints and compare vs the base branch
         id: ota
+        env:
+          BASE_REF: ${{ steps.base.outputs.ref }}
+          ALLOW_NATIVE_ON_MAIN: ${{ steps.base.outputs.allow_native_on_main }}
+          # On a pull_request event the ambient values describe the merge ref
+          # (`<n>/merge`, a synthetic sha). The comment must name the branch and
+          # commit the author pushed, so override both.
+          GITHUB_REF_NAME: ${{ github.head_ref || github.ref_name }}
+          GITHUB_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          vp run check:mobile-ota-compat -- \
-            --write-env \
-            --check-shipped-tags \
-            --base-dir "$RUNNER_TEMP/main-baseline"
+          set -euo pipefail
+          args=(--write-env --check-shipped-tags --base-dir "$RUNNER_TEMP/base-baseline" --base-branch "$BASE_REF")
+          if [ -n "$ALLOW_NATIVE_ON_MAIN" ]; then args+=(--allow-native-on-main); fi
+          vp run check:mobile-ota-compat -- "${args[@]}"
 
       - name: Comment OTA compatibility on the PR
-        if: github.event_name == 'push' && steps.ota.outputs.comment_b64 != ''
+        if: steps.base.outputs.number != '' && steps.ota.outputs.comment_b64 != ''
         uses: actions/github-script@v7
         env:
           COMMENT_B64: ${{ steps.ota.outputs.comment_b64 }}
+          PR_NUMBER: ${{ steps.base.outputs.number }}
         with:
           script: |
             const body = Buffer.from(process.env.COMMENT_B64, 'base64').toString('utf8');
             const marker = '<!-- mobile-ota-check -->';
+            const prNumber = Number(process.env.PR_NUMBER);
 
-            const { data: prs } = await github.rest.pulls.list({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              head: `${context.repo.owner}:${context.payload.ref.replace('refs/heads/', '')}`,
-              state: 'open',
-            });
-            if (prs.length === 0) return;
-
-            const pr = prs[0];
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              issue_number: pr.number,
+              issue_number: prNumber,
             });
 
             const existing = comments.find((comment) => comment.body?.includes(marker));
@@ -152,7 +246,7 @@ jobs:
               await github.rest.issues.createComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                issue_number: pr.number,
+                issue_number: prNumber,
                 body,
               });
             }
@@ -164,21 +258,22 @@ jobs:
       # non-deterministic (see MAX_DIFF_CONFIRMATIONS in the check script), and a
       # flake must not flip a label either way.
       - name: Label native fingerprint changes
-        if: github.event_name == 'push' && steps.ota.outputs.overall != 'unknown' && steps.ota.outputs.overall != ''
+        if: steps.base.outputs.number != '' && steps.ota.outputs.overall != 'unknown' && steps.ota.outputs.overall != ''
         uses: actions/github-script@v7
         env:
           OVERALL: ${{ steps.ota.outputs.overall }}
+          PR_NUMBER: ${{ steps.base.outputs.number }}
         with:
           script: |
             const LABEL = 'native-fingerprint';
-            const { data: prs } = await github.rest.pulls.list({
+            const prNumber = Number(process.env.PR_NUMBER);
+            // Re-read rather than trusting the event payload: a `labeled` event
+            // carries the labels as they were when it fired.
+            const { data: pr } = await github.rest.pulls.get({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              head: `${context.repo.owner}:${context.payload.ref.replace('refs/heads/', '')}`,
-              state: 'open',
+              pull_number: prNumber,
             });
-            if (prs.length === 0) return;
-            const pr = prs[0];
 
             const wanted = process.env.OVERALL === 'native-change-required';
             const has = pr.labels.some((label) => label.name === LABEL);
@@ -195,22 +290,28 @@ jobs:
                   description: 'Moves the native fingerprint — current fleet misses main OTAs until replacement binaries ship',
                 });
               }
-              await github.rest.issues.addLabels({ ...context.repo, issue_number: pr.number, labels: [LABEL] });
+              await github.rest.issues.addLabels({ ...context.repo, issue_number: prNumber, labels: [LABEL] });
             } else {
               try {
-                await github.rest.issues.removeLabel({ ...context.repo, issue_number: pr.number, name: LABEL });
+                await github.rest.issues.removeLabel({ ...context.repo, issue_number: prNumber, name: LABEL });
               } catch (error) {
                 if (error.status !== 404) throw error;
               }
             }
 
-      - name: Publish neutral check-run
+      - name: Publish the check-run
         if: always()
         uses: actions/github-script@v7
         env:
           # Falls back to "unknown" if an earlier step failed before the script
           # produced an output (e.g. install died), so the check always posts.
           CHECK_TITLE: ${{ steps.ota.outputs.check_title || 'OTA compatibility unknown (no baseline)' }}
+          # Neutral unless the script said otherwise, so a step that died before
+          # writing an output reports neutral rather than a phantom failure.
+          CHECK_CONCLUSION: ${{ steps.ota.outputs.check_conclusion || 'neutral' }}
+          # The PR's head commit — on a pull_request event context.sha is the
+          # merge ref, and a check-run posted there is invisible on the PR.
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         with:
           script: |
             const title = process.env.CHECK_TITLE;
@@ -218,9 +319,11 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               name: 'OTA compatibility',
-              head_sha: context.sha,
+              head_sha: process.env.HEAD_SHA,
               status: 'completed',
-              // Always neutral — informational, never a merge gate.
-              conclusion: 'neutral',
+              // Neutral for every verdict except a native change merging into
+              // main without the allow-native-on-main label — see
+              // deriveCheckConclusion in scripts/mobile-ota-compat-check.ts.
+              conclusion: process.env.CHECK_CONCLUSION,
               output: { title, summary: title },
             });

@@ -1,9 +1,9 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { BOARD_DISPLAY_ORDER, type BoardName } from '@boardsesh/shared-schema';
+import { type BoardName } from '@boardsesh/shared-schema';
 import { boardTypeLabel } from '@boardsesh/board-constants';
-import { outlineEditorLayouts, outlineEditorSetIds, outlineEditorSizes } from './board-configs';
+import { OUTLINE_EDITOR_BOARDS, outlineEditorLayouts, outlineEditorSetIds, outlineEditorSizes } from './board-configs';
 import { Text } from '../Text';
 import { Button } from '../Button';
 import { useTheme } from '../../providers/theme-provider';
@@ -38,7 +38,7 @@ export function OutlineEditorPickerScreen() {
 
   const boardRows = useMemo<PickerRow[]>(
     () =>
-      BOARD_DISPLAY_ORDER.map((name) => ({
+      OUTLINE_EDITOR_BOARDS.map((name) => ({
         key: name,
         id: 0,
         label: boardTypeLabel(name),
@@ -91,7 +91,7 @@ export function OutlineEditorPickerScreen() {
     // — the board art an override is drawn against has all of them mounted.
     const setIds = outlineEditorSetIds(boardName, layoutId, sizeId);
     router.push({
-      pathname: '/(tabs)/profile/outline-canvas',
+      pathname: '/settings/outline-canvas',
       params: { boardName, layoutId: String(layoutId), sizeId: String(sizeId), setIds },
     });
   }, [router, boardName, layoutId, sizeId]);

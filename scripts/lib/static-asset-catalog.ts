@@ -13,10 +13,22 @@ const CONTENT_TYPES = Object.freeze({
   '.ico': 'image/x-icon',
   '.png': 'image/png',
   '.webp': 'image/webp',
+  '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
 });
 
+/** Board art, marketing captures and help stills all ship as webp. */
+const IMAGE_EXTENSIONS = ['.webp'] as const;
+
+/**
+ * Help-page screen recordings. Both encodings of a clip ship — no one container
+ * plays in every browser — and each is content-addressed exactly like an image,
+ * so they need no separate upload path, only a content type.
+ */
+const VIDEO_EXTENSIONS = ['.mp4', '.webm'] as const;
+
 const PUBLIC_RUNTIME_IMAGES = [
-  'brand/boardsesh-mark.png',
+  'brand/boardsesh-mark.webp',
   'icons/apple-touch-icon.png',
   'icons/icon-192.png',
   'icons/icon-512.png',
@@ -36,24 +48,37 @@ export type StaticAssetSource = Readonly<{
 
 const toPosix = (filePath: string): string => filePath.split(sep).join(posix.sep);
 
-function listWebpFiles(directory: string): string[] {
+/**
+ * A missing directory is empty, not an error: `packages/web/public/videos` only
+ * exists once a help clip has been converted, and Git cannot carry an empty
+ * directory, so a fresh checkout with no clips must still generate a catalog.
+ */
+function listFilesWithExtensions(directory: string, extensions: readonly string[]): string[] {
+  if (!existsSync(directory)) return [];
   const files: string[] = [];
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     const absolutePath = join(directory, entry.name);
-    if (entry.isDirectory()) files.push(...listWebpFiles(absolutePath));
-    else if (entry.isFile() && entry.name.toLowerCase().endsWith('.webp')) files.push(absolutePath);
+    if (entry.isDirectory()) files.push(...listFilesWithExtensions(absolutePath, extensions));
+    else if (entry.isFile() && extensions.some((extension) => entry.name.toLowerCase().endsWith(extension))) {
+      files.push(absolutePath);
+    }
   }
   return files;
 }
 
 export function discoverStaticAssetSources(repoRoot: string): StaticAssetSource[] {
   const publicRoot = join(repoRoot, 'packages/web/public');
-  const boardRoot = join(publicRoot, 'images');
-  const sources: StaticAssetSource[] = listWebpFiles(boardRoot).map((absolutePath) => {
+  const walkedFiles = [
+    ...listFilesWithExtensions(join(publicRoot, 'images'), IMAGE_EXTENSIONS),
+    ...listFilesWithExtensions(join(publicRoot, 'videos'), VIDEO_EXTENSIONS),
+  ];
+  const sources: StaticAssetSource[] = walkedFiles.map((absolutePath) => {
     const publicRelativePath = toPosix(relative(publicRoot, absolutePath));
     return {
       logicalPath: `/${publicRelativePath}`,
       sourcePath: toPosix(relative(repoRoot, absolutePath)),
+      // Not shell chrome: board art, help stills and help clips are all loaded
+      // by a route that asks for them, never by the root layout.
       nativeBundle: true,
     };
   });

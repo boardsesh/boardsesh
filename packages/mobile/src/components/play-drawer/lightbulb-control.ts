@@ -1,4 +1,4 @@
-export type PlayDrawerLightbulbPressAction = 'noop' | 'connect' | 'disconnect' | 'takeWall' | 'releaseWall';
+export type PlayDrawerLightbulbPressAction = 'noop' | 'connect' | 'disconnect' | 'takeWall' | 'releaseWall' | 'relay';
 
 export function derivePlayDrawerLightbulbPressAction(args: {
   hasBluetooth: boolean;
@@ -8,6 +8,21 @@ export function derivePlayDrawerLightbulbPressAction(args: {
   ledless?: boolean;
   /** This device holds the wall with no Bluetooth link. */
   wallHeld?: boolean;
+  /**
+   * A session peer AUTHORITATIVELY holds the BLE link — the server-owned,
+   * seq-gated board-presence holder (`sessionHolderPresent`), never the
+   * best-effort `isSessionWallLit` flag. See {@link deriveBoardConnection} for
+   * why that distinction matters: the flag has no reconciliation and can stick
+   * `true` after a missed event, and keying the connect suppression on it would
+   * strand a climber with a bulb that no longer connects to anything.
+   */
+  holderIsAuthoritative: boolean;
+  /**
+   * The call site can put the climb it is displaying onto the peer's wall by
+   * making it the session's current climb (PlayDrawer). Surfaces with no
+   * displayed climb to relay — the toolbar and app-bar bulbs — pass `false`.
+   */
+  canRelay: boolean;
 }): PlayDrawerLightbulbPressAction {
   // No board selected yet, or a connect/disconnect already in flight — ignore.
   if (!args.hasBluetooth || args.isBluetoothLoading) return 'noop';
@@ -19,6 +34,21 @@ export function derivePlayDrawerLightbulbPressAction(args: {
   if (args.wallHeld) return 'releaseWall';
   // A wall with no lights has nothing to connect to; the tap takes the wall.
   if (args.ledless) return 'takeWall';
+  // Someone I'm climbing with is driving the wall. An Aurora/MoonBoard box is a
+  // single-central peripheral: it stops advertising once taken, and Android's
+  // GATT rejects the second central outright. So a connect from here cannot
+  // succeed — it spends ~15s scanning and then shows "Connection failed" over a
+  // board that is working perfectly (BleError 201 DeviceDisconnected, which
+  // `connection-error.ts` buckets as `connect_failed` — the single largest BLE
+  // failure bucket in the app, and ~65x more common on Android than iOS).
+  //
+  // Relay instead: the holder's auto-sender writes whatever the session's
+  // current climb is, so making this climb current lights it on their link.
+  // With nothing to relay we stop at 'noop' rather than firing that doomed
+  // connect — the bulb already reads lit in this state, so a tap that does
+  // nothing tells the truth ("it's on, someone else is driving") where the
+  // alert actively lied.
+  if (args.holderIsAuthoritative) return args.canRelay ? 'relay' : 'noop';
   return 'connect';
 }
 

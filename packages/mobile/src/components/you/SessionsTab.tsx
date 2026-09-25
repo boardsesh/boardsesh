@@ -24,6 +24,7 @@ import { useOfflineQueryState } from '../../hooks/use-offline-query-state';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
+import { nowMs } from '../../lib/clock';
 
 type FeedRow = { type: 'header'; bucket: FeedRecencyBucket } | { type: 'session'; item: SessionFeedItem };
 type CommentTarget = { entityId: string; entityType: SocialEntityType };
@@ -120,10 +121,10 @@ export function SessionsTab({ userId, topInset = 0 }: SessionsTabProps) {
   // two agree and neither rebuckets on every render. It re-evaluates on focus
   // and on pull-to-refresh (not per frame), so a screen left mounted across
   // midnight stops mislabelling yesterday's session as "Today".
-  const [now, setNow] = useState(() => Date.now());
+  const [now, setNow] = useState(() => nowMs());
   useFocusEffect(
     useCallback(() => {
-      setNow(Date.now());
+      setNow(nowMs());
     }, []),
   );
 
@@ -259,7 +260,7 @@ export function SessionsTab({ userId, topInset = 0 }: SessionsTabProps) {
           <RefreshControl
             refreshing={feed.isRefetching}
             onRefresh={() => {
-              setNow(Date.now());
+              setNow(nowMs());
               void feed.refetch();
             }}
             tintColor={brandColors.primary}

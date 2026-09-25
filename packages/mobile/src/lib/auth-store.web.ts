@@ -467,6 +467,28 @@ export async function storeTokens(_jwt: string, _refreshToken: string, _expiresA
 }
 
 /**
+ * The browser counterpart of the native deferred-reconcile retry (#5345). It has
+ * nothing to do, and that is a fact about the platform rather than a shortcut.
+ *
+ * KeychainNamespaceMigration is mounted from the one root layout, so its AppState
+ * `active` listener runs in the browser too and calls this. There is no v1 -> v2
+ * keychain namespace to reconcile there: `USES_V2_NAMESPACE` is
+ * `process.env.EXPO_OS === 'ios'`, so `migrateSecureKeysToV2` returns before it
+ * touches SecureStore and `deferredReconcileKeys('auth')` is always empty on web.
+ * Web credentials are the HttpOnly NextAuth cookie (see `getAuthToken`), never a
+ * SecureStore item, so there is no stale copy for a repair to find either.
+ *
+ * Resolving rather than throwing like `storeTokens` is deliberate: a throw says
+ * "you called something impossible", and a foreground transition asking whether
+ * anything is deferred is a perfectly ordinary thing to do. Nothing on web reports
+ * a deferral, so nothing here should pretend one is being retried.
+ * `keychain-namespace-migration.web.test.ts` holds that pair together.
+ */
+export function retryDeferredCredentialReconcile(): Promise<void> {
+  return Promise.resolve();
+}
+
+/**
  * Observe in-memory browser credential invalidation. The source lets the auth
  * provider distinguish another tab's logout from local generation rotation
  * during sign-in, whose cleanup is already owned by the local caller.

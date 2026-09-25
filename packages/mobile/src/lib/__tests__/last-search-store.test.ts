@@ -156,6 +156,15 @@ describe('saveLastSearch no-op on default/empty', () => {
     expect((await getLastSearch(kilterBoard))?.filters.minGrade).toBe(15);
   });
 
+  // The Other angles switch is its own filter: a Woods search with only it on
+  // must come back on return, not be deleted as a clean default.
+  it('persists when only the other-angles switch is on', async () => {
+    const { saveLastSearch, getLastSearch } = await import('../last-search-store');
+    const woodsBoard: BoardSearchConfig = { boardName: 'woods', layoutId: 1, sizeId: 1, setIds: '1', angle: 30 };
+    await saveLastSearch(woodsBoard, { ...defaultFilters, includeOtherAngles: true }, '');
+    expect((await getLastSearch(woodsBoard))?.filters.includeOtherAngles).toBe(true);
+  });
+
   it('deletes the saved entry when the search is reset to the clean default', async () => {
     const { saveLastSearch, getLastSearch } = await import('../last-search-store');
     await saveLastSearch(kilterBoard, activeFilters, 'crimps');

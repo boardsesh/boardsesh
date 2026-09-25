@@ -3,6 +3,23 @@
 How Boardsesh survives a Postgres connect blip, what it deliberately does not
 retry, and where to point a monitor.
 
+## TLS verification
+
+The shared primary and replica pools honor explicit `sslmode=verify-full`:
+both certificate trust and hostname are checked, including for local hosts.
+An explicit verification request is never replaced by the legacy `require`
+default. Remote URLs without `verify-full` retain the existing
+encryption-only default; this change does not migrate other deployments' trust.
+Repeated `sslmode` parameters are rejected rather than choosing a driver-specific
+precedence.
+
+The hold detector requires `verify-full` for remote connections and accepts only
+`sslmode` and `application_name` URL query options, without duplicates. Use
+`NODE_EXTRA_CA_CERTS` at process startup for a privately issued trust certificate,
+not `sslrootcert` (the data and queue drivers interpret that option differently).
+Both drivers must reject an untrusted certificate and a hostname mismatch before
+the worker is deployed. Never set `NODE_TLS_REJECT_UNAUTHORIZED=0`.
+
 ## The failure this fixes
 
 postgres.js attaches the first query of a fresh connection to the connect
@@ -50,6 +67,47 @@ about which statements "look idempotent".
 - **Multi-statement callbacks.** `withDbConnectRetry` takes a single statement.
   Wrapping a sequence would re-run the earlier statements when a later one
   fails to connect.
+
+## Socket disconnects and transaction cleanup (#5299)
+
+The workspace patches and pins `postgres@3.4.9` until an upstream release passes
+the backend disconnect/recovery regressions. Both Node entry points (ESM and
+CommonJS) receive the patch. It lives in `packages/db/patches`, outside the root
+`patches` directory that mobile hashes into its native runtime fingerprint.
+The backend, web, and sync Dockerfiles copy it before fetching dependencies;
+the deployment-input guard checks every configured patch directory. `Dockerfile.ci`
+needs no extra line — it copies all of `manifests/packages` before `pnpm fetch`,
+so a patch stored inside a workspace package rides along.
+
+A socket closing during a transaction can reject its query, then trigger the
+driver's automatic rollback after `closed()` has nulled the socket. That small
+write schedules `nextWrite` on the immediate queue, where the null dereference
+escapes the query promise and kills the backend. No application Postgres
+`onclose` hook is involved in the reproduced path.
+
+[Upstream PR #1168](https://github.com/porsager/postgres/pull/1168) guards that
+write. The guard alone prevented the crash in our reproduction but left a
+rollback in the connection's query state, hanging subsequent pool queries.
+Our patch also records failure for the transaction's lifetime, rejects its
+queued and later statements (including automatic rollback/commit), and clears
+the write buffer and immediate handle on close/termination. Closing also clears
+the failed connection's result/error state so a server FATAL response cannot
+reject the first query on a replacement socket. A transaction
+callback resuming after pool reconnection still fails against its original
+transaction; it cannot write through the replacement connection.
+
+The existing connect retry policy is unchanged. An interrupted transaction
+fails; its statements are never replayed. Ordinary application errors still
+roll back normally, including savepoints. Sentry retains its normal fatal-error
+handling; there is no process-level exception suppression.
+
+`postgres-disconnect.test.ts` runs isolated Node processes against both installed
+entry points, using controlled socket closes and termination of the test's own
+live PostgreSQL connection. It checks query settlement, repeated pool reuse,
+fresh transactions, delayed callbacks, and startup write-timer recovery. Keep
+these tests when upgrading; remove the override and patch only when the new
+release passes them. After deployment, check BOARDSESH-GH and replica restarts,
+and confirm `/health/db` recovers after database availability returns.
 
 ## Budgets
 
@@ -134,6 +192,22 @@ resolver path at all.
 hundred milliseconds, wrap the fall-through.** The Redis hit rate is not the
 safety property; the concurrency of the miss is.
 
+`similarClimbs` is the third read to take that shape (#4968,
+`graphql/resolvers/climbs/similar-climbs-cache.ts`). Measured on the dev
+catalogue — 893k climbs, 5.5M Kilter `board_climb_holds` rows, serial plan — a
+typical 18-hold Kilter climb runs **4 831 ms on a fresh Postgres and 205 ms
+warm**; the 198-hold tail is 7 860 ms cold and 1 542 ms warm. The cold figure
+for the typical case is 1.6x the front door's 3 s deadline, which is why #4968
+reads as a cold-cache failure rather than a slow-query one. (Parallelism is not
+the variable: warm serial 1 542 ms vs 1 566 ms with
+`max_parallel_workers_per_gather = 4`, and the planner chooses no `Gather` node
+for this shape — so `withSerialPlan` costs it nothing measurable.) It differs
+from the other two in one way: its key is
+per climb across the whole catalogue, so it takes **no** `REDISLESS_FALLBACK_TTL_MS`
+process-local copy. An unbounded local map in a long-lived process is a worse
+failure than re-running the statement, and single-flight alone still covers the
+concurrency of the miss, which is the half that protects the pool.
+
 ## Front-door read deadlines and pool sizing (#4461)
 
 The connect retry above bounds a _failed_ connect. It does nothing about a
@@ -196,7 +270,17 @@ one at the database.
 | read fails or deadlines, climb page | hung to the platform limit, then 404 | 500 at ~6 s per request                         |
 | read fails or deadlines, list page  | 200 with zero climbs                 | 500 at ~6 s                                     |
 | backend `boardBySlug` fails, `/b/…` | 404                                  | 500                                             |
-| backend GraphQL wedged              | climb page hung indefinitely         | similar climbs / beta links render empty at 3 s |
+| backend GraphQL wedged              | climb page hung indefinitely         | similar climbs / beta links degrade at 3 s      |
+
+Since #4968 "degrade" is not "render empty". Both sections return
+`{ status: 'unavailable' }` rather than `[]`, because `[]` is also what a climb
+nobody has filmed looks like and the page was publishing "No beta filmed yet."
+on the strength of a timeout — 6,922 + 748 renders in fourteen days. Each
+section now says it did not load, and similar climbs additionally ship WITHOUT a
+React Query seed so the reader's own browser refetches on hydration: the retry
+happens off the server-render budget and against the reader's IP rather than the
+web server's single shared one. There is deliberately no server-side retry — a
+second attempt spends another 3 s pushing work at the pool that just failed.
 
 The 5xx is the point. Google retries a 5xx and keeps the URL, while a 404 — or a
 200 with nothing on it — on a sitemapped URL reads as "drop this page".
@@ -308,6 +392,254 @@ wins it calls `query.cancel()`: postgres.js queues a query with no timeout of
 its own (`postgres/src/index.js:341`), so walking away would leave a zombie
 `select 1` that fires whenever the pool recovers, and probes would pile up
 through an outage.
+
+The same statement also reads `current_setting('max_parallel_workers_per_gather')`
+and reports it as `database.maxParallelWorkersPerGather` — see the next section
+for why. It rides the existing round trip rather than adding one.
+
+## Parallel-query DSM exhaustion, and why the guard moved to the database (#5352)
+
+`could not resize shared memory segment "/PostgreSQL.<id>" to <n> bytes: No space
+left on device` (SQLSTATE `53100`, `dsm_impl.c` / `dsm_impl_posix`) is a
+**parallel-query** failure. Postgres allocates a dynamic-shared-memory segment
+per parallel worker out of the container's `/dev/shm`; Docker's default is 64 MB.
+Measured on the dev catalogue (9.95M `board_climb_holds` rows), one `similarClimbs`
+plan holds ~33 MB across 12 segments — so two concurrent parallel plans exhaust a
+stock budget and the loser gets `53100`.
+
+It is not a connectivity problem and a retry is not a fix: the statement reached
+the server and the server refused it.
+
+### Why five rounds of call-site guards did not end it
+
+`withSerialPlan` (`packages/db/src/queries/util/serial-plan.ts`) opens a
+transaction and issues `SET LOCAL max_parallel_workers_per_gather = 0`. Measured
+under a deliberately shrunk `/dev/shm`, that guard is completely effective: the
+unguarded statement raises `53100` and the guarded one returns normally. In Sentry
+every guarded resolver went quiet the day its guard shipped —
+`mySmartPlaylistCounts` after 2026-08-11, `similarClimbs` after 2026-08-15,
+`syncClimbGrades` after 2026-08-18, `userTicks` after 2026-08-19.
+
+What failed was the strategy, not the guard. The backend has roughly 65 statements
+with the shape that Postgres can promote to a parallel plan (a join across two or
+more of `board_climbs` / `board_climb_stats` / `board_climb_holds` /
+`board_climb_grades` / `boardsesh_ticks`, or an aggregate over one). Four were
+wrapped. Whether the planner picks a `Gather` for the other sixty changes as the
+tables grow, so each round silenced one resolver and a different one surfaced
+weeks later. The guard also never reached the sync daemons
+(`recomputeClimbStatsBulk`), the board-snapshot export, SSR, OG-image data or the
+scheduler jobs, all of which share the same `/dev/shm`.
+
+### What we do instead
+
+Migration `0225_dsm_serial_plan_default.sql` sets the default on the database:
+
+```sql
+ALTER DATABASE <db> SET max_parallel_workers_per_gather = 0;
+```
+
+Every session inherits it — resolvers, background jobs, scripts, a human in psql.
+It is a **default, not a lock**: a session that wants parallelism can still
+`SET LOCAL max_parallel_workers_per_gather = <n>` inside a transaction, and the
+whole thing reverses with `ALTER DATABASE <db> RESET max_parallel_workers_per_gather`.
+It cannot change results, only latency — and on the top offender the serial plan is
+*faster* (2154 ms vs 4163 ms), because the parallel plan reaches for a Parallel Seq
+Scan where the serial plan keeps the index.
+
+Plain SQL against a stock `docker run postgres:17`: no Railway knob, no dashboard
+setting, no extension. Database settings can travel in a portable dump: a plain
+`pg_dump --create` includes them, and a custom archive restores them with
+`pg_restore --create`. A restore into an existing database does not restore those
+settings. A restored Drizzle ledger also prevents migration 0225 from rerunning;
+follow the [restore verification gate](#preserving-the-default-through-a-database-restore)
+before routing traffic to a restored database.
+
+Two caveats worth knowing:
+
+- **Existing pooled connections keep their old value until they cycle**
+  (`idle_timeout` is 30s outside Vercel), so the change lands within about a minute
+  of the migration rather than instantly.
+- **The migration is fail-soft**, and in production that is the only path it ever
+  takes. See below.
+
+### Why the migration cannot apply in production (#5352 round 5b)
+
+`ALTER DATABASE ... SET` requires ownership of the database. The production
+migration session is deliberately the opposite of that: `production-deploy.yml`
+connects as `boardsesh_migrator` and `SET ROLE`s to `boardsesh_owner`, and
+`reserveMigrationOwnerSession` refuses to run a single statement unless
+the owner role did not own the database (`packages/db/scripts/migration-owner-role.ts`).
+The production investigation for #5372 found the `railway` database owned by
+the Railway-provisioned superuser, without an owner-capable credential in CI.
+That was the observed configuration, not a requirement on future credentials.
+
+**Update, 25 Sep 2026:** the replication work transferred `railway` to
+`boardsesh_owner`. `reserveMigrationOwnerSession` now accepts either layout —
+a superuser-owned database with the single non-grantable owner `CREATE`, or
+`boardsesh_owner` owning this database — and still rejects the owner role
+owning any other database. The history below describes the earlier layout.
+
+On its initial run under that role, 0225 raised `insufficient_privilege`. Its
+`EXCEPTION` handler turned that into a `RAISE WARNING`, and drizzle recorded the
+migration as applied, so later deploys do not retry it. Reproduced against a stock
+`docker run postgres:17` wearing the same role shape:
+
+```
+WARNING:  boardsesh: could not set max_parallel_workers_per_gather on database
+          railway; (must be owner of database railway)
+-- pg_db_role_setting: 0 rows; a runtime session still reports 2
+```
+
+`ALTER ROLE <app_role> SET ...` — the pooled-URL escape hatch used for
+`statement_timeout` above — is closed for the same reason: `permission denied to
+alter role … Only roles with the CREATEROLE attribute and the ADMIN option on
+role "boardsesh_runtime" may alter this role`.
+
+Editing 0225 fixes nothing (it is already recorded), and granting the migration
+role database ownership would dismantle the least-privilege contract the PG18
+transition was built on. So the setting is owned by a **separate, idempotent
+deploy step** instead:
+
+```
+vp run db:verify-serial-plan          # add -- --check-only to never write
+```
+
+`packages/db/scripts/verify-serial-plan.ts`, run by the `verify-serial-plan` job
+after `migrate`:
+
+1. Reads the setting through an ordinary **application** connection
+   (`secrets.DATABASE_URL`, the runtime role). That is the fact that matters —
+   what a new app session resolves the GUC to, the same number `/health/db`
+   reports.
+2. Exits 0 and issues nothing when it is already `0`.
+3. Otherwise applies the database default when `ADMIN_DATABASE_URL` names a
+   connection that owns the database, then re-checks on a **new** application
+   connection (`ALTER DATABASE ... SET` never changes the session that issued
+   it, so re-reading the same session would be a vacuous check). The ALTER
+   targets the admin session's `current_database()`, so the step refuses before
+   any DDL unless that equals the application session's database — an
+   `ADMIN_DATABASE_URL` ending in `/postgres` fails the job instead of changing
+   the maintenance database. It also compares the live server address, port,
+   and postmaster start time before DDL, so another cluster with a database
+   named `railway` fails closed. These values guard this run, not provide a
+   durable cluster identifier. The application probe stays in its own open
+   transaction while the admin probe, ALTER, and catalog recheck run in another.
+   Transaction pooling therefore keeps both server identities pinned through
+   the decision. If either connection path cannot expose a
+   matching identity, use the one-off owner action below instead.
+4. Otherwise **exits 1**, printing the one statement an operator runs once.
+
+The automated ALTER and generated remediation accept simple ASCII database
+identifiers (`[A-Za-z_][A-Za-z0-9_]*`), including the production name `railway`.
+Names containing hyphens, spaces or non-ASCII characters receive a readable owner
+handoff without generated SQL or an administrator connection. An operator must
+handle those names with properly quoted SQL in a separately authorized owning
+session. Connection-cleanup failures emit a warning while preserving the
+verification result or original query error.
+
+A **fresh database still gets the default from migrations**: 0225 applies
+normally wherever the migrating role owns the database — local docker, the
+`boardsesh-dev-db` image, CI service containers, branch deploys — which is every
+environment except the production role shape. The deploy step is what covers that
+one, and what makes a miss loud instead of a warning inside a 13k-line migration
+log.
+
+The job is deliberately **not** in the `needs:` of the deploy jobs. The condition
+it reports is a property of the database, not of the commit being shipped, and a
+deploy cannot fix it; gating the release train on it would trade a reported miss
+for a self-inflicted outage. It is loud instead — a red job on every run plus the
+Discord failure alert. The success notification also waits for this job and
+is suppressed when verification fails or is cancelled; deploy jobs can still
+complete while the workflow reports the database condition. See
+[production deploys](production-deploy.md#serial-plan-verification-after-migrations)
+for its environment and concurrency behavior.
+
+**Operator handoff.** A green workflow requires the default to be applied. Before
+rolling out verification, arrange either the one-off owner action below or the
+owner-capable credential; otherwise every deploy reports verification failure
+and sends the failure alert until the missing default is fixed. The credential
+itself is optional because an already-correct database needs no administrator.
+
+Database ownership is sufficient for this setting; use a dedicated database-owner
+connection, not a cluster-superuser URL. Keep it separate from the restricted
+migration and runtime credentials. A one-off owner session avoids retaining an
+owner credential in the deployment environment.
+
+When the deploy job goes red, either:
+
+```sql
+-- once, from a separately authorized psql session that owns the database
+ALTER DATABASE railway SET max_parallel_workers_per_gather = 0;
+```
+
+or add `ADMIN_DATABASE_URL` to the `Production` environment pointing at such a
+connection, and the job applies it itself on the next run. The setting survives
+restarts on that database. A replacement database needs the restore verification
+below. Confirm with `GET /health/db → database.maxParallelWorkersPerGather`,
+which must read `"0"`.
+
+### Preserving the default through a database restore
+
+PostgreSQL's [pg_dump documentation](https://www.postgresql.org/docs/current/app-pgdump.html)
+and [pg_restore documentation](https://www.postgresql.org/docs/current/app-pgrestore.html)
+specify that `--create` includes database-level `ALTER DATABASE ... SET` settings.
+For a full custom archive, use `pg_dump --format=custom` followed by
+`pg_restore --create --exit-on-error` through an operator-provided account allowed
+to create the target database. The restore connection selects a maintenance
+database; PostgreSQL creates the database under the name stored in the archive.
+The destination must not already have that name. Use a mode `0600` `PGPASSFILE`
+and separate connection flags rather than putting passwords in command arguments.
+Global roles still need separate provisioning; `--create` does not create them.
+
+A restore into a precreated or renamed destination without `--create`, a
+schema-only restore into an existing database, and logical replication need an
+explicit target default. The [Neon migration runbook](neon-migration.md)
+uses that path. The existing migration ledger is evidence of prior migration
+execution, not evidence that the replacement database inherited its settings.
+
+Before cutover, verify the **target** with application credentials:
+
+```bash
+# DATABASE_URL is injected for the target application role; no administrator is used.
+vp exec pnpm --filter @boardsesh/db run db:verify-serial-plan -- --check-only
+```
+
+Do not route traffic to the target until this exits successfully and a fresh
+application connection reports both the database default and effective value as
+`0`. If it fails, an operator must apply the `ALTER DATABASE ... SET` above to the
+target through an owning connection, or run the verifier with an explicitly
+provided `ADMIN_DATABASE_URL` for that same target database, then repeat
+`--check-only`. Recheck the target application's `/health/db` after its pooled
+connections cycle. This is a database-migration cutover prerequisite; routine
+deployments retain the separate, nonblocking verification job described above.
+
+The integration suite exercises a real custom archive and both restore paths on
+stock PostgreSQL 17: `--create` preserves the setting and the applied migration
+ledger, while restoring into a precreated database fails verification until an
+owning connection reapplies the default. CI uses the service container's matching
+`pg_dump` and `pg_restore` clients via `SERIAL_PLAN_PG_CONTAINER`; local runs may
+use installed clients compatible with `SERIAL_PLAN_DB_URL` instead.
+
+### The recurrence signal
+
+A warning in a migration log is exactly the kind of thing nobody reads, and five
+rounds of this bug stayed invisible for want of a signal. So the backend reports
+the value **its own pool actually sees**:
+
+```
+GET /health/db → database.maxParallelWorkersPerGather
+```
+
+`"0"` means the default landed. Anything else means it did not, and `53100` can
+come back — read the `verify-serial-plan` job's log, which prints both the
+session value and the database default and carries its own remediation. A value
+present in `pg_db_role_setting` but not on the app's connections would be no fix
+at all, which is why this reads the live session rather than the catalog.
+
+The other half of the signal is Sentry: until #5351 every one of these landed in
+the unfingerprinted `BOARDSESH-AK` bucket, which is why four "fixed" rounds looked
+like one continuous failure. With per-cause fingerprinting a recurrence appears as
+its own issue carrying the `graphqlPath` tag.
 
 ## Runbook
 

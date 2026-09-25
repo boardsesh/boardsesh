@@ -244,16 +244,8 @@ export function validateWoodsClimb(args: {
   return { sizeId: args.sizeId, dimension, holds };
 }
 
-/**
- * The stored Woods size for an existing climb, read back from the denormalised
- * `compatible_size_ids` the create path writes. Returns null for a row that
- * predates it (or an imported row the catalog repair hasn't reached), which the
- * caller treats as "size unknown" rather than guessing a wall.
- */
-export function storedWoodsSizeId(compatibleSizeIds: number[] | null | undefined): number | null {
-  const sizeId = compatibleSizeIds?.find((candidate) => woodsSizeIdToDimension(candidate) !== undefined);
-  return sizeId ?? null;
-}
+// Shared with the nightly neighbour job, which groups Woods climbs by wall.
+export { storedWoodsSizeId } from '@boardsesh/db/queries';
 
 /**
  * Resolve the size an update applies to. The size is immutable: a Woods climb

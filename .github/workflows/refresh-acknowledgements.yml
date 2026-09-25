@@ -1,10 +1,9 @@
 name: Refresh Acknowledgements
 
 # Weekly: regenerate the mobile Acknowledgements data — GitHub contributors +
-# `boardsesh` org sponsors — and the bundled OSS license attribution. Both
-# generators degrade gracefully (keep the committed JSON on any failure), so a
-# missing token or API hiccup never produces an empty list. Idempotent: the
-# commit step only runs when the generated files actually change.
+# `boardsesh` org sponsors — and the bundled OSS license attribution. The
+# repository App commits the generated snapshot directly to protected main. A
+# partial refresh fails instead of silently preserving stale acknowledgements.
 on:
   schedule:
     - cron: '0 7 * * 1' # 07:00 UTC every Monday
@@ -15,15 +14,48 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   refresh:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # Production permits only main. This keeps a manual dispatch from another
+    # branch from minting the App token that bypasses main's review rule.
+    environment: Production
+    outputs:
+      changed: ${{ steps.result.outputs.changed }}
+      commit_sha: ${{ steps.commit.outputs.commit_sha }}
+      contributors: ${{ steps.result.outputs.contributors }}
+      sponsors: ${{ steps.result.outputs.sponsors }}
+      private_sponsors: ${{ steps.result.outputs.private_sponsors }}
     steps:
-      - name: Checkout repository
+      - name: Require repository App credentials
+        env:
+          APP_ID: ${{ vars.OTA_PUSH_APP_ID }}
+          APP_PRIVATE_KEY: ${{ secrets.OTA_PUSH_APP_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          [ -n "$APP_ID" ] || { echo '::error::Missing OTA_PUSH_APP_ID.'; exit 1; }
+          [ -n "$APP_PRIVATE_KEY" ] || { echo '::error::Missing OTA_PUSH_APP_PRIVATE_KEY.'; exit 1; }
+
+      # Mint before checkout: checkout persists this App identity for the
+      # protected-main push. Members:read permits the Sponsor GraphQL query.
+      - name: Mint repository App token
+        id: repository_app
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1
+        with:
+          app-id: ${{ vars.OTA_PUSH_APP_ID }}
+          private-key: ${{ secrets.OTA_PUSH_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-members: read
+
+      - name: Checkout main
         uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ steps.repository_app.outputs.token }}
 
       - uses: voidzero-dev/setup-vp@v1
         with:
@@ -35,29 +67,83 @@ jobs:
 
       - name: Regenerate acknowledgements + OSS licenses
         env:
-          # Contributors work with the default repo token. Reading the org's
-          # GitHub Sponsors needs a PAT with sponsors / read:org scope — set the
-          # ACKNOWLEDGEMENTS_GH_TOKEN secret to enable it; without it the sponsors
-          # list stays as-committed and the script still succeeds.
-          GH_TOKEN: ${{ secrets.ACKNOWLEDGEMENTS_GH_TOKEN || github.token }}
+          GH_TOKEN: ${{ steps.repository_app.outputs.token }}
         run: |
-          node --import tsx scripts/fetch-acknowledgements.ts
+          node --import tsx scripts/fetch-acknowledgements.ts --strict
           node --import tsx scripts/generate-oss-licenses.ts
 
-      # NOTE: changelog.generated.json is intentionally NOT refreshed here — the
-      # Mobile OTA Production workflow is its sole owner (it regenerates and pushes
-      # the file on every publish). Keep it out of this job to avoid two writers.
-      - name: Commit refreshed data
+      - name: Record refresh result
+        id: result
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if [[ -n "$(git status --porcelain packages/mobile/src/data)" ]]; then
-            git add packages/mobile/src/data/acknowledgements.generated.json packages/mobile/src/data/oss-licenses.generated.json
-            git commit -m "chore: refresh acknowledgements + OSS licenses [skip ci]"
-            # Explicit target: commit back to the branch this run was dispatched from
-            # (main on the schedule) — checkout leaves a detached HEAD, so a bare
-            # `git push` has no upstream and could otherwise be ambiguous.
-            git push origin "HEAD:${{ github.ref_name }}"
+          set -euo pipefail
+          ACKNOWLEDGEMENTS_FILE=packages/mobile/src/data/acknowledgements.generated.json
+          echo "contributors=$(jq '.contributors | length' "$ACKNOWLEDGEMENTS_FILE")" >> "$GITHUB_OUTPUT"
+          echo "sponsors=$(jq '.sponsors | length' "$ACKNOWLEDGEMENTS_FILE")" >> "$GITHUB_OUTPUT"
+          echo "private_sponsors=$(jq '.privateSponsorCount' "$ACKNOWLEDGEMENTS_FILE")" >> "$GITHUB_OUTPUT"
+          if git diff --quiet -- packages/mobile/src/data/acknowledgements.generated.json packages/mobile/src/data/oss-licenses.generated.json; then
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
           else
-            echo "No changes to acknowledgements data."
+            echo 'changed=true' >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Commit refreshed data
+        id: commit
+        if: steps.result.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          git config user.name 'boardsesh-repo-bot[bot]'
+          git config user.email 'boardsesh-repo-bot[bot]@users.noreply.github.com'
+          git add packages/mobile/src/data/acknowledgements.generated.json packages/mobile/src/data/oss-licenses.generated.json
+          git commit -m 'chore: refresh acknowledgements + OSS licenses [skip ci]'
+
+          for attempt in 1 2 3; do
+            if git push origin HEAD:main; then
+              echo "commit_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            if [ "$attempt" = 3 ]; then
+              echo '::error::Could not push the refresh after three attempts.'
+              exit 1
+            fi
+            git fetch origin main
+            git rebase origin/main
+          done
+
+  notify:
+    needs: refresh
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: Production
+    steps:
+      - name: Notify deployments channel
+        env:
+          DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
+          REFRESH_RESULT: ${{ needs.refresh.result }}
+          CHANGED: ${{ needs.refresh.outputs.changed }}
+          COMMIT_SHA: ${{ needs.refresh.outputs.commit_sha }}
+          CONTRIBUTORS: ${{ needs.refresh.outputs.contributors }}
+          SPONSORS: ${{ needs.refresh.outputs.sponsors }}
+          PRIVATE_SPONSORS: ${{ needs.refresh.outputs.private_sponsors }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -z "$DISCORD_DEPLOY_WEBHOOK" ]; then
+            echo 'DISCORD_DEPLOY_WEBHOOK not set — skipping notification'
+            exit 0
+          fi
+
+          if [ "$REFRESH_RESULT" = success ]; then
+            if [ "$CHANGED" = true ]; then
+              UPDATE_LINE="committed ${COMMIT_SHA:0:7}"
+            else
+              UPDATE_LINE='no generated-data changes'
+            fi
+            CONTENT=$(printf '✅ **Acknowledgements refreshed** — %s\n• contributors: %s\n• public sponsors: %s\n• private sponsors: %s\n<%s>' \
+              "$UPDATE_LINE" "$CONTRIBUTORS" "$SPONSORS" "$PRIVATE_SPONSORS" "$RUN_URL")
+          else
+            CONTENT=$(printf '🚨 **Acknowledgements refresh %s**\n<%s>' "$REFRESH_RESULT" "$RUN_URL")
+          fi
+
+          jq -n --arg content "$CONTENT" '{content: $content, allowed_mentions: {parse: []}}' \
+            | curl -sS --fail-with-body -X POST -H 'Content-Type: application/json' -d @- "$DISCORD_DEPLOY_WEBHOOK" || \
+              echo '::warning::Failed to post Discord notification (see status above)'

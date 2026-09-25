@@ -64,8 +64,27 @@ vi.mock('@boardsesh/analytics', () => ({
 vi.mock('../../../providers/toast-provider', () => ({ useToast: () => toastMock }));
 // The hook reads board-presence flags; mock the provider so the test doesn't
 // pull in its ws-client → expo-secure-store chain (un-mockable native module).
+// Unbound by default, which is what most tests here want — the board-attribution
+// suite below binds a wall and asserts which ticks are allowed to carry its id.
+const presenceState = vi.hoisted(() => ({ enabled: false, boardId: null as number | null }));
 vi.mock('../../../providers/board-presence-provider', () => ({
-  useBoardPresenceControls: () => ({ enabled: false, boardId: null }),
+  useBoardPresenceControls: () => presenceState,
+}));
+// The stored active board, the same source `board-presence-provider` binds its
+// boardId from. The hook compares the tick's board against it to decide whether
+// the bound wall's id belongs on this tick.
+const activeBoardState = vi.hoisted(() => ({
+  current: null as {
+    uuid?: string;
+    boardType: string;
+    layoutId: number;
+    sizeId: number;
+    setIds: string;
+    angle?: number;
+  } | null,
+}));
+vi.mock('../../../lib/graphql/use-active-board', () => ({
+  useActiveBoard: () => ({ data: activeBoardState.current }),
 }));
 // Mock the Rogue-timer provider so the test doesn't pull its rogue-timer-ble →
 // react-native-ble-plx chain (Flow source Rolldown can't parse) into the graph.
@@ -96,6 +115,7 @@ vi.mock('@boardsesh/board-react', async (importOriginal) => {
 
 import { useQuickTickForm, type QuickTickFormInput, type QuickTickDismissSnapshot } from '../use-quick-tick-form';
 import { track } from '../../../lib/analytics';
+import { armRestTimer, getRestTimerState, resetRestTimerStoreForTests } from '../../../lib/rest-timer-store';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 
 // A DOM stand-in for the sheet: every control the real form exposes, driven
@@ -194,8 +214,12 @@ beforeEach(() => {
   saveMock.state.failure = null;
   toastMock.showToast.mockClear();
   gradesState.current = [];
+  presenceState.enabled = false;
+  presenceState.boardId = null;
+  activeBoardState.current = null;
   connectivityState.isOffline = false;
   vi.mocked(track).mockClear();
+  resetRestTimerStoreForTests();
 });
 
 afterEach(() => {
@@ -394,6 +418,62 @@ describe('useQuickTickForm analytics', () => {
   });
 });
 
+// Which wall a tick lands on. The presence binding names the board the climber
+// is standing at; the form's board fields name the board the CLIMB belongs to,
+// because the play drawer hands down the resolved render board. Those two part
+// company the moment the queue holds climbs from more than one wall, and the
+// tick has to follow the climb — a tick stamped with the wrong wall shows up in
+// that wall's "Now on the wall" feed as a problem nobody climbed there.
+describe('useQuickTickForm board attribution', () => {
+  /** The wall the climber is standing at, as `useActiveBoard` reports it. */
+  const ACTIVE_BOARD = { boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20', angle: ANGLE };
+  /** The same wall as the form receives it for a climb that lives on it. */
+  const ACTIVE_BOARD_FIELDS = { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20' };
+  /** A Kilter Homewall climb left in the queue after a board switch — its own
+   *  layout, size and sets, and no board id of its own anywhere on the client. */
+  const HOMEWALL_FIELDS = { boardName: 'kilter', layoutId: 8, sizeId: 17, setIds: '20' };
+
+  function bindWall(boardId: number) {
+    presenceState.enabled = true;
+    presenceState.boardId = boardId;
+    activeBoardState.current = ACTIVE_BOARD;
+  }
+
+  it('stamps the bound wall on a tick for a climb that lives on it', () => {
+    boardState.current = null;
+    bindWall(4242);
+    const { getByTestId } = renderForm(ACTIVE_BOARD_FIELDS);
+
+    fireEvent.click(getByTestId('save'));
+
+    expect(saveMock.mutate.mock.calls[0][0]).toMatchObject({ boardId: 4242 });
+  });
+
+  it('keeps the bound wall off a tick for a climb that belongs to another wall', () => {
+    boardState.current = null;
+    bindWall(4242);
+    const { getByTestId } = renderForm(HOMEWALL_FIELDS);
+
+    fireEvent.click(getByTestId('save'));
+
+    // No boardId at all rather than the wrong one: the Homewall's own id is not
+    // knowable from a render board, and guessing costs other climbers' data.
+    // The server still resolves the board from the layout/size/sets below.
+    expect(saveMock.mutate.mock.calls[0][0]).not.toHaveProperty('boardId');
+    expect(saveMock.mutate.mock.calls[0][0]).toMatchObject({ layoutId: 8, sizeId: 17, setIds: '20' });
+  });
+
+  it('sends no board id while no wall is bound', () => {
+    boardState.current = null;
+    activeBoardState.current = ACTIVE_BOARD;
+    const { getByTestId } = renderForm(ACTIVE_BOARD_FIELDS);
+
+    fireEvent.click(getByTestId('save'));
+
+    expect(saveMock.mutate.mock.calls[0][0]).not.toHaveProperty('boardId');
+  });
+});
+
 // The failed save prints its reason in the action bar's reserved error slot
 // instead of a toast the sheet covers — so the message has to survive on the
 // form until the next attempt clears it.
@@ -545,5 +625,123 @@ describe('useQuickTickForm tries count', () => {
 
     fireEvent.click(getByTestId('save'));
     expect(saveMock.mutate.mock.calls[0][0]).toMatchObject({ status: 'flash', attemptCount: 1 });
+  });
+});
+
+// The rest timer (#5378) anchors on the tick from this hook's per-call
+// onSuccess, beside the shipped Rogue-stopwatch kick. There is deliberately no
+// branch on delivery in the production code: React Query runs onSuccess for the
+// acknowledged AND the offline-queued save, and a rest timer is about when YOU
+// logged the send. Two tests dressed up as "two deliveries" would assert the
+// same line twice, so this asserts the contract that can actually break — that
+// the anchor is the exact timestamp we sent, not a second one derived later.
+describe('useQuickTickForm rest timer anchor', () => {
+  it('anchors the timer on the exact climbedAt the save was given', () => {
+    boardState.current = boardWithoutHistory();
+    armRestTimer('afterTick', Date.parse('2026-09-11T09:00:00.000Z'), 'session-1');
+    const { getByTestId } = renderForm();
+
+    fireEvent.click(getByTestId('save'));
+
+    const sentClimbedAt = (saveMock.mutate.mock.calls[0][0] as { climbedAt: string }).climbedAt;
+    expect(getRestTimerState().lastTickAt).toBe(sentClimbedAt);
+    expect(getRestTimerState().anchorMs).toBe(Date.parse(sentClimbedAt));
+  });
+
+  it('anchors on an edited climbedAt rather than re-deriving a fresh now', () => {
+    boardState.current = boardWithoutHistory();
+    armRestTimer('afterTick', Date.parse('2026-09-11T09:00:00.000Z'), 'session-1');
+    const { getByTestId } = renderForm();
+
+    fireEvent.click(getByTestId('climbedat-date'));
+    fireEvent.click(getByTestId('save'));
+
+    const sentClimbedAt = (saveMock.mutate.mock.calls[0][0] as { climbedAt: string }).climbedAt;
+    expect(getRestTimerState().lastTickAt).toBe(sentClimbedAt);
+  });
+
+  it('leaves the timer alone when the save fails', () => {
+    boardState.current = boardWithoutHistory();
+    armRestTimer('afterTick', Date.parse('2026-09-11T09:00:00.000Z'), 'session-1');
+    saveMock.state.failure = new Error('nope');
+    const { getByTestId } = renderForm();
+
+    fireEvent.click(getByTestId('save'));
+
+    expect(getRestTimerState().lastTickAt).toBeNull();
+    expect(getRestTimerState().anchorMs).toBeNull();
+  });
+
+  it('does nothing at all while the timer is disarmed', () => {
+    boardState.current = boardWithoutHistory();
+    const { getByTestId } = renderForm();
+
+    fireEvent.click(getByTestId('save'));
+
+    expect(getRestTimerState().armed).toBe(false);
+    expect(getRestTimerState().lastTickAt).toBeNull();
+  });
+});
+
+describe('useQuickTickForm selected-board attribution', () => {
+  // The wall the climber picked, and the config the drawer sends for a climb
+  // that lives on it. Set ids are stored in a different ORDER than the tick
+  // sends them, which is the same wall — the comparison has to normalise, the
+  // way the server's own config gate does.
+  const SELECTED_BOARD = {
+    uuid: 'board-uuid-tranquility',
+    boardType: 'moonboard',
+    layoutId: 6,
+    sizeId: 1,
+    setIds: '27,24,26,25',
+  };
+  const TICK_CONFIG = { layoutId: 6, sizeId: 1, setIds: '24,25,26,27' };
+
+  it("sends the selected board's uuid when the tick is on that wall", () => {
+    // Without this the tick carries only the config and the presence board id,
+    // and a serial-less wall's presence id is the shared per-config feed — so
+    // the tick lands on the global feed and the climber's own board reads as
+    // empty on Home (#5121).
+    boardState.current = boardWithoutHistory();
+    activeBoardState.current = SELECTED_BOARD;
+    const { getByTestId } = renderForm({ boardName: 'moonboard', ...TICK_CONFIG });
+
+    fireEvent.click(getByTestId('save'));
+
+    expect(saveMock.mutate.mock.calls[0][0]).toMatchObject({ boardUuid: SELECTED_BOARD.uuid });
+  });
+
+  it('omits the uuid when the drawer resolved a different board to render', () => {
+    // A climb that needs holds this wall hasn't got renders against another
+    // board, and the tick carries THAT config. The server drops a boardUuid
+    // whose config disagrees without falling back (#4219), so sending it here
+    // would leave the tick with no board at all.
+    boardState.current = boardWithoutHistory();
+    activeBoardState.current = SELECTED_BOARD;
+    const { getByTestId } = renderForm({ boardName: 'moonboard', layoutId: 3, sizeId: 1, setIds: '5,6,7,8,9,10' });
+
+    fireEvent.click(getByTestId('save'));
+
+    expect(saveMock.mutate.mock.calls[0][0]).not.toHaveProperty('boardUuid');
+  });
+
+  it('omits the uuid when no board is selected', () => {
+    boardState.current = boardWithoutHistory();
+    activeBoardState.current = null;
+    const { getByTestId } = renderForm({ boardName: 'moonboard', ...TICK_CONFIG });
+
+    fireEvent.click(getByTestId('save'));
+
+    expect(saveMock.mutate.mock.calls[0][0]).not.toHaveProperty('boardUuid');
+  });
+
+  it('omits the uuid when the drawer sent no config to check it against', () => {
+    boardState.current = boardWithoutHistory();
+    activeBoardState.current = SELECTED_BOARD;
+    const { getByTestId } = renderForm({ boardName: 'moonboard' });
+
+    fireEvent.click(getByTestId('save'));
+
+    expect(saveMock.mutate.mock.calls[0][0]).not.toHaveProperty('boardUuid');
   });
 });

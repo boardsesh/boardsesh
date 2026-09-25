@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'http';
 import Busboy from 'busboy';
 import { v4 as uuidv4 } from 'uuid';
 import { applyCorsHeaders } from './cors';
+import { guardUploadFileStream } from './http-utils';
 import { validateToken } from '../middleware/auth';
 import { isS3Configured, uploadToS3 } from '../storage/s3';
 import { logger } from '../utils/logger';
@@ -133,6 +134,10 @@ export async function handleOcrTestDataUpload(req: IncomingMessage, res: ServerR
     });
 
     busboy.on('file', (name: string, stream: NodeJS.ReadableStream, info: { filename: string; mimeType: string }) => {
+      // Before every early return: busboy destroys this stream with an error on
+      // any truncated part, and an unlistened one exits the process (#5359).
+      guardUploadFileStream(stream, { route: req.url ?? '/api/ocr-test-data', field: name });
+
       if (name !== 'image') {
         stream.resume();
         return;

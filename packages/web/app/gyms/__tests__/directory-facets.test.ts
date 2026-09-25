@@ -8,6 +8,7 @@ import {
   isSearchApplication,
   paginationWindow,
   parseDirectoryQuery,
+  FILTERABLE_BOARD_TYPES,
 } from '../directory-facets';
 
 describe('facet routes', () => {
@@ -26,6 +27,14 @@ describe('facet routes', () => {
 });
 
 describe('parseDirectoryQuery', () => {
+  it('carries a bounded place label only alongside valid coordinates', () => {
+    expect(parseDirectoryQuery('all', { place: 'Sydney' }).place).toBeUndefined();
+    const query = parseDirectoryQuery('all', { place: '  Sydney  ', lat: '-33.86', lng: '151.2', radius: '50' });
+    expect(query.place).toBe('Sydney');
+    expect(buildDirectoryHref('all', query, 2)).toBe('/gyms?place=Sydney&lat=-33.86&lng=151.2&radius=50&page=2');
+    expect(buildFacetSwitchHref('kilter', query)).toBe('/gyms/kilter?place=Sydney&lat=-33.86&lng=151.2&radius=50');
+    expect(parseDirectoryQuery('all', { place: 'x'.repeat(300), lat: '0', lng: '0' }).place).toHaveLength(200);
+  });
   it('defaults to an unfiltered first page', () => {
     expect(parseDirectoryQuery('all', {})).toEqual({
       query: '',
@@ -209,5 +218,29 @@ describe('paginationWindow', () => {
 
   it('never emits more pages than exist', () => {
     expect(paginationWindow(2, 3)).toEqual([1, 2, 3]);
+  });
+});
+
+describe('the filterable board-type vocabulary', () => {
+  it('covers the eight catalogue boards and excludes spray', () => {
+    // A spray wall is one climber's own wall, not a board model a gym is found
+    // by, so it must never become a `?boardType=` value or a directory facet —
+    // even though it has a `BOARD_TYPE_LABELS` row for the places that DO name
+    // it (a board card, a wall's own screens).
+    expect([...FILTERABLE_BOARD_TYPES].sort()).toEqual([
+      'decoy',
+      'grasshopper',
+      'kilter',
+      'moonboard',
+      'soill',
+      'tension',
+      'touchstone',
+      'woods',
+    ]);
+    expect(FILTERABLE_BOARD_TYPES).not.toContain('spray');
+  });
+
+  it('drops spray from a requested boardType filter', () => {
+    expect(parseDirectoryQuery('all', { boardType: 'spray' }).boardTypes).toEqual([]);
   });
 });

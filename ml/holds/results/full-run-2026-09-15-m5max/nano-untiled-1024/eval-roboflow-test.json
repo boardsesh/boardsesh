@@ -1,0 +1,1509 @@
+{
+  "config": "nano-untiled-1024",
+  "model": ".data/artifacts/nano-untiled-1024/model-int8.onnx",
+  "model_bytes": 31327953,
+  "dataset": ".data/roboflow-1class",
+  "split": "test",
+  "photos": 148,
+  "holds": 8030,
+  "box": {
+    "precision": 0.9801,
+    "recall": 0.8455,
+    "f1": 0.9078,
+    "tp": 6789,
+    "fp": 138,
+    "fn": 1241
+  },
+  "latency_seconds": {
+    "p50": 0.168,
+    "p95": 0.178,
+    "mean": 0.169
+  },
+  "peak_rss_mb": 1040.4,
+  "correction_rate_micro": 0.1717,
+  "correction_rate_macro": 0.1684,
+  "score_threshold": 0.6,
+  "threads": 8,
+  "per_photo": [
+    {
+      "file_name": "6EgpmqjXq8ePyqd2N_jpg.rf.260d1ee5b3b1250563bbfdc003ad7e64.jpg",
+      "holds": 52,
+      "detections": 41,
+      "tp": 41,
+      "fp": 0,
+      "fn": 11,
+      "correction_rate": 0.2115,
+      "seconds": 0.203
+    },
+    {
+      "file_name": "6ZozigkwGHsku9zKb_jpg.rf.1f04d653a6e87f474c12014dbe37b89f.jpg",
+      "holds": 32,
+      "detections": 27,
+      "tp": 27,
+      "fp": 0,
+      "fn": 5,
+      "correction_rate": 0.1562,
+      "seconds": 0.179
+    },
+    {
+      "file_name": "6M2MXxKtYeGQpd5sB_jpg.rf.22257e9ea96cd308fa24a86520187803.jpg",
+      "holds": 88,
+      "detections": 63,
+      "tp": 60,
+      "fp": 3,
+      "fn": 28,
+      "correction_rate": 0.3523,
+      "seconds": 0.164
+    },
+    {
+      "file_name": "8kk8iy6GG58Qoy5ut_jpg.rf.1bdb68e4a39fd2ea5dfa06529f124ad5.jpg",
+      "holds": 33,
+      "detections": 32,
+      "tp": 31,
+      "fp": 1,
+      "fn": 2,
+      "correction_rate": 0.0909,
+      "seconds": 0.163
+    },
+    {
+      "file_name": "8Xe6TEx98Hj5bhxNC_jpg.rf.14d724e82deba7de2f6e56be03e13150.jpg",
+      "holds": 62,
+      "detections": 47,
+      "tp": 46,
+      "fp": 1,
+      "fn": 16,
+      "correction_rate": 0.2742,
+      "seconds": 0.165
+    },
+    {
+      "file_name": "7LdujxavP78heZ6dg_jpg.rf.08026ef74cf79d4dd76319c329531b53.jpg",
+      "holds": 60,
+      "detections": 55,
+      "tp": 55,
+      "fp": 0,
+      "fn": 5,
+      "correction_rate": 0.0833,
+      "seconds": 0.17
+    },
+    {
+      "file_name": "7tzjSTq9bP4vgPRKJ_jpg.rf.0c342329aedb3c1d3fb1dc46b05effdd.jpg",
+      "holds": 65,
+      "detections": 50,
+      "tp": 46,
+      "fp": 4,
+      "fn": 19,
+      "correction_rate": 0.3538,
+      "seconds": 0.168
+    },
+    {
+      "file_name": "asi6gL58jqxaQuWex_jpg.rf.0e04ec26fa81437543bccf6571ec6e33.jpg",
+      "holds": 61,
+      "detections": 60,
+      "tp": 60,
+      "fp": 0,
+      "fn": 1,
+      "correction_rate": 0.0164,
+      "seconds": 0.161
+    },
+    {
+      "file_name": "8DsPJc48s6MjASccb_jpg.rf.2251365c8944110900429cacacd6115b.jpg",
+      "holds": 61,
+      "detections": 51,
+      "tp": 48,
+      "fp": 3,
+      "fn": 13,
+      "correction_rate": 0.2623,
+      "seconds": 0.171
+    },
+    {
+      "file_name": "8tLT7mhxKMzuq2tnw_jpg.rf.192e3e88b96062def1828ccb1e75c7fc.jpg",
+      "holds": 44,
+      "detections": 39,
+      "tp": 38,
+      "fp": 1,
+      "fn": 6,
+      "correction_rate": 0.1591,
+      "seconds": 0.166
+    },
+    {
+      "file_name": "2022-12-08_15-20-12_UTC_jpg.rf.12e13ef4a161d83e3db39405b4649dcb.jpg",
+      "holds": 83,
+      "detections": 68,
+      "tp": 66,
+      "fp": 2,
+      "fn": 17,
+      "correction_rate": 0.2289,
+      "seconds": 0.168
+    },
+    {
+      "file_name": "8meHDvgZMaZgfqRkG_jpg.rf.0c90bad06bf949fe5bfcfad63d1c9783.jpg",
+      "holds": 64,
+      "detections": 59,
+      "tp": 58,
+      "fp": 1,
+      "fn": 6,
+      "correction_rate": 0.1094,
+      "seconds": 0.162
+    },
+    {
+      "file_name": "8eFdXYnyzajmNKhjR_jpg.rf.21216ee9279d4267aafcc2b01809a8aa.jpg",
+      "holds": 33,
+      "detections": 31,
+      "tp": 30,
+      "fp": 1,
+      "fn": 3,
+      "correction_rate": 0.1212,
+      "seconds": 0.167
+    },
+    {
+      "file_name": "7QeTipbFoMjEBQqFP_jpg.rf.1cdec07ed176cdbb2e498fa73045c7e2.jpg",
+      "holds": 48,
+      "detections": 46,
+      "tp": 46,
+      "fp": 0,
+      "fn": 2,
+      "correction_rate": 0.0417,
+      "seconds": 0.165
+    },
+    {
+      "file_name": "67SRhazs8eB8YoKPw_jpg.rf.09bf52ed2f93ccc5499ecc2e32b0ef24.jpg",
+      "holds": 48,
+      "detections": 45,
+      "tp": 45,
+      "fp": 0,
+      "fn": 3,
+      "correction_rate": 0.0625,
+      "seconds": 0.162
+    },
+    {
+      "file_name": "B9mA52W6FnZ4qQfNQ_jpg.rf.19a63c68a19e4a26d18929f56e0af18b.jpg",
+      "holds": 41,
+      "detections": 37,
+      "tp": 37,
+      "fp": 0,
+      "fn": 4,
+      "correction_rate": 0.0976,
+      "seconds": 0.166
+    },
+    {
+      "file_name": "6PmQm3E49aHfAYkQb_jpg.rf.230278d608bd4ed9d9175d6a2ed81872.jpg",
+      "holds": 78,
+      "detections": 73,
+      "tp": 72,
+      "fp": 1,
+      "fn": 6,
+      "correction_rate": 0.0897,
+      "seconds": 0.167
+    },
+    {
+      "file_name": "7uDifWMHysv2gimRF_jpg.rf.043f408a7b9837cf0c7aaab6a7e51e25.jpg",
+      "holds": 64,
+      "detections": 61,
+      "tp": 56,
+      "fp": 5,
+      "fn": 8,
+      "correction_rate": 0.2031,
+      "seconds": 0.167
+    },
+    {
+      "file_name": "7z5PpkoBKyFYkjuai_jpg.rf.05e883480e756c4dfee74509aa200c1b.jpg",
+      "holds": 39,
+      "detections": 36,
+      "tp": 36,
+      "fp": 0,
+      "fn": 3,
+      "correction_rate": 0.0769,
+      "seconds": 0.168
+    },
+    {
+      "file_name": "6wTRuruAfMAofmEjN_jpg.rf.29a15eb87ac16650000483fbe4029b33.jpg",
+      "holds": 53,
+      "detections": 47,
+      "tp": 47,
+      "fp": 0,
+      "fn": 6,
+      "correction_rate": 0.1132,
+      "seconds": 0.166
+    },
+    {
+      "file_name": "7WEfBHLwK3dgsEyyf_jpg.rf.14b8d8fac630bcc73f32b0b9edc6c774.jpg",
+      "holds": 50,
+      "detections": 45,
+      "tp": 43,
+      "fp": 2,
+      "fn": 7,
+      "correction_rate": 0.18,
+      "seconds": 0.165
+    },
+    {
+      "file_name": "bKoZNXLNuKQNEN4DL_jpg.rf.189e3404cba84f4492ffbfd44c8cf62b.jpg",
+      "holds": 37,
+      "detections": 32,
+      "tp": 31,
+      "fp": 1,
+      "fn": 6,
+      "correction_rate": 0.1892,
+      "seconds": 0.164
+    },
+    {
+      "file_name": "6vukGX5kdtisEWvLo_jpg.rf.2b2b3a7c7d15fdfc1c8cbfb7d6b18e30.jpg",
+      "holds": 74,
+      "detections": 62,
+      "tp": 62,
+      "fp": 0,
+      "fn": 12,
+      "correction_rate": 0.1622,
+      "seconds": 0.162
+    },
+    {
+      "file_name": "2022-12-08_15-22-26_UTC_jpg.rf.24f3a35bd63e05e6114d42253f3660df.jpg",
+      "holds": 86,
+      "detections": 81,
+      "tp": 79,
+      "fp": 2,
+      "fn": 7,
+      "correction_rate": 0.1047,
+      "seconds": 0.169
+    },
+    {
+      "file_name": "6H6STBgsdD9mM4t53_jpg.rf.2bf452def0385ce5f969579560094265.jpg",
+      "holds": 60,
+      "detections": 43,
+      "tp": 42,
+      "fp": 1,
+      "fn": 18,
+      "correction_rate": 0.3167,
+      "seconds": 0.173
+    },
+    {
+      "file_name": "8MXGYoYK6SiDFnyuz_jpg.rf.2af7ffdac4c15478090c8f28b0e189d6.jpg",
+      "holds": 65,
+      "detections": 59,
+      "tp": 59,
+      "fp": 0,
+      "fn": 6,
+      "correction_rate": 0.0923,
+      "seconds": 0.166
+    },
+    {
+      "file_name": "8Ycm9ADfsmXnEMeZs_jpg.rf.2b0c87fa1868769d70f6251902951df7.jpg",
+      "holds": 20,
+      "detections": 17,
+      "tp": 17,
+      "fp": 0,
+      "fn": 3,
+      "correction_rate": 0.15,
+      "seconds": 0.163
+    },
+    {
+      "file_name": "2022-12-08_11-29-42_UTC_jpg.rf.14576bee94c189966da603ed6817f0b4.jpg",
+      "holds": 74,
+      "detections": 64,
+      "tp": 59,
+      "fp": 5,
+      "fn": 15,
+      "correction_rate": 0.2703,
+      "seconds": 0.176
+    },
+    {
+      "file_name": "8mZcoZd6X4w3M5uYH_jpg.rf.20b22bebf44bb9402e91b38089f55a28.jpg",
+      "holds": 61,
+      "detections": 50,
+      "tp": 50,
+      "fp": 0,
+      "fn": 11,
+      "correction_rate": 0.1803,
+      "seconds": 0.171
+    },
+    {
+      "file_name": "7kavc4f76pm3KHovX_jpg.rf.2d9bacf69879a4fc25232d56e039cbaf.jpg",
+      "holds": 37,
+      "detections": 33,
+      "tp": 33,
+      "fp": 0,
+      "fn": 4,
+      "correction_rate": 0.1081,
+      "seconds": 0.174
+    },
+    {
+      "file_name": "7K49DSSR3DztgEPTZ_jpg.rf.35fabd9c3f2cdd591df67e40ef56ec66.jpg",
+      "holds": 53,
+      "detections": 40,
+      "tp": 38,
+      "fp": 2,
+      "fn": 15,
+      "correction_rate": 0.3208,
+      "seconds": 0.168
+    },
+    {
+      "file_name": "6R9dJsD2BFRx69RWZ_jpg.rf.36fe62b27b5a8d3fc5c4ccdc1044198c.jpg",
+      "holds": 44,
+      "detections": 37,
+      "tp": 37,
+      "fp": 0,
+      "fn": 7,
+      "correction_rate": 0.1591,
+      "seconds": 0.168
+    },
+    {
+      "file_name": "6q2cuFjZWupepfQdH_jpg.rf.30358288fb0e16e9b57ae00437a14807.jpg",
+      "holds": 25,
+      "detections": 15,
+      "tp": 14,
+      "fp": 1,
+      "fn": 11,
+      "correction_rate": 0.48,
+      "seconds": 0.163
+    },
+    {
+      "file_name": "7cq8g4AX2GzZ3zPWA_jpg.rf.389e5ddab0a4ff2a52d50bc756b1689c.jpg",
+      "holds": 40,
+      "detections": 28,
+      "tp": 28,
+      "fp": 0,
+      "fn": 12,
+      "correction_rate": 0.3,
+      "seconds": 0.17
+    },
+    {
+      "file_name": "7iGkJjjGptzWeMKAH_jpg.rf.381dc3a20ef45e1e781a68c36488ed50.jpg",
+      "holds": 57,
+      "detections": 47,
+      "tp": 45,
+      "fp": 2,
+      "fn": 12,
+      "correction_rate": 0.2456,
+      "seconds": 0.162
+    },
+    {
+      "file_name": "8yB3EyY9sSHs9N98Z_jpg.rf.3a90ba50ad0402029e37e72720379668.jpg",
+      "holds": 37,
+      "detections": 36,
+      "tp": 36,
+      "fp": 0,
+      "fn": 1,
+      "correction_rate": 0.027,
+      "seconds": 0.167
+    },
+    {
+      "file_name": "8brPfPWaxBxJunt7W_jpg.rf.3add2e8e3ffec61addee518b7efdb4f7.jpg",
+      "holds": 60,
+      "detections": 53,
+      "tp": 53,
+      "fp": 0,
+      "fn": 7,
+      "correction_rate": 0.1167,
+      "seconds": 0.169
+    },
+    {
+      "file_name": "8Mr7R53MsATEd64Yw_jpg.rf.3d252ec4b5f063e393cd2ce3c69ce67f.jpg",
+      "holds": 92,
+      "detections": 74,
+      "tp": 74,
+      "fp": 0,
+      "fn": 18,
+      "correction_rate": 0.1957,
+      "seconds": 0.162
+    },
+    {
+      "file_name": "6h62uoigXd5nqL6nq_jpg.rf.3c6b4cc8bb62988a07563ecf3255c8a1.jpg",
+      "holds": 56,
+      "detections": 48,
+      "tp": 40,
+      "fp": 8,
+      "fn": 16,
+      "correction_rate": 0.4286,
+      "seconds": 0.168
+    },
+    {
+      "file_name": "7GbMSR9itJytEEuta_jpg.rf.40887e82f7539e51bed73193347fa2a5.jpg",
+      "holds": 53,
+      "detections": 45,
+      "tp": 44,
+      "fp": 1,
+      "fn": 9,
+      "correction_rate": 0.1887,
+      "seconds": 0.163
+    },
+    {
+      "file_name": "9LLa6PTH9MLCRYHEo_jpg.rf.42d187251f918458ea8f0ce65e0c9b0a.jpg",
+      "holds": 44,
+      "detections": 39,
+      "tp": 38,
+      "fp": 1,
+      "fn": 6,
+      "correction_rate": 0.1591,
+      "seconds": 0.163
+    },
+    {
+      "file_name": "7imN4YnTevRbSNr22_jpg.rf.4e861b0d6c98f8d394c18f16300ae5ff.jpg",
+      "holds": 71,
+      "detections": 52,
+      "tp": 52,
+      "fp": 0,
+      "fn": 19,
+      "correction_rate": 0.2676,
+      "seconds": 0.166
+    },
+    {
+      "file_name": "2RiDAWsqqWaSwwteT_jpg.rf.4b35dd893d246d1d434495638996c8b5.jpg",
+      "holds": 43,
+      "detections": 36,
+      "tp": 33,
+      "fp": 3,
+      "fn": 10,
+      "correction_rate": 0.3023,
+      "seconds": 0.169
+    },
+    {
+      "file_name": "8MzEnu3JaD23qobHn_jpg.rf.4ed5ad9b9c66f257d01aa7320b7f5663.jpg",
+      "holds": 51,
+      "detections": 44,
+      "tp": 43,
+      "fp": 1,
+      "fn": 8,
+      "correction_rate": 0.1765,
+      "seconds": 0.165
+    },
+    {
+      "file_name": "8QsMFpu3uWKYqhNLj_jpg.rf.44e708dc4ec869e4475672f03678b347.jpg",
+      "holds": 34,
+      "detections": 27,
+      "tp": 27,
+      "fp": 0,
+      "fn": 7,
+      "correction_rate": 0.2059,
+      "seconds": 0.162
+    },
+    {
+      "file_name": "2xbw6YnKHbq7ev35M_jpg.rf.537376797417bd7505ada620fe64c56b.jpg",
+      "holds": 57,
+      "detections": 50,
+      "tp": 50,
+      "fp": 0,
+      "fn": 7,
+      "correction_rate": 0.1228,
+      "seconds": 0.166
+    },
+    {
+      "file_name": "8XLSPL4uYW6ZkSfgu_jpg.rf.543862a475c17a5cceb5dd2b4f170044.jpg",
+      "holds": 52,
+      "detections": 49,
+      "tp": 48,
+      "fp": 1,
+      "fn": 4,
+      "correction_rate": 0.0962,
+      "seconds": 0.169
+    },
+    {
+      "file_name": "8aoFjbrCBRaAjTZa9_jpg.rf.4fd4a770115f12a95a8f92f6ff6540e2.jpg",
+      "holds": 42,
+      "detections": 39,
+      "tp": 39,
+      "fp": 0,
+      "fn": 3,
+      "correction_rate": 0.0714,
+      "seconds": 0.168
+    },
+    {
+      "file_name": "6mAJdFt2Lv2rawNpQ_jpg.rf.56f9b1daa65dabd0421e581059fccdef.jpg",
+      "holds": 30,
+      "detections": 31,
+      "tp": 30,
+      "fp": 1,
+      "fn": 0,
+      "correction_rate": 0.0333,
+      "seconds": 0.164
+    },
+    {
+      "file_name": "8WqxisshwXiG48EyD_jpg.rf.57c0fc521519e03ab76761932b2fa94e.jpg",
+      "holds": 44,
+      "detections": 40,
+      "tp": 39,
+      "fp": 1,
+      "fn": 5,
+      "correction_rate": 0.1364,
+      "seconds": 0.166
+    },
+    {
+      "file_name": "7BuemLEynL6owaDz4_jpg.rf.5719bcc23e93ccad708ca5aaeb174f2c.jpg",
+      "holds": 50,
+      "detections": 47,
+      "tp": 47,
+      "fp": 0,
+      "fn": 3,
+      "correction_rate": 0.06,
+      "seconds": 0.171
+    },
+    {
+      "file_name": "7B4D5jDuz5wSFPpty_jpg.rf.57b0f9a38c75a16a72d8831016f4c212.jpg",
+      "holds": 35,
+      "detections": 35,
+      "tp": 35,
+      "fp": 0,
+      "fn": 0,
+      "correction_rate": 0.0,
+      "seconds": 0.165
+    },
+    {
+      "file_name": "8m8zirYdXJpWG56qQ_jpg.rf.594c0b360654b7c93a44f3a89a7a5dc8.jpg",
+      "holds": 35,
+      "detections": 35,
+      "tp": 33,
+      "fp": 2,
+      "fn": 2,
+      "correction_rate": 0.1143,
+      "seconds": 0.166
+    },
+    {
+      "file_name": "5xAWpY3Si37Ri5zEa_jpg.rf.5a7eeebd2df880144e5cdfb6b1a2ae59.jpg",
+      "holds": 58,
+      "detections": 55,
+      "tp": 55,
+      "fp": 0,
+      "fn": 3,
+      "correction_rate": 0.0517,
+      "seconds": 0.165
+    },
+    {
+      "file_name": "6X9cSe9th9Mhr3AMj_jpg.rf.5e1408bcf83c1197dbcccb141e3f1b29.jpg",
+      "holds": 55,
+      "detections": 47,
+      "tp": 47,
+      "fp": 0,
+      "fn": 8,
+      "correction_rate": 0.1455,
+      "seconds": 0.172
+    },
+    {
+      "file_name": "7GpfJgHDt6EKZuMSz_jpg.rf.60efc0209b2a92f100dec8a352905896.jpg",
+      "holds": 25,
+      "detections": 18,
+      "tp": 17,
+      "fp": 1,
+      "fn": 8,
+      "correction_rate": 0.36,
+      "seconds": 0.165
+    },
+    {
+      "file_name": "6ayuGopPanbFptKfH_jpg.rf.656109f1816ae6c6e4bf91dbf792af0f.jpg",
+      "holds": 60,
+      "detections": 50,
+      "tp": 48,
+      "fp": 2,
+      "fn": 12,
+      "correction_rate": 0.2333,
+      "seconds": 0.169
+    },
+    {
+      "file_name": "7Y4oerZBbm28DBrSk_jpg.rf.6b2b36aa1a5ad8fb0a7963546010d852.jpg",
+      "holds": 34,
+      "detections": 32,
+      "tp": 32,
+      "fp": 0,
+      "fn": 2,
+      "correction_rate": 0.0588,
+      "seconds": 0.165
+    },
+    {
+      "file_name": "8qgPqL7j87dHF3WJZ_jpg.rf.6accca74dd11585af505ffda5ecb20a9.jpg",
+      "holds": 76,
+      "detections": 68,
+      "tp": 68,
+      "fp": 0,
+      "fn": 8,
+      "correction_rate": 0.1053,
+      "seconds": 0.168
+    },
+    {
+      "file_name": "7EtyHwzFs8XrYiqzN_jpg.rf.6e4323dfce728954818d7c1c09316501.jpg",
+      "holds": 55,
+      "detections": 46,
+      "tp": 45,
+      "fp": 1,
+      "fn": 10,
+      "correction_rate": 0.2,
+      "seconds": 0.18
+    },
+    {
+      "file_name": "7GARkoxAz4dBvfAkh_jpg.rf.73c5f21c92db74cb9bc65614dbbe2e0f.jpg",
+      "holds": 55,
+      "detections": 43,
+      "tp": 43,
+      "fp": 0,
+      "fn": 12,
+      "correction_rate": 0.2182,
+      "seconds": 0.182
+    },
+    {
+      "file_name": "7HiZ3JmsFYsvvq53d_jpg.rf.6f43bd538433fab072218084a222673e.jpg",
+      "holds": 30,
+      "detections": 24,
+      "tp": 23,
+      "fp": 1,
+      "fn": 7,
+      "correction_rate": 0.2667,
+      "seconds": 0.176
+    },
+    {
+      "file_name": "2022-12-09_14-47-34_UTC_jpg.rf.716788b200e80f48219b88a4be1ca11e.jpg",
+      "holds": 154,
+      "detections": 137,
+      "tp": 135,
+      "fp": 2,
+      "fn": 19,
+      "correction_rate": 0.1364,
+      "seconds": 0.171
+    },
+    {
+      "file_name": "2022-12-08_14-47-53_UTC_jpg.rf.6d60d11858d4c104cf0f49aa98fd9399.jpg",
+      "holds": 132,
+      "detections": 122,
+      "tp": 121,
+      "fp": 1,
+      "fn": 11,
+      "correction_rate": 0.0909,
+      "seconds": 0.168
+    },
+    {
+      "file_name": "7xzuoqGAqYJGbnwNK_jpg.rf.6babdb7379baa683603c9768f7ee69a3.jpg",
+      "holds": 29,
+      "detections": 24,
+      "tp": 24,
+      "fp": 0,
+      "fn": 5,
+      "correction_rate": 0.1724,
+      "seconds": 0.169
+    },
+    {
+      "file_name": "7KvgfgvW3otbf5TQ5_jpg.rf.75115469abec22e7cfc83a4b5c3536ac.jpg",
+      "holds": 41,
+      "detections": 34,
+      "tp": 33,
+      "fp": 1,
+      "fn": 8,
+      "correction_rate": 0.2195,
+      "seconds": 0.166
+    },
+    {
+      "file_name": "2zLS8bBY582XCN4ek_jpg.rf.753ea4e414f6a0abeacb73a90bdbebe6.jpg",
+      "holds": 47,
+      "detections": 42,
+      "tp": 42,
+      "fp": 0,
+      "fn": 5,
+      "correction_rate": 0.1064,
+      "seconds": 0.167
+    },
+    {
+      "file_name": "6LcJRL67MFg9nQuZC_jpg.rf.75e2abb1ad1a238fed7a24e6c9ed2759.jpg",
+      "holds": 66,
+      "detections": 62,
+      "tp": 61,
+      "fp": 1,
+      "fn": 5,
+      "correction_rate": 0.0909,
+      "seconds": 0.164
+    },
+    {
+      "file_name": "7uc68GbFSGEtHpZzp_jpg.rf.751e9a80dc68ca3cd139d4e2fa2ba314.jpg",
+      "holds": 72,
+      "detections": 53,
+      "tp": 52,
+      "fp": 1,
+      "fn": 20,
+      "correction_rate": 0.2917,
+      "seconds": 0.17
+    },
+    {
+      "file_name": "7YRuM4EfyhwTjCzzR_jpg.rf.7784a8d200054cea91dca256f7f1740a.jpg",
+      "holds": 27,
+      "detections": 25,
+      "tp": 25,
+      "fp": 0,
+      "fn": 2,
+      "correction_rate": 0.0741,
+      "seconds": 0.164
+    },
+    {
+      "file_name": "8W4t6B99MQLHk4MkM_jpg.rf.798f5c6eafb2600b8f716d7d8473d294.jpg",
+      "holds": 35,
+      "detections": 26,
+      "tp": 26,
+      "fp": 0,
+      "fn": 9,
+      "correction_rate": 0.2571,
+      "seconds": 0.166
+    },
+    {
+      "file_name": "7dmHTHAbntK8XgNJY_jpg.rf.79e0c50c548ef6a321636350e0a9af8c.jpg",
+      "holds": 75,
+      "detections": 60,
+      "tp": 57,
+      "fp": 3,
+      "fn": 18,
+      "correction_rate": 0.28,
+      "seconds": 0.165
+    },
+    {
+      "file_name": "BSSNu9Yqr3xCSLTkG_jpg.rf.7b4abbaa5c885f75029a91c789b3e0b4.jpg",
+      "holds": 52,
+      "detections": 47,
+      "tp": 46,
+      "fp": 1,
+      "fn": 6,
+      "correction_rate": 0.1346,
+      "seconds": 0.167
+    },
+    {
+      "file_name": "5Whxq8uoDCx44qaHH_jpg.rf.837f5ad3ebb1406e16a2cc92917bec7c.jpg",
+      "holds": 57,
+      "detections": 51,
+      "tp": 51,
+      "fp": 0,
+      "fn": 6,
+      "correction_rate": 0.1053,
+      "seconds": 0.167
+    },
+    {
+      "file_name": "6PxHAB5DdPiXib9hM_jpg.rf.80dcff0c9a57955e1af850f5786ed314.jpg",
+      "holds": 26,
+      "detections": 18,
+      "tp": 18,
+      "fp": 0,
+      "fn": 8,
+      "correction_rate": 0.3077,
+      "seconds": 0.168
+    },
+    {
+      "file_name": "6v9hpA2nMD5yjcG8X_jpg.rf.8478d8210cff78ee3edee4f535b9af11.jpg",
+      "holds": 61,
+      "detections": 47,
+      "tp": 47,
+      "fp": 0,
+      "fn": 14,
+      "correction_rate": 0.2295,
+      "seconds": 0.175
+    },
+    {
+      "file_name": "6oofqkqKEGDrC8fhD_jpg.rf.863a0bb76da94ad657178c00c9855822.jpg",
+      "holds": 72,
+      "detections": 64,
+      "tp": 64,
+      "fp": 0,
+      "fn": 8,
+      "correction_rate": 0.1111,
+      "seconds": 0.168
+    },
+    {
+      "file_name": "6J7vRrkHmNfu9KDtP_jpg.rf.89a1196c234da8cb0c40d6e54bac66e0.jpg",
+      "holds": 65,
+      "detections": 47,
+      "tp": 46,
+      "fp": 1,
+      "fn": 19,
+      "correction_rate": 0.3077,
+      "seconds": 0.165
+    },
+    {
+      "file_name": "8oJmowWC6x2EEoXFd_jpg.rf.8c6cfda830c9467d405b6f5f156f292e.jpg",
+      "holds": 42,
+      "detections": 37,
+      "tp": 36,
+      "fp": 1,
+      "fn": 6,
+      "correction_rate": 0.1667,
+      "seconds": 0.165
+    },
+    {
+      "file_name": "7PtgCinSy275iTPRj_jpg.rf.8753c4276b579da49c6dcc6739eab5e4.jpg",
+      "holds": 45,
+      "detections": 35,
+      "tp": 34,
+      "fp": 1,
+      "fn": 11,
+      "correction_rate": 0.2667,
+      "seconds": 0.171
+    },
+    {
+      "file_name": "32YtEoWiX7p4PuxCi_jpg.rf.88d9e9a9cd97a8b7532d6fdf987d4a03.jpg",
+      "holds": 56,
+      "detections": 48,
+      "tp": 47,
+      "fp": 1,
+      "fn": 9,
+      "correction_rate": 0.1786,
+      "seconds": 0.167
+    },
+    {
+      "file_name": "7yS5MviQKy4C3X4SA_jpg.rf.8e259e2543aa57ab211bd990c4f202e5.jpg",
+      "holds": 51,
+      "detections": 42,
+      "tp": 42,
+      "fp": 0,
+      "fn": 9,
+      "correction_rate": 0.1765,
+      "seconds": 0.166
+    },
+    {
+      "file_name": "6Yfad7Pi3Dmijx2Gr_jpg.rf.8d43030f84e72170ba514869c339458d.jpg",
+      "holds": 67,
+      "detections": 57,
+      "tp": 56,
+      "fp": 1,
+      "fn": 11,
+      "correction_rate": 0.1791,
+      "seconds": 0.164
+    },
+    {
+      "file_name": "8zktLvrxdJXx4dpcg_jpg.rf.901d8805e92a3a095d24662133bff8c4.jpg",
+      "holds": 38,
+      "detections": 34,
+      "tp": 32,
+      "fp": 2,
+      "fn": 6,
+      "correction_rate": 0.2105,
+      "seconds": 0.169
+    },
+    {
+      "file_name": "2pEZSLw9ZCqX5Ncde_jpg.rf.906d0a7f48243b5ab1cb9c5d4e0c3851.jpg",
+      "holds": 22,
+      "detections": 21,
+      "tp": 21,
+      "fp": 0,
+      "fn": 1,
+      "correction_rate": 0.0455,
+      "seconds": 0.169
+    },
+    {
+      "file_name": "7XiH6XgM3xieXjADJ_jpg.rf.93269fc4c6e33d609f47169fd5fc4a64.jpg",
+      "holds": 25,
+      "detections": 25,
+      "tp": 25,
+      "fp": 0,
+      "fn": 0,
+      "correction_rate": 0.0,
+      "seconds": 0.164
+    },
+    {
+      "file_name": "7QRAoPTySgGRkz4Sa_jpg.rf.91032e015e888b148d271106289ab37c.jpg",
+      "holds": 57,
+      "detections": 46,
+      "tp": 45,
+      "fp": 1,
+      "fn": 12,
+      "correction_rate": 0.2281,
+      "seconds": 0.171
+    },
+    {
+      "file_name": "7doeTAEMHFYL9nttN_jpg.rf.90ea62992a9ad16ca2962a12960d9f01.jpg",
+      "holds": 64,
+      "detections": 44,
+      "tp": 41,
+      "fp": 3,
+      "fn": 23,
+      "correction_rate": 0.4062,
+      "seconds": 0.172
+    },
+    {
+      "file_name": "7eJgiwFNvTcYE2rwg_jpg.rf.961fc9444a41af47e90972219191de10.jpg",
+      "holds": 49,
+      "detections": 46,
+      "tp": 46,
+      "fp": 0,
+      "fn": 3,
+      "correction_rate": 0.0612,
+      "seconds": 0.176
+    },
+    {
+      "file_name": "6ZBBenz92pLxsbDjS_jpg.rf.97464fa2f99fc16c856d48bb65e59431.jpg",
+      "holds": 46,
+      "detections": 32,
+      "tp": 32,
+      "fp": 0,
+      "fn": 14,
+      "correction_rate": 0.3043,
+      "seconds": 0.175
+    },
+    {
+      "file_name": "8RQ4GLMWmpMDbxzgw_jpg.rf.97a8f9bf623c472337e36556caca80fc.jpg",
+      "holds": 52,
+      "detections": 52,
+      "tp": 52,
+      "fp": 0,
+      "fn": 0,
+      "correction_rate": 0.0,
+      "seconds": 0.166
+    },
+    {
+      "file_name": "7Q5FJSfGL5SeM7beq_jpg.rf.99157eca6c9c4ee3973d130cd22dd7b0.jpg",
+      "holds": 69,
+      "detections": 48,
+      "tp": 43,
+      "fp": 5,
+      "fn": 26,
+      "correction_rate": 0.4493,
+      "seconds": 0.176
+    },
+    {
+      "file_name": "6FXREXS3Ynwt39Q8Y_jpg.rf.9a0ed0d86a1d15365b7dd26fa4770f89.jpg",
+      "holds": 72,
+      "detections": 56,
+      "tp": 52,
+      "fp": 4,
+      "fn": 20,
+      "correction_rate": 0.3333,
+      "seconds": 0.17
+    },
+    {
+      "file_name": "8HLSoZWNbavjzqAMq_jpg.rf.a1ec595a60031b3a4fdcde8cbea225eb.jpg",
+      "holds": 62,
+      "detections": 53,
+      "tp": 53,
+      "fp": 0,
+      "fn": 9,
+      "correction_rate": 0.1452,
+      "seconds": 0.173
+    },
+    {
+      "file_name": "2022-12-12_11-15-14_UTC_jpg.rf.a25e5a2f8a4e7bded3ca0bfd8f251cf3.jpg",
+      "holds": 68,
+      "detections": 56,
+      "tp": 56,
+      "fp": 0,
+      "fn": 12,
+      "correction_rate": 0.1765,
+      "seconds": 0.168
+    },
+    {
+      "file_name": "8dAtPNFopJDitY47w_jpg.rf.9e7cbf70db8c87a6f733ad7288aaeba0.jpg",
+      "holds": 39,
+      "detections": 39,
+      "tp": 37,
+      "fp": 2,
+      "fn": 2,
+      "correction_rate": 0.1026,
+      "seconds": 0.177
+    },
+    {
+      "file_name": "7BDLuC4gd6K6ZZ93d_jpg.rf.a3a73050e4ade9d32719cafa1ff201cc.jpg",
+      "holds": 59,
+      "detections": 56,
+      "tp": 56,
+      "fp": 0,
+      "fn": 3,
+      "correction_rate": 0.0508,
+      "seconds": 0.171
+    },
+    {
+      "file_name": "8wxWBAyLdZ5Bx5sqd_jpg.rf.a58246456d1913be91d91957a35de793.jpg",
+      "holds": 67,
+      "detections": 60,
+      "tp": 58,
+      "fp": 2,
+      "fn": 9,
+      "correction_rate": 0.1642,
+      "seconds": 0.169
+    },
+    {
+      "file_name": "8cMrWAZbGN9z36dDh_jpg.rf.a765b620b949da09ea75424b19a6dcd4.jpg",
+      "holds": 51,
+      "detections": 41,
+      "tp": 41,
+      "fp": 0,
+      "fn": 10,
+      "correction_rate": 0.1961,
+      "seconds": 0.165
+    },
+    {
+      "file_name": "7BBkG5ro7sAWGL8FQ_jpg.rf.a9b81ce3b2e656cbbd82e8d6f51a13cb.jpg",
+      "holds": 40,
+      "detections": 39,
+      "tp": 39,
+      "fp": 0,
+      "fn": 1,
+      "correction_rate": 0.025,
+      "seconds": 0.169
+    },
+    {
+      "file_name": "6yFYD4tvExxfFSZAk_jpg.rf.a5b3523f4f5f8084734c6cda229afd77.jpg",
+      "holds": 53,
+      "detections": 42,
+      "tp": 39,
+      "fp": 3,
+      "fn": 14,
+      "correction_rate": 0.3208,
+      "seconds": 0.179
+    },
+    {
+      "file_name": "6S4n3H42k69JP7n8k_jpg.rf.acd4f0d1683aa9656ef1df518cd0997e.jpg",
+      "holds": 57,
+      "detections": 56,
+      "tp": 56,
+      "fp": 0,
+      "fn": 1,
+      "correction_rate": 0.0175,
+      "seconds": 0.17
+    },
+    {
+      "file_name": "7HqNbDyrqxtggvyNu_jpg.rf.aff436f828101e37231f59109adffd31.jpg",
+      "holds": 53,
+      "detections": 50,
+      "tp": 50,
+      "fp": 0,
+      "fn": 3,
+      "correction_rate": 0.0566,
+      "seconds": 0.17
+    },
+    {
+      "file_name": "7bXGKhNdrHWGAqkhq_jpg.rf.af41461cafb823573c5a394ce1ecf6ed.jpg",
+      "holds": 18,
+      "detections": 14,
+      "tp": 14,
+      "fp": 0,
+      "fn": 4,
+      "correction_rate": 0.2222,
+      "seconds": 0.174
+    },
+    {
+      "file_name": "8Y2jEsLopjKcGGQHu_jpg.rf.adc3be81a07988bb317356c44ac3747a.jpg",
+      "holds": 58,
+      "detections": 53,
+      "tp": 51,
+      "fp": 2,
+      "fn": 7,
+      "correction_rate": 0.1552,
+      "seconds": 0.167
+    },
+    {
+      "file_name": "6uYFYLsazPKmjwCFG_jpg.rf.b10d80e6d2717f7bd4fad55e2e296dfe.jpg",
+      "holds": 58,
+      "detections": 50,
+      "tp": 49,
+      "fp": 1,
+      "fn": 9,
+      "correction_rate": 0.1724,
+      "seconds": 0.172
+    },
+    {
+      "file_name": "7qgQdATgCQ3wBkAyi_jpg.rf.b36085341973ae7c81102f7fdf0bb5a0.jpg",
+      "holds": 33,
+      "detections": 33,
+      "tp": 31,
+      "fp": 2,
+      "fn": 2,
+      "correction_rate": 0.1212,
+      "seconds": 0.17
+    },
+    {
+      "file_name": "6E3tFhYteohvYpr8c_jpg.rf.b7dc4cabbcf32e19b03d99b0a6d93ec0.jpg",
+      "holds": 43,
+      "detections": 39,
+      "tp": 39,
+      "fp": 0,
+      "fn": 4,
+      "correction_rate": 0.093,
+      "seconds": 0.176
+    },
+    {
+      "file_name": "6s6GsertTxcdFZLEg_jpg.rf.b589d1800c7261bc526eaf50c896d01a.jpg",
+      "holds": 29,
+      "detections": 27,
+      "tp": 26,
+      "fp": 1,
+      "fn": 3,
+      "correction_rate": 0.1379,
+      "seconds": 0.168
+    },
+    {
+      "file_name": "8RKGu75jcDZozr4Kb_jpg.rf.bbd8fc990d03426e869156b4df22c630.jpg",
+      "holds": 52,
+      "detections": 48,
+      "tp": 48,
+      "fp": 0,
+      "fn": 4,
+      "correction_rate": 0.0769,
+      "seconds": 0.153
+    },
+    {
+      "file_name": "6DWXWz4g5jHGMJCjY_jpg.rf.c2c26585a086dfd2e8a5db0e404bc8dc.jpg",
+      "holds": 87,
+      "detections": 73,
+      "tp": 71,
+      "fp": 2,
+      "fn": 16,
+      "correction_rate": 0.2069,
+      "seconds": 0.163
+    },
+    {
+      "file_name": "4Qwwq6gjjNsLMpzsv_jpg.rf.c9f9c1709ab2c255603637d9308d2a56.jpg",
+      "holds": 46,
+      "detections": 43,
+      "tp": 43,
+      "fp": 0,
+      "fn": 3,
+      "correction_rate": 0.0652,
+      "seconds": 0.178
+    },
+    {
+      "file_name": "8HqrsWxH2hirytans_jpg.rf.c788999804033243c09e15c4313dbee4.jpg",
+      "holds": 61,
+      "detections": 56,
+      "tp": 53,
+      "fp": 3,
+      "fn": 8,
+      "correction_rate": 0.1803,
+      "seconds": 0.172
+    },
+    {
+      "file_name": "8rBtfN67dRbhrhPZ7_jpg.rf.cbabc2488ef94e840e2ae39fcf496d13.jpg",
+      "holds": 58,
+      "detections": 53,
+      "tp": 52,
+      "fp": 1,
+      "fn": 6,
+      "correction_rate": 0.1207,
+      "seconds": 0.17
+    },
+    {
+      "file_name": "7m7onFW7aW2ZvFNKP_jpg.rf.cca749463e0a5019372b66df26e2d4da.jpg",
+      "holds": 30,
+      "detections": 24,
+      "tp": 24,
+      "fp": 0,
+      "fn": 6,
+      "correction_rate": 0.2,
+      "seconds": 0.175
+    },
+    {
+      "file_name": "2022-12-08_19-53-13_UTC_jpg.rf.cf03e2c4aee5be26da6c10cda1263575.jpg",
+      "holds": 84,
+      "detections": 76,
+      "tp": 76,
+      "fp": 0,
+      "fn": 8,
+      "correction_rate": 0.0952,
+      "seconds": 0.166
+    },
+    {
+      "file_name": "7T49nd2kFosNT6e4s_jpg.rf.cd7b40c0e283be73cf59b99ced3fa924.jpg",
+      "holds": 50,
+      "detections": 43,
+      "tp": 43,
+      "fp": 0,
+      "fn": 7,
+      "correction_rate": 0.14,
+      "seconds": 0.167
+    },
+    {
+      "file_name": "BgcGiqEJ6SfYEDdCM_jpg.rf.cf1b3b7edc354d1875d6f9d7adc51ae0.jpg",
+      "holds": 61,
+      "detections": 37,
+      "tp": 35,
+      "fp": 2,
+      "fn": 26,
+      "correction_rate": 0.459,
+      "seconds": 0.18
+    },
+    {
+      "file_name": "8Zf3NgPEe9NwtS3kv_jpg.rf.d13132cc2880f62456e4872853809aaa.jpg",
+      "holds": 42,
+      "detections": 40,
+      "tp": 40,
+      "fp": 0,
+      "fn": 2,
+      "correction_rate": 0.0476,
+      "seconds": 0.173
+    },
+    {
+      "file_name": "6kmSJx7G2vwbLQt7m_jpg.rf.db3b38d723bc6a5469a908dcd0fd7f3b.jpg",
+      "holds": 48,
+      "detections": 44,
+      "tp": 44,
+      "fp": 0,
+      "fn": 4,
+      "correction_rate": 0.0833,
+      "seconds": 0.188
+    },
+    {
+      "file_name": "7a2kDPYFXxwNCxb3b_jpg.rf.d3cb87e27af859d48b039261eb56e6b5.jpg",
+      "holds": 40,
+      "detections": 38,
+      "tp": 38,
+      "fp": 0,
+      "fn": 2,
+      "correction_rate": 0.05,
+      "seconds": 0.173
+    },
+    {
+      "file_name": "2022-12-12_05-54-04_UTC_jpg.rf.db66404df561170ee1d98c413ac064bc.jpg",
+      "holds": 94,
+      "detections": 84,
+      "tp": 82,
+      "fp": 2,
+      "fn": 12,
+      "correction_rate": 0.1489,
+      "seconds": 0.173
+    },
+    {
+      "file_name": "6Zxc2Mz6twXEQAYdw_jpg.rf.dd23fae99a72735f216a81c2680b1a80.jpg",
+      "holds": 68,
+      "detections": 58,
+      "tp": 58,
+      "fp": 0,
+      "fn": 10,
+      "correction_rate": 0.1471,
+      "seconds": 0.168
+    },
+    {
+      "file_name": "8F8h7ZijjaictJLcj_jpg.rf.dcff561d0dc61fdfda47ba4319a650d9.jpg",
+      "holds": 34,
+      "detections": 34,
+      "tp": 34,
+      "fp": 0,
+      "fn": 0,
+      "correction_rate": 0.0,
+      "seconds": 0.171
+    },
+    {
+      "file_name": "6ufPkC5N2BHdwxQqB_jpg.rf.dffee0c7a80cd2fed2ca5db37cab9adc.jpg",
+      "holds": 34,
+      "detections": 33,
+      "tp": 28,
+      "fp": 5,
+      "fn": 6,
+      "correction_rate": 0.3235,
+      "seconds": 0.166
+    },
+    {
+      "file_name": "8uLuQroHXXYBLsbMh_jpg.rf.e1dbbe6f85f7474ea62ca7436f75381d.jpg",
+      "holds": 39,
+      "detections": 34,
+      "tp": 34,
+      "fp": 0,
+      "fn": 5,
+      "correction_rate": 0.1282,
+      "seconds": 0.168
+    },
+    {
+      "file_name": "67RuebNxCRgqBBEAu_jpg.rf.e2f5dae0be1c69e2596d2ba7b8aa0ea1.jpg",
+      "holds": 62,
+      "detections": 43,
+      "tp": 41,
+      "fp": 2,
+      "fn": 21,
+      "correction_rate": 0.371,
+      "seconds": 0.174
+    },
+    {
+      "file_name": "6Qz5pzZdd78GoQmje_jpg.rf.e45bcf827feb400ede15ed925310ec4e.jpg",
+      "holds": 45,
+      "detections": 31,
+      "tp": 29,
+      "fp": 2,
+      "fn": 16,
+      "correction_rate": 0.4,
+      "seconds": 0.169
+    },
+    {
+      "file_name": "8W8aFwNYMtWHLa3Wu_jpg.rf.e52bd8375e8a8bbe26c2f7a57c5927d7.jpg",
+      "holds": 65,
+      "detections": 55,
+      "tp": 54,
+      "fp": 1,
+      "fn": 11,
+      "correction_rate": 0.1846,
+      "seconds": 0.153
+    },
+    {
+      "file_name": "6u8NeXGPWskixhYL2_jpg.rf.e65d32bbde310185f9d025531068948a.jpg",
+      "holds": 34,
+      "detections": 30,
+      "tp": 30,
+      "fp": 0,
+      "fn": 4,
+      "correction_rate": 0.1176,
+      "seconds": 0.167
+    },
+    {
+      "file_name": "az9CxvMSLnq3yRHLT_jpg.rf.e5e77a39ae1cce5f76fd98f7ee0c0891.jpg",
+      "holds": 26,
+      "detections": 22,
+      "tp": 22,
+      "fp": 0,
+      "fn": 4,
+      "correction_rate": 0.1538,
+      "seconds": 0.176
+    },
+    {
+      "file_name": "6p79rYgHD9tmDvSsf_jpg.rf.e93116c6ff7dbd3b0b12853e2f4e4b55.jpg",
+      "holds": 62,
+      "detections": 53,
+      "tp": 52,
+      "fp": 1,
+      "fn": 10,
+      "correction_rate": 0.1774,
+      "seconds": 0.172
+    },
+    {
+      "file_name": "7a6RG8rzczwqCmrne_jpg.rf.e9e4f9348ab2187213afce2da6a74cf2.jpg",
+      "holds": 78,
+      "detections": 58,
+      "tp": 57,
+      "fp": 1,
+      "fn": 21,
+      "correction_rate": 0.2821,
+      "seconds": 0.171
+    },
+    {
+      "file_name": "7JcPMAckSmMzKfP3o_jpg.rf.ebcdb76c52fef9eed2a7fe3b984d6c79.jpg",
+      "holds": 37,
+      "detections": 37,
+      "tp": 35,
+      "fp": 2,
+      "fn": 2,
+      "correction_rate": 0.1081,
+      "seconds": 0.168
+    },
+    {
+      "file_name": "A94XzknXbPTefw3y9_jpg.rf.f0a9dc90af15b75bf8c1d85b9c4dcf6e.jpg",
+      "holds": 55,
+      "detections": 47,
+      "tp": 47,
+      "fp": 0,
+      "fn": 8,
+      "correction_rate": 0.1455,
+      "seconds": 0.174
+    },
+    {
+      "file_name": "5WqwYqgFaZywEyjNd_jpg.rf.f0de822b1dc579378629bcf2be20fabf.jpg",
+      "holds": 48,
+      "detections": 45,
+      "tp": 45,
+      "fp": 0,
+      "fn": 3,
+      "correction_rate": 0.0625,
+      "seconds": 0.172
+    },
+    {
+      "file_name": "bncKjfzR29GtTR3ss_jpg.rf.ecb364a7fe050ca278b147d7ea1cd918.jpg",
+      "holds": 52,
+      "detections": 46,
+      "tp": 46,
+      "fp": 0,
+      "fn": 6,
+      "correction_rate": 0.1154,
+      "seconds": 0.171
+    },
+    {
+      "file_name": "2022-12-11_09-56-38_UTC_jpg.rf.f30c963b41cb6656926c66a7568746d6.jpg",
+      "holds": 88,
+      "detections": 80,
+      "tp": 80,
+      "fp": 0,
+      "fn": 8,
+      "correction_rate": 0.0909,
+      "seconds": 0.175
+    },
+    {
+      "file_name": "8NaGBGQ3B4wqnLZ8S_jpg.rf.f372f9d1e328dd02a7626f7b9c310378.jpg",
+      "holds": 65,
+      "detections": 53,
+      "tp": 53,
+      "fp": 0,
+      "fn": 12,
+      "correction_rate": 0.1846,
+      "seconds": 0.166
+    },
+    {
+      "file_name": "8rWGPao4TTnY6cst9_jpg.rf.f339d1a585d133ca63e6c4090f3ab431.jpg",
+      "holds": 48,
+      "detections": 47,
+      "tp": 47,
+      "fp": 0,
+      "fn": 1,
+      "correction_rate": 0.0208,
+      "seconds": 0.17
+    },
+    {
+      "file_name": "6hAJoPDNxyif4asSu_jpg.rf.f54d48520834e55b0c14f5c12ef2de3f.jpg",
+      "holds": 69,
+      "detections": 61,
+      "tp": 60,
+      "fp": 1,
+      "fn": 9,
+      "correction_rate": 0.1449,
+      "seconds": 0.172
+    },
+    {
+      "file_name": "6AhYGegXftACTRcFe_jpg.rf.f6b0e09372ba363a7f698cee567b065a.jpg",
+      "holds": 58,
+      "detections": 46,
+      "tp": 44,
+      "fp": 2,
+      "fn": 14,
+      "correction_rate": 0.2759,
+      "seconds": 0.167
+    },
+    {
+      "file_name": "2022-12-09_14-00-59_UTC_jpg.rf.f8006b1188e39bd18ac6253a67e245e1.jpg",
+      "holds": 143,
+      "detections": 126,
+      "tp": 126,
+      "fp": 0,
+      "fn": 17,
+      "correction_rate": 0.1189,
+      "seconds": 0.174
+    },
+    {
+      "file_name": "7DPXY6zfcWNrbDCMX_jpg.rf.fae7b2eac0ac7dc053d0abaf6360f0ea.jpg",
+      "holds": 63,
+      "detections": 57,
+      "tp": 57,
+      "fp": 0,
+      "fn": 6,
+      "correction_rate": 0.0952,
+      "seconds": 0.167
+    },
+    {
+      "file_name": "2022-12-11_10-05-56_UTC_jpg.rf.fb6010c8e8cfd20972b39d3ca29630a1.jpg",
+      "holds": 48,
+      "detections": 46,
+      "tp": 46,
+      "fp": 0,
+      "fn": 2,
+      "correction_rate": 0.0417,
+      "seconds": 0.174
+    },
+    {
+      "file_name": "6WoWPEA2fpj78s7vJ_jpg.rf.fe7eab8c4f3a8ae56a603739653fa77f.jpg",
+      "holds": 57,
+      "detections": 55,
+      "tp": 52,
+      "fp": 3,
+      "fn": 5,
+      "correction_rate": 0.1404,
+      "seconds": 0.168
+    },
+    {
+      "file_name": "6hJYsnp7QzkRqaW9D_jpg.rf.fb0970b23c34f912779fc02a92237a8c.jpg",
+      "holds": 57,
+      "detections": 52,
+      "tp": 51,
+      "fp": 1,
+      "fn": 6,
+      "correction_rate": 0.1228,
+      "seconds": 0.171
+    },
+    {
+      "file_name": "8HyDoXZ4bbjkKEuup_jpg.rf.ffb5950703a88f6a2d8ea9fa26d684d4.jpg",
+      "holds": 62,
+      "detections": 45,
+      "tp": 44,
+      "fp": 1,
+      "fn": 18,
+      "correction_rate": 0.3065,
+      "seconds": 0.181
+    }
+  ]
+}

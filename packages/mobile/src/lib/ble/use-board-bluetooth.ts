@@ -39,8 +39,9 @@ import {
   nativeBleSupportsBoard,
   subscribeNativeBleConnected,
 } from './adapter-factory';
-import { requestBleRuntimePermissions } from './use-ble-permissions';
+import { requestBleRuntimePermissionStatus, requestOptionalNotificationPermission } from './use-ble-permissions';
 import { describeBlePermissionDenial } from './android-location-permission';
+import { alertBluetoothUnavailable } from './bluetooth-unavailable-alert';
 import { manufacturerCompanyId } from './advertisement';
 import type {
   BleAdapterOptions,
@@ -256,10 +257,25 @@ export type PickerState = {
 };
 
 // Identity of a board pairing: the silent-reconnect and adoption guards only
-// trust a remembered/native connection while the active config still matches.
+// trust a remembered/native connection while the active board still matches.
 // Deliberately excludes set_ids — see the reconnectSerialForCurrentBoard note.
-export function boardConfigKey(boardName: string, layoutId: number, sizeId: number): string {
-  return `${boardName}::${layoutId}::${sizeId}`;
+//
+// The board uuid IS included, for a different reason than sets. Sets are about
+// which encoding the wall needs; the uuid is about WHICH BOX. A gym can run two
+// identically-configured walls, and without the uuid a serial remembered against
+// one of them is silently offered as the reconnect target for the other — the
+// lightbulb lights the wall the climber just walked away from. A missing uuid
+// contributes an empty segment, which is stable and matches the old key shape.
+//
+// Records persisted under the old key simply stop matching after an upgrade and
+// fall back to the device picker, so no migration is needed.
+export function boardConfigKey(
+  boardName: string,
+  layoutId: number,
+  sizeId: number,
+  boardUuid: string | undefined,
+): string {
+  return `${boardName}::${layoutId}::${sizeId}::${boardUuid ?? ''}`;
 }
 
 /**
@@ -487,13 +503,29 @@ type UseBoardBluetoothOptions = {
 
 const KEEP_AWAKE_TAG = 'boardsesh-ble';
 
+/**
+ * Identity of the board a live connection was opened against.
+ *
+ * The saved board's uuid is part of the key because board/layout/size/sets does
+ * not identify a wall: a gym can run two Kilter 12x12s with the same sets, and
+ * those are two physical controllers with a byte-identical config. Keyed on the
+ * config alone, switching between them left the identity unchanged, so the
+ * config-switch teardown never fired — the radio link stayed bound to the old
+ * wall while the rest of the app rebound to the new board, and a climb lit on
+ * wall A was reported into wall B's presence feed.
+ *
+ * A board with no uuid (nothing saved yet, the pre-resolve commit on a cold
+ * start) contributes an empty segment: stable across renders, and identical to
+ * the pre-uuid behaviour.
+ */
 function connectionConfigIdentity(
   boardName: string | undefined,
   layoutId: number | undefined,
   sizeId: number | undefined,
   setIds: string | undefined,
+  boardUuid: string | undefined,
 ): string {
-  return `${boardName ?? ''}:${layoutId ?? ''}:${sizeId ?? ''}:${setIds ?? ''}`;
+  return `${boardName ?? ''}:${layoutId ?? ''}:${sizeId ?? ''}:${setIds ?? ''}:${boardUuid ?? ''}`;
 }
 
 /**
@@ -642,7 +674,9 @@ export function useBoardBluetooth({
   const adoptionSuppressedRef = useRef(false);
   // Full config identity the live connection was established for. Includes set
   // IDs so a set-only route switch ends the old attribution generation rather
-  // than allowing its asynchronous board resolve to bleed into the new setup.
+  // than allowing its asynchronous board resolve to bleed into the new setup,
+  // and the board uuid so a switch between two identically-configured walls at
+  // one gym ends it too.
   const connectedConfigIdentityRef = useRef<string | null>(null);
   // What connect() pushed as its initialFrames write, if any. The AutoSender
   // (mounted right after isConnected flips true) reads this one-shot seed so a
@@ -814,6 +848,15 @@ export function useBoardBluetooth({
           setPickerState((prev) => (prev ? { ...prev, devices } : null));
         },
         () => {
+          // Nobody is looking at this picker: the Android session notification's
+          // bulb connects without bringing the app forward. Since the adapters
+          // stopped failing an empty scan, nothing else would end this connect,
+          // and connectInFlightRef would swallow every later bulb tap until the
+          // app is opened. End it with the silent cancel, as unmount does (#5654).
+          if (!isAppActive()) {
+            handleCancel();
+            return;
+          }
           // Scan window closed — drop the spinner. The picker stays open (a
           // device was found but not yet picked, or it shows the empty state).
           setPickerState((prev) => (prev ? { ...prev, isScanning: false } : null));
@@ -1381,14 +1424,28 @@ export function useBoardBluetooth({
       let connectAdapter: BluetoothAdapter | null = null;
 
       try {
-        const permissionsGranted = await requestBleRuntimePermissions({ requestNotificationPermission: true });
-        if (!permissionsGranted) {
+        // Bluetooth only: the Android 13+ notifications prompt waits until the
+        // board is connected (below), so a first connect shows one system dialog
+        // before the scan instead of two (#5654).
+        const permissionStatus = await requestBleRuntimePermissionStatus();
+        if (permissionStatus === 'unsupported') {
+          // Expo web in a browser with no Web Bluetooth. Not a denial: there is
+          // nothing to allow, so no permission copy and no Permission Denied event.
+          await alertBluetoothUnavailable({ reason: 'unsupported', boardName, t, tCommon });
+          return false;
+        }
+        if (permissionStatus !== 'granted') {
           // The Alert is the only trace this path used to leave — an entire
           // class of "Bluetooth doesn't work" was invisible in telemetry.
           void describeBlePermissionDenial().then((denialContext) => {
             track(SHARED_EVENTS.BluetoothPermissionDenied, { ...denialContext, surface: 'connect', boardName });
           });
-          Alert.alert(t('ble.permissionRequired'), t('ble.errorPermissionDenied'));
+          if (permissionStatus === 'blocked') {
+            // Android stopped showing the dialog, so re-asking is a dead tap.
+            await alertBluetoothUnavailable({ reason: 'unauthorized', boardName, t, tCommon });
+          } else {
+            Alert.alert(t('ble.permissionRequired'), t('ble.errorPermissionDenied'));
+          }
           return false;
         }
 
@@ -1401,7 +1458,8 @@ export function useBoardBluetooth({
 
         const available = await adapter.isAvailable();
         if (!available) {
-          Alert.alert(t('ble.connectionFailedTitle'), tCommon('bluetooth.unavailable'));
+          // Blocked (iOS denial) and radio-off used to share "Bluetooth is off".
+          await alertBluetoothUnavailable({ boardName, t, tCommon });
           return false;
         }
 
@@ -1493,7 +1551,7 @@ export function useBoardBluetooth({
         // couldn't tear the (now-wrong) connection down. Both drop paths
         // (clearConnectionAfterDrop, teardownConnection) already clear it.
         const connectionConfig = { boardName: boardName ?? '', layoutId, sizeId, setIds };
-        const connectionIdentity = connectionConfigIdentity(boardName, layoutId, sizeId, setIds);
+        const connectionIdentity = connectionConfigIdentity(boardName, layoutId, sizeId, setIds, boardUuid);
         connectedConfigIdentityRef.current = connectionIdentity;
         unsubDisconnectRef.current = adapter.onDisconnect((info) => {
           handleDisconnection(adapter, connectionGeneration, info);
@@ -1560,7 +1618,7 @@ export function useBoardBluetooth({
         // Without a full config there is no usable key (the reconnect comparison
         // against currentConfigKey could never match).
         if (layoutId !== undefined && sizeId !== undefined) {
-          const configKey = boardConfigKey(boardName, layoutId, sizeId);
+          const configKey = boardConfigKey(boardName, layoutId, sizeId, boardUuid);
           if (parsedSerial) {
             rememberConnectedBoard({ configKey, serial: parsedSerial });
           } else if (boardName === 'moonboard') {
@@ -1651,6 +1709,9 @@ export function useBoardBluetooth({
         setIsConnected(true);
         onConnectionChange?.(true);
         onConnectSuccess?.(parsedSerial, connectionHandle);
+        // Android 13+ only, and not awaited: the board is connected, and the
+        // dialog doesn't hold up the write that lights the climb (#5654).
+        void requestOptionalNotificationPermission();
         // Connect-time BLE write diagnostics (iOS native adapter only; null on
         // Android/web and on binaries too old to report them). Set as global
         // Sentry tags so they ride any later write-stall report, and recorded on
@@ -1727,13 +1788,14 @@ export function useBoardBluetooth({
         }
         setIsConnected(false);
 
-        // Dismiss the picker sheet if it's still showing. When a reconnect-by-
-        // serial grace window opens the picker but nothing ever advertises, the
-        // adapter rejects the selection promise on the scan timeout without
-        // settling the picker's own promise — so the sheet (and its spinner)
-        // would otherwise stay mounted until the user swipes it away. Settle the
-        // dangling picker promise before clearing it (matching the unmount
-        // cleanup) so it can't leak.
+        // Dismiss the picker sheet if it's still showing. When the scan fails
+        // while the picker is open (a scan error, Bluetooth switched off), the
+        // adapter rejects the selection promise without settling the picker's
+        // own promise — so the sheet (and its spinner) would otherwise stay
+        // mounted until the user swipes it away. A scan that simply ends empty
+        // doesn't come through here: the picker stays up with its empty state
+        // and Scan again (#5654). Settle the dangling picker promise before
+        // clearing it (matching the unmount cleanup) so it can't leak.
         pickerRejectRef.current?.(new Error('Connection failed'));
         pickerRejectRef.current = null;
         setPickerState(null);
@@ -1748,7 +1810,7 @@ export function useBoardBluetooth({
           case 'user_cancelled':
             break;
           case 'unavailable':
-            Alert.alert(t('ble.connectionFailedTitle'), tCommon('bluetooth.unavailable'));
+            await alertBluetoothUnavailable({ boardName, t, tCommon });
             break;
           case 'board_not_found':
             Alert.alert(t('ble.connectionFailedTitle'), tCommon('bluetooth.boardNotFound'));
@@ -1852,14 +1914,16 @@ export function useBoardBluetooth({
     [forgetConnectedBoard, teardownConnection],
   );
 
-  // If the active board config changes while a connection is live, tear it down.
+  // If the active board changes while a connection is live, tear it down.
   // BluetoothProvider is mounted once globally; without this a board/layout/size/set
   // switch would keep the old physical link but encode sends with the NEW
   // config's LED placement map — wrong-format packets streamed to the OLD wall.
+  // A uuid-only change (two identically-configured walls at one gym) encodes
+  // fine but still streams to the wrong wall, so it tears down here too.
   useEffect(() => {
     const connectedIdentity = connectedConfigIdentityRef.current;
     if (!adapterRef.current || !connectedIdentity) return;
-    const activeIdentity = connectionConfigIdentity(boardName, layoutId, sizeId, setIds);
+    const activeIdentity = connectionConfigIdentity(boardName, layoutId, sizeId, setIds, boardUuid);
     if (activeIdentity === connectedIdentity) return;
     // teardownConnection sets adoptionSuppressedRef on purpose: the named-device
     // adopt guard is boardType-granular only, so a same-family layout switch
@@ -1874,7 +1938,7 @@ export function useBoardBluetooth({
     // clearConnectionAfterDrop can also race here: if a native drop already
     // nulled adapterRef.current the early-return above prevents a double
     // teardown, which is intentional.
-  }, [boardName, layoutId, sizeId, setIds, isConnected, teardownConnection]);
+  }, [boardName, layoutId, sizeId, setIds, boardUuid, isConnected, teardownConnection]);
 
   // iOS-only: adopt a connection the native BoardBleManager established
   // outside JS — the Dynamic Island lightbulb's reconnect-by-last-known-board,
@@ -1908,9 +1972,9 @@ export function useBoardBluetooth({
       // restoration paths that can become write-ready without a fresh
       // advertisement name.
       const adoptedBoardType = parseAnyBoardTypeFromDeviceName(deviceName);
-      const currentConfigKey = boardConfigKey(boardName, layoutId, sizeId);
+      const currentConfigKey = boardConfigKey(boardName, layoutId, sizeId, boardUuid);
       const currentConnectionConfig = { boardName, layoutId, sizeId, setIds };
-      const currentConnectionIdentity = connectionConfigIdentity(boardName, layoutId, sizeId, setIds);
+      const currentConnectionIdentity = connectionConfigIdentity(boardName, layoutId, sizeId, setIds, boardUuid);
       const rememberedBoard = lastConnectedBoardRef.current;
       const canAdoptNamelessRememberedBoard = !adoptedBoardType && rememberedBoard?.configKey === currentConfigKey;
       if (
@@ -2041,6 +2105,7 @@ export function useBoardBluetooth({
     layoutId,
     sizeId,
     setIds,
+    boardUuid,
     devicePicker,
     handleDisconnection,
     onConnectionChange,
@@ -2080,7 +2145,9 @@ export function useBoardBluetooth({
   // same physical controller and the LED placement map keys on layout+size; the
   // lifetime still ends on a set-only route switch so attribution cannot bleed.
   const currentConfigKey =
-    boardName && layoutId !== undefined && sizeId !== undefined ? boardConfigKey(boardName, layoutId, sizeId) : null;
+    boardName && layoutId !== undefined && sizeId !== undefined
+      ? boardConfigKey(boardName, layoutId, sizeId, boardUuid)
+      : null;
   // The remembered board only counts while the route still points at the same
   // config; a stored handle for a different board is never offered as a target.
   const rememberedForCurrentBoard =

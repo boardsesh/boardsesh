@@ -57,11 +57,8 @@ type LogbookRowProps = {
    */
   onDeleteRequest?: (ascent: AscentFeedItem, method: 'swipe' | 'a11y') => void;
   /**
-   * Whether the meta line carries the BOARD name. The logbook tab passes false
-   * when a divider or subdivider above already names the board; the angle
-   * stays on the row either way (it varies per climb on adjustable boards and
-   * disambiguates repeat ascents). Defaults to true so flat views never lose
-   * the wall.
+   * Whether to repeat the user-named wall below the canonical board identity.
+   * The board product/layout and angle always remain visible on every row.
    */
   showBoardInMeta?: boolean;
   /**
@@ -86,14 +83,9 @@ const ACTION_REVEAL = 150;
 const COMMIT_THRESHOLD = 96;
 const SWIPE_FRICTION = 1;
 
-// Meta-line width tiers (device fontScale). The Text primitive caps scaling at
-// 1.5×, so 1.5 is the true worst case. Below DROP_TIME everything fits on one
-// line; between the tiers the time-of-day (the lowest-value part) drops; at
-// TWO_LINE the meta wraps to a results line + context line so nothing is lost.
-// Whole parts drop — never character ellipsis mid-part (a "3★" cut to "3…"
-// misreports the rating). Thresholds are a starting point, tuned on device.
+// Time is secondary to board identity and outcomes; omit it visually at larger
+// type sizes while retaining it in the complete accessibility announcement.
 const FONT_SCALE_DROP_TIME = 1.15;
-const FONT_SCALE_TWO_LINE = 1.3;
 
 // Status is the hero of a logbook entry — a bare ~22pt glyph, shape-first
 // (⚡ flashed, ✓ sent, ○ project) with colour as reinforcement, replacing the
@@ -215,11 +207,13 @@ export const LogbookRow = memo(function LogbookRow({
   const quality = normalizeLogbookQuality(ascent.effectiveQuality ?? ascent.quality);
   const hasNote = logbookNoteIsVisible(ascent.comment);
   const hasBetaVideo = ascent.hasBetaVideo === true;
-  // The user-named board when the tick has one ("Garage Board"), else the
-  // LAYOUT ("Kilter Homewall", "MoonBoard 2016") — a named board is personal
-  // context worth keeping; unnamed ticks still get the wall product.
-  const wallLabel = ascent.boardDisplayName ?? getLayoutDisplayName(ascent.boardType, ascent.layoutId);
-  const boardAngleLabel = `${wallLabel} ${ascent.angle}°`;
+  // Canonical identity stays visible even under a named-wall heading, so a
+  // mixed logbook always names the board each climb belongs to. A custom wall
+  // name remains extra personal context and stays in the accessibility label.
+  const layoutLabel = getLayoutDisplayName(ascent.boardType, ascent.layoutId);
+  const boardAngleLabel = `${layoutLabel} · ${ascent.angle}°`;
+  const namedWall = ascent.boardDisplayName?.trim();
+  const wallContext = showBoardInMeta && namedWall && namedWall !== layoutLabel ? namedWall : null;
   // A grouped flash day (flash + later repeats) still owns its summed tries —
   // "Flash · 5 tries" — while a plain flash stays a bare "Flash". Scoped to
   // grouped rows (groupTries != null): a lone imported flash tick carrying a
@@ -243,15 +237,8 @@ export const LogbookRow = memo(function LogbookRow({
   );
 
   const showTimeInline = fontScale < FONT_SCALE_DROP_TIME;
-  const twoLineMeta = fontScale >= FONT_SCALE_TWO_LINE;
-  // One line: results + context together, time dropping first under scale.
-  // Two lines (accessibility sizes): results over context, nothing dropped.
-  // Between the tiers (1.15–1.3) the time is INTENTIONALLY absent from the
-  // visual layout — it's the lowest-value part and the a11y label still
-  // speaks it; it returns in the context line once the two-line layout kicks in.
-  const metaWall = showBoardInMeta ? boardAngleLabel : `${ascent.angle}°`;
-  const primaryMetaText = twoLineMeta ? attemptsLabel : [attemptsLabel, metaWall].filter(Boolean).join(' · ');
-  const contextMetaText = twoLineMeta ? [metaWall, timeLabel].filter(Boolean).join(' · ') : null;
+  const resultMetaText = [attemptsLabel, showTimeInline ? timeLabel : null].filter(Boolean).join(' · ');
+  const notePreview = hasNote ? ascent.comment?.trim().replace(/\s+/g, ' ') : null;
 
   // Rows whose board config can't resolve (frameless MoonBoard ticks) dead-end
   // in the play drawer today; keep the tap (analytics + a future detail view)
@@ -409,10 +396,11 @@ export const LogbookRow = memo(function LogbookRow({
       : null,
     attemptsKind === 'flash' && !flashShowsTries ? null : t('mobile.logbook.tries', { count: triesShown }),
     quality != null ? t('mobile.logbook.row.a11yStars', { count: quality }) : null,
-    hasNote ? t('mobile.logbook.row.a11yHasNote') : null,
+    notePreview ? `${t('mobile.logbook.row.a11yHasNote')}: ${notePreview}` : null,
     hasBetaVideo ? t('mobile.logbook.row.a11yHasBetaVideo') : null,
     ascent.isMirror ? t('mobile.logbook.row.a11yMirrored') : null,
     boardAngleLabel,
+    namedWall && namedWall !== layoutLabel ? namedWall : null,
     timeLabel,
   ]
     .filter(Boolean)
@@ -456,6 +444,7 @@ export const LogbookRow = memo(function LogbookRow({
             browser/list scroll; only horizontal ones reach this tap/long-press. */}
         <GestureDetector gesture={tapGesture} touchAction="pan-y">
           <View
+            testID={`logbook-entry-${ascent.uuid}`}
             accessible
             accessibilityRole="button"
             accessibilityLabel={accessibilityLabel}
@@ -491,21 +480,31 @@ export const LogbookRow = memo(function LogbookRow({
                   </View>
                 ) : null}
               </View>
-              <View style={styles.metaRow}>
-                <Text variant="footnote" color={systemColors.secondaryLabel} numberOfLines={1} style={styles.metaText}>
-                  {primaryMetaText}
+              <Text
+                testID={`logbook-board-${ascent.boardType}`}
+                variant="footnote"
+                color={systemColors.secondaryLabel}
+                style={styles.boardIdentity}
+              >
+                {boardAngleLabel}
+              </Text>
+              {wallContext ? (
+                <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={1}>
+                  {wallContext}
                 </Text>
-                {hasNote ? <Icon name="edit" size={11} color={systemColors.secondaryLabel} /> : null}
-                {showTimeInline ? (
-                  <Text variant="footnote" color={systemColors.tertiaryLabel}>
-                    {timeLabel}
+              ) : null}
+              {notePreview ? (
+                <View style={styles.metaRow}>
+                  <Icon name="edit" size={11} color={systemColors.secondaryLabel} />
+                  <Text
+                    variant="caption1"
+                    color={systemColors.secondaryLabel}
+                    numberOfLines={1}
+                    style={styles.metaText}
+                  >
+                    {notePreview}
                   </Text>
-                ) : null}
-              </View>
-              {contextMetaText ? (
-                <Text variant="footnote" color={systemColors.tertiaryLabel} numberOfLines={1}>
-                  {contextMetaText}
-                </Text>
+                </View>
               ) : null}
             </View>
 
@@ -547,6 +546,9 @@ export const LogbookRow = memo(function LogbookRow({
                   ) : null}
                 </View>
               ) : null}
+              <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.resultText}>
+                {resultMetaText}
+              </Text>
             </View>
           </View>
         </GestureDetector>
@@ -604,6 +606,8 @@ const styles = StyleSheet.create({
   metaText: {
     flexShrink: 1,
   },
+  boardIdentity: { fontWeight: '500' },
+  resultText: { textAlign: 'right' },
   trailing: {
     flexShrink: 0,
     alignItems: 'flex-end',
@@ -614,6 +618,7 @@ const styles = StyleSheet.create({
   gradeText: {
     fontWeight: '700',
     textAlign: 'right',
+    fontVariant: ['tabular-nums'],
   },
   iconGradeRow: {
     flexDirection: 'row',

@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Pressable, StyleSheet, type PressableStateCallbackType } from 'react-native';
+import { Platform, Pressable, StyleSheet, type PressableStateCallbackType } from 'react-native';
 import Animated, {
   cancelAnimation,
   useAnimatedStyle,
@@ -167,11 +167,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  // iOS-only elevation: Android's native shadow on this fully-rounded view renders as a hexagon, not a circle.
   connected: {
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.35,
     shadowRadius: 8,
-    elevation: 2,
+    elevation: Platform.OS === 'ios' ? 2 : 0,
   },
   pressed: {
     opacity: 0.6,

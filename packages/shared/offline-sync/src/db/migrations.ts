@@ -11,13 +11,30 @@
 // node-based fake (or node:sqlite) can exercise the version bookkeeping without
 // loading native expo-sqlite.
 
-import { SCHEMA_STATEMENTS } from './schema';
+import {
+  BOARD_CLIMB_HOLD_POSTINGS,
+  BOARD_CLIMB_HOLD_SETS,
+  HOLDS_INDEX_CLIMBS,
+  INDEX_CLIMBS_SYNC_SEQ,
+  SCHEMA_STATEMENTS,
+  SPRAY_WALLS,
+} from './schema';
 import { applyBusyTimeout } from './pragmas';
+import { requeueTransportDeadLetters, setDeadLetterRecoveryNotice } from '../mutation-queue/dead-letter-recovery';
 import type { OfflineDatabase, SqlExecutor } from '../database';
 
 export type Migration = {
   version: number;
   statements: string[];
+  /**
+   * An optional DATA step, run after `statements` and inside the SAME exclusive
+   * transaction as the version stamp. Exists for the one thing a DDL string
+   * cannot do: reuse the queue's own row transitions instead of restating them
+   * as bulk SQL that can drift from them (issue #5335). Sharing the transaction
+   * is what makes such a step interruption-safe — a killed app rolls the rows
+   * and the stamp back together, and the migration re-runs cleanly next launch.
+   */
+  run?: (txn: SqlExecutor) => Promise<void>;
 };
 
 // Migration 1 stands up the full v1 schema. Future schema changes append
@@ -78,6 +95,92 @@ export const MIGRATIONS: Migration[] = [
     version: 5,
     statements: ['ALTER TABLE board_climbs ADD COLUMN is_hidden INTEGER;'],
   },
+  {
+    // One-time recovery of the sends #5295 threw away (issue #5335). Two
+    // transport failures the old classifier did not recognise dead-lettered a
+    // queued send on attempt 0 of 10; roughly 17 climbers have a row holding a
+    // send they logged and believe is recorded. This puts exactly those rows
+    // back on the queue — matched on the recorded error and nothing else, so a
+    // row a server permanently rejected stays where it is.
+    //
+    // A data step rather than a statement list because the row transition must
+    // BE `retryDeadLetter`, the same one the manual Sync-issues retry uses. It
+    // is version-stamped like any other migration, which is what makes it
+    // once-per-install, and it shares the migration's transaction, which is
+    // what makes an interrupted launch leave every row either `pending` or
+    // `dead_letter` and never a third thing.
+    //
+    // MUST ship with or after the #5295 classifier fix: revived rows meeting the
+    // old classifier would dead-letter again on the first hiccup.
+    version: 6,
+    statements: [],
+    run: async (txn) => {
+      const requeued = await requeueTransportDeadLetters(txn);
+      // Only a real recovery leaves a trace. Every fresh install runs this
+      // migration against an empty queue, and none of them should owe anybody a
+      // notice.
+      if (requeued > 0) await setDeadLetterRecoveryNotice(txn, requeued);
+    },
+  },
+  {
+    // How many of a climb's holds have come off the wall (server
+    // `board_climbs.missing_hold_count`, materialised by
+    // `recomputeMissingHoldCounts` whenever a spray-wall reset lands). Nullable
+    // INTEGER here because it is nullable there: every climb on the eight
+    // catalogue boards carries NULL, holds do not come off a Kilter.
+    //
+    // This is what lets the offline climb search answer the Intact / Lost-holds
+    // filter (SW-12) instead of declining it. An ALTER rather than a v1 edit, so
+    // an existing database picks it up without a re-crawl — and, deliberately,
+    // WITHOUT a `refreshRevision` bump; see the comment on `board_climbs` in
+    // sync/table-config.ts for why a bump would be the expensive wrong answer.
+    version: 7,
+    statements: ['ALTER TABLE board_climbs ADD COLUMN missing_hold_count INTEGER;'],
+  },
+  {
+    // Spray walls: the photo identity, geometry and holds of a runtime-created
+    // wall (issue #5448). A new per-board reference table, so it is a v8 CREATE
+    // rather than an edit to v1's SCHEMA_STATEMENTS, exactly like
+    // board_climb_grades at v4. The DDL text lives in schema.ts with the rest of
+    // the on-device DDL.
+    //
+    // No index: the table is read by its primary key (`layout_id`) and holds at
+    // most `MAX_SPRAY_WALLS_PER_USER` rows per account.
+    version: 8,
+    statements: [SPRAY_WALLS],
+  },
+  {
+    version: 9,
+    statements: [
+      `CREATE TABLE IF NOT EXISTS followed_author_snapshots (
+        user_id TEXT PRIMARY KEY NOT NULL,
+        snapshot TEXT NOT NULL
+      );`,
+    ],
+  },
+  {
+    // The device-derived holds index (hold heatmap + similar climbs on device).
+    //
+    // Three tables built on the phone from `board_climbs.frames` by
+    // holds-index/hold-index.ts: a local integer id per climb uuid, one packed
+    // hold set per climb, and one packed posting list per (layout, hold). NOT
+    // synced tables: no TABLE_CONFIGS entry, no checkpoint, no tombstones, and
+    // never part of a snapshot artifact (DEVICE_ONLY_TABLES; the export refuses
+    // DDL that names them). Freshness lives in one `holds-index:<scopeKey>`
+    // sync_meta watermark per downloaded scope.
+    //
+    // `idx_climbs_sync_seq` is on `board_climbs` because the builder walks a
+    // layout in `sync_seq` order from that watermark, and asks "is anything
+    // newer than the watermark?" on every read of the index. No existing index
+    // carries `sync_seq`, so both would sort the whole layout each time. It is
+    // in DEVICE_ONLY_STATEMENTS, so the snapshot export leaves it out of artifacts.
+    //
+    // Bumping LATEST_SCHEMA_VERSION makes today's v9 artifacts schema-stale for
+    // v10 clients until the next live threshold scan rebuilds them (every 15
+    // minutes; docs/board-snapshots.md "Schema-bump staleness window").
+    version: 10,
+    statements: [HOLDS_INDEX_CLIMBS, BOARD_CLIMB_HOLD_SETS, BOARD_CLIMB_HOLD_POSTINGS, INDEX_CLIMBS_SYNC_SEQ],
+  },
 ];
 
 const SCHEMA_VERSION_TABLE = `
@@ -100,9 +203,10 @@ async function stampVersion(db: SqlExecutor, version: number): Promise<void> {
 
 /**
  * Brings the database up to LATEST_SCHEMA_VERSION. Applies each pending migration
- * (version > current) in ascending order; every migration's statements plus its
- * version stamp run inside one exclusive transaction, so a crash mid-migration
- * leaves the stored version untouched and the migration re-runs cleanly next launch.
+ * (version > current) in ascending order; every migration's statements, its
+ * optional data step, and its version stamp run inside one exclusive transaction,
+ * so a crash mid-migration leaves the stored version untouched, rolls back
+ * whatever the migration had done, and re-runs cleanly next launch.
  */
 export async function runMigrations(db: OfflineDatabase): Promise<void> {
   await db.execAsync(SCHEMA_VERSION_TABLE);
@@ -120,6 +224,7 @@ export async function runMigrations(db: OfflineDatabase): Promise<void> {
       for (const statement of migration.statements) {
         await txn.execAsync(statement);
       }
+      await migration.run?.(txn);
       await stampVersion(txn, migration.version);
     });
   }

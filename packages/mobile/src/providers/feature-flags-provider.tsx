@@ -20,7 +20,8 @@
 
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { readPosthogFeatureFlags, subscribePosthogFeatureFlags } from '../lib/analytics';
-import { useFeatureFlagOverrides } from '../lib/feature-flag-overrides';
+import { useFeatureFlagOverrides, type FeatureFlagOverrides } from '../lib/feature-flag-overrides';
+import { isDevBuild } from '../lib/is-dev-build';
 import { isOfflineDownloadsEnabled } from './offline-downloads-enabled';
 
 export type FeatureFlags = Record<string, boolean | string | undefined>;
@@ -40,6 +41,21 @@ export type FeatureFlagDefinition = {
    * plain on/off flag.
    */
   variants?: readonly string[];
+  /**
+   * This flag decides something whose LEGALITY depends on where the device is,
+   * not just whether a feature looks finished — so a tester must not be able to
+   * force it on in a production build.
+   *
+   * The on-device override normally wins over PostHog, which is the whole point
+   * of the tester screen. For a policy-controlled flag that is a hole: testers
+   * ship on the same store binaries as everyone else, so an override travels to
+   * a region where the behaviour it unlocks violates store policy, and PostHog
+   * — the layer that actually knows the region — is overruled. Marking the flag
+   * here makes the override apply in `__DEV__` builds only (QA still exercises
+   * the path in a dev client) and be ignored in production, where PostHog stays
+   * authoritative. See `donation-links` and docs/feature-flags.md.
+   */
+  policyControlled?: boolean;
 };
 
 export const FEATURE_FLAG_DEFINITIONS = [
@@ -60,6 +76,12 @@ export const FEATURE_FLAG_DEFINITIONS = [
     description: 'Search box and filter sheet on the logbook (shipped: 100% rollout since 2026-07-03).',
   },
   {
+    key: 'board-link-onboarding-step',
+    label: 'Onboarding board-account link step',
+    description:
+      'Offer to link a supported board account after the first-run board pick. Off or unresolved skips the extra step.',
+  },
+  {
     key: 'kilter-oauth-linking',
     label: 'Kilter account linking',
     description: 'Show the Kilter username/password sign-in card in Integrations.',
@@ -68,6 +90,12 @@ export const FEATURE_FLAG_DEFINITIONS = [
     key: 'logbook-grouping-kill',
     label: 'Disable logbook grouping',
     description: 'Emergency kill switch: fall back to flat logbook entries if day-scoped repeat grouping misbehaves.',
+  },
+  {
+    key: 'cross-angle-stats',
+    label: 'Cross-angle climb stats',
+    description:
+      "Show climbs whose grade and sends live at a different angle, ranked on that angle's real send count and marked with it, instead of burying them under every climb set at the angle you are browsing. Not read on Woods, which has its own Other angles switch in the climb filters, off by default. KEEP THIS AT 0%: on a large catalogue the query loses its index-ordered early exit and costs ~0.9 s on MoonBoard and ~5.6 s on Kilter, measured on production. It is here to test the behaviour on one device, not to roll out.",
   },
   {
     key: 'garmin-watch',
@@ -100,6 +128,12 @@ export const FEATURE_FLAG_DEFINITIONS = [
     variants: ['1', '0.5', '0.25', '0.1', '0'],
   },
   {
+    key: 'shared-session-browse',
+    label: 'Preview-first shared sessions',
+    description:
+      'In a session with 2+ climbers, swipes and climb-list taps browse instead of writing the shared queue and lighting the wall; "Put on the wall" becomes the one commit. Off = every gesture drives the wall as it always did.',
+  },
+  {
     key: 'moonboard-wide-angles',
     label: 'MoonBoard wide angles',
     description:
@@ -118,10 +152,66 @@ export const FEATURE_FLAG_DEFINITIONS = [
       'Abort interactive GraphQL requests after 20 s so a hung server cannot pin a screen. Kill switch for marginal networks: set to false (sync keeps its own 30 s).',
   },
   {
+    key: 'spray-walls',
+    label: 'Spray walls',
+    description:
+      'The "Add a spray wall" tile on the boards picker and the /boards/spray/* routes behind it: photograph a wall, mark its corners, let the phone suggest holds, correct them, publish. A POSITIVE rollout flag — unresolved reads as off, so the tile never flickers in for the first frames of a cold open.',
+  },
+  {
+    key: 'donation-links',
+    label: 'Donation links',
+    policyControlled: true,
+    description:
+      'POLICY-CONTROLLED: an on-device override is ignored in production builds, so this row does nothing on a store binary — PostHog decides. Turn the Acknowledgements support text into a tappable link to boardsesh.com/support. A POSITIVE rollout flag — unresolved reads as off, which renders the compliant unlinked text. An external donation link is a store-policy violation outside two narrow windows, and ONLY ONE OF THEM IS ENFORCED IN THE APP: iOS additionally requires an App Store storefront of USA, read natively, so an over-broad rollout cannot reach a non-US iPhone. Android has no such client guard — Play exposes no storefront to the app — so the PostHog targeting IS the guard, and it must be exactly: platform = Android AND country = AU AND date >= 2026-09-30. Rolling this out to Android by percentage, or to any other country, ships a policy violation.',
+  },
+  {
     key: 'climb-moderation-kill',
     label: 'Disable climb reporting + moderation',
     description:
       'Emergency kill switch: hides the Report climb action, the More-tab Moderation row and the community moderation status. Unresolved reads as enabled (kill switches invert the default; see docs/feature-flags.md).',
+  },
+  {
+    key: 'active-board-follow-heal-kill',
+    label: 'Disable the active-board follow heal',
+    description:
+      'Emergency kill switch: stops the app silently following the board it launched on when that board is neither yours nor followed (#5654). The heal waits for flags to resolve before it runs, so turning this on takes effect on the next launch without an OTA. Unresolved reads as enabled.',
+  },
+  {
+    key: 'connectivity-banner-kill',
+    label: 'Disable the connectivity banner',
+    description:
+      'Emergency kill switch for the bottom "No signal / server trouble / Back online" banner, which never painted from 2.2.0 until #5654 woke it up. Hides the banner only: outage detection and the fail-fast path keep running (that is backend-outage-detection). Unresolved reads as enabled.',
+  },
+  {
+    key: 'qa-tester-gate-kill',
+    label: 'Disable the QA launch prompt',
+    description:
+      'Emergency kill switch for the tester-only launch prompt that offers a PR preview or shows the brief for the running one. Dormant from 2.2.0 until #5654. The More-tab QA rows stay. Unresolved reads as enabled, but the gate waits for flags to resolve before it pushes.',
+  },
+  {
+    key: 'send-recovery-gate-kill',
+    label: 'Disable the recovered-sends notice',
+    description:
+      'Emergency kill switch for the one-time "sends we lost are on their way" notice (#5335), dormant from 2.2.0 until #5654. The sends themselves are requeued by the schema migration either way, and the notice stays owed in the database while this is on. Unresolved reads as enabled, but the gate waits for flags to resolve before it pushes.',
+  },
+  {
+    key: 'first-board-picker-kill',
+    label: 'Disable the first-board picker',
+    description:
+      'Emergency kill switch for the board picker the launch gate opens by itself for a new account (at most 7 days old) with no board (#5654). With it on, the gate logs would_present and opens nothing; Find my board and every other way into the picker keep working. Unresolved reads as enabled, but the gate waits for flags to resolve before it pushes.',
+  },
+  {
+    key: 'first-connect-cta-kill',
+    label: 'Disable the connect step',
+    description:
+      'Emergency kill switch for the connect-step test (#5654): the "Light climbs on" card on Climbs, the "Light it on the board" pill in the play view, and the one-time "Connected to" confirmation. With it on, no new account is enrolled and everyone already enrolled gets the plain bulb back. Unresolved reads as enabled; the gate waits for flags to resolve before it enrols anyone.',
+  },
+  {
+    key: 'first-connect-cta-arm',
+    label: 'Force the connect-step arm (QA)',
+    description:
+      'QA only. Puts the signed-in account in the treatment (card + pill) or control arm of the connect-step test, whatever its age, build or app version, and starts this phone from a clean slate as if it had never connected. Takes effect right away. Only the on-device choice here counts; a PostHog value for this key is ignored. Forced exposures are tagged arm_forced and left out of the analysis. Default lets the account hash decide.',
+    variants: ['treatment', 'control'],
   },
 ] as const satisfies readonly FeatureFlagDefinition[];
 
@@ -130,16 +220,79 @@ export const FEATURE_FLAG_DEFINITIONS = [
 // silently widening to `string`.
 export type FeatureFlagKey = (typeof FEATURE_FLAG_DEFINITIONS)[number]['key'];
 
+/** Flags whose on-device override must not survive into a production build. */
+export const POLICY_CONTROLLED_FLAG_KEYS: ReadonlySet<string> = new Set(
+  FEATURE_FLAG_DEFINITIONS.filter(
+    (definition): definition is (typeof FEATURE_FLAG_DEFINITIONS)[number] & { policyControlled: true } =>
+      'policyControlled' in definition && definition.policyControlled,
+  ).map((definition) => definition.key),
+);
+
+/**
+ * Drop the overrides a production build is not allowed to honour.
+ *
+ * Returns the SAME object when nothing is stripped — the common case, and the
+ * provider's `useMemo` depends on that reference staying stable.
+ */
+export function applyOverridePolicy(overrides: FeatureFlagOverrides): FeatureFlagOverrides {
+  // A dev client is the one place a tester is supposed to be able to force these
+  // on: the binary never reaches a store, so there is no policy to violate.
+  if (isDevBuild()) return overrides;
+  let allowed: FeatureFlagOverrides | null = null;
+  for (const key of Object.keys(overrides)) {
+    if (!POLICY_CONTROLLED_FLAG_KEYS.has(key)) continue;
+    allowed ??= { ...overrides };
+    delete allowed[key];
+  }
+  return allowed ?? overrides;
+}
+
 const FeatureFlagsContext = createContext<FeatureFlags>(DEFAULT_FEATURE_FLAGS);
+
+/**
+ * Whether the live flag values have had their chance to arrive.
+ *
+ * Separate from the values themselves, because "off" and "not known yet" are the
+ * same bag to a consumer and are very different things to a gate. A screen that
+ * REDIRECTS on a flag — rather than just hiding a tile — cannot act on the empty
+ * first frame: an enabled climber opening a deep link would be bounced to the
+ * picker before PostHog answered, and resolving the flag a moment later cannot
+ * bring the discarded route back.
+ *
+ * A second context rather than a field on the first, so nothing that reads flag
+ * VALUES re-renders when this flips.
+ */
+const FeatureFlagsResolvedContext = createContext<boolean>(false);
+
+/**
+ * How long a consumer waits for PostHog before treating the bag as final.
+ *
+ * There has to be a ceiling. PostHog may be unreachable, disabled in this build,
+ * or never initialised at all, and none of those ever fires `onFeatureFlags` —
+ * so without a timeout a gated route would spin forever on exactly the fleets
+ * where the flag is off anyway. Two seconds is longer than a warm flag read and
+ * short enough that a cold, offline deep link is not left staring at nothing.
+ */
+export const FEATURE_FLAG_RESOLUTION_TIMEOUT_MS = 2000;
 
 export function FeatureFlagsProvider({
   flags = DEFAULT_FEATURE_FLAGS,
+  staticFlagsAreFinal = true,
   children,
 }: {
   flags?: FeatureFlags;
+  /**
+   * Whether a supplied `flags` bag is the whole answer. True for a test, which
+   * hands over every value it cares about. False for the root layout's env
+   * override, which pins one or two keys while PostHog still answers for every
+   * other flag, kill switches included: reading that bag as final would let a
+   * gate act before a switch flipped in PostHog could reach it.
+   */
+  staticFlagsAreFinal?: boolean;
   children: ReactNode;
 }) {
   const [posthogFlags, setPosthogFlags] = useState<FeatureFlags>(DEFAULT_FEATURE_FLAGS);
+  const [resolved, setResolved] = useState(false);
   const { overrides } = useFeatureFlagOverrides();
 
   useEffect(() => {
@@ -151,24 +304,59 @@ export function FeatureFlagsProvider({
     };
 
     refreshFlags();
-    const unsubscribe = subscribePosthogFeatureFlags(refreshFlags);
+    const unsubscribe = subscribePosthogFeatureFlags(() => {
+      refreshFlags();
+      // PostHog has answered. Whatever it said, the bag is now the real one.
+      if (mounted) setResolved(true);
+    });
+    // And the backstop, for every fleet where it never answers at all.
+    const timer = setTimeout(() => {
+      if (mounted) setResolved(true);
+    }, FEATURE_FLAG_RESOLUTION_TIMEOUT_MS);
     return () => {
       mounted = false;
+      clearTimeout(timer);
       unsubscribe();
     };
   }, []);
 
+  // A statically supplied bag that is the whole answer (every test) is already
+  // final: there is nothing on its way that could change it. A partial one (the
+  // env override) still waits for PostHog like an empty bag does.
+  const hasStaticFlags = flags !== DEFAULT_FEATURE_FLAGS && staticFlagsAreFinal;
+
   const value = useMemo<FeatureFlags>(() => {
-    const hasOverrides = Object.keys(overrides).length > 0;
+    // Policy-controlled flags lose their override outside a dev build, so this
+    // has to happen BEFORE the empty check: on a store binary a lone
+    // donation-links override leaves nothing to merge at all.
+    const honouredOverrides = applyOverridePolicy(overrides);
+    const hasOverrides = Object.keys(honouredOverrides).length > 0;
     if (posthogFlags === DEFAULT_FEATURE_FLAGS && flags === DEFAULT_FEATURE_FLAGS && !hasOverrides) {
       return DEFAULT_FEATURE_FLAGS;
     }
     // Local tester overrides win over the static env override, which wins over
     // the live PostHog value.
-    return { ...posthogFlags, ...flags, ...overrides };
+    return { ...posthogFlags, ...flags, ...honouredOverrides };
   }, [posthogFlags, flags, overrides]);
 
-  return <FeatureFlagsContext.Provider value={value}>{children}</FeatureFlagsContext.Provider>;
+  return (
+    <FeatureFlagsContext.Provider value={value}>
+      <FeatureFlagsResolvedContext.Provider value={resolved || hasStaticFlags}>
+        {children}
+      </FeatureFlagsResolvedContext.Provider>
+    </FeatureFlagsContext.Provider>
+  );
+}
+
+/**
+ * Whether the flag bag is final.
+ *
+ * Read this before acting IRREVERSIBLY on a flag — a redirect, a navigation
+ * reset. A surface that merely shows or hides something does not need it: the
+ * value re-renders when it lands.
+ */
+export function useFeatureFlagsResolved(): boolean {
+  return useContext(FeatureFlagsResolvedContext);
 }
 
 export function useFeatureFlags(): FeatureFlags {
@@ -234,6 +422,67 @@ export function useClimbModerationEnabled(): boolean {
 }
 
 /**
+ * Kill switch for the active-board follow heal (#5654): the silent `followBoard`
+ * the app sends at launch for a board that is bound on this phone but missing
+ * from Your boards.
+ *
+ * A KILL switch because the heal is a silent server write that reaches the whole
+ * store fleet by OTA, and this is the only way to stop it without shipping
+ * another one. Missing/undefined reads as "not killed". The heal itself waits for
+ * `useFeatureFlagsResolved()` before it acts, so an unresolved first frame never
+ * slips a follow past a flag that is set.
+ */
+export function useActiveBoardFollowHealEnabled(): boolean {
+  return useFeatureFlag('active-board-follow-heal-kill') !== true;
+}
+
+/**
+ * Kill switches for the three launch surfaces #5654 woke up. All three sat
+ * behind a `ready` prop frozen at false from 2.2.0 on, so the OTA that fixed the
+ * wiring turned on features the fleet had never run. Each gets its own switch so
+ * one misbehaving surface can go without the others.
+ *
+ * KILL switches, for the usual reason (see `useAnonymousClimbViewEnabled`):
+ * missing/undefined reads as "not killed". All three surfaces also wait for
+ * `useFeatureFlagsResolved()` before they act, so a switch flipped in PostHog
+ * lands before the push (`QaTesterGate`, `SendRecoveryGate`) or the first paint
+ * (`ConnectivityBanner`) it is meant to stop, not after.
+ */
+export function useConnectivityBannerEnabled(): boolean {
+  return useFeatureFlag('connectivity-banner-kill') !== true;
+}
+
+export function useQaTesterGateEnabled(): boolean {
+  return useFeatureFlag('qa-tester-gate-kill') !== true;
+}
+
+export function useSendRecoveryGateEnabled(): boolean {
+  return useFeatureFlag('send-recovery-gate-kill') !== true;
+}
+
+/**
+ * Kill switch for the picker `OnboardingGate` opens by itself for a new account
+ * with no board (#5654). It ships to every new account with no experiment, so
+ * this is the only way to take it back without a release. Unresolved reads as
+ * "not killed", and the gate waits for `useFeatureFlagsResolved()` before it
+ * pushes, so a switch flipped in PostHog lands before the push.
+ */
+export function useFirstBoardPickerEnabled(): boolean {
+  return useFeatureFlag('first-board-picker-kill') !== true;
+}
+
+/**
+ * Kill switch for the connect-step test (#5654, PR 7): the Climbs card, the
+ * play-view pill and the first-connect confirmation, plus new enrolments.
+ * Unresolved reads as "not killed". The gate waits for
+ * `useFeatureFlagsResolved()` before it enrols, and the surfaces re-render when
+ * the value lands, so flipping it in PostHog takes the whole test down.
+ */
+export function useFirstConnectCtaEnabled(): boolean {
+  return useFeatureFlag('first-connect-cta-kill') !== true;
+}
+
+/**
  * Gate for the play drawer's "Boardsesh grade" section. Missing/undefined (flags
  * not loaded yet) reads as OFF — the section stays hidden until PostHog resolves.
  */
@@ -285,6 +534,37 @@ export function useInteractiveRequestDeadlineEnabled(): boolean {
  */
 export function usePersonalGradesDefault(): boolean {
   return useFeatureFlag('personal-grades') === true;
+}
+
+/**
+ * Gate for preview-first browsing in a shared session (#4281 / #4683).
+ *
+ * A POSITIVE rollout flag, not a `*-kill` one, and the direction is the whole
+ * point: unresolved must mean the behaviour this feature replaced. The off-state
+ * here is "your swipe lights the board", which is what the app has always done
+ * and what a climber standing at a wall expects — so the first frames of a cold
+ * open, a PostHog outage, and a missing key all land on the safe side. Reading
+ * it as a kill switch would do the opposite: it would default a whole fleet into
+ * a mode where gestures stop driving the wall, which is exactly the regression
+ * that took #4683 back out.
+ */
+export function useSharedSessionBrowseEnabled(): boolean {
+  return useFeatureFlag('shared-session-browse') === true;
+}
+
+/**
+ * Gate for the spray-wall front door (epic #5346, SW-09): the picker tile and
+ * every `/boards/spray/*` route behind it.
+ *
+ * A POSITIVE rollout flag, and `=== true` is the whole contract: PostHog
+ * resolves asynchronously, so anything looser (`!== false`) would show the tile
+ * for the first frames of every cold open and let a deep link walk into the flow
+ * on a fleet the feature is not enabled for. Unresolved, absent and explicitly
+ * off all read the same — hidden — which is the only safe reading while a
+ * feature is dark.
+ */
+export function useSprayWallsEnabled(): boolean {
+  return useFeatureFlag('spray-walls') === true;
 }
 
 function featureFlagsEqual(leftFlags: FeatureFlags, rightFlags: FeatureFlags): boolean {

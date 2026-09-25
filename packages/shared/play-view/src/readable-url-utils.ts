@@ -344,6 +344,15 @@ function resolveReadableBoardSegments({
     }
   }
 
+  if (boardType === 'spray') {
+    // A spray wall has no readable URL and never will have one of this shape.
+    // Its layout and size are created at runtime from the climber's own wall, so
+    // there is no layout name, size name or hold-set name to slug — and the
+    // numeric path is already canonical for it. Returning null puts the caller
+    // on `buildNumericClimbViewPath`.
+    return null;
+  }
+
   if (boardType === 'woods') {
     try {
       const woodsDetails = getWoodsBoardDetails({ size_id: sizeId });
@@ -709,6 +718,11 @@ export function resolveBoardSegmentsToIds({
   if (boardType === 'woods') {
     return resolveWoodsSegmentsToIds({ layoutSlug, sizeSlug, setSlug });
   }
+
+  // Spray emits only numeric paths (see `resolveReadableBoardSegments`), which
+  // `parseBoardRoutePath` resolves without coming through here. A slug-shaped
+  // `/spray/...` path is therefore not a URL we ever built.
+  if (boardType === 'spray') return null;
 
   const layout = getAllLayouts(boardType).find((candidate) => generateLayoutSlug(candidate.name) === layoutSlug);
   if (!layout) return null;

@@ -14,6 +14,7 @@
 // when the shape changes so stale values are ignored rather than misread.
 
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
+import { BOARD_FEED_SUGGESTION_SOURCE_ID } from './playlists/board-feed-suggestion-source';
 import { getPreference, setPreference, removePreference } from './preference-store';
 import type { UserStorageOwner } from './user-storage-owner';
 
@@ -43,8 +44,28 @@ function capSuggestionSource(source: PlaylistSuggestionSource | null): PlaylistS
   return { ...source, climbs: source.climbs.slice(windowStart, windowStart + MAX_PERSISTED_SUGGESTION_CLIMBS) };
 }
 
-export function getStoredQueueSnapshot(_owner?: UserStorageOwner | null): Promise<LocalQueueSnapshot | null> {
-  return getPreference<LocalQueueSnapshot>(QUEUE_SNAPSHOT_KEY);
+/**
+ * Drop a persisted board-feed track on the way in.
+ *
+ * Up to 2.5.0 a board switch replaced the climber's own list with the board's
+ * unfiltered popular-by-ascents feed, and that replacement was persisted. It is
+ * exactly the track that served climbs the climber had filtered out (issue
+ * #5403), so restoring one after the upgrade would reinstall the bug for the
+ * people who hit it. The queue itself is untouched — this is one bad field, not
+ * a reason to bump `QUEUE_SNAPSHOT_KEY` and throw away everyone's solo queue.
+ *
+ * Board-feed sources the fixed build writes are harmless (they carry the
+ * climber's own masked list), so dropping them costs a restored climber their
+ * swipe track once, not their queue.
+ */
+function dropBoardFeedSource(snapshot: LocalQueueSnapshot | null): LocalQueueSnapshot | null {
+  if (!snapshot?.playlistSuggestionSource) return snapshot;
+  if (snapshot.playlistSuggestionSource.playlistUuid !== BOARD_FEED_SUGGESTION_SOURCE_ID) return snapshot;
+  return { ...snapshot, playlistSuggestionSource: null };
+}
+
+export async function getStoredQueueSnapshot(_owner?: UserStorageOwner | null): Promise<LocalQueueSnapshot | null> {
+  return dropBoardFeedSource(await getPreference<LocalQueueSnapshot>(QUEUE_SNAPSHOT_KEY));
 }
 
 export function setStoredQueueSnapshot(

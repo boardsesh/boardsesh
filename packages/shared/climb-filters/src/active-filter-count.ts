@@ -11,6 +11,7 @@ import type { ClimbBoardFilterState } from './board-filter-state';
 export function countActiveFiltersBeyondGrade(filters: ClimbFilterState, boardFilters?: ClimbBoardFilterState): number {
   let count = 0;
   if (filters.setter && filters.setter.length > 0) count += 1;
+  if (filters.onlyFollowedAuthors) count += 1;
   if (filters.minAscents != null) count += 1;
   if (filters.minRating != null) count += 1;
   if (filters.gradeAccuracy != null) count += 1;
@@ -18,6 +19,7 @@ export function countActiveFiltersBeyondGrade(filters: ClimbFilterState, boardFi
   if (filters.onlyTallClimbs) count += 1;
   if (filters.onlyWideClimbs) count += 1;
   if (filters.onlyWithBetaVideos) count += 1;
+  if (filters.includeOtherAngles) count += 1;
   // The four tick flags are one conceptual axis (the "Your progress" selector),
   // so they contribute at most one — "Not tried" sets two flags but is one choice.
   if (isProgressFilterActive(filters)) count += 1;

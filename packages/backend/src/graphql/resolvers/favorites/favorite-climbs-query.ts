@@ -2,6 +2,7 @@ import { eq, and, sql, desc } from 'drizzle-orm';
 import { type ConnectionContext, type Climb, type BoardName, SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
+import { sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
 import { getClimbStars, getGradeLabel, toConfidenceTier } from '@boardsesh/db/queries';
 import { requireAuthenticated, validateInput } from '../shared/helpers';
 import { GetUserFavoriteClimbsInputSchema } from '../../../validation/schemas';
@@ -43,7 +44,26 @@ export const favoriteClimbsQuery = {
     const countResult = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(dbSchema.userFavorites)
-      .where(and(eq(dbSchema.userFavorites.userId, userId), eq(dbSchema.userFavorites.boardName, boardName)));
+      // The count joins the climb for the same reason the page does — otherwise it
+      // promises rows the page then withholds.
+      .innerJoin(
+        tables.climbs,
+        and(eq(tables.climbs.uuid, dbSchema.userFavorites.climbUuid), eq(tables.climbs.boardType, boardName)),
+      )
+      .where(
+        and(
+          eq(dbSchema.userFavorites.userId, userId),
+          eq(dbSchema.userFavorites.boardName, boardName),
+          // A favourite is a reference the user PERSISTED, so it outlives the
+          // wall's visibility: without this, a climb favourited while the wall was
+          // public keeps returning its name, description and frames after the owner
+          // makes the wall private again. A no-op on the other eight board types.
+          sprayClimbVisibilityCondition(
+            { boardType: tables.climbs.boardType, layoutId: tables.climbs.layoutId },
+            userId,
+          ),
+        ),
+      );
 
     const totalCount = countResult[0]?.count || 0;
 
@@ -62,12 +82,23 @@ export const favoriteClimbsQuery = {
         frames_count: tables.climbs.framesCount,
         frames_pace: tables.climbs.framesPace,
         compatible_size_ids: tables.climbs.compatibleSizeIds,
+        // How many of the climb's holds have come off the wall. Spray walls only —
+        // NULL on every catalogue board, where holds do not come off — and the badge,
+        // the Intact / Lost holds filter and the remix prompt all read it, so a
+        // projection without it tells a climber that a climb they cannot do is fine.
+        missing_hold_count: tables.climbs.missingHoldCount,
         // The structured climb rules. Omitting them here does not just blank a
         // badge: the derived `Climb.is_no_match` resolver falls back to the Aurora
         // description convention when the array is absent, and the play drawer
         // prints "rule not recorded" on Woods (issue #5214).
         characteristics: tables.climbs.characteristics,
         // Stats data
+        // The angle the stats row was joined at — input.angle when a row exists,
+        // NULL when the climb has none there. The favorites list pins the join to
+        // the browsed angle, so this is never a different angle; it is carried so
+        // the row the play drawer opens with says where its numbers came from
+        // rather than leaving the client to assume.
+        statsAngle: tables.climbStats.angle,
         ascensionist_count: tables.climbStats.ascensionistCount,
         difficulty_id: sql<number | null>`ROUND(${tables.climbStats.displayDifficulty}::numeric, 0)`,
         quality_average: sql<number>`ROUND(${tables.climbStats.qualityAverage}::numeric, 2)`,
@@ -100,7 +131,20 @@ export const favoriteClimbsQuery = {
           eq(dbSchema.boardClimbGrades.angle, input.angle),
         ),
       )
-      .where(and(eq(dbSchema.userFavorites.userId, userId), eq(dbSchema.userFavorites.boardName, boardName)))
+      .where(
+        and(
+          eq(dbSchema.userFavorites.userId, userId),
+          eq(dbSchema.userFavorites.boardName, boardName),
+          // A favourite is a reference the user PERSISTED, so it outlives the
+          // wall's visibility: without this, a climb favourited while the wall was
+          // public keeps returning its name, description and frames after the owner
+          // makes the wall private again. A no-op on the other eight board types.
+          sprayClimbVisibilityCondition(
+            { boardType: tables.climbs.boardType, layoutId: tables.climbs.layoutId },
+            userId,
+          ),
+        ),
+      )
       .orderBy(desc(dbSchema.userFavorites.createdAt))
       .limit(pageSize + 1)
       .offset(page * pageSize);
@@ -118,12 +162,14 @@ export const favoriteClimbsQuery = {
       framesCount: result.frames_count ?? null,
       framesPace: result.frames_pace ?? null,
       compatibleSizeIds: result.compatible_size_ids ?? null,
+      missingHoldCount: result.missing_hold_count ?? null,
       characteristics: result.characteristics ?? null,
       // Every row is scoped to this board by the join; carrying it keeps
       // is_no_match from applying Aurora's description convention to a
       // MoonBoard climb whose prose just happens to mention matching.
       boardType: boardName,
       angle: input.angle,
+      statsAngle: result.statsAngle ?? null,
       ascensionist_count: Number(result.ascensionist_count || 0),
       difficulty: getGradeLabel(result.difficulty_id),
       quality_average: result.quality_average?.toString() || '0',
