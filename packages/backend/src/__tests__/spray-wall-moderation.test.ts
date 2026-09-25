@@ -769,6 +769,8 @@ describe('a hidden wall', () => {
       ).entries.map((entry) => entry.userId);
 
     expect(await leaderboardFor(STRANGER)).toEqual([OWNER]);
+    // Anonymous too: a public wall's leaderboard must stay readable without a session.
+    expect(await leaderboardFor(null)).toEqual([OWNER]);
     expect(await boardPresenceQueries.boardConnection({}, { boardId }, ctxFor(STRANGER))).toBeNull();
     expect(await boardQueuePreviewQueries.boardQueuePreview({}, { boardId }, ctxFor(STRANGER))).toBeNull();
 
