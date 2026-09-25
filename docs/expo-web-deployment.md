@@ -181,7 +181,7 @@ store fleet's crash screen is unchanged.
 A reload keeps the URL, including `?sessionId`, and the solo queue is already
 persisted, so the climber comes back where they were. Keeping the previous
 deploys' chunks live would avoid the reload entirely; that is tracked
-separately.
+in #5780.
 
 ### Cross-origin backend
 
