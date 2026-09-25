@@ -74,7 +74,7 @@ vi.mock('../../connectivity/connectivity-store', () => ({
 
 const fakeDb = { tag: 'db' };
 
-import { offlineAwareRequest } from '../offline-request';
+import { offlineAwareRequest, registerOfflineOperationForTests } from '../offline-request';
 import { setOfflineEngineEnabled, __resetOfflineEngineForTests } from '../../offline-engine';
 import {
   SEARCH_CLIMBS,
@@ -930,5 +930,124 @@ describe('offlineAwareRequest — offline-usage signal lanes (#4317)', () => {
       surface: 'grade',
       boardName: 'tension',
     });
+  });
+});
+
+// `local-only` ops (similar climbs): the server resolver is admin-gated, so a
+// non-admin reaching it would see an auth error instead of an empty strip. The
+// policy must never touch the network — not online, not as a rescue.
+describe('offlineAwareRequest — local-only network policy', () => {
+  const LOCAL_ONLY_DOC = 'query LocalOnlyTest { localOnlyTest }';
+  type LocalOnlyVars = { boardName: string };
+  type LocalOnlyResponse = { items: string[] };
+  const canServeLocal = vi.fn<() => Promise<boolean>>();
+  const resolveLocal = vi.fn<() => Promise<LocalOnlyResponse>>();
+  let unregister: () => void = () => undefined;
+
+  beforeEach(() => {
+    canServeLocal.mockResolvedValue(true);
+    resolveLocal.mockResolvedValue({ items: ['local'] });
+    unregister = registerOfflineOperationForTests<LocalOnlyVars, LocalOnlyResponse>({
+      document: LOCAL_ONLY_DOC,
+      networkPolicy: 'local-only',
+      surface: 'search',
+      boardNameOf: ({ boardName }) => boardName,
+      canServeLocal,
+      resolveLocal,
+      offlineFallback: () => ({ items: [] }),
+    });
+  });
+
+  afterEach(() => {
+    unregister();
+  });
+
+  it('serves local while online and records the online_local lane', async () => {
+    setOnline(true);
+    const result = await offlineAwareRequest<LocalOnlyResponse>(LOCAL_ONLY_DOC, { boardName: 'kilter' });
+    expect(result).toEqual({ items: ['local'] });
+    expect(request).not.toHaveBeenCalled();
+    expect(recordOfflineRead).toHaveBeenCalledExactlyOnceWith({
+      lane: 'online_local',
+      surface: 'search',
+      boardName: 'kilter',
+    });
+  });
+
+  it('serves local while offline under the offline lane', async () => {
+    setOfflineBecause('backend_unreachable');
+    const result = await offlineAwareRequest<LocalOnlyResponse>(LOCAL_ONLY_DOC, { boardName: 'kilter' });
+    expect(result).toEqual({ items: ['local'] });
+    expect(recordOfflineRead).toHaveBeenCalledExactlyOnceWith({
+      lane: 'backend_unreachable_local',
+      surface: 'search',
+      boardName: 'kilter',
+    });
+  });
+
+  it('returns the fallback ONLINE when local cannot serve, without calling the network', async () => {
+    setOnline(true);
+    canServeLocal.mockResolvedValue(false);
+    const result = await offlineAwareRequest<LocalOnlyResponse>(LOCAL_ONLY_DOC, { boardName: 'kilter' });
+    expect(result).toEqual({ items: [] });
+    expect(request).not.toHaveBeenCalled();
+    expect(resolveLocal).not.toHaveBeenCalled();
+    expect(recordOfflineReadUnavailable).toHaveBeenCalledExactlyOnceWith({
+      reason: 'board_not_downloaded',
+      surface: 'search',
+      boardName: 'kilter',
+      connectivityReason: null,
+    });
+  });
+
+  it('returns the fallback OFFLINE when local cannot serve, with the offline reason', async () => {
+    setOnline(false);
+    canServeLocal.mockResolvedValue(false);
+    const result = await offlineAwareRequest<LocalOnlyResponse>(LOCAL_ONLY_DOC, { boardName: 'kilter' });
+    expect(result).toEqual({ items: [] });
+    expect(request).not.toHaveBeenCalled();
+    expect(recordOfflineReadUnavailable).toHaveBeenCalledExactlyOnceWith({
+      reason: 'board_not_downloaded',
+      surface: 'search',
+      boardName: 'kilter',
+      connectivityReason: 'device_offline',
+    });
+  });
+
+  it('names a missing db handle as its own reason and still skips the network', async () => {
+    setOnline(true);
+    getDatabaseHandle.mockReturnValue(null);
+    const result = await offlineAwareRequest<LocalOnlyResponse>(LOCAL_ONLY_DOC, { boardName: 'kilter' });
+    expect(result).toEqual({ items: [] });
+    expect(canServeLocal).not.toHaveBeenCalled();
+    expect(request).not.toHaveBeenCalled();
+    expect(recordOfflineReadUnavailable).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: 'local_db_unavailable' }),
+    );
+  });
+
+  it('ignores the offline-engine flag: flag off + online still reads local, never the network', async () => {
+    setOfflineEngineEnabled(false);
+    setOnline(true);
+    const result = await offlineAwareRequest<LocalOnlyResponse>(LOCAL_ONLY_DOC, { boardName: 'kilter' });
+    expect(result).toEqual({ items: ['local'] });
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('propagates a local read error instead of rescuing through the network', async () => {
+    setOnline(true);
+    resolveLocal.mockRejectedValue(new Error('sqlite read failed'));
+    await expect(offlineAwareRequest<LocalOnlyResponse>(LOCAL_ONLY_DOC, { boardName: 'kilter' })).rejects.toThrow(
+      'sqlite read failed',
+    );
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('returns the fallback with no signal when called without variables', async () => {
+    setOnline(true);
+    const result = await offlineAwareRequest<LocalOnlyResponse>(LOCAL_ONLY_DOC);
+    expect(result).toEqual({ items: [] });
+    expect(request).not.toHaveBeenCalled();
+    expect(recordOfflineReadUnavailable).not.toHaveBeenCalled();
   });
 });

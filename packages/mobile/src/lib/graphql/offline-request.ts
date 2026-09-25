@@ -58,8 +58,22 @@ function scopeOf(input: { boardName: string; layoutId: number; sizeId: number })
   return { boardType: input.boardName, layoutId: input.layoutId, sizeId: input.sizeId };
 }
 
+/**
+ * Where a registered read may go.
+ *
+ * - `local-first` (default): local SQLite when it can serve, else the network,
+ *   with the network-error rescue back to local. Every op before similar climbs.
+ * - `local-only`: local SQLite or the empty fallback, NEVER the network. For
+ *   catalogue reads whose server resolver is too expensive to run for everyone
+ *   (similar climbs), so the server gates it to admins: letting a non-admin fall
+ *   through would trade an empty strip for an auth error. The caller decides
+ *   separately (`useCatalogQuerySource`) whether to ask the network directly.
+ */
+export type OfflineNetworkPolicy = 'local-first' | 'local-only';
+
 type OfflineOperation<TVariables, TResponse> = {
   document: string;
+  networkPolicy?: OfflineNetworkPolicy;
   // Offline-usage rollup (#4317): which read this is, and which board it is
   // scoped to. The gate keys on (day, lane, board) and carries `surface` as a
   // descriptive prop of the read that crossed a rung.
@@ -88,6 +102,19 @@ const OFFLINE_OPERATIONS = new Map<string, OfflineOperation<never, unknown>>();
 
 function registerOfflineOperation<TVariables, TResponse>(operation: OfflineOperation<TVariables, TResponse>): void {
   OFFLINE_OPERATIONS.set(operation.document, operation as OfflineOperation<never, unknown>);
+}
+
+/**
+ * Test seam: register a synthetic op so the routing policies can be exercised
+ * without a real document behind them. Returns the unregister function.
+ */
+export function registerOfflineOperationForTests<TVariables, TResponse>(
+  operation: OfflineOperation<TVariables, TResponse>,
+): () => void {
+  registerOfflineOperation(operation);
+  return () => {
+    OFFLINE_OPERATIONS.delete(operation.document);
+  };
 }
 
 // Shared by the search + count registrations so the climbs list and its
@@ -266,6 +293,7 @@ function offlineReadLane(): OfflineReadLane {
  */
 export async function offlineAwareRequest<TResponse>(document: string, variables?: Variables): Promise<TResponse> {
   const operation = OFFLINE_OPERATIONS.get(document);
+  if (operation?.networkPolicy === 'local-only') return localOnlyRequest<TResponse>(operation, variables);
   // Carry a local source we already resolved on the way to the network so the
   // network-failure catch below can reuse it instead of re-probing. Only set on
   // the online miss-retry path — the one path that reaches the network with a
@@ -374,4 +402,43 @@ export async function offlineAwareRequest<TResponse>(document: string, variables
     }
     throw networkError;
   }
+}
+
+/**
+ * A `local-only` read: local SQLite when it can serve, otherwise the op's empty
+ * fallback — online or offline, and never `getHttpClient()`. Not gated by the
+ * offline-engine flag either: reading data already on disk never is (#3888), and
+ * with no local source the only alternative would be the network this policy
+ * exists to avoid.
+ *
+ * The unavailable reason is recorded online too, with a null connectivity
+ * reason, because "online and still nothing" is exactly the audience a download
+ * nudge is for. A throwing `resolveLocal` propagates, as on the local-first path.
+ */
+async function localOnlyRequest<TResponse>(
+  operation: OfflineOperation<never, unknown>,
+  variables: Variables | undefined,
+): Promise<TResponse> {
+  const isOnline = onlineManager.isOnline();
+  const db = getDatabaseHandle();
+  if (db && variables !== undefined && (await operation.canServeLocal(db, variables as never))) {
+    const localResponse = (await operation.resolveLocal(db, variables as never)) as TResponse;
+    recordOfflineRead({
+      lane: isOnline ? 'online_local' : offlineReadLane(),
+      surface: operation.surface,
+      boardName: operation.boardNameOf(variables as never),
+    });
+    return localResponse;
+  }
+  if (variables !== undefined) {
+    recordOfflineReadUnavailable({
+      reason: db
+        ? ((await operation.unavailableReason?.(db, variables as never)) ?? 'board_not_downloaded')
+        : 'local_db_unavailable',
+      surface: operation.surface,
+      boardName: operation.boardNameOf(variables as never),
+      connectivityReason: getConnectivitySnapshot().reason,
+    });
+  }
+  return operation.offlineFallback() as TResponse;
 }
