@@ -140,7 +140,7 @@ describe('the shaped track', () => {
     }
   });
 
-  it('lands every 15 s rung exactly, so a scrub can reach each one', () => {
+  it('lands every 5 s rung exactly, so a scrub can reach each one', () => {
     for (const seconds of [15, 30, 45, 60, 120, 180, 600, 1800, 3600]) {
       const rung = shouldReportValue(
         trackPosition(ratioFor(seconds), 300),
