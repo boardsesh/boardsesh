@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-25T22:38:43.895Z",
+  "generatedAt": "2026-09-25T22:47:40.422Z",
   "entries": [
+    {
+      "prNumber": 5774,
+      "category": "fixed",
+      "title": "The Attempt and Flash buttons stay lined up while you type a note",
+      "mergedAt": "2026-09-25T22:24:51Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5774"
+    },
     {
       "prNumber": 5783,
       "category": "fixed",

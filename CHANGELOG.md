@@ -20,6 +20,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- The Attempt and Flash buttons stay lined up while you type a note ([#5774](https://github.com/boardsesh/boardsesh/pull/5774))
 - Tap connect and the board sheet opens right away while it looks for your saved board ([#5783](https://github.com/boardsesh/boardsesh/pull/5783))
   Board off or out of range? Tap "Search for any board" to skip the wait
 - Your note stays in view above the keyboard when you log or edit a tick ([#5772](https://github.com/boardsesh/boardsesh/pull/5772))
