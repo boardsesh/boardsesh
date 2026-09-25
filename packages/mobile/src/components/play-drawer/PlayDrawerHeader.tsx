@@ -91,6 +91,9 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
   );
   // Same marker, same key and styling as the search-list row (ClimbListItemContent):
   // this climb's grade/sends came from a different angle than the one on the wall.
+  // It shares the row's narrow lag too: `statsAngle` is fixed at fetch time, so after
+  // the first ever tick at the browsed angle the marker keeps naming the old angle
+  // until the climb is refetched. Self-correcting; see the row's comment.
   const showSetAngleMarker = statsAngle != null && statsAngle !== angle;
 
   const subtitleParts: string[] = [];
