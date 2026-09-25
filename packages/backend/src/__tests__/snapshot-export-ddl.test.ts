@@ -7,7 +7,7 @@
 
 import { describe, it, expect } from 'vite-plus/test';
 import { DatabaseSync } from 'node:sqlite';
-import { DEVICE_ONLY_TABLES } from '@boardsesh/offline-sync';
+import { DEVICE_ONLY_STATEMENTS, DEVICE_ONLY_TABLES } from '@boardsesh/offline-sync';
 import { boardSnapshotDdlStatements } from '../scripts/export-board-snapshots';
 
 const ARTIFACT_TABLES = ['board_climb_stats', 'board_climbs', 'snapshot_meta'];
@@ -51,11 +51,12 @@ describe('boardSnapshotDdlStatements', () => {
     }
   });
 
-  it('carries the sync_seq index on board_climbs, which names only a snapshot table', () => {
-    expect(boardSnapshotDdlStatements().some((statement) => statement.includes('idx_climbs_sync_seq'))).toBe(true);
-    expect(
-      boardSnapshotDdlStatements().some((statement) => /hold_sets|hold_postings|holds_index/.test(statement)),
-    ).toBe(false);
+  it('leaves out statements only the device needs, such as the sync_seq index on board_climbs', () => {
+    expect(DEVICE_ONLY_STATEMENTS.some((statement) => statement.includes('idx_climbs_sync_seq'))).toBe(true);
+    for (const statement of boardSnapshotDdlStatements()) {
+      expect(statement).not.toContain('idx_climbs_sync_seq');
+      expect(statement).not.toMatch(/hold_sets|hold_postings|holds_index/);
+    }
   });
 
   it('keeps the grades artifact to board_climb_grades and snapshot_meta', () => {

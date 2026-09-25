@@ -172,7 +172,8 @@ export const MIGRATIONS: Migration[] = [
     // `idx_climbs_sync_seq` is on `board_climbs` because the builder walks a
     // layout in `sync_seq` order from that watermark, and asks "is anything
     // newer than the watermark?" on every read of the index. No existing index
-    // carries `sync_seq`, so both would sort the whole layout each time.
+    // carries `sync_seq`, so both would sort the whole layout each time. It is
+    // in DEVICE_ONLY_STATEMENTS, so the snapshot export leaves it out of artifacts.
     //
     // Bumping LATEST_SCHEMA_VERSION makes today's v9 artifacts schema-stale for
     // v10 clients until the next live threshold scan rebuilds them (every 15

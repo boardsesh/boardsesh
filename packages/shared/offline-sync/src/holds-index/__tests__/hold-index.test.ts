@@ -2,7 +2,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TestSqliteDb } from '../../testing/sqlite-test-db';
 import { markScopeDownloadComplete } from '../../sync/checkpoints';
 import { offlineBoardKey, type OfflineBoardScope } from '../../offline-board-key';
-import { ensureHoldIndex, holdIndexKey, isHoldIndexBehind, removeClimbFromHoldIndex } from '../hold-index';
+import {
+  HOLD_INDEX_GENERATION_PREFIX,
+  clearBoardTypeHoldIndex,
+  ensureHoldIndex,
+  holdIndexKey,
+  isHoldIndexBehind,
+  removeClimbFromHoldIndex,
+} from '../hold-index';
+import { removeBoardScopeData } from '../../sync/scope-teardown';
 import { HOLD_ROLE, HOLD_ROLE_OTHER } from '../query';
 import {
   expectPostingsMatchHoldSets,
@@ -340,6 +348,136 @@ describe('ensureHoldIndex — incremental', () => {
     await insertClimb({ uuid: 'new', seq: 3 });
     await ensureHoldIndex(db, KILTER_12, { parseHoldRows, queryClient });
     expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['similarClimbs'] });
+  });
+});
+
+describe('teardown racing a build', () => {
+  /** A yieldToHost that removes the sibling size on its `nth` call, then yields normally. */
+  function teardownSiblingOnYield(nth: number): () => Promise<void> {
+    let calls = 0;
+    return async () => {
+      calls += 1;
+      if (calls === nth) {
+        await removeBoardScopeData({
+          db,
+          scope: KILTER_8,
+          scopeKey: offlineBoardKey(KILTER_8),
+          retainedScopes: [KILTER_12],
+        });
+      }
+    };
+  }
+
+  beforeEach(async () => {
+    await markScopeDownloadComplete(db, offlineBoardKey(KILTER_8));
+    for (let index = 1; index <= 4; index += 1) {
+      await insertClimb({ uuid: `shared-${index}`, seq: index, sizes: [8, 12], frames: `p${index}r12` });
+    }
+  });
+
+  it('stops a first build when a sibling size is torn down between its hold-set chunks', async () => {
+    // Yield 1 comes after the first 2-climb chunk commits.
+    const result = await ensureHoldIndex(db, KILTER_12, {
+      parseHoldRows,
+      initialChunkClimbs: 2,
+      yieldToHost: teardownSiblingOnYield(1),
+    });
+
+    expect(result.status).toBe('aborted');
+    expect(await watermarkOf(KILTER_12)).toBeNull();
+    // The teardown left this scope downloaded; only its index went.
+    expect(
+      await db.getFirstAsync('SELECT 1 FROM sync_meta WHERE key = ?', [`scope-complete:${offlineBoardKey(KILTER_12)}`]),
+    ).not.toBeNull();
+
+    const rebuilt = await ensureHoldIndex(db, KILTER_12, { parseHoldRows });
+    expect(rebuilt.status).toBe('complete');
+    await expectPostingsMatchHoldSets(db, 'kilter', 1);
+  });
+
+  it('never writes postings from a rebuild read that a sibling teardown overtook', async () => {
+    // One hold-set chunk (no yield), then the rebuild: yield 1 before its read,
+    // yield 2 before its first write batch — the teardown lands there.
+    const result = await ensureHoldIndex(db, KILTER_12, { parseHoldRows, yieldToHost: teardownSiblingOnYield(2) });
+
+    expect(result.status).toBe('aborted');
+    expect(await watermarkOf(KILTER_12)).toBeNull();
+    expect((await db.getFirstAsync<{ n: number }>('SELECT COUNT(*) AS n FROM board_climb_hold_postings'))?.n).toBe(0);
+    expect(
+      await db.getFirstAsync('SELECT value FROM sync_meta WHERE key = ?', [`${HOLD_INDEX_GENERATION_PREFIX}kilter:1`]),
+    ).toEqual({ value: '1' });
+  });
+});
+
+describe('an incremental chunk racing a tombstone', () => {
+  it('does not write a hold set for a climb deleted after the chunk was read', async () => {
+    await insertClimb({ uuid: 'base', seq: 1 });
+    await ensureHoldIndex(db, KILTER_12, { parseHoldRows });
+    await insertClimb({ uuid: 'racer', seq: 2, frames: 'p4r13' });
+    let checks = 0;
+
+    const result = await ensureHoldIndex(db, KILTER_12, {
+      parseHoldRows,
+      shouldContinue: () => {
+        checks += 1;
+        // After the chunk's read, before its write: the climb is tombstoned.
+        if (checks === 2) void db.runAsync("DELETE FROM board_climbs WHERE uuid = 'racer'");
+        return true;
+      },
+    });
+
+    expect(result.status).toBe('complete');
+    expect(await holdSetOf(db, 'racer')).toBeNull();
+    expect(await db.getFirstAsync("SELECT id FROM holds_index_climbs WHERE uuid = 'racer'")).toBeNull();
+    await expectPostingsMatchHoldSets(db, 'kilter', 1);
+  });
+});
+
+describe('clearBoardTypeHoldIndex', () => {
+  it("takes a board type's hold sets, postings, watermarks and local ids, gone climbs included, and nothing else", async () => {
+    const spray: OfflineBoardScope = { boardType: 'spray', layoutId: 4, sizeId: 4 };
+    await markScopeDownloadComplete(db, offlineBoardKey(spray));
+    await insertClimb({ uuid: 'wall-climb', seq: 1, boardType: 'spray', layoutId: 4, sizes: [4] });
+    await insertClimb({ uuid: 'wall-climb-tombstoned', seq: 2, boardType: 'spray', layoutId: 4, sizes: [4] });
+    await insertClimb({ uuid: 'kilter-climb', seq: 3 });
+    await ensureHoldIndex(db, spray, { parseHoldRows });
+    await ensureHoldIndex(db, KILTER_12, { parseHoldRows });
+    // A spray climb that left board_climbs without the cascade: no join through
+    // board_climbs can attribute it to spray any more.
+    await db.runAsync("DELETE FROM board_climbs WHERE uuid = 'wall-climb-tombstoned'");
+
+    await db.withExclusiveTransactionAsync(async (txn) => {
+      await clearBoardTypeHoldIndex(txn, 'spray');
+    });
+
+    const uuids = await db.getAllAsync<{ uuid: string }>('SELECT uuid FROM holds_index_climbs ORDER BY uuid');
+    expect(uuids).toEqual([{ uuid: 'kilter-climb' }]);
+    expect(await holdSetOf(db, 'kilter-climb')).not.toBeNull();
+    expect(await postingsOf(db, 'spray', 4)).toEqual(new Map());
+    expect((await postingsOf(db, 'kilter', 1)).size).toBeGreaterThan(0);
+    expect(await watermarkOf(spray)).toBeNull();
+    expect(await watermarkOf(KILTER_12)).not.toBeNull();
+    expect(
+      await db.getFirstAsync('SELECT value FROM sync_meta WHERE key = ?', [`${HOLD_INDEX_GENERATION_PREFIX}spray`]),
+    ).toEqual({ value: '1' });
+  });
+
+  it('never reissues a deleted local id', async () => {
+    await insertClimb({ uuid: 'first', seq: 1 });
+    await ensureHoldIndex(db, KILTER_12, { parseHoldRows });
+    const firstId = (await db.getFirstAsync<{ id: number }>("SELECT id FROM holds_index_climbs WHERE uuid = 'first'"))
+      ?.id;
+    await db.withExclusiveTransactionAsync(async (txn) => {
+      await clearBoardTypeHoldIndex(txn, 'kilter');
+    });
+    await db.runAsync("DELETE FROM board_climbs WHERE uuid = 'first'");
+    await insertClimb({ uuid: 'second', seq: 2 });
+
+    await ensureHoldIndex(db, KILTER_12, { parseHoldRows });
+
+    const secondId = (await db.getFirstAsync<{ id: number }>("SELECT id FROM holds_index_climbs WHERE uuid = 'second'"))
+      ?.id;
+    expect(secondId).toBeGreaterThan(firstId ?? Number.POSITIVE_INFINITY);
   });
 });
 

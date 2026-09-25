@@ -220,12 +220,13 @@ CREATE TABLE IF NOT EXISTS spray_walls (
 
 /**
  * A stable local integer id per climb uuid, so a posting is 4 bytes per climb
- * instead of a 36-character uuid. Rows are only ever `INSERT OR IGNORE`d: an id
- * never changes meaning while any posting may name it.
+ * instead of a 36-character uuid. Rows are only ever `INSERT OR IGNORE`d, and
+ * `AUTOINCREMENT` means a deleted id is never handed out again: an id that a
+ * stale posting still names can never come to mean a different climb.
  */
 export const HOLDS_INDEX_CLIMBS = `
 CREATE TABLE IF NOT EXISTS holds_index_climbs (
-  id INTEGER PRIMARY KEY,
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
   uuid TEXT NOT NULL UNIQUE
 );
 `.trim();
@@ -258,9 +259,10 @@ CREATE TABLE IF NOT EXISTS board_climb_hold_postings (
  * "is the index behind?" probe is `sync_seq > ? LIMIT 1`; without this index
  * both sort the whole layout on every call.
  *
- * This one DOES name `board_climbs`, so the snapshot export copies it into the
- * artifact DDL. That is harmless (an index the import never reads) and pinned by
- * `snapshot-export-ddl.test.ts`.
+ * It names `board_climbs`, which the snapshot export's table match would pull
+ * into every artifact, where it is dead weight (the import copies rows out of
+ * the attached artifact and never queries it by `sync_seq`). It is therefore in
+ * DEVICE_ONLY_STATEMENTS below, which the export leaves out.
  */
 export const INDEX_CLIMBS_SYNC_SEQ = `
 CREATE INDEX IF NOT EXISTS idx_climbs_sync_seq ON board_climbs (board_type, layout_id, sync_seq);
@@ -273,6 +275,13 @@ CREATE INDEX IF NOT EXISTS idx_climbs_sync_seq ON board_climbs (board_type, layo
  * them alongside the board tables.
  */
 export const DEVICE_ONLY_TABLES = ['holds_index_climbs', 'board_climb_hold_sets', 'board_climb_hold_postings'] as const;
+
+/**
+ * Migration statements the device needs but a snapshot artifact must not carry,
+ * although they touch an artifact table. The export drops these by exact text,
+ * so moving one requires no artifact format change.
+ */
+export const DEVICE_ONLY_STATEMENTS: readonly string[] = [INDEX_CLIMBS_SYNC_SEQ];
 
 // --- Sync bookkeeping ---------------------------------------------------------
 // checkpoints.ts reads/writes sync_meta(key, value); it has no CREATE TABLE of

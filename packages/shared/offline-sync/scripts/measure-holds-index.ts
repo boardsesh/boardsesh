@@ -12,6 +12,13 @@
 // and --all-sizes builds every size scope of the layout one after another (the
 // cost of a climber downloading every size; shared climbs are derived once).
 //
+// A DEV-ONLY script, not part of the package build or of CI. It imports the parser
+// from board-constants by relative path because @boardsesh/offline-sync keeps zero
+// runtime deps and no devDependency on it, and the workspace package name does not
+// resolve from here under `node --import tsx`. CI never typechecks it; before
+// committing a change, check it by hand:
+//   vp exec tsc --noEmit -p packages/shared/offline-sync/scripts
+//
 // Work files go under os.tmpdir(); on the dev box TMPDIR is ~/.cache/claude-tmp,
 // which is disk, not the /tmp RAM disk. Nothing here writes to the artifact.
 
@@ -30,8 +37,7 @@ import { basename, join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { createGunzip } from 'node:zlib';
 import { parseArgs } from 'node:util';
-// A relative import on purpose: @boardsesh/offline-sync keeps zero runtime deps
-// (the parser is injected), and this script should not add a workspace devDep.
+// Relative on purpose; see the header.
 import { HOLD_STATE_MAP, parseFramesToHoldRows } from '../../../board-constants/src/hold-states';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { runMigrations } from '../src/db/migrations';
