@@ -18,6 +18,7 @@ import {
   configureMainConnection,
   vacuumDatabase,
   BOARD_DATA_TABLES,
+  DEVICE_ONLY_TABLES,
   getUnfinishedDownloadScopeKeys,
   claimAbandonedDownloadTerminal,
   purgeNamespaceForScopeKey,
@@ -79,7 +80,16 @@ const SPRAY_BOARD_TYPE = 'spray';
 // — deliberately, because a Kilter catalogue is shared. So the rows for the one
 // board type where that is false have to go with the wall. Only `board_type =
 // 'spray'` is touched; the catalogue download the wipe exists to protect is not.
-const SPRAY_SCOPED_BOARD_TABLES = ['board_climbs', 'board_climb_stats', 'board_climb_grades'] as const;
+//
+// `board_climb_holds` is the device-derived holds index: it carries the wall's
+// climbs' holds, so it goes with them. Its watermark is in `scopeSyncMetaKeys`,
+// which the per-wall marker loop below already clears.
+const SPRAY_SCOPED_BOARD_TABLES = [
+  'board_climbs',
+  'board_climb_stats',
+  'board_climb_grades',
+  'board_climb_holds',
+] as const;
 
 let databaseHandle: SQLiteDatabase | null = null;
 
@@ -1020,7 +1030,11 @@ export async function purgeLocalDataForSignOut(
     // (#5448) — so a plain concatenation ran its DELETE twice. Harmless today,
     // and exactly the kind of thing that stops being harmless when someone adds
     // a count or a trigger to this loop.
-    for (const table of new Set([...USER_DATA_TABLES_TO_CLEAR, ...BOARD_DATA_TABLES])) {
+    //
+    // DEVICE_ONLY_TABLES (the derived holds index) is spread for the same reason
+    // BOARD_DATA_TABLES is: it is built from the catalog this wipe deletes, and it
+    // is deliberately NOT in TABLE_CONFIGS, so BOARD_DATA_TABLES cannot cover it.
+    for (const table of new Set([...USER_DATA_TABLES_TO_CLEAR, ...BOARD_DATA_TABLES, ...DEVICE_ONLY_TABLES])) {
       await txn.runAsync(`DELETE FROM ${table}`);
     }
     await deleteAllSyncMeta(txn);

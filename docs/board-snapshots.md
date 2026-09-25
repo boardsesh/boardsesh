@@ -231,6 +231,18 @@ layout artifact but intentionally outside the enabled size.
   artifact hits exactly that stale path: it rejects the artifact and crawls the scope page by page until the
   next export rebuilds it at v5.
 
+### Device-derived tables stay out
+
+`board_climb_holds` (schema v10, the holds index behind similar climbs and the hold heatmap on the phone) is
+built on the device from `board_climbs.frames` and is **never** part of an artifact. The exclusion is
+enforced in code, not just by convention: the table is listed in `DEVICE_ONLY_TABLES`
+(`@boardsesh/offline-sync`), `boardSnapshotDdlStatements` throws if any statement it selects names one, and
+`snapshot-export-ddl.test.ts` pins the artifact's table list to exactly `board_climbs`,
+`board_climb_stats` and `snapshot_meta`. The same migration's `idx_climbs_sync_seq` index is on
+`board_climbs`, so it does get copied into the artifact DDL. It adds some bytes to the decoded file and
+nothing else, because the import never reads it. Because v10 bumps `schema_version`, the
+schema-bump staleness window below applies to it.
+
 ### Compatible additions and missing columns
 
 Extra incoming columns are expected while server exports and installed apps run different versions.

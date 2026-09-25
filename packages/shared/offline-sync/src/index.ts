@@ -124,7 +124,20 @@ export type {
   BootstrapRetryWakeReporter,
   BootstrapPathRecoveredInfo,
   BootstrapPathRecoveredReporter,
+  HoldIndexSyncOptions,
 } from './sync/pull-client';
+
+// --- Device-derived holds index (hold heatmap + similar climbs on device) --------
+// `board_climb_holds`, built on the phone from `board_climbs.frames`. Not a synced
+// table; see holds-index/hold-index.ts for the watermark and lock rules.
+export {
+  ensureHoldIndex,
+  isHoldIndexBehind,
+  holdIndexKey,
+  HOLD_INDEX_KEY_PREFIX,
+  HOLD_INDEX_CHUNK_CLIMBS,
+} from './holds-index/hold-index';
+export type { HoldRow, HoldRowParser, EnsureHoldIndexOptions, EnsureHoldIndexResult } from './holds-index/hold-index';
 
 // --- Tombstone retention (issue #3474) --------------------------------------
 // The backend prune job imports SYNC_DELETIONS_RETENTION_DAYS from here so the
@@ -274,7 +287,7 @@ export type {
 
 // --- On-device schema ------------------------------------------------------------
 export { vacuumDatabase, measureReclaimableBytes } from './db/vacuum';
-export { SCHEMA_STATEMENTS } from './db/schema';
+export { SCHEMA_STATEMENTS, DEVICE_ONLY_TABLES } from './db/schema';
 export { runMigrations, MIGRATIONS, LATEST_SCHEMA_VERSION } from './db/migrations';
 export { SnapshotSchemaCompatibilityError, type SchemaDriftReport } from './sync/schema-compatibility';
 export type { Migration } from './db/migrations';
