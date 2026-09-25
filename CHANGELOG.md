@@ -8,6 +8,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Spanish send button now reads "Encadenado", matching the wording used everywhere else a send shows up in the app. ([#5751](https://github.com/boardsesh/boardsesh/pull/5751))
 - Sign in to Kilter now asks for your email, not a username — matching how you actually log into the Kilter app. ([#5754](https://github.com/boardsesh/boardsesh/pull/5754))
 - Translated pages on iPhone Safari can recover from a login-page hiccup, so you can get back to your account. ([#5755](https://github.com/boardsesh/boardsesh/pull/5755))
 - Search and sheet notes keep working when you tap away in the browser. ([#5756](https://github.com/boardsesh/boardsesh/pull/5756))

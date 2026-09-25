@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-25T00:49:47.949Z",
+  "generatedAt": "2026-09-25T00:58:34.362Z",
   "entries": [
+    {
+      "prNumber": 5751,
+      "category": "fixed",
+      "title": "Spanish send button now reads \"Encadenado\", matching the wording used everywhere else a send shows up in the app.",
+      "mergedAt": "2026-09-25T00:38:49Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5751"
+    },
     {
       "prNumber": 5754,
       "category": "fixed",
