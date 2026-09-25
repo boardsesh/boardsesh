@@ -25,7 +25,7 @@ describe('withGradeSource', () => {
 
   it('strips a pre-existing gradeSource when no grade bound or difficulty sort reads it', () => {
     expect(withGradeSource({ ...board, gradeSource: 'BOARDSESH' }, true)).not.toHaveProperty('gradeSource');
-    expect(withGradeSource({ ...board, gradeSource: 'AURORA' }, true)).not.toHaveProperty('gradeSource');
+    expect(withGradeSource({ ...board, gradeSource: 'UPSTREAM' }, true)).not.toHaveProperty('gradeSource');
   });
 
   it('returns the same object when there is nothing to change', () => {

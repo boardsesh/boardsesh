@@ -203,7 +203,7 @@ describe('useInfiniteSearchClimbs', () => {
       expect(lastInput().gradeSource).toBeUndefined();
     });
 
-    it('stays on the Aurora grade until the stored preference has been read', async () => {
+    it('stays on the upstream grade until the stored preference has been read', async () => {
       featureFlags.values = { 'boardsesh-grade': true };
       boardseshGradesPreference.enabled = true;
       boardseshGradesPreference.loaded = false;
