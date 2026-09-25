@@ -86,13 +86,6 @@ export const climbQueries = {
     { input }: { input: SimilarClimbsInput },
     ctx: ConnectionContext,
   ): Promise<SimilarClimb[]> => {
-    // 30/min/IP. The similar-climbs CTE scans board_climb_holds for the
-    // whole layout before the HAVING prune. React Query caches identical
-    // queries for 5 min but the play-drawer surface keys on climbUuid so
-    // rapid climb-switching generates fresh requests; 30/min stays well
-    // above any realistic interactive cadence while keeping a CGNAT'd
-    // shared IP from running the query at 1/s sustained.
-    await applyRateLimit(ctx, 30, 'similar-climbs');
     const validated = validateInput(SimilarClimbsInputSchema, input, 'input');
 
     if (!isValidBoardName(validated.boardType)) {
@@ -101,6 +94,12 @@ export const climbQueries = {
     const boardType = validated.boardType as BoardName;
 
     if (!(await hasCatalogQueryAccess(ctx, boardType))) {
+      // 600/min/IP on the index path. The read is one index lookup, and every
+      // web front-door render reaches here from the web server's single IP:
+      // crawlers walking climb pages put hundreds of requests a minute through
+      // that one key, which the 30/min live-path limit below turned into
+      // RATE_LIMITED errors and empty strips.
+      await applyRateLimit(ctx, 600, 'similar-climbs-index');
       // Spray walls are private catalogues and never materialised; the app
       // answers them from the wall it has mirrored on the phone. Checked first
       // so a wall answers every non-admin the same way, frames or not.
@@ -124,6 +123,14 @@ export const climbQueries = {
         statsAngle: validated.angle ?? undefined,
       });
     }
+
+    // 30/min/IP on the live path only. The similar-climbs CTE scans
+    // board_climb_holds for the whole layout before the HAVING prune. React
+    // Query caches identical queries for 5 min but the play-drawer surface keys
+    // on climbUuid so rapid climb-switching generates fresh requests; 30/min
+    // stays well above any realistic interactive cadence while keeping a
+    // CGNAT'd shared IP from running the query at 1/s sustained.
+    await applyRateLimit(ctx, 30, 'similar-climbs');
 
     // `climbUuid` is OPTIONAL here — a caller may pass a bare hold set — so this
     // needs no capability at all: posting `holds: [1..N]` with `threshold: 0`

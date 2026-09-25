@@ -121,3 +121,12 @@ longer uses. The update bumped `sync_seq`, so the next run re-scores it.
 - **Check it worked**: the front-door similar strip should load cold in well
   under a second, and `seq_scan` on `board_climb_holds` in `pg_stat_user_tables`
   should stop climbing.
+
+## Rate limits
+
+Two keys, one per path, both per user or per IP (`applyRateLimit`):
+
+- `similar-climbs-index` — **600/min** on the materialised path. One index lookup per call, and every web
+  front-door render reaches the backend from the web server's single IP, so a crawler walking climb pages
+  puts hundreds of calls a minute through that one key.
+- `similar-climbs` — **30/min** on the live Jaccard path (admins only). Unchanged from before the index.
