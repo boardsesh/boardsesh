@@ -110,6 +110,13 @@ export const queriesTypeDefs = /* GraphQL */ `
     similarClimbs(input: SimilarClimbsInput!): [SimilarClimb!]!
 
     """
+    Per-hold usage over the climbs a search matches (the hold heatmap). Admin
+    only: every other climber gets the same aggregate on device from the
+    downloaded board, so this live path never serves the public.
+    """
+    holdHeatmap(input: ClimbSearchInput!): [HoldStat!]!
+
+    """
     Get a single climb by its UUID.
     """
     climb(boardName: String!, layoutId: Int!, sizeId: Int!, setIds: String!, angle: Int!, climbUuid: ID!): Climb

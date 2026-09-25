@@ -27,7 +27,9 @@ const {
   recordOfflineReadUnavailable,
   getSimilarClimbsLocal,
   ensureHoldIndex,
+  getHoldHeatmapLocal,
 } = vi.hoisted(() => ({
+  getHoldHeatmapLocal: vi.fn(),
   getSimilarClimbsLocal: vi.fn(),
   ensureHoldIndex: vi.fn(),
   getDatabaseHandle: vi.fn(),
@@ -61,6 +63,7 @@ vi.mock('../../../db/queries/get-boardsesh-grade-local', () => ({
 }));
 vi.mock('../client', () => ({ getHttpClient: () => ({ request }) }));
 vi.mock('../../../db/queries/get-similar-climbs-local', () => ({ getSimilarClimbsLocal }));
+vi.mock('../../../db/queries/get-hold-heatmap-local', () => ({ getHoldHeatmapLocal }));
 vi.mock('../../../offline/hold-index-parser', () => ({ parseHoldRows: vi.fn() }));
 vi.mock('@boardsesh/offline-sync', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@boardsesh/offline-sync')>()),
@@ -96,6 +99,9 @@ import {
   type GetClimbQueryVariables,
 } from '../operations';
 import {
+  HOLD_HEATMAP_QUERY,
+  type HoldHeatmapQueryResponse,
+  type HoldHeatmapQueryVariables,
   SIMILAR_CLIMBS_QUERY,
   type SimilarClimbsResponse,
   type SimilarClimbsVariables,
@@ -1143,5 +1149,56 @@ describe('offlineAwareRequest — SIMILAR_CLIMBS_QUERY (local-only)', () => {
     expect(result).toEqual({ similarClimbs: [] });
     expect(isBoardDownloadedLocally).not.toHaveBeenCalled();
     expect(request).not.toHaveBeenCalled();
+  });
+});
+
+// The hold heatmap is local-only too, and gated like search: the climb set is the
+// list's, so a filter SQLite cannot express declines exactly as search does.
+describe('offlineAwareRequest — HOLD_HEATMAP_QUERY (local-only)', () => {
+  const heatmapVars: HoldHeatmapQueryVariables = {
+    input: { boardName: 'kilter', layoutId: 1, sizeId: 5, setIds: '1', angle: 40 },
+  };
+  const stat = { holdId: 7, totalUses: 2, startingUses: 0, handUses: 2, footUses: 0, finishUses: 0, totalAscents: 5 };
+
+  beforeEach(() => {
+    getHoldHeatmapLocal.mockResolvedValue([stat]);
+    isOfflineSearchSupported.mockReturnValue(true);
+  });
+
+  it('answers from SQLite while online for a downloaded board', async () => {
+    setOnline(true);
+    isBoardDownloadedLocally.mockResolvedValue(true);
+    const result = await offlineAwareRequest<HoldHeatmapQueryResponse>(HOLD_HEATMAP_QUERY, heatmapVars);
+    expect(result).toEqual({ holdHeatmap: [stat] });
+    expect(getHoldHeatmapLocal).toHaveBeenCalledWith(fakeDb, heatmapVars.input);
+    expect(request).not.toHaveBeenCalled();
+    expect(recordOfflineRead).toHaveBeenCalledExactlyOnceWith({
+      lane: 'online_local',
+      surface: 'hold_heatmap',
+      boardName: 'kilter',
+    });
+  });
+
+  it('returns the unavailable fallback ONLINE for a board that is not downloaded — no request', async () => {
+    setOnline(true);
+    isBoardDownloadedLocally.mockResolvedValue(false);
+    const result = await offlineAwareRequest<HoldHeatmapQueryResponse>(HOLD_HEATMAP_QUERY, heatmapVars);
+    expect(result).toEqual({ holdHeatmap: [], unavailable: true });
+    expect(request).not.toHaveBeenCalled();
+    expect(getHoldHeatmapLocal).not.toHaveBeenCalled();
+    // Online, the unavailable signal stays quiet (local-only records offline gaps only).
+    expect(recordOfflineReadUnavailable).not.toHaveBeenCalled();
+  });
+
+  it('declines a filter SQLite cannot run on a downloaded board — no request', async () => {
+    setOnline(false);
+    isOfflineSearchSupported.mockReturnValue(false);
+    isBoardDownloadedLocally.mockResolvedValue(true);
+    const result = await offlineAwareRequest<HoldHeatmapQueryResponse>(HOLD_HEATMAP_QUERY, heatmapVars);
+    expect(result).toEqual({ holdHeatmap: [], unavailable: true });
+    expect(request).not.toHaveBeenCalled();
+    expect(recordOfflineReadUnavailable).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: 'filter_unsupported', surface: 'hold_heatmap' }),
+    );
   });
 });

@@ -124,6 +124,11 @@ type PlayDrawerActionBarProps = {
   onTickPress: () => void;
   onTickLongPress: () => void;
   onOpenAngleSelector?: () => void;
+  /** The hold heatmap toggle. Omitted (or an anonymous viewer) → no button. */
+  onToggleHeatmap?: () => void;
+  heatmapActive?: boolean;
+  /** The heatmap's answer is on its way. */
+  heatmapBusy?: boolean;
 };
 
 export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
@@ -169,6 +174,9 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
   onTickPress,
   onTickLongPress,
   onOpenAngleSelector,
+  onToggleHeatmap,
+  heatmapActive = false,
+  heatmapBusy = false,
 }: PlayDrawerActionBarProps) {
   const { t } = useTranslation('session');
   const { t: tClimbs } = useTranslation('climbs');
@@ -232,6 +240,11 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
     hapticMedium();
     onShare();
   }, [onShare]);
+
+  const handleToggleHeatmap = useCallback(() => {
+    hapticMedium();
+    onToggleHeatmap?.();
+  }, [onToggleHeatmap]);
 
   return (
     <View style={drawerActionBarStyles.container}>
@@ -377,6 +390,20 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
                 accessibilityLabel={
                   isFavorited ? t('playView.actionBar.removeFavoriteAria') : t('playView.actionBar.addFavoriteAria')
                 }
+              />
+            )}
+            {/* Where the climbs go on this board. A read, but it answers from a
+            downloaded board (or offers the download), which a signed-out reader
+            of the web export has no way to use. */}
+            {onToggleHeatmap && !isAnonymous && (
+              <ActionButton
+                size="sm"
+                iconName="flame"
+                onPress={handleToggleHeatmap}
+                active={heatmapActive}
+                activeColor={theme.brandColors.warning}
+                busy={heatmapActive && heatmapBusy}
+                accessibilityLabel={heatmapActive ? tClimbs('mobile.heatmap.hide') : tClimbs('mobile.heatmap.show')}
               />
             )}
             {/* The ellipsis opens queue / favourite / tick / playlist rows — every

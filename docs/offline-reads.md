@@ -43,6 +43,7 @@ These have "now" semantics or are unbounded, so a stale copy is worse than an ho
 | `['setterStats', …]`                                                                     | SQLite                      | Registered today (#5407)                                           |
 | `['boardseshGrade']`, `['boardseshGradesForAngles']`                                     | SQLite                      | Registered today                                                   |
 | `['similarClimbs', …]`                                                                   | SQLite (local-only)         | Holds index; never the network for non-admins — see below          |
+| `['holdHeatmap', …]`                                                                     | SQLite (local-only)         | Holds index ⋈ the list's filters; never the network for non-admins |
 | `['logbook', board, …]`                                                                  | SQLite                      | `boardsesh_ticks`; reader missing                                  |
 | `['localTicks', …]`                                                                      | SQLite                      | Pending-write badge, reads local already                           |
 | `['userPlaylists']`, `['playlistClimbs', …]`, `['playlist', uuid]`                       | SQLite                      | `playlists` + `playlist_climbs`; reader missing                    |
@@ -118,7 +119,7 @@ None of the three is a synced table. They have no `TABLE_CONFIGS` entry, no chec
 - **When it runs.** `pullSync` builds the index for each scope at the end of every cycle, after the completion markers are written, so it never holds up a download. A build failure is reported through `holdIndex.onError` and never fails the cycle. The mobile similar-climbs and heatmap readers, which ship in later PRs, will also call `ensureHoldIndex` before they query.
 - **Cleanup.** A `board_climbs` tombstone takes the climb out of its postings and drops its hold set. Scope teardown clears the whole layout's index and every sibling scope's watermark, and a surviving sibling rebuilds on its next cycle. After a snapshot import, the orphan sweep deletes hold sets whose climb is gone and rebuilds that layout's postings. The spray sign-out wipe clears spray's hold sets, postings and watermarks. It also clears every hold set whose climb is already gone, then every local id that no hold set still uses, so no spray uuid is left behind. The explicit sign-out wipe clears all three tables.
 
-`board_climbs` and `board_climb_hold_sets` both invalidate `['similarClimbs']`. `['holdHeatmap']` will join them when the heatmap's local reader ships; until then the drift test would reject a key that nothing reads.
+`board_climbs` and `board_climb_hold_sets` both invalidate `['similarClimbs']` and `['holdHeatmap']`. `board_climb_stats` invalidates `['holdHeatmap']` as well: stats colour the ascent and grade modes and also decide the climb set under `minAscents`, `minRating` and a grade range. `staleTime` never triggers a refetch on its own, so without that key the overlay would keep old numbers until it was switched off and on. `invalidateQueries` refetches active queries only, so the key costs nothing while the overlay is hidden.
 
 ### Expensive catalogue reads are local-only
 
@@ -132,7 +133,9 @@ The caller picks the source with `useCatalogQuerySource(scope)` (`packages/mobil
 | `network` | not downloaded, and the viewer is an admin (`useIsAdmin`) | `getHttpClient().request` directly, bypassing the interceptor |
 | `download` | everyone else | no query; the section offers the download (`OfflineNudgeCard`, nudge surface `similar_climbs`, trigger `similar_climbs`, source `play_drawer`) for the active board when it is the drawer's exact board, and a neutral "download this board to see similar climbs" line whenever no card shows (a climb from another board, the card dismissed, or offline downloads unavailable) |
 
-Supporters become one more branch next to the admin check. The hold heatmap will use the same hook and policy.
+Supporters become one more branch next to the admin check.
+
+The hold heatmap (`HOLD_HEATMAP_QUERY`, surface `hold_heatmap`) uses the same hook and policy. Its `canServeLocal` is the climbs list's own gate (`isOfflineSearchSupported` + `isBoardDownloadedLocally` + the followed-authors check), and its local reader (`packages/mobile/src/db/queries/get-hold-heatmap-local.ts`) builds its climb set with the list's `buildJoinAndWhere`, owner stamp and followed-authors condition included, so the personal-progress filters obey the auth-scoping contract above. It joins that set to `board_climb_hold_sets` and folds the packed blobs in JS with `aggregateHoldUsage`. A board-scoped admin looking at a board outside their scope gets "Couldn't load" from the admin-gated resolver, the same as similar climbs. A hold-state filter declines like search does; the drawer says the heatmap cannot follow it and offers the whole board. The play drawer reads the list's saved search for the board config (`getLastSearch`), because it has no search provider of its own. For a board that is not downloaded it offers the download (nudge surface and trigger `hold_heatmap`, source `play_drawer`); the create board shows a one-line note instead, because toasts draw behind its native sheet.
 
 ## Local-first while online, and when not to be
 

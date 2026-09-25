@@ -7,6 +7,7 @@ import { searchClimbsLocal, countClimbsLocal, isOfflineSearchSupported } from '.
 import { getClimbLocal } from '../../db/queries/get-climb-local';
 import { getBoardseshGradeLocal, getBoardseshGradesForAnglesLocal } from '../../db/queries/get-boardsesh-grade-local';
 import { getSetterStatsLocal } from '../../db/queries/get-setter-stats-local';
+import { getHoldHeatmapLocal } from '../../db/queries/get-hold-heatmap-local';
 import { canReadFollowedAuthors } from '../../db/queries/followed-authors-local';
 import { FollowedAuthorsUnavailableError } from '../followed-authors-error';
 import { isBoardDownloadedLocally, isBoardTypeDownloadedLocally } from '../../db/queries/board-download-status';
@@ -21,6 +22,9 @@ import {
   SIMILAR_CLIMBS_QUERY,
   type SimilarClimbsVariables,
   type SimilarClimbsResponse,
+  HOLD_HEATMAP_QUERY,
+  type HoldHeatmapQueryResponse,
+  type HoldHeatmapQueryVariables,
 } from '@boardsesh/graphql/operations';
 import {
   BOARDSESH_GRADE,
@@ -210,6 +214,34 @@ registerOfflineOperation<GetSetterStatsQueryVariables, GetSetterStatsQueryRespon
     (!input.onlyFollowedAuthors || (await canReadFollowedAuthors(db))),
   resolveLocal: async (db, { input }) => ({ setterStats: await getSetterStatsLocal(db, input) }),
   offlineFallback: () => ({ setterStats: [] }),
+});
+
+/**
+ * The local heatmap response. `unavailable` marks the fallback — the device could
+ * not answer at all (not downloaded, a filter SQLite cannot run, followed authors
+ * unreadable) — so the panel never reads it as "no climbs match". The network
+ * never sets it.
+ */
+export type LocalHoldHeatmapResponse = HoldHeatmapQueryResponse & { unavailable?: true };
+
+// Hold heatmap: per-hold usage over the climbs the list's filters match.
+// LOCAL-ONLY, kept off the live resolver by policy: the heatmap is an offline
+// feature for non-admins, and the server's GROUP BY over every hold row of a
+// layout is admin-only. Admins who have not downloaded the board are sent to the
+// network by `useHoldHeatmap`'s caller (`useCatalogQuerySource`), not by this
+// interceptor. Same gate and unavailable reasons as search, since the climb set
+// is the list's. `getHoldHeatmapLocal` brings the holds index up to date first
+// and throws on an interrupted build, so React Query retries instead of caching
+// a partial heatmap. An empty list is a real answer: no `isLocalMiss`.
+registerOfflineOperation<HoldHeatmapQueryVariables, LocalHoldHeatmapResponse>({
+  document: HOLD_HEATMAP_QUERY,
+  networkPolicy: 'local-only',
+  surface: 'hold_heatmap',
+  boardNameOf: ({ input }) => input.boardName,
+  unavailableReason: searchUnavailableReason,
+  canServeLocal: canServeSearchLocal,
+  resolveLocal: async (db, { input }) => ({ holdHeatmap: await getHoldHeatmapLocal(db, input) }),
+  offlineFallback: () => ({ holdHeatmap: [], unavailable: true }),
 });
 
 // Boardsesh grade reads. These carry only boardName (+ climbUuid + angle), no

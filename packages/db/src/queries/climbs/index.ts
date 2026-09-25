@@ -17,6 +17,8 @@ export { getClimbStars } from './climb-stars';
 export { getGradeLabel } from './grade-lookup';
 export { populateDenormalizedColumns } from './populate-denormalized-columns';
 export { getSetterStats } from './setter-stats';
+export { getHoldHeatmapData, normalizeHoldHeatmapRow } from './hold-heatmap';
+export type { HoldHeatmapData } from './hold-heatmap';
 export { followedAuthorCondition } from './followed-authors';
 export type { SetterStat } from './setter-stats';
 export type { BoardRouteParams, ClimbSearchParams, ClimbSearchInputLike, ClimbRow, ClimbSearchResult } from './types';

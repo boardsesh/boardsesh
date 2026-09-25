@@ -3306,6 +3306,23 @@ export type HoldOutlineOverride = {
   updatedAt: Scalars['String']['output'];
 };
 
+/** One hold's usage across the climbs a search matches (the hold heatmap). */
+export type HoldStat = {
+  __typename?: 'HoldStat';
+  /** Average display difficulty of those climbs; null when none has a grade. */
+  averageDifficulty?: Maybe<Scalars['Float']['output']>;
+  finishUses: Scalars['Int']['output'];
+  footUses: Scalars['Int']['output'];
+  handUses: Scalars['Int']['output'];
+  /** Renderer/frame hold id (MoonBoard cell ids included). */
+  holdId: Scalars['Int']['output'];
+  startingUses: Scalars['Int']['output'];
+  /** Sum of those climbs' ascent counts at the browsed angle. */
+  totalAscents: Scalars['Int']['output'];
+  /** Climbs that use the hold. */
+  totalUses: Scalars['Int']['output'];
+};
+
 /** A scanned post whose climb name matched multiple climbs — the user picks one. */
 export type InstagramBetaAmbiguous = {
   __typename?: 'InstagramBetaAmbiguous';
@@ -6061,6 +6078,12 @@ export type Query = {
    */
   gymStats: GymStats;
   /**
+   * Per-hold usage over the climbs a search matches (the hold heatmap). Admin
+   * only: every other climber gets the same aggregate on device from the
+   * downloaded board, so this live path never serves the public.
+   */
+  holdHeatmap: Array<HoldStat>;
+  /**
    * The traced hold silhouettes this backend ships for a board config, alongside
    * the hand-drawn corrections that supersede them (admin only, scoped to the
    * board). Read-only; the editor renders both and offers a revert.
@@ -6800,6 +6823,11 @@ export type QueryGymSprayWallsArgs = {
 /** Root query type for all read operations. */
 export type QueryGymStatsArgs = {
   input: GymStatsInput;
+};
+
+/** Root query type for all read operations. */
+export type QueryHoldHeatmapArgs = {
+  input: ClimbSearchInput;
 };
 
 /** Root query type for all read operations. */
@@ -10384,6 +10412,7 @@ export type ResolversTypes = ResolversObject<{
   HoldOutlineConfigInput: HoldOutlineConfigInput;
   HoldOutlineKind: HoldOutlineKind;
   HoldOutlineOverride: ResolverTypeWrapper<HoldOutlineOverride>;
+  HoldStat: ResolverTypeWrapper<HoldStat>;
   ID: ResolverTypeWrapper<Scalars['ID']['output']>;
   InstagramBetaAmbiguous: ResolverTypeWrapper<InstagramBetaAmbiguous>;
   InstagramBetaCandidate: ResolverTypeWrapper<InstagramBetaCandidate>;
@@ -10829,6 +10858,7 @@ export type ResolversParentTypes = ResolversObject<{
   GymTopClimb: GymTopClimb;
   HoldOutlineConfigInput: HoldOutlineConfigInput;
   HoldOutlineOverride: HoldOutlineOverride;
+  HoldStat: HoldStat;
   ID: Scalars['ID']['output'];
   InstagramBetaAmbiguous: InstagramBetaAmbiguous;
   InstagramBetaCandidate: InstagramBetaCandidate;
@@ -12684,6 +12714,21 @@ export type HoldOutlineOverrideResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type HoldStatResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['HoldStat'] = ResolversParentTypes['HoldStat'],
+> = ResolversObject<{
+  averageDifficulty?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
+  finishUses?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  footUses?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  handUses?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  holdId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  startingUses?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  totalAscents?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  totalUses?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type InstagramBetaAmbiguousResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['InstagramBetaAmbiguous'] = ResolversParentTypes['InstagramBetaAmbiguous'],
@@ -14486,6 +14531,12 @@ export type QueryResolvers<
     RequireFields<QueryGymSprayWallsArgs, 'gymUuid'>
   >;
   gymStats?: Resolver<ResolversTypes['GymStats'], ParentType, ContextType, RequireFields<QueryGymStatsArgs, 'input'>>;
+  holdHeatmap?: Resolver<
+    Array<ResolversTypes['HoldStat']>,
+    ParentType,
+    ContextType,
+    RequireFields<QueryHoldHeatmapArgs, 'input'>
+  >;
   holdOutlines?: Resolver<
     ResolversTypes['BoardHoldOutlines'],
     ParentType,
@@ -16373,6 +16424,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   GymStatsWindow?: GymStatsWindowResolvers<ContextType>;
   GymTopClimb?: GymTopClimbResolvers<ContextType>;
   HoldOutlineOverride?: HoldOutlineOverrideResolvers<ContextType>;
+  HoldStat?: HoldStatResolvers<ContextType>;
   InstagramBetaAmbiguous?: InstagramBetaAmbiguousResolvers<ContextType>;
   InstagramBetaCandidate?: InstagramBetaCandidateResolvers<ContextType>;
   InstagramBetaMatch?: InstagramBetaMatchResolvers<ContextType>;

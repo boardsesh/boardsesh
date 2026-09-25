@@ -246,6 +246,22 @@ export const newClimbFeedTypeDefs = /* GraphQL */ `
     frames: String
   }
 
+  "One hold's usage across the climbs a search matches (the hold heatmap)."
+  type HoldStat {
+    "Renderer/frame hold id (MoonBoard cell ids included)."
+    holdId: Int!
+    "Climbs that use the hold."
+    totalUses: Int!
+    startingUses: Int!
+    handUses: Int!
+    footUses: Int!
+    finishUses: Int!
+    "Sum of those climbs' ascent counts at the browsed angle."
+    totalAscents: Int!
+    "Average display difficulty of those climbs; null when none has a grade."
+    averageDifficulty: Float
+  }
+
   type SimilarClimb {
     uuid: ID!
     name: String

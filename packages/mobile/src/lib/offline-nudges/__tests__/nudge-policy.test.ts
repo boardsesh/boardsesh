@@ -51,6 +51,7 @@ describe('shouldShowNudge — eligibility', () => {
       'board_card',
       'onboarding',
       'similar_climbs',
+      'hold_heatmap',
     ] as NudgeSurface[]) {
       expect(shouldShowNudge(input({ surface, offlineState }))).toBe(false);
     }
@@ -64,6 +65,7 @@ describe('shouldShowNudge — eligibility', () => {
       'board_card',
       'onboarding',
       'similar_climbs',
+      'hold_heatmap',
     ] as NudgeSurface[]) {
       expect(shouldShowNudge(input({ surface, autoOfflineBoards: true }))).toBe(false);
     }
@@ -78,6 +80,7 @@ describe('shouldShowNudge — eligibility', () => {
       'board_card',
       'onboarding',
       'similar_climbs',
+      'hold_heatmap',
     ] as NudgeSurface[]) {
       expect(shouldShowNudge(input({ surface }))).toBe(false);
     }
@@ -102,6 +105,7 @@ describe('shouldShowNudge — eligibility', () => {
       'board_card',
       'onboarding',
       'similar_climbs',
+      'hold_heatmap',
     ] as NudgeSurface[]) {
       expect(shouldShowNudge(input({ surface, state }))).toBe(false);
     }
@@ -143,7 +147,7 @@ describe('shouldShowNudge — caps apply to the interruptive prompt only', () =>
   // reverts to a dead end because an unrelated prompt fired two days ago.
   // `onboarding` is in here for a stronger reason still — first run happens
   // once, so a cooldown could only ever mean the offer is never made at all.
-  it.each(['no_catalog', 'whats_new', 'board_card', 'onboarding', 'similar_climbs'] as NudgeSurface[])(
+  it.each(['no_catalog', 'whats_new', 'board_card', 'onboarding', 'similar_climbs', 'hold_heatmap'] as NudgeSurface[])(
     'never cools down the %s affordance',
     (surface) => {
       let state: OfflineNudgeState = { ...emptyNudgeState(), lastPromptAtMs: NOW, lastAcceptedAtMs: NOW };
