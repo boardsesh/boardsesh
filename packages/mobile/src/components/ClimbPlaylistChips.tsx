@@ -35,8 +35,22 @@ type ResolvedChip = { key: string; name: string; dotColor: string; emoji: string
  * so the whole row stays one clean target (membership management lives in the
  * actions sheet).
  */
-export const ClimbPlaylistChips = React.memo(function ClimbPlaylistChips({ climbUuid }: { climbUuid: string }) {
-  const { enabled } = useShowPlaylistTagsPreference();
+export const ClimbPlaylistChips = React.memo(function ClimbPlaylistChips({
+  climbUuid,
+  forceVisible = false,
+}: {
+  climbUuid: string;
+  /**
+   * Show the tags even with the "Show playlist tags" setting off. Set only by the
+   * climbs list's `rich` density tier, where the tag line is what the tier IS —
+   * picking it in More → Climb list is the opt-in, so re-checking the (default-off)
+   * toggle would leave the tier doing nothing for most climbers. Every other caller
+   * leaves this alone and the toggle stays in charge.
+   */
+  forceVisible?: boolean;
+}) {
+  const { enabled: tagSettingEnabled } = useShowPlaylistTagsPreference();
+  const enabled = forceVisible || tagSettingEnabled;
   const membership = useClimbPlaylistMemberships(climbUuid);
   const playlistsContext = usePlaylistsContextOptional();
   const { variant, systemColors, m3 } = useTheme();

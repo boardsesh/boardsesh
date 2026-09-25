@@ -32,6 +32,7 @@ vi.mock('@boardsesh/board-react', () => ({
 }));
 
 vi.mock('react-native', () => ({
+  Platform: { OS: 'android' },
   StyleSheet: { create: (styles: unknown) => styles },
   View: ({ children }: { children?: ReactNode }) => createElement('div', {}, children),
 }));

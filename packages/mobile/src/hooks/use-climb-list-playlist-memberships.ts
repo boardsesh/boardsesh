@@ -18,6 +18,14 @@ type UseClimbListPlaylistMembershipsArgs = {
   // Must be a referentially-stable array (memoize at the call site) — the effect
   // depends on it, so a fresh array every render would refetch every render.
   climbUuids: readonly string[];
+  /**
+   * Fetch even when the "Show playlist tags" setting is off. The rich density
+   * tier renders the tag line unconditionally — the tags ARE what that tier
+   * adds — so without this the rows would ask for tags the store was never
+   * filled with and render an empty line for anyone who left the setting off,
+   * which is its default.
+   */
+  force?: boolean;
 };
 
 /**
@@ -27,7 +35,8 @@ type UseClimbListPlaylistMembershipsArgs = {
  * to the established "fetch the visible UUIDs, write into the external store"
  * pattern (see the favorites note in `use-mobile-climb-actions-data.ts`).
  *
- * No-op unless the user enabled the setting AND is signed in. Dedupes via a ref
+ * No-op unless the user enabled the setting (or a caller passes `force`) AND is
+ * signed in. Dedupes via a ref
  * so each climb is requested once; resets the ref and clears the store whenever
  * the board/layout/auth/enabled context flips, so a previous board's memberships
  * can't paint the new board's rows. Deferred past the active fling via
@@ -37,8 +46,10 @@ export function useClimbListPlaylistMemberships({
   boardName,
   layoutId,
   climbUuids,
+  force = false,
 }: UseClimbListPlaylistMembershipsArgs): void {
-  const { enabled } = useShowPlaylistTagsPreference();
+  const { enabled: settingEnabled } = useShowPlaylistTagsPreference();
+  const enabled = force || settingEnabled;
   const { isAuthenticated } = useAuth();
 
   const fetchedRef = useRef<Set<string>>(new Set());
