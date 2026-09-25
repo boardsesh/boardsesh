@@ -411,6 +411,57 @@ describe('board-queue-preview privacy gates', () => {
     await cleanup();
   });
 
+  it('ends a stranger\u2019s stream when a spray wall is hidden mid-stream, and keeps the owner\u2019s', async () => {
+    // The producer's gate is viewer-independent and knows nothing of spray, so a
+    // hidden PUBLIC wall still has its previews published to the channel. What
+    // stops a stranger is the subscription's per-event `sprayStreamGate`, the
+    // same one `boardNowPlaying` carries.
+    const { id: boardId, uuid: boardUuid } = await makeBoardRow({ isPublic: true });
+    const layoutId = 900_000 + Math.floor(Math.random() * 90_000);
+    await db.execute(sql`
+      UPDATE user_boards SET board_type = 'spray', layout_id = ${layoutId}, size_id = ${layoutId}, set_ids = '1'
+      WHERE id = ${boardId}
+    `);
+    await db.execute(sql`INSERT INTO spray_walls (board_uuid, layout_id) VALUES (${boardUuid}, ${layoutId})`);
+    const boardKey = String(boardId);
+    const preview = { boardId, current: null, upNext: [] } as unknown as BoardQueuePreview;
+
+    const owner = boardQueuePreviewSubscriptions.boardQueuePreview.subscribe(undefined, { boardId }, authCtx());
+    const stranger = boardQueuePreviewSubscriptions.boardQueuePreview.subscribe(
+      undefined,
+      { boardId },
+      authCtx({ userId: 'board-queue-preview-stranger' }),
+    );
+    try {
+      // No session is bound, so there is no seed: each stream waits on the channel.
+      let ownerNext = owner.next();
+      let strangerNext = stranger.next();
+      await waitFor(() => pubsub.getBoardQueuePreviewSubscriberCount(boardKey) === 2);
+
+      // Before: a public wall, so both streams deliver.
+      pubsub.publishBoardQueuePreview(boardKey, preview);
+      expect((await ownerNext).done).toBe(false);
+      expect((await strangerNext).done).toBe(false);
+
+      await db.execute(sql`UPDATE spray_walls SET hidden_at = now() WHERE layout_id = ${layoutId}`);
+
+      ownerNext = owner.next();
+      strangerNext = stranger.next();
+      pubsub.publishBoardQueuePreview(boardKey, preview);
+      // The stranger's stream ends on the first event after the hide; the owner's
+      // carries on.
+      expect((await strangerNext).done).toBe(true);
+      const ownerResult = await ownerNext;
+      expect(ownerResult.done).toBe(false);
+      expect((ownerResult.value as { boardQueuePreview: BoardQueuePreview }).boardQueuePreview.boardId).toBe(boardId);
+    } finally {
+      await owner.return?.(undefined);
+      await stranger.return?.(undefined);
+      // `spray_walls.board_uuid` is ON DELETE RESTRICT, so the wall goes first.
+      await db.execute(sql`DELETE FROM spray_walls WHERE layout_id = ${layoutId}`);
+    }
+  });
+
   it('public board + public session → data flows to an anonymous viewer', async () => {
     const boardId = await makeBoard({ isPublic: true });
     const sessionId = await makeSession({ boardId, isPublic: true });
