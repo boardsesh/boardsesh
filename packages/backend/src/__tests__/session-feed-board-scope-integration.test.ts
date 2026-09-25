@@ -35,6 +35,9 @@ const SOLO_DAILY_GROUP = `daily:${SOLO_USER_ID}:${SOLO_DAY}`;
 // lands at midnight the NEXT day, so it must not hide the 7th.
 const SESSION_DAY_GROUP = `daily:${SOLO_USER_ID}:2026-02-06`;
 const EVE_OF_SESSION_GROUP = `daily:${SOLO_USER_ID}:2026-02-07`;
+// A third daily card, so a page deep in the feed needs more daily groups than
+// one page holds (guards the daily branch's offset + limit cut).
+const SECOND_SOLO_GROUP = `daily:${SOLO_USER_ID}:2026-02-05`;
 const CLIMB_UUID = 'sf-board-scope-climb-1';
 const BOARD_A_UUID = 'sf-board-scope-board-a';
 const BOARD_B_UUID = 'sf-board-scope-board-b';
@@ -174,6 +177,13 @@ describe('sessionGroupedFeed — exact board_id scoping (real DB)', () => {
     });
 
     await insertTick({
+      uuid: 'sf-tick-solo-second-day',
+      sessionId: null,
+      boardId: boardAId,
+      climbedAt: '2026-02-05 12:00:00',
+      userId: SOLO_USER_ID,
+    });
+    await insertTick({
       uuid: 'sf-tick-solo-session-day',
       sessionId: null,
       boardId: boardAId,
@@ -285,6 +295,7 @@ describe('sessionGroupedFeed — exact board_id scoping (real DB)', () => {
       const onePage = await callFeed({ boardUuid: BOARD_A_UUID, includeDailyHighlights: true, limit: 50 });
       expect(onePage.sessions.map((session) => session.sessionId)).toEqual([
         EVE_OF_SESSION_GROUP,
+        SECOND_SOLO_GROUP,
         SOLO_DAILY_GROUP,
         SESSION_ON_A,
       ]);
