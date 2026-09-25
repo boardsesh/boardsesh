@@ -38,7 +38,7 @@ If a PR already exists but is unmerged, the job is to get **that** PR ready, not
 ## 2. Claim
 
 ```
-gh issue edit <n> --add-assignee marcodejongh
+gh issue edit <n> --add-assignee @me
 gh issue comment <n> --body "🤖 Claimed by bug-batch loop \`<loop>\` (batch <N>, session <id>)"
 ```
 
@@ -86,7 +86,8 @@ git worktree add -b fix/<issue>-<slug> ~/projects/boardsesh/wt-<issue> origin/ma
 
 Never under `/tmp` or `.claude/worktrees/` (the mobile bundle check needs a sibling worktree).
 
-**Paste this block into every implementer prompt:**
+**Paste this block into every implementer prompt**, replacing `<scratchpad>` with the absolute path
+of your session's scratchpad directory (subagents share it) and `<issue>`/`<loop>` with real values:
 
 > - Prove each guard fires: revert the fix, watch the test go red, restore, and paste the real red
 >   output. A new lint rule or checker needs a deliberately broken fixture.
@@ -94,8 +95,7 @@ Never under `/tmp` or `.claude/worktrees/` (the mobile bundle check needs a sibl
 >   you did not see is not.
 > - Commit before mutating code to test a guard. `git checkout -- <file>` also throws away
 >   uncommitted real work.
-> - Scratch files go in `<scratchpad>/<issue>-<loop>/` with unique names, where `<scratchpad>` is
->   the session's scratchpad directory from the system prompt (shared by every agent in the session). The shell has
+> - Scratch files go in `<scratchpad>/<issue>-<loop>/` with unique names. The shell has
 >   `noclobber` on, so write files with the Write tool or `>|`, never bare `>`. Read the file back
 >   right before `--body-file`, and re-read the published PR body with `gh pr view`.
 > - Run tests in the FOREGROUND with generous timeouts. Do not start background tasks or monitors
@@ -157,7 +157,8 @@ A follow-up you find at P2 or worse gets a fix PR in the same turn, not just an 
 
 ## 9. Hazards
 
-The Sentry skill's §7 covers the backend test-DB lock, load-induced shifting failures, disk and
+The Sentry skill's "Hazards that cost real time" section covers the backend test-DB lock,
+load-induced shifting failures, disk and
 inode exhaustion, squash-merge retargets and parallel PRs in one file. The bug-bash additions:
 
 - **One heavy job at a time on the box.** `vp check` leaves a ~2 GB `tsgolint` behind
