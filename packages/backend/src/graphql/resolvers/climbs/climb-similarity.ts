@@ -1,11 +1,7 @@
 import { sql } from 'drizzle-orm';
 import type { SQL, SQLWrapper } from 'drizzle-orm';
 import * as dbSchema from '@boardsesh/db/schema';
-import {
-  STATE_TO_PRIMARY_CODE,
-  convertLitUpHoldsStringToMap,
-  isSentinelHoldState,
-} from '@boardsesh/board-constants/hold-states';
+import { STATE_TO_PRIMARY_CODE } from '@boardsesh/board-constants/hold-states';
 import type { BoardName } from '@boardsesh/board-constants';
 import {
   CLIMB_CHARACTERISTICS,
@@ -29,14 +25,11 @@ export type DuplicateGateExecutor = {
   execute(query: SQLWrapper | string): PromiseLike<unknown>;
 };
 
-export type NormalizedHold = {
-  holdId: number;
-  holdState: string;
-};
-
-export type NormalizedHoldRow = NormalizedHold & {
-  frameNumber: number;
-};
+// The frames parser and its hold types live in `@boardsesh/db` so the nightly
+// neighbour job (`packages/db/scripts/refresh-climb-neighbors.ts`) reads a
+// climb's holds exactly as this module does. Re-exported for existing callers.
+export { parseFramesToHoldEntries, type NormalizedHold, type NormalizedHoldRow } from '@boardsesh/db/queries';
+import type { NormalizedHold } from '@boardsesh/db/queries';
 
 export type ExactDuplicateMatch = {
   uuid: string;
@@ -86,31 +79,6 @@ const KNOWN_HOLD_STATES_SQL = sql`(${sql.join(
   KNOWN_HOLD_STATES.map((state) => sql`${state}`),
   sql`, `,
 )})`;
-
-/**
- * Parse the Aurora-style frame string ("p<id>r<role>p<id>r<role>...,p<id>r<role>...")
- * into a flat list of holds with their state name. Multi-frame strings (comma
- * separated) are flattened with the frame index preserved.
- *
- * Returns only holds whose state code resolves to a named state (STARTING /
- * HAND / FINISH / FOOT) — unknown codes (the synthetic "1=42" sentinel) are
- * dropped so they can't poison signatures.
- */
-export function parseFramesToHoldEntries(boardType: BoardName, frames: string | null | undefined): NormalizedHoldRow[] {
-  if (!frames) return [];
-  const frameMap = convertLitUpHoldsStringToMap(frames, boardType);
-  const rows: NormalizedHoldRow[] = [];
-  for (const [frameIndexKey, holdsMap] of Object.entries(frameMap)) {
-    const frameNumber = Number(frameIndexKey);
-    for (const [holdIdKey, hold] of Object.entries(holdsMap)) {
-      if (isSentinelHoldState(hold.state)) continue;
-      const holdId = Number(holdIdKey);
-      if (!Number.isFinite(holdId)) continue;
-      rows.push({ frameNumber, holdId, holdState: hold.state });
-    }
-  }
-  return rows;
-}
 
 /**
  * Build the canonical signature used to detect exact-match duplicates. Sorts

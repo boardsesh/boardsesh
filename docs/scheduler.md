@@ -152,7 +152,7 @@ unused and may be retained until its normal secret-rotation review.
 ### Not in scope
 
 - The GitHub-Actions-scheduled jobs (`refresh-recommendations`,
-  `refresh-climb-grades`, `refresh-content-model`, `refresh-hold-features`,
+  `refresh-climb-grades`, `refresh-climb-neighbors`, `refresh-content-model`, `refresh-hold-features`,
   `export-board-snapshots`, `refresh-acknowledgements`) are a separate thing.
 - **`user-sync-cron` (#1875) needs no decision — the route is gone.**
   `git grep user-sync-cron` returns only three prose mentions

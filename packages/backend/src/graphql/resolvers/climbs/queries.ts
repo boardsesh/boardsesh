@@ -12,7 +12,7 @@ import {
   USER_SPECIFIC_SEARCH_PARAMS,
 } from '@boardsesh/shared-schema';
 import type { BoardName } from '@boardsesh/board-constants';
-import { getGradeLabel, getSetterStats } from '@boardsesh/db/queries';
+import { getGradeLabel, getMaterializedSimilarClimbs, getSetterStats } from '@boardsesh/db/queries';
 import { logger } from '../../../utils/logger';
 import {
   type ClimbSearchParams,
@@ -26,6 +26,7 @@ import { isSprayBoardType, sprayLayoutIsReadable, sprayLayoutIsReadableWithCapab
 import { findMoonBoardDuplicateMatches } from './moonboard-duplicates';
 import { parseFramesToHoldEntries, type NormalizedHold } from './climb-similarity';
 import { findSimilarClimbsCached } from './similar-climbs-cache';
+import { hasCatalogQueryAccess, requireCatalogQueryAccess } from '../social/roles';
 import {
   BoardNameSchema,
   CheckMoonBoardClimbDuplicatesInputSchema,
@@ -71,28 +72,65 @@ export const climbQueries = {
   /**
    * Find climbs on the same board+layout that share at least `threshold`
    * (default 0.5) position-only Jaccard similarity with the target's holds.
-   * Used by the playview drawer's similar-climbs panel (0.5) and by the
-   * create-climb form to preview the exact duplicate when a publish is
-   * blocked (1.0).
+   * Used by the playview drawer's similar-climbs panel and the web climb page's
+   * similar-climbs strip (both 0.5).
+   *
+   * Two paths (docs/similar-climbs.md):
+   *  - Admins (`hasCatalogQueryAccess`) run the live Jaccard CTE, cached.
+   *  - Everyone else, anonymous callers included (the web front door calls
+   *    anonymously), reads the nightly `board_climb_neighbors` index. A bare
+   *    `frames` lookup has no precomputed answer, so it stays admin-only.
    */
   similarClimbs: async (
     _: unknown,
     { input }: { input: SimilarClimbsInput },
     ctx: ConnectionContext,
   ): Promise<SimilarClimb[]> => {
-    // 30/min/IP. The similar-climbs CTE scans board_climb_holds for the
-    // whole layout before the HAVING prune. React Query caches identical
-    // queries for 5 min but the play-drawer surface keys on climbUuid so
-    // rapid climb-switching generates fresh requests; 30/min stays well
-    // above any realistic interactive cadence while keeping a CGNAT'd
-    // shared IP from running the query at 1/s sustained.
-    await applyRateLimit(ctx, 30, 'similar-climbs');
     const validated = validateInput(SimilarClimbsInputSchema, input, 'input');
 
     if (!isValidBoardName(validated.boardType)) {
       throw new Error(`Invalid board name: ${validated.boardType}. Must be one of: ${SUPPORTED_BOARDS.join(', ')}`);
     }
     const boardType = validated.boardType as BoardName;
+
+    if (!(await hasCatalogQueryAccess(ctx, boardType))) {
+      // 600/min/IP on the index path. The read is one index lookup, and every
+      // web front-door render reaches here from the web server's single IP:
+      // crawlers walking climb pages put hundreds of requests a minute through
+      // that one key, which the 30/min live-path limit below turned into
+      // RATE_LIMITED errors and empty strips.
+      await applyRateLimit(ctx, 600, 'similar-climbs-index');
+      // Spray walls are private catalogues and never materialised; the app
+      // answers them from the wall it has mirrored on the phone. Checked first
+      // so a wall answers every non-admin the same way, frames or not.
+      if (isSprayBoardType(boardType)) return [];
+      const climbUuid = validated.climbUuid;
+      if (!climbUuid) {
+        // No materialised answer for an unsaved hold pattern. Throws: the
+        // caller was just found not to hold the access it asks for.
+        await requireCatalogQueryAccess(ctx, boardType);
+        return [];
+      }
+      return getMaterializedSimilarClimbs(dbRead, {
+        boardType,
+        layoutId: validated.layoutId,
+        climbUuid,
+        threshold: validated.threshold ?? 0.5,
+        limit: validated.limit ?? 25,
+        // Stored lists are already scoped to the target's own wall; a size the
+        // caller names narrows them further, as the live path's size scope does.
+        sizeId: isSizeScopedSimilarityBoard(boardType) ? (validated.sizeId ?? undefined) : undefined,
+        statsAngle: validated.angle ?? undefined,
+      });
+    }
+
+    // 30/min/IP on the live path only. The similar-climbs CTE scans
+    // board_climb_holds for the whole layout before the HAVING prune. React
+    // Query caches identical queries for 5 min but the play-drawer surface keys
+    // on climbUuid so rapid climb-switching generates fresh requests; 30/min
+    // stays well above any realistic interactive cadence while keeping a
+    // CGNAT'd shared IP from running the query at 1/s sustained.
+    await applyRateLimit(ctx, 30, 'similar-climbs');
 
     // `climbUuid` is OPTIONAL here — a caller may pass a bare hold set — so this
     // needs no capability at all: posting `holds: [1..N]` with `threshold: 0`
