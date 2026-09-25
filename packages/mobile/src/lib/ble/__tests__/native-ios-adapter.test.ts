@@ -65,7 +65,8 @@ vi.mock('../../../../modules/live-activity/src/index', () => ({
 
 import { NativeIosBleAdapter } from '../native-ios-adapter';
 import { SERIAL_RECONNECT_GRACE_MS } from '@boardsesh/ble-protocol/scan-constants';
-import type { BleWriteDiagnostics, DevicePickerFn, DevicePickerTargetSearch, DiscoveredDevice } from '../types';
+import type { BleWriteDiagnostics, DevicePickerFn } from '../types';
+import { recordingTargetPicker } from './recording-target-picker';
 
 // A targeted connect opens the picker at the tap in its searching state (#5658).
 // Tests that only care about the auto-select or the connect after it use a picker
@@ -152,45 +153,6 @@ describe('NativeIosBleAdapter scan timeout', () => {
 
     expect(nativeMock.connect).toHaveBeenCalledWith('dev-1');
   });
-
-  // A targeted connect's picker, recording what the adapter tells it (#5658).
-  function recordingTargetPicker() {
-    const record = {
-      opened: 0,
-      targetSearch: undefined as DevicePickerTargetSearch | undefined,
-      searchEnded: 0,
-      found: 0,
-      scanStopped: 0,
-      updates: [] as DiscoveredDevice[][],
-      pick: (_deviceId: string) => {},
-      cancel: (_error: Error) => {},
-    };
-    const picker: DevicePickerFn = (subscribe, targetSearch) => {
-      record.opened += 1;
-      record.targetSearch = targetSearch;
-      return new Promise<string>((resolve, reject) => {
-        record.pick = resolve;
-        record.cancel = reject;
-        subscribe(
-          (devices) => record.updates.push(devices),
-          () => {
-            record.scanStopped += 1;
-          },
-          {
-            onTargetSearchEnded: () => {
-              record.searchEnded += 1;
-            },
-            onTargetFound: () => {
-              record.found += 1;
-              // What the real picker does on close: retire its own promise.
-              reject(new Error('Device selection cancelled'));
-            },
-          },
-        );
-      });
-    };
-    return { picker, record };
-  }
 
   const needleAdvert = {
     device: { deviceId: 'needle-dev', name: 'Garage Wall#NEEDLE-SERIAL@3' },

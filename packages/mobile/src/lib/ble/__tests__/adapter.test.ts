@@ -1,11 +1,6 @@
 import { describe, it, expect, vi, beforeEach, onTestFinished } from 'vitest';
-import type {
-  BleAdapterOptions,
-  DevicePickerFn,
-  DevicePickerTargetSearch,
-  BoardScanFamily,
-  DiscoveredDevice,
-} from '../types';
+import type { BleAdapterOptions, DevicePickerFn, DevicePickerTargetSearch, BoardScanFamily } from '../types';
+import { recordingTargetPicker } from './recording-target-picker';
 
 // ── Hoisted mocks (available inside vi.mock factories) ──────────────────
 
@@ -980,45 +975,6 @@ describe('RNBleAdapter', () => {
       expect((error as Error).message).toMatch(/scan failed/i);
       expect(mockBleManager.stopDeviceScan).toHaveBeenCalled();
     });
-
-    // A targeted connect's picker, recording what the adapter tells it (#5658).
-    function recordingTargetPicker() {
-      const record = {
-        opened: 0,
-        targetSearch: undefined as DevicePickerTargetSearch | undefined,
-        searchEnded: 0,
-        found: 0,
-        scanStopped: 0,
-        updates: [] as DiscoveredDevice[][],
-        pick: (_deviceId: string) => {},
-        cancel: (_error: Error) => {},
-      };
-      const picker: DevicePickerFn = (subscribe, targetSearch) => {
-        record.opened += 1;
-        record.targetSearch = targetSearch;
-        return new Promise<string>((resolve, reject) => {
-          record.pick = resolve;
-          record.cancel = reject;
-          subscribe(
-            (devices) => record.updates.push(devices),
-            () => {
-              record.scanStopped += 1;
-            },
-            {
-              onTargetSearchEnded: () => {
-                record.searchEnded += 1;
-              },
-              onTargetFound: () => {
-                record.found += 1;
-                // What the real picker does on close: retire its own promise.
-                reject(new Error('Device selection cancelled'));
-              },
-            },
-          );
-        });
-      };
-      return { picker, record };
-    }
 
     // Capture the scan callback so a test controls WHEN the saved board
     // advertises, and make that board connectable.
