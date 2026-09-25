@@ -41,7 +41,9 @@ private key. Recreate containers after CA changes. Verify both drivers reject
 untrusted and wrong-host certificates before production enablement.
 
 The worker refuses superuser/role-management/database-creation privileges and
-schema CREATE rights; it also verifies ledger DML. Queue startup disables
+schema CREATE rights; it also verifies ledger DML and refuses any login that can
+DELETE ledger rows, which is how the backend runtime login (CRUD on every
+application table, no CREATE) fails closed instead of passing as a worker. Queue startup disables
 migration, scheduling, supervision and index DDL. The backend retains pg-boss
 supervision and the singleton, once-per-minute reconciliation schedule, so
 homelab availability is not required for detecting failed or expired work.

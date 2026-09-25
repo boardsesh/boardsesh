@@ -18,14 +18,23 @@ export async function assertQueuePrimary(database: Db): Promise<void> {
   }
 }
 
-/** Refuse owner/superuser credentials even when a deployment uses the right username. */
+/**
+ * Refuse owner/superuser credentials even when a deployment uses the right username.
+ *
+ * The backend runtime login also lacks schema CREATE, so the privilege bits alone
+ * cannot tell it apart from a worker. The migrator grants that role CRUD on every
+ * application table, including DELETE on the ledger, while worker logins only ever
+ * receive SELECT/INSERT/UPDATE there (the backend reconciler owns purging). A login
+ * that can delete ledger rows is therefore never a restricted worker identity.
+ */
 export async function assertWorkerPrivileges(database: Db): Promise<void> {
   const result = await database.executeSql(`SELECT
     rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls AS privileged,
     has_schema_privilege(current_user, 'public', 'CREATE') OR has_schema_privilege(current_user, 'pgboss', 'CREATE') AS can_create,
     has_table_privilege(current_user, 'public.background_job_runs', 'SELECT')
       AND has_table_privilege(current_user, 'public.background_job_runs', 'INSERT')
-      AND has_table_privilege(current_user, 'public.background_job_runs', 'UPDATE') AS ledger_access
+      AND has_table_privilege(current_user, 'public.background_job_runs', 'UPDATE') AS ledger_access,
+    has_table_privilege(current_user, 'public.background_job_runs', 'DELETE') AS ledger_delete
     FROM pg_roles WHERE rolname = current_user`);
   const row: unknown = result.rows[0];
   if (
@@ -36,7 +45,9 @@ export async function assertWorkerPrivileges(database: Db): Promise<void> {
     !('can_create' in row) ||
     row.can_create !== false ||
     !('ledger_access' in row) ||
-    row.ledger_access !== true
+    row.ledger_access !== true ||
+    !('ledger_delete' in row) ||
+    row.ledger_delete !== false
   ) {
     throw new Error('Worker requires a restricted database login and migrated ledger grants');
   }

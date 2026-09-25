@@ -1,12 +1,21 @@
 name: Background Worker Image
 on:
   pull_request:
+    # Keep in step with the push filter: every path is an input to Dockerfile.worker
+    # (root manifests, transitive backend workspaces), so a change there must build here.
     paths:
       - 'packages/backend/**'
       - 'packages/db/**'
+      - 'packages/shared/**'
+      - 'packages/shared-schema/**'
+      - 'packages/*-sync/**'
+      - 'packages/sync-runtime/**'
+      - 'packages/board-constants/**'
       - 'Dockerfile.worker'
       - 'scripts/create-service-docker-context.mjs'
       - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'package.json'
       - '.github/workflows/background-worker-image.yml'
   push:
     branches: [main]

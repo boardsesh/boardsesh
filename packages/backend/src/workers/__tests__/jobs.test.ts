@@ -213,6 +213,32 @@ describe('durable worker jobs', () => {
     },
   );
 
+  it('rejects the backend runtime login even though it has no DDL privileges', async () => {
+    // Mirrors migration-runtime-acl.ts: CRUD on every application table, pg-boss
+    // DML, USAGE but no CREATE on the schemas. Every earlier privilege bit matches
+    // a worker, so only the broad application grants can fail this login closed.
+    const roleName = `runtime_test_${randomUUID().replaceAll('-', '')}`;
+    try {
+      await owner.unsafe(`CREATE ROLE "${roleName}" NOLOGIN`);
+      await owner.unsafe(`GRANT USAGE ON SCHEMA public, pgboss TO "${roleName}"`);
+      await owner.unsafe(
+        `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public, pgboss TO "${roleName}"`,
+      );
+      await owner.begin(async (transaction) => {
+        await transaction.unsafe(`SET LOCAL ROLE "${roleName}"`);
+        const asRuntime = {
+          executeSql: async (statement: string, parameters?: unknown[]) => ({
+            rows: [...(await transaction.unsafe(statement, (parameters ?? []) as never))],
+          }),
+        };
+        await expect(assertWorkerPrivileges(asRuntime)).rejects.toThrow('restricted');
+      });
+    } finally {
+      await owner.unsafe(`DROP OWNED BY "${roleName}"`);
+      await owner.unsafe(`DROP ROLE "${roleName}"`);
+    }
+  });
+
   it('boots and settles under worker grants without DDL or personal data privileges', async () => {
     const roleName = `worker_test_${randomUUID().replaceAll('-', '')}`;
     const password = randomUUID();
