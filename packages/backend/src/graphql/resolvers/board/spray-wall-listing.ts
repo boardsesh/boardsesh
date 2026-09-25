@@ -55,12 +55,14 @@ export function listableSprayWallCondition(viewerId: string | null | undefined):
 
 /**
  * The same rule for a row already loaded from `spray_walls`, where the join has
- * been done and the SQL form would be a second query per row.
+ * been done and the SQL form would be a second query per row. Mirrors the SQL
+ * exactly: the owner, or a published wall that is not admin-hidden.
  */
 export function sprayWallIsListable(
-  wall: { currentVersionId: number | null },
+  wall: { currentVersionId: number | null; hiddenAt: Date | null },
   board: { ownerId: string },
   viewerId: string | null | undefined,
 ): boolean {
-  return wall.currentVersionId != null || (viewerId != null && board.ownerId === viewerId);
+  if (viewerId != null && board.ownerId === viewerId) return true;
+  return wall.currentVersionId != null && wall.hiddenAt == null;
 }

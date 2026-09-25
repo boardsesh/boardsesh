@@ -610,7 +610,16 @@ export async function requireReadablePresenceBoard(
   if (!viewerUserId && !(row && row.deletedAt === null && isRowAnonReadable(row))) {
     throw new GraphQLError('Board not found', { extensions: { code: 'NOT_FOUND' } });
   }
-  if (!row || row.layoutId == null) return { anonReadableVerified: !viewerUserId, board: null };
+  if (!row) return { anonReadableVerified: !viewerUserId, board: null };
+  // Fail closed: a spray row with no layout names no wall whose rule could admit
+  // anybody. The column is NOT NULL today; this is what keeps the gate honest if
+  // that ever relaxes, rather than skipping the spray check.
+  if (row.layoutId == null) {
+    if (row.boardType === 'spray') {
+      throw new GraphQLError('Board not found', { extensions: { code: 'NOT_FOUND' } });
+    }
+    return { anonReadableVerified: !viewerUserId, board: null };
+  }
   await assertSprayBoardIsReadable({ boardType: row.boardType, layoutId: row.layoutId }, viewerUserId);
   return { anonReadableVerified: !viewerUserId, board: { boardType: row.boardType, layoutId: row.layoutId } };
 }
