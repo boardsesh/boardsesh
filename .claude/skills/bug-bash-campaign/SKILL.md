@@ -30,7 +30,7 @@ number in it.
   issue number. Grepping titles or branch names alone has missed real fixes.
 - `gh issue view <n>`: a `closed` event about 1 s after a PR merge is an auto-close, which means
   the fix already landed.
-- `ls -d /tmp/boardsesh-* ~/projects/boardsesh/wt-*`: another loop checked out on this issue has
+- `ls -d /tmp/boardsesh-* ~/projects/boardsesh/wt-* 2>/dev/null`: another loop checked out on this issue has
   effectively taken it.
 
 If a PR already exists but is unmerged, the job is to get **that** PR ready, not start over.
@@ -87,7 +87,8 @@ git worktree add -b fix/<issue>-<slug> ~/projects/boardsesh/wt-<issue> origin/ma
 Never under `/tmp` or `.claude/worktrees/` (the mobile bundle check needs a sibling worktree).
 
 **Paste this block into every implementer prompt**, replacing `<scratchpad>` with the absolute path
-of your session's scratchpad directory (subagents share it) and `<issue>`/`<loop>` with real values:
+of your session's scratchpad directory (Claude Code names it in the system prompt; subagents share
+it; with none, use `$TMPDIR/<loop>`) and `<issue>`/`<loop>` with real values:
 
 > - Prove each guard fires: revert the fix, watch the test go red, restore, and paste the real red
 >   output. A new lint rule or checker needs a deliberately broken fixture.
@@ -158,8 +159,7 @@ A follow-up you find at P2 or worse gets a fix PR in the same turn, not just an 
 ## 9. Hazards
 
 The Sentry skill's "Hazards that cost real time" section covers the backend test-DB lock,
-load-induced shifting failures, disk and
-inode exhaustion, squash-merge retargets and parallel PRs in one file. The bug-bash additions:
+load-induced shifting failures, disk and inode exhaustion, squash-merge retargets and parallel PRs in one file. The bug-bash additions:
 
 - **One heavy job at a time on the box.** `vp check` leaves a ~2 GB `tsgolint` behind
   (`pkill -f tsgolint || true`). Don't pair a background job with a separate waiter.
