@@ -89,13 +89,24 @@ function getPosthog(): PostHog | null {
     persistence: 'localStorage',
   });
 
-  registerWebEnvironment(posthogClient);
+  registerWebSuperProperties(posthogClient);
 
   return posthogClient;
 }
 
-// Registers `environment: 'production'` as a persistent super property on every
-// event, mirroring mobile's registerAppEnvironment() in
+// Registers the super properties every web event carries: `environment` and
+// `$raw_user_agent`.
+//
+// `$raw_user_agent`: posthog-js-lite (unlike the full posthog-js) never puts
+// the browser UA on an event — its getContext() sends $browser/$os/$device
+// only. PostHog's `$virt_is_bot` reads the event property, not the request
+// header the backend proxy forwards (#3139), so every web event landed with no
+// UA and was classed as a bot: 0 of ~660k `$lib = js` events carried one over
+// the 120 days to 2026-09-25, and all of them were `$virt_is_bot = true`
+// (#5653). Capped at 1000 chars like posthog-js does. Mobile registers its own
+// constant for the same reason (registerMobileUserAgent in posthog-client.ts).
+//
+// `environment: 'production'` mirrors mobile's registerAppEnvironment() in
 // packages/mobile/src/lib/posthog-client.ts. Without this, web PostHog events
 // carried no `environment` tag at all, so a dashboard filter of
 // `environment = 'production'` silently dropped 100% of web volume while still
@@ -117,18 +128,26 @@ function getPosthog(): PostHog | null {
 // both swallowed. register() is declared `async` in @posthog/core 1.46.1, so
 // today it can only reject — the Promise.resolve() + try/catch keeps that from
 // being a silent version coupling if a future SDK makes it sync.
-function registerWebEnvironment(client: PostHog): void {
+const MAX_RAW_USER_AGENT_LENGTH = 1000;
+
+function webSuperProperties(userAgent: string): Record<string, string> {
+  const properties: Record<string, string> = { environment: 'production' };
+  if (userAgent) properties.$raw_user_agent = userAgent.slice(0, MAX_RAW_USER_AGENT_LENGTH);
+  return properties;
+}
+
+function registerWebSuperProperties(client: PostHog): void {
   try {
-    void Promise.resolve(client.register({ environment: 'production' })).catch((error: unknown) => {
-      warnEnvironmentRegistrationFailed(error);
+    void Promise.resolve(client.register(webSuperProperties(navigator.userAgent))).catch((error: unknown) => {
+      warnSuperPropertyRegistrationFailed(error);
     });
   } catch (error) {
-    warnEnvironmentRegistrationFailed(error);
+    warnSuperPropertyRegistrationFailed(error);
   }
 }
 
-function warnEnvironmentRegistrationFailed(error: unknown): void {
-  if (shouldDebugAnalytics) console.warn('[analytics] failed to register environment super property', error);
+function warnSuperPropertyRegistrationFailed(error: unknown): void {
+  if (shouldDebugAnalytics) console.warn('[analytics] failed to register web super properties', error);
 }
 
 type PosthogProperties = Record<string, string | number | boolean | null>;
@@ -272,8 +291,8 @@ export function alias(newId: string): boolean {
 
 // PostHog's reset() clears the distinct id AND every registered super
 // property, but getPosthog() caches the singleton, so the registration done at
-// construction never runs again. Re-register `environment` straight after so a
-// party-profile reset (party-profile-context.tsx) doesn't silently drop the tag
+// construction never runs again. Re-register `environment` and `$raw_user_agent`
+// straight after so a party-profile reset (party-profile-context.tsx) doesn't silently drop them
 // for the rest of the page session — mirrors mobile's reset() in
 // packages/mobile/src/lib/analytics.ts.
 //
@@ -285,7 +304,7 @@ export function reset(): boolean {
   const didReset = core.reset();
   if (didReset) {
     const posthog = getPosthog();
-    if (posthog) registerWebEnvironment(posthog);
+    if (posthog) registerWebSuperProperties(posthog);
   }
   return didReset;
 }

@@ -22,6 +22,7 @@ vi.mock('../../../modules/install-referrer/src/index', () => ({ installReferrerN
 
 import {
   INSTALL_ATTRIBUTED_EVENT,
+  classifyInstallChannel,
   maybeFetchAndAttachInstallReferrer,
   parseInstallReferrer,
   resetInstallReferrerFetchInFlightForTests,
@@ -84,6 +85,27 @@ describe('parseInstallReferrer', () => {
   });
 });
 
+describe('classifyInstallChannel', () => {
+  it('reads Play organic installs as organic', () => {
+    expect(classifyInstallChannel(parseInstallReferrer('utm_source=google-play&utm_medium=organic'))).toBe('organic');
+    expect(classifyInstallChannel(parseInstallReferrer('utm_source=google&utm_medium=organic'))).toBe('organic');
+  });
+
+  it('reads a tagged link as a campaign', () => {
+    expect(classifyInstallChannel(parseInstallReferrer('utm_source=gym&utm_medium=qr&utm_campaign=pilot'))).toBe(
+      'campaign',
+    );
+    expect(classifyInstallChannel(parseInstallReferrer('utm_campaign=pilot'))).toBe('campaign');
+  });
+
+  it('reads an empty or Play "(not set)" referrer as unknown', () => {
+    expect(classifyInstallChannel(parseInstallReferrer(''))).toBe('unknown');
+    expect(classifyInstallChannel(parseInstallReferrer('utm_source=(not%20set)&utm_medium=(not%20set)'))).toBe(
+      'unknown',
+    );
+  });
+});
+
 describe('maybeFetchAndAttachInstallReferrer', () => {
   it('fetches once, marks the flag, and attaches parsed referrer data', async () => {
     const fetchNative = vi.fn(async () => ({
@@ -103,11 +125,13 @@ describe('maybeFetchAndAttachInstallReferrer', () => {
       install_campaign: 'spring_sale',
       install_click_timestamp: 100,
       install_begin_timestamp: 200,
+      install_channel: 'campaign',
     });
     expect(analytics.track).toHaveBeenCalledWith(INSTALL_ATTRIBUTED_EVENT, {
       install_source: 'google',
       install_medium: 'cpc',
       install_campaign: 'spring_sale',
+      install_channel: 'campaign',
     });
   });
 
@@ -127,8 +151,33 @@ describe('maybeFetchAndAttachInstallReferrer', () => {
       install_campaign: null,
       install_click_timestamp: 0,
       install_begin_timestamp: 300,
+      install_channel: 'unknown',
     });
     expect(analytics.track).not.toHaveBeenCalled();
+  });
+
+  // #5653: Play stamps organic installs with utm_* too, so Install Attributed
+  // fires for them. The event keeps firing (history stays comparable) but
+  // must say the install was organic.
+  it('labels a Play organic install as organic on both the event and the person', async () => {
+    const fetchNative = vi.fn(async () => ({
+      installReferrer: 'utm_source=google-play&utm_medium=organic',
+      referrerClickTimestampSeconds: 0,
+      installBeginTimestampSeconds: 400,
+    }));
+
+    await maybeFetchAndAttachInstallReferrer(fetchNative);
+
+    expect(analytics.setPersonProperties).toHaveBeenCalledWith(
+      undefined,
+      expect.objectContaining({ install_source: 'google-play', install_channel: 'organic' }),
+    );
+    expect(analytics.track).toHaveBeenCalledWith(INSTALL_ATTRIBUTED_EVENT, {
+      install_source: 'google-play',
+      install_medium: 'organic',
+      install_campaign: null,
+      install_channel: 'organic',
+    });
   });
 
   it('ignores a concurrent overlapping call — only the first invocation reaches fetchNative', async () => {

@@ -1,10 +1,6 @@
 import { afterEach, describe, it, expect, vi } from 'vitest';
-import {
-  MOBILE_USER_AGENT,
-  registerMobileUserAgent,
-  registerAppEnvironment,
-  buildPostHogOptions,
-} from '../posthog-client';
+import { MOBILE_USER_AGENT } from '../mobile-user-agent';
+import { registerMobileUserAgent, registerAppEnvironment, buildPostHogOptions } from '../posthog-client';
 
 // The whole point of MOBILE_USER_AGENT is to give mobile events a User-Agent that
 // PostHog's classifier reads as "Regular" rather than the bot it assigns to an
