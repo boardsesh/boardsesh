@@ -193,7 +193,7 @@ type DownloadOfferProps = { boardName: string; layoutId: number; sizeId: number 
  * climber's ACTIVE board, and only when the drawer shows that exact board
  * (type, layout, size): a climb reached by deep link or a party queue may be
  * on a board this climber does not own, and downloading a stranger's board
- * from here would be the wrong offer. Those get the plain empty state.
+ * from here would be the wrong offer. Those get a neutral line instead.
  */
 const SimilarClimbsDownloadOffer = memo(function SimilarClimbsDownloadOffer({
   boardName,
@@ -236,6 +236,8 @@ const SimilarClimbsDownloadOffer = memo(function SimilarClimbsDownloadOffer({
     });
   }, [board, isOffline, nudge, armWithoutConfirm, confirmAndDownload, showToast, tBoards]);
 
+  const handleDismiss = useCallback(() => nudge.dismiss('once'), [nudge]);
+
   if (board && nudge.visible) {
     return (
       <OfflineNudgeCard
@@ -245,7 +247,7 @@ const SimilarClimbsDownloadOffer = memo(function SimilarClimbsDownloadOffer({
         primaryLabel={tBoards('mobile.offline.nudge.similarClimbs.cta', { name: board.name })}
         onPrimary={handleDownload}
         dismissLabel={tBoards('mobile.offline.nudge.notNow')}
-        onDismiss={() => nudge.dismiss('once')}
+        onDismiss={handleDismiss}
       />
     );
   }
@@ -256,7 +258,10 @@ const SimilarClimbsDownloadOffer = memo(function SimilarClimbsDownloadOffer({
     return <SimilarClimbsEmpty message={t('mobile.similarClimbs.waitingForDownload', { name: board.name })} />;
   }
 
-  return <SimilarClimbsEmpty message={t('mobile.similarClimbs.empty')} />;
+  // No card (a climb from another board, the card dismissed, or offline
+  // downloads unavailable here): still not "no similar climbs", which would
+  // read as the real answer for a board nobody searched.
+  return <SimilarClimbsEmpty message={t('mobile.similarClimbs.downloadToSee')} />;
 });
 
 const styles = StyleSheet.create({

@@ -122,7 +122,7 @@ None of the three is a synced table. They have no `TABLE_CONFIGS` entry, no chec
 
 ### Expensive catalogue reads are local-only
 
-Similar climbs is the first read registered with `networkPolicy: 'local-only'` (`packages/mobile/src/lib/graphql/offline-request.ts`). Its server resolver scans every hold row of the layout, so the server serves it to admins only. A local-only op never calls `getHttpClient()`: when the downloaded board can serve it, it reads SQLite (online or offline); when it cannot, it returns the op's empty fallback and records the unavailable reason, online included. There is no network-error rescue either, because there is no network request to fail. Without this, a non-admin whose board is not downloaded would fall through to the admin-gated resolver and see an auth error.
+Similar climbs is the first read registered with `networkPolicy: 'local-only'` (`packages/mobile/src/lib/graphql/offline-request.ts`). It is kept off the live resolver by policy: similar climbs are an offline feature for non-admins. The server's live scan (every hold row of the layout) is admin-only after #5766, and non-admins would otherwise get the nightly neighbour index. A local-only op never calls `getHttpClient()`: when the downloaded board can serve it, it reads SQLite (online or offline); when it cannot, it returns the op's empty fallback. The unavailable reason is recorded only while offline, as on the local-first path, because online the `download` audience never runs the query. There is no network-error rescue either, because there is no network request to fail.
 
 The caller picks the source with `useCatalogQuerySource(scope)` (`packages/mobile/src/lib/offline/use-catalog-query-source.ts`):
 
@@ -130,7 +130,7 @@ The caller picks the source with `useCatalogQuerySource(scope)` (`packages/mobil
 | --- | --- | --- |
 | `local` | the exact `(board, layout, size)` scope is in `syncEnabledBoards` and has its `scope-complete:` marker — the same check `isBoardDownloadedLocally` makes before its row probe | `offlineAwareRequest`; the first read builds the holds index, and the strip shows "Preparing similar climbs…" meanwhile |
 | `network` | not downloaded, and the viewer is an admin (`useIsAdmin`) | `getHttpClient().request` directly, bypassing the interceptor |
-| `download` | everyone else | no query; the section offers the download (`OfflineNudgeCard`, nudge surface `similar_climbs`, trigger `similar_climbs`, source `play_drawer`) for the active board when it is the drawer's exact board, and the plain empty state for a climb from any other board |
+| `download` | everyone else | no query; the section offers the download (`OfflineNudgeCard`, nudge surface `similar_climbs`, trigger `similar_climbs`, source `play_drawer`) for the active board when it is the drawer's exact board, and a neutral "download this board to see similar climbs" line whenever no card shows (a climb from another board, the card dismissed, or offline downloads unavailable) |
 
 Supporters become one more branch next to the admin check. The hold heatmap will use the same hook and policy.
 

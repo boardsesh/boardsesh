@@ -11,8 +11,8 @@
 //   post-acceptance quiet period.
 //
 //   Affordances (`no_catalog`, `whats_new`, `board_card`, `onboarding`,
-//   `similar_climbs`) live
-//   inside a screen the user chose to look at, usually in place of a dead end.
+//   `similar_climbs`) live inside a screen the user chose to look at, usually in
+//   place of a dead end.
 //   Capping them is a regression: an empty state that reverts to "nothing here"
 //   72 hours after an unrelated prompt is worse than the empty state we set out
 //   to fix. They are bounded by eligibility and dismiss-forever alone.

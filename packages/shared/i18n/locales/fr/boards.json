@@ -359,7 +359,7 @@
       "enableTitle": "Télécharger {{name}} ?",
       "enableMessage": "Télécharge tous les blocs de cette board pour les parcourir et enregistrer tes croix hors ligne.",
       "enableMessageWithSize": "Environ {{size}}. Télécharge tous les blocs de cette board pour les parcourir et enregistrer tes croix hors ligne.",
-      "enableIndexLine": "Plus environ {{index}} sur ton téléphone pour la recherche par prises.",
+      "enableIndexLine": "Et jusqu'à environ {{index}} sur ton téléphone pour les blocs similaires.",
       "enableConfirm": "Télécharger",
       "pickerNotice": "Pas de réseau — voici les boards que tu as téléchargées.",
       "pickerNoticeUnreachable": "Impossible de charger tes boards pour l'instant — voici celles que tu as téléchargées.",

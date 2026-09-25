@@ -1,10 +1,11 @@
 // Where an expensive catalogue read (similar climbs, later the hold heatmap)
 // gets its answer for one board scope.
 //
-// Those server resolvers scan every hold row of a layout, so the server serves
-// them to admins only. Everyone else reads the downloaded board on the phone,
-// and a board that is not downloaded gets an offer to download it — never a
-// network call that would come back as an auth error.
+// They are kept off the live resolver by policy: similar climbs are an offline
+// feature for non-admins. The server's live scan is admin-only after #5766, and
+// non-admins would otherwise get the nightly index. So admins ask the server,
+// everyone else reads the downloaded board on the phone, and a board that is
+// not downloaded gets an offer to download it instead of a network call.
 //
 // The `local` predicate is the one `isBoardDownloadedLocally` (the
 // `offlineAwareRequest` registration's `canServeLocal`) applies before its row

@@ -359,7 +359,7 @@
       "enableTitle": "Download {{name}}?",
       "enableMessage": "Downloads all this board's climbs so you can browse and log sends with no signal.",
       "enableMessageWithSize": "About {{size}}. Downloads all this board's climbs so you can browse and log sends with no signal.",
-      "enableIndexLine": "Plus about {{index}} on your phone for hold search.",
+      "enableIndexLine": "Up to about {{index}} on your phone for similar climbs.",
       "enableConfirm": "Download",
       "pickerNotice": "No signal — here are the boards you've downloaded.",
       "pickerNoticeUnreachable": "Can't reach your boards right now — here are the ones you've downloaded.",

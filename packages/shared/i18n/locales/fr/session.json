@@ -212,7 +212,8 @@
       "empty": "Aucune voie similaire trouvee",
       "retry": "Reessayer",
       "preparing": "Préparation des blocs similaires…",
-      "waitingForDownload": "Les blocs similaires arrivent dès que {{name}} a fini de se télécharger."
+      "waitingForDownload": "Les blocs similaires arrivent dès que {{name}} a fini de se télécharger.",
+      "downloadToSee": "Télécharge cette board pour voir les blocs similaires"
     },
     "community": {
       "moderation": {

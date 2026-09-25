@@ -212,7 +212,8 @@
       "empty": "No similar climbs found",
       "retry": "Try again",
       "preparing": "Preparing similar climbs…",
-      "waitingForDownload": "Similar climbs show up once {{name}} finishes downloading."
+      "waitingForDownload": "Similar climbs show up once {{name}} finishes downloading.",
+      "downloadToSee": "Download this board to see similar climbs"
     },
     "community": {
       "moderation": {

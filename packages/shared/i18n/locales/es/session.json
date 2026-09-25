@@ -212,7 +212,8 @@
       "empty": "No se encontraron escaladas similares",
       "retry": "Reintentar",
       "preparing": "Preparando bloques similares…",
-      "waitingForDownload": "Los bloques similares aparecen en cuanto termine de descargarse {{name}}."
+      "waitingForDownload": "Los bloques similares aparecen en cuanto termine de descargarse {{name}}.",
+      "downloadToSee": "Descarga este plafón para ver bloques similares"
     },
     "community": {
       "moderation": {

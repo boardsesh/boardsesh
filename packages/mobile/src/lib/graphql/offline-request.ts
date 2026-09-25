@@ -72,10 +72,11 @@ function scopeOf(input: { boardName: string; layoutId: number; sizeId: number })
  * - `local-first` (default): local SQLite when it can serve, else the network,
  *   with the network-error rescue back to local. Every op before similar climbs.
  * - `local-only`: local SQLite or the empty fallback, NEVER the network. For
- *   catalogue reads whose server resolver is too expensive to run for everyone
- *   (similar climbs), so the server gates it to admins: letting a non-admin fall
- *   through would trade an empty strip for an auth error. The caller decides
- *   separately (`useCatalogQuerySource`) whether to ask the network directly.
+ *   catalogue reads kept off the live resolver by policy: similar climbs are an
+ *   offline feature for non-admins. The server's live scan is admin-only after
+ *   #5766, and non-admins would otherwise get its nightly index. The caller
+ *   decides separately (`useCatalogQuerySource`) whether to ask the network
+ *   directly (admins).
  */
 export type OfflineNetworkPolicy = 'local-first' | 'local-only';
 
@@ -260,17 +261,20 @@ registerOfflineOperation<BoardseshGradesForAnglesVariables, BoardseshGradesForAn
   offlineFallback: () => ({ boardseshGradesForAngles: [] }),
 });
 
-// Similar climbs (the play drawer strip): LOCAL-ONLY. The server resolver
-// scans every hold row of the layout, so it is admin-gated; a non-admin
-// falling through to it would get an auth error, not climbs. Admins who have
-// not downloaded the board are sent to the network by `useSimilarClimbs`
-// itself (`useCatalogQuerySource`), not by this interceptor.
+// Similar climbs (the play drawer strip): LOCAL-ONLY, kept off the live
+// resolver by policy. Similar climbs are an offline feature for non-admins: the
+// server's live scan is admin-only after #5766, and non-admins would otherwise
+// get the nightly index. Admins who have not downloaded the board are sent to
+// the network by `useSimilarClimbs` itself (`useCatalogQuerySource`), not by
+// this interceptor.
 //
 // `resolveLocal` first brings the scope's holds index up to date. That is one
 // probe when the sync cycle already built it, and the whole first build when
 // it did not (a board downloaded by a build that predates the index) — the
-// strip shows its loading state meanwhile. No `isLocalMiss`: an empty list is
-// a real answer (nothing on this layout shares enough holds).
+// strip shows its loading state meanwhile. An aborted build throws, so React
+// Query retries instead of caching a strip built from a partial index. No
+// `isLocalMiss`: an empty list is a real answer (nothing on this layout shares
+// enough holds).
 registerOfflineOperation<SimilarClimbsVariables, SimilarClimbsResponse>({
   document: SIMILAR_CLIMBS_QUERY,
   networkPolicy: 'local-only',
@@ -283,7 +287,12 @@ registerOfflineOperation<SimilarClimbsVariables, SimilarClimbsResponse>({
   resolveLocal: async (db, { input }) => {
     // canServeLocal already refused a missing size; this narrows it.
     const sizeId = input.sizeId ?? 0;
-    await ensureHoldIndex(db, { boardType: input.boardType, layoutId: input.layoutId, sizeId }, { parseHoldRows });
+    const build = await ensureHoldIndex(
+      db,
+      { boardType: input.boardType, layoutId: input.layoutId, sizeId },
+      { parseHoldRows },
+    );
+    if (build.status === 'aborted') throw new Error('Similar climbs: holds index build was interrupted');
     return { similarClimbs: await getSimilarClimbsLocal(db, { ...input, sizeId }, parseHoldRows) };
   },
   offlineFallback: () => ({ similarClimbs: [] }),
@@ -448,9 +457,11 @@ export async function offlineAwareRequest<TResponse>(document: string, variables
  * with no local source the only alternative would be the network this policy
  * exists to avoid.
  *
- * The unavailable reason is recorded online too, with a null connectivity
- * reason, because "online and still nothing" is exactly the audience a download
- * nudge is for. A throwing `resolveLocal` propagates, as on the local-first path.
+ * The unavailable reason is recorded only while OFFLINE, like the local-first
+ * path: online, the `download` audience never runs this query at all (the hook
+ * disables it), and a stray online record would share the rollup's dedupe key
+ * with the real offline gaps. A throwing `resolveLocal` propagates, as on the
+ * local-first path.
  */
 async function localOnlyRequest<TResponse>(
   operation: OfflineOperation<never, unknown>,
@@ -467,7 +478,7 @@ async function localOnlyRequest<TResponse>(
     });
     return localResponse;
   }
-  if (variables !== undefined) {
+  if (!isOnline && variables !== undefined) {
     recordOfflineReadUnavailable({
       reason: db
         ? ((await operation.unavailableReason?.(db, variables as never)) ?? 'board_not_downloaded')

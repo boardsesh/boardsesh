@@ -224,13 +224,22 @@ describe('SimilarClimbsSection — source states', () => {
     expect(offer.accept).toHaveBeenCalledWith('armed');
   });
 
-  it('download on a climb from another board: plain empty state, no offer', () => {
+  it('download on a climb from another board: neutral line, no offer, never "no similar climbs"', () => {
     similar.source = 'download';
     offer.activeBoard = { ...garage, sizeId: 11 };
-    const { getByText, queryByTestId } = render(createElement(SimilarClimbsSection, props));
+    const { getByText, queryByTestId, queryByText } = render(createElement(SimilarClimbsSection, props));
     expect(queryByTestId('offline-nudge-card')).toBeNull();
     expect(offer.nudgeBoards.at(-1)).toBeNull();
-    expect(getByText('mobile.similarClimbs.empty')).toBeTruthy();
+    expect(getByText('mobile.similarClimbs.downloadToSee')).toBeTruthy();
+    expect(queryByText('mobile.similarClimbs.empty')).toBeNull();
+  });
+
+  it('download with the card dismissed or unavailable: neutral line, not the empty answer', () => {
+    similar.source = 'download';
+    offer.nudgeVisible = false;
+    const { getByText, queryByText } = render(createElement(SimilarClimbsSection, props));
+    expect(getByText('mobile.similarClimbs.downloadToSee')).toBeTruthy();
+    expect(queryByText('mobile.similarClimbs.empty')).toBeNull();
   });
 
   it('download already asked for: says the strip arrives with the download', () => {

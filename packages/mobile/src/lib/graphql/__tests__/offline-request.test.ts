@@ -1000,19 +1000,15 @@ describe('offlineAwareRequest — local-only network policy', () => {
     });
   });
 
-  it('returns the fallback ONLINE when local cannot serve, without calling the network', async () => {
+  it('returns the fallback ONLINE when local cannot serve, without calling the network or the gap signal', async () => {
     setOnline(true);
     canServeLocal.mockResolvedValue(false);
     const result = await offlineAwareRequest<LocalOnlyResponse>(LOCAL_ONLY_DOC, { boardName: 'kilter' });
     expect(result).toEqual({ items: [] });
     expect(request).not.toHaveBeenCalled();
     expect(resolveLocal).not.toHaveBeenCalled();
-    expect(recordOfflineReadUnavailable).toHaveBeenCalledExactlyOnceWith({
-      reason: 'board_not_downloaded',
-      surface: 'search',
-      boardName: 'kilter',
-      connectivityReason: null,
-    });
+    // Online is not an offline gap: recording it would share the rollup's dedupe key.
+    expect(recordOfflineReadUnavailable).not.toHaveBeenCalled();
   });
 
   it('returns the fallback OFFLINE when local cannot serve, with the offline reason', async () => {
@@ -1030,7 +1026,7 @@ describe('offlineAwareRequest — local-only network policy', () => {
   });
 
   it('names a missing db handle as its own reason and still skips the network', async () => {
-    setOnline(true);
+    setOnline(false);
     getDatabaseHandle.mockReturnValue(null);
     const result = await offlineAwareRequest<LocalOnlyResponse>(LOCAL_ONLY_DOC, { boardName: 'kilter' });
     expect(result).toEqual({ items: [] });
@@ -1107,12 +1103,7 @@ describe('offlineAwareRequest — SIMILAR_CLIMBS_QUERY (local-only)', () => {
     expect(result).toEqual({ similarClimbs: [] });
     expect(request).not.toHaveBeenCalled();
     expect(ensureHoldIndex).not.toHaveBeenCalled();
-    expect(recordOfflineReadUnavailable).toHaveBeenCalledExactlyOnceWith({
-      reason: 'board_not_downloaded',
-      surface: 'similar_climbs',
-      boardName: 'kilter',
-      connectivityReason: null,
-    });
+    expect(recordOfflineReadUnavailable).not.toHaveBeenCalled();
   });
 
   it('returns an empty strip OFFLINE for a board that is not downloaded', async () => {
@@ -1120,6 +1111,17 @@ describe('offlineAwareRequest — SIMILAR_CLIMBS_QUERY (local-only)', () => {
     isBoardDownloadedLocally.mockResolvedValue(false);
     const result = await offlineAwareRequest<SimilarClimbsResponse>(SIMILAR_CLIMBS_QUERY, similarVars);
     expect(result).toEqual({ similarClimbs: [] });
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('throws on an aborted index build so a partial strip is never cached', async () => {
+    setOnline(true);
+    isBoardDownloadedLocally.mockResolvedValue(true);
+    ensureHoldIndex.mockResolvedValue({ status: 'aborted' });
+    await expect(offlineAwareRequest<SimilarClimbsResponse>(SIMILAR_CLIMBS_QUERY, similarVars)).rejects.toThrow(
+      'interrupted',
+    );
+    expect(getSimilarClimbsLocal).not.toHaveBeenCalled();
     expect(request).not.toHaveBeenCalled();
   });
 

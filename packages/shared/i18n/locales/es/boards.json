@@ -359,7 +359,7 @@
       "enableTitle": "¿Descargar {{name}}?",
       "enableMessage": "Descarga todos los bloques de este plafón para explorarlos y registrar tus ascensos sin conexión.",
       "enableMessageWithSize": "Unos {{size}}. Descarga todos los bloques de este plafón para explorarlos y registrar tus ascensos sin conexión.",
-      "enableIndexLine": "Más unos {{index}} en tu móvil para buscar por presas.",
+      "enableIndexLine": "Y hasta unos {{index}} más en tu móvil para los bloques similares.",
       "enableConfirm": "Descargar",
       "pickerNotice": "Sin conexión: estos son los plafones que has descargado.",
       "pickerNoticeUnreachable": "Ahora mismo no podemos cargar tus plafones: estos son los que has descargado.",
