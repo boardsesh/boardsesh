@@ -19,7 +19,7 @@ import { useMemo } from 'react';
 import { offlineBoardKey } from '@boardsesh/offline-sync';
 import { useSetting } from '../../settings';
 import { useDownloadedScopeKeys } from '../../offline/use-downloaded-scope-keys';
-import { useIsAdmin } from '../graphql/hooks';
+import { useIsAdmin } from '../graphql/hooks/use-is-admin';
 
 /**
  * - `local` — the scope is downloaded: read SQLite through `offlineAwareRequest`.

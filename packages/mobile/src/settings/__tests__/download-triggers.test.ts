@@ -48,6 +48,14 @@ describe('download-trigger attribution', () => {
     expect(takeDownloadTrigger('kilter:1:5')).toBe('toggle');
   });
 
+  // Without the allowlist entry the similar-climbs offer's downloads would read
+  // back as `unknown` and vanish from the nudge funnel.
+  it('round-trips the similar-climbs trigger', () => {
+    rememberDownloadTrigger('kilter:1:5', 'similar_climbs');
+
+    expect(takeDownloadTrigger('kilter:1:5')).toBe('similar_climbs');
+  });
+
   it('reports unknown for a scope that was never attributed', () => {
     // A board enabled by a build that predates this store. An explicit, expected
     // value — not an accident.

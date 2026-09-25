@@ -210,7 +210,9 @@
     "similarClimbs": {
       "title": "Escaladas similares",
       "empty": "No se encontraron escaladas similares",
-      "retry": "Reintentar"
+      "retry": "Reintentar",
+      "preparing": "Preparando bloques similares…",
+      "waitingForDownload": "Los bloques similares aparecen en cuanto termine de descargarse {{name}}."
     },
     "community": {
       "moderation": {

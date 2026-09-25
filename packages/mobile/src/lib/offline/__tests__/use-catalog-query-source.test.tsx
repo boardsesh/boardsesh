@@ -23,7 +23,7 @@ vi.mock('../../../settings', () => ({
 vi.mock('../../../offline/use-downloaded-scope-keys', () => ({
   useDownloadedScopeKeys: () => ({ data: state.downloadedScopeKeys, isLoading: state.downloadedLoading }),
 }));
-vi.mock('../../graphql/hooks', () => ({
+vi.mock('../../graphql/hooks/use-is-admin', () => ({
   useIsAdmin: (options?: { enabled?: boolean }) => {
     state.adminEnabled.push(options?.enabled);
     return { isAdmin: state.isAdmin, isLoading: state.adminLoading };

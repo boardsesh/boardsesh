@@ -21,9 +21,6 @@ import type {
   DeleteHoldOutlineOverrideInput,
 } from '@boardsesh/shared-schema';
 import {
-  SIMILAR_CLIMBS_QUERY,
-  type SimilarClimbsVariables,
-  type SimilarClimbsResponse,
   CLIMB_STATS_HISTORY,
   type ClimbStatsHistoryResponse,
   BOARDSESH_GRADE,
@@ -152,11 +149,9 @@ import {
   type EndSessionMutationResponse,
   type ToggleFavoriteMutationVariables,
   type ToggleFavoriteMutationResponse,
-  GET_PROFILE_ADMIN_FLAG,
   GET_HOLD_OUTLINES,
   UPSERT_HOLD_OUTLINE_OVERRIDE,
   DELETE_HOLD_OUTLINE_OVERRIDE,
-  type GetProfileAdminFlagQueryResponse,
   type HoldOutlinesQueryResponse,
   type UpsertHoldOutlineOverrideMutationResponse,
   type DeleteHoldOutlineOverrideMutationResponse,
@@ -1394,30 +1389,9 @@ export function useUserBetaLinks(
 // Similar Climbs + Community stats (play drawer)
 // ============================================
 
-/**
- * Position-only Jaccard similar climbs for a saved climb. `climbUuid` null
- * disables the query (e.g. before a climb is selected).
- */
-export function useSimilarClimbs(
-  boardName: string,
-  climbUuid: string | null,
-  layoutId: number,
-  angle: number,
-  limit = 12,
-) {
-  return useQuery({
-    queryKey: ['similarClimbs', boardName, climbUuid, layoutId, angle, limit],
-    queryFn: () => {
-      const variables: SimilarClimbsVariables = {
-        input: { boardType: boardName, layoutId, climbUuid: climbUuid!, angle, limit },
-      };
-      return getHttpClient().request<SimilarClimbsResponse>(SIMILAR_CLIMBS_QUERY, variables);
-    },
-    select: (data) => data.similarClimbs,
-    enabled: !!climbUuid,
-    staleTime: 5 * 60 * 1000,
-  });
-}
+// Own module: it pulls in the offline source hook (expo-sqlite), which the
+// barrel's unit tests mock out the same way as the other submodules.
+export { useSimilarClimbs } from './use-similar-climbs';
 
 /**
  * Last-12-months stats snapshots for a climb, one row per (angle, snapshot).
@@ -1551,27 +1525,9 @@ export {
 // Hold Outline Overrides (admin outline editor)
 // ============================================
 
-/**
- * Is the viewer an admin? Its own query document, not a field on `useProfile`.
- *
- * `UserProfile.isAdmin` reaches production in a backend deploy that lands after
- * this JS does, so asking for it inside `GET_PROFILE` would fail that whole
- * query — and blank the You tab — for every user until the two lined up. Here a
- * miss is contained: the query errors, `data` stays undefined, and the flag
- * reads false. Fail-closed is the right default for an admin gate anyway.
- */
-export function useIsAdmin(options?: { enabled?: boolean }): { isAdmin: boolean; isLoading: boolean } {
-  const query = useQuery({
-    queryKey: ['profileAdminFlag'],
-    queryFn: () => getHttpClient().request<GetProfileAdminFlagQueryResponse>(GET_PROFILE_ADMIN_FLAG),
-    select: (data) => data.profile?.isAdmin ?? false,
-    enabled: options?.enabled ?? true,
-    // One retry only: an old backend rejects this document every time, and the
-    // gate should settle to "no" quickly rather than spin.
-    retry: 1,
-  });
-  return { isAdmin: query.data ?? false, isLoading: query.isLoading };
-}
+// Own module so hooks outside this barrel (useCatalogQuerySource) can use it
+// without importing the barrel that imports them.
+export { useIsAdmin } from './use-is-admin';
 
 export type HoldOutlineConfigKey = { boardName: string; layoutId: number; sizeId: number };
 

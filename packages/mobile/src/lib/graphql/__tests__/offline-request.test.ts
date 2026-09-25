@@ -25,7 +25,11 @@ const {
   request,
   recordOfflineRead,
   recordOfflineReadUnavailable,
+  getSimilarClimbsLocal,
+  ensureHoldIndex,
 } = vi.hoisted(() => ({
+  getSimilarClimbsLocal: vi.fn(),
+  ensureHoldIndex: vi.fn(),
   getDatabaseHandle: vi.fn(),
   isBoardDownloadedLocally: vi.fn(),
   isBoardTypeDownloadedLocally: vi.fn(),
@@ -56,6 +60,12 @@ vi.mock('../../../db/queries/get-boardsesh-grade-local', () => ({
   getBoardseshGradesForAnglesLocal,
 }));
 vi.mock('../client', () => ({ getHttpClient: () => ({ request }) }));
+vi.mock('../../../db/queries/get-similar-climbs-local', () => ({ getSimilarClimbsLocal }));
+vi.mock('../../../offline/hold-index-parser', () => ({ parseHoldRows: vi.fn() }));
+vi.mock('@boardsesh/offline-sync', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@boardsesh/offline-sync')>()),
+  ensureHoldIndex,
+}));
 // The rollup gate itself is covered in @boardsesh/offline-sync; here we assert
 // the interceptor hands it the right LANE for each terminal outcome (#4317).
 vi.mock('../../../offline/offline-usage-signal', () => ({
@@ -85,6 +95,11 @@ import {
   type GetClimbQueryResponse,
   type GetClimbQueryVariables,
 } from '../operations';
+import {
+  SIMILAR_CLIMBS_QUERY,
+  type SimilarClimbsResponse,
+  type SimilarClimbsVariables,
+} from '@boardsesh/graphql/operations';
 import {
   BOARDSESH_GRADE,
   BOARDSESH_GRADES_FOR_ANGLES,
@@ -1049,5 +1064,82 @@ describe('offlineAwareRequest — local-only network policy', () => {
     expect(result).toEqual({ items: [] });
     expect(request).not.toHaveBeenCalled();
     expect(recordOfflineReadUnavailable).not.toHaveBeenCalled();
+  });
+});
+
+// Similar climbs is registered local-only: the server resolver is admin-gated,
+// so a climber whose board is not downloaded gets an empty strip from here and
+// the download offer from the section — never a request.
+describe('offlineAwareRequest — SIMILAR_CLIMBS_QUERY (local-only)', () => {
+  const similarVars: SimilarClimbsVariables = {
+    input: { boardType: 'kilter', layoutId: 1, sizeId: 5, climbUuid: 'c1', angle: 40, limit: 12 },
+  };
+
+  beforeEach(() => {
+    ensureHoldIndex.mockResolvedValue({ status: 'complete' });
+    getSimilarClimbsLocal.mockResolvedValue([{ uuid: 'twin' }]);
+  });
+
+  it('builds the holds index, then answers from SQLite while online', async () => {
+    setOnline(true);
+    isBoardDownloadedLocally.mockResolvedValue(true);
+    const result = await offlineAwareRequest<SimilarClimbsResponse>(SIMILAR_CLIMBS_QUERY, similarVars);
+    expect(result).toEqual({ similarClimbs: [{ uuid: 'twin' }] });
+    expect(isBoardDownloadedLocally).toHaveBeenCalledWith(fakeDb, { boardType: 'kilter', layoutId: 1, sizeId: 5 });
+    expect(ensureHoldIndex).toHaveBeenCalledWith(
+      fakeDb,
+      { boardType: 'kilter', layoutId: 1, sizeId: 5 },
+      expect.objectContaining({ parseHoldRows: expect.any(Function) }),
+    );
+    expect(ensureHoldIndex.mock.invocationCallOrder[0]).toBeLessThan(getSimilarClimbsLocal.mock.invocationCallOrder[0]);
+    expect(request).not.toHaveBeenCalled();
+    expect(recordOfflineRead).toHaveBeenCalledExactlyOnceWith({
+      lane: 'online_local',
+      surface: 'similar_climbs',
+      boardName: 'kilter',
+    });
+  });
+
+  it('returns an empty strip ONLINE for a board that is not downloaded — no request', async () => {
+    setOnline(true);
+    isBoardDownloadedLocally.mockResolvedValue(false);
+    const result = await offlineAwareRequest<SimilarClimbsResponse>(SIMILAR_CLIMBS_QUERY, similarVars);
+    expect(result).toEqual({ similarClimbs: [] });
+    expect(request).not.toHaveBeenCalled();
+    expect(ensureHoldIndex).not.toHaveBeenCalled();
+    expect(recordOfflineReadUnavailable).toHaveBeenCalledExactlyOnceWith({
+      reason: 'board_not_downloaded',
+      surface: 'similar_climbs',
+      boardName: 'kilter',
+      connectivityReason: null,
+    });
+  });
+
+  it('returns an empty strip OFFLINE for a board that is not downloaded', async () => {
+    setOnline(false);
+    isBoardDownloadedLocally.mockResolvedValue(false);
+    const result = await offlineAwareRequest<SimilarClimbsResponse>(SIMILAR_CLIMBS_QUERY, similarVars);
+    expect(result).toEqual({ similarClimbs: [] });
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('treats an empty local list as the answer, not a miss to retry', async () => {
+    setOnline(true);
+    isBoardDownloadedLocally.mockResolvedValue(true);
+    getSimilarClimbsLocal.mockResolvedValue([]);
+    const result = await offlineAwareRequest<SimilarClimbsResponse>(SIMILAR_CLIMBS_QUERY, similarVars);
+    expect(result).toEqual({ similarClimbs: [] });
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('cannot serve an input without a size (the scope is size-exact)', async () => {
+    setOnline(true);
+    isBoardDownloadedLocally.mockResolvedValue(true);
+    const result = await offlineAwareRequest<SimilarClimbsResponse>(SIMILAR_CLIMBS_QUERY, {
+      input: { ...similarVars.input, sizeId: null },
+    });
+    expect(result).toEqual({ similarClimbs: [] });
+    expect(isBoardDownloadedLocally).not.toHaveBeenCalled();
+    expect(request).not.toHaveBeenCalled();
   });
 });

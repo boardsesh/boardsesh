@@ -10,7 +10,8 @@
 //   They carry a cooldown, a lifetime cap, a cross-surface cooldown and a
 //   post-acceptance quiet period.
 //
-//   Affordances (`no_catalog`, `whats_new`, `board_card`, `onboarding`) live
+//   Affordances (`no_catalog`, `whats_new`, `board_card`, `onboarding`,
+//   `similar_climbs`) live
 //   inside a screen the user chose to look at, usually in place of a dead end.
 //   Capping them is a regression: an empty state that reverts to "nothing here"
 //   72 hours after an unrelated prompt is worse than the empty state we set out
@@ -20,7 +21,7 @@
 
 import type { BoardDownloadState } from '../../components/board-discovery/board-offline-state';
 
-export type NudgeSurface = 'post_session' | 'no_catalog' | 'whats_new' | 'board_card' | 'onboarding';
+export type NudgeSurface = 'post_session' | 'no_catalog' | 'whats_new' | 'board_card' | 'onboarding' | 'similar_climbs';
 
 export const NUDGE_SURFACES: readonly NudgeSurface[] = [
   'post_session',
@@ -28,6 +29,7 @@ export const NUDGE_SURFACES: readonly NudgeSurface[] = [
   'whats_new',
   'board_card',
   'onboarding',
+  'similar_climbs',
 ];
 
 /** Surfaces that interrupt, and therefore carry frequency machinery. */
@@ -66,6 +68,7 @@ export function emptyNudgeState(): OfflineNudgeState {
       whats_new: emptySurfaceState(),
       board_card: emptySurfaceState(),
       onboarding: emptySurfaceState(),
+      similar_climbs: emptySurfaceState(),
     },
     lastPromptAtMs: null,
     lastAcceptedAtMs: null,

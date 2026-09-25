@@ -42,6 +42,7 @@ These have "now" semantics or are unbounded, so a stale copy is worse than an ho
 | `['climb', …]`                                                                           | SQLite                      | Registered today                                                   |
 | `['setterStats', …]`                                                                     | SQLite                      | Registered today (#5407)                                           |
 | `['boardseshGrade']`, `['boardseshGradesForAngles']`                                     | SQLite                      | Registered today                                                   |
+| `['similarClimbs', …]`                                                                   | SQLite (local-only)         | Holds index; never the network for non-admins — see below          |
 | `['logbook', board, …]`                                                                  | SQLite                      | `boardsesh_ticks`; reader missing                                  |
 | `['localTicks', …]`                                                                      | SQLite                      | Pending-write badge, reads local already                           |
 | `['userPlaylists']`, `['playlistClimbs', …]`, `['playlist', uuid]`                       | SQLite                      | `playlists` + `playlist_climbs`; reader missing                    |
@@ -118,6 +119,20 @@ None of the three is a synced table. They have no `TABLE_CONFIGS` entry, no chec
 - **Cleanup.** A `board_climbs` tombstone takes the climb out of its postings and drops its hold set. Scope teardown clears the whole layout's index and every sibling scope's watermark, and a surviving sibling rebuilds on its next cycle. After a snapshot import, the orphan sweep deletes hold sets whose climb is gone and rebuilds that layout's postings. The spray sign-out wipe clears spray's hold sets, postings and watermarks. It also clears every hold set whose climb is already gone, then every local id that no hold set still uses, so no spray uuid is left behind. The explicit sign-out wipe clears all three tables.
 
 `board_climbs` and `board_climb_hold_sets` both invalidate `['similarClimbs']`. `['holdHeatmap']` will join them when the heatmap's local reader ships; until then the drift test would reject a key that nothing reads.
+
+### Expensive catalogue reads are local-only
+
+Similar climbs is the first read registered with `networkPolicy: 'local-only'` (`packages/mobile/src/lib/graphql/offline-request.ts`). Its server resolver scans every hold row of the layout, so the server serves it to admins only. A local-only op never calls `getHttpClient()`: when the downloaded board can serve it, it reads SQLite (online or offline); when it cannot, it returns the op's empty fallback and records the unavailable reason, online included. There is no network-error rescue either, because there is no network request to fail. Without this, a non-admin whose board is not downloaded would fall through to the admin-gated resolver and see an auth error.
+
+The caller picks the source with `useCatalogQuerySource(scope)` (`packages/mobile/src/lib/offline/use-catalog-query-source.ts`):
+
+| Source | When | What the play drawer does |
+| --- | --- | --- |
+| `local` | the exact `(board, layout, size)` scope is in `syncEnabledBoards` and has its `scope-complete:` marker — the same check `isBoardDownloadedLocally` makes before its row probe | `offlineAwareRequest`; the first read builds the holds index, and the strip shows "Preparing similar climbs…" meanwhile |
+| `network` | not downloaded, and the viewer is an admin (`useIsAdmin`) | `getHttpClient().request` directly, bypassing the interceptor |
+| `download` | everyone else | no query; the section offers the download (`OfflineNudgeCard`, nudge surface `similar_climbs`, trigger `similar_climbs`, source `play_drawer`) for the active board when it is the drawer's exact board, and the plain empty state for a climb from any other board |
+
+Supporters become one more branch next to the admin check. The hold heatmap will use the same hook and policy.
 
 ## Local-first while online, and when not to be
 

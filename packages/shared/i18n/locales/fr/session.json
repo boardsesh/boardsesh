@@ -210,7 +210,9 @@
     "similarClimbs": {
       "title": "Voies similaires",
       "empty": "Aucune voie similaire trouvee",
-      "retry": "Reessayer"
+      "retry": "Reessayer",
+      "preparing": "Préparation des blocs similaires…",
+      "waitingForDownload": "Les blocs similaires arrivent dès que {{name}} a fini de se télécharger."
     },
     "community": {
       "moderation": {

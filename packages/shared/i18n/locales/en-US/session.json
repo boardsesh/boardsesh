@@ -210,7 +210,9 @@
     "similarClimbs": {
       "title": "Similar Climbs",
       "empty": "No similar climbs found",
-      "retry": "Try again"
+      "retry": "Try again",
+      "preparing": "Preparing similar climbs…",
+      "waitingForDownload": "Similar climbs show up once {{name}} finishes downloading."
     },
     "community": {
       "moderation": {

@@ -11,9 +11,17 @@ import { canReadFollowedAuthors } from '../../db/queries/followed-authors-local'
 import { FollowedAuthorsUnavailableError } from '../followed-authors-error';
 import { isBoardDownloadedLocally, isBoardTypeDownloadedLocally } from '../../db/queries/board-download-status';
 import { getHttpClient } from './client';
+import { ensureHoldIndex } from '@boardsesh/offline-sync';
 import type { OfflineReadLane, OfflineReadSurface, OfflineUnavailableReason } from '@boardsesh/offline-sync';
+import { getSimilarClimbsLocal } from '../../db/queries/get-similar-climbs-local';
+import { parseHoldRows } from '../../offline/hold-index-parser';
 import { getConnectivitySnapshot } from '../connectivity/connectivity-store';
 import { recordOfflineRead, recordOfflineReadUnavailable } from '../../offline/offline-usage-signal';
+import {
+  SIMILAR_CLIMBS_QUERY,
+  type SimilarClimbsVariables,
+  type SimilarClimbsResponse,
+} from '@boardsesh/graphql/operations';
 import {
   BOARDSESH_GRADE,
   BOARDSESH_GRADES_FOR_ANGLES,
@@ -250,6 +258,35 @@ registerOfflineOperation<BoardseshGradesForAnglesVariables, BoardseshGradesForAn
     boardseshGradesForAngles: await getBoardseshGradesForAnglesLocal(db, { boardName, climbUuid }),
   }),
   offlineFallback: () => ({ boardseshGradesForAngles: [] }),
+});
+
+// Similar climbs (the play drawer strip): LOCAL-ONLY. The server resolver
+// scans every hold row of the layout, so it is admin-gated; a non-admin
+// falling through to it would get an auth error, not climbs. Admins who have
+// not downloaded the board are sent to the network by `useSimilarClimbs`
+// itself (`useCatalogQuerySource`), not by this interceptor.
+//
+// `resolveLocal` first brings the scope's holds index up to date. That is one
+// probe when the sync cycle already built it, and the whole first build when
+// it did not (a board downloaded by a build that predates the index) — the
+// strip shows its loading state meanwhile. No `isLocalMiss`: an empty list is
+// a real answer (nothing on this layout shares enough holds).
+registerOfflineOperation<SimilarClimbsVariables, SimilarClimbsResponse>({
+  document: SIMILAR_CLIMBS_QUERY,
+  networkPolicy: 'local-only',
+  surface: 'similar_climbs',
+  boardNameOf: ({ input }) => input.boardType,
+  canServeLocal: (db, { input }) =>
+    input.sizeId == null
+      ? Promise.resolve(false)
+      : isBoardDownloadedLocally(db, { boardType: input.boardType, layoutId: input.layoutId, sizeId: input.sizeId }),
+  resolveLocal: async (db, { input }) => {
+    // canServeLocal already refused a missing size; this narrows it.
+    const sizeId = input.sizeId ?? 0;
+    await ensureHoldIndex(db, { boardType: input.boardType, layoutId: input.layoutId, sizeId }, { parseHoldRows });
+    return { similarClimbs: await getSimilarClimbsLocal(db, { ...input, sizeId }, parseHoldRows) };
+  },
+  offlineFallback: () => ({ similarClimbs: [] }),
 });
 
 /**
