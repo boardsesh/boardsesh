@@ -410,7 +410,7 @@ job-level gate cannot see, and print "held" for a deploy that actually shipped.
 
 `deploy/app-subdomain/__tests__/production-deploy-hold.test.ts` asserts the gate,
 its Discord counterpart, that held line, and that the export's `EXPO_PUBLIC_*`
-stay at workflow level. The `deploy-config` job in `.github/workflows/ci.yml`
+stay at workflow level. The `deploy-config` step of the `guards` job in `.github/workflows/ci.yml`
 runs it on every PR touching `production-deploy.yml`.
 
 ### Infra follow-ups (not provisioned here)

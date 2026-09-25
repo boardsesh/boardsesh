@@ -2,9 +2,9 @@ name: CI Image
 
 # Builds and publishes the prebaked CI seed the self-hosted homelab fleet
 # pulls before every job (issue #5008, part of epic #5005): the repo's full
-# git history plus the resolved pnpm store, layered so a typical daily
+# git history plus the resolved pnpm store, layered so a typical
 # rebuild only ever pushes a few MB instead of re-pushing .git's one big
-# packfile (~398 MB) every day. Full design and layer-order rationale live in
+# packfile (~398 MB) every time. Full design and layer-order rationale live in
 # Dockerfile.ci's header comment -- read that first if any of this workflow
 # is surprising.
 #
@@ -14,7 +14,7 @@ name: CI Image
 #                     command against the registry's existing tags and builds
 #                     whatever is missing, ONE layer at a time (baseline
 #                     first if even that is missing, then each completed week
-#                     in order). On a normal day this finds nothing missing
+#                     in order). On a normal run this finds nothing missing
 #                     and exits immediately; it only does real work at a week
 #                     rollover, or when catching up a fresh baseline.
 #
@@ -29,10 +29,11 @@ name: CI Image
 # cannot pull its own seed before the seed exists.
 
 on:
-  schedule:
-    # Once a day. Most of the work in Dockerfile.ci's `ci-image` target is a
-    # cache hit on a normal day -- see build-daily-image's comments.
-    - cron: '17 4 * * *'
+  # Manual only. There is no cron: most of the work in Dockerfile.ci's
+  # `ci-image` target is a cache hit on a normal day (see build-daily-image's
+  # comments), so a scheduled run mostly spent a runner slot rebuilding what
+  # was already published. Dispatch it from the Actions tab when the lockfile
+  # moves or a week of history has rolled over.
   workflow_dispatch:
 
 env:
@@ -138,7 +139,7 @@ jobs:
 
           # Bounded loop, not "while true": a bug that makes `plan` never
           # report satisfaction should fail loudly instead of running the
-          # scheduled job for an hour. 60 covers a from-scratch bootstrap
+          # job for an hour. 60 covers a from-scratch bootstrap
           # (baseline + a full quarter of weeks) with headroom to spare.
           for _ in $(seq 1 60); do
             # GHCR container package versions -> every tag already published

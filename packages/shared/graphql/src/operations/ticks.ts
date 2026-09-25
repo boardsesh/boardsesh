@@ -587,7 +587,7 @@ export type UpdateTickInput = {
 };
 
 // Compile-time drift guard: this hand-written UpdateTickInput must stay in step
-// with the codegen-generated input (which the `codegen-drift` CI job keeps
+// with the codegen-generated input (which the `codegen-drift` CI guard keeps
 // locked to the GraphQL SDL + its Zod validation gate). A field added to the
 // SDL but forgotten here would otherwise type-check fine and silently never be
 // sent on an edit. Mirrors the offline-sync UPDATE_TICK_INPUT_FIELDS guard

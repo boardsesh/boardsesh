@@ -12,7 +12,7 @@
  *
  * Reads the workflow with readFileSync, so Vitest's `--changed` module graph
  * can never relate it to a workflow-only diff. CI runs it unfiltered in the
- * deploy-config job, alongside the other production-deploy contract suites.
+ * deploy-config guard step, alongside the other production-deploy contract suites.
  */
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';

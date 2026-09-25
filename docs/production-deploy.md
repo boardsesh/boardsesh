@@ -497,49 +497,34 @@ web rollback levers.
 
 ## Where the images are built
 
-`build-web` and `build-backend` run on GitHub-hosted runners. The
-`DEPLOY_RUNNER_LINUX` wiring remains in the workflow — unset (the default)
-means `ubuntu-latest` — but there is currently no self-hosted destination to
-point it at: **the bs-ci fleet was retired in September 2026** (the homelab now
-hosts only long-lived workloads; short-lived CI/build capacity is planned to
-move to a cloud spot runner pool — tracked in #5131).
+`build-web` and `build-backend` run on GitHub-hosted runners, like every other
+job. The `DEPLOY_RUNNER_LINUX` wiring is still in the workflow (unset, the
+default, means `ubuntu-latest`) but nothing legal can be pointed at it: the
+bs-ci homelab fleet was retired in September 2026, and the September 2026
+capacity review decided against a cloud runner pool. The org moved to the
+GitHub Team plan (60 concurrent jobs instead of 20) and ci.yml went from 25 jobs
+to 15 instead. The numbers, the rejected options and the queued-age watchdog
+that tells us if a deploy ever waits again are in [ci-runners.md](./ci-runners.md).
 
-`["self-hosted","bs-ci"]` is no longer a legal value for this variable; the
-labels match nothing.
-
-### Why a second variable
-
-`CI_RUNNER_LINUX` routes CI. This is deliberately separate, because the two are
-different decisions: moving CI between runner pools must not silently move
-where production images are built, and taking the deploy builds off a pool
-after a security review must not cost the CI speedup. The separation carries
-over unchanged to any future cloud pool.
-
-### The persistent-BuildKit design (preserved for the cloud pool)
-
-`scripts/ci/ensure-buildkitd.sh` + `scripts/ci/buildkitd.toml` implement a
-BuildKit daemon that outlives an ephemeral job, so `--mount=type=cache`
-survives between deploys — the pnpm store, and Turbopack's build database for
-`next build`. It attaches with buildx's `remote` driver, **not**
-`docker-container`: `docker/setup-buildx-action`'s post step runs
-`docker buildx rm`, which under the docker-container driver would delete the
-shared daemon and its cache. The scripts are kept for the cloud-pool
-migration; `scripts/__tests__/ci-self-hosted-secret-boundary.test.ts` still
-holds the invariant that no routed job may carry a secret other than
+`scripts/__tests__/ci-self-hosted-secret-boundary.test.ts` still holds the
+invariant behind that wiring: no routed job may carry a secret other than
 `GITHUB_TOKEN` (with the named `build-web`/`build-backend` allowlist), and
 `DATABASE_URL` (`migrate`) and `RAILWAY_TOKEN` (every deploy job) stay
-GitHub-hosted, asserted by test.
+GitHub-hosted. `scripts/ci/ensure-buildkitd.sh` + `buildkitd.toml` (a BuildKit
+daemon that outlives an ephemeral job, attached with buildx's `remote` driver)
+are dead code kept only until the variable is removed.
 
-### If a future pool wedges a deploy
+### If a runner destination ever wedges a deploy
 
 `runs-on` resolves at dispatch, so a queued job whose labels never come online
 holds the `production-deploy` concurrency group (`cancel-in-progress: false`)
 and every later push queues behind it silently — `notify-failure` never fires
 because nothing failed. `production-deploy-watchdog.yml` cancels a run parked
-that way, but only after 45 minutes and only once per head SHA. Any future
-self-hosted destination needs its own health failsafe built on **queued-age**
-(jobs queued longer than N minutes), not on registered-runner counts — an
-on-demand pool legitimately has zero registered runners while idle.
+that way, but only after 45 minutes and only once per head SHA.
+`ci-lane-watchdog.yml` is the earlier signal: every 15 minutes it posts to
+Discord when a deploy or OTA job has been queued longer than 5 minutes. Both
+key on **queued age**, never on registered-runner counts — an on-demand pool
+legitimately has zero registered runners while idle.
 
 ## Migrations stay backward-compatible
 

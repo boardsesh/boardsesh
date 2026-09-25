@@ -1,0 +1,165 @@
+name: CI Lane Watchdog
+
+# Pings Discord when a deploy or OTA job has sat in GitHub's queue for longer
+# than the threshold (5 min by default). On the Free plan's 20 concurrent job
+# slots a PR burst could hold `deploy-web-railway` in the queue for 12 minutes
+# and the OTA preview `gate` for 8.7; this tells us when that happens again.
+# It keys on each job's queued age, never on a registered-runner count: a
+# runner count says nothing about whether our job is actually waiting (see
+# docs/production-deploy.md, "If a runner destination ever wedges a deploy").
+# Alert only. It reads the Actions API and never cancels, re-runs or edits
+# anything.
+
+on:
+  schedule:
+    # Every 15 minutes, deliberately off :00/:15/:30/:45. GitHub's scheduler
+    # queues cron runs behind the quarter-hour rush (see synthetic-checks.yml).
+    - cron: '4,19,34,49 * * * *'
+  workflow_dispatch:
+    inputs:
+      threshold_minutes:
+        description: 'Alert on watched jobs queued longer than this many minutes.'
+        required: false
+        default: '5'
+        type: string
+
+permissions: {}
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+    concurrency:
+      group: ci-lane-watchdog
+      cancel-in-progress: true
+    steps:
+      - name: Find deploy/OTA jobs stuck in the queue
+        uses: actions/github-script@v7
+        env:
+          DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
+          THRESHOLD_MINUTES: ${{ inputs.threshold_minutes || '5' }}
+        with:
+          script: |
+            // Matched on the workflow FILE, not its display name, so a rename
+            // of `name:` does not silently drop a lane from the watch list.
+            const WATCHED = new Map([
+              ['production-deploy.yml', 'Production Deploy'],
+              ['mobile-ota-production.yml', 'Mobile OTA Production (Self-Hosted)'],
+              ['mobile-ota-preview.yml', 'Mobile OTA Preview (Per-PR Branch)'],
+              ['mobile-ota-backport.yml', 'Mobile OTA Backport (Approved Release)'],
+              ['android-apk-rn.yml', 'Android Play Internal Deploy (React Native)'],
+              ['android-apk-dev-client.yml', 'Android Dev-Client APK (React Native)'],
+            ]);
+            const RUN_CAP = 200;
+            const LIST_CAP = 10;
+
+            const parsed = Number.parseFloat(process.env.THRESHOLD_MINUTES ?? '5');
+            const thresholdMinutes = Number.isFinite(parsed) && parsed >= 0 ? parsed : 5;
+            const now = Date.now();
+            const { owner, repo } = context.repo;
+
+            // run.path looks like `.github/workflows/foo.yml` (occasionally
+            // with an `@ref` suffix); keep just the file name.
+            const workflowFile = (run) => {
+              const path = (run.path ?? '').split('@')[0];
+              return path.split('/').pop() ?? '';
+            };
+
+            // API failures here are NOT caught: a watchdog that cannot see the
+            // queue must go red rather than report "all clear".
+            // One listing per watched workflow and status, so a burst of 200+
+            // queued ci.yml / OTA-preview runs cannot fill a shared cap before
+            // an in-progress deploy run (whose later job is the queued one) is
+            // ever seen.
+            const watchedRuns = [];
+            for (const file of WATCHED.keys()) {
+              for (const status of ['queued', 'in_progress']) {
+                const iterator = github.paginate.iterator(github.rest.actions.listWorkflowRuns, {
+                  owner,
+                  repo,
+                  workflow_id: file,
+                  status,
+                  per_page: 100,
+                });
+                let seen = 0;
+                for await (const page of iterator) {
+                  for (const run of page.data) {
+                    if (seen >= RUN_CAP) break;
+                    watchedRuns.push(run);
+                    seen++;
+                  }
+                  if (seen >= RUN_CAP) break;
+                }
+              }
+            }
+            core.info(`Scanned ${watchedRuns.length} active runs across ${WATCHED.size} watched workflows.`);
+
+            const stuck = [];
+            for (const run of watchedRuns) {
+              const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
+                owner,
+                repo,
+                run_id: run.id,
+                filter: 'latest',
+                per_page: 100,
+              });
+              for (const job of jobs) {
+                if (job.status !== 'queued') continue;
+                const createdAt = Date.parse(job.created_at ?? run.created_at);
+                if (!Number.isFinite(createdAt)) continue;
+                const queuedMinutes = (now - createdAt) / 60000;
+                if (queuedMinutes < thresholdMinutes) continue;
+                stuck.push({
+                  workflow: WATCHED.get(workflowFile(run)) ?? run.name,
+                  job: job.name,
+                  queuedMinutes,
+                  url: job.html_url ?? run.html_url,
+                });
+              }
+            }
+
+            if (stuck.length === 0) {
+              core.info(`No watched job queued longer than ${thresholdMinutes} min.`);
+              await core.summary
+                .addRaw(`No deploy/OTA job queued longer than ${thresholdMinutes} min.`, true)
+                .write();
+              return;
+            }
+
+            stuck.sort((a, b) => b.queuedMinutes - a.queuedMinutes);
+            const lines = stuck
+              .slice(0, LIST_CAP)
+              .map((item) => `${item.workflow} / ${item.job} queued ${Math.round(item.queuedMinutes)} min → <${item.url}>`);
+            if (stuck.length > LIST_CAP) lines.push(`…and ${stuck.length - LIST_CAP} more`);
+            const heading = `⏳ **${stuck.length} deploy/OTA job(s) queued longer than ${thresholdMinutes} min**`;
+
+            await core.summary
+              .addHeading(`${stuck.length} deploy/OTA job(s) queued longer than ${thresholdMinutes} min`, 3)
+              .addList(lines)
+              .write();
+            core.warning(`${stuck.length} watched job(s) queued longer than ${thresholdMinutes} min.`);
+
+            const webhook = process.env.DISCORD_DEPLOY_WEBHOOK;
+            if (!webhook) {
+              core.info('DISCORD_DEPLOY_WEBHOOK not set — summary only.');
+              return;
+            }
+            // A Discord outage must never turn the watchdog red.
+            try {
+              const response = await fetch(webhook, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                // allowed_mentions.parse=[] blocks @everyone/@here/role/user pings.
+                body: JSON.stringify({
+                  content: [heading, ...lines].join('\n').slice(0, 1900),
+                  allowed_mentions: { parse: [] },
+                }),
+              });
+              if (!response.ok) {
+                core.warning(`Discord webhook returned ${response.status}: ${await response.text()}`);
+              }
+            } catch (error) {
+              core.warning(`Failed to post Discord notification: ${error instanceof Error ? error.message : String(error)}`);
+            }
