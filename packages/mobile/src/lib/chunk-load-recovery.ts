@@ -13,8 +13,12 @@
 
 export type ChunkLoadCause = 'stale-deploy' | 'transient' | 'network' | 'offline';
 
-/** What the recovery did: reloaded the page, or left a manual Reload button. */
-export type ChunkRecoveryOutcome = 'reloading' | 'offline' | 'exhausted';
+/**
+ * What the recovery did: reloaded the page, or left a manual Reload button —
+ * because the browser is offline, because it reports online but the origin did
+ * not answer, or because the automatic reloads are spent.
+ */
+export type ChunkRecoveryOutcome = 'reloading' | 'offline' | 'unreachable' | 'exhausted';
 
 /** Shared with the inline shell script in `public/index.html` (web only). */
 export const CHUNK_RELOAD_GUARD_KEY = 'boardsesh:chunk-reload-at';

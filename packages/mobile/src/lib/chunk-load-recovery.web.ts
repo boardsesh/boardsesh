@@ -37,8 +37,12 @@ import { flushSentry } from './sentry';
 
 export type ChunkLoadCause = 'stale-deploy' | 'transient' | 'network' | 'offline';
 
-/** What the recovery did: reloaded the page, or left a manual Reload button. */
-export type ChunkRecoveryOutcome = 'reloading' | 'offline' | 'exhausted';
+/**
+ * What the recovery did: reloaded the page, or left a manual Reload button —
+ * because the browser is offline, because it reports online but the origin did
+ * not answer, or because the automatic reloads are spent.
+ */
+export type ChunkRecoveryOutcome = 'reloading' | 'offline' | 'unreachable' | 'exhausted';
 
 /** sessionStorage key holding the time of the last automatic reload. Read by `public/index.html` too. */
 export const CHUNK_RELOAD_GUARD_KEY = 'boardsesh:chunk-reload-at';
@@ -195,11 +199,13 @@ export async function recoverFromChunkLoadError(
   const cause: ChunkLoadCause = !online ? 'offline' : (probe?.cause ?? 'transient');
 
   const outcome: ChunkRecoveryOutcome =
-    cause === 'offline' || cause === 'network'
+    cause === 'offline'
       ? 'offline'
-      : claimAutoReload(deps.storage(), deps.now())
-        ? 'reloading'
-        : 'exhausted';
+      : cause === 'network'
+        ? 'unreachable'
+        : claimAutoReload(deps.storage(), deps.now())
+          ? 'reloading'
+          : 'exhausted';
 
   deps.report(error, {
     tags: { chunk_load_cause: cause, chunk_load_recovery: outcome },

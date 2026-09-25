@@ -41,7 +41,7 @@ const chunkError = Object.assign(new Error('Loading module https://app.boardsesh
   name: 'AsyncRequireError',
 });
 
-async function renderSettled(outcome: 'reloading' | 'offline' | 'exhausted') {
+async function renderSettled(outcome: 'reloading' | 'offline' | 'unreachable' | 'exhausted') {
   recovery.recoverFromChunkLoadError.mockResolvedValue(outcome);
   const view = render(createElement(ChunkLoadErrorScreen, { error: chunkError }));
   await act(async () => {});
@@ -72,6 +72,15 @@ describe('ChunkLoadErrorScreen', () => {
     expect(screen.getByText("You're offline")).toBeTruthy();
     expect(screen.queryByText('Try again')).toBeNull();
     expect(screen.queryByText('Go home')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Reload' }));
+    expect(recovery.reloadPage).toHaveBeenCalledTimes(1);
+  });
+
+  it("says it couldn't reach Boardsesh, not that you're offline, when the origin did not answer", async () => {
+    await renderSettled('unreachable');
+    expect(screen.getByText("Couldn't reach Boardsesh")).toBeTruthy();
+    expect(screen.getByText('Check your connection, then reload.')).toBeTruthy();
+    expect(screen.queryByText("You're offline")).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Reload' }));
     expect(recovery.reloadPage).toHaveBeenCalledTimes(1);
   });

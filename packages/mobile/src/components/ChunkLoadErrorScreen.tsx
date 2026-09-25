@@ -33,6 +33,12 @@ const COPY: Record<ChunkRecoveryOutcome | 'recovering', { title: string; message
     title: "You're offline",
     message: "This screen hasn't downloaded yet. Reconnect, then reload.",
   },
+  // The browser says it is online, but the probe got no answer from the origin
+  // (a captive portal, a flaky in-app browser): "offline" would be wrong.
+  unreachable: {
+    title: "Couldn't reach Boardsesh",
+    message: 'Check your connection, then reload.',
+  },
   exhausted: {
     title: "This screen didn't load",
     message: 'Reload the page to try again.',
@@ -71,7 +77,17 @@ export function ChunkLoadErrorScreen({ error }: { error: Error }) {
   return (
     <View style={styles.container}>
       <View style={styles.iconContainer}>
-        <Icon name={stateKey === 'offline' ? 'offline.unavailable' : 'refresh'} size={48} color={brandColors.primary} />
+        <Icon
+          name={
+            stateKey === 'offline'
+              ? 'offline.unavailable'
+              : stateKey === 'unreachable'
+                ? 'server.unreachable'
+                : 'refresh'
+          }
+          size={48}
+          color={brandColors.primary}
+        />
       </View>
       <Text variant="title2" style={styles.title}>
         {copy.title}

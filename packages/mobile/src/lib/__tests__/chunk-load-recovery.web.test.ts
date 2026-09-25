@@ -252,10 +252,10 @@ describe('recoverFromChunkLoadError', () => {
     );
   });
 
-  it('does not reload when the origin does not answer the probe', async () => {
+  it('does not reload when the origin does not answer the probe, and does not call it offline', async () => {
     const { deps, storage } = makeDeps({ fetchImpl: vi.fn().mockRejectedValue(new TypeError('Failed to fetch')) });
 
-    await expect(recoverFromChunkLoadError(asyncRequireError(), deps)).resolves.toBe('offline');
+    await expect(recoverFromChunkLoadError(asyncRequireError(), deps)).resolves.toBe('unreachable');
 
     expect(deps.reload).not.toHaveBeenCalled();
     // The window's one reload is still unspent for when the network comes back.
