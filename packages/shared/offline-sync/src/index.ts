@@ -308,7 +308,14 @@ export type {
 // --- On-device schema ------------------------------------------------------------
 export { vacuumDatabase, measureReclaimableBytes } from './db/vacuum';
 export { SCHEMA_STATEMENTS, DEVICE_ONLY_TABLES, DEVICE_ONLY_STATEMENTS } from './db/schema';
-export { runMigrations, MIGRATIONS, LATEST_SCHEMA_VERSION } from './db/migrations';
+export {
+  runMigrations,
+  MIGRATIONS,
+  LATEST_SCHEMA_VERSION,
+  ARTIFACT_SCHEMA_VERSION,
+  ARTIFACT_TABLES,
+  artifactSchemaVersion,
+} from './db/migrations';
 export { SnapshotSchemaCompatibilityError, type SchemaDriftReport } from './sync/schema-compatibility';
 export type { Migration } from './db/migrations';
 export {

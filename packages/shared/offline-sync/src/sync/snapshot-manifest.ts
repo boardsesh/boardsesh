@@ -98,8 +98,9 @@ export type SnapshotManifestEntry = {
   // colons/dots replaced by dashes).
   builtAt: string;
   // The offline-sync client schema version the artifact's SQLite DDL was built
-  // at (LATEST_SCHEMA_VERSION). A client older than this must migrate the file
-  // up (or refuse it) before serving reads from it.
+  // at (the exporter's LATEST_SCHEMA_VERSION). A client accepts it when it is at
+  // least ARTIFACT_SCHEMA_VERSION, the last migration that changed an artifact
+  // table; newer is always fine (the import intersects columns).
   schemaVersion: number;
   tables: Record<SnapshotTableName, SnapshotTableStats>;
   // The layout's separate grades artifact, when it has grade rows. ADDITIVE:
