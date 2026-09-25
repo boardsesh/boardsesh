@@ -686,7 +686,7 @@
       },
       "duplicate": {
         "title": "La même board deux fois dans la liste",
-        "p1": "Deux lignes avec des numéros de série différents, ce sont deux contrôleurs. Une ligne qui affiche seulement Kilter Board, sans numéro de série, est un boîtier LED récent fait par le fabricant. Deux de ces boîtiers dans la même salle n'apparaissent pour l'instant que sur une seule ligne (on corrige ça). Si le mauvais mur s'allume, garde l'ampoule appuyée, touche Déconnecter la board et réessaie.",
+        "p1": "Deux lignes avec des numéros de série différents, ce sont deux contrôleurs. Une ligne qui affiche seulement Kilter Board, sans numéro de série, est un boîtier LED récent fait par le fabricant. Deux de ces boîtiers dans la même salle apparaissent sur deux lignes. Celle qui a le plus de barres de signal est en général le mur devant toi. Si le mauvais mur s'allume, garde l'ampoule appuyée, touche Déconnecter la board et réessaie.",
         "p2": "Il n'y a pas de liste d'appareils à oublier. L'app ne retient que ta dernière board.",
         "p3": "Une board affichée deux fois sous Tes boards, c'est autre chose. Touche Modifier à côté de Tes boards, puis Supprimer ou Se désabonner."
       },

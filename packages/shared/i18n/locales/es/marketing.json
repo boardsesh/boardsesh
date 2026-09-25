@@ -686,7 +686,7 @@
       },
       "duplicate": {
         "title": "El mismo plafón dos veces en la lista",
-        "p1": "Dos filas con números de serie distintos son dos controladores. Una fila que solo pone Kilter Board, sin serie, es una caja LED nueva de fábrica. Dos de esas en un rocódromo salen ahora mismo como una sola fila (lo estamos arreglando). Si se enciende el muro equivocado, mantén pulsada la bombilla, toca Desconectar plafón y prueba otra vez.",
+        "p1": "Dos filas con números de serie distintos son dos controladores. Una fila que solo pone Kilter Board, sin serie, es una caja LED nueva de fábrica. Dos de esas en un rocódromo salen como dos filas. La que tiene más barras de señal suele ser el muro que tienes delante. Si se enciende el muro equivocado, mantén pulsada la bombilla, toca Desconectar plafón y prueba otra vez.",
         "p2": "No hay lista de dispositivos olvidados. La app solo recuerda tu último plafón.",
         "p3": "Un plafón que sale dos veces en Tus plafones es otra cosa. Toca Editar junto a Tus plafones y luego Eliminar o Dejar de seguir."
       },

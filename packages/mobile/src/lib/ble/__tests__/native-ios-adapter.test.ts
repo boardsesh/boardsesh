@@ -350,6 +350,41 @@ describe('NativeIosBleAdapter connect flow', () => {
     ]);
   });
 
+  it('lists two bare-name boxes as two rows and connects to the one picked (#5601)', async () => {
+    let manualPick: (deviceId: string) => void = () => {};
+    const seenDeviceIdsByUpdate: string[][] = [];
+    const adapter = new NativeIosBleAdapter(
+      (subscribe) =>
+        new Promise<string>((resolve) => {
+          manualPick = resolve;
+          subscribe((devices) => {
+            seenDeviceIdsByUpdate.push(devices.map((device) => device.deviceId));
+          });
+        }),
+    );
+    const connectPromise = adapter.requestAndConnect();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    scanListeners[0]?.({
+      device: { deviceId: 'wall-a', name: 'Kilter Board' },
+      localName: 'Kilter Board',
+      rssi: -50,
+    });
+    scanListeners[0]?.({
+      device: { deviceId: 'wall-b', name: 'Kilter Board' },
+      localName: 'Kilter Board',
+      rssi: -65,
+    });
+
+    manualPick('wall-a');
+    await vi.runAllTimersAsync();
+    await connectPromise;
+
+    expect(seenDeviceIdsByUpdate.at(-1)).toEqual(['wall-a', 'wall-b']);
+    expect(nativeMock.connect).toHaveBeenCalledWith('wall-a');
+  });
+
   it('does not mask the original failure when stopScan rejects in the cleanup path', async () => {
     nativeMock.stopScan.mockRejectedValueOnce(new Error('bluetooth turned off'));
     const adapter = new NativeIosBleAdapter(() => Promise.reject(new Error('Device selection cancelled')));

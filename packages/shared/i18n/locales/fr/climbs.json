@@ -613,7 +613,7 @@
         "footlessKickboard": "Sans pieds + KB",
         "noKickboard": "Sans KB"
       },
-      "setAngleMarker": "{{angle}}°",
+      "setAngleMarker": "ouvert à {{angle}}°",
       "setAngleMarkerAria": "La cotation et les croix sont à {{angle}} degrés"
     },
     "climbRules": {

@@ -66,6 +66,14 @@ type PlayDrawerHeaderProps = {
    *  which puts a `person` glyph on it. */
   markedAsMine?: boolean;
   onPressSetter?: () => void;
+  /** The angle the grade and send count above (the `difficulty`/`qualityAverage`/
+   *  `ascensionistCount` props) were read from. Present only when the climb was
+   *  pulled in from another angle (issue #5405/#5532's "Other angles" toggle);
+   *  `undefined`/`null` means the numbers match `angle` and no marker is shown. */
+  statsAngle?: number | null;
+  /** The angle currently being viewed. Compared against `statsAngle` to decide
+   *  whether to show the "set at N°" marker under the grade. */
+  angle?: number;
 };
 
 export const PlayDrawerHeader = memo(function PlayDrawerHeader({
@@ -86,6 +94,8 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
   secondaryGrade,
   markedAsMine = false,
   onPressSetter,
+  statsAngle,
+  angle,
 }: PlayDrawerHeaderProps) {
   const { t } = useTranslation('climbs');
   // The header's height is pinned (see `minRowHeight` below) and the headline's
@@ -98,6 +108,12 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
     () => gradeColor ?? getGradeColor(rawDifficulty ?? difficulty) ?? DEFAULT_GRADE_COLOR,
     [gradeColor, rawDifficulty, difficulty],
   );
+  // Same marker, same key and styling as the search-list row (ClimbListItemContent):
+  // this climb's grade/sends came from a different angle than the one on the wall.
+  // It shares the row's narrow lag too: `statsAngle` is fixed at fetch time, so after
+  // the first ever tick at the browsed angle the marker keeps naming the old angle
+  // until the climb is refetched. Self-correcting; see the row's comment.
+  const showSetAngleMarker = statsAngle != null && statsAngle !== angle;
 
   const subtitleParts: string[] = [];
   if (ascensionistCount > 0) subtitleParts.push(formatSends(ascensionistCount, t));
@@ -213,6 +229,16 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
               </Text>
             </View>
           ) : null}
+          {showSetAngleMarker ? (
+            <Text
+              variant="caption2"
+              numberOfLines={1}
+              accessibilityLabel={t('mobile.climbRow.setAngleMarkerAria', { angle: statsAngle })}
+              style={styles.setAngleMarkerText}
+            >
+              {t('mobile.climbRow.setAngleMarker', { angle: statsAngle })}
+            </Text>
+          ) : null}
         </View>
       }
     />
@@ -280,16 +306,27 @@ export const LivePlayDrawerHeader = memo(function LivePlayDrawerHeader({
       isHidden={climb.is_hidden === true}
       leading={leading}
       onLongPressName={onLongPressName}
+      statsAngle={climb.statsAngle}
+      angle={angle}
     />
   );
 });
 
 const styles = StyleSheet.create({
+  // Deliberately uncoloured, same as the search-list row's marker — colour in
+  // this slot carries the grade and nothing else.
+  setAngleMarkerText: {
+    color: iosSystemColors.systemGray,
+    textAlign: 'right',
+  },
   gradeText: {
     fontVariant: ['tabular-nums'],
     fontWeight: '700',
     textAlign: 'right',
   },
+  // Stacks the grade, the crowd's line when it disagrees with yours, and the
+  // optional "set at N°" marker, so each sits right under the grade it
+  // qualifies, all right-aligned in the trailing slot.
   gradeColumn: {
     alignItems: 'flex-end',
     gap: 1,

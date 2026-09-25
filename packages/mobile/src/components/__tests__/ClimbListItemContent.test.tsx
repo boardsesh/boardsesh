@@ -186,6 +186,49 @@ describe('ClimbListItemContent grade', () => {
   });
 });
 
+// #5532: a climb pulled in from another angle shows the grade/sends it carries,
+// but the row said nothing about where they came from beyond an a11y-only label.
+describe('ClimbListItemContent set-angle marker', () => {
+  beforeEach(() => {
+    resolveGrade.mockReturnValue({ label: 'V4', color: '#111111', isBoardsesh: false });
+  });
+
+  it('marks a climb whose stats came from a different angle than the one browsed', () => {
+    const { container } = render(
+      <ClimbListItemContent
+        climb={{ ...baseClimb, statsAngle: 45 }}
+        boardName="kilter"
+        layoutId={1}
+        sizeId={1}
+        setIds="1"
+        angle={40}
+      />,
+    );
+    expect(container.textContent).toContain('mobile.climbRow.setAngleMarker');
+  });
+
+  it('leaves a climb unmarked when its stats angle matches the browsed angle', () => {
+    const { container } = render(
+      <ClimbListItemContent
+        climb={{ ...baseClimb, statsAngle: 40 }}
+        boardName="kilter"
+        layoutId={1}
+        sizeId={1}
+        setIds="1"
+        angle={40}
+      />,
+    );
+    expect(container.textContent).not.toContain('mobile.climbRow.setAngleMarker');
+  });
+
+  it('leaves a queue row without the field unmarked rather than guessing', () => {
+    const { container } = render(
+      <ClimbListItemContent climb={baseClimb} boardName="kilter" layoutId={1} sizeId={1} setIds="1" angle={40} />,
+    );
+    expect(container.textContent).not.toContain('mobile.climbRow.setAngleMarker');
+  });
+});
+
 describe('ClimbListItemContent favourite heart', () => {
   beforeEach(() => {
     favoritesStore.reset();

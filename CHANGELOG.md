@@ -20,6 +20,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- A climb pulled in from another angle now tells you which angle its grade and sends come from — in the list and in the climb header, not just the screen-reader label ([#5792](https://github.com/boardsesh/boardsesh/pull/5792))
 - The Attempt and Flash buttons stay lined up while you type a note ([#5774](https://github.com/boardsesh/boardsesh/pull/5774))
 - Tap connect and the board sheet opens right away while it looks for your saved board ([#5783](https://github.com/boardsesh/boardsesh/pull/5783))
   Board off or out of range? Tap "Search for any board" to skip the wait
