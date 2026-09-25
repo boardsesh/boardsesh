@@ -16,6 +16,8 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Find any setter by name in the setter filter, even a two-letter one ([#5781](https://github.com/boardsesh/boardsesh/pull/5781))
+- Your crew sees live session changes across devices again. ([#5784](https://github.com/boardsesh/boardsesh/pull/5784))
 - Search finds a climb by its full name, apostrophes and dashes included ([#5778](https://github.com/boardsesh/boardsesh/pull/5778))
 - If Boardsesh updates while you have it open in your browser, the page now reloads itself instead of getting stuck on an error. ([#5782](https://github.com/boardsesh/boardsesh/pull/5782))
 - Settings opens on top of whatever you're doing and closes back to it, instead of taking over the You tab ([#5760](https://github.com/boardsesh/boardsesh/pull/5760))
