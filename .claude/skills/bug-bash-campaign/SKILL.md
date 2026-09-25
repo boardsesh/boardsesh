@@ -30,8 +30,9 @@ number in it.
   issue number. Grepping titles or branch names alone has missed real fixes.
 - `gh issue view <n>`: a `closed` event about 1 s after a PR merge is an auto-close, which means
   the fix already landed.
-- `ls -d /tmp/boardsesh-* ~/projects/boardsesh/wt-* 2>/dev/null`: another loop checked out on this issue has
-  effectively taken it.
+- `find /tmp ~/projects/boardsesh -maxdepth 1 -name 'boardsesh-*' -o -name 'wt-*'`: another loop
+  checked out on this issue has effectively taken it. (`find`, not `ls` with globs: zsh aborts on
+  a glob that matches nothing.)
 
 If a PR already exists but is unmerged, the job is to get **that** PR ready, not start over.
 
@@ -159,7 +160,8 @@ A follow-up you find at P2 or worse gets a fix PR in the same turn, not just an 
 ## 9. Hazards
 
 The Sentry skill's "Hazards that cost real time" section covers the backend test-DB lock,
-load-induced shifting failures, disk and inode exhaustion, squash-merge retargets and parallel PRs in one file. The bug-bash additions:
+load-induced shifting failures, disk and inode exhaustion, squash-merge retargets and parallel
+PRs in one file. The bug-bash additions:
 
 - **One heavy job at a time on the box.** `vp check` leaves a ~2 GB `tsgolint` behind
   (`pkill -f tsgolint || true`). Don't pair a background job with a separate waiter.
