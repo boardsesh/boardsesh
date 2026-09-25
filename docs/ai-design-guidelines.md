@@ -175,6 +175,23 @@ When the Material variant is active, `theme.m3` also exposes the full MD3 colour
 (`primaryContainer`, `onSurfaceVariant`, `outlineVariant`, the `elevation.level0–5` ladder) for app
 components that need to match Paper components without re-deriving roles. Liquid Glass never reads it.
 
+### Data ramp (`theme.heatRamp`)
+
+The hold heatmap's five stops, few → many. **Data ramp: single violet hue, luminance-ordered, never
+a role hue.** Start / Hand / Finish / Foot already own green, cyan, magenta and amber on the wall, so a
+green-to-red ramp reads as hold roles. Luminance carries the order, which keeps it readable for every
+colour-vision type; the hottest stop is always the one with the most contrast against the sheet.
+
+| Scheme | 1 (few)   | 2         | 3         | 4         | 5 (many)  |
+| ------ | --------- | --------- | --------- | --------- | --------- |
+| Dark   | `#4C1D95` | `#6D28D9` | `#8B5CF6` | `#C4B5FD` | `#F5F3FF` |
+| Light  | `#DDD6FE` | `#A78BFA` | `#7C3AED` | `#5B21B6` | `#2E1065` |
+
+`heat-ramp.test.ts` holds it strictly monotonic in luminance with at least 1.3:1 between neighbours.
+Resolved in `variant-tokens.ts` (`resolveHeatRamp`); the renderer's hold-state map and the legend
+read the same array. Grade mode is the exception: it colours by the app's grade colours
+(`V_GRADE_COLORS`), because a grade already has a colour everywhere else in the app.
+
 ### Static iOS colour constants
 
 `packages/mobile/src/theme/ios-colors.ts` holds fixed hexes (`systemRed` `#FF3B30`, `systemGreen`
