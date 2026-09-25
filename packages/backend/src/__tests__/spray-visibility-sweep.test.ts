@@ -573,6 +573,10 @@ const NOT_APPLICABLE: Record<string, string> = {
   'Query.checkMoonBoardClimbDuplicates':
     "hardcoded to board_type = 'moonboard', so a spray climb is not a row it can return",
 
+  // --- similar climbs: never materialised for a wall --------------------------
+  'Query.similarClimbs':
+    'a non-admin (the sweep owner included) reads board_climb_neighbors, which the nightly job never computes for spray layouts, so a wall answers []; only an admin reaches the live query, and it keeps the sprayLayoutIsReadable gate (docs/similar-climbs.md)',
+
   // --- stats and grades: numbers keyed on a uuid the caller already holds -----
   'Query.angles': 'the static angle catalogue for a board type; the layout id is not read',
   'Query.climbStatsHistory': 'ascent/quality/grade numbers only, and the seed logs no history rows',
@@ -918,9 +922,9 @@ async function seedWorld(): Promise<SeededWorld> {
     ctxFor(OWNER),
   )) as { uuid: string };
 
-  // A SECOND climb on the same wall, sharing two holds, so `similarClimbs` — the
-  // reader that takes a bare hold set and so needed the gate most — has
-  // something to find.
+  // A SECOND climb on the same wall, sharing two holds, so a hold-overlap read
+  // has something to find. (`similarClimbs` itself answers a non-admin from
+  // the materialised index, which skips spray — see NOT_APPLICABLE.)
   await climbMutations.saveClimb(
     {},
     {
