@@ -60,6 +60,25 @@ cannot pass today. Until it is resolved (tracked in
 `marcodejongh/blackheathdc-ansible#434`), recovery from the homelab copy is
 possible, but not through the reviewed playbooks.
 
+## Primary settings outside the image
+
+The image's `postgresql.conf` holds the defaults. These settings are set with
+`ALTER SYSTEM`, so they live in `postgresql.auto.conf` on the Railway volume.
+A `pg_dump`/`pg_restore` move does not carry them, so re-apply them on any new
+primary:
+
+| Setting | Value | Why | Set (UTC) |
+|---|---|---|---|
+| `max_slot_wal_keep_size` | `16GB` | Caps WAL held for the homelab slot. The DR role asserts this exact value | 2026-09-24 |
+| `log_connections` | `authorization` | One line per session with user, database and app, so unused credentials stay provable while `boardsesh_standby` is on a public port. PG18 made this a list setting. `all` logged 4 lines per session (98% of all log lines), and its client host is always Railway's proxy (`100.64.0.16`). Failed logins log as `FATAL` either way | 2026-09-25 |
+| `wal_compression` | `lz4` | Full-page images were 12.3M of the WAL records in the 5 days after cutover. Compressing them cuts WAL egress and backup size | 2026-09-25 |
+| `checkpoint_timeout` | `15min` | Was 5 min. Fewer checkpoints means fewer full-page images | 2026-09-25 |
+| `max_wal_size` | `4GB` | Was 1 GB, which forced 101 extra checkpoints in 5 days | 2026-09-25 |
+| `shared_preload_libraries` | `pg_stat_statements` | Per-query statistics. Needs a restart, then `CREATE EXTENSION pg_stat_statements` as superuser in `railway`. Not a migration, because the extension needs superuser | 2026-09-25 |
+
+Check any change against the pinned image digest in a local container before
+applying it. A preload library that fails to load stops Postgres from starting.
+
 ## Editing the diagrams
 
 The `.excalidraw` files in `docs/diagrams/` are the sources. Open one at
