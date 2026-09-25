@@ -7,14 +7,26 @@ type Entry = { climb_uuid: string; angle: number; difficulty: number | null; cli
 const ctrl = vi.hoisted(() => ({
   board: null as { logbookByClimbAngle: Map<string, Entry[]>; fetchedLogbookClimbUuids: Set<string> } | null,
   personalGrades: true,
+  boardName: 'kilter' as string | null,
+  // What the device's own ticks table answers; `undefined` = not read.
+  localGrade: undefined as { difficulty: number; climbedAt: string } | null | undefined,
+  localGradeEnabled: [] as boolean[],
 }));
 
 vi.mock('../use-personal-grades', () => ({
   usePersonalGradesActive: () => ctrl.personalGrades,
 }));
 
+vi.mock('../use-local-my-grade', () => ({
+  useLocalMyGrade: (_climbUuid: string, _boardName: string | null, _angle: number, enabled: boolean) => {
+    ctrl.localGradeEnabled.push(enabled);
+    return enabled ? ctrl.localGrade : undefined;
+  },
+}));
+
 vi.mock('@boardsesh/board-react', () => ({
   useOptionalBoardLogbook: () => ctrl.board,
+  useOptionalBoardActions: () => (ctrl.boardName ? { boardName: ctrl.boardName } : null),
   logbookClimbAngleKey: (climbUuid: string, angle: number) => `${climbUuid}:${angle}`,
 }));
 
@@ -47,6 +59,9 @@ describe('useMyGrade', () => {
   beforeEach(() => {
     ctrl.board = null;
     ctrl.personalGrades = true;
+    ctrl.boardName = 'kilter';
+    ctrl.localGrade = undefined;
+    ctrl.localGradeEnabled = [];
   });
 
   it('reports none when the setting is off, whatever the logbook holds', () => {
@@ -117,5 +132,84 @@ describe('useMyGrade', () => {
     setLogbook([entry({ difficulty: 0 })]);
     const { result: zero } = renderHook(() => useMyGrade('a', 40));
     expect(zero.current).toMatchObject({ status: 'set', difficultyId: BOULDER_SCALE_MIN_ID });
+  });
+
+  // Offline the logbook never resolves (it is a network fetch and is not
+  // persisted), while the on-device search keeps filtering and sorting by the
+  // climber's grade. These fallbacks keep the label on the number that placed
+  // the row.
+  describe('offline fallbacks', () => {
+    it('uses the search row grade while the logbook is unresolved', () => {
+      setLogbook([], []);
+      const { result } = renderHook(() => useMyGrade('a', 40, { rowDifficulty: 27 }));
+      expect(result.current).toMatchObject({ status: 'set', difficultyId: 27, climbedAt: null });
+    });
+
+    it('treats a null row grade as a real "never graded"', () => {
+      setLogbook([], []);
+      const { result } = renderHook(() => useMyGrade('a', 40, { rowDifficulty: null }));
+      expect(result.current.status).toBe('none');
+    });
+
+    it('clamps the row grade like every other source', () => {
+      setLogbook([], []);
+      const { result } = renderHook(() => useMyGrade('a', 40, { rowDifficulty: 99 }));
+      expect(result.current).toMatchObject({ status: 'set', difficultyId: BOULDER_SCALE_MAX_ID });
+    });
+
+    it('lets a resolved logbook win over the row grade', () => {
+      // The logbook carries an optimistic tick the moment it is saved; the row
+      // is only as fresh as the last search.
+      setLogbook([entry({ difficulty: 14 })]);
+      const { result } = renderHook(() => useMyGrade('a', 40, { rowDifficulty: 27 }));
+      expect(result.current).toMatchObject({ status: 'set', difficultyId: 14 });
+    });
+
+    it('reads the device ticks table for the drawer when nothing else resolved', () => {
+      setLogbook([], []);
+      ctrl.localGrade = { difficulty: 25, climbedAt: '2026-08-01T00:00:00.000Z' };
+      const { result } = renderHook(() => useMyGrade('a', 40, { localFallback: true }));
+      expect(result.current).toEqual({ status: 'set', difficultyId: 25, climbedAt: '2026-08-01T00:00:00.000Z' });
+    });
+
+    it('reports none when the device ticks table has no graded tick', () => {
+      setLogbook([], []);
+      ctrl.localGrade = null;
+      const { result } = renderHook(() => useMyGrade('a', 40, { localFallback: true }));
+      expect(result.current.status).toBe('none');
+    });
+
+    it('stays unknown when the device ticks table was not read', () => {
+      setLogbook([], []);
+      ctrl.localGrade = undefined;
+      const { result } = renderHook(() => useMyGrade('a', 40, { localFallback: true }));
+      expect(result.current.status).toBe('unknown');
+    });
+
+    it('never reads the device ticks table from a list row', () => {
+      // One SQLite lookup per call — per-row it would be one per visible row.
+      setLogbook([], []);
+      renderHook(() => useMyGrade('a', 40));
+      renderHook(() => useMyGrade('a', 40, { rowDifficulty: 27 }));
+      expect(ctrl.localGradeEnabled.every((enabled) => !enabled)).toBe(true);
+    });
+
+    it('stops reading the device ticks table once the logbook resolves', () => {
+      setLogbook([entry({ difficulty: 14 })]);
+      ctrl.localGrade = { difficulty: 25, climbedAt: '2026-08-01T00:00:00.000Z' };
+      const { result } = renderHook(() => useMyGrade('a', 40, { localFallback: true }));
+      expect(result.current).toMatchObject({ status: 'set', difficultyId: 14 });
+      expect(ctrl.localGradeEnabled.every((enabled) => !enabled)).toBe(true);
+    });
+
+    it('ignores every source when the setting is off', () => {
+      setLogbook([], []);
+      ctrl.personalGrades = false;
+      ctrl.localGrade = { difficulty: 25, climbedAt: '2026-08-01T00:00:00.000Z' };
+      const { result: row } = renderHook(() => useMyGrade('a', 40, { rowDifficulty: 27 }));
+      const { result: drawer } = renderHook(() => useMyGrade('a', 40, { localFallback: true }));
+      expect(row.current.status).toBe('none');
+      expect(drawer.current.status).toBe('none');
+    });
   });
 });

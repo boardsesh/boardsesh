@@ -58,6 +58,9 @@ export type ClimbListItemClimb = {
    *  that came through a cross-angle search (issue #5405); the queue's own `Climb`
    *  does not carry it, so a queued row simply shows no marker. */
   statsAngle?: number | null;
+  /** The climber's own grade, projected by a search that filtered or sorted by
+   *  it (#4828). Absent on every other row, including queued ones. */
+  myDifficulty?: number | null;
   quality_average: string;
   setter_username?: string | null;
   // Intrinsic climb attributes shown as grey glyphs after the name.
@@ -350,7 +353,10 @@ const LiveClimbGrade = React.memo(function LiveClimbGrade({
   // community-grade-only (its `boardseshDifficulty`/`boardseshConfidence`
   // fields must only ever accompany a community grade), and its own docblock
   // says a caller holding a user grade has to check it first.
-  const myGrade = useMyGrade(climb.uuid, angle);
+  // The row's own `myDifficulty` is the number the search filtered and sorted it
+  // by. It stands in until the logbook resolves this climb — which offline it
+  // never does — so the label always agrees with the band the row sits in.
+  const myGrade = useMyGrade(climb.uuid, angle, { rowDifficulty: climb.myDifficulty });
   const mine = myGrade.status === 'set' ? renderDifficulty(myGrade.difficultyId, gradeFormat) : null;
 
   // Explicit props win when a caller has authoritative data of its own (a

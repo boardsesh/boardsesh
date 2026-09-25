@@ -1,7 +1,8 @@
 import { useMemo } from 'react';
-import { logbookClimbAngleKey, useOptionalBoardLogbook } from '@boardsesh/board-react';
+import { logbookClimbAngleKey, useOptionalBoardActions, useOptionalBoardLogbook } from '@boardsesh/board-react';
 import { clampToBoulderScale, pickLatestGradedTick } from '@boardsesh/logbook';
 import { usePersonalGradesActive } from './use-personal-grades';
+import { useLocalMyGrade } from './use-local-my-grade';
 
 /**
  * What the app knows about the climber's own grade for one climb at one angle.
@@ -16,10 +17,30 @@ import { usePersonalGradesActive } from './use-personal-grades';
 export type MyGrade =
   | { status: 'unknown' }
   | { status: 'none' }
-  | { status: 'set'; difficultyId: number; climbedAt: string };
+  // `climbedAt` is null when the grade came from a search row, which carries the
+  // number but not the tick it came from.
+  | { status: 'set'; difficultyId: number; climbedAt: string | null };
 
 const UNKNOWN: MyGrade = { status: 'unknown' };
 const NONE: MyGrade = { status: 'none' };
+
+export type UseMyGradeOptions = {
+  /**
+   * The `myDifficulty` the search row arrived with (#4828), or `undefined` when
+   * the search did not project one. The server and the on-device search both
+   * project it whenever they filtered or sorted by the climber's grade, so it is
+   * exactly the number that placed the row. Used only while the logbook has not
+   * resolved this climb — which offline is always, since the logbook is a
+   * network fetch — so a row the list put in the V10 band never reads V0.
+   */
+  rowDifficulty?: number | null;
+  /**
+   * Read the grade from the device's own ticks table while the logbook is
+   * unresolved and there is no row value. One SQLite lookup per call, so this
+   * is for single-climb surfaces (the play drawer), never per list row.
+   */
+  localFallback?: boolean;
+};
 
 /**
  * The grade this climber last gave a climb at this angle, or nothing when they
@@ -46,8 +67,16 @@ const NONE: MyGrade = { status: 'none' };
  * the scale — and an unclamped display half would then show one grade while the
  * list filtered and sorted the row by another. That mismatch is the whole defect
  * #4828 exists to close, so the two halves read the same number or neither does.
+ *
+ * Sources, in order: the logbook once it has resolved this climb; else the
+ * `myDifficulty` the search row carries; else (drawer only) the device's own
+ * ticks table. The logbook is a network fetch that is never persisted, so
+ * offline it never resolves — without the two fallbacks every surface showed
+ * the crowd's grade while the on-device search filtered and sorted by the
+ * climber's own.
  */
-export function useMyGrade(climbUuid: string, angle: number): MyGrade {
+export function useMyGrade(climbUuid: string, angle: number, options: UseMyGradeOptions = {}): MyGrade {
+  const { rowDifficulty, localFallback = false } = options;
   const logbook = useOptionalBoardLogbook();
   // Depend on the BOOLEAN, not the context object. `logbook` is the volatile
   // half of the board context — a new reference on every tick merge — and it is
@@ -64,16 +93,39 @@ export function useMyGrade(climbUuid: string, angle: number): MyGrade {
   // precisely the defect #4828 is about. Reading one seam makes that impossible
   // to get wrong; reading three call sites would not.
   const personalGradesEnabled = usePersonalGradesActive();
+  const boardName = useOptionalBoardActions()?.boardName ?? null;
+  const logbookResolved = hasLogbook && isFetched;
+  // Only asked for when nothing better exists: the logbook is unresolved and the
+  // caller has no row value. Online the logbook lands and wins; offline this is
+  // the only source the drawer has.
+  const localGrade = useLocalMyGrade(
+    climbUuid,
+    boardName,
+    angle,
+    personalGradesEnabled && localFallback && !logbookResolved && rowDifficulty === undefined,
+  );
 
   return useMemo<MyGrade>(() => {
     // Turned off: report the same "never graded it" every surface already
     // handles, so all of them fall back to the crowd's number together.
     if (!personalGradesEnabled) return NONE;
-    // Outside a BoardProvider, or before this climb's ticks have been fetched,
-    // we genuinely do not know.
-    if (!hasLogbook || !isFetched) return UNKNOWN;
-    const latest = pickLatestGradedTick(entries);
-    if (!latest || latest.difficulty == null) return NONE;
-    return { status: 'set', difficultyId: clampToBoulderScale(latest.difficulty), climbedAt: latest.climbed_at };
-  }, [personalGradesEnabled, hasLogbook, isFetched, entries]);
+    // The logbook is the freshest source — it carries an optimistic tick the
+    // moment it is saved — so it wins whenever it has resolved this climb.
+    if (logbookResolved) {
+      const latest = pickLatestGradedTick(entries);
+      if (!latest || latest.difficulty == null) return NONE;
+      return { status: 'set', difficultyId: clampToBoulderScale(latest.difficulty), climbedAt: latest.climbed_at };
+    }
+    // Next, the number the search row was filtered and sorted by. A null here
+    // is a real answer — the search looked and found no graded tick.
+    if (rowDifficulty !== undefined) {
+      if (rowDifficulty == null) return NONE;
+      return { status: 'set', difficultyId: clampToBoulderScale(rowDifficulty), climbedAt: null };
+    }
+    // Last, the device's own ticks table. `undefined` means it was not read
+    // (offline downloads off, no handle, still loading): genuinely unknown.
+    if (localGrade === undefined) return UNKNOWN;
+    if (localGrade === null) return NONE;
+    return { status: 'set', difficultyId: clampToBoulderScale(localGrade.difficulty), climbedAt: localGrade.climbedAt };
+  }, [personalGradesEnabled, logbookResolved, entries, rowDifficulty, localGrade]);
 }

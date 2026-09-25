@@ -102,7 +102,10 @@ const YourGradeBlock = memo(function YourGradeBlock({
 }) {
   const { t } = useTranslation('climbs');
   const { brandColors } = useTheme();
-  const myGrade = useMyGrade(climbUuid, angle);
+  // Falls back to the device's own ticks table while the logbook is unresolved,
+  // so the drawer shows the climber's grade offline too — the same grade the
+  // on-device search placed this climb by.
+  const myGrade = useMyGrade(climbUuid, angle, { localFallback: true });
   const mine = myGrade.status === 'set' ? renderDifficulty(myGrade.difficultyId, gradeFormat) : null;
 
   if (!mine) {

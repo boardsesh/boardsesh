@@ -23,7 +23,7 @@ const myGradeOverride = vi.hoisted(() => ({
   current: { status: 'unknown' } as
     | { status: 'unknown' }
     | { status: 'none' }
-    | { status: 'set'; difficultyId: number; climbedAt: string },
+    | { status: 'set'; difficultyId: number; climbedAt: string | null },
 }));
 
 vi.mock('@boardsesh/board-react', () => ({
@@ -58,8 +58,13 @@ vi.mock('../../hooks/use-ascent-status', () => ({
   useAscentStatus: () => null,
 }));
 
+const useMyGradeCalls = vi.hoisted(() => [] as Array<{ climbUuid: string; angle: number; options: unknown }>);
+
 vi.mock('../../hooks/use-my-grade', () => ({
-  useMyGrade: () => myGradeOverride.current,
+  useMyGrade: (climbUuid: string, angle: number, options: unknown) => {
+    useMyGradeCalls.push({ climbUuid, angle, options });
+    return myGradeOverride.current;
+  },
 }));
 
 vi.mock('../../hooks/use-grade-format', () => ({
@@ -301,6 +306,24 @@ describe('ClimbListItemContent personal grade', () => {
     expect(gradeNode(container)?.textContent).toBe('V4');
     expect(secondaryNode(container)).toBeNull();
     expect(iconNames(container)).not.toContain('person');
+  });
+
+  // Offline the logbook never resolves, so the row's own projected grade is the
+  // only thing that keeps its label in step with the band the search put it in.
+  it('hands the search row’s own grade to useMyGrade, and never asks for a local read', () => {
+    useMyGradeCalls.length = 0;
+    resolveGrade.mockReturnValue({ label: 'V0', color: '#111111', isBoardsesh: false });
+    render(
+      <ClimbListItemContent
+        climb={{ ...baseClimb, myDifficulty: 27 }}
+        boardName="kilter"
+        layoutId={1}
+        sizeId={1}
+        setIds="1"
+        angle={40}
+      />,
+    );
+    expect(useMyGradeCalls.at(-1)).toEqual({ climbUuid: baseClimb.uuid, angle: 40, options: { rowDifficulty: 27 } });
   });
 
   it('shows your grade over the crowd’s, each marked, when they disagree', () => {
