@@ -336,7 +336,7 @@ describe('searchClimbsLocal', () => {
   // with its Boardsesh grade, so the range filter has to key on that grade.
   describe('gradeSource', () => {
     beforeEach(async () => {
-      // Aurora says 18, Boardsesh says 16.
+      // Upstream says 18, Boardsesh says 16.
       await insertClimb(db, { uuid: 'split' });
       await insertStat(db, { climbUuid: 'split', displayDifficulty: 18.0, ascensionistCount: 5 });
       await insertGrade(db, { climbUuid: 'split', universalGrade: 16.0 });
@@ -354,20 +354,20 @@ describe('searchClimbsLocal', () => {
       expect(await matches(makeInput({ minGrade: 18, maxGrade: 18, gradeSource: 'BOARDSESH' }))).toEqual([]);
     });
 
-    it('keys the range on display_difficulty under AURORA and when omitted', async () => {
-      expect(await matches(makeInput({ minGrade: 16, maxGrade: 16, gradeSource: 'AURORA' }))).toEqual([]);
-      expect(await matches(makeInput({ minGrade: 18, maxGrade: 18, gradeSource: 'AURORA' }))).toEqual(['split']);
+    it('keys the range on display_difficulty under UPSTREAM and when omitted', async () => {
+      expect(await matches(makeInput({ minGrade: 16, maxGrade: 16, gradeSource: 'UPSTREAM' }))).toEqual([]);
+      expect(await matches(makeInput({ minGrade: 18, maxGrade: 18, gradeSource: 'UPSTREAM' }))).toEqual(['split']);
       expect(await matches(makeInput({ minGrade: 16, maxGrade: 16 }))).toEqual([]);
       expect(await matches(makeInput({ minGrade: 18, maxGrade: 18 }))).toEqual(['split']);
     });
 
     it('falls back to display_difficulty under BOARDSESH when there is no grade row', async () => {
-      await insertClimb(db, { uuid: 'aurora-only' });
-      await insertStat(db, { climbUuid: 'aurora-only', displayDifficulty: 16.0, ascensionistCount: 5 });
+      await insertClimb(db, { uuid: 'upstream-only' });
+      await insertStat(db, { climbUuid: 'upstream-only', displayDifficulty: 16.0, ascensionistCount: 5 });
 
       expect((await matches(makeInput({ minGrade: 16, maxGrade: 16, gradeSource: 'BOARDSESH' }))).sort()).toEqual([
-        'aurora-only',
         'split',
+        'upstream-only',
       ]);
     });
 
@@ -390,7 +390,7 @@ describe('searchClimbsLocal', () => {
       const sorted = (gradeSource: ClimbSearchInput['gradeSource']) =>
         matches(makeInput({ sortBy: 'difficulty', sortOrder: 'desc', gradeSource }));
       expect(await sorted('BOARDSESH')).toEqual(['other', 'split']);
-      expect(await sorted('AURORA')).toEqual(['split', 'other']);
+      expect(await sorted('UPSTREAM')).toEqual(['split', 'other']);
     });
   });
 

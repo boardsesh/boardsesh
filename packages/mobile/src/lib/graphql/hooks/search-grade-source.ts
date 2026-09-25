@@ -8,7 +8,7 @@ import { useBoardseshGradesPreference } from '../../boardsesh-grades-preference'
  * grades on, a row shows its Boardsesh grade, so a V4 filter has to key on that
  * grade too, or it returns rows labelled V3.
  *
- * Off leaves the input untouched: an omitted `gradeSource` is AURORA on the
+ * Off leaves the input untouched: an omitted `gradeSource` is UPSTREAM on the
  * server and on the device, so the query key and the search-cache key stay what
  * they were for every climber who has not opted in. On, the field is part of the
  * input and so of the React Query key, which is what refetches the list when the
@@ -38,7 +38,7 @@ export function withGradeSource<TInput extends ClimbSearchInput>(
 /**
  * Whether searches should send the Boardsesh grade source: `useBoardseshGradesActive`
  * (flag AND preference), and only once the stored preference has been read. Until
- * then the search goes out on the Aurora grade, the default every climber starts
+ * then the search goes out on the upstream grade, the default every climber starts
  * with, rather than guessing.
  */
 export function useSearchGradeSourceActive(): boolean {

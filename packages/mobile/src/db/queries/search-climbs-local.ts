@@ -256,7 +256,7 @@ export function effectiveStatsSql(column: StatsColumn, crossAngle: boolean): str
  * The rounded grade id a climb is filtered on (and, under the Boardsesh source,
  * sorted on). Mirrors `gradeValueSql` in
  * packages/db/src/queries/climbs/create-climb-filters.ts (issues #5643, #5752,
- * #5753): AURORA (and an omitted source) reads display_difficulty first and falls
+ * #5753): UPSTREAM (and an omitted source) reads display_difficulty first and falls
  * back to the Boardsesh grade; BOARDSESH reads the Boardsesh grade first — the
  * value a row is labelled with when Boardsesh grades are on — and falls back to
  * display_difficulty.
@@ -267,8 +267,8 @@ export function effectiveStatsSql(column: StatsColumn, crossAngle: boolean): str
 export function gradeValueSql(displayDifficulty: string, gradeSource: ClimbSearchInput['gradeSource']): string {
   const boardseshGrade = 'COALESCE(g.universal_grade, g.local_grade)';
   // A `setter_only` grade is never shown on a row (`resolveBoardseshDifficulty`
-  // falls back to the Aurora grade), so the Boardsesh source skips it too. The
-  // Aurora branch keeps its fallback exactly as it was.
+  // falls back to the upstream grade), so the Boardsesh source skips it too. The
+  // upstream branch keeps its fallback exactly as it was.
   const shownBoardseshGrade = `CASE WHEN g.confidence = 'setter_only' THEN NULL ELSE ${boardseshGrade} END`;
   const coalesced =
     gradeSource === 'BOARDSESH'
@@ -448,10 +448,10 @@ function buildJoinAndWhere(
   // malformed deep-link values.
   const gradeAccuracy = input.gradeAccuracy ? parseFloat(String(input.gradeAccuracy)) : NaN;
   if (Number.isFinite(gradeAccuracy)) {
-    // Always the Aurora-first value, whatever the grade source: accuracy measures
-    // how far the crowd average sits from the crowd/setter grade.
+    // Always the upstream-first value, whatever the grade source: accuracy measures
+    // how far the crowd average sits from the upstream grade.
     push(
-      `ABS(${gradeValueSql(eff('display_difficulty'), 'AURORA')} - ${eff('difficulty_average')}) <= ?`,
+      `ABS(${gradeValueSql(eff('display_difficulty'), 'UPSTREAM')} - ${eff('difficulty_average')}) <= ?`,
       gradeAccuracy,
     );
   }
@@ -551,7 +551,7 @@ function sortColumnSql(sortBy: string, crossAngle: boolean, gradeSource: ClimbSe
       return eff('ascensionist_count');
     case 'difficulty':
       // Under the Boardsesh source the sort keys on the grade the row is labelled
-      // with, as the server's does. The Aurora sort has no fallback, unchanged.
+      // with, as the server's does. The upstream sort has no fallback, unchanged.
       return gradeSource === 'BOARDSESH'
         ? gradeValueSql(eff('display_difficulty'), 'BOARDSESH')
         : `CAST(ROUND(${eff('display_difficulty')}) AS INTEGER)`;
