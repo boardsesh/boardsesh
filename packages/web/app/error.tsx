@@ -56,9 +56,19 @@ function isTranslatorDomError(error: Error): boolean {
   const name = error.name ?? '';
   const message = error.message ?? '';
   if (name !== 'NotFoundError') return false;
-  return (
-    message.includes('removeChild') || message.includes('insertBefore') || message.includes('not a child of this node')
-  );
+  if (
+    message.includes('removeChild') ||
+    message.includes('insertBefore') ||
+    message.includes('not a child of this node')
+  ) {
+    return true;
+  }
+
+  // WebKit's DOMException message names neither operation. The raw stack can
+  // still identify the DOM method React called during its commit. Require it
+  // alongside NOT_FOUND_ERR (8): IndexedDB and other APIs also throw code 8.
+  const exceptionCode = (error as Error & { code?: number }).code;
+  return exceptionCode === 8 && /\b(?:insertBefore|removeChild)\b/.test(error.stack ?? '');
 }
 
 // Limit auto-recovery attempts: a translator can keep mutating the page on

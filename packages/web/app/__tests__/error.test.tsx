@@ -18,6 +18,12 @@ function makeNotFoundError(message: string): Error {
   return error;
 }
 
+function makeWebkitNotFoundError(stack: string): DOMException {
+  const error = new DOMException('The object can not be found here.', 'NotFoundError');
+  Object.defineProperty(error, 'stack', { value: stack });
+  return error;
+}
+
 afterEach(() => {
   cleanup();
   captureException.mockClear();
@@ -90,6 +96,54 @@ describe('PageError translator-DOM auto-recovery', () => {
     expect(reset).toHaveBeenCalledTimes(1);
   });
 
+  it('auto-resets a WebKit DOM commit error when the raw stack names insertBefore', () => {
+    const error = makeWebkitNotFoundError(
+      'insertBefore@[native code]\nsr@https://boardsesh.com/_next/static/chunks/app.js:1:123',
+    );
+    const reset = vi.fn();
+    render(<PageError error={error} reset={reset} />);
+    expect(captureException).toHaveBeenCalledWith(error, { tags: { autoRecovered: 'translator-dom' } });
+    act(() => {
+      vi.runAllTimers();
+    });
+    expect(reset).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps an unrelated WebKit NotFoundError visible even with code 8', () => {
+    const error = makeWebkitNotFoundError(
+      'get@[native code]\nreadFromIndexedDB@https://boardsesh.com/_next/static/chunks/app.js:1:123',
+    );
+    const reset = vi.fn();
+    const { container } = render(<PageError error={error} reset={reset} />);
+    act(() => {
+      vi.runAllTimers();
+    });
+    expect(reset).not.toHaveBeenCalled();
+    expect(container.textContent).toContain('Something broke');
+    expect(captureException).toHaveBeenCalledWith(error);
+  });
+
+  it('keeps a WebKit NotFoundError with no stack visible', () => {
+    const error = makeWebkitNotFoundError('');
+    const reset = vi.fn();
+    render(<PageError error={error} reset={reset} />);
+    act(() => {
+      vi.runAllTimers();
+    });
+    expect(reset).not.toHaveBeenCalled();
+  });
+
+  it('does not recover another DOMException even when its stack names insertBefore', () => {
+    const error = new DOMException('The object can not be found here.', 'InvalidStateError');
+    Object.defineProperty(error, 'stack', { value: 'insertBefore@[native code]' });
+    const reset = vi.fn();
+    render(<PageError error={error} reset={reset} />);
+    act(() => {
+      vi.runAllTimers();
+    });
+    expect(reset).not.toHaveBeenCalled();
+  });
+
   it('does not auto-reset a generic NotFoundError', () => {
     const error = makeNotFoundError('something else entirely');
     const reset = vi.fn();
@@ -130,6 +184,26 @@ describe('PageError translator-DOM auto-recovery', () => {
     expect(reset).toHaveBeenCalledTimes(1); // no second auto-reset
     expect(container.textContent).toContain('Something broke');
     expect(container.textContent).toContain('Try again');
+    expect(captureException).toHaveBeenCalledWith(secondError);
+  });
+
+  it('shows the visible fallback when a WebKit error survives its first auto-reset', () => {
+    const stack = 'insertBefore@[native code]\nsr@https://boardsesh.com/app.js:1:123';
+    const firstError = makeWebkitNotFoundError(stack);
+    const reset = vi.fn();
+    const { rerender, container } = render(<PageError error={firstError} reset={reset} />);
+    act(() => {
+      vi.runAllTimers();
+    });
+    expect(reset).toHaveBeenCalledTimes(1);
+
+    const secondError = makeWebkitNotFoundError(stack);
+    rerender(<PageError error={secondError} reset={reset} />);
+    act(() => {
+      vi.runAllTimers();
+    });
+    expect(reset).toHaveBeenCalledTimes(1);
+    expect(container.textContent).toContain('Something broke');
     expect(captureException).toHaveBeenCalledWith(secondError);
   });
 
