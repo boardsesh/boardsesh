@@ -1680,7 +1680,12 @@ export const socialBoardQueries = {
 
     // Get the board
     const [board] = await db
-      .select({ id: dbSchema.userBoards.id })
+      .select({
+        id: dbSchema.userBoards.id,
+        boardType: dbSchema.userBoards.boardType,
+        layoutId: dbSchema.userBoards.layoutId,
+        isUnlisted: dbSchema.userBoards.isUnlisted,
+      })
       .from(dbSchema.userBoards)
       .where(and(eq(dbSchema.userBoards.uuid, boardUuid), isNull(dbSchema.userBoards.deletedAt)))
       .limit(1);
@@ -1694,8 +1699,19 @@ export const socialBoardQueries = {
       throw new GraphQLError('Board not found', { extensions: { code: 'NOT_FOUND' } });
     }
 
-    // Anonymous callers only read public / system-shared boards' leaderboards.
-    await requireAnonReadableBoard(board.id, ctx.userId);
+    // A spray wall takes the wall's own rule INSTEAD of the anonymous mask, the
+    // same call `board(boardUuid)` makes on the same key: the leaderboard names
+    // who climbs on somebody's home wall, so a private or admin-hidden wall is
+    // its owner's (and, for private, its gym's) alone. Same NOT_FOUND as above.
+    if (isSprayBoardType(board.boardType)) {
+      const viewerId = ctx.isAuthenticated ? ctx.userId : undefined;
+      if (!(await sprayBoardRowIsReadable(board, viewerId, 'capability'))) {
+        throw new GraphQLError('Board not found', { extensions: { code: 'NOT_FOUND' } });
+      }
+    } else {
+      // Anonymous callers only read public / system-shared boards' leaderboards.
+      await requireAnonReadableBoard(board.id, ctx.userId);
+    }
 
     // Build time filter
     let timeFilter;

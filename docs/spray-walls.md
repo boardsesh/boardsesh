@@ -1245,7 +1245,7 @@ a notice saying what happened. A wall that quietly stopped being visible to thei
 crew with no explanation would read as data loss, and the climbs on it are their
 work.
 
-The rule lands in **four** implementations, which is the thing to keep in step —
+The rule lands in **eleven** implementations, which is the thing to keep in step —
 they do not share a query builder:
 
 1. `viewerCanSeeSprayWall` (by uuid) and 2. `viewerCanSeeSprayWallByLayout` in
@@ -1256,7 +1256,38 @@ they do not share a query builder:
 4. the three SQL predicates in
    `packages/db/src/queries/climbs/spray-visibility.ts`, each carrying
    `AND (sw.hidden_at IS NULL OR ub.owner_id = <viewer>)`. Those are what gate a
-   spray climb's ~15 reads.
+   spray climb's ~15 reads;
+5. `sprayBoardRowIsReadable` in
+   `packages/backend/src/graphql/resolvers/climbs/spray-read-access.ts`, whose
+   `'capability'` half honours an unlisted wall's uuid only while the wall is not
+   hidden. It gates `board(boardUuid)`, `boardLeaderboard` and `searchClimbs` /
+   `holdHeatmap` with a `sprayWallUuid`, which never go through number 1;
+6. `listableSprayWallCondition` in
+   `packages/backend/src/graphql/resolvers/board/spray-wall-listing.ts`, the
+   EXISTS behind `searchBoards`, `gymBoards` and `myBoards`. Its owner escape sits
+   outside the EXISTS, so the owner still lists their own hidden wall;
+7. gym discovery's own EXISTS in
+   `packages/backend/src/graphql/resolvers/social/board-discovery.ts`, with no
+   owner escape at all;
+8. the share card: `renderSprayOgCard` in
+   `packages/backend/src/services/spray-og-card.ts` answers a hidden wall with
+   the private wall's `404` + `no-store` (`docs/og-climb.md`), before a photo URL
+   is derived;
+9. `publicWallPhotoUrl` in `spray-walls.ts`, null on a hidden wall for the owner
+   too, since a private wall has no public URL for anybody;
+10. the climb sitemap's wall source, `buildPublicSprayWallQuery` in
+    `packages/web/app/lib/seo/sitemap/spray-wall-configs.ts`. The sitemap's climb
+    query carries number 4 as well, so this one is the first gate, not the only one;
+11. `assertSprayBoardIsReadable` / `assertSprayBoardIdIsReadable` in
+    `spray-read-access.ts`, the by-layout rule for the board-presence reads keyed
+    on a numeric board id: history, recent climbs, presence stats,
+    `boardConnection` and `boardQueuePreview` (query and subscription).
+
+Hiding does NOT delete the wall's `media` copy. Nothing in Boardsesh hands its URL
+out once the wall is hidden, but a URL somebody already copied keeps working for as
+long as that object exists. A share card an edge or an unfurler cached before the
+hide keeps being served until that cache entry expires (a day of freshness at our
+edge, see `docs/og-climb.md`).
 
 Hiding also purges the wall's `feed_items`, the same as deleting it does — feed
 rows are served straight out of that table and would outlive the gate. Unhiding

@@ -25,6 +25,15 @@ import * as dbSchema from '@boardsesh/db/schema';
  * them — a "12 results" header over nine rows, and a last page that is empty. The
  * predicate has to be in the WHERE that carries LIMIT/OFFSET *and* in the count,
  * which means one expression both can take.
+ *
+ * ## Hidden walls
+ *
+ * A wall an admin has hidden (`spray_walls.hidden_at`, SW-17) reads exactly like
+ * a private one for everybody but its owner, so it leaves every listing this
+ * predicate carries: `searchBoards`, `gymBoards` (gym editors included — they
+ * are not the owner) and a follower's `myBoards`. The owner escape sits OUTSIDE
+ * the EXISTS, so the owner still lists their own hidden wall and sees the
+ * notice on it. See "What hidden means" in docs/spray-walls.md.
  */
 export function listableSprayWallCondition(viewerId: string | null | undefined): SQL {
   // `IS DISTINCT FROM` rather than `<>`: board_type is NOT NULL today, and a
@@ -39,18 +48,21 @@ export function listableSprayWallCondition(viewerId: string | null | undefined):
       WHERE sw.board_uuid = ${dbSchema.userBoards.uuid}
         AND sw.deleted_at IS NULL
         AND sw.current_version_id IS NOT NULL
+        AND sw.hidden_at IS NULL
     )
   )`;
 }
 
 /**
  * The same rule for a row already loaded from `spray_walls`, where the join has
- * been done and the SQL form would be a second query per row.
+ * been done and the SQL form would be a second query per row. Mirrors the SQL
+ * exactly: the owner, or a published wall that is not admin-hidden.
  */
 export function sprayWallIsListable(
-  wall: { currentVersionId: number | null },
+  wall: { currentVersionId: number | null; hiddenAt: Date | null },
   board: { ownerId: string },
   viewerId: string | null | undefined,
 ): boolean {
-  return wall.currentVersionId != null || (viewerId != null && board.ownerId === viewerId);
+  if (viewerId != null && board.ownerId === viewerId) return true;
+  return wall.currentVersionId != null && wall.hiddenAt == null;
 }
