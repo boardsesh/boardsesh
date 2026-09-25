@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { Text } from './Text';
 import { Icon } from './Icon';
-import { brandColors } from '../theme/colors';
+import { brandColorsDark, materialSurfaces } from '../theme/colors';
 import { spacing } from '../theme/tokens';
 import { recoverFromChunkLoadError, reloadPage, type ChunkRecoveryOutcome } from '../lib/chunk-load-recovery';
 
@@ -17,6 +17,13 @@ import { recoverFromChunkLoadError, reloadPage, type ChunkRecoveryOutcome } from
 //
 // Copy is hardcoded English for the same reason as the generic boundary in
 // app/_layout.tsx: it renders before any provider, so i18next is not ready.
+//
+// Colours are explicit for the same reason. With no ThemeProvider above the
+// boundary, an uncoloured `Text` falls back to React Native's default black,
+// and the web shell paints body and #root #000000, so the copy would be
+// black-on-black. The screen commits to the dark Velvet surface the shell
+// already is, and colours every element from it.
+const palette = materialSurfaces.dark;
 
 type ScreenState = { kind: 'recovering' } | { kind: 'settled'; outcome: ChunkRecoveryOutcome };
 
@@ -86,13 +93,13 @@ export function ChunkLoadErrorScreen({ error }: { error: Error }) {
                 : 'refresh'
           }
           size={48}
-          color={brandColors.primary}
+          color={brandColorsDark.primary}
         />
       </View>
-      <Text variant="title2" style={styles.title}>
+      <Text variant="title2" color={palette.label} style={styles.title}>
         {copy.title}
       </Text>
-      <Text variant="body" style={styles.message}>
+      <Text variant="body" color={palette.secondaryLabel} style={styles.message}>
         {copy.message}
       </Text>
       {showReloadButton && (
@@ -102,7 +109,7 @@ export function ChunkLoadErrorScreen({ error }: { error: Error }) {
           accessibilityLabel="Reload"
           style={({ pressed }) => [styles.primaryButton, pressed && styles.pressedButton]}
         >
-          <Text variant="body" color={brandColors.onPrimary} style={styles.buttonLabel}>
+          <Text variant="body" color={brandColorsDark.onPrimary} style={styles.buttonLabel}>
             Reload
           </Text>
         </Pressable>
@@ -117,6 +124,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: spacing[6],
+    backgroundColor: palette.background,
   },
   iconContainer: {
     marginBottom: spacing[5],
@@ -129,7 +137,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: spacing[8],
     maxWidth: 320,
-    opacity: 0.7,
   },
   primaryButton: {
     alignItems: 'center',
@@ -138,7 +145,7 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 280,
     borderRadius: 12,
-    backgroundColor: brandColors.primaryFill,
+    backgroundColor: brandColorsDark.primaryFill,
     paddingHorizontal: spacing[5],
   },
   pressedButton: {

@@ -28,14 +28,18 @@ vi.mock('react-native', () => ({
     accessibilityLabel?: string;
   }) => createElement('button', { onClick: onPress, 'aria-label': accessibilityLabel, type: 'button' }, children),
 }));
+// Records the foreground each Text was given: this screen renders outside
+// ThemeProvider, where Text has no theme colour to fall back on.
 vi.mock('../Text', () => ({
-  Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
+  Text: ({ children, color }: { children?: ReactNode; color?: string }) =>
+    createElement('span', { 'data-color': color ?? 'unset' }, children),
 }));
 vi.mock('../Icon', () => ({
   Icon: ({ name }: { name: string }) => createElement('i', { 'data-icon': name }),
 }));
 
 import { ChunkLoadErrorScreen } from '../ChunkLoadErrorScreen';
+import { materialSurfaces } from '../../theme/colors';
 
 const chunkError = Object.assign(new Error('Loading module https://app.boardsesh.com/index-1.js failed.'), {
   name: 'AsyncRequireError',
@@ -59,6 +63,20 @@ describe('ChunkLoadErrorScreen', () => {
     expect(screen.getByText('Loading the latest Boardsesh')).toBeTruthy();
     expect(screen.queryByRole('button')).toBeNull();
     expect(recovery.recoverFromChunkLoadError).toHaveBeenCalledWith(chunkError);
+  });
+
+  it('gives its copy the light Velvet foreground, not the pre-provider default black', () => {
+    // The web shell paints body and #root #000000, and with no ThemeProvider
+    // above the error boundary an uncoloured Text renders black-on-black.
+    recovery.recoverFromChunkLoadError.mockReturnValue(new Promise(() => {}));
+    render(createElement(ChunkLoadErrorScreen, { error: chunkError }));
+    expect(screen.getByText('Loading the latest Boardsesh').getAttribute('data-color')).toBe(
+      materialSurfaces.dark.label,
+    );
+    expect(screen.getByText('This screen needs a fresh copy of the app. One moment.').getAttribute('data-color')).toBe(
+      materialSurfaces.dark.secondaryLabel,
+    );
+    expect(materialSurfaces.dark.label).not.toMatch(/^#0{3,6}$/);
   });
 
   it('shows no buttons while the page reloads itself', async () => {
