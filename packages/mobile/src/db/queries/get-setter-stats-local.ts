@@ -26,6 +26,12 @@ import { followedAuthorsLocalCondition } from './followed-authors-local';
  */
 type Bind = string | number;
 
+// Escape LIKE metacharacters so the setter search matches the typed text
+// literally; paired with an explicit ESCAPE '\' on every predicate that binds it.
+function escapeLikeMetacharacters(input: string): string {
+  return input.replace(/[\\%_]/g, (char) => `\\${char}`);
+}
+
 type SetterStatRow = { setter_username: string; climb_count: number };
 
 export async function getSetterStatsLocal(db: OfflineDatabase, input: SetterStatsInput): Promise<SetterStat[]> {
@@ -94,17 +100,26 @@ export async function getSetterStatsLocal(db: OfflineDatabase, input: SetterStat
   }
 
   // Case-insensitive substring filter (autocomplete), mirroring the server's
-  // `ilike(setterUsername, '%term%')` byte for byte — including its unescaped
-  // `%`/`_` wildcards. This local branch serves while online too (a downloaded
-  // board is local-first), so escaping here the way search-climbs-local.ts
-  // escapes its `name` filter would make a search containing `%`/`_` return
-  // different setters depending only on whether the board happens to be
-  // downloaded. SQLite LIKE is ASCII case-insensitive by default, same as the
-  // name-filter caveat in search-climbs-local.ts.
-  const search = input.search?.trim();
+  // `ilike(setterUsername, '%term%')`, with the term's own `%`/`_`/`\` escaped on
+  // both sides so "a_b" finds that setter and not "axb". SQLite honours the
+  // backslash escape only through the explicit ESCAPE clause. This local branch
+  // serves while online too (a downloaded board is local-first), so the two must
+  // escape alike or a search would return different setters depending on whether
+  // the board happens to be downloaded. SQLite LIKE and lower() fold ASCII case
+  // only, the same caveat as the name filter in search-climbs-local.ts.
+  const search = input.search?.trim() ?? '';
+  const escapedSearch = escapeLikeMetacharacters(search);
   if (search) {
-    push('c.setter_username LIKE ?', `%${search}%`);
+    push(`c.setter_username LIKE ? ESCAPE '\\'`, `%${escapedSearch}%`);
   }
+  // With a search term, relevance comes before climb count, as on the server:
+  // exact username, then prefix, then the other substring matches (#4885).
+  // Otherwise a short name like "ES" drowns under 50 prolific setters whose
+  // names merely contain "es".
+  const relevanceOrderSql = search
+    ? `CASE WHEN lower(c.setter_username) = lower(?) THEN 0 WHEN c.setter_username LIKE ? ESCAPE '\\' THEN 1 ELSE 2 END, `
+    : '';
+  const relevanceOrderBinds: Bind[] = search ? [search, `${escapedSearch}%`] : [];
 
   // Joined only when the restriction probes it, so the unrestricted statement stays
   // the join-free one. (climb_uuid, board_type, angle) is the stats primary key: at
@@ -122,10 +137,10 @@ export async function getSetterStatsLocal(db: OfflineDatabase, input: SetterStat
     ${joinSql}
     WHERE ${conditions.join(' AND ')}
     GROUP BY c.setter_username
-    ORDER BY climb_count DESC, c.setter_username ASC
+    ORDER BY ${relevanceOrderSql}climb_count DESC, c.setter_username ASC
     LIMIT 50
   `;
 
-  const rows = await db.getAllAsync<SetterStatRow>(query, [...joinBinds, ...binds]);
+  const rows = await db.getAllAsync<SetterStatRow>(query, [...joinBinds, ...binds, ...relevanceOrderBinds]);
   return rows.map((row) => ({ setterUsername: row.setter_username, climbCount: row.climb_count }));
 }

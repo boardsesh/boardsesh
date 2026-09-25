@@ -179,17 +179,50 @@ describe('getSetterStatsLocal', () => {
     expect(unmatched).toEqual([]);
   });
 
-  it('treats `%`/`_` in the search term as SQL wildcards, matching the server ILIKE unescaped', async () => {
+  it('matches `%`/`_` in the search term literally, like the escaped server ILIKE', async () => {
     await insertClimb(db, { uuid: 'c1', setterUsername: 'axb' });
     await insertClimb(db, { uuid: 'c2', setterUsername: 'a_b' });
+    await insertClimb(db, { uuid: 'c3', setterUsername: '100%er' });
+    await insertClimb(db, { uuid: 'c4', setterUsername: '100 club' });
 
-    // '_' is a single-character wildcard in both SQLite LIKE and Postgres ILIKE,
-    // so an unescaped search term must match both rows, not just the literal one.
-    const result = await getSetterStatsLocal(db, makeInput({ search: 'a_b' }));
-
-    expect(result).toEqual([
+    expect(await getSetterStatsLocal(db, makeInput({ search: 'a_b' }))).toEqual([
       { setterUsername: 'a_b', climbCount: 1 },
-      { setterUsername: 'axb', climbCount: 1 },
+    ]);
+    expect(await getSetterStatsLocal(db, makeInput({ search: '100%' }))).toEqual([
+      { setterUsername: '100%er', climbCount: 1 },
+    ]);
+  });
+
+  // #4885: a two-letter setter ("ES") was unfindable because every setter with
+  // "es" anywhere in their name matched, and the 50 most prolific filled the cap.
+  it('puts an exact username match first, then prefixes, ahead of climb count', async () => {
+    // 52 prolific setters whose names merely contain "es", two climbs each.
+    for (let index = 0; index < 52; index += 1) {
+      const setterUsername = `Wes ${String(index).padStart(2, '0')}`;
+      await insertClimb(db, { uuid: `bulk-${index}-a`, setterUsername });
+      await insertClimb(db, { uuid: `bulk-${index}-b`, setterUsername });
+    }
+    await insertClimb(db, { uuid: 'es-1', setterUsername: 'ES' });
+    await insertClimb(db, { uuid: 'esther-1', setterUsername: 'Esther' });
+
+    const result = await getSetterStatsLocal(db, makeInput({ search: 'es' }));
+
+    expect(result).toHaveLength(50);
+    expect(result.slice(0, 3)).toEqual([
+      { setterUsername: 'ES', climbCount: 1 },
+      { setterUsername: 'Esther', climbCount: 1 },
+      { setterUsername: 'Wes 00', climbCount: 2 },
+    ]);
+  });
+
+  it('keeps the plain climb-count order when there is no search term', async () => {
+    await insertClimb(db, { uuid: 'c1', setterUsername: 'Wes' });
+    await insertClimb(db, { uuid: 'c2', setterUsername: 'Wes' });
+    await insertClimb(db, { uuid: 'c3', setterUsername: 'ES' });
+
+    expect(await getSetterStatsLocal(db, makeInput())).toEqual([
+      { setterUsername: 'Wes', climbCount: 2 },
+      { setterUsername: 'ES', climbCount: 1 },
     ]);
   });
 

@@ -434,3 +434,57 @@ describe('setterStats — size filter skips MoonBoard, still applies to Aurora b
     expect(noMatch).toEqual([]);
   });
 });
+
+// #4885: a two-letter setter ("ES") was unfindable in the setter picker. `%ES%`
+// matches every setter with "es" anywhere in their name, the query kept the 50
+// with the most climbs, and ES with one climb never made the cut. Relevance now
+// orders ahead of count: exact username, then prefix, then the rest. Seeded on a
+// layout of its own so the suite above keeps its exact lists.
+describe('setterStats — search relevance and literal wildcards (#4885, real DB)', () => {
+  const PREFIX = 'setter-rank-4885-';
+  const LAYOUT_ID = 4885;
+  const search = (term: string) =>
+    climbQueries.setterStats(
+      null,
+      { input: { boardName: 'kilter', layoutId: LAYOUT_ID, sizeId: 10, setIds: '1', angle: 40, search: term } },
+      makeCtx(),
+    );
+
+  beforeAll(async () => {
+    // 52 prolific setters whose names merely contain "es", two climbs each.
+    await db.execute(sql`
+      INSERT INTO board_climbs (uuid, board_type, layout_id, setter_username, name, description, frames, is_listed, is_draft, compatible_size_ids, required_set_ids)
+      SELECT ${PREFIX} || 'bulk-' || setter_index || '-' || climb_index, 'kilter', ${LAYOUT_ID},
+             'Wes ' || lpad(setter_index::text, 2, '0'), 'Bulk climb', '', 'p1r1', true, false,
+             ARRAY[10]::integer[], ARRAY[1]::integer[]
+      FROM generate_series(0, 51) AS setter_index, generate_series(1, 2) AS climb_index
+    `);
+    await db.execute(sql`
+      INSERT INTO board_climbs (uuid, board_type, layout_id, setter_username, name, description, frames, is_listed, is_draft, compatible_size_ids, required_set_ids)
+      VALUES
+        (${PREFIX + 'es'}, 'kilter', ${LAYOUT_ID}, 'ES', 'Short setter climb', '', 'p1r1', true, false, ARRAY[10]::integer[], ARRAY[1]::integer[]),
+        (${PREFIX + 'esther'}, 'kilter', ${LAYOUT_ID}, 'Esther', 'Prefix setter climb', '', 'p1r1', true, false, ARRAY[10]::integer[], ARRAY[1]::integer[]),
+        (${PREFIX + 'a-underscore-b'}, 'kilter', ${LAYOUT_ID}, 'a_b', 'Literal underscore', '', 'p1r1', true, false, ARRAY[10]::integer[], ARRAY[1]::integer[]),
+        (${PREFIX + 'axb'}, 'kilter', ${LAYOUT_ID}, 'axb', 'Not an underscore', '', 'p1r1', true, false, ARRAY[10]::integer[], ARRAY[1]::integer[])
+    `);
+  });
+
+  afterAll(async () => {
+    await db.execute(sql`DELETE FROM board_climbs WHERE uuid LIKE ${PREFIX + '%'}`);
+  });
+
+  it('puts an exact username match first, then prefixes, ahead of climb count', async () => {
+    const result = await search('es');
+
+    expect(result).toHaveLength(50);
+    expect(result.slice(0, 3)).toEqual([
+      { setterUsername: 'ES', climbCount: 1 },
+      { setterUsername: 'Esther', climbCount: 1 },
+      { setterUsername: 'Wes 00', climbCount: 2 },
+    ]);
+  });
+
+  it('matches `_` in the search term literally', async () => {
+    expect(await search('a_b')).toEqual([{ setterUsername: 'a_b', climbCount: 1 }]);
+  });
+});
