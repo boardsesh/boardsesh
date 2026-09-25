@@ -103,17 +103,17 @@ describe('useSprayWallBuilder', () => {
     });
   });
 
-  it('creates the wall PRIVATE even when the climber chose public', () => {
+  it('sends the chosen visibility with the create, so the server holds it (#5513)', () => {
     const { result } = renderHook(() => useSprayWallBuilder());
     act(() => result.current.setName('Garage wall'));
     act(() => result.current.setIsPublic(true));
 
-    // The row exists before any version, photo or hold, and `searchBoards`
-    // filters on is_public / is_unlisted alone — so a wall created public is a
-    // listed, unusable board for as long as the flow takes, and forever if it is
-    // abandoned.
-    expect(result.current.buildCreateInput()).toMatchObject({ isPublic: false, isUnlisted: false });
-    // …and the choice is remembered, to be applied once there is something to see.
+    // `createSprayWall` keeps the board private until the first publish and
+    // applies this then — which is what lets a wall resumed on a later launch,
+    // with a fresh builder, still publish public. Forcing false here lost the
+    // choice whenever the app closed mid-wizard.
+    expect(result.current.buildCreateInput()).toMatchObject({ isPublic: true, isUnlisted: false });
+    // The post-publish write stays, for a backend that predates that.
     expect(result.current.pendingVisibility()).toEqual({ isPublic: true, isUnlisted: false });
   });
 
@@ -125,7 +125,9 @@ describe('useSprayWallBuilder', () => {
 
   it('remembers an unlisted choice too', () => {
     const { result } = renderHook(() => useSprayWallBuilder());
+    act(() => result.current.setName('Garage wall'));
     act(() => result.current.setIsUnlisted(true));
+    expect(result.current.buildCreateInput()).toMatchObject({ isPublic: false, isUnlisted: true });
     expect(result.current.pendingVisibility()).toEqual({ isPublic: false, isUnlisted: true });
   });
 
