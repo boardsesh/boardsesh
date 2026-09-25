@@ -16,6 +16,10 @@ const mockBleManager = vi.hoisted(() => ({
   // For the tests that drive the real ble-plx adapter's scan (#5654).
   startDeviceScan: vi.fn(),
   stopDeviceScan: vi.fn(),
+  // For the saved-board tests that let the real adapter reach its connect (#5658).
+  connectToDevice: vi.fn(),
+  cancelDeviceConnection: vi.fn().mockResolvedValue(undefined),
+  onDeviceDisconnected: vi.fn(() => ({ remove: vi.fn() })),
 }));
 
 // Mutable so a test can put the app in the background and assert what the hook
@@ -183,7 +187,8 @@ import { getBleEncodingSignature } from '../encoding-signature';
 import type { BleWriteDiagnostics } from '../types';
 import { reportHandledError } from '../../error-reporting';
 import { createBleWriteActivityStore } from '../write-activity-store';
-import { SCAN_TIMEOUT_MS } from '@boardsesh/ble-protocol/scan-constants';
+import { SCAN_TIMEOUT_MS, SERIAL_RECONNECT_GRACE_MS } from '@boardsesh/ble-protocol/scan-constants';
+import { AURORA_ADVERTISED_SERVICE_UUID } from '@boardsesh/ble-protocol';
 
 // The #3314 binary-capability probe defaults to "new binary" (drives every
 // board) for the whole file; old-binary tests flip it per test and this
@@ -4479,6 +4484,221 @@ describe('useBoardBluetooth when the picker scan finds nothing (#5654)', () => {
     expect(result.current.pickerState).toBeNull();
     expect(result.current.loading).toBe(false);
     await expect(connectPromise).resolves.toBe(false);
+    expect(Alert.alert).not.toHaveBeenCalled();
+  });
+});
+
+// The connect sheet opens at the tap for a saved board (#5658), driven through
+// the real ble-plx adapter so the adapter → picker signals are the real ones.
+describe('useBoardBluetooth connect sheet for a saved board (#5658)', () => {
+  let scanCallbacks: Array<(error: unknown, device: unknown) => void> = [];
+
+  const advert = (serial: string, id: string) => ({
+    id,
+    localName: `Kilter Board#${serial}@3`,
+    name: `Kilter Board#${serial}@3`,
+    rssi: -45,
+    serviceUUIDs: [AURORA_ADVERTISED_SERVICE_UUID],
+  });
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    resetReactNativePermissionHarness();
+    mockBleManager.state.mockResolvedValue('PoweredOn');
+    const { RNBleAdapter: RealRNBleAdapter } = await vi.importActual<typeof import('../adapter')>('../adapter');
+    vi.mocked(createBluetoothAdapter).mockImplementation(
+      (devicePicker, scanFamily, options) => new RealRNBleAdapter(devicePicker, scanFamily, options),
+    );
+    scanCallbacks = [];
+    mockBleManager.startDeviceScan.mockImplementation(
+      (_uuids: unknown, _opts: unknown, callback: (error: unknown, device: unknown) => void) => {
+        scanCallbacks.push(callback);
+      },
+    );
+    mockParseSerialNumber.mockImplementation((name?: string) => name?.match(/#([^@]+)/)?.[1]);
+    mockAppState.currentState = 'active';
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    mockParseSerialNumber.mockReset();
+    mockBleManager.connectToDevice.mockReset();
+    mockAppState.currentState = 'active';
+    vi.useRealTimers();
+  });
+
+  function renderBluetooth() {
+    return renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+  }
+
+  it('opens the sheet at the tap searching for the saved board, and lists nothing until the list starts', async () => {
+    const { result } = renderBluetooth();
+    await act(async () => {
+      void result.current.connect(undefined, undefined, 'NEEDLE');
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(result.current.pickerState).toMatchObject({
+      mode: 'searching',
+      presented: true,
+      closing: false,
+      devices: [],
+    });
+    expect(result.current.pickerState?.handleSearchAnyBoard).toBeInstanceOf(Function);
+
+    // Another board advertises while we search: held back, not listed.
+    act(() => scanCallbacks[0](null, advert('OTHER', 'other-device')));
+    expect(result.current.pickerState?.devices).toEqual([]);
+
+    // The grace window ends: the list takes over with what was heard.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SERIAL_RECONNECT_GRACE_MS);
+    });
+    expect(result.current.pickerState).toMatchObject({ mode: 'list', presented: true });
+    expect(result.current.pickerState?.handleSearchAnyBoard).toBeUndefined();
+    expect(result.current.pickerState?.devices.map((device) => device.deviceId)).toEqual(['other-device']);
+  });
+
+  it('switches to the list at once on "Search for any board"', async () => {
+    const { result } = renderBluetooth();
+    await act(async () => {
+      void result.current.connect(undefined, undefined, 'NEEDLE');
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    act(() => result.current.pickerState?.handleSearchAnyBoard?.());
+    expect(result.current.pickerState).toMatchObject({ mode: 'list', presented: true });
+
+    // The saved board advertising now is listed, not auto-selected.
+    act(() => scanCallbacks[0](null, advert('NEEDLE', 'needle-device')));
+    expect(result.current.pickerState?.devices.map((device) => device.deviceId)).toEqual(['needle-device']);
+    expect(mockBleManager.connectToDevice).not.toHaveBeenCalled();
+  });
+
+  it('keeps a background tap (Android notification bulb) silent until the list starts', async () => {
+    mockAppState.currentState = 'background';
+    const { result } = renderBluetooth();
+    await act(async () => {
+      void result.current.connect(undefined, undefined, 'NEEDLE');
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(result.current.pickerState).toMatchObject({ mode: 'searching', presented: false });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SERIAL_RECONNECT_GRACE_MS);
+    });
+    expect(result.current.pickerState).toMatchObject({ mode: 'list', presented: true });
+  });
+
+  it('closes the sheet by dismissal, not by unmount, when the saved board is found', async () => {
+    // The found board's link fails, so the catch in connect() runs against a
+    // sheet that is already closing: it must leave that dismissal alone.
+    mockBleManager.connectToDevice.mockRejectedValue(new Error('Connection timed out — board may be powered off'));
+    const { result } = renderBluetooth();
+    let connectPromise: Promise<boolean> = Promise.resolve(true);
+    await act(async () => {
+      connectPromise = result.current.connect(undefined, undefined, 'NEEDLE');
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    await act(async () => {
+      scanCallbacks[0](null, advert('NEEDLE', 'needle-device'));
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    await expect(connectPromise).resolves.toBe(false);
+    expect(mockBleManager.connectToDevice).toHaveBeenCalledOnce();
+    expect(mockBleManager.connectToDevice).toHaveBeenCalledWith('needle-device');
+
+    // Still mounted and closing: the host clears it once the dismissal settled.
+    expect(result.current.pickerState).toMatchObject({ closing: true, mode: 'searching' });
+    act(() => result.current.pickerState?.handleClosed());
+    expect(result.current.pickerState).toBeNull();
+    expect(result.current.loading).toBe(false);
+  });
+
+  it('treats a swipe-down while searching as a quiet cancel', async () => {
+    const { result } = renderBluetooth();
+    let connectPromise: Promise<boolean> = Promise.resolve(true);
+    await act(async () => {
+      connectPromise = result.current.connect(undefined, undefined, 'NEEDLE');
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(result.current.loading).toBe(true);
+
+    await act(async () => {
+      result.current.pickerState?.handleCancel();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    await expect(connectPromise).resolves.toBe(false);
+    expect(result.current.pickerState).toBeNull();
+    expect(result.current.loading).toBe(false);
+    expect(Alert.alert).not.toHaveBeenCalled();
+    expect(mockTrack).toHaveBeenCalledWith(
+      'Bluetooth Connection Failed',
+      expect.objectContaining({ failureReason: 'user_cancelled' }),
+    );
+
+    // The saved board advertising after the cancel connects nothing.
+    act(() => scanCallbacks[0](null, advert('NEEDLE', 'needle-device')));
+    expect(mockBleManager.connectToDevice).not.toHaveBeenCalled();
+  });
+
+  it('keeps searching out of sight when another sheet displaces it, and connects the saved board', async () => {
+    mockBleManager.connectToDevice.mockRejectedValue(new Error('Connection timed out — board may be powered off'));
+    const { result } = renderBluetooth();
+    let connectPromise: Promise<boolean> = Promise.resolve(true);
+    await act(async () => {
+      connectPromise = result.current.connect(undefined, undefined, 'NEEDLE');
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    act(() => result.current.pickerState?.handleDisplaced());
+    expect(result.current.pickerState).toMatchObject({ mode: 'searching', presented: false });
+    expect(result.current.loading).toBe(true);
+
+    // The scan is still running: the saved board still gets auto-selected.
+    await act(async () => {
+      scanCallbacks[0](null, advert('NEEDLE', 'needle-device'));
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(mockBleManager.connectToDevice).toHaveBeenCalledWith('needle-device');
+    await expect(connectPromise).resolves.toBe(false);
+  });
+
+  it('brings a displaced searching sheet back as the list when the search ends', async () => {
+    const { result } = renderBluetooth();
+    await act(async () => {
+      void result.current.connect(undefined, undefined, 'NEEDLE');
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    act(() => result.current.pickerState?.handleDisplaced());
+    expect(result.current.pickerState).toMatchObject({ presented: false });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SERIAL_RECONNECT_GRACE_MS);
+    });
+    expect(result.current.pickerState).toMatchObject({ mode: 'list', presented: true });
+    expect(result.current.loading).toBe(true);
+  });
+
+  it('still cancels a displaced list, as before', async () => {
+    const { result } = renderBluetooth();
+    let connectPromise: Promise<boolean> = Promise.resolve(true);
+    await act(async () => {
+      connectPromise = result.current.connect(undefined, undefined, 'NEEDLE');
+      await vi.advanceTimersByTimeAsync(SERIAL_RECONNECT_GRACE_MS);
+    });
+    expect(result.current.pickerState).toMatchObject({ mode: 'list' });
+
+    await act(async () => {
+      result.current.pickerState?.handleDisplaced();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    await expect(connectPromise).resolves.toBe(false);
+    expect(result.current.pickerState).toBeNull();
+    expect(result.current.loading).toBe(false);
     expect(Alert.alert).not.toHaveBeenCalled();
   });
 });
