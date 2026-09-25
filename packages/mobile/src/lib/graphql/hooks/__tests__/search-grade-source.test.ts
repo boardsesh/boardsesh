@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ClimbSearchInput } from '@boardsesh/shared-schema';
-import { withGradeSource } from '../search-grade-source';
+import { climbSearchScrollKey, withGradeSource } from '../search-grade-source';
 
 const board: ClimbSearchInput = { boardName: 'kilter', layoutId: 1, sizeId: 2, setIds: '3', angle: 40 };
 
@@ -31,5 +31,35 @@ describe('withGradeSource', () => {
   it('returns the same object when there is nothing to change', () => {
     const input = { ...board, name: 'Moonage' };
     expect(withGradeSource(input, false)).toBe(input);
+  });
+});
+
+describe('climbSearchScrollKey', () => {
+  const graded: ClimbSearchInput = { ...board, minGrade: 16, maxGrade: 18 };
+
+  it('changes when Boardsesh grades flip on a graded search, so the list scrolls to the top', () => {
+    expect(climbSearchScrollKey(graded, true)).not.toBe(climbSearchScrollKey(graded, false));
+  });
+
+  it('changes for the difficulty sort too', () => {
+    const bySort: ClimbSearchInput = { ...board, sortBy: 'difficulty' };
+    expect(climbSearchScrollKey(bySort, true)).not.toBe(climbSearchScrollKey(bySort, false));
+  });
+
+  it('stays put when the flip cannot change the results', () => {
+    expect(climbSearchScrollKey(board, true)).toBe(climbSearchScrollKey(board, false));
+  });
+
+  it('ignores page and property order', () => {
+    const reordered: ClimbSearchInput = {
+      maxGrade: 18,
+      minGrade: 16,
+      angle: 40,
+      setIds: '3',
+      sizeId: 2,
+      layoutId: 1,
+      boardName: 'kilter',
+    };
+    expect(climbSearchScrollKey({ ...graded, page: 4 }, true)).toBe(climbSearchScrollKey(reordered, true));
   });
 });
