@@ -1,50 +1,51 @@
-// The device-derived holds index: `board_climb_holds` rows built on the phone from
-// the `frames` string every downloaded climb already carries.
+// The device-derived holds index, built on the phone from the `frames` string
+// every downloaded climb already carries.
 //
-// Two local readers need per-hold rows with an index — similar climbs (which
-// climbs share these holds?) and the hold heatmap (how often is each hold used?)
-// — and neither can afford to ask Postgres for them. The frames are already on
-// disk, so the rows are derived here instead of downloaded.
+// Two local readers need to go from holds to climbs: similar climbs ("which
+// climbs share these holds?") and the hold heatmap ("how often is each hold
+// used?"). Neither can afford to ask Postgres. The frames are already on disk,
+// so the index is derived here instead of downloaded.
+//
+// Storage is packed blobs, not one row per hold (holds-index/query.ts has the
+// byte formats):
+//   holds_index_climbs        uuid → stable local integer id
+//   board_climb_hold_sets     climb id → its holds (5 bytes per hold)
+//   board_climb_hold_postings (board, layout, hold) → sorted climb ids
+// One row per hold was ~3.8M rows and ~370 MB on a single Kilter download.
 //
 // The shape of the build, and why:
 //
-//  - FIRST BUILD IN UUID ORDER. The primary key leads with (board_type,
-//    climb_uuid). Walking a fresh scope in `sync_seq` order inserts random uuids,
-//    so once the table is large every chunk rewrites ~1,000 scattered pages. The
-//    first build walks `uuid` order instead, so inserts append, then hands over
-//    to the incremental phase at the scope's `MAX(sync_seq)` from when it began.
-//    Both phases resume from sync_meta after a kill.
-//
 //  - WATERMARK PER SCOPE, on `sync_seq` only. One `holds-index:<scopeKey>` row in
-//    sync_meta per downloaded (boardType, layoutId, sizeId). Per SCOPE rather than
-//    per layout because a second size of the same layout imports its own climbs
-//    with older `sync_seq` values, which a per-layout watermark would skip
-//    forever. `sync_seq` is the server's per-row change counter (a sequence bumped
-//    on every UPDATE); the client upsert and the snapshot import both preserve it,
-//    so "newer than the watermark" is exactly "new or edited since the last build".
-//    `updatedAt` is stored beside it for humans reading sync_meta, never compared.
+//    sync_meta per downloaded (boardType, layoutId, sizeId). Per scope rather than
+//    per layout because a second size of a layout imports its own climbs with
+//    older `sync_seq` values, which a per-layout watermark would skip forever.
+//    `sync_seq` is the server's per-row change counter; the client upsert and the
+//    snapshot import both preserve it, so "newer than the watermark" is exactly
+//    "new or edited since the last build".
 //
-//  - ONLY COMPLETE SCOPES. A scope mid-crawl receives rows in cursor order, not
-//    `sync_seq` order, so a watermark taken from a partial catalog could sit above
-//    rows the crawl has not delivered yet, and they would never be indexed. The
-//    build waits for `scope-complete:` and re-checks it under the write lock, which
-//    also makes it safe against a teardown landing between chunks: the teardown
-//    deletes that marker in the same transaction as the rows.
+//  - ONLY COMPLETE SCOPES. A crawl mid-flight delivers rows out of `sync_seq`
+//    order, so a watermark taken then could sit above rows not yet delivered. The
+//    build needs `scope-complete:` and re-checks it under every write lock, which
+//    also keeps it safe from a teardown landing between chunks: the teardown
+//    deletes that marker in the same transaction as the index rows.
 //
-//  - SHORT LOCKS. Climbs are read 500 at a time on the main connection with no
-//    transaction open (a WAL reader never blocks the writer), parsed in JS, then
-//    written in ONE short IMMEDIATE transaction per chunk: delete the chunk's old
-//    rows, insert the new ones, advance the watermark. Rows and watermark commit
-//    together, so a killed app resumes at the last committed chunk (#4314).
+//  - FIRST BUILD, then INCREMENTAL. With no watermark, the build records the
+//    scope's MAX(sync_seq), walks the scope in uuid order (so new local ids and
+//    their uuid index append rather than scatter), writes hold sets in short
+//    2,000-climb transactions, then rebuilds the layout's postings from every
+//    hold set of that layout and stamps the watermark at the recorded value. A
+//    first build that is interrupted starts again from the top: hold-set writes
+//    skip unchanged rows, and the postings rebuild reads the truth, so nothing is
+//    lost. After that, climbs past the watermark are re-derived 500 at a time,
+//    each chunk editing only the postings its climbs enter or leave.
 //
-//  - ONLY LISTED, PUBLISHED, NOT HIDDEN climbs get rows. Neither reader looks at
-//    anything else. The watermark still advances past the others, and a climb that
-//    flips hidden later gets a new `sync_seq`, is re-read, and loses its rows.
+//  - ONLY LISTED, PUBLISHED, NOT HIDDEN climbs are indexed. Neither reader shows
+//    anything else. A climb that flips hidden gets a new `sync_seq`, is re-read,
+//    and leaves the index.
 //
-//  - ORPHANS ARE DELETED TARGETED, never by a `NOT EXISTS` sweep under the write
-//    lock: the tombstone cascade and scope teardown delete a climb's rows with the
-//    climb, and `sweepOrphans` (after a snapshot import, whose reconcile step
-//    deletes local climbs) discovers orphans with a lock-free read first.
+//  - POSTINGS ARE PER LAYOUT, shared by every downloaded size of it, so builds are
+//    single-flighted per layout, and a teardown clears the whole layout's index
+//    and every sibling scope's watermark (the survivors rebuild next cycle).
 //
 // The frames parser is INJECTED (`HoldRowParser`): this package has zero runtime
 // dependencies by contract, and the parser lives in @boardsesh/board-constants.
@@ -54,9 +55,10 @@ import { offlineBoardKey, type OfflineBoardScope } from '../offline-board-key';
 import { climbsScopeFilter } from '../sync/board-scope-sql';
 import { isScopeDownloadComplete } from '../sync/checkpoints';
 import { invalidateKeysForTable } from '../sync/invalidate-keys';
-import { buildMultiRowInsertSql, multiRowChunkSize, runPullWrite, SQLITE_MAX_BIND_VARIABLES } from '../sync/pull-write';
+import { runPullWrite } from '../sync/pull-write';
+import { decodeHoldSetIds, editPostings, encodeHoldSet, encodePostings, holdStateToRole } from './query';
 
-/** One derived row: a hold a climb lights, and the role it lights it in. */
+/** One parsed hold: a hold a climb lights, and the role it lights it in. */
 export type HoldRow = { holdId: number; holdState: string };
 
 /**
@@ -70,41 +72,51 @@ export type HoldRowParser = (boardType: string, frames: string) => readonly Hold
 export type EnsureHoldIndexOptions = {
   parseHoldRows: HoldRowParser;
   /**
-   * Checked before every chunk's read and again under its write lock. Returning
-   * false stops the build with nothing half-written: the chunk in hand is
-   * dropped and the watermark stays at the last committed chunk.
+   * Checked before every chunk and again under its write lock. Returning false
+   * stops the build: the chunk in hand is dropped and the watermark stays where
+   * it was (an interrupted first build simply starts over next time).
    */
   shouldContinue?: () => boolean;
   /**
-   * Delete rows whose climb is gone. Only needed after a snapshot import, whose
-   * reconcile step deletes local climbs without a tombstone.
+   * Remove index entries whose climb is gone. Only needed after a snapshot
+   * import, whose reconcile step deletes local climbs without a tombstone.
    */
   sweepOrphans?: boolean;
-  /** When given, the `board_climb_holds` query keys are invalidated after rows changed. */
+  /** When given, the holds-index query keys are invalidated after the index changed. */
   queryClient?: QueryInvalidator;
-  /** Climbs per chunk. Defaults to HOLD_INDEX_CHUNK_CLIMBS; a test seam. */
+  /** Climbs per incremental chunk (default HOLD_INDEX_CHUNK_CLIMBS); a test seam. */
   chunkClimbs?: number;
+  /** Climbs per first-build chunk (default HOLD_INDEX_INITIAL_CHUNK_CLIMBS); a test seam. */
+  initialChunkClimbs?: number;
 };
 
 export type EnsureHoldIndexResult = {
   /**
    * `complete` — the index covers every climb of the scope.
-   * `aborted` — `shouldContinue` said stop; committed chunks are kept.
+   * `aborted` — `shouldContinue` said stop, or the scope changed under the build.
    * `not-downloaded` — the scope has no `scope-complete:` marker, so nothing ran.
    */
   status: 'complete' | 'aborted' | 'not-downloaded';
-  /** Climbs read from `board_climbs` and committed past the watermark. */
+  /** Climbs read from `board_climbs` and committed. */
   climbsProcessed: number;
-  /** Hold rows inserted. */
-  rowsInserted: number;
-  /** Hold rows deleted, re-derivations and swept orphans included. */
-  rowsDeleted: number;
-  /** Write transactions committed. */
+  /** Hold-set rows inserted or changed. */
+  holdSetsWritten: number;
+  /** Hold-set rows removed (climb hidden, unlisted, drafted or gone). */
+  holdSetsDeleted: number;
+  /** Posting rows written or removed. */
+  postingsWritten: number;
+  /** Climb chunks committed. */
   chunks: number;
 };
 
-/** Climbs read and written per chunk. 500 uuids stay well under the bind ceiling. */
+/** Climbs per incremental chunk: one short write each. */
 export const HOLD_INDEX_CHUNK_CLIMBS = 500;
+/** Climbs per first-build chunk: hold sets only, so a bigger chunk is still short. */
+export const HOLD_INDEX_INITIAL_CHUNK_CLIMBS = 2000;
+/** Posting rows per transaction when a layout's postings are rebuilt. */
+const POSTINGS_WRITE_BATCH_HOLDS = 200;
+/** Ids per `IN (...)` list, under SQLite's 999 bind floor. */
+const IN_LIST_BATCH = 900;
 
 /** Prefix of the per-scope watermark key in sync_meta. */
 export const HOLD_INDEX_KEY_PREFIX = 'holds-index:';
@@ -114,50 +126,18 @@ export function holdIndexKey(scopeKey: string): string {
   return `${HOLD_INDEX_KEY_PREFIX}${scopeKey}`;
 }
 
-/**
- * The per-scope build state in sync_meta.
- *
- * `initial` — the first build of a scope, walking climbs in `uuid` order from
- * `lastUuid`. `targetSyncSeq` is the scope's highest `sync_seq` when the walk
- * began; the walk ends by stamping `incremental` at that value, so a climb that
- * arrives or changes mid-walk (always above it) is picked up afterwards.
- *
- * `incremental` — every climb up to `syncSeq` is indexed; later work walks
- * `sync_seq` order from there.
- */
-type HoldIndexWatermark =
-  | { phase: 'initial'; lastUuid: string | null; targetSyncSeq: number }
-  | { phase: 'incremental'; syncSeq: number; updatedAt: string | null };
-
-const HOLD_COLUMNS = ['board_type', 'climb_uuid', 'hold_id', 'hold_state'] as const;
+type HoldIndexWatermark = { syncSeq: number; updatedAt: string | null };
 
 class HoldIndexChunkAbortedError extends Error {}
 
-function isFiniteNumber(value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value);
-}
-
-function parseWatermark(raw: string | null | undefined): HoldIndexWatermark | null {
+function parseWatermark(raw: string | null): HoldIndexWatermark | null {
   if (!raw) return null;
   try {
     const parsed: unknown = JSON.parse(raw);
     if (typeof parsed !== 'object' || parsed === null) return null;
-    const record = parsed as Record<string, unknown>;
-    if (record.phase === 'initial' && isFiniteNumber(record.targetSyncSeq)) {
-      return {
-        phase: 'initial',
-        lastUuid: typeof record.lastUuid === 'string' ? record.lastUuid : null,
-        targetSyncSeq: record.targetSyncSeq,
-      };
-    }
-    if (isFiniteNumber(record.syncSeq)) {
-      return {
-        phase: 'incremental',
-        syncSeq: record.syncSeq,
-        updatedAt: typeof record.updatedAt === 'string' ? record.updatedAt : null,
-      };
-    }
-    return null;
+    const { syncSeq, updatedAt } = parsed as { syncSeq?: unknown; updatedAt?: unknown };
+    if (typeof syncSeq !== 'number' || !Number.isFinite(syncSeq)) return null;
+    return { syncSeq, updatedAt: typeof updatedAt === 'string' ? updatedAt : null };
   } catch {
     // A row we cannot read is a row we rebuild from: the build is idempotent.
     return null;
@@ -172,14 +152,14 @@ async function readRawWatermark(db: SqlExecutor, scopeKey: string): Promise<stri
 }
 
 /**
- * Is there any climb in this scope the index has not covered yet? No index, or
- * an unfinished first build, is behind by definition; otherwise one indexed
- * probe on `idx_climbs_sync_seq`, cheap enough to run before every local read.
+ * Is there any climb in this scope the index does not cover? No watermark (never
+ * built, or a first build still running) is behind by definition; otherwise one
+ * indexed probe on `idx_climbs_sync_seq`, cheap enough before every local read.
  * Says nothing about whether the scope is downloaded; `ensureHoldIndex` checks that.
  */
 export async function isHoldIndexBehind(db: SqlExecutor, scope: OfflineBoardScope): Promise<boolean> {
   const watermark = parseWatermark(await readRawWatermark(db, offlineBoardKey(scope)));
-  if (!watermark || watermark.phase === 'initial') return true;
+  if (!watermark) return true;
   const filter = climbsScopeFilter(scope);
   const row = await db.getFirstAsync<{ behind: number }>(
     `SELECT 1 AS behind FROM board_climbs WHERE ${filter.sql} AND sync_seq > ? LIMIT 1`,
@@ -198,47 +178,173 @@ type ClimbChunkRow = {
   is_hidden: number | null;
 };
 
-const CLIMB_CHUNK_COLUMNS = 'uuid, frames, updated_at, sync_seq, is_listed, is_draft, is_hidden';
+type PostingEdit = { add: Set<number>; remove: Set<number> };
 
-/** Listed, published and not hidden: the only climbs either reader can show. */
-function isIndexable(climb: ClimbChunkRow): boolean {
-  return climb.is_listed === 1 && climb.is_draft === 0 && (climb.is_hidden ?? 0) === 0;
-}
+const CLIMB_CHUNK_COLUMNS = 'uuid, frames, updated_at, sync_seq, is_listed, is_draft, is_hidden';
 
 function placeholders(count: number): string {
   return Array.from({ length: count }, () => '?').join(', ');
 }
 
-/**
- * Delete the hold rows of climbs that no longer exist. Discovery is a plain read
- * with no transaction, so the lock is held only for the targeted delete, which
- * re-checks each climb's absence in case a pull re-added it in between.
- */
-async function sweepOrphanRows(db: OfflineDatabase, boardType: string): Promise<number> {
-  const orphans = await db.getAllAsync<{ climb_uuid: string }>(
-    `SELECT DISTINCT holds.climb_uuid FROM board_climb_holds holds
-     WHERE holds.board_type = ?
-       AND NOT EXISTS (SELECT 1 FROM board_climbs climbs WHERE climbs.uuid = holds.climb_uuid)`,
-    [boardType],
-  );
-  if (orphans.length === 0) return 0;
+function bytesEqual(left: Uint8Array | null, right: Uint8Array | null): boolean {
+  if (left === right) return true;
+  if (!left || !right || left.byteLength !== right.byteLength) return false;
+  for (let index = 0; index < left.byteLength; index += 1) if (left[index] !== right[index]) return false;
+  return true;
+}
 
-  let deleted = 0;
-  const perStatement = SQLITE_MAX_BIND_VARIABLES - 1;
-  await runPullWrite(db, async (transaction) => {
-    deleted = 0;
-    for (let start = 0; start < orphans.length; start += perStatement) {
-      const batch = orphans.slice(start, start + perStatement).map((orphan) => orphan.climb_uuid);
-      const result = await transaction.runAsync(
-        `DELETE FROM board_climb_holds
-         WHERE board_type = ? AND climb_uuid IN (${placeholders(batch.length)})
-           AND NOT EXISTS (SELECT 1 FROM board_climbs climbs WHERE climbs.uuid = board_climb_holds.climb_uuid)`,
-        [boardType, ...batch],
-      );
-      deleted += result.changes;
+function asBytes(value: unknown): Uint8Array | null {
+  return value instanceof Uint8Array ? value : null;
+}
+
+/** The climb's hold-set blob, or null when it must not be indexed (or lights nothing). */
+function deriveHoldSet(boardType: string, climb: ClimbChunkRow, parseHoldRows: HoldRowParser): Uint8Array | null {
+  const indexable = climb.is_listed === 1 && climb.is_draft === 0 && (climb.is_hidden ?? 0) === 0;
+  if (!indexable) return null;
+  const holds = parseHoldRows(boardType, climb.frames ?? '');
+  if (holds.length === 0) return null;
+  return encodeHoldSet(holds.map(({ holdId, holdState }) => ({ holdId, role: holdStateToRole(holdState) })));
+}
+
+/** Local ids for `uuids`, creating the missing ones. Must run inside the write transaction. */
+async function ensureClimbIds(txn: SqlExecutor, uuids: readonly string[]): Promise<Map<string, number>> {
+  const ids = new Map<string, number>();
+  for (let start = 0; start < uuids.length; start += IN_LIST_BATCH) {
+    const batch = uuids.slice(start, start + IN_LIST_BATCH);
+    await txn.runAsync(
+      `INSERT OR IGNORE INTO holds_index_climbs (uuid) VALUES ${batch.map(() => '(?)').join(', ')}`,
+      batch,
+    );
+    const rows = await txn.getAllAsync<{ id: number; uuid: string }>(
+      `SELECT id, uuid FROM holds_index_climbs WHERE uuid IN (${placeholders(batch.length)})`,
+      batch,
+    );
+    for (const row of rows) ids.set(row.uuid, row.id);
+  }
+  return ids;
+}
+
+async function readHoldSets(executor: SqlExecutor, climbIds: readonly number[]): Promise<Map<number, Uint8Array>> {
+  const sets = new Map<number, Uint8Array>();
+  for (let start = 0; start < climbIds.length; start += IN_LIST_BATCH) {
+    const batch = climbIds.slice(start, start + IN_LIST_BATCH);
+    const rows = await executor.getAllAsync<{ climb_id: number; holds: unknown }>(
+      `SELECT climb_id, holds FROM board_climb_hold_sets WHERE climb_id IN (${placeholders(batch.length)})`,
+      batch,
+    );
+    for (const row of rows) {
+      const bytes = asBytes(row.holds);
+      if (bytes) sets.set(row.climb_id, bytes);
     }
-  });
-  return deleted;
+  }
+  return sets;
+}
+
+async function readPosting(
+  txn: SqlExecutor,
+  boardType: string,
+  layoutId: number,
+  holdId: number,
+): Promise<Uint8Array | null> {
+  const row = await txn.getFirstAsync<{ climb_ids: unknown }>(
+    'SELECT climb_ids FROM board_climb_hold_postings WHERE board_type = ? AND layout_id = ? AND hold_id = ?',
+    [boardType, layoutId, holdId],
+  );
+  return asBytes(row?.climb_ids);
+}
+
+async function writePosting(
+  txn: SqlExecutor,
+  boardType: string,
+  layoutId: number,
+  holdId: number,
+  climbIds: Uint8Array,
+): Promise<void> {
+  if (climbIds.byteLength === 0) {
+    await txn.runAsync('DELETE FROM board_climb_hold_postings WHERE board_type = ? AND layout_id = ? AND hold_id = ?', [
+      boardType,
+      layoutId,
+      holdId,
+    ]);
+    return;
+  }
+  await txn.runAsync(
+    'INSERT OR REPLACE INTO board_climb_hold_postings (board_type, layout_id, hold_id, climb_ids) VALUES (?, ?, ?, ?)',
+    [boardType, layoutId, holdId, climbIds],
+  );
+}
+
+/**
+ * Take one climb out of the index: drop its id from every posting its hold set
+ * names, then drop the hold set. The `board_climbs` tombstone cascade calls this
+ * inside its own transaction. The `holds_index_climbs` row stays: an id never
+ * changes meaning, and a reused uuid gets its old id back.
+ */
+export async function removeClimbFromHoldIndex(
+  txn: SqlExecutor,
+  climb: { uuid: string; boardType: string; layoutId: number },
+): Promise<boolean> {
+  const idRow = await txn.getFirstAsync<{ id: number }>('SELECT id FROM holds_index_climbs WHERE uuid = ?', [
+    climb.uuid,
+  ]);
+  if (!idRow) return false;
+  const holdSet = (await readHoldSets(txn, [idRow.id])).get(idRow.id);
+  if (!holdSet) return false;
+  const remove = new Set([idRow.id]);
+  for (const holdId of decodeHoldSetIds(holdSet)) {
+    const edited = editPostings(await readPosting(txn, climb.boardType, climb.layoutId, holdId), new Set(), remove);
+    if (edited) await writePosting(txn, climb.boardType, climb.layoutId, holdId, edited);
+  }
+  await txn.runAsync('DELETE FROM board_climb_hold_sets WHERE climb_id = ?', [idRow.id]);
+  return true;
+}
+
+/**
+ * Clear one layout's whole index — its climbs' hold sets, its postings, and the
+ * watermark of EVERY scope of the layout — inside the caller's transaction.
+ * Scope teardown runs it before deleting the climbs (the hold sets are found
+ * through them). Postings are shared by sibling sizes, so a surviving sibling
+ * loses its index too and rebuilds it on its next cycle.
+ */
+export async function clearLayoutHoldIndex(txn: SqlExecutor, boardType: string, layoutId: number): Promise<void> {
+  await txn.runAsync(
+    `DELETE FROM board_climb_hold_sets WHERE climb_id IN (
+       SELECT hic.id FROM holds_index_climbs hic JOIN board_climbs c ON c.uuid = hic.uuid
+       WHERE c.board_type = ? AND c.layout_id = ?)`,
+    [boardType, layoutId],
+  );
+  await txn.runAsync('DELETE FROM board_climb_hold_postings WHERE board_type = ? AND layout_id = ?', [
+    boardType,
+    layoutId,
+  ]);
+  const prefix = `${HOLD_INDEX_KEY_PREFIX}${boardType}:${layoutId}:`;
+  await txn.runAsync('DELETE FROM sync_meta WHERE substr(key, 1, ?) = ?', [prefix.length, prefix]);
+}
+
+/**
+ * Clear every trace of one board type from the index, local ids included — the
+ * spray wipe on sign-out, where a private wall's climbs must not outlive the
+ * account. Run it before the board type's climbs are deleted.
+ */
+export async function clearBoardTypeHoldIndex(txn: SqlExecutor, boardType: string): Promise<void> {
+  const climbIds =
+    'SELECT hic.id FROM holds_index_climbs hic JOIN board_climbs c ON c.uuid = hic.uuid WHERE c.board_type = ?';
+  await txn.runAsync(`DELETE FROM board_climb_hold_sets WHERE climb_id IN (${climbIds})`, [boardType]);
+  await txn.runAsync(`DELETE FROM holds_index_climbs WHERE id IN (${climbIds})`, [boardType]);
+  await txn.runAsync('DELETE FROM board_climb_hold_postings WHERE board_type = ?', [boardType]);
+  const prefix = `${HOLD_INDEX_KEY_PREFIX}${boardType}:`;
+  await txn.runAsync('DELETE FROM sync_meta WHERE substr(key, 1, ?) = ?', [prefix.length, prefix]);
+}
+
+function emptyResult(): EnsureHoldIndexResult {
+  return {
+    status: 'complete',
+    climbsProcessed: 0,
+    holdSetsWritten: 0,
+    holdSetsDeleted: 0,
+    postingsWritten: 0,
+    chunks: 0,
+  };
 }
 
 async function buildHoldIndex(
@@ -248,180 +354,306 @@ async function buildHoldIndex(
   options: EnsureHoldIndexOptions,
 ): Promise<EnsureHoldIndexResult> {
   const { parseHoldRows, sweepOrphans = false } = options;
+  const { boardType, layoutId } = scope;
   const shouldContinue = options.shouldContinue ?? (() => true);
-  const chunkClimbs = Math.max(1, Math.min(options.chunkClimbs ?? HOLD_INDEX_CHUNK_CLIMBS, HOLD_INDEX_CHUNK_CLIMBS));
-  const result: EnsureHoldIndexResult = {
-    status: 'complete',
-    climbsProcessed: 0,
-    rowsInserted: 0,
-    rowsDeleted: 0,
-    chunks: 0,
-  };
+  const chunkClimbs = Math.max(1, options.chunkClimbs ?? HOLD_INDEX_CHUNK_CLIMBS);
+  const initialChunkClimbs = Math.max(1, options.initialChunkClimbs ?? HOLD_INDEX_INITIAL_CHUNK_CLIMBS);
+  const result = emptyResult();
+  const aborted = (): EnsureHoldIndexResult => ({ ...result, status: 'aborted' });
 
   if (!(await isScopeDownloadComplete(db, scopeKey))) return { ...result, status: 'not-downloaded' };
 
   const filter = climbsScopeFilter(scope);
-  const uuidWalkFilter = climbsScopeFilter(scope, '+');
-  const insertChunkRows = multiRowChunkSize(HOLD_COLUMNS.length);
   let rawWatermark = await readRawWatermark(db, scopeKey);
 
   /**
-   * One short IMMEDIATE transaction: replace `climbs`' hold rows and move the
-   * watermark to `next`, but only if the scope is still downloaded and nobody
-   * moved the watermark since `rawWatermark` was read. `climbs` may be empty (a
-   * phase transition). Returns false when the chunk was dropped.
+   * One short IMMEDIATE transaction, run only while the scope is still
+   * downloaded and nobody has moved the watermark since the build read it. A
+   * teardown or sign-out that committed in between took the scope-complete
+   * marker (and the index rows) with it; writing now would put rows back for
+   * climbs that are gone. Returns false when the write was dropped.
    */
-  const commitChunk = async (climbs: readonly ClimbChunkRow[], next: HoldIndexWatermark): Promise<boolean> => {
-    const values: SqlValue[] = [];
-    for (const climb of climbs) {
-      if (!isIndexable(climb)) continue;
-      for (const hold of parseHoldRows(scope.boardType, climb.frames ?? '')) {
-        values.push(scope.boardType, climb.uuid, hold.holdId, hold.holdState);
-      }
-    }
+  const guardedWrite = async (task: (txn: SqlExecutor) => Promise<void>): Promise<boolean> => {
     if (!shouldContinue()) return false;
-
     const expectedRaw = rawWatermark;
-    const nextRaw = JSON.stringify(next);
-    let chunkDeleted = 0;
     try {
-      await runPullWrite(db, async (transaction) => {
-        chunkDeleted = 0;
-        // Under the lock: a teardown or sign-out that committed since the read
-        // took the scope-complete marker and our watermark with it. Writing now
-        // would leave rows for climbs that are gone and a watermark that makes a
-        // re-download skip them.
-        if (!shouldContinue() || !(await isScopeDownloadComplete(transaction, scopeKey))) {
+      await runPullWrite(db, async (txn) => {
+        if (!shouldContinue() || !(await isScopeDownloadComplete(txn, scopeKey))) {
           throw new HoldIndexChunkAbortedError();
         }
-        if ((await readRawWatermark(transaction, scopeKey)) !== expectedRaw) throw new HoldIndexChunkAbortedError();
-
-        if (climbs.length > 0) {
-          const uuids = climbs.map((climb) => climb.uuid);
-          const deleteResult = await transaction.runAsync(
-            `DELETE FROM board_climb_holds WHERE board_type = ? AND climb_uuid IN (${placeholders(uuids.length)})`,
-            [scope.boardType, ...uuids],
-          );
-          chunkDeleted = deleteResult.changes;
-        }
-
-        const rowCount = values.length / HOLD_COLUMNS.length;
-        for (let startRow = 0; startRow < rowCount; startRow += insertChunkRows) {
-          const rowsInStatement = Math.min(insertChunkRows, rowCount - startRow);
-          await transaction.runAsync(
-            buildMultiRowInsertSql('board_climb_holds', HOLD_COLUMNS, rowsInStatement),
-            values.slice(startRow * HOLD_COLUMNS.length, (startRow + rowsInStatement) * HOLD_COLUMNS.length),
-          );
-        }
-
-        await transaction.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
-          holdIndexKey(scopeKey),
-          nextRaw,
-        ]);
+        if ((await readRawWatermark(txn, scopeKey)) !== expectedRaw) throw new HoldIndexChunkAbortedError();
+        await task(txn);
       });
+      return true;
     } catch (error) {
       if (error instanceof HoldIndexChunkAbortedError) return false;
       throw error;
     }
-
-    rawWatermark = nextRaw;
-    if (climbs.length > 0) result.chunks += 1;
-    result.climbsProcessed += climbs.length;
-    result.rowsInserted += values.length / HOLD_COLUMNS.length;
-    result.rowsDeleted += chunkDeleted;
-    return true;
   };
 
-  let watermark: HoldIndexWatermark | null = parseWatermark(rawWatermark);
+  const stampWatermark = async (txn: SqlExecutor, watermark: HoldIndexWatermark): Promise<string> => {
+    const raw = JSON.stringify(watermark);
+    await txn.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [holdIndexKey(scopeKey), raw]);
+    return raw;
+  };
 
-  // FIRST BUILD: walk the scope in uuid order. The primary key leads with
-  // (board_type, climb_uuid), so inserting climbs in uuid order appends to the
-  // b-tree instead of touching a random leaf page per climb. Walking in sync_seq
-  // order (random uuids) made every late chunk rewrite ~1,000 scattered pages:
-  // about 0.8 GB of WAL for one MoonBoard layout.
+  /**
+   * Recompute every posting of this layout from the hold sets of the layout's
+   * climbs, which are the truth. The read takes no lock and walks the hold-set
+   * key in order (the `+` keeps the planner off board_climbs' indexes, which
+   * would sort the layout for every batch); the writes go in short batches and
+   * skip postings that did not change.
+   */
+  const rebuildLayoutPostings = async (): Promise<boolean> => {
+    const postings = new Map<number, number[]>();
+    let lastClimbId = -1;
+    for (;;) {
+      if (!shouldContinue()) return false;
+      const rows = await db.getAllAsync<{ climb_id: number; holds: unknown }>(
+        `SELECT hs.climb_id, hs.holds
+         FROM board_climb_hold_sets hs
+         JOIN holds_index_climbs hic ON hic.id = hs.climb_id
+         JOIN board_climbs c ON c.uuid = hic.uuid
+         WHERE hs.climb_id > ? AND +c.board_type = ? AND +c.layout_id = ?
+         ORDER BY hs.climb_id
+         LIMIT 5000`,
+        [lastClimbId, boardType, layoutId],
+      );
+      if (rows.length === 0) break;
+      for (const row of rows) {
+        const bytes = asBytes(row.holds);
+        if (!bytes) continue;
+        // Rows arrive in climb-id order, so each posting list is built sorted.
+        for (const holdId of decodeHoldSetIds(bytes)) {
+          let ids = postings.get(holdId);
+          if (!ids) {
+            ids = [];
+            postings.set(holdId, ids);
+          }
+          ids.push(row.climb_id);
+        }
+      }
+      lastClimbId = rows[rows.length - 1].climb_id;
+    }
+
+    const holdIds = [...postings.keys()];
+    for (let start = 0; start < holdIds.length; start += POSTINGS_WRITE_BATCH_HOLDS) {
+      const batch = holdIds.slice(start, start + POSTINGS_WRITE_BATCH_HOLDS);
+      const wrote = await guardedWrite(async (txn) => {
+        for (const holdId of batch) {
+          const next = encodePostings(postings.get(holdId) ?? []);
+          if (bytesEqual(await readPosting(txn, boardType, layoutId, holdId), next)) continue;
+          await writePosting(txn, boardType, layoutId, holdId, next);
+          result.postingsWritten += 1;
+        }
+      });
+      if (!wrote) return false;
+    }
+    return guardedWrite(async (txn) => {
+      const existing = await txn.getAllAsync<{ hold_id: number }>(
+        'SELECT hold_id FROM board_climb_hold_postings WHERE board_type = ? AND layout_id = ?',
+        [boardType, layoutId],
+      );
+      for (const { hold_id: holdId } of existing) {
+        if (postings.has(holdId)) continue;
+        await writePosting(txn, boardType, layoutId, holdId, new Uint8Array(0));
+        result.postingsWritten += 1;
+      }
+    });
+  };
+
+  /**
+   * Hold sets for one chunk. Unchanged sets are not rewritten, which keeps a
+   * sibling size's first build (mostly the same climbs) close to write-free.
+   * Returns the per-hold posting edits the chunk implies.
+   */
+  const writeHoldSets = async (
+    txn: SqlExecutor,
+    climbs: readonly ClimbChunkRow[],
+    derived: ReadonlyMap<string, Uint8Array | null>,
+  ): Promise<Map<number, PostingEdit>> => {
+    const edits = new Map<number, PostingEdit>();
+    const editFor = (holdId: number): PostingEdit => {
+      let edit = edits.get(holdId);
+      if (!edit) {
+        edit = { add: new Set(), remove: new Set() };
+        edits.set(holdId, edit);
+      }
+      return edit;
+    };
+    const ids = await ensureClimbIds(
+      txn,
+      climbs.map((climb) => climb.uuid),
+    );
+    const existing = await readHoldSets(txn, [...ids.values()]);
+    const upserts: SqlValue[] = [];
+    const deletes: number[] = [];
+    for (const climb of climbs) {
+      const climbId = ids.get(climb.uuid);
+      if (climbId === undefined) continue;
+      const previous = existing.get(climbId) ?? null;
+      const next = derived.get(climb.uuid) ?? null;
+      if (bytesEqual(previous, next)) continue;
+      const previousHolds = previous ? decodeHoldSetIds(previous) : new Uint32Array(0);
+      const nextHolds = next ? decodeHoldSetIds(next) : new Uint32Array(0);
+      const nextSet = new Set(nextHolds);
+      const previousSet = new Set(previousHolds);
+      for (const holdId of previousHolds) if (!nextSet.has(holdId)) editFor(holdId).remove.add(climbId);
+      for (const holdId of nextHolds) if (!previousSet.has(holdId)) editFor(holdId).add.add(climbId);
+      if (next) upserts.push(climbId, next);
+      else deletes.push(climbId);
+    }
+    for (let start = 0; start < upserts.length; start += IN_LIST_BATCH) {
+      const batch = upserts.slice(start, start + IN_LIST_BATCH);
+      await txn.runAsync(
+        `INSERT OR REPLACE INTO board_climb_hold_sets (climb_id, holds) VALUES ${Array.from(
+          { length: batch.length / 2 },
+          () => '(?, ?)',
+        ).join(', ')}`,
+        batch,
+      );
+    }
+    for (let start = 0; start < deletes.length; start += IN_LIST_BATCH) {
+      const batch = deletes.slice(start, start + IN_LIST_BATCH);
+      await txn.runAsync(`DELETE FROM board_climb_hold_sets WHERE climb_id IN (${placeholders(batch.length)})`, batch);
+    }
+    result.holdSetsWritten += upserts.length / 2;
+    result.holdSetsDeleted += deletes.length;
+    return edits;
+  };
+
+  const deriveChunk = (climbs: readonly ClimbChunkRow[]): Map<string, Uint8Array | null> =>
+    new Map(climbs.map((climb) => [climb.uuid, deriveHoldSet(boardType, climb, parseHoldRows)]));
+
+  let watermark = parseWatermark(rawWatermark);
+
   if (!watermark) {
-    if (!shouldContinue()) return { ...result, status: 'aborted' };
+    // FIRST BUILD. Record the scope's newest change first: anything that lands
+    // while this runs is above it and belongs to the incremental phase.
+    if (!shouldContinue()) return aborted();
     const target = await db.getFirstAsync<{ max_seq: number | null }>(
       `SELECT MAX(sync_seq) AS max_seq FROM board_climbs WHERE ${filter.sql}`,
       filter.params,
     );
-    watermark = { phase: 'initial', lastUuid: null, targetSyncSeq: target?.max_seq ?? -1 };
-    // Stamped before the first chunk so a killed app resumes the walk rather
-    // than starting a new one with a different target.
-    if (!(await commitChunk([], watermark))) return { ...result, status: 'aborted' };
-  }
-
-  while (watermark.phase === 'initial') {
-    if (!shouldContinue()) return { ...result, status: 'aborted' };
-    const { lastUuid, targetSyncSeq }: { lastUuid: string | null; targetSyncSeq: number } = watermark;
-    // `uuidWalkFilter` prefixes every scope column with a unary `+`, which stops
-    // SQLite from using an index on it. Without that the planner picks
-    // idx_climbs_sync_seq and sorts the whole scope for every chunk (~300 ms on a
-    // Kilter layout); with it, `uuid > ?` walks the uuid primary key in order and
-    // stops at the chunk's 500th match, so the whole walk reads the table once.
-    const climbs: ClimbChunkRow[] = await db.getAllAsync<ClimbChunkRow>(
-      `SELECT ${CLIMB_CHUNK_COLUMNS}
-       FROM board_climbs
-       WHERE uuid > ? AND ${uuidWalkFilter.sql} AND +sync_seq IS NOT NULL
-       ORDER BY uuid
-       LIMIT ?`,
-      [lastUuid ?? '', ...uuidWalkFilter.params, chunkClimbs],
-    );
-    const walkDone: boolean = climbs.length < chunkClimbs;
-    const next: HoldIndexWatermark = walkDone
-      ? { phase: 'incremental', syncSeq: targetSyncSeq, updatedAt: null }
-      : { phase: 'initial', lastUuid: climbs[climbs.length - 1].uuid, targetSyncSeq };
-    if (!(await commitChunk(climbs, next))) return { ...result, status: 'aborted' };
+    const targetSyncSeq = target?.max_seq ?? -1;
+    // A unary `+` on every scope column stops SQLite using an index on it, so the
+    // `uuid > ?` range walks the uuid key in order and each chunk stops at its
+    // limit. Without it the planner picks idx_climbs_sync_seq and sorts the whole
+    // scope for every chunk (~300 ms per chunk on a Kilter layout).
+    const uuidWalkFilter = climbsScopeFilter(scope, '+');
+    let lastUuid = '';
+    for (;;) {
+      if (!shouldContinue()) return aborted();
+      const climbs = await db.getAllAsync<ClimbChunkRow>(
+        `SELECT ${CLIMB_CHUNK_COLUMNS} FROM board_climbs
+         WHERE uuid > ? AND ${uuidWalkFilter.sql} AND +sync_seq IS NOT NULL
+         ORDER BY uuid LIMIT ?`,
+        [lastUuid, ...uuidWalkFilter.params, initialChunkClimbs],
+      );
+      if (climbs.length === 0) break;
+      const derived = deriveChunk(climbs);
+      // Postings are not edited here: the rebuild below derives them from every
+      // hold set of the layout at once, which is what makes a restart lossless.
+      const wrote = await guardedWrite(async (txn) => {
+        await writeHoldSets(txn, climbs, derived);
+      });
+      if (!wrote) return aborted();
+      result.chunks += 1;
+      result.climbsProcessed += climbs.length;
+      lastUuid = climbs[climbs.length - 1].uuid;
+      if (climbs.length < initialChunkClimbs) break;
+    }
+    if (!(await rebuildLayoutPostings())) return aborted();
+    const next: HoldIndexWatermark = { syncSeq: targetSyncSeq, updatedAt: null };
+    let stamped = '';
+    const wrote = await guardedWrite(async (txn) => {
+      stamped = await stampWatermark(txn, next);
+    });
+    if (!wrote) return aborted();
+    rawWatermark = stamped;
     watermark = next;
   }
 
-  // INCREMENTAL: everything newer than the watermark, in sync_seq order.
-  let syncSeq: number = watermark.syncSeq;
+  // INCREMENTAL: everything newer than the watermark, in sync_seq order, each
+  // chunk editing only the postings its climbs enter or leave.
+  let syncSeq = watermark.syncSeq;
   for (;;) {
-    if (!shouldContinue()) return { ...result, status: 'aborted' };
-    const climbs: ClimbChunkRow[] = await db.getAllAsync<ClimbChunkRow>(
-      `SELECT ${CLIMB_CHUNK_COLUMNS}
-       FROM board_climbs
+    if (!shouldContinue()) return aborted();
+    const climbs = await db.getAllAsync<ClimbChunkRow>(
+      `SELECT ${CLIMB_CHUNK_COLUMNS} FROM board_climbs
        WHERE ${filter.sql} AND sync_seq > ?
-       ORDER BY sync_seq
-       LIMIT ?`,
+       ORDER BY sync_seq LIMIT ?`,
       [...filter.params, syncSeq, chunkClimbs],
     );
     if (climbs.length === 0) break;
-    const lastClimb: ClimbChunkRow = climbs[climbs.length - 1];
-    const next: HoldIndexWatermark = {
-      phase: 'incremental',
-      syncSeq: lastClimb.sync_seq,
-      updatedAt: lastClimb.updated_at,
-    };
-    if (!(await commitChunk(climbs, next))) return { ...result, status: 'aborted' };
+    const derived = deriveChunk(climbs);
+    const lastClimb = climbs[climbs.length - 1];
+    const next: HoldIndexWatermark = { syncSeq: lastClimb.sync_seq, updatedAt: lastClimb.updated_at };
+    let stamped = '';
+    const wrote = await guardedWrite(async (txn) => {
+      const edits = await writeHoldSets(txn, climbs, derived);
+      for (const [holdId, { add, remove }] of edits) {
+        const edited = editPostings(await readPosting(txn, boardType, layoutId, holdId), add, remove);
+        if (!edited) continue;
+        await writePosting(txn, boardType, layoutId, holdId, edited);
+        result.postingsWritten += 1;
+      }
+      stamped = await stampWatermark(txn, next);
+    });
+    if (!wrote) return aborted();
+    rawWatermark = stamped;
     syncSeq = next.syncSeq;
+    result.chunks += 1;
+    result.climbsProcessed += climbs.length;
     if (climbs.length < chunkClimbs) break;
   }
 
   if (sweepOrphans && shouldContinue()) {
-    result.rowsDeleted += await sweepOrphanRows(db, scope.boardType);
+    // Hold sets whose climb is gone. Found without a lock; deleted in one short
+    // transaction that re-checks each one. The postings are then rebuilt for this
+    // layout (the one the import reconciled), the simplest correct fix: an
+    // orphan id left in ANOTHER layout's posting is harmless, because
+    // `findSimilarClimbCandidates` drops ids that have no hold set.
+    const orphans = await db.getAllAsync<{ id: number }>(
+      `SELECT hic.id FROM holds_index_climbs hic
+       JOIN board_climb_hold_sets hs ON hs.climb_id = hic.id
+       WHERE NOT EXISTS (SELECT 1 FROM board_climbs c WHERE c.uuid = hic.uuid)`,
+    );
+    if (orphans.length > 0) {
+      const deleted = await guardedWrite(async (txn) => {
+        for (let start = 0; start < orphans.length; start += IN_LIST_BATCH) {
+          const batch = orphans.slice(start, start + IN_LIST_BATCH).map((orphan) => orphan.id);
+          const removed = await txn.runAsync(
+            `DELETE FROM board_climb_hold_sets WHERE climb_id IN (${placeholders(batch.length)})
+               AND NOT EXISTS (
+                 SELECT 1 FROM holds_index_climbs hic JOIN board_climbs c ON c.uuid = hic.uuid
+                 WHERE hic.id = board_climb_hold_sets.climb_id)`,
+            batch,
+          );
+          result.holdSetsDeleted += removed.changes;
+        }
+      });
+      if (!deleted || !(await rebuildLayoutPostings())) return aborted();
+    }
   }
   return result;
 }
 
-// One build per scope at a time. The pull cycle and a local reader can both ask
-// for the same scope; the second joins the first instead of racing it for the
-// write lock and re-deriving the same chunk.
-const inFlightBuilds = new Map<string, Promise<EnsureHoldIndexResult>>();
+// One build per LAYOUT at a time: postings are shared by every size of a layout,
+// so two scopes of one layout must not edit them concurrently. A caller for the
+// same scope joins the running build; any other caller waits for it and then
+// runs its own pass (usually one probe).
+const inFlightBuilds = new Map<string, { scopeKey: string; promise: Promise<EnsureHoldIndexResult> }>();
 
 /**
  * Bring one downloaded scope's holds index up to date, in short chunks.
  *
- * Idempotent and resumable: a second call with nothing new is one probe, and a
- * call interrupted anywhere resumes from the last committed chunk. Never call it
- * inside a transaction — it opens its own, one per chunk.
+ * Idempotent and resumable: a second call with nothing new is one probe. Never
+ * call it inside a transaction — it opens its own.
  *
- * Joining an in-flight build returns that build's result, unless it was aborted
- * (its owner's `shouldContinue` said stop, which says nothing about this caller)
- * or this caller asked for `sweepOrphans`, which the running build may not have
- * been asked for. Those callers wait for it and then run their own pass, which
- * starts from the watermark the first one left.
+ * Joining a build of the same scope returns that build's result, unless it was
+ * aborted (its owner's `shouldContinue` says nothing about this caller) or this
+ * caller asked for `sweepOrphans`. Those callers wait and then run their own pass.
  */
 export async function ensureHoldIndex(
   db: OfflineDatabase,
@@ -429,31 +661,34 @@ export async function ensureHoldIndex(
   options: EnsureHoldIndexOptions,
 ): Promise<EnsureHoldIndexResult> {
   const scopeKey = offlineBoardKey(scope);
+  const layoutKey = `${scope.boardType}:${scope.layoutId}`;
   let result: EnsureHoldIndexResult | null = null;
   for (;;) {
-    const running = inFlightBuilds.get(scopeKey);
+    const running = inFlightBuilds.get(layoutKey);
     if (!running) break;
     // A build that threw is its owner's error to report; this caller retries.
-    const joined = await running.catch(() => null);
-    if (joined && joined.status !== 'aborted' && !options.sweepOrphans) {
+    const joined = await running.promise.catch(() => null);
+    if (running.scopeKey === scopeKey && joined && joined.status !== 'aborted' && !options.sweepOrphans) {
       result = joined;
       break;
     }
   }
   if (!result) {
     // No await between the empty-map check above and this set, so two callers
-    // can never both start a build for one scope.
-    const started = buildHoldIndex(db, scope, scopeKey, options);
-    inFlightBuilds.set(scopeKey, started);
+    // can never both start a build for one layout.
+    const promise = buildHoldIndex(db, scope, scopeKey, options);
+    const entry = { scopeKey, promise };
+    inFlightBuilds.set(layoutKey, entry);
     try {
-      result = await started;
+      result = await promise;
     } finally {
-      if (inFlightBuilds.get(scopeKey) === started) inFlightBuilds.delete(scopeKey);
+      if (inFlightBuilds.get(layoutKey) === entry) inFlightBuilds.delete(layoutKey);
     }
   }
 
-  if (options.queryClient && result.rowsInserted + result.rowsDeleted > 0) {
-    for (const key of invalidateKeysForTable('board_climb_holds') ?? []) {
+  const changed = result.holdSetsWritten + result.holdSetsDeleted + result.postingsWritten > 0;
+  if (options.queryClient && changed) {
+    for (const key of invalidateKeysForTable('board_climb_hold_sets') ?? []) {
       options.queryClient.invalidateQueries({ queryKey: key });
     }
   }

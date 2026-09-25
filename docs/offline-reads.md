@@ -91,18 +91,30 @@ The persisted cache adds its own layer on top: the blob carries a `userId` stamp
 
 ### The holds index is derived on the device, not synced
 
-`board_climb_holds` (schema v10) holds one row per hold per climb: `(board_type, climb_uuid, hold_id, hold_state)`, `WITHOUT ROWID`, plus `idx_climb_holds_by_hold` on `(board_type, hold_id, climb_uuid)`. The on-device similar-climbs and hold-heatmap queries need it. The phone builds it from the `frames` string every downloaded climb already has (`ensureHoldIndex`, `packages/shared/offline-sync/src/holds-index/hold-index.ts`), using the same rule Postgres uses: the first row per hold wins across frames, and unknown role codes are dropped (`parseFramesToHoldRows` in `@boardsesh/board-constants`). The engine takes the parser as a parameter, and mobile passes it in from `packages/mobile/src/offline/hold-index-parser.ts`.
+The on-device similar-climbs and hold-heatmap queries need to go from holds to climbs. The phone builds that index from the `frames` string every downloaded climb already has (`ensureHoldIndex`, `packages/shared/offline-sync/src/holds-index/hold-index.ts`). It uses the same rule Postgres uses: the first entry per hold wins across frames, and unknown role codes are dropped (`parseFramesToHoldRows` in `@boardsesh/board-constants`). The engine takes the parser as a parameter, and mobile passes it in from `packages/mobile/src/offline/hold-index-parser.ts`.
 
-The table is not a synced table. It has no `TABLE_CONFIGS` entry, no checkpoint and no tombstones, and it never ships in a snapshot artifact (`DEVICE_ONLY_TABLES`). The rules:
+It is three tables of packed blobs (schema v10), not one row per hold. One row per hold measured 3.8M rows and 370 MB for one Kilter download.
 
-- **Only complete scopes.** A scope is indexed only once its `scope-complete:` marker exists. The builder checks the marker again under each chunk's write lock, so it cannot write into a scope that a teardown is removing.
-- **One watermark per scope.** Progress is stored in the `holds-index:<scopeKey>` row of `sync_meta`. The first build walks the scope in `uuid` order, so primary-key inserts append instead of scattering. At the start it records the scope's `MAX(sync_seq)`. When the walk ends, the builder switches to incremental mode at that value and from then on walks `sync_seq` order. The watermark is per scope, not per layout, because a second size of a layout brings climbs with older `sync_seq` values.
-- **Short writes.** The builder reads 500 climbs on the main connection, then writes them in one short IMMEDIATE transaction: delete the chunk's old rows, insert the new ones, and move the watermark. A killed app resumes from the last chunk that committed.
-- **Which climbs get rows.** Only listed, published, not-hidden climbs get rows. Hiding a climb bumps its `sync_seq`, and the rebuild then deletes its rows.
+| Table | One row per | Contents |
+| --- | --- | --- |
+| `holds_index_climbs` | climb uuid | a stable local integer id; only ever `INSERT OR IGNORE`d |
+| `board_climb_hold_sets` | indexed climb | its holds, sorted by hold id, 5 bytes each (uint32 hold id + uint8 role: 0 start, 1 hand, 2 foot, 3 finish, 255 other) |
+| `board_climb_hold_postings` | (board, layout, hold) | sorted uint32 local ids of the climbs that use the hold; `WITHOUT ROWID` |
+
+Readers never decode bytes themselves. `holds-index/query.ts` provides `getHoldSet`, `findSimilarClimbCandidates` (overlap counting over postings, then Jaccard) and `aggregateHoldUsage` (the heatmap's per-hold counts over hold sets). On the real `kilter:1` artifact, one download's index is 67 MB on disk, and a candidate query takes 3–5 ms in node.
+
+None of the three is a synced table. They have no `TABLE_CONFIGS` entry, no checkpoint and no tombstones, and they never ship in a snapshot artifact (`DEVICE_ONLY_TABLES`). The rules:
+
+- **Only complete scopes.** A scope is indexed only once its `scope-complete:` marker exists. The builder checks the marker again under each write lock, so it cannot write into a scope that a teardown is removing.
+- **One watermark per scope.** Progress is stored in the `holds-index:<scopeKey>` row of `sync_meta`, compared on `sync_seq` only. The watermark is per scope, not per layout, because a second size of a layout brings climbs with older `sync_seq` values.
+- **First build.** With no watermark, the builder records the scope's `MAX(sync_seq)`. It then walks the scope in `uuid` order in 2,000-climb transactions that write hold sets only; the uuid order makes new ids append instead of scatter. Next it rebuilds the layout's postings from every hold set of that layout, and finally stamps the watermark. An interrupted first build starts over. Nothing is lost, because hold-set writes skip unchanged rows and the rebuild reads the truth.
+- **Incremental.** Climbs past the watermark are re-derived 500 at a time. Each chunk edits only the postings its climbs enter or leave, and moves the watermark in the same short transaction.
+- **Which climbs are indexed.** Only listed, published, not-hidden climbs. Hiding a climb bumps its `sync_seq`, and the next pass takes it out.
+- **Postings are per layout.** Every downloaded size of a layout shares them, so builds run one at a time per layout.
 - **When it runs.** `pullSync` builds the index for each scope at the end of every cycle, after the completion markers are written, so it never holds up a download. A build failure is reported through `holdIndex.onError` and never fails the cycle. The local readers also call `ensureHoldIndex` before they query.
-- **Cleanup.** The rows are removed with their climbs by the `board_climbs` tombstone cascade, by scope teardown (children first, and the watermark with them), by the orphan sweep after a snapshot import, and by both sign-out wipes. Spray rows go on every sign-out; the explicit sign-out clears every table.
+- **Cleanup.** A `board_climbs` tombstone takes the climb out of its postings and drops its hold set. Scope teardown clears the whole layout's index and every sibling scope's watermark, and a surviving sibling rebuilds on its next cycle. After a snapshot import, the orphan sweep deletes hold sets whose climb is gone and rebuilds that layout's postings. The spray sign-out wipe clears spray's index, local ids included. The explicit sign-out wipe clears all three tables.
 
-`board_climbs` and `board_climb_holds` both invalidate `['similarClimbs']`. `['holdHeatmap']` will join them when the heatmap's local reader ships; until then the drift test would reject a key that nothing reads.
+`board_climbs` and `board_climb_hold_sets` both invalidate `['similarClimbs']`. `['holdHeatmap']` will join them when the heatmap's local reader ships; until then the drift test would reject a key that nothing reads.
 
 ## Local-first while online, and when not to be
 

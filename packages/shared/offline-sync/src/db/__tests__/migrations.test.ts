@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 
 import { runMigrations, MIGRATIONS, LATEST_SCHEMA_VERSION } from '../migrations';
-import { SCHEMA_STATEMENTS } from '../schema';
+import { DEVICE_ONLY_TABLES, SCHEMA_STATEMENTS } from '../schema';
 import { TABLE_CONFIGS } from '../../sync/table-config';
 import { createTestDatabase, listTables, primaryKeyColumns, tableColumns } from '../../testing/sqlite-test-db';
 
@@ -281,27 +281,27 @@ describe('runMigrations', () => {
     expect(await primaryKeyColumns(upgradedDb, 'spray_walls')).toEqual(['layout_id']);
   });
 
-  it('v10 creates the device-derived board_climb_holds WITHOUT ROWID plus both indexes, on fresh and v9-stamped databases', async () => {
+  it('v10 creates the device-derived holds index tables and the sync_seq index, on fresh and v9-stamped databases', async () => {
     const assertHoldsSchema = async (database: ReturnType<typeof createTestDatabase>) => {
-      expect(await listTables(database)).toContain('board_climb_holds');
-      expect(await primaryKeyColumns(database, 'board_climb_holds')).toEqual(['board_type', 'climb_uuid', 'hold_id']);
-      expect(await tableColumns(database, 'board_climb_holds')).toEqual([
+      const tables = await listTables(database);
+      for (const table of ['holds_index_climbs', 'board_climb_hold_sets', 'board_climb_hold_postings']) {
+        expect(tables).toContain(table);
+      }
+      expect(await primaryKeyColumns(database, 'holds_index_climbs')).toEqual(['id']);
+      expect(await primaryKeyColumns(database, 'board_climb_hold_sets')).toEqual(['climb_id']);
+      expect(await primaryKeyColumns(database, 'board_climb_hold_postings')).toEqual([
         'board_type',
-        'climb_uuid',
+        'layout_id',
         'hold_id',
-        'hold_state',
       ]);
-      const table = await database.getFirstAsync<{ sql: string }>(
-        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'board_climb_holds'",
+      const postings = await database.getFirstAsync<{ sql: string }>(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'board_climb_hold_postings'",
       );
-      expect(table?.sql).toMatch(/WITHOUT ROWID/);
-      const indexes = await database.getAllAsync<{ name: string; tbl_name: string }>(
-        "SELECT name, tbl_name FROM sqlite_master WHERE type = 'index' AND name IN ('idx_climb_holds_by_hold', 'idx_climbs_sync_seq') ORDER BY name",
+      expect(postings?.sql).toMatch(/WITHOUT ROWID/);
+      const index = await database.getFirstAsync<{ tbl_name: string }>(
+        "SELECT tbl_name FROM sqlite_master WHERE type = 'index' AND name = 'idx_climbs_sync_seq'",
       );
-      expect(indexes).toEqual([
-        { name: 'idx_climb_holds_by_hold', tbl_name: 'board_climb_holds' },
-        { name: 'idx_climbs_sync_seq', tbl_name: 'board_climbs' },
-      ]);
+      expect(index).toEqual({ tbl_name: 'board_climbs' });
     };
 
     const freshDb = createTestDatabase();
@@ -313,7 +313,7 @@ describe('runMigrations', () => {
     const upgradedDb = createTestDatabase();
     await runMigrations(upgradedDb);
     await upgradedDb.execAsync(
-      'DROP INDEX idx_climbs_sync_seq; DROP INDEX idx_climb_holds_by_hold; DROP TABLE board_climb_holds;',
+      'DROP INDEX idx_climbs_sync_seq; DROP TABLE holds_index_climbs; DROP TABLE board_climb_hold_sets; DROP TABLE board_climb_hold_postings;',
     );
     await upgradedDb.runAsync(
       "INSERT INTO board_climbs (uuid, board_type, layout_id, frames, sync_seq) VALUES ('kept', 'kilter', 1, 'p1r12', 3)",
@@ -329,8 +329,10 @@ describe('runMigrations', () => {
     ).toBe(10);
   });
 
-  it('keeps the device-only holds table out of SCHEMA_STATEMENTS', () => {
-    expect(SCHEMA_STATEMENTS.some((statement) => statement.includes('board_climb_holds'))).toBe(false);
+  it('keeps the device-only holds index tables out of SCHEMA_STATEMENTS', () => {
+    for (const table of DEVICE_ONLY_TABLES) {
+      expect(SCHEMA_STATEMENTS.some((statement) => statement.includes(table))).toBe(false);
+    }
   });
 
   it('holds every column the sync config will write, for every syncable table', async () => {

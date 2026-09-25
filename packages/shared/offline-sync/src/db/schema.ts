@@ -203,46 +203,53 @@ CREATE TABLE IF NOT EXISTS spray_walls (
 `.trim();
 
 /**
- * The per-hold rows of every indexed climb, DERIVED on the device from
- * `board_climbs.frames` (see holds-index/hold-index.ts). The server has the same
- * table in Postgres, but this one is never synced, never tombstoned and never
- * shipped in a snapshot artifact: the device rebuilds it from rows it already
- * has, so it costs no download and no backend query.
+ * The device-derived holds index (holds-index/). Three tables, all built on the
+ * phone from `board_climbs.frames`, never synced, never tombstoned, never shipped
+ * in a snapshot artifact. The byte formats are in holds-index/query.ts.
  *
- * `hold_state` is the canonical role name (STARTING / HAND / FOOT / FINISH, or
- * whatever `HOLD_STATE_MAP` names for the board), exactly what Postgres stores.
+ * Packed blobs rather than one row per hold: a Kilter download is ~3.8M
+ * hold rows, which as rows costs ~370 MB on the phone.
  *
- * `WITHOUT ROWID` makes the primary key the table itself, so the heatmap's
- * `(board_type, climb_uuid)` probe is a covering range scan with no rowid hop.
+ * Two rules for this DDL text, both enforced by the snapshot export
+ * (`boardSnapshotDdlStatements`, which picks the artifact's DDL out of MIGRATIONS
+ * with a word-boundary regex on `board_climbs`): no SQL comments, which could name
+ * `board_climbs`, and no `REFERENCES board_climbs`. Commentary stays here in TS.
  *
- * Two rules for the DDL text of this table and its index, both enforced by the
- * snapshot export (`boardSnapshotDdlStatements`, which picks the artifact's DDL
- * out of MIGRATIONS with a word-boundary regex on `board_climbs`):
- *  - no SQL comments, which could name `board_climbs` and drag this table into a
- *    public artifact;
- *  - no `REFERENCES board_climbs`, for the same reason. There is no FK anyway:
- *    the engine deletes children explicitly (tombstone cascade, scope teardown,
- *    the post-import orphan sweep), and SQLite FK enforcement is off.
- *
- * Deliberately NOT part of `SCHEMA_STATEMENTS`: it arrives in migration v10,
- * like `SPRAY_WALLS` at v8.
+ * Deliberately NOT part of `SCHEMA_STATEMENTS`: they arrive in migration v10.
  */
-export const BOARD_CLIMB_HOLDS = `
-CREATE TABLE IF NOT EXISTS board_climb_holds (
-  board_type TEXT NOT NULL,
-  climb_uuid TEXT NOT NULL,
-  hold_id INTEGER NOT NULL,
-  hold_state TEXT NOT NULL,
-  PRIMARY KEY (board_type, climb_uuid, hold_id)
-) WITHOUT ROWID;
+
+/**
+ * A stable local integer id per climb uuid, so a posting is 4 bytes per climb
+ * instead of a 36-character uuid. Rows are only ever `INSERT OR IGNORE`d: an id
+ * never changes meaning while any posting may name it.
+ */
+export const HOLDS_INDEX_CLIMBS = `
+CREATE TABLE IF NOT EXISTS holds_index_climbs (
+  id INTEGER PRIMARY KEY,
+  uuid TEXT NOT NULL UNIQUE
+);
+`.trim();
+
+/** One row per indexed climb: its holds, sorted, 5 bytes each (uint32 hold id + uint8 role). */
+export const BOARD_CLIMB_HOLD_SETS = `
+CREATE TABLE IF NOT EXISTS board_climb_hold_sets (
+  climb_id INTEGER PRIMARY KEY,
+  holds BLOB NOT NULL
+);
 `.trim();
 
 /**
- * Hold id → climbs, for the similar-climbs overlap scan (`hold_id IN (...)`).
- * Carries `climb_uuid` so the scan never touches the table.
+ * One row per (board, layout, hold): the sorted uint32 local ids of the indexed
+ * climbs that use it. Per LAYOUT, shared by every downloaded size of it.
  */
-export const INDEX_CLIMB_HOLDS_BY_HOLD = `
-CREATE INDEX IF NOT EXISTS idx_climb_holds_by_hold ON board_climb_holds (board_type, hold_id, climb_uuid);
+export const BOARD_CLIMB_HOLD_POSTINGS = `
+CREATE TABLE IF NOT EXISTS board_climb_hold_postings (
+  board_type TEXT NOT NULL,
+  layout_id INTEGER NOT NULL,
+  hold_id INTEGER NOT NULL,
+  climb_ids BLOB NOT NULL,
+  PRIMARY KEY (board_type, layout_id, hold_id)
+) WITHOUT ROWID;
 `.trim();
 
 /**
@@ -265,7 +272,7 @@ CREATE INDEX IF NOT EXISTS idx_climbs_sync_seq ON board_climbs (board_type, layo
  * refuses to emit DDL naming one of these, and the explicit sign-out wipe clears
  * them alongside the board tables.
  */
-export const DEVICE_ONLY_TABLES = ['board_climb_holds'] as const;
+export const DEVICE_ONLY_TABLES = ['holds_index_climbs', 'board_climb_hold_sets', 'board_climb_hold_postings'] as const;
 
 // --- Sync bookkeeping ---------------------------------------------------------
 // checkpoints.ts reads/writes sync_meta(key, value); it has no CREATE TABLE of

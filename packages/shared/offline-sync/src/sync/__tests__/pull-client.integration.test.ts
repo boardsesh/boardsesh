@@ -30,6 +30,8 @@ import type { QueryInvalidator } from '../../database';
 const onSchemaDrift = vi.fn();
 
 import { pullSync } from '../pull-client';
+import { ensureHoldIndex } from '../../holds-index/hold-index';
+import { decodePostings, getHoldSet } from '../../holds-index/query';
 import { enqueue } from '../../mutation-queue/queue';
 import {
   setBackgrounded,
@@ -740,24 +742,27 @@ describe('sync layer — real-DDL integration', () => {
       ).toBeNull();
     });
 
-    it("a board_climbs tombstone takes the climb's derived hold rows with it, unless the guard keeps the climb", async () => {
-      // board_climb_holds is derived on the device, so nothing on the server ever
-      // tombstones its rows; the climb's tombstone has to cascade locally.
+    it('a board_climbs tombstone takes the climb out of the holds index, unless the guard keeps the climb', async () => {
+      // The holds index is derived on the device, so nothing on the server ever
+      // tombstones it; the climb's tombstone has to cascade locally.
+      await db.runAsync("INSERT INTO sync_meta (key, value) VALUES ('scope-complete:kilter:1:12', '1')");
       for (const [uuid, updatedAt] of [
         ['gone', '2024-05-01T00:00:00Z'],
         ['re-added', '2024-06-02T00:00:00Z'],
       ]) {
         await db.runAsync(
-          `INSERT INTO board_climbs (uuid, board_type, layout_id, updated_at, sync_seq) VALUES (?, 'kilter', 1, ?, 1)`,
+          `INSERT INTO board_climbs (uuid, board_type, layout_id, compatible_size_ids, frames, is_listed, is_draft, updated_at, sync_seq)
+           VALUES (?, 'kilter', 1, '[12]', 'p1r13p2r13', 1, 0, ?, 1)`,
           [uuid, updatedAt],
         );
-        await db.runAsync(
-          `INSERT INTO board_climb_holds (board_type, climb_uuid, hold_id, hold_state) VALUES ('kilter', ?, 1, 'HAND'), ('kilter', ?, 2, 'FOOT')`,
-          [uuid, uuid],
-        );
       }
-      await db.runAsync(
-        "INSERT INTO board_climb_holds (board_type, climb_uuid, hold_id, hold_state) VALUES ('tension', 'gone', 1, 'HAND')",
+      await ensureHoldIndex(
+        db,
+        { boardType: 'kilter', layoutId: 1, sizeId: 12 },
+        {
+          parseHoldRows: (_boardType, frames) =>
+            [...frames.matchAll(/p(\d+)r\d+/g)].map((match) => ({ holdId: Number(match[1]), holdState: 'HAND' })),
+        },
       );
 
       const deletions: DeletionRecord[] = [
@@ -766,14 +771,19 @@ describe('sync layer — real-DDL integration', () => {
       ];
       await pullSync(db, queryClient, makeSingleTableFetch({ queryName: 'syncTicks', documents: [], deletions }));
 
-      const holdRows = await db.getAllAsync<{ board_type: string; climb_uuid: string }>(
-        'SELECT board_type, climb_uuid FROM board_climb_holds ORDER BY board_type, climb_uuid, hold_id',
+      const indexed = await db.getAllAsync<{ uuid: string }>(
+        'SELECT hic.uuid FROM board_climb_hold_sets hs JOIN holds_index_climbs hic ON hic.id = hs.climb_id',
       );
-      expect(holdRows).toEqual([
-        { board_type: 'kilter', climb_uuid: 're-added' },
-        { board_type: 'kilter', climb_uuid: 're-added' },
-        // Scoped to the deleted climb's own board type.
-        { board_type: 'tension', climb_uuid: 'gone' },
+      expect(indexed).toEqual([{ uuid: 're-added' }]);
+      const postings = await db.getAllAsync<{ hold_id: number; climb_ids: Uint8Array }>(
+        'SELECT hold_id, climb_ids FROM board_climb_hold_postings ORDER BY hold_id',
+      );
+      const reAddedId = (
+        await db.getFirstAsync<{ id: number }>("SELECT id FROM holds_index_climbs WHERE uuid = 're-added'")
+      )?.id;
+      expect(postings.map((row) => [row.hold_id, [...decodePostings(row.climb_ids)]])).toEqual([
+        [1, [reAddedId]],
+        [2, [reAddedId]],
       ]);
     });
 
@@ -1366,9 +1376,7 @@ describe('the holds index at the end of a pull cycle', () => {
       holdIndex: { parseHoldRows },
     });
 
-    expect(
-      await db.getAllAsync("SELECT hold_id FROM board_climb_holds WHERE climb_uuid = 'indexed' ORDER BY hold_id"),
-    ).toEqual([{ hold_id: 1 }, { hold_id: 2 }]);
+    expect((await getHoldSet(db, 'indexed'))?.map((entry) => entry.holdId)).toEqual([1, 2]);
     expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['similarClimbs'] });
     expect(onProgress).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'idle' }));
   });
@@ -1378,7 +1386,7 @@ describe('the holds index at the end of a pull cycle', () => {
       enabledBoards: [SCOPE_KEY],
     });
 
-    expect(await db.getFirstAsync('SELECT 1 FROM board_climb_holds')).toBeNull();
+    expect(await db.getFirstAsync('SELECT 1 FROM board_climb_hold_sets')).toBeNull();
   });
 
   it('reports a failed build and still completes the scope and the cycle', async () => {

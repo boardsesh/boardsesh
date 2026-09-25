@@ -39,7 +39,11 @@ describe('boardSnapshotDdlStatements', () => {
   });
 
   it('never carries a device-only table', () => {
-    expect(DEVICE_ONLY_TABLES).toContain('board_climb_holds');
+    expect([...DEVICE_ONLY_TABLES].sort()).toEqual([
+      'board_climb_hold_postings',
+      'board_climb_hold_sets',
+      'holds_index_climbs',
+    ]);
     for (const statement of boardSnapshotDdlStatements()) {
       for (const table of DEVICE_ONLY_TABLES) {
         expect(statement, statement).not.toMatch(new RegExp(`\\b${table}\\b`));
@@ -49,7 +53,9 @@ describe('boardSnapshotDdlStatements', () => {
 
   it('carries the sync_seq index on board_climbs, which names only a snapshot table', () => {
     expect(boardSnapshotDdlStatements().some((statement) => statement.includes('idx_climbs_sync_seq'))).toBe(true);
-    expect(boardSnapshotDdlStatements().some((statement) => statement.includes('idx_climb_holds_by_hold'))).toBe(false);
+    expect(
+      boardSnapshotDdlStatements().some((statement) => /hold_sets|hold_postings|holds_index/.test(statement)),
+    ).toBe(false);
   });
 
   it('keeps the grades artifact to board_climb_grades and snapshot_meta', () => {

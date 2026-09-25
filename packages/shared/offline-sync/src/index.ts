@@ -128,16 +128,35 @@ export type {
 } from './sync/pull-client';
 
 // --- Device-derived holds index (hold heatmap + similar climbs on device) --------
-// `board_climb_holds`, built on the phone from `board_climbs.frames`. Not a synced
-// table; see holds-index/hold-index.ts for the watermark and lock rules.
+// Packed hold sets + per-hold postings built on the phone from
+// `board_climbs.frames`. Not synced tables; see holds-index/hold-index.ts for the
+// watermark and lock rules and holds-index/query.ts for the byte formats.
 export {
   ensureHoldIndex,
   isHoldIndexBehind,
   holdIndexKey,
   HOLD_INDEX_KEY_PREFIX,
   HOLD_INDEX_CHUNK_CLIMBS,
+  HOLD_INDEX_INITIAL_CHUNK_CLIMBS,
+  clearBoardTypeHoldIndex,
 } from './holds-index/hold-index';
 export type { HoldRow, HoldRowParser, EnsureHoldIndexOptions, EnsureHoldIndexResult } from './holds-index/hold-index';
+export {
+  HOLD_ROLE,
+  HOLD_ROLE_OTHER,
+  HOLD_SET_ENTRY_BYTES,
+  holdStateToRole,
+  encodeHoldSet,
+  decodeHoldSet,
+  decodeHoldSetIds,
+  holdSetSize,
+  encodePostings,
+  decodePostings,
+  getHoldSet,
+  findSimilarClimbCandidates,
+  aggregateHoldUsage,
+} from './holds-index/query';
+export type { HoldSetEntry, HoldRole, SimilarClimbCandidate, HoldUsage } from './holds-index/query';
 
 // --- Tombstone retention (issue #3474) --------------------------------------
 // The backend prune job imports SYNC_DELETIONS_RETENTION_DAYS from here so the
