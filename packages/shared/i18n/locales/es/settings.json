@@ -388,6 +388,9 @@
   },
   "ble": {
     "scanning": "Buscando plafones cercanos…",
+    "searchingForBoard": "Buscando tu {{board}}…",
+    "searchingForSavedBoard": "Buscando tu plafón…",
+    "searchAnyBoard": "Buscar cualquier plafón",
     "writing": "Iluminando el plafón…",
     "selectBoard": "Seleccionar plafón",
     "devicesFound_one": "{{count}} plafón encontrado",

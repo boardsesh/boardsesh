@@ -2163,6 +2163,12 @@ describe('BluetoothProvider wall-confirm integration', () => {
       isScanning: false,
       handleSelect,
       handleCancel: vi.fn(),
+      sessionId: 1,
+      mode: 'list',
+      presented: true,
+      closing: false,
+      handleDisplaced: vi.fn(),
+      handleClosed: vi.fn(),
     };
     resolvedBoards.value = new Map([['SN-1', { kind: 'recorded', config: makeSerialConfig({ setIds: '20,1' }) }]]);
 
@@ -2180,6 +2186,12 @@ describe('BluetoothProvider wall-confirm integration', () => {
       isScanning: false,
       handleSelect,
       handleCancel: vi.fn(),
+      sessionId: 1,
+      mode: 'list',
+      presented: true,
+      closing: false,
+      handleDisplaced: vi.fn(),
+      handleClosed: vi.fn(),
     };
     resolvedBoards.value = new Map([
       ['SN-2', { kind: 'recorded', config: makeSerialConfig({ serialNumber: 'SN-2', boardName: 'tension' }) }],

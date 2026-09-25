@@ -753,6 +753,12 @@ describe('BluetoothProvider — a real link always wins over a virtual hold', ()
       isScanning: false,
       handleSelect: vi.fn(),
       handleCancel: vi.fn(),
+      sessionId: 1,
+      mode: 'list',
+      presented: true,
+      closing: false,
+      handleDisplaced: vi.fn(),
+      handleClosed: vi.fn(),
     };
     const view = renderProvider({ hasLeds: true });
     expect(view.getByTestId('device-picker')).toBeTruthy();

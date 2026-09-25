@@ -81,8 +81,23 @@ vi.mock('@boardsesh/board-config', () => ({
   formatBoardDisplayName: (boardName: string) => boardName,
 }));
 
+// The coordinator bridge, recording what the sheet asks of it. `dismissAndWait`
+// hands back a promise the test settles, standing in for the native dismissal.
+type ManagedSheetOptionsSeen = { open?: boolean; onClose?: () => void; onDisplaced?: () => void };
+const managedSheet = vi.hoisted(() => ({
+  lastOptions: null as ManagedSheetOptionsSeen | null,
+  settleDismiss: () => {},
+  dismissAndWait: vi.fn(),
+}));
 vi.mock('../../../providers/sheet-presentation-provider', () => ({
-  useManagedSheet: () => ({ onChange: () => {}, onFullyDismissed: () => {} }),
+  useManagedSheet: (options: ManagedSheetOptionsSeen) => {
+    managedSheet.lastOptions = options;
+    return {
+      onChange: () => {},
+      onFullyDismissed: () => {},
+      handle: { dismissAndWait: managedSheet.dismissAndWait },
+    };
+  },
 }));
 
 vi.mock('../../sheet-snap-points', () => ({
@@ -461,5 +476,80 @@ describe('DevicePickerSheet Scan again', () => {
   it('renders nothing where no host wires a rescan', () => {
     const { container } = render(<DevicePickerSheet {...makeProps({ onScanAgain: undefined })} />);
     expect(scanAgainButton(container)).toBeNull();
+  });
+});
+
+describe('DevicePickerSheet while searching for the saved board (#5658)', () => {
+  beforeEach(() => {
+    stats.noneMatchedSelectedType = false;
+    locationHint.shouldOfferLocationGrant = false;
+    locationHint.wasGranted = false;
+    locationHint.shouldOfferLocationServicesEnable = false;
+    locationHint.servicesWereEnabled = false;
+    managedSheet.lastOptions = null;
+    managedSheet.dismissAndWait.mockReset();
+    managedSheet.dismissAndWait.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          managedSheet.settleDismiss = () => resolve({ status: 'dismissed' });
+        }),
+    );
+  });
+
+  it('shows a spinner, the board it is looking for and "Search for any board", with no list or tips', () => {
+    const onSearchAnyBoard = vi.fn();
+    const { container } = render(
+      <DevicePickerSheet
+        {...makeProps({ mode: 'searching', isScanning: true, onSearchAnyBoard, onScanAgain: vi.fn() })}
+      />,
+    );
+
+    expect(container.querySelector('[data-spinner]')).not.toBeNull();
+    // The product name, never a serial.
+    expect(hasText(container, 'ble.searchingForBoard:kilter aurora.card.boardSuffix')).toBe(true);
+    expect(hasText(container, 'ble.scanning')).toBe(false);
+    expect(hasText(container, 'ble.troubleshootTitle')).toBe(false);
+    expect(container.querySelector('[data-button="ble.scanAgain"]')).toBeNull();
+
+    act(() => (container.querySelector('[data-button="ble.searchAnyBoard"]') as HTMLButtonElement).click());
+    expect(onSearchAnyBoard).toHaveBeenCalledOnce();
+  });
+
+  it('keeps its searching state even when the scan has stopped', () => {
+    const { container } = render(<DevicePickerSheet {...makeProps({ mode: 'searching', isScanning: false })} />);
+    expect(hasText(container, 'ble.searchingForBoard:kilter aurora.card.boardSuffix')).toBe(true);
+    expect(hasText(container, 'ble.noDevicesFound')).toBe(false);
+  });
+
+  it('asks the coordinator for the open state the session wants, and passes displacement through', () => {
+    const onDisplaced = vi.fn();
+    const { rerender } = render(<DevicePickerSheet {...makeProps({ mode: 'searching', open: false, onDisplaced })} />);
+    expect(managedSheet.lastOptions?.open).toBe(false);
+    expect(managedSheet.lastOptions?.onDisplaced).toBe(onDisplaced);
+
+    rerender(<DevicePickerSheet {...makeProps({ mode: 'list', open: true, onDisplaced })} />);
+    expect(managedSheet.lastOptions?.open).toBe(true);
+  });
+
+  it('closes by dismissal and reports closed only after the dismissal settles', async () => {
+    const onClosed = vi.fn();
+    const onDismiss = vi.fn();
+    render(<DevicePickerSheet {...makeProps({ mode: 'searching', closing: true, onClosed, onDismiss })} />);
+
+    expect(managedSheet.lastOptions?.open).toBe(false);
+    expect(managedSheet.dismissAndWait).toHaveBeenCalledOnce();
+    await act(async () => {
+      await Promise.resolve();
+    });
+    // Still presenting or dismissing: the host must not unmount it yet.
+    expect(onClosed).not.toHaveBeenCalled();
+
+    await act(async () => {
+      managedSheet.settleDismiss();
+      await Promise.resolve();
+    });
+    expect(onClosed).toHaveBeenCalledOnce();
+    // A close without a choice is not the climber cancelling.
+    expect(onDismiss).not.toHaveBeenCalled();
   });
 });

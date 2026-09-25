@@ -423,6 +423,11 @@ type UseManagedSheetOptions = {
    * the parent can clear the state that drove `open`. Not fired for coordinator-
    * initiated closes (the parent already drove those). */
   onClose?: () => void;
+  /** Fired when the coordinator displaced this sheet to present another one in
+   * its group. Defaults to `onClose`, which suits a sheet that simply closes; a
+   * sheet that must survive displacement (the BLE picker while it searches for
+   * the saved board) tells the two apart here. */
+  onDisplaced?: () => void;
   /** Fired AFTER the dismiss animation has really settled. */
   onFullyDismissed?: () => void;
 };
@@ -439,6 +444,7 @@ export function useManagedSheet({
   group = 'root',
   sheetRef,
   onClose,
+  onDisplaced,
   onFullyDismissed,
 }: UseManagedSheetOptions): {
   onChange: (index: number) => void;
@@ -453,6 +459,8 @@ export function useManagedSheet({
   const desiredIndexRef = useRef(0);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  const onDisplacedRef = useRef(onDisplaced);
+  onDisplacedRef.current = onDisplaced;
   const onFullyDismissedRef = useRef(onFullyDismissed);
   onFullyDismissedRef.current = onFullyDismissed;
 
@@ -471,6 +479,10 @@ export function useManagedSheet({
   // drove `open` — otherwise the sheet re-presents when the displacer closes.
   // No notifyClosed here: the coordinator is driving this dismiss itself.
   const fireDisplaced = useCallback(() => {
+    if (onDisplacedRef.current) {
+      onDisplacedRef.current();
+      return;
+    }
     onCloseRef.current?.();
   }, []);
 

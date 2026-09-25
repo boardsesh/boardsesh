@@ -388,6 +388,9 @@
   },
   "ble": {
     "scanning": "Recherche de boards à proximité…",
+    "searchingForBoard": "Recherche de votre {{board}}…",
+    "searchingForSavedBoard": "Recherche de votre board…",
+    "searchAnyBoard": "Chercher n'importe quelle board",
     "writing": "Allumage de la board…",
     "selectBoard": "Sélectionner une board",
     "devicesFound_one": "{{count}} board trouvée",

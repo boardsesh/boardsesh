@@ -134,13 +134,14 @@ type BluetoothContextValue = {
    */
   armUndoWallChangeToast: () => void;
   /**
-   * Serial to silently reconnect to for the board currently in view, or null
-   * when nothing is remembered or the user switched boards — in which case
-   * callers open the device picker instead. Aurora boards only.
+   * Serial to reconnect to for the board currently in view (the picker shows
+   * "searching" while it looks for it), or null when nothing is remembered or
+   * the user switched boards — in which case the picker opens straight to the
+   * list. Aurora boards only.
    */
   reconnectSerialForCurrentBoard: string | null;
   /**
-   * BLE device id to silently reconnect to for a MoonBoard currently in view
+   * BLE device id to reconnect to for a MoonBoard currently in view
    * (MoonBoards carry no serial), or null when nothing is remembered or the user
    * switched boards. The lightbulb passes this so the tap reconnects to the same
    * board instead of opening the picker.
@@ -1603,7 +1604,10 @@ export function BluetoothProvider({
   // own session was flushed must not write into the next session's answer.
   const pickerSessionIdRef = useRef(0);
   useEffect(() => {
-    if (pickerState) {
+    // Only a picker that showed its list counts (#5658). One still searching for
+    // the saved board lists nothing, so a session that found it (or was
+    // cancelled) before the list came up must not flush an empty summary.
+    if (pickerState?.mode === 'list') {
       if (pickerResolutionStatsRef.current === null) {
         const sessionId = pickerSessionIdRef.current + 1;
         pickerSessionIdRef.current = sessionId;
@@ -1637,7 +1641,7 @@ export function BluetoothProvider({
 
   const setActiveBoard = useSetActiveBoard();
 
-  // One-shot request to silently reconnect to `serial` once the active board
+  // One-shot request to reconnect to `serial` once the active board
   // config has actually switched to `configKey`. Set by the switch flow and by
   // the picker's "Scan again" (same config, no serial, so it only waits for the
   // cancelled connect to settle), cleared by the effect below the moment it
@@ -1690,8 +1694,8 @@ export function BluetoothProvider({
     if (armUndoToast) {
       armUndoWallChangeToast();
     }
-    // connect's third param does a silent serial auto-select, falling back to the
-    // picker only if that serial never advertises.
+    // connect's third param auto-selects that serial while the picker shows
+    // "searching", falling back to the list only if it never advertises.
     void connect(undefined, undefined, serial);
   }, [pendingAutoConnect, boardName, layoutId, sizeId, loading, armUndoWallChangeToast, connect]);
 
@@ -1701,9 +1705,9 @@ export function BluetoothProvider({
   // mismatch switch below does) and queue a fresh connect through the one-shot
   // slot above, which waits for the cancelled one to settle. No remembered
   // target, unlike the bulb: the climber was just looking at the list and asked
-  // for another scan, so the picker comes straight back with a live scan. A
-  // target would close the sheet for the silent 10 s auto-select window first,
-  // with only the bulb spinner to show anything is happening. The remembered
+  // for another scan, so the picker comes straight back to the list with a live
+  // scan. A target would put them back in the "searching" state for the 10 s
+  // auto-select window instead of the list they asked to refresh. The remembered
   // board still lists when it advertises. A first attempt's initialFrames are
   // not carried over: the auto-sender lights the current climb once the new link
   // is up, and the climb editor re-sends its frame when it sees the link.
@@ -2326,6 +2330,7 @@ export function BluetoothProvider({
             DevicePickerSheetHost. */}
         {pickerState && !pickerHostedExternally && (
           <DevicePickerSheet
+            key={pickerState.sessionId}
             devices={pickerState.devices}
             onSelect={handlePickerSelect}
             onDismiss={pickerState.handleCancel}
@@ -2334,6 +2339,12 @@ export function BluetoothProvider({
             currentBoardConfig={currentBoardConfig}
             onNoLeds={takeVirtualWallAfterPickerDismiss}
             onScanAgain={handlePickerScanAgain}
+            mode={pickerState.mode}
+            open={pickerState.presented}
+            closing={pickerState.closing}
+            onClosed={pickerState.handleClosed}
+            onSearchAnyBoard={pickerState.handleSearchAnyBoard}
+            onDisplaced={pickerState.handleDisplaced}
           />
         )}
       </BluetoothWriteActivityProvider>

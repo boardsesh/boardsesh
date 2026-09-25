@@ -35,6 +35,7 @@ export function DevicePickerSheetHost({ registerExternal = false }: DevicePicker
 
   return (
     <DevicePickerSheet
+      key={pickerState.sessionId}
       devices={pickerState.devices}
       onSelect={onSelect}
       onDismiss={pickerState.handleCancel}
@@ -43,6 +44,12 @@ export function DevicePickerSheetHost({ registerExternal = false }: DevicePicker
       currentBoardConfig={currentBoardConfig}
       onNoLeds={onNoLeds}
       onScanAgain={onScanAgain}
+      mode={pickerState.mode}
+      open={pickerState.presented}
+      closing={pickerState.closing}
+      onClosed={pickerState.handleClosed}
+      onSearchAnyBoard={pickerState.handleSearchAnyBoard}
+      onDisplaced={pickerState.handleDisplaced}
     />
   );
 }

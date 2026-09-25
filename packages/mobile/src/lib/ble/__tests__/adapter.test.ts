@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { BleAdapterOptions, DevicePickerFn, BoardScanFamily } from '../types';
+import { describe, it, expect, vi, beforeEach, onTestFinished } from 'vitest';
+import type { BleAdapterOptions, DevicePickerFn, DevicePickerTargetSearch, BoardScanFamily } from '../types';
+import { recordingTargetPicker } from './recording-target-picker';
 
 // ── Hoisted mocks (available inside vi.mock factories) ──────────────────
 
@@ -975,49 +976,82 @@ describe('RNBleAdapter', () => {
       expect(mockBleManager.stopDeviceScan).toHaveBeenCalled();
     });
 
-    it('falls back to the picker when a reconnect-by-serial board never advertises', async () => {
+    // Capture the scan callback so a test controls WHEN the saved board
+    // advertises, and make that board connectable.
+    function setupNeedleBoard(): Array<(error: unknown, device: unknown) => void> {
+      mockBleManager.onDeviceDisconnected.mockReturnValue({ remove: vi.fn() });
+      mockBleManager.cancelDeviceConnection.mockResolvedValue(undefined);
+      const captured: Array<(error: unknown, device: unknown) => void> = [];
+      mockBleManager.startDeviceScan.mockImplementation(
+        (_uuids: unknown, _opts: unknown, callback: (error: unknown, device: unknown) => void) => {
+          captured.push(callback);
+        },
+      );
+      vi.mocked(parseSerialNumber).mockImplementation((name?: string) => name?.match(/#([^@]+)/)?.[1]);
+      // clearAllMocks keeps implementations, so drop this one after the test.
+      onTestFinished(() => {
+        vi.mocked(parseSerialNumber).mockReset();
+      });
+      const characteristic = {
+        uuid: 'uart-write-uuid',
+        isWritableWithoutResponse: true,
+        writeWithoutResponse: vi.fn().mockResolvedValue(undefined),
+        writeWithResponse: vi.fn().mockResolvedValue(undefined),
+      };
+      const deviceWithServices = {
+        id: 'needle-device',
+        characteristicsForService: vi.fn().mockResolvedValue([characteristic]),
+        requestMTU: vi.fn().mockResolvedValue({ mtu: 247 }),
+        discoverAllServicesAndCharacteristics: vi.fn().mockReturnThis(),
+      };
+      mockBleManager.connectToDevice.mockResolvedValue({
+        id: 'needle-device',
+        requestMTU: vi.fn().mockResolvedValue({ mtu: 247 }),
+        discoverAllServicesAndCharacteristics: vi.fn().mockReturnValue(deviceWithServices),
+      });
+      return captured;
+    }
+
+    const needleAdvert = {
+      id: 'needle-device',
+      localName: 'Kilter Board#NEEDLE@3',
+      name: 'Kilter Board#NEEDLE@3',
+      rssi: -40,
+      serviceUUIDs: ['aurora-uuid'],
+    };
+
+    it('opens the picker at the tap in its searching state and keeps the list back until the grace ends (#5658)', async () => {
       vi.useFakeTimers();
       try {
-        mockBleManager.onDeviceDisconnected.mockReturnValue({ remove: vi.fn() });
-        mockBleManager.startDeviceScan.mockImplementation(() => {});
-
-        let pickerOpened = false;
-        const onScanStopped = vi.fn();
-        let cancelPicker: (error: Error) => void = () => {};
-        // Picker stays open once shown, until the climber cancels it.
-        const devicePicker: DevicePickerFn = (subscribe) => {
-          pickerOpened = true;
-          subscribe(() => {}, onScanStopped);
-          return new Promise<string>((_resolve, reject) => {
-            cancelPicker = reject;
-          });
-        };
-        const adapter = new RNBleAdapter(devicePicker);
+        setupNeedleBoard();
+        const { picker, record } = recordingTargetPicker();
+        const adapter = new RNBleAdapter(picker);
         let settledWith: unknown = 'pending';
-        const settled = adapter.requestAndConnect('NEEDLE-SERIAL').then(
+        const settled = adapter.requestAndConnect('NEEDLE').then(
           (connection) => (settledWith = connection),
           (reason: unknown) => (settledWith = reason),
         );
-        await Promise.resolve();
 
-        // Silent auto-select before the grace window — no picker yet.
+        // Mounted at the tap, searching for the saved board, not a blank wait.
+        expect(record.opened).toBe(1);
+        expect(record.targetSearch).toBeDefined();
+
+        // The list does not take over before the grace window ends (#3609):
+        // a board slow to re-advertise still gets the whole window.
         await vi.advanceTimersByTimeAsync(SERIAL_RECONNECT_GRACE_MS - 1);
-        expect(pickerOpened).toBe(false);
-
-        // Grace window elapses with no match → picker opens instead of failing.
+        expect(record.searchEnded).toBe(0);
         await vi.advanceTimersByTimeAsync(1);
-        expect(pickerOpened).toBe(true);
+        expect(record.searchEnded).toBe(1);
+        expect(record.opened).toBe(1);
 
-        // Nothing ever advertises → the scan stops and the picker is told, so it
-        // drops the spinner for its empty state (#5654). The connect stays open
-        // instead of rejecting, so the sheet's Scan again stays reachable.
+        // Nothing ever advertises: the scan stops and the picker is told, so it
+        // shows its empty state. The connect stays open until the climber leaves.
         await vi.advanceTimersByTimeAsync(SCAN_TIMEOUT_MS);
-        expect(onScanStopped).toHaveBeenCalledOnce();
-        expect(mockBleManager.stopDeviceScan).toHaveBeenCalled();
+        expect(record.scanStopped).toBe(1);
+        expect(record.searchEnded).toBe(1);
         expect(settledWith).toBe('pending');
 
-        // The climber closes the empty picker: that is what ends the connect.
-        cancelPicker(new Error('Device selection cancelled'));
+        record.cancel(new Error('Device selection cancelled'));
         await settled;
         expect((settledWith as Error).message).toBe('Device selection cancelled');
       } finally {
@@ -1025,71 +1059,81 @@ describe('RNBleAdapter', () => {
       }
     });
 
-    it('reconnects silently when the target re-advertises past the old 4s window but within the grace (#3609)', async () => {
+    it('auto-selects the saved board while searching, closes the picker and settles once (#3609, #5658)', async () => {
       vi.useFakeTimers();
       try {
-        mockBleManager.onDeviceDisconnected.mockReturnValue({ remove: vi.fn() });
-        mockBleManager.cancelDeviceConnection.mockResolvedValue(undefined);
+        const captured = setupNeedleBoard();
+        const { picker, record } = recordingTargetPicker();
+        const adapter = new RNBleAdapter(picker);
+        const connectPromise = adapter.requestAndConnect('NEEDLE');
 
-        // Capture the scan callback so the test controls WHEN the board re-advertises.
-        const captured: Array<(error: unknown, device: unknown) => void> = [];
-        mockBleManager.startDeviceScan.mockImplementation(
-          (_uuids: unknown, _opts: unknown, callback: (error: unknown, device: unknown) => void) => {
-            captured.push(callback);
-          },
-        );
-
-        // The re-advertised board parses to the reconnect target serial.
-        vi.mocked(parseSerialNumber).mockReturnValue('NEEDLE-SERIAL');
-
-        // A connectable board so the post-selection connect flow completes.
-        const characteristic = {
-          uuid: 'uart-write-uuid',
-          isWritableWithoutResponse: true,
-          writeWithoutResponse: vi.fn().mockResolvedValue(undefined),
-          writeWithResponse: vi.fn().mockResolvedValue(undefined),
-        };
-        const deviceWithServices = {
-          id: 'needle-device',
-          characteristicsForService: vi.fn().mockResolvedValue([characteristic]),
-          requestMTU: vi.fn().mockResolvedValue({ mtu: 247 }),
-          discoverAllServicesAndCharacteristics: vi.fn().mockReturnThis(),
-        };
-        mockBleManager.connectToDevice.mockResolvedValue({
-          id: 'needle-device',
-          requestMTU: vi.fn().mockResolvedValue({ mtu: 247 }),
-          discoverAllServicesAndCharacteristics: vi.fn().mockReturnValue(deviceWithServices),
-        });
-
-        let pickerOpened = false;
-        const devicePicker: DevicePickerFn = () => {
-          pickerOpened = true;
-          return new Promise<string>(() => {});
-        };
-        const adapter = new RNBleAdapter(devicePicker);
-        const connectPromise = adapter.requestAndConnect('NEEDLE-SERIAL');
-        await Promise.resolve();
-
-        // 6s in — past the OLD 4s grace, before the new 10s grace. With the old
-        // value the picker would already have flashed; it must not now (#3609).
+        // 6s in: past the old 4s grace, still inside the current one.
         await vi.advanceTimersByTimeAsync(6_000);
-        expect(pickerOpened).toBe(false);
-
-        // The board finally re-advertises → silent auto-select, still no picker.
-        captured[0](null, {
-          id: 'needle-device',
-          localName: 'Kilter Board#NEEDLE@3',
-          name: 'Kilter Board#NEEDLE@3',
-          rssi: -40,
-          serviceUUIDs: ['aurora-uuid'],
-        });
+        captured[0](null, needleAdvert);
 
         const connection = await connectPromise;
-        expect(pickerOpened).toBe(false);
+        expect(connection.deviceId).toBe('needle-device');
+        // The picker was told to close, and the list never took over.
+        expect(record.found).toBe(1);
+        expect(record.searchEnded).toBe(0);
+        // The picker's own reject on close did not beat the auto-select.
+        expect(mockBleManager.connectToDevice).toHaveBeenCalledTimes(1);
+
+        // A repeat advert, the grace window and the scan timeout change nothing.
+        captured[0](null, needleAdvert);
+        await vi.advanceTimersByTimeAsync(SCAN_TIMEOUT_MS);
+        expect(record.found).toBe(1);
+        expect(record.searchEnded).toBe(0);
+        expect(record.scanStopped).toBe(0);
+        expect(mockBleManager.connectToDevice).toHaveBeenCalledTimes(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('lists a late match after "Search for any board" instead of auto-selecting it (#5658)', async () => {
+      vi.useFakeTimers();
+      try {
+        const captured = setupNeedleBoard();
+        const { picker, record } = recordingTargetPicker();
+        const adapter = new RNBleAdapter(picker);
+        const connectPromise = adapter.requestAndConnect('NEEDLE');
+        await Promise.resolve();
+
+        record.targetSearch?.searchAnyBoard();
+        expect(record.searchEnded).toBe(1);
+        // Idempotent: a second tap, and the grace window later, do nothing more.
+        record.targetSearch?.searchAnyBoard();
+        await vi.advanceTimersByTimeAsync(SERIAL_RECONNECT_GRACE_MS);
+        expect(record.searchEnded).toBe(1);
+
+        // The saved board shows up now: listed, not auto-selected.
+        captured[0](null, needleAdvert);
+        expect(record.found).toBe(0);
+        expect(record.updates.at(-1)?.map((device) => device.deviceId)).toEqual(['needle-device']);
+        expect(mockBleManager.connectToDevice).not.toHaveBeenCalled();
+
+        record.pick('needle-device');
+        const connection = await connectPromise;
         expect(connection.deviceId).toBe('needle-device');
       } finally {
         vi.useRealTimers();
       }
+    });
+
+    it('opens the picker straight to the list, with no target search, when no board is saved', async () => {
+      mockBleManager.startDeviceScan.mockImplementation(() => {});
+      let receivedTargetSearch: DevicePickerTargetSearch | undefined;
+      let opened = 0;
+      const picker: DevicePickerFn = (_subscribe, targetSearch) => {
+        opened += 1;
+        receivedTargetSearch = targetSearch;
+        return Promise.reject(new Error('Device selection cancelled'));
+      };
+      const adapter = new RNBleAdapter(picker);
+      await expect(adapter.requestAndConnect()).rejects.toThrow('Device selection cancelled');
+      expect(opened).toBe(1);
+      expect(receivedTargetSearch).toBeUndefined();
     });
 
     it('signals scan-stopped to the picker on timeout when devices were found but not picked', async () => {
