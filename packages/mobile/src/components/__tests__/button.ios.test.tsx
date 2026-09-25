@@ -11,7 +11,10 @@ import type { ViewStyle } from 'react-native';
 
 const hostCalls = vi.hoisted(() => ({ props: [] as Record<string, unknown>[] }));
 
-vi.mock('react-native', () => ({ Platform: { OS: 'ios' } }));
+vi.mock('react-native', () => ({
+  Platform: { OS: 'ios', select: (options: Record<string, unknown>) => options.ios ?? options.default },
+  PlatformColor: (name: string) => name,
+}));
 vi.mock('@expo/ui', () => ({
   Host: (props: Record<string, unknown> & { children?: ReactNode }) => {
     hostCalls.props.push(props);
