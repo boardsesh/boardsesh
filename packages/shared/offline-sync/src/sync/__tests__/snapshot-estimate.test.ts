@@ -21,7 +21,7 @@ import {
   MAX_TRANSPORT_DOWNLOAD_FAILURES,
   type BootstrapRetryState,
 } from '../bootstrap-retry';
-import { LATEST_SCHEMA_VERSION } from '../../db/migrations';
+import { ARTIFACT_SCHEMA_VERSION, LATEST_SCHEMA_VERSION } from '../../db/migrations';
 import type { SnapshotManifest, SnapshotManifestEntry } from '../snapshot-manifest';
 
 function entry(patch: Partial<SnapshotManifestEntry> = {}): SnapshotManifestEntry {
@@ -94,10 +94,12 @@ describe('isSnapshotEntryUsable', () => {
 
   it('accepts a NEWER artifact (bootstrap intersects columns)', () => {
     expect(isSnapshotEntryUsable(entry({ schemaVersion: LATEST_SCHEMA_VERSION + 1 }))).toBe(true);
+    // Older than the client, but no artifact table changed since: still usable.
+    expect(isSnapshotEntryUsable(entry({ schemaVersion: ARTIFACT_SCHEMA_VERSION }))).toBe(true);
   });
 
   it('rejects a STALER artifact (import would NULL-fill the client’s newer columns)', () => {
-    expect(isSnapshotEntryUsable(entry({ schemaVersion: LATEST_SCHEMA_VERSION - 1 }))).toBe(false);
+    expect(isSnapshotEntryUsable(entry({ schemaVersion: ARTIFACT_SCHEMA_VERSION - 1 }))).toBe(false);
   });
 });
 
@@ -179,7 +181,7 @@ describe('estimateScopeDownload', () => {
   });
 
   it('is unknown for a schema-stale artifact (skipped before the download)', () => {
-    expect(eligible({ manifest: manifest([entry({ schemaVersion: LATEST_SCHEMA_VERSION - 1 })]) })).toEqual({
+    expect(eligible({ manifest: manifest([entry({ schemaVersion: ARTIFACT_SCHEMA_VERSION - 1 })]) })).toEqual({
       kind: 'unknown',
     });
   });

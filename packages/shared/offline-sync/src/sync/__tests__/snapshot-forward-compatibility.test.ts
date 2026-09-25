@@ -8,7 +8,7 @@ import { join } from 'node:path';
 // a production option that could bypass schema verification.
 vi.mock('../../db/migrations', async (importOriginal) => {
   const original = await importOriginal<typeof import('../../db/migrations')>();
-  return { ...original, LATEST_SCHEMA_VERSION: 4 };
+  return { ...original, LATEST_SCHEMA_VERSION: 4, ARTIFACT_SCHEMA_VERSION: 4 };
 });
 vi.mock('../table-config', async (importOriginal) => {
   const original = await importOriginal<typeof import('../table-config')>();

@@ -45,7 +45,7 @@ import {
 } from '../bootstrap-retry';
 import { getCheckpoint, setCheckpoint, markScopeDownloadComplete, DELETIONS_CHECKPOINT_KEY } from '../checkpoints';
 import { removeBoardScopeData } from '../scope-teardown';
-import { runMigrations, LATEST_SCHEMA_VERSION, MIGRATIONS } from '../../db/migrations';
+import { runMigrations, ARTIFACT_SCHEMA_VERSION, LATEST_SCHEMA_VERSION, MIGRATIONS } from '../../db/migrations';
 import { ensureMutationQueueTable } from '../../mutation-queue/schema';
 import {
   setSigningOut,
@@ -1032,7 +1032,7 @@ describe('pullSync snapshot bootstrap', () => {
       stats: [],
       climbsWatermark: CLIMBS_WATERMARK,
       statsWatermark: STATS_WATERMARK,
-      schemaVersion: LATEST_SCHEMA_VERSION - 1,
+      schemaVersion: ARTIFACT_SCHEMA_VERSION - 1,
     });
     const source = makeSnapshotSource({ manifest: makeManifest([makeEntry()]), fileForEntry: () => filePath });
 
@@ -1079,7 +1079,7 @@ describe('pullSync snapshot bootstrap', () => {
       statsWatermark: STATS_WATERMARK,
     });
     const source = makeSnapshotSource({
-      manifest: makeManifest([makeEntry({ schemaVersion: LATEST_SCHEMA_VERSION - 1 })]),
+      manifest: makeManifest([makeEntry({ schemaVersion: ARTIFACT_SCHEMA_VERSION - 1 })]),
       fileForEntry: () => filePath,
     });
     const { fetch } = makeGraphqlFetch({
@@ -1110,11 +1110,53 @@ describe('pullSync snapshot bootstrap', () => {
       stats: [],
       climbsWatermark: CLIMBS_WATERMARK,
       statsWatermark: STATS_WATERMARK,
-      schemaVersion: LATEST_SCHEMA_VERSION - 1,
+      schemaVersion: ARTIFACT_SCHEMA_VERSION - 1,
     });
     await expect(
       bootstrapScopeFromSnapshot({ db, scope: SCOPE_KILTER_5, scopeKey: 'kilter:1:5', filePath }),
     ).rejects.toThrow(SnapshotSchemaStaleError);
+    expect(await db.getFirstAsync('SELECT 1 AS n FROM board_climbs LIMIT 1')).toBeNull();
+  });
+
+  it('imports an artifact stamped below LATEST_SCHEMA_VERSION but at ARTIFACT_SCHEMA_VERSION or above', async () => {
+    // v10 added only device-side tables, so a v9 artifact carries every column
+    // this client has. Rejecting it would send every download to the paged crawl
+    // until the export republished.
+    expect(ARTIFACT_SCHEMA_VERSION).toBeLessThan(LATEST_SCHEMA_VERSION);
+    const filePath = join(workDir, 'older-device-schema.db');
+    buildArtifact({
+      filePath,
+      climbs: [{ uuid: 'c1', compatibleSizeIds: [5] }],
+      stats: [],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+      schemaVersion: LATEST_SCHEMA_VERSION - 1,
+    });
+
+    await bootstrapScopeFromSnapshot({ db, scope: SCOPE_KILTER_5, scopeKey: 'kilter:1:5', filePath });
+
+    const climbs = await db.getAllAsync<{ uuid: string }>('SELECT uuid FROM board_climbs');
+    expect(climbs).toEqual([{ uuid: 'c1' }]);
+  });
+
+  it('still refuses an older-schema artifact that lacks a column this client requires', async () => {
+    // The column check stays the real safety net, whatever version is stamped.
+    const filePath = join(workDir, 'missing-column.db');
+    buildArtifact({
+      filePath,
+      climbs: [{ uuid: 'c1', compatibleSizeIds: [5] }],
+      stats: [],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+      schemaVersion: LATEST_SCHEMA_VERSION - 1,
+    });
+    const artifact = new DatabaseSync(filePath);
+    artifact.exec('ALTER TABLE board_climbs DROP COLUMN missing_hold_count');
+    artifact.close();
+
+    await expect(
+      bootstrapScopeFromSnapshot({ db, scope: SCOPE_KILTER_5, scopeKey: 'kilter:1:5', filePath }),
+    ).rejects.toMatchObject({ name: 'SnapshotSchemaCompatibilityError', direction: 'missing-source-column' });
     expect(await db.getFirstAsync('SELECT 1 AS n FROM board_climbs LIMIT 1')).toBeNull();
   });
 
@@ -2582,7 +2624,7 @@ describe('pullSync onScopeDownloadComplete', () => {
       stats: [],
       climbsWatermark: CLIMBS_WATERMARK,
       statsWatermark: STATS_WATERMARK,
-      schemaVersion: LATEST_SCHEMA_VERSION - 1,
+      schemaVersion: ARTIFACT_SCHEMA_VERSION - 1,
     });
     const source = makeSnapshotSource({ manifest: makeManifest([makeEntry()]), fileForEntry: () => filePath });
     const { fetch } = makeGraphqlFetch();

@@ -21,7 +21,7 @@
 
 import type { SnapshotManifest, SnapshotManifestEntry } from './snapshot-manifest';
 import { evaluateBootstrapEligibility, type BootstrapRetryState } from './bootstrap-retry';
-import { LATEST_SCHEMA_VERSION } from '../db/migrations';
+import { ARTIFACT_SCHEMA_VERSION } from '../db/migrations';
 
 export type SnapshotDownloadEstimate =
   /**
@@ -63,7 +63,8 @@ export function findSnapshotEntry(
 
 /**
  * True when an artifact is safe to import: an artifact built against a client
- * schema OLDER than ours would NULL-fill the columns that migration added and
+ * schema older than the last migration that changed an artifact table
+ * (ARTIFACT_SCHEMA_VERSION) would NULL-fill the columns that migration added and
  * then stamp the resume cursor past those rows, which the strict `>` delta pull
  * would never backfill. Newer is fine — the import intersects columns.
  * Mirrors the pre-download gate in `runBootstrapPhase`. Takes just the version
@@ -71,7 +72,7 @@ export function findSnapshotEntry(
  * `schemaVersion` — is held to the same rule.
  */
 export function isSnapshotEntryUsable(entry: Pick<SnapshotManifestEntry, 'schemaVersion'>): boolean {
-  return entry.schemaVersion >= LATEST_SCHEMA_VERSION;
+  return entry.schemaVersion >= ARTIFACT_SCHEMA_VERSION;
 }
 
 /**

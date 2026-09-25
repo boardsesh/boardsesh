@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest';
 
-import { runMigrations, MIGRATIONS, LATEST_SCHEMA_VERSION } from '../migrations';
+import {
+  runMigrations,
+  MIGRATIONS,
+  LATEST_SCHEMA_VERSION,
+  ARTIFACT_SCHEMA_VERSION,
+  artifactSchemaVersion,
+} from '../migrations';
 import { DEVICE_ONLY_TABLES, SCHEMA_STATEMENTS } from '../schema';
 import { TABLE_CONFIGS } from '../../sync/table-config';
 import { createTestDatabase, listTables, primaryKeyColumns, tableColumns } from '../../testing/sqlite-test-db';
@@ -382,6 +388,40 @@ describe('runMigrations', () => {
     expect(columns).toContain('note');
     const finalRow = await db.getFirstAsync<{ version: number }>('SELECT version FROM schema_version WHERE id = 1');
     expect(finalRow?.version).toBe(LATEST_SCHEMA_VERSION + 1);
+  });
+});
+
+describe('ARTIFACT_SCHEMA_VERSION', () => {
+  it('is the last migration that changed an artifact table: v7, missing_hold_count', () => {
+    expect(ARTIFACT_SCHEMA_VERSION).toBe(7);
+  });
+
+  it('is not moved by device-only migrations (v8 spray_walls, v9 followed authors, v10 holds index)', () => {
+    expect(LATEST_SCHEMA_VERSION).toBeGreaterThan(ARTIFACT_SCHEMA_VERSION);
+    expect(artifactSchemaVersion(MIGRATIONS.filter((migration) => migration.version <= 7))).toBe(7);
+  });
+
+  it('moves when a migration changes an artifact table, and ignores device-only statements', () => {
+    const next = LATEST_SCHEMA_VERSION + 1;
+    expect(
+      artifactSchemaVersion([
+        ...MIGRATIONS,
+        { version: next, statements: ['ALTER TABLE board_climbs ADD COLUMN note TEXT;'] },
+      ]),
+    ).toBe(next);
+    expect(
+      artifactSchemaVersion([
+        ...MIGRATIONS,
+        { version: next, statements: ['ALTER TABLE board_climb_grades ADD COLUMN spread REAL;'] },
+      ]),
+    ).toBe(next);
+    // A table whose name merely contains an artifact table's name does not count.
+    expect(
+      artifactSchemaVersion([
+        ...MIGRATIONS,
+        { version: next, statements: ['CREATE TABLE board_climbs_cache (x TEXT);'] },
+      ]),
+    ).toBe(ARTIFACT_SCHEMA_VERSION);
   });
 });
 

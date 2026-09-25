@@ -16,6 +16,7 @@ import {
   BOARD_CLIMB_HOLD_SETS,
   HOLDS_INDEX_CLIMBS,
   INDEX_CLIMBS_SYNC_SEQ,
+  DEVICE_ONLY_STATEMENTS,
   SCHEMA_STATEMENTS,
   SPRAY_WALLS,
 } from './schema';
@@ -175,9 +176,8 @@ export const MIGRATIONS: Migration[] = [
     // carries `sync_seq`, so both would sort the whole layout each time. It is
     // in DEVICE_ONLY_STATEMENTS, so the snapshot export leaves it out of artifacts.
     //
-    // Bumping LATEST_SCHEMA_VERSION makes today's v9 artifacts schema-stale for
-    // v10 clients until the next live threshold scan rebuilds them (every 15
-    // minutes; docs/board-snapshots.md "Schema-bump staleness window").
+    // Changes no artifact table (the sync_seq index is device-only), so it does
+    // not move ARTIFACT_SCHEMA_VERSION: v10 clients keep importing v9 artifacts.
     version: 10,
     statements: [HOLDS_INDEX_CLIMBS, BOARD_CLIMB_HOLD_SETS, BOARD_CLIMB_HOLD_POSTINGS, INDEX_CLIMBS_SYNC_SEQ],
   },
@@ -191,6 +191,39 @@ CREATE TABLE IF NOT EXISTS schema_version (
 `.trim();
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS.reduce((highest, migration) => Math.max(highest, migration.version), 0);
+
+/** The tables a snapshot artifact carries: the whole-layout file's two, plus the grades file's one. */
+export const ARTIFACT_TABLES = ['board_climbs', 'board_climb_stats', 'board_climb_grades'] as const;
+
+/**
+ * The highest migration version that changed a table a snapshot artifact
+ * carries: a statement naming one of ARTIFACT_TABLES (whole word, the same
+ * match the export's `boardSnapshotDdlStatements` uses to pick artifact DDL),
+ * leaving out DEVICE_ONLY_STATEMENTS, which never reach an artifact.
+ *
+ * This, not LATEST_SCHEMA_VERSION, is how old an artifact may be. An artifact
+ * built at a schema below it may lack a column this client has, and importing
+ * it would NULL-fill that column and stamp the cursor past the rows (the
+ * SnapshotSchemaStaleError case). An artifact built below LATEST but at or above
+ * this has every artifact column this client has. Only device-side tables
+ * changed since then, so rejecting it would send every fresh download to the
+ * paged crawl until the export republished, with no data reason.
+ *
+ * Only DDL counts. A migration whose `run` data step rewrites artifact rows
+ * must also name the table in `statements`, or this derivation will not see it.
+ */
+export function artifactSchemaVersion(migrations: readonly Migration[]): number {
+  const deviceOnly = new Set(DEVICE_ONLY_STATEMENTS.map((statement) => statement.trim()));
+  const namesArtifactTable = (statement: string): boolean =>
+    !deviceOnly.has(statement.trim()) && ARTIFACT_TABLES.some((table) => new RegExp(`\\b${table}\\b`).test(statement));
+  return migrations.reduce(
+    (highest, migration) =>
+      migration.statements.some(namesArtifactTable) ? Math.max(highest, migration.version) : highest,
+    0,
+  );
+}
+
+export const ARTIFACT_SCHEMA_VERSION = artifactSchemaVersion(MIGRATIONS);
 
 async function getCurrentVersion(db: SqlExecutor): Promise<number> {
   const row = await db.getFirstAsync<{ version: number }>('SELECT version FROM schema_version WHERE id = 1');
