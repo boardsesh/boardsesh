@@ -210,10 +210,8 @@ type RecordedQuery = { table: string | null; orderBy: string[]; joins: string[] 
 // Fake SearchDb: a minimal stand-in for a top-level Drizzle instance. Every
 // select chain method returns the same builder object, and awaiting it (via a
 // real `.then`) records that the query ran — so a test can assert the query
-// executed AFTER the SET LOCAL guard, not before or instead of it. Mirrors the
-// mock in packages/web/app/lib/db/queries/climbs/__tests__/holds-heatmap.test.ts,
-// adapted to node:test (no module mocking needed — searchClimbs takes `db` as
-// a plain parameter).
+// executed AFTER the SET LOCAL guard, not before or instead of it. No module
+// mocking is needed: searchClimbs takes `db` as a plain parameter.
 //
 // Each builder also records the table `from()` was called with and the RENDERED
 // ORDER BY fragments, so a test can assert on the SQL the code actually emitted

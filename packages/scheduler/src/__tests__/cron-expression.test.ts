@@ -26,7 +26,7 @@ describe('parseCronExpression', () => {
     expect(expression.restrictsDayOfWeek).toBe(false);
   });
 
-  it('parses the weekly prewarm slots still owned by Vercel', () => {
+  it('parses a weekly day-of-week slot', () => {
     const expression = parseCronExpression('45 4 * * 0');
     expect([...expression.minutes]).toEqual([45]);
     expect([...expression.hours]).toEqual([4]);

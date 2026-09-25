@@ -116,15 +116,6 @@ export const SetterSchema = z
 export const SettersResponseSchema = z.array(SetterSchema).openapi('SettersResponse');
 
 // ============================================
-// Heatmap Schema
-// ============================================
-
-export const HeatmapDataSchema = z
-  .record(z.string(), z.number())
-  .describe('Map of hold IDs to usage frequency')
-  .openapi('HeatmapData');
-
-// ============================================
 // Angle Schema
 // ============================================
 

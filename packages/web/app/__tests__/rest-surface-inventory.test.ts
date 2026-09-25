@@ -1,7 +1,8 @@
 /**
- * The standing inventory oracle for issue #1889 (REST surface audit: 40
- * routes classified after the board renderer moved to Railway in #4715 and
- * the Railway healthcheck route landed in #3798).
+ * The standing inventory oracle for issue #1889 (REST surface audit: 38
+ * routes classified after the board renderer moved to Railway in #4715, the
+ * Railway healthcheck route landed in #3798, and the hold-heatmap route and
+ * its prewarm cron were retired).
  *
  * A classification table living only in an issue body or a doc goes stale the
  * moment a route is added or removed without anyone re-reading it — exactly
@@ -75,7 +76,6 @@ const VERDICTS: Record<string, Verdict> = {
   // in packages/web/vercel.json any more; `classifies every scheduler cron
   // target as an external surface` pins that below.
   'app/api/internal/cleanup/route.ts': 'keep-external',
-  'app/api/internal/prewarm-heatmap/[board_name]/route.ts': 'keep-external',
   'app/api/internal/profile-percentiles/route.ts': 'keep-external',
   // Now a scheduler cron target like the three above: the `refresh-sitemap-climbs`
   // job fires it every six hours (#4648). Still reachable by hand for the initial
@@ -116,7 +116,6 @@ const VERDICTS: Record<string, Verdict> = {
   'app/api/v1/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/[climb_uuid]/route.ts': 'keep-external',
   'app/api/v1/[board_name]/climb-stats/[climb_uuid]/route.ts': 'keep-external',
   'app/api/v1/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/setters/route.ts': 'keep-external',
-  'app/api/v1/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/heatmap/route.ts': 'keep-external',
   'app/api/v1/[board_name]/slugs/layout/[slug]/route.ts': 'keep-external',
   'app/api/v1/[board_name]/slugs/size/[layout_id]/[slug]/route.ts': 'keep-external',
   'app/api/v1/[board_name]/slugs/sets/[layout_id]/[size_id]/[slug]/route.ts': 'keep-external',
@@ -161,18 +160,13 @@ function readCronPaths(): string[] {
  */
 const SCHEDULER_CRON_PATHS: readonly string[] = [
   '/api/internal/cleanup',
-  '/api/internal/prewarm-heatmap/kilter',
-  '/api/internal/prewarm-heatmap/tension',
-  '/api/internal/prewarm-heatmap/decoy',
-  '/api/internal/prewarm-heatmap/touchstone',
-  '/api/internal/prewarm-heatmap/grasshopper',
   '/api/internal/profile-percentiles',
   '/api/internal/refresh-sitemap-climbs',
 ];
 
 /**
- * Resolve a scheduled URL (`/api/internal/prewarm-heatmap/kilter`) to the route
- * key that serves it (`app/api/internal/prewarm-heatmap/[board_name]/route.ts`),
+ * Resolve a scheduled URL (`/api/internal/cleanup`) to the route key that
+ * serves it (`app/api/internal/cleanup/route.ts`),
  * treating a `[param]` segment as a wildcard. Returns undefined when no route
  * file can serve the schedule at all.
  */
@@ -257,6 +251,6 @@ describe('REST surface inventory (issue #1889)', () => {
   it('counts exactly the audited surface', () => {
     // Guards the headline number in issue #1889 itself — a change here means
     // the issue body needs a fresh audit pass, not a quiet reclassification.
-    expect(derived.size).toBe(40);
+    expect(derived.size).toBe(38);
   });
 });

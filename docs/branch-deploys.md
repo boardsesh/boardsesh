@@ -1176,7 +1176,6 @@ Organized by migration priority (pure reads first, then mutations, then proxies)
 | ------------------------------------------------------------- | ------------------------------- |
 | `/api/v1/[board]/[layout]/[size]/[sets]/[angle]/[climb_uuid]` | `query climb(board, uuid)`      |
 | `/api/v1/[board]/[layout]/[size]/[sets]/[angle]/setters`      | `query setters(board, ...)`     |
-| `/api/v1/[board]/[layout]/[size]/[sets]/[angle]/heatmap`      | `query heatmap(board, ...)`     |
 | `/api/v1/[board]/climb-stats/[climb_uuid]`                    | `query climbStats(board, uuid)` |
 | `/api/v1/[board]/beta/[climb_uuid]`                           | `query beta(board, uuid)`       |
 | `/api/v1/[board]/grades`                                      | `query grades(board)`           |

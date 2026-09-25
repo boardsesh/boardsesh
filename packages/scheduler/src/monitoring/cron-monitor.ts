@@ -29,8 +29,7 @@ export function monitorSlugForJob(jobName: string): string {
  *
  * The ticker fires on the minute, so anything late is a real fault (the
  * container is down, mid-redeploy, or its clock has drifted). Five minutes
- * absorbs a Railway deploy swap without swallowing an outage, and stays well
- * inside the 15-minute stagger between the heatmap prewarms.
+ * absorbs a Railway deploy swap without swallowing an outage.
  */
 const CHECKIN_MARGIN_MINUTES = 5;
 
@@ -65,8 +64,8 @@ export function monitorConfigForJob(job: JobDefinition): CronMonitorConfig {
     timezone: job.timezone,
     checkinMargin: CHECKIN_MARGIN_MINUTES,
     maxRuntime: maxRuntimeMinutes(job.timeoutMs),
-    // These jobs are weekly. Waiting for a second consecutive failure before
-    // filing an issue would mean hearing about a broken prewarm two weeks late,
+    // Some of these jobs are weekly. Waiting for a second consecutive failure
+    // before filing an issue would mean hearing about a broken one two weeks late,
     // so alert on the first one and clear on the first success.
     failureIssueThreshold: 1,
     recoveryThreshold: 1,
