@@ -5,8 +5,8 @@
 // tab's history: after one visit, tapping You reopened Settings instead of the
 // profile. These two layouts are the fix — Settings owns a root stack, and the
 // You tab keeps only the screens that are genuinely the profile's.
-import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
 type Children = { children?: ReactNode };
@@ -76,6 +76,11 @@ const SETTINGS_PAGES = [
 ];
 
 describe('the settings stack', () => {
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+  });
+
   it('registers every settings page in its own root stack', () => {
     expect(screenNames(SettingsLayout)).toEqual(SETTINGS_PAGES);
   });
@@ -103,10 +108,9 @@ describe('the settings stack', () => {
   it('goes Home when Settings was opened with nothing underneath', () => {
     screenNames(SettingsLayout);
     const options = screens.options.get('index') as ScreenProps['options'];
-    routerMock.back.mockClear();
     routerMock.canGoBack.mockReturnValueOnce(false);
     render(createElement('div', null, options?.headerLeft?.({ tintColor: '#000' })));
-    fireEvent.click(screen.getAllByRole('button', { name: 'ariaLabels.back' }).at(-1) as HTMLElement);
+    fireEvent.click(screen.getByRole('button', { name: 'ariaLabels.back' }));
     expect(routerMock.back).not.toHaveBeenCalled();
     expect(routerMock.replace).toHaveBeenCalledWith('/(tabs)/home');
   });
