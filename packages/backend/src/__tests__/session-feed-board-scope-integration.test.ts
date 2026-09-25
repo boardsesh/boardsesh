@@ -30,6 +30,11 @@ const CLIMBER_USER_ID = 'sf-board-scope-climber';
 const SOLO_USER_ID = 'sf-board-scope-solo';
 const SOLO_DAY = '2026-02-04';
 const SOLO_DAILY_GROUP = `daily:${SOLO_USER_ID}:${SOLO_DAY}`;
+// 2026-02-06: the same climber also logged in a session (on board B) late that
+// day, so the day belongs to that session's card. 2026-02-07: the session tick
+// lands at midnight the NEXT day, so it must not hide the 7th.
+const SESSION_DAY_GROUP = `daily:${SOLO_USER_ID}:2026-02-06`;
+const EVE_OF_SESSION_GROUP = `daily:${SOLO_USER_ID}:2026-02-07`;
 const CLIMB_UUID = 'sf-board-scope-climb-1';
 const BOARD_A_UUID = 'sf-board-scope-board-a';
 const BOARD_B_UUID = 'sf-board-scope-board-b';
@@ -42,6 +47,8 @@ let boardBId: number;
 
 type SessionFeedResult = {
   sessions: Array<{ sessionId: string; sessionType: string; tickCount: number }>;
+  cursor: string | null;
+  hasMore: boolean;
 };
 
 const callFeed = (input: Record<string, unknown>) =>
@@ -165,6 +172,35 @@ describe('sessionGroupedFeed — exact board_id scoping (real DB)', () => {
       climbedAt: `${SOLO_DAY} 18:30:00`,
       userId: SOLO_USER_ID,
     });
+
+    await insertTick({
+      uuid: 'sf-tick-solo-session-day',
+      sessionId: null,
+      boardId: boardAId,
+      climbedAt: '2026-02-06 00:01:00',
+      userId: SOLO_USER_ID,
+    });
+    await insertTick({
+      uuid: 'sf-tick-solo-in-session',
+      sessionId: SESSION_ON_B,
+      boardId: boardBId,
+      climbedAt: '2026-02-06 23:59:00',
+      userId: SOLO_USER_ID,
+    });
+    await insertTick({
+      uuid: 'sf-tick-solo-eve',
+      sessionId: null,
+      boardId: boardAId,
+      climbedAt: '2026-02-07 23:59:00',
+      userId: SOLO_USER_ID,
+    });
+    await insertTick({
+      uuid: 'sf-tick-solo-midnight-session',
+      sessionId: SESSION_ON_B,
+      boardId: boardBId,
+      climbedAt: '2026-02-08 00:00:00',
+      userId: SOLO_USER_ID,
+    });
   });
 
   afterAll(async () => {
@@ -235,6 +271,39 @@ describe('sessionGroupedFeed — exact board_id scoping (real DB)', () => {
 
       expect(sessionIds).toContain(SESSION_ON_A);
       expect(result.sessions.some((session) => session.sessionType === 'daily_highlight')).toBe(false);
+    });
+
+    it('leaves a day the climber spent in a session to that session, by calendar day', async () => {
+      const result = await callFeed({ boardUuid: BOARD_A_UUID, includeDailyHighlights: true, limit: 50 });
+      const sessionIds = result.sessions.map((session) => session.sessionId);
+
+      expect(sessionIds).not.toContain(SESSION_DAY_GROUP);
+      expect(sessionIds).toContain(EVE_OF_SESSION_GROUP);
+    });
+
+    it('pages through the same cards, in the same order, one at a time', async () => {
+      const onePage = await callFeed({ boardUuid: BOARD_A_UUID, includeDailyHighlights: true, limit: 50 });
+      expect(onePage.sessions.map((session) => session.sessionId)).toEqual([
+        EVE_OF_SESSION_GROUP,
+        SOLO_DAILY_GROUP,
+        SESSION_ON_A,
+      ]);
+
+      const paged: string[] = [];
+      let cursor: string | null = null;
+      for (let page = 0; page < 10; page++) {
+        const result: SessionFeedResult = await callFeed({
+          boardUuid: BOARD_A_UUID,
+          includeDailyHighlights: true,
+          limit: 1,
+          ...(cursor ? { cursor } : {}),
+        });
+        paged.push(...result.sessions.map((session) => session.sessionId));
+        if (!result.hasMore) break;
+        cursor = result.cursor;
+      }
+
+      expect(paged).toEqual(onePage.sessions.map((session) => session.sessionId));
     });
 
     it('keeps them off the feed when the boardUuid does not resolve to a board', async () => {

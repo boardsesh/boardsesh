@@ -186,33 +186,41 @@ export async function getSessionFeed(
         ),
         `
       : sql``;
+    // Keyset guard from the caller's previous page. The combined feed applies it
+    // below; the daily branch applies it too so its top-K cut stays correct.
+    const beforeFilter = pagination?.before
+      ? sql`(session_last_tick, ('session:' || session_id) COLLATE "C") < (${pagination.before.occurredAt}::timestamptz AT TIME ZONE 'UTC', ${pagination.before.id} COLLATE "C")`
+      : null;
+    // The final SELECT keeps at most offset + limit + 1 rows of the combined,
+    // ordered feed, and any row that makes it is within that many rows of its
+    // own branch under the same order. So the daily branch cuts to that many
+    // groups BEFORE the per-tick ranking and the user/vote/comment joins. On a
+    // board with 80k session-less ticks, that is the difference between ranking
+    // and joining ~80k day groups and ranking the ~20 that can be shown.
+    const dailyGroupLimit = offset + limit + 1;
     const dailyHighlightCtes = shouldIncludeDailyHighlights
       ? sql`
         daily_ticks AS (
           SELECT
-            t.*,
-            t.climbed_at::date AS day,
-            COALESCE(t.difficulty, ROUND(bcs.display_difficulty)::int) AS effective_difficulty
+            t.id,
+            t.uuid,
+            t.user_id,
+            t.board_type,
+            t.climb_uuid,
+            t.angle,
+            t.status,
+            t.attempt_count,
+            t.difficulty,
+            t.climbed_at,
+            t.climbed_at::date AS day
           FROM boardsesh_ticks t
           ${participantFilterEnabled ? sql`INNER JOIN eligible_users eu ON eu.user_id = t.user_id` : sql``}
-          LEFT JOIN board_climb_aliases bca_stats ON bca_stats.board_type = t.board_type AND bca_stats.alias_uuid = t.climb_uuid
-          LEFT JOIN board_climb_stats bcs
-            ON bcs.climb_uuid = COALESCE(bca_stats.canonical_uuid, t.climb_uuid)
-            AND bcs.board_type = t.board_type
-            AND bcs.angle = t.angle
           WHERE t.session_id IS NULL
             ${sessionBoardFilter}
-            AND NOT EXISTS (
-              SELECT 1
-              FROM boardsesh_ticks session_tick
-              WHERE session_tick.user_id = t.user_id
-                AND session_tick.session_id IS NOT NULL
-                AND session_tick.climbed_at::date = t.climbed_at::date
-                ${pagination ? sql`AND session_tick.climbed_at <= ${pagination.snapshotAt}::timestamptz AT TIME ZONE 'UTC'` : sql``}
-            )
         ),
-        daily_base AS (
+        daily_groups AS (
           SELECT
+            ('daily:' || user_id || ':' || day::text) AS session_id,
             user_id,
             day,
             MIN(climbed_at) AS session_first_tick,
@@ -223,10 +231,50 @@ export async function getSessionFeed(
             (
               COALESCE(SUM(GREATEST(attempt_count - 1, 0)) FILTER (WHERE status = 'send'), 0)
               + COALESCE(SUM(attempt_count) FILTER (WHERE status = 'attempt'), 0)
-            )::int AS total_attempts,
-            ARRAY_AGG(DISTINCT board_type) AS board_types
+            )::int AS total_attempts
           FROM daily_ticks
+          -- No DISTINCT aggregate here (board_types is collected for the kept
+          -- groups only, in daily_board_types), so this can hash-aggregate.
           GROUP BY user_id, day
+        ),
+        daily_base AS (
+          SELECT dg.*
+          FROM (
+            -- Newest group first, fenced with OFFSET 0 so the planner cannot fold
+            -- this sort above the probe below. The probe then walks groups in
+            -- feed order and the LIMIT stops it once the page is full, instead
+            -- of probing every day group on the board.
+            SELECT
+              groups.*,
+              groups.session_id COLLATE "C" AS sort_session_id
+            FROM daily_groups groups
+            ORDER BY groups.session_last_tick DESC, sort_session_id DESC
+            OFFSET 0
+          ) dg
+          -- A day the climber spent in a real session belongs to that session's
+          -- card, not a daily one. One LIMIT 1 probe per group, as a climbed_at
+          -- range on the (user_id, climbed_at) index. The old per-tick NOT EXISTS
+          -- hashed every session tick in the table.
+          LEFT JOIN LATERAL (
+            SELECT 1 AS hit
+            FROM boardsesh_ticks session_tick
+            WHERE session_tick.user_id = dg.user_id
+              AND session_tick.session_id IS NOT NULL
+              AND session_tick.climbed_at >= dg.day
+              AND session_tick.climbed_at < dg.day + 1
+              ${pagination ? sql`AND session_tick.climbed_at <= ${pagination.snapshotAt}::timestamptz AT TIME ZONE 'UTC'` : sql``}
+            LIMIT 1
+          ) session_day ON true
+          WHERE session_day.hit IS NULL
+            ${beforeFilter ? sql`AND ${beforeFilter}` : sql``}
+          ORDER BY dg.session_last_tick DESC, dg.sort_session_id DESC
+          LIMIT ${dailyGroupLimit}
+        ),
+        daily_board_types AS (
+          SELECT dt.user_id, dt.day, ARRAY_AGG(DISTINCT dt.board_type) AS board_types
+          FROM daily_ticks dt
+          INNER JOIN daily_base kept ON kept.user_id = dt.user_id AND kept.day = dt.day
+          GROUP BY dt.user_id, dt.day
         ),
         daily_hardest AS (
           SELECT *
@@ -244,13 +292,25 @@ export async function getSessionFeed(
                   (dt.status IN ('flash', 'send')) DESC,
                   COALESCE(dt.effective_difficulty, -1) DESC, dt.climbed_at DESC, dt.id DESC
               ) AS rank
-            FROM daily_ticks dt
+            FROM (
+              SELECT
+                dt_raw.*,
+                COALESCE(dt_raw.difficulty, ROUND(bcs.display_difficulty)::int) AS effective_difficulty
+              FROM daily_ticks dt_raw
+              INNER JOIN daily_base kept ON kept.user_id = dt_raw.user_id AND kept.day = dt_raw.day
+              LEFT JOIN board_climb_aliases bca_stats
+                ON bca_stats.board_type = dt_raw.board_type AND bca_stats.alias_uuid = dt_raw.climb_uuid
+              LEFT JOIN board_climb_stats bcs
+                ON bcs.climb_uuid = COALESCE(bca_stats.canonical_uuid, dt_raw.climb_uuid)
+                AND bcs.board_type = dt_raw.board_type
+                AND bcs.angle = dt_raw.angle
+            ) dt
           ) ranked
           WHERE rank = 1
         ),
         daily_scored AS (
           SELECT
-            ('daily:' || db.user_id || ':' || db.day::text) AS session_id,
+            db.session_id,
             'daily_highlight'::text AS session_type,
             db.session_first_tick,
             db.session_last_tick,
@@ -266,11 +326,12 @@ export async function getSessionFeed(
             db.day::text AS daily_date,
             COALESCE(up.display_name, u.name) AS daily_display_name,
             COALESCE(up.avatar_url, u.image) AS daily_avatar_url,
-            db.board_types AS daily_board_types,
+            dbt.board_types AS daily_board_types,
             dh.uuid AS highlight_tick_uuid,
             (dh.status IN ('flash', 'send')) AS highlight_is_send
           FROM daily_base db
           INNER JOIN daily_hardest dh ON dh.user_id = db.user_id AND dh.day = db.day
+          INNER JOIN daily_board_types dbt ON dbt.user_id = db.user_id AND dbt.day = db.day
           LEFT JOIN users u ON u.id = db.user_id
           LEFT JOIN user_profiles up ON up.user_id = db.user_id
           LEFT JOIN vote_counts vc
@@ -409,7 +470,7 @@ export async function getSessionFeed(
         ${combinedCte}
         SELECT * ${pagination ? sql`, to_char(session_last_tick, 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS candidate_time` : sql``}
         FROM combined
-        ${pagination?.before ? sql`WHERE (session_last_tick, ('session:' || session_id) COLLATE "C") < (${pagination.before.occurredAt}::timestamptz AT TIME ZONE 'UTC', ${pagination.before.id} COLLATE "C")` : sql``}
+        ${beforeFilter ? sql`WHERE ${beforeFilter}` : sql``}
         ORDER BY session_last_tick DESC, session_id COLLATE "C" DESC
         OFFSET ${offset}
         LIMIT ${limit + 1}
