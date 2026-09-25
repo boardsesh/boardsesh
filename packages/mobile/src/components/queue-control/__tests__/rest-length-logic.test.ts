@@ -192,6 +192,8 @@ describe('the release magnet, as this control composes it', () => {
   it('leaves 0:55 and 1:05 reachable — a magnet that swallows its neighbours is a gap', () => {
     expect(commitRestLength(56)).toBe(55);
     expect(commitRestLength(64)).toBe(65);
+    // Far from the magnet entirely, so the composed function is a no-op ladder snap.
+    expect(commitRestLength(40)).toBe(40);
   });
 
   it('is the 5 s ladder everywhere else', () => {

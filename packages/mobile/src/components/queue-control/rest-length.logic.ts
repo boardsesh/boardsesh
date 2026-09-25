@@ -61,7 +61,7 @@ export const DEFAULT_REST_LENGTH_SECONDS = 60;
  *
  * A power curve rather than the pace slider's logarithm because this range is
  * 240:1 with a floor that matters: a log track pins 0:15 and 1:00:00 the same
- * way, but spends a quarter of itself on 0:15–1:00, where there are only three
+ * way, but spends a quarter of itself on 0:15–1:00, where there are only nine
  * rungs to land on.
  *
  * The DOMAIN is untouched by this — still 15 s to an hour at 5 s resolution.
