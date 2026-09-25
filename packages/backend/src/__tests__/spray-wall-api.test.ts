@@ -4768,6 +4768,20 @@ describe('a wall keeps the visibility picked at creation through a resumed publi
     expect(publicBucketObjects.has(before!)).toBe(false);
   });
 
+  it('lets an explicit choice before the first publish clear a pending unlisted request too', async () => {
+    const wall = await createWall(OWNER, { isUnlisted: true });
+    await sprayWallMutations.updateSprayWall({}, { input: { uuid: wall.uuid, isUnlisted: false } }, ctxFor(OWNER));
+
+    const versionId = await openDraft(wall.uuid);
+    await sprayWallMutations.publishSprayWallVersion({}, { input: { versionId } }, ctxFor(OWNER));
+
+    const row = await visibilityOf(wall.uuid);
+    expect(row.is_unlisted).toBe(false);
+    expect(row.is_public).toBe(false);
+    expect(row.pending_is_public).toBeNull();
+    expect(row.pending_is_unlisted).toBeNull();
+  });
+
   it('lets a visibility change before the first publish win over the creation-time choice', async () => {
     const wall = await createWall(OWNER, { isPublic: true });
     await sprayWallMutations.updateSprayWall({}, { input: { uuid: wall.uuid, isPublic: false } }, ctxFor(OWNER));
