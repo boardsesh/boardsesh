@@ -67,10 +67,10 @@ The image's `postgresql.conf` holds the defaults. These settings are set with
 A `pg_dump`/`pg_restore` move does not carry them, so re-apply them on any new
 primary:
 
-| Setting | Value | Why | Set |
+| Setting | Value | Why | Set (UTC) |
 |---|---|---|---|
-| `max_slot_wal_keep_size` | `16GB` | Caps WAL held for the homelab slot. The DR role asserts this exact value | 2026-09-25 |
-| `log_connections` | `all` | Makes unused credentials provable while `boardsesh_standby` is on a public port | 2026-09-25 |
+| `max_slot_wal_keep_size` | `16GB` | Caps WAL held for the homelab slot. The DR role asserts this exact value | 2026-09-24 |
+| `log_connections` | `all` | Makes unused credentials provable while `boardsesh_standby` is on a public port. PG18 made this a list setting, so `on` is no longer the spelling | 2026-09-24 |
 | `wal_compression` | `lz4` | Full-page images were 12.3M of the WAL records in the 5 days after cutover. Compressing them cuts WAL egress and backup size | 2026-09-25 |
 | `checkpoint_timeout` | `15min` | Was 5 min. Fewer checkpoints means fewer full-page images | 2026-09-25 |
 | `max_wal_size` | `4GB` | Was 1 GB, which forced 101 extra checkpoints in 5 days | 2026-09-25 |
