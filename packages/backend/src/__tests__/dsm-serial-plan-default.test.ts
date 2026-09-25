@@ -197,9 +197,9 @@ describe('DSM parallel-plan default (#5352)', () => {
       const sql = readFileSync(migrationPath, 'utf8');
 
       // Not a rare fallback: `ALTER DATABASE ... SET` needs database ownership,
-      // and `reserveMigrationOwnerSession` refuses to run unless
-      // `ownerDoesNotOwnDatabase` holds, so production takes this branch on
-      // EVERY deploy and drizzle records the migration anyway. Reproduced
+      // which the production owner role lacked until the Sep 2026 replication
+      // work, so production took this branch and drizzle recorded the
+      // migration anyway. Reproduced
       // against postgres:17 in packages/db/scripts/serial-plan-default.integration.test.ts.
       //
       // The migration still earns its place — it applies on every database

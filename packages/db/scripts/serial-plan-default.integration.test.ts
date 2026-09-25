@@ -13,9 +13,9 @@
  *   - `<owner>` is NOLOGIN, holds CREATE on the database, and does NOT own it,
  *   - `<migrator>` is the LOGIN credential and may only `SET ROLE <owner>`.
  *
- * `reserveMigrationOwnerSession` asserts `ownerDoesNotOwnDatabase` as a
- * precondition (migration-owner-role.ts), so this is not an accident of
- * provisioning that could be fixed by granting ownership — it is the contract.
+ * This is the PG18 cutover layout. Since the Sep 2026 replication work the
+ * production owner role owns the database instead, which
+ * `reserveMigrationOwnerSession` also accepts (migration-owner-role.ts).
  *
  * Runs against this job's stock `postgres:17` service; skipped when
  * SERIAL_PLAN_DB_URL is unset, the same gate the migration-journal and

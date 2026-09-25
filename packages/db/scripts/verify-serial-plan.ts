@@ -2,9 +2,9 @@
  * The deploy step that owns `max_parallel_workers_per_gather` (#5352).
  *
  * Why a step and not a migration: `ALTER DATABASE ... SET` needs database
- * ownership, and the production migration role is deliberately NOT the database
- * owner — `reserveMigrationOwnerSession` asserts `ownerDoesNotOwnDatabase`
- * before it runs a single statement. Migration 0225 therefore raised
+ * ownership, and the production migration role was NOT the database owner when
+ * 0225 shipped (the Sep 2026 replication work made it the owner, which
+ * `reserveMigrationOwnerSession` now accepts). Migration 0225 therefore raised
  * `insufficient_privilege` on its first run under that role, converted it into
  * a `RAISE WARNING`, and was recorded as applied. Later deploys do not retry it.
  * The reproduction and the whole decision tree live in serial-plan-default.ts.
