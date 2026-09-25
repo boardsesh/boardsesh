@@ -3303,6 +3303,23 @@ export type HoldOutlineOverride = {
   updatedAt: Scalars['String']['output'];
 };
 
+/** One hold's usage across the climbs a search matches (the hold heatmap). */
+export type HoldStat = {
+  __typename?: 'HoldStat';
+  /** Average display difficulty of those climbs; null when none has a grade. */
+  averageDifficulty?: Maybe<Scalars['Float']['output']>;
+  finishUses: Scalars['Int']['output'];
+  footUses: Scalars['Int']['output'];
+  handUses: Scalars['Int']['output'];
+  /** Renderer/frame hold id (MoonBoard cell ids included). */
+  holdId: Scalars['Int']['output'];
+  startingUses: Scalars['Int']['output'];
+  /** Sum of those climbs' ascent counts at the browsed angle. */
+  totalAscents: Scalars['Int']['output'];
+  /** Climbs that use the hold. */
+  totalUses: Scalars['Int']['output'];
+};
+
 /** A scanned post whose climb name matched multiple climbs — the user picks one. */
 export type InstagramBetaAmbiguous = {
   __typename?: 'InstagramBetaAmbiguous';
@@ -6058,6 +6075,12 @@ export type Query = {
    */
   gymStats: GymStats;
   /**
+   * Per-hold usage over the climbs a search matches (the hold heatmap). Admin
+   * only: every other climber gets the same aggregate on device from the
+   * downloaded board, so this live path never serves the public.
+   */
+  holdHeatmap: Array<HoldStat>;
+  /**
    * The traced hold silhouettes this backend ships for a board config, alongside
    * the hand-drawn corrections that supersede them (admin only, scoped to the
    * board). Read-only; the editor renders both and offers a revert.
@@ -6797,6 +6820,11 @@ export type QueryGymSprayWallsArgs = {
 /** Root query type for all read operations. */
 export type QueryGymStatsArgs = {
   input: GymStatsInput;
+};
+
+/** Root query type for all read operations. */
+export type QueryHoldHeatmapArgs = {
+  input: ClimbSearchInput;
 };
 
 /** Root query type for all read operations. */
@@ -11372,6 +11400,25 @@ export type ReassignGymOwnerMutation = {
     newOwnerId: string;
     syncFrozenAt?: string | null;
   };
+};
+
+export type HoldHeatmapQueryVariables = Exact<{
+  input: ClimbSearchInput;
+}>;
+
+export type HoldHeatmapQuery = {
+  __typename?: 'Query';
+  holdHeatmap: Array<{
+    __typename?: 'HoldStat';
+    holdId: number;
+    totalUses: number;
+    startingUses: number;
+    handUses: number;
+    footUses: number;
+    finishUses: number;
+    totalAscents: number;
+    averageDifficulty?: number | null;
+  }>;
 };
 
 export type LiveSessionFieldsFragment = {
@@ -16930,6 +16977,52 @@ export const ReassignGymOwnerDocument = {
     },
   ],
 } as unknown as DocumentNode<ReassignGymOwnerMutation, ReassignGymOwnerMutationVariables>;
+export const HoldHeatmapDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'HoldHeatmap' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ClimbSearchInput' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'holdHeatmap' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'holdId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'totalUses' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'startingUses' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'handUses' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'footUses' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'finishUses' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'totalAscents' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'averageDifficulty' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<HoldHeatmapQuery, HoldHeatmapQueryVariables>;
 export const FollowedLiveSessionsDocument = {
   kind: 'Document',
   definitions: [

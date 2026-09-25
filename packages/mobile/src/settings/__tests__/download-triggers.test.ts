@@ -56,6 +56,12 @@ describe('download-trigger attribution', () => {
     expect(takeDownloadTrigger('kilter:1:5')).toBe('similar_climbs');
   });
 
+  it('round-trips the hold-heatmap trigger', () => {
+    rememberDownloadTrigger('kilter:1:5', 'hold_heatmap');
+
+    expect(takeDownloadTrigger('kilter:1:5')).toBe('hold_heatmap');
+  });
+
   it('reports unknown for a scope that was never attributed', () => {
     // A board enabled by a build that predates this store. An explicit, expected
     // value — not an accident.

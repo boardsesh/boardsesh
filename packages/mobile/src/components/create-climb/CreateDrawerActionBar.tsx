@@ -53,6 +53,10 @@ type CreateDrawerActionBarProps = {
   publishBlocked: boolean;
   /** The persistent "is my work safe?" line, or null for an empty editor. */
   draftStatus: DraftStatusView | null;
+  /** The hold heatmap toggle; omitted → no button. */
+  onToggleHeatmap?: () => void;
+  heatmapActive?: boolean;
+  heatmapBusy?: boolean;
 };
 
 /**
@@ -88,6 +92,9 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
   onSave,
   publishBlocked,
   draftStatus,
+  onToggleHeatmap,
+  heatmapActive = false,
+  heatmapBusy = false,
 }: CreateDrawerActionBarProps) {
   const { t } = useTranslation('climbs');
   const { systemColors } = useTheme();
@@ -228,6 +235,19 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
             onPress={onClearHolds}
             accessibilityLabel={t('mobile.create.actions.clear')}
           />
+          {/* Where the climbs on this board already go, drawn on the holds not
+              yet painted. */}
+          {onToggleHeatmap ? (
+            <ActionButton
+              size="sm"
+              iconName="flame"
+              onPress={onToggleHeatmap}
+              active={heatmapActive}
+              activeColor={brandColors.warning}
+              busy={heatmapActive && heatmapBusy}
+              accessibilityLabel={heatmapActive ? t('mobile.heatmap.hide') : t('mobile.heatmap.show')}
+            />
+          ) : null}
         </ScrollView>
 
         {/* Not a play glyph: this pushes the climb into the queue, which lights

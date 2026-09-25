@@ -397,6 +397,11 @@
           "title": "Los bloques similares viven en tu móvil",
           "body": "Descarga {{name}} para ver bloques que comparten estas presas",
           "cta": "Descargar {{name}}"
+        },
+        "holdHeatmap": {
+          "title": "Mira dónde están los bloques",
+          "body": "Descarga {{name}} para ver las presas que más usan los escaladores",
+          "cta": "Descargar {{name}}"
         }
       }
     },

@@ -830,6 +830,28 @@
     },
     "setterNotes": {
       "title": "Notas del setter"
+    },
+    "heatmap": {
+      "show": "Mostrar mapa de calor de presas",
+      "hide": "Ocultar mapa de calor de presas",
+      "modeLabel": "Colorear presas por",
+      "modes": {
+        "uses": "Más usadas",
+        "ascents": "Más encadenes",
+        "difficulty": "Grado"
+      },
+      "legendLow": "Menos",
+      "legendHigh": "Más",
+      "legendEasy": "Más fácil",
+      "legendHard": "Más difícil",
+      "filtered": "Filtrado · {{summary}}",
+      "wholeBoard": "Todo el plafón",
+      "wholeBoardHint": "Cuenta todos los bloques del plafón",
+      "useFiltersHint": "Cuenta solo los bloques que cumplen tus filtros",
+      "filterUnsupported": "El mapa de calor todavía no puede seguir un filtro de presas. Toca el chip para ver todo el plafón.",
+      "empty": "Ningún bloque cumple estos filtros.",
+      "loadFailed": "No se pudo cargar el mapa de calor. Inténtalo de nuevo en un momento.",
+      "needsDownload": "Descarga este plafón para ver dónde están los bloques."
     }
   },
   "frontDoor": {

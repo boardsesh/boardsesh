@@ -397,6 +397,11 @@
           "title": "Les blocs similaires vivent sur ton téléphone",
           "body": "Télécharge {{name}} pour voir les blocs qui partagent ces prises",
           "cta": "Télécharger {{name}}"
+        },
+        "holdHeatmap": {
+          "title": "Vois où sont les blocs",
+          "body": "Télécharge {{name}} pour voir les prises que les grimpeurs utilisent le plus",
+          "cta": "Télécharger {{name}}"
         }
       }
     },

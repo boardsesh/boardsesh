@@ -163,6 +163,7 @@ export type OfflineDownloadTrigger =
   | 'retry'
   | 'onboarding'
   | 'similar_climbs'
+  | 'hold_heatmap'
   | 'unknown';
 
 const KNOWN_TRIGGERS: readonly OfflineDownloadTrigger[] = [
@@ -174,6 +175,7 @@ const KNOWN_TRIGGERS: readonly OfflineDownloadTrigger[] = [
   'retry',
   'onboarding',
   'similar_climbs',
+  'hold_heatmap',
   'unknown',
 ];
 

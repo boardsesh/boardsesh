@@ -830,6 +830,28 @@
     },
     "setterNotes": {
       "title": "Notizen vom Routenbau"
+    },
+    "heatmap": {
+      "show": "Griff-Heatmap zeigen",
+      "hide": "Griff-Heatmap ausblenden",
+      "modeLabel": "Griffe färben nach",
+      "modes": {
+        "uses": "Meistgenutzt",
+        "ascents": "Meiste Begehungen",
+        "difficulty": "Grad"
+      },
+      "legendLow": "Weniger",
+      "legendHigh": "Mehr",
+      "legendEasy": "Leichter",
+      "legendHard": "Schwerer",
+      "filtered": "Gefiltert · {{summary}}",
+      "wholeBoard": "Ganzes Board",
+      "wholeBoardHint": "Zählt stattdessen jeden Boulder am Board",
+      "useFiltersHint": "Zählt nur die Boulder, die zu deinen Filtern passen",
+      "filterUnsupported": "Die Heatmap kann einem Griff-Filter noch nicht folgen. Tipp auf den Chip, um das ganze Board zu sehen.",
+      "empty": "Kein Boulder passt zu diesen Filtern.",
+      "loadFailed": "Die Heatmap konnte nicht geladen werden. Versuch es gleich noch mal.",
+      "needsDownload": "Lade dieses Board herunter, um zu sehen, wo die Boulder sind."
     }
   },
   "frontDoor": {

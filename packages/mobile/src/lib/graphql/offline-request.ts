@@ -7,6 +7,7 @@ import { searchClimbsLocal, countClimbsLocal, isOfflineSearchSupported } from '.
 import { getClimbLocal } from '../../db/queries/get-climb-local';
 import { getBoardseshGradeLocal, getBoardseshGradesForAnglesLocal } from '../../db/queries/get-boardsesh-grade-local';
 import { getSetterStatsLocal } from '../../db/queries/get-setter-stats-local';
+import { getHoldHeatmapLocal } from '../../db/queries/get-hold-heatmap-local';
 import { canReadFollowedAuthors } from '../../db/queries/followed-authors-local';
 import { FollowedAuthorsUnavailableError } from '../followed-authors-error';
 import { isBoardDownloadedLocally, isBoardTypeDownloadedLocally } from '../../db/queries/board-download-status';
@@ -21,6 +22,9 @@ import {
   SIMILAR_CLIMBS_QUERY,
   type SimilarClimbsVariables,
   type SimilarClimbsResponse,
+  HOLD_HEATMAP_QUERY,
+  type HoldHeatmapQueryResponse,
+  type HoldHeatmapQueryVariables,
 } from '@boardsesh/graphql/operations';
 import {
   BOARDSESH_GRADE,
@@ -210,6 +214,26 @@ registerOfflineOperation<GetSetterStatsQueryVariables, GetSetterStatsQueryRespon
     (!input.onlyFollowedAuthors || (await canReadFollowedAuthors(db))),
   resolveLocal: async (db, { input }) => ({ setterStats: await getSetterStatsLocal(db, input) }),
   offlineFallback: () => ({ setterStats: [] }),
+});
+
+// Hold heatmap: per-hold usage over the climbs the list's filters match. The
+// server resolver is a GROUP BY over every hold row of a layout, so it is
+// admin-only; everyone else is answered here, from the downloaded board and the
+// device-derived holds index (getHoldHeatmapLocal brings the index up to date
+// first). `local-only`: a board that is not downloaded, or a filter SQLite cannot
+// express, gets the empty fallback, never a network call that would come back as
+// an auth error. The hook asks the network directly for admins
+// (useCatalogQuerySource). Same gate and unavailable reasons as search, since the
+// climb set is the list's. An empty list is a real answer: no `isLocalMiss`.
+registerOfflineOperation<HoldHeatmapQueryVariables, HoldHeatmapQueryResponse>({
+  document: HOLD_HEATMAP_QUERY,
+  networkPolicy: 'local-only',
+  surface: 'hold_heatmap',
+  boardNameOf: ({ input }) => input.boardName,
+  unavailableReason: searchUnavailableReason,
+  canServeLocal: canServeSearchLocal,
+  resolveLocal: async (db, { input }) => ({ holdHeatmap: await getHoldHeatmapLocal(db, input) }),
+  offlineFallback: () => ({ holdHeatmap: [] }),
 });
 
 // Boardsesh grade reads. These carry only boardName (+ climbUuid + angle), no

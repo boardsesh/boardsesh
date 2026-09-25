@@ -12,6 +12,7 @@ export * from './gym-kiosks';
 export * from './notifications';
 export * from './activity-feed';
 export * from './new-climb-feed';
+export * from './hold-heatmap';
 export * from './sessions';
 export * from './create-session';
 export * from './live-sessions';

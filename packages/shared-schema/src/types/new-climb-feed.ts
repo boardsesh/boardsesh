@@ -86,6 +86,18 @@ export type SimilarClimbsInput = {
   frames?: string | null;
 };
 
+/** One hold's usage across the climbs a search matches (the hold heatmap). */
+export type HoldStat = {
+  holdId: number;
+  totalUses: number;
+  startingUses: number;
+  handUses: number;
+  footUses: number;
+  finishUses: number;
+  totalAscents: number;
+  averageDifficulty?: number | null;
+};
+
 export type SimilarClimb = {
   uuid: string;
   name?: string | null;

@@ -93,10 +93,9 @@ export const TABLE_INVALIDATE_KEYS: Record<string, InvalidateKeys> = {
   // (#5407 made ['setterStats'] a local read too — a sync that adds/removes
   // climbs changes who's set on the board, so it must refresh alongside search).
   //
-  // ['similarClimbs'] — answered on device from board_climbs joined to the
-  // derived holds index (holds-index/), so a climb arriving, changing or being
-  // hidden changes the strip. (['holdHeatmap'] joins it once the heatmap's
-  // reader exists: the drift test refuses a key nobody reads.)
+  // ['similarClimbs'] / ['holdHeatmap'] — answered on device from board_climbs
+  // joined to the derived holds index (holds-index/), so a climb arriving,
+  // changing or being hidden changes the strip and the heatmap.
   board_climbs: [
     ['searchClimbs'],
     ['infiniteSearchClimbs'],
@@ -104,6 +103,7 @@ export const TABLE_INVALIDATE_KEYS: Record<string, InvalidateKeys> = {
     ['climb'],
     ['setterStats'],
     ['similarClimbs'],
+    ['holdHeatmap'],
   ],
   // The setter picker reads stats too, on Woods only: a climb set at another angle
   // counts toward its setter at the browsed angle once it has a stats row there
@@ -123,7 +123,7 @@ export const TABLE_INVALIDATE_KEYS: Record<string, InvalidateKeys> = {
   // The device-derived holds index (holds-index/hold-index.ts). Not a synced
   // table — nothing pulls or drains it — but the index builder invalidates
   // through this map after a chunk changed rows, so it lives here with the rest.
-  board_climb_hold_sets: [['similarClimbs']],
+  board_climb_hold_sets: [['similarClimbs'], ['holdHeatmap']],
 
   // Deliberately empty — not a placeholder.
   //
