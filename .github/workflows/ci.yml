@@ -1183,6 +1183,18 @@ jobs:
           cache: ${{ runner.environment == 'github-hosted' }}
       - name: Install dependencies
         run: vp install --frozen-lockfile
+      # These node:test suites are outside Vitest's affected module graph.
+      # Reuse this disposable service once per workflow; fixtures roll back.
+      - name: Verify shared-feed tick repair against PostgreSQL
+        if: matrix.shard == 1
+        env:
+          SHARED_FEED_TICK_TEST_DB_URL: postgresql://postgres:postgres@127.0.0.1:5433/boardsesh_backend_test
+        run: |
+          set -o pipefail
+          vp exec tsx --test packages/db/scripts/backfill-shared-feed-tick-boards-helpers.test.ts
+          vp exec tsx --test packages/db/scripts/backfill-shared-feed-tick-boards-args.test.ts
+          vp exec tsx --test --test-reporter=tap packages/db/scripts/backfill-shared-feed-tick-boards.integration.test.ts | tee shared-feed-tick-integration.tap
+          awk '/^# tests / { tests = $3 } /^# pass / { passed = $3 } /^# skipped / { skipped = $3; reported = 1 } END { exit !(reported && tests > 0 && passed == tests && skipped == 0) }' shared-feed-tick-integration.tap
       - name: Run backend tests (shard ${{ matrix.shard }}/${{ matrix.total }})
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5433/boardsesh_backend_test
