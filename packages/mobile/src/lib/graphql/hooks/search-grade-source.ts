@@ -1,3 +1,4 @@
+import { hashKey } from '@tanstack/react-query';
 import type { ClimbSearchInput } from '@boardsesh/shared-schema';
 import { useBoardseshGradesActive } from '../../../hooks/use-display-grade';
 import { useBoardseshGradesPreference } from '../../boardsesh-grades-preference';
@@ -50,4 +51,17 @@ export function useSearchGradeSourceActive(): boolean {
 /** `withGradeSource` bound to `useSearchGradeSourceActive`. */
 export function useGradeSourceSearchInput<TInput extends ClimbSearchInput>(input: TInput): TInput {
   return withGradeSource(input, useSearchGradeSourceActive());
+}
+
+/**
+ * The key a climb list resets its scroll on: the search as it is actually sent
+ * (after `withGradeSource`), without `page`. Built from the same normalised input
+ * the query key uses, so flipping Boardsesh grades, which re-sorts or re-filters
+ * the list, scrolls it back to the top just like any other new search, while a
+ * flip that cannot change the results (no grade bound, no difficulty sort) does
+ * not. `hashKey` sorts object keys, so property order can't fake a change.
+ */
+export function climbSearchScrollKey(input: ClimbSearchInput, boardseshGradesActive: boolean): string {
+  const { page: _page, ...queryInput } = withGradeSource(input, boardseshGradesActive);
+  return hashKey([queryInput]);
 }
