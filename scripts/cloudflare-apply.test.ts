@@ -29,7 +29,11 @@ import {
   DR_PRIMARY_HOSTNAME,
   DYNAMIC_REDIRECT_RULE_PHASE,
   LIST_PAGE_PATH_SUFFIX,
+  OBSERVE_COUNTRY_HEADER_EXPRESSION,
+  OBSERVE_COUNTRY_HEADER_NAME,
+  OBSERVE_COUNTRY_HEADER_RULE_DESCRIPTION,
   RATE_LIMIT_RULE_PHASE,
+  REQUEST_HEADER_RULE_PHASE,
   RSC_QUERY_PARAM,
   RSC_REQUEST_HEADER_NAME,
   SESSION_COOKIE_NAME_SUBSTRING,
@@ -40,6 +44,7 @@ import {
   WWW_HTML_CACHE_RULE_DESCRIPTION,
   WWW_RAILWAY_CNAME_TARGET,
   WS_HOSTNAME,
+  UPDATES_HOSTNAME,
   buildWwwHtmlCachePathPrefixes,
   desiredCloudflareState,
 } from '../infra/cloudflare/config';
@@ -619,6 +624,33 @@ describe('assets.boardsesh.com desired state', () => {
   });
 });
 
+describe('Observe country request header', () => {
+  const countryRule = desired.requestHeaderRules.find(
+    (rule) => rule.description === OBSERVE_COUNTRY_HEADER_RULE_DESCRIPTION,
+  );
+
+  it('sets the origin header from Cloudflare country data only on the OTA host', () => {
+    expect(countryRule).toEqual({
+      description: OBSERVE_COUNTRY_HEADER_RULE_DESCRIPTION,
+      expression: OBSERVE_COUNTRY_HEADER_EXPRESSION,
+      action: 'rewrite',
+      action_parameters: {
+        headers: {
+          [OBSERVE_COUNTRY_HEADER_NAME]: { operation: 'set', expression: 'ip.src.country' },
+        },
+      },
+      enabled: true,
+    });
+    expect(countryRule?.expression).toBe(`http.host eq "${UPDATES_HOSTNAME}"`);
+  });
+
+  it('uses the Cloudflare request-header transform phase', () => {
+    expect(MANAGED_RULE_PHASES.find((phase) => phase.resource === 'request-header-rule')?.phase).toBe(
+      REQUEST_HEADER_RULE_PHASE,
+    );
+  });
+});
+
 describe('www.boardsesh.com under Cloudflare management (#4655)', () => {
   it('is a fully managed proxied CNAME to the Railway web service', () => {
     // Landed here first as `management: 'proxied-only'` (target left to the
@@ -699,6 +731,7 @@ describe('www.boardsesh.com under Cloudflare management (#4655)', () => {
       wafRules: [],
       rateLimitRules: [],
       redirectRules: [],
+      requestHeaderRules: [],
       responseHeaderRules: [],
       ssl: desired.ssl,
     };
@@ -2184,11 +2217,11 @@ describe('a rule phase this token cannot read', () => {
     expect(changes.some((change) => change.resource === 'cache-rule')).toBe(true);
   });
 
-  it('marks only the newly-added phase optional', () => {
-    // A phase that predates the scope it needs must still fail loudly when the
-    // scope is lost; only the one being rolled out is allowed to degrade.
+  it('has no optional rule phases after transform scope confirmation', () => {
+    // Both header-transform phases use the same confirmed production-token
+    // scope, so losing it must fail loudly instead of degrading either rule.
     const optional = MANAGED_RULE_PHASES.filter((phase) => phase.optional).map((phase) => phase.resource);
-    expect(optional).toEqual(['response-header-rule']);
+    expect(optional).toEqual([]);
   });
 });
 

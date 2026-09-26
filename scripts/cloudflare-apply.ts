@@ -79,7 +79,7 @@ const TOKEN_SCOPES = [
   'Zone.WAF Edit              — create/update the two crawler rules',
   'Zone.Rate Limit Edit       — create/update the climb-view rate-limit rule (http_ratelimit phase)',
   'Zone.Dynamic Redirect Edit — create/update the apex → www redirect (http_request_dynamic_redirect phase)',
-  'Zone.Transform Rules Edit  — create/update the assets CORS response-header rule\n                               (http_response_headers_transform phase)',
+  'Zone.Transform Rules Edit  — create/update the Observe country request-header rule and assets CORS\n                               response-header rule (request/response transform phases)',
   'Zone.Zone Settings Read    — read the SSL/TLS mode',
   'Zone.Zone Settings Edit    — ONLY needed with --allow-zone-ssl (to set the zone SSL mode)',
   'Account.Workers R2 Storage Edit — create R2 buckets + attach their custom domains (Read is not enough:\n                               it detects drift but cannot converge it). Needs CLOUDFLARE_ACCOUNT_ID too.',

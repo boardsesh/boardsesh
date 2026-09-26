@@ -318,7 +318,7 @@ describe('resolving the runtimeVersion a publish targeted', () => {
       const runtimeVersion = resolvePublishedRuntimeVersion('ios', env, runner as unknown as typeof execFileSync);
       expect(runtimeVersion).toBeNull();
       expect(warning).toHaveBeenCalledWith(expect.stringContaining('could not confirm a stable runtimeVersion'));
-      const fetchImpl = vi.fn<typeof fetch>();
+      const fetchImpl = vi.fn() as unknown as typeof fetch;
       await expect(
         verifyPreviewBranchIsSurfable(
           'pr-5417',

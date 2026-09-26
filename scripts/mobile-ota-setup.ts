@@ -120,6 +120,10 @@ function printServerSetup(): void {
       `REDIS_PORT=\${{Redis.REDISPORT}}`,
       `REDIS_PASSWORD=\${{Redis.REDISPASSWORD}}`,
       `CACHE_KEY_PREFIX=boardsesh-ota`,
+      // Cloudflare overwrites this header from ip.src.country on the proxied
+      // updates hostname. It is aggregate telemetry only, never an auth signal.
+      `TRUST_GEOIP_HEADERS=true`,
+      `GEOIP_HEADER_COUNTRY=X-Geo-Country`,
       `PROMETHEUS_ENABLED=true`,
     ].join('\n'),
   );

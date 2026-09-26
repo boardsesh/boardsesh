@@ -82,6 +82,12 @@ ours attached, so this tool manages its declared settings through the API.
   Railway's Redis auto-update window (weekends). No retry count is declared: it has
   no effect under `ALWAYS`, so the planner neither compares nor writes it then. It
   is still compared for an `ON_FAILURE` service.
+- **Observe country attribution.** `TRUST_GEOIP_HEADERS` is pinned to `true` and
+  `GEOIP_HEADER_COUNTRY` to `X-Geo-Country`. Cloudflare overwrites that header
+  from `ip.src.country` only for `updates.boardsesh.com`; xprem records it with
+  Observe rows. The value is aggregate telemetry, not an authorization or
+  compliance signal. A caller reaching Railway directly could forge it, so no
+  application decision may depend on it.
 - **Variables that must not be set.** `forbiddenVars` catches the ones that would
   switch xprem out of control-plane mode. Reported, never deleted.
 - **Custom domains, volume mounts, replicas, region.** Read and reported, never

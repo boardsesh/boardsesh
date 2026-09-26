@@ -6,6 +6,8 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it, vi } from 'vitest';
 
+import { OBSERVE_COUNTRY_HEADER_NAME } from '../infra/cloudflare/config';
+
 import {
   CANONICAL_WEB_ORIGIN,
   CLICKHOUSE_IMAGE,
@@ -18,6 +20,7 @@ import {
   OTA_BASE_URL,
   OTA_CONTAINER_PORT,
   OTA_HEALTHCHECK_PATH,
+  OTA_GEOIP_COUNTRY_HEADER,
   OTA_IMAGE,
   OTA_IMAGE_REPOSITORY,
   OTA_POSTGRES_SERVICE_NAME,
@@ -91,6 +94,11 @@ const OTA_CACHE_VARS = {
   REDIS_PORT: '6379',
   REDIS_PASSWORD: 'test-redis-password',
   CACHE_KEY_PREFIX: 'boardsesh-ota',
+};
+
+const OTA_GEOIP_VARS = {
+  TRUST_GEOIP_HEADERS: 'true',
+  GEOIP_HEADER_COUNTRY: OTA_GEOIP_COUNTRY_HEADER,
 };
 
 /** The live value of an OWNED variable. The plan may print the declared value; never this one. */
@@ -768,6 +776,31 @@ describe('diffServiceVars', () => {
 
   it('reports no drift when CACHE_MODE and CACHE_KEY_PREFIX hold the exact values', () => {
     expect(diffServiceVars(OTA, otaLive(OTA_CACHE_VARS), PLAN_OPTIONS)).toEqual([]);
+  });
+
+  it('requires Cloudflare country-header trust and the exact host-scoped header name', () => {
+    const missing = liveState({
+      variables: variablesWithOta(otaVariables({ TRUST_GEOIP_HEADERS: null, GEOIP_HEADER_COUNTRY: null })),
+    });
+    expect(diffServiceVars(OTA, missing, PLAN_OPTIONS).map((change) => change.summary)).toEqual([
+      `${OTA_SERVICE_NAME}: TRUST_GEOIP_HEADERS must be "true"`,
+      `${OTA_SERVICE_NAME}: GEOIP_HEADER_COUNTRY must be "${OTA_GEOIP_COUNTRY_HEADER}"`,
+    ]);
+
+    const wrong = liveState({
+      variables: variablesWithOta(otaVariables({ TRUST_GEOIP_HEADERS: 'false', GEOIP_HEADER_COUNTRY: 'CF-IPCountry' })),
+    });
+    expect(diffServiceVars(OTA, wrong, PLAN_OPTIONS).map((change) => change.summary)).toEqual([
+      `${OTA_SERVICE_NAME}: TRUST_GEOIP_HEADERS must be "true"`,
+      `${OTA_SERVICE_NAME}: GEOIP_HEADER_COUNTRY must be "${OTA_GEOIP_COUNTRY_HEADER}"`,
+    ]);
+  });
+
+  it('accepts the exact Observe country-header configuration', () => {
+    expect(OTA_GEOIP_COUNTRY_HEADER).toBe(OBSERVE_COUNTRY_HEADER_NAME);
+    expect(
+      diffServiceVars(OTA, liveState({ variables: variablesWithOta(otaVariables(OTA_GEOIP_VARS)) }), PLAN_OPTIONS),
+    ).toEqual([]);
   });
 
   it('reports each missing Redis connection variable', () => {

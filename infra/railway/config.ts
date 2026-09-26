@@ -94,6 +94,9 @@ export const OTA_BASE_URL = 'https://updates.boardsesh.com';
 /** The port xprem listens on inside the container, and the custom domain's target. */
 export const OTA_CONTAINER_PORT = 8080;
 
+/** xprem trusts this Cloudflare-authored header for Observe country attribution. */
+export const OTA_GEOIP_COUNTRY_HEADER = 'X-Geo-Country';
+
 /**
  * xprem's liveness endpoint, used as Railway's healthcheck.
  *
@@ -632,6 +635,20 @@ export const desiredRailwayState: RailwayDesiredState = {
       requiredVars: OTA_REQUIRED_VARS,
       forbiddenVars: OTA_FORBIDDEN_VARS,
       requiredConstrainedVars: [
+        {
+          name: 'TRUST_GEOIP_HEADERS',
+          allowedValues: ['true'],
+          reason:
+            'Enables xprem country attribution from the Cloudflare request-header transform on ' +
+            'updates.boardsesh.com. This is telemetry-only and must never become an authorization signal.',
+        },
+        {
+          name: 'GEOIP_HEADER_COUNTRY',
+          allowedValues: [OTA_GEOIP_COUNTRY_HEADER],
+          reason:
+            'Pins xprem to the host-scoped X-Geo-Country header that Cloudflare overwrites from ip.src.country, ' +
+            'instead of accepting every provider-specific location header in its default catalog.',
+        },
         {
           name: 'CACHE_MODE',
           allowedValues: ['redis'],
