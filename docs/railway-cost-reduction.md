@@ -243,7 +243,7 @@ calls).
 The variable is set per service, never as a shared variable. kilter-sync builds
 its own pool and ignores it. aurora-sync and moonboard-sync build their pools with
 `createDb`, so they would read it; neither sets it today, and it must not be added
-to them, because their long catalog writes would then be cancelled at 45 s.
+to them without first checking that none of their statements run longer than 45 s.
 
 #### Serial plans
 
