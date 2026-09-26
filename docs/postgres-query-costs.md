@@ -34,7 +34,7 @@ Change IDs (C#) match the audit findings. Rows are in rank order.
 | Rank | C# | Change | Saved per day | Memory (MB) | Effort | Migr. | Risk | Replica verdict | Offline-only? |
 |---|---|---|---|---|---|---|---|---|---|
 | 1 | C1 | Popular configs: no cache DEL on boot, one scheduled refresh, `required_set_ids <@` rewrite | 2,000–12,000 (E, deploy-dependent) | 0 | S–M | No | Low | speed confirmed; "0 mismatches" refuted | No (a CDN JSON option exists) |
-| 2 | C2 | searchClimbs stats path: split the grade filter, join grades after LIMIT | 2,500–4,000 (E) | 0 | S | No | Med | weaker; rare-band regression | Partial, already local-first |
+| 2 | C2 | searchClimbs stats path: split the grade filter, join grades after LIMIT | 2,500–4,000 (E) | 0 | S | No | Med | confirmed; min-only/max-only slowdown accepted | Partial, already local-first |
 | 3 | C3 | climbStatsHistory reads current board_climb_stats | 1,560–1,915 (E) | 0 (2.7 GB leaves the working set) | S | No | Low | confirmed | Yes, data on device |
 | 4 | C4 | Runaway guards: connection check, keepalives, per-service statement timeout, logging | caps tails ≥4,666 s per 16.2 h over 30 s (P) | 0 | S | No | Med | not re-tested | No |
 | 5 | C5 | Kilter catalog sync: skip unchanged stats rows, load self-aliases once, guard upserts, unnest | 600–1,700 (E) + about 1.9 GB WAL/day (E) | 0 | M | No | Med | stats half stronger; alias half smaller | No (it also cuts offline pulls) |
@@ -75,16 +75,17 @@ Change IDs (C#) match the audit findings. Rows are in rank order.
 
 ### C2. searchClimbs stats-driven path
 
-- **What:** split the filter into `ROUND(s.display_difficulty) <op> …` OR (`display_difficulty IS NULL AND EXISTS(grades in band)`), for BETWEEN, `>=` and `<=`. Join `board_climb_grades` after LIMIT/OFFSET. Keep COALESCE for `gradeSource='boardsesh'` and personal grades. Add no enable_* settings.
-- **Measured:**
-  - Homewall: reads 9,911 → 274, cold 4.7 → 0.38 s, warm 237 → 178 ms (R).
-  - MoonBoard L3: reads 30,061 → 9,846 (−67%), hits 309k → 163k, cold 14.7 → 4.9 s, warm 553 → 311 ms (R). The EXISTS fallback runs 3,002 times (R).
-  - Kilter L1 band 22–24: the plan flips to an index walk, 1.5 s → 2 ms warm, 587k → 516 buffers, 90 MB temp → 0 (R).
-  - **Regression, Kilter L1 rare band 31–33:** 283k stats-PK probes, 587k → 1.0M hits, 1.54 → 1.99 s warm (R). It spills no temp and never touches the 1.3 GB grades table, so it may still win on prod's 1 GB cache (not measured).
-- **Rows:** identical, same order, on 3 configs. MoonBoard unlimited: 6,776 = 6,776 (R).
+- **What:** rank and cut the page from `board_climb_stats` + `board_climbs` alone, then LEFT JOIN `board_climb_grades` onto the `pageSize + 1` rows after LIMIT/OFFSET. The upstream grade range is split into `ROUND(display_difficulty::numeric, 0) <op> …` OR (`ROUND(display_difficulty::numeric, 0) IS NULL AND EXISTS(Boardsesh grade in band)`), for BETWEEN, `>=` and `<=` — the same answer as the old `COALESCE(ROUND(display_difficulty), ROUND(Boardsesh grade))` form. The EXISTS correlates to `board_climbs.uuid`, not to the stats row: correlating it to the stats row instead let the planner push the whole OR into the stats scan and, next to its 33x underestimate of the `board_climbs` array filters, drove a probe of every climb on the layout. The `ROUND(...) IS NULL` spelling (not a bare `display_difficulty IS NULL`) lets a narrow band BitmapOr straight out of `board_climb_stats_difficulty_rounded_idx`. The Boardsesh grade source, personal grades and cross-angle keep the old in-query join and COALESCE form. `countClimbs` and the standard search are unchanged. No enable_* settings.
+- **Measured (replica, warm, `max_parallel_workers_per_gather=0`, `random_page_cost=1.1`):**
+  - Homewall V9-V11: 136k → 92k buffers, 231 → 187 ms. Cold, from the audit: reads 9,911 → 274, 4.7 → 0.38 s.
+  - MoonBoard L3 V8-V9: 339k → 173k buffers (−49%), 544 → 313 ms. Cold, from the audit: reads fell 67%, 30,061 → 9,846.
+  - Kilter Original V14-V16 (rare band, 6 matches): 1.06M → 12k buffers, 1,619 ms → 19 ms.
+  - Kilter Original V0-V1 / V3-V4 / V6-V8: 584k buffers and 1.4–1.5 s each → 384-407 buffers and 0.8–1.4 ms.
+  - **Known slowdown, in a shape production does not send:** a min-only or max-only range on Kilter Original is slower — `>= V11` goes 63 ms → 314 ms, `<= V0` goes 15 ms → 327 ms. Over the `pg_stat_statements` window, prod ran 6,006 BETWEEN calls and 2,566 no-grade calls on this path, and 0 min-only or max-only calls.
+- **Rows:** identical, same order and count, on 24 of 24 board/band/page combinations (Kilter Original, Homewall, MoonBoard L3, Tension L10; bands V0–V16, min-only, max-only, no grade, quality sort, page 2, two unlimited pages) (R). MoonBoard L3 V8-V9 unlimited: 6,776 = 6,776 rows, 224 admitted only through the Boardsesh-grade fallback.
 - **Sizing:** the family is 5,295 s in the window (P), about 8,300 s/day (E). MoonBoard is 60% of it and gains the least, so savings are 2,500–4,000 s/day (E).
-- **Where:** `packages/db/src/queries/climbs/search-climbs.ts:352-472`, `packages/db/src/queries/climbs/create-climb-filters.ts:334-345, 547-558`.
-- **Caveats:** add a test or guard for narrow bands on big layouts. Test NULL `display_difficulty` with a grades row. Pair the implementation with a reviewer.
+- **Where:** `packages/db/src/queries/climbs/search-climbs.ts` (`selectPageThenJoinGrades` and `statsDrivenClimbFields`), `packages/db/src/queries/climbs/create-climb-filters.ts` (`statsRowGradeRangeSql` and `gradeValueSql`).
+- **Caveats:** the narrow-band plan is pinned by `search-climbs-explain.integration.test.ts` (opt-in, dev DB only — not enforced by CI). `display_difficulty IS NULL` with a grades row present is covered by `climb-queries.test.ts`. The outer SELECT in `selectPageThenJoinGrades` hand-lists its columns rather than re-projecting `statsDrivenClimbFields()` (drizzle's subquery type has no index signature to map over); `search-climbs.test.ts` pins the two key sets together so a column added to one and forgotten in the other fails loudly instead of silently dropping from the rows.
 
 ### C3. climbStatsHistory
 
@@ -229,7 +230,8 @@ Every move here is JS-only and ships by OTA from `main`. New data must go in a s
 ## Rejected or weakened
 
 - **C1 "0 mismatches":** refuted (R). The counts correct by up to 2%. Diff and accept.
-- **C2 at 3,500–5,500 s/day:** weakened to 2,500–4,000 (E). There is a rare-band regression on big layouts (R).
+- **C2 at 3,500–5,500 s/day:** weakened to 2,500–4,000 (E).
+- **C2 rewrite as first written in the audit report:** rejected. Correlating the EXISTS fallback to the stats row and testing a bare `display_difficulty IS NULL` regressed Kilter Original (8 ms–1.4 s → 1.9 s) and min-only searches (63 ms → 1.9 s). Fixed by correlating to `board_climbs.uuid` and testing `ROUND(display_difficulty::numeric, 0) IS NULL` instead — see [C2](#c2-searchclimbs-stats-driven-path).
 - **C5 `ANY($uuids)` alias probe:** rejected for large layouts (R). Use load-once. The "6.8 s mean" first reported was the max (P).
 - **C6 CTE on HIDDEN_GEMS:** rejected. 2.5× more buffers and 6× slower (R).
 - **C8 at 340–650 s/day:** only about 323 s/day exists (P→E).
@@ -294,7 +296,7 @@ Nothing here is native, so everything ships from `main`. The `totalAscents`, `to
    - Popular rail: up to 24 h stale, with counts corrected by up to 2%?
    - Discovery rail: up to 15 min stale?
 4. **Offline-only trade-offs:** hide filter-sheet counts, Discover counts and the Following chip for boards that are not downloaded and for the browser app? Measure the download rate in PostHog first.
-5. **C2 rare bands:** accept a slower worst case (1.54 → 1.99 s warm (R)) with no temp and no grades reads, or add a guard?
+5. **C2 min-only/max-only shape:** accept the slowdown on Kilter Original (63 → 314 ms, 15 → 327 ms warm (R)) since prod sent 0 such calls in the measured window, or add a guard before it does?
 6. **Stats-history snapshot:** can it become change-only once C3 lands? The `packages/db/src/queries/grade-model/gates.ts` backtest assumes a full weekly cross-section.
 7. **Setter sitemap:** does it earn search traffic? If not, removing it saves about 270 s/day (E).
 8. **Deploy cadence and replica count:** these set the real size of C1.
