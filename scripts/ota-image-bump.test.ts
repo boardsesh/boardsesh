@@ -160,12 +160,15 @@ describe('the files a bump rewrites', () => {
       'docs/mobile-ota-updates.md',
       'scripts/mobile-ota-setup.ts',
       'scripts/mobile-ota-rollback.ts',
-      '.github/workflows/mobile-ota-backport.yml',
       'CLAUDE.md',
       'AGENTS.md',
     ]) {
       expect(VERSION_BEARING_FILES).toContain(relativePath);
     }
+  });
+
+  it('never rewrites a workflow file, which the bump App has no permission to push', () => {
+    expect(VERSION_BEARING_FILES.filter((path) => path.startsWith('.github/workflows/'))).toEqual([]);
   });
 
   it('includes the CLI pin itself, which is where eoas@<version> lives', () => {

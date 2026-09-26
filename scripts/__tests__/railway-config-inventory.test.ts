@@ -32,6 +32,12 @@ function readRepoFile(relativePath: string): string {
 }
 
 /** The `NAME=` keys of the env block the setup runbook prints. */
+function otaConstrainedVars() {
+  return (
+    desiredRailwayState.services.find((service) => service.name === OTA_SERVICE_NAME)?.requiredConstrainedVars ?? []
+  );
+}
+
 function runbookVariableNames(): string[] {
   const source = readRepoFile('scripts/mobile-ota-setup.ts');
   return [...source.matchAll(/^\s*`([A-Z][A-Z0-9_]*)=/gm)].map(([, name]) => name);
@@ -39,10 +45,26 @@ function runbookVariableNames(): string[] {
 
 describe('the OTA env contract', () => {
   it('declares every variable the setup runbook tells you to paste into Railway', () => {
-    const declared = new Set(OTA_REQUIRED_VARS.map((variable) => variable.name));
+    const declared = new Set([
+      ...OTA_REQUIRED_VARS.map((variable) => variable.name),
+      ...otaConstrainedVars().map((variable) => variable.name),
+    ]);
     const missing = runbookVariableNames().filter((name) => !declared.has(name));
 
     expect(missing).toEqual([]);
+  });
+
+  it('has the runbook paste a value every pinned variable accepts', () => {
+    // CACHE_MODE and CACHE_KEY_PREFIX are pinned to exact public values. A runbook
+    // that pasted anything else would stand up a server the drift check rejects.
+    const source = readRepoFile('scripts/mobile-ota-setup.ts');
+    const wrong = otaConstrainedVars().flatMap((variable) => {
+      const match = source.match(new RegExp(`^\\s*\`${variable.name}=([^\`]*)\``, 'm'));
+      if (!match) return [];
+      return variable.allowedValues.includes(match[1]) ? [] : [`${variable.name}=${match[1]}`];
+    });
+
+    expect(wrong).toEqual([]);
   });
 
   it('gives every declared variable a reason, so drift explains itself in the plan', () => {

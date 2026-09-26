@@ -657,9 +657,7 @@ describe('diffServiceVars', () => {
 
   /** A converged OTA service whose cache variables are exactly `cacheVars`. */
   function otaLive(cacheVars: Record<string, string>) {
-    const withoutCache = otaVariables(
-      Object.fromEntries(Object.keys(OTA_CACHE_VARS).map((name) => [name, null])),
-    );
+    const withoutCache = otaVariables(Object.fromEntries(Object.keys(OTA_CACHE_VARS).map((name) => [name, null])));
     return liveState({ variables: variablesWithOta({ ...withoutCache, ...cacheVars }) });
   }
 

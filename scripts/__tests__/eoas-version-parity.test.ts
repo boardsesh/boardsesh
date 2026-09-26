@@ -1,6 +1,6 @@
 /// <reference types="node" />
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -68,6 +68,21 @@ describe('eoas version parity', () => {
     );
 
     expect(drifted).toEqual([]);
+  });
+
+  it('keeps pinned eoas versions out of every workflow file', () => {
+    // The bump workflow's App has Contents write but not Workflows write, so a
+    // version inside .github/workflows/ would make every generated bump fail at push.
+    const workflowDir = join(ROOT_DIR, '.github', 'workflows');
+    const pinned = readdirSync(workflowDir)
+      .filter((name) => /\.ya?ml$/.test(name))
+      .flatMap((name) =>
+        [...readFileSync(join(workflowDir, name), 'utf-8').matchAll(EOAS_SPEC_PATTERN)].map(
+          ([spec]) => `.github/workflows/${name}: ${spec}`,
+        ),
+      );
+
+    expect(pinned).toEqual([]);
   });
 
   it('keeps every server-image mention on the version config.ts declares', () => {
