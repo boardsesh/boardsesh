@@ -140,6 +140,25 @@ export function isAccessoryHostRoute(segments: Segments): boolean {
 }
 
 /**
+ * Climbs-tab sub-routes whose bottom controls sit where the accessory platter draws:
+ * the full-screen hold-type and zone filter boards. Their mode toggle and chip row
+ * live at the bottom of the screen, and on iOS 26 the platter covered them.
+ */
+const ACCESSORY_HIDDEN_CLIMBS_ROUTES: ReadonlySet<string> = new Set(['holds', 'zone']);
+
+/**
+ * True where the native accessory platter must be HIDDEN while its host stays
+ * mounted. Hiding goes through react-native-screens' `bottomAccessoryHidden` prop,
+ * not an unmount: the React host and its content stay alive, and the patched
+ * `applyBottomAccessoryVisibility` schedules the tab-bar relayout on that edge too
+ * (patches/react-native-screens@4.26.2.patch), which is the #5055 fix. This is a
+ * narrow exception to `isAccessoryHostRoute`, never a replacement for it.
+ */
+export function isAccessoryHiddenRoute(segments: Segments): boolean {
+  return isClimbsTabRoute(segments) && ACCESSORY_HIDDEN_CLIMBS_ROUTES.has(segments[2] ?? '');
+}
+
+/**
  * The focused tab's route segment (e.g. `'climbs'`), or `null` when the focused
  * route is not inside the tab navigator. Segment 0 is the `(tabs)` group, so the
  * tab name is segment 1. Used by the iPad sidebar to highlight the active row
