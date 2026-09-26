@@ -1421,6 +1421,9 @@ jobs:
         env:
           TMPDIR: ${{ runner.temp }}/metro-web
           BOARDSESH_EXPORT_KEEP_METRO_CACHE: '1'
+          # The eager brotli budget is a repository variable so it can be moved
+          # without a commit; empty when unset, and the script's default applies.
+          BOARDSESH_WEB_EAGER_BROTLI_BUDGET: ${{ vars.BOARDSESH_WEB_EAGER_BROTLI_BUDGET }}
         run: vp run check:mobile-web-bundle
       - name: Save Metro's Expo-web transform cache
         uses: actions/cache/save@v4
