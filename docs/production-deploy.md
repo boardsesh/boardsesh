@@ -46,6 +46,11 @@ The stage captures each platform's production manifest ID before it publishes;
 promotion fails if a manual or native republish changed either ID meanwhile.
 If the live schema is not ready, promotion fails closed; the next cumulative
 run picks up the unpromoted mobile change. See [mobile OTA updates](mobile-ota-updates.md).
+New main pushes do not cancel or invalidate an in-flight staged OTA: the runs
+are serialized, and the next run publishes the remaining commits. The live
+schema check and per-platform production manifest baseline still protect each
+promotion. An in-flight run does not overwrite a newer main commit with its
+generated changelog; the next run refreshes that file.
 
 www left Vercel on 2026-09-01 (#4655); the workflow's Vercel half — the second
 `next build` inside `build-web`, the `deploy-web` job, and the `check-rollback`
