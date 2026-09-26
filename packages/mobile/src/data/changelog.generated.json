@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-26T01:36:03.933Z",
+  "generatedAt": "2026-09-26T01:44:34.074Z",
   "entries": [
+    {
+      "prNumber": 5809,
+      "category": "improved",
+      "title": "The create and hold-filter boards no longer draw dots on every hold; tap the holds themselves",
+      "mergedAt": "2026-09-26T01:33:40Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5809"
+    },
     {
       "prNumber": 5813,
       "category": "new",

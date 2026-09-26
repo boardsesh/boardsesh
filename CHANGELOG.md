@@ -15,6 +15,10 @@ manual changes). See docs/mobile-ota-updates.md.
 - The grade you gave a climb is now the grade you see on it, and the one it sorts and filters by. The crowd's number sits underneath when the two disagree. ([#5143](https://github.com/boardsesh/boardsesh/pull/5143))
   Grade a climb you haven't sent yet — handy on boards where everything reads sandbagged.
 
+### Improved
+
+- The create and hold-filter boards no longer draw dots on every hold; tap the holds themselves ([#5809](https://github.com/boardsesh/boardsesh/pull/5809))
+
 ### Fixed
 
 - Settings has a back button again, so you can always get out ([#5806](https://github.com/boardsesh/boardsesh/pull/5806))
