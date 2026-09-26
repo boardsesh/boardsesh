@@ -235,13 +235,37 @@ function isDefaultDenyExemptPath(pathname: string): boolean {
  * 2. Any other self-identified automation is blocked on GET, off the exempt
  *    paths, unless CRAWLER_ALLOW_TOKENS names it. GET-only matches the edge
  *    rule, whose allow-rule `skip` is GET-only too.
+ *
+ * Pass `automationDefaultDeny: false` to apply rule 1 alone. The middleware
+ * does that outside production (see `isOriginAutomationDefaultDenyEnabled`).
  */
-export function isBlockedCrawler(userAgent: string | null, request: { method: string; pathname: string }): boolean {
+export function isBlockedCrawler(
+  userAgent: string | null,
+  request: { method: string; pathname: string },
+  { automationDefaultDeny = true }: { automationDefaultDeny?: boolean } = {},
+): boolean {
   const normalizedUserAgent = userAgent?.toLowerCase() ?? '';
   if (includesAny(normalizedUserAgent, BLOCKED_CRAWLER_TOKENS)) return true;
+  if (!automationDefaultDeny) return false;
   if (request.method !== 'GET' || isDefaultDenyExemptPath(request.pathname)) return false;
   return (
     includesAny(normalizedUserAgent, AUTOMATION_SIGNATURE_TOKENS) &&
     !includesAny(normalizedUserAgent, CRAWLER_ALLOW_TOKENS)
   );
+}
+
+/**
+ * Whether the origin applies rule 2 of `isBlockedCrawler` (the automation
+ * default-deny). Named crawlers are refused in every environment regardless.
+ *
+ * The Cloudflare edge rule is the primary enforcement. The origin copy exists
+ * only for requests that reach the Railway hostname directly, and that never
+ * happens in dev or e2e — while those environments are full of legitimate
+ * automation: Playwright's headless Chromium announces itself as
+ * `HeadlessChrome`, and local scripts use curl. So the default-deny runs only
+ * in a production build, and `BOARDSESH_E2E=1` turns it off for the CI e2e
+ * shards, which serve a production build (`next start`) to Playwright.
+ */
+export function isOriginAutomationDefaultDenyEnabled(): boolean {
+  return process.env.NODE_ENV === 'production' && process.env.BOARDSESH_E2E !== '1';
 }
