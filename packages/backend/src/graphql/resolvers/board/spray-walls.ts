@@ -782,7 +782,7 @@ function publicWallPhotoUrl(board: UserBoardRow, wall: SprayWallRow): string | n
  * copy just made is deleted rather than left in a world-readable bucket. Never
  * throws — the caller has already committed the publish.
  */
-async function refreshPublicWallPhoto(
+export async function refreshPublicWallPhoto(
   wallId: number,
   boardUuid: string,
   photoKey: string | null,
@@ -794,7 +794,17 @@ async function refreshPublicWallPhoto(
 ): Promise<void> {
   let nextKey: string | null = null;
   try {
-    nextKey = await copyWallPhotoToPublicBucket(boardUuid, photoKey);
+    // One retry on a THROW, never on a null (a null means there is nothing to
+    // copy, which a second try will not change). This runs after the publish has
+    // committed, and a resumed first publish has no later call from the client
+    // to heal a failed copy with (#5513) — so one transient object-storage error
+    // should not be enough to leave a public wall without a photo.
+    try {
+      nextKey = await copyWallPhotoToPublicBucket(boardUuid, photoKey);
+    } catch (firstError) {
+      logger.warn('Retrying a spray wall public photo copy', { boardUuid }, firstError);
+      nextKey = await copyWallPhotoToPublicBucket(boardUuid, photoKey);
+    }
     if (!nextKey) return;
 
     const result = await db.execute(sql`
@@ -2009,18 +2019,23 @@ export const sprayWallMutations = {
     // transaction then fails, which the catch below cleans up. The other order
     // costs a public wall whose photo never got copied, which nothing cleans up.
     //
-    // A wall that is already public but has no public copy is promoted again. That
-    // state is reachable: a first publish that applies a public creation-time
-    // choice (#5513) commits the flag and makes the copy afterwards, best effort,
-    // so a failed copy leaves a public wall with no photo to show. Re-stating
-    // "public" — which the wizard does straight after its publish — heals it.
+    // A wall that is already public but has no public copy is copied again, on ANY
+    // update that does not make it private — a rename heals it as well as a
+    // re-stated "public". That state is reachable: a publish commits the flag and
+    // makes the copy afterwards, best effort (it retries once, see
+    // `refreshPublicWallPhoto`), so a failed copy leaves a public wall with no
+    // photo to show. A resumed wizard run never re-states public after its
+    // publish, so the heal cannot wait for that one call. Costs one read and one
+    // copy, and only on a wall that is in that broken state.
     //
     // Never for an admin-hidden wall (#5797): it reads as private to everybody but
     // its owner, so its photo has no business in the world-readable bucket even
     // when the owner flips the flag. Re-checked under the lock below, since a hide
     // can land while the copy is in flight.
+    const promoting = validated.isPublic === true && !board.isPublic;
+    const healing = board.isPublic && validated.isPublic !== false && wall.publicPhotoKey == null;
     const promotedPhotoKey =
-      validated.isPublic === true && wall.hiddenAt == null && (!board.isPublic || wall.publicPhotoKey == null)
+      wall.hiddenAt == null && (promoting || healing)
         ? await copyWallPhotoToPublicBucket(board.uuid, await publishedPhotoKey(wall))
         : null;
 
@@ -2061,7 +2076,12 @@ export const sprayWallMutations = {
         const losingPublic = goingPrivate && boardNow?.isPublic === true;
 
         const [wallNow] = await tx
-          .select({ publicPhotoKey: dbSchema.sprayWalls.publicPhotoKey, hiddenAt: dbSchema.sprayWalls.hiddenAt })
+          .select({
+            publicPhotoKey: dbSchema.sprayWalls.publicPhotoKey,
+            hiddenAt: dbSchema.sprayWalls.hiddenAt,
+            pendingIsPublic: dbSchema.sprayWalls.pendingIsPublic,
+            pendingIsUnlisted: dbSchema.sprayWalls.pendingIsUnlisted,
+          })
           .from(dbSchema.sprayWalls)
           .where(eq(dbSchema.sprayWalls.id, wall.id))
           .limit(1);
@@ -2102,16 +2122,33 @@ export const sprayWallMutations = {
         // window where the two disagree is a window where a private wall's photo
         // has a world-readable URL.
         const wallUpdates: Partial<typeof dbSchema.sprayWalls.$inferInsert> = { updatedAt: new Date() };
-        // An explicit visibility change supersedes whatever the climber picked at
-        // creation (#5513): without this, a wall made private again before its
-        // first publish would be flipped back to the old choice by that publish.
-        if (validated.isPublic !== undefined || validated.isUnlisted !== undefined) {
-          wallUpdates.pendingIsPublic = null;
-          wallUpdates.pendingIsUnlisted = null;
+        // An explicit visibility change supersedes what the climber picked at
+        // creation (#5513) — field by field. Each flag this call states replaces
+        // its half of the pending pair; a flag it leaves out keeps the creation-time
+        // choice, exactly as the board row keeps a flag the update does not name.
+        // Without the first half, a wall made private again before its first
+        // publish would be flipped back by that publish; without the second,
+        // `{ isUnlisted: false }` alone would silently drop a pending public.
+        // Only while something is pending: there is nothing to merge into after
+        // the first publish, which clears the pair.
+        const hasPending = wallNow?.pendingIsPublic != null || wallNow?.pendingIsUnlisted != null;
+        if (hasPending && (validated.isPublic !== undefined || validated.isUnlisted !== undefined)) {
+          const merged = pendingVisibilityColumns({
+            isPublic: validated.isPublic ?? wallNow?.pendingIsPublic === true,
+            isUnlisted: validated.isUnlisted ?? wallNow?.pendingIsUnlisted === true,
+          });
+          wallUpdates.pendingIsPublic = merged.pendingIsPublic;
+          wallUpdates.pendingIsUnlisted = merged.pendingIsUnlisted;
         }
-        if (promotedPhotoKey && wallNow?.hiddenAt != null) {
-          // Hidden while the copy was in flight: the copy is attached to nothing
-          // and goes on the post-commit delete list with the other orphans.
+        // A copy made for a HEAL (the board already public, this call not stating
+        // it) has to find the board still public under the lock: a demotion that
+        // committed after the read above would otherwise get a world-readable photo
+        // key written onto a wall that is now private.
+        const stillPublic = validated.isPublic === true || boardNow?.isPublic === true;
+        if (promotedPhotoKey && (wallNow?.hiddenAt != null || !stillPublic)) {
+          // Hidden, or no longer public, while the copy was in flight: the copy is
+          // attached to nothing and goes on the post-commit delete list with the
+          // other orphans.
           orphanedPublicKeys.push(promotedPhotoKey);
         } else if (promotedPhotoKey) {
           wallUpdates.publicPhotoKey = promotedPhotoKey;
