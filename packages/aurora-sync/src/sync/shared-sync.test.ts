@@ -86,6 +86,8 @@ const shimInsertedRows: Array<Record<string, unknown>> = [];
  * even if the write path stops using the helper.
  */
 const shimConflictSets: Array<Record<string, unknown>> = [];
+/** The `setWhere` recorded next to each `set` above (undefined when the write shipped none). */
+const shimConflictGuards: Array<{ set: Record<string, unknown>; setWhere: SQL | undefined }> = [];
 const shimExistingClimbStatRows: Array<{ climbUuid: string; angle: number }> = [];
 const shimClimbStatSelectPredicates: SQL[] = [];
 
@@ -95,6 +97,9 @@ function createDbShim() {
     get(_target, prop) {
       if (prop === 'then') return undefined; // not a thenable, just chainable
       if (prop === Symbol.toPrimitive) return undefined;
+      // An awaited write resolves to the shim itself; it carries no command
+      // count, like a driver result that reports none.
+      if (prop === 'count' || prop === 'rowCount') return undefined;
       if (prop === 'transaction') {
         return async (cb: (tx: typeof shim) => Promise<void>) => cb(shim);
       }
@@ -126,12 +131,17 @@ function createDbShim() {
           // the database without needing a real one.
           if (prop === 'values' && Array.isArray(args[0])) {
             shimInsertedRows.push(...(args[0] as Array<Record<string, unknown>>));
+          } else if (prop === 'values' && args[0] != null && typeof args[0] === 'object') {
+            shimInsertedRows.push(args[0] as Record<string, unknown>);
           }
           // Record conflict clauses so a test can assert on the SET a write
           // actually shipped, not on a helper re-invoked inside the test.
           if (prop === 'onConflictDoUpdate' && args[0] != null && typeof args[0] === 'object') {
-            const { set } = args[0] as { set?: Record<string, unknown> };
-            if (set != null) shimConflictSets.push(set);
+            const { set, setWhere } = args[0] as { set?: Record<string, unknown>; setWhere?: SQL };
+            if (set != null) {
+              shimConflictSets.push(set);
+              shimConflictGuards.push({ set, setWhere });
+            }
           }
           return shim;
         },
@@ -1007,6 +1017,114 @@ describe('board_climb_stats empty-row guard (issue #4068)', () => {
     // The grade is taken verbatim — this is what makes the marker meaningless.
     expect(render(statsConflictSet.displayDifficulty)).toBe('excluded.display_difficulty');
     expect(render(statsConflictSet.tickGradedAt)).toBe('null');
+  });
+});
+
+describe('no-op write guards (recorded from the real write path)', () => {
+  const dialect = new PgDialect();
+  const render = (fragment: SQL) => dialect.sqlToQuery(fragment).sql.toLowerCase().replace(/\s+/g, ' ').trim();
+
+  beforeEach(() => {
+    mockSharedSync.mockReset();
+    mockPopulateDenormalizedColumns.mockReset();
+    mockPopulateDenormalizedColumns.mockResolvedValue(undefined);
+    shimConflictSets.length = 0;
+    shimConflictGuards.length = 0;
+    shimInsertedRows.length = 0;
+  });
+
+  function recordedGuard(isTarget: (set: Record<string, unknown>) => boolean) {
+    const matches = shimConflictGuards.filter(({ set }) => isTarget(set));
+    expect(matches).toHaveLength(1);
+    const [{ set, setWhere }] = matches;
+    expect(setWhere).toBeDefined();
+    return { set, guard: render(setWhere as SQL) };
+  }
+
+  it('climb_stats: guards every SET column except the upstream_synced_at stamp', async () => {
+    mockSharedSync.mockResolvedValueOnce(
+      complete({
+        climb_stats: [
+          {
+            climb_uuid: 'GUARDED',
+            angle: 40,
+            display_difficulty: 20,
+            benchmark_difficulty: null,
+            ascensionist_count: 5,
+            difficulty_average: 20.1,
+            quality_average: 2,
+            fa_username: null,
+            fa_at: null,
+          },
+        ],
+      }),
+    );
+
+    await syncSharedData(fakePostgresClient(), 'decoy', 'token');
+
+    const { set, guard } = recordedGuard((recordedSet) => 'upstreamQualityAverage' in recordedSet);
+    const [storedTuple, incomingTuple] = guard.split(' is distinct from ');
+    const guardedColumns = [...storedTuple.matchAll(/"board_climb_stats"\."([a-z_]+)"/g)].map((match) => match[1]);
+    expect([...guardedColumns].sort()).toEqual(
+      [
+        'ascensionist_count',
+        'benchmark_difficulty',
+        'difficulty_average',
+        'display_difficulty',
+        'fa_at',
+        'fa_username',
+        'quality_average',
+        'quality_normalized',
+        'tick_graded_at',
+        'upstream_ascensionist_count',
+        'upstream_quality_average',
+      ].sort(),
+    );
+    // Every SET key but the stamp is in the guard, in the same order.
+    expect(Object.keys(set).filter((key) => key !== 'upstreamSyncedAt')).toHaveLength(guardedColumns.length);
+    // tick_graded_at is set to NULL, so a marked row always reads as changed (#4798).
+    expect(guardedColumns[guardedColumns.length - 1]).toBe('tick_graded_at');
+    expect(incomingTuple).toMatch(/, null\) or "board_climb_stats"\."upstream_synced_at" is null$/);
+    expect(render(set.upstreamSyncedAt as SQL)).toBe('excluded.upstream_synced_at');
+  });
+
+  it('beta_links and climbs: guard exactly the columns their SET writes', async () => {
+    mockSharedSync.mockResolvedValueOnce(
+      complete({
+        beta_links: [
+          {
+            climb_uuid: 'BETA',
+            link: 'https://example.com/v',
+            foreign_username: null,
+            angle: 40,
+            thumbnail: null,
+            is_listed: true,
+            created_at: '2024-01-01 00:00:00',
+          },
+        ],
+      }),
+    );
+
+    await syncSharedData(fakePostgresClient(), 'decoy', 'token');
+
+    const beta = recordedGuard((recordedSet) => 'thumbnail' in recordedSet);
+    expect(beta.guard).toBe(
+      '("board_beta_links"."foreign_username", "board_beta_links"."angle", "board_beta_links"."thumbnail", "board_beta_links"."is_listed", "board_beta_links"."created_at") is distinct from (excluded.foreign_username, excluded.angle, excluded.thumbnail, excluded.is_listed, excluded.created_at)',
+    );
+  });
+
+  it('reports climb_stats offered vs written and marks only a complete pass', async () => {
+    const lines: string[] = [];
+    mockSharedSync.mockResolvedValueOnce(complete({ climb_stats: [] }));
+    const result = await syncSharedData(fakePostgresClient(), 'decoy', 'token', (line) => lines.push(line));
+    expect(result.climbStatsWrites).toEqual({ received: 0, offered: 0, written: 0 });
+    expect(lines).toContain('[SharedSync] decoy climb_stats writes: received=0 offered=0 written=0 unchanged=0');
+    expect(shimInsertedRows.filter((row) => row.tableName === '__local_climb_stats_pass__')).toHaveLength(1);
+
+    shimInsertedRows.length = 0;
+    mockSharedSync.mockResolvedValue(partial({ climb_stats: [] }));
+    await syncSharedData(fakePostgresClient(), 'decoy', 'token', () => {});
+    expect(shimInsertedRows.filter((row) => row.tableName === '__local_climb_stats_pass__')).toHaveLength(0);
   });
 });
 

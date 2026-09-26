@@ -1,6 +1,6 @@
 import { sharedSync } from '../api/shared-sync-api';
 import { type SyncOptions, type AuroraBoardName, SHARED_SYNC_TABLES } from '../api/types';
-import { sql, eq, and, inArray, isNull, isNotNull } from 'drizzle-orm';
+import { sql, eq, and, inArray, isNull, isNotNull, type SQL } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import type postgres from 'postgres';
@@ -29,9 +29,13 @@ import {
   mergeCatalogCharacteristicsSql,
   populateDenormalizedColumns,
   blendedQualityAverageSql,
+  conflictSetChangesRowSql,
+  conflictSetEntries,
+  markClimbStatsPassCompleted,
   setterSyncNotificationUuid,
   snapshotClimbStatsHistoryIfDue,
 } from '@boardsesh/db/queries';
+import { commandCountFromResult } from '@boardsesh/db/client';
 import { setterFollows, notifications, userBoardMappings, userFollows } from '@boardsesh/db/schema';
 import { sanitizeFirstAscent } from '@boardsesh/sync-runtime';
 
@@ -575,8 +579,30 @@ function isEmptyUpstreamClimbStat(value: MappedClimbStat): boolean {
   );
 }
 
-async function upsertClimbStats(db: DrizzleDb, board: AuroraBoardName, data: ClimbStats[]) {
+/**
+ * Per-pass climb_stats write counts. `received` is what Aurora sent, `offered`
+ * what reached the upsert (fully empty NEW keys are dropped first), `written`
+ * the rows the upsert inserted or changed. offered − written is the no-op
+ * re-sends the conflict guard skipped.
+ */
+export type ClimbStatsWriteCounts = { received: number; offered: number; written: number };
+
+export function emptyClimbStatsWriteCounts(): ClimbStatsWriteCounts {
+  return { received: 0, offered: 0, written: 0 };
+}
+
+/**
+ * Upsert one Aurora climb_stats payload, adding what it offered and wrote to
+ * `counts`. Exported for the real-Postgres guard tests.
+ */
+export async function upsertClimbStats(
+  db: DrizzleDb,
+  board: AuroraBoardName,
+  data: ClimbStats[],
+  counts: ClimbStatsWriteCounts = emptyClimbStatsWriteCounts(),
+): Promise<ClimbStatsWriteCounts> {
   const climbStatsSchema = UNIFIED_TABLES.climbStats;
+  counts.received += data.length;
 
   await processBatches(data, async (batch) => {
     // Three cooperating writers feed this row: Aurora sync (here), Kilter sync
@@ -628,7 +654,7 @@ async function upsertClimbStats(db: DrizzleDb, board: AuroraBoardName, data: Cli
     if (values.length === 0) return;
 
     // Stamp upstream_synced_at on the stats row (records that a manufacturer
-    // sync just touched it). upstream_quality_average carries the normalized
+    // sync just wrote it). upstream_quality_average carries the normalized
     // manufacturer average (== value.qualityAverage) into the blend column; the
     // base `values.qualityAverage` still feeds the fresh-row INSERT (blend ==
     // upstream when no Boardsesh votes exist yet). The weekly
@@ -642,59 +668,122 @@ async function upsertClimbStats(db: DrizzleDb, board: AuroraBoardName, data: Cli
       upstreamSyncedAt: nowIso,
     }));
 
-    // The upstream conflict policy (climbStatsUpstreamConflictSet): take the
-    // incoming cursored count verbatim so a legitimate decrease propagates.
-    // Resolved ONCE and reused for the
-    // count SET, the total, AND the blend weight, because a Postgres SET
-    // expression sees the OLD row value of a bare column — the blend must weight
-    // by this NEW upstream count, not the stale stored one. Single source keeps
-    // the three in lockstep: the blend follows the count policy automatically.
-    const upstreamConflictSet = climbStatsUpstreamConflictSet();
-    const blendedQualityAverage = blendedQualityAverageSql({
-      upstreamQualityAverage: sql`excluded.upstream_quality_average`,
-      upstreamAscensionistCount: upstreamConflictSet.upstreamAscensionistCount,
-      boardseshQualitySum: sql`${climbStatsSchema.boardseshQualitySum}`,
-      boardseshQualityCount: sql`${climbStatsSchema.boardseshQualityCount}`,
-    });
-
-    await db
+    const conflictSet = climbStatsConflictSet();
+    const result = await db
       .insert(climbStatsSchema)
       .values(statsValues)
       .onConflictDoUpdate({
         target: [climbStatsSchema.boardType, climbStatsSchema.climbUuid, climbStatsSchema.angle],
         set: {
-          displayDifficulty: sql`excluded.display_difficulty`,
-          benchmarkDifficulty: sql`excluded.benchmark_difficulty`,
-          // upstream_ = the board's single manufacturer count; take the incoming
-          // cursored value verbatim (not GREATEST) so a legitimate decrease
-          // propagates. See climbStatsUpstreamConflictSet. Same object drives the
-          // blend weight above, keeping count and blend in lockstep.
-          ...upstreamConflictSet,
-          difficultyAverage: sql`excluded.difficulty_average`,
-          // Manufacturer average lands in upstream_quality_average; quality_average
-          // is the blend of it and Boardsesh's own votes.
-          upstreamQualityAverage: sql`excluded.upstream_quality_average`,
-          qualityAverage: blendedQualityAverage,
-          qualityNormalized: sql`true`,
-          // See firstAscentConflictSet: sanitized once at INSERT-value
-          // construction time, so excluded.* here is already safe.
-          ...firstAscentConflictSet(),
-          // Record that an upstream (manufacturer) sync last touched this row.
+          ...conflictSet,
+          // Record that an upstream (manufacturer) sync last wrote this row.
+          // Deliberately outside the guard: it moves only when a value above
+          // does (or the row was never stamped). "A pass ran" lives per board in
+          // CLIMB_STATS_PASS_CURSOR instead.
           upstreamSyncedAt: sql`excluded.upstream_synced_at`,
-          // Aurora owns this row's grade now (#4798). display_difficulty above
-          // takes excluded verbatim — including NULL, which is Aurora saying
-          // "no grade here" — so the tick-derived marker can never still
-          // describe what is stored. Clearing it also releases a grade the
-          // recompute had derived: if Aurora nulled the grade, the row now reads
-          // "ungraded" and the next recompute re-derives it from ticks.
-          tickGradedAt: sql`NULL`,
         },
+        setWhere: climbStatsConflictWhere(conflictSet),
       });
+    counts.offered += statsValues.length;
+    // INSERT … ON CONFLICT reports inserted + updated rows, never the skipped ones.
+    counts.written += commandCountFromResult(result) ?? 0;
   });
+  return counts;
+}
+
+/**
+ * The ON CONFLICT SET for board_climb_stats on the Aurora shared sync, keyed by
+ * schema property. Every entry feeds both the SET and the no-op guard
+ * (climbStatsConflictWhere), so the guard can never miss a column the SET
+ * writes. upstream_synced_at is deliberately NOT here — see upsertClimbStats.
+ *
+ * Exported for tests.
+ */
+export function climbStatsConflictSet() {
+  const climbStatsSchema = UNIFIED_TABLES.climbStats;
+  // The upstream conflict policy (climbStatsUpstreamConflictSet): take the
+  // incoming cursored count verbatim so a legitimate decrease propagates.
+  // Resolved ONCE and reused for the count SET, the total, AND the blend
+  // weight, because a Postgres SET expression sees the OLD row value of a bare
+  // column — the blend must weight by this NEW upstream count, not the stale
+  // stored one. Single source keeps the three in lockstep: the blend follows
+  // the count policy automatically.
+  const upstreamConflictSet = climbStatsUpstreamConflictSet();
+  return {
+    displayDifficulty: sql`excluded.display_difficulty`,
+    benchmarkDifficulty: sql`excluded.benchmark_difficulty`,
+    // upstream_ = the board's single manufacturer count; take the incoming
+    // cursored value verbatim (not GREATEST) so a legitimate decrease
+    // propagates. See climbStatsUpstreamConflictSet. Same object drives the
+    // blend weight below, keeping count and blend in lockstep.
+    ...upstreamConflictSet,
+    difficultyAverage: sql`excluded.difficulty_average`,
+    // Manufacturer average lands in upstream_quality_average; quality_average
+    // is the blend of it and Boardsesh's own votes.
+    upstreamQualityAverage: sql`excluded.upstream_quality_average`,
+    qualityAverage: blendedQualityAverageSql({
+      upstreamQualityAverage: sql`excluded.upstream_quality_average`,
+      upstreamAscensionistCount: upstreamConflictSet.upstreamAscensionistCount,
+      boardseshQualitySum: sql`${climbStatsSchema.boardseshQualitySum}`,
+      boardseshQualityCount: sql`${climbStatsSchema.boardseshQualityCount}`,
+    }),
+    qualityNormalized: sql`true`,
+    // See firstAscentConflictSet: sanitized once at INSERT-value
+    // construction time, so excluded.* here is already safe.
+    ...firstAscentConflictSet(),
+    // Aurora owns this row's grade now (#4798). display_difficulty above
+    // takes excluded verbatim — including NULL, which is Aurora saying
+    // "no grade here" — so the tick-derived marker can never still
+    // describe what is stored. Clearing it also releases a grade the
+    // recompute had derived: if Aurora nulled the grade, the row now reads
+    // "ungraded" and the next recompute re-derives it from ticks. In the
+    // guard this entry reads "tick_graded_at IS DISTINCT FROM NULL", so a
+    // marked row is always written even when its grade already matches.
+    tickGradedAt: sql`NULL`,
+  } satisfies Partial<Record<keyof typeof climbStatsSchema.$inferInsert, SQL>>;
+}
+
+/**
+ * The ON CONFLICT … WHERE for the Aurora climb_stats upsert. It runs on the
+ * locked current row, so a concurrent tick recompute can never make it skip a
+ * write that is needed. A row is written when:
+ *
+ * 1. some SET column would change — every one of them, including those the
+ *    sync_seq trigger does not watch (upstream_*, tick_graded_at,
+ *    quality_normalized). tick_graded_at's entry is NULL, so a row the
+ *    recompute graded is always written and its marker cleared (#4798); or
+ * 2. it has never been upstream-stamped, a one-off per row that keeps
+ *    "NULL = upstream never confirmed this row" true.
+ *
+ * Unlike kilter-sync (stats-upsert.ts) there is no periodic restamp. The only
+ * runtime reader of the stamp is the recompute's push-back absorption
+ * (kilter_synced_at < upstream_synced_at - 48h), and only kilter-sync writes
+ * kilter_synced_at, on Kilter ticks. This path writes every Aurora board except
+ * Kilter, so a frozen stamp here cannot change a count.
+ *
+ * Why it matters: Aurora's climb_stats cursor re-sends most of the table
+ * (≈765k rows/day on a 985k-row table in prod, Sep 2026). Without this guard
+ * every re-sent row was rewritten — 748 MB of WAL and 72k full-page images in
+ * 19.5 h — although the values rarely change.
+ *
+ * Exported for tests.
+ */
+export function climbStatsConflictWhere(conflictSet: ReturnType<typeof climbStatsConflictSet>): SQL {
+  const climbStatsSchema = UNIFIED_TABLES.climbStats;
+  const entries = conflictSetEntries(climbStatsSchema, conflictSet);
+  return sql`${conflictSetChangesRowSql(entries)} OR ${climbStatsSchema.upstreamSyncedAt} IS NULL`;
 }
 
 async function upsertBetaLinks(db: DrizzleDb, board: AuroraBoardName, data: BetaLink[]) {
   const betaLinksSchema = UNIFIED_TABLES.betaLinks;
+  const betaLinkSet = {
+    foreignUsername: sql`excluded.foreign_username`,
+    angle: sql`excluded.angle`,
+    thumbnail: sql`excluded.thumbnail`,
+    isListed: sql`excluded.is_listed`,
+    createdAt: sql`excluded.created_at`,
+  } satisfies Partial<Record<keyof typeof betaLinksSchema.$inferInsert, SQL>>;
+  const betaLinkGuardEntries = conflictSetEntries(betaLinksSchema, betaLinkSet);
   await processBatches(data, async (batch) => {
     await db
       .insert(betaLinksSchema)
@@ -712,13 +801,9 @@ async function upsertBetaLinks(db: DrizzleDb, board: AuroraBoardName, data: Beta
       )
       .onConflictDoUpdate({
         target: [betaLinksSchema.boardType, betaLinksSchema.climbUuid, betaLinksSchema.link],
-        set: {
-          foreignUsername: sql`excluded.foreign_username`,
-          angle: sql`excluded.angle`,
-          thumbnail: sql`excluded.thumbnail`,
-          isListed: sql`excluded.is_listed`,
-          createdAt: sql`excluded.created_at`,
-        },
+        set: betaLinkSet,
+        // Every SET value is excluded.*, so an identical re-send is skipped.
+        setWhere: conflictSetChangesRowSql(betaLinkGuardEntries),
       });
   });
 }
@@ -750,6 +835,15 @@ async function upsertClimbs(db: DrizzleDb, board: AuroraBoardName, data: Climb[]
   // Everything else (frames/edges/setter/layout/angle) is preserved on
   // conflict — Aurora seeds these on insert, but we don't trust remote
   // re-edits to overwrite our copy.
+  const climbSet = {
+    // is_draft/is_listed: verbatim for catalog rows, preserved for user
+    // climbs. See climbListingConflictSet.
+    ...climbListingConflictSet(),
+    name: sql`excluded.name`,
+    description: sql`excluded.description`,
+    characteristics: climbCharacteristicsConflictSql(),
+  } satisfies Partial<Record<keyof typeof climbsSchema.$inferInsert, SQL>>;
+  const climbGuardEntries = conflictSetEntries(climbsSchema, climbSet);
   await processBatches(data, async (batch) => {
     await db
       .insert(climbsSchema)
@@ -782,14 +876,9 @@ async function upsertClimbs(db: DrizzleDb, board: AuroraBoardName, data: Climb[]
       )
       .onConflictDoUpdate({
         target: [climbsSchema.uuid],
-        set: {
-          // is_draft/is_listed: verbatim for catalog rows, preserved for user
-          // climbs. See climbListingConflictSet.
-          ...climbListingConflictSet(),
-          name: sql`excluded.name`,
-          description: sql`excluded.description`,
-          characteristics: climbCharacteristicsConflictSql(),
-        },
+        set: climbSet,
+        // Skip a re-sent climb whose five written columns already match.
+        setWhere: conflictSetChangesRowSql(climbGuardEntries),
       });
   });
 
@@ -911,6 +1000,7 @@ async function upsertSharedTableData(
   tableName: string,
   data: SyncPutFields[],
   log: (message: string) => void,
+  climbStatsWriteCounts: ClimbStatsWriteCounts,
 ): Promise<NewClimbInfo[]> {
   switch (tableName) {
     case 'attempts':
@@ -947,7 +1037,7 @@ async function upsertSharedTableData(
       await upsertKits(db, boardName, data as Kit[]);
       return [];
     case 'climb_stats':
-      await upsertClimbStats(db, boardName, data as ClimbStats[]);
+      await upsertClimbStats(db, boardName, data as ClimbStats[], climbStatsWriteCounts);
       return [];
     case 'beta_links':
       await upsertBetaLinks(db, boardName, data as BetaLink[]);
@@ -999,6 +1089,7 @@ export type SharedSyncResult = {
   complete: boolean;
   results: Record<string, { synced: number; complete: boolean }>;
   newClimbs: NewClimbInfo[];
+  climbStatsWrites: ClimbStatsWriteCounts;
 };
 
 /**
@@ -1044,6 +1135,10 @@ export async function syncSharedData(
 
   const totalResults: Record<string, { synced: number; complete: boolean }> = {};
   const allNewClimbs: NewClimbInfo[] = [];
+  const climbStatsWrites = emptyClimbStatsWriteCounts();
+  // Taken before the first batch, so every row stamp this pass writes is at or
+  // after it (see CLIMB_STATS_PASS_CURSOR).
+  const passStartedAt = new Date().toISOString();
   let isComplete = false;
   let attempts = 0;
 
@@ -1058,7 +1153,14 @@ export async function syncSharedData(
         const data = syncResults[tableName];
         if (!Array.isArray(data)) continue;
         log(`[SharedSync] ${tableName}: ${data.length} records`);
-        const newClimbs = await upsertSharedTableData(tx, board, tableName, data as SyncPutFields[], log);
+        const newClimbs = await upsertSharedTableData(
+          tx,
+          board,
+          tableName,
+          data as SyncPutFields[],
+          log,
+          climbStatsWrites,
+        );
         allNewClimbs.push(...newClimbs);
         if (!totalResults[tableName]) {
           totalResults[tableName] = { synced: 0, complete: false };
@@ -1117,6 +1219,29 @@ export async function syncSharedData(
         .join(', ') || 'no changes'
     }`,
   );
+  // How much of Aurora's climb_stats re-send was real change. offered − written
+  // is what the no-op guard in upsertClimbStats skipped.
+  log(
+    `[SharedSync] ${board} climb_stats writes: received=${climbStatsWrites.received} offered=${
+      climbStatsWrites.offered
+    } written=${climbStatsWrites.written} unchanged=${climbStatsWrites.offered - climbStatsWrites.written}`,
+  );
+
+  // Per-board "a complete pass ran": the row stamps no longer move on unchanged
+  // rows, so this is where that fact lives. Only a pass that reached Aurora's
+  // _complete counts. A failure here must not fail the sync (the data already
+  // committed).
+  if (isComplete) {
+    try {
+      await markClimbStatsPassCompleted(db, board, passStartedAt);
+    } catch (error) {
+      log(
+        `[SharedSync] climb_stats pass marker failed for ${board} (sync was OK): ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
 
   // Weekly board_climb_stats_history snapshot: a full cross-section of every
   // climb on the board with ascents, gated by a 7-day per-board watermark.
@@ -1155,7 +1280,7 @@ export async function syncSharedData(
     }
   }
 
-  return { complete: isComplete, results: totalResults, newClimbs: allNewClimbs };
+  return { complete: isComplete, results: totalResults, newClimbs: allNewClimbs, climbStatsWrites };
 }
 
 /**
