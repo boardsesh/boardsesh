@@ -110,7 +110,12 @@ Bump `OTA_SERVER_VERSION` in `infra/railway/config.ts` and `EOAS_PACKAGE_SPEC` i
 2. rolls a deployment (`serviceInstanceDeployV2`, which returns its id),
 3. polls until three consecutive `SUCCESS` readings, each reporting the image it
    deployed in `meta.image`,
-4. probes `/hc` and `/ready`,
+4. probes `/hc` and `/ready` until each answers 200 three times in a row, polling
+   every 5 seconds for up to 90 seconds. For a while after SUCCESS, Railway's edge
+   still sends some requests to the old container it is draining. On 2026-09-26 a
+   probe of three tries over ten seconds caught that window and rolled back a
+   healthy 3.2.4 server. A lone 200 proves little there, since the old container
+   can answer it,
 5. **rolls back and restores the previous configuration** if either step fails,
    unless another deployment has taken over the service in the meantime.
 

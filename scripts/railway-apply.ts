@@ -102,8 +102,21 @@ const DEPLOY_POLL_INTERVAL_MS = 10_000;
 export const DEPLOY_SUCCESS_CONFIRMATIONS = 3;
 const DEPLOY_MAX_CONSECUTIVE_READ_ERRORS = 3;
 
-/** Probe attempts per path, and the gap between them. */
-const PROBE_ATTEMPTS = 3;
+/**
+ * Probe budget per path: poll every PROBE_RETRY_DELAY_MS, up to PROBE_ATTEMPTS
+ * times (90 seconds), and pass only after PROBE_REQUIRED_CONSECUTIVE_OK answers
+ * of 200 in a row.
+ *
+ * Measured on 2026-09-26 (the first 3.2.4 roll): 30 seconds after the deploy
+ * reached SUCCESS, Railway's edge was still splitting requests between the new
+ * container and the old one it had sent SIGTERM. `/hc` answered 200 and `/ready`
+ * answered 503 100 ms apart, although xprem serves both from the same handler
+ * that always writes 200. Three tries over ten seconds rolled back a healthy
+ * server. A single 200 proves little in that window either, since the old
+ * container can answer it, hence the consecutive requirement.
+ */
+export const PROBE_ATTEMPTS = 18;
+export const PROBE_REQUIRED_CONSECUTIVE_OK = 3;
 const PROBE_RETRY_DELAY_MS = 5_000;
 
 /** Railway's DeploymentStatus enum, from live introspection of the schema. */
@@ -924,30 +937,41 @@ export async function probeService(
   for (const path of verify.paths) {
     const url = `${verify.baseUrl}${path}`;
     let lastFailure = '';
+    let consecutiveOk = 0;
 
-    // Retried, because this runs during the switchover the service's own
-    // drainingSeconds exists to cover. A single 502 from the edge is
+    // Polled, because this runs during the switchover the service's own
+    // drainingSeconds exists to cover. A 502/503 from the edge in that window is
     // indistinguishable from a broken server, and treating it as one would roll
-    // back a perfectly healthy production deployment.
+    // back a perfectly healthy production deployment. See PROBE_ATTEMPTS.
     for (let attempt = 1; attempt <= PROBE_ATTEMPTS; attempt += 1) {
       try {
         const response = await fetch(url, { signal: AbortSignal.timeout(15_000) });
         if (response.ok) {
-          console.log(`[railway-apply] probe ok: ${url}`);
-          lastFailure = '';
-          break;
+          consecutiveOk += 1;
+          if (consecutiveOk >= PROBE_REQUIRED_CONSECUTIVE_OK) break;
+        } else {
+          consecutiveOk = 0;
+          lastFailure = `HTTP ${response.status}`;
         }
-        lastFailure = `HTTP ${response.status}`;
       } catch (error) {
+        consecutiveOk = 0;
         lastFailure = error instanceof Error ? error.message : String(error);
       }
       if (attempt < PROBE_ATTEMPTS) {
-        console.warn(`[railway-apply] probe ${url} attempt ${attempt}/${PROBE_ATTEMPTS}: ${lastFailure}; retrying.`);
+        if (consecutiveOk === 0) {
+          console.warn(`[railway-apply] probe ${url} attempt ${attempt}/${PROBE_ATTEMPTS}: ${lastFailure}; retrying.`);
+        }
         await sleep(PROBE_RETRY_DELAY_MS);
       }
     }
 
-    if (lastFailure) throw new Error(`Post-deploy probe failed: ${url} answered ${lastFailure}.`);
+    if (consecutiveOk < PROBE_REQUIRED_CONSECUTIVE_OK) {
+      throw new Error(
+        `Post-deploy probe failed: ${url} did not answer 200 ${PROBE_REQUIRED_CONSECUTIVE_OK} times in a row ` +
+          `within ${PROBE_ATTEMPTS} attempts (last: ${lastFailure || 'no answer'}).`,
+      );
+    }
+    console.log(`[railway-apply] probe ok: ${url} (${PROBE_REQUIRED_CONSECUTIVE_OK} consecutive 200s)`);
   }
 }
 
