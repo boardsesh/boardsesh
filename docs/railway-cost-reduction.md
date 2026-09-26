@@ -217,7 +217,11 @@ The timeout goes on the two services that answer people instead:
 parameter for every pool made by `createDb`, `createReadDb` and `createPool`. Both
 services connect straight to `postgis---pg18.railway.internal:5432`, not through
 PgBouncer, so the startup parameter is accepted (see "The `statement_timeout`
-hazard" in [db-connectivity.md](./db-connectivity.md)). A transaction that needs
+hazard" in [db-connectivity.md](./db-connectivity.md)). The read pool takes the
+same startup parameter, so before setting the variable confirm that
+`READ_REPLICA_URL` on each service is either unset (reads fall back to the
+primary pool) or also a direct Postgres URL. A pooled `READ_REPLICA_URL` would
+fail every read connection. A transaction that needs
 less can still `SET LOCAL` a lower value, as the playlist sitemap does with 15 s.
 
 The longest scheduled statements on those two services fit under 45 s, all
