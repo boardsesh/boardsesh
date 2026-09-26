@@ -84,6 +84,17 @@ export const CRAWLER_ALLOW_TOKENS = [
   // started getting challenged.
   'baiduspider',
   'qwantify',
+  // Added 2026-09-26 with the automation default-deny, which would otherwise
+  // catch them on the `bot` signature. DuckDuckGo's favicon fetcher draws the
+  // icon beside our results; DuckAssist answers from pages DuckDuckGo already
+  // indexes; Kagi runs its own small index. AdsBot-Google checks landing pages
+  // and msnbot-media is Bing's image crawler: neither is covered by `googlebot`
+  // or `bingbot` as a substring.
+  'duckduckgo-favicons-bot',
+  'duckassistbot',
+  'kagibot',
+  'adsbot-google',
+  'msnbot-media',
   // Share-card unfurlers. Blocking these breaks link previews, not crawling —
   // and so does CHALLENGING them, which is how climb previews broke on
   // 2026-09-11. None of these execute JavaScript, so a managed challenge is an
@@ -109,6 +120,12 @@ export const CRAWLER_ALLOW_TOKENS = [
   'iframely',
   'nuzzel',
   'quora link preview',
+  // Also added with the default-deny. Snapchat's unfurler says `bot` in its UA
+  // (`Snap URL Preview Service; bot; snapchat`), and climb pages get shared
+  // there. AppleNewsBot builds Apple News and Messages previews; `applebot`
+  // is not a substring of it.
+  'snap url preview',
+  'applenewsbot',
   // The Internet Archive. It reaches us and it loops, but it is low volume and
   // excluding it is a values call rather than a cost one (see
   // CRAWLER_BLOCK_TOKENS in infra/cloudflare/config.ts). It passed by default
@@ -185,6 +202,9 @@ export const AUTOMATION_SIGNATURE_TOKENS = [
  *   (`mobile-ota-production.yml` waits on ws `/health`,
  *   `railway-cost-monitor.yml` reads `/health/db`). They are cheap, and a 403
  *   there would stall an OTA publish rather than save a byte.
+ * - `/robots.txt` stays readable so an unlisted bot can see the Disallow
+ *   lines and stop on its own. A 403 there reads as "no restrictions" under
+ *   RFC 9309. Named crawlers are still refused by the block rule.
  * - `/.well-known/` holds the app-site-association files the OS fetches. The
  *   fetchers are allow-listed too, but a renamed Apple or Google agent must not
  *   be able to break deep links.
@@ -192,7 +212,7 @@ export const AUTOMATION_SIGNATURE_TOKENS = [
  *   programmatic surfaces: a script or a partner server calling them is the
  *   intended client, and will often send python-requests or Go-http-client.
  */
-export const AUTOMATION_DEFAULT_DENY_EXEMPT_PATHS = ['/health', '/health/db', '/api/health'] as const;
+export const AUTOMATION_DEFAULT_DENY_EXEMPT_PATHS = ['/health', '/health/db', '/api/health', '/robots.txt'] as const;
 export const AUTOMATION_DEFAULT_DENY_EXEMPT_PATH_PREFIXES = ['/.well-known/', '/api/v1/', '/v1/partner/'] as const;
 
 function includesAny(normalizedUserAgent: string, tokens: readonly string[]): boolean {

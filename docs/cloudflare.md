@@ -586,9 +586,16 @@ The limits, on purpose:
   UAs (`Boardsesh/… CFNetwork`, `okhttp`, `Dalvik`) and our servers' `node`
   carry no signature, and a test pins that.
 - Exempt paths: `/health`, `/health/db`, `/api/health` (CI polls them with bare
-  curl), `/.well-known/` (deep-link association files) and the two API surfaces
-  `/api/v1/` and `/v1/partner/`, whose intended clients are scripts and partner
-  servers.
+  curl), `/robots.txt` (so an unlisted bot can read the Disallow lines; named
+  crawlers still get the block rule there), `/.well-known/` (deep-link
+  association files) and the two API surfaces `/api/v1/` and `/v1/partner/`,
+  whose intended clients are scripts and partner servers.
+- Allowed on top of the search engines and unfurlers, because each carries
+  `bot` and would otherwise be caught: the Snapchat unfurler, AppleNewsBot,
+  DuckDuckGo's favicon fetcher and DuckAssistBot, Kagibot, AdsBot-Google,
+  msnbot-media, Sentry's uptime check, the iOS and Android deep-link fetchers,
+  our ESP32 board controller (`ESP32HTTPClient`) and the Internet Archive.
+  SeznamBot stays blocked by name.
 - The web middleware applies the same rule at the origin through
   `isBlockedCrawler`, for requests that reach Railway directly.
 
