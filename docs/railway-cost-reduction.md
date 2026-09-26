@@ -197,4 +197,4 @@ replicas overlap, so their estimated savings must not simply be added together.
 
 ## October 2026
 
-- **Planned (2026-09-26): ClickHouse lean image.** `boardsesh-ota-clickhouse` idled at 2.9 GB ($23.6/month of memory) under a 24 GB ceiling. The new image caps the server at 1.2 GB, shrinks the caches and turns off every system log except `query_log` (7 days); the smoke test measured 271 MB idle against 424 MB for stock 25.3 under the same 2 GB limit. Then `limitOverride` 2 GB / 2 vCPU. Expected about −$15/month. Rollout and rollback: `docs/railway.md`, "Rolling out a new ClickHouse image".
+- **Planned (2026-09-26): ClickHouse lean image.** `boardsesh-ota-clickhouse` idled at 2.9 GB ($23.6/month of memory) under a 24 GB ceiling. The new image caps the server at 1.2 GB and each query at 500 MB, shrinks the caches and turns off every system log except `query_log` (7 days); the smoke test measured 271 MB idle against 424 MB for stock 25.3 under the same 2 GB limit. Then `limitOverride` 2 GB / 2 vCPU. Expected about −$15/month. Rollout and rollback: `docs/railway.md`, "Rolling out a new ClickHouse image".

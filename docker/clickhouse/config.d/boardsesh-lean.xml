@@ -54,14 +54,23 @@
     <background_pool_size>2</background_pool_size>
     <!-- Two queued merges per thread, so 4 merge slots in total. -->
     <background_merges_mutations_concurrency_ratio>2</background_merges_mutations_concurrency_ratio>
-    <!-- TTL deletes, part cleanup and system-log flushes run here. Stock 512. -->
+    <!--
+      Schedules merge selection, part cleanup and system-log flushes. Stock 512.
+      TTL deletes themselves run as merges in the pool above.
+    -->
     <background_schedule_pool_size>4</background_schedule_pool_size>
     <!-- The OTA server and the Observe dashboard are the only clients. Stock 1000. -->
     <max_concurrent_queries>20</max_concurrent_queries>
     <!-- Idle client connections, not queries. Stock 4096. -->
     <max_connections>64</max_connections>
-    <!-- Global thread pool ceiling. Stock 10000. Work beyond it queues rather than fails. -->
-    <max_thread_pool_size>128</max_thread_pool_size>
+    <!--
+      max_thread_pool_size stays at the stock 10000 on purpose. The global pool is a
+      ceiling, not an allocation, and about 110 of its threads are taken by fixed
+      pools at boot. At 128, a restart on a volume holding the 17 stock log tables
+      deadlocked: 18 table-loading threads each waited on part-loading jobs that
+      could not get a thread, and the server never opened port 9000.
+      docker/clickhouse/smoke.sh boots on such a volume to catch this.
+    -->
     <!-- Idle threads kept for reuse. Stock 1000; each one pins a stack. -->
     <max_thread_pool_free_size>16</max_thread_pool_free_size>
 

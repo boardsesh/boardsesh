@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<!--
+  Boardsesh: a per-query memory cap for the default settings profile, which the
+  upstream entrypoint assigns to the CLICKHOUSE_USER account (xprem).
+
+  Stock 25.3 sets no per-query limit (max_memory_usage = 0), so one query can grow
+  until it hits the 1.2 GB server ceiling in config.d/boardsesh-lean.xml. While it
+  sits there, every other query and insert fails with "(total) memory limit
+  exceeded", including the OTA server's writes. With 500 MB per query, a runaway
+  dashboard query fails on its own and the rest keep working. Observe's whole
+  dataset is tens of MB, so no real query comes near it.
+
+  Only the profile is touched. Users, passwords, networks and access management
+  still come from the entrypoint's users.d/default-user.xml.
+-->
+<clickhouse>
+    <profiles>
+        <default>
+            <max_memory_usage>500000000</max_memory_usage>
+        </default>
+    </profiles>
+</clickhouse>
