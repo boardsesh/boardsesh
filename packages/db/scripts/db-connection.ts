@@ -160,13 +160,41 @@ export function isLocalDatabaseUrl(databaseUrl: string): boolean {
   );
 }
 
+/**
+ * One-shot database scripts may use plaintext only for the repo's known local
+ * development hosts. Force TLS for remote URLs that omit it or permit
+ * plaintext, while preserving URL modes that also verify certificates.
+ */
+export function scriptDatabaseConnectionOptions(databaseUrl: string) {
+  const options = { max: 1 };
+  let parsedDatabaseUrl: URL;
+  try {
+    parsedDatabaseUrl = new URL(databaseUrl);
+  } catch {
+    // postgres-js rejects the URL; never turn a parse mismatch into plaintext.
+    return { ...options, ssl: 'require' as const };
+  }
+  const sslModes = parsedDatabaseUrl.searchParams.getAll('sslmode');
+  if (sslModes.length > 1) throw new Error('Database URL must not repeat sslmode');
+  const sslMode = sslModes[0];
+  const sslRootCertificate = parsedDatabaseUrl.searchParams.getAll('sslrootcert').at(-1);
+  // Match the current primary/replica contract even for localhost: an explicit
+  // trust request must not depend on NODE_TLS_REJECT_UNAUTHORIZED or URL defaults.
+  if (sslMode === 'verify-full' || sslRootCertificate === 'system') {
+    return { ...options, ssl: { rejectUnauthorized: true } };
+  }
+  if (isLocalDatabaseUrl(databaseUrl)) return options;
+  const driverRequiresTls = sslMode !== undefined && !['', 'disable', 'false', 'allow', 'prefer'].includes(sslMode);
+  return driverRequiresTls ? options : { ...options, ssl: 'require' as const };
+}
+
 type ScriptDb = ReturnType<typeof drizzle>;
 
 export function createScriptDb(url?: string): { db: ScriptDb; close: () => Promise<void> } {
   const databaseUrl = url ?? getScriptDatabaseUrl();
   // Scripts are short-lived one-shots and target the direct (non-pooled) URL,
   // so a single connection is sufficient and avoids opening 10 by default.
-  const client = postgres(databaseUrl, { max: 1 });
+  const client = postgres(databaseUrl, scriptDatabaseConnectionOptions(databaseUrl));
   const db = drizzle(client);
   return {
     db,

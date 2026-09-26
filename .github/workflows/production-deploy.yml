@@ -546,6 +546,12 @@ jobs:
       - name: Install dependencies
         run: vp install --frozen-lockfile
 
+      - name: Verify direct database connection
+        env:
+          DATABASE_DIRECT_ENDPOINT: ${{ vars.DATABASE_DIRECT_ENDPOINT }}
+          MIGRATOR_DATABASE_URL: ${{ secrets.MIGRATOR_DATABASE_URL }}
+        run: vp exec tsx packages/db/scripts/verify-direct-database.ts
+
       - name: Run database migrations
         env:
           # Migrations run as the dedicated boardsesh_migrator role, never as
