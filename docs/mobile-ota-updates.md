@@ -1040,7 +1040,14 @@ Postgres, server, DNS) stay manual. Run it with no argument for the ordered runb
    - `STORAGE_MODE` = `s3`, plus `S3_BUCKET_NAME` (`boardsesh-ota-v3`), `AWS_REGION` (`auto`),
      `AWS_BASE_ENDPOINT` (the selected S3-compatible account endpoint), and
      `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`
-   - `CACHE_MODE` = `local` (fine at one replica)
+   - `CACHE_MODE` = `redis`, with `REDIS_HOST` = `${{Redis.REDISHOST}}`, `REDIS_PORT` =
+     `${{Redis.REDISPORT}}`, `REDIS_PASSWORD` = `${{Redis.REDISPASSWORD}}` (the project's
+     Railway Redis, over the private network) and `CACHE_KEY_PREFIX` = `boardsesh-ota`. Local
+     mode caches in the Go heap with no size bound or eviction: in production it reached a
+     1.7 GB live heap (2.3M objects) after 21 days. The backend keeps its own keys in the same
+     Redis, so the prefix is mandatory. `vp run railway:apply` asserts all of this (see
+     [railway.md](./railway.md)). `CACHE_MODE` = `local` still works as a fallback at one
+     replica, if Redis is down or being replaced; expect the heap to grow again while it runs.
    - `DB_URL` + `DB_KEYS_MASTER_KEY_B64` (from steps 2–3)
    - `USE_DASHBOARD=true`, `ADMIN_EMAIL` (a bare address), and a policy-compliant `ADMIN_PASSWORD`
      (≥8 chars, upper/lower/digit/special — first boot crash-loops otherwise). These are the

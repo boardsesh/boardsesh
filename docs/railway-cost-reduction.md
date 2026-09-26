@@ -163,6 +163,27 @@ connections. Its connection string is the `connection string` field of the
 the PG18 proxy since September 26; before that they still named the deleted PG16
 proxy.
 
+## October 2026
+
+- Planned, applied on _<date>_: `boardsesh-ota-v3` moves from `CACHE_MODE=local`
+  to Redis (`boardsesh-ota` key prefix on the shared Railway Redis). Before: 1.7 GB
+  live Go heap, 2.3M objects after 21 days. After: _measured on <date>_. Set:
+
+  ```sh
+  railway variable set --service boardsesh-ota-v3 --environment production \
+  'CACHE_MODE=redis' \
+  'REDIS_HOST=${{Redis.REDISHOST}}' \
+  'REDIS_PORT=${{Redis.REDISPORT}}' \
+  'REDIS_PASSWORD=${{Redis.REDISPASSWORD}}' \
+  'CACHE_KEY_PREFIX=boardsesh-ota'
+  ```
+
+  Rollback: set `CACHE_MODE=local` and remove the four Redis variables
+  (`railway variable delete --service boardsesh-ota-v3 --environment production <NAME>`
+  for `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `CACHE_KEY_PREFIX`). The
+  nightly drift check reports `CACHE_MODE` and the Redis variables until the
+  switch is applied, and again after a rollback.
+
 ## Remaining rollout
 
 Ship each item independently so it can be reviewed and rolled back separately:

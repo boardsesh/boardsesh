@@ -41,7 +41,16 @@ const NO_SUPPLIED = { suppliedVars: new Set<string>() };
 // The main stubs answer every service's variables() query with one set, so this
 // holds every variable any declared service requires, across all of them. A
 // service-specific value is merged over it by the caller.
+// The OTA server's Redis cache settings, as production carries them.
+const OTA_CACHE_VARS = {
+  CACHE_MODE: 'redis',
+  REDIS_HOST: 'redis.railway.internal',
+  REDIS_PASSWORD: 'test-redis-password',
+  CACHE_KEY_PREFIX: 'boardsesh-ota',
+};
+
 const BASELINE_REQUIRED_VARS = {
+  ...OTA_CACHE_VARS,
   SMTP_USER: 'mailer@boardsesh.com',
   SMTP_PASSWORD: 'test-password',
   BOARDSESH_WEB: '1',
@@ -63,7 +72,7 @@ function liveState(overrides: Partial<LiveState> = {}): LiveState {
       { id: 'svc-pg18', name: POSTGRES_PRIMARY_SERVICE_NAME },
     ],
     variables: {
-      [OTA_SERVICE_NAME]: { CLICKHOUSE_URL: 'clickhouse://u:p@host:9000/expo_observe' },
+      [OTA_SERVICE_NAME]: { CLICKHOUSE_URL: 'clickhouse://u:p@host:9000/expo_observe', ...OTA_CACHE_VARS },
       // Presence is all this config asserts; the PEM bodies live only in Railway.
       [POSTGRES_PRIMARY_SERVICE_NAME]: {
         PG_TLS_SERVER_CERT: '-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----',
@@ -235,6 +244,53 @@ describe('diffServiceVars', () => {
     });
     const [change] = diffServiceVars(otaService, live, NO_SUPPLIED);
     expect(change.summary).toContain('placeholder');
+  });
+
+  it('reports a missing CACHE_MODE, since xprem then silently runs the unbounded local cache', () => {
+    const { CACHE_MODE: _cacheMode, ...withoutCacheMode } = OTA_CACHE_VARS;
+    const live = liveState({
+      variables: {
+        ...liveState().variables,
+        [OTA_SERVICE_NAME]: { CLICKHOUSE_URL: 'clickhouse://u:p@host:9000/expo_observe', ...withoutCacheMode },
+      },
+    });
+    const changes = diffServiceVars(otaService, live, NO_SUPPLIED);
+    expect(changes).toHaveLength(1);
+    expect(changes[0]).toMatchObject({ resource: 'env-var', blocked: true });
+    expect(changes[0]?.summary).toBe(`${OTA_SERVICE_NAME}: CACHE_MODE is absent`);
+    expect(changes[0]?.detail).toContain('1.7 GB');
+  });
+
+  it('rejects CACHE_MODE=local, the setting that grew the heap', () => {
+    const live = liveState({
+      variables: {
+        ...liveState().variables,
+        [OTA_SERVICE_NAME]: {
+          CLICKHOUSE_URL: 'clickhouse://u:p@host:9000/expo_observe',
+          ...OTA_CACHE_VARS,
+          CACHE_MODE: 'local',
+        },
+      },
+    });
+    const changes = diffServiceVars(otaService, live, NO_SUPPLIED);
+    expect(changes).toHaveLength(1);
+    expect(changes[0]?.summary).toBe(`${OTA_SERVICE_NAME}: CACHE_MODE must be absent or "redis"`);
+    expect(changes[0]?.blocked).toBe(true);
+  });
+
+  it('reports each missing Redis connection variable', () => {
+    const live = liveState({
+      variables: {
+        ...liveState().variables,
+        [OTA_SERVICE_NAME]: { CLICKHOUSE_URL: 'clickhouse://u:p@host:9000/expo_observe', CACHE_MODE: 'redis' },
+      },
+    });
+    const summaries = diffServiceVars(otaService, live, NO_SUPPLIED).map((change) => change.summary);
+    expect(summaries).toEqual([
+      `${OTA_SERVICE_NAME}: REDIS_HOST is absent`,
+      `${OTA_SERVICE_NAME}: REDIS_PASSWORD is absent`,
+      `${OTA_SERVICE_NAME}: CACHE_KEY_PREFIX is absent`,
+    ]);
   });
 
   it('stays quiet about variables on a service that does not exist', () => {

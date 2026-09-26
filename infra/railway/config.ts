@@ -259,6 +259,47 @@ export const desiredRailwayState: RailwayDesiredState = {
             'Enables xprem Observe. Unset means telemetry ingest is silently dropped and the ' +
             'dashboard renders the "turn on telemetry" placeholder instead of metrics.',
         },
+        // The four cache variables below move xprem's manifest/asset cache out of
+        // the Go heap and into the project's shared Railway Redis. They were
+        // added to config before the runtime switch: until someone sets them on
+        // the service, the nightly drift check reports them as absent. That is
+        // the intended nudge, not a false alarm. Rollout and rollback live in
+        // docs/railway-cost-reduction.md (October 2026).
+        {
+          name: 'CACHE_MODE',
+          reason:
+            'Must be "redis". xprem falls back to CACHE_MODE=local without it, and the local cache ' +
+            'has no size bound or eviction: it reached a 1.7 GB live Go heap (2.3M objects) after ' +
+            '21 days. The server keeps serving, so nothing fails except the memory bill.',
+        },
+        {
+          name: 'REDIS_HOST',
+          reason:
+            'Private-network host of the shared Railway Redis (${{Redis.REDISHOST}}). Without it ' +
+            'redis mode has nothing to connect to, and the cache stops working.',
+        },
+        {
+          name: 'REDIS_PASSWORD',
+          reason:
+            'Auth for the shared Railway Redis (${{Redis.REDISPASSWORD}}). Railway Redis requires ' +
+            'a password, so redis mode fails to connect without it.',
+        },
+        {
+          name: 'CACHE_KEY_PREFIX',
+          reason:
+            'Must be set (production uses "boardsesh-ota"). The backend keeps its own keys in the ' +
+            'same Redis (pub/sub, debounce, connection caps); without a prefix the OTA cache keys ' +
+            'share that keyspace and can collide with them.',
+        },
+      ],
+      optionalConstrainedVars: [
+        {
+          name: 'CACHE_MODE',
+          allowedValues: ['redis'],
+          reason:
+            'CACHE_MODE=local keeps an unbounded in-process cache that grew to a 1.7 GB Go heap. ' +
+            'Rollback to local is a deliberate, temporary step; the drift check reports it until reverted.',
+        },
       ],
     },
     {
