@@ -218,7 +218,12 @@ vi.mock('../../settings', () => ({
   setSetting: vi.fn(),
   useSetting: () => [true, vi.fn()],
 }));
-vi.mock('../../lib/qa/qa-surf', () => ({ listPrBranches: vi.fn(async () => []), readRunningPrNumber: () => null }));
+vi.mock('../../lib/qa/qa-surf', () => ({
+  listPrBranches: vi.fn(async () => []),
+  readRunningOtaBranch: () => null,
+  readRunningPrNumber: () => null,
+  STAGING_OTA_BRANCH: 'pr-staging',
+}));
 vi.mock('../../lib/qa/qa-gate-decision', () => ({ decideQaGate: decideQaGateMock }));
 vi.mock('../../lib/offline-recovery/send-recovery-decision', () => ({ decideSendRecovery: decideSendRecoveryMock }));
 
