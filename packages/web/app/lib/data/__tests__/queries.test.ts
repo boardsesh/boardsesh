@@ -38,7 +38,6 @@ describe('getClimb', () => {
   });
 
   it('maps layoutId, boardType, and derives difficulty/is_no_match from characteristics', async () => {
-    mockSqlTag.mockResolvedValueOnce([]); // alias lookup: no alias, uuid unchanged
     mockSqlTag.mockResolvedValueOnce([
       {
         uuid: 'climb-uuid-1',
@@ -75,7 +74,7 @@ describe('getClimb', () => {
       }),
     );
 
-    expect(mockSqlTag).toHaveBeenCalledTimes(2);
+    expect(mockSqlTag).toHaveBeenCalledTimes(1);
     expect(climb.uuid).toBe('climb-uuid-1');
     expect(climb.layoutId).toBe(8);
     expect(climb.boardType).toBe('kilter');
@@ -85,7 +84,6 @@ describe('getClimb', () => {
   });
 
   it('derives is_no_match from the description prefix when characteristics is null', async () => {
-    mockSqlTag.mockResolvedValueOnce([]); // alias lookup: no alias, uuid unchanged
     mockSqlTag.mockResolvedValueOnce([
       {
         uuid: 'climb-uuid-2',
@@ -129,7 +127,6 @@ describe('getClimb', () => {
   });
 
   it('is_no_match is false when characteristics has no no_match token and the description does not start with "no match"', async () => {
-    mockSqlTag.mockResolvedValueOnce([]); // alias lookup: no alias, uuid unchanged
     mockSqlTag.mockResolvedValueOnce([
       {
         uuid: 'climb-uuid-3',
@@ -172,7 +169,6 @@ describe('getClimb', () => {
   });
 
   it('resolves an old/merged climb link through board_climb_aliases to the canonical uuid', async () => {
-    mockSqlTag.mockResolvedValueOnce([{ canonical_uuid: 'canonical-uuid-9' }]); // alias hit
     mockSqlTag.mockResolvedValueOnce([
       {
         uuid: 'canonical-uuid-9',
@@ -209,20 +205,20 @@ describe('getClimb', () => {
       }),
     );
 
-    expect(mockSqlTag).toHaveBeenCalledTimes(2);
-    // The climb query (2nd call) must have queried by the RESOLVED canonical
-    // uuid, not the alias — otherwise this renders an empty husk instead of
-    // the merged climb's real data. Call args are [strings, ...interpolated
-    // values]; check the interpolated values only.
-    const [, ...climbQueryValues] = mockSqlTag.mock.calls[1];
-    expect(climbQueryValues).toContain('canonical-uuid-9');
-    expect(climbQueryValues).not.toContain('old-alias-uuid-9');
+    expect(mockSqlTag).toHaveBeenCalledTimes(1);
+    // The single statement resolves the requested alias inside a CTE before it
+    // joins board_climbs. The canonical UUID is returned by Postgres rather
+    // than interpolated from JavaScript.
+    const [queryStrings, ...climbQueryValues] = mockSqlTag.mock.calls[0];
+    const climbQueryText = Array.from(queryStrings as TemplateStringsArray).join(' ');
+    expect(climbQueryText).toContain('resolved_climb AS NOT MATERIALIZED');
+    expect(climbQueryText).toContain('board_climb_aliases');
+    expect(climbQueryValues).toContain('old-alias-uuid-9');
     expect(climb.uuid).toBe('canonical-uuid-9');
   });
 
   it('resolves null when no row matches, instead of throwing on an undefined row', async () => {
-    mockSqlTag.mockResolvedValueOnce([]); // alias lookup: no alias
-    mockSqlTag.mockResolvedValueOnce([]); // climb select: no such climb
+    mockSqlTag.mockResolvedValueOnce([]); // no resolved climb row
 
     const climb = await getClimb({
       board_name: 'kilter',
