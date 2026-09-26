@@ -22,7 +22,11 @@ export const TABLE_INVALIDATE_KEYS: Record<string, InvalidateKeys> = {
   // (logbook-keys.ts builds ['logbook', boardName, …]).
   // ['localTicks'] — the "waiting to sync" badge clears once a tick lands.
   // ['climb'] — the detail's server-side ascent + vote counts.
-  // ['userTicks'] — the You tab's per-board tick fan-out (use-you-data.ts).
+  // ['userTicks'] / ['userProfileStats'] / ['userClimbPercentile'] — the You
+  //   page's three reads (use-you-data.ts). All three derive from the logbook,
+  //   so a synced or drained tick must reach the stats card too, not only the
+  //   charts. The You page keeps them unsubscribed while it is off screen, so
+  //   this marks them stale and the refetch waits until the climber opens it.
   // ['searchClimbs'] / ['infiniteSearchClimbs'] / ['searchClimbsCount'] — a tick
   //   at a new angle grades a stats row server-side; the drainer fires these
   //   once the tick lands so the list refetches (the pull path is already
@@ -37,6 +41,8 @@ export const TABLE_INVALIDATE_KEYS: Record<string, InvalidateKeys> = {
     ['localTicks'],
     ['climb'],
     ['userTicks'],
+    ['userProfileStats'],
+    ['userClimbPercentile'],
     ['searchClimbs'],
     ['infiniteSearchClimbs'],
     ['searchClimbsCount'],
@@ -116,6 +122,8 @@ export const TABLE_INVALIDATE_KEYS: Record<string, InvalidateKeys> = {
   // ['holdHeatmap'] too: stats colour the ascent and grade modes, and decide the
   // climb set for minAscents / minRating / grade-range filters. Only an active
   // query refetches, so this costs nothing unless the overlay is up.
+  // ['climbStatsHistory'] — the play drawer's per-angle stats, read local-first
+  // from this table once the climb's layout is downloaded.
   board_climb_stats: [
     ['searchClimbs'],
     ['infiniteSearchClimbs'],
@@ -123,6 +131,7 @@ export const TABLE_INVALIDATE_KEYS: Record<string, InvalidateKeys> = {
     ['climb'],
     ['setterStats'],
     ['holdHeatmap'],
+    ['climbStatsHistory'],
   ],
   // The stats keys plus the two grade-specific keys the play-drawer grade
   // section and the by-angle chart read.

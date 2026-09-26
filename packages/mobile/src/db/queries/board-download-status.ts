@@ -83,3 +83,41 @@ export async function hasDownloadedBoardData(db: OfflineDatabase): Promise<boole
   );
   return (row?.has_rows ?? 0) === 1;
 }
+
+/**
+ * Whether the layout a climb belongs to has a completed download, at any size.
+ *
+ * For reads keyed only by (board type, climb uuid) whose empty answer is a real
+ * answer — the per-angle stats list comes back empty for a climb nobody has sent
+ * yet — so "is anything of this board type downloaded" is not enough: a climb
+ * from a layout that never synced would read as unsent instead of falling back
+ * to the network. Stats sync with their layout's climbs, so a completed download
+ * of the climb's own layout means its stats rows are all here.
+ *
+ * Short-circuits on the in-memory setting before touching SQLite, so a device
+ * with nothing downloaded for this board type pays no probe. `getSetting` is
+ * imported lazily for the same reason as `isBoardDownloadedLocally` above.
+ */
+export async function isClimbLayoutDownloadedLocally(
+  db: OfflineDatabase,
+  boardType: string,
+  climbUuid: string,
+): Promise<boolean> {
+  const { getSetting } = await import('../../settings/hooks');
+  const scopeKeysForType = getSetting('syncEnabledBoards').filter(
+    (scopeKey) => parseOfflineBoardKey(scopeKey)?.boardType === boardType,
+  );
+  if (scopeKeysForType.length === 0) return false;
+
+  const climb = await db.getFirstAsync<{ layout_id: number | null }>(
+    'SELECT layout_id FROM board_climbs WHERE uuid = ? AND board_type = ? LIMIT 1',
+    [climbUuid, boardType],
+  );
+  if (climb?.layout_id == null) return false;
+
+  for (const scopeKey of scopeKeysForType) {
+    if (parseOfflineBoardKey(scopeKey)?.layoutId !== climb.layout_id) continue;
+    if (await isScopeDownloadComplete(db, scopeKey)) return true;
+  }
+  return false;
+}
