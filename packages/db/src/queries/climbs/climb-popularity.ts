@@ -1,4 +1,4 @@
-import { and, asc, eq, gt, gte, inArray, isNotNull, lte, max, sql, type SQL } from 'drizzle-orm';
+import { and, asc, eq, getTableName, gt, gte, inArray, isNotNull, lte, max, sql, type SQL } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import { SUPPORTED_BOARDS, type BoardName } from '@boardsesh/shared-schema';
 import { boardClimbPopularity, boardClimbPopularityRuns, boardClimbStats } from '../../schema/index';
@@ -291,8 +291,33 @@ export function resetClimbPopularityReadinessForTests(): void {
 }
 
 /**
+ * False while autovacuum still owes `board_climb_popularity` an ANALYZE: more
+ * rows changed since the last one than its own trigger (threshold + scale
+ * factor x rows). Right after the first build the table has no statistics, the
+ * planner guesses about 9 rows per (board, angle) instead of about 200k, and
+ * the fallback's LEFT JOIN on the table becomes a nested loop over a
+ * materialised scan: a Kilter Boardsesh-grade band took 117 s instead of 0.9 s
+ * on the dev DB. The runtime role cannot ANALYZE (it holds no MAINTAIN), so the
+ * search waits for autovacuum, about a minute. The hourly incremental writes
+ * stay far under the trigger. The counters are per server and reset after a
+ * crash; a reset reads as zero changes, and the statistics themselves survive.
+ */
+function analyzedSinceBulkWrite(): SQL {
+  return sql`NOT EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_stat_user_tables AS popularity_stats
+    JOIN pg_catalog.pg_class AS popularity_class ON popularity_class.oid = popularity_stats.relid
+    WHERE popularity_stats.relid = to_regclass(${getTableName(boardClimbPopularity)})
+      AND popularity_stats.n_mod_since_analyze >
+        current_setting('autovacuum_analyze_threshold')::float8
+        + current_setting('autovacuum_analyze_scale_factor')::float8 * GREATEST(popularity_class.reltuples, 0)
+  )`;
+}
+
+/**
  * Whether the popular sort may read `board_climb_popularity` for this board:
- * true once a full build has finished. Any failure (the table not migrated
+ * true once a full build has finished and the table has been analyzed since
+ * (see analyzedSinceBulkWrite). Any failure (the table not migrated
  * yet, a test double without a query builder) answers false, which keeps the
  * old aggregation — slower, never wrong.
  */
@@ -307,7 +332,13 @@ export async function isClimbPopularityReady(
     const rows = await db
       .select({ boardType: boardClimbPopularityRuns.boardType })
       .from(boardClimbPopularityRuns)
-      .where(and(eq(boardClimbPopularityRuns.boardType, boardType), isNotNull(boardClimbPopularityRuns.fullBuiltAt)))
+      .where(
+        and(
+          eq(boardClimbPopularityRuns.boardType, boardType),
+          isNotNull(boardClimbPopularityRuns.fullBuiltAt),
+          analyzedSinceBulkWrite(),
+        ),
+      )
       .limit(1);
     ready = rows.length > 0;
   } catch {

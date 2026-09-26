@@ -36,6 +36,7 @@ Nothing runs on deploy or boot.
 - The sort is `popular` and descending.
 - The search is not cross-angle.
 - The board has a `full_built_at`. Each process caches this answer for 60 s. This makes the deploy order safe: the code can ship before the migration's first build finishes.
+- Autovacuum does not owe the table an ANALYZE: fewer rows changed since the last one than `autovacuum_analyze_threshold` + `autovacuum_analyze_scale_factor` x rows. Right after the first build the table has no statistics. The planner then guesses about 9 rows per (board, angle), and the fallback's join on the table turns into a nested loop over every row: a Kilter Boardsesh-grade band took 117 s instead of 0.9 s on the dev DB. The runtime role cannot run ANALYZE itself, so the search waits for autovacuum, about a minute. Hourly incremental runs stay far under the trigger; an Aurora sync that rewrites more than a tenth of a board's stats sends searches back to the aggregation until the next autoanalyze.
 
 **The walk:** read `board_climb_popularity_rank_idx` in order at the browsed angle, join the live stats row and the climb by primary key, and stop after one page. The walk runs when:
 
@@ -76,5 +77,5 @@ Production has 934k stats rows, so expect the same. Only the first pages of the 
 ## Runbook
 
 - **Force a full rebuild of one board:** `DELETE FROM board_climb_popularity_runs WHERE board_type = 'kilter';`. The search goes back to the aggregation within 60 s, and the next hourly run rebuilds the board.
-- **Turn the table off:** the same delete for every board, then unschedule `climb-popularity-refresh` in pg-boss. Every backend boot calls `boss.schedule` again, so the next deploy or restart re-enables the job and rebuilds within the hour. To keep it off across restarts, revert the read path and the job registration.
+- **Turn the table off:** the same delete for every board, then unschedule the job: `DELETE FROM pgboss.schedule WHERE name = 'climb-popularity-refresh';`. Every backend boot calls `boss.schedule` again, so the next deploy or restart re-enables the job and rebuilds within the hour. To keep it off across restarts, revert the read path and the job registration.
 - **Reclaim the index space after the first build:** `REINDEX INDEX CONCURRENTLY board_climb_popularity_rank_idx;`
