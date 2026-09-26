@@ -733,8 +733,8 @@ jobs:
       && (needs.migrate.result == 'success' || (needs.detect-changes.outputs.web_changed != 'true' && needs.detect-changes.outputs.backend_changed != 'true' && needs.migrate.result == 'skipped'))
       && (needs.deploy-production-backend.result == 'success' || (needs.detect-changes.outputs.backend_changed != 'true' && needs.deploy-production-backend.result == 'skipped'))
     runs-on: ubuntu-latest
-    # 45 minutes for the promotion itself, plus up to 55 for the server-rollout wait.
-    timeout-minutes: 100
+    # 45 minutes for the promotion itself, plus up to 85 for the server-rollout wait.
+    timeout-minutes: 130
     environment: Production
     permissions:
       contents: read

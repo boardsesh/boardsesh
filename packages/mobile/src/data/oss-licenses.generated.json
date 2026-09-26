@@ -1545,7 +1545,7 @@
   },
   {
     "name": "@xprem/control-center",
-    "version": "3.1.2",
+    "version": "3.2.4",
     "license": "MIT",
     "repository": "https://github.com/mercuretechnologies/xprem",
     "publisher": null,

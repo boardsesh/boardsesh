@@ -25,8 +25,8 @@ const RAILWAY_APPLY_PATHS = [
   '.github/workflows/railway-drift.yml',
 ];
 const POLL_INTERVAL_MS = 20_000;
-/** Above the apply job's own 50-minute timeout, so a slow rollback is waited out rather than raced. */
-const WAIT_BUDGET_MS = 55 * 60_000;
+/** Above the apply job's own 80-minute timeout, so a slow migration or rollback is waited out rather than raced. */
+const WAIT_BUDGET_MS = 85 * 60_000;
 /** How long a run that should exist may take to appear after the push; GitHub can queue for minutes. */
 const APPEAR_BUDGET_MS = 10 * 60_000;
 /** Consecutive failed reads of the run list tolerated before giving up. */
@@ -133,7 +133,7 @@ async function main() {
       );
     }
     if (Date.now() - started > WAIT_BUDGET_MS) {
-      throw new Error(`Railway Config for ${sha} was still running after 55 minutes.`);
+      throw new Error(`Railway Config for ${sha} was still running after 85 minutes.`);
     }
     console.log(`Waiting for Railway Config on ${sha} to finish rolling the OTA server...`);
     await new Promise((done) => setTimeout(done, POLL_INTERVAL_MS));

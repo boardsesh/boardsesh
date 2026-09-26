@@ -115,7 +115,10 @@ Bump `OTA_SERVER_VERSION` in `infra/railway/config.ts` and `EOAS_PACKAGE_SPEC` i
    still sends some requests to the old container it is draining. On 2026-09-26 a
    probe of three tries over ten seconds caught that window and rolled back a
    healthy 3.2.4 server. A lone 200 proves little there, since the old container
-   can answer it,
+   can answer it. One 503 is different: xprem's `storage migration in progress`
+   means its first-boot migrations are still running. The probe waits that out for
+   up to 30 minutes without spending attempts, which is why the apply job's timeout
+   is 80 minutes,
 5. **rolls back and restores the previous configuration** if either step fails,
    unless another deployment has taken over the service in the meantime.
 
