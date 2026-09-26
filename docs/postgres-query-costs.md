@@ -13,17 +13,17 @@ Each number carries a tag that says where it came from. The tags are explained i
 - **Quiet-day load:** 15,727 s of query time in the 15.3 h window (P), or about 24,700 s/day (E).
 - **Savings:** the 15 changes below remove about **9,000 s/day on a quiet day, roughly 36% (E)**. Days with several deploys save more, because each popular-configs stampede costs about 10,000 s (P).
 - **Memory:**
-  - Dropped: about 1.33 GB of indexes (P, from sizes) and 279 MB of dead heap (P).
+  - Dropped: about 0.84 GB of indexes (P, from sizes). `board_climb_similar` (763 MB total, about 483 MB of that in indexes) is kept — see [C7](#c7-index-and-table-drops) — so it is no longer counted here.
   - Added: at most about 100 MB (E).
-  - Net: about −1.6 GB on disk (E).
+  - Net: about −0.75 GB on disk (E).
 - **Offline-only:** moving reads onto the device helps only three families much: stats history, recommendation counts and followed-setter counts. See [Offline-only candidates](#offline-only-candidates).
 
 ## Known recurring jobs that rewrote data
 
 Two scheduled jobs rewrote large amounts of data on every run without changing it. Check both before changing their schedules or steps.
 
-1. **`refresh-content-model.yml` (Sundays 05:30 UTC):** its similarity step rebuilds `board_climb_similar`, and nothing reads that table. Remove the similarity step and keep the embeddings step.
-2. **`refresh-moonboard-wide-angle-estimates.yml` (Mondays 08:30 UTC):** rewrites 2.89M grade rows (P) each run. Every MoonBoard device then re-pulls about 1.2M rows (E). The job needs a no-op diff so it writes only rows that changed. Pause the cron until it has one.
+1. **`refresh-content-model.yml` (Sundays 05:30 UTC):** its similarity step rebuilds `board_climb_similar`, and nothing reads that table. Remove the similarity step and keep the embeddings step. **Shipped: #5828.** (The table itself is kept for Climb2Vec — see [C7](#c7-index-and-table-drops) — only its weekly rebuild stopped.)
+2. **`refresh-moonboard-wide-angle-estimates.yml` (Mondays 08:30 UTC):** rewrites 2.89M grade rows (P) each run. Every MoonBoard device then re-pulls about 1.2M rows (E). The job needs a no-op diff so it writes only rows that changed. Pause the cron until it has one. **Shipped: #5830.**
 
 The rule for any sync or batch job: a write that changes nothing still costs WAL, and on offline-synced tables it bumps `sync_seq`, which makes every device re-pull the row. Skip unchanged rows with `IS DISTINCT FROM` or a `setWhere` over the SET columns.
 
@@ -31,23 +31,25 @@ The rule for any sync or batch job: a write that changes nothing still costs WAL
 
 Change IDs (C#) match the audit findings. Rows are in rank order.
 
-| Rank | C# | Change | Saved per day | Memory (MB) | Effort | Migr. | Risk | Replica verdict | Offline-only? |
-|---|---|---|---|---|---|---|---|---|---|
-| 1 | C1 | Popular configs: no cache DEL on boot, one scheduled refresh, `required_set_ids <@` rewrite | 2,000–12,000 (E, deploy-dependent) | 0 | S–M | No | Low | speed confirmed; "0 mismatches" refuted | No (a CDN JSON option exists) |
-| 2 | C2 | searchClimbs stats path: split the grade filter, join grades after LIMIT | 2,500–4,000 (E) | 0 | S | No | Med | confirmed; min-only/max-only slowdown accepted | Partial, already local-first |
-| 3 | C3 | climbStatsHistory reads current board_climb_stats | 1,560–1,915 (E) | 0 (2.7 GB leaves the working set) | S | No | Low | confirmed | Yes, data on device |
-| 4 | C4 | Runaway guards: connection check, keepalives, per-service statement timeout, logging | caps tails ≥4,666 s per 16.2 h over 30 s (P) | 0 | S | No | Med | not re-tested | No |
-| 5 | C5 | Kilter catalog sync: skip unchanged stats rows, load self-aliases once, guard upserts, unnest | 600–1,700 (E) + about 1.9 GB WAL/day (E) | 0 | M | No | Med | stats half stronger; alias half smaller | No (it also cuts offline pulls) |
-| 6 | C6 | Recommendation counts: Redis cache, plus a CTE for misses on CROWD/AT_LEVEL only | 900–1,050 (E) | 0 | S | No | Low | weaker (HIDDEN_GEMS regresses) | Partial: the count can go local |
-| 7 | C9 | Popular sort: popularity side table with covering columns (Redis page cache first) | 600 (quiet) to 7,100 (contended) (E) | +65–130 (E) | M | Yes | Med | confirmed | Partial, already local |
-| 8 | C7 | Drop dead/duplicate indexes and the unused board_climb_similar | 150–350 (E) + write churn | −1,327 idx, −279 heap (P) | S | Yes | Low–Med | not re-tested | No |
-| 9 | C14 | Job trims: setter sitemap, snapshot export, grade backtest, neighbour gap scan, communityStats | 400–700 (E) | 0 | S–M | No | Low | not re-tested | No |
-| 10 | C13 | Web climb page: climb row first, alias lookup only on miss/unlisted | 350–375 (E) | 0 | S | No | Low | confirmed, bigger | No |
-| 11 | C12 | Followed-setter counts: early return on no follows, bind arrays | about 315 (E) | 0 | S | No | Low | confirmed, bigger | Yes, already local-first |
-| 12 | C8 | Discovery rail: cache the top-40 ranking, re-check visibility per request | 280–305 (E) | 0 | S | No | Low | confirmed, smaller | No |
-| 13 | C10 | You page: conditional userTicks joins, stop refetch on tick/resume | 200–500 (E) | 0 | S | No | Low | join trim confirmed | Yes, needs new data (L) |
-| 14 | C11 | Similar-climbs read: already cached (Redis 1 h + singleFlight, #4968) | 0 (done) | 0 | — | No | — | already shipped | Already local on mobile |
-| 15 | C15 | Memory budget: parallel workers 0, smaller pools, pg-boss intervals | ceiling; wait time 500–700 (E) | −270 steady, −500 worst (E) | S | No | Low–Med | not re-tested | No |
+**Shipped:** C1, C2, C3, C5, C6, C8, C10, C12, C13 (PR numbers in the Status column). C11 shipped earlier. C7 and C14 shipped in part. **Still open:** C4, C7 (remaining index drops), C9, C14 (remaining job trims), C15.
+
+| Rank | C# | Status | Change | Saved per day | Memory (MB) | Effort | Migr. | Risk | Replica verdict | Offline-only? |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | C1 | Shipped #5833 | Popular configs: no cache DEL on boot, one scheduled refresh, `required_set_ids <@` rewrite | 2,000–12,000 (E, deploy-dependent) | 0 | S–M | No | Low | speed confirmed; "0 mismatches" refuted | No (a CDN JSON option exists) |
+| 2 | C2 | Shipped #5840 | searchClimbs stats path: split the grade filter, join grades after LIMIT | 2,500–4,000 (E) | 0 | S | No | Med | confirmed; min-only/max-only slowdown accepted | Partial, already local-first |
+| 3 | C3 | Shipped #5838 | climbStatsHistory reads current board_climb_stats | 1,560–1,915 (E) | 0 (2.7 GB leaves the working set) | S | No | Low | confirmed | Yes, data on device |
+| 4 | C4 | Open | Runaway guards: connection check, keepalives, per-service statement timeout, logging | caps tails ≥4,666 s per 16.2 h over 30 s (P) | 0 | S | No | Med | not re-tested | No |
+| 5 | C5 | Shipped #5836 | Kilter catalog sync: skip unchanged stats rows, load self-aliases once, guard upserts, unnest | 600–1,700 (E) + about 1.9 GB WAL/day (E) | 0 | M | No | Med | stats half stronger; alias half smaller | No (it also cuts offline pulls) |
+| 6 | C6 | Shipped #5838 | Recommendation counts: Redis cache, plus a CTE for misses on CROWD/AT_LEVEL only | 900–1,050 (E) | 0 | S | No | Low | weaker (HIDDEN_GEMS regresses) | Partial: the count can go local |
+| 7 | C9 | Open | Popular sort: popularity side table with covering columns (Redis page cache first) | 600 (quiet) to 7,100 (contended) (E) | +65–130 (E) | M | Yes | Med | confirmed | Partial, already local |
+| 8 | C7 | Open | Drop dead/duplicate indexes (`board_climb_similar` is kept, not dropped) | 150–350 (E) + write churn | −844 idx (P) | S | Yes | Low–Med | not re-tested | No |
+| 9 | C14 | Partial #5835, #5838 | Job trims: setter sitemap, snapshot export, grade backtest, neighbour gap scan, communityStats | 400–700 (E) | 0 | S–M | No | Low | not re-tested | No |
+| 10 | C13 | Shipped #5835 | Web climb page: climb row first, alias lookup only on miss/unlisted | 350–375 (E) | 0 | S | No | Low | confirmed, bigger | No |
+| 11 | C12 | Shipped #5838 | Followed-setter counts: early return on no follows, bind arrays | about 315 (E) | 0 | S | No | Low | confirmed, bigger | Yes, already local-first |
+| 12 | C8 | Shipped #5838 | Discovery rail: cache the top-40 ranking, re-check visibility per request | 280–305 (E) | 0 | S | No | Low | confirmed, smaller | No |
+| 13 | C10 | Shipped #5837 | You page: conditional userTicks joins, stop refetch on tick/resume | 200–500 (E) | 0 | S | No | Low | join trim confirmed | Yes, needs new data (L) |
+| 14 | C11 | Shipped earlier #4968 | Similar-climbs read: already cached (Redis 1 h + singleFlight, #4968) | 0 (done) | 0 | — | No | — | already shipped | Already local on mobile |
+| 15 | C15 | Open | Memory budget: parallel workers 0, smaller pools, pg-boss intervals | ceiling; wait time 500–700 (E) | −270 steady, −500 worst (E) | S | No | Low–Med | not re-tested | No |
 
 ## Details per change
 
@@ -123,7 +125,7 @@ Change IDs (C#) match the audit findings. Rows are in rank order.
 
 ### C6. Recommendation counts
 
-- **What:** cache the user-independent count in Redis for 6–24 h under `rec-count:v1:{type}:{board}:{layout}:{size}:{sets}:{angle}[:{band}]`. On a miss, use the `MATERIALIZED` stats CTE for **CROWD and AT_LEVEL only**. Leave HIDDEN_GEMS as it is.
+- **What:** cache the user-independent count in Redis for 6 h (decided; the audit's range was 6–24 h) under `rec-count:v1:{type}:{board}:{layout}:{size}:{sets}:{angle}[:{band}]`. On a miss, use the `MATERIALIZED` stats CTE for **CROWD and AT_LEVEL only**. Leave HIDDEN_GEMS as it is. Shipped: the card count subtracts the viewer's own sends from the cached catalog count exactly (a live PK lookup, not a NOT EXISTS join), so nobody sees their own sends counted.
 - **Measured:**
   - CROWD, top kilter config: 50,156 → 4,974 buffers, 485 → 17 ms warm (R).
   - CROWD, tension: 228k → 52k buffers, 462 → 184 ms (R).
@@ -149,18 +151,18 @@ Change IDs (C#) match the audit findings. Rows are in rank order.
 - **Drop:**
   - stats v1 covering indexes (470 MB (P); they are prefixes of v2);
   - `board_climb_neighbors_rank_idx` (256 MB (P));
-  - the small unused indexes from the audit findings and `boardsesh_ticks_sync_pending_idx`;
-  - `board_climb_similar` (763 MB (P), 0 scans; owner approval needed).
+  - the small unused indexes from the audit findings and `boardsesh_ticks_sync_pending_idx`.
+- **Keep:** `board_climb_similar` and its indexes (763 MB (P) total, about 483 MB of that in indexes; 0 scans today). **Decided:** the owner is keeping the table for future Climb2Vec work ([`docs/climb2vec.md`](./climb2vec.md) phase 3a) instead of dropping it. Its weekly rebuild already stopped (#5828), so it costs no write churn while it sits unread.
 - **Declare** `board_climbs_layout_filter_idx` IF NOT EXISTS (557k scans (P)).
-- **Caveats:** use `SET LOCAL lock_timeout='3s'` with retry. Keep the similar-table CREATE in the moonboard-dedup fixture.
+- **Caveats:** use `SET LOCAL lock_timeout='3s'` with retry.
 
 ### C14. Job trims
 
-- **Sitemap:** Redis-shared setter list, MoonBoard EXISTS gate, `item_count` from `sitemap_shard_refreshes`. 145–355 s/day (E).
-- **Snapshot export:** in-stream watermark, about 78 s/day and 9.8M reads/day (E).
-- **Grade job:** skip an unchanged backtest, or use a hash join (3.2M → 248k reads (P)). Add a keyset cursor.
-- **Neighbour job:** `updateClimb` deletes only its own list, and the gap scan runs weekly. Since #5770 this job serves only web and old binaries.
-- **communityStats:** 1 h Redis plus a 21,600 s revalidate. 110–170 s/day (E).
+- **Sitemap:** Redis-shared setter list, MoonBoard EXISTS gate, `item_count` from `sitemap_shard_refreshes`. 145–355 s/day (E). Shipped in #5835: the EXISTS gate and `item_count`. Open: the Redis-shared setter list.
+- **Snapshot export:** in-stream watermark, about 78 s/day and 9.8M reads/day (E). Open.
+- **Grade job:** skip an unchanged backtest, or use a hash join (3.2M → 248k reads (P)). Add a keyset cursor. Open.
+- **Neighbour job:** `updateClimb` deletes only its own list, and the gap scan runs weekly. Since #5770 this job serves only web and old binaries. Open.
+- **communityStats:** 1 h Redis plus a 21,600 s revalidate. 110–170 s/day (E). Shipped: the 1 h Redis cache (#5838).
 
 ### C13. Web climb page
 
@@ -196,7 +198,7 @@ Change IDs (C#) match the audit findings. Rows are in rank order.
 ### C10. You page
 
 - **userTicks:** join grades and ratings only when the selection asks for them. Buffers fall 30,013 → 19,687 (−34%), executor time about 104 → 65 ms, planning 22 → 6 ms, rows identical (R). The ratings join is a full 629-page seq scan on every call (R). The join trim is worth 50–90 s/day (E).
-- **Refetch:** `refetchType:'none'` on tick invalidations, `refetchOnWindowFocus:false`, `staleTime` 30 min, and the invalidate keys fixed. The database effect was not measurable.
+- **Refetch:** `refetchType:'none'` on tick invalidations, `refetchOnWindowFocus:false`, `staleTime` 30 min, and the invalidate keys fixed. The database effect was not measurable. **Decided:** the 30 min `staleTime` applies everywhere this data loads, including when viewing another climber's profile, not just your own You page.
 
 ### C11. Similar-climbs read
 
@@ -273,8 +275,8 @@ Nothing here is native, so everything ships from `main`. The `totalAscents`, `to
 7. **Web:** C13, the sitemap EXISTS gate, summary-row counts, communityStats revalidate.
 8. **Mobile JS OTA:** C10 refetch policy and trimmed GET_USER_TICKS, local-first C3, favorites reader. Optional local-only moves wait on open question 4.
 9. **Jobs:** C14.
-10. **Migration A:** C7 index drops, `board_climbs_layout_filter_idx` IF NOT EXISTS, kilter_recent partial index.
-11. **Migration B (after approval):** DROP TABLE `board_climb_similar`.
+10. **Migration A:** C7 index drops (not `board_climb_similar` — kept, see [C7](#c7-index-and-table-drops)), `board_climbs_layout_filter_idx` IF NOT EXISTS, kilter_recent partial index.
+11. ~~**Migration B (after approval):** DROP TABLE `board_climb_similar`~~ — decided against; the table stays for Climb2Vec.
 12. **Migration C (M):** the C9 side table, after its Redis page cache ships in step 5.
 13. **Later (L):** `layout_id` on stats and grades, a keyset search cursor, the ops-run REINDEX.
 
@@ -289,15 +291,15 @@ Nothing here is native, so everything ships from `main`. The `totalAscents`, `to
 
 ## Open questions
 
-1. **Data deletion:** OK to DROP `board_climb_similar` (763 MB)? Is the Climb2Vec blend still planned?
-2. **`upstream_synced_at` readers:** do any exist? The answer decides C5's 24 h re-stamp clause.
+1. **Data deletion — decided:** keep `board_climb_similar`. The Climb2Vec blend is still planned ([`docs/climb2vec.md`](./climb2vec.md) phase 3a), so the table is not dropped (see [C7](#c7-index-and-table-drops)).
+2. **`upstream_synced_at` readers — answered (#5836):** yes. The tick-recompute absorption rule reads it (`packages/db/src/queries/climb-stats/recompute.ts`), so C5 ships the 24 h re-stamp clause, narrowed to rows with Boardsesh ascents.
 3. **Staleness:**
-   - May recommendation counts include your own sends?
-   - Popular rail: up to 24 h stale, with counts corrected by up to 2%?
-   - Discovery rail: up to 15 min stale?
-4. **Offline-only trade-offs:** hide filter-sheet counts, Discover counts and the Following chip for boards that are not downloaded and for the browser app? Measure the download rate in PostHog first.
-5. **C2 min-only/max-only shape:** accept the slowdown on Kilter Original (63 → 314 ms, 15 → 327 ms warm (R)) since prod sent 0 such calls in the measured window, or add a guard before it does?
-6. **Stats-history snapshot:** can it become change-only once C3 lands? The `packages/db/src/queries/grade-model/gates.ts` backtest assumes a full weekly cross-section.
+   - Recommendation counts exclude your own sends — shipped (#5838): the card count is the cached catalog count minus an exact live count of the viewer's own sends.
+   - Popular rail: up to 24 h stale, with counts corrected by up to 2% — **decided**, shipped (#5833, daily cron).
+   - Discovery rail: up to 15 min stale — **decided**, shipped (#5838).
+4. **Offline-only trade-offs — decided:** ship local-first only. Don't hide filter-sheet counts, Discover counts or the Following chip for boards that are not downloaded or for the browser app; they keep falling back to the server instead.
+5. **C2 min-only/max-only shape — decided:** accept the slowdown on Kilter Original (63 → 314 ms, 15 → 327 ms warm (R)), no guard. Prod still sends 0 such calls (shipped as-is in #5840).
+6. **Stats-history snapshot:** now that C3 has shipped (#5838), can it become change-only? The `packages/db/src/queries/grade-model/gates.ts` backtest assumes a full weekly cross-section.
 7. **Setter sitemap:** does it earn search traffic? If not, removing it saves about 270 s/day (E).
 8. **Deploy cadence and replica count:** these set the real size of C1.
 9. **Wide-angle grades:** keep materialising all 15 MoonBoard angles?
