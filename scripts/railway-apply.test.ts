@@ -1,5 +1,9 @@
 /// <reference types="node" />
 
+import { spawnSync } from 'node:child_process';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { describe, expect, it, vi } from 'vitest';
 
 import {
@@ -58,6 +62,7 @@ import {
   fetchClickHouseTtl,
   fetchUpdateInputFields,
   fetchVolumes,
+  isRollbackFenced,
   main,
   parseArgs,
   previousConfigurationInput,
@@ -2921,5 +2926,31 @@ describe('Railway authentication', () => {
     resetAuthScheme();
     const { schemesTried } = await runAgainst('project');
     expect(schemesTried[0]).toBe('project');
+  });
+});
+
+describe('the railway:apply entry point', () => {
+  it('loads under tsx, the runner `vp run railway:apply` uses, and reaches its credential check', () => {
+    // Vitest loads modules as ESM, so every test above passes even when the script
+    // cannot start: on 2026-09-26 a static import of the rollback helper (an ES
+    // module with top-level await) made tsx's CommonJS transform fail at load, and
+    // the first production apply died before reading anything. Run it for real.
+    const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+    const run = spawnSync('vp', ['exec', 'tsx', 'scripts/railway-apply.ts'], {
+      cwd: repositoryRoot,
+      encoding: 'utf8',
+      env: { ...process.env, RAILWAY_TOKEN: '', RAILWAY_PROJECT_ID: '' },
+      timeout: 60_000,
+    });
+    const output = `${run.stdout}\n${run.stderr}`;
+    expect(output).not.toContain('Transform failed');
+    expect(output).toContain('RAILWAY_TOKEN and RAILWAY_PROJECT_ID are both required');
+    expect(run.status).toBe(1);
+  }, 90_000);
+
+  it("recognises the rollback helper's fenced error by name", () => {
+    expect(isRollbackFenced(new RollbackFencedError('competing deployment'))).toBe(true);
+    expect(isRollbackFenced(new Error('rollback deployment did not reach SUCCESS in time'))).toBe(false);
+    expect(isRollbackFenced('RollbackFencedError')).toBe(false);
   });
 });

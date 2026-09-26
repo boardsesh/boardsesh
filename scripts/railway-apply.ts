@@ -83,7 +83,6 @@ import type {
   PlannedChange,
 } from '../infra/railway/plan';
 import { EOAS_PACKAGE_SPEC } from './lib/eoas';
-import { RollbackFencedError } from './railway-deployment-rollback.mjs';
 
 const RAILWAY_API = 'https://backboard.railway.com/graphql/v2';
 
@@ -1016,6 +1015,19 @@ export async function restoreConfiguration(
 
 type RollbackDeployment = typeof import('./railway-deployment-rollback.mjs').rollbackDeployment;
 
+/**
+ * True for the rollback helper's RollbackFencedError.
+ *
+ * Matched by name, never by importing the class: the helper is an ES module with
+ * top-level await (its CLI entry point), and `vp run railway:apply` runs this file
+ * through tsx's CommonJS transform, which cannot `require` such a module. A static
+ * import therefore crashes the script at load, before it reads anything; the helper
+ * is only ever loaded lazily, with `await import()`, for that reason.
+ */
+export function isRollbackFenced(error: unknown): boolean {
+  return error instanceof Error && error.name === 'RollbackFencedError';
+}
+
 interface AppliedDeployment {
   deploymentId: string;
   mutation: ServiceMutation;
@@ -1066,7 +1078,7 @@ async function rollbackAppliedDeployment(
     });
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
-    if (error instanceof RollbackFencedError) {
+    if (isRollbackFenced(error)) {
       // Another deployment is acting on this service: one appeared after ours, or
       // beside the rollback. Somebody else now owns its configuration, and writing
       // the pre-run image and settings back would overwrite theirs.
