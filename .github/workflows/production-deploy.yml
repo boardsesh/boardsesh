@@ -891,6 +891,9 @@ jobs:
         # `--clear` + env-assertion support; once it does, it becomes the
         # in-export stale-env detector. The independent grep step below covers us
         # regardless of merge order.
+        env:
+          # Same repository variable CI's "Expo web bundle check" reads.
+          BOARDSESH_WEB_EAGER_BROTLI_BUDGET: ${{ vars.BOARDSESH_WEB_EAGER_BROTLI_BUDGET }}
         run: |
           BOARDSESH_EXPORT_EXPECT_URLS="https://ws.boardsesh.com https://www.boardsesh.com" \
           bash scripts/build-expo-web-export.sh --subdomain "$RUNNER_TEMP/app-standalone"
