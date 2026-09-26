@@ -32,26 +32,55 @@
 -- the session owner may already have run DROP INDEX CONCURRENTLY by hand, and
 -- several of these never existed on dev databases (0067 dropped them there).
 --
+-- Only the tables that still own one of these indexes are locked. After the
+-- hand-run concurrent drops the lock list is empty and the whole migration
+-- takes no table lock at all: an unconditional LOCK on board_climb_stats (the
+-- busiest table in the database) could stall every reader for up to 3 s per
+-- attempt even with nothing left to drop. A DROP INDEX IF EXISTS on a missing
+-- index takes no table lock either.
+--
 -- board_climbs_layout_filter_idx already exists in production (0067 dropped it
--- from the schema but not from prod, where it carries ~560k scans a week), so
--- IF NOT EXISTS makes this a no-op there; it builds the 7 MB index on fresh dev,
--- test and CI databases, where a few seconds of blocked writes do not matter.
+-- from the schema but not from prod, where it carries ~560k scans a week). The
+-- CREATE runs only when it is missing, because CREATE INDEX IF NOT EXISTS takes
+-- a SHARE lock on board_climbs before it checks the name. It builds the 7 MB
+-- index on fresh dev, test and CI databases, where a few seconds of blocked
+-- writes do not matter.
 DO $$
 DECLARE
   attempts integer := 0;
+  lock_list text;
 BEGIN
+  SELECT string_agg(DISTINCT index_row.indrelid::regclass::text, ', ')
+    INTO lock_list
+    FROM unnest(ARRAY[
+      'board_climbs_board_type_idx',
+      'boardsesh_ticks_sync_pending_idx',
+      'board_climb_events_board_confirmed_at_idx',
+      'board_climb_events_board_climb_idx',
+      'board_setter_stats_score_idx',
+      'board_climb_neighbors_rank_idx',
+      'board_climb_stats_ascents_covering_idx',
+      'board_climb_stats_quality_covering_idx',
+      'board_climbs_edges_idx',
+      'board_climbs_characteristics_idx'
+    ]) AS target(index_name)
+    JOIN pg_index index_row ON index_row.indexrelid = to_regclass(target.index_name);
+
+  IF to_regclass('board_climbs_layout_filter_idx') IS NULL
+     AND to_regclass('board_climbs') IS NOT NULL
+     AND (lock_list IS NULL OR NOT 'board_climbs' = ANY (string_to_array(lock_list, ', '))) THEN
+    lock_list := concat_ws(', ', lock_list, 'board_climbs');
+  END IF;
+
+  IF lock_list IS NULL THEN
+    RETURN;
+  END IF;
+
   LOOP
     attempts := attempts + 1;
     BEGIN
       SET LOCAL lock_timeout = '3s';
-      LOCK TABLE
-        "board_climbs",
-        "board_climb_stats",
-        "board_climb_neighbors",
-        "board_climb_events",
-        "board_setter_stats",
-        "boardsesh_ticks"
-      IN ACCESS EXCLUSIVE MODE;
+      EXECUTE format('LOCK TABLE %s IN ACCESS EXCLUSIVE MODE', lock_list);
       SET LOCAL lock_timeout = '0';
       RETURN;
     EXCEPTION WHEN lock_not_available OR deadlock_detected THEN
@@ -75,4 +104,9 @@ DROP INDEX IF EXISTS "board_climb_stats_ascents_covering_idx";--> statement-brea
 DROP INDEX IF EXISTS "board_climb_stats_quality_covering_idx";--> statement-breakpoint
 DROP INDEX IF EXISTS "board_climbs_edges_idx";--> statement-breakpoint
 DROP INDEX IF EXISTS "board_climbs_characteristics_idx";--> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "board_climbs_layout_filter_idx" ON "board_climbs" USING btree ("board_type","layout_id","is_listed","is_draft","frames_count");
+DO $$
+BEGIN
+  IF to_regclass('board_climbs_layout_filter_idx') IS NULL THEN
+    CREATE INDEX "board_climbs_layout_filter_idx" ON "board_climbs" USING btree ("board_type","layout_id","is_listed","is_draft","frames_count");
+  END IF;
+END $$;
