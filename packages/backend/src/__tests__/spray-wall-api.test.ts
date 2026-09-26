@@ -4676,9 +4676,42 @@ describe('a wall keeps the visibility picked at creation through a resumed publi
     expect(row.pending_is_public).toBeNull();
   });
 
+  it('retries a failed post-publish photo copy once, so a resumed publish still gets its photo', async () => {
+    // A resumed wizard run never re-states public after its publish, so the
+    // server cannot wait for that call to heal one transient failure.
+    const { copyObjectBetweenBuckets } = await import('../storage/s3');
+    vi.mocked(copyObjectBetweenBuckets).mockRejectedValueOnce(new Error('media bucket blipped'));
+
+    const { wall } = await createPublishedWall(OWNER, { isPublic: true });
+
+    const row = await visibilityOf(wall.uuid);
+    expect(row.is_public).toBe(true);
+    expect(row.public_photo_key).not.toBeNull();
+    expect(publicBucketObjects.has(row.public_photo_key!)).toBe(true);
+  });
+
+  it('heals a public wall with no public copy on the next edit, not only a re-stated public', async () => {
+    const { copyObjectBetweenBuckets } = await import('../storage/s3');
+    vi.mocked(copyObjectBetweenBuckets)
+      .mockRejectedValueOnce(new Error('media bucket unreachable'))
+      .mockRejectedValueOnce(new Error('media bucket still unreachable'));
+
+    const { wall } = await createPublishedWall(OWNER, { isPublic: true });
+    expect((await visibilityOf(wall.uuid)).public_photo_key).toBeNull();
+
+    await sprayWallMutations.updateSprayWall({}, { input: { uuid: wall.uuid, name: 'Renamed wall' } }, ctxFor(OWNER));
+
+    const healed = await visibilityOf(wall.uuid);
+    expect(healed.is_public).toBe(true);
+    expect(healed.public_photo_key).not.toBeNull();
+    expect(publicBucketObjects.has(healed.public_photo_key!)).toBe(true);
+  });
+
   it('heals a public wall whose post-publish photo copy failed when public is re-stated', async () => {
     const { copyObjectBetweenBuckets } = await import('../storage/s3');
-    vi.mocked(copyObjectBetweenBuckets).mockRejectedValueOnce(new Error('media bucket unreachable'));
+    vi.mocked(copyObjectBetweenBuckets)
+      .mockRejectedValueOnce(new Error('media bucket unreachable'))
+      .mockRejectedValueOnce(new Error('media bucket still unreachable'));
 
     const { wall } = await createPublishedWall(OWNER, { isPublic: true });
     const broken = await visibilityOf(wall.uuid);
@@ -4766,6 +4799,21 @@ describe('a wall keeps the visibility picked at creation through a resumed publi
     // The copy is of the photo the reset just published, and the old one is gone.
     expect(publicBucketObjects.get(after!)).toBe(version.photo_key);
     expect(publicBucketObjects.has(before!)).toBe(false);
+  });
+
+  it('keeps the half of a pending choice an explicit update does not state', async () => {
+    // Created public, then an update that names only `isUnlisted`: the pending
+    // public request is not the caller's to have dropped.
+    const wall = await createWall(OWNER, { isPublic: true });
+    await sprayWallMutations.updateSprayWall({}, { input: { uuid: wall.uuid, isUnlisted: false } }, ctxFor(OWNER));
+
+    const versionId = await openDraft(wall.uuid);
+    await sprayWallMutations.publishSprayWallVersion({}, { input: { versionId } }, ctxFor(OWNER));
+
+    const row = await visibilityOf(wall.uuid);
+    expect(row.is_public).toBe(true);
+    expect(row.is_unlisted).toBe(false);
+    expect(row.pending_is_public).toBeNull();
   });
 
   it('lets an explicit choice before the first publish clear a pending unlisted request too', async () => {

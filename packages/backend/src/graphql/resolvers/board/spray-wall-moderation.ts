@@ -9,7 +9,12 @@ import { applyRateLimit, requireAuthenticated, validateInput } from '../shared/h
 import { requireAdmin } from '../social/roles';
 import { ReportSprayWallInputSchema, SetSprayWallHiddenInputSchema, UUIDSchema } from '../../../validation/schemas';
 import { deleteFromS3, isS3Configured, listS3Objects } from '../../../storage/s3';
-import { purgeSprayWallFeedItems, SPRAY_WALL_CODES, viewerCanSeeSprayWall } from './spray-walls';
+import {
+  purgeSprayWallFeedItems,
+  refreshPublicWallPhoto,
+  SPRAY_WALL_CODES,
+  viewerCanSeeSprayWall,
+} from './spray-walls';
 
 /**
  * Moderation and retention for spray walls (SW-17, epic #5346).
@@ -208,6 +213,32 @@ export const sprayWallModerationMutations = {
       hidden: validated.hidden,
       adminId: ctx.userId,
     });
+
+    // An unhidden PUBLIC wall with no public photo copy gets one now. While a wall
+    // is hidden, every path that copies its photo into the world-readable bucket
+    // refuses (#5797) — but the owner can still publish it or make it public, so
+    // it can come back public with nothing for the gym page, the share card or
+    // `publicPhotoUrl` to show, and nothing else would ever copy it. Read fresh
+    // after the commit rather than from `loaded`; `refreshPublicWallPhoto`
+    // re-checks public / unhidden / still-this-version under the row lock, and
+    // never throws.
+    if (!validated.hidden) {
+      const [unhidden] = await db
+        .select({
+          isPublic: dbSchema.userBoards.isPublic,
+          publicPhotoKey: dbSchema.sprayWalls.publicPhotoKey,
+          currentVersionId: dbSchema.sprayWalls.currentVersionId,
+          photoKey: dbSchema.sprayWallVersions.photoKey,
+        })
+        .from(dbSchema.sprayWalls)
+        .innerJoin(dbSchema.userBoards, eq(dbSchema.userBoards.uuid, dbSchema.sprayWalls.boardUuid))
+        .innerJoin(dbSchema.sprayWallVersions, eq(dbSchema.sprayWallVersions.id, dbSchema.sprayWalls.currentVersionId))
+        .where(eq(dbSchema.sprayWalls.id, loaded.wall.id))
+        .limit(1);
+      if (unhidden?.isPublic && unhidden.publicPhotoKey == null && unhidden.currentVersionId != null) {
+        await refreshPublicWallPhoto(loaded.wall.id, loaded.board.uuid, unhidden.photoKey, unhidden.currentVersionId);
+      }
+    }
 
     // Read back rather than echoing the write: under the guard above, a second
     // concurrent hide changes nothing, and reporting its own `now` would tell the
