@@ -212,10 +212,15 @@ export function buildRecommendationRefsSql(params: RecommendationQueryParams, pa
  *
  * CROWD and AT_LEVEL are driven from `board_climb_stats`: a MATERIALIZED CTE
  * picks the qualifying stats rows at the angle through the stats index, then
- * each one probes `board_climbs` by primary key. Joined the other way round, the
- * planner estimates the size/set array predicates at ~8.6k rows when the real
- * slice is ~283k, and heap-scans nearly the whole layout for every count. On the
- * replica, CROWD on the top Kilter config went from 50,156 to 4,974 buffers.
+ * joins them to `board_climbs`. Joined the other way round, the planner
+ * estimates the size/set array predicates at ~8.6k rows when the real slice is
+ * ~283k, and heap-scans nearly the whole layout for every count. The CTE does
+ * not always fix that: it too is misestimated (~11k rows for CROWD at Kilter 40°
+ * when ~385 qualify), so on some configs the planner still hash-joins the whole
+ * slice. Replica, warm, viewer excluded: AT_LEVEL on Kilter 1/10 {1,20} 46.7k ->
+ * 4.4k buffers and the Kilter homewall 117k -> 21k, but CROWD on Kilter 1/10
+ * {1,20} only 47k -> 43k. The card count is cached (`rec-count`), so there
+ * only a miss pays this; the playlist hero count pays it every time.
  * HIDDEN_GEMS stays catalog-driven: its 5-50 ascent range is wide enough that
  * the CTE read 2.5x more buffers than the shipped plan.
  *
