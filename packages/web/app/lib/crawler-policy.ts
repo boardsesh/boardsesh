@@ -125,6 +125,11 @@ export const CRAWLER_ALLOW_TOKENS = [
   'aasa-bot',
   'googleassociationservice',
   'boardsesh-production-smoke',
+  // Our own ESP32 board controller. Its thumbnail client
+  // (embedded/libs/thumbnail-client) GETs www /api/internal/board-render with
+  // the Arduino HTTPClient default UA, `ESP32HTTPClient`, which carries the
+  // `httpclient` signature. Flashed devices cannot be patched from here.
+  'esp32httpclient',
   // A person asked an assistant to open this page. These are fetches on a
   // human's behalf, not crawls, and the origin has let them through since the
   // AI-crawler block (see middleware.test.ts). ChatGPT-User carries
