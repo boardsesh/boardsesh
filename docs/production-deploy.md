@@ -4,6 +4,17 @@
 starts a run; the run builds web and backend in parallel, gates on both builds
 passing, migrates, then deploys.
 
+Migrations always connect to PostgreSQL directly, never through PgBouncer
+(`migrate.ts` holds one session for `SET ROLE`, which transaction pooling cannot
+keep). Before migrating, the job runs `verify-direct-database.ts`: it compares
+the non-credential `host:port/database` of the `MIGRATOR_DATABASE_URL` secret
+with the Production-environment variable `DATABASE_DIRECT_ENDPOINT`, then runs a
+TLS `SELECT 1`. A pooler URL, a missing variable, a failed login or a network
+error stops the deploy; there is no fallback to the runtime URL.
+`DATABASE_DIRECT_ENDPOINT` must exist before this step reaches `main`, set to the
+endpoint `MIGRATOR_DATABASE_URL` uses today. Change it deliberately if Railway
+replaces the database's TCP proxy; a password rotation does not change it.
+
 ## Architecture
 
 Production is four services, each answering to a different platform:
@@ -322,9 +333,13 @@ hand-written server) since the standalone `server.js` is generated at build time
 
 `overlapSeconds` (the other teardown knob) keeps both deployments serving at
 once. It is deliberately unset. Overlap would double the backend's Postgres
-footprint — 5 replicas x `DB_POOL_MAX` 10 — against a shared `max_connections`
-of 100 since the PG18 cutover (200 on PG16, where it was exhausted; see
-[db-connectivity.md](./db-connectivity.md)). Railway only sends SIGTERM once the
+footprint — 3 replicas x (`DB_POOL_MAX` 10 + `PGBOSS_POOL_SIZE` 4) = 42 — against
+a shared `max_connections` of 100 since the PG18 cutover (200 on PG16, where it
+was exhausted). Even the 15 s drain already puts both fleets on the database at
+once: about 106 connections at the ceiling against 97 non-superuser slots. Once
+the backend's postgres.js pool goes through PgBouncer, the draining fleet adds
+only its 12 pg-boss connections; see the budget in
+[db-connectivity.md](./db-connectivity.md#connection-budget-at-max_connections--100). Railway only sends SIGTERM once the
 replacement deployment is already healthy, so there is no capacity gap for
 overlap to cover; draining alone addresses the severed-request case.
 
