@@ -38,10 +38,20 @@ import {
 
 const NO_SUPPLIED = { suppliedVars: new Set<string>() };
 
+// The OTA server's Redis cache settings, as production carries them.
+const OTA_CACHE_VARS = {
+  CACHE_MODE: 'redis',
+  REDIS_HOST: 'redis.railway.internal',
+  REDIS_PORT: '6379',
+  REDIS_PASSWORD: 'test-redis-password',
+  CACHE_KEY_PREFIX: 'boardsesh-ota',
+};
+
 // The main stubs answer every service's variables() query with one set, so this
 // holds every variable any declared service requires, across all of them. A
 // service-specific value is merged over it by the caller.
 const BASELINE_REQUIRED_VARS = {
+  ...OTA_CACHE_VARS,
   SMTP_USER: 'mailer@boardsesh.com',
   SMTP_PASSWORD: 'test-password',
   BOARDSESH_WEB: '1',
@@ -63,7 +73,7 @@ function liveState(overrides: Partial<LiveState> = {}): LiveState {
       { id: 'svc-pg18', name: POSTGRES_PRIMARY_SERVICE_NAME },
     ],
     variables: {
-      [OTA_SERVICE_NAME]: { CLICKHOUSE_URL: 'clickhouse://u:p@host:9000/expo_observe' },
+      [OTA_SERVICE_NAME]: { CLICKHOUSE_URL: 'clickhouse://u:p@host:9000/expo_observe', ...OTA_CACHE_VARS },
       // Presence is all this config asserts; the PEM bodies live only in Railway.
       [POSTGRES_PRIMARY_SERVICE_NAME]: {
         PG_TLS_SERVER_CERT: '-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----',
@@ -235,6 +245,91 @@ describe('diffServiceVars', () => {
     });
     const [change] = diffServiceVars(otaService, live, NO_SUPPLIED);
     expect(change.summary).toContain('placeholder');
+  });
+
+  function otaLive(cacheVars: Record<string, string>) {
+    return liveState({
+      variables: {
+        ...liveState().variables,
+        [OTA_SERVICE_NAME]: { CLICKHOUSE_URL: 'clickhouse://u:p@host:9000/expo_observe', ...cacheVars },
+      },
+    });
+  }
+
+  it('blocks a missing CACHE_MODE and says to set it, never to remove it', () => {
+    const { CACHE_MODE: _cacheMode, ...withoutCacheMode } = OTA_CACHE_VARS;
+    const changes = diffServiceVars(otaService, otaLive(withoutCacheMode), NO_SUPPLIED);
+    expect(changes).toHaveLength(1);
+    expect(changes[0]).toMatchObject({ resource: 'env-var', blocked: true });
+    expect(changes[0]?.summary).toBe(`${OTA_SERVICE_NAME}: CACHE_MODE must be "redis"`);
+    expect(changes[0]?.detail).toContain('1.7 GB');
+    expect(changes[0]?.detail).toContain('not set on this service');
+    expect(changes[0]?.detail).toContain('Set CACHE_MODE to "redis".');
+    expect(changes[0]?.detail).not.toMatch(/remove|absent or/i);
+  });
+
+  it('rejects CACHE_MODE=local, the setting that grew the heap', () => {
+    const changes = diffServiceVars(otaService, otaLive({ ...OTA_CACHE_VARS, CACHE_MODE: 'local' }), NO_SUPPLIED);
+    expect(changes).toHaveLength(1);
+    expect(changes[0]?.summary).toBe(`${OTA_SERVICE_NAME}: CACHE_MODE must be "redis"`);
+    expect(changes[0]?.detail).toContain('Set CACHE_MODE to "redis".');
+    expect(changes[0]?.detail).not.toMatch(/remove/i);
+    expect(changes[0]?.blocked).toBe(true);
+  });
+
+  it('blocks a missing CACHE_KEY_PREFIX with the set-to remediation', () => {
+    const { CACHE_KEY_PREFIX: _prefix, ...withoutPrefix } = OTA_CACHE_VARS;
+    const changes = diffServiceVars(otaService, otaLive(withoutPrefix), NO_SUPPLIED);
+    expect(changes).toHaveLength(1);
+    expect(changes[0]?.summary).toBe(`${OTA_SERVICE_NAME}: CACHE_KEY_PREFIX must be "boardsesh-ota"`);
+    expect(changes[0]?.detail).toContain('Set CACHE_KEY_PREFIX to "boardsesh-ota".');
+    expect(changes[0]?.blocked).toBe(true);
+  });
+
+  it('blocks any other CACHE_KEY_PREFIX, which would silently move every key', () => {
+    const changes = diffServiceVars(
+      otaService,
+      otaLive({ ...OTA_CACHE_VARS, CACHE_KEY_PREFIX: 'staging-ota-prefix' }),
+      NO_SUPPLIED,
+    );
+    expect(changes).toHaveLength(1);
+    expect(changes[0]?.summary).toBe(`${OTA_SERVICE_NAME}: CACHE_KEY_PREFIX must be "boardsesh-ota"`);
+    expect(changes[0]?.detail).toContain('set to an unsupported value');
+    expect(`${changes[0]?.summary}\n${changes[0]?.detail}`).not.toContain('staging-ota-prefix');
+    expect(changes[0]?.blocked).toBe(true);
+  });
+
+  it('reports no drift when CACHE_MODE and CACHE_KEY_PREFIX hold the exact values', () => {
+    expect(diffServiceVars(otaService, otaLive(OTA_CACHE_VARS), NO_SUPPLIED)).toEqual([]);
+  });
+
+  it('reports each missing Redis connection variable', () => {
+    const summaries = diffServiceVars(
+      otaService,
+      otaLive({ CACHE_MODE: 'redis', CACHE_KEY_PREFIX: 'boardsesh-ota' }),
+      NO_SUPPLIED,
+    ).map((change) => change.summary);
+    expect(summaries).toEqual([
+      `${OTA_SERVICE_NAME}: REDIS_HOST is absent`,
+      `${OTA_SERVICE_NAME}: REDIS_PORT is absent`,
+      `${OTA_SERVICE_NAME}: REDIS_PASSWORD is absent`,
+    ]);
+  });
+
+  it('accepts unrendered ${{Redis.*}} reference templates as set, not as placeholders', () => {
+    const live = liveState({
+      variables: {
+        ...liveState().variables,
+        [OTA_SERVICE_NAME]: {
+          CLICKHOUSE_URL: 'clickhouse://u:p@host:9000/expo_observe',
+          ...OTA_CACHE_VARS,
+          REDIS_HOST: '${{Redis.REDISHOST}}',
+          REDIS_PORT: '${{Redis.REDISPORT}}',
+          REDIS_PASSWORD: '${{Redis.REDISPASSWORD}}',
+        },
+      },
+    });
+    expect(diffServiceVars(otaService, live, NO_SUPPLIED)).toEqual([]);
   });
 
   it('stays quiet about variables on a service that does not exist', () => {

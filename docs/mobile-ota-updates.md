@@ -1040,7 +1040,21 @@ Postgres, server, DNS) stay manual. Run it with no argument for the ordered runb
    - `STORAGE_MODE` = `s3`, plus `S3_BUCKET_NAME` (`boardsesh-ota-v3`), `AWS_REGION` (`auto`),
      `AWS_BASE_ENDPOINT` (the selected S3-compatible account endpoint), and
      `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`
-   - `CACHE_MODE` = `local` (fine at one replica)
+   - `CACHE_MODE` = `redis`, with `REDIS_HOST` = `${{Redis.REDISHOST}}`, `REDIS_PORT` =
+     `${{Redis.REDISPORT}}`, `REDIS_PASSWORD` = `${{Redis.REDISPASSWORD}}` (the project's
+     Railway Redis, over the private network) and `CACHE_KEY_PREFIX` = `boardsesh-ota`. Local
+     mode caches in the Go heap with no size bound or eviction: in production it reached a
+     1.7 GB live heap (2.3M objects) after 21 days. The backend keeps its own keys in the same
+     Redis; the prefix keeps OTA keys easy to tell apart (unset, xprem uses `expoopenota`). xprem
+     has no default for `REDIS_PORT` and panics if it cannot reach Redis. `vp run railway:apply` asserts all of this (see
+     [railway.md](./railway.md)). `CACHE_MODE` = `local` still works as a fallback at one
+     replica, if Redis is down or being replaced; expect the heap to grow again while it runs.
+     **Redis is now a hard dependency of OTA delivery.** xprem opens the cache once, in a
+     `sync.Once`, and pings `REDIS_HOST:REDIS_PORT`; if that ping fails it panics. The first cache
+     use is the bucket-migration lock at boot, so an unreachable Redis crashes the server before it
+     serves any update. The mitigation is the service's restart policy set to `ALWAYS`, so it keeps
+     retrying until Redis answers. The likely time for this race is Railway's Redis auto-update
+     window (weekends), when Redis restarts and the OTA server may boot while it is down.
    - `DB_URL` + `DB_KEYS_MASTER_KEY_B64` (from steps 2–3)
    - `USE_DASHBOARD=true`, `ADMIN_EMAIL` (a bare address), and a policy-compliant `ADMIN_PASSWORD`
      (≥8 chars, upper/lower/digit/special — first boot crash-loops otherwise). These are the

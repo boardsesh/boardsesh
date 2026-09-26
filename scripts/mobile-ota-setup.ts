@@ -111,7 +111,15 @@ function printServerSetup(): void {
       `AWS_REGION=auto`,
       `AWS_ACCESS_KEY_ID=<bucket key id>`,
       `AWS_SECRET_ACCESS_KEY=<bucket secret>`,
-      `CACHE_MODE=local`,
+      // Redis, not local: local mode caches in the Go heap with no bound and
+      // reached 1.7 GB (2.3M objects) after 21 days in production. xprem has no
+      // default REDIS_PORT. The prefix names OTA keys in the shared Redis.
+      // CACHE_MODE=local remains a valid fallback for a single replica.
+      `CACHE_MODE=redis`,
+      `REDIS_HOST=\${{Redis.REDISHOST}}`,
+      `REDIS_PORT=\${{Redis.REDISPORT}}`,
+      `REDIS_PASSWORD=\${{Redis.REDISPASSWORD}}`,
+      `CACHE_KEY_PREFIX=boardsesh-ota`,
       `PROMETHEUS_ENABLED=true`,
     ].join('\n'),
   );

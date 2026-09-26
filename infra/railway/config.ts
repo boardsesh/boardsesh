@@ -143,6 +143,17 @@ export interface OptionalConstrainedEnvVar {
   reason: string;
 }
 
+/**
+ * A variable which must be present AND hold one of these public values. Absence is
+ * drift too: the remediation is always "set it", never "remove it".
+ */
+export interface RequiredConstrainedEnvVar {
+  name: string;
+  /** Public, non-secret values the variable must hold. */
+  allowedValues: readonly string[];
+  reason: string;
+}
+
 /** At least one variable in the group must contain the public expected value. */
 export interface RequiredOneOfEnvVars {
   names: readonly string[];
@@ -155,6 +166,7 @@ export interface ServiceDesired {
   management: ServiceManagement;
   requiredVars: RequiredEnvVar[];
   optionalConstrainedVars?: OptionalConstrainedEnvVar[];
+  requiredConstrainedVars?: RequiredConstrainedEnvVar[];
   requiredOneOfVars?: RequiredOneOfEnvVars[];
   /** Only meaningful for a report-only service we describe but do not create. */
   expected?: {
@@ -271,6 +283,50 @@ export const desiredRailwayState: RailwayDesiredState = {
           reason:
             'Enables xprem Observe. Unset means telemetry ingest is silently dropped and the ' +
             'dashboard renders the "turn on telemetry" placeholder instead of metrics.',
+        },
+        // The three Redis connection variables below, plus CACHE_MODE and
+        // CACHE_KEY_PREFIX in requiredConstrainedVars, move xprem's manifest/asset
+        // cache out of the Go heap and into the project's shared Railway Redis.
+        // Rollback lives in docs/railway-cost-reduction.md ("OTA server Redis
+        // cache, September 26").
+        {
+          name: 'REDIS_HOST',
+          reason:
+            'Private-network host of the shared Railway Redis (${{Redis.REDISHOST}}). xprem dials ' +
+            'REDIS_HOST:REDIS_PORT and panics when the first connection check fails, so without it ' +
+            'the server cannot serve updates.',
+        },
+        {
+          name: 'REDIS_PORT',
+          reason:
+            'Port of the shared Railway Redis (${{Redis.REDISPORT}}). xprem v3.1.2 has no default ' +
+            'for it: an empty value makes the address "host:" and the connection check panics.',
+        },
+        {
+          name: 'REDIS_PASSWORD',
+          reason:
+            'Auth for the shared Railway Redis (${{Redis.REDISPASSWORD}}). Railway Redis requires ' +
+            'a password, so without it the connection check fails with NOAUTH and xprem panics.',
+        },
+      ],
+      requiredConstrainedVars: [
+        {
+          name: 'CACHE_MODE',
+          allowedValues: ['redis'],
+          reason:
+            'xprem falls back to CACHE_MODE=local when this is unset, and the local cache has no ' +
+            'size bound or eviction: it reached a 1.7 GB live Go heap (2.3M objects) after 21 days. ' +
+            'The server keeps serving, so nothing fails except the memory bill. A rollback to local ' +
+            'is a deliberate, temporary step; the drift check reports it until reverted.',
+        },
+        {
+          name: 'CACHE_KEY_PREFIX',
+          allowedValues: ['boardsesh-ota'],
+          reason:
+            'Any other prefix, including xprem\'s default "expoopenota" when unset, moves every ' +
+            'cached manifest, lock and rate-limit counter to a different key namespace without any ' +
+            "error. Pinning it keeps the keys stable and easy to tell apart from the backend's keys " +
+            'in the same Redis.',
         },
       ],
     },

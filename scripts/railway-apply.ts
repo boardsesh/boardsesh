@@ -283,6 +283,7 @@ async function fetchVariables(
     const hasVariableAssertions =
       declared.requiredVars.length > 0 ||
       (declared.optionalConstrainedVars?.length ?? 0) > 0 ||
+      (declared.requiredConstrainedVars?.length ?? 0) > 0 ||
       (declared.requiredOneOfVars?.length ?? 0) > 0;
     if (!live || !hasVariableAssertions) continue;
     const data = await railwayRequest<{ variables: Record<string, string> }>(token, VARIABLES_QUERY, {
