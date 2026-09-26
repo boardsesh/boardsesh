@@ -14,6 +14,7 @@ import {
 const APP_ID = '007e6fd7-f200-448c-9449-8d48ba5d51fc';
 const COMMIT = 'a'.repeat(40);
 const RUNTIME = 'b'.repeat(40);
+const ASSET_PATH = 'assets/0a328cd9c1afd0afe8e3b1ec5165b1b4';
 // Real xprem IDs are content hashes in UUID shape, not RFC 4122 UUIDs: no
 // version or variant digits. The iOS one was served by production on 2026-09-26.
 const BASELINE_IDS = {
@@ -40,13 +41,13 @@ function stageFixture() {
     const bundle = `_expo/static/js/${platform}/main.hbc`;
     const bytes = Buffer.from(`${platform}: original staged bundle`);
     writeFileSync(join(directory, bundle), bytes);
-    writeFileSync(join(directory, 'assets', 'icon.png'), Buffer.from([1, 2, 3]));
+    writeFileSync(join(directory, ASSET_PATH), Buffer.from([1, 2, 3]));
     writeFileSync(
       join(directory, 'metadata.json'),
       JSON.stringify({
         version: 0,
         bundler: 'metro',
-        fileMetadata: { [platform]: { bundle, assets: [{ path: 'assets/icon.png', ext: 'png' }] } },
+        fileMetadata: { [platform]: { bundle, assets: [{ path: ASSET_PATH, ext: 'png' }] } },
       }),
     );
     writeFileSync(
@@ -151,6 +152,18 @@ describe('stage receipt and export validation', () => {
     const fixture = stageFixture();
     writeFileSync(join(fixture.iosExport, '_expo/static/js/ios/main.hbc'), 'modified after staging');
     expect(() => validateExport(fixture.iosExport, 'ios', fixture.hashes.ios)).toThrow('differs from stage receipt');
+  });
+
+  it('accepts Metro hash-named assets and rejects a false declared extension', () => {
+    const fixture = stageFixture();
+    expect(validateExport(fixture.iosExport, 'ios', fixture.hashes.ios).assetPaths).toEqual([ASSET_PATH]);
+    const metadataPath = join(fixture.iosExport, 'metadata.json');
+    const metadata = JSON.parse(readFileSync(metadataPath, 'utf8')) as {
+      fileMetadata: { ios: { assets: { path: string; ext: string }[] } };
+    };
+    metadata.fileMetadata.ios.assets[0].path = 'assets/icon.jpg';
+    writeFileSync(metadataPath, JSON.stringify(metadata));
+    expect(() => validateExport(fixture.iosExport, 'ios', fixture.hashes.ios)).toThrow('extension mismatch');
   });
 
   it('rejects a symbolic link inside the export', () => {
@@ -344,7 +357,7 @@ describe('exact-byte production promotion', () => {
     expect(requests).toHaveLength(2);
     for (const request of requests) {
       const body = JSON.parse(request.init.body as string) as { fileNames: string[]; message: string };
-      expect(body.fileNames).toEqual(expect.arrayContaining(['metadata.json', 'expoConfig.json', 'assets/icon.png']));
+      expect(body.fileNames).toEqual(expect.arrayContaining(['metadata.json', 'expoConfig.json', ASSET_PATH]));
       expect(body.message).toBe('Test staged release');
       expect(request.url.searchParams.get('commitHash')).toBe(COMMIT);
       expect(request.url.searchParams.get('runtimeVersion')).toBe(RUNTIME);
@@ -363,6 +376,41 @@ describe('exact-byte production promotion', () => {
     expect(server.calls.filter((call) => call.url.pathname.includes('/markUpdateAsUploaded/production'))).toHaveLength(
       2,
     );
+  });
+
+  it('uploads a hash-named asset with the MIME type declared by Expo', async () => {
+    const fixture = stageFixture();
+    const server = fetchServer(fixture);
+    const assetFetch = vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const url = requestUrl(input);
+      if (url.pathname.includes('/requestUploadUrl/production')) {
+        return Response.json({
+          updateId: url.searchParams.get('platform') === 'ios' ? 101 : 102,
+          uploadRequests: [
+            {
+              requestUploadUrl: `https://bucket.example/${url.searchParams.get('platform')}/asset`,
+              fileName: ASSET_PATH.split('/').pop(),
+              filePath: ASSET_PATH,
+            },
+          ],
+        });
+      }
+      return server.fetchImpl(input, init);
+    }) as unknown as typeof fetch;
+    await promoteArchivedOta({
+      receiptPath: fixture.receiptPath,
+      iosExport: fixture.iosExport,
+      androidExport: fixture.androidExport,
+      manifestUrl: 'https://updates.example/manifest',
+      token: 'test-token',
+      fetchImpl: assetFetch,
+    });
+    const uploads = server.calls.filter((call) => call.init.method === 'PUT');
+    expect(uploads).toHaveLength(2);
+    for (const upload of uploads) {
+      expect(upload.init.headers).toMatchObject({ 'Content-Type': 'image/png' });
+      expect(Buffer.from(upload.init.body as Buffer)).toEqual(Buffer.from([1, 2, 3]));
+    }
   });
 
   it('rejects a server request for an undeclared file before any upload', async () => {

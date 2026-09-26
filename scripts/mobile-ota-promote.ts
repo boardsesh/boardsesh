@@ -36,6 +36,7 @@ interface ValidatedExport {
   files: Map<string, ExportFile>;
   bundlePath: string;
   assetPaths: string[];
+  assetExtensions: Map<string, string>;
   expoConfig: Record<string, unknown>;
 }
 
@@ -152,6 +153,7 @@ export function validateExport(
 
   const files = new Map<string, ExportFile>();
   const assetPaths: string[] = [];
+  const assetExtensions = new Map<string, string>();
   const addFile = (declaredPath: string): void => {
     const file = regularExportFile(root, declaredPath);
     if (files.has(file.relativePath)) throw new Error(`Duplicate Expo export path: ${file.relativePath}.`);
@@ -164,10 +166,18 @@ export function validateExport(
     const asset = object(assetInput, `${platform} asset ${index}`);
     const assetPath = string(asset.path, `${platform} asset ${index} path`);
     const extension = string(asset.ext, `${platform} asset ${index} ext`);
-    if (extension !== assetPath.split('.').pop())
+    // Metro's production export names assets by content hash without a suffix.
+    // The extension lives in metadata.json; older exports may include it in the path.
+    if (
+      !/^[a-z0-9]+$/i.test(extension) ||
+      (basename(assetPath).includes('.')
+        ? extension !== assetPath.split('.').pop()
+        : !/^assets\/[0-9a-f]{32}$/i.test(assetPath))
+    )
       throw new Error(`${platform} asset extension mismatch: ${assetPath}.`);
     addFile(assetPath);
     assetPaths.push(assetPath);
+    assetExtensions.set(assetPath, extension);
   }
 
   const bundle = files.get(bundlePath);
@@ -184,7 +194,7 @@ export function validateExport(
   const requestHeaders = object(updates.requestHeaders, 'expoConfig.json updates.requestHeaders');
   const appId = string(requestHeaders['expo-app-id'], 'expo-app-id');
   if (!UUID.test(appId)) throw new Error('expo-app-id must be a UUID.');
-  return { platform, appId, files, bundlePath, assetPaths, expoConfig };
+  return { platform, appId, files, bundlePath, assetPaths, assetExtensions, expoConfig };
 }
 
 export function parsePromoteArgs(argv: string[]): { receipt: string; iosExport: string; androidExport: string } {
@@ -304,8 +314,8 @@ function parseUploadLease(input: unknown, exportFiles: Map<string, ExportFile>, 
   return { updateId, uploadRequests };
 }
 
-function contentType(filePath: string): string {
-  const extension = filePath.split('.').pop()?.toLowerCase();
+function contentType(filePath: string, assetExtension?: string): string {
+  const extension = (assetExtension ?? filePath.split('.').pop())?.toLowerCase();
   if (extension === 'json' || extension === 'map') return 'application/json';
   if (extension === 'js') return 'application/javascript';
   if (extension === 'png') return 'image/png';
@@ -353,7 +363,7 @@ async function fetchWithRetry(
 
 async function uploadLeaseFiles(
   lease: UploadLease,
-  exportFiles: Map<string, ExportFile>,
+  exportFiles: ValidatedExport,
   base: URL,
   appId: string,
   token: string,
@@ -361,7 +371,7 @@ async function uploadLeaseFiles(
   paceUpload: () => Promise<void>,
 ): Promise<void> {
   for (const request of lease.uploadRequests) {
-    const file = exportFiles.get(request.filePath);
+    const file = exportFiles.files.get(request.filePath);
     if (!file) throw new Error(`Unvalidated upload file: ${request.filePath}.`);
     const bytes = readFileSync(file.absolutePath);
     if (isLocalUpload(new URL(request.requestUploadUrl), base, appId)) {
@@ -391,7 +401,7 @@ async function uploadLeaseFiles(
           {
             method: 'PUT',
             headers: {
-              'Content-Type': contentType(request.filePath),
+              'Content-Type': contentType(request.filePath, exportFiles.assetExtensions.get(request.filePath)),
               'Cache-Control': 'max-age=31556926',
               ...request.headers,
             },
@@ -631,15 +641,7 @@ export async function promoteArchivedOta(options: {
   for (const platform of ['ios', 'android'] as const) {
     // Recheck immediately before each platform's first production PUT.
     await assertBaselineUnchanged(platform);
-    await uploadLeaseFiles(
-      leases[platform],
-      exports[platform].files,
-      base,
-      appId,
-      options.token,
-      fetchImpl,
-      paceUpload,
-    );
+    await uploadLeaseFiles(leases[platform], exports[platform], base, appId, options.token, fetchImpl, paceUpload);
     const finalizeUrl = controlUrl(base, appId, 'markUpdateAsUploaded');
     finalizeUrl.searchParams.set('platform', platform);
     finalizeUrl.searchParams.set('updateId', leases[platform].updateId);
