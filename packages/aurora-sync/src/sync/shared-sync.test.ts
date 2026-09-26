@@ -88,6 +88,8 @@ const shimInsertedRows: Array<Record<string, unknown>> = [];
 const shimConflictSets: Array<Record<string, unknown>> = [];
 /** The `setWhere` recorded next to each `set` above (undefined when the write shipped none). */
 const shimConflictGuards: Array<{ set: Record<string, unknown>; setWhere: SQL | undefined }> = [];
+/** How many of the next transaction commits fail and re-run their callback. */
+let shimFailedCommitsRemaining = 0;
 const shimExistingClimbStatRows: Array<{ climbUuid: string; angle: number }> = [];
 const shimClimbStatSelectPredicates: SQL[] = [];
 
@@ -101,7 +103,15 @@ function createDbShim() {
       // count, like a driver result that reports none.
       if (prop === 'count' || prop === 'rowCount') return undefined;
       if (prop === 'transaction') {
-        return async (cb: (tx: typeof shim) => Promise<void>) => cb(shim);
+        // Like a retrying transaction wrapper: when a commit is set to fail,
+        // the callback runs again, and only the last run commits.
+        return async (cb: (tx: typeof shim) => Promise<void>) => {
+          await cb(shim);
+          while (shimFailedCommitsRemaining > 0) {
+            shimFailedCommitsRemaining -= 1;
+            await cb(shim);
+          }
+        };
       }
       if (prop === 'execute') return async () => undefined;
       if (prop === 'select') {
@@ -1031,6 +1041,12 @@ describe('no-op write guards (recorded from the real write path)', () => {
     shimInsertedRows.length = 0;
   });
 
+  function writtenStatsRowsFor(climbUuids: string[]) {
+    return shimInsertedRows.filter(
+      (row) => 'upstreamQualityAverage' in row && climbUuids.includes(String(row.climbUuid)),
+    );
+  }
+
   function recordedGuard(isTarget: (set: Record<string, unknown>) => boolean) {
     const matches = shimConflictGuards.filter(({ set }) => isTarget(set));
     expect(matches).toHaveLength(1);
@@ -1117,6 +1133,33 @@ describe('no-op write guards (recorded from the real write path)', () => {
     expect(beta.guard).toBe(
       '("board_beta_links"."foreign_username", "board_beta_links"."angle", "board_beta_links"."thumbnail", "board_beta_links"."is_listed", "board_beta_links"."created_at") is distinct from (excluded.foreign_username, excluded.angle, excluded.thumbnail, excluded.is_listed, excluded.created_at)',
     );
+  });
+
+  it('counts only the committed run of a retried transaction callback', async () => {
+    const stat = (climbUuid: string) => ({
+      climb_uuid: climbUuid,
+      angle: 40,
+      display_difficulty: 20,
+      benchmark_difficulty: null,
+      ascensionist_count: 5,
+      difficulty_average: 20.1,
+      quality_average: 2,
+      fa_username: null,
+      fa_at: null,
+    });
+    const lines: string[] = [];
+    mockSharedSync.mockResolvedValueOnce(complete({ climb_stats: [stat('RETRY-A'), stat('RETRY-B')] }));
+    shimFailedCommitsRemaining = 1;
+    try {
+      const result = await syncSharedData(fakePostgresClient(), 'decoy', 'token', (line) => lines.push(line));
+      // The callback ran twice; one pass of two rows is what committed.
+      expect(writtenStatsRowsFor(['RETRY-A', 'RETRY-B'])).toHaveLength(4);
+      expect(result.climbStatsWrites).toEqual({ received: 2, offered: 2, written: 0 });
+      expect(result.results.climb_stats.synced).toBe(2);
+      expect(lines).toContain('[SharedSync] decoy climb_stats writes: received=2 offered=2 written=0 unchanged=2');
+    } finally {
+      shimFailedCommitsRemaining = 0;
+    }
   });
 
   it('reports climb_stats offered vs written', async () => {

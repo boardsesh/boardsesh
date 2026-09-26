@@ -3,7 +3,7 @@ import { sql } from 'drizzle-orm';
 import postgres from 'postgres';
 import { rowsFromResult } from '@boardsesh/db/client';
 import { syncSharedData, upsertClimbStats } from '@boardsesh/aurora-sync/sync';
-import type { BetaLink, ClimbStats, SyncData } from '@boardsesh/aurora-sync/api';
+import type { BetaLink, Climb, ClimbStats, SyncData } from '@boardsesh/aurora-sync/api';
 import { db } from '../db/client';
 import { getWorkerDatabaseUrl } from './worker-db';
 
@@ -206,6 +206,68 @@ describe('Aurora beta_links upsert skips unchanged rows (real DB)', () => {
       const changed = await betaLinkRow();
       expect(changed.thumbnail).toBe('thumb2.jpg');
       expect(changed.xmin).not.toBe(inserted.xmin);
+    } finally {
+      await client.end();
+    }
+  });
+});
+
+describe('Aurora climbs upsert skips unchanged rows (real DB)', () => {
+  it('rewrites a re-sent climb only when one of its five written columns changed', async () => {
+    const tag = uniqueTag();
+    const client = postgres(getWorkerDatabaseUrl(), { max: 1, prepare: false, onnotice: () => {} });
+    const auroraClimb = (uuid: string, overrides: Partial<Climb> = {}): Climb => ({
+      uuid,
+      name: 'Crimp city',
+      description: 'Beta: trust the heel',
+      hsm: 1,
+      edge_left: 0,
+      edge_right: 100,
+      edge_bottom: 0,
+      edge_top: 100,
+      frames_count: 1,
+      frames_pace: 0,
+      frames: 'p1r5',
+      setter_id: 7,
+      setter_username: 'setter',
+      layout_id: 9,
+      is_draft: false,
+      is_listed: true,
+      created_at: '2024-01-01 00:00:00',
+      updated_at: '2024-01-01 00:00:00',
+      angle: 40,
+      ...overrides,
+    });
+    const climbUuids = [`${tag}-climb-a`, `${tag}-climb-b`];
+    const climbRows = async () => {
+      const rows = rowsFromResult<{ uuid: string; xmin: string; name: string | null }>(
+        await db.execute(sql`
+          SELECT uuid, xmin::text AS xmin, name FROM board_climbs
+           WHERE uuid IN (${climbUuids[0]}, ${climbUuids[1]}) ORDER BY uuid`),
+      );
+      if (rows.length !== 2) throw new Error(`expected 2 climbs, found ${rows.length}`);
+      return rows;
+    };
+    try {
+      mockSharedSync.mockReset();
+      mockSharedSync.mockResolvedValue({ _complete: true, climbs: climbUuids.map((uuid) => auroraClimb(uuid)) });
+      await syncSharedData(client, BOARD, 'token', () => {});
+      const inserted = await climbRows();
+
+      // Identical re-send: neither row gets a new tuple.
+      await syncSharedData(client, BOARD, 'token', () => {});
+      expect(await climbRows()).toEqual(inserted);
+
+      // A renamed b rewrites b and only b.
+      mockSharedSync.mockResolvedValue({
+        _complete: true,
+        climbs: [auroraClimb(climbUuids[0]), auroraClimb(climbUuids[1], { name: 'Crimp city (renamed)' })],
+      });
+      await syncSharedData(client, BOARD, 'token', () => {});
+      const [rowA, rowB] = await climbRows();
+      expect(rowA).toEqual(inserted[0]);
+      expect(rowB.name).toBe('Crimp city (renamed)');
+      expect(rowB.xmin).not.toBe(inserted[1].xmin);
     } finally {
       await client.end();
     }

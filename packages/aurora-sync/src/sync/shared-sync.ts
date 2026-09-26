@@ -1143,7 +1143,17 @@ export async function syncSharedData(
 
     const syncResults = await sharedSync(board, buildSyncParams(), token);
 
+    // Per-batch tallies, reset on every run of the transaction callback and
+    // folded into the pass totals only once the transaction has committed. A
+    // callback that runs again after a failed commit (a retrying transaction
+    // wrapper) would otherwise count its rows twice.
+    let batchClimbStatsWrites = emptyClimbStatsWriteCounts();
+    let batchNewClimbs: NewClimbInfo[] = [];
+    let batchSyncedByTable = new Map<string, number>();
     await db.transaction(async (tx) => {
+      batchClimbStatsWrites = emptyClimbStatsWriteCounts();
+      batchNewClimbs = [];
+      batchSyncedByTable = new Map();
       for (const tableName of PROCESSING_ORDER) {
         const data = syncResults[tableName];
         if (!Array.isArray(data)) continue;
@@ -1154,13 +1164,10 @@ export async function syncSharedData(
           tableName,
           data as SyncPutFields[],
           log,
-          climbStatsWrites,
+          batchClimbStatsWrites,
         );
-        allNewClimbs.push(...newClimbs);
-        if (!totalResults[tableName]) {
-          totalResults[tableName] = { synced: 0, complete: false };
-        }
-        totalResults[tableName].synced += data.length;
+        batchNewClimbs.push(...newClimbs);
+        batchSyncedByTable.set(tableName, (batchSyncedByTable.get(tableName) ?? 0) + data.length);
       }
 
       // Track every requested table so totalResults stays comparable across runs.
@@ -1191,6 +1198,17 @@ export async function syncSharedData(
         }
       }
     });
+
+    climbStatsWrites.received += batchClimbStatsWrites.received;
+    climbStatsWrites.offered += batchClimbStatsWrites.offered;
+    climbStatsWrites.written += batchClimbStatsWrites.written;
+    allNewClimbs.push(...batchNewClimbs);
+    for (const [tableName, synced] of batchSyncedByTable) {
+      if (!totalResults[tableName]) {
+        totalResults[tableName] = { synced: 0, complete: false };
+      }
+      totalResults[tableName].synced += synced;
+    }
 
     isComplete = syncResults._complete !== false;
     if (!isComplete) {
