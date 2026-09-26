@@ -46,6 +46,11 @@ export const DEFAULT_SEARCH_CACHE_TTL = 86400;
  * (`isCacheableBoard` in the climbs resolver), so no cached page describes it,
  * and every cacheable board resolves exactly as before. The v8 note above
  * predates that exclusion.
+ *
+ * Since #5855 this version also prefixes the ten-minute popular-sort pages that
+ * `popular-page-cache.ts` stores for MoonBoard and Woods. A content change on
+ * those boards still needs a bump if serving the old shape for up to ten minutes
+ * after deploy is not acceptable.
  */
 export const CACHE_VERSION = 'v9';
 
