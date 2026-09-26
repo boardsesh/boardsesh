@@ -75,7 +75,7 @@ describe('front-door reads run under a deadline', () => {
   });
 
   it('bounds the all-angles stats read', async () => {
-    await getClimbStatsForAllAngles(params);
+    await getClimbStatsForAllAngles(params.board_name, params.climb_uuid);
 
     expect(labels()).toEqual(['climb-stats-all-angles']);
   });
@@ -98,7 +98,7 @@ describe('front-door reads run under a deadline', () => {
 
   it('gives every climb-page read a budget inside the 6 s ceiling', async () => {
     await getClimb(params);
-    await getClimbStatsForAllAngles(params);
+    await getClimbStatsForAllAngles(params.board_name, params.climb_uuid);
 
     for (const read of recordedReads) {
       expect(read.ms).toBeGreaterThan(0);

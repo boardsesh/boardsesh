@@ -103,7 +103,7 @@ describe('climb front door per-request dedupe', () => {
     // Models the route: metadata's read, the body's read, then the angle table.
     await getClimb(params);
     await getClimb(equivalentParams);
-    await getClimbStatsForAllAngles(params);
+    await getClimbStatsForAllAngles(params.board_name, params.climb_uuid);
 
     expect(mockSqlTag).toHaveBeenCalledTimes(2);
   });
@@ -117,7 +117,7 @@ describe('climb front door per-request dedupe', () => {
 
   it('shares one read budget across the request instead of restarting it per statement', async () => {
     await getClimb(params);
-    await getClimbStatsForAllAngles(params);
+    await getClimbStatsForAllAngles(params.board_name, params.climb_uuid);
 
     // Two reads, one budget: the climb gets the full 6 s and the angle table
     // gets what remains. Independent deadlines would make the request ceiling

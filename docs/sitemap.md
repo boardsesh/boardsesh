@@ -90,14 +90,21 @@ honest (there is no `user_boards` row shape behind them) and nothing more. It
 does not hold them last in any ordering: `isBetterConfig` only ranks candidates
 within one `boardType:layoutId` group, so the source is additive in **content**
 and not in **ordinal** — see "Adding a board also moves `ordinal`" below. The
-`climbCount` is a plain grouped count over `board_climbs`, **not** the tier-2
-`DISTINCT ON` scan: both shards read that number only as a `> 0` gate, so making
-the boards shard pay the climbs shard's cost budget for a boolean would be the
-wrong trade.
+`climbCount` is `1`, a presence flag and not a count: both shards read it only as
+a `> 0` gate, and there is exactly one synthetic config per layout group, so
+`isBetterConfig` never compares two of them. The gate is one `EXISTS` per known
+layout, answered by the first matching row of `board_climbs_layout_filter_idx`
+(listed, non-draft, non-hidden). It replaced a grouped `count(*)` over every
+MoonBoard row: on the prod replica that was a 287k-row bitmap heap scan at
+224.8 ms and 34,956 buffers per call, and the `EXISTS` form is 0.17 ms and 28
+buffers for the same seven layouts. Both caches around it (the Data Cache entry
+and the in-process TTL) hold it for 6 h, the same window the setter and climbs
+shards use; a layout gains or loses its first listed climb on an import, not on
+a crawl.
 
 ### Two callers, two fail policies
 
-|                                   | caller                 | on a MoonBoard count failure    |
+|                                   | caller                 | on a MoonBoard gate failure     |
 | --------------------------------- | ---------------------- | ------------------------------- |
 | `getSitemapClimbConfigsOrThrow()` | the climb shards       | **throws**                      |
 | `getBoardsShardConfigsOrThrow()`  | `/sitemaps/boards.xml` | logs, serves the listed configs |
@@ -112,7 +119,7 @@ lopsided: MoonBoard contributes 8 of `boards.xml`'s 668 items on the dev image
 against the listed configs' 660. Before this module existed no database failure
 could reach that shard at all — it was a GraphQL fetch behind a backend Redis
 cache with a one-year TTL — so 503ing 660 working Kilter/Tension/Decoy URLs
-because a grouped count timed out would be a regression bought with nothing. A
+because the MoonBoard gate timed out would be a regression bought with nothing. A
 failed **listed** fetch still throws on both paths: that is the leg whose loss
 would tell Google the boards were deleted.
 
@@ -127,7 +134,7 @@ Then the backend answers `[]` and queues a refresh, and
 so the shard 503s until the job has refilled the key (about 30 s). It never
 publishes a boards shard with no boards.
 
-The count query carries a 10 s budget applied _inside_ the shared single-flight
+The gate query carries a 10 s budget applied _inside_ the shared single-flight
 promise, so a give-up is not memoised and the next caller retries instead of
 joining a stall that already gave up. Nothing else bounds it: the pool sets
 `connect_timeout: 30` and `statement_timeout` is off by default (PgBouncer
@@ -316,6 +323,10 @@ refresher inside one transaction:
   registry's `buildPage()`; `refreshClimbSitemapStore()` writes both. The summary is
   DERIVED from the built URL rows (count + max `last_modified`), so one set of
   sixteen scans feeds both tables and they can never describe different sets.
+  That is also why a page read takes its total from the summary's `item_count`
+  rather than a `count(*)` over `sitemap_climb_urls`: the two are committed in one
+  transaction, and the one-row read replaced a ~130k-row scan (10.5 ms and ~400
+  block reads) on every page fetch.
 
 The URL table also buys the index a **per-page `<lastmod>`**
 (`fetchStoredClimbPageLastmods`, a `max(last_modified)` per ordinal bucket): one
@@ -325,7 +336,10 @@ value and never degrades the shard.
 
 Both tables are a **cache, not a source of truth**, and are retained even when the
 switch is off. Truncating them loses no source data: the read paths fall back to the
-live scan they replaced, and the next refresh repopulates them.
+live scan they replaced, and the next refresh repopulates them. Truncate them
+together: the page read takes its total from the summary row, so a summary left
+behind over an empty URL table reads as a torn page and 503s until the next
+refresh, instead of falling back.
 
 ### Read behaviour
 
@@ -336,8 +350,9 @@ live scan they replaced, and the next refresh repopulates them.
 | row older than 48 h | still **served**, plus a `console.error`. A sitemap whose `<lastmod>` drifted by a day beats a shard missing from the index |
 | read throws         | falls back to the live scan, plus a `console.error`. The realistic cause is the migration not having been applied           |
 
-The page read (`buildClimbShardPage`) follows the same doctrine: an empty
-`sitemap_climb_urls` or a read that throws falls back to the live grouped build —
+The page read (`buildClimbShardPage`) follows the same doctrine: no summary row
+(nothing has ever been refreshed) or a read that throws falls back to the live
+grouped build —
 the 51 s path, correct and never worse than before the store existed. It is
 TTL-cached per instance, so only the first request into an empty store pays it
 (measured on the dev image with MoonBoard in: 22.7 s for the first hit against a

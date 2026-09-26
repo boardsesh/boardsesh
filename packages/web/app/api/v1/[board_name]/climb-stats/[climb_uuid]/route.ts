@@ -60,18 +60,7 @@ export async function GET(
   }
 
   try {
-    // Create a minimal parsed params object with just what we need
-    const parsedParams = {
-      board_name: params.board_name as BoardName,
-      climb_uuid: params.climb_uuid,
-      // These aren't needed for the climb stats query, but required by the interface
-      layout_id: 0,
-      size_id: 0,
-      set_ids: [] as number[],
-      angle: 0,
-    };
-
-    const climbStats = await getClimbStatsForAllAngles(parsedParams);
+    const climbStats = await getClimbStatsForAllAngles(params.board_name as BoardName, params.climb_uuid);
 
     // Cache at the edge: climb stats change slowly (only when ticks are logged),
     // so serve repeat hits from the CDN instead of invoking the function and
