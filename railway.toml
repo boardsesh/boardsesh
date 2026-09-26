@@ -27,8 +27,8 @@ restartPolicyMaxRetries = 5
 # PGBOSS_POOL_SIZE 4) = 42) against a max_connections of 100 (200 before the
 # PG18 cutover), 97 of them open to application roles. Even this 15s drain
 # briefly runs both fleets: at the ceiling that is ~106 connections today, and
-# ~81 once the backend's postgres.js pool goes through PgBouncer (45 servers
-# shared by both fleets, plus the draining fleet's 12 pg-boss connections).
+# ~57 once the backend's DATABASE_URL (postgres.js and pg-boss) goes through
+# PgBouncer, whose 45 server connections both fleets share.
 # Budget: docs/db-connectivity.md. Draining alone fixes the severed-request case.
 # Unquoted on purpose: railway.schema.json types drainingSeconds as
 # {"type": "number"}. The prose docs at docs.railway.com show it quoted

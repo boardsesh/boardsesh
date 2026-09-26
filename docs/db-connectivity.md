@@ -450,15 +450,22 @@ straight to the PG18 primary, `postgis---pg18.railway.internal:5432`.
   certificate, so every server login would fail.
 - App clients keep `prepare: false` and PgBouncer runs with
   `max_prepared_statements = 0`. Session features stay out of pooled traffic:
-  only `pg_advisory_xact_lock`, `SET LOCAL` only inside transactions, and pg-boss
-  12 with LISTEN off.
+  only `pg_advisory_xact_lock`, `SET LOCAL` only inside transactions. pg-boss 12
+  is transaction-mode safe as the backend uses it: unnamed statements,
+  transaction-scoped advisory locks, and no LISTEN (it only listens when
+  `notify` is on, which the backend does not set).
 
 ### What goes through it, and what stays direct
 
 Pooled, one change at a time, each watched as its own connection-budget event:
 
 1. The `boardsesh-web` Railway service's `DATABASE_URL` (postgres.js, `DB_POOL_MAX` 10).
-2. The backend's postgres.js pool (3 replicas x `DB_POOL_MAX` 10).
+2. The backend's `DATABASE_URL`. It carries both the postgres.js pool
+   (3 replicas x `DB_POOL_MAX` 10) and pg-boss (3 x `PGBOSS_POOL_SIZE` 4):
+   `packages/backend/src/services/job-queue.ts` builds pg-boss from the same
+   connection string, so the two move together. pg-boss uses the `pg` driver,
+   which the connect retry above does not cover; a `query_wait_timeout` there
+   fails that pg-boss call, and pg-boss's own job retry and supervision pick it up.
 
 Direct, always:
 
@@ -472,9 +479,9 @@ Direct, always:
   PgBouncer has no public listener.
 - **`boardsesh_readonly`** investigations (at most 5 connections).
 
-Direct for now, until the pooled services have run clean: pg-boss (4 per backend
-replica, `PGBOSS_POOL_SIZE`) and the hold detector (`DB_POOL_MAX` 3 plus a pg-boss
-pool of 3).
+The hold detector is a separate service with its own `DATABASE_URL`
+(`DB_POOL_MAX` 3 plus a pg-boss pool of 3). It stays direct unless that URL is
+changed on purpose.
 
 ### Connection budget at `max_connections = 100`
 
@@ -487,24 +494,28 @@ which leaves 52 for everything direct.
 | PgBouncer server connections      |             — |                ≤ 45 |
 | web postgres.js                   |            10 |       0 (via pooler) |
 | backend postgres.js, 3 x 10       |            30 |       0 (via pooler) |
-| backend pg-boss, 3 x 4            |            12 |                   12 |
+| backend pg-boss, 3 x 4            |            12 |       0 (via pooler) |
 | hold detector, 3 + 3              |             6 |                    6 |
 | `boardsesh_readonly`              |           ≤ 5 |                  ≤ 5 |
 | migrator, during a deploy         |             1 |                    1 |
-| **ceiling, steady**               |      **≤ 64** |             **≤ 69** |
-| backend deploy, old fleet draining |    **≤ 106** |             **≤ 81** |
+| **ceiling, steady**               |      **≤ 64** |             **≤ 57** |
+| backend deploy, old fleet draining |    **≤ 106** |             **≤ 57** |
 
-The homelab sync daemons come on top of both columns. The pooled column is higher
-at steady state only on paper: PgBouncer reaches 45 servers only when 45 clients
-are in a transaction at once. The deploy row is the reason for the pooler. Today a
-backend deploy runs the old and new fleets side by side for up to 15 s
-(`drainingSeconds`), and 106 is over the 97 available. Behind PgBouncer the
-draining fleet's postgres.js clients queue at the pooler, so only its 12 pg-boss
-connections are added.
+The homelab sync daemons come on top of both columns. PgBouncer reaches 45
+servers only when 45 clients are in a transaction at once. The deploy row is the
+reason for the pooler. Today a backend deploy runs the old and new fleets side by
+side for up to 15 s (`drainingSeconds`), and 106 is over the 97 available. Behind
+PgBouncer both fleets' 84 client connections (plus web's 10) share the same 45
+servers and queue at the pooler, so the database total does not move.
 
-The 52 direct slots hold as long as the direct clients stay under them: 24 at
-steady state, 36 during a backend deploy, which leaves 16 for the sync daemons
-and operator sessions. Recount with the query below before adding any direct
+The cost of that cap is queueing: 52 pooled clients at steady state (94 during a
+backend deploy) compete for 45 servers. A burst of long transactions makes the
+rest wait, and after 5 s they fail with `query_wait_timeout`. Watch
+`cl_waiting` and `avg_wait_time` below after each cutover step.
+
+The 52 direct slots hold as long as the direct clients stay under them: 12 after
+the backend cutover, deploy or not, which leaves 40 for the sync daemons and
+operator sessions. Recount with the query below before adding any direct
 client, raising a pool size, or adding a PgBouncer replica.
 
 ```sql
@@ -515,15 +526,24 @@ GROUP BY 1, 2
 ORDER BY 3 DESC;
 ```
 
-### Before the first cutover: the startup rejection
+### The startup rejection, and the driver patch that fixes it
 
 postgres.js fetches array types on a connection's first ReadyForQuery, before it
-sends the caller's statement. When PgBouncer times that fetch out, postgres.js
-rejects the caller's statement with the `08P01` error (retried above), but the
-promise of the type fetch itself is never handled. Node reports one unhandled
-rejection per new connection that hits a saturated pool. Measured locally on
-2026-09-26. Check how the web and backend processes handle an unhandled
-rejection before the first cutover: with Node's default it exits the process.
+sends the caller's statement. When PgBouncer times that fetch out, it sends a
+FATAL `08P01` and closes. The stock 3.4.9 driver never handled the fetch's
+promise (Node exits on the unhandled rejection unless something like Sentry
+catches it), returned early from `closed()` without clearing the failed query,
+and delivered the error to the caller only because the next socket's login
+tripped over that stale state.
+
+The workspace patch (`packages/db/patches/postgres@3.4.9.patch`, see #5299
+above) now handles the fetch's promise. It fails the connect with the pooler's
+error when the socket closes after an error during startup, and clears the
+query state before any startup reconnect. The caller still gets `08P01
+query_wait_timeout` for a statement that was never written, so the retry still
+applies. `postgres-disconnect.test.ts` pins this against a fake PgBouncer on both
+entry points: no unhandled rejection, one socket, the `08P01` error, one retry,
+and the caller's statement written once.
 
 ### Deploy and cut over
 

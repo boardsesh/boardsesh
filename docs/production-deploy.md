@@ -337,8 +337,9 @@ footprint — 3 replicas x (`DB_POOL_MAX` 10 + `PGBOSS_POOL_SIZE` 4) = 42 — ag
 a shared `max_connections` of 100 since the PG18 cutover (200 on PG16, where it
 was exhausted). Even the 15 s drain already puts both fleets on the database at
 once: about 106 connections at the ceiling against 97 non-superuser slots. Once
-the backend's postgres.js pool goes through PgBouncer, the draining fleet adds
-only its 12 pg-boss connections; see the budget in
+the backend's `DATABASE_URL` (its postgres.js pool and pg-boss) goes through
+PgBouncer, both fleets share the pooler's 45 server connections and the draining
+fleet adds nothing at the database; see the budget in
 [db-connectivity.md](./db-connectivity.md#connection-budget-at-max_connections--100). Railway only sends SIGTERM once the
 replacement deployment is already healthy, so there is no capacity gap for
 overlap to cover; draining alone addresses the severed-request case.
