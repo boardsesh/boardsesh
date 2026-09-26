@@ -47,6 +47,11 @@ it. A second `--apply` with nothing to do is a no-op.
   default for `REDIS_PORT`, so a missing port or host makes its Redis connection
   check panic. `CACHE_KEY_PREFIX` pins the key names (unset, xprem uses
   `expoopenota`), so a config change never strands the cached state under old keys.
+  With `CACHE_MODE=redis`, Redis is a hard dependency of OTA delivery: xprem pings
+  Redis once, in a `sync.Once`, on its first cache use (the bucket-migration lock at
+  boot) and panics if the ping fails. The service's restart policy is `ALWAYS` so it
+  retries until Redis answers; the race is most likely during Railway's Redis
+  auto-update window (weekends).
 - **ClickHouse retention.** Asserts the TTLs on xprem's `observe_metrics` and
   `observe_logs` tables.
 
