@@ -158,10 +158,15 @@ build. Once the backend deploy succeeds (or is unchanged), a one-shot live
 GraphQL-schema check must pass before those same archived export bytes are uploaded
 to the existing `production` branch. No runner polls while the backend builds;
 an OTA staging failure does not stop service deploys, but fails the overall run
-and leaves production OTA unchanged. A newer substantive main commit before
-promotion also fails the run so the next cumulative deploy stages the newer head.
+and leaves production OTA unchanged. Production deploys are serialized, so a
+newer main push waits while the current staged OTA finishes; the next run then
+stages changes since the last successful production deploy. If main advanced,
+the in-flight run leaves its generated changelog for the newer run to publish.
 The stage records each platform's production manifest ID before publishing;
 promotion refuses to overwrite a manual or native republish that changed either ID.
+The promoter uses each archived export's `metadata.json` for asset media types,
+matching the pinned `eoas` uploader even though Metro names the files by content
+hash without extensions.
 
 Pushes to `release/next` still run `.github/workflows/mobile-ota-production.yml`
 directly. `main` serves the store fleet; `release/next` (the release train,
