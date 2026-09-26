@@ -30,9 +30,9 @@ the route, Vercel and Railway both) reds CI.
 
 | Job                          | Path                                        | Schedule (UTC) | `timeoutMs` | Sentry monitor slug                    |
 | ---------------------------- | ------------------------------------------- | -------------- | ----------- | -------------------------------------- |
-| `cleanup`                    | `/api/internal/cleanup`                     | `0 5 * * *`    | 120 s       | `scheduler-cleanup`                    |
+| `cleanup`                    | `/api/internal/cleanup`                     | `0 5 * * *`    | 120 s       | — (`overdue` on `/health/jobs`)        |
 | `profile-percentiles`        | `/api/internal/profile-percentiles`         | `0 6 * * 0`    | 15 min      | — (`overdue` on `/health/jobs`)        |
-| `refresh-sitemap-climbs`     | `/api/internal/refresh-sitemap-climbs`      | `0 */6 * * *`  | 15 min      | — (`overdue` on `/health/jobs`)        |
+| `refresh-sitemap-climbs`     | `/api/internal/refresh-sitemap-climbs`      | `0 */6 * * *`  | 15 min      | `scheduler-refresh-sitemap-climbs`     |
 | `refresh-gym-activity-stats` | Backend `/graphql`: `refreshGymActivityStats` | `30 6 * * *` | 15 min | — (`overdue` on `/health/jobs`)        |
 | `purge-spray-wall-photos`    | Backend `/graphql`: `purgeDeletedSprayWallPhotos` | `0 7 * * *` | 10 min | — (`overdue` on `/health/jobs`)        |
 
@@ -178,7 +178,7 @@ to UTC.
 | `BOARDSESH_BACKEND_GRAPHQL_URL` | no | `https://ws.boardsesh.com/graphql` | Full HTTP(S) endpoint for the backend-owned gym activity job. |
 | `PORT`                    | no       | `8080`                      | Health server.                                                                                                                                                     |
 | `SCHEDULER_DISABLED_JOBS` | no       | —                           | Comma-separated job names to leave unscheduled. Read once at startup, so set it and restart the service — no code change, no image rebuild. `run <job>` still works on a disabled job. |
-| `SENTRY_DSN`              | no       | —                           | Turns on the `cleanup` cron monitor below. Use the **same DSN `packages/web` uses server-side** — it is the literal in `packages/web/sentry.server.config.ts`, also the fallback in `packages/backend/src/instrument.ts`. Unset = monitors off, logged once at startup. |
+| `SENTRY_DSN`              | no       | —                           | Turns on the `refresh-sitemap-climbs` cron monitor below. Use the **same DSN `packages/web` uses server-side** — it is the literal in `packages/web/sentry.server.config.ts`, also the fallback in `packages/backend/src/instrument.ts`. Unset = monitors off, logged once at startup. |
 | `SENTRY_ENVIRONMENT`      | no       | `production`                | Environment tag on the check-ins.                                                                                                                                                  |
 
 A missing `CRON_SECRET` throws at startup, so a misconfigured service
@@ -206,7 +206,7 @@ Dockerfile, no new workflow.
    - `CRON_SECRET` — same value as the Vercel project env var.
    - `BOARDSESH_WEB_URL=https://www.boardsesh.com`
    - `PORT=8080` (or let Railway inject its own `PORT`).
-   - `SENTRY_DSN` — the web server DSN, for the `cleanup` cron monitor.
+   - `SENTRY_DSN` — the web server DSN, for the `refresh-sitemap-climbs` cron monitor.
 5. **Healthcheck path**: `/health`.
 6. **Replicas: 1.** Two instances would double-fire every job; there is no
    leader election in this slice. If it ever needs more than one, `DaemonLease`
@@ -242,8 +242,8 @@ Consequences, in order of how long you can ignore them:
   rather than to a broken sitemap.
 
 None of these are data loss, but `/health/jobs` will (correctly) go 503 with
-each one `overdue`, and the `cleanup` Sentry monitor raises a missed-occurrence
-issue — the signal to finish the cutover.
+each one `overdue`, and the `refresh-sitemap-climbs` Sentry monitor raises a
+missed-occurrence issue — the signal to finish the cutover.
 
 ## Sentry cron monitors (#1876)
 
@@ -252,17 +252,20 @@ container, a wrong `TZ`, a stopped ticker all produce silence. Two things catch
 that silence: one Sentry cron monitor, and the `overdue` flag on
 `/health/jobs` (see [Health endpoints](#health-endpoints)).
 
-**Only `cleanup` has a Sentry monitor.** Sentry bills $0.78 a month for every
-cron monitor beyond the first, and one daily check-in is enough to prove the
-ticker, the container and its clock are alive — every job shares that one
-ticker. A job opts in with `sentryMonitor: true` on its `JobDefinition`;
-`registry.test.ts` pins `cleanup` as the only one, so adding a second is a
-deliberate billing change. The other four jobs are watched through `overdue`,
-which an external probe (the homelab's Prometheus blackbox exporter) alerts on.
-Their old monitors (`scheduler-profile-percentiles`,
-`scheduler-refresh-sitemap-climbs`, `scheduler-refresh-gym-activity-stats`,
-`scheduler-purge-spray-wall-photos`) get no more check-ins after this deploy;
-delete them in Sentry, or each raises a missed-occurrence issue.
+**Only `refresh-sitemap-climbs` has a Sentry monitor.** Sentry bills $0.78 a
+month for every cron monitor beyond the first, and bills per monitor, not per
+check-in. Every job shares one ticker, so one monitor proves the ticker, the
+container and its clock are alive, and the most frequent job is the cheapest
+canary: a dead ticker misses a six-hourly check-in within 6 hours (plus the
+5-minute margin), where the daily `cleanup` would take up to 24. A job opts in
+with `sentryMonitor: true` on its `JobDefinition`; `registry.test.ts` pins
+`refresh-sitemap-climbs` as the only one, so adding a second is a deliberate
+billing change. The other four jobs are watched through `overdue`, which an
+external probe (the homelab's Prometheus blackbox exporter) alerts on. Their
+old monitors (`scheduler-cleanup`, `scheduler-profile-percentiles`,
+`scheduler-refresh-gym-activity-stats`, `scheduler-purge-spray-wall-photos`)
+get no more check-ins after this deploy; delete them in Sentry, or each raises
+a missed-occurrence issue.
 
 `automaticVercelMonitors` had to be replaced rather than just switched off: it
 only ever worked because Vercel handed Sentry the cron metadata out of a
@@ -321,7 +324,14 @@ both hold:
    `expectedLastRunAt` — 7 minutes for `cleanup`, 20 for the 15-minute jobs.
 
 Disabled jobs (`SCHEDULER_DISABLED_JOBS`) are never overdue. A tick skipped
-behind a still-running predecessor does count: it did not run.
+behind a still-running predecessor does count: it did not run. It cannot flip
+while that predecessor is legitimately running, because the predecessor
+started before the skipped slot and is bounded by the same `timeoutMs`.
+
+`overdue` clears when the next scheduled run starts, or when the service
+restarts. A one-shot `run <job>` is a separate process, so it does **not**
+clear it: after a manual catch-up run, restart the service if you want
+`/health/jobs` green before the next slot.
 
 `expectedLastRunAt` comes from walking back one minute at a time from now until
 the cron expression matches (`packages/scheduler/src/cron/previous-run.ts`),
@@ -354,9 +364,9 @@ warned, never queued, so a slow run can't stack up. Each run is also bounded by
 the job's `timeoutMs` (120s for `cleanup`, 15 min for the weekly jobs) via
 `AbortController`. If a job is misbehaving, set `SCHEDULER_DISABLED_JOBS=<name>`
 and restart — no code change, no redeploy. A disabled job drops out of
-`/health/jobs`' verdict, but if it is `cleanup` it also stops checking in, so
-its Sentry monitor will report missed occurrences until it is re-enabled or the
-monitor is muted.
+`/health/jobs`' verdict, but if it is `refresh-sitemap-climbs` it also stops
+checking in, so its Sentry monitor will report missed occurrences until it is
+re-enabled or the monitor is muted.
 
 **Run one now.** `node --import tsx packages/scheduler/src/cli/index.ts run <job>` runs a
 single job and exits non-zero on failure. It never starts the recurring

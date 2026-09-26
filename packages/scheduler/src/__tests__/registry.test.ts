@@ -126,13 +126,15 @@ describe('job registry', () => {
     }
   });
 
-  it('keeps exactly one Sentry cron monitor, on cleanup', () => {
-    // Sentry bills each monitor beyond the first. `cleanup` is the canary that
-    // the ticker is alive; every other job's missed run surfaces as `overdue`
-    // on /health/jobs. A second `sentryMonitor: true` is a billing decision,
-    // so it has to change this test on purpose.
+  it('keeps exactly one Sentry cron monitor, on the six-hourly sitemap refresh', () => {
+    // Sentry bills each monitor beyond the first. `refresh-sitemap-climbs` is
+    // the canary that the shared ticker is alive — the most frequent job, so a
+    // dead ticker surfaces within six hours. Every other job's missed run
+    // surfaces as `overdue` on /health/jobs. A second `sentryMonitor: true` is
+    // a billing decision, so it has to change this test on purpose.
     const monitoredJobNames = JOBS.filter((job) => job.sentryMonitor === true).map((job) => job.name);
-    expect(monitoredJobNames).toEqual(['cleanup']);
+    expect(monitoredJobNames).toEqual(['refresh-sitemap-climbs']);
+    expect(findJob('refresh-sitemap-climbs')?.schedule).toBe('0 */6 * * *');
   });
 
   it('returns undefined for an unknown job name', () => {
