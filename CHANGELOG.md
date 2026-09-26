@@ -13,6 +13,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Settings has a back button again, so you can always get out ([#5806](https://github.com/boardsesh/boardsesh/pull/5806))
 - The current climb bar no longer covers the hold-type buttons when you search by holds ([#5807](https://github.com/boardsesh/boardsesh/pull/5807))
 
 ## 2026-09-25
