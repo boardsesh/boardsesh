@@ -405,7 +405,9 @@ with the Vercel web deployment; disabling only the new Cloudflare rule is safe
 but sends every image to Railway. Never disable the `ws` proxy to roll this route
 back because GraphQL, WebSockets, and `/og` share that hostname.
 
-- **Crawler rules** — two rules in `http_request_firewall_custom`, in this order:
+- **Crawler rules** — the first two of the four rules in
+  `http_request_firewall_custom`, in this order (the automation default-deny
+  and the climb-view challenge follow them, both described below):
   1. `skip` (all remaining custom rules) for search engines and share-card
      unfurlers. Brave runs its **own** index rather than reselling Bing or
      Google, so it is allowlisted explicitly. **Scoped to `GET`.** `skip` with
@@ -589,6 +591,10 @@ The limits, on purpose:
   servers.
 - The web middleware applies the same rule at the origin through
   `isBlockedCrawler`, for requests that reach Railway directly.
+
+The zone is on the Free plan, which allows 5 custom rules in total. This rule
+is the fourth, so one slot is left. Anything new should extend an existing
+rule's expression before it takes that slot.
 
 The SEO-scraper tokens on the block rule are now mostly redundant. Keep them for
 one release, then prune them.

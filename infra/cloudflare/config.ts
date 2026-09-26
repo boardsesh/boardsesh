@@ -152,7 +152,7 @@ export const BACKEND_BOARD_RENDER_CACHE_RULE_DESCRIPTION =
 /** Marker for the www list/climb-view HTML cache rule. Never rename without migrating the live rule. */
 export const WWW_HTML_CACHE_RULE_DESCRIPTION = 'boardsesh:www-html-edge-cache (managed by scripts/cloudflare-apply.ts)';
 
-/** Markers for the two WAF custom rules. Same never-rename contract as above. */
+/** Markers for the allow and block WAF custom rules. Same never-rename contract as above. */
 export const CRAWLER_ALLOW_RULE_DESCRIPTION =
   'boardsesh:allow-search-crawlers (managed by scripts/cloudflare-apply.ts)';
 export const CRAWLER_BLOCK_RULE_DESCRIPTION = 'boardsesh:block-seo-scrapers (managed by scripts/cloudflare-apply.ts)';
@@ -613,9 +613,10 @@ export { CRAWLER_ALLOW_TOKENS };
  *
  * The SEO half is now mostly redundant: each of these agents' real UA also
  * carries a generic signature (`bot`, `spider`, a `/crawler` or `/robot/` URL),
- * so the automation default-deny rule would block it on GET anyway. They stay for one release as a record of what was
- * measured and as a belt for the non-GET methods the default-deny ignores;
- * prune the SEO half once the default-deny has run cleanly for a release.
+ * so the automation default-deny rule would block it on GET anyway. They stay
+ * for one release as a record of what was measured and as a belt for the
+ * non-GET methods the default-deny ignores; prune the SEO half once the
+ * default-deny has run cleanly for a release.
  *
  * AI training/search crawlers are explicit too: September 7 origin logs showed
  * Claude-SearchBot on www and GPTBot bypassing Cloudflare via the Railway domain,

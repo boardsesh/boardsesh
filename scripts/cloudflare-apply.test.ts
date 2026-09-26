@@ -1096,6 +1096,33 @@ describe('automation default-deny (allow-list model)', () => {
       'Mozilla/5.0 (Phone; OpenHarmony 5.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36 ArkWeb/4.1.6.1 Mobile HuaweiBrowser/5.0.4.300',
     ],
     ['Samsung Pass', 'SamsungPass (Android; Samsung Electronics)'],
+    // In-app and OEM browsers whose UAs carry app or device tokens a bare
+    // `bot` or `python` could collide with. None of these do today.
+    [
+      'Facebook in-app (iOS)',
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 [FBAN/FBIOS;FBAV/470.0.0.40.97;FBBV/620335452;FBDV/iPhone15,2;FBMD/iPhone;FBSN/iOS;FBSV/17.5;FBSS/3;FBID/phone;FBLC/en_US;FBOP/5;FBRV/0]',
+    ],
+    [
+      'Instagram in-app (Android WebView)',
+      'Mozilla/5.0 (Linux; Android 14; SM-S918B Build/UP1A.231005.007; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/125.0.6422.165 Mobile Safari/537.36 Instagram 334.0.0.42.95 Android (34/14; 480dpi; 1080x2340; samsung; SM-S918B; dm3q; qcom; en_US; 606473723)',
+    ],
+    [
+      'TikTok in-app (iOS)',
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 musical_ly_35.1.0 JsSdk/2.0 NetType/WIFI Channel/App Store ByteLocale/en Region/US ByteFullLocale/en isDarkMode/0 WKWebView/1 BytedanceWebview/d8a21c6 FalconTag/',
+    ],
+    [
+      'Samsung Internet',
+      'Mozilla/5.0 (Linux; Android 14; SAMSUNG SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/25.0 Chrome/121.0.0.0 Mobile Safari/537.36',
+    ],
+    [
+      'MIUI browser',
+      'Mozilla/5.0 (Linux; U; Android 13; en-us; 2201117TG Build/TKQ1.221114.001) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/112.0.5615.136 Mobile Safari/537.36 XiaoMi/MiuiBrowser/14.7.0-gn',
+    ],
+    [
+      'Electron (Slack desktop)',
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Slack/4.39.95 Chrome/126.0.6478.183 Electron/31.3.1 Safari/537.36',
+    ],
+    ['Firefox Android', 'Mozilla/5.0 (Android 14; Mobile; rv:130.0) Gecko/130.0 Firefox/130.0'],
     [
       'Safari',
       'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15',
@@ -1104,6 +1131,7 @@ describe('automation default-deny (allow-list model)', () => {
     ['our servers (undici)', 'node'],
     ['empty UA', ''],
     ['production smoke', 'boardsesh-production-smoke/1.0'],
+    ['ESP32 board controller (thumbnail fetch)', 'ESP32HTTPClient'],
     ['Sentry uptime', 'SentryUptimeBot/1.0 (+http://docs.sentry.io/product/alerts/uptime-monitoring/)'],
     ['Apple AASA', 'AASA-Bot/1.0.0'],
     ['Android asset links', 'GoogleAssociationService'],
