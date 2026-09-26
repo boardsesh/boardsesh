@@ -80,6 +80,11 @@ export const JOBS: readonly JobDefinition[] = [
     timezone: 'UTC',
     timeoutMs: CLEANUP_TIMEOUT_MS,
     webPath: '/api/internal/cleanup',
+    // The only job with a Sentry cron monitor. Monitors are billed per job, and
+    // one daily check-in is enough to prove the ticker, the container and its
+    // clock are alive; the other jobs' missed runs show up as `overdue` on
+    // `/health/jobs`.
+    sentryMonitor: true,
     run: triggerWebCron('/api/internal/cleanup'),
   },
 
@@ -100,7 +105,8 @@ export const JOBS: readonly JobDefinition[] = [
   // over. #4648 republishes the surface and brings the same slot back here.
   // docs/sitemap.md's runbook used to call for a separate one-shot Railway cron
   // service — this is that service, except it already exists, already has
-  // Sentry monitors, and already has a disable switch.
+  // missed-run detection (`overdue` on /health/jobs), and already has a
+  // disable switch.
   //
   // Overlap-safe, which JobDefinition requires: the refresher takes
   // `pg_try_advisory_xact_lock` as the first statement of its write

@@ -15,9 +15,13 @@ export type CreateHealthServerOptions = {
   readonly logger: SchedulerLogger;
 };
 
-/** A scheduled job whose most recent run failed and has not since succeeded. */
+/**
+ * A scheduled job whose most recent run failed and has not since succeeded, or
+ * whose last slot passed with no run at all (`overdue` — a dead ticker, a
+ * stopped container clock, a tick skipped behind a wedged predecessor).
+ */
 function isDegraded(jobs: JobStatus[]): boolean {
-  return jobs.some((job) => job.scheduled && job.lastError !== null);
+  return jobs.some((job) => job.scheduled && (job.lastError !== null || job.overdue));
 }
 
 /**
@@ -31,7 +35,7 @@ function isDegraded(jobs: JobStatus[]): boolean {
  *   says which of the two it is. The body still reports `status: 'degraded'`
  *   so a human or a log scrape can see it.
  * - `GET /health/jobs` — job health. 503 when a scheduled job's last run
- *   failed, 200 otherwise. Point an alert at this one; Railway must not, or it
+ *   failed or its last slot went by without a run (`overdue`), 200 otherwise. Point an alert at this one; Railway must not, or it
  *   will restart-loop on a problem restarts don't solve.
  */
 export function createHealthServer({ port, getStatus, logger }: CreateHealthServerOptions): HealthServer {

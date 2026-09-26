@@ -31,10 +31,10 @@ the route, Vercel and Railway both) reds CI.
 | Job                          | Path                                        | Schedule (UTC) | `timeoutMs` | Sentry monitor slug                    |
 | ---------------------------- | ------------------------------------------- | -------------- | ----------- | -------------------------------------- |
 | `cleanup`                    | `/api/internal/cleanup`                     | `0 5 * * *`    | 120 s       | `scheduler-cleanup`                    |
-| `profile-percentiles`        | `/api/internal/profile-percentiles`         | `0 6 * * 0`    | 15 min      | `scheduler-profile-percentiles`        |
-| `refresh-sitemap-climbs`     | `/api/internal/refresh-sitemap-climbs`      | `0 */6 * * *`  | 15 min      | `scheduler-refresh-sitemap-climbs`     |
-| `refresh-gym-activity-stats` | Backend `/graphql`: `refreshGymActivityStats` | `30 6 * * *` | 15 min | `scheduler-refresh-gym-activity-stats` |
-| `purge-spray-wall-photos`    | Backend `/graphql`: `purgeDeletedSprayWallPhotos` | `0 7 * * *` | 10 min | `scheduler-purge-spray-wall-photos`    |
+| `profile-percentiles`        | `/api/internal/profile-percentiles`         | `0 6 * * 0`    | 15 min      | — (`overdue` on `/health/jobs`)        |
+| `refresh-sitemap-climbs`     | `/api/internal/refresh-sitemap-climbs`      | `0 */6 * * *`  | 15 min      | — (`overdue` on `/health/jobs`)        |
+| `refresh-gym-activity-stats` | Backend `/graphql`: `refreshGymActivityStats` | `30 6 * * *` | 15 min | — (`overdue` on `/health/jobs`)        |
+| `purge-spray-wall-photos`    | Backend `/graphql`: `purgeDeletedSprayWallPhotos` | `0 7 * * *` | 10 min | — (`overdue` on `/health/jobs`)        |
 
 **`refresh-sitemap-climbs` is the one job that missed the migration.** Vercel
 fired it at `0 */6 * * *` from 2026-08-22 until the climb-sitemap pause deleted
@@ -178,7 +178,7 @@ to UTC.
 | `BOARDSESH_BACKEND_GRAPHQL_URL` | no | `https://ws.boardsesh.com/graphql` | Full HTTP(S) endpoint for the backend-owned gym activity job. |
 | `PORT`                    | no       | `8080`                      | Health server.                                                                                                                                                     |
 | `SCHEDULER_DISABLED_JOBS` | no       | —                           | Comma-separated job names to leave unscheduled. Read once at startup, so set it and restart the service — no code change, no image rebuild. `run <job>` still works on a disabled job. |
-| `SENTRY_DSN`              | no       | —                           | Turns on the cron monitors below. Use the **same DSN `packages/web` uses server-side** — it is the literal in `packages/web/sentry.server.config.ts`, also the fallback in `packages/backend/src/instrument.ts`. Unset = monitors off, logged once at startup. |
+| `SENTRY_DSN`              | no       | —                           | Turns on the `cleanup` cron monitor below. Use the **same DSN `packages/web` uses server-side** — it is the literal in `packages/web/sentry.server.config.ts`, also the fallback in `packages/backend/src/instrument.ts`. Unset = monitors off, logged once at startup. |
 | `SENTRY_ENVIRONMENT`      | no       | `production`                | Environment tag on the check-ins.                                                                                                                                                  |
 
 A missing `CRON_SECRET` throws at startup, so a misconfigured service
@@ -206,7 +206,7 @@ Dockerfile, no new workflow.
    - `CRON_SECRET` — same value as the Vercel project env var.
    - `BOARDSESH_WEB_URL=https://www.boardsesh.com`
    - `PORT=8080` (or let Railway inject its own `PORT`).
-   - `SENTRY_DSN` — the web server DSN, for the cron monitors.
+   - `SENTRY_DSN` — the web server DSN, for the `cleanup` cron monitor.
 5. **Healthcheck path**: `/health`.
 6. **Replicas: 1.** Two instances would double-fire every job; there is no
    leader election in this slice. If it ever needs more than one, `DaemonLease`
@@ -241,31 +241,46 @@ Consequences, in order of how long you can ignore them:
   store on the next crawl, so this one degrades to "slower to notice new climbs"
   rather than to a broken sitemap.
 
-None of these are data loss, but the Sentry monitors will (correctly) raise a
-missed-occurrence issue for each one, which is the signal to finish the cutover.
+None of these are data loss, but `/health/jobs` will (correctly) go 503 with
+each one `overdue`, and the `cleanup` Sentry monitor raises a missed-occurrence
+issue — the signal to finish the cutover.
 
 ## Sentry cron monitors (#1876)
 
-`/health/jobs` tells you a job **failed**. It cannot tell you a job never
-**ran** — a dead container, a wrong `TZ`, a stopped ticker all produce silence,
-and silence looks identical to "nothing was due". That gap is what the monitors
-close, and it is why `automaticVercelMonitors` had to be replaced rather than
-just switched off: it only ever worked because Vercel handed Sentry the cron
-metadata out of a deploy, which no longer happens.
+A failing job is easy to see. A job that never **runs** is not — a dead
+container, a wrong `TZ`, a stopped ticker all produce silence. Two things catch
+that silence: one Sentry cron monitor, and the `overdue` flag on
+`/health/jobs` (see [Health endpoints](#health-endpoints)).
 
-Every **scheduled** run is wrapped in `Sentry.withMonitor(slug, run, config)`
-(`packages/scheduler/src/monitoring/`). The config carries the job's own crontab
-expression and UTC timezone, so Sentry knows when the next check-in is due and
-raises an issue when one does not arrive:
+**Only `cleanup` has a Sentry monitor.** Sentry bills $0.78 a month for every
+cron monitor beyond the first, and one daily check-in is enough to prove the
+ticker, the container and its clock are alive — every job shares that one
+ticker. A job opts in with `sentryMonitor: true` on its `JobDefinition`;
+`registry.test.ts` pins `cleanup` as the only one, so adding a second is a
+deliberate billing change. The other four jobs are watched through `overdue`,
+which an external probe (the homelab's Prometheus blackbox exporter) alerts on.
+Their old monitors (`scheduler-profile-percentiles`,
+`scheduler-refresh-sitemap-climbs`, `scheduler-refresh-gym-activity-stats`,
+`scheduler-purge-spray-wall-photos`) get no more check-ins after this deploy;
+delete them in Sentry, or each raises a missed-occurrence issue.
+
+`automaticVercelMonitors` had to be replaced rather than just switched off: it
+only ever worked because Vercel handed Sentry the cron metadata out of a
+deploy, which no longer happens.
+
+A monitored job's **scheduled** runs are wrapped in
+`Sentry.withMonitor(slug, run, config)` (`packages/scheduler/src/monitoring/`).
+The config carries the job's own crontab expression and UTC timezone, so Sentry
+knows when the next check-in is due and raises an issue when one does not
+arrive:
 
 - `checkinMargin: 5` minutes late before an occurrence counts as missed —
   enough to ride out a Railway deploy swap.
 - `maxRuntime` = the job's `timeoutMs` rounded up to minutes, plus one.
-- `failureIssueThreshold: 1`, `recoveryThreshold: 1`. Some of these jobs are
-  weekly; waiting for a second consecutive failure means hearing about a broken
-  weekly job a fortnight late.
+- `failureIssueThreshold: 1`, `recoveryThreshold: 1`. Alert on the first
+  missed or failed run, clear on the first success.
 
-Sentry creates each monitor from its first check-in — there is nothing to
+Sentry creates the monitor from its first check-in — there is nothing to
 provision in the dashboard. Slugs are `scheduler-<job name>` and are pinned in
 `cron-monitor.test.ts`, because Sentry keys a monitor's whole history on its
 slug: renaming a job would orphan the old monitor and start a blank one.
@@ -287,20 +302,41 @@ A failing job still fails: the monitor wrapper rethrows, so `lastError`,
 Split the way the backend splits `/health` from `/health/db`:
 
 - `GET /health` — **liveness**, and what Railway's healthcheck polls. 200
-  whenever the process is up. It deliberately stays green on a failing job:
-  restarting the container cannot fix a rotated `CRON_SECRET` or a WAF rule,
-  and a restart would wipe the `lastError` that tells you which it is. The body
-  still carries `status: 'degraded'` and `degraded: true`.
-- `GET /health/jobs` — **job health**. 503 when a scheduled job's last run
-  failed, 200 otherwise. Point an alert here. Do **not** point Railway's
-  healthcheck at it.
+  whenever the process is up. It deliberately stays green on a failing or
+  overdue job: restarting the container cannot fix a rotated `CRON_SECRET` or a
+  WAF rule, and a restart would wipe the `lastError` that tells you which it is.
+  The body still carries `status: 'degraded'` and `degraded: true`.
+- `GET /health/jobs` — **job health**. 503 when any scheduled job's last run
+  failed (`lastError` set) or is `overdue`, 200 otherwise. Point an alert here.
+  Do **not** point Railway's healthcheck at it.
+
+Each job in the body carries `expectedLastRunAt` — the most recent instant its
+schedule says it should have started — and `overdue`. A job is overdue when
+both hold:
+
+1. No run has started at or after `expectedLastRunAt`. If the job has not run
+   since the process started, the process start time stands in for its last
+   run, so a fresh restart is never overdue for a slot that passed before it.
+2. More than the job's `timeoutMs` plus 5 minutes has passed since
+   `expectedLastRunAt` — 7 minutes for `cleanup`, 20 for the 15-minute jobs.
+
+Disabled jobs (`SCHEDULER_DISABLED_JOBS`) are never overdue. A tick skipped
+behind a still-running predecessor does count: it did not run.
+
+`expectedLastRunAt` comes from walking back one minute at a time from now until
+the cron expression matches (`packages/scheduler/src/cron/previous-run.ts`),
+bounded at 8 days — the weekly `profile-percentiles` is the longest schedule.
+A monthly job would need that bound raised to about 32 days, or it would never
+read as overdue.
 
 ## Runbook
 
 **Is it ticking?** `GET /health` returns every job with `lastRunAt`,
 `lastSuccessAt`, `lastDurationMs`, `lastError`, `runCount`, `failureCount` and
-`skippedCount`. `lastRunAt` older than the job's interval means the ticker is
-not firing; check the container is actually running and its clock is sane.
+`skippedCount`, plus `expectedLastRunAt` and `overdue`. `overdue: true` (and a
+503 on `/health/jobs`) means a slot went by with no run; if every job is
+overdue the ticker is not firing — check the container is actually running and
+its clock is sane.
 
 **A job is failing.** `lastError` carries the HTTP status and a truncated body.
 401 → the two `CRON_SECRET`s have drifted apart. 403 with an HTML body → a
@@ -317,9 +353,10 @@ page), `ENOTFOUND` means `BOARDSESH_WEB_URL` is wrong or DNS is broken.
 warned, never queued, so a slow run can't stack up. Each run is also bounded by
 the job's `timeoutMs` (120s for `cleanup`, 15 min for the weekly jobs) via
 `AbortController`. If a job is misbehaving, set `SCHEDULER_DISABLED_JOBS=<name>`
-and restart — no code change, no redeploy. Note that a disabled job stops
-checking in, so its Sentry monitor will report missed occurrences until it is
-re-enabled or the monitor is muted.
+and restart — no code change, no redeploy. A disabled job drops out of
+`/health/jobs`' verdict, but if it is `cleanup` it also stops checking in, so
+its Sentry monitor will report missed occurrences until it is re-enabled or the
+monitor is muted.
 
 **Run one now.** `node --import tsx packages/scheduler/src/cli/index.ts run <job>` runs a
 single job and exits non-zero on failure. It never starts the recurring

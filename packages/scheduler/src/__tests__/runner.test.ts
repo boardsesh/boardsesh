@@ -4,7 +4,7 @@ import type { CronScheduleOptions, CronScheduler, CronTask } from '../cron/sched
 import type { JobDefinition } from '../jobs/types';
 import type { LogFields, SchedulerLogger } from '../logger';
 import { createCronMonitor, type CronMonitorConfig, type WithMonitorFn } from '../monitoring/cron-monitor';
-import { createScheduler } from '../runner';
+import { createScheduler, OVERDUE_GRACE_MS } from '../runner';
 
 type RecordedRegistration = {
   expression: string;
@@ -244,7 +244,7 @@ describe('createScheduler', () => {
     const run = vi.fn().mockResolvedValue({ ok: true });
 
     const scheduler = createScheduler({
-      jobs: [defineJob({ run, name: 'profile-percentiles', schedule: '30 4 * * 0' })],
+      jobs: [defineJob({ run, name: 'profile-percentiles', schedule: '30 4 * * 0', sentryMonitor: true })],
       config: baseConfig,
       cron,
       logger,
@@ -274,7 +274,13 @@ describe('createScheduler', () => {
     const { calls, monitor } = createRecordingMonitor();
     const run = vi.fn().mockResolvedValue({ ok: true });
 
-    const scheduler = createScheduler({ jobs: [defineJob({ run })], config: baseConfig, cron, logger, monitor });
+    const scheduler = createScheduler({
+      jobs: [defineJob({ run, sentryMonitor: true })],
+      config: baseConfig,
+      cron,
+      logger,
+      monitor,
+    });
 
     await scheduler.runJob('cleanup');
     expect(run).toHaveBeenCalledTimes(1);
@@ -293,7 +299,7 @@ describe('createScheduler', () => {
     const { calls, monitor } = createRecordingMonitor();
     const run = vi.fn(() => new Promise<unknown>(() => undefined));
 
-    createScheduler({ jobs: [defineJob({ run })], config: baseConfig, cron, logger, monitor });
+    createScheduler({ jobs: [defineJob({ run, sentryMonitor: true })], config: baseConfig, cron, logger, monitor });
 
     registrations[0].handler();
     registrations[0].handler();
@@ -308,7 +314,13 @@ describe('createScheduler', () => {
     const { calls, monitor } = createRecordingMonitor();
     const run = vi.fn().mockRejectedValue(new Error('web returned HTTP 500'));
 
-    const scheduler = createScheduler({ jobs: [defineJob({ run })], config: baseConfig, cron, logger, monitor });
+    const scheduler = createScheduler({
+      jobs: [defineJob({ run, sentryMonitor: true })],
+      config: baseConfig,
+      cron,
+      logger,
+      monitor,
+    });
 
     expect(() => registrations[0].handler()).not.toThrow();
     await vi.waitFor(() => expect(scheduler.getStatus()[0].failureCount).toBe(1));
@@ -343,5 +355,163 @@ describe('createScheduler', () => {
     expect(status.lastRunAt).not.toBeNull();
     expect(status.lastSuccessAt).not.toBeNull();
     expect(status.lastDurationMs).not.toBeNull();
+  });
+});
+
+describe('createScheduler Sentry monitor opt-in', () => {
+  it('wraps a scheduled tick in the monitor when the job sets sentryMonitor', async () => {
+    const { cron, registrations } = createFakeCron();
+    const { logger } = createRecordingLogger();
+    const { calls, monitor } = createRecordingMonitor();
+
+    const scheduler = createScheduler({
+      jobs: [defineJob({ sentryMonitor: true })],
+      config: baseConfig,
+      cron,
+      logger,
+      monitor,
+    });
+
+    registrations[0].handler();
+    await vi.waitFor(() => expect(scheduler.getStatus()[0].runCount).toBe(1));
+    expect(calls.map((call) => call.slug)).toEqual(['scheduler-cleanup']);
+  });
+
+  it('runs a job without sentryMonitor unwrapped, so it costs no monitor', async () => {
+    const { cron, registrations } = createFakeCron();
+    const { logger } = createRecordingLogger();
+    const { calls, monitor } = createRecordingMonitor();
+    const run = vi.fn().mockRejectedValue(new Error('web returned HTTP 500'));
+
+    const scheduler = createScheduler({
+      jobs: [defineJob({ name: 'refresh-sitemap-climbs', schedule: '0 */6 * * *', run })],
+      config: baseConfig,
+      cron,
+      logger,
+      monitor,
+    });
+
+    expect(() => registrations[0].handler()).not.toThrow();
+    await vi.waitFor(() => expect(scheduler.getStatus()[0].failureCount).toBe(1));
+    expect(calls).toEqual([]);
+    expect(scheduler.getStatus()[0].lastError).toBe('web returned HTTP 500');
+  });
+});
+
+describe('createScheduler overdue detection', () => {
+  /** A settable clock; starts at the given instant. */
+  function createClock(startIso: string) {
+    let currentMs = Date.parse(startIso);
+    return {
+      now: () => new Date(currentMs),
+      set(iso: string) {
+        currentMs = Date.parse(iso);
+      },
+    };
+  }
+
+  // Daily 05:00 UTC, 120 s timeout: overdue once 05:00 + 2 min + 5 min passes.
+  const dailyJob = defineJob({ run: vi.fn().mockResolvedValue({ ok: true }) });
+
+  it('is not overdue right after a restart, even past a slot that fired before it', () => {
+    const { cron } = createFakeCron();
+    const { logger } = createRecordingLogger();
+    const clock = createClock('2026-09-26T09:00:00.000Z');
+
+    const scheduler = createScheduler({ jobs: [dailyJob], config: baseConfig, cron, logger, now: clock.now });
+
+    const status = scheduler.getStatus()[0];
+    expect(status.expectedLastRunAt).toBe('2026-09-26T05:00:00.000Z');
+    expect(status.overdue).toBe(false);
+  });
+
+  it('turns overdue when a slot passes the timeout plus grace with no run', () => {
+    const { cron } = createFakeCron();
+    const { logger } = createRecordingLogger();
+    const clock = createClock('2026-09-26T09:00:00.000Z');
+    const scheduler = createScheduler({ jobs: [dailyJob], config: baseConfig, cron, logger, now: clock.now });
+
+    const graceEndsMs = Date.parse('2026-09-27T05:00:00.000Z') + dailyJob.timeoutMs + OVERDUE_GRACE_MS;
+
+    clock.set(new Date(graceEndsMs).toISOString());
+    expect(scheduler.getStatus()[0].overdue).toBe(false);
+
+    clock.set(new Date(graceEndsMs + 60_000).toISOString());
+    const status = scheduler.getStatus()[0];
+    expect(status.expectedLastRunAt).toBe('2026-09-27T05:00:00.000Z');
+    expect(status.overdue).toBe(true);
+  });
+
+  it('clears overdue once a tick starts at or after the expected slot', async () => {
+    const { cron, registrations } = createFakeCron();
+    const { logger } = createRecordingLogger();
+    const clock = createClock('2026-09-26T09:00:00.000Z');
+    const scheduler = createScheduler({ jobs: [dailyJob], config: baseConfig, cron, logger, now: clock.now });
+
+    clock.set('2026-09-27T05:00:00.400Z');
+    registrations[0].handler();
+    await vi.waitFor(() => expect(scheduler.getStatus()[0].running).toBe(false));
+
+    clock.set('2026-09-27T12:00:00.000Z');
+    expect(scheduler.getStatus()[0].overdue).toBe(false);
+  });
+
+  it('flags a tick skipped behind a still-running predecessor once grace runs out', () => {
+    const { cron, registrations } = createFakeCron();
+    const { logger } = createRecordingLogger();
+    const clock = createClock('2026-09-26T00:00:00.000Z');
+    const scheduler = createScheduler({
+      jobs: [
+        defineJob({ name: 'refresh-sitemap-climbs', schedule: '0 */6 * * *', run: () => new Promise(() => undefined) }),
+      ],
+      config: baseConfig,
+      cron,
+      logger,
+      now: clock.now,
+    });
+
+    clock.set('2026-09-26T00:00:00.300Z');
+    registrations[0].handler();
+    clock.set('2026-09-26T06:00:00.300Z');
+    registrations[0].handler();
+    expect(scheduler.getStatus()[0].skippedCount).toBe(1);
+
+    clock.set('2026-09-26T06:30:00.000Z');
+    expect(scheduler.getStatus()[0].overdue).toBe(true);
+  });
+
+  it('never marks a disabled job overdue', () => {
+    const { cron } = createFakeCron();
+    const { logger } = createRecordingLogger();
+    const clock = createClock('2026-09-26T09:00:00.000Z');
+    const scheduler = createScheduler({
+      jobs: [dailyJob],
+      config: { ...baseConfig, disabledJobs: ['cleanup'] },
+      cron,
+      logger,
+      now: clock.now,
+    });
+
+    clock.set('2026-10-10T09:00:00.000Z');
+    const status = scheduler.getStatus()[0];
+    expect(status.overdue).toBe(false);
+    expect(status.expectedLastRunAt).toBeNull();
+  });
+
+  it('never marks a job overdue in a one-shot run process', () => {
+    const { cron } = createFakeCron();
+    const { logger } = createRecordingLogger();
+    const clock = createClock('2026-09-26T09:00:00.000Z');
+    const scheduler = createScheduler({
+      jobs: [dailyJob],
+      config: baseConfig,
+      cron,
+      logger,
+      registerSchedules: false,
+      now: clock.now,
+    });
+
+    clock.set('2026-10-10T09:00:00.000Z');
+    expect(scheduler.getStatus()[0].overdue).toBe(false);
   });
 });

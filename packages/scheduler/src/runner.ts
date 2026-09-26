@@ -1,4 +1,6 @@
 import type { SchedulerConfig } from './config';
+import { parseCronExpression, type CronExpression } from './cron/expression';
+import { previousScheduledRun } from './cron/previous-run';
 import type { CronScheduler, CronTask } from './cron/scheduler';
 import { describeError, type SchedulerLogger } from './logger';
 import type { JobDefinition } from './jobs/types';
@@ -17,7 +19,26 @@ export type JobStatus = {
   readonly runCount: number;
   readonly failureCount: number;
   readonly skippedCount: number;
+  /**
+   * The most recent instant the schedule says this job should have started,
+   * or null for a disabled job (or when the schedule has no occurrence in the
+   * last 8 days).
+   */
+  readonly expectedLastRunAt: string | null;
+  /**
+   * True when {@link expectedLastRunAt} passed more than the job's
+   * `timeoutMs` plus 5 minutes ago and no run has started since — the ticker
+   * missed it. Always false for a disabled job.
+   */
+  readonly overdue: boolean;
 };
+
+/**
+ * How late past its own `timeoutMs` a scheduled run may be before the job
+ * counts as overdue. Five minutes is the same margin the Sentry monitor gives a
+ * check-in: enough to ride out a Railway deploy swap.
+ */
+export const OVERDUE_GRACE_MS = 5 * 60_000;
 
 export type Scheduler = {
   /** Every known job, including ones held back by SCHEDULER_DISABLED_JOBS. */
@@ -47,12 +68,19 @@ export type CreateSchedulerOptions = {
    */
   readonly registerSchedules?: boolean;
   /**
-   * Reports each *scheduled* run to a Sentry cron monitor. Defaults to a no-op,
+   * Reports each *scheduled* run of a job flagged `sentryMonitor` to a Sentry
+   * cron monitor. Defaults to a no-op,
    * which is what `scheduler run <job>` and every test get: a manual run is not
    * a scheduled occurrence, and checking one in would mark a genuinely missed
    * occurrence as healthy.
    */
   readonly monitor?: CronMonitor;
+  /**
+   * Clock for run timestamps and overdue checks. Injected for tests; defaults
+   * to the wall clock. Read once at creation as the process start, so a job
+   * whose slot passed before a restart is not reported overdue.
+   */
+  readonly now?: () => Date;
 };
 
 type MutableJobState = {
@@ -86,7 +114,9 @@ export function createScheduler({
   logger,
   registerSchedules = true,
   monitor = noopCronMonitor,
+  now = () => new Date(),
 }: CreateSchedulerOptions): Scheduler {
+  const processStartedAt = now();
   const duplicateName = jobs.find((job, index) => jobs.findIndex((other) => other.name === job.name) !== index);
   if (duplicateName) {
     throw new Error(`duplicate job name ${JSON.stringify(duplicateName.name)}`);
@@ -103,6 +133,29 @@ export function createScheduler({
   }
 
   const scheduledJobs = jobs.filter((job) => !disabledJobNames.has(job.name));
+  // Only the jobs this instance actually ticks can be overdue: a one-shot
+  // `scheduler run <job>` process registers nothing, so nothing is due.
+  const parsedScheduleByJobName = new Map<string, CronExpression>(
+    (registerSchedules ? scheduledJobs : []).map((job) => [job.name, parseCronExpression(job.schedule)]),
+  );
+
+  const describeSchedulePosition = (job: JobDefinition, state: MutableJobState) => {
+    const parsedSchedule = parsedScheduleByJobName.get(job.name);
+    if (!parsedSchedule) {
+      return { expectedLastRunAt: null, overdue: false };
+    }
+    const currentTime = now();
+    const expectedLastRun = previousScheduledRun(parsedSchedule, job.timezone, currentTime);
+    if (!expectedLastRun) {
+      return { expectedLastRunAt: null, overdue: false };
+    }
+    // A run that started at or after the expected slot covers it; so does a
+    // process that started after it (a fresh restart has no history to judge).
+    const lastStartedMs = state.lastRunAt === null ? processStartedAt.getTime() : Date.parse(state.lastRunAt);
+    const missedSlot = lastStartedMs < expectedLastRun.getTime();
+    const pastGrace = currentTime.getTime() - expectedLastRun.getTime() > job.timeoutMs + OVERDUE_GRACE_MS;
+    return { expectedLastRunAt: expectedLastRun.toISOString(), overdue: missedSlot && pastGrace };
+  };
 
   const executeJob = async (job: JobDefinition): Promise<unknown> => {
     const state = stateByJobName.get(job.name);
@@ -111,9 +164,9 @@ export function createScheduler({
     }
 
     state.running = true;
-    state.lastRunAt = new Date().toISOString();
+    const startedAt = now().getTime();
+    state.lastRunAt = new Date(startedAt).toISOString();
     state.runCount += 1;
-    const startedAt = Date.now();
 
     try {
       const result = await job.run({
@@ -122,13 +175,14 @@ export function createScheduler({
         timeoutMs: job.timeoutMs,
         shutdownSignal: shutdownController.signal,
       });
-      state.lastDurationMs = Date.now() - startedAt;
-      state.lastSuccessAt = new Date().toISOString();
+      const finishedAt = now().getTime();
+      state.lastDurationMs = finishedAt - startedAt;
+      state.lastSuccessAt = new Date(finishedAt).toISOString();
       state.lastError = null;
       logger.info('job succeeded', { job: job.name, durationMs: state.lastDurationMs, result });
       return result;
     } catch (error) {
-      state.lastDurationMs = Date.now() - startedAt;
+      state.lastDurationMs = now().getTime() - startedAt;
       state.lastError = describeError(error);
       state.failureCount += 1;
       logger.error('job failed', { job: job.name, durationMs: state.lastDurationMs, error: state.lastError });
@@ -156,7 +210,12 @@ export function createScheduler({
       // rejection here would take the whole scheduler process down. The monitor
       // still sees the rejection first: it wraps executeJob, and .catch() is
       // applied to the wrapper's result, not to executeJob directly.
-      void monitor.monitor(job, () => executeJob(job)).catch(() => undefined);
+      //
+      // Only jobs flagged `sentryMonitor` are wrapped: each Sentry monitor is
+      // billed, so one job keeps it as the canary that the ticker is alive and
+      // the rest rely on `overdue` in `/health/jobs`.
+      const run = job.sentryMonitor === true ? monitor.monitor(job, () => executeJob(job)) : executeJob(job);
+      void run.catch(() => undefined);
     };
 
     tasks.push(cron.schedule(job.schedule, handler, { timezone: job.timezone }));
@@ -190,6 +249,7 @@ export function createScheduler({
           runCount: state.runCount,
           failureCount: state.failureCount,
           skippedCount: state.skippedCount,
+          ...describeSchedulePosition(job, state),
         };
       });
     },
