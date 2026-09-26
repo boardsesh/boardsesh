@@ -141,9 +141,10 @@ count queries went from 0.3 s to 2.6 s. Those are the queries that no longer fit
 cache; the fixes are tracked in #5814.
 
 `work_mem` is per sort or hash step, not per connection, so it is the one setting
-that can push memory past the cap. Fifty idle connections cost nothing, but ten
-concurrent heavy queries with two sorts each could claim 320 MB on top of the 1 GB
-of shared buffers. That still fits in 4 GB. Watch for OOM kills if the number of
+that can push memory past the cap. Hash steps get twice as much
+(`hash_mem_multiplier` is 2). Fifty idle connections cost nothing, but ten
+concurrent heavy queries, each with a hash join and two sorts, could claim 640 MB on
+top of the 1 GB of shared buffers. That still fits in 4 GB. Watch for OOM kills if the number of
 concurrent catalogue queries grows.
 
 Roll back on an OOM kill or an unexplained restart, not on latency alone. Go back to
