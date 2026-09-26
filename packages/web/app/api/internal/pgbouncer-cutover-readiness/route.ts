@@ -9,7 +9,9 @@ export const runtime = 'nodejs';
 export const revalidate = 0;
 
 const TOKEN_ENV = 'PGBOUNCER_CUTOVER_SMOKE_TOKEN';
-const PROBE_DB_TIMEOUT_MS = 5_000;
+// Above PgBouncer's 5 s query_wait_timeout, so a saturated pool answers with
+// its own 08P01 error before this deadline and the two 503s stay distinguishable.
+const PROBE_DB_TIMEOUT_MS = 8_000;
 const NO_STORE_HEADERS = {
   'Cache-Control': 'private, no-store, max-age=0',
   'CDN-Cache-Control': 'no-store',

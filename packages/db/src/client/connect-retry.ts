@@ -45,8 +45,9 @@ const RETRYABLE_CONNECT_ERROR_CODES: ReadonlySet<string> = new Set([
  * - `no more connections allowed (max_client_conn)` is sent during client login
  *   (client.c:1078), before the client can send a statement at all.
  * - `server login has been failing, cached error: ...` comes from
- *   `check_fast_fail()` (objects.c:880), which `find_server()` reaches only
- *   after returning early for a client that already has a linked server.
+ *   `check_fast_fail()` (objects.c:880). `find_server()` returns early when the
+ *   client already has a linked server, so this check only runs for a client
+ *   that has none, and nothing it sent can have reached Postgres.
  *
  * postgres.js adds a second, independent guarantee. After a FATAL from the
  * pooler, PgBouncer closes the socket without ReadyForQuery, so a statement that

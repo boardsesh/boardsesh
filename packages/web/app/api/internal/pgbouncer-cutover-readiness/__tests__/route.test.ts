@@ -60,7 +60,7 @@ describe('GET /api/internal/pgbouncer-cutover-readiness', () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true });
     expect(database.execute).toHaveBeenCalledTimes(1);
-    expect(database.deadlines).toEqual([5_000]);
+    expect(database.deadlines).toEqual([8_000]);
     expect(response.headers.get('cache-control')).toBe(NO_STORE);
     expect(response.headers.get('cdn-cache-control')).toBe('no-store');
     expect(response.headers.get('vary')).toBe('Authorization');

@@ -50,7 +50,7 @@ and exactly one of these PgBouncer messages:
 | `query_wait_timeout`                             | `08P01:query_wait_timeout`         | waited 5 s for a server connection and got none    |
 | `client_login_timeout (server down)`             | `08P01:client_login_timeout`       | login waited for a server that never answered      |
 | `no more connections allowed (max_client_conn)`  | `08P01:max_client_conn`            | PgBouncer already holds 500 client connections     |
-| `server login has been failing, cached error: …` | `08P01:server_login_retry`         | PgBouncer's last upstream login failed; fail fast  |
+| `server login has been failing, cached error: …` | `08P01:server_login_retry`         | PgBouncer's last upstream login failed; fail fast. Prefix match: PgBouncer truncates the cached error |
 
 The last one is matched by prefix, because PgBouncer cuts every message to
 127 bytes. The cached upstream error can name a role or host, so it never goes
