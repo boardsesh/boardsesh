@@ -235,6 +235,27 @@ type NativeClimbRenderParams = {
    * cache with) the uncapped one.
    */
   maxVeilOpacity?: number;
+  /**
+   * Hold-state codes this surface draws that no board defines — the hold
+   * heatmap's buckets (900–904) and grade colours (910+) — merged into the
+   * config's `hold_state_map` over the board's own. The renderer colours any
+   * code the map names; a code with no role draws no glyph.
+   *
+   * Enters the render signature (an `xs-<hash>` token), so the PNG cache and
+   * the config cache key off it exactly like `holdColorOverride` does. MUST be
+   * referentially stable (memoised on the colours it carries).
+   */
+  extraHoldStates?: Readonly<Record<number, { color: string }>>;
+  /**
+   * Draw every lit hold with this Aura mark instead of the climber's own mark
+   * style. The heatmap passes `'fill'`: the heat reads as a tinted silhouette,
+   * never a glow. Implies the Aura drawing — `fill` has no classic
+   * equivalent — wherever the installed renderer can draw it; a binary that
+   * cannot still falls back to classic, and `boardseshRendererAvailable` says
+   * so. Substituted into the render settings above the signature chain, so it
+   * reaches the cache key.
+   */
+  markStyleOverride?: 'fill';
 };
 
 type NativeClimbRenderResult = {
@@ -1478,6 +1499,9 @@ function getBoardConfig(
   // frames string is walked with a regex, so parsing it twice per Aura render
   // is pure waste on the render-miss path.
   litHoldIds: Set<number> = new Set(),
+  // Merged over the board's own map on the way out rather than baked into the
+  // cached entry: the entry is per board, the extras are per surface.
+  extraHoldStates?: Readonly<Record<number, { color: string }>>,
 ) {
   const widthKey = renderWidth != null ? `${renderWidth}` : 'full';
   // Spray token: the wall version, so a reset rebuilds the config (new hold
@@ -1630,12 +1654,21 @@ function getBoardConfig(
   // circles and the glow follows them. `led_cover` and the veil measurement do
   // not read outlines and are unaffected; `led_inner` and `silhouette_lightness`
   // drop out with the silhouette they were traced and measured against.
+  const configBase = extraHoldStates
+    ? {
+        ...cached.configBase,
+        hold_state_map: {
+          ...(cached.configBase.hold_state_map as Record<number, unknown>),
+          ...extraHoldStates,
+        },
+      }
+    : cached.configBase;
   if (!boardsesh || !cached.boardseshGeometry || boardsesh.settings.holdShape === 'circle') {
-    return { configBase: cached.configBase, setIdsArray: cached.setIdsArray };
+    return { configBase, setIdsArray: cached.setIdsArray };
   }
   return {
     configBase: {
-      ...cached.configBase,
+      ...configBase,
       holds: withLitHoldGeometry(
         cached.holds,
         cached.boardseshGeometry,
@@ -1665,6 +1698,7 @@ export function _getBoardConfigForTests(
   // The test seam keeps taking a frames STRING and parses it here: a suite is
   // describing a climb, not the render path's already-parsed intermediate.
   frames = '',
+  extraHoldStates?: Readonly<Record<number, { color: string }>>,
 ): ReturnType<typeof getBoardConfig> {
   return getBoardConfig(
     boardName,
@@ -1680,6 +1714,7 @@ export function _getBoardConfigForTests(
     renderSignature,
     boardsesh,
     parseLitHoldIds(frames),
+    extraHoldStates,
   );
 }
 
@@ -1789,6 +1824,8 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     playSurface = false,
     prefetch = false,
     maxVeilOpacity,
+    extraHoldStates,
+    markStyleOverride,
   } = params;
   const {
     overrides: storedHoldColorOverrides,
@@ -1884,7 +1921,21 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
   // in the cache key rather than painting preset pixels under the stored
   // settings' key.
   const { settings: storedRenderSettings } = useBoardRenderSettings();
-  const boardRenderSettings = renderSettingsOverride ?? storedRenderSettings;
+  const baseRenderSettings = renderSettingsOverride ?? storedRenderSettings;
+  // A mark-style override asks for the Aura drawing with that mark, whatever
+  // mode the climber picked: the heatmap's fill has no classic counterpart. The
+  // capability probe below still decides whether the binary can draw it.
+  const boardRenderSettings = useMemo<BoardRenderSettings>(
+    () =>
+      markStyleOverride === undefined
+        ? baseRenderSettings
+        : {
+            ...baseRenderSettings,
+            mode: 'aura',
+            boardsesh: { ...baseRenderSettings.boardsesh, markStyle: markStyleOverride },
+          },
+    [baseRenderSettings, markStyleOverride],
+  );
   // The probe answers from inside a promise, like the marker refusal does, so
   // subscribing is what lets a mounted surface pick the mode up at all.
   const boardseshSupportTick = useSyncExternalStore(
@@ -1929,9 +1980,20 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
   // axes of the same PNG, so the cache key carries both. Empty halves drop out,
   // which keeps a classic render's key byte-identical to what it has always
   // been.
+  // The extra hold states are a third axis: the same frames under a different
+  // code → colour map is a different picture. Hashed rather than spelled out, so
+  // a grade map with eighteen entries still yields a short key.
+  const extraHoldStatesSignature = useMemo(() => {
+    if (!extraHoldStates) return '';
+    const entries = Object.keys(extraHoldStates)
+      .map(Number)
+      .sort((left, right) => left - right)
+      .map((code) => `${code}:${extraHoldStates[code]?.color ?? ''}`);
+    return entries.length > 0 ? `xs-${fnv1aHex(entries.join(','))}` : '';
+  }, [extraHoldStates]);
   const effectiveRenderSignature = useMemo(
-    () => [effectiveOverrideSignature, boardRenderSignature].filter(Boolean).join('.'),
-    [effectiveOverrideSignature, boardRenderSignature],
+    () => [effectiveOverrideSignature, boardRenderSignature, extraHoldStatesSignature].filter(Boolean).join('.'),
+    [effectiveOverrideSignature, boardRenderSignature, extraHoldStatesSignature],
   );
 
   // The wall version for a spray board, `''` for every catalogue one.
@@ -2392,6 +2454,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
           }
         : null,
       litHoldIds,
+      extraHoldStates,
     );
     if (!boardConfig) return;
     // Backed off after a full-disk failure: the write cannot succeed, and every
@@ -2618,6 +2681,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     effectiveRenderSettings,
     fieldColor,
     veilOpacity,
+    extraHoldStates,
     recoveryRequest,
     failureTelemetryContext,
   ]);
