@@ -230,6 +230,16 @@ function isAppActive(): boolean {
   return AppState.currentState === 'active' || AppState.currentState === 'inactive';
 }
 
+// Whole milliseconds since `startMs`, for the connect-step timings (#5775).
+// performance.now() is monotonic, so a wall-clock correction mid-connect can't
+// turn a step negative or add a minute to it the way Date.now() could.
+function monotonicNowMs(): number {
+  return typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
+}
+function elapsedMsSince(startMs: number): number {
+  return Math.round(monotonicNowMs() - startMs);
+}
+
 // MoonBoard grid rows for the native configureBoard payload, so native
 // re-encodes (widget intents, reconnect re-light) use the same serpentine grid
 // as the JS send path — Mini strips are 12 rows, standard 18 (#3392). Undefined
@@ -689,6 +699,9 @@ export function useBoardBluetooth({
   // the singleton BLE manager, and the first attempt's scan teardown kills
   // the second attempt's scan, stranding the picker.
   const connectInFlightRef = useRef(false);
+  // When the running connect started (monotonic ms), so a swallowed second tap
+  // can report how long the first one had been going (#5775).
+  const connectInFlightStartedAtRef = useRef(0);
   // True after an explicit user disconnect, false again on the next deliberate
   // connect. While set, the native-connection adoption path is ignored — it
   // would otherwise race the in-flight native disconnect and re-establish the
@@ -1508,6 +1521,13 @@ export function useBoardBluetooth({
 
   const connect = useCallback(
     async (initialFrames?: string, mirrored?: boolean, targetSerial?: string, targetDeviceId?: string) => {
+      // Connect-step timings (#5775). `preScanMs` and `pickerOpenMs` count from
+      // here; `availableMs`, `teardownMs` and `configureMs` time one await each.
+      // A step that never ran stays undefined, so the key drops from the event.
+      const connectStartedAtMs = monotonicNowMs();
+      const reconnect = !!targetSerial || !!targetDeviceId;
+      let pickerOpenMs: number | undefined;
+      let configureMs: number | undefined;
       if (!boardName) {
         console.error('Cannot connect to Bluetooth without board name');
         return false;
@@ -1517,9 +1537,17 @@ export function useBoardBluetooth({
       // surface racing the first). Both attempts would share the singleton BLE
       // manager and tear down each other's scans, so ignore the second tap.
       if (connectInFlightRef.current) {
+        track(SHARED_EVENTS.BluetoothConnectIgnored, {
+          boardName,
+          layoutId,
+          sizeId,
+          reconnect,
+          inFlightMs: elapsedMsSince(connectInFlightStartedAtRef.current),
+        });
         return false;
       }
       connectInFlightRef.current = true;
+      connectInFlightStartedAtRef.current = connectStartedAtMs;
       // A deliberate connect re-arms native-connection adoption after an
       // earlier explicit disconnect suppressed it.
       adoptionSuppressedRef.current = false;
@@ -1537,6 +1565,7 @@ export function useBoardBluetooth({
       // requestAndConnect), so the catch below can scope its cleanup to it.
       let connectPickerSessionId: number | null = null;
       const connectDevicePicker: DevicePickerFn = (subscribe, targetSearch) => {
+        pickerOpenMs ??= elapsedMsSince(connectStartedAtMs);
         const pickerPromise = devicePicker(subscribe, targetSearch);
         // The picker's executor ran synchronously, so the counter now holds its session.
         connectPickerSessionId ??= pickerSessionCounterRef.current;
@@ -1576,7 +1605,9 @@ export function useBoardBluetooth({
         );
         connectAdapter = adapter;
 
+        const availableStartedAtMs = monotonicNowMs();
         const available = await adapter.isAvailable();
+        const availableMs = elapsedMsSince(availableStartedAtMs);
         if (!available) {
           // Blocked (iOS denial) and radio-off used to share "Bluetooth is off".
           await alertBluetoothUnavailable({ boardName, t, tCommon });
@@ -1596,6 +1627,7 @@ export function useBoardBluetooth({
         // Clean up any existing adapter. A live link replaced by a new connect
         // is a deliberate end of the old generation and keeps the old board's
         // snapshotted attribution.
+        let teardownMs: number | undefined;
         if (adapterRef.current) {
           const previousAdapter = adapterRef.current;
           const previousLifetime = activeConnectionLifetimeRef.current;
@@ -1607,6 +1639,7 @@ export function useBoardBluetooth({
           adapterRef.current = null;
           connectedConfigIdentityRef.current = null;
           configuredDeviceNameRef.current = undefined;
+          const teardownStartedAtMs = monotonicNowMs();
           try {
             await previousAdapter.disconnect();
           } catch {
@@ -1616,6 +1649,7 @@ export function useBoardBluetooth({
             // replacing it anyway, so swallow it rather than aborting the
             // reconnect with a spurious error.
           }
+          teardownMs = elapsedMsSince(teardownStartedAtMs);
         }
 
         // Surface the scan on the session-recording timeline / PostHog. `reconnect`
@@ -1625,7 +1659,10 @@ export function useBoardBluetooth({
           boardName,
           layoutId,
           sizeId,
-          reconnect: !!targetSerial || !!targetDeviceId,
+          reconnect,
+          preScanMs: elapsedMsSince(connectStartedAtMs),
+          availableMs,
+          teardownMs,
         });
 
         // Stage the board configuration into the native manager BEFORE the
@@ -1643,6 +1680,7 @@ export function useBoardBluetooth({
           layoutId !== undefined &&
           sizeId !== undefined
         ) {
+          const configureStartedAtMs = monotonicNowMs();
           try {
             await adapter.configureBoard({
               boardName,
@@ -1655,6 +1693,7 @@ export function useBoardBluetooth({
           } catch (error) {
             console.warn('[BLE] Failed to pre-stage board configuration to native side:', error);
           }
+          configureMs = elapsedMsSince(configureStartedAtMs);
         }
 
         const connection = await adapter.requestAndConnect(targetSerial, targetDeviceId);
@@ -1800,6 +1839,9 @@ export function useBoardBluetooth({
             // Sits alongside the classifyBleFailure categories used by the catch
             // block below; this one is only reachable from the initial write.
             failureReason: 'dropped_after_connect',
+            reconnect,
+            pickerOpenMs,
+            configureMs,
           });
           return false;
         }
@@ -1870,6 +1912,9 @@ export function useBoardBluetooth({
           bleManufacturerData: connection.manufacturerData ?? undefined,
           bleManufacturerCompanyId: manufacturerCompanyId(connection.manufacturerData),
           bleServiceData: connection.serviceData ? JSON.stringify(connection.serviceData) : undefined,
+          reconnect,
+          pickerOpenMs,
+          configureMs,
         });
         return true;
       } catch (error) {
@@ -1966,6 +2011,9 @@ export function useBoardBluetooth({
           // low-level GATT status are visible for re-measurement (#3608). Empty on
           // web / native iOS.
           ...blePlxErrorCodes(error),
+          reconnect,
+          pickerOpenMs,
+          configureMs,
         });
       } finally {
         connectInFlightRef.current = false;
