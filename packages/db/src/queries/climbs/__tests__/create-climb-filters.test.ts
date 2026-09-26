@@ -793,6 +793,116 @@ void describe('createClimbFilters: grade range', () => {
   });
 });
 
+// The stats-driven list reads the grade range without a board_climb_grades join
+// (see statsRowGradeRangeSql). The exact text is pinned because two parts of it
+// are plan choices, not style: each was measured on the production replica, and
+// the obvious alternative spelling regressed a real search by 100x or more.
+void describe('createClimbFilters: grade range for the stats-driven list', () => {
+  const dialect = new PgDialect();
+  const render = (conditions: SQL[] | null) => (conditions ?? []).map((condition) => dialect.sqlToQuery(condition));
+  const splitBetween =
+    '(ROUND("board_climb_stats"."display_difficulty"::numeric, 0) BETWEEN $1 AND $2 OR ' +
+    '(ROUND("board_climb_stats"."display_difficulty"::numeric, 0) IS NULL AND EXISTS (\n' +
+    '    SELECT 1 FROM "board_climb_grades" AS "grade_fallback"\n' +
+    '    WHERE "grade_fallback"."board_type" = $3\n' +
+    '    AND "grade_fallback"."climb_uuid" = "board_climbs"."uuid"\n' +
+    '    AND "grade_fallback"."angle" = $4\n' +
+    '    AND ROUND(COALESCE("grade_fallback"."universal_grade", "grade_fallback"."local_grade")::numeric, 0) BETWEEN $5 AND $6\n' +
+    '  )))';
+
+  void it('splits BETWEEN into the stats grade, then the Boardsesh grade when the stats grade is missing', () => {
+    const [query] = render(
+      createClimbFilters(params, { minGrade: 26, maxGrade: 28 }).getStatsRowClimbStatsConditions(),
+    );
+    assert.equal(query.sql, splitBetween);
+    assert.deepEqual(query.params, [26, 28, 'kilter', 40, 26, 28]);
+  });
+
+  // A climb with no stats row can't reach this query (it INNER JOINs stats), but
+  // one whose stats row carries no difficulty can, and its Boardsesh grade must
+  // still admit it — the same answer the COALESCE form gives.
+  void it('reads the NULL through the same ROUND as the index, and correlates the probe to board_climbs', () => {
+    const [query] = render(
+      createClimbFilters(params, { minGrade: 26, maxGrade: 28 }).getStatsRowClimbStatsConditions(),
+    );
+    // Matches board_climb_stats_difficulty_rounded_idx, so a narrow band can
+    // BitmapOr out of it (Kilter Original V14-V16: 1.6 s -> 19 ms).
+    assert.match(query.sql, /ROUND\("board_climb_stats"\."display_difficulty"::numeric, 0\) IS NULL/);
+    assert.doesNotMatch(query.sql, /"board_climb_stats"\."display_difficulty" IS NULL/);
+    // Join-level, so the planner does not drive from board_climbs and probe the
+    // stats row of every climb on the layout (Kilter Original V3-V4: 1.9 s -> 1 ms).
+    assert.match(query.sql, /"grade_fallback"\."climb_uuid" = "board_climbs"\."uuid"/);
+  });
+
+  void it('splits a min-only and a max-only range the same way', () => {
+    const [minOnly] = render(createClimbFilters(params, { minGrade: 16 }).getStatsRowClimbStatsConditions());
+    assert.match(minOnly.sql, /^\(ROUND\("board_climb_stats"\."display_difficulty"::numeric, 0\) >= \$1 OR/);
+    assert.match(minOnly.sql, /local_grade"\)::numeric, 0\) >= \$4\n/);
+    assert.doesNotMatch(minOnly.sql, /BETWEEN|<=/);
+    const [maxOnly] = render(createClimbFilters(params, { maxGrade: 16 }).getStatsRowClimbStatsConditions());
+    assert.match(maxOnly.sql, /^\(ROUND\("board_climb_stats"\."display_difficulty"::numeric, 0\) <= \$1 OR/);
+    assert.match(maxOnly.sql, /local_grade"\)::numeric, 0\) <= \$4\n/);
+    assert.doesNotMatch(maxOnly.sql, /BETWEEN|>=/);
+  });
+
+  void it('treats the upstream source like no source', () => {
+    const upstream = render(
+      createClimbFilters(params, {
+        minGrade: 26,
+        maxGrade: 28,
+        gradeSource: 'upstream',
+      }).getStatsRowClimbStatsConditions(),
+    );
+    assert.equal(upstream[0].sql, splitBetween);
+  });
+
+  void it('carries the required-stats predicates alongside the split range', () => {
+    const conditions = createClimbFilters(params, {
+      minGrade: 26,
+      maxGrade: 28,
+      minAscents: 5,
+    }).getStatsRowClimbStatsConditions();
+    const rendered = render(conditions).map((query) => query.sql);
+    assert.equal(rendered.length, 2);
+    assert.match(rendered[0], /"board_climb_stats"\."ascensionist_count" >= \$1/);
+    assert.match(rendered[1], /grade_fallback/);
+  });
+
+  void it('is an empty list, not null, when there is no grade filter', () => {
+    assert.deepEqual(createClimbFilters(params, {}).getStatsRowClimbStatsConditions(), []);
+    // Only bounds make a filter; a source alone does not.
+    assert.deepEqual(createClimbFilters(params, { gradeSource: 'boardsesh' }).getStatsRowClimbStatsConditions(), []);
+  });
+
+  void it('is null whenever the range has to read the joined grades row', () => {
+    const band = { minGrade: 26, maxGrade: 28 };
+    // The Boardsesh source reads the Boardsesh grade first.
+    assert.equal(
+      createClimbFilters(params, { ...band, gradeSource: 'boardsesh' }).getStatsRowClimbStatsConditions(),
+      null,
+    );
+    // Personal grades wrap the joined value.
+    assert.equal(
+      createClimbFilters(params, { ...band, useMyGrades: true }, 'user-1').getStatsRowClimbStatsConditions(),
+      null,
+    );
+    // Cross-angle resolves the grade at another angle.
+    assert.equal(
+      createClimbFilters(params, band, undefined, { crossAngleStats: true }).getStatsRowClimbStatsConditions(),
+      null,
+    );
+  });
+
+  void it('leaves getClimbStatsConditions on the COALESCE form for the LEFT JOIN queries', () => {
+    const [query] = render(createClimbFilters(params, { minGrade: 26, maxGrade: 28 }).getClimbStatsConditions());
+    assert.match(
+      query.sql,
+      /^COALESCE\(ROUND\("board_climb_stats"\."display_difficulty"::numeric, 0\), ROUND\(COALESCE/,
+    );
+    assert.doesNotMatch(query.sql, /grade_fallback/);
+  });
+});
+
 void describe('createClimbFilters: community-hidden climbs', () => {
   // Rendered through the same sqlToString the rest of this file uses, so the
   // assertions read the SQL the builder actually emits rather than restating it.
