@@ -25,8 +25,25 @@
      socket.removeListener('data', data)
      socket.removeListener('connect', connected)
      idleTimer.cancel()
-@@ -451,6 +453,9 @@
-       return reconnect()
+@@ -447,10 +449,24 @@
+     socket.removeAllListeners()
+     socket = null
+ 
+-    if (initial)
+-      return reconnect()
++    if (initial) {
++      // Closed during the startup type fetch. A pooler (PgBouncer's
++      // query_wait_timeout) sends a FATAL error and then closes: fail the
++      // connect with it, since the caller's initial query was never written.
++      // Otherwise reconnect, and never carry this socket's query state over.
++      if (errorResponse)
++        errored(errorResponse)
++      else {
++        query = results = errorResponse = null
++        result = new Result()
++        return reconnect()
++      }
++    }
  
      !hadError && (query || sent.length) && error(Errors.connection('CONNECTION_CLOSED', options, socket))
 +    // A replacement socket must not inherit a failed result or fatal error.
@@ -35,6 +52,16 @@
      closedTime = performance.now()
      hadError && options.shared.retries++
      delay = (typeof backoff === 'function' ? backoff(options.shared.retries) : backoff) * 1000
+@@ -561,7 +577,8 @@
+ 
+       if (needsTypes) {
+         initial.reserve && (initial = null)
+-        return fetchArrayTypes()
++        // Its failure reaches the caller through `initial`; never leave it unhandled.
++        return fetchArrayTypes().catch(() => {})
+       }
+ 
+       initial && !initial.reserve && execute(initial)
 --- a/src/index.js
 +++ b/src/index.js
 @@ -236,13 +236,21 @@
@@ -97,8 +124,25 @@
      socket.removeListener('data', data)
      socket.removeListener('connect', connected)
      idleTimer.cancel()
-@@ -451,6 +453,9 @@
-       return reconnect()
+@@ -447,10 +449,24 @@
+     socket.removeAllListeners()
+     socket = null
+ 
+-    if (initial)
+-      return reconnect()
++    if (initial) {
++      // Closed during the startup type fetch. A pooler (PgBouncer's
++      // query_wait_timeout) sends a FATAL error and then closes: fail the
++      // connect with it, since the caller's initial query was never written.
++      // Otherwise reconnect, and never carry this socket's query state over.
++      if (errorResponse)
++        errored(errorResponse)
++      else {
++        query = results = errorResponse = null
++        result = new Result()
++        return reconnect()
++      }
++    }
  
      !hadError && (query || sent.length) && error(Errors.connection('CONNECTION_CLOSED', options, socket))
 +    // A replacement socket must not inherit a failed result or fatal error.
@@ -107,6 +151,16 @@
      closedTime = performance.now()
      hadError && options.shared.retries++
      delay = (typeof backoff === 'function' ? backoff(options.shared.retries) : backoff) * 1000
+@@ -561,7 +577,8 @@
+ 
+       if (needsTypes) {
+         initial.reserve && (initial = null)
+-        return fetchArrayTypes()
++        // Its failure reaches the caller through `initial`; never leave it unhandled.
++        return fetchArrayTypes().catch(() => {})
+       }
+ 
+       initial && !initial.reserve && execute(initial)
 --- a/cjs/src/index.js
 +++ b/cjs/src/index.js
 @@ -236,13 +236,21 @@
