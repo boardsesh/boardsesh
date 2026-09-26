@@ -38,17 +38,22 @@ const FEED_PAGE_SIZE = 20;
  *
  * What says it changed: a tick save/edit/delete (board-react's tick hooks) and a
  * synced or drained `boardsesh_ticks` row (TABLE_INVALIDATE_KEYS) invalidate
- * these keys. The caller passes `subscribed: false` while the You screen is not
- * on screen, so such an invalidation only marks the data stale; the observer
- * re-subscribes when the screen regains focus and refetches then. So a tick
- * logged from the climb screen is on the You page the moment the climber opens
- * it, without costing the backend a refetch per tick in between.
+ * these keys. The caller passes `onScreen: false` while the You screen is not
+ * on screen, which disables the queries: an invalidation only marks the data
+ * stale, and re-enabling on focus refetches it then. So a tick logged from the
+ * climb screen is on the You page the moment the climber opens it, without
+ * costing the backend a refetch per tick in between.
+ *
+ * `enabled`, not `subscribed: false`: an unsubscribed query has no observer, so
+ * the cache drops it after gcTime (30 min) and the tab comes back to a skeleton
+ * instead of the last numbers. A disabled observer keeps the entry alive, the
+ * same as the always-mounted tab did before.
  */
 const YOU_PAGE_STALE_TIME_MS = 30 * 60 * 1000;
 
 export type YouPageQueryOptions = {
   /** False while the You screen is off screen (see YOU_PAGE_STALE_TIME_MS). Defaults to true. */
-  subscribed?: boolean;
+  onScreen?: boolean;
 };
 
 // Normalise a `userTicks` row into the @boardsesh/profile-stats LogbookEntry
@@ -86,10 +91,9 @@ export function useAllBoardsTicks(userId: string | undefined, options?: YouPageQ
       );
       return collected;
     },
-    enabled: !!userId,
+    enabled: !!userId && options?.onScreen !== false,
     staleTime: YOU_PAGE_STALE_TIME_MS,
     refetchOnWindowFocus: false,
-    subscribed: options?.subscribed,
   });
 }
 
@@ -127,10 +131,9 @@ export function useUserProfileStats(userId: string | undefined, options?: YouPag
       });
       return response.userProfileStats;
     },
-    enabled: !!userId,
+    enabled: !!userId && options?.onScreen !== false,
     staleTime: YOU_PAGE_STALE_TIME_MS,
     refetchOnWindowFocus: false,
-    subscribed: options?.subscribed,
   });
 }
 
@@ -143,10 +146,9 @@ export function useUserClimbPercentile(userId: string | undefined, options?: You
       });
       return response.userClimbPercentile;
     },
-    enabled: !!userId,
+    enabled: !!userId && options?.onScreen !== false,
     staleTime: YOU_PAGE_STALE_TIME_MS,
     refetchOnWindowFocus: false,
-    subscribed: options?.subscribed,
   });
 }
 

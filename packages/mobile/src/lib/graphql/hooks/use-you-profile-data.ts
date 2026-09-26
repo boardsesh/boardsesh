@@ -30,13 +30,13 @@ export function useYouProfileData(userId: string | undefined) {
   const fromDate = '';
   const toDate = '';
 
-  // Off screen, the three reads stay unsubscribed: a tick invalidation marks
-  // them stale instead of refetching 32 queries behind a screen nobody is
-  // looking at, and regaining focus re-subscribes and refetches the stale ones.
-  const subscribed = useIsFocused();
-  const allBoardsTicksQuery = useAllBoardsTicks(userId, { subscribed });
-  const profileStatsQuery = useUserProfileStats(userId, { subscribed });
-  const percentileQuery = useUserClimbPercentile(userId, { subscribed });
+  // Off screen, the three reads are disabled: a tick invalidation marks them
+  // stale instead of refetching 32 queries behind a screen nobody is looking
+  // at, and regaining focus re-enables them and refetches the stale ones.
+  const onScreen = useIsFocused();
+  const allBoardsTicksQuery = useAllBoardsTicks(userId, { onScreen });
+  const profileStatsQuery = useUserProfileStats(userId, { onScreen });
+  const percentileQuery = useUserClimbPercentile(userId, { onScreen });
 
   const allBoardsTicks = useMemo(() => allBoardsTicksQuery.data ?? {}, [allBoardsTicksQuery.data]);
 

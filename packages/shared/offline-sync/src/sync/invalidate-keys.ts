@@ -25,7 +25,7 @@ export const TABLE_INVALIDATE_KEYS: Record<string, InvalidateKeys> = {
   // ['userTicks'] / ['userProfileStats'] / ['userClimbPercentile'] — the You
   //   page's three reads (use-you-data.ts). All three derive from the logbook,
   //   so a synced or drained tick must reach the stats card too, not only the
-  //   charts. The You page keeps them unsubscribed while it is off screen, so
+  //   charts. The You page keeps them disabled while it is off screen, so
   //   this marks them stale and the refetch waits until the climber opens it.
   // ['searchClimbs'] / ['infiniteSearchClimbs'] / ['searchClimbsCount'] — a tick
   //   at a new angle grades a stats row server-side; the drainer fires these

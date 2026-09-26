@@ -7,8 +7,8 @@ import { GET_USER_TICKS, GET_USER_PROFILE_STATS, GET_USER_CLIMB_PERCENTILE } fro
 import { BOARD_TYPES } from '@boardsesh/profile-stats';
 
 // The You page's three reads refetch only when a tick changed AND the screen is
-// on screen. These pin the two halves: an invalidation while unsubscribed (off
-// screen) sends nothing, and re-subscribing (focus) fetches the stale data — so
+// on screen. These pin the two halves: an invalidation while disabled (off
+// screen) sends nothing, and re-enabling (focus) fetches the stale data — so
 // a tick logged elsewhere is on the You page when the climber opens it.
 
 const requestMock = vi.hoisted(() => vi.fn());
@@ -24,11 +24,11 @@ function makeWrapper() {
   return { queryClient, wrapper };
 }
 
-function useYouPageReads(subscribed: boolean) {
+function useYouPageReads(onScreen: boolean) {
   return {
-    ticks: useAllBoardsTicks('user-1', { subscribed }),
-    stats: useUserProfileStats('user-1', { subscribed }),
-    percentile: useUserClimbPercentile('user-1', { subscribed }),
+    ticks: useAllBoardsTicks('user-1', { onScreen }),
+    stats: useUserProfileStats('user-1', { onScreen }),
+    percentile: useUserClimbPercentile('user-1', { onScreen }),
   };
 }
 
@@ -48,9 +48,9 @@ beforeEach(() => {
 describe('You page read freshness', () => {
   it('marks the reads stale off screen and refetches them once the screen is back', async () => {
     const { queryClient, wrapper } = makeWrapper();
-    const { result, rerender } = renderHook(({ subscribed }) => useYouPageReads(subscribed), {
+    const { result, rerender } = renderHook(({ onScreen }) => useYouPageReads(onScreen), {
       wrapper,
-      initialProps: { subscribed: true },
+      initialProps: { onScreen: true },
     });
     await waitFor(() => expect(result.current.percentile.isSuccess).toBe(true));
     await waitFor(() => expect(result.current.ticks.isSuccess).toBe(true));
@@ -58,7 +58,7 @@ describe('You page read freshness', () => {
     expect(callsFor(GET_USER_PROFILE_STATS)).toBe(1);
 
     // The climber leaves for a climb and logs a tick there.
-    rerender({ subscribed: false });
+    rerender({ onScreen: false });
     await act(async () => {
       await queryClient.invalidateQueries({ queryKey: ['userTicks'] });
       await queryClient.invalidateQueries({ queryKey: ['userProfileStats'] });
@@ -68,7 +68,7 @@ describe('You page read freshness', () => {
     expect(callsFor(GET_USER_PROFILE_STATS)).toBe(1);
 
     // Back on the You page: the stale reads refetch, once.
-    rerender({ subscribed: true });
+    rerender({ onScreen: true });
     await waitFor(() => expect(callsFor(GET_USER_TICKS)).toBe(BOARD_TYPES.length * 2));
     await waitFor(() => expect(callsFor(GET_USER_PROFILE_STATS)).toBe(2));
     await waitFor(() => expect(callsFor(GET_USER_CLIMB_PERCENTILE)).toBe(2));
@@ -76,21 +76,46 @@ describe('You page read freshness', () => {
 
   it('does not refetch fresh data on refocus', async () => {
     const { wrapper } = makeWrapper();
-    const { result, rerender } = renderHook(({ subscribed }) => useYouPageReads(subscribed), {
+    const { result, rerender } = renderHook(({ onScreen }) => useYouPageReads(onScreen), {
       wrapper,
-      initialProps: { subscribed: true },
+      initialProps: { onScreen: true },
     });
     await waitFor(() => expect(result.current.ticks.isSuccess).toBe(true));
     await waitFor(() => expect(result.current.stats.isSuccess).toBe(true));
 
-    rerender({ subscribed: false });
-    rerender({ subscribed: true });
+    rerender({ onScreen: false });
+    rerender({ onScreen: true });
     // Nothing invalidated and well inside the 30-minute staleTime.
     await act(async () => {
       await Promise.resolve();
     });
     expect(callsFor(GET_USER_TICKS)).toBe(BOARD_TYPES.length);
     expect(callsFor(GET_USER_PROFILE_STATS)).toBe(1);
+  });
+
+  it('keeps the last numbers through an off-screen gap longer than gcTime', async () => {
+    // An unsubscribed query would be garbage-collected here and come back as a
+    // skeleton; a disabled one keeps its observer, so the entry stays.
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 20 } } });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    );
+    const { result, rerender } = renderHook(({ onScreen }) => useYouPageReads(onScreen), {
+      wrapper,
+      initialProps: { onScreen: true },
+    });
+    await waitFor(() => expect(result.current.stats.isSuccess).toBe(true));
+    await waitFor(() => expect(result.current.ticks.isSuccess).toBe(true));
+
+    rerender({ onScreen: false });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 80));
+    });
+    rerender({ onScreen: true });
+
+    expect(result.current.ticks.isSuccess).toBe(true);
+    expect(result.current.stats.isSuccess).toBe(true);
+    expect(callsFor(GET_USER_TICKS)).toBe(BOARD_TYPES.length);
   });
 
   it('refetches straight away when the invalidation lands while the screen is up', async () => {
