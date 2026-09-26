@@ -42,3 +42,4 @@ export * from './sitemap-shard-refreshes';
 export * from './sitemap-climb-urls';
 export * from './spray-walls';
 export * from './background-job-runs';
+export * from './tick-climbed-at-corrections';
