@@ -744,7 +744,9 @@ export const boardClimbStats = pgTable(
     // (kilter_synced_at < upstream_synced_at - 48h). The Kilter Grips writers
     // restamp a row only when a value changes, or daily while Boardsesh ascents
     // count on it (kilter-sync stats-upsert.ts), so on Kilter it reads "last
-    // changed upstream", not "last pass".
+    // changed upstream", not "last pass". The Aurora shared sync also writes it
+    // only with a real change (aurora-sync shared-sync.ts); its "a pass ran"
+    // time lives per board in board_shared_syncs (__local_climb_stats_pass__).
     upstreamSyncedAt: timestamp('upstream_synced_at', { mode: 'string' }),
     // Provenance marker for display_difficulty: non-NULL = the grade was
     // written from Boardsesh ticks (UTC wall time); NULL = upstream's, or never

@@ -174,12 +174,67 @@ contributes 0 to the Boardsesh term; a user with only native ticks counts, and
 keeps counting after push-back (immediate-tally requirement). Every import
 path (this daemon's user-sync, the web duplicate, kilter `applyLogs`,
 json-import) bulk-recomputes affected keys after each batch. Upstream stats
-writers also stamp `board_climb_stats.upstream_synced_at` on every upsert
-(freshness watermark; the tick recompute never touches it).
+writers also stamp `board_climb_stats.upstream_synced_at` whenever they write a
+row (the tick recompute never touches it). Since the no-op guard below, the
+Aurora sync and kilter-sync both skip rows whose values did not change, so the
+stamp reads "last changed upstream", not "last pass".
 
 The search hot path reads `ascensionist_count` through the covering index from
 migration 0067, so it stays a regular column (not `GENERATED`) — every writer
 must update it whenever they touch their own share.
+
+#### Unchanged re-sends are not rewritten
+
+Aurora's `climb_stats` cursor re-sends most of the table on every pass: in
+September 2026 it offered about 765k rows a day against a 985k-row table. The
+upsert used to rewrite every one of them, because its SET always moved
+`upstream_synced_at` and `tick_graded_at`. That made it the second-largest WAL
+writer on the primary (748 MB of WAL and 72k full-page images in 19.5 hours),
+and the WAL is shipped to the DR standby and to backup storage.
+
+`upsertClimbStats` now carries an `ON CONFLICT … WHERE` guard
+(`climbStatsConflictWhere`). A re-sent row is written only when:
+
+1. any SET column would change. The guard is built from the same entries as
+   the SET (`climbStatsConflictSet`), so it compares every column the SET
+   writes, including the computed ones: the upstream count policy, the total,
+   the quality blend, `quality_normalized`, the FA pair. `tick_graded_at`'s
+   entry is `NULL`, so a row carrying the tick-derived grade marker is always
+   written and the marker is cleared, even when the grade already matches
+   (#4798); or
+2. `upstream_synced_at IS NULL`, a one-off per row.
+
+`upstream_synced_at` is not in the guard. It still moves on every write, but an
+unchanged row keeps its old stamp. Its only runtime reader is the push-back
+absorption rule in the tick recompute (`kilter_synced_at < upstream_synced_at -
+48h`). Only kilter-sync writes `kilter_synced_at`, on Kilter ticks, and this
+daemon syncs every Aurora board except Kilter, so a frozen stamp here cannot
+change a count. The #4798 grade rule reads marker presence, never the stamp.
+
+"An Aurora pass ran" is kept per board instead of per row: after a pass reaches
+Aurora's `_complete`, the sync writes the pass START time to
+`board_shared_syncs` under the synthetic cursor `__local_climb_stats_pass__`
+(`markClimbStatsPassCompleted`; read it with `readClimbStatsPassStartedAt`). The
+start, not the end, because every row the pass wrote carries a stamp taken after
+it, so `GREATEST(row stamp, marker)` equals the row stamp for every row the pass
+changed. The marker never moves backward. Nothing reads it yet; it is the
+board-level time a future absorption rule for non-Kilter push-back would use.
+
+`beta_links` and `climbs` use the same guard. Their SETs write only
+`excluded.*` values and the listing/characteristics policy, so an identical
+re-send is skipped.
+
+**Reading the log line.** Every pass logs one line (numbers here are an example):
+
+```
+[SharedSync] tension climb_stats writes: received=41210 offered=41198 written=312 unchanged=40886
+```
+
+`received` is what Aurora sent, `offered` what reached the upsert (fully empty
+new keys are dropped first), `written` the rows inserted or changed, and
+`unchanged` the no-op re-sends the guard skipped. `written / offered` is the
+fraction of the re-send that was real change. The same numbers come back on
+`SharedSyncResult.climbStatsWrites`.
 
 `fa_username` / `fa_at` follow a related but asymmetric rule. Aurora's upsert
 writes them verbatim (including `null`, which is how Aurora signals an FA
