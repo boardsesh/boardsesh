@@ -1,6 +1,6 @@
 # Postgres query costs under the 4 GB cap
 
-This is the reference for what our Postgres queries cost and which changes cut that cost. Production Postgres runs under a 4 GB memory cap with 1,024 MiB of shared_buffers. Every number here comes from the September 2026 query-cost audit. Before you add a query, index or job that touches a large table, read the section for that area.
+This is the reference for what our Postgres queries cost and which changes cut that cost. Production Postgres runs under a 4 GB memory cap with 1,024 MiB of shared_buffers ([how the cap was set](./railway-cost-reduction.md#pg18-primary-4-gb-cap-september-26)). Every number here comes from the September 2026 query-cost audit. Before you add a query, index or job that touches a large table, read the section for that area.
 
 Each number carries a tag that says where it came from. The tags are explained in [How this was measured](#how-this-was-measured).
 
@@ -66,7 +66,7 @@ Change IDs (C#) match the audit findings. Rows are in rank order.
   - kilter 8/24: −163 climbs, +1. The 163 have zero holds rows but need set 27.
   - grasshopper: identical.
   - Counts shift by up to about 2% per config, and every shift is a correction.
-- **Where:** `packages/backend/src/graphql/resolvers/social/boards.ts:805-807, 849-865, 978-990, 1040-1070`; `server.ts:806`.
+- **Where:** `packages/backend/src/graphql/resolvers/social/boards.ts:805-807, 849-865, 978-990, 1040-1070`; `packages/backend/src/server.ts:806`.
 - **Caveats:**
   - Keep `totalAscents` as an Int.
   - Exclude `required_set_ids` NULL.
@@ -83,12 +83,12 @@ Change IDs (C#) match the audit findings. Rows are in rank order.
   - **Regression, Kilter L1 rare band 31–33:** 283k stats-PK probes, 587k → 1.0M hits, 1.54 → 1.99 s warm (R). It spills no temp and never touches the 1.3 GB grades table, so it may still win on prod's 1 GB cache (not measured).
 - **Rows:** identical, same order, on 3 configs. MoonBoard unlimited: 6,776 = 6,776 (R).
 - **Sizing:** the family is 5,295 s in the window (P), about 8,300 s/day (E). MoonBoard is 60% of it and gains the least, so savings are 2,500–4,000 s/day (E).
-- **Where:** `packages/db/src/queries/climbs/search-climbs.ts:352-472`, `create-climb-filters.ts:334-345, 547-558`.
+- **Where:** `packages/db/src/queries/climbs/search-climbs.ts:352-472`, `packages/db/src/queries/climbs/create-climb-filters.ts:334-345, 547-558`.
 - **Caveats:** add a test or guard for narrow bands on big layouts. Test NULL `display_difficulty` with a grades row. Pair the implementation with a reviewer.
 
 ### C3. climbStatsHistory
 
-- **What:** select current `board_climb_stats` rows with `ascensionist_count > 0`, map `updated_at` to `createdAt`, and keep the spray visibility check. Give it its own rate-limit bucket. Delete the dead web `climb-analytics.tsx`.
+- **What:** select current `board_climb_stats` rows with `ascensionist_count > 0`, map `updated_at` to `createdAt`, and keep the spray visibility check. Give it its own rate-limit bucket. Delete the dead web `packages/web/app/components/charts/climb-analytics.tsx`.
 - **Measured:**
   - Top Kilter climb: 2,860 ms cold / 15,730 reads → 1.25 ms / 18 buffers (R).
   - Median climb: 16.5 → 1.8 ms cold (R).
@@ -103,7 +103,7 @@ Change IDs (C#) match the audit findings. Rows are in rank order.
 
 ### C4. Runaway guards
 
-- **What:** set `client_connection_check_interval=5s`, keepalives 60/10/3, `track_io_timing=on`, `log_lock_waits=on` and `log_temp_files=10MB` (#5811). After C1 ships, set `DB_STATEMENT_TIMEOUT_MS=30000–60000` on backend and web only.
+- **What:** set `client_connection_check_interval=5s`, keepalives 60/10/3, `track_io_timing=on`, `log_lock_waits=on` and `log_temp_files=10MB`, on top of the `ALTER SYSTEM` settings from #5811 (see [the cap write-up](./railway-cost-reduction.md#pg18-primary-4-gb-cap-september-26)). After C1 ships, set `DB_STATEMENT_TIMEOUT_MS=30000–60000` on backend and web only.
 - **Why:** no statement timeout exists. Orphaned queries ran for over 30 min (P). 98 calls with a mean over 30 s used ≥4,666 s beyond 30 s in 16.2 h (P).
 - **Caveats:**
   - Never `ALTER ROLE boardsesh_runtime`: kilter-sync's 80–135 s upserts (P) would fail.
@@ -118,7 +118,7 @@ Change IDs (C#) match the audit findings. Rows are in rank order.
   - In the window this query had 12 calls, 1.9 s mean and 6.8 s max (P), so it is only 35–130 s/day (E).
 - **Also:** alias upsert skip, wall-source `IS DISTINCT FROM` with `is_listed`, unnest batches (852 queryids become 1), user-sync touched keys, and self-heal watermark slack.
 - **Offline side effect:** every no-op rewrite bumps `sync_seq`, so each device holding the layout re-pulls those rows. This fix shrinks the offline-sync-pull family too.
-- **Where:** `packages/kilter-sync/src/sync/catalog-sync.ts:492, 579-617, 786, 1032-1103`, `stats-repair.ts:314-354`, `locations-sync.ts:193-213`.
+- **Where:** `packages/kilter-sync/src/sync/catalog-sync.ts:492, 579-617, 786, 1032-1103`, `packages/kilter-sync/src/sync/stats-repair.ts:314-354`, `packages/kilter-sync/src/sync/locations-sync.ts:193-213`.
 
 ### C6. Recommendation counts
 
@@ -130,7 +130,7 @@ Change IDs (C#) match the audit findings. Rows are in rank order.
   - HIDDEN_GEMS: gets worse, from 18.5k to 46.5k buffers and 68 to 405 ms (R).
   - Counts identical in 9 of 9 cases (R).
 - **Why the cache matters most:** for heavy tickers the per-user ticks NOT EXISTS is 31k of the 52k buffers (R), and only a user-agnostic key removes it.
-- **Where:** `recommendation-query.ts:34-146`, `smart-playlists.ts:506-513`. `useSmartPlaylistCounts` is live (Discover `index.tsx:163`). Keep the hero count exact.
+- **Where:** `packages/db/src/queries/recommendations/recommendation-query.ts:34-146`, `packages/backend/src/graphql/resolvers/playlists/queries/smart-playlists.ts:506-513`. `useSmartPlaylistCounts` is live (`packages/mobile/app/(tabs)/discover/index.tsx:163`). Keep the hero count exact.
 
 ### C9. Popular sort
 
@@ -214,9 +214,9 @@ Every move here is JS-only and ships by OTA from `main`. New data must go in a s
 
 | Move | What moves | Native users without a download, and browser-app users, lose | Server s/day |
 |---|---|---|---|
-| C3 stats history → local | Register `CLIMB_STATS_HISTORY` in `offlineAwareRequest`. Resolve from local `board_climb_stats`. Switch `useClimbStatsHistory` (hooks/index.ts:1405) off `getHttpClient`. | Local-only: angle badges. Local-first plus C3: nothing. | Local-only 1,560–1,915 (E) |
+| C3 stats history → local | Register `CLIMB_STATS_HISTORY` in `offlineAwareRequest`. Resolve from local `board_climb_stats`. Switch `useClimbStatsHistory` (`packages/mobile/src/lib/graphql/hooks/index.ts:1405`) off `getHttpClient`. | Local-only: angle badges. Local-first plus C3: nothing. | Local-only 1,560–1,915 (E) |
 | C6 recommendation count → local | COUNT from local board_climbs, stats and ticks behind `useSmartPlaylistCounts`. The ranked list stays on the server: it needs setter_score and send_count_30d. | Local-only: Discover card counts. | Local-only 900–1,050 (E) |
-| C12 setter counts local-only | Already local-first (offline-request.ts:208). Set `networkPolicy: 'local-only'`. | The "Following" chip. 88% of calls return nothing today (P). | 170–325 (E); C12 gets most of it anyway |
+| C12 setter counts local-only | Already local-first (`packages/mobile/src/lib/graphql/offline-request.ts:208`). Set `networkPolicy: 'local-only'`. | The "Following" chip. 88% of calls return nothing today (P). | 170–325 (E); C12 gets most of it anyway |
 | Search count local-only | `useSearchClimbsCount` returns null when it cannot serve locally. | The "Show N climbs" preview, probably for most users. | 182–300 (E) |
 | Hold-state search local | Lift the `hasHoldState` decline and answer from the device holds index. | Nothing, unless it is made local-only. | 50–640 uncontended (E) |
 | Favorites reader | A local `user_favorites` reader for `useFavoriteStatus`. User tables sync without a board download. | Nothing on native. | 10–40 (E) |
@@ -295,7 +295,7 @@ Nothing here is native, so everything ships from `main`. The `totalAscents`, `to
    - Discovery rail: up to 15 min stale?
 4. **Offline-only trade-offs:** hide filter-sheet counts, Discover counts and the Following chip for boards that are not downloaded and for the browser app? Measure the download rate in PostHog first.
 5. **C2 rare bands:** accept a slower worst case (1.54 → 1.99 s warm (R)) with no temp and no grades reads, or add a guard?
-6. **Stats-history snapshot:** can it become change-only once C3 lands? The `gates.ts` backtest assumes a full weekly cross-section.
+6. **Stats-history snapshot:** can it become change-only once C3 lands? The `packages/db/src/queries/grade-model/gates.ts` backtest assumes a full weekly cross-section.
 7. **Setter sitemap:** does it earn search traffic? If not, removing it saves about 270 s/day (E).
 8. **Deploy cadence and replica count:** these set the real size of C1.
 9. **Wide-angle grades:** keep materialising all 15 MoonBoard angles?
