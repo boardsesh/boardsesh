@@ -66,6 +66,8 @@ import {
   main,
   parseArgs,
   previousConfigurationInput,
+  PROBE_ATTEMPTS,
+  PROBE_REQUIRED_CONSECUTIVE_OK,
   probeService,
   resetAuthScheme,
   rollbackAppliedDeployments,
@@ -1588,9 +1590,14 @@ describe('probeService', () => {
       return new Response('ok', { status: 200 });
     }) as typeof globalThis.fetch;
     try {
-      const { error } = await withFetch(stub, () => probeService({ baseUrl: OTA_BASE_URL, paths: ['/hc', '/ready'] }));
+      const { error } = await withFetch(stub, () =>
+        probeService({ baseUrl: OTA_BASE_URL, paths: ['/hc', '/ready'] }, async () => {}),
+      );
       expect(error).toBeUndefined();
-      expect(seen).toEqual([`${OTA_BASE_URL}/hc`, `${OTA_BASE_URL}/ready`]);
+      expect(seen).toEqual([
+        ...Array(PROBE_REQUIRED_CONSECUTIVE_OK).fill(`${OTA_BASE_URL}/hc`),
+        ...Array(PROBE_REQUIRED_CONSECUTIVE_OK).fill(`${OTA_BASE_URL}/ready`),
+      ]);
     } finally {
       captured.restore();
     }
@@ -1611,8 +1618,50 @@ describe('probeService', () => {
         }),
       );
       expect(error?.message).toMatch(/probe failed.*503/);
-      expect(attempts).toBe(3);
-      expect(sleeps).toEqual([5_000, 5_000]);
+      expect(attempts).toBe(PROBE_ATTEMPTS);
+      expect(sleeps).toEqual(Array(PROBE_ATTEMPTS - 1).fill(5_000));
+    } finally {
+      captured.restore();
+    }
+  });
+
+  it('rides out the edge splitting traffic between the old and new container', async () => {
+    // 2026-09-26, the first 3.2.4 roll: 30 s after SUCCESS the edge still sent some
+    // requests to the draining old container, so 200s and 503s interleaved for a
+    // while. Three tries over ten seconds rolled back a healthy server.
+    const captured = captureConsole();
+    const answers = [200, 503, 503, 200, 503, 503, 503, 200, 200, 200];
+    let calls = 0;
+    const stub = (async () => {
+      const status = answers[Math.min(calls, answers.length - 1)];
+      calls += 1;
+      return new Response('', { status });
+    }) as typeof globalThis.fetch;
+    try {
+      const { error } = await withFetch(stub, () =>
+        probeService({ baseUrl: OTA_BASE_URL, paths: ['/ready'] }, async () => {}),
+      );
+      expect(error).toBeUndefined();
+      expect(calls).toBe(answers.length);
+    } finally {
+      captured.restore();
+    }
+  });
+
+  it('does not accept a lone 200 inside a run of failures', async () => {
+    // A single 200 in the switch window may come from the old container.
+    const captured = captureConsole();
+    let calls = 0;
+    const stub = (async () => {
+      calls += 1;
+      return new Response('', { status: calls % 2 === 0 ? 200 : 503 });
+    }) as typeof globalThis.fetch;
+    try {
+      const { error } = await withFetch(stub, () =>
+        probeService({ baseUrl: OTA_BASE_URL, paths: ['/ready'] }, async () => {}),
+      );
+      expect(error?.message).toMatch(/did not answer 200 3 times in a row/);
+      expect(calls).toBe(PROBE_ATTEMPTS);
     } finally {
       captured.restore();
     }
@@ -2448,8 +2497,9 @@ describe('apply mode', () => {
     );
 
     expect(code).toBe(0);
-    expect(stub.probeCalls()).toBe(4);
-    expect(sleeps.filter((milliseconds) => milliseconds === 5_000)).toHaveLength(2);
+    // /hc: 503, 503, then three 200s; /ready: three 200s.
+    expect(stub.probeCalls()).toBe(2 + 2 * PROBE_REQUIRED_CONSECUTIVE_OK);
+    expect(sleeps.filter((milliseconds) => milliseconds === 5_000)).toHaveLength(4 + 2);
   });
 
   it('unwinds successful services in reverse when a later service fails', async () => {
