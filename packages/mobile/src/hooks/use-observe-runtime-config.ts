@@ -1,7 +1,8 @@
 import { useEffect } from 'react';
-import { useFeatureFlags } from '../providers/feature-flags-provider';
+import { AppState } from 'react-native';
+import { useFeatureFlags, useFeatureFlagsResolved } from '../providers/feature-flags-provider';
 import { parseObserveSampleRate, resolveObserveDispatchEnabled } from '../lib/observe-config';
-import { configureObserve } from '../lib/observe-runtime';
+import { configureObserve, dispatchObserveEvents } from '../lib/observe-runtime';
 
 /**
  * Re-applies the Observe dispatch settings whenever the PostHog flags change.
@@ -19,16 +20,14 @@ import { configureObserve } from '../lib/observe-runtime';
  *
  * A no-op when no runtime is registered (node tests, Expo web).
  *
- * On a cold start this re-applies the same defaults `observe-bootstrap.ts`
- * already set, because PostHog has not resolved yet. That second call is
- * deliberate rather than something to optimise away: skipping it would mean
- * branching on "are these the defaults", and the whole point of this effect is
- * that it is the single place the runtime settings come from once flags exist.
- * The call is idempotent and passes the same integrations constant, so it costs
- * one no-op configure per launch.
+ * On a cold start this first applies the unresolved bag, then deliberately
+ * re-applies it when PostHog's answer becomes final even if the values stayed at
+ * their defaults. The latter effect run precedes the first manual flush below,
+ * so that foreground flush never uses a provisional kill switch or sample rate.
  */
 export function useObserveRuntimeConfig(): void {
   const flags = useFeatureFlags();
+  const flagsResolved = useFeatureFlagsResolved();
   const dispatchFlag = flags['observe-dispatch-enabled'];
   const sampleRateFlag = flags['observe-sample-rate'];
 
@@ -37,5 +36,22 @@ export function useObserveRuntimeConfig(): void {
       dispatchingEnabled: resolveObserveDispatchEnabled(dispatchFlag),
       sampleRate: parseObserveSampleRate(sampleRateFlag),
     });
-  }, [dispatchFlag, sampleRateFlag]);
+    // Re-apply once when the flag bag becomes final, even when its values still
+    // equal the shipped defaults. This effect is declared before the lifecycle
+    // effect so final configuration always reaches native before its first flush.
+  }, [dispatchFlag, flagsResolved, sampleRateFlag]);
+
+  useEffect(() => {
+    if (!flagsResolved) return;
+
+    let previousAppState = AppState.currentState;
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      const enteredForeground = nextAppState === 'active' && previousAppState !== 'active';
+      previousAppState = nextAppState;
+      if (enteredForeground) void dispatchObserveEvents();
+    });
+    if (previousAppState === 'active') void dispatchObserveEvents();
+
+    return () => subscription.remove();
+  }, [flagsResolved]);
 }

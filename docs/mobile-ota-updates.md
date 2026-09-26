@@ -892,13 +892,18 @@ produced it — the per-update comparison neither PostHog nor Sentry can express
   of the node-env test graph that `error-reporting.ts` sits in.
 - **What it sends**: per-screen `cold_ttr` / `warm_ttr` / `tti` (expo-router integration), log
   events, and every error that reaches `reportError` — so Sentry and Observe always agree on what
-  counted as an error. `tti` needs `markInteractive` per screen and is not wired up yet.
+  counted as an error. After feature flags resolve, the app flushes once for the launch and again
+  whenever it returns from inactive/background to active; the SDK's native background flush stays
+  in place. `tti` needs `markInteractive` per screen and is not wired up yet.
 - **Endpoint**: derived from `EXPO_UPDATES_URL`'s origin plus the OTA app id
   (`resolveObserveEndpoint` in `app.config.ts`), so telemetry and manifests can never point at
   different servers. A build with no self-hosted URL, or an EAS-hosted one, reports nothing.
 - **Control without a build**: `observe-dispatch-enabled` (kill switch) and `observe-sample-rate`
   (multivariate, ships at `1`) in PostHog. Unresolved flags read as the shipped defaults, so a
   device that never reaches PostHog keeps reporting.
+- **Country**: Cloudflare overwrites `X-Geo-Country` from `ip.src.country` on the proxied updates
+  hostname, and xprem trusts only that configured header. This is aggregate telemetry only: the
+  public Railway origin means it must never be used for authorization or compliance decisions.
 - **Native.** `expo-observe` pulls in `expo-app-metrics` and `expo-eas-client`, so it moved the
   fingerprint. Only binaries built after it shipped report at all — an older store build stays
   silent however long it runs.
@@ -1133,6 +1138,9 @@ Postgres, server, DNS) stay manual. Run it with no argument for the ordered runb
      serves any update. The mitigation is the service's restart policy set to `ALWAYS`, so it keeps
      retrying until Redis answers. The likely time for this race is Railway's Redis auto-update
      window (weekends), when Redis restarts and the OTA server may boot while it is down.
+   - `TRUST_GEOIP_HEADERS=true` and `GEOIP_HEADER_COUNTRY=X-Geo-Country`. Apply the Cloudflare
+     request-header rule before enabling these; it overwrites the header from `ip.src.country` on
+     `updates.boardsesh.com`.
    - `DB_URL` + `DB_KEYS_MASTER_KEY_B64` (from steps 2–3)
    - `USE_DASHBOARD=true`, `ADMIN_EMAIL` (a bare address), and a policy-compliant `ADMIN_PASSWORD`
      (≥8 chars, upper/lower/digit/special — first boot crash-loops otherwise). These are the

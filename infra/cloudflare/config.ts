@@ -230,6 +230,12 @@ export const DYNAMIC_REDIRECT_RULE_PHASE = 'http_request_dynamic_redirect';
  */
 export const RESPONSE_HEADER_RULE_PHASE = 'http_response_headers_transform';
 
+/** Request-header rewrites sent from Cloudflare to origins. */
+export const REQUEST_HEADER_RULE_PHASE = 'http_request_late_transform';
+
+/** The proxied xprem endpoint that receives Observe telemetry and OTA traffic. */
+export const UPDATES_HOSTNAME = 'updates.boardsesh.com';
+
 /** Cloudflare SSL/TLS modes ordered weakest → strongest, for the "is the live mode weaker?" check. */
 export const SSL_MODE_STRENGTH = ['off', 'flexible', 'full', 'strict'] as const;
 export type SslMode = (typeof SSL_MODE_STRENGTH)[number];
@@ -398,6 +404,21 @@ export interface ResponseHeaderRuleDesired {
   enabled: boolean;
 }
 
+/**
+ * A Request Header Transform rule. The expression value is evaluated at the
+ * edge, so the origin receives Cloudflare's country lookup rather than a value
+ * supplied by the client.
+ */
+export interface RequestHeaderRuleDesired {
+  description: string;
+  expression: string;
+  action: 'rewrite';
+  action_parameters: {
+    headers: Record<string, { operation: 'set'; expression: string }>;
+  };
+  enabled: boolean;
+}
+
 export interface CloudflareDesiredState {
   zoneName: string;
   dnsRecords: DnsRecordDesired[];
@@ -416,6 +437,8 @@ export interface CloudflareDesiredState {
   rateLimitRules: RateLimitRuleDesired[];
   /** Order is not significant: Cloudflare stops at the first matching redirect and there is only one. */
   redirectRules: RedirectRuleDesired[];
+  /** Order is not significant: the rule is host-scoped and identified by description. */
+  requestHeaderRules: RequestHeaderRuleDesired[];
   /** Order is not significant: matched by expression, like cache rules. */
   responseHeaderRules: ResponseHeaderRuleDesired[];
   ssl: SslDesired;
@@ -900,6 +923,11 @@ export const SNAPSHOTS_CORS_HEADER_RULE_DESCRIPTION =
   'boardsesh:snapshots-cors-header (managed by scripts/cloudflare-apply.ts)';
 export const SNAPSHOTS_CORS_HEADER_EXPRESSION = `http.host eq "${SNAPSHOTS_HOSTNAME}"`;
 
+export const OBSERVE_COUNTRY_HEADER_RULE_DESCRIPTION =
+  'boardsesh:observe-country-header (managed by scripts/cloudflare-apply.ts)';
+export const OBSERVE_COUNTRY_HEADER_EXPRESSION = `http.host eq "${UPDATES_HOSTNAME}"`;
+export const OBSERVE_COUNTRY_HEADER_NAME = 'X-Geo-Country';
+
 /**
  * CORS for public, immutable objects fetched directly by clients.
  *
@@ -1258,6 +1286,19 @@ export const desiredCloudflareState: CloudflareDesiredState = {
           status_code: 301,
           target_url: { expression: APEX_REDIRECT_TARGET_EXPRESSION },
           preserve_query_string: true,
+        },
+      },
+      enabled: true,
+    },
+  ],
+  requestHeaderRules: [
+    {
+      description: OBSERVE_COUNTRY_HEADER_RULE_DESCRIPTION,
+      expression: OBSERVE_COUNTRY_HEADER_EXPRESSION,
+      action: 'rewrite',
+      action_parameters: {
+        headers: {
+          [OBSERVE_COUNTRY_HEADER_NAME]: { operation: 'set', expression: 'ip.src.country' },
         },
       },
       enabled: true,

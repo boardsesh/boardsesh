@@ -45,6 +45,10 @@ overrides:
   # Keep main on the App Store 2.5.0 runtime; advance these only on release/next.
   baseline-browser-mapping: 2.11.17
   caniuse-lite: 1.0.30001809
+  # expo-app-metrics 57.0.21 asks for 57.0.2, whose Android Maven artifact was
+  # not published. Its Android sources are identical to the autolinked 57.0.1.
+  # Remove this when expo-updates-interface >=57.0.2 publishes that Maven artifact.
+  expo-updates-interface: 57.0.1
   # Remove only when an upstream release passes the disconnect/recovery tests (#5299).
   postgres: 3.4.9
   react-native-screens: 4.26.2

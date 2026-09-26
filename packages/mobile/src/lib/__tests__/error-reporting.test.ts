@@ -457,7 +457,7 @@ describe('Observe forwarding', () => {
   });
 
   function registerObserve(reportError_ = vi.fn()) {
-    setObserveRuntime({ configure: vi.fn(), reportError: reportError_ });
+    setObserveRuntime({ configure: vi.fn(), dispatchEvents: vi.fn(async () => undefined), reportError: reportError_ });
     return reportError_;
   }
 
@@ -510,6 +510,7 @@ describe('Observe forwarding', () => {
     // able to lose the actual error.
     setObserveRuntime({
       configure: vi.fn(),
+      dispatchEvents: vi.fn(async () => undefined),
       reportError: () => {
         throw new Error('native module exploded');
       },
