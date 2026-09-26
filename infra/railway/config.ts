@@ -260,11 +260,8 @@ export const desiredRailwayState: RailwayDesiredState = {
             'dashboard renders the "turn on telemetry" placeholder instead of metrics.',
         },
         // The four cache variables below move xprem's manifest/asset cache out of
-        // the Go heap and into the project's shared Railway Redis. They were
-        // added to config before the runtime switch: until someone sets them on
-        // the service, the nightly drift check reports them as absent. That is
-        // the intended nudge, not a false alarm. Rollout and rollback live in
-        // docs/railway-cost-reduction.md (October 2026).
+        // the Go heap and into the project's shared Railway Redis. Rollback lives
+        // in docs/railway-cost-reduction.md (October 2026).
         {
           name: 'CACHE_MODE',
           reason:

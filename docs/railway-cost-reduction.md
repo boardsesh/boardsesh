@@ -165,24 +165,28 @@ proxy.
 
 ## October 2026
 
-- Planned, applied on _<date>_: `boardsesh-ota-v3` moves from `CACHE_MODE=local`
-  to Redis (`boardsesh-ota` key prefix on the shared Railway Redis). Before: 1.7 GB
-  live Go heap, 2.3M objects after 21 days. After: _measured on <date>_. Set:
+- Applied 2026-09-26 01:08 UTC: `boardsesh-ota-v3` moved from `CACHE_MODE=local`
+  to Redis (`boardsesh-ota` key prefix on the shared Railway Redis). Before:
+  1.81 GB RSS, 1.74 GB live Go heap, 2.3M objects after 21 days. After, one
+  minute past the restart (`/metrics`): 49.8 MB RSS
+  (`process_resident_memory_bytes`), 13.4 MB heap in use
+  (`go_memstats_heap_inuse_bytes`). `/hc` and `/ready` returned 200 about 50 s
+  after the redeploy. Variables set:
 
   ```sh
   railway variable set --service boardsesh-ota-v3 --environment production \
-  'CACHE_MODE=redis' \
-  'REDIS_HOST=${{Redis.REDISHOST}}' \
-  'REDIS_PORT=${{Redis.REDISPORT}}' \
-  'REDIS_PASSWORD=${{Redis.REDISPASSWORD}}' \
-  'CACHE_KEY_PREFIX=boardsesh-ota'
+    'CACHE_MODE=redis' \
+    'REDIS_HOST=${{Redis.REDISHOST}}' \
+    'REDIS_PORT=${{Redis.REDISPORT}}' \
+    'REDIS_PASSWORD=${{Redis.REDISPASSWORD}}' \
+    'CACHE_KEY_PREFIX=boardsesh-ota'
   ```
 
   Rollback: set `CACHE_MODE=local` and remove the four Redis variables
   (`railway variable delete --service boardsesh-ota-v3 --environment production <NAME>`
   for `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `CACHE_KEY_PREFIX`). The
-  nightly drift check reports `CACHE_MODE` and the Redis variables until the
-  switch is applied, and again after a rollback.
+  nightly drift check reports `CACHE_MODE` and the Redis variables while rolled
+  back.
 
 ## Remaining rollout
 
