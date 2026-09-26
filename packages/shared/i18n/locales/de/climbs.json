@@ -722,8 +722,6 @@
       "settings": {
         "draftLabel": "Als Entwurf speichern",
         "draftDescription": "Entwürfe bleiben privat, bis du sie veröffentlichst.",
-        "showAllHoldsLabel": "Alle Griffe zeigen",
-        "showAllHoldsDescription": "Hebt jeden antippbaren Griff auf dem Board hervor.",
         "noMatchLabel": "Kein Matchen",
         "noMatchDescription": "Hände dürfen nicht am selben Griff matchen",
         "noKickboardLabel": "Ohne Fußleiste",

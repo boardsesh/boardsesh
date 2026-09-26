@@ -13,7 +13,6 @@ import type { BoardName, HoldsFilter } from '@boardsesh/shared-schema';
 import { BoardImageNative } from '../BoardImageNative';
 import { ResetZoomButton } from '../board-controls/ResetZoomButton';
 import { useZoomPanGesture } from '../play-drawer/use-zoom-pan-gesture';
-import { HoldTargetLayer } from '../create-climb/HoldTargetLayer';
 import { holdGeometry, buildHoldHitTargets } from '../create-climb/holdLayout';
 import { useRestHoldTapGesture } from '../create-climb/use-rest-hold-tap-gesture';
 import { useZoomedHoldTapGesture, PAN_ACTIVATION_OFFSET } from '../create-climb/use-zoomed-hold-tap-gesture';
@@ -73,8 +72,6 @@ type InteractiveFilterBoardProps = {
   activeHoldId?: number | null;
   /** Tap handler that opens the hold picker. Omit to disable hold taps (zone mode). */
   onHoldTap?: (holdId: number) => void;
-  /** Hide visible all-hold tap markers while keeping hold tap targets active. */
-  showHoldMarkers?: boolean;
   mirrored?: boolean;
   renderWidth: number;
   renderHeight: number;
@@ -128,9 +125,9 @@ export type FilterBoardControls = {
  * no-SVG gesture model as `InteractiveCreateBoard`: the board PNG plus one
  * full-bleed tap overlay and the filter rings INSIDE the zoom-transformed view,
  * so taps and rings track holds at any zoom with no manual coordinate math. The
- * overlay resolves a touch to the nearest hold centre (#4496); the dots below it
- * are markers only. Pinch is always live; the 1-finger pan only mounts while
- * zoomed.
+ * overlay resolves a touch to the nearest hold centre (#4496). No per-hold dots
+ * are drawn: the board photo is the target. Pinch is always live; the 1-finger
+ * pan only mounts while zoomed.
  *
  * Unlike the create board this lives on a full-screen route (not a bottom
  * sheet), so the pan overlay can stay simpler — there's no parent scroll to
@@ -147,7 +144,6 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
   holdsFilter,
   activeHoldId = null,
   onHoldTap,
-  showHoldMarkers = true,
   mirrored = false,
   renderWidth,
   renderHeight,
@@ -204,9 +200,8 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
     () => buildHoldHitTargets(holdTargets, boardWidth, boardHeight, renderWidth, renderHeight, mirrored),
     [holdTargets, boardWidth, boardHeight, renderWidth, renderHeight, mirrored],
   );
-  // At rest, one full-bleed overlay resolves the tap to the nearest hold centre.
-  // HoldTargetLayer below is markers only, so nothing competes for the touch
-  // (#4496).
+  // At rest, one full-bleed overlay resolves the tap to the nearest hold centre
+  // (#4496). Nothing is drawn per hold, so nothing competes for the touch.
   const restHoldTapGesture = useRestHoldTapGesture({
     hitTargets,
     // The picker opens on a single tap, so a long press routes to the same
@@ -291,17 +286,6 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
               />
             ) : null}
             {activeHighlight}
-            {onHoldTap ? (
-              <HoldTargetLayer
-                holdTargets={holdTargets}
-                boardWidth={boardWidth}
-                boardHeight={boardHeight}
-                measuredWidth={renderWidth}
-                mirrored={mirrored}
-                showAllHolds
-                showHoldMarkers={showHoldMarkers}
-              />
-            ) : null}
             {!isZoomed && restHoldTapGesture ? (
               <GestureDetector gesture={restHoldTapGesture}>
                 <View collapsable={false} style={StyleSheet.absoluteFill} />

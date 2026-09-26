@@ -722,8 +722,6 @@
       "settings": {
         "draftLabel": "Enregistrer comme brouillon",
         "draftDescription": "Les brouillons restent privés jusqu’à publication.",
-        "showAllHoldsLabel": "Afficher toutes les prises",
-        "showAllHoldsDescription": "Met en évidence chaque prise cliquable de la board.",
         "noMatchLabel": "Une main par prise",
         "noMatchDescription": "Les mains ne peuvent pas se rejoindre sur la même prise",
         "noKickboardLabel": "Sans kickboard",
