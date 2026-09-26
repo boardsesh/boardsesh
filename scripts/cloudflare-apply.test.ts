@@ -1132,6 +1132,19 @@ describe('automation default-deny (allow-list model)', () => {
     ['empty UA', ''],
     ['production smoke', 'boardsesh-production-smoke/1.0'],
     ['ESP32 board controller (thumbnail fetch)', 'ESP32HTTPClient'],
+    [
+      'Snapchat unfurler',
+      'Mozilla/5.0 (compatible; Snap URL Preview Service; bot; snapchat; https://developers.snap.com/robots)',
+    ],
+    [
+      'AppleNewsBot',
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15 (AppleNewsBot/0.1; +http://www.apple.com/go/applebot)',
+    ],
+    ['DuckDuckGo favicons', 'Mozilla/5.0 (compatible; DuckDuckGo-Favicons-Bot/1.0; +http://duckduckgo.com)'],
+    ['DuckAssistBot', 'DuckAssistBot/1.2; (+http://duckduckgo.com/duckassistbot.html)'],
+    ['Kagibot', 'Mozilla/5.0 (compatible; Kagibot/1.0; +https://kagi.com/bot)'],
+    ['AdsBot-Google', 'AdsBot-Google (+http://www.google.com/adsbot.html)'],
+    ['msnbot-media', 'msnbot-media/1.1 (+http://search.msn.com/msnbot.htm)'],
     ['Sentry uptime', 'SentryUptimeBot/1.0 (+http://docs.sentry.io/product/alerts/uptime-monitoring/)'],
     ['Apple AASA', 'AASA-Bot/1.0.0'],
     ['Android asset links', 'GoogleAssociationService'],
@@ -1187,6 +1200,10 @@ describe('automation default-deny (allow-list model)', () => {
     ['GPTBot', 'Mozilla/5.0 (compatible; GPTBot/1.4; +https://openai.com/gptbot)'],
     ['AhrefsBot', 'Mozilla/5.0 (compatible; AhrefsBot/7.0; +http://ahrefs.com/robot/)'],
     ['YandexBot', 'Mozilla/5.0 (compatible; YandexBot/3.0; +http://yandex.com/bots)'],
+    [
+      'SeznamBot',
+      'Mozilla/5.0 (compatible; SeznamBot/4.0; +https://o-seznam.cz/napoveda/vyhledavani/en/seznambot-crawler/)',
+    ],
   ];
 
   it.each(mustPass)('lets %s through at the edge and the origin', (_label, userAgent) => {
@@ -1214,7 +1231,7 @@ describe('automation default-deny (allow-list model)', () => {
   it('leaves health, .well-known and the API surfaces alone', () => {
     // mobile-ota-production.yml polls ws /health with bare curl while it waits
     // for the backend; a 403 there would stall every OTA publish.
-    for (const path of ['/health', '/health/db', '/api/health']) {
+    for (const path of ['/health', '/health/db', '/api/health', '/robots.txt']) {
       expect(defaultDenyRule.expression).toContain(`http.request.uri.path eq "${path}"`);
       expect(isBlockedCrawler('curl/8.9.1', { method: 'GET', pathname: path })).toBe(false);
     }
@@ -1225,6 +1242,8 @@ describe('automation default-deny (allow-list model)', () => {
     // Named crawlers stay blocked everywhere: the exemption is for the
     // default-deny only.
     expect(isBlockedCrawler('Lightpanda/1.0', { method: 'POST', pathname: '/health' })).toBe(true);
+    expect(isBlockedCrawler('Lightpanda/1.0', { method: 'GET', pathname: '/robots.txt' })).toBe(true);
+    expect(isBlockedCrawler('SomeNewBot/1.0', { method: 'GET', pathname: '/robots.txt' })).toBe(false);
   });
 
   it('runs after the allow rule and before the challenge', () => {
