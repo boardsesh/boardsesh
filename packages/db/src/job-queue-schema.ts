@@ -31,6 +31,27 @@ const POPULAR_BOARD_CONFIGS_REFRESH_QUEUE_OPTIONS = {
   retryDelay: 300,
 } as const;
 
+/**
+ * The backend's hourly `board_climb_popularity` refresh (the popular sort's
+ * ranking table, docs/climb-popularity.md). Lives here because the migrator
+ * creates the queue.
+ */
+export const CLIMB_POPULARITY_REFRESH_QUEUE = 'climb-popularity-refresh';
+
+/**
+ * `exclusive`: one job queued or running, so a slow run never overlaps the
+ * next hour's. An incremental run takes well under a second; a full pass
+ * (a board's first build, then weekly) took 34 s for every board on the dev DB.
+ * The handler stops itself before 1,500 s, under this expiry, so pg-boss never
+ * starts a second copy beside a live one.
+ */
+const CLIMB_POPULARITY_REFRESH_QUEUE_OPTIONS = {
+  policy: 'exclusive',
+  expireInSeconds: 1_800,
+  retryLimit: 2,
+  retryDelay: 300,
+} as const;
+
 /** Only the deployment's reserved migration-owner connection may execute this. */
 export async function initializeJobQueueSchema(
   database: Parameters<typeof jobQueueTransactionAdapter>[0],
@@ -65,6 +86,12 @@ export async function initializeJobQueueSchema(
     });
     const { policy: _popularPolicy, ...mutablePopularOptions } = POPULAR_BOARD_CONFIGS_REFRESH_QUEUE_OPTIONS;
     await boss.updateQueue(POPULAR_BOARD_CONFIGS_REFRESH_QUEUE, mutablePopularOptions);
+    await boss.createQueue(CLIMB_POPULARITY_REFRESH_QUEUE, {
+      partition: false,
+      ...CLIMB_POPULARITY_REFRESH_QUEUE_OPTIONS,
+    });
+    const { policy: _climbPopularityPolicy, ...mutableClimbPopularityOptions } = CLIMB_POPULARITY_REFRESH_QUEUE_OPTIONS;
+    await boss.updateQueue(CLIMB_POPULARITY_REFRESH_QUEUE, mutableClimbPopularityOptions);
     for (const queue of Object.values(BACKGROUND_JOB_QUEUES)) {
       await boss.createQueue(queue, { partition: false, ...BACKGROUND_PROBE_JOB_OPTIONS });
       const { policy: _policy, ...mutableOptions } = BACKGROUND_PROBE_JOB_OPTIONS;

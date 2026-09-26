@@ -1,10 +1,13 @@
 import { type SQL, desc, sql, and, eq } from 'drizzle-orm';
+import { alias, type SubqueryWithSelection } from 'drizzle-orm/pg-core';
 import type { DbInstance } from '../../client/postgres';
-import { boardClimbs, boardClimbStats, boardClimbGrades } from '../../schema/index';
+import { boardClimbs, boardClimbStats, boardClimbGrades, boardClimbPopularity } from '../../schema/index';
 import { withSerialPlan } from '../util/serial-plan';
+import { isClimbPopularityReady } from './climb-popularity';
 import {
   createClimbFilters,
   effectiveDifficultySql,
+  gradeInRangeSql,
   gradeValueSql,
   personalGradeColumnSql,
   type PersonalGradeJoinTarget,
@@ -198,6 +201,18 @@ export const searchClimbs = async (
   const statsDrivenSort = getStatsDrivenSort(sortBy, sortOrder);
 
   const hasStatsFilters = filters.hasRequiredStatsFilters();
+  // Cross-angle keeps the aggregation: it ranks every climb by its effective
+  // row, which no per-angle walk can serve, and a per-candidate lookup of the
+  // table measured slower than the one hash aggregate (3.3 s vs 2.3 s on
+  // Kilter Original, dev DB).
+  if (
+    sortBy === 'popular' &&
+    sortOrder === 'desc' &&
+    !filters.isCrossAngleStats &&
+    (await isClimbPopularityReady(db, params.board_name))
+  ) {
+    return popularitySearch(db, params, searchParams, filters, page, pageSize);
+  }
   if (!statsDrivenSort) {
     return standardSearch(db, params, searchParams, filters, sortBy, sortOrder, isDraftsQuery, page, pageSize, false);
   }
@@ -495,13 +510,7 @@ async function selectPageThenJoinGrades(
 ): Promise<RawSelectResult[]> {
   const sortColumn = statsDrivenSortColumn(sortBy);
   const rankedPage = db
-    .select({
-      ...statsDrivenClimbFields(),
-      // The ranking key and its tiebreak, carried out so the outer query can put
-      // the page back in the same order.
-      sort_key: sql<number | null>`${sortColumn}`.as('sort_key'),
-      sort_uuid: sql<string>`${boardClimbStats.climbUuid}`.as('sort_uuid'),
-    })
+    .select(rankedPageFields(sql`${sortColumn}`, sql`${boardClimbStats.climbUuid}`))
     .from(boardClimbStats)
     .innerJoin(boardClimbs, eq(boardClimbs.uuid, boardClimbStats.climbUuid))
     .where(and(...statsDrivenScopeConditions(params, filters), ...statsRowConditions))
@@ -511,6 +520,33 @@ async function selectPageThenJoinGrades(
     .offset(page * pageSize)
     .as('ranked_page');
 
+  return joinGradesToRankedPage(db, params, rankedPage);
+}
+
+/**
+ * A ranked page's SELECT list: the stats-driven row plus the ranking key and
+ * its tiebreak, carried out so the outer query can put the page back in the
+ * same order.
+ */
+function rankedPageFields(sortKey: SQL, sortUuid: SQL) {
+  return {
+    ...statsDrivenClimbFields(),
+    sort_key: sql<number | null>`${sortKey}`.as('sort_key'),
+    sort_uuid: sql<string>`${sortUuid}`.as('sort_uuid'),
+  };
+}
+
+type RankedPage = SubqueryWithSelection<ReturnType<typeof rankedPageFields>, 'ranked_page'>;
+
+/**
+ * Look up the Boardsesh grade for a ranked page's rows (at most pageSize + 1),
+ * after the page is cut. Shared by the stats-driven and popularity walks.
+ */
+async function joinGradesToRankedPage(
+  db: SearchDb,
+  params: BoardRouteParams,
+  rankedPage: RankedPage,
+): Promise<RawSelectResult[]> {
   return (await db
     .select({
       uuid: rankedPage.uuid,
@@ -623,6 +659,193 @@ async function selectPageWithGradesJoined(
 }
 
 /**
+ * The popular sort once the board's `board_climb_popularity` build has finished
+ * (C9 in docs/postgres-query-costs.md).
+ *
+ * The order is:
+ *
+ *   [walk rows, by total DESC, uuid DESC] ++ [every other row, by total DESC NULLS LAST, uuid DESC]
+ *
+ * where a walk row is a single-frame, unhidden climb with a stats row AND a
+ * popularity row at the browsed angle whose copied grade and ascent count pass
+ * the filter, and `total` is the climb's ascent count summed over every angle,
+ * as the old aggregation computed it. The walk reads
+ * `board_climb_popularity_rank_idx` in order and stops after one page; the
+ * rest only runs once the walk is exhausted, like the stats-driven fallback
+ * (#1971), and its first rows are exactly the walk's.
+ *
+ * One change from the old order, the same one the ascents sort has always
+ * made: a climb nobody has logged at the browsed angle now follows every climb
+ * somebody has, whatever its total at other angles.
+ *
+ * Never used under cross-angle (see searchClimbs).
+ */
+async function popularitySearch(
+  db: DbInstance,
+  params: BoardRouteParams,
+  searchParams: ClimbSearchParams,
+  filters: ReturnType<typeof createClimbFilters>,
+  page: number,
+  pageSize: number,
+): Promise<ClimbSearchResult> {
+  // The walk reads the stats row without a grades join (like
+  // selectPageThenJoinGrades), so it needs the split grade predicate; it
+  // cannot serve the climber's own grades either. Routes and projects are
+  // almost all outside the walk anyway (routes sort in the tail, projects have
+  // no stats row).
+  const statsRowConditions = filters.getStatsRowClimbStatsConditions();
+  const canWalk =
+    statsRowConditions !== null &&
+    filters.getPersonalGradeJoin() === null &&
+    !searchParams.projectsOnly &&
+    !(searchParams.routes && !searchParams.boulders);
+
+  if (canWalk) {
+    const copyConditions = popularityCopyConditions(boardClimbPopularity, searchParams);
+    const walk = await withSerialPlan(db, (tx) =>
+      runPopularityWalk(tx, params, filters, statsRowConditions, copyConditions, page, pageSize),
+    );
+    if (walk.hasMore) return walk;
+  }
+
+  return standardSearch(db, params, searchParams, filters, 'popular', 'desc', false, page, pageSize, false, {
+    copyConditions: canWalk ? popularityCopyConditions(popularityAtAngle, searchParams) : [],
+  });
+}
+
+/**
+ * The standard search orders the popular sort from `board_climb_popularity`
+ * instead of the aggregation when this is set. `copyConditions` are the copy
+ * predicates the walk applied (empty when it could not run), so the standard
+ * search puts exactly the walk's rows first.
+ */
+type PopularTableOrdering = {
+  copyConditions: SQL[];
+};
+
+/** The browsed-angle popularity row, joined by the standard search to mark walk rows. */
+const popularityAtAngle = alias(boardClimbPopularity, 'popularity_at_angle');
+/**
+ * Any one popularity row of a climb: every row of a climb carries the same
+ * total. Drizzle renders an aliased table interpolated into `sql` as the bare
+ * alias, so the FROM below spells out `table AS alias` itself.
+ */
+const POPULARITY_ANY_ANGLE_ALIAS = 'popularity_any_angle';
+const popularityAnyAngle = alias(boardClimbPopularity, POPULARITY_ANY_ANGLE_ALIAS);
+
+/**
+ * The filter's grade band and minimum ascents, checked against the copies the
+ * popularity row carries so the walk can reject a row inside the index. The
+ * live stats row is still checked (statsRowConditions); these only decide
+ * which rows get that far. Mirrors `statsRowGradeRangeSql` and the minAscents
+ * predicate in create-climb-filters: a NULL copied difficulty passes here and
+ * is settled by the live check's Boardsesh-grade fallback.
+ */
+function popularityCopyConditions(
+  popularity: typeof boardClimbPopularity | typeof popularityAtAngle,
+  searchParams: ClimbSearchParams,
+): SQL[] {
+  const conditions: SQL[] = [];
+  if (searchParams.minAscents && !searchParams.projectsOnly) {
+    conditions.push(sql`${popularity.ascensionistCount} >= ${searchParams.minAscents}`);
+  }
+  const bandCondition = gradeInRangeSql(
+    sql`ROUND(${popularity.displayDifficulty}::numeric, 0)`,
+    searchParams.minGrade,
+    searchParams.maxGrade,
+  );
+  if (bandCondition) {
+    conditions.push(sql`(${bandCondition} OR ${popularity.displayDifficulty} IS NULL)`);
+  }
+  return conditions;
+}
+
+/**
+ * The single-frame, unhidden rule the old aggregation applied before it would
+ * count a climb at all. Rows outside it had no total and sorted last.
+ */
+function countsTowardPopularity(): SQL {
+  return sql`(${boardClimbs.isHidden} = false AND (${boardClimbs.framesCount} = 1 OR ${boardClimbs.framesCount} IS NULL))`;
+}
+
+/**
+ * The walk: popularity rows at the browsed angle in index order, joined to
+ * their live stats row and climb by primary key, cut to one page.
+ */
+async function runPopularityWalk(
+  db: SearchDb,
+  params: BoardRouteParams,
+  filters: ReturnType<typeof createClimbFilters>,
+  statsRowConditions: SQL[],
+  copyConditions: SQL[],
+  page: number,
+  pageSize: number,
+): Promise<ClimbSearchResult> {
+  const rankedPage = db
+    .select(
+      rankedPageFields(sql`${boardClimbPopularity.totalAscensionistCount}`, sql`${boardClimbPopularity.climbUuid}`),
+    )
+    .from(boardClimbPopularity)
+    .innerJoin(
+      boardClimbStats,
+      and(
+        eq(boardClimbStats.boardType, boardClimbPopularity.boardType),
+        eq(boardClimbStats.climbUuid, boardClimbPopularity.climbUuid),
+        eq(boardClimbStats.angle, boardClimbPopularity.angle),
+      ),
+    )
+    .innerJoin(boardClimbs, eq(boardClimbs.uuid, boardClimbPopularity.climbUuid))
+    .where(
+      and(
+        eq(boardClimbPopularity.boardType, params.board_name),
+        eq(boardClimbPopularity.angle, params.angle),
+        ...copyConditions,
+        ...statsDrivenScopeConditions(params, filters),
+        ...statsRowConditions,
+        countsTowardPopularity(),
+      ),
+    )
+    // Bare DESC (NULLS FIRST) on both: the index's pathkeys, so no Sort node.
+    // Both columns are NOT NULL, so this is the same order as NULLS LAST.
+    .orderBy(desc(boardClimbPopularity.totalAscensionistCount), desc(boardClimbPopularity.climbUuid))
+    .limit(pageSize + 1)
+    .offset(page * pageSize)
+    .as('ranked_page');
+
+  const rows = await joinGradesToRankedPage(db, params, rankedPage);
+  const hasMore = rows.length > pageSize;
+  const trimmed = hasMore ? rows.slice(0, pageSize) : rows;
+  return { climbs: trimmed.map((row) => mapResultToClimbRow(row, params, false)), hasMore };
+}
+
+/**
+ * The standard search's ORDER BY keys (before the uuid tiebreak) for the
+ * popular sort read from `board_climb_popularity`. See popularitySearch.
+ */
+function popularTableSortKeys(params: BoardRouteParams, ordering: PopularTableOrdering): SQL[] {
+  // The old aggregation's total, NULL wherever it would not have counted the
+  // climb (hidden, a route, unlisted, a draft) or found no stats row. One
+  // primary-key probe per candidate.
+  const tailTotal = sql`CASE WHEN ${countsTowardPopularity()} AND ${boardClimbs.isListed} = true AND ${boardClimbs.isDraft} = false
+    THEN (SELECT ${popularityAnyAngle.totalAscensionistCount}
+          FROM ${boardClimbPopularity} AS ${sql.identifier(POPULARITY_ANY_ANGLE_ALIAS)}
+          WHERE ${popularityAnyAngle.boardType} = ${params.board_name}
+            AND ${popularityAnyAngle.climbUuid} = ${boardClimbs.uuid}
+          LIMIT 1)
+    END`;
+  const isWalkRow = and(
+    sql`${popularityAtAngle.climbUuid} IS NOT NULL`,
+    sql`${boardClimbStats.climbUuid} IS NOT NULL`,
+    countsTowardPopularity(),
+    ...ordering.copyConditions,
+  );
+  return [
+    sql`CASE WHEN ${isWalkRow} THEN 0 ELSE 1 END ASC`,
+    sql`CASE WHEN ${isWalkRow} THEN ${popularityAtAngle.totalAscensionistCount} ELSE ${tailTotal} END DESC NULLS LAST`,
+  ];
+}
+
+/**
  * Standard search: FROM board_climbs LEFT JOIN board_climb_stats.
  * Used for non-default sorts (difficulty, name, creation, popular) and for
  * draft queries.
@@ -641,6 +864,7 @@ async function standardSearch(
   page: number,
   pageSize: number,
   orderStatsHavingFirst: boolean,
+  popularTable: PopularTableOrdering | null = null,
 ): Promise<ClimbSearchResult> {
   return withSerialPlan(db, (tx) =>
     runStandardSearch(
@@ -654,6 +878,7 @@ async function standardSearch(
       page,
       pageSize,
       orderStatsHavingFirst,
+      popularTable,
     ),
   );
 }
@@ -669,12 +894,15 @@ async function runStandardSearch(
   page: number,
   pageSize: number,
   orderStatsHavingFirst: boolean,
+  popularTable: PopularTableOrdering | null,
 ): Promise<ClimbSearchResult> {
   // For the popular sort, pre-aggregate total ascents across all angles via a joined subquery
   // instead of a correlated subquery that runs per candidate row.
   // Scoped with an EXISTS to only aggregate stats for climbs matching the search filters.
+  // Only until the board's board_climb_popularity build has finished: after
+  // that the totals come from the table (see popularTableSortKeys).
   const popularCountsSubquery =
-    sortBy === 'popular'
+    sortBy === 'popular' && !popularTable
       ? db
           .select({
             climbUuid: boardClimbStats.climbUuid,
@@ -833,11 +1061,13 @@ async function runStandardSearch(
   // quality_average would otherwise interleave with stats-less climbs by uuid DESC.
   // Never set it for name/creation/popular/random sorts — it would reorder them (and
   // break the md5 shuffle's page stability).
-  const orderByKeys = [
-    ...(orderStatsHavingFirst ? [sql`CASE WHEN ${boardClimbStats.climbUuid} IS NULL THEN 1 ELSE 0 END ASC`] : []),
-    orderByClause,
-    desc(boardClimbs.uuid),
-  ];
+  const orderByKeys = popularTable
+    ? [...popularTableSortKeys(params, popularTable), desc(boardClimbs.uuid)]
+    : [
+        ...(orderStatsHavingFirst ? [sql`CASE WHEN ${boardClimbStats.climbUuid} IS NULL THEN 1 ELSE 0 END ASC`] : []),
+        orderByClause,
+        desc(boardClimbs.uuid),
+      ];
 
   // LEFT JOIN preserves climbs without stats (they get NULL stats columns).
   const withStatsJoin = db
@@ -873,9 +1103,22 @@ async function runStandardSearch(
     ? coreQuery.leftJoin(personalGradeJoin.subquery, personalGradeJoin.on)
     : coreQuery;
 
-  const queryWithJoins = popularCountsSubquery
+  const queryWithPopularCounts = popularCountsSubquery
     ? queryWithPersonalGrade.leftJoin(popularCountsSubquery, eq(popularCountsSubquery.climbUuid, boardClimbs.uuid))
     : queryWithPersonalGrade;
+
+  // The browsed-angle popularity row, which decides whether a row belongs to
+  // the walk's prefix — see popularTableSortKeys.
+  const queryWithJoins = popularTable
+    ? queryWithPopularCounts.leftJoin(
+        popularityAtAngle,
+        and(
+          eq(popularityAtAngle.boardType, params.board_name),
+          eq(popularityAtAngle.climbUuid, boardClimbs.uuid),
+          eq(popularityAtAngle.angle, params.angle),
+        ),
+      )
+    : queryWithPopularCounts;
 
   const results: RawSelectResult[] = (await queryWithJoins
     .where(and(...whereConditions))

@@ -11,6 +11,7 @@ import {
   statsDrivenClimbFields,
 } from '../search-climbs';
 import { mapSearchInputToParams, normalizeSearchSortBy, type BoardRouteParams } from '../types';
+import { resetClimbPopularityReadinessForTests } from '../climb-popularity';
 import type { DbInstance } from '../../../client/postgres';
 
 const baseInput = {
@@ -910,5 +911,83 @@ void describe('stats-driven path: Boardsesh grades joined after the page is cut'
       ['first', 'second'],
     );
     assert.equal(result.hasMore, true);
+  });
+});
+
+/**
+ * C9: once a board's `board_climb_popularity` build has finished, the popular
+ * sort walks that table in index order instead of aggregating every stats row
+ * of the board (docs/climb-popularity.md).
+ */
+void describe('popular sort: board_climb_popularity walk', () => {
+  // The readiness answer is cached per process for 60 s; every case resets it
+  // before and after, so no other test inherits a "ready" board.
+  const withReadyBoard = (ready: boolean, scriptedRows: Record<string, unknown>[][]) => {
+    resetClimbPopularityReadinessForTests();
+    const fake = createFakeSearchDb(scriptedRows);
+    // The readiness probe is a plain select on the top-level db, outside any
+    // transaction: answer it with one row when the board is built.
+    const readinessBuilder: Record<string, unknown> = {};
+    for (const method of ['from', 'where', 'limit']) readinessBuilder[method] = () => readinessBuilder;
+    readinessBuilder.then = (onFulfilled?: (value: unknown) => unknown) =>
+      Promise.resolve(ready ? [{ boardType: 'kilter' }] : []).then(onFulfilled);
+    return { ...fake, db: { ...fake.fakeDb, select: () => readinessBuilder } as unknown as DbInstance };
+  };
+  const popular = { page: 0, pageSize: 20, sortBy: 'popular', sortOrder: 'desc' } as const;
+
+  void it('walks the rank index when the board is built', async () => {
+    const walkPage = Array.from({ length: 21 }, (_, index) => fakeRow(`climb-${index}`));
+    const { db, queries, callOrder, executedStatements } = withReadyBoard(true, [walkPage]);
+    try {
+      const result = await searchClimbs(db, SEARCH_PARAMS, popular);
+      assert.equal(result.climbs.length, 20);
+      assert.equal(result.hasMore, true);
+      assert.equal(queries.length, 1, 'a full walk page needs no fallback');
+      assert.equal(queries[0].table, 'board_climb_popularity');
+      // Bare DESC on both keys: the index's own order, so no Sort node.
+      assert.deepEqual(queries[0].subquery?.orderBy, [
+        '"board_climb_popularity"."total_ascensionist_count" desc',
+        '"board_climb_popularity"."climb_uuid" desc',
+      ]);
+      assert.ok(queries[0].subquery?.joins.includes('board_climb_stats'), 'the live stats row is re-checked');
+      assertEverySelectIsGuarded(callOrder, executedStatements);
+    } finally {
+      resetClimbPopularityReadinessForTests();
+    }
+  });
+
+  void it('falls back to the ordered standard search when the walk runs out', async () => {
+    const { db, queries } = withReadyBoard(true, [[fakeRow('only-walk-row')], [fakeRow('only-walk-row')]]);
+    try {
+      await searchClimbs(db, SEARCH_PARAMS, popular);
+      assert.equal(queries.length, 2);
+      assert.equal(queries[1].table, 'board_climbs');
+      assert.ok(queries[1].joins.includes('popularity_at_angle'), 'the fallback marks the walk rows');
+    } finally {
+      resetClimbPopularityReadinessForTests();
+    }
+  });
+
+  void it('keeps the old aggregation until the board is built', async () => {
+    const { db, queries, whereClauses } = withReadyBoard(false, []);
+    try {
+      await searchClimbs(db, SEARCH_PARAMS, popular);
+      assert.equal(queries.length, 1);
+      assert.equal(queries[0].table, 'board_climbs');
+      assert.equal(whereClauses.length, 2, 'the popular_counts subquery, then the page query');
+    } finally {
+      resetClimbPopularityReadinessForTests();
+    }
+  });
+
+  void it('keeps the old aggregation under cross-angle stats', async () => {
+    const { db, queries } = withReadyBoard(true, []);
+    try {
+      await searchClimbs(db, SEARCH_PARAMS, { ...popular, crossAngleStats: true });
+      assert.ok(queries.length > 0);
+      assert.ok(queries.every((query) => query.table !== 'board_climb_popularity'));
+    } finally {
+      resetClimbPopularityReadinessForTests();
+    }
   });
 });

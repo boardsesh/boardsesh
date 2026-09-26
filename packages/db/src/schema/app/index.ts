@@ -32,6 +32,7 @@ export * from './hold-outline-overrides';
 export * from './climb-embeddings';
 export * from './climb-similar';
 export * from './climb-neighbors';
+export * from './climb-popularity';
 export * from './integration-exports';
 export * from './location-sync';
 export * from './location-sync-unfreeze-audit';

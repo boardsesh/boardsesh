@@ -19,6 +19,10 @@ const climbNeighborResumableBuildsSchema = readFileSync(
   new URL('../../../db/drizzle/0237_climb_neighbor_resumable_builds.sql', import.meta.url),
   'utf8',
 );
+const climbPopularitySchema = readFileSync(
+  new URL('../../../db/drizzle/0242_climb_popularity.sql', import.meta.url),
+  'utf8',
+);
 
 export const schemaSQL = `
   DROP TABLE IF EXISTS "board_session_queues" CASCADE;
@@ -1867,4 +1871,6 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   DROP TABLE IF EXISTS board_climb_neighbors, board_climb_neighbor_runs, board_climb_neighbor_group_runs;
   ${climbNeighborsSchema}
   ${climbNeighborResumableBuildsSchema}
+  DROP TABLE IF EXISTS board_climb_popularity, board_climb_popularity_runs;
+  ${climbPopularitySchema}
 `;

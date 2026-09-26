@@ -73,3 +73,17 @@ export {
   type ClimbNeighborRefreshOptions,
   type ClimbNeighborRefreshResult,
 } from './climb-neighbors-refresh';
+export {
+  FULL_CHUNK_STATS_ROWS,
+  FULL_REBUILD_INTERVAL_MS,
+  INCREMENTAL_CHUNK_CLIMBS,
+  INCREMENTAL_MAX_CLIMBS,
+  WATERMARK_SLACK,
+  isClimbPopularityReady,
+  refreshClimbPopularity,
+  refreshClimbPopularityForBoard,
+  resetClimbPopularityReadinessForTests,
+  type ClimbPopularityBoardResult,
+  type ClimbPopularityDb,
+  type ClimbPopularityRefreshOptions,
+} from './climb-popularity';
