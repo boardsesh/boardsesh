@@ -15,6 +15,7 @@ import { isLocalDevelopment, isTestEnvironment } from '@boardsesh/db/client/conf
 import { logger } from '../utils/logger';
 import { wasErrorReported } from '../utils/sentry-dedupe';
 import { maskDatabaseError } from './mask-error';
+import { responseCompressionPlugin } from './response-compression';
 
 async function authenticateHttpBearer(authHeader: string | null): Promise<AuthResult | null> {
   if (!authHeader) return null;
@@ -98,7 +99,9 @@ export function createYogaInstance() {
     graphqlEndpoint: '/graphql',
     // Depth/cost limiting for HTTP GraphQL requests.
     // WebSocket subscriptions are protected separately via onSubscribe in websocket/setup.ts
-    plugins: [maxDepthPlugin({ n: 10 }), costLimitPlugin({ maxCost: 5000 })],
+    // Response compression: Railway bills uncompressed egress even though
+    // Cloudflare compresses to the client. See ./response-compression.ts.
+    plugins: [maxDepthPlugin({ n: 10 }), costLimitPlugin({ maxCost: 5000 }), responseCompressionPlugin()],
     // Context function - extract auth and the trusted client IP from HTTP requests.
     // `req` is the Node request `server.ts` hands to `yoga.handle`; it carries the
     // TCP socket the client cannot forge.
