@@ -8,7 +8,9 @@ name: Refresh MoonBoard Wide-Angle Estimates
 # rows into board_climb_grades, disjoint from both the main grade model
 # (25°/40° only) and refresh-moonboard-angle-estimates.yml's same-board
 # transpose (the OTHER of 25°/40°). Rows the run no longer stands behind are
-# reaped in the same transaction. Idempotent.
+# reaped in the same transaction. Idempotent: a row whose values did not move
+# is left alone (packages/db/scripts/grade-estimate-upsert.ts), so its
+# computed_at sync cursor stays put and devices don't download it again.
 #
 # Weekly rather than nightly for the same reason as the sibling angle-estimate
 # job: the training sample (MoonBoard problems with a known 25°/40° grade)

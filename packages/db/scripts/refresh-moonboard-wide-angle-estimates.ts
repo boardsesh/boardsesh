@@ -17,7 +17,7 @@
  */
 import { sql } from 'drizzle-orm';
 import { createScriptDb } from './db-connection.js';
-import { boardClimbGrades } from '../src/schema/app/climb-grades.js';
+import { upsertGradeEstimates } from './grade-estimate-upsert.js';
 import {
   CONFIDENCE,
   MOONBOARD_WIDE_ANGLE_SHAPE_BOARDS,
@@ -40,7 +40,6 @@ import {
 } from './moonboard-wide-angle-estimate-helpers.js';
 
 const READ_PAGE_ROWS = 20000;
-const UPSERT_BATCH = 500;
 const DELETE_BATCH = 500;
 const SAMPLE_ROWS = 5;
 
@@ -114,30 +113,7 @@ async function loadExistingKeys(db: Db): Promise<MoonboardWideAngleEstimateKey[]
  * same class of bug on the delete side).
  */
 async function upsertEstimates(db: DbWriter, plan: MoonboardWideAngleEstimatePlan): Promise<number> {
-  let written = 0;
-  for (let start = 0; start < plan.upserts.length; start += UPSERT_BATCH) {
-    const batch = plan.upserts.slice(start, start + UPSERT_BATCH);
-    await db
-      .insert(boardClimbGrades)
-      .values(batch)
-      .onConflictDoUpdate({
-        target: [boardClimbGrades.boardType, boardClimbGrades.climbUuid, boardClimbGrades.angle],
-        set: {
-          localGrade: sql`EXCLUDED.local_grade`,
-          universalGrade: sql`EXCLUDED.universal_grade`,
-          gradeLow: sql`EXCLUDED.grade_low`,
-          gradeHigh: sql`EXCLUDED.grade_high`,
-          confidence: sql`EXCLUDED.confidence`,
-          ascensionistCount: sql`EXCLUDED.ascensionist_count`,
-          contentPrior: sql`EXCLUDED.content_prior`,
-          modelVersion: sql`EXCLUDED.model_version`,
-          coeffVersion: sql`EXCLUDED.coeff_version`,
-          computedAt: sql`now()`,
-        },
-      });
-    written += batch.length;
-  }
-  return written;
+  return upsertGradeEstimates(db, plan.upserts);
 }
 
 async function reapStaleEstimates(db: DbWriter, reaps: readonly MoonboardWideAngleEstimateKey[]): Promise<number> {
@@ -215,7 +191,9 @@ async function main(): Promise<void> {
       written: await upsertEstimates(tx, plan),
       deleted: await reapStaleEstimates(tx, plan.reaps),
     }));
-    console.log(`[moon-wide] published ${written} estimate rows, reaped ${deleted} stale rows.`);
+    console.log(
+      `[moon-wide] published ${written} changed estimate rows (${plan.upserts.length - written} unchanged, left alone), reaped ${deleted} stale rows.`,
+    );
     console.log('[moon-wide] done.');
   } finally {
     await close();
