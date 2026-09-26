@@ -1440,8 +1440,8 @@ export type ClimbStatsForClimb = {
 };
 
 /**
- * A single snapshot of climb statistics from the history table.
- * Captured during shared sync to track trends over time.
+ * Current climb statistics at one angle. The name is historical: entries used to
+ * be snapshots from the history table, and now come from the live stats row.
  */
 export type ClimbStatsHistoryEntry = {
   __typename?: 'ClimbStatsHistoryEntry';
@@ -1449,7 +1449,7 @@ export type ClimbStatsHistoryEntry = {
   angle: Scalars['Int']['output'];
   /** Number of people who have completed this climb at this angle */
   ascensionistCount?: Maybe<Scalars['Int']['output']>;
-  /** When this snapshot was recorded */
+  /** When these numbers were last updated (ISO 8601) */
   createdAt: Scalars['String']['output'];
   /** Average difficulty rating */
   difficultyAverage?: Maybe<Scalars['Float']['output']>;
@@ -5919,8 +5919,8 @@ export type Query = {
    */
   climbStatsForClimbs: Array<ClimbStatsForClimb>;
   /**
-   * Get climb stats history for a climb over the last 12 months.
-   * Returns snapshots captured during shared sync for trend analysis.
+   * Current statistics for a climb, one entry per angle it has been sent at.
+   * Despite the name this is no longer a time series; prefer climbStatsForAngles.
    */
   climbStatsHistory: Array<ClimbStatsHistoryEntry>;
   /** Get comments for an entity. */

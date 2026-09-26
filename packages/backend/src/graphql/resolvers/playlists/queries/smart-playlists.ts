@@ -13,7 +13,11 @@ import { applyRateLimit, requireAuthenticated, validateInput } from '../../share
 import { GetSmartPlaylistInputSchema } from '../../../../validation/schemas';
 import { hydrateClimbsByRefs, type ClimbRef } from '../helpers/hydrate-climbs';
 import { resolveRecommendationBoardTarget } from '../helpers/recommendation-board-target';
-import { selectRecommendationClimbRefs, countRecommendationClimbRefs } from '../helpers/recommendation-refs';
+import {
+  selectRecommendationClimbRefs,
+  countRecommendationClimbRefs,
+  countRecommendationCardClimbs,
+} from '../helpers/recommendation-refs';
 
 // Logbook-derived smart playlists (computed from the user's own ticks).
 type LogbookPlaylistType = 'FIVE_STARS' | 'MOST_REPEATED' | 'PROJECTS' | 'LIKED_CLIMBS';
@@ -499,16 +503,17 @@ export const mySmartPlaylistCounts = async (
       { type: 'LIKED_CLIMBS', count: byType.get('LIKED_CLIMBS') ?? 0 },
     ];
 
-    // Recommendation cards: scoped to the user's resolved board. All zero
-    // (cards hidden) when no board can be determined. The transaction handle
-    // goes down so the four counts share this connection and its guard rather
-    // than opening four more.
+    // Recommendation cards: scoped to the user's resolved board, and left out
+    // when no board can be determined. The transaction handle goes down so the
+    // four counts share this connection and its guard rather than opening four
+    // more. Each card count is a cached catalog count minus the user's own
+    // sends (countRecommendationCardClimbs); the playlist page stays exact.
     const target = await resolveRecommendationBoardTarget(userId, undefined, tx);
     if (target) {
       const recCounts = await Promise.all(
         RECOMMENDATION_TYPES.map(async (type) => ({
           type,
-          count: await countRecommendationClimbRefs(type, target, userId, tx),
+          count: await countRecommendationCardClimbs(type, target, userId, tx),
         })),
       );
       counts.push(...recCounts);
