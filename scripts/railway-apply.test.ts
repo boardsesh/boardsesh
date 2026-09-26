@@ -38,17 +38,18 @@ import {
 
 const NO_SUPPLIED = { suppliedVars: new Set<string>() };
 
-// The main stubs answer every service's variables() query with one set, so this
-// holds every variable any declared service requires, across all of them. A
-// service-specific value is merged over it by the caller.
 // The OTA server's Redis cache settings, as production carries them.
 const OTA_CACHE_VARS = {
   CACHE_MODE: 'redis',
   REDIS_HOST: 'redis.railway.internal',
+  REDIS_PORT: '6379',
   REDIS_PASSWORD: 'test-redis-password',
   CACHE_KEY_PREFIX: 'boardsesh-ota',
 };
 
+// The main stubs answer every service's variables() query with one set, so this
+// holds every variable any declared service requires, across all of them. A
+// service-specific value is merged over it by the caller.
 const BASELINE_REQUIRED_VARS = {
   ...OTA_CACHE_VARS,
   SMTP_USER: 'mailer@boardsesh.com',
@@ -288,9 +289,26 @@ describe('diffServiceVars', () => {
     const summaries = diffServiceVars(otaService, live, NO_SUPPLIED).map((change) => change.summary);
     expect(summaries).toEqual([
       `${OTA_SERVICE_NAME}: REDIS_HOST is absent`,
+      `${OTA_SERVICE_NAME}: REDIS_PORT is absent`,
       `${OTA_SERVICE_NAME}: REDIS_PASSWORD is absent`,
       `${OTA_SERVICE_NAME}: CACHE_KEY_PREFIX is absent`,
     ]);
+  });
+
+  it('accepts unrendered ${{Redis.*}} reference templates as set, not as placeholders', () => {
+    const live = liveState({
+      variables: {
+        ...liveState().variables,
+        [OTA_SERVICE_NAME]: {
+          CLICKHOUSE_URL: 'clickhouse://u:p@host:9000/expo_observe',
+          ...OTA_CACHE_VARS,
+          REDIS_HOST: '${{Redis.REDISHOST}}',
+          REDIS_PORT: '${{Redis.REDISPORT}}',
+          REDIS_PASSWORD: '${{Redis.REDISPASSWORD}}',
+        },
+      },
+    });
+    expect(diffServiceVars(otaService, live, NO_SUPPLIED)).toEqual([]);
   });
 
   it('stays quiet about variables on a service that does not exist', () => {

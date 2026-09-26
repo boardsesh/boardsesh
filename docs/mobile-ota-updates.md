@@ -1045,7 +1045,8 @@ Postgres, server, DNS) stay manual. Run it with no argument for the ordered runb
      Railway Redis, over the private network) and `CACHE_KEY_PREFIX` = `boardsesh-ota`. Local
      mode caches in the Go heap with no size bound or eviction: in production it reached a
      1.7 GB live heap (2.3M objects) after 21 days. The backend keeps its own keys in the same
-     Redis, so the prefix is mandatory. `vp run railway:apply` asserts all of this (see
+     Redis; the prefix keeps OTA keys easy to tell apart (unset, xprem uses `expoopenota`). xprem
+     has no default for `REDIS_PORT` and panics if it cannot reach Redis. `vp run railway:apply` asserts all of this (see
      [railway.md](./railway.md)). `CACHE_MODE` = `local` still works as a fallback at one
      replica, if Redis is down or being replaced; expect the heap to grow again while it runs.
    - `DB_URL` + `DB_KEYS_MASTER_KEY_B64` (from steps 2–3)

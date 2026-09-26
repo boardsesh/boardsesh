@@ -163,7 +163,7 @@ connections. Its connection string is the `connection string` field of the
 the PG18 proxy since September 26; before that they still named the deleted PG16
 proxy.
 
-## October 2026
+## OTA server Redis cache, September 26
 
 - Applied 2026-09-26 01:08 UTC: `boardsesh-ota-v3` moved from `CACHE_MODE=local`
   to Redis (`boardsesh-ota` key prefix on the shared Railway Redis). Before:

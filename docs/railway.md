@@ -40,12 +40,13 @@ it. A second `--apply` with nothing to do is a no-op.
   their values, and installing or rolling back the certificate itself is a separate
   reviewed operator procedure rather than anything a nightly job does.
   `boardsesh-ota-v3` needs `CLICKHOUSE_URL` plus the Redis cache settings:
-  `CACHE_MODE` (which must be `redis`), `REDIS_HOST`, `REDIS_PASSWORD` and
-  `CACHE_KEY_PREFIX`. Without `CACHE_MODE`, xprem quietly falls back to its local
-  in-process cache, which has no size bound and grew to a 1.7 GB heap; the server
-  keeps working, so only this check notices. `CACHE_KEY_PREFIX` keeps OTA keys
-  apart from the backend's keys in the shared Redis. `REDIS_PORT` is not asserted:
-  Railway Redis listens on the default port.
+  `CACHE_MODE` (which must be `redis`), `REDIS_HOST`, `REDIS_PORT`,
+  `REDIS_PASSWORD` and `CACHE_KEY_PREFIX`. Without `CACHE_MODE`, xprem quietly
+  falls back to its local in-process cache, which has no size bound and grew to a
+  1.7 GB heap; the server keeps working, so only this check notices. xprem has no
+  default for `REDIS_PORT`, so a missing port or host makes its Redis connection
+  check panic. `CACHE_KEY_PREFIX` pins the key names (unset, xprem uses
+  `expoopenota`), so a config change never strands the cached state under old keys.
 - **ClickHouse retention.** Asserts the TTLs on xprem's `observe_metrics` and
   `observe_logs` tables.
 

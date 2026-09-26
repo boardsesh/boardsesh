@@ -259,9 +259,9 @@ export const desiredRailwayState: RailwayDesiredState = {
             'Enables xprem Observe. Unset means telemetry ingest is silently dropped and the ' +
             'dashboard renders the "turn on telemetry" placeholder instead of metrics.',
         },
-        // The four cache variables below move xprem's manifest/asset cache out of
+        // The five cache variables below move xprem's manifest/asset cache out of
         // the Go heap and into the project's shared Railway Redis. Rollback lives
-        // in docs/railway-cost-reduction.md (October 2026).
+        // in docs/railway-cost-reduction.md ("OTA server Redis cache, September 26").
         {
           name: 'CACHE_MODE',
           reason:
@@ -272,21 +272,28 @@ export const desiredRailwayState: RailwayDesiredState = {
         {
           name: 'REDIS_HOST',
           reason:
-            'Private-network host of the shared Railway Redis (${{Redis.REDISHOST}}). Without it ' +
-            'redis mode has nothing to connect to, and the cache stops working.',
+            'Private-network host of the shared Railway Redis (${{Redis.REDISHOST}}). xprem dials ' +
+            'REDIS_HOST:REDIS_PORT and panics when the first connection check fails, so without it ' +
+            'the server cannot serve updates.',
+        },
+        {
+          name: 'REDIS_PORT',
+          reason:
+            'Port of the shared Railway Redis (${{Redis.REDISPORT}}). xprem v3.1.2 has no default ' +
+            'for it: an empty value makes the address "host:" and the connection check panics.',
         },
         {
           name: 'REDIS_PASSWORD',
           reason:
             'Auth for the shared Railway Redis (${{Redis.REDISPASSWORD}}). Railway Redis requires ' +
-            'a password, so redis mode fails to connect without it.',
+            'a password, so without it the connection check fails with NOAUTH and xprem panics.',
         },
         {
           name: 'CACHE_KEY_PREFIX',
           reason:
-            'Must be set (production uses "boardsesh-ota"). The backend keeps its own keys in the ' +
-            'same Redis (pub/sub, debounce, connection caps); without a prefix the OTA cache keys ' +
-            'share that keyspace and can collide with them.',
+            'Production uses "boardsesh-ota". Unset, xprem prefixes keys with "expoopenota", which ' +
+            'works but moves every cached manifest, lock and rate-limit counter to new keys. Pinning ' +
+            "it keeps the keys stable and easy to tell apart from the backend's keys in the same Redis.",
         },
       ],
       optionalConstrainedVars: [
