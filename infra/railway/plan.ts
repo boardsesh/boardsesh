@@ -168,9 +168,9 @@ export interface PlanOptions {
   /**
    * The `eoas` CLI version this repo publishes with, from EOAS_PACKAGE_SPEC.
    *
-   * The standing rule in docs/mobile-ota-updates.md is that the CLI may lead the
-   * server but must never trail it — a CLI that trails can 404 on app-scoped
-   * routes. Passing it here turns that prose rule into a blocked plan entry.
+   * A CLI that trails the server can 404 on app-scoped routes, so an image ahead
+   * of this version is a blocked plan entry. (Since 3.2.0 the CLI may not lead
+   * either; eoas-version-parity.test.ts requires the two to be equal.)
    */
   eoasVersion?: string;
 }

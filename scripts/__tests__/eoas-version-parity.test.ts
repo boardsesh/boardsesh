@@ -105,12 +105,12 @@ describe('eoas version parity', () => {
     }
   });
 
-  it('never lets the deployed server outrank the CLI we publish with', () => {
-    // The standing rule from docs/mobile-ota-updates.md: the CLI may lead the
-    // server, but a CLI that TRAILS can 404 on app-scoped routes. Enforced here as
-    // well as in infra/railway/plan.ts, so the two halves cannot be bumped out of
-    // order even in a PR that never runs the apply tool.
-    expect(compareVersions(OTA_SERVER_VERSION, PINNED_EOAS_VERSION)).toBeLessThanOrEqual(0);
+  it('keeps the deployed server and the CLI we publish with on the same version', () => {
+    // A CLI that TRAILS the server can 404 on app-scoped routes, and since 3.2.0 a
+    // CLI that LEADS it cannot upload at all (the upload protocol changed with no
+    // fallback). infra/railway/plan.ts blocks the trailing case at apply time; this
+    // catches both in any PR, even one that never runs the apply tool.
+    expect(compareVersions(OTA_SERVER_VERSION, PINNED_EOAS_VERSION)).toBe(0);
   });
 
   it('states the pinned CLI in the OTA doc and the declared server image in the runbook', () => {

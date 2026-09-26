@@ -133,10 +133,13 @@ Six things gate the image change, and all six matter:
   larger act than correcting a healthcheck path, so it is asked for explicitly —
   the same shape as `cf:apply`'s `--allow-zone-ssl`. The nightly drift job never
   passes it; the apply job does.
-- **The CLI may lead the server, never trail it.** `infra/railway/plan.ts` blocks
-  the OTA image if its version is ahead of `EOAS_PACKAGE_SPEC`, because a CLI that trails
-  can 404 on app-scoped routes. `scripts/__tests__/eoas-version-parity.test.ts`
-  asserts the same thing without needing the API. ClickHouse has its own version
+- **The CLI never trails the server.** `infra/railway/plan.ts` blocks the OTA image
+  if its version is ahead of `EOAS_PACKAGE_SPEC`, because a CLI that trails can 404 on
+  app-scoped routes. `scripts/__tests__/eoas-version-parity.test.ts` asserts the same
+  thing without needing the API. Since xprem 3.2.0 the CLI may not lead either, because
+  the upload protocol changed with no fallback. So the bump PR moves both, and the OTA
+  publish on that commit waits for this apply to finish
+  (`scripts/mobile-ota-server-ready.mjs`). ClickHouse has its own version
   series and is not compared to eoas; its image changes still require explicit opt-in.
 - **The service must be quiet.** A deployment already in flight aborts the run
   rather than stacking a second one on top of it.

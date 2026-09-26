@@ -80,6 +80,46 @@ describe('production OTA workflow reliability', () => {
     expect(timeout).toBeGreaterThanOrEqual(minimumPublishJobTimeoutMinutes(2));
   });
 
+  it('waits for a same-commit OTA server rollout before every upload to the server', () => {
+    const gateStep = 'Wait for the OTA server rollout on this commit';
+    // Staging: the gate runs before the first publish step.
+    const publishJob = jobBlock(production, 'publish');
+    expect(stepBlock(publishJob, gateStep)).toContain('node scripts/mobile-ota-server-ready.mjs');
+    expect(publishJob.indexOf(gateStep)).toBeLessThan(publishJob.indexOf('vp run mobile:publish'));
+    expect(parse(production).permissions).toMatchObject({ contents: 'read', actions: 'read' });
+    // Promotion: a second upload, so a second check before it.
+    const promotion = jobBlock(pipeline, 'promote-mobile-ota');
+    expect(stepBlock(promotion, gateStep)).toContain('node scripts/mobile-ota-server-ready.mjs');
+    expect(promotion.indexOf(gateStep)).toBeLessThan(promotion.indexOf('scripts/mobile-ota-promote.ts'));
+    // The gate diffs HEAD against its parent, so both checkouts need full history.
+    expect(publishJob).toMatch(/fetch-depth: 0/);
+    expect(promotion).toMatch(/fetch-depth: 0/);
+    const deployJobs = (parse(pipeline) as { jobs: Record<string, { permissions?: Record<string, string> }> }).jobs;
+    for (const jobName of ['stage-mobile-ota', 'promote-mobile-ota']) {
+      expect(deployJobs[jobName].permissions).toMatchObject({ actions: 'read' });
+    }
+  });
+
+  it('gives the staging publish room for the server-rollout wait on top of its retry budget', () => {
+    const gateSource = readFileSync(resolve(REPO_ROOT, 'scripts', 'mobile-ota-server-ready.mjs'), 'utf8');
+    const waitMinutes = Number(gateSource.match(/WAIT_BUDGET_MS = (\d+) \* 60_000/)?.[1]);
+    expect(waitMinutes).toBeGreaterThan(0);
+    const timeout = Number(jobBlock(production, 'publish').match(/timeout-minutes: (\d+)/)?.[1]);
+    expect(timeout).toBeGreaterThanOrEqual(minimumPublishJobTimeoutMinutes(2) + waitMinutes);
+  });
+
+  it('keeps the gate watching exactly the paths that trigger the Railway apply job', () => {
+    const railway = parse(readFileSync(resolve(WORKFLOW_DIR, 'railway-drift.yml'), 'utf8')) as {
+      on: { push: { paths: string[] } };
+    };
+    const gateSource = readFileSync(resolve(REPO_ROOT, 'scripts', 'mobile-ota-server-ready.mjs'), 'utf8');
+    const listed = gateSource.match(/RAILWAY_APPLY_PATHS = \[([\s\S]*?)\];/)?.[1] ?? '';
+    const gatePaths = [...listed.matchAll(/'([^']+)'/g)].map(([, path]) => path);
+    expect(gatePaths.map((path) => (path.endsWith('/') ? `${path}**` : path)).sort()).toEqual(
+      [...railway.on.push.paths].sort(),
+    );
+  });
+
   it('keeps the job-overhead allowance above the steps it is meant to cover', () => {
     // SELF_HOSTED_PUBLISH_JOB_OVERHEAD_MINUTES is an estimate, and the source-map
     // uploads are the bulk of it. They carry their own `timeout-minutes`, so
@@ -315,6 +355,23 @@ describe('backport OTA workflow upload pressure', () => {
       expect(overlay).toContain(implementationPath);
       expect(gitAddLine).toContain(implementationPath);
     }
+  });
+});
+
+describe('preview publish across an OTA server upgrade', () => {
+  it('skips, rather than fails, a preview whose eoas pin is ahead of the live server', () => {
+    const publishJob = jobBlock(preview, 'publish');
+    const pinStep = stepBlock(publishJob, 'Skip when this PR moves the eoas pin ahead of the live server');
+    expect(pinStep).toContain('scripts/lib/eoas.ts');
+    expect(pinStep).toContain('$RUNNER_TEMP/main-baseline');
+    for (const stepName of ['Publish iOS OTA', 'Publish Android OTA']) {
+      expect(stepBlock(publishJob, stepName)).toContain("steps.eoas_pin.outputs.moved != 'true'");
+    }
+    // The pin check reads the main baseline, so it must come after that exists.
+    expect(publishJob.indexOf('Materialize origin/main baseline')).toBeLessThan(
+      publishJob.indexOf('Skip when this PR moves the eoas pin'),
+    );
+    expect(stepBlock(publishJob, 'Finalize authoritative deployment state')).toContain('EOAS_PIN_MOVED');
   });
 });
 

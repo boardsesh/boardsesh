@@ -73,7 +73,7 @@ export const OTA_POSTGRES_SERVICE_NAME = 'Postgres';
  * Bumping this is an upgrade. scripts/ota-image-bump.ts opens that PR, and moves
  * EOAS_PACKAGE_SPEC (scripts/lib/eoas.ts) in the same commit.
  */
-export const OTA_SERVER_VERSION = '3.1.2';
+export const OTA_SERVER_VERSION = '3.2.4';
 
 /**
  * The repository path Railway pulls from.
