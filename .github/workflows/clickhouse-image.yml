@@ -1,0 +1,109 @@
+name: ClickHouse Image
+
+# The ClickHouse behind xprem Observe (Railway service boardsesh-ota-clickhouse):
+# stock clickhouse/clickhouse-server:25.3 plus docker/clickhouse/config.d, which caps
+# the server at 1.2 GB and turns off the system logs. See docs/railway.md,
+# "Rolling out a new ClickHouse image".
+#
+# Publishing is dispatch-only and deliberately not wired to pushes: the digest is
+# pinned by hand on the Railway service (Settings -> Source -> Docker Image), the
+# same convention as the WAL-G image. An image that moved on its own would leave
+# that pin describing an artifact nobody chose.
+#
+# amd64 only. Railway runs amd64, and nothing else consumes this image.
+on:
+  pull_request:
+    paths:
+      - 'docker/clickhouse/**'
+      - '.github/workflows/clickhouse-image.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: clickhouse-image-${{ github.ref }}
+  # A superseded PR run is wasted work, but a publish must never be cancelled
+  # half-way through pushing a manifest.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  smoke:
+    name: Boot the image and prove the lean config
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+
+      - name: Build
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        with:
+          context: docker/clickhouse
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: boardsesh-clickhouse:smoke
+
+      # Boots it with the Railway service's env under a 2 GB / 2 vCPU limit, then
+      # asserts the settings, the enforced 1.2 GB ceiling, an xprem-shaped table
+      # (merge, TTL, mutation), that only query_log is left, and idle memory.
+      - name: Smoke test
+        env:
+          IMAGE: boardsesh-clickhouse:smoke
+        run: docker/clickhouse/smoke.sh
+
+  publish:
+    name: Publish and attest
+    if: github.event_name == 'workflow_dispatch'
+    needs: smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        id: image
+        with:
+          context: docker/clickhouse
+          platforms: linux/amd64
+          push: true
+          provenance: false
+          sbom: false
+          tags: ghcr.io/boardsesh/boardsesh-clickhouse:sha-${{ github.sha }}
+
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
+        with:
+          subject-name: ghcr.io/boardsesh/boardsesh-clickhouse
+          subject-digest: ${{ steps.image.outputs.digest }}
+          push-to-registry: true
+
+      - name: Report the digest to pin
+        run: |
+          {
+            echo '## ClickHouse image published'
+            echo
+            echo 'Pin this on the Railway service `boardsesh-ota-clickhouse`'
+            echo '(Settings -> Source -> Docker Image), and in `CLICKHOUSE_IMAGE` in'
+            echo '`infra/railway/config.ts`:'
+            echo
+            echo '```'
+            echo 'ghcr.io/boardsesh/boardsesh-clickhouse@${{ steps.image.outputs.digest }}'
+            echo '```'
+            echo
+            echo 'The tag `sha-${{ github.sha }}` is a lookup alias only; Railway'
+            echo 'deploys by digest. Then follow "Rolling out a new ClickHouse image"'
+            echo 'in docs/railway.md: restart ClickHouse only, never the OTA server'
+            echo 'at the same time.'
+          } >> "$GITHUB_STEP_SUMMARY"

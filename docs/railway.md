@@ -142,10 +142,18 @@ the app — the per-PR `pr-*` branches are what drive it.
 **ClickHouse's own system logs are the real consumer.** They ship almost no TTL:
 `asynchronous_metric_log` alone wrote 55M rows in the first hour. Left alone the
 `system` database grows by roughly 38 MB/day, unbounded — about a hundred times what
-Observe itself uses. Every `system.*_log` MergeTree table has since been given a TTL
-(14 days for the high-frequency instrumentation, 30 for the diagnostics worth
-reading). These are ClickHouse's tables, not xprem's, so **re-check them after an image
-upgrade** — a new server version can recreate a log table and drop the TTL with it.
+Observe itself uses. In September every `system.*_log` MergeTree table was given a TTL
+by hand (14 days for the high-frequency instrumentation, 30 for the diagnostics worth
+reading). Those TTLs lived in table metadata, so a new server version could recreate a
+log table and drop the TTL with it.
+
+**The image now does this instead.** `docker/clickhouse/config.d/boardsesh-lean.xml`
+removes every system log except `query_log`, and gives `query_log` a 7-day TTL in
+config, where an image upgrade cannot lose it. The same file caps the server at
+1.2 GB and shrinks the caches, which is where the memory bill came from: the stock
+server idled at 2.9 GB under a 24 GB ceiling. The hand-set TTLs are superseded once
+the image is live and the one-off `DROP` below has run. `docker/clickhouse/smoke.sh`
+proves the config on every PR that touches it.
 
 ### Disk headroom
 
@@ -193,6 +201,67 @@ See `docs/feature-flags.md`.
 > `observe_metrics` takes a row per navigation per device, which is a different order of
 > magnitude from the server-side tables. Re-measure once real traffic has been flowing
 > for a week — the query is under "What fills the disk" above.
+
+### Rolling out a new ClickHouse image
+
+The service runs `ghcr.io/boardsesh/boardsesh-clickhouse`, built from `docker/clickhouse`:
+stock `clickhouse/clickhouse-server:25.3` (the version xprem tests against, pinned by
+digest) plus one config file. It is published only by hand and pinned by digest, the
+same convention as the WAL-G image.
+
+**Never restart the OTA server (`boardsesh-ota-v3`) while ClickHouse is down.** xprem
+calls `log.Fatalf` when ClickHouse is unreachable at boot, so an OTA restart during
+the ClickHouse restart takes `updates.boardsesh.com` down with it. Restart ClickHouse
+alone; a running OTA server rides out a short ClickHouse outage.
+
+1. **Publish.** Actions → *ClickHouse Image* → Run workflow on `main`. The smoke job
+   runs first; the publish job's summary prints
+   `ghcr.io/boardsesh/boardsesh-clickhouse@sha256:…`.
+2. **Make it pullable.** A new GHCR package starts private. Either make
+   `boardsesh-clickhouse` public (it holds no secrets, only stock ClickHouse and a
+   config file) or give the Railway service registry credentials, as the PG18 service
+   has for `boardsesh-postgres-postgis`.
+3. **Pin it.** Railway → `boardsesh-ota-clickhouse` → Settings → Source → Docker Image:
+   paste the digest reference from step 1. Put the same string in `CLICKHOUSE_IMAGE`
+   in `infra/railway/config.ts`.
+4. **Bound the container.** ClickHouse caps itself at 1.2 GB; the 2 GB container limit
+   is the safety rail behind it (the server takes the lower of its setting and 90% of
+   the cgroup, so the 1.2 GB setting stays in force):
+
+   ```sh
+   railway environment edit --project afceee45-0af1-46b3-abbe-8b9094c23bc6 --environment production --message 'ClickHouse: lean image, 2 GB / 2 vCPU ceiling' <<'JSON'
+   {"services":{"fbed6e0a-ed08-485c-b2f3-3cd879732d69":{"deploy":{"limitOverride":{"containers":{"cpu":2,"memoryBytes":2000000000}}}}}}
+   JSON
+   ```
+
+5. **Deploy ClickHouse only.** Steps 3 and 4 stage changes for one service; deploy
+   them and wait for the ClickHouse deployment to be live. Do not touch the OTA server.
+   Then check `https://updates.boardsesh.com/hc` still answers 200 and the Observe
+   dashboard still renders its charts.
+6. **Drop the old log tables.** Removing a log from config stops ClickHouse writing
+   it, but the tables already on the volume stay until dropped. Create a temporary
+   Railway TCP proxy to port 8123 on `boardsesh-ota-clickhouse`, then list what is
+   left and drop it:
+
+   ```sh
+   CH='https://<proxy-host>:<proxy-port>'   # plain http:// if the proxy is not TLS
+   AUTH='--user xprem:<CLICKHOUSE_PASSWORD from the service variables>'
+   curl -sS $AUTH "$CH" --data-binary "SELECT name FROM system.tables
+     WHERE database = 'system' AND engine = 'MergeTree' AND name != 'query_log'"
+   # For each name printed (asynchronous_metric_log, metric_log, trace_log, part_log,
+   # text_log, query_log_0 if the TTL change renamed the old query_log, …):
+   curl -sS $AUTH "$CH" --data-binary 'DROP TABLE system.asynchronous_metric_log SYNC'
+   ```
+
+   Delete the TCP proxy afterwards. It exposes the database to the internet for as
+   long as it exists.
+7. **Verify over 24 hours.** Railway memory for the service stays under 1.2 GB, the
+   volume reading printed by `vp run railway:apply` drops, and the dry run reports no
+   drift.
+
+Rollback: repoint Source → Docker Image at `clickhouse/clickhouse-server:25.3` and
+deploy ClickHouse alone. The volume and the `expo_observe` data are untouched by
+either image; stock config recreates the dropped log tables, empty.
 
 ## Why services are not created
 
