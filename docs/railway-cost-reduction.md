@@ -138,7 +138,13 @@ the offline climbs database, and the app prefers it. In a five-minute sample 40
 minutes after the restart, the mean statement went from 7.7 ms to 17 ms. The
 climb-stats history lookup went from 94 ms to about 980 ms, and a few catalogue
 count queries went from 0.3 s to 2.6 s. Those are the queries that no longer fit in
-cache.
+cache; the fixes are tracked in #5814.
+
+`work_mem` is per sort or hash step, not per connection, so it is the one setting
+that can push memory past the cap. Fifty idle connections cost nothing, but ten
+concurrent heavy queries with two sorts each could claim 320 MB on top of the 1 GB
+of shared buffers. That still fits in 4 GB. Watch for OOM kills if the number of
+concurrent catalogue queries grows.
 
 Roll back on an OOM kill or an unexplained restart, not on latency alone. Go back to
 12 GB, not 24. The settings can stay: they fit in 12 GB too.
