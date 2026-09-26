@@ -355,6 +355,23 @@ describe('backport OTA workflow upload pressure', () => {
   });
 });
 
+describe('preview publish across an OTA server upgrade', () => {
+  it('skips, rather than fails, a preview whose eoas pin is ahead of the live server', () => {
+    const publishJob = jobBlock(preview, 'publish');
+    const pinStep = stepBlock(publishJob, 'Skip when this PR moves the eoas pin ahead of the live server');
+    expect(pinStep).toContain('scripts/lib/eoas.ts');
+    expect(pinStep).toContain('$RUNNER_TEMP/main-baseline');
+    for (const stepName of ['Publish iOS OTA', 'Publish Android OTA']) {
+      expect(stepBlock(publishJob, stepName)).toContain("steps.eoas_pin.outputs.moved != 'true'");
+    }
+    // The pin check reads the main baseline, so it must come after that exists.
+    expect(publishJob.indexOf('Materialize origin/main baseline')).toBeLessThan(
+      publishJob.indexOf('Skip when this PR moves the eoas pin'),
+    );
+    expect(stepBlock(publishJob, 'Finalize authoritative deployment state')).toContain('EOAS_PIN_MOVED');
+  });
+});
+
 describe('publisher helper preview routing', () => {
   it.each(['mobile-ota-preview.yml', 'mobile-ota-preview-prompt.yml', 'pr-test-plan.yml'])(
     '%s treats a probe-only diff as a mobile preview change',

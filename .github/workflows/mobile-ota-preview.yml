@@ -679,6 +679,23 @@ jobs:
           esac
           echo "behind_main=$behind" >> "$GITHUB_OUTPUT"
 
+      # A PR that moves the eoas pin (an xprem upgrade) publishes with a CLI the live
+      # server does not run yet, and since 3.2.0 the two sides share no upload
+      # protocol across versions. The server only rolls when that PR merges, so a
+      # preview cannot work before then: skip it with a notice instead of failing.
+      - name: Skip when this PR moves the eoas pin ahead of the live server
+        id: eoas_pin
+        run: |
+          pin() { grep -oE "EOAS_PACKAGE_SPEC = 'eoas@[^']+'" "$1/scripts/lib/eoas.ts" | head -1; }
+          pr_pin=$(pin .)
+          main_pin=$(pin "$RUNNER_TEMP/main-baseline")
+          if [ -n "$pr_pin" ] && [ "$pr_pin" != "$main_pin" ]; then
+            echo "::notice::This PR changes the eoas pin ($main_pin -> $pr_pin). The live OTA server moves only when it merges, so no preview is published."
+            echo "moved=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "moved=false" >> "$GITHUB_OUTPUT"
+          fi
+
       # V3 control-plane: `eoas publish` creates the pr-<n> branch. iOS
       # WITHOUT GOOGLE_MAPS_API_KEY (Apple
       # Maps), Android WITH it — the per-platform split that keeps each published
@@ -694,14 +711,14 @@ jobs:
       # 34796068541. Nothing new is needed here.
       - name: Publish iOS OTA
         id: publish_ios
-        if: steps.compat.outputs.verdict_ios != 'native-change-required'
+        if: steps.compat.outputs.verdict_ios != 'native-change-required' && steps.eoas_pin.outputs.moved != 'true'
         env:
           EOO_TOKEN: ${{ secrets.EOO_TOKEN }}
         run: vp run mobile:publish -- --channel "$BRANCH" --platform ios
 
       - name: Publish Android OTA
         id: publish_android
-        if: steps.compat.outputs.verdict_android != 'native-change-required'
+        if: steps.compat.outputs.verdict_android != 'native-change-required' && steps.eoas_pin.outputs.moved != 'true'
         env:
           EOO_TOKEN: ${{ secrets.EOO_TOKEN }}
           GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
@@ -721,6 +738,7 @@ jobs:
           VERDICT_ANDROID: ${{ steps.compat.outputs.verdict_android }}
           OUTCOME_IOS: ${{ steps.publish_ios.outcome }}
           OUTCOME_ANDROID: ${{ steps.publish_android.outcome }}
+          EOAS_PIN_MOVED: ${{ steps.eoas_pin.outputs.moved }}
         with:
           script: |
             const anyPublished =
@@ -731,12 +749,15 @@ jobs:
               process.env.VERDICT_IOS === 'native-change-required' ||
               process.env.VERDICT_ANDROID === 'native-change-required';
             const nativeOnly = !anyPublished && !anyFailed && nativeSkip;
-            const state = anyPublished ? 'success' : nativeOnly ? 'inactive' : 'failure';
+            const pinMoved = !anyPublished && !anyFailed && process.env.EOAS_PIN_MOVED === 'true';
+            const state = anyPublished ? 'success' : nativeOnly || pinMoved ? 'inactive' : 'failure';
             const description = anyPublished
               ? `OTA branch ${process.env.BRANCH} ready`
               : nativeOnly
                 ? `${process.env.BRANCH}: native change — no OTA preview`
-                : `OTA preview ${process.env.BRANCH} failed`;
+                : pinMoved
+                  ? `${process.env.BRANCH}: OTA server upgrade — no preview until merge`
+                  : `OTA preview ${process.env.BRANCH} failed`;
             await github.rest.repos.createDeploymentStatus({
               owner: context.repo.owner,
               repo: context.repo.repo,
