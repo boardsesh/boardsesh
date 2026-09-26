@@ -812,16 +812,18 @@ describe('recentBetaLinks Redis cache', () => {
     expect(executeMock).toHaveBeenCalledTimes(1);
   });
 
-  it('warmRecentBetaLinksCache: deletes stale key and re-runs the CTE on lock win', async () => {
+  it('warmRecentBetaLinksCache: re-runs the CTE and overwrites the key in place on lock win', async () => {
     redisSetMock.mockResolvedValueOnce('OK'); // lock acquired
     executeMock.mockReturnValueOnce([cachedRow()]);
 
     await warmRecentBetaLinksCache();
 
-    // Lock first, then DEL the current global-scope key, then run the CTE and SET the result.
+    // Lock first, then run the CTE and SET over the current global-scope key.
+    // No DEL: readers keep the previous copy while the CTE runs.
     expect(redisSetMock.mock.calls[0][0]).toBe('boardsesh:recent-beta-links:lock');
-    expect(redisDelMock).toHaveBeenCalledWith('boardsesh:recent-beta-links:global:v0');
+    expect(redisDelMock).not.toHaveBeenCalled();
     expect(executeMock).toHaveBeenCalledTimes(1);
+    expect(redisSetMock.mock.calls[1][0]).toBe('boardsesh:recent-beta-links:global:v0');
   });
 
   it('warmRecentBetaLinksCache: skips the query when another node holds the lock', async () => {

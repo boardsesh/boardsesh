@@ -804,7 +804,14 @@ function formatDisplayName(
 const REDIS_CACHE_KEY = 'boardsesh:popular-board-configs';
 const REDIS_CACHE_TTL_SECONDS = 365 * 24 * 60 * 60; // 1 year
 const REDIS_LOCK_KEY = 'boardsesh:popular-board-configs:lock';
-const REDIS_LOCK_TTL_SECONDS = 120; // 2 min lock to prevent duplicate queries across nodes
+/**
+ * Held for the length of one refresh so a second node does not start a second
+ * copy. The statement took 2–3 min on the PG18 primary after its 4 GB cap
+ * (2026-09-26), so the old 120 s let a node that booted later in the same
+ * rollout run a duplicate. Ten minutes still frees the lock for the next deploy
+ * if the holder dies mid-refresh.
+ */
+const REDIS_LOCK_TTL_SECONDS = 600;
 
 /**
  * Key for the in-process single-flight. The statement below is the heaviest
@@ -819,8 +826,8 @@ const POPULAR_CONFIGS_FLIGHT_KEY = 'popular-board-configs';
 /**
  * Last-resort cache for deployments with no Redis (local dev, the e2e CI
  * stack). With a shared cache there is nothing to fall back to and this is
- * never read or written, so production behaviour — including the deliberate
- * cache DELETE in `warmPopularConfigsCache` on every deploy — is unchanged.
+ * never read or written, so production behaviour — including the in-place
+ * refresh `warmPopularConfigsCache` does on every deploy — is unchanged.
  * Without one, single-flight alone would still re-run the statement for the
  * first caller after each completion, forever.
  */
@@ -899,7 +906,7 @@ async function runPopularConfigsQuery(): Promise<CachedPopularConfig[]> {
   // A climb counts for a config only if ALL its holds belong to placements in that config's sets.
   // board_climb_holds.hold_id = board_placements.id (placement ID).
   //
-  // Cached in Redis for 1 year (deliberately re-run on deploy). Cost, measured
+  // Cached in Redis for 1 year (re-run and overwritten in place on deploy). Cost, measured
   // 2026-08-22 against the dev-db image (51 listed configs, 648k board_climbs,
   // idle 10-core box): 82 s for one execution. The header on this block used to
   // read "~31 configs, ~750ms worst case per LATERAL" — that is long stale, and
@@ -1033,14 +1040,16 @@ async function runPopularConfigsQuery(): Promise<CachedPopularConfig[]> {
 
 /**
  * Refresh the popular configs Redis cache on server startup.
- * Always re-runs the query on deploy (data may have changed via Aurora sync).
+ * Always re-runs the query on deploy (data may have changed via Aurora sync),
+ * but overwrites the key rather than emptying it first, so readers are served
+ * the previous copy for the minutes the statement takes.
  * Uses a Redis lock so only one node across the cluster runs the expensive query;
  * other nodes skip — they'll read from Redis when the resolver executes.
  */
 export async function warmPopularConfigsCache(): Promise<void> {
-  // Mirrors the cache DELETE below for a deployment with no Redis: the warm-up
-  // exists to re-run the query on deploy, so it must not be answered by the
-  // copy the previous run left behind.
+  // For a deployment with no Redis: the generation bump stops a flight that
+  // started before this deploy from writing pre-deploy data into the copy
+  // after the refresh below has run.
   dropPopularConfigsFallback();
 
   if (redisClientManager.isRedisConnected()) {
@@ -1053,8 +1062,12 @@ export async function warmPopularConfigsCache(): Promise<void> {
         logger.info('[PopularConfigs] Another node is refreshing the cache, skipping');
         return;
       }
-      // Winning node: delete stale cache so getPopularConfigs() runs the SQL query
-      await publisher.del(REDIS_CACHE_KEY);
+      // Winning node: refresh IN PLACE. The key is deliberately not deleted
+      // first — the statement runs for minutes, and an empty key meant every
+      // home rail, Boards tab and /sitemaps/boards.xml request queued behind
+      // it for that whole window (the boards shard gives up at 10 s and 503s,
+      // which failed the web deploy smoke). Readers keep the previous value
+      // until runPopularConfigsQuery's SET overwrites it.
     } catch (err) {
       logger.error('[PopularConfigs] Redis lock failed:', err);
     }
@@ -1062,7 +1075,9 @@ export async function warmPopularConfigsCache(): Promise<void> {
 
   logger.info('[PopularConfigs] Refreshing cache...');
   try {
-    const configs = await getPopularConfigs();
+    // Straight to the statement, not getPopularConfigs(): that would answer
+    // from the key we are here to refresh.
+    const configs = await singleFlight(POPULAR_CONFIGS_FLIGHT_KEY, runPopularConfigsQuery);
     logger.info(`[PopularConfigs] Cache warmed with ${configs.length} configs`);
   } catch (err) {
     logger.error('[PopularConfigs] Cache warm-up failed:', err);

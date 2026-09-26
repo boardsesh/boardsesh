@@ -17,11 +17,12 @@ import type { ConnectionContext } from '@boardsesh/shared-schema';
  * hold one.
  */
 
-const { executeMock, redisConnectedMock, redisGetMock, redisSetMock } = vi.hoisted(() => ({
+const { executeMock, redisConnectedMock, redisGetMock, redisSetMock, redisDelMock } = vi.hoisted(() => ({
   executeMock: vi.fn(),
   redisConnectedMock: vi.fn(() => false),
   redisGetMock: vi.fn(),
   redisSetMock: vi.fn(),
+  redisDelMock: vi.fn(),
 }));
 
 vi.mock('../db/client', () => ({
@@ -33,7 +34,7 @@ vi.mock('../db/client', () => ({
 vi.mock('../redis/client', () => ({
   redisClientManager: {
     isRedisConnected: redisConnectedMock,
-    getClients: () => ({ publisher: { get: redisGetMock, set: redisSetMock, del: vi.fn() } }),
+    getClients: () => ({ publisher: { get: redisGetMock, set: redisSetMock, del: redisDelMock } }),
   },
 }));
 
@@ -72,6 +73,7 @@ beforeEach(() => {
   redisConnectedMock.mockReturnValue(false);
   redisGetMock.mockReset();
   redisSetMock.mockReset();
+  redisDelMock.mockReset();
   dropPopularConfigsFallback();
   resetSingleFlightForTests();
 });
@@ -160,10 +162,37 @@ describe('popularBoardConfigs does not stampede the connection pool', () => {
     await askForConfigs();
 
     // Every call still asks Redis first and still writes back, so the
-    // deliberate cache DELETE `warmPopularConfigsCache` does on each deploy
-    // is still what decides freshness in production.
+    // in-place refresh `warmPopularConfigsCache` does on each deploy is still
+    // what decides freshness in production.
     expect(redisGetMock).toHaveBeenCalledTimes(2);
     expect(redisSetMock).toHaveBeenCalledTimes(2);
     expect(executeMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('refreshes the Redis copy in place on deploy — readers keep the old one meanwhile', async () => {
+    // The 2026-09-26 deploy failures: the warm-up DELETEd the key, the
+    // statement then ran for minutes on the PG18 primary, and every reader —
+    // including /sitemaps/boards.xml, which gives up at 10 s — waited on it.
+    const previousCopy = [{ boardType: 'kilter', layoutId: 1, displayName: 'previous deploy' }];
+    redisConnectedMock.mockReturnValue(true);
+    redisSetMock.mockResolvedValue('OK');
+    redisGetMock.mockResolvedValue(JSON.stringify(previousCopy));
+    const inFlight = deferredRows();
+    executeMock.mockReturnValue(inFlight.promise);
+
+    const warming = warmPopularConfigsCache();
+    await vi.waitFor(() => expect(executeMock).toHaveBeenCalledTimes(1));
+
+    const duringRefresh = await askForConfigs();
+    expect(duringRefresh.configs).toEqual(previousCopy);
+    expect(redisDelMock).not.toHaveBeenCalled();
+
+    inFlight.resolve([CONFIG_ROW]);
+    await warming;
+
+    expect(executeMock).toHaveBeenCalledTimes(1);
+    const dataWrites = redisSetMock.mock.calls.filter(([key]) => key === 'boardsesh:popular-board-configs');
+    expect(dataWrites).toHaveLength(1);
+    expect(JSON.parse(dataWrites[0][1] as string)[0]).toMatchObject({ boardType: 'kilter', climbCount: 4200 });
   });
 });
