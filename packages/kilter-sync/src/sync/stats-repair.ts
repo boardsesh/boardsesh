@@ -1,7 +1,6 @@
 import { and, eq, sql } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
-import { boardClimbAliases, boardClimbs, boardClimbStats } from '@boardsesh/db/schema';
-import { blendedQualityAverageSql } from '@boardsesh/db/queries';
+import { boardClimbAliases, boardClimbs } from '@boardsesh/db/schema';
 import { commandCountFromResult, rowsFromResult } from '@boardsesh/db/client';
 
 import type { KilterTokenProvider } from '../api/token-provider';
@@ -10,7 +9,7 @@ import { KilterApiError } from '../api/errors';
 import { pullKilterReference, type KilterReferencePull } from './reference-pull';
 import { buildLayoutResolver } from './layout-resolver';
 import { catalogStatSourceKey, foldCatalogStat, shouldSkipEmptyCatalogStat, type StatAccum } from './catalog-sync';
-import { kilterStatsGradeConflictSet } from './stats-grade-conflict';
+import { upsertKilterStats, type KilterStatsUpsertRow } from './stats-upsert';
 
 type DrizzleDb = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
 
@@ -52,22 +51,6 @@ export type KilterStatsRepairSummary = {
   maxKilterRise: number;
   topBefore: KilterStatsRepairTopRow[];
   topAfter: KilterStatsRepairTopRow[] | null;
-};
-
-type RepairStatValue = {
-  boardType: string;
-  climbUuid: string;
-  angle: number;
-  displayDifficulty: number | null;
-  difficultyAverage: number | null;
-  qualityAverage: number | null;
-  upstreamQualityAverage: number | null;
-  qualityNormalized: boolean;
-  faUsername: string | null;
-  faAt: string | null;
-  upstreamAscensionistCount: number;
-  ascensionistCount: number;
-  upstreamSyncedAt: string;
 };
 
 type CompareRow = {
@@ -184,9 +167,8 @@ async function loadCanonicalMap(db: DrizzleDb, layoutId: number): Promise<Map<st
   return map;
 }
 
-function statValueFromAccum(accum: StatAccum): RepairStatValue {
+function statValueFromAccum(accum: StatAccum): KilterStatsUpsertRow {
   return {
-    boardType: KILTER,
     climbUuid: accum.canonicalUuid,
     angle: accum.angle,
     displayDifficulty: accum.displayDifficulty,
@@ -194,17 +176,11 @@ function statValueFromAccum(accum: StatAccum): RepairStatValue {
     // qualityAverage (Grips' native 1-5, stored verbatim), difficulty, and
     // the fa_* fields (#3536 range guard) were all guarded by foldCatalogStat
     // when this repair accumulated the stat rows — the repair reads them
-    // straight from the accum.
+    // straight from the accum. The quality also seeds the blend's upstream term.
     qualityAverage: accum.qualityAverage,
-    // Corrected manufacturer average also seeds the blend's upstream term.
-    upstreamQualityAverage: accum.qualityAverage,
-    qualityNormalized: true,
     faUsername: accum.faUsername,
     faAt: accum.faAt,
     upstreamAscensionistCount: accum.kilterCount,
-    ascensionistCount: accum.kilterCount,
-    // Record that the Kilter Grips stats-repair last touched this row.
-    upstreamSyncedAt: new Date().toISOString(),
   };
 }
 
@@ -252,7 +228,7 @@ async function retainRepairableStats(db: DrizzleDb, stats: StatAccum[]): Promise
 
 async function compareExistingStats(
   db: DrizzleDb,
-  statValues: RepairStatValue[],
+  statValues: KilterStatsUpsertRow[],
 ): Promise<{ changedRows: number; maxKilterDrop: number; maxKilterRise: number }> {
   let changedRows = 0;
   let maxKilterDrop = 0;
@@ -311,47 +287,12 @@ async function countFormulaMismatches(db: DrizzleDb): Promise<number> {
   return Number(rows[0]?.rows_to_recompute ?? 0);
 }
 
-async function upsertRepairedStats(db: DrizzleDb, statValues: RepairStatValue[]): Promise<void> {
+async function upsertRepairedStats(db: DrizzleDb, statValues: KilterStatsUpsertRow[]): Promise<void> {
   // Repair is the authoritative reconciliation to the live Grips catalog, so it
-  // overwrites the upstream count with the excluded value (it may correct a count
-  // downward), unlike the routine catalog sync which only ever raises it. Defined
-  // ONCE and reused for the count SET, the total, AND the blend weight — a Postgres
-  // SET reads the OLD value of a bare column, so the blend must weight by this NEW
-  // resolved count. Single source keeps them in lockstep if the policy changes.
-  const resolvedUpstreamAscensionistCount = sql`excluded.upstream_ascensionist_count`;
-  const blendedQuality = blendedQualityAverageSql({
-    upstreamQualityAverage: sql`COALESCE(excluded.upstream_quality_average, ${boardClimbStats.upstreamQualityAverage})`,
-    upstreamAscensionistCount: resolvedUpstreamAscensionistCount,
-    boardseshQualitySum: sql`${boardClimbStats.boardseshQualitySum}`,
-    boardseshQualityCount: sql`${boardClimbStats.boardseshQualityCount}`,
-  });
-  await processBatches(statValues, async (chunk) => {
-    await db
-      .insert(boardClimbStats)
-      .values(chunk)
-      .onConflictDoUpdate({
-        target: [boardClimbStats.boardType, boardClimbStats.climbUuid, boardClimbStats.angle],
-        set: {
-          upstreamAscensionistCount: resolvedUpstreamAscensionistCount,
-          ascensionistCount: sql`COALESCE(${resolvedUpstreamAscensionistCount}, 0) + COALESCE(${boardClimbStats.boardseshAscensionistCount}, 0)`,
-          // Grips is authoritative when it supplies a grade, silent when it
-          // does not; tick_graded_at rides along with it (#4798). Shared with
-          // catalog-sync.ts — see kilterStatsGradeConflictSet.
-          ...kilterStatsGradeConflictSet(),
-          upstreamQualityAverage: sql`COALESCE(excluded.upstream_quality_average, ${boardClimbStats.upstreamQualityAverage})`,
-          qualityAverage: blendedQuality,
-          qualityNormalized: sql`true`,
-          // fa_* COALESCE deliberately kept as-is (#3536): the
-          // sanitizeFirstAscent guard in foldCatalogStat (which built these
-          // values) only stops NEW garbage from landing, so an
-          // already-poisoned stored fa_at survives here until the deferred
-          // prod cleanup heals it.
-          faUsername: sql`COALESCE(excluded.fa_username, ${boardClimbStats.faUsername})`,
-          faAt: sql`COALESCE(excluded.fa_at, ${boardClimbStats.faAt})`,
-          upstreamSyncedAt: sql`excluded.upstream_synced_at`,
-        },
-      });
-  });
+  // overwrites the upstream count with the incoming value (it may correct a
+  // count downward), unlike the routine catalog sync which only ever raises it.
+  // Rows that already match are skipped (see upsertKilterStats).
+  await upsertKilterStats(db, statValues, { policy: 'authoritative' });
 }
 
 async function recomputeMaterializedTotals(db: DrizzleDb): Promise<number> {
