@@ -1414,9 +1414,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/metro-web
-          key: metro-web-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'packages/mobile/web-runtime/pnpm-lock.yaml', 'packages/mobile/web-runtime/pnpm-workspace.yaml', 'packages/mobile/metro.config.js', 'packages/mobile/metro-web-runtime-resolution.cjs', 'packages/mobile/expo-web-response-headers.cjs', 'packages/mobile/babel.config.js', 'packages/mobile/app.config.ts', 'patches/**') }}-${{ github.sha }}
+          key: metro-web-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'packages/mobile/web-runtime/pnpm-lock.yaml', 'packages/mobile/web-runtime/pnpm-workspace.yaml', 'packages/mobile/metro.config.js', 'packages/mobile/metro-web-runtime-resolution.cjs', 'packages/mobile/metro-web-deterministic-transform-worker.cjs', 'packages/mobile/expo-web-response-headers.cjs', 'packages/mobile/babel.config.js', 'packages/mobile/app.config.ts', 'patches/**') }}-${{ github.sha }}
           restore-keys: |
-            metro-web-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'packages/mobile/web-runtime/pnpm-lock.yaml', 'packages/mobile/web-runtime/pnpm-workspace.yaml', 'packages/mobile/metro.config.js', 'packages/mobile/metro-web-runtime-resolution.cjs', 'packages/mobile/expo-web-response-headers.cjs', 'packages/mobile/babel.config.js', 'packages/mobile/app.config.ts', 'patches/**') }}-
+            metro-web-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'packages/mobile/web-runtime/pnpm-lock.yaml', 'packages/mobile/web-runtime/pnpm-workspace.yaml', 'packages/mobile/metro.config.js', 'packages/mobile/metro-web-runtime-resolution.cjs', 'packages/mobile/metro-web-deterministic-transform-worker.cjs', 'packages/mobile/expo-web-response-headers.cjs', 'packages/mobile/babel.config.js', 'packages/mobile/app.config.ts', 'patches/**') }}-
       - name: Expo web bundle check
         env:
           TMPDIR: ${{ runner.temp }}/metro-web
@@ -1427,7 +1427,7 @@ jobs:
         if: github.ref == 'refs/heads/main'
         with:
           path: ${{ runner.temp }}/metro-web
-          key: metro-web-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'packages/mobile/web-runtime/pnpm-lock.yaml', 'packages/mobile/web-runtime/pnpm-workspace.yaml', 'packages/mobile/metro.config.js', 'packages/mobile/metro-web-runtime-resolution.cjs', 'packages/mobile/expo-web-response-headers.cjs', 'packages/mobile/babel.config.js', 'packages/mobile/app.config.ts', 'patches/**') }}-${{ github.sha }}
+          key: metro-web-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'packages/mobile/web-runtime/pnpm-lock.yaml', 'packages/mobile/web-runtime/pnpm-workspace.yaml', 'packages/mobile/metro.config.js', 'packages/mobile/metro-web-runtime-resolution.cjs', 'packages/mobile/metro-web-deterministic-transform-worker.cjs', 'packages/mobile/expo-web-response-headers.cjs', 'packages/mobile/babel.config.js', 'packages/mobile/app.config.ts', 'patches/**') }}-${{ github.sha }}
 
   # Builds Dockerfile.web — the image #3795 makes the www production artifact.
   # Nothing else in per-PR CI runs `next build` for web (e2e-tests.yml is

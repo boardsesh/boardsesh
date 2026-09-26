@@ -15,6 +15,13 @@ const config = getSentryExpoConfig(projectRoot);
 
 config.watchFolders = [monorepoRoot];
 
+// Web exports only: Expo's worker, but with CSS-module class maps in a stable
+// key order so one commit always exports the same bytes (#5808). Gated so
+// native bundles keep Expo's worker and their transform cache.
+if (process.env.BOARDSESH_WEB === '1') {
+  config.transformerPath = require.resolve('./metro-web-deterministic-transform-worker.cjs');
+}
+
 configureWatchman(config);
 
 function escapedPathPattern(filePath) {
