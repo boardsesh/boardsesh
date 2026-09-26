@@ -147,15 +147,36 @@ async function nextChunkEnd(db: ClimbPopularityDb, boardType: BoardName, after: 
   return row?.climbUuid ?? null;
 }
 
+/** Distinct climbs in the (after, end] chunk, for climbsConsidered. */
+async function chunkClimbCount(
+  db: ClimbPopularityDb,
+  boardType: BoardName,
+  after: string | null,
+  end: string | null,
+): Promise<number> {
+  const [row] = await db
+    .select({ count: sql<number>`COUNT(DISTINCT ${boardClimbStats.climbUuid})` })
+    .from(boardClimbStats)
+    .where(
+      and(
+        eq(boardClimbStats.boardType, boardType),
+        after === null ? undefined : gt(boardClimbStats.climbUuid, after),
+        end === null ? undefined : lte(boardClimbStats.climbUuid, end),
+      ),
+    );
+  return Number(row?.count ?? 0);
+}
+
 async function runFullPass(
   db: ClimbPopularityDb,
   boardType: BoardName,
   shouldContinue: () => boolean,
-): Promise<{ statements: number; completed: boolean }> {
+): Promise<{ statements: number; completed: boolean; climbsConsidered: number }> {
   let statements = 0;
+  let climbsConsidered = 0;
   let after: string | null = null;
   for (;;) {
-    if (!shouldContinue()) return { statements, completed: false };
+    if (!shouldContinue()) return { statements, completed: false, climbsConsidered };
     const end = await nextChunkEnd(db, boardType, after);
     // (after, end]: whole climbs, because the chunk is cut on climb_uuid.
     await upsertClimbs(
@@ -174,8 +195,9 @@ async function runFullPass(
         end === null ? undefined : lte(boardClimbPopularity.climbUuid, end),
       ),
     );
-    statements += 2;
-    if (end === null) return { statements, completed: true };
+    climbsConsidered += await chunkClimbCount(db, boardType, after, end);
+    statements += 3;
+    if (end === null) return { statements, completed: true, climbsConsidered };
     after = end;
   }
 }
@@ -245,6 +267,7 @@ export async function refreshClimbPopularityForBoard(
   if (mode === 'full') {
     const full = await runFullPass(db, boardType, shouldContinue);
     statements += full.statements;
+    climbsConsidered = full.climbsConsidered;
     if (!full.completed) {
       return { boardType, mode, climbsConsidered, statements, milliseconds: Date.now() - startedAt };
     }

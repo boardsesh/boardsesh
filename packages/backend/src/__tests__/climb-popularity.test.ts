@@ -129,6 +129,8 @@ describe('board_climb_popularity', () => {
   it('builds one row per stats row, each carrying the climb total', async () => {
     const result = await refreshClimbPopularityForBoard(db, BOARD);
     expect(result.mode).toBe('full');
+    // alpha, bravo, charlie have stats rows; delta has none and is not considered.
+    expect(result.climbsConsidered).toBe(3);
 
     expect(await popularityRows()).toEqual([
       { climb: 'alpha', angle: 40, total: 150 },
