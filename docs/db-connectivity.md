@@ -457,7 +457,7 @@ timer updates even when queues have little work. The C15 defaults are:
 | ------------------------------------ | --------------: | ----------: | ------ |
 | `flowIntervalSeconds`                | 5 s             | 3600 s      | Flows and job dependencies are unused; restore a short interval before adding either. |
 | `cronMonitorIntervalSeconds`         | 30 s            | 45 s        | 45 s is the maximum accepted by pg-boss 12.33; 46 throws during construction. |
-| `monitorIntervalSeconds`             | 60 s            | 120 s       | Queue expiry is noticed within 2 min instead of 1. |
+| `monitorIntervalSeconds`             | 60 s            | 120 s       | The 60 s supervise cadence makes expiry and missed-heartbeat checks 2–3 min instead of 1–2. |
 | maintenance `pollingIntervalSeconds` | 2 s             | 30 s        | Reconcile and dead-letter workers poll less often, with at most one-minute scheduling. |
 | selected cron retention              | 7 days          | 1 day       | Applies only to `__pgboss__send-it` and the spray/background-job reconcile queues. |
 

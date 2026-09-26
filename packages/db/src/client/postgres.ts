@@ -66,7 +66,9 @@ function readPoolInt(name: string, fallback: number, minimum: number): number {
 /**
  * Per-deployment pool knobs. On Vercel the defaults are the serverless pair
  * above; everywhere else (backend, sync jobs, scripts) they are
- * `DEFAULT_POOL_MAX` / `DEFAULT_POOL_IDLE_TIMEOUT_S` unless the env var is set. The split exists because peak server-side connections scale with
+ * `DEFAULT_POOL_MAX` / `DEFAULT_POOL_IDLE_TIMEOUT_S` unless the env var is set.
+ *
+ * The split exists because peak server-side connections scale with
  * *instance count* × held-idle connections, not with per-instance `max`.
  *
  * `prepare: false` is required when the target is PgBouncer in transaction

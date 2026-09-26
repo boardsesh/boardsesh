@@ -51,22 +51,29 @@ export async function reconcileSprayDetections(boss: PgBoss): Promise<void> {
 }
 
 export async function startSprayDetectionMaintenance(boss: PgBoss): Promise<void> {
-  const pollingIntervalSeconds = MAINTENANCE_POLLING_INTERVAL_SECONDS;
-  await boss.work<SprayDetectionJob>(SPRAY_DETECTION_DEAD_QUEUE, { pollingIntervalSeconds }, async (jobs) => {
-    for (const job of jobs) {
-      await db
-        .update(sprayWallDetections)
-        .set({ status: 'failed', error: 'DETECTION_FAILED', finishedAt: new Date(), attemptToken: null })
-        .where(
-          and(
-            eq(sprayWallDetections.id, job.data.detectionId),
-            inArray(sprayWallDetections.status, ['pending', 'running']),
-          ),
-        );
-    }
-  });
+  await boss.work<SprayDetectionJob>(
+    SPRAY_DETECTION_DEAD_QUEUE,
+    { pollingIntervalSeconds: MAINTENANCE_POLLING_INTERVAL_SECONDS },
+    async (jobs) => {
+      for (const job of jobs) {
+        await db
+          .update(sprayWallDetections)
+          .set({ status: 'failed', error: 'DETECTION_FAILED', finishedAt: new Date(), attemptToken: null })
+          .where(
+            and(
+              eq(sprayWallDetections.id, job.data.detectionId),
+              inArray(sprayWallDetections.status, ['pending', 'running']),
+            ),
+          );
+      }
+    },
+  );
   await boss.schedule(SPRAY_DETECTION_RECONCILE_QUEUE, '* * * * *');
-  await boss.work(SPRAY_DETECTION_RECONCILE_QUEUE, { pollingIntervalSeconds }, async () => {
-    await reconcileSprayDetections(boss);
-  });
+  await boss.work(
+    SPRAY_DETECTION_RECONCILE_QUEUE,
+    { pollingIntervalSeconds: MAINTENANCE_POLLING_INTERVAL_SECONDS },
+    async () => {
+      await reconcileSprayDetections(boss);
+    },
+  );
 }
