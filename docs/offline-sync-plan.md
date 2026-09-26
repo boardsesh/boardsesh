@@ -687,6 +687,14 @@ CREATE TABLE sync_deletions (
 CREATE INDEX idx_sync_deletions_user_since ON sync_deletions (user_id, deleted_at);
 ```
 
+Normal application deletes rely on the triggers below. A reviewed admin repair may
+append a tombstone directly when it revokes access without deleting the authoritative
+row, but only in the same transaction as that revocation and after its locked drift
+checks pass. The direct row must use the affected offline user's `user_id` and the
+same `table_name` / `record_id` identity that the pull client deletes. This is a
+narrow repair invariant, not a general substitute for a missing trigger; see the
+[cross-linked playlist repair](./repair-cross-linked-playlists.md).
+
 ### Per-table trigger functions
 
 Different tables use different identifier columns:
