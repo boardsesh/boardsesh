@@ -1991,9 +1991,13 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       .map((code) => `${code}:${extraHoldStates[code]?.color ?? ''}`);
     return entries.length > 0 ? `xs-${fnv1aHex(entries.join(','))}` : '';
   }, [extraHoldStates]);
+  const configRenderSignature = useMemo(
+    () => [effectiveOverrideSignature, boardRenderSignature].filter(Boolean).join('.'),
+    [effectiveOverrideSignature, boardRenderSignature],
+  );
   const effectiveRenderSignature = useMemo(
-    () => [effectiveOverrideSignature, boardRenderSignature, extraHoldStatesSignature].filter(Boolean).join('.'),
-    [effectiveOverrideSignature, boardRenderSignature, extraHoldStatesSignature],
+    () => [configRenderSignature, extraHoldStatesSignature].filter(Boolean).join('.'),
+    [configRenderSignature, extraHoldStatesSignature],
   );
 
   // The wall version for a spray board, `''` for every catalogue one.
@@ -2444,7 +2448,10 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       effectiveOverrides.shapes,
       effectiveOverrides.brushThickness,
       effectiveOverrides.shapeSize,
-      effectiveRenderSignature,
+      // Without the extra-states token: the extras are merged over the cached
+      // entry on the way out, so keying the per-board config on them would only
+      // rebuild the board and evict list configs for every heat map.
+      configRenderSignature,
       effectiveRenderSettings.mode === 'aura'
         ? {
             settings: effectiveRenderSettings.boardsesh,
@@ -2678,6 +2685,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     effectiveOverrides,
     effectiveOverrideSignature,
     effectiveRenderSignature,
+    configRenderSignature,
     effectiveRenderSettings,
     fieldColor,
     veilOpacity,

@@ -189,6 +189,11 @@ function boardOfKeyPart(part: unknown): BoardScopeKey | null {
  * (conservative: a key we cannot read is always refreshed).
  */
 export function queryKeyMatchesBoardScope(queryKey: readonly unknown[], scope: BoardScopeKey): boolean {
+  // `['similarClimbs', boardName, climbUuid, layoutId, …]` (use-similar-climbs.ts)
+  // carries the board as plain positional values rather than an input object.
+  if (queryKey[0] === 'similarClimbs' && typeof queryKey[1] === 'string' && typeof queryKey[3] === 'number') {
+    return queryKey[1] === scope.boardType && queryKey[3] === scope.layoutId;
+  }
   for (const part of queryKey) {
     const board = boardOfKeyPart(part);
     if (board) return board.boardType === scope.boardType && board.layoutId === scope.layoutId;

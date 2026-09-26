@@ -861,7 +861,7 @@
         "climbsLight": "Darker holds are in more climbs",
         "startsFinishesDark": "Brighter holds are in more starts and finishes",
         "startsFinishesLight": "Darker holds are in more starts and finishes",
-        "grade": "Red holds show up on harder climbs"
+        "grade": "Purple holds show up on harder climbs, yellow on easier ones"
       },
       "wholeBoard": "Whole board",
       "holdPicksSkipped": "{{summary}} · hold picks skipped offline",

@@ -192,9 +192,12 @@ export function buildHeatLayer({ statsByHoldId, holdIds, metric, ramp, skipHoldI
   let total = 0;
   const cells: HeatCell[] = [];
   const codeColors: Record<number, { color: string }> = {};
+  for (const { value } of ranked) if (value > total) total = value;
   ranked.forEach(({ holdId, value }, index) => {
-    if (value > total) total = value;
-    const bucket = heatBucketIndex(percentiles[index]);
+    // The busiest hold is always the hottest colour: with fewer than ten used
+    // holds the top mid-rank is below 0.95, so a tight filter would otherwise
+    // never show the last bucket at all.
+    const bucket = value === total ? HEAT_BUCKET_CODES.length - 1 : heatBucketIndex(percentiles[index]);
     if (bucket === null) return;
     const lowest = edgeValues[bucket];
     if (lowest === null || value < lowest) edgeValues[bucket] = value;

@@ -143,7 +143,8 @@ export function CreateClimbScreen({
     // Switching heat on with the eraser in hand would show nothing at all: pick
     // up the Hand brush, whose heat is the most useful default.
     if (!heatmapActive && selectedBrush === 'OFF') setSelectedBrush('HAND');
-    setHeatmapActive(!heatmapActive);
+    // Functional, so two taps before a re-render still land as on → off.
+    setHeatmapActive((active) => !active);
   }, [heatmapActive, selectedBrush, setSelectedBrush]);
   const heatmapStatus: CreateHeatmap['status'] =
     heatmapSource === 'download' && !heatmapSourceResolving

@@ -861,7 +861,7 @@
         "climbsLight": "Dunklere Griffe sind in mehr Bouldern",
         "startsFinishesDark": "Hellere Griffe sind öfter Start oder Top",
         "startsFinishesLight": "Dunklere Griffe sind öfter Start oder Top",
-        "grade": "Rote Griffe tauchen in schwereren Bouldern auf"
+        "grade": "Lila Griffe tauchen in schwereren Bouldern auf, gelbe in leichteren"
       },
       "wholeBoard": "Ganzes Board",
       "holdPicksSkipped": "{{summary}} · Griffauswahl offline übersprungen",

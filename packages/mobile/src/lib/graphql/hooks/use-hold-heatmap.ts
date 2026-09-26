@@ -37,7 +37,9 @@ export function useHoldHeatmap(
   { withStats = false }: { withStats?: boolean } = {},
 ) {
   const query = useQuery({
-    queryKey: ['holdHeatmap', source, input, withStats ? 'stats' : 'holds'],
+    // The server always answers with everything, so only the phone's answer
+    // splits by mode; an admin switching mode reuses the one network entry.
+    queryKey: ['holdHeatmap', source, input, source === 'local' ? (withStats ? 'stats' : 'holds') : 'all'],
     queryFn: () => {
       if (source === 'local') {
         // Always explicit: the local resolver reads the grade column when told nothing.

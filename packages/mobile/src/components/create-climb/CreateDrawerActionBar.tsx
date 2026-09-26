@@ -278,9 +278,20 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
           While the heat is on its line takes the same box, unless the draft has
           something urgent to say. */}
       {heatmapLine && draftStatus?.tone !== 'error' && draftStatus?.tone !== 'warning' ? (
-        <View style={statusRowStyles.row} testID="create-heatmap-line">
-          {heatmapLine}
-        </View>
+        <>
+          <View style={statusRowStyles.row} testID="create-heatmap-line">
+            {heatmapLine}
+          </View>
+          {/* Still mounted, out of sight and out of the layout, so autosave
+              transitions keep being announced while the heat line has the slot. */}
+          <View
+            style={styles.offscreenStatus}
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+          >
+            <CreateDraftStatusRow status={draftStatus} announce={announce} />
+          </View>
+        </>
       ) : (
         <CreateDraftStatusRow status={draftStatus} announce={announce} />
       )}
@@ -355,6 +366,12 @@ const styles = StyleSheet.create({
   // the Save pill rather than a full gap below it.
   rowSecondaryWithStatus: {
     paddingBottom: spacing[1],
+  },
+  offscreenStatus: {
+    position: 'absolute',
+    height: 0,
+    overflow: 'hidden',
+    opacity: 0,
   },
   actionScroll: {
     // Claims the row's leftover width so the trailing Set Active + Save pair is

@@ -18,10 +18,17 @@ describe('queryKeyMatchesBoardScope', () => {
     );
   });
 
-  it('reads a { input } wrapper and a boardType spelling', () => {
-    expect(
-      queryKeyMatchesBoardScope(['similarClimbs', { input: { boardType: 'kilter', layoutId: 1 } }], KILTER_1),
-    ).toBe(true);
+  it("reads similar climbs' positional key", () => {
+    // ['similarClimbs', boardName, climbUuid, layoutId, sizeId, angle, limit, source]
+    expect(queryKeyMatchesBoardScope(['similarClimbs', 'kilter', 'uuid-1', 1, 10, 40, 12, 'local'], KILTER_1)).toBe(
+      true,
+    );
+    expect(queryKeyMatchesBoardScope(['similarClimbs', 'kilter', 'uuid-1', 8, 10, 40, 12, 'local'], KILTER_1)).toBe(
+      false,
+    );
+    expect(queryKeyMatchesBoardScope(['similarClimbs', 'tension', 'uuid-1', 1, 10, 40, 12, 'local'], KILTER_1)).toBe(
+      false,
+    );
   });
 
   it('refreshes a key that names no board', () => {

@@ -310,8 +310,10 @@ describe('CreateDrawerActionBar', () => {
         heatmapLine: createElement('span', null, 'heat legend'),
       }),
     );
-    expect(container.querySelector('[data-testid="create-heatmap-line"]')?.textContent).toBe('heat legend');
-    expect(container.querySelector('[data-testid="create-draft-status-row"]')).toBeNull();
+    const heatLine = container.querySelector('[data-testid="create-heatmap-line"]');
+    expect(heatLine?.textContent).toBe('heat legend');
+    // The autosave row stays mounted (for its announcements), outside the heat line's box.
+    expect(heatLine?.querySelector('[data-testid="create-draft-status-row"]')).toBeNull();
   });
 
   it('lets an urgent draft status win over the heat line', () => {

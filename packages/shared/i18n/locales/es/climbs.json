@@ -861,10 +861,10 @@
         "climbsLight": "Las presas más oscuras salen en más bloques",
         "startsFinishesDark": "Las presas más claras son salida o final en más bloques",
         "startsFinishesLight": "Las presas más oscuras son salida o final en más bloques",
-        "grade": "Las presas rojas aparecen en bloques más difíciles"
+        "grade": "Las presas moradas salen en bloques más difíciles; las amarillas, en más fáciles"
       },
       "wholeBoard": "Todo el plafón",
-      "holdPicksSkipped": "{{summary}} · sin la selección de presas sin conexión",
+      "holdPicksSkipped": "{{summary}} · selección de presas omitida sin conexión",
       "wholeBoardHint": "Cuenta todos los bloques del plafón",
       "useFiltersHint": "Cuenta solo los bloques que cumplen tus filtros",
       "filterUnsupported": "El mapa de calor no puede seguir estos filtros sin conexión. Toca el chip para ver todo el plafón.",

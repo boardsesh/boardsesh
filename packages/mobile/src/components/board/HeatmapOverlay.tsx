@@ -84,9 +84,15 @@ function RenderedHeatmap({
   mirrored = false,
 }: HeatmapOverlayProps) {
   const frames = useMemo(() => heatLayerFrames(layer.cells), [layer.cells]);
+  // The hook is always mounted (hooks cannot be conditional), but it is only
+  // handed the frames once the capability probe says the fill can be drawn:
+  // until then, and on a binary that cannot, a render would be a classic ring
+  // picture that is thrown away — one wasted full-width render in the shared
+  // queue per heat change. Asking for the fill mode is what starts the probe.
+  const [fillSupported, setFillSupported] = useState<boolean | null>(null);
   const { overlayUri, overlayLoadKey, onOverlayLoad, onOverlayError, boardseshRendererAvailable, rendererUnavailable } =
     useNativeClimbRender({
-      frames,
+      frames: fillSupported === true ? frames : '',
       boardName,
       layoutId,
       sizeId,
@@ -96,8 +102,17 @@ function RenderedHeatmap({
       extraHoldStates: layer.codeColors,
       markStyleOverride: 'fill',
     });
+  if (boardseshRendererAvailable !== fillSupported) setFillSupported(boardseshRendererAvailable);
 
-  const handleLoad = useCallback(() => onOverlayLoad(overlayLoadKey), [onOverlayLoad, overlayLoadKey]);
+  // The last image that finished loading, kept on screen while the next one
+  // renders: painting a hold on the create board, or switching mode, changes
+  // the heat and therefore the cache key, and the new PNG takes a native render
+  // to arrive. Without this the whole layer blinked off on every tap.
+  const [shownUri, setShownUri] = useState<string | null>(null);
+  const handleLoad = useCallback(() => {
+    if (overlayUri) setShownUri(overlayUri);
+    onOverlayLoad(overlayLoadKey);
+  }, [overlayUri, onOverlayLoad, overlayLoadKey]);
   const handleError = useCallback(
     (event: { error: string }) => onOverlayError(event, overlayLoadKey),
     [onOverlayError, overlayLoadKey],
@@ -114,24 +129,39 @@ function RenderedHeatmap({
       />
     );
   }
-  // Until the capability probe answers, whatever came back is a classic ring
-  // render; wait for the fill rather than flashing rings.
-  if (boardseshRendererAvailable !== true || !overlayUri) return null;
+  if (boardseshRendererAvailable !== true) return null;
+  const retained = shownUri !== null && shownUri !== overlayUri ? shownUri : null;
   return (
-    <Image
-      key={overlayLoadKey ?? overlayUri}
-      source={{ uri: overlayUri }}
-      style={StyleSheet.absoluteFill}
-      contentFit="contain"
-      cachePolicy="memory"
-      // Rendered at the board's own width, like the play view's own overlay, so
-      // expo-image has nothing to resample on the main thread.
-      allowDownscaling={false}
-      transition={0}
-      accessible={false}
-      onLoad={handleLoad}
-      onError={handleError}
-    />
+    <>
+      {retained ? (
+        <Image
+          key={`retained-${retained}`}
+          source={{ uri: retained }}
+          style={StyleSheet.absoluteFill}
+          contentFit="contain"
+          cachePolicy="memory"
+          allowDownscaling={false}
+          transition={0}
+          accessible={false}
+        />
+      ) : null}
+      {overlayUri ? (
+        <Image
+          key={overlayLoadKey ?? overlayUri}
+          source={{ uri: overlayUri }}
+          style={StyleSheet.absoluteFill}
+          contentFit="contain"
+          cachePolicy="memory"
+          // Rendered at the board's own width, like the play view's own overlay, so
+          // expo-image has nothing to resample on the main thread.
+          allowDownscaling={false}
+          transition={0}
+          accessible={false}
+          onLoad={handleLoad}
+          onError={handleError}
+        />
+      ) : null}
+    </>
   );
 }
 

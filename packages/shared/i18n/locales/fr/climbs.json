@@ -861,7 +861,7 @@
         "climbsLight": "Les prises les plus foncées servent dans le plus de blocs",
         "startsFinishesDark": "Les prises les plus claires servent le plus souvent de départ ou d'arrivée",
         "startsFinishesLight": "Les prises les plus foncées servent le plus souvent de départ ou d'arrivée",
-        "grade": "Les prises rouges reviennent dans les blocs plus durs"
+        "grade": "Les prises violettes reviennent dans les blocs plus durs, les jaunes dans les plus faciles"
       },
       "wholeBoard": "Toute la board",
       "holdPicksSkipped": "{{summary}} · choix de prises ignorés hors ligne",

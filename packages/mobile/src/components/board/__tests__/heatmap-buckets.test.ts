@@ -126,6 +126,13 @@ describe('buildHeatLayer (counts)', () => {
     expect(layer.legend).toEqual(unpainted.legend);
   });
 
+  it('always gives the busiest hold the hottest colour, even on a tight filter', () => {
+    // Four used holds: the top mid-rank is 0.875, below the last edge.
+    const small = statsMap([1, 2, 3, 4].map((holdId) => holdStat(holdId, { totalUses: holdId })));
+    const layer = buildHeatLayer({ statsByHoldId: small, holdIds: [1, 2, 3, 4], metric: 'climbs', ramp: RAMP });
+    expect(layer.cells.find((cell) => cell.holdId === 4)?.bucket).toBe(4);
+  });
+
   it('ignores stats for holds the board cannot draw, and holds with a zero count', () => {
     const layer = buildHeatLayer({
       statsByHoldId: statsMap([holdStat(1, { totalUses: 5, footUses: 0 }), holdStat(999, { footUses: 9 })]),
