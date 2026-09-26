@@ -92,7 +92,7 @@ describe('the palette rail, as a list', () => {
     // line names the same three dichromacies.
     const tritanopia = CVD_PALETTE_OPTIONS.find((option) => option.id === 'tritanopia');
 
-    expect(tritanopia?.labelI18nKey).toBe('mobile.more.boardLook.accessibility.cvdPalette.presets.tritanopia');
+    expect(tritanopia?.labelI18nKey).toBe('mobile.settings.boardLook.accessibility.cvdPalette.presets.tritanopia');
   });
 });
 

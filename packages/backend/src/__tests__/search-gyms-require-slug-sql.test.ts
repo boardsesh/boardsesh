@@ -323,3 +323,76 @@ describe('slugPresentFilter', () => {
     expect(slugPresentFilter(false, sql`gyms.slug`)).toBeNull();
   });
 });
+
+/**
+ * Rendered-SQL coverage for `SearchGymsInput.angles` (the gym directory's angle
+ * filter), on the same two paths and the same two proximity statements.
+ *
+ * What the angle filter has to guarantee is not "the clause is present" but
+ * "the clause is in the SAME `EXISTS` as the other three". Splitting it into a
+ * second `EXISTS` would let a gym match `Kilter Homewall at 40` by owning a
+ * Homewall at 25 and, separately, an unrelated board at 40 — a wrong answer that
+ * looks like a working filter, and the exact failure the board-match comment in
+ * the resolver has always warned about for type/layout/size.
+ */
+describe('searchGyms angles — rendered SQL', () => {
+  beforeEach(() => {
+    mockDb.execute.mockClear();
+    mockDb.select.mockClear();
+    textSelectCaptures.length = 0;
+  });
+
+  it('emits byte-identical SQL when angles is omitted', async () => {
+    // The no-regression guard: mobile's useNearbyGyms and the gym picker ride
+    // these exact queries and must not notice that the field now exists.
+    const [countSql, rowsSql] = await searchWith(PROXIMITY_INPUT);
+    expect(countSql).toBe(BASELINE_PROXIMITY_COUNT_SQL);
+    expect(rowsSql).toBe(BASELINE_PROXIMITY_ROWS_SQL);
+  });
+
+  it('treats an empty angles array as absent', async () => {
+    const [countSql, rowsSql] = await searchWith({ ...PROXIMITY_INPUT, angles: [] });
+    expect(countSql).toBe(BASELINE_PROXIMITY_COUNT_SQL);
+    expect(rowsSql).toBe(BASELINE_PROXIMITY_ROWS_SQL);
+  });
+
+  it('puts the angle predicate in BOTH proximity statements', async () => {
+    const [countSql, rowsSql, ...extra] = await searchWith({ ...PROXIMITY_INPUT, angles: [40] });
+    expect(extra).toEqual([]);
+    expect(countSql).toContain('ub.angle IN (');
+    expect(rowsSql).toContain('ub.angle IN (');
+  });
+
+  it('ANDs angle with type, layout and size inside ONE EXISTS', async () => {
+    const [countSql] = await searchWith({
+      ...PROXIMITY_INPUT,
+      boardTypes: ['kilter'],
+      layoutIds: [8],
+      sizeIds: [23],
+      angles: [40],
+    });
+
+    // Exactly one EXISTS subquery over user_boards, carrying all four predicates.
+    expect(countSql.match(/EXISTS \(SELECT 1 FROM user_boards/g)).toHaveLength(1);
+    const existsClause = countSql.slice(countSql.indexOf('EXISTS (SELECT 1 FROM user_boards'));
+    for (const predicate of ['ub.board_type IN (', 'ub.layout_id IN (', 'ub.size_id IN (', 'ub.angle IN (']) {
+      expect(existsClause).toContain(predicate);
+    }
+    expect(existsClause).toContain('ub.deleted_at IS NULL');
+  });
+
+  it('carries several angles as an OR within the one predicate', async () => {
+    const [countSql] = await searchWith({ ...PROXIMITY_INPUT, angles: [40, 45] });
+    expect(countSql).toContain('ub.angle IN ($4, $5)');
+  });
+
+  it('applies on the text path too — the one /gyms actually runs', async () => {
+    const { wheres } = await textSearchWith({ ...TEXT_INPUT, boardTypes: ['tension'], angles: [40] });
+    expect(wheres).toHaveLength(2);
+    for (const where of wheres) {
+      expect(where.match(/exists \(select 1 from user_boards/gi)).toHaveLength(1);
+      expect(where).toContain('ub.angle IN (');
+      expect(where).toContain('ub.board_type IN (');
+    }
+  });
+});

@@ -4,8 +4,44 @@
 // skipped) the welcome walkthrough, so it never shows again. Absent means a
 // fresh install — show it once.
 
-import { ONBOARDING_BOARD_TIP_KEY, ONBOARDING_SEEN_KEY } from '@boardsesh/key-value-storage';
+import {
+  ONBOARDING_BOARD_TIP_KEY,
+  ONBOARDING_LINK_EMPTY_DISMISSED_KEY,
+  ONBOARDING_SEEN_KEY,
+} from '@boardsesh/key-value-storage';
 import { secureStorePreferences } from '../preferences/secure-store-adapter';
+
+let linkEmptyDismissalWritesEnabled = true;
+let linkEmptyDismissalOperation: Promise<void> = Promise.resolve();
+
+function enqueueLinkEmptyDismissalOperation(operation: () => Promise<void>): Promise<void> {
+  const nextOperation = linkEmptyDismissalOperation.then(operation, operation);
+  linkEmptyDismissalOperation = nextOperation.catch(() => undefined);
+  return nextOperation;
+}
+
+/** Prevent a departing account from writing its dismissal after account cleanup starts. */
+export function suspendLinkEmptyDismissalWrites(): void {
+  linkEmptyDismissalWritesEnabled = false;
+}
+
+/** Re-enable dismissal persistence only after the authenticated account boundary has settled. */
+export function resumeLinkEmptyDismissalWrites(): void {
+  linkEmptyDismissalWritesEnabled = true;
+}
+
+export function dismissLinkEmptyPrompt(): Promise<void> {
+  if (!linkEmptyDismissalWritesEnabled) return Promise.resolve();
+  return enqueueLinkEmptyDismissalOperation(async () => {
+    if (!linkEmptyDismissalWritesEnabled) return;
+    await secureStorePreferences.set(ONBOARDING_LINK_EMPTY_DISMISSED_KEY, true);
+  });
+}
+
+/** Remove the device-global dismissal at the authenticated account boundary. */
+export function clearLinkEmptyPromptDismissal(): Promise<void> {
+  return enqueueLinkEmptyDismissalOperation(() => secureStorePreferences.remove(ONBOARDING_LINK_EMPTY_DISMISSED_KEY));
+}
 
 /**
  * Whether the user has already seen the first-run walkthrough. Returns `false`

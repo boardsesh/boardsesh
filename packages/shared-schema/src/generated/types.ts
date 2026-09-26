@@ -1112,7 +1112,7 @@ export type Climb = {
   setter_username: Scalars['String']['output'];
   /** Star rating (0-5), rounded from quality_average */
   stars: Scalars['Float']['output'];
-  /** The angle the grade, ascents and quality on this climb were actually read from. Equals angle normally; differs when the browsed angle had no stats row and the climb own set angle supplied them, which is always the case on Woods and MoonBoard and opt-in elsewhere via ClimbSearchInput.crossAngleStats (issue #5405). Null when the climb has no stats at any angle, i.e. a genuine project. Display only: show it beside the grade when it differs, never key on it. Deliberately absent from ClimbInput, so a queued climb carries no set-angle marker, because adding a field there means changing four lists at once (see queue-climb-field-contract.test.ts) and the marker is not worth that. */
+  /** The angle the grade, ascents and quality on this climb were actually read from. Equals angle normally; differs when the browsed angle had no stats row and the climb own set angle supplied them: in a search that set ClimbSearchInput.crossAngleStats (issue #5405), in a by-name search on Woods, and on the Woods climb detail read (issue #5642). Null when the climb has no stats at any angle, i.e. a genuine project. Display only: show it beside the grade when it differs, never key on it. Deliberately absent from ClimbInput, so a queued climb carries no set-angle marker, because adding a field there means changing four lists at once (see queue-climb-field-contract.test.ts) and the marker is not worth that. */
   statsAngle?: Maybe<Scalars['Int']['output']>;
   /** Number of times the current user has sent this climb */
   userAscents?: Maybe<Scalars['Int']['output']>;
@@ -1148,6 +1148,17 @@ export type ClimbCommunityStatus = {
   outlierAnalysis?: Maybe<OutlierAnalysis>;
   updatedAt?: Maybe<Scalars['String']['output']>;
 };
+
+/**
+ * Which grade the grade-range filter reads.
+ *
+ * UPSTREAM is the default: the board's own catalogue grade (display_difficulty),
+ * falling back to the Boardsesh grade only when a climb has no stats row at that
+ * angle. BOARDSESH reads the model-generated Boardsesh grade first and falls back to
+ * the upstream grade, so a climber who sees Boardsesh grades on the list gets the
+ * rows whose label is in range.
+ */
+export type ClimbGradeSource = 'BOARDSESH' | 'UPSTREAM';
 
 /** Input type for creating or updating a climb. */
 export type ClimbInput = {
@@ -1262,10 +1273,12 @@ export type ClimbSearchInput = {
   boardName: Scalars['String']['input'];
   /** Include single-frame climbs (boulders). Omitting both boulders and routes matches all climb types; set boulders=true with routes=false (or omit routes) to filter to boulders only. */
   boulders?: InputMaybe<Scalars['Boolean']['input']>;
-  /** Resolve each climb's grade and ascents through its own set angle when the browsed angle has no stats row, instead of ranking it below every climb that does have one (issue #5405). Ignored — always on — for boards whose climbs are angle-bound by nature, Woods and MoonBoard. Elsewhere it is opt-in, because an Aurora catalogue grades every angle independently and the browsed angle is usually the right one to read. */
+  /** Resolve each climb's grade and ascents through its own set angle when the browsed angle has no stats row, instead of ranking it below every climb that does have one (issue #5405). Opt-in on every board; omitted means off. On Woods, whose climbs are bound to the angle they were set at, off also narrows the list to the climbs for the browsed angle: set there, with no set angle recorded, or with stats there (issue #5642). A name search on Woods resolves across angles either way, so a climb is findable by name at any angle. */
   crossAngleStats?: InputMaybe<Scalars['Boolean']['input']>;
   /** Grade accuracy filter ('tight', 'moderate', 'loose') */
   gradeAccuracy?: InputMaybe<Scalars['String']['input']>;
+  /** Which grade minGrade and maxGrade are compared against. Omitted means UPSTREAM, the grade older app builds filter on. Send BOARDSESH when the list shows Boardsesh grades, so the filter matches the labels. */
+  gradeSource?: InputMaybe<ClimbGradeSource>;
   /** Hide climbs the user has attempted (requires auth) */
   hideAttempted?: InputMaybe<Scalars['Boolean']['input']>;
   /** Hide climbs the user has completed (requires auth) */
@@ -3291,6 +3304,23 @@ export type HoldOutlineOverride = {
   sizeId: Scalars['Int']['output'];
   /** When the override was last written (ISO 8601). */
   updatedAt: Scalars['String']['output'];
+};
+
+/** One hold's usage across the climbs a search matches (the hold heatmap). */
+export type HoldStat = {
+  __typename?: 'HoldStat';
+  /** Average display difficulty of those climbs; null when none has a grade. */
+  averageDifficulty?: Maybe<Scalars['Float']['output']>;
+  finishUses: Scalars['Int']['output'];
+  footUses: Scalars['Int']['output'];
+  handUses: Scalars['Int']['output'];
+  /** Renderer/frame hold id (MoonBoard cell ids included). */
+  holdId: Scalars['Int']['output'];
+  startingUses: Scalars['Int']['output'];
+  /** Sum of those climbs' ascent counts at the browsed angle. */
+  totalAscents: Scalars['Int']['output'];
+  /** Climbs that use the hold. */
+  totalUses: Scalars['Int']['output'];
 };
 
 /** A scanned post whose climb name matched multiple climbs — the user picks one. */
@@ -6048,6 +6078,12 @@ export type Query = {
    */
   gymStats: GymStats;
   /**
+   * Per-hold usage over the climbs a search matches (the hold heatmap). Admin
+   * only: every other climber gets the same aggregate on device from the
+   * downloaded board, so this live path never serves the public.
+   */
+  holdHeatmap: Array<HoldStat>;
+  /**
    * The traced hold silhouettes this backend ships for a board config, alongside
    * the hand-drawn corrections that supersede them (admin only, scoped to the
    * board). Read-only; the editor renders both and offers a revert.
@@ -6277,6 +6313,9 @@ export type Query = {
    *   true position-exact matches.
    * The duplicate-publish gate uses state-aware (hold_id, hold_state)
    * matching separately — see findExactDuplicateMatch.
+   * Admins get the live query. Everyone else reads the nightly precomputed
+   * index (top 25 per climb at 0.5 and above), and a frames-only lookup
+   * (no climbUuid) is admin-only. See docs/similar-climbs.md.
    */
   similarClimbs: Array<SimilarClimb>;
   /**
@@ -6787,6 +6826,11 @@ export type QueryGymSprayWallsArgs = {
 /** Root query type for all read operations. */
 export type QueryGymStatsArgs = {
   input: GymStatsInput;
+};
+
+/** Root query type for all read operations. */
+export type QueryHoldHeatmapArgs = {
+  input: ClimbSearchInput;
 };
 
 /** Root query type for all read operations. */
@@ -7736,6 +7780,8 @@ export type SearchBoardsInput = {
 
 /** Input for searching gyms. */
 export type SearchGymsInput = {
+  /** Filter to gyms that have a board set to one of these angles in degrees (OR). Combined with boardTypes/layoutIds/sizeIds, all must match the same board: a gym asking for a Kilter Homewall at 40 degrees is not matched by one owning a Homewall at 25 plus, separately, something else at 40. */
+  angles?: InputMaybe<Array<Scalars['Int']['input']>>;
   /** Filter to gyms that have a board of one of these types (OR) */
   boardTypes?: InputMaybe<Array<Scalars['String']['input']>>;
   /** Latitude for proximity search */
@@ -8441,7 +8487,8 @@ export type SetterSearchResult = {
 
 /**
  * A setter username paired with the number of climbs they've authored
- * for a given board configuration. Angle-independent.
+ * for a given board configuration. Angle-independent everywhere but Woods,
+ * where it follows SetterStatsInput.crossAngleStats.
  */
 export type SetterStat = {
   __typename?: 'SetterStat';
@@ -8456,10 +8503,12 @@ export type SetterStat = {
  * Used to power the setter filter autocomplete in the search drawer.
  */
 export type SetterStatsInput = {
-  /** Board angle in degrees. Accepted and ignored: the setter list is the same at every angle (#5404). */
+  /** Board angle in degrees. Ignored on every board whose climbs are not bound to one angle: the setter list is the same at every angle there (#5404). On Woods it is the browsed angle, and the counts cover only the climbs for it unless crossAngleStats is set (#5642). */
   angle: Scalars['Int']['input'];
   /** Board type (e.g., 'kilter', 'tension') */
   boardName: Scalars['String']['input'];
+  /** Count every climb whatever angle it was set at. Mirrors ClimbSearchInput.crossAngleStats, and only changes anything on Woods, whose climbs are bound to the angle they were set at: omitted or false, a setter is counted only for the climbs the default list shows at this angle (set there, with no set angle recorded, or with stats there), so the picker never offers a setter whose climbs the list cannot show (#5642). Send true when the search it filters has the Other angles switch on. */
+  crossAngleStats?: InputMaybe<Scalars['Boolean']['input']>;
   /** Layout ID */
   layoutId: Scalars['Int']['input'];
   /** Restrict counts and usernames to followed authors. Requires authentication. */
@@ -10222,6 +10271,7 @@ export type ResolversTypes = ResolversObject<{
   Climb: ResolverTypeWrapper<Climb>;
   ClimbClassicStatus: ResolverTypeWrapper<ClimbClassicStatus>;
   ClimbCommunityStatus: ResolverTypeWrapper<ClimbCommunityStatus>;
+  ClimbGradeSource: ClimbGradeSource;
   ClimbInput: ClimbInput;
   ClimbMatchResult: ResolverTypeWrapper<ClimbMatchResult>;
   ClimbMirrored: ResolverTypeWrapper<ClimbMirrored>;
@@ -10367,6 +10417,7 @@ export type ResolversTypes = ResolversObject<{
   HoldOutlineConfigInput: HoldOutlineConfigInput;
   HoldOutlineKind: HoldOutlineKind;
   HoldOutlineOverride: ResolverTypeWrapper<HoldOutlineOverride>;
+  HoldStat: ResolverTypeWrapper<HoldStat>;
   ID: ResolverTypeWrapper<Scalars['ID']['output']>;
   InstagramBetaAmbiguous: ResolverTypeWrapper<InstagramBetaAmbiguous>;
   InstagramBetaCandidate: ResolverTypeWrapper<InstagramBetaCandidate>;
@@ -10812,6 +10863,7 @@ export type ResolversParentTypes = ResolversObject<{
   GymTopClimb: GymTopClimb;
   HoldOutlineConfigInput: HoldOutlineConfigInput;
   HoldOutlineOverride: HoldOutlineOverride;
+  HoldStat: HoldStat;
   ID: Scalars['ID']['output'];
   InstagramBetaAmbiguous: InstagramBetaAmbiguous;
   InstagramBetaCandidate: InstagramBetaCandidate;
@@ -12667,6 +12719,21 @@ export type HoldOutlineOverrideResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type HoldStatResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['HoldStat'] = ResolversParentTypes['HoldStat'],
+> = ResolversObject<{
+  averageDifficulty?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
+  finishUses?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  footUses?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  handUses?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  holdId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  startingUses?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  totalAscents?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  totalUses?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type InstagramBetaAmbiguousResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['InstagramBetaAmbiguous'] = ResolversParentTypes['InstagramBetaAmbiguous'],
@@ -14469,6 +14536,12 @@ export type QueryResolvers<
     RequireFields<QueryGymSprayWallsArgs, 'gymUuid'>
   >;
   gymStats?: Resolver<ResolversTypes['GymStats'], ParentType, ContextType, RequireFields<QueryGymStatsArgs, 'input'>>;
+  holdHeatmap?: Resolver<
+    Array<ResolversTypes['HoldStat']>,
+    ParentType,
+    ContextType,
+    RequireFields<QueryHoldHeatmapArgs, 'input'>
+  >;
   holdOutlines?: Resolver<
     ResolversTypes['BoardHoldOutlines'],
     ParentType,
@@ -16356,6 +16429,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   GymStatsWindow?: GymStatsWindowResolvers<ContextType>;
   GymTopClimb?: GymTopClimbResolvers<ContextType>;
   HoldOutlineOverride?: HoldOutlineOverrideResolvers<ContextType>;
+  HoldStat?: HoldStatResolvers<ContextType>;
   InstagramBetaAmbiguous?: InstagramBetaAmbiguousResolvers<ContextType>;
   InstagramBetaCandidate?: InstagramBetaCandidateResolvers<ContextType>;
   InstagramBetaMatch?: InstagramBetaMatchResolvers<ContextType>;

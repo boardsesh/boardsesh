@@ -22,7 +22,6 @@ import {
   ClimbSchema,
   ClimbStatsResponseSchema,
   SettersResponseSchema,
-  HeatmapDataSchema,
   AnglesResponseSchema,
   LayoutSlugResponseSchema,
   SizeSlugResponseSchema,
@@ -208,34 +207,6 @@ registry.registerPath({
       content: {
         'application/json': {
           schema: SettersResponseSchema,
-        },
-      },
-    },
-  },
-});
-
-registry.registerPath({
-  method: 'get',
-  path: '/api/v1/{board_name}/{layout_id}/{size_id}/{set_ids}/{angle}/heatmap',
-  summary: 'Get hold usage heatmap',
-  description:
-    'Returns frequency data for each hold, showing how often holds are used in climbs. Useful for visualizing popular hold positions.',
-  tags: ['Climbs'],
-  request: {
-    params: z.object({
-      board_name: BoardNameSchema,
-      layout_id: z.string().describe('Layout ID'),
-      size_id: z.string().describe('Size ID'),
-      set_ids: z.string().describe('Comma-separated set IDs'),
-      angle: z.string().describe('Board angle in degrees'),
-    }),
-  },
-  responses: {
-    200: {
-      description: 'Hold usage frequency map',
-      content: {
-        'application/json': {
-          schema: HeatmapDataSchema,
         },
       },
     },

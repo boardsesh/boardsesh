@@ -12,10 +12,90 @@ GET https://ws.boardsesh.com/og/climb
   ?board_name=kilter          # enum: kilter|tension|moonboard|decoy|touchstone|grasshopper|soill|woods
   &layout_id=1
   &size_id=10
-  &set_ids=1,20               # canonicalised (sorted + deduped) by the zod schema
+  &set_ids=1,20               # canonicalised (sorted + deduped) by the zod schema; max 24 ids
   &frames=p1080r15p1202r12    # fully determines the image — no DB involved
   &format=jpeg                # optional; jpeg (default) | png | webp
+  &n=BING+BANG+BOSH           # optional; climb name, <=64 code points after normalising
+  &g=7a/V6                    # optional; grade label, [A-Za-z0-9+/. -]{1,16}
+  &s=Patrick+Gosling          # optional; setter, <=32 code points after normalising
+  &angle=40                   # optional; -90 to 90 (Grasshopper's list starts at -5)
 ```
+
+The `set_ids` cap is 24 (`MAX_SET_IDS`), sized against the catalogue rather
+than guessed: the widest shipped config is Decoy layout 2 / size 1 at 19 hold
+sets. `set-ids-catalogue.test.ts` walks every entry in `SETS` and fails if one
+outgrows the cap — when it was 10, every Decoy climb's card and board image was
+a 400, and nothing caught it because both apps render the overlay locally and
+never call this endpoint.
+
+### The climb-identity column
+
+The card is 1200x630: the board art right-aligned in a 736x602 box on the left,
+and the climb's identity in a 392px column on the right. Both halves matter for
+different consumers — a social unfurl shows the whole card, while a search engine
+crops it to a square from the centre and keeps only `x` in [285, 915]. Right-
+aligning the board is what puts a portrait board fully inside that crop;
+`og-geometry.test.ts` walks the catalogue and fails if a board ever renders
+smaller than the old full-width layout or spills into the column.
+
+`n`, `g`, `s` and `angle` are all **optional**, so a URL built by an
+already-shipped mobile binary still renders — it just gets the board on its own.
+The board line under the name (`Kilter · Original · 12 x 12 Square`) is derived
+from `board_name`/`layout_id`/`size_id`, not taken as a param: those already
+determine the board that gets drawn, so a caller-supplied label would be a
+second, forgeable source for the same fact.
+
+### Why a card's holds look bolder than the app's
+
+A card is authored at 1200x630 and almost nobody sees it at that size. Cropped
+square and rendered at ~110px, the board is roughly 68px wide and an individual
+hold about two pixels, at which point the app's drawing of a lit hold disappears
+into the board art. So `isOgVariant` draws its marks bigger —
+`OG_HOLD_SHAPE_EMPHASIS` x1.6, stroke x1.3, glow reach x1.4, all in
+`render-config.ts`. Measured on a Kilter climb (sparse lit holds on a busy grey
+board), the lit holds go from 68 to 160 vivid pixels in that thumbnail.
+
+Switching the card to the thumbnail mark style (`glow-fill`) looks like the
+obvious lever and is not: it measured +5.8% on Kilter and slightly negative on
+MoonBoard, because the problem at 110px is the marks' size, not their style.
+
+The card's Aura config is one of the terms in `BOARD_RENDER_VERSION`
+(`wasm_config_aura_card`). Before that it was not, and the projection asserted
+that output width was "all the variants change in the config" — true until the
+emphasis existed. Without the probe, a change here would move no version and
+Cloudflare would serve the old drawing `immutable` for a year.
+
+Ascents and quality are deliberately **not** on the card. They tick constantly,
+and the response is immutable for a year, so every tick would mint a fresh cache
+entry and leave the old one at the edge.
+
+**Three things to know before touching the text path.**
+
+1. **Every string must be escaped for Pango markup.** libvips calls
+   `pango_parse_markup` unconditionally — there is no plain-text mode — so an
+   unescaped `&` throws `text: invalid markup in text` rather than rendering
+   literally. A climb called "Rock & Roll" would be a 500. `escapePangoMarkup`
+   in `validation.ts` is the only safe way in.
+2. **The card names its font family, and that is load-bearing.** On Alpine
+   `fc-match sans` resolves to WenQuanYi Zen Hei — the CJK font — which renders
+   Latin in its own weaker glyphs and does not honour `weight="700"`, so the
+   grade and the climb name come out un-bold. `OG_CARD_FONT_FAMILY` defaults to
+   `Noto Sans`; fontconfig still falls back to Zen Hei per character for CJK.
+   Invisible in dev, because macOS resolves whatever the host has.
+3. **The image needs fonts installed.** `Dockerfile.backend` is `node:22-alpine`,
+   which ships none, and Pango does not degrade gracefully without them: a 40pt
+   request renders 12px tall, Cyrillic comes back blank, and CJK throws. The
+   image installs `fontconfig font-noto font-noto-emoji font-noto-hebrew
+   font-wqy-zenhei` — sized against what real climb names contain, which includes
+   Japanese katakana, Chinese and emoji. `font-wqy-zenhei` covers CJK for 27 MB
+   where `font-noto-cjk` costs 90 MB for a visually identical result.
+
+`n` and `s` are the only caller-supplied free text on the endpoint, which is
+unauthenticated. They are NFC-normalised, stripped of control characters and of
+the invisible/bidi-override set, whitespace-collapsed, and truncated by code
+point. `OG_CARD_TEXT_DISABLED=1` drops both; the board, grade and angle keep
+rendering. It is read once at module load, so it takes a restart to apply —
+faster than shipping a code change, but not a live toggle.
 
 Responses are immutable (`Cache-Control: … immutable`, 1 year): the query
 fully determines the bytes. Invalid params are rejected with 400 before any
@@ -87,6 +167,8 @@ repeats, ~700ms worst-case first render of a never-seen board config.
 | Var                        | Default               | Meaning                                                                                                                                                                            |
 | -------------------------- | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `BOARD_IMAGES_ROOT`        | `<cwd>/../web/public` | Directory containing `images/` (board photos). The backend Docker context ships `packages/web/public/images` via `extraSourceDirs` in `scripts/create-service-docker-context.mjs`. |
+| `OG_CARD_FONT_FAMILY` | `Noto Sans` | the family handed to Pango; see the font note above |
+| `OG_CARD_TEXT_DISABLED` | unset | `1` drops the caller-supplied `n`/`s`; read at module load, so it needs a restart |
 | `BOARD_RENDER_CONCURRENCY` | `2`                   | Shared concurrency cap for OG and board-image misses, including low-priority boot warmups.                                                                                         |
 | `BOARD_RENDER_MAX_QUEUE`   | `40`                  | Maximum unique render misses waiting behind the shared semaphore before a `503` with `Retry-After: 5`.                                                                             |
 
@@ -94,9 +176,29 @@ repeats, ~700ms worst-case first render of a never-seen board config.
 
 Crawlers scrape seconds after a share, so clients prime the caches ahead of
 them: climb view SSR fire-and-forgets one OG render per page view (via
-`scheduleOgImageWarming`), and the Share button on web and mobile fetches both
-the share page URL and the og image URL before opening the share sheet. All
-best-effort — failures are swallowed and never delay sharing.
+`scheduleOgImageWarming`), and the Share button fetches ahead of the unfurler
+before opening the share sheet. All best-effort — failures are swallowed and
+never delay sharing.
+
+**Mobile warms the card the page advertises, not one it builds.** The app cannot
+reproduce the URL www puts in `og:image`: that angle is `selectCanonicalClimbAngle`,
+chosen from every angle's ascent counts, so the same climb served at `/25/`,
+`/40/` and `/50/` all advertise `angle=40`. A URL without the identity params is
+a different key at Cloudflare *and* in `byteCache` — measured against production,
+the app-shaped URL came back `MISS` while www's came back `HIT`, so the old
+prewarm was heating something nobody requests.
+
+So `prewarmShareCaches` (`packages/mobile/src/lib/share-prewarm.ts`) does two
+things at once. It issues the identity-free URL immediately, which shares the
+per-board `ogBase` with the real card and turns its render from `miss` into
+`base-hit`. In parallel it fetches the share page, reads `og:image` out of the
+head, and warms that exact URL. The page read is bounded (4s) so a request that
+never answers cannot strand the rest, and only `BACKEND_URL` is ever followed —
+a prewarm that chased any `og:image` it was handed would be a request forwarder.
+
+This only warms the colo nearest the sharer. iMessage builds its preview
+on-device so that is the right one; Slack and Discord fetch from their own
+datacenters and still land cold.
 
 ## Operational notes
 

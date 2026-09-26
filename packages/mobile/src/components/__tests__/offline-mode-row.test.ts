@@ -26,8 +26,8 @@ describe('buildOfflineModeRow', () => {
     expect(row).toMatchObject({
       kind: 'toggle',
       key: 'offlineMode',
-      label: 'mobile.more.offline.offlineMode',
-      subtitle: 'mobile.more.offline.offlineModeDescription',
+      label: 'mobile.settings.offline.offlineMode',
+      subtitle: 'mobile.settings.offline.offlineModeDescription',
       value: false,
     });
   });

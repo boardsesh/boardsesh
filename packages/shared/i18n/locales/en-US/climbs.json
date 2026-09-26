@@ -528,6 +528,8 @@
       "betaVideos": "Beta videos only",
       "betaVideosShort": "🎥 Beta",
       "betaVideosDescription": "Only climbs with a beta video",
+      "otherAngles": "Other angles",
+      "otherAnglesDescription": "Show climbs set at a different angle",
       "searchSetters": "Search setters",
       "noSetters": "No setters yet",
       "clearAll": "Clear all",
@@ -602,7 +604,7 @@
         "footlessKickboard": "Footless + KB",
         "noKickboard": "No KB"
       },
-      "setAngleMarker": "{{angle}}°",
+      "setAngleMarker": "set at {{angle}}°",
       "setAngleMarkerAria": "Grade and sends are from {{angle}} degrees"
     },
     "climbRules": {
@@ -828,6 +830,29 @@
     },
     "setterNotes": {
       "title": "Setter's notes"
+    },
+    "heatmap": {
+      "show": "Show hold heatmap",
+      "hide": "Hide hold heatmap",
+      "modeLabel": "Color holds by",
+      "modes": {
+        "uses": "Most used",
+        "ascents": "Most sent",
+        "difficulty": "Grade"
+      },
+      "legendLow": "Fewer",
+      "legendHigh": "More",
+      "legendEasy": "Easier",
+      "legendHard": "Harder",
+      "filtered": "Filtered · {{summary}}",
+      "wholeBoard": "Whole board",
+      "wholeBoardHint": "Counts every climb on the board instead",
+      "useFiltersHint": "Counts only the climbs your filters match",
+      "filterUnsupported": "The heatmap can't follow a hold filter yet. Tap the chip to see the whole board.",
+      "empty": "No climbs match these filters.",
+      "loadFailed": "Couldn't load the heatmap. Try again in a moment.",
+      "needsDownload": "Download this board to see where the climbs are.",
+      "unavailable": "Heatmap isn't available right now."
     }
   },
   "frontDoor": {

@@ -22,20 +22,36 @@ it. A second `--apply` with nothing to do is a no-op.
 
 ## What it manages
 
-- **Services.** Asserts `boardsesh-ota-v3` and `boardsesh-web` exist; reports when
-  the ClickHouse service is missing. It never creates or deletes a service — see
+- **Services.** Asserts `boardsesh-ota-v3`, `boardsesh-web` and `PostGIS - PG18`
+  exist; reports when the ClickHouse service is missing. It never creates or
+  deletes a service — see
   [Why services are not created](#why-services-are-not-created).
 - **Variables.** Asserts the declared variables are set and are not still an
   unfilled `<placeholder>`. It also checks public safe-value rules without
   printing live values: `boardsesh-web` needs SMTP credentials, `BOARDSESH_WEB`
   must be absent or `1`, and `NEXTAUTH_URL` or `BASE_URL` must name the canonical
-  `https://www.boardsesh.com` origin.
+  `https://www.boardsesh.com` origin. `PostGIS - PG18` needs
+  `PG_TLS_SERVER_CERT` and `PG_TLS_SERVER_KEY` — the certificate and key the
+  primary serves, which the image's entrypoint writes to the volume at boot. A
+  missing one is drift here rather than a surprise at deploy time, and an absent
+  pair means the primary falls back to its base image's snakeoil certificate,
+  whose private key is published in a public Docker Hub layer. This tool only
+  asserts that the two variables are set; it never writes them without being handed
+  their values, and installing or rolling back the certificate itself is a separate
+  reviewed operator procedure rather than anything a nightly job does.
 - **ClickHouse retention.** Asserts the TTLs on xprem's `observe_metrics` and
   `observe_logs` tables.
 
 A service that is live but not declared here is **reported and left alone**. The
-project also holds Postgres and other services on purpose; a tool that removed what
-it did not recognise would be a catastrophe rather than a convenience.
+project also holds other services on purpose; a tool that removed what it did not
+recognise would be a catastrophe rather than a convenience.
+
+`PostGIS - PG18` is declared for its **TLS variables alone**, and nothing else
+about it. Its image digest, volume and networking stay outside this tool, managed
+by the reviewed publish flow in
+[postgres-image-publishing.md](./postgres-image-publishing.md) — a nightly job
+must not be the thing with an opinion about which image the production database
+runs.
 
 ## Secrets
 

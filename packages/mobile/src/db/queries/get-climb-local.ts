@@ -1,6 +1,6 @@
 import type { OfflineDatabase } from '@boardsesh/offline-sync';
 import type { Climb } from '@boardsesh/shared-schema';
-import { effectiveStatsSql, isCrossAngleStats, mapRowToClimb, type LocalClimbRow } from './search-climbs-local';
+import { effectiveStatsSql, isDetailCrossAngleStats, mapRowToClimb, type LocalClimbRow } from './search-climbs-local';
 
 /**
  * On-device climb detail read (board_climbs ⋈ board_climb_stats ⋈
@@ -24,11 +24,12 @@ export type GetClimbLocalInput = {
 
 export async function getClimbLocal(db: OfflineDatabase, input: GetClimbLocalInput): Promise<Climb | null> {
   const { boardName, layoutId, angle, climbUuid } = input;
-  // Same resolution the list row used, so a badged row does not open a drawer that
-  // silently claims its grade belongs to the browsed angle (issue #5405). There is
-  // no search input here, so only the board capability can turn it on — which is
-  // the whole of the default-on case, Woods and MoonBoard.
-  const crossAngle = isCrossAngleStats({ boardName, crossAngleStats: false });
+  // Cross-angle whenever the board is angle-bound, whatever the list did (issue
+  // #5405), mirroring the server's `resolveDetailCrossAngleStats`. A Woods list is
+  // restricted to the browsed angle unless it opts in (#5642), but a climb set at
+  // another angle still reaches this read — a by-name search, an opted-in list, a
+  // playlist — and must open with its set-angle grade, badged, rather than blank.
+  const crossAngle = isDetailCrossAngleStats(boardName);
   const eff = (column: Parameters<typeof effectiveStatsSql>[0]) => effectiveStatsSql(column, crossAngle);
   const setAngleJoin = crossAngle
     ? `LEFT JOIN board_climb_stats s_set

@@ -309,6 +309,14 @@ export type MyGymsInput = {
 export type SearchGymsInput = {
   query?: string;
   boardTypes?: string[];
+  /** Layout ids (OR). Only meaningful under exactly one board type — layout ids are not unique across boards. */
+  layoutIds?: number[];
+  /** Product-size ids (OR). Only meaningful under exactly one layout. */
+  sizeIds?: number[];
+  /** Board angles in degrees (OR). Scoped to the board type, not the layout. */
+  angles?: number[];
+  /** Only gyms with two or more distinct board types. A gym-level predicate, not a board-level one. */
+  multiBoardTypeOnly?: boolean;
   latitude?: number;
   longitude?: number;
   radiusKm?: number;

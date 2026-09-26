@@ -87,6 +87,13 @@ vi.mock('expo-router', () => ({
   useLocalSearchParams: () => state.params,
 }));
 
+// Link eligibility is covered in its own hook and activation tests. This picker
+// suite only needs the ordinary no-offer path and must not load auth's native
+// providers while rendering in jsdom.
+vi.mock('../../../src/lib/onboarding/use-onboarding-link-offer', () => ({
+  useOnboardingLinkOffer: () => () => false,
+}));
+
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));

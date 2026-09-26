@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import { router } from 'expo-router';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { OnboardingBoardStep } from './OnboardingBoardStep';
@@ -14,6 +14,7 @@ import { useBoardOfflineState } from '../board-discovery/use-board-offline-state
 import { trackNudgeAccepted, trackNudgeDismissed, trackNudgeShown } from '../../lib/offline-nudges/nudge-analytics';
 import type { NudgeEventContext } from '../../lib/offline-nudges/nudge-analytics';
 import { offlineBoardKeyForBoard } from '../../settings';
+import { reportError } from '../../lib/error-reporting';
 
 // Module-level so an absent board list keeps a stable identity — a fresh `[]`
 // per render would rebuild the carousel's items on every commit.
@@ -89,12 +90,18 @@ export function OnboardingBoardRoute({
     [offlineDownloadsEnabled, isOffline, boardOfflineState, nudgeContextFor, confirmAndDownload],
   );
 
-  // `replace`, not the picker's `dismissTo`: onboarding is a full-screen cover
-  // with nothing of its own left to return to, and the board-look gate picks the
-  // climber up on Climbs.
+  // `dismissTo`, like the picker and the link step: onboarding is a full-screen
+  // cover with nothing of its own left to return to, and the board-look gate
+  // picks the climber up on Climbs. It used to `replace` — but the replay rows
+  // open this walkthrough from Settings, itself a root destination now, so a
+  // replace would swap onboarding for a SECOND copy of the tabs and strand
+  // Settings under it. `dismissTo` pops back to the tabs already in the stack,
+  // and still replaces this screen on a cold deep link where there are none.
   const leaveToClimbs = useCallback(() => {
-    router.replace('/(tabs)/climbs');
+    router.dismissTo('/(tabs)/climbs');
   }, []);
+
+  const bindingRef = useRef(false);
 
   const activateBoard = useActivateBoard({
     source: 'onboarding',
@@ -103,7 +110,19 @@ export function OnboardingBoardRoute({
     onBound: offerDownload,
   });
 
-  const onSelect = useCallback((board: UserBoard) => void activateBoard(board), [activateBoard]);
+  // Keep the selected board stable until its bind and download offer finish.
+  const onSelect = useCallback(
+    (board: UserBoard) => {
+      if (bindingRef.current) return;
+      bindingRef.current = true;
+      void activateBoard(board)
+        .catch(reportError)
+        .finally(() => {
+          bindingRef.current = false;
+        });
+    },
+    [activateBoard],
+  );
 
   /**
    * The card glyph: download a board WITHOUT binding it.

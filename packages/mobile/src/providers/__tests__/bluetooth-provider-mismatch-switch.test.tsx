@@ -307,6 +307,12 @@ function makeMismatchingPickerState(): PickerState {
     isScanning: false,
     handleSelect: vi.fn(),
     handleCancel: vi.fn(),
+    sessionId: 1,
+    mode: 'list',
+    presented: true,
+    closing: false,
+    handleDisplaced: vi.fn(),
+    handleClosed: vi.fn(),
   };
 }
 
@@ -650,6 +656,24 @@ describe('BluetoothProvider mismatch switch', () => {
     expect(analytics.track.mock.calls.filter(([name]) => name === 'BLE Picker Devices Resolved')).toHaveLength(1);
   });
 
+  it('flushes no resolution-stats event for a picker that never left its searching state (#5658)', async () => {
+    // The saved board was found (or the climber cancelled) while the sheet was
+    // still "searching": it never listed anything, so there is nothing to summarise.
+    bluetooth.state.pickerState = { ...makeMismatchingPickerState(), mode: 'searching', devices: [] };
+    const { rerender } = renderProvider(KILTER_PROPS);
+
+    bluetooth.state.pickerState = null;
+    rerender(
+      createElement(BluetoothProvider, {
+        ...KILTER_PROPS,
+        children: createElement('div', null),
+      }),
+    );
+
+    expect(analytics.track).not.toHaveBeenCalledWith('BLE Picker Devices Resolved', expect.anything());
+    expect(blePermissions.getAndroidLocationPermissionState).not.toHaveBeenCalled();
+  });
+
   it('surfaces the switch-failed alert and keeps the picker open when setActiveBoard rejects', async () => {
     const pickerState = makeMismatchingPickerState();
     bluetooth.state.pickerState = pickerState;
@@ -722,7 +746,13 @@ describe('BluetoothProvider picker Scan again', () => {
   });
 
   function makeEmptyPickerState(): PickerState {
-    return { devices: [], isScanning: false, handleSelect: vi.fn(), handleCancel: vi.fn() };
+    return {
+      ...makeMismatchingPickerState(),
+      devices: [],
+      isScanning: false,
+      handleSelect: vi.fn(),
+      handleCancel: vi.fn(),
+    };
   }
 
   function rerenderSettled(rerender: (ui: ReactNode) => void, props: BoardProps) {

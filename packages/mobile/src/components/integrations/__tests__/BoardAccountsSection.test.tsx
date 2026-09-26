@@ -1,9 +1,13 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, fireEvent, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR } from '@boardsesh/shared-schema/sync-error-codes';
-import type { AuroraCredentialStatus, AuroraCredentialsResponse } from '../../../lib/aurora-credentials';
+import {
+  BoardAccountError,
+  type AuroraCredentialStatus,
+  type AuroraCredentialsResponse,
+} from '../../../lib/aurora-credentials';
 
 // --- Hoisted mock state, mutated per-test before render ---
 const mocks = vi.hoisted(() => ({
@@ -23,21 +27,38 @@ const mocks = vi.hoisted(() => ({
   refetch: vi.fn(() => Promise.resolve()),
   flags: {} as Record<string, boolean | undefined>,
   credentials: [] as AuroraCredentialStatus[],
+  auroraBoards: ['kilter', 'tension'],
+  linkStarted: vi.fn(),
+  linkSucceeded: vi.fn(),
+  linkFailed: vi.fn(),
 }));
 
-vi.mock('../../../lib/aurora-credentials', () => ({
-  BoardAccountError: class BoardAccountError extends Error {},
-  getAuroraCredentials: () => Promise.resolve({ credentials: [] }),
-  getAuroraUnsyncedCounts: () => Promise.resolve({}),
-  saveAuroraCredential: mocks.saveAurora,
-  saveKilterCredentialViaPassword: mocks.saveKilterViaPassword,
-  deleteAuroraCredential: mocks.deleteAurora,
-  streamAuroraImport: mocks.streamImport,
-  streamMoonBoardImport: mocks.streamMoonBoardImport,
+vi.mock('../../../lib/integrations/board-link-analytics', () => ({
+  trackLinkStarted: mocks.linkStarted,
+  trackLinkSucceeded: mocks.linkSucceeded,
+  trackLinkFailed: mocks.linkFailed,
 }));
+
+vi.mock('expo-web-browser', () => ({ openAuthSessionAsync: vi.fn() }));
+vi.mock('../../../lib/auth-interceptor', () => ({ authenticatedFetch: vi.fn() }));
+vi.mock('../../../lib/env', () => ({ BACKEND_URL: 'https://backend.test' }));
+
+vi.mock('../../../lib/aurora-credentials', async (importOriginal) => {
+  const { BoardAccountError } = await importOriginal<typeof import('../../../lib/aurora-credentials')>();
+  return {
+    BoardAccountError,
+    getAuroraCredentials: () => Promise.resolve({ credentials: [] }),
+    getAuroraUnsyncedCounts: () => Promise.resolve({}),
+    saveAuroraCredential: mocks.saveAurora,
+    saveKilterCredentialViaPassword: mocks.saveKilterViaPassword,
+    deleteAuroraCredential: mocks.deleteAurora,
+    streamAuroraImport: mocks.streamImport,
+    streamMoonBoardImport: mocks.streamMoonBoardImport,
+  };
+});
 
 vi.mock('@boardsesh/shared-schema', () => ({
-  AURORA_BOARDS: ['kilter', 'tension'],
+  AURORA_BOARDS: mocks.auroraBoards,
   parseAuroraExportJson: vi.fn(() => ({
     data: { user: { username: 'aurora' }, ascents: [], attempts: [], circuits: [], climbs: [] },
     preview: { username: 'aurora', ascents: 0, attempts: 0, circuits: 0, climbs: 0 },
@@ -48,7 +69,7 @@ vi.mock('@boardsesh/shared-schema', () => ({
 type MutationOptions = {
   mutationFn: (vars: unknown) => unknown;
   onSuccess?: (result: unknown, vars: unknown) => unknown;
-  onError?: (error: unknown) => unknown;
+  onError?: (error: unknown, variables: unknown) => unknown;
 };
 
 vi.mock('@tanstack/react-query', () => ({
@@ -68,7 +89,7 @@ vi.mock('@tanstack/react-query', () => ({
     mutate: (vars: unknown) => {
       void Promise.resolve(opts.mutationFn(vars))
         .then((result) => opts.onSuccess?.(result, vars))
-        .catch((error) => opts.onError?.(error));
+        .catch((error) => opts.onError?.(error, vars));
     },
     isPending: false,
     variables: undefined,
@@ -148,9 +169,9 @@ vi.mock('../../../theme/tokens', () => ({
 }));
 vi.mock('../../../theme/ios-colors', () => ({ iosSystemColors: { white: '#fff' } }));
 
-type TextProps = { children?: ReactNode };
+type TextProps = { children?: ReactNode; variant?: string };
 vi.mock('../../Text', () => ({
-  Text: ({ children }: TextProps) => createElement('span', {}, children),
+  Text: ({ children, variant }: TextProps) => createElement('span', { 'data-text-variant': variant }, children),
 }));
 vi.mock('../../Icon', () => ({ Icon: () => createElement('span', { 'data-icon': 'true' }) }));
 vi.mock('../../SectionHeader', () => ({
@@ -164,6 +185,7 @@ vi.mock('../../Button', () => ({
 }));
 
 import { BoardAccountsSection } from '../BoardAccountsSection';
+import { LinkBoardAccountModal } from '../LinkBoardAccountModal';
 
 const button = (root: HTMLElement, title: string) =>
   root.querySelector(`[data-button="${title}"]`) as HTMLButtonElement | null;
@@ -171,7 +193,11 @@ const button = (root: HTMLElement, title: string) =>
 const input = (root: HTMLElement, placeholder: string) =>
   root.querySelector(`[data-input="${placeholder}"]`) as HTMLInputElement | null;
 
-describe('BoardAccountsSection — Kilter password card', () => {
+beforeEach(() => {
+  mocks.auroraBoards.splice(0, mocks.auroraBoards.length, 'kilter', 'tension');
+});
+
+describe('BoardAccountsSection — board cards', () => {
   beforeEach(() => {
     mocks.saveAurora.mockReset();
     mocks.saveKilterViaPassword.mockReset().mockResolvedValue(undefined);
@@ -179,6 +205,12 @@ describe('BoardAccountsSection — Kilter password card', () => {
     mocks.invalidate.mockClear();
     mocks.flags = {};
     mocks.credentials = [];
+  });
+
+  it('renders the So iLL card heading with its canonical brand name', () => {
+    mocks.auroraBoards.push('soill');
+    const { getByText } = render(<BoardAccountsSection />);
+    expect(getByText('So iLL', { selector: '[data-text-variant="headline"]' })).toBeTruthy();
   });
 
   it('shows the Kilter (new) sign-in card when the flag is on', () => {
@@ -222,7 +254,7 @@ describe('BoardAccountsSection — Kilter password card', () => {
 
     fireEvent.click(button(container, 'aurora.card.kilterSignIn')!);
 
-    fireEvent.change(input(container, 'aurora.linkDialog.usernamePlaceholder')!, {
+    fireEvent.change(input(container, 'aurora.kilterLinkDialog.emailPlaceholder')!, {
       target: { value: 'climber' },
     });
     fireEvent.change(input(container, 'aurora.linkDialog.passwordPlaceholder')!, {
@@ -235,6 +267,91 @@ describe('BoardAccountsSection — Kilter password card', () => {
       expect(mocks.saveKilterViaPassword).toHaveBeenCalledWith({ username: 'climber', password: 'secret' });
     });
     expect(mocks.saveAurora).not.toHaveBeenCalled();
+  });
+
+  it('reports invalid Kilter credentials as an email problem, not a username one', async () => {
+    mocks.flags = { 'kilter-oauth-linking': true };
+    mocks.saveKilterViaPassword.mockRejectedValue(new BoardAccountError('invalid_credentials'));
+    const { container } = render(<BoardAccountsSection />);
+
+    fireEvent.click(button(container, 'aurora.card.kilterSignIn')!);
+    fireEvent.change(input(container, 'aurora.kilterLinkDialog.emailPlaceholder')!, {
+      target: { value: 'climber@example.com' },
+    });
+    fireEvent.change(input(container, 'aurora.linkDialog.passwordPlaceholder')!, {
+      target: { value: 'wrong' },
+    });
+    fireEvent.click(button(container, 'aurora.linkDialog.submit')!);
+
+    await waitFor(() => {
+      expect(mocks.showToast).toHaveBeenCalledWith('aurora.mobile.invalidCredentialsKilter', 'error');
+    });
+    expect(mocks.showToast).not.toHaveBeenCalledWith('aurora.mobile.invalidCredentials', 'error');
+  });
+});
+
+describe('BoardAccountsSection — link funnel', () => {
+  beforeEach(() => {
+    mocks.saveAurora.mockReset().mockResolvedValue(null);
+    mocks.showToast.mockReset();
+    mocks.invalidate.mockClear();
+    mocks.linkStarted.mockReset();
+    mocks.linkSucceeded.mockReset();
+    mocks.linkFailed.mockReset();
+    mocks.flags = {};
+    mocks.credentials = [];
+  });
+
+  const submitTensionLink = (container: HTMLElement) => {
+    fireEvent.click(button(container, 'aurora.card.link')!);
+    fireEvent.change(input(container, 'aurora.linkDialog.usernamePlaceholder')!, {
+      target: { value: 'climber' },
+    });
+    fireEvent.change(input(container, 'aurora.linkDialog.passwordPlaceholder')!, {
+      target: { value: 'secret' },
+    });
+    fireEvent.click(button(container, 'aurora.linkDialog.submit')!);
+  };
+
+  it('reports a start and a success, tagged with the board and the surface', async () => {
+    const { container } = render(<BoardAccountsSection />);
+    submitTensionLink(container);
+
+    await waitFor(() => expect(mocks.linkSucceeded).toHaveBeenCalledTimes(1));
+    expect(mocks.linkStarted).toHaveBeenCalledWith({ boardType: 'tension', source: 'integrations' });
+    expect(mocks.linkSucceeded).toHaveBeenCalledWith({ boardType: 'tension', source: 'integrations' });
+    expect(mocks.linkFailed).not.toHaveBeenCalled();
+  });
+
+  it('reports a failure with its reason, on the board the attempt was for', async () => {
+    mocks.saveAurora.mockRejectedValue(new Error('offline'));
+    const { container } = render(<BoardAccountsSection />);
+    submitTensionLink(container);
+
+    await waitFor(() => expect(mocks.linkFailed).toHaveBeenCalledTimes(1));
+    expect(mocks.linkFailed).toHaveBeenCalledWith({ boardType: 'tension', source: 'integrations' }, 'request_failed');
+    expect(mocks.linkStarted).toHaveBeenCalledTimes(1);
+    expect(mocks.linkSucceeded).not.toHaveBeenCalled();
+  });
+
+  it.each(['invalid_credentials', 'account_already_linked'] as const)(
+    'reports the server %s error code once without a success',
+    async (code) => {
+      mocks.saveAurora.mockRejectedValue(new BoardAccountError(code));
+      const { container } = render(<BoardAccountsSection />);
+      submitTensionLink(container);
+
+      await waitFor(() => expect(mocks.linkFailed).toHaveBeenCalledTimes(1));
+      expect(mocks.linkFailed).toHaveBeenCalledWith({ boardType: 'tension', source: 'integrations' }, code);
+      expect(mocks.linkStarted).toHaveBeenCalledTimes(1);
+      expect(mocks.linkSucceeded).not.toHaveBeenCalled();
+    },
+  );
+
+  it('does not report a start when the dialog is opened but never submitted', () => {
+    const { container } = render(<BoardAccountsSection />);
+    fireEvent.click(button(container, 'aurora.card.link')!);
+    expect(mocks.linkStarted).not.toHaveBeenCalled();
   });
 });
 
@@ -434,5 +551,86 @@ describe('BoardAccountsSection — sync_error on a connected board card (#3526)'
 
     expect(container.textContent).not.toContain('aurora.status.error');
     expect(container.textContent).not.toContain('aurora.status.duplicateAccountCircuits');
+  });
+});
+
+describe('LinkBoardAccountModal host lifecycle', () => {
+  beforeEach(() => {
+    mocks.saveAurora.mockReset().mockResolvedValue(undefined);
+    mocks.saveKilterViaPassword.mockReset().mockResolvedValue(undefined);
+    mocks.invalidate.mockReset().mockResolvedValue(undefined);
+    mocks.showToast.mockClear();
+    mocks.linkStarted.mockClear();
+    mocks.linkSucceeded.mockClear();
+    mocks.linkFailed.mockClear();
+  });
+
+  it('clears credentials after closing and when changing the selected board', () => {
+    const onClose = vi.fn();
+    const { container, rerender } = render(
+      <LinkBoardAccountModal boardType="tension" source="integrations" onClose={onClose} />,
+    );
+    fireEvent.change(input(container, 'aurora.linkDialog.usernamePlaceholder')!, { target: { value: 'first-user' } });
+    fireEvent.change(input(container, 'aurora.linkDialog.passwordPlaceholder')!, { target: { value: 'first-secret' } });
+    fireEvent.click(button(container, 'actions.cancel')!);
+    expect(onClose).toHaveBeenCalledTimes(1);
+    rerender(<LinkBoardAccountModal boardType={null} source="integrations" onClose={onClose} />);
+    rerender(<LinkBoardAccountModal boardType="tension" source="integrations" onClose={onClose} />);
+    expect(input(container, 'aurora.linkDialog.usernamePlaceholder')?.value).toBe('');
+    expect(input(container, 'aurora.linkDialog.passwordPlaceholder')?.value).toBe('');
+
+    fireEvent.change(input(container, 'aurora.linkDialog.usernamePlaceholder')!, { target: { value: 'second-user' } });
+    fireEvent.change(input(container, 'aurora.linkDialog.passwordPlaceholder')!, {
+      target: { value: 'second-secret' },
+    });
+    rerender(<LinkBoardAccountModal boardType="kilter" source="integrations" onClose={onClose} />);
+    expect(input(container, 'aurora.kilterLinkDialog.emailPlaceholder')?.value).toBe('');
+    expect(input(container, 'aurora.linkDialog.passwordPlaceholder')?.value).toBe('');
+    expect(mocks.linkStarted).not.toHaveBeenCalled();
+    expect(mocks.saveAurora).not.toHaveBeenCalled();
+    expect(mocks.saveKilterViaPassword).not.toHaveBeenCalled();
+  });
+
+  it('shows the username field for a non-Kilter board, not the Kilter email field', () => {
+    const { container } = render(<LinkBoardAccountModal boardType="tension" source="integrations" onClose={vi.fn()} />);
+    expect(input(container, 'aurora.linkDialog.usernamePlaceholder')).not.toBeNull();
+    expect(input(container, 'aurora.kilterLinkDialog.emailPlaceholder')).toBeNull();
+  });
+
+  it('shows the Kilter email field, not the generic username field', () => {
+    const { container } = render(<LinkBoardAccountModal boardType="kilter" source="integrations" onClose={vi.fn()} />);
+    expect(input(container, 'aurora.kilterLinkDialog.emailPlaceholder')).not.toBeNull();
+    expect(input(container, 'aurora.linkDialog.usernamePlaceholder')).toBeNull();
+  });
+
+  it('notifies the host after both credential caches refresh with one linked outcome', async () => {
+    let releaseInvalidations: () => void = () => {
+      throw new Error('Invalidation promise not initialized');
+    };
+    const invalidations = new Promise<void>((resolve) => {
+      releaseInvalidations = resolve;
+    });
+    mocks.invalidate.mockReturnValue(invalidations);
+    const onClose = vi.fn();
+    const onLinked = vi.fn();
+    const { container } = render(
+      <LinkBoardAccountModal boardType="tension" source="onboarding" onClose={onClose} onLinked={onLinked} />,
+    );
+    fireEvent.change(input(container, 'aurora.linkDialog.usernamePlaceholder')!, { target: { value: '  user  ' } });
+    fireEvent.change(input(container, 'aurora.linkDialog.passwordPlaceholder')!, { target: { value: 'secret' } });
+    fireEvent.click(button(container, 'aurora.linkDialog.submit')!);
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    expect(mocks.saveAurora).toHaveBeenCalledWith({ boardType: 'tension', username: 'user', password: 'secret' });
+    expect(mocks.invalidate).toHaveBeenCalledWith({ queryKey: ['auroraCredentials'] });
+    expect(mocks.invalidate).toHaveBeenCalledWith({ queryKey: ['auroraCredentials', 'unsynced'] });
+    expect(onLinked).not.toHaveBeenCalled();
+    await act(async () => {
+      releaseInvalidations();
+      await invalidations;
+    });
+    expect(onLinked).toHaveBeenCalledExactlyOnceWith('tension');
+    expect(mocks.linkStarted).toHaveBeenCalledExactlyOnceWith({ boardType: 'tension', source: 'onboarding' });
+    expect(mocks.linkSucceeded).toHaveBeenCalledExactlyOnceWith({ boardType: 'tension', source: 'onboarding' });
+    expect(mocks.linkFailed).not.toHaveBeenCalled();
   });
 });

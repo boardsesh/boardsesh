@@ -1,7 +1,13 @@
 import { describe, it, expect } from 'vitest';
 
-import { runMigrations, MIGRATIONS, LATEST_SCHEMA_VERSION } from '../migrations';
-import { SCHEMA_STATEMENTS } from '../schema';
+import {
+  runMigrations,
+  MIGRATIONS,
+  LATEST_SCHEMA_VERSION,
+  ARTIFACT_SCHEMA_VERSION,
+  artifactSchemaVersion,
+} from '../migrations';
+import { DEVICE_ONLY_TABLES, SCHEMA_STATEMENTS } from '../schema';
 import { TABLE_CONFIGS } from '../../sync/table-config';
 import { createTestDatabase, listTables, primaryKeyColumns, tableColumns } from '../../testing/sqlite-test-db';
 
@@ -281,6 +287,60 @@ describe('runMigrations', () => {
     expect(await primaryKeyColumns(upgradedDb, 'spray_walls')).toEqual(['layout_id']);
   });
 
+  it('v10 creates the device-derived holds index tables and the sync_seq index, on fresh and v9-stamped databases', async () => {
+    const assertHoldsSchema = async (database: ReturnType<typeof createTestDatabase>) => {
+      const tables = await listTables(database);
+      for (const table of ['holds_index_climbs', 'board_climb_hold_sets', 'board_climb_hold_postings']) {
+        expect(tables).toContain(table);
+      }
+      expect(await primaryKeyColumns(database, 'holds_index_climbs')).toEqual(['id']);
+      expect(await primaryKeyColumns(database, 'board_climb_hold_sets')).toEqual(['climb_id']);
+      expect(await primaryKeyColumns(database, 'board_climb_hold_postings')).toEqual([
+        'board_type',
+        'layout_id',
+        'hold_id',
+      ]);
+      const postings = await database.getFirstAsync<{ sql: string }>(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'board_climb_hold_postings'",
+      );
+      expect(postings?.sql).toMatch(/WITHOUT ROWID/);
+      const index = await database.getFirstAsync<{ tbl_name: string }>(
+        "SELECT tbl_name FROM sqlite_master WHERE type = 'index' AND name = 'idx_climbs_sync_seq'",
+      );
+      expect(index).toEqual({ tbl_name: 'board_climbs' });
+    };
+
+    const freshDb = createTestDatabase();
+    await runMigrations(freshDb);
+    await assertHoldsSchema(freshDb);
+
+    // Existing install stamped at v9: only the pending v10 migration applies,
+    // and the catalog rows already on disk are untouched.
+    const upgradedDb = createTestDatabase();
+    await runMigrations(upgradedDb);
+    await upgradedDb.execAsync(
+      'DROP INDEX idx_climbs_sync_seq; DROP TABLE holds_index_climbs; DROP TABLE board_climb_hold_sets; DROP TABLE board_climb_hold_postings;',
+    );
+    await upgradedDb.runAsync(
+      "INSERT INTO board_climbs (uuid, board_type, layout_id, frames, sync_seq) VALUES ('kept', 'kilter', 1, 'p1r12', 3)",
+    );
+    await upgradedDb.runAsync('UPDATE schema_version SET version = 9 WHERE id = 1');
+    await runMigrations(upgradedDb);
+    await assertHoldsSchema(upgradedDb);
+    expect(await upgradedDb.getFirstAsync("SELECT uuid FROM board_climbs WHERE uuid = 'kept'")).toEqual({
+      uuid: 'kept',
+    });
+    expect(
+      (await upgradedDb.getFirstAsync<{ version: number }>('SELECT version FROM schema_version WHERE id = 1'))?.version,
+    ).toBe(10);
+  });
+
+  it('keeps the device-only holds index tables out of SCHEMA_STATEMENTS', () => {
+    for (const table of DEVICE_ONLY_TABLES) {
+      expect(SCHEMA_STATEMENTS.some((statement) => statement.includes(table))).toBe(false);
+    }
+  });
+
   it('holds every column the sync config will write, for every syncable table', async () => {
     // The manifest's whole point: `upsertDocuments` builds
     // `INSERT INTO <table> (<localColumns ∩ document keys>)`, so a localColumns
@@ -328,6 +388,40 @@ describe('runMigrations', () => {
     expect(columns).toContain('note');
     const finalRow = await db.getFirstAsync<{ version: number }>('SELECT version FROM schema_version WHERE id = 1');
     expect(finalRow?.version).toBe(LATEST_SCHEMA_VERSION + 1);
+  });
+});
+
+describe('ARTIFACT_SCHEMA_VERSION', () => {
+  it('is the last migration that changed an artifact table: v7, missing_hold_count', () => {
+    expect(ARTIFACT_SCHEMA_VERSION).toBe(7);
+  });
+
+  it('is not moved by device-only migrations (v8 spray_walls, v9 followed authors, v10 holds index)', () => {
+    expect(LATEST_SCHEMA_VERSION).toBeGreaterThan(ARTIFACT_SCHEMA_VERSION);
+    expect(artifactSchemaVersion(MIGRATIONS.filter((migration) => migration.version <= 7))).toBe(7);
+  });
+
+  it('moves when a migration changes an artifact table, and ignores device-only statements', () => {
+    const next = LATEST_SCHEMA_VERSION + 1;
+    expect(
+      artifactSchemaVersion([
+        ...MIGRATIONS,
+        { version: next, statements: ['ALTER TABLE board_climbs ADD COLUMN note TEXT;'] },
+      ]),
+    ).toBe(next);
+    expect(
+      artifactSchemaVersion([
+        ...MIGRATIONS,
+        { version: next, statements: ['ALTER TABLE board_climb_grades ADD COLUMN spread REAL;'] },
+      ]),
+    ).toBe(next);
+    // A table whose name merely contains an artifact table's name does not count.
+    expect(
+      artifactSchemaVersion([
+        ...MIGRATIONS,
+        { version: next, statements: ['CREATE TABLE board_climbs_cache (x TEXT);'] },
+      ]),
+    ).toBe(ARTIFACT_SCHEMA_VERSION);
   });
 });
 

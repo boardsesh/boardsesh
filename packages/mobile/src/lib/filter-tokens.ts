@@ -178,6 +178,14 @@ export function getActiveFilterTokens({
     });
   }
 
+  if (filters.includeOtherAngles) {
+    tokens.push({
+      key: 'otherAngles',
+      label: labels.otherAngles(),
+      clear: () => patchFilters({ includeOtherAngles: undefined }),
+    });
+  }
+
   // Only drafts/projects produce a token — 'any' is the default and 'established'
   // is the retired duplicate of the popularity lever (matches the summary).
   if (filters.status === 'drafts' || filters.status === 'projects') {

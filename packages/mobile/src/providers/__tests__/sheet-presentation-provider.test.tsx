@@ -527,4 +527,58 @@ describe('useManagedSheet bridge', () => {
     vi.advanceTimersByTime(SETTLE_MS);
     expect(sheetApiA.snapToIndex).toHaveBeenCalledTimes(1); // only the original present
   });
+
+  // The BLE picker while it searches for the saved board (#5658): displaced, it
+  // must not read as the climber closing it, and it re-presents when its parent
+  // asks for it again.
+  it('fires onDisplaced instead of onClose when a sheet supplies it, and re-presents when reopened', async () => {
+    const onCloseA = vi.fn();
+    const onDisplacedA = vi.fn();
+    const sheetApiA = makeSheetApi();
+    const sheetApiB = makeSheetApi();
+
+    function SheetA({ open }: { open: boolean }) {
+      const sheetRef = useRef(sheetApiA as unknown as BottomSheetMethods);
+      useManagedSheet({
+        open,
+        sheetRef: sheetRef as RefObject<BottomSheetMethods | null>,
+        onClose: onCloseA,
+        onDisplaced: onDisplacedA,
+      });
+      return null;
+    }
+    function SheetB({ open }: { open: boolean }) {
+      const sheetRef = useRef(sheetApiB as unknown as BottomSheetMethods);
+      useManagedSheet({ open, sheetRef: sheetRef as RefObject<BottomSheetMethods | null> });
+      return null;
+    }
+    function Harness({ openA, openB }: { openA: boolean; openB: boolean }) {
+      return createElement(
+        SheetPresentationProvider,
+        null,
+        createElement(SheetA, { open: openA }),
+        createElement(SheetB, { open: openB }),
+      );
+    }
+
+    const { rerender } = render(createElement(Harness, { openA: true, openB: false }));
+    vi.advanceTimersByTime(SETTLE_MS); // A presented
+
+    rerender(createElement(Harness, { openA: true, openB: true })); // B displaces A
+    await act(async () => {});
+    expect(onDisplacedA).toHaveBeenCalledTimes(1);
+    expect(onCloseA).not.toHaveBeenCalled();
+
+    // The parent hides A in response (the picker keeps searching out of sight).
+    rerender(createElement(Harness, { openA: false, openB: true }));
+    vi.advanceTimersByTime(SETTLE_MS); // A dismiss settles
+    vi.advanceTimersByTime(SETTLE_MS); // B present settles
+    expect(sheetApiB.snapToIndex).toHaveBeenCalledWith(0);
+
+    // The parent asks for A again (the picker's list starts): it comes back.
+    rerender(createElement(Harness, { openA: true, openB: true }));
+    vi.advanceTimersByTime(SETTLE_MS); // B displaced, dismiss settles
+    expect(sheetApiA.snapToIndex).toHaveBeenCalledTimes(2);
+    expect(onCloseA).not.toHaveBeenCalled();
+  });
 });

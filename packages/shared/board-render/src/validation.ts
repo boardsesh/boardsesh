@@ -28,12 +28,21 @@ export function isSupportedBoardName(boardName: string): boardName is BoardName 
 /** Hard cap on the encoded frames string, to bound WASM work per request. */
 export const MAX_FRAMES_LENGTH = 16_384;
 
-export const MAX_SET_IDS = 10;
+/**
+ * Hard cap on how many hold sets one render may composite.
+ *
+ * Sized against the real catalogue, not guessed: the widest shipped config is
+ * Decoy layout 2 / size 1, which carries 19 sets. `set-ids-catalogue.test.ts`
+ * walks every entry in `SETS` and fails if one outgrows this number, because
+ * the previous cap of 10 silently 400'd every Decoy climb — both its share card
+ * and the board image on the page itself.
+ */
+export const MAX_SET_IDS = 24;
 
 /**
- * Ten comma-separated safe integers. Apply this byte-sized bound before regex
- * or split work so hostile query strings cannot make validation scale with an
- * arbitrary input length.
+ * `MAX_SET_IDS` comma-separated safe integers. Apply this byte-sized bound
+ * before regex or split work so hostile query strings cannot make validation
+ * scale with an arbitrary input length.
  */
 export const MAX_SET_IDS_LENGTH = MAX_SET_IDS * String(Number.MAX_SAFE_INTEGER).length + (MAX_SET_IDS - 1);
 
@@ -142,6 +151,86 @@ export const boardseshRenderQuerySchema = z.object({
 export type BoardseshRenderQuery = z.infer<typeof boardseshRenderQuerySchema>;
 
 /**
+ * The grade vocabulary a card will draw: `V7`, `7B+`, `6c+`, `5.12a`, `V8/7B`.
+ *
+ * Exported because the URL builder has to apply it too. A grade that fails here
+ * is a 400, and a 400 is no card at all — so a caller that cannot match it must
+ * drop the grade rather than send it and lose the whole image.
+ */
+export const OG_CARD_GRADE_PATTERN = /^[A-Za-z0-9+/. -]{1,16}$/;
+
+/** Raw query-string bounds, applied before any per-codepoint work. */
+export const MAX_CARD_NAME_PARAM_LENGTH = 512;
+export const MAX_CARD_SETTER_PARAM_LENGTH = 256;
+
+/** What survives normalisation and actually reaches the card. */
+export const MAX_CARD_NAME_CODEPOINTS = 64;
+export const MAX_CARD_SETTER_CODEPOINTS = 32;
+
+/**
+ * Invisible characters that are not in `\p{C}` but would still let a crafted URL
+ * render something other than what it says: the zero-width space, the
+ * left/right marks, the bidi overrides and isolates, and the byte-order mark.
+ *
+ * U+200C and U+200D are deliberately NOT in that list. Both are text, not
+ * decoration: the joiner is what holds a compound emoji together, so stripping
+ * it turns a climber emoji into two glyphs, and the non-joiner is semantic in
+ * Persian and Arabic. Climb names contain emoji — the catalogue has one whose
+ * whole name is an emoji.
+ */
+const INVISIBLE_CHARACTERS = /[\u200B\u200E\u200F\u2028\u2029\u202A-\u202E\u2066-\u2069\uFEFF]/gu;
+
+/**
+ * Bound a caller-supplied string before it is drawn onto a share card.
+ *
+ * `/og/climb` is unauthenticated and its responses are immutable for a year, so
+ * whatever text a URL carries is what that URL renders for as long as anyone
+ * holds it. This is a deny-list rather than an allow-list of scripts on purpose:
+ * real climb names in the catalogue include Japanese katakana, Chinese, Hebrew
+ * and emoji, and a script allow-list would blank them.
+ *
+ * Truncation counts code points via `Array.from`, so an emoji costs one
+ * character rather than being cut in half into a lone surrogate.
+ */
+export function normalizeOgCardText(raw: string, maxCodePoints: number): string {
+  const stripped = raw
+    .normalize('NFC')
+    // Whitespace becomes a space BEFORE control characters are stripped: a tab
+    // and a newline are both `\p{C}`, so stripping first would silently join
+    // the words either side of them.
+    .replaceAll(/\s/gu, ' ')
+    .replaceAll(INVISIBLE_CHARACTERS, '')
+    // `\p{C}` minus the format category, which is handled by the explicit list
+    // above instead. `\p{Cf}` holds the bidi overrides AND the joiners, and the
+    // joiners are text: stripping the whole category takes a compound emoji
+    // apart.
+    .replaceAll(/[\p{Cc}\p{Co}\p{Cs}\p{Cn}]/gu, '')
+    .replaceAll(/ {2,}/gu, ' ')
+    .trim();
+
+  const codePoints = Array.from(stripped);
+  return codePoints.length <= maxCodePoints ? stripped : codePoints.slice(0, maxCodePoints).join('').trim();
+}
+
+/**
+ * Escape text for Pango markup.
+ *
+ * libvips calls `pango_parse_markup` on every string it typesets, unconditionally
+ * — there is no plain-text mode. An unescaped `&` or `<` does not render
+ * literally, it throws `text: invalid markup in text`, so a climb called
+ * "Rock & Roll" would 500 the endpoint rather than look wrong. Verified against
+ * sharp 0.34.5 on both macOS and node:22-alpine.
+ */
+export function escapePangoMarkup(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+/**
  * Strict query validation for the public `GET /og/climb` endpoint. Runs before
  * any CPU-heavy work: rejects bad input cheaply with a 400 so a crawler can't
  * push the backend into wasted WASM/sharp renders.
@@ -166,6 +255,37 @@ export const ogClimbQuerySchema = z
       .max(MAX_FRAMES_LENGTH, 'frames string is too large')
       .refine(isValidFramesString, 'frames contains invalid syntax'),
     format: z.enum(['webp', 'png', 'jpeg', 'jpg']).optional(),
+    // Climb identity drawn on the card. All optional, so a URL built by an
+    // already-shipped mobile binary still renders — it just gets the board on
+    // its own. Deliberately NOT ascents or quality: those tick constantly, and
+    // every tick would mint a new URL against a year-long immutable cache.
+    n: z
+      .string()
+      .max(MAX_CARD_NAME_PARAM_LENGTH, 'n is too large')
+      .transform((name) => normalizeOgCardText(name, MAX_CARD_NAME_CODEPOINTS))
+      .optional(),
+    s: z
+      .string()
+      .max(MAX_CARD_SETTER_PARAM_LENGTH, 's is too large')
+      .transform((setter) => normalizeOgCardText(setter, MAX_CARD_SETTER_CODEPOINTS))
+      .optional(),
+    // Grades are a closed vocabulary across every board we render — `V7`,
+    // `7B+`, `6c+`, `5.12a`, `V8/7B` — so this one gets an allow-list rather
+    // than the free-text treatment.
+    g: z
+      .string()
+      .regex(OG_CARD_GRADE_PATTERN, 'g must be a grade label')
+      // The charset admits spaces, so `g=%20%20` passes the regex, renders
+      // nothing, and still hashes to its own byte-cache entry. Trim first and
+      // require something left, so a blank grade keys as no grade.
+      .transform((grade) => grade.trim())
+      .refine((grade) => grade.length > 0, 'g must be a grade label')
+      .optional(),
+    // Wide on purpose. Grasshopper's angle list starts at -5, and a bound that
+    // clipped it would 400 — which is not a missing angle on the card, it is no
+    // card at all. `og-card-angles.test.ts` walks every board's angle list and
+    // fails if one ever falls outside this.
+    angle: z.coerce.number().int().min(-90).max(90).optional(),
   })
   .extend(boardseshRenderQuerySchema.shape);
 

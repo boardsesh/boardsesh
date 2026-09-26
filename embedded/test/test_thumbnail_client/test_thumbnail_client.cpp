@@ -104,6 +104,52 @@ void test_parse_board_render_route_sorts_set_ids_and_ignores_angle(void) {
     TEST_ASSERT_EQUAL_STRING("1,20", route.setIds);
 }
 
+void test_parse_board_render_route_keeps_every_set_id_on_the_widest_board(void) {
+    // Decoy layout 2 / size 1 carries 19 hold sets, the widest shipped config.
+    // At the old 16-id cap this parsed the first 16, sorted those, and wrote
+    // them back over the route — the device then asked for a Decoy board with
+    // three of its hold sets missing.
+    BoardRenderRoute route;
+    bool parsed = parseBoardRenderRoute(
+        "decoy/2/1/20,19,18,17,16,15,14,13,12,11,10,9,8,7,6,5,4,3,2/40", route);
+
+    TEST_ASSERT_TRUE(parsed);
+    TEST_ASSERT_EQUAL_STRING("decoy", route.boardName);
+    TEST_ASSERT_EQUAL_STRING("2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20", route.setIds);
+}
+
+void test_parse_board_render_route_leaves_a_set_list_past_the_cap_intact(void) {
+    // Past MAX_SET_IDS the list is left exactly as it arrived rather than
+    // truncated. Sorting only aligns the request with the server's cache key —
+    // the server canonicalises set ids itself, so an unsorted list still renders
+    // the right board while a short one does not.
+    BoardRenderRoute route;
+    const char* tooMany = "25,24,23,22,21,20,19,18,17,16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1";
+    String path = String("decoy/2/1/") + tooMany + "/40";
+    bool parsed = parseBoardRenderRoute(path.c_str(), route);
+
+    TEST_ASSERT_TRUE(parsed);
+    TEST_ASSERT_EQUAL_STRING(tooMany, route.setIds);
+}
+
+void test_parse_board_render_route_holds_the_widest_list_the_parser_accepts(void) {
+    // 24 three-digit ids is 95 characters, the worst case MAX_SET_IDS allows.
+    // The buffer has to hold it, or a config the parser would accept is instead
+    // dropped whole by copySegment and shows as a blank thumbnail.
+    BoardRenderRoute route;
+    String setIds = "100";
+    for (int i = 1; i < 24; i++) {
+        setIds += ",";
+        setIds += String(100 + i);
+    }
+    String path = String("decoy/2/1/") + setIds + "/40";
+    bool parsed = parseBoardRenderRoute(path.c_str(), route);
+
+    TEST_ASSERT_EQUAL(95, static_cast<int>(setIds.length()));
+    TEST_ASSERT_TRUE(parsed);
+    TEST_ASSERT_EQUAL_STRING(setIds.c_str(), route.setIds);
+}
+
 void test_parse_board_render_route_accepts_locale_prefixed_path(void) {
     BoardRenderRoute route;
     bool parsed = parseBoardRenderRoute("/es/tension/2/10/3,1/list", route);
@@ -229,6 +275,9 @@ int main(int argc, char** argv) {
 
     UNITY_BEGIN();
     RUN_TEST(test_parse_board_render_route_sorts_set_ids_and_ignores_angle);
+    RUN_TEST(test_parse_board_render_route_keeps_every_set_id_on_the_widest_board);
+    RUN_TEST(test_parse_board_render_route_leaves_a_set_list_past_the_cap_intact);
+    RUN_TEST(test_parse_board_render_route_holds_the_widest_list_the_parser_accepts);
     RUN_TEST(test_parse_board_render_route_accepts_locale_prefixed_path);
     RUN_TEST(test_parse_board_render_route_rejects_missing_segments);
     RUN_TEST(test_normalize_render_base_url_handles_ws_and_trailing_slashes);

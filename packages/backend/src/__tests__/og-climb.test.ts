@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import sharp from 'sharp';
-import { MAX_SET_IDS_LENGTH } from '@boardsesh/board-render';
+import { MAX_SET_IDS, MAX_SET_IDS_LENGTH } from '@boardsesh/board-render';
 import { RateLimitError } from '../utils/rate-limiter';
 
 // The handler under test talks to the board-render service and the Redis rate
@@ -131,6 +131,19 @@ describe('handleOgClimb', () => {
       expect(checkRateLimitRedis).not.toHaveBeenCalled();
     });
 
+    it('rejects more distinct set_ids than the cap, not just an over-long string', async () => {
+      // The byte bound above and the count bound are different rejections, and
+      // only the byte one was covered. The count is the one that matters: it is
+      // what 400'd every Decoy climb when the cap was 10.
+      const res = await run({
+        ...validParams,
+        set_ids: Array.from({ length: MAX_SET_IDS + 1 }, (_, index) => index + 1).join(','),
+      });
+
+      expect(res.statusCode).toBe(400);
+      expect(renderOgClimb).not.toHaveBeenCalled();
+    });
+
     it('rejects missing or empty frames with 400 — a blank board must not get immutable 200 headers', async () => {
       const { frames: _omit, ...paramsWithoutFrames } = validParams;
       const missingFramesResponse = await run(paramsWithoutFrames);
@@ -193,6 +206,99 @@ describe('handleOgClimb', () => {
       const [callArgs] = vi.mocked(renderOgClimb).mock.calls[0];
       expect(callArgs.glyphs).toBe(true);
       expect(callArgs.fieldColor).toBe('#123456');
+    });
+  });
+
+  describe('climb identity on the card', () => {
+    it('renders the board alone when no identity params are sent', async () => {
+      // An already-shipped mobile binary builds the bare URL. It must keep
+      // getting a card, not a 400.
+      const res = await run(validParams);
+
+      expect(res.statusCode).toBe(200);
+      const [callArgs] = vi.mocked(renderOgClimb).mock.calls[0];
+      expect(callArgs.card?.name).toBeUndefined();
+      expect(callArgs.card?.grade).toBeUndefined();
+    });
+
+    it('passes the normalised identity to the renderer', async () => {
+      await run({ ...validParams, n: '  BING  BANG BOSH ', g: '7a/V6', s: 'Patrick Gosling', angle: '40' });
+      const [callArgs] = vi.mocked(renderOgClimb).mock.calls[0];
+
+      expect(callArgs.card?.name).toBe('BING BANG BOSH');
+      expect(callArgs.card?.grade).toBe('7a/V6');
+      expect(callArgs.card?.setter).toBe('Patrick Gosling');
+      expect(callArgs.card?.angle).toBe(40);
+    });
+
+    it('derives the board line from the config rather than taking it as a param', async () => {
+      await run({ ...validParams, n: 'Boulder 9' });
+
+      expect(vi.mocked(renderOgClimb).mock.calls[0][0].card?.boardLine).toContain('Kilter');
+    });
+
+    it('rejects an over-long name before any render work', async () => {
+      const res = await run({ ...validParams, n: 'a'.repeat(513) });
+
+      expect(res.statusCode).toBe(400);
+      expect(JSON.parse(res.body.toString()).details).toEqual(['n is too large']);
+      expect(renderOgClimb).not.toHaveBeenCalled();
+    });
+
+    it('rejects an over-long setter before any render work', async () => {
+      const res = await run({ ...validParams, s: 'a'.repeat(257) });
+
+      expect(res.statusCode).toBe(400);
+      expect(renderOgClimb).not.toHaveBeenCalled();
+    });
+
+    it('rejects free text in the grade slot and an out-of-range angle', async () => {
+      expect((await run({ ...validParams, g: '<b>V7</b>' })).statusCode).toBe(400);
+      expect((await run({ ...validParams, angle: '91' })).statusCode).toBe(400);
+      expect(renderOgClimb).not.toHaveBeenCalled();
+    });
+
+    it('keeps a name containing Pango markup, escaped rather than rejected', async () => {
+      // "Rock & Roll" is a plausible climb name. The escaping happens where the
+      // text meets Pango; the handler's job is not to lose the name.
+      await run({ ...validParams, n: 'Rock & Roll' });
+
+      expect(vi.mocked(renderOgClimb).mock.calls[0][0].card?.name).toBe('Rock & Roll');
+    });
+
+    it('names a font family rather than leaving Pango on its default', async () => {
+      // On the Alpine image `fc-match sans` resolves to the CJK font, which
+      // renders Latin in its own weaker glyphs and ignores weight="700" — the
+      // grade and the climb name would ship un-bold. Nothing in PR CI builds
+      // the backend image, so this assertion is the guard.
+      await run({ ...validParams, n: 'BING BANG BOSH', g: '7a/V6' });
+
+      expect(vi.mocked(renderOgClimb).mock.calls[0][0].card?.fontFamily).toBe('Noto Sans');
+    });
+
+    it('drops only the free-text fields when the kill switch is set', async () => {
+      // A grade is matched by an allow-list, not free text, so the switch that
+      // exists to turn off caller-supplied words must leave it alone.
+      vi.stubEnv('OG_CARD_TEXT_DISABLED', '1');
+      vi.resetModules();
+      const { handleOgClimb: gated } = await import('../handlers/og-climb');
+      const { req, url } = makeRequest({ ...validParams, n: 'BING BANG BOSH', s: 'someone', g: '7a/V6', angle: '40' });
+      const res = makeResponse();
+      await gated(req, res as unknown as ServerResponse, url);
+
+      const [callArgs] = vi.mocked(renderOgClimb).mock.calls[0];
+      expect(callArgs.card?.name).toBeUndefined();
+      expect(callArgs.card?.setter).toBeUndefined();
+      expect(callArgs.card?.grade).toBe('7a/V6');
+      expect(callArgs.card?.angle).toBe(40);
+      vi.unstubAllEnvs();
+      vi.resetModules();
+    });
+
+    it('keeps the non-Latin names the catalogue contains', async () => {
+      await run({ ...validParams, n: '\u30AB\u30C1\u30AB\u30C1' });
+
+      expect(vi.mocked(renderOgClimb).mock.calls[0][0].card?.name).toBe('\u30AB\u30C1\u30AB\u30C1');
     });
   });
 

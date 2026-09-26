@@ -40,6 +40,12 @@ export const DEFAULT_SEARCH_CACHE_TTL = 86400;
  * and a search that does not filter on integrity has no param that moved — so a
  * cached v8 page would serve rows with the field absent and every climb on a wall
  * that has just been reset would read as intact for the full 24h TTL.
+ *
+ * Not bumped for #5642, which narrowed Woods searches back to the browsed angle
+ * unless `crossAngleStats` opts in: Woods has not been cacheable since #4750
+ * (`isCacheableBoard` in the climbs resolver), so no cached page describes it,
+ * and every cacheable board resolves exactly as before. The v8 note above
+ * predates that exclusion.
  */
 export const CACHE_VERSION = 'v9';
 

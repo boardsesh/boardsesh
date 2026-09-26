@@ -73,6 +73,24 @@ export const userBoards = pgTable(
   (table) => ({
     // Gym lookup
     gymIdx: index('user_boards_gym_idx').on(table.gymId),
+    // The gym directory's board filter: `searchGyms` probes
+    // `EXISTS (SELECT 1 FROM user_boards ub WHERE ub.gym_id = ? AND ub.deleted_at
+    // IS NULL AND ub.board_type IN (...) AND ub.layout_id IN (...) AND ...)`.
+    //
+    // `gym_id` leads because it is the correlated predicate; `board_type` follows
+    // because the filter cascade guarantees it is set whenever layout, size or
+    // angle are, and it is the most selective of the four.
+    //
+    // Honest about the gain: `user_boards_gym_idx` above already makes that
+    // EXISTS an index scan over a handful of rows, so this is a constant factor,
+    // not a complexity change. What it adds is the partial predicate (soft-deleted
+    // rows never enter the scan) and an index-ONLY probe with no heap fetch —
+    // which is worth having because a MoonBoard gym carries 14 rows and a
+    // multi-wall gym more, and because the directory's board-summary read hits the
+    // same columns.
+    gymBoardFilterIdx: index('user_boards_gym_filter_idx')
+      .on(table.gymId, table.boardType, table.layoutId, table.sizeId, table.angle)
+      .where(sql`${table.deletedAt} IS NULL`),
     // Owner+config lookup for createBoard's duplicate check. Deliberately NOT
     // unique: a config tuple does not identify a physical board. The same
     // layout/size/set combination legitimately exists at two different gyms

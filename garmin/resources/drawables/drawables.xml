@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Drawable resources.
+
+  LauncherIcon is the app's icon in the watch's app list, referenced from
+  manifest.xml (launcherIcon="@Drawables.LauncherIcon"). `launcher_icon.png` is a
+  committed PLACEHOLDER (a plain 60x60 solid-colour square) so the project builds
+  out of the box — replace it with real Boardsesh branding before shipping.
+  Connect IQ launcher icons are a small square PNG; a single ~40-60px icon scales
+  acceptably across the product allow-list.
+-->
+<drawables>
+    <bitmap id="LauncherIcon" filename="launcher_icon.png" />
+</drawables>

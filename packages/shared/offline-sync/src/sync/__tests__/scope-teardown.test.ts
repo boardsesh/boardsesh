@@ -247,6 +247,10 @@ describe('removeBoardScopeData — markers', () => {
       '1',
     ]);
     await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
+      `holds-index:${scopeKey}`,
+      JSON.stringify({ updatedAt: '2026-06-01T00:00:00Z', syncSeq: 9 }),
+    ]);
+    await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
       `bootstrap-paged-fallback:${scopeKey}`,
       '1',
     ]);
@@ -293,9 +297,14 @@ describe('removeBoardScopeData — markers', () => {
     await removeBoardScopeData({ db, scope: KILTER_12X12, scopeKey: 'kilter:1:5', retainedScopes: [KILTER_8X12] });
 
     for (const key of scopeSyncMetaKeys('kilter:1:7')) {
+      // The one deliberate exception: the holds index's postings are per LAYOUT,
+      // so the teardown clears the whole layout's index and every sibling's
+      // watermark, and the sibling rebuilds on its next cycle.
+      if (key === 'holds-index:kilter:1:7') continue;
       const row = await db.getFirstAsync<{ key: string }>('SELECT key FROM sync_meta WHERE key = ?', [key]);
       expect(row, `${key} should survive`).not.toBeNull();
     }
+    expect(await db.getFirstAsync('SELECT key FROM sync_meta WHERE key = ?', ['holds-index:kilter:1:7'])).toBeNull();
   });
 
   // Guards against anyone "tidying" the exact-key list into a LIKE 'checkpoint:%'
@@ -348,6 +357,9 @@ describe('removeBoardScopeData — markers', () => {
         'scope-download-started:kilter:1:5',
         'reused-import-failed:kilter:1:5',
         'grades-bootstrap-attempts:kilter:1:5',
+        // The device-derived holds index's watermark: a re-download re-imports
+        // climbs with their old sync_seq, which a surviving one would skip.
+        'holds-index:kilter:1:5',
       ]),
     );
   });

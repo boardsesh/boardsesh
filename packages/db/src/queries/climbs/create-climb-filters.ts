@@ -1,6 +1,7 @@
 import { type SQL, eq, gt, sql, like, notLike, inArray, isNull, or, and } from 'drizzle-orm';
 import { getMoonBoardGeometryByLayoutId, woodsHoldIdsInZone } from '@boardsesh/board-config';
 import { getTallWideScope } from '@boardsesh/board-constants/product-sizes';
+import { climbNameLikePattern } from '@boardsesh/climb-filters';
 import {
   boardClimbs,
   boardClimbStats,
@@ -11,23 +12,16 @@ import {
   boardHoles,
   boardBetaLinks,
 } from '../../schema/index';
-import type { BoardRouteParams, ClimbSearchParams } from './types';
+import { hasNameQuery, type BoardRouteParams, type ClimbSearchParams } from './types';
 import { followedAuthorCondition } from './followed-authors';
 import { climbHoldPlacementMatchSql } from './placement-match';
 import {
+  browsedAngleRestrictionSql,
   effectiveStatsColumn,
   setAngleStatsJoinConditions,
   gradeJoinAngleSql,
   type StatsColumnKey,
 } from './effective-stats';
-
-// Escape LIKE/ILIKE metacharacters so user-supplied search text is matched
-// literally. Postgres' default escape character is backslash, so `\%`, `\_`,
-// and `\\` match the literal character. The value is bound as a parameter (not
-// a SQL literal), so this is the only escaping layer needed.
-function escapeLikePattern(input: string): string {
-  return input.replace(/[\\%_]/g, (char) => `\\${char}`);
-}
 
 // A Postgres `ARRAY[...]::int[]` literal from a number list, for the tall/wide
 // `compatible_size_ids &&` overlap predicates and the Woods zone `= ANY(...)`
@@ -55,10 +49,13 @@ function intArrayLiteral(values: readonly number[]): SQL {
  * The offline mirror of this rule lives in
  * packages/mobile/src/db/queries/search-climbs-local.ts and must agree, or an
  * offline search shows what the online one hides.
+ *
+ * `hasNameQuery` is shared with the angle-bound browse restriction
+ * (`resolveCrossAngleStats` in ./effective-stats), which makes the same exception
+ * for the same reason: a named climb is findable at any angle too.
  */
 export function hiddenClimbCondition(searchParams: ClimbSearchParams): SQL[] {
-  const hasNameQuery = typeof searchParams.name === 'string' && searchParams.name.length > 0;
-  return hasNameQuery ? [] : [eq(boardClimbs.isHidden, false)];
+  return hasNameQuery(searchParams) ? [] : [eq(boardClimbs.isHidden, false)];
 }
 
 /**
@@ -110,6 +107,32 @@ function moonBoardZoneCoordinates(layoutId: number, placementHoleId: SQL): { x: 
 }
 
 /**
+ * The rounded grade id a climb is filtered on — and, under the Boardsesh source,
+ * sorted on — for `searchParams.gradeSource` (issues #5643, #5752, #5753).
+ *
+ *   - 'upstream' (and undefined): the board's own catalogue grade (display_difficulty),
+ *     falling back to the Boardsesh grade only when there is no stats row.
+ *   - 'boardsesh': the Boardsesh grade (COALESCE(universal, local), the value a
+ *     list row labels a climb with when Boardsesh grades are on), falling back to
+ *     display_difficulty when the climb has no board_climb_grades row.
+ *
+ * `displayDifficulty` must be the effective-stats reader (`statsCol`), so this
+ * composes with cross-angle. Mirrored by `gradeValueSql` in
+ * packages/mobile/src/db/queries/search-climbs-local.ts.
+ */
+export function gradeValueSql(displayDifficulty: SQL, gradeSource: ClimbSearchParams['gradeSource']): SQL {
+  const upstreamGrade = sql`ROUND(${displayDifficulty}::numeric, 0)`;
+  const boardseshGrade = sql`ROUND(COALESCE(${boardClimbGrades.universalGrade}, ${boardClimbGrades.localGrade})::numeric, 0)`;
+  if (gradeSource !== 'boardsesh') return sql`COALESCE(${upstreamGrade}, ${boardseshGrade})`;
+  // A `setter_only` grade is never shown on a row (the label falls back to the
+  // upstream grade — `resolveBoardseshDifficulty` in the mobile app), so it must
+  // not be filtered or sorted on either. The upstream branch above keeps its
+  // fallback exactly as it was.
+  const shownBoardseshGrade = sql`CASE WHEN ${boardClimbGrades.confidence} = 'setter_only' THEN NULL ELSE ${boardseshGrade} END`;
+  return sql`COALESCE(${shownBoardseshGrade}, ${upstreamGrade})`;
+}
+
+/**
  * Creates a shared filtering object for climb search and heatmap queries.
  * Uses unified tables (board_climbs, board_climb_stats, etc.) with board_type filtering.
  *
@@ -118,18 +141,26 @@ function moonBoardZoneCoordinates(layoutId: number, placementHoleId: SQL): { x: 
  * @param userId Optional user ID for personal progress filters
  * @param options.crossAngleStats Resolve stats through the climb's set angle when
  *   the browsed angle has none (issue #5405). It is an explicit OPT-IN, never
- *   derived here, because the holds heatmap
- *   (packages/web/app/lib/db/queries/climbs/holds-heatmap.ts) reuses these same
- *   condition arrays from a query that drives off `board_climb_holds` and has no
- *   `board_climbs` in its FROM at all. A set-angle reference baked in on the
+ *   derived here, because a holds heatmap query (see
+ *   `getHoldHeatmapClimbStatsConditions`) reuses these same condition arrays
+ *   from a query that drives off `board_climb_holds` and has no `board_climbs`
+ *   in its FROM at all. A set-angle reference baked in on the
  *   board's behalf would make that query fail to plan on exactly the boards the
  *   fix is for. The heatmap passes nothing and its SQL is unchanged.
+ * @param options.restrictToBrowsedAngle Keep only the climbs that belong to the
+ *   browsed angle (issue #5642) — see `browsedAngleRestrictionSql` in
+ *   ./effective-stats. Opt-in for the same reason as `crossAngleStats`: the
+ *   predicate probes the browsed-angle `board_climb_stats` join and names
+ *   `board_climbs.angle`, and the heatmap's FROM has neither. Callers pass
+ *   `resolveBrowsedAngleRestriction`; this builder then drops it for a drafts
+ *   query and under cross-angle, and reports the outcome as
+ *   `isBrowsedAngleRestricted`.
  */
 export const createClimbFilters = (
   params: BoardRouteParams,
   searchParams: ClimbSearchParams,
   userId?: string,
-  options?: { crossAngleStats?: boolean },
+  options?: { crossAngleStats?: boolean; restrictToBrowsedAngle?: boolean },
 ) => {
   const crossAngle = options?.crossAngleStats === true;
   // Reads one stats column from the effective row. Every call shares one
@@ -189,6 +220,20 @@ export const createClimbFilters = (
 
   // When showing only drafts, skip the isListed filter (drafts are never listed)
   const isListedCondition: SQL | null = isOnlyDrafts ? null : eq(boardClimbs.isListed, true);
+
+  // Angle-bound boards keep only the climbs that belong to the browsed angle
+  // (issue #5642). Two exemptions are decided here rather than in
+  // `resolveBrowsedAngleRestriction`, because only this builder knows them:
+  //   - a user's own drafts list shows every draft, whatever angle it was saved
+  //     at — the same list-everything-I-own reading that skips the size and stats
+  //     filters for drafts in searchClimbs / countClimbs;
+  //   - under cross-angle the search wants every angle, so a caller passing both
+  //     options gets cross-angle rather than a contradiction.
+  // Both searchClimbs and countClimbs build their WHERE from
+  // `getClimbWhereConditions`, which is where this lands, so the list and the
+  // count badge above it cannot disagree about it.
+  const isBrowsedAngleRestricted = options?.restrictToBrowsedAngle === true && !isOnlyDrafts && !crossAngle;
+  const browsedAngleConditions: SQL[] = isBrowsedAngleRestricted ? [browsedAngleRestrictionSql(params.angle)] : [];
 
   // Boulders / routes filter. Both selected (or both falsy — treated as "no
   // preference") → omit the frames_count constraint entirely. Boulders only →
@@ -262,7 +307,8 @@ export const createClimbFilters = (
   // browsed angle but one at its set angle already resolves a real
   // display_difficulty there, and only a climb with NO stats row at either angle
   // falls all the way through to the Boardsesh grade.
-  const gradeRangeValue = sql`COALESCE(ROUND(${statsCol('displayDifficulty')}::numeric, 0), ROUND(COALESCE(${boardClimbGrades.universalGrade}, ${boardClimbGrades.localGrade})::numeric, 0))`;
+  // `gradeSource: 'boardsesh'` swaps the order — see `gradeValueSql`.
+  const gradeRangeValue = gradeValueSql(statsCol('displayDifficulty'), searchParams.gradeSource);
   if (searchParams.minGrade && searchParams.maxGrade) {
     gradeRangeConditions.push(sql`${gradeRangeValue} BETWEEN ${searchParams.minGrade} AND ${searchParams.maxGrade}`);
   } else if (searchParams.minGrade) {
@@ -296,10 +342,12 @@ export const createClimbFilters = (
     climbStatsConditions.push(sql`${statsCol('benchmarkDifficulty')} > 0`);
   }
 
-  // Name search condition. Escape LIKE metacharacters so a search for "50%" or
-  // "a_b" matches literally instead of treating %/_ as wildcards.
+  // Name search condition. The shared pattern builder escapes the user's own
+  // LIKE metacharacters (so "50%" and "a_b" match literally) and folds the
+  // punctuation and spacing that made a typed full name miss (#5353). The
+  // offline SQLite search uses the same builder.
   const nameCondition: SQL[] = searchParams.name
-    ? [sql`${boardClimbs.name} ILIKE ${`%${escapeLikePattern(searchParams.name)}%`}`]
+    ? [sql`${boardClimbs.name} ILIKE ${climbNameLikePattern(searchParams.name)}`]
     : [];
 
   // Setter name filter condition
@@ -735,30 +783,6 @@ export const createClimbFilters = (
     };
   };
 
-  // Hold-specific user data selectors for heatmap using boardsesh_ticks
-  const getHoldUserLogbookSelects = (climbHoldsTable: typeof boardClimbHolds) => {
-    return {
-      userAscents: sql<number>`(
-        SELECT COUNT(*)
-        FROM ${boardseshTicks}
-        WHERE ${boardseshTicks.climbUuid} = ${climbHoldsTable.climbUuid}
-        AND ${boardseshTicks.userId} = ${userId || ''}
-        AND ${boardseshTicks.boardType} = ${params.board_name}
-        AND ${boardseshTicks.angle} = ${params.angle}
-        AND ${boardseshTicks.status} IN ('flash', 'send')
-      )`,
-      userAttempts: sql<number>`(
-        SELECT COUNT(*)
-        FROM ${boardseshTicks}
-        WHERE ${boardseshTicks.climbUuid} = ${climbHoldsTable.climbUuid}
-        AND ${boardseshTicks.userId} = ${userId || ''}
-        AND ${boardseshTicks.boardType} = ${params.board_name}
-        AND ${boardseshTicks.angle} = ${params.angle}
-        AND ${boardseshTicks.status} = 'attempt'
-      )`,
-    };
-  };
-
   return {
     // True only when this is genuinely a user's drafts query (onlyDrafts AND a
     // userId to own them). Callers MUST derive their isDraftsQuery flag from this,
@@ -767,8 +791,13 @@ export const createClimbFilters = (
     // size/stats filters and force creation sort while the filters still required
     // listed non-drafts. See searchClimbs / countClimbs.
     isOnlyDrafts: Boolean(isOnlyDrafts),
+    /** Whether the WHERE below carries the browsed-angle restriction (issue
+     *  #5642) — `restrictToBrowsedAngle` after the drafts and cross-angle
+     *  exemptions. Read it back rather than re-deriving it. */
+    isBrowsedAngleRestricted,
     getClimbWhereConditions: () => [
       ...baseConditions,
+      ...browsedAngleConditions,
       ...nameCondition,
       ...setterNameCondition,
       ...(searchParams.onlyFollowedAuthors ? [followedAuthorCondition(userId)] : []),
@@ -829,9 +858,9 @@ export const createClimbFilters = (
       eq(boardClimbHolds.boardType, params.board_name),
     ],
     getUserLogbookSelects,
-    getHoldUserLogbookSelects,
     // Raw parts
     baseConditions,
+    browsedAngleConditions,
     climbStatsConditions,
     gradeRangeConditions,
     nameCondition,

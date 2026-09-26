@@ -195,8 +195,9 @@ export async function reserveMigrationOwnerSession(
         loginMembershipCount: number;
         loginRole: string;
         loginRoleMatches: boolean;
-        ownerDoesNotOwnDatabase: boolean;
         ownerIncomingMembershipsMatch: boolean;
+        ownerOwnsCurrentDatabase: boolean;
+        ownerOwnsNoOtherDatabase: boolean;
         ownerCreateGrantMatches: boolean;
         ownerMembershipMatches: boolean;
         ownerRoleMatches: boolean;
@@ -263,10 +264,16 @@ export async function reserveMigrationOwnerSession(
                  AND NOT rolcreaterole AND rolinherit AND NOT rolreplication
                  AND NOT rolbypassrls
              ) AS "ownerRoleMatches",
+             EXISTS (
+               SELECT 1 FROM pg_catalog.pg_database AS database, owner_role
+               WHERE database.datname = current_database()
+                 AND database.datdba = owner_role.oid
+             ) AS "ownerOwnsCurrentDatabase",
              NOT EXISTS (
                SELECT 1 FROM pg_catalog.pg_database AS database, owner_role
-               WHERE database.datdba = owner_role.oid
-             ) AS "ownerDoesNotOwnDatabase",
+               WHERE database.datname <> current_database()
+                 AND database.datdba = owner_role.oid
+             ) AS "ownerOwnsNoOtherDatabase",
              (
                SELECT count(*) = 1
                FROM pg_catalog.pg_auth_members AS membership
@@ -634,10 +641,17 @@ export async function reserveMigrationOwnerSession(
     ) {
       throw new Error(`migration credential must be the exact restricted LOGIN role ${contract.loginRole}`);
     }
+    // Two database layouts are accepted. The PG18 cutover shape: a superuser
+    // owns the database and the owner role holds one non-grantable CREATE.
+    // The replication shape (Sep 2026): the owner role owns this database,
+    // which subsumes that CREATE grant and rebuilds the ACL without it. Owning
+    // any other database is never accepted.
+    const ownerDatabaseAccessMatches =
+      catalogContract.ownerOwnsNoOtherDatabase &&
+      (catalogContract.ownerOwnsCurrentDatabase || catalogContract.ownerCreateGrantMatches);
     if (
       !catalogContract.ownerRoleMatches ||
-      !catalogContract.ownerDoesNotOwnDatabase ||
-      !catalogContract.ownerCreateGrantMatches ||
+      !ownerDatabaseAccessMatches ||
       !catalogContract.ownerMembershipMatches ||
       !catalogContract.ownerIncomingMembershipsMatch ||
       !catalogContract.subscriberContractMatches ||
@@ -656,8 +670,7 @@ export async function reserveMigrationOwnerSession(
     ) {
       const failedChecks = Object.entries({
         ownerRoleMatches: catalogContract.ownerRoleMatches,
-        ownerDoesNotOwnDatabase: catalogContract.ownerDoesNotOwnDatabase,
-        ownerCreateGrantMatches: catalogContract.ownerCreateGrantMatches,
+        ownerDatabaseAccessMatches,
         ownerMembershipMatches: catalogContract.ownerMembershipMatches,
         ownerIncomingMembershipsMatch: catalogContract.ownerIncomingMembershipsMatch,
         subscriberContractMatches: catalogContract.subscriberContractMatches,

@@ -124,7 +124,40 @@ export type {
   BootstrapRetryWakeReporter,
   BootstrapPathRecoveredInfo,
   BootstrapPathRecoveredReporter,
+  HoldIndexSyncOptions,
 } from './sync/pull-client';
+
+// --- Device-derived holds index (hold heatmap + similar climbs on device) --------
+// Packed hold sets + per-hold postings built on the phone from
+// `board_climbs.frames`. Not synced tables; see holds-index/hold-index.ts for the
+// watermark and lock rules and holds-index/query.ts for the byte formats.
+export {
+  ensureHoldIndex,
+  isHoldIndexBehind,
+  holdIndexKey,
+  HOLD_INDEX_KEY_PREFIX,
+  HOLD_INDEX_CHUNK_CLIMBS,
+  HOLD_INDEX_INITIAL_CHUNK_CLIMBS,
+  HOLD_INDEX_GENERATION_PREFIX,
+  clearBoardTypeHoldIndex,
+} from './holds-index/hold-index';
+export type { HoldRow, HoldRowParser, EnsureHoldIndexOptions, EnsureHoldIndexResult } from './holds-index/hold-index';
+export {
+  HOLD_ROLE,
+  HOLD_ROLE_OTHER,
+  HOLD_SET_ENTRY_BYTES,
+  holdStateToRole,
+  encodeHoldSet,
+  decodeHoldSet,
+  decodeHoldSetIds,
+  holdSetSize,
+  encodePostings,
+  decodePostings,
+  getHoldSet,
+  findSimilarClimbCandidates,
+  aggregateHoldUsage,
+} from './holds-index/query';
+export type { HoldSetEntry, HoldRole, SimilarClimbCandidate, HoldUsage } from './holds-index/query';
 
 // --- Tombstone retention (issue #3474) --------------------------------------
 // The backend prune job imports SYNC_DELETIONS_RETENTION_DAYS from here so the
@@ -274,8 +307,15 @@ export type {
 
 // --- On-device schema ------------------------------------------------------------
 export { vacuumDatabase, measureReclaimableBytes } from './db/vacuum';
-export { SCHEMA_STATEMENTS } from './db/schema';
-export { runMigrations, MIGRATIONS, LATEST_SCHEMA_VERSION } from './db/migrations';
+export { SCHEMA_STATEMENTS, DEVICE_ONLY_TABLES, DEVICE_ONLY_STATEMENTS } from './db/schema';
+export {
+  runMigrations,
+  MIGRATIONS,
+  LATEST_SCHEMA_VERSION,
+  ARTIFACT_SCHEMA_VERSION,
+  ARTIFACT_TABLES,
+  artifactSchemaVersion,
+} from './db/migrations';
 export { SnapshotSchemaCompatibilityError, type SchemaDriftReport } from './sync/schema-compatibility';
 export type { Migration } from './db/migrations';
 export {

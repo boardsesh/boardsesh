@@ -35,7 +35,7 @@ import {
   type SyncCheckpoint,
 } from './checkpoints';
 import { capturePurgeToken, hasPurgeLanded, isSigningOut } from '../mutation-queue/drainer';
-import { LATEST_SCHEMA_VERSION } from '../db/migrations';
+import { ARTIFACT_SCHEMA_VERSION } from '../db/migrations';
 import { applyBulkImportPragmas, applyBusyTimeout } from '../db/pragmas';
 import { isDatabaseLockedError } from '../db/lock-errors';
 import {
@@ -1138,7 +1138,7 @@ async function readDeletionsReplayFrom(
   if (
     meta.table_name !== DELETIONS_SNAPSHOT_META_TABLE ||
     meta.format_version !== SNAPSHOT_MANIFEST_FORMAT_VERSION ||
-    meta.schema_version < LATEST_SCHEMA_VERSION ||
+    meta.schema_version < ARTIFACT_SCHEMA_VERSION ||
     meta.row_count !== 0 ||
     String(meta.watermark_sync_seq) !== '0' ||
     metaBuiltAt !== artifactBuiltAt ||
@@ -1152,9 +1152,10 @@ async function readDeletionsReplayFrom(
 }
 
 /**
- * Thrown when the artifact was built at an older client schema version than this
- * app runs. Importing it would NULL-fill columns the newer schema added and then
- * stamp the cursor PAST those rows — the strict-`>` delta pull would never
+ * Thrown when the artifact was built at a client schema older than the last
+ * migration that changed an artifact table (ARTIFACT_SCHEMA_VERSION). Importing
+ * it would NULL-fill columns that migration added and then stamp the cursor PAST
+ * those rows — the strict-`>` delta pull would never
  * backfill them, silently degrading data a paged crawl would have delivered.
  * The caller treats this as a permanent miss for this run (no attempt burned):
  * the nightly export rebuilds artifacts at the new schema within a day, but a
@@ -1162,7 +1163,7 @@ async function readDeletionsReplayFrom(
  */
 export class SnapshotSchemaStaleError extends Error {
   constructor(artifactVersion: number) {
-    super(`snapshot bootstrap: artifact schema_version ${artifactVersion} < client ${LATEST_SCHEMA_VERSION}`);
+    super(`snapshot bootstrap: artifact schema_version ${artifactVersion} < required ${ARTIFACT_SCHEMA_VERSION}`);
     this.name = 'SnapshotSchemaStaleError';
   }
 }
@@ -1231,8 +1232,12 @@ async function verifySnapshotMeta(
       );
     }
     // A NEWER artifact schema is fine (extra columns are dropped by the shared-
-    // column intersection); an OLDER one is not — see SnapshotSchemaStaleError.
-    if (meta.schema_version < LATEST_SCHEMA_VERSION) {
+    // column intersection); one older than the last migration that touched an
+    // artifact table is not — see SnapshotSchemaStaleError. Older than
+    // LATEST_SCHEMA_VERSION but not than ARTIFACT_SCHEMA_VERSION is fine: only
+    // device-side tables changed since. The required-columns check that follows
+    // (sharedColumns) is still the backstop for a missing client column.
+    if (meta.schema_version < ARTIFACT_SCHEMA_VERSION) {
       throw new SnapshotSchemaStaleError(meta.schema_version);
     }
     const rowBuiltAt = normalizeSnapshotTimestamp(meta.built_at);

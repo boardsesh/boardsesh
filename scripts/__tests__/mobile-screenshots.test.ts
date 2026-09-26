@@ -33,6 +33,7 @@ import {
   parseArgs,
   renderMaestroFlowForIosDevice,
   resolveAppStoreLocaleTargets,
+  resolveAppPath,
   resolveIosScreenshotDevices,
   rotationDegreesForIosOrientation,
   validateIosAppLauncherUrl,
@@ -783,6 +784,24 @@ describe('validateIosAppLauncherUrl', () => {
     try {
       writeInfoPlist(appPath, 'http://localhost:8081');
       expect(() => validateIosAppLauncherUrl(appPath, 8091)).toThrow(/expected http:\/\/localhost:8091/);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  // The guard used to be wired to resolveAndroidAppPath, where it can only ever
+  // no-op: it returns early on anything that is not a .app. So a mismatched iOS
+  // app sailed through and the run died much later at "did not reach the home
+  // screen", the dev-client having silently attached to whatever Metro owned the
+  // baked port. Pin the wiring, not just the function.
+  it('is wired into the iOS --app-path resolver, not only the Android one', () => {
+    if (!hasPlutil()) return;
+    const tempDir = mkdtempSync(join(tmpdir(), 'boardsesh-test-app-'));
+    const appPath = join(tempDir, 'Boardsesh.app');
+    mkdirSync(appPath);
+    try {
+      writeInfoPlist(appPath, 'http://localhost:65000');
+      expect(() => resolveAppPath({ ...parseArgs([]), appPath })).toThrow(/BOARDSESH_METRO_PORT/);
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }

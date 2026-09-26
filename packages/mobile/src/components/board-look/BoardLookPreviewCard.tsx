@@ -170,7 +170,7 @@ export const BoardLookPreviewCard = React.memo(function BoardLookPreviewCard({
   const scrimLabel = reduceTransparency ? (systemColors.label as string) : overlays.onScrim;
 
   const enlargeActions = useMemo(
-    () => [{ name: 'longpress' as const, label: t('mobile.more.accessibility.cvd.openLarger') }],
+    () => [{ name: 'longpress' as const, label: t('mobile.settings.accessibility.cvd.openLarger') }],
     [t],
   );
 
@@ -184,7 +184,7 @@ export const BoardLookPreviewCard = React.memo(function BoardLookPreviewCard({
         accessibilityRole="radio"
         accessibilityState={{ checked: selected }}
         accessibilityLabel={label}
-        accessibilityValue={{ text: t('mobile.more.boardLook.presets.position', { index: index + 1, total }) }}
+        accessibilityValue={{ text: t('mobile.settings.boardLook.presets.position', { index: index + 1, total }) }}
         accessibilityActions={enlargeActions}
         onAccessibilityAction={handleEnlarge}
         onPress={handlePress}
@@ -259,7 +259,7 @@ export const BoardLookPreviewCard = React.memo(function BoardLookPreviewCard({
                 numberOfLines={1}
                 maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
               >
-                {t('mobile.more.boardLook.presets.activeBadge')}
+                {t('mobile.settings.boardLook.presets.activeBadge')}
               </Text>
             </View>
           ) : null}
@@ -271,7 +271,7 @@ export const BoardLookPreviewCard = React.memo(function BoardLookPreviewCard({
           <Pressable
             testID="board-look-expand-badge"
             accessibilityRole="button"
-            accessibilityLabel={t('mobile.more.boardLook.presets.showFullSize', { look: label })}
+            accessibilityLabel={t('mobile.settings.boardLook.presets.showFullSize', { look: label })}
             onPress={handleEnlarge}
             hitSlop={style.expandHitSlop}
             style={[

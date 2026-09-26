@@ -13,6 +13,7 @@ import {
   type DocumentsPulledSink,
   type RowsDeletedSink,
   type BootstrapRetryWakeInfo,
+  type HoldIndexSyncOptions,
 } from './pull-client';
 import type { SnapshotSource, SnapshotBootstrapErrorReporter } from './snapshot-bootstrap';
 import { onPurgeSettled } from '../mutation-queue/drainer';
@@ -95,6 +96,8 @@ export type SchedulerOptions = {
    * and healing partly-crawled scopes.
    */
   isOnUnmeteredNetwork?: () => boolean | Promise<boolean>;
+  /** Threaded through to pullSync's SyncOptions — see HoldIndexSyncOptions. */
+  holdIndex?: HoldIndexSyncOptions;
 };
 
 let isSyncing = false;
@@ -186,6 +189,7 @@ async function runSync(request: SyncRunRequest): Promise<void> {
       onDocumentsPulled: options?.onDocumentsPulled,
       onRowsDeleted: options?.onRowsDeleted,
       isOnUnmeteredNetwork: options?.isOnUnmeteredNetwork,
+      holdIndex: options?.holdIndex,
       // Lifecycle-only callbacks. The active scheduler may be newer than this
       // run (for example after a React effect replacement), so resolve it at
       // callback time and require the same database before handing it a wake.

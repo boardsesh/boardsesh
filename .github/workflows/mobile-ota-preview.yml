@@ -194,6 +194,7 @@ jobs:
               path === 'pnpm-workspace.yaml' ||
               path === 'scripts/mobile-publish.ts' ||
               path === 'scripts/lib/mobile-publish-retry.ts' ||
+              path === 'scripts/lib/ota-branch-probe.ts' ||
               path === 'scripts/lib/eoas.ts' ||
               path === '.github/workflows/mobile-ota-preview.yml';
 
@@ -509,7 +510,7 @@ jobs:
     # job killed mid-backoff dies by timeout instead of reporting `s3-slowdown`.
     # Derived and enforced in mobile-ota-publish-workflow.test.ts from the ladder
     # in scripts/lib/mobile-publish-retry.ts.
-    timeout-minutes: 150
+    timeout-minutes: 165
     concurrency:
       group: mobile-ota-preview-mutation-${{ needs.gate.outputs.pr_number }}
       cancel-in-progress: false
@@ -683,6 +684,14 @@ jobs:
       # Maps), Android WITH it — the per-platform split that keeps each published
       # fingerprint equal to its shipped binary (matches mobile-ota-production.yml). A
       # native-change platform is skipped.
+      # `mobile:publish` verifies its own work for a `pr-<n>` branch: it re-asks
+      # `/branch_lists` — the same unauthenticated question the in-app picker asks —
+      # and fails when the branch it just uploaded is not being offered. It resolves
+      # the runtimeVersion to probe with ITSELF, inside the step, because only the
+      # step's own env produces the right hash: GOOGLE_MAPS_API_KEY below is an
+      # Android-only fingerprint input, so the compat step (which has no key) resolves
+      # a DIFFERENT Android hash. Passing that one in failed a healthy publish in run
+      # 34796068541. Nothing new is needed here.
       - name: Publish iOS OTA
         id: publish_ios
         if: steps.compat.outputs.verdict_ios != 'native-change-required'
@@ -815,7 +824,11 @@ jobs:
                   ? '⚠️ behind a native change on `main` — rebase, then re-check'
                   : '⚠️ native change — needs a TestFlight/Play build';
               }
-              if (outcome === 'failure') return '❌ publish failed (see the run log)';
+              // A failing publish step now has a second cause worth naming: the upload
+              // succeeded but the server does not offer the branch to this
+              // runtimeVersion, so the picker would show nothing. The publisher prints
+              // which platform and hash it probed; keep the cell short and point at it.
+              if (outcome === 'failure') return '❌ publish failed or not surfable (see the run log)';
               return '—';
             };
             const iosCell = cell(process.env.OUTCOME_IOS, process.env.VERDICT_IOS);

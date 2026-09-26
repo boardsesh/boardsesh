@@ -200,8 +200,14 @@ export type ClimbSearchInput = {
   // filter. Reads the materialised `board_climbs.missing_hold_count`.
   holdIntegrity?: 'ANY' | 'INTACT' | 'BROKEN';
   // Resolve stats through the climb's own set angle when the browsed angle has
-  // none. Always on for Woods and MoonBoard; opt-in elsewhere. See #5405.
+  // none (#5405). Opt-in on every board; omitted means off. On Woods, off also
+  // narrows the list to the browsed angle's climbs, and a name search resolves
+  // across angles regardless (#5642).
   crossAngleStats?: boolean;
+  // Which grade minGrade/maxGrade compare against. UPSTREAM (and an absent value)
+  // reads the board's own catalogue grade (display_difficulty) first; BOARDSESH
+  // reads the model-generated Boardsesh grade first.
+  gradeSource?: 'UPSTREAM' | 'BOARDSESH';
   // Climb-type toggles. Both undefined / both true → no frames_count filter.
   // Boulders only → `frames_count = 1`. Routes only → `frames_count > 1`.
   boulders?: boolean;
@@ -244,6 +250,10 @@ export type SetterStatsInput = {
   setIds: string;
   angle: number;
   search?: string;
+  // Same opt-in as ClimbSearchInput.crossAngleStats. Only Woods reads it: omitted
+  // or false, a setter's count covers only the climbs the default list shows at
+  // `angle` (#5642). Every other board counts at every angle regardless.
+  crossAngleStats?: boolean;
 };
 
 export type SetterStat = {

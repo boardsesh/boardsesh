@@ -210,7 +210,10 @@
     "similarClimbs": {
       "title": "Ähnliche Boulder",
       "empty": "Keine ähnlichen Boulder gefunden",
-      "retry": "Nochmal versuchen"
+      "retry": "Nochmal versuchen",
+      "preparing": "Ähnliche Boulder werden vorbereitet …",
+      "waitingForDownload": "Ähnliche Boulder erscheinen, sobald {{name}} fertig geladen ist.",
+      "downloadToSee": "Lade dieses Board herunter, um ähnliche Boulder zu sehen"
     },
     "community": {
       "moderation": {
@@ -311,17 +314,18 @@
     },
     "restTimer": {
       "armLabel": "Pausen-Timer",
-      "armDescription": "Stoppt deine Pause nach jeder Begehung und schaltet zum nächsten Boulder, wenn sie um ist.",
+      "armDescription": "Stoppt deine Pause zwischen den Bouldern und schaltet zum nächsten, wenn sie um ist.",
       "waitingForTick": "Trag eine Begehung ein",
       "targetLabel": "Pause",
       "targetAria": "Länge der Pause",
       "off": "Aus",
       "modeLabel": "Takt",
       "modeAria": "Takt des Pausen-Timers",
-      "modeAfterTick": "Nach jeder Begehung",
+      "modeAfterTick": "Nach jedem Boulder",
       "modeOnTheMinute": "Fester Takt",
-      "modeAfterTickHint": "Deine Pause startet, sobald du eine Begehung einträgst.",
-      "modeOnTheMinuteHint": "Der Takt läuft durch, egal wie lange du am Boulder brauchst.",
+      "modeEvery": "Alle {{length}}",
+      "modeAfterTickHint": "Deine Pause startet neu, sobald du einen Versuch oder eine Begehung einträgst.",
+      "modeOnTheMinuteHint": "Feste Zeitfenster ab dem Einschalten. Versuche oder Begehungen setzen die Uhr nie zurück.",
       "autoAdvance": "Zum nächsten Boulder wechseln",
       "autoAdvanceHint": "Boardsesh beleuchtet ihn für dich an der Wand.",
       "autoAdvanceBlocked": "Nur wer die Wand steuert, kann die Warteschlange weiterschalten.",

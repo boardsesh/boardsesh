@@ -324,10 +324,10 @@ describe('the Accessibility leaf — a climber who chose Classic', () => {
     setState({ mode: 'classic', effectiveMode: 'classic', boardseshRendererAvailable: true });
     const { queryByText } = render(<BoardLookAccessibilityScreen />);
 
-    expect(queryByText('mobile.more.accessibility.brush.title')).not.toBeNull();
-    expect(queryByText('mobile.more.accessibility.size.title')).not.toBeNull();
+    expect(queryByText('mobile.settings.accessibility.brush.title')).not.toBeNull();
+    expect(queryByText('mobile.settings.accessibility.size.title')).not.toBeNull();
     // No "these only apply to Classic" note — they do apply, right now.
-    expect(queryByText('mobile.more.boardLook.accessibility.classicOnlyNote')).toBeNull();
+    expect(queryByText('mobile.settings.boardLook.accessibility.classicOnlyNote')).toBeNull();
   });
 
   it('keeps the colour controls, which apply in every drawing', () => {
@@ -339,7 +339,7 @@ describe('the Accessibility leaf — a climber who chose Classic', () => {
     const { queryByText, queryByTestId } = render(<BoardLookAccessibilityScreen />);
 
     expect(queryByTestId('palette-carousel')).not.toBeNull();
-    expect(queryByText('mobile.more.accessibility.roles.starting')).not.toBeNull();
+    expect(queryByText('mobile.settings.accessibility.roles.starting')).not.toBeNull();
   });
 });
 
@@ -348,9 +348,9 @@ describe('the Accessibility leaf — a climber on the Boardsesh drawing', () => 
     setState({ mode: 'aura', effectiveMode: 'aura', boardseshRendererAvailable: true });
     const { queryByText } = render(<BoardLookAccessibilityScreen />);
 
-    expect(queryByText('mobile.more.accessibility.brush.title')).toBeNull();
-    expect(queryByText('mobile.more.accessibility.size.title')).toBeNull();
-    expect(queryByText('mobile.more.boardLook.accessibility.classicOnlyNote')).not.toBeNull();
+    expect(queryByText('mobile.settings.accessibility.brush.title')).toBeNull();
+    expect(queryByText('mobile.settings.accessibility.size.title')).toBeNull();
+    expect(queryByText('mobile.settings.boardLook.accessibility.classicOnlyNote')).not.toBeNull();
   });
 });
 
@@ -362,16 +362,16 @@ describe('the Accessibility leaf — the capability probe has not answered', () 
     setState({ mode: 'aura', effectiveMode: 'classic', boardseshRendererAvailable: null });
     const { queryByText } = render(<BoardLookAccessibilityScreen />);
 
-    expect(queryByText('mobile.more.accessibility.brush.title')).toBeNull();
-    expect(queryByText('mobile.more.accessibility.size.title')).toBeNull();
+    expect(queryByText('mobile.settings.accessibility.brush.title')).toBeNull();
+    expect(queryByText('mobile.settings.accessibility.size.title')).toBeNull();
   });
 
   it('shows them once the probe says this binary cannot draw the other mode', () => {
     setState({ mode: 'aura', effectiveMode: 'classic', boardseshRendererAvailable: false });
     const { queryByText } = render(<BoardLookAccessibilityScreen />);
 
-    expect(queryByText('mobile.more.accessibility.brush.title')).not.toBeNull();
-    expect(queryByText('mobile.more.accessibility.size.title')).not.toBeNull();
+    expect(queryByText('mobile.settings.accessibility.brush.title')).not.toBeNull();
+    expect(queryByText('mobile.settings.accessibility.size.title')).not.toBeNull();
   });
 });
 
@@ -383,8 +383,8 @@ describe('the Accessibility leaf — remembering the climber’s own colours', (
     setState({ mode: 'classic', effectiveMode: 'classic', boardseshRendererAvailable: true });
     const { getByText } = render(<BoardLookAccessibilityScreen />);
 
-    fireEvent.click(getByText('mobile.more.accessibility.roles.starting').closest('button')!);
-    fireEvent.click(getByText('mobile.more.accessibility.save'));
+    fireEvent.click(getByText('mobile.settings.accessibility.roles.starting').closest('button')!);
+    fireEvent.click(getByText('mobile.settings.accessibility.save'));
 
     expect(holdColorOverridesState.setRoleMarkerOverride).toHaveBeenCalled();
     expect(customHoldColors.remember).toHaveBeenCalledTimes(1);
@@ -407,7 +407,7 @@ describe('the Accessibility leaf — remembering the climber’s own colours', (
     setState({ mode: 'classic', effectiveMode: 'classic', boardseshRendererAvailable: true });
     const { getByText } = render(<BoardLookAccessibilityScreen />);
 
-    fireEvent.click(getByText('mobile.more.accessibility.resetAll'));
+    fireEvent.click(getByText('mobile.settings.accessibility.resetAll'));
 
     expect(holdColorOverridesState.resetOverrides).toHaveBeenCalledTimes(1);
     expect(customHoldColors.clear).toHaveBeenCalledTimes(1);

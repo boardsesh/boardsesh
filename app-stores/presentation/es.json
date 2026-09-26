@@ -43,6 +43,10 @@
     "headline": "Sigue la actividad de tu plafón",
     "description": "Mira los encadenes recientes y las estadísticas de tu plafón."
   },
+  "wallKiosk": {
+    "headline": "Déjalo junto al plafón.",
+    "description": "El bloque iluminado, legible desde la colchoneta."
+  },
   "boardFamily": {
     "headline": "Tus plafones. Una app.",
     "description": "Cambia de plafón sin cambiar de app."

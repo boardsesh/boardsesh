@@ -686,7 +686,7 @@
       },
       "duplicate": {
         "title": "The same board listed twice",
-        "p1": "Two rows with different serials are two controllers. A row that reads only Kilter Board, with no serial, is a newer manufacturer-built LED box. Two of those in one gym currently show as a single row (we're fixing it). If the wrong wall lights, hold the lightbulb, tap Disconnect board and try again.",
+        "p1": "Two rows with different serials are two controllers. A row that reads only Kilter Board, with no serial, is a newer manufacturer-built LED box. Two of those in one gym show as two rows. The one with more signal bars is usually the wall you're standing at. If the wrong wall lights, hold the lightbulb, tap Disconnect board and try again.",
         "p2": "There is no forget-this-device list. The app only remembers your last board.",
         "p3": "A board showing twice under Your boards is different. Tap Edit next to Your boards, then Delete or Unfollow."
       },
@@ -927,11 +927,11 @@
       "title": "Account deletion",
       "intro": "You can delete your account and all associated data at any time. There are two ways to do it:",
       "inApp": "In the app:",
-      "inAppBody": " Open More from your profile, scroll to the bottom, and tap Delete Account. You will be asked to confirm before anything is removed.",
+      "inAppBody": " Tap your avatar, open Settings, scroll to the bottom, and tap Delete Account. You will be asked to confirm before anything is removed.",
       "onWeb": "On the web:",
       "onWebBody": " Log in at ",
       "onWebLink": "app.boardsesh.com",
-      "onWebBodyEnd": " and open More from your profile to find the same Delete Account button.",
+      "onWebBodyEnd": " and open Settings from your avatar menu to find the same Delete Account button.",
       "permanent": "Deletion is immediate and permanent. Once confirmed, we remove your email address, username, logbook entries, queue data, and party session history from our servers. This cannot be undone."
     },
     "children": {

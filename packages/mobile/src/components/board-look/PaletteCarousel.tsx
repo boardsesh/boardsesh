@@ -88,7 +88,7 @@ export function PaletteCarousel({ preview, selectedId, onSelect, contentStyle }:
         renderItem={renderItem}
         keyExtractor={keyExtractor}
         extraData={extraData}
-        accessibilityLabel={t('mobile.more.accessibility.palettes.carouselAccessibility')}
+        accessibilityLabel={t('mobile.settings.accessibility.palettes.carouselAccessibility')}
         contentStyle={contentStyle}
       />
 

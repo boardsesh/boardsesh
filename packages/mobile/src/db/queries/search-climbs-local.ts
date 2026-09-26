@@ -3,6 +3,7 @@ import type { BoardName, Climb, ClimbSearchInput } from '@boardsesh/shared-schem
 import { resolveClimbNoMatch } from '@boardsesh/shared-schema';
 import { getBoardCapabilities, isSizeScopedBoard } from '@boardsesh/board-config';
 import { getTallWideScope } from '@boardsesh/board-constants';
+import { climbNameLikePattern } from '@boardsesh/climb-filters';
 import { getGradeLabel, getClimbStars } from '../../lib/grade-label';
 import { followedAuthorsLocalCondition } from './followed-authors-local';
 
@@ -93,13 +94,6 @@ export function parseSetIds(setIds: string | null | undefined): number[] {
     .filter((value) => Number.isFinite(value));
 }
 
-// Escape LIKE metacharacters so a search for "50%" or "a_b" matches literally.
-// SQLite LIKE is case-insensitive for ASCII only (accented letters won't fold) —
-// an accepted offline limitation vs Postgres ILIKE.
-function escapeLike(input: string): string {
-  return input.replace(/[\\%_]/g, (char) => `\\${char}`);
-}
-
 type HoldFilters = { anyHolds: number[]; notHolds: number[]; hasHoldState: boolean };
 
 function parseHoldsFilter(holdsFilter: unknown): HoldFilters {
@@ -184,7 +178,7 @@ function ownedTicks(alias: string): string {
 /**
  * Cross-angle stats resolution, mirroring
  * packages/db/src/queries/climbs/effective-stats.ts. The server decides this per
- * request; the local mirror has to reach the same answer from the same two inputs,
+ * request; the local mirror has to reach the same answer from the same inputs,
  * or a downloaded board would show a different list than the network does.
  */
 export type StatsColumn =
@@ -195,8 +189,46 @@ export type StatsColumn =
   | 'benchmark_difficulty'
   | 'angle';
 
-export function isCrossAngleStats(input: Pick<ClimbSearchInput, 'boardName' | 'crossAngleStats'>): boolean {
-  return getBoardCapabilities(input.boardName).angleBoundClimbs || input.crossAngleStats === true;
+/**
+ * Whether this search is an explicit by-name lookup — the same test as the
+ * server's `hasNameQuery` (packages/db/src/queries/climbs/types.ts). Two rules
+ * below key on it, as they do there: the community-hidden filter and the
+ * angle-bound cross-angle exception.
+ */
+function hasNameQuery(input: Pick<ClimbSearchInput, 'name'>): boolean {
+  return typeof input.name === 'string' && input.name.length > 0;
+}
+
+/**
+ * Mirrors `resolveCrossAngleStats`: on when the search opts in on any board, or
+ * when an angle-bound board (Woods) is searched by name. Omitted means off
+ * everywhere (issue #5642).
+ */
+export function isCrossAngleStats(input: Pick<ClimbSearchInput, 'boardName' | 'crossAngleStats' | 'name'>): boolean {
+  if (input.crossAngleStats === true) return true;
+  return getBoardCapabilities(input.boardName).angleBoundClimbs && hasNameQuery(input);
+}
+
+/**
+ * Mirrors `resolveBrowsedAngleRestriction`: an angle-bound search that is not
+ * cross-angle keeps only the climbs that belong to the browsed angle (issue
+ * #5642). The server also exempts a user's own drafts list; that query never
+ * runs here — `isOfflineSearchSupported` declines `onlyDrafts`, and the local
+ * base predicate is `is_draft = 0` regardless — so there is nothing to exempt.
+ */
+export function isBrowsedAngleRestricted(
+  input: Pick<ClimbSearchInput, 'boardName' | 'crossAngleStats' | 'name'>,
+): boolean {
+  return getBoardCapabilities(input.boardName).angleBoundClimbs && !isCrossAngleStats(input);
+}
+
+/**
+ * Mirrors `resolveDetailCrossAngleStats`: the climb detail read resolves stats
+ * cross-angle on an angle-bound board whatever the list did, so a Woods climb
+ * opened at an angle it was not set at shows its set-angle grade.
+ */
+export function isDetailCrossAngleStats(boardName: ClimbSearchInput['boardName']): boolean {
+  return getBoardCapabilities(boardName).angleBoundClimbs;
 }
 
 /**
@@ -214,14 +246,39 @@ export function effectiveStatsSql(column: StatsColumn, crossAngle: boolean): str
   return `CASE WHEN s.climb_uuid IS NOT NULL THEN s.${column} ELSE s_set.${column} END`;
 }
 
+/**
+ * The rounded grade id a climb is filtered on (and, under the Boardsesh source,
+ * sorted on). Mirrors `gradeValueSql` in
+ * packages/db/src/queries/climbs/create-climb-filters.ts (issues #5643, #5752,
+ * #5753): UPSTREAM (and an omitted source) reads display_difficulty first and falls
+ * back to the Boardsesh grade; BOARDSESH reads the Boardsesh grade first — the
+ * value a row is labelled with when Boardsesh grades are on — and falls back to
+ * display_difficulty.
+ *
+ * `displayDifficulty` is the effective-stats reader, so this composes with
+ * cross-angle; `g` is the grades join, which follows whichever stats row won.
+ */
+export function gradeValueSql(displayDifficulty: string, gradeSource: ClimbSearchInput['gradeSource']): string {
+  const boardseshGrade = 'COALESCE(g.universal_grade, g.local_grade)';
+  // A `setter_only` grade is never shown on a row (`resolveBoardseshDifficulty`
+  // falls back to the upstream grade), so the Boardsesh source skips it too. The
+  // upstream branch keeps its fallback exactly as it was.
+  const shownBoardseshGrade = `CASE WHEN g.confidence = 'setter_only' THEN NULL ELSE ${boardseshGrade} END`;
+  const coalesced =
+    gradeSource === 'BOARDSESH'
+      ? `COALESCE(${shownBoardseshGrade}, ${displayDifficulty})`
+      : `COALESCE(${displayDifficulty}, ${boardseshGrade})`;
+  return `CAST(ROUND(${coalesced}) AS INTEGER)`;
+}
+
 function ticksExists(negated: boolean, statusSql: string): string {
   return `${negated ? 'NOT EXISTS' : 'EXISTS'} (SELECT 1 FROM boardsesh_ticks t
     WHERE t.climb_uuid = c.uuid AND t.board_type = ? AND t.angle = ? AND ${ownedTicks('t')} AND ${statusSql})`;
 }
 
-type JoinAndWhere = { joinSql: string; whereSql: string; joinBinds: Bind[]; whereBinds: Bind[] };
+export type JoinAndWhere = { joinSql: string; whereSql: string; joinBinds: Bind[]; whereBinds: Bind[] };
 
-function buildJoinAndWhere(
+export function buildJoinAndWhere(
   input: ClimbSearchInput,
   ownerUserId: string | null,
   followedCondition?: { sql: string; binds: string[] },
@@ -278,7 +335,19 @@ function buildJoinAndWhere(
   // schema at migration v5 and rows pulled before the server started sending it
   // are NULL — an unknown flag reads as visible, which is the safe direction for
   // a column the sync will refresh.
-  if (!input.name) push('COALESCE(c.is_hidden, 0) = 0');
+  if (!hasNameQuery(input)) push('COALESCE(c.is_hidden, 0) = 0');
+
+  // The browsed-angle restriction, mirroring `browsedAngleRestrictionSql` in
+  // packages/db/src/queries/climbs/effective-stats.ts arm for arm (issue #5642):
+  // on Woods without the opt-in, keep a climb set at this angle, one with no set
+  // angle recorded, or one with a stats row here. `s` is the browsed-angle stats
+  // join in both join shapes above, and its climb_uuid is part of the primary key,
+  // so NULL means exactly "no row at this angle" — the same probe
+  // `effectiveStatsSql` uses. `countClimbsLocal` shares this builder, so the badge
+  // counts what the list shows.
+  if (isBrowsedAngleRestricted(input)) {
+    push('(c.angle = ? OR c.angle IS NULL OR s.climb_uuid IS NOT NULL)', angle);
+  }
 
   // Spray-wall hold integrity, mirroring `holdIntegrityCondition` in
   // packages/db/src/queries/climbs/create-climb-filters.ts character for
@@ -328,9 +397,13 @@ function buildJoinAndWhere(
     }
   }
 
-  // Name (case-insensitive ASCII LIKE).
+  // Name. The pattern comes from the same builder the backend's ILIKE uses, so
+  // punctuation and spacing fold identically online and offline (#5353). It
+  // escapes with `\`, which SQLite only honours through this explicit ESCAPE.
+  // SQLite LIKE folds case for ASCII only (accented letters won't fold), an
+  // accepted offline limitation vs Postgres ILIKE.
   if (input.name) {
-    push(`c.name LIKE ? ESCAPE '\\'`, `%${escapeLike(input.name)}%`);
+    push(`c.name LIKE ? ESCAPE '\\'`, climbNameLikePattern(input.name));
   }
 
   // Setter name(s).
@@ -351,13 +424,14 @@ function buildJoinAndWhere(
   // to match it). `eff('display_difficulty')` already resolves through the
   // set-angle fallback under cross-angle, so only a climb with NO stats row at
   // either angle falls all the way through to g.universal_grade/local_grade.
-  const roundedGrade = `CAST(ROUND(COALESCE(${eff('display_difficulty')}, COALESCE(g.universal_grade, g.local_grade))) AS INTEGER)`;
+  // `gradeSource: 'BOARDSESH'` swaps the order — see `gradeValueSql`.
+  const gradeRangeValue = gradeValueSql(eff('display_difficulty'), input.gradeSource);
   if (input.minGrade && input.maxGrade) {
-    push(`${roundedGrade} BETWEEN ? AND ?`, input.minGrade, input.maxGrade);
+    push(`${gradeRangeValue} BETWEEN ? AND ?`, input.minGrade, input.maxGrade);
   } else if (input.minGrade) {
-    push(`${roundedGrade} >= ?`, input.minGrade);
+    push(`${gradeRangeValue} >= ?`, input.minGrade);
   } else if (input.maxGrade) {
-    push(`${roundedGrade} <= ?`, input.maxGrade);
+    push(`${gradeRangeValue} <= ?`, input.maxGrade);
   }
 
   // Min rating (quality_average is canonical 1-5).
@@ -372,7 +446,12 @@ function buildJoinAndWhere(
   // malformed deep-link values.
   const gradeAccuracy = input.gradeAccuracy ? parseFloat(String(input.gradeAccuracy)) : NaN;
   if (Number.isFinite(gradeAccuracy)) {
-    push(`ABS(${roundedGrade} - ${eff('difficulty_average')}) <= ?`, gradeAccuracy);
+    // Always the upstream-first value, whatever the grade source: accuracy measures
+    // how far the crowd average sits from the upstream grade.
+    push(
+      `ABS(${gradeValueSql(eff('display_difficulty'), 'UPSTREAM')} - ${eff('difficulty_average')}) <= ?`,
+      gradeAccuracy,
+    );
   }
 
   // Benchmarks only.
@@ -463,13 +542,17 @@ function buildJoinAndWhere(
   return { joinSql, whereSql: conditions.join(' AND '), joinBinds, whereBinds };
 }
 
-function sortColumnSql(sortBy: string, crossAngle: boolean): string {
+function sortColumnSql(sortBy: string, crossAngle: boolean, gradeSource: ClimbSearchInput['gradeSource']): string {
   const eff = (column: StatsColumn) => effectiveStatsSql(column, crossAngle);
   switch (sortBy) {
     case 'ascents':
       return eff('ascensionist_count');
     case 'difficulty':
-      return `CAST(ROUND(${eff('display_difficulty')}) AS INTEGER)`;
+      // Under the Boardsesh source the sort keys on the grade the row is labelled
+      // with, as the server's does. The upstream sort has no fallback, unchanged.
+      return gradeSource === 'BOARDSESH'
+        ? gradeValueSql(eff('display_difficulty'), 'BOARDSESH')
+        : `CAST(ROUND(${eff('display_difficulty')}) AS INTEGER)`;
     case 'name':
       // NOCASE so 'apple' sorts before 'Zebra', matching Postgres's locale
       // collation (SQLite's default BINARY puts all uppercase first). ASCII
@@ -658,7 +741,7 @@ export async function searchClimbsLocal(db: OfflineDatabase, input: ClimbSearchI
   const randomSeedBind = input.sortSeed && Number.isFinite(seedInt) ? Math.trunc(seedInt) : 1;
   const orderBy = isRandom
     ? `${RANDOM_ORDER_EXPR} ASC, c.uuid DESC`
-    : `${sortColumnSql(sortBy, crossAngle)} ${sortOrder}, c.uuid DESC`;
+    : `${sortColumnSql(sortBy, crossAngle, input.gradeSource)} ${sortOrder}, c.uuid DESC`;
 
   const query = `
     SELECT

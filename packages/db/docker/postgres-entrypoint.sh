@@ -1,0 +1,205 @@
+#!/usr/bin/env bash
+# Materialise the primary's TLS material, then hand off to the upstream entrypoint.
+#
+# Why the key arrives as a variable rather than in the image: this image is public
+# on GHCR, so a server key can never be baked into it.
+#
+# Why it is written outside PGDATA: pg_basebackup copies the whole data directory
+# and excludes only a fixed list of runtime files, so a key under PGDATA would be
+# copied onto the DR standby's disk and into every WAL-G base backup. The DR
+# design states that the backup host holds only the encryption *public* key, and
+# a key under PGDATA would quietly break that. It goes on the volume instead, in
+# a sibling directory, so it still survives a rebuild and a fresh deploy.
+#
+# With PG_TLS_SERVER_CERT and PG_TLS_SERVER_KEY unset this script changes
+# nothing. That is what keeps local dev, CI, a fresh volume and the homelab DR
+# standby -- which serves loopback only with ssl = off -- booting unchanged.
+
+set -Eeuo pipefail
+
+TLS_DIR="${PG_TLS_DIR:-/var/lib/postgresql/tls}"
+TLS_CERT="$TLS_DIR/server.crt"
+TLS_KEY="$TLS_DIR/server.key"
+readonly TLS_DIR TLS_CERT TLS_KEY
+
+log() { printf 'boardsesh-postgres: %s\n' "$1"; }
+fail() {
+  printf 'boardsesh-postgres: %s\n' "$1" >&2
+  exit 1
+}
+
+# Every way the staged pair can be wrong, reported specifically.
+staged_material_is_valid() {
+  local cert_path="$1"
+  local key_path="$2"
+
+  if ! openssl x509 -noout -in "$cert_path" 2>/dev/null; then
+    printf 'boardsesh-postgres: PG_TLS_SERVER_CERT is not a PEM certificate\n' >&2
+    return 1
+  fi
+  if ! openssl pkey -noout -in "$key_path" 2>/dev/null; then
+    printf 'boardsesh-postgres: PG_TLS_SERVER_KEY is not a PEM private key\n' >&2
+    return 1
+  fi
+
+  # A mismatched pair is the failure worth catching here. PostgreSQL reveals it
+  # only by refusing to start, and on a service with no shell that is a much
+  # worse place to discover it than in this log line.
+  # This function runs in condition context, so errexit is suspended inside it and
+  # a failing command substitution would leave both variables empty -- which
+  # compares equal and would validate a broken pair. Check each one explicitly.
+  local cert_pubkey key_pubkey
+  if ! cert_pubkey="$(openssl x509 -noout -pubkey -in "$cert_path")" || [[ -z "$cert_pubkey" ]]; then
+    printf 'boardsesh-postgres: could not read a public key from PG_TLS_SERVER_CERT\n' >&2
+    return 1
+  fi
+  if ! key_pubkey="$(openssl pkey -pubout -in "$key_path")" || [[ -z "$key_pubkey" ]]; then
+    printf 'boardsesh-postgres: could not derive a public key from PG_TLS_SERVER_KEY\n' >&2
+    return 1
+  fi
+  if [[ "$cert_pubkey" != "$key_pubkey" ]]; then
+    printf 'boardsesh-postgres: PG_TLS_SERVER_CERT and PG_TLS_SERVER_KEY are not a matching pair\n' >&2
+    return 1
+  fi
+  return 0
+}
+
+# A pure test, so it is safe to call in condition context. Bash suspends errexit
+# inside a function called there, which is why the mutating half below is kept
+# out of it: a failed mkdir, chmod, mv or chown would otherwise be swallowed and
+# the boot would continue with unusable TLS files, or silently without TLS.
+tls_material_requested() {
+  [[ -n "${PG_TLS_SERVER_CERT:-}" || -n "${PG_TLS_SERVER_KEY:-}" ]]
+}
+
+install_tls_material() {
+  local cert="${PG_TLS_SERVER_CERT:-}"
+  local key="${PG_TLS_SERVER_KEY:-}"
+
+  # Failing closed matters more than convenience here: half a pair means someone
+  # intended TLS and mis-wired it, and starting without it would look fine while
+  # serving a snakeoil certificate the DR standby refuses.
+  [[ -n "$cert" ]] || fail 'PG_TLS_SERVER_KEY is set but PG_TLS_SERVER_CERT is empty'
+  [[ -n "$key" ]] || fail 'PG_TLS_SERVER_CERT is set but PG_TLS_SERVER_KEY is empty'
+
+  mkdir -p "$TLS_DIR"
+  chmod 0750 "$TLS_DIR"
+
+  # Staged beside the real paths and validated there, so material that does not
+  # validate is never installed -- and, more importantly, a bad variable update
+  # cannot replace a working pair with a broken one and then exit. The previous
+  # material stays exactly as it was.
+  local cert_staged="$TLS_CERT.incoming"
+  local key_staged="$TLS_KEY.incoming"
+
+  # Anything that dies between the two writes -- a full disk is the realistic one --
+  # would otherwise leave a staged file behind, and in the worst ordering that is a
+  # partial private key sitting at rest on the volume. Cleared after the move, by
+  # which point these names no longer exist.
+  # shellcheck disable=SC2064  # expand the paths now; they are local to this call
+  trap "rm -f '$cert_staged' '$key_staged'" EXIT
+
+  # umask first, so both files are created 0600 and the key is never briefly
+  # world-readable between the write and the chmod.
+  local previous_umask
+  previous_umask="$(umask)"
+  umask 077
+  printf '%s\n' "$cert" >"$cert_staged"
+  printf '%s\n' "$key" >"$key_staged"
+  umask "$previous_umask"
+
+  if ! staged_material_is_valid "$cert_staged" "$key_staged"; then
+    rm -f "$cert_staged" "$key_staged"
+    fail 'refusing to install TLS material that does not validate'
+  fi
+
+  chmod 0644 "$cert_staged"
+  chmod 0600 "$key_staged"
+  # Two renames, not one atomic swap, so a kill between them leaves the new
+  # certificate beside the old key. That window is real on disk and unobservable in
+  # practice: this script installs the pair on every boot from the variables, which
+  # are the source of truth, and it is the same script that execs into PostgreSQL --
+  # so a half-swapped pair is overwritten before anything could serve it. Verified
+  # by staging a deliberately mismatched pair on a volume and restarting: the next
+  # boot comes up ssl=on rather than refusing.
+  mv -f "$cert_staged" "$TLS_CERT"
+  mv -f "$key_staged" "$TLS_KEY"
+  trap - EXIT
+
+  # PostgreSQL refuses a key it does not own, and the upstream entrypoint drops
+  # to postgres via gosu after this runs.
+  if [[ "$(id -u)" == '0' ]]; then
+    chown postgres:postgres "$TLS_DIR" "$TLS_CERT" "$TLS_KEY"
+  fi
+
+  log "installed TLS material at $TLS_DIR ($(openssl x509 -noout -subject -enddate -in "$TLS_CERT" | tr '\n' ' '))"
+}
+
+# The upstream entrypoint treats a leading option as PostgreSQL's own and prepends
+# `postgres` itself, so `docker run IMAGE -c shared_buffers=...` is a supported
+# form. Normalise it first, or the check below would install the certificate and
+# then start PostgreSQL without being told to use it.
+if [[ "${1:-}" == -* ]]; then
+  set -- postgres "$@"
+fi
+
+# A start command of `docker-entrypoint.sh postgres` is a common idiom, and this
+# script execs that entrypoint anyway, so drop the redundant leading copy rather
+# than let it hide the server invocation behind it.
+if [[ "${1:-}" == 'docker-entrypoint.sh' || "${1:-}" == '/usr/local/bin/docker-entrypoint.sh' ]]; then
+  shift
+  if [[ "${1:-}" == -* ]]; then
+    set -- postgres "$@"
+  fi
+fi
+
+if tls_material_requested; then
+  # Called outside condition context on purpose: errexit is live here, so a
+  # failed mkdir, chmod, mv or chown stops the boot instead of being ignored.
+  install_tls_material
+else
+  log 'PG_TLS_SERVER_CERT/KEY unset; leaving TLS configuration untouched'
+fi
+
+# Starting the server through a shell hides it from the check below, so the TLS
+# settings would not be applied and PostgreSQL would come up on whatever
+# postgresql.auto.conf still says -- which, before the first rollout, is the base
+# image's snakeoil certificate. That is a silent downgrade of the one property this
+# file exists to provide, so it stops rather than warns.
+if tls_material_requested && [[ "$(basename -- "${1:-}")" == *sh ]]; then
+  take_next_argument='no'
+  shell_payload=''
+  for argument in "$@"; do
+    if [[ "$take_next_argument" == 'yes' ]]; then
+      shell_payload="$argument"
+      break
+    fi
+    [[ "$argument" == '-c' ]] && take_next_argument='yes'
+  done
+  if [[ "$shell_payload" =~ (^|[[:space:]\;\&\|\(])postgres([[:space:]]|$) ]]; then
+    fail "refusing to start PostgreSQL through a shell with TLS material set, because the TLS settings cannot be applied to it; use a start command of 'postgres …' directly"
+  fi
+fi
+
+if tls_material_requested && [[ "${1:-}" == 'postgres' ]]; then
+  shift
+  # Command-line settings outrank postgresql.auto.conf, which is deliberate: it
+  # makes the image authoritative, so an ALTER SYSTEM left over from an earlier
+  # manual fix cannot silently shadow the declared paths.
+  #
+  # ssl_min_protocol_version is PostgreSQL's own default. It is stated rather
+  # than assumed. Tightening the cipher list is deliberately NOT bundled with a
+  # certificate rollout -- that is a separate, separately reviewed change.
+  set -- postgres \
+    -c ssl=on \
+    -c "ssl_cert_file=$TLS_CERT" \
+    -c "ssl_key_file=$TLS_KEY" \
+    -c ssl_min_protocol_version=TLSv1.2 \
+    "$@"
+fi
+
+if tls_material_requested && [[ "${1:-}" != 'postgres' ]]; then
+  log "note: TLS material is installed but ${1:-<no command>} is not the server, so no TLS settings were applied"
+fi
+
+exec docker-entrypoint.sh "$@"

@@ -484,6 +484,23 @@ describe('DiscoverLibrary followed setter playlists', () => {
     );
   });
 
+  it('counts every angle on Woods, like the setter page a row opens (#5642)', () => {
+    activeBoardState.data = { boardType: 'woods', layoutId: 1, sizeId: 2, setIds: '1', angle: 40 };
+    renderHub();
+    expect(setterStats).toHaveBeenLastCalledWith(
+      {
+        boardName: 'woods',
+        layoutId: 1,
+        sizeId: 2,
+        setIds: '1',
+        angle: 40,
+        onlyFollowedAuthors: true,
+        crossAngleStats: true,
+      },
+      true,
+    );
+  });
+
   it('keeps personal cards visible while setters load', () => {
     followedSettersHook.isLoading = true;
     const { container, getByText } = renderHub();

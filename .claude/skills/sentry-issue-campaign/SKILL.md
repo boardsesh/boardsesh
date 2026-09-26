@@ -8,6 +8,9 @@ description: Drive Sentry-derived GitHub issues to merged PRs at scale — pick 
 Turn `from-sentry` issues into merged PRs. The work is orchestration: you pick, claim, delegate,
 verify, and shepherd. You rarely write the fix yourself.
 
+For bugs without the `from-sentry` label, use `bug-bash-campaign` instead. This skill adds the
+Sentry-specific steps ("Resolving the underlying Sentry issues") to the same loop.
+
 ## 1. Pick and claim
 
 ```

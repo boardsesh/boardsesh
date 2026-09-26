@@ -56,11 +56,38 @@ export type BleDisconnectInfo = {
   description?: string;
 };
 
+// A connect with a saved board (serial or device id) opens the picker at the tap
+// in a "searching for your board" state, while the adapter keeps trying to
+// auto-select that board (#5658). The adapter hands the picker this handle.
+export type DevicePickerTargetSearch = {
+  // The picker's "Search for any board": stop auto-selecting the saved board
+  // and show the normal list now. Idempotent, and a no-op once the search ended.
+  searchAnyBoard: () => void;
+};
+
+// Adapter → picker signals for a targeted connect. Exactly one of them fires,
+// at most once.
+export type DevicePickerTargetListeners = {
+  // The saved board was not matched (the grace window ran out, or the climber
+  // tapped "Search for any board"): show the normal list of boards.
+  onTargetSearchEnded: () => void;
+  // The adapter auto-selected the saved board and has ALREADY settled its
+  // selection. The picker closes without a choice.
+  onTargetFound: () => void;
+};
+
 // The picker subscribes for live device updates and, optionally, a one-shot
 // signal that the scan has stopped (timeout) so it can drop its "scanning"
-// spinner instead of implying a scan that's no longer running.
+// spinner instead of implying a scan that's no longer running. The target
+// arguments are passed only for a targeted connect, and both are optional so
+// an adapter without one (web) needs no change.
 export type DevicePickerFn = (
-  subscribe: (onUpdate: (devices: DiscoveredDevice[]) => void, onScanStopped?: () => void) => void,
+  subscribe: (
+    onUpdate: (devices: DiscoveredDevice[]) => void,
+    onScanStopped?: () => void,
+    targetListeners?: DevicePickerTargetListeners,
+  ) => void,
+  targetSearch?: DevicePickerTargetSearch,
 ) => Promise<string>;
 
 // Per-write transport diagnostics (#3230), attached to the Climb Sent to Board
@@ -141,8 +168,9 @@ export type BleAdapterOptions = {
 
 export type BluetoothAdapter = {
   isAvailable(): Promise<boolean>;
-  // `targetSerial` (Aurora) / `targetDeviceId` (MoonBoard) silently auto-select
-  // the remembered board on the reconnect scan; with neither, the picker opens.
+  // `targetSerial` (Aurora) / `targetDeviceId` (MoonBoard) auto-select the
+  // remembered board on the reconnect scan while the picker shows "searching";
+  // with neither, the picker opens straight to the list.
   requestAndConnect(targetSerial?: string, targetDeviceId?: string): Promise<BleConnection>;
   disconnect(): Promise<void>;
   write(data: Uint8Array, signal?: AbortSignal): Promise<void>;

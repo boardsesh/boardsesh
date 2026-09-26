@@ -166,7 +166,7 @@ describe('BoardLookCarousel — pressing a card', () => {
     act(() => cardProps.enlarge.get('classic')?.('classic'));
 
     expect(sheet.visible).toBe(true);
-    expect(sheet.title).toBe('mobile.more.boardLook.mode.options.classic');
+    expect(sheet.title).toBe('mobile.settings.boardLook.mode.options.classic');
     // Looking is not choosing.
     expect(onSelect).not.toHaveBeenCalled();
   });

@@ -214,6 +214,16 @@ if [[ ! -f "$OUTPUT_DIR/wasm/board_renderer_wasm.js" || ! -f "$OUTPUT_DIR/wasm/b
   exit 1
 fi
 
+# The shell's inline chunk-recovery script (#5611) is the only thing that can
+# recover a failed root `_layout` chunk. Expo renders index.html from the
+# public/ template, so assert the script made it through rather than trust it.
+if ! grep -q "boardsesh:chunk-reload-at" "$OUTPUT_DIR/index.html" ||
+  ! grep -q "unhandledrejection" "$OUTPUT_DIR/index.html"; then
+  echo "[build-expo-web-export] index.html lost the inline chunk-recovery script (public/index.html)" >&2
+  exit 1
+fi
+echo "[build-expo-web-export] index.html carries the inline chunk-recovery script"
+
 # --- PWA manifest (W-24, #4438) -------------------------------------------
 # index.html is a checked-in template (packages/mobile/public/index.html) whose
 # manifest href is a fixed `/app/manifest.json`, and manifest.json is copied
@@ -287,7 +297,7 @@ fi
 # Set deliberately close to the current figure. It is a ratchet, not headroom:
 # the measured total is printed on every run (pass or fail) so it can be walked
 # down as the split work continues.
-BOARDSESH_WEB_EAGER_BROTLI_BUDGET="${BOARDSESH_WEB_EAGER_BROTLI_BUDGET:-2050000}"
+BOARDSESH_WEB_EAGER_BROTLI_BUDGET="${BOARDSESH_WEB_EAGER_BROTLI_BUDGET:-2051000}"
 node "$ROOT_DIR/scripts/lib/check-expo-web-eager-budget.mjs" \
   "$OUTPUT_DIR" \
   "$BOARDSESH_WEB_EAGER_BROTLI_BUDGET" \

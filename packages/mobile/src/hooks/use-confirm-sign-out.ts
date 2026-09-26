@@ -91,16 +91,16 @@ export function useConfirmSignOut(): () => Promise<void> {
       const deadLetterCount = outbox?.deadLetterCount ?? 0;
 
       const message = [
-        hasDownloads ? t('mobile.more.signOut.messageOffline') : t('mobile.more.signOut.message'),
-        ...(pendingCount > 0 ? [t('mobile.more.signOut.pendingMessage', { count: pendingCount })] : []),
-        ...(deadLetterCount > 0 ? [t('mobile.more.signOut.failedMessage', { count: deadLetterCount })] : []),
+        hasDownloads ? t('mobile.settings.signOut.messageOffline') : t('mobile.settings.signOut.message'),
+        ...(pendingCount > 0 ? [t('mobile.settings.signOut.pendingMessage', { count: pendingCount })] : []),
+        ...(deadLetterCount > 0 ? [t('mobile.settings.signOut.failedMessage', { count: deadLetterCount })] : []),
       ].join('\n\n');
 
       const confirmed = await confirm({
-        title: t('mobile.more.signOut.title'),
+        title: t('mobile.settings.signOut.title'),
         message,
-        confirmLabel: t('mobile.more.signOut.confirm'),
-        cancelLabel: t('mobile.more.signOut.cancel'),
+        confirmLabel: t('mobile.settings.signOut.confirm'),
+        cancelLabel: t('mobile.settings.signOut.cancel'),
         destructive: true,
       });
       if (!confirmed) return;
@@ -108,7 +108,7 @@ export function useConfirmSignOut(): () => Promise<void> {
       await signOut('manual');
     } catch (error) {
       reportError(error);
-      showSignOutFailure(t('mobile.more.signOut.failureTitle'), t('mobile.more.signOut.failure'));
+      showSignOutFailure(t('mobile.settings.signOut.failureTitle'), t('mobile.settings.signOut.failure'));
     } finally {
       inFlightRef.current = false;
     }

@@ -10,8 +10,8 @@
       "viewProfile": "Profil von {{name}} ansehen",
       "thisClimber": "dieser Person"
     },
-    "more": {
-      "title": "Mehr",
+    "settings": {
+      "title": "Einstellungen",
       "library": "Bibliothek",
       "development": "Entwicklung",
       "dev": {
@@ -384,6 +384,8 @@
       },
       "previews": {
         "title": "Vorschauen",
+        "promptOnLaunchTitle": "Vorschauen beim Start anzeigen",
+        "promptOnLaunchSubtitle": "Gilt ab dem nächsten Start von Boardsesh",
         "pickTitle": "PR-Vorschau testen",
         "pickSubtitle": "Probier eine Änderung vor dem Release und sag uns, wie sie läuft",
         "testPlanTitle": "Testplan #{{prNumber}}",
@@ -473,6 +475,14 @@
         "record": "Deine Begehungen landen unter Fortschritt im Diagramm: Gradverteilung und schwerste Begehung. Importier dein Kilter- und Tension-Routenbuch aus Aurora und starte mit deiner Historie.",
         "accessory": "Die Leiste unten zeigt immer, was auf dem Board liegt. Von dort wechselst du Boulder.",
         "climbsTab": "Um zu deinen Bouldern zurückzukommen, tipp in der Tab-Leiste auf die Lupe."
+      },
+      "link": {
+        "title": "Nimm deine {{boardName}}-Begehungen mit",
+        "body": "Dein {{boardName}}-Konto und Boardsesh sind getrennt, auch mit derselben E-Mail-Adresse. Verknüpfe dein Konto, um verfügbare Begehungen mit deinem Routenbuch zu synchronisieren. Dauer und verfügbarer Verlauf variieren.",
+        "footnote": "Zum Verknüpfen brauchst du deinen {{boardName}}-Benutzernamen, nicht deine E-Mail.",
+        "continue": "Mein {{boardName}}-Konto verknüpfen",
+        "skip": "Jetzt nicht",
+        "skipHint": "Du kannst das jederzeit unter Einstellungen › Verbundene Apps machen."
       }
     },
     "nav": {
@@ -561,7 +571,7 @@
       "serverTitle": "Boardsesh ist gerade nicht erreichbar",
       "serverBody": "Dafür brauchen wir unseren Server. Heruntergeladene Boards kannst du weiter durchstöbern, durchsuchen und Begehungen eintragen, und deine Begehungen warten auf deinem Handy.",
       "offlineModeTitle": "Offline-Modus ist an",
-      "offlineModeBody": "Dafür brauchst du eine Verbindung. Schalte den Offline-Modus im Hinweis oder unter Mehr aus, um es zu laden.",
+      "offlineModeBody": "Dafür brauchst du eine Verbindung. Schalte den Offline-Modus im Hinweis oder unter „Einstellungen“ aus, um es zu laden.",
       "errorTitle": "Konnte nicht geladen werden",
       "errorBody": "Das ist nicht durchgekommen. Versuch es noch mal.",
       "retry": "Erneut versuchen"
@@ -612,7 +622,7 @@
     "statistics": "Statistiken",
     "sessions": "Sessions",
     "createdClimbs": "Gebaute Boulder",
-    "auroraMigration": "Aurora-Migration",
+    "auroraMigration": "Routenbuch mitnehmen",
     "startClimbing": "Loslegen",
     "signIn": "Anmelden",
     "nav": {
@@ -875,7 +885,7 @@
       "help": "Hilfe",
       "docs": "Doku",
       "playlists": "Playlists",
-      "auroraMigration": "Aurora-Migration",
+      "auroraMigration": "Routenbuch mitnehmen",
       "legal": "Impressum",
       "privacy": "Datenschutz",
       "gymsKilter": "Hallen mit einem Kilter Board",

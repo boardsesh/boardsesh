@@ -70,6 +70,12 @@ export const FEATURE_FLAG_DEFINITIONS = [
     description: 'Search box and filter sheet on the logbook (shipped: 100% rollout since 2026-07-03).',
   },
   {
+    key: 'board-link-onboarding-step',
+    label: 'Onboarding board-account link step',
+    description:
+      'Offer to link a supported board account after the first-run board pick. Off or unresolved skips the extra step.',
+  },
+  {
     key: 'kilter-oauth-linking',
     label: 'Kilter account linking',
     description: 'Show the Kilter username/password sign-in card in Integrations.',
@@ -83,7 +89,7 @@ export const FEATURE_FLAG_DEFINITIONS = [
     key: 'cross-angle-stats',
     label: 'Cross-angle climb stats',
     description:
-      "Show climbs whose grade and sends live at a different angle, ranked on that angle's real send count and marked with it, instead of burying them under every climb set at the angle you are browsing. Woods always does this. KEEP THIS AT 0%: on a large catalogue the query loses its index-ordered early exit and costs ~0.9 s on MoonBoard and ~5.6 s on Kilter, measured on production. It is here to test the behaviour on one device, not to roll out.",
+      "Show climbs whose grade and sends live at a different angle, ranked on that angle's real send count and marked with it, instead of burying them under every climb set at the angle you are browsing. Not read on Woods, which has its own Other angles switch in the climb filters, off by default. KEEP THIS AT 0%: on a large catalogue the query loses its index-ordered early exit and costs ~0.9 s on MoonBoard and ~5.6 s on Kilter, measured on production. It is here to test the behaviour on one device, not to roll out.",
   },
   {
     key: 'garmin-watch',

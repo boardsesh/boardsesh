@@ -136,6 +136,12 @@ vi.mock('@boardsesh/analytics', () => ({
 vi.mock('../../../lib/analytics', () => ({ track: vi.fn() }));
 
 // --- Children ----------------------------------------------------------------
+// The heatmap reads the saved search from secure storage and the offline
+// database; neither exists here, and the drawer only wires it.
+vi.mock('../heatmap/use-play-drawer-heatmap', () => ({
+  usePlayDrawerHeatmap: () => ({ enabled: false, isBusy: false, overlay: null, toggle: () => {} }),
+}));
+vi.mock('../heatmap/PlayDrawerHeatmapPanel', () => ({ PlayDrawerHeatmapPanel: () => null }));
 vi.mock('../DeferredBoard', () => ({
   DeferredBoard: (props: Props) => {
     recorded.board.push(props);

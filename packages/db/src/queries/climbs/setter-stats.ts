@@ -1,10 +1,18 @@
 import { isSizeScopedBoard } from '@boardsesh/board-config';
 import { and, eq, ilike, sql } from 'drizzle-orm';
 import type { DbInstance } from '../../client/postgres';
-import { boardClimbs } from '../../schema/index';
+import { boardClimbs, boardClimbStats } from '../../schema/index';
 import { withSerialPlan } from '../util/serial-plan';
-import type { BoardRouteParams } from './types';
+import type { BoardRouteParams, ClimbSearchParams } from './types';
 import { followedAuthorCondition } from './followed-authors';
+import { browsedAngleRestrictionSql, resolveBrowsedAngleRestriction } from './effective-stats';
+
+// Escape LIKE/ILIKE metacharacters so the setter search matches the typed text
+// literally. Postgres' default escape character is backslash, and the value is
+// bound as a parameter, so this is the only escaping layer needed.
+function escapeLikeMetacharacters(input: string): string {
+  return input.replace(/[\\%_]/g, (char) => `\\${char}`);
+}
 
 /**
  * One row in the setter-stats result: a setter's username and how many
@@ -18,19 +26,52 @@ export type SetterStat = {
 };
 
 /**
+ * The one search input the setter aggregate reads besides the board. Picked from
+ * `ClimbSearchParams` rather than redeclared, so the picker's opt-in cannot drift
+ * from the list's: it is the same field, with the same "omitted means off".
+ */
+export type SetterStatsOptions = Pick<ClimbSearchParams, 'crossAngleStats'>;
+
+/**
  * Aggregate setter usernames with their climb counts for a board configuration.
  *
- * Deliberately angle-blind, and `params.angle` is ignored. Climb-list membership
- * is angle-independent — `countClimbs` and `runStandardSearch` both LEFT JOIN
+ * Membership follows the climb list's angle rule, and that rule depends on the
+ * board.
+ *
+ * On a catalogue board (every board but Woods) list membership is
+ * angle-independent — `countClimbs` and `runStandardSearch` both LEFT JOIN
  * `board_climb_stats`, so the angle decides a climb's grade and its sort position,
- * never whether it exists. This query used to INNER JOIN stats at the angle, which
- * meant a setter only appeared if one of their climbs happened to carry a stats row
- * at exactly the board's current tilt (#5404).
+ * never whether it exists — and so is this query: `params.angle` is ignored and
+ * nothing joins `board_climb_stats`. It used to INNER JOIN stats at the angle,
+ * which meant a setter only appeared if one of their climbs happened to carry a
+ * stats row at exactly the board's current tilt (#5404).
  *
  * Woods is the board that proved it. Every Woods climb has exactly one stats row,
  * at the angle it was set at (Aurora boards replicate stats across angles; Woods
  * does not), so the join reduced woods/layout 1/size 1 from 15 setters to 3 and
  * hid the board's most prolific setter — 246 climbs, none of them at 25°.
+ *
+ * Woods is also where angle-blind stopped being the list's answer. Its climbs are
+ * angle-bound (`getBoardCapabilities(board).angleBoundClimbs`), and since #5642 a
+ * Woods list keeps only the climbs for the browsed angle unless the search opts in
+ * with `crossAngleStats` (the "Other angles" switch). An angle-blind count then
+ * offered that same setter as "246 climbs" at 25°, and picking them gave an empty
+ * list. So on an angle-bound board without `options.crossAngleStats`, this applies
+ * the list's own predicate, `browsedAngleRestrictionSql` — set at the browsed
+ * angle, no set angle recorded, or a stats row there — decided by the list's own
+ * `resolveBrowsedAngleRestriction`. That is not the #5404 join coming back: the
+ * restriction admits a climb through any one of its three arms, and the stats row
+ * its third arm probes comes from a LEFT JOIN on the stats primary key
+ * (board_type, climb_uuid, angle), so it can neither drop a climb the list shows
+ * nor match two rows for one climb and inflate a count. With the opt-in the Woods
+ * count is angle-blind again, matching the opted-in list. Every unrestricted call
+ * renders exactly the join-free SQL it did before #5642.
+ *
+ * No climb name reaches the resolver. `searchQuery` narrows `setter_username`,
+ * not the climb name, so the by-name exception that makes a Woods list cross-angle
+ * on its own never fires here: the climb-name filter is one of the drawer's other
+ * filters the counts come before (next paragraph), and a caller that wants every
+ * angle says so with `crossAngleStats`.
  *
  * The counts mean the climbs this filter can surface at this board configuration,
  * before the drawer's other filters. Notably NOT mirrored from `createClimbFilters`
@@ -52,6 +93,10 @@ export type SetterStat = {
  * - Community-hidden climbs are excluded (#5049). Unlike the list's
  *   `hiddenClimbCondition`, there is no name-search exception here — this query's
  *   `searchQuery` filters `setter_username`, not the climb name.
+ * - The browsed-angle restriction described above, which the list carries in
+ *   `browsedAngleConditions`. The list's one exemption from it — a user's own
+ *   drafts list — cannot arise here, because `is_draft = false` keeps every
+ *   draft out of the picker.
  *
  * Size-scoped boards (everything but MoonBoard) are filtered to climbs whose
  * `compatible_size_ids` contains the requested size, using array containment
@@ -65,17 +110,36 @@ export type SetterStat = {
  * so the cut is deterministic — the long tail is dominated by one-climb setters,
  * and an unordered tie at row 50 would make the picker flicker between refetches.
  *
+ * With a search term, name relevance comes before climb count: an exact username
+ * match first, then usernames that start with the term, then the other substring
+ * matches. Without that, a short name was never found (#4885). `%ES%` matches every
+ * setter with "es" anywhere in their name, the prolific ones fill all 50 rows, and
+ * the setter called "ES", with only a few climbs, never reaches the picker. Both tiers
+ * are case-insensitive, like the substring filter. The term's own `%`, `_` and `\`
+ * are escaped, so a search for "a_b" finds that setter and not "axb".
+ * `getSetterStatsLocal` on mobile orders and escapes the same way.
+ *
  * Runs under `withSerialPlan`: a scan of the whole layout in `board_climbs` feeding
  * a HashAggregate is a plan the planner is happy to parallelize, and the per-worker
  * DSM allocations are what kept exhausting `/dev/shm` (#4105). The LIMIT 50 applies
- * after the GROUP BY, so it does not bound the scan.
+ * after the GROUP BY, so it does not bound the scan. The restricted Woods shape
+ * adds one primary-key LEFT JOIN per climb to the same scan, which leaves the
+ * guard exactly as necessary and the LIMIT exactly where it was.
  */
 export const getSetterStats = async (
   db: DbInstance,
   params: BoardRouteParams,
   searchQuery?: string,
   followingUserId?: string,
+  options: SetterStatsOptions = {},
 ): Promise<SetterStat[]> => {
+  // No `name`: `searchQuery` is a setter-username filter, never a climb-name
+  // search, so it must not trigger the by-name cross-angle exception. False on
+  // every board that is not angle-bound, and then nothing below changes.
+  const restrictToBrowsedAngle = resolveBrowsedAngleRestriction(params, {
+    crossAngleStats: options.crossAngleStats,
+  });
+
   // MoonBoard leaves required_set_ids NULL until the backfill runs; better to offer
   // a setter than to hide one. Mirrors `allowNullRequiredSets` in create-climb-filters.
   const allowNullRequiredSets = params.board_name === 'moonboard';
@@ -108,24 +172,54 @@ export const getSetterStats = async (
     // must not pad its setter's count either — the autocomplete would otherwise
     // promise climbs the search below it can never return.
     eq(boardClimbs.isHidden, false),
+    // Woods without the opt-in: count only the climbs the list shows at this
+    // angle (#5642). The predicate's stats arm reads the unaliased
+    // `board_climb_stats`, which only the restricted shape below joins.
+    ...(restrictToBrowsedAngle ? [browsedAngleRestrictionSql(params.angle)] : []),
   ];
 
-  if (searchQuery && searchQuery.trim().length > 0) {
-    whereConditions.push(ilike(boardClimbs.setterUsername, `%${searchQuery}%`));
+  const searchTerm = searchQuery?.trim() ?? '';
+  const escapedSearchTerm = escapeLikeMetacharacters(searchTerm);
+  if (searchTerm.length > 0) {
+    whereConditions.push(ilike(boardClimbs.setterUsername, `%${escapedSearchTerm}%`));
   }
+  // Exact match, then prefix, then the rest, ahead of climb count (#4885). Only
+  // with a search term: the unsearched picker keeps its plain count order.
+  const searchRelevanceOrder =
+    searchTerm.length > 0
+      ? [
+          sql`CASE WHEN lower(${boardClimbs.setterUsername}) = lower(${searchTerm}) THEN 0 WHEN ${boardClimbs.setterUsername} ILIKE ${`${escapedSearchTerm}%`} THEN 1 ELSE 2 END`,
+        ]
+      : [];
 
-  const result = await withSerialPlan(db, (tx) =>
-    tx
+  const result = await withSerialPlan(db, (tx) => {
+    const fromClimbs = tx
       .select({
         setter_username: boardClimbs.setterUsername,
         climb_count: sql<number>`count(*)::int`,
       })
-      .from(boardClimbs)
+      .from(boardClimbs);
+    // The browsed-angle stats row, joined only when the restriction needs its
+    // presence probe, so an unrestricted call renders the same join-free SQL it
+    // always did. Same ON as the list's `getClimbStatsJoinConditions`; the three
+    // columns are the stats primary key, so at most one row joins per climb and
+    // count(*) still counts climbs.
+    const withBrowsedAngleStats = restrictToBrowsedAngle
+      ? fromClimbs.leftJoin(
+          boardClimbStats,
+          and(
+            eq(boardClimbStats.climbUuid, boardClimbs.uuid),
+            eq(boardClimbStats.boardType, params.board_name),
+            eq(boardClimbStats.angle, params.angle),
+          ),
+        )
+      : fromClimbs;
+    return withBrowsedAngleStats
       .where(and(...whereConditions))
       .groupBy(boardClimbs.setterUsername)
-      .orderBy(sql`count(*) DESC`, sql`${boardClimbs.setterUsername} ASC`)
-      .limit(50),
-  );
+      .orderBy(...searchRelevanceOrder, sql`count(*) DESC`, sql`${boardClimbs.setterUsername} ASC`)
+      .limit(50);
+  });
 
   // Strip any nulls — they're filtered out in the WHERE clause but the
   // column is nullable in the schema so TS doesn't know that.

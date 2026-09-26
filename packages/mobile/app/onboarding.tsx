@@ -4,6 +4,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useTheme as usePaperTheme } from 'react-native-paper';
 import { OnboardingPrompt } from '../src/components/onboarding/OnboardingPrompt';
 import { OnboardingBoardRoute } from '../src/components/onboarding/OnboardingBoardRoute';
+import { OnboardingLinkRoute } from '../src/components/onboarding/OnboardingLinkRoute';
 import { BoardLookStep } from '../src/components/board-look/BoardLookStep';
 import { useTheme } from '../src/providers/theme-provider';
 import { useVariantValue } from '../src/theme/variants';
@@ -14,12 +15,13 @@ import { useEffectiveBoardRenderSettings } from '../src/hooks/use-native-climb-r
  * The onboarding route, which hosts the walkthrough (issue #4961). Since #5654
  * the launch gate no longer opens it: a new account with no board gets the
  * board picker in first-board mode instead (`/boards?firstBoard=1`), and this
- * route is what the More tab's "Replay" rows open.
+ * route is what Settings' "Replay" rows open.
  *
- * Three steps, none of them skippable:
+ * Three mandatory steps, with optional account linking after the board pick:
  *
  *   `/onboarding`                  the framing card — why a named board matters
  *   `/onboarding?step=board`       pick one, and take it offline while you're here
+ *   `/onboarding?step=link`        optionally link that board account; Back declines
  *   `/onboarding?step=board-look`  the 2.4 "which drawing?" question
  *
  * They live behind one route so the app keeps a single launch-time interruption
@@ -32,10 +34,11 @@ import { useEffectiveBoardRenderSettings } from '../src/hooks/use-native-climb-r
  * away. So the board step leaves to Climbs and the gate takes over from there.
  *
  * Presented as a `transparentModal` over the live tabs (see app/_layout.tsx),
- * with the swipe-to-dismiss gesture disabled; each step swallows Android hardware
- * back as well. Transparent so UIKit never snapshots the iOS 26 tab bar (hard
- * rule 2 in docs/mobile-sheets-vs-routes.md), which is why one `OnboardingBacking`
- * paints an opaque page under every step: the live tabs must not show through.
+ * with the swipe-to-dismiss gesture disabled. The mandatory steps swallow Android
+ * hardware back; optional linking treats Back as a decline. Transparent so UIKit
+ * never snapshots the iOS 26 tab bar (hard rule 2 in docs/mobile-sheets-vs-routes.md),
+ * which is why one `OnboardingBacking` paints an opaque page under every step: the
+ * live tabs must not show through.
  * The steps are variant-agnostic — this route resolves the palette from the
  * active UI variant (Liquid Glass / HIG vs Material 3) and injects it.
  */
@@ -76,6 +79,15 @@ export default function OnboardingScreen() {
   let stepContent: ReactNode;
   if (step === 'board-look') {
     stepContent = <BoardLookRoute accentColor={accentColor} bodyColor={bodyColor} backgroundColor={backgroundColor} />;
+  } else if (step === 'link') {
+    stepContent = (
+      <OnboardingLinkRoute
+        accentColor={accentColor}
+        iconColor={iconColor}
+        bodyColor={bodyColor}
+        backgroundColor={backgroundColor}
+      />
+    );
   } else if (step === 'board') {
     stepContent = (
       <OnboardingBoardRoute accentColor={accentColor} bodyColor={bodyColor} backgroundColor={backgroundColor} />
@@ -125,12 +137,21 @@ function BoardLookRoute({
   const { status, preview } = useBoardPreviewClimb();
   const { boardseshRendererAvailable } = useEffectiveBoardRenderSettings();
 
+  // Both exits `dismissTo`, the same verb OnboardingLinkRoute uses. The replay
+  // rows that open this walkthrough live in Settings — itself a ROOT destination
+  // — so the root stack usually reads `[(tabs), settings, onboarding]`, and
+  // `dismissTo` is the only verb that reads right from both there and a cold
+  // deep link into the walkthrough: it pops back to the named route when the
+  // stack already holds it, and replaces this screen when it doesn't. A
+  // `replace` would strand Settings under a second copy of the tabs; a
+  // `navigate` would push over a still-mounted walkthrough on the deep-link
+  // path, landing Back on the card the climber just left.
   const leave = useCallback(() => {
-    router.replace('/(tabs)/climbs');
+    router.dismissTo('/(tabs)/climbs');
   }, []);
 
   const customize = useCallback(() => {
-    router.replace('/(tabs)/profile/board-look');
+    router.dismissTo('/settings/board-look');
   }, []);
 
   // Deep-linked here without a board to draw (the gate never does this, but the

@@ -528,6 +528,8 @@
       "betaVideos": "Nur mit Beta-Video",
       "betaVideosShort": "🎥 Beta",
       "betaVideosDescription": "Nur Boulder mit Beta-Video",
+      "otherAngles": "Andere Winkel",
+      "otherAnglesDescription": "Zeigt Boulder, die in einem anderen Winkel geschraubt wurden",
       "searchSetters": "Routenbauer*innen suchen",
       "noSetters": "Noch keine Routenbauer*innen",
       "clearAll": "Alles zurücksetzen",
@@ -602,7 +604,7 @@
         "footlessKickboard": "Ohne Füße + KB",
         "noKickboard": "Ohne KB"
       },
-      "setAngleMarker": "{{angle}}°",
+      "setAngleMarker": "bei {{angle}}° geschraubt",
       "setAngleMarkerAria": "Bewertung und Begehungen stammen von {{angle}} Grad"
     },
     "climbRules": {
@@ -828,6 +830,29 @@
     },
     "setterNotes": {
       "title": "Notizen vom Routenbau"
+    },
+    "heatmap": {
+      "show": "Griff-Heatmap zeigen",
+      "hide": "Griff-Heatmap ausblenden",
+      "modeLabel": "Griffe färben nach",
+      "modes": {
+        "uses": "Meistgenutzt",
+        "ascents": "Meiste Begehungen",
+        "difficulty": "Grad"
+      },
+      "legendLow": "Weniger",
+      "legendHigh": "Mehr",
+      "legendEasy": "Leichter",
+      "legendHard": "Schwerer",
+      "filtered": "Gefiltert · {{summary}}",
+      "wholeBoard": "Ganzes Board",
+      "wholeBoardHint": "Zählt stattdessen jeden Boulder am Board",
+      "useFiltersHint": "Zählt nur die Boulder, die zu deinen Filtern passen",
+      "filterUnsupported": "Die Heatmap kann einem Griff-Filter noch nicht folgen. Tipp auf den Chip, um das ganze Board zu sehen.",
+      "empty": "Kein Boulder passt zu diesen Filtern.",
+      "loadFailed": "Die Heatmap konnte nicht geladen werden. Versuch es gleich noch mal.",
+      "needsDownload": "Lade dieses Board herunter, um zu sehen, wo die Boulder sind.",
+      "unavailable": "Die Heatmap ist gerade nicht verfügbar."
     }
   },
   "frontDoor": {

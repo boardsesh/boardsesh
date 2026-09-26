@@ -221,15 +221,41 @@ layout artifact but intentionally outside the enabled size.
 - **`schema_version`** — the on-device client schema version the artifact's DDL was built against
   (`LATEST_SCHEMA_VERSION` from `@boardsesh/offline-sync`'s migrations). An artifact whose schema is newer
   than the client is tolerated: bootstrap only imports columns present in both tables (`sharedColumns` in
-  `snapshot-bootstrap.ts`), dropping artifact-only columns. An artifact **staler** than the client
-  (`schema_version < LATEST_SCHEMA_VERSION`) is rejected client-side (`SnapshotSchemaStaleError`) rather
-  than imported, because importing it would NULL-fill the client's newer columns and then stamp the resume
-  cursor _past_ those rows — the strict `>` delta pull would never backfill them. A staler artifact is a
-  **permanent miss for that run, no bootstrap attempt burned** — the scope falls back to the always-correct
-  paged crawl, and the next live threshold scan rebuilds the stale-schema artifact.
+  `snapshot-bootstrap.ts`), dropping artifact-only columns. An artifact older than the last migration that
+  changed an **artifact table** (`schema_version < ARTIFACT_SCHEMA_VERSION`) is rejected client-side
+  (`SnapshotSchemaStaleError`, and before the download by `isSnapshotEntryUsable`) rather than imported,
+  because importing it would NULL-fill the client's newer columns and then stamp the resume cursor _past_
+  those rows — the strict `>` delta pull would never backfill them. A staler artifact is a **permanent miss
+  for that run, no bootstrap attempt burned** — the scope falls back to the always-correct paged crawl, and
+  the next live threshold scan rebuilds the stale-schema artifact.
+- **`ARTIFACT_SCHEMA_VERSION`** is derived from the migrations. It is the highest version with a statement
+  naming `board_climbs`, `board_climb_stats` or `board_climb_grades` (the same whole-word match the export
+  uses to pick artifact DDL, minus `DEVICE_ONLY_STATEMENTS`). It is 7 today (`missing_hold_count`). A
+  migration that touches only device-side tables (v8 spray walls, v9 followed authors, v10 holds index)
+  raises `LATEST_SCHEMA_VERSION` but not this, so older artifacts stay importable and downloads keep
+  coming from the CDN. The required-columns check below remains the backstop: an artifact that lacks a
+  configured client column is refused whatever version it is stamped with.
 - Schema **v5** adds `board_climbs.is_hidden` (the community-hidden flag). A client on v5 meeting a v4
   artifact hits exactly that stale path: it rejects the artifact and crawls the scope page by page until the
   next export rebuilds it at v5.
+
+### Device-derived tables stay out
+
+The holds index behind similar climbs and the hold heatmap on the phone is three tables:
+`holds_index_climbs`, `board_climb_hold_sets` and `board_climb_hold_postings` (schema v10). The device builds
+them from `board_climbs.frames`, and they are **never** part of an artifact. The exclusion is enforced in
+code, not just by convention: the tables are listed in `DEVICE_ONLY_TABLES` (`@boardsesh/offline-sync`),
+`boardSnapshotDdlStatements` throws if any statement it selects names one, and `snapshot-export-ddl.test.ts`
+pins the artifact's table list to exactly `board_climbs`, `board_climb_stats` and `snapshot_meta`.
+
+The same migration's `idx_climbs_sync_seq` index is on `board_climbs`. Matched by table name alone, it would
+land in every artifact, where it is dead weight because the import copies rows out and never queries them by
+`sync_seq`. So it is listed in `DEVICE_ONLY_STATEMENTS`, which the export drops by exact text. The same list
+serves any future statement that the device needs on an artifact table but the artifact must not carry. It
+needs no format change, because an artifact never had these statements.
+
+v10 changes no artifact table, so it does not move `ARTIFACT_SCHEMA_VERSION`. v10 clients import v9
+artifacts, and v9 clients import v10 ones. No staleness window applies.
 
 ### Compatible additions and missing columns
 
@@ -1293,8 +1319,11 @@ coordinated change, not just a constant flip:
 
 ### Schema-bump staleness window
 
-A schema-version bump on the client (a new migration touching `board_climbs`, `board_climb_stats`, or
-`board_climb_grades`) makes existing artifacts `schema_version`-stale. The live threshold scan treats an
+Only a migration that changes an artifact table (`board_climbs`, `board_climb_stats`, or
+`board_climb_grades`) moves `ARTIFACT_SCHEMA_VERSION`, and only that makes existing artifacts
+`schema_version`-stale. A device-only migration raises `LATEST_SCHEMA_VERSION` and nothing else: clients
+keep importing the artifacts already published. The export still stamps `LATEST_SCHEMA_VERSION` and still
+rebuilds artifacts stamped below it, so manifests catch up, but no client waits on that. The live threshold scan treats an
 old schema as stale without waiting for 500 rows, so the fleet's gzip artifacts self-heal on the next
 best-effort scan (scheduled every 15 minutes); the identity rollback catches up in the 07:15 nightly.
 During that window, freshly-enabled scopes on the new client fall back to the paged crawl (a permanent

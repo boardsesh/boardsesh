@@ -528,6 +528,8 @@
       "betaVideos": "Avec vidéo de beta uniquement",
       "betaVideosShort": "🎥 Beta",
       "betaVideosDescription": "Uniquement les voies avec une vidéo de beta",
+      "otherAngles": "Autres angles",
+      "otherAnglesDescription": "Affiche les blocs ouverts à un autre angle",
       "searchSetters": "Rechercher des ouvreurs",
       "noSetters": "Aucun ouvreur",
       "clearAll": "Tout effacer",
@@ -602,7 +604,7 @@
         "footlessKickboard": "Sans pieds + KB",
         "noKickboard": "Sans KB"
       },
-      "setAngleMarker": "{{angle}}°",
+      "setAngleMarker": "ouvert à {{angle}}°",
       "setAngleMarkerAria": "La cotation et les croix sont à {{angle}} degrés"
     },
     "climbRules": {
@@ -828,6 +830,29 @@
     },
     "setterNotes": {
       "title": "Notes de l’ouvreur"
+    },
+    "heatmap": {
+      "show": "Afficher la carte de chaleur des prises",
+      "hide": "Masquer la carte de chaleur des prises",
+      "modeLabel": "Colorer les prises selon",
+      "modes": {
+        "uses": "Plus utilisées",
+        "ascents": "Plus de croix",
+        "difficulty": "Cotation"
+      },
+      "legendLow": "Moins",
+      "legendHigh": "Plus",
+      "legendEasy": "Plus facile",
+      "legendHard": "Plus dur",
+      "filtered": "Filtré · {{summary}}",
+      "wholeBoard": "Toute la board",
+      "wholeBoardHint": "Compte tous les blocs de la board",
+      "useFiltersHint": "Compte seulement les blocs qui passent tes filtres",
+      "filterUnsupported": "La carte de chaleur ne suit pas encore un filtre de prises. Touche la puce pour voir toute la board.",
+      "empty": "Aucun bloc ne passe ces filtres.",
+      "loadFailed": "Impossible de charger la carte de chaleur. Réessaie dans un instant.",
+      "needsDownload": "Télécharge cette board pour voir où sont les blocs.",
+      "unavailable": "La carte de chaleur n'est pas disponible pour le moment."
     }
   },
   "frontDoor": {

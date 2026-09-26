@@ -65,7 +65,13 @@ vi.mock('../../../../modules/live-activity/src/index', () => ({
 
 import { NativeIosBleAdapter } from '../native-ios-adapter';
 import { SERIAL_RECONNECT_GRACE_MS } from '@boardsesh/ble-protocol/scan-constants';
-import type { BleWriteDiagnostics } from '../types';
+import type { BleWriteDiagnostics, DevicePickerFn } from '../types';
+import { recordingTargetPicker } from './recording-target-picker';
+
+// A targeted connect opens the picker at the tap in its searching state (#5658).
+// Tests that only care about the auto-select or the connect after it use a picker
+// that stays open and never picks, standing in for that searching sheet.
+const pickerThatNeverPicks: DevicePickerFn = () => new Promise<string>(() => {});
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -148,74 +154,114 @@ describe('NativeIosBleAdapter scan timeout', () => {
     expect(nativeMock.connect).toHaveBeenCalledWith('dev-1');
   });
 
-  it('falls back to the picker (not a hard reject) when targetSerial never advertises', async () => {
-    let pickerOpened = false;
-    const onScanStopped = vi.fn();
-    // Picker that stays open once shown (never resolves on its own).
-    const adapter = new NativeIosBleAdapter((subscribe) => {
-      pickerOpened = true;
-      subscribe(() => {}, onScanStopped);
-      return new Promise<string>(() => {});
-    });
+  const needleAdvert = {
+    device: { deviceId: 'needle-dev', name: 'Garage Wall#NEEDLE-SERIAL@3' },
+    localName: 'Garage Wall#NEEDLE-SERIAL@3',
+    rssi: -50,
+  };
+
+  it('opens the picker at the tap in its searching state and keeps the list back until the grace ends (#5658)', async () => {
+    const { picker, record } = recordingTargetPicker();
+    const adapter = new NativeIosBleAdapter(picker);
     let settledWith: unknown = 'pending';
     void adapter.requestAndConnect('NEEDLE-SERIAL').then(
       (connection) => (settledWith = connection),
       (error: unknown) => (settledWith = error),
     );
+
+    // Mounted at the tap, searching for the saved board, not a blank wait.
+    expect(record.opened).toBe(1);
+    expect(record.targetSearch).toBeDefined();
     await Promise.resolve();
 
-    // Before the grace window the auto-select is still silent — no picker.
-    vi.advanceTimersByTime(SERIAL_RECONNECT_GRACE_MS - 1);
-    await Promise.resolve();
-    expect(pickerOpened).toBe(false);
+    // The list does not take over before the grace window ends (#3609).
+    await vi.advanceTimersByTimeAsync(SERIAL_RECONNECT_GRACE_MS - 1);
+    expect(record.searchEnded).toBe(0);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(record.searchEnded).toBe(1);
+    expect(record.opened).toBe(1);
 
-    // Grace window elapses with no serial match → the picker opens instead of
-    // waiting out the full scan window and failing.
-    vi.advanceTimersByTime(1);
-    await Promise.resolve();
-    expect(pickerOpened).toBe(true);
-
-    // ...and with nothing ever discovered, the scan timeout stops the spinner
-    // and leaves the picker up for its empty state, rather than failing (#5654).
-    vi.advanceTimersByTime(30_000);
-    await vi.runAllTimersAsync();
-    expect(onScanStopped).toHaveBeenCalledOnce();
+    // With nothing ever discovered, the scan timeout stops the spinner and
+    // leaves the picker up for its empty state, rather than failing (#5654).
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(record.scanStopped).toBe(1);
+    expect(record.searchEnded).toBe(1);
     expect(settledWith).toBe('pending');
   });
 
-  it('lets the user pick the stored board after the grace window opens the picker', async () => {
-    let manualPick: (deviceId: string) => void = () => {};
-    const adapter = new NativeIosBleAdapter(
-      () =>
-        new Promise<string>((resolve) => {
-          manualPick = resolve;
-        }),
-    );
+  it('lets the user pick the saved board once the grace window has switched to the list', async () => {
+    const { picker, record } = recordingTargetPicker();
+    const adapter = new NativeIosBleAdapter(picker);
     const connectPromise = adapter.requestAndConnect('NEEDLE-SERIAL');
     await Promise.resolve();
 
-    // Grace window opens the picker.
-    vi.advanceTimersByTime(SERIAL_RECONNECT_GRACE_MS);
-    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(SERIAL_RECONNECT_GRACE_MS);
+    expect(record.searchEnded).toBe(1);
 
-    // The board finally advertises after the picker opened — it shows up as a
-    // pickable device (auto-select has stopped), and the user taps it.
-    scanListeners[0]?.({
-      device: { deviceId: 'late-dev', name: 'Garage Wall#NEEDLE-SERIAL@3' },
-      localName: 'Garage Wall#NEEDLE-SERIAL@3',
-      rssi: -50,
-    });
-    manualPick('late-dev');
+    // The board finally advertises after the list took over: it shows up as a
+    // pickable device (auto-select has stopped), and the climber taps it.
+    scanListeners[0]?.(needleAdvert);
+    expect(record.found).toBe(0);
+    expect(nativeMock.connect).not.toHaveBeenCalled();
+    record.pick('needle-dev');
     await vi.runAllTimersAsync();
     await connectPromise;
 
-    expect(nativeMock.connect).toHaveBeenCalledWith('late-dev');
+    expect(nativeMock.connect).toHaveBeenCalledWith('needle-dev');
+  });
+
+  it('auto-selects the saved board while searching, closes the picker and settles once (#3609, #5658)', async () => {
+    const { picker, record } = recordingTargetPicker();
+    const adapter = new NativeIosBleAdapter(picker);
+    const connectPromise = adapter.requestAndConnect('NEEDLE-SERIAL');
+    await Promise.resolve();
+
+    // 6s in: past the old 4s grace, still inside the current one.
+    await vi.advanceTimersByTimeAsync(6_000);
+    scanListeners[0]?.(needleAdvert);
+
+    const connection = await connectPromise;
+    expect(connection.deviceId).toBe('needle-dev');
+    expect(record.found).toBe(1);
+    expect(record.searchEnded).toBe(0);
+    // The picker's own reject on close did not beat the auto-select.
+    expect(nativeMock.connect).toHaveBeenCalledTimes(1);
+
+    // The grace window and the scan timeout change nothing afterwards.
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(record.found).toBe(1);
+    expect(record.searchEnded).toBe(0);
+    expect(record.scanStopped).toBe(0);
+  });
+
+  it('lists a late match after "Search for any board" instead of auto-selecting it (#5658)', async () => {
+    const { picker, record } = recordingTargetPicker();
+    const adapter = new NativeIosBleAdapter(picker);
+    const connectPromise = adapter.requestAndConnect('NEEDLE-SERIAL');
+    await Promise.resolve();
+
+    record.targetSearch?.searchAnyBoard();
+    expect(record.searchEnded).toBe(1);
+    // Idempotent: a second tap, and the grace window later, do nothing more.
+    record.targetSearch?.searchAnyBoard();
+    await vi.advanceTimersByTimeAsync(SERIAL_RECONNECT_GRACE_MS);
+    expect(record.searchEnded).toBe(1);
+
+    scanListeners[0]?.(needleAdvert);
+    expect(record.found).toBe(0);
+    expect(record.updates.at(-1)?.map((device) => device.deviceId)).toEqual(['needle-dev']);
+    expect(nativeMock.connect).not.toHaveBeenCalled();
+
+    record.pick('needle-dev');
+    await vi.runAllTimersAsync();
+    const connection = await connectPromise;
+    expect(connection.deviceId).toBe('needle-dev');
   });
 });
 
 describe('NativeIosBleAdapter connect flow', () => {
   it('auto-selects a discovered device matching targetSerial', async () => {
-    const adapter = new NativeIosBleAdapter(() => Promise.reject(new Error('picker should not open')));
+    const adapter = new NativeIosBleAdapter(pickerThatNeverPicks);
     const connectPromise = adapter.requestAndConnect('A1B2C3');
     await Promise.resolve();
 
@@ -304,6 +350,41 @@ describe('NativeIosBleAdapter connect flow', () => {
     ]);
   });
 
+  it('lists two bare-name boxes as two rows and connects to the one picked (#5601)', async () => {
+    let manualPick: (deviceId: string) => void = () => {};
+    const seenDeviceIdsByUpdate: string[][] = [];
+    const adapter = new NativeIosBleAdapter(
+      (subscribe) =>
+        new Promise<string>((resolve) => {
+          manualPick = resolve;
+          subscribe((devices) => {
+            seenDeviceIdsByUpdate.push(devices.map((device) => device.deviceId));
+          });
+        }),
+    );
+    const connectPromise = adapter.requestAndConnect();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    scanListeners[0]?.({
+      device: { deviceId: 'wall-a', name: 'Kilter Board' },
+      localName: 'Kilter Board',
+      rssi: -50,
+    });
+    scanListeners[0]?.({
+      device: { deviceId: 'wall-b', name: 'Kilter Board' },
+      localName: 'Kilter Board',
+      rssi: -65,
+    });
+
+    manualPick('wall-a');
+    await vi.runAllTimersAsync();
+    await connectPromise;
+
+    expect(seenDeviceIdsByUpdate.at(-1)).toEqual(['wall-a', 'wall-b']);
+    expect(nativeMock.connect).toHaveBeenCalledWith('wall-a');
+  });
+
   it('does not mask the original failure when stopScan rejects in the cleanup path', async () => {
     nativeMock.stopScan.mockRejectedValueOnce(new Error('bluetooth turned off'));
     const adapter = new NativeIosBleAdapter(() => Promise.reject(new Error('Device selection cancelled')));
@@ -314,7 +395,7 @@ describe('NativeIosBleAdapter connect flow', () => {
   });
 
   it('flushes the native write queue when an in-flight write is aborted', async () => {
-    const adapter = new NativeIosBleAdapter(() => Promise.reject(new Error('picker should not open')));
+    const adapter = new NativeIosBleAdapter(pickerThatNeverPicks);
     const connectPromise = adapter.requestAndConnect('A1B2C3');
     await Promise.resolve();
     scanListeners[0]?.({
@@ -346,14 +427,14 @@ describe('NativeIosBleAdapter connect flow', () => {
   });
 
   it('does not call native.disconnect on a never-connected adapter', async () => {
-    const adapter = new NativeIosBleAdapter(() => Promise.reject(new Error('picker should not open')));
+    const adapter = new NativeIosBleAdapter(pickerThatNeverPicks);
 
     await expect(adapter.disconnect()).resolves.toBeUndefined();
     expect(nativeMock.disconnect).not.toHaveBeenCalled();
   });
 
   it('skips native.disconnect after the device self-cleaned on a disconnected event', async () => {
-    const adapter = new NativeIosBleAdapter(() => Promise.reject(new Error('picker should not open')));
+    const adapter = new NativeIosBleAdapter(pickerThatNeverPicks);
     const connectPromise = adapter.requestAndConnect('A1B2C3');
     await Promise.resolve();
     scanListeners[0]?.({
@@ -375,7 +456,7 @@ describe('NativeIosBleAdapter connect flow', () => {
   });
 
   it('calls native.disconnect after adoptConnection while still tracking a device', async () => {
-    const adapter = new NativeIosBleAdapter(() => Promise.reject(new Error('picker should not open')));
+    const adapter = new NativeIosBleAdapter(pickerThatNeverPicks);
 
     adapter.adoptConnection('adopted-dev');
     await adapter.disconnect();
@@ -384,7 +465,7 @@ describe('NativeIosBleAdapter connect flow', () => {
   });
 
   it('adoptConnection wires writes and the disconnect callback without scanning', async () => {
-    const adapter = new NativeIosBleAdapter(() => Promise.reject(new Error('picker should not open')));
+    const adapter = new NativeIosBleAdapter(pickerThatNeverPicks);
 
     adapter.adoptConnection('adopted-dev');
     await adapter.write(new Uint8Array([0x01, 0x02]));
@@ -398,7 +479,7 @@ describe('NativeIosBleAdapter connect flow', () => {
   });
 
   it('forwards the native disconnect reason fields as BleDisconnectInfo', () => {
-    const adapter = new NativeIosBleAdapter(() => Promise.reject(new Error('picker should not open')));
+    const adapter = new NativeIosBleAdapter(pickerThatNeverPicks);
 
     adapter.adoptConnection('adopted-dev');
     const onDisconnect = vi.fn();
@@ -424,7 +505,7 @@ describe('NativeIosBleAdapter connect flow', () => {
   });
 
   it('forwards a write-stall context marker when the native layer caused the drop', () => {
-    const adapter = new NativeIosBleAdapter(() => Promise.reject(new Error('picker should not open')));
+    const adapter = new NativeIosBleAdapter(pickerThatNeverPicks);
 
     adapter.adoptConnection('adopted-dev');
     const onDisconnect = vi.fn();
@@ -580,7 +661,7 @@ describe('NativeIosBleAdapter write diagnostics', () => {
   });
 
   it('stores the diagnostics the native write resolves on success', async () => {
-    const adapter = new NativeIosBleAdapter(() => Promise.reject(new Error('picker should not open')));
+    const adapter = new NativeIosBleAdapter(pickerThatNeverPicks);
     adapter.adoptConnection('adopted-dev');
     nativeMock.write.mockResolvedValueOnce(sampleDiagnostics);
 
@@ -590,7 +671,7 @@ describe('NativeIosBleAdapter write diagnostics', () => {
   });
 
   it('records null (not undefined) when an old binary resolves no diagnostics', async () => {
-    const adapter = new NativeIosBleAdapter(() => Promise.reject(new Error('picker should not open')));
+    const adapter = new NativeIosBleAdapter(pickerThatNeverPicks);
     adapter.adoptConnection('adopted-dev');
     nativeMock.write.mockResolvedValueOnce(undefined);
 
@@ -599,7 +680,7 @@ describe('NativeIosBleAdapter write diagnostics', () => {
   });
 
   it('fetches the native stash and rethrows when a write rejects on a newer binary', async () => {
-    const adapter = new NativeIosBleAdapter(() => Promise.reject(new Error('picker should not open')));
+    const adapter = new NativeIosBleAdapter(pickerThatNeverPicks);
     adapter.adoptConnection('adopted-dev');
     const writeError = new Error('write_timeout');
     nativeMock.write.mockRejectedValueOnce(writeError);
@@ -614,7 +695,7 @@ describe('NativeIosBleAdapter write diagnostics', () => {
   it('rethrows without a stash fetch when a write rejects on an old binary', async () => {
     // The default native mock has no getLastWriteDiagnostics — the old-binary
     // case where the reject path must not attempt (and must not throw from) a fetch.
-    const adapter = new NativeIosBleAdapter(() => Promise.reject(new Error('picker should not open')));
+    const adapter = new NativeIosBleAdapter(pickerThatNeverPicks);
     adapter.adoptConnection('adopted-dev');
     const writeError = new Error('write_timeout');
     nativeMock.write.mockRejectedValueOnce(writeError);
@@ -644,7 +725,7 @@ describe('NativeIosBleAdapter connect diagnostics (#3480)', () => {
   };
 
   it('fetches the native stash and rethrows when a connect rejects on a newer binary', async () => {
-    const adapter = new NativeIosBleAdapter(() => Promise.reject(new Error('picker should not open')));
+    const adapter = new NativeIosBleAdapter(pickerThatNeverPicks);
     const connectError = new Error('UART service was not found');
     nativeMock.connect.mockRejectedValueOnce(connectError);
     const getStash = vi.fn().mockResolvedValue({ discoveredServices: ['AURORA-UUID'] });
@@ -661,7 +742,7 @@ describe('NativeIosBleAdapter connect diagnostics (#3480)', () => {
   it('rethrows without a stash fetch when a connect rejects on an old binary', async () => {
     // Default native mock has no getLastConnectDiagnostics — the old-binary case
     // where the reject path must not attempt (or throw from) a fetch.
-    const adapter = new NativeIosBleAdapter(() => Promise.reject(new Error('picker should not open')));
+    const adapter = new NativeIosBleAdapter(pickerThatNeverPicks);
     const connectError = new Error('UART service was not found');
     nativeMock.connect.mockRejectedValueOnce(connectError);
 
@@ -673,7 +754,7 @@ describe('NativeIosBleAdapter connect diagnostics (#3480)', () => {
   });
 
   it('clears stale connect diagnostics on a subsequent successful connect', async () => {
-    const adapter = new NativeIosBleAdapter(() => Promise.reject(new Error('picker should not open')));
+    const adapter = new NativeIosBleAdapter(pickerThatNeverPicks);
     const getStash = vi.fn().mockResolvedValue({ discoveredServices: [] });
     (nativeMock as Record<string, unknown>).getLastConnectDiagnostics = getStash;
 

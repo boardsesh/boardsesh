@@ -9,6 +9,7 @@
  */
 
 import { spawn } from 'node:child_process';
+import { SURFABILITY_CONFIRM_BUDGET_MINUTES, SURFABILITY_PROBE_BUDGET_MINUTES } from './ota-branch-probe';
 
 /**
  * Backoff ladder for one platform, in wait order: 34 minutes total, sized to
@@ -37,10 +38,39 @@ export const SELF_HOSTED_PUBLISH_MAX_ATTEMPTS = SELF_HOSTED_PUBLISH_RETRY_DELAYS
  */
 export const SELF_HOSTED_PUBLISH_ATTEMPT_COST_MINUTES = 2.5;
 
+/**
+ * What one attempt of a PREVIEW publish can cost, including the branch probe a
+ * finalize 524 triggers before the ladder sleeps. The probe is what turns #5422's
+ * six blind re-exports into one confirmation, so its budget belongs in the floor
+ * rather than in the slack between the floor and a job's `timeout-minutes`.
+ *
+ * Preview only: `production` and the backport branches are never probed (the
+ * check is scoped to `pr-<n>`), so charging their jobs for it would inflate their
+ * floors for time they cannot spend.
+ */
+export const SELF_HOSTED_PUBLISH_ATTEMPT_BUDGET_MINUTES =
+  SELF_HOSTED_PUBLISH_ATTEMPT_COST_MINUTES + SURFABILITY_CONFIRM_BUDGET_MINUTES;
+
+const SELF_HOSTED_PUBLISH_LADDER_MINUTES =
+  SELF_HOSTED_PUBLISH_RETRY_DELAYS_MS.reduce((total, delayMs) => total + delayMs, 0) / 60_000;
+
 /** Every wait plus the failed attempt that precedes each one. */
 export const SELF_HOSTED_PUBLISH_WORST_CASE_MINUTES_PER_PLATFORM =
-  SELF_HOSTED_PUBLISH_RETRY_DELAYS_MS.reduce((total, delayMs) => total + delayMs, 0) / 60_000 +
-  SELF_HOSTED_PUBLISH_MAX_ATTEMPTS * SELF_HOSTED_PUBLISH_ATTEMPT_COST_MINUTES;
+  SELF_HOSTED_PUBLISH_LADDER_MINUTES + SELF_HOSTED_PUBLISH_MAX_ATTEMPTS * SELF_HOSTED_PUBLISH_ATTEMPT_COST_MINUTES;
+
+/** Two bounded 60-second fingerprint resolves, cached once per preview platform. */
+export const PREVIEW_RUNTIME_RESOLUTION_BUDGET_MINUTES = 2;
+
+/**
+ * The same, for a preview publish: every attempt may confirm a 524, and the whole
+ * platform is verified once more at the end on the longer, propagation-tolerant
+ * schedule.
+ */
+export const SELF_HOSTED_PREVIEW_WORST_CASE_MINUTES_PER_PLATFORM =
+  SELF_HOSTED_PUBLISH_LADDER_MINUTES +
+  SELF_HOSTED_PUBLISH_MAX_ATTEMPTS * SELF_HOSTED_PUBLISH_ATTEMPT_BUDGET_MINUTES +
+  SURFABILITY_PROBE_BUDGET_MINUTES +
+  PREVIEW_RUNTIME_RESOLUTION_BUDGET_MINUTES;
 
 /**
  * Everything a publish job does around the publish steps themselves. Dominated
@@ -58,11 +88,11 @@ export const SELF_HOSTED_PUBLISH_JOB_OVERHEAD_MINUTES = 30;
  * and preview do iOS then Android in a single job, backport fans out one
  * platform per matrix job.
  */
-export function minimumPublishJobTimeoutMinutes(platforms: number): number {
-  return (
-    Math.ceil(platforms * SELF_HOSTED_PUBLISH_WORST_CASE_MINUTES_PER_PLATFORM) +
-    SELF_HOSTED_PUBLISH_JOB_OVERHEAD_MINUTES
-  );
+export function minimumPublishJobTimeoutMinutes(platforms: number, probesBranch = false): number {
+  const perPlatform = probesBranch
+    ? SELF_HOSTED_PREVIEW_WORST_CASE_MINUTES_PER_PLATFORM
+    : SELF_HOSTED_PUBLISH_WORST_CASE_MINUTES_PER_PLATFORM;
+  return Math.ceil(platforms * perPlatform) + SELF_HOSTED_PUBLISH_JOB_OVERHEAD_MINUTES;
 }
 
 export type OtaPublishPlatform = 'ios' | 'android';
@@ -101,13 +131,26 @@ export type PlatformPublishOutcome = {
   success: boolean;
   attempts: number;
   failureKind: PublishFailureKind | null;
+  /**
+   * The command exited 0 without creating an update, because xprem found the
+   * bundle identical to one already in storage. See NO_CHANGE_NOTICE.
+   */
+  noChange: boolean;
 };
+
+/**
+ * Asks the update server whether the branch is being offered for this platform
+ * RIGHT NOW. Optional: a caller with no runtimeVersion to probe with (a local
+ * publish) simply omits it and gets the unchanged ladder.
+ */
+export type PublishConfirmation = (platform: OtaPublishPlatform) => Promise<boolean>;
 
 export type PublishRetryDependencies = {
   runner?: PublishCommandRunner;
   sleeper?: PublishSleeper;
   stdout?: TextOutput;
   stderr?: TextOutput;
+  confirmPublished?: PublishConfirmation;
 };
 
 const CLASSIFIER_WINDOW_CHARS = 4096;
@@ -116,6 +159,30 @@ const EXPLICIT_HTTP_5XX =
   /(?:\bHTTP(?:\/\d(?:\.\d)?)?\s+|\b(?:status|statusCode|status code|response (?:status|code))\s*[:=]?\s*)5\d{2}\b/i;
 const EXPLICIT_HTTP_4XX =
   /(?:\bHTTP(?:\/\d(?:\.\d)?)?\s+|\b(?:status|statusCode|status code|response (?:status|code))\s*[:=]?\s*)4\d{2}\b/i;
+/**
+ * The finalize call at the very end of a publish: every asset is already in the
+ * object store, and this is the request that records the update against the
+ * branch. It regularly outlives Cloudflare's 100 s origin cap on
+ * updates.boardsesh.com, which answers 524 — so a 524 HERE says the proxy gave
+ * up, NOT that the origin failed. Distinguished from any other 5xx because the
+ * update may well have landed, which is worth confirming before spending a
+ * ~2.5-minute re-export on it (see `confirmPublished` below).
+ */
+const FINALIZE_GATEWAY_TIMEOUT = /HTTP 524 from \S*\/markUpdateAsUploaded\//i;
+/**
+ * xprem skipping an export whose bundle is identical to one already in storage:
+ *
+ *   ⚠️ There is no change in the update for android, ignored...
+ *   ⚠️ No changes found in the update, nothing to deploy
+ *
+ * eoas EXITS 0 on this, so without a scan for it the publisher reports
+ * `android=success` for a platform it did not publish. Usually harmless — the
+ * previous identical update is still on the branch — but not when the branch was
+ * reset first, which is how #5417 lost its Android preview with nothing said. The
+ * surfability check in mobile-publish.ts is what turns this into a hard failure;
+ * this is only how the log learns to say what happened.
+ */
+const NO_CHANGE_NOTICE = /(?:no change in the update for (?:ios|android)|no changes found in the update)/i;
 const S3_SLOWDOWN_CODE = /<Code>\s*SlowDown\s*<\/Code>/i;
 const S3_SLOWDOWN_MESSAGE = /<Message>\s*Please reduce your request rate\.?\s*<\/Message>/i;
 const PERMANENT_S3_CODE =
@@ -130,6 +197,8 @@ type FailureEvidence = {
   hasSlowDownCode: boolean;
   hasSlowDownMessage: boolean;
   hasHttp5xx: boolean;
+  hasFinalizeTimeout: boolean;
+  hasNoChangeNotice: boolean;
   hasPermanent: boolean;
 };
 
@@ -138,6 +207,8 @@ function emptyEvidence(): FailureEvidence {
     hasSlowDownCode: false,
     hasSlowDownMessage: false,
     hasHttp5xx: false,
+    hasFinalizeTimeout: false,
+    hasNoChangeNotice: false,
     hasPermanent: false,
   };
 }
@@ -156,6 +227,8 @@ export class PublishFailureEvidenceScanner {
     this.evidence.hasSlowDownCode ||= S3_SLOWDOWN_CODE.test(searchable);
     this.evidence.hasSlowDownMessage ||= S3_SLOWDOWN_MESSAGE.test(searchable);
     this.evidence.hasHttp5xx ||= EXPLICIT_HTTP_5XX.test(searchable);
+    this.evidence.hasFinalizeTimeout ||= FINALIZE_GATEWAY_TIMEOUT.test(searchable);
+    this.evidence.hasNoChangeNotice ||= NO_CHANGE_NOTICE.test(searchable);
     this.evidence.hasPermanent ||=
       EXPLICIT_HTTP_4XX.test(searchable) ||
       PERMANENT_S3_CODE.test(searchable) ||
@@ -163,6 +236,20 @@ export class PublishFailureEvidenceScanner {
       PERMANENT_INPUT_ERROR.test(searchable) ||
       PERMANENT_BUILD_ERROR.test(searchable);
     this.window = searchable.slice(-CLASSIFIER_WINDOW_CHARS);
+  }
+
+  /**
+   * Whether this attempt died finalizing rather than uploading. A permanent
+   * signal still vetoes it: a 524 that arrived alongside an auth failure is not
+   * evidence the update landed.
+   */
+  sawFinalizeTimeout(): boolean {
+    return this.evidence.hasFinalizeTimeout && !this.evidence.hasPermanent;
+  }
+
+  /** Whether xprem deduplicated this export instead of publishing it. */
+  sawNoChangeNotice(): boolean {
+    return this.evidence.hasNoChangeNotice;
   }
 
   classify(): PublishFailureKind {
@@ -243,6 +330,7 @@ export async function publishSelfHostedPlatformWithRetry(
   const sleeper = dependencies.sleeper ?? sleepForPublishRetry;
   const stdout = dependencies.stdout ?? process.stdout;
   const stderr = dependencies.stderr ?? process.stderr;
+  const confirmPublished = dependencies.confirmPublished;
   const label = platformLabel(invocation.platform);
 
   for (let attempt = 1; attempt <= SELF_HOSTED_PUBLISH_MAX_ATTEMPTS; attempt++) {
@@ -268,11 +356,53 @@ export async function publishSelfHostedPlatformWithRetry(
       // A runner failure has no retryable server evidence. Keep the diagnostic
       // intentionally generic: thrown errors can embed argv/env or a raw tail.
       stderr.write(`[mobile:publish] ${label} publish process failed to run; not retrying.\n`);
-      return { platform: invocation.platform, success: false, attempts: attempt, failureKind: 'unknown' };
+      return {
+        platform: invocation.platform,
+        success: false,
+        attempts: attempt,
+        failureKind: 'unknown',
+        noChange: false,
+      };
     }
 
     if (exitCode === 0) {
-      return { platform: invocation.platform, success: true, attempts: attempt, failureKind: null };
+      return {
+        platform: invocation.platform,
+        success: true,
+        attempts: attempt,
+        failureKind: null,
+        noChange: scanner.sawNoChangeNotice(),
+      };
+    }
+
+    // A finalize 524 is Cloudflare hanging up on a slow origin, not a failed
+    // upload — the update has usually landed. Ask the server before spending a
+    // full re-export on it: #5422 burned 2h09m across six attempts that each
+    // re-bundled ~5300 modules to reach the same timeout. Deliberately before
+    // the retryable check, so it also rescues the LAST attempt.
+    if (confirmPublished && scanner.sawFinalizeTimeout()) {
+      stderr.write(
+        `[mobile:publish] ${label} publish timed out finalizing (HTTP 524); checking whether the branch is offered.\n`,
+      );
+      let confirmed = false;
+      try {
+        confirmed = await confirmPublished(invocation.platform);
+      } catch {
+        // A probe failure is not evidence either way — fall through to the ladder.
+        stderr.write(`[mobile:publish] ${label} could not reach the update server to confirm; retrying as usual.\n`);
+      }
+      if (confirmed) {
+        stdout.write(
+          `[mobile:publish] ${label} branch is offered after the 524; skipping retries after attempt ${attempt}. Bundle identity was not verified.\n`,
+        );
+        return {
+          platform: invocation.platform,
+          success: true,
+          attempts: attempt,
+          failureKind: null,
+          noChange: false,
+        };
+      }
     }
 
     const failureKind = scanner.classify();
@@ -282,7 +412,7 @@ export async function publishSelfHostedPlatformWithRetry(
       stderr.write(
         `[mobile:publish] ${label} publish failed (${failureDescription(failureKind)})${exhausted}; not retrying.\n`,
       );
-      return { platform: invocation.platform, success: false, attempts: attempt, failureKind };
+      return { platform: invocation.platform, success: false, attempts: attempt, failureKind, noChange: false };
     }
 
     const delayMs = SELF_HOSTED_PUBLISH_RETRY_DELAYS_MS[attempt - 1];
@@ -293,7 +423,7 @@ export async function publishSelfHostedPlatformWithRetry(
       await sleeper(delayMs);
     } catch {
       stderr.write(`[mobile:publish] ${label} retry wait failed; not retrying.\n`);
-      return { platform: invocation.platform, success: false, attempts: attempt, failureKind };
+      return { platform: invocation.platform, success: false, attempts: attempt, failureKind, noChange: false };
     }
   }
 
@@ -304,6 +434,7 @@ export async function publishSelfHostedPlatformWithRetry(
     success: false,
     attempts: SELF_HOSTED_PUBLISH_MAX_ATTEMPTS,
     failureKind: 'unknown',
+    noChange: false,
   };
 }
 
@@ -317,7 +448,7 @@ export async function publishPlatformsSequentially(
     try {
       outcomes.push(await publishPlatform(platform));
     } catch {
-      outcomes.push({ platform, success: false, attempts: 0, failureKind: 'unknown' });
+      outcomes.push({ platform, success: false, attempts: 0, failureKind: 'unknown', noChange: false });
     }
   }
   return outcomes;

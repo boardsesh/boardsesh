@@ -10,8 +10,8 @@
       "viewProfile": "Voir le profil de {{name}}",
       "thisClimber": "ce grimpeur"
     },
-    "more": {
-      "title": "Plus",
+    "settings": {
+      "title": "Paramètres",
       "library": "Bibliothèque",
       "development": "Développement",
       "dev": {
@@ -384,6 +384,8 @@
       },
       "previews": {
         "title": "Aperçus",
+        "promptOnLaunchTitle": "Afficher les aperçus au démarrage",
+        "promptOnLaunchSubtitle": "S'applique au prochain démarrage de Boardsesh",
         "pickTitle": "Tester un aperçu de PR",
         "pickSubtitle": "Essaie une nouveauté avant sa sortie et dis-nous ce que ça donne",
         "testPlanTitle": "Plan de test #{{prNumber}}",
@@ -473,6 +475,14 @@
         "record": "Tes croix s'affichent ici dans Progression : éventail de cotations et ta plus grosse croix. Importe ton carnet Kilter et Tension depuis Aurora pour partir avec ton historique.",
         "accessory": "La barre du bas montre toujours ce qui est sur le mur. Change de voie depuis là.",
         "climbsTab": "Pour revenir à tes blocs, touche la loupe dans la barre d'onglets."
+      },
+      "link": {
+        "title": "Emporte tes croix {{boardName}} avec toi",
+        "body": "Ton compte {{boardName}} et Boardsesh sont distincts, même si tu utilises le même e-mail. Lie ton compte pour synchroniser les croix disponibles avec ton carnet. Le délai de synchronisation et l’historique disponible varient.",
+        "footnote": "Pour lier ton compte, utilise ton identifiant {{boardName}}, pas ton e-mail.",
+        "continue": "Lier mon compte {{boardName}}",
+        "skip": "Pas maintenant",
+        "skipHint": "Tu peux le faire à tout moment dans Réglages › Apps connectées."
       }
     },
     "nav": {
@@ -561,7 +571,7 @@
       "serverTitle": "Impossible de joindre Boardsesh pour l'instant",
       "serverBody": "Il faut notre serveur pour ça. Les boards téléchargées se parcourent, se cherchent et s'enregistrent toujours, et tes croix attendent sur ton téléphone.",
       "offlineModeTitle": "Le mode hors ligne est activé",
-      "offlineModeBody": "Il faut une connexion pour ça. Désactive le mode hors ligne depuis le bandeau ou dans Plus pour le charger.",
+      "offlineModeBody": "Il faut une connexion pour ça. Désactive le mode hors ligne depuis le bandeau ou dans Paramètres pour le charger.",
       "errorTitle": "Impossible de charger ça",
       "errorBody": "Ça n'est pas passé. Réessaie.",
       "retry": "Réessayer"
@@ -612,7 +622,7 @@
     "statistics": "Statistiques",
     "sessions": "Sessions",
     "createdClimbs": "Blocs créés",
-    "auroraMigration": "Migration Aurora",
+    "auroraMigration": "Récupérer votre carnet",
     "startClimbing": "Commencer à grimper",
     "signIn": "Se connecter",
     "nav": {
@@ -875,7 +885,7 @@
       "help": "Aide",
       "docs": "Doc développeur",
       "playlists": "Playlists",
-      "auroraMigration": "Migration Aurora",
+      "auroraMigration": "Récupérer ton carnet",
       "legal": "Mentions légales",
       "privacy": "Confidentialité",
       "gymsKilter": "Salles avec une board Kilter",

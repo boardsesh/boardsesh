@@ -25,7 +25,13 @@ const {
   request,
   recordOfflineRead,
   recordOfflineReadUnavailable,
+  getSimilarClimbsLocal,
+  ensureHoldIndex,
+  getHoldHeatmapLocal,
 } = vi.hoisted(() => ({
+  getHoldHeatmapLocal: vi.fn(),
+  getSimilarClimbsLocal: vi.fn(),
+  ensureHoldIndex: vi.fn(),
   getDatabaseHandle: vi.fn(),
   isBoardDownloadedLocally: vi.fn(),
   isBoardTypeDownloadedLocally: vi.fn(),
@@ -56,6 +62,13 @@ vi.mock('../../../db/queries/get-boardsesh-grade-local', () => ({
   getBoardseshGradesForAnglesLocal,
 }));
 vi.mock('../client', () => ({ getHttpClient: () => ({ request }) }));
+vi.mock('../../../db/queries/get-similar-climbs-local', () => ({ getSimilarClimbsLocal }));
+vi.mock('../../../db/queries/get-hold-heatmap-local', () => ({ getHoldHeatmapLocal }));
+vi.mock('../../../offline/hold-index-parser', () => ({ parseHoldRows: vi.fn() }));
+vi.mock('@boardsesh/offline-sync', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@boardsesh/offline-sync')>()),
+  ensureHoldIndex,
+}));
 // The rollup gate itself is covered in @boardsesh/offline-sync; here we assert
 // the interceptor hands it the right LANE for each terminal outcome (#4317).
 vi.mock('../../../offline/offline-usage-signal', () => ({
@@ -74,7 +87,7 @@ vi.mock('../../connectivity/connectivity-store', () => ({
 
 const fakeDb = { tag: 'db' };
 
-import { offlineAwareRequest } from '../offline-request';
+import { offlineAwareRequest, registerOfflineOperationForTests } from '../offline-request';
 import { setOfflineEngineEnabled, __resetOfflineEngineForTests } from '../../offline-engine';
 import {
   SEARCH_CLIMBS,
@@ -85,6 +98,14 @@ import {
   type GetClimbQueryResponse,
   type GetClimbQueryVariables,
 } from '../operations';
+import {
+  HOLD_HEATMAP_QUERY,
+  type HoldHeatmapQueryResponse,
+  type HoldHeatmapQueryVariables,
+  SIMILAR_CLIMBS_QUERY,
+  type SimilarClimbsResponse,
+  type SimilarClimbsVariables,
+} from '@boardsesh/graphql/operations';
 import {
   BOARDSESH_GRADE,
   BOARDSESH_GRADES_FOR_ANGLES,
@@ -930,5 +951,254 @@ describe('offlineAwareRequest — offline-usage signal lanes (#4317)', () => {
       surface: 'grade',
       boardName: 'tension',
     });
+  });
+});
+
+// `local-only` ops (similar climbs): the server resolver is admin-gated, so a
+// non-admin reaching it would see an auth error instead of an empty strip. The
+// policy must never touch the network — not online, not as a rescue.
+describe('offlineAwareRequest — local-only network policy', () => {
+  const LOCAL_ONLY_DOC = 'query LocalOnlyTest { localOnlyTest }';
+  type LocalOnlyVars = { boardName: string };
+  type LocalOnlyResponse = { items: string[] };
+  const canServeLocal = vi.fn<() => Promise<boolean>>();
+  const resolveLocal = vi.fn<() => Promise<LocalOnlyResponse>>();
+  let unregister: () => void = () => undefined;
+
+  beforeEach(() => {
+    canServeLocal.mockResolvedValue(true);
+    resolveLocal.mockResolvedValue({ items: ['local'] });
+    unregister = registerOfflineOperationForTests<LocalOnlyVars, LocalOnlyResponse>({
+      document: LOCAL_ONLY_DOC,
+      networkPolicy: 'local-only',
+      surface: 'search',
+      boardNameOf: ({ boardName }) => boardName,
+      canServeLocal,
+      resolveLocal,
+      offlineFallback: () => ({ items: [] }),
+    });
+  });
+
+  afterEach(() => {
+    unregister();
+  });
+
+  it('serves local while online and records the online_local lane', async () => {
+    setOnline(true);
+    const result = await offlineAwareRequest<LocalOnlyResponse>(LOCAL_ONLY_DOC, { boardName: 'kilter' });
+    expect(result).toEqual({ items: ['local'] });
+    expect(request).not.toHaveBeenCalled();
+    expect(recordOfflineRead).toHaveBeenCalledExactlyOnceWith({
+      lane: 'online_local',
+      surface: 'search',
+      boardName: 'kilter',
+    });
+  });
+
+  it('serves local while offline under the offline lane', async () => {
+    setOfflineBecause('backend_unreachable');
+    const result = await offlineAwareRequest<LocalOnlyResponse>(LOCAL_ONLY_DOC, { boardName: 'kilter' });
+    expect(result).toEqual({ items: ['local'] });
+    expect(recordOfflineRead).toHaveBeenCalledExactlyOnceWith({
+      lane: 'backend_unreachable_local',
+      surface: 'search',
+      boardName: 'kilter',
+    });
+  });
+
+  it('returns the fallback ONLINE when local cannot serve, without calling the network or the gap signal', async () => {
+    setOnline(true);
+    canServeLocal.mockResolvedValue(false);
+    const result = await offlineAwareRequest<LocalOnlyResponse>(LOCAL_ONLY_DOC, { boardName: 'kilter' });
+    expect(result).toEqual({ items: [] });
+    expect(request).not.toHaveBeenCalled();
+    expect(resolveLocal).not.toHaveBeenCalled();
+    // Online is not an offline gap: recording it would share the rollup's dedupe key.
+    expect(recordOfflineReadUnavailable).not.toHaveBeenCalled();
+  });
+
+  it('returns the fallback OFFLINE when local cannot serve, with the offline reason', async () => {
+    setOnline(false);
+    canServeLocal.mockResolvedValue(false);
+    const result = await offlineAwareRequest<LocalOnlyResponse>(LOCAL_ONLY_DOC, { boardName: 'kilter' });
+    expect(result).toEqual({ items: [] });
+    expect(request).not.toHaveBeenCalled();
+    expect(recordOfflineReadUnavailable).toHaveBeenCalledExactlyOnceWith({
+      reason: 'board_not_downloaded',
+      surface: 'search',
+      boardName: 'kilter',
+      connectivityReason: 'device_offline',
+    });
+  });
+
+  it('names a missing db handle as its own reason and still skips the network', async () => {
+    setOnline(false);
+    getDatabaseHandle.mockReturnValue(null);
+    const result = await offlineAwareRequest<LocalOnlyResponse>(LOCAL_ONLY_DOC, { boardName: 'kilter' });
+    expect(result).toEqual({ items: [] });
+    expect(canServeLocal).not.toHaveBeenCalled();
+    expect(request).not.toHaveBeenCalled();
+    expect(recordOfflineReadUnavailable).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: 'local_db_unavailable' }),
+    );
+  });
+
+  it('ignores the offline-engine flag: flag off + online still reads local, never the network', async () => {
+    setOfflineEngineEnabled(false);
+    setOnline(true);
+    const result = await offlineAwareRequest<LocalOnlyResponse>(LOCAL_ONLY_DOC, { boardName: 'kilter' });
+    expect(result).toEqual({ items: ['local'] });
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('propagates a local read error instead of rescuing through the network', async () => {
+    setOnline(true);
+    resolveLocal.mockRejectedValue(new Error('sqlite read failed'));
+    await expect(offlineAwareRequest<LocalOnlyResponse>(LOCAL_ONLY_DOC, { boardName: 'kilter' })).rejects.toThrow(
+      'sqlite read failed',
+    );
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('returns the fallback with no signal when called without variables', async () => {
+    setOnline(true);
+    const result = await offlineAwareRequest<LocalOnlyResponse>(LOCAL_ONLY_DOC);
+    expect(result).toEqual({ items: [] });
+    expect(request).not.toHaveBeenCalled();
+    expect(recordOfflineReadUnavailable).not.toHaveBeenCalled();
+  });
+});
+
+// Similar climbs is registered local-only: the server resolver is admin-gated,
+// so a climber whose board is not downloaded gets an empty strip from here and
+// the download offer from the section — never a request.
+describe('offlineAwareRequest — SIMILAR_CLIMBS_QUERY (local-only)', () => {
+  const similarVars: SimilarClimbsVariables = {
+    input: { boardType: 'kilter', layoutId: 1, sizeId: 5, climbUuid: 'c1', angle: 40, limit: 12 },
+  };
+
+  beforeEach(() => {
+    ensureHoldIndex.mockResolvedValue({ status: 'complete' });
+    getSimilarClimbsLocal.mockResolvedValue([{ uuid: 'twin' }]);
+  });
+
+  it('builds the holds index, then answers from SQLite while online', async () => {
+    setOnline(true);
+    isBoardDownloadedLocally.mockResolvedValue(true);
+    const result = await offlineAwareRequest<SimilarClimbsResponse>(SIMILAR_CLIMBS_QUERY, similarVars);
+    expect(result).toEqual({ similarClimbs: [{ uuid: 'twin' }] });
+    expect(isBoardDownloadedLocally).toHaveBeenCalledWith(fakeDb, { boardType: 'kilter', layoutId: 1, sizeId: 5 });
+    expect(ensureHoldIndex).toHaveBeenCalledWith(
+      fakeDb,
+      { boardType: 'kilter', layoutId: 1, sizeId: 5 },
+      expect.objectContaining({ parseHoldRows: expect.any(Function) }),
+    );
+    expect(ensureHoldIndex.mock.invocationCallOrder[0]).toBeLessThan(getSimilarClimbsLocal.mock.invocationCallOrder[0]);
+    expect(request).not.toHaveBeenCalled();
+    expect(recordOfflineRead).toHaveBeenCalledExactlyOnceWith({
+      lane: 'online_local',
+      surface: 'similar_climbs',
+      boardName: 'kilter',
+    });
+  });
+
+  it('returns an empty strip ONLINE for a board that is not downloaded — no request', async () => {
+    setOnline(true);
+    isBoardDownloadedLocally.mockResolvedValue(false);
+    const result = await offlineAwareRequest<SimilarClimbsResponse>(SIMILAR_CLIMBS_QUERY, similarVars);
+    expect(result).toEqual({ similarClimbs: [] });
+    expect(request).not.toHaveBeenCalled();
+    expect(ensureHoldIndex).not.toHaveBeenCalled();
+    expect(recordOfflineReadUnavailable).not.toHaveBeenCalled();
+  });
+
+  it('returns an empty strip OFFLINE for a board that is not downloaded', async () => {
+    setOnline(false);
+    isBoardDownloadedLocally.mockResolvedValue(false);
+    const result = await offlineAwareRequest<SimilarClimbsResponse>(SIMILAR_CLIMBS_QUERY, similarVars);
+    expect(result).toEqual({ similarClimbs: [] });
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('throws on an aborted index build so a partial strip is never cached', async () => {
+    setOnline(true);
+    isBoardDownloadedLocally.mockResolvedValue(true);
+    ensureHoldIndex.mockResolvedValue({ status: 'aborted' });
+    await expect(offlineAwareRequest<SimilarClimbsResponse>(SIMILAR_CLIMBS_QUERY, similarVars)).rejects.toThrow(
+      'interrupted',
+    );
+    expect(getSimilarClimbsLocal).not.toHaveBeenCalled();
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('treats an empty local list as the answer, not a miss to retry', async () => {
+    setOnline(true);
+    isBoardDownloadedLocally.mockResolvedValue(true);
+    getSimilarClimbsLocal.mockResolvedValue([]);
+    const result = await offlineAwareRequest<SimilarClimbsResponse>(SIMILAR_CLIMBS_QUERY, similarVars);
+    expect(result).toEqual({ similarClimbs: [] });
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('cannot serve an input without a size (the scope is size-exact)', async () => {
+    setOnline(true);
+    isBoardDownloadedLocally.mockResolvedValue(true);
+    const result = await offlineAwareRequest<SimilarClimbsResponse>(SIMILAR_CLIMBS_QUERY, {
+      input: { ...similarVars.input, sizeId: null },
+    });
+    expect(result).toEqual({ similarClimbs: [] });
+    expect(isBoardDownloadedLocally).not.toHaveBeenCalled();
+    expect(request).not.toHaveBeenCalled();
+  });
+});
+
+// The hold heatmap is local-only too, and gated like search: the climb set is the
+// list's, so a filter SQLite cannot express declines exactly as search does.
+describe('offlineAwareRequest — HOLD_HEATMAP_QUERY (local-only)', () => {
+  const heatmapVars: HoldHeatmapQueryVariables = {
+    input: { boardName: 'kilter', layoutId: 1, sizeId: 5, setIds: '1', angle: 40 },
+  };
+  const stat = { holdId: 7, totalUses: 2, startingUses: 0, handUses: 2, footUses: 0, finishUses: 0, totalAscents: 5 };
+
+  beforeEach(() => {
+    getHoldHeatmapLocal.mockResolvedValue([stat]);
+    isOfflineSearchSupported.mockReturnValue(true);
+  });
+
+  it('answers from SQLite while online for a downloaded board', async () => {
+    setOnline(true);
+    isBoardDownloadedLocally.mockResolvedValue(true);
+    const result = await offlineAwareRequest<HoldHeatmapQueryResponse>(HOLD_HEATMAP_QUERY, heatmapVars);
+    expect(result).toEqual({ holdHeatmap: [stat] });
+    expect(getHoldHeatmapLocal).toHaveBeenCalledWith(fakeDb, heatmapVars.input);
+    expect(request).not.toHaveBeenCalled();
+    expect(recordOfflineRead).toHaveBeenCalledExactlyOnceWith({
+      lane: 'online_local',
+      surface: 'hold_heatmap',
+      boardName: 'kilter',
+    });
+  });
+
+  it('returns the unavailable fallback ONLINE for a board that is not downloaded — no request', async () => {
+    setOnline(true);
+    isBoardDownloadedLocally.mockResolvedValue(false);
+    const result = await offlineAwareRequest<HoldHeatmapQueryResponse>(HOLD_HEATMAP_QUERY, heatmapVars);
+    expect(result).toEqual({ holdHeatmap: [], unavailable: true });
+    expect(request).not.toHaveBeenCalled();
+    expect(getHoldHeatmapLocal).not.toHaveBeenCalled();
+    // Online, the unavailable signal stays quiet (local-only records offline gaps only).
+    expect(recordOfflineReadUnavailable).not.toHaveBeenCalled();
+  });
+
+  it('declines a filter SQLite cannot run on a downloaded board — no request', async () => {
+    setOnline(false);
+    isOfflineSearchSupported.mockReturnValue(false);
+    isBoardDownloadedLocally.mockResolvedValue(true);
+    const result = await offlineAwareRequest<HoldHeatmapQueryResponse>(HOLD_HEATMAP_QUERY, heatmapVars);
+    expect(result).toEqual({ holdHeatmap: [], unavailable: true });
+    expect(request).not.toHaveBeenCalled();
+    expect(recordOfflineReadUnavailable).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: 'filter_unsupported', surface: 'hold_heatmap' }),
+    );
   });
 });

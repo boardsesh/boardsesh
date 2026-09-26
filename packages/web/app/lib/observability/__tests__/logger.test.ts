@@ -38,7 +38,7 @@ describe('createJsonLogger in production mode', () => {
     const logger = createJsonLogger({ service: 'web', pretty: false });
 
     try {
-      logger.info('prewarm-heatmap done', { boardName: 'kilter', warmed: 12, failed: 0, durationMs: 4310 });
+      logger.info('profile-percentiles done', { boardName: 'kilter', warmed: 12, failed: 0, durationMs: 4310 });
     } finally {
       streams.restore();
     }
@@ -54,7 +54,7 @@ describe('createJsonLogger in production mode', () => {
       level: 'info',
       service: 'web',
       time: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/),
-      message: 'prewarm-heatmap done',
+      message: 'profile-percentiles done',
       boardName: 'kilter',
       warmed: 12,
       failed: 0,

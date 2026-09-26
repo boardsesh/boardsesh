@@ -261,7 +261,7 @@ export function useConnectivityBanner(): ConnectivityBannerModel {
   }, []);
 
   const openSyncIssues = useCallback(() => {
-    router.push('/(tabs)/profile/more');
+    router.push('/settings');
   }, [router]);
 
   return useMemo(

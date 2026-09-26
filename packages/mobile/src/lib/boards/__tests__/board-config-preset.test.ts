@@ -9,7 +9,7 @@ import {
   getBoardSetsForLayoutAndSize,
   getBoardSizesForLayoutId,
   getDefaultBoardSizeForLayout,
-} from '../../custom-board-options';
+} from '@boardsesh/board-config';
 
 function popular(overrides: Partial<PopularBoardConfig>): PopularBoardConfig {
   return {

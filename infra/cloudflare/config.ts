@@ -45,6 +45,29 @@ export const ASSETS_CNAME_TARGET = 'boardsesh-static-assets.t3.tigrisbucket.io';
 /** Path prefix whose responses are immutable (`Cache-Control: … immutable`, 1y) and safe to edge-cache. */
 export const OG_PATH_PREFIX = '/og/';
 
+/**
+ * The name the homelab DR standby uses to reach the production PostgreSQL
+ * primary, fronting Railway's TCP proxy for that service.
+ *
+ * It exists so the standby can verify a certificate against a hostname we
+ * control. Railway only ever allocates a random high port for a TCP proxy and
+ * can reassign the proxy hostname, so a certificate issued for
+ * `*.proxy.rlwy.net` would be an identity claim over a name someone else
+ * administers, and would need reissuing whenever Railway moved it. With this
+ * record in front, that becomes a DNS edit instead.
+ *
+ * See docs/BOARDSESH_POSTGRES_DR.md in blackheathdc-ansible for the standby side.
+ */
+export const DR_PRIMARY_HOSTNAME = 'pgdr.boardsesh.com';
+
+/**
+ * Railway's TCP proxy host for the `PostGIS - PG18` service. The proxy routes by
+ * PORT rather than by hostname, so any name resolving to this address reaches
+ * the same database; the port lives in the standby's `primary_conninfo`, because
+ * DNS cannot carry one.
+ */
+export const DR_PRIMARY_CNAME_TARGET = 'iriguchi.proxy.rlwy.net';
+
 /** The marketing/SEO www origin whose crawl cost the rules below exist to cap. */
 export const WWW_HOSTNAME = 'www.boardsesh.com';
 
@@ -965,6 +988,28 @@ export const desiredCloudflareState: CloudflareDesiredState = {
       name: ASSETS_HOSTNAME,
       type: 'CNAME',
       content: ASSETS_CNAME_TARGET,
+      ttl: 1,
+      proxied: false,
+      settings: {
+        flatten_cname: false,
+      },
+    },
+    // The DR standby's route to the production primary. Fully managed and
+    // created when absent, exactly like assets above.
+    //
+    // `proxied: false` is load-bearing and not a preference: this carries the
+    // PostgreSQL wire protocol on a high port, and Cloudflare's proxy handles
+    // neither raw TCP nor a non-HTTP port. Orange-clouding it would stop
+    // replication outright.
+    //
+    // Nothing here terminates TLS. The primary presents its own certificate
+    // end-to-end and the standby verifies it with sslmode=verify-full against
+    // this name, so the record is pure indirection.
+    {
+      management: 'full',
+      name: DR_PRIMARY_HOSTNAME,
+      type: 'CNAME',
+      content: DR_PRIMARY_CNAME_TARGET,
       ttl: 1,
       proxied: false,
       settings: {

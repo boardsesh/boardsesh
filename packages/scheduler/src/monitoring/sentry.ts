@@ -56,7 +56,7 @@ export function setupCronMonitoring({ env = process.env, logger }: SetupCronMoni
     // (This replaces a comment claiming tracing here would be noise. It was
     // written when nothing in the fleet emitted spans, so a scheduler trace
     // would have been an island. Now that web and backend are traced, a job's
-    // outbound call to /api/internal/prewarm-heatmap/* — which has a 15-minute
+    // outbound call to /api/internal/profile-percentiles — which has a 15-minute
     // timeout — is exactly the thing that needs a duration on it. The cron
     // check-in only records that a run finished, not how close to that ceiling
     // it came; the span is the warning before the timeout.)

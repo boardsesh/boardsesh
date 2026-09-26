@@ -35,6 +35,7 @@ export function getFilterSummary(
       onlyTallClimbs: filters.onlyTallClimbs,
       onlyWideClimbs: filters.onlyWideClimbs,
       onlyWithBetaVideos: filters.onlyWithBetaVideos,
+      includeOtherAngles: filters.includeOtherAngles,
       status: filters.status,
       hideAttempted: filters.hideAttempted,
       hideCompleted: filters.hideCompleted,

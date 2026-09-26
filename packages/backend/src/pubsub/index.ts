@@ -216,6 +216,7 @@ class PubSub {
       climbStats: this.climbStatsChannel.getRuntimeStats(),
       boardPresence: this.boardPresenceChannel.getRuntimeStats(),
       boardQueue: this.boardQueueChannel.getRuntimeStats(),
+      redisMessageRejects: this.redisAdapter?.getRejectedMessageCounts() ?? { invalidJson: 0, invalidEnvelope: 0 },
     };
   }
 

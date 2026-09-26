@@ -42,10 +42,11 @@ function readBody(req: IncomingMessage, limitBytes: number): Promise<Buffer | { 
  * gzips the /batch/ payload when CompressionStream is available, so the body is
  * binary, not text).
  *
- * Also forwards the browser's User-Agent. PostHog derives `$raw_user_agent` (and
- * its bot/traffic classification + device parsing) from the request UA header;
- * Node's fetch sends none by default, so without this every proxied event lands
- * with an empty UA and PostHog flags it as a bot.
+ * Also forwards the browser's User-Agent, so the upstream request carries the
+ * real one rather than Node fetch's default. That header does NOT fill the
+ * `$raw_user_agent` event property PostHog's bot flag (`$virt_is_bot`) reads:
+ * 0 of ~660k proxied web events had it (#5653). The web client registers
+ * `$raw_user_agent` itself as a super property (packages/web/app/lib/analytics.ts).
  */
 export async function handlePosthogProxy(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
   if (!applyCorsHeaders(req, res)) return;

@@ -13,6 +13,13 @@ import { Icon } from '../Icon';
 import { ClimbListThumbnail } from '../ClimbListThumbnail';
 import { buildClimbStub, formatByline, rankBySizeCompatibility } from './similar-climbs-utils';
 import { useSimilarClimbs } from '../../lib/graphql/hooks';
+import { useActiveBoard } from '../../lib/graphql/use-active-board';
+import { useOfflineNudge } from '../../lib/offline-nudges/use-offline-nudge';
+import { useConfirmBoardDownload } from '../../offline/use-confirm-board-download';
+import { offlineBoardKeyForBoard, useSetting } from '../../settings';
+import { OfflineNudgeCard } from '../offline/OfflineNudgeCard';
+import { useIsOffline } from '../../hooks/use-is-offline';
+import { useToast } from '../../providers/toast-provider';
 import { useDisplayGrade } from '../../hooks/use-display-grade';
 import { useTheme } from '../../providers/theme-provider';
 import { iosSystemColors } from '../../theme/ios-colors';
@@ -44,7 +51,15 @@ export const SimilarClimbsSection = memo(function SimilarClimbsSection({
   const { t: tClimbs } = useTranslation('climbs');
   const { brandColors } = useTheme();
   const { resolveGrade } = useDisplayGrade();
-  const { data: climbs, isLoading, isError, refetch } = useSimilarClimbs(boardName, climbUuid, layoutId, angle);
+  const scope = useMemo(() => ({ boardName, layoutId, sizeId }), [boardName, layoutId, sizeId]);
+  const {
+    data: climbs,
+    isLoading,
+    isError,
+    refetch,
+    source,
+    isResolvingSource,
+  } = useSimilarClimbs(scope, climbUuid, angle);
 
   // Wall-compatible climbs rank first; incompatible ones are dimmed and last.
   const ranked = useMemo(() => rankBySizeCompatibility(climbs ?? [], sizeId), [climbs, sizeId]);
@@ -62,19 +77,35 @@ export const SimilarClimbsSection = memo(function SimilarClimbsSection({
     void refetch();
   }, [refetch]);
 
-  if (isLoading) {
+  if (isLoading || isResolvingSource) {
     return (
-      <ScrollView
-        horizontal
-        nestedScrollEnabled
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.scroller}
-      >
-        {Array.from({ length: SKELETON_COUNT }, (_, index) => (
-          <View key={index} style={[styles.card, styles.skeletonCard]} />
-        ))}
-      </ScrollView>
+      <View style={styles.loading}>
+        <ScrollView
+          horizontal
+          nestedScrollEnabled
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.scroller}
+        >
+          {Array.from({ length: SKELETON_COUNT }, (_, index) => (
+            <View key={index} style={[styles.card, styles.skeletonCard]} />
+          ))}
+        </ScrollView>
+        {/* The first read of a downloaded board builds its holds index, which
+            can take a few seconds on a big catalogue. Say so. */}
+        {source === 'local' ? (
+          <Text variant="caption1" color={iosSystemColors.systemGray}>
+            {t('mobile.similarClimbs.preparing')}
+          </Text>
+        ) : null}
+      </View>
     );
+  }
+
+  // Similar climbs only read a downloaded board (the server query is too
+  // expensive to run for everyone), so a board that is not downloaded gets
+  // the download offer in place of the strip.
+  if (source === 'download') {
+    return <SimilarClimbsDownloadOffer boardName={boardName} layoutId={layoutId} sizeId={sizeId} />;
   }
 
   if (isError) {
@@ -93,16 +124,7 @@ export const SimilarClimbsSection = memo(function SimilarClimbsSection({
     );
   }
 
-  if (ranked.length === 0) {
-    return (
-      <View style={styles.emptyContainer}>
-        <Icon name="search" size={20} color={iosSystemColors.systemGray} />
-        <Text variant="subheadline" color={iosSystemColors.systemGray}>
-          {t('mobile.similarClimbs.empty')}
-        </Text>
-      </View>
-    );
-  }
+  if (ranked.length === 0) return <SimilarClimbsEmpty message={t('mobile.similarClimbs.empty')} />;
 
   return (
     <ScrollView
@@ -153,6 +175,95 @@ export const SimilarClimbsSection = memo(function SimilarClimbsSection({
   );
 });
 
+function SimilarClimbsEmpty({ message }: { message: string }) {
+  return (
+    <View style={styles.emptyContainer}>
+      <Icon name="search" size={20} color={iosSystemColors.systemGray} />
+      <Text variant="subheadline" color={iosSystemColors.systemGray}>
+        {message}
+      </Text>
+    </View>
+  );
+}
+
+type DownloadOfferProps = { boardName: string; layoutId: number; sizeId: number };
+
+/**
+ * The carrot for a board that is not on the phone. Offered only for the
+ * climber's ACTIVE board, and only when the drawer shows that exact board
+ * (type, layout, size): a climb reached by deep link or a party queue may be
+ * on a board this climber does not own, and downloading a stranger's board
+ * from here would be the wrong offer. Those get a neutral line instead.
+ */
+const SimilarClimbsDownloadOffer = memo(function SimilarClimbsDownloadOffer({
+  boardName,
+  layoutId,
+  sizeId,
+}: DownloadOfferProps) {
+  const { t } = useTranslation('session');
+  const { t: tBoards } = useTranslation('boards');
+  const { data: activeBoard } = useActiveBoard();
+  const board =
+    activeBoard &&
+    activeBoard.boardType === boardName &&
+    activeBoard.layoutId === layoutId &&
+    activeBoard.sizeId === sizeId
+      ? activeBoard
+      : null;
+  const nudge = useOfflineNudge({ surface: 'similar_climbs', board });
+  const { confirmAndDownload, armWithoutConfirm } = useConfirmBoardDownload();
+  const [enabledScopeKeys] = useSetting('syncEnabledBoards');
+  const isOffline = useIsOffline();
+  const { showToast } = useToast();
+
+  const handleDownload = useCallback(() => {
+    if (!board) return;
+    void Haptics.selectionAsync();
+    const attribution = { trigger: 'similar_climbs', source: 'play_drawer' } as const;
+    // No signal: arm only. A cycle kicked from here would fail and spend a
+    // bootstrap attempt (see OfflineCatalogCta); the scheduler pulls the board
+    // the moment the phone reconnects.
+    if (isOffline) {
+      nudge.accept('armed');
+      armWithoutConfirm(board, attribution);
+      showToast(tBoards('mobile.offline.nudge.noCatalog.armedToast', { name: board.name }), 'success');
+      return;
+    }
+    // The size dialog inside confirmAndDownload is the consent gate: only a
+    // confirmed download counts as an accept.
+    void confirmAndDownload(board, attribution).then((confirmed) => {
+      if (confirmed) nudge.accept('download');
+    });
+  }, [board, isOffline, nudge, armWithoutConfirm, confirmAndDownload, showToast, tBoards]);
+
+  const handleDismiss = useCallback(() => nudge.dismiss('once'), [nudge]);
+
+  if (board && nudge.visible) {
+    return (
+      <OfflineNudgeCard
+        testID="similar-climbs-download-offer"
+        title={tBoards('mobile.offline.nudge.similarClimbs.title')}
+        body={tBoards('mobile.offline.nudge.similarClimbs.body', { name: board.name })}
+        primaryLabel={tBoards('mobile.offline.nudge.similarClimbs.cta', { name: board.name })}
+        onPrimary={handleDownload}
+        dismissLabel={tBoards('mobile.offline.nudge.notNow')}
+        onDismiss={handleDismiss}
+      />
+    );
+  }
+
+  // Already asked for (armed or mid-download): say when the strip arrives
+  // rather than "no similar climbs", which would read as the real answer.
+  if (board && enabledScopeKeys.includes(offlineBoardKeyForBoard(board))) {
+    return <SimilarClimbsEmpty message={t('mobile.similarClimbs.waitingForDownload', { name: board.name })} />;
+  }
+
+  // No card (a climb from another board, the card dismissed, or offline
+  // downloads unavailable here): still not "no similar climbs", which would
+  // read as the real answer for a board nobody searched.
+  return <SimilarClimbsEmpty message={t('mobile.similarClimbs.downloadToSee')} />;
+});
+
 const styles = StyleSheet.create({
   scroller: {
     gap: spacing[3],
@@ -184,6 +295,9 @@ const styles = StyleSheet.create({
   },
   byline: {
     width: '100%',
+  },
+  loading: {
+    gap: spacing[2],
   },
   emptyContainer: {
     flexDirection: 'row',

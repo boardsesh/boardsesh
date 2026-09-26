@@ -1,3 +1,4 @@
+vi.mock('../../../src/lib/onboarding/use-onboarding-link-offer', () => ({ useOnboardingLinkOffer: () => () => false }));
 // @vitest-environment jsdom
 //
 // #4166. Creating a board silently did nothing: `handleCreate` looked for an

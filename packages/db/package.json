@@ -95,6 +95,7 @@
     "test:explain": "tsx --test src/queries/climbs/__tests__/search-climbs-explain.integration.test.ts",
     "test:migration-journal": "tsx --test scripts/migration-journal-verification.integration.test.ts",
     "db:verify-journal": "tsx scripts/verify-migration-journal.ts",
+    "db:verify-serial-plan": "tsx scripts/verify-serial-plan.ts",
     "db:studio": "drizzle-kit studio",
     "db:import-moonboard": "tsx scripts/import-moonboard-problems.ts",
     "db:import-moonboard-2024": "tsx scripts/import-moonboard-2024.ts",
@@ -114,6 +115,7 @@
     "db:dedupe-serial-boards": "tsx scripts/dedupe-serial-boards.ts",
     "db:dedupe-beta-links": "tsx scripts/dedupe-beta-links.ts",
     "db:refresh-climb-grades": "tsx scripts/refresh-climb-grades.ts",
+    "db:refresh-climb-neighbors": "tsx scripts/refresh-climb-neighbors.ts",
     "db:refresh-moonboard-angle-estimates": "tsx scripts/refresh-moonboard-angle-estimates.ts",
     "db:refresh-moonboard-wide-angle-estimates": "tsx scripts/refresh-moonboard-wide-angle-estimates.ts",
     "db:seed-social": "tsx scripts/seed-social.ts",
@@ -125,6 +127,7 @@
   "dependencies": {
     "@boardsesh/board-config": "workspace:*",
     "@boardsesh/board-constants": "workspace:*",
+    "@boardsesh/climb-filters": "workspace:*",
     "@boardsesh/kiosk": "workspace:*",
     "@boardsesh/shared-schema": "workspace:*",
     "@boardsesh/sync-runtime": "workspace:*",

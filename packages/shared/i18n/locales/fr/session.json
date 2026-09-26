@@ -210,7 +210,10 @@
     "similarClimbs": {
       "title": "Voies similaires",
       "empty": "Aucune voie similaire trouvee",
-      "retry": "Reessayer"
+      "retry": "Reessayer",
+      "preparing": "Préparation des blocs similaires…",
+      "waitingForDownload": "Les blocs similaires arrivent dès que {{name}} a fini de se télécharger.",
+      "downloadToSee": "Télécharge cette board pour voir les blocs similaires"
     },
     "community": {
       "moderation": {
@@ -311,17 +314,18 @@
     },
     "restTimer": {
       "armLabel": "Minuteur de repos",
-      "armDescription": "Chronomètre ton repos après chaque croix et passe au bloc suivant quand il est écoulé.",
+      "armDescription": "Chronomètre ton repos entre les blocs et passe au bloc suivant quand il est écoulé.",
       "waitingForTick": "Enregistre un bloc pour démarrer",
       "targetLabel": "Repos",
       "targetAria": "Durée du repos",
       "off": "Désactivé",
       "modeLabel": "Cadence",
       "modeAria": "Cadence du minuteur de repos",
-      "modeAfterTick": "Après chaque croix",
+      "modeAfterTick": "Après chaque bloc",
       "modeOnTheMinute": "Rythme fixe",
-      "modeAfterTickHint": "Ton repos démarre dès que tu enregistres un bloc.",
-      "modeOnTheMinuteHint": "Le rythme garde son tempo, quelle que soit la durée de ton essai.",
+      "modeEvery": "Toutes les {{length}}",
+      "modeAfterTickHint": "Ton repos repart à zéro à chaque essai ou croix que tu enregistres.",
+      "modeOnTheMinuteHint": "Des créneaux fixes dès que tu l’actives. Enregistrer un essai ou une croix ne relance jamais le chrono.",
       "autoAdvance": "Passer au bloc suivant",
       "autoAdvanceHint": "Boardsesh l’allume sur le mur pour toi.",
       "autoAdvanceBlocked": "Seule la personne qui pilote le mur peut faire avancer la file.",

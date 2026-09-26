@@ -2,11 +2,12 @@ import { desc, sql, and, eq } from 'drizzle-orm';
 import type { DbInstance } from '../../client/postgres';
 import { boardClimbs, boardClimbStats, boardClimbGrades } from '../../schema/index';
 import { withSerialPlan } from '../util/serial-plan';
-import { createClimbFilters } from './create-climb-filters';
+import { createClimbFilters, gradeValueSql } from './create-climb-filters';
 import {
   boardClimbStatsAtSetAngle,
   effectiveStatsColumn,
   gradeJoinAngleSql,
+  resolveBrowsedAngleRestriction,
   resolveCrossAngleStats,
   resolvedStatsAngleSql,
 } from './effective-stats';
@@ -154,8 +155,14 @@ export const searchClimbs = async (
   const page = clampSearchPage(searchParams.page);
   const pageSize = searchParams.pageSize ?? 20;
 
+  // Both angle decisions come from ./effective-stats, and countClimbs passes the
+  // same two, so the list and its count badge describe one universe. On Woods
+  // without the opt-in this is the browsed-angle restriction (issue #5642), which
+  // takes the ordinary stats-driven path below: its INNER JOIN already satisfies
+  // the restriction's stats arm, and the fallback reads the same WHERE.
   const filters = createClimbFilters(params, searchParams, userId, {
     crossAngleStats: resolveCrossAngleStats(params, searchParams),
+    restrictToBrowsedAngle: resolveBrowsedAngleRestriction(params, searchParams),
   });
   // Derive from the filter builder's unified predicate (onlyDrafts AND a userId),
   // not `!!searchParams.onlyDrafts` — otherwise onlyDrafts-without-userId makes this
@@ -262,6 +269,14 @@ export type SearchPath = 'standard-only' | 'stats-driven-only' | 'stats-driven-w
  * INNER JOIN this flag forces would drop exactly those climbs before the WHERE
  * clause's Boardsesh-grade fallback ever runs, so a grade-range-only filter must
  * fall through to `stats-driven-with-fallback` (or `standard-only`) instead.
+ *
+ * An angle-bound search WITHOUT cross-angle needs no branch of its own. Its
+ * browsed-angle restriction (issue #5642) is one more predicate in
+ * `getClimbWhereConditions`, and its stats arm is the browsed-angle row-presence
+ * probe — always true under the stats-driven INNER JOIN. So the stats-driven
+ * pages are exactly what they were, the fallback applies the same WHERE and only
+ * loses the stats-less climbs set at other angles, and its stats-having prefix
+ * still lines up with the stats-driven pages row for row.
  */
 export function chooseSearchPath(input: {
   statsDrivenSort: StatsDrivenSort | null;
@@ -522,7 +537,13 @@ async function runStandardSearch(
     // `popular` is untouched: it already sums ascents across every angle, so it was
     // never angle-blind in the way this fix addresses.
     ascents: sql`${statsCol('ascensionistCount')}`,
-    difficulty: sql`ROUND(${statsCol('displayDifficulty')}::numeric, 0)`,
+    // Under the Boardsesh source the sort keys on the grade the row is labelled
+    // with, the same value the grade-range filter reads (issue #5643). The upstream
+    // sort is unchanged: no fallback, so stats-less climbs keep sorting last.
+    difficulty:
+      searchParams.gradeSource === 'boardsesh'
+        ? gradeValueSql(statsCol('displayDifficulty'), 'boardsesh')
+        : sql`ROUND(${statsCol('displayDifficulty')}::numeric, 0)`,
     name: sql`${boardClimbs.name}`,
     quality: sql`${statsCol('qualityAverage')}`,
     creation: sql`${boardClimbs.createdAt}`,

@@ -1,6 +1,241 @@
 {
-  "generatedAt": "2026-09-21T23:48:11.616Z",
+  "generatedAt": "2026-09-25T23:41:46.011Z",
   "entries": [
+    {
+      "prNumber": 5790,
+      "category": "fixed",
+      "title": "Two Kilter-built LED boxes in one gym now each get their own row when you connect, so you can pick the wall you're at.",
+      "mergedAt": "2026-09-25T23:26:42Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5790"
+    },
+    {
+      "prNumber": 5792,
+      "category": "fixed",
+      "title": "A climb pulled in from another angle now tells you which angle its grade and sends come from — in the list and in the climb header, not just the screen-reader label",
+      "mergedAt": "2026-09-25T23:22:21Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5792"
+    },
+    {
+      "prNumber": 5774,
+      "category": "fixed",
+      "title": "The Attempt and Flash buttons stay lined up while you type a note",
+      "mergedAt": "2026-09-25T22:24:51Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5774"
+    },
+    {
+      "prNumber": 5783,
+      "category": "fixed",
+      "title": "Tap connect and the board sheet opens right away while it looks for your saved board",
+      "mergedAt": "2026-09-25T21:43:16Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5783",
+      "body": "Board off or out of range? Tap \"Search for any board\" to skip the wait"
+    },
+    {
+      "prNumber": 5772,
+      "category": "fixed",
+      "title": "Your note stays in view above the keyboard when you log or edit a tick",
+      "mergedAt": "2026-09-25T21:41:12Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5772"
+    },
+    {
+      "prNumber": 5771,
+      "category": "fixed",
+      "title": "The rest-length slider now spans the full card, so it's easy to drag between sets.",
+      "mergedAt": "2026-09-25T21:40:50Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5771",
+      "body": "Set up a fixed window like \"Every 3:00\" straight from the session card. Logging attempts or sends won't restart it."
+    },
+    {
+      "prNumber": 5745,
+      "category": "new",
+      "title": "Find a gym by the exact wall you want: pick a board, then its layout, size and angle.",
+      "mergedAt": "2026-09-25T21:38:05Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5745"
+    },
+    {
+      "prNumber": 5768,
+      "category": "new",
+      "title": "Similar climbs now come from your downloaded board, so they work with no signal",
+      "mergedAt": "2026-09-25T21:18:46Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5768",
+      "body": "On a board you haven't downloaded, one tap downloads it and switches similar climbs on\nHold heatmap: see which holds get used most on your downloaded board, filtered the way your climb list is; on the create board too"
+    },
+    {
+      "prNumber": 5781,
+      "category": "fixed",
+      "title": "Find any setter by name in the setter filter, even a two-letter one",
+      "mergedAt": "2026-09-25T21:06:17Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5781"
+    },
+    {
+      "prNumber": 5784,
+      "category": "fixed",
+      "title": "Your crew sees live session changes across devices again.",
+      "mergedAt": "2026-09-25T21:05:40Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5784"
+    },
+    {
+      "prNumber": 5778,
+      "category": "fixed",
+      "title": "Search finds a climb by its full name, apostrophes and dashes included",
+      "mergedAt": "2026-09-25T21:04:55Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5778"
+    },
+    {
+      "prNumber": 5782,
+      "category": "fixed",
+      "title": "If Boardsesh updates while you have it open in your browser, the page now reloads itself instead of getting stuck on an error.",
+      "mergedAt": "2026-09-25T21:04:09Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5782"
+    },
+    {
+      "prNumber": 5766,
+      "category": "new",
+      "title": "Similar climbs on climb pages load faster",
+      "mergedAt": "2026-09-25T12:07:08Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5766"
+    },
+    {
+      "prNumber": 5763,
+      "category": "improved",
+      "title": "Hold heatmaps are moving into the app, where they run on your downloaded board.",
+      "mergedAt": "2026-09-25T09:59:27Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5763"
+    },
+    {
+      "prNumber": 5760,
+      "category": "fixed",
+      "title": "Settings opens on top of whatever you're doing and closes back to it, instead of taking over the You tab",
+      "mergedAt": "2026-09-25T09:59:12Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5760",
+      "body": "Tapping You always lands on your profile now, even after a trip through Settings"
+    },
+    {
+      "prNumber": 5759,
+      "category": "fixed",
+      "title": "The grade filter now matches the Boardsesh grades you see on each climb.",
+      "mergedAt": "2026-09-25T09:13:19Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5759"
+    },
+    {
+      "prNumber": 5751,
+      "category": "fixed",
+      "title": "Spanish send button now reads \"Encadenado\", matching the wording used everywhere else a send shows up in the app.",
+      "mergedAt": "2026-09-25T00:38:49Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5751"
+    },
+    {
+      "prNumber": 5754,
+      "category": "fixed",
+      "title": "Sign in to Kilter now asks for your email, not a username — matching how you actually log into the Kilter app.",
+      "mergedAt": "2026-09-25T00:38:38Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5754"
+    },
+    {
+      "prNumber": 5755,
+      "category": "fixed",
+      "title": "Translated pages on iPhone Safari can recover from a login-page hiccup, so you can get back to your account.",
+      "mergedAt": "2026-09-25T00:38:21Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5755"
+    },
+    {
+      "prNumber": 5756,
+      "category": "fixed",
+      "title": "Search and sheet notes keep working when you tap away in the browser.",
+      "mergedAt": "2026-09-25T00:38:05Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5756"
+    },
+    {
+      "prNumber": 5667,
+      "category": "fixed",
+      "title": "Woods lists now show climbs for the angle you're on. Flip on \"Other angles\" in filters to see the rest.",
+      "mergedAt": "2026-09-23T22:46:54Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5667"
+    },
+    {
+      "prNumber": 5749,
+      "category": "fixed",
+      "title": "Sharing a climb now gets the preview picture ready before the link leaves your phone, so it shows up straight away instead of after a few seconds of blank.",
+      "mergedAt": "2026-09-23T13:27:05Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5749"
+    },
+    {
+      "prNumber": 5693,
+      "category": "fixed",
+      "title": "Decoy climbs now show the board in link previews instead of a broken image",
+      "mergedAt": "2026-09-23T09:50:26Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5693"
+    },
+    {
+      "prNumber": 5695,
+      "category": "new",
+      "title": "Shared climb links now show the board, the grade, the name and the setter instead of a dark empty card",
+      "mergedAt": "2026-09-23T09:11:10Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5695"
+    },
+    {
+      "prNumber": 5689,
+      "category": "fixed",
+      "title": "Swipe through every compatible climb in your playlist again.",
+      "mergedAt": "2026-09-23T06:30:49Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5689"
+    },
+    {
+      "prNumber": 5651,
+      "category": "new",
+      "title": "Infrastructure monitoring for the DR standby's trust path. No user-facing change.",
+      "mergedAt": "2026-09-23T06:28:53Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5651"
+    },
+    {
+      "prNumber": 5648,
+      "category": "new",
+      "title": "Internal infrastructure: a DR backup sidecar image. No user-facing change.",
+      "mergedAt": "2026-09-23T06:28:22Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5648"
+    },
+    {
+      "prNumber": 5684,
+      "category": "fixed",
+      "title": "Choose whether PR previews open when Boardsesh starts.",
+      "mergedAt": "2026-09-22T10:10:53Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5684"
+    },
+    {
+      "prNumber": 5235,
+      "category": "new",
+      "title": "When enabled, first-run can help you link your board account after picking a board. Bring available sends into your logbook, or choose Not now and keep climbing.",
+      "mergedAt": "2026-09-22T08:43:30Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5235"
+    },
+    {
+      "prNumber": 5650,
+      "category": "new",
+      "title": "Infrastructure: lets the database image serve a real certificate. Nothing deployed here.",
+      "mergedAt": "2026-09-22T08:13:15Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5650"
+    },
+    {
+      "prNumber": 5231,
+      "category": "fixed",
+      "title": "Link your board account with clearer instructions and correctly spelled board names.",
+      "mergedAt": "2026-09-22T08:07:40Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5231"
+    },
+    {
+      "prNumber": 5649,
+      "category": "new",
+      "title": "Infrastructure DNS for the disaster-recovery standby. No user-facing change.",
+      "mergedAt": "2026-09-22T07:36:15Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5649"
+    },
+    {
+      "prNumber": 3466,
+      "category": "new",
+      "title": "This separate Garmin app is not shipped through the mobile app's release notes and still requires Connect IQ Store preparation.",
+      "mergedAt": "2026-09-22T07:33:40Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/3466"
+    },
     {
       "prNumber": 5634,
       "category": "fixed",
@@ -5616,6 +5851,19 @@
     }
   ],
   "nativeReleases": [
+    {
+      "kind": "native-release",
+      "date": "2026-09-22T18:21:48+10:00",
+      "sha": "560358e9f7e88965fc3ab9b8f0f3feb69b18c4d6",
+      "platforms": [
+        "android",
+        "ios"
+      ],
+      "fingerprints": {
+        "android": "6ff7f9e5265402b6cc4c3532330f55fe99429051",
+        "ios": "ad75a3da716fbe67bb8d58e96247ae443b94bd98"
+      }
+    },
     {
       "kind": "native-release",
       "date": "2026-09-19T21:21:37+10:00",

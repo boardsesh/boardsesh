@@ -23,6 +23,19 @@ function pushedCountInput(): ClimbSearchInput {
 }
 
 describe('climb count preview input', () => {
+  it('trims the name like the committed search does, so a lone space is no by-name search', () => {
+    expect(buildCountPreviewInput(DEFAULT_FILTERS, {}, boardConfig, '  crimp ').name).toBe('crimp');
+    expect(buildCountPreviewInput(DEFAULT_FILTERS, {}, boardConfig, ' ')).not.toHaveProperty('name');
+  });
+
+  it('counts other angles only on a board that has the switch (#5642)', () => {
+    const otherAngles: ClimbFilters = { ...DEFAULT_FILTERS, includeOtherAngles: true };
+    const woodsConfig = { boardName: 'woods', layoutId: 1, sizeId: 2, setIds: '1', angle: 40 };
+
+    expect(buildCountPreviewInput(otherAngles, {}, woodsConfig, '').crossAngleStats).toBe(true);
+    expect(buildCountPreviewInput(otherAngles, {}, boardConfig, '')).not.toHaveProperty('crossAngleStats');
+  });
+
   it('gives the setters screen and the sheet the same count query key for the same picks', () => {
     const settersScreenInput = withSetterSelection(pushedCountInput(), ['alice', 'bob']);
     // The sheet after the handoff merges the picks into its draft.

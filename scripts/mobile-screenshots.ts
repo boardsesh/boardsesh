@@ -2151,7 +2151,6 @@ function resolveAndroidAppPath(options: ScreenshotOptions): string {
     if (!existsSync(options.appPath)) {
       throw new Error(`--app-path not found: ${options.appPath}`);
     }
-    validateIosAppLauncherUrl(options.appPath);
     return options.appPath;
   }
   if (existsSync(DEFAULT_ANDROID_APK)) {
@@ -2364,6 +2363,12 @@ export function resolveAppPath(options: ScreenshotOptions): string {
     if (!existsSync(options.appPath)) {
       throw new Error(`--app-path not found: ${options.appPath}`);
     }
+    // A dev-client bakes its Metro URL in at build time. Handed one built for a
+    // different port, the app silently attaches to whatever Metro owns that port
+    // — a developer's own dev server, serving a bundle with no screenshot mode —
+    // and the run dies much later at "did not reach the home screen" with no hint
+    // why. Fail here instead, where the remedy is obvious.
+    validateIosAppLauncherUrl(options.appPath);
     return options.appPath;
   }
   console.log(`${LOG} No --app-path given; building a Debug simulator app (slow — CI passes a cached .app)...`);

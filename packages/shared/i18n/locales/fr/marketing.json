@@ -686,7 +686,7 @@
       },
       "duplicate": {
         "title": "La même board deux fois dans la liste",
-        "p1": "Deux lignes avec des numéros de série différents, ce sont deux contrôleurs. Une ligne qui affiche seulement Kilter Board, sans numéro de série, est un boîtier LED récent fait par le fabricant. Deux de ces boîtiers dans la même salle n'apparaissent pour l'instant que sur une seule ligne (on corrige ça). Si le mauvais mur s'allume, garde l'ampoule appuyée, touche Déconnecter la board et réessaie.",
+        "p1": "Deux lignes avec des numéros de série différents, ce sont deux contrôleurs. Une ligne qui affiche seulement Kilter Board, sans numéro de série, est un boîtier LED récent fait par le fabricant. Deux de ces boîtiers dans la même salle apparaissent sur deux lignes. Celle qui a le plus de barres de signal est en général le mur devant toi. Si le mauvais mur s'allume, garde l'ampoule appuyée, touche Déconnecter la board et réessaie.",
         "p2": "Il n'y a pas de liste d'appareils à oublier. L'app ne retient que ta dernière board.",
         "p3": "Une board affichée deux fois sous Tes boards, c'est autre chose. Touche Modifier à côté de Tes boards, puis Supprimer ou Se désabonner."
       },
@@ -927,11 +927,11 @@
       "title": "Suppression du compte",
       "intro": "Vous pouvez supprimer votre compte et toutes les données associées à tout moment. Il y a deux façons de le faire :",
       "inApp": "Dans l'app :",
-      "inAppBody": " Ouvrez Plus depuis votre profil, descendez tout en bas et touchez Supprimer le compte. Une confirmation vous sera demandée avant toute suppression.",
+      "inAppBody": " Touchez votre avatar, ouvrez Paramètres, descendez tout en bas et touchez Supprimer le compte. Une confirmation vous sera demandée avant toute suppression.",
       "onWeb": "Sur le web :",
       "onWebBody": " Connectez-vous sur ",
       "onWebLink": "app.boardsesh.com",
-      "onWebBodyEnd": " et ouvrez Plus depuis votre profil pour trouver le même bouton Supprimer le compte.",
+      "onWebBodyEnd": " et ouvrez Paramètres depuis le menu de votre avatar pour trouver le même bouton Supprimer le compte.",
       "permanent": "La suppression est immédiate et définitive. Une fois confirmée, nous retirons de nos serveurs votre adresse e-mail, votre nom d'utilisateur, vos entrées de carnet, vos données de file et l'historique de vos sessions party. Cela ne peut pas être annulé."
     },
     "children": {

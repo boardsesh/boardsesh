@@ -1,5 +1,6 @@
 import { Pressable, StyleSheet, type ViewStyle } from 'react-native';
 import { Icon } from '../Icon';
+import { ActivityIndicator } from '../ActivityIndicator';
 import type { IconName } from '../icon-map';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing } from '../../theme/tokens';
@@ -34,6 +35,8 @@ type ActionButtonProps = {
    * against the sheet and carries no explanation, so a gated action needs one.
    */
   accessibilityHint?: string;
+  /** Swap the glyph for a spinner while the action's work is in flight. */
+  busy?: boolean;
 };
 
 export function ActionButton({
@@ -46,6 +49,7 @@ export function ActionButton({
   iconColor,
   accessibilityLabel,
   accessibilityHint,
+  busy = false,
 }: ActionButtonProps) {
   const { dim, icon } = SIZES[size];
   const buttonStyle: ViewStyle[] = [
@@ -67,14 +71,18 @@ export function ActionButton({
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       accessibilityHint={accessibilityHint}
-      accessibilityState={{ disabled }}
+      accessibilityState={{ disabled, selected: active, busy }}
       style={({ pressed }) => [
         ...buttonStyle,
         disabled && drawerActionBarStyles.actionButtonDisabled,
         pressed && !disabled && drawerActionBarStyles.actionButtonPressed,
       ]}
     >
-      <Icon name={iconName} size={icon} color={resolvedColor} />
+      {busy ? (
+        <ActivityIndicator size="small" color={resolvedColor} />
+      ) : (
+        <Icon name={iconName} size={icon} color={resolvedColor} />
+      )}
     </Pressable>
   );
 }

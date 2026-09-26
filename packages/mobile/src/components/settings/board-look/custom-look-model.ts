@@ -80,20 +80,20 @@ export function buildCustomLookModel(input: CustomLookModelInput): MoreFormModel
     {
       kind: 'segmented',
       key: 'glowFalloff',
-      label: t('mobile.more.boardLook.glowVeil.falloff.title'),
+      label: t('mobile.settings.boardLook.glowVeil.falloff.title'),
       options: GLOW_FALLOFF_OPTIONS.map((option) => ({
         key: option,
-        label: t(`mobile.more.boardLook.glowVeil.falloff.options.${option}`),
+        label: t(`mobile.settings.boardLook.glowVeil.falloff.options.${option}`),
       })),
       selectedKey: boardsesh.glowFalloff,
       onSelect: (key) => setField('glowFalloff', key as BoardseshRenderSettings['glowFalloff']),
     },
     slider(
       'glowReach',
-      t('mobile.more.boardLook.glowVeil.reach.title'),
+      t('mobile.settings.boardLook.glowVeil.reach.title'),
       BOARD_RENDER_SETTING_BOUNDS.glowReach,
       0.1,
-      (v) => t('mobile.more.boardLook.glowVeil.reach.value', { value: v.toFixed(1) }),
+      (v) => t('mobile.settings.boardLook.glowVeil.reach.value', { value: v.toFixed(1) }),
     ),
   ];
 
@@ -101,10 +101,10 @@ export function buildCustomLookModel(input: CustomLookModelInput): MoreFormModel
     glowVeilRows.push(
       slider(
         'plateauShare',
-        t('mobile.more.boardLook.glowVeil.plateauShare.title'),
+        t('mobile.settings.boardLook.glowVeil.plateauShare.title'),
         BOARD_RENDER_SETTING_BOUNDS.plateauShare,
         0.05,
-        (v) => t('mobile.more.boardLook.glowVeil.plateauShare.value', { value: Math.round(v * 100) }),
+        (v) => t('mobile.settings.boardLook.glowVeil.plateauShare.value', { value: Math.round(v * 100) }),
       ),
     );
   }
@@ -112,10 +112,10 @@ export function buildCustomLookModel(input: CustomLookModelInput): MoreFormModel
   glowVeilRows.push({
     kind: 'segmented',
     key: 'veil',
-    label: t('mobile.more.boardLook.glowVeil.veil.title'),
+    label: t('mobile.settings.boardLook.glowVeil.veil.title'),
     options: VEIL_OPTIONS.map((option) => ({
       key: option,
-      label: t(`mobile.more.boardLook.glowVeil.veil.options.${option}`),
+      label: t(`mobile.settings.boardLook.glowVeil.veil.options.${option}`),
     })),
     selectedKey: boardsesh.veil,
     onSelect: (key) => setField('veil', key as BoardseshRenderSettings['veil']),
@@ -125,10 +125,10 @@ export function buildCustomLookModel(input: CustomLookModelInput): MoreFormModel
     glowVeilRows.push(
       slider(
         'veilOpacity',
-        t('mobile.more.boardLook.glowVeil.veilOpacity.title'),
+        t('mobile.settings.boardLook.glowVeil.veilOpacity.title'),
         BOARD_RENDER_SETTING_BOUNDS.veilOpacity,
         0.05,
-        (v) => t('mobile.more.boardLook.glowVeil.veilOpacity.value', { value: Math.round(v * 100) }),
+        (v) => t('mobile.settings.boardLook.glowVeil.veilOpacity.value', { value: Math.round(v * 100) }),
       ),
     );
   }
@@ -141,10 +141,10 @@ export function buildCustomLookModel(input: CustomLookModelInput): MoreFormModel
     {
       kind: 'segmented',
       key: 'holdShape',
-      label: t('mobile.more.boardLook.marks.holdShape.title'),
+      label: t('mobile.settings.boardLook.marks.holdShape.title'),
       options: HOLD_SHAPE_OPTIONS.map((option) => ({
         key: option,
-        label: t(`mobile.more.boardLook.marks.holdShape.options.${option}`),
+        label: t(`mobile.settings.boardLook.marks.holdShape.options.${option}`),
       })),
       selectedKey: boardsesh.holdShape,
       onSelect: (key) => setField('holdShape', key as BoardseshRenderSettings['holdShape']),
@@ -152,10 +152,10 @@ export function buildCustomLookModel(input: CustomLookModelInput): MoreFormModel
     {
       kind: 'segmented',
       key: 'markStyle',
-      label: t('mobile.more.boardLook.marks.style.title'),
+      label: t('mobile.settings.boardLook.marks.style.title'),
       options: MARK_STYLE_OPTIONS.map((option) => ({
         key: option,
-        label: t(`mobile.more.boardLook.marks.style.options.${option === 'glow-fill' ? 'glowFill' : option}`),
+        label: t(`mobile.settings.boardLook.marks.style.options.${option === 'glow-fill' ? 'glowFill' : option}`),
       })),
       selectedKey: boardsesh.markStyle,
       onSelect: (key) => setField('markStyle', key as BoardseshRenderSettings['markStyle']),
@@ -166,10 +166,10 @@ export function buildCustomLookModel(input: CustomLookModelInput): MoreFormModel
     marksRows.push(
       slider(
         'fillOpacity',
-        t('mobile.more.boardLook.marks.fillOpacity.title'),
+        t('mobile.settings.boardLook.marks.fillOpacity.title'),
         BOARD_RENDER_SETTING_BOUNDS.fillOpacity,
         0.05,
-        (v) => t('mobile.more.boardLook.marks.fillOpacity.value', { value: Math.round(v * 100) }),
+        (v) => t('mobile.settings.boardLook.marks.fillOpacity.value', { value: Math.round(v * 100) }),
       ),
     );
   }
@@ -178,34 +178,34 @@ export function buildCustomLookModel(input: CustomLookModelInput): MoreFormModel
     {
       kind: 'toggle',
       key: 'softDisc',
-      label: t('mobile.more.boardLook.marks.softDisc.label'),
-      subtitle: t('mobile.more.boardLook.marks.softDisc.subtitle'),
+      label: t('mobile.settings.boardLook.marks.softDisc.label'),
+      subtitle: t('mobile.settings.boardLook.marks.softDisc.subtitle'),
       value: boardsesh.softDisc,
       onValueChange: (value) => setField('softDisc', value),
     },
     {
       kind: 'toggle',
       key: 'smallHoldBoost',
-      label: t('mobile.more.boardLook.marks.smallHoldBoost.label'),
-      subtitle: t('mobile.more.boardLook.marks.smallHoldBoost.subtitle'),
+      label: t('mobile.settings.boardLook.marks.smallHoldBoost.label'),
+      subtitle: t('mobile.settings.boardLook.marks.smallHoldBoost.subtitle'),
       value: boardsesh.smallHoldBoost,
       onValueChange: (value) => setField('smallHoldBoost', value),
     },
     {
       kind: 'toggle',
       key: 'ledDots',
-      label: t('mobile.more.boardLook.marks.ledDots.label'),
-      subtitle: t('mobile.more.boardLook.marks.ledDots.subtitle'),
+      label: t('mobile.settings.boardLook.marks.ledDots.label'),
+      subtitle: t('mobile.settings.boardLook.marks.ledDots.subtitle'),
       value: boardsesh.ledDots,
       onValueChange: (value) => setField('ledDots', value),
     },
     {
       kind: 'segmented',
       key: 'thumbnailStyle',
-      label: t('mobile.more.boardLook.marks.thumbnailStyle.title'),
+      label: t('mobile.settings.boardLook.marks.thumbnailStyle.title'),
       options: THUMBNAIL_STYLE_OPTIONS.map((option) => ({
         key: option,
-        label: t(`mobile.more.boardLook.marks.thumbnailStyle.options.${option}`),
+        label: t(`mobile.settings.boardLook.marks.thumbnailStyle.options.${option}`),
       })),
       selectedKey: boardsesh.thumbnailStyle,
       onSelect: (key) => setField('thumbnailStyle', key as BoardseshRenderSettings['thumbnailStyle']),
@@ -234,15 +234,15 @@ export function buildCustomLookModel(input: CustomLookModelInput): MoreFormModel
   sections.push(
     {
       key: 'mode',
-      title: t('mobile.more.boardLook.mode.title'),
+      title: t('mobile.settings.boardLook.mode.title'),
       rows: [
         {
           kind: 'segmented',
           key: 'mode',
-          label: t('mobile.more.boardLook.mode.title'),
+          label: t('mobile.settings.boardLook.mode.title'),
           options: (['classic', 'aura'] as const).map((option) => ({
             key: option,
-            label: t(`mobile.more.boardLook.mode.options.${option}`),
+            label: t(`mobile.settings.boardLook.mode.options.${option}`),
           })),
           selectedKey: selectedMode,
           onSelect: (key) => setMode(key as BoardRenderModeSetting),
@@ -250,8 +250,8 @@ export function buildCustomLookModel(input: CustomLookModelInput): MoreFormModel
         },
       ],
     },
-    { key: 'glowVeil', title: t('mobile.more.boardLook.glowVeil.title'), rows: glowVeilRows },
-    { key: 'marks', title: t('mobile.more.boardLook.marks.title'), rows: marksRows },
+    { key: 'glowVeil', title: t('mobile.settings.boardLook.glowVeil.title'), rows: glowVeilRows },
+    { key: 'marks', title: t('mobile.settings.boardLook.marks.title'), rows: marksRows },
   );
 
   return { sections };

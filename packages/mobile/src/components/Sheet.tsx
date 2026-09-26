@@ -22,6 +22,7 @@ import { androidSafeSnapPoints } from './sheet-snap-points';
 import { useSheetBodyContentStyle } from './sheet-content-inset';
 import { useSheetColumnStyle } from './use-sheet-column-style';
 import { useSheetDetentProbe } from './sheet-detent-probe';
+import { SheetScrollIntoViewProvider, useProgrammaticSnap, useSheetScrollIntoViewHost } from './sheet-scroll-into-view';
 import { useManagedSheet, type PresenterGroup } from '../providers/sheet-presentation-provider';
 
 type SheetProps = {
@@ -140,10 +141,13 @@ export const Sheet = forwardRef<BottomSheetMethods, SheetProps>(function Sheet(
   // Dev-only observers for #3922 — they feed a log line, never layout.
   const { probeProps, sentinelProps, onColumnLayout } = useSheetDetentProbe(columnStyle, 'Sheet');
 
+  // The keyboard-detent snap on field focus is not a drag: no haptic for it.
+  const { programmaticSnapRef, snapWithoutHaptic } = useProgrammaticSnap(managed.handle.snapToIndex);
+
   const handleChange = useCallback(
     (index: number) => {
       if (index >= 0) {
-        hapticMedium();
+        if (!programmaticSnapRef.current) hapticMedium();
         setActiveIndex(index);
       } else {
         // Reset on close so a re-open of an always-mounted sheet starts at the
@@ -155,7 +159,7 @@ export const Sheet = forwardRef<BottomSheetMethods, SheetProps>(function Sheet(
       managed.onChange(index);
       onChangeRef.current?.(index);
     },
-    [managed],
+    [managed, programmaticSnapRef],
   );
 
   // A fixed header or a pinned footer both need a wrapper around the body, and
@@ -187,16 +191,24 @@ export const Sheet = forwardRef<BottomSheetMethods, SheetProps>(function Sheet(
   // #3922: measure whichever view actually carries columnStyle — the body when
   // there is no header or footer, the KeyboardAvoidingView below when there is.
   const bodyLayout = hasChrome ? undefined : onColumnLayout;
+  // A focused field that opts in (the tick note) is scrolled clear of the pinned
+  // footer once the keyboard shrinks the body (#5665). See sheet-scroll-into-view.
+  const { scrollIntoView, scrollProps } = useSheetScrollIntoViewHost({
+    onBodyLayout: bodyLayout,
+    lastDetentIndex: useContentFitting ? 0 : effectiveSnapPoints.length - 1,
+    activeIndex,
+    snapToIndex: snapWithoutHaptic,
+  });
   const body = scrollable ? (
     <BottomSheetScrollView
+      {...scrollProps}
       style={bodyStyle}
-      onLayout={bodyLayout}
       contentContainerStyle={bodyContentContainerStyle}
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode="on-drag"
     >
-      {children}
+      <SheetScrollIntoViewProvider value={scrollIntoView}>{children}</SheetScrollIntoViewProvider>
     </BottomSheetScrollView>
   ) : useContentFitting && !hasChrome && Platform.OS === 'web' ? (
     // Web + dynamic sizing only, where the column is never bounded and the

@@ -111,9 +111,9 @@ describe('useConfirmSignOut', () => {
 
     expect(confirmMock).toHaveBeenCalledTimes(1);
     expect(confirmMock.mock.calls[0][0]).toMatchObject({
-      title: 'mobile.more.signOut.title',
-      confirmLabel: 'mobile.more.signOut.confirm',
-      cancelLabel: 'mobile.more.signOut.cancel',
+      title: 'mobile.settings.signOut.title',
+      confirmLabel: 'mobile.settings.signOut.confirm',
+      cancelLabel: 'mobile.settings.signOut.cancel',
       destructive: true,
     });
     expect(signOutMock).toHaveBeenCalledWith('manual');
@@ -135,13 +135,13 @@ describe('useConfirmSignOut', () => {
     hasDownloadedBoardDataMock.mockResolvedValue(true);
     const withDownloads = renderConfirmSignOut();
     await withDownloads.press();
-    expect(messageOf()).toBe('mobile.more.signOut.messageOffline');
+    expect(messageOf()).toBe('mobile.settings.signOut.messageOffline');
 
     confirmMock.mockClear();
     hasDownloadedBoardDataMock.mockResolvedValue(false);
     const withoutDownloads = renderConfirmSignOut();
     await withoutDownloads.press();
-    expect(messageOf()).toBe('mobile.more.signOut.message');
+    expect(messageOf()).toBe('mobile.settings.signOut.message');
   });
 
   it('names the unsynced changes that signing out would discard', async () => {
@@ -150,7 +150,7 @@ describe('useConfirmSignOut', () => {
 
     await press();
 
-    expect(messageOf()).toContain('mobile.more.signOut.pendingMessage#3');
+    expect(messageOf()).toContain('mobile.settings.signOut.pendingMessage#3');
   });
 
   it('says both when there are downloads and unsynced changes', async () => {
@@ -160,8 +160,8 @@ describe('useConfirmSignOut', () => {
 
     await press();
 
-    expect(messageOf()).toContain('mobile.more.signOut.messageOffline');
-    expect(messageOf()).toContain('mobile.more.signOut.pendingMessage#1');
+    expect(messageOf()).toContain('mobile.settings.signOut.messageOffline');
+    expect(messageOf()).toContain('mobile.settings.signOut.pendingMessage#1');
   });
 
   it('omits the unsynced warning when the queue is empty', async () => {
@@ -169,8 +169,8 @@ describe('useConfirmSignOut', () => {
 
     await press();
 
-    expect(messageOf()).not.toContain('mobile.more.signOut.pendingMessage');
-    expect(messageOf()).not.toContain('mobile.more.signOut.failedMessage');
+    expect(messageOf()).not.toContain('mobile.settings.signOut.pendingMessage');
+    expect(messageOf()).not.toContain('mobile.settings.signOut.failedMessage');
   });
 
   // The regression this pair exists for: the wipe DELETEs pending_mutations whole, but
@@ -183,7 +183,7 @@ describe('useConfirmSignOut', () => {
 
     await press();
 
-    expect(messageOf()).toContain('mobile.more.signOut.failedMessage#2');
+    expect(messageOf()).toContain('mobile.settings.signOut.failedMessage#2');
   });
 
   // Two counts, two sentences: a pending write still gets sign-out's drain, a dead
@@ -195,8 +195,8 @@ describe('useConfirmSignOut', () => {
 
     await press();
 
-    expect(messageOf()).toContain('mobile.more.signOut.pendingMessage#3');
-    expect(messageOf()).toContain('mobile.more.signOut.failedMessage#1');
+    expect(messageOf()).toContain('mobile.settings.signOut.pendingMessage#3');
+    expect(messageOf()).toContain('mobile.settings.signOut.failedMessage#1');
   });
 
   it('still confirms when the outbox read fails', async () => {
@@ -206,8 +206,8 @@ describe('useConfirmSignOut', () => {
     await press();
 
     expect(confirmMock).toHaveBeenCalledTimes(1);
-    expect(messageOf()).not.toContain('mobile.more.signOut.pendingMessage');
-    expect(messageOf()).not.toContain('mobile.more.signOut.failedMessage');
+    expect(messageOf()).not.toContain('mobile.settings.signOut.pendingMessage');
+    expect(messageOf()).not.toContain('mobile.settings.signOut.failedMessage');
     expect(signOutMock).toHaveBeenCalledWith('manual');
   });
 
@@ -222,9 +222,9 @@ describe('useConfirmSignOut', () => {
 
     await press();
 
-    expect(messageOf()).toContain('mobile.more.signOut.pendingMessage#2');
-    expect(messageOf()).toContain('mobile.more.signOut.failedMessage#1');
-    expect(messageOf()).toContain('mobile.more.signOut.message');
+    expect(messageOf()).toContain('mobile.settings.signOut.pendingMessage#2');
+    expect(messageOf()).toContain('mobile.settings.signOut.failedMessage#1');
+    expect(messageOf()).toContain('mobile.settings.signOut.message');
     expect(signOutMock).toHaveBeenCalledWith('manual');
   });
 
@@ -236,7 +236,7 @@ describe('useConfirmSignOut', () => {
     await press();
 
     expect(hasDownloadedBoardDataMock).toHaveBeenCalledTimes(1);
-    expect(messageOf()).toBe('mobile.more.signOut.messageOffline');
+    expect(messageOf()).toBe('mobile.settings.signOut.messageOffline');
   });
 
   it('still confirms when offline storage never initialised', async () => {
@@ -300,8 +300,8 @@ describe('useConfirmSignOut', () => {
 
     expect(reportErrorMock).toHaveBeenCalledWith(failure);
     expect(showSignOutFailureMock).toHaveBeenCalledWith(
-      'mobile.more.signOut.failureTitle',
-      'mobile.more.signOut.failure',
+      'mobile.settings.signOut.failureTitle',
+      'mobile.settings.signOut.failure',
     );
   });
 });

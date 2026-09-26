@@ -135,6 +135,15 @@ owner with `CREATE` on the target database and ownership of pre-existing app
 schemas such as `public`. Reapply and audit runtime grants/default privileges
 separately; `--no-acl` intentionally does not preserve them.
 
+This schema-only restore into a precreated database does **not** restore database
+settings. Before cutover, the target database owner must explicitly set
+`max_parallel_workers_per_gather = 0`, then the target application role must pass
+[serial-plan check-only verification](db-connectivity.md#preserving-the-default-through-a-database-restore)
+through a fresh connection. Do not rely on migration 0225 rerunning from a
+restored ledger or on the routine deployment check to block cutover. Hold traffic
+on the source until the target check succeeds; no change to the restricted
+migration-role privileges is needed.
+
 Create the subscription only through the guarded operator helper below. It
 builds the password-bearing `CONNECTION` clause in a mode `0600` temporary SQL
 file, enables `standard_conforming_strings`, verifies the password-redacted
@@ -524,8 +533,6 @@ To turn the homelab replica on for application reads, set `READ_REPLICA_URL` in 
 
 - `packages/web/app/lib/db/queries/climbs/search-climbs.ts` — climb-search SSR (`cachedSearchClimbs`).
 - `packages/backend/src/db/queries/climbs/search-climbs.ts` — GraphQL `searchClimbs` resolver.
-- `packages/web/app/lib/db/queries/climbs/holds-heatmap.ts` — heatmap stats.
-- `packages/web/app/api/internal/prewarm-heatmap/[board_name]/route.ts` — heatmap warm-up cron.
 - `packages/web/app/lib/seo/dynamic-og-data.ts` — OG profile/setter/session/playlist summary queries.
 - `packages/web/app/api/og/profile/route.tsx` — OG profile per-grade tick aggregation.
 - `packages/backend/src/graphql/resolvers/social/session-feed.ts` — session-grouped activity feed.

@@ -1035,4 +1035,368 @@ describe('Climb Query Functions', () => {
       expect(await seededUuids(searchParams)).toEqual(ALL_SEEDED);
     });
   });
+
+  // #5353: iOS Smart Punctuation types `’` for `'`, and the catalogue stores both
+  // forms, so a full name typed on a phone missed the climb while part of it
+  // found it. The pattern builder folds quotes and dashes; this pins the
+  // rows against real Postgres ILIKE, on a size and set no other fixture uses.
+  describe('name search folds apostrophes, quotes and dashes (#5353)', () => {
+    const PREFIX = 'name-fold-5353-';
+    const id = (suffix: string) => PREFIX + suffix;
+    const board: ParsedBoardRouteParameters = {
+      board_name: 'kilter',
+      layout_id: 1,
+      size_id: 5353,
+      set_ids: [5353],
+      angle: 40,
+    };
+    const found = async (name: string, sortBy: ClimbSearchParams['sortBy'] = 'ascents') => {
+      const result = await searchClimbs(board, { page: 0, pageSize: 100, sortBy, sortOrder: 'desc', name });
+      return result.climbs.map((climb) => climb.uuid).sort();
+    };
+
+    beforeAll(async () => {
+      await db.execute(sql`
+        INSERT INTO board_climbs (uuid, board_type, layout_id, setter_username, name, frames, frames_count, is_draft, is_listed, edge_left, edge_right, edge_bottom, edge_top, created_at, required_set_ids, compatible_size_ids)
+        VALUES
+          (${id('straight')}, 'kilter', 1, 'nf', ${"Joey's Gaston"}, 'p1r12', 1, false, true, 10, 100, 10, 150, '2024-01-01', ARRAY[5353], ARRAY[5353]),
+          (${id('curly')}, 'kilter', 1, 'nf', ${'Joey’s Gaston'}, 'p1r12', 1, false, true, 10, 100, 10, 150, '2024-01-01', ARRAY[5353], ARRAY[5353]),
+          (${id('dashed')}, 'kilter', 1, 'nf', 'Spider-Man Roof', 'p1r12', 1, false, true, 10, 100, 10, 150, '2024-01-01', ARRAY[5353], ARRAY[5353]),
+          (${id('plain')}, 'kilter', 1, 'nf', 'Perfect gaston', 'p1r12', 1, false, true, 10, 100, 10, 150, '2024-01-01', ARRAY[5353], ARRAY[5353]),
+          (${id('percent')}, 'kilter', 1, 'nf', '50% crimp', 'p1r12', 1, false, true, 10, 100, 10, 150, '2024-01-01', ARRAY[5353], ARRAY[5353]),
+          (${id('fifty')}, 'kilter', 1, 'nf', '500 crimp', 'p1r12', 1, false, true, 10, 100, 10, 150, '2024-01-01', ARRAY[5353], ARRAY[5353]),
+          (${id('the-end')}, 'kilter', 1, 'nf', 'The End', 'p1r12', 1, false, true, 10, 100, 10, 150, '2024-01-01', ARRAY[5353], ARRAY[5353]),
+          (${id('the-bitter-end')}, 'kilter', 1, 'nf', 'The Bitter End', 'p1r12', 1, false, true, 10, 100, 10, 150, '2024-01-01', ARRAY[5353], ARRAY[5353])
+        ON CONFLICT DO NOTHING
+      `);
+      // Stats on some rows only, so the default ascents sort exercises both the
+      // stats-driven page and the stats-less fallback behind it.
+      await db.execute(sql`
+        INSERT INTO board_climb_stats (board_type, climb_uuid, angle, display_difficulty, ascensionist_count, difficulty_average, quality_average)
+        VALUES
+          ('kilter', ${id('straight')}, 40, 20.0, 12, 20.0, 3.0),
+          ('kilter', ${id('plain')}, 40, 18.0, 3, 18.0, 2.0)
+        ON CONFLICT DO NOTHING
+      `);
+    });
+
+    afterAll(async () => {
+      await db.execute(sql`DELETE FROM board_climb_stats WHERE climb_uuid LIKE ${PREFIX + '%'}`);
+      await db.execute(sql`DELETE FROM board_climbs WHERE uuid LIKE ${PREFIX + '%'}`);
+    });
+
+    it('finds both apostrophe forms whichever one is typed', async () => {
+      expect(await found('Joey’s Gaston')).toEqual([id('curly'), id('straight')]);
+      expect(await found("Joey's Gaston")).toEqual([id('curly'), id('straight')]);
+      expect(await found('Joey’s Gaston', 'name')).toEqual([id('curly'), id('straight')]);
+    });
+
+    it('folds a dash, but keeps spaces literal so words cannot drift apart', async () => {
+      expect(await found('spider–man roof')).toEqual([id('dashed')]);
+      // #5655 review: a `%` fold let "the end" reach "The Bitter End" and pushed
+      // the climb actually named "The End" off the first page.
+      expect(await found('the end')).toEqual([id('the-end')]);
+    });
+
+    it('keeps a punctuation-only query literal instead of matching every climb', async () => {
+      expect(await found("'")).toEqual([id('straight')]);
+      expect(await found('-')).toEqual([id('dashed')]);
+      expect(await countClimbs(board, { name: '“' })).toBe(0);
+    });
+
+    it('returns exactly the old rows for a plain query', async () => {
+      expect(await found('gaston')).toEqual([id('curly'), id('plain'), id('straight')]);
+      expect(await found('GASTON', 'name')).toEqual([id('curly'), id('plain'), id('straight')]);
+    });
+
+    it("still matches the user's own % literally", async () => {
+      expect(await found('50%')).toEqual([id('percent')]);
+    });
+
+    it('counts the same rows the list returns', async () => {
+      expect(await countClimbs(board, { name: 'Joey’s Gaston' })).toBe(2);
+    });
+  });
+
+  // Issue #5642. A Woods climb has stats only at the angle it was set at. Without
+  // the opt-in a search at 30° keeps only the climbs that belong to 30° — set
+  // there, with no set angle, or with a stats row there. With it, or by name, the
+  // list reaches every angle and grades each climb at its own set angle (#5405).
+  // The db package's unit tests pin the SQL; this pins the rows, the count, and the
+  // stats-driven → fallback boundary, which only a real database can.
+  describe('Woods browsed-angle restriction (#5642)', () => {
+    const PREFIX = 'woods-angle-5642-';
+    const id = (suffix: string) => PREFIX + suffix;
+    const SETTER = 'woods-angle-5642-setter';
+    const OWNER_ID = 'woods-angle-5642-owner';
+    const woodsAt30: ParsedBoardRouteParameters = {
+      board_name: 'woods',
+      layout_id: 1,
+      size_id: 1,
+      set_ids: [1],
+      angle: 30,
+    };
+    const kilterAt40: ParsedBoardRouteParameters = {
+      board_name: 'kilter',
+      layout_id: 1,
+      size_id: 7,
+      set_ids: [1],
+      angle: 40,
+    };
+
+    // In the order a restricted ascents-DESC search returns them: the two climbs
+    // with a 30° stats row by ascents, then the stats-less ones by uuid DESC.
+    const AT_30 = [id('set-30'), id('set-40-stats-at-30'), id('set-30-no-stats'), id('no-set-angle')];
+    const OTHER_ANGLES = [id('set-40'), id('set-40-no-stats')];
+    const ALL_LISTED = [...AT_30, ...OTHER_ANGLES];
+
+    const browse = (overrides: ClimbSearchParams = {}): ClimbSearchParams => ({
+      page: 0,
+      pageSize: 100,
+      sortBy: 'ascents',
+      sortOrder: 'desc',
+      settername: [SETTER],
+      ...overrides,
+    });
+
+    // Two rows a page, so the walk crosses from the stats-driven pages into the
+    // LEFT-JOIN fallback and the restriction has to hold on both sides of it.
+    async function walk(searchParams: ClimbSearchParams, userId?: string): Promise<string[]> {
+      const collected: string[] = [];
+      for (let page = 0; page < 10; page += 1) {
+        const result = await searchClimbs(woodsAt30, { ...searchParams, page, pageSize: 2 }, userId);
+        collected.push(...result.climbs.map((climb) => climb.uuid));
+        if (!result.hasMore) return collected;
+      }
+      throw new Error('hasMore never cleared');
+    }
+
+    beforeAll(async () => {
+      await db.execute(sql`
+        INSERT INTO users (id, email, name)
+        VALUES (${OWNER_ID}, ${`${OWNER_ID}@test.invalid`}, 'Woods angle owner')
+        ON CONFLICT (id) DO NOTHING
+      `);
+      await db.execute(sql`
+        INSERT INTO board_climbs (uuid, board_type, layout_id, setter_username, name, frames, frames_count, is_draft, is_listed, angle, created_at, required_set_ids, compatible_size_ids, user_id)
+        VALUES
+          (${id('set-30')}, 'woods', 1, ${SETTER}, 'Woodsangle set 30', 'p1r4', 1, false, true, 30, '2024-01-01', ARRAY[]::int[], ARRAY[1], NULL),
+          (${id('set-30-no-stats')}, 'woods', 1, ${SETTER}, 'Woodsangle set 30 unclimbed', 'p2r4', 1, false, true, 30, '2024-01-01', ARRAY[]::int[], ARRAY[1], NULL),
+          (${id('set-40-stats-at-30')}, 'woods', 1, ${SETTER}, 'Woodsangle set 40 climbed at 30', 'p3r4', 1, false, true, 40, '2024-01-01', ARRAY[]::int[], ARRAY[1], NULL),
+          (${id('no-set-angle')}, 'woods', 1, ${SETTER}, 'Woodsangle no set angle', 'p4r4', 1, false, true, NULL, '2024-01-01', ARRAY[]::int[], ARRAY[1], NULL),
+          (${id('set-40')}, 'woods', 1, ${SETTER}, 'Woodsangle set 40', 'p5r4', 1, false, true, 40, '2024-01-01', ARRAY[]::int[], ARRAY[1], NULL),
+          (${id('set-40-no-stats')}, 'woods', 1, ${SETTER}, 'Woodsangle set 40 unclimbed', 'p6r4', 1, false, true, 40, '2024-01-01', ARRAY[]::int[], ARRAY[1], NULL),
+          (${id('draft-40')}, 'woods', 1, ${SETTER}, 'Woodsangle draft 40', 'p7r4', 1, true, false, 40, '2024-01-01', ARRAY[]::int[], ARRAY[1], ${OWNER_ID}),
+          (${id('kilter-set-50')}, 'kilter', 1, ${SETTER}, 'Woodsangle kilter 50', 'p8r12', 1, false, true, 50, '2024-01-01', ARRAY[1], ARRAY[7], NULL)
+        ON CONFLICT DO NOTHING
+      `);
+      await db.execute(sql`
+        INSERT INTO board_climb_stats (board_type, climb_uuid, angle, display_difficulty, ascensionist_count, difficulty_average, quality_average)
+        VALUES
+          ('woods', ${id('set-30')}, 30, 12.0, 5, 12.0, 3.0),
+          ('woods', ${id('set-40-stats-at-30')}, 30, 14.0, 2, 14.0, 3.0),
+          ('woods', ${id('set-40-stats-at-30')}, 40, 16.0, 50, 16.0, 4.0),
+          ('woods', ${id('set-40')}, 40, 20.0, 500, 20.0, 5.0)
+        ON CONFLICT DO NOTHING
+      `);
+    });
+
+    afterAll(async () => {
+      await db.execute(sql`DELETE FROM board_climb_stats WHERE climb_uuid LIKE ${PREFIX + '%'}`);
+      await db.execute(sql`DELETE FROM board_climbs WHERE uuid LIKE ${PREFIX + '%'}`);
+      await db.execute(sql`DELETE FROM users WHERE id = ${OWNER_ID}`);
+    });
+
+    it('keeps only the climbs that belong to 30° by default, across the fallback boundary', async () => {
+      const collected = await walk(browse());
+
+      expect(collected).toEqual(AT_30);
+      // The count badge describes the same list.
+      expect(await countClimbs(woodsAt30, browse())).toBe(AT_30.length);
+    });
+
+    it('reads an explicit false as the default', async () => {
+      const searchParams = browse({ crossAngleStats: false });
+
+      expect(await walk(searchParams)).toEqual(AT_30);
+      expect(await countClimbs(woodsAt30, searchParams)).toBe(AT_30.length);
+    });
+
+    it('reads a restricted climb at the browsed angle, not its set angle', async () => {
+      const { climbs } = await searchClimbs(woodsAt30, browse());
+      const climbedAt30 = climbs.find((climb) => climb.uuid === id('set-40-stats-at-30'));
+
+      expect(climbedAt30?.statsAngle).toBe(30);
+      expect(climbedAt30?.ascensionist_count).toBe(2);
+    });
+
+    it('lists every angle with the opt-in, graded at the set angle', async () => {
+      const searchParams = browse({ crossAngleStats: true });
+      const { climbs } = await searchClimbs(woodsAt30, searchParams);
+
+      expect(climbs.map((climb) => climb.uuid).sort()).toEqual([...ALL_LISTED].sort());
+      // Ranked on its 40° sends, not sunk below every 30° climb.
+      expect(climbs[0].uuid).toBe(id('set-40'));
+      expect(climbs[0].statsAngle).toBe(40);
+      expect(climbs[0].ascensionist_count).toBe(500);
+      expect(await countClimbs(woodsAt30, searchParams)).toBe(ALL_LISTED.length);
+    });
+
+    it('finds a climb set at another angle by name, graded there, without the opt-in', async () => {
+      const searchParams = browse({ name: 'Woodsangle' });
+      const { climbs } = await searchClimbs(woodsAt30, searchParams);
+
+      expect(climbs.map((climb) => climb.uuid).sort()).toEqual([...ALL_LISTED].sort());
+      const setAt40 = climbs.find((climb) => climb.uuid === id('set-40'));
+      expect(setAt40?.statsAngle).toBe(40);
+      expect(setAt40?.ascensionist_count).toBe(500);
+      expect(await countClimbs(woodsAt30, searchParams)).toBe(ALL_LISTED.length);
+    });
+
+    it("shows the owner's drafts list whatever angle each draft was saved at", async () => {
+      const searchParams = browse({ onlyDrafts: true });
+      const { climbs } = await searchClimbs(woodsAt30, searchParams, OWNER_ID);
+
+      expect(climbs.map((climb) => climb.uuid)).toEqual([id('draft-40')]);
+      expect(await countClimbs(woodsAt30, searchParams, OWNER_ID)).toBe(1);
+    });
+
+    it('still opens a Woods climb at another angle with its set-angle grade', async () => {
+      const climb = await getClimbByUuid({ ...woodsAt30, climb_uuid: id('set-40') });
+
+      expect(climb?.angle).toBe(30);
+      expect(climb?.statsAngle).toBe(40);
+      expect(climb?.ascensionist_count).toBe(500);
+      expect(climb?.difficulty).not.toBe('');
+    });
+
+    it('leaves Kilter unrestricted — a climb set at 50° still lists at 40°', async () => {
+      const { climbs } = await searchClimbs(kilterAt40, browse());
+
+      expect(climbs.map((climb) => climb.uuid)).toContain(id('kilter-set-50'));
+      expect(await countClimbs(kilterAt40, browse())).toBe(1);
+    });
+  });
+
+  // Issues #5643 / #5752 / #5753: with Boardsesh grades on, a row is labelled with
+  // its Boardsesh grade, so the grade range under gradeSource 'boardsesh' has to key
+  // on that grade — on both search paths, and the count badge has to agree.
+  describe('grade source (#5643)', () => {
+    const PREFIX = 'GRADE-SOURCE-TEST-';
+    const id = (suffix: string) => PREFIX + suffix;
+    const GRADE_SOURCE_SETTER = 'grade-source-setter';
+    const gradeSourceParams: ParsedBoardRouteParameters = {
+      board_name: 'kilter',
+      layout_id: 1,
+      size_id: 7,
+      set_ids: [1],
+      angle: 40,
+    };
+
+    beforeAll(async () => {
+      await db.execute(sql`
+        INSERT INTO board_climbs (uuid, board_type, layout_id, setter_username, name, frames, frames_count, is_draft, is_listed, edge_left, edge_right, edge_bottom, edge_top, created_at, required_set_ids, compatible_size_ids)
+        VALUES
+          (${id('split')}, 'kilter', 1, ${GRADE_SOURCE_SETTER}, 'Grade Source Split', 'p700r12', 1, false, true, 10, 100, 10, 150, '2024-01-01', ARRAY[1], ARRAY[7]),
+          (${id('setter-only')}, 'kilter', 1, ${GRADE_SOURCE_SETTER}, 'Grade Source Setter Only', 'p701r12', 1, false, true, 10, 100, 10, 150, '2024-01-01', ARRAY[1], ARRAY[7]),
+          (${id('upstream-16')}, 'kilter', 1, ${GRADE_SOURCE_SETTER}, 'Grade Source Upstream 16', 'p702r12', 1, false, true, 10, 100, 10, 150, '2024-01-01', ARRAY[1], ARRAY[7])
+        ON CONFLICT DO NOTHING
+      `);
+      // SPLIT: upstream 18, Boardsesh 16. SETTER-ONLY: the same numbers, but a
+      // setter_only grade the row never shows. UPSTREAM-16: no grade row at all.
+      await db.execute(sql`
+        INSERT INTO board_climb_stats (board_type, climb_uuid, angle, display_difficulty, ascensionist_count, difficulty_average, quality_average)
+        VALUES
+          ('kilter', ${id('split')}, 40, 18.0, 30, 18.0, 4.0),
+          ('kilter', ${id('setter-only')}, 40, 18.0, 20, 18.0, 4.0),
+          ('kilter', ${id('upstream-16')}, 40, 16.0, 10, 16.0, 4.0)
+        ON CONFLICT DO NOTHING
+      `);
+      await db.execute(sql`
+        INSERT INTO board_climb_grades (board_type, climb_uuid, angle, local_grade, universal_grade, confidence, model_version, coeff_version)
+        VALUES
+          ('kilter', ${id('split')}, 40, 16.0, 16.0, 'confirmed', 'test', 'test'),
+          ('kilter', ${id('setter-only')}, 40, 16.0, 16.0, 'setter_only', 'test', 'test')
+        ON CONFLICT DO NOTHING
+      `);
+    });
+
+    afterAll(async () => {
+      await db.execute(sql`DELETE FROM board_climb_grades WHERE climb_uuid LIKE ${PREFIX + '%'}`);
+      await db.execute(sql`DELETE FROM board_climb_stats WHERE climb_uuid LIKE ${PREFIX + '%'}`);
+      await db.execute(sql`DELETE FROM board_climbs WHERE uuid LIKE ${PREFIX + '%'}`);
+    });
+
+    const gradeSearch = (
+      grade: number,
+      sortBy: 'creation' | 'ascents',
+      gradeSource?: ClimbSearchParams['gradeSource'],
+    ): ClimbSearchParams => ({
+      page: 0,
+      pageSize: 50,
+      sortBy,
+      sortOrder: 'desc',
+      minGrade: grade,
+      maxGrade: grade,
+      settername: [GRADE_SOURCE_SETTER],
+      gradeSource,
+    });
+
+    // 'creation' takes the standard LEFT JOIN path; 'ascents' starts on the
+    // stats-driven INNER JOIN path.
+    it.each(['creation', 'ascents'] as const)('keys the range on the Boardsesh grade (sortBy %s)', async (sortBy) => {
+      const boardsesh16 = gradeSearch(16, sortBy, 'boardsesh');
+      const listed = (await searchClimbs(gradeSourceParams, boardsesh16)).climbs.map((climb) => climb.uuid);
+      expect(listed.sort()).toEqual([id('upstream-16'), id('split')].sort());
+      expect(await countClimbs(gradeSourceParams, boardsesh16)).toBe(listed.length);
+
+      // setter_only is skipped, so that climb stays on its upstream 18.
+      const boardsesh18 = gradeSearch(18, sortBy, 'boardsesh');
+      const listed18 = (await searchClimbs(gradeSourceParams, boardsesh18)).climbs.map((climb) => climb.uuid);
+      expect(listed18).toEqual([id('setter-only')]);
+      expect(await countClimbs(gradeSourceParams, boardsesh18)).toBe(1);
+    });
+
+    it.each(['creation', 'ascents'] as const)(
+      'keeps the upstream grade when the source is omitted (sortBy %s)',
+      async (sortBy) => {
+        const upstream16 = gradeSearch(16, sortBy);
+        const listed = (await searchClimbs(gradeSourceParams, upstream16)).climbs.map((climb) => climb.uuid);
+        expect(listed).toEqual([id('upstream-16')]);
+        expect(await countClimbs(gradeSourceParams, upstream16)).toBe(1);
+      },
+    );
+
+    // Effective Boardsesh grades: SETTER-ONLY 18 (its setter_only grade is skipped,
+    // so it falls back to upstream), SPLIT 16, UPSTREAM-16 16 (no grade row). Ties
+    // break on uuid DESC, so UPSTREAM-16 sorts ahead of SPLIT.
+    it('sorts by the Boardsesh grade under boardsesh, in the same buckets the filter uses', async () => {
+      const bySortedDifficulty = async (gradeSource?: ClimbSearchParams['gradeSource']) =>
+        (
+          await searchClimbs(gradeSourceParams, {
+            page: 0,
+            pageSize: 50,
+            sortBy: 'difficulty',
+            sortOrder: 'desc',
+            settername: [GRADE_SOURCE_SETTER],
+            gradeSource,
+          })
+        ).climbs.map((climb) => climb.uuid);
+
+      const boardseshOrder = await bySortedDifficulty('boardsesh');
+      expect(boardseshOrder).toEqual([id('setter-only'), id('upstream-16'), id('split')]);
+
+      // The sort and the filter agree: each grade bucket the filter returns is a
+      // contiguous run of the sorted list, in descending grade order.
+      const filtered = async (grade: number) =>
+        (await searchClimbs(gradeSourceParams, gradeSearch(grade, 'creation', 'boardsesh'))).climbs
+          .map((climb) => climb.uuid)
+          .sort();
+      expect(boardseshOrder.slice(0, 1).sort()).toEqual(await filtered(18));
+      expect(boardseshOrder.slice(1).sort()).toEqual(await filtered(16));
+
+      // Omitted source: the upstream grade, SPLIT and SETTER-ONLY tied at 18.
+      expect(await bySortedDifficulty()).toEqual([id('split'), id('setter-only'), id('upstream-16')]);
+    });
+  });
 });

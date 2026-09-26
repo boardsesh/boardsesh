@@ -12,6 +12,23 @@ vi.mock('../../client', () => ({
   getHttpClient: () => ({ request: requestMock }),
 }));
 
+// The live flag bag, keyed like FEATURE_FLAG_DEFINITIONS. Empty = every flag
+// unresolved, which is what a device with no PostHog answer sees.
+const featureFlags = vi.hoisted(() => ({ values: {} as Record<string, boolean | undefined> }));
+vi.mock('../../../../providers/feature-flags-provider', () => ({
+  useFeatureFlag: (key: string) => featureFlags.values[key],
+  useBoardseshGradeEnabled: () => featureFlags.values['boardsesh-grade'] === true,
+}));
+
+// The climber's "Show Boardsesh grades" preference, read with the flag above.
+const boardseshGradesPreference = vi.hoisted(() => ({ enabled: false, loaded: true }));
+vi.mock('../../../boardsesh-grades-preference', () => ({
+  useBoardseshGradesPreference: () => ({
+    enabled: boardseshGradesPreference.enabled,
+    loaded: boardseshGradesPreference.loaded,
+  }),
+}));
+
 import { keepSameBoardSearchResults, useInfiniteSearchClimbs } from '../use-infinite-search-climbs';
 
 const baseInput: ClimbSearchInput = {
@@ -54,6 +71,9 @@ function makeResponse(page: number): SearchClimbsQueryResponse {
 
 describe('useInfiniteSearchClimbs', () => {
   beforeEach(() => {
+    featureFlags.values = {};
+    boardseshGradesPreference.enabled = false;
+    boardseshGradesPreference.loaded = true;
     requestMock.mockReset();
     requestMock.mockImplementation((_query: unknown, variables: { input: ClimbSearchInput }) =>
       Promise.resolve(makeResponse(variables.input.page ?? 0)),
@@ -79,6 +99,135 @@ describe('useInfiniteSearchClimbs', () => {
     await waitFor(() => expect(requestMock).toHaveBeenCalledTimes(2));
     expect(lastInput()).toMatchObject({ page: 1, pageSize: 30, name: 'Moonage' });
     expect(result.current.hasNextPage).toBe(false);
+  });
+
+  // Issue #5642: on Woods the "Other angles" filter switch decides, and it
+  // defaults off; the tester flag only reaches boards that are not angle-bound.
+  describe('crossAngleStats', () => {
+    const woodsInput: ClimbSearchInput = { ...baseInput, boardName: 'woods' };
+
+    it('sends true on Woods when the Other angles switch is on', async () => {
+      renderHook(() => useInfiniteSearchClimbs({ ...woodsInput, crossAngleStats: true }), { wrapper: wrapper() });
+
+      await waitFor(() => expect(requestMock).toHaveBeenCalledTimes(1));
+      expect(lastInput().crossAngleStats).toBe(true);
+    });
+
+    it('sends false on Woods by default, even with the tester flag on', async () => {
+      featureFlags.values = { 'cross-angle-stats': true };
+      renderHook(() => useInfiniteSearchClimbs(woodsInput), { wrapper: wrapper() });
+
+      await waitFor(() => expect(requestMock).toHaveBeenCalledTimes(1));
+      expect(lastInput().crossAngleStats).toBe(false);
+    });
+
+    it('sends true on Kilter when the tester flag is on', async () => {
+      featureFlags.values = { 'cross-angle-stats': true };
+      renderHook(() => useInfiniteSearchClimbs(baseInput), { wrapper: wrapper() });
+
+      await waitFor(() => expect(requestMock).toHaveBeenCalledTimes(1));
+      expect(lastInput().crossAngleStats).toBe(true);
+    });
+
+    it('sends false on Kilter with the flag unresolved', async () => {
+      renderHook(() => useInfiniteSearchClimbs(baseInput), { wrapper: wrapper() });
+
+      await waitFor(() => expect(requestMock).toHaveBeenCalledTimes(1));
+      expect(lastInput().crossAngleStats).toBe(false);
+    });
+
+    it('refetches when the switch flips, because the value is part of the query key', async () => {
+      const { rerender } = renderHook(({ input }: { input: ClimbSearchInput }) => useInfiniteSearchClimbs(input), {
+        initialProps: { input: woodsInput },
+        wrapper: wrapper(),
+      });
+      await waitFor(() => expect(requestMock).toHaveBeenCalledTimes(1));
+
+      rerender({ input: { ...woodsInput, crossAngleStats: true } });
+
+      await waitFor(() => expect(requestMock).toHaveBeenCalledTimes(2));
+      expect(lastInput().crossAngleStats).toBe(true);
+    });
+  });
+
+  // Issue #5643: with Boardsesh grades on, the grade filter keys on the grade
+  // the rows are labelled with.
+  describe('gradeSource', () => {
+    // A grade bound, so the source can reach SQL and is worth sending.
+    const gradedInput: ClimbSearchInput = { ...baseInput, minGrade: 16, maxGrade: 18 };
+
+    it('omits gradeSource while Boardsesh grades are off', async () => {
+      featureFlags.values = { 'boardsesh-grade': true };
+      renderHook(() => useInfiniteSearchClimbs(gradedInput), { wrapper: wrapper() });
+
+      await waitFor(() => expect(requestMock).toHaveBeenCalledTimes(1));
+      expect(lastInput().gradeSource).toBeUndefined();
+    });
+
+    it('omits gradeSource when the preference is on but the flag is off', async () => {
+      boardseshGradesPreference.enabled = true;
+      renderHook(() => useInfiniteSearchClimbs(gradedInput), { wrapper: wrapper() });
+
+      await waitFor(() => expect(requestMock).toHaveBeenCalledTimes(1));
+      expect(lastInput().gradeSource).toBeUndefined();
+    });
+
+    it('sends BOARDSESH with the flag and the preference on', async () => {
+      featureFlags.values = { 'boardsesh-grade': true };
+      boardseshGradesPreference.enabled = true;
+      renderHook(() => useInfiniteSearchClimbs(gradedInput), { wrapper: wrapper() });
+
+      await waitFor(() => expect(requestMock).toHaveBeenCalledTimes(1));
+      expect(lastInput().gradeSource).toBe('BOARDSESH');
+    });
+
+    it('refetches when the preference flips, because the source is part of the query key', async () => {
+      featureFlags.values = { 'boardsesh-grade': true };
+      const { rerender } = renderHook(() => useInfiniteSearchClimbs(gradedInput), { wrapper: wrapper() });
+      await waitFor(() => expect(requestMock).toHaveBeenCalledTimes(1));
+      expect(lastInput().gradeSource).toBeUndefined();
+
+      boardseshGradesPreference.enabled = true;
+      rerender();
+
+      await waitFor(() => expect(requestMock).toHaveBeenCalledTimes(2));
+      expect(lastInput().gradeSource).toBe('BOARDSESH');
+    });
+
+    it('omits gradeSource when neither a grade bound nor the difficulty sort can read it', async () => {
+      featureFlags.values = { 'boardsesh-grade': true };
+      boardseshGradesPreference.enabled = true;
+      renderHook(() => useInfiniteSearchClimbs(baseInput), { wrapper: wrapper() });
+
+      await waitFor(() => expect(requestMock).toHaveBeenCalledTimes(1));
+      expect(lastInput().gradeSource).toBeUndefined();
+    });
+
+    it('stays on the upstream grade until the stored preference has been read', async () => {
+      featureFlags.values = { 'boardsesh-grade': true };
+      boardseshGradesPreference.enabled = true;
+      boardseshGradesPreference.loaded = false;
+      renderHook(() => useInfiniteSearchClimbs(gradedInput), { wrapper: wrapper() });
+
+      await waitFor(() => expect(requestMock).toHaveBeenCalledTimes(1));
+      expect(lastInput().gradeSource).toBeUndefined();
+    });
+
+    it('strips a gradeSource the caller already set when Boardsesh grades are off', async () => {
+      renderHook(() => useInfiniteSearchClimbs({ ...gradedInput, gradeSource: 'BOARDSESH' }), { wrapper: wrapper() });
+
+      await waitFor(() => expect(requestMock).toHaveBeenCalledTimes(1));
+      expect(lastInput()).not.toHaveProperty('gradeSource');
+    });
+
+    it('sends BOARDSESH for the difficulty sort without a grade bound', async () => {
+      featureFlags.values = { 'boardsesh-grade': true };
+      boardseshGradesPreference.enabled = true;
+      renderHook(() => useInfiniteSearchClimbs({ ...baseInput, sortBy: 'difficulty' }), { wrapper: wrapper() });
+
+      await waitFor(() => expect(requestMock).toHaveBeenCalledTimes(1));
+      expect(lastInput().gradeSource).toBe('BOARDSESH');
+    });
   });
 
   describe('keepPreviousResults', () => {

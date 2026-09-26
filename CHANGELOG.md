@@ -4,6 +4,75 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-09-25
+
+### New
+
+- Find a gym by the exact wall you want: pick a board, then its layout, size and angle. ([#5745](https://github.com/boardsesh/boardsesh/pull/5745))
+- Similar climbs now come from your downloaded board, so they work with no signal ([#5768](https://github.com/boardsesh/boardsesh/pull/5768))
+  On a board you haven't downloaded, one tap downloads it and switches similar climbs on
+  Hold heatmap: see which holds get used most on your downloaded board, filtered the way your climb list is; on the create board too
+- Similar climbs on climb pages load faster ([#5766](https://github.com/boardsesh/boardsesh/pull/5766))
+
+### Improved
+
+- Hold heatmaps are moving into the app, where they run on your downloaded board. ([#5763](https://github.com/boardsesh/boardsesh/pull/5763))
+
+### Fixed
+
+- Two Kilter-built LED boxes in one gym now each get their own row when you connect, so you can pick the wall you're at. ([#5790](https://github.com/boardsesh/boardsesh/pull/5790))
+- A climb pulled in from another angle now tells you which angle its grade and sends come from — in the list and in the climb header, not just the screen-reader label ([#5792](https://github.com/boardsesh/boardsesh/pull/5792))
+- The Attempt and Flash buttons stay lined up while you type a note ([#5774](https://github.com/boardsesh/boardsesh/pull/5774))
+- Tap connect and the board sheet opens right away while it looks for your saved board ([#5783](https://github.com/boardsesh/boardsesh/pull/5783))
+  Board off or out of range? Tap "Search for any board" to skip the wait
+- Your note stays in view above the keyboard when you log or edit a tick ([#5772](https://github.com/boardsesh/boardsesh/pull/5772))
+- The rest-length slider now spans the full card, so it's easy to drag between sets. ([#5771](https://github.com/boardsesh/boardsesh/pull/5771))
+  Set up a fixed window like "Every 3:00" straight from the session card. Logging attempts or sends won't restart it.
+- Find any setter by name in the setter filter, even a two-letter one ([#5781](https://github.com/boardsesh/boardsesh/pull/5781))
+- Your crew sees live session changes across devices again. ([#5784](https://github.com/boardsesh/boardsesh/pull/5784))
+- Search finds a climb by its full name, apostrophes and dashes included ([#5778](https://github.com/boardsesh/boardsesh/pull/5778))
+- If Boardsesh updates while you have it open in your browser, the page now reloads itself instead of getting stuck on an error. ([#5782](https://github.com/boardsesh/boardsesh/pull/5782))
+- Settings opens on top of whatever you're doing and closes back to it, instead of taking over the You tab ([#5760](https://github.com/boardsesh/boardsesh/pull/5760))
+  Tapping You always lands on your profile now, even after a trip through Settings
+- The grade filter now matches the Boardsesh grades you see on each climb. ([#5759](https://github.com/boardsesh/boardsesh/pull/5759))
+- Spanish send button now reads "Encadenado", matching the wording used everywhere else a send shows up in the app. ([#5751](https://github.com/boardsesh/boardsesh/pull/5751))
+- Sign in to Kilter now asks for your email, not a username — matching how you actually log into the Kilter app. ([#5754](https://github.com/boardsesh/boardsesh/pull/5754))
+- Translated pages on iPhone Safari can recover from a login-page hiccup, so you can get back to your account. ([#5755](https://github.com/boardsesh/boardsesh/pull/5755))
+- Search and sheet notes keep working when you tap away in the browser. ([#5756](https://github.com/boardsesh/boardsesh/pull/5756))
+
+## 2026-09-23
+
+### New
+
+- Shared climb links now show the board, the grade, the name and the setter instead of a dark empty card ([#5695](https://github.com/boardsesh/boardsesh/pull/5695))
+- Infrastructure monitoring for the DR standby's trust path. No user-facing change. ([#5651](https://github.com/boardsesh/boardsesh/pull/5651))
+- Internal infrastructure: a DR backup sidecar image. No user-facing change. ([#5648](https://github.com/boardsesh/boardsesh/pull/5648))
+
+### Fixed
+
+- Woods lists now show climbs for the angle you're on. Flip on "Other angles" in filters to see the rest. ([#5667](https://github.com/boardsesh/boardsesh/pull/5667))
+- Sharing a climb now gets the preview picture ready before the link leaves your phone, so it shows up straight away instead of after a few seconds of blank. ([#5749](https://github.com/boardsesh/boardsesh/pull/5749))
+- Decoy climbs now show the board in link previews instead of a broken image ([#5693](https://github.com/boardsesh/boardsesh/pull/5693))
+- Swipe through every compatible climb in your playlist again. ([#5689](https://github.com/boardsesh/boardsesh/pull/5689))
+
+## 2026-09-22
+
+### App update
+
+A new version shipped to the App Store and Play Store.
+
+### New
+
+- When enabled, first-run can help you link your board account after picking a board. Bring available sends into your logbook, or choose Not now and keep climbing. ([#5235](https://github.com/boardsesh/boardsesh/pull/5235))
+- Infrastructure: lets the database image serve a real certificate. Nothing deployed here. ([#5650](https://github.com/boardsesh/boardsesh/pull/5650))
+- Infrastructure DNS for the disaster-recovery standby. No user-facing change. ([#5649](https://github.com/boardsesh/boardsesh/pull/5649))
+- This separate Garmin app is not shipped through the mobile app's release notes and still requires Connect IQ Store preparation. ([#3466](https://github.com/boardsesh/boardsesh/pull/3466))
+
+### Fixed
+
+- Choose whether PR previews open when Boardsesh starts. ([#5684](https://github.com/boardsesh/boardsesh/pull/5684))
+- Link your board account with clearer instructions and correctly spelled board names. ([#5231](https://github.com/boardsesh/boardsesh/pull/5231))
+
 ## 2026-09-21
 
 ### New

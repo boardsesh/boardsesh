@@ -20,7 +20,7 @@ export const climbTypeDefs = /* GraphQL */ `
     frames: String!
     "The angle the climber is browsing at. Named for the set angle historically, but every producer stamps the browsed angle here, and ticks, the queue and the BLE spill guard all key on that. See statsAngle for where the numbers below came from."
     angle: Int!
-    "The angle the grade, ascents and quality on this climb were actually read from. Equals angle normally; differs when the browsed angle had no stats row and the climb own set angle supplied them, which is always the case on Woods and MoonBoard and opt-in elsewhere via ClimbSearchInput.crossAngleStats (issue #5405). Null when the climb has no stats at any angle, i.e. a genuine project. Display only: show it beside the grade when it differs, never key on it. Deliberately absent from ClimbInput, so a queued climb carries no set-angle marker, because adding a field there means changing four lists at once (see queue-climb-field-contract.test.ts) and the marker is not worth that."
+    "The angle the grade, ascents and quality on this climb were actually read from. Equals angle normally; differs when the browsed angle had no stats row and the climb own set angle supplied them: in a search that set ClimbSearchInput.crossAngleStats (issue #5405), in a by-name search on Woods, and on the Woods climb detail read (issue #5642). Null when the climb has no stats at any angle, i.e. a genuine project. Display only: show it beside the grade when it differs, never key on it. Deliberately absent from ClimbInput, so a queued climb carries no set-angle marker, because adding a field there means changing four lists at once (see queue-climb-field-contract.test.ts) and the marker is not worth that."
     statsAngle: Int
     "Number of people who have completed this climb"
     ascensionist_count: Int!
@@ -116,6 +116,20 @@ export const climbTypeDefs = /* GraphQL */ `
     ANY
     INTACT
     BROKEN
+  }
+
+  """
+  Which grade the grade-range filter reads.
+
+  UPSTREAM is the default: the board's own catalogue grade (display_difficulty),
+  falling back to the Boardsesh grade only when a climb has no stats row at that
+  angle. BOARDSESH reads the model-generated Boardsesh grade first and falls back to
+  the upstream grade, so a climber who sees Boardsesh grades on the list gets the
+  rows whose label is in range.
+  """
+  enum ClimbGradeSource {
+    UPSTREAM
+    BOARDSESH
   }
 
   """
@@ -267,8 +281,10 @@ export const climbTypeDefs = /* GraphQL */ `
     projectsOnly: Boolean
     "Keep only intact climbs, only climbs that have lost a hold, or everything (the default)."
     holdIntegrity: HoldIntegrityFilter
-    "Resolve each climb's grade and ascents through its own set angle when the browsed angle has no stats row, instead of ranking it below every climb that does have one (issue #5405). Ignored — always on — for boards whose climbs are angle-bound by nature, Woods and MoonBoard. Elsewhere it is opt-in, because an Aurora catalogue grades every angle independently and the browsed angle is usually the right one to read."
+    "Resolve each climb's grade and ascents through its own set angle when the browsed angle has no stats row, instead of ranking it below every climb that does have one (issue #5405). Opt-in on every board; omitted means off. On Woods, whose climbs are bound to the angle they were set at, off also narrows the list to the climbs for the browsed angle: set there, with no set angle recorded, or with stats there (issue #5642). A name search on Woods resolves across angles either way, so a climb is findable by name at any angle."
     crossAngleStats: Boolean
+    "Which grade minGrade and maxGrade are compared against. Omitted means UPSTREAM, the grade older app builds filter on. Send BOARDSESH when the list shows Boardsesh grades, so the filter matches the labels."
+    gradeSource: ClimbGradeSource
     "Include single-frame climbs (boulders). Omitting both boulders and routes matches all climb types; set boulders=true with routes=false (or omit routes) to filter to boulders only."
     boulders: Boolean
     "Include multi-frame climbs (routes). Omitting both boulders and routes matches all climb types; set routes=true with boulders=false (or omit boulders) to filter to routes only."
@@ -306,15 +322,18 @@ export const climbTypeDefs = /* GraphQL */ `
     sizeId: Int!
     "Comma-separated set IDs"
     setIds: String!
-    "Board angle in degrees. Accepted and ignored: the setter list is the same at every angle (#5404)."
+    "Board angle in degrees. Ignored on every board whose climbs are not bound to one angle: the setter list is the same at every angle there (#5404). On Woods it is the browsed angle, and the counts cover only the climbs for it unless crossAngleStats is set (#5642)."
     angle: Int!
     "Case-insensitive substring filter on setter username (for autocomplete)"
     search: String
+    "Count every climb whatever angle it was set at. Mirrors ClimbSearchInput.crossAngleStats, and only changes anything on Woods, whose climbs are bound to the angle they were set at: omitted or false, a setter is counted only for the climbs the default list shows at this angle (set there, with no set angle recorded, or with stats there), so the picker never offers a setter whose climbs the list cannot show (#5642). Send true when the search it filters has the Other angles switch on."
+    crossAngleStats: Boolean
   }
 
   """
   A setter username paired with the number of climbs they've authored
-  for a given board configuration. Angle-independent.
+  for a given board configuration. Angle-independent everywhere but Woods,
+  where it follows SetterStatsInput.crossAngleStats.
   """
   type SetterStat {
     "Setter's username"

@@ -10,7 +10,6 @@ import {
   type ColorValue,
 } from 'react-native';
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
-import { hashKey } from '@tanstack/react-query';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Stack, useFocusEffect, useRouter, useLocalSearchParams } from 'expo-router';
@@ -84,6 +83,11 @@ import { useClimbListPlaylistMemberships } from '../../../src/hooks/use-climb-li
 import { useClimbListFavorites } from '../../../src/hooks/use-climb-list-favorites';
 import { useScreenshotClimbStatsPrefetch } from '../../../src/hooks/use-screenshot-climb-stats-prefetch';
 import { useInfiniteSearchClimbs } from '../../../src/lib/graphql/hooks/use-infinite-search-climbs';
+import {
+  climbSearchScrollKey,
+  useSearchGradeSourceActive,
+  withGradeSource,
+} from '../../../src/lib/graphql/hooks/search-grade-source';
 import { offlineAwareRequest } from '../../../src/lib/graphql/offline-request';
 import { isOfflineSearchSupported } from '../../../src/db/queries/search-climbs-local';
 import { useIsOffline } from '../../../src/hooks/use-is-offline';
@@ -126,6 +130,7 @@ import {
 } from '../../../src/lib/recent-filter-store';
 import { getLastSearch, saveLastSearch, boardConfigKey } from '../../../src/lib/last-search-store';
 import { getFilterSummary, buildClimbFilterSummary } from '../../../src/lib/filter-summary';
+import { filtersForBoard } from '../../../src/lib/climb-filter-types';
 import { getActiveFilterTokens } from '../../../src/lib/filter-tokens';
 import { normalizeSearchName, visibleSearchTextNeedsSync } from '../../../src/lib/search-name';
 import { track } from '../../../src/lib/analytics';
@@ -667,7 +672,7 @@ function ClimbListInner() {
     () =>
       mergeBoardFilters(
         toClimbSearchInput(
-          filters,
+          filtersForBoard(filters, boardName),
           { boardName, layoutId, sizeId, setIds, angle },
           { page: 0, pageSize: PAGE_SIZE },
           { name },
@@ -703,12 +708,15 @@ function ClimbListInner() {
   // the search itself (the query key's input, without `page`) rather than the
   // input object's identity, so a rebuilt but identical input never scrolls.
   // React Query's own hashKey sorts object keys, so property order can't fake a
-  // change. Skips the first run so mounting never scrolls.
+  // change. Skips the first run so mounting never scrolls. Includes the grade
+  // source `useInfiniteSearchClimbs` adds (issue #5643), so flipping Boardsesh
+  // grades on a graded search resets the scroll along with the query key.
   const climbListRef = useRef<FlashListRef<Climb>>(null);
-  const searchScrollKey = useMemo(() => {
-    const { page: _page, ...queryInput } = searchInput;
-    return hashKey([queryInput]);
-  }, [searchInput]);
+  const boardseshGradesActive = useSearchGradeSourceActive();
+  const searchScrollKey = useMemo(
+    () => climbSearchScrollKey(searchInput, boardseshGradesActive),
+    [searchInput, boardseshGradesActive],
+  );
   const hasSeenSearchKeyRef = useRef(false);
   useEffect(() => {
     if (!hasSeenSearchKeyRef.current) {
@@ -800,6 +808,7 @@ function ClimbListInner() {
         zeroResultOnlyTallClimbs: filters.onlyTallClimbs ?? false,
         zeroResultOnlyWideClimbs: filters.onlyWideClimbs ?? false,
         zeroResultOnlyWithBetaVideos: filters.onlyWithBetaVideos ?? false,
+        zeroResultIncludeOtherAngles: filters.includeOtherAngles ?? false,
         zeroResultBoulders: filters.boulders ?? true,
         zeroResultRoutes: filters.routes ?? false,
         zeroResultHideAttempted: filters.hideAttempted ?? false,
@@ -899,14 +908,17 @@ function ClimbListInner() {
   const fetchSearchPage = useCallback(
     async ({ page, pageSize }: { page: number; pageSize: number }) => {
       const { filters: basisFilters, boardFilters: basisBoardFilters, name: basisName } = searchBasis.read();
-      const input = mergeBoardFilters(
-        toClimbSearchInput(
-          basisFilters,
-          { boardName, layoutId, sizeId, setIds, angle },
-          { page, pageSize },
-          { name: basisName },
+      const input = withGradeSource(
+        mergeBoardFilters(
+          toClimbSearchInput(
+            filtersForBoard(basisFilters, boardName),
+            { boardName, layoutId, sizeId, setIds, angle },
+            { page, pageSize },
+            { name: basisName },
+          ),
+          basisBoardFilters,
         ),
-        basisBoardFilters,
+        boardseshGradesActive,
       );
       // Same offline-aware source the list uses, so the play-drawer swipe keeps
       // paging climbs with no signal on a downloaded board.
@@ -916,7 +928,7 @@ function ClimbListInner() {
         hasMore: response.searchClimbs.hasMore,
       };
     },
-    [searchBasis, boardName, layoutId, sizeId, setIds, angle],
+    [searchBasis, boardName, layoutId, sizeId, setIds, angle, boardseshGradesActive],
   );
 
   const allQueueClimbs = useMemo(() => toQueueClimbs(visibleClimbs), [visibleClimbs]);
@@ -1162,7 +1174,8 @@ function ClimbListInner() {
 
   const handleApplyRecentFilter = useCallback(
     (pillFilters: ClimbFilters, pillSearchText: string) => {
-      replaceSearch(pillFilters, pillSearchText);
+      // Pills are shared across boards; keep only what this board can show.
+      replaceSearch(filtersForBoard(pillFilters, boardName), pillSearchText);
       visibleSearchTextRef.current = '';
       applyVisibleSearchText(pillSearchText);
       if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
@@ -1170,7 +1183,7 @@ function ClimbListInner() {
       searchHeaderRef.current?.blur();
       setIsSearchFocused(false);
     },
-    [applyVisibleSearchText, replaceSearch],
+    [applyVisibleSearchText, replaceSearch, boardName],
   );
 
   const handleClearRecentFilters = useCallback(() => {

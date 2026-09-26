@@ -711,6 +711,34 @@ describe('tickQueries — behavior fixes', () => {
       expect(result.items).toHaveLength(1);
       expect(result.items[0].climbName).toBe('Sloper Madness');
     });
+
+    // #5353: the logbook uses climb search's pattern, so a name typed with the
+    // phone's curly apostrophe finds the straight-apostrophe climb here too.
+    it('finds either apostrophe form, as climb search does', async () => {
+      const straightUuid = CLIMB_PREFIX + 'straight-apostrophe';
+      const curlyUuid = CLIMB_PREFIX + 'curly-apostrophe';
+      await insertClimb(straightUuid, "Joey's Gaston");
+      await insertClimb(curlyUuid, 'Joey’s Gaston');
+      await insertTick({
+        uuid: 'tick-straight-1',
+        climbUuid: straightUuid,
+        climbedAt: '2026-01-01 10:00:00',
+        status: 'send',
+      });
+      await insertTick({
+        uuid: 'tick-curly-1',
+        climbUuid: curlyUuid,
+        climbedAt: '2026-01-02 10:00:00',
+        status: 'send',
+      });
+
+      const curlyQuery = await callUserAscentsFeed(TEST_USER_ID, { climbName: 'Joey’s Gaston', limit: 50 });
+      const straightQuery = await callUserAscentsFeed(TEST_USER_ID, { climbName: "Joey's Gaston", limit: 50 });
+
+      const bothNames = ["Joey's Gaston", 'Joey’s Gaston'];
+      expect(curlyQuery.items.map((item) => item.climbName).sort()).toEqual(bothNames);
+      expect(straightQuery.items.map((item) => item.climbName).sort()).toEqual(bothNames);
+    });
   });
 
   describe('userAscentsFeed — hasBetaVideo', () => {

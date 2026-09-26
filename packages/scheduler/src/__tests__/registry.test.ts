@@ -27,11 +27,6 @@ const vercelCronPaths = (vercelConfig.crons ?? []).map((cron) => cron.path);
  */
 const VERCEL_SCHEDULES: readonly (readonly [job: string, path: string, schedule: string])[] = [
   ['cleanup', '/api/internal/cleanup', '0 5 * * *'],
-  ['prewarm-heatmap-kilter', '/api/internal/prewarm-heatmap/kilter', '0 4 * * 0'],
-  ['prewarm-heatmap-tension', '/api/internal/prewarm-heatmap/tension', '15 4 * * 0'],
-  ['prewarm-heatmap-decoy', '/api/internal/prewarm-heatmap/decoy', '30 4 * * 0'],
-  ['prewarm-heatmap-touchstone', '/api/internal/prewarm-heatmap/touchstone', '45 4 * * 0'],
-  ['prewarm-heatmap-grasshopper', '/api/internal/prewarm-heatmap/grasshopper', '0 5 * * 0'],
   ['profile-percentiles', '/api/internal/profile-percentiles', '0 6 * * 0'],
   ['refresh-sitemap-climbs', '/api/internal/refresh-sitemap-climbs', '0 */6 * * *'],
 ];
@@ -95,15 +90,6 @@ describe('job registry', () => {
     // more often than any crawler re-reads the file.
     const actual = JOBS.filter((job) => job.webPath !== undefined).map((job) => [job.name, job.webPath, job.schedule]);
     expect(actual).toEqual(VERCEL_SCHEDULES.map((row) => [...row]));
-  });
-
-  it('keeps the five heatmap prewarms staggered rather than firing them together', () => {
-    // Five boards' worth of heatmap aggregates against one Postgres. The
-    // stagger is the rate limit, so a schedule collapsed onto a single minute
-    // is a regression even though every individual job still "runs weekly".
-    const prewarmSlots = JOBS.filter((job) => job.name.startsWith('prewarm-heatmap-')).map((job) => job.schedule);
-    expect(new Set(prewarmSlots).size).toBe(prewarmSlots.length);
-    expect(prewarmSlots).toHaveLength(5);
   });
 
   it('runs the gym activity refresh directly against GraphQL at 06:30 UTC', () => {

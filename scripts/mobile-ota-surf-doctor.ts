@@ -51,23 +51,42 @@ import { pathToFileURL } from 'node:url';
 
 const LOG = '[ota-surf-doctor]';
 
-// The app id the V3 server routes on (the `expo-app-id` header the client sends).
-// Kept as a literal per file rather than shared: scripts/ota-preview-cleanup.ts
-// runs under bare `node --experimental-strip-types` with no install step, and
-// app.config.ts is read by a loader that can't resolve a sibling .ts. All copies
-// are pinned equal by scripts/mobile-ci-env-parity.test.ts.
-export const OTA_APP_ID = '007e6fd7-f200-448c-9449-8d48ba5d51fc';
+// Every primitive of the `/branch_lists` call — the app id, the channel, the
+// header set, the response interpretation — now lives in scripts/lib/ota-branch-probe.ts
+// so this diagnostic and the publisher's own surfability check (scripts/mobile-publish.ts)
+// ask the server exactly the same question. Re-exported because this module is the
+// documented entry point for them.
+import {
+  DEFAULT_BASE_URL,
+  OTA_APP_ID,
+  OTA_CHANNEL,
+  PLATFORMS,
+  PROBE_TIMEOUT_MS,
+  SURFING_DISABLED_HEADER,
+  buildProbeHeaders,
+  interpretProbe,
+  probeBranchList,
+  stripManifestSuffix,
+  type FetchLike,
+  type Platform,
+  type ProbeOutcome,
+  type SurfState,
+  type SurfableBranch,
+} from './lib/ota-branch-probe';
 
-// The channel every production/TestFlight binary bakes into `expo-channel-name`
-// (packages/mobile/app.config.ts). Branch surfing is a property OF this channel.
-export const OTA_CHANNEL = 'production';
-
-export const DEFAULT_BASE_URL = 'https://updates.boardsesh.com';
-
-// Set by xprem on a 404 that came from branch surfing being off for the channel,
-// as opposed to any other 404 on the way. Mirrors SURFING_DISABLED_HEADER in
-// @xprem/control-center's surf.ts — the client keys the same distinction off it.
-export const SURFING_DISABLED_HEADER = 'xprem-branch-surfing';
+// Preserve the legacy exports; probeBranchList is internal to the shared helper.
+export {
+  DEFAULT_BASE_URL,
+  OTA_APP_ID,
+  OTA_CHANNEL,
+  PLATFORMS,
+  PROBE_TIMEOUT_MS,
+  SURFING_DISABLED_HEADER,
+  buildProbeHeaders,
+  interpretProbe,
+  stripManifestSuffix,
+};
+export type { FetchLike, Platform, ProbeOutcome, SurfState, SurfableBranch };
 
 /**
  * Stand-in runtimeVersion for a probe with none supplied.
@@ -86,29 +105,11 @@ export const SURFING_DISABLED_HEADER = 'xprem-branch-surfing';
  */
 export const SWITCH_PROBE_RUNTIME_VERSION = 'boardsesh-surf-doctor-switch-probe';
 
-export const PLATFORMS = ['ios', 'android'] as const;
-export type Platform = (typeof PLATFORMS)[number];
-
 /**
  * Where a probed runtimeVersion came from. `none` means nobody supplied one, so
  * only the switch verdict is meaningful — see SWITCH_PROBE_RUNTIME_VERSION.
  */
 export type RuntimeVersionSource = 'flag' | 'env' | 'none';
-
-export type SurfState = 'surfing-off' | 'branches' | 'no-branches' | 'unreachable';
-
-export interface SurfableBranch {
-  name: string;
-  lastUpdateAt?: string;
-}
-
-export interface ProbeOutcome {
-  state: SurfState;
-  branches: SurfableBranch[];
-  total: number;
-  /** Human-readable "why" — the status line, or the parse failure. */
-  detail: string;
-}
 
 export interface PlatformReport extends ProbeOutcome {
   platform: Platform;
@@ -127,11 +128,6 @@ export interface DoctorArgs {
   platforms: Platform[];
   runtimeVersion: string | null;
   json: boolean;
-}
-
-/** PURE: strip an EXPO_UPDATES_URL's trailing `/manifest` to the server base URL. */
-export function stripManifestSuffix(url: string): string {
-  return url.replace(/\/manifest\/?$/, '').replace(/\/+$/, '');
 }
 
 function readFlag(argv: string[], name: string): string | null {
@@ -156,65 +152,6 @@ export function parseDoctorArgs(argv: string[], env: DoctorEnv = process.env): D
     platforms,
     runtimeVersion: readFlag(args, 'runtime-version') ?? null,
     json: args.includes('--json'),
-  };
-}
-
-/**
- * PURE: the exact header set a binary sends. app.config.ts bakes `expo-app-id`,
- * `expo-channel-name` and `xprem-branch`; expo-updates adds the runtime version
- * and platform. `xprem-branch` is deliberately absent here — an empty branch
- * header is what "I am on the channel's own branch" looks like, and that is the
- * state we want to probe from.
- */
-export function buildProbeHeaders(runtimeVersion: string, platform: Platform): Record<string, string> {
-  return {
-    'expo-app-id': OTA_APP_ID,
-    'expo-channel-name': OTA_CHANNEL,
-    'expo-runtime-version': runtimeVersion,
-    'expo-platform': platform,
-  };
-}
-
-/**
- * PURE: an HTTP answer → one of the three states the app renders, plus
- * "unreachable" for everything that is neither.
- *
- * The 404 split is the whole point: a 404 CARRYING the surfing header means the
- * channel refuses to surf, while a bare 404 means something else answered — a
- * proxy, a wrong base URL, a retired server. The app conflates neither, so
- * neither does this.
- */
-export function interpretProbe(status: number, headers: Headers, body: unknown): ProbeOutcome {
-  if (status === 404) {
-    return headers.get(SURFING_DISABLED_HEADER) !== null
-      ? { state: 'surfing-off', branches: [], total: 0, detail: `HTTP 404, ${SURFING_DISABLED_HEADER}: off` }
-      : {
-          state: 'unreachable',
-          branches: [],
-          total: 0,
-          detail: `HTTP 404 without a ${SURFING_DISABLED_HEADER} header — is the base URL right?`,
-        };
-  }
-  if (status !== 200) {
-    return { state: 'unreachable', branches: [], total: 0, detail: `HTTP ${status}` };
-  }
-  const payload = body as { branches?: unknown; total?: unknown } | null;
-  if (!payload || !Array.isArray(payload.branches)) {
-    return { state: 'unreachable', branches: [], total: 0, detail: 'HTTP 200 with an unexpected body shape' };
-  }
-  const branches = payload.branches
-    .filter((entry): entry is Record<string, unknown> => typeof entry === 'object' && entry !== null)
-    .map((entry) => ({
-      name: String(entry.name ?? ''),
-      lastUpdateAt: typeof entry.lastUpdateAt === 'string' ? entry.lastUpdateAt : undefined,
-    }))
-    .filter((entry) => entry.name.length > 0);
-  const total = typeof payload.total === 'number' ? payload.total : branches.length;
-  return {
-    state: branches.length > 0 ? 'branches' : 'no-branches',
-    branches,
-    total,
-    detail: `HTTP 200, ${total} branch${total === 1 ? '' : 'es'}`,
   };
 }
 
@@ -277,44 +214,6 @@ export function summarizeReports(reports: PlatformReport[], baseUrl: string): st
   return lines;
 }
 
-export type FetchLike = (
-  url: string,
-  init: { headers: Record<string, string>; signal?: AbortSignal },
-) => Promise<Response>;
-
-/**
- * Cap on one probe. This is a diagnostic someone reaches for when previews look
- * broken, so an unreachable server has to come back as a REPORT ("unreachable")
- * rather than a hang — a script that never returns looks like a fourth, unnamed
- * failure state.
- */
-export const PROBE_TIMEOUT_MS = 15_000;
-
-async function probePlatform(
-  fetchImpl: FetchLike,
-  baseUrl: string,
-  runtimeVersion: string,
-  platform: Platform,
-): Promise<ProbeOutcome> {
-  try {
-    // ?all=1 raises the page cap only; it does NOT bypass the runtimeVersion or
-    // platform filter, so a wrong fingerprint still reads as an empty list.
-    const response = await fetchImpl(`${baseUrl}/branch_lists?all=1`, {
-      headers: buildProbeHeaders(runtimeVersion, platform),
-      signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
-    });
-    const body = response.status === 200 ? await response.json().catch(() => null) : null;
-    return interpretProbe(response.status, response.headers, body);
-  } catch (error) {
-    return {
-      state: 'unreachable',
-      branches: [],
-      total: 0,
-      detail: `request failed: ${error instanceof Error ? error.message : String(error)}`,
-    };
-  }
-}
-
 /**
  * PURE: which runtimeVersion to probe with, and how much it can be trusted.
  * Falls back to the sentinel rather than resolving one locally — see
@@ -338,7 +237,7 @@ export async function runSurfDoctor(
   const { runtimeVersion, source } = resolveProbeRuntimeVersion(args, env);
   const reports: PlatformReport[] = [];
   for (const platform of args.platforms) {
-    const outcome = await probePlatform(fetchImpl, args.baseUrl, runtimeVersion, platform);
+    const outcome = await probeBranchList(fetchImpl, args.baseUrl, runtimeVersion, platform);
     reports.push({ platform, runtimeVersion, runtimeVersionSource: source, ...outcome });
   }
 

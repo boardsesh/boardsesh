@@ -17,6 +17,7 @@ export type FilterSummaryLabels = {
   tallOnly?: () => string;
   wideOnly?: () => string;
   betaOnly?: () => string;
+  otherAngles?: () => string;
   status?: (kind: 'drafts' | 'established' | 'projects') => string;
   hideAttempted?: () => string;
   hideCompleted?: () => string;
@@ -46,6 +47,7 @@ export type BaseFilters = {
   onlyTallClimbs?: boolean;
   onlyWideClimbs?: boolean;
   onlyWithBetaVideos?: boolean;
+  includeOtherAngles?: boolean;
   status?: 'any' | 'drafts' | 'established' | 'projects';
   hideAttempted?: boolean;
   hideCompleted?: boolean;
@@ -126,6 +128,10 @@ export function getBaseFilterParts(
 
   if (filters.onlyWithBetaVideos && labels.betaOnly) {
     parts.push(labels.betaOnly());
+  }
+
+  if (filters.includeOtherAngles && labels.otherAngles) {
+    parts.push(labels.otherAngles());
   }
 
   // 'any' is the catch-all default and 'established' overlaps the usual

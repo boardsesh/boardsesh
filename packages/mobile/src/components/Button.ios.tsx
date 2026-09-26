@@ -145,8 +145,25 @@ export function Button({
   const spinnerColor = isDestructive ? brandColors.error : contentColor;
   const buttonRole = isDestructive ? 'destructive' : role === 'cancel' ? 'cancel' : undefined;
 
+  // `ignoreSafeArea="keyboard"`: every Host is its own UIHostingController,
+  // and by default SwiftUI insets its content for any part of the keyboard
+  // that overlaps it. Keyboard avoidance belongs to the React Native layout
+  // (the sheets' KeyboardAvoidingView), not to each button: a per-button inset
+  // only squeezes the label, and glass and borderedProminent respond to that
+  // squeeze differently. That is the suspected cause of the tick sheet's
+  // Attempt sitting lower than Flash with the keyboard up (#5663, unproven on
+  // a device). React Native does not fully clear the keyboard everywhere yet:
+  // at the tick sheet's 65% detent the action row still sits ~4pt under the
+  // keyboard edge until #5772 raises the sheet to 92% on note focus. With this
+  // prop that sliver is covered instead of re-laid-out.
   return (
-    <Host matchContents={buttonMatchContents(style)} colorScheme={colorScheme} style={style} testID={testID}>
+    <Host
+      matchContents={buttonMatchContents(style)}
+      ignoreSafeArea="keyboard"
+      colorScheme={colorScheme}
+      style={style}
+      testID={testID}
+    >
       <SwiftUIButton role={buttonRole} onPress={handlePress} modifiers={modifiers}>
         {/* The fill frame is repeated on the LABEL because that is the view
             `.buttonStyle()` paints its background around — see buttonFillAxes.

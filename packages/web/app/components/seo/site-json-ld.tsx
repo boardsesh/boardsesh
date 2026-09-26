@@ -25,7 +25,7 @@ export default async function SiteJsonLd() {
   const { t, locale } = await getServerTranslation('marketing');
 
   const siteUrl = absoluteUrl('/');
-  const logoUrl = resolveShellStaticAssetUrl('/brand/boardsesh-mark.png');
+  const logoUrl = resolveShellStaticAssetUrl('/brand/boardsesh-mark.webp');
 
   return (
     <JsonLd

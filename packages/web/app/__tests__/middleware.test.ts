@@ -384,7 +384,7 @@ describe('middleware matcher config', () => {
   it.each([
     '/api/internal/board-render',
     '/api/og/setter',
-    '/api/internal/prewarm-heatmap/kilter',
+    '/api/internal/profile-percentiles',
     '/api/internal/revalidate-climb',
   ])('does not run middleware on %s (no CORS/locale/board-validation work needed there)', (pathname) => {
     expect(isMatchedByConfig(pathname)).toBe(false);

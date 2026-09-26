@@ -359,6 +359,7 @@
       "enableTitle": "¿Descargar {{name}}?",
       "enableMessage": "Descarga todos los bloques de este plafón para explorarlos y registrar tus ascensos sin conexión.",
       "enableMessageWithSize": "Unos {{size}}. Descarga todos los bloques de este plafón para explorarlos y registrar tus ascensos sin conexión.",
+      "enableIndexLine": "Y hasta unos {{index}} más en tu móvil para los bloques similares.",
       "enableConfirm": "Descargar",
       "pickerNotice": "Sin conexión: estos son los plafones que has descargado.",
       "pickerNoticeUnreachable": "Ahora mismo no podemos cargar tus plafones: estos son los que has descargado.",
@@ -391,6 +392,16 @@
           "title": "Escala donde no llega el wifi",
           "body": "Descarga un plafón una vez y todo su catálogo queda en tu móvil: la búsqueda, los filtros y registrar encadenes funcionan en un sótano sin cobertura.",
           "cta": "Elegir un plafón para descargar"
+        },
+        "similarClimbs": {
+          "title": "Los bloques similares viven en tu móvil",
+          "body": "Descarga {{name}} para ver bloques que comparten estas presas",
+          "cta": "Descargar {{name}}"
+        },
+        "holdHeatmap": {
+          "title": "Mira dónde están los bloques",
+          "body": "Descarga {{name}} para ver las presas que más usan los escaladores",
+          "cta": "Descargar {{name}}"
         }
       }
     },

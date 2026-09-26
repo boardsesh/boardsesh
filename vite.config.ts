@@ -173,6 +173,7 @@ export default defineConfig({
       './packages/shared/session-inference/vite.config.ts',
       './packages/shared/playlist-generator/vite.config.ts',
       './packages/shared/climb-filters/vite.config.ts',
+      './packages/shared/gym-filters/vite.config.ts',
       './packages/shared/community-roles/vite.config.ts',
       './packages/shared/gym-claim/vite.config.ts',
       './packages/shared/kiosk/vite.config.ts',
@@ -233,6 +234,15 @@ export default defineConfig({
         command: 'pnpm --filter @boardsesh/db run db:verify-journal',
         cache: false,
       },
+      // Asserts that application sessions start with max_parallel_workers_per_gather=0
+      // (#5352), and applies the database default when ADMIN_DATABASE_URL owns the
+      // database. Exits 1 when neither holds — migration 0225 cannot fix it, because
+      // ALTER DATABASE needs ownership the migration role deliberately does not have.
+      // Add `-- --check-only` to report without ever issuing DDL.
+      'db:verify-serial-plan': {
+        command: 'pnpm --filter @boardsesh/db run db:verify-serial-plan',
+        cache: false,
+      },
       'db:studio': {
         command: 'pnpm --filter @boardsesh/db run db:studio',
         dependsOn: ['db:up'],
@@ -278,6 +288,13 @@ export default defineConfig({
         command: 'pnpm --filter @boardsesh/db run db:refresh-climb-grades',
         // No db:up dependency: this often targets a remote DB_URL and supports
         // read-only validation/dry-runs before writing published grade rows.
+        cache: false,
+      },
+      'db:refresh-climb-neighbors': {
+        command: 'pnpm --filter @boardsesh/db run db:refresh-climb-neighbors',
+        // Same reasoning as db:refresh-climb-grades: often a remote DB_URL, and
+        // --dry-run writes nothing. Forward flags with
+        // `vp run db:refresh-climb-neighbors -- --board=kilter --full`.
         cache: false,
       },
       'db:refresh-moonboard-angle-estimates': {
@@ -835,6 +852,10 @@ export default defineConfig({
         command: 'pnpm --filter @boardsesh/climb-filters run typecheck',
         dependsOn: ['codegen'],
       },
+      'typecheck:gym-filters': {
+        command: 'pnpm --filter @boardsesh/gym-filters run typecheck',
+        dependsOn: ['codegen'],
+      },
       'typecheck:community-roles': {
         command: 'pnpm --filter @boardsesh/community-roles run typecheck',
       },
@@ -951,6 +972,7 @@ export default defineConfig({
           'typecheck:profile-stats',
           'typecheck:playlist-generator',
           'typecheck:climb-filters',
+          'typecheck:gym-filters',
           'typecheck:community-roles',
           'typecheck:kiosk',
           'typecheck:i18n',

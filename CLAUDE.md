@@ -10,7 +10,7 @@ Boardsesh is a monorepo. Next.js 16 web app + React Native (Expo) mobile app for
 
 - Backend work belongs in `packages/backend` (GraphQL), not in the Next.js app. We are slowly moving REST/server logic out of `packages/web`.
 - Work autonomously end-to-end: backend + frontend + QA. Don't stop at "API is ready but UI isn't updated."
-- Use subagents (always Opus) for grunt work. Pair every implementation subagent with a QA/reviewer subagent.
+- Use subagents for grunt work: Sonnet for bounded, mechanical work (copy, i18n, docs, simple tests), Opus for anything with correctness risk (concurrency, data, sync, security, native). Pair every implementation subagent with a QA/reviewer subagent.
 - No AI-generated images. Real photos or diagrams only.
 - No buzzwords. Concrete numbers, plain language.
 - Default to action. Full autonomy except no data deletion without asking.
@@ -118,6 +118,9 @@ Read relevant `docs/` before working on the matching area; update docs when the 
 - `docs/user-media-storage.md` — the two Cloudflare R2 buckets behind avatars, gym images, beta thumbnails and user data exports: why R2 rather than Tigris (Tigris forbids a TLS-terminating proxy, so Cloudflare can't cache it), the named-bucket env contract, the no-ACL rule R2 forces, and the Railway-bucket migration runbook
 - `docs/offline-sync-plan.md` — the offline engine (mutation outbox + drainer, pull sync, snapshot bootstrap, startup lock model) and, since #4862, the **connectivity model**: the composed store that is the single writer of `onlineManager`, the `/health/db`-confirmed backend-unreachable state, the 20 s fail-fast deadline, drainer safety during outages, the banner, and the Offline mode toggle; `docs/offline-reads.md` — which screens read from SQLite vs a persisted cache vs an honest "no signal / server trouble" placard, and the auth-scoping contract every local read must satisfy
 - `docs/moonboard-catalog-import.md` — how a MoonBoard capture reaches prod: the three scripts and their order, what each refuses to do, how to read the merge/skip counters, why withdrawn problems get unlisted but vanished ones only get reported, and what the beta-link importer deliberately does not import
+- `docs/pg-primary-tls-rollout.md` — the reviewed rollout for the production primary's TLS certificate: why the certificate it serves today has a published private key, the private-CA parameters and key ceremony, the audit-install-verify order, why rollback is a digest redeploy and never `ALTER SYSTEM RESET`, the two-day slot-loss fuse behind an expiry, and the three things never to do
+- `docs/postgres-dr-architecture.md` — the one-page shape of production Postgres DR (with two Excalidraw diagrams): the Railway PG18 primary, the async physical slot capped at 16 GiB, the read-only homelab standby on Proxmox VM 157, the encrypted WAL-G and pg_dump backups on Unraid, the four-step manual failover, and the UPS gate that blocks promotion today
+- `docs/walg-dr-image.md` — the WAL-G sidecar image for the homelab DR standby: why we build it (upstream publishes none), the six contracts the ansible role enforces, why the binary must be static and declare uid 999, and the dispatch-publish plus digest-pinning loop
 - `docs/board-snapshots.md` — nightly SQLite board-catalog snapshots (export job, client bootstrap, ops runbook); `docs/board-snapshots-dataset.md` — the same snapshots as a public downloadable dataset
 - `docs/help-clips.md` — the /help gesture clips: the `simctl recordVideo` contract, the `HELP_CLIPS` naming table, `vp run help:convert-clips` (mp4 + webm + webp poster), the 1.5 MB budget, and how a page uses `HelpClip`
 - `docs/board-art-geometry.md` — `@boardsesh/board-art-geometry`: traced hold silhouettes per board config (the frozen coordinate contract, how to regenerate, the seven capture gates, the Woods white-key path for photographic art, and the ring fallback downstream)
@@ -138,7 +141,9 @@ Read relevant `docs/` before working on the matching area; update docs when the 
 - `docs/railway.md` — the OTA project's Railway config-as-code (`vp run railway:apply`): what it asserts vs. applies, why services are never created from a script, the `RAILWAY_VAR_*` secret contract, and the xprem ClickHouse retention guard
 - `docs/mobile-sheets-vs-routes.md` — mobile: which surface to use (bottom sheet vs route), with the decision tree + the hard rules (incl. why `fullScreenModal` breaks the iOS 26 native tab bar)
 - `docs/gym-funnel-analytics.md` — the www gym funnel event contract in `@boardsesh/analytics` (seven event names, their property sets, the QR `?src=qr&medium=` landing params, and why `boardTypes` must be a joined string)
+- `docs/growth-metrics.md` — the growth-dashboard contract (#5653): each population as a `$lib` + `environment` pair (native, browser app, preview, untagged legacy binaries, www, backend), the search-to-send and activation funnels, why www `$virt_is_bot` is wrong before the `$raw_user_agent` fix, what `Install Attributed` / `install_channel` do and don't mean, and the dates to annotate
 - `docs/spray-walls.md` — spray walls: the identity mapping that makes a wall a runtime-created catalogue layout under the ninth board type (`spray`), the five side tables and the `is_listed = false` privacy rule behind every per-wall catalogue row, the canonical frame and the reset/generation rule, the per-wall caps and where their numbers are said out loud, the five places spray is deliberately excluded (board pickers, the popular-config rail, gym directory facets, the public snapshot export, sitemaps), and the ops half: reporting a wall, the admin `hidden` flag that reads as private to everyone but the owner, the 30-day photo purge, the outcomes-only telemetry and the `spray-walls` flag rollout gates
+- `docs/similar-climbs.md` — the materialised similar-climbs index: who gets the live Jaccard query (admins) vs `board_climb_neighbors` (everyone else), the nightly `sync_seq` watermark job (settled-row watermark, `list_size` refill, per-board matrix, resumable full builds and their measured duration), the `updateClimb` invalidation, and the `--full` runbook
 - `docs/sitemap.md` — the shard registry, the degrade-at-the-index / fail-closed-at-the-shard split, and the climb store (`sitemap_shard_refreshes` + the `sitemap_climb_urls` ordinal table the shard pages read): who refreshes it, the `?force=1` escape hatch, and why the write lock is transaction-scoped
 
 ## Architecture Overview
@@ -158,7 +163,7 @@ the Expo app in W-16 (#4435) — www keeps marketing, account and gym surfaces o
 
 - Server components fetch initial data.
 - Client components use React Query.
-- API: `/api/internal/...` for server-side ops; `/api/v1/...` for the public read API (climbs, grades, heatmaps, slugs). The Aurora proxies are gone: W-25a (#4441) retired them, W-25b (#4443) deleted the URLs. Board login and tick logging run on GraphQL.
+- API: `/api/internal/...` for server-side ops; `/api/v1/...` for the public read API (climbs, grades, slugs). The Aurora proxies are gone: W-25a (#4441) retired them, W-25b (#4443) deleted the URLs. Board login and tick logging run on GraphQL.
 - State: Context + `useReducer` for complex state; URL params as source of truth for board config.
 
 ### Integration points
