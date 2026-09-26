@@ -26,7 +26,7 @@
 //
 // Every non-reload outcome leaves the climber a manual Reload button.
 //
-// The inline script in `public/index.html` covers the one failure this module
+// The inline script in the web shell (index.html in public/) covers the one failure this module
 // cannot: the root `_layout` chunk itself, which holds the error boundary that
 // calls in here. It acts only while ROOT_LAYOUT_LOADED_FLAG is unset — the root
 // layout sets it through `markRootLayoutLoaded` as it evaluates — and shares the
@@ -44,22 +44,22 @@ export type ChunkLoadCause = 'stale-deploy' | 'transient' | 'network' | 'offline
  */
 export type ChunkRecoveryOutcome = 'reloading' | 'offline' | 'unreachable' | 'exhausted';
 
-/** sessionStorage key holding the time of the last automatic reload. Read by `public/index.html` too. */
+/** sessionStorage key holding the time of the last automatic reload. Read by the web shell (index.html in public/) too. */
 export const CHUNK_RELOAD_GUARD_KEY = 'boardsesh:chunk-reload-at';
 
-/** Minimum gap between two automatic reloads in one tab. Read by `public/index.html` too. */
+/** Minimum gap between two automatic reloads in one tab. Read by the web shell (index.html in public/) too. */
 export const CHUNK_RELOAD_WINDOW_MS = 60_000;
 
-/** sessionStorage key counting automatic reloads in this tab. Read by `public/index.html` too. */
+/** sessionStorage key counting automatic reloads in this tab. Read by the web shell (index.html in public/) too. */
 export const CHUNK_RELOAD_COUNT_KEY = 'boardsesh:chunk-reload-count';
 
-/** Automatic reloads one tab may ever make; past this only the manual button remains. Read by `public/index.html` too. */
+/** Automatic reloads one tab may ever make; past this only the manual button remains. Read by the web shell (index.html in public/) too. */
 export const CHUNK_RELOAD_MAX_PER_TAB = 3;
 
-/** Window property the root layout sets as it evaluates. Read by `public/index.html` too. */
+/** Window property the root layout sets as it evaluates. Read by the web shell (index.html in public/) too. */
 export const ROOT_LAYOUT_LOADED_FLAG = '__BOARDSESH_ROOT_LAYOUT_LOADED__';
 
-/** The panel the shell script paints when it may not reload. Read by `public/index.html` too. */
+/** The panel the shell script paints when it may not reload. Read by the web shell (index.html in public/) too. */
 const BOOT_FAILURE_PANEL_ID = 'boot-failure';
 
 /** How long the status probe may take before the failure counts as a network one. */
@@ -224,7 +224,7 @@ export async function recoverFromChunkLoadError(
 
 /**
  * Called once as the root layout module evaluates. From here on the root error
- * boundary exists, so the shell script in `public/index.html` stands down; it
+ * boundary exists, so the shell script in the web shell (index.html in public/) stands down; it
  * also clears a failure panel the shell painted for a sibling layout chunk that
  * failed while the root one was still arriving.
  */
