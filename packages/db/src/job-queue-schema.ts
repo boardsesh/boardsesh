@@ -12,6 +12,25 @@ import {
   jobQueueTransactionAdapter,
 } from './background-jobs';
 
+/**
+ * The backend's daily popular-board-configs refresh (and the refresh a reader's
+ * cache miss asks for). Lives here because the migrator creates the queue.
+ */
+export const POPULAR_BOARD_CONFIGS_REFRESH_QUEUE = 'popular-board-configs-refresh';
+
+/**
+ * `exclusive`: one job queued or running, so the cron and any number of on-miss
+ * requests collapse to one. A run takes about 30 s; expiry at 600 s sits under
+ * the backend's 900 s Redis lock, so a retry after an expiry finds the lock
+ * still held by the stuck run and skips instead of running a second copy.
+ */
+const POPULAR_BOARD_CONFIGS_REFRESH_QUEUE_OPTIONS = {
+  policy: 'exclusive',
+  expireInSeconds: 600,
+  retryLimit: 2,
+  retryDelay: 300,
+} as const;
+
 /** Only the deployment's reserved migration-owner connection may execute this. */
 export async function initializeJobQueueSchema(
   database: Parameters<typeof jobQueueTransactionAdapter>[0],
@@ -40,6 +59,12 @@ export async function initializeJobQueueSchema(
       policy: 'singleton',
       expireInSeconds: 120,
     });
+    await boss.createQueue(POPULAR_BOARD_CONFIGS_REFRESH_QUEUE, {
+      partition: false,
+      ...POPULAR_BOARD_CONFIGS_REFRESH_QUEUE_OPTIONS,
+    });
+    const { policy: _popularPolicy, ...mutablePopularOptions } = POPULAR_BOARD_CONFIGS_REFRESH_QUEUE_OPTIONS;
+    await boss.updateQueue(POPULAR_BOARD_CONFIGS_REFRESH_QUEUE, mutablePopularOptions);
     for (const queue of Object.values(BACKGROUND_JOB_QUEUES)) {
       await boss.createQueue(queue, { partition: false, ...BACKGROUND_PROBE_JOB_OPTIONS });
       const { policy: _policy, ...mutableOptions } = BACKGROUND_PROBE_JOB_OPTIONS;

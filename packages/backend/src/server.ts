@@ -66,7 +66,6 @@ import { handleApnsStats } from './handlers/apns-stats';
 import { handleIntegrationOAuthStart, handleIntegrationOAuthCallback } from './handlers/integrations-oauth';
 import { createYogaInstance } from './graphql/yoga';
 import { setupWebSocketServer } from './websocket/setup';
-import { warmPopularConfigsCache } from './graphql/resolvers/social/boards';
 import { warmRecentBetaLinksCache } from './graphql/resolvers/beta-videos/queries';
 import {
   initializeApns,
@@ -801,15 +800,13 @@ export async function startServer(): Promise<ServerResources> {
     logger.info(`  Integration OAuth start: ${httpScheme}://0.0.0.0:${PORT}/integrations/:provider/start`);
     logger.info(`  Integration OAuth callback: ${httpScheme}://0.0.0.0:${PORT}/integrations/:provider/callback`);
 
-    // Warm up popular board configs cache in the background.
-    // Uses a Redis lock so only one node across the cluster runs the query.
-    warmPopularConfigsCache().catch((err) => {
-      logger.error('[Server] Popular configs cache warm-up failed:', err);
-    });
-
-    // Warm the recent-beta-links cache the same way. The underlying CTE was
+    // Popular board configs have no boot step: a pg-boss job refreshes them
+    // (services/popular-board-configs.ts), so a deploy costs the database
+    // nothing.
+    //
+    // Fill the recent-beta-links cache if it is empty. The underlying CTE was
     // slow enough in production to starve the DB pool — caching it in Redis
-    // moves the cost off the request path.
+    // moves the cost off the request path. A value already there is kept.
     warmRecentBetaLinksCache().catch((err) => {
       logger.error('[Server] Recent beta links cache warm-up failed:', err);
     });

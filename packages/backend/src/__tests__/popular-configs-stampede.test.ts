@@ -1,29 +1,32 @@
 import { describe, it, expect, beforeEach, vi } from 'vite-plus/test';
+import { PgDialect } from 'drizzle-orm/pg-core';
+import type { SQL } from 'drizzle-orm';
+import type { PgBoss } from 'pg-boss';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
+import { POPULAR_BOARD_CONFIGS_REFRESH_QUEUE } from '@boardsesh/db/job-queue-schema';
 
 /**
- * #4463: `popularBoardConfigs` is the home page's resolver and the heaviest
- * read in the app — 82 s on the dev database when cold. It is Redis-cached,
- * but the fall-through had no concurrency control, so N simultaneous visitors
- * during a cold window meant N simultaneous copies, each pinning one of the
- * pool's ten connections. Once the pool was gone every other query in the
- * process queued behind it forever (postgres.js's acquire queue is unbounded
- * and untimed), which is what made `/embed/**` renders hang for 60 s+ in the
- * e2e suite — the CI backend runs with no REDIS_URL, so every render was a
- * cold window.
+ * `popularBoardConfigs` is the home page's resolver, and its statement was the
+ * heaviest read in the app: 24 production runs in one day at a 548 s mean,
+ * because every deploy DELETEd the Redis key on boot and every replica then
+ * re-ran the statement (#4463 is the pool exhaustion that caused on a cold
+ * window).
  *
- * These pin the two properties that make that impossible: one in-flight
- * statement per process, and a process-local copy when there is no Redis to
- * hold one.
+ * These pin the shape that makes that impossible: a reader never runs the
+ * statement, a miss only asks the job queue for a refresh, and the refresh
+ * job writes over the old value under a cross-replica lock.
  */
 
-const { executeMock, redisConnectedMock, redisGetMock, redisSetMock, redisDelMock } = vi.hoisted(() => ({
-  executeMock: vi.fn(),
-  redisConnectedMock: vi.fn(() => false),
-  redisGetMock: vi.fn(),
-  redisSetMock: vi.fn(),
-  redisDelMock: vi.fn(),
-}));
+const { executeMock, redisConnectedMock, redisGetMock, redisSetMock, redisEvalMock, getJobQueueMock, sendMock } =
+  vi.hoisted(() => ({
+    executeMock: vi.fn(),
+    redisConnectedMock: vi.fn(() => false),
+    redisGetMock: vi.fn(),
+    redisSetMock: vi.fn(),
+    redisEvalMock: vi.fn(),
+    getJobQueueMock: vi.fn(),
+    sendMock: vi.fn(),
+  }));
 
 vi.mock('../db/client', () => ({
   db: {
@@ -34,15 +37,24 @@ vi.mock('../db/client', () => ({
 vi.mock('../redis/client', () => ({
   redisClientManager: {
     isRedisConnected: redisConnectedMock,
-    getClients: () => ({ publisher: { get: redisGetMock, set: redisSetMock, del: redisDelMock } }),
+    getClients: () => ({ publisher: { get: redisGetMock, set: redisSetMock, eval: redisEvalMock, del: vi.fn() } }),
   },
 }));
 
+vi.mock('../services/job-queue', () => ({
+  getJobQueue: getJobQueueMock,
+}));
+
+import { socialBoardQueries } from '../graphql/resolvers/social/boards';
 import {
-  socialBoardQueries,
-  dropPopularConfigsFallback,
-  warmPopularConfigsCache,
-} from '../graphql/resolvers/social/boards';
+  POPULAR_CONFIGS_LOCK_KEY,
+  POPULAR_CONFIGS_LOCK_TTL_SECONDS,
+  POPULAR_CONFIGS_REDIS_KEY,
+  POPULAR_CONFIGS_REFRESH_CRON,
+  refreshPopularConfigsCache,
+  resetPopularConfigsForTests,
+  startPopularBoardConfigsRefresh,
+} from '../services/popular-board-configs';
 import { resetSingleFlightForTests } from '../utils/single-flight';
 
 const CONFIG_ROW = {
@@ -59,6 +71,21 @@ const CONFIG_ROW = {
   board_count: 12,
 };
 
+const CACHED_CONFIG = {
+  boardType: 'kilter',
+  layoutId: 1,
+  layoutName: 'Kilter Board Original',
+  sizeId: 10,
+  sizeName: '12x12 With Kickboard',
+  sizeDescription: '12 x 12',
+  setIds: [1, 2],
+  setNames: ['Bolt Ons', 'Screw Ons'],
+  climbCount: 4200,
+  totalAscents: 99000,
+  boardCount: 12,
+  displayName: 'OG 12x12',
+};
+
 function deferredRows() {
   let resolve!: (rows: unknown) => void;
   const promise = new Promise<unknown>((resolveFn) => {
@@ -73,8 +100,13 @@ beforeEach(() => {
   redisConnectedMock.mockReturnValue(false);
   redisGetMock.mockReset();
   redisSetMock.mockReset();
-  redisDelMock.mockReset();
-  dropPopularConfigsFallback();
+  redisEvalMock.mockReset();
+  redisEvalMock.mockResolvedValue(1);
+  sendMock.mockReset();
+  sendMock.mockResolvedValue('job-id');
+  getJobQueueMock.mockReset();
+  getJobQueueMock.mockReturnValue({ send: sendMock });
+  resetPopularConfigsForTests();
   resetSingleFlightForTests();
 });
 
@@ -84,115 +116,195 @@ const anonCtx = { connectionId: 'conn-anon', isAuthenticated: false } as Connect
 
 const askForConfigs = () => socialBoardQueries.popularBoardConfigs(undefined, { input: { limit: 20 } }, anonCtx);
 
-describe('popularBoardConfigs does not stampede the connection pool', () => {
-  it('runs one statement for callers that arrive while the first is still running', async () => {
-    const inFlight = deferredRows();
-    executeMock.mockReturnValue(inFlight.promise);
+describe('popularBoardConfigs readers never run the statement', () => {
+  it('answers from Redis without touching the database or the queue', async () => {
+    redisConnectedMock.mockReturnValue(true);
+    redisGetMock.mockResolvedValue(JSON.stringify([CACHED_CONFIG]));
 
-    const concurrent = [askForConfigs(), askForConfigs(), askForConfigs(), askForConfigs(), askForConfigs()];
-    // Five concurrent home-page renders, one pool connection.
-    expect(executeMock).toHaveBeenCalledTimes(1);
+    const result = await askForConfigs();
 
-    inFlight.resolve([CONFIG_ROW]);
-    const results = await Promise.all(concurrent);
-
-    expect(executeMock).toHaveBeenCalledTimes(1);
-    for (const result of results) {
-      expect(result.totalCount).toBe(1);
-      expect(result.configs[0]?.boardType).toBe('kilter');
-    }
+    expect(result.totalCount).toBe(1);
+    expect(result.configs[0]?.displayName).toBe('OG 12x12');
+    expect(executeMock).not.toHaveBeenCalled();
+    expect(sendMock).not.toHaveBeenCalled();
   });
 
-  it('answers a later caller from the process-local copy when there is no Redis', async () => {
-    executeMock.mockResolvedValue([CONFIG_ROW]);
-
-    await askForConfigs();
-    await askForConfigs();
-
-    // Without the fallback, single-flight alone would re-run the 82 s
-    // statement for the first caller after every completion.
-    expect(executeMock).toHaveBeenCalledTimes(1);
-    expect(redisGetMock).not.toHaveBeenCalled();
-    expect(redisSetMock).not.toHaveBeenCalled();
-  });
-
-  it('re-runs the statement on the deploy warm-up instead of answering it from the last run', async () => {
-    executeMock.mockResolvedValue([CONFIG_ROW]);
-
-    await askForConfigs();
-    expect(executeMock).toHaveBeenCalledTimes(1);
-
-    // `warmPopularConfigsCache` exists to re-run the query on every deploy
-    // because the Aurora sync may have moved the data under it. With Redis it
-    // does that by DELETing the cache key; with no Redis it must drop the
-    // process-local copy, or the warm-up is answered from the previous run's
-    // fixture and quietly does nothing.
-    await warmPopularConfigsCache();
-    expect(executeMock).toHaveBeenCalledTimes(2);
-
-    // The warm-up re-seeded the copy, so the next visitor is still cheap.
-    await askForConfigs();
-    expect(executeMock).toHaveBeenCalledTimes(2);
-  });
-
-  it('does not let a flight that started before a drop repopulate the copy behind it', async () => {
-    const inFlight = deferredRows();
-    executeMock.mockReturnValueOnce(inFlight.promise);
-
-    const readStartedFirst = askForConfigs();
-    // The deploy warm-up (or a test) drops the copy while that 82 s statement
-    // is still running. Its rows are pre-deploy; caching them afterwards would
-    // undo the drop for the next 10 minutes.
-    dropPopularConfigsFallback();
-    inFlight.resolve([CONFIG_ROW]);
-    await readStartedFirst;
-
-    executeMock.mockResolvedValueOnce([CONFIG_ROW]);
-    await askForConfigs();
-
-    expect(executeMock).toHaveBeenCalledTimes(2);
-  });
-
-  it('keeps the Redis path exactly as it was — no process-local copy is consulted', async () => {
+  it('answers a Redis miss with [] and queues one refresh for a burst of callers', async () => {
     redisConnectedMock.mockReturnValue(true);
     redisGetMock.mockResolvedValue(null);
-    executeMock.mockResolvedValue([CONFIG_ROW]);
 
-    await askForConfigs();
-    await askForConfigs();
+    const results = await Promise.all([askForConfigs(), askForConfigs(), askForConfigs(), askForConfigs()]);
 
-    // Every call still asks Redis first and still writes back, so the
-    // in-place refresh `warmPopularConfigsCache` does on each deploy is still
-    // what decides freshness in production.
-    expect(redisGetMock).toHaveBeenCalledTimes(2);
-    expect(redisSetMock).toHaveBeenCalledTimes(2);
-    expect(executeMock).toHaveBeenCalledTimes(2);
+    for (const result of results) {
+      expect(result.configs).toEqual([]);
+      expect(result.totalCount).toBe(0);
+    }
+    // Five home-page renders on a cold key used to be five copies of a 548 s
+    // statement. Now they are zero, and one job request.
+    expect(executeMock).not.toHaveBeenCalled();
+    expect(sendMock).toHaveBeenCalledTimes(1);
+    expect(sendMock).toHaveBeenCalledWith(POPULAR_BOARD_CONFIGS_REFRESH_QUEUE, {});
   });
 
-  it('refreshes the Redis copy in place on deploy — readers keep the old one meanwhile', async () => {
-    // The 2026-09-26 deploy failures: the warm-up DELETEd the key, the
-    // statement then ran for minutes on the PG18 primary, and every reader —
-    // including /sitemaps/boards.xml, which gives up at 10 s — waited on it.
-    const previousCopy = [{ boardType: 'kilter', layoutId: 1, displayName: 'previous deploy' }];
+  it('serves the last list it saw when the key goes missing, and still asks for a refresh', async () => {
+    redisConnectedMock.mockReturnValue(true);
+    redisGetMock.mockResolvedValueOnce(JSON.stringify([CACHED_CONFIG]));
+    await askForConfigs();
+
+    redisGetMock.mockResolvedValueOnce(null);
+    const afterEviction = await askForConfigs();
+
+    expect(afterEviction.configs).toHaveLength(1);
+    expect(executeMock).not.toHaveBeenCalled();
+    expect(sendMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('serves the last list it saw when Redis is unreachable, without queueing anything', async () => {
+    redisConnectedMock.mockReturnValue(true);
+    redisGetMock.mockResolvedValueOnce(JSON.stringify([CACHED_CONFIG]));
+    await askForConfigs();
+
+    redisGetMock.mockRejectedValueOnce(new Error('redis down mid-flight'));
+    const duringOutage = await askForConfigs();
+
+    expect(duringOutage.configs).toHaveLength(1);
+    expect(executeMock).not.toHaveBeenCalled();
+    expect(sendMock).not.toHaveBeenCalled();
+  });
+
+  it('answers [] quietly on a server with no job queue', async () => {
+    // Servers started by tests have no queue. The read must still answer.
+    getJobQueueMock.mockReturnValue(null);
+
+    const result = await askForConfigs();
+
+    expect(result.configs).toEqual([]);
+    expect(executeMock).not.toHaveBeenCalled();
+  });
+
+  it('without Redis, serves the process-local copy once a refresh has filled it', async () => {
+    const cold = await askForConfigs();
+    expect(cold.configs).toEqual([]);
+    expect(sendMock).toHaveBeenCalledTimes(1);
+
+    executeMock.mockResolvedValue([CONFIG_ROW]);
+    await refreshPopularConfigsCache();
+
+    const warm = await askForConfigs();
+    expect(warm.totalCount).toBe(1);
+    expect(warm.configs[0]?.boardType).toBe('kilter');
+    // Once warm, a Redis-less server never asks again: the daily job keeps it.
+    await askForConfigs();
+    expect(executeMock).toHaveBeenCalledTimes(1);
+    expect(sendMock).toHaveBeenCalledTimes(1);
+    expect(redisSetMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('refreshPopularConfigsCache', () => {
+  it('takes a cross-replica lock of at least 600 s, SETs over the old value and releases its own lock', async () => {
     redisConnectedMock.mockReturnValue(true);
     redisSetMock.mockResolvedValue('OK');
-    redisGetMock.mockResolvedValue(JSON.stringify(previousCopy));
+    executeMock.mockResolvedValue([CONFIG_ROW]);
+
+    const configs = await refreshPopularConfigsCache();
+
+    expect(configs).toHaveLength(1);
+    const [lockCall, valueCall] = redisSetMock.mock.calls;
+    expect(lockCall[0]).toBe(POPULAR_CONFIGS_LOCK_KEY);
+    expect(lockCall.slice(2)).toEqual(['EX', POPULAR_CONFIGS_LOCK_TTL_SECONDS, 'NX']);
+    expect(POPULAR_CONFIGS_LOCK_TTL_SECONDS).toBeGreaterThanOrEqual(600);
+    // A plain SET, never a DEL first: readers keep the old list until this lands.
+    expect(valueCall[0]).toBe(POPULAR_CONFIGS_REDIS_KEY);
+    expect(JSON.parse(valueCall[1] as string)[0].boardType).toBe('kilter');
+    // Compare-and-delete with the token the lock was taken with.
+    expect(redisEvalMock).toHaveBeenCalledTimes(1);
+    expect(redisEvalMock.mock.calls[0][2]).toBe(POPULAR_CONFIGS_LOCK_KEY);
+    expect(redisEvalMock.mock.calls[0][3]).toBe(lockCall[1]);
+  });
+
+  it('skips the statement when another replica holds the lock', async () => {
+    redisConnectedMock.mockReturnValue(true);
+    redisSetMock.mockResolvedValueOnce(null);
+
+    await expect(refreshPopularConfigsCache()).resolves.toBeNull();
+
+    expect(executeMock).not.toHaveBeenCalled();
+    expect(redisEvalMock).not.toHaveBeenCalled();
+  });
+
+  it('runs one statement for concurrent refreshes in one process', async () => {
     const inFlight = deferredRows();
     executeMock.mockReturnValue(inFlight.promise);
 
-    const warming = warmPopularConfigsCache();
-    await vi.waitFor(() => expect(executeMock).toHaveBeenCalledTimes(1));
-
-    const duringRefresh = await askForConfigs();
-    expect(duringRefresh.configs).toEqual(previousCopy);
-    expect(redisDelMock).not.toHaveBeenCalled();
-
+    const concurrent = [refreshPopularConfigsCache(), refreshPopularConfigsCache(), refreshPopularConfigsCache()];
+    await Promise.resolve();
     inFlight.resolve([CONFIG_ROW]);
-    await warming;
+    await Promise.all(concurrent);
 
     expect(executeMock).toHaveBeenCalledTimes(1);
-    const dataWrites = redisSetMock.mock.calls.filter(([key]) => key === 'boardsesh:popular-board-configs');
-    expect(dataWrites).toHaveLength(1);
-    expect(JSON.parse(dataWrites[0][1] as string)[0]).toMatchObject({ boardType: 'kilter', climbCount: 4200 });
+  });
+
+  it('keeps the old value when the statement fails, and still frees the lock', async () => {
+    redisConnectedMock.mockReturnValue(true);
+    redisSetMock.mockResolvedValue('OK');
+    executeMock.mockRejectedValue(new Error('canceling statement due to statement timeout'));
+
+    await expect(refreshPopularConfigsCache()).rejects.toThrow('statement timeout');
+
+    // Only the lock was SET; the list was never touched.
+    expect(redisSetMock).toHaveBeenCalledTimes(1);
+    expect(redisSetMock.mock.calls[0][0]).toBe(POPULAR_CONFIGS_LOCK_KEY);
+    expect(redisEvalMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('never writes an empty list over a good one', async () => {
+    redisConnectedMock.mockReturnValue(true);
+    redisSetMock.mockResolvedValue('OK');
+    executeMock.mockResolvedValue([]);
+
+    await expect(refreshPopularConfigsCache()).resolves.toBeNull();
+
+    expect(redisSetMock).toHaveBeenCalledTimes(1);
+    expect(redisSetMock.mock.calls[0][0]).toBe(POPULAR_CONFIGS_LOCK_KEY);
+  });
+
+  it('counts climbs by required sets, not by walking every hold', async () => {
+    executeMock.mockResolvedValue([CONFIG_ROW]);
+
+    await refreshPopularConfigsCache();
+
+    const statement = new PgDialect().sqlToQuery(executeMock.mock.calls[0][0] as SQL).sql;
+    expect(statement).toContain('bc.required_set_ids <@ configs.set_ids');
+    // NULL (not yet derived) counts only on MoonBoard, the one board whose list
+    // page lets it through (create-climb-filters.ts).
+    expect(statement).toContain("bc.required_set_ids IS NULL AND configs.board_type = 'moonboard'");
+    expect(statement).not.toContain('board_climb_holds');
+    // The rail's order is unchanged: most boards first, then most ascents.
+    expect(statement).toContain('ORDER BY board_count DESC, total_ascents DESC');
+  });
+});
+
+describe('startPopularBoardConfigsRefresh', () => {
+  it('schedules the daily cron and runs the refresh as the job body', async () => {
+    const scheduleMock = vi.fn().mockResolvedValue(undefined);
+    let handler: (() => Promise<unknown>) | undefined;
+    const workMock = vi.fn(async (_name: string, jobHandler: () => Promise<unknown>) => {
+      handler = jobHandler;
+      return 'worker-id';
+    });
+    const boss = { schedule: scheduleMock, work: workMock } as unknown as PgBoss;
+
+    await startPopularBoardConfigsRefresh(boss);
+
+    expect(scheduleMock).toHaveBeenCalledWith(POPULAR_BOARD_CONFIGS_REFRESH_QUEUE, POPULAR_CONFIGS_REFRESH_CRON, null, {
+      tz: 'UTC',
+    });
+    expect(workMock.mock.calls[0][0]).toBe(POPULAR_BOARD_CONFIGS_REFRESH_QUEUE);
+
+    executeMock.mockResolvedValue([CONFIG_ROW]);
+    await handler?.();
+    expect(executeMock).toHaveBeenCalledTimes(1);
+    expect((await askForConfigs()).totalCount).toBe(1);
   });
 });

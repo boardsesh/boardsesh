@@ -12,6 +12,7 @@ import { startJobQueue, stopJobQueue } from './services/job-queue';
 import { startSprayDetectionMaintenance } from './services/spray-detection-maintenance';
 import { startBackgroundJobMaintenance } from './services/background-job-maintenance';
 import { db } from './db/client';
+import { startPopularBoardConfigsRefresh } from './services/popular-board-configs';
 
 async function main() {
   const { wss, httpServer, cleanupIntervals, shutdownServices } = await startServer();
@@ -27,6 +28,11 @@ async function main() {
   const jobQueue = await startJobQueue();
   await startSprayDetectionMaintenance(jobQueue);
   await startBackgroundJobMaintenance(jobQueue, db);
+  // Not fatal: without the job the rail keeps serving the list already in
+  // Redis, which is a better outcome than a backend that will not boot.
+  await startPopularBoardConfigsRefresh(jobQueue).catch((error: unknown) => {
+    logger.error('[PopularConfigs] Could not register the refresh job', { error });
+  });
 
   let shuttingDown = false;
 

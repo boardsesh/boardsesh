@@ -3,7 +3,7 @@ import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { PgBoss } from 'pg-boss';
 import { describe, expect, it } from 'vitest';
-import { initializeJobQueueSchema } from '@boardsesh/db/job-queue-schema';
+import { initializeJobQueueSchema, POPULAR_BOARD_CONFIGS_REFRESH_QUEUE } from '@boardsesh/db/job-queue-schema';
 import { retrySprayDetectionAttempt } from '@boardsesh/db/queries';
 import { SPRAY_DETECTION_QUEUE, SPRAY_DETECTION_RECONCILE_QUEUE } from '@boardsesh/shared-schema';
 
@@ -41,6 +41,13 @@ describe('owner-only queue initialization', () => {
       await expect(restricted`CREATE TABLE pgboss.detector_forbidden (id int)`).rejects.toThrow('permission denied');
       await runtime.start();
       await runtime.schedule(SPRAY_DETECTION_RECONCILE_QUEUE, '* * * * *');
+      // The popular-configs refresh: created by the owner, scheduled and
+      // requested by the runtime role.
+      await runtime.schedule(POPULAR_BOARD_CONFIGS_REFRESH_QUEUE, '17 4 * * *', null, { tz: 'UTC' });
+      const refreshId = await runtime.send(POPULAR_BOARD_CONFIGS_REFRESH_QUEUE, {});
+      expect(refreshId).toBeTruthy();
+      // `exclusive`: a second request while one is queued is dropped.
+      expect(await runtime.send(POPULAR_BOARD_CONFIGS_REFRESH_QUEUE, {})).toBeNull();
       const id = await runtime.send(SPRAY_DETECTION_QUEUE, { detectionId: randomUUID() });
       expect(id).toBeTruthy();
       const jobs = await runtime.fetch(SPRAY_DETECTION_QUEUE);

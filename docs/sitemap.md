@@ -116,12 +116,16 @@ because a grouped count timed out would be a regression bought with nothing. A
 failed **listed** fetch still throws on both paths: that is the leg whose loss
 would tell Google the boards were deleted.
 
-That backend cache is refreshed in place on every backend deploy, never emptied
-first. The statement behind it took 2–3 minutes on the PG18 primary after its
-4 GB cap, and while the warm-up used to `DEL` the key before recomputing, every
-`/sitemaps/boards.xml` request in that window waited on it, hit the 10 s abort
-and 503ed — which is what failed the web deploy smoke on 2026-09-26. The
-listed leg only misses now when Redis itself has lost the key.
+That backend cache is written by a daily pg-boss job
+(`packages/backend/src/services/popular-board-configs.ts`), never on deploy and
+never by a reader. The warm-up used to `DEL` the key on every deploy and
+recompute it, so every `/sitemaps/boards.xml` request in that window waited on a
+2–3 minute statement, hit the 10 s abort and 503ed, which failed the web deploy
+smoke on 2026-09-26. Now the key is only missing when Redis itself has lost it.
+Then the backend answers `[]` and queues a refresh, and
+`getAllBoardConfigsOrThrow` treats an empty list as a failed fetch and throws,
+so the shard 503s until the job has refilled the key (about 30 s). It never
+publishes a boards shard with no boards.
 
 The count query carries a 10 s budget applied _inside_ the shared single-flight
 promise, so a give-up is not memoised and the next caller retries instead of

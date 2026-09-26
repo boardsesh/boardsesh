@@ -13,7 +13,7 @@
 
 import { describe, it, expect } from 'vite-plus/test';
 import { boardTypeLabel, CATALOGUE_BOARD_TYPES } from '@boardsesh/board-constants';
-import { isPopularConfigRow } from '../graphql/resolvers/social/boards';
+import { isPopularConfigRow } from '../services/popular-board-configs';
 import { defaultBoardName } from '../graphql/resolvers/board-presence/shared';
 
 describe('isPopularConfigRow', () => {
