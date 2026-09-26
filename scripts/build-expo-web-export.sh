@@ -301,7 +301,9 @@ fi
 # 2026-09-25: #5801 set 2,051,000 against a measured 2,050,852, and #5792 (the
 # Woods grade-angle marker) landed an hour later at 2,053,008. Sub-kilobyte slack
 # reds main on ordinary growth, so this sits ~3 KB above the current figure.
-BOARDSESH_WEB_EAGER_BROTLI_BUDGET="${BOARDSESH_WEB_EAGER_BROTLI_BUDGET:-2056000}"
+# #5143 (personal grades on the climb list and play drawer) adds ~4.5 KB and
+# measured 2,057,562, so it moves the ratchet to 2,058,000.
+BOARDSESH_WEB_EAGER_BROTLI_BUDGET="${BOARDSESH_WEB_EAGER_BROTLI_BUDGET:-2058000}"
 node "$ROOT_DIR/scripts/lib/check-expo-web-eager-budget.mjs" \
   "$OUTPUT_DIR" \
   "$BOARDSESH_WEB_EAGER_BROTLI_BUDGET" \

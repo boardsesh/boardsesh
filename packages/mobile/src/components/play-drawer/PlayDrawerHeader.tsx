@@ -1,5 +1,5 @@
 import { memo, useMemo, type ReactNode } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { CLIMB_CHARACTERISTICS, type BoardName, type Climb } from '@boardsesh/shared-schema';
 import { useEffectiveClimbStats } from '@boardsesh/board-react';
@@ -12,9 +12,14 @@ import { MarqueeText } from '../MarqueeText';
 import { DrawerHeader } from '../DrawerHeader';
 import { ClimbAttributeIcons } from '../ClimbAttributeIcons';
 import { iosSystemColors } from '../../theme/ios-colors';
-import { WALL_STATE_PILL_TOUCH_HEIGHT } from '../../theme/layout';
+import { PLAY_HEADER_TRAILING_MIN_WIDTH, WALL_STATE_PILL_TOUCH_HEIGHT } from '../../theme/layout';
 import { useDisplayGrade } from '../../hooks/use-display-grade';
 import { resolveClimbRuleLabels } from './climb-rule-labels';
+import { useGradeFormat } from '../../hooks/use-grade-format';
+import { useMyGrade } from '../../hooks/use-my-grade';
+import { renderDifficulty } from '../../lib/boardsesh-grade-display';
+import { derivePersonalGradeDisplay } from '@boardsesh/logbook';
+import { splitGradeLabel } from '@boardsesh/play-view';
 
 type PlayDrawerHeaderProps = {
   name: string;
@@ -54,6 +59,12 @@ type PlayDrawerHeaderProps = {
   /** Long-press handler on the name (copies it to the clipboard). When omitted the
    *  name is a plain, non-interactive label — used for the swipe "peek" header. */
   onLongPressName?: () => void;
+  /** The crowd's grade, demoted to a small `people`-marked line under the main
+   *  one. Only set when it disagrees with the grade the climber gave (#4796). */
+  secondaryGrade?: string | null;
+  /** True when the main grade is the climber's own AND differs from the crowd's,
+   *  which puts a `person` glyph on it. */
+  markedAsMine?: boolean;
   onPressSetter?: () => void;
   /** The angle the grade and send count above (the `difficulty`/`qualityAverage`/
    *  `ascensionistCount` props) were read from. Present only when the climb was
@@ -80,11 +91,19 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
   isHidden = false,
   leading,
   onLongPressName,
+  secondaryGrade,
+  markedAsMine = false,
   onPressSetter,
   statsAngle,
   angle,
 }: PlayDrawerHeaderProps) {
   const { t } = useTranslation('climbs');
+  // The header's height is pinned (see `minRowHeight` below) and the headline's
+  // line height alone eats that floor once type is scaled up, so the second line
+  // is dropped rather than clamping anyone's Dynamic Type. The same information
+  // is spelled out in the Grades section below, which scrolls.
+  const { fontScale } = useWindowDimensions();
+  const dropSecondaryLine = fontScale > 1.3;
   const resolvedGradeColor = useMemo(
     () => gradeColor ?? getGradeColor(rawDifficulty ?? difficulty) ?? DEFAULT_GRADE_COLOR,
     [gradeColor, rawDifficulty, difficulty],
@@ -190,11 +209,26 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
           ) : null}
         </>
       }
+      trailingMinWidth={PLAY_HEADER_TRAILING_MIN_WIDTH}
       trailing={
         <View style={styles.gradeColumn}>
-          <Text variant="headline" style={[styles.gradeText, { color: resolvedGradeColor }]} numberOfLines={1}>
-            {difficulty}
-          </Text>
+          <View style={styles.gradeRow}>
+            {/* The play drawer is the screen you hand your partner to show them
+                the beta, so an unlabelled headline number that is actually your
+                private opinion needs to say so. */}
+            {markedAsMine ? <Icon name="person" size={13} color={iosSystemColors.systemGray} /> : null}
+            <Text variant="headline" style={[styles.gradeText, { color: resolvedGradeColor }]} numberOfLines={1}>
+              {difficulty}
+            </Text>
+          </View>
+          {secondaryGrade && !dropSecondaryLine ? (
+            <View style={styles.gradeRow}>
+              <Icon name="people" size={11} color={iosSystemColors.systemGray} />
+              <Text variant="caption2" style={styles.secondaryGradeText} numberOfLines={1}>
+                {secondaryGrade}
+              </Text>
+            </View>
+          ) : null}
           {showSetAngleMarker ? (
             <Text
               variant="caption2"
@@ -232,6 +266,7 @@ export const LivePlayDrawerHeader = memo(function LivePlayDrawerHeader({
   onPressSetter,
 }: LivePlayDrawerHeaderProps) {
   const { resolveGrade } = useDisplayGrade();
+  const { gradeFormat } = useGradeFormat();
   const liveStats = useEffectiveClimbStats(boardName, layoutId, climb.uuid, angle, {
     ascensionistCount: climb.ascensionist_count,
     qualityAverage: climb.quality_average,
@@ -242,12 +277,24 @@ export const LivePlayDrawerHeader = memo(function LivePlayDrawerHeader({
     difficulty: liveStats.difficulty,
   });
 
+  // Your grade wins over the crowd's. Resolved ABOVE `resolveGrade`, never
+  // inside it — that resolver's contract is community-grades-only.
+  // Falls back to the device's own ticks table while the logbook is unresolved,
+  // so the drawer shows the climber's grade offline too — the same grade the
+  // on-device search placed this climb by.
+  const myGrade = useMyGrade(climb.uuid, angle, { localFallback: true });
+  const mine = myGrade.status === 'set' ? renderDifficulty(myGrade.difficultyId, gradeFormat) : null;
+  const personal = derivePersonalGradeDisplay(mine?.label ?? null, displayedGrade.label);
+  const showsMine = personal.source === 'personal' && mine !== null;
+
   return (
     <PlayDrawerHeader
       name={climb.name}
-      difficulty={displayedGrade.label}
+      difficulty={showsMine ? mine.label : displayedGrade.label}
       rawDifficulty={liveStats.difficulty}
-      gradeColor={displayedGrade.color}
+      gradeColor={showsMine ? mine.color : displayedGrade.color}
+      markedAsMine={showsMine && personal.markPrimary}
+      secondaryGrade={showsMine ? (splitGradeLabel(personal.secondaryLabel)[0] ?? null) : null}
       qualityAverage={liveStats.qualityAverage}
       ascensionistCount={liveStats.ascensionistCount}
       setterUsername={climb.setter_username}
@@ -266,11 +313,6 @@ export const LivePlayDrawerHeader = memo(function LivePlayDrawerHeader({
 });
 
 const styles = StyleSheet.create({
-  // Wraps the grade + the optional "set at N°" marker so the marker sits right
-  // under the grade it qualifies, both right-aligned in the trailing slot.
-  gradeColumn: {
-    alignItems: 'flex-end',
-  },
   // Deliberately uncoloured, same as the search-list row's marker — colour in
   // this slot carries the grade and nothing else.
   setAngleMarkerText: {
@@ -280,6 +322,25 @@ const styles = StyleSheet.create({
   gradeText: {
     fontVariant: ['tabular-nums'],
     fontWeight: '700',
+    textAlign: 'right',
+  },
+  // Stacks the grade, the crowd's line when it disagrees with yours, and the
+  // optional "set at N°" marker, so each sits right under the grade it
+  // qualifies, all right-aligned in the trailing slot.
+  gradeColumn: {
+    alignItems: 'flex-end',
+    gap: 1,
+  },
+  gradeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
+  secondaryGradeText: {
+    color: iosSystemColors.systemGray,
+    fontVariant: ['tabular-nums'],
+    fontWeight: '600',
+    marginTop: -2,
     textAlign: 'right',
   },
   nameRow: {

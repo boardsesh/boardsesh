@@ -27,6 +27,11 @@ export const TABLE_INVALIDATE_KEYS: Record<string, InvalidateKeys> = {
   //   at a new angle grades a stats row server-side; the drainer fires these
   //   once the tick lands so the list refetches (the pull path is already
   //   covered by the board_climb_stats entry below).
+  //   Personal grades (#4828) add a second reason, and it holds on BOTH
+  //   consumers: a tick can carry the climber's own grade, and that grade is
+  //   what the list filters and sorts by, so a pulled or drained tick moves
+  //   climbs between grade bands. Without these keys the list keeps showing a
+  //   re-graded climb in the band it just left.
   boardsesh_ticks: [
     ['logbook'],
     ['localTicks'],
