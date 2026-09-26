@@ -617,7 +617,7 @@ The history backtest (`tail_backtest` + `head_holdout`) is the one exception to
 verdict depends only on the coefficient set, `GRADE_MODEL_VERSION` and the
 grade-model code. So a night reuses the last evaluated verdict when all three
 match it: same `coeff_version`, same model version, and the same sha256 of the
-`packages/db/src/queries/grade-model/` sources (stored as `gradeModelHash` in
+`packages/db/src/queries/grade-model/` sources plus `refresh-climb-grades.ts` (stored as `gradeModelHash` in
 each `gate_results` payload). The reused entries keep the original metrics, are
 marked `skipped: true`, and their `detail` names the run they came from. A refit
 (weekly or `--refit-coefficients`), any grade-model code change, `--dry-run`,

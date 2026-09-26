@@ -23,6 +23,9 @@ import type { GateResult } from '../src/queries/grade-model/index.js';
 export const BACKTEST_GATE_NAMES = ['tail_backtest', 'head_holdout'] as const;
 
 const GRADE_MODEL_SOURCE_DIR = fileURLToPath(new URL('../src/queries/grade-model/', import.meta.url));
+// The nightly script owns the backtest sample size and the gate wiring, so an
+// edit there must also force a real backtest.
+const GRADE_REFRESH_SCRIPT = fileURLToPath(new URL('./refresh-climb-grades.ts', import.meta.url));
 
 function listSourceFiles(directory: string): string[] {
   const files: string[] = [];
@@ -40,11 +43,15 @@ function listSourceFiles(directory: string): string[] {
 
 /**
  * sha256 over every grade-model source file (relative path + contents, in path
- * order). The nightly job runs from a source checkout, so any change to the blend,
- * the gates or the backtest SQL gives a new hash and forces a real backtest,
- * even when GRADE_MODEL_VERSION was not bumped.
+ * order) plus the refresh script itself. The nightly job runs from a source
+ * checkout, so any change to the blend, the gates, the backtest SQL or the
+ * sample size gives a new hash and forces a real backtest, even when
+ * GRADE_MODEL_VERSION was not bumped.
  */
-export function gradeModelCodeHash(sourceDirectory: string = GRADE_MODEL_SOURCE_DIR): string {
+export function gradeModelCodeHash(
+  sourceDirectory: string = GRADE_MODEL_SOURCE_DIR,
+  extraFiles: readonly string[] = [GRADE_REFRESH_SCRIPT],
+): string {
   const hash = createHash('sha256');
   const files = listSourceFiles(sourceDirectory)
     .map((filePath) => ({ filePath, relativePath: relative(sourceDirectory, filePath).split(sep).join('/') }))
@@ -53,6 +60,12 @@ export function gradeModelCodeHash(sourceDirectory: string = GRADE_MODEL_SOURCE_
     );
   for (const { filePath, relativePath } of files) {
     hash.update(relativePath);
+    hash.update('\0');
+    hash.update(readFileSync(filePath));
+    hash.update('\0');
+  }
+  for (const filePath of extraFiles) {
+    hash.update(`extra:${filePath.split(sep).pop() ?? filePath}`);
     hash.update('\0');
     hash.update(readFileSync(filePath));
     hash.update('\0');
