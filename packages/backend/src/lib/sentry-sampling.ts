@@ -71,9 +71,10 @@
  * against a 5M quota.
  *
  * The rule now: a root span with no HTTP request behind it is sampled at 0,
- * with one exception. graphql-ws operations (`query X (query X)`,
- * `mutation X (...)`, `subscription X (...)`) arrive over the party-mode
- * WebSocket with no HTTP request, and get the same 1% as HTTP GraphQL. Redis
+ * with one exception. graphql-ws operations arrive over the party-mode
+ * WebSocket with no HTTP request, and get the same 1% as HTTP GraphQL. They
+ * are STORED as `mutation X (mutation X)`, but the sampler sees them as
+ * `graphql.execute` (see GRAPHQL_EXECUTE_SPAN_NAME). Redis
  * children INSIDE a sampled HTTP request are unaffected: the sampler only sees
  * roots, and a child inherits its root's decision.
  */
@@ -202,8 +203,25 @@ export function isWebSocketUpgrade(request: BackendSamplingRequest): boolean {
 /** Origin @sentry/server-utils stamps on the span it starts per ioredis diagnostics-channel event. */
 const REDIS_DIAGNOSTIC_CHANNEL_ORIGIN = 'auto.db.redis.diagnostic_channel';
 
-/** graphql-ws operation roots are named `"<operation type> <OperationName> (...)"`. */
-const GRAPHQL_WS_OPERATION_NAME = /^(?:query|mutation|subscription) /;
+/**
+ * Name the graphql-ws operation root carries WHEN THE SAMPLER RUNS.
+ *
+ * With graphql 16 (what the backend runs), @sentry/node's vendored
+ * GraphQLInstrumentation starts the execute span as `graphql.execute`
+ * (`_createExecuteSpan` -> `startInactiveSpan({ name: SpanNames.EXECUTE })`)
+ * and only then calls `updateName('mutation ReportBoardClimb')`; after the
+ * result, `useOperationNameForRootSpan` renames it again to the stored
+ * `mutation ReportBoardClimb (mutation ReportBoardClimb)`. The sampler only
+ * ever sees the first name, so matching the stored name alone would sample
+ * every graphql-ws operation at 0.
+ */
+const GRAPHQL_EXECUTE_SPAN_NAME = 'graphql.execute';
+
+/**
+ * The same root under graphql 17's diagnostics channels: @sentry/server-utils
+ * names it `"<operation type> <OperationName>"` at start.
+ */
+const GRAPHQL_WS_OPERATION_NAME = /^(?:query|mutation|subscription)(?: |$)/;
 
 /**
  * True when the sampling context carries a URL of any kind.
@@ -243,9 +261,14 @@ export function isRedisDiagnosticRoot(request: BackendSamplingRequest): boolean 
   return request.attributes?.['db.system.name'] === 'redis' && !hasRequestUrl(request);
 }
 
-/** True for a graphql-ws operation root (`query X (query X)`, `mutation X (...)`, `subscription X (...)`). */
+/**
+ * True for a graphql-ws operation root: `graphql.execute` at sampling time
+ * under graphql 16, `query X` / `mutation X` / `subscription X` under the
+ * graphql 17 diagnostics channels.
+ */
 export function isGraphqlWsOperation(name: string | undefined): boolean {
-  return name !== undefined && GRAPHQL_WS_OPERATION_NAME.test(name);
+  if (name === undefined) return false;
+  return name === GRAPHQL_EXECUTE_SPAN_NAME || GRAPHQL_WS_OPERATION_NAME.test(name);
 }
 
 function stripLeadingMethod(name: string | undefined): string {

@@ -167,6 +167,21 @@ describe('resolveBackendTracesSampleRate: root spans with no HTTP request', () =
     expect(resolveBackendTracesSampleRate({ name: 'some timer tick' })).toBe(0);
   });
 
+  it('samples a graphql-ws operation by the name it has when the sampler runs', () => {
+    // graphql 16 + @sentry/node's vendored GraphQLInstrumentation: the execute
+    // span starts as `graphql.execute` and is renamed only after sampling.
+    expect(
+      resolveBackendTracesSampleRate({
+        name: 'graphql.execute',
+        attributes: { 'sentry.origin': 'auto.graphql.otel.graphql' },
+      }),
+    ).toBe(0.01);
+    expect(resolveBackendTracesSampleRate({ name: 'graphql.execute' })).toBe(0.01);
+    // graphql 17 diagnostics channel: named by operation at start.
+    expect(resolveBackendTracesSampleRate({ name: 'subscription BoardNowPlaying' })).toBe(0.01);
+    expect(resolveBackendTracesSampleRate({ name: 'query' })).toBe(0.01);
+  });
+
   it('samples graphql-ws operations at the HTTP GraphQL rate', () => {
     expect(resolveBackendTracesSampleRate({ name: 'mutation ReportBoardClimb (mutation ReportBoardClimb)' })).toBe(
       0.01,
@@ -189,6 +204,7 @@ describe('resolveBackendTracesSampleRate: root spans with no HTTP request', () =
   it('does not treat a name that merely contains "query" as a graphql-ws operation', () => {
     expect(isGraphqlWsOperation('queryBoards')).toBe(false);
     expect(isGraphqlWsOperation('subscriptions cleanup')).toBe(false);
+    expect(isGraphqlWsOperation('graphql.executeSomething')).toBe(false);
     expect(isGraphqlWsOperation(undefined)).toBe(false);
   });
 
