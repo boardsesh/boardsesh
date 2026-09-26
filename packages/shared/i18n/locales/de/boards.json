@@ -397,11 +397,6 @@
           "title": "Ähnliche Boulder liegen auf deinem Handy",
           "body": "Lade {{name}} herunter, um Boulder mit diesen Griffen zu sehen",
           "cta": "{{name}} herunterladen"
-        },
-        "holdHeatmap": {
-          "title": "Sieh, wo die Boulder sind",
-          "body": "Lade {{name}} herunter, um die Griffe zu sehen, die Kletterer*innen am meisten nutzen",
-          "cta": "{{name}} herunterladen"
         }
       }
     },

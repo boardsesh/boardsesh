@@ -6,6 +6,9 @@
 // preview-first work is giving board art back, not spending it on chrome. The
 // utilities are gone for the duration on purpose: browsing is a transient
 // choosing state, and the primary row above still acts on the displayed climb.
+// The one exception is the heatmap flame, which PlayDrawerActionBar renders in a
+// fixed leading slot BEFORE this bar: browsing from search is when the heatmap
+// is wanted most. This bar's row keeps `flex: 1`, so it takes what is left.
 //
 // The busy-wall confirm re-uses the same two controls IN PLACE rather than
 // growing a dialog: the pair crossfades to "Keep theirs" / "Put mine up" and the

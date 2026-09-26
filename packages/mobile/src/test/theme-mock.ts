@@ -18,7 +18,12 @@ import {
   materialSurfaceContainers,
 } from '../theme/colors';
 import { buildPaperTheme } from '../theme/paper-theme';
-import { resolveActionColors, resolveChartColors, sectionCaptionByVariant } from '../theme/variants/variant-tokens';
+import {
+  resolveActionColors,
+  resolveChartColors,
+  resolveHeatRamp,
+  sectionCaptionByVariant,
+} from '../theme/variants/variant-tokens';
 import { variantFeatures } from '../theme/variants/variant-features';
 
 /**
@@ -73,6 +78,7 @@ export function makeThemeMock(overrides: Partial<Theme> = {}): Theme {
       brandPrimary: brand.primary,
     }),
     chartColors: resolvedChartColors,
+    heatRamp: resolveHeatRamp(colorScheme),
     sheetSurface: resolvedChartColors.secondaryBackground,
     sectionCaption: sectionCaptionByVariant[variant],
     features: variantFeatures[variant],

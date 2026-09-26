@@ -161,3 +161,55 @@ export const TABLE_INVALIDATE_KEYS: Record<string, InvalidateKeys> = {
 export function invalidateKeysForTable(tableName: string): InvalidateKeys | null {
   return TABLE_INVALIDATE_KEYS[tableName] ?? null;
 }
+
+/**
+ * Query-key heads whose keys name ONE board (an input object carrying
+ * `boardName`/`boardType` + `layoutId`). A change on one board has nothing to
+ * say to another board's entry, and the heatmap's aggregate is the most
+ * expensive read on the device — re-running it for a board nobody is looking at
+ * on every sync page is pure cost.
+ */
+const BOARD_SCOPED_KEY_HEADS: ReadonlySet<string> = new Set(['holdHeatmap', 'similarClimbs']);
+
+export type BoardScopeKey = { boardType: string; layoutId: number };
+
+type QueryKeyHolder = { queryKey: readonly unknown[] };
+
+function boardOfKeyPart(part: unknown): BoardScopeKey | null {
+  if (!part || typeof part !== 'object' || Array.isArray(part)) return null;
+  const record = part as Record<string, unknown>;
+  const input = record.input && typeof record.input === 'object' ? (record.input as Record<string, unknown>) : record;
+  const boardType = typeof input.boardName === 'string' ? input.boardName : input.boardType;
+  if (typeof boardType !== 'string' || typeof input.layoutId !== 'number') return null;
+  return { boardType, layoutId: input.layoutId };
+}
+
+/**
+ * True when a query's key belongs to `scope`'s board, or names no board at all
+ * (conservative: a key we cannot read is always refreshed).
+ */
+export function queryKeyMatchesBoardScope(queryKey: readonly unknown[], scope: BoardScopeKey): boolean {
+  // `['similarClimbs', boardName, climbUuid, layoutId, …]` (use-similar-climbs.ts)
+  // carries the board as plain positional values rather than an input object.
+  if (queryKey[0] === 'similarClimbs' && typeof queryKey[1] === 'string' && typeof queryKey[3] === 'number') {
+    return queryKey[1] === scope.boardType && queryKey[3] === scope.layoutId;
+  }
+  for (const part of queryKey) {
+    const board = boardOfKeyPart(part);
+    if (board) return board.boardType === scope.boardType && board.layoutId === scope.layoutId;
+  }
+  return true;
+}
+
+/**
+ * The filters to invalidate `key` with after a change on `scope`'s board:
+ * board-scoped heads get a predicate so only that board's entries refetch;
+ * every other key (and every change with no board) is invalidated whole.
+ */
+export function scopedInvalidateFilters(
+  key: readonly string[],
+  scope: BoardScopeKey | null | undefined,
+): { queryKey: readonly unknown[]; predicate?: (query: QueryKeyHolder) => boolean } {
+  if (!scope || !BOARD_SCOPED_KEY_HEADS.has(key[0] ?? '')) return { queryKey: key };
+  return { queryKey: key, predicate: (query) => queryKeyMatchesBoardScope(query.queryKey, scope) };
+}

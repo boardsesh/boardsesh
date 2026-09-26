@@ -2066,6 +2066,7 @@ export function PlayDrawer({
                             onToggleHeatmap={heatmap.toggle}
                             heatmapActive={heatmap.enabled}
                             heatmapBusy={heatmap.isBusy}
+                            heatmapMode={heatmap.mode}
                           />
                         </View>
 

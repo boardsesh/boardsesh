@@ -47,8 +47,11 @@ import { DuplicateBanner } from './DuplicateBanner';
 import { InlineConfirmBanner } from './InlineConfirmBanner';
 import { useTranslation } from 'react-i18next';
 import { useCreateClimbScreen, type CreateClimbBoard } from './use-create-climb-screen';
-import { HeatmapOverlay } from '../board/HeatmapOverlay';
+import { HeatmapOverlay, useHeatLayer } from '../board/HeatmapOverlay';
+import { formatHeatmapClimbCount, HeatmapLegend } from '../board/HeatmapLegend';
+import { HeatmapDownloadLine } from '../board/HeatmapDownloadLine';
 import { Text } from '../Text';
+import type { CreateHeatmap } from './create-heatmap';
 
 type Controller = ReturnType<typeof useCreateClimbScreen>;
 
@@ -71,22 +74,16 @@ type CreateDrawerProps = {
   onClose: () => void;
   /** Open the climb that a publish collided with (the duplicate banner link). */
   onViewDuplicate: (uuid: string) => void;
-  /** The hold heatmap: whether it is on, its per-hold stats, and its toggle
-   *  (omitted → no heatmap button). */
-  heatmapActive?: boolean;
-  heatmapBusy?: boolean;
-  heatmapStatsByHoldId?: ReadonlyMap<number, HoldStat>;
-  /** Why the heatmap is not drawing (board not downloaded, load failed), or null. */
-  heatmapNotice?: string | null;
-  onToggleHeatmap?: () => void;
+  /** The hold heatmap, following the active brush (omitted → no heatmap button). */
+  heatmap?: CreateHeatmap;
 };
-
-const NO_HEATMAP_STATS: ReadonlyMap<number, HoldStat> = new Map();
 
 // The peek must never grow into the '100%' snap — at that point the two snap
 // points collapse into one, the sheet has no travel and the "drag up for the
 // form" affordance is dead. Belt and braces for a large Dynamic Type setting or
 // a locale with taller chrome.
+const NO_STATS: ReadonlyMap<number, HoldStat> = new Map<number, HoldStat>();
+
 const MAX_PEEK_FRACTION = 0.92;
 
 // The native sheet's drag grabber sits in the sheet chrome above the content;
@@ -109,14 +106,10 @@ export function CreateDrawer({
   onLoadDraft,
   onClose,
   onViewDuplicate,
-  heatmapActive = false,
-  heatmapBusy = false,
-  heatmapStatsByHoldId = NO_HEATMAP_STATS,
-  heatmapNotice = null,
-  onToggleHeatmap,
+  heatmap,
 }: CreateDrawerProps) {
   const { systemColors } = useTheme();
-  const { t } = useTranslation('climbs');
+  const { t, i18n } = useTranslation('climbs');
   // A SEPARATE hook, not `useTranslation(['climbs', 'session'])`: with an array,
   // `t('a.b.c')` resolves against the FIRST namespace only, so the wall-state
   // key — which lives in session.json — fell through and the chip rendered the
@@ -249,24 +242,68 @@ export function CreateDrawer({
     return { width: availWidth, height: availWidth / boardAspect };
   }, [boardHolds.boardWidth, boardHolds.boardHeight, windowWidth, boardMaxHeight]);
 
-  // Painted holds keep their own marker; the heatmap only colours the rest.
-  const paintedHoldIds = useMemo(
-    () => new Set(Object.keys(controller.litUpHoldsMap).map(Number)),
-    [controller.litUpHoldsMap],
-  );
+  // Heat covers every hold, painted ones included: the painted hold's own mark
+  // is drawn in the holds layer on top and covers it. Skipping painted holds in
+  // the heat frames changed the heat picture on every tap, i.e. a fresh native
+  // render and a new PNG per paint state. This way the heat image only changes
+  // with the brush, the data or the scheme.
+  const heatmapActive = heatmap?.active ?? false;
+  const heatLayer = useHeatLayer({
+    statsByHoldId: heatmap?.statsByHoldId ?? NO_STATS,
+    holdTargets: boardHolds.holdTargets,
+    metric: heatmapActive && heatmap?.status === 'ready' ? (heatmap.metric ?? null) : null,
+  });
   const heatmapOverlay = useMemo(
     () =>
       heatmapActive ? (
         <HeatmapOverlay
-          statsByHoldId={heatmapStatsByHoldId}
+          layer={heatLayer}
+          boardName={board.boardName as BoardName}
+          layoutId={board.layoutId}
+          sizeId={board.sizeId}
+          setIds={board.setIds}
           holdTargets={boardHolds.holdTargets}
           boardWidth={boardHolds.boardWidth}
           boardHeight={boardHolds.boardHeight}
-          paintedHoldIds={paintedHoldIds}
         />
       ) : null,
-    [heatmapActive, heatmapStatsByHoldId, boardHolds, paintedHoldIds],
+    [heatmapActive, heatLayer, board.boardName, board.layoutId, board.sizeId, board.setIds, boardHolds],
   );
+  // While heat is on, the line under Save explains it (or offers the download)
+  // in place of the autosave note. Erase hides the heat, and the line with it.
+  const heatmapLine = useMemo(() => {
+    if (!heatmap?.active) return null;
+    if (heatmap.status === 'download') {
+      return <HeatmapDownloadLine board={heatmap.downloadBoard} numberOfLines={1} testID="create-heatmap-download" />;
+    }
+    if (heatmap.status === 'error') {
+      return (
+        <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={1}>
+          {t('mobile.heatmap.loadFailed')}
+        </Text>
+      );
+    }
+    if (heatmap.status === 'unavailable') {
+      return (
+        <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={1}>
+          {t('mobile.heatmap.unavailable')}
+        </Text>
+      );
+    }
+    if (heatmap.metric === null) return null;
+    const count = heatmap.climbCount;
+    return (
+      <HeatmapLegend
+        legend={heatLayer.legend}
+        lowLabel={t('mobile.heatmap.legend.fewClimbs')}
+        highLabel={t('mobile.heatmap.legend.manyClimbs')}
+        allEqualLabel={t('mobile.heatmap.legend.allEqual')}
+        scopeLabel={count === null ? null : formatHeatmapClimbCount(t, count, i18n?.language)}
+        wrap={false}
+        testID="create-heatmap-legend"
+      />
+    );
+  }, [heatmap, heatLayer.legend, systemColors.secondaryLabel, t, i18n?.language]);
 
   const setHeightIfChanged = (setter: (updater: (prev: number) => number) => void, measured: number) => {
     setter((prev) => (Math.abs(prev - measured) > 2 ? Math.round(measured) : prev));
@@ -417,12 +454,6 @@ export function CreateDrawer({
               />
             </View>
 
-            {heatmapNotice ? (
-              <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.heatmapNotice}>
-                {heatmapNotice}
-              </Text>
-            ) : null}
-
             <CreateRoutePlaybackSlot
               showRouteTransport={controller.showRouteTransport}
               frameCount={controller.frameCount}
@@ -452,9 +483,10 @@ export function CreateDrawer({
               onSave={() => void controller.handleSave()}
               publishBlocked={controller.publishBlocked}
               draftStatus={controller.draftStatus}
-              onToggleHeatmap={onToggleHeatmap}
+              onToggleHeatmap={heatmap?.toggle}
               heatmapActive={heatmapActive}
-              heatmapBusy={heatmapBusy}
+              heatmapBusy={heatmap?.busy ?? false}
+              heatmapLine={heatmapLine}
             />
           </View>
 
@@ -490,11 +522,6 @@ export function CreateDrawer({
 }
 
 const styles = StyleSheet.create({
-  heatmapNotice: {
-    paddingHorizontal: spacing[4],
-    paddingTop: spacing[2],
-    textAlign: 'center',
-  },
   scroll: {
     flex: 1,
   },

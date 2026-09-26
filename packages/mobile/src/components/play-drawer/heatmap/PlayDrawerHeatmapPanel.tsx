@@ -5,15 +5,15 @@ import type { UserBoard } from '@boardsesh/shared-schema';
 import { Text } from '../../Text';
 import { Icon } from '../../Icon';
 import { SegmentedControl } from '../../SegmentedControl';
-import { OfflineNudgeCard } from '../../offline/OfflineNudgeCard';
-import { HEAT_RAMP, HEATMAP_MODES, type HeatmapMode } from '../../board/HeatmapOverlay';
+import { formatHeatmapClimbCount, HeatmapLegend } from '../../board/HeatmapLegend';
+import { HeatmapDownloadLine } from '../../board/HeatmapDownloadLine';
+import { HEATMAP_MODES, type HeatmapMode } from '../../board/heatmap-buckets';
 import { useTheme } from '../../../providers/theme-provider';
 import { useGrades } from '../../../lib/graphql/hooks';
 import { countFilteredHolds, hasActiveClimbFilters } from '@boardsesh/climb-filters';
 import { getFilterSummary } from '../../../lib/filter-summary';
 import { DEFAULT_FILTERS } from '../../../lib/climb-filter-types';
-import { useOfflineNudge } from '../../../lib/offline-nudges/use-offline-nudge';
-import { useConfirmBoardDownload } from '../../../offline/use-confirm-board-download';
+import { useHeatmapFirstRunCaption } from '../../../lib/heatmap-first-run';
 import { borderRadius, spacing } from '../../../theme/tokens';
 import type { PlayDrawerHeatmap } from './use-play-drawer-heatmap';
 
@@ -29,9 +29,10 @@ type PlayDrawerHeatmapPanelProps = {
 };
 
 /**
- * The row under the board while the heatmap is on: what the colours mean, which
- * climbs they count (the list's filters, or the whole board), and — for a board
- * that is not on this phone — the offer to download it instead.
+ * The block under the board while the heatmap is on: what the colours mean and
+ * how many climbs they count, the colour mode, which climbs they count (the
+ * list's filters, or the whole board) — or, for a board that is not on this
+ * phone, one line offering the download.
  */
 export const PlayDrawerHeatmapPanel = memo(function PlayDrawerHeatmapPanel({
   heatmap,
@@ -40,30 +41,51 @@ export const PlayDrawerHeatmapPanel = memo(function PlayDrawerHeatmapPanel({
 }: PlayDrawerHeatmapPanelProps) {
   if (!heatmap.enabled) return null;
   if (heatmap.source === 'download') {
-    return heatmap.isResolving ? null : <HeatmapDownloadOffer board={nudgeBoard} />;
+    return heatmap.isResolving ? null : (
+      <View style={styles.panel}>
+        <HeatmapDownloadLine board={nudgeBoard} source="play_drawer" testID="hold-heatmap-download-line" />
+      </View>
+    );
   }
-  return <HeatmapLegend heatmap={heatmap} boardName={boardName} />;
+  return <HeatmapPanelBody heatmap={heatmap} boardName={boardName} />;
 });
 
-function HeatmapLegend({ heatmap, boardName }: { heatmap: PlayDrawerHeatmap; boardName: string }) {
-  const { t } = useTranslation('climbs');
-  const { systemColors } = useTheme();
-  const { search, wholeBoard, toggleWholeBoard, mode, setMode } = heatmap;
+function HeatmapPanelBody({ heatmap, boardName }: { heatmap: PlayDrawerHeatmap; boardName: string }) {
+  const { t, i18n } = useTranslation('climbs');
+  const { systemColors, colorScheme } = useTheme();
+  const { search, wholeBoard, toggleWholeBoard, mode, setMode, legend, climbCount } = heatmap;
+  const showCaption = useHeatmapFirstRunCaption(heatmap.enabled);
 
   const modeOptions = useMemo(
     () =>
       HEATMAP_MODES.map((key) => ({
         key,
         label:
-          key === 'uses'
-            ? t('mobile.heatmap.modes.uses')
-            : key === 'ascents'
-              ? t('mobile.heatmap.modes.ascents')
-              : t('mobile.heatmap.modes.difficulty'),
+          key === 'climbs'
+            ? t('mobile.heatmap.modes.climbs')
+            : key === 'startsFinishes'
+              ? t('mobile.heatmap.modes.startsFinishes')
+              : t('mobile.heatmap.modes.grade'),
       })),
     [t],
   );
   const handleSelectMode = useCallback((next: HeatmapMode) => setMode(next), [setMode]);
+
+  const isGrade = mode === 'grade';
+  const lowLabel = isGrade ? t('mobile.heatmap.legend.easier') : t('mobile.heatmap.legend.fewClimbs');
+  const highLabel = isGrade ? t('mobile.heatmap.legend.harder') : t('mobile.heatmap.legend.manyClimbs');
+  const scopeLabel = climbCount === null ? null : formatHeatmapClimbCount(t, climbCount, i18n?.language);
+  const caption = !showCaption
+    ? null
+    : isGrade
+      ? t('mobile.heatmap.firstRun.grade')
+      : mode === 'startsFinishes'
+        ? colorScheme === 'dark'
+          ? t('mobile.heatmap.firstRun.startsFinishesDark')
+          : t('mobile.heatmap.firstRun.startsFinishesLight')
+        : colorScheme === 'dark'
+          ? t('mobile.heatmap.firstRun.climbsDark')
+          : t('mobile.heatmap.firstRun.climbsLight');
 
   const status = heatmap.filterUnsupported
     ? t('mobile.heatmap.filterUnsupported')
@@ -76,30 +98,35 @@ function HeatmapLegend({ heatmap, boardName }: { heatmap: PlayDrawerHeatmap; boa
           : null;
 
   return (
-    <View style={styles.legend} testID="play-drawer-heatmap-legend">
+    <View style={styles.panel} testID="play-drawer-heatmap-legend">
+      <HeatmapLegend
+        legend={legend}
+        lowLabel={lowLabel}
+        highLabel={highLabel}
+        allEqualLabel={t('mobile.heatmap.legend.allEqual')}
+        scopeLabel={scopeLabel}
+        showEdgeValues
+      />
+      {caption ? (
+        <Text variant="caption1" color={systemColors.secondaryLabel} testID="play-drawer-heatmap-caption">
+          {caption}
+        </Text>
+      ) : null}
       <SegmentedControl
         options={modeOptions}
         selectedKey={mode}
         onSelect={handleSelectMode}
         accessibilityLabel={t('mobile.heatmap.modeLabel')}
       />
-      <View style={styles.legendRow}>
-        <Text variant="caption1" color={systemColors.secondaryLabel}>
-          {mode === 'difficulty' ? t('mobile.heatmap.legendEasy') : t('mobile.heatmap.legendLow')}
-        </Text>
-        <View style={styles.ramp} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-          {HEAT_RAMP.map((color) => (
-            <View key={color} style={[styles.rampStep, { backgroundColor: color }]} />
-          ))}
-        </View>
-        <Text variant="caption1" color={systemColors.secondaryLabel}>
-          {mode === 'difficulty' ? t('mobile.heatmap.legendHard') : t('mobile.heatmap.legendHigh')}
-        </Text>
-        <View style={styles.spacer} />
-        {search ? (
-          <HeatmapFilterChip search={search} boardName={boardName} wholeBoard={wholeBoard} onPress={toggleWholeBoard} />
-        ) : null}
-      </View>
+      {search ? (
+        <HeatmapScopeChip
+          search={search}
+          boardName={boardName}
+          wholeBoard={wholeBoard}
+          holdPicksSkipped={heatmap.holdPicksSkipped}
+          onPress={toggleWholeBoard}
+        />
+      ) : null}
       {status ? (
         <Text variant="footnote" color={systemColors.secondaryLabel}>
           {status}
@@ -109,15 +136,17 @@ function HeatmapLegend({ heatmap, boardName }: { heatmap: PlayDrawerHeatmap; boa
   );
 }
 
-function HeatmapFilterChip({
+function HeatmapScopeChip({
   search,
   boardName,
   wholeBoard,
+  holdPicksSkipped,
   onPress,
 }: {
   search: NonNullable<PlayDrawerHeatmap['search']>;
   boardName: string;
   wholeBoard: boolean;
+  holdPicksSkipped: boolean;
   onPress: () => void;
 }) {
   const { t } = useTranslation('climbs');
@@ -144,7 +173,11 @@ function HeatmapFilterChip({
       : boardParts;
     return parts.join(' · ');
   }, [search, grades, t]);
-  const label = wholeBoard ? t('mobile.heatmap.wholeBoard') : t('mobile.heatmap.filtered', { summary });
+  const label = wholeBoard
+    ? t('mobile.heatmap.wholeBoard')
+    : holdPicksSkipped
+      ? t('mobile.heatmap.holdPicksSkipped', { summary })
+      : summary;
 
   return (
     <Pressable
@@ -168,78 +201,23 @@ function HeatmapFilterChip({
       >
         {label}
       </Text>
+      <Icon name="chevron.down" size={12} color={wholeBoard ? systemColors.secondaryLabel : brandColors.primary} />
     </Pressable>
   );
 }
 
-function HeatmapDownloadOffer({ board }: { board: UserBoard | null }) {
-  const { t } = useTranslation('boards');
-  const { t: tClimbs } = useTranslation('climbs');
-  const { systemColors } = useTheme();
-  const { confirmAndDownload } = useConfirmBoardDownload();
-  const nudge = useOfflineNudge({ surface: 'hold_heatmap', board });
-
-  // Accept only once the size dialog said yes, like every other nudge surface.
-  const handleDownload = useCallback(() => {
-    if (!board) return;
-    void confirmAndDownload(board, { trigger: 'hold_heatmap', source: 'play_drawer' }).then((confirmed) => {
-      if (confirmed) nudge.accept('download');
-    });
-  }, [board, nudge, confirmAndDownload]);
-  const handleDismiss = useCallback(() => nudge.dismiss('once'), [nudge]);
-
-  if (!board || !nudge.visible) {
-    // Downloading already, dismissed, or a board the climber is not standing at:
-    // still say why the board is not lighting up.
-    return (
-      <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.fallback}>
-        {tClimbs('mobile.heatmap.needsDownload')}
-      </Text>
-    );
-  }
-
-  return (
-    <OfflineNudgeCard
-      testID="hold-heatmap-offline-nudge"
-      title={t('mobile.offline.nudge.holdHeatmap.title')}
-      body={t('mobile.offline.nudge.holdHeatmap.body', { name: board.name })}
-      primaryLabel={t('mobile.offline.nudge.holdHeatmap.cta', { name: board.name })}
-      onPrimary={handleDownload}
-      dismissLabel={t('mobile.offline.nudge.notNow')}
-      onDismiss={handleDismiss}
-      style={styles.nudge}
-    />
-  );
-}
-
 const styles = StyleSheet.create({
-  legend: {
+  panel: {
     gap: spacing[2],
     paddingHorizontal: spacing[4],
     paddingTop: spacing[2],
   },
-  legendRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[2],
-  },
-  ramp: {
-    flexDirection: 'row',
-    borderRadius: borderRadius.sm,
-    overflow: 'hidden',
-  },
-  rampStep: {
-    width: 14,
-    height: 8,
-  },
-  spacer: {
-    flex: 1,
-  },
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
+    alignSelf: 'flex-start',
     gap: spacing[1],
-    flexShrink: 1,
+    maxWidth: '100%',
     paddingHorizontal: spacing[2],
     paddingVertical: spacing[1],
     borderRadius: borderRadius.full,
@@ -250,13 +228,5 @@ const styles = StyleSheet.create({
   },
   pressed: {
     opacity: 0.6,
-  },
-  fallback: {
-    paddingHorizontal: spacing[4],
-    paddingTop: spacing[2],
-  },
-  nudge: {
-    marginHorizontal: spacing[4],
-    marginTop: spacing[2],
   },
 });

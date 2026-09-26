@@ -50,6 +50,14 @@ vi.mock('../../../theme/tokens', () => ({
   spacing: { 1: 4, 2: 8, 3: 12, 4: 16, 6: 24 },
   sheetStyles: { background: {} },
 }));
+// The heat layer pulls in the native renderer hook and the download flow; the
+// drawer's own layout is what these cases are about.
+vi.mock('../../board/HeatmapOverlay', () => ({
+  HeatmapOverlay: () => null,
+  useHeatLayer: () => ({ cells: [], codeColors: {}, legend: { kind: 'count', edgeValues: [], total: 0 } }),
+}));
+vi.mock('../../board/HeatmapLegend', () => ({ HeatmapLegend: () => null }));
+vi.mock('../../board/HeatmapDownloadLine', () => ({ HeatmapDownloadLine: () => null }));
 vi.mock('../InteractiveCreateBoard', () => ({
   InteractiveCreateBoard: () => createElement('div', { 'data-node': 'board' }),
 }));

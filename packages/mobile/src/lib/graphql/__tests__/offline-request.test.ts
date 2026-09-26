@@ -27,9 +27,9 @@ const {
   recordOfflineReadUnavailable,
   getSimilarClimbsLocal,
   ensureHoldIndex,
-  getHoldHeatmapLocal,
+  getHoldHeatmapLocalWithCount,
 } = vi.hoisted(() => ({
-  getHoldHeatmapLocal: vi.fn(),
+  getHoldHeatmapLocalWithCount: vi.fn(),
   getSimilarClimbsLocal: vi.fn(),
   ensureHoldIndex: vi.fn(),
   getDatabaseHandle: vi.fn(),
@@ -63,7 +63,7 @@ vi.mock('../../../db/queries/get-boardsesh-grade-local', () => ({
 }));
 vi.mock('../client', () => ({ getHttpClient: () => ({ request }) }));
 vi.mock('../../../db/queries/get-similar-climbs-local', () => ({ getSimilarClimbsLocal }));
-vi.mock('../../../db/queries/get-hold-heatmap-local', () => ({ getHoldHeatmapLocal }));
+vi.mock('../../../db/queries/get-hold-heatmap-local', () => ({ getHoldHeatmapLocalWithCount }));
 vi.mock('../../../offline/hold-index-parser', () => ({ parseHoldRows: vi.fn() }));
 vi.mock('@boardsesh/offline-sync', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@boardsesh/offline-sync')>()),
@@ -1161,7 +1161,7 @@ describe('offlineAwareRequest — HOLD_HEATMAP_QUERY (local-only)', () => {
   const stat = { holdId: 7, totalUses: 2, startingUses: 0, handUses: 2, footUses: 0, finishUses: 0, totalAscents: 5 };
 
   beforeEach(() => {
-    getHoldHeatmapLocal.mockResolvedValue([stat]);
+    getHoldHeatmapLocalWithCount.mockResolvedValue({ holdStats: [stat], climbCount: 12 });
     isOfflineSearchSupported.mockReturnValue(true);
   });
 
@@ -1169,8 +1169,10 @@ describe('offlineAwareRequest — HOLD_HEATMAP_QUERY (local-only)', () => {
     setOnline(true);
     isBoardDownloadedLocally.mockResolvedValue(true);
     const result = await offlineAwareRequest<HoldHeatmapQueryResponse>(HOLD_HEATMAP_QUERY, heatmapVars);
-    expect(result).toEqual({ holdHeatmap: [stat] });
-    expect(getHoldHeatmapLocal).toHaveBeenCalledWith(fakeDb, heatmapVars.input);
+    // The phone's answer carries how many climbs it counted, for the legend.
+    expect(result).toEqual({ holdHeatmap: [stat], climbCount: 12 });
+    // No `withStats` variable → the grade column is still read (the safe default).
+    expect(getHoldHeatmapLocalWithCount).toHaveBeenCalledWith(fakeDb, heatmapVars.input, { withStats: true });
     expect(request).not.toHaveBeenCalled();
     expect(recordOfflineRead).toHaveBeenCalledExactlyOnceWith({
       lane: 'online_local',
@@ -1185,7 +1187,7 @@ describe('offlineAwareRequest — HOLD_HEATMAP_QUERY (local-only)', () => {
     const result = await offlineAwareRequest<HoldHeatmapQueryResponse>(HOLD_HEATMAP_QUERY, heatmapVars);
     expect(result).toEqual({ holdHeatmap: [], unavailable: true });
     expect(request).not.toHaveBeenCalled();
-    expect(getHoldHeatmapLocal).not.toHaveBeenCalled();
+    expect(getHoldHeatmapLocalWithCount).not.toHaveBeenCalled();
     // Online, the unavailable signal stays quiet (local-only records offline gaps only).
     expect(recordOfflineReadUnavailable).not.toHaveBeenCalled();
   });
