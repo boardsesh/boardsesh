@@ -28,7 +28,7 @@
  */
 import { createReadStream } from 'node:fs';
 import { createInterface } from 'node:readline';
-import { sql } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import { ANGLES } from '@boardsesh/board-config';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { createScriptDb } from './db-connection.js';
@@ -115,6 +115,12 @@ import {
   type TauSampleRow,
 } from '../src/queries/grade-model/index.js';
 import { rowsOf } from '../src/queries/util/rows.js';
+import {
+  findReusableBacktest,
+  gradeModelCodeHash,
+  reusedBacktestGates,
+  type StoredGateRun,
+} from './grade-backtest-reuse.js';
 
 const COEFF_MAX_AGE_DAYS = 7;
 const BACKTEST_SAMPLE_LIMIT = 20000;
@@ -650,6 +656,10 @@ async function computeBoard(
           AND bc.is_listed = true
           AND COALESCE(bc.is_draft, false) = false
           AND s.climb_uuid > ${lastClimbUuid}
+          -- Implied by the join, but spelled out so board_climbs_pkey (uuid)
+          -- starts its range at the cursor: without it every page re-walked
+          -- board_climbs from the first uuid, quadratic over ~56 pages.
+          AND bc.uuid > ${lastClimbUuid}
           -- MoonBoard's catalog import leaves a placeholder stats row at a
           -- problem's non-graded fixed angle: 0 ascents, but display_difficulty
           -- and difficulty_average both populated from MoonBoard's own implied
@@ -1088,12 +1098,13 @@ async function publishPassedRun(
   gates: GateResult[],
   computedByBoard: Map<string, ComputedRow[]>,
   persistCoefficientSet: boolean,
+  codeHash: string,
 ): Promise<PublishedBoardResult[]> {
   return db.transaction(async (tx) => {
     if (persistCoefficientSet) {
       await persistCoefficients(tx, coefficients);
     }
-    await recordGateResults(tx, coefficients, gates);
+    await recordGateResults(tx, coefficients, gates, codeHash);
     await createRefreshKeyTable(tx);
     for (const [boardType, computed] of computedByBoard) {
       await insertRefreshKeys(tx, boardType, computed);
@@ -1109,14 +1120,32 @@ async function publishPassedRun(
   });
 }
 
-async function recordGateResults(db: DbWriter, coefficients: GradeCoefficients, gates: GateResult[]): Promise<void> {
+async function recordGateResults(
+  db: DbWriter,
+  coefficients: GradeCoefficients,
+  gates: GateResult[],
+  codeHash: string,
+): Promise<void> {
   const runKey = new Date().toISOString();
   await db.insert(boardGradeCoefficients).values({
     coeffVersion: coefficients.coeffVersion,
     kind: 'gate_results',
     key: runKey,
-    payload: { modelVersion: GRADE_MODEL_VERSION, gates },
+    // gradeModelHash lets a later night with the same coefficients prove the
+    // grade-model code is unchanged before it reuses this backtest verdict.
+    payload: { modelVersion: GRADE_MODEL_VERSION, gradeModelHash: codeHash, gates },
   });
+}
+
+/** The stored gate runs for one coefficient set, newest first. */
+async function loadGateRuns(db: Db, coeffVersion: string): Promise<StoredGateRun[]> {
+  const rows = await db
+    .select({ runKey: boardGradeCoefficients.key, payload: boardGradeCoefficients.payload })
+    .from(boardGradeCoefficients)
+    .where(and(eq(boardGradeCoefficients.coeffVersion, coeffVersion), eq(boardGradeCoefficients.kind, 'gate_results')))
+    .orderBy(desc(boardGradeCoefficients.createdAt))
+    .limit(30);
+  return rows;
 }
 
 /**
@@ -1143,6 +1172,43 @@ async function runZeroEvidenceGates(
     }
     return gate;
   });
+}
+
+/**
+ * Score the history backtest sample into the tail_backtest / head_holdout gates.
+ * Environments without stats history (e.g. the dev DB image) can't run the
+ * backtest at all — that's "no evidence", not a model regression — so
+ * `--allow-empty-backtest` records both as skipped there. Prod keeps the strict
+ * behavior: an empty sample means a broken query and must block.
+ */
+function evaluateBacktestGates(
+  backtestRows: BacktestSampleRow[],
+  coefficients: GradeCoefficients,
+  allowEmptyBacktest: boolean,
+): GateResult[] {
+  if (backtestRows.length === 0 && allowEmptyBacktest) {
+    console.warn('[grades]   backtest SKIPPED — no stats-history sample (--allow-empty-backtest).');
+    return [
+      {
+        gate: 'tail_backtest',
+        passed: true,
+        skipped: true,
+        detail: 'skipped: empty history sample (--allow-empty-backtest)',
+        metrics: { multiN: 0 },
+      },
+      {
+        gate: 'head_holdout',
+        passed: true,
+        skipped: true,
+        detail: 'skipped: empty history sample (--allow-empty-backtest)',
+        metrics: { singleN: 0 },
+      },
+    ];
+  }
+  const backtest = evaluateBacktest(backtestRows, coefficients);
+  console.log(`[grades]   tail_backtest: ${backtest.tailGate.passed ? 'PASS' : 'FAIL'} — ${backtest.tailGate.detail}`);
+  console.log(`[grades]   head_holdout: ${backtest.headGate.passed ? 'PASS' : 'FAIL'} — ${backtest.headGate.detail}`);
+  return [backtest.tailGate, backtest.headGate];
 }
 
 function blockingGates(gates: GateResult[]): GateResult[] {
@@ -1178,30 +1244,7 @@ async function validateOnly(db: Db, allowEmptyBacktest: boolean, contentPriorFil
   const gates: GateResult[] = [];
   console.log('[grades] validate-only: running gates against live data…');
   const backtestRows = rowsOf<BacktestSampleRow>(await db.execute(buildBacktestSampleSql(BACKTEST_SAMPLE_LIMIT)));
-  if (backtestRows.length === 0 && allowEmptyBacktest) {
-    console.warn('[grades]   backtest SKIPPED — no stats-history sample (--allow-empty-backtest).');
-    gates.push(
-      {
-        gate: 'tail_backtest',
-        passed: true,
-        detail: 'skipped: empty history sample (--allow-empty-backtest)',
-        metrics: { multiN: 0 },
-      },
-      {
-        gate: 'head_holdout',
-        passed: true,
-        detail: 'skipped: empty history sample (--allow-empty-backtest)',
-        metrics: { singleN: 0 },
-      },
-    );
-  } else {
-    const backtest = evaluateBacktest(backtestRows, coefficients);
-    gates.push(backtest.tailGate, backtest.headGate);
-    console.log(
-      `[grades]   tail_backtest: ${backtest.tailGate.passed ? 'PASS' : 'FAIL'} — ${backtest.tailGate.detail}`,
-    );
-    console.log(`[grades]   head_holdout: ${backtest.headGate.passed ? 'PASS' : 'FAIL'} — ${backtest.headGate.detail}`);
-  }
+  gates.push(...evaluateBacktestGates(backtestRows, coefficients, allowEmptyBacktest));
   const zeroEvidenceGates = await runZeroEvidenceGates(db, coefficients, allowEmptyBacktest);
   gates.push(...zeroEvidenceGates);
   for (const gate of zeroEvidenceGates) {
@@ -1351,37 +1394,29 @@ async function main(): Promise<void> {
     }
 
     // Pre-write gates: history backtest + cross-board residual.
-    console.log('[grades] running backtest gate…');
-    const backtestRows = rowsOf<BacktestSampleRow>(await db.execute(buildBacktestSampleSql(BACKTEST_SAMPLE_LIMIT)));
-    if (backtestRows.length === 0 && allowEmptyBacktest) {
-      // Environments without stats history (e.g. the dev DB image) can't run
-      // the backtest at all — that's "no evidence", not a model regression.
-      // Prod keeps the strict behavior: an empty sample there means a broken
-      // query and must block.
-      console.warn('[grades]   backtest SKIPPED — no stats-history sample (--allow-empty-backtest).');
-      gates.push(
-        {
-          gate: 'tail_backtest',
-          passed: true,
-          detail: 'skipped: empty history sample (--allow-empty-backtest)',
-          metrics: { multiN: 0 },
-        },
-        {
-          gate: 'head_holdout',
-          passed: true,
-          detail: 'skipped: empty history sample (--allow-empty-backtest)',
-          metrics: { singleN: 0 },
-        },
-      );
+    // The backtest is reused when nothing it depends on changed since it last
+    // ran: the same frozen coefficient set, GRADE_MODEL_VERSION and grade-model
+    // code. A refit, a code change, a dry run or a candidate-prior file always
+    // evaluates it for real. See grade-backtest-reuse.ts and docs/boardsesh-grade.md §4.
+    const codeHash = gradeModelCodeHash();
+    const reusableBacktest =
+      persistCoefficientSet || dryRun || contentPriorFile
+        ? null
+        : findReusableBacktest(await loadGateRuns(db, coefficients.coeffVersion), {
+            modelVersion: GRADE_MODEL_VERSION,
+            codeHash,
+          });
+    let backtestRows: BacktestSampleRow[] = [];
+    if (reusableBacktest) {
+      const reusedGates = reusedBacktestGates(reusableBacktest);
+      gates.push(...reusedGates);
+      for (const gate of reusedGates) {
+        console.log(`[grades]   ${gate.gate}: PASS (reused) — ${gate.detail}`);
+      }
     } else {
-      const backtest = evaluateBacktest(backtestRows, coefficients);
-      gates.push(backtest.tailGate, backtest.headGate);
-      console.log(
-        `[grades]   tail_backtest: ${backtest.tailGate.passed ? 'PASS' : 'FAIL'} — ${backtest.tailGate.detail}`,
-      );
-      console.log(
-        `[grades]   head_holdout: ${backtest.headGate.passed ? 'PASS' : 'FAIL'} — ${backtest.headGate.detail}`,
-      );
+      console.log(`[grades] running backtest gate (grade-model code ${codeHash.slice(0, 12)})…`);
+      backtestRows = rowsOf<BacktestSampleRow>(await db.execute(buildBacktestSampleSql(BACKTEST_SAMPLE_LIMIT)));
+      gates.push(...evaluateBacktestGates(backtestRows, coefficients, allowEmptyBacktest));
     }
 
     const kilterOffset = coefficients.boardOffset.kilter;
@@ -1479,7 +1514,14 @@ async function main(): Promise<void> {
       return;
     }
 
-    const publishedBoards = await publishPassedRun(db, coefficients, gates, computedByBoard, persistCoefficientSet);
+    const publishedBoards = await publishPassedRun(
+      db,
+      coefficients,
+      gates,
+      computedByBoard,
+      persistCoefficientSet,
+      codeHash,
+    );
     for (const { boardType, written, held, deleted } of publishedBoards) {
       console.log(
         `[grades]   ${boardType}: ${written} published, ${held} held by hysteresis, ${deleted} stale deleted`,

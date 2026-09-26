@@ -612,6 +612,20 @@ Coefficients are refit weekly and frozen between refits. Every nightly run
 evaluates the gates first and **writes zero grade rows if any blocking gate
 fails**. Results persist to `board_grade_coefficients` (kind `gate_results`).
 
+The history backtest (`tail_backtest` + `head_holdout`) is the one exception to
+"evaluates". It reads about 3.2M blocks of `board_climb_stats_history`, and its
+verdict depends only on the coefficient set, `GRADE_MODEL_VERSION` and the
+grade-model code. So a night reuses the last evaluated verdict when all three
+match it: same `coeff_version`, same model version, and the same sha256 of the
+`packages/db/src/queries/grade-model/` sources (stored as `gradeModelHash` in
+each `gate_results` payload). The reused entries keep the original metrics, are
+marked `skipped: true`, and their `detail` names the run they came from. A refit
+(weekly or `--refit-coefficients`), any grade-model code change, `--dry-run`,
+`--validate-only` and `--content-prior-file` always run it for real. The cost:
+new history rows and fresher truth reach the gate at the next refit, at most 7
+days later. Over Sep 2026 the nightly re-runs under frozen coefficients moved
+the improvement metric by under 0.01 (0.060–0.067) against the 0.01 tolerance.
+
 | Gate                             | Threshold                                                                                                                                               | Blocks?             | What a failure means                                                                                                                                   |
 | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `tail_backtest`                  | multi-angle shrunk MAE must not exceed raw MAE (+0.01 tolerance), n ≥ 100; improvement % reported against an aspirational 20% bar                       | yes                 | the blend makes sparse grades worse than doing nothing                                                                                                 |
