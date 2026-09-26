@@ -53,6 +53,37 @@ export async function assertWorkerPrivileges(database: Db): Promise<void> {
   }
 }
 
+/**
+ * pg-boss background timers, slowed to what our queues need (docs/db-connectivity.md,
+ * "pg-boss timers"). Every backend replica runs these, and each tick races the
+ * other replicas for the single `pgboss.version` row, so a faster tick costs
+ * lock waits, not just a cheap UPDATE.
+ *
+ * - `flowIntervalSeconds` 3600: the flow gate resolves `boss.flow()` / job
+ *   dependencies. Nothing uses them (no `.flow(` in the repo, and
+ *   `pgboss.job_dependency` is empty in production), so the 5 s default was
+ *   about 52k no-op UPDATEs a day. A future flow user must lower this back,
+ *   or children unblock up to an hour late.
+ * - `cronMonitorIntervalSeconds` 45: the maximum pg-boss 12 accepts (a larger
+ *   value throws in the constructor). The timekeeper still matches every
+ *   occurrence in the preceding 60 s, so per-minute crons do not skip.
+ * - `monitorIntervalSeconds` 120: the queue-stats aggregate seq-scans
+ *   `pgboss.job_common`. Job expiry checks ride the same pass, so a job whose
+ *   worker died is noticed within 2 min instead of 1.
+ */
+export const JOB_QUEUE_TIMER_OPTIONS = {
+  flowIntervalSeconds: 3600,
+  cronMonitorIntervalSeconds: 45,
+  monitorIntervalSeconds: 120,
+} as const;
+
+/**
+ * Poll interval for the backend's maintenance workers (the reconcile crons and
+ * the detection dead-letter queue). Their jobs arrive at most once a minute, so
+ * the 2 s default was 30 fetches per replica for every job.
+ */
+export const MAINTENANCE_POLLING_INTERVAL_SECONDS = 30;
+
 /** Shared connection factory. Only the backend owns scheduling/supervision. */
 export function createJobQueueClient(options: {
   connectionString: string;
@@ -76,6 +107,7 @@ export function createJobQueueClient(options: {
     supervise: options.owner === 'backend',
     // Owner migrations maintain indexes; restricted runtimes never perform DDL.
     reindex: false,
+    ...JOB_QUEUE_TIMER_OPTIONS,
   });
   instance.on('error', () => {
     // Driver errors can contain credentials/SQL. Emit a bounded operational error.

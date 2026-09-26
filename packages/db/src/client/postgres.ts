@@ -20,8 +20,14 @@ const sqlLogger = process.env.DEBUG_SQL === 'true' ? new QueryLogger() : undefin
 
 const fullSchema = { ...schema, ...relations };
 
-/** Pool size when `DB_POOL_MAX` is unset — unchanged from before the knob existed. */
-export const DEFAULT_POOL_MAX = 10;
+/**
+ * Pool size when `DB_POOL_MAX` is unset. It was 10 until the 2026-09 connection
+ * budget: postgres.js round-robins over every open connection, so a pool sits at
+ * its `max` even though fleet-wide concurrency averages under one active
+ * statement. 5 per process keeps the whole fleet well under
+ * `max_connections`; see docs/db-connectivity.md, "Connection budget".
+ */
+export const DEFAULT_POOL_MAX = 5;
 /** Seconds an idle connection is held when `DB_POOL_IDLE_TIMEOUT_S` is unset. */
 export const DEFAULT_POOL_IDLE_TIMEOUT_S = 30;
 /** Serverless (Vercel) pool defaults — smaller per-lambda footprint; see docs/db-connectivity.md § pool sizing. */
@@ -59,9 +65,8 @@ function readPoolInt(name: string, fallback: number, minimum: number): number {
 
 /**
  * Per-deployment pool knobs. On Vercel the defaults are the serverless pair
- * above; everywhere else (backend, sync jobs, scripts) they stay the values
- * that were hard-coded here before, so nothing changes unless the env var is
- * set. The split exists because peak server-side connections scale with
+ * above; everywhere else (backend, sync jobs, scripts) they are
+ * `DEFAULT_POOL_MAX` / `DEFAULT_POOL_IDLE_TIMEOUT_S` unless the env var is set. The split exists because peak server-side connections scale with
  * *instance count* × held-idle connections, not with per-instance `max`.
  *
  * `prepare: false` is required when the target is PgBouncer in transaction

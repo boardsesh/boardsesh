@@ -350,17 +350,18 @@ hand-written server) since the standalone `server.js` is generated at build time
 ### No overlapSeconds
 
 `overlapSeconds` (the other teardown knob) keeps both deployments serving at
-once. It is deliberately unset. Overlap would double the backend's Postgres
-footprint — 2 replicas x (`DB_POOL_MAX` 10 + `PGBOSS_POOL_SIZE` 4) = 28 (down from 3
-replicas on 2026-09-26; see [railway-cost-reduction.md](./railway-cost-reduction.md)) — against
-a shared `max_connections` of 100 since the PG18 cutover (200 on PG16, where it
-was exhausted). Even the 15 s drain already puts both fleets on the database at
-once: about 92 connections at the ceiling against 97 non-superuser slots. A
-pooler would cap that, but PgBouncer is parked; see
-[db-connectivity.md](./db-connectivity.md#pgbouncer-parked) for why and when to
-revisit it. Railway only sends SIGTERM once the
-replacement deployment is already healthy, so there is no capacity gap for
-overlap to cover; draining alone addresses the severed-request case.
+once. It is deliberately unset. With the C15 code defaults, the two backend
+replicas use 2 x (`DB_POOL_MAX` 5 + `PGBOSS_POOL_SIZE` 2) = 14 connections,
+down from 28 before the pool change. On a 15 s drain, the full-fleet ceiling is
+77 while the web service's explicit `DB_POOL_MAX=10` is unchanged; setting the
+separate web cap to 4 lowers that ceiling to 71. Both fit under the 97
+non-superuser slots of `max_connections=100`. The homelab sync runners still
+set `max: 5` in code and ignore `DB_POOL_MAX`, so a cap of 3 needs a separate
+code follow-up before relying on the 65-connection budget. PgBouncer remains
+parked; see [db-connectivity.md](./db-connectivity.md#pgbouncer-parked) for why
+and when to revisit it. Railway only sends SIGTERM once the replacement
+deployment is already healthy, so there is no capacity gap for overlap to
+cover; draining alone addresses the severed-request case.
 
 ## Cut-over sequence (complete)
 

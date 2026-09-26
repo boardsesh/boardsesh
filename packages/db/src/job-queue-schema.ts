@@ -56,6 +56,13 @@ const CLIMB_POPULARITY_REFRESH_QUEUE_OPTIONS = {
   retryDelay: 300,
 } as const;
 
+/**
+ * Completed jobs of the once-a-minute crons (the two reconcilers and pg-boss's
+ * own `__pgboss__send-it` dispatcher) are kept 1 day, not pg-boss's 7-day
+ * default. The queue-stats monitor seq-scans this table on every pass.
+ */
+export const CRON_JOB_DELETE_AFTER_SECONDS = 24 * 60 * 60;
+
 type TablePrivilege = 'SELECT' | 'INSERT' | 'UPDATE' | 'DELETE';
 
 /** One GRANT on a `public` table, optionally limited to some columns. */
@@ -551,6 +558,7 @@ export async function initializeJobQueueSchema(
     // pg-boss 12.33's scheduler creates this queue at runtime. Pre-create it
     // under the owner so scheduler startup needs DML, never schema CREATE.
     await boss.createQueue('__pgboss__send-it', { partition: false });
+    await boss.updateQueue('__pgboss__send-it', { deleteAfterSeconds: CRON_JOB_DELETE_AFTER_SECONDS });
     await boss.createQueue(SPRAY_DETECTION_DEAD_QUEUE, { partition: false });
     await boss.createQueue(SPRAY_DETECTION_QUEUE, { partition: false, ...SPRAY_DETECTION_JOB_OPTIONS });
     await boss.updateQueue(SPRAY_DETECTION_QUEUE, SPRAY_DETECTION_JOB_OPTIONS);
@@ -558,6 +566,12 @@ export async function initializeJobQueueSchema(
       partition: false,
       policy: 'singleton',
       expireInSeconds: 120,
+      deleteAfterSeconds: CRON_JOB_DELETE_AFTER_SECONDS,
+    });
+    // createQueue leaves an existing queue's options alone, so update the
+    // retention when the owner initializes an already-installed queue too.
+    await boss.updateQueue(SPRAY_DETECTION_RECONCILE_QUEUE, {
+      deleteAfterSeconds: CRON_JOB_DELETE_AFTER_SECONDS,
     });
     await boss.createQueue(POPULAR_BOARD_CONFIGS_REFRESH_QUEUE, {
       partition: false,
@@ -587,6 +601,7 @@ export async function initializeJobQueueSchema(
       ...BACKGROUND_JOB_QUEUE_OPTIONS,
       expireInSeconds: 120,
       policy: 'singleton' as const,
+      deleteAfterSeconds: CRON_JOB_DELETE_AFTER_SECONDS,
     };
     await boss.createQueue(BACKGROUND_JOB_RECONCILE_QUEUE, { partition: false, ...reconcileOptions });
     const { policy: _reconcilePolicy, ...mutableReconcileOptions } = reconcileOptions;
