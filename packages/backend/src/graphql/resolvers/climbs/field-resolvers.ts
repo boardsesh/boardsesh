@@ -2,6 +2,7 @@ import type { Climb } from '@boardsesh/shared-schema';
 import { searchClimbs as searchClimbsQuery, countClimbs } from '../../../db/queries/climbs/index';
 import type { ClimbSearchContext } from '../shared/types';
 import { searchCache, DEFAULT_SEARCH_CACHE_TTL } from '../../../services/search-cache';
+import { readPopularPage } from './popular-page-cache';
 import {
   logSearchClimbsMetrics,
   type SearchClimbsMetricDimensions,
@@ -46,6 +47,20 @@ export const climbFieldResolvers = {
 
     if (parent._cachedClimbs !== undefined) {
       return finalize(parent._cachedClimbs, 'precomputed');
+    }
+
+    // Popular-sort pages every viewer shares: Redis plus single-flight, because
+    // each page re-runs a layout-wide ascent aggregate (popular-page-cache.ts).
+    if (parent._isPopularPageCacheable) {
+      const { page, source } = await readPopularPage({
+        params: parent.params,
+        searchParams: parent.searchParams,
+        coveredBySearchCache: parent._isCacheable ?? false,
+        load: () => searchClimbsQuery(parent.params, parent.searchParams, parent.userId),
+      });
+      parent._cachedClimbs = page.climbs;
+      parent._cachedHasMore = page.hasMore;
+      return finalize(page.climbs, source);
     }
 
     // User-specific queries bypass Redis cache entirely

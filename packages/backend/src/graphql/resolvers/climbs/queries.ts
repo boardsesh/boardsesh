@@ -28,6 +28,7 @@ import { isSprayBoardType, sprayLayoutIsReadable, sprayLayoutIsReadableWithCapab
 import { findMoonBoardDuplicateMatches } from './moonboard-duplicates';
 import { parseFramesToHoldEntries, type NormalizedHold } from './climb-similarity';
 import { findSimilarClimbsCached } from './similar-climbs-cache';
+import { isPopularPageCacheable } from './popular-page-cache';
 import { hasCatalogQueryAccess, requireCatalogQueryAccess } from '../social/roles';
 import {
   BoardNameSchema,
@@ -460,6 +461,7 @@ export const climbQueries = {
       searchParams,
       userId,
       _isCacheable: !hasUserSpecificFilters && isCacheableBoard,
+      _isPopularPageCacheable: isPopularPageCacheable(parsedInput.boardName, searchParams),
     };
   },
 

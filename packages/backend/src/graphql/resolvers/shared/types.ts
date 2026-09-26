@@ -15,6 +15,12 @@ export type ClimbSearchContext = {
   _cachedTotalCount?: number;
   /** True when the query has no user-specific filters and results can be cached in Redis */
   _isCacheable?: boolean;
+  /**
+   * True for a popular-sort page every viewer sees the same way. Such a page is
+   * read through `readPopularPage`: Redis (24 h where `_isCacheable`, else
+   * 10 min) with single-flight on the miss. See `climbs/popular-page-cache.ts`.
+   */
+  _isPopularPageCacheable?: boolean;
 };
 
 /**
