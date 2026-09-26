@@ -2,11 +2,8 @@
 
 /**
  * Promote the archived, already-exported main OTA to the existing production branch.
- * xprem cannot republish across branches. This speaks the same upload/finalize
- * protocol as eoas@3.2.4, but never runs Expo export again. That protocol changed
- * at 3.2.0: requestUploadUrl takes a `files` list (path, content hash, md5 cache
- * key and role) instead of `fileNames`, and a server on either side of that line
- * rejects the other shape, so this file moves with EOAS_PACKAGE_SPEC. The pipeline must first
+ * xprem 3.1.2 cannot republish across branches. This uses the same upload/finalize
+ * protocol as eoas@3.1.2, but never runs Expo export again. The pipeline must first
  * verify that the staged commit's GraphQL schema is live.
  *
  * vp exec tsx scripts/mobile-ota-promote.ts --receipt ota-stage/receipt.json \
@@ -53,20 +50,6 @@ interface UploadRequest {
 interface UploadLease {
   updateId: string;
   uploadRequests: UploadRequest[];
-}
-
-/** What a published file is to the update, as the server reads it (eoas 3.2.4 FileRole). */
-export type UploadFileRole = 'launch' | 'asset' | 'config';
-
-/** One entry of the requestUploadUrl `files` list (eoas 3.2.4 FileUploadItem). */
-export interface UploadFileItem {
-  path: string;
-  /** SHA-256, base64url without padding: the manifest hash and the object key under {appId}/cas/. */
-  hash: string;
-  /** MD5 hex: the on-device cache key expo-updates uses. Absent for config files. */
-  key?: string;
-  ext?: string;
-  role: UploadFileRole;
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -213,47 +196,6 @@ export function validateExport(
   return { platform, appId, files, bundlePath, assetPaths, assetExtensions, expoConfig };
 }
 
-function fileDigest(absolutePath: string): { hash: string; key: string } {
-  const bytes = readFileSync(absolutePath);
-  return {
-    hash: createHash('sha256').update(bytes).digest('base64url'),
-    key: createHash('md5').update(bytes).digest('hex'),
-  };
-}
-
-/**
- * The `files` list eoas 3.2.4 sends for one platform (buildUploadFiles +
- * computeFilesRequests): the two config files, the launch bundle and each asset,
- * each with its digest and role. The server validates every entry and refuses a
- * publish without exactly one launch asset.
- */
-export function buildUploadFiles(exportFiles: ValidatedExport): UploadFileItem[] {
-  const fileAt = (relativePath: string): ExportFile => {
-    const file = exportFiles.files.get(relativePath);
-    if (!file) throw new Error(`${exportFiles.platform} export file disappeared: ${relativePath}.`);
-    return file;
-  };
-  const configFiles = ['metadata.json', 'expoConfig.json'].map((relativePath): UploadFileItem => ({
-    path: relativePath,
-    hash: fileDigest(fileAt(relativePath).absolutePath).hash,
-    role: 'config',
-  }));
-  const launchAsset: UploadFileItem = {
-    path: exportFiles.bundlePath,
-    ...fileDigest(fileAt(exportFiles.bundlePath).absolutePath),
-    // eoas stamps every launch bundle `hbc`, whatever its path says.
-    ext: 'hbc',
-    role: 'launch',
-  };
-  const assets = exportFiles.assetPaths.map((assetPath): UploadFileItem => ({
-    path: assetPath,
-    ...fileDigest(fileAt(assetPath).absolutePath),
-    ext: exportFiles.assetExtensions.get(assetPath),
-    role: 'asset',
-  }));
-  return [...configFiles, launchAsset, ...assets];
-}
-
 export function parsePromoteArgs(argv: string[]): { receipt: string; iosExport: string; androidExport: string } {
   const args: Record<string, string> = {};
   for (let index = 0; index < argv.length; index++) {
@@ -366,7 +308,7 @@ function parseUploadLease(input: unknown, exportFiles: Map<string, ExportFile>, 
     }
     return { requestUploadUrl, fileName, filePath, headers };
   });
-  // xprem stores files by content hash and skips any it already holds, so
+  // xprem 3.1.2 reuses matching assets from the previous production update;
   // uploadRequests can legitimately be only a subset of requested files.
   return { updateId, uploadRequests };
 }
@@ -442,9 +384,7 @@ async function uploadLeaseFiles(
             form.append(request.fileName, new Blob([bytes]), request.fileName);
             return {
               method: 'PUT',
-              // Since 3.2.0 the local-bucket upload token travels in a header the
-              // lease names, alongside the publish credential.
-              headers: { ...request.headers, Authorization: `Bearer ${token}` },
+              headers: { Authorization: `Bearer ${token}` },
               body: form,
               redirect: 'error',
             };
@@ -646,8 +586,7 @@ export async function promoteArchivedOta(options: {
   const base = uploadServerBase(options.manifestUrl);
   const fetchImpl = options.fetchImpl ?? fetch;
   const publishGroup = randomUUID();
-  // null: the server answered 406, so production already serves exactly these files.
-  const leases = {} as Record<OtaPlatform, UploadLease | null>;
+  const leases = {} as Record<OtaPlatform, UploadLease>;
   let lastUploadStart = 0;
   const paceUpload = async (): Promise<void> => {
     // Match this repo's eoas --upload-rate 5 setting, including retry attempts.
@@ -690,45 +629,31 @@ export async function promoteArchivedOta(options: {
       method: 'POST',
       headers: { Authorization: `Bearer ${options.token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        files: buildUploadFiles(exports[platform]),
+        fileNames: [...exports[platform].files.keys()],
         ...(receipt.message ? { message: receipt.message } : {}),
       }),
       redirect: 'error',
     });
-    if (response.status === 409)
-      throw new Error(`${platform} production has an active rollout; promotion was refused.`);
-    if (response.status === 406) {
-      // Since 3.2.0 "no changes" is answered here, before any upload. The served
-      // manifest is still verified below, so this cannot hide a wrong update.
-      await response.body?.cancel();
-      leases[platform] = null;
-      continue;
-    }
     await requireSuccess(response, `${platform} upload request`);
     leases[platform] = parseUploadLease((await response.json()) as unknown, exports[platform].files, base, appId);
   }
 
   for (const platform of ['ios', 'android'] as const) {
-    const lease = leases[platform];
-    if (lease === null) {
-      console.log(`[ota-promote] ${platform}: production already serves these files; verifying only.`);
-    } else {
-      // Recheck immediately before each platform's first production PUT.
-      await assertBaselineUnchanged(platform);
-      await uploadLeaseFiles(lease, exports[platform], base, appId, options.token, fetchImpl, paceUpload);
-      const finalizeUrl = controlUrl(base, appId, 'markUpdateAsUploaded');
-      finalizeUrl.searchParams.set('platform', platform);
-      finalizeUrl.searchParams.set('updateId', lease.updateId);
-      finalizeUrl.searchParams.set('runtimeVersion', receipt.platforms[platform].runtimeVersion);
-      const response = await fetchWithRetry(fetchImpl, finalizeUrl, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${options.token}`, 'Content-Type': 'application/json' },
-        redirect: 'error',
-      });
-      if (response.status === 409)
-        throw new Error(`${platform} production has an active rollout; promotion was refused.`);
-      if (response.status !== 406) await requireSuccess(response, `${platform} production finalize`);
-    }
+    // Recheck immediately before each platform's first production PUT.
+    await assertBaselineUnchanged(platform);
+    await uploadLeaseFiles(leases[platform], exports[platform], base, appId, options.token, fetchImpl, paceUpload);
+    const finalizeUrl = controlUrl(base, appId, 'markUpdateAsUploaded');
+    finalizeUrl.searchParams.set('platform', platform);
+    finalizeUrl.searchParams.set('updateId', leases[platform].updateId);
+    finalizeUrl.searchParams.set('runtimeVersion', receipt.platforms[platform].runtimeVersion);
+    const response = await fetchWithRetry(fetchImpl, finalizeUrl, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${options.token}`, 'Content-Type': 'application/json' },
+      redirect: 'error',
+    });
+    if (response.status === 409)
+      throw new Error(`${platform} production has an active rollout; promotion was refused.`);
+    if (response.status !== 406) await requireSuccess(response, `${platform} production finalize`);
     await verifyServedExportWithRetry(
       options.manifestUrl,
       exports[platform],

@@ -32,7 +32,7 @@ Postgres and left V2 running untouched while its fleet drained. The URL cutover 
   their binary. Only a **store update** recovers one.
 - There is no cross-server backport and V2 cannot be revived — its bucket is gone. Recovery for a
   stranded install is store-side only.
-- V3 is the Railway service `boardsesh-ota-v3` (image `ghcr.io/mercuretechnologies/xprem:v3.2.4` —
+- V3 is the Railway service `boardsesh-ota-v3` (image `ghcr.io/mercuretechnologies/xprem:v3.1.2` —
   see [Versions](#versions-the-cli-pin-and-the-server-image)), backed by a dedicated Railway Postgres
   and the S3-compatible bucket `boardsesh-ota-v3`. Verify its current provider through the storage
   migration gate below; the bucket name alone does not distinguish R2 from Tigris. Its endpoint is
@@ -53,9 +53,9 @@ Postgres and left V2 running untouched while its fleet drained. The URL cutover 
 ### Versions: the CLI pin and the server image
 
 One version governs both halves of the self-hosted path, and each half has a constant:
-`EOAS_PACKAGE_SPEC` in `scripts/lib/eoas.ts` (currently **`eoas@3.2.4`**) is the CLI we publish with,
+`EOAS_PACKAGE_SPEC` in `scripts/lib/eoas.ts` (currently **`eoas@3.1.2`**) is the CLI we publish with,
 and `OTA_SERVER_VERSION` in `infra/railway/config.ts` is the image Railway runs
-(`ghcr.io/mercuretechnologies/xprem:v3.2.4`). `scripts/__tests__/eoas-version-parity.test.ts` fails CI
+(`ghcr.io/mercuretechnologies/xprem:v3.1.2`). `scripts/__tests__/eoas-version-parity.test.ts` fails CI
 if this doc, the setup runbook or the rollback helper drifts off either — root `scripts/` has no
 typecheck task, so nothing else would catch it.
 
@@ -69,7 +69,29 @@ endpoint. `infra/railway/plan.ts` blocks an image ahead of the pin, and the vers
 asserts the same without touching the API. The older rule, that the CLI may lead the server, stopped
 holding at 3.2.0 (below): across that line neither side may lead.
 
-#### The 3.2 upgrade (3.1.2 to 3.2.4)
+#### The 3.2 upgrade (3.1.2 to 3.2.4): attempted, rolled back
+
+**Status (2026-09-26): not deployed.** #5861 moved everything to 3.2.4, and two applies rolled it
+back automatically: the first after a ten-second probe, the second after a 90-second probe. Both
+times `/ready` answered 503 the whole way through. The cause is the first boot, not the server:
+
+- 3.2.2 added a Postgres migration, `backfill_update_asset_mapping`, that reads the bucket once per
+  existing update to fill `updates.asset_mapping`. It runs sequentially, logs nothing until it ends,
+  and runs inside ONE transaction.
+- Until migrations finish, xprem serves `/hc` = 200 but answers every other path, manifests
+  included, with 503 "storage migration in progress". Railway's healthcheck is `/hc`, so it swaps
+  the booting container in, and devices get 503 on update checks for the whole backfill. They keep
+  running their current bundle.
+- A rollback kills the container mid-backfill, the transaction rolls back, and the next attempt
+  starts from zero. The backfill therefore has to finish in a single boot.
+
+Before retrying: count the rows it will walk (`SELECT count(*) FROM updates WHERE asset_mapping IS
+NULL` on the OTA Postgres), time a sample of bucket reads, and give the OTA service a readiness
+window longer than that estimate. Pruning old `pr-*` preview updates first shortens it. The 3.2 SQL
+migrations from the first attempt stay applied, and 3.1.2 ignores them.
+
+What the retry has to respect:
+
 
 - **The upload protocol broke in both directions.** `requestUploadUrl` now takes a `files` list
   (path, SHA-256 hash, md5 cache key, role) instead of `fileNames`, and "no changes" moved from a
@@ -250,7 +272,7 @@ its external map and uploads the OTA bundle to our storage via the server. `eoas
 URL from `updates.url` in `app.config.ts`, so `EXPO_UPDATES_URL` must be present.
 **Auth is `EOO_TOKEN`, not an Expo token:** the V3 control-plane server rejects Expo tokens, so
 publish/rollback need an app-scoped `eoo_` key minted in the dashboard. The CLI is pinned to
-**`eoas@3.2.4`** via `EOAS_PACKAGE_SPEC` in `scripts/lib/eoas.ts` (V3 routes are app-scoped; a `v2`
+**`eoas@3.1.2`** via `EOAS_PACKAGE_SPEC` in `scripts/lib/eoas.ts` (V3 routes are app-scoped; a `v2`
 CLI 404s) — see [Versions](#versions-the-cli-pin-and-the-server-image) for the pin↔image rule. Every
 self-hosted publish also passes `--upload-rate 5` to pace its asset uploads; the reasoning is below.
 
@@ -300,7 +322,7 @@ superseded.
   only: `requestUploadUrl` loads the previous update's `metadata.json` for the same
   app/branch/runtimeVersion/platform, server-side-copies everything already there, and hands back
   upload URLs for the remainder — roughly 380 uploads down to a handful on a repeat publish to a
-  branch. **It needs the Railway image on `xprem:v3.2.4`**; until then the CLI-side halves above are
+  branch. **It needs the Railway image on `xprem:v3.1.2`**; until then the CLI-side halves above are
   what we have. It degrades safely (an unavailable copy just falls back to a normal upload).
 
 The whole-command retry ladder below is therefore now a **backstop**, not the first line of defence.
@@ -1068,7 +1090,7 @@ Postgres, server, DNS) stay manual. Run it with no argument for the ordered runb
    before boot. It seals the signing key in Postgres; **never regenerate it** (doing so makes every
    sealed key unreadable).
 4. **Deploy the server** — Railway service running
-   `ghcr.io/mercuretechnologies/xprem:v3.2.4`, which `infra/railway/config.ts` declares and
+   `ghcr.io/mercuretechnologies/xprem:v3.1.2`, which `infra/railway/config.ts` declares and
    `vp run railway:apply` keeps deployed (see the
    [deployment](https://mercuretechnologies.github.io/expo-open-ota/docs/deployment/railway) /
    [env reference](https://mercuretechnologies.github.io/expo-open-ota/docs/reference/environment)
@@ -1124,7 +1146,7 @@ Postgres, server, DNS) stay manual. Run it with no argument for the ordered runb
    build).
 9. **Verify** — a header-carrying `GET https://updates.boardsesh.com/manifest` (with `expo-app-id`,
    `expo-channel-name: production`, platform/runtime headers) returns 200 with signature `keyid
-main` after the first publish, and its assets load. `vp dlx eoas@3.2.4 doctor --channel=production`
+main` after the first publish, and its assets load. `vp dlx eoas@3.1.2 doctor --channel=production`
    should be clean.
 
 ### Durability: Postgres holds the only private key

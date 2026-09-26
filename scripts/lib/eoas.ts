@@ -21,7 +21,7 @@
 // docs/mobile-ota-updates.md, "The 3.2 upgrade".
 //
 // Railway pulls the image under its PRE-RENAME name
-// `ghcr.io/mercuretechnologies/expo-open-ota:v3.2.4` (the project renamed
+// `ghcr.io/mercuretechnologies/expo-open-ota:v3.1.2` (the project renamed
 // expo-open-ota → xprem at v3.1.0 and still publishes the old name), so reading
 // the Railway dashboard for `xprem:` and finding nothing does not mean the server
 // is behind.
@@ -33,7 +33,7 @@
 // Single source of truth: imported by mobile-publish.ts, mobile-ota-rollback.ts,
 // mobile-ota-setup.ts, and asserted by the rollback + version-parity tests so a
 // stale copy can't creep back in per-file.
-export const EOAS_PACKAGE_SPEC = 'eoas@3.2.4';
+export const EOAS_PACKAGE_SPEC = 'eoas@3.1.2';
 
 // Asset-upload starts per second for a self-hosted publish, passed as
 // `eoas publish --upload-rate`. The CLI default is 10; we run 5 because the
