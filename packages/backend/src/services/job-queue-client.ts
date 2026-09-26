@@ -68,8 +68,10 @@ export async function assertWorkerPrivileges(database: Db): Promise<void> {
  *   value throws in the constructor). The timekeeper still matches every
  *   occurrence in the preceding 60 s, so per-minute crons do not skip.
  * - `monitorIntervalSeconds` 120: the queue-stats aggregate seq-scans
- *   `pgboss.job_common`. Job expiry checks ride the same pass, so a job whose
- *   worker died is noticed within 2 min instead of 1.
+ *   `pgboss.job_common`. Job expiry and missed-heartbeat checks ride the same
+ *   pass, and that pass only runs on a 60 s supervise tick once 120 s have
+ *   passed, so a job whose worker died is failed 2 to 3 min late instead of
+ *   1 to 2 (spray detection's 30 s heartbeat included).
  */
 export const JOB_QUEUE_TIMER_OPTIONS = {
   flowIntervalSeconds: 3600,
@@ -79,8 +81,11 @@ export const JOB_QUEUE_TIMER_OPTIONS = {
 
 /**
  * Poll interval for the backend's maintenance workers (the reconcile crons and
- * the detection dead-letter queue). Their jobs arrive at most once a minute, so
- * the 2 s default was 30 fetches per replica for every job.
+ * the detection dead-letter queue). The crons get one job a minute, so the 2 s
+ * default was 30 fetches per replica for every job. The dead-letter queue only
+ * gets a job when a detection exhausts its retries, and marking that detection
+ * failed up to 30 s later adds little to a path that already spent over a
+ * minute on three backed-off retries.
  */
 export const MAINTENANCE_POLLING_INTERVAL_SECONDS = 30;
 

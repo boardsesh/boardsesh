@@ -585,8 +585,8 @@ row-lock waits (one 1-row UPDATE had a 10.9 s max). The backend sets:
 | -------------------------------------- | --------------: | ---: | ----------------------------------------------------------------------------------------------------- |
 | `flowIntervalSeconds`                  |             5 s | 3600 | flows and job dependencies are unused (`pgboss.job_dependency` is empty); lower it again to use them |
 | `cronMonitorIntervalSeconds`           |            30 s |   45 | the maximum pg-boss accepts; 46 or more throws in the constructor                                   |
-| `monitorIntervalSeconds`               |            60 s |  120 | the queue-stats pass seq-scans `pgboss.job_common`; job expiry is noticed within 2 min instead of 1 |
-| maintenance `pollingIntervalSeconds`   |             2 s |   30 | reconcile crons and the detection dead-letter queue get at most one job a minute                    |
+| `monitorIntervalSeconds`               |            60 s |  120 | the queue-stats pass seq-scans `pgboss.job_common`; expiry and heartbeat failures land 2 to 3 min late instead of 1 to 2 |
+| maintenance `pollingIntervalSeconds`   |             2 s |   30 | reconcile crons get one job a minute; a dead-lettered detection is marked failed up to 30 s later |
 | cron queues' `deleteAfterSeconds`      |          7 days |  1 day | `__pgboss__send-it` and both reconcile queues; the week of completed jobs was most of `job_common` |
 
 `deleteAfterSeconds` is copied onto each job when it is inserted, so jobs
