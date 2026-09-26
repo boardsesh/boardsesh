@@ -60,6 +60,9 @@ scheduled job attributable to the reduction, or a latency regression over 20%
 for 15 minutes against comparable pre-change traffic. The deliberate initial
 Railway restart is recorded above and is not an OOM.
 
+The service `648faad6…` below is the PG16 cluster, deleted on 2026-09-25. For the
+PG18 primary, use the rollback in the next section.
+
 To restore the PostGIS ceiling without changing unrelated settings:
 
 ```sh
@@ -73,6 +76,92 @@ jobs, with non-reclaimable memory below 5 GB and no material regression. Railway
 total memory graph alone cannot establish that gate: collect cgroup
 `memory.current` and `memory.stat` to distinguish reclaimable file cache. If this
 evidence is missing, retain 12 GB. An 8 GB trial is never automatic.
+
+This gate covered the PG16 cluster. For the PG18 primary the owner chose on
+2026-09-26 to go straight to 4 GB without the seven-day window, accepting slower
+online queries (next section). Rollback there is on OOM kills and restarts only.
+
+## PG18 primary: 4 GB cap, September 26
+
+The PG18 primary (`PostGIS - PG18`, service `f122fc1f-b90a-4395-989b-8ee361da8820`)
+came up after the cutover with a 24 vCPU / 24 GB ceiling and initdb's memory
+defaults. Railway bills memory on usage, and usage includes the kernel page cache,
+so the cache grew into whatever the ceiling allowed.
+
+Measured before the change, with pg_stat_statements covering the previous 25 hours:
+
+| Measurement | Value |
+| --- | ---: |
+| RAM, six-day average / peak | 7.5 GB / 12.8 GB |
+| RAM, the ten hours after #5766 | 4.2 GB rising to 9.9 GB |
+| CPU, the ten hours after #5766 | 0.17 vCPU average, 1.8 peak |
+| Database size | 12 GB |
+| `shared_buffers` | 128 MB |
+| Shared-buffer hit rate | 54% |
+| Temporary files written since initdb | 3.2 TB |
+| Client connections | 50, all idle between requests |
+
+PostgreSQL itself held about 1 GB; the rest was page cache. Most of it was fed by
+the live Jaccard similar-climbs query: 3,059 calls in 25 hours, 900 ms each, 128,000
+sequential scans of `board_climb_holds` and about 2.7 TB of page-cache reads. #5766
+moved everyone but admins to `board_climb_neighbors`, and a 100-second sample after
+that deploy showed no calls to it. The largest remaining reader is the sitemap climb
+query (`packages/web/app/lib/seo/sitemap/climb-query.ts`), about 2.6 GB per call,
+run a handful of times a day.
+
+At **2026-09-26 00:08 UTC** the ceiling changed to 8 vCPU / 4,000,000,000 bytes.
+Before that, these went into `postgresql.auto.conf` with `ALTER SYSTEM`:
+
+| Setting | Before | After |
+| --- | ---: | ---: |
+| `shared_buffers` | 128 MB | 1 GB |
+| `effective_cache_size` | 4 GB | 2.5 GB |
+| `work_mem` | 4 MB | 16 MB |
+| `maintenance_work_mem` | 64 MB | 256 MB |
+| `random_page_cost` | 4 | 1.1 |
+| `jit` | on | off |
+
+`max_connections` stays at 100. It has been 100 since the PG18 cutover, not the
+200 PG16 had. Steady state is about 50 client connections: five backend replicas
+and web on the runtime role, plus pg-boss and the detector. A deploy briefly runs
+the old and new backend fleets side by side while the old one drains. That can
+approach the limit, but the logs show no "too many clients" errors since the
+cutover. Raising it must start on the homelab standby: a hot standby refuses to
+start with a lower value than its primary, so raising the primary first would stop
+replication. The limit change restarted the service. Postgres was accepting connections
+again 20 seconds later with `shared_buffers = 1GB`, the homelab standby resumed
+streaming with no lag, and `/health/db` returned 200. The CPU ceiling is a safety
+rail only; CPU is billed on usage.
+
+Slower online queries are an accepted cost. Climbers who want fast search download
+the offline climbs database, and the app prefers it. In a five-minute sample 40
+minutes after the restart, the mean statement went from 7.7 ms to 17 ms. The
+climb-stats history lookup went from 94 ms to about 980 ms, and a few catalogue
+count queries went from 0.3 s to 2.6 s. Those are the queries that no longer fit in
+cache.
+
+Roll back on an OOM kill or an unexplained restart, not on latency alone. Go back to
+12 GB, not 24. The settings can stay: they fit in 12 GB too.
+
+```sh
+railway environment edit --project afceee45-0af1-46b3-abbe-8b9094c23bc6 --environment production --message 'Restore PostGIS PG18 12 GB memory ceiling' <<'JSON'
+{"services":{"f122fc1f-b90a-4395-989b-8ee361da8820":{"deploy":{"limitOverride":{"containers":{"cpu":8,"memoryBytes":12000000000}}}}}}
+JSON
+```
+
+After any restart, probe the database itself. Railway can report `state: live`
+while the container is wedged; `redeploy` recovers it.
+
+### Read-only access for investigations
+
+Use the `boardsesh_readonly` role for analysis, never the superuser. It has
+`pg_read_all_data` and `pg_monitor` (so it can read `pg_stat_statements`), defaults
+to read-only transactions, has a 120-second statement timeout and at most five
+connections. Its connection string is the `connection string` field of the
+1Password item `RAILWAY Postgres PROD (readonly)` in vault `Boardsesh`. The
+`DATABASE_URL` (runtime role) and `DATABASE_DIRECT_URL` (superuser) items point at
+the PG18 proxy since September 26; before that they still named the deleted PG16
+proxy.
 
 ## Remaining rollout
 

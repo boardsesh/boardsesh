@@ -24,7 +24,7 @@ restartPolicyMaxRetries = 5
 #
 # Deliberately no `overlapSeconds`: overlap would keep both fleets serving and
 # double the backend's Postgres footprint (5 replicas x DB_POOL_MAX 10) against
-# a max_connections of 200 that has been exhausted before — see
+# a max_connections of 100 (200 before the PG18 cutover) — see
 # docs/db-connectivity.md. Draining alone fixes the severed-request case.
 # Unquoted on purpose: railway.schema.json types drainingSeconds as
 # {"type": "number"}. The prose docs at docs.railway.com show it quoted

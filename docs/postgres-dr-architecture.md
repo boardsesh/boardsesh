@@ -75,6 +75,17 @@ primary:
 | `checkpoint_timeout` | `15min` | Was 5 min. Fewer checkpoints means fewer full-page images | 2026-09-25 |
 | `max_wal_size` | `4GB` | Was 1 GB, which forced 101 extra checkpoints in 5 days | 2026-09-25 |
 | `shared_preload_libraries` | `pg_stat_statements` | Per-query statistics. Needs a restart, then `CREATE EXTENSION pg_stat_statements` as superuser in `railway`. Not a migration, because the extension needs superuser | 2026-09-25 |
+| `shared_buffers` | `1GB` | Sized for the 4 GB container cap. Was the initdb default of 128 MB. Needs a restart | 2026-09-26 |
+| `effective_cache_size` | `2560MB` | What the planner may assume is cached under the 4 GB cap | 2026-09-26 |
+| `work_mem` | `16MB` | Was 4 MB, and 3.2 TB of temp files had been written since initdb. Matches the standby | 2026-09-26 |
+| `maintenance_work_mem` | `256MB` | Faster vacuum and index builds | 2026-09-26 |
+| `random_page_cost` | `1.1` | The Railway volume is SSD, and more reads now come from disk | 2026-09-26 |
+| `jit` | `off` | JIT spent memory and CPU compiling the 1–60 s catalogue queries | 2026-09-26 |
+
+The memory settings assume the 4 GB cap described in
+[railway-cost-reduction.md](./railway-cost-reduction.md). A new primary with a
+different memory limit needs `shared_buffers` and `effective_cache_size` resized
+to match.
 
 Check any change against the pinned image digest in a local container before
 applying it. A preload library that fails to load stops Postgres from starting.
