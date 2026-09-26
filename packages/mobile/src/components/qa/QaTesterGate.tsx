@@ -10,7 +10,7 @@ import { getSetting, setSetting, useSetting } from '../../settings';
 import { track } from '../../lib/analytics';
 import { reportHandledError } from '../../lib/error-reporting';
 import { decideQaGate, type QaGateInput } from '../../lib/qa/qa-gate-decision';
-import { listPrBranches, readRunningPrNumber } from '../../lib/qa/qa-surf';
+import { listPrBranches, readRunningOtaBranch, readRunningPrNumber, STAGING_OTA_BRANCH } from '../../lib/qa/qa-surf';
 import { qaSessionKey } from '../../lib/qa/qa-keys';
 import { prBranchName } from '../../lib/qa/pr-branch';
 import { LAUNCH_ORIGIN, QA_BRIEF_SHOWN_EVENT, QA_PREVIEW_PROMPTED_EVENT } from '../../lib/qa/qa-analytics';
@@ -87,6 +87,13 @@ export function QaTesterGate() {
     // switching it on from immediately interrupting the screen the tester is on;
     // the next cold start gets a fresh module-level session guard.
     if (!promptEnabledForSession) {
+      promptedThisSession = true;
+      return;
+    }
+
+    // Staging is an opt-in main update, not a PR to verdict. Do not interrupt
+    // testers with a PR prompt when they relaunch on its bundle.
+    if (readRunningOtaBranch() === STAGING_OTA_BRANCH) {
       promptedThisSession = true;
       return;
     }

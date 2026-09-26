@@ -102,6 +102,7 @@ jobs:
       web_changed: ${{ steps.changes.outputs.web }}
       backend_changed: ${{ steps.changes.outputs.backend }}
       app_changed: ${{ steps.changes.outputs.app }}
+      ota_changed: ${{ steps.changes.outputs.ota }}
       deployment_base_sha: ${{ steps.changes.outputs.deployment_base_sha }}
       cloudflare_changed: ${{ steps.changes.outputs.cloudflare }}
       static_assets_changed: ${{ steps.changes.outputs.static_assets }}
@@ -130,6 +131,16 @@ jobs:
         env:
           RUNS_JSON: ${{ steps.deploy-history.outputs.runs_json }}
         run: node scripts/production-deploy-changes.mjs --runs-json "$RUNS_JSON"
+
+  # Export and upload to the tester-only staging branch while web/backend build.
+  # A staging failure is recorded in this run but never holds service deploys.
+  stage-mobile-ota:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.ota_changed == 'true'
+    uses: ./.github/workflows/mobile-ota-production.yml
+    with:
+      stage_for_production_deploy: true
+    secrets: inherit
 
   # Resolves which deployers www is allowed to use on this run, and hands the
   # answer downstream as job outputs.
@@ -697,6 +708,141 @@ jobs:
           fi
           exit 1
 
+  # No polling runner: this starts only after staging and the backend deploy
+  # have both finished. The live schema is checked again before any production
+  # upload, including when backend_changed was false or deployment was held.
+  promote-mobile-ota:
+    needs: [detect-changes, stage-mobile-ota, build-web, build-backend, migrate, deploy-production-backend]
+    if: >-
+      always()
+      && needs.detect-changes.outputs.ota_changed == 'true'
+      && needs.stage-mobile-ota.result == 'success'
+      && (needs.build-web.result == 'success' || (needs.detect-changes.outputs.web_changed != 'true' && needs.build-web.result == 'skipped'))
+      && (needs.build-backend.result == 'success' || (needs.detect-changes.outputs.backend_changed != 'true' && needs.build-backend.result == 'skipped'))
+      && (needs.migrate.result == 'success' || (needs.detect-changes.outputs.web_changed != 'true' && needs.detect-changes.outputs.backend_changed != 'true' && needs.migrate.result == 'skipped'))
+      && (needs.deploy-production-backend.result == 'success' || (needs.detect-changes.outputs.backend_changed != 'true' && needs.deploy-production-backend.result == 'skipped'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: Production
+    concurrency:
+      group: mobile-ota-production
+      cancel-in-progress: false
+      queue: max
+    steps:
+      - name: Mint changelog push token
+        id: push_token
+        if: vars.OTA_PUSH_APP_ID != ''
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.OTA_PUSH_APP_ID }}
+          private-key: ${{ secrets.OTA_PUSH_APP_PRIVATE_KEY }}
+
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          token: ${{ steps.push_token.outputs.token || github.token }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: mobile-ota-stage
+          path: ota-stage
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.x'
+
+      - name: Require current candidate and live backend schema
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          # A newer substantive main commit gets its own cumulative deploy run.
+          # Fail this run so its OTA change stays in that run's diff baseline.
+          if ! git diff --quiet "$GITHUB_SHA" origin/main -- . \
+            ':!CHANGELOG.md' ':!packages/mobile/src/data/changelog.generated.json'; then
+            echo '::error::main advanced since staging; a newer production deploy must stage the latest OTA.'
+            exit 1
+          fi
+          node scripts/mobile-ota-schema-ready.mjs
+
+      - name: Promote exact staged iOS and Android exports
+        id: promote
+        env:
+          EOO_TOKEN: ${{ secrets.EOO_TOKEN }}
+          EXPO_UPDATES_URL: ${{ vars.EXPO_UPDATES_URL }}
+        run: >-
+          node --experimental-strip-types scripts/mobile-ota-promote.ts
+          --receipt ota-stage/receipt.json
+          --ios-export ota-stage/ios
+          --android-export ota-stage/android
+
+      - name: Push promoted changelog to main
+        if: steps.promote.outcome == 'success' && vars.OTA_PUSH_APP_ID != ''
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git worktree add --detach "$RUNNER_TEMP/ota-changelog" origin/main
+          cp ota-stage/changelog.generated.json "$RUNNER_TEMP/ota-changelog/packages/mobile/src/data/changelog.generated.json"
+          cp ota-stage/CHANGELOG.md "$RUNNER_TEMP/ota-changelog/CHANGELOG.md"
+          cd "$RUNNER_TEMP/ota-changelog"
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git config user.name 'github-actions[bot]'
+          git add packages/mobile/src/data/changelog.generated.json CHANGELOG.md
+          if git diff --cached --quiet; then
+            echo 'Promoted changelog already matches main.'
+          else
+            git commit -m 'chore(changelog): refresh from promoted OTA [skip ci]'
+            git push origin HEAD:main
+          fi
+
+      - name: OTA health check (non-blocking)
+        id: health
+        if: always() && steps.promote.outcome == 'success'
+        continue-on-error: true
+        env:
+          POSTHOG_PERSONAL_API_KEY: ${{ secrets.POSTHOG_PERSONAL_API_KEY }}
+        run: |
+          sleep 30
+          node --experimental-strip-types scripts/mobile-ota-health-check.ts --hours 6 --out "$RUNNER_TEMP/ota-health.md"
+
+      - name: Report promoted OTA
+        if: always() && steps.promote.outcome == 'success'
+        env:
+          DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          echo '### Mobile OTA promoted to production' >> "$GITHUB_STEP_SUMMARY"
+          jq -r '.platforms | to_entries[] | "- \(.key): \(.value.runtimeVersion)"' ota-stage/receipt.json >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "$DISCORD_DEPLOY_WEBHOOK" ]; then
+            summary="$(cat ota-stage/discord-changelog.md)"
+            [ -n "$summary" ] || summary="$(git log -1 --format=%s "$GITHUB_SHA")"
+            content="$(printf '📱 **Production OTA promoted** on `%s`\n%s\n<%s>' "${GITHUB_SHA:0:7}" "$summary" "$RUN_URL")"
+            jq -n --arg content "$content" '{content:$content,allowed_mentions:{parse:[]}}' \
+              | curl -sS --fail-with-body -X POST -H 'Content-Type: application/json' -d @- "$DISCORD_DEPLOY_WEBHOOK" \
+              || echo '::warning::Could not post OTA notification.'
+            if [ -s "$RUNNER_TEMP/ota-health.md" ]; then
+              content="$(printf '🩺 **Production OTA health**\n%s\n<%s>' "$(cat "$RUNNER_TEMP/ota-health.md")" "$RUN_URL")"
+              jq -n --arg content "$content" '{content:$content,allowed_mentions:{parse:[]}}' \
+                | curl -sS --fail-with-body -X POST -H 'Content-Type: application/json' -d @- "$DISCORD_DEPLOY_WEBHOOK" \
+                || echo '::warning::Could not post OTA health notification.'
+            fi
+          fi
+
+  verify-mobile-ota:
+    needs: [detect-changes, stage-mobile-ota, promote-mobile-ota]
+    if: always() && needs.detect-changes.outputs.ota_changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require both staging and promotion
+        env:
+          STAGE_RESULT: ${{ needs.stage-mobile-ota.result }}
+          PROMOTE_RESULT: ${{ needs.promote-mobile-ota.result }}
+        run: |
+          if [ "$STAGE_RESULT" != success ] || [ "$PROMOTE_RESULT" != success ]; then
+            echo "::error::Main OTA not promoted (stage=$STAGE_RESULT, promote=$PROMOTE_RESULT)."
+            exit 1
+          fi
+
   # www on Railway — the only web deployer since the Vercel scrub. Still gated
   # by WEB_DEPLOY_TARGETS so `none` remains the deploy hold, and so a second
   # target can be added back without reshaping the job.
@@ -1261,6 +1407,9 @@ jobs:
     needs:
       [
         detect-changes,
+        stage-mobile-ota,
+        promote-mobile-ota,
+        verify-mobile-ota,
         resolve-web-targets,
         sync-static-assets,
         build-web,
@@ -1293,6 +1442,8 @@ jobs:
           DEPLOY_BACKEND: ${{ needs.deploy-production-backend.result }}
           DEPLOY_CLOUDFLARE: ${{ needs.deploy-cloudflare.result }}
           DEPLOY_APP_WEB: ${{ needs.deploy-app-web.result }}
+          STAGE_MOBILE_OTA: ${{ needs.stage-mobile-ota.result }}
+          PROMOTE_MOBILE_OTA: ${{ needs.promote-mobile-ota.result }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           COMMIT_SHA: ${{ github.sha }}
         run: |
@@ -1301,8 +1452,8 @@ jobs:
             exit 0
           fi
           # URL wrapped in <…> so Discord suppresses the inline preview embed.
-          CONTENT=$(printf '🚨 **Production deploy failed** on \`%s\`\n• detect-changes: %s\n• resolve-web-targets: %s\n• sync-static-assets: %s\n• build-web: %s\n• build-backend: %s\n• migrate: %s\n• verify-serial-plan: %s\n• deploy-web-railway: %s\n• deploy-production-backend: %s\n• deploy-cloudflare: %s\n• deploy-app-web: %s\n<%s>' \
-            "${COMMIT_SHA:0:7}" "$DETECT_CHANGES" "$RESOLVE_WEB_TARGETS" "$SYNC_STATIC_ASSETS" "$BUILD_WEB" "$BUILD_BACKEND" "$MIGRATE" "$VERIFY_SERIAL_PLAN" "$DEPLOY_WEB_RAILWAY" "$DEPLOY_BACKEND" "$DEPLOY_CLOUDFLARE" "$DEPLOY_APP_WEB" "$RUN_URL")
+          CONTENT=$(printf '🚨 **Production deploy failed** on \`%s\`\n• detect-changes: %s\n• stage-mobile-ota: %s\n• promote-mobile-ota: %s\n• resolve-web-targets: %s\n• sync-static-assets: %s\n• build-web: %s\n• build-backend: %s\n• migrate: %s\n• verify-serial-plan: %s\n• deploy-web-railway: %s\n• deploy-production-backend: %s\n• deploy-cloudflare: %s\n• deploy-app-web: %s\n<%s>' \
+            "${COMMIT_SHA:0:7}" "$DETECT_CHANGES" "$STAGE_MOBILE_OTA" "$PROMOTE_MOBILE_OTA" "$RESOLVE_WEB_TARGETS" "$SYNC_STATIC_ASSETS" "$BUILD_WEB" "$BUILD_BACKEND" "$MIGRATE" "$VERIFY_SERIAL_PLAN" "$DEPLOY_WEB_RAILWAY" "$DEPLOY_BACKEND" "$DEPLOY_CLOUDFLARE" "$DEPLOY_APP_WEB" "$RUN_URL")
           # --fail-with-body surfaces Discord's status + error body (e.g. 429,
           # rotated webhook) in the log instead of failing silently. Don't let a
           # webhook hiccup fail the job — the alert is best-effort.
@@ -1320,6 +1471,9 @@ jobs:
     needs:
       [
         detect-changes,
+        stage-mobile-ota,
+        promote-mobile-ota,
+        verify-mobile-ota,
         resolve-web-targets,
         sync-static-assets,
         build-web,
@@ -1342,7 +1496,7 @@ jobs:
       && !contains(needs.*.result, 'cancelled')
       && (needs.deploy-web-railway.result == 'success' ||
       needs.deploy-production-backend.result == 'success' || needs.deploy-cloudflare.result == 'success' ||
-      needs.deploy-app-web.result == 'success')
+      needs.deploy-app-web.result == 'success' || needs.promote-mobile-ota.result == 'success')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: Production
@@ -1375,6 +1529,7 @@ jobs:
           BACKEND_RESULT: ${{ needs.deploy-production-backend.result }}
           CLOUDFLARE_RESULT: ${{ needs.deploy-cloudflare.result }}
           APP_WEB_RESULT: ${{ needs.deploy-app-web.result }}
+          OTA_RESULT: ${{ needs.promote-mobile-ota.result }}
           # A held deploy is a skip, which would otherwise print as "unchanged" —
           # the exact invisibility notify-app-web-held exists to prevent.
           #
@@ -1427,6 +1582,8 @@ jobs:
           elif [ "$APP_WEB_HELD" = "true" ]; then
             APP_WEB_LINE="held (APP_WEB_DEPLOY_HOLD set)"
           fi
+          OTA_LINE="unchanged"
+          if [ "$OTA_RESULT" = "success" ]; then OTA_LINE="promoted"; fi
 
           # Pull PR numbers from merge-commit subjects in the exact cumulative
           # range used by change detection. Skip when a safe baseline was not
@@ -1458,8 +1615,8 @@ jobs:
           fi
 
           # RUN_URL wrapped in <…> so Discord suppresses the inline preview embed.
-          CONTENT=$(printf '✅ **Production deployed** on `%s`\n• web: %s\n• backend: %s\n• Cloudflare: %s\n• app.boardsesh.com: %s%s\n<%s>' \
-            "${COMMIT_SHA:0:7}" "$WEB_LINE" "$BACKEND_LINE" "$CLOUDFLARE_LINE" "$APP_WEB_LINE" "$SHIPPED_SECTION" "$RUN_URL")
+          CONTENT=$(printf '✅ **Production deployed** on `%s`\n• web: %s\n• backend: %s\n• Cloudflare: %s\n• app.boardsesh.com: %s\n• mobile OTA: %s%s\n<%s>' \
+            "${COMMIT_SHA:0:7}" "$WEB_LINE" "$BACKEND_LINE" "$CLOUDFLARE_LINE" "$APP_WEB_LINE" "$OTA_LINE" "$SHIPPED_SECTION" "$RUN_URL")
           # allowed_mentions.parse=[] blocks @everyone/@here/role/user pings —
           # critical here because PR titles flow straight into $content.
           jq -n --arg content "$CONTENT" '{content: $content, allowed_mentions: {parse: []}}' \

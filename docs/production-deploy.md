@@ -1,8 +1,9 @@
 # Production deploys: the concurrency group, and what to do when main stops shipping
 
-`production-deploy.yml` is the only production deployer. Every push to `main`
-starts a run; the run builds web and backend in parallel, gates on both builds
-passing, migrates, then deploys.
+`production-deploy.yml` is the only main-push production deployer. Every push to
+`main` starts a run; web, backend, and mobile OTA staging can run in parallel.
+Service deploys gate on successful builds; mobile OTA promotion additionally
+requires the live backend to serve the staged GraphQL schema.
 
 ## Architecture
 
@@ -22,6 +23,18 @@ attempted build has passed, and only then do the deploy jobs run —
 `deploy-web-railway` and `deploy-production-backend`. Whether the web deploy
 runs at all is controlled by the `WEB_DEPLOY_TARGETS` Production-environment
 variable — see [Web deploy targets](#web-deploy-targets) below.
+
+`stage-mobile-ota` calls the mobile publisher to upload the exact iOS and Android
+exports to the tester-only `pr-staging` branch during those builds. It archives
+both exports and their runtime fingerprints. `promote-mobile-ota` waits for the
+attempted builds and backend deploy, checks the live schema once, then uploads
+the archived bytes to the existing `production` branch. It never maps the
+production channel to staging and never re-exports JS. A staging failure does
+not hold web/backend, but marks the run failed and alerts the deploy channel.
+The stage captures each platform's production manifest ID before it publishes;
+promotion fails if a manual or native republish changed either ID meanwhile.
+If the live schema is not ready, promotion fails closed; the next cumulative
+run picks up the unpromoted mobile change. See [mobile OTA updates](mobile-ota-updates.md).
 
 www left Vercel on 2026-09-01 (#4655); the workflow's Vercel half — the second
 `next build` inside `build-web`, the `deploy-web` job, and the `check-rollback`
