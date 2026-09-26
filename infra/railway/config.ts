@@ -52,25 +52,21 @@ export const POSTGRES_PRIMARY_SERVICE_NAME = 'PostGIS - PG18';
 export const CANONICAL_WEB_ORIGIN = 'https://www.boardsesh.com';
 
 /**
- * Image for the ClickHouse service. Pinned to the version xprem itself tests
- * against — docker-compose.yml and .github/workflows/push.yml in the xprem repo
- * both use `clickhouse/clickhouse-server:25.3`. Running a version xprem's goose
- * migrations have never been exercised on is an avoidable risk.
- *
- * The service is moving to `ghcr.io/boardsesh/boardsesh-clickhouse`, built from
- * docker/clickhouse: the same 25.3 server plus a config that caps it at 1.2 GB and
- * turns off the system logs. It is published by `.github/workflows/clickhouse-image.yml`
- * on dispatch and pinned by digest on Railway by hand (docs/railway.md, "Rolling out a
- * new ClickHouse image").
+ * Image for the ClickHouse service. The base is still `clickhouse/clickhouse-server:25.3` —
+ * the version xprem itself tests against (docker-compose.yml and .github/workflows/push.yml
+ * in the xprem repo both use it; running a version xprem's goose migrations have never been
+ * exercised on is an avoidable risk) — now wrapped by `ghcr.io/boardsesh/boardsesh-clickhouse`
+ * (built from `docker/clickhouse/Dockerfile`), which layers lean `config.d`/`users.d`
+ * overrides on top to cap memory and turn off the system logs. It is published by
+ * `.github/workflows/clickhouse-image.yml` on dispatch and pinned by digest on Railway by
+ * hand (docs/railway.md, "Rolling out a new ClickHouse image").
  *
  * Nothing compares this against the live service. It only fills the "service does not
  * exist" remediation text in plan.ts (diffService), so the value that matters is the
  * one a human would recreate the service from.
- *
- * TODO(clickhouse-image): after the first publish, replace with
- * `ghcr.io/boardsesh/boardsesh-clickhouse@sha256:<digest from the workflow summary>`.
  */
-export const CLICKHOUSE_IMAGE = 'clickhouse/clickhouse-server:25.3';
+export const CLICKHOUSE_IMAGE =
+  'ghcr.io/boardsesh/boardsesh-clickhouse@sha256:80d3d4c0dfacbd845476eea56ca239a3d658e868e01389ed264e1a9ecf56f6fd';
 
 /** ClickHouse's data directory. A service without a volume here loses telemetry on redeploy. */
 export const CLICKHOUSE_VOLUME_MOUNT_PATH = '/var/lib/clickhouse';
