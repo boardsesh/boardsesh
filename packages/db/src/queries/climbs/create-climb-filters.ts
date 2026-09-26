@@ -640,10 +640,13 @@ export const createClimbFilters = (
   // source reads it first, personal grades wrap the joined value, and
   // cross-angle resolves the grade at another angle), so the caller must keep
   // the join inside the query and use `getClimbStatsConditions()` instead.
+  // Cross-angle is null even without a band: every `statsCol` predicate then
+  // reads the effective-stats join, which the stats-driven FROM does not carry.
   // An empty list means there is no grade filter at all.
   const statsRowGradeRangeConditions: SQL[] | null = (() => {
+    if (crossAngle) return null;
     if (gradeRangeConditions.length === 0) return [];
-    if (personalGradeScope || crossAngle || searchParams.gradeSource === 'boardsesh') return null;
+    if (personalGradeScope || searchParams.gradeSource === 'boardsesh') return null;
     const condition = statsRowGradeRangeSql(
       params.board_name,
       params.angle,
