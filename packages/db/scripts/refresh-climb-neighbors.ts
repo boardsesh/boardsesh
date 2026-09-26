@@ -11,7 +11,8 @@
  * Flags: --board=<name> (default: every board but spray) · --full (rebuild the
  * board(s) from scratch, ignoring the watermark; a board with no watermark row
  * gets a full build on its first run without it) ·
- * --dry-run (compute and count, write nothing).
+ * --dry-run (compute and count, write nothing) · --refill-gaps (also run the
+ * whole-board scan for lists that lost a row; the Sunday UTC run does it anyway).
  *
  * A full build is resumable: a cancelled run leaves its finished groups and
  * lists recorded, and the next run (with or without --full) carries on. Boards
@@ -21,6 +22,7 @@ import type { BoardName } from '@boardsesh/shared-schema';
 import { createScriptDb } from './db-connection.js';
 import {
   CLIMB_NEIGHBOR_BOARDS,
+  isGapRefillDay,
   orderBoardsByClimbCount,
   refreshClimbNeighborsForBoard,
 } from '../src/queries/climbs/climb-neighbors-refresh.js';
@@ -44,6 +46,9 @@ async function main(): Promise<void> {
   const requestedBoards = parseBoards(get('--board'));
   const full = argv.includes('--full');
   const dryRun = argv.includes('--dry-run');
+  // The gap scan reads every neighbour row on the board; gaps only come from
+  // deleted climbs now, so it runs weekly (docs/similar-climbs.md).
+  const refillGappedLists = argv.includes('--refill-gaps') || isGapRefillDay(new Date());
 
   const { db, close } = createScriptDb();
   const startedAt = Date.now();
@@ -51,7 +56,8 @@ async function main(): Promise<void> {
     // Cheapest boards first: the small catalogues are served before Kilter.
     const boards = await orderBoardsByClimbCount(db, requestedBoards);
     console.log(
-      `[refresh-climb-neighbors] boards=${boards.join(',')}${full ? ' --full' : ''}${dryRun ? ' --dry-run' : ''}`,
+      `[refresh-climb-neighbors] boards=${boards.join(',')}${full ? ' --full' : ''}${dryRun ? ' --dry-run' : ''}` +
+        (refillGappedLists ? ' (with gap refill)' : ''),
     );
     let totalRows = 0;
     for (const boardType of boards) {
@@ -59,6 +65,7 @@ async function main(): Promise<void> {
         boardType,
         full,
         dryRun,
+        refillGappedLists,
         log: (line) => console.log(`[refresh-climb-neighbors] ${line}`),
       });
       totalRows += result.rowsWritten;
