@@ -38,39 +38,40 @@ vi.mock('@/app/lib/server-popular-configs', () => ({
 }));
 
 /** Stands in for the listed-layout gate — one row per MoonBoard layout id with a listed climb. */
-const climbCounts = vi.hoisted(() => ({
+const listedLayouts = vi.hoisted(() => ({
   rows: [] as { layoutId: number }[],
   calls: 0,
   throws: false,
   /** A read that never comes back — the mode the pool's 30 s connect timeout and the absent statement_timeout leave unbounded. */
   stalls: false,
 }));
-vi.mock('@/app/lib/db/db', () => ({
-  dbzRead: {
-    select: () => ({
-      from: () => ({
-        // Thenable rather than async: the gate builds its inner EXISTS subquery
-        // on the same `db`, and only the outer query is ever awaited, so only an
-        // await counts as a read.
-        where: () => ({
-          then: (onFulfilled: (rows: { layoutId: number }[]) => unknown, onRejected: (error: unknown) => unknown) => {
-            climbCounts.calls += 1;
-            if (climbCounts.throws)
-              return Promise.reject(new Error('read pool exhausted')).then(onFulfilled, onRejected);
-            if (climbCounts.stalls) return new Promise(() => {});
-            return Promise.resolve(climbCounts.rows).then(onFulfilled, onRejected);
-          },
+vi.mock('@/app/lib/db/db', async () => {
+  const { SQL, is } = await import('drizzle-orm');
+  // The gate builds its inner EXISTS subquery on the same `db`, but only the
+  // outer query (FROM an `unnest(...)` SQL fragment, not a table) is awaited,
+  // so only that `where` counts as a read.
+  const readListedLayouts = async (): Promise<{ layoutId: number }[]> => {
+    listedLayouts.calls += 1;
+    if (listedLayouts.throws) throw new Error('read pool exhausted');
+    if (listedLayouts.stalls) return new Promise(() => {});
+    return listedLayouts.rows;
+  };
+  return {
+    dbzRead: {
+      select: () => ({
+        from: (source: unknown) => ({
+          where: () => (is(source, SQL) ? readListedLayouts() : {}),
         }),
       }),
-    }),
-  },
-}));
+    },
+  };
+});
 
 /**
  * The public spray walls (SW-16, #5449), stubbed so this file keeps testing the
  * MERGE rather than the wall query — `spray-wall-sitemap.test.ts` renders that
  * query's real SQL. Stubbing it is also what keeps the `dbzRead` stand-in above
- * honest: it answers exactly the MoonBoard grouped count and nothing else.
+ * honest: it answers exactly the MoonBoard listed-layout gate and nothing else.
  */
 const sprayWalls = vi.hoisted(() => ({
   configs: [] as (PopularBoardConfig & { sprayWallSlug: string })[],
@@ -124,10 +125,10 @@ beforeEach(() => {
   listed.configs = [KILTER_CONFIG];
   listed.calls = 0;
   listed.throws = false;
-  climbCounts.rows = ALL_LAYOUTS;
-  climbCounts.calls = 0;
-  climbCounts.throws = false;
-  climbCounts.stalls = false;
+  listedLayouts.rows = ALL_LAYOUTS;
+  listedLayouts.calls = 0;
+  listedLayouts.throws = false;
+  listedLayouts.stalls = false;
   sprayWalls.configs = [];
   sprayWalls.calls = 0;
   sprayWalls.throws = false;
@@ -191,14 +192,14 @@ describe('getSitemapClimbConfigsOrThrow', () => {
   });
 
   it('drops a layout with no listed climbs rather than shipping a thin /list page', async () => {
-    climbCounts.rows = [{ layoutId: 2 }];
+    listedLayouts.rows = [{ layoutId: 2 }];
 
     const moonboard = (await getSitemapClimbConfigsOrThrow()).filter((config) => config.boardType === 'moonboard');
     expect(moonboard.map((config) => config.layoutId)).toEqual([2]);
   });
 
   it('ignores a layout id the catalogue does not know', async () => {
-    climbCounts.rows = [{ layoutId: 99 }];
+    listedLayouts.rows = [{ layoutId: 99 }];
 
     const moonboard = (await getSitemapClimbConfigsOrThrow()).filter((config) => config.boardType === 'moonboard');
     expect(moonboard).toEqual([]);
@@ -213,7 +214,7 @@ describe('getSitemapClimbConfigsOrThrow', () => {
       getSitemapClimbConfigsOrThrow(),
       getSitemapClimbConfigsOrThrow(),
     ]);
-    expect(climbCounts.calls).toBe(1);
+    expect(listedLayouts.calls).toBe(1);
     // Exactly one listed-config call per request — the `Promise.all` leg — with
     // deduplication delegated to `getAllBoardConfigsOrThrow`'s own in-process
     // single-flight (which the mock deliberately does not reimplement, or this
@@ -224,11 +225,11 @@ describe('getSitemapClimbConfigsOrThrow', () => {
     expect(listed.calls).toBe(3);
 
     await getSitemapClimbConfigsOrThrow();
-    expect(climbCounts.calls).toBe(1);
+    expect(listedLayouts.calls).toBe(1);
 
     resetSitemapBoardConfigCacheForTests();
     await getSitemapClimbConfigsOrThrow();
-    expect(climbCounts.calls).toBe(2);
+    expect(listedLayouts.calls).toBe(2);
   });
 
   it('does not memoise a failed gate read, so a transient DB error is not an hour of missing MoonBoard', async () => {
@@ -236,29 +237,29 @@ describe('getSitemapClimbConfigsOrThrow', () => {
     // assigned inside the `.then`. Without that, one unlucky read would pin an
     // empty MoonBoard catalogue for the whole TTL and the sitemap would quietly
     // lose 44k URLs while answering 200.
-    climbCounts.throws = true;
+    listedLayouts.throws = true;
     await expect(getSitemapClimbConfigsOrThrow()).rejects.toThrow('read pool exhausted');
-    expect(climbCounts.calls).toBe(1);
+    expect(listedLayouts.calls).toBe(1);
 
-    climbCounts.throws = false;
+    listedLayouts.throws = false;
     const moonboard = (await getSitemapClimbConfigsOrThrow()).filter((config) => config.boardType === 'moonboard');
     expect(moonboard).toHaveLength(7);
-    expect(climbCounts.calls).toBe(2);
+    expect(listedLayouts.calls).toBe(2);
   });
 
   it('shares one rejection across concurrent callers, then lets the next one retry', async () => {
-    climbCounts.throws = true;
+    listedLayouts.throws = true;
     const inFlight = [
       getSitemapClimbConfigsOrThrow(),
       getSitemapClimbConfigsOrThrow(),
       getSitemapClimbConfigsOrThrow(),
     ];
     await Promise.all(inFlight.map((pending) => expect(pending).rejects.toThrow('read pool exhausted')));
-    expect(climbCounts.calls).toBe(1);
+    expect(listedLayouts.calls).toBe(1);
 
-    climbCounts.throws = false;
+    listedLayouts.throws = false;
     await getSitemapClimbConfigsOrThrow();
-    expect(climbCounts.calls).toBe(2);
+    expect(listedLayouts.calls).toBe(2);
   });
 
   it('propagates a listed-config failure instead of publishing a MoonBoard-only sitemap', async () => {
@@ -276,7 +277,7 @@ describe('the gate query is bounded', () => {
     // leaves `statement_timeout` off by default, so before this the only limit
     // was the platform's — and the single-flight made every later caller join
     // the stall rather than retry.
-    climbCounts.stalls = true;
+    listedLayouts.stalls = true;
     vi.useFakeTimers();
     try {
       const pending = getSitemapClimbConfigsOrThrow();
@@ -289,7 +290,7 @@ describe('the gate query is bounded', () => {
   });
 
   it('lets the boards shard through on a stalled read', async () => {
-    climbCounts.stalls = true;
+    listedLayouts.stalls = true;
     vi.useFakeTimers();
     try {
       const pending = getBoardsShardConfigsOrThrow();
@@ -327,7 +328,7 @@ describe('getBoardsShardConfigsOrThrow', () => {
     // The lopsided trade this exists for: on the dev image MoonBoard contributes
     // 8 of `/sitemaps/boards.xml`'s 668 items and the listed configs contribute
     // 660. Before this module, no database failure could reach that shard at all.
-    climbCounts.throws = true;
+    listedLayouts.throws = true;
 
     const configs = await getBoardsShardConfigsOrThrow();
 
@@ -359,7 +360,7 @@ describe('getBoardsShardConfigsOrThrow', () => {
     // Same module, opposite policy — the climbs shard resolves its groups twice
     // per crawl and `pagedShardRouteHandler` throws "cache epochs disagree" if
     // those two disagree, so a tolerated failure there is worse than a 503.
-    climbCounts.throws = true;
+    listedLayouts.throws = true;
 
     await expect(getSitemapClimbConfigsOrThrow()).rejects.toThrow('read pool exhausted');
   });
