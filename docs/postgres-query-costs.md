@@ -46,7 +46,7 @@ Change IDs (C#) match the audit findings. Rows are in rank order.
 | 11 | C12 | Followed-setter counts: early return on no follows, bind arrays | about 315 (E) | 0 | S | No | Low | confirmed, bigger | Yes, already local-first |
 | 12 | C8 | Discovery rail: cache the top-40 ranking, re-check visibility per request | 280–305 (E) | 0 | S | No | Low | confirmed, smaller | No |
 | 13 | C10 | You page: conditional userTicks joins, stop refetch on tick/resume | 200–500 (E) | 0 | S | No | Low | join trim confirmed | Yes, needs new data (L) |
-| 14 | C11 | Similar-climbs read: Redis on the limit-25 answer | 200–500 (E) | 0 | S | No | Low | not re-tested | Already local on mobile |
+| 14 | C11 | Similar-climbs read: already cached (Redis 1 h + singleFlight, #4968) | 0 (done) | 0 | — | No | — | already shipped | Already local on mobile |
 | 15 | C15 | Memory budget: parallel workers 0, smaller pools, pg-boss intervals | ceiling; wait time 500–700 (E) | −270 steady, −500 worst (E) | S | No | Low–Med | not re-tested | No |
 
 ## Details per change
@@ -199,7 +199,7 @@ Change IDs (C#) match the audit findings. Rows are in rank order.
 
 ### C11. Similar-climbs read
 
-Redis plus singleFlight around `getMaterializedSimilarClimbs`. Fetch 25 and slice. TTL at most 1 h. Mobile is already local-only (#5770), so the remaining load is www SSR, admins and old binaries.
+Already shipped. The `similarClimbs` resolver reads through `findSimilarClimbsCached` (`packages/backend/src/graphql/resolvers/climbs/similar-climbs-cache.ts`): Redis for 1 h plus singleFlight (#4968). The audit counted it as pending by mistake. What remains is cache misses, one per climb per hour. Mobile is already local-only (#5770), so those misses come from www SSR, admins and old binaries. No further change is planned.
 
 ### C15. Memory budget
 
@@ -266,7 +266,7 @@ Nothing here is native, so everything ships from `main`. The `totalAscents`, `to
 2. **CI and scripts:** drop the similarity step and add the MoonBoard wide-angle no-op diff (see [Known recurring jobs](#known-recurring-jobs-that-rewrote-data)).
 3. **Config and env:** C4 settings and serial-plan-default. After step 1: the statement timeout, pools and pg-boss intervals (C15).
 4. **packages/db:** C2 with the rare-band test.
-5. **Backend resolvers:** C3, C6 (cache plus the CROWD/AT_LEVEL CTE), C8, C11, C12, the communityStats cache and a 6 h board-stats TTL.
+5. **Backend resolvers:** C3, C6 (cache plus the CROWD/AT_LEVEL CTE), C8, C12, the communityStats cache and a 6 h board-stats TTL.
 6. **kilter-sync:** C5 with load-once self-aliases.
 7. **Web:** C13, the sitemap EXISTS gate, summary-row counts, communityStats revalidate.
 8. **Mobile JS OTA:** C10 refetch policy and trimmed GET_USER_TICKS, local-first C3, favorites reader. Optional local-only moves wait on open question 4.
