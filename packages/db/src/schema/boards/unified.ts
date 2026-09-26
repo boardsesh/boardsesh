@@ -428,7 +428,9 @@ export const boardClimbs = pgTable(
 //     UUIDs — the alias_uuid is precisely the UUID we did NOT promote to
 //     board_climbs. A FK would block every non-canonical insert.
 //
-// last_seen_at is refreshed on every ingest via ON CONFLICT DO UPDATE.
+// last_seen_at is refreshed via ON CONFLICT DO UPDATE. The Kilter catalog sync
+// refreshes it at most once a day per alias (unless source changes), so treat
+// it as "confirmed upstream within the last day", not "seen this run".
 // Importers may also repair canonical_uuid when a later dedup pass identifies
 // the true survivor; first_seen_at is stamped on insert and never touched again.
 //
@@ -738,6 +740,11 @@ export const boardClimbStats = pgTable(
     // the tick recompute — it records manufacturer-count provenance, not
     // Boardsesh activity. Lets downstream reasoning tell "upstream owns this
     // row's FA/difficulty" from "these fields were only ever tick-derived".
+    // The tick recompute's push-back absorption rule reads it
+    // (kilter_synced_at < upstream_synced_at - 48h). The Kilter Grips writers
+    // restamp a row only when a value changes, or daily while Boardsesh ascents
+    // count on it (kilter-sync stats-upsert.ts), so on Kilter it reads "last
+    // changed upstream", not "last pass".
     upstreamSyncedAt: timestamp('upstream_synced_at', { mode: 'string' }),
     // Provenance marker for display_difficulty: non-NULL = the grade was
     // written from Boardsesh ticks (UTC wall time); NULL = upstream's, or never

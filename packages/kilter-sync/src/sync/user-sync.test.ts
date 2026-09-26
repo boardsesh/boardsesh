@@ -258,7 +258,8 @@ describe('applyLogs — natural-key adoption', () => {
     // the ascent, the new one gains it.
     const { tx } = createTx({
       selectResults: [[{ uuid: 'tick-uuid-1', kilterId: 'log-A', ownerUserId: 'user-1' }]],
-      executeResults: [[{ climb_uuid: 'climb-old', angle: 45 }]],
+      // Prior-key SELECT, then the UPDATE's RETURNING (the row's new key).
+      executeResults: [[{ climb_uuid: 'climb-old', angle: 45 }], [{ climb_uuid: 'climb-1', angle: 40 }]],
     });
 
     const op = makeLogPutOp({
@@ -1007,6 +1008,44 @@ describe('applyLogs — PR4 offset inference + edit guard', () => {
     // Payload unchanged → no UPDATE.
     expect(calls.filter((c) => c.kind === 'execute')).toHaveLength(0);
     expect(calls.filter((c) => c.kind === 'insert')).toHaveLength(0);
+    // Nothing was written, so no stats key is recomputed either. PowerSync
+    // redelivers whole logbooks, so this is most of a typical flush.
+    expect(recomputedKeys()).toEqual([]);
+  });
+
+  it('recomputes only the key the UPDATE actually wrote, not a skipped locally-edited log', async () => {
+    // log-A changed upstream and is written; log-B is locally edited since its
+    // last Kilter sync, so its stale snapshot is skipped and its key is left alone.
+    const { tx } = createTx({
+      selectResults: [
+        [
+          existingKilterTick({ status: 'attempt', kilterType: 'attempts' }),
+          existingKilterTick({
+            uuid: 'tick-uuid-2',
+            kilterId: 'log-B',
+            climbUuid: 'climb-2',
+            updatedAt: '2026-05-03T00:00:00.000Z',
+            kilterSyncedAt: '2026-05-02T00:00:00.000Z',
+          }),
+        ],
+      ],
+      executeResults: [[{ climb_uuid: 'climb-1', angle: 40 }], [{ climb_uuid: 'climb-1', angle: 40 }]],
+    });
+
+    const ops = [
+      makeLogPutOp({ log_uuid: 'log-A', climb_uuid: 'climb-1', angle: 40, created_at: '2026-05-01T12:00:00.000Z' }),
+      makeLogPutOp({
+        log_uuid: 'log-B',
+        climb_uuid: 'climb-2',
+        angle: 40,
+        created_at: '2026-05-01T12:00:00.000Z',
+        topped: 0,
+      }),
+    ];
+
+    await applyLogs(tx as unknown as TxArg, 'user-1', ops, aliasCacheFor(['climb-1', 'climb-2']), logSpy);
+
+    expect(recomputedKeys()).toEqual([{ climbUuid: 'climb-1', angle: 40 }]);
   });
 
   it('still applies a real kilter_id edit (changed status) despite the guards', async () => {

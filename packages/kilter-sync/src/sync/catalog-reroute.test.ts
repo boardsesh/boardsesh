@@ -112,17 +112,23 @@ function createFakeDb(queues: TableQueues) {
     return stub;
   }
 
+  const insertResult = () => ({
+    onConflictDoUpdate: () => Promise.resolve([]),
+    onConflictDoNothing: () => Promise.resolve([]),
+    returning: () => Promise.resolve([]),
+    then: (onFulfilled: (rows: Rows) => unknown) => Promise.resolve([]).then(onFulfilled),
+  });
   const writer = {
     insert: (table: Table) => ({
       values: (values: Rows | Record<string, unknown>) => {
         inserts.push({ table: getTableName(table), values: Array.isArray(values) ? values : [values] });
-        const written = {
-          onConflictDoUpdate: () => Promise.resolve([]),
-          onConflictDoNothing: () => Promise.resolve([]),
-          returning: () => Promise.resolve([]),
-          then: (onFulfilled: (rows: Rows) => unknown) => Promise.resolve([]).then(onFulfilled),
-        };
-        return written;
+        return insertResult();
+      },
+      // insert().select(unnest …) carries its rows as SQL params; record the
+      // write without them.
+      select: () => {
+        inserts.push({ table: getTableName(table), values: [] });
+        return insertResult();
       },
     }),
     update: (table: Table) => ({

@@ -1,12 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { SQL } from 'drizzle-orm';
-import { PgDialect } from 'drizzle-orm/pg-core';
 import type { KilterCatalogStat } from '../api/kilter-rest';
 import type { KilterReferencePull } from './reference-pull';
+import type { KilterStatsUpsertRow, KilterUpstreamCountPolicy } from './stats-upsert';
 
-const { mockFetchLayoutClimbStats, mockBuildLayoutResolver } = vi.hoisted(() => ({
+const { mockFetchLayoutClimbStats, mockBuildLayoutResolver, mockUpsertKilterStats } = vi.hoisted(() => ({
   mockFetchLayoutClimbStats: vi.fn(),
   mockBuildLayoutResolver: vi.fn(),
+  mockUpsertKilterStats: vi.fn(),
+}));
+
+// The statement itself is covered by stats-upsert.test.ts (render) and
+// stats-upsert.integration.test.ts (real Postgres); here we check what the
+// repair hands it.
+vi.mock('./stats-upsert', () => ({
+  upsertKilterStats: mockUpsertKilterStats,
 }));
 
 vi.mock('../api/kilter-rest', async () => {
@@ -68,10 +75,16 @@ function reference(): KilterReferencePull {
 }
 
 function createDbShim(args: { selectResults: SelectResult[]; executeResults: ExecuteResult[] }) {
-  const insertValues: unknown[] = [];
-  // Every `set` object handed to onConflictDoUpdate, so a test can assert on
-  // the conflict clause the write actually shipped rather than rebuilding it.
-  const conflictSets: Array<Record<string, unknown>> = [];
+  // Every chunk list handed to upsertKilterStats, with the count policy it asked for.
+  const insertValues: KilterStatsUpsertRow[][] = [];
+  const policies: KilterUpstreamCountPolicy[] = [];
+  mockUpsertKilterStats.mockImplementation(
+    async (_db: unknown, rows: KilterStatsUpsertRow[], options: { policy: KilterUpstreamCountPolicy }) => {
+      insertValues.push(rows);
+      policies.push(options.policy);
+      return rows.length;
+    },
+  );
   const execute = vi.fn(async () => args.executeResults.shift() ?? []);
   const select = vi.fn(() => ({
     from: () => ({
@@ -81,25 +94,13 @@ function createDbShim(args: { selectResults: SelectResult[]; executeResults: Exe
       }),
     }),
   }));
-  const insert = vi.fn(() => ({
-    values: vi.fn((values: unknown) => {
-      insertValues.push(values);
-      return {
-        onConflictDoUpdate: vi.fn(async (config: { set?: Record<string, unknown> } | undefined) => {
-          if (config?.set != null) conflictSets.push(config.set);
-          return undefined;
-        }),
-      };
-    }),
-  }));
-
-  const db = { select, execute, insert, transaction: vi.fn() };
+  const db = { select, execute, transaction: vi.fn() };
   db.transaction.mockImplementation(async (cb: (tx: typeof db) => Promise<unknown>) => cb(db));
 
   return {
     db,
     insertValues,
-    conflictSets,
+    policies,
   };
 }
 
@@ -145,7 +146,7 @@ describe('repairKilterCatalogStats', () => {
   });
 
   it('applies repaired counts and recomputes materialized totals', async () => {
-    const { db, insertValues } = createDbShim({
+    const { db, insertValues, policies } = createDbShim({
       selectResults: [[{ uuid: 'canon' }], [{ aliasUuid: 'alias-b', canonicalUuid: 'canon' }]],
       executeResults: [[], [{ changed_rows: '1', max_drop: '12' }], [{ rows_to_recompute: '2' }], { count: 2 }, []],
     });
@@ -162,13 +163,13 @@ describe('repairKilterCatalogStats', () => {
     expect(insertValues).toHaveLength(1);
     expect(insertValues[0]).toMatchObject([
       {
-        boardType: 'kilter',
         climbUuid: 'canon',
         angle: 40,
         upstreamAscensionistCount: 17,
-        ascensionistCount: 17,
       },
     ]);
+    // The repair may lower a count, so it must not use the catalog's GREATEST.
+    expect(policies).toEqual(['authoritative']);
   });
 
   it('skips an empty Grips angle but preserves a zero-ascent stat with a grade', async () => {
@@ -226,7 +227,7 @@ describe('repairKilterCatalogStats', () => {
         }),
       ]);
     });
-    const { db, insertValues, conflictSets } = createDbShim({
+    const { db, insertValues } = createDbShim({
       selectResults: [[{ uuid: 'canon' }], []],
       executeResults: [
         [],
@@ -257,27 +258,6 @@ describe('repairKilterCatalogStats', () => {
         upstreamAscensionistCount: 0,
       },
     ]);
-
-    // #4798. tick_graded_at means "the stored display_difficulty came from
-    // Boardsesh ticks", so it must survive exactly as long as that grade does.
-    // This repair COALESCEs display_difficulty, so the marker mirrors it: an
-    // incoming NULL (this fixture — Grips shipped no grade) keeps ours AND
-    // keeps the marker, so a later tick can still refresh it and a delete can
-    // still clear it; a non-NULL grade takes over and clears the marker.
-    //
-    // A timestamp comparison would be wrong here: this repair stamps
-    // upstream_synced_at on every pass, so a gradeless pass would look newer
-    // than the marker and freeze a grade we own.
-    const [conflictSet] = conflictSets as Array<Record<string, SQL>>;
-    expect(conflictSet).toBeDefined();
-    const dialect = new PgDialect();
-    const render = (fragment: SQL) => dialect.sqlToQuery(fragment).sql.toLowerCase().replace(/\s+/g, ' ').trim();
-    expect(render(conflictSet.displayDifficulty)).toBe(
-      'coalesce(excluded.display_difficulty, "board_climb_stats"."display_difficulty")',
-    );
-    expect(render(conflictSet.tickGradedAt)).toBe(
-      'case when excluded.display_difficulty is null then "board_climb_stats"."tick_graded_at" else null end',
-    );
   });
 
   it('does not let an existing mixed-case key authorize an absent casing variant', async () => {

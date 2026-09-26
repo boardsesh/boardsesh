@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildLayoutCatalogIndex,
+  buildSelfAliasLowerSet,
   createGroupResult,
   createStagingBatch,
   stageCatalogClimb,
@@ -88,7 +89,7 @@ function stagingContext(
     index: buildLayoutCatalogIndex({
       layoutId: options.layoutId ?? SOURCE_LAYOUT_ID,
       climbRows: options.climbRows ?? [],
-      selfAliasUuids: options.selfAliasUuids ?? [],
+      existingSelfAliasLower: buildSelfAliasLowerSet(options.selfAliasUuids ?? []),
       holeToPlacement: options.holeToPlacement ?? SOURCE_REMAP,
     }),
     sourceLayoutUuid: '27',
@@ -150,6 +151,33 @@ void describe('stageCatalogClimb — UUID identity', () => {
     stageCatalogClimb(catalogClimb(), context);
     expect(context.batch.aliasRows).toHaveLength(0);
     expect(context.result.selfAliasesBackfilled).toBe(0);
+  });
+
+  it('shares the run-wide self-alias set, so a self-alias staged once is never staged again', () => {
+    // One set is loaded per run and handed to every layout index and the
+    // reroute pass. A canonical inserted by one index (here: staged as new)
+    // must count as having its self-alias when a later index meets it.
+    const shared = buildSelfAliasLowerSet([]);
+    const first = stagingContext();
+    first.index = buildLayoutCatalogIndex({
+      layoutId: SOURCE_LAYOUT_ID,
+      climbRows: [],
+      existingSelfAliasLower: shared,
+      holeToPlacement: SOURCE_REMAP,
+    });
+    expect(stageCatalogClimb(catalogClimb(), first)).toBe('inserted');
+    expect(shared.has('climb-1')).toBe(true);
+
+    const later = stagingContext();
+    later.index = buildLayoutCatalogIndex({
+      layoutId: SOURCE_LAYOUT_ID,
+      climbRows: [catalogRow({ uuid: 'CLIMB-1' })],
+      existingSelfAliasLower: shared,
+      holeToPlacement: SOURCE_REMAP,
+    });
+    expect(stageCatalogClimb(catalogClimb(), later)).toBe('identity');
+    expect(later.batch.aliasRows).toHaveLength(0);
+    expect(later.result.selfAliasesBackfilled).toBe(0);
   });
 });
 

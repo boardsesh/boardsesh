@@ -1,5 +1,5 @@
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
-import { inArray } from 'drizzle-orm';
+import { and, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import { kilterWallSources, userBoards } from '@boardsesh/db/schema';
 import {
   resolveKilterInstallConfig,
@@ -164,6 +164,89 @@ export function buildKilterLocationRecords(
   return { records, skipped: dedupeSkipped(skipped) };
 }
 
+/** One kilter_wall_sources row as the location sync resolves it (always listed). */
+export type WallSourceMapping = {
+  sourceKey: string;
+  sourceBoardUuid: string;
+  gymUuid: string;
+  productLayoutUuid: string;
+  wallUuid: string;
+  layoutId: number;
+  sizeId: number;
+  setIds: string;
+};
+
+const WALL_SOURCE_BATCH = 1000;
+
+/**
+ * Write this run's wall sources as listed and unlist every other one, in one
+ * transaction. Rows that already hold the same values are left alone: the old
+ * code unlisted all ~1.2k rows and re-upserted each one per run, so every row
+ * got two new versions per pass although almost none changed. is_listed is in
+ * the comparison so a row coming back after an unlisting is re-listed.
+ * updated_at only moves on a real change; the one reader
+ * (kilter-live-import.ts) filters on is_listed and never reads it.
+ */
+export async function upsertKilterWallSources(db: DrizzleDb, mappings: WallSourceMapping[]): Promise<void> {
+  await db.transaction(async (transaction) => {
+    for (let start = 0; start < mappings.length; start += WALL_SOURCE_BATCH) {
+      const chunk = mappings.slice(start, start + WALL_SOURCE_BATCH);
+      await transaction
+        .insert(kilterWallSources)
+        .select(wallSourceUpsertSelect(chunk))
+        .onConflictDoUpdate({
+          target: kilterWallSources.sourceKey,
+          set: {
+            sourceBoardUuid: sql`excluded.source_board_uuid`,
+            gymUuid: sql`excluded.gym_uuid`,
+            productLayoutUuid: sql`excluded.product_layout_uuid`,
+            wallUuid: sql`excluded.wall_uuid`,
+            layoutId: sql`excluded.layout_id`,
+            sizeId: sql`excluded.size_id`,
+            setIds: sql`excluded.set_ids`,
+            isListed: sql`excluded.is_listed`,
+            updatedAt: sql`excluded.updated_at`,
+          },
+          setWhere: sql`(${kilterWallSources.sourceBoardUuid}, ${kilterWallSources.gymUuid}, ${kilterWallSources.productLayoutUuid},
+              ${kilterWallSources.wallUuid}, ${kilterWallSources.layoutId}, ${kilterWallSources.sizeId},
+              ${kilterWallSources.setIds}, ${kilterWallSources.isListed})
+            IS DISTINCT FROM (excluded.source_board_uuid, excluded.gym_uuid, excluded.product_layout_uuid,
+              excluded.wall_uuid, excluded.layout_id, excluded.size_id, excluded.set_ids, excluded.is_listed)`,
+        });
+    }
+    const listedKeys = mappings.map((mapping) => mapping.sourceKey);
+    await transaction
+      .update(kilterWallSources)
+      .set({ isListed: false, updatedAt: new Date() })
+      .where(
+        and(
+          eq(kilterWallSources.isListed, true),
+          sql`${kilterWallSources.sourceKey} <> ALL(${sql.param(listedKeys)}::text[])`,
+        ),
+      );
+  });
+}
+
+/**
+ * A wall-source chunk as unnest() arrays, one statement text for any chunk
+ * size. Drizzle's insert().select(sql) inserts into every kilter_wall_sources
+ * column in table order, so this lists them all.
+ */
+function wallSourceUpsertSelect(rows: WallSourceMapping[]): SQL {
+  return sql`SELECT incoming.source_key, incoming.source_board_uuid, incoming.gym_uuid, incoming.product_layout_uuid,
+           incoming.wall_uuid, incoming.layout_id, incoming.size_id, incoming.set_ids, true, now()
+      FROM unnest(
+        ${sql.param(rows.map((row) => row.sourceKey))}::text[],
+        ${sql.param(rows.map((row) => row.sourceBoardUuid))}::text[],
+        ${sql.param(rows.map((row) => row.gymUuid))}::text[],
+        ${sql.param(rows.map((row) => row.productLayoutUuid))}::text[],
+        ${sql.param(rows.map((row) => row.wallUuid))}::text[],
+        ${sql.param(rows.map((row) => row.layoutId))}::integer[],
+        ${sql.param(rows.map((row) => row.sizeId))}::integer[],
+        ${sql.param(rows.map((row) => row.setIds))}::text[]
+      ) AS incoming(source_key, source_board_uuid, gym_uuid, product_layout_uuid, wall_uuid, layout_id, size_id, set_ids)`;
+}
+
 export async function syncKilterLocations(args: {
   db: DrizzleDb;
   reference: KilterReferencePull;
@@ -189,30 +272,26 @@ export async function syncKilterLocations(args: {
       .filter((wall) => wall.gymUuid)
       .map((wall) => [`kilter:${wall.gymUuid}:${wall.wallUuid || wall.id}`, wall]),
   );
-  await args.db.transaction(async (transaction) => {
-    await transaction.update(kilterWallSources).set({ isListed: false });
-    for (const record of validRecords) {
-      const wall = wallsByKey.get(record.sourceKey);
-      const sourceBoardUuid = boardUuidForSource(record.sourceKey);
-      if (!existingUuids.has(sourceBoardUuid) || !wall?.gymUuid || !wall.productLayoutUuid) continue;
-      const mapping = {
-        sourceKey: record.sourceKey,
-        sourceBoardUuid,
-        gymUuid: wall.gymUuid,
-        productLayoutUuid: wall.productLayoutUuid,
-        wallUuid: wall.wallUuid || wall.id,
-        layoutId: record.layoutId,
-        sizeId: record.sizeId,
-        setIds: record.setIds,
-        isListed: true,
-        updatedAt: new Date(),
-      };
-      await transaction
-        .insert(kilterWallSources)
-        .values(mapping)
-        .onConflictDoUpdate({ target: kilterWallSources.sourceKey, set: mapping });
-    }
-  });
+  // Keyed by source key so a repeated wall can't hit the same row twice in one
+  // INSERT … ON CONFLICT (Postgres rejects that); the last record wins, as the
+  // old one-row-per-statement loop did.
+  const mappingsByKey = new Map<string, WallSourceMapping>();
+  for (const record of validRecords) {
+    const wall = wallsByKey.get(record.sourceKey);
+    const sourceBoardUuid = boardUuidForSource(record.sourceKey);
+    if (!existingUuids.has(sourceBoardUuid) || !wall?.gymUuid || !wall.productLayoutUuid) continue;
+    mappingsByKey.set(record.sourceKey, {
+      sourceKey: record.sourceKey,
+      sourceBoardUuid,
+      gymUuid: wall.gymUuid,
+      productLayoutUuid: wall.productLayoutUuid,
+      wallUuid: wall.wallUuid || wall.id,
+      layoutId: record.layoutId,
+      sizeId: record.sizeId,
+      setIds: record.setIds,
+    });
+  }
+  await upsertKilterWallSources(args.db, [...mappingsByKey.values()]);
   // Merge the upsert-side skips (e.g. invalid coordinates) with the kilter-side
   // skips (unlisted / unmapped / unsupported) and dedupe — boardsSkipped tracks
   // the deduped length so the count and the array stay in step.
