@@ -342,6 +342,9 @@ rejects startup parameters that are not in `ignore_startup_parameters`, and
 paths, chosen by what the URL actually points at:
 
 - **Direct Postgres** — set `DB_STATEMENT_TIMEOUT_MS` on the deployment.
+  Production's `boardsesh-backend` and `boardsesh-web` connect directly and
+  take `45000`; the sync daemons do not get it (see "Runaway guards" in
+  [railway-cost-reduction.md](./railway-cost-reduction.md)).
 - **Pooled (PgBouncer) URL** — do it database-side instead, with
   `ALTER ROLE <app_role> SET statement_timeout = '8s'`, which passes through a
   pooler transparently.
