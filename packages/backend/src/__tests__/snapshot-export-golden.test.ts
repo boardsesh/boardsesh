@@ -503,6 +503,68 @@ describe('board-snapshot export ↔ live pull parity', () => {
     expect(statsMeta.watermark_sync_seq).toBe(String(statsWatermarkRow.sync_seq));
   });
 
+  it('derives the in-stream watermark exactly: sub-second precision, trailing zeros and sync_seq ties', async () => {
+    await insertClimb({ uuid: 'c1', compatibleSizeIds: [5], updatedAt: '2026-05-01T00:00:00Z' });
+    await insertClimb({ uuid: 'c2', compatibleSizeIds: [5], updatedAt: '2026-05-01T00:00:00Z' });
+    // Explicit sync_seq values so heap (stream) order disagrees with keyset
+    // order. The winner is streamed FIRST; a later row ties it on the timestamp
+    // with a lower seq; another later row has a higher seq but an earlier
+    // timestamp that renders WITHOUT a fraction, so a string compare of the ISO
+    // forms ('…00Z' > '…00.5Z') would pick it.
+    const statRows: Array<{ climbUuid: string; angle: number; updatedAt: string; syncSeq: number }> = [
+      { climbUuid: 'c1', angle: 40, updatedAt: '2026-05-03 00:00:00.500000', syncSeq: 900 },
+      { climbUuid: 'c1', angle: 45, updatedAt: '2026-05-03 00:00:00.5', syncSeq: 100 },
+      { climbUuid: 'c2', angle: 40, updatedAt: '2026-05-03 00:00:00', syncSeq: 5000 },
+      { climbUuid: 'c2', angle: 45, updatedAt: '2026-05-02 23:59:59.999999', syncSeq: 6000 },
+    ];
+    for (const statRow of statRows) {
+      await db.execute(sql`
+        INSERT INTO board_climb_stats (board_type, climb_uuid, angle, updated_at, sync_seq)
+        VALUES (${BOARD_TYPE}, ${statRow.climbUuid}, ${statRow.angle}, ${statRow.updatedAt}::timestamp, ${statRow.syncSeq})
+      `);
+    }
+
+    const filePath = join(workDir, 'artifact-precision.db');
+    const result = await exportLayoutSnapshot({
+      sqlClient: createPool(),
+      boardType: BOARD_TYPE,
+      layoutId: LAYOUT_ID,
+      filePath,
+      builtAt: BUILT_AT,
+      stabilityWindowSeconds: 0,
+    });
+
+    const expected = (
+      await db.execute(sql`
+        SELECT updated_at, sync_seq FROM board_climb_stats
+        WHERE board_type = ${BOARD_TYPE}
+        ORDER BY updated_at DESC, sync_seq DESC LIMIT 1
+      `)
+    )[0] as { updated_at: unknown; sync_seq: unknown };
+    expect(String(expected.sync_seq)).toBe('900');
+
+    const statsMeta = readArtifactMeta(filePath, 'board_climb_stats')!;
+    expect(statsMeta.row_count).toBe(4);
+    expect(statsMeta.watermark_updated_at).toBe(toIso(expected.updated_at));
+    expect(statsMeta.watermark_updated_at).toBe('2026-05-03T00:00:00.5Z');
+    expect(statsMeta.watermark_sync_seq).toBe('900');
+    expect(result.tables.board_climb_stats).toEqual({
+      rowCount: 4,
+      watermarkUpdatedAt: '2026-05-03T00:00:00.5Z',
+      watermarkSyncSeq: '900',
+    });
+    // The helper column that orders the watermark never reaches the artifact.
+    const artifactDb = new DatabaseSync(filePath);
+    try {
+      const statsColumns = (artifactDb.prepare('PRAGMA table_info(board_climb_stats)').all() as { name: string }[]).map(
+        (column) => column.name,
+      );
+      expect(statsColumns).not.toContain('watermark_cursor_micros');
+    } finally {
+      artifactDb.close();
+    }
+  });
+
   it('records a deletion replay boundary from the export transaction clock minus the stability window', async () => {
     await insertClimb({ uuid: 'c1', compatibleSizeIds: [5], updatedAt: '2026-05-01T00:00:00Z' });
     const stabilityWindowSeconds = 30;
