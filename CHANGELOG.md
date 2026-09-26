@@ -17,10 +17,12 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Improved
 
+- MoonBoard boards stop re-downloading every grade each week, so syncing is faster and uses less data ([#5830](https://github.com/boardsesh/boardsesh/pull/5830))
 - The create and hold-filter boards no longer draw dots on every hold; tap the holds themselves ([#5809](https://github.com/boardsesh/boardsesh/pull/5809))
 
 ### Fixed
 
+- Popular boards stay listed while we ship updates, instead of disappearing for a few minutes ([#5818](https://github.com/boardsesh/boardsesh/pull/5818))
 - Settings has a back button again, so you can always get out ([#5806](https://github.com/boardsesh/boardsesh/pull/5806))
 - The current climb bar no longer covers the hold-type buttons when you search by holds ([#5807](https://github.com/boardsesh/boardsesh/pull/5807))
 

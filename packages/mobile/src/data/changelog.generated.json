@@ -1,6 +1,20 @@
 {
-  "generatedAt": "2026-09-26T01:44:34.074Z",
+  "generatedAt": "2026-09-26T03:29:38.031Z",
   "entries": [
+    {
+      "prNumber": 5830,
+      "category": "improved",
+      "title": "MoonBoard boards stop re-downloading every grade each week, so syncing is faster and uses less data",
+      "mergedAt": "2026-09-26T03:26:27Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5830"
+    },
+    {
+      "prNumber": 5818,
+      "category": "fixed",
+      "title": "Popular boards stay listed while we ship updates, instead of disappearing for a few minutes",
+      "mergedAt": "2026-09-26T02:55:00Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5818"
+    },
     {
       "prNumber": 5809,
       "category": "improved",
