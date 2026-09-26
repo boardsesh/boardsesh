@@ -105,25 +105,34 @@ describe('popular page cache', () => {
   describe('isPopularPageCacheable', () => {
     it('accepts a popular page with no user-specific filter, on MoonBoard, Woods and Kilter', () => {
       for (const boardName of ['moonboard', 'woods', 'kilter']) {
-        expect(isPopularPageCacheable(boardName, popularParams({ minGrade: 16, name: 'crimp' })), boardName).toBe(true);
+        expect(
+          isPopularPageCacheable(boardName, popularParams({ minGrade: 16, name: 'crimp' }), boardName === 'kilter'),
+          boardName,
+        ).toBe(true);
       }
     });
 
     it('rejects every other sort', () => {
       for (const sortBy of ['ascents', 'quality', 'difficulty', 'name', 'creation', 'random'] as const) {
-        expect(isPopularPageCacheable('kilter', { sortBy }), sortBy).toBe(false);
+        expect(isPopularPageCacheable('kilter', { sortBy }, true), sortBy).toBe(false);
       }
     });
 
+    it('rejects ascending order outside the 24 h cache, where new climbs sort first', () => {
+      expect(isPopularPageCacheable('moonboard', popularParams({ sortOrder: 'asc' }), false)).toBe(false);
+      expect(isPopularPageCacheable('woods', popularParams({ sortOrder: 'asc' }), false)).toBe(false);
+      expect(isPopularPageCacheable('kilter', popularParams({ sortOrder: 'asc' }), true)).toBe(true);
+    });
+
     it('rejects spray walls, whose pages are private per wall', () => {
-      expect(isPopularPageCacheable('spray', popularParams())).toBe(false);
+      expect(isPopularPageCacheable('spray', popularParams(), false)).toBe(false);
     });
 
     it('rejects a search carrying any user-specific filter', () => {
       expect(USER_SPECIFIC_SEARCH_PARAMS.length).toBeGreaterThan(0);
       for (const param of USER_SPECIFIC_SEARCH_PARAMS) {
         const withParam = { ...popularParams(), [param]: param === 'minUserRating' ? 3 : true } as ClimbSearchParams;
-        expect(isPopularPageCacheable('kilter', withParam), param).toBe(false);
+        expect(isPopularPageCacheable('kilter', withParam, false), param).toBe(false);
       }
     });
   });

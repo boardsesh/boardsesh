@@ -31,8 +31,11 @@ import { readThroughRedis } from '../../../utils/redis-read-through';
  * - MoonBoard and Woods are excluded from the 24 h cache because climbs are
  *   created under the search. A popular page tolerates ten minutes of that: a
  *   new climb has no ascents, so it sorts to the tail of the popular order
- *   (`NULLS LAST`) and would not appear on an early page anyway. The web
+ *   (`DESC NULLS LAST`) and would not appear on an early page anyway. The web
  *   MoonBoard front door already accepts 15 minutes for the same reason.
+ *   That argument holds only for the descending order: ascending popular sorts
+ *   `ASC NULLS FIRST`, so a new climb lands on page 0 there. Ascending popular
+ *   pages on these boards therefore stay uncached.
  *
  * ## What it never covers
  *
@@ -72,9 +75,16 @@ export type PopularPageSource = 'db' | 'redis';
  * way. Reads the same `USER_SPECIFIC_SEARCH_PARAMS` list the resolver uses to
  * decide whether to resolve a viewer at all, so the two cannot drift.
  */
-export function isPopularPageCacheable(boardName: string, searchParams: ClimbSearchParams): boolean {
+export function isPopularPageCacheable(
+  boardName: string,
+  searchParams: ClimbSearchParams,
+  coveredBySearchCache: boolean,
+): boolean {
   if (boardName === 'spray') return false;
   if (searchParams.sortBy !== 'popular') return false;
+  // Ascending puts ascent-less (new) climbs first, so the ten-minute key would
+  // hide a just-created climb from page 0. The 24 h cache already covered these.
+  if (!coveredBySearchCache && searchParams.sortOrder === 'asc') return false;
   return !USER_SPECIFIC_SEARCH_PARAMS.some((param) => !!searchParams[param as keyof ClimbSearchParams]);
 }
 

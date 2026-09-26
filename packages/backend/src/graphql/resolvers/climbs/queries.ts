@@ -456,12 +456,13 @@ export const climbQueries = {
 
     // Return context for field resolvers - queries are executed lazily per field
     // Personal progress filters now use boardsesh_ticks table with NextAuth user ID
+    const isCacheable = !hasUserSpecificFilters && isCacheableBoard;
     return {
       params,
       searchParams,
       userId,
-      _isCacheable: !hasUserSpecificFilters && isCacheableBoard,
-      _isPopularPageCacheable: isPopularPageCacheable(parsedInput.boardName, searchParams),
+      _isCacheable: isCacheable,
+      _isPopularPageCacheable: isPopularPageCacheable(parsedInput.boardName, searchParams, isCacheable),
     };
   },
 
