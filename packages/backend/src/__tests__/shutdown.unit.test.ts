@@ -103,11 +103,11 @@ describe('shutdown: ordering', () => {
 
 describe('pool configuration', () => {
   // Was a grep of postgres.ts for the literal `idle_timeout: 30`. #4461 made
-  // both knobs env-derived (`DB_POOL_MAX` / `DB_POOL_IDLE_TIMEOUT_S`, defaults
-  // unchanged), which would have left that grep green-but-meaningless. Assert
-  // on the options postgres-js actually resolved instead — the backend must
-  // keep the pre-#4461 sizing unless someone sets the env vars on it, which
-  // only the Vercel project is expected to do.
+  // both knobs env-derived (`DB_POOL_MAX` / `DB_POOL_IDLE_TIMEOUT_S`), which
+  // would have left that grep green-but-meaningless. Assert on the options
+  // postgres-js actually resolved instead. The backend sets neither env var in
+  // production, so these defaults are its real pool: `max` 5 since the
+  // 2026-09 connection budget (docs/db-connectivity.md), idle 30 s.
   //
   // These overlap `packages/db/src/client/__tests__/postgres.test.ts` on
   // purpose. `packages/db` is not a Vitest project and the only db test CI runs
@@ -134,13 +134,13 @@ describe('pool configuration', () => {
     }
   }
 
-  it('keeps the pre-#4461 pool defaults when the env knobs are unset', async () => {
+  it('uses the connection-budget pool defaults when the env knobs are unset', async () => {
     const { max, idle_timeout: idleTimeout } = await poolOptionsWith({
       DB_POOL_MAX: undefined,
       DB_POOL_IDLE_TIMEOUT_S: undefined,
     });
 
-    expect(max).toBe(10);
+    expect(max).toBe(5);
     expect(idleTimeout).toBe(30);
   });
 
@@ -158,7 +158,7 @@ describe('pool configuration', () => {
     // getClimb issues two sequential statements; a pool of one serialises every
     // front-door render behind a single connection.
     expect((await poolOptionsWith({ DB_POOL_MAX: '1' })).max).toBe(2);
-    expect((await poolOptionsWith({ DB_POOL_MAX: 'abc' })).max).toBe(10);
+    expect((await poolOptionsWith({ DB_POOL_MAX: 'abc' })).max).toBe(5);
   });
 
   it('lets DB_POOL_IDLE_TIMEOUT_S=0 mean "never close an idle connection"', async () => {

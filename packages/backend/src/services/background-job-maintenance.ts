@@ -4,6 +4,7 @@ import type { DbInstance } from '@boardsesh/db/client';
 import { BACKGROUND_JOB_RECONCILE_QUEUE } from '@boardsesh/db/background-jobs';
 import { backgroundJobRuns } from '@boardsesh/db/schema';
 import { reconcileBackgroundJobRun } from '@boardsesh/db/queries';
+import { MAINTENANCE_POLLING_INTERVAL_SECONDS } from './job-queue-client';
 
 /** Backend-owned, bounded and fair even while every homelab consumer is offline. */
 export function backgroundJobReconciler(database: DbInstance) {
@@ -49,7 +50,11 @@ export function backgroundJobReconciler(database: DbInstance) {
 export async function startBackgroundJobMaintenance(boss: PgBoss, database: DbInstance): Promise<void> {
   await boss.schedule(BACKGROUND_JOB_RECONCILE_QUEUE, '* * * * *', {}, { tz: 'UTC' });
   const reconcile = backgroundJobReconciler(database);
-  await boss.work(BACKGROUND_JOB_RECONCILE_QUEUE, { localConcurrency: 1, batchSize: 1 }, async () => {
-    await reconcile();
-  });
+  await boss.work(
+    BACKGROUND_JOB_RECONCILE_QUEUE,
+    { localConcurrency: 1, batchSize: 1, pollingIntervalSeconds: MAINTENANCE_POLLING_INTERVAL_SECONDS },
+    async () => {
+      await reconcile();
+    },
+  );
 }

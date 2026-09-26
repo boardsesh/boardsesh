@@ -10,6 +10,7 @@ import {
 import { sprayWallDetections } from '@boardsesh/db/schema';
 import { readSprayDetection, sprayDetectionSourceIsCurrent } from '@boardsesh/db/queries';
 import { db } from '../db/client';
+import { MAINTENANCE_POLLING_INTERVAL_SECONDS } from './job-queue-client';
 
 let reconcileCursor: string | undefined;
 
@@ -50,21 +51,29 @@ export async function reconcileSprayDetections(boss: PgBoss): Promise<void> {
 }
 
 export async function startSprayDetectionMaintenance(boss: PgBoss): Promise<void> {
-  await boss.work<SprayDetectionJob>(SPRAY_DETECTION_DEAD_QUEUE, async (jobs) => {
-    for (const job of jobs) {
-      await db
-        .update(sprayWallDetections)
-        .set({ status: 'failed', error: 'DETECTION_FAILED', finishedAt: new Date(), attemptToken: null })
-        .where(
-          and(
-            eq(sprayWallDetections.id, job.data.detectionId),
-            inArray(sprayWallDetections.status, ['pending', 'running']),
-          ),
-        );
-    }
-  });
+  await boss.work<SprayDetectionJob>(
+    SPRAY_DETECTION_DEAD_QUEUE,
+    { pollingIntervalSeconds: MAINTENANCE_POLLING_INTERVAL_SECONDS },
+    async (jobs) => {
+      for (const job of jobs) {
+        await db
+          .update(sprayWallDetections)
+          .set({ status: 'failed', error: 'DETECTION_FAILED', finishedAt: new Date(), attemptToken: null })
+          .where(
+            and(
+              eq(sprayWallDetections.id, job.data.detectionId),
+              inArray(sprayWallDetections.status, ['pending', 'running']),
+            ),
+          );
+      }
+    },
+  );
   await boss.schedule(SPRAY_DETECTION_RECONCILE_QUEUE, '* * * * *');
-  await boss.work(SPRAY_DETECTION_RECONCILE_QUEUE, async () => {
-    await reconcileSprayDetections(boss);
-  });
+  await boss.work(
+    SPRAY_DETECTION_RECONCILE_QUEUE,
+    { pollingIntervalSeconds: MAINTENANCE_POLLING_INTERVAL_SECONDS },
+    async () => {
+      await reconcileSprayDetections(boss);
+    },
+  );
 }
