@@ -151,9 +151,12 @@ log table and drop the TTL with it.
 removes every system log except `query_log`, and gives `query_log` a 7-day TTL in
 config, where an image upgrade cannot lose it. The same file caps the server at
 1.2 GB and shrinks the caches, which is where the memory bill came from: the stock
-server idled at 2.9 GB under a 24 GB ceiling. The hand-set TTLs are superseded once
-the image is live and the one-off `DROP` below has run. `docker/clickhouse/smoke.sh`
-proves the config on every PR that touches it.
+server idled at 2.9 GB under a 24 GB ceiling. `users.d/boardsesh-query-memory.xml`
+caps each query at 500 MB, so one runaway dashboard query fails alone instead of
+filling the 1.2 GB and failing the OTA server's inserts with it. The hand-set TTLs
+are superseded once the image is live and the one-off `DROP` below has run.
+`docker/clickhouse/smoke.sh` proves the config on every PR that touches it,
+including a first boot on a volume the stock image wrote.
 
 ### Disk headroom
 
@@ -217,10 +220,14 @@ alone; a running OTA server rides out a short ClickHouse outage.
 1. **Publish.** Actions → *ClickHouse Image* → Run workflow on `main`. The smoke job
    runs first; the publish job's summary prints
    `ghcr.io/boardsesh/boardsesh-clickhouse@sha256:…`.
-2. **Make it pullable.** A new GHCR package starts private. Either make
-   `boardsesh-clickhouse` public (it holds no secrets, only stock ClickHouse and a
-   config file) or give the Railway service registry credentials, as the PG18 service
-   has for `boardsesh-postgres-postgis`.
+2. **Make it public.** A new GHCR package starts private, and Railway pulls
+   `ghcr.io/boardsesh/*` anonymously: `boardsesh-postgres-postgis`, which the PG18
+   service runs, is a public package. Do the same here: github.com/orgs/boardsesh →
+   Packages → `boardsesh-clickhouse` → Package settings → Danger Zone → Change
+   visibility → Public. It holds no secrets, only stock ClickHouse and two config
+   files. Check it from a shell that is logged out of ghcr.io:
+   `docker manifest inspect ghcr.io/boardsesh/boardsesh-clickhouse@sha256:…` prints
+   a manifest instead of `unauthorized`.
 3. **Pin it.** Railway → `boardsesh-ota-clickhouse` → Settings → Source → Docker Image:
    paste the digest reference from step 1. Put the same string in `CLICKHOUSE_IMAGE`
    in `infra/railway/config.ts`.
@@ -254,7 +261,9 @@ alone; a running OTA server rides out a short ClickHouse outage.
    ```
 
    Delete the TCP proxy afterwards. It exposes the database to the internet for as
-   long as it exists.
+   long as it exists. Run the listing again after any future base-version bump: a
+   version whose `query_log` schema differs renames the old table to `query_log_N`
+   the same way, and nothing drops it.
 7. **Verify over 24 hours.** Railway memory for the service stays under 1.2 GB, the
    volume reading printed by `vp run railway:apply` drops, and the dry run reports no
    drift.

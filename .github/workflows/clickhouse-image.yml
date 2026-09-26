@@ -1,8 +1,9 @@
 name: ClickHouse Image
 
 # The ClickHouse behind xprem Observe (Railway service boardsesh-ota-clickhouse):
-# stock clickhouse/clickhouse-server:25.3 plus docker/clickhouse/config.d, which caps
-# the server at 1.2 GB and turns off the system logs. See docs/railway.md,
+# stock clickhouse/clickhouse-server:25.3 plus docker/clickhouse/config.d and users.d,
+# which cap the server at 1.2 GB and each query at 500 MB and turn off the system
+# logs. See docs/railway.md,
 # "Rolling out a new ClickHouse image".
 #
 # Publishing is dispatch-only and deliberately not wired to pushes: the digest is
@@ -91,6 +92,8 @@ jobs:
 
       - name: Report the digest to pin
         run: |
+          # The backticks below are Markdown, not command substitution.
+          # shellcheck disable=SC2016
           {
             echo '## ClickHouse image published'
             echo
