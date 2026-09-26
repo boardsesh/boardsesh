@@ -68,13 +68,13 @@ void describe('postgres client', () => {
       }
     }
 
-    void it('defaults to the values that were hard-coded before the knobs existed', async () => {
+    void it('defaults to the connection-budget pool size and the 30 s idle timeout', async () => {
       const options = await poolOptionsWith({
         DB_POOL_MAX: undefined,
         DB_POOL_IDLE_TIMEOUT_S: undefined,
         VERCEL: undefined,
       });
-      assert.equal(options.max, 10);
+      assert.equal(options.max, 5);
       assert.equal(options.idle_timeout, 30);
     });
 
@@ -111,7 +111,7 @@ void describe('postgres client', () => {
 
     void it('falls back to the default when DB_POOL_MAX is not a number', async () => {
       const options = await poolOptionsWith({ DB_POOL_MAX: 'abc', VERCEL: undefined });
-      assert.equal(options.max, 10);
+      assert.equal(options.max, 5);
     });
 
     void it('falls back to the serverless default when DB_POOL_MAX is not a number on Vercel', async () => {

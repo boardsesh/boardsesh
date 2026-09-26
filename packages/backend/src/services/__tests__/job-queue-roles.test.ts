@@ -3,7 +3,12 @@ import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { PgBoss } from 'pg-boss';
 import { describe, expect, it } from 'vitest';
-import { initializeJobQueueSchema, POPULAR_BOARD_CONFIGS_REFRESH_QUEUE } from '@boardsesh/db/job-queue-schema';
+import {
+  CRON_JOB_DELETE_AFTER_SECONDS,
+  initializeJobQueueSchema,
+  POPULAR_BOARD_CONFIGS_REFRESH_QUEUE,
+} from '@boardsesh/db/job-queue-schema';
+import { BACKGROUND_JOB_RECONCILE_QUEUE } from '@boardsesh/db/background-jobs';
 import { retrySprayDetectionAttempt } from '@boardsesh/db/queries';
 import { SPRAY_DETECTION_QUEUE, SPRAY_DETECTION_RECONCILE_QUEUE } from '@boardsesh/shared-schema';
 
@@ -34,6 +39,12 @@ describe('owner-only queue initialization', () => {
       // Production's ACL reconciler removes the default PUBLIC type grant.
       await owner`REVOKE ALL ON TYPE public.spray_detection_status FROM PUBLIC`;
       await initializeJobQueueSchema(drizzle(owner), undefined, role);
+      // The once-a-minute crons keep a day of completed jobs, not a week.
+      const cronQueues = ['__pgboss__send-it', SPRAY_DETECTION_RECONCILE_QUEUE, BACKGROUND_JOB_RECONCILE_QUEUE];
+      const retention = await owner<{ name: string; deletion_seconds: number }[]>`
+        SELECT name, deletion_seconds FROM pgboss.queue WHERE name = ANY(${cronQueues}) ORDER BY name`;
+      expect(retention).toHaveLength(cronQueues.length);
+      for (const queue of retention) expect(queue.deletion_seconds).toBe(CRON_JOB_DELETE_AFTER_SECONDS);
       const [typeGrant] =
         await restricted`SELECT has_type_privilege(current_user, 'public.spray_detection_status', 'USAGE') AS permitted`;
       expect(typeGrant.permitted).toBe(true);

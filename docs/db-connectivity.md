@@ -364,7 +364,7 @@ rest of the hour-long entry.
 | knob                      | default        | meaning                                                                                  |
 | ------------------------- | -------------- | ---------------------------------------------------------------------------------------- |
 | `DB_READ_DEADLINE_MS`     | 6000           | web front door: wall clock for one _request's_ reads (queue wait + connect + execute)    |
-| `DB_POOL_MAX`             | 10 (Vercel: 3) | postgres.js `max`, clamped to a floor of 2                                               |
+| `DB_POOL_MAX`             | 5 (Vercel: 3)  | postgres.js `max`, clamped to a floor of 2                                               |
 | `DB_POOL_IDLE_TIMEOUT_S`  | 30 (Vercel: 5) | seconds an idle connection is held open; `0` means "never close one" and is not clamped  |
 | `DB_STATEMENT_TIMEOUT_MS` | unset          | emits a `statement_timeout` startup parameter — **off by default**, see the hazard below |
 
@@ -373,7 +373,8 @@ brownout the front door should shed load rather than spend a second and third
 connect attempt holding a pool slot while a crawler waits. That comparison only
 holds because the budget is per request — see the shared-budget note above.
 
-The pool knobs default to the values that used to be hard-coded — except on
+The pool knobs default to `max` 5 and idle 30 s (see the connection budget
+under PgBouncer below for why `max` fell from 10) — except on
 Vercel, where an unset knob now falls back to the serverless pair (`max` 3,
 idle 5 s; `process.env.VERCEL` selects it, an explicit env var still wins).
 The split exists because peak server-side connections scale with
@@ -466,9 +467,9 @@ straight to the PG18 primary, `postgis---pg18.railway.internal:5432`.
 
 Pooled, one change at a time, each watched as its own connection-budget event:
 
-1. The `boardsesh-web` Railway service's `DATABASE_URL` (postgres.js, `DB_POOL_MAX` 10).
+1. The `boardsesh-web` Railway service's `DATABASE_URL` (postgres.js, `DB_POOL_MAX` from its env).
 2. The backend's `DATABASE_URL`. It carries both the postgres.js pool
-   (3 replicas x `DB_POOL_MAX` 10) and pg-boss (3 x `PGBOSS_POOL_SIZE` 4):
+   (2 replicas x `DB_POOL_MAX` 5) and pg-boss (2 x `PGBOSS_POOL_SIZE` 2):
    `packages/backend/src/services/job-queue.ts` builds pg-boss from the same
    connection string, so the two move together. pg-boss uses the `pg` driver,
    which the connect retry above does not cover; a `query_wait_timeout` there
@@ -493,37 +494,112 @@ changed on purpose.
 ### Connection budget at `max_connections = 100`
 
 PostgreSQL keeps 3 slots for superusers (`superuser_reserved_connections`
-default), which leaves 97 for application roles. PgBouncer can take 45 of them,
-which leaves 52 for everything direct.
+default), which leaves 97 for application roles. The standby's walsender counts
+against `max_wal_senders`, and autovacuum and parallel workers have their own
+slots, so none of them appear below.
 
-| client                            | today, direct | web + backend pooled |
-| --------------------------------- | ------------: | -------------------: |
-| PgBouncer server connections      |             — |                ≤ 45 |
-| web postgres.js                   |            10 |       0 (via pooler) |
-| backend postgres.js, 3 x 10       |            30 |       0 (via pooler) |
-| backend pg-boss, 3 x 4            |            12 |       0 (via pooler) |
-| hold detector, 3 + 3              |             6 |                    6 |
-| `boardsesh_readonly`              |           ≤ 5 |                  ≤ 5 |
-| migrator, during a deploy         |             1 |                    1 |
-| **ceiling, steady**               |      **≤ 64** |             **≤ 57** |
-| backend deploy, old fleet draining |    **≤ 106** |             **≤ 57** |
+Every pool is sized by one of three knobs. The code defaults apply wherever the
+deployment sets no env var:
 
-The homelab sync daemons come on top of both columns. PgBouncer reaches 45
-servers only when 45 clients are in a transaction at once. The deploy row is the
-reason for the pooler. Today a backend deploy runs the old and new fleets side by
-side for up to 15 s (`drainingSeconds`), and 106 is over the 97 available. Behind
-PgBouncer both fleets' 84 client connections (plus web's 10) share the same 45
-servers and queue at the pooler, so the database total does not move.
+| knob               | default | where it is read                                                              |
+| ------------------ | ------: | ----------------------------------------------------------------------------- |
+| `DB_POOL_MAX`      |       5 | `DEFAULT_POOL_MAX`, `packages/db/src/client/postgres.ts` (Vercel: 3)          |
+| `PGBOSS_POOL_SIZE` |       2 | `DEFAULT_PGBOSS_POOL_SIZE`, `packages/backend/src/services/job-queue.ts`      |
+| worker pools       |   2 + 1 | fixed by `packages/backend/src/workers/config.ts`; other values fail startup |
 
-The cost of that cap is queueing: 52 pooled clients at steady state (94 during a
-backend deploy) compete for 45 servers. A burst of long transactions makes the
-rest wait, and after 5 s they fail with `query_wait_timeout`. Watch
+Until 2026-09-26 the first two were 10 and 4. postgres.js hands each query to
+the next open connection in turn, so a busy pool sits at its `max` even though
+the whole fleet averages under one active statement (0.82 in the 2026-09
+audit). The ceiling is what counts, not the average.
+
+| client                                   | before (2026-09-26) | after these defaults |
+| ---------------------------------------- | ------------------: | -------------------: |
+| backend postgres.js, 2 replicas          |              2 x 10 |                2 x 5 |
+| backend pg-boss, 2 replicas              |               2 x 4 |                2 x 2 |
+| web postgres.js, 1 replica (env)         |                  10 |                    4 |
+| hold detector, postgres.js 3 + pg-boss 3 |                   6 |                    6 |
+| homelab sync daemons, about 3            |             3 x 10 |                3 x 5 |
+| homelab background workers, 4 roles      |           4 x (2+1) |            4 x (2+1) |
+| `boardsesh_readonly` (role cap)          |                 ≤ 5 |                  ≤ 5 |
+| migrator, during a deploy                |                   1 |                    1 |
+| **ceiling, steady**                      |            **≤ 92** |              **≤ 57** |
+| **+ old backend fleet draining (15 s)**  |            **≤ 120** |              **≤ 71** |
+
+Web's 4 needs `DB_POOL_MAX=4` on the `boardsesh-web` Railway service, which set
+it to 10 explicitly; the code default does not reach it. The homelab rows are
+ceilings: the daemons held 1 to 2 connections each in the audit, and the
+background workers only run once a role is enabled. The daemons should pin
+`DB_POOL_MAX=3` in their own env, which brings the steady ceiling to 51 and the
+deploy ceiling to 65.
+
+The ceiling only matters when every pool fills at once, which a slow database
+does cause: requests pile up, every pool opens its last connection, and the
+next client gets `53300 too many connections`. The before column could not fit
+97 during a deploy. The after column fits with 26 to spare.
+
+### Lowering `max_connections` to 60, last
+
+Each slot reserves a small amount of shared memory whether or not it is used,
+and every live backend costs a few MB of private memory plus page tables. Under
+the 4 GB cap that is worth reclaiming, but only after every pool is capped,
+because a too-low `max_connections` turns a busy minute into refused logins.
+The order:
+
+1. Ship the pool defaults above and set `DB_POOL_MAX=4` on `boardsesh-web`.
+2. Pin `DB_POOL_MAX=3` on the homelab sync daemons.
+3. Watch the recount query below for a week of deploys. The peak, including a
+   backend deploy, must stay under 45.
+4. Only then set `max_connections = 60` (57 application slots). The deploy
+   ceiling of 65 in the table is above 57, so either keep the background
+   workers off, or put the backend behind PgBouncer first. PgBouncer's own
+   cap of 45 servers must then drop to fit, for example 30 plus 5 reserve.
+
+`max_connections` needs a restart, so it goes in a maintenance window. The
+standby can keep 100: a hot standby needs a value at least as high as its
+primary's, so lowering the primary is safe, and raising it again later means
+raising the standby first.
+
+### With PgBouncer
+
+PgBouncer (#4842, above) takes up to 45 server connections, which leaves 52
+direct slots at `max_connections = 100`. Behind it, web (4) and both backend
+fleets (14 each, 28 during a deploy) are clients: 18 at steady state, 32 during
+a backend deploy, sharing the same servers, so a deploy no longer moves the
+database total. The direct clients (hold detector, homelab daemons and
+workers, `boardsesh_readonly`, migrator) come to at most 39 with the defaults above.
+
+The cost of the cap is queueing: a burst of long transactions makes the other
+clients wait, and after 5 s they fail with `query_wait_timeout`. Watch
 `cl_waiting` and `avg_wait_time` below after each cutover step.
 
-The 52 direct slots hold as long as the direct clients stay under them: 12 after
-the backend cutover, deploy or not, which leaves 40 for the sync daemons and
-operator sessions. Recount with the query below before adding any direct
-client, raising a pool size, or adding a PgBouncer replica.
+### pg-boss timers
+
+The backend is the only pg-boss owner with supervision and scheduling on
+(`packages/backend/src/services/job-queue-client.ts`). Every replica runs the
+timers, and each tick races the other replicas for the single
+`pgboss.version` row. The defaults in pg-boss 12.33 cost about 830 s of
+database time a day for a queue that runs about one job a minute, mostly as
+row-lock waits (one 1-row UPDATE had a 10.9 s max). The backend sets:
+
+| option                                 | pg-boss default | ours | why                                                                                                   |
+| -------------------------------------- | --------------: | ---: | ----------------------------------------------------------------------------------------------------- |
+| `flowIntervalSeconds`                  |             5 s | 3600 | flows and job dependencies are unused (`pgboss.job_dependency` is empty); lower it again to use them |
+| `cronMonitorIntervalSeconds`           |            30 s |   45 | the maximum pg-boss accepts; 46 or more throws in the constructor                                   |
+| `monitorIntervalSeconds`               |            60 s |  120 | the queue-stats pass seq-scans `pgboss.job_common`; job expiry is noticed within 2 min instead of 1 |
+| maintenance `pollingIntervalSeconds`   |             2 s |   30 | reconcile crons and the detection dead-letter queue get at most one job a minute                    |
+| cron queues' `deleteAfterSeconds`      |          7 days |  1 day | `__pgboss__send-it` and both reconcile queues; the week of completed jobs was most of `job_common` |
+
+`deleteAfterSeconds` is copied onto each job when it is inserted, so jobs
+completed before the migrator applies the new value still age out on the old
+7-day clock. `job_common` reaches its smaller size a week after the deploy.
+
+The hold detector and the homelab workers run with supervision and scheduling
+off, so only their fetch polls touch the database.
+
+### Recounting
+
+Recount with the query below before adding any direct client, raising a pool
+size, or adding a PgBouncer replica.
 
 ```sql
 SELECT usename, application_name, count(*)
