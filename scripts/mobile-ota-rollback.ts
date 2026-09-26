@@ -9,7 +9,7 @@
  *
  *   --mode embedded   (default) → `eoas rollback --nonInteractive`   Publishes a
  *       rollback DIRECTIVE: every install currently on the bad OTA reverts to the
- *       binary's EMBEDDED bundle on its next launch. eoas@3.1.2 rollback prompts
+ *       binary's EMBEDDED bundle on its next launch. eoas@3.2.4 rollback prompts
  *       for confirmation and THROWS in a non-TTY, so the helper passes
  *       --nonInteractive — that's what makes it CI-safe. Use this to stop the
  *       bleeding fast — it always lands on a known-good (shipped) bundle.
@@ -102,7 +102,7 @@ export function parseRollbackArgs(argv: string[]): RollbackOptions {
 export function buildEoasArgs(options: RollbackOptions): string[] {
   const subcommand = options.mode === 'embedded' ? 'rollback' : 'republish';
   const args = [EOAS_PACKAGE_SPEC, subcommand, '--branch', options.branch, '--platform', options.platform];
-  // eoas@3.1.2 `rollback` prompts for confirmation and throws in a non-TTY (CI)
+  // eoas@3.2.4 `rollback` prompts for confirmation and throws in a non-TTY (CI)
   // without --nonInteractive. `republish` is interactive by design (it prompts for
   // which previous update to re-point to), so it stays TTY-driven — run it locally.
   if (options.mode === 'embedded') args.push('--nonInteractive');
