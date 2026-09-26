@@ -3,23 +3,26 @@ import type { ConnectionContext } from '@boardsesh/shared-schema';
 import * as dbSchema from '@boardsesh/db/schema';
 import { playlistQueries } from '../graphql/resolvers/playlists/queries';
 
-const { mockDb, eqSpy, notInArraySpy, resolveTargetMock, selectRefsMock, countRefsMock } = vi.hoisted(() => {
-  const mockDb = {
-    execute: vi.fn(),
-    select: vi.fn(),
-    insert: vi.fn(),
-    delete: vi.fn(),
-    update: vi.fn(),
-  };
-  return {
-    mockDb,
-    eqSpy: vi.fn(),
-    notInArraySpy: vi.fn(),
-    resolveTargetMock: vi.fn(),
-    selectRefsMock: vi.fn(),
-    countRefsMock: vi.fn(),
-  };
-});
+const { mockDb, eqSpy, notInArraySpy, resolveTargetMock, selectRefsMock, countRefsMock, cardCountMock } = vi.hoisted(
+  () => {
+    const mockDb = {
+      execute: vi.fn(),
+      select: vi.fn(),
+      insert: vi.fn(),
+      delete: vi.fn(),
+      update: vi.fn(),
+    };
+    return {
+      mockDb,
+      eqSpy: vi.fn(),
+      notInArraySpy: vi.fn(),
+      resolveTargetMock: vi.fn(),
+      selectRefsMock: vi.fn(),
+      countRefsMock: vi.fn(),
+      cardCountMock: vi.fn(),
+    };
+  },
+);
 
 vi.mock('../db/client', () => ({ db: mockDb }));
 
@@ -32,6 +35,7 @@ vi.mock('../graphql/resolvers/playlists/helpers/recommendation-board-target', ()
 vi.mock('../graphql/resolvers/playlists/helpers/recommendation-refs', () => ({
   selectRecommendationClimbRefs: selectRefsMock,
   countRecommendationClimbRefs: countRefsMock,
+  countRecommendationCardClimbs: cardCountMock,
 }));
 
 vi.mock('drizzle-orm', async (importOriginal) => {
@@ -691,7 +695,7 @@ describe('mySmartPlaylistCounts resolver', () => {
     const ctx = makeCtx();
     queueCountsRows([{ type: 'FIVE_STARS', count: 1 }]);
     resolveTargetMock.mockResolvedValueOnce({ boardType: 'kilter', layoutId: 8, sizeId: 25, angle: 40, setIds: null });
-    countRefsMock.mockResolvedValue(7);
+    cardCountMock.mockResolvedValue(7);
 
     const result = await playlistQueries.mySmartPlaylistCounts(null, undefined, ctx);
 
@@ -699,6 +703,10 @@ describe('mySmartPlaylistCounts resolver', () => {
     expect(recCounts).toHaveLength(4);
     expect(recCounts.every((entry) => entry.count === 7)).toBe(true);
     expect(result).toContainEqual({ type: 'FIVE_STARS', count: 1 });
+    // Cards take the cached catalog-minus-sends count; the exact per-user count
+    // is reserved for the playlist page's hero.
+    expect(cardCountMock).toHaveBeenCalledTimes(4);
+    expect(countRefsMock).not.toHaveBeenCalled();
   });
 
   it('omits RECOMMENDED_* counts when no board resolves', async () => {

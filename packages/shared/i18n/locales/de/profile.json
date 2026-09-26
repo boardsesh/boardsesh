@@ -132,12 +132,6 @@
       "to": "Bis"
     }
   },
-  "analytics": {
-    "noData": "Noch keine Auswertungen vorhanden. Die Daten kommen beim Sync dazu.",
-    "ascentsOverTime": "Begehungen im Zeitverlauf",
-    "qualityOverTime": "Qualität im Zeitverlauf",
-    "gradeOverTime": "Grad im Zeitverlauf"
-  },
   "mobile": {
     "account": "Konto",
     "signOut": "Abmelden"

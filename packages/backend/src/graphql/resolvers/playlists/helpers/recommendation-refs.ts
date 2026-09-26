@@ -3,6 +3,7 @@ import { gradeBandToDifficultyIds } from '@boardsesh/board-constants/grade-conve
 import {
   buildRecommendationRefsSql,
   buildRecommendationCountSql,
+  buildRecommendationSentOverlapSql,
   buildUserSendGradesByBoardSql,
   computeUserMaxVGrade,
   rowsOf,
@@ -14,6 +15,7 @@ import {
 } from '@boardsesh/db/queries';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { db } from '../../../../db/client';
+import { readThroughRedis } from '../../../../utils/redis-read-through';
 import type { ClimbRef } from './hydrate-climbs';
 
 /** How far back published_at counts as "fresh". A year keeps the pool healthy
@@ -110,5 +112,74 @@ export async function countRecommendationClimbRefs(
     if (!params) return 0;
     const rows = rowsOf<{ count: number }>(await tx.execute(buildRecommendationCountSql(params)));
     return Number(rows[0]?.count ?? 0);
+  });
+}
+
+/**
+ * Six hours: the owner-approved staleness for a card label. The rows behind it
+ * move with the nightly stats refresh and catalog sync, and a card saying "283
+ * climbs" when the list holds 285 costs nobody anything.
+ */
+export const RECOMMENDATION_COUNT_CACHE_TTL_SECONDS = 6 * 60 * 60;
+
+/**
+ * `rec-count:v1:{type}:{board}:{layout}:{size}:{sets}:{angle}[:{band}]`. Sets
+ * are sorted because `<@` ignores their order; `all` covers both "no set filter"
+ * shapes (null and empty). The AT_LEVEL band is part of the answer, so it is
+ * part of the key. Bump `v1` when the candidate rules change.
+ */
+export function recommendationCountCacheKey(params: RecommendationQueryParams): string {
+  const { boardType, layoutId, sizeId, angle, setIds } = params.target;
+  const sets = setIds && setIds.length > 0 ? [...setIds].sort((left, right) => left - right).join(',') : 'all';
+  const parts: Array<string | number> = ['rec-count', 'v1', params.type, boardType, layoutId, sizeId, sets, angle];
+  if (params.gradeBand) parts.push(`${params.gradeBand.minDifficultyId}-${params.gradeBand.maxDifficultyId}`);
+  return parts.join(':');
+}
+
+/**
+ * The Discover card's "N climbs" label: candidates the viewer has not sent yet.
+ *
+ * The catalog half (every candidate, whoever asks) is the expensive part and is
+ * the same for everyone on a board config, so it is cached in Redis for six
+ * hours. The viewer half is how many of those candidates they have already
+ * sent, read live from their own ticks. Catalog minus sent equals the NOT EXISTS
+ * count exactly (checked on the replica across 16 config x type cases), so the
+ * label stays exact per user; only the catalog half can be up to six hours old,
+ * and a just-logged send lowers the label straight away.
+ *
+ * The playlist page keeps `countRecommendationClimbRefs`, uncached: its hero
+ * count sits above the list it pages through and must match it.
+ *
+ * A miss runs on the caller's guarded transaction. `singleFlight` lets a
+ * concurrent caller join that promise, which is safe because the leader awaits
+ * it before its own transaction ends.
+ */
+export async function countRecommendationCardClimbs(
+  type: RecommendationType,
+  target: BoardTarget,
+  userId: string,
+  executor?: SerialPlanDb,
+): Promise<number> {
+  return onGuardedExecutor(executor, async (tx) => {
+    const params = await buildParams(type, target, userId, tx);
+    if (!params) return 0;
+
+    const catalogCount = await readThroughRedis({
+      key: recommendationCountCacheKey(params),
+      ttlSeconds: RECOMMENDATION_COUNT_CACHE_TTL_SECONDS,
+      label: 'RecommendationCount',
+      load: async () => {
+        const rows = rowsOf<{ count: number }>(
+          await tx.execute(buildRecommendationCountSql({ ...params, excludeUserId: null })),
+        );
+        return Number(rows[0]?.count ?? 0);
+      },
+    });
+    if (catalogCount === 0) return 0;
+
+    const sentRows = rowsOf<{ count: number }>(await tx.execute(buildRecommendationSentOverlapSql(params, userId)));
+    // Clamped: the catalog half can be hours old, so a climb that joined the
+    // candidates since could count as sent without being in the total.
+    return Math.max(0, catalogCount - Number(sentRows[0]?.count ?? 0));
   });
 }

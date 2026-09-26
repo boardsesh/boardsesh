@@ -2442,8 +2442,8 @@ describe('a private wall\u2019s climbs are not readable through the climb API', 
 
   it('withholds every OTHER stats reader from a retained uuid too', async () => {
     // The by-uuid readers of `board_climb_stats` the class audit turned up: the
-    // twelve-month history, and the outlier analysis behind `climbCommunityStatus`
-    // — which is unauthenticated and takes a bare uuid.
+    // per-angle `climbStatsHistory`, and the outlier analysis behind
+    // `climbCommunityStatus` — both unauthenticated, both taking a bare uuid.
     //
     // `boardseshGrade` / `boardseshGradesForAngles` carry the same predicate and are
     // NOT exercised here: they LEFT JOIN `board_climb_embeddings`, which the test
@@ -2452,11 +2452,6 @@ describe('a private wall\u2019s climbs are not readable through the climb API', 
     // closes a latent gap rather than a live leak.
     const wall = await wallWithAClimb({ isPublic: true });
 
-    await db.execute(sql`
-      INSERT INTO board_climb_stats_history
-        (board_type, climb_uuid, angle, display_difficulty, ascensionist_count, difficulty_average, quality_average, created_at)
-      VALUES ('spray', ${wall.climbUuid}, 40, 17, 4, 17, 3, now())
-    `);
     // Three angles with ten-plus ascents each: `analyzeGradeOutlier` needs two
     // qualifying neighbours before it answers at all.
     for (const angle of [30, 40, 50]) {

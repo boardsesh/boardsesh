@@ -5,7 +5,13 @@ import type { BoardDiscoveryClimb, ConnectionContext } from '@boardsesh/shared-s
 import { boardseshTicks, gyms, userBoards, users } from '@boardsesh/db/schema';
 import { db } from '../db/client';
 import { pubsub } from '../pubsub';
-import { boardDiscoveryQueries } from '../graphql/resolvers/social/board-discovery';
+import {
+  BOARD_DISCOVERY_CACHE_TTL_SECONDS,
+  boardDiscoveryCacheKey,
+  boardDiscoveryQueries,
+} from '../graphql/resolvers/social/board-discovery';
+import { redisClientManager } from '../redis/client';
+import { resetSingleFlightForTests } from '../utils/single-flight';
 
 const OWNER = 'board-discovery-owner';
 const CLIMBERS = [OWNER, 'board-discovery-climber-2', 'board-discovery-climber-3'];
@@ -192,5 +198,73 @@ describe('physical board discovery', () => {
     for (const input of [{ limit: 13 }, { limit: 0 }, { limit: 1.5 }, { gymUuid: 'not-a-uuid' }]) {
       await expect(discover(input)).rejects.toThrow();
     }
+  });
+});
+
+describe('physical board discovery ranking cache', () => {
+  const redisStore = new Map<string, string>();
+  const getMock = vi.fn(async (key: string) => redisStore.get(key) ?? null);
+  const setMock = vi.fn(async (key: string, value: string) => {
+    redisStore.set(key, value);
+    return 'OK';
+  });
+
+  beforeEach(() => {
+    redisStore.clear();
+    getMock.mockClear();
+    setMock.mockClear();
+    resetSingleFlightForTests();
+    vi.spyOn(redisClientManager, 'isRedisConnected').mockReturnValue(true);
+    vi.spyOn(redisClientManager, 'getClients').mockReturnValue({
+      publisher: { get: getMock, set: setMock },
+    } as unknown as ReturnType<typeof redisClientManager.getClients>);
+  });
+
+  it('caches the ranking for fifteen minutes per gym scope', async () => {
+    const gym = await seedGym();
+    const board = await seedBoard(gym.id);
+    await seedTick(board.id, OWNER);
+
+    expect((await discover({ gymUuid: gym.uuid }))[0]).toMatchObject({ uuid: board.uuid, uniqueClimbers: 1 });
+    expect(setMock).toHaveBeenCalledWith(
+      boardDiscoveryCacheKey(gym.uuid),
+      JSON.stringify([{ boardId: board.id, uniqueClimbers: 1 }]),
+      'EX',
+      BOARD_DISCOVERY_CACHE_TTL_SECONDS,
+    );
+    expect(BOARD_DISCOVERY_CACHE_TTL_SECONDS).toBe(15 * 60);
+
+    // A new climber inside the window is not counted until the entry expires.
+    await seedTick(board.id, CLIMBERS[1]);
+    expect((await discover({ gymUuid: gym.uuid }))[0]).toMatchObject({ uniqueClimbers: 1 });
+    expect(setMock).toHaveBeenCalledTimes(1);
+    expect(boardDiscoveryCacheKey(undefined)).toBe('board-discovery:v1:all');
+  });
+
+  it('re-checks visibility and reads metadata fresh on every cached request', async () => {
+    const gym = await seedGym();
+    const hidden = await seedBoard(gym.id);
+    const renamed = await seedBoard(gym.id);
+    await seedTick(hidden.id, OWNER);
+    await seedTick(hidden.id, CLIMBERS[1]);
+    await seedTick(renamed.id, OWNER);
+
+    expect((await discover()).map((board) => board.uuid)).toEqual([hidden.uuid, renamed.uuid]);
+
+    await db.update(userBoards).set({ isPublic: false }).where(eq(userBoards.id, hidden.id));
+    await db.update(userBoards).set({ name: 'New name' }).where(eq(userBoards.id, renamed.id));
+
+    const result = await discover();
+    expect(result.map((board) => [board.uuid, board.name])).toEqual([[renamed.uuid, 'New name']]);
+    expect(setMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls through to a live ranking when Redis fails', async () => {
+    getMock.mockRejectedValueOnce(new Error('ECONNREFUSED'));
+    setMock.mockRejectedValueOnce(new Error('ECONNREFUSED'));
+    const gym = await seedGym();
+    const board = await seedBoard(gym.id);
+
+    expect((await discover()).map((entry) => entry.uuid)).toEqual([board.uuid]);
   });
 });
