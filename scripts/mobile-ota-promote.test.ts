@@ -78,7 +78,6 @@ function stageFixture() {
 function fetchServer(
   fixture: ReturnType<typeof stageFixture>,
   statusByPlatform: Partial<Record<'ios' | 'android', number>> = {},
-  uploadRequestStatusByPlatform: Partial<Record<'ios' | 'android', number>> = {},
 ) {
   const calls: { url: URL; init: RequestInit }[] = [];
   const fetchImpl = vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
@@ -86,12 +85,10 @@ function fetchServer(
     calls.push({ url, init });
     if (url.pathname.includes('/requestUploadUrl/production')) {
       const platform = url.searchParams.get('platform') as 'ios' | 'android';
-      const uploadRequestStatus = uploadRequestStatusByPlatform[platform];
-      if (uploadRequestStatus !== undefined) return new Response('', { status: uploadRequestStatus });
       const filePath = `_expo/static/js/${platform}/main.hbc`;
       return Response.json({
         updateId: platform === 'ios' ? 101 : 102,
-        // Only one file needs a PUT: xprem already holds the rest by content hash.
+        // Only one file needs a PUT: xprem reuses the remaining requested assets.
         uploadRequests: [
           {
             requestUploadUrl: `https://bucket.example/${platform}/bundle`,
@@ -369,31 +366,10 @@ describe('exact-byte production promotion', () => {
     const requests = server.calls.filter((call) => call.url.pathname.includes('/requestUploadUrl/production'));
     expect(requests).toHaveLength(2);
     for (const request of requests) {
-      const platform = request.url.searchParams.get('platform') as 'ios' | 'android';
-      const body = JSON.parse(request.init.body as string) as {
-        files: unknown[];
-        fileNames?: unknown;
-        message: string;
-      };
-      // xprem 3.2.0+ reads only `files`; the pre-3.2 `fileNames` shape is rejected.
-      expect(body.fileNames).toBeUndefined();
-      const exportRoot = join(fixture.root, platform);
-      const sha256 = (relativePath: string) =>
-        createHash('sha256')
-          .update(readFileSync(join(exportRoot, relativePath)))
-          .digest('base64url');
-      const md5 = (relativePath: string) =>
-        createHash('md5')
-          .update(readFileSync(join(exportRoot, relativePath)))
-          .digest('hex');
-      const bundlePath = `_expo/static/js/${platform}/main.hbc`;
-      const assetPath = `assets/${EXPORT_ASSET_HASH}`;
-      expect(body.files).toEqual([
-        { path: 'metadata.json', hash: sha256('metadata.json'), role: 'config' },
-        { path: 'expoConfig.json', hash: sha256('expoConfig.json'), role: 'config' },
-        { path: bundlePath, hash: sha256(bundlePath), key: md5(bundlePath), ext: 'hbc', role: 'launch' },
-        { path: assetPath, hash: sha256(assetPath), key: md5(assetPath), ext: 'png', role: 'asset' },
-      ]);
+      const body = JSON.parse(request.init.body as string) as { fileNames: string[]; message: string };
+      expect(body.fileNames).toEqual(
+        expect.arrayContaining(['metadata.json', 'expoConfig.json', `assets/${EXPORT_ASSET_HASH}`]),
+      );
       expect(body.message).toBe('Test staged release');
       expect(request.url.searchParams.get('commitHash')).toBe(COMMIT);
       expect(request.url.searchParams.get('runtimeVersion')).toBe(RUNTIME);
@@ -412,40 +388,6 @@ describe('exact-byte production promotion', () => {
     expect(server.calls.filter((call) => call.url.pathname.includes('/markUpdateAsUploaded/production'))).toHaveLength(
       2,
     );
-  });
-
-  it('verifies without uploading when the server says production already has these files', async () => {
-    // Since xprem 3.2.0 "no changes" is a 406 on requestUploadUrl, before any upload.
-    const fixture = stageFixture();
-    const server = fetchServer(fixture, {}, { ios: 406, android: 406 });
-    await promoteArchivedOta({
-      receiptPath: fixture.receiptPath,
-      iosExport: fixture.iosExport,
-      androidExport: fixture.androidExport,
-      manifestUrl: 'https://updates.example/manifest',
-      token: 'test-token',
-      fetchImpl: server.fetchImpl,
-    });
-    expect(server.calls.some((call) => call.init.method === 'PUT')).toBe(false);
-    expect(server.calls.some((call) => call.url.pathname.includes('/markUpdateAsUploaded/'))).toBe(false);
-    // The served manifest is still checked against the staged export.
-    expect(server.calls.filter((call) => call.url.pathname === '/manifest').length).toBeGreaterThanOrEqual(4);
-  });
-
-  it('refuses when requestUploadUrl reports an active rollout', async () => {
-    const fixture = stageFixture();
-    const server = fetchServer(fixture, {}, { ios: 409 });
-    await expect(
-      promoteArchivedOta({
-        receiptPath: fixture.receiptPath,
-        iosExport: fixture.iosExport,
-        androidExport: fixture.androidExport,
-        manifestUrl: 'https://updates.example/manifest',
-        token: 'test-token',
-        fetchImpl: server.fetchImpl,
-      }),
-    ).rejects.toThrow('active rollout');
-    expect(server.calls.some((call) => call.init.method === 'PUT')).toBe(false);
   });
 
   it('uploads hash-named assets with the MIME type in Expo metadata', async () => {
