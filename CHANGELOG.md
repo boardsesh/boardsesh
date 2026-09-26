@@ -4,6 +4,13 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-09-26
+
+### New
+
+- The grade you gave a climb is now the grade you see on it, and the one it sorts and filters by. The crowd's number sits underneath when the two disagree. ([#5143](https://github.com/boardsesh/boardsesh/pull/5143))
+  Grade a climb you haven't sent yet — handy on boards where everything reads sandbagged.
+
 ## 2026-09-25
 
 ### New

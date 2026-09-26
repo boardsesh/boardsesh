@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-09-25T23:41:46.011Z",
+  "generatedAt": "2026-09-26T00:25:45.307Z",
   "entries": [
+    {
+      "prNumber": 5143,
+      "category": "new",
+      "title": "The grade you gave a climb is now the grade you see on it, and the one it sorts and filters by. The crowd's number sits underneath when the two disagree.",
+      "mergedAt": "2026-09-26T00:12:14Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5143",
+      "body": "Grade a climb you haven't sent yet — handy on boards where everything reads sandbagged."
+    },
     {
       "prNumber": 5790,
       "category": "fixed",
