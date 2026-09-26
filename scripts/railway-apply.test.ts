@@ -385,7 +385,10 @@ describe('classifyVar and the placeholder pattern', () => {
 describe('diffServiceImage', () => {
   it.each(['25.3', '25.3.1'])('does not compare ClickHouse %s against the unrelated eoas version', (tag) => {
     const service = { ...CLICKHOUSE, image: `clickhouse/clickhouse-server:${tag}` };
-    const live = withInstance(CLICKHOUSE_SERVICE_NAME, { image: 'clickhouse/clickhouse-server:24.1' });
+    const live = withInstance(CLICKHOUSE_SERVICE_NAME, {
+      image: 'clickhouse/clickhouse-server:24.1',
+      runningImage: 'clickhouse/clickhouse-server:24.1',
+    });
     const allowed = diffServiceImage(service, live, { ...PLAN_OPTIONS, allowImageChange: true });
     expect(allowed).toMatchObject({ resource: 'service-image', image: service.image });
     expect(allowed?.blocked).toBeFalsy();
@@ -425,6 +428,23 @@ describe('diffServiceImage', () => {
     expect(change?.summary).toMatch(/configured for .* but running /);
   });
 
+  it('blocks a configured-versus-running split even when the repo declares a third image', () => {
+    // Configured for B, serving A, declared C. Deploying C here would, on failure,
+    // roll back to serving A while restoring configured B, so the next deploy for
+    // any reason would ship B unprobed.
+    const configuredImage = `${OTA_IMAGE_REPOSITORY}:v3.0.6`;
+    const servingImage = `${OTA_IMAGE_REPOSITORY}:v3.0.5`;
+    const change = diffServiceImage(
+      OTA,
+      withInstance(OTA_SERVICE_NAME, { image: configuredImage, runningImage: servingImage }),
+      { ...PLAN_OPTIONS, allowImageChange: true },
+    );
+
+    expect(change).toMatchObject({ resource: 'service-image', blocked: true, service: OTA_SERVICE_NAME });
+    expect(change?.image).toBeUndefined();
+    expect(change?.summary).toContain(`configured for ${configuredImage} but running ${servingImage}`);
+  });
+
   const driftedImage = `${OTA_IMAGE_REPOSITORY}:v3.0.5`;
 
   it('is silent when the running image is the declared one', () => {
@@ -432,17 +452,25 @@ describe('diffServiceImage', () => {
   });
 
   it('blocks an image change nobody asked for, since it rolls the server every binary talks to', () => {
-    const change = diffServiceImage(OTA, withInstance(OTA_SERVICE_NAME, { image: driftedImage }), PLAN_OPTIONS);
+    const change = diffServiceImage(
+      OTA,
+      withInstance(OTA_SERVICE_NAME, { image: driftedImage, runningImage: driftedImage }),
+      PLAN_OPTIONS,
+    );
     expect(change).toMatchObject({ resource: 'service-image', blocked: true, service: OTA_SERVICE_NAME });
     expect(change?.image).toBe(OTA_IMAGE);
     expect(change?.detail).toMatch(/--allow-image-change/);
   });
 
   it('unblocks the same change once the caller opted in', () => {
-    const change = diffServiceImage(OTA, withInstance(OTA_SERVICE_NAME, { image: driftedImage }), {
-      ...PLAN_OPTIONS,
-      allowImageChange: true,
-    });
+    const change = diffServiceImage(
+      OTA,
+      withInstance(OTA_SERVICE_NAME, { image: driftedImage, runningImage: driftedImage }),
+      {
+        ...PLAN_OPTIONS,
+        allowImageChange: true,
+      },
+    );
     expect(change?.blocked).toBeFalsy();
     expect(change?.image).toBe(OTA_IMAGE);
   });
@@ -990,6 +1018,35 @@ describe('buildPlan', () => {
       'update_health_segment_snapshots',
       'update_health_snapshots',
     ]);
+  });
+
+  it('refuses a run that would change the ClickHouse and OTA images together', () => {
+    // xprem exits at boot when ClickHouse is unreachable, so rolling both at once
+    // can restart the OTA server while ClickHouse is down.
+    const olderOta = `${OTA_IMAGE_REPOSITORY}:v3.0.5`;
+    const olderClickHouse = 'clickhouse/clickhouse-server:24.1';
+    const base = liveState();
+    const live: LiveState = {
+      ...base,
+      instances: {
+        ...base.instances,
+        [OTA_SERVICE_NAME]: { ...convergedInstance(OTA), image: olderOta, runningImage: olderOta },
+        [CLICKHOUSE_SERVICE_NAME]: {
+          ...convergedInstance(CLICKHOUSE),
+          image: olderClickHouse,
+          runningImage: olderClickHouse,
+        },
+      },
+    };
+    const imageChanges = buildPlan(desiredRailwayState, live, { ...PLAN_OPTIONS, allowImageChange: true }).filter(
+      (change) => change.resource === 'service-image',
+    );
+
+    expect(imageChanges.map((change) => change.service)).toEqual([OTA_SERVICE_NAME, CLICKHOUSE_SERVICE_NAME]);
+    for (const change of imageChanges) {
+      expect(change.blocked, change.service).toBe(true);
+      expect(change.summary, change.service).toMatch(/separate PRs/);
+    }
   });
 
   it('reports image, deploy, domain, volume, scale and variable drift together', () => {
@@ -1635,6 +1692,16 @@ describe('waitForDeployment', () => {
     expect(error?.message).toMatch(/Not rolling back/);
   });
 
+  it('refuses to call a SUCCESS healthy when it omits the image it should be running', async () => {
+    // Without meta.image the raced-image check has nothing to compare, so three
+    // such readings would otherwise confirm a rollout nobody could verify.
+    resetAuthScheme();
+    const stub = deploymentStub(['SUCCESS'], {});
+    const { error } = await withFetch(stub.fetch, () => waitForDeployment('token', 'dep-new', OTA_IMAGE, noSleep));
+    expect(error?.message).toMatch(/meta\.image/);
+    expect(stub.polls()).toBe(3);
+  });
+
   it('gives up rather than polling a stuck deployment forever', async () => {
     resetAuthScheme();
     const stub = deploymentStub(['DEPLOYING']);
@@ -1771,7 +1838,10 @@ interface StubOptions {
   updateInputFields?: string[];
   /** Statuses the deployment poll returns in order; the last one repeats. */
   deploymentStatuses?: string[];
-  /** `meta` on the polled deployment. Empty by default, so the raced-image check stays quiet. */
+  /**
+   * `meta` on the polled deployment. Defaults to the image the deployed service is
+   * configured for at poll time, which is what a healthy Railway deployment reports.
+   */
   deploymentMeta?: unknown;
   /** HTTP statuses returned by service probes; the last one repeats. */
   probeStatuses?: number[];
@@ -1840,10 +1910,34 @@ function railwayStub(options: StubOptions = {}): {
 
   const graphql = (data: unknown) => new Response(JSON.stringify({ data }), { status: 200 });
 
-  const instanceFor = (name: string): InstanceResponse => ({
-    ...convergedInstanceResponse(declaredService(name)),
-    ...options.instances?.[name],
-  });
+  const instanceFor = (name: string): InstanceResponse => {
+    const converged = convergedInstanceResponse(declaredService(name));
+    const override = options.instances?.[name] ?? {};
+    // An override that only moves the configured image describes a service that
+    // was deployed from that image, so its serving deployment reports it too.
+    // A test that wants configured and running to disagree says so explicitly.
+    const servedImage = override.source === undefined ? undefined : (override.source?.image ?? null);
+    const deployments =
+      servedImage === undefined
+        ? {}
+        : {
+            latestDeployment: converged.latestDeployment && {
+              ...converged.latestDeployment,
+              meta: { image: servedImage },
+            },
+            activeDeployments: converged.activeDeployments.map((deployment) => ({
+              ...deployment,
+              meta: { image: servedImage },
+            })),
+          };
+    return { ...converged, ...deployments, ...override };
+  };
+
+  // What each service is configured for, as the tool's own writes move it.
+  const configuredImages = new Map<string, string | null>(
+    desiredRailwayState.services.map((service) => [service.name, instanceFor(service.name).source?.image ?? null]),
+  );
+  let lastDeployedService: string | undefined;
 
   const volumeEdges = desiredRailwayState.services.flatMap((service) =>
     service.volume
@@ -1895,7 +1989,11 @@ function railwayStub(options: StubOptions = {}): {
       return graphql({ __type: { inputFields: fields.map((name) => ({ name })) } });
     }
     if (body.query.includes('variableUpsert')) return graphql({ variableUpsert: true });
-    if (body.query.includes('serviceInstanceUpdate(')) return graphql({ serviceInstanceUpdate: true });
+    if (body.query.includes('serviceInstanceUpdate(')) {
+      const writtenSource = (body.variables?.input as { source?: { image?: string | null } } | undefined)?.source;
+      if (serviceName && writtenSource) configuredImages.set(serviceName, writtenSource.image ?? null);
+      return graphql({ serviceInstanceUpdate: true });
+    }
     if (body.query.includes('projectToken')) {
       // An image change is refused unless the token can also drive the rollback.
       if (options.projectScoped === false) return graphql({ projectToken: null });
@@ -1903,11 +2001,16 @@ function railwayStub(options: StubOptions = {}): {
         projectToken: { projectId: options.tokenProjectId ?? 'test-project', environmentId: 'env-prod' },
       });
     }
-    if (body.query.includes('serviceInstanceDeployV2(')) return graphql({ serviceInstanceDeployV2: NEW_DEPLOYMENT_ID });
+    if (body.query.includes('serviceInstanceDeployV2(')) {
+      lastDeployedService = serviceName;
+      return graphql({ serviceInstanceDeployV2: NEW_DEPLOYMENT_ID });
+    }
     if (body.query.includes('deployment(id:')) {
       const status = statuses[Math.min(polls, statuses.length - 1)];
       polls += 1;
-      return graphql({ deployment: { id: NEW_DEPLOYMENT_ID, status, meta: options.deploymentMeta ?? {} } });
+      const configuredImage = lastDeployedService ? configuredImages.get(lastDeployedService) : null;
+      const defaultMeta = configuredImage ? { image: configuredImage } : {};
+      return graphql({ deployment: { id: NEW_DEPLOYMENT_ID, status, meta: options.deploymentMeta ?? defaultMeta } });
     }
     if (body.query.includes('serviceInstance(')) {
       return graphql({
@@ -2310,6 +2413,105 @@ describe('apply mode', () => {
     ]);
     expect(rollbacks).toEqual([liveServiceId(WEB_SERVICE_NAME), OTA_SERVICE_ID]);
     expect(output).toContain('Any variables written this run remain set');
+  });
+
+  it('does not restore configuration when a fenced rollback refuses to run', async () => {
+    // A newer deployment appeared between the failed rollout and the rollback
+    // preflight. The helper refuses on purpose; writing the pre-run image back now
+    // would overwrite whatever that newer actor configured.
+    const olderImage = `${OTA_IMAGE_REPOSITORY}:v3.0.5`;
+    const stub = railwayStub({
+      instances: { [OTA_SERVICE_NAME]: { source: { image: olderImage } } },
+      deploymentStatuses: ['FAILED'],
+    });
+    const { code, calls, output, error } = await runCli(
+      ['--apply', '--allow-image-change'],
+      stub,
+      {},
+      {
+        sleep: async () => {},
+        rollbackDeployment: async () => {
+          throw new Error('Rollback preflight found a competing deployment between the target and expected current');
+        },
+      },
+    );
+
+    expect(error).toBeNull();
+    expect(code).toBe(1);
+    // Only the forward write; no restore after the refused rollback.
+    expect(callsMatching(calls, 'serviceInstanceUpdate(').map((call) => call.variables.input)).toEqual([
+      { source: { image: OTA_IMAGE } },
+    ]);
+    expect(output).toMatch(/configuration was NOT restored/);
+    expect(output).toContain(OTA_SERVICE_NAME);
+  });
+
+  it('does not restore an earlier service in a batch unwind when its rollback is refused', async () => {
+    const variables = convergedVariables();
+    variables[WEB_SERVICE_NAME] = { ...variables[WEB_SERVICE_NAME] };
+    delete variables[WEB_SERVICE_NAME].SMTP_USER;
+    const stub = railwayStub({
+      variables,
+      instances: { [OTA_SERVICE_NAME]: { healthcheckTimeout: 300 } },
+      deploymentStatuses: [...Array(DEPLOY_SUCCESS_CONFIRMATIONS).fill('SUCCESS'), 'FAILED'],
+    });
+    const rollbacks: string[] = [];
+
+    const { code, calls, output } = await runCli(
+      ['--apply'],
+      stub,
+      { RAILWAY_VAR_SMTP_USER: 'smtp-user' },
+      {
+        rollbackDeployment: async ({ serviceId }) => {
+          rollbacks.push(serviceId);
+          if (serviceId === OTA_SERVICE_ID) {
+            throw new Error('Expected current deployment is not the sole newest service deployment');
+          }
+          return { deploymentId: `rollback-${serviceId}`, image: 'restored-image' };
+        },
+        sleep: async () => {},
+      },
+    );
+
+    expect(code).toBe(1);
+    expect(rollbacks).toEqual([liveServiceId(WEB_SERVICE_NAME), OTA_SERVICE_ID]);
+    expect(callsMatching(calls, 'serviceInstanceUpdate(').map((call) => call.variables.input)).toEqual([
+      { healthcheckTimeout: 100 },
+    ]);
+    expect(output).toMatch(/configuration was NOT restored/);
+  });
+
+  it('probes the OTA server after a ClickHouse image change and rolls ClickHouse back when it fails', async () => {
+    const olderClickHouse = 'ghcr.io/boardsesh/boardsesh-clickhouse@sha256:' + '0'.repeat(64);
+    const clickhouseServiceId = liveServiceId(CLICKHOUSE_SERVICE_NAME);
+    const stub = railwayStub({
+      instances: { [CLICKHOUSE_SERVICE_NAME]: { source: { image: olderClickHouse } } },
+      probeStatuses: [503],
+    });
+    const rollbacks: string[] = [];
+
+    const { code, calls, output, error } = await runCli(
+      ['--apply', '--allow-image-change'],
+      stub,
+      {},
+      {
+        rollbackDeployment: async ({ serviceId }) => {
+          rollbacks.push(serviceId);
+          return { deploymentId: 'rollback-clickhouse', image: olderClickHouse };
+        },
+        sleep: async () => {},
+      },
+    );
+
+    expect(error).toBeNull();
+    expect(code).toBe(1);
+    expect(stub.probeCalls()).toBeGreaterThan(0);
+    expect(output).toContain(`${OTA_BASE_URL}${OTA_HEALTHCHECK_PATH}`);
+    expect(rollbacks).toEqual([clickhouseServiceId]);
+    expect(callsMatching(calls, 'serviceInstanceUpdate(').map((call) => call.variables)).toEqual([
+      expect.objectContaining({ serviceId: clickhouseServiceId, input: { source: { image: CLICKHOUSE_IMAGE } } }),
+      expect.objectContaining({ serviceId: clickhouseServiceId, input: { source: { image: olderClickHouse } } }),
+    ]);
   });
 
   it('batches deploy settings into a single serviceInstanceUpdate per service', async () => {

@@ -25,6 +25,7 @@
 //      zone-wide SSL change behind --allow-zone-ssl.
 
 import {
+  CLICKHOUSE_SERVICE_NAME,
   OTA_SERVICE_NAME,
   PLACEHOLDER_PATTERN,
   type DeploySettings,
@@ -337,28 +338,35 @@ export function diffServiceImage(desired: ServiceDesired, live: LiveState, optio
       blocked: true,
     };
   }
-  if (instance.image === desired.image) {
-    // Configured correctly, but is that what is actually running? A mismatch here
-    // means an earlier run wrote the image and never got a deployment to carry it.
-    // Reported rather than applied: re-deploying somebody else's half-finished
-    // change unattended is worse than saying so.
-    if (instance.runningImage !== desired.image) {
-      return {
-        resource: 'service-image',
-        summary: `${desired.name}: configured for ${desired.image} but running ${instance.runningImage}`,
-        service: desired.name,
-        detail:
-          `The service's configured image matches this repo, but the live container was built ` +
-          `from a different one — so an earlier apply wrote the image without a deployment to ` +
-          `carry it.\n` +
-          `The next deploy of this service for ANY reason will ship ${desired.image} without ` +
-          `passing through this tool's probe or rollback.\n` +
-          `Fix: redeploy the service in Railway, having checked ${desired.image} is what you want.`,
-        blocked: true,
-      };
-    }
-    return null;
+  // Is what the service is configured for what is actually running? A mismatch
+  // means an earlier run (or a dashboard edit) wrote an image and never got a
+  // deployment to carry it. Checked before the declared image is even looked at:
+  // deploying a third image over such a split, and then rolling back after a
+  // failed probe, would restore the serving container AND the configured image —
+  // leaving the split in place and the next deploy poised to ship an image nobody
+  // probed. Reported rather than applied: re-deploying somebody else's
+  // half-finished change unattended is worse than saying so.
+  if (instance.image !== instance.runningImage) {
+    const configuredImage = instance.image ?? '(none)';
+    return {
+      resource: 'service-image',
+      summary: `${desired.name}: configured for ${configuredImage} but running ${instance.runningImage}`,
+      service: desired.name,
+      detail:
+        `The service's configured image differs from the one the live container was built ` +
+        `from, so something wrote the image without a deployment to carry it.\n` +
+        `The next deploy of this service for ANY reason will ship ${configuredImage} without ` +
+        `passing through this tool's probe or rollback.\n` +
+        (configuredImage === desired.image
+          ? `Fix: redeploy the service in Railway, having checked ${desired.image} is what you want.`
+          : `This repo declares ${desired.image}. Fix: in Railway, either redeploy the configured ` +
+            `image (having checked it is what you want) or set the image back to ` +
+            `${instance.runningImage}, then re-run so this tool rolls ${desired.image} from a ` +
+            `consistent baseline.`),
+      blocked: true,
+    };
   }
+  if (instance.image === desired.image) return null;
 
   const declaredVersion = imageVersion(desired.image);
   const cliVersion = desired.name === OTA_SERVICE_NAME ? options.eoasVersion : undefined;
@@ -818,6 +826,41 @@ export function diffVolumeUsage(
 }
 
 /**
+ * Refuse a run that would move the ClickHouse image and the OTA image together.
+ *
+ * xprem calls log.Fatalf at boot when ClickHouse is unreachable, so an OTA
+ * deployment that lands while ClickHouse is restarting takes updates.boardsesh.com
+ * down with it — the one thing docs/railway.md says never to do. Each image change
+ * is safe alone: ClickHouse's own apply probes the OTA server's readiness, and the
+ * OTA apply probes itself. Together, a single merge could break the rule.
+ *
+ * Only real image moves count (entries carrying `image`); a blocked split or an
+ * unreadable serving deployment already stops that service. Both entries are
+ * blocked, and the summary says why, because the SKIPPED line prints only that.
+ * Mutates the map in place.
+ */
+export function refuseCoupledImageChanges(imageChanges: Map<string, PlannedChange>): void {
+  const otaChange = imageChanges.get(OTA_SERVICE_NAME);
+  const clickhouseChange = imageChanges.get(CLICKHOUSE_SERVICE_NAME);
+  if (!otaChange?.image || !clickhouseChange?.image) return;
+
+  const refusal =
+    `Refusing to change the ${CLICKHOUSE_SERVICE_NAME} and ${OTA_SERVICE_NAME} images in one run: ` +
+    `xprem exits at boot when ClickHouse is unreachable, so rolling both can restart the OTA ` +
+    `server while ClickHouse is down.\n` +
+    `Fix: land the two image changes in separate PRs, ClickHouse first, and let each apply ` +
+    `verify before merging the next.`;
+  for (const change of [clickhouseChange, otaChange]) {
+    imageChanges.set(change.service as string, {
+      ...change,
+      summary: `${change.summary} (refused: change the ClickHouse and OTA images in separate PRs)`,
+      detail: change.detail ? `${refusal}\n${change.detail}` : refusal,
+      blocked: true,
+    });
+  }
+}
+
+/**
  * Build the full plan.
  *
  * Order is outside-in: whether the service exists, then what it runs, then how it
@@ -849,9 +892,17 @@ export function buildPlan(desired: RailwayDesiredState, live: LiveState, options
     }
   }
 
+  const imageChanges = new Map<string, PlannedChange>();
   for (const service of desired.services) {
     if (missingInstances.has(service.name)) continue;
     const imageChange = diffServiceImage(service, live, options);
+    if (imageChange) imageChanges.set(service.name, imageChange);
+  }
+  refuseCoupledImageChanges(imageChanges);
+
+  for (const service of desired.services) {
+    if (missingInstances.has(service.name)) continue;
+    const imageChange = imageChanges.get(service.name);
     if (imageChange) changes.push(imageChange);
     changes.push(...diffDeploySettings(service, live));
     changes.push(...diffCustomDomains(service, live));

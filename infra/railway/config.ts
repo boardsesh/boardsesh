@@ -660,6 +660,11 @@ export const desiredRailwayState: RailwayDesiredState = {
       image: CLICKHOUSE_IMAGE,
       volume: { mountPath: CLICKHOUSE_VOLUME_MOUNT_PATH, name: CLICKHOUSE_VOLUME_NAME },
       expectedScale: { numReplicas: 1, region: 'us-west2' },
+      // Probes the OTA server, not ClickHouse. ClickHouse has no public endpoint,
+      // and xprem is the client that has to reach it: a ClickHouse rollout that
+      // reaches SUCCESS but leaves xprem unable to connect fails /ready here and
+      // rolls ClickHouse back. The OTA server itself is not redeployed.
+      verify: { baseUrl: OTA_BASE_URL, paths: [OTA_HEALTHCHECK_PATH, OTA_READINESS_PATH] },
       requiredVars: [],
     },
     {

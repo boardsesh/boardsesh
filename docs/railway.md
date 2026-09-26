@@ -106,9 +106,11 @@ Bump `OTA_SERVER_VERSION` in `infra/railway/config.ts` and `EOAS_PACKAGE_SPEC` i
 
 1. writes the deploy settings and the new image (`serviceInstanceUpdate`),
 2. rolls a deployment (`serviceInstanceDeployV2`, which returns its id),
-3. polls until three consecutive `SUCCESS` readings,
+3. polls until three consecutive `SUCCESS` readings, each reporting the image it
+   deployed in `meta.image`,
 4. probes `/hc` and `/ready`,
-5. **rolls back and restores the previous configuration** if either step fails.
+5. **rolls back and, once the rollback is confirmed, restores the previous
+   configuration** if either step fails.
 
 A run touching multiple services behaves as one deployment batch. If a later
 service fails, every earlier verified deployment is rolled back in reverse order;
@@ -122,7 +124,7 @@ to succeed.
 `vp run ota:image-bump` opens those PRs for you — see
 [Upgrade PRs](#upgrade-prs-stable-and-beta).
 
-Four things gate the image change, and all four matter:
+Six things gate the image change, and all six matter:
 
 - **`--allow-image-change`.** `--apply` alone will not move the image. Rolling a
   new container on the server every production binary talks to is a categorically
@@ -142,6 +144,13 @@ Four things gate the image change, and all four matter:
   which an account token answers as null. Unchecked, that mismatch surfaces at the
   single worst moment: a bad image live, the probe failed, and the recovery path
   dying immediately. So an image change asks first, and refuses if the answer is no.
+- **Configured must match running.** If the service is configured for one image
+  and serving another, the plan blocks any image change, whatever the repo
+  declares. See [Configured is not running](#configured-is-not-running).
+- **ClickHouse and the OTA server never move together.** A plan that would change
+  both images in one run blocks both. xprem exits at boot when ClickHouse is
+  unreachable, so rolling both at once can restart the OTA server while ClickHouse
+  is down. Land the two changes in separate PRs, ClickHouse first.
 
 ### Step 5 is the part worth reading twice
 
@@ -150,6 +159,20 @@ settings or the configured `source.image`, so a rollback alone would leave the
 next deploy ready to re-ship the failed configuration. The failure path therefore
 issues a second `serviceInstanceUpdate` restoring exactly the fields this run
 changed, including prior nulls. It says so loudly if any rollback or restore fails.
+
+That restore runs only after the rollback helper confirms the rollback. The helper
+refuses when a newer deployment appeared after the failed one (a competing
+deployment between the two, or ours no longer the newest). Someone else has acted
+on the service by then, so writing the pre-run image and settings back would
+overwrite their change. On any rollback failure the tool writes nothing more,
+prints `configuration was NOT restored` with what the service is still configured
+for, and asks the operator to check the deployment list: leave a newer deployment
+alone, or, if there is none, redeploy the previous deployment and restore the
+settings by hand. The same rule applies to every service in a multi-service unwind.
+
+A deployment that reaches `SUCCESS` without `meta.image` cannot be checked against
+the image this run deployed. Such a reading counts as a failed read: it resets the
+three confirmations, and three in a row fail the rollout, which then rolls back.
 
 Environment variables are separate from that recovery. Every `variableUpsert`
 uses `skipDeploys: true`, then the service gets one deployment carrying the whole
@@ -181,7 +204,10 @@ them disagreeing — and a drift check reading only the configured image would c
 that in sync forever, while the next unrelated deploy shipped the never-probed
 image. So the plan compares the **running** deployment's `meta.image` too and
 reports the split. Configured-versus-running disagreement blocks writes to that
-service until an operator reconciles it.
+service until an operator reconciles it, even when the repo declares a third image.
+Deploying that third image and then rolling back would restore the serving
+container and the configured image, leaving the split in place for the next deploy
+to ship unprobed.
 
 The reader identifies the serving image and rollback baseline from exactly one
 active `SUCCESS` deployment. A newer failed or canceled attempt is not that
@@ -473,9 +499,10 @@ alone; a running OTA server rides out a short ClickHouse outage.
    `infra/railway/config.ts` and merge that PR on its own. The `apply` job deploys
    ClickHouse alone, waits for it, then probes the OTA server's `/hc` and `/ready`:
    xprem is the client that has to reach ClickHouse, so its readiness is the real
-   check. A failed probe rolls ClickHouse back. The planner refuses a run that would
-   change the ClickHouse and OTA images together, so the rule below cannot be broken
-   by one merge. Without CI, the manual path is Railway → `boardsesh-ota-clickhouse`
+   check. A failed probe rolls ClickHouse back (the OTA server is not redeployed).
+   The planner refuses a run that would change the ClickHouse and OTA images
+   together, so the rule below cannot be broken by one merge: land them in separate
+   PRs. Without CI, the manual path is Railway → `boardsesh-ota-clickhouse`
    → Settings → Source → Docker Image, then the same constant change so the nightly
    drift check agrees.
 4. **Bound the container.** ClickHouse caps itself at 1.2 GB; the 2 GB container limit

@@ -852,6 +852,18 @@ async function waitForDeployment(
       }
       status = data.deployment.status;
       liveImage = deploymentImage(data.deployment.meta);
+      // A SUCCESS that omits meta.image cannot be checked against the image this
+      // tool deployed, and three of them would otherwise confirm a rollout nobody
+      // verified. Treated as a malformed read rather than an outright failure:
+      // it is the same shape of gap (Railway answered, but not with what we need),
+      // so it resets the confirmations and is retried, and three in a row throw a
+      // plain error — which takes the normal failure path and rolls back.
+      if (status === 'SUCCESS' && expectedImage && !liveImage) {
+        throw new Error(
+          `Deployment ${deploymentId} reports SUCCESS without meta.image, so it cannot be ` +
+            `confirmed to run ${expectedImage}.`,
+        );
+      }
       consecutiveReadErrors = 0;
     } catch (error) {
       confirmations = 0;
@@ -1040,10 +1052,9 @@ async function rollbackAppliedDeployment(
   applied: AppliedDeployment,
   rollbackDeployment: RollbackDeployment,
 ): Promise<boolean> {
-  let succeeded = true;
-  console.error(
-    `[railway-apply] Rolling back ${applied.mutation.serviceName} to deployment ${applied.previousDeployment.id}.`,
-  );
+  const serviceName = applied.mutation.serviceName;
+  const changedConfiguration = applied.mutation.image || Object.keys(applied.mutation.deployFields).length > 0;
+  console.error(`[railway-apply] Rolling back ${serviceName} to deployment ${applied.previousDeployment.id}.`);
   try {
     await rollbackDeployment({
       serviceId: applied.mutation.serviceId,
@@ -1052,24 +1063,42 @@ async function rollbackAppliedDeployment(
       token,
     });
   } catch (error) {
+    // The configuration is restored ONLY after a confirmed rollback. The helper
+    // refuses on purpose when a newer deployment appeared after ours (it is no
+    // longer the sole newest, or a competing one sits in between), and in that
+    // case somebody else now owns this service's configuration: writing the
+    // pre-run image and settings back would overwrite theirs. A rollback that
+    // failed for any other reason gets the same treatment, because this tool can
+    // no longer tell which deployment is serving.
     const reason = error instanceof Error ? error.message : String(error);
-    console.error(`[railway-apply] MANUAL ACTION: could not roll back ${applied.mutation.serviceName} (${reason}).`);
-    succeeded = false;
+    const configuredFor = applied.mutation.image ?? 'the settings this run wrote';
+    console.error(
+      `[railway-apply] MANUAL ACTION: could not roll back ${serviceName} (${reason}).\n` +
+        `[railway-apply] ${serviceName} configuration was NOT restored` +
+        (changedConfiguration
+          ? `: it is still configured for ${configuredFor}, and deployment ${applied.deploymentId} from this run ` +
+            `may still be serving.`
+          : '.') +
+        `\n[railway-apply] Check ${serviceName}'s deployment list in Railway for a newer deployment this run did ` +
+        `not create. If there is one, leave its configuration alone. If there is none, redeploy ` +
+        `${applied.previousDeployment.id} and set the configuration back by hand.`,
+    );
+    return false;
   }
 
-  if (applied.mutation.image || Object.keys(applied.mutation.deployFields).length > 0) {
+  if (changedConfiguration) {
     try {
       await restoreConfiguration(token, environmentId, applied.mutation, applied.previousInstance);
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
       console.error(
-        `[railway-apply] MANUAL ACTION: rolled ${applied.mutation.serviceName} back, but could not restore its ` +
+        `[railway-apply] MANUAL ACTION: rolled ${serviceName} back, but could not restore its ` +
           `previous configuration (${reason}). Reconcile it in Railway before it redeploys.`,
       );
-      succeeded = false;
+      return false;
     }
   }
-  return succeeded;
+  return true;
 }
 
 export async function main(
