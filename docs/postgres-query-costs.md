@@ -203,7 +203,7 @@ Already shipped. The `similarClimbs` resolver reads through `findSimilarClimbsCa
 
 ### C15. Memory budget
 
-- Run `serial-plan-default.ts` with `ADMIN_DATABASE_URL`. The repo contract is 0 parallel workers per gather and the live value was 2 (P).
+- Run `ADMIN_DATABASE_URL=... vp run db:verify-serial-plan` (from `packages/db`; the logic lives in `scripts/serial-plan-default.ts`). The repo contract is 0 parallel workers per gather and the live value was 2 (P).
 - After C1: backend pool 4–5, pg-boss 2, web 4, homelab daemons 3.
 - pg-boss: `flowIntervalSeconds 3600`, `cronMonitorIntervalSeconds 45`, `monitorIntervalSeconds ≤120`.
 - Lower `max_connections` to 60 last.
@@ -214,9 +214,9 @@ Every move here is JS-only and ships by OTA from `main`. New data must go in a s
 
 | Move | What moves | Native users without a download, and browser-app users, lose | Server s/day |
 |---|---|---|---|
-| C3 stats history → local | Register `CLIMB_STATS_HISTORY` in `offlineAwareRequest`. Resolve from local `board_climb_stats`. Switch `useClimbStatsHistory` (`packages/mobile/src/lib/graphql/hooks/index.ts:1405`) off `getHttpClient`. | Local-only: angle badges. Local-first plus C3: nothing. | Local-only 1,560–1,915 (E) |
+| C3 stats history → local | Register `CLIMB_STATS_HISTORY` in `offlineAwareRequest`. Resolve from local `board_climb_stats`. Switch `useClimbStatsHistory` (`packages/mobile/src/lib/graphql/hooks/index.ts`) off `getHttpClient`. | Local-only: angle badges. Local-first plus C3: nothing. | Local-only 1,560–1,915 (E) |
 | C6 recommendation count → local | COUNT from local board_climbs, stats and ticks behind `useSmartPlaylistCounts`. The ranked list stays on the server: it needs setter_score and send_count_30d. | Local-only: Discover card counts. | Local-only 900–1,050 (E) |
-| C12 setter counts local-only | Already local-first (`packages/mobile/src/lib/graphql/offline-request.ts:208`). Set `networkPolicy: 'local-only'`. | The "Following" chip. 88% of calls return nothing today (P). | 170–325 (E); C12 gets most of it anyway |
+| C12 setter counts local-only | Already local-first: the followed-setter count is `GET_SETTER_STATS` with `onlyFollowedAuthors`, registered as an offline operation in `packages/mobile/src/lib/graphql/offline-request.ts`. Set `networkPolicy: 'local-only'`. | The "Following" chip. 88% of calls return nothing today (P). | 170–325 (E); C12 gets most of it anyway |
 | Search count local-only | `useSearchClimbsCount` returns null when it cannot serve locally. | The "Show N climbs" preview, probably for most users. | 182–300 (E) |
 | Hold-state search local | Lift the `hasHoldState` decline and answer from the device holds index. | Nothing, unless it is made local-only. | 50–640 uncontended (E) |
 | Favorites reader | A local `user_favorites` reader for `useFavoriteStatus`. User tables sync without a board download. | Nothing on native. | 10–40 (E) |
@@ -264,7 +264,7 @@ Nothing here is native, so everything ships from `main`. The `totalAscents`, `to
 
 1. **Backend:** C1 (no-DEL, lock, pg-boss cron, rewrite, 47-row diff) and the `warmRecentBetaLinksCache` fix.
 2. **CI and scripts:** drop the similarity step and add the MoonBoard wide-angle no-op diff (see [Known recurring jobs](#known-recurring-jobs-that-rewrote-data)).
-3. **Config and env:** C4 settings and serial-plan-default. After step 1: the statement timeout, pools and pg-boss intervals (C15).
+3. **Config and env:** C4 settings and `db:verify-serial-plan`. After step 1: the statement timeout, pools and pg-boss intervals (C15).
 4. **packages/db:** C2 with the rare-band test.
 5. **Backend resolvers:** C3, C6 (cache plus the CROWD/AT_LEVEL CTE), C8, C12, the communityStats cache and a 6 h board-stats TTL.
 6. **kilter-sync:** C5 with load-once self-aliases.
