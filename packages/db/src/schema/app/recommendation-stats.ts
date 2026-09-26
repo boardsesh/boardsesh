@@ -26,7 +26,6 @@ export const boardSetterStats = pgTable(
   },
   (table) => ({
     pk: primaryKey({ columns: [table.boardType, table.setterUsername] }),
-    scoreIdx: index('board_setter_stats_score_idx').on(table.boardType, table.setterScore),
   }),
 );
 
