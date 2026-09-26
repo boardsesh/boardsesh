@@ -124,9 +124,15 @@ again 20 seconds later with `shared_buffers = 1GB`, the homelab standby resumed
 streaming with no lag, and `/health/db` returned 200. The CPU ceiling is a safety
 rail only; CPU is billed on usage.
 
-Roll back on an OOM kill, an unexplained restart, or a sustained latency regression
-over 20% against the pre-change pg_stat_statements means. Go back to 12 GB, not 24.
-The settings can stay: they fit in 12 GB too.
+Slower online queries are an accepted cost. Climbers who want fast search download
+the offline climbs database, and the app prefers it. In a five-minute sample 40
+minutes after the restart, the mean statement went from 7.7 ms to 17 ms. The
+climb-stats history lookup went from 94 ms to about 980 ms, and a few catalogue
+count queries went from 0.3 s to 2.6 s. Those are the queries that no longer fit in
+cache.
+
+Roll back on an OOM kill or an unexplained restart, not on latency alone. Go back to
+12 GB, not 24. The settings can stay: they fit in 12 GB too.
 
 ```sh
 railway environment edit --project afceee45-0af1-46b3-abbe-8b9094c23bc6 --environment production --message 'Restore PostGIS PG18 12 GB memory ceiling' <<'JSON'
