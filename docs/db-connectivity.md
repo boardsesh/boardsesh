@@ -522,8 +522,8 @@ audit). The ceiling is what counts, not the average.
 | homelab background workers, 4 roles      |           4 x (2+1) |            4 x (2+1) |
 | `boardsesh_readonly` (role cap)          |                 ≤ 5 |                  ≤ 5 |
 | migrator, during a deploy                |                   1 |                    1 |
-| **ceiling, steady**                      |            **≤ 92** |              **≤ 57** |
-| **+ old backend fleet draining (15 s)**  |            **≤ 120** |              **≤ 71** |
+| **ceiling, steady**                      |            **≤ 92** |             **≤ 57** |
+| **+ old backend fleet draining (15 s)**  |           **≤ 120** |             **≤ 71** |
 
 Web's 4 needs `DB_POOL_MAX=4` on the `boardsesh-web` Railway service, which set
 it to 10 explicitly; the code default does not reach it. The homelab rows are
