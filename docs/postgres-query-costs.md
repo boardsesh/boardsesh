@@ -42,8 +42,8 @@ Change IDs (C#) match the audit findings. Rows are in rank order.
 | 5 | C5 | Shipped #5836 | Kilter catalog sync: skip unchanged stats rows, load self-aliases once, guard upserts, unnest | 600–1,700 (E) + about 1.9 GB WAL/day (E) | 0 | M | No | Med | stats half stronger; alias half smaller | No (it also cuts offline pulls) |
 | 6 | C6 | Shipped #5838 | Recommendation counts: Redis cache, plus a CTE for misses on CROWD/AT_LEVEL only | 900–1,050 (E) | 0 | S | No | Low | weaker (HIDDEN_GEMS regresses) | Partial: the count can go local |
 | 7 | C9 | Open | Popular sort: popularity side table with covering columns (Redis page cache first) | 600 (quiet) to 7,100 (contended) (E) | +65–130 (E) | M | Yes | Med | confirmed | Partial, already local |
-| 8 | C7 | Partial (Open) | Drop dead/duplicate indexes (`board_climb_similar` is kept, not dropped) | 150–350 (E) + write churn | −844 idx (P) | S | Yes | Low–Med | not re-tested | No |
-| 9 | C14 | Partial #5835 | Job trims: setter sitemap, snapshot export, grade backtest, neighbour gap scan, communityStats | 400–700 (E) | 0 | S–M | No | Low | not re-tested | No |
+| 8 | C7 | Open | Drop dead/duplicate indexes (`board_climb_similar` is kept, not dropped) | 150–350 (E) + write churn | −844 idx (P) | S | Yes | Low–Med | not re-tested | No |
+| 9 | C14 | Partial #5835, #5838 | Job trims: setter sitemap, snapshot export, grade backtest, neighbour gap scan, communityStats | 400–700 (E) | 0 | S–M | No | Low | not re-tested | No |
 | 10 | C13 | Shipped #5835 | Web climb page: climb row first, alias lookup only on miss/unlisted | 350–375 (E) | 0 | S | No | Low | confirmed, bigger | No |
 | 11 | C12 | Shipped #5838 | Followed-setter counts: early return on no follows, bind arrays | about 315 (E) | 0 | S | No | Low | confirmed, bigger | Yes, already local-first |
 | 12 | C8 | Shipped #5838 | Discovery rail: cache the top-40 ranking, re-check visibility per request | 280–305 (E) | 0 | S | No | Low | confirmed, smaller | No |
@@ -158,11 +158,11 @@ Change IDs (C#) match the audit findings. Rows are in rank order.
 
 ### C14. Job trims
 
-- **Sitemap:** Redis-shared setter list, MoonBoard EXISTS gate, `item_count` from `sitemap_shard_refreshes`. 145–355 s/day (E).
-- **Snapshot export:** in-stream watermark, about 78 s/day and 9.8M reads/day (E).
-- **Grade job:** skip an unchanged backtest, or use a hash join (3.2M → 248k reads (P)). Add a keyset cursor.
-- **Neighbour job:** `updateClimb` deletes only its own list, and the gap scan runs weekly. Since #5770 this job serves only web and old binaries.
-- **communityStats:** 1 h Redis plus a 21,600 s revalidate. 110–170 s/day (E).
+- **Sitemap:** Redis-shared setter list, MoonBoard EXISTS gate, `item_count` from `sitemap_shard_refreshes`. 145–355 s/day (E). Shipped in #5835: the EXISTS gate and `item_count`. Open: the Redis-shared setter list.
+- **Snapshot export:** in-stream watermark, about 78 s/day and 9.8M reads/day (E). Open.
+- **Grade job:** skip an unchanged backtest, or use a hash join (3.2M → 248k reads (P)). Add a keyset cursor. Open.
+- **Neighbour job:** `updateClimb` deletes only its own list, and the gap scan runs weekly. Since #5770 this job serves only web and old binaries. Open.
+- **communityStats:** 1 h Redis plus a 21,600 s revalidate. 110–170 s/day (E). Shipped: the 1 h Redis cache (#5838).
 
 ### C13. Web climb page
 
