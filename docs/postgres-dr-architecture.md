@@ -81,6 +81,16 @@ primary:
 | `maintenance_work_mem` | `256MB` | Faster vacuum and index builds | 2026-09-26 |
 | `random_page_cost` | `1.1` | The Railway volume is SSD, and more reads now come from disk | 2026-09-26 |
 | `jit` | `off` | JIT spent memory and CPU compiling the 1–60 s catalogue queries | 2026-09-26 |
+| `client_connection_check_interval` | `5s` | A query whose client has gone cancels itself instead of running to the end | pending |
+| `tcp_keepalives_idle` / `_interval` / `_count` | `60` / `10` / `3` | Drops a dead peer after 90 s instead of about 2 h 11 min | pending |
+| `track_io_timing` | `on` | I/O time in `pg_stat_statements` and `EXPLAIN` | pending |
+| `log_lock_waits` | `on` | Logs lock waits over `deadlock_timeout` | pending |
+| `log_temp_files` | `10MB` | Logs each temp file of 10 MB or more with its statement | pending |
+
+`max_parallel_workers_per_gather = 0` is a database default (`ALTER DATABASE`),
+not an `ALTER SYSTEM` setting. A plain `pg_dump` does not carry it either;
+re-apply it with `vp run db:verify-serial-plan` (see "Serial plans" in
+[railway-cost-reduction.md](./railway-cost-reduction.md)).
 
 The memory settings assume the 4 GB cap described in
 [railway-cost-reduction.md](./railway-cost-reduction.md). A new primary with a

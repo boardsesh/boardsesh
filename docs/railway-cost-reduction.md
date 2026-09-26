@@ -159,6 +159,95 @@ JSON
 After any restart, probe the database itself. Railway can report `state: live`
 while the container is wedged; `redeploy` recovers it.
 
+### Runaway guards
+
+Under a 4 GB cap, one query that nobody is waiting for still holds its sort and
+hash memory until it finishes. Before these guards the primary had no statement
+timeout at all: orphaned queries ran for over 30 minutes after their client had
+gone, and in the 21 hours after the 2026-09-25 statistics reset, 33 statement
+shapes on the runtime role had at least one run over 45 s (most of it the old
+popular-configs statement, which #5833 moved to a daily 18 s cron).
+
+Applied the same way as the memory settings above (applied: _pending_): `ALTER
+SYSTEM` as the superuser, into `postgresql.auto.conf`. None of them needs a restart.
+
+| Setting | Before | After | What it does |
+| --- | ---: | ---: | --- |
+| `client_connection_check_interval` | 0 (off) | 5s | A running query checks every 5 s whether its client socket is still open, and cancels itself if not |
+| `tcp_keepalives_idle` | 7200 s | 60 s | Probe an idle TCP connection after 60 s instead of 2 hours |
+| `tcp_keepalives_interval` | 75 s | 10 s | Seconds between unanswered probes |
+| `tcp_keepalives_count` | 9 | 3 | A dead peer is dropped after 60 + 3 × 10 = 90 s |
+| `track_io_timing` | off | on | Read and write times in `pg_stat_statements` and `EXPLAIN (ANALYZE, BUFFERS)`, so a slow query can be told apart from a slow disk |
+| `log_lock_waits` | off | on | Logs any lock wait longer than `deadlock_timeout` (1 s) |
+| `log_temp_files` | -1 (off) | 10MB | Logs each temp file of 10 MB or more with the statement that wrote it. 3.3 TB of temp files have been written since initdb |
+
+The keepalive values apply to TCP connections opened after the reload. A Unix-socket
+session reports them as 0, so check them through the proxy or the private network.
+
+```sql
+-- As the superuser (1Password item `DATABASE_DIRECT_URL`), database `railway`:
+ALTER SYSTEM SET client_connection_check_interval = '5s';
+ALTER SYSTEM SET tcp_keepalives_idle = 60;
+ALTER SYSTEM SET tcp_keepalives_interval = 10;
+ALTER SYSTEM SET tcp_keepalives_count = 3;
+ALTER SYSTEM SET track_io_timing = on;
+ALTER SYSTEM SET log_lock_waits = on;
+ALTER SYSTEM SET log_temp_files = '10MB';
+SELECT pg_reload_conf();
+```
+
+Rollback is per setting, also without a restart:
+`ALTER SYSTEM RESET <name>; SELECT pg_reload_conf();`.
+
+Two things are deliberately not set:
+
+- **`temp_file_limit`.** The sitemap climb refresh and a few catalogue counts
+  still write large temp files. A limit waits until C9 in
+  [postgres-query-costs.md](./postgres-query-costs.md) moves that work to a side
+  table.
+- **`ALTER ROLE boardsesh_runtime SET statement_timeout`.** kilter-sync connects
+  as the same role, and its `board_climb_stats` upserts take 80–135 s. A role
+  default would fail them.
+
+#### Statement timeout on backend and web
+
+The timeout goes on the two services that answer people instead:
+`DB_STATEMENT_TIMEOUT_MS=45000` on `boardsesh-backend` and `boardsesh-web`.
+`packages/db/src/client/postgres.ts` turns it into a `statement_timeout` startup
+parameter for every pool made by `createDb`, `createReadDb` and `createPool`. Both
+services connect straight to `postgis---pg18.railway.internal:5432`, not through
+PgBouncer, so the startup parameter is accepted (see "The `statement_timeout`
+hazard" in [db-connectivity.md](./db-connectivity.md)). A transaction that needs
+less can still `SET LOCAL` a lower value, as the playlist sitemap does with 15 s.
+
+The longest jobs on those two services fit under 45 s: the popular-configs cron
+ran in 17.7 s and the sitemap climb refresh's largest statement peaked at 33.7 s.
+Both keep their previous result when a run fails. The variable is set per service,
+never as a shared variable: kilter-sync builds its own pool and ignores it, but
+aurora-sync and moonboard-sync use `createDb` and would pick it up.
+
+#### Serial plans
+
+`max_parallel_workers_per_gather` is 2 in production, against the repo contract
+of 0 (#5352, #5767). Each parallel worker is another process with its own
+`work_mem`, so under the cap it is also a memory setting. It is a database default,
+not an `ALTER SYSTEM` setting, and is applied with the script that owns it:
+
+```sh
+cd packages/db
+DATABASE_URL='<runtime role, 1Password item DATABASE_URL>' \
+ADMIN_DATABASE_URL='<superuser, 1Password item DATABASE_DIRECT_URL>' \
+  vp run db:verify-serial-plan
+```
+
+It checks through the runtime connection, runs
+`ALTER DATABASE "railway" SET max_parallel_workers_per_gather = 0` through the
+admin one only when needed, and checks again. New sessions get the value; pooled
+connections keep 2 until they are recycled, so `/health/db` reports
+`maxParallelWorkersPerGather: "0"` after the next backend deploy. Rollback:
+`ALTER DATABASE "railway" RESET max_parallel_workers_per_gather;` as the superuser.
+Once it reads 0, the `verify-serial-plan` deploy job can be re-enabled (#5767).
+
 ### Read-only access for investigations
 
 Use the `boardsesh_readonly` role for analysis, never the superuser. It has
