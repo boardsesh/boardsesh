@@ -54,10 +54,12 @@ function rawRow(uuid: string) {
 
 // Chainable drizzle stub: every builder method returns the same chain, and the
 // chain is awaitable, resolving to the canned rows. Covers both query paths
-// (innerJoin for stats-driven, leftJoin for standard) plus offset.
+// (innerJoin for stats-driven, leftJoin for standard) plus offset, and `as`,
+// which the stats-driven path uses to rank the page in a subquery before it
+// joins the Boardsesh grades onto it.
 function makeChain(rows: unknown[]): Record<string, unknown> {
   const chain: Record<string, unknown> = {};
-  const methods = ['from', 'innerJoin', 'leftJoin', 'where', 'orderBy', 'limit', 'offset'];
+  const methods = ['from', 'innerJoin', 'leftJoin', 'where', 'orderBy', 'limit', 'offset', 'as'];
   chain.then = (resolve: (value: unknown) => unknown) => Promise.resolve(rows).then(resolve);
   for (const method of methods) {
     chain[method] = vi.fn(() => chain);
