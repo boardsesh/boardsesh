@@ -430,7 +430,20 @@ describe('Observe forwarding', () => {
     // 'error-reporting' network tests above) and so never reaches Observe.
     reportHandledError(new Error('BLE write timed out waiting for the board to accept data'));
 
+    expect(mockedCaptureToSentry).toHaveBeenCalledWith(
+      expect.any(Error),
+      expect.objectContaining({ level: 'warning', tags: { ble_write_timeout: true } }),
+    );
     expect(observeReport).toHaveBeenCalledTimes(1);
+  });
+
+  it('drops a network failure from Observe too, not just from Sentry', () => {
+    const observeReport = registerObserve();
+
+    reportHandledError(new TypeError('Network request failed'));
+
+    expect(mockedCaptureToSentry).not.toHaveBeenCalled();
+    expect(observeReport).not.toHaveBeenCalled();
   });
 
   it('reports to Sentry even when Observe throws', () => {

@@ -26,7 +26,7 @@ export type { ErrorReportContext };
  *
  * Both destinations hang off this one funnel deliberately. Everything the
  * filters in `reportHandledError` already dropped (cancellations, expected auth
- * and validation rejections) stays dropped for both, so the two can never
+ * and validation rejections, network/transport failures) stays dropped for both, so the two can never
  * disagree about what counted as an error. Observe takes no context — it records
  * the error against the OTA update id that produced it, which is the question
  * Sentry cannot answer; Sentry keeps the triage detail.

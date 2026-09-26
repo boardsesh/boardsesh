@@ -108,7 +108,7 @@ describe('front-door time-scoped reporting', () => {
     await getFrontDoorSimilarClimbs({ boardType: 'kilter', layoutId: 8, climbUuid: 'climb-1', angle: 40 });
     await getFrontDoorSimilarClimbs({ boardType: 'kilter', layoutId: 8, climbUuid: 'climb-2', angle: 40 });
 
-    expect(frontDoorLogCalls()).toHaveLength(2);
+    expect(frontDoorLogCalls()).toHaveLength(1);
     expect(frontDoorCaptureCalls()).toHaveLength(1);
   });
 

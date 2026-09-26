@@ -127,18 +127,22 @@ function reportFrontDoorOutage(
   error: unknown,
   nowMs: number = Date.now(),
 ): void {
+  // Check-and-set runs synchronously, before any await, so concurrent renders
+  // failing in the same tick still produce exactly one report. The log line
+  // shares the latch: a wedged backend fails every render, and one line per
+  // window says the same thing as one per render at a fraction of the cost.
+  const lastReportedAtMs = lastReportedAtMsBySection.get(section);
+  if (lastReportedAtMs !== undefined && nowMs - lastReportedAtMs < FRONT_DOOR_REPORT_INTERVAL_MS) {
+    return;
+  }
+  lastReportedAtMsBySection.set(section, nowMs);
+
   const compactError = compactErrorMessage(error);
   console.error(`Front door: ${section} unavailable, rendering the section's degraded state`, {
     boardType: params.boardType,
     climbUuid: params.climbUuid,
     error: compactError,
   });
-
-  const lastReportedAtMs = lastReportedAtMsBySection.get(section);
-  if (lastReportedAtMs !== undefined && nowMs - lastReportedAtMs < FRONT_DOOR_REPORT_INTERVAL_MS) {
-    return;
-  }
-  lastReportedAtMsBySection.set(section, nowMs);
 
   const errorClass = classifyFrontDoorError(compactError);
   Sentry.withScope((scope) => {
