@@ -37,7 +37,18 @@ const { fakeDb, state } = vi.hoisted(() => {
 
   const makeSelectBuilder = (handle: string) => {
     const builder: Record<string, unknown> = {};
-    for (const method of ['from', 'innerJoin', 'leftJoin', 'where', 'groupBy', 'having', 'orderBy', 'limit', 'as']) {
+    for (const method of [
+      'from',
+      'innerJoin',
+      'leftJoin',
+      'where',
+      'groupBy',
+      'having',
+      'orderBy',
+      'limit',
+      'as',
+      '$dynamic',
+    ]) {
       builder[method] = () => builder;
     }
     // Deliberate: drizzle's query builder is awaitable, so the fake has to be a

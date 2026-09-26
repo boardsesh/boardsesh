@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterEach } from 'vite-plus/test';
 import { sql } from 'drizzle-orm';
 import { db } from '../db/client';
 import { tickQueries } from '../graphql/resolvers/ticks/queries';
+import { parse, type FieldNode, type GraphQLResolveInfo, type OperationDefinitionNode } from 'graphql';
 
 /**
  * Integration tests for the tick query resolvers, covering the three behavior
@@ -114,6 +115,27 @@ const callUserTicks = (userId: string, boardType: string) =>
   tickQueries.userTicks(undefined, { userId, boardType }) as Promise<
     Array<{ uuid: string; quality: number | null; effectiveQuality: number | null }>
   >;
+
+type SelectedUserTick = {
+  climbUuid: string;
+  effectiveDifficulty: number | null;
+  effectiveQuality: number | null;
+  boardseshDifficulty: number | null;
+};
+
+// userTicks as a GraphQL request selecting `fields` would reach it: with resolve
+// info, so the resolver trims the joins that selection doesn't need.
+const callUserTicksSelecting = (userId: string, boardType: string, fields: string) => {
+  const operation = parse(`{ userTicks(userId: "${userId}", boardType: "${boardType}") { ${fields} } }`)
+    .definitions[0] as OperationDefinitionNode;
+  const info = { fieldNodes: [operation.selectionSet.selections[0] as FieldNode], fragments: {} };
+  return tickQueries.userTicks(
+    undefined,
+    { userId, boardType },
+    undefined,
+    info as unknown as GraphQLResolveInfo,
+  ) as Promise<SelectedUserTick[]>;
+};
 
 const callUserTickCountsByBoard = (userId: string) =>
   tickQueries.userTickCountsByBoard(undefined, { userId }) as Promise<Array<{ boardType: string; count: number }>>;
@@ -1833,6 +1855,40 @@ describe('tickQueries — behavior fixes', () => {
       // Raw quality stays null (edit flows read it); effective is the owner's 4.
       expect(row?.quality).toBeNull();
       expect(row?.effectiveQuality).toBe(4);
+    });
+
+    it('userTicks: a selection that asks for effectiveQuality still gets the synced rating', async () => {
+      const climbUuid = CLIMB_PREFIX + 'rating-userticks-selected';
+      await insertClimb(climbUuid, 'Rating UserTicks Selected');
+      await insertTick({ uuid: 'tick-rating-selected', climbUuid, climbedAt: '2026-05-09 10:00:00', status: 'send' });
+      await insertClimbRating({ climbUuid, rating: 4 });
+
+      const rows = await callUserTicksSelecting(TEST_USER_ID, 'kilter', 'climbUuid effectiveQuality');
+      expect(rows.find((item) => item.climbUuid === climbUuid)?.effectiveQuality).toBe(4);
+    });
+
+    it('userTicks: the You-page selection skips the rating and grade joins without dropping a row', async () => {
+      const climbUuid = CLIMB_PREFIX + 'rating-userticks-trimmed';
+      await insertClimb(climbUuid, 'Rating UserTicks Trimmed');
+      await insertBoardClimbStats({ climbUuid, displayDifficulty: 18 });
+      await insertBoardClimbGrade({ climbUuid, localGrade: 19, universalGrade: 19, confidence: 'confirmed' });
+      await insertTick({ uuid: 'tick-rating-trimmed', climbUuid, climbedAt: '2026-05-10 10:00:00', status: 'send' });
+      await insertClimbRating({ climbUuid, rating: 4 });
+
+      const fullRows = await callUserTicks(TEST_USER_ID, 'kilter');
+      const trimmedRows = await callUserTicksSelecting(
+        TEST_USER_ID,
+        'kilter',
+        'climbUuid angle status attemptCount difficulty effectiveDifficulty climbedAt layoutId',
+      );
+      // Same rows in the same order — both joins are 1:1.
+      expect(trimmedRows.map((item) => item.climbUuid)).toEqual(
+        (fullRows as unknown as Array<{ climbUuid: string }>).map((item) => item.climbUuid),
+      );
+      const trimmed = trimmedRows.find((item) => item.climbUuid === climbUuid);
+      expect(trimmed?.effectiveDifficulty).toBe(18);
+      expect(trimmed?.effectiveQuality).toBeNull();
+      expect(trimmed?.boardseshDifficulty).toBeNull();
     });
 
     it('userGroupedAscentsFeed: bestQuality reflects the synced rating for a null-quality tick', async () => {

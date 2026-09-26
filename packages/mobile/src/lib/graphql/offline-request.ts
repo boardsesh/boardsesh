@@ -10,7 +10,12 @@ import { getSetterStatsLocal } from '../../db/queries/get-setter-stats-local';
 import { getHoldHeatmapLocalWithCount } from '../../db/queries/get-hold-heatmap-local';
 import { canReadFollowedAuthors } from '../../db/queries/followed-authors-local';
 import { FollowedAuthorsUnavailableError } from '../followed-authors-error';
-import { isBoardDownloadedLocally, isBoardTypeDownloadedLocally } from '../../db/queries/board-download-status';
+import {
+  isBoardDownloadedLocally,
+  isBoardTypeDownloadedLocally,
+  isClimbLayoutDownloadedLocally,
+} from '../../db/queries/board-download-status';
+import { getClimbStatsHistoryLocal } from '../../db/queries/get-climb-stats-history-local';
 import { getHttpClient } from './client';
 import { ensureHoldIndex } from '@boardsesh/offline-sync';
 import type { OfflineReadLane, OfflineReadSurface, OfflineUnavailableReason } from '@boardsesh/offline-sync';
@@ -27,6 +32,9 @@ import {
   type HoldHeatmapQueryVariables,
 } from '@boardsesh/graphql/operations';
 import {
+  CLIMB_STATS_HISTORY,
+  type ClimbStatsHistoryVariables,
+  type ClimbStatsHistoryResponse,
   BOARDSESH_GRADE,
   BOARDSESH_GRADES_FOR_ANGLES,
   type BoardseshGradeVariables,
@@ -305,6 +313,26 @@ registerOfflineOperation<BoardseshGradesForAnglesVariables, BoardseshGradesForAn
     boardseshGradesForAngles: await getBoardseshGradesForAnglesLocal(db, { boardName, climbUuid }),
   }),
   offlineFallback: () => ({ boardseshGradesForAngles: [] }),
+});
+
+// Per-angle community stats (the play drawer's grade-by-angle bars and the angle
+// picker). Local-first: served from board_climb_stats once the climb's OWN
+// layout has a completed download at a size the climb fits, the server
+// otherwise. The gate is the climb's own scope, not just the board type,
+// because an empty list is a real answer here (a climb nobody has sent) — a
+// climb whose stats never synced has to reach the network instead of reading
+// as unsent. So no
+// `isLocalMiss` either: past that gate, empty means empty. Counted under the
+// `grade` surface, the read the bars feed.
+registerOfflineOperation<ClimbStatsHistoryVariables, ClimbStatsHistoryResponse>({
+  document: CLIMB_STATS_HISTORY,
+  surface: 'grade',
+  boardNameOf: ({ boardName }) => boardName,
+  canServeLocal: (db, { boardName, climbUuid }) => isClimbLayoutDownloadedLocally(db, boardName, climbUuid),
+  resolveLocal: async (db, { boardName, climbUuid }) => ({
+    climbStatsHistory: await getClimbStatsHistoryLocal(db, { boardName, climbUuid }),
+  }),
+  offlineFallback: () => ({ climbStatsHistory: [] }),
 });
 
 // Similar climbs (the play drawer strip): LOCAL-ONLY, kept off the live

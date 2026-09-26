@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import dayjs from 'dayjs';
+import { useIsFocused } from 'expo-router';
 import { deriveProfileViewModel, type UnifiedTimeframeType, type PeriodComparisonMode } from '@boardsesh/profile-stats';
 import { useGradeFormat } from '../../../hooks/use-grade-format';
 import { useOfflineQueryState } from '../../../hooks/use-offline-query-state';
@@ -29,9 +30,13 @@ export function useYouProfileData(userId: string | undefined) {
   const fromDate = '';
   const toDate = '';
 
-  const allBoardsTicksQuery = useAllBoardsTicks(userId);
-  const profileStatsQuery = useUserProfileStats(userId);
-  const percentileQuery = useUserClimbPercentile(userId);
+  // Off screen, the three reads are disabled: a tick invalidation marks them
+  // stale instead of refetching 32 queries behind a screen nobody is looking
+  // at, and regaining focus re-enables them and refetches the stale ones.
+  const onScreen = useIsFocused();
+  const allBoardsTicksQuery = useAllBoardsTicks(userId, { onScreen });
+  const profileStatsQuery = useUserProfileStats(userId, { onScreen });
+  const percentileQuery = useUserClimbPercentile(userId, { onScreen });
 
   const allBoardsTicks = useMemo(() => allBoardsTicksQuery.data ?? {}, [allBoardsTicksQuery.data]);
 

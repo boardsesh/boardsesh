@@ -16,6 +16,8 @@ const {
   getDatabaseHandle,
   isBoardDownloadedLocally,
   isBoardTypeDownloadedLocally,
+  isClimbLayoutDownloadedLocally,
+  getClimbStatsHistoryLocal,
   searchClimbsLocal,
   countClimbsLocal,
   isOfflineSearchSupported,
@@ -35,6 +37,8 @@ const {
   getDatabaseHandle: vi.fn(),
   isBoardDownloadedLocally: vi.fn(),
   isBoardTypeDownloadedLocally: vi.fn(),
+  isClimbLayoutDownloadedLocally: vi.fn(),
+  getClimbStatsHistoryLocal: vi.fn(),
   searchClimbsLocal: vi.fn(),
   countClimbsLocal: vi.fn(),
   isOfflineSearchSupported: vi.fn(),
@@ -50,7 +54,9 @@ vi.mock('../../../db', () => ({ getDatabaseHandle }));
 vi.mock('../../../db/queries/board-download-status', () => ({
   isBoardDownloadedLocally,
   isBoardTypeDownloadedLocally,
+  isClimbLayoutDownloadedLocally,
 }));
+vi.mock('../../../db/queries/get-climb-stats-history-local', () => ({ getClimbStatsHistoryLocal }));
 vi.mock('../../../db/queries/search-climbs-local', () => ({
   searchClimbsLocal,
   countClimbsLocal,
@@ -107,6 +113,8 @@ import {
   type SimilarClimbsVariables,
 } from '@boardsesh/graphql/operations';
 import {
+  CLIMB_STATS_HISTORY,
+  type ClimbStatsHistoryResponse,
   BOARDSESH_GRADE,
   BOARDSESH_GRADES_FOR_ANGLES,
   type BoardseshGradeResponse,
@@ -124,6 +132,15 @@ const climbVars: GetClimbQueryVariables = {
 };
 const gradeVars = { boardName: 'kilter', climbUuid: 'c1', angle: 40 };
 const gradesForAnglesVars = { boardName: 'kilter', climbUuid: 'c1' };
+const statsHistoryVars = { boardName: 'kilter', climbUuid: 'c1' };
+const localStatsEntry = {
+  angle: 40,
+  ascensionistCount: 12,
+  qualityAverage: 2.8,
+  difficultyAverage: 20.4,
+  displayDifficulty: 20.1,
+  createdAt: '2026-09-25T10:00:00Z',
+};
 const localGrade = {
   localGrade: 20,
   universalGrade: 19,
@@ -164,7 +181,10 @@ beforeEach(() => {
   isBoardTypeDownloadedLocally.mockResolvedValue(true);
   getBoardseshGradeLocal.mockResolvedValue(localGrade);
   getBoardseshGradesForAnglesLocal.mockResolvedValue([{ angle: 40, ...localGrade }]);
+  isClimbLayoutDownloadedLocally.mockResolvedValue(true);
+  getClimbStatsHistoryLocal.mockResolvedValue([localStatsEntry]);
   request.mockResolvedValue({
+    climbStatsHistory: [{ ...localStatsEntry, ascensionistCount: 99 }],
     searchClimbs: { climbs: [{ uuid: 'net' }], hasMore: true, totalCount: 99 },
     climb: { uuid: 'net-detail' },
     boardseshGrade: { ...localGrade, modelVersion: 'v1', localGrade: 99 },
@@ -478,6 +498,42 @@ describe('offlineAwareRequest — BOARDSESH_GRADES_FOR_ANGLES', () => {
     expect(result.boardseshGradesForAngles[0].modelVersion).toBe('v1');
     expect(getBoardseshGradesForAnglesLocal).not.toHaveBeenCalled();
     expect(request).toHaveBeenCalledWith(BOARDSESH_GRADES_FOR_ANGLES, gradesForAnglesVars);
+  });
+});
+
+describe('offlineAwareRequest — CLIMB_STATS_HISTORY', () => {
+  it("reads the per-angle stats locally when the climb's layout is downloaded (online)", async () => {
+    setOnline(true);
+    const result = await offlineAwareRequest<ClimbStatsHistoryResponse>(CLIMB_STATS_HISTORY, statsHistoryVars);
+    expect(result).toEqual({ climbStatsHistory: [localStatsEntry] });
+    expect(isClimbLayoutDownloadedLocally).toHaveBeenCalledWith(fakeDb, 'kilter', 'c1');
+    expect(getClimbStatsHistoryLocal).toHaveBeenCalledWith(fakeDb, statsHistoryVars);
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('keeps an empty local list — past the layout gate, no ascents is a real answer', async () => {
+    setOnline(true);
+    getClimbStatsHistoryLocal.mockResolvedValue([]);
+    const result = await offlineAwareRequest<ClimbStatsHistoryResponse>(CLIMB_STATS_HISTORY, statsHistoryVars);
+    expect(result).toEqual({ climbStatsHistory: [] });
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it("asks the server when the climb's layout is not downloaded (online)", async () => {
+    setOnline(true);
+    isClimbLayoutDownloadedLocally.mockResolvedValue(false);
+    const result = await offlineAwareRequest<ClimbStatsHistoryResponse>(CLIMB_STATS_HISTORY, statsHistoryVars);
+    expect(result.climbStatsHistory[0].ascensionistCount).toBe(99);
+    expect(getClimbStatsHistoryLocal).not.toHaveBeenCalled();
+    expect(request).toHaveBeenCalledWith(CLIMB_STATS_HISTORY, statsHistoryVars);
+  });
+
+  it('returns the empty list offline with nothing local', async () => {
+    setOnline(false);
+    isClimbLayoutDownloadedLocally.mockResolvedValue(false);
+    const result = await offlineAwareRequest<ClimbStatsHistoryResponse>(CLIMB_STATS_HISTORY, statsHistoryVars);
+    expect(result).toEqual({ climbStatsHistory: [] });
+    expect(request).not.toHaveBeenCalled();
   });
 });
 

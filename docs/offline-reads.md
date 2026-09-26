@@ -42,6 +42,7 @@ These have "now" semantics or are unbounded, so a stale copy is worse than an ho
 | `['climb', …]`                                                                           | SQLite                      | Registered today                                                   |
 | `['setterStats', …]`                                                                     | SQLite                      | Registered today (#5407)                                           |
 | `['boardseshGrade']`, `['boardseshGradesForAngles']`                                     | SQLite                      | Registered today                                                   |
+| `['climbStatsHistory', board, uuid]`                                                     | SQLite                      | `board_climb_stats`, once a scope the climb belongs to (its layout, at a size it fits) finished downloading; server otherwise |
 | `['similarClimbs', …]`                                                                   | SQLite (local-only)         | Holds index; never the network for non-admins — see below          |
 | `['holdHeatmap', …]`                                                                     | SQLite (local-only)         | Holds index ⋈ the list's filters; never the network for non-admins |
 | `['logbook', board, …]`                                                                  | SQLite                      | `boardsesh_ticks`; reader missing                                  |
@@ -55,7 +56,7 @@ These have "now" semantics or are unbounded, so a stale copy is worse than an ho
 | `['myGyms']`                                                                             | Persisted cache             | Small, identity-shaped                                             |
 | `['grades', board]`, `['angles', board, layout]`                                         | Persisted cache             | Config, changes ~never                                             |
 | `['publicProfile', selfId]`                                                              | Persisted cache             | Own profile only, 24 h                                             |
-| `['userTicks', userId]`                                                                  | Neither (for now)           | See "Deliberately deferred"                                        |
+| `['userTicks', userId]`                                                                  | Neither (for now)           | See "Deliberately deferred". Refetches only on focus after a tick invalidation, or past 30 min |
 | `['activityFeed']`, `['sessionGroupedFeed']`, `['sessionDetail', …]`                     | Neither                     | "Now" semantics                                                    |
 | `['crewFeed', viewerId]`                                                               | Neither                     | Viewer-scoped live feed; no persisted cache                        |
 | `['searchUsers', …]`, `['gymMembers', …]`, `['comments', …]`, `['bulkVoteSummaries', …]` | Neither                     | Unbounded or live                                                  |
