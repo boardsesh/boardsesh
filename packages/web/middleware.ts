@@ -47,7 +47,7 @@ export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Cheap origin fallback for crawlers that bypass Cloudflare's public hostname.
-  if (isBlockedCrawler(request.headers.get('user-agent'))) {
+  if (isBlockedCrawler(request.headers.get('user-agent'), { method: request.method, pathname })) {
     return new NextResponse(null, {
       status: 403,
       headers: { 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex, nofollow' },

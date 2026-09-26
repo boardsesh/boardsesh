@@ -52,7 +52,9 @@ describe('robots', () => {
     const rules = robots().rules;
     const allRules = Array.isArray(rules) ? rules : [rules];
     const blockedRule = allRules.find((rule) => toList(rule.userAgent).includes('gptbot'));
-    expect(toList(blockedRule?.userAgent)).toEqual(expect.arrayContaining(['yandexbot', 'yandexrenderresourcesbot']));
+    expect(toList(blockedRule?.userAgent)).toEqual(
+      expect.arrayContaining(['yandexbot', 'yandexrenderresourcesbot', 'lightpanda']),
+    );
     // Applebot stays out of it — it still indexes us. Only its writes are cut,
     // and that happens in instrumentation-client.ts, not here.
     expect(toList(blockedRule?.userAgent)).not.toContain('applebot');

@@ -17,6 +17,7 @@ import {
   BACKEND_BOARD_RENDER_CACHE_RULE_DESCRIPTION,
   BOARD_CONTENT_CHALLENGE_RULE_DESCRIPTION,
   BOARD_RENDER_CACHE_RULE_DESCRIPTION,
+  AUTOMATION_DEFAULT_DENY_RULE_DESCRIPTION,
   CACHE_RULE_DESCRIPTION,
   CRAWLER_ALLOW_RULE_DESCRIPTION,
   CRAWLER_ALLOW_TOKENS,
@@ -42,6 +43,7 @@ import {
   buildWwwHtmlCachePathPrefixes,
   desiredCloudflareState,
 } from '../infra/cloudflare/config';
+import { isBlockedCrawler } from '../packages/web/app/lib/crawler-policy';
 import type {
   DnsRecordDesired,
   FullyManagedDnsRecordDesired,
@@ -883,6 +885,7 @@ describe('www cost-control rules (#4650)', () => {
       'Screaming Frog SEO Spider/21.4',
       'Mozilla/5.0 (compatible; YandexBot/3.0; +http://yandex.com/bots)',
       'Mozilla/5.0 (compatible; YandexRenderResourcesBot/1.0; +http://yandex.com/bots)',
+      'Lightpanda/1.0',
     ];
     for (const userAgent of blockedUserAgents) {
       const matched = CRAWLER_BLOCK_TOKENS.some((token) => userAgent.toLowerCase().includes(token));
@@ -1047,6 +1050,185 @@ describe('www cost-control rules (#4650)', () => {
   });
 });
 
+describe('automation default-deny (allow-list model)', () => {
+  const ruleByDescription = (description: string) => {
+    const rule = desired.wafRules.find((candidate) => candidate.description === description);
+    expect(rule, description).toBeDefined();
+    return rule!;
+  };
+  const allowRule = ruleByDescription(CRAWLER_ALLOW_RULE_DESCRIPTION);
+  const blockRule = ruleByDescription(CRAWLER_BLOCK_RULE_DESCRIPTION);
+  const defaultDenyRule = ruleByDescription(AUTOMATION_DEFAULT_DENY_RULE_DESCRIPTION);
+  const challengeRule = ruleByDescription(BOARD_CONTENT_CHALLENGE_RULE_DESCRIPTION);
+
+  // Tokens read back out of the SHIPPED expressions, so the verdict below is
+  // what Cloudflare will evaluate rather than a restatement of the lists.
+  const tokensIn = (expression: string): string[] =>
+    [...expression.matchAll(/lower\(http\.user_agent\) contains "([^"]*)"/g)].map(([, token]) => token);
+  const allowTokens = tokensIn(allowRule.expression);
+  const blockTokens = tokensIn(blockRule.expression);
+  const signatureTokens = tokensIn(defaultDenyRule.expression);
+
+  /** The edge verdict for a GET of a www page: allow (skip) → block → default-deny. */
+  const blockedAtEdge = (userAgent: string): boolean => {
+    const normalized = userAgent.toLowerCase();
+    if (allowTokens.some((token) => normalized.includes(token))) return false;
+    if (blockTokens.some((token) => normalized.includes(token))) return true;
+    return signatureTokens.some((token) => normalized.includes(token));
+  };
+
+  // Every self-identified agent seen in 6,012 Railway HTTP log entries (12
+  // windows, www and ws, 2026-09-19..26), plus the app and browser strings the
+  // rule must never touch. Adding a token? Run the new agent through here.
+  const mustPass: [string, string][] = [
+    ['iOS app (CFNetwork)', 'Boardsesh/1 CFNetwork/3860.700.2 Darwin/25.6.0'],
+    ['iOS app (native)', 'Boardsesh/2.5.0 (iPhone; iOS 26.6.1; Scale/3.00)'],
+    ['Android app', 'okhttp/4.12.0'],
+    ['Android app (Dalvik)', 'Dalvik/2.1.0 (Linux; U; Android 17; Pixel 9 Pro Build/CP2A.260805.005.A1)'],
+    ['Cubot phone', 'Dalvik/2.1.0 (Linux; U; Android 12; CUBOT P50 Build/SP1A.210812.016)'],
+    [
+      'Cubot phone browser',
+      'Mozilla/5.0 (Linux; Android 12; CUBOT P50) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36',
+    ],
+    ['Huawei ArkWeb', 'com.huawei.hmos.browser (phone;OpenHarmony-6.1.1.120;SGT-AL00B) NetworkSDK/8.0.16.302'],
+    [
+      'Huawei browser',
+      'Mozilla/5.0 (Phone; OpenHarmony 5.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36 ArkWeb/4.1.6.1 Mobile HuaweiBrowser/5.0.4.300',
+    ],
+    ['Samsung Pass', 'SamsungPass (Android; Samsung Electronics)'],
+    [
+      'Safari',
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15',
+    ],
+    ['Opera Presto', 'Opera/9.80 (X11; Linux i686; U; en) Presto/2.2.15 Version/10.00'],
+    ['our servers (undici)', 'node'],
+    ['empty UA', ''],
+    ['production smoke', 'boardsesh-production-smoke/1.0'],
+    ['Sentry uptime', 'SentryUptimeBot/1.0 (+http://docs.sentry.io/product/alerts/uptime-monitoring/)'],
+    ['Apple AASA', 'AASA-Bot/1.0.0'],
+    ['Android asset links', 'GoogleAssociationService'],
+    [
+      'Googlebot',
+      'Mozilla/5.0 (Linux; Android 6.0.1; Nexus 5X Build/MMB29P) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.8010.52 Mobile Safari/537.36 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+    ],
+    [
+      'bingbot',
+      'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm) Chrome/116.0.1938.76 Safari/537.36',
+    ],
+    [
+      'Applebot',
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15 (Applebot/0.1; +http://www.apple.com/go/applebot)',
+    ],
+    [
+      'Facebook/Twitter unfurler',
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_1) AppleWebKit/601.2.4 (KHTML, like Gecko) Version/9.0.1 Safari/601.2.4 facebookexternalhit/1.1 Facebot Twitterbot/1.0',
+    ],
+    [
+      'ChatGPT-User',
+      'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; ChatGPT-User/1.0; +https://openai.com/bot',
+    ],
+    ['Mastodon', 'Mastodon/4.2.1 (http.rb/5.1.1; +https://mastodon.social/) Bot'],
+    ['Internet Archive', 'Mozilla/5.0 (compatible; archive.org_bot +http://www.archive.org/details/archive.org_bot)'],
+    [
+      'old IE (browser-shaped scraper, out of scope)',
+      'Mozilla/4.0 (compatible; MSIE 6.0b; Windows NT 5.0; .NET CLR 1.1.4322)',
+    ],
+  ];
+
+  const mustBlock: [string, string][] = [
+    ['Lightpanda', 'Lightpanda/1.0'],
+    [
+      'meta-webindexer',
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 (compatible; meta-webindexer/1.1 (+https://developers.facebook.com/docs/sharing/webmasters/crawler))',
+    ],
+    ['curl', 'curl/8.9.1'],
+    ['python-requests', 'python-requests/2.32.3'],
+    ['aiohttp', 'Python/3.12 aiohttp/3.9.5'],
+    ['Go', 'Go-http-client/1.1'],
+    ['Java', 'Java/17.0.2'],
+    ['Apache HttpClient', 'Apache-HttpClient/4.5.14 (Java/17.0.2)'],
+    ['wget', 'Wget/1.21.4'],
+    ['libwww', 'libwww-perl/6.72'],
+    ['Scrapy', 'Scrapy/2.11.2 (+https://scrapy.org)'],
+    [
+      'HeadlessChrome',
+      'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/126.0.0.0 Safari/537.36',
+    ],
+    ['an unnamed bot', 'Mozilla/5.0 (compatible; SomeNewBot/1.0; +https://example.com/bot)'],
+    ['an unnamed spider', 'ExampleSpider/2.0'],
+    ['GPTBot', 'Mozilla/5.0 (compatible; GPTBot/1.4; +https://openai.com/gptbot)'],
+    ['AhrefsBot', 'Mozilla/5.0 (compatible; AhrefsBot/7.0; +http://ahrefs.com/robot/)'],
+    ['YandexBot', 'Mozilla/5.0 (compatible; YandexBot/3.0; +http://yandex.com/bots)'],
+  ];
+
+  it.each(mustPass)('lets %s through at the edge and the origin', (_label, userAgent) => {
+    expect(blockedAtEdge(userAgent)).toBe(false);
+    expect(isBlockedCrawler(userAgent, { method: 'GET', pathname: '/kilter' })).toBe(false);
+  });
+
+  it.each(mustBlock)('blocks %s at the edge and the origin', (_label, userAgent) => {
+    expect(blockedAtEdge(userAgent)).toBe(true);
+    expect(isBlockedCrawler(userAgent, { method: 'GET', pathname: '/kilter' })).toBe(true);
+  });
+
+  it('only ever matches GET on www and ws', () => {
+    // POST is the mobile app's GraphQL traffic; assets, snapshots and updates
+    // serve the apps and OTA clients.
+    expect(defaultDenyRule.action).toBe('block');
+    expect(
+      defaultDenyRule.expression.startsWith(
+        `((http.host eq "${WWW_HOSTNAME}" or http.host eq "${WS_HOSTNAME}") and http.request.method eq "GET" and `,
+      ),
+    ).toBe(true);
+    expect(isBlockedCrawler('curl/8.9.1', { method: 'POST', pathname: '/graphql' })).toBe(false);
+  });
+
+  it('leaves health, .well-known and the API surfaces alone', () => {
+    // mobile-ota-production.yml polls ws /health with bare curl while it waits
+    // for the backend; a 403 there would stall every OTA publish.
+    for (const path of ['/health', '/health/db', '/api/health']) {
+      expect(defaultDenyRule.expression).toContain(`http.request.uri.path eq "${path}"`);
+      expect(isBlockedCrawler('curl/8.9.1', { method: 'GET', pathname: path })).toBe(false);
+    }
+    for (const prefix of ['/.well-known/', '/api/v1/', '/v1/partner/']) {
+      expect(defaultDenyRule.expression).toContain(`starts_with(http.request.uri.path, "${prefix}")`);
+      expect(isBlockedCrawler('Go-http-client/1.1', { method: 'GET', pathname: `${prefix}x` })).toBe(false);
+    }
+    // Named crawlers stay blocked everywhere: the exemption is for the
+    // default-deny only.
+    expect(isBlockedCrawler('Lightpanda/1.0', { method: 'POST', pathname: '/health' })).toBe(true);
+  });
+
+  it('runs after the allow rule and before the challenge', () => {
+    // The allow rule's skip is what exempts allow-listed agents; this rule
+    // has no "unless" of its own.
+    const rules = desired.wafRules;
+    expect(rules.indexOf(allowRule)).toBeLessThan(rules.indexOf(defaultDenyRule));
+    expect(rules.indexOf(blockRule)).toBeLessThan(rules.indexOf(defaultDenyRule));
+    expect(rules.indexOf(defaultDenyRule)).toBeLessThan(rules.indexOf(challengeRule));
+    expect(rules.indexOf(challengeRule)).toBe(rules.length - 1);
+  });
+
+  it('balances its parentheses', () => {
+    const opens = defaultDenyRule.expression.split('(').length - 1;
+    const closes = defaultDenyRule.expression.split(')').length - 1;
+    expect(opens).toBe(closes);
+  });
+
+  it('never carries a signature token the apps or our servers send', () => {
+    for (const appUserAgent of [
+      'okhttp/4.12.0',
+      'Boardsesh/1 CFNetwork/3860.700.2 Darwin/25.6.0',
+      'Dalvik/2.1.0',
+      'node',
+    ]) {
+      for (const token of signatureTokens) {
+        expect(appUserAgent.toLowerCase()).not.toContain(token);
+      }
+    }
+  });
+});
+
 describe('managed rule ordering and foreign-rule safety', () => {
   const liveRule = (description: string, extra: Partial<RulesetRule> = {}): RulesetRule => ({
     id: `${description}-id`,
@@ -1069,6 +1251,7 @@ describe('managed rule ordering and foreign-rule safety', () => {
     expect(rules.map((rule) => rule.description)).toEqual([
       CRAWLER_ALLOW_RULE_DESCRIPTION,
       CRAWLER_BLOCK_RULE_DESCRIPTION,
+      AUTOMATION_DEFAULT_DENY_RULE_DESCRIPTION,
       // Last on purpose: it is the only rule that can catch an ordinary browser
       // string, so both UA verdicts must be reached first.
       BOARD_CONTENT_CHALLENGE_RULE_DESCRIPTION,
