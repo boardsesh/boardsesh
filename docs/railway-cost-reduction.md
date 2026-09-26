@@ -181,8 +181,8 @@ SYSTEM` as the superuser, into `postgresql.auto.conf`. None of them needs a rest
 | `log_lock_waits` | off | on | Logs any lock wait longer than `deadlock_timeout` (1 s) |
 | `log_temp_files` | -1 (off) | 10MB | Logs each temp file of 10 MB or more with the statement that wrote it. 3.3 TB of temp files have been written since initdb |
 
-The keepalive values apply to TCP connections opened after the reload. A Unix-socket
-session reports them as 0, so check them through the proxy or the private network.
+A Unix-socket session reports the keepalive values as 0, so check them from a new
+TCP session, through the proxy or the private network.
 
 ```sql
 -- As the superuser (1Password item `DATABASE_DIRECT_URL`), database `railway`:
@@ -220,11 +220,29 @@ PgBouncer, so the startup parameter is accepted (see "The `statement_timeout`
 hazard" in [db-connectivity.md](./db-connectivity.md)). A transaction that needs
 less can still `SET LOCAL` a lower value, as the playlist sitemap does with 15 s.
 
-The longest jobs on those two services fit under 45 s: the popular-configs cron
-ran in 17.7 s and the sitemap climb refresh's largest statement peaked at 33.7 s.
-Both keep their previous result when a run fails. The variable is set per service,
-never as a shared variable: kilter-sync builds its own pool and ignores it, but
-aurora-sync and moonboard-sync use `createDb` and would pick it up.
+The longest scheduled statements on those two services fit under 45 s, all
+measured since the 2026-09-25 statistics reset:
+
+- The popular-configs cron ran in 17.7 s (16.8–18.2 s with a serial plan on the
+  replica). A failed run keeps the previous list in Redis.
+- The setters sitemap query, built when a `/sitemaps/setters/N.xml` page misses
+  its 6-hour in-process cache, peaked at 33.7 s (13.4 s mean over 34 calls). It
+  already runs under `withSerialPlan`, so the serial-plan default below does not
+  slow it. It has the least headroom, and a failed build does not keep an old
+  list: that page answers 503 and the crawler retries.
+- The sitemap climb refresh's largest per-group statement peaked at 8.4 s. A
+  failed refresh keeps the stored URL table.
+- The weekly profile-percentiles rebuild and the daily gym-activity rebuild did
+  not run in that window; their reads take about 1 s and 0.5 s on the replica.
+
+Interactive reads that ran past 45 s will now fail with `57014` instead: the
+worst climb-list reads (up to 474 s), a `user_boards ... FOR UPDATE` that waited
+168 s on a lock, and one offline-sync pull read of 47 s (0.2 s mean over 476
+calls).
+
+The variable is set per service, never as a shared variable: kilter-sync builds
+its own pool and ignores it, but aurora-sync and moonboard-sync use `createDb`
+and would pick it up.
 
 #### Serial plans
 
