@@ -65,6 +65,8 @@ export {
 } from './climb-neighbors';
 export {
   CLIMB_NEIGHBOR_BOARDS,
+  CLIMB_NEIGHBOR_GAP_REFILL_UTC_DAY,
+  isGapRefillDay,
   orderBoardsByClimbCount,
   refreshClimbNeighborsForBoard,
   type ClimbNeighborRefreshDb,

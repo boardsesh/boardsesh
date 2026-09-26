@@ -65,6 +65,14 @@ layout is rebuilt when any table reaches 500 stable rows, when its manifest entr
 existing main/grades artifact has an older client schema. If the optional grades artifact is absent, the
 grades probe starts at epoch and still requires 500 rows, so grade-less MoonBoard layouts remain a no-op.
 
+Small layouts take a cheaper path. The scan first reads up to 500 of the layout's climb uuids (with
+`enable_seqscan` off for that one statement, because `board_type` and `layout_id` are estimated
+independently and moonboard layout 1 is planned as ~130k climbs when it has 128). A layout with fewer
+than 500 climbs cannot put 500 climb rows past any watermark, so its `board_climbs` probe is skipped,
+and its stats and grades probes use `climb_uuid = ANY(<uuids>)` against each table's primary key instead
+of walking the board-wide cursor index. On the replica, moonboard layout 1's grades probe from epoch
+drops from 3.2 s and 954k buffers to 29 ms and 522 buffers.
+
 Selected layouts go through the same repeatable-read build and artifact-first/manifest-last publish path
 as the nightly. Layouts below threshold ride through the manifest byte-for-byte. If no layout is stale,
 the command returns without uploading an artifact, rewriting `generatedAt`, invalidating the five-minute
@@ -87,8 +95,11 @@ For every `(board_type, layout_id)` pair with at least one climb (`discoverLayou
 3. Excludes rows younger than `SYNC_STABILITY_WINDOW_SECONDS` (default 30s, same env var the resolvers
    read) — a row still inside its write-transaction's commit window is left for the incremental pull rather
    than risking a watermark that covers it before it's actually visible.
-4. Computes each table's watermark — the max `(updated_at, sync_seq)` over the exported rows — from the
-   **same transaction snapshot** as the row stream, and writes it into `snapshot_meta` alongside
+4. Computes each table's watermark — the max `(updated_at, sync_seq)` over the exported rows — **while
+   streaming those rows**, so it covers exactly what the artifact holds and costs no extra query. The
+   stream SELECT adds the cursor as integer microseconds for ordering (never a string compare of rendered
+   timestamps) and the winning row's raw value goes through the same `toIso` as the row itself. It is
+   written into `snapshot_meta` alongside
    `row_count`, `schema_version` (`LATEST_SCHEMA_VERSION`), and `format_version`. The transaction also
    captures a conservative tombstone boundary into a metadata-only `sync_deletions` row: the oldest of
    run `builtAt`, export-transaction start minus `SYNC_STABILITY_WINDOW_SECONDS`, and the oldest active
@@ -453,7 +464,7 @@ cellular. A recovery on that path reports `trigger: 'user-request'`.
 checkpoints on the heal path and throws `SnapshotWatermarkRegressionError` — before opening the exclusive
 transaction, so nothing at all is written — when either table's artifact watermark compares older than the
 local checkpoint. That covers both hazards at once: an artifact whose scope filter matches no rows
-(`tableWatermark` returns the epoch, reachable for a size whose `compatible_size_ids` never matches or
+(the export stamps the epoch, reachable for a size whose `compatible_size_ids` never matches or
 after any export/client filter drift), and a crawl that already ran past the artifact. Without it the
 import would lower `checkpoint:board_climbs:<scope>` — destroying exactly the progress the heal exists to
 rescue — and rewind the single global deletions cursor with it. It is reported at full severity

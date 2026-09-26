@@ -11,6 +11,7 @@ import {
   CLIMB_NEIGHBOR_K,
   ClimbNeighborIndex,
   getMaterializedSimilarClimbs,
+  isGapRefillDay,
   refreshClimbNeighborsForBoard,
 } from '@boardsesh/db/queries';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
@@ -382,6 +383,28 @@ describe('refreshClimbNeighborsForBoard', () => {
     expect(refilled.map(({ neighbor }) => neighbor)).not.toContain(last);
   });
 
+  it('leaves a list one short on a night without the weekly gap scan, then refills it on the scan night', async () => {
+    await settleClimbs();
+    await refreshClimbNeighborsForBoard(db, { boardType: BOARD });
+    const middle = (await neighbourList('k-target'))[3].neighbor;
+    await db.delete(dbSchema.boardClimbs).where(eq(dbSchema.boardClimbs.uuid, PREFIX + middle));
+
+    const quietNight = await refreshClimbNeighborsForBoard(db, { boardType: BOARD, refillGappedLists: false });
+    expect(quietNight.workSetSize).toBe(0);
+    expect(quietNight.rowsWritten).toBe(0);
+    expect(await neighbourList('k-target')).toHaveLength(CLIMB_NEIGHBOR_K - 1);
+
+    await refreshClimbNeighborsForBoard(db, { boardType: BOARD, refillGappedLists: true });
+    expect(await neighbourList('k-target')).toHaveLength(CLIMB_NEIGHBOR_K);
+  });
+
+  it('schedules the gap scan on Sundays (UTC) only', () => {
+    expect(isGapRefillDay(new Date('2026-09-27T12:00:00Z'))).toBe(true); // Sunday
+    expect(isGapRefillDay(new Date('2026-09-27T23:59:59Z'))).toBe(true);
+    expect(isGapRefillDay(new Date('2026-09-26T06:45:00Z'))).toBe(false); // Saturday
+    expect(isGapRefillDay(new Date('2026-09-28T00:00:00Z'))).toBe(false); // Monday
+  });
+
   it('refills a list that lost only its last-ranked row', async () => {
     await settleClimbs();
     await refreshClimbNeighborsForBoard(db, { boardType: BOARD });
@@ -583,7 +606,7 @@ describe('updateClimb invalidates the materialised neighbours', () => {
     await reset();
   });
 
-  it('deletes the edited climb’s rows in both directions and leaves the rest', async () => {
+  it('deletes only the edited climb’s own list; the nightly run clears its slot in other lists', async () => {
     await insertClimb({
       uuid: 'mine',
       layoutId: 4,
@@ -603,16 +626,19 @@ describe('updateClimb invalidates the materialised neighbours', () => {
       { connectionId: 'conn', isAuthenticated: true, userId: OWNER } as unknown as ConnectionContext,
     );
 
-    expect(await rowsNaming('mine')).toBe(0);
-    // The survivors keep their old rank (a gap where 'mine' sat) until the
-    // nightly run rewrites the list; the read path orders by similarity, not rank.
-    expect(await neighbourList('peer-1')).toEqual([{ neighbor: 'peer-2', rank: 2, shared: 9 }]);
-    expect(await neighbourList('peer-2')).toEqual([{ neighbor: 'peer-1', rank: 2, shared: 9 }]);
+    // Its own list is gone; the peers still name it until the nightly run,
+    // so no list is left with a gap only the weekly scan would find.
+    expect(await neighbourList('mine')).toEqual([]);
+    expect(await rowsNaming('mine')).toBe(2);
+    expect(await neighbourList('peer-1')).toHaveLength(2);
+    expect(await neighbourList('peer-2')).toHaveLength(2);
 
-    // The edit bumped sync_seq, so the next run re-scores the climb on its new holds.
-    await refreshClimbNeighborsForBoard(db, { boardType: BOARD });
+    // The edit bumped sync_seq, so the next run re-scores the climb on its new
+    // holds and rewrites the lists it sat in, even with the gap scan off.
+    await refreshClimbNeighborsForBoard(db, { boardType: BOARD, refillGappedLists: false });
     expect(await rowsNaming('mine')).toBe(0);
     expect(await neighbourList('peer-1')).toEqual([{ neighbor: 'peer-2', rank: 1, shared: 9 }]);
+    expect(await neighbourList('peer-2')).toEqual([{ neighbor: 'peer-1', rank: 1, shared: 9 }]);
   });
 });
 

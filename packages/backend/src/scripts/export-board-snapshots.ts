@@ -375,6 +375,69 @@ async function hasDeltaAtThreshold(params: {
   return rows.length >= threshold;
 }
 
+/**
+ * The layout's climb uuids when it has FEWER than `threshold` climbs, else null.
+ *
+ * `LIMIT threshold` caps the read at one probe's worth of rows. `enable_seqscan`
+ * is switched off for this one statement (SET LOCAL, reset at commit) because
+ * board_type and layout_id are estimated independently: moonboard layout 1 has
+ * 128 climbs but is planned as ~130k, and with a LIMIT the planner then seq-scans
+ * all of board_climbs (190 ms, 46k buffers on the replica) instead of reading
+ * board_climbs_layout_filter_idx (1 ms, 120 buffers).
+ */
+async function smallLayoutClimbUuids(sqlClient: Sql, pair: LayoutPair, threshold: number): Promise<string[] | null> {
+  const rows = await sqlClient.begin(async (tx) => {
+    await tx.unsafe('SET LOCAL enable_seqscan = off');
+    return tx<{ uuid: string }[]>`
+      SELECT uuid FROM board_climbs
+      WHERE board_type = ${pair.boardType} AND layout_id = ${pair.layoutId}
+      LIMIT ${threshold}
+    `;
+  });
+  if (rows.length >= threshold) return null;
+  return rows.map((row) => String(row.uuid));
+}
+
+/**
+ * {@link hasDeltaAtThreshold} for a layout whose every climb uuid is known.
+ * Rows are reached through the table's (board_type, climb_uuid, angle) primary
+ * key, one probe per climb, instead of walking the board-wide cursor index and
+ * throwing away every row that belongs to another layout. For a tiny layout the
+ * board-wide walk is the expensive shape: moonboard layout 1's grades probe from
+ * epoch read 954k buffers in 3.2 s on the replica; this form reads 522 in 29 ms.
+ * Same scope as the EXISTS form: the uuids are exactly the layout's climbs.
+ */
+async function hasSmallLayoutDeltaAtThreshold(params: {
+  sqlClient: Sql;
+  pair: LayoutPair;
+  climbUuids: string[];
+  tableName: 'board_climb_stats' | 'board_climb_grades';
+  watermark: SnapshotWatermark;
+  threshold: number;
+}): Promise<boolean> {
+  const { sqlClient, pair, climbUuids, tableName, watermark, threshold } = params;
+  if (climbUuids.length === 0) return false;
+  const cursorColumn = cursorColumnFor(tableName);
+  const rows = await sqlClient.unsafe(
+    `SELECT 1
+     FROM ${tableName}
+     WHERE board_type = $1
+       AND climb_uuid = ANY($2::text[])
+       AND ${cursorColumn} < now() - make_interval(secs => $3)
+       AND (${cursorColumn}, sync_seq) > ($4::timestamp, $5::bigint)
+     LIMIT $6`,
+    [
+      pair.boardType,
+      climbUuids,
+      DEFAULT_STABILITY_WINDOW_SECONDS,
+      watermark.watermarkUpdatedAt,
+      watermark.watermarkSyncSeq,
+      threshold,
+    ],
+  );
+  return rows.length >= threshold;
+}
+
 type RefreshReason = SnapshotTableName | SnapshotGradesTableName | 'missing-entry' | 'stale-schema';
 
 /** Return the first reason this pair needs a new artifact, or null when current. */
@@ -413,7 +476,28 @@ async function layoutRefreshReason(params: {
     });
   }
 
+  // A layout with fewer climbs than the threshold can never put `threshold`
+  // climb rows past any watermark, so its board_climbs probe is skipped outright,
+  // and its stats/grades probes go through the per-climb primary key.
+  const smallLayoutUuids = await smallLayoutClimbUuids(sqlClient, pair, threshold);
+
   for (const { tableName, watermark } of tableWatermarks) {
+    if (smallLayoutUuids) {
+      if (tableName === 'board_climbs') continue;
+      if (
+        await hasSmallLayoutDeltaAtThreshold({
+          sqlClient,
+          pair,
+          climbUuids: smallLayoutUuids,
+          tableName,
+          watermark,
+          threshold,
+        })
+      ) {
+        return tableName;
+      }
+      continue;
+    }
     if (await hasDeltaAtThreshold({ sqlClient, pair, tableName, watermark, threshold })) {
       return tableName;
     }
@@ -421,11 +505,60 @@ async function layoutRefreshReason(params: {
   return null;
 }
 
+// The streamed SELECT carries one extra computed column: the cursor timestamp as
+// integer microseconds since the epoch. It is the ORDER key for the in-stream
+// watermark below — exact to the microsecond and independent of how the driver
+// renders the timestamp — and is never written into the artifact.
+const WATERMARK_CURSOR_ALIAS = 'watermark_cursor_micros';
+
+/**
+ * The running maximum `(cursor, sync_seq)` keyset over streamed rows. Ordering
+ * uses the Postgres-computed microsecond value and a BigInt sync_seq, so it
+ * matches `ORDER BY cursor DESC, sync_seq DESC` exactly — never a string compare
+ * of rendered timestamps, which misorders mixed sub-second precision
+ * ('…:00.5' vs '…:00.25'). The reported watermark is the WINNING row's raw
+ * cursor value run through the same `toIso` the old per-table watermark query
+ * used, so the artifact's snapshot_meta is byte-identical to that query's.
+ */
+export class KeysetWatermarkTracker {
+  private bestMicros: bigint | null = null;
+  private bestSyncSeq: bigint | null = null;
+  private bestRawCursor: unknown = null;
+  private bestRawSyncSeq: unknown = null;
+
+  observe(cursorMicros: unknown, rawCursor: unknown, rawSyncSeq: unknown): void {
+    const micros = BigInt(String(cursorMicros));
+    const syncSeq = BigInt(String(rawSyncSeq));
+    if (
+      this.bestMicros === null ||
+      this.bestSyncSeq === null ||
+      micros > this.bestMicros ||
+      (micros === this.bestMicros && syncSeq > this.bestSyncSeq)
+    ) {
+      this.bestMicros = micros;
+      this.bestSyncSeq = syncSeq;
+      this.bestRawCursor = rawCursor;
+      this.bestRawSyncSeq = rawSyncSeq;
+    }
+  }
+
+  /** Empty scope → the epoch sentinel, so a client resumes from the start. */
+  result(): SnapshotWatermark {
+    if (this.bestMicros === null) {
+      return { watermarkUpdatedAt: EPOCH_WATERMARK_UPDATED_AT, watermarkSyncSeq: EPOCH_WATERMARK_SYNC_SEQ };
+    }
+    return { watermarkUpdatedAt: toIso(this.bestRawCursor), watermarkSyncSeq: String(this.bestRawSyncSeq) };
+  }
+}
+
 /**
  * Stream one table's scoped rows from Postgres through the shared row shaping into
  * the SQLite artifact, batched into multi-row INSERTs. Returns the number of rows
- * written; the watermark is computed separately (see `tableWatermark`) from the
- * same repeatable-read snapshot.
+ * written and the table's watermark: the greatest `(cursor, sync_seq)` keyset over
+ * exactly the rows written, tracked while streaming. Rows and watermark come from
+ * one statement in the export's REPEATABLE READ snapshot, so the watermark can
+ * never cover a row the artifact omitted, and no second query walks the
+ * board-wide cursor index backwards to find it.
  */
 async function streamTableIntoSqlite(
   tx: TransactionSql,
@@ -435,9 +568,16 @@ async function streamTableIntoSqlite(
   whereClause: string,
   params: (string | number)[],
   streamBatchSize: number,
-): Promise<number> {
+): Promise<SnapshotTableExportResult> {
   assertSafeColumns(columns);
-  const selectSql = `SELECT ${columns.join(', ')} FROM ${tableName} WHERE ${whereClause}`;
+  const cursorColumn = cursorColumnFor(tableName);
+  if (!columns.includes(cursorColumn) || !columns.includes('sync_seq')) {
+    throw new Error(`Snapshot table ${tableName} must export ${cursorColumn} and sync_seq to derive its watermark`);
+  }
+  const selectSql =
+    `SELECT ${columns.join(', ')}, ` +
+    `(EXTRACT(EPOCH FROM ${cursorColumn}) * 1000000)::bigint AS ${WATERMARK_CURSOR_ALIAS} ` +
+    `FROM ${tableName} WHERE ${whereClause}`;
   const chunkSize = multiRowChunkSize(columns.length);
   const insertSqlByRowCount = new Map<number, string>();
   const insertSqlFor = (rowCount: number): string => {
@@ -452,6 +592,7 @@ async function streamTableIntoSqlite(
   };
 
   let rowCount = 0;
+  const watermark = new KeysetWatermarkTracker();
   const pending: RawRow[] = [];
   const flush = (): void => {
     if (pending.length === 0) return;
@@ -464,46 +605,16 @@ async function streamTableIntoSqlite(
   };
 
   for await (const batch of tx.unsafe(selectSql, params).cursor(streamBatchSize)) {
-    for (const rawRow of batch) {
-      pending.push(normalizeRow(rawRow as RawRow));
+    for (const streamedRow of batch) {
+      const { [WATERMARK_CURSOR_ALIAS]: cursorMicros, ...rawRow } = streamedRow as RawRow;
+      watermark.observe(cursorMicros, rawRow[cursorColumn], rawRow.sync_seq);
+      pending.push(normalizeRow(rawRow));
       rowCount += 1;
     }
     flush();
   }
   flush();
-  return rowCount;
-}
-
-/**
- * Compute a table's watermark (the greatest `(updated_at, sync_seq)` keyset over
- * the scoped rows) inside the same transaction/snapshot as the row stream, so it
- * never covers a row the artifact omitted. Postgres orders the timestamps as real
- * timestamps — never string-compared in JS, which would misorder mixed sub-second
- * precision. Empty scope → the epoch sentinel, so a client resumes from the start.
- */
-async function tableWatermark(
-  tx: TransactionSql,
-  tableName: SnapshotTableName | SnapshotGradesTableName,
-  whereClause: string,
-  params: (string | number)[],
-): Promise<{ watermarkUpdatedAt: string; watermarkSyncSeq: string }> {
-  const cursorColumn = cursorColumnFor(tableName);
-  const rows = await tx.unsafe(
-    `SELECT ${cursorColumn} AS cursor_at, sync_seq
-     FROM ${tableName}
-     WHERE ${whereClause}
-     ORDER BY ${cursorColumn} DESC, sync_seq DESC
-     LIMIT 1`,
-    params,
-  );
-  const watermarkRow = rows[0] as unknown as { cursor_at: unknown; sync_seq: unknown } | undefined;
-  if (!watermarkRow) {
-    return { watermarkUpdatedAt: EPOCH_WATERMARK_UPDATED_AT, watermarkSyncSeq: EPOCH_WATERMARK_SYNC_SEQ };
-  }
-  return {
-    watermarkUpdatedAt: toIso(watermarkRow.cursor_at),
-    watermarkSyncSeq: String(watermarkRow.sync_seq),
-  };
+  return { rowCount, ...watermark.result() };
 }
 
 type DeletionReplayProbeRow = {
@@ -754,7 +865,7 @@ export async function exportLayoutSnapshot(params: {
       const climbColumns = TABLE_CONFIGS.board_climbs.localColumns;
       const statsColumns = TABLE_CONFIGS.board_climb_stats.localColumns;
 
-      const climbRowCount = await streamTableIntoSqlite(
+      const climbsResult = await streamTableIntoSqlite(
         tx,
         sqliteDb,
         'board_climbs',
@@ -763,9 +874,7 @@ export async function exportLayoutSnapshot(params: {
         scopeParams,
         streamBatchSize,
       );
-      const climbWatermark = await tableWatermark(tx, 'board_climbs', CLIMBS_WHERE, scopeParams);
-
-      const statsRowCount = await streamTableIntoSqlite(
+      const statsResult = await streamTableIntoSqlite(
         tx,
         sqliteDb,
         'board_climb_stats',
@@ -774,16 +883,15 @@ export async function exportLayoutSnapshot(params: {
         scopeParams,
         streamBatchSize,
       );
-      const statsWatermark = await tableWatermark(tx, 'board_climb_stats', STATS_WHERE, scopeParams);
 
       const tables = {
-        board_climbs: { rowCount: climbRowCount, ...climbWatermark },
-        board_climb_stats: { rowCount: statsRowCount, ...statsWatermark },
+        board_climbs: climbsResult,
+        board_climb_stats: statsResult,
       } satisfies Record<SnapshotTableName, SnapshotTableExportResult>;
 
       if (!gradesDb) return { tables, gradesTables: null, ...deletionReplayMetadata };
 
-      const gradesRowCount = await streamTableIntoSqlite(
+      const gradesResult = await streamTableIntoSqlite(
         tx,
         gradesDb,
         'board_climb_grades',
@@ -792,13 +900,12 @@ export async function exportLayoutSnapshot(params: {
         scopeParams,
         streamBatchSize,
       );
-      const gradesWatermark = await tableWatermark(tx, 'board_climb_grades', GRADES_WHERE, scopeParams);
 
       return {
         tables,
         ...deletionReplayMetadata,
         gradesTables: {
-          board_climb_grades: { rowCount: gradesRowCount, ...gradesWatermark },
+          board_climb_grades: gradesResult,
         } satisfies Record<SnapshotGradesTableName, SnapshotTableExportResult>,
       };
     });

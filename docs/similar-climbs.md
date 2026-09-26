@@ -89,8 +89,9 @@ group first:
    hold → climbs index.
 3. Recompute, from scratch, every list that can have changed: the work-set
    climbs, their above-0.5 neighbours (the new climb may now rank in their
-   top 25), the lists that lost a row in step 1, and any list now shorter than
-   when it was written (see below). Each chunk of lists is replaced in one transaction.
+   top 25), the lists that lost a row in step 1, and, on the weekly gap-scan
+   run, any list now shorter than when it was written (see below). Each chunk of
+   lists is replaced in one transaction.
 4. Advance the watermark, once every group on the board is done.
 
 Each group logs climbs processed, rows written and seconds. A group with 5,000 or
@@ -128,20 +129,31 @@ compute for a full build. The first implementation managed 44 a second, about
 about 0.6 rows per climb adds a few minutes, so expect well under an hour for a
 full Kilter build. Every other board is a fraction of that.
 
-**Lists that lost a row.** Two things remove rows outside the job: `updateClimb`
-(below), and a deleted climb, whose rows go with the FK cascade. By the next run
-nothing names that climb any more. Each row therefore carries `list_size`, the
-length of its list when it was written. A list whose row count has dropped below
-it gets refilled.
+**Lists that lost a row.** One thing removes rows from other climbs' lists
+outside the job: a deleted climb, whose rows go with the FK cascade. By the next
+run nothing names that climb any more. Each row therefore carries `list_size`,
+the length of its list when it was written, and a list whose row count has
+dropped below it gets refilled.
+
+Finding those lists means grouping every neighbour row on the board (Kilter: 192k
+rows, 20-36 s; MoonBoard: 2.3M rows), so the scan runs **weekly**, on the run
+that starts on a Sunday (UTC), and on any run given `--refill-gaps`. A full build
+never needs it. Deletes are rare (5 in a day of prod stats), and a list that lost
+a row is still correct, one entry short: clients show 10-12 of its 25, so the
+cost of waiting is at most a week of one fewer candidate below the fold.
 
 ## Edit invalidation
 
 `updateClimb` (`packages/backend/src/graphql/resolvers/climbs/mutations.ts`)
 rewrites a climb's `board_climb_holds` when its frames change. In the same
-transaction it deletes that climb's `board_climb_neighbors` rows in both
-directions. Until the next run, the edited climb shows no similar climbs and
-appears in no one else's list, which beats showing a score for holds it no
-longer uses. The update bumped `sync_seq`, so the next run re-scores it.
+transaction it deletes that climb's **own** `board_climb_neighbors` list, so
+until the next run the edited climb shows no similar climbs rather than a list
+scored on holds it no longer uses. Its slot in other climbs' lists stays until
+the next nightly run: the update bumped `sync_seq`, so the job deletes every row
+naming the climb and rewrites each list it sat in (step 1 and 3 above). Until
+then those lists can still show it, at its pre-edit score, for up to a day.
+Deleting those slots in the mutation too would leave each of those lists one
+row short, a gap only the weekly scan finds.
 
 ## Runbook
 
@@ -160,6 +172,9 @@ longer uses. The update bumped `sync_seq`, so the next run re-scores it.
   (then without `--dry-run`, or with `--full`). Uses `DB_URL` / `DATABASE_URL`
   like the other `packages/db` scripts.
 - **Something looks stale**: `--full` for that board is always safe to re-run.
+- **Refill short lists now** (after a bulk climb delete, say): run
+  `vp run db:refresh-climb-neighbors -- --board=<board> --refill-gaps` against
+  the target database; the Sunday run does it on its own.
 - **Memory**: the job holds one group's `(uuid, frames)` and hold index in memory
   at a time. The biggest is Kilter layout 1, with about 295k eligible climbs.
   The workflow gives node 4 GB.

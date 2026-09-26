@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { GraphQLError } from 'graphql';
-import { and, eq, or, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import {
   type ConnectionContext,
   type SaveClimbResult,
@@ -1107,19 +1107,18 @@ export const climbMutations = {
           }
 
           // The materialised similar-climbs index scored this climb on the holds
-          // it just gave up, so its rows are wrong in both directions: its own
-          // neighbour list, and its slot in every other climb's list. Drop them
-          // with the hold rewrite; the UPDATE above bumped `sync_seq`, which puts
-          // the climb back in the nightly refresh window (docs/similar-climbs.md).
+          // it just gave up, so its own neighbour list is wrong. Drop that list
+          // with the hold rewrite. Its slot in other climbs' lists is left for
+          // the nightly job: the UPDATE above bumped `sync_seq`, and the job
+          // deletes every row naming a changed climb and rewrites the lists it
+          // sat in (docs/similar-climbs.md). Deleting those slots here too would
+          // leave gaps only the weekly whole-board scan finds.
           await tx
             .delete(dbSchema.boardClimbNeighbors)
             .where(
               and(
                 eq(dbSchema.boardClimbNeighbors.boardType, validated.boardType),
-                or(
-                  eq(dbSchema.boardClimbNeighbors.climbUuid, validated.uuid),
-                  eq(dbSchema.boardClimbNeighbors.neighborUuid, validated.uuid),
-                ),
+                eq(dbSchema.boardClimbNeighbors.climbUuid, validated.uuid),
               ),
             );
 

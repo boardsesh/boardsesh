@@ -62,7 +62,24 @@ export type ClimbNeighborRefreshOptions = {
   shouldContinue?: () => boolean;
   /** Lists written per transaction. Tests shrink it to stop mid-group. */
   chunkSize?: number;
+  /**
+   * Incremental runs only: also scan the whole board for lists shorter than
+   * their `list_size` and refill them. The scan reads every row on the board
+   * (Kilter: 192k rows, 20-36 s), and since `updateClimb` stopped deleting other
+   * climbs' rows the only source of such gaps is a deleted climb's FK cascade,
+   * a handful a week. The script turns it on once a week
+   * ({@link isGapRefillDay}) and on `--refill-gaps`. Defaults to true.
+   */
+  refillGappedLists?: boolean;
 };
+
+/** UTC day of week (0 = Sunday) on which the nightly run also refills gapped lists. */
+export const CLIMB_NEIGHBOR_GAP_REFILL_UTC_DAY = 0;
+
+/** Whether a nightly run starting at `now` is the weekly gap-refill run. */
+export function isGapRefillDay(now: Date): boolean {
+  return now.getUTCDay() === CLIMB_NEIGHBOR_GAP_REFILL_UTC_DAY;
+}
 
 export type ClimbNeighborGroupStat = {
   layoutId: number;
@@ -205,6 +222,7 @@ export async function refreshClimbNeighborsForBoard(
     log = () => {},
     shouldContinue = () => true,
     chunkSize = RECOMPUTE_CHUNK,
+    refillGappedLists = true,
   }: ClimbNeighborRefreshOptions,
 ): Promise<ClimbNeighborRefreshResult> {
   const result: ClimbNeighborRefreshResult = {
@@ -367,27 +385,29 @@ export async function refreshClimbNeighborsForBoard(
     result.workSetSize = workSet.size;
     log(`[${boardType}] ${workSet.size} climb(s) changed since sync_seq ${previousSyncSeq}`);
 
-    // Lists shorter than they were written lost a row outside this job:
-    // `updateClimb` deletes an edited climb's rows in both directions, and
-    // deleting a climb cascades its rows away. By the time the job runs nothing
+    // Lists shorter than they were written lost a row outside this job: a
+    // deleted climb cascades its rows away, and by the time the job runs nothing
     // names that climb any more, so `list_size` is the only record of which
-    // lists to refill.
-    const gapped = await db
-      .select({
-        uuid: boardClimbNeighbors.climbUuid,
-        layoutId: boardClimbs.layoutId,
-        compatibleSizeIds: boardClimbs.compatibleSizeIds,
-      })
-      .from(boardClimbNeighbors)
-      .innerJoin(boardClimbs, eq(boardClimbs.uuid, boardClimbNeighbors.climbUuid))
-      .where(eq(boardClimbNeighbors.boardType, boardType))
-      .groupBy(boardClimbNeighbors.climbUuid, boardClimbs.layoutId, boardClimbs.compatibleSizeIds)
-      .having(sql`COUNT(*) <> MAX(${boardClimbNeighbors.listSize})`);
-    for (const climb of gapped) {
-      const key = groupKeyFor(boardType, climb.layoutId, climb.compatibleSizeIds);
-      if (key) addToGroup(groups, key, climb.uuid);
+    // lists to refill. A list that lost a row is still correct, one entry
+    // short, and clients show 10-12 of 25, so this whole-board scan runs weekly.
+    if (refillGappedLists) {
+      const gapped = await db
+        .select({
+          uuid: boardClimbNeighbors.climbUuid,
+          layoutId: boardClimbs.layoutId,
+          compatibleSizeIds: boardClimbs.compatibleSizeIds,
+        })
+        .from(boardClimbNeighbors)
+        .innerJoin(boardClimbs, eq(boardClimbs.uuid, boardClimbNeighbors.climbUuid))
+        .where(eq(boardClimbNeighbors.boardType, boardType))
+        .groupBy(boardClimbNeighbors.climbUuid, boardClimbs.layoutId, boardClimbs.compatibleSizeIds)
+        .having(sql`COUNT(*) <> MAX(${boardClimbNeighbors.listSize})`);
+      for (const climb of gapped) {
+        const key = groupKeyFor(boardType, climb.layoutId, climb.compatibleSizeIds);
+        if (key) addToGroup(groups, key, climb.uuid);
+      }
+      log(`[${boardType}] gap scan: ${gapped.length} list(s) short of their written size to refill`);
     }
-    if (gapped.length > 0) log(`[${boardType}] ${gapped.length} list(s) short of their written size to refill`);
 
     // Climbs whose list named a work-set climb: they lose that row below and
     // are recomputed so the slot is refilled.
