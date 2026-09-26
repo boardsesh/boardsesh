@@ -45,7 +45,7 @@ beforeAll(async () => {
   const [existingLedger] = await owner`SELECT to_regclass('public.background_job_runs') AS ledger`;
   if (!existingLedger.ledger) {
     await owner.unsafe(
-      readFileSync(new URL('../../../../db/drizzle/0240_background_job_runs.sql', import.meta.url), 'utf8'),
+      readFileSync(new URL('../../../../db/drizzle/0241_background_job_runs.sql', import.meta.url), 'utf8'),
     );
   }
   await initializeJobQueueSchema(drizzle(owner));
