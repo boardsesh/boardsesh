@@ -323,7 +323,7 @@ hand-written server) since the standalone `server.js` is generated at build time
 `overlapSeconds` (the other teardown knob) keeps both deployments serving at
 once. It is deliberately unset. Overlap would double the backend's Postgres
 footprint — 5 replicas x `DB_POOL_MAX` 10 — against a shared `max_connections`
-of 200 that has been exhausted before (see
+of 100 since the PG18 cutover (200 on PG16, where it was exhausted; see
 [db-connectivity.md](./db-connectivity.md)). Railway only sends SIGTERM once the
 replacement deployment is already healthy, so there is no capacity gap for
 overlap to cover; draining alone addresses the severed-request case.

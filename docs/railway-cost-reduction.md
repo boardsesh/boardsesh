@@ -77,6 +77,10 @@ total memory graph alone cannot establish that gate: collect cgroup
 `memory.current` and `memory.stat` to distinguish reclaimable file cache. If this
 evidence is missing, retain 12 GB. An 8 GB trial is never automatic.
 
+This gate covered the PG16 cluster. For the PG18 primary the owner chose on
+2026-09-26 to go straight to 4 GB without the seven-day window, accepting slower
+online queries (next section). Rollback there is on OOM kills and restarts only.
+
 ## PG18 primary: 4 GB cap, September 26
 
 The PG18 primary (`PostGIS - PG18`, service `f122fc1f-b90a-4395-989b-8ee361da8820`)
@@ -117,9 +121,14 @@ Before that, these went into `postgresql.auto.conf` with `ALTER SYSTEM`:
 | `random_page_cost` | 4 | 1.1 |
 | `jit` | on | off |
 
-`max_connections` stays at 100: a hot standby refuses to start with a lower value
-than its primary, so raising it on the primary first would stop the homelab
-standby. The limit change restarted the service. Postgres was accepting connections
+`max_connections` stays at 100. It has been 100 since the PG18 cutover, not the
+200 PG16 had. Steady state is about 50 client connections: five backend replicas
+and web on the runtime role, plus pg-boss and the detector. A deploy briefly runs
+the old and new backend fleets side by side while the old one drains. That can
+approach the limit, but the logs show no "too many clients" errors since the
+cutover. Raising it must start on the homelab standby: a hot standby refuses to
+start with a lower value than its primary, so raising the primary first would stop
+replication. The limit change restarted the service. Postgres was accepting connections
 again 20 seconds later with `shared_buffers = 1GB`, the homelab standby resumed
 streaming with no lag, and `/health/db` returned 200. The CPU ceiling is a safety
 rail only; CPU is billed on usage.
