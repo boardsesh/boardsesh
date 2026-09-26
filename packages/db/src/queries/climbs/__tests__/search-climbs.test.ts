@@ -839,10 +839,7 @@ void describe('stats-driven path: Boardsesh grades joined after the page is cut'
     assert.equal(whereClauses.length, 1);
     assert.match(whereClauses[0], /"grade_fallback"/);
     assert.doesNotMatch(whereClauses[0], /"board_climb_grades"\."/);
-    // The outer SELECT hand-lists these columns rather than re-projecting them
-    // from `statsDrivenClimbFields()` (drizzle's subquery type has no index
-    // signature to map over), so a field added there and forgotten here would
-    // otherwise vanish from this path's rows with no type error.
+    // Pins the outer SELECT's hand-listed columns to statsDrivenClimbFields(), so a forgotten field can't silently vanish.
     const climbFieldKeys = Object.keys(statsDrivenClimbFields());
     for (const key of climbFieldKeys) {
       assert.ok(pageQuery.selectKeys.includes(key), `outer SELECT is missing ${key}`);
