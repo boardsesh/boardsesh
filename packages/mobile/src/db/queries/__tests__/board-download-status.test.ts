@@ -134,11 +134,28 @@ describe('isClimbLayoutDownloadedLocally', () => {
     await runMigrations(db);
   });
 
-  it("is true when the climb's own layout finished downloading, at any size", async () => {
-    await insertClimb(db, { uuid: 'a', layoutId: 1, compatibleSizeIds: [5] });
+  it("is true when a size of the climb's own layout that the climb fits finished downloading", async () => {
+    await insertClimb(db, { uuid: 'a', layoutId: 1, compatibleSizeIds: [5, 7] });
     setSetting('syncEnabledBoards', ['kilter:1:7']);
     await markScopeDownloadComplete(db, 'kilter:1:7');
     expect(await isClimbLayoutDownloadedLocally(db, 'kilter', 'a')).toBe(true);
+  });
+
+  it('is false when the only completed size of the layout is one the climb does not fit', async () => {
+    // The stats pull is scoped by compatible_size_ids, so a finished kilter:1:7
+    // never pulled this climb's stats, even though the row is here (kilter:1:5
+    // is still downloading).
+    await insertClimb(db, { uuid: 'a', layoutId: 1, compatibleSizeIds: [5] });
+    setSetting('syncEnabledBoards', ['kilter:1:5', 'kilter:1:7']);
+    await markScopeDownloadComplete(db, 'kilter:1:7');
+    expect(await isClimbLayoutDownloadedLocally(db, 'kilter', 'a')).toBe(false);
+  });
+
+  it('ignores size for a board that is not size-scoped', async () => {
+    await insertClimb(db, { uuid: 'm', boardType: 'moonboard', layoutId: 2, compatibleSizeIds: null });
+    setSetting('syncEnabledBoards', ['moonboard:2:1']);
+    await markScopeDownloadComplete(db, 'moonboard:2:1');
+    expect(await isClimbLayoutDownloadedLocally(db, 'moonboard', 'm')).toBe(true);
   });
 
   it('is false when only a different layout of the board type is downloaded', async () => {

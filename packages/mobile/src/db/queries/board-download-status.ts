@@ -85,14 +85,18 @@ export async function hasDownloadedBoardData(db: OfflineDatabase): Promise<boole
 }
 
 /**
- * Whether the layout a climb belongs to has a completed download, at any size.
+ * Whether a completed download covers this climb: a scope of the climb's own
+ * layout at a size the climb fits (any size for boards that are not
+ * size-scoped).
  *
  * For reads keyed only by (board type, climb uuid) whose empty answer is a real
  * answer — the per-angle stats list comes back empty for a climb nobody has sent
  * yet — so "is anything of this board type downloaded" is not enough: a climb
- * from a layout that never synced would read as unsent instead of falling back
- * to the network. Stats sync with their layout's climbs, so a completed download
- * of the climb's own layout means its stats rows are all here.
+ * from a scope that never synced would read as unsent instead of falling back
+ * to the network. The server scopes the stats pull to the scope's climbs by
+ * layout AND `compatible_size_ids`, so a completed download at a size the climb
+ * does not fit never pulled its stats rows — even when the climb row itself is
+ * on the device (a second size of the layout still downloading, say).
  *
  * Short-circuits on the in-memory setting before touching SQLite, so a device
  * with nothing downloaded for this board type pays no probe. `getSetting` is
@@ -109,15 +113,31 @@ export async function isClimbLayoutDownloadedLocally(
   );
   if (scopeKeysForType.length === 0) return false;
 
-  const climb = await db.getFirstAsync<{ layout_id: number | null }>(
-    'SELECT layout_id FROM board_climbs WHERE uuid = ? AND board_type = ? LIMIT 1',
+  const climb = await db.getFirstAsync<{ layout_id: number | null; compatible_size_ids: string | null }>(
+    'SELECT layout_id, compatible_size_ids FROM board_climbs WHERE uuid = ? AND board_type = ? LIMIT 1',
     [climbUuid, boardType],
   );
   if (climb?.layout_id == null) return false;
 
+  const sizeScoped = isSizeScopedBoard(boardType);
+  const climbSizeIds = sizeScoped ? parseSizeIds(climb.compatible_size_ids) : null;
+
   for (const scopeKey of scopeKeysForType) {
-    if (parseOfflineBoardKey(scopeKey)?.layoutId !== climb.layout_id) continue;
+    const scope = parseOfflineBoardKey(scopeKey);
+    if (scope?.layoutId !== climb.layout_id) continue;
+    if (climbSizeIds && !climbSizeIds.has(scope.sizeId)) continue;
     if (await isScopeDownloadComplete(db, scopeKey)) return true;
   }
   return false;
+}
+
+/** `compatible_size_ids` is stored as a JSON array; anything else reads as no sizes. */
+function parseSizeIds(raw: string | null): ReadonlySet<number> {
+  if (!raw) return new Set();
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return new Set(Array.isArray(parsed) ? parsed.filter((id): id is number => typeof id === 'number') : []);
+  } catch {
+    return new Set();
+  }
 }

@@ -42,7 +42,7 @@ These have "now" semantics or are unbounded, so a stale copy is worse than an ho
 | `['climb', …]`                                                                           | SQLite                      | Registered today                                                   |
 | `['setterStats', …]`                                                                     | SQLite                      | Registered today (#5407)                                           |
 | `['boardseshGrade']`, `['boardseshGradesForAngles']`                                     | SQLite                      | Registered today                                                   |
-| `['climbStatsHistory', board, uuid]`                                                     | SQLite                      | `board_climb_stats`, once the climb's own layout finished downloading; server otherwise |
+| `['climbStatsHistory', board, uuid]`                                                     | SQLite                      | `board_climb_stats`, once a scope the climb belongs to (its layout, at a size it fits) finished downloading; server otherwise |
 | `['similarClimbs', …]`                                                                   | SQLite (local-only)         | Holds index; never the network for non-admins — see below          |
 | `['holdHeatmap', …]`                                                                     | SQLite (local-only)         | Holds index ⋈ the list's filters; never the network for non-admins |
 | `['logbook', board, …]`                                                                  | SQLite                      | `boardsesh_ticks`; reader missing                                  |

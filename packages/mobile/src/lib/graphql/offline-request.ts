@@ -317,10 +317,11 @@ registerOfflineOperation<BoardseshGradesForAnglesVariables, BoardseshGradesForAn
 
 // Per-angle community stats (the play drawer's grade-by-angle bars and the angle
 // picker). Local-first: served from board_climb_stats once the climb's OWN
-// layout has a completed download, the server otherwise. The gate is the
-// climb's layout, not just the board type, because an empty list is a real
-// answer here (a climb nobody has sent) — a climb from a layout that never
-// synced has to reach the network instead of reading as unsent. So no
+// layout has a completed download at a size the climb fits, the server
+// otherwise. The gate is the climb's own scope, not just the board type,
+// because an empty list is a real answer here (a climb nobody has sent) — a
+// climb whose stats never synced has to reach the network instead of reading
+// as unsent. So no
 // `isLocalMiss` either: past that gate, empty means empty. Counted under the
 // `grade` surface, the read the bars feed.
 registerOfflineOperation<ClimbStatsHistoryVariables, ClimbStatsHistoryResponse>({
