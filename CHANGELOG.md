@@ -8,6 +8,10 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- Hold heatmap redesigned. Used holds are shaded violet inside their own shapes, and they are ranked so the hot holds stand out. ([#5813](https://github.com/boardsesh/boardsesh/pull/5813))
+  Three modes: Climbs, Starts & finishes, and Grade.
+  On the create board, the heatmap follows your brush.
+  The flame now stays put while you browse.
 - The grade you gave a climb is now the grade you see on it, and the one it sorts and filters by. The crowd's number sits underneath when the two disagree. ([#5143](https://github.com/boardsesh/boardsesh/pull/5143))
   Grade a climb you haven't sent yet — handy on boards where everything reads sandbagged.
 

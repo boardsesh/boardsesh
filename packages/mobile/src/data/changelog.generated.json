@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-09-26T00:42:49.255Z",
+  "generatedAt": "2026-09-26T01:36:03.933Z",
   "entries": [
+    {
+      "prNumber": 5813,
+      "category": "new",
+      "title": "Hold heatmap redesigned. Used holds are shaded violet inside their own shapes, and they are ranked so the hot holds stand out.",
+      "mergedAt": "2026-09-26T01:33:04Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5813",
+      "body": "Three modes: Climbs, Starts & finishes, and Grade.\nOn the create board, the heatmap follows your brush.\nThe flame now stays put while you browse."
+    },
     {
       "prNumber": 5806,
       "category": "fixed",
