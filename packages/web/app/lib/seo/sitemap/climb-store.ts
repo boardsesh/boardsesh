@@ -403,7 +403,8 @@ export type ClimbShardPage = StoredClimbPage & { source: ClimbShardSource };
  * reads. That tear is bounded and self-describing: each statement sees a
  * complete epoch, and the worst case — an empty slice against a non-zero count —
  * is exactly the transient disagreement the route handler already 503s with
- * `no-store`.
+ * `no-store`. A summary over an EMPTY URL table is not a tear (no refresh
+ * commits that), so it returns null and the caller takes the live build.
  */
 export async function fetchStoredClimbPage(page: number): Promise<StoredClimbPage | null> {
   const start = (page - 1) * CLIMB_URLS_PER_SHARD;
@@ -421,6 +422,15 @@ export async function fetchStoredClimbPage(page: number): Promise<StoredClimbPag
   // An empty SLICE of a populated table is not: that verdict (transient tear vs
   // out-of-range) belongs to the route handler, which has the summary in hand.
   if (totalItems === 0) {
+    return null;
+  }
+
+  // A summary with no URL rows under it — the table truncated or restored
+  // without its summary row — is "never populated" too, not a tear. A refresh
+  // never commits a summary over an empty table, so a 503 here would never
+  // clear on its own. Only an in-range empty slice pays the extra probe; a
+  // healthy page and a genuine past-the-end page both skip it.
+  if (pageRows.length === 0 && start < totalItems && !(await hasStoredClimbUrls())) {
     return null;
   }
 

@@ -269,6 +269,17 @@ describe('getSitemapClimbConfigsOrThrow', () => {
 
     await expect(getSitemapClimbConfigsOrThrow()).rejects.toThrow('backend unreachable');
   });
+
+  it('refuses a second candidate for a MoonBoard layout rather than ranking one against the presence flag', async () => {
+    // `isBetterConfig` ranks within a layout group by `climbCount` first, and
+    // the static MoonBoard config's `climbCount: 1` is not a count. If a listed
+    // config ever named a MoonBoard layout, it would win or lose against that
+    // flag for no real reason — so both shards fail loudly instead.
+    listed.configs = [KILTER_CONFIG, { ...KILTER_CONFIG, boardType: 'moonboard', layoutId: 4, climbCount: 3 }];
+
+    await expect(getSitemapClimbConfigsOrThrow()).rejects.toThrow('two configs for moonboard layout 4');
+    await expect(getBoardsShardConfigsOrThrow()).rejects.toThrow('two configs for moonboard layout 4');
+  });
 });
 
 describe('the gate query is bounded', () => {

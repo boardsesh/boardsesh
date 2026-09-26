@@ -199,7 +199,8 @@ async function getMoonBoardListedLayoutIds(): Promise<Set<number>> {
  *
  * `climbCount: 1` is a presence flag, not a count. Both shards read it only as
  * a `> 0` gate, and `isBetterConfig` never compares two MoonBoard candidates
- * because there is exactly one per layout group.
+ * because there is exactly one per layout group — an invariant
+ * `withMoonBoardConfigs` enforces rather than assumes.
  */
 function buildMoonBoardConfigs(listedLayoutIds: Set<number>): PopularBoardConfig[] {
   const configs: PopularBoardConfig[] = [];
@@ -234,6 +235,36 @@ function buildMoonBoardConfigs(listedLayoutIds: Set<number>): PopularBoardConfig
 }
 
 /**
+ * The listed configs plus the MoonBoard ones, refusing any second candidate for
+ * a MoonBoard layout group.
+ *
+ * The MoonBoard configs carry `climbCount: 1` as a presence flag, and
+ * `isBetterConfig` ranks candidates within a `boardType:layoutId` group by
+ * `climbCount` first. A second candidate for the same group — a psls row for
+ * MoonBoard from a future importer, or two `MOONBOARD_LAYOUTS` keys sharing an
+ * id — would be ranked against that flag as if it were a count and win or lose
+ * for no real reason. Throwing makes that change fail loudly in its own PR
+ * instead of silently reordering the sitemap.
+ */
+function withMoonBoardConfigs(
+  listedConfigs: PopularBoardConfig[],
+  moonBoardLayoutIds: Set<number>,
+): PopularBoardConfig[] {
+  const combined = [...listedConfigs, ...buildMoonBoardConfigs(moonBoardLayoutIds)];
+  const seenMoonBoardLayouts = new Set<number>();
+  for (const config of combined) {
+    if (config.boardType !== 'moonboard') continue;
+    if (seenMoonBoardLayouts.has(config.layoutId)) {
+      throw new Error(
+        `[sitemap] two configs for moonboard layout ${config.layoutId}: the static MoonBoard config's climbCount is a presence flag and cannot be ranked against another candidate`,
+      );
+    }
+    seenMoonBoardLayouts.add(config.layoutId);
+  }
+  return combined;
+}
+
+/**
  * Every board configuration the CLIMB shards build URLs from.
  *
  * Strict on both legs, and it has to be. The climbs shard resolves its groups
@@ -259,7 +290,7 @@ export async function getSitemapClimbConfigsOrThrow(): Promise<SitemapClimbConfi
     getPublicSprayWallConfigs(),
   ]);
 
-  return [...listedConfigs, ...buildMoonBoardConfigs(moonBoardLayoutIds), ...sprayWallConfigs];
+  return [...withMoonBoardConfigs(listedConfigs, moonBoardLayoutIds), ...sprayWallConfigs];
 }
 
 /**
@@ -294,7 +325,7 @@ export async function getBoardsShardConfigsOrThrow(): Promise<PopularBoardConfig
     }),
   ]);
 
-  return [...listedConfigs, ...buildMoonBoardConfigs(moonBoardLayoutIds)];
+  return withMoonBoardConfigs(listedConfigs, moonBoardLayoutIds);
 }
 
 /** Test seam: drops the in-process TTL cache and any in-flight fetch. */
