@@ -582,9 +582,17 @@ function isEmptyUpstreamClimbStat(value: MappedClimbStat): boolean {
  * Per-pass climb_stats write counts. `received` is what Aurora sent, `offered`
  * what reached the upsert (fully empty NEW keys are dropped first), `written`
  * the rows the upsert inserted or changed. offered − written is the no-op
- * re-sends the conflict guard skipped.
+ * re-sends the conflict guard skipped. `written` is null when a statement ran
+ * but the driver reported no row count: unknown, never a silent 0.
  */
-export type ClimbStatsWriteCounts = { received: number; offered: number; written: number };
+export type ClimbStatsWriteCounts = { received: number; offered: number; written: number | null };
+
+/** Add `batch` into `total`. An unknown written count on either side stays unknown. */
+export function addClimbStatsWriteCounts(total: ClimbStatsWriteCounts, batch: ClimbStatsWriteCounts): void {
+  total.received += batch.received;
+  total.offered += batch.offered;
+  total.written = total.written === null || batch.written === null ? null : total.written + batch.written;
+}
 
 export function emptyClimbStatsWriteCounts(): ClimbStatsWriteCounts {
   return { received: 0, offered: 0, written: 0 };
@@ -601,6 +609,9 @@ export async function upsertClimbStats(
   counts: ClimbStatsWriteCounts = emptyClimbStatsWriteCounts(),
 ): Promise<ClimbStatsWriteCounts> {
   const climbStatsSchema = UNIFIED_TABLES.climbStats;
+  // received counts every row Aurora sent, BEFORE the empty-new-key filter
+  // below; offered counts what reaches the upsert AFTER it. received > offered
+  // is expected whenever Aurora sends empty stats for keys we do not have.
   counts.received += data.length;
 
   await processBatches(data, async (batch) => {
@@ -683,8 +694,10 @@ export async function upsertClimbStats(
         setWhere: climbStatsConflictWhere(conflictSet),
       });
     counts.offered += statsValues.length;
-    // INSERT … ON CONFLICT reports inserted + updated rows, never the skipped ones.
-    counts.written += commandCountFromResult(result) ?? 0;
+    // INSERT … ON CONFLICT reports inserted + updated rows, never the skipped
+    // ones. No count from the driver makes the pass total unknown (null).
+    const rowsWritten = commandCountFromResult(result);
+    counts.written = rowsWritten === undefined || counts.written === null ? null : counts.written + rowsWritten;
   });
   return counts;
 }
@@ -1199,9 +1212,7 @@ export async function syncSharedData(
       }
     });
 
-    climbStatsWrites.received += batchClimbStatsWrites.received;
-    climbStatsWrites.offered += batchClimbStatsWrites.offered;
-    climbStatsWrites.written += batchClimbStatsWrites.written;
+    addClimbStatsWriteCounts(climbStatsWrites, batchClimbStatsWrites);
     allNewClimbs.push(...batchNewClimbs);
     for (const [tableName, synced] of batchSyncedByTable) {
       if (!totalResults[tableName]) {
@@ -1234,11 +1245,17 @@ export async function syncSharedData(
   );
   // How much of Aurora's climb_stats re-send was real change. offered − written
   // is what the no-op guard in upsertClimbStats skipped.
+  const { received, offered, written } = climbStatsWrites;
   log(
-    `[SharedSync] ${board} climb_stats writes: received=${climbStatsWrites.received} offered=${
-      climbStatsWrites.offered
-    } written=${climbStatsWrites.written} unchanged=${climbStatsWrites.offered - climbStatsWrites.written}`,
+    `[SharedSync] ${board} climb_stats writes: received=${received} offered=${offered} written=${
+      written ?? 'unknown'
+    } unchanged=${written === null ? 'unknown' : offered - written}`,
   );
+  if (written === null) {
+    log(
+      `[SharedSync] WARNING ${board}: the database driver returned no row count for a climb_stats upsert; written is unknown for this pass`,
+    );
+  }
 
   // Weekly board_climb_stats_history snapshot: a full cross-section of every
   // climb on the board with ascents, gated by a 7-day per-board watermark.

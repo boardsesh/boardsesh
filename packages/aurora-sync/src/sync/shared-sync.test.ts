@@ -52,6 +52,7 @@ vi.mock('drizzle-orm/postgres-js', async () => {
 import type { SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import {
+  addClimbStatsWriteCounts,
   climbListingConflictSet,
   climbStatsUpstreamConflictSet,
   createSetterSyncNotifications,
@@ -1135,6 +1136,17 @@ describe('no-op write guards (recorded from the real write path)', () => {
     );
   });
 
+  it('keeps written unknown once any batch lacks a row count', () => {
+    const total = { received: 3, offered: 3, written: 3 };
+    addClimbStatsWriteCounts(total, { received: 2, offered: 1, written: null });
+    expect(total).toEqual({ received: 5, offered: 4, written: null });
+    addClimbStatsWriteCounts(total, { received: 1, offered: 1, written: 1 });
+    expect(total.written).toBeNull();
+    const known = { received: 1, offered: 1, written: 1 };
+    addClimbStatsWriteCounts(known, { received: 2, offered: 2, written: 0 });
+    expect(known).toEqual({ received: 3, offered: 3, written: 1 });
+  });
+
   it('counts only the committed run of a retried transaction callback', async () => {
     const stat = (climbUuid: string) => ({
       climb_uuid: climbUuid,
@@ -1154,9 +1166,13 @@ describe('no-op write guards (recorded from the real write path)', () => {
       const result = await syncSharedData(fakePostgresClient(), 'decoy', 'token', (line) => lines.push(line));
       // The callback ran twice; one pass of two rows is what committed.
       expect(writtenStatsRowsFor(['RETRY-A', 'RETRY-B'])).toHaveLength(4);
-      expect(result.climbStatsWrites).toEqual({ received: 2, offered: 2, written: 0 });
+      // The shim reports no row count, so written is unknown rather than 0.
+      expect(result.climbStatsWrites).toEqual({ received: 2, offered: 2, written: null });
       expect(result.results.climb_stats.synced).toBe(2);
-      expect(lines).toContain('[SharedSync] decoy climb_stats writes: received=2 offered=2 written=0 unchanged=2');
+      expect(lines).toContain(
+        '[SharedSync] decoy climb_stats writes: received=2 offered=2 written=unknown unchanged=unknown',
+      );
+      expect(lines.filter((line) => line.includes('returned no row count'))).toHaveLength(1);
     } finally {
       shimFailedCommitsRemaining = 0;
     }
@@ -1166,8 +1182,10 @@ describe('no-op write guards (recorded from the real write path)', () => {
     const lines: string[] = [];
     mockSharedSync.mockResolvedValueOnce(complete({ climb_stats: [] }));
     const result = await syncSharedData(fakePostgresClient(), 'decoy', 'token', (line) => lines.push(line));
+    // No statement ran, so zero written is known, and there is no warning.
     expect(result.climbStatsWrites).toEqual({ received: 0, offered: 0, written: 0 });
     expect(lines).toContain('[SharedSync] decoy climb_stats writes: received=0 offered=0 written=0 unchanged=0');
+    expect(lines.filter((line) => line.includes('returned no row count'))).toHaveLength(0);
   });
 });
 

@@ -28,6 +28,10 @@ vi.mock('../../../aurora-sync/src/api/shared-sync-api', () => ({ sharedSync: moc
 
 const BOARD = 'tension';
 
+// Every suite here needs the real test database; skip rather than throw when
+// the infra is deliberately absent.
+const describeWithDatabase = process.env.SKIP_TEST_INFRA === '1' ? describe.skip : describe;
+
 function auroraStat(climbUuid: string, overrides: Partial<ClimbStats> = {}): ClimbStats {
   return {
     climb_uuid: climbUuid,
@@ -70,7 +74,7 @@ function uniqueTag(): string {
   return `noop-${process.pid}-${tagCounter}`;
 }
 
-describe('Aurora climb_stats upsert skips unchanged rows (real DB)', () => {
+describeWithDatabase('Aurora climb_stats upsert skips unchanged rows (real DB)', () => {
   it('writes 0 rows for an identical batch, then exactly the changed rows', async () => {
     const tag = uniqueTag();
     const batch = [auroraStat(`${tag}-a`), auroraStat(`${tag}-b`), auroraStat(`${tag}-c`)];
@@ -132,7 +136,7 @@ describe('Aurora climb_stats upsert skips unchanged rows (real DB)', () => {
   });
 });
 
-describe('syncSharedData: per-pass climb_stats write counts (real DB)', () => {
+describeWithDatabase('syncSharedData: per-pass climb_stats write counts (real DB)', () => {
   const client = postgres(getWorkerDatabaseUrl(), { max: 1, prepare: false, onnotice: () => {} });
 
   beforeEach(async () => {
@@ -170,7 +174,7 @@ describe('syncSharedData: per-pass climb_stats write counts (real DB)', () => {
   });
 });
 
-describe('Aurora beta_links upsert skips unchanged rows (real DB)', () => {
+describeWithDatabase('Aurora beta_links upsert skips unchanged rows (real DB)', () => {
   it('rewrites a re-sent link only when a column changed', async () => {
     const tag = uniqueTag();
     const client = postgres(getWorkerDatabaseUrl(), { max: 1, prepare: false, onnotice: () => {} });
@@ -212,7 +216,7 @@ describe('Aurora beta_links upsert skips unchanged rows (real DB)', () => {
   });
 });
 
-describe('Aurora climbs upsert skips unchanged rows (real DB)', () => {
+describeWithDatabase('Aurora climbs upsert skips unchanged rows (real DB)', () => {
   it('rewrites a re-sent climb only when one of its five written columns changed', async () => {
     const tag = uniqueTag();
     const client = postgres(getWorkerDatabaseUrl(), { max: 1, prepare: false, onnotice: () => {} });
