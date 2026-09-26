@@ -52,20 +52,17 @@ export const boardClimbEvents = pgTable(
     createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),
   },
   (table) => ({
-    // "Recent sends for a board" / "what's on board X now" (LIMIT 1). A plain
-    // (board, time) btree serves the DESC scan in either direction.
-    boardConfirmedAtIdx: index('board_climb_events_board_confirmed_at_idx').on(table.boardId, table.confirmedAt),
     // Keyset paging + double-flush idempotency (onConflictDoNothing target).
     boardSeqUnique: uniqueIndex('board_climb_events_board_seq_unique').on(table.boardId, table.seq),
     externalOccurrenceUnique: uniqueIndex('board_climb_events_external_occurrence_unique').on(
       table.source,
       table.externalOccurrenceKey,
     ),
+    // "Recent sends for a board" / "what's on board X now" (LIMIT 1) and the
+    // (confirmed_at, seq) keyset history page. Serves either DESC scan.
     chronologicalIdx: index('board_climb_events_chronological_idx').on(table.boardId, table.confirmedAt, table.seq),
     // Session recap: every climb on the wall during a session.
     sessionIdx: index('board_climb_events_session_idx').on(table.sessionId),
-    // "How often was this climb on this wall" (future leaderboards).
-    boardClimbIdx: index('board_climb_events_board_climb_idx').on(table.boardId, table.climbUuid),
   }),
 );
 
