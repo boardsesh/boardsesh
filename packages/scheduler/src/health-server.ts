@@ -35,8 +35,9 @@ function isDegraded(jobs: JobStatus[]): boolean {
  *   says which of the two it is. The body still reports `status: 'degraded'`
  *   so a human or a log scrape can see it.
  * - `GET /health/jobs` — job health. 503 when a scheduled job's last run
- *   failed or its last slot went by without a run (`overdue`), 200 otherwise. Point an alert at this one; Railway must not, or it
- *   will restart-loop on a problem restarts don't solve.
+ *   failed or its last slot went by without a run (`overdue`), 200
+ *   otherwise. Point an alert at this one; Railway must not, or it will
+ *   restart-loop on a problem restarts don't solve.
  */
 export function createHealthServer({ port, getStatus, logger }: CreateHealthServerOptions): HealthServer {
   const server: Server = createServer((request, response) => {

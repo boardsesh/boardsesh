@@ -476,8 +476,29 @@ describe('createScheduler overdue detection', () => {
     registrations[0].handler();
     expect(scheduler.getStatus()[0].skippedCount).toBe(1);
 
-    clock.set('2026-09-26T06:30:00.000Z');
+    // Still inside timeoutMs + grace (2 + 5 min) of the skipped 06:00 slot:
+    // the in-flight run may yet be legitimately working, so nothing is flagged.
+    clock.set('2026-09-26T06:07:00.000Z');
+    expect(scheduler.getStatus()[0].overdue).toBe(false);
+
+    clock.set('2026-09-26T06:07:01.000Z');
     expect(scheduler.getStatus()[0].overdue).toBe(true);
+  });
+
+  it('counts a run that started exactly on the slot as covering it', async () => {
+    const { cron, registrations } = createFakeCron();
+    const { logger } = createRecordingLogger();
+    const clock = createClock('2026-09-26T09:00:00.000Z');
+    const scheduler = createScheduler({ jobs: [dailyJob], config: baseConfig, cron, logger, now: clock.now });
+
+    clock.set('2026-09-27T05:00:00.000Z');
+    registrations[0].handler();
+    await vi.waitFor(() => expect(scheduler.getStatus()[0].running).toBe(false));
+
+    clock.set('2026-09-27T23:59:00.000Z');
+    const status = scheduler.getStatus()[0];
+    expect(status.lastRunAt).toBe(status.expectedLastRunAt);
+    expect(status.overdue).toBe(false);
   });
 
   it('never marks a disabled job overdue', () => {

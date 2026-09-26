@@ -1,6 +1,6 @@
 import type { SchedulerConfig } from './config';
-import { parseCronExpression, type CronExpression } from './cron/expression';
-import { previousScheduledRun } from './cron/previous-run';
+import { parseCronExpression } from './cron/expression';
+import { createPreviousRunFinder } from './cron/previous-run';
 import type { CronScheduler, CronTask } from './cron/scheduler';
 import { describeError, type SchedulerLogger } from './logger';
 import type { JobDefinition } from './jobs/types';
@@ -135,17 +135,22 @@ export function createScheduler({
   const scheduledJobs = jobs.filter((job) => !disabledJobNames.has(job.name));
   // Only the jobs this instance actually ticks can be overdue: a one-shot
   // `scheduler run <job>` process registers nothing, so nothing is due.
-  const parsedScheduleByJobName = new Map<string, CronExpression>(
-    (registerSchedules ? scheduledJobs : []).map((job) => [job.name, parseCronExpression(job.schedule)]),
+  // One memoised finder per job: `/health` is polled every few seconds, and a
+  // cold walk back to last Sunday costs ~10,000 `Intl` formats.
+  const findPreviousRunByJobName = new Map<string, (currentTime: Date) => Date | null>(
+    (registerSchedules ? scheduledJobs : []).map((job) => [
+      job.name,
+      createPreviousRunFinder(parseCronExpression(job.schedule), job.timezone),
+    ]),
   );
 
   const describeSchedulePosition = (job: JobDefinition, state: MutableJobState) => {
-    const parsedSchedule = parsedScheduleByJobName.get(job.name);
-    if (!parsedSchedule) {
+    const findPreviousRun = findPreviousRunByJobName.get(job.name);
+    if (!findPreviousRun) {
       return { expectedLastRunAt: null, overdue: false };
     }
     const currentTime = now();
-    const expectedLastRun = previousScheduledRun(parsedSchedule, job.timezone, currentTime);
+    const expectedLastRun = findPreviousRun(currentTime);
     if (!expectedLastRun) {
       return { expectedLastRunAt: null, overdue: false };
     }
