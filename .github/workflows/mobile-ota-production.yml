@@ -81,6 +81,8 @@ permissions:
   # bypass main's "require a pull request" rule — the default GITHUB_TOKEN can't),
   # so the workflow token just needs read for checkout/fetch.
   contents: read
+  # scripts/mobile-ota-server-ready.mjs lists this commit's Railway Config runs.
+  actions: read
 
 concurrency:
   # Direct production publishes share one lane with native republishes and
@@ -154,7 +156,10 @@ jobs:
     # enforced in mobile-ota-publish-workflow.test.ts from the ladder in
     # scripts/lib/mobile-publish-retry.ts — raise both together or not at all.
     # Costs nothing on a healthy publish, which finishes in well under 10 minutes.
-    timeout-minutes: 150
+    # On top of that budget: up to 55 minutes waiting for a Railway Config run on the
+    # same commit (scripts/mobile-ota-server-ready.mjs), which only happens on the
+    # rare push that also rolls the OTA server.
+    timeout-minutes: 210
     # Gates EOO_TOKEN + GOOGLE_MAPS_API_KEY + the EXPO_UPDATES_URL variable.
     environment: Production
 
@@ -209,6 +214,15 @@ jobs:
 
       - name: Install Node.js dependencies (workspace root)
         run: vp install --frozen-lockfile
+
+      # eoas and the xprem server must speak the same upload protocol (3.2.0 broke
+      # it both ways). When this commit also rolls the server image, Railway Config
+      # runs alongside this job; wait for it rather than publish against the old
+      # server. Returns at once for the ordinary push with no Railway change.
+      - name: Wait for the OTA server rollout on this commit
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/mobile-ota-server-ready.mjs
 
       - name: Check OTA infra is wired
         id: gate

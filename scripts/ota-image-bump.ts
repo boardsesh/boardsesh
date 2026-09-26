@@ -6,9 +6,8 @@
  * The self-hosted OTA server has two halves that must move together: the `eoas`
  * CLI this repo publishes with (`EOAS_PACKAGE_SPEC` in scripts/lib/eoas.ts) and the
  * server image Railway runs (`OTA_SERVER_VERSION` in infra/railway/config.ts).
- * Upstream publishes both from the same release, so bumping them together is what
- * keeps the standing rule — the CLI may lead the server, never trail it — true by
- * construction.
+ * Upstream publishes both from the same release, and since 3.2.0 their upload
+ * protocol has no cross-version fallback, so they are always bumped together.
  *
  * Two candidates are tracked, not one. A prerelease must never displace a stable
  * upgrade: `3.2.0-beta3` outranks `3.1.3` by semver, so a single "highest version"

@@ -75,6 +75,7 @@ function isProductionDeployTestFile(filePath) {
     filePath === 'scripts/production-smoke.test.ts' ||
     filePath === 'scripts/mobile-ota-promote.test.ts' ||
     filePath === 'scripts/mobile-ota-schema-ready.test.mjs' ||
+    filePath === 'scripts/mobile-ota-server-ready.test.mjs' ||
     filePath === 'scripts/mobile-ota-stage-verify.test.ts'
   );
 }
@@ -192,6 +193,7 @@ function isOtaAffecting(filePath) {
     filePath === 'scripts/lib/eoas.ts' ||
     filePath === 'scripts/mobile-ota-promote.ts' ||
     filePath === 'scripts/mobile-ota-schema-ready.mjs' ||
+    filePath === 'scripts/mobile-ota-server-ready.mjs' ||
     filePath === 'scripts/mobile-ota-stage-verify.ts' ||
     filePath === '.github/workflows/mobile-ota-production.yml'
   );

@@ -64,19 +64,33 @@ newest stable release and, separately, one for the newest prerelease — bumping
 same commit. Merging it rolls the image, waits for the deployment, probes the server and rolls back
 if it does not answer. See [railway.md](./railway.md).
 
-**The CLI may lead the server; it must never trail it.** Neither side exchanges a version and there
-is no version endpoint. This used to mean "confirm the deployed image in the Railway dashboard after
-a bump"; now the rule is enforced in two places that need no dashboard — `infra/railway/plan.ts`
-blocks an image ahead of the pin, and the version-parity test asserts the same without touching the
-API. Two features require the server on v3.1.2:
+**The CLI and the server move together.** Neither side exchanges a version and there is no version
+endpoint. `infra/railway/plan.ts` blocks an image ahead of the pin, and the version-parity test
+asserts the same without touching the API. The older rule, that the CLI may lead the server, stopped
+holding at 3.2.0 (below): across that line neither side may lead.
 
-- server-side reuse of the previous update's assets (xprem #165) — see
-  [The throttle](#the-throttle-and-what-actually-fixes-it) for what that is worth;
-- `vp run mobile:ota-rollback -- --mode republish`: 3.1.2 lists republish candidates through a new
-  `.../runtimeVersion/<rv>/publish-groups` route that 3.0.5 does not serve, and can pass
-  `?publishGroup=` on the republish call itself; back-compat for older clients is server-side
-  (xprem #168). The helper prints a warning before running it. `--mode embedded` — the mode the
-  incident runbook uses — is unaffected.
+#### The 3.2 upgrade (3.1.2 to 3.2.4)
+
+- **The upload protocol broke in both directions.** `requestUploadUrl` now takes a `files` list
+  (path, SHA-256 hash, md5 cache key, role) instead of `fileNames`, and "no changes" moved from a
+  406 on `markUpdateAsUploaded` to a 406 on `requestUploadUrl`. eoas 3.2.x against a 3.1.x server
+  fails with `No file names provided`; eoas 3.1.x against a 3.2.x server fails too, because the
+  server has no fallback. `scripts/mobile-ota-promote.ts` speaks this protocol itself, so it moves
+  with `EOAS_PACKAGE_SPEC` as well.
+- **One PR moves the image, the CLI and the promote script.** On that push, Railway Config rolls the
+  server while production-deploy stages the OTA. `scripts/mobile-ota-server-ready.mjs` makes the
+  staging publish and the promote step wait for the Railway Config run on the same commit, and
+  fail if it did not succeed. Every other push returns from it at once.
+- **Assets are content-addressed from 3.2.0.** Uploads land at `{appId}/cas/<sha256>` and each update
+  maps its files there (`updates.asset_mapping`). Updates published before the upgrade keep being
+  served from their old folders. The first boot runs the Postgres migrations for this (`blobs`,
+  `bundle_patches`, `updates.asset_mapping`, `apps.git_url`) plus a backfill.
+- **Rolling back is a one-way door after the first 3.2 publish.** 3.1.2 knows nothing about the
+  `cas/` layout, so it cannot serve an update published on 3.2. Going back means reverting the
+  version PR (server, CLI and promote script together) and republishing the current JS with the old
+  CLI. The 3.2 schema changes can stay; 3.1.2 ignores the new tables and column.
+- **Bundle diffing stays off.** `BUNDLE_DIFFING` is unset. Patches are served from the server itself
+  rather than the CDN, and each diff job peaks at about six times the bundle size in memory.
 
 After any bump: re-verify `/hc` = 200, `/ready` = 200, a header-carrying manifest + asset probe, and
 run `eoas doctor`.
@@ -85,9 +99,10 @@ run `eoas doctor`.
 
 - **Never drop `expo-app-id`, `expo-channel-name`, or `xprem-branch`.** Self-hosted clients bake all
   three in `updates.requestHeaders`; xprem's branch API overrides only `xprem-branch`.
-- **Move the `eoas` pin first, the V3 server image second — never the other way round.** A CLI that
-  trails the server can 404 on app-scoped routes. `vp run ota:image-bump` moves both in one commit,
-  so the ordering holds by construction; `infra/railway/plan.ts` blocks the apply if it ever does not.
+- **Move the `eoas` pin and the V3 server image in one commit.** A CLI that trails the server can 404
+  on app-scoped routes, and since 3.2.0 a CLI that leads it cannot upload at all. `vp run
+  ota:image-bump` moves both together, `infra/railway/plan.ts` blocks an image ahead of the pin, and
+  the publish waits for the server to roll (see [The 3.2 upgrade](#the-32-upgrade-312-to-324)).
   Re-verify after every bump (above).
 - **Dashboard creds are production-release creds.** `/dashboard` mints API keys, exports the cert,
   remaps channels, and runs rollouts — treat the admin login as production-release access (one admin,

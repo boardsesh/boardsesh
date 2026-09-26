@@ -423,8 +423,8 @@ async function publishToSelfHostedBranch(
   // rollouts. Production's channel→branch mapping is a one-time dashboard action;
   // per-PR previews use branch surfing. Progressive rollouts are branch + runtimeVersion scoped
   // (--rollout-percentage targets a branch's runtimeVersion), not channel scoped.
-  // EOAS_PACKAGE_SPEC pins the CLI (it may lead the deployed server, never trail
-  // it); see scripts/lib/eoas.ts. From 3.1.2 the CLI paces its own asset uploads
+  // EOAS_PACKAGE_SPEC pins the CLI to the deployed server's version; the two
+  // move together (see scripts/lib/eoas.ts). From 3.1.2 the CLI paces its own asset uploads
   // (--upload-rate) and retries 429/5xx itself, so the whole-command retry ladder
   // in lib/mobile-publish-retry.ts is now a backstop rather than the first line
   // of defence against storage throttling.

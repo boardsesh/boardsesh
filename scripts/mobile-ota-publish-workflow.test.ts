@@ -80,6 +80,43 @@ describe('production OTA workflow reliability', () => {
     expect(timeout).toBeGreaterThanOrEqual(minimumPublishJobTimeoutMinutes(2));
   });
 
+  it('waits for a same-commit OTA server rollout before every upload to the server', () => {
+    const gateStep = 'Wait for the OTA server rollout on this commit';
+    // Staging: the gate runs before the first publish step.
+    const publishJob = jobBlock(production, 'publish');
+    expect(stepBlock(publishJob, gateStep)).toContain('node scripts/mobile-ota-server-ready.mjs');
+    expect(publishJob.indexOf(gateStep)).toBeLessThan(publishJob.indexOf('vp run mobile:publish'));
+    expect(parse(production).permissions).toMatchObject({ contents: 'read', actions: 'read' });
+    // Promotion: a second upload, so a second check before it.
+    const promotion = jobBlock(pipeline, 'promote-mobile-ota');
+    expect(stepBlock(promotion, gateStep)).toContain('node scripts/mobile-ota-server-ready.mjs');
+    expect(promotion.indexOf(gateStep)).toBeLessThan(promotion.indexOf('scripts/mobile-ota-promote.ts'));
+    const deployJobs = (parse(pipeline) as { jobs: Record<string, { permissions?: Record<string, string> }> }).jobs;
+    for (const jobName of ['stage-mobile-ota', 'promote-mobile-ota']) {
+      expect(deployJobs[jobName].permissions).toMatchObject({ actions: 'read' });
+    }
+  });
+
+  it('gives the staging publish room for the server-rollout wait on top of its retry budget', () => {
+    const gateSource = readFileSync(resolve(REPO_ROOT, 'scripts', 'mobile-ota-server-ready.mjs'), 'utf8');
+    const waitMinutes = Number(gateSource.match(/WAIT_BUDGET_MS = (\d+) \* 60_000/)?.[1]);
+    expect(waitMinutes).toBeGreaterThan(0);
+    const timeout = Number(jobBlock(production, 'publish').match(/timeout-minutes: (\d+)/)?.[1]);
+    expect(timeout).toBeGreaterThanOrEqual(minimumPublishJobTimeoutMinutes(2) + waitMinutes);
+  });
+
+  it('keeps the gate watching exactly the paths that trigger the Railway apply job', () => {
+    const railway = parse(readFileSync(resolve(WORKFLOW_DIR, 'railway-drift.yml'), 'utf8')) as {
+      on: { push: { paths: string[] } };
+    };
+    const gateSource = readFileSync(resolve(REPO_ROOT, 'scripts', 'mobile-ota-server-ready.mjs'), 'utf8');
+    const listed = gateSource.match(/RAILWAY_APPLY_PATHS = \[([\s\S]*?)\];/)?.[1] ?? '';
+    const gatePaths = [...listed.matchAll(/'([^']+)'/g)].map(([, path]) => path);
+    expect(gatePaths.map((path) => (path.endsWith('/') ? `${path}**` : path)).sort()).toEqual(
+      [...railway.on.push.paths].sort(),
+    );
+  });
+
   it('keeps the job-overhead allowance above the steps it is meant to cover', () => {
     // SELF_HOSTED_PUBLISH_JOB_OVERHEAD_MINUTES is an estimate, and the source-map
     // uploads are the bulk of it. They carry their own `timeout-minutes`, so

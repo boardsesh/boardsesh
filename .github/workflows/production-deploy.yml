@@ -137,6 +137,11 @@ jobs:
   stage-mobile-ota:
     needs: detect-changes
     if: needs.detect-changes.outputs.ota_changed == 'true'
+    # The ceiling for the called workflow: it reads this commit's Railway Config
+    # runs (actions: read) before uploading. See scripts/mobile-ota-server-ready.mjs.
+    permissions:
+      contents: read
+      actions: read
     uses: ./.github/workflows/mobile-ota-production.yml
     with:
       stage_for_production_deploy: true
@@ -728,8 +733,13 @@ jobs:
       && (needs.migrate.result == 'success' || (needs.detect-changes.outputs.web_changed != 'true' && needs.detect-changes.outputs.backend_changed != 'true' && needs.migrate.result == 'skipped'))
       && (needs.deploy-production-backend.result == 'success' || (needs.detect-changes.outputs.backend_changed != 'true' && needs.deploy-production-backend.result == 'skipped'))
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # 45 minutes for the promotion itself, plus up to 55 for the server-rollout wait.
+    timeout-minutes: 100
     environment: Production
+    permissions:
+      contents: read
+      # scripts/mobile-ota-server-ready.mjs lists this commit's Railway Config runs.
+      actions: read
     concurrency:
       group: mobile-ota-production
       cancel-in-progress: false
@@ -766,6 +776,13 @@ jobs:
           # The live schema check and per-platform baseline guard still fail
           # closed if a newer backend or independent OTA made it unsafe.
           node scripts/mobile-ota-schema-ready.mjs
+
+      # Staging already waited, but promotion is a second upload to the server:
+      # re-check so a Railway Config run that failed after staging stops it here.
+      - name: Wait for the OTA server rollout on this commit
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/mobile-ota-server-ready.mjs
 
       - name: Promote exact staged iOS and Android exports
         id: promote

@@ -10,37 +10,25 @@
 // The eoas CLI spec passed to `vp dlx`. Pinned, not `@latest`: V3 routes are
 // app-scoped, so a v2 CLI 404s against our self-hosted server.
 //
-// The rule here used to be "the CLI must match the deployed server EXACTLY".
-// That was our own convention, not a protocol requirement — neither build
-// exchanges a version (no cliVersion/serverVersion handshake exists in either
-// dist). The real rule is: **the CLI may lead the server, never trail it.**
-// 3.1.2 was checked wire-compatible against the still-3.0.5 server before this
-// bump — the three routes the publish path uses
-// (`/{appId}/requestUploadUrl/{branch}`, `/uploadLocalFile`,
-// `/markUpdateAsUploaded/{branch}`) are unchanged, and the
-// `markUpdateAsUploaded` block is byte-identical between the two builds.
+// The CLI and the server move together. Neither build exchanges a version (no
+// cliVersion/serverVersion handshake exists), so compatibility is a property of
+// the wire, and at 3.2.0 the wire broke both ways: `requestUploadUrl` takes a
+// `files` list instead of `fileNames`, with no fallback on either side. A CLI
+// that trails the server can also 404 on app-scoped routes. So
+// scripts/ota-image-bump.ts moves this pin and OTA_SERVER_VERSION
+// (infra/railway/config.ts) in one commit, and the publish on that commit waits
+// for the server to roll (scripts/mobile-ota-server-ready.mjs). See
+// docs/mobile-ota-updates.md, "The 3.2 upgrade".
 //
-// Why 3.1.2 (released 2026-08-19): it carries the two upstream fixes for the
-// Tigris `SlowDown` throttling in #3620. `fetchWithRetries` now retries 429/5xx
-// and honours `Retry-After` (≤3.1.1 retried network errors only, so a single 503
-// mid-upload called `process.exit(1)` and killed the whole publish), and
-// `publish` gained `--upload-rate` to cap what was an unbounded `Promise.all`
-// over every asset in the export.
-//
-// Two server-side halves ride the same version, and both are now available:
-// Railway runs v3.1.2, published under the PRE-RENAME image name
+// Railway pulls the image under its PRE-RENAME name
 // `ghcr.io/mercuretechnologies/expo-open-ota:v3.2.4` (the project renamed
 // expo-open-ota → xprem at v3.1.0 and still publishes the old name), so reading
 // the Railway dashboard for `xprem:` and finding nothing does not mean the server
-// is behind. Branch surfing answering on the live server confirms it: that route
-// first shipped in v3.1.2-beta2.
-//   * server-side reuse of the previous update's assets (xprem #165) — the half
-//     that drops a repeat publish from ~380 uploads to a handful; and
-//   * `vp run mobile:ota-rollback -- --mode republish`: 3.1.2 lists candidates
-//     through a new `.../runtimeVersion/<rv>/publish-groups` route that 3.0.5 does
-//     not serve, with the back-compat living server-side (xprem #168). `--mode
-//     embedded`, the mode the rollback runbook actually uses, is unaffected, and
-//     the helper warns before running republish.
+// is behind.
+//
+// Since 3.1.2 the CLI retries 429/5xx itself, honours `Retry-After`, and paces
+// uploads with `--upload-rate`: the upstream fixes for the Tigris `SlowDown`
+// throttling in #3620.
 //
 // Single source of truth: imported by mobile-publish.ts, mobile-ota-rollback.ts,
 // mobile-ota-setup.ts, and asserted by the rollback + version-parity tests so a
