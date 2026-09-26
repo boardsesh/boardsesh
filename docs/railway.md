@@ -40,13 +40,16 @@ it. A second `--apply` with nothing to do is a no-op.
   their values, and installing or rolling back the certificate itself is a separate
   reviewed operator procedure rather than anything a nightly job does.
   `boardsesh-ota-v3` needs `CLICKHOUSE_URL` plus the Redis cache settings:
-  `CACHE_MODE` (which must be `redis`), `REDIS_HOST`, `REDIS_PORT`,
-  `REDIS_PASSWORD` and `CACHE_KEY_PREFIX`. Without `CACHE_MODE`, xprem quietly
+  `REDIS_HOST`, `REDIS_PORT` and `REDIS_PASSWORD` must be set, and two are pinned
+  to exact values: `CACHE_MODE` must be `redis` and `CACHE_KEY_PREFIX` must be
+  `boardsesh-ota`. Absent or any other value is drift, and the remediation is
+  always to set the pinned value, never to remove it. Without `CACHE_MODE`, xprem quietly
   falls back to its local in-process cache, which has no size bound and grew to a
   1.7 GB heap; the server keeps working, so only this check notices. xprem has no
   default for `REDIS_PORT`, so a missing port or host makes its Redis connection
   check panic. `CACHE_KEY_PREFIX` pins the key names (unset, xprem uses
-  `expoopenota`), so a config change never strands the cached state under old keys.
+  `expoopenota`); any other prefix silently moves every cached manifest, lock and
+  rate-limit counter to a new key namespace, so the check compares the exact value.
   With `CACHE_MODE=redis`, Redis is a hard dependency of OTA delivery: xprem pings
   Redis once, in a `sync.Once`, on its first cache use (the bucket-migration lock at
   boot) and panics if the ping fails. The service's restart policy is `ALWAYS` so it

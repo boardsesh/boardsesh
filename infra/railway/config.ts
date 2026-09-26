@@ -130,6 +130,17 @@ export interface OptionalConstrainedEnvVar {
   reason: string;
 }
 
+/**
+ * A variable which must be present AND hold one of these public values. Absence is
+ * drift too: the remediation is always "set it", never "remove it".
+ */
+export interface RequiredConstrainedEnvVar {
+  name: string;
+  /** Public, non-secret values the variable must hold. */
+  allowedValues: readonly string[];
+  reason: string;
+}
+
 /** At least one variable in the group must contain the public expected value. */
 export interface RequiredOneOfEnvVars {
   names: readonly string[];
@@ -142,6 +153,7 @@ export interface ServiceDesired {
   management: ServiceManagement;
   requiredVars: RequiredEnvVar[];
   optionalConstrainedVars?: OptionalConstrainedEnvVar[];
+  requiredConstrainedVars?: RequiredConstrainedEnvVar[];
   requiredOneOfVars?: RequiredOneOfEnvVars[];
   /** Only meaningful for a report-only service we describe but do not create. */
   expected?: {
@@ -259,16 +271,11 @@ export const desiredRailwayState: RailwayDesiredState = {
             'Enables xprem Observe. Unset means telemetry ingest is silently dropped and the ' +
             'dashboard renders the "turn on telemetry" placeholder instead of metrics.',
         },
-        // The five cache variables below move xprem's manifest/asset cache out of
-        // the Go heap and into the project's shared Railway Redis. Rollback lives
-        // in docs/railway-cost-reduction.md ("OTA server Redis cache, September 26").
-        {
-          name: 'CACHE_MODE',
-          reason:
-            'Must be "redis". xprem falls back to CACHE_MODE=local without it, and the local cache ' +
-            'has no size bound or eviction: it reached a 1.7 GB live Go heap (2.3M objects) after ' +
-            '21 days. The server keeps serving, so nothing fails except the memory bill.',
-        },
+        // The three Redis connection variables below, plus CACHE_MODE and
+        // CACHE_KEY_PREFIX in requiredConstrainedVars, move xprem's manifest/asset
+        // cache out of the Go heap and into the project's shared Railway Redis.
+        // Rollback lives in docs/railway-cost-reduction.md ("OTA server Redis
+        // cache, September 26").
         {
           name: 'REDIS_HOST',
           reason:
@@ -288,21 +295,25 @@ export const desiredRailwayState: RailwayDesiredState = {
             'Auth for the shared Railway Redis (${{Redis.REDISPASSWORD}}). Railway Redis requires ' +
             'a password, so without it the connection check fails with NOAUTH and xprem panics.',
         },
-        {
-          name: 'CACHE_KEY_PREFIX',
-          reason:
-            'Production uses "boardsesh-ota". Unset, xprem prefixes keys with "expoopenota", which ' +
-            'works but moves every cached manifest, lock and rate-limit counter to new keys. Pinning ' +
-            "it keeps the keys stable and easy to tell apart from the backend's keys in the same Redis.",
-        },
       ],
-      optionalConstrainedVars: [
+      requiredConstrainedVars: [
         {
           name: 'CACHE_MODE',
           allowedValues: ['redis'],
           reason:
-            'CACHE_MODE=local keeps an unbounded in-process cache that grew to a 1.7 GB Go heap. ' +
-            'Rollback to local is a deliberate, temporary step; the drift check reports it until reverted.',
+            'xprem falls back to CACHE_MODE=local when this is unset, and the local cache has no ' +
+            'size bound or eviction: it reached a 1.7 GB live Go heap (2.3M objects) after 21 days. ' +
+            'The server keeps serving, so nothing fails except the memory bill. A rollback to local ' +
+            'is a deliberate, temporary step; the drift check reports it until reverted.',
+        },
+        {
+          name: 'CACHE_KEY_PREFIX',
+          allowedValues: ['boardsesh-ota'],
+          reason:
+            'Any other prefix, including xprem\'s default "expoopenota" when unset, moves every ' +
+            'cached manifest, lock and rate-limit counter to a different key namespace without any ' +
+            "error. Pinning it keeps the keys stable and easy to tell apart from the backend's keys " +
+            'in the same Redis.',
         },
       ],
     },

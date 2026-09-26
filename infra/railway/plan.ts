@@ -199,6 +199,28 @@ export function diffServiceVars(desired: ServiceDesired, live: LiveState, option
     });
   }
 
+  for (const constrained of desired.requiredConstrainedVars ?? []) {
+    const rawValue = serviceVars[constrained.name];
+    const normalizedValue = rawValue?.trim();
+    if (normalizedValue && constrained.allowedValues.includes(normalizedValue)) continue;
+
+    const state = classifyVar(rawValue);
+    const allowedValues = constrained.allowedValues.map((allowedValue) => `"${allowedValue}"`).join(' or ');
+    const liveDescription =
+      state === 'absent'
+        ? 'not set on this service'
+        : state === 'placeholder'
+          ? 'an unfilled placeholder'
+          : 'set to an unsupported value (not printed)';
+    changes.push({
+      resource: 'env-var',
+      summary: `${desired.name}: ${constrained.name} must be ${allowedValues}`,
+      detail: `${constrained.reason}\nThe variable is ${liveDescription}. Set ${constrained.name} to ${allowedValues}.`,
+      target: { serviceName: desired.name, varName: constrained.name },
+      blocked: true,
+    });
+  }
+
   for (const requirement of desired.requiredOneOfVars ?? []) {
     const matchesExpectedValue = requirement.names.some(
       (name) => serviceVars[name]?.trim() === requirement.expectedValue,
