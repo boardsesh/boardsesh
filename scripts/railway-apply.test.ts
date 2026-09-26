@@ -2949,8 +2949,16 @@ describe('the railway:apply entry point', () => {
   }, 90_000);
 
   it("recognises the rollback helper's fenced error by name", () => {
+    // The helper's own class, as railway-apply receives it from the lazy import.
     expect(isRollbackFenced(new RollbackFencedError('competing deployment'))).toBe(true);
+    // A post-mutation failure is a plain Error: config must still be restored.
     expect(isRollbackFenced(new Error('rollback deployment did not reach SUCCESS in time'))).toBe(false);
+    // Only the name decides. That is the contract with the helper, and the only
+    // thing it throws under that name is the fence, so no other value may match.
+    const renamed = new Error('named by hand');
+    renamed.name = 'RollbackFencedError';
+    expect(isRollbackFenced(renamed)).toBe(true);
+    expect(isRollbackFenced({ name: 'RollbackFencedError', message: 'not an Error' })).toBe(false);
     expect(isRollbackFenced('RollbackFencedError')).toBe(false);
   });
 });
