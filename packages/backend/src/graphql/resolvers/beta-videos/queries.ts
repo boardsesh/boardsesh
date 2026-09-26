@@ -65,10 +65,9 @@ const HOME_PER_USER_CAP = 3;
 // Aggressive caching for the home-strip query: it runs a window function
 // over the full beta-links table joined to board_climbs, which was slow
 // enough in production to starve the DB connection pool (see incident
-// triggered by the previous merge of this PR). Mirrors the strategy in
-// resolvers/social/boards.ts (`warmPopularConfigsCache`): a Redis key
-// with a long TTL refreshed at deploy via a distributed lock, plus
-// invalidation on writes for snappier feedback.
+// triggered by the previous merge of this PR). A Redis key with a 24 h TTL,
+// refreshed in place at deploy via a distributed lock, plus invalidation on
+// writes for snappier feedback.
 //
 // Scope the cache before the CTE's per-user cap and total limit. Filtering a
 // global top-N result in JavaScript can otherwise leave a board/layout with an
@@ -80,8 +79,7 @@ const RECENT_BETA_LINKS_REDIS_GENERATION_KEY = `${RECENT_BETA_LINKS_REDIS_KEY_PR
 // primary freshness mechanism.
 const RECENT_BETA_LINKS_REDIS_TTL_SECONDS = 24 * 60 * 60;
 const RECENT_BETA_LINKS_REDIS_LOCK_KEY = 'boardsesh:recent-beta-links:lock';
-// Matches the popular-configs lock: held for one whole refresh, so a node that
-// boots later in the same rollout cannot start a duplicate while the key is
+// Held for one whole refresh, so a node that boots later in the same rollout cannot start a duplicate while the key is
 // being overwritten in place.
 const RECENT_BETA_LINKS_REDIS_LOCK_TTL_SECONDS = 600;
 const RECENT_BETA_LINKS_CACHE_SIZE = RECENT_BETA_LINKS_MAX_LIMIT;
@@ -374,7 +372,7 @@ async function runRecentBetaLinksQuery(scope: RecentBetaLinksScope): Promise<Cac
 /**
  * Redis-cached read for the home strip. Falls through to the CTE on miss
  * and writes the result back. On Redis unavailable, runs the CTE inline
- * (same fall-through pattern as `getPopularConfigs` in social/boards.ts).
+ * (with a per-process single-flight so concurrent misses share one CTE).
  */
 /**
  * Calls with the same canonical scope join one in-flight CTE; different board
@@ -384,7 +382,7 @@ async function runRecentBetaLinksQuery(scope: RecentBetaLinksScope): Promise<Cac
 const RECENT_BETA_LINKS_FLIGHT_KEY_PREFIX = 'recent-beta-links';
 
 /**
- * Redis-less fallback, mirroring `getPopularConfigs`. Never read or written
+ * Redis-less fallback. Never read or written
  * when a shared cache is available, so production behaviour is unchanged.
  */
 const localFallbackRows = new Map<string, { rows: CachedRecentBetaLinkRow[]; expiresAt: number }>();
@@ -475,7 +473,7 @@ function refreshRecentBetaLinks(
 
 /**
  * Refresh the recent-beta-links Redis cache on server startup.
- * Mirrors `warmPopularConfigsCache`: a distributed Redis lock ensures only
+ * A distributed Redis lock ensures only
  * one node across the cluster runs the underlying query, and it overwrites the
  * key rather than emptying it first, so readers keep the previous copy until
  * the new one lands.
@@ -484,11 +482,6 @@ export async function warmRecentBetaLinksCache(): Promise<void> {
   // No Redis means there's no cache to warm — running the CTE here would
   // just discard the result. Skip the work and the log so dev/test logs
   // stay honest.
-  //
-  // This is why there is no `dropRecentBetaLinksFallback()` here to mirror
-  // `warmPopularConfigsCache`'s drop: that one keeps going without Redis (it
-  // seeds the process-local copy), this one stops before it could read or
-  // write anything.
   if (!redisClientManager.isRedisConnected()) return;
 
   let generation: string;

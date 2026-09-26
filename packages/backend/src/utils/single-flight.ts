@@ -3,8 +3,9 @@
  * promise, per process.
  *
  * The home page's two reads — `popularBoardConfigs` and `recentBetaLinks` —
- * are Redis-cached with a long TTL, and both fall through to a heavy SQL
- * statement on a miss. The fall-through had no concurrency control of any
+ * are Redis-cached with a long TTL, and both used to fall through to a heavy
+ * SQL statement on a miss (`recentBetaLinks` still does; `popularBoardConfigs`
+ * now only reads, and a pg-boss job runs its statement). The fall-through had no concurrency control of any
  * kind: N simultaneous requests during a cold window meant N simultaneous
  * copies of the statement, each holding one of the pool's ten connections
  * until it finished. Once the pool was gone every OTHER query in the process
@@ -18,8 +19,8 @@
  * window, and `/embed/**` renders (which wait on the backend over HTTP) hung
  * for the whole test budget.
  *
- * The distributed Redis lock the warm-up jobs take is not a substitute: it
- * only stops a second NODE from refreshing, and it is not held on the resolver
+ * The distributed Redis locks the refresh jobs take are not a substitute: they
+ * only stop a second NODE from refreshing, and are not held on the resolver
  * path at all.
  *
  * Deliberately not a cache. The promise is dropped the moment it settles, so a
@@ -34,10 +35,9 @@ const inFlightByKey = new Map<string, Promise<unknown>>();
  * one of those reads from a process-local copy.
  *
  * Single-flight alone still re-runs the statement for the first caller after
- * every completion, which on an 82 s statement is a permanent one-connection
- * burn and permanent database load. Shared by both call sites so the two do
- * not drift; never consulted when Redis is connected, so production freshness
- * is still decided by the shared cache and the deploy-time refresh.
+ * every completion, which is a permanent one-connection burn and permanent
+ * database load. Used by `recentBetaLinks`; never consulted when Redis is
+ * connected, so production freshness is decided by the shared cache.
  */
 export const REDISLESS_FALLBACK_TTL_MS = 10 * 60 * 1000;
 

@@ -1713,7 +1713,7 @@ property rather than a catalogue:
    wall finder offers it; a wall is created through the add-a-wall flow
    (`/boards/spray/new`, below) and reached at its own `/b/{slug}`.
 2. **The popular-config rail.** `getPopularConfigs`
-   (`packages/backend/src/graphql/resolvers/social/boards.ts`) feeds the www
+   (`packages/backend/src/services/popular-board-configs.ts`) feeds the www
    homepage board rail and the mobile Boards tab, and neither consults the
    display list — so the exclusion is at the source, twice: the SQL drops
    `board_type = 'spray'` before the expensive per-config LATERAL climb count is

@@ -188,6 +188,13 @@ The distributed Redis lock those reads' warm-up jobs take is not a substitute:
 it only stops a second _node_ from refreshing, and it is not held on the
 resolver path at all.
 
+`popularBoardConfigs` has since left this pattern entirely: its readers never
+run the statement. A daily pg-boss job computes the list and writes it over the
+old one (`packages/backend/src/services/popular-board-configs.ts`); a reader on
+a miss gets the last list its process saw, or `[]`, and queues a refresh. The
+statement itself now tests `required_set_ids <@ set_ids` instead of walking
+every hold, about 30 s for all configs where it was 548 s.
+
 **When adding a cache-with-fallthrough on a read that costs more than a few
 hundred milliseconds, wrap the fall-through.** The Redis hit rate is not the
 safety property; the concurrency of the miss is.
