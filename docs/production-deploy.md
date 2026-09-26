@@ -346,10 +346,11 @@ hand-written server) since the standalone `server.js` is generated at build time
 
 `overlapSeconds` (the other teardown knob) keeps both deployments serving at
 once. It is deliberately unset. Overlap would double the backend's Postgres
-footprint — 3 replicas x (`DB_POOL_MAX` 10 + `PGBOSS_POOL_SIZE` 4) = 42 — against
+footprint — 2 replicas x (`DB_POOL_MAX` 10 + `PGBOSS_POOL_SIZE` 4) = 28 (down from 3
+replicas on 2026-09-26; see [railway-cost-reduction.md](./railway-cost-reduction.md)) — against
 a shared `max_connections` of 100 since the PG18 cutover (200 on PG16, where it
 was exhausted). Even the 15 s drain already puts both fleets on the database at
-once: about 106 connections at the ceiling against 97 non-superuser slots. Once
+once: about 92 connections at the ceiling against 97 non-superuser slots. Once
 the backend's `DATABASE_URL` (its postgres.js pool and pg-boss) goes through
 PgBouncer, both fleets share the pooler's 45 server connections and the draining
 fleet adds nothing at the database; see the budget in
