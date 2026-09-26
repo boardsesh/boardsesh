@@ -319,8 +319,10 @@ async function runPopularConfigsQuery(): Promise<CachedPopularConfig[]> {
   // EXISTS over nothing is true) and dropped climbs with a junk `hold_id = 0`
   // row.
   //
-  // A NULL required_set_ids means the sets were never derived. The list page
-  // cannot place such a climb, so this count does not either.
+  // A NULL required_set_ids means the sets were not derived yet. The list page
+  // (`create-climb-filters.ts`) drops such a climb on every board but MoonBoard,
+  // whose backfill runs separately and which it lets through; this count
+  // follows the same rule so it still matches the list behind the tap.
   const result = await db.execute(sql`
     SELECT
       configs.board_type,
@@ -383,8 +385,10 @@ async function runPopularConfigsQuery(): Promise<CachedPopularConfig[]> {
         AND bc.edge_right < bps.edge_right
         AND bc.edge_bottom > bps.edge_bottom
         AND bc.edge_top < bps.edge_top
-        AND bc.required_set_ids IS NOT NULL
-        AND bc.required_set_ids <@ configs.set_ids
+        AND (
+          bc.required_set_ids <@ configs.set_ids
+          OR (bc.required_set_ids IS NULL AND configs.board_type = 'moonboard')
+        )
     ) cc ON true
     WHERE bl.is_listed = true
       AND bps.is_listed = true

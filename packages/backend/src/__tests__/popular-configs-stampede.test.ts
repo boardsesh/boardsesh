@@ -276,7 +276,9 @@ describe('refreshPopularConfigsCache', () => {
 
     const statement = new PgDialect().sqlToQuery(executeMock.mock.calls[0][0] as SQL).sql;
     expect(statement).toContain('bc.required_set_ids <@ configs.set_ids');
-    expect(statement).toContain('bc.required_set_ids IS NOT NULL');
+    // NULL (not yet derived) counts only on MoonBoard, the one board whose list
+    // page lets it through (create-climb-filters.ts).
+    expect(statement).toContain("bc.required_set_ids IS NULL AND configs.board_type = 'moonboard'");
     expect(statement).not.toContain('board_climb_holds');
     // The rail's order is unchanged: most boards first, then most ascents.
     expect(statement).toContain('ORDER BY board_count DESC, total_ascents DESC');

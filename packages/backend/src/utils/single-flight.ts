@@ -5,10 +5,10 @@
  * The home page's two reads — `popularBoardConfigs` and `recentBetaLinks` —
  * are Redis-cached with a long TTL, and both used to fall through to a heavy
  * SQL statement on a miss (`recentBetaLinks` still does; `popularBoardConfigs`
- * now only reads, and a pg-boss job runs its statement). The fall-through had no concurrency control of any
- * kind: N simultaneous requests during a cold window meant N simultaneous
- * copies of the statement, each holding one of the pool's ten connections
- * until it finished. Once the pool was gone every OTHER query in the process
+ * now only reads, and a pg-boss job runs its statement). The fall-through had
+ * no concurrency control of any kind: N simultaneous requests during a cold
+ * window meant N simultaneous copies of the statement, each holding one of the
+ * pool's ten connections until it finished. Once the pool was gone every OTHER query in the process
  * queued behind it forever — postgres.js's acquire queue is unbounded and
  * untimed (docs/db-connectivity.md) — so an anonymous `board(boardUuid:)`
  * that normally answers in 50 ms never answered at all, while `{ __typename }`
