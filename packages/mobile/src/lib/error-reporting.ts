@@ -76,8 +76,8 @@ function isCancellation(error: unknown): boolean {
 
 /**
  * An offline / transport failure (no server response). Expected on flaky mobile
- * networks, so we keep it filterable as a low-severity breadcrumb rather than a
- * full `error` that drowns real bugs. Three shapes:
+ * networks — dropped entirely rather than reported, and left as a breadcrumb
+ * instead (see the call site in `reportHandledError`). Three shapes:
  *   - graphql-request wraps a fetch failure in a ClientError that carries no HTTP
  *     `response.status` (a `response` present but with a non-numeric status);
  *   - our GraphQL client throws a typed `GraphQLEmptyResponseError` (see
@@ -153,7 +153,11 @@ function isExpectedDuplicateBoardError(error: unknown): boolean {
  *   - GraphQL rate-limit rejections (RATE_LIMITED) are downgraded to `warning`
  *     and tagged `rate_limited` — expected backpressure from typing/panning
  *     discovery searches too fast, not a bug (#3285),
- *   - offline/network failures are downgraded to `warning` and tagged `network`,
+ *   - offline/network failures are dropped entirely and left as a breadcrumb
+ *     (`category: 'network'`) — the connectivity store already emits one
+ *     `Backend Reachability Changed` event per outage episode, so a Sentry
+ *     event per failed query adds nothing but quota (BOARDSESH-99, 6k
+ *     events/12d),
  *   - BLE write-resume timeouts are downgraded to `warning` and tagged
  *     `ble_write_timeout` (the native layer auto-recovers them by cycling the
  *     connection — #3181 — so they're transient, not hard failures),
@@ -197,10 +201,20 @@ export function reportHandledError(error: unknown, context?: ErrorReportContext)
     return;
   }
   if (isNetworkError(error)) {
-    reportError(error, {
-      ...context,
+    // Dropped rather than downgraded: the connectivity store already emits one
+    // `Backend Reachability Changed` event per outage episode and leaves its own
+    // breadcrumb on the way, which is the signal we actually want (same
+    // rationale as `isBackendUnavailableError` above). A per-query network
+    // failure on a flaky mobile connection is expected, repeats constantly, and
+    // reporting it at any Sentry level still bills an event — BOARDSESH-99 cost
+    // 6k of them in 12 days for no diagnostic gain. Leave a cheap breadcrumb
+    // instead, bounded by Sentry's own ring buffer, so the sequence still reads
+    // on whatever else does get reported.
+    addErrorBreadcrumb({
+      category: 'network',
+      message: 'transport failure',
       level: 'warning',
-      tags: { ...context?.tags, network: true },
+      ...(context?.tags?.source !== undefined ? { data: { source: context.tags.source } } : {}),
     });
     return;
   }

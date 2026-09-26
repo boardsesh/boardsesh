@@ -1,20 +1,23 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { GRAPHQL_EMPTY_RESPONSE_ERROR_NAME } from '@boardsesh/offline-sync/error-classification';
 import { reportError, reportHandledError } from '../error-reporting';
-import { captureToSentry } from '../sentry';
+import { addBreadcrumbToSentry, captureToSentry } from '../sentry';
 import { resetObserveRuntimeForTests, setObserveRuntime } from '../observe-runtime';
 
-// captureToSentry is the only side-effecting dependency; mocking it keeps this a
-// pure test of the noise policy (and avoids sentry.ts's import-time Sentry.init +
-// global error-capture install).
+// captureToSentry and addBreadcrumbToSentry are the only side-effecting
+// dependencies; mocking them keeps this a pure test of the noise policy (and
+// avoids sentry.ts's import-time Sentry.init + global error-capture install).
 vi.mock('../sentry', () => ({
   captureToSentry: vi.fn(),
+  addBreadcrumbToSentry: vi.fn(),
 }));
 
 const mockedCaptureToSentry = vi.mocked(captureToSentry);
+const mockedAddBreadcrumbToSentry = vi.mocked(addBreadcrumbToSentry);
 
 afterEach(() => {
   mockedCaptureToSentry.mockClear();
+  mockedAddBreadcrumbToSentry.mockClear();
 });
 
 describe('reportHandledError', () => {
@@ -211,56 +214,71 @@ describe('reportHandledError', () => {
     });
   });
 
-  it('downgrades offline fetch failures to a warning and tags them network', () => {
+  it('drops offline fetch failures entirely and leaves a network breadcrumb', () => {
     const offline = new TypeError('Network request failed');
     reportHandledError(offline, { tags: { source: 'react-query' } });
-    expect(mockedCaptureToSentry).toHaveBeenCalledWith(offline, {
+    expect(mockedCaptureToSentry).not.toHaveBeenCalled();
+    expect(mockedAddBreadcrumbToSentry).toHaveBeenCalledWith({
+      category: 'network',
+      message: 'transport failure',
       level: 'warning',
-      tags: { source: 'react-query', network: true },
+      data: { source: 'react-query' },
     });
   });
 
-  it('treats a transport ClientError (response without a numeric status) as network', () => {
+  it('drops a transport ClientError (response without a numeric status) as network, with a breadcrumb', () => {
     const transport = Object.assign(new Error('boom'), { response: { errors: [] } });
     reportHandledError(transport, { tags: { source: 'queue-mutation' } });
-    expect(mockedCaptureToSentry).toHaveBeenCalledWith(transport, {
+    expect(mockedCaptureToSentry).not.toHaveBeenCalled();
+    expect(mockedAddBreadcrumbToSentry).toHaveBeenCalledWith({
+      category: 'network',
+      message: 'transport failure',
       level: 'warning',
-      tags: { source: 'queue-mutation', network: true },
+      data: { source: 'queue-mutation' },
     });
   });
 
-  it('downgrades a GraphQLEmptyResponseError (2xx with an empty/truncated body) to a warning tagged network (#3190)', () => {
+  it('drops a GraphQLEmptyResponseError (2xx with an empty/truncated body) as network, with a breadcrumb (#3190)', () => {
     const emptyBody = Object.assign(new Error('GraphQL response body was empty or not valid JSON (HTTP 200)'), {
       name: GRAPHQL_EMPTY_RESPONSE_ERROR_NAME,
     });
     reportHandledError(emptyBody, { tags: { source: 'react-query', kind: 'query' } });
-    expect(mockedCaptureToSentry).toHaveBeenCalledWith(emptyBody, {
+    expect(mockedCaptureToSentry).not.toHaveBeenCalled();
+    expect(mockedAddBreadcrumbToSentry).toHaveBeenCalledWith({
+      category: 'network',
+      message: 'transport failure',
       level: 'warning',
-      tags: { source: 'react-query', kind: 'query', network: true },
+      data: { source: 'react-query' },
     });
   });
 
-  it('downgrades an Error-typed WinterCG "fetch failed" transport rejection to a warning (#3610)', () => {
+  it('drops an Error-typed WinterCG "fetch failed" transport rejection as network, with a breadcrumb (#3610)', () => {
     // graphql-ws HTTP wraps the underlying NSURLError as `Error: "fetch failed: <cause>"`
     // (a plain Error, not a TypeError) — the shared matcher classifies it as network.
     const offline = new Error('fetch failed: The network connection was lost.');
     reportHandledError(offline, { tags: { source: 'ws-client' } });
-    expect(mockedCaptureToSentry).toHaveBeenCalledWith(offline, {
+    expect(mockedCaptureToSentry).not.toHaveBeenCalled();
+    expect(mockedAddBreadcrumbToSentry).toHaveBeenCalledWith({
+      category: 'network',
+      message: 'transport failure',
       level: 'warning',
-      tags: { source: 'ws-client', network: true },
+      data: { source: 'ws-client' },
     });
   });
 
-  it('downgrades a bare iOS NSURLError description (no wrapper) to a warning — best-effort English (#3610)', () => {
+  it('drops a bare iOS NSURLError description (no wrapper) as network, with a breadcrumb — best-effort English (#3610)', () => {
     const offline = new Error('The connection has timed out unexpectedly.');
     reportHandledError(offline, { tags: { source: 'ws-client' } });
-    expect(mockedCaptureToSentry).toHaveBeenCalledWith(offline, {
+    expect(mockedCaptureToSentry).not.toHaveBeenCalled();
+    expect(mockedAddBreadcrumbToSentry).toHaveBeenCalledWith({
+      category: 'network',
+      message: 'transport failure',
       level: 'warning',
-      tags: { source: 'ws-client', network: true },
+      data: { source: 'ws-client' },
     });
   });
 
-  it('follows the .cause chain of a synthetic wrapper to find the transport failure (#4238)', () => {
+  it('follows the .cause chain of a synthetic wrapper to find the transport failure and drops it (#4238)', () => {
     // The snapshot-bootstrap reporter wraps its own prose around the real error.
     // The wrapper message matches nothing, so before the cause was attached this
     // reached Sentry at level: error for every user who opened the app offline.
@@ -268,31 +286,40 @@ describe('reportHandledError', () => {
       cause: new TypeError('Network request failed'),
     });
     reportHandledError(wrapped, { tags: { source: 'offline-sync', kind: 'snapshot-bootstrap' } });
-    expect(mockedCaptureToSentry).toHaveBeenCalledWith(wrapped, {
+    expect(mockedCaptureToSentry).not.toHaveBeenCalled();
+    expect(mockedAddBreadcrumbToSentry).toHaveBeenCalledWith({
+      category: 'network',
+      message: 'transport failure',
       level: 'warning',
-      tags: { source: 'offline-sync', kind: 'snapshot-bootstrap', network: true },
+      data: { source: 'offline-sync' },
     });
   });
 
-  it('reaches a transport cause nested two wrappers deep (expo-file-system inside our own wrapper)', () => {
+  it('reaches a transport cause nested two wrappers deep and drops it (expo-file-system inside our own wrapper)', () => {
     const wrapped = new Error('Snapshot bootstrap failed for kilter:1:10 at stage "download" (attempt 1)', {
       cause: new Error('snapshot download: File.downloadFileAsync failed for kilter:1: The request timed out.', {
         cause: Object.assign(new Error('The request timed out.'), { name: 'UnableToDownloadException' }),
       }),
     });
     reportHandledError(wrapped, { tags: { source: 'offline-sync' } });
-    expect(mockedCaptureToSentry).toHaveBeenCalledWith(wrapped, {
+    expect(mockedCaptureToSentry).not.toHaveBeenCalled();
+    expect(mockedAddBreadcrumbToSentry).toHaveBeenCalledWith({
+      category: 'network',
+      message: 'transport failure',
       level: 'warning',
-      tags: { source: 'offline-sync', network: true },
+      data: { source: 'offline-sync' },
     });
   });
 
-  it('forces warning for a network error even if the caller asked for a higher level', () => {
+  it('drops a network error entirely even when the caller asked for a higher level', () => {
     const offline = new TypeError('Network request failed');
     reportHandledError(offline, { level: 'fatal', tags: { source: 'x' } });
-    expect(mockedCaptureToSentry).toHaveBeenCalledWith(offline, {
+    expect(mockedCaptureToSentry).not.toHaveBeenCalled();
+    expect(mockedAddBreadcrumbToSentry).toHaveBeenCalledWith({
+      category: 'network',
+      message: 'transport failure',
       level: 'warning',
-      tags: { source: 'x', network: true },
+      data: { source: 'x' },
     });
   });
 
@@ -398,7 +425,10 @@ describe('Observe forwarding', () => {
   it('still forwards an error the policy downgraded rather than dropped', () => {
     const observeReport = registerObserve();
 
-    reportHandledError(Object.assign(new Error('Network request failed'), { name: 'TypeError' }));
+    // A BLE write-resume timeout is downgraded to `warning`, not dropped —
+    // unlike a network failure, which is dropped entirely (see
+    // 'error-reporting' network tests above) and so never reaches Observe.
+    reportHandledError(new Error('BLE write timed out waiting for the board to accept data'));
 
     expect(observeReport).toHaveBeenCalledTimes(1);
   });
