@@ -51,6 +51,31 @@
  * "everything else" bucket gives f_other <= ~0.46. So the budget holds while
  * fewer than ~46% of backend requests are non-GraphQL and non-zero-rated. If a
  * new REST surface ever pushes past that, it needs its own rate here.
+ *
+ * ---------------------------------------------------------------------------
+ * What the arithmetic above missed: root spans with no HTTP request at all.
+ * ---------------------------------------------------------------------------
+ *
+ * The budget counts requests. Measured over 14 days in 2026-09 (Sentry
+ * `count_sample()` on stored spans), the backend also stored ~1.0M `db.redis`
+ * ROOT spans (`redis-xreadgroup`, `redis-scan`, `redis-hget`, `redis-eval`,
+ * `redis-expire`, `redis-multi`, ...) plus `graphql.parse` (~62k/7d) and
+ * `graphql.validate` (~31k/7d) roots. None of them belong to a request. ioredis
+ * publishes diagnostics-channel events, and @sentry/server-utils starts a span
+ * for each one (`sentry.origin: 'auto.db.redis.diagnostic_channel'`). The
+ * background loops (event-broker consumer, heartbeats, Kilter live sync, the
+ * APNs marker) issue those commands with no active span, so every command
+ * becomes its own root and reached the sampler. It has no `url.path`, no
+ * `http.url`, no method and no `normalizedRequest`, so it fell through to the
+ * 10% default. Together with web that put the org at ~12M stored spans/month
+ * against a 5M quota.
+ *
+ * The rule now: a root span with no HTTP request behind it is sampled at 0,
+ * with one exception. graphql-ws operations (`query X (query X)`,
+ * `mutation X (...)`, `subscription X (...)`) arrive over the party-mode
+ * WebSocket with no HTTP request, and get the same 1% as HTTP GraphQL. Redis
+ * children INSIDE a sampled HTTP request are unaffected: the sampler only sees
+ * roots, and a child inherits its root's decision.
  */
 
 /** Paths whose transactions are worth nothing and would drown everything else. */
@@ -174,6 +199,55 @@ export function isWebSocketUpgrade(request: BackendSamplingRequest): boolean {
   return headers.connection?.toLowerCase().includes('upgrade') ?? false;
 }
 
+/** Origin @sentry/server-utils stamps on the span it starts per ioredis diagnostics-channel event. */
+const REDIS_DIAGNOSTIC_CHANNEL_ORIGIN = 'auto.db.redis.diagnostic_channel';
+
+/** graphql-ws operation roots are named `"<operation type> <OperationName> (...)"`. */
+const GRAPHQL_WS_OPERATION_NAME = /^(?:query|mutation|subscription) /;
+
+/**
+ * True when the sampling context carries a URL of any kind.
+ *
+ * Deliberately excludes the span-name fallback `resolveBackendRequestPath`
+ * uses: a bare name like `redis-scan` would otherwise read as the path
+ * `/redis-scan`.
+ */
+function hasRequestUrl(request: BackendSamplingRequest): boolean {
+  const attributePath = request.attributes?.['url.path'];
+  const attributeUrl = request.attributes?.['http.url'];
+  return (
+    (typeof attributePath === 'string' && attributePath.length > 0) ||
+    (typeof attributeUrl === 'string' && attributeUrl.length > 0) ||
+    Boolean(request.normalizedRequest?.url)
+  );
+}
+
+/**
+ * True when the root span belongs to an HTTP request: it has a method (from
+ * attributes, the normalized request, or a `"<METHOD> <path>"` name) or a URL.
+ */
+export function hasHttpRequest(request: BackendSamplingRequest): boolean {
+  return resolveBackendRequestMethod(request) !== '' || hasRequestUrl(request);
+}
+
+/**
+ * True for a root span started by the ioredis diagnostics-channel subscriber.
+ *
+ * `sentry.op` is not usable here: it reaches the sampler as `'db'`, not
+ * `'db.redis'`, because inferSpanData overwrites it. `sentry.origin` and
+ * `db.system.name` survive. The `db.system.name` branch requires no URL so a
+ * hypothetical HTTP root carrying a redis attribute is never zeroed by it.
+ */
+export function isRedisDiagnosticRoot(request: BackendSamplingRequest): boolean {
+  if (request.attributes?.['sentry.origin'] === REDIS_DIAGNOSTIC_CHANNEL_ORIGIN) return true;
+  return request.attributes?.['db.system.name'] === 'redis' && !hasRequestUrl(request);
+}
+
+/** True for a graphql-ws operation root (`query X (query X)`, `mutation X (...)`, `subscription X (...)`). */
+export function isGraphqlWsOperation(name: string | undefined): boolean {
+  return name !== undefined && GRAPHQL_WS_OPERATION_NAME.test(name);
+}
+
 function stripLeadingMethod(name: string | undefined): string {
   if (!name) return '';
 
@@ -200,6 +274,14 @@ function stripLeadingMethod(name: string | undefined): string {
  */
 export function resolveBackendTracesSampleRate(request: BackendSamplingRequest): number {
   if (isWebSocketUpgrade(request)) return 0;
+
+  // Background redis commands, matched by origin rather than by name so a
+  // renamed span (or a new command) cannot reopen the ~1M spans/14d leak.
+  if (isRedisDiagnosticRoot(request)) return 0;
+
+  if (!hasHttpRequest(request)) {
+    return isGraphqlWsOperation(request.name) ? GRAPHQL_SAMPLE_RATE : 0;
+  }
 
   const path = resolveBackendRequestPath(request);
 

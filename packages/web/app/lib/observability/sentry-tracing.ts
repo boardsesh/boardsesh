@@ -8,22 +8,38 @@
  */
 
 /**
- * Sample rate for a server transaction that isn't explicitly zeroed below.
+ * Sample rate for a server transaction that isn't explicitly zeroed or
+ * rationed below.
  *
- * Span budget (system target: <= 3M spans/month).
+ * Span budget. The org quota is 5M stored spans/month; the target set when
+ * tracing went on (cdcb32cca8) is <= 3M/month across web and backend.
  *
- * `boardsesh-web` served 12,422 requests in the 7 days to 2026-09-01, so:
- *   12,422 / 7 * 30    = ~53,200 requests/month
- *   53,200 * 0.25      = ~13,300 sampled requests/month
- *   * ~4 spans each    = ~53,000 spans/month
+ * The original derivation here counted 12,422 web requests over 7 days and
+ * ~4 spans per sampled request, which came out at ~53,000 spans/month. Both
+ * inputs were wrong. Measured over 14 days in 2026-09 (Sentry `count_sample()`
+ * on stored spans), web alone stored several million spans:
  *
- * Web is under 2% of the budget even at 25%. `boardsesh-backend` is the one
- * that has to be rationed (3,371,614 requests over the same 7 days, 260x web) —
- * see the arithmetic in `packages/backend/src/lib/sentry-sampling.ts`. Keeping
- * web at 25% is what makes route-level p75 latency readable: at 1% the thin
- * tail of marketing and gym routes would never accumulate enough samples to
- * have a p75 at all, which is the whole reason this stage exists (we lost
- * Vercel Observability Plus when www moved to the Railway container).
+ *   climb view route              2.89M  (52% of all stored spans, org-wide)
+ *   Next.js internal spans        1.96M  (generateMetadata, render route, ...)
+ *   http.client                   0.64M  (incl. ~52k/7d forwarding /monitoring)
+ *   graphql.parse                 ~246k/7d (graphql-request's document parse)
+ *
+ * A sampled App Router render is dozens of spans, not four, and the climb view
+ * (`/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/view/[climb_uuid]`)
+ * is crawled at a rate the request count above never saw. So:
+ *
+ *   - the climb view is rationed to CLIMB_VIEW_TRACES_SAMPLE_RATE (5%, a 5x cut:
+ *     ~2.9M/14d is ~6.2M/month at 25%, ~1.2M/month at 5%, and the internals
+ *     dropped below take a large share of what remains);
+ *   - the Next.js internals, the tunnel forward and graphql.parse/validate are
+ *     dropped span-by-span via WEB_IGNORED_SPANS, without losing the root.
+ *
+ * Every other route stays at 25%. That is what makes route-level p75 latency
+ * readable: at 1% the thin tail of marketing and gym routes would never
+ * accumulate enough samples to have a p75 at all, which is the whole reason
+ * server tracing exists (we lost Vercel Observability Plus when www moved to
+ * the Railway container). The backend's arithmetic is in
+ * `packages/backend/src/lib/sentry-sampling.ts`.
  */
 export const WEB_SERVER_TRACES_SAMPLE_RATE = 0.25;
 
@@ -54,6 +70,24 @@ const SENTRY_TUNNEL_PATH = '/monitoring';
 
 /** Railway's own health probe target. Constant traffic, zero diagnostic value. */
 const HEALTH_PATH = '/api/health';
+
+/**
+ * Rate for the climb view. It stored 2.89M spans in 14 days at 25% — half of
+ * everything the org stored — so it is rationed to a fifth of the default. At
+ * this volume 5% still leaves thousands of samples a day for its p75.
+ */
+export const CLIMB_VIEW_TRACES_SAMPLE_RATE = 0.05;
+
+/**
+ * `/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/view/[climb_uuid]`,
+ * optionally behind a locale prefix (see SUPPORTED_LOCALES in @boardsesh/i18n).
+ *
+ * Matched against the raw request path, because that is what the sampler sees
+ * (`GET /moonboard/2016/standard-11x18-grid/.../40/view/skyline-7804be6e-...`),
+ * not the parameterised route name. `view` must be exactly the sixth segment,
+ * so `/play/...` and other seven-segment paths keep the default rate.
+ */
+const CLIMB_VIEW_PATH = /^(?:\/(?:es|fr|de))?\/[^/]+\/[^/]+\/[^/]+\/[^/]+\/[^/]+\/view\/[^/]+\/?$/;
 
 const HTTP_METHODS = new Set(['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'TRACE', 'CONNECT']);
 
@@ -132,8 +166,61 @@ export function resolveWebTracesSampleRate(request: TraceSamplingRequest): numbe
   if (path === SENTRY_TUNNEL_PATH && (method === 'POST' || method === '')) return 0;
   if (path === HEALTH_PATH || path.startsWith(`${HEALTH_PATH}/`)) return 0;
 
+  if (CLIMB_VIEW_PATH.test(path)) return CLIMB_VIEW_TRACES_SAMPLE_RATE;
+
   return WEB_SERVER_TRACES_SAMPLE_RATE;
 }
+
+/**
+ * One entry of Sentry's `ignoreSpans` option, declared structurally so this
+ * module keeps no `@sentry/*` import. The object form is the op-scoped arm of
+ * `IgnoreSpanFilter` in @sentry/core (`op` required, `name` optional): every
+ * field given must match for the span to be dropped.
+ */
+export type WebIgnoredSpanPattern =
+  | string
+  | RegExp
+  | {
+      readonly name?: string | RegExp;
+      readonly op: string | RegExp;
+    };
+
+/**
+ * Spans the web server and edge SDKs drop before sending.
+ *
+ * Matching semantics (@sentry/core `shouldIgnoreSpan` / `isMatchingPattern`):
+ * a bare string or RegExp is tested against the span NAME; a string matches as
+ * a SUBSTRING, not exactly. So every entry here is an anchored RegExp, which
+ * keeps a future span that merely contains one of these words alive. A
+ * dropped child's own children are re-parented to its parent. A matching ROOT
+ * drops its whole transaction, which is intended for a root `graphql.parse`.
+ *
+ * Why not `beforeSendSpan`: in SDK v10 returning null from it only logs a
+ * warning and keeps the span. And why not `{ op: 'default' }`: Sentry shows
+ * Next's spans as `default` but their op is actually undefined, so they have
+ * to be matched by name.
+ *
+ * `http.client` spans to the backend (`POST http://boardsesh-backend...`) are
+ * deliberately kept: they are the outbound-API-by-hostname view.
+ */
+export const WEB_IGNORED_SPANS: WebIgnoredSpanPattern[] = [
+  // Next.js App Router internals: ~1.96M stored spans in 14 days. The root
+  // http.server span already carries the route's total latency.
+  /^generateMetadata /,
+  /^resolve page components$/,
+  /^start response$/,
+  /^build component tree$/,
+  /^render route \(app\)/,
+  /^NextNodeServer\.clientComponentLoading$/,
+  // The /monitoring tunnel forwarding a browser envelope to Sentry: Sentry
+  // tracing itself talking to Sentry (~52k/7d).
+  { op: 'http.client', name: /\/api\/\d+\/envelope\/$/ },
+  // graphql-request parsing its own documents (~246k/7d). The Graphql
+  // integration is also disabled in sentry.server.config.ts; this catches any
+  // path that still produces them.
+  /^graphql\.parse$/,
+  /^graphql\.validate$/,
+];
 
 /**
  * Span attributes that carry a full request URL, and therefore a query string.

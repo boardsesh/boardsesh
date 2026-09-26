@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { RailwayTaggableEvent } from '../sentry-tracing';
+import type { WebIgnoredSpanPattern } from '../sentry-tracing';
 import {
+  CLIMB_VIEW_TRACES_SAMPLE_RATE,
   redactSensitiveSpanUrls,
   resolveSampledRequestMethod,
   resolveSampledRequestPath,
   stripSensitiveQueryString,
   tagRailwayRequestId,
+  WEB_IGNORED_SPANS,
   WEB_SERVER_TRACES_SAMPLE_RATE,
   WEB_TRACE_PROPAGATION_TARGETS,
   resolveWebTracesSampleRate,
@@ -57,6 +60,146 @@ describe('resolveWebTracesSampleRate', () => {
 
   it('reads the path from a full URL when the span name has none', () => {
     expect(resolveWebTracesSampleRate({ name: 'middleware', url: 'https://www.boardsesh.com/api/health' })).toBe(0);
+  });
+});
+
+describe('resolveWebTracesSampleRate: climb view', () => {
+  const climbViewPath =
+    '/moonboard/2016/standard-11x18-grid/original-school-holds_hold-set-b_hold-set-a/40/view/skyline-7804be6e-1b2c-4d5e-8f90-123456789abc';
+
+  it('rations the climb view to 5%', () => {
+    // Pinned as a literal. The climb view stored 2.89M spans in 14 days at
+    // 25%, half of everything the org stored; see the budget comment.
+    expect(CLIMB_VIEW_TRACES_SAMPLE_RATE).toBe(0.05);
+    expect(resolveWebTracesSampleRate({ name: `GET ${climbViewPath}` })).toBe(CLIMB_VIEW_TRACES_SAMPLE_RATE);
+  });
+
+  it('rations the middleware transaction for the same request', () => {
+    // The edge config samples `middleware GET` from the request URL, so the
+    // middleware span must land at the same rate as the page.
+    expect(
+      resolveWebTracesSampleRate({
+        name: 'middleware GET',
+        method: 'GET',
+        url: `https://www.boardsesh.com${climbViewPath}?utm_source=share`,
+      }),
+    ).toBe(CLIMB_VIEW_TRACES_SAMPLE_RATE);
+  });
+
+  it('handles locale prefixes and a trailing slash', () => {
+    expect(resolveWebTracesSampleRate({ name: `GET /es${climbViewPath}` })).toBe(CLIMB_VIEW_TRACES_SAMPLE_RATE);
+    expect(resolveWebTracesSampleRate({ name: `GET /fr${climbViewPath}` })).toBe(CLIMB_VIEW_TRACES_SAMPLE_RATE);
+    expect(resolveWebTracesSampleRate({ name: `GET /de${climbViewPath}/` })).toBe(CLIMB_VIEW_TRACES_SAMPLE_RATE);
+    expect(resolveWebTracesSampleRate({ name: 'GET /kilter/1/10/1,20/40/view/abc123' })).toBe(
+      CLIMB_VIEW_TRACES_SAMPLE_RATE,
+    );
+  });
+
+  it('leaves /play and other seven-segment paths at the default rate', () => {
+    expect(resolveWebTracesSampleRate({ name: 'GET /kilter/1/10/1,20/40/play/abc123' })).toBe(
+      WEB_SERVER_TRACES_SAMPLE_RATE,
+    );
+    expect(resolveWebTracesSampleRate({ name: 'GET /a/b/c/d/e/f/g' })).toBe(WEB_SERVER_TRACES_SAMPLE_RATE);
+    // `view` in the wrong position, or with extra segments after the climb.
+    expect(resolveWebTracesSampleRate({ name: 'GET /kilter/1/10/1,20/view/abc123' })).toBe(
+      WEB_SERVER_TRACES_SAMPLE_RATE,
+    );
+    expect(resolveWebTracesSampleRate({ name: 'GET /kilter/1/10/1,20/40/view/abc123/beta' })).toBe(
+      WEB_SERVER_TRACES_SAMPLE_RATE,
+    );
+    // The board list under the same prefix.
+    expect(resolveWebTracesSampleRate({ name: 'GET /kilter/1/10/1,20/40/list' })).toBe(WEB_SERVER_TRACES_SAMPLE_RATE);
+  });
+});
+
+/**
+ * Test double for @sentry/core's `shouldIgnoreSpan`, which @sentry/nextjs does
+ * not re-export (and web doesn't depend on @sentry/core directly). Mirrors
+ * `isMatchingPattern` with its default `requireExactStringMatch = false`: a
+ * string pattern matches as a SUBSTRING, a RegExp is tested as-is, and an
+ * object pattern needs every given field to match.
+ */
+function matchesSdkPattern(value: string | undefined, pattern: string | RegExp): boolean {
+  if (value === undefined) return false;
+  return typeof pattern === 'string' ? value.includes(pattern) : pattern.test(value);
+}
+
+function isIgnoredBySdk(span: { name: string; op?: string }, patterns: WebIgnoredSpanPattern[]): boolean {
+  return patterns.some((pattern) => {
+    if (typeof pattern === 'string' || pattern instanceof RegExp) return matchesSdkPattern(span.name, pattern);
+    const nameMatches = pattern.name ? matchesSdkPattern(span.name, pattern.name) : true;
+    return nameMatches && matchesSdkPattern(span.op, pattern.op);
+  });
+}
+
+describe('WEB_IGNORED_SPANS', () => {
+  it('drops the Next.js App Router internals by name, whatever their op', () => {
+    // Their op is undefined (Sentry displays it as `default`), so name is the only handle.
+    const nextInternalSpanNames = [
+      'generateMetadata /[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/view/[climb_uuid]',
+      'resolve page components',
+      'start response',
+      'build component tree',
+      'render route (app) /[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/view/[climb_uuid]',
+      'NextNodeServer.clientComponentLoading',
+    ];
+    for (const spanName of nextInternalSpanNames) {
+      expect(isIgnoredBySdk({ name: spanName }, WEB_IGNORED_SPANS), spanName).toBe(true);
+    }
+  });
+
+  it('drops graphql.parse and graphql.validate', () => {
+    expect(isIgnoredBySdk({ name: 'graphql.parse', op: 'graphql.parse' }, WEB_IGNORED_SPANS)).toBe(true);
+    expect(isIgnoredBySdk({ name: 'graphql.validate' }, WEB_IGNORED_SPANS)).toBe(true);
+  });
+
+  it('drops the tunnel forwarding an envelope to Sentry', () => {
+    expect(
+      isIgnoredBySdk(
+        {
+          name: 'POST https://o4510644927660032.ingest.us.sentry.io/api/4510644930150400/envelope/',
+          op: 'http.client',
+        },
+        WEB_IGNORED_SPANS,
+      ),
+    ).toBe(true);
+  });
+
+  it('keeps outbound calls to the backend and other APIs', () => {
+    // The "outbound API by hostname" view depends on these.
+    expect(
+      isIgnoredBySdk(
+        { name: 'POST http://boardsesh-backend.railway.internal:8080/graphql', op: 'http.client' },
+        WEB_IGNORED_SPANS,
+      ),
+    ).toBe(false);
+    expect(
+      isIgnoredBySdk({ name: 'GET https://www.boardsesh.com/api/v1/climbs', op: 'http.client' }, WEB_IGNORED_SPANS),
+    ).toBe(false);
+  });
+
+  it('keeps the root request span and spans that merely mention an ignored name', () => {
+    expect(isIgnoredBySdk({ name: 'GET /kilter/1/10/1,20/40/view/abc', op: 'http.server' }, WEB_IGNORED_SPANS)).toBe(
+      false,
+    );
+    // Anchored patterns: a substring string entry would have matched these.
+    expect(isIgnoredBySdk({ name: 'db: start response cache warm' }, WEB_IGNORED_SPANS)).toBe(false);
+    expect(isIgnoredBySdk({ name: 'graphql.parse.cached' }, WEB_IGNORED_SPANS)).toBe(false);
+    // An envelope path that is not an http.client span is not the tunnel forward.
+    expect(isIgnoredBySdk({ name: 'POST /api/1/envelope/', op: 'http.server' }, WEB_IGNORED_SPANS)).toBe(false);
+  });
+
+  it('uses only anchored RegExps or op-scoped filters, never bare substring strings', () => {
+    // Bare strings match as substrings in the SDK, which would silently drop
+    // any future span that happens to contain the text.
+    for (const pattern of WEB_IGNORED_SPANS) {
+      if (typeof pattern === 'string') throw new Error(`bare string pattern: ${pattern}`);
+      if (pattern instanceof RegExp) {
+        expect(pattern.source.startsWith('^'), pattern.source).toBe(true);
+      } else {
+        expect(pattern.op).toBeTruthy();
+      }
+    }
   });
 });
 
