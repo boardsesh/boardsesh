@@ -5,7 +5,14 @@ import { fileURLToPath } from 'node:url';
 
 const scriptPath = fileURLToPath(import.meta.url);
 const ZERO_SHA = '0000000000000000000000000000000000000000';
-const ALL_TARGETS = Object.freeze({ web: true, backend: true, app: true, cloudflare: true, staticAssets: true });
+const ALL_TARGETS = Object.freeze({
+  web: true,
+  backend: true,
+  app: true,
+  ota: true,
+  cloudflare: true,
+  staticAssets: true,
+});
 const FULL_COMMIT_SHA_PATTERN = /^[0-9a-f]{40}$/i;
 
 function fullDeploy(reason) {
@@ -65,7 +72,10 @@ function isProductionDeployTestFile(filePath) {
     filePath === 'scripts/production-web-deploy-targets.test.mjs' ||
     filePath === 'scripts/railway-deployment-rollback.test.mjs' ||
     filePath === 'scripts/railway-deployment-status.test.mjs' ||
-    filePath === 'scripts/production-smoke.test.ts'
+    filePath === 'scripts/production-smoke.test.ts' ||
+    filePath === 'scripts/mobile-ota-promote.test.ts' ||
+    filePath === 'scripts/mobile-ota-schema-ready.test.mjs' ||
+    filePath === 'scripts/mobile-ota-stage-verify.test.ts'
   );
 }
 
@@ -163,8 +173,32 @@ function isAppAffecting(filePath) {
   );
 }
 
+// Keep this in step with the main-push paths formerly owned by
+// mobile-ota-production.yml. Cumulative detection also recovers an OTA push
+// whose earlier production-deploy run was superseded while pending.
+function isOtaAffecting(filePath) {
+  return (
+    (filePath.startsWith('packages/mobile/') && filePath !== 'packages/mobile/src/data/changelog.generated.json') ||
+    filePath.startsWith('packages/shared/') ||
+    filePath.startsWith('packages/board-constants/') ||
+    filePath.startsWith('packages/shared-schema/') ||
+    filePath === 'package.json' ||
+    filePath === 'pnpm-lock.yaml' ||
+    filePath === 'pnpm-workspace.yaml' ||
+    filePath.startsWith('patches/') ||
+    filePath === 'scripts/mobile-publish.ts' ||
+    filePath === 'scripts/lib/mobile-publish-retry.ts' ||
+    filePath === 'scripts/lib/ota-branch-probe.ts' ||
+    filePath === 'scripts/lib/eoas.ts' ||
+    filePath === 'scripts/mobile-ota-promote.ts' ||
+    filePath === 'scripts/mobile-ota-schema-ready.mjs' ||
+    filePath === 'scripts/mobile-ota-stage-verify.ts' ||
+    filePath === '.github/workflows/mobile-ota-production.yml'
+  );
+}
+
 function classifyChangedFiles(changedFiles) {
-  const targets = { web: false, backend: false, app: false, cloudflare: false, staticAssets: false };
+  const targets = { web: false, backend: false, app: false, ota: false, cloudflare: false, staticAssets: false };
 
   for (const filePath of changedFiles) {
     if (isProductionDeployTestFile(filePath) || isProductionDeployWatchdogFile(filePath)) continue;
@@ -172,6 +206,7 @@ function classifyChangedFiles(changedFiles) {
     if (isBackendAffecting(filePath)) targets.backend = true;
     if (isWebAffecting(filePath)) targets.web = true;
     if (isAppAffecting(filePath)) targets.app = true;
+    if (isOtaAffecting(filePath)) targets.ota = true;
     if (isCloudflareAffecting(filePath)) targets.cloudflare = true;
     if (isStaticAssetsAffecting(filePath)) targets.staticAssets = true;
   }
@@ -300,6 +335,7 @@ function formatGitHubOutputs(result) {
     `web=${result.web}`,
     `backend=${result.backend}`,
     `app=${result.app}`,
+    `ota=${result.ota}`,
     `cloudflare=${result.cloudflare}`,
     `static_assets=${result.staticAssets}`,
     `deployment_base_sha=${result.deploymentBaseSha}`,

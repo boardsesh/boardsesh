@@ -1,8 +1,8 @@
 name: Mobile OTA Production (Self-Hosted)
 
 # Publishes a production OTA (JS bundle + manifest) to the self-hosted
-# expo-open-ota server on every push to main or release/next that touches the
-# mobile app, and on manual dispatch from either. main serves the store fleet;
+# expo-open-ota server on release/next pushes and manual dispatch. Main pushes
+# call it in staging mode from production-deploy.yml. main serves the store fleet;
 # release/next serves the testers on the train's TestFlight / Play-internal
 # binary, and only once the train's fingerprint has moved away from main's (the
 # train guard below). Changelog push-back, the Sentry release, the health probe
@@ -26,17 +26,17 @@ name: Mobile OTA Production (Self-Hosted)
 # Name the run after what it is doing — `gh workflow run` returns no run id, so
 # this is the only handle for spotting a dispatched republish in the Actions list.
 run-name: >-
-  ${{ github.event.inputs.expect_fingerprint
+  ${{ inputs.stage_for_production_deploy && 'Stage main OTA'
+  || github.event.inputs.expect_fingerprint
   && format('Republish {0} after native build ({1})', github.event.inputs.platform, github.event.inputs.expect_fingerprint)
   || 'Production OTA' }}
 
 on:
   push:
-    # Both lines publish: main serves the store fleet, release/next serves the
-    # TestFlight / Play-internal testers running the train's binary. The train's
+    # release/next serves the TestFlight / Play-internal testers running the train's binary. The train's
     # publish is guarded so it can never take over main's runtimeVersion — see the
     # "Skip platforms whose runtimeVersion main still owns" step below.
-    branches: [main, release/next]
+    branches: [release/next]
     # Matches the native build workflows' trigger set (ios-testflight-rn.yml /
     # android-apk-rn.yml) so a native build and its OTA fire on the same changes.
     # packages/shared/** already covers queue / board-config / ble-protocol, which
@@ -70,6 +70,11 @@ on:
           native build workflows when they republish after a store upload; leave
           empty for a normal manual publish.
         required: false
+  workflow_call:
+    inputs:
+      stage_for_production_deploy:
+        type: boolean
+        required: true
 
 permissions:
   # read only: the push-back to main uses a dedicated GitHub App token (it must
@@ -78,12 +83,10 @@ permissions:
   contents: read
 
 concurrency:
-  # EXACTLY ONE production OTA publish at a time, repo-wide. This workflow owns
-  # changelog.generated.json (regenerate + push to main), so two concurrent runs
-  # would race on that file. A constant group (not per-ref) serializes push +
-  # dispatch + any branch into a single lane. cancel-in-progress: false never
-  # kills a publish mid-flight.
-  group: mobile-ota-production
+  # Direct production publishes share one lane with native republishes and
+  # backports. Staging has its own lane so it can overlap production publishes
+  # and the web/backend builds; promotion later takes the production lane.
+  group: ${{ inputs.stage_for_production_deploy && 'mobile-ota-staging' || 'mobile-ota-production' }}
   cancel-in-progress: false
   # QUEUE, never supersede. cancel-in-progress governs only the RUNNING run —
   # by default GitHub still cancels an existing *pending* run when a new one
@@ -140,120 +143,7 @@ env:
   EXPO_PUBLIC_USE_RN_FETCH: '1'
 
 jobs:
-  # Holds the publish until the live backend serves the GraphQL schema this OTA
-  # queries (#5370). On 2026-09-08 #5283 changed the schema and the client in one
-  # commit; the OTA published at 21:36 UTC and the backend with the new argument
-  # finished deploying at 21:55, so updated phones got GRAPHQL_VALIDATION_FAILED
-  # for 19 minutes. production-deploy.yml runs off the same push, so the fix is
-  # to wait for it rather than race it.
-  #
-  # FAIL OPEN, always. Every path out of this job lets `publish` run: a pass, a
-  # 60-minute cap, no deploy running, or the job itself crashing (publish uses
-  # `!cancelled()`). A wedged backend deploy must not also freeze mobile, and a
-  # per-platform republish dispatched by a native build must never be stranded.
-  #
-  # Deliberately NOT `environment: Production`: it needs no secret beyond the
-  # repo-level Discord webhook, and a second environment gate would park every
-  # OTA behind a manual approval. No workflow-level env either — the shared env
-  # above is locked by scripts/mobile-ci-env-parity.test.ts.
-  await-backend-schema:
-    runs-on: ubuntu-latest
-    # The poll loop caps itself at 60 minutes; this is the backstop above it.
-    timeout-minutes: 75
-    permissions:
-      # actions: read for `gh run list` on production-deploy.yml.
-      actions: read
-      contents: read
-    steps:
-      # A republish dispatched by a native build re-ships JS main already
-      # published (and gated) on push. Skip every step so it goes straight to
-      # publish; the job still succeeds, so `publish` is not skipped with it.
-      - name: Skip for a native-build republish
-        if: github.event.inputs.expect_fingerprint != ''
-        env:
-          EXPECT_FINGERPRINT: ${{ github.event.inputs.expect_fingerprint }}
-        run: echo "::notice::Republish for fingerprint $EXPECT_FINGERPRINT — not waiting for the backend."
-
-      - name: Checkout repository
-        if: github.event.inputs.expect_fingerprint == ''
-        uses: actions/checkout@v4
-        with:
-          # Full history: merge-base and diff need both the OTA commit and the
-          # deployed release, which can be newer than this checkout.
-          fetch-depth: 0
-
-      - uses: voidzero-dev/setup-vp@v1
-        if: github.event.inputs.expect_fingerprint == ''
-        with:
-          node-version: '22.x'
-          cache: false
-
-      - name: Wait for the backend to serve this schema
-        if: github.event.inputs.expect_fingerprint == ''
-        env:
-          GH_TOKEN: ${{ github.token }}
-          DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          # No `set -e`: every failure below degrades to "publish anyway".
-          set -uo pipefail
-          schema_path=packages/shared-schema/src/schema
-          need="$(git log -1 --format=%H "$GITHUB_SHA" -- "$schema_path" 2>/dev/null || true)"
-          echo "Schema commit this OTA needs: ${need:-<none>}"
-          start=$SECONDS
-          while :; do
-            elapsed=$((SECONDS - start))
-            git fetch --quiet origin main || echo "::warning::git fetch origin main failed; comparing against the local history."
-            # No -f: a 503 (Redis down) still carries `release`.
-            release="$(curl -sS --max-time 20 https://ws.boardsesh.com/health 2>/dev/null | jq -r '.release // empty' 2>/dev/null || true)"
-            is_ancestor=false
-            schema_diff_empty=false
-            if printf '%s' "$release" | grep -Eq '^[0-9a-f]{40}$' && git cat-file -e "${release}^{commit}" 2>/dev/null; then
-              [ -n "$need" ] && git merge-base --is-ancestor "$need" "$release" && is_ancestor=true
-              git diff --quiet "$release" "$GITHUB_SHA" -- "$schema_path" && schema_diff_empty=true
-            fi
-            running="$(gh run list -w production-deploy.yml -b main --limit 20 --json status \
-              -q '[.[] | select(.status == "queued" or .status == "in_progress" or .status == "waiting" or .status == "pending" or .status == "requested")] | length' \
-              2>/dev/null || echo 0)"
-            deploy_running=false
-            [ "${running:-0}" -gt 0 ] 2>/dev/null && deploy_running=true
-            verdict="$(node --experimental-strip-types scripts/mobile-ota-backend-gate.ts \
-              --need "$need" --release "$release" --is-ancestor "$is_ancestor" \
-              --schema-diff-empty "$schema_diff_empty" --deploy-running "$deploy_running" \
-              --elapsed-seconds "$elapsed" 2>/dev/null)"
-            decision="$(printf '%s\n' "$verdict" | sed -n 's/^decision=//p')"
-            reason="$(printf '%s\n' "$verdict" | sed -n 's/^reason=//p')"
-            echo "[$((elapsed / 60))m] ${decision:-<no verdict>}: ${reason:-decision script produced no output}"
-            case "$decision" in
-              pass)
-                echo "::notice::Backend is ready: $reason"
-                echo "Backend schema gate: **pass** after $((elapsed / 60)) min — $reason" >> "$GITHUB_STEP_SUMMARY"
-                exit 0
-                ;;
-              wait)
-                sleep 60
-                ;;
-              *)
-                reason="${reason:-the decision script failed to run}"
-                echo "::warning::Publishing without confirming the backend schema: $reason"
-                echo "Backend schema gate: **published without confirmation** after $((elapsed / 60)) min — $reason" >> "$GITHUB_STEP_SUMMARY"
-                if [ -n "${DISCORD_DEPLOY_WEBHOOK:-}" ]; then
-                  content="$(printf '⚠️ **Production OTA publishing before the backend confirmed its schema** on `%s`\n• %s\n<%s>' \
-                    "${GITHUB_SHA:0:7}" "$reason" "$RUN_URL")"
-                  jq -n --arg content "$content" '{content: $content, allowed_mentions: {parse: []}}' \
-                    | curl -sS --fail-with-body -X POST -H "Content-Type: application/json" -d @- "$DISCORD_DEPLOY_WEBHOOK" \
-                    || echo "::warning::Failed to post Discord notification (see status above)"
-                fi
-                exit 0
-                ;;
-            esac
-          done
-
   publish:
-    # Fail open: runs after the gate whatever its result, unless the run was
-    # cancelled. A gate that crashed or hit its job timeout still publishes.
-    needs: await-backend-schema
-    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     # Six attempts per platform can spend 34 minutes in backoff alone, and iOS
     # and Android each get that budget sequentially — a fully throttled run is
@@ -276,6 +166,7 @@ jobs:
     env:
       INPUT_PLATFORM: ${{ github.event.inputs.platform || 'all' }}
       INPUT_MESSAGE: ${{ github.event.inputs.message }}
+      OTA_BRANCH: ${{ inputs.stage_for_production_deploy && 'pr-staging' || 'production' }}
 
     steps:
       # Mint the GitHub App token FIRST so checkout persists ITS credentials for
@@ -307,6 +198,10 @@ jobs:
           # token (read-only checkout) when the app isn't set up.
           token: ${{ steps.push_token.outputs.token || github.token }}
 
+      - name: Require live backend schema before direct main publish
+        if: github.ref == 'refs/heads/main' && !inputs.stage_for_production_deploy
+        run: node scripts/mobile-ota-schema-ready.mjs
+
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: '22.x'
@@ -317,13 +212,19 @@ jobs:
 
       - name: Check OTA infra is wired
         id: gate
+        env:
+          STAGING: ${{ inputs.stage_for_production_deploy }}
         run: |
-          # Fail closed but skip gracefully: until the server URL is configured AND
-          # the signing cert is committed, app.config falls back to the EAS URL, so
-          # a published fingerprint could never match a self-hosted binary. Skip
-          # (green no-op) rather than publish to nowhere — mirrors the inert default.
+          # Until the server URL is configured AND the signing cert is committed,
+          # app.config falls back to the EAS URL and the fingerprint cannot match
+          # a self-hosted binary. A main deploy must fail staging; direct release
+          # and manual publishes keep their existing green no-op behavior.
           if [ -z "$EXPO_UPDATES_URL" ] || [ ! -f packages/mobile/certs/certificate.pem ]; then
             echo "configured=false" >> "$GITHUB_OUTPUT"
+            if [ "$STAGING" = true ]; then
+              echo '::error::Main OTA cannot stage without EXPO_UPDATES_URL and the signing certificate.'
+              exit 1
+            fi
             echo "::notice::Self-hosted OTA not wired yet (EXPO_UPDATES_URL unset or certs/certificate.pem missing) — skipping production OTA publish. See docs/mobile-ota-updates.md."
           else
             echo "configured=true" >> "$GITHUB_OUTPUT"
@@ -542,6 +443,23 @@ jobs:
           esac
           echo "Working tree carries only the regenerated changelog (or nothing)."
 
+      - name: Capture production OTA baseline before staging
+        id: baseline
+        if: inputs.stage_for_production_deploy && steps.generate.outcome == 'success'
+        env:
+          GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ota-stage
+          ios_runtime="$(cd packages/mobile && env -u GOOGLE_MAPS_API_KEY vp exec expo-updates runtimeversion:resolve --platform ios | jq -r '.runtimeVersion')"
+          android_runtime="$(cd packages/mobile && vp exec expo-updates runtimeversion:resolve --platform android | jq -r '.runtimeVersion')"
+          printf '%s' "$ios_runtime" > ota-stage/ios-runtime
+          printf '%s' "$android_runtime" > ota-stage/android-runtime
+          vp exec tsx scripts/mobile-ota-promote.ts --capture-baseline \
+            --ios-runtime "$ios_runtime" --android-runtime "$android_runtime" \
+            --app-id 007e6fd7-f200-448c-9449-8d48ba5d51fc \
+            --out ota-stage/baseline.json
+
       # iOS and Android are published in SEPARATE steps with platform-specific env.
       # GOOGLE_MAPS_API_KEY is set only on the Android native prebuild (iOS uses
       # Apple Maps), and it changes the resolved config — hence the fingerprint —
@@ -550,7 +468,7 @@ jobs:
       # single `--platform all` publish with one env could only ever match one side.
       - name: Publish iOS OTA
         id: publish_ios
-        if: steps.gate.outputs.configured == 'true' && steps.generate.outcome == 'success' && steps.expect.outputs.mismatch != 'true' && steps.train_guard.outputs.publish_ios != 'false' && (env.INPUT_PLATFORM == 'all' || env.INPUT_PLATFORM == 'ios')
+        if: steps.gate.outputs.configured == 'true' && steps.generate.outcome == 'success' && (!inputs.stage_for_production_deploy || steps.baseline.outcome == 'success') && steps.expect.outputs.mismatch != 'true' && steps.train_guard.outputs.publish_ios != 'false' && (env.INPUT_PLATFORM == 'all' || env.INPUT_PLATFORM == 'ios')
         continue-on-error: true
         env:
           # V3 control-plane rejects Expo tokens; eoas publish authenticates with the
@@ -565,7 +483,7 @@ jobs:
         # binaries (still on the old one) never receive JS that needs the new native
         # code. Pinning to the last tag instead would do exactly that — a crash.
         run: |
-          args=(--channel production --platform ios)
+          args=(--channel "$OTA_BRANCH" --platform ios)
           if [ -n "$INPUT_MESSAGE" ]; then args+=(--message "$INPUT_MESSAGE"); fi
           vp run mobile:publish -- "${args[@]}"
 
@@ -583,9 +501,15 @@ jobs:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
         run: vp run mobile:upload-sourcemaps -- --platform ios
 
+      - name: Archive staged iOS export
+        if: inputs.stage_for_production_deploy && steps.publish_ios.outcome == 'success'
+        run: |
+          mkdir -p ota-stage
+          cp -a packages/mobile/dist ota-stage/ios
+
       - name: Publish Android OTA
         id: publish_android
-        if: always() && steps.gate.outputs.configured == 'true' && steps.generate.outcome == 'success' && steps.expect.outputs.mismatch != 'true' && steps.train_guard.outputs.publish_android != 'false' && (env.INPUT_PLATFORM == 'all' || env.INPUT_PLATFORM == 'android')
+        if: always() && steps.gate.outputs.configured == 'true' && steps.generate.outcome == 'success' && (!inputs.stage_for_production_deploy || steps.baseline.outcome == 'success') && steps.expect.outputs.mismatch != 'true' && steps.train_guard.outputs.publish_android != 'false' && (env.INPUT_PLATFORM == 'all' || env.INPUT_PLATFORM == 'android')
         continue-on-error: true
         env:
           EOO_TOKEN: ${{ secrets.EOO_TOKEN }}
@@ -595,7 +519,7 @@ jobs:
           # iOS publish step; the publish resolves the current commit's fingerprint.)
           GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
         run: |
-          args=(--channel production --platform android)
+          args=(--channel "$OTA_BRANCH" --platform android)
           if [ -n "$INPUT_MESSAGE" ]; then args+=(--message "$INPUT_MESSAGE"); fi
           vp run mobile:publish -- "${args[@]}"
 
@@ -607,6 +531,49 @@ jobs:
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
         run: vp run mobile:upload-sourcemaps -- --platform android
+
+      - name: Archive staged Android export
+        if: inputs.stage_for_production_deploy && steps.publish_android.outcome == 'success'
+        run: cp -a packages/mobile/dist ota-stage/android
+
+      - name: Record staged export fingerprints and hashes
+        if: inputs.stage_for_production_deploy && steps.publish_ios.outcome == 'success' && steps.publish_android.outcome == 'success'
+        run: |
+          set -euo pipefail
+          ios_runtime="$(cat ota-stage/ios-runtime)"
+          android_runtime="$(cat ota-stage/android-runtime)"
+          test -n "$ios_runtime" && test -n "$android_runtime"
+          ios_bundle="$(jq -r '.fileMetadata.ios.bundle' ota-stage/ios/metadata.json)"
+          android_bundle="$(jq -r '.fileMetadata.android.bundle' ota-stage/android/metadata.json)"
+          ios_hash="$(sha256sum "ota-stage/ios/$ios_bundle" | cut -d' ' -f1)"
+          android_hash="$(sha256sum "ota-stage/android/$android_bundle" | cut -d' ' -f1)"
+          update_message="$INPUT_MESSAGE"
+          if [ -z "$update_message" ]; then update_message="$(git log -1 --format=%s "$GITHUB_SHA")"; fi
+          jq -n --slurpfile baseline ota-stage/baseline.json --arg sha "$GITHUB_SHA" --arg message "$update_message" \
+            --arg ios_runtime "$ios_runtime" --arg android_runtime "$android_runtime" \
+            --arg ios_hash "$ios_hash" --arg android_hash "$android_hash" \
+            '{commitHash:$sha,message:$message,baselineProductionUpdateIds:$baseline[0],platforms:{ios:{runtimeVersion:$ios_runtime,bundleSha256:$ios_hash},android:{runtimeVersion:$android_runtime,bundleSha256:$android_hash}}}' \
+            > ota-stage/receipt.json
+          cp packages/mobile/src/data/changelog.generated.json ota-stage/changelog.generated.json
+          cp CHANGELOG.md ota-stage/CHANGELOG.md
+          if [ -f "$RUNNER_TEMP/discord-changelog.md" ]; then
+            cp "$RUNNER_TEMP/discord-changelog.md" ota-stage/discord-changelog.md
+          else
+            : > ota-stage/discord-changelog.md
+          fi
+
+      - name: Verify both staged updates appear in the picker
+        if: inputs.stage_for_production_deploy && steps.publish_ios.outcome == 'success' && steps.publish_android.outcome == 'success'
+        run: vp exec tsx scripts/mobile-ota-stage-verify.ts ota-stage/receipt.json
+
+      - name: Upload staged OTA export
+        if: inputs.stage_for_production_deploy && steps.publish_ios.outcome == 'success' && steps.publish_android.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-ota-stage
+          path: ota-stage/
+          retention-days: 7
+          if-no-files-found: error
 
       # Publish both requested platforms before deciding the job result. This
       # makes a partial release explicit without trying to roll back the platform
@@ -699,7 +666,7 @@ jobs:
       # publish too. The health check can't cover this: an install running its own
       # embedded bundle is not an emergency launch, so the fleet reads as healthy.
       - name: Verify the republished update is the one the fleet will see
-        if: steps.gate.outputs.configured == 'true' && github.event.inputs.expect_fingerprint != '' && steps.expect.outputs.mismatch != 'true' && steps.publish_summary.outputs.all_success == 'true'
+        if: ${{ !inputs.stage_for_production_deploy && steps.gate.outputs.configured == 'true' && github.event.inputs.expect_fingerprint != '' && steps.expect.outputs.mismatch != 'true' && steps.publish_summary.outputs.all_success == 'true' }}
         env:
           EXPECT_FINGERPRINT: ${{ github.event.inputs.expect_fingerprint }}
           PLATFORM: ${{ github.event.inputs.platform }}
@@ -752,7 +719,7 @@ jobs:
       # app isn't configured — checkout then holds only the default token, the OTA
       # already shipped, and main's committed copy is just left unchanged.
       - name: Push changelog to main
-        if: github.ref == 'refs/heads/main' && steps.publish_summary.outputs.all_success == 'true' && steps.generate.outputs.changed == 'true' && vars.OTA_PUSH_APP_ID != ''
+        if: github.ref == 'refs/heads/main' && !inputs.stage_for_production_deploy && steps.publish_summary.outputs.all_success == 'true' && steps.generate.outputs.changed == 'true' && vars.OTA_PUSH_APP_ID != ''
         run: |
           set -euo pipefail
           cp packages/mobile/src/data/changelog.generated.json "$RUNNER_TEMP/changelog.json"
@@ -798,7 +765,7 @@ jobs:
       # every requested platform succeeded. A `--platform ios` run reports just
       # "iOS" (the Android step is skipped, not success).
       - name: Notify deployments channel
-        if: github.ref == 'refs/heads/main' && steps.publish_summary.outputs.all_success == 'true'
+        if: github.ref == 'refs/heads/main' && !inputs.stage_for_production_deploy && steps.publish_summary.outputs.all_success == 'true'
         env:
           DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -864,7 +831,7 @@ jobs:
       # See docs/mobile-ota-updates.md ("Health monitoring & rollback").
       - name: OTA health check (non-blocking)
         id: health
-        if: always() && github.ref == 'refs/heads/main' && steps.gate.outputs.configured == 'true' && (steps.publish_ios.outcome == 'success' || steps.publish_android.outcome == 'success')
+        if: always() && github.ref == 'refs/heads/main' && !inputs.stage_for_production_deploy && steps.gate.outputs.configured == 'true' && (steps.publish_ios.outcome == 'success' || steps.publish_android.outcome == 'success')
         continue-on-error: true
         env:
           POSTHOG_PERSONAL_API_KEY: ${{ secrets.POSTHOG_PERSONAL_API_KEY }}
@@ -884,7 +851,7 @@ jobs:
       # is 'failure' only when the gate tripped (continue-on-error turned the
       # non-zero exit into a step failure without failing the job).
       - name: Notify OTA health to Discord
-        if: always() && github.ref == 'refs/heads/main' && steps.gate.outputs.configured == 'true' && (steps.publish_ios.outcome == 'success' || steps.publish_android.outcome == 'success')
+        if: always() && github.ref == 'refs/heads/main' && !inputs.stage_for_production_deploy && steps.gate.outputs.configured == 'true' && (steps.publish_ios.outcome == 'success' || steps.publish_android.outcome == 'success')
         env:
           DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

@@ -8,6 +8,7 @@ const hasSeenOnboardingMock = vi.hoisted(() => vi.fn());
 const getInitialURLMock = vi.hoisted(() => vi.fn());
 const listPrBranchesMock = vi.hoisted(() => vi.fn());
 const readRunningPrNumberMock = vi.hoisted(() => vi.fn());
+const readRunningOtaBranchMock = vi.hoisted(() => vi.fn());
 const trackMock = vi.hoisted(() => vi.fn());
 const reportHandledErrorMock = vi.hoisted(() => vi.fn());
 const settingsStore = vi.hoisted(() => ({ values: {} as Record<string, boolean | string | null> }));
@@ -48,6 +49,8 @@ vi.mock('../../../lib/ota-branch-surfing-state', () => ({
 vi.mock('../../../lib/qa/qa-surf', () => ({
   listPrBranches: listPrBranchesMock,
   readRunningPrNumber: readRunningPrNumberMock,
+  readRunningOtaBranch: readRunningOtaBranchMock,
+  STAGING_OTA_BRANCH: 'pr-staging',
 }));
 vi.mock('../../../settings', () => ({
   getSetting: (key: string) => settingsStore.values[key] ?? null,
@@ -82,6 +85,7 @@ beforeEach(() => {
   getInitialURLMock.mockReset().mockResolvedValue(null);
   listPrBranchesMock.mockReset().mockResolvedValue(branchList(4792, 4800));
   readRunningPrNumberMock.mockReset().mockReturnValue(null);
+  readRunningOtaBranchMock.mockReset().mockReturnValue(null);
   settingsStore.values = { qaPromptOnLaunch: true };
   profileCtrl.id = 'user-a';
   profileCtrl.isTester = true;
@@ -95,6 +99,12 @@ beforeEach(() => {
 });
 
 describe('QaTesterGate on production', () => {
+  it('does not interrupt a tester running the staged main update', () => {
+    readRunningOtaBranchMock.mockReturnValue('pr-staging');
+    render(<QaTesterGate />);
+    expect(listPrBranchesMock).not.toHaveBeenCalled();
+    expect(pushMock).not.toHaveBeenCalled();
+  });
   it('offers the pick list, seeded with the branches it just listed', async () => {
     render(<QaTesterGate />);
     await waitFor(() =>

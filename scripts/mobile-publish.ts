@@ -172,19 +172,19 @@ export function buildSelfHostedEoasArgs(
   // `hidden: true` upstream, so it is undocumented and could be dropped; it is
   // safe only because EOAS_PACKAGE_SPEC pins the exact eoas version. Production
   // only: previews publish from a clean PR checkout and stay strict.
+  const productionDeployBranch = branchName === 'production' || branchName === 'pr-staging';
   const repositoryCheckArgs =
-    branchName === 'production' && options.allowDirtyTree === true ? ['--disableRepositoryCheck'] : [];
-  const sourceMapArgs =
-    branchName === 'production'
-      ? [
-          // Keep the exact production export that eoas uploads on disk with
-          // external source maps. The platform-specific workflow uploads this
-          // directory to Sentry immediately; the next publish replaces `dist`.
-          '--dumpSourcemap',
-          '--outputDir',
-          'dist',
-        ]
-      : [];
+    productionDeployBranch && options.allowDirtyTree === true ? ['--disableRepositoryCheck'] : [];
+  const sourceMapArgs = productionDeployBranch
+    ? [
+        // Keep the exact production export that eoas uploads on disk with
+        // external source maps. The platform-specific workflow uploads this
+        // directory to Sentry immediately; the next publish replaces `dist`.
+        '--dumpSourcemap',
+        '--outputDir',
+        'dist',
+      ]
+    : [];
   return [
     EOAS_PACKAGE_SPEC,
     'publish',

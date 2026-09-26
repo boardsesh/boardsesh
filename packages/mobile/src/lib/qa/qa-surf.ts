@@ -22,6 +22,11 @@ export type QaPrBranch = {
   lastUpdateAt: string;
 };
 
+// Fits the production channel's existing `pr-*` branch-surfing pattern while
+// remaining distinct from numbered PR previews.
+export const STAGING_OTA_BRANCH = 'pr-staging';
+export type QaBranchList = { previews: QaPrBranch[]; staging: { lastUpdateAt: string } | null };
+
 export const BRANCH_SURFING_UNAVAILABLE_MESSAGE = 'Branch surfing is unavailable on this build';
 
 /**
@@ -91,17 +96,28 @@ function branchTimeMs(lastUpdateAt: string): number {
  * for this runtime version spent one of the fifty.
  */
 export async function listPrBranches(signal?: AbortSignal): Promise<QaPrBranch[] | null> {
+  const result = await listQaBranches(signal);
+  return result?.previews ?? null;
+}
+
+/** PRs plus the compatible staged main update, from one server request. */
+export async function listQaBranches(signal?: AbortSignal): Promise<QaBranchList | null> {
   const page = await listBranches(requireSurfConfig(), signal, true);
   if (page === null) return null;
 
   const previews: QaPrBranch[] = [];
+  let staging: QaBranchList['staging'] = null;
   for (const branch of page.branches) {
+    if (branch.name === STAGING_OTA_BRANCH) {
+      staging = { lastUpdateAt: branch.lastUpdateAt };
+      continue;
+    }
     const prNumber = parsePrBranch(branch.name);
     if (prNumber === null) continue;
     previews.push({ prNumber, branch: branch.name, lastUpdateAt: branch.lastUpdateAt });
   }
   previews.sort((left, right) => branchTimeMs(right.lastUpdateAt) - branchTimeMs(left.lastUpdateAt));
-  return previews;
+  return { previews, staging };
 }
 
 /**
@@ -125,4 +141,13 @@ export async function surfToPr(prNumber: number): Promise<SurfOutcome> {
  */
 export async function surfToProduction(): Promise<SurfOutcome> {
   return surfTo(requireSurfConfig(), null);
+}
+
+/** Pin the tester-only staged main bundle; production is never remapped. */
+export async function surfToStaging(): Promise<SurfOutcome> {
+  return surfTo(requireSurfConfig(), STAGING_OTA_BRANCH);
+}
+
+export function readRunningOtaBranch(): string | null {
+  return readOtaBranch(Updates.manifest);
 }

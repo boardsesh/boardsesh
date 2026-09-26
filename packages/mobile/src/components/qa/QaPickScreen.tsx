@@ -18,7 +18,14 @@ import { spacing, borderRadius } from '../../theme/tokens';
 import { formatRelativeTime } from '../../lib/format-relative-time';
 import { track } from '../../lib/analytics';
 import { reportHandledError } from '../../lib/error-reporting';
-import { listPrBranches, qaSurfingAvailable, readRefusedPrNumber, surfToPr } from '../../lib/qa/qa-surf';
+import {
+  listQaBranches,
+  qaSurfingAvailable,
+  readRefusedPrNumber,
+  surfToPr,
+  surfToProduction,
+  surfToStaging,
+} from '../../lib/qa/qa-surf';
 import { parsePrNumberList } from '../../lib/qa/pr-branch';
 import {
   buildQaPickRows,
@@ -75,11 +82,12 @@ export function QaPickScreen() {
 
   const branchesQuery = useQuery({
     queryKey: ['qaPrBranches'],
-    queryFn: ({ signal }) => listPrBranches(signal),
+    queryFn: ({ signal }) => listQaBranches(signal),
     staleTime: 30_000,
     retry: 1,
   });
-  const branches = branchesQuery.data ?? null;
+  const branchList = branchesQuery.data ?? null;
+  const branches = branchList?.previews ?? null;
   const { refetch: refetchBranches } = branchesQuery;
 
   const prNumbers = branches === null ? seedPrNumbers : branches.map((entry) => entry.prNumber);
@@ -99,6 +107,7 @@ export function QaPickScreen() {
   const unlistedPr = useMemo(() => unlistedPrNumber(rows, query), [rows, query]);
 
   const [surfingPrNumber, setSurfingPrNumber] = useState<number | null>(null);
+  const [surfingChannel, setSurfingChannel] = useState<'staging' | 'production' | null>(null);
   // Swipe-dismiss pops the route without touching Skip, so the "left without
   // choosing" signal is recorded on unmount — one place, both exits, no
   // double-count when a pick did happen.
@@ -130,6 +139,32 @@ export function QaPickScreen() {
   );
 
   const surfingAvailable = qaSurfingAvailable();
+
+  const handleChannelPick = useCallback(
+    (channel: 'staging' | 'production') => {
+      if (!surfingAvailable || surfInFlightRef.current) return;
+      surfInFlightRef.current = true;
+      pickedRef.current = true;
+      setSurfingChannel(channel);
+      const switchBranch = channel === 'staging' ? surfToStaging : surfToProduction;
+      void switchBranch()
+        .then((outcome) => {
+          if (outcome === 'nothing-to-load') {
+            surfInFlightRef.current = false;
+            setSurfingChannel(null);
+            showToast(t(channel === 'staging' ? 'qa.pick.stagingNextLaunch' : 'qa.pick.productionNextLaunch'), 'info');
+          }
+        })
+        .catch((error: unknown) => {
+          surfInFlightRef.current = false;
+          setSurfingChannel(null);
+          pickedRef.current = false;
+          reportHandledError(error, { tags: { source: 'qa', op: `surf-to-${channel}` } });
+          showToast(error instanceof Error && error.message ? error.message : t('qa.pick.unreachableTitle'), 'error');
+        });
+    },
+    [showToast, surfingAvailable, t],
+  );
 
   const handlePick = useCallback(
     (row: QaPickRow) => {
@@ -211,7 +246,7 @@ export function QaPickScreen() {
           showToast(t('qa.pick.surfingOffTitle'), 'info');
           return;
         }
-        if (refreshed.data?.some((branch) => branch.prNumber === prNumber)) {
+        if (refreshed.data?.previews.some((branch) => branch.prNumber === prNumber)) {
           const outcome = await surfToPr(prNumber);
           // 'reloading' deliberately leaves the in-flight state set and `pickedRef`
           // true: the app is restarting onto that bundle and nothing after this
@@ -256,7 +291,7 @@ export function QaPickScreen() {
   // Every row goes flat while a surf is in flight, not just the one that was
   // tapped: the app is on its way to another bundle and a second choice cannot
   // be honoured, so offering it would be a lie.
-  const rowsDisabled = !surfingAvailable || surfingPrNumber !== null;
+  const rowsDisabled = !surfingAvailable || surfingPrNumber !== null || surfingChannel !== null;
 
   const renderItem = useCallback(
     ({ item }: { item: QaPickRow }) => (
@@ -287,7 +322,7 @@ export function QaPickScreen() {
 
   const trySurfBlock =
     unlistedPr !== null && surfingAvailable ? (
-      <TrySurfBlock prNumber={unlistedPr} busy={surfingPrNumber !== null} onTrySurf={handleTrySurf} t={t} />
+      <TrySurfBlock prNumber={unlistedPr} busy={rowsDisabled} onTrySurf={handleTrySurf} t={t} />
     ) : null;
 
   return (
@@ -323,6 +358,39 @@ export function QaPickScreen() {
             placeholder={t('qa.pick.searchPlaceholder')}
             clearAccessibilityLabel={t('qa.pick.clearSearch')}
           />
+        </View>
+      ) : null}
+
+      {surfingAvailable ? (
+        <View style={styles.channelChoices}>
+          {branchList?.staging ? (
+            <PressableSurface
+              onPress={() => handleChannelPick('staging')}
+              feedback="opacity"
+              disabled={rowsDisabled}
+              accessibilityRole="button"
+              accessibilityLabel={t('qa.pick.stagingTitle')}
+              style={[styles.row, styles.channelRow, { backgroundColor: systemColors.elevatedSurface }]}
+            >
+              <Text variant="body">{t('qa.pick.stagingTitle')}</Text>
+              <Text variant="footnote" color={systemColors.secondaryLabel}>
+                {t('qa.pick.stagingBody')}
+              </Text>
+            </PressableSurface>
+          ) : null}
+          <PressableSurface
+            onPress={() => handleChannelPick('production')}
+            feedback="opacity"
+            disabled={rowsDisabled}
+            accessibilityRole="button"
+            accessibilityLabel={t('qa.pick.productionTitle')}
+            style={[styles.row, styles.channelRow, { backgroundColor: systemColors.elevatedSurface }]}
+          >
+            <Text variant="body">{t('qa.pick.productionTitle')}</Text>
+            <Text variant="footnote" color={systemColors.secondaryLabel}>
+              {t('qa.pick.productionBody')}
+            </Text>
+          </PressableSurface>
         </View>
       ) : null}
 
@@ -626,6 +694,14 @@ const styles = StyleSheet.create({
     padding: spacing[3],
     marginBottom: spacing[2],
     borderRadius: borderRadius.lg,
+  },
+  channelChoices: {
+    paddingHorizontal: spacing[3],
+  },
+  channelRow: {
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    gap: spacing[1],
   },
   rowDimmed: {
     opacity: 0.4,

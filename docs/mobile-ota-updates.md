@@ -151,9 +151,20 @@ instead of throwing. For `@expo/ui` sheets the guard lives in `patches/@expo%2Fu
 
 ## Publishing a production update
 
-**Automatic.** Every push to `main` **or `release/next`** that touches the mobile
-app runs `.github/workflows/mobile-ota-production.yml`, which publishes a
-production OTA. `main` serves the store fleet; `release/next` (the release train,
+**Automatic.** A mobile-affecting push to `main` is detected by
+`.github/workflows/production-deploy.yml`. It calls the OTA workflow to publish
+both platform exports to the tester-only `pr-staging` branch while web and backend
+build. Once the backend deploy succeeds (or is unchanged), a one-shot live
+GraphQL-schema check must pass before those same archived export bytes are uploaded
+to the existing `production` branch. No runner polls while the backend builds;
+an OTA staging failure does not stop service deploys, but fails the overall run
+and leaves production OTA unchanged. A newer substantive main commit before
+promotion also fails the run so the next cumulative deploy stages the newer head.
+The stage records each platform's production manifest ID before publishing;
+promotion refuses to overwrite a manual or native republish that changed either ID.
+
+Pushes to `release/next` still run `.github/workflows/mobile-ota-production.yml`
+directly. `main` serves the store fleet; `release/next` (the release train,
 see `docs/mobile-store-release.md`) serves the testers running the train's
 TestFlight / Play-internal binary, so they get JS as fast as everyone else —
 including after a `main` → `release/next` sync.
@@ -172,8 +183,9 @@ changelog regeneration and push-back, the Sentry release, the health probe and t
 Discord notification. Because
 runtimeVersion is a fingerprint, this is safe to run on every push: a native change publishes an
 OTA whose fingerprint no current binary has yet, so it only lands once the matching store build
-ships. Until the server is wired (no `EXPO_UPDATES_URL` variable or committed cert), the workflow
-skips with a green no-op. The matching native builds (`ios-testflight-rn` / `android-apk-rn`) run
+ships. If the server is not wired (no `EXPO_UPDATES_URL` variable or committed cert), main
+staging fails; direct release-train/manual publishes retain the old green no-op.
+The matching native builds (`ios-testflight-rn` / `android-apk-rn`) run
 on the same push but are **fingerprint-gated** — they only build when the fingerprint is new (see
 [Native-build gating](#native-build-gating-ota-only-when-the-fingerprint-is-unchanged) below).
 Matching fingerprints are necessary but not sufficient: an OTA published while a native build is
@@ -329,9 +341,13 @@ client requesting an unmapped channel gets `No branch mapping found`. Mapping is
 **cannot map** (it 403s with "This action requires a dashboard session").
 
 - **Production** is mapped once, by hand, in the dashboard — nothing on `main` remaps it.
-- **Per-PR previews are branches, not channels.** The production channel enables xprem Branch
-  Surfing with the narrow pattern `pr-*`; the branch API in `@xprem/control-center` sends
-  `xprem-branch: pr-N`. No per-PR channel or mapping is created.
+- **PR previews and staging are branches, not channels.** The production channel enables xprem Branch
+  Surfing with the narrow pattern `pr-*`; the picker sends `xprem-branch: pr-N` for a PR or
+  `xprem-branch: pr-staging` for the staged main update. No extra channel mapping is created.
+  Production in the picker clears the branch override. Staging is intentionally selectable
+  before the backend schema is promoted, so it is for testers; the staging export itself
+  is promoted byte-for-byte after the schema gate. The `pr-` S3 lifecycle rule also
+  covers staging assets, so a stale staging update expires after 14 days.
 - **Branch Surfing is ON** for `production` with the pattern `pr-*` (enabled 2026-09-01, once native
   builds carrying the picker and the baked `xprem-branch` header had reached testers — that ordering
   is the prerequisite, because a binary without the header cannot surf). While it was off, every
@@ -665,8 +681,8 @@ exactly — see the parity check above).
 ## Publish ordering: an OTA must not outrun the backend schema
 
 A fingerprint says nothing about the **backend**. An OTA whose JS sends a new GraphQL argument or
-field only works once the live backend serves that schema. `mobile-ota-production.yml` and
-`production-deploy.yml` both run off the same push to `main`, and the OTA is usually faster. It
+field only works once the live backend serves that schema. The old mobile workflow
+and production deploy both ran off the same push to `main`, and the OTA was usually faster. It
 happened on 2026-09-08 (#5370):
 
 | time (UTC) | event |
@@ -676,32 +692,21 @@ happened on 2026-09-08 (#5370):
 
 For those 19 minutes updated phones got `GRAPHQL_VALIDATION_FAILED`.
 
-The `await-backend-schema` job now runs before `publish`. Every 60 seconds it:
+The main OTA now uploads to `pr-staging` while web and backend build. Promotion
+starts only after the backend deploy and all attempted builds succeed. It reads
+`release` from the live, healthy backend and requires an exact Git diff match
+for both `packages/shared-schema/src/schema.ts` and its `schema/` directory
+against the staged commit. A 503, missing release SHA, unavailable Git history,
+or different schema fails closed. It does not poll or wait on a runner.
+The same one-shot check guards direct main dispatches, including native-build
+republishes; `release/next` retains its separate fingerprint guard.
 
-1. Takes `need`, the last commit at or before the OTA's commit that touched
-   `packages/shared-schema/src/schema`.
-2. Fetches `origin/main` and reads `release` from `https://ws.boardsesh.com/health`. A 503 still
-   carries `release`; an unstamped build reports `development`, which never passes.
-3. **Passes** when `release` is a full SHA that contains `need` (`git merge-base --is-ancestor`), or
-   when `git diff release OTA-commit -- packages/shared-schema/src/schema` is empty. The second rule
-   covers a deploy hold or a rollback where the backend is behind but its schema is the same.
-4. **Keeps waiting** only while `production-deploy.yml` has a queued, in-progress or waiting run on
-   `main`, for at most 60 minutes. For the first 3 minutes it also waits when no deploy is listed,
-   because GitHub can register the deploy run a little after the OTA run.
-
-The decision is the pure function in `scripts/mobile-ota-backend-gate.ts`, unit-tested in
-`scripts/mobile-ota-backend-gate.test.ts`.
-
-**It fails open.** On the 60-minute cap, with no deploy running, or if the gate job itself breaks,
-the OTA publishes anyway: the job writes a `::warning::`, a line in the run summary, and a Discord
-post to the deploy channel, and `publish` runs with `if: !cancelled()`. Holding mobile back behind a
-wedged backend deploy (see `docs/production-deploy.md`) would be worse than the window it closes.
-A republish dispatched by a native build (`expect_fingerprint` set) skips the wait; its JS was
-already gated when the push to `main` published it.
-
-The gate job has no `environment:`, so it adds no approval step, and it adds no workflow-level env
-(that block is locked by `scripts/mobile-ci-env-parity.test.ts`). It narrows the window. Schema
-changes still have to stay backward-compatible for the store fleet.
+The staged bundle is visible only to someone who chooses Staging in the picker.
+That person may encounter a feature waiting for the backend change; the production
+fleet cannot receive it until promotion. Because xprem only loads a *newer* update,
+choosing Production clears the staging pin but may leave the currently running
+staging JS until a newer production update ships. The picker says so. Schema
+changes still have to stay backward-compatible for older store binaries.
 
 ## Backporting a JS fix to an approved release (release anchors)
 
@@ -1231,7 +1236,8 @@ the sheet opening while closing climb search.
 
 Every user on a surfing-capable binary gets Boardsesh's **Test a PR preview** row in the
 user drawer and under **Previews** on the More tab. Both open the themed preview screen,
-which lists compatible PR branches and explains "Previews are switched off" or "Nothing
+which lists compatible PR branches, Staging when available, and Production to return
+to the live feed. It explains "Previews are switched off" or "Nothing
 to test right now" when appropriate. The row is hidden only on a binary that cannot surf.
 
 A user whose profile has `isTester` is also *prompted* without asking: on every cold
