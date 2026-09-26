@@ -316,6 +316,7 @@ function parseUploadLease(input: unknown, exportFiles: Map<string, ExportFile>, 
 function contentType(filePath: string, assetExtension?: string): string {
   const extension = (assetExtension ?? filePath.split('.').pop())?.toLowerCase();
   if (extension === 'json' || extension === 'map') return 'application/json';
+  if (extension === 'xml') return 'application/xml';
   if (extension === 'js') return 'application/javascript';
   if (extension === 'png') return 'image/png';
   if (extension === 'jpg' || extension === 'jpeg') return 'image/jpeg';

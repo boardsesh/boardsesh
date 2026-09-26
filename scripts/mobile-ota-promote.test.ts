@@ -392,6 +392,12 @@ describe('exact-byte production promotion', () => {
 
   it('uploads hash-named assets with the MIME type in Expo metadata', async () => {
     const fixture = stageFixture();
+    const androidMetadataPath = join(fixture.androidExport, 'metadata.json');
+    const androidMetadata = JSON.parse(readFileSync(androidMetadataPath, 'utf8')) as {
+      fileMetadata: { android: { assets: { ext: string }[] } };
+    };
+    androidMetadata.fileMetadata.android.assets[0].ext = 'xml';
+    writeFileSync(androidMetadataPath, JSON.stringify(androidMetadata));
     const server = fetchServer(fixture);
     const assetPath = `assets/${EXPORT_ASSET_HASH}`;
     const assetFetch = vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
@@ -421,7 +427,9 @@ describe('exact-byte production promotion', () => {
     const uploads = server.calls.filter((call) => call.init.method === 'PUT');
     expect(uploads).toHaveLength(2);
     for (const upload of uploads) {
-      expect(upload.init.headers).toMatchObject({ 'Content-Type': 'image/png' });
+      expect(upload.init.headers).toMatchObject({
+        'Content-Type': upload.url.pathname.includes('/ios/') ? 'image/png' : 'application/xml',
+      });
       expect(Buffer.from(upload.init.body as Buffer)).toEqual(Buffer.from([1, 2, 3]));
     }
   });
