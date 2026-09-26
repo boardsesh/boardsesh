@@ -211,14 +211,17 @@ absorption rule in the tick recompute (`kilter_synced_at < upstream_synced_at -
 daemon syncs every Aurora board except Kilter, so a frozen stamp here cannot
 change a count. The #4798 grade rule reads marker presence, never the stamp.
 
-"An Aurora pass ran" is kept per board instead of per row: after a pass reaches
-Aurora's `_complete`, the sync writes the pass START time to
-`board_shared_syncs` under the synthetic cursor `__local_climb_stats_pass__`
-(`markClimbStatsPassCompleted`; read it with `readClimbStatsPassStartedAt`). The
-start, not the end, because every row the pass wrote carries a stamp taken after
-it, so `GREATEST(row stamp, marker)` equals the row stamp for every row the pass
-changed. The marker never moves backward. Nothing reads it yet; it is the
-board-level time a future absorption rule for non-Kilter push-back would use.
+No per-board "a pass ran" marker replaces the row stamp: nothing would read it.
+Add one together with its first reader.
+
+A skipped row is not free. `ON CONFLICT … WHERE` locks the conflicting row
+before it evaluates the guard, and the lock writes one WAL record per re-sent
+row, plus a full-page image the first time a page is touched after a
+checkpoint. On a local PG15 test with 100k unchanged rows, the guarded upsert
+wrote 13 MB of WAL (100k records, 934 full-page images); the unguarded one wrote
+40 MB (401k records, 1,209 full-page images). Removing the remaining lock WAL
+would need unchanged rows filtered out before the insert (a `NOT EXISTS`
+prefilter or `MERGE … WHEN MATCHED AND`), which wrote no WAL in the same test.
 
 `beta_links` and `climbs` use the same guard. Their SETs write only
 `excluded.*` values and the listing/characteristics policy, so an identical

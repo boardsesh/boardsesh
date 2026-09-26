@@ -31,7 +31,6 @@ import {
   blendedQualityAverageSql,
   conflictSetChangesRowSql,
   conflictSetEntries,
-  markClimbStatsPassCompleted,
   setterSyncNotificationUuid,
   snapshotClimbStatsHistoryIfDue,
 } from '@boardsesh/db/queries';
@@ -678,8 +677,7 @@ export async function upsertClimbStats(
           ...conflictSet,
           // Record that an upstream (manufacturer) sync last wrote this row.
           // Deliberately outside the guard: it moves only when a value above
-          // does (or the row was never stamped). "A pass ran" lives per board in
-          // CLIMB_STATS_PASS_CURSOR instead.
+          // does (or the row was never stamped).
           upstreamSyncedAt: sql`excluded.upstream_synced_at`,
         },
         setWhere: climbStatsConflictWhere(conflictSet),
@@ -1136,9 +1134,6 @@ export async function syncSharedData(
   const totalResults: Record<string, { synced: number; complete: boolean }> = {};
   const allNewClimbs: NewClimbInfo[] = [];
   const climbStatsWrites = emptyClimbStatsWriteCounts();
-  // Taken before the first batch, so every row stamp this pass writes is at or
-  // after it (see CLIMB_STATS_PASS_CURSOR).
-  const passStartedAt = new Date().toISOString();
   let isComplete = false;
   let attempts = 0;
 
@@ -1226,22 +1221,6 @@ export async function syncSharedData(
       climbStatsWrites.offered
     } written=${climbStatsWrites.written} unchanged=${climbStatsWrites.offered - climbStatsWrites.written}`,
   );
-
-  // Per-board "a complete pass ran": the row stamps no longer move on unchanged
-  // rows, so this is where that fact lives. Only a pass that reached Aurora's
-  // _complete counts. A failure here must not fail the sync (the data already
-  // committed).
-  if (isComplete) {
-    try {
-      await markClimbStatsPassCompleted(db, board, passStartedAt);
-    } catch (error) {
-      log(
-        `[SharedSync] climb_stats pass marker failed for ${board} (sync was OK): ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-    }
-  }
 
   // Weekly board_climb_stats_history snapshot: a full cross-section of every
   // climb on the board with ascents, gated by a 7-day per-board watermark.

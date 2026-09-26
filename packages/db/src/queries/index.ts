@@ -9,7 +9,6 @@ export * from './sync/upstream-playlist-owners';
 export * from './sync/claim-credential';
 export * from './sync/daemon-lease';
 export * from './sync/shared-sync-cooldown';
-export * from './sync/climb-stats-pass';
 export * from './sync/gym-wall-crawl';
 export * from './sync/setter-notification-uuid';
 export * from './aliases';

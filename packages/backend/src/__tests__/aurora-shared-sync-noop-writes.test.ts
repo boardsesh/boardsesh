@@ -2,11 +2,6 @@ import { afterAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { sql } from 'drizzle-orm';
 import postgres from 'postgres';
 import { rowsFromResult } from '@boardsesh/db/client';
-import {
-  CLIMB_STATS_PASS_CURSOR,
-  markClimbStatsPassCompleted,
-  readClimbStatsPassStartedAt,
-} from '@boardsesh/db/queries';
 import { syncSharedData, upsertClimbStats } from '@boardsesh/aurora-sync/sync';
 import type { BetaLink, ClimbStats, SyncData } from '@boardsesh/aurora-sync/api';
 import { db } from '../db/client';
@@ -28,7 +23,7 @@ import { getWorkerDatabaseUrl } from './worker-db';
 const { mockSharedSync } = vi.hoisted(() => ({ mockSharedSync: vi.fn() }));
 
 // The only network call in syncSharedData. Mocked by file so the rest of the
-// write path (every upsert, the pass marker, the history snapshot) is real.
+// write path (every upsert, the history snapshot) is real.
 vi.mock('../../../aurora-sync/src/api/shared-sync-api', () => ({ sharedSync: mockSharedSync }));
 
 const BOARD = 'tension';
@@ -137,7 +132,7 @@ describe('Aurora climb_stats upsert skips unchanged rows (real DB)', () => {
   });
 });
 
-describe('syncSharedData: per-pass counts and the board pass marker (real DB)', () => {
+describe('syncSharedData: per-pass climb_stats write counts (real DB)', () => {
   const client = postgres(getWorkerDatabaseUrl(), { max: 1, prepare: false, onnotice: () => {} });
 
   beforeEach(async () => {
@@ -153,7 +148,7 @@ describe('syncSharedData: per-pass counts and the board pass marker (real DB)', 
     return { _complete: true, ...payload };
   }
 
-  it('logs offered vs written, and marks the pass start at or before every row stamp', async () => {
+  it('logs offered vs written, and leaves an unchanged row and its stamp alone', async () => {
     const tag = uniqueTag();
     const stats = [auroraStat(`${tag}-a`), auroraStat(`${tag}-b`)];
     const logLines: string[] = [];
@@ -162,43 +157,16 @@ describe('syncSharedData: per-pass counts and the board pass marker (real DB)', 
     const firstRun = await syncSharedData(client, BOARD, 'token', (line) => logLines.push(line));
     expect(firstRun.climbStatsWrites).toEqual({ received: 2, offered: 2, written: 2 });
     expect(logLines).toContain(`[SharedSync] ${BOARD} climb_stats writes: received=2 offered=2 written=2 unchanged=0`);
+    const rowBefore = await statsRow(stats[0].climb_uuid);
+    expect(rowBefore.upstream_synced_at).not.toBeNull();
 
-    const passStartedAtMs = (await readClimbStatsPassStartedAt(db, BOARD))?.getTime() ?? Number.NaN;
-    const rowStamp = (await statsRow(stats[0].climb_uuid)).upstream_synced_at ?? '';
-    // upstream_synced_at holds the ISO string's UTC wall time, zoneless.
-    const rowStampMs = Date.parse(`${rowStamp.replace(' ', 'T')}Z`);
-    expect(Number.isFinite(passStartedAtMs)).toBe(true);
-    expect(Number.isFinite(rowStampMs)).toBe(true);
-    expect(passStartedAtMs).toBeLessThanOrEqual(rowStampMs);
-
-    // Aurora re-sends the same rows: nothing is written, the pass still counts.
+    // Aurora re-sends the same rows: nothing is written.
     logLines.length = 0;
     const secondRun = await syncSharedData(client, BOARD, 'token', (line) => logLines.push(line));
     expect(secondRun.climbStatsWrites).toEqual({ received: 2, offered: 2, written: 0 });
     expect(logLines).toContain(`[SharedSync] ${BOARD} climb_stats writes: received=2 offered=2 written=0 unchanged=2`);
-    const secondPassStartedAtMs = (await readClimbStatsPassStartedAt(db, BOARD))?.getTime() ?? Number.NaN;
-    expect(secondPassStartedAtMs).toBeGreaterThan(passStartedAtMs);
-    // The row itself was not rewritten, so its stamp stays where it was.
-    expect((await statsRow(stats[0].climb_uuid)).upstream_synced_at).toBe(rowStamp);
-  });
-
-  it('does not mark a pass that never reached _complete', async () => {
-    mockSharedSync.mockResolvedValue({ _complete: false, climb_stats: [] });
-
-    const run = await syncSharedData(client, BOARD, 'token', () => {});
-    expect(run.complete).toBe(false);
-    const markers = rowsFromResult<{ table_name: string }>(
-      await db.execute(sql`
-        SELECT table_name FROM board_shared_syncs
-         WHERE board_type = ${BOARD} AND table_name = ${CLIMB_STATS_PASS_CURSOR}`),
-    );
-    expect(markers).toEqual([]);
-  });
-
-  it('never moves the marker backward', async () => {
-    await markClimbStatsPassCompleted(db, BOARD, '2026-09-26T10:00:00.000Z');
-    await markClimbStatsPassCompleted(db, BOARD, '2026-09-26T09:00:00.000Z');
-    expect((await readClimbStatsPassStartedAt(db, BOARD))?.toISOString()).toBe('2026-09-26T10:00:00.000Z');
+    // The row was not rewritten, so its xmin and stamp stay where they were.
+    expect(await statsRow(stats[0].climb_uuid)).toEqual(rowBefore);
   });
 });
 

@@ -131,8 +131,6 @@ function createDbShim() {
           // the database without needing a real one.
           if (prop === 'values' && Array.isArray(args[0])) {
             shimInsertedRows.push(...(args[0] as Array<Record<string, unknown>>));
-          } else if (prop === 'values' && args[0] != null && typeof args[0] === 'object') {
-            shimInsertedRows.push(args[0] as Record<string, unknown>);
           }
           // Record conflict clauses so a test can assert on the SET a write
           // actually shipped, not on a helper re-invoked inside the test.
@@ -1121,18 +1119,12 @@ describe('no-op write guards (recorded from the real write path)', () => {
     );
   });
 
-  it('reports climb_stats offered vs written and marks only a complete pass', async () => {
+  it('reports climb_stats offered vs written', async () => {
     const lines: string[] = [];
     mockSharedSync.mockResolvedValueOnce(complete({ climb_stats: [] }));
     const result = await syncSharedData(fakePostgresClient(), 'decoy', 'token', (line) => lines.push(line));
     expect(result.climbStatsWrites).toEqual({ received: 0, offered: 0, written: 0 });
     expect(lines).toContain('[SharedSync] decoy climb_stats writes: received=0 offered=0 written=0 unchanged=0');
-    expect(shimInsertedRows.filter((row) => row.tableName === '__local_climb_stats_pass__')).toHaveLength(1);
-
-    shimInsertedRows.length = 0;
-    mockSharedSync.mockResolvedValue(partial({ climb_stats: [] }));
-    await syncSharedData(fakePostgresClient(), 'decoy', 'token', () => {});
-    expect(shimInsertedRows.filter((row) => row.tableName === '__local_climb_stats_pass__')).toHaveLength(0);
   });
 });
 
