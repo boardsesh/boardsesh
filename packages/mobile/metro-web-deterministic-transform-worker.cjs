@@ -11,8 +11,6 @@
 //
 // metro.config.js points transformerPath here only when BOARDSESH_WEB=1, so
 // native bundles and their transform cache keep Expo's own worker.
-const crypto = require('crypto');
-const fs = require('fs');
 const path = require('path');
 
 const expoRoot = path.dirname(require.resolve('expo/package.json'));
@@ -50,16 +48,7 @@ function installSortedCssModuleExports(lightningcss) {
 
 installSortedCssModuleExports(require(lightningcssPath));
 
-const upstreamWorker = require(upstreamWorkerPath);
-
-// Metro keys its transform cache on this file's contents, not the upstream
-// worker's. Fold the upstream worker in too, so an Expo upgrade still misses.
-const upstreamWorkerDigest = crypto.createHash('sha1').update(fs.readFileSync(upstreamWorkerPath)).digest('hex');
-
 module.exports = {
-  ...upstreamWorker,
-  getCacheKey(...args) {
-    return `${upstreamWorker.getCacheKey(...args)}$${upstreamWorkerDigest}`;
-  },
+  ...require(upstreamWorkerPath),
   __test: { upstreamWorkerPath, sortCssModuleExports },
 };

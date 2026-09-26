@@ -9,18 +9,24 @@ import { describe, expect, it } from 'vitest';
 // fail if the hook stops reaching the call site Expo actually uses.
 const require = createRequire(import.meta.url);
 const mobileRoot = join(__dirname, '..', '..');
-const workerModule = require('../../metro-web-deterministic-transform-worker.cjs') as {
-  getCacheKey: (...args: unknown[]) => string;
-  __test: { upstreamWorkerPath: string };
-};
-const cssModulesPath = join(dirname(workerModule.__test.upstreamWorkerPath), 'css-modules.js');
-const { transformCssModuleWeb } = require(cssModulesPath) as {
+const wrapperPath = require.resolve('../../metro-web-deterministic-transform-worker.cjs');
+
+// Production order: Expo's supervising worker loads its own transform worker
+// (and css-modules.js with it) before it requires ours. Load them in that
+// order here too, so a module-scope lightningcss read in css-modules.js would
+// escape the hook and turn this test red.
+const expoWorkerPath = require.resolve('@expo/metro-config/build/transform-worker/transform-worker', {
+  paths: [dirname(require.resolve('expo/package.json'))],
+});
+require(expoWorkerPath);
+const { transformCssModuleWeb } = require(join(dirname(expoWorkerPath), 'css-modules.js')) as {
   transformCssModuleWeb: (props: {
     filename: string;
     src: string;
     options: { projectRoot: string; dev: boolean; minify: boolean; sourceMap: boolean; reactServer: boolean };
   }) => Promise<{ output: string }>;
 };
+const workerModule = require(wrapperPath) as { __test: { upstreamWorkerPath: string } };
 
 // Twelve classes: an unsorted HashMap lands in sorted order by chance about
 // once in 479 million runs.
@@ -45,12 +51,13 @@ function exportedKeyOrder(output: string): string[] {
   return Object.keys(JSON.parse(styles) as Record<string, string>);
 }
 
-function transformerPathFor(env: NodeJS.ProcessEnv): string {
-  return execFileSync(process.execPath, ['-e', 'process.stdout.write(require("./metro.config.js").transformerPath)'], {
-    cwd: mobileRoot,
-    env,
-    encoding: 'utf8',
-  });
+function metroConfigFor(env: NodeJS.ProcessEnv): { transformerPath: string; cacheVersion: string } {
+  const script =
+    'const c=require("./metro.config.js");process.stdout.write(JSON.stringify([c.transformerPath,c.cacheVersion]))';
+  const [transformerPath, cacheVersion] = JSON.parse(
+    execFileSync(process.execPath, ['-e', script], { cwd: mobileRoot, env, encoding: 'utf8' }),
+  ) as [string, string];
+  return { transformerPath, cacheVersion };
 }
 
 describe('metro-web-deterministic-transform-worker', () => {
@@ -63,23 +70,18 @@ describe('metro-web-deterministic-transform-worker', () => {
     expect(exportedKeyOrder(output)).toEqual([...classNames].sort());
   });
 
-  it("wraps Expo's own default worker and keys the cache on it", () => {
-    const expoMetroConfig = require(
-      require.resolve('@expo/metro-config', { paths: [dirname(require.resolve('expo/package.json'))] }),
-    ) as { unstable_transformerPath: string };
-    expect(workerModule.__test.upstreamWorkerPath).toBe(expoMetroConfig.unstable_transformerPath);
-    const { transformer } = require('../../metro.config.js') as { transformer: unknown };
-    const upstreamWorker = require(workerModule.__test.upstreamWorkerPath) as typeof workerModule;
-    const cacheKey = workerModule.getCacheKey(transformer, {});
-    expect(cacheKey.startsWith(`${upstreamWorker.getCacheKey(transformer, {})}$`)).toBe(true);
-    expect(cacheKey).toMatch(/\$[0-9a-f]{40}$/);
+  it("wraps Expo's own default worker", () => {
+    expect(workerModule.__test.upstreamWorkerPath).toBe(expoWorkerPath);
   });
 
-  it('is only wired in for the web gate, so native keeps Expo’s worker', () => {
+  it('is only wired in for the web gate, where it also salts the cache key', () => {
     const { BOARDSESH_WEB: _ignored, ...nativeEnv } = process.env;
-    expect(transformerPathFor(nativeEnv)).toBe(workerModule.__test.upstreamWorkerPath);
-    expect(transformerPathFor({ ...nativeEnv, BOARDSESH_WEB: '1' })).toBe(
-      require.resolve('../../metro-web-deterministic-transform-worker.cjs'),
-    );
+    const native = metroConfigFor(nativeEnv);
+    const web = metroConfigFor({ ...nativeEnv, BOARDSESH_WEB: '1' });
+    expect(native.transformerPath).toBe(expoWorkerPath);
+    expect(web.transformerPath).toBe(wrapperPath);
+    // Expo CLI's supervising worker keys neither our file nor a getCacheKey we
+    // export; Metro's getTransformCacheKey does include cacheVersion.
+    expect(web.cacheVersion).toMatch(new RegExp(`^${native.cacheVersion.replace('.', '\\.')}\\+web-[0-9a-f]{16}$`));
   });
 });

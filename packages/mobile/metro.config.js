@@ -3,6 +3,8 @@
 // returns the same Expo config object, so every customisation below applies
 // unchanged.
 const { getSentryExpoConfig } = require('@sentry/react-native/metro');
+const crypto = require('crypto');
+const fs = require('fs');
 const path = require('path');
 const { configureWatchman } = require('./metro-watchman.cjs');
 const { applyExpoWebResponseHeaders } = require('./expo-web-response-headers.cjs');
@@ -18,8 +20,19 @@ config.watchFolders = [monorepoRoot];
 // Web exports only: Expo's worker, but with CSS-module class maps in a stable
 // key order so one commit always exports the same bytes (#5808). Gated so
 // native bundles keep Expo's worker and their transform cache.
+//
+// Expo CLI runs a custom transformerPath inside its supervising worker, whose
+// cache key covers neither this wrapper nor a getCacheKey it exports. Metro
+// does put cacheVersion into every transform cache key, so fold both files'
+// contents in there: editing the wrapper or upgrading Expo's worker misses.
 if (process.env.BOARDSESH_WEB === '1') {
-  config.transformerPath = require.resolve('./metro-web-deterministic-transform-worker.cjs');
+  const webTransformerPath = require.resolve('./metro-web-deterministic-transform-worker.cjs');
+  const workerDigest = crypto.createHash('sha1');
+  for (const workerPath of [webTransformerPath, config.transformerPath]) {
+    workerDigest.update(fs.readFileSync(workerPath));
+  }
+  config.cacheVersion = `${config.cacheVersion ?? ''}+web-${workerDigest.digest('hex').slice(0, 16)}`;
+  config.transformerPath = webTransformerPath;
 }
 
 configureWatchman(config);
