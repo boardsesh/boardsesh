@@ -21,6 +21,7 @@ export * from './sessions/index';
 export * from './ticks/index';
 export * from './util/rows';
 export * from './util/serial-plan';
+export * from './util/conflict-guard';
 export * from './spray-walls/index';
 export * from './places/import';
 export * from './background-jobs';

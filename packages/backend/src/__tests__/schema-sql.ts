@@ -1139,7 +1139,9 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
     "created_by_user_id" text,
     "tick_uuid" text,
     "board_id" bigint,
-    "video_identity" text
+    "video_identity" text,
+    -- Same key as prod (migration 0025); the Aurora shared sync upserts on it.
+    CONSTRAINT "board_beta_links_board_type_climb_uuid_link_pk" PRIMARY KEY ("board_type", "climb_uuid", "link")
   );
   ALTER TABLE "board_beta_links"
     ADD CONSTRAINT "board_beta_links_tick_uuid_boardsesh_ticks_uuid_fk"

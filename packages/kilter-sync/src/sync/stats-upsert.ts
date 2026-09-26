@@ -1,7 +1,7 @@
 import { sql, type SQL } from 'drizzle-orm';
-import type { PgColumn, PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
+import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import { boardClimbStats } from '@boardsesh/db/schema';
-import { blendedQualityAverageSql } from '@boardsesh/db/queries';
+import { blendedQualityAverageSql, conflictSetChangesRowSql, type ConflictSetEntry } from '@boardsesh/db/queries';
 import { commandCountFromResult } from '@boardsesh/db/client';
 
 import { kilterStatsGradeConflictSet } from './stats-grade-conflict';
@@ -42,7 +42,7 @@ export type KilterStatsUpsertRow = {
  */
 export type KilterUpstreamCountPolicy = 'raise-only' | 'authoritative';
 
-type SetEntry = { column: PgColumn; value: SQL };
+type SetEntry = ConflictSetEntry;
 
 /**
  * The ON CONFLICT SET both Kilter Grips writers ship, as (column, new value)
@@ -119,15 +119,7 @@ export function kilterStatsConflictSet(policy: KilterUpstreamCountPolicy): SetEn
  * those rewrites, so offline clients see no difference.
  */
 export function kilterStatsConflictWhere(set: SetEntry[]): SQL {
-  const stored = sql.join(
-    set.map((entry) => sql`${entry.column}`),
-    sql`, `,
-  );
-  const incoming = sql.join(
-    set.map((entry) => entry.value),
-    sql`, `,
-  );
-  return sql`(${stored}) IS DISTINCT FROM (${incoming})
+  return sql`${conflictSetChangesRowSql(set)}
     OR ${boardClimbStats.upstreamSyncedAt} IS NULL
     OR (
       ${boardClimbStats.upstreamSyncedAt} < excluded.upstream_synced_at - interval '${sql.raw(KILTER_STATS_RESTAMP_INTERVAL)}'
