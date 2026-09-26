@@ -1102,10 +1102,18 @@ describe('no-op write guards (recorded from the real write path)', () => {
             created_at: '2024-01-01 00:00:00',
           },
         ],
-      }),
+        climbs: [{ uuid: 'GUARDED-CLIMB', frames: 'p1r1', layout_id: 1, name: 'guarded climb' }],
+      } as Partial<SyncData>),
     );
 
     await syncSharedData(fakePostgresClient(), 'decoy', 'token');
+
+    const climb = recordedGuard((recordedSet) => 'characteristics' in recordedSet);
+    const [climbStoredTuple] = climb.guard.split(' is distinct from ');
+    expect(climbStoredTuple).toBe(
+      '("board_climbs"."is_draft", "board_climbs"."is_listed", "board_climbs"."name", "board_climbs"."description", "board_climbs"."characteristics")',
+    );
+    expect(Object.keys(climb.set)).toEqual(['isDraft', 'isListed', 'name', 'description', 'characteristics']);
 
     const beta = recordedGuard((recordedSet) => 'thumbnail' in recordedSet);
     expect(beta.guard).toBe(
