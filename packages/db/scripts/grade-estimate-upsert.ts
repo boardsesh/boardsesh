@@ -22,7 +22,7 @@ import { boardClimbGrades } from '../src/schema/app/climb-grades.js';
 export type GradeEstimateRow = typeof boardClimbGrades.$inferInsert;
 export type GradeEstimateWriter = Pick<PgDatabase<PgQueryResultHKT>, 'insert'>;
 
-export const GRADE_ESTIMATE_UPSERT_BATCH = 500;
+const GRADE_ESTIMATE_UPSERT_BATCH = 500;
 
 /**
  * Every value column the upsert overwrites. The SET list and the
