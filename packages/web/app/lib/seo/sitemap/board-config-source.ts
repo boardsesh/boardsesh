@@ -1,6 +1,6 @@
 import 'server-only';
 import { unstable_cache } from 'next/cache';
-import { and, count, eq } from 'drizzle-orm';
+import { and, eq, exists, sql } from 'drizzle-orm';
 import { getDefaultRenderBoard } from '@boardsesh/board-config';
 import type { PopularBoardConfig } from '@boardsesh/shared-schema';
 import { dbzRead } from '@/app/lib/db/db';
@@ -34,11 +34,16 @@ import { getPublicSprayWallConfigs } from './spray-wall-configs';
  * change to the resolver the mobile board picker and the www home rail read.
  */
 
-/** In-process TTL and Data Cache window, matching `getAllBoardConfigsOrThrow`. */
-const MOONBOARD_REVALIDATE_SECONDS = 3_600;
+/**
+ * In-process TTL and Data Cache window: 6 h, the same window the setter and
+ * climbs shards use. The answer is "does this layout have a listed climb",
+ * which changes when a whole MoonBoard layout is imported or emptied, not when
+ * one climb is.
+ */
+const MOONBOARD_REVALIDATE_SECONDS = 21_600;
 
 /**
- * Wall-clock bound on the count query, matching the `SITEMAP_FETCH_TIMEOUT_MS`
+ * Wall-clock bound on the layout-gate query, matching the `SITEMAP_FETCH_TIMEOUT_MS`
  * the listed-config fetch gives its own `AbortController`.
  *
  * `shardRouteHandler` is documented "deliberately unbounded" on the grounds that
@@ -48,16 +53,16 @@ const MOONBOARD_REVALIDATE_SECONDS = 3_600;
  * parameter — see docs/db-connectivity.md), so a stalled read would have held the
  * boards shard for the whole platform timeout, and the single-flight would have
  * made every later caller join the stall. Measured cost of the query itself on
- * the dev image: 36 ms warm, 151 ms first touch, so 10 s is a tail bound and not
- * a budget anything is expected to spend.
+ * the prod replica: 0.17 ms and 28 buffers, so 10 s is a tail bound and not a
+ * budget anything is expected to spend.
  *
  * Like `withDeadline` in `shard-registry.ts`, this stops waiting rather than
  * cancelling: the abandoned query keeps running and will populate the caches for
  * whoever asks next.
  */
-const MOONBOARD_COUNT_TIMEOUT_MS = 10_000;
+const MOONBOARD_GATE_TIMEOUT_MS = 10_000;
 const MOONBOARD_TTL_MS = MOONBOARD_REVALIDATE_SECONDS * 1_000;
-const MOONBOARD_CACHE_TAG = 'sitemap-moonboard-climb-counts';
+const MOONBOARD_CACHE_TAG = 'sitemap-moonboard-listed-layouts';
 
 /**
  * MoonBoard's catalogue is code, not data: adding a layout or a hold set means
@@ -71,55 +76,70 @@ const MOONBOARD_CACHE_TAG = 'sitemap-moonboard-climb-counts';
 const MOONBOARD_LAYOUT_KEYS = Object.keys(MOONBOARD_LAYOUTS) as MoonBoardLayoutKey[];
 
 /**
- * Listed, non-draft, non-hidden MoonBoard climbs per layout.
+ * The MoonBoard layouts that have at least one listed, non-draft, non-hidden
+ * climb.
  *
- * A plain grouped count, NOT the tier-2 `DISTINCT ON` scan the climbs shard
- * runs. Both shards use this number only as a `> 0` gate — `board-entries.ts`
- * skips a config with no listed climbs as a thin page, `climb-entries.ts` skips
- * the group entirely — and making the boards shard pay the climbs shard's cost
- * budget for a boolean is the wrong trade. The tier-2 count that decides how
- * many URLs actually ship is computed downstream, where it is already paid for.
+ * Both shards use this only as a gate — `board-entries.ts` skips a config with
+ * no listed climbs as a thin page, `climb-entries.ts` skips the group entirely —
+ * so it asks exactly that: one `EXISTS` per known layout, each answered by the
+ * first matching row of `board_climbs_layout_filter_idx`. It used to be a
+ * grouped `count(*)` over every MoonBoard row. On the prod replica that was a
+ * bitmap heap scan of 287k rows, 224.8 ms and 34,956 buffers (~270 MB of
+ * shared_buffers churn) per call; this is 0.17 ms and 28 buffers, for the same
+ * seven layouts. The tier-2 count that decides how many URLs actually ship is
+ * computed downstream, where it is already paid for.
  *
  * `is_hidden` is part of the gate, not a refinement of it: the climbs shard
  * already drops community-hidden climbs, so a layout whose only listed climbs
  * have been hidden would otherwise keep its board URL in the sitemap while
  * every climb URL under it disappeared — a thin page submitted to Google.
  */
-export function buildMoonBoardClimbCountQuery(db: typeof dbzRead) {
+export function buildMoonBoardListedLayoutsQuery(db: typeof dbzRead, layoutIds: readonly number[]) {
+  const layoutId = sql<number>`layout_ids.layout_id`;
+  const layoutIdList = sql.join(
+    layoutIds.map((id) => sql`${id}`),
+    sql`, `,
+  );
   return db
-    .select({ layoutId: boardClimbs.layoutId, climbCount: count() })
-    .from(boardClimbs)
+    .select({ layoutId })
+    .from(sql`unnest(ARRAY[${layoutIdList}]::int[]) AS layout_ids(layout_id)`)
     .where(
-      and(
-        eq(boardClimbs.boardType, 'moonboard'),
-        eq(boardClimbs.isListed, true),
-        eq(boardClimbs.isDraft, false),
-        eq(boardClimbs.isHidden, false),
+      exists(
+        db
+          .select({ present: sql`1` })
+          .from(boardClimbs)
+          .where(
+            and(
+              eq(boardClimbs.boardType, 'moonboard'),
+              eq(boardClimbs.layoutId, layoutId),
+              eq(boardClimbs.isListed, true),
+              eq(boardClimbs.isDraft, false),
+              eq(boardClimbs.isHidden, false),
+            ),
+          ),
       ),
-    )
-    .groupBy(boardClimbs.layoutId);
+    );
 }
 
-async function fetchMoonBoardClimbCounts(): Promise<Map<number, number>> {
-  const rows = await buildMoonBoardClimbCountQuery(dbzRead);
+const MOONBOARD_LAYOUT_IDS = MOONBOARD_LAYOUT_KEYS.map((layoutKey) => MOONBOARD_LAYOUTS[layoutKey].id);
 
-  const countsByLayout = new Map<number, number>();
-  for (const row of rows) {
-    if (row.layoutId == null) continue;
-    countsByLayout.set(row.layoutId, Number(row.climbCount));
-  }
-  return countsByLayout;
+async function fetchMoonBoardListedLayoutIds(): Promise<number[]> {
+  const rows = await buildMoonBoardListedLayoutsQuery(dbzRead, MOONBOARD_LAYOUT_IDS);
+  return rows.map((row) => Number(row.layoutId));
 }
 
-/** Data Cache stores plain JSON, so the Map is rebuilt on the way out. */
-const cachedMoonBoardClimbCounts = unstable_cache(
-  async (): Promise<[number, number][]> => [...(await fetchMoonBoardClimbCounts()).entries()],
-  ['sitemap-moonboard-climb-counts'],
-  { revalidate: MOONBOARD_REVALIDATE_SECONDS, tags: [MOONBOARD_CACHE_TAG] },
+/** Data Cache stores plain JSON, so the Set is rebuilt on the way out. */
+const cachedMoonBoardListedLayoutIds = unstable_cache(
+  fetchMoonBoardListedLayoutIds,
+  ['sitemap-moonboard-listed-layouts'],
+  {
+    revalidate: MOONBOARD_REVALIDATE_SECONDS,
+    tags: [MOONBOARD_CACHE_TAG],
+  },
 );
 
-let cachedCounts: { builtAt: number; countsByLayout: Map<number, number> } | null = null;
-let countsInFlight: Promise<Map<number, number>> | null = null;
+let cachedLayouts: { builtAt: number; listedLayoutIds: Set<number> } | null = null;
+let layoutsInFlight: Promise<Set<number>> | null = null;
 
 /**
  * Same two-layer shape as `getAllBoardConfigsOrThrow`: the Data Cache for
@@ -128,12 +148,12 @@ let countsInFlight: Promise<Map<number, number>> | null = null;
  * `/sitemap.xml` reaches this from the boards shard and the climbs summary at
  * the same moment.
  */
-async function getMoonBoardClimbCounts(): Promise<Map<number, number>> {
-  if (cachedCounts && Date.now() - cachedCounts.builtAt < MOONBOARD_TTL_MS) {
-    return cachedCounts.countsByLayout;
+async function getMoonBoardListedLayoutIds(): Promise<Set<number>> {
+  if (cachedLayouts && Date.now() - cachedLayouts.builtAt < MOONBOARD_TTL_MS) {
+    return cachedLayouts.listedLayoutIds;
   }
-  if (countsInFlight) {
-    return countsInFlight;
+  if (layoutsInFlight) {
+    return layoutsInFlight;
   }
 
   // The timeout is INSIDE the shared promise on purpose: a rejection then flows
@@ -141,20 +161,20 @@ async function getMoonBoardClimbCounts(): Promise<Map<number, number>> {
   // concurrent caller sees it, and the next caller retries instead of joining a
   // stall that already gave up.
   const build = withTimeout(
-    cachedMoonBoardClimbCounts(),
-    MOONBOARD_COUNT_TIMEOUT_MS,
-    '[sitemap] MoonBoard climb-count query',
-  ).then((entries) => {
-    const countsByLayout = new Map(entries);
-    cachedCounts = { builtAt: Date.now(), countsByLayout };
-    return countsByLayout;
+    cachedMoonBoardListedLayoutIds(),
+    MOONBOARD_GATE_TIMEOUT_MS,
+    '[sitemap] MoonBoard listed-layout query',
+  ).then((layoutIds) => {
+    const listedLayoutIds = new Set(layoutIds);
+    cachedLayouts = { builtAt: Date.now(), listedLayoutIds };
+    return listedLayoutIds;
   });
-  countsInFlight = build;
+  layoutsInFlight = build;
 
   try {
     return await build;
   } finally {
-    countsInFlight = null;
+    layoutsInFlight = null;
   }
 }
 
@@ -176,14 +196,17 @@ async function getMoonBoardClimbCounts(): Promise<Map<number, number>> {
  * A layout with no listed climbs is dropped rather than shipped with a zero
  * count: both shards would skip it anyway, and leaving it in means a future
  * caller has to know that.
+ *
+ * `climbCount: 1` is a presence flag, not a count. Both shards read it only as
+ * a `> 0` gate, and `isBetterConfig` never compares two MoonBoard candidates
+ * because there is exactly one per layout group.
  */
-function buildMoonBoardConfigs(countsByLayout: Map<number, number>): PopularBoardConfig[] {
+function buildMoonBoardConfigs(listedLayoutIds: Set<number>): PopularBoardConfig[] {
   const configs: PopularBoardConfig[] = [];
 
   for (const layoutKey of MOONBOARD_LAYOUT_KEYS) {
     const layout = MOONBOARD_LAYOUTS[layoutKey];
-    const climbCount = countsByLayout.get(layout.id) ?? 0;
-    if (climbCount <= 0) continue;
+    if (!listedLayoutIds.has(layout.id)) continue;
 
     const renderBoard = getDefaultRenderBoard('moonboard', layout.id);
     if (!renderBoard) continue;
@@ -197,7 +220,7 @@ function buildMoonBoardConfigs(countsByLayout: Map<number, number>): PopularBoar
       sizeDescription: MOONBOARD_SIZE.description,
       setIds: renderBoard.setIds,
       setNames: MOONBOARD_SETS[layoutKey].filter((set) => renderBoard.setIds.includes(set.id)).map((set) => set.name),
-      climbCount,
+      climbCount: 1,
       // Not measured here, and not read by either shard. A number invented to
       // fill the field would show up in `isBetterConfig`'s ranking as if it
       // meant something.
@@ -223,9 +246,9 @@ function buildMoonBoardConfigs(countsByLayout: Map<number, number>): PopularBoar
  * already does for the same reason.
  */
 export async function getSitemapClimbConfigsOrThrow(): Promise<SitemapClimbConfig[]> {
-  const [listedConfigs, moonBoardCounts, sprayWallConfigs] = await Promise.all([
+  const [listedConfigs, moonBoardLayoutIds, sprayWallConfigs] = await Promise.all([
     getAllBoardConfigsOrThrow(),
-    getMoonBoardClimbCounts(),
+    getMoonBoardListedLayoutIds(),
     // Strict for exactly the reason above, and its own cache makes it more
     // likely rather than less: the walls sit behind a separate `unstable_cache`
     // entry with its own revalidate clock, so the summary pass and the item pass
@@ -236,7 +259,7 @@ export async function getSitemapClimbConfigsOrThrow(): Promise<SitemapClimbConfi
     getPublicSprayWallConfigs(),
   ]);
 
-  return [...listedConfigs, ...buildMoonBoardConfigs(moonBoardCounts), ...sprayWallConfigs];
+  return [...listedConfigs, ...buildMoonBoardConfigs(moonBoardLayoutIds), ...sprayWallConfigs];
 }
 
 /**
@@ -249,7 +272,7 @@ export async function getSitemapClimbConfigsOrThrow(): Promise<SitemapClimbConfi
  * contribute 660. Before this module existed no database failure could reach
  * that shard at all — it was a GraphQL fetch behind a backend Redis cache with a
  * one-year TTL — so making 660 working Kilter/Tension/Decoy URLs 503 for an hour
- * because a grouped count timed out would be a strict regression bought with
+ * because the MoonBoard gate timed out would be a strict regression bought with
  * nothing.
  *
  * A failed listed fetch still throws. That is the leg whose loss would tell
@@ -260,22 +283,22 @@ export async function getSitemapClimbConfigsOrThrow(): Promise<SitemapClimbConfi
  * emit for one. SW-16 made a wall's CLIMBS indexable, not the wall's own page.
  */
 export async function getBoardsShardConfigsOrThrow(): Promise<PopularBoardConfig[]> {
-  const [listedConfigs, moonBoardCounts] = await Promise.all([
+  const [listedConfigs, moonBoardLayoutIds] = await Promise.all([
     getAllBoardConfigsOrThrow(),
-    getMoonBoardClimbCounts().catch((err: unknown) => {
+    getMoonBoardListedLayoutIds().catch((err: unknown) => {
       console.error(
-        '[sitemap] boards shard: MoonBoard climb counts unavailable, serving the listed configs without them:',
+        '[sitemap] boards shard: MoonBoard listed layouts unavailable, serving the listed configs without them:',
         err instanceof Error ? err.message : err,
       );
-      return new Map<number, number>();
+      return new Set<number>();
     }),
   ]);
 
-  return [...listedConfigs, ...buildMoonBoardConfigs(moonBoardCounts)];
+  return [...listedConfigs, ...buildMoonBoardConfigs(moonBoardLayoutIds)];
 }
 
 /** Test seam: drops the in-process TTL cache and any in-flight fetch. */
 export function resetSitemapBoardConfigCacheForTests(): void {
-  cachedCounts = null;
-  countsInFlight = null;
+  cachedLayouts = null;
+  layoutsInFlight = null;
 }

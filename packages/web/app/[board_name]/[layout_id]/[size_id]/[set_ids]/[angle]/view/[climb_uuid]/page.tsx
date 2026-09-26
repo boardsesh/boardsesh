@@ -29,10 +29,11 @@ export async function generateMetadata(props: { params: Promise<BoardRouteParame
   try {
     const { parsedParams } = await parseRouteParams(params);
     const boardDetails = getBoardDetailsForBoard(parsedParams);
-    const [currentClimb, angleStats] = await Promise.all([
-      getClimb(parsedParams),
-      getClimbStatsForAllAngles(parsedParams),
-    ]);
+    // Sequential on purpose: the angle table is keyed on the uuid the climb
+    // resolved to, not the URL's (an alias URL names a husk). It costs no page
+    // latency, because the body renders concurrently and already waits on the
+    // same two React-cached reads in this order.
+    const currentClimb = await getClimb(parsedParams);
     if (!currentClimb) {
       return createBoardContentPageMetadata({
         title: t('metadata.view.fallbackTitle'),
@@ -41,6 +42,7 @@ export async function generateMetadata(props: { params: Promise<BoardRouteParame
         robots: { index: false, follow: true },
       });
     }
+    const angleStats = await getClimbStatsForAllAngles(parsedParams.board_name, currentClimb.uuid);
 
     const climbName = resolveClimbDisplayName(currentClimb.name, boardDetails.board_name);
     const climbGrade = currentClimb.difficulty || 'Unknown Grade';
@@ -165,14 +167,16 @@ export default async function ClimbViewPage(props: { params: Promise<BoardRouteP
     const boardDetails = getBoardDetailsForBoard(parsedParams);
 
     const [angleStats, similarClimbs, betaLinks] = await Promise.all([
-      getClimbStatsForAllAngles(parsedParams),
+      // Keyed on the climb the URL resolved to: for an alias URL the requested
+      // uuid names a husk with no stats, similar climbs or beta of its own.
+      getClimbStatsForAllAngles(parsedParams.board_name, currentClimb.uuid),
       getFrontDoorSimilarClimbs({
         boardType: parsedParams.board_name,
         layoutId: parsedParams.layout_id,
-        climbUuid: parsedParams.climb_uuid,
+        climbUuid: currentClimb.uuid,
         angle: parsedParams.angle,
       }),
-      getFrontDoorBetaLinks({ boardType: parsedParams.board_name, climbUuid: parsedParams.climb_uuid }),
+      getFrontDoorBetaLinks({ boardType: parsedParams.board_name, climbUuid: currentClimb.uuid }),
     ]);
 
     const preloadUrls = buildOverlayPreloadUrls(boardDetails, currentClimb.frames, false);

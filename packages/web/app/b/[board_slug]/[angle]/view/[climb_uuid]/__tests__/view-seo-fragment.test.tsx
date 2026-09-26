@@ -384,6 +384,37 @@ describe('setter notes on the climb front door', () => {
   });
 });
 
+describe('an alias URL', () => {
+  it('reads angle stats, similar climbs and beta for the canonical climb, not the husk uuid', async () => {
+    const { getClimb } = await import('@/app/lib/data/queries');
+    const { getFrontDoorSimilarClimbs, getFrontDoorBetaLinks } = await import('@/app/lib/data/front-door-data.server');
+    // The URL names an old uuid; `getClimb` resolved it to the canonical row.
+    vi.mocked(getClimb).mockResolvedValueOnce({
+      uuid: 'canonical-climb',
+      name: 'Test Climb',
+      difficulty: 'V5',
+      setter_username: 'setter-person',
+      quality_average: '4.20',
+      ascensionist_count: 12,
+      frames: 'p1r12',
+      description: null,
+    } as unknown as Awaited<ReturnType<typeof getClimb>>);
+    vi.mocked(getClimbStatsForAllAngles).mockClear();
+    vi.mocked(getFrontDoorSimilarClimbs).mockClear();
+    vi.mocked(getFrontDoorBetaLinks).mockClear();
+
+    await renderFrontDoor({ ...PARAMS, climb_uuid: 'alias-climb' });
+
+    expect(vi.mocked(getClimbStatsForAllAngles)).toHaveBeenCalledWith('kilter', 'canonical-climb');
+    expect(vi.mocked(getFrontDoorSimilarClimbs)).toHaveBeenCalledWith(
+      expect.objectContaining({ climbUuid: 'canonical-climb' }),
+    );
+    expect(vi.mocked(getFrontDoorBetaLinks)).toHaveBeenCalledWith(
+      expect.objectContaining({ climbUuid: 'canonical-climb' }),
+    );
+  });
+});
+
 describe('the CTA strips the locale prefix (accepted regression)', () => {
   it('sends an /es reader to the English app route, not one the app does not have', async () => {
     const { buildAppHandoffUrl } = await import('@/app/lib/app-handoff');

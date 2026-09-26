@@ -71,7 +71,7 @@ describe('climb front door statement budget', () => {
   });
 
   it('getClimbStatsForAllAngles costs exactly one statement', async () => {
-    await getClimbStatsForAllAngles(params);
+    await getClimbStatsForAllAngles(params.board_name, params.climb_uuid);
     expect(mockSqlTag).toHaveBeenCalledTimes(1);
   });
 

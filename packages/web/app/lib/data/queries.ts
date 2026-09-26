@@ -37,6 +37,26 @@ class ClimbRowMissingError extends Error {
  * "this climb does not exist" from "we could not answer right now". Alias
  * resolution lives in the same statement as the climb select so one cold page
  * holds one server connection for one round trip rather than two.
+ *
+ * The requested row is checked first and `board_climb_aliases` is read only
+ * when that row is missing or unlisted. Nearly every request is for a listed
+ * climb (the sitemap only emits listed, non-alias uuids), and for those the
+ * alias probe answered "yourself" at the cost of two random reads into a
+ * 90 MB index plus a 178 MB heap. Both scalar subqueries are InitPlans, which
+ * Postgres evaluates on first use, so the alias probe on the `ELSE` branch is
+ * never executed for a listed row. The rows that do need it:
+ *
+ * - Kilter and MoonBoard catalog aliases with no `board_climbs` row: missing,
+ *   so they resolve through the alias table.
+ * - Unlisted husks left behind by the MoonBoard 2024 import and the dedup
+ *   passes (~9.6k rows, all `is_listed = false`): unlisted, so they resolve
+ *   through the alias table to the canonical climb.
+ *
+ * One deliberate exception. Four Kilter uuids are listed rows AND carry a
+ * non-self alias. Their holds no longer match the canonical they were folded
+ * onto (the fingerprints diverged after the fold), each has its own stats, and
+ * none has a Boardsesh tick, so this now renders the climb the uuid names
+ * rather than the stale fold target. A listed row wins over its alias.
  */
 async function fetchClimbFromDb(
   boardName: BoardName,
@@ -52,16 +72,25 @@ async function fetchClimbFromDb(
       'climb-select',
       sql`
         WITH resolved_climb AS NOT MATERIALIZED (
-          SELECT COALESCE(
-            (
-              SELECT aliases.canonical_uuid
-              FROM board_climb_aliases aliases
-              WHERE aliases.board_type = ${boardName}
-                AND aliases.alias_uuid = ${requestedClimbUuid}
-              LIMIT 1
-            ),
-            ${requestedClimbUuid}
-          ) AS uuid
+          SELECT CASE
+            WHEN EXISTS (
+              SELECT 1
+              FROM board_climbs requested
+              WHERE requested.uuid = ${requestedClimbUuid}
+                AND requested.board_type = ${boardName}
+                AND requested.is_listed
+            ) THEN ${requestedClimbUuid}
+            ELSE COALESCE(
+              (
+                SELECT aliases.canonical_uuid
+                FROM board_climb_aliases aliases
+                WHERE aliases.board_type = ${boardName}
+                  AND aliases.alias_uuid = ${requestedClimbUuid}
+                LIMIT 1
+              ),
+              ${requestedClimbUuid}
+            )
+          END AS uuid
         )
         SELECT climbs.uuid, climbs.setter_username, climbs.user_id as "userId", climbs.name, climbs.description,
         climbs.layout_id as "layoutId", climbs.board_type as "boardType",
@@ -139,8 +168,18 @@ async function cachedClimbFetch(
  * read failed.
  */
 const getClimbCached = cache(
-  async (boardName: BoardName, layoutId: LayoutId, angle: number, climbUuid: string): Promise<Climb | null> =>
-    cachedClimbFetch(boardName, layoutId, angle, climbUuid),
+  async (boardName: BoardName, layoutId: LayoutId, angle: number, climbUuid: string): Promise<Climb | null> => {
+    const climb = await cachedClimbFetch(boardName, layoutId, angle, climbUuid);
+    if (!climb || climb.uuid === climbUuid) return climb;
+    // An alias URL. The entry above is keyed and tagged on the alias uuid, and
+    // `revalidate-climb` only ever clears `climb-${canonical}`, so an edit to
+    // the canonical climb would sit behind the alias URL for up to an hour.
+    // Keep only the mapping from that entry and serve the row from the
+    // canonical's own entry, which the revalidate does clear. Alias URLs are
+    // rare (the sitemap never emits them), so the extra read on a cold alias
+    // entry is cheap. There are no alias chains, so one hop is enough.
+    return cachedClimbFetch(boardName, layoutId, angle, climb.uuid);
+  },
 );
 
 export async function getClimb(params: ParsedBoardRouteParametersWithUuid): Promise<Climb | null> {
@@ -224,20 +263,19 @@ async function fetchClimbStatsForAllAnglesFromDb(
  * Cached under the same `climb-${uuid}` tag as `getClimb`, so one
  * `revalidateTag` clears both: a page that renders the climb's own facts from a
  * fresh row and its angle table from an hour-old one is worse than either.
+ *
+ * Pass the uuid `getClimb` returned, not the one in the URL. For an alias URL
+ * the URL's uuid names a husk with no stats of its own (or no row at all), and
+ * a cache entry keyed on it would never be cleared by the canonical's
+ * revalidate.
  */
-const getClimbStatsForAllAnglesCached = cache(
+export const getClimbStatsForAllAngles = cache(
   async (boardName: BoardName, climbUuid: string): Promise<ClimbStatsForAngle[]> =>
     unstable_cache(fetchClimbStatsForAllAnglesFromDb, ['climb-stats-all-angles', boardName, climbUuid], {
       revalidate: 3600,
       tags: [`climb-${climbUuid}`],
     })(boardName, climbUuid),
 );
-
-export async function getClimbStatsForAllAngles(
-  params: ParsedBoardRouteParametersWithUuid,
-): Promise<ClimbStatsForAngle[]> {
-  return getClimbStatsForAllAnglesCached(params.board_name, params.climb_uuid);
-}
 
 export type LayoutRow = {
   id: number;

@@ -145,9 +145,6 @@ function resolveRootSelect(state: SelectState): unknown[] {
     return store.row ? [store.row] : [];
   }
   if (store.readThrows) throw new Error('relation "sitemap_climb_urls" does not exist');
-  if (state.fields.includes('totalItems')) {
-    return [{ totalItems: store.urlRows.length }];
-  }
   if (state.fields.includes('present')) {
     return store.urlRows.length > 0 ? [{ present: 1 }] : [];
   }
@@ -558,6 +555,7 @@ describe('refreshing the store', () => {
 describe('reading a stored shard page', () => {
   it('serves a page as an ordinal range without the live build', async () => {
     store.urlRows = [...storedUrlRows(3), ...storedUrlRows(2, PER_PAGE)];
+    store.row = storedRow({ itemCount: 5 });
 
     const page = await fetchStoredClimbPage(2);
 
@@ -571,17 +569,19 @@ describe('reading a stored shard page', () => {
     expect(live.buildCalls).toBe(0);
   });
 
-  it('returns null for an empty table, never an empty page', async () => {
+  it('returns null when no refresh has ever committed, never an empty page', async () => {
     // "Never populated" is the caller's cue to fall back to the live build. An
     // empty SLICE of a populated table is NOT null — that verdict belongs to the
     // route handler, which has the summary in hand to tell tear from 404.
     store.urlRows = [];
+    store.row = null;
 
     expect(await fetchStoredClimbPage(1)).toBeNull();
   });
 
   it('returns an empty slice with the real total for a page past the stored end', async () => {
     store.urlRows = storedUrlRows(3);
+    store.row = storedRow({ itemCount: 3 });
 
     const page = await fetchStoredClimbPage(2);
 
@@ -590,9 +590,23 @@ describe('reading a stored shard page', () => {
   });
 });
 
+describe('the stored page total', () => {
+  it('is the summary row the refresh wrote in the same transaction, not a count over the URL table', async () => {
+    // The two are written together, so they always agree; reading the one-row
+    // summary replaces a count(*) over ~130k URL rows on every page fetch.
+    store.urlRows = storedUrlRows(3);
+    store.row = storedRow({ itemCount: 52_000 });
+
+    const page = await fetchStoredClimbPage(1);
+
+    expect(page?.totalItems).toBe(52_000);
+  });
+});
+
 describe('buildClimbShardPage', () => {
   it('serves from the store and never touches the live build', async () => {
     store.urlRows = storedUrlRows(3);
+    store.row = storedRow({ itemCount: 3 });
 
     const page = await buildClimbShardPage(1);
 
