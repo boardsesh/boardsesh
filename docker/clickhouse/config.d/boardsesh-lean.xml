@@ -1,0 +1,124 @@
+<?xml version="1.0"?>
+<!--
+  Boardsesh: a small ClickHouse for xprem Observe (Railway service
+  boardsesh-ota-clickhouse). Loaded after config.xml and docker_related_config.xml.
+
+  The workload is five small expo_observe tables fed by about 136k OTA requests a
+  week. Stock settings are sized for a dedicated analytics host, and Railway bills
+  memory on usage including page cache, so the stock server idled at 2.9 GB. This
+  file bounds what the server itself may hold. The Railway limitOverride (2 GB) is
+  the safety rail behind it.
+
+  Server settings only. xprem runs goose migrations against expo_observe with the
+  CLICKHOUSE_USER account the upstream entrypoint creates, so nothing here may touch
+  users, profiles, quotas, databases or table definitions. The merge_tree section
+  changes table defaults for merge scheduling; it is not stored in any table's
+  metadata and does not change xprem's schema.
+
+  Tested by docker/clickhouse/smoke.sh. Every value below is asserted there or
+  exercised by it.
+-->
+<clickhouse>
+    <!--
+      Memory ceiling for the whole server: 1.2 GB. Queries, merges and caches all
+      count against it; a query that would cross it fails instead of growing.
+
+      max_server_memory_usage_to_ram_ratio is left at its default (0.9) on purpose.
+      In 25.3 the server takes min(max_server_memory_usage, RAM x ratio) and treats
+      0 as "no limit", so ratio 0 would not make this value win: it would lower the
+      ceiling to 0, which means unlimited. Under Railway's 2 GB limit, RAM x 0.9 is
+      1.8 GB, so this absolute value is the one in force.
+    -->
+    <max_server_memory_usage>1200000000</max_server_memory_usage>
+
+    <!--
+      Caches. Stock is a 5 GiB mark cache and an 8 GiB uncompressed cache. Both fill
+      lazily, so they cost nothing at boot and then grow into every byte the dashboard
+      reads. The whole Observe dataset is tens of MB.
+    -->
+    <!-- 128 MiB of marks covers every part of every Observe table many times over. -->
+    <mark_cache_size>134217728</mark_cache_size>
+    <!-- Off. Observe queries are small scans; decompressing again is cheaper than holding blocks. -->
+    <uncompressed_cache_size>0</uncompressed_cache_size>
+    <!-- Marks of skipping indexes. 16 MiB; xprem's tables barely use skip indexes. -->
+    <index_mark_cache_size>16777216</index_mark_cache_size>
+    <!-- Decompressed skipping-index blocks. Off, same reasoning as uncompressed_cache_size. -->
+    <index_uncompressed_cache_size>0</index_uncompressed_cache_size>
+    <!-- Count of mmapped files kept open (not bytes). Stock 1000; nothing here uses mmap reads. -->
+    <mmap_cache_size>64</mmap_cache_size>
+
+    <!--
+      Concurrency. Two vCPUs and one writer (the OTA server) do not need the stock pools.
+    -->
+    <!-- Merge and mutation threads. Stock 16. Merges on tables this size take milliseconds. -->
+    <background_pool_size>2</background_pool_size>
+    <!-- Two queued merges per thread, so 4 merge slots in total. -->
+    <background_merges_mutations_concurrency_ratio>2</background_merges_mutations_concurrency_ratio>
+    <!-- TTL deletes, part cleanup and system-log flushes run here. Stock 512. -->
+    <background_schedule_pool_size>4</background_schedule_pool_size>
+    <!-- The OTA server and the Observe dashboard are the only clients. Stock 1000. -->
+    <max_concurrent_queries>20</max_concurrent_queries>
+    <!-- Idle client connections, not queries. Stock 4096. -->
+    <max_connections>64</max_connections>
+    <!-- Global thread pool ceiling. Stock 10000. Work beyond it queues rather than fails. -->
+    <max_thread_pool_size>128</max_thread_pool_size>
+    <!-- Idle threads kept for reuse. Stock 1000; each one pins a stack. -->
+    <max_thread_pool_free_size>16</max_thread_pool_free_size>
+
+    <!--
+      Required by the smaller pool above. When any of these exceeds
+      background_pool_size x background_merges_mutations_concurrency_ratio (4 here)
+      the 25.3 server refuses to start at all: "Code: 36 ... mutations cannot work
+      with these settings (BAD_ARGUMENTS)". Stock values are 8, 20 and 25, sized for
+      the stock 32 slots. Removing this section while keeping the small pool turns
+      the next restart into a crash loop, and xprem's next boot into a log.Fatalf.
+    -->
+    <merge_tree>
+        <number_of_free_entries_in_pool_to_lower_max_size_of_merge>1</number_of_free_entries_in_pool_to_lower_max_size_of_merge>
+        <number_of_free_entries_in_pool_to_execute_mutation>2</number_of_free_entries_in_pool_to_execute_mutation>
+        <number_of_free_entries_in_pool_to_execute_optimize_entire_partition>2</number_of_free_entries_in_pool_to_execute_optimize_entire_partition>
+    </merge_tree>
+
+    <!-- Refresh system.asynchronous_metrics once a minute instead of every second. -->
+    <asynchronous_metrics_update_period_s>60</asynchronous_metrics_update_period_s>
+
+    <!--
+      System logs. Stock 25.3 enables seventeen of them, and they were the real disk
+      and memory consumer: asynchronous_metric_log alone wrote 55M rows in its first
+      hour. Nobody reads them for this service. Removing an element here stops the
+      server creating or writing that table. It does not drop a table that already
+      exists on the volume; see "Rolling out a new ClickHouse image" in
+      docs/railway.md for the one-off DROP.
+
+      session_log and zookeeper_log are off in stock config; they are listed so a
+      future base image that turns them on stays off here.
+    -->
+    <asynchronous_metric_log remove="1"/>
+    <metric_log remove="1"/>
+    <query_metric_log remove="1"/>
+    <latency_log remove="1"/>
+    <trace_log remove="1"/>
+    <part_log remove="1"/>
+    <text_log remove="1"/>
+    <session_log remove="1"/>
+    <processors_profile_log remove="1"/>
+    <error_log remove="1"/>
+    <query_views_log remove="1"/>
+    <query_thread_log remove="1"/>
+    <zookeeper_log remove="1"/>
+    <opentelemetry_span_log remove="1"/>
+    <crash_log remove="1"/>
+    <asynchronous_insert_log remove="1"/>
+    <backup_log remove="1"/>
+    <s3queue_log remove="1"/>
+    <blob_storage_log remove="1"/>
+
+    <!--
+      query_log stays: it is the one log worth reading when a dashboard query is
+      slow (docs/railway-clickhouse-audit.sql uses it). Seven days is enough to look
+      back over an incident. Flush interval and partitioning stay stock.
+    -->
+    <query_log>
+        <ttl>event_date + INTERVAL 7 DAY DELETE</ttl>
+    </query_log>
+</clickhouse>
