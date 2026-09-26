@@ -70,6 +70,8 @@ describe('beta-link-thumbnails: key + url helpers', () => {
   });
 });
 
+// Exercise the non-stream arrayBuffer fallback; empty-stream regressions below
+// use real Response bodies to cover the streaming reader separately.
 function mockFetchImageOnce(opts: { ok?: boolean; contentType?: string; body?: Uint8Array } = {}) {
   const { ok = true, contentType = 'image/jpeg', body = new Uint8Array([0xff, 0xd8, 0xff]) } = opts;
   const fetchMock = vi.fn().mockResolvedValueOnce({
@@ -110,6 +112,29 @@ describe('cacheInstagramThumbnail', () => {
     mockFetchImageOnce({ ok: false });
     const url = await cacheInstagramThumbnail('ABC123', 'https://scontent.cdninstagram.com/photo.jpg');
     expect(url).toBeNull();
+    expect(uploadToS3).not.toHaveBeenCalled();
+  });
+
+  it('returns null when the source responds 200 with an empty body', async () => {
+    // A zero-byte upload would be stored under an immutable key and served as
+    // a "successful" empty image for a year, with no way to repair it.
+    mockFetchImageOnce({ body: new Uint8Array([]) });
+    const url = await cacheInstagramThumbnail('ABC123', 'https://scontent.cdninstagram.com/photo.jpg');
+    expect(url).toBeNull();
+    expect(uploadToS3).not.toHaveBeenCalled();
+  });
+
+  it('rejects a streamed empty image before publishing the original or resized variants', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(new Uint8Array(), {
+          status: 200,
+          headers: { 'Content-Type': 'image/jpeg' },
+        }),
+      ),
+    );
+    expect(await cacheInstagramThumbnail('ABC123', 'https://scontent.cdninstagram.com/photo.jpg')).toBeNull();
     expect(uploadToS3).not.toHaveBeenCalled();
   });
 

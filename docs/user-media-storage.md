@@ -92,6 +92,25 @@ All four accept `?size=N` for `N` in `ALLOWED_IMAGE_SIZES` (`packages/shared-sch
 
 New Instagram and TikTok thumbnails write the shared `BETA_THUMBNAIL_REQUEST_SIZE` (280px) variant before the original and before returning a URL for the feed. Avatars and gym images write every allowed size on each upload; their `?v=` parameter prevents stale images after replacement. Without a public base URL, the backend proxies images and resizes on demand, caching variants only for immutable beta thumbnails.
 
+### Empty image objects
+
+New beta thumbnail downloads with an empty body are rejected before writing either
+an original or a resized variant. The avatar upload endpoint already rejects empty
+multipart files; mobile retains the native/browser `appendUploadImage` adapter.
+
+When the backend proxies media (no public media base URL), known-empty avatars,
+gym images and beta thumbnails return `404` with `Cache-Control: no-store`.
+Unknown object lengths continue streaming. Sized requests check the actual original
+bytes, and an empty cached beta variant is regenerated from a healthy original and
+written back to the same key. An absent or empty original returns the same uncached
+404 without a storage write. Ordinary proxy misses also remain uncached so a
+separately repaired object is immediately visible.
+
+These read guards do not run on configured CDN redirects and do not repair stored
+URLs or existing bucket objects. Legacy avatar remediation stays in #4228/#4724;
+thumbnail repair and its cache/refetch policy stay in #4743. No production census,
+object deletion or data repair is part of these guards.
+
 ### Repairing missing beta thumbnail variants
 
 An original returning 200 while its `@280.jpg` URL returns 404 means the resized object is missing. After deploying the upload fix, run the existing backfill with the production media bucket environment:
