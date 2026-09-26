@@ -80,7 +80,10 @@ const RECENT_BETA_LINKS_REDIS_GENERATION_KEY = `${RECENT_BETA_LINKS_REDIS_KEY_PR
 // primary freshness mechanism.
 const RECENT_BETA_LINKS_REDIS_TTL_SECONDS = 24 * 60 * 60;
 const RECENT_BETA_LINKS_REDIS_LOCK_KEY = 'boardsesh:recent-beta-links:lock';
-const RECENT_BETA_LINKS_REDIS_LOCK_TTL_SECONDS = 120;
+// Matches the popular-configs lock: held for one whole refresh, so a node that
+// boots later in the same rollout cannot start a duplicate while the key is
+// being overwritten in place.
+const RECENT_BETA_LINKS_REDIS_LOCK_TTL_SECONDS = 600;
 const RECENT_BETA_LINKS_CACHE_SIZE = RECENT_BETA_LINKS_MAX_LIMIT;
 
 // Extract an Instagram handle from `userProfiles.instagramUrl`. The field
