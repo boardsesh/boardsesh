@@ -66,6 +66,9 @@ PR #5267 had not merged; its existence was not evidence of active collection.
 The plan required reviewing captured metrics and health results before either
 later reduction. The hard billing cap recorded then was $250.
 
+The reduction to two replicas was applied on 2026-09-26 at 03:28 UTC and is
+recorded in [railway-cost-reduction.md](./railway-cost-reduction.md).
+
 ## Reapply and rollback commands recorded on September 7
 
 Check current service identities, configuration and capacity requirements before
