@@ -894,6 +894,147 @@ describe('Climb Query Functions', () => {
     });
   });
 
+  // The stats-driven list splits the grade filter (the board's grade, else the
+  // Boardsesh grade when the stats row has no difficulty) and joins
+  // board_climb_grades only after LIMIT. Both must give exactly the rows and
+  // order the COALESCE-over-a-join form did; this walks the edge cases against
+  // real Postgres. minAscents keeps every search on the stats-driven path, so
+  // the standard-search fallback can't answer in its place.
+  describe('stats-driven grade split (Boardsesh fallback after LIMIT)', () => {
+    const PREFIX = 'GRADE-SPLIT-TEST-';
+    const id = (suffix: string) => PREFIX + suffix;
+    const SETTER = 'grade-split-setter';
+    const splitParams: ParsedBoardRouteParameters = {
+      board_name: 'kilter',
+      layout_id: 1,
+      size_id: 7,
+      set_ids: [1],
+      angle: 40,
+    };
+    const splitSearch = (overrides: Partial<ClimbSearchParams>): ClimbSearchParams => ({
+      page: 0,
+      pageSize: 50,
+      sortBy: 'ascents',
+      sortOrder: 'desc',
+      minAscents: 1,
+      settername: [SETTER],
+      ...overrides,
+    });
+    const uuidsFor = async (overrides: Partial<ClimbSearchParams>) =>
+      (await searchClimbs(splitParams, splitSearch(overrides))).climbs.map((climb) => climb.uuid);
+
+    beforeAll(async () => {
+      const climbs = [
+        'a-dd-26',
+        'f-dd-26',
+        'b-null-grade-27',
+        'c-null-local-20',
+        'd-null-no-grade',
+        'e-dd-28-5',
+        'g-dd-12-grade-27',
+        'h-null-grade-other-angle',
+      ];
+      for (const suffix of climbs) {
+        await db.execute(sql`
+          INSERT INTO board_climbs (uuid, board_type, layout_id, setter_username, name, frames, frames_count, is_draft, is_listed, edge_left, edge_right, edge_bottom, edge_top, created_at, required_set_ids, compatible_size_ids)
+          VALUES (${id(suffix)}, 'kilter', 1, ${SETTER}, ${suffix}, 'p700r12', 1, false, true, 10, 100, 10, 150, '2024-01-01', ARRAY[1], ARRAY[7])
+          ON CONFLICT DO NOTHING
+        `);
+      }
+
+      // a and f tie on ascents, so the uuid DESC tiebreak decides them (f first).
+      // e's 28.5 rounds to 29 as numeric (the cast the filter keeps) but to 28 as
+      // double precision, which would wrongly admit it to a V9-V11 band.
+      await db.execute(sql`
+        INSERT INTO board_climb_stats (board_type, climb_uuid, angle, display_difficulty, ascensionist_count, difficulty_average, quality_average)
+        VALUES
+          ('kilter', ${id('a-dd-26')}, 40, 26.4, 100, 26.4, 3.0),
+          ('kilter', ${id('f-dd-26')}, 40, 25.6, 100, 25.6, 3.0),
+          ('kilter', ${id('e-dd-28-5')}, 40, 28.5, 90, 28.5, 3.0),
+          ('kilter', ${id('b-null-grade-27')}, 40, NULL, 80, NULL, 3.0),
+          ('kilter', ${id('g-dd-12-grade-27')}, 40, 12.0, 70, 12.0, 3.0),
+          ('kilter', ${id('c-null-local-20')}, 40, NULL, 60, NULL, 3.0),
+          ('kilter', ${id('h-null-grade-other-angle')}, 40, NULL, 50, NULL, 3.0),
+          ('kilter', ${id('d-null-no-grade')}, 40, NULL, 40, NULL, 3.0)
+        ON CONFLICT DO NOTHING
+      `);
+
+      await db.execute(sql`
+        INSERT INTO board_climb_grades (board_type, climb_uuid, angle, local_grade, universal_grade, confidence, model_version, coeff_version)
+        VALUES
+          ('kilter', ${id('a-dd-26')}, 40, 12.0, 12.0, 'confirmed', 'test', 'test'),
+          ('kilter', ${id('b-null-grade-27')}, 40, 26.0, 27.3, 'confirmed', 'test', 'test'),
+          ('kilter', ${id('c-null-local-20')}, 40, 20.0, NULL, 'provisional', 'test', 'test'),
+          ('kilter', ${id('g-dd-12-grade-27')}, 40, 27.0, 27.0, 'confirmed', 'test', 'test'),
+          ('kilter', ${id('h-null-grade-other-angle')}, 30, 27.0, 27.0, 'confirmed', 'test', 'test')
+        ON CONFLICT DO NOTHING
+      `);
+    });
+
+    afterAll(async () => {
+      await db.execute(sql`DELETE FROM board_climb_grades WHERE climb_uuid LIKE ${PREFIX + '%'}`);
+      await db.execute(sql`DELETE FROM board_climb_stats WHERE climb_uuid LIKE ${PREFIX + '%'}`);
+      await db.execute(sql`DELETE FROM board_climbs WHERE uuid LIKE ${PREFIX + '%'}`);
+    });
+
+    it('admits a climb whose stats row has no difficulty on its Boardsesh grade, in ascents order', async () => {
+      // f/a on the board's grade (a's Boardsesh 12 is ignored: the board's grade
+      // wins), b on its Boardsesh 27.3. Out: e (rounds to 29), g (board says 12),
+      // c (Boardsesh 20), d (no grade anywhere), h (Boardsesh grade at 30° only).
+      expect(await uuidsFor({ minGrade: 26, maxGrade: 28 })).toEqual([
+        id('f-dd-26'),
+        id('a-dd-26'),
+        id('b-null-grade-27'),
+      ]);
+    });
+
+    it('applies the same split to a min-only and a max-only range', async () => {
+      expect(await uuidsFor({ minGrade: 27 })).toEqual([id('e-dd-28-5'), id('b-null-grade-27')]);
+      expect(await uuidsFor({ maxGrade: 26 })).toEqual([
+        id('f-dd-26'),
+        id('a-dd-26'),
+        id('g-dd-12-grade-27'),
+        id('c-null-local-20'),
+      ]);
+    });
+
+    it('still carries the Boardsesh grade on the page rows, looked up after the cut', async () => {
+      const result = await searchClimbs(splitParams, splitSearch({ minGrade: 26, maxGrade: 28 }));
+      const byUuid = new Map(result.climbs.map((climb) => [climb.uuid, climb]));
+      expect(byUuid.get(id('a-dd-26'))?.boardseshDifficulty).toBe(12);
+      expect(byUuid.get(id('a-dd-26'))?.boardseshConfidence).toBe('confirmed');
+      expect(byUuid.get(id('b-null-grade-27'))?.boardseshDifficulty).toBe(27.3);
+      expect(byUuid.get(id('f-dd-26'))?.boardseshDifficulty).toBeNull();
+      expect(byUuid.get(id('f-dd-26'))?.boardseshConfidence).toBeNull();
+    });
+
+    it('pages through the same order with no row served twice', async () => {
+      const first = await searchClimbs(splitParams, splitSearch({ minGrade: 26, maxGrade: 28, pageSize: 2 }));
+      const second = await searchClimbs(splitParams, splitSearch({ minGrade: 26, maxGrade: 28, pageSize: 2, page: 1 }));
+      expect(first.climbs.map((climb) => climb.uuid)).toEqual([id('f-dd-26'), id('a-dd-26')]);
+      expect(first.hasMore).toBe(true);
+      expect(second.climbs.map((climb) => climb.uuid)).toEqual([id('b-null-grade-27')]);
+      expect(second.hasMore).toBe(false);
+    });
+
+    it('agrees with countClimbs, which still reads the COALESCE form through a join', async () => {
+      for (const band of [{ minGrade: 26, maxGrade: 28 }, { minGrade: 27 }, { maxGrade: 26 }]) {
+        const listed = await uuidsFor(band);
+        expect(await countClimbs(splitParams, splitSearch(band))).toBe(listed.length);
+      }
+    });
+
+    it('keeps the Boardsesh grade source on its own rule', async () => {
+      // Boardsesh grade first, the board's grade only without one: a (12) drops
+      // out, g (27) comes in, e (no grades row, board 29) stays out.
+      expect(await uuidsFor({ minGrade: 26, maxGrade: 28, gradeSource: 'boardsesh' })).toEqual([
+        id('f-dd-26'),
+        id('b-null-grade-27'),
+        id('g-dd-12-grade-27'),
+      ]);
+    });
+  });
+
   // Personal rating filters (#2645): "min stars I gave" + "only climbs I rated",
   // read straight off boardsesh_ticks at the browsed angle. Latest rating wins,
   // never-rated climbs stay visible unless onlyRatedByMe is on.

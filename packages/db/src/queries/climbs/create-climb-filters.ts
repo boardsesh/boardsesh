@@ -1,5 +1,5 @@
 import { type SQL, desc, eq, gt, isNotNull, sql, like, notLike, inArray, isNull, or, and } from 'drizzle-orm';
-import { QueryBuilder } from 'drizzle-orm/pg-core';
+import { QueryBuilder, alias } from 'drizzle-orm/pg-core';
 import { getMoonBoardGeometryByLayoutId, woodsHoldIdsInZone } from '@boardsesh/board-config';
 import { getTallWideScope } from '@boardsesh/board-constants/product-sizes';
 import { BOULDER_GRADES } from '@boardsesh/board-constants/boulder-grade-mapping';
@@ -344,6 +344,84 @@ export function gradeValueSql(displayDifficulty: SQL, gradeSource: ClimbSearchPa
 }
 
 /**
+ * The Boardsesh-grade row the split grade filter below falls back to. Aliased so
+ * the EXISTS probe can never bind to a `board_climb_grades` join the outer query
+ * happens to carry. Drizzle renders an aliased table interpolated into `sql` as
+ * the bare alias, so the FROM spells out `table AS alias` itself.
+ */
+const GRADE_FALLBACK_ALIAS = 'grade_fallback';
+const gradeFallback = alias(boardClimbGrades, GRADE_FALLBACK_ALIAS);
+
+/**
+ * The upstream grade-range filter written for the stats-driven list in
+ * search-climbs.ts: a query whose FROM is `board_climb_stats` at the browsed
+ * angle INNER JOIN `board_climbs`, with NO `board_climb_grades` join before its
+ * LIMIT.
+ *
+ *   ROUND(display_difficulty) <range>
+ *   OR (ROUND(display_difficulty) IS NULL
+ *       AND EXISTS (Boardsesh grade at this angle <range>))
+ *
+ * That is the same test as `gradeValueSql(..., upstream) <range>`, i.e.
+ * `COALESCE(ROUND(display_difficulty), ROUND(Boardsesh grade)) <range>`: when
+ * the rounded difficulty is set only the first arm can be true, and when it is
+ * NULL only the second can. `board_climb_grades` has one row per (board_type,
+ * climb_uuid, angle) (its primary key), so the EXISTS is the LEFT JOIN's row.
+ * Both arms keep the `::numeric` cast: ROUND(double precision) breaks .5 ties
+ * the other way, so dropping it would move a climb across a band edge.
+ *
+ * Why split it: the COALESCE form needs the grades row for EVERY row the plan
+ * visits, and those primary-key probes into the 1.3 GB grades table were most of
+ * the disk reads in this query. Here only a climb without a difficulty (a few
+ * thousand per board and angle) pays for a grades probe.
+ *
+ * Two details are load-bearing for the plan, both measured on the production
+ * replica across 22 board/band combinations:
+ *
+ *  - The EXISTS correlates to `board_climbs.uuid`, not to the equal
+ *    `board_climb_stats.climb_uuid`. That makes the OR a join-level clause, so
+ *    the planner costs the join the way it did for the COALESCE form. Correlated
+ *    to the stats row instead, the whole OR is pushed into the stats scan with
+ *    an accurate band estimate; next to the planner's 30x underestimate of the
+ *    `board_climbs` side (the `required_set_ids <@` / `compatible_size_ids @>`
+ *    array filters) that tipped Kilter Original V0-V1 and V3-V4 into probing the
+ *    stats row of all 283k climbs on the layout: 1.9 s, against 1 ms here.
+ *  - The NULL test is on `ROUND(display_difficulty::numeric, 0)`, not the bare
+ *    column. Postgres still derives `band OR rounded IS NULL` from the OR as a
+ *    restriction on the stats scan, and in this spelling both halves match
+ *    `board_climb_stats_difficulty_rounded_idx`, so a narrow band BitmapOrs
+ *    straight out of that index: Kilter Original V14-V16 went from 1.6 s /
+ *    1.06M buffers to 19 ms / 12k.
+ *
+ * Returns `null` when neither bound is set.
+ */
+function statsRowGradeRangeSql(
+  boardType: string,
+  angle: number,
+  minGrade: number | undefined,
+  maxGrade: number | undefined,
+): SQL | null {
+  const upstreamInRange = gradeInRangeSql(
+    sql`ROUND(${boardClimbStats.displayDifficulty}::numeric, 0)`,
+    minGrade,
+    maxGrade,
+  );
+  const boardseshInRange = gradeInRangeSql(
+    sql`ROUND(COALESCE(${gradeFallback.universalGrade}, ${gradeFallback.localGrade})::numeric, 0)`,
+    minGrade,
+    maxGrade,
+  );
+  if (!upstreamInRange || !boardseshInRange) return null;
+  return sql`(${upstreamInRange} OR (ROUND(${boardClimbStats.displayDifficulty}::numeric, 0) IS NULL AND EXISTS (
+    SELECT 1 FROM ${boardClimbGrades} AS ${sql.identifier(GRADE_FALLBACK_ALIAS)}
+    WHERE ${gradeFallback.boardType} = ${boardType}
+    AND ${gradeFallback.climbUuid} = ${boardClimbs.uuid}
+    AND ${gradeFallback.angle} = ${angle}
+    AND ${boardseshInRange}
+  )))`;
+}
+
+/**
  * Creates a shared filtering object for climb search and heatmap queries.
  * Uses unified tables (board_climbs, board_climb_stats, etc.) with board_type filtering.
  *
@@ -555,6 +633,25 @@ export const createClimbFilters = (
   } else if (searchParams.maxGrade) {
     gradeRangeConditions.push(sql`${gradeRangeValue} <= ${searchParams.maxGrade}`);
   }
+
+  // The same grade range for the stats-driven list, which reads no
+  // board_climb_grades join before its LIMIT — see `statsRowGradeRangeSql`.
+  // `null` means the filter has to read the joined grades row (the Boardsesh
+  // source reads it first, personal grades wrap the joined value, and
+  // cross-angle resolves the grade at another angle), so the caller must keep
+  // the join inside the query and use `getClimbStatsConditions()` instead.
+  // An empty list means there is no grade filter at all.
+  const statsRowGradeRangeConditions: SQL[] | null = (() => {
+    if (gradeRangeConditions.length === 0) return [];
+    if (personalGradeScope || crossAngle || searchParams.gradeSource === 'boardsesh') return null;
+    const condition = statsRowGradeRangeSql(
+      params.board_name,
+      params.angle,
+      searchParams.minGrade,
+      searchParams.maxGrade,
+    );
+    return condition ? [condition] : null;
+  })();
 
   if (searchParams.minRating) {
     // qualityAverage is canonical 1-5 (migrations 0115/0116 backfilled Aurora's 1-3
@@ -1071,6 +1168,15 @@ export const createClimbFilters = (
     // in search-climbs.ts) must use `hasRequiredStatsFilters` instead of
     // `.length` on this, since a grade-range-only filter no longer requires one.
     getClimbStatsConditions: () => [...climbStatsConditions, ...gradeRangeConditions],
+    /**
+     * Stats-shaped predicates for a query whose FROM is `board_climb_stats`
+     * (browsed angle) with NO `board_climb_grades` join before its LIMIT: the
+     * required-stats bucket plus the split grade range. `null` when the grade
+     * filter cannot be written without the joined grades row — the caller then
+     * keeps that join in the query and spreads `getClimbStatsConditions()`.
+     */
+    getStatsRowClimbStatsConditions: (): SQL[] | null =>
+      statsRowGradeRangeConditions === null ? null : [...climbStatsConditions, ...statsRowGradeRangeConditions],
     // True only for filters that can't be satisfied without a real board_climb_stats
     // row (minAscents, minRating, onlyBenchmarks, gradeAccuracy) — excludes the
     // grade range, which now falls back to the Boardsesh grade for a stats-less

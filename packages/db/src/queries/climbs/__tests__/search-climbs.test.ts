@@ -205,7 +205,16 @@ function fakeRow(uuid: string): Record<string, unknown> {
 }
 
 /** What one SELECT the code under test issued looked like. */
-type RecordedQuery = { table: string | null; orderBy: string[]; joins: string[] };
+type RecordedQuery = {
+  table: string | null;
+  orderBy: string[];
+  joins: string[];
+  /** Set when `from()` read a subquery: what that subquery itself recorded. */
+  subquery?: RecordedQuery;
+};
+
+/** Marks the stand-in `.as()` returns, so `from()` can tell a subquery from a table. */
+const FAKE_SUBQUERY = Symbol('fakeSubquery');
 
 // Fake SearchDb: a minimal stand-in for a top-level Drizzle instance. Every
 // select chain method returns the same builder object, and awaiting it (via a
@@ -237,8 +246,19 @@ function createFakeSearchDb(scriptedRows: Record<string, unknown>[][] = []) {
         return builder;
       };
     }
+    // A subquery source (the stats-driven ranked page) records the table the
+    // subquery itself read, and keeps the subquery's own record for assertions.
     builder.from = (source: unknown) => {
-      recorded.table = is(source, Table) ? getTableName(source) : null;
+      const inner =
+        typeof source === 'object' && source !== null
+          ? (source as { [FAKE_SUBQUERY]?: RecordedQuery })[FAKE_SUBQUERY]
+          : undefined;
+      if (inner) {
+        recorded.table = inner.table;
+        recorded.subquery = inner;
+      } else {
+        recorded.table = is(source, Table) ? getTableName(source) : null;
+      }
       return builder;
     };
     // Rendered in call order across every builder, so a test can read the WHERE
@@ -249,12 +269,20 @@ function createFakeSearchDb(scriptedRows: Record<string, unknown>[][] = []) {
       return builder;
     };
     // `.as()` ends a subquery. The real return is a drizzle subquery whose
-    // columns the caller references; these two stand-ins are the only ones
-    // standardSearch reads (the popular join key and its sort column).
-    builder.as = () => ({
-      climbUuid: sql.raw('popular_counts.climb_uuid'),
-      totalAscensionistCount: sql.raw('popular_counts.total_ascensionist_count'),
-    });
+    // columns the caller references; this stand-in renders any column as
+    // `"alias"."key"` (the popular-count join key and sort column, the ranked
+    // page's fields) and carries this builder's record for `from()`.
+    builder.as = (alias: string) =>
+      new Proxy(
+        {},
+        {
+          get: (_target, key) => {
+            if (key === FAKE_SUBQUERY) return recorded;
+            if (typeof key !== 'string' || key === 'then' || key === 'constructor') return undefined;
+            return sql.raw(`"${alias}"."${key}"`);
+          },
+        },
+      );
     builder.orderBy = (...fragments: SQL[]) => {
       recorded.orderBy = fragments.map((fragment) => dialect.sqlToQuery(fragment).sql);
       return builder;
@@ -762,5 +790,106 @@ void describe('browsed-angle restriction on an angle-bound board (issue #5642)',
     await searchClimbs(fakeDb as unknown as DbInstance, WOODS_PARAMS, { ...ascentsPage, onlyDrafts: true });
 
     for (const where of whereClauses) assert.match(where, BROWSED_ANGLE_RESTRICTION_PATTERN);
+  });
+});
+
+// The stats-driven page is ranked and cut with no board_climb_grades join, and
+// only the page's rows look the Boardsesh grade up. Joined inside the ranked
+// query, the grades row was fetched for every row the plan visited — most of the
+// disk reads this query did in production. These pin WHEN the join happens for
+// each kind of search; create-climb-filters.test.ts pins the split grade filter.
+void describe('stats-driven path: Boardsesh grades joined after the page is cut', () => {
+  const gradeBand = {
+    page: 0,
+    pageSize: 20,
+    sortBy: 'ascents',
+    sortOrder: 'desc',
+    minGrade: 26,
+    maxGrade: 28,
+  } as const;
+
+  void it('ranks the page from board_climb_stats + board_climbs, then joins the grades onto it', async () => {
+    const { fakeDb, queries, whereClauses } = createFakeSearchDb();
+
+    await searchClimbs(fakeDb as unknown as DbInstance, SEARCH_PARAMS, { ...gradeBand, minAscents: 1 });
+
+    assert.equal(queries.length, 1);
+    const [pageQuery] = queries;
+    assert.ok(pageQuery.subquery, 'the stats-driven page must be read through the ranked subquery');
+    assert.equal(pageQuery.subquery.table, 'board_climb_stats');
+    assert.deepEqual(pageQuery.subquery.joins, ['board_climbs'], 'nothing but board_climbs may join before LIMIT');
+    assert.deepEqual(pageQuery.joins, ['board_climb_grades'], 'the grades join belongs on the cut page');
+    // The ranked query orders on the covering index's keys; the outer query puts
+    // the joined page back in that order.
+    assert.deepEqual(pageQuery.subquery.orderBy, [
+      '"board_climb_stats"."ascensionist_count" DESC NULLS LAST',
+      '"board_climb_stats"."climb_uuid" desc',
+    ]);
+    assert.deepEqual(pageQuery.orderBy, ['"ranked_page"."sort_key" DESC NULLS LAST', '"ranked_page"."sort_uuid" desc']);
+    // The grade filter reads board_climb_grades only through the aliased probe.
+    assert.equal(whereClauses.length, 1);
+    assert.match(whereClauses[0], /"grade_fallback"/);
+    assert.doesNotMatch(whereClauses[0], /"board_climb_grades"\."/);
+  });
+
+  void it('takes the same shape with no grade filter, and for the quality sort', async () => {
+    for (const search of [
+      { page: 0, pageSize: 20, sortBy: 'ascents', sortOrder: 'desc', minAscents: 1 },
+      { ...gradeBand, sortBy: 'quality', minRating: 3 },
+    ] as const) {
+      const { fakeDb, queries } = createFakeSearchDb();
+      await searchClimbs(fakeDb as unknown as DbInstance, SEARCH_PARAMS, search);
+      assert.deepEqual(queries[0].subquery?.joins, ['board_climbs']);
+      assert.deepEqual(queries[0].joins, ['board_climb_grades']);
+    }
+  });
+
+  void it('keeps the grades join inside the ranked query under the Boardsesh grade source', async () => {
+    // The Boardsesh source filters on the Boardsesh grade FIRST, so every
+    // candidate row needs its grades row before it can be kept or dropped.
+    const { fakeDb, queries, whereClauses } = createFakeSearchDb();
+
+    await searchClimbs(fakeDb as unknown as DbInstance, SEARCH_PARAMS, {
+      ...gradeBand,
+      minAscents: 1,
+      gradeSource: 'boardsesh',
+    });
+
+    assert.equal(queries[0].subquery, undefined);
+    assert.equal(queries[0].table, 'board_climb_stats');
+    assert.deepEqual(queries[0].joins, ['board_climbs', 'board_climb_grades']);
+    assert.match(whereClauses[0], /"board_climb_grades"\."confidence" = 'setter_only'/);
+    assert.doesNotMatch(whereClauses[0], /grade_fallback/);
+  });
+
+  void it('keeps the grades join inside the ranked query under personal grades', async () => {
+    const { fakeDb, queries, whereClauses } = createFakeSearchDb();
+
+    await searchClimbs(
+      fakeDb as unknown as DbInstance,
+      SEARCH_PARAMS,
+      { ...gradeBand, minAscents: 1, useMyGrades: true },
+      'grade-rule-user',
+    );
+
+    assert.equal(queries[0].subquery, undefined);
+    assert.deepEqual(queries[0].joins, ['board_climbs', 'board_climb_grades']);
+    assert.match(whereClauses.at(-1) ?? '', /coalesce\("my_grade"\."difficulty"/i);
+  });
+
+  void it('hands the page rows back in the order the query returned them', async () => {
+    const { fakeDb } = createFakeSearchDb([[fakeRow('first'), fakeRow('second'), fakeRow('third')]]);
+
+    const result = await searchClimbs(fakeDb as unknown as DbInstance, SEARCH_PARAMS, {
+      ...gradeBand,
+      pageSize: 2,
+      minAscents: 1,
+    });
+
+    assert.deepEqual(
+      result.climbs.map((climb) => climb.uuid),
+      ['first', 'second'],
+    );
+    assert.equal(result.hasMore, true);
   });
 });

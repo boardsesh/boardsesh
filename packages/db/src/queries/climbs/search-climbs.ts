@@ -1,4 +1,4 @@
-import { desc, sql, and, eq } from 'drizzle-orm';
+import { type SQL, desc, sql, and, eq } from 'drizzle-orm';
 import type { DbInstance } from '../../client/postgres';
 import { boardClimbs, boardClimbStats, boardClimbGrades } from '../../schema/index';
 import { withSerialPlan } from '../util/serial-plan';
@@ -7,6 +7,7 @@ import {
   effectiveDifficultySql,
   gradeValueSql,
   personalGradeColumnSql,
+  type PersonalGradeJoinTarget,
 } from './create-climb-filters';
 import {
   boardClimbStatsAtSetAngle,
@@ -368,18 +369,42 @@ async function runStatsDrivenSearch(
   page: number,
   pageSize: number,
 ): Promise<ClimbSearchResult> {
-  const orderByClause =
-    sortBy === 'quality'
-      ? sql`${boardClimbStats.qualityAverage} DESC NULLS LAST`
-      : sql`${boardClimbStats.ascensionistCount} DESC NULLS LAST`;
-
   // Personal grades (#4828). The grade filter in getClimbStatsConditions()
   // references this join's alias, so it is NOT optional here — when the filter
   // builder says the rule is on, the join has to exist or the SQL won't parse.
   // It also projects the number those rows were selected by.
   const personalGradeJoin = filters.getPersonalGradeJoin();
+  // Null when the grade filter reads the joined board_climb_grades row (the
+  // Boardsesh grade source, personal grades), which pins that join inside the
+  // ranked query. Otherwise the grades join waits until the page is chosen.
+  const statsRowConditions = filters.getStatsRowClimbStatsConditions();
 
-  const selectFields = {
+  const rows =
+    personalGradeJoin || statsRowConditions === null
+      ? await selectPageWithGradesJoined(db, params, filters, sortBy, page, pageSize, personalGradeJoin)
+      : await selectPageThenJoinGrades(db, params, filters, statsRowConditions, sortBy, page, pageSize);
+
+  const hasMore = rows.length > pageSize;
+  const trimmed = hasMore ? rows.slice(0, pageSize) : rows;
+  const climbs = trimmed.map((row) => mapResultToClimbRow(row, params, personalGradeJoin !== null));
+  return { climbs, hasMore };
+}
+
+/** The ranking key of the stats-driven path: a covering-index column, walked DESC. */
+function statsDrivenSortColumn(sortBy: StatsDrivenSort) {
+  return sortBy === 'quality' ? boardClimbStats.qualityAverage : boardClimbStats.ascensionistCount;
+}
+
+/**
+ * The per-row columns of the stats-driven path, minus the Boardsesh grade — the
+ * two queries below differ only in WHEN they join `board_climb_grades`.
+ *
+ * Every SQL expression carries an explicit `.as()` so the same object can be the
+ * SELECT list of a subquery; drizzle refuses to reference an unaliased
+ * expression through one.
+ */
+function statsDrivenClimbFields() {
+  return {
     uuid: boardClimbs.uuid,
     setter_username: boardClimbs.setterUsername,
     userId: boardClimbs.userId,
@@ -392,15 +417,23 @@ async function runStatsDrivenSearch(
     is_hidden: boardClimbs.isHidden,
     angle: boardClimbStats.angle,
     // Always the browsed angle here: this path INNER JOINs stats at it, and
-    // `chooseSearchPath` never routes a cross-angle search through it.
-    stats_angle: boardClimbStats.angle,
+    // `chooseSearchPath` never routes a cross-angle search through it. Aliased
+    // rather than a second bare `angle` column, which a subquery could not
+    // tell apart from the first.
+    stats_angle: sql<number | null>`${boardClimbStats.angle}`.as('stats_angle'),
     ascensionist_count: boardClimbStats.ascensionistCount,
     // ROUND(::numeric) returns text over the wire (see RawSelectResult).
-    difficulty_id: sql<number | string | null>`ROUND(${boardClimbStats.displayDifficulty}::numeric, 0)`,
-    quality_average: sql<number | string | null>`ROUND(${boardClimbStats.qualityAverage}::numeric, 2)`,
+    difficulty_id: sql<number | string | null>`ROUND(${boardClimbStats.displayDifficulty}::numeric, 0)`.as(
+      'difficulty_id',
+    ),
+    quality_average: sql<number | string | null>`ROUND(${boardClimbStats.qualityAverage}::numeric, 2)`.as(
+      'quality_average',
+    ),
     difficulty_error: sql<
       number | string | null
-    >`ROUND(${boardClimbStats.difficultyAverage}::numeric - ${boardClimbStats.displayDifficulty}::numeric, 2)`,
+    >`ROUND(${boardClimbStats.difficultyAverage}::numeric - ${boardClimbStats.displayDifficulty}::numeric, 2)`.as(
+      'difficulty_error',
+    ),
     benchmark_difficulty: boardClimbStats.benchmarkDifficulty,
     description: boardClimbs.description,
     characteristics: boardClimbs.characteristics,
@@ -415,6 +448,128 @@ async function runStatsDrivenSearch(
     // Carried on every search row so a spray list can badge a climb that lost a
     // hold without a second round trip — the badge is on the row, not the detail.
     missing_hold_count: boardClimbs.missingHoldCount,
+  };
+}
+
+/**
+ * The WHERE both stats-driven queries share, apart from the stats predicates:
+ * the stats-table scope plus every climb condition (base filters, name, setter,
+ * holds, personal progress) and the size bounds.
+ */
+function statsDrivenScopeConditions(params: BoardRouteParams, filters: ReturnType<typeof createClimbFilters>): SQL[] {
+  return [
+    eq(boardClimbStats.boardType, params.board_name),
+    eq(boardClimbStats.angle, params.angle),
+    ...filters.getClimbWhereConditions(),
+    ...filters.getSizeConditions(),
+  ];
+}
+
+/**
+ * The default stats-driven query: rank and cut the page with no
+ * `board_climb_grades` join, THEN look up the Boardsesh grade for the
+ * pageSize + 1 rows that made it.
+ *
+ * Joined inside the ranked query, the grades row was fetched for every stats row
+ * the plan visited — every candidate of a bitmap-plus-sort plan, or every row an
+ * index walk skipped past — which on a big layout meant tens of thousands of
+ * primary-key probes into a 1.3 GB table for a 20-row page. Now the grade-range
+ * filter reads a grades row only for a climb without a display_difficulty (see
+ * `statsRowGradeRangeSql`). Measured on the production replica: Kilter Homewall
+ * at V9-V11 went from 4.7 s to 0.38 s cold, and MoonBoard layout 3 read 67% fewer
+ * blocks.
+ *
+ * The outer ORDER BY repeats the inner one, because a join may emit rows in any
+ * order.
+ */
+async function selectPageThenJoinGrades(
+  db: SearchDb,
+  params: BoardRouteParams,
+  filters: ReturnType<typeof createClimbFilters>,
+  statsRowConditions: SQL[],
+  sortBy: StatsDrivenSort,
+  page: number,
+  pageSize: number,
+): Promise<RawSelectResult[]> {
+  const sortColumn = statsDrivenSortColumn(sortBy);
+  const rankedPage = db
+    .select({
+      ...statsDrivenClimbFields(),
+      // The ranking key and its tiebreak, carried out so the outer query can put
+      // the page back in the same order.
+      sort_key: sql<number | null>`${sortColumn}`.as('sort_key'),
+      sort_uuid: sql<string>`${boardClimbStats.climbUuid}`.as('sort_uuid'),
+    })
+    .from(boardClimbStats)
+    .innerJoin(boardClimbs, eq(boardClimbs.uuid, boardClimbStats.climbUuid))
+    .where(and(...statsDrivenScopeConditions(params, filters), ...statsRowConditions))
+    // Same keys as selectPageWithGradesJoined — see the tiebreak note there.
+    .orderBy(sql`${sortColumn} DESC NULLS LAST`, desc(boardClimbStats.climbUuid))
+    .limit(pageSize + 1)
+    .offset(page * pageSize)
+    .as('ranked_page');
+
+  return (await db
+    .select({
+      uuid: rankedPage.uuid,
+      setter_username: rankedPage.setter_username,
+      userId: rankedPage.userId,
+      name: rankedPage.name,
+      frames: rankedPage.frames,
+      is_draft: rankedPage.is_draft,
+      is_hidden: rankedPage.is_hidden,
+      angle: rankedPage.angle,
+      stats_angle: rankedPage.stats_angle,
+      ascensionist_count: rankedPage.ascensionist_count,
+      difficulty_id: rankedPage.difficulty_id,
+      quality_average: rankedPage.quality_average,
+      difficulty_error: rankedPage.difficulty_error,
+      benchmark_difficulty: rankedPage.benchmark_difficulty,
+      description: rankedPage.description,
+      characteristics: rankedPage.characteristics,
+      created_at: rankedPage.created_at,
+      published_at: rankedPage.published_at,
+      frames_count: rankedPage.frames_count,
+      frames_pace: rankedPage.frames_pace,
+      compatible_size_ids: rankedPage.compatible_size_ids,
+      missing_hold_count: rankedPage.missing_hold_count,
+      // Boardsesh grade at the searched angle, for the page's rows only.
+      boardsesh_difficulty: sql<
+        number | null
+      >`COALESCE(${boardClimbGrades.universalGrade}, ${boardClimbGrades.localGrade})`,
+      boardsesh_confidence: boardClimbGrades.confidence,
+    })
+    .from(rankedPage)
+    // LEFT JOIN so a climb without a grade row still returns (fields NULL). The
+    // literal browsed angle: this path never runs cross-angle.
+    .leftJoin(
+      boardClimbGrades,
+      and(
+        eq(boardClimbGrades.boardType, params.board_name),
+        eq(boardClimbGrades.climbUuid, rankedPage.uuid),
+        eq(boardClimbGrades.angle, params.angle),
+      ),
+    )
+    .orderBy(sql`${rankedPage.sort_key} DESC NULLS LAST`, desc(rankedPage.sort_uuid))) as unknown as RawSelectResult[];
+}
+
+/**
+ * The stats-driven query with `board_climb_grades` joined inside it, for the
+ * searches whose WHERE reads that row: the Boardsesh grade source (it filters on
+ * the Boardsesh grade first) and personal grades (the filter wraps the joined
+ * value, and the `my_grade` join rides along).
+ */
+async function selectPageWithGradesJoined(
+  db: SearchDb,
+  params: BoardRouteParams,
+  filters: ReturnType<typeof createClimbFilters>,
+  sortBy: StatsDrivenSort,
+  page: number,
+  pageSize: number,
+  personalGradeJoin: PersonalGradeJoinTarget | null,
+): Promise<RawSelectResult[]> {
+  const selectFields = {
+    ...statsDrivenClimbFields(),
     // Boardsesh grade at the searched angle (params.angle). Surfaced flattened so
     // list rows carry it without a per-climb boardseshGrade round-trip.
     boardsesh_difficulty: sql<
@@ -447,18 +602,10 @@ async function runStatsDrivenSearch(
 
   // LEFT JOIN, never INNER: an inner join drops every climb the climber has not
   // graded — i.e. nearly the whole board.
-  const results: RawSelectResult[] = (await (
-    personalGradeJoin ? baseQuery.leftJoin(personalGradeJoin.subquery, personalGradeJoin.on) : baseQuery
-  )
+  return (await (personalGradeJoin ? baseQuery.leftJoin(personalGradeJoin.subquery, personalGradeJoin.on) : baseQuery)
     .where(
       and(
-        // Stats-table scope
-        eq(boardClimbStats.boardType, params.board_name),
-        eq(boardClimbStats.angle, params.angle),
-        // All climb conditions (base filters, name, setter, holds, personal progress)
-        ...filters.getClimbWhereConditions(),
-        // Size edge bounds
-        ...filters.getSizeConditions(),
+        ...statsDrivenScopeConditions(params, filters),
         // Stats conditions (minAscents, grade range, quality, accuracy)
         ...filters.getClimbStatsConditions(),
       ),
@@ -468,14 +615,9 @@ async function runStatsDrivenSearch(
     // trailing key column — the scan returns rows already in order, no sort. Do NOT
     // mirror this in runStandardSearch: there it's a LEFT JOIN and climb_uuid is NULL
     // for stats-less rows, which would corrupt the ordering.
-    .orderBy(orderByClause, desc(boardClimbStats.climbUuid))
+    .orderBy(sql`${statsDrivenSortColumn(sortBy)} DESC NULLS LAST`, desc(boardClimbStats.climbUuid))
     .limit(pageSize + 1)
     .offset(page * pageSize)) as unknown as RawSelectResult[];
-
-  const hasMore = results.length > pageSize;
-  const trimmed = hasMore ? results.slice(0, pageSize) : results;
-  const climbs = trimmed.map((row) => mapResultToClimbRow(row, params, personalGradeJoin !== null));
-  return { climbs, hasMore };
 }
 
 /**

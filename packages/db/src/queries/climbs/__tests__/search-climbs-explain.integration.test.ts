@@ -215,6 +215,33 @@ if (!EXPLAIN_DB_URL) {
       assert.ok(indexNames(nodes).some((n) => /ascents_covering/.test(n)));
     });
 
+    // The narrow-band guard. A V14-V16 band on the biggest Kilter layout matches a
+    // handful of climbs, so any plan that visits every climb on the layout (the
+    // old COALESCE-over-a-join form did, and so did a split correlated to the
+    // stats row) costs 1.5-2 s on production. The split filter is spelled so
+    // both of its arms match board_climb_stats_difficulty_rounded_idx; the band
+    // and the NULL-difficulty rows then come straight out of that index.
+    void it('narrow grade band on a big layout reads the band from the rounded-difficulty index', async () => {
+      const selects = tableSelects(
+        await runSearch({ page: 0, pageSize: 40, sortBy: 'ascents', sortOrder: 'desc', minGrade: 31, maxGrade: 33 }),
+      );
+      assert.ok(selects.length >= 1, 'expected a stats-driven SELECT');
+      const nodes = await explainNodes(selects[0].query, selects[0].params, GUARD);
+      assert.ok(
+        indexNames(nodes).some((n) => /difficulty_rounded/.test(n)),
+        `a narrow band should BitmapOr out of the rounded-difficulty index; saw: ${indexNames(nodes).join(', ')}`,
+      );
+      assert.equal(hasSeqScanOnBoardTable(nodes), false, 'a narrow band must not seq-scan a board table');
+      // board_climb_grades is only ever probed by primary key: the fallback arm and
+      // the page's own grade lookup after LIMIT.
+      const gradeNodes = nodes.filter((n) => n.rel === 'board_climb_grades');
+      assert.ok(gradeNodes.length > 0);
+      for (const node of gradeNodes) {
+        assert.match(node.index ?? '', /board_climb_grades_board_type_climb_uuid_angle_pk/, `saw: ${node.type}`);
+      }
+      if (RUN_ANALYZE) await logTiming('narrow band, big layout', selects[0]);
+    });
+
     void it('standard path (name sort) runs SET LOCAL before the SELECT and avoids a parallel Gather', async () => {
       const statements = await runSearch({ page: 0, pageSize: 20, sortBy: 'name', sortOrder: 'asc' });
       const setLocalIdx = statements.findIndex((s) =>
