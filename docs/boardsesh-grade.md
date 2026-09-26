@@ -414,6 +414,16 @@ transposed one when both exist).
 result as a `board_climb_grades` row tiered `moonboard_wide_angle_estimate`,
 `model_version = 'moonboard-wide-angle-v1'`.
 
+Both MoonBoard estimate jobs share one upsert
+(`packages/db/scripts/grade-estimate-upsert.ts`) that skips a row unless one of
+its values moved (`IS DISTINCT FROM` on every overwritten column except
+`coeff_version`, which is minted per run). An unchanged row keeps its
+`computed_at`, which is the offline sync cursor, so devices don't download it
+again. Before this, every Monday run re-stamped all ~2.89M wide-angle rows and
+every MoonBoard device re-pulled its layout's share (about 1.2M rows for the
+largest layout). A row that did move carries that run's `coeff_version`; an
+unchanged one keeps the version of the run that last moved it.
+
 Validated by proxy, since MoonBoard itself has no wide-angle ground truth yet:
 using Kilter's fitted shape to predict Tension's own held-out angles beats "no
 angle effect" by 18.7% MAE. This is deliberately the roughest of MoonBoard's

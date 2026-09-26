@@ -23,7 +23,8 @@
  */
 import { sql } from 'drizzle-orm';
 import { createScriptDb } from './db-connection.js';
-import { boardClimbGrades, boardGradeCoefficients } from '../src/schema/app/climb-grades.js';
+import { upsertGradeEstimates } from './grade-estimate-upsert.js';
+import { boardGradeCoefficients } from '../src/schema/app/climb-grades.js';
 import {
   CONFIDENCE,
   MOONBOARD_ANGLE_MODEL_VERSION,
@@ -47,7 +48,6 @@ import {
 } from './moonboard-angle-estimate-helpers.js';
 
 const READ_PAGE_ROWS = 20000;
-const UPSERT_BATCH = 500;
 const DELETE_BATCH = 500;
 /** How many planned rows --dry-run prints in full, so the output stays readable. */
 const SAMPLE_ROWS = 3;
@@ -135,30 +135,7 @@ async function persistCoefficients(db: DbWriter, coefficients: MoonboardAngleCoe
 }
 
 async function upsertEstimates(db: DbWriter, plan: MoonboardAngleEstimatePlan): Promise<number> {
-  let written = 0;
-  for (let start = 0; start < plan.upserts.length; start += UPSERT_BATCH) {
-    const batch = plan.upserts.slice(start, start + UPSERT_BATCH);
-    await db
-      .insert(boardClimbGrades)
-      .values(batch)
-      .onConflictDoUpdate({
-        target: [boardClimbGrades.boardType, boardClimbGrades.climbUuid, boardClimbGrades.angle],
-        set: {
-          localGrade: sql`EXCLUDED.local_grade`,
-          universalGrade: sql`EXCLUDED.universal_grade`,
-          gradeLow: sql`EXCLUDED.grade_low`,
-          gradeHigh: sql`EXCLUDED.grade_high`,
-          confidence: sql`EXCLUDED.confidence`,
-          ascensionistCount: sql`EXCLUDED.ascensionist_count`,
-          contentPrior: sql`EXCLUDED.content_prior`,
-          modelVersion: sql`EXCLUDED.model_version`,
-          coeffVersion: sql`EXCLUDED.coeff_version`,
-          computedAt: sql`now()`,
-        },
-      });
-    written += batch.length;
-  }
-  return written;
+  return upsertGradeEstimates(db, plan.upserts);
 }
 
 /**
@@ -233,7 +210,9 @@ async function main(): Promise<void> {
       await persistCoefficients(tx, coefficients);
       return { written: await upsertEstimates(tx, plan), deleted: await reapStaleEstimates(tx, plan.reaps) };
     });
-    console.log(`[moon-angle] published ${written} estimate rows, reaped ${deleted} stale rows.`);
+    console.log(
+      `[moon-angle] published ${written} changed estimate rows (${plan.upserts.length - written} unchanged, left alone), reaped ${deleted} stale rows.`,
+    );
     console.log('[moon-angle] done.');
   } finally {
     await close();
