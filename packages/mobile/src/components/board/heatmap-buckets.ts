@@ -73,7 +73,7 @@ export function midRankPercentiles(values: readonly number[]): number[] {
   const total = values.length;
   if (total === 0) return [];
   const order = values.map((value, index) => ({ value, index })).sort((left, right) => left.value - right.value);
-  const percentiles = new Array<number>(total);
+  const percentiles: number[] = Array.from({ length: total }, () => 0);
   let groupStart = 0;
   while (groupStart < total) {
     let groupEnd = groupStart;

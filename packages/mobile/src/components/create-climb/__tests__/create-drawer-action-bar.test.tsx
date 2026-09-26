@@ -40,8 +40,23 @@ vi.mock('../../Button.surface', () => ({
   ButtonSurfaceProvider: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
 }));
 vi.mock('../../drawer-action-bar/DrawerActionBar', () => ({
-  ActionButton: ({ iconName, accessibilityLabel }: { iconName?: string; accessibilityLabel?: string }) =>
-    createElement('button', { 'data-action': iconName, 'data-label': accessibilityLabel }),
+  ActionButton: ({
+    iconName,
+    accessibilityLabel,
+    checked,
+    activeColor,
+  }: {
+    iconName?: string;
+    accessibilityLabel?: string;
+    checked?: boolean;
+    activeColor?: string;
+  }) =>
+    createElement('button', {
+      'data-action': iconName,
+      'data-label': accessibilityLabel,
+      'data-checked': checked == null ? undefined : String(checked),
+      'data-active-color': activeColor,
+    }),
   drawerActionBarStyles: { container: {}, rowSecondary: {}, spacer: {} },
 }));
 vi.mock('../brush-roles', () => ({
@@ -54,7 +69,7 @@ vi.mock('../../../lib/hold-color-overrides', () => ({ useHoldColorOverrides: () 
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({
     systemColors: { fill: '#EFEFF0', label: '#000000', secondaryLabel: '#5B5563' },
-    brandColors: { warning: '#B45309', error: '#C81E1E' },
+    brandColors: { warning: '#B45309', error: '#C81E1E', primary: '#A78BFA' },
   }),
 }));
 vi.mock('../../../theme/colors', () => ({ brandColors: { primary: '#6D28D9', success: '#047857' } }));
@@ -275,5 +290,41 @@ describe('CreateDrawerActionBar', () => {
     const { setActive } = renderBar(3);
     expect(setActive).toBeTruthy();
     expect(document.querySelector('[data-action="play.circle"]')).toBeNull();
+  });
+
+  it('reads the flame as a "Heatmap" toggle, tinted with the brand violet and filled while on', () => {
+    const { container } = render(
+      createElement(CreateDrawerActionBar, { ...baseProps, onToggleHeatmap: vi.fn(), heatmapActive: true }),
+    );
+    const flame = container.querySelector('[data-action="flame.fill"]');
+    expect(flame?.getAttribute('data-label')).toBe('mobile.heatmap.toggle');
+    expect(flame?.getAttribute('data-checked')).toBe('true');
+    expect(flame?.getAttribute('data-active-color')).toBe('#A78BFA');
+  });
+
+  it('puts the heat line where the autosave note sits while heat is on', () => {
+    const { container } = render(
+      createElement(CreateDrawerActionBar, {
+        ...baseProps,
+        draftStatus: { text: 'mobile.create.autosave.onDevice', tone: 'muted', announce: false },
+        heatmapLine: createElement('span', null, 'heat legend'),
+      }),
+    );
+    expect(container.querySelector('[data-testid="create-heatmap-line"]')?.textContent).toBe('heat legend');
+    expect(container.querySelector('[data-testid="create-draft-status-row"]')).toBeNull();
+  });
+
+  it('lets an urgent draft status win over the heat line', () => {
+    const { container } = render(
+      createElement(CreateDrawerActionBar, {
+        ...baseProps,
+        draftStatus: { text: 'mobile.create.autosave.saveFailed', tone: 'error', announce: true },
+        heatmapLine: createElement('span', null, 'heat legend'),
+      }),
+    );
+    expect(container.querySelector('[data-testid="create-heatmap-line"]')).toBeNull();
+    expect(container.querySelector('[data-testid="create-draft-status-row"]')?.textContent).toContain(
+      'mobile.create.autosave.saveFailed',
+    );
   });
 });

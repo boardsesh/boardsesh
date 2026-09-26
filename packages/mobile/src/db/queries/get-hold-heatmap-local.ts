@@ -9,7 +9,7 @@ import {
   isOfflineSearchSupported,
 } from './search-climbs-local';
 
-type HoldSetRow = { holds: unknown; ascensionist_count: number | null; display_difficulty: number | null };
+type HoldSetRow = { holds: unknown; ascensionist_count?: number | null; display_difficulty?: number | null };
 
 /**
  * On-device twin of the server's `holdHeatmap` (packages/db/src/queries/climbs/
@@ -32,8 +32,36 @@ type HoldSetRow = { holds: unknown; ascensionist_count: number | null; display_d
  * `isOfflineSearchSupported` gate as the list): the registration's
  * `canServeLocal` already declines those, so this is a second line only.
  */
-export async function getHoldHeatmapLocal(db: OfflineDatabase, input: ClimbSearchInput): Promise<HoldStat[]> {
-  if (!isOfflineSearchSupported(input)) return [];
+export type HoldHeatmapLocalOptions = {
+  /**
+   * Read each climb's grade and ascent count too. Only the grade mode colours
+   * by them; the count modes need nothing but the packed hold sets, so they
+   * skip the two effective-stats columns (and the per-row fold of them).
+   */
+  withStats?: boolean;
+};
+
+export type HoldHeatmapLocalResult = {
+  holdStats: HoldStat[];
+  /** How many climbs the search matched and the aggregate folded: the legend's scope count. */
+  climbCount: number;
+};
+
+export async function getHoldHeatmapLocal(
+  db: OfflineDatabase,
+  input: ClimbSearchInput,
+  options: HoldHeatmapLocalOptions = {},
+): Promise<HoldStat[]> {
+  return (await getHoldHeatmapLocalWithCount(db, input, options)).holdStats;
+}
+
+/** `getHoldHeatmapLocal` plus the number of climbs it counted. */
+export async function getHoldHeatmapLocalWithCount(
+  db: OfflineDatabase,
+  input: ClimbSearchInput,
+  { withStats = true }: HoldHeatmapLocalOptions = {},
+): Promise<HoldHeatmapLocalResult> {
+  if (!isOfflineSearchSupported(input)) return { holdStats: [], climbCount: 0 };
 
   const build = await ensureHoldIndex(
     db,
@@ -48,11 +76,14 @@ export async function getHoldHeatmapLocal(db: OfflineDatabase, input: ClimbSearc
   const followedCondition = input.onlyFollowedAuthors ? await followedAuthorsLocalCondition(db) : undefined;
   const { joinSql, whereSql, joinBinds, whereBinds } = buildJoinAndWhere(input, ownerUserId, followedCondition);
   const crossAngle = isCrossAngleStats(input);
+  const statsColumns = withStats
+    ? `,
+       ${effectiveStatsSql('ascensionist_count', crossAngle)} AS ascensionist_count,
+       ${effectiveStatsSql('display_difficulty', crossAngle)} AS display_difficulty`
+    : '';
 
   const rows = await db.getAllAsync<HoldSetRow>(
-    `SELECT hs.holds,
-       ${effectiveStatsSql('ascensionist_count', crossAngle)} AS ascensionist_count,
-       ${effectiveStatsSql('display_difficulty', crossAngle)} AS display_difficulty
+    `SELECT hs.holds${statsColumns}
      FROM board_climbs c
      JOIN holds_index_climbs hic ON hic.uuid = c.uuid
      JOIN board_climb_hold_sets hs ON hs.climb_id = hic.id
@@ -61,16 +92,23 @@ export async function getHoldHeatmapLocal(db: OfflineDatabase, input: ClimbSearc
     [...joinBinds, ...whereBinds],
   );
 
-  return holdUsageToStats(
+  let climbCount = 0;
+  const holdStats = holdUsageToStats(
     aggregateHoldUsage(
       (function* decodeRows() {
         for (const row of rows) {
           if (!(row.holds instanceof Uint8Array)) continue;
-          yield { holds: row.holds, ascents: row.ascensionist_count, difficulty: row.display_difficulty };
+          climbCount++;
+          yield {
+            holds: row.holds,
+            ascents: row.ascensionist_count ?? null,
+            difficulty: row.display_difficulty ?? null,
+          };
         }
       })(),
     ),
   );
+  return { holdStats, climbCount };
 }
 
 /** The aggregate in the GraphQL `HoldStat` shape, ordered by hold id. */

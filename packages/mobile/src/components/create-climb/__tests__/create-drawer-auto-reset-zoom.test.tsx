@@ -38,6 +38,14 @@ vi.mock('../../../theme/tokens', () => ({
 
 // Publishes the handle the drawer calls, the same way the real board's
 // useImperativeHandle does.
+// The heat layer pulls in the native renderer hook and the download flow; the
+// drawer's own layout is what these cases are about.
+vi.mock('../../board/HeatmapOverlay', () => ({
+  HeatmapOverlay: () => null,
+  useHeatLayer: () => ({ cells: [], codeColors: {}, legend: { kind: 'count', edgeValues: [], total: 0 } }),
+}));
+vi.mock('../../board/HeatmapLegend', () => ({ HeatmapLegend: () => null }));
+vi.mock('../../board/HeatmapDownloadLine', () => ({ HeatmapDownloadLine: () => null }));
 vi.mock('../InteractiveCreateBoard', () => ({
   InteractiveCreateBoard: ({ controlRef }: { controlRef?: RefObject<CreateBoardControls | null> }) => {
     useEffect(() => {

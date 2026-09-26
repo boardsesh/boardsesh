@@ -760,7 +760,7 @@
         "publishedToast": "Boulder veröffentlicht"
       },
       "autosave": {
-        "onDevice": "Auf diesem Handy gespeichert",
+        "onDevice": "Entwurf auf diesem Handy gespeichert",
         "inAccount": "Entwurf in deinem Konto gespeichert",
         "unsyncedEdits": "Die neuesten Änderungen sind nur auf diesem Handy",
         "notStored": "Melde dich an, um diesen Entwurf zu behalten",
@@ -841,26 +841,38 @@
       "title": "Notizen vom Routenbau"
     },
     "heatmap": {
-      "show": "Griff-Heatmap zeigen",
-      "hide": "Griff-Heatmap ausblenden",
+      "toggle": "Heatmap",
       "modeLabel": "Griffe färben nach",
       "modes": {
-        "uses": "Meistgenutzt",
-        "ascents": "Meiste Begehungen",
-        "difficulty": "Grad"
+        "climbs": "Boulder",
+        "startsFinishes": "Start & Top",
+        "grade": "Grad"
       },
-      "legendLow": "Weniger",
-      "legendHigh": "Mehr",
-      "legendEasy": "Leichter",
-      "legendHard": "Schwerer",
-      "filtered": "Gefiltert · {{summary}}",
+      "legend": {
+        "fewClimbs": "Wenige Boulder",
+        "manyClimbs": "Viele Boulder",
+        "easier": "Leichter",
+        "harder": "Schwerer"
+      },
+      "climbCount_one": "{{formattedCount}} Boulder",
+      "climbCount_other": "{{formattedCount}} Boulder",
+      "firstRun": {
+        "climbsDark": "Hellere Griffe sind in mehr Bouldern",
+        "climbsLight": "Dunklere Griffe sind in mehr Bouldern",
+        "startsFinishesDark": "Hellere Griffe sind öfter Start oder Top",
+        "startsFinishesLight": "Dunklere Griffe sind öfter Start oder Top",
+        "grade": "Rote Griffe tauchen in schwereren Bouldern auf"
+      },
       "wholeBoard": "Ganzes Board",
+      "holdPicksSkipped": "{{summary}} · Griffauswahl offline übersprungen",
       "wholeBoardHint": "Zählt stattdessen jeden Boulder am Board",
       "useFiltersHint": "Zählt nur die Boulder, die zu deinen Filtern passen",
-      "filterUnsupported": "Die Heatmap kann einem Griff-Filter noch nicht folgen. Tipp auf den Chip, um das ganze Board zu sehen.",
+      "filterUnsupported": "Die Heatmap kann diesen Filtern offline nicht folgen. Tipp auf den Chip, um das ganze Board zu sehen.",
       "empty": "Kein Boulder passt zu diesen Filtern.",
-      "loadFailed": "Die Heatmap konnte nicht geladen werden. Versuch es gleich noch mal.",
-      "needsDownload": "Lade dieses Board herunter, um zu sehen, wo die Boulder sind.",
+      "loadFailed": "Die Heatmap wurde nicht geladen. Versuch es in einer Minute noch mal.",
+      "needsDownload": "Lade dieses Board herunter, um zu sehen, welche Griffe genutzt werden.",
+      "downloadLine": "Lade {{name}} herunter, um zu sehen, welche Griffe genutzt werden",
+      "download": "Herunterladen",
       "unavailable": "Die Heatmap ist gerade nicht verfügbar."
     }
   },

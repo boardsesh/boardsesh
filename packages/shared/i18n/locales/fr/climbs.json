@@ -760,7 +760,7 @@
         "publishedToast": "Voie publiée"
       },
       "autosave": {
-        "onDevice": "Enregistré sur ce téléphone",
+        "onDevice": "Brouillon enregistré sur ce téléphone",
         "inAccount": "Brouillon enregistré sur votre compte",
         "unsyncedEdits": "Les dernières modifications sont uniquement sur ce téléphone",
         "notStored": "Connectez-vous pour garder ce brouillon",
@@ -841,26 +841,38 @@
       "title": "Notes de l’ouvreur"
     },
     "heatmap": {
-      "show": "Afficher la carte de chaleur des prises",
-      "hide": "Masquer la carte de chaleur des prises",
+      "toggle": "Carte de chaleur",
       "modeLabel": "Colorer les prises selon",
       "modes": {
-        "uses": "Plus utilisées",
-        "ascents": "Plus de croix",
-        "difficulty": "Cotation"
+        "climbs": "Blocs",
+        "startsFinishes": "Départs et arrivées",
+        "grade": "Cotation"
       },
-      "legendLow": "Moins",
-      "legendHigh": "Plus",
-      "legendEasy": "Plus facile",
-      "legendHard": "Plus dur",
-      "filtered": "Filtré · {{summary}}",
+      "legend": {
+        "fewClimbs": "Peu de blocs",
+        "manyClimbs": "Beaucoup de blocs",
+        "easier": "Plus facile",
+        "harder": "Plus dur"
+      },
+      "climbCount_one": "{{formattedCount}} bloc",
+      "climbCount_other": "{{formattedCount}} blocs",
+      "firstRun": {
+        "climbsDark": "Les prises les plus claires servent dans le plus de blocs",
+        "climbsLight": "Les prises les plus foncées servent dans le plus de blocs",
+        "startsFinishesDark": "Les prises les plus claires servent le plus souvent de départ ou d'arrivée",
+        "startsFinishesLight": "Les prises les plus foncées servent le plus souvent de départ ou d'arrivée",
+        "grade": "Les prises rouges reviennent dans les blocs plus durs"
+      },
       "wholeBoard": "Toute la board",
+      "holdPicksSkipped": "{{summary}} · choix de prises ignorés hors ligne",
       "wholeBoardHint": "Compte tous les blocs de la board",
       "useFiltersHint": "Compte seulement les blocs qui passent tes filtres",
-      "filterUnsupported": "La carte de chaleur ne suit pas encore un filtre de prises. Touche la puce pour voir toute la board.",
+      "filterUnsupported": "La carte de chaleur ne peut pas suivre ces filtres hors ligne. Touche la puce pour voir toute la board.",
       "empty": "Aucun bloc ne passe ces filtres.",
-      "loadFailed": "Impossible de charger la carte de chaleur. Réessaie dans un instant.",
-      "needsDownload": "Télécharge cette board pour voir où sont les blocs.",
+      "loadFailed": "La carte de chaleur ne s'est pas chargée. Réessaie dans une minute.",
+      "needsDownload": "Télécharge cette board pour voir quelles prises servent.",
+      "downloadLine": "Télécharge {{name}} pour voir quelles prises servent",
+      "download": "Télécharger",
       "unavailable": "La carte de chaleur n'est pas disponible pour le moment."
     }
   },

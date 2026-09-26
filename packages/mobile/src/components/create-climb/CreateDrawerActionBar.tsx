@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef } from 'react';
+import { memo, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import { View, Pressable, ScrollView, StyleSheet } from 'react-native';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { useTranslation } from 'react-i18next';
@@ -15,7 +15,7 @@ import { glassSize } from '../../theme/layout';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { brushRoleColor, getPaintRoles, useBrushRoleLabels, type BrushRole } from './brush-roles';
 import { deriveSaveButtonView } from './save-button-view';
-import { CreateDraftStatusRow } from './CreateDraftStatusRow';
+import { CreateDraftStatusRow, statusRowStyles } from './CreateDraftStatusRow';
 import { useRateLimitedAnnouncer } from './use-rate-limited-announcer';
 import type { DraftStatusView } from './draft-status-view';
 import type { SaveButtonState } from './use-create-climb-screen';
@@ -57,6 +57,13 @@ type CreateDrawerActionBarProps = {
   onToggleHeatmap?: () => void;
   heatmapActive?: boolean;
   heatmapBusy?: boolean;
+  /**
+   * While the heat is on, the line that explains it (legend, download offer or
+   * error). It takes the autosave note's place — one line box, so the sheet's
+   * measured peek never moves — unless that note is a warning or an error,
+   * which always wins.
+   */
+  heatmapLine?: ReactNode;
 };
 
 /**
@@ -95,9 +102,10 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
   onToggleHeatmap,
   heatmapActive = false,
   heatmapBusy = false,
+  heatmapLine = null,
 }: CreateDrawerActionBarProps) {
   const { t } = useTranslation('climbs');
-  const { systemColors } = useTheme();
+  const { systemColors, brandColors: schemeBrandColors } = useTheme();
   const roleLabels = useBrushRoleLabels();
   const { overrides: holdColorOverrides } = useHoldColorOverrides();
   // One voice for this whole surface, so a status transition and a frame
@@ -240,12 +248,13 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
           {onToggleHeatmap ? (
             <ActionButton
               size="sm"
-              iconName="flame"
+              iconName={heatmapActive ? 'flame.fill' : 'flame'}
               onPress={onToggleHeatmap}
               active={heatmapActive}
-              activeColor={brandColors.warning}
+              activeColor={schemeBrandColors.primary}
               busy={heatmapActive && heatmapBusy}
-              accessibilityLabel={heatmapActive ? t('mobile.heatmap.hide') : t('mobile.heatmap.show')}
+              checked={heatmapActive}
+              accessibilityLabel={t('mobile.heatmap.toggle')}
             />
           ) : null}
         </ScrollView>
@@ -265,8 +274,16 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
         <SaveButton saveState={saveState} onSave={onSave} publishBlocked={publishBlocked} />
       </View>
 
-      {/* Always rendered, even with nothing to say — see CreateDraftStatusRow. */}
-      <CreateDraftStatusRow status={draftStatus} announce={announce} />
+      {/* Always rendered, even with nothing to say — see CreateDraftStatusRow.
+          While the heat is on its line takes the same box, unless the draft has
+          something urgent to say. */}
+      {heatmapLine && draftStatus?.tone !== 'error' && draftStatus?.tone !== 'warning' ? (
+        <View style={statusRowStyles.row} testID="create-heatmap-line">
+          {heatmapLine}
+        </View>
+      ) : (
+        <CreateDraftStatusRow status={draftStatus} announce={announce} />
+      )}
     </View>
   );
 });
