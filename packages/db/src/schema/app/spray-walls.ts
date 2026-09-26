@@ -6,6 +6,7 @@ import {
   integer,
   bigint,
   bigserial,
+  boolean,
   real,
   jsonb,
   timestamp,
@@ -158,6 +159,23 @@ export const sprayWalls = pgTable(
      * again" would mean nothing. Each promotion mints a fresh key.
      */
     publicPhotoKey: text('public_photo_key'),
+    /**
+     * The visibility the owner asked for when they created the wall, held here
+     * until the wall's first publish (#5513).
+     *
+     * A wall is private until it has something to see: `createSprayWall` writes
+     * `user_boards.is_public` / `is_unlisted` false whatever the input says, and
+     * parks the requested pair in these two columns instead. The first publish
+     * copies them onto the board row and nulls them, so the choice survives the
+     * climber closing the app mid-wizard and resuming later — where it used to
+     * live only in React state and was lost. An explicit visibility change through
+     * `updateSprayWall` before that also nulls them: the later choice wins.
+     *
+     * Both NULL means nothing is pending, which is every published wall and every
+     * wall created private. Always written as a pair.
+     */
+    pendingIsPublic: boolean('pending_is_public'),
+    pendingIsUnlisted: boolean('pending_is_unlisted'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
     /**

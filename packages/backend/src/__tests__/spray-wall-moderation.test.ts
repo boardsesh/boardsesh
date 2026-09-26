@@ -56,6 +56,17 @@ vi.mock('../storage/s3', () => ({
     storedObjects.get(bucket)?.delete(key);
     deletedObjects.push({ bucket, key });
   }),
+  // The public-promotion copy (SW-14): only a key that exists in the private
+  // bucket copies, exactly like the real one.
+  copyObjectBetweenBuckets: vi.fn(
+    async (source: string, sourceKey: string, destination: string, destinationKey: string) => {
+      if (!storedObjects.get(source)?.has(sourceKey)) return null;
+      if (!storedObjects.has(destination)) storedObjects.set(destination, new Set());
+      storedObjects.get(destination)!.add(destinationKey);
+      return { key: destinationKey };
+    },
+  ),
+  getPublicUrl: vi.fn((_bucket: string, key: string) => `https://media.example/${key}`),
 }));
 
 vi.mock('../events', () => ({
@@ -428,6 +439,47 @@ describe('a hidden wall', () => {
       hiddenAt: string | null;
     };
     expect(owned.hiddenAt).toBeNull();
+  });
+
+  it('gets its public photo copy when a wall made public while hidden is unhidden', async () => {
+    // Created public, hidden before its first publish, then published: the
+    // publish applies the public choice but refuses the copy into the public
+    // bucket, because the wall is hidden (#5797).
+    const wall = (await sprayWallMutations.createSprayWall(
+      {},
+      { input: { name: `Wall ${uuidv4().slice(0, 6)}`, angle: 40, isPublic: true } },
+      ctxFor(OWNER),
+    )) as CreatedWall;
+    await sprayWallModerationMutations.setSprayWallHidden(
+      {},
+      { input: { uuid: wall.uuid, hidden: true } },
+      ctxFor(ADMIN),
+    );
+    const photoId = registerUploadedPhoto(wall.uuid);
+    const version = (await sprayWallMutations.createSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, photoId, anchors: ANCHORS } },
+      ctxFor(OWNER),
+    )) as { id: string };
+    await sprayWallMutations.publishSprayWallVersion({}, { input: { versionId: version.id } }, ctxFor(OWNER));
+
+    const publicPhotoKeyOf = async (): Promise<string | null> => {
+      const [row] = (await db.execute(
+        sql`SELECT public_photo_key FROM spray_walls WHERE board_uuid = ${wall.uuid}`,
+      )) as unknown as Array<{ public_photo_key: string | null }>;
+      return row.public_photo_key;
+    };
+    expect(await publicPhotoKeyOf()).toBeNull();
+
+    await sprayWallModerationMutations.setSprayWallHidden(
+      {},
+      { input: { uuid: wall.uuid, hidden: false } },
+      ctxFor(ADMIN),
+    );
+
+    const restored = await publicPhotoKeyOf();
+    expect(restored).not.toBeNull();
+    expect(storedObjects.get('media')?.has(restored!)).toBe(true);
   });
 
   it('drops out of the cross-board climb predicate, not just the wall reads', async () => {
