@@ -834,6 +834,28 @@ void test('marks only the concurrency fence as RollbackFencedError, so callers c
     (error) => error instanceof RollbackFencedError && /concurrent post-baseline/.test(error.message),
   );
 
+  // Fenced before the mutation: expected-current changed status between the exact
+  // read and the list read, which means another actor moved it.
+  const noMutationCalls = [];
+  await assert.rejects(
+    rollbackDeployment(
+      baseOptions(
+        sequenceFetch(
+          [...preflightResponses({ baseline: baselineDeployments({ current: { status: 'REMOVED' } }) })],
+          noMutationCalls,
+        ),
+      ),
+    ),
+    (error) => error instanceof RollbackFencedError && /status disagreed/.test(error.message),
+  );
+  assert.equal(mutationCalls(noMutationCalls).length, 0);
+
+  // Fenced before the mutation: expected-current is missing from the list read.
+  await assert.rejects(
+    rollbackDeployment(baseOptions(sequenceFetch([...preflightResponses({ baseline: [targetDeployment()] })]))),
+    (error) => error instanceof RollbackFencedError && /not present exactly once/.test(error.message),
+  );
+
   // Not fenced: our own rollback deployment failed. The caller still owns the service.
   const failedRollback = rollbackResultDeployment('FAILED');
   await assert.rejects(

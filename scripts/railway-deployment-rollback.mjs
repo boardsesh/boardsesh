@@ -350,7 +350,7 @@ function validatePreMutationState({ deployments, expectedCurrent, scope, target 
     throw new RollbackFencedError('Expected current deployment is cancelled; automatic rollback is unsafe');
   }
   if (expectedCurrent.createdAtMs <= target.createdAtMs) {
-    throw new Error('Expected current deployment is not newer than the rollback target');
+    throw new RollbackFencedError('Expected current deployment is not newer than the rollback target');
   }
 
   const targetFromList = deployments.filter((deployment) => deployment.id === target.id);
@@ -366,18 +366,23 @@ function validatePreMutationState({ deployments, expectedCurrent, scope, target 
     throw new Error('Rollback target disagreed between exact and list queries');
   }
 
+  // The expected-current checks below are fences too: the deployment we were asked
+  // to replace changing between two reads, or no longer being newer than the
+  // target, means another actor is working on this service.
   const currentFromList = deployments.filter((deployment) => deployment.id === expectedCurrent.id);
   if (currentFromList.length !== 1) {
-    throw new Error('Expected current deployment was not present exactly once in the service deployment list');
+    throw new RollbackFencedError(
+      'Expected current deployment was not present exactly once in the service deployment list',
+    );
   }
   if (currentFromList[0].createdAtMs !== expectedCurrent.createdAtMs) {
-    throw new Error('Expected current deployment timestamp disagreed between exact and list queries');
+    throw new RollbackFencedError('Expected current deployment timestamp disagreed between exact and list queries');
   }
   if (currentFromList[0].image !== expectedCurrent.image) {
-    throw new Error('Expected current deployment image disagreed between exact and list queries');
+    throw new RollbackFencedError('Expected current deployment image disagreed between exact and list queries');
   }
   if (currentFromList[0].status !== expectedCurrent.status) {
-    throw new Error('Expected current deployment status disagreed between exact and list queries');
+    throw new RollbackFencedError('Expected current deployment status disagreed between exact and list queries');
   }
 
   const competingDeployments = deployments.filter(
