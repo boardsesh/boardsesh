@@ -240,16 +240,18 @@ worst climb-list reads (up to 474 s), a `user_boards ... FOR UPDATE` that waited
 168 s on a lock, and one offline-sync pull read of 47 s (0.2 s mean over 476
 calls).
 
-The variable is set per service, never as a shared variable: kilter-sync builds
-its own pool and ignores it, but aurora-sync and moonboard-sync use `createDb`
-and would pick it up.
+The variable is set per service, never as a shared variable. kilter-sync builds
+its own pool and ignores it. aurora-sync and moonboard-sync build their pools with
+`createDb`, so they would read it; neither sets it today, and it must not be added
+to them, because their long catalog writes would then be cancelled at 45 s.
 
 #### Serial plans
 
 `max_parallel_workers_per_gather` is 2 in production, against the repo contract
 of 0 (#5352, #5767). Each parallel worker is another process with its own
-`work_mem`, so under the cap it is also a memory setting. It is a database default,
-not an `ALTER SYSTEM` setting, and is applied with the script that owns it:
+`work_mem`, so under the cap it is also a memory setting. The repo applies it as
+a database-level default (`ALTER DATABASE`), not system-wide with `ALTER SYSTEM`,
+using the script that owns it:
 
 ```sh
 cd packages/db
