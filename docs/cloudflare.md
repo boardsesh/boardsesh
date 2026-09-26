@@ -422,8 +422,8 @@ back because GraphQL, WebSockets, and `/og` share that hostname.
      automated AI training and search crawlers and **Yandex**, using the shared
      tokens in `packages/web/app/lib/crawler-policy.ts`. Google, Bing,
      DuckDuckGo, Apple, Brave, Baidu, Qwant and the share-card unfurlers remain
-     allowed. Human-triggered AI fetchers
-     are not added to this automated-crawler list.
+     allowed. Human-triggered AI fetchers (ChatGPT-User, Claude-User,
+     Perplexity-User) are on the allow list, not this one.
 
   **Yandex moved from the allow list to the block list on 2026-09-11.** It was
   added to the allow list four days earlier, in the AI-crawler commit, with no
@@ -561,6 +561,45 @@ back because GraphQL, WebSockets, and `/og` share that hostname.
 `lower()` on every user-agent comparison is required, not stylistic:
 Cloudflare's `contains` is case-sensitive, so a bare `contains "AhrefsBot"`
 installs cleanly and matches nothing. A test pins that too.
+
+**Self-identified automation is default-denied (2026-09-26).** A third WAF rule,
+`boardsesh:automation-default-deny`, sits after the allow rule and the block
+rule and before the challenge. It blocks a `GET` to www or ws whose UA carries a
+generic automation signature (`bot`, `crawler`, `spider`, `scraper`,
+`headless`, `python`, `go-http-client`, `java/`, `libwww`, `wget/`, `curl/`,
+`scrapy`, `httpclient`) unless the agent is on the allow list. The "unless" is
+rule order: the allow rule's `skip` runs first. So a crawler now has to be
+named to get in, instead of named to be kept out.
+
+Why: `Lightpanda/1.0`, a headless browser for AI agents, was 96% of a www log
+sample and 43% of a ws one that day. It was on no list. It is now named in
+`COST_BLOCKED_CRAWLER_TOKENS` too, because its bare UA carries no signature.
+
+The limits, on purpose:
+- Only agents that say they are automated. Real climbers send `Mozilla/…`, and
+  a browser string only matches when it names itself (`compatible;
+  Googlebot/2.1`). Browser-shaped scrapers stay the challenge's and the rate
+  limit's job.
+- `GET` only, so the mobile app's GraphQL POSTs are never caught. The app's own
+  UAs (`Boardsesh/… CFNetwork`, `okhttp`, `Dalvik`) and our servers' `node`
+  carry no signature, and a test pins that.
+- Exempt paths: `/health`, `/health/db`, `/api/health` (CI polls them with bare
+  curl), `/.well-known/` (deep-link association files) and the two API surfaces
+  `/api/v1/` and `/v1/partner/`, whose intended clients are scripts and partner
+  servers.
+- The web middleware applies the same rule at the origin through
+  `isBlockedCrawler`, for requests that reach Railway directly.
+
+The SEO-scraper tokens on the block rule are now mostly redundant. Keep them for
+one release, then prune them.
+
+**To let an agent in**, add a lowercase substring of its UA to
+`CRAWLER_ALLOW_TOKENS` in `packages/web/app/lib/crawler-policy.ts` (web and
+Cloudflare both read it), with a comment saying who it is and why we want it.
+Add its full UA to the `mustPass` fixture in `scripts/cloudflare-apply.test.ts`.
+The merge deploys both the edge rule and the web middleware. To keep one out
+that carries no signature (as Lightpanda did), add it to
+`COST_BLOCKED_CRAWLER_TOKENS` or `AI_CRAWLER_TOKENS` and to `mustBlock`.
 
 **What this does not catch.** UA blocking only stops crawlers that identify
 themselves honestly. A UA-rotating farm walked ~2,500 climb-view URLs on

@@ -22,6 +22,14 @@ describe('blocked crawler origin rejection', () => {
     // SSR path. See COST_BLOCKED_CRAWLER_TOKENS in app/lib/crawler-policy.ts.
     'Mozilla/5.0 (compatible; YandexBot/3.0; +http://yandex.com/bots)',
     'Mozilla/5.0 (compatible; YandexRenderResourcesBot/1.0; +http://yandex.com/bots)',
+    // Named on cost too: 483 of 501 www requests in one 16-second window on
+    // 2026-09-26.
+    'Lightpanda/1.0',
+    // Not named anywhere: caught by the automation default-deny because the
+    // UA says it is automated and CRAWLER_ALLOW_TOKENS does not list it.
+    'curl/8.9.1',
+    'python-requests/2.32.3',
+    'Mozilla/5.0 (compatible; SomeNewBot/1.0; +https://example.com/bot)',
   ])('rejects %s before rendering', (userAgent) => {
     const response = middleware(
       new NextRequest('https://boardsesh-web-production.up.railway.app/fr/setter/test', {
@@ -40,6 +48,10 @@ describe('blocked crawler origin rejection', () => {
     'facebookexternalhit/1.1',
     'ChatGPT-User/1.0',
     'Claude-User/1.0',
+    'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; ChatGPT-User/1.0; +https://openai.com/bot',
+    'SentryUptimeBot/1.0 (+http://docs.sentry.io/product/alerts/uptime-monitoring/)',
+    'boardsesh-production-smoke/1.0',
+    'okhttp/4.12.0',
     'Mozilla/5.0',
     // The reason COST_BLOCKED_CRAWLER_TOKENS spells out `yandexbot` and
     // `yandexrenderresourcesbot` instead of a bare `yandex`: these three are
@@ -51,6 +63,13 @@ describe('blocked crawler origin rejection', () => {
   ])('preserves %s', (userAgent) => {
     const response = middleware(
       new NextRequest('https://www.boardsesh.com/', { headers: { 'user-agent': userAgent } }),
+    );
+    expect(response.status).not.toBe(403);
+  });
+
+  it('only default-denies GET, so an automated write is left to the route', () => {
+    const response = middleware(
+      new NextRequest('https://www.boardsesh.com/', { method: 'POST', headers: { 'user-agent': 'curl/8.9.1' } }),
     );
     expect(response.status).not.toBe(403);
   });
@@ -712,14 +731,26 @@ describe('middleware bot-gates the sticky locale redirect and cookie', () => {
   const CHROME_UA =
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36';
   const CRAWLER_UAS: [string, string][] = [
+    // Only crawlers that still reach this code. The SEO scrapers this list
+    // was written for (AhrefsBot, SemrushBot, DataForSeoBot, MJ12bot, DotBot)
+    // are now 403'd earlier by the crawler policy — pinned in the next test.
     ['Googlebot (named by Next)', GOOGLEBOT_UA],
+    ['bingbot', 'Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)'],
+    ['DuckDuckBot', 'Mozilla/5.0 (compatible; DuckDuckBot-Https/1.1; https://duckduckgo.com/duckduckbot)'],
+    ['archive.org_bot', 'Mozilla/5.0 (compatible; archive.org_bot +http://www.archive.org/details/archive.org_bot)'],
+  ];
+
+  it.each([
     ['AhrefsBot', 'Mozilla/5.0 (compatible; AhrefsBot/7.0; +http://ahrefs.com/robot/)'],
     ['SemrushBot', 'Mozilla/5.0 (compatible; SemrushBot/7~bl; +http://www.semrush.com/bot.html)'],
     ['DataForSeoBot', 'Mozilla/5.0 (compatible; DataForSeoBot/1.0; +https://dataforseo.com/dataforseo-bot)'],
     ['MJ12bot', 'Mozilla/5.0 (compatible; MJ12bot/v1.4.8; http://mj12bot.com/)'],
     ['DotBot', 'Mozilla/5.0 (compatible; DotBot/1.2; +https://opensiteexplorer.org/dotbot; help@moz.com)'],
-    ['archive.org_bot', 'Mozilla/5.0 (compatible; archive.org_bot +http://www.archive.org/details/archive.org_bot)'],
-  ];
+  ])('403s %s before the locale gate is reached', (_label, crawlerUa) => {
+    const request = makeRequestWithUserAgent('/some/page', crawlerUa);
+    request.cookies.set(LOCALE_COOKIE, 'de');
+    expect(middleware(request).status).toBe(403);
+  });
 
   function makeRequestWithUserAgent(url: string, ua: string): NextRequest {
     return new NextRequest(new URL(url, 'http://localhost:3000'), {

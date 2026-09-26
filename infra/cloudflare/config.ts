@@ -1,6 +1,12 @@
 /// <reference types="node" />
 
-import { BLOCKED_CRAWLER_TOKENS } from '../../packages/web/app/lib/crawler-policy';
+import {
+  AUTOMATION_DEFAULT_DENY_EXEMPT_PATH_PREFIXES,
+  AUTOMATION_DEFAULT_DENY_EXEMPT_PATHS,
+  AUTOMATION_SIGNATURE_TOKENS,
+  BLOCKED_CRAWLER_TOKENS,
+  CRAWLER_ALLOW_TOKENS,
+} from '../../packages/web/app/lib/crawler-policy';
 
 // Declarative desired-state for the Cloudflare-managed boardsesh.com zone. This
 // is plain typed data — no side effects, no API calls. scripts/cloudflare-apply.ts
@@ -150,6 +156,9 @@ export const WWW_HTML_CACHE_RULE_DESCRIPTION = 'boardsesh:www-html-edge-cache (m
 export const CRAWLER_ALLOW_RULE_DESCRIPTION =
   'boardsesh:allow-search-crawlers (managed by scripts/cloudflare-apply.ts)';
 export const CRAWLER_BLOCK_RULE_DESCRIPTION = 'boardsesh:block-seo-scrapers (managed by scripts/cloudflare-apply.ts)';
+/** Marker for the automation default-deny WAF rule. Same never-rename contract as above. */
+export const AUTOMATION_DEFAULT_DENY_RULE_DESCRIPTION =
+  'boardsesh:automation-default-deny (managed by scripts/cloudflare-apply.ts)';
 
 /**
  * Marker for the board-content managed-challenge rule. Same never-rename
@@ -582,57 +591,12 @@ export const WWW_HTML_CACHE_EXPRESSION =
   ` and not (http.request.uri.query contains "${RSC_QUERY_PARAM}"))`;
 
 /**
- * Search engines and social unfurlers that must never be blocked. Brave runs its
- * OWN index (not a Bing/Google reseller), so losing it loses real coverage — it is
- * listed explicitly rather than assumed.
- *
- * Cloudflare's `cf.client.bot` "verified bot" signal is deliberately NOT used here:
- * AhrefsBot and SemrushBot are themselves verified bots, so that field is true for
- * precisely the crawlers CRAWLER_BLOCK_TOKENS exists to stop.
+ * The allow list lives in crawler-policy.ts beside the block list, so the
+ * origin's default-deny and this edge rule read the same tokens. Its full
+ * rationale (search engines, unfurlers, the 2026-09-11 challenge fallout, the
+ * operational agents) is on the definition there. Re-exported for the tests.
  */
-export const CRAWLER_ALLOW_TOKENS = [
-  'googlebot',
-  'google-inspectiontool',
-  'storebot-google',
-  'google-pagerenderer',
-  'bingbot',
-  'bingpreview',
-  'duckduckbot',
-  'brave-search',
-  'bravebot',
-  'applebot',
-  // Added 2026-09-11 with the climb-view challenge below. Both send people back
-  // (Baidu 7, Qwant 1 over 30 days) and neither was on either list, so they
-  // passed by default — which stopped working the moment an unlisted agent
-  // started getting challenged.
-  'baiduspider',
-  'qwantify',
-  // Share-card unfurlers. Blocking these breaks link previews, not crawling —
-  // and so does CHALLENGING them, which is how climb previews broke on
-  // 2026-09-11. None of these execute JavaScript, so a managed challenge is an
-  // unconditional fail for every one of them. Extended the same day from the
-  // original seven after Signal, Bluesky, Mastodon and Teams were all measured
-  // getting `403 cf-mitigated: challenge` on a climb page.
-  'twitterbot',
-  'facebookexternalhit',
-  'slackbot',
-  'discordbot',
-  'linkedinbot',
-  'telegrambot',
-  'whatsapp',
-  'signalbot',
-  'cardyb',
-  'mastodon',
-  'microsoftpreview',
-  'skypeuripreview',
-  'redditbot',
-  'pinterest',
-  'vkshare',
-  'embedly',
-  'iframely',
-  'nuzzel',
-  'quora link preview',
-] as const;
+export { CRAWLER_ALLOW_TOKENS };
 
 /**
  * Commercial SEO/backlink crawlers. Each was verified reaching our origin on
@@ -647,6 +611,12 @@ export const CRAWLER_ALLOW_TOKENS = [
  * 36% of www requests against 3.6% for real browsers, on the most expensive SSR
  * path we have. See COST_BLOCKED_CRAWLER_TOKENS in crawler-policy.ts.
  *
+ * The SEO half is now mostly redundant: each of these agents' real UA also
+ * carries a generic signature (`bot`, `spider`, a `/crawler` or `/robot/` URL),
+ * so the automation default-deny rule would block it on GET anyway. They stay for one release as a record of what was
+ * measured and as a belt for the non-GET methods the default-deny ignores;
+ * prune the SEO half once the default-deny has run cleanly for a release.
+ *
  * AI training/search crawlers are explicit too: September 7 origin logs showed
  * Claude-SearchBot on www and GPTBot bypassing Cloudflare via the Railway domain,
  * despite synthetic probes receiving 403. The shared list also drives robots.txt
@@ -655,6 +625,8 @@ export const CRAWLER_ALLOW_TOKENS = [
  * NOT listed, on purpose:
  * - `archive.org_bot` — it reaches us and it loops, but it is the Internet Archive,
  *   it is low volume, and excluding it is a values call rather than a cost one.
+ *   Since the automation default-deny it is on CRAWLER_ALLOW_TOKENS, because
+ *   passing by default no longer happens for anything that says it is a bot.
  */
 export const CRAWLER_BLOCK_TOKENS = [
   ...BLOCKED_CRAWLER_TOKENS,
@@ -705,6 +677,44 @@ export const CRAWLER_ALLOW_EXPRESSION = `(http.request.method eq "GET" and (${bu
   CRAWLER_ALLOW_TOKENS,
 )}))`;
 export const CRAWLER_BLOCK_EXPRESSION = buildUserAgentExpression(CRAWLER_BLOCK_TOKENS);
+
+/**
+ * Default-deny for self-identified automation: a GET whose UA carries a
+ * generic signature (`bot`, `crawler`, `curl/` … see AUTOMATION_SIGNATURE_TOKENS
+ * in crawler-policy.ts) is blocked unless the agent is on CRAWLER_ALLOW_TOKENS.
+ *
+ * The "unless" is not in this expression. It is rule order: the allow rule runs
+ * first and its action is `skip` over the current ruleset, so an allow-listed
+ * agent never reaches this rule. Both are GET-only, so the exemption covers
+ * exactly what this rule can block. Repeating the allow tokens here as
+ * `and not (...)` would be a second copy to keep in step.
+ *
+ * Why an allow list at all: on 2026-09-26 `Lightpanda/1.0`, an AI-agent
+ * headless browser on no block list, was 96% of a www log sample and 43% of a
+ * ws one. A deny list only ever names the last crawler that hurt; this one
+ * makes the next one ask to be let in.
+ *
+ * Scope:
+ * - www and ws only. assets, snapshots, media and updates serve the apps and
+ *   OTA clients and are cache-fronted; nothing there is worth the risk.
+ * - GET only, so the mobile app's GraphQL POSTs can never be caught, whatever
+ *   a future client library puts in its UA.
+ * - Browser strings are untouched: real climbers arrive as `Mozilla/…`, and a
+ *   `Mozilla/…` string only matches when it names itself (`compatible;
+ *   Googlebot/2.1`).
+ * - Health, `/.well-known/` and the two API surfaces are exempt — see
+ *   AUTOMATION_DEFAULT_DENY_EXEMPT_PATHS in crawler-policy.ts.
+ *
+ * Registered between the allow rule and the challenge, which must stay last.
+ */
+export const AUTOMATION_DEFAULT_DENY_EXPRESSION =
+  `((http.host eq "${WWW_HOSTNAME}" or http.host eq "${WS_HOSTNAME}")` +
+  ` and http.request.method eq "GET"` +
+  ` and not (${AUTOMATION_DEFAULT_DENY_EXEMPT_PATHS.map((path) => `http.request.uri.path eq "${path}"`).join(' or ')})` +
+  ` and not (${AUTOMATION_DEFAULT_DENY_EXEMPT_PATH_PREFIXES.map(
+    (pathPrefix) => `starts_with(http.request.uri.path, "${pathPrefix}")`,
+  ).join(' or ')})` +
+  ` and (${buildUserAgentExpression(AUTOMATION_SIGNATURE_TOKENS)}))`;
 
 /**
  * Climb-view pages on www, across every URL shape that renders one.
@@ -1162,6 +1172,13 @@ export const desiredCloudflareState: CloudflareDesiredState = {
     {
       description: CRAWLER_BLOCK_RULE_DESCRIPTION,
       expression: CRAWLER_BLOCK_EXPRESSION,
+      action: 'block',
+      enabled: true,
+    },
+    // After the allow rule, which is what exempts allow-listed agents from it.
+    {
+      description: AUTOMATION_DEFAULT_DENY_RULE_DESCRIPTION,
+      expression: AUTOMATION_DEFAULT_DENY_EXPRESSION,
       action: 'block',
       enabled: true,
     },
