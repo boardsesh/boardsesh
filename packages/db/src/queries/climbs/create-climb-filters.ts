@@ -203,7 +203,11 @@ export function effectiveDifficultySql(crowdGrade: SQL): SQL {
  * match the crowd-grade filter above it, which has always read them that way —
  * grade id 0 is below the scale's floor (10) and never a real bound.
  */
-function gradeInRangeSql(gradeExpr: SQL, minGrade: number | undefined, maxGrade: number | undefined): SQL | null {
+export function gradeInRangeSql(
+  gradeExpr: SQL,
+  minGrade: number | undefined,
+  maxGrade: number | undefined,
+): SQL | null {
   if (minGrade && maxGrade) return sql`${gradeExpr} BETWEEN ${minGrade} AND ${maxGrade}`;
   if (minGrade) return sql`${gradeExpr} >= ${minGrade}`;
   if (maxGrade) return sql`${gradeExpr} <= ${maxGrade}`;

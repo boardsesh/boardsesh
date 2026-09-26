@@ -13,6 +13,7 @@ import { startSprayDetectionMaintenance } from './services/spray-detection-maint
 import { startBackgroundJobMaintenance } from './services/background-job-maintenance';
 import { db } from './db/client';
 import { startPopularBoardConfigsRefresh } from './services/popular-board-configs';
+import { startClimbPopularityRefresh } from './services/climb-popularity-refresh';
 
 async function main() {
   const { wss, httpServer, cleanupIntervals, shutdownServices } = await startServer();
@@ -32,6 +33,11 @@ async function main() {
   // Redis, which is a better outcome than a backend that will not boot.
   await startPopularBoardConfigsRefresh(jobQueue).catch((error: unknown) => {
     logger.error('[PopularConfigs] Could not register the refresh job', { error });
+  });
+  // Not fatal either: without the job the popular sort keeps reading the
+  // table as last refreshed, or the old aggregation for a board never built.
+  await startClimbPopularityRefresh(jobQueue).catch((error: unknown) => {
+    logger.error('[ClimbPopularity] Could not register the refresh job', { error });
   });
 
   let shuttingDown = false;

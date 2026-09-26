@@ -1695,6 +1695,13 @@
       "when": 1790389720970,
       "tag": "0241_background_job_runs",
       "breakpoints": true
+    },
+    {
+      "idx": 242,
+      "version": "7",
+      "when": 1790403441981,
+      "tag": "0242_climb_popularity",
+      "breakpoints": true
     }
   ]
 }
