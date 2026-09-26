@@ -6,9 +6,8 @@ import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
  *
  * The crawl surface W-23 submits is six figures of climb URLs, so the number of
  * Postgres round trips one cold render costs is a load-bearing number, not an
- * implementation detail. This counts them and asserts the alias lookup and the
- * climb select stay strictly sequential (one connection at a time), so nobody
- * re-inflates the fan-out without the budget going red.
+ * implementation detail. Alias resolution is part of the climb-select CTE, so
+ * one cold climb read must stay one statement and one connection.
  */
 const { mockSqlTag, rowsFromResultMock, inFlight } = vi.hoisted(() => {
   const inFlight = { current: 0, max: 0 };
@@ -61,16 +60,13 @@ describe('climb front door statement budget', () => {
     inFlight.max = 0;
   });
 
-  it('getClimb costs exactly two statements', async () => {
+  it('getClimb resolves aliases and selects the climb in one statement', async () => {
     await getClimb(params);
-    expect(mockSqlTag).toHaveBeenCalledTimes(2);
+    expect(mockSqlTag).toHaveBeenCalledTimes(1);
   });
 
-  it('getClimb runs its alias lookup and climb select sequentially', async () => {
+  it('getClimb holds at most one connection', async () => {
     await getClimb(params);
-    // The climb select needs the alias result, so max concurrency is 1. If this
-    // ever becomes 2 the two statements were fired together against different
-    // uuids — the alias resolution would be silently dropped.
     expect(inFlight.max).toBe(1);
   });
 
@@ -80,7 +76,7 @@ describe('climb front door statement budget', () => {
   });
 
   // The whole-page budget lives in `climb-request-dedupe.test.ts`, where React's
-  // `cache` is a real memo. Asserting 3 here would be arithmetic on the two
-  // cases above (2 + 1) and would pin the number while being unable to tell the
+  // `cache` is a real memo. Asserting 2 here would be arithmetic on the two
+  // cases above (1 + 1) and would pin the number while being unable to tell the
   // deduped page pass from the un-deduped one — the regression that matters.
 });

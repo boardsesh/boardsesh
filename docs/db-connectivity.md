@@ -219,13 +219,13 @@ rather than an error.
 
 `packages/web/app/lib/db/read-deadline.ts` bounds one read client-side. It races
 the pending query against a timer and rejects with `DbReadTimeoutError`
-(`code: 'DB_READ_TIMEOUT'`) when the timer wins. It is wired at four
-front-door reads — the two statements behind `getClimb`, the all-angles
+(`code: 'DB_READ_TIMEOUT'`) when the timer wins. It is wired at three
+front-door reads — the alias-resolving `getClimb` statement, the all-angles
 stats select, and the shared climb search — and deliberately **not** inside
 `withConnectRetry` or `packages/db`, where it would change behaviour for the
 backend, the sync runners and every script.
 
-**Cancellation covers three of the four.** On a timeout the helper calls
+**Cancellation covers two of the three.** On a timeout the helper calls
 `query.cancel()` the way the health probe does, so a timed-out statement does not
 fire later against a recovered pool. That only works for raw postgres.js
 queries. The list front door's search is drizzle-issued and exposes no
@@ -241,8 +241,8 @@ internally (`Query.cancel()` returns `null`), so a failure to open it surfaces a
 an unhandled rejection the runtime logs. Accepted: a zombie statement firing
 against a recovered pool is worse than a log line.
 
-**One budget per request, not per statement.** The climb page issues three reads
-in sequence, so three independent 6 s deadlines would be an ~18 s request
+**One budget per request, not per statement.** The climb page issues two reads
+in sequence, so two independent 6 s deadlines would be a ~12 s request
 ceiling — the opposite of shedding load. `app/lib/db/request-read-budget.ts`
 puts one deadline timestamp in React's per-render `cache` scope and hands each
 read whatever the earlier ones left, floored at 500 ms. Outside a render scope
