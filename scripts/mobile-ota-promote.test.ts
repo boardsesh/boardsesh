@@ -14,9 +14,11 @@ import {
 const APP_ID = '007e6fd7-f200-448c-9449-8d48ba5d51fc';
 const COMMIT = 'a'.repeat(40);
 const RUNTIME = 'b'.repeat(40);
+// Real xprem IDs are content hashes in UUID shape, not RFC 4122 UUIDs: no
+// version or variant digits. The iOS one was served by production on 2026-09-26.
 const BASELINE_IDS = {
-  ios: '11111111-1111-4111-8111-111111111111',
-  android: '22222222-2222-4222-8222-222222222222',
+  ios: 'a96bbffc-e084-91c9-61ee-0107f5b6857b',
+  android: '22222222-2222-9222-6222-222222222222',
 };
 
 const requestUrl = (input: RequestInfo | URL): URL =>

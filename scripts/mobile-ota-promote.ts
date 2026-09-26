@@ -52,6 +52,10 @@ interface UploadLease {
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+// xprem derives update IDs from content hashes, so they have the 8-4-4-4-12 shape
+// without RFC 4122 version and variant digits: production served
+// `a96bbffc-e084-91c9-61ee-0107f5b6857b` on 2026-09-26. App IDs stay strict.
+const UPDATE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SHA256 = /^[0-9a-f]{64}$/i;
 const COMMIT_SHA = /^[0-9a-f]{40}$/i;
 
@@ -87,8 +91,8 @@ export function parseStageReceipt(input: unknown): StageReceipt {
   const baselineProductionUpdateIds = {} as StageReceipt['baselineProductionUpdateIds'];
   for (const platform of ['ios', 'android'] as const) {
     const updateId = baseline[platform];
-    if (updateId !== null && (typeof updateId !== 'string' || !UUID.test(updateId))) {
-      throw new Error(`${platform} baseline production update ID must be a UUID or null.`);
+    if (updateId !== null && (typeof updateId !== 'string' || !UPDATE_ID.test(updateId))) {
+      throw new Error(`${platform} baseline production update ID must be a UUID-shaped ID or null.`);
     }
     baselineProductionUpdateIds[platform] = updateId;
   }
@@ -463,7 +467,7 @@ async function productionUpdateId(
   const manifest = await readProductionManifest(manifestUrl, platform, runtimeVersion, appId, fetchImpl);
   if (manifest === null) return null;
   const id = string(manifest.id, `${platform} production update ID`);
-  if (!UUID.test(id)) throw new Error(`${platform} production update ID must be a UUID.`);
+  if (!UPDATE_ID.test(id)) throw new Error(`${platform} production update ID must be a UUID-shaped ID.`);
   return id;
 }
 
