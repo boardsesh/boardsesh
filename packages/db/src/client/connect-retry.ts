@@ -31,6 +31,54 @@ const RETRYABLE_CONNECT_ERROR_CODES: ReadonlySet<string> = new Set([
   'ENOTFOUND',
 ]);
 
+/**
+ * PgBouncer failures that prove the statement never reached PostgreSQL.
+ *
+ * PgBouncer reports its own pooler errors as SQLSTATE 08P01 and closes the
+ * client socket (`disconnect_client()` -> proto.c:164 in 1.25.2). The messages
+ * below are only sent to a client that holds no server connection:
+ *
+ * - `query_wait_timeout` and `client_login_timeout (server down)` come from the
+ *   janitor's `waiting_client_list` loop (janitor.c:431-475), which holds only
+ *   CL_WAITING / CL_WAITING_LOGIN clients. A waiting client's packet is still in
+ *   PgBouncer's buffer; no server has been linked to forward it to.
+ * - `no more connections allowed (max_client_conn)` is sent during client login
+ *   (client.c:1078), before the client can send a statement at all.
+ * - `server login has been failing, cached error: ...` comes from
+ *   `check_fast_fail()` (objects.c:880). `find_server()` returns early when the
+ *   client already has a linked server, so this check only runs for a client
+ *   that has none, and nothing it sent can have reached Postgres.
+ *
+ * postgres.js adds a second, independent guarantee. After a FATAL from the
+ * pooler, PgBouncer closes the socket without ReadyForQuery, so a statement that
+ * was already written is rejected with CONNECTION_CLOSED (not retried), never
+ * with the 08P01 error. The 08P01 error only reaches a caller through the
+ * connection's startup path, where the caller's statement is still postgres.js's
+ * unsent `initial` query. Measured against PgBouncer 1.25.2 and PostgreSQL 18.6:
+ * an in-flight statement on a saturated pool fails with CONNECTION_CLOSED; the
+ * first statement on a fresh connection fails with 08P01 `query_wait_timeout`.
+ *
+ * `query_timeout` is deliberately absent: PgBouncer also sends it for a client
+ * whose statement is running on a server.
+ */
+const PGBOUNCER_PRE_EXECUTION_MESSAGES: ReadonlyMap<string, string> = new Map([
+  ['query_wait_timeout', 'query_wait_timeout'],
+  ['client_login_timeout (server down)', 'client_login_timeout'],
+  ['no more connections allowed (max_client_conn)', 'max_client_conn'],
+]);
+/** Prefix only: PgBouncer truncates the whole message to 127 bytes, which can cut the suffix. */
+const PGBOUNCER_LOGIN_RETRY_PREFIX = 'server login has been failing, cached error: ';
+
+function pgbouncerPreExecutionReason(code: string, error: object): string | null {
+  if (code !== '08P01') return null;
+  const { message } = error as { message?: unknown };
+  if (typeof message !== 'string') return null;
+  const reason = PGBOUNCER_PRE_EXECUTION_MESSAGES.get(message);
+  if (reason) return reason;
+  // The cached upstream error can name a user or host, so it never reaches logs.
+  return message.startsWith(PGBOUNCER_LOGIN_RETRY_PREFIX) ? 'server_login_retry' : null;
+}
+
 const DEFAULT_ATTEMPTS = 3;
 const DEFAULT_BASE_DELAY_MS = 150;
 const DEFAULT_MAX_DELAY_MS = 600;
@@ -52,6 +100,10 @@ const DEFAULT_MAX_DELAY_MS = 600;
  * The budget check after each attempt is what keeps a single request from
  * absorbing more than roughly two of those. Details and measurements:
  * docs/db-connectivity.md.
+ *
+ * PgBouncer's `query_wait_timeout` is 5s in deploy/pgbouncer, so the same check
+ * allows one retry after a pool-saturation failure (about 10s in total) and
+ * rethrows the second.
  */
 const DEFAULT_BUDGET_MS = 10_000;
 
@@ -98,11 +150,18 @@ function readEnvInt(name: string, fallback: number): number {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 }
 
+/**
+ * The retry label for an error that provably never reached PostgreSQL, or
+ * null. Driver connect errors keep their own code; PgBouncer pre-execution
+ * errors come back as `08P01:<reason>` (for example `08P01:query_wait_timeout`).
+ */
 export function connectErrorCode(error: unknown): string | null {
   if (!error || typeof error !== 'object') return null;
   const { code } = error as { code?: unknown };
   if (typeof code !== 'string') return null;
-  return RETRYABLE_CONNECT_ERROR_CODES.has(code) ? code : null;
+  if (RETRYABLE_CONNECT_ERROR_CODES.has(code)) return code;
+  const pgbouncerReason = pgbouncerPreExecutionReason(code, error);
+  return pgbouncerReason === null ? null : `${code}:${pgbouncerReason}`;
 }
 
 export function isRetryableConnectError(error: unknown): boolean {

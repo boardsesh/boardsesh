@@ -42,6 +42,20 @@ single statement when it fails with one of:
 | `ECONNREFUSED`                           | nothing listening (Postgres restarting) |
 | `EAI_AGAIN` / `EAI_NODATA` / `ENOTFOUND` | DNS did not resolve the host            |
 
+and, once traffic goes through PgBouncer, when it fails with SQLSTATE `08P01`
+and exactly one of these PgBouncer messages:
+
+| message                                          | observer label                     | what it means                                      |
+| ------------------------------------------------ | ---------------------------------- | -------------------------------------------------- |
+| `query_wait_timeout`                             | `08P01:query_wait_timeout`         | waited 5 s for a server connection and got none    |
+| `client_login_timeout (server down)`             | `08P01:client_login_timeout`       | login waited for a server that never answered      |
+| `no more connections allowed (max_client_conn)`  | `08P01:max_client_conn`            | PgBouncer already holds 500 client connections     |
+| `server login has been failing, cached error: …` | `08P01:server_login_retry`         | PgBouncer's last upstream login failed; fail fast. Prefix match: PgBouncer truncates the cached error |
+
+The last one is matched by prefix, because PgBouncer cuts every message to
+127 bytes. The cached upstream error can name a role or host, so it never goes
+into the label.
+
 ### Why that is write-safe
 
 postgres.js starts `connectTimer` at `connection.js:343` and cancels it at
@@ -52,11 +66,50 @@ those codes proves the server never saw the statement: re-running it cannot
 double-execute a write. The safety argument is structural, not a judgement call
 about which statements "look idempotent".
 
+The PgBouncer errors rest on two separate guarantees.
+
+1. **PgBouncer only sends them to a client with no server.** `query_wait_timeout`
+   and `client_login_timeout (server down)` come from the janitor loop over
+   `waiting_client_list` (PgBouncer 1.25.2 `janitor.c:431-475`), which holds only
+   waiting clients. A waiting client's statement is still in PgBouncer's buffer.
+   `max_client_conn` is sent during login (`client.c:1078`). The login-retry
+   message comes from `check_fast_fail()` (`objects.c:880`), which `find_server()`
+   only reaches for a client without a linked server. In transaction mode a
+   client keeps its server until the transaction ends, so none of these can land
+   in the middle of a transaction either.
+2. **postgres.js only hands them to a statement it has not sent.** PgBouncer
+   closes the socket right after the error, without ReadyForQuery. A statement
+   that was already written therefore fails with `CONNECTION_CLOSED`, which is
+   not retried. The `08P01` error reaches a caller only on the startup path,
+   where the caller's statement is still the connection's unsent `initial`
+   query.
+
+Measured on 2026-09-26 against PgBouncer 1.25.2 and PostgreSQL 18.6, with all 45
+server connections held by `pg_sleep`: a statement on an already-open client
+connection failed after 5 s with `CONNECTION_CLOSED`; the first statement on a
+new connection failed after 5 s with `08P01 query_wait_timeout`, was retried
+once, and succeeded when a server freed up. With PostgreSQL stopped, new
+connections failed with `08P01 query_wait_timeout`; 520 simultaneous clients got
+106 `08P01 no more connections allowed (max_client_conn)`. A bad upstream
+password comes back as PostgreSQL's own `28P01`, which is not retried.
+
+`query_timeout` is not on the list: PgBouncer also sends it for a client whose
+statement is running on a server. PgBouncer 1.25.2 no longer has a
+`pgbouncer cannot connect to server` message; an unreachable server shows up as
+`query_wait_timeout`.
+
+The wall-clock budget bounds the cost. A `query_wait_timeout` spends 5 s, so the
+10 s budget allows one retry and rethrows the second failure, about 10 s in all.
+The web front door's 6 s read deadline sheds the request before that.
+
 ### What is NOT retried, and why
 
 - **`CONNECTION_CLOSED`** — postgres.js emits it both for a socket that died
   while connecting and for one that died with a query in flight. The error
-  object does not distinguish them, so retrying could re-run a write.
+  object does not distinguish them, so retrying could re-run a write. Behind
+  PgBouncer this includes a `query_wait_timeout` on a connection that was
+  already open: the pooler never ran that statement, but the error cannot prove
+  it.
 - **`read ETIMEDOUT`** (Sentry BOARDSESH-9X) — a `TLSWrap.onStreamRead` failure,
   i.e. an in-flight query dying mid-read. Same ambiguity, and it is a separate
   problem: it predates and outlives the connect bursts.
@@ -339,8 +392,10 @@ paths, chosen by what the URL actually points at:
   `ALTER ROLE <app_role> SET statement_timeout = '8s'`, which passes through a
   pooler transparently.
 
-`psql "$DATABASE_URL" -c 'show pool_mode;'` tells you which you have: a direct
-Postgres errors, PgBouncer answers.
+Do not use `SHOW pool_mode` on the application database to tell them apart.
+PgBouncer answers its `SHOW` commands only on its admin database; on an
+application database it forwards the query to PostgreSQL. Check the host in the
+URL instead: the pooler listens on port 6432.
 
 ### There is no web health probe
 
@@ -368,6 +423,190 @@ Not covered:
   retry at the job level; routing them through the shared builder is a separate
   change (it would also add `ssl: 'require'`, which their local runs do not
   currently use).
+
+## PgBouncer in front of production (#4842)
+
+**Status: built, not deployed.** Every production client still connects
+straight to the PG18 primary, `postgis---pg18.railway.internal:5432`.
+
+### Shape
+
+- One Railway service running `ghcr.io/boardsesh/boardsesh-pgbouncer`, built from
+  `deploy/pgbouncer/` by `.github/workflows/pgbouncer-image.yml`. **One replica.**
+  Its limits are per process, so a second replica doubles the database budget.
+- Transaction pooling. 40 server connections plus 5 reserve, hard-capped at 45
+  for the database and for the upstream role. Up to 500 client connections. A
+  client that waits 5 s for a server is disconnected (`query_wait_timeout`).
+  Server connections open on demand (`min_pool_size = 0`) and close after 300 s
+  idle, so the pooler holds at most as many servers as there are clients in a
+  transaction at once.
+- TLS on both sides. Clients connect to port 6432 on the private network. Upstream
+  is `postgis---pg18.railway.internal:5432` with `server_tls_sslmode = verify-full`,
+  trusting only the Boardsesh DR Primary CA passed in `PGBOUNCER_SERVER_TLS_CA`.
+  That name is one of the two SANs on the primary's leaf
+  ([pg-primary-tls-rollout.md](./pg-primary-tls-rollout.md)). **Before deploying,
+  confirm the primary serves the private-CA leaf**: `docs/pg-primary-tls.json`
+  still lists it as a pending rollout, and verify-full refuses the old
+  certificate, so every server login would fail.
+- App clients keep `prepare: false` and PgBouncer runs with
+  `max_prepared_statements = 0`. Session features stay out of pooled traffic:
+  only `pg_advisory_xact_lock`, `SET LOCAL` only inside transactions. pg-boss 12
+  is transaction-mode safe as the backend uses it: unnamed statements,
+  transaction-scoped advisory locks, and no LISTEN (it only listens when
+  `notify` is on, which the backend does not set).
+
+### What goes through it, and what stays direct
+
+Pooled, one change at a time, each watched as its own connection-budget event:
+
+1. The `boardsesh-web` Railway service's `DATABASE_URL` (postgres.js, `DB_POOL_MAX` 10).
+2. The backend's `DATABASE_URL`. It carries both the postgres.js pool
+   (3 replicas x `DB_POOL_MAX` 10) and pg-boss (3 x `PGBOSS_POOL_SIZE` 4):
+   `packages/backend/src/services/job-queue.ts` builds pg-boss from the same
+   connection string, so the two move together. pg-boss uses the `pg` driver,
+   which the connect retry above does not cover; a `query_wait_timeout` there
+   fails that pg-boss call, and pg-boss's own job retry and supervision pick it up.
+
+Direct, always:
+
+- **Migrations.** `migrate.ts` reserves one session for `SET ROLE`, which
+  transaction pooling cannot keep. The deploy checks that `MIGRATOR_DATABASE_URL`
+  points at `DATABASE_DIRECT_ENDPOINT` before migrating (see
+  [production-deploy.md](./production-deploy.md)).
+- **The standby's walsender.** Replication is a separate protocol PgBouncer does
+  not carry. It counts against `max_wal_senders` (10), not `max_connections`.
+- **The homelab sync daemons**, which reach the primary over the public TCP proxy.
+  PgBouncer has no public listener.
+- **`boardsesh_readonly`** investigations (at most 5 connections).
+
+The hold detector is a separate service with its own `DATABASE_URL`
+(`DB_POOL_MAX` 3 plus a pg-boss pool of 3). It stays direct unless that URL is
+changed on purpose.
+
+### Connection budget at `max_connections = 100`
+
+PostgreSQL keeps 3 slots for superusers (`superuser_reserved_connections`
+default), which leaves 97 for application roles. PgBouncer can take 45 of them,
+which leaves 52 for everything direct.
+
+| client                            | today, direct | web + backend pooled |
+| --------------------------------- | ------------: | -------------------: |
+| PgBouncer server connections      |             — |                ≤ 45 |
+| web postgres.js                   |            10 |       0 (via pooler) |
+| backend postgres.js, 3 x 10       |            30 |       0 (via pooler) |
+| backend pg-boss, 3 x 4            |            12 |       0 (via pooler) |
+| hold detector, 3 + 3              |             6 |                    6 |
+| `boardsesh_readonly`              |           ≤ 5 |                  ≤ 5 |
+| migrator, during a deploy         |             1 |                    1 |
+| **ceiling, steady**               |      **≤ 64** |             **≤ 57** |
+| backend deploy, old fleet draining |    **≤ 106** |             **≤ 57** |
+
+The homelab sync daemons come on top of both columns. PgBouncer reaches 45
+servers only when 45 clients are in a transaction at once. The deploy row is the
+reason for the pooler. Today a backend deploy runs the old and new fleets side by
+side for up to 15 s (`drainingSeconds`), and 106 is over the 97 available. Behind
+PgBouncer both fleets' 84 client connections (plus web's 10) share the same 45
+servers and queue at the pooler, so the database total does not move.
+
+The cost of that cap is queueing: 52 pooled clients at steady state (94 during a
+backend deploy) compete for 45 servers. A burst of long transactions makes the
+rest wait, and after 5 s they fail with `query_wait_timeout`. Watch
+`cl_waiting` and `avg_wait_time` below after each cutover step.
+
+The 52 direct slots hold as long as the direct clients stay under them: 12 after
+the backend cutover, deploy or not, which leaves 40 for the sync daemons and
+operator sessions. Recount with the query below before adding any direct
+client, raising a pool size, or adding a PgBouncer replica.
+
+```sql
+SELECT usename, application_name, count(*)
+FROM pg_stat_activity
+WHERE backend_type = 'client backend'
+GROUP BY 1, 2
+ORDER BY 3 DESC;
+```
+
+### The startup rejection, and the driver patch that fixes it
+
+postgres.js fetches array types on a connection's first ReadyForQuery, before it
+sends the caller's statement. When PgBouncer times that fetch out, it sends a
+FATAL `08P01` and closes. The stock 3.4.9 driver never handled the fetch's
+promise (Node exits on the unhandled rejection unless something like Sentry
+catches it), returned early from `closed()` without clearing the failed query,
+and delivered the error to the caller only because the next socket's login
+tripped over that stale state.
+
+The workspace patch (`packages/db/patches/postgres@3.4.9.patch`, see #5299
+above) now handles the fetch's promise. It fails the connect with the pooler's
+error when the socket closes after an error during startup, and clears the
+query state before any startup reconnect. The caller still gets `08P01
+query_wait_timeout` for a statement that was never written, so the retry still
+applies. `postgres-disconnect.test.ts` pins this against a fake PgBouncer on both
+entry points: no unhandled rejection, one socket, the `08P01` error, one retry,
+and the caller's statement written once.
+
+### Deploy and cut over
+
+1. Provision `MIGRATOR_DATABASE_URL`, `DATABASE_DIRECT_ENDPOINT`, the three
+   distinct PgBouncer identities, TLS material and
+   `PGBOUNCER_CUTOVER_SMOKE_TOKEN` before changing any runtime URL.
+2. Verify the full-SHA image's GitHub attestation, resolve its OCI digest, and
+   deploy that digest with the environment in `deploy/pgbouncer/README.md`.
+3. Keep PgBouncer on the private network. Allow only the application services
+   and an explicit operator source.
+4. With `boardsesh-web` still direct, run the smoke below against
+   `RAILWAY_WEB_ORIGIN` to record a baseline.
+5. Change only `boardsesh-web`'s `DATABASE_URL` to the pooled private URL,
+   redeploy the current image, then repeat the smoke against both
+   `RAILWAY_WEB_ORIGIN` and `https://www.boardsesh.com`.
+
+Load `PGBOUNCER_CUTOVER_SMOKE_TOKEN` from the same secret store as the target
+service, then run:
+
+```sh
+vp run smoke:pgbouncer-cutover -- --origin https://TARGET
+```
+
+It requires zero failures from 100 climb renders and 100 uncached database
+probes at concurrency 32. The probe route
+(`/api/internal/pgbouncer-cutover-readiness`) is the only uncached read through
+the web pool: climb pages come from `unstable_cache`, and `/api/health` never
+touches the database. Use a dedicated high-entropy token, never a database
+credential. Remove it from `boardsesh-web` after the cutover so the probe answers
+401, and mint a fresh one for the next cutover.
+
+Move the backend as a separate change, after the web cutover has run clean.
+
+### Observe, alert, and roll back
+
+Connect to PgBouncer's admin database (`pgbouncer`) with the admin identity:
+
+```sql
+SHOW POOLS;   -- cl_waiting > 0 for long = saturated; sv_* must sum to <= 45
+SHOW STATS;   -- avg_wait_time rising = clients queueing for a server
+SHOW CLIENTS;
+SHOW SERVERS;
+```
+
+`sv_active + sv_idle + sv_used + sv_tested + sv_login` must stay at or below 45.
+Success is zero smoke failures, zero PostgreSQL `53300` (too many connections)
+events, and no more than 45 PgBouncer server connections.
+
+Web Sentry events carry `postgres.error_code`; `53300` also carries
+`postgres.resource_exhaustion:true`. Alert on at least one matching event in
+5 minutes and require 30 clean minutes for recovery. The alert is configured by
+hand because CI's Sentry access is read-only.
+
+Roll back by restoring the direct `DATABASE_URL` on the service and redeploying.
+Keep its pool knobs unchanged. Stop PgBouncer only after every service using its
+URL has drained.
+
+Rotate client credentials without an authentication gap: add a distinct
+`PGBOUNCER_CLIENT_USER_NEXT` and password, deploy PgBouncer with both, move and
+redeploy the clients, wait for old-identity traffic to reach zero, then promote
+the next identity and remove the old one. Rotate the upstream and admin
+identities separately, with a health check after each. Never use the PostgreSQL
+superuser as the client or admin login.
 
 ## Health endpoints
 

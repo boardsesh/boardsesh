@@ -11,6 +11,7 @@ import {
   WEB_IGNORED_SPANS,
   WEB_TRACE_PROPAGATION_TARGETS,
 } from './app/lib/observability/sentry-tracing';
+import { tagPostgresError } from '@/app/lib/observability/postgres-error-tags';
 
 Sentry.init({
   dsn: 'https://f55e6626faf787ae5291ad75b010ea14@o4510644927660032.ingest.us.sentry.io/4510644930150400',
@@ -25,6 +26,11 @@ Sentry.init({
   enabled: isProductionSentryEnvironment(),
 
   environment: resolveSentryEnvironment(),
+
+  // Normalise postgres.js and Drizzle wrapper shapes into queryable SQLSTATE
+  // tags. Production alerts can now match `postgres.error_code:53300` without
+  // relying on an English message or one particular error wrapper.
+  beforeSend: tagPostgresError,
 
   // Enable logs to be sent to Sentry
   enableLogs: true,

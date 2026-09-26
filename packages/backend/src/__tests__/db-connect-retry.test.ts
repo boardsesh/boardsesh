@@ -42,6 +42,49 @@ describe('connectErrorCode', () => {
   });
 });
 
+/** The shape postgres.js gives a PgBouncer pooler error: a PostgresError with SQLSTATE 08P01. */
+function pgbouncerError(message: string): Error & { code: string; severity_local: string } {
+  return Object.assign(new Error(message), { name: 'PostgresError', code: '08P01', severity_local: 'FATAL' });
+}
+
+describe('connectErrorCode for PgBouncer pooler errors', () => {
+  it('accepts the messages PgBouncer only sends to a client with no linked server', () => {
+    expect(connectErrorCode(pgbouncerError('query_wait_timeout'))).toBe('08P01:query_wait_timeout');
+    expect(connectErrorCode(pgbouncerError('client_login_timeout (server down)'))).toBe('08P01:client_login_timeout');
+    expect(connectErrorCode(pgbouncerError('no more connections allowed (max_client_conn)'))).toBe(
+      '08P01:max_client_conn',
+    );
+  });
+
+  it('accepts a truncated server_login_retry message and keeps the cached upstream error out of the label', () => {
+    const cached = pgbouncerError(
+      'server login has been failing, cached error: password authentication failed for user "a_very_long_role_na',
+    );
+    expect(connectErrorCode(cached)).toBe('08P01:server_login_retry');
+  });
+
+  it('rejects PgBouncer errors that can arrive after a statement reached PostgreSQL', () => {
+    for (const message of [
+      'query_timeout',
+      'client_idle_timeout',
+      'idle transaction timeout',
+      'server conn crashed?',
+    ]) {
+      expect(isRetryableConnectError(pgbouncerError(message))).toBe(false);
+    }
+  });
+
+  it('matches the whole message, not a substring, and only under SQLSTATE 08P01', () => {
+    expect(isRetryableConnectError(pgbouncerError('query_wait_timeout exceeded by a user function'))).toBe(false);
+    expect(isRetryableConnectError(pgbouncerError('ERROR: query_wait_timeout'))).toBe(false);
+    expect(isRetryableConnectError(Object.assign(new Error('query_wait_timeout'), { code: '57014' }))).toBe(false);
+    expect(isRetryableConnectError(Object.assign(new Error('query_wait_timeout'), { code: 'CONNECTION_CLOSED' }))).toBe(
+      false,
+    );
+    expect(isRetryableConnectError(pgbouncerError('invalid message format'))).toBe(false);
+  });
+});
+
 describe('withDbConnectRetry', () => {
   it('runs once when the statement succeeds', async () => {
     let calls = 0;
@@ -108,6 +151,30 @@ describe('withDbConnectRetry', () => {
     ).rejects.toBe(failure);
 
     expect(calls).toBe(1);
+  });
+
+  it('retries a PgBouncer query_wait_timeout once, then rethrows when the 5s wait has spent the budget', async () => {
+    // query_wait_timeout is 5s in deploy/pgbouncer. With the default 10s budget
+    // the first failure (5s) leaves room for one retry; the second (10s) does not.
+    const events: DbConnectRetryEvent[] = [];
+    setDbConnectObserver((event) => events.push(event));
+    let calls = 0;
+    let clock = 0;
+    const failure = pgbouncerError('query_wait_timeout');
+
+    await expect(
+      withDbConnectRetry(
+        () => {
+          calls += 1;
+          clock += 5_000;
+          return Promise.reject(failure);
+        },
+        { attempts: 3, budgetMs: 10_000, sleep: noSleep, now: () => clock },
+      ),
+    ).rejects.toBe(failure);
+
+    expect(calls).toBe(2);
+    expect(events.map((event) => event.code)).toEqual(['08P01:query_wait_timeout']);
   });
 
   it('gives up immediately when the first attempt already burned the wall-clock budget', async () => {
