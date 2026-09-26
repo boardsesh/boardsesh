@@ -154,7 +154,7 @@ describe('stage receipt and export validation', () => {
     expect(() => validateExport(fixture.iosExport, 'ios', fixture.hashes.ios)).toThrow('differs from stage receipt');
   });
 
-  it('accepts Metro hash-named assets and rejects a false declared extension', () => {
+  it('accepts Metro hash-named assets and rejects a path-extension mismatch', () => {
     const fixture = stageFixture();
     expect(validateExport(fixture.iosExport, 'ios', fixture.hashes.ios).assetPaths).toEqual([ASSET_PATH]);
     const metadataPath = join(fixture.iosExport, 'metadata.json');

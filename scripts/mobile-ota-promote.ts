@@ -172,7 +172,7 @@ export function validateExport(
       !/^[a-z0-9]+$/i.test(extension) ||
       (basename(assetPath).includes('.')
         ? extension !== assetPath.split('.').pop()
-        : !/^assets\/[0-9a-f]{32}$/i.test(assetPath))
+        : !/^assets\/[0-9a-f]{32}$/.test(assetPath))
     )
       throw new Error(`${platform} asset extension mismatch: ${assetPath}.`);
     addFile(assetPath);
