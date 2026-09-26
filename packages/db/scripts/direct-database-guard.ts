@@ -51,6 +51,8 @@ export function assertExpectedDirectEndpoint(connectionString: string, expectedE
     if (expectedUrl.username || expectedUrl.password || expectedUrl.search || expectedUrl.hash) throw new Error();
     normalizedExpectedEndpoint = databaseEndpointIdentity(expectedUrl.href);
   } catch {
+    // One message for every parse failure on purpose: the inner error can echo
+    // the variable, and a value with embedded credentials must never reach the log.
     throw new Error('DATABASE_DIRECT_ENDPOINT must be a valid host:port/database identity');
   }
 
