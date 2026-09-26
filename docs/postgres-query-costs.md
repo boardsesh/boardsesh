@@ -299,7 +299,7 @@ Nothing here is native, so everything ships from `main`. The `totalAscents`, `to
    - Discovery rail: up to 15 min stale — **decided**, shipped (#5838).
 4. **Offline-only trade-offs — decided:** ship local-first only. Don't hide filter-sheet counts, Discover counts or the Following chip for boards that are not downloaded or for the browser app; they keep falling back to the server instead.
 5. **C2 min-only/max-only shape — decided:** accept the slowdown on Kilter Original (63 → 314 ms, 15 → 327 ms warm (R)), no guard. Prod still sends 0 such calls (shipped as-is in #5840).
-6. **Stats-history snapshot:** can it become change-only once C3 lands? The `packages/db/src/queries/grade-model/gates.ts` backtest assumes a full weekly cross-section.
+6. **Stats-history snapshot:** now that C3 has shipped (#5838), can it become change-only? The `packages/db/src/queries/grade-model/gates.ts` backtest assumes a full weekly cross-section.
 7. **Setter sitemap:** does it earn search traffic? If not, removing it saves about 270 s/day (E).
 8. **Deploy cadence and replica count:** these set the real size of C1.
 9. **Wide-angle grades:** keep materialising all 15 MoonBoard angles?
