@@ -27,7 +27,7 @@ describe('direct database guard', () => {
     ).not.toThrow();
   });
 
-  it('rejects a PgBouncer endpoint even when credentials and database match', () => {
+  it('rejects a pooler endpoint even when credentials and database match', () => {
     expect(() =>
       assertExpectedDirectEndpoint(
         'postgres://migrator:secret@pooler.example:6432/boardsesh',

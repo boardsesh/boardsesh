@@ -5,12 +5,12 @@
 Service deploys gate on successful builds; mobile OTA promotion additionally
 requires the live backend to serve the staged GraphQL schema.
 
-Migrations always connect to PostgreSQL directly, never through PgBouncer
-(`migrate.ts` holds one session for `SET ROLE`, which transaction pooling cannot
-keep). Before migrating, the job runs `verify-direct-database.ts`: it compares
+Migrations run as the dedicated `boardsesh_migrator` role against a known,
+direct PostgreSQL endpoint (`migrate.ts` also holds one session for `SET ROLE`,
+which a transaction-pooling proxy could not keep). Before migrating, the job runs `verify-direct-database.ts`: it compares
 the non-credential `host:port/database` of the `MIGRATOR_DATABASE_URL` secret
 with the Production-environment variable `DATABASE_DIRECT_ENDPOINT`, then runs a
-TLS `SELECT 1`. A pooler URL, a missing variable, a failed login or a network
+TLS `SELECT 1`. Any other endpoint, a missing variable, a failed login or a network
 error stops the deploy; there is no fallback to the runtime URL.
 `DATABASE_DIRECT_ENDPOINT` must exist before this step reaches `main`, set to the
 endpoint `MIGRATOR_DATABASE_URL` uses today. Change it deliberately if Railway
@@ -355,11 +355,10 @@ footprint — 2 replicas x (`DB_POOL_MAX` 10 + `PGBOSS_POOL_SIZE` 4) = 28 (down 
 replicas on 2026-09-26; see [railway-cost-reduction.md](./railway-cost-reduction.md)) — against
 a shared `max_connections` of 100 since the PG18 cutover (200 on PG16, where it
 was exhausted). Even the 15 s drain already puts both fleets on the database at
-once: about 92 connections at the ceiling against 97 non-superuser slots. Once
-the backend's `DATABASE_URL` (its postgres.js pool and pg-boss) goes through
-PgBouncer, both fleets share the pooler's 45 server connections and the draining
-fleet adds nothing at the database; see the budget in
-[db-connectivity.md](./db-connectivity.md#connection-budget-at-max_connections--100). Railway only sends SIGTERM once the
+once: about 92 connections at the ceiling against 97 non-superuser slots. A
+pooler would cap that, but PgBouncer is parked; see
+[db-connectivity.md](./db-connectivity.md#pgbouncer-parked) for why and when to
+revisit it. Railway only sends SIGTERM once the
 replacement deployment is already healthy, so there is no capacity gap for
 overlap to cover; draining alone addresses the severed-request case.
 

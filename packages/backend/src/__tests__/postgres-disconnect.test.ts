@@ -6,9 +6,7 @@ import { getWorkerDatabaseUrl } from './worker-db';
 
 const executeFile = promisify(execFile);
 const fixturePath = fileURLToPath(new URL('./helpers/postgres-disconnect-process.ts', import.meta.url));
-const pgbouncerFixturePath = fileURLToPath(
-  new URL('./helpers/pgbouncer-startup-rejection-process.ts', import.meta.url),
-);
+const startupFatalFixturePath = fileURLToPath(new URL('./helpers/startup-fatal-process.ts', import.meta.url));
 
 describe.each(['esm', 'cjs'])('postgres disconnect recovery (%s)', (entryPoint) => {
   it.each(['clean', 'error', 'fatal', 'startup', 'delayed', 'live'])(
@@ -36,22 +34,23 @@ describe.each(['esm', 'cjs'])('postgres disconnect recovery (%s)', (entryPoint) 
   );
 });
 
-// PgBouncer's query_wait_timeout lands on postgres.js's startup array-type fetch
-// as a FATAL 08P01 followed by a close. The stock 3.4.9 driver left that fetch's
-// promise unhandled (Node exits) and delivered the error through stale state on
-// the next socket. The patch fails the connect with the pooler error instead.
-describe.each(['esm', 'cjs'])('PgBouncer startup rejection (%s)', (entryPoint) => {
-  it.each(['fatal', 'retry', 'close'])(
+// A server that answers postgres.js's startup array-type fetch with a FATAL and
+// a close (found against PgBouncer's query_wait_timeout). The stock 3.4.9 driver
+// left that fetch's promise unhandled (Node exits) and delivered the error
+// through stale state on the next socket. The patch fails the connect with the
+// server's error instead.
+describe.each(['esm', 'cjs'])('FATAL during startup (%s)', (entryPoint) => {
+  it.each(['fatal', 'close'])(
     'settles the %s scenario with no unhandled rejection',
     async (scenario) => {
       const { stdout } = await executeFile(
         process.execPath,
-        ['--import', 'tsx', pgbouncerFixturePath, entryPoint, scenario],
+        ['--import', 'tsx', startupFatalFixturePath, entryPoint, scenario],
         {
           timeout: 15_000,
         },
       );
-      expect(stdout).toContain('pgbouncer startup rejection verified');
+      expect(stdout).toContain('startup fatal verified');
     },
     20_000,
   );

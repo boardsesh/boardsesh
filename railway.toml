@@ -23,13 +23,12 @@ restartPolicyMaxRetries = 5
 # healthy, so this drains the old fleet rather than delaying the new one.
 #
 # Deliberately no `overlapSeconds`: overlap would keep both fleets serving and
-# double the backend's Postgres footprint (3 replicas x (DB_POOL_MAX 10 +
-# PGBOSS_POOL_SIZE 4) = 42) against a max_connections of 100 (200 before the
+# double the backend's Postgres footprint (2 replicas x (DB_POOL_MAX 10 +
+# PGBOSS_POOL_SIZE 4) = 28) against a max_connections of 100 (200 before the
 # PG18 cutover), 97 of them open to application roles. Even this 15s drain
-# briefly runs both fleets: at the ceiling that is ~106 connections today, and
-# ~57 once the backend's DATABASE_URL (postgres.js and pg-boss) goes through
-# PgBouncer, whose 45 server connections both fleets share.
-# Budget: docs/db-connectivity.md. Draining alone fixes the severed-request case.
+# briefly runs both fleets: at the ceiling that is ~92 connections. A pooler
+# would cap that, but PgBouncer is parked ("PgBouncer: parked" in
+# docs/db-connectivity.md). Budget: docs/db-connectivity.md. Draining alone fixes the severed-request case.
 # Unquoted on purpose: railway.schema.json types drainingSeconds as
 # {"type": "number"}. The prose docs at docs.railway.com show it quoted
 # ("drainingSeconds": "10"), which contradicts their own schema — a quoted

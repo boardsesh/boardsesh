@@ -1,8 +1,8 @@
 /**
- * The standing inventory oracle for issue #1889 (REST surface audit: 39
+ * The standing inventory oracle for issue #1889 (REST surface audit: 38
  * routes classified after the board renderer moved to Railway in #4715, the
- * Railway healthcheck route landed in #3798, the hold-heatmap route and its
- * prewarm cron were retired, and the PgBouncer cutover probe landed).
+ * Railway healthcheck route landed in #3798, and the hold-heatmap route and
+ * its prewarm cron were retired).
  *
  * A classification table living only in an issue body or a doc goes stale the
  * moment a route is added or removed without anyone re-reading it — exactly
@@ -62,7 +62,7 @@ const VERDICTS: Record<string, Verdict> = {
   // so a transient blip can't fail a deploy or start a restart loop. ---
   'app/api/health/route.ts': 'keep-external',
 
-  // --- /api/internal/* (16) ---
+  // --- /api/internal/* (15) ---
   // Party-session / kiosk auth bridge — never delete.
   'app/api/internal/ws-auth/route.ts': 'keep-external',
   // No web consumer, but no production surface either (404s outside
@@ -82,9 +82,6 @@ const VERDICTS: Record<string, Verdict> = {
   // refresh after a re-enable, which is why it also answers a bare authenticated
   // curl. Absent from vercel.json, like every other cron.
   'app/api/internal/refresh-sitemap-climbs/route.ts': 'keep-external',
-  // Operator-only target for the PgBouncer cutover smoke CLI. Production app
-  // code never calls it; the dedicated bearer token keeps it off public paths.
-  'app/api/internal/pgbouncer-cutover-readiness/route.ts': 'keep-external',
   'app/api/internal/beta-link-thumbnail/route.ts': 'keep-caller',
   'app/api/internal/revalidate-climb/route.ts': 'keep-caller',
   'app/api/internal/climb-search-cache/revalidate/route.ts': 'keep-caller',
@@ -254,6 +251,6 @@ describe('REST surface inventory (issue #1889)', () => {
   it('counts exactly the audited surface', () => {
     // Guards the headline number in issue #1889 itself — a change here means
     // the issue body needs a fresh audit pass, not a quiet reclassification.
-    expect(derived.size).toBe(39);
+    expect(derived.size).toBe(38);
   });
 });

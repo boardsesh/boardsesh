@@ -2,12 +2,13 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { Duplex } from 'node:stream';
 import type postgresTypes from 'postgres';
-import { setDbConnectObserver, withConnectRetry } from '@boardsesh/db/client';
 
 // Runs in a child process so an unhandled rejection is observed, not swallowed
-// by the test runner. A fake PgBouncer answers the startup packet, then fails
-// the first statement on the connection (postgres.js's array-type fetch) the way
-// PgBouncer does on `query_wait_timeout`: a FATAL 08P01 and a closed socket.
+// by the test runner. A fake server answers the startup packet, then fails the
+// first statement on the connection (postgres.js's array-type fetch) with a
+// FATAL and a closed socket. The frame is PgBouncer's `query_wait_timeout`
+// (08P01), where the bug was found; any server that ends a session during
+// startup takes the same driver path.
 const [entryPoint, scenario] = process.argv.slice(2);
 const postgres: typeof postgresTypes =
   entryPoint === 'cjs' ? createRequire(import.meta.url)('postgres') : (await import('postgres')).default;
@@ -26,13 +27,13 @@ function frame(type: string, payload = Buffer.alloc(0)): Buffer {
 
 const queryWaitTimeout = frame('E', Buffer.from('SFATAL\0VFATAL\0C08P01\0Mquery_wait_timeout\0\0'));
 
-/** `fail` sockets reject their first statement like PgBouncer; `close` sockets hang up without an error. */
+/** `fail` sockets reject their first statement with a FATAL; `close` sockets hang up without an error. */
 type SocketBehaviour = 'fail' | 'close' | 'serve';
 
 const statements: { socket: number; statement: string }[] = [];
-const sockets: FakePgBouncerSocket[] = [];
+const sockets: FakeServerSocket[] = [];
 
-class FakePgBouncerSocket extends Duplex {
+class FakeServerSocket extends Duplex {
   readonly socketNumber = sockets.length + 1;
   private started = false;
   private closing = false;
@@ -68,7 +69,7 @@ class FakePgBouncerSocket extends Duplex {
       return;
     }
     if (this.behaviour !== 'serve') {
-      // PgBouncer holds the packet while the client waits; nothing is executed.
+      // The server rejects the packet; nothing is executed.
       if (!this.closing) this.hangUp(this.behaviour === 'fail');
       callback();
       return;
@@ -115,9 +116,9 @@ function createPool(behaviours: SocketBehaviour[]) {
     idle_timeout: 0,
     max_lifetime: 0,
     backoff: () => 0,
-    socket: () => new FakePgBouncerSocket(behaviours[sockets.length] ?? 'serve'),
+    socket: () => new FakeServerSocket(behaviours[sockets.length] ?? 'serve'),
   };
-  return postgres('postgres://pooler@fake-pgbouncer:6432/boardsesh', poolOptions as Parameters<typeof postgres>[1]);
+  return postgres('postgres://app@fake-server:5432/boardsesh', poolOptions as Parameters<typeof postgres>[1]);
 }
 
 async function settleAndCheckUnhandled(): Promise<void> {
@@ -130,30 +131,10 @@ async function failedTypeFetch(): Promise<void> {
   try {
     await assert.rejects(pool.unsafe(CALLER_STATEMENT), { code: '08P01', message: 'query_wait_timeout' });
     await settleAndCheckUnhandled();
-    // The connect failed with the pooler's error; it did not loop reconnecting.
+    // The connect failed with the server's error; it did not loop reconnecting.
     assert.equal(sockets.length, 1);
     assert.equal(statements.length, 0);
   } finally {
-    await pool.end({ timeout: 0 });
-  }
-}
-
-async function retriedTypeFetch(): Promise<void> {
-  const retryCodes: string[] = [];
-  setDbConnectObserver((event) => retryCodes.push(event.code));
-  const pool = createPool(['fail', 'serve']);
-  const retrying = withConnectRetry(pool, { sleep: () => Promise.resolve() });
-  try {
-    await retrying.unsafe(CALLER_STATEMENT);
-    await settleAndCheckUnhandled();
-    assert.deepEqual(retryCodes, ['08P01:query_wait_timeout']);
-    // Written exactly once, on the replacement connection.
-    assert.deepEqual(
-      statements.filter(({ statement }) => statement === CALLER_STATEMENT),
-      [{ socket: 2, statement: CALLER_STATEMENT }],
-    );
-  } finally {
-    setDbConnectObserver(null);
     await pool.end({ timeout: 0 });
   }
 }
@@ -175,8 +156,7 @@ async function closedTypeFetch(): Promise<void> {
 }
 
 if (scenario === 'fatal') await failedTypeFetch();
-else if (scenario === 'retry') await retriedTypeFetch();
 else if (scenario === 'close') await closedTypeFetch();
 else assert.fail(`unknown scenario: ${scenario}`);
-process.stdout.write('pgbouncer startup rejection verified\n');
+process.stdout.write('startup fatal verified\n');
 process.exit(0);

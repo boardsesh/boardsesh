@@ -10,7 +10,7 @@ import {
 export async function verifyDirectDatabase(): Promise<void> {
   const connectionString = process.env.MIGRATOR_DATABASE_URL;
   if (!connectionString) {
-    throw new Error('MIGRATOR_DATABASE_URL is required; migrations must bypass PgBouncer transaction pooling');
+    throw new Error('MIGRATOR_DATABASE_URL is required; migrations run as the migrator role on the direct endpoint');
   }
   assertExpectedDirectEndpoint(connectionString, process.env.DATABASE_DIRECT_ENDPOINT ?? '');
 

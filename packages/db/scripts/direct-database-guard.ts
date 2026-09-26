@@ -36,8 +36,8 @@ export function databaseEndpointIdentity(connectionString: string): string {
 
 /**
  * Compare only the non-credential endpoint identity. The protected environment
- * pins the known Railway PostgreSQL TCP endpoint; PgBouncer has a different
- * hostname or port. Password rotation therefore needs no workflow change, while
+ * pins the known Railway PostgreSQL TCP endpoint; any proxy or other database
+ * has a different hostname or port. Password rotation therefore needs no workflow change, while
  * moving the direct endpoint remains an explicit fail-closed operation.
  */
 export function assertExpectedDirectEndpoint(connectionString: string, expectedEndpoint: string): void {
