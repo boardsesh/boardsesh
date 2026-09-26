@@ -91,8 +91,8 @@ type FrontDoorSectionName = 'similar-climbs' | 'beta-links';
  * than embedding the error text. The old message interpolated the raw error —
  * "Rate limit exceeded. Try again in 29 seconds" — and Sentry groups issues by
  * message, so every distinct retry-after value minted its own issue. Grouping
- * now happens on a stable `errorClass`, and the retry-after text is dropped
- * entirely rather than just moved to `extra`, so it can never resurrect the
+ * now happens on a stable `errorClass`; the compacted error text survives only
+ * as `extra.error`, which Sentry never groups on, so it cannot resurrect the
  * per-value fanout.
  */
 const FRONT_DOOR_REPORT_INTERVAL_MS = 15 * 60_000;
@@ -112,7 +112,9 @@ type FrontDoorErrorClass = 'timeout' | 'rate-limited' | 'backend-error';
  * into the message or fingerprint — that is exactly what caused the fanout.
  */
 function classifyFrontDoorError(compactError: string): FrontDoorErrorClass {
-  if (/AbortError|aborted/i.test(compactError)) {
+  // The 3 s deadline aborts via AbortController ("AbortError: This operation
+  // was aborted"); the other two spellings cover a transport-level timeout.
+  if (/AbortError|aborted|timed out|timeout/i.test(compactError)) {
     return 'timeout';
   }
   if (/Rate limit exceeded/i.test(compactError)) {
