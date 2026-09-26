@@ -891,6 +891,11 @@ void describe('createClimbFilters: grade range for the stats-driven list', () =>
       createClimbFilters(params, band, undefined, { crossAngleStats: true }).getStatsRowClimbStatsConditions(),
       null,
     );
+    // Cross-angle with no band too: its stats predicates read the effective-stats join.
+    assert.equal(
+      createClimbFilters(params, {}, undefined, { crossAngleStats: true }).getStatsRowClimbStatsConditions(),
+      null,
+    );
   });
 
   void it('leaves getClimbStatsConditions on the COALESCE form for the LEFT JOIN queries', () => {
