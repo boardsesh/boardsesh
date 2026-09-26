@@ -74,7 +74,8 @@ function isProductionDeployTestFile(filePath) {
     filePath === 'scripts/railway-deployment-status.test.mjs' ||
     filePath === 'scripts/production-smoke.test.ts' ||
     filePath === 'scripts/mobile-ota-promote.test.ts' ||
-    filePath === 'scripts/mobile-ota-schema-ready.test.mjs'
+    filePath === 'scripts/mobile-ota-schema-ready.test.mjs' ||
+    filePath === 'scripts/mobile-ota-stage-verify.test.ts'
   );
 }
 

@@ -189,6 +189,9 @@ void test('keeps production deploy unit tests CI-only', () => {
     'scripts/railway-deployment-rollback.test.mjs',
     'scripts/railway-deployment-status.test.mjs',
     'scripts/production-smoke.test.ts',
+    'scripts/mobile-ota-promote.test.ts',
+    'scripts/mobile-ota-schema-ready.test.mjs',
+    'scripts/mobile-ota-stage-verify.test.ts',
   ]) {
     assert.deepEqual(classifyChangedFiles([filePath]), {
       web: false,

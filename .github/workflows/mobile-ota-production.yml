@@ -572,7 +572,7 @@ jobs:
         with:
           name: mobile-ota-stage
           path: ota-stage/
-          retention-days: 2
+          retention-days: 7
           if-no-files-found: error
 
       # Publish both requested platforms before deciding the job result. This

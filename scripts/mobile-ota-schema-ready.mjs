@@ -23,7 +23,7 @@ async function main() {
   if (!response.ok) throw new Error(`Live backend health failed (HTTP ${response.status})`);
   const health = await response.json();
   const release = typeof health.release === 'string' ? health.release : '';
-  if (!SHA.test(release)) throw new Error(`Live backend reported no valid release SHA (HTTP ${response.status})`);
+  if (!SHA.test(release)) throw new Error('Live backend health did not contain a valid release SHA');
   git('cat-file', '-e', `${release}^{commit}`);
   let sameSchema = false;
   try {
