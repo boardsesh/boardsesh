@@ -1013,6 +1013,31 @@ describe('applyLogs — PR4 offset inference + edit guard', () => {
     expect(recomputedKeys()).toEqual([]);
   });
 
+  it('still recomputes an identical re-sync of a pushed native send past the 48 h window (absorption)', async () => {
+    // Push-back absorption only happens when the key is recomputed after the
+    // upstream stamp moves 48 h past the push; the redelivered log is that trigger.
+    const pushedLongAgo = existingKilterTick({ origin: 'native', kilterSyncedAt: '2026-05-01T12:00:00.000Z' });
+    const pushedJustNow = existingKilterTick({
+      uuid: 'tick-2',
+      kilterId: 'log-B',
+      climbUuid: 'climb-2',
+      origin: 'native',
+      updatedAt: new Date(Date.now() - 60_000).toISOString(),
+      kilterSyncedAt: new Date().toISOString(),
+    });
+    const { tx, calls } = createTx({ selectResults: [[pushedLongAgo, pushedJustNow]] });
+
+    const ops = [
+      makeLogPutOp({ log_uuid: 'log-A', climb_uuid: 'climb-1', angle: 40, created_at: '2026-05-01T12:00:00.000Z' }),
+      makeLogPutOp({ log_uuid: 'log-B', climb_uuid: 'climb-2', angle: 40, created_at: '2026-05-01T12:00:00.000Z' }),
+    ];
+
+    await applyLogs(tx as unknown as TxArg, 'user-1', ops, aliasCacheFor(['climb-1', 'climb-2']), logSpy);
+
+    expect(calls.filter((c) => c.kind === 'execute')).toHaveLength(0);
+    expect(recomputedKeys()).toEqual([{ climbUuid: 'climb-1', angle: 40 }]);
+  });
+
   it('recomputes only the key the UPDATE actually wrote, not a skipped locally-edited log', async () => {
     // log-A changed upstream and is written; log-B is locally edited since its
     // last Kilter sync, so its stale snapshot is skipped and its key is left alone.

@@ -584,7 +584,24 @@ type ExistingKilterTick = {
   kilterType: 'attempts' | 'logs' | null;
   updatedAt: string;
   kilterSyncedAt: string | null;
+  origin: (typeof boardseshTicks.$inferSelect)['origin'];
 };
+
+/**
+ * The recompute's push-back absorption rule drops a native tick pushed to
+ * Kilter from the Boardsesh count once kilter_synced_at < upstream_synced_at -
+ * 48h (recompute.ts). Time passing alone never re-runs it, so a skipped re-sync
+ * of such a tick still recomputes its key: PowerSync redelivers the logbook
+ * every cycle, which is what eventually absorbs the push. Only native sends past
+ * the 48 h window qualify, a small slice of any logbook.
+ */
+const ABSORPTION_WINDOW_MS = 48 * 60 * 60 * 1000;
+function mayNeedAbsorptionRecompute(stored: ExistingKilterTick, nowMs: number): boolean {
+  if (stored.origin !== 'native') return false;
+  if (stored.status !== 'flash' && stored.status !== 'send') return false;
+  if (stored.kilterSyncedAt === null) return false;
+  return Date.parse(stored.kilterSyncedAt) < nowMs - ABSORPTION_WINDOW_MS;
+}
 
 /** True when the row carries a local edit newer than the last successful sync. */
 function isLocallyEditedSinceKilterSync(stored: ExistingKilterTick): boolean {
@@ -766,6 +783,7 @@ export async function applyLogs(
       kilterType: boardseshTicks.kilterType,
       updatedAt: boardseshTicks.updatedAt,
       kilterSyncedAt: boardseshTicks.kilterSyncedAt,
+      origin: boardseshTicks.origin,
     })
     .from(boardseshTicks)
     .where(inArray(boardseshTicks.kilterId, incomingKilterIds));
@@ -919,6 +937,7 @@ export async function applyLogs(
   const adoptions: Array<{ uuid: string; kilterId: string; fields: LogTickFields }> = [];
   const inserts: NormalisedLog[] = [];
 
+  const nowMs = Date.now();
   for (const n of normalised) {
     const existing = kilterIdMap.get(n.raw.log_uuid);
     if (existing) {
@@ -937,8 +956,11 @@ export async function applyLogs(
       // the local edit is pending push-back and Kilter's stale snapshot must
       // not stomp it. And skip a no-op re-sync (payload identical) so we don't
       // churn updated_at / re-ship the row to offline clients for nothing.
-      if (isLocallyEditedSinceKilterSync(existing)) continue;
-      if (!kilterPayloadDiffers(n.fields, existing)) continue;
+      if (isLocallyEditedSinceKilterSync(existing) || !kilterPayloadDiffers(n.fields, existing)) {
+        // Nothing to write, but a pushed native send may now be absorbable.
+        if (mayNeedAbsorptionRecompute(existing, nowMs)) addTouchedKey(existing.climbUuid, existing.angle);
+        continue;
+      }
       updatesByKilterId.push({ uuid: existing.uuid, fields: n.fields });
       continue;
     }
