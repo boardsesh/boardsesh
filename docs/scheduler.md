@@ -321,7 +321,8 @@ both hold:
    since the process started, the process start time stands in for its last
    run, so a fresh restart is never overdue for a slot that passed before it.
 2. More than the job's `timeoutMs` plus 5 minutes has passed since
-   `expectedLastRunAt` — 7 minutes for `cleanup`, 20 for the 15-minute jobs.
+   `expectedLastRunAt` — `timeoutMs + 5 min`, so 7 minutes for `cleanup`, 15 for
+   `purge-spray-wall-photos`, 20 for the 15-minute jobs.
 
 Disabled jobs (`SCHEDULER_DISABLED_JOBS`) are never overdue. A tick skipped
 behind a still-running predecessor does count: it did not run. It cannot flip

@@ -52,6 +52,11 @@ export type Scheduler = {
    * Bypasses the tick-level in-flight guard on purpose: an operator asking for
    * a run gets one even if a scheduled run is still going. `JobDefinition.run`
    * documents the contract that makes that safe.
+   *
+   * Because it records `lastRunAt` on this instance, a call here clears an
+   * `overdue` flag. The `scheduler run <job>` CLI does not: it runs in its own
+   * process and never sees the ticking instance's state (docs/scheduler.md,
+   * "Health endpoints").
    */
   runJob(jobName: string): Promise<unknown>;
   stop(): void;
