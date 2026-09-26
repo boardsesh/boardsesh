@@ -116,6 +116,13 @@ because a grouped count timed out would be a regression bought with nothing. A
 failed **listed** fetch still throws on both paths: that is the leg whose loss
 would tell Google the boards were deleted.
 
+That backend cache is refreshed in place on every backend deploy, never emptied
+first. The statement behind it took 2–3 minutes on the PG18 primary after its
+4 GB cap, and while the warm-up used to `DEL` the key before recomputing, every
+`/sitemaps/boards.xml` request in that window waited on it, hit the 10 s abort
+and 503ed — which is what failed the web deploy smoke on 2026-09-26. The
+listed leg only misses now when Redis itself has lost the key.
+
 The count query carries a 10 s budget applied _inside_ the shared single-flight
 promise, so a give-up is not memoised and the next caller retries instead of
 joining a stall that already gave up. Nothing else bounds it: the pool sets

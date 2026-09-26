@@ -37,7 +37,7 @@ const inFlightByKey = new Map<string, Promise<unknown>>();
  * every completion, which on an 82 s statement is a permanent one-connection
  * burn and permanent database load. Shared by both call sites so the two do
  * not drift; never consulted when Redis is connected, so production freshness
- * is still decided by the shared cache and the deploy-time DELETE.
+ * is still decided by the shared cache and the deploy-time refresh.
  */
 export const REDISLESS_FALLBACK_TTL_MS = 10 * 60 * 1000;
 

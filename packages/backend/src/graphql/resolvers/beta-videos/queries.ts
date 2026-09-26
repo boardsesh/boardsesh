@@ -80,7 +80,10 @@ const RECENT_BETA_LINKS_REDIS_GENERATION_KEY = `${RECENT_BETA_LINKS_REDIS_KEY_PR
 // primary freshness mechanism.
 const RECENT_BETA_LINKS_REDIS_TTL_SECONDS = 24 * 60 * 60;
 const RECENT_BETA_LINKS_REDIS_LOCK_KEY = 'boardsesh:recent-beta-links:lock';
-const RECENT_BETA_LINKS_REDIS_LOCK_TTL_SECONDS = 120;
+// Matches the popular-configs lock: held for one whole refresh, so a node that
+// boots later in the same rollout cannot start a duplicate while the key is
+// being overwritten in place.
+const RECENT_BETA_LINKS_REDIS_LOCK_TTL_SECONDS = 600;
 const RECENT_BETA_LINKS_CACHE_SIZE = RECENT_BETA_LINKS_MAX_LIMIT;
 
 // Extract an Instagram handle from `userProfiles.instagramUrl`. The field
@@ -433,6 +436,20 @@ async function getCachedRecentBetaLinks(scope: RecentBetaLinksScope): Promise<Ca
   // Same pool-exhaustion hazard as popularBoardConfigs (#4463): the other half
   // of the home page's cold read. One in-flight copy per process, joined by
   // every concurrent caller.
+  return refreshRecentBetaLinks(scope, redisGeneration, localGeneration);
+}
+
+/**
+ * Run the CTE for one scope and overwrite its cached copy, single-flighted.
+ * Shared by the read-through miss above and the deploy warm-up, which calls it
+ * directly so it recomputes without first emptying the key readers are using.
+ */
+function refreshRecentBetaLinks(
+  scope: RecentBetaLinksScope,
+  redisGeneration: string | null,
+  localGeneration: number,
+): Promise<CachedRecentBetaLinkRow[]> {
+  const scopeKey = recentBetaLinksScopeKey(scope);
   const generation = redisGeneration ?? String(localGeneration);
   return singleFlight(`${RECENT_BETA_LINKS_FLIGHT_KEY_PREFIX}:${scopeKey}:v${generation}`, async () => {
     const rows = await runRecentBetaLinksQuery(scope);
@@ -459,8 +476,9 @@ async function getCachedRecentBetaLinks(scope: RecentBetaLinksScope): Promise<Ca
 /**
  * Refresh the recent-beta-links Redis cache on server startup.
  * Mirrors `warmPopularConfigsCache`: a distributed Redis lock ensures only
- * one node across the cluster runs the underlying query; others read the
- * fresh value when the resolver runs.
+ * one node across the cluster runs the underlying query, and it overwrites the
+ * key rather than emptying it first, so readers keep the previous copy until
+ * the new one lands.
  */
 export async function warmRecentBetaLinksCache(): Promise<void> {
   // No Redis means there's no cache to warm — running the CTE here would
@@ -473,6 +491,7 @@ export async function warmRecentBetaLinksCache(): Promise<void> {
   // write anything.
   if (!redisClientManager.isRedisConnected()) return;
 
+  let generation: string;
   try {
     const { publisher } = redisClientManager.getClients();
     const lockAcquired = await publisher.set(
@@ -486,12 +505,11 @@ export async function warmRecentBetaLinksCache(): Promise<void> {
       logger.info('[RecentBetaLinks] Another node is refreshing the cache, skipping');
       return;
     }
-    // Winning node: delete the current global scope so getCachedRecentBetaLinks()
-    // runs the SQL query. Scoped mobile reads warm on demand.
-    const generation = await getRedisGeneration();
-    await publisher.del(
-      recentBetaLinksCacheKey(recentBetaLinksScopeKey({ boardType: null, layoutId: null }), generation),
-    );
+    // Winning node: refresh the global scope IN PLACE. Deleting it first would
+    // make every home-page read wait on the CTE for as long as it runs; the
+    // SET in refreshRecentBetaLinks overwrites the key instead. Scoped mobile
+    // reads warm on demand.
+    generation = await getRedisGeneration();
   } catch (err) {
     logger.error('[RecentBetaLinks] Redis lock failed:', err);
     return;
@@ -499,7 +517,7 @@ export async function warmRecentBetaLinksCache(): Promise<void> {
 
   logger.info('[RecentBetaLinks] Refreshing cache...');
   try {
-    const rows = await getCachedRecentBetaLinks({ boardType: null, layoutId: null });
+    const rows = await refreshRecentBetaLinks({ boardType: null, layoutId: null }, generation, fallbackGeneration);
     logger.info(`[RecentBetaLinks] Cache warmed with ${rows.length} rows`);
   } catch (err) {
     logger.error('[RecentBetaLinks] Cache warm-up failed:', err);
