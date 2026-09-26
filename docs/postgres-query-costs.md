@@ -31,7 +31,7 @@ The rule for any sync or batch job: a write that changes nothing still costs WAL
 
 Change IDs (C#) match the audit findings. Rows are in rank order.
 
-**Shipped:** C1, C2, C3, C5, C6, C8, C10, C12, C13 (PR numbers in the Status column). C11 shipped earlier. C7 and C14 shipped in part. **Still open:** C4, C7 (remaining index drops), C9, C14 (remaining job trims), C15.
+**Shipped:** C1, C2, C3, C5, C6, C7, C8, C10, C12, C13 (PR numbers in the Status column). C11 shipped earlier. C14 shipped in part. **Still open:** C4, C9, C14 (remaining job trims), C15.
 
 | Rank | C# | Status | Change | Saved per day | Memory (MB) | Effort | Migr. | Risk | Replica verdict | Offline-only? |
 |---|---|---|---|---|---|---|---|---|---|---|
@@ -42,7 +42,7 @@ Change IDs (C#) match the audit findings. Rows are in rank order.
 | 5 | C5 | Shipped #5836 | Kilter catalog sync: skip unchanged stats rows, load self-aliases once, guard upserts, unnest | 600–1,700 (E) + about 1.9 GB WAL/day (E) | 0 | M | No | Med | stats half stronger; alias half smaller | No (it also cuts offline pulls) |
 | 6 | C6 | Shipped #5838 | Recommendation counts: Redis cache, plus a CTE for misses on CROWD/AT_LEVEL only | 900–1,050 (E) | 0 | S | No | Low | weaker (HIDDEN_GEMS regresses) | Partial: the count can go local |
 | 7 | C9 | Open | Popular sort: popularity side table with covering columns (Redis page cache first) | 600 (quiet) to 7,100 (contended) (E) | +65–130 (E) | M | Yes | Med | confirmed | Partial, already local |
-| 8 | C7 | Open | Drop dead/duplicate indexes (`board_climb_similar` is kept, not dropped) | 150–350 (E) + write churn | −844 idx (P) | S | Yes | Low–Med | not re-tested | No |
+| 8 | C7 | Shipped #5856 | Drop dead/duplicate indexes (`board_climb_similar` is kept, not dropped) | 150–350 (E) + write churn | −915 idx (P) | S | Yes | Low–Med | not re-tested | No |
 | 9 | C14 | Partial #5835, #5838 | Job trims: setter sitemap, snapshot export, grade backtest, neighbour gap scan, communityStats | 400–700 (E) | 0 | S–M | No | Low | not re-tested | No |
 | 10 | C13 | Shipped #5835 | Web climb page: climb row first, alias lookup only on miss/unlisted | 350–375 (E) | 0 | S | No | Low | confirmed, bigger | No |
 | 11 | C12 | Shipped #5838 | Followed-setter counts: early return on no follows, bind arrays | about 315 (E) | 0 | S | No | Low | confirmed, bigger | Yes, already local-first |
@@ -154,6 +154,7 @@ Change IDs (C#) match the audit findings. Rows are in rank order.
   - the small unused indexes from the audit findings and `boardsesh_ticks_sync_pending_idx`.
 - **Keep:** `board_climb_similar` and its indexes (763 MB (P) total, about 483 MB of that in indexes; 0 scans today). **Decided:** the owner is keeping the table for future Climb2Vec work ([`docs/climb2vec.md`](./climb2vec.md) phase 3a) instead of dropping it. Its weekly rebuild already stopped (#5828), so it costs no write churn while it sits unread.
 - **Declare** `board_climbs_layout_filter_idx` IF NOT EXISTS (557k scans (P)).
+- **Shipped: #5856** (migration 0242). It drops 10 indexes, 915 MB (P) on 2026-09-26: both v1 stats covering indexes, `board_climb_neighbors_rank_idx`, `boardsesh_ticks_sync_pending_idx`, `board_climb_events_board_confirmed_at_idx` and `_board_climb_idx`, `board_setter_stats_score_idx`, and the `board_climbs` `board_type`, `edges` and `characteristics` indexes. The PR body carries the prod runbook: hand-run `DROP INDEX CONCURRENTLY` first so the migration takes no table lock, plus the exact `CREATE INDEX CONCURRENTLY` rollback definitions. `board_climbs_layout_filter_idx` is a strict prefix of `board_climbs_search_filter_idx`; it is kept because it is half the size (7 MB vs 14 MB) and the planner picks it for layout-only scans (560k scans vs 30k (P)).
 - **Caveats:** use `SET LOCAL lock_timeout='3s'` with retry.
 
 ### C14. Job trims

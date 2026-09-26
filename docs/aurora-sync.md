@@ -180,7 +180,7 @@ Aurora sync and kilter-sync both skip rows whose values did not change, so the
 stamp reads "last changed upstream", not "last pass".
 
 The search hot path reads `ascensionist_count` through the covering index from
-migration 0067, so it stays a regular column (not `GENERATED`) — every writer
+migration 0122 (`board_climb_stats_ascents_covering_v2_idx`), so it stays a regular column (not `GENERATED`) — every writer
 must update it whenever they touch their own share.
 
 #### Unchanged re-sends are not rewritten

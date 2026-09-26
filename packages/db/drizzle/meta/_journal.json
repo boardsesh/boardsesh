@@ -1702,6 +1702,13 @@
       "when": 1790403441981,
       "tag": "0242_climb_popularity",
       "breakpoints": true
+    },
+    {
+      "idx": 243,
+      "version": "7",
+      "when": 1790422834764,
+      "tag": "0243_drop_unused_indexes",
+      "breakpoints": true
     }
   ]
 }

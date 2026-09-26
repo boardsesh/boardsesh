@@ -236,7 +236,6 @@ export const schemaSQL = `
   );
 
   CREATE INDEX IF NOT EXISTS "board_climbs_hold_fingerprint_idx" ON "board_climbs" ("board_type", "layout_id", "hold_fingerprint");
-  CREATE INDEX IF NOT EXISTS "board_climbs_characteristics_idx" ON "board_climbs" USING gin ("characteristics");
 
   CREATE TABLE IF NOT EXISTS "board_climb_aliases" (
     "board_type" text NOT NULL,
@@ -990,10 +989,8 @@ export const schemaSQL = `
     "confirmed_at" timestamp NOT NULL,
     "created_at" timestamp DEFAULT now() NOT NULL
   );
-  CREATE INDEX IF NOT EXISTS "board_climb_events_board_confirmed_at_idx" ON "board_climb_events" ("board_id", "confirmed_at");
   CREATE UNIQUE INDEX IF NOT EXISTS "board_climb_events_board_seq_unique" ON "board_climb_events" ("board_id", "seq");
   CREATE INDEX IF NOT EXISTS "board_climb_events_session_idx" ON "board_climb_events" ("session_id");
-  CREATE INDEX IF NOT EXISTS "board_climb_events_board_climb_idx" ON "board_climb_events" ("board_id", "climb_uuid");
   DROP TABLE IF EXISTS "kilter_wall_sources";
 CREATE TABLE "kilter_wall_sources" (
 	"source_key" text PRIMARY KEY NOT NULL,

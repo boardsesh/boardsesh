@@ -355,9 +355,9 @@ export const boardClimbs = pgTable(
     // 'method_footless', 'method_footless_kickboard', 'method_no_kickboard'
     // (see @boardsesh/shared-schema CLIMB_CHARACTERISTICS). Internal reads/filters
     // use this array; the description prefix stays only as the Aurora wire format.
-    // A GIN index (board_climbs_characteristics_idx) is created in a custom
-    // migration — like compatible_size_ids' GIN index (migration 0073), kept out
-    // of the schema so drizzle-kit generate never emits a destructive diff for it.
+    // Unindexed: no query filters on it. Migration 0135 built a GIN index
+    // (board_climbs_characteristics_idx) that production never scanned, and
+    // 0242 dropped it.
     characteristics: text('characteristics').array(),
     // Spray walls only: how many of this climb's holds have come off the wall
     // (`spray_wall_holds.removed_version_id IS NOT NULL`). NULL on every other
@@ -371,7 +371,18 @@ export const boardClimbs = pgTable(
     syncSeq: bigserial('sync_seq', { mode: 'number' }).notNull(),
   },
   (table) => ({
-    boardTypeIdx: index('board_climbs_board_type_idx').on(table.boardType),
+    // Layout-scoped reads (sitemap board configs, catalogue counts) and any
+    // whole-board range scan. Created in migration 0025, dropped from the schema
+    // in 0067 but never from production, where it carries ~560k scans a week;
+    // declared again (IF NOT EXISTS) so a future generate cannot drop it. It
+    // also replaces the old single-column board_climbs_board_type_idx.
+    layoutFilterIdx: index('board_climbs_layout_filter_idx').on(
+      table.boardType,
+      table.layoutId,
+      table.isListed,
+      table.isDraft,
+      table.framesCount,
+    ),
     // Leading board_type: every syncClimbs pull filters on it before walking
     // the (updated_at, sync_seq) cursor, so a per-board pull is one range scan.
     syncCursorIdx: index('board_climbs_sync_cursor_idx').on(table.boardType, table.updatedAt, table.syncSeq),
@@ -681,9 +692,10 @@ export const boardClimbStats = pgTable(
     // (Historically upstream was split into aurora_/kilter_ columns for the two
     // Kilter backends; migration 0141 folded them into GREATEST(aurora, kilter) and
     // dropped the kilter column.)
-    // Keep it as a regular column (not GENERATED) so the custom covering indexes
-    // (board_climb_stats_ascents_covering_idx, migration 0068; the v2 variant with
-    // climb_uuid as a trailing key column, migration 0122) keep working.
+    // Keep it as a regular column (not GENERATED) so the custom covering index
+    // (board_climb_stats_ascents_covering_v2_idx, migration 0122, with climb_uuid
+    // as a trailing key column) keeps working. The v1 index from 0068 was a
+    // strict prefix of it and was dropped in 0242.
     ascensionistCount: bigint('ascensionist_count', { mode: 'number' }),
     upstreamAscensionistCount: bigint('upstream_ascensionist_count', { mode: 'number' }),
     boardseshAscensionistCount: bigint('boardsesh_ascensionist_count', { mode: 'number' }),
