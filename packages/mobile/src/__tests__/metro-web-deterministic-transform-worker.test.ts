@@ -46,8 +46,17 @@ const classNames = [
 ];
 const cssModuleSource = classNames.map((className) => `.${className} { color: red; }`).join('\n');
 
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function exportedKeyOrder(output: string): string[] {
-  const styles = output.slice(output.indexOf('(') + 1, output.indexOf('},{unstable_styles') + 1);
+  const stylesStart = output.indexOf('Object.assign(');
+  const stylesEnd = output.indexOf('},{unstable_styles');
+  if (stylesStart === -1 || stylesEnd === -1) {
+    throw new Error(`Expo's CSS-module output changed shape; cannot find the class map in: ${output.slice(0, 200)}`);
+  }
+  const styles = output.slice(stylesStart + 'Object.assign('.length, stylesEnd + 1);
   return Object.keys(JSON.parse(styles) as Record<string, string>);
 }
 
@@ -82,6 +91,6 @@ describe('metro-web-deterministic-transform-worker', () => {
     expect(web.transformerPath).toBe(wrapperPath);
     // Expo CLI's supervising worker keys neither our file nor a getCacheKey we
     // export; Metro's getTransformCacheKey does include cacheVersion.
-    expect(web.cacheVersion).toMatch(new RegExp(`^${native.cacheVersion.replace('.', '\\.')}\\+web-[0-9a-f]{16}$`));
+    expect(web.cacheVersion).toMatch(new RegExp(`^${escapeRegExp(native.cacheVersion)}\\+web-[0-9a-f]{16}$`));
   });
 });
