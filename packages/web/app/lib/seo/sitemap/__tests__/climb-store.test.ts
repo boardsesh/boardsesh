@@ -601,6 +601,25 @@ describe('the stored page total', () => {
 
     expect(page?.totalItems).toBe(52_000);
   });
+
+  it('falls back to the live build when the summary survives an emptied URL table', async () => {
+    // The torn state: a summary row says 100 items but the URL table under it
+    // is empty (truncated, or restored without it). No refresh commits that, so
+    // it will not clear on its own; a 503 here would stick until the next
+    // refresh. It must read as "never populated" and take the live build.
+    store.urlRows = [];
+    store.row = storedRow({ itemCount: 100 });
+    live.fallbackItems = [{ path: '/kilter/live-1', lastModified: null }];
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    expect(await fetchStoredClimbPage(1)).toBeNull();
+
+    const page = await buildClimbShardPage(1);
+
+    expect(page.source).toBe('live');
+    expect(page.items).toEqual([{ path: '/kilter/live-1', lastModified: null }]);
+    expect(live.fallbackItemCalls).toBe(1);
+  });
 });
 
 describe('buildClimbShardPage', () => {

@@ -139,6 +139,30 @@ function getOpenGraphImageUrl(image: string | URL | { url: string | URL } | unde
 }
 
 describe('board slug climb metadata', () => {
+  it('keys the angle stats on the uuid the climb resolved to, not the alias in the URL', async () => {
+    const { getClimb, getClimbStatsForAllAngles } = await import('@/app/lib/data/queries');
+    vi.mocked(getClimb).mockResolvedValueOnce({
+      uuid: 'canonical-climb',
+      name: 'Test Climb',
+      difficulty: 'V5',
+      setter_username: 'setter',
+      quality_average: 4,
+      ascensionist_count: 12,
+      frames: 'p1r12,p2r13',
+    } as unknown as Awaited<ReturnType<typeof getClimb>>);
+    vi.mocked(getClimbStatsForAllAngles).mockClear();
+
+    const metadata = await pageModule.generateMetadata({
+      params: Promise.resolve({ board_slug: 'my-board', angle: '40', climb_uuid: 'alias-climb' }),
+    });
+
+    // Not the noindex fallback: a throw inside generateMetadata would land
+    // there and could leave the stats call unmade for the wrong reason.
+    expect(metadata.robots).toBeUndefined();
+    expect(vi.mocked(getClimbStatsForAllAngles)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(getClimbStatsForAllAngles)).toHaveBeenCalledWith('kilter', 'canonical-climb');
+  });
+
   it('uses the absolute backend OG image URL for social images', async () => {
     const metadata = await pageModule.generateMetadata({
       params: Promise.resolve({
