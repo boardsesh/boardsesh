@@ -1,7 +1,7 @@
-# Railway config assertions
+# Railway (OTA project config-as-code)
 
-Config assertions for the Railway project that runs the public web service and the
-self-hosted xprem OTA server (`updates.boardsesh.com`). It is the same three-file shape as
+Config-as-code for the Railway services that run the self-hosted xprem OTA server
+(`updates.boardsesh.com`). It is the same three-file shape as
 [cloudflare.md](./cloudflare.md): typed desired state, a pure diff, and one script
 that does all the I/O.
 
@@ -10,92 +10,339 @@ that does all the I/O.
 | `infra/railway/config.ts` | Declarative desired state. No side effects, no API calls, **no secret values**. |
 | `infra/railway/plan.ts` | Pure diff → `PlannedChange[]`. Unit-tested; no I/O. |
 | `scripts/railway-apply.ts` | Fetches live state, builds the plan, reports or converges. |
+| `scripts/ota-image-bump.ts` | Finds newer xprem releases and rewrites the repo onto one. |
 | `scripts/railway-apply.test.ts` | Tests the plan layer. Needs no live project. |
 
 ```bash
-RAILWAY_TOKEN=... RAILWAY_PROJECT_ID=... vp run railway:apply              # dry-run
-RAILWAY_TOKEN=... RAILWAY_PROJECT_ID=... vp run railway:apply -- --apply   # converge
+RAILWAY_TOKEN=... RAILWAY_PROJECT_ID=... vp run railway:apply                                   # dry-run
+RAILWAY_TOKEN=... RAILWAY_PROJECT_ID=... vp run railway:apply -- --apply                        # converge
+RAILWAY_TOKEN=... RAILWAY_PROJECT_ID=... vp run railway:apply -- --apply --allow-image-change   # + roll a new image
 ```
 
 Dry-run is the default and **exits non-zero when there is drift**, so CI can gate on
 it. A second `--apply` with nothing to do is a no-op.
 
+`--no-wait` is a local diagnostic escape hatch: it skips deployment polling and
+post-deploy probes, so it also skips failure detection and automatic rollback.
+Do not use it in the production apply workflow; manually verify any deployment
+started with this flag.
+
+## Why not `railway.toml`
+
+The repo retains `railway.toml` and `railway.web.toml` for backend and web
+configuration. Their presence does not prove Railway reads them: only existing
+services already using the legacy config-file mechanism retain support until
+the cutoff below. Track service adoption and migration in
+[#5041](https://github.com/boardsesh/boardsesh/issues/5041). The OTA service
+`boardsesh-ota-v3` is sourced from a third-party GHCR image with no repository of
+ours attached, so this tool manages its declared settings through the API.
+
+> [Railway's Config-as-Code documentation](https://docs.railway.com/config-as-code)
+> specifies a **2026-12-01** cutoff for existing users; new services cannot opt in.
+> The backend/web migration remains a separate decision in #5041, including
+> whether `railway config plan --detailed-exit-code` replaces overlapping checks.
+
 ## What it manages
 
-- **Services.** Asserts `boardsesh-ota-v3`, `boardsesh-web` and `PostGIS - PG18`
-  exist; reports when the ClickHouse service is missing. It never creates or
-  deletes a service — see
-  [Why services are not created](#why-services-are-not-created).
-- **Variables.** Asserts the declared variables are set and are not still an
-  unfilled `<placeholder>`. It also checks public safe-value rules without
-  printing live values: `boardsesh-web` needs SMTP credentials, `BOARDSESH_WEB`
-  must be absent or `1`, and `NEXTAUTH_URL` or `BASE_URL` must name the canonical
-  `https://www.boardsesh.com` origin. `PostGIS - PG18` needs
-  `PG_TLS_SERVER_CERT` and `PG_TLS_SERVER_KEY` — the certificate and key the
-  primary serves, which the image's entrypoint writes to the volume at boot. A
-  missing one is drift here rather than a surprise at deploy time, and an absent
-  pair means the primary falls back to its base image's snakeoil certificate,
-  whose private key is published in a public Docker Hub layer. This tool only
-  asserts that the two variables are set; it never writes them without being handed
-  their values, and installing or rolling back the certificate itself is a separate
-  reviewed operator procedure rather than anything a nightly job does.
-  `boardsesh-ota-v3` needs `CLICKHOUSE_URL` plus the Redis cache settings:
-  `REDIS_HOST`, `REDIS_PORT` and `REDIS_PASSWORD` must be set, and two are pinned
-  to exact values: `CACHE_MODE` must be `redis` and `CACHE_KEY_PREFIX` must be
-  `boardsesh-ota`. Absent or any other value is drift, and the remediation is
-  always to set the pinned value, never to remove it. Without `CACHE_MODE`, xprem quietly
-  falls back to its local in-process cache, which has no size bound and grew to a
-  1.7 GB heap; the server keeps working, so only this check notices. xprem has no
-  default for `REDIS_PORT`, so a missing port or host makes its Redis connection
-  check panic. `CACHE_KEY_PREFIX` pins the key names (unset, xprem uses
-  `expoopenota`); any other prefix silently moves every cached manifest, lock and
-  rate-limit counter to a new key namespace, so the check compares the exact value.
-  With `CACHE_MODE=redis`, Redis is a hard dependency of OTA delivery: xprem pings
-  Redis once, in a `sync.Once`, on its first cache use (the bucket-migration lock at
-  boot) and panics if the ping fails. The service's restart policy is `ALWAYS` so it
-  retries until Redis answers; the race is most likely during Railway's Redis
-  auto-update window (weekends).
-- **ClickHouse retention.** Asserts the TTLs on xprem's `observe_metrics` and
-  `observe_logs` tables.
+| | `boardsesh-ota-v3` | `boardsesh-ota-clickhouse` | `Postgres` | `PostGIS - PG18` | `boardsesh-web` | everything else |
+| --- | --- | --- | --- | --- | --- | --- |
+| Level | `managed` | `managed` | `assert-only` | `assert-only` | `assert-only` | `inventory` |
+| Image | applied | applied | left alone | left alone | left alone | — |
+| Deploy settings | applied | — | — | — | — | — |
+| Variables | applied / asserted | — | — | asserted | asserted | — |
+| Domains, volumes, scale | reported | reported | reported | — | — | — |
 
-A service that is live but not declared here is **reported and left alone**. The
-project also holds other services on purpose; a tool that removed what it did not
-recognise would be a catastrophe rather than a convenience.
+- **The image.** `OTA_SERVER_VERSION` in `infra/railway/config.ts` is the one place
+  the deployed xprem version is written down. Applying it rolls a deployment —
+  see [Upgrading the OTA server](#upgrading-the-ota-server).
+- **Deploy settings.** Healthcheck path and timeout, restart policy, and the
+  draining window. All safe, all reversible, all applied.
+- **Variables.** A variable declared **with a value** is configuration this repo
+  owns and converges. A variable declared **by name only** is presence-only:
+  asserted present and not an unfilled `<placeholder>`, never printed, never
+  overwritten once set. This covers secrets and the provider-managed
+  `AWS_BASE_ENDPOINT`, so merging cannot restore a stale storage endpoint. For
+  `PostGIS - PG18`, this also asserts that `PG_TLS_SERVER_CERT` and
+  `PG_TLS_SERVER_KEY` are present without reading either value into git.
+- **The OTA cache variables.** `boardsesh-ota-v3` needs `REDIS_HOST`,
+  `REDIS_PORT` and `REDIS_PASSWORD` set (by name only; they are Railway references
+  to the shared Redis), and two public values pinned exactly: `CACHE_MODE` must be
+  `redis` and `CACHE_KEY_PREFIX` must be `boardsesh-ota`. Absent or any other value
+  is drift, and the remediation is always to set the pinned value, never to remove
+  it. Without `CACHE_MODE`, xprem quietly falls back to its local in-process cache,
+  which has no size bound and grew to a 1.7 GB heap; the server keeps working, so
+  only this check notices. xprem has no default for `REDIS_PORT`, so a missing port
+  or host makes its Redis connection check panic. `CACHE_KEY_PREFIX` pins the key
+  names (unset, xprem uses `expoopenota`); any other prefix silently moves every
+  cached manifest, lock and rate-limit counter to a new key namespace. With
+  `CACHE_MODE=redis`, Redis is a hard dependency of OTA delivery: xprem pings Redis
+  once, in a `sync.Once`, on its first cache use (the bucket-migration lock at boot)
+  and panics if the ping fails. That is why the declared restart policy is `ALWAYS`:
+  the server retries until Redis answers, and the race is most likely during
+  Railway's Redis auto-update window (weekends). No retry count is declared: it has
+  no effect under `ALWAYS`, so the planner neither compares nor writes it then. It
+  is still compared for an `ON_FAILURE` service.
+- **Variables that must not be set.** `forbiddenVars` catches the ones that would
+  switch xprem out of control-plane mode. Reported, never deleted.
+- **Custom domains, volume mounts, replicas, region.** Read and reported, never
+  applied. Each is either half of a change that lives somewhere else, a create, or
+  a decision with a bill attached.
+- **ClickHouse retention.** Asserts the TTLs on xprem's `observe_*` and health
+  tables.
 
-`PostGIS - PG18` is declared for its **TLS variables alone**, and nothing else
-about it. Its image digest, volume and networking stay outside this tool, managed
-by the reviewed publish flow in
-[postgres-image-publishing.md](./postgres-image-publishing.md) — a nightly job
-must not be the thing with an opinion about which image the production database
-runs.
+A service that is live but not declared at all is **reported and left alone**. The
+three services this repo does not manage are listed as `inventory` with a `managedBy`
+note, so that report fires for a genuinely *new* service — which is worth seeing —
+rather than the same three lines every night.
+
+`PostGIS - PG18` is declared for its **TLS variables alone**. Its image digest,
+volume and networking remain under the reviewed publish flow in
+[postgres-image-publishing.md](./postgres-image-publishing.md); the Railway drift
+job never changes them.
+
+## Upgrading the OTA server
+
+Bump `OTA_SERVER_VERSION` in `infra/railway/config.ts` and `EOAS_PACKAGE_SPEC` in
+`scripts/lib/eoas.ts` together, in one PR. Merging it is what performs the upgrade:
+`railway-drift.yml`'s `apply` job runs on push to `main` and
+
+1. writes the deploy settings and the new image (`serviceInstanceUpdate`),
+2. rolls a deployment (`serviceInstanceDeployV2`, which returns its id),
+3. polls until three consecutive `SUCCESS` readings, each reporting the image it
+   deployed in `meta.image`,
+4. probes `/hc` and `/ready`,
+5. **rolls back and restores the previous configuration** if either step fails,
+   unless another deployment has taken over the service in the meantime.
+
+A run touching multiple services behaves as one deployment batch. If a later
+service fails, every earlier verified deployment is rolled back in reverse order;
+variables remain set because Railway's deployment rollback cannot undo variable
+configuration. Before the first write, every waited multi-service batch verifies
+that each service has a rollback target. Token rollback capability is a hard
+preflight only when the batch changes an image. Non-image changes still deploy and
+probe, and failures trigger a best-effort unwind; that unwind needs a project token
+to succeed.
+
+`vp run ota:image-bump` opens those PRs for you — see
+[Upgrade PRs](#upgrade-prs-stable-and-beta).
+
+Six things gate the image change, and all six matter:
+
+- **`--allow-image-change`.** `--apply` alone will not move the image. Rolling a
+  new container on the server every production binary talks to is a categorically
+  larger act than correcting a healthcheck path, so it is asked for explicitly —
+  the same shape as `cf:apply`'s `--allow-zone-ssl`. The nightly drift job never
+  passes it; the apply job does.
+- **The CLI may lead the server, never trail it.** `infra/railway/plan.ts` blocks
+  the OTA image if its version is ahead of `EOAS_PACKAGE_SPEC`, because a CLI that trails
+  can 404 on app-scoped routes. `scripts/__tests__/eoas-version-parity.test.ts`
+  asserts the same thing without needing the API. ClickHouse has its own version
+  series and is not compared to eoas; its image changes still require explicit opt-in.
+- **The service must be quiet.** A deployment already in flight aborts the run
+  rather than stacking a second one on top of it.
+- **The token must be able to roll back.** `railwayRequest` probes both auth
+  schemes, so an *account* token drives the whole apply happily — but the rollback
+  helper sends only `Project-Access-Token` and reads `projectToken` for its scope,
+  which an account token answers as null. Unchecked, that mismatch surfaces at the
+  single worst moment: a bad image live, the probe failed, and the recovery path
+  dying immediately. So an image change asks first, and refuses if the answer is no.
+- **Configured must match running.** If the service is configured for one image
+  and serving another, the plan blocks any image change, whatever the repo
+  declares. See [Configured is not running](#configured-is-not-running).
+- **A ClickHouse image change runs alone.** A plan that changes the ClickHouse image
+  and also writes anything to the OTA service (its image, a deploy setting or a
+  variable) blocks all of those entries. xprem exits at boot when ClickHouse is
+  unreachable, and a two-service run can restart the OTA server while ClickHouse
+  is restarting: through the OTA deploy itself, or through a failed batch that
+  rolls ClickHouse back and then the OTA server. Converge the OTA service first,
+  then land the ClickHouse image in a separate PR.
+
+### Step 5 is the part worth reading twice
+
+`deploymentRollback` restores the *running container*. It does not touch deploy
+settings or the configured `source.image`, so a rollback alone would leave the
+next deploy ready to re-ship the failed configuration. The failure path therefore
+issues a second `serviceInstanceUpdate` restoring exactly the fields this run
+changed, including prior nulls. It says so loudly if any rollback or restore fails.
+
+The restore is skipped in one case only: the rollback helper throws
+`RollbackFencedError`, meaning another deployment is acting on the service. That
+covers a deployment competing with or newer than the failed one before the
+rollback, and a second deployment appearing beside the rollback after it. Someone
+else has acted on the service by then, so writing the pre-run image and settings
+back would overwrite their change. The tool prints `configuration was NOT
+restored`, what the service is still configured for, and asks the operator to find
+the deployment that is neither this run's nor the rollback target, and to leave its
+configuration alone.
+
+Any other rollback failure (reads that kept failing, a rollback deployment that
+failed or did not settle in time) leaves this run as the only actor. The tool says
+the rollback deployment did not settle, restores the configuration anyway so the
+next deploy does not re-ship the failed change, and asks the operator to check
+which deployment is serving. The same rules apply to every service in a
+multi-service unwind.
+
+A deployment that reaches `SUCCESS` without `meta.image` cannot be checked against
+the image this run deployed. Such a reading counts as a failed read: it resets the
+three confirmations, and three in a row fail the rollout, which then rolls back.
+
+Environment variables are separate from that recovery. Every `variableUpsert`
+uses `skipDeploys: true`, then the service gets one deployment carrying the whole
+batch. Neither `deploymentRollback` nor the deploy-setting/configuration restore
+undoes those variable writes, so they survive a failed single-service apply and a
+failed multi-service batch. After either failure, inspect each affected service's
+**Production → Variables** page in Railway, compare it with `infra/railway/config.ts`
+and the secrets supplied to the failed run, then manually restore the previous
+value or remove the newly added variable before re-running the drift workflow.
+
+If a service in a multi-service batch has no rollback target, the run refuses the
+whole batch before its first write. Single-service applies retain the existing
+best-effort policy even without a prior rollback target. The tool warns for an
+image change without a target; a failed rollout without one requires manual
+reconciliation. This does not relax the separate image-change token capability
+check.
+
+Two failures deliberately do *not* roll back the current service. If its deployment
+was canceled/parked or carries somebody else's image, rollback could undo a newer
+or manual action. Earlier services completed by the same run are still unwound.
+Every recovery is best-effort across the whole stack, followed by an aggregate
+`MANUAL ACTION` warning when anything could not be restored.
+
+### Configured is not running
+
+`serviceInstanceUpdate` writes configuration; the container keeps what it was
+created with until the next deployment. A run killed between those two steps leaves
+them disagreeing — and a drift check reading only the configured image would call
+that in sync forever, while the next unrelated deploy shipped the never-probed
+image. So the plan compares the **running** deployment's `meta.image` too and
+reports the split. Configured-versus-running disagreement blocks writes to that
+service until an operator reconciles it, even when the repo declares a third image.
+Deploying that third image and then rolling back would restore the serving
+container and the configured image, leaving the split in place for the next deploy
+to ship unprobed.
+
+The reader identifies the serving image and rollback baseline from exactly one
+active `SUCCESS` deployment. A newer failed or canceled attempt is not that
+baseline. Missing image metadata, no active success, or multiple active successes
+block writes to an image-managed service; the tool cannot prove convergence or
+safely choose a deployment to restore. A known serving deployment whose
+`canRollback` is false still follows the single-service best-effort and
+multi-service refusal policies above.
+
+### The probe retries
+
+`/hc` and `/ready` are probed three times with a short backoff, not once. The probe
+runs during the switchover the service's own `drainingSeconds` exists to cover, and
+a single 502 from the edge is indistinguishable from a broken server — treating one
+as a failure would roll back a perfectly healthy production deployment.
+
+### When an upgrade fails
+
+**Revert the bump PR.** The rollback restores the container and the *configured*
+image, but `OTA_SERVER_VERSION` in the repo still names the bad tag — so the next
+push touching `infra/railway/**` sees the same drift and attempts the same upgrade
+again. Nothing else re-triggers it (the `apply` job is path-filtered, so unrelated
+pushes to `main` do not), but a second infra change would, and each attempt rolls a
+production deployment. Reverting the version is what actually stops it.
+
+**A deployment parked on `NEEDS_APPROVAL` is left alone**, not rolled back — nothing
+is broken and releasing it is a human's call. Approve or cancel it in Railway, then
+re-run.
+
+**The two mutations are never retried**, on purpose: an ambiguous response may mean
+Railway already accepted the call, and retrying would create a second deployment. So
+a timeout on `serviceInstanceUpdate` or `serviceInstanceDeployV2` leaves the run
+failed with a deployment possibly in flight. Wait for the service to go quiet — the
+next run refuses to touch a service that is not — then re-run.
+
+### After any bump
+
+- `vp dlx eoas@<version> doctor --channel=production`.
+- Check `https://updates.boardsesh.com/ready` and that the Observe dashboard still
+  renders. An xprem bump never touches ClickHouse's own tables: the lean image
+  disables the system logs in config (see [What fills the disk](#what-fills-the-disk)).
+
+## Upgrade PRs (stable and beta)
+
+`.github/workflows/ota-image-bump.yml` runs each Monday at 07:15 UTC and opens a
+**draft PR per candidate**. `vp run ota:image-bump` does the same locally:
+
+```
+[ota-image-bump] Declared server 3.1.2, publishing with eoas 3.1.2.
+  newest stable: 3.1.3
+  newest prerelease: 3.2.0-beta3
+```
+
+**Two candidates, not one.** A prerelease outranks a stable release by semver —
+`3.2.0-beta3` > `3.1.3` — so a single "newest version" search would propose the beta
+and quietly bury the stable upgrade behind it. They are tracked separately and each
+gets its own branch, so both are visible and each is merged on its own merits. The
+prerelease PR says so in its body.
+
+Ordering has one deliberate departure from strict semver. Upstream writes betas two
+ways, `v3.0.0-beta.3` and `v3.2.0-beta1`, and the spec compares alphanumeric
+identifiers in ASCII order — which ranks `beta10` *below* `beta2`. On the day xprem
+ships a tenth beta a spec-pure comparison would propose the ninth as the newest, so
+a trailing number on an identifier is compared numerically.
+
+The bump rewrites every file that names the version — the parity test polices the
+same list — and both halves move in one commit, so the CLI can never end up
+trailing the server.
 
 ## Secrets
 
-`infra/railway/config.ts` never holds a value. It declares that a variable must
-exist and must not be a placeholder — the value lives in Railway.
+`infra/railway/config.ts` holds a value only for repo-owned, non-secret
+configuration, which is what makes that value safe to print: it is already in git.
+Everything else is declared by name, and the value lives in Railway.
 
-`--apply` writes a variable only when the caller supplies its value in the script's
-own environment as `RAILWAY_VAR_<NAME>`:
+`--apply` writes a name-only variable solely when the caller supplies its value in
+the script's own environment as `RAILWAY_VAR_<NAME>`:
 
 ```bash
 RAILWAY_VAR_CLICKHOUSE_URL='clickhouse://…' vp run railway:apply -- --apply
 ```
 
-Without one, the drift is reported and left unapplied. A variable that is already
-set and is not a placeholder is **never overwritten** — this tool cannot clobber a
-working DSN with a stale one.
+Without one, the drift is reported and left unapplied. A presence-only value that
+is already set and is not a placeholder is **never overwritten** — this tool cannot
+clobber a working DSN or storage endpoint with a stale one.
 
-Values never reach a log line. `infra/railway/plan.ts` reduces every variable to
-`set` / `absent` / `placeholder` before it can appear in a `PlannedChange`, and one
-of the unit tests asserts a password cannot survive into the plan.
+Values never reach a log line. `infra/railway/plan.ts` reduces every name-only
+variable to `set` / `absent` / `placeholder` before it can appear in a
+`PlannedChange`, and for a variable this repo owns it prints the *declared* value on
+a mismatch and never the live one. Unit tests assert a password cannot survive into
+the plan on either path.
+
+### Why the draining window is a deploy setting, not a variable
+
+Railway exposes the SIGTERM-to-SIGKILL window two ways: `drainingSeconds` on the
+service instance, and a `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` variable. Both would
+work. The typed field is used because the variable route would need an exception to
+"never overwrite a value that is already set" — and that rule is exactly what
+protects a live DSN. A numeric knob is not worth qualifying it.
 
 ### Why placeholders are their own state
 
 `npx eoas server:init` writes `CLICKHOUSE_URL=<clickhouse://user:password@host:9000/xprem>`
 when you enable Observe without pasting a DSN. That value passes a naive "is it
 set?" check and then fails at boot, so it is classified separately and reported with
-a different message. The pattern is borrowed from xprem's own CLI, which uses the
-identical regex to catch the identical mistake.
+a different message. The pattern is borrowed from xprem's own CLI, which catches the
+identical mistake.
+
+It is **anchored**, unlike theirs. An unanchored pattern matches any value merely
+*containing* a bracketed run, and `ADMIN_PASSWORD` is the one variable whose policy
+requires a symbol — so `hunter<2>!Ab` is a plausible real password. Misreading a
+live secret as a placeholder is not cosmetic: it makes the variable convergeable, so
+a supplied value would overwrite a working one, breaking the rule that a set secret
+is never clobbered.
+
+## Why the schema is introspected before a write
+
+Railway's published field list for `ServiceInstanceUpdateInput` is hand-curated and
+omits both `source` and `drainingSeconds` — the two fields that make this tool's
+apply path possible. The schema itself is the only trustworthy answer, and
+introspection is open on `backboard.railway.com` with no token, so `--apply` checks
+it for the cost of one unauthenticated POST. If a field it writes ever disappears,
+it says so instead of sending a mutation nobody can reason about.
 
 ## ClickHouse retention
 
@@ -104,11 +351,16 @@ xprem's ClickHouse migrations ship **no TTL on any table**. Left alone,
 
 The declared windows are 90 days for metrics and 30 for logs — logs carry the event
 bodies and attribute blobs that dominate the bytes, while metrics are narrow numeric
-rows worth comparing across releases months apart.
+rows worth comparing across releases months apart. Three server-side health tables
+carry 90/90/180 windows; all five are in `CLICKHOUSE_RETENTION`.
 
 The check is skipped, not failed, when the script has no `CLICKHOUSE_URL` of its own
 (the same way `scripts/mobile-ota-health-check.ts` skips without a PostHog key). It
 reads over ClickHouse's HTTP interface on port 8123 and never writes.
+
+The database name is the sole value interpolated into that read-only SQL. The tool
+accepts only an unquoted ClickHouse identifier (`[A-Za-z_][A-Za-z0-9_]*`), which is
+the SQL-injection boundary rather than a cosmetic naming check.
 
 > **The assertion cannot run from CI as written.** The DSN host is
 > `boardsesh-ota-clickhouse.railway.internal`, which resolves only inside Railway's
@@ -192,6 +444,10 @@ stops accepting writes, and since xprem calls `log.Fatalf` when ClickHouse is
 unreachable at boot, the next OTA restart would then fail to come up at all — a full
 disk here is an availability risk for `updates.boardsesh.com`.
 
+Growing the volume is a dashboard action, and not out of caution: `sizeMB` appears on
+no input type anywhere in Railway's schema, so resizing is not something the API
+permits at all.
+
 ### Where each table's rows come from
 
 Two independent producers, which is why the tables filled at very different times.
@@ -251,9 +507,16 @@ alone; a running OTA server rides out a short ClickHouse outage.
    files. Check it from a shell that is logged out of ghcr.io:
    `docker manifest inspect ghcr.io/boardsesh/boardsesh-clickhouse@sha256:…` prints
    a manifest instead of `unauthorized`.
-3. **Pin it.** Railway → `boardsesh-ota-clickhouse` → Settings → Source → Docker Image:
-   paste the digest reference from step 1. Put the same string in `CLICKHOUSE_IMAGE`
-   in `infra/railway/config.ts`.
+3. **Pin it.** Put the digest reference from step 1 in `CLICKHOUSE_IMAGE` in
+   `infra/railway/config.ts` and merge that PR on its own. The `apply` job deploys
+   ClickHouse alone, waits for it, then probes the OTA server's `/hc` and `/ready`:
+   xprem is the client that has to reach ClickHouse, so its readiness is the real
+   check. A failed probe rolls ClickHouse back (the OTA server is not redeployed).
+   The planner refuses a run that would change the ClickHouse image and write
+   anything to the OTA service, so the rule below cannot be broken by one merge:
+   converge the OTA service first, then land the ClickHouse image on its own. Without CI, the manual path is Railway → `boardsesh-ota-clickhouse`
+   → Settings → Source → Docker Image, then the same constant change so the nightly
+   drift check agrees.
 4. **Bound the container.** ClickHouse caps itself at 1.2 GB; the 2 GB container limit
    is the safety rail behind it (the server takes the lower of its setting and 90% of
    the cgroup, so the 1.2 GB setting stays in force):
@@ -264,10 +527,10 @@ alone; a running OTA server rides out a short ClickHouse outage.
    JSON
    ```
 
-5. **Deploy ClickHouse only.** Steps 3 and 4 stage changes for one service; deploy
-   them and wait for the ClickHouse deployment to be live. Do not touch the OTA server.
-   Then check `https://updates.boardsesh.com/hc` still answers 200 and the Observe
-   dashboard still renders its charts.
+5. **Deploy ClickHouse only.** The apply job already did this when it pinned the
+   image; step 4's limit change stages a second deploy for ClickHouse alone. Do not
+   touch the OTA server. Then check `https://updates.boardsesh.com/hc` still answers
+   200 and the Observe dashboard still renders its charts.
 6. **Drop the old log tables.** Removing a log from config stops ClickHouse writing
    it, but the tables already on the volume stay until dropped. Create a temporary
    Railway TCP proxy to port 8123 on `boardsesh-ota-clickhouse`, then list what is
@@ -291,8 +554,10 @@ alone; a running OTA server rides out a short ClickHouse outage.
    volume reading printed by `vp run railway:apply` drops, and the dry run reports no
    drift.
 
-Rollback: repoint Source → Docker Image at `clickhouse/clickhouse-server:25.3` and
-deploy ClickHouse alone. The volume and the `expo_observe` data are untouched by
+Rollback: revert the `CLICKHOUSE_IMAGE` PR (or set it to the previous digest) and
+merge; the apply job deploys ClickHouse alone. In an emergency, repoint Source →
+Docker Image at `clickhouse/clickhouse-server:25.3` by hand, deploy ClickHouse alone,
+and follow up with the constant change so the drift check stops reporting it. The volume and the `expo_observe` data are untouched by
 either image; stock config recreates the dropped log tables, empty.
 
 ## Why services are not created
@@ -302,20 +567,43 @@ A ClickHouse service is only correct with a persistent volume mounted at
 loses every row on each redeploy, and a name lookup that misses would create a
 *second* service rather than reusing the first. Neither has a cheap undo.
 
-So the tool reports exactly what is missing and what to create, and applies only
-variables — which are safe and idempotent. This mirrors how the Cloudflare tool
-reports a zone-wide SSL change instead of applying it. Widening this to
-`serviceCreate` + `volumeCreate` is a deliberate follow-up, not an oversight.
+A project-level service also needs an instance in the selected environment. A
+missing environment instance is blocked drift, not an in-sync result. The tool
+does not create it or write its variables/settings or trigger its deployment;
+restore the intended instance and any persistent mount first.
+
+So the tool reports exactly what is missing and what to create. Changing an
+*existing* service is a different risk and is automated: it is reversible by
+changing the constant back, Railway keeps the deployment history, and the apply
+path verifies its own result.
+
+The same reasoning covers what stays report-only on an existing service. A custom
+domain is only half a change — the other half is the DNS record in
+`infra/cloudflare/config.ts` — and creating one side alone leaves a domain that
+never verifies. Replica count has a bill attached, and Railway's replica state
+lives in an opaque `multiRegionConfig` JSON that a scalar write does not reliably
+move. Changing a region relocates a running service.
+
+## Why `Postgres` is asserted, not managed
+
+The OTA control-plane database runs `ghcr.io/railwayapp-templates/postgres-ssl:18`
+with Railway's own vulnerability auto-updates (`tagMode: sha`). Pinning an image
+there would fight Railway's patching of the database that holds **the only copy of
+the app's private signing key**. So its image is deliberately left alone and only
+its volume mount is asserted — a Postgres that lost its volume looks perfectly
+healthy and would take that key with it on the next redeploy.
 
 ## How it runs in CI
 
-`.github/workflows/railway-drift.yml` has two jobs, split by trigger:
+`.github/workflows/railway-drift.yml` has three jobs, split by trigger:
 
+- **`apply`** — push to `main` touching `infra/railway/**` or the apply script.
+  Runs `--apply --allow-image-change` against the live project. This is what makes
+  a merged version bump an upgrade. Needs `secrets.RAILWAY_TOKEN`.
 - **`drift`** — schedule (06:30 UTC) and `workflow_dispatch`. Runs the real dry-run
-  against the live project and fails on drift. It needs `secrets.RAILWAY_TOKEN`, which
-  lives in the **Production** environment.
-- **`validate`** — pull requests touching `infra/railway/**` or the apply script. Runs
-  the plan layer's tests and typechecks the script.
+  and fails on drift. Never passes `--allow-image-change`.
+- **`validate`** — pull requests touching `infra/railway/**` or the scripts. Runs
+  the plan layer's tests and typechecks. No credentials.
 
 They are split because the Production environment's deployment branch policy admits
 `main` alone. A pull request runs as `refs/pull/N/merge`, so a job asking for that
@@ -326,16 +614,32 @@ The cost is that a service name misspelled against the *live* project is caught 
 nightly run rather than on the PR. Closing that gap means a second environment holding
 the token with no branch policy; that is a security call, not a workflow tweak.
 
-`vars.RAILWAY_PROJECT_ID` must be set as a repository variable or the `drift` job skips
-itself with a notice.
+`vars.RAILWAY_PROJECT_ID` must be set as a repository variable or the jobs skip
+themselves with a notice.
+
+The `apply` job gets a concurrency group of its own, and never cancels. Keying on
+`github.ref` alone would not achieve that: it is `refs/heads/main` for push,
+schedule and `workflow_dispatch` alike, so all three would share one group — and
+`cancel-in-progress` is read from the *incoming* run. The 06:30 cron landing on an
+apply that merged at 06:29 would have killed it mid-deploy. A dry-run alongside an
+apply is harmless, so the read-only runs share a separate, cancellable group.
+
+`timeout-minutes` sits above the tool's own worst case for the same reason: the poll
+budgets 15 minutes and the rollback another 15, so a shorter job timeout could kill
+the rollback halfway.
+
+> **`RAILWAY_TOKEN`'s blast radius grew.** The same credential that used to read,
+> and write one variable it was handed, can now roll a container image. That is a
+> real widening even behind `--allow-image-change`, and worth remembering when
+> deciding where that secret lives.
 
 ## Env
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
-| `RAILWAY_TOKEN` | yes | Railway API token. The same secret the production deploy already uses against `backboard.railway.com`. It is a **project** token, scoped to this project and its production environment, so it authenticates with `Project-Access-Token` — not `Authorization: Bearer`, which is for account tokens. The script tries one and falls back to the other, so either kind works. |
+| `RAILWAY_TOKEN` | yes | Railway API token. The same secret the production deploy already uses against `backboard.railway.com`. It is a **project** token, scoped to this project and its production environment, so it authenticates with `Project-Access-Token` — not `Authorization: Bearer`, which is for account tokens. The script tries one and falls back to the other, so either kind works — but the rollback path needs a project token specifically, since it derives its scope from `projectToken`. |
 | `RAILWAY_PROJECT_ID` | yes | The project holding the OTA services. |
-| `RAILWAY_VAR_<NAME>` | no | A value `--apply` may write for a declared variable. Never logged. |
+| `RAILWAY_VAR_<NAME>` | no | A value `--apply` may write for a presence-only variable. Never logged. |
 | `CLICKHOUSE_URL` | no | Enables the retention assertion. Read-only. **Do not add this as a CI secret yet** — see the reachability note under ClickHouse retention. |
 
 ## Related
@@ -344,3 +648,5 @@ itself with a notice.
   versions, the publish path, and the cutover history.
 - [cloudflare.md](./cloudflare.md) — the same config-as-code pattern for the
   `boardsesh.com` zone.
+- [production-deploy.md](./production-deploy.md) — the web/backend deploy path, and
+  why `drainingSeconds` exists.
