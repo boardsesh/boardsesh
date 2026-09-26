@@ -17,11 +17,17 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Improved
 
+- Old MoonBoard climb links now show that climb's grades, ascents, similar climbs and beta ([#5835](https://github.com/boardsesh/boardsesh/pull/5835))
+- Your You page stops reloading your whole logbook every time you switch back to it. New ticks still show up the moment you open it. ([#5837](https://github.com/boardsesh/boardsesh/pull/5837))
+  Grade-by-angle bars on a climb load instantly on boards you've downloaded, even with no signal.
+- Grade-filtered climb lists load faster, most of all on big boards ([#5840](https://github.com/boardsesh/boardsesh/pull/5840))
+- Pick Staging or Production from the preview list when testing an update. ([#5823](https://github.com/boardsesh/boardsesh/pull/5823))
 - MoonBoard boards stop re-downloading every grade each week, so syncing is faster and uses less data ([#5830](https://github.com/boardsesh/boardsesh/pull/5830))
 - The create and hold-filter boards no longer draw dots on every hold; tap the holds themselves ([#5809](https://github.com/boardsesh/boardsesh/pull/5809))
 
 ### Fixed
 
+- Fine-tune your rest timer in 5-second steps instead of 15 — dial in exactly the rest you want. ([#5802](https://github.com/boardsesh/boardsesh/pull/5802))
 - Popular boards stay listed while we ship updates, instead of disappearing for a few minutes ([#5818](https://github.com/boardsesh/boardsesh/pull/5818))
 - Settings has a back button again, so you can always get out ([#5806](https://github.com/boardsesh/boardsesh/pull/5806))
 - The current climb bar no longer covers the hold-type buttons when you search by holds ([#5807](https://github.com/boardsesh/boardsesh/pull/5807))

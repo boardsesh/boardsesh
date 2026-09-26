@@ -1,6 +1,42 @@
 {
-  "generatedAt": "2026-09-26T03:29:38.031Z",
+  "generatedAt": "2026-09-26T05:39:12.724Z",
   "entries": [
+    {
+      "prNumber": 5835,
+      "category": "improved",
+      "title": "Old MoonBoard climb links now show that climb's grades, ascents, similar climbs and beta",
+      "mergedAt": "2026-09-26T05:31:26Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5835"
+    },
+    {
+      "prNumber": 5837,
+      "category": "improved",
+      "title": "Your You page stops reloading your whole logbook every time you switch back to it. New ticks still show up the moment you open it.",
+      "mergedAt": "2026-09-26T05:13:26Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5837",
+      "body": "Grade-by-angle bars on a climb load instantly on boards you've downloaded, even with no signal."
+    },
+    {
+      "prNumber": 5840,
+      "category": "improved",
+      "title": "Grade-filtered climb lists load faster, most of all on big boards",
+      "mergedAt": "2026-09-26T05:12:15Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5840"
+    },
+    {
+      "prNumber": 5802,
+      "category": "fixed",
+      "title": "Fine-tune your rest timer in 5-second steps instead of 15 — dial in exactly the rest you want.",
+      "mergedAt": "2026-09-26T04:30:39Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5802"
+    },
+    {
+      "prNumber": 5823,
+      "category": "improved",
+      "title": "Pick Staging or Production from the preview list when testing an update.",
+      "mergedAt": "2026-09-26T03:30:07Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5823"
+    },
     {
       "prNumber": 5830,
       "category": "improved",
