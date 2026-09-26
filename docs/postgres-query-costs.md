@@ -141,8 +141,10 @@ Change IDs (C#) match the audit findings. Rows are in rank order.
   - Prod: 20.2 s mean, 2.27M reads, about 2.4 GB temp per call (P). The replica does not reproduce this.
   - Side-table simulation: 2.3–2.5 ms, about 410 buffers, rows identical (R).
   - Hard band without covering columns: 1.09 s and 276k buffers (R). With them: 2.4 ms (R).
-- **Not measured:** refresh cost, climbs with no stats row, deep OFFSET pages.
-- **Caveats:** never add a column to `board_climbs`, because the sync trigger bumps `sync_seq`. Pair it with an OFFSET cap.
+  - Deep OFFSET pages cost the same as page 0: Kilter layout 1, size 10, 40° read 125,279 buffers in about 1.5 s at OFFSET 0, 2,000 and 10,000 (R). MoonBoard 2016 (layout 2) takes about 440 ms and 70k buffers per page (R).
+- **Not measured:** refresh cost, climbs with no stats row.
+- **Shipped (first half, #5855):** `packages/backend/src/graphql/resolvers/climbs/popular-page-cache.ts` puts Redis plus singleFlight in front of every popular page that has no user-specific filter. Boards the 24 h search cache covers keep that key and TTL. MoonBoard and Woods get a 10 min key, descending order only, because an ascending sort puts new (ascent-less) climbs on page 0. Spray walls and per-user searches bypass it, so the tick-filtered statement (62 calls, 25.7 s mean (P)) waits for the side table.
+- **Caveats:** never add a column to `board_climbs`, because the sync trigger bumps `sync_seq`. No OFFSET cap for the aggregate path: the aggregate is the whole cost, so a cap saves nothing there. Revisit it with the side table.
 
 ### C7. Index and table drops
 
