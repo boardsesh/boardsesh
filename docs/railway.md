@@ -215,7 +215,9 @@ same convention as the WAL-G image.
 Currently published digest:
 `ghcr.io/boardsesh/boardsesh-clickhouse@sha256:80d3d4c0dfacbd845476eea56ca239a3d658e868e01389ed264e1a9ecf56f6fd`
 (tag `sha-cb144344cdf0d1182737c1356f888cb1f685800d`, published 2026-09-26) — keep this
-line current so the next rollout has a rollback target.
+line current so the next rollout has a rollback target. Pinned in production at
+2026-09-26 03:08 UTC with the 2 GB / 2 vCPU ceiling; live settings and the
+system-log cleanup are recorded in `docs/railway-cost-reduction.md`.
 
 **Never restart the OTA server (`boardsesh-ota-v3`) while ClickHouse is down.** xprem
 calls `log.Fatalf` when ClickHouse is unreachable at boot, so an OTA restart during
