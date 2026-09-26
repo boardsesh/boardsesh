@@ -732,7 +732,7 @@ jobs:
       - name: Mint changelog push token
         id: push_token
         if: vars.OTA_PUSH_APP_ID != ''
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1
         with:
           app-id: ${{ vars.OTA_PUSH_APP_ID }}
           private-key: ${{ secrets.OTA_PUSH_APP_PRIVATE_KEY }}
@@ -742,7 +742,7 @@ jobs:
           fetch-depth: 0
           token: ${{ steps.push_token.outputs.token || github.token }}
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: mobile-ota-stage
           path: ota-stage
