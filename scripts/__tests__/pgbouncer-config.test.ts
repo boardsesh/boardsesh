@@ -74,6 +74,7 @@ describe('PgBouncer runtime configuration', () => {
     expect(configuration).toMatch(/min_pool_size = 0/);
     expect(configuration).toMatch(/reserve_pool_size = 5/);
     expect(configuration).toMatch(/reserve_pool_timeout = 3/);
+    expect(configuration).toMatch(/^listen_addr = 0\.0\.0\.0,::$/m);
     expect(configuration).toMatch(/max_db_connections = 45/);
     expect(configuration).toMatch(/max_user_connections = 45/);
     expect(configuration).toMatch(/max_client_conn = 500/);
@@ -180,10 +181,15 @@ describe('PgBouncer runtime configuration', () => {
     expect(hba).toBe(
       'local all all reject\n' +
         'hostnossl all all 0.0.0.0/0 reject\n' +
+        'hostnossl all all ::/0 reject\n' +
         'hostssl boardsesh boardsesh_client 0.0.0.0/0 scram-sha-256\n' +
+        'hostssl boardsesh boardsesh_client ::/0 scram-sha-256\n' +
         'hostssl boardsesh boardsesh_client_next 0.0.0.0/0 scram-sha-256\n' +
+        'hostssl boardsesh boardsesh_client_next ::/0 scram-sha-256\n' +
         'hostssl pgbouncer pgbouncer_admin 0.0.0.0/0 scram-sha-256\n' +
-        'hostssl all all 0.0.0.0/0 reject\n',
+        'hostssl pgbouncer pgbouncer_admin ::/0 scram-sha-256\n' +
+        'hostssl all all 0.0.0.0/0 reject\n' +
+        'hostssl all all ::/0 reject\n',
     );
     expect(readFileSync(join(runtimeDirectory, 'userlist.txt'), 'utf8')).toContain(
       '"boardsesh_client_next" "next client secret"',

@@ -41,9 +41,11 @@ pool, plus an explicit operator source when remote admin-console access is
 needed. TLS and HBA authentication do not replace a service-level firewall or
 private-network allowlist.
 
-The IPv4-only `listen_addr = 0.0.0.0` and HBA rules are intentional for the
-current private network. Review both the HBA rules and network allowlist before
-enabling IPv6 listeners.
+The listener is dual-stack (`listen_addr = 0.0.0.0,::`) because Railway's
+private network is IPv6, with IPv4 only in newer environments. Every HBA host
+rule is written for both `0.0.0.0/0` and `::/0` in the same order: non-TLS
+rejected, the application identities allowed only on the application database,
+the admin identity only on `pgbouncer`, everything else rejected.
 
 Set both `PGBOUNCER_SERVER_TLS_CERT` and `PGBOUNCER_SERVER_TLS_KEY` when the
 upstream requires a client certificate. `PGBOUNCER_LISTEN_PORT` defaults to

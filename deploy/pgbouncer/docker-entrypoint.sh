@@ -160,19 +160,22 @@ fi
 
 mv "$userlist_temporary" "$userlist_file"
 
-cat >"$auth_hba_temporary" <<EOF
-local all all reject
-hostnossl all all 0.0.0.0/0 reject
-hostssl $PGBOUNCER_DATABASE_NAME $PGBOUNCER_CLIENT_USER 0.0.0.0/0 scram-sha-256
-EOF
+# Railway private networking is IPv6 (newer environments add IPv4), so every
+# host rule is written once per address family, in the same order.
+append_host_rule() {
+  for address in 0.0.0.0/0 ::/0; do
+    printf '%s %s %s %s %s\n' "$1" "$2" "$3" "$address" "$4" >>"$auth_hba_temporary"
+  done
+}
+
+printf 'local all all reject\n' >"$auth_hba_temporary"
+append_host_rule hostnossl all all reject
+append_host_rule hostssl "$PGBOUNCER_DATABASE_NAME" "$PGBOUNCER_CLIENT_USER" scram-sha-256
 if [ -n "${PGBOUNCER_CLIENT_USER_NEXT:-}" ]; then
-  printf 'hostssl %s %s 0.0.0.0/0 scram-sha-256\n' \
-    "$PGBOUNCER_DATABASE_NAME" "$PGBOUNCER_CLIENT_USER_NEXT" >>"$auth_hba_temporary"
+  append_host_rule hostssl "$PGBOUNCER_DATABASE_NAME" "$PGBOUNCER_CLIENT_USER_NEXT" scram-sha-256
 fi
-cat >>"$auth_hba_temporary" <<EOF
-hostssl pgbouncer $PGBOUNCER_ADMIN_USER 0.0.0.0/0 scram-sha-256
-hostssl all all 0.0.0.0/0 reject
-EOF
+append_host_rule hostssl pgbouncer "$PGBOUNCER_ADMIN_USER" scram-sha-256
+append_host_rule hostssl all all reject
 mv "$auth_hba_temporary" "$auth_hba_file"
 
 if [ -n "${PGBOUNCER_CLIENT_TLS_CERT:-}" ]; then
@@ -206,7 +209,7 @@ cat >"$config_temporary" <<EOF
 $PGBOUNCER_DATABASE_NAME = host=$PGBOUNCER_UPSTREAM_HOST port=$PGBOUNCER_UPSTREAM_PORT dbname=$PGBOUNCER_DATABASE_NAME user=$PGBOUNCER_UPSTREAM_USER
 
 [pgbouncer]
-listen_addr = 0.0.0.0
+listen_addr = 0.0.0.0,::
 listen_port = $PGBOUNCER_LISTEN_PORT
 unix_socket_dir = $PGBOUNCER_RUNTIME_DIR
 pidfile = $PGBOUNCER_RUNTIME_DIR/pgbouncer.pid

@@ -128,4 +128,37 @@ if PGPASSWORD=client_password docker exec \
   exit 1
 fi
 
+# The listener is dual-stack. Exercise the IPv6 socket and the ::/0 HBA rules
+# over the container's loopback when the runtime gives the container IPv6.
+if docker exec "$pgbouncer_container" grep -q '^00000000000000000000000000000001 ' /proc/net/if_inet6; then
+  PGPASSWORD=client_password docker exec \
+    --env PGPASSWORD \
+    --env PGSSLMODE=require \
+    "$pgbouncer_container" \
+    psql --no-password --no-psqlrc --quiet --host=::1 --port=6432 --username=client_user --dbname=boardsesh --command='SELECT 1' \
+    >/dev/null
+
+  if PGPASSWORD=client_password docker exec \
+    --env PGPASSWORD \
+    --env PGSSLMODE=disable \
+    "$pgbouncer_container" \
+    psql --no-password --no-psqlrc --quiet --host=::1 --port=6432 --username=client_user --dbname=boardsesh --command='SELECT 1' \
+    >/dev/null 2>&1; then
+    printf 'plaintext IPv6 client unexpectedly reached the application database\n' >&2
+    exit 1
+  fi
+
+  if PGPASSWORD=client_password docker exec \
+    --env PGPASSWORD \
+    --env PGSSLMODE=require \
+    "$pgbouncer_container" \
+    psql --no-password --no-psqlrc --quiet --host=::1 --port=6432 --username=client_user --dbname=pgbouncer --command='SHOW VERSION' \
+    >/dev/null 2>&1; then
+    printf 'application identity unexpectedly reached the admin console over IPv6\n' >&2
+    exit 1
+  fi
+else
+  printf 'IPv6 loopback unavailable in this container runtime; IPv6 listener checks skipped\n'
+fi
+
 printf 'PgBouncer TLS application-path smoke test passed\n'
