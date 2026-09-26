@@ -91,6 +91,9 @@ describe('production OTA workflow reliability', () => {
     const promotion = jobBlock(pipeline, 'promote-mobile-ota');
     expect(stepBlock(promotion, gateStep)).toContain('node scripts/mobile-ota-server-ready.mjs');
     expect(promotion.indexOf(gateStep)).toBeLessThan(promotion.indexOf('scripts/mobile-ota-promote.ts'));
+    // The gate diffs HEAD against its parent, so both checkouts need full history.
+    expect(publishJob).toMatch(/fetch-depth: 0/);
+    expect(promotion).toMatch(/fetch-depth: 0/);
     const deployJobs = (parse(pipeline) as { jobs: Record<string, { permissions?: Record<string, string> }> }).jobs;
     for (const jobName of ['stage-mobile-ota', 'promote-mobile-ota']) {
       expect(deployJobs[jobName].permissions).toMatchObject({ actions: 'read' });

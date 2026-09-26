@@ -27,8 +27,10 @@ const RAILWAY_APPLY_PATHS = [
 const POLL_INTERVAL_MS = 20_000;
 /** Above the apply job's own 50-minute timeout, so a slow rollback is waited out rather than raced. */
 const WAIT_BUDGET_MS = 55 * 60_000;
-/** How long a run that should exist may take to appear after the push. */
-const APPEAR_BUDGET_MS = 3 * 60_000;
+/** How long a run that should exist may take to appear after the push; GitHub can queue for minutes. */
+const APPEAR_BUDGET_MS = 10 * 60_000;
+/** Consecutive failed reads of the run list tolerated before giving up. */
+const MAX_CONSECUTIVE_READ_FAILURES = 5;
 
 /**
  * What to do given the Railway Config runs for this commit.
@@ -61,8 +63,10 @@ function changedFilesInHead() {
     });
     return output.split('\n').filter(Boolean);
   } catch {
-    // No parent in this checkout. Fall back to trusting the run list alone.
-    return [];
+    // Without the parent commit this cannot tell whether a Railway Config run is
+    // coming, and guessing "no" would let the publish race the rollout. Both callers
+    // check out full history, so this only fires on a misconfigured checkout.
+    throw new Error('Cannot diff HEAD against its parent; check out with fetch-depth: 0 before this gate.');
   }
 }
 
@@ -92,8 +96,21 @@ async function main() {
   if (!sha || !SHA.test(sha)) throw new Error('GITHUB_SHA must be a full commit SHA');
   const expectRun = touchesRailwayApply(changedFilesInHead());
   const started = Date.now();
+  let consecutiveReadFailures = 0;
   for (;;) {
-    const runs = await railwayRunsFor(sha);
+    let runs;
+    try {
+      runs = await railwayRunsFor(sha);
+      consecutiveReadFailures = 0;
+    } catch (error) {
+      // A transient 5xx or timeout must not abort a publish mid-wait. Keep polling,
+      // and give up only when the API stays unreadable.
+      consecutiveReadFailures += 1;
+      if (consecutiveReadFailures >= MAX_CONSECUTIVE_READ_FAILURES) throw error;
+      console.log(`::warning::${error instanceof Error ? error.message : String(error)}; retrying.`);
+      await new Promise((done) => setTimeout(done, POLL_INTERVAL_MS));
+      continue;
+    }
     const decision = serverReadiness({
       runs,
       expectRun,

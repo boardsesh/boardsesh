@@ -686,10 +686,16 @@ jobs:
       - name: Skip when this PR moves the eoas pin ahead of the live server
         id: eoas_pin
         run: |
-          pin() { grep -oE "EOAS_PACKAGE_SPEC = 'eoas@[^']+'" "$1/scripts/lib/eoas.ts" | head -1; }
+          # Quote-style agnostic, and fail closed: an unreadable pin must not let
+          # a preview publish against a server it may not speak to.
+          pin() { grep -oE "EOAS_PACKAGE_SPEC *= *['\"]eoas@[^'\"]+" "$1/scripts/lib/eoas.ts" | grep -oE "eoas@.+" | head -1; }
           pr_pin=$(pin .)
           main_pin=$(pin "$RUNNER_TEMP/main-baseline")
-          if [ -n "$pr_pin" ] && [ "$pr_pin" != "$main_pin" ]; then
+          if [ -z "$pr_pin" ] || [ -z "$main_pin" ]; then
+            echo "::error::Could not read EOAS_PACKAGE_SPEC from scripts/lib/eoas.ts (PR: '$pr_pin', main: '$main_pin')."
+            exit 1
+          fi
+          if [ "$pr_pin" != "$main_pin" ]; then
             echo "::notice::This PR changes the eoas pin ($main_pin -> $pr_pin). The live OTA server moves only when it merges, so no preview is published."
             echo "moved=true" >> "$GITHUB_OUTPUT"
           else

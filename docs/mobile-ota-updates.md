@@ -87,8 +87,9 @@ holding at 3.2.0 (below): across that line neither side may lead.
   `bundle_patches`, `updates.asset_mapping`, `apps.git_url`) plus a backfill.
 - **Rolling back is a one-way door after the first 3.2 publish.** 3.1.2 knows nothing about the
   `cas/` layout, so it cannot serve an update published on 3.2. Going back means reverting the
-  version PR (server, CLI and promote script together) and republishing the current JS with the old
-  CLI. The 3.2 schema changes can stay; 3.1.2 ignores the new tables and column.
+  version PR, so `OTA_SERVER_VERSION`, `EOAS_PACKAGE_SPEC` and the promote script move back
+  together (the version-parity test fails on a partial revert), and then republishing the current
+  JS with the old CLI. The 3.2 schema changes can stay; 3.1.2 ignores the new tables and column.
 - **Bundle diffing stays off.** `BUNDLE_DIFFING` is unset. Patches are served from the server itself
   rather than the CDN, and each diff job peaks at about six times the bundle size in memory.
 
