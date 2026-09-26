@@ -355,9 +355,11 @@ export const boardClimbs = pgTable(
     // 'method_footless', 'method_footless_kickboard', 'method_no_kickboard'
     // (see @boardsesh/shared-schema CLIMB_CHARACTERISTICS). Internal reads/filters
     // use this array; the description prefix stays only as the Aurora wire format.
-    // Unindexed: no query filters on it. Migration 0135 built a GIN index
-    // (board_climbs_characteristics_idx) that production never scanned, and
-    // 0242 dropped it.
+    // The rule matcher filters COALESCE(characteristics, legacy Aurora
+    // description fallback) with array containment, so a plain-column GIN
+    // index does not match that expression. Migration 0135 built the
+    // board_climbs_characteristics_idx GIN index; production never scanned it,
+    // and migration 0250 removes it.
     characteristics: text('characteristics').array(),
     // Spray walls only: how many of this climb's holds have come off the wall
     // (`spray_wall_holds.removed_version_id IS NOT NULL`). NULL on every other
@@ -699,7 +701,7 @@ export const boardClimbStats = pgTable(
     // Keep it as a regular column (not GENERATED) so the custom covering index
     // (board_climb_stats_ascents_covering_v2_idx, migration 0122, with climb_uuid
     // as a trailing key column) keeps working. The v1 index from 0068 was a
-    // strict prefix of it and was dropped in 0242.
+    // strict prefix of it and is removed in migration 0250.
     ascensionistCount: bigint('ascensionist_count', { mode: 'number' }),
     upstreamAscensionistCount: bigint('upstream_ascensionist_count', { mode: 'number' }),
     boardseshAscensionistCount: bigint('boardsesh_ascensionist_count', { mode: 'number' }),
