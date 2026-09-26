@@ -402,8 +402,10 @@ function statsDrivenSortColumn(sortBy: StatsDrivenSort) {
  * Every SQL expression carries an explicit `.as()` so the same object can be the
  * SELECT list of a subquery; drizzle refuses to reference an unaliased
  * expression through one.
+ *
+ * Exported so `search-climbs.test.ts` can pin `selectPageThenJoinGrades`'s hand-listed outer SELECT to these keys.
  */
-function statsDrivenClimbFields() {
+export function statsDrivenClimbFields() {
   return {
     uuid: boardClimbs.uuid,
     setter_username: boardClimbs.setterUsername,

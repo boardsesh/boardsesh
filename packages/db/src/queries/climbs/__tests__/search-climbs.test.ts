@@ -2,7 +2,14 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { getTableName, is, sql, Table, type SQL } from 'drizzle-orm';
-import { chooseSearchPath, getStatsDrivenSort, clampSearchPage, MAX_SEARCH_PAGE, searchClimbs } from '../search-climbs';
+import {
+  chooseSearchPath,
+  getStatsDrivenSort,
+  clampSearchPage,
+  MAX_SEARCH_PAGE,
+  searchClimbs,
+  statsDrivenClimbFields,
+} from '../search-climbs';
 import { mapSearchInputToParams, normalizeSearchSortBy, type BoardRouteParams } from '../types';
 import type { DbInstance } from '../../../client/postgres';
 
@@ -209,6 +216,8 @@ type RecordedQuery = {
   table: string | null;
   orderBy: string[];
   joins: string[];
+  /** The keys of the object passed to `.select(...)`. */
+  selectKeys: string[];
   /** Set when `from()` read a subquery: what that subquery itself recorded. */
   subquery?: RecordedQuery;
 };
@@ -232,8 +241,8 @@ function createFakeSearchDb(scriptedRows: Record<string, unknown>[][] = []) {
   const queries: RecordedQuery[] = [];
   const whereClauses: string[] = [];
 
-  const makeSelectBuilder = () => {
-    const recorded: RecordedQuery = { table: null, orderBy: [], joins: [] };
+  const makeSelectBuilder = (fields?: Record<string, unknown>) => {
+    const recorded: RecordedQuery = { table: null, orderBy: [], joins: [], selectKeys: Object.keys(fields ?? {}) };
     const builder: Record<string, unknown> = {};
     for (const method of ['limit', 'offset', 'groupBy']) {
       builder[method] = () => builder;
@@ -307,7 +316,7 @@ function createFakeSearchDb(scriptedRows: Record<string, unknown>[][] = []) {
       executedStatements.push(statement);
       return Promise.resolve([]);
     },
-    select: () => makeSelectBuilder(),
+    select: (fields?: Record<string, unknown>) => makeSelectBuilder(fields),
   };
 
   const fakeDb = {
@@ -830,6 +839,16 @@ void describe('stats-driven path: Boardsesh grades joined after the page is cut'
     assert.equal(whereClauses.length, 1);
     assert.match(whereClauses[0], /"grade_fallback"/);
     assert.doesNotMatch(whereClauses[0], /"board_climb_grades"\."/);
+    // Pins the outer SELECT's hand-listed columns to statsDrivenClimbFields(), so a forgotten field can't silently vanish.
+    const climbFieldKeys = Object.keys(statsDrivenClimbFields());
+    for (const key of climbFieldKeys) {
+      assert.ok(pageQuery.selectKeys.includes(key), `outer SELECT is missing ${key}`);
+    }
+    assert.deepEqual(
+      pageQuery.selectKeys.filter((key) => !climbFieldKeys.includes(key)).sort(),
+      ['boardsesh_confidence', 'boardsesh_difficulty'],
+      'only the Boardsesh grade columns may be added on top of statsDrivenClimbFields()',
+    );
   });
 
   void it('takes the same shape with no grade filter, and for the quality sort', async () => {
