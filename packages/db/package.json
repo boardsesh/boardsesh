@@ -6,6 +6,11 @@
   "main": "src/index.ts",
   "types": "src/index.ts",
   "exports": {
+    "./background-jobs": {
+      "types": "./src/background-jobs.ts",
+      "import": "./src/background-jobs.ts",
+      "default": "./src/background-jobs.ts"
+    },
     "./job-queue-schema": {
       "types": "./src/job-queue-schema.ts",
       "import": "./src/job-queue-schema.ts",
