@@ -238,6 +238,9 @@ describe('physical board discovery ranking cache', () => {
     await seedTick(board.id, CLIMBERS[1]);
     expect((await discover({ gymUuid: gym.uuid }))[0]).toMatchObject({ uniqueClimbers: 1 });
     expect(setMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('keys the unscoped ranking under a shared "all" entry', () => {
     expect(boardDiscoveryCacheKey(undefined)).toBe('board-discovery:v1:all');
   });
 

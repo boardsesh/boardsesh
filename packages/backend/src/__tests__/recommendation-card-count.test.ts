@@ -195,11 +195,12 @@ describe('recommendation count SQL', () => {
     expect(rendered).not.toContain('boardsesh_ticks');
   });
 
-  it('drives the overlap from the viewer ticks and keeps FRESH on a LEFT JOIN', () => {
+  it('drives the overlap from the viewer ticks and skips the stats join for FRESH', () => {
     const fresh = render(buildRecommendationSentOverlapSql(paramsFor('RECOMMENDED_FRESH'), 'user-1'));
     expect(fresh).toMatch(/SELECT DISTINCT t\.climb_uuid FROM boardsesh_ticks t/);
-    expect(fresh).toContain('LEFT JOIN board_climb_stats s');
+    expect(fresh).not.toContain('board_climb_stats');
     const crowd = render(buildRecommendationSentOverlapSql(paramsFor('RECOMMENDED_CROWD_FAVORITES'), 'user-1'));
+    expect(crowd).toContain('JOIN board_climb_stats s');
     expect(crowd).not.toContain('LEFT JOIN board_climb_stats');
   });
 

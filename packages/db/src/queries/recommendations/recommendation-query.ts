@@ -269,6 +269,9 @@ export function buildRecommendationCountSql(params: RecommendationQueryParams): 
  * It is driven from the viewer's own ticks, so it costs a few primary-key probes
  * per distinct sent climb instead of a scan of the layout. That is what lets the
  * viewer-free half be cached across users (`rec-count` in the backend).
+ *
+ * FRESH has no stats bounds, so it skips the stats join entirely: a LEFT JOIN on
+ * the stats primary key reads no column and cannot change the count.
  */
 export function buildRecommendationSentOverlapSql(params: RecommendationQueryParams, userId: string): SQL {
   const { angle, boardType } = params.target;
@@ -285,8 +288,12 @@ export function buildRecommendationSentOverlapSql(params: RecommendationQueryPar
         AND t.status IN ('flash', 'send')
     ) sent
     JOIN board_climbs bc ON bc.uuid = sent.climb_uuid
-    ${bounds ? sql`JOIN` : sql`LEFT JOIN`} board_climb_stats s
-      ON s.board_type = bc.board_type AND s.climb_uuid = bc.uuid AND s.angle = ${angle}
+    ${
+      bounds
+        ? sql`JOIN board_climb_stats s
+      ON s.board_type = bc.board_type AND s.climb_uuid = bc.uuid AND s.angle = ${angle}`
+        : sql``
+    }
     WHERE ${sql.join(conditions, sql` AND `)}
   `;
 }
