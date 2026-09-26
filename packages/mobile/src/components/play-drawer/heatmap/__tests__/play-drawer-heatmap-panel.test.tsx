@@ -233,7 +233,8 @@ describe('PlayDrawerHeatmapPanel', () => {
     expect(getByText('mobile.heatmap.legend.fewClimbs')).toBeTruthy();
     expect(getByText('mobile.heatmap.legend.manyClimbs')).toBeTruthy();
     expect(getByText('140')).toBeTruthy();
-    expect(getByText('mobile.heatmap.climbCount:18k')).toBeTruthy();
+    // The full count, never "18k".
+    expect(getByText('mobile.heatmap.climbCount:18,240')).toBeTruthy();
   });
 
   it('names the grade ends in grade mode', () => {
@@ -270,5 +271,19 @@ describe('PlayDrawerHeatmapPanel', () => {
     });
     expect(queryByTestId('play-drawer-heatmap-caption')).toBeNull();
     expect(firstRun.writes).toEqual([]);
+  });
+
+  it('says every hold is used equally instead of claiming a hottest hold', () => {
+    const { getByText, queryByText } = render(
+      createElement(PlayDrawerHeatmapPanel, {
+        heatmap: heatmap({
+          legend: { kind: 'count', edgeValues: [null, null, 4, null, null], total: 4, allEqual: true },
+        }),
+        boardName: 'kilter',
+        nudgeBoard: board,
+      }),
+    );
+    expect(getByText('mobile.heatmap.legend.allEqual')).toBeTruthy();
+    expect(queryByText('mobile.heatmap.legend.manyClimbs')).toBeNull();
   });
 });

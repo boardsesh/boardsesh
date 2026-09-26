@@ -48,10 +48,9 @@ import { InlineConfirmBanner } from './InlineConfirmBanner';
 import { useTranslation } from 'react-i18next';
 import { useCreateClimbScreen, type CreateClimbBoard } from './use-create-climb-screen';
 import { HeatmapOverlay, useHeatLayer } from '../board/HeatmapOverlay';
-import { HeatmapLegend } from '../board/HeatmapLegend';
+import { formatHeatmapClimbCount, HeatmapLegend } from '../board/HeatmapLegend';
 import { HeatmapDownloadLine } from '../board/HeatmapDownloadLine';
 import { Text } from '../Text';
-import { formatCount } from '../../lib/format-climb-stats';
 import type { CreateHeatmap } from './create-heatmap';
 
 type Controller = ReturnType<typeof useCreateClimbScreen>;
@@ -110,7 +109,7 @@ export function CreateDrawer({
   heatmap,
 }: CreateDrawerProps) {
   const { systemColors } = useTheme();
-  const { t } = useTranslation('climbs');
+  const { t, i18n } = useTranslation('climbs');
   // A SEPARATE hook, not `useTranslation(['climbs', 'session'])`: with an array,
   // `t('a.b.c')` resolves against the FIRST namespace only, so the wall-state
   // key — which lives in session.json — fell through and the chip rendered the
@@ -243,18 +242,16 @@ export function CreateDrawer({
     return { width: availWidth, height: availWidth / boardAspect };
   }, [boardHolds.boardWidth, boardHolds.boardHeight, windowWidth, boardMaxHeight]);
 
-  // Painted holds keep their own mark; the heat only colours the rest. Ranked
-  // with them, so painting a hold never recolours its neighbours.
+  // Heat covers every hold, painted ones included: the painted hold's own mark
+  // is drawn in the holds layer on top and covers it. Skipping painted holds in
+  // the heat frames changed the heat picture on every tap, i.e. a fresh native
+  // render and a new PNG per paint state. This way the heat image only changes
+  // with the brush, the data or the scheme.
   const heatmapActive = heatmap?.active ?? false;
-  const paintedHoldIds = useMemo(
-    () => new Set(Object.keys(controller.litUpHoldsMap).map(Number)),
-    [controller.litUpHoldsMap],
-  );
   const heatLayer = useHeatLayer({
     statsByHoldId: heatmap?.statsByHoldId ?? NO_STATS,
     holdTargets: boardHolds.holdTargets,
     metric: heatmapActive && heatmap?.status === 'ready' ? (heatmap.metric ?? null) : null,
-    skipHoldIds: paintedHoldIds,
   });
   const heatmapOverlay = useMemo(
     () =>
@@ -300,13 +297,13 @@ export function CreateDrawer({
         legend={heatLayer.legend}
         lowLabel={t('mobile.heatmap.legend.fewClimbs')}
         highLabel={t('mobile.heatmap.legend.manyClimbs')}
-        scopeLabel={
-          count === null ? null : t('mobile.heatmap.climbCount', { count, formattedCount: formatCount(count) })
-        }
+        allEqualLabel={t('mobile.heatmap.legend.allEqual')}
+        scopeLabel={count === null ? null : formatHeatmapClimbCount(t, count, i18n?.language)}
+        wrap={false}
         testID="create-heatmap-legend"
       />
     );
-  }, [heatmap, heatLayer.legend, systemColors.secondaryLabel, t]);
+  }, [heatmap, heatLayer.legend, systemColors.secondaryLabel, t, i18n?.language]);
 
   const setHeightIfChanged = (setter: (updater: (prev: number) => number) => void, measured: number) => {
     setter((prev) => (Math.abs(prev - measured) > 2 ? Math.round(measured) : prev));

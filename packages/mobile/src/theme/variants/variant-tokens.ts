@@ -97,8 +97,10 @@ export function resolveChartColors(variant: UiVariant, colorScheme: 'light' | 'd
 export type HeatRamp = readonly [string, string, string, string, string];
 
 export const heatRampByScheme = {
-  dark: ['#4C1D95', '#6D28D9', '#8B5CF6', '#C4B5FD', '#F5F3FF'],
-  light: ['#DDD6FE', '#A78BFA', '#7C3AED', '#5B21B6', '#2E1065'],
+  // Violet end to end: a near-white top stop read as an unheated grey hold on
+  // the board photo, and a near-white cold stop faded the same way in light mode.
+  dark: ['#4C1D95', '#6D28D9', '#8B5CF6', '#A78BFA', '#C4B5FD'],
+  light: ['#C4B5FD', '#A78BFA', '#7C3AED', '#5B21B6', '#2E1065'],
 } as const satisfies Record<'light' | 'dark', HeatRamp>;
 
 export function resolveHeatRamp(colorScheme: 'light' | 'dark'): HeatRamp {

@@ -1162,6 +1162,110 @@ describe('useNativeClimbRender heatmap seams', () => {
     expect(asRecord(asRecord(plain?.configBase).hold_state_map)[900]).toBeUndefined();
   });
 
+  it('leaves every other surface byte-identical: no extras, no override → same config and key', async () => {
+    boardRenderSettingsRef.current = { ...DEFAULT_BOARD_RENDER_SETTINGS, mode: 'aura' };
+    const plain = renderHook(() => useNativeClimbRender({ ...GRASSHOPPER, frames: GRASSHOPPER_FRAMES }));
+    await waitFor(() => expect(sentConfigs().some((config) => config.render_mode === 'aura')).toBe(true));
+    const plainCalls = nativeModule.renderHoldsOverlay.mock.calls.map(([json, key]) => [json, key]);
+    plain.unmount();
+    _renderedOverlaysForTests.clear();
+    _inflightRendersForTests.clear();
+    nativeModule.renderHoldsOverlay.mockClear();
+
+    renderHook(() =>
+      useNativeClimbRender({
+        ...GRASSHOPPER,
+        frames: GRASSHOPPER_FRAMES,
+        extraHoldStates: undefined,
+        markStyleOverride: undefined,
+      }),
+    );
+    await waitFor(() => expect(sentConfigs().some((config) => config.render_mode === 'aura')).toBe(true));
+    const explicitCalls = nativeModule.renderHoldsOverlay.mock.calls.map(([json, key]) => [json, key]);
+    // Same config JSON, byte for byte, under the same cache key.
+    expect(explicitCalls.at(-1)).toEqual(plainCalls.at(-1));
+    const [, cacheKey] = plainCalls.at(-1) ?? [];
+    expect(cacheKey).toBeDefined();
+    const auraConfig = sentConfigs().find((config) => config.render_mode === 'aura');
+    expect(auraConfig?.mark_style).toBe('glow');
+    expect(Object.keys(asRecord(auraConfig?.hold_state_map)).some((code) => Number(code) >= 900)).toBe(false);
+
+    // And the config builder hands back the cached board config untouched.
+    const inputs = boardseshInputs();
+    const withoutArg = _getBoardConfigForTests(
+      'grasshopper',
+      1,
+      5,
+      '1',
+      false,
+      undefined,
+      {},
+      {},
+      1,
+      1,
+      'default',
+      inputs,
+    );
+    const withUndefined = _getBoardConfigForTests(
+      'grasshopper',
+      1,
+      5,
+      '1',
+      false,
+      undefined,
+      {},
+      {},
+      1,
+      1,
+      'default',
+      inputs,
+      '',
+      undefined,
+    );
+    expect(JSON.stringify(withUndefined?.configBase)).toBe(JSON.stringify(withoutArg?.configBase));
+  });
+
+  it('keys the heat PNG on the extras without splitting the board-config cache', () => {
+    // The extras are merged over the cached entry on the way out, so the same
+    // board config serves every heat map.
+    const inputs = boardseshInputs({ markStyle: 'fill' });
+    const first = _getBoardConfigForTests(
+      'grasshopper',
+      1,
+      5,
+      '1',
+      false,
+      undefined,
+      {},
+      {},
+      1,
+      1,
+      'sig',
+      inputs,
+      '',
+      HEAT_STATES,
+    );
+    const second = _getBoardConfigForTests(
+      'grasshopper',
+      1,
+      5,
+      '1',
+      false,
+      undefined,
+      {},
+      {},
+      1,
+      1,
+      'sig',
+      inputs,
+      '',
+      OTHER_HEAT_STATES,
+    );
+    expect(asRecord(asRecord(first?.configBase).hold_state_map)[900]).toEqual({ color: '#4C1D95' });
+    expect(asRecord(asRecord(second?.configBase).hold_state_map)[900]).toEqual({ color: '#DDD6FE' });
+    expect(asRecord(first?.configBase).holds).toBe(asRecord(second?.configBase).holds);
+  });
+
   it('stays classic, and says so, when the binary cannot draw the fill', async () => {
     nativeModule.probeBoardseshRendererSupport.mockResolvedValue(false);
     const { result } = renderHook(() =>

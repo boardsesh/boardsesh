@@ -45,17 +45,20 @@ vi.mock('../../drawer-action-bar/DrawerActionBar', () => ({
     accessibilityLabel,
     checked,
     activeColor,
+    accessibilityValueText,
   }: {
     iconName?: string;
     accessibilityLabel?: string;
     checked?: boolean;
     activeColor?: string;
+    accessibilityValueText?: string;
   }) =>
     createElement('button', {
       'data-action': iconName,
       'data-label': accessibilityLabel,
       'data-checked': checked == null ? undefined : String(checked),
       'data-active-color': activeColor,
+      'data-value': accessibilityValueText,
     }),
   drawerActionBarStyles: { container: {}, rowSecondary: {}, spacer: {} },
 }));
@@ -300,6 +303,8 @@ describe('CreateDrawerActionBar', () => {
     expect(flame?.getAttribute('data-label')).toBe('mobile.heatmap.toggle');
     expect(flame?.getAttribute('data-checked')).toBe('true');
     expect(flame?.getAttribute('data-active-color')).toBe('#A78BFA');
+    // The heat follows the brush, so the toggle speaks the brush.
+    expect(flame?.getAttribute('data-value')).toBe('Hand');
   });
 
   it('puts the heat line where the autosave note sits while heat is on', () => {

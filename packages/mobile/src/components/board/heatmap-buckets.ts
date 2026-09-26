@@ -136,6 +136,11 @@ export type HeatLegend =
       edgeValues: (number | null)[];
       /** The largest count on the board: the top of the last bucket. */
       total: number;
+      /**
+       * Every used hold has the same count. There is no ranking to show, so
+       * they all take the MIDDLE colour and the legend says so in words.
+       */
+      allEqual?: boolean;
     }
   | {
       kind: 'grade';
@@ -192,7 +197,25 @@ export function buildHeatLayer({ statsByHoldId, holdIds, metric, ramp, skipHoldI
   let total = 0;
   const cells: HeatCell[] = [];
   const codeColors: Record<number, { color: string }> = {};
-  for (const { value } of ranked) if (value > total) total = value;
+  let lowest = Number.POSITIVE_INFINITY;
+  for (const { value } of ranked) {
+    if (value > total) total = value;
+    if (value < lowest) lowest = value;
+  }
+  if (lowest === total) {
+    // Nothing to rank: the hottest colour would claim these holds stand out.
+    const middle = Math.floor(HEAT_BUCKET_CODES.length / 2);
+    const code = HEAT_BUCKET_CODES[middle];
+    const color = ramp[middle] ?? ramp[0];
+    for (const { holdId } of ranked) {
+      if (skipHoldIds?.has(holdId)) continue;
+      codeColors[code] = { color };
+      cells.push({ holdId, bucket: middle, code, color });
+    }
+    const allEqualEdges: (number | null)[] = [null, null, null, null, null];
+    allEqualEdges[middle] = total;
+    return { cells, codeColors, legend: { kind: 'count', edgeValues: allEqualEdges, total, allEqual: true } };
+  }
   ranked.forEach(({ holdId, value }, index) => {
     // The busiest hold is always the hottest colour: with fewer than ten used
     // holds the top mid-rank is below 0.95, so a tight filter would otherwise

@@ -4,6 +4,7 @@ import { difficultyIdToVNumber } from '@boardsesh/board-constants/grade-conversi
 import { V_GRADE_COLORS } from '@boardsesh/board-constants/grade-colors';
 import {
   buildHeatLayer,
+  gradeSwatches,
   GRADE_CODE_BASE,
   HEAT_BUCKET_CODES,
   heatBucketIndex,
@@ -133,6 +134,14 @@ describe('buildHeatLayer (counts)', () => {
     expect(layer.cells.find((cell) => cell.holdId === 4)?.bucket).toBe(4);
   });
 
+  it('paints every hold the middle colour when all counts tie, and flags it for the legend', () => {
+    const tied = statsMap([1, 2, 3].map((holdId) => holdStat(holdId, { totalUses: 7 })));
+    const layer = buildHeatLayer({ statsByHoldId: tied, holdIds: [1, 2, 3], metric: 'climbs', ramp: RAMP });
+    expect(layer.cells.map((cell) => cell.bucket)).toEqual([2, 2, 2]);
+    expect(layer.cells.every((cell) => cell.color === RAMP[2])).toBe(true);
+    expect(layer.legend).toMatchObject({ kind: 'count', allEqual: true, total: 7 });
+  });
+
   it('ignores stats for holds the board cannot draw, and holds with a zero count', () => {
     const layer = buildHeatLayer({
       statsByHoldId: statsMap([holdStat(1, { totalUses: 5, footUses: 0 }), holdStat(999, { footUses: 9 })]),
@@ -179,5 +188,20 @@ describe('heatLayerFrames', () => {
         { holdId: 3, bucket: 0, code: 900, color: '#000' },
       ]),
     ).toBe('p3r900p20r904');
+  });
+});
+
+describe('gradeSwatches', () => {
+  it('repeats one colour when every drawn hold is the same grade', () => {
+    const swatches = gradeSwatches(4, 4);
+    expect(swatches).toHaveLength(5);
+    expect(new Set(swatches).size).toBe(1);
+    expect(swatches[0]).toBe(V_GRADE_COLORS.V4);
+  });
+
+  it('spans easiest to hardest, and is empty with nothing drawn', () => {
+    expect(gradeSwatches(0, 8)[0]).toBe(V_GRADE_COLORS.V0);
+    expect(gradeSwatches(0, 8)[4]).toBe(V_GRADE_COLORS.V8);
+    expect(gradeSwatches(null, null)).toEqual([]);
   });
 });

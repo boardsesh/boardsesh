@@ -184,9 +184,10 @@ colour-vision type; the hottest stop is always the one with the most contrast ag
 
 | Scheme | 1 (few)   | 2         | 3         | 4         | 5 (many)  |
 | ------ | --------- | --------- | --------- | --------- | --------- |
-| Dark   | `#4C1D95` | `#6D28D9` | `#8B5CF6` | `#C4B5FD` | `#F5F3FF` |
-| Light  | `#DDD6FE` | `#A78BFA` | `#7C3AED` | `#5B21B6` | `#2E1065` |
+| Dark   | `#4C1D95` | `#6D28D9` | `#8B5CF6` | `#A78BFA` | `#C4B5FD` |
+| Light  | `#C4B5FD` | `#A78BFA` | `#7C3AED` | `#5B21B6` | `#2E1065` |
 
+No near-white stop at either end: on the board photo a near-white hold reads as an unheated grey one.
 `heat-ramp.test.ts` holds it strictly monotonic in luminance with at least 1.3:1 between neighbours.
 Resolved in `variant-tokens.ts` (`resolveHeatRamp`); the renderer's hold-state map and the legend
 read the same array. Grade mode is the exception: it colours by the app's grade colours

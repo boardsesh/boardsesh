@@ -5,7 +5,7 @@ import type { UserBoard } from '@boardsesh/shared-schema';
 import { Text } from '../../Text';
 import { Icon } from '../../Icon';
 import { SegmentedControl } from '../../SegmentedControl';
-import { HeatmapLegend } from '../../board/HeatmapLegend';
+import { formatHeatmapClimbCount, HeatmapLegend } from '../../board/HeatmapLegend';
 import { HeatmapDownloadLine } from '../../board/HeatmapDownloadLine';
 import { HEATMAP_MODES, type HeatmapMode } from '../../board/heatmap-buckets';
 import { useTheme } from '../../../providers/theme-provider';
@@ -13,7 +13,6 @@ import { useGrades } from '../../../lib/graphql/hooks';
 import { countFilteredHolds, hasActiveClimbFilters } from '@boardsesh/climb-filters';
 import { getFilterSummary } from '../../../lib/filter-summary';
 import { DEFAULT_FILTERS } from '../../../lib/climb-filter-types';
-import { formatCount } from '../../../lib/format-climb-stats';
 import { useHeatmapFirstRunCaption } from '../../../lib/heatmap-first-run';
 import { borderRadius, spacing } from '../../../theme/tokens';
 import type { PlayDrawerHeatmap } from './use-play-drawer-heatmap';
@@ -52,7 +51,7 @@ export const PlayDrawerHeatmapPanel = memo(function PlayDrawerHeatmapPanel({
 });
 
 function HeatmapPanelBody({ heatmap, boardName }: { heatmap: PlayDrawerHeatmap; boardName: string }) {
-  const { t } = useTranslation('climbs');
+  const { t, i18n } = useTranslation('climbs');
   const { systemColors, colorScheme } = useTheme();
   const { search, wholeBoard, toggleWholeBoard, mode, setMode, legend, climbCount } = heatmap;
   const showCaption = useHeatmapFirstRunCaption(heatmap.enabled);
@@ -75,10 +74,7 @@ function HeatmapPanelBody({ heatmap, boardName }: { heatmap: PlayDrawerHeatmap; 
   const isGrade = mode === 'grade';
   const lowLabel = isGrade ? t('mobile.heatmap.legend.easier') : t('mobile.heatmap.legend.fewClimbs');
   const highLabel = isGrade ? t('mobile.heatmap.legend.harder') : t('mobile.heatmap.legend.manyClimbs');
-  const scopeLabel =
-    climbCount === null
-      ? null
-      : t('mobile.heatmap.climbCount', { count: climbCount, formattedCount: formatCount(climbCount) });
+  const scopeLabel = climbCount === null ? null : formatHeatmapClimbCount(t, climbCount, i18n?.language);
   const caption = !showCaption
     ? null
     : isGrade
@@ -103,7 +99,14 @@ function HeatmapPanelBody({ heatmap, boardName }: { heatmap: PlayDrawerHeatmap; 
 
   return (
     <View style={styles.panel} testID="play-drawer-heatmap-legend">
-      <HeatmapLegend legend={legend} lowLabel={lowLabel} highLabel={highLabel} scopeLabel={scopeLabel} showEdgeValues />
+      <HeatmapLegend
+        legend={legend}
+        lowLabel={lowLabel}
+        highLabel={highLabel}
+        allEqualLabel={t('mobile.heatmap.legend.allEqual')}
+        scopeLabel={scopeLabel}
+        showEdgeValues
+      />
       {caption ? (
         <Text variant="caption1" color={systemColors.secondaryLabel} testID="play-drawer-heatmap-caption">
           {caption}

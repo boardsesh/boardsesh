@@ -852,7 +852,8 @@
         "fewClimbs": "Pocos bloques",
         "manyClimbs": "Muchos bloques",
         "easier": "Más fácil",
-        "harder": "Más difícil"
+        "harder": "Más difícil",
+        "allEqual": "Todas las presas se usan por igual"
       },
       "climbCount_one": "{{formattedCount}} bloque",
       "climbCount_other": "{{formattedCount}} bloques",

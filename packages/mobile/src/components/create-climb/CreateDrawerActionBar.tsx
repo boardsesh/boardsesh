@@ -255,6 +255,14 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
               busy={heatmapActive && heatmapBusy}
               checked={heatmapActive}
               accessibilityLabel={t('mobile.heatmap.toggle')}
+              // The heat follows the brush, so the brush is what it is showing.
+              accessibilityValueText={
+                heatmapActive
+                  ? selectedBrush === 'OFF'
+                    ? t('mobile.create.brush.erase')
+                    : roleLabels[selectedBrush]
+                  : undefined
+              }
             />
           ) : null}
         </ScrollView>

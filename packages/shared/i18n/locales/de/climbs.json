@@ -852,7 +852,8 @@
         "fewClimbs": "Wenige Boulder",
         "manyClimbs": "Viele Boulder",
         "easier": "Leichter",
-        "harder": "Schwerer"
+        "harder": "Schwerer",
+        "allEqual": "Jeder Griff gleich oft genutzt"
       },
       "climbCount_one": "{{formattedCount}} Boulder",
       "climbCount_other": "{{formattedCount}} Boulder",

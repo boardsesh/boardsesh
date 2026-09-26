@@ -1985,10 +1985,10 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
   // a grade map with eighteen entries still yields a short key.
   const extraHoldStatesSignature = useMemo(() => {
     if (!extraHoldStates) return '';
-    const entries = Object.keys(extraHoldStates)
-      .map(Number)
-      .sort((left, right) => left - right)
-      .map((code) => `${code}:${extraHoldStates[code]?.color ?? ''}`);
+    const entries = Object.entries(extraHoldStates)
+      .map(([code, state]) => [Number(code), state.color] as const)
+      .sort(([left], [right]) => left - right)
+      .map(([code, color]) => `${code}:${color}`);
     return entries.length > 0 ? `xs-${fnv1aHex(entries.join(','))}` : '';
   }, [extraHoldStates]);
   const configRenderSignature = useMemo(

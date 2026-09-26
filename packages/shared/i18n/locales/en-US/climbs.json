@@ -852,7 +852,8 @@
         "fewClimbs": "Few climbs",
         "manyClimbs": "Many climbs",
         "easier": "Easier",
-        "harder": "Harder"
+        "harder": "Harder",
+        "allEqual": "Every hold used equally"
       },
       "climbCount_one": "{{formattedCount}} climb",
       "climbCount_other": "{{formattedCount}} climbs",
