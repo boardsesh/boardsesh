@@ -51,6 +51,16 @@ A climb with no stats row at the browsed angle now comes after every climb that 
 
 Pages whose walk fills them are unchanged. On the production replica, 7 of 7 pages across Kilter, Tension and MoonBoard (page 0, page 5, two grade bands) came back identical, row for row. The difference shows only once a narrow filter exhausts the walk, for example page 3 and later of a Kilter name search. The mobile offline search (`search-climbs-local.ts`) still uses the old order.
 
+## Freshness
+
+The table lags `board_climb_stats` by up to one refresh interval (about an hour). The walk and its fallback read the same stale copies, so pages stay consistent with each other, but three things differ from the live order until the next run:
+
+- The rank uses the total from the last run, so a climb that just gained ascents keeps its old position.
+- A climb whose live grade or ascent count now passes a band or minimum-ascents filter, but whose copy does not, sorts in the tail instead of the walk. It still shows: the live stats row decides whether a climb matches.
+- A climb whose first stats row landed after the last run has no row in the table. It sorts after every climb with a total, like a climb with no stats.
+
+On the production replica, 270 Kilter climbs and 181 Tension climbs had a stats row updated in one two-hour window on 2026-09-26, so each incremental run touches a few hundred climbs.
+
 ## Size
 
 On the dev DB (917k stats rows), measured after `VACUUM ANALYZE`:
@@ -66,5 +76,5 @@ Production has 934k stats rows, so expect the same. Only the first pages of the 
 ## Runbook
 
 - **Force a full rebuild of one board:** `DELETE FROM board_climb_popularity_runs WHERE board_type = 'kilter';`. The search goes back to the aggregation within 60 s, and the next hourly run rebuilds the board.
-- **Turn the table off:** the same delete for every board. Then pause the job by unscheduling `climb-popularity-refresh` in pg-boss.
+- **Turn the table off:** the same delete for every board, then unschedule `climb-popularity-refresh` in pg-boss. Every backend boot calls `boss.schedule` again, so the next deploy or restart re-enables the job and rebuilds within the hour. To keep it off across restarts, revert the read path and the job registration.
 - **Reclaim the index space after the first build:** `REINDEX INDEX CONCURRENTLY board_climb_popularity_rank_idx;`
