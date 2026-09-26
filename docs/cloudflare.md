@@ -597,7 +597,11 @@ The limits, on purpose:
   our ESP32 board controller (`ESP32HTTPClient`) and the Internet Archive.
   SeznamBot stays blocked by name.
 - The web middleware applies the same rule at the origin through
-  `isBlockedCrawler`, for requests that reach Railway directly.
+  `isBlockedCrawler`, for requests that reach Railway directly. There the
+  automation default-deny runs only in a production build without
+  `BOARDSESH_E2E=1` (the CI e2e shards set it): dev and e2e never arrive by
+  the Railway hostname, and Playwright's headless Chromium says
+  `HeadlessChrome`. Named crawlers are refused in every environment.
 
 The zone is on the Free plan, which allows 5 custom rules in total. This rule
 is the fourth, so one slot is left. Anything new should extend an existing

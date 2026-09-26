@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, it, expect } from 'vite-plus/test';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vite-plus/test';
 import { NextRequest } from 'next/server';
 import { CLIMB_SESSION_COOKIE } from '@/app/lib/climb-session-cookie';
 import { DEFAULT_LOCALE, LOCALE_COOKIE, LOCALE_HEADER } from '@/app/lib/i18n/config';
@@ -12,7 +12,23 @@ function sp(params: Record<string, string> = {}): URLSearchParams {
   return new URLSearchParams(params);
 }
 
+const HEADLESS_CHROME_UA =
+  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/140.0.7339.16 Safari/537.36';
+
+// The automation default-deny runs only in a production build without
+// BOARDSESH_E2E (isOriginAutomationDefaultDenyEnabled). Vitest runs with
+// NODE_ENV=test, so the production-behaviour suites opt in explicitly.
+function stubProductionOrigin(): void {
+  vi.stubEnv('NODE_ENV', 'production');
+  vi.stubEnv('BOARDSESH_E2E', '');
+}
+
 describe('blocked crawler origin rejection', () => {
+  beforeEach(stubProductionOrigin);
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it.each([
     'GPTBot/1.4',
     'Claude-SearchBot/1.0',
@@ -72,6 +88,55 @@ describe('blocked crawler origin rejection', () => {
       new NextRequest('https://www.boardsesh.com/', { method: 'POST', headers: { 'user-agent': 'curl/8.9.1' } }),
     );
     expect(response.status).not.toBe(403);
+  });
+
+  it('refuses headless Chromium in production', () => {
+    const response = middleware(
+      new NextRequest('https://boardsesh-web-production.up.railway.app/', {
+        headers: { 'user-agent': HEADLESS_CHROME_UA },
+      }),
+    );
+    expect(response.status).toBe(403);
+  });
+});
+
+describe('blocked crawler origin rejection outside production', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  function requestAs(userAgent: string): NextRequest {
+    return new NextRequest(`http://localhost:3000${LEGACY_LIST}`, { headers: { 'user-agent': userAgent } });
+  }
+
+  describe.each([
+    ['development', () => vi.stubEnv('NODE_ENV', 'development')],
+    ['test', () => vi.stubEnv('NODE_ENV', 'test')],
+    [
+      'a production build under e2e (BOARDSESH_E2E=1)',
+      () => {
+        vi.stubEnv('NODE_ENV', 'production');
+        vi.stubEnv('BOARDSESH_E2E', '1');
+      },
+    ],
+  ])('in %s', (_label, stubEnvironment) => {
+    beforeEach(stubEnvironment);
+
+    // Playwright's headless Chromium, as the e2e global setup and any bare
+    // browser context send it, plus the local scripts that curl the server.
+    it.each([HEADLESS_CHROME_UA, 'curl/8.9.1', 'python-requests/2.32.3'])(
+      'lets %s through: the default-deny is edge-only here',
+      (userAgent) => {
+        expect(middleware(requestAs(userAgent)).status).not.toBe(403);
+      },
+    );
+
+    it.each(['GPTBot/1.4', 'Lightpanda/1.0', 'Mozilla/5.0 (compatible; YandexBot/3.0; +http://yandex.com/bots)'])(
+      'still refuses the named crawler %s',
+      (userAgent) => {
+        expect(middleware(requestAs(userAgent)).status).toBe(403);
+      },
+    );
   });
 });
 
@@ -740,6 +805,10 @@ describe('middleware bot-gates the sticky locale redirect and cookie', () => {
     ['archive.org_bot', 'Mozilla/5.0 (compatible; archive.org_bot +http://www.archive.org/details/archive.org_bot)'],
   ];
 
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it.each([
     ['AhrefsBot', 'Mozilla/5.0 (compatible; AhrefsBot/7.0; +http://ahrefs.com/robot/)'],
     ['SemrushBot', 'Mozilla/5.0 (compatible; SemrushBot/7~bl; +http://www.semrush.com/bot.html)'],
@@ -747,6 +816,8 @@ describe('middleware bot-gates the sticky locale redirect and cookie', () => {
     ['MJ12bot', 'Mozilla/5.0 (compatible; MJ12bot/v1.4.8; http://mj12bot.com/)'],
     ['DotBot', 'Mozilla/5.0 (compatible; DotBot/1.2; +https://opensiteexplorer.org/dotbot; help@moz.com)'],
   ])('403s %s before the locale gate is reached', (_label, crawlerUa) => {
+    // Unnamed SEO scrapers are caught by the production-only default-deny.
+    stubProductionOrigin();
     const request = makeRequestWithUserAgent('/some/page', crawlerUa);
     request.cookies.set(LOCALE_COOKIE, 'de');
     expect(middleware(request).status).toBe(403);

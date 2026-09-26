@@ -15,7 +15,7 @@
 // time out; serial lets the first test absorb the compile and the rest run
 // against a warm bundle.
 
-import { expect, test, type Page } from '@playwright/test';
+import { devices, expect, test, type Page } from '@playwright/test';
 import { and, asc, eq, sql } from 'drizzle-orm';
 import { boardClimbs, boardClimbStats, closePool, createDb, userBoards } from '@boardsesh/db';
 
@@ -313,6 +313,9 @@ test.describe('expo-web smoke', () => {
       // eligibility before the Expo bundle evaluates.
       const context = await browser.newContext({
         baseURL: process.env.PLAYWRIGHT_TEST_BASE_URL || 'http://localhost:3000',
+        // A bare context sends Playwright's default `HeadlessChrome` UA, which
+        // the crawler policy refuses in a production build.
+        userAgent: devices['Desktop Chrome'].userAgent,
         viewport: { width: 1440, height: 900 },
         screen: { width: 1440, height: 900 },
         isMobile: false,
