@@ -11,6 +11,10 @@ manual changes). See docs/mobile-ota-updates.md.
 - The grade you gave a climb is now the grade you see on it, and the one it sorts and filters by. The crowd's number sits underneath when the two disagree. ([#5143](https://github.com/boardsesh/boardsesh/pull/5143))
   Grade a climb you haven't sent yet — handy on boards where everything reads sandbagged.
 
+### Fixed
+
+- The current climb bar no longer covers the hold-type buttons when you search by holds ([#5807](https://github.com/boardsesh/boardsesh/pull/5807))
+
 ## 2026-09-25
 
 ### New

@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-26T00:25:45.307Z",
+  "generatedAt": "2026-09-26T00:34:28.415Z",
   "entries": [
+    {
+      "prNumber": 5807,
+      "category": "fixed",
+      "title": "The current climb bar no longer covers the hold-type buttons when you search by holds",
+      "mergedAt": "2026-09-26T00:12:56Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5807"
+    },
     {
       "prNumber": 5143,
       "category": "new",
