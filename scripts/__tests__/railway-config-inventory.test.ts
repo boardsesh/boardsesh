@@ -164,10 +164,15 @@ describe('the declared services', () => {
       'boardsesh-web',
       'boardsesh-backend',
       'boardsesh-scheduler',
-      'PostGIS - PROD',
       'Redis',
     ]) {
       expect(declared).toContain(name);
     }
+  });
+
+  it('no longer lists the PG16 primary, deleted on 2026-09-25', () => {
+    // A declared service that is gone reads as a blocked "does not exist" for an
+    // asserted one, and as a stale ownership note for an inventory one.
+    expect(desiredRailwayState.services.map((service) => service.name)).not.toContain('PostGIS - PROD');
   });
 });

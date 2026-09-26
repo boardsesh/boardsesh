@@ -100,6 +100,21 @@ const ROLLBACK_MUTATION = `
 
 class RailwayReadError extends Error {}
 
+/**
+ * The rollback stopped because another deployment is acting on the service: one
+ * competing with, or newer than, the deployment it was asked to replace, or one
+ * appearing beside the rollback it created. Callers must treat the service as
+ * somebody else's from here on. Every other failure (a read that kept failing, a
+ * rollback deployment that failed or never settled) leaves the caller as the only
+ * actor, and it is a plain Error.
+ */
+class RollbackFencedError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'RollbackFencedError';
+  }
+}
+
 function requireSafeId(rawId, label) {
   const id = String(rawId ?? '')
     .trim()
@@ -332,7 +347,7 @@ function validatePreMutationState({ deployments, expectedCurrent, scope, target 
     throw new Error('Expected current deployment must differ from the rollback target');
   }
   if (expectedCurrent.status === 'CANCELED' || expectedCurrent.status === 'CANCELLED') {
-    throw new Error('Expected current deployment is cancelled; automatic rollback is unsafe');
+    throw new RollbackFencedError('Expected current deployment is cancelled; automatic rollback is unsafe');
   }
   if (expectedCurrent.createdAtMs <= target.createdAtMs) {
     throw new Error('Expected current deployment is not newer than the rollback target');
@@ -373,13 +388,15 @@ function validatePreMutationState({ deployments, expectedCurrent, scope, target 
         (deployment.status === 'SUCCESS' && deployment.createdAtMs > target.createdAtMs)),
   );
   if (competingDeployments.length > 0) {
-    throw new Error('Rollback preflight found a competing deployment between the target and expected current');
+    throw new RollbackFencedError(
+      'Rollback preflight found a competing deployment between the target and expected current',
+    );
   }
 
   const newestCreatedAtMs = Math.max(...deployments.map((deployment) => deployment.createdAtMs));
   const newest = deployments.filter((deployment) => deployment.createdAtMs === newestCreatedAtMs);
   if (newest.length !== 1 || newest[0].id !== expectedCurrent.id) {
-    throw new Error('Expected current deployment is not the sole newest service deployment');
+    throw new RollbackFencedError('Expected current deployment is not the sole newest service deployment');
   }
 
   return new Set(deployments.map((deployment) => deployment.id));
@@ -400,7 +417,7 @@ function validateLockedRollback({ deployments, baselineIds, lockedDeploymentId, 
 
   const postBaseline = deploymentsAfterBaseline(deployments, baselineIds);
   if (postBaseline.length !== 1 || postBaseline[0].id !== lockedDeploymentId) {
-    throw new Error('Railway rollback verification found a concurrent post-baseline deployment');
+    throw new RollbackFencedError('Railway rollback verification found a concurrent post-baseline deployment');
   }
   const listedRollback = postBaseline[0];
   if (listedRollback.createdAtMs !== polled.createdAtMs) {
@@ -414,7 +431,7 @@ function validateLockedRollback({ deployments, baselineIds, lockedDeploymentId, 
 
 function rollbackIsCurrent({ serviceState, baselineIds, lockedDeploymentId }) {
   if (serviceState.latest.id !== lockedDeploymentId) {
-    throw new Error('Railway rollback deployment is not the service instance latest deployment');
+    throw new RollbackFencedError('Railway rollback deployment is not the service instance latest deployment');
   }
   if (FAILED_STATUSES.has(serviceState.latest.status)) {
     throw new Error(`Railway service instance latest deployment reached terminal status ${serviceState.latest.status}`);
@@ -426,7 +443,7 @@ function rollbackIsCurrent({ serviceState, baselineIds, lockedDeploymentId }) {
     (deployment) => deployment.id !== lockedDeploymentId && !baselineIds.has(deployment.id),
   );
   if (unexpectedActive.length > 0) {
-    throw new Error('Railway service instance reported a concurrent active deployment');
+    throw new RollbackFencedError('Railway service instance reported a concurrent active deployment');
   }
   if (serviceState.active.length !== 1 || serviceState.active[0].id !== lockedDeploymentId) {
     return false;
@@ -553,7 +570,7 @@ async function rollbackDeployment({
           continue;
         }
         if (discovered.length !== 1) {
-          throw new Error('Railway rollback discovery found concurrent post-baseline deployments');
+          throw new RollbackFencedError('Railway rollback discovery found concurrent post-baseline deployments');
         }
         lockedDeploymentId = discovered[0].id;
       }
@@ -663,6 +680,7 @@ export {
   ROLLBACK_MUTATION,
   SERVICE_INSTANCE_STATE_QUERY,
   RailwayReadError,
+  RollbackFencedError,
   appendRollbackOutput,
   deploymentsAfterBaseline,
   requestGraphql,

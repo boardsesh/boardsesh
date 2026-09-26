@@ -83,6 +83,7 @@ import type {
   PlannedChange,
 } from '../infra/railway/plan';
 import { EOAS_PACKAGE_SPEC } from './lib/eoas';
+import { RollbackFencedError } from './railway-deployment-rollback.mjs';
 
 const RAILWAY_API = 'https://backboard.railway.com/graphql/v2';
 
@@ -1052,6 +1053,7 @@ async function rollbackAppliedDeployment(
   applied: AppliedDeployment,
   rollbackDeployment: RollbackDeployment,
 ): Promise<boolean> {
+  let succeeded = true;
   const serviceName = applied.mutation.serviceName;
   const changedConfiguration = applied.mutation.image || Object.keys(applied.mutation.deployFields).length > 0;
   console.error(`[railway-apply] Rolling back ${serviceName} to deployment ${applied.previousDeployment.id}.`);
@@ -1063,27 +1065,33 @@ async function rollbackAppliedDeployment(
       token,
     });
   } catch (error) {
-    // The configuration is restored ONLY after a confirmed rollback. The helper
-    // refuses on purpose when a newer deployment appeared after ours (it is no
-    // longer the sole newest, or a competing one sits in between), and in that
-    // case somebody else now owns this service's configuration: writing the
-    // pre-run image and settings back would overwrite theirs. A rollback that
-    // failed for any other reason gets the same treatment, because this tool can
-    // no longer tell which deployment is serving.
     const reason = error instanceof Error ? error.message : String(error);
-    const configuredFor = applied.mutation.image ?? 'the settings this run wrote';
+    if (error instanceof RollbackFencedError) {
+      // Another deployment is acting on this service: one appeared after ours, or
+      // beside the rollback. Somebody else now owns its configuration, and writing
+      // the pre-run image and settings back would overwrite theirs.
+      const configuredFor = applied.mutation.image ?? 'the settings this run wrote';
+      console.error(
+        `[railway-apply] MANUAL ACTION: rollback of ${serviceName} was refused because another ` +
+          `deployment is acting on it (${reason}).\n` +
+          `[railway-apply] ${serviceName} configuration was NOT restored` +
+          (changedConfiguration ? `: it is still configured for ${configuredFor}.` : '.') +
+          `\n[railway-apply] Find the deployment that is neither ${applied.deploymentId} (this run) nor ` +
+          `${applied.previousDeployment.id} (the rollback target) in ${serviceName}'s deployment list. ` +
+          `Whoever made it owns the service now; leave its configuration alone and reconcile with them.`,
+      );
+      return false;
+    }
+    // No other actor was detected, so this run still owns the service. The
+    // rollback deployment may have been created and then failed or not settled,
+    // or never created at all. Either way the configuration goes back to the
+    // pre-run values, so the next deploy does not re-ship the failed change.
     console.error(
-      `[railway-apply] MANUAL ACTION: could not roll back ${serviceName} (${reason}).\n` +
-        `[railway-apply] ${serviceName} configuration was NOT restored` +
-        (changedConfiguration
-          ? `: it is still configured for ${configuredFor}, and deployment ${applied.deploymentId} from this run ` +
-            `may still be serving.`
-          : '.') +
-        `\n[railway-apply] Check ${serviceName}'s deployment list in Railway for a newer deployment this run did ` +
-        `not create. If there is one, leave its configuration alone. If there is none, redeploy ` +
-        `${applied.previousDeployment.id} and set the configuration back by hand.`,
+      `[railway-apply] MANUAL ACTION: the rollback deployment did not settle for ${serviceName} (${reason}). ` +
+        `No competing deployment was detected, so its previous configuration is restored anyway. ` +
+        `Check which deployment is serving: redeploy ${applied.previousDeployment.id} if it is not.`,
     );
-    return false;
+    succeeded = false;
   }
 
   if (changedConfiguration) {
@@ -1098,7 +1106,7 @@ async function rollbackAppliedDeployment(
       return false;
     }
   }
-  return true;
+  return succeeded;
 }
 
 export async function main(

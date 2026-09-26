@@ -30,3 +30,10 @@ export function rollbackDeployment(options: {
   targetDeploymentId: string;
   token: string;
 }): Promise<{ deploymentId: string; image: string }>;
+
+/**
+ * The rollback stopped because another deployment is acting on the service
+ * (competing, newer, or appearing beside the rollback). Any other rejection is a
+ * plain Error and means no other actor was detected.
+ */
+export class RollbackFencedError extends Error {}

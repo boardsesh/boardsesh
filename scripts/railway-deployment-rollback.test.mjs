@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { ROLLBACK_MUTATION, appendRollbackOutput, rollbackDeployment } from './railway-deployment-rollback.mjs';
+import {
+  ROLLBACK_MUTATION,
+  RollbackFencedError,
+  appendRollbackOutput,
+  rollbackDeployment,
+} from './railway-deployment-rollback.mjs';
 
 const SERVICE_ID = '10000000-0000-4000-8000-000000000001';
 const OTHER_SERVICE_ID = '10000000-0000-4000-8000-000000000002';
@@ -801,4 +806,48 @@ void test('bounds preflight reads and poll attempts without mutation retries', a
     /did not reach SUCCESS in time/,
   );
   assert.equal(mutationCalls(timeoutCalls).length, 1);
+});
+
+void test('marks only the concurrency fence as RollbackFencedError, so callers can tell it from a failed rollback', async () => {
+  // Fenced before the mutation: a newer deployment competes with ours.
+  await assert.rejects(
+    rollbackDeployment(
+      baseOptions(
+        sequenceFetch([...preflightResponses({ baseline: [...baselineDeployments(), concurrentDeployment()] })]),
+      ),
+    ),
+    (error) => error instanceof RollbackFencedError,
+  );
+
+  // Fenced after the mutation: a second deployment appeared beside ours.
+  const queuedRollback = rollbackResultDeployment('QUEUED');
+  await assert.rejects(
+    rollbackDeployment(
+      baseOptions(
+        sequenceFetch([
+          ...preflightResponses(),
+          mutationResponse(true),
+          deploymentListResponse([...baselineDeployments(), queuedRollback, concurrentDeployment()]),
+        ]),
+      ),
+    ),
+    (error) => error instanceof RollbackFencedError && /concurrent post-baseline/.test(error.message),
+  );
+
+  // Not fenced: our own rollback deployment failed. The caller still owns the service.
+  const failedRollback = rollbackResultDeployment('FAILED');
+  await assert.rejects(
+    rollbackDeployment(
+      baseOptions(
+        sequenceFetch([
+          ...preflightResponses(),
+          mutationResponse(true),
+          deploymentListResponse([...baselineDeployments(), failedRollback]),
+          deploymentResponse(failedRollback),
+          deploymentListResponse([...baselineDeployments(), failedRollback]),
+        ]),
+      ),
+    ),
+    (error) => !(error instanceof RollbackFencedError) && /terminal status FAILED/.test(error.message),
+  );
 });

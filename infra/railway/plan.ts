@@ -457,6 +457,12 @@ export function diffDeploySettings(desired: ServiceDesired, live: LiveState): Pl
 
   for (const field of fields) {
     const declared = desired.deploy[field];
+    // Under ALWAYS Railway restarts without limit and the retry count means
+    // nothing, and what Railway stores for it then is not documented. Comparing it
+    // would report drift nobody can act on, and writing it would be a guess, so it
+    // is neither compared nor written. It still counts under ON_FAILURE.
+    if (field === 'restartPolicyMaxRetries' && desired.deploy.restartPolicyType === 'ALWAYS') continue;
+    if (declared === undefined) continue;
     const liveValue = instance[field];
     if (liveValue === declared) continue;
 
@@ -825,39 +831,54 @@ export function diffVolumeUsage(
   };
 }
 
+/** Whether a planned change would write to the OTA service if applied (or opted in). */
+function writesOtaService(change: PlannedChange): boolean {
+  const serviceName = change.service ?? change.target?.serviceName;
+  if (serviceName !== OTA_SERVICE_NAME) return false;
+  // An image move counts even while it waits for --allow-image-change: the
+  // refusal must read the same in the nightly dry run as in the apply job.
+  if (change.resource === 'service-image') return change.image !== undefined;
+  return !change.blocked && (change.resource === 'deploy-setting' || change.resource === 'env-var');
+}
+
 /**
- * Refuse a run that would move the ClickHouse image and the OTA image together.
+ * Refuse a ClickHouse image change in the same run as any write to the OTA server.
  *
  * xprem calls log.Fatalf at boot when ClickHouse is unreachable, so an OTA
  * deployment that lands while ClickHouse is restarting takes updates.boardsesh.com
- * down with it — the one thing docs/railway.md says never to do. Each image change
- * is safe alone: ClickHouse's own apply probes the OTA server's readiness, and the
- * OTA apply probes itself. Together, a single merge could break the rule.
+ * down with it. That is not only the case where both images move: any OTA write
+ * (image, deploy setting or variable) rolls an OTA deployment, and a failed batch
+ * unwinds in reverse, so ClickHouse can be rolled back and the OTA server
+ * restarted right after, before ClickHouse accepts connections again.
  *
- * Only real image moves count (entries carrying `image`); a blocked split or an
- * unreadable serving deployment already stops that service. Both entries are
- * blocked, and the summary says why, because the SKIPPED line prints only that.
- * Mutates the map in place.
+ * Only a real ClickHouse image move (an entry carrying `image`) triggers this; a
+ * blocked split or unreadable serving deployment already stops that service.
+ * Every involved entry is blocked and its summary says why, because the SKIPPED
+ * line prints only the summary.
  */
-export function refuseCoupledImageChanges(imageChanges: Map<string, PlannedChange>): void {
-  const otaChange = imageChanges.get(OTA_SERVICE_NAME);
-  const clickhouseChange = imageChanges.get(CLICKHOUSE_SERVICE_NAME);
-  if (!otaChange?.image || !clickhouseChange?.image) return;
+export function refuseClickHouseImageWithOtaWrites(changes: PlannedChange[]): PlannedChange[] {
+  const changesClickHouseImage = changes.some(
+    (change) => change.resource === 'service-image' && change.service === CLICKHOUSE_SERVICE_NAME && change.image,
+  );
+  if (!changesClickHouseImage || !changes.some(writesOtaService)) return changes;
 
   const refusal =
-    `Refusing to change the ${CLICKHOUSE_SERVICE_NAME} and ${OTA_SERVICE_NAME} images in one run: ` +
-    `xprem exits at boot when ClickHouse is unreachable, so rolling both can restart the OTA ` +
-    `server while ClickHouse is down.\n` +
-    `Fix: land the two image changes in separate PRs, ClickHouse first, and let each apply ` +
-    `verify before merging the next.`;
-  for (const change of [clickhouseChange, otaChange]) {
-    imageChanges.set(change.service as string, {
+    `Refusing to change the ${CLICKHOUSE_SERVICE_NAME} image in the same run as a write to ` +
+    `${OTA_SERVICE_NAME}: xprem exits at boot when ClickHouse is unreachable, and this run could ` +
+    `restart the OTA server (its own deploy, or a rollback of it) while ClickHouse is restarting.\n` +
+    `Fix: converge the OTA service first, then land the ClickHouse image change in a separate PR.`;
+  return changes.map((change) => {
+    const involved =
+      writesOtaService(change) ||
+      (change.resource === 'service-image' && change.service === CLICKHOUSE_SERVICE_NAME && change.image);
+    if (!involved) return change;
+    return {
       ...change,
-      summary: `${change.summary} (refused: change the ClickHouse and OTA images in separate PRs)`,
+      summary: `${change.summary} (refused: converge the OTA service first, then the ClickHouse image in a separate PR)`,
       detail: change.detail ? `${refusal}\n${change.detail}` : refusal,
       blocked: true,
-    });
-  }
+    };
+  });
 }
 
 /**
@@ -892,17 +913,9 @@ export function buildPlan(desired: RailwayDesiredState, live: LiveState, options
     }
   }
 
-  const imageChanges = new Map<string, PlannedChange>();
   for (const service of desired.services) {
     if (missingInstances.has(service.name)) continue;
     const imageChange = diffServiceImage(service, live, options);
-    if (imageChange) imageChanges.set(service.name, imageChange);
-  }
-  refuseCoupledImageChanges(imageChanges);
-
-  for (const service of desired.services) {
-    if (missingInstances.has(service.name)) continue;
-    const imageChange = imageChanges.get(service.name);
     if (imageChange) changes.push(imageChange);
     changes.push(...diffDeploySettings(service, live));
     changes.push(...diffCustomDomains(service, live));
@@ -929,7 +942,7 @@ export function buildPlan(desired: RailwayDesiredState, live: LiveState, options
   const volumeUsageChange = diffVolumeUsage(desired.clickhouseVolumeUsageLimitPercent, live.clickhouseVolume);
   if (volumeUsageChange) changes.push(volumeUsageChange);
 
-  return changes;
+  return refuseClickHouseImageWithOtaWrites(changes);
 }
 
 /**
@@ -941,7 +954,7 @@ export function buildPlan(desired: RailwayDesiredState, live: LiveState, options
  *
  * Services listed as `inventory` count as declared. That is the point of the
  * inventory: so this reports a genuinely NEW service, which is worth seeing,
- * instead of the same five lines every night, which is not.
+ * instead of the same three lines every night, which is not.
  */
 export function undeclaredServices(desired: RailwayDesiredState, live: LiveState): string[] {
   const declared = new Set(desired.services.map((service) => service.name));

@@ -48,6 +48,7 @@ import {
 } from '../infra/railway/plan';
 import type { LiveServiceInstance, LiveState, PlanOptions } from '../infra/railway/plan';
 import { EOAS_PACKAGE_SPEC } from './lib/eoas';
+import { RollbackFencedError } from './railway-deployment-rollback.mjs';
 import {
   ACTIVE_DEPLOYMENT_STATUSES,
   DEPLOY_SUCCESS_CONFIRMATIONS,
@@ -511,6 +512,32 @@ describe('diffDeploySettings', () => {
       expect(change).toMatchObject({ resource: 'deploy-setting', service: OTA_SERVICE_NAME });
       expect(change.blocked).toBeFalsy();
     }
+  });
+
+  it('ignores the retry count under ALWAYS, whatever Railway stores for it', () => {
+    expect(OTA.deploy?.restartPolicyType).toBe('ALWAYS');
+    for (const storedRetries of [10, null, 0]) {
+      const changes = diffDeploySettings(
+        OTA,
+        withInstance(OTA_SERVICE_NAME, { restartPolicyMaxRetries: storedRetries }),
+      );
+      expect(changes, String(storedRetries)).toEqual([]);
+    }
+  });
+
+  it('still converges the retry count under ON_FAILURE, where it caps restarts', () => {
+    const onFailure: ServiceDesired = {
+      ...OTA,
+      deploy: {
+        ...(OTA.deploy as NonNullable<ServiceDesired['deploy']>),
+        restartPolicyType: 'ON_FAILURE',
+        restartPolicyMaxRetries: 3,
+      },
+    };
+    const live = withInstance(OTA_SERVICE_NAME, { restartPolicyType: 'ON_FAILURE', restartPolicyMaxRetries: 10 });
+    expect(diffDeploySettings(onFailure, live).map((change) => change.deployField)).toEqual([
+      { name: 'restartPolicyMaxRetries', value: 3 },
+    ]);
   });
 
   it('explains why a missing healthcheck matters, and carries the value to write', () => {
@@ -1045,11 +1072,48 @@ describe('buildPlan', () => {
     expect(imageChanges.map((change) => change.service)).toEqual([OTA_SERVICE_NAME, CLICKHOUSE_SERVICE_NAME]);
     for (const change of imageChanges) {
       expect(change.blocked, change.service).toBe(true);
-      expect(change.summary, change.service).toMatch(/separate PRs/);
+      expect(change.summary, change.service).toMatch(/separate PR/);
     }
   });
 
-  it('reports image, deploy, domain, volume, scale and variable drift together', () => {
+  it('refuses a ClickHouse image change in the same run as any OTA service write', () => {
+    // A batch unwind could roll ClickHouse back and then restart the OTA server
+    // while ClickHouse is not yet accepting connections.
+    const olderClickHouse = 'clickhouse/clickhouse-server:24.1';
+    const base = liveState();
+    const live: LiveState = {
+      ...base,
+      variables: variablesWithOta(otaVariables({ BASE_URL: WRONG_OWNED_VALUE })),
+      instances: {
+        ...base.instances,
+        [OTA_SERVICE_NAME]: { ...convergedInstance(OTA), healthcheckTimeout: 300 },
+        [CLICKHOUSE_SERVICE_NAME]: {
+          ...convergedInstance(CLICKHOUSE),
+          image: olderClickHouse,
+          runningImage: olderClickHouse,
+        },
+      },
+    };
+    const plan = buildPlan(desiredRailwayState, live, { ...PLAN_OPTIONS, allowImageChange: true });
+    const coupled = plan.filter(
+      (change) =>
+        (change.resource === 'service-image' && change.service === CLICKHOUSE_SERVICE_NAME) ||
+        change.service === OTA_SERVICE_NAME ||
+        change.target?.serviceName === OTA_SERVICE_NAME,
+    );
+
+    expect(coupled.map((change) => change.resource).sort((left, right) => left.localeCompare(right))).toEqual([
+      'deploy-setting',
+      'env-var',
+      'service-image',
+    ]);
+    for (const change of coupled) {
+      expect(change.blocked, change.summary).toBe(true);
+      expect(change.summary).toMatch(/OTA service first/);
+    }
+  });
+
+  it('refuses a run that would change the ClickHouse and OTA images together', () => {
     const base = liveState();
     const live: LiveState = {
       ...base,
@@ -1079,7 +1143,7 @@ describe('buildPlan', () => {
 });
 
 describe('inventory services', () => {
-  it('are declared, so undeclaredServices reports a genuinely new service instead of the same five lines', () => {
+  it('are declared, so undeclaredServices reports a genuinely new service instead of the same three lines', () => {
     expect(undeclaredServices(desiredRailwayState, liveState())).toEqual([]);
   });
 
@@ -2431,7 +2495,9 @@ describe('apply mode', () => {
       {
         sleep: async () => {},
         rollbackDeployment: async () => {
-          throw new Error('Rollback preflight found a competing deployment between the target and expected current');
+          throw new RollbackFencedError(
+            'Rollback preflight found a competing deployment between the target and expected current',
+          );
         },
       },
     );
@@ -2444,6 +2510,69 @@ describe('apply mode', () => {
     ]);
     expect(output).toMatch(/configuration was NOT restored/);
     expect(output).toContain(OTA_SERVICE_NAME);
+  });
+
+  it('still restores configuration when its own rollback deployment fails to settle', async () => {
+    // The helper created the rollback deployment itself, so no newer actor owns the
+    // service. Skipping the restore would leave it configured for the failed image
+    // while serving the old one.
+    const olderImage = `${OTA_IMAGE_REPOSITORY}:v3.0.5`;
+    const stub = railwayStub({
+      instances: { [OTA_SERVICE_NAME]: { source: { image: olderImage } } },
+      deploymentStatuses: ['FAILED'],
+    });
+    const { code, calls, output, error } = await runCli(
+      ['--apply', '--allow-image-change'],
+      stub,
+      {},
+      {
+        sleep: async () => {},
+        rollbackDeployment: async () => {
+          throw new Error('Railway rollback deployment did not reach SUCCESS in time');
+        },
+      },
+    );
+
+    expect(error).toBeNull();
+    expect(code).toBe(1);
+    expect(callsMatching(calls, 'serviceInstanceUpdate(').map((call) => call.variables.input)).toEqual([
+      { source: { image: OTA_IMAGE } },
+      { source: { image: olderImage } },
+    ]);
+    expect(output).toMatch(/rollback deployment did not settle/i);
+    expect(output).not.toMatch(/configuration was NOT restored/);
+  });
+
+  it('restores an earlier service in a batch unwind when its rollback fails without a fence', async () => {
+    const variables = convergedVariables();
+    variables[WEB_SERVICE_NAME] = { ...variables[WEB_SERVICE_NAME] };
+    delete variables[WEB_SERVICE_NAME].SMTP_USER;
+    const stub = railwayStub({
+      variables,
+      instances: { [OTA_SERVICE_NAME]: { healthcheckTimeout: 300 } },
+      deploymentStatuses: [...Array(DEPLOY_SUCCESS_CONFIRMATIONS).fill('SUCCESS'), 'FAILED'],
+    });
+
+    const { code, calls, output } = await runCli(
+      ['--apply'],
+      stub,
+      { RAILWAY_VAR_SMTP_USER: 'smtp-user' },
+      {
+        rollbackDeployment: async ({ serviceId }) => {
+          if (serviceId === OTA_SERVICE_ID)
+            throw new Error('Railway rollback deployment reached terminal status FAILED');
+          return { deploymentId: `rollback-${serviceId}`, image: 'restored-image' };
+        },
+        sleep: async () => {},
+      },
+    );
+
+    expect(code).toBe(1);
+    expect(callsMatching(calls, 'serviceInstanceUpdate(').map((call) => call.variables.input)).toEqual([
+      { healthcheckTimeout: 100 },
+      { healthcheckTimeout: 300 },
+    ]);
+    expect(output).toMatch(/rollback deployment did not settle/i);
   });
 
   it('does not restore an earlier service in a batch unwind when its rollback is refused', async () => {
@@ -2465,7 +2594,7 @@ describe('apply mode', () => {
         rollbackDeployment: async ({ serviceId }) => {
           rollbacks.push(serviceId);
           if (serviceId === OTA_SERVICE_ID) {
-            throw new Error('Expected current deployment is not the sole newest service deployment');
+            throw new RollbackFencedError('Expected current deployment is not the sole newest service deployment');
           }
           return { deploymentId: `rollback-${serviceId}`, image: 'restored-image' };
         },

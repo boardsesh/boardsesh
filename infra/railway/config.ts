@@ -254,7 +254,12 @@ export interface DeploySettings {
   healthcheckPath: string;
   healthcheckTimeout: number;
   restartPolicyType: RestartPolicyType;
-  restartPolicyMaxRetries: number;
+  /**
+   * Restart cap under ON_FAILURE. Omit it under ALWAYS: the planner neither
+   * compares nor writes it then, because it has no effect and Railway's stored
+   * value for it is not documented.
+   */
+  restartPolicyMaxRetries?: number;
   /**
    * The SIGTERM-to-SIGKILL window.
    *
@@ -570,7 +575,7 @@ export const OTA_REQUIRED_VARS: RequiredEnvVar[] = [
  * Services this repo knowingly does not manage.
  *
  * Recorded so that `undeclaredServices()` reports a service nobody has claimed —
- * which is a real event worth seeing — instead of the same four lines every night.
+ * which is a real event worth seeing — instead of the same three lines every night.
  * Nothing here is asserted or applied.
  */
 export const INVENTORY_SERVICES: ServiceDesired[] = [
@@ -585,12 +590,6 @@ export const INVENTORY_SERVICES: ServiceDesired[] = [
     management: 'inventory',
     requiredVars: [],
     managedBy: 'the Railway dashboard; see docs/scheduler.md',
-  },
-  {
-    name: 'PostGIS - PROD',
-    management: 'inventory',
-    requiredVars: [],
-    managedBy: "Railway's Postgres template; the application database, see docs/db-connectivity.md",
   },
   {
     name: 'Redis',
@@ -615,10 +614,9 @@ export const desiredRailwayState: RailwayDesiredState = {
         // ALWAYS, not ON_FAILURE: with CACHE_MODE=redis xprem panics when its first
         // Redis ping fails (most likely during Railway's weekend Redis auto-update),
         // and a capped retry count would leave the OTA server down once it ran out.
-        // ALWAYS keeps it retrying until Redis answers. The retry count is ignored
-        // under ALWAYS; 0 is what Railway stores for it.
+        // ALWAYS keeps it retrying until Redis answers. No retry count is declared:
+        // it has no effect under ALWAYS, so the planner neither compares nor writes it.
         restartPolicyType: 'ALWAYS',
-        restartPolicyMaxRetries: 0,
         // Matches the backend's railway.toml. Unlike the backend there is no
         // force-exit timer to stay above — xprem is upstream's Go binary and we do
         // not own its shutdown — so this is a plain safety net.

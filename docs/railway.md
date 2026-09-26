@@ -79,7 +79,9 @@ ours attached, so this tool manages its declared settings through the API.
   once, in a `sync.Once`, on its first cache use (the bucket-migration lock at boot)
   and panics if the ping fails. That is why the declared restart policy is `ALWAYS`:
   the server retries until Redis answers, and the race is most likely during
-  Railway's Redis auto-update window (weekends).
+  Railway's Redis auto-update window (weekends). No retry count is declared: it has
+  no effect under `ALWAYS`, so the planner neither compares nor writes it then. It
+  is still compared for an `ON_FAILURE` service.
 - **Variables that must not be set.** `forbiddenVars` catches the ones that would
   switch xprem out of control-plane mode. Reported, never deleted.
 - **Custom domains, volume mounts, replicas, region.** Read and reported, never
@@ -89,9 +91,9 @@ ours attached, so this tool manages its declared settings through the API.
   tables.
 
 A service that is live but not declared at all is **reported and left alone**. The
-four services this repo does not manage are listed as `inventory` with a `managedBy`
+three services this repo does not manage are listed as `inventory` with a `managedBy`
 note, so that report fires for a genuinely *new* service — which is worth seeing —
-rather than the same four lines every night.
+rather than the same three lines every night.
 
 `PostGIS - PG18` is declared for its **TLS variables alone**. Its image digest,
 volume and networking remain under the reviewed publish flow in
@@ -109,8 +111,8 @@ Bump `OTA_SERVER_VERSION` in `infra/railway/config.ts` and `EOAS_PACKAGE_SPEC` i
 3. polls until three consecutive `SUCCESS` readings, each reporting the image it
    deployed in `meta.image`,
 4. probes `/hc` and `/ready`,
-5. **rolls back and, once the rollback is confirmed, restores the previous
-   configuration** if either step fails.
+5. **rolls back and restores the previous configuration** if either step fails,
+   unless another deployment has taken over the service in the meantime.
 
 A run touching multiple services behaves as one deployment batch. If a later
 service fails, every earlier verified deployment is rolled back in reverse order;
@@ -147,10 +149,13 @@ Six things gate the image change, and all six matter:
 - **Configured must match running.** If the service is configured for one image
   and serving another, the plan blocks any image change, whatever the repo
   declares. See [Configured is not running](#configured-is-not-running).
-- **ClickHouse and the OTA server never move together.** A plan that would change
-  both images in one run blocks both. xprem exits at boot when ClickHouse is
-  unreachable, so rolling both at once can restart the OTA server while ClickHouse
-  is down. Land the two changes in separate PRs, ClickHouse first.
+- **A ClickHouse image change runs alone.** A plan that changes the ClickHouse image
+  and also writes anything to the OTA service (its image, a deploy setting or a
+  variable) blocks all of those entries. xprem exits at boot when ClickHouse is
+  unreachable, and a two-service run can restart the OTA server while ClickHouse
+  is restarting: through the OTA deploy itself, or through a failed batch that
+  rolls ClickHouse back and then the OTA server. Converge the OTA service first,
+  then land the ClickHouse image in a separate PR.
 
 ### Step 5 is the part worth reading twice
 
@@ -160,15 +165,22 @@ next deploy ready to re-ship the failed configuration. The failure path therefor
 issues a second `serviceInstanceUpdate` restoring exactly the fields this run
 changed, including prior nulls. It says so loudly if any rollback or restore fails.
 
-That restore runs only after the rollback helper confirms the rollback. The helper
-refuses when a newer deployment appeared after the failed one (a competing
-deployment between the two, or ours no longer the newest). Someone else has acted
-on the service by then, so writing the pre-run image and settings back would
-overwrite their change. On any rollback failure the tool writes nothing more,
-prints `configuration was NOT restored` with what the service is still configured
-for, and asks the operator to check the deployment list: leave a newer deployment
-alone, or, if there is none, redeploy the previous deployment and restore the
-settings by hand. The same rule applies to every service in a multi-service unwind.
+The restore is skipped in one case only: the rollback helper throws
+`RollbackFencedError`, meaning another deployment is acting on the service. That
+covers a deployment competing with or newer than the failed one before the
+rollback, and a second deployment appearing beside the rollback after it. Someone
+else has acted on the service by then, so writing the pre-run image and settings
+back would overwrite their change. The tool prints `configuration was NOT
+restored`, what the service is still configured for, and asks the operator to find
+the deployment that is neither this run's nor the rollback target, and to leave its
+configuration alone.
+
+Any other rollback failure (reads that kept failing, a rollback deployment that
+failed or did not settle in time) leaves this run as the only actor. The tool says
+the rollback deployment did not settle, restores the configuration anyway so the
+next deploy does not re-ship the failed change, and asks the operator to check
+which deployment is serving. The same rules apply to every service in a
+multi-service unwind.
 
 A deployment that reaches `SUCCESS` without `meta.image` cannot be checked against
 the image this run deployed. Such a reading counts as a failed read: it resets the
@@ -500,9 +512,9 @@ alone; a running OTA server rides out a short ClickHouse outage.
    ClickHouse alone, waits for it, then probes the OTA server's `/hc` and `/ready`:
    xprem is the client that has to reach ClickHouse, so its readiness is the real
    check. A failed probe rolls ClickHouse back (the OTA server is not redeployed).
-   The planner refuses a run that would change the ClickHouse and OTA images
-   together, so the rule below cannot be broken by one merge: land them in separate
-   PRs. Without CI, the manual path is Railway → `boardsesh-ota-clickhouse`
+   The planner refuses a run that would change the ClickHouse image and write
+   anything to the OTA service, so the rule below cannot be broken by one merge:
+   converge the OTA service first, then land the ClickHouse image on its own. Without CI, the manual path is Railway → `boardsesh-ota-clickhouse`
    → Settings → Source → Docker Image, then the same constant change so the nightly
    drift check agrees.
 4. **Bound the container.** ClickHouse caps itself at 1.2 GB; the 2 GB container limit
