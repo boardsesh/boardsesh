@@ -37,7 +37,7 @@ function linearRatioFor(seconds: number): number {
   return (seconds - MIN_REST_LENGTH_SECONDS) / (MAX_REST_LENGTH_SECONDS - MIN_REST_LENGTH_SECONDS);
 }
 
-/** What a release commits — the 15 s ladder, then the magnet, exactly as
+/** What a release commits — the 5 s ladder, then the magnet, exactly as
  *  `ValueSlider` composes them for this control. */
 function commitRestLength(rawSeconds: number): number {
   return magnetRestLength(quantizeRestLength(rawSeconds), rawSeconds);
@@ -140,7 +140,7 @@ describe('the shaped track', () => {
     }
   });
 
-  it('lands every 15 s rung exactly, so a scrub can reach each one', () => {
+  it('lands every 5 s rung exactly, so a scrub can reach each one', () => {
     for (const seconds of [15, 30, 45, 60, 120, 180, 600, 1800, 3600]) {
       const rung = shouldReportValue(
         trackPosition(ratioFor(seconds), 300),
@@ -165,10 +165,10 @@ describe('the shaped track', () => {
 });
 
 describe('quantizeRestLength / clampRestLength', () => {
-  it('snaps to the 15 s ladder', () => {
-    expect(quantizeRestLength(52)).toBe(45);
-    expect(quantizeRestLength(53)).toBe(60);
-    expect(quantizeRestLength(100)).toBe(105);
+  it('snaps to the 5 s ladder', () => {
+    expect(quantizeRestLength(52)).toBe(50);
+    expect(quantizeRestLength(53)).toBe(55);
+    expect(quantizeRestLength(103)).toBe(105);
   });
 
   it('never leaves the range, even at the rounding edges', () => {
@@ -184,27 +184,28 @@ describe('quantizeRestLength / clampRestLength', () => {
 
 describe('the release magnet, as this control composes it', () => {
   it('pulls a landing near 1:00 onto 1:00 exactly', () => {
-    expect(commitRestLength(52)).toBe(60);
-    expect(commitRestLength(70)).toBe(60);
+    expect(commitRestLength(58)).toBe(60);
+    expect(commitRestLength(62)).toBe(60);
     expect(commitRestLength(60)).toBe(60);
   });
 
-  it('leaves 0:45 and 1:15 reachable — a magnet that swallows its neighbours is a gap', () => {
-    expect(commitRestLength(49)).toBe(45);
-    expect(commitRestLength(71)).toBe(75);
-    expect(commitRestLength(40)).toBe(45);
+  it('leaves 0:55 and 1:05 reachable — a magnet that swallows its neighbours is a gap', () => {
+    expect(commitRestLength(56)).toBe(55);
+    expect(commitRestLength(64)).toBe(65);
+    // Far from the magnet entirely, so the composed function is a no-op ladder snap.
+    expect(commitRestLength(40)).toBe(40);
   });
 
-  it('is the 15 s ladder everywhere else', () => {
-    expect(commitRestLength(187)).toBe(180);
-    expect(commitRestLength(1790)).toBe(1785);
+  it('is the 5 s ladder everywhere else', () => {
+    expect(commitRestLength(187)).toBe(185);
+    expect(commitRestLength(1793)).toBe(1795);
   });
 
   it('judges the window on the RAW landing, which is the only order that pulls', () => {
-    // 52s rounds to 0:45 first, and 0:45 is 15s from the magnet — a window
+    // 57s rounds to 0:55 first, and 0:55 is 5s from the magnet — a window
     // measured after the rounding would never pull anything in.
-    expect(magnetRestLength(quantizeRestLength(52), 52)).toBe(60);
-    expect(magnetRestLength(quantizeRestLength(52), quantizeRestLength(52))).toBe(45);
+    expect(magnetRestLength(quantizeRestLength(57), 57)).toBe(60);
+    expect(magnetRestLength(quantizeRestLength(57), quantizeRestLength(57))).toBe(55);
   });
 });
 
@@ -215,8 +216,8 @@ describe('one VoiceOver step — the user with no thumb', () => {
   });
 
   it('puts an off-ladder rest back on the ladder instead of carrying its offset', () => {
-    expect(adjustRestLength(100, 1)).toBe(135);
-    expect(adjustRestLength(100, -1)).toBe(75);
+    expect(adjustRestLength(101, 1)).toBe(130);
+    expect(adjustRestLength(101, -1)).toBe(70);
   });
 
   it('stops at both ends rather than wrapping — the tap gesture owns Off', () => {
