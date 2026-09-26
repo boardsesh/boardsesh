@@ -2,7 +2,12 @@ import { desc, sql, and, eq } from 'drizzle-orm';
 import type { DbInstance } from '../../client/postgres';
 import { boardClimbs, boardClimbStats, boardClimbGrades } from '../../schema/index';
 import { withSerialPlan } from '../util/serial-plan';
-import { createClimbFilters, gradeValueSql } from './create-climb-filters';
+import {
+  createClimbFilters,
+  effectiveDifficultySql,
+  gradeValueSql,
+  personalGradeColumnSql,
+} from './create-climb-filters';
 import {
   boardClimbStatsAtSetAngle,
   effectiveStatsColumn,
@@ -60,6 +65,12 @@ type RawSelectResult = {
   // confidence is text. Both null when the climb has no board_climb_grades row at this angle.
   boardsesh_difficulty: number | null;
   boardsesh_confidence: string | null;
+  // The climber's own clamped grade from the personal-grade join. Absent
+  // from the row entirely unless the search asked for personal grades; null
+  // within such a search when they never graded this climb at this angle.
+  // LEAST/GREATEST over an integer column stays integer, but the driver is free
+  // to hand it back as text, so it goes through toIntegerOrNull like the rest.
+  my_difficulty?: number | string | null;
 };
 
 // difficulty_id arrives as a string like "15" from the driver; coerce to an integer
@@ -70,7 +81,13 @@ function toIntegerOrNull(value: number | string | null): number | null {
   return Number.isFinite(numeric) ? Math.round(numeric) : null;
 }
 
-function mapResultToClimbRow(result: RawSelectResult, params: BoardRouteParams): ClimbRow {
+/**
+ * @param hasPersonalGrade Whether this query joined the personal-grade subquery.
+ * When false the `myDifficulty` key is left OFF the row rather than set to
+ * null: web's SSR path never asks for personal grades, and an always-present
+ * key would change every cached search payload it stores for no reader.
+ */
+function mapResultToClimbRow(result: RawSelectResult, params: BoardRouteParams, hasPersonalGrade: boolean): ClimbRow {
   return {
     uuid: result.uuid,
     setter_username: result.setter_username || '',
@@ -108,6 +125,10 @@ function mapResultToClimbRow(result: RawSelectResult, params: BoardRouteParams):
     // coerce defensively so a stringly-typed driver value can't string-concatenate.
     boardseshDifficulty: result.boardsesh_difficulty == null ? null : Number(result.boardsesh_difficulty),
     boardseshConfidence: toConfidenceTier(result.boardsesh_confidence),
+    // Carried so a row that was FILTERED and ORDERED by the climber's own grade
+    // arrives holding that same number — a row cannot disagree with its own
+    // position in the list (#4828).
+    ...(hasPersonalGrade ? { myDifficulty: toIntegerOrNull(result.my_difficulty ?? null) } : {}),
   };
 }
 
@@ -352,6 +373,12 @@ async function runStatsDrivenSearch(
       ? sql`${boardClimbStats.qualityAverage} DESC NULLS LAST`
       : sql`${boardClimbStats.ascensionistCount} DESC NULLS LAST`;
 
+  // Personal grades (#4828). The grade filter in getClimbStatsConditions()
+  // references this join's alias, so it is NOT optional here — when the filter
+  // builder says the rule is on, the join has to exist or the SQL won't parse.
+  // It also projects the number those rows were selected by.
+  const personalGradeJoin = filters.getPersonalGradeJoin();
+
   const selectFields = {
     uuid: boardClimbs.uuid,
     setter_username: boardClimbs.setterUsername,
@@ -394,9 +421,10 @@ async function runStatsDrivenSearch(
       number | null
     >`COALESCE(${boardClimbGrades.universalGrade}, ${boardClimbGrades.localGrade})`,
     boardsesh_confidence: boardClimbGrades.confidence,
+    ...(personalGradeJoin ? { my_difficulty: sql<number | string | null>`${personalGradeColumnSql()}` } : {}),
   };
 
-  const results: RawSelectResult[] = (await db
+  const baseQuery = db
     .select(selectFields)
     .from(boardClimbStats)
     .innerJoin(boardClimbs, eq(boardClimbs.uuid, boardClimbStats.climbUuid))
@@ -415,7 +443,13 @@ async function runStatsDrivenSearch(
         eq(boardClimbGrades.climbUuid, boardClimbs.uuid),
         sql`${boardClimbGrades.angle} = ${gradeJoinAngleSql(params.angle, filters.isCrossAngleStats)}`,
       ),
-    )
+    );
+
+  // LEFT JOIN, never INNER: an inner join drops every climb the climber has not
+  // graded — i.e. nearly the whole board.
+  const results: RawSelectResult[] = (await (
+    personalGradeJoin ? baseQuery.leftJoin(personalGradeJoin.subquery, personalGradeJoin.on) : baseQuery
+  )
     .where(
       and(
         // Stats-table scope
@@ -440,7 +474,7 @@ async function runStatsDrivenSearch(
 
   const hasMore = results.length > pageSize;
   const trimmed = hasMore ? results.slice(0, pageSize) : results;
-  const climbs = trimmed.map((row) => mapResultToClimbRow(row, params));
+  const climbs = trimmed.map((row) => mapResultToClimbRow(row, params, personalGradeJoin !== null));
   return { climbs, hasMore };
 }
 
@@ -533,17 +567,29 @@ async function runStandardSearch(
   const crossAngle = filters.isCrossAngleStats;
   const statsCol = (key: Parameters<typeof effectiveStatsColumn>[0]) => effectiveStatsColumn(key, crossAngle);
 
+  // Personal grades (#4828). Non-null only when the filter builder decided the
+  // rule is in force, so filter, sort and projection cannot disagree about
+  // whether the feature is on for this search.
+  const personalGradeJoin = filters.getPersonalGradeJoin();
+
+  // Under the Boardsesh source the sort keys on the grade the row is labelled
+  // with, the same value the grade-range filter reads (issue #5643). The upstream
+  // sort is unchanged: no fallback, so stats-less climbs keep sorting last.
+  const crowdDifficultySort =
+    searchParams.gradeSource === 'boardsesh'
+      ? gradeValueSql(statsCol('displayDifficulty'), 'boardsesh')
+      : sql`ROUND(${statsCol('displayDifficulty')}::numeric, 0)`;
+
   const allowedSortColumns: Record<string, ReturnType<typeof sql>> = {
     // `popular` is untouched: it already sums ascents across every angle, so it was
     // never angle-blind in the way this fix addresses.
     ascents: sql`${statsCol('ascensionistCount')}`,
-    // Under the Boardsesh source the sort keys on the grade the row is labelled
-    // with, the same value the grade-range filter reads (issue #5643). The upstream
-    // sort is unchanged: no fallback, so stats-less climbs keep sorting last.
-    difficulty:
-      searchParams.gradeSource === 'boardsesh'
-        ? gradeValueSql(statsCol('displayDifficulty'), 'boardsesh')
-        : sql`ROUND(${statsCol('displayDifficulty')}::numeric, 0)`,
+    // With personal grades on the difficulty sort orders by COALESCE(my clamped
+    // grade, the crowd sort above) — so a climb the climber re-graded to V10
+    // lands among the V10s instead of staying with the V0s (#4828). Climbs they
+    // never graded keep their crowd position, so the list is one ordered
+    // sequence, not two interleaved ones.
+    difficulty: personalGradeJoin ? effectiveDifficultySql(crowdDifficultySort) : crowdDifficultySort,
     name: sql`${boardClimbs.name}`,
     quality: sql`${statsCol('qualityAverage')}`,
     creation: sql`${boardClimbs.createdAt}`,
@@ -620,6 +666,10 @@ async function runStandardSearch(
       number | null
     >`COALESCE(${boardClimbGrades.universalGrade}, ${boardClimbGrades.localGrade})`,
     boardsesh_confidence: boardClimbGrades.confidence,
+    // The climber's own grade, projected so the row arrives holding the number
+    // it was filtered and ordered by. Key omitted entirely when the search did
+    // not ask for personal grades.
+    ...(personalGradeJoin ? { my_difficulty: sql<number | string | null>`${personalGradeColumnSql()}` } : {}),
   };
 
   const orderByClause = randomOrderExpr
@@ -672,9 +722,16 @@ async function runStandardSearch(
     ),
   );
 
-  const queryWithJoins = popularCountsSubquery
-    ? coreQuery.leftJoin(popularCountsSubquery, eq(popularCountsSubquery.climbUuid, boardClimbs.uuid))
+  // LEFT JOIN, never INNER: an inner join drops every climb the climber has not
+  // graded — i.e. nearly the whole board. One join against their whole grade
+  // book, not one lookup per candidate climb.
+  const queryWithPersonalGrade = personalGradeJoin
+    ? coreQuery.leftJoin(personalGradeJoin.subquery, personalGradeJoin.on)
     : coreQuery;
+
+  const queryWithJoins = popularCountsSubquery
+    ? queryWithPersonalGrade.leftJoin(popularCountsSubquery, eq(popularCountsSubquery.climbUuid, boardClimbs.uuid))
+    : queryWithPersonalGrade;
 
   const results: RawSelectResult[] = (await queryWithJoins
     .where(and(...whereConditions))
@@ -685,6 +742,6 @@ async function runStandardSearch(
   const hasMore = results.length > pageSize;
   const trimmed = hasMore ? results.slice(0, pageSize) : results;
 
-  const climbs = trimmed.map((row) => mapResultToClimbRow(row, params));
+  const climbs = trimmed.map((row) => mapResultToClimbRow(row, params, personalGradeJoin !== null));
   return { climbs, hasMore };
 }

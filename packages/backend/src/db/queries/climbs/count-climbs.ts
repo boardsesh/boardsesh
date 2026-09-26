@@ -41,6 +41,15 @@ export const countClimbs = async (
   // size/stats filters are skipped here only when they're skipped there.
   const isDraftsQuery = filters.isOnlyDrafts;
 
+  // getClimbStatsConditions() carries the personal-grade range filter (#4828) as
+  // well as the crowd-grade and stats predicates, so the count is computed
+  // from the SAME predicate the list is. If it ever drifts out of here the
+  // "Show N" badge starts disagreeing with what the list actually shows.
+  //
+  // That filter reads the `my_grade` alias, so the join below is mandatory
+  // whenever this is non-null — searchClimbs joins the identical thing.
+  const personalGradeJoin = filters.getPersonalGradeJoin();
+
   const whereConditions = [
     ...filters.getClimbWhereConditions(),
     // Draft climbs may have NULL compatible_size_ids (denormalized columns not yet populated),
@@ -75,9 +84,12 @@ export const countClimbs = async (
       const withSetAngle = filters.isCrossAngleStats
         ? base.leftJoin(boardClimbStatsAtSetAngle, and(...filters.getSetAngleStatsJoinConditions()))
         : base;
-      const result = await withSetAngle
-        .leftJoin(boardClimbGrades, and(...filters.getClimbGradesJoinConditions()))
-        .where(and(...whereConditions));
+      const withGrades = withSetAngle.leftJoin(boardClimbGrades, and(...filters.getClimbGradesJoinConditions()));
+      // LEFT JOIN, never INNER — an inner join would count only the climbs this
+      // climber has graded, which is the opposite of what the badge means.
+      const result = await (
+        personalGradeJoin ? withGrades.leftJoin(personalGradeJoin.subquery, personalGradeJoin.on) : withGrades
+      ).where(and(...whereConditions));
       return Number(result[0]?.count ?? 0);
     });
   } catch (error) {

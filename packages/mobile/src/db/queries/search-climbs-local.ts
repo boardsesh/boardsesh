@@ -3,6 +3,7 @@ import type { BoardName, Climb, ClimbSearchInput } from '@boardsesh/shared-schem
 import { resolveClimbNoMatch } from '@boardsesh/shared-schema';
 import { getBoardCapabilities, isSizeScopedBoard } from '@boardsesh/board-config';
 import { getTallWideScope } from '@boardsesh/board-constants';
+import { BOULDER_GRADES } from '@boardsesh/board-constants/boulder-grade-mapping';
 import { climbNameLikePattern } from '@boardsesh/climb-filters';
 import { getGradeLabel, getClimbStars } from '../../lib/grade-label';
 import { followedAuthorsLocalCondition } from './followed-authors-local';
@@ -136,6 +137,12 @@ export function isOfflineSearchSupported(input: ClimbSearchInput): boolean {
   // supported (synced ticks carry quality + climbed_at).
   // These need tables we don't sync (or the drafts owner path), so fall back:
   if (input.onlyDrafts) return false;
+  // Personal grades (#4828) are NOT listed here: buildJoinAndWhere and
+  // sortColumnSql implement the same latest-graded-tick rule the server does,
+  // against the synced ticks (which carry both `difficulty` and `uuid`). This
+  // function returns TRUE by default, so anything it cannot actually answer must
+  // be added above — a downloaded board reads locally even while online, so a
+  // silently-ignored filter here is wrong results with no network fallback.
   if (input.onlyWithBetaVideos) return false;
   if (input.zoneBox) return false;
   // Spray-wall hold integrity (SW-12) IS expressible now: SW-15 (#5448) mirrors
@@ -274,6 +281,67 @@ export function gradeValueSql(displayDifficulty: string, gradeSource: ClimbSearc
 function ticksExists(negated: boolean, statusSql: string): string {
   return `${negated ? 'NOT EXISTS' : 'EXISTS'} (SELECT 1 FROM boardsesh_ticks t
     WHERE t.climb_uuid = c.uuid AND t.board_type = ? AND t.angle = ? AND ${ownedTicks('t')} AND ${statusSql})`;
+}
+
+// ---------------------------------------------------------------------------
+// Personal grades (#4828), the on-device half of the rule the server states in
+// packages/db/src/queries/climbs/create-climb-filters.ts:
+//
+//   personal grade  := difficulty of the LATEST tick for
+//                      (user, board_type, climb_uuid, angle) whose difficulty is
+//                      NOT NULL, ordered by (climbed_at DESC, uuid DESC)
+//   effective grade := COALESCE(clamped personal grade, gradeValueSql(...))
+//
+// The local ticks table carries both `difficulty` and `uuid`, so unlike the
+// personal-RATING filter above — which has to fall back to updated_at because
+// the server tie-breaks on a bigserial id this table lacks — this half can tie
+// -break on exactly the same key the server does, and an offline search returns
+// the same rows in the same order as an online one.
+// ---------------------------------------------------------------------------
+
+/** Scale bounds, derived from the shared table (currently 10..33), never hardcoded. */
+const GRADE_SCALE_MIN_ID = BOULDER_GRADES[0].difficulty_id;
+const GRADE_SCALE_MAX_ID = BOULDER_GRADES[BOULDER_GRADES.length - 1].difficulty_id;
+
+/** SQLite's MIN/MAX are 2-arg scalar functions here, not aggregates. */
+function clampToBoulderScale(difficultyExpr: string): string {
+  return `MIN(MAX(${difficultyExpr}, ${GRADE_SCALE_MIN_ID}), ${GRADE_SCALE_MAX_ID})`;
+}
+
+/**
+ * The climber's own clamped grade for the outer row's climb, or NULL when they
+ * never graded it. Binds: board_type, angle, ownerUserId.
+ *
+ * A correlated scalar subquery rather than the server's DISTINCT ON join: the
+ * local ticks table holds one climber's ticks for boards they downloaded, so
+ * `idx_ticks_climb` makes each probe a handful of rows and there is no 220k-row
+ * candidate set for a per-row probe to multiply against.
+ */
+const MY_GRADE_SUBQUERY = `(SELECT ${clampToBoulderScale('mg.difficulty')}
+    FROM boardsesh_ticks mg
+    WHERE mg.climb_uuid = c.uuid AND mg.board_type = ? AND mg.angle = ? AND ${ownedTicks('mg')}
+    AND mg.difficulty IS NOT NULL
+    ORDER BY mg.climbed_at DESC, mg.uuid DESC
+    LIMIT 1)`;
+
+/**
+ * COALESCE(my grade, the crowd's) for the grade filter. `crowdGrade` is the
+ * value the filter keys on with personal grades off (`gradeValueSql`, so the
+ * grade-source and cross-angle rules still apply to every climb the climber
+ * never graded). Carries `MY_GRADE_SUBQUERY`'s three binds first.
+ */
+function effectiveGradeExpr(crowdGrade: string): string {
+  return `COALESCE(${MY_GRADE_SUBQUERY}, ${crowdGrade})`;
+}
+
+/** The three binds `MY_GRADE_SUBQUERY` (and so `effectiveGradeExpr`) needs. */
+function myGradeBinds(boardType: string, angle: number, ownerUserId: string | null): Bind[] {
+  return [boardType, angle, ownerUserId];
+}
+
+/** Whether this search keys grades off the climber's own ticks. */
+function usesMyGrades(input: ClimbSearchInput): boolean {
+  return !!input.useMyGrades;
 }
 
 export type JoinAndWhere = { joinSql: string; whereSql: string; joinBinds: Bind[]; whereBinds: Bind[] };
@@ -425,13 +493,19 @@ export function buildJoinAndWhere(
   // set-angle fallback under cross-angle, so only a climb with NO stats row at
   // either angle falls all the way through to g.universal_grade/local_grade.
   // `gradeSource: 'BOARDSESH'` swaps the order — see `gradeValueSql`.
+  //
+  // Personal grades (#4828) wrap this same value: COALESCE(my grade, it). One
+  // plain range test, the same shape the server uses — the EXISTS/NOT EXISTS
+  // halves under an OR it replaced measured a 7.1x regression server-side.
   const gradeRangeValue = gradeValueSql(eff('display_difficulty'), input.gradeSource);
+  const personalGradeBinds = usesMyGrades(input) ? myGradeBinds(boardType, angle, ownerUserId) : [];
+  const rangeValue = usesMyGrades(input) ? effectiveGradeExpr(gradeRangeValue) : gradeRangeValue;
   if (input.minGrade && input.maxGrade) {
-    push(`${gradeRangeValue} BETWEEN ? AND ?`, input.minGrade, input.maxGrade);
+    push(`${rangeValue} BETWEEN ? AND ?`, ...personalGradeBinds, input.minGrade, input.maxGrade);
   } else if (input.minGrade) {
-    push(`${gradeRangeValue} >= ?`, input.minGrade);
+    push(`${rangeValue} >= ?`, ...personalGradeBinds, input.minGrade);
   } else if (input.maxGrade) {
-    push(`${gradeRangeValue} <= ?`, input.maxGrade);
+    push(`${rangeValue} <= ?`, ...personalGradeBinds, input.maxGrade);
   }
 
   // Min rating (quality_average is canonical 1-5).
@@ -542,7 +616,12 @@ export function buildJoinAndWhere(
   return { joinSql, whereSql: conditions.join(' AND '), joinBinds, whereBinds };
 }
 
-function sortColumnSql(sortBy: string, crossAngle: boolean, gradeSource: ClimbSearchInput['gradeSource']): string {
+function sortColumnSql(
+  sortBy: string,
+  crossAngle: boolean,
+  gradeSource: ClimbSearchInput['gradeSource'],
+  useMyGrades: boolean,
+): string {
   const eff = (column: StatsColumn) => effectiveStatsSql(column, crossAngle);
   switch (sortBy) {
     case 'ascents':
@@ -550,9 +629,19 @@ function sortColumnSql(sortBy: string, crossAngle: boolean, gradeSource: ClimbSe
     case 'difficulty':
       // Under the Boardsesh source the sort keys on the grade the row is labelled
       // with, as the server's does. The upstream sort has no fallback, unchanged.
-      return gradeSource === 'BOARDSESH'
-        ? gradeValueSql(eff('display_difficulty'), 'BOARDSESH')
-        : `CAST(ROUND(${eff('display_difficulty')}) AS INTEGER)`;
+      const crowdSort =
+        gradeSource === 'BOARDSESH'
+          ? gradeValueSql(eff('display_difficulty'), 'BOARDSESH')
+          : `CAST(ROUND(${eff('display_difficulty')}) AS INTEGER)`;
+      // With personal grades on, a climb the climber re-graded to V10 sorts among
+      // the V10s rather than staying with the V0s (#4828).
+      //
+      // Ordering on the PROJECTED alias rather than repeating the subquery:
+      // SQLite happily takes a result-column alias inside an ORDER BY
+      // expression, and doing so evaluates the per-row probe once instead of
+      // once for the SELECT and again for the sort. The alias only exists when
+      // personal grades are on, which is exactly this branch.
+      return useMyGrades ? `COALESCE(my_difficulty, ${crowdSort})` : crowdSort;
     case 'name':
       // NOCASE so 'apple' sorts before 'Zebra', matching Postgres's locale
       // collation (SQLite's default BINARY puts all uppercase first). ASCII
@@ -614,6 +703,10 @@ export type LocalClimbRow = {
    *  array in TEXT (see the offline schema), not a native array. Null when the
    *  server had no compatibility data for the climb. */
   compatible_size_ids: string | null;
+  /** The climber's own clamped grade for this climb+angle. Selected only when
+   *  the search asked for personal grades; null within such a search when they
+   *  never graded the climb (#4828). */
+  my_difficulty?: number | null;
 };
 
 export function parseCharacteristics(raw: string | null): string[] | null {
@@ -644,7 +737,13 @@ export function parseCompatibleSizeIds(raw: string | null): number[] | null {
   }
 }
 
-export function mapRowToClimb(row: LocalClimbRow, boardType: string, layoutId: number, angle: number): Climb {
+export function mapRowToClimb(
+  row: LocalClimbRow,
+  boardType: string,
+  layoutId: number,
+  angle: number,
+  hasPersonalGrade = false,
+): Climb {
   const characteristics = parseCharacteristics(row.characteristics);
   const difficultyId = row.display_difficulty === null ? null : Math.round(row.display_difficulty);
   const difficultyError =
@@ -694,6 +793,10 @@ export function mapRowToClimb(row: LocalClimbRow, boardType: string, layoutId: n
     // way an online one is — on Woods this is the only signal that separates the
     // 8x10 from the 12x12 (canAddClimbToBoard rule 5).
     compatibleSizeIds: parseCompatibleSizeIds(row.compatible_size_ids),
+    // The climber's own grade, so a row that was filtered and ordered by it
+    // arrives holding it. Key omitted entirely when the search did not ask for
+    // personal grades, matching the server row shape.
+    ...(hasPersonalGrade ? { myDifficulty: row.my_difficulty ?? null } : {}),
   };
 }
 
@@ -706,6 +809,7 @@ export async function searchClimbsLocal(db: OfflineDatabase, input: ClimbSearchI
   const pageSize = input.pageSize ?? DEFAULT_PAGE_SIZE;
   const sortBy = normalizeSortBy(input.sortBy);
   const sortOrder = input.sortOrder === 'asc' ? 'ASC' : 'DESC';
+  const useMyGrades = usesMyGrades(input);
 
   const followedCondition = input.onlyFollowedAuthors ? await followedAuthorsLocalCondition(db) : undefined;
   const { joinSql, whereSql, joinBinds, whereBinds } = buildJoinAndWhere(input, ownerUserId, followedCondition);
@@ -716,7 +820,9 @@ export async function searchClimbsLocal(db: OfflineDatabase, input: ClimbSearchI
   const eff = (column: StatsColumn) => effectiveStatsSql(column, crossAngle);
 
   // SELECT-clause binds come first textually: the two per-climb tick counts
-  // (board, angle, owner each), then the optional popular-total subquery.
+  // (board, angle, owner each), then the optional popular-total subquery, then
+  // the optional personal-grade probe. Positional `?` binds, so this list has to
+  // stay in the same order the fragments appear in the SQL text below.
   const selectBinds: Bind[] = [boardType, angle, ownerUserId, boardType, angle, ownerUserId];
   const popularSelect =
     sortBy === 'popular'
@@ -724,6 +830,11 @@ export async function searchClimbsLocal(db: OfflineDatabase, input: ClimbSearchI
           WHERE ps.climb_uuid = c.uuid AND ps.board_type = ?) AS popular_total`
       : '';
   if (sortBy === 'popular') selectBinds.push(boardType);
+
+  // Project the climber's own grade so the row carries the number it was
+  // filtered and ordered by, exactly like the server's join projection.
+  const myGradeSelect = useMyGrades ? `, ${MY_GRADE_SUBQUERY} AS my_difficulty` : '';
+  if (useMyGrades) selectBinds.push(...myGradeBinds(boardType, angle, ownerUserId));
 
   const userAscentsSelect = `(SELECT COUNT(*) FROM boardsesh_ticks t
     WHERE t.climb_uuid = c.uuid AND t.board_type = ? AND t.angle = ? AND ${ownedTicks('t')}
@@ -741,7 +852,7 @@ export async function searchClimbsLocal(db: OfflineDatabase, input: ClimbSearchI
   const randomSeedBind = input.sortSeed && Number.isFinite(seedInt) ? Math.trunc(seedInt) : 1;
   const orderBy = isRandom
     ? `${RANDOM_ORDER_EXPR} ASC, c.uuid DESC`
-    : `${sortColumnSql(sortBy, crossAngle, input.gradeSource)} ${sortOrder}, c.uuid DESC`;
+    : `${sortColumnSql(sortBy, crossAngle, input.gradeSource, useMyGrades)} ${sortOrder}, c.uuid DESC`;
 
   const query = `
     SELECT
@@ -757,7 +868,7 @@ export async function searchClimbsLocal(db: OfflineDatabase, input: ClimbSearchI
       COALESCE(g.universal_grade, g.local_grade) AS boardsesh_difficulty,
       g.confidence AS boardsesh_confidence,
       ${userAscentsSelect},
-      ${userAttemptsSelect}${popularSelect}
+      ${userAttemptsSelect}${popularSelect}${myGradeSelect}
     FROM board_climbs c
     ${joinSql}
     WHERE ${whereSql}
@@ -765,14 +876,17 @@ export async function searchClimbsLocal(db: OfflineDatabase, input: ClimbSearchI
     LIMIT ? OFFSET ?
   `;
 
-  // ORDER BY (the random seed `?`) sits between WHERE and LIMIT/OFFSET in the SQL text.
+  // ORDER BY sits between WHERE and LIMIT/OFFSET in the SQL text, and carries
+  // the random seed `?` for a shuffle. The difficulty sort needs no binds of
+  // its own: it reads the `my_difficulty` alias the SELECT already computed,
+  // rather than repeating that subquery and its three binds here.
   const orderBinds: Bind[] = isRandom ? [randomSeedBind] : [];
   const binds: Bind[] = [...selectBinds, ...joinBinds, ...whereBinds, ...orderBinds, pageSize + 1, page * pageSize];
   const rows = await db.getAllAsync<LocalClimbRow>(query, binds);
 
   const hasMore = rows.length > pageSize;
   const trimmed = hasMore ? rows.slice(0, pageSize) : rows;
-  const climbs = trimmed.map((row) => mapRowToClimb(row, boardType, input.layoutId, angle));
+  const climbs = trimmed.map((row) => mapRowToClimb(row, boardType, input.layoutId, angle, useMyGrades));
   return { climbs, hasMore };
 }
 
