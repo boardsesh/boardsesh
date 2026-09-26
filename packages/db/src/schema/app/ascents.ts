@@ -169,6 +169,33 @@ export const boardseshTicks = pgTable(
       table.angle,
       table.climbUuid,
     ),
+    // Index for the wall-kiosk "recent senders" byline (boardClimbRecentSenders):
+    // equality on board_id + climb_uuid + angle + status, then GROUP BY user_id
+    // ordered by max(climbed_at). Every kiosk re-runs it on each board stats
+    // event, floored at one call per 2s per wall, so it is the hottest read on
+    // this table.
+    //
+    // The widest index it could otherwise use is
+    // boardsesh_ticks_board_climbed_at_idx (board_id, climbed_at), which leaves
+    // the climb/angle/status predicates to a heap filter over every tick ever
+    // logged on that board — tens of thousands of rows on a busy gym wall for a
+    // handful of matches. These four equality columns narrow to just the
+    // matching rows; climbed_at and user_id are deliberately left out even
+    // though the query groups and sorts on them, because an index-only scan
+    // would also need board_type, and those three text/timestamp columns would
+    // roughly double the index on the largest table we have to save a heap
+    // fetch on a few dozen rows.
+    //
+    // status is a key column rather than a WHERE clause (the shape
+    // flash_send_updated_at_idx below uses) because the resolver sends it as
+    // bind parameters; a partial index would then rest on Postgres proving
+    // implication from those, which a generic plan cannot do.
+    boardClimbSendersIdx: index('boardsesh_ticks_board_climb_senders_idx').on(
+      table.boardId,
+      table.climbUuid,
+      table.angle,
+      table.status,
+    ),
     syncCursorIdx: index('boardsesh_ticks_sync_cursor_idx').on(table.userId, table.updatedAt, table.id),
     // Covering index for the personal-grade read (#4828): "the difficulty of
     // this climber's LATEST graded tick for (board, angle, climb)". The search
