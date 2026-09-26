@@ -13,6 +13,7 @@ import {
 
 const APP_ID = '007e6fd7-f200-448c-9449-8d48ba5d51fc';
 const COMMIT = 'a'.repeat(40);
+const EXPORT_ASSET_HASH = '0a328cd9c1afd0afe8e3b1ec5165b1b4';
 const RUNTIME = 'b'.repeat(40);
 // Real xprem IDs are content hashes in UUID shape, not RFC 4122 UUIDs: no
 // version or variant digits. The iOS one was served by production on 2026-09-26.
@@ -40,13 +41,14 @@ function stageFixture() {
     const bundle = `_expo/static/js/${platform}/main.hbc`;
     const bytes = Buffer.from(`${platform}: original staged bundle`);
     writeFileSync(join(directory, bundle), bytes);
-    writeFileSync(join(directory, 'assets', 'icon.png'), Buffer.from([1, 2, 3]));
+    // Real `expo export` shape: content-hash file name, type only in `ext`.
+    writeFileSync(join(directory, 'assets', EXPORT_ASSET_HASH), Buffer.from([1, 2, 3]));
     writeFileSync(
       join(directory, 'metadata.json'),
       JSON.stringify({
         version: 0,
         bundler: 'metro',
-        fileMetadata: { [platform]: { bundle, assets: [{ path: 'assets/icon.png', ext: 'png' }] } },
+        fileMetadata: { [platform]: { bundle, assets: [{ path: `assets/${EXPORT_ASSET_HASH}`, ext: 'png' }] } },
       }),
     );
     writeFileSync(
@@ -151,6 +153,27 @@ describe('stage receipt and export validation', () => {
     const fixture = stageFixture();
     writeFileSync(join(fixture.iosExport, '_expo/static/js/ios/main.hbc'), 'modified after staging');
     expect(() => validateExport(fixture.iosExport, 'ios', fixture.hashes.ios)).toThrow('differs from stage receipt');
+  });
+
+  it('accepts extensionless hashed assets and rejects a mismatched extension', () => {
+    const fixture = stageFixture();
+    expect(() => validateExport(fixture.iosExport, 'ios', fixture.hashes.ios)).not.toThrow();
+    for (const asset of [
+      { path: 'assets/icon.jpg', ext: 'png' },
+      { path: 'assets/not-a-hash', ext: 'png' },
+      { path: `assets/${EXPORT_ASSET_HASH}`, ext: '../png' },
+    ]) {
+      writeFileSync(join(fixture.iosExport, asset.path), Buffer.from([1]));
+      writeFileSync(
+        join(fixture.iosExport, 'metadata.json'),
+        JSON.stringify({
+          version: 0,
+          bundler: 'metro',
+          fileMetadata: { ios: { bundle: '_expo/static/js/ios/main.hbc', assets: [asset] } },
+        }),
+      );
+      expect(() => validateExport(fixture.iosExport, 'ios', fixture.hashes.ios)).toThrow('asset extension mismatch');
+    }
   });
 
   it('rejects a symbolic link inside the export', () => {
@@ -344,7 +367,9 @@ describe('exact-byte production promotion', () => {
     expect(requests).toHaveLength(2);
     for (const request of requests) {
       const body = JSON.parse(request.init.body as string) as { fileNames: string[]; message: string };
-      expect(body.fileNames).toEqual(expect.arrayContaining(['metadata.json', 'expoConfig.json', 'assets/icon.png']));
+      expect(body.fileNames).toEqual(
+        expect.arrayContaining(['metadata.json', 'expoConfig.json', `assets/${EXPORT_ASSET_HASH}`]),
+      );
       expect(body.message).toBe('Test staged release');
       expect(request.url.searchParams.get('commitHash')).toBe(COMMIT);
       expect(request.url.searchParams.get('runtimeVersion')).toBe(RUNTIME);

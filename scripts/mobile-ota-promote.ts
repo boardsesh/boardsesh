@@ -164,7 +164,13 @@ export function validateExport(
     const asset = object(assetInput, `${platform} asset ${index}`);
     const assetPath = string(asset.path, `${platform} asset ${index} path`);
     const extension = string(asset.ext, `${platform} asset ${index} ext`);
-    if (extension !== assetPath.split('.').pop())
+    // `expo export` writes assets under their content hash with no extension
+    // (`assets/0a328cd9…`) and records the type in `ext`. Accept that shape, or a
+    // path whose own extension agrees with `ext`; reject anything else.
+    const assetName = assetPath.split('/').pop() ?? '';
+    const dot = assetName.lastIndexOf('.');
+    const shapeMatches = dot === -1 ? /^[0-9a-f]{32}$/i.test(assetName) : assetName.slice(dot + 1) === extension;
+    if (!/^[a-z0-9]+$/i.test(extension) || !shapeMatches)
       throw new Error(`${platform} asset extension mismatch: ${assetPath}.`);
     addFile(assetPath);
     assetPaths.push(assetPath);
