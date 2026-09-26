@@ -390,6 +390,42 @@ describe('exact-byte production promotion', () => {
     );
   });
 
+  it('uploads hash-named assets with the MIME type in Expo metadata', async () => {
+    const fixture = stageFixture();
+    const server = fetchServer(fixture);
+    const assetPath = `assets/${EXPORT_ASSET_HASH}`;
+    const assetFetch = vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const url = requestUrl(input);
+      if (url.pathname.includes('/requestUploadUrl/production')) {
+        return Response.json({
+          updateId: url.searchParams.get('platform') === 'ios' ? 101 : 102,
+          uploadRequests: [
+            {
+              requestUploadUrl: `https://bucket.example/${url.searchParams.get('platform')}/asset`,
+              fileName: EXPORT_ASSET_HASH,
+              filePath: assetPath,
+            },
+          ],
+        });
+      }
+      return server.fetchImpl(input, init);
+    }) as unknown as typeof fetch;
+    await promoteArchivedOta({
+      receiptPath: fixture.receiptPath,
+      iosExport: fixture.iosExport,
+      androidExport: fixture.androidExport,
+      manifestUrl: 'https://updates.example/manifest',
+      token: 'test-token',
+      fetchImpl: assetFetch,
+    });
+    const uploads = server.calls.filter((call) => call.init.method === 'PUT');
+    expect(uploads).toHaveLength(2);
+    for (const upload of uploads) {
+      expect(upload.init.headers).toMatchObject({ 'Content-Type': 'image/png' });
+      expect(Buffer.from(upload.init.body as Buffer)).toEqual(Buffer.from([1, 2, 3]));
+    }
+  });
+
   it('rejects a server request for an undeclared file before any upload', async () => {
     const fixture = stageFixture();
     const server = fetchServer(fixture);

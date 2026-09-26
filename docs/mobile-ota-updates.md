@@ -162,6 +162,9 @@ and leaves production OTA unchanged. A newer substantive main commit before
 promotion also fails the run so the next cumulative deploy stages the newer head.
 The stage records each platform's production manifest ID before publishing;
 promotion refuses to overwrite a manual or native republish that changed either ID.
+The promoter uses each archived export's `metadata.json` for asset media types,
+matching the pinned `eoas` uploader even though Metro names the files by content
+hash without extensions.
 
 Pushes to `release/next` still run `.github/workflows/mobile-ota-production.yml`
 directly. `main` serves the store fleet; `release/next` (the release train,
