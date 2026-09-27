@@ -266,8 +266,10 @@ describe('export-board-snapshots under the batch login', () => {
         runId,
         family: 'export-board-snapshots' as const,
         signal: new AbortController().signal,
+        expiresAt: Date.now() + 60 * 60 * 1000,
         database: familyDatabase,
         transaction: () => Promise.reject(new Error('no fenced statement expected')),
+        enqueue: () => Promise.reject(new Error('enqueue not expected')),
       });
       // Its last touch is past one heartbeat window (120 s) but inside three:
       // a stall, not a dead worker, so it still counts as running.

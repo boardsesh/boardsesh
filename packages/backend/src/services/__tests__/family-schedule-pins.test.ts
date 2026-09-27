@@ -13,6 +13,10 @@ const EXPECTED_SCHEDULES: Record<string, Array<{ key: string; cron: string; tz: 
   'refresh-hold-features': [{ key: 'nightly', cron: '15 6 * * *', tz: 'UTC', roles: ['batch'] }],
   'refresh-climb-grades': [{ key: 'nightly', cron: '30 6 * * *', tz: 'UTC', roles: ['batch'] }],
   'refresh-climb-neighbors': [{ key: 'nightly', cron: '45 6 * * *', tz: 'UTC', roles: ['batch'] }],
+  'export-board-snapshots': [
+    { key: 'nightly', cron: '15 7 * * *', tz: 'UTC', roles: ['batch'] },
+    { key: 'live-scan', cron: '7,22,37,52 * * * *', tz: 'UTC', roles: ['batch'] },
+  ],
   'aurora-user-sync': [],
   'kilter-user-sync': [],
   'provider-routine-cycle': [{ key: 'every-5-min', cron: '*/5 * * * *', tz: 'UTC', roles: ['routine-provider'] }],

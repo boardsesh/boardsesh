@@ -1,5 +1,5 @@
 import { defineConfig } from 'vite-plus';
-import { SERIAL_TEST_FILES } from './vitest-serial-files';
+import { SERIAL_TEST_FILES } from './vitest-serial-files.ts';
 
 /** The backend tests that must run one file at a time; see vitest-serial-files.ts. */
 export default defineConfig({

@@ -15,6 +15,7 @@ export const SERIAL_TEST_FILES = [
   'src/workers/families/__tests__/provider-routine-cycle.test.ts',
   'src/services/__tests__/job-queue-roles.test.ts',
   'src/services/__tests__/job-queue-roles-routine.test.ts',
+  'src/services/__tests__/job-queue-roles-snapshots.test.ts',
   'src/__tests__/aurora-credentials-enqueue.test.ts',
   'src/__tests__/request-provider-sync.test.ts',
   'src/__tests__/provider-sync-control.test.ts',
