@@ -15,6 +15,7 @@ describe('family registry', () => {
       'refresh-recommendations',
       'refresh-hold-features',
       'refresh-climb-grades',
+      'refresh-climb-neighbors',
     ]);
     expect(() => requireFamily('no-such-family')).toThrow('UNKNOWN_FAMILY');
   });

@@ -53,16 +53,38 @@ precision, so 7 of 10 holds still passes a 0.7 threshold.
 
 ## The nightly job
 
-`packages/db/scripts/refresh-climb-neighbors.ts`, run by
-`.github/workflows/refresh-climb-neighbors.yml` at 06:45 UTC against Production.
-The workflow runs one matrix job per board (every board but spray, pinned to
-`CLIMB_NEIGHBOR_BOARDS` by `climb-neighbors-workflow.test.ts`). Each job has a
-350-minute timeout and its own concurrency group, so a newer run never cancels a
-running build. GitHub keeps only one pending job per group, so at most one run
-waits behind a long build (a later one replaces it). A dispatch picks one board
-or `all` from a fixed list. Run locally over several boards, the
-script takes the cheapest boards first.
-The logic lives in `packages/db/src/queries/climbs/climb-neighbors-refresh.ts` so
+One job body, `runRefreshClimbNeighbors` in
+`packages/db/src/jobs/refresh-climb-neighbors.ts` (`@boardsesh/db/jobs`), with
+two callers:
+
+- **Today's owner: the workflow.** `.github/workflows/refresh-climb-neighbors.yml`
+  runs the CLI `packages/db/scripts/refresh-climb-neighbors.ts` at 06:45 UTC
+  against Production, one matrix job per board (every board but spray, pinned
+  to `CLIMB_NEIGHBOR_BOARDS` by `climb-neighbors-workflow.test.ts`). Each job
+  has a 350-minute timeout, 4 GB of heap and its own concurrency group, so a
+  newer run never cancels a running build. GitHub keeps only one pending job
+  per group, so at most one run waits behind a long build (a later one
+  replaces it). A dispatch picks one board or `all` from a fixed list. Run
+  locally over several boards, the CLI takes the cheapest boards first.
+- **Next owner: the `refresh-climb-neighbors` batch family**
+  (`packages/backend/src/workers/families/refresh-climb-neighbors.ts`,
+  docs/background-workers.md "Batch families"). Its `nightly` schedule
+  (`45 6 * * *` UTC, pinned to the workflow's cron by
+  `scripts/__tests__/batch-families-cron.test.ts`) fans out one job per board,
+  cheapest first (`orderBoardsByClimbCount`), and the batch worker runs them one
+  at a time. Payload `{ board, full?, dryRun?, refillGaps? }`, one dedup key per
+  board, a 6-hour lease, two retries. It runs only once
+  `BATCH_FAMILIES_ENABLED` names it; the workflow keeps its schedule until the
+  cutover PR removes it.
+
+Every write goes through the caller's `transact`: the CLI's is a plain
+transaction, the family's is the worker's attempt fence, so a chunk commits
+only while that attempt still owns the run. The job stops between chunks when
+its signal aborts (worker shutdown, the lease running out, a lost attempt),
+exactly as a cut-off CI job does, and throws `ClimbNeighborsInterruptedError`;
+the family records `INTERRUPTED` and pg-boss retries, and the retry resumes
+from what was recorded (below).
+The per-board logic lives in `packages/db/src/queries/climbs/climb-neighbors-refresh.ts` so
 the backend test suite can run it against a real Postgres.
 
 **Watermark.** `board_climb_neighbor_runs` holds one row per board with the highest
@@ -119,7 +141,13 @@ that changed while the build was cut off have a higher `sync_seq`, so the first
 incremental run afterwards folds them into lists the build wrote before they
 existed.
 
-**How long a full build takes.** The index counts overlaps over typed arrays.
+**How long a full build takes.** Measured against production on 2026-09-25,
+every board's first build on a GitHub runner: Kilter 9.5 minutes (layout 1,
+294,908 climbs, about 540 a second, 179k rows), MoonBoard 13 minutes
+(2.3M rows, 12 a list), Tension 3 minutes, the rest under a minute each. The
+heaviest chunk of 1,000 lists, on MoonBoard, took about 4 s with its compute.
+
+The index counts overlaps over typed arrays.
 Only the rarest |a| − ⌈0.5·|a|⌉ + 1 holds may admit a candidate; the rest only
 add to admitted candidates' counts, and there is no per-candidate intersection.
 Measured on the Kilter layout 1 snapshot (294,823 eligible climbs, one group)
@@ -157,27 +185,49 @@ row short, a gap only the weekly scan finds.
 
 ## Runbook
 
+The workflow owns the schedule until the cutover PR; the family commands
+below work as soon as the batch worker runs this image, enabled or not. Family
+runs are enqueued on the batch host with
+`node --import tsx packages/backend/src/workers/operator.ts enqueue refresh-climb-neighbors '<payload>'`
+(docs/background-workers.md, "Operator runs").
+
 - **First run / new board**: nothing to do, no `--full` needed. A board with no watermark row
   gets a full build on its next run, so the first 06:45 run after the migration
   deploys fills every board. Until then non-admins get an empty list. To fill
-  sooner, dispatch the workflow (optionally one `board` at a time).
-- **Full rebuild**: dispatch with `full` ticked. It rewrites every list, then
-  deletes anything it didn't write (lists of climbs no longer eligible). Readers
-  never see an empty gap: each chunk of lists is swapped in one transaction.
-- **A build was cut off** (timeout, cancel, runner lost): do nothing. The next
-  run of that board, nightly or dispatched, resumes it. To start over instead,
-  clear `full_build_started_at` and `full_build_sync_seq` on the board's
-  `board_climb_neighbor_runs` row and dispatch with `full`.
+  sooner, dispatch the workflow (optionally one `board` at a time), or enqueue
+  `{"board":"<board>"}`.
+- **Full rebuild**: dispatch with `full` ticked, or enqueue
+  `{"board":"kilter","full":true}` (one board per job). It rewrites every
+  list, then deletes anything it didn't write (lists of climbs no longer
+  eligible). Readers never see an empty gap: each chunk of lists is swapped in
+  one transaction.
+- **A build was cut off** (timeout, cancel, runner lost, worker restarted): do
+  nothing. The next run of that board, nightly, dispatched, or the family's own
+  retry, resumes it. To start over instead, clear `full_build_started_at` and
+  `full_build_sync_seq` on the board's `board_climb_neighbor_runs` row and run
+  with `full`.
+- **A family run failed**: its `background_job_runs` row carries the code.
+  `INTERRUPTED` means the signal stopped it and a retry resumes; after the last
+  retry the next night does. `ATTEMPT_FAILED` is anything else (a database
+  error); check the worker log for the board and group it reached.
+- **Don't run two at once on one board.** Two runs writing the same lists
+  collide on the primary key. The workflow's per-board concurrency group and
+  the family's per-board dedup key each prevent it on their own side, not
+  across the two; don't dispatch the workflow for a board while its family job
+  runs.
 - **Locally**: `vp run db:refresh-climb-neighbors -- --board=kilter --dry-run`
   (then without `--dry-run`, or with `--full`). Uses `DB_URL` / `DATABASE_URL`
   like the other `packages/db` scripts.
-- **Something looks stale**: `--full` for that board is always safe to re-run.
+- **Something looks stale**: `--full` (or `"full":true`) for that board is always safe to re-run.
 - **Refill short lists now** (after a bulk climb delete, say): run
   `vp run db:refresh-climb-neighbors -- --board=<board> --refill-gaps` against
-  the target database; the Sunday run does it on its own.
+  the target database, or enqueue `{"board":"<board>","refillGaps":true}`; the
+  Sunday run does it on its own.
 - **Memory**: the job holds one group's `(uuid, frames)` and hold index in memory
   at a time. The biggest is Kilter layout 1, with about 295k eligible climbs.
-  The workflow gives node 4 GB.
+  The workflow gives node 4 GB, and so does the batch container
+  (`NODE_OPTIONS=--max-old-space-size=4096`). The container's peak RSS on a
+  Kilter full build must be measured before the family is enabled (#5800).
 - **Check it worked**: the front-door similar strip should load cold in well
   under a second, and `seq_scan` on `board_climb_holds` in `pg_stat_user_tables`
   should stop climbing.

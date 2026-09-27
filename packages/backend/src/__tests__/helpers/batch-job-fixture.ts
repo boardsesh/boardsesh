@@ -9,6 +9,10 @@
  *   size-17 product-size row the shadow hold classifications key on;
  * - one MoonBoard climb with ascents, so the weekly history snapshot writes.
  *
+ * `seedClimbNeighborFixture` adds six Tension climbs on two layouts of their
+ * own for the neighbours job (refresh-climb-neighbors), so a run can be
+ * stopped between the two groups.
+ *
  * Setup truncates these tables before every test file; `clearBatchJobFixture`
  * removes what the jobs wrote so later files in the same worker start clean.
  */
@@ -23,6 +27,12 @@ export const KILTER_CLIMBS = ['alpha', 'bravo', 'charlie', 'delta', 'echo', 'fox
   (name) => `${FIXTURE_PREFIX}${name}`,
 );
 export const MOONBOARD_CLIMB = `${FIXTURE_PREFIX}moon`;
+/** The neighbours fixture's board and its two comparison groups, smallest first. */
+export const NEIGHBOR_BOARD = 'tension';
+export const NEIGHBOR_SMALL_LAYOUT = 9901;
+export const NEIGHBOR_LARGE_LAYOUT = 9902;
+export const NEIGHBOR_SMALL_CLIMBS = ['nb-a', 'nb-b'].map((name) => `${FIXTURE_PREFIX}${name}`);
+export const NEIGHBOR_LARGE_CLIMBS = ['nb-c', 'nb-d', 'nb-e', 'nb-f'].map((name) => `${FIXTURE_PREFIX}${name}`);
 const LAYOUT = 8;
 const SIZE = 17;
 const PLACEMENTS = [9001, 9002, 9003, 9004, 9005, 9006];
@@ -125,8 +135,76 @@ export async function seedBatchJobFixture(db: JobDatabase): Promise<void> {
   );
 }
 
-/** Remove everything the fixture and the three jobs wrote. */
+/** Tension frames lighting each hold as a hand (role 6). */
+export function tensionFrames(holdIds: readonly number[]): string {
+  return holdIds.map((holdId) => `p${holdId}r6`).join('');
+}
+
+function holdRange(from: number, to: number): number[] {
+  return Array.from({ length: to - from + 1 }, (_, offset) => from + offset);
+}
+
+/** Insert one listed, single-frame Tension climb for the neighbours job. */
+export async function insertNeighborClimb(
+  db: JobDatabase,
+  { uuid, layoutId, holds }: { uuid: string; layoutId: number; holds: readonly number[] },
+): Promise<void> {
+  await db.insert(dbSchema.boardClimbs).values({
+    uuid,
+    boardType: NEIGHBOR_BOARD,
+    layoutId,
+    setterUsername: 'fixture-neighbor-setter',
+    name: uuid,
+    frames: tensionFrames(holds),
+    framesCount: 1,
+    isDraft: false,
+    isListed: true,
+  });
+}
+
+/**
+ * Layout 9901: two climbs sharing 9 of 11 holds. Layout 9902: four climbs that
+ * share 10 of 12 holds pairwise, so each list there has three neighbours. The
+ * climbs are aged past the watermark's one-hour settle window (moving only
+ * `updated_at`, which the sync trigger ignores), so a build lands its
+ * watermark on them.
+ */
+export async function seedClimbNeighborFixture(db: JobDatabase): Promise<void> {
+  await insertNeighborClimb(db, {
+    uuid: NEIGHBOR_SMALL_CLIMBS[0],
+    layoutId: NEIGHBOR_SMALL_LAYOUT,
+    holds: holdRange(1, 10),
+  });
+  await insertNeighborClimb(db, {
+    uuid: NEIGHBOR_SMALL_CLIMBS[1],
+    layoutId: NEIGHBOR_SMALL_LAYOUT,
+    holds: [...holdRange(1, 9), 11],
+  });
+  for (const [variant, uuid] of NEIGHBOR_LARGE_CLIMBS.entries()) {
+    await insertNeighborClimb(db, {
+      uuid,
+      layoutId: NEIGHBOR_LARGE_LAYOUT,
+      holds: [...holdRange(1, 10), 20 + variant],
+    });
+  }
+  await db
+    .update(dbSchema.boardClimbs)
+    .set({ updatedAt: sql`now() - interval '2 hours'` })
+    .where(like(dbSchema.boardClimbs.uuid, `${FIXTURE_PREFIX}nb-%`));
+}
+
+/** The neighbours job's state for the fixture board: lists, watermark and finished groups. */
+export async function clearClimbNeighborState(db: JobDatabase): Promise<void> {
+  await db.delete(dbSchema.boardClimbNeighbors).where(eq(dbSchema.boardClimbNeighbors.boardType, NEIGHBOR_BOARD));
+  await db.delete(dbSchema.boardClimbNeighborRuns).where(eq(dbSchema.boardClimbNeighborRuns.boardType, NEIGHBOR_BOARD));
+  await db
+    .delete(dbSchema.boardClimbNeighborGroupRuns)
+    .where(eq(dbSchema.boardClimbNeighborGroupRuns.boardType, NEIGHBOR_BOARD));
+}
+
+/** Remove everything the fixture and the batch jobs wrote. */
 export async function clearBatchJobFixture(db: JobDatabase): Promise<void> {
+  await clearClimbNeighborState(db);
   const generated = db
     .select({ id: dbSchema.playlists.id })
     .from(dbSchema.playlists)

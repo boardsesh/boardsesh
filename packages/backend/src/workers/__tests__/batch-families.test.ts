@@ -1,10 +1,10 @@
 /**
- * The three batch family modules without a database: payload schemas, dedup
+ * The batch family modules without a database: payload schemas, dedup
  * keys, schedules, options, and how `execute` hands the job body its reads,
  * writes and signal. The job bodies themselves run against the test database
  * in src/__tests__/batch-jobs.test.ts.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DbInstance } from '@boardsesh/db/client';
 import type { JobDatabase } from '@boardsesh/db/jobs';
 
@@ -12,6 +12,8 @@ const jobs = vi.hoisted(() => ({
   runRefreshRecommendations: vi.fn(),
   runRefreshHoldFeatures: vi.fn(),
   runRefreshClimbGrades: vi.fn(),
+  runRefreshClimbNeighbors: vi.fn(),
+  orderBoardsByClimbCount: vi.fn(),
 }));
 
 vi.mock('@boardsesh/db/jobs', async (importOriginal) => {
@@ -19,11 +21,13 @@ vi.mock('@boardsesh/db/jobs', async (importOriginal) => {
   return { ...actual, ...jobs };
 });
 
-const { GradeGatesFailedError } = await import('@boardsesh/db/jobs');
+const { CLIMB_NEIGHBOR_BOARDS, ClimbNeighborsInterruptedError, GradeGatesFailedError } =
+  await import('@boardsesh/db/jobs');
 const { BackgroundJobError, familiesForRole, requireFamily } = await import('../families');
 const { refreshRecommendationsFamily } = await import('../families/refresh-recommendations');
 const { refreshHoldFeaturesFamily } = await import('../families/refresh-hold-features');
 const { refreshClimbGradesFamily } = await import('../families/refresh-climb-grades');
+const { refreshClimbNeighborsFamily } = await import('../families/refresh-climb-neighbors');
 
 type Context = Parameters<typeof refreshRecommendationsFamily.execute>[0];
 
@@ -60,20 +64,35 @@ beforeEach(() => {
   vi.unstubAllEnvs();
 });
 
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 describe('batch family registration', () => {
-  it('registers the three families on the batch role only', () => {
+  it('registers the batch families on the batch role only', () => {
     const batch = familiesForRole('batch').map((family) => family.name);
     expect(batch).toEqual(
-      expect.arrayContaining(['refresh-recommendations', 'refresh-hold-features', 'refresh-climb-grades']),
+      expect.arrayContaining([
+        'refresh-recommendations',
+        'refresh-hold-features',
+        'refresh-climb-grades',
+        'refresh-climb-neighbors',
+      ]),
     );
     for (const role of ['interactive-import', 'routine-provider', 'maintenance-delivery'] as const) {
       expect(familiesForRole(role).map((family) => family.name)).toEqual(['worker-probe']);
     }
     expect(requireFamily('refresh-climb-grades')).toBe(refreshClimbGradesFamily);
+    expect(requireFamily('refresh-climb-neighbors')).toBe(refreshClimbNeighborsFamily);
   });
 
   it('keeps each lease inside pg-boss limits and each heartbeat window valid', () => {
-    for (const family of [refreshRecommendationsFamily, refreshHoldFeaturesFamily, refreshClimbGradesFamily]) {
+    for (const family of [
+      refreshRecommendationsFamily,
+      refreshHoldFeaturesFamily,
+      refreshClimbGradesFamily,
+      refreshClimbNeighborsFamily,
+    ]) {
       expect(family.options.expireInSeconds).toBeLessThanOrEqual(24 * 60 * 60);
       expect(family.options.heartbeatSeconds).toBeGreaterThanOrEqual(10);
       expect(family.options.heartbeatSeconds).toBeLessThan(family.options.expireInSeconds);
@@ -87,6 +106,15 @@ describe('batch family registration', () => {
     });
     expect(refreshHoldFeaturesFamily.options).toMatchObject({ expireInSeconds: 1200, retryLimit: 2, retryDelay: 300 });
     expect(refreshClimbGradesFamily.options).toMatchObject({ expireInSeconds: 1800, retryLimit: 1, retryDelay: 900 });
+    expect(refreshClimbNeighborsFamily.options).toEqual({
+      expireInSeconds: 21_600,
+      retryLimit: 2,
+      retryDelay: 300,
+      retryBackoff: true,
+      retryDelayMax: 900,
+      deadlineSeconds: 79_200,
+      heartbeatSeconds: 60,
+    });
   });
 
   it('schedules one nightly UTC job each, fanned out with the default payload', async () => {
@@ -98,6 +126,26 @@ describe('batch family registration', () => {
     expect(await refreshRecommendationsFamily.schedules?.[0].fanOut(database)).toEqual([{ payload: {} }]);
     expect(await refreshHoldFeaturesFamily.schedules?.[0].fanOut(database)).toEqual([{ payload: { board: 'kilter' } }]);
     expect(await refreshClimbGradesFamily.schedules?.[0].fanOut(database)).toEqual([{ payload: {} }]);
+  });
+
+  it('fans the neighbours schedule out to one job per board, cheapest first', async () => {
+    expect(refreshClimbNeighborsFamily.schedules?.map(({ key, cron, tz }) => ({ key, cron, tz }))).toEqual([
+      { key: 'nightly', cron: '45 6 * * *', tz: undefined },
+    ]);
+    jobs.orderBoardsByClimbCount.mockResolvedValue(['soill', 'touchstone', 'moonboard', 'kilter']);
+    const requests = await refreshClimbNeighborsFamily.schedules?.[0].fanOut(database);
+    expect(jobs.orderBoardsByClimbCount).toHaveBeenCalledWith(database, CLIMB_NEIGHBOR_BOARDS);
+    expect(requests).toEqual([
+      { payload: { board: 'soill' } },
+      { payload: { board: 'touchstone' } },
+      { payload: { board: 'moonboard' } },
+      { payload: { board: 'kilter' } },
+    ]);
+    // Every fanned-out payload is one the worker accepts, keyed by its board.
+    for (const request of requests ?? []) {
+      const parsed = refreshClimbNeighborsFamily.payload.parse(request.payload);
+      expect(refreshClimbNeighborsFamily.singletonKey?.(parsed)).toBe(request.payload.board);
+    }
   });
 });
 
@@ -118,6 +166,25 @@ describe('payloads and dedup keys', () => {
     expect(refreshHoldFeaturesFamily.payload.safeParse({ board: 'Kilter; DROP' }).success).toBe(false);
     expect(refreshHoldFeaturesFamily.payload.safeParse({ board: 'kilter', dryRun: 'yes' }).success).toBe(false);
     expect(refreshHoldFeaturesFamily.payload.safeParse({ board: 'kilter', extra: true }).success).toBe(false);
+  });
+
+  it('refresh-climb-neighbors takes one materialised board and its three switches, keyed by board', () => {
+    expect(refreshClimbNeighborsFamily.payload.parse({ board: 'kilter' })).toEqual({ board: 'kilter' });
+    expect(refreshClimbNeighborsFamily.payload.parse({ board: 'kilter', full: true, dryRun: false })).toEqual({
+      board: 'kilter',
+      full: true,
+      dryRun: false,
+    });
+    expect(refreshClimbNeighborsFamily.singletonKey?.({ board: 'moonboard' })).toBe('moonboard');
+    for (const board of CLIMB_NEIGHBOR_BOARDS) {
+      expect(refreshClimbNeighborsFamily.payload.safeParse({ board }).success).toBe(true);
+    }
+    // Spray walls are private and never materialised.
+    expect(refreshClimbNeighborsFamily.payload.safeParse({ board: 'spray' }).success).toBe(false);
+    expect(refreshClimbNeighborsFamily.payload.safeParse({}).success).toBe(false);
+    expect(refreshClimbNeighborsFamily.payload.safeParse({ board: 'Kilter' }).success).toBe(false);
+    expect(refreshClimbNeighborsFamily.payload.safeParse({ board: 'kilter', full: 'yes' }).success).toBe(false);
+    expect(refreshClimbNeighborsFamily.payload.safeParse({ board: 'kilter', boards: ['tension'] }).success).toBe(false);
   });
 
   it('refresh-climb-grades takes only its three switches and one constant key', () => {
@@ -186,6 +253,59 @@ describe('execute', () => {
       .catch((error: unknown) => error);
     expect(failure).toBeInstanceOf(BackgroundJobError);
     expect(failure).toMatchObject({ code: 'GATES_FAILED', retryable: false });
+  });
+
+  it('refresh-climb-neighbors runs its one board through the fence, live and incremental by default', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-09-28T06:45:00Z')); // a Monday
+    const { context: jobContext, transaction } = context('refresh-climb-neighbors');
+    await refreshClimbNeighborsFamily.execute(jobContext, { board: 'tension' });
+    const [options] = jobs.runRefreshClimbNeighbors.mock.calls[0];
+    expect(options).toMatchObject({
+      db: database,
+      signal: jobContext.signal,
+      boards: ['tension'],
+      full: false,
+      dryRun: false,
+      refillGaps: false,
+    });
+    expect(await writeThrough(options)).toBe(fencedTransaction);
+    expect(transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it('refresh-climb-neighbors refills gaps on Sundays (UTC) unless the payload says otherwise', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-09-27T06:45:00Z')); // a Sunday
+    await refreshClimbNeighborsFamily.execute(context('refresh-climb-neighbors').context, { board: 'kilter' });
+    await refreshClimbNeighborsFamily.execute(context('refresh-climb-neighbors').context, {
+      board: 'kilter',
+      refillGaps: false,
+    });
+    vi.setSystemTime(new Date('2026-09-28T06:45:00Z')); // a Monday
+    await refreshClimbNeighborsFamily.execute(context('refresh-climb-neighbors').context, {
+      board: 'kilter',
+      refillGaps: true,
+      full: true,
+    });
+    expect(jobs.runRefreshClimbNeighbors.mock.calls.map(([options]) => [options.refillGaps, options.full])).toEqual([
+      [true, false],
+      [false, false],
+      [true, true],
+    ]);
+  });
+
+  it('refresh-climb-neighbors maps a stopped run to a retryable INTERRUPTED', async () => {
+    jobs.runRefreshClimbNeighbors.mockRejectedValue(new ClimbNeighborsInterruptedError('kilter'));
+    const failure = await refreshClimbNeighborsFamily
+      .execute(context('refresh-climb-neighbors').context, { board: 'kilter' })
+      .catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(BackgroundJobError);
+    expect(failure).toMatchObject({ code: 'INTERRUPTED', retryable: true });
+    const outage = new Error('connection reset');
+    jobs.runRefreshClimbNeighbors.mockRejectedValue(outage);
+    await expect(
+      refreshClimbNeighborsFamily.execute(context('refresh-climb-neighbors').context, { board: 'kilter' }),
+    ).rejects.toBe(outage);
   });
 
   it('refresh-climb-grades lets any other failure retry', async () => {

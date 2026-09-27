@@ -43,6 +43,7 @@ export const BACKGROUND_JOB_FAMILIES = [
   'refresh-recommendations',
   'refresh-hold-features',
   'refresh-climb-grades',
+  'refresh-climb-neighbors',
 ] as const;
 
 export type BackgroundJobFamily = (typeof BACKGROUND_JOB_FAMILIES)[number];
