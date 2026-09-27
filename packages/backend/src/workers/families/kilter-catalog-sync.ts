@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { logger } from '../../utils/logger';
 import { boundedErrorFields } from './job-logging';
 import { BackgroundJobError, type BackgroundJobFamilyModule } from './types';
+import { AURORA_SHARED_SYNC_DEADLINE_SECONDS } from './aurora-shared-sync';
 
 const kilterCatalogSyncPayload = z.object({}).strict();
 
@@ -44,7 +45,10 @@ export const kilterCatalogSyncFamily: BackgroundJobFamilyModule<KilterCatalogSyn
     retryDelay: 300,
     retryBackoff: true,
     retryDelayMax: 300,
-    deadlineSeconds: 7200,
+    // Queued at :23, it can wait behind the five hour-long :07 shared syncs on
+    // the one-at-a-time worker at the same priority: the same full-fan-out
+    // budget, so it runs late instead of expiring at claim.
+    deadlineSeconds: AURORA_SHARED_SYNC_DEADLINE_SECONDS,
     // Equal to the routine cycle, so FIFO order keeps it from waiting behind
     // an endless stream of cycles (docs/background-workers.md, "Queue share").
     priority: 0,

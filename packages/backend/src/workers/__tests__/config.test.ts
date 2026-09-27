@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { ROUTINE_CYCLE_DEFAULTS, requireProviderSecrets, routineCycleLimits, workerConfig } from '../config';
+import {
+  ROUTINE_CYCLE_BUDGET_MAX_MS,
+  ROUTINE_CYCLE_DEFAULTS,
+  requireProviderSecrets,
+  routineCycleLimits,
+  workerConfig,
+} from '../config';
 
 const environment = { WORKER_ROLE: 'interactive-import', DATABASE_URL: 'postgresql://worker:secret@localhost/test' };
 
@@ -67,7 +73,7 @@ describe('worker configuration', () => {
       }),
     ).toBe(true);
   });
-  it('reads the routine cycle limits, with defaults of 4 credentials and 3 minutes', () => {
+  it('reads the routine cycle limits, with defaults of 4 credentials and 2 minutes', () => {
     expect(routineCycleLimits({})).toEqual({ maxCredentials: 4, budgetMs: 120_000 });
     expect(ROUTINE_CYCLE_DEFAULTS).toEqual({ maxCredentials: 4, budgetMs: 120_000 });
     expect(routineCycleLimits({ ROUTINE_CYCLE_MAX_CREDENTIALS: '10', ROUTINE_CYCLE_BUDGET_MS: '60000' })).toEqual({
@@ -81,11 +87,18 @@ describe('worker configuration', () => {
     { ROUTINE_CYCLE_MAX_CREDENTIALS: '4.5' },
     { ROUTINE_CYCLE_MAX_CREDENTIALS: 'many' },
     { ROUTINE_CYCLE_BUDGET_MS: '0' },
-    // The budget is soft, so it has to leave a credential's worth of the 600 s lease.
-    { ROUTINE_CYCLE_BUDGET_MS: '400001' },
+    // Two cycles per 300 s window must leave the board-wide jobs room.
+    { ROUTINE_CYCLE_BUDGET_MS: '150001' },
     { ROUTINE_CYCLE_BUDGET_MS: '-1' },
   ])('fails worker startup on an invalid routine limit %j', (override) => {
     expect(() => workerConfig({ ...environment, ...override })).toThrow();
+  });
+  it('caps the cycle budget at half the 300 s window and says why', () => {
+    expect(ROUTINE_CYCLE_BUDGET_MAX_MS).toBe(150_000);
+    expect(routineCycleLimits({ ROUTINE_CYCLE_BUDGET_MS: '150000' }).budgetMs).toBe(150_000);
+    expect(() => routineCycleLimits({ ROUTINE_CYCLE_BUDGET_MS: '180000' })).toThrow(
+      /at most 150000: two providers queue a cycle every 300 000 ms/,
+    );
   });
   it('needs both provider secrets for the routine families, and none for MoonBoard or the self-heal', () => {
     const routine = [

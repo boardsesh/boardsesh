@@ -59,7 +59,7 @@ export const providerRoutineCycleFamily: BackgroundJobFamilyModule<ProviderRouti
   name: 'provider-routine-cycle',
   roles: ['routine-provider'],
   options: {
-    // The soft budget (at most 400 s, default 120 s) plus one credential's sync
+    // The soft budget (at most 150 s, default 120 s) plus one credential's sync
     // must fit in this lease; the signal aborts at it.
     expireInSeconds: 600,
     retryLimit: 0,

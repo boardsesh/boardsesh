@@ -178,7 +178,7 @@ describe('family contracts', () => {
           expireInSeconds: 3600,
           retryLimit: 1,
           retryDelay: 300,
-          deadlineSeconds: 7200,
+          deadlineSeconds: AURORA_SHARED_SYNC_DEADLINE_SECONDS,
           heartbeatSeconds: 300,
           priority: 0,
         },

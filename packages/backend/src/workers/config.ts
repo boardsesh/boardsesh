@@ -69,27 +69,42 @@ export const PROVIDER_FAMILY_SECRETS: Readonly<Record<string, readonly string[]>
 export const ROUTINE_CYCLE_DEFAULTS = { maxCredentials: 4, budgetMs: 120_000 } as const;
 
 /**
+ * The most `ROUTINE_CYCLE_BUDGET_MS` may be. Two providers queue a cycle every
+ * 300 s on the one-at-a-time routine worker; above 150 000 each, the cycles
+ * alone would need more than the whole window and the board-wide jobs would
+ * never run. This is the hard limit; the default (120 000) is what leaves the
+ * board-wide jobs their headroom (docs/background-workers.md, "Queue share").
+ */
+export const ROUTINE_CYCLE_BUDGET_MAX_MS = 150_000;
+
+/**
  * How much one routine cycle may do: at most `maxCredentials` credentials, and
  * no new credential once `budgetMs` has passed. The budget is soft (a started
- * credential finishes), so it must leave room inside the family's 600 s lease:
- * at most 400 s here. Overridden by `ROUTINE_CYCLE_MAX_CREDENTIALS` /
- * `ROUTINE_CYCLE_BUDGET_MS`.
+ * credential finishes). Overridden by `ROUTINE_CYCLE_MAX_CREDENTIALS` /
+ * `ROUTINE_CYCLE_BUDGET_MS` (at most {@link ROUTINE_CYCLE_BUDGET_MAX_MS}).
  */
 export function routineCycleLimits(environment: Readonly<Record<string, string | undefined>> = process.env): {
   maxCredentials: number;
   budgetMs: number;
 } {
-  const read = (name: string, fallback: number, max: number): number => {
+  const read = (name: string, fallback: number, max: number, tooHigh?: string): number => {
     const raw = environment[name];
     if (raw === undefined || raw.trim() === '') return fallback;
     if (!/^\d+$/.test(raw.trim())) throw new Error(`Invalid ${name}`);
     const value = Number(raw.trim());
+    if (value > max && tooHigh) throw new Error(`Invalid ${name}: ${tooHigh}`);
     if (value < 1 || value > max) throw new Error(`Invalid ${name}`);
     return value;
   };
   return {
     maxCredentials: read('ROUTINE_CYCLE_MAX_CREDENTIALS', ROUTINE_CYCLE_DEFAULTS.maxCredentials, 50),
-    budgetMs: read('ROUTINE_CYCLE_BUDGET_MS', ROUTINE_CYCLE_DEFAULTS.budgetMs, 400_000),
+    budgetMs: read(
+      'ROUTINE_CYCLE_BUDGET_MS',
+      ROUTINE_CYCLE_DEFAULTS.budgetMs,
+      ROUTINE_CYCLE_BUDGET_MAX_MS,
+      `at most ${ROUTINE_CYCLE_BUDGET_MAX_MS}: two providers queue a cycle every 300 000 ms, ` +
+        `so 2 x budget must stay within the window to leave the board-wide jobs room`,
+    ),
   };
 }
 

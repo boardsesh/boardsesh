@@ -202,7 +202,7 @@ module. The module declares:
 | `kilter-user-sync` | `interactive-import` | 1800 s (heartbeat 300 s) | 3, 30 s backoff to 300 s | 2 h | `userId:kilter:linkGeneration` |
 | `provider-routine-cycle` | `routine-provider` | 600 s (heartbeat 300 s) | none | 6 h | `aurora` / `kilter` |
 | `aurora-shared-sync` | `routine-provider` | 3600 s (heartbeat 300 s) | 1, after 300 s | 6 h | the board |
-| `kilter-catalog-sync` | `routine-provider` | 3600 s (heartbeat 300 s) | 1, after 300 s | 2 h | `kilter` |
+| `kilter-catalog-sync` | `routine-provider` | 3600 s (heartbeat 300 s) | 1, after 300 s | 6 h | `kilter` |
 | `moonboard-locations-sync` | `routine-provider` | 1800 s (heartbeat 120 s) | 1, after 600 s | 24 h | `moonboard` |
 | `climb-stats-self-heal` | `maintenance-delivery` | 900 s (heartbeat 120 s) | 1, after 300 s | 1 h | `climb-stats` |
 
@@ -693,7 +693,7 @@ it, then succeeds and logs `[worker] routine cycle finished` with the reason:
 | Stop | When |
 | --- | --- |
 | `MAX_CREDENTIALS` | `ROUTINE_CYCLE_MAX_CREDENTIALS` credentials attempted (default 4, 1 to 50) |
-| `BUDGET` | `ROUTINE_CYCLE_BUDGET_MS` passed (default 120 000, at most 400 000), checked before each claim; a started credential finishes |
+| `BUDGET` | `ROUTINE_CYCLE_BUDGET_MS` passed (default 120 000, at most 150 000), checked before each claim; a started credential finishes |
 | `NO_CREDENTIALS` | nothing is due |
 | `PROVIDER_THROTTLED` | the provider answered 429 with `Retry-After`: that credential's `provider_retry_after_until` is set to `now() + delay` (capped at 6 h) and the failure step the 429 was charged is taken back. The claim waits for the later of that time and the failure backoff (`last_sync_attempt_at + backoff(n)`), never their sum, and the cycle ends |
 | `CYCLE_DEADLINE` | a credential's sync was still running one minute before the lease ends: it is stopped, a transient `CYCLE_DEADLINE` failure is recorded on it under the still-live fence (so `consecutive_failures` backoff parks it and `last_sync_error` shows it), and the cycle ends |
@@ -736,8 +736,9 @@ they were queued. The arithmetic that keeps the board-wide jobs moving:
 Two things break this, so do neither: a board-wide family with a LOWER
 priority than the cycle (it would wait behind every cycle ever queued, since
 the cycles never run dry), and a budget above 150 000 (two cycles would then
-fill the whole 300 s). If you change `ROUTINE_CYCLE_BUDGET_MS`, keep twice
-its value well under 300 000.
+need more than the whole 300 s). The worker refuses to start with
+`ROUTINE_CYCLE_BUDGET_MS` above 150 000, and the error states this arithmetic;
+the default of 120 000 is what leaves the board-wide jobs their room.
 
 The run's absolute deadline is 6 hours, not the lease's 10 minutes, the same
 full-fan-out budget as `aurora-shared-sync`: the routine worker runs one job at
@@ -782,7 +783,9 @@ recently synced board first (by its `board_shared_syncs` cooldown stamp;
 never-run boards lead). The routine worker runs one job at a time, so the
 fifth board can wait behind four runs that each hold an hour's lease; its
 6-hour deadline covers that wait plus a routine cycle or a Kilter catalog run
-in between, so a late board runs late instead of expiring at claim.
+in between, so a late board runs late instead of expiring at claim. The Kilter
+catalog (queued at :23) and the routine cycle can wait behind the same five
+runs, so they carry the same 6-hour deadline.
 
 `aurora-shared-sync` and `kilter-catalog-sync` borrow a token from the board's
 most recently successful `active` credential (Kilter falls back to the
