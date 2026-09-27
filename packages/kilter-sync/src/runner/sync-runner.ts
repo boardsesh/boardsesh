@@ -17,6 +17,7 @@ import {
   snapshotClimbStatsHistoryIfDue,
   stampSharedSyncFinished,
   isWeeklyCursorDue,
+  isSyncFenceError,
   markWeeklyCursorDone,
   type SharedSyncClaimToken,
 } from '@boardsesh/db/queries';
@@ -42,7 +43,15 @@ import { syncKilterCatalog, type KilterCatalogSummary } from '../sync/catalog-sy
 import { repairKilterCatalogStats, type KilterStatsRepairSummary } from '../sync/stats-repair';
 import { buildLayoutResolver } from '../sync/layout-resolver';
 import { syncKilterLocations, pullKilterReference } from '../sync';
-import type { RunnerClient, RunnerDb, SyncRunnerConfig, SyncSummary, KilterCredentialRecord } from './types';
+import type {
+  RunnerClient,
+  RunnerDb,
+  RunCycleOptions,
+  SyncOutcome,
+  SyncRunnerConfig,
+  SyncSummary,
+  KilterCredentialRecord,
+} from './types';
 
 // Catalog cooldown: a full per-cycle catalog pull is expensive, so the daemon
 // piggyback runs it at most once per window. Persisted in board_shared_syncs
@@ -57,6 +66,64 @@ const DEFAULT_CATALOG_SYNC_COOLDOWN_MS = 60 * 60 * 1000;
  */
 const SYNC_HEALTH_SUMMARY_COOLDOWN_MS = 60 * 60 * 1000;
 
+/**
+ * Record a failed Kilter cycle on the credential row. Shared by the daemon and
+ * the background job families so both write the same bookkeeping; `database`
+ * is the plain pool for the daemon and the fenced batch transaction for a job.
+ *
+ * - A transient failure leaves `sync_status`/`sync_error` untouched (a genuine
+ *   transient must not flag the card 'error') and never touches `last_sync_at`
+ *   (the user-facing "last successful sync"). It DOES stamp
+ *   `last_sync_attempt_at` (the scheduler's fairness clock), bump
+ *   `consecutive_failures` (backoff) and write `last_sync_error`
+ *   (observability). Before that, a transient-looping credential advanced
+ *   NOTHING user-visible and the daemon silently re-attempted it forever: the
+ *   live kilter outage. No data is lost: last_sync_attempt_at is only a
+ *   scheduling key, each cycle re-pulls the full PowerSync snapshot and the
+ *   apply is idempotent.
+ * - A permanent failure marks the credential 'error', or 'expired' for
+ *   `invalid_grant` so the UI prompts re-auth instead of "something went
+ *   wrong". It stamps the attempt clock too: 'error' stays in the candidate
+ *   set, and without the stamp a NULL attempt time would keep sorting first and
+ *   monopolise the queue. Unknown throws land here (fail-closed).
+ */
+export async function recordKilterFailure(
+  database: RunnerDb,
+  cred: KilterCredentialRecord,
+  error: Error,
+): Promise<{ status: 'error' | 'expired' | null; transient: boolean }> {
+  const attemptAt = new Date();
+  const credentialMatches = and(
+    eq(auroraCredentials.userId, cred.userId),
+    eq(auroraCredentials.boardType, KILTER_BOARD_TYPE),
+  );
+  if (isTransientKilterError(error)) {
+    await database
+      .update(auroraCredentials)
+      .set({
+        lastSyncAttemptAt: attemptAt,
+        consecutiveFailures: sql`COALESCE(${auroraCredentials.consecutiveFailures}, 0) + 1`,
+        lastSyncError: error.message,
+        updatedAt: attemptAt,
+      })
+      .where(credentialMatches);
+    return { status: null, transient: true };
+  }
+  const status = error instanceof KilterApiError && error.code === 'invalid_grant' ? 'expired' : 'error';
+  await database
+    .update(auroraCredentials)
+    .set({
+      syncStatus: status,
+      syncError: error.message,
+      lastSyncError: error.message,
+      consecutiveFailures: sql`COALESCE(${auroraCredentials.consecutiveFailures}, 0) + 1`,
+      lastSyncAttemptAt: attemptAt,
+      updatedAt: attemptAt,
+    })
+    .where(credentialMatches);
+  return { status, transient: false };
+}
+
 export class SyncRunner {
   private config: SyncRunnerConfig;
   private daemonController: AbortController | null = null;
@@ -65,6 +132,9 @@ export class SyncRunner {
   private lastHealthSummaryAt = 0;
   private client: RunnerClient | null = null;
   private db: RunnerDb | null = null;
+  // False when the caller injected `db`: the caller owns that pool, so this
+  // runner never opens one of its own and stop() never ends it.
+  private readonly ownsPool: boolean;
   private lease: DaemonLease | null = null;
   // Per-process identity for the daemon lease, minted once so a renewal reads
   // as "still us" rather than a takeover.
@@ -72,13 +142,20 @@ export class SyncRunner {
 
   constructor(config: SyncRunnerConfig = {}) {
     this.config = config;
+    this.ownsPool = !config.db;
+    if (config.db) this.db = config.db;
   }
 
   private getCatalogSyncCooldownMs(): number {
     return this.config.sharedSyncCooldownMs ?? DEFAULT_CATALOG_SYNC_COOLDOWN_MS;
   }
 
-  private getClient(): { client: RunnerClient; db: RunnerDb } {
+  /** The runner's database, and its own postgres-js client when it owns the pool. */
+  private getClient(): { client: RunnerClient | null; db: RunnerDb } {
+    if (!this.ownsPool) {
+      if (!this.db) throw new Error('Injected database is missing');
+      return { client: null, db: this.db };
+    }
     if (!this.client || !this.db) {
       const connectionString = process.env.DATABASE_URL || process.env.DB_URL;
       if (!connectionString) {
@@ -88,13 +165,15 @@ export class SyncRunner {
       // PgBouncer in transaction mode, which is incompatible with prepared
       // statements. Direct (non-pooled) URLs work either way, so this is
       // the safe default for both.
-      this.client = postgres(connectionString, {
+      const client = postgres(connectionString, {
         max: 5,
         idle_timeout: 30,
         connect_timeout: 30,
         prepare: false,
       });
-      this.db = drizzle(this.client);
+      this.client = client;
+      this.db = drizzle(client);
+      return { client, db: this.db };
     }
     return { client: this.client, db: this.db };
   }
@@ -136,113 +215,91 @@ export class SyncRunner {
     const summary: SyncSummary = { total: 1, successful: 0, failed: 0, errors: [] };
     const { db } = this.getClient();
 
-    // Candidate selection is inside the try so a DB failure here is handled
-    // by the same path as a per-credential failure (and, in the daemon, by
-    // runDaemonLoop's onCycleError) instead of escaping unlogged.
-    let cred: KilterCredentialRecord | null = null;
+    // Candidate selection is inside a try so a DB failure here is surfaced the
+    // same way as a per-credential failure (and, in the daemon, never escapes
+    // unlogged). A failure before we picked a credential has no user to stamp.
+    let cred: KilterCredentialRecord | null;
     try {
       cred = await this.getNextCredentialToSync(db);
-      if (!cred) {
-        summary.total = 0;
-        return summary;
-      }
-
-      await this.runCycleForCredential(db, cred);
-      summary.successful = 1;
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
+      this.handleError(err, { board: KILTER_BOARD_TYPE });
+      summary.failed = 1;
+      summary.errors.push({ userId: '', boardType: KILTER_BOARD_TYPE, error: err.message });
+      return summary;
+    }
+    if (!cred) {
+      summary.total = 0;
+      return summary;
+    }
 
-      // A failure before we even picked a credential (e.g. the selection
-      // query itself) has no user to stamp — surface it and bail.
-      if (!cred) {
-        this.handleError(err, { board: KILTER_BOARD_TYPE });
-        summary.failed = 1;
-        summary.errors.push({ userId: '', boardType: KILTER_BOARD_TYPE, error: err.message });
-        return summary;
-      }
+    const outcome = await this.runCycleForCredential(db, cred);
+    if (outcome.status === 'active') {
+      summary.successful = 1;
+    } else {
+      summary.failed = 1;
+      summary.errors.push({
+        userId: cred.userId,
+        boardType: KILTER_BOARD_TYPE,
+        error: outcome.error ?? 'Unknown error',
+      });
+    }
+    return summary;
+  }
 
-      const transient = isTransientKilterError(err);
-
-      if (transient) {
-        // Leave syncStatus/syncError untouched (a genuine transient must
-        // not get flagged 'error' in the UI) and DO NOT touch last_sync_at
-        // (that timestamp is the user-facing "last successful sync" — a
-        // failed cycle must never advance it). But DO record the failure so
-        // it stops being silent: stamp last_sync_attempt_at (the scheduler's
-        // fairness clock), bump consecutive_failures (drives backoff), and
-        // write last_sync_error (observability — this is how an operator sees
-        // WHY a card that still reads 'active' hasn't actually synced). Before
-        // this, a transient-looping credential advanced NOTHING user-visible:
-        // last_sync_at stayed put, no error was recorded, and the daemon
-        // silently re-attempted it forever. That was the live kilter outage.
-        //
-        // No data is lost: last_sync_attempt_at is ONLY a scheduling key
-        // (which credential to pick next), never a data cursor. Each cycle
-        // re-pulls the FULL PowerSync snapshot and the apply is idempotent
-        // (dedup + natural-key adoption + ON CONFLICT), so rows missed by a
-        // failed cycle are re-applied on the credential's next successful
-        // turn. If the pull ever becomes incremental, that watermark needs
-        // its own column — it must not piggyback on this attempt clock.
-        const attemptAt = new Date();
-        await db
-          .update(auroraCredentials)
-          .set({
-            lastSyncAttemptAt: attemptAt,
-            consecutiveFailures: sql`COALESCE(${auroraCredentials.consecutiveFailures}, 0) + 1`,
-            lastSyncError: err.message,
-            updatedAt: attemptAt,
-          })
-          .where(and(eq(auroraCredentials.userId, cred.userId), eq(auroraCredentials.boardType, KILTER_BOARD_TYPE)));
-
+  /**
+   * Sync one claimed credential and record the outcome on it. Shared by the
+   * daemon (`syncNextUser`) and the background job families.
+   *
+   * A credential failure is recorded by {@link recordKilterFailure} and
+   * returned as an outcome, never thrown. A fence refusal or an abort (see
+   * `isSyncFenceError`) is rethrown instead: it means the job must stop, not
+   * that the account is broken, so nothing is recorded against it.
+   *
+   * `transaction` routes every credential write and every user-sync flush
+   * through the caller's batch runner; the Keycloak token refresh keeps its own
+   * unfenced `FOR UPDATE` transaction on `db`. `skipCatalogSync` leaves the
+   * catalog piggyback to its own schedule.
+   */
+  async runCycleForCredential(
+    db: RunnerDb,
+    cred: KilterCredentialRecord,
+    options: RunCycleOptions = {},
+  ): Promise<SyncOutcome> {
+    const resolved: RunCycleOptions = {
+      ...options,
+      transaction: options.transaction ?? this.config.transaction,
+      signal: options.signal ?? this.config.signal,
+    };
+    try {
+      await this.syncCredentialCycle(db, cred, resolved);
+      return { status: 'active' };
+    } catch (error) {
+      if (resolved.signal?.aborted || isSyncFenceError(error)) throw error;
+      const err = error instanceof Error ? error : new Error(String(error));
+      const recorded = resolved.transaction
+        ? await resolved.transaction((transaction) => recordKilterFailure(transaction, cred, err))
+        : await recordKilterFailure(db, cred, err);
+      if (recorded.transient) {
         this.log(
           `[KilterSyncRunner] Transient sync failure for user ${cred.userId} (attempt ${
             (cred.consecutiveFailures ?? 0) + 1
           }, backing off): ${err.message}`,
         );
-        this.handleError(err, { userId: cred.userId, board: KILTER_BOARD_TYPE });
-        summary.failed = 1;
-        summary.errors.push({ userId: cred.userId, boardType: KILTER_BOARD_TYPE, error: err.message });
-        return summary;
+      } else {
+        this.log(
+          `[KilterSyncRunner] Permanent sync failure for user ${cred.userId} (status=${recorded.status}, attempt ${
+            (cred.consecutiveFailures ?? 0) + 1
+          }): ${err.message}`,
+        );
       }
-
-      // Permanent failure — mark errored so the next cycle picks a
-      // different user. invalid_grant maps to 'expired' specifically so
-      // the UI knows to prompt re-auth instead of "something went wrong".
-      const isExpired = err instanceof KilterApiError && err.code === 'invalid_grant';
-      const status = isExpired ? 'expired' : 'error';
-      // Stamp last_sync_attempt_at on the permanent path too (NOT
-      // last_sync_at — a failed cycle is not a successful sync). 'expired'
-      // is excluded from selection so it can't be re-picked, but 'error'
-      // stays in the candidate set — without the attempt stamp an errored
-      // credential with a NULL attempt time would keep sorting first and
-      // monopolise the queue. (See the transient branch for the rationale.)
-      // Also bump consecutive_failures + record last_sync_error: an 'error'
-      // credential is still retried, so it must back off; 'unknown'/unknown
-      // throws now land here (fail-closed) and get an observable message.
-      const attemptAt = new Date();
-      await db
-        .update(auroraCredentials)
-        .set({
-          syncStatus: status,
-          syncError: err.message,
-          lastSyncError: err.message,
-          consecutiveFailures: sql`COALESCE(${auroraCredentials.consecutiveFailures}, 0) + 1`,
-          lastSyncAttemptAt: attemptAt,
-          updatedAt: attemptAt,
-        })
-        .where(and(eq(auroraCredentials.userId, cred.userId), eq(auroraCredentials.boardType, KILTER_BOARD_TYPE)));
-
-      this.log(
-        `[KilterSyncRunner] Permanent sync failure for user ${cred.userId} (status=${status}, attempt ${
-          (cred.consecutiveFailures ?? 0) + 1
-        }): ${err.message}`,
-      );
       this.handleError(err, { userId: cred.userId, board: KILTER_BOARD_TYPE });
-      summary.failed = 1;
-      summary.errors.push({ userId: cred.userId, boardType: KILTER_BOARD_TYPE, error: err.message });
+      return {
+        status: recorded.status === 'expired' ? 'expired' : 'error',
+        error: err.message,
+        transient: recorded.transient,
+      };
     }
-
-    return summary;
   }
 
   /**
@@ -255,17 +312,28 @@ export class SyncRunner {
     if (!cred) {
       throw new Error(`No kilter credential for user ${userId}`);
     }
-    await this.runCycleForCredential(db, cred);
+    await this.syncCredentialCycle(db, cred, {});
   }
 
-  private async runCycleForCredential(db: RunnerDb, cred: KilterCredentialRecord): Promise<void> {
+  /** One cycle for one credential. Throws on any failure; the callers record it. */
+  private async syncCredentialCycle(
+    db: RunnerDb,
+    cred: KilterCredentialRecord,
+    options: RunCycleOptions,
+  ): Promise<void> {
+    // Unfenced on purpose: the refresh keeps its own FOR UPDATE transaction on
+    // the credential row (rotating refresh tokens must be read and written under
+    // one lock), and it must never hold a job's fence open across Keycloak HTTP.
     const accessToken = await this.refreshTokenFor(cred, db);
+    options.signal?.throwIfAborted();
 
     const { skippedForeignCircuits } = await syncKilterUserData({
       db,
       userId: cred.userId,
       accessToken,
       log: (msg) => this.log(msg),
+      transaction: options.transaction,
+      signal: options.signal,
     });
 
     // TODO(push-back): wire pushKilterUserData(...) in here, between the
@@ -300,20 +368,24 @@ export class SyncRunner {
         `[KilterSyncRunner] User ${cred.userId}: ${skippedForeignCircuits} circuit(s) skipped — the Kilter account is linked to another Boardsesh user (see #3526)`,
       );
     }
-    await db
-      .update(auroraCredentials)
-      .set({
-        lastSyncAt: now,
-        lastSyncAttemptAt: now,
-        syncStatus: 'active',
-        syncError: duplicateCircuitOwnerError,
-        // Success clears the failure counters so backoff resets and the
-        // observability field stops showing a stale error.
-        consecutiveFailures: 0,
-        lastSyncError: null,
-        updatedAt: now,
-      })
-      .where(and(eq(auroraCredentials.userId, cred.userId), eq(auroraCredentials.boardType, KILTER_BOARD_TYPE)));
+    const markActive = async (database: RunnerDb) => {
+      await database
+        .update(auroraCredentials)
+        .set({
+          lastSyncAt: now,
+          lastSyncAttemptAt: now,
+          syncStatus: 'active',
+          syncError: duplicateCircuitOwnerError,
+          // Success clears the failure counters so backoff resets and the
+          // observability field stops showing a stale error.
+          consecutiveFailures: 0,
+          lastSyncError: null,
+          updatedAt: now,
+        })
+        .where(and(eq(auroraCredentials.userId, cred.userId), eq(auroraCredentials.boardType, KILTER_BOARD_TYPE)));
+    };
+    if (options.transaction) await options.transaction(markActive);
+    else await markActive(db);
 
     // Greppable success line. The daemon had NONE until now: only failures and
     // the duplicate-circuit case ever logged, so `grep 'Successfully synced'`
@@ -326,6 +398,8 @@ export class SyncRunner {
 
     // Piggyback: after the user-half succeeds and is stamped active, refresh
     // the shared catalog if its cooldown has elapsed. Reuses this user's token.
+    // A background job skips it: the catalog sync runs on its own schedule there.
+    if (options.skipCatalogSync) return;
     await this.maybeRunCatalogSync(db, cred, accessToken);
   }
 

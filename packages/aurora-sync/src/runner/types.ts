@@ -1,3 +1,5 @@
+import type { ProviderSyncDb, SyncBatchRunner } from '@boardsesh/db/queries';
+
 /**
  * Context passed to the `onError` callback. `userId`/`board` are the original
  * pair; the rest is the per-credential failure ledger snapshot so a callback
@@ -34,6 +36,38 @@ export type SyncRunnerConfig = {
    * behaviours that let followers get duplicate setter notifications.
    */
   sharedSyncCooldownMs?: number;
+  /**
+   * A database the caller owns (a background worker's pool). When set the
+   * runner never opens its own `postgres` pool and `close()` leaves this one
+   * alone. Unset, the runner connects to `DATABASE_URL` itself (the daemon).
+   */
+  db?: ProviderSyncDb;
+  /** Default batch runner for credential writes and user-sync pages. See {@link SyncCredentialOptions}. */
+  transaction?: SyncBatchRunner;
+  /** Default abort signal for provider requests and between pages. */
+  signal?: AbortSignal;
+};
+
+export type SyncCredentialOptions = {
+  /**
+   * Runs every credential write and every user-sync page in one transaction
+   * behind the caller's fences. Provider HTTP never runs inside it.
+   */
+  transaction?: SyncBatchRunner;
+  /** Stops the sync between pages and cancels an in-flight provider request. */
+  signal?: AbortSignal;
+  /** Leave the board-wide shared sync to its own schedule. */
+  skipSharedSync?: boolean;
+};
+
+/**
+ * How one credential's sync ended. `transient` marks a failure a retry may fix
+ * (Aurora down, a timeout); the credential's status is left as it was then.
+ */
+export type SyncOutcome = {
+  status: 'active' | 'error' | 'expired';
+  error?: string;
+  transient?: boolean;
 };
 
 // The daemon loop itself lives in @boardsesh/sync-runtime (shared with

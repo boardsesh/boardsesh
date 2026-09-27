@@ -57,6 +57,10 @@ export class AuroraClimbingClient {
     options: { apiUrl: boolean } = { apiUrl: false },
   ): Promise<T> {
     const url = `https://${options.apiUrl ? 'api.' : ''}${this.baseURL}${options.apiUrl ? `/${this.apiVersion}` : ''}${endpoint}`;
+    // A caller's signal (a background job's shutdown or lost lease) cuts the
+    // request short on top of the 30 s timeout.
+    const callerSignal = fetchOptions.signal ?? undefined;
+    const timeoutSignal = AbortSignal.timeout(30000); // 30 second timeout
 
     try {
       const contentType =
@@ -70,7 +74,7 @@ export class AuroraClimbingClient {
           ...this.createHeaders(contentType),
           ...((fetchOptions.headers as Record<string, string> | undefined) ?? {}),
         },
-        signal: AbortSignal.timeout(30000), // 30 second timeout
+        signal: callerSignal ? AbortSignal.any([callerSignal, timeoutSignal]) : timeoutSignal,
       });
 
       console.info(`Response status: ${response.status} ${response.statusText}`);
@@ -92,6 +96,12 @@ export class AuroraClimbingClient {
         throw error;
       }
 
+      // The caller stopped the work: surface its reason, not an Aurora timeout
+      // that would be recorded against the credential.
+      if (callerSignal?.aborted) {
+        throw callerSignal.reason;
+      }
+
       if (error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError')) {
         throw createAuroraTimeoutError(url, error);
       }
@@ -104,11 +114,12 @@ export class AuroraClimbingClient {
     }
   }
 
-  async signIn(username: string, password: string): Promise<LoginResponse> {
+  async signIn(username: string, password: string, options: { signal?: AbortSignal } = {}): Promise<LoginResponse> {
     const data = await this.request<LoginResponse>(
       '/sessions',
       {
         method: 'POST',
+        signal: options.signal,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           username,

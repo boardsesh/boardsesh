@@ -14,11 +14,14 @@ import {
   credentialBackoffMs,
   findGymsDueForWallCrawl,
   getCredentialFleetSnapshot,
+  isSyncFenceError,
   readSharedSyncCursor,
   releaseDaemonLease,
   selfHealStaleClimbStats,
   stampSharedSyncFinished,
+  type ProviderSyncDb,
   type SharedSyncClaimToken,
+  type SyncBatchRunner,
 } from '@boardsesh/db/queries';
 import { DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR } from '@boardsesh/shared-schema/sync-error-codes';
 import { syncUserData, hasForeignOwnedCircuitPlaylists } from '../sync/user-sync';
@@ -44,10 +47,18 @@ import {
   runDaemonLoop,
   type SyncHealthSnapshot,
 } from '@boardsesh/sync-runtime';
-import type { SyncRunnerConfig, SyncSummary, CredentialRecord, DaemonOptions, SyncErrorContext } from './types';
+import type {
+  SyncRunnerConfig,
+  SyncSummary,
+  CredentialRecord,
+  DaemonOptions,
+  SyncErrorContext,
+  SyncCredentialOptions,
+  SyncOutcome,
+} from './types';
 
 type RunnerClient = ReturnType<typeof postgres>;
-type RunnerDb = ReturnType<typeof drizzle>;
+type RunnerDb = ProviderSyncDb;
 
 // Cooldown between shared-sync attempts on the same board, regardless of which
 // user-sync triggered them. Without this, if N users on the same board cycle
@@ -141,6 +152,14 @@ export class SyncRunner {
   private daemonController: AbortController | null = null;
   private client: RunnerClient | null = null;
   private db: RunnerDb | null = null;
+  // False when the caller injected `db`: the caller owns that pool, so this
+  // runner never opens one of its own and close() never ends it.
+  private readonly ownsPool: boolean;
+  // The options of the syncCredential call in flight. Instance state rather
+  // than parameters so the private helpers keep their signatures; a runner
+  // syncs one credential at a time (the daemon loop and a job both do), and
+  // syncCredential refuses a second concurrent call.
+  private callOptions: SyncCredentialOptions | null = null;
   private lease: DaemonLease | null = null;
   // Per-process identity for the daemon lease. Minted once per SyncRunner so a
   // renewal is recognised as "still us" rather than a takeover.
@@ -156,13 +175,24 @@ export class SyncRunner {
 
   constructor(config: SyncRunnerConfig = {}) {
     this.config = config;
+    this.ownsPool = !config.db;
+    if (config.db) this.db = config.db;
   }
 
   private getSharedSyncCooldownMs(): number {
     return Math.max(0, this.config.sharedSyncCooldownMs ?? DEFAULT_SHARED_SYNC_COOLDOWN_MS);
   }
 
-  private getClient(): { client: RunnerClient; db: RunnerDb } {
+  /**
+   * The runner's database, and its own postgres-js client when it owns the
+   * pool. `client` is null for an injected database: only the shared sync
+   * still needs a raw client, and a job-driven runner skips it.
+   */
+  private getClient(): { client: RunnerClient | null; db: RunnerDb } {
+    if (!this.ownsPool) {
+      if (!this.db) throw new Error('Injected database is missing');
+      return { client: null, db: this.db };
+    }
     if (!this.client || !this.db) {
       const connectionString = process.env.DATABASE_URL;
       if (!connectionString) {
@@ -179,6 +209,24 @@ export class SyncRunner {
       this.db = drizzle(this.client);
     }
     return { client: this.client, db: this.db };
+  }
+
+  /**
+   * Run a credential-row write through the call's batch runner when it has one
+   * (a background job's fenced transaction), else straight on the database as
+   * the daemon always has.
+   */
+  private async writeCredential(write: (db: RunnerDb) => Promise<void>): Promise<void> {
+    const transaction = this.callOptions?.transaction ?? this.config.transaction;
+    if (transaction) {
+      await transaction(write);
+      return;
+    }
+    await write(this.getClient().db);
+  }
+
+  private currentSignal(): AbortSignal | undefined {
+    return this.callOptions?.signal ?? this.config.signal;
   }
 
   private log(message: string): void {
@@ -215,33 +263,65 @@ export class SyncRunner {
 
     this.log(`[SyncRunner] Syncing next user: ${cred.userId} for ${cred.boardType}`);
 
-    try {
-      await this.syncSingleCredential(cred);
+    const outcome = await this.syncCredential(cred);
+    if (outcome.status === 'active') {
       results.successful++;
-      this.log(`[SyncRunner] ✓ Successfully synced user ${cred.userId} for ${cred.boardType}`);
-    } catch (error) {
+    } else {
       results.failed++;
-      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-      // Stamp the scheduler + observability fields on EVERY failure, whatever
-      // path inside syncSingleCredential threw (transient login, invalid
-      // credential, decryption). syncSingleCredential's own error branches set
-      // the user-facing sync_status/sync_error where appropriate; this always
-      // advances last_sync_attempt_at (so the credential rotates out of the
-      // front of the queue instead of being re-picked first every cycle),
-      // bumps consecutive_failures (backoff), and records last_sync_error.
-      // Without this the transient-login path advanced NOTHING and wedged the
-      // whole board's sync — the aurora starvation bug.
-      await this.recordSyncFailure(cred, errorMsg);
       results.errors.push({
         userId: cred.userId,
         boardType: cred.boardType,
-        error: errorMsg,
+        error: outcome.error ?? 'Unknown error',
       });
-      this.handleError(error instanceof Error ? error : new Error(errorMsg), this.buildErrorContext(cred, error));
-      this.log(`[SyncRunner] ✗ Failed to sync user ${cred.userId} for ${cred.boardType}: ${errorMsg}`);
     }
 
     return results;
+  }
+
+  /**
+   * Sync one claimed credential and record the outcome on it. Shared by the
+   * daemon (`syncNextUser`) and the background job families, so both write the
+   * same failure bookkeeping.
+   *
+   * A credential failure (login, decryption, Aurora, a database error while
+   * applying) is recorded on the row and returned as an outcome, never thrown:
+   * it stamps `last_sync_attempt_at` so the credential rotates to the back of
+   * the queue instead of being re-picked first every cycle, bumps
+   * `consecutive_failures` (backoff) and writes `last_sync_error`. Without that
+   * the transient-login path advanced NOTHING and wedged the whole board's
+   * sync (the aurora starvation bug). The error branches inside set the
+   * user-facing sync_status/sync_error where appropriate.
+   *
+   * A fence refusal or an abort (see `isSyncFenceError`) is rethrown instead:
+   * it says the job must stop, not that the credential is broken, so nothing is
+   * recorded against the climber's account.
+   *
+   * `transaction` routes every credential write and every page of the user
+   * sync through the caller's batch runner. `skipSharedSync` leaves the
+   * board-wide shared sync to its own schedule.
+   */
+  async syncCredential(cred: CredentialRecord, options: SyncCredentialOptions = {}): Promise<SyncOutcome> {
+    if (this.callOptions) throw new Error('SyncRunner is already syncing a credential');
+    this.callOptions = options;
+    try {
+      await this.syncSingleCredential(cred);
+      this.log(`[SyncRunner] ✓ Successfully synced user ${cred.userId} for ${cred.boardType}`);
+      return { status: 'active' };
+    } catch (error) {
+      if (this.currentSignal()?.aborted || isSyncFenceError(error)) throw error;
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      await this.recordSyncFailure(cred, errorMsg);
+      this.handleError(error instanceof Error ? error : new Error(errorMsg), this.buildErrorContext(cred, error));
+      this.log(`[SyncRunner] ✗ Failed to sync user ${cred.userId} for ${cred.boardType}: ${errorMsg}`);
+      const resolved = error instanceof CredentialSyncError ? error : null;
+      return {
+        status: resolved?.syncStatus === 'expired' ? 'expired' : 'error',
+        error: errorMsg,
+        transient: isTransientAuroraError(error),
+      };
+    } finally {
+      this.callOptions = null;
+    }
   }
 
   /**
@@ -274,17 +354,18 @@ export class SyncRunner {
    * row in one cycle (e.g. recordInvalidCredentialFailure + this).
    */
   private async recordSyncFailure(cred: CredentialRecord, errorMsg: string): Promise<void> {
-    const { db } = this.getClient();
     const attemptAt = new Date();
-    await db
-      .update(auroraCredentials)
-      .set({
-        lastSyncAttemptAt: attemptAt,
-        consecutiveFailures: sql`COALESCE(${auroraCredentials.consecutiveFailures}, 0) + 1`,
-        lastSyncError: errorMsg,
-        updatedAt: attemptAt,
-      })
-      .where(and(eq(auroraCredentials.userId, cred.userId), eq(auroraCredentials.boardType, cred.boardType)));
+    await this.writeCredential(async (db) => {
+      await db
+        .update(auroraCredentials)
+        .set({
+          lastSyncAttemptAt: attemptAt,
+          consecutiveFailures: sql`COALESCE(${auroraCredentials.consecutiveFailures}, 0) + 1`,
+          lastSyncError: errorMsg,
+          updatedAt: attemptAt,
+        })
+        .where(and(eq(auroraCredentials.userId, cred.userId), eq(auroraCredentials.boardType, cred.boardType)));
+    });
 
     // consecutive_failures is incremented in SQL above; mirror the resulting
     // value in JS to fire the FLAPPING event exactly once, when the streak
@@ -538,12 +619,14 @@ export class SyncRunner {
     let token: string;
 
     try {
-      const loginResponse = await auroraClient.signIn(username, password);
+      const loginResponse = await auroraClient.signIn(username, password, { signal: this.currentSignal() });
       if (!loginResponse.token) {
         throw new Error('Login succeeded but no token returned');
       }
       token = loginResponse.token;
     } catch (loginError) {
+      // A stopped job is not a login failure; leave the credential untouched.
+      if (this.currentSignal()?.aborted) throw loginError;
       if (isTransientAuroraError(loginError)) {
         this.log(
           `[SyncRunner] Transient Aurora login error for user ${cred.userId} (${boardType}); will retry later: ${(loginError as Error).message}`,
@@ -566,9 +649,13 @@ export class SyncRunner {
 
     await this.updateStoredToken(cred.userId, cred.boardType, token);
 
-    const { client, db } = this.getClient();
+    const { db } = this.getClient();
     this.log(`[SyncRunner] Syncing user ${cred.userId} for ${boardType}...`);
-    await syncUserData(client, boardType, token, cred.auroraUserId, cred.userId, undefined, this.log.bind(this));
+    await syncUserData(db, boardType, token, cred.auroraUserId, cred.userId, {
+      log: this.log.bind(this),
+      transaction: this.callOptions?.transaction ?? this.config.transaction,
+      signal: this.currentSignal(),
+    });
     const succeededAt = new Date();
 
     // Circuits whose playlist belongs to another Boardsesh user get refused by
@@ -632,7 +719,9 @@ export class SyncRunner {
     // consecutive user syncs for the same board don't fire N independent
     // shared-sync loops (and N copies of setter notifications for the same
     // pre-existing climbs). Failures here must not poison the user's
-    // credential status, since the user-half already succeeded.
+    // credential status, since the user-half already succeeded. A background
+    // job skips it: the shared sync runs on its own schedule there.
+    if (this.callOptions?.skipSharedSync) return;
     await this.maybeRunSharedSync(boardType, token, cred.userId);
   }
 
@@ -657,6 +746,13 @@ export class SyncRunner {
     const cooldownMs = this.getSharedSyncCooldownMs();
     const { client, db } = this.getClient();
     const cursor = { boardType, cursorName: SHARED_SYNC_COOLDOWN_CURSOR };
+    // syncSharedData still takes a raw postgres-js client, which an injected
+    // database does not come with. Such a runner leaves the shared sync to its
+    // own job rather than opening a second pool behind the caller's back.
+    if (!client) {
+      this.log(`[SyncRunner] Skipping shared sync for ${boardType}: this runner has no pool of its own`);
+      return;
+    }
 
     // Claiming stamps the cursor, so a concurrent caller (another instance, or
     // the next user-sync landing while we're still working) is turned away.
@@ -909,7 +1005,6 @@ export class SyncRunner {
     lastSyncAt?: Date,
     credentialFailureUpdate: CredentialFailureUpdate = {},
   ): Promise<void> {
-    const { db } = this.getClient();
     const updateData: Record<string, unknown> = {
       syncStatus: status,
       syncError: error,
@@ -940,10 +1035,12 @@ export class SyncRunner {
       updateData.lastSyncError = credentialFailureUpdate.lastSyncError;
     }
 
-    await db
-      .update(auroraCredentials)
-      .set(updateData)
-      .where(and(eq(auroraCredentials.userId, userId), eq(auroraCredentials.boardType, boardType)));
+    await this.writeCredential(async (db) => {
+      await db
+        .update(auroraCredentials)
+        .set(updateData)
+        .where(and(eq(auroraCredentials.userId, userId), eq(auroraCredentials.boardType, boardType)));
+    });
   }
 
   private isInvalidCredentialError(error: unknown): boolean {
@@ -982,16 +1079,17 @@ export class SyncRunner {
 
   private async updateStoredToken(userId: string, boardType: string, token: string): Promise<void> {
     const encryptedToken = encrypt(token);
-    const { db } = this.getClient();
-    await db
-      .update(auroraCredentials)
-      .set({
-        auroraToken: encryptedToken,
-        credentialFailureCount: 0,
-        lastCredentialFailureAt: null,
-        updatedAt: new Date(),
-      })
-      .where(and(eq(auroraCredentials.userId, userId), eq(auroraCredentials.boardType, boardType)));
+    await this.writeCredential(async (db) => {
+      await db
+        .update(auroraCredentials)
+        .set({
+          auroraToken: encryptedToken,
+          credentialFailureCount: 0,
+          lastCredentialFailureAt: null,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(auroraCredentials.userId, userId), eq(auroraCredentials.boardType, boardType)));
+    });
   }
 
   async close(): Promise<void> {

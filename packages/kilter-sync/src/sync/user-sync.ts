@@ -20,7 +20,9 @@ import {
   myPlaylistOwnerEdge,
   selectUpstreamPlaylistOwners,
   acquireUserTickMutationLock,
+  isSyncFenceError,
   type ClimbStatsKey,
+  type SyncBatchRunner,
   type TickTimeSample,
 } from '@boardsesh/db/queries';
 
@@ -141,6 +143,14 @@ export type SyncKilterUserDataArgs = {
    * surfacing to the daemon's log.
    */
   log?: (msg: string) => void;
+  /**
+   * Runs each phase's writes in one transaction. Defaults to `db.transaction`.
+   * A background job passes its fenced runner here so every flush commits only
+   * while the job still owns its attempt, the link generation and the lease.
+   */
+  transaction?: SyncBatchRunner;
+  /** Cancels the PowerSync stream and stops before the next flush. */
+  signal?: AbortSignal;
 };
 
 export type SyncKilterUserDataResult = {
@@ -246,7 +256,10 @@ export async function syncKilterUserData({
   userId,
   accessToken,
   log = (msg) => console.warn(msg),
+  transaction,
+  signal,
 }: SyncKilterUserDataArgs): Promise<SyncKilterUserDataResult> {
+  const runBatch: SyncBatchRunner = transaction ?? ((callback) => db.transaction(callback));
   // Buffer ops by object_type so we can apply them in dependency order.
   // PowerSync delivers ops as a snapshot; each PUT carries the full row,
   // so we don't need to preserve the wire ordering — only the FK
@@ -290,7 +303,7 @@ export async function syncKilterUserData({
   async function flushLogs(): Promise<void> {
     if (buffer.logs.length === 0) return;
     const batch = buffer.logs.splice(0, buffer.logs.length);
-    await db.transaction((tx) => applyLogs(tx, userId, batch, aliasCache, log));
+    await runBatch((tx) => applyLogs(tx, userId, batch, aliasCache, log));
   }
 
   async function flushClimbRatings(): Promise<void> {
@@ -302,7 +315,7 @@ export async function syncKilterUserData({
     // next flush would skip those climb/angle keys as already claimed, silently
     // leaving no rating at all. That is reachable today: a failing flush is
     // caught by runPhase and the sync continues to the next one.
-    const committedClaims = await db.transaction((tx) =>
+    const committedClaims = await runBatch((tx) =>
       applyClimbRatings(tx, userId, batch, aliasCache, log, claimedRatingKeys),
     );
     for (const [naturalKey, claim] of committedClaims) {
@@ -328,9 +341,13 @@ export async function syncKilterUserData({
   // First failure per phase wins — later ones are the same cause re-hit.
   const phaseErrors = new Map<string, Error>();
   async function runPhase(name: string, phase: () => Promise<void>): Promise<void> {
+    signal?.throwIfAborted();
     try {
       await phase();
     } catch (error) {
+      // A fence refusal or an abort means "stop writing", not "this phase hit a
+      // bad row": end the whole sync now instead of running the next phase.
+      if (signal?.aborted || isSyncFenceError(error)) throw error;
       const failure = error instanceof Error ? error : new Error(String(error));
       log(`[kilter-sync] ${name} phase failed for user ${userId}: ${failure.message}`);
       if (!phaseErrors.has(name)) {
@@ -341,6 +358,7 @@ export async function syncKilterUserData({
 
   await streamKilterPowerSync({
     accessToken,
+    signal,
     streams: ['user_buckets', 'circuit_buckets'],
     onOp: async (op) => {
       switch (op.object_type) {
@@ -449,7 +467,7 @@ export async function syncKilterUserData({
 
   let circuitsResult: SyncKilterUserDataResult = { skippedForeignCircuits: 0 };
   await runPhase('circuits', async () => {
-    circuitsResult = await db.transaction((tx) =>
+    circuitsResult = await runBatch((tx) =>
       applyCircuits(tx, userId, buffer.circuits, filteredCircuitClimbs, aliasCache, log),
     );
   });

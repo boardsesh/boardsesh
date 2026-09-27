@@ -10,7 +10,12 @@ import {
 } from '@boardsesh/sync-runtime';
 import { normalizePlaylistColor } from '@boardsesh/shared-schema';
 import { DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR } from '@boardsesh/shared-schema/sync-error-codes';
-import { foreignPlaylistOwnerGuard, selectUpstreamPlaylistOwners } from '@boardsesh/db/queries';
+import {
+  foreignPlaylistOwnerGuard,
+  isSyncFenceError,
+  selectUpstreamPlaylistOwners,
+  type SyncBatchRunner,
+} from '@boardsesh/db/queries';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import { UNIFIED_TABLES } from '../db/table-select';
 import { playlists, playlistClimbs, playlistOwnership } from '@boardsesh/db/schema/app';
@@ -528,13 +533,12 @@ async function updateUserSyncs(tx: DrizzleDb, boardName: AuroraBoardName, userSy
 }
 
 export async function getLastSyncTimes(
-  pgClient: ReturnType<typeof postgres>,
+  db: OwnerQueryDb,
   boardName: AuroraBoardName,
   userId: number,
   tableNames: string[],
 ) {
   const userSyncsSchema = UNIFIED_TABLES.userSyncs;
-  const db = drizzle(pgClient);
   return db
     .select()
     .from(userSyncsSchema)
@@ -568,21 +572,41 @@ export type SyncTableResult = {
 
 export type SyncUserDataResult = Record<string, SyncTableResult>;
 
+export type SyncUserDataOptions = {
+  tables?: string[];
+  log?: (message: string) => void;
+  /**
+   * Runs each page's writes in one transaction. Defaults to `db.transaction`.
+   * A background job passes its fenced runner here so every page commits only
+   * while the job still owns its attempt, the link generation and the lease.
+   */
+  transaction?: SyncBatchRunner;
+  /** Checked between pages and passed to the Aurora request. */
+  signal?: AbortSignal;
+};
+
+/**
+ * Pull this user's tables from Aurora page by page, one transaction per page.
+ *
+ * Provider HTTP always runs between transactions, never inside one, so a
+ * fenced runner never holds its locks across a network call.
+ */
 export async function syncUserData(
-  pgClient: ReturnType<typeof postgres>,
+  db: OwnerQueryDb,
   board: AuroraBoardName,
   token: string,
   auroraUserId: number,
   nextAuthUserId: string,
-  tables: string[] = USER_TABLES,
-  log: (message: string) => void = console.info,
+  options: SyncUserDataOptions = {},
 ): Promise<SyncUserDataResult> {
+  const { tables = USER_TABLES, log = console.info, signal } = options;
+  const runBatch: SyncBatchRunner = options.transaction ?? ((callback) => db.transaction(callback));
   try {
     const syncParams: SyncOptions = {
       tables,
     };
 
-    const allSyncTimes = await getLastSyncTimes(pgClient, board, auroraUserId, tables);
+    const allSyncTimes = await getLastSyncTimes(db, board, auroraUserId, tables);
     const userSyncMap = new Map(allSyncTimes.map((sync) => [sync.tableName, sync.lastSynchronizedAt]));
 
     const defaultTimestamp = '1970-01-01 00:00:00.000000';
@@ -602,16 +626,16 @@ export async function syncUserData(
     let syncAttempts = 0;
     const maxSyncAttempts = 50;
 
-    const db = drizzle(pgClient);
-
     while (!isComplete && syncAttempts < maxSyncAttempts) {
+      // Between pages: a stopped job ends here, with every earlier page committed.
+      signal?.throwIfAborted();
       syncAttempts++;
       log(`Sync attempt ${syncAttempts} for user ${auroraUserId}`);
 
-      const syncResults = await userSync(board, auroraUserId, currentSyncParams, token);
+      const syncResults = await userSync(board, auroraUserId, currentSyncParams, token, signal);
 
       try {
-        await db.transaction(async (tx) => {
+        await runBatch(async (tx) => {
           for (const tableName of tables) {
             log(`Syncing ${tableName} for user ${auroraUserId} (batch ${syncAttempts})`);
             if (syncResults[tableName] && Array.isArray(syncResults[tableName])) {
@@ -658,6 +682,9 @@ export async function syncUserData(
           }
         });
       } catch (error) {
+        // A fence refusal or an abort is not a database failure: rethrow it as
+        // itself so the caller can tell "stop" from "this credential failed".
+        if (signal?.aborted || isSyncFenceError(error)) throw error;
         const formatted = formatDbError(error);
         log(formatted);
         throw new Error(formatted);
@@ -678,6 +705,7 @@ export async function syncUserData(
 
     return totalResults;
   } catch (error) {
+    if (signal?.aborted || isSyncFenceError(error)) throw error;
     const formatted = formatDbError(error);
     log(`Error syncing user data: ${formatted}`);
     throw error instanceof Error ? error : new Error(formatted);
