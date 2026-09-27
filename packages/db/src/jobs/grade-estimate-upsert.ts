@@ -17,7 +17,7 @@
  */
 import { sql, type SQL } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
-import { boardClimbGrades } from '../src/schema/app/climb-grades.js';
+import { boardClimbGrades } from '../schema/app/climb-grades';
 
 export type GradeEstimateRow = typeof boardClimbGrades.$inferInsert;
 export type GradeEstimateWriter = Pick<PgDatabase<PgQueryResultHKT>, 'insert'>;

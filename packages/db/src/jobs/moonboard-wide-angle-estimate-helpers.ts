@@ -3,7 +3,7 @@
  * moonboard-wide-angle-model.ts for the estimation math and why this exists.
  */
 import { sql, type SQL } from 'drizzle-orm';
-import type { boardClimbGrades } from '../src/schema/app/climb-grades.js';
+import type { boardClimbGrades } from '../schema/app/climb-grades';
 import {
   CONFIDENCE,
   MOONBOARD_SHALLOW_ANGLE,
@@ -12,7 +12,7 @@ import {
   pickWideAngleAnchor,
   type GradeCoefficients,
   type MoonboardWideAngleAnchor,
-} from '../src/queries/grade-model/index.js';
+} from '../queries/grade-model';
 
 export const MOONBOARD_WIDE_ANGLE_MODEL_VERSION = 'moonboard-wide-angle-v1';
 export const MOONBOARD_BOARD_TYPE = 'moonboard';

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { PgDialect } from 'drizzle-orm/pg-core';
-import { GRADE_ESTIMATE_COMPARED_COLUMNS, gradeEstimateConflictUpdate } from './grade-estimate-upsert.js';
+import { GRADE_ESTIMATE_COMPARED_COLUMNS, gradeEstimateConflictUpdate } from '../grade-estimate-upsert';
 
 const dialect = new PgDialect();
 

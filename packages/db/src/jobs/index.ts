@@ -39,3 +39,21 @@ export {
   type RefreshClimbNeighborsParams,
   type RefreshClimbNeighborsResult,
 } from './refresh-climb-neighbors';
+export {
+  runMoonboardAngleEstimates,
+  MoonboardFitUnusableError,
+  MOONBOARD_BOARD_TYPE,
+  MOONBOARD_ANGLE_MAX_BAND_HALF_WIDTH,
+  parseMoonboardAngleEstimateFlags,
+  type MoonboardAngleEstimateFlags,
+  type RefreshMoonboardAngleEstimatesOptions,
+  type RefreshMoonboardAngleEstimatesParams,
+  type RefreshMoonboardAngleEstimatesResult,
+} from './refresh-moonboard-angle-estimates';
+export {
+  runMoonboardWideAngleEstimates,
+  MOONBOARD_WIDE_ANGLE_MODEL_VERSION,
+  type RefreshMoonboardWideAngleEstimatesOptions,
+  type RefreshMoonboardWideAngleEstimatesParams,
+  type RefreshMoonboardWideAngleEstimatesResult,
+} from './refresh-moonboard-wide-angle-estimates';

@@ -45,6 +45,8 @@ export const BACKGROUND_JOB_FAMILIES = [
   'refresh-climb-grades',
   'refresh-climb-neighbors',
   'export-board-snapshots',
+  'refresh-moonboard-angle-estimates',
+  'refresh-moonboard-wide-angle-estimates',
 ] as const;
 
 export type BackgroundJobFamily = (typeof BACKGROUND_JOB_FAMILIES)[number];
