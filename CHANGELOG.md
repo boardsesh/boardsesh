@@ -4,6 +4,13 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-09-27
+
+### New
+
+- Link your Kilter or Tension account and your logbook starts syncing right away ([#5873](https://github.com/boardsesh/boardsesh/pull/5873))
+  Tap Sync now on a linked board to pull your latest sends
+
 ## 2026-09-26
 
 ### New

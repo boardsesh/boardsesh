@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-09-26T05:39:12.724Z",
+  "generatedAt": "2026-09-27T08:52:41.384Z",
   "entries": [
+    {
+      "prNumber": 5873,
+      "category": "new",
+      "title": "Link your Kilter or Tension account and your logbook starts syncing right away",
+      "mergedAt": "2026-09-27T08:39:38Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5873",
+      "body": "Tap Sync now on a linked board to pull your latest sends"
+    },
     {
       "prNumber": 5835,
       "category": "improved",
