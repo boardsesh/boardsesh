@@ -951,13 +951,13 @@ importers:
       drizzle-orm:
         specifier: ^0.45.2
         version: 0.45.2(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(expo-sqlite@57.0.2(expo@57.0.18)(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1))(@types/react@19.2.18)(bufferutil@4.1.0)(react@19.2.8)(supports-color@8.1.1))(react@19.2.8))(pg@8.23.0)(postgres@3.4.9(patch_hash=c9d57c6587ebb9a43c7f01fa63c3950592b1fe72e2e2c56ce93e2bd1ec419fcf))
+      tsx:
+        specifier: ^4.23.1
+        version: 4.23.12
     devDependencies:
       '@types/node':
         specifier: ^25.9.5
         version: 25.9.5
-      tsx:
-        specifier: ^4.23.1
-        version: 4.23.12
       typescript:
         specifier: ~7.0.2
         version: 7.0.2
