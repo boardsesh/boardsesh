@@ -206,7 +206,10 @@ export async function clearPendingProviderSyncRun(
     .where(and(keyMatches(input), eq(providerSyncControls.pendingRunId, input.runId)));
 }
 
-/** A climber asked for a sync while another run held the lease; tell them when it lands. */
+/**
+ * A climber asked for a sync while another run held the lease; tell them when
+ * it lands. Written only: the completion notification that reads it is #5618.
+ */
 export async function markProviderSyncRequesterWaiting(
   transaction: ProviderSyncDb,
   input: ProviderSyncKey,

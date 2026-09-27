@@ -116,6 +116,8 @@ export async function runProviderSync(
     started = await context.transaction(async (transaction) => {
       await enterFence(transaction, fence);
       if (await acquireCredentialSyncLease(transaction, { ...fence, ttlMs: CREDENTIAL_LEASE_TTL_MS })) return 'leased';
+      // Nothing reads this flag yet: its consumer is #5618, which tells the
+      // climber when the run holding the lease finishes.
       if (request.requestedBy === 'manual') await markProviderSyncRequesterWaiting(transaction, key);
       return 'busy';
     });

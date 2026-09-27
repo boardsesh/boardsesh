@@ -37,6 +37,8 @@ export type AuroraCredentialStatus = {
   syncError?: string | null;
   /** The queued or running sync this account is waiting on, if any. */
   pendingRunId?: string | null;
+  /** Sync now can queue a run for this account. */
+  syncAvailable?: boolean | null;
 };
 
 /** A "Sync now" request: the run that will sync the account. */

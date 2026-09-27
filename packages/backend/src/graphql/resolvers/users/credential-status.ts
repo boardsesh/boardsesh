@@ -12,5 +12,6 @@ export function mapAuroraCredentialStatus(credential: RestAuroraCredentialStatus
     syncStatus: credential.syncStatus,
     syncError: credential.syncError,
     pendingRunId: credential.pendingRunId,
+    syncAvailable: credential.syncAvailable,
   };
 }

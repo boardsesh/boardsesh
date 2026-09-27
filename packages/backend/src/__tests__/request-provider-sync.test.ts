@@ -89,6 +89,29 @@ describe('requestProviderSync', () => {
     expect(allRuns[0].payload).toMatchObject({ userId, boardType: 'tension', requestedBy: 'manual' });
   });
 
+  it('queues a kilter-user-sync run for a linked Kilter account, then joins it', async () => {
+    await db.insert(auroraCredentials).values({
+      userId,
+      boardType: 'kilter',
+      encryptedRefreshToken: 'ciphertext',
+      syncStatus: 'active',
+    });
+    await db.transaction((tx) => rotateLinkGeneration(tx, { userId, boardType: 'kilter', linked: true }));
+
+    const first = await syncNow('kilter');
+    const second = await syncNow('kilter');
+
+    expect(first).toMatchObject({ status: 'queued', coalesced: false });
+    expect(second).toEqual({ runId: first.runId, status: 'queued', coalesced: true });
+    const allRuns = await db.select().from(backgroundJobRuns);
+    expect(allRuns).toHaveLength(1);
+    expect(allRuns[0]).toMatchObject({
+      id: first.runId,
+      family: 'kilter-user-sync',
+      payload: { userId, boardType: 'kilter', requestedBy: 'manual' },
+    });
+  });
+
   it('refuses a board with no credential, or one that needs a relink', async () => {
     await expect(syncNow()).rejects.toMatchObject({ extensions: { code: 'PROVIDER_NOT_LINKED' } });
     await linkTension('expired');

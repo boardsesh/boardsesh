@@ -452,6 +452,8 @@ export type AuroraCredentialStatus = {
   hasToken: Scalars['Boolean']['output'];
   /** The queued or running sync this account is waiting on, if any */
   pendingRunId?: Maybe<Scalars['ID']['output']>;
+  /** Whether Sync now can queue a run for this account (its board's sync is switched on) */
+  syncAvailable?: Maybe<Scalars['Boolean']['output']>;
   /** Machine code or message from the last failed sync, when there is one */
   syncError?: Maybe<Scalars['String']['output']>;
   /** Sync state of the stored credential: pending, active, error, expired, or linked (no credential) */

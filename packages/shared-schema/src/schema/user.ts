@@ -71,6 +71,8 @@ export const userTypeDefs = /* GraphQL */ `
     syncError: String
     "The queued or running sync this account is waiting on, if any"
     pendingRunId: ID
+    "Whether Sync now can queue a run for this account (its board's sync is switched on)"
+    syncAvailable: Boolean
   }
 
   """
