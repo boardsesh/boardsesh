@@ -1079,9 +1079,11 @@ export class SyncRunner {
     this.lastSelfHealAt = now;
     try {
       const { db } = this.getClient();
-      const { keysHealed } = await selfHealStaleClimbStats(db);
-      if (keysHealed > 0) {
-        this.log(`[SyncRunner] Recompute self-heal: re-derived ${keysHealed} stale climb-stat key(s)`);
+      const { pendingKeysDrained, keysHealed } = await selfHealStaleClimbStats(db);
+      if (keysHealed > 0 || pendingKeysDrained > 0) {
+        this.log(
+          `[SyncRunner] Recompute self-heal: re-derived ${keysHealed} stale climb-stat key(s), drained ${pendingKeysDrained} pending key(s)`,
+        );
       }
     } catch (error) {
       this.handleError(error instanceof Error ? error : new Error(String(error)), {});

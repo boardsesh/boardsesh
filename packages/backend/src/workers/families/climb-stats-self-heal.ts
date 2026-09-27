@@ -1,9 +1,5 @@
 import { z } from 'zod';
-import {
-  drainPendingClimbStatsRecomputes,
-  findStaleClimbStatsKeys,
-  recomputeClimbStatsInBatches,
-} from '@boardsesh/db/queries';
+import { selfHealStaleClimbStats } from '@boardsesh/db/queries';
 import { logger } from '../../utils/logger';
 import type { BackgroundJobFamilyModule } from './types';
 
@@ -25,9 +21,10 @@ export const SELF_HEAL_BATCH_KEYS = 500;
  *    `board_climb_stats` row they feed (at most 5000 keys) and re-derive those
  *    rows: a debounced tick recompute a backend deploy dropped.
  *
- * Pure database work: the key scan is an unfenced read, and the recompute runs
- * through the attempt fence in batches of 500 keys, so no batch holds the
- * run-row lock for long.
+ * Pure database work, and the same pass the Aurora daemon runs
+ * (`selfHealStaleClimbStats`): the key scan is an unfenced read, and every
+ * recompute runs through the attempt fence in batches of 500 keys, so no batch
+ * holds the run-row lock for long.
  */
 export const climbStatsSelfHealFamily: BackgroundJobFamilyModule<ClimbStatsSelfHealPayload> = {
   name: 'climb-stats-self-heal',
@@ -47,14 +44,15 @@ export const climbStatsSelfHealFamily: BackgroundJobFamilyModule<ClimbStatsSelfH
   async execute(context) {
     // First the keys a sync job marked and never got to recompute (it stopped
     // between a page and its flush), oldest first; then the tick scan.
-    const drained = await drainPendingClimbStatsRecomputes(context.transaction, { batchKeys: SELF_HEAL_BATCH_KEYS });
-    const keys = await findStaleClimbStatsKeys(context.database);
-    const healed = await recomputeClimbStatsInBatches(context.transaction, keys, SELF_HEAL_BATCH_KEYS);
+    const { pendingKeysDrained, keysHealed } = await selfHealStaleClimbStats(context.database, {
+      runBatch: context.transaction,
+      batchKeys: SELF_HEAL_BATCH_KEYS,
+    });
     logger.info('[worker] climb stats self-heal finished', {
       runId: context.runId,
       family: context.family,
-      pendingKeysDrained: drained,
-      keysHealed: healed,
+      pendingKeysDrained,
+      keysHealed,
     });
   },
 };

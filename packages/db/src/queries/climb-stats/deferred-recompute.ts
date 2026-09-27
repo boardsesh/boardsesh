@@ -50,6 +50,11 @@ function keysPayload(keys: readonly ClimbStatsKey[]): string {
  * recomputing the same key either waits for this transaction and then sees its
  * ticks, or deletes the row first and this transaction re-inserts it. Either
  * way the key is recomputed after this write.
+ *
+ * The update keeps the row's oldest `requested_at`. That timestamp is the
+ * orphan clock {@link drainPendingClimbStatsRecomputes} reads, so resetting it
+ * on every write would let a key that keeps being re-marked stay younger than
+ * the drain's cutoff forever.
  */
 export async function markClimbStatsRecomputePending(
   transaction: DrizzleDb,
@@ -62,7 +67,8 @@ export async function markClimbStatsRecomputePending(
       INSERT INTO climb_stats_recompute_pending (board_type, climb_uuid, angle)
       SELECT k.board_type, k.climb_uuid, k.angle
         FROM jsonb_to_recordset(${payload}::jsonb) AS k(board_type text, climb_uuid text, angle integer)
-      ON CONFLICT (board_type, climb_uuid, angle) DO UPDATE SET requested_at = excluded.requested_at
+      ON CONFLICT (board_type, climb_uuid, angle)
+        DO UPDATE SET requested_at = LEAST(climb_stats_recompute_pending.requested_at, excluded.requested_at)
     `);
   }
 }
@@ -105,12 +111,14 @@ export async function recomputeClimbStatsInBatches(
   runBatch: RecomputeBatchRunner,
   keys: readonly ClimbStatsKey[],
   batchKeys: number = CLIMB_STATS_RECOMPUTE_BATCH_KEYS,
+  onBatchCommitted?: (batch: readonly ClimbStatsKey[]) => void,
 ): Promise<number> {
   if (!Number.isInteger(batchKeys) || batchKeys <= 0) throw new Error('Invalid recompute batch size');
   const distinct = sortedDistinct(keys);
   for (let start = 0; start < distinct.length; start += batchKeys) {
     const batch = distinct.slice(start, start + batchKeys);
     await runBatch((transaction) => recomputeAndClear(transaction, batch));
+    onBatchCommitted?.(batch);
   }
   return distinct.length;
 }
@@ -189,10 +197,14 @@ export class DeferredClimbStatsRecompute {
     return this.committed.size;
   }
 
-  /** Recompute every committed key in bounded batches, then forget them. */
+  /**
+   * Recompute every committed key in bounded batches. Each key is forgotten
+   * only once the batch that recomputed it committed, so a flush that throws
+   * part-way keeps the rest for a retry (and their pending rows for the drain).
+   */
   async flush(runBatch: RecomputeBatchRunner, batchKeys?: number): Promise<number> {
-    const keys = [...this.committed.values()];
-    this.committed = new Map();
-    return recomputeClimbStatsInBatches(runBatch, keys, batchKeys);
+    return recomputeClimbStatsInBatches(runBatch, [...this.committed.values()], batchKeys, (batch) => {
+      for (const key of batch) this.committed.delete(keyOf(key));
+    });
   }
 }

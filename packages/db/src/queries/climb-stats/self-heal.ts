@@ -1,6 +1,11 @@
 import { sql } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
-import { recomputeClimbStatsBulk, type ClimbStatsKey } from './recompute';
+import type { ClimbStatsKey } from './recompute';
+import {
+  CLIMB_STATS_RECOMPUTE_BATCH_KEYS,
+  drainPendingClimbStatsRecomputes,
+  recomputeClimbStatsInBatches,
+} from './deferred-recompute';
 import { rowsOf } from '../util/rows';
 
 type DrizzleDb = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
@@ -18,7 +23,10 @@ type DrizzleDb = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
 const SELF_HEAL_LOOKBACK_HOURS = 3;
 const SELF_HEAL_BATCH = 5000;
 
-export type SelfHealResult = { keysHealed: number };
+export type SelfHealResult = { pendingKeysDrained: number; keysHealed: number };
+
+/** Runs one write batch in one transaction, behind whatever fences its owner applies. */
+type SelfHealBatchRunner = <Result>(callback: (transaction: DrizzleDb) => Promise<Result>) => Promise<Result>;
 
 /**
  * The keys one self-heal pass would re-derive: flash/send ticks updated within
@@ -57,16 +65,26 @@ export async function findStaleClimbStatsKeys(
 }
 
 /**
- * One bounded pass of the recompute self-heal: find the stale keys
- * ({@link findStaleClimbStatsKeys}) and re-derive them with
- * recomputeClimbStatsBulk. One pass is cheap and never runs away.
+ * One bounded pass of the recompute self-heal, the single path both the
+ * Aurora daemon and the `climb-stats-self-heal` job run:
+ *
+ * 1. drain `climb_stats_recompute_pending` rows a stopped sync left behind
+ *    ({@link drainPendingClimbStatsRecomputes});
+ * 2. find the stale keys ({@link findStaleClimbStatsKeys}, an unfenced read)
+ *    and re-derive them with {@link recomputeClimbStatsInBatches}.
+ *
+ * Every write goes through `runBatch`, one bounded batch per transaction. A
+ * background job passes its attempt fence; the daemon takes the default, a
+ * plain transaction per batch.
  */
 export async function selfHealStaleClimbStats(
   db: DrizzleDb,
-  opts: { limit?: number; lookbackHours?: number } = {},
+  opts: { limit?: number; lookbackHours?: number; batchKeys?: number; runBatch?: SelfHealBatchRunner } = {},
 ): Promise<SelfHealResult> {
+  const runBatch: SelfHealBatchRunner = opts.runBatch ?? ((callback) => db.transaction(callback));
+  const batchKeys = opts.batchKeys ?? CLIMB_STATS_RECOMPUTE_BATCH_KEYS;
+  const pendingKeysDrained = await drainPendingClimbStatsRecomputes(runBatch, { batchKeys });
   const keys = await findStaleClimbStatsKeys(db, opts);
-  if (keys.length === 0) return { keysHealed: 0 };
-  await recomputeClimbStatsBulk(db, keys);
-  return { keysHealed: keys.length };
+  const keysHealed = await recomputeClimbStatsInBatches(runBatch, keys, batchKeys);
+  return { pendingKeysDrained, keysHealed };
 }
