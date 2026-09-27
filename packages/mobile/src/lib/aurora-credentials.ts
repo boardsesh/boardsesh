@@ -20,6 +20,8 @@ export type AuroraCredentialStatus = {
    * once it finished; absent from backends older than the field.
    */
   pendingRunId?: string | null;
+  /** The backend can run "Sync now" for this account. Absent from older backends. */
+  syncAvailable?: boolean;
   createdAt: string;
 };
 

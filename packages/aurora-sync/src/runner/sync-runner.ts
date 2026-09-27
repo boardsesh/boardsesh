@@ -336,7 +336,9 @@ export class SyncRunner {
       return {
         status: resolved?.syncStatus === 'expired' ? 'expired' : 'error',
         error: errorMsg,
-        transient: isTransientAuroraError(error),
+        // A deadlock or serialization failure is the database, not the
+        // account: worth a retry, like an Aurora outage.
+        transient: isTransientAuroraError(error) || /code=(40P01|40001)\b/.test(errorMsg),
       };
     } finally {
       this.callOptions = null;

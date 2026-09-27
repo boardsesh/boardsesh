@@ -11,7 +11,7 @@ import type {
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { applyRateLimit, requireAuthenticated, validateInput } from '../shared/helpers';
-import { coalesceInteractiveRun, lockProviderSyncControl, rotateLinkGeneration } from '@boardsesh/db/queries';
+import { coalesceInteractiveRun, ensureProviderSyncControl, lockProviderSyncControl } from '@boardsesh/db/queries';
 import { loadProfileRoleFlags } from './role-flags';
 import { FAVORITE_COUNT_SUBQUERY } from './favorite-count';
 import { logger } from '../../../utils/logger';
@@ -198,22 +198,24 @@ export const userMutations = {
     const key = { userId, boardType };
 
     return db.transaction(async (tx) => {
-      const control = await lockProviderSyncControl(tx, key);
+      let control = await lockProviderSyncControl(tx, key);
       const [credential] = await tx
         .select({ syncStatus: dbSchema.auroraCredentials.syncStatus })
         .from(dbSchema.auroraCredentials)
         .where(and(eq(dbSchema.auroraCredentials.userId, userId), eq(dbSchema.auroraCredentials.boardType, boardType)));
       const syncable = credential && SYNCABLE_CREDENTIAL_STATUSES.includes(credential.syncStatus);
-      if (!syncable || (control && !control.linked)) {
+      if (syncable && !control) {
+        // A credential linked before control rows existed. Create the row
+        // without a new generation (concurrent taps land on one row), then lock it.
+        await ensureProviderSyncControl(tx, key);
+        control = await lockProviderSyncControl(tx, key);
+      }
+      if (!syncable || !control?.linked) {
         throw new GraphQLError('Link this board account before syncing it.', {
           extensions: { code: 'PROVIDER_NOT_LINKED' },
         });
       }
-      // A credential linked before its control row existed gets one now. No job
-      // can hold a generation for a row that did not exist, so nothing is fenced off.
-      const linkGeneration = control
-        ? control.linkGeneration
-        : (await rotateLinkGeneration(tx, { ...key, linked: true })).linkGeneration;
+      const { linkGeneration } = control;
 
       const waiting = await coalesceInteractiveRun(tx, key);
       if (waiting) return { runId: waiting.runId, status: waiting.status, coalesced: true };

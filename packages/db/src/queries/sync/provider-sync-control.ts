@@ -62,18 +62,17 @@ export class CredentialLeaseLostError extends Error {
 
 /**
  * An error that means "stop writing", not "this credential failed": a fence
- * refused the batch, or the run was aborted. Runners rethrow these untouched
- * instead of recording them as a sync failure on the credential.
+ * refused the batch. Runners rethrow these untouched instead of recording them
+ * as a sync failure on the credential. An abort is recognised separately, by
+ * the caller's own signal being aborted: matching on the error name would also
+ * catch a daemon's unrelated timeout and skip its failure bookkeeping.
  */
 export function isSyncFenceError(error: unknown): boolean {
-  if (
+  return (
     error instanceof StaleLinkGenerationError ||
     error instanceof CredentialLeaseLostError ||
     error instanceof BackgroundJobAttemptLostError
-  ) {
-    return true;
-  }
-  return error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError');
+  );
 }
 
 const keyMatches = ({ userId, boardType }: ProviderSyncKey) =>
@@ -105,6 +104,18 @@ export async function rotateLinkGeneration(
     })
     .returning({ linkGeneration: providerSyncControls.linkGeneration });
   return { linkGeneration: row.linkGeneration };
+}
+
+/**
+ * Create the control row for a credential linked before rows existed, without
+ * starting a new generation: two concurrent callers both land on one row, and
+ * no queued job is fenced off by it.
+ */
+export async function ensureProviderSyncControl(transaction: ProviderSyncDb, key: ProviderSyncKey): Promise<void> {
+  await transaction
+    .insert(providerSyncControls)
+    .values({ userId: key.userId, boardType: key.boardType, linked: true })
+    .onConflictDoNothing();
 }
 
 /** Lock the control row for a read-modify-write (the "Sync now" path). */
@@ -244,7 +255,12 @@ export async function clearFinishedProviderSyncRuns(database: ProviderSyncDb, li
         AND ${backgroundJobRuns.status} IN ('queued', 'running', 'retrying')
     )`;
   const candidates = await database
-    .select({ userId: providerSyncControls.userId, boardType: providerSyncControls.boardType })
+    .select({
+      userId: providerSyncControls.userId,
+      boardType: providerSyncControls.boardType,
+      pendingRunId: providerSyncControls.pendingRunId,
+      activeRunId: providerSyncControls.activeRunId,
+    })
     .from(providerSyncControls)
     .where(
       or(
@@ -255,6 +271,10 @@ export async function clearFinishedProviderSyncRuns(database: ProviderSyncDb, li
     .limit(limit);
   let cleared = 0;
   for (const candidate of candidates) {
+    // Compare-and-set on the run IDs just read. A producer that re-pointed the
+    // row meanwhile (a new pending run, a new lease) commits a row this WHERE no
+    // longer matches, so the recheck skips it instead of judging the new run
+    // with this statement's older snapshot, in which it does not exist yet.
     const updated = await database
       .update(providerSyncControls)
       .set({
@@ -263,7 +283,13 @@ export async function clearFinishedProviderSyncRuns(database: ProviderSyncDb, li
         activeLeaseUntil: sql`CASE WHEN ${runIsFinished(providerSyncControls.activeRunId)} THEN NULL ELSE ${providerSyncControls.activeLeaseUntil} END`,
         updatedAt: sql`now()`,
       })
-      .where(keyMatches(candidate))
+      .where(
+        and(
+          keyMatches(candidate),
+          sql`${providerSyncControls.pendingRunId} IS NOT DISTINCT FROM ${candidate.pendingRunId}::uuid`,
+          sql`${providerSyncControls.activeRunId} IS NOT DISTINCT FROM ${candidate.activeRunId}::uuid`,
+        ),
+      )
       .returning({ userId: providerSyncControls.userId });
     cleared += updated.length;
   }

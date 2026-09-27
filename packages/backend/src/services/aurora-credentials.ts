@@ -36,6 +36,8 @@ export type AuroraCredentialStatus = {
   syncError: string | null;
   /** The queued or running interactive sync for this link, if any: the card shows "Syncing". */
   pendingRunId: string | null;
+  /** "Sync now" can queue a run for this link: its family is enabled and a credential is stored. */
+  syncAvailable: boolean;
   createdAt: string;
 };
 
@@ -289,6 +291,7 @@ export async function getAuroraCredentialStatuses(userId: string): Promise<Auror
   ]);
 
   const statusesByBoard = new Map<string, AuroraCredentialStatus>();
+  const enabledFamilies = enabledBatchFamilies();
 
   for (const credential of credentials) {
     statusesByBoard.set(credential.boardType, {
@@ -303,6 +306,7 @@ export async function getAuroraCredentialStatuses(userId: string): Promise<Auror
       syncStatus: credential.syncStatus,
       syncError: credential.syncError,
       pendingRunId: credential.pendingRunId ?? null,
+      syncAvailable: enabledFamilies.includes(providerSyncFamily(credential.boardType)),
       createdAt: credential.createdAt.toISOString(),
     });
   }
@@ -318,6 +322,7 @@ export async function getAuroraCredentialStatuses(userId: string): Promise<Auror
       syncStatus: 'linked',
       syncError: null,
       pendingRunId: null,
+      syncAvailable: false,
       createdAt: mapping.linkedAt.toISOString(),
     });
   }
@@ -507,6 +512,7 @@ export async function saveAuroraCredential(input: {
     syncStatus: 'pending',
     syncError: null,
     pendingRunId: syncRunId,
+    syncAvailable: enabledBatchFamilies().includes(providerSyncFamily(input.boardType)),
     createdAt: now.toISOString(),
     ...(syncRunId ? { syncRunId } : {}),
   };

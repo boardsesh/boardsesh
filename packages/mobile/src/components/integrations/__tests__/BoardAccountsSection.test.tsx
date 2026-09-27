@@ -570,6 +570,7 @@ describe('BoardAccountsSection — Sync now', () => {
     syncStatus: 'active',
     syncError: null,
     pendingRunId: null,
+    syncAvailable: true,
     createdAt: '2026-01-01T00:00:00.000Z',
     ...overrides,
   });
@@ -611,6 +612,13 @@ describe('BoardAccountsSection — Sync now', () => {
     fireEvent.click(button(container, 'aurora.card.syncNow')!);
 
     await waitFor(() => expect(mocks.showToast).toHaveBeenCalledWith('aurora.mobile.syncNowRateLimited', 'warning'));
+  });
+
+  it('offers no Sync now while the backend does not run it for this board', () => {
+    mocks.credentials = [tensionCredential({ syncAvailable: false })];
+    const { container } = render(<BoardAccountsSection />);
+
+    expect(button(container, 'aurora.card.syncNow')).toBeNull();
   });
 
   it('offers no Sync now on an account that has to be reconnected first', () => {

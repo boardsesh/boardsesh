@@ -503,7 +503,10 @@ Every write batch goes through `fencedBatchRunner`
 Lock order, for every writer: ledger run row, then the user tick advisory lock,
 then the control row, then credential and tick rows. The link producers and
 "Sync now" lock the control row before they touch `aurora_credentials`, so a
-relink waits for an in-flight batch instead of deadlocking with it. Provider HTTP
+relink waits for an in-flight batch instead of deadlocking with it. The daemons
+take no lease, but every Aurora page transaction (daemon or job) takes the tick
+lock before its first row lock, so a daemon and a job on the same account
+serialize instead of deadlocking. Provider HTTP
 (Aurora login and `/sync`, Keycloak, PowerSync) always runs between batches.
 The Kilter token refresh keeps its own unfenced `FOR UPDATE` transaction on the
 credential row, exactly as the daemon runs it. A fenced batch holds the run-row lock, so
@@ -554,7 +557,8 @@ an enqueue, never by leaning on pg-boss to hold two queued runs for one account.
 The singleton key carries the generation, so a relink gets its own run instead
 of being deduplicated onto the old generation's run, which could only fail.
 `AuroraCredentialStatus.pendingRunId` (GraphQL and the REST credential list) is
-what the app shows as "Syncing".
+what the app shows as "Syncing"; the REST list's `syncAvailable` says whether the
+board's family is enabled, so the app hides "Sync now" until it is.
 
 ### Cutover
 

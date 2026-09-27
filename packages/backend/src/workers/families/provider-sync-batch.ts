@@ -87,8 +87,10 @@ function fenceFailure(error: unknown): unknown {
  * The provider-agnostic body of `aurora-user-sync` and `kilter-user-sync`:
  *
  * a. under the fences, check the generation and take the lease. A live lease
- *    held by another run (a daemon-era routine sync, a previous attempt that
- *    has not expired) ends this attempt with a retryable `CREDENTIAL_BUSY`;
+ *    held by another run (an earlier attempt whose lease has not expired;
+ *    from PR-3, the routine cycle) ends this attempt with a retryable
+ *    `CREDENTIAL_BUSY`. The daemons take no lease: they share the tick lock
+ *    order instead, and an overlap costs one duplicate, idempotent sync;
  *    a manual request first records that the climber is waiting;
  * b. claim the named credential (`claimCredentialForRun`, unfenced: it only
  *    stamps the attempt clock);

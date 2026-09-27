@@ -109,6 +109,7 @@ describe('linking a board queues its first sync', () => {
 
     expect(status.syncRunId).toBeDefined();
     expect(status.pendingRunId).toBe(status.syncRunId);
+    expect(status.syncAvailable).toBe(true);
     const control = await controlRow();
     const [run] = await runs();
     expect(await runs()).toHaveLength(1);
@@ -164,6 +165,7 @@ describe('linking a board queues its first sync', () => {
 
     expect(status.syncRunId).toBeUndefined();
     expect(status.pendingRunId).toBeNull();
+    expect(status.syncAvailable).toBe(false);
     expect(await runs()).toEqual([]);
     expect(await controlRow()).toMatchObject({ linked: true, pendingRunId: null });
   });

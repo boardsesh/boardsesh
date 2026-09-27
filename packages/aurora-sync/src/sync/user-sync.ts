@@ -11,6 +11,7 @@ import {
 import { normalizePlaylistColor } from '@boardsesh/shared-schema';
 import { DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR } from '@boardsesh/shared-schema/sync-error-codes';
 import {
+  acquireUserTickMutationLock,
   foreignPlaylistOwnerGuard,
   isSyncFenceError,
   selectUpstreamPlaylistOwners,
@@ -636,6 +637,13 @@ export async function syncUserData(
 
       try {
         await runBatch(async (tx) => {
+          // Every page takes the user tick lock before its first row lock, so
+          // the daemon and a fenced worker batch (which takes it first too)
+          // lock in one order. Taken only when the ascents table was reached,
+          // the daemon would hold board_users/board_walls/board_climbs rows
+          // while waiting for the lock a worker batch holds while waiting for
+          // those rows: a deadlock on a just-linked account both sync.
+          if (nextAuthUserId) await acquireUserTickMutationLock(tx, nextAuthUserId);
           for (const tableName of tables) {
             log(`Syncing ${tableName} for user ${auroraUserId} (batch ${syncAttempts})`);
             if (syncResults[tableName] && Array.isArray(syncResults[tableName])) {

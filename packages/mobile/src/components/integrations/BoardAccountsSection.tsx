@@ -1017,8 +1017,10 @@ function BoardAccountCard({
   const totalUnsynced = unsyncedCounts.ascents + unsyncedCounts.climbs;
   const isExpired = credential?.syncStatus === 'expired';
   // Only a stored credential can sync: a bare mapping ('linked') or an expired
-  // one needs the climber to (re)connect first.
-  const canSyncNow = credential ? SYNCABLE_SYNC_STATUSES.has(credential.syncStatus) : false;
+  // one needs the climber to (re)connect first. The backend also says whether
+  // it runs "Sync now" for this board yet, so the button never promises a
+  // sync that would only answer "not switched on".
+  const canSyncNow = credential?.syncAvailable === true && SYNCABLE_SYNC_STATUSES.has(credential.syncStatus);
   // The sync daemons write a machine-readable code here for conditions the
   // client is expected to explain in the viewer's language (#3526). Everything
   // else in `sync_error` is still free text from an older path — those keep the

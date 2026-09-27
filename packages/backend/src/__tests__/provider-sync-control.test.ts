@@ -6,6 +6,7 @@ import { createDb } from '@boardsesh/db/client';
 import { auroraCredentials, backgroundJobRuns, providerSyncControls } from '@boardsesh/db/schema';
 import {
   StaleLinkGenerationError,
+  isSyncFenceError,
   acquireCredentialSyncLease,
   assertLinkGenerationCurrent,
   claimCredentialForRun,
@@ -156,6 +157,16 @@ describe('link generation', () => {
     await expect(
       database.transaction((tx) => assertLinkGenerationCurrent(tx, { ...key, linkGeneration })),
     ).rejects.toBeInstanceOf(StaleLinkGenerationError);
+  });
+});
+
+describe('fence errors', () => {
+  it('are the fence refusals only, never an error that merely looks like an abort', () => {
+    expect(isSyncFenceError(new StaleLinkGenerationError())).toBe(true);
+    const timeout = new Error('timed out');
+    timeout.name = 'TimeoutError';
+    // A daemon's own timeout must still be recorded against the credential.
+    expect(isSyncFenceError(timeout)).toBe(false);
   });
 });
 
