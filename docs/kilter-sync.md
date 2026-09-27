@@ -240,15 +240,17 @@ After the worker cutover the `kilter-catalog-sync` job owns it instead (hourly
 at :23, `SyncRunner.runCatalogSyncJob`): a refresh-grant token from the most
 recently successful `active` Kilter credential (else the
 `KILTER_TEST_USERNAME`/`KILTER_TEST_PASSWORD` account), the same slot claimed
-with a 50-minute cooldown (60 against an hourly cron would skip every other
-tick), then the catalog, the weekly stats repair and the weekly history
+with a 50-minute cooldown measured from the claim (the end-of-run marker is
+backdated by the run's length, so a long pull never makes the next hourly tick
+wait), then the catalog, the weekly stats repair and the weekly history
 snapshot. A transient failure, an abort or a database error re-stamps a
 five-minute cooldown so the job's one retry can run; a permanent Kilter
 failure keeps the full one. The catalog's REST client honours `Retry-After`
 (capped at 5 minutes), else backs off exponentially up to 30 s. The catalog
 writes are not behind the attempt fence (it interleaves requests and writes
 per layout); the slot is the single-writer guarantee, as it is for the daemon,
-and the job's signal stops it between layout groups.
+and the job's signal stops it at the next REST request (the catalog GETs and
+their 429 backoff take the signal) or layout group.
 
 ### Prerequisite: fingerprint backfill
 
@@ -500,7 +502,10 @@ The daemon stays the owner of routine syncs until the cutover sets
   (`deferStatsRecompute`, on by default when `transaction` is set): `applyLogs`
   collects the keys it wrote, and once the flush commits they are recomputed in
   batches of at most 500 keys, one transaction each, so no fenced batch blocks
-  the job's heartbeat for long. The daemon keeps the inline recompute.
+  the job's heartbeat for long. The keys are written to
+  `climb_stats_recompute_pending` in the flush itself and cleared by the batch
+  that recomputes them; a worker that stops in between leaves them for the
+  hourly self-heal. The daemon keeps the inline recompute.
 - A 429 from Keycloak, the REST portal or PowerSync carries `Retry-After` into
   `KilterApiError.retryAfterMs` and the `SyncOutcome` (a PowerSync 429 is now
   `rate_limited`; it was a transient `powersync` error before). The routine

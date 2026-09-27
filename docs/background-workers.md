@@ -90,7 +90,7 @@ remain supported.
 | --- | --- |
 | SELECT, UPDATE | `aurora_credentials`, `provider_sync_controls` |
 | SELECT | `users (id, name)`, `user_profiles (user_id, display_name)`, `user_board_mappings`, `board_climb_aliases` |
-| SELECT, INSERT, UPDATE, DELETE | `boardsesh_ticks`, `logbook_sync_skips`, `board_users`, `board_walls`, `board_climbs`, `board_tags`, `board_circuits`, `board_user_syncs`, `board_climb_stats`, `board_climb_ratings`, `playlists`, `playlist_climbs`, `playlist_ownership` |
+| SELECT, INSERT, UPDATE, DELETE | `boardsesh_ticks`, `logbook_sync_skips`, `board_users`, `board_walls`, `board_climbs`, `board_tags`, `board_circuits`, `board_user_syncs`, `board_climb_stats`, `board_climb_ratings`, `playlists`, `playlist_climbs`, `playlist_ownership`, `climb_stats_recompute_pending` |
 | INSERT | `sync_deletions` (the `boardsesh_ticks` and `playlist*` delete triggers write it as the caller) |
 
 It is proven, not trusted: `services/__tests__/job-queue-roles.test.ts` runs a
@@ -115,6 +115,7 @@ these grants. A table the appliers start writing fails that test first.
 | --- | --- |
 | SELECT | `boardsesh_ticks (id, user_id, board_type, climb_uuid, angle, status, origin, quality, difficulty, climbed_at, updated_at, kilter_id, kilter_synced_at, kilter_detached_at)`, `board_climbs (uuid, board_type, user_id)`, `users (id, name)`, `user_profiles (user_id, display_name)` |
 | SELECT, INSERT, UPDATE | `board_climb_stats` |
+| SELECT, UPDATE, DELETE | `climb_stats_recompute_pending` (UPDATE because the drain reads it `FOR UPDATE SKIP LOCKED`) |
 
 No application SQL function is called directly; the trigger functions these
 writes fire (the `sync_seq` stamps, the location triggers) run as the caller,
@@ -199,7 +200,7 @@ module. The module declares:
 | `refresh-moonboard-wide-angle-estimates` | `batch` | 7,200 s | 1, after 900 s | 6 days | `weekly` |
 | `aurora-user-sync` | `interactive-import` | 1800 s (heartbeat 300 s) | 3, 30 s backoff to 300 s | 2 h | `userId:boardType:linkGeneration` |
 | `kilter-user-sync` | `interactive-import` | 1800 s (heartbeat 300 s) | 3, 30 s backoff to 300 s | 2 h | `userId:kilter:linkGeneration` |
-| `provider-routine-cycle` | `routine-provider` | 600 s (heartbeat 300 s) | none | 15 min | `aurora` / `kilter` |
+| `provider-routine-cycle` | `routine-provider` | 600 s (heartbeat 300 s) | none | 75 min | `aurora` / `kilter` |
 | `aurora-shared-sync` | `routine-provider` | 3600 s (heartbeat 300 s), priority -5 | 1, after 300 s | 2 h | the board |
 | `kilter-catalog-sync` | `routine-provider` | 3600 s (heartbeat 300 s) | 1, after 300 s | 2 h | `kilter` |
 | `moonboard-locations-sync` | `routine-provider` | 1800 s (heartbeat 120 s) | 1, after 600 s | 24 h | `moonboard` |
@@ -531,8 +532,9 @@ already landed.
 
 `aurora-user-sync` and `kilter-user-sync` sync one climber's linked account:
 right after they link it, and when they tap "Sync now". The payload is
-`{ userId, boardType, linkGeneration, requestedBy: 'link' | 'manual' }`; it
-names the account, never how to log in. Worker startup fails when a role serves
+`{ userId, boardType, linkGeneration, requestedBy: 'link' | 'manual' | 'routine' }`
+(`routine`: the routine cycle handed over a never-synced account); it names the
+account, never how to log in. Worker startup fails when a role serves
 either family and `AURORA_CREDENTIALS_SECRET` (both) or `KILTER_OAUTH_CLIENT_ID`
 (Kilter) is missing.
 
@@ -564,12 +566,18 @@ no heartbeat lands while it runs, and pg-boss fails an active job at
 therefore a hard ceiling on one batch: one Aurora page, one 500-op Kilter
 flush, or the whole circuits phase. A batch that needs longer can never
 succeed. The stats recompute those batches trigger is not part of them: with a
-batch runner the appliers collect the `(climb, angle)` keys they wrote, and
-after the page or flush commits the keys are recomputed in batches of at most
-500 (`DeferredClimbStatsRecompute`, one seed INSERT and one aggregate UPDATE
-each), every batch its own fenced transaction. The daemons, which pass no batch
-runner, keep the inline recompute. Keys lost to a crash between a page and its
-recompute are caught by the hourly `climb-stats-self-heal`.
+batch runner the appliers write the `(climb, angle)` keys they touched to
+`climb_stats_recompute_pending` in the page or flush transaction itself (an
+upsert, so the key commits with the ticks), and after the page or flush commits
+the keys are recomputed in batches of at most 500 (`DeferredClimbStatsRecompute`:
+lock the pending rows, one seed INSERT, one aggregate UPDATE, delete the rows),
+every batch its own fenced transaction. The daemons, which pass no batch runner,
+keep the inline recompute and never write the table. A worker that stops between
+a page and its recompute leaves the rows behind, and the hourly
+`climb-stats-self-heal` drains every row older than two minutes, oldest first.
+That covers what its tick scan cannot see: a key with no stats row yet (a
+first-link climber's own climbs), a key whose tick was deleted or downgraded,
+and keys past the scan's 5000-row limit.
 
 ### One run
 
@@ -673,6 +681,7 @@ it, then succeeds and logs `[worker] routine cycle finished` with the reason:
 | `BUDGET` | `ROUTINE_CYCLE_BUDGET_MS` passed (default 180 000, at most 400 000), checked before each claim; a started credential finishes |
 | `NO_CREDENTIALS` | nothing is due |
 | `PROVIDER_THROTTLED` | the provider answered 429 with `Retry-After`: that credential's `last_sync_attempt_at` is set to `now() + delay` (capped at 6 h), which keeps it out of the claim and at the back of the queue, and the cycle ends |
+| `CYCLE_DEADLINE` | a credential's sync was still running one minute before the lease ends: it is stopped, a transient `CYCLE_DEADLINE` failure is recorded on it under the still-live fence (so `consecutive_failures` backoff parks it and `last_sync_error` shows it), and the cycle ends |
 | `ABORTED` | shutdown or a lost attempt; the run records the abort |
 
 Both limits are validated at worker startup. Why these numbers: 4 credentials
@@ -681,7 +690,25 @@ every 1 to 15 minutes, on the worker's fixed 2 + 1 connections. The 3-minute
 budget leaves the rest of the 600 s lease for the credential in flight: an
 incremental Aurora sync is a login and one or two pages, a Kilter one a token
 refresh and one PowerSync snapshot. The 300 s heartbeat window bounds one
-fenced batch (a page, a 500-op flush, a 500-key recompute), not a credential.
+fenced batch (a page, a 500-op flush, a 500-key recompute), not a credential;
+a credential gets its own deadline, one minute before the lease ends.
+
+An account that has never synced (`last_sync_at IS NULL`) is not synced in the
+cycle: a full first import can outlast a 600 s lease. The cycle hands it to its
+interactive family (`aurora-user-sync` / `kilter-user-sync`, 30-minute lease)
+with `requestedBy: 'routine'`, enqueued inside the fenced transaction, and
+records the run as `pending_run_id`. If a link or "Sync now" run is already
+pending it joins that run instead of queueing another. This needs the
+`interactive-import` worker to be running, which the provider sync cutover
+(above) already requires.
+
+The run's absolute deadline is 75 minutes, not the lease's 10: the routine
+worker runs one job at a time, so a cycle can sit queued behind an hourly
+`aurora-shared-sync` or `kilter-catalog-sync` whose own lease is an hour. With
+a 15-minute deadline such a cycle would already be past it when fetched and
+fail at claim; 3600 + 900 s covers the wait. A cycle that waited that long
+simply runs late; the next one is queued behind it (one queued plus one active
+per provider).
 
 The claim is the daemon's `claimNextCredentialForSync` (attempt-clock fairness,
 failure backoff, the 30 s reclaim gap) with `excludeLeased`, run inside the
@@ -704,8 +731,10 @@ one is 5 minutes away.
 most recently successful `active` credential (Kilter falls back to the
 `KILTER_TEST_USERNAME`/`KILTER_TEST_PASSWORD` account) and never record
 anything against it. They claim the daemons' `board_shared_syncs` cooldown slot
-with 50 minutes (the slot is re-stamped when a run ends, so the daemons' 60
-would skip every other hourly tick). A held slot succeeds as a logged
+with 50 minutes, measured from the claim: the slot is re-stamped when a run
+ends, backdated by the run's length, so however long a run takes the next
+hourly tick finds it free (and a second writer inside the hour is still turned
+away). A held slot succeeds as a logged
 `SHARED_SYNC_COOLDOWN` / `CATALOG_SYNC_COOLDOWN`, no credential to borrow as
 `SHARED_SYNC_NO_DONOR` / `CATALOG_SYNC_NO_DONOR`; neither does any work. A
 transient provider failure is a retryable `PROVIDER_UNAVAILABLE` and re-stamps
@@ -725,9 +754,11 @@ slot is its single-writer guarantee. Details:
 `MOONBOARD_CREDENTIALS_ABSENT` and writes nothing, not even a freshness marker
 ([moonboard-sync.md](moonboard-sync.md#scheduled-sync)).
 
-`climb-stats-self-heal` scans flash and send ticks from the last 3 hours that
-are newer than their stats row (at most 5000 keys) and recomputes them in
-fenced batches of 500.
+`climb-stats-self-heal` first drains `climb_stats_recompute_pending` (rows
+older than two minutes, oldest first, `FOR UPDATE SKIP LOCKED`, up to 20
+batches of 500), then scans flash and send ticks from the last 3 hours that are
+newer than their stats row (at most 5000 keys) and recomputes them in fenced
+batches of 500.
 
 ### Routine cutover
 
@@ -741,9 +772,12 @@ together.
    now: with nothing enabled nothing is queued.
 3. On the sync host set `SYNC_DAEMON_DISABLED=true`
    (`roles/boardsesh_sync/templates/sync.env.j2`) and restart the daemons: each
-   logs one line and exits 0. Wait for their `sync_daemon_leases` rows to go
-   stale (a stopped daemon releases its lease; check that no row's
-   `heartbeat_at` moves).
+   logs one line and exits 0. Because they exit 0, the ansible change must land
+   first and set the daemon services' compose restart policy to `on-failure`
+   (or stop the units); under `always` or `unless-stopped` Docker restarts a
+   clean exit in a loop. Wait for their `sync_daemon_leases` rows to go stale (a
+   stopped daemon releases its lease; check that no row's `heartbeat_at`
+   moves).
 4. Add `provider-routine-cycle,aurora-shared-sync,kilter-catalog-sync,moonboard-locations-sync,climb-stats-self-heal`
    to `BATCH_FAMILIES_ENABLED` and redeploy the backend.
 5. Unpause the `routine-provider` worker (`WORKER_PAUSED=false`, with

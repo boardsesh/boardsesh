@@ -120,7 +120,8 @@ cannot reuse an identity. If a stalled daemon finishes after another daemon has
 reclaimed the board, the stale finisher cannot replace the newer marker.
 
 The normal cooldown is one hour from the end of the run (configurable through
-`sharedSyncCooldownMs`; the scheduled job claims with 50 minutes). Successful runs and permanent or unknown failures keep
+`sharedSyncCooldownMs`; the scheduled job claims with 50 minutes, measured from
+the claim). Successful runs and permanent or unknown failures keep
 that full cooldown. A canonical `AuroraRequestError` caused by a timeout,
 network failure, rate limit, HTTP 429, or HTTP 500–599 retries after five minutes
 or the configured full cooldown, whichever is shorter. Other 4xx responses,
@@ -412,12 +413,17 @@ before with one deliberate exception, the first bullet:
   ascents and bids appliers collect the `(climb, angle)` keys they wrote, and
   once the page commits they are recomputed in batches of at most 500 keys, one
   transaction each. A fenced batch holds the job's run-row lock and so blocks
-  its heartbeat; this keeps every batch short. The daemon passes no runner and
-  keeps the inline recompute. A crash between a page and its recompute is
-  caught by the hourly `climb-stats-self-heal` job.
+  its heartbeat; this keeps every batch short. The keys are also written to
+  `climb_stats_recompute_pending` inside the page transaction and deleted by the
+  batch that recomputes them, so a worker that stops in between leaves them for
+  the hourly `climb-stats-self-heal` to drain. The daemon passes no runner and
+  keeps the inline recompute.
 - A 429 from Aurora carries `Retry-After` into `AuroraRequestError.retryAfterMs`
   and the `SyncOutcome`; the routine cycle parks that credential for the delay
-  and stops.
+  (in place of the backoff step the 429 was charged) and stops.
+- `recordAuroraSyncFailure(db, cred, message)` is the failure bookkeeping on its
+  own, for a failure a job sees and the runner does not (the routine cycle's
+  per-credential `CYCLE_DEADLINE`).
 - `syncableAuroraCredentialsFilter()` is exported so the job claims a named
   credential under exactly the daemon's eligibility.
 
@@ -430,14 +436,16 @@ A job-driven runner skips the shared sync (`skipSharedSync`); the
    or a login with its password when none is stored or Aurora rejects it (401
    or 403). Nothing is ever recorded against that credential;
 2. claim the board's `__local_shared_sync__` slot with a 50-minute cooldown
-   (the daemon uses 60; the slot is re-stamped when a run ends, so 60 against
-   an hourly cron would skip every other tick);
+   (the daemon uses 60) measured from the claim, so the next hourly tick finds
+   it free however long this run takes;
 3. `syncSharedData(db, board, token, log, { transaction, signal })`, which now
    takes the drizzle database (reads) and a batch runner (every page, the
    history snapshot, the required_set_ids heal and the notifications), then
    the gym locations and one wall-crawl slice in batches of 25 gyms;
-4. re-stamp the slot: the full cooldown on success or a permanent Aurora
-   failure, five minutes after a transient one, an abort or a database error,
+4. re-stamp the slot: on success or a permanent Aurora failure the full
+   cooldown from the claim (the end-of-run marker is backdated by the run's
+   length); five minutes from the end after a transient one, an abort or a
+   database error,
    so the job's one retry can run.
 
 No donor is a logged `SHARED_SYNC_NO_DONOR` and a held slot a logged
