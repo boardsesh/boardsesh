@@ -216,8 +216,8 @@ describe('batch families on the test database', () => {
       publishCrossAngleEstimates: false,
     });
     expect(result.mode).toBe('published');
-    // The publish, then the honesty report.
-    expect(transacts.calls).toBe(2);
+    // The publish is the only fenced batch; the honesty report is a plain read.
+    expect(transacts.calls).toBe(1);
     const grades = await db
       .select()
       .from(dbSchema.boardClimbGrades)

@@ -164,6 +164,10 @@ describe('batch worker grants', () => {
         }
       }
       await owner.unsafe(`CREATE ROLE "${role}" NOLOGIN`);
+      // Rebuilding a login's grants must never touch the backend's own login.
+      await expect(initializeJobQueueSchema(drizzle(owner), role, undefined, [`batch=${role}`])).rejects.toThrow(
+        'must not be the runtime or detector role',
+      );
       await initializeJobQueueSchema(drizzle(owner), undefined, undefined, [`batch=${role}`]);
       await clearBatchJobFixture(ownerDatabase);
       await seedBatchJobFixture(ownerDatabase);
@@ -210,6 +214,9 @@ describe('batch worker grants', () => {
 
       // Nothing beyond the list: no user data it does not need, no catalog writes.
       await expect(restricted`SELECT email FROM users LIMIT 1`).rejects.toThrow('permission denied');
+      await expect(restricted`SELECT comment FROM boardsesh_ticks LIMIT 1`).rejects.toThrow('permission denied');
+      await expect(restricted`SELECT session_id FROM boardsesh_ticks LIMIT 1`).rejects.toThrow('permission denied');
+      await expect(restricted`SELECT name FROM user_boards LIMIT 1`).rejects.toThrow('permission denied');
       await expect(restricted`SELECT id FROM aurora_credentials LIMIT 1`).rejects.toThrow('permission denied');
       await expect(restricted`DELETE FROM board_climbs WHERE uuid = 'none'`).rejects.toThrow('permission denied');
       await expect(restricted`DELETE FROM background_job_runs WHERE false`).rejects.toThrow('permission denied');

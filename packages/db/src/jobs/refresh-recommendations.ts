@@ -164,6 +164,7 @@ async function refreshSendStats(
     // degradation is impossible to miss; setting the key is the actual fix.
     log.warn(
       'POSTHOG_PERSONAL_API_KEY is not set — board_climb_send_stats was NOT refreshed and the recommendation send-boost stays neutral. Set POSTHOG_PERSONAL_API_KEY to enable it.',
+      { title: 'send-stats skipped' },
     );
     return { status: 'skipped', reason: 'no-api-key' };
   }
@@ -176,7 +177,11 @@ async function refreshSendStats(
     signal: AbortSignal.any([signal, AbortSignal.timeout(POSTHOG_TIMEOUT_MS)]),
   });
   if (!response.ok) {
-    log.warn(`[recs] PostHog query failed (${response.status}) — skipping send stats.`);
+    // Release the connection; the body is an error page we do not log.
+    await response.body?.cancel();
+    log.warn(`[recs] PostHog query failed (${response.status}) — skipping send stats.`, {
+      title: 'send-stats skipped',
+    });
     return { status: 'skipped', reason: 'query-failed' };
   }
   const payload = (await response.json()) as { results?: unknown[][] };

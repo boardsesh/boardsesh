@@ -16,7 +16,8 @@ export type JobTransact = <Result>(callback: (transaction: JobDatabase) => Promi
 /** Plain-text progress lines. Never pass credentials, SQL or provider responses. */
 export type JobLogger = {
   info(message: string): void;
-  warn(message: string): void;
+  /** `title` names the warning where the sink has titles (a GitHub Actions annotation). */
+  warn(message: string, details?: { title?: string }): void;
 };
 
 /** What every job body takes. Reads go through `db`, writes through `transact`. */

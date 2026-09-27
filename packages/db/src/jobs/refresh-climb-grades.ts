@@ -138,6 +138,17 @@ async function readRows<Row>(db: JobDatabase, query: SQLWrapper): Promise<Row[]>
   });
 }
 
+/** A bounded description of a failed query: error class and SQLSTATE, never SQL or parameters. */
+function describeQueryFailure(error: unknown): string {
+  const name = error instanceof Error ? error.name : 'unknown error';
+  const cause: unknown = error instanceof Error && error.cause !== undefined ? error.cause : error;
+  const code =
+    typeof cause === 'object' && cause !== null && 'code' in cause && typeof cause.code === 'string'
+      ? cause.code
+      : 'none';
+  return `${name}, SQLSTATE ${code}`;
+}
+
 /** Thrown when a blocking validation gate fails. Nothing was written. */
 export class GradeGatesFailedError extends Error {
   readonly gates: readonly GateResult[];
@@ -1407,7 +1418,9 @@ export async function runRefreshClimbGrades(options: RefreshClimbGradesOptions):
   // A candidate file is a diagnostic input — never let it flow into a real
   // publish run, where it would persist un-vetted priors to board_climb_grades.
   if (contentPriorFile && !dryRun && !options.validateOnly) {
-    throw new Error('contentPriorFile requires validateOnly or dryRun; refusing a write run with candidate priors.');
+    throw new Error(
+      '--content-prior-file requires --validate-only or --dry-run; refusing a write run with candidate priors.',
+    );
   }
   signal.throwIfAborted();
   if (options.validateOnly) {
@@ -1579,31 +1592,29 @@ export async function runRefreshClimbGrades(options: RefreshClimbGradesOptions):
     log.info(`[grades]   ${boardType}: ${written} published, ${held} held by hysteresis, ${deleted} stale deleted`);
   }
 
-  // Honesty report (never blocks): boards whose grade is just the label.
-  // Run it inside a transaction with parallel workers off — the 589k×900k
-  // hash join's parallel workers exhausted prod's /dev/shm (SQLSTATE 53100)
-  // on the first prod run; serial execution spills to disk instead. And a
-  // report-only failure must never fail the run after grades published.
+  // Honesty report (never blocks): boards whose grade is just the label. A
+  // plain read with parallel workers off (readRows): the 589k×900k hash join's
+  // parallel workers exhausted prod's /dev/shm (SQLSTATE 53100) on the first
+  // prod run; serial execution spills to disk instead. It runs outside the
+  // fence, so a slow report never holds the run row the heartbeat needs, and a
+  // report-only failure never fails the run after grades published.
   try {
-    const honesty = await transact(async (tx) => {
-      await tx.execute(sql`SET LOCAL max_parallel_workers_per_gather = 0`);
-      return rowsOf<{
-        board_type: string;
-        correlation: number | null;
-        mean_abs_delta: number | null;
-        rows: number;
-      }>(await tx.execute(buildHonestyCheckSql()));
-    });
+    const honesty = await readRows<{
+      board_type: string;
+      correlation: number | null;
+      mean_abs_delta: number | null;
+      rows: number;
+    }>(db, buildHonestyCheckSql());
     for (const row of honesty) {
       log.info(
         `[grades]   honesty ${row.board_type}: corr(display)=${row.correlation === null ? 'n/a' : Number(row.correlation).toFixed(3)}, mean|Δ|=${row.mean_abs_delta === null ? 'n/a' : Number(row.mean_abs_delta).toFixed(3)} over ${row.rows} rows`,
       );
     }
   } catch (honestyError) {
-    // A lost attempt must still fail the run; anything else is report-only.
-    signal.throwIfAborted();
+    // A query error's message carries the SQL and its parameters; log only the
+    // error class and SQLSTATE.
     log.warn(
-      `[grades] honesty report failed (grades already published, run continues): ${honestyError instanceof Error ? honestyError.message : String(honestyError)}`,
+      `[grades] honesty report failed (grades already published, run continues): ${describeQueryFailure(honestyError)}`,
     );
   }
   log.info('[grades] done.');

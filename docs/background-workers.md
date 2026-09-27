@@ -67,7 +67,10 @@ adds that role's data grants from `WORKER_ROLE_DATA_GRANTS` in
 those tables; a bare login gets the queue and ledger only. The lists are
 authoritative: the migrator revokes a login's `public` table and sequence
 grants before granting, so a table removed from a list (or a login moved to a
-bare entry) loses its grant on the next migration. Today only `batch` has data
+bare entry) loses its grant on the next migration. Each login's revoke and
+grants run as one `DO` block, a single transaction, so a migration during a
+running job never leaves the login with nothing. A worker login may not be the
+runtime or detector login; the migrator refuses it. Today only `batch` has data
 grants (see "Batch families"). Runtime users must never be migration owners.
 The existing runtime and detector grant contracts remain supported.
 
@@ -180,8 +183,8 @@ the tick throws and pg-boss retries it.
 
 ## Batch families
 
-Three nightly data jobs that ran only on GitHub Actions now also run on the
-batch worker. The job bodies live in `packages/db/src/jobs/` (package export
+Three nightly data jobs that run on GitHub Actions can also run on the batch
+worker, once `BATCH_FAMILIES_ENABLED` names them. The job bodies live in `packages/db/src/jobs/` (package export
 `@boardsesh/db/jobs`) and take `{ db, signal, transact, log, ...params }`: `db`
 for reads, `transact` for every write batch, and they throw instead of exiting.
 The CLIs in `packages/db/scripts/` pass `db.transaction`; the families pass the
@@ -201,13 +204,16 @@ publish transaction was 69 s with 99.7% of rows held by hysteresis.
 **A fenced write batch must finish inside the heartbeat window.** The fence
 holds the run row's lock until it commits, and the worker's heartbeat needs
 that lock, so no touch lands while a batch runs; the fence then rechecks the
-heartbeat before commit. A batch longer than `heartbeatSeconds` therefore
-always loses its attempt. Recommendations and hold features write in short
-batches (the longest are the setter-stats upsert, about 8 s, and the weekly
-MoonBoard history snapshot, about 5 s). The grade publish is one transaction
-on purpose (coefficients, gates and every board's grades commit together), so
-that family's heartbeat is 900 s. Size any new family's heartbeat to its
-longest batch, not to its whole run.
+heartbeat before commit. The last touch can already be up to 10 s old when a
+batch starts (the worker touches every 10 s at most), so the safe bound on one
+fenced batch is `heartbeatSeconds` minus 10 s: about 20 s for a 30 s family.
+Longer, and the attempt is lost. Recommendations and hold features write in
+short batches (the longest are the setter-stats upsert, about 8 s, and the
+weekly MoonBoard history snapshot, about 5 s). The grade publish is one
+transaction on purpose (coefficients, gates and every board's grades commit
+together), so that family's heartbeat is 900 s. Its honesty report is a plain
+read outside the fence. Size any new family's heartbeat to its longest batch,
+not to its whole run, and keep reads out of the fence.
 
 `refresh-climb-grades` fails a blocking validation gate with
 `BackgroundJobError('GATES_FAILED', { retryable: false })`: nothing was
@@ -234,8 +240,11 @@ job's signal.
 **Grants.** `batch=<login>` gets SELECT on the catalog and history the jobs scan
 (`board_climbs`, `board_climb_stats`, `board_climb_holds`, `board_placements`,
 `board_holes`, `board_sets`, `board_product_sizes_layouts_sets`,
-`board_climb_embeddings`, `board_climb_aliases`), SELECT on `boardsesh_ticks`
-and on `user_boards (id, gym_id)` for the grade model's evidence, and the writes
+`board_climb_embeddings`, `board_climb_aliases`), SELECT on the outcome
+columns of `boardsesh_ticks` (`user_id`, `board_type`, `climb_uuid`, `angle`,
+`status`, `attempt_count`, `origin`, `difficulty`, `board_id`, `climbed_at`;
+never comments or sessions) and on `user_boards (id, gym_id)` for the grade
+model's evidence, and the writes
 above: `board_setter_stats`, `board_climb_send_stats`, `playlists`,
 `playlist_ownership`, `playlist_climbs`, `sync_deletions` (INSERT, from the
 `playlist_climbs` delete trigger), `board_climb_stats_history`,
@@ -270,8 +279,13 @@ grades):
    and `WORKER_PAUSED=false`.
 2. Add the family to the backend's `BATCH_FAMILIES_ENABLED` and redeploy. The
    Actions workflow keeps running too, on the same cron but hours late (GitHub
-   started these 06:00 UTC crons at 10:40 to 11:50 in Sep 2026). Every job is
-   idempotent, so the overlap costs one duplicate run a night.
+   started these 06:00 UTC crons at 10:40 to 11:50 in Sep 2026). For
+   recommendations and hold features that overlap is safe: both are
+   idempotent, so it costs one duplicate run a night. **Grades is the
+   exception:** disable its workflow's schedule the same day the family is
+   enabled (step 4 for grades lands with this step, not after it). Two
+   overlapping grade publishes are single long transactions over the same rows
+   and can deadlock, and on a refit night both would persist a coefficient set.
 3. Wait for three `succeeded` ledger rows for the family, and compare their
    log output (row counts per phase) with the same nights' workflow logs.
 4. In a follow-up PR, delete that workflow's `schedule:` block and keep

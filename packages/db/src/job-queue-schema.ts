@@ -89,9 +89,25 @@ export const WORKER_ROLE_DATA_GRANTS: Record<BackgroundWorkerRole, readonly Work
     { table: 'board_product_sizes_layouts_sets', privileges: ['SELECT'] },
     { table: 'board_climb_embeddings', privileges: ['SELECT'] },
     { table: 'board_climb_aliases', privileges: ['SELECT'] },
-    // The grade model's rater and behaviour evidence: every tick, plus which gym
-    // a tick's board belongs to (two columns of user_boards, nothing else).
-    { table: 'boardsesh_ticks', privileges: ['SELECT'] },
+    // The grade model's rater and behaviour evidence: the outcome columns of
+    // each tick (never comments, sessions or media), plus which gym a tick's
+    // board belongs to (two columns of user_boards, nothing else).
+    {
+      table: 'boardsesh_ticks',
+      privileges: ['SELECT'],
+      columns: [
+        'user_id',
+        'board_type',
+        'climb_uuid',
+        'angle',
+        'status',
+        'attempt_count',
+        'origin',
+        'difficulty',
+        'board_id',
+        'climbed_at',
+      ],
+    },
     { table: 'user_boards', privileges: ['SELECT'], columns: ['id', 'gym_id'] },
     // The recommendations job's writes.
     { table: 'board_setter_stats', privileges: ['SELECT', 'INSERT', 'UPDATE'] },
@@ -153,6 +169,44 @@ function grantStatement(grant: WorkerTableGrant, login: string): string {
   return `GRANT ${privileges} ON public."${grant.table}" TO "${login}"`;
 }
 
+/**
+ * One login's whole grant set as a single `DO` block: one statement is one
+ * transaction, so a migration that runs while a worker is mid-job never leaves
+ * the login between the revoke and the grants. Identifiers are validated
+ * before they are spliced in.
+ */
+function workerGrantBlock(login: string, role: BackgroundWorkerRole | undefined): string {
+  if (!IDENTIFIER.test(login)) throw new Error('Invalid job queue role');
+  const grants = [LEDGER_GRANT, ...(role ? WORKER_ROLE_DATA_GRANTS[role] : [])];
+  const insertTables = [
+    ...new Set(grants.filter((grant) => grant.privileges.includes('INSERT')).map((grant) => grant.table)),
+  ];
+  const tableList = insertTables.length ? insertTables.map((table) => `'${table}'`).join(', ') : `''`;
+  return `DO $grants$
+DECLARE
+  owned_sequence text;
+BEGIN
+  GRANT USAGE ON SCHEMA public TO "${login}";
+  REVOKE ALL ON ALL TABLES IN SCHEMA public FROM "${login}";
+  REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM "${login}";
+${grants.map((grant) => `  ${grantStatement(grant, login)};`).join('\n')}
+  -- Serial and identity columns: the sequences the inserts draw from.
+  FOR owned_sequence IN
+    SELECT sequence.relname
+      FROM pg_depend dependency
+      JOIN pg_class sequence ON sequence.oid = dependency.objid AND sequence.relkind = 'S'
+      JOIN pg_class owner ON owner.oid = dependency.refobjid
+      JOIN pg_namespace namespace ON namespace.oid = owner.relnamespace
+     WHERE dependency.deptype IN ('a', 'i')
+       AND namespace.nspname = 'public'
+       AND owner.relname IN (${tableList})
+  LOOP
+    EXECUTE format('GRANT USAGE ON SEQUENCE public.%I TO %I', owned_sequence, '${login}');
+  END LOOP;
+END
+$grants$`;
+}
+
 /** Only the deployment's reserved migration-owner connection may execute this. */
 export async function initializeJobQueueSchema(
   database: Parameters<typeof jobQueueTransactionAdapter>[0],
@@ -163,6 +217,13 @@ export async function initializeJobQueueSchema(
   const workerLogins = workerRoles.map(parseWorkerLogin);
   for (const role of [runtimeRole, detectorRole]) {
     if (role && !IDENTIFIER.test(role)) throw new Error('Invalid job queue role');
+  }
+  // A worker login's grants are revoked and rebuilt below; pointed at the
+  // runtime or detector login, that would strip the backend's own CRUD.
+  for (const { login } of workerLogins) {
+    if (login === runtimeRole || login === detectorRole) {
+      throw new Error(`Worker login ${login} must not be the runtime or detector role`);
+    }
   }
   const adapter = jobQueueTransactionAdapter(database);
   const boss = new PgBoss({ db: adapter, supervise: false, schedule: false });
@@ -227,29 +288,7 @@ export async function initializeJobQueueSchema(
     // The lists are authoritative: revoke first, so a table dropped from a
     // role's list (or a login moved to another role) loses its grant here.
     for (const { login, role } of workerLogins) {
-      await adapter.executeSql(`GRANT USAGE ON SCHEMA public TO "${login}"`);
-      await adapter.executeSql(`REVOKE ALL ON ALL TABLES IN SCHEMA public FROM "${login}"`);
-      await adapter.executeSql(`REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM "${login}"`);
-      const grants = [LEDGER_GRANT, ...(role ? WORKER_ROLE_DATA_GRANTS[role] : [])];
-      for (const grant of grants) await adapter.executeSql(grantStatement(grant, login));
-      const insertTables = grants.filter((grant) => grant.privileges.includes('INSERT')).map((grant) => grant.table);
-      if (!insertTables.length) continue;
-      // Serial and identity columns: the sequences the inserts draw from.
-      const owned = await adapter.executeSql(
-        `SELECT sequence.relname AS sequence_name
-           FROM pg_depend dependency
-           JOIN pg_class sequence ON sequence.oid = dependency.objid AND sequence.relkind = 'S'
-           JOIN pg_class owner ON owner.oid = dependency.refobjid
-           JOIN pg_namespace namespace ON namespace.oid = owner.relnamespace
-          WHERE dependency.deptype IN ('a', 'i')
-            AND namespace.nspname = 'public'
-            AND owner.relname = ANY($1::text[])`,
-        [insertTables],
-      );
-      for (const row of owned.rows as Array<{ sequence_name: string }>) {
-        if (!IDENTIFIER.test(row.sequence_name)) throw new Error('Invalid grant identifier');
-        await adapter.executeSql(`GRANT USAGE ON SEQUENCE public."${row.sequence_name}" TO "${login}"`);
-      }
+      await adapter.executeSql(workerGrantBlock(login, role));
     }
     if (detectorRole) {
       await adapter.executeSql(`GRANT USAGE ON SCHEMA public TO "${detectorRole}"`);
