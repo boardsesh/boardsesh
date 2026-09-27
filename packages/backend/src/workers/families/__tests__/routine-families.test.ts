@@ -251,14 +251,16 @@ describe('aurora-shared-sync execute', () => {
 describe('kilter-catalog-sync execute', () => {
   const family = requireFamily('kilter-catalog-sync');
 
-  it('claims with the 50-minute cooldown and the run signal', async () => {
+  it('claims with the 50-minute cooldown, the run signal and the attempt fence', async () => {
     runners.runCatalogSyncJob.mockResolvedValue({ status: 'synced', tokenSource: 'credential' });
     const context = fakeContext('kilter-catalog-sync');
 
     await family.execute(context, {});
 
+    // Every write batch of the job goes through the attempt fence.
     expect(runners.runCatalogSyncJob).toHaveBeenCalledWith({
       signal: context.signal,
+      transaction: context.transaction,
       cooldownMs: KILTER_CATALOG_SYNC_COOLDOWN_MS,
     });
   });
