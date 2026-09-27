@@ -91,7 +91,7 @@ and the web cron `packages/web/app/lib/data-sync/aurora/user-sync.ts`) route
 
 #### Shared (board-wide) tables
 
-After every successful per-user sync, the daemon also runs a shared sync for that user's board, reusing the user's just-refreshed Aurora token. This replaces the old Vercel `/api/internal/shared-sync/<board>` cron and the per-board `*_SYNC_TOKEN` env vars (`KILTER_SYNC_TOKEN`, `TENSION_SYNC_TOKEN`, `DECOY_SYNC_TOKEN`, `TOUCHSTONE_SYNC_TOKEN`, `GRASSHOPPER_SYNC_TOKEN`) — those env vars can be removed from the Vercel project settings.
+After every successful per-user sync, the daemon also runs a shared sync for that user's board, reusing the user's just-refreshed Aurora token. After the worker cutover the `aurora-shared-sync` job runs it instead, hourly per board, on a borrowed token (see "Worker families" below). This replaces the old Vercel `/api/internal/shared-sync/<board>` cron and the per-board `*_SYNC_TOKEN` env vars (`KILTER_SYNC_TOKEN`, `TENSION_SYNC_TOKEN`, `DECOY_SYNC_TOKEN`, `TOUCHSTONE_SYNC_TOKEN`, `GRASSHOPPER_SYNC_TOKEN`) — those env vars can be removed from the Vercel project settings.
 
 | Aurora Table               | Local Table                        |
 | -------------------------- | ---------------------------------- |
@@ -120,7 +120,7 @@ cannot reuse an identity. If a stalled daemon finishes after another daemon has
 reclaimed the board, the stale finisher cannot replace the newer marker.
 
 The normal cooldown is one hour from the end of the run (configurable through
-`sharedSyncCooldownMs`). Successful runs and permanent or unknown failures keep
+`sharedSyncCooldownMs`; the scheduled job claims with 50 minutes). Successful runs and permanent or unknown failures keep
 that full cooldown. A canonical `AuroraRequestError` caused by a timeout,
 network failure, rate limit, HTTP 429, or HTTP 500–599 retries after five minutes
 or the configured full cooldown, whichever is shorter. Other 4xx responses,
@@ -364,13 +364,21 @@ recompute `ascensionist_count` in the same statement that updates that side.
 
 ## Worker families
 
-The daemon below is still the current owner of routine syncs; it keeps
-syncing every credential in turn until PR-3 moves that to a
-`provider-routine-cycle` family. Since PR-2 a worker also syncs one account on
-demand: the `aurora-user-sync` family (role `interactive-import`) runs right
-after a climber links a Tension, Decoy, Touchstone, Grasshopper or So iLL
-account, and when they tap "Sync now". Full contract:
-[background-workers.md, "Provider sync families"](background-workers.md#provider-sync-families).
+Three worker families replace the daemon. Full contracts and the cutover:
+[background-workers.md](background-workers.md#routine-provider-sync).
+
+| Family | Role | What it does |
+| --- | --- | --- |
+| `aurora-user-sync` | `interactive-import` | One account, right after a climber links it and when they tap "Sync now" |
+| `provider-routine-cycle` (`{ provider: 'aurora' }`) | `routine-provider` | Every 5 minutes: the daemon's one-credential cycle, up to 4 credentials a run |
+| `aurora-shared-sync` (`{ board }`) | `routine-provider` | Hourly at :07 per board: the shared `/sync`, the history snapshot, gym locations and a wall-crawl slice |
+
+The daemon stays the owner of routine syncs until the cutover sets
+`SYNC_DAEMON_DISABLED=true` on the sync host. From then on `aurora-sync daemon`
+logs one line and exits 0, and the families do its work. The two must never
+both run: the daemon claim now skips accounts a worker holds a lease on
+(`excludeLeased`), and the shared sync keeps the same `board_shared_syncs`
+cooldown slot, but a double owner still doubles the provider traffic.
 
 What changes in this package to make that possible. The daemon behaves as
 before with one deliberate exception, the first bullet:
@@ -394,15 +402,46 @@ before with one deliberate exception, the first bullet:
   does, because `syncNextUser` now calls it. A fence refusal or an abort is
   rethrown instead of being recorded on the credential.
 - `syncUserData(db, board, token, auroraUserId, userId, { tables, log,
-  transaction, signal })` runs each Aurora page in one transaction through the
-  batch runner and checks the signal between pages. Aurora HTTP happens between
-  those transactions, never inside one; `signIn` and `userSync` combine the
-  caller's signal with their 30 s timeout.
+  transaction, signal, deferStatsRecompute })` runs each Aurora page in one
+  transaction through the batch runner and checks the signal between pages.
+  Aurora HTTP happens between those transactions, never inside one; `signIn`,
+  `userSync` and `sharedSync` combine the caller's signal with their 30 s
+  timeout.
+- With a batch runner the stats recompute leaves the page transaction
+  (`deferStatsRecompute`, on by default when `transaction` is set): the
+  ascents and bids appliers collect the `(climb, angle)` keys they wrote, and
+  once the page commits they are recomputed in batches of at most 500 keys, one
+  transaction each. A fenced batch holds the job's run-row lock and so blocks
+  its heartbeat; this keeps every batch short. The daemon passes no runner and
+  keeps the inline recompute. A crash between a page and its recompute is
+  caught by the hourly `climb-stats-self-heal` job.
+- A 429 from Aurora carries `Retry-After` into `AuroraRequestError.retryAfterMs`
+  and the `SyncOutcome`; the routine cycle parks that credential for the delay
+  and stops.
 - `syncableAuroraCredentialsFilter()` is exported so the job claims a named
   credential under exactly the daemon's eligibility.
 
-A job-driven runner skips the shared sync (`skipSharedSync`): it still needs a
-raw client, and the board-wide half stays on the daemon for now.
+A job-driven runner skips the shared sync (`skipSharedSync`); the
+`aurora-shared-sync` job runs it on its own schedule through
+`SyncRunner.runSharedSyncJob(board, { transaction, signal, cooldownMs })`:
+
+1. borrow a token from the board's most recently successful `active`
+   credential (`findSharedSyncDonorCredential`): its stored `aurora_token`,
+   or a login with its password when none is stored or Aurora rejects it (401
+   or 403). Nothing is ever recorded against that credential;
+2. claim the board's `__local_shared_sync__` slot with a 50-minute cooldown
+   (the daemon uses 60; the slot is re-stamped when a run ends, so 60 against
+   an hourly cron would skip every other tick);
+3. `syncSharedData(db, board, token, log, { transaction, signal })`, which now
+   takes the drizzle database (reads) and a batch runner (every page, the
+   history snapshot, the required_set_ids heal and the notifications), then
+   the gym locations and one wall-crawl slice in batches of 25 gyms;
+4. re-stamp the slot: the full cooldown on success or a permanent Aurora
+   failure, five minutes after a transient one, an abort or a database error,
+   so the job's one retry can run.
+
+No donor is a logged `SHARED_SYNC_NO_DONOR` and a held slot a logged
+`SHARED_SYNC_COOLDOWN`; both runs succeed without work.
 
 ## CLI Usage
 
@@ -446,6 +485,8 @@ aurora-sync locations --board tension -v
 ```bash
 DATABASE_URL="postgresql://..."
 AURORA_CREDENTIALS_SECRET="<encryption key>"
+# Only on the sync host, once the worker families own routine syncs:
+SYNC_DAEMON_DISABLED="true"
 ```
 
 ### Using 1Password CLI
@@ -480,6 +521,8 @@ op run --env-file=packages/aurora-sync/.env.1password -- vp exec aurora-sync dae
 - Between cycles it waits a random `1` to `15` minutes.
 - It does not sync between `10:00 PM` and `7:00 AM` in `Australia/Sydney`, but the process stays alive and checks again every minute.
 - Aurora HTTP, timeout, network, and rate-limit failures are treated as transient and retried later without marking the credential as errored.
+- The claim skips an account a background job holds a live lease on (`excludeLeased`), so a daemon and a worker never sync one credential at the same time.
+- `SYNC_DAEMON_DISABLED=true` (the literal `true`, nothing else) makes the command log one line and exit 0 before it touches the lease or the pool. The ansible template `roles/boardsesh_sync/templates/sync.env.j2` sets it at the cutover, so the service goes idle without its unit being deleted. Its compose restart policy must not restart a clean exit (`on-failure`, not `always`/`unless-stopped`), or the container restarts in a loop that logs the line each time.
 
 ## Deployment (daemon CLI on a VM)
 
@@ -494,6 +537,7 @@ Postgres and remains effective across daemon restarts and overlapping deploys.
 | --------------------------- | ---------------------------------------------------- |
 | `DATABASE_URL`              | Postgres connection string                           |
 | `AURORA_CREDENTIALS_SECRET` | Same key as the web app (for decrypting credentials) |
+| `SYNC_DAEMON_DISABLED`      | `true` once the worker families own routine syncs: the daemon exits 0 |
 
 ### 2. Run it
 

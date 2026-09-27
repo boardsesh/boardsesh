@@ -236,6 +236,20 @@ with that user's token; success and failure both keep the full cooldown from
 the end of the catalog run, and a catalog failure never poisons the user's
 credential.
 
+After the worker cutover the `kilter-catalog-sync` job owns it instead (hourly
+at :23, `SyncRunner.runCatalogSyncJob`): a refresh-grant token from the most
+recently successful `active` Kilter credential (else the
+`KILTER_TEST_USERNAME`/`KILTER_TEST_PASSWORD` account), the same slot claimed
+with a 50-minute cooldown (60 against an hourly cron would skip every other
+tick), then the catalog, the weekly stats repair and the weekly history
+snapshot. A transient failure, an abort or a database error re-stamps a
+five-minute cooldown so the job's one retry can run; a permanent Kilter
+failure keeps the full one. The catalog's REST client honours `Retry-After`
+(capped at 5 minutes), else backs off exponentially up to 30 s. The catalog
+writes are not behind the attempt fence (it interleaves requests and writes
+per layout); the slot is the single-writer guarantee, as it is for the daemon,
+and the job's signal stops it between layout groups.
+
 ### Prerequisite: fingerprint backfill
 
 Dedup keys on `(board_type, layout_id, hold_fingerprint)`, but the legacy Kilter catalog landed before that column existed — every existing kilter climb has `hold_fingerprint IS NULL` until backfilled. Run once before catalog sync so Grips climbs dedupe against the existing catalog instead of duplicating it:
@@ -459,10 +473,18 @@ Account linking is gated client-side by the `kilter-oauth-linking` PostHog featu
 
 ## Worker families
 
-The daemon below is still the current owner of routine syncs until PR-3. Since
-PR-2 the `kilter-user-sync` family (role `interactive-import`) also syncs one
-account right after a climber links Kilter, and when they tap "Sync now". Full
-contract: [background-workers.md, "Provider sync families"](background-workers.md#provider-sync-families).
+Three worker families replace the daemon. Full contracts and the cutover:
+[background-workers.md](background-workers.md#routine-provider-sync).
+
+| Family | Role | What it does |
+| --- | --- | --- |
+| `kilter-user-sync` | `interactive-import` | One account, right after a climber links Kilter and when they tap "Sync now" |
+| `provider-routine-cycle` (`{ provider: 'kilter' }`) | `routine-provider` | Every 5 minutes: the daemon's one-credential cycle, up to 4 credentials a run |
+| `kilter-catalog-sync` | `routine-provider` | Hourly at :23: the catalog, the weekly stats repair and history snapshot (see [Cooldown + piggyback](#cooldown--piggyback)) |
+
+The daemon stays the owner of routine syncs until the cutover sets
+`SYNC_DAEMON_DISABLED=true` on the sync host; from then on
+`kilter-sync daemon` logs one line and exits 0.
 
 - `runCycleForCredential(db, cred, { transaction, signal, skipCatalogSync })` is
   public and returns a `SyncOutcome`. The daemon calls it too, so both record
@@ -474,6 +496,15 @@ contract: [background-workers.md, "Provider sync families"](background-workers.m
   through the batch runner; the signal cancels the PowerSync stream. A fence
   refusal or an abort ends the sync at once instead of being collected as a
   failed phase.
+- With a batch runner the stats recompute leaves the logs flush
+  (`deferStatsRecompute`, on by default when `transaction` is set): `applyLogs`
+  collects the keys it wrote, and once the flush commits they are recomputed in
+  batches of at most 500 keys, one transaction each, so no fenced batch blocks
+  the job's heartbeat for long. The daemon keeps the inline recompute.
+- A 429 from Keycloak, the REST portal or PowerSync carries `Retry-After` into
+  `KilterApiError.retryAfterMs` and the `SyncOutcome` (a PowerSync 429 is now
+  `rate_limited`; it was a transient `powersync` error before). The routine
+  cycle parks that credential for the delay and stops.
 - The Keycloak refresh (`getStoredKilterAccessToken`) is unchanged and stays
   outside every fence, on the worker's pool. It is not a short transaction: it
   holds the credential row `FOR UPDATE` across the Keycloak HTTP call (up to
@@ -488,6 +519,8 @@ A worker serving this family refuses to start without `KILTER_OAUTH_CLIENT_ID`
 and `AURORA_CREDENTIALS_SECRET`.
 
 ## Daemon
+
+`SYNC_DAEMON_DISABLED=true` (the literal `true`) makes `kilter-sync daemon` log one line and exit 0 before it touches the lease or the pool, so the ansible service goes idle without its unit being deleted (its compose restart policy must not restart a clean exit). The claim skips an account a background job holds a live lease on (`excludeLeased`), so a daemon and a worker never sync one credential at the same time.
 
 Same loop shape as aurora-sync's daemon: one user per cycle, random 1–15 min jitter between cycles, Sydney quiet hours (`10pm–7am`), transient errors (HTTP 5xx, network, timeout) leave `syncStatus` untouched for retry, while Keycloak `invalid_grant` is treated as permanent and routes to `syncStatus = 'expired'`.
 
@@ -543,6 +576,8 @@ op run --env-file=packages/kilter-sync/.env.1password -- vp exec kilter-sync dae
 | `KILTER_SYNC_HOST`           | no                 | Override PowerSync host (sandbox)                                  |
 | `KILTER_PORTAL_HOST`         | no                 | Override REST portal host (sandbox)                                |
 | `DATABASE_URL`               | yes                | Same Postgres as everything else                                   |
+| `SYNC_DAEMON_DISABLED`       | no                 | `true` once the worker families own routine syncs: the daemon exits 0 |
+| `KILTER_TEST_USERNAME` / `KILTER_TEST_PASSWORD` | no | ROPC fallback token for the catalog when no Kilter account is linked (never in production) |
 
 ## Open wire questions
 
