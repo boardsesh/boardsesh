@@ -256,7 +256,16 @@ export const CREDENTIAL_RETRY_AFTER_CAP_MS = 6 * 60 * 60 * 1000;
  */
 export async function deferCredentialSyncAttempt(
   db: DrizzleDb,
-  options: { userId: string; boardType: string; delayMs: number },
+  options: {
+    userId: string;
+    boardType: string;
+    delayMs: number;
+    /**
+     * Take back the `consecutive_failures` step the throttled attempt was just
+     * charged: the park replaces that backoff step instead of adding to it.
+     */
+    forgiveFailure?: boolean;
+  },
 ): Promise<void> {
   const delayMs = Number.isFinite(options.delayMs)
     ? Math.min(Math.max(0, options.delayMs), CREDENTIAL_RETRY_AFTER_CAP_MS)
@@ -265,6 +274,9 @@ export async function deferCredentialSyncAttempt(
     .update(auroraCredentials)
     .set({
       lastSyncAttemptAt: sql`now() + make_interval(secs => ${delayMs / 1000}::double precision)`,
+      ...(options.forgiveFailure
+        ? { consecutiveFailures: sql`GREATEST(COALESCE(${auroraCredentials.consecutiveFailures}, 0) - 1, 0)` }
+        : {}),
       updatedAt: sql`now()`,
     })
     .where(and(eq(auroraCredentials.userId, options.userId), eq(auroraCredentials.boardType, options.boardType)));

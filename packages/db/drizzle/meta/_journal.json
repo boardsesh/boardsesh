@@ -1723,6 +1723,13 @@
       "when": 1790476928909,
       "tag": "0245_provider_sync_controls_backfill",
       "breakpoints": true
+    },
+    {
+      "idx": 246,
+      "version": "7",
+      "when": 1790489608976,
+      "tag": "0246_climb_stats_recompute_pending",
+      "breakpoints": true
     }
   ]
 }

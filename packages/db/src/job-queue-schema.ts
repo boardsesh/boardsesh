@@ -105,6 +105,9 @@ const PROVIDER_SYNC_GRANTS: readonly WorkerTableGrant[] = [
   { table: 'playlist_ownership', privileges: PROVIDER_SYNC_WRITE },
   // Written by the boardsesh_ticks and playlist* delete triggers (offline sync tombstones).
   { table: 'sync_deletions', privileges: ['INSERT'] },
+  // The stats keys a page or flush still owes a recompute: marked (upsert) in
+  // the page transaction, locked, recomputed and deleted in the batch after it.
+  { table: 'climb_stats_recompute_pending', privileges: PROVIDER_SYNC_WRITE },
 ];
 
 const CATALOG_WRITE: readonly TablePrivilege[] = ['SELECT', 'INSERT', 'UPDATE'];
@@ -198,6 +201,9 @@ const CLIMB_STATS_SELF_HEAL_GRANTS: readonly WorkerTableGrant[] = [
   },
   { table: 'board_climbs', privileges: ['SELECT'], columns: ['uuid', 'board_type', 'user_id'] },
   { table: 'board_climb_stats', privileges: ['SELECT', 'INSERT', 'UPDATE'] },
+  // Pending keys a stopped worker left behind: read `FOR UPDATE SKIP LOCKED`
+  // (which needs UPDATE), recomputed, deleted.
+  { table: 'climb_stats_recompute_pending', privileges: ['SELECT', 'UPDATE', 'DELETE'] },
   // The first ascensionist's crown: COALESCE(display_name, name).
   { table: 'users', privileges: ['SELECT'], columns: ['id', 'name'] },
   { table: 'user_profiles', privileges: ['SELECT'], columns: ['user_id', 'display_name'] },
