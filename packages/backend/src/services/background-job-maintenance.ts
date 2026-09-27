@@ -3,7 +3,7 @@ import type { PgBoss } from 'pg-boss';
 import type { DbInstance } from '@boardsesh/db/client';
 import { BACKGROUND_JOB_RECONCILE_QUEUE } from '@boardsesh/db/background-jobs';
 import { backgroundJobRuns } from '@boardsesh/db/schema';
-import { reconcileBackgroundJobRun } from '@boardsesh/db/queries';
+import { clearFinishedProviderSyncRuns, reconcileBackgroundJobRun } from '@boardsesh/db/queries';
 
 /** Backend-owned, bounded and fair even while every homelab consumer is offline. */
 export function backgroundJobReconciler(database: DbInstance) {
@@ -43,6 +43,11 @@ export function backgroundJobReconciler(database: DbInstance) {
             inArray(backgroundJobRuns.status, ['succeeded', 'failed', 'cancelled']),
           ),
         );
+    // Provider sync control rows still pointing at a finished or purged run: a
+    // worker that died mid-sync leaves its lease and pending run behind, and
+    // "Sync now" would otherwise coalesce onto a dead run. Bounded like the
+    // two steps above.
+    await clearFinishedProviderSyncRuns(database, 100);
   };
 }
 

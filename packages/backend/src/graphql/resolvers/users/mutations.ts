@@ -6,10 +6,12 @@ import type {
   UserProfile,
   AuroraCredentialStatus,
   DeleteAccountInput,
+  ProviderSyncRequest,
 } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
-import { requireAuthenticated, validateInput } from '../shared/helpers';
+import { applyRateLimit, requireAuthenticated, validateInput } from '../shared/helpers';
+import { coalesceInteractiveRun, ensureProviderSyncControl, lockProviderSyncControl } from '@boardsesh/db/queries';
 import { loadProfileRoleFlags } from './role-flags';
 import { FAVORITE_COUNT_SUBQUERY } from './favorite-count';
 import { logger } from '../../../utils/logger';
@@ -20,25 +22,20 @@ import {
   SaveAuroraCredentialInputSchema,
   AuroraBoardNameSchema,
   DeleteAccountInputSchema,
+  ProviderSyncBoardTypeSchema,
 } from '../../../validation/schemas';
 import {
   deleteAuroraCredential,
   DuplicateBoardLinkError,
+  requestProviderSyncOn,
   saveAuroraCredential,
-  type AuroraCredentialStatus as RestAuroraCredentialStatus,
 } from '../../../services/aurora-credentials';
+import { mapAuroraCredentialStatus } from './credential-status';
 import type { AuroraBoardName } from '@boardsesh/shared-schema';
 import { deleteClimbDependentRows, groupClimbUuidsByBoardType } from '../climbs/climb-cleanup';
 
-function mapAuroraCredentialStatus(credential: RestAuroraCredentialStatus): AuroraCredentialStatus {
-  return {
-    boardType: credential.boardType,
-    username: credential.auroraUsername,
-    userId: credential.auroraUserId ?? undefined,
-    syncedAt: credential.lastSyncAt ?? undefined,
-    hasToken: credential.syncStatus !== 'linked',
-  };
-}
+/** Credential statuses a sync can run from; `expired` needs a relink first. */
+const SYNCABLE_CREDENTIAL_STATUSES = ['pending', 'active', 'error'];
 
 export const userMutations = {
   /**
@@ -182,6 +179,55 @@ export const userMutations = {
       }
       throw error;
     }
+  },
+
+  /**
+   * "Sync now": queue an interactive sync of one linked board account, or join
+   * the one already waiting. The control row is locked for the whole decision,
+   * so two taps racing each other queue one run between them.
+   */
+  requestProviderSync: async (
+    _: unknown,
+    { boardType }: { boardType: string },
+    ctx: ConnectionContext,
+  ): Promise<ProviderSyncRequest> => {
+    requireAuthenticated(ctx);
+    validateInput(ProviderSyncBoardTypeSchema, boardType, 'boardType');
+    await applyRateLimit(ctx, 5, 'requestProviderSync');
+    const userId = ctx.userId!;
+    const key = { userId, boardType };
+
+    return db.transaction(async (tx) => {
+      let control = await lockProviderSyncControl(tx, key);
+      const [credential] = await tx
+        .select({ syncStatus: dbSchema.auroraCredentials.syncStatus })
+        .from(dbSchema.auroraCredentials)
+        .where(and(eq(dbSchema.auroraCredentials.userId, userId), eq(dbSchema.auroraCredentials.boardType, boardType)));
+      const syncable = credential && SYNCABLE_CREDENTIAL_STATUSES.includes(credential.syncStatus);
+      if (syncable && !control) {
+        // A credential linked before control rows existed. Create the row
+        // without a new generation (concurrent taps land on one row), then lock it.
+        await ensureProviderSyncControl(tx, key);
+        control = await lockProviderSyncControl(tx, key);
+      }
+      if (!syncable || !control?.linked) {
+        throw new GraphQLError('Link this board account before syncing it.', {
+          extensions: { code: 'PROVIDER_NOT_LINKED' },
+        });
+      }
+      const { linkGeneration } = control;
+
+      const waiting = await coalesceInteractiveRun(tx, key);
+      if (waiting) return { runId: waiting.runId, status: waiting.status, coalesced: true };
+
+      const runId = await requestProviderSyncOn(tx, { ...key, linkGeneration, requestedBy: 'manual' });
+      if (!runId) {
+        throw new GraphQLError('Syncing this board from the app is not switched on yet.', {
+          extensions: { code: 'PROVIDER_SYNC_UNAVAILABLE' },
+        });
+      }
+      return { runId, status: 'queued', coalesced: false };
+    });
   },
 
   /**

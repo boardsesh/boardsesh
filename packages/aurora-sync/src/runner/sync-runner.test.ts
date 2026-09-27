@@ -1151,3 +1151,27 @@ describe('SyncRunner.getSyncHealthSnapshot', () => {
     });
   });
 });
+
+describe('SyncRunner.syncCredential concurrency', () => {
+  it('refuses a second concurrent call on the same runner, and accepts the next one after', async () => {
+    const runner = new SyncRunner({ onLog: () => {} });
+    const runnerPrivates = runner as unknown as SyncRunnerPrivates;
+    let finishFirst!: () => void;
+    const firstHeld = new Promise<void>((resolve) => (finishFirst = resolve));
+    const syncSingle = vi
+      .spyOn(runnerPrivates, 'syncSingleCredential')
+      .mockImplementationOnce(() => firstHeld)
+      .mockResolvedValue(undefined);
+
+    const first = runner.syncCredential(createCredential({ userId: 'user-first' }));
+    // The second call arrives while the first is still awaiting its sync.
+    await expect(runner.syncCredential(createCredential({ userId: 'user-second' }))).rejects.toThrow('already syncing');
+    finishFirst();
+    await expect(first).resolves.toEqual({ status: 'active' });
+
+    await expect(runner.syncCredential(createCredential({ userId: 'user-third' }))).resolves.toEqual({
+      status: 'active',
+    });
+    expect(syncSingle).toHaveBeenCalledTimes(2);
+  });
+});

@@ -158,14 +158,16 @@
         "title": "Retirer le lien du compte",
         "description": "Vraiment délier votre compte {{boardName}} ?",
         "ok": "Oui, délier"
-      }
+      },
+      "syncNow": "Synchroniser"
     },
     "status": {
       "connected": "Lié",
       "error": "Erreur",
       "expired": "Expiré",
       "syncing": "Synchronisation",
-      "duplicateAccountCircuits": "Les circuits ne se synchronisent pas : un autre compte Boardsesh utilise les mêmes identifiants de board, donc la synchro des playlists est en pause des deux côtés. Vos croix et vos notes continuent d'arriver."
+      "duplicateAccountCircuits": "Les circuits ne se synchronisent pas : un autre compte Boardsesh utilise les mêmes identifiants de board, donc la synchro des playlists est en pause des deux côtés. Vos croix et vos notes continuent d'arriver.",
+      "syncingHint": "Synchronisation en cours, reviens dans un moment"
     },
     "unsynced": {
       "title_one": "{{count}} élément en attente de synchro",
@@ -218,7 +220,11 @@
       "importInterrupted": "L'import s'est arrêté avant la fin. Réimporter le fichier est sans risque.",
       "requestDataFailed": "Impossible d'ouvrir l'e-mail. Réessaie.",
       "requestDataCopyFailed": "Impossible de copier la demande. Réessaie.",
-      "passwordHelp": "Tes identifiants sont chiffrés avant d'être stockés."
+      "passwordHelp": "Tes identifiants sont chiffrés avant d'être stockés.",
+      "syncNowRateLimited": "Doucement, tu viens de le demander. Réessaie dans une minute.",
+      "syncNowUnavailable": "La synchro à la demande n'est pas encore activée. Ton carnet continue de se synchroniser tout seul.",
+      "syncNowNotLinked": "Reconnecte ce compte pour le synchroniser.",
+      "syncNowFailed": "Impossible de lancer la synchro. Réessaie dans un moment."
     },
     "import": {
       "steps": {

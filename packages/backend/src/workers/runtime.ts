@@ -6,9 +6,12 @@ import { assertQueuePrimary, assertWorkerPrivileges, createJobQueueClient } from
 import { logger } from '../utils/logger';
 import { enqueueOn } from '../services/job-queue';
 import { executeBackgroundJob, handlerForRole, type BackgroundJobPayload } from './jobs';
-import type { WorkerConfig } from './config';
+import { requireProviderSecrets, type WorkerConfig } from './config';
+import { familiesForRole } from './families';
 
 export async function startWorker(config: WorkerConfig) {
+  // Before any connection: a worker missing a provider secret never claims a job.
+  requireProviderSecrets(config.role, familiesForRole(config.role));
   const database = createDb();
   const boss = createJobQueueClient({ connectionString: config.databaseUrl, poolSize: 1, owner: 'worker' });
   const handler = handlerForRole(config.role);

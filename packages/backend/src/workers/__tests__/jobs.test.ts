@@ -517,6 +517,10 @@ describe('durable worker jobs', () => {
               DB_POOL_MAX: '2',
               PGBOSS_POOL_SIZE: '1',
               READ_REPLICA_URL: '',
+              // interactive-import serves the provider sync families, which
+              // refuse to start without their secrets.
+              AURORA_CREDENTIALS_SECRET: 'worker-test-secret',
+              KILTER_OAUTH_CLIENT_ID: 'worker-test-client',
             },
             stdio: 'ignore',
           });

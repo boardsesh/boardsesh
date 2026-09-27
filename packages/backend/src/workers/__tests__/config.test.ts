@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { workerConfig } from '../config';
+import { requireProviderSecrets, workerConfig } from '../config';
 
 const environment = { WORKER_ROLE: 'interactive-import', DATABASE_URL: 'postgresql://worker:secret@localhost/test' };
 
@@ -38,5 +38,22 @@ describe('worker configuration', () => {
         DATABASE_URL: 'postgresql://worker:secret@remote.example/test?sslmode=verify-full',
       }).paused,
     ).toBe(true);
+  });
+  it('refuses a role serving a provider family without that family’s secrets', () => {
+    const families = [{ name: 'worker-probe' }, { name: 'aurora-user-sync' }, { name: 'kilter-user-sync' }];
+    expect(() => requireProviderSecrets('interactive-import', families, {})).toThrow(
+      'AURORA_CREDENTIALS_SECRET, KILTER_OAUTH_CLIENT_ID',
+    );
+    expect(() =>
+      requireProviderSecrets('interactive-import', families, { AURORA_CREDENTIALS_SECRET: 'secret' }),
+    ).toThrow('KILTER_OAUTH_CLIENT_ID');
+    expect(() =>
+      requireProviderSecrets('interactive-import', families, {
+        AURORA_CREDENTIALS_SECRET: 'secret',
+        KILTER_OAUTH_CLIENT_ID: 'client',
+      }),
+    ).not.toThrow();
+    // A role with no provider family needs nothing.
+    expect(() => requireProviderSecrets('batch', [{ name: 'worker-probe' }], {})).not.toThrow();
   });
 });

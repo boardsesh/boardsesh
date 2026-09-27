@@ -1858,3 +1858,25 @@ export type DeleteHoldOutlineOverrideMutationVariables = {
 export type DeleteHoldOutlineOverrideMutationResponse = {
   deleteHoldOutlineOverride: boolean;
 };
+
+// ============================================
+// Board account sync ("Sync now")
+// ============================================
+
+export const REQUEST_PROVIDER_SYNC = gql`
+  mutation RequestProviderSync($boardType: String!) {
+    requestProviderSync(boardType: $boardType) {
+      runId
+      status
+      coalesced
+    }
+  }
+`;
+
+export type RequestProviderSyncMutationVariables = {
+  boardType: string;
+};
+
+export type RequestProviderSyncMutationResponse = {
+  requestProviderSync: { runId: string; status: string; coalesced: boolean };
+};

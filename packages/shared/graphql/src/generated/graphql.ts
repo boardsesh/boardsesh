@@ -450,6 +450,14 @@ export type AuroraCredentialStatus = {
   boardType: Scalars['String']['output'];
   /** Whether a valid token is stored */
   hasToken: Scalars['Boolean']['output'];
+  /** The queued or running sync this account is waiting on, if any */
+  pendingRunId?: Maybe<Scalars['ID']['output']>;
+  /** Whether Sync now can queue a run for this account (its board's sync is switched on) */
+  syncAvailable?: Maybe<Scalars['Boolean']['output']>;
+  /** Machine code or message from the last failed sync, when there is one */
+  syncError?: Maybe<Scalars['String']['output']>;
+  /** Sync state of the stored credential: pending, active, error, expired, or linked (no credential) */
+  syncStatus?: Maybe<Scalars['String']['output']>;
   /** When credentials were last synced (ISO 8601) */
   syncedAt?: Maybe<Scalars['String']['output']>;
   /** Aurora user ID (after successful sync) */
@@ -4073,6 +4081,12 @@ export type Mutation = {
    * notified). Requires authentication.
    */
   requestGymClaim: RequestGymClaimResult;
+  /**
+   * Pull the latest logbook from a linked board account now.
+   * Joins a sync that is already waiting instead of queueing a second one.
+   * Rate limited to 5 requests a minute.
+   */
+  requestProviderSync: ProviderSyncRequest;
   requestSprayWallDetection: SprayWallDetection;
   /**
    * Resolve a BLE serial for clients that can disambiguate. Returns a single
@@ -4757,6 +4771,11 @@ export type MutationReportSprayWallArgs = {
 /** Root mutation type for all write operations. */
 export type MutationRequestGymClaimArgs = {
   input: RequestGymClaimInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationRequestProviderSyncArgs = {
+  boardType: Scalars['String']['input'];
 };
 
 /** Root mutation type for all write operations. */
@@ -5619,6 +5638,17 @@ export type ProposeSprayWallResetInput = {
    */
   versionId: Scalars['ID']['input'];
   wallUuid: Scalars['ID']['input'];
+};
+
+/** A "Sync now" request for one linked board account. */
+export type ProviderSyncRequest = {
+  __typename?: 'ProviderSyncRequest';
+  /** True when the request joined a run that was already waiting, instead of queueing a new one */
+  coalesced: Scalars['Boolean']['output'];
+  /** The background run that will sync the account */
+  runId: Scalars['ID']['output'];
+  /** That run's status: queued, running or retrying */
+  status: Scalars['String']['output'];
 };
 
 /** Public-facing user profile for social features. */

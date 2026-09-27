@@ -13,6 +13,7 @@ export async function userSync(
   userId: number,
   options: SyncOptions = {},
   token: string,
+  signal?: AbortSignal,
 ): Promise<SyncData> {
   const { sharedSyncs = [], userSyncs = [] } = options;
 
@@ -51,7 +52,9 @@ export async function userSync(
       method: 'POST',
       headers,
       body: requestBody,
-      signal: AbortSignal.timeout(30000),
+      // A caller's signal (a background job's shutdown or lost lease) cuts the
+      // request short on top of the 30 s timeout.
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30000)]) : AbortSignal.timeout(30000),
     });
 
     await assertAuroraResponseOk(response, webUrl);
@@ -59,6 +62,12 @@ export async function userSync(
   } catch (error) {
     if (isAuroraRequestError(error)) {
       throw error;
+    }
+
+    // The caller stopped the work: surface its reason, not an Aurora timeout
+    // that would be recorded against the credential.
+    if (signal?.aborted) {
+      throw signal.reason;
     }
 
     if (error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError')) {

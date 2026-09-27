@@ -29,8 +29,9 @@ vi.mock('../../workers/families', () => ({
 
 vi.mock('../../workers/jobs', () => ({ enqueueBackgroundJob: fakes.enqueue }));
 
-const { assertScheduleRoles, enabledBatchFamilies, runScheduleTick, startBatchSchedules } =
+const { assertScheduleRoles, enabledBatchFamilies, enabledBatchFamiliesOrNone, runScheduleTick, startBatchSchedules } =
   await import('../batch-schedules');
+const { logger } = await import('../../utils/logger');
 
 const batchFake = {
   name: 'batch-fake',
@@ -95,6 +96,23 @@ describe('enabledBatchFamilies', () => {
 
   it('rejects an unknown family name', () => {
     expect(() => enabledBatchFamilies({ BATCH_FAMILIES_ENABLED: 'batch-fake,refresh-typo' })).toThrow('refresh-typo');
+  });
+});
+
+describe('enabledBatchFamiliesOrNone', () => {
+  it('turns every family off for an invalid list instead of throwing, and logs it once per value', () => {
+    const logged = vi.spyOn(logger, 'error').mockImplementation(() => logger);
+    const invalid = { BATCH_FAMILIES_ENABLED: 'batch-fake,refresh-typo' };
+
+    expect([...enabledBatchFamiliesOrNone(invalid)]).toEqual([]);
+    expect([...enabledBatchFamiliesOrNone(invalid)]).toEqual([]);
+    expect(logged).toHaveBeenCalledTimes(1);
+
+    expect([...enabledBatchFamiliesOrNone({ BATCH_FAMILIES_ENABLED: 'batch-fake' })]).toEqual(['batch-fake']);
+    expect(logged).toHaveBeenCalledTimes(1);
+    // Unset is "none", not a cache hit on nothing.
+    expect([...enabledBatchFamiliesOrNone({})]).toEqual([]);
+    logged.mockRestore();
   });
 });
 

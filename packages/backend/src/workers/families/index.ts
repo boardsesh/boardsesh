@@ -12,6 +12,8 @@ import { refreshMoonboardAngleEstimatesFamily } from './refresh-moonboard-angle-
 import { refreshMoonboardWideAngleEstimatesFamily } from './refresh-moonboard-wide-angle-estimates';
 import { refreshRecommendationsFamily } from './refresh-recommendations';
 import { workerProbeFamily } from './worker-probe';
+import { auroraUserSyncFamily } from './aurora-user-sync';
+import { kilterUserSyncFamily } from './kilter-user-sync';
 
 export { BackgroundJobError } from './types';
 export type { BackgroundJobContext, BackgroundJobFamilyModule, BackgroundJobFamilyOptions } from './types';
@@ -26,6 +28,8 @@ const FAMILY_MODULES = {
   'export-board-snapshots': exportBoardSnapshotsFamily,
   'refresh-moonboard-angle-estimates': refreshMoonboardAngleEstimatesFamily,
   'refresh-moonboard-wide-angle-estimates': refreshMoonboardWideAngleEstimatesFamily,
+  'aurora-user-sync': auroraUserSyncFamily,
+  'kilter-user-sync': kilterUserSyncFamily,
 } satisfies Record<BackgroundJobFamily, BackgroundJobFamilyModule>;
 
 const registry: ReadonlyMap<string, BackgroundJobFamilyModule> = new Map(

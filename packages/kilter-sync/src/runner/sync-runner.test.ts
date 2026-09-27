@@ -81,6 +81,7 @@ import { SyncRunner } from './sync-runner';
 type SyncRunnerPrivates = {
   getNextCredentialToSync: (db: RunnerDb) => Promise<KilterCredentialRecord | null>;
   runCycleForCredential: (db: RunnerDb, cred: KilterCredentialRecord) => Promise<void>;
+  syncCredentialCycle: (db: RunnerDb, cred: KilterCredentialRecord, options: unknown) => Promise<void>;
   getClient: () => { client: unknown; db: RunnerDb };
   maybeRunCatalogSync: (db: RunnerDb, cred: KilterCredentialRecord, currentToken: string) => Promise<void>;
   maybeRepairKilterStats: (...args: unknown[]) => Promise<void>;
@@ -623,5 +624,32 @@ describe('SyncRunner catalog-sync cooldown claim', () => {
     await expect(privates.maybeRunCatalogSync(db, credential(), 'access-token')).resolves.toBeUndefined();
 
     expect(onError).toHaveBeenCalled();
+  });
+});
+
+describe('SyncRunner.runCycleForCredential concurrency', () => {
+  it('refuses a second concurrent cycle on the same runner, and accepts the next one after', async () => {
+    const runner = new SyncRunner({ onLog: () => {} });
+    const privates = runner as unknown as SyncRunnerPrivates;
+    const { db } = createDbShim();
+    let finishFirst!: () => void;
+    const firstHeld = new Promise<void>((resolve) => (finishFirst = resolve));
+    const cycle = vi
+      .spyOn(privates, 'syncCredentialCycle')
+      .mockImplementationOnce(() => firstHeld)
+      .mockResolvedValue(undefined);
+
+    const first = runner.runCycleForCredential(db, credential({ userId: 'user-first' }));
+    // The second call arrives while the first is still awaiting its cycle.
+    await expect(runner.runCycleForCredential(db, credential({ userId: 'user-second' }))).rejects.toThrow(
+      'already syncing',
+    );
+    finishFirst();
+    await expect(first).resolves.toEqual({ status: 'active' });
+
+    await expect(runner.runCycleForCredential(db, credential({ userId: 'user-third' }))).resolves.toEqual({
+      status: 'active',
+    });
+    expect(cycle).toHaveBeenCalledTimes(2);
   });
 });

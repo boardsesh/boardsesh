@@ -47,6 +47,8 @@ export const BACKGROUND_JOB_FAMILIES = [
   'export-board-snapshots',
   'refresh-moonboard-angle-estimates',
   'refresh-moonboard-wide-angle-estimates',
+  'aurora-user-sync',
+  'kilter-user-sync',
 ] as const;
 
 export type BackgroundJobFamily = (typeof BACKGROUND_JOB_FAMILIES)[number];

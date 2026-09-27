@@ -65,6 +65,26 @@ export const userTypeDefs = /* GraphQL */ `
     syncedAt: String
     "Whether a valid token is stored"
     hasToken: Boolean!
+    "Sync state of the stored credential: pending, active, error, expired, or linked (no credential)"
+    syncStatus: String
+    "Machine code or message from the last failed sync, when there is one"
+    syncError: String
+    "The queued or running sync this account is waiting on, if any"
+    pendingRunId: ID
+    "Whether Sync now can queue a run for this account (its board's sync is switched on)"
+    syncAvailable: Boolean
+  }
+
+  """
+  A "Sync now" request for one linked board account.
+  """
+  type ProviderSyncRequest {
+    "The background run that will sync the account"
+    runId: ID!
+    "That run's status: queued, running or retrying"
+    status: String!
+    "True when the request joined a run that was already waiting, instead of queueing a new one"
+    coalesced: Boolean!
   }
 
   """

@@ -158,14 +158,16 @@
         "title": "Quitar vínculo de cuenta",
         "description": "¿Seguro que quieres desvincular tu cuenta de {{boardName}}?",
         "ok": "Sí, desvincular"
-      }
+      },
+      "syncNow": "Sincronizar ahora"
     },
     "status": {
       "connected": "Vinculado",
       "error": "Error",
       "expired": "Caducado",
       "syncing": "Sincronizando",
-      "duplicateAccountCircuits": "Los circuitos no se están sincronizando: otra cuenta de Boardsesh usa este mismo inicio de sesión del plafón, así que la sincronización de playlists está en pausa para las dos. Tus encadenes y valoraciones siguen llegando."
+      "duplicateAccountCircuits": "Los circuitos no se están sincronizando: otra cuenta de Boardsesh usa este mismo inicio de sesión del plafón, así que la sincronización de playlists está en pausa para las dos. Tus encadenes y valoraciones siguen llegando.",
+      "syncingHint": "Sincronizando, vuelve en un rato"
     },
     "unsynced": {
       "title_one": "{{count}} elemento pendiente de sincronizar",
@@ -218,7 +220,11 @@
       "importInterrupted": "La importación se detuvo antes de terminar. Volver a importar el archivo es seguro.",
       "requestDataFailed": "No se pudo abrir el correo. Inténtalo de nuevo.",
       "requestDataCopyFailed": "No se pudo copiar la solicitud. Inténtalo de nuevo.",
-      "passwordHelp": "Tus credenciales se cifran antes de guardarse."
+      "passwordHelp": "Tus credenciales se cifran antes de guardarse.",
+      "syncNowRateLimited": "Más despacio, acabas de pedirlo. Vuelve a intentarlo en un minuto.",
+      "syncNowUnavailable": "Sincronizar ahora aún no está activado. Tu logbook se sigue sincronizando solo.",
+      "syncNowNotLinked": "Vuelve a conectar esta cuenta para sincronizarla.",
+      "syncNowFailed": "No se pudo iniciar la sincronización. Inténtalo de nuevo en un rato."
     },
     "import": {
       "steps": {

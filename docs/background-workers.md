@@ -72,9 +72,24 @@ grants before granting, so a table removed from a list (or a login moved to a
 bare entry) loses its grant on the next migration. Each login's revoke and
 grants run as one `DO` block, a single transaction, so a migration during a
 running job never leaves the login with nothing. A worker login may not be the
-runtime or detector login; the migrator refuses it. Today only `batch` has data
-grants (see "Batch families"). Runtime users must never be migration owners.
-The existing runtime and detector grant contracts remain supported.
+runtime or detector login; the migrator refuses it. The `batch` data grants are
+listed under "Batch families", the provider roles' below. Runtime users must
+never be migration owners. The existing runtime and detector grant contracts
+remain supported.
+
+`interactive-import` and `routine-provider` share the provider sync list
+(`PROVIDER_SYNC_GRANTS`):
+
+| Grant | Tables |
+| --- | --- |
+| SELECT, UPDATE | `aurora_credentials`, `provider_sync_controls` |
+| SELECT | `users (id, name)`, `user_profiles (user_id, display_name)`, `user_board_mappings`, `board_climb_aliases` |
+| SELECT, INSERT, UPDATE, DELETE | `boardsesh_ticks`, `logbook_sync_skips`, `board_users`, `board_walls`, `board_climbs`, `board_tags`, `board_circuits`, `board_user_syncs`, `board_climb_stats`, `board_climb_ratings`, `playlists`, `playlist_climbs`, `playlist_ownership` |
+| INSERT | `sync_deletions` (the `boardsesh_ticks` and `playlist*` delete triggers write it as the caller) |
+
+It is proven, not trusted: `services/__tests__/job-queue-roles.test.ts` runs a
+whole Aurora user sync (every applier branch) as a NOLOGIN role holding only
+these grants. A table the appliers start writing fails that test first.
 
 ## Queues
 
@@ -141,6 +156,8 @@ module. The module declares:
 | `export-board-snapshots` | `batch` | 2,700 s | 1, after 300 s | 20 h (live scan: skips itself after 840 s) | mode (`nightly`, `live-scan`) |
 | `refresh-moonboard-angle-estimates` | `batch` | 1,800 s | 1, after 900 s | 6 days | `weekly` |
 | `refresh-moonboard-wide-angle-estimates` | `batch` | 7,200 s | 1, after 900 s | 6 days | `weekly` |
+| `aurora-user-sync` | `interactive-import` | 1800 s (heartbeat 300 s) | 3, 30 s backoff to 300 s | 2 h | `userId:boardType:linkGeneration` |
+| `kilter-user-sync` | `interactive-import` | 1800 s (heartbeat 300 s) | 3, 30 s backoff to 300 s | 2 h | `userId:kilter:linkGeneration` |
 
 Throw `BackgroundJobError(code)` from `execute` to record a bounded,
 credential-free `error_code` (`/^[A-Z][A-Z0-9_]{0,63}$/`); pass
@@ -186,6 +203,10 @@ enqueue is logged with a bounded code (never payload contents), counted and
 skipped, since retrying the tick would duplicate every job that did enqueue
 under a run-ID key. When every request in a tick fails, nothing was enqueued, so
 the tick throws and pg-boss retries it.
+
+The same list gates producers that are not schedules: a link and "Sync now"
+queue `aurora-user-sync` / `kilter-user-sync` runs only while those names are
+listed (see "Provider sync families").
 
 ## Batch families
 
@@ -460,6 +481,116 @@ Rollback: remove the family from `BATCH_FAMILIES_ENABLED` (the backend
 unschedules it on boot) and restore the workflow's `schedule:` if step 4
 already landed.
 
+## Provider sync families
+
+`aurora-user-sync` and `kilter-user-sync` sync one climber's linked account:
+right after they link it, and when they tap "Sync now". The payload is
+`{ userId, boardType, linkGeneration, requestedBy: 'link' | 'manual' }`; it
+names the account, never how to log in. Worker startup fails when a role serves
+either family and `AURORA_CREDENTIALS_SECRET` (both) or `KILTER_OAUTH_CLIENT_ID`
+(Kilter) is missing.
+
+### The fences
+
+Every write batch goes through `fencedBatchRunner`
+(`workers/families/provider-sync-batch.ts`), the one place three fences meet:
+
+1. the attempt fence (`context.transaction`): this attempt still owns the run
+   and its pg-boss lease;
+2. the link generation (`assertLinkGenerationCurrent`, `FOR SHARE` on the
+   `provider_sync_controls` row): the account has not been relinked or unlinked
+   since the job was queued;
+3. the credential lease (`acquireCredentialSyncLease`, 10 minutes, renewed by
+   every batch): no other run is syncing this account.
+
+Lock order, for every writer: ledger run row, then the user tick advisory lock,
+then the control row, then credential and tick rows. The link producers and
+"Sync now" lock the control row before they touch `aurora_credentials`, so a
+relink waits for an in-flight batch instead of deadlocking with it. The daemons
+take no lease, but every Aurora page transaction (daemon or job) takes the tick
+lock before its first row lock, so a daemon and a job on the same account
+serialize instead of deadlocking. Provider HTTP
+(Aurora login and `/sync`, Keycloak, PowerSync) always runs between batches.
+The Kilter token refresh keeps its own unfenced `FOR UPDATE` transaction on the
+credential row, exactly as the daemon runs it. A fenced batch holds the run-row lock, so
+no heartbeat lands while it runs, and pg-boss fails an active job at
+`heartbeat_on + heartbeatSeconds`. The families' 300 s heartbeat window is
+therefore a hard ceiling on one batch: one Aurora page or one 500-op Kilter
+flush, each with the stats recompute it triggers, or the whole circuits phase.
+A batch that needs longer can never succeed. First syncs fit today; PR-3's
+routine cycle must move `recomputeClimbStatsBulk` out of the page transaction
+into its own chunked batches rather than lean on this window.
+
+### One run
+
+1. Under the fences, check the generation and take the lease. Another run's live
+   lease ends the attempt with a retryable `CREDENTIAL_BUSY`; a manual request
+   first sets `notify_requester` (nothing reads it yet; a later PR notifies).
+2. Claim the named credential with `claimCredentialForRun`, inside a fenced
+   transaction so a run gone stale cannot stamp the new link's attempt clock: no
+   30 s reclaim gap, no backoff, but the daemon's own eligibility filter, so an
+   expired credential is `CREDENTIAL_UNAVAILABLE`.
+3. Run the provider sync with `skipSharedSync` / `skipCatalogSync`: the
+   board-wide half stays with the daemon (and later its own family).
+4. Release the lease and clear `pending_run_id`, unless a retry is coming.
+
+| Error code | Retries | Meaning |
+| --- | --- | --- |
+| `STALE_LINK_GENERATION` | no | Relinked or unlinked since queued; nothing was written |
+| `CREDENTIAL_BUSY` | yes | Another run holds the lease, or took it over mid-run |
+| `CREDENTIAL_UNAVAILABLE` | no | No syncable credential (expired, removed, half-written) |
+| `PROVIDER_UNAVAILABLE` | yes | Transient provider failure, already recorded on the credential |
+| `CREDENTIAL_EXPIRED` / `PROVIDER_SYNC_FAILED` | no | Permanent failure, recorded on the credential and shown on the card |
+
+A credential failure goes through the same bookkeeping as the daemon
+(`consecutive_failures`, `last_sync_error`, status rules). A fence refusal or an
+abort is never recorded against the account.
+
+### Producers, "Sync now" and coalescing
+
+`saveAuroraCredential`, `saveKilterCredential` and the Kilter password path call
+`rotateLinkGeneration` inside their transaction, before the credential write,
+then `requestProviderSyncOn`, which enqueues the family run and sets
+`pending_run_id` when the family is in `BATCH_FAMILIES_ENABLED` (and does nothing
+otherwise). The run commits with the link: a throw after the enqueue rolls back
+both. `deleteAuroraCredential` rotates with `linked = false`; the control row
+outlives the credential so a job queued before the unlink still fails its check.
+For Kilter it reads the refresh token in that transaction and revokes it at
+Keycloak only after the commit, so no row lock is held across the HTTP call.
+
+The GraphQL mutation `requestProviderSync(boardType)` is "Sync now": 5 a minute
+per user, then one transaction that locks the control row, refuses an unlinked
+or expired account (`PROVIDER_NOT_LINKED`), joins the pending run while it is
+queued, running or retrying (`coalesced: true`), and otherwise queues a manual
+run (`PROVIDER_SYNC_UNAVAILABLE` while the family is off). The queue is
+`stately` with one retry slot per key, so coalescing has to happen here, before
+an enqueue, never by leaning on pg-boss to hold two queued runs for one account.
+The singleton key carries the generation, so a relink gets its own run instead
+of being deduplicated onto the old generation's run, which could only fail.
+`AuroraCredentialStatus.pendingRunId` (GraphQL and the REST credential list) is
+what the app shows as "Syncing"; the REST list's `syncAvailable` says whether the
+board's family is enabled, so the app hides "Sync now" until it is.
+
+### Cutover
+
+1. Run the migrator (0244, 0245 and the new grants, with `<worker-role>=<login>`
+   entries).
+2. Unpause the `interactive-import` worker (`WORKER_PAUSED=false`) with
+   `AURORA_CREDENTIALS_SECRET` and `KILTER_OAUTH_CLIENT_ID` (plus
+   `KILTER_OAUTH_CLIENT_SECRET` for a confidential client). With no family
+   enabled nothing is queued, so it idles.
+3. Deploy the backend with `BATCH_FAMILIES_ENABLED=aurora-user-sync,kilter-user-sync`.
+   Links now queue runs and "Sync now" works. In the other order, every link
+   made before the worker is up queues a run nobody consumes, and its card reads
+   "Syncing" until the run's 2 h deadline.
+
+The daemons keep running and keep owning routine syncs until PR-3. The overlap
+costs at most one duplicate, idempotent sync of a just-linked account: the
+daemon claim does not look at the lease yet. Rollback, in reverse: remove the
+families from `BATCH_FAMILIES_ENABLED` first, then pause the worker once its
+queue is empty; runs left queued expire at their deadline and the reconciler
+clears the control rows.
+
 ## Attempts, retries and reconciliation
 
 Queue payloads contain only `{ runId }`; the run row carries `family`,
@@ -474,9 +605,9 @@ window.
 Claims lock the run, then its pg-boss row, and check retry count, live lease and
 absolute deadline. Each data batch uses `withBackgroundJobAttempt`; it checks
 the current attempt token and lease again before commit. Never perform provider
-HTTP requests while holding those locks. Future personal imports must also
-acquire their logbook/control locks and validate link generation inside each
-actual helper transaction as specified in #5615/#5616.
+HTTP requests while holding those locks. Personal imports add the tick lock,
+the link generation and the credential lease inside each of those transactions
+(see "Provider sync families").
 
 Workers explicitly fetch and settle jobs. They do not use automatic `work()`
 acknowledgements: a stale callback must not complete/fail a newer attempt by
@@ -493,7 +624,10 @@ advancing a cursor past healthy work. It rereads state under both locks before
 changing anything. Missing jobs, exhausted retries, cancellation and deadline
 expiry become explicit outcomes; stale attempts lose their token. The supervisor
 owns actual requeueing. Up to 100 terminal ledger rows older than 30 days are
-removed per invocation. Active/retryable records are never purged.
+removed per invocation. Active/retryable records are never purged. A third step
+clears up to 100 `provider_sync_controls` rows whose `pending_run_id` or
+`active_run_id` points at a finished or purged run, so a worker that died
+mid-sync never leaves "Sync now" coalescing onto a dead run.
 
 ## Operator commands and health
 
@@ -546,6 +680,6 @@ owner. Preserve durable pending data and retain schema during image rollback.
 
 Provisioning, trusted production TLS, actual peak memory/primary load and
 interactive-plus-routine capacity tests remain deployment gates. The under-30s
-eligible import start target cannot be demonstrated until #5615 implements
-personal imports. Probe tests are not evidence of provider import throughput.
+eligible import start target can be measured once the interactive-import worker
+is unpaused with the provider families enabled. Probe tests are not evidence of provider import throughput.
 Do not close #5614's deployment/capacity acceptance items from code tests alone.

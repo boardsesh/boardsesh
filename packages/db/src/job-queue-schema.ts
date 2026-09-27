@@ -66,6 +66,48 @@ export type WorkerTableGrant = {
 };
 
 /**
+ * What syncing one climber's Aurora or Kilter account reads and writes: the
+ * credential bookkeeping and fences, then everything the two user-sync
+ * appliers touch (`apply-user-logbook.ts`, aurora `user-sync.ts`, kilter
+ * `user-sync.ts`, and the stats recompute they both call).
+ */
+const PROVIDER_SYNC_WRITE: readonly TablePrivilege[] = ['SELECT', 'INSERT', 'UPDATE', 'DELETE'];
+const PROVIDER_SYNC_GRANTS: readonly WorkerTableGrant[] = [
+  // Status, token and failure bookkeeping on the credential; the link
+  // generation, lease and pending run on the control row. Rows are never
+  // created or deleted by a worker: linking and unlinking are the backend's.
+  { table: 'aurora_credentials', privileges: ['SELECT', 'UPDATE'] },
+  { table: 'provider_sync_controls', privileges: ['SELECT', 'UPDATE'] },
+  // Read only: the name the stats recompute crowns a climb's first
+  // ascensionist with (COALESCE(display_name, name)), and nothing else of the
+  // user: no email, no image. Then the board mapping, and the climb aliases
+  // both appliers resolve canonical climbs through.
+  { table: 'users', privileges: ['SELECT'], columns: ['id', 'name'] },
+  { table: 'user_profiles', privileges: ['SELECT'], columns: ['user_id', 'display_name'] },
+  { table: 'user_board_mappings', privileges: ['SELECT'] },
+  { table: 'board_climb_aliases', privileges: ['SELECT'] },
+  // The logbook and its skip log.
+  { table: 'boardsesh_ticks', privileges: PROVIDER_SYNC_WRITE },
+  { table: 'logbook_sync_skips', privileges: PROVIDER_SYNC_WRITE },
+  // Aurora's per-user tables and the incremental sync cursor.
+  { table: 'board_users', privileges: PROVIDER_SYNC_WRITE },
+  { table: 'board_walls', privileges: PROVIDER_SYNC_WRITE },
+  { table: 'board_climbs', privileges: PROVIDER_SYNC_WRITE },
+  { table: 'board_tags', privileges: PROVIDER_SYNC_WRITE },
+  { table: 'board_circuits', privileges: PROVIDER_SYNC_WRITE },
+  { table: 'board_user_syncs', privileges: PROVIDER_SYNC_WRITE },
+  // The stats recompute after a logbook write, and Kilter's ratings.
+  { table: 'board_climb_stats', privileges: PROVIDER_SYNC_WRITE },
+  { table: 'board_climb_ratings', privileges: PROVIDER_SYNC_WRITE },
+  // Circuits mirrored as playlists.
+  { table: 'playlists', privileges: PROVIDER_SYNC_WRITE },
+  { table: 'playlist_climbs', privileges: PROVIDER_SYNC_WRITE },
+  { table: 'playlist_ownership', privileges: PROVIDER_SYNC_WRITE },
+  // Written by the boardsesh_ticks and playlist* delete triggers (offline sync tombstones).
+  { table: 'sync_deletions', privileges: ['INSERT'] },
+];
+
+/**
  * Data grants per worker role, on top of the pg-boss DML and the ledger every
  * worker login gets. Each list is exactly what that role's families read and
  * write, and is proven by running every family under the restricted role in
@@ -74,8 +116,9 @@ export type WorkerTableGrant = {
  * ship later add their lists in the PR that ships them.
  */
 export const WORKER_ROLE_DATA_GRANTS: Record<BackgroundWorkerRole, readonly WorkerTableGrant[]> = {
-  'interactive-import': [],
-  'routine-provider': [],
+  // aurora-user-sync, kilter-user-sync (and the routine cycle after them).
+  'interactive-import': PROVIDER_SYNC_GRANTS,
+  'routine-provider': PROVIDER_SYNC_GRANTS,
   'maintenance-delivery': [],
   // refresh-recommendations, refresh-hold-features, refresh-climb-grades,
   // refresh-climb-neighbors, export-board-snapshots.
