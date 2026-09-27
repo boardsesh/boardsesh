@@ -3,7 +3,11 @@ import { and, eq, isNotNull, or, sql } from 'drizzle-orm';
 
 import { db } from '../db/client';
 import { auroraCredentials } from '@boardsesh/db/schema';
-import { claimNextCredentialForSync, deferCredentialSyncAttempt } from '@boardsesh/db/queries';
+import {
+  claimNextCredentialForSync,
+  deferCredentialSyncAttempt,
+  findSharedSyncDonorCredential,
+} from '@boardsesh/db/queries';
 
 // ---------------------------------------------------------------------------
 // Credential selection + exponential backoff (real DB)
@@ -245,6 +249,41 @@ describe('credential selection + backoff (real DB)', () => {
        WHERE user_id = ${USER_FAIL} AND board_type = 'kilter'`);
 
     expect(await pickNextKilterCredential()).toBeNull();
+  });
+
+  it('never borrows a donor inside a provider Retry-After hold', async () => {
+    for (const [userId, hoursAgo] of [
+      [USER_H1, 1],
+      [USER_H2, 2],
+    ] as const) {
+      await seedCredential({ userId, syncStatus: 'active', consecutiveFailures: 0, lastSyncAttemptAt: sql`now()` });
+      await db.execute(sql`
+        UPDATE aurora_credentials SET last_sync_at = now() - make_interval(hours => ${hoursAgo})
+         WHERE user_id = ${userId} AND board_type = 'kilter'`);
+    }
+    const donor = async () =>
+      (
+        await findSharedSyncDonorCredential(db, {
+          boardType: 'kilter',
+          candidateFilter: or(eq(auroraCredentials.userId, USER_H1), eq(auroraCredentials.userId, USER_H2)),
+        })
+      )?.userId ?? null;
+    const hold = (userId: string, until: ReturnType<typeof sql>) =>
+      db.execute(sql`
+        UPDATE aurora_credentials SET provider_retry_after_until = ${until}
+         WHERE user_id = ${userId} AND board_type = 'kilter'`);
+
+    // The most recent success is the donor…
+    expect(await donor()).toBe(USER_H1);
+    // …unless the provider is holding it: the next one is borrowed instead.
+    await hold(USER_H1, sql`now() + interval '1 hour'`);
+    expect(await donor()).toBe(USER_H2);
+    // Every candidate held: no donor at all.
+    await hold(USER_H2, sql`now() + interval '1 hour'`);
+    expect(await donor()).toBeNull();
+    // A hold that has run out no longer counts.
+    await hold(USER_H1, sql`now() - interval '1 second'`);
+    expect(await donor()).toBe(USER_H1);
   });
 
   it('sorts a never-attempted credential first (NULLS FIRST)', async () => {

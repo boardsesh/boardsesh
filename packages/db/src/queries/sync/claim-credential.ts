@@ -319,7 +319,8 @@ export async function deferCredentialSyncAttempt(
  * The credential whose token a board-wide job borrows: an `active` credential
  * for the board (plus the runner's own eligibility filter), most recently
  * synced first. The most recent success is the one most likely to still hold a
- * working token or password. Null when the board has no healthy credential.
+ * working token or password. A credential inside a provider Retry-After hold
+ * is skipped. Null when the board has no healthy credential.
  */
 export async function findSharedSyncDonorCredential(
   db: DrizzleDb,
@@ -332,6 +333,9 @@ export async function findSharedSyncDonorCredential(
       and(
         eq(auroraCredentials.boardType, options.boardType),
         eq(auroraCredentials.syncStatus, 'active'),
+        // A credential the provider asked us to leave alone is no donor either:
+        // borrowing it would call the provider inside the window it set.
+        sql`(${auroraCredentials.providerRetryAfterUntil} IS NULL OR ${auroraCredentials.providerRetryAfterUntil} <= now())`,
         options.candidateFilter,
       ),
     )
