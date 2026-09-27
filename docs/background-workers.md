@@ -721,7 +721,13 @@ credential then goes through `runRoutineCredentialSync`
 (`workers/families/provider-sync-batch.ts`), the same adapter and fences as a
 first-link sync: read the link generation (creating the control row of a
 credential linked before rows existed), take the lease, sync with every write
-behind `fencedBatchRunner`, release the lease. A never-synced account is
+behind `fencedBatchRunner`, release the lease. The claim's row is only a
+snapshot, so the transaction that takes the lease also re-reads the credential
+`FOR SHARE` (after the control row, the fenced-batch lock order) and syncs that
+row; if it was rewritten since the claim (a relink rotates the generation the
+fence was just read from and replaces the secrets), the lease goes straight
+back and the credential is a logged `CREDENTIAL_RELINKED` skip, left to the
+relink's own interactive run. A never-synced account is
 instead handed to its interactive family in one fenced transaction that takes
 the lease, queues (or joins) the interactive run, records it as pending and
 hands the lease back, so no committed lease sits between the check and the

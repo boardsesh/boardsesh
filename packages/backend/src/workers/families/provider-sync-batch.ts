@@ -28,7 +28,9 @@ import {
   coalesceInteractiveRun,
   deferCredentialSyncAttempt,
   ensureProviderSyncControl,
+  isSameClaimedCredential,
   markProviderSyncRequesterWaiting,
+  readCredentialForShare,
   readProviderSyncControl,
   releaseCredentialSyncLease,
   setPendingProviderSyncRun,
@@ -301,7 +303,13 @@ export const ROUTINE_CREDENTIAL_DEADLINE_MARGIN_MS = 60_000;
  */
 export type RoutineCredentialResult = {
   result: 'synced' | 'failed' | 'skipped' | 'queued';
-  reason?: 'NOT_LINKED' | 'CREDENTIAL_BUSY' | 'STALE_LINK_GENERATION' | 'CYCLE_DEADLINE' | 'FIRST_SYNC';
+  reason?:
+    | 'NOT_LINKED'
+    | 'CREDENTIAL_BUSY'
+    | 'STALE_LINK_GENERATION'
+    | 'CREDENTIAL_RELINKED'
+    | 'CYCLE_DEADLINE'
+    | 'FIRST_SYNC';
   /** Set when the provider throttled us; the credential is held until the delay has passed. */
   retryAfterMs?: number;
   /** For `queued`: the interactive run the account was handed to, and whether it already existed. */
@@ -325,6 +333,7 @@ export type RoutineCredentialResult = {
 async function queueFirstSync(
   context: BackgroundJobContext,
   fence: ProviderSyncFence,
+  claimed: ClaimedCredential,
   adapter: Pick<ProviderSyncAdapter, 'interactiveFamily'>,
 ): Promise<RoutineCredentialResult> {
   const key = { userId: fence.userId, boardType: fence.boardType };
@@ -332,6 +341,12 @@ async function queueFirstSync(
     await enterFence(transaction, fence);
     if (!(await acquireCredentialSyncLease(transaction, { ...fence, ttlMs: CREDENTIAL_LEASE_TTL_MS }))) {
       throw new CredentialLeaseLostError();
+    }
+    if (!isSameClaimedCredential(claimed, await readCredentialForShare(transaction, key))) {
+      // Relinked (or otherwise rewritten) since the claim: that link's own run
+      // handles it. Hand the lease straight back.
+      await releaseCredentialSyncLease(transaction, fence);
+      return { result: 'skipped', reason: 'CREDENTIAL_RELINKED' };
     }
     const pending = await coalesceInteractiveRun(transaction, key);
     let queued: RoutineCredentialResult;
@@ -351,6 +366,35 @@ async function queueFirstSync(
 }
 
 /**
+ * Take the lease for a claimed credential and bind the run to the credential
+ * row as it is NOW, in one fenced transaction. The claim's row is a snapshot:
+ * a relink between the claim and this point rotates the link generation the
+ * fence was just built from AND rewrites the secrets, so syncing the snapshot
+ * would sign into the old account and apply its logbook under the new
+ * generation. Under the control row's lock (then the credential's `FOR SHARE`,
+ * the documented order) the row must still be the one claimed; if it is not,
+ * the lease goes straight back and the credential is skipped.
+ */
+async function takeRoutineLease(
+  context: BackgroundJobContext,
+  fence: ProviderSyncFence,
+  claimed: ClaimedCredential,
+): Promise<{ status: 'busy' } | { status: 'relinked' } | { status: 'leased'; credential: ClaimedCredential }> {
+  return context.transaction(async (transaction) => {
+    await enterFence(transaction, fence);
+    if (!(await acquireCredentialSyncLease(transaction, { ...fence, ttlMs: CREDENTIAL_LEASE_TTL_MS }))) {
+      return { status: 'busy' as const };
+    }
+    const current = await readCredentialForShare(transaction, fence);
+    if (!current || !isSameClaimedCredential(claimed, current)) {
+      await releaseCredentialSyncLease(transaction, fence);
+      return { status: 'relinked' as const };
+    }
+    return { status: 'leased' as const, credential: current };
+  });
+}
+
+/**
  * Sync one credential the routine cycle already claimed
  * (`claimNextCredentialForSync`, which stamped its attempt clock), through the
  * same fences and adapter as a first-link sync:
@@ -362,7 +406,10 @@ async function queueFirstSync(
  *    ({@link queueFirstSync});
  * 3. take the credential lease under the fences; a live lease another run
  *    holds (a first-link or "Sync now" run that started after the claim) is a
- *    skip;
+ *    skip. In the same transaction the credential row is re-read and must
+ *    still be the claimed one ({@link takeRoutineLease}); a relink since the
+ *    claim is a `CREDENTIAL_RELINKED` skip, and the sync runs on the re-read
+ *    row, never the claim's snapshot (the first-sync handoff checks the same);
  * 4. otherwise run the adapter with every write behind
  *    {@link fencedBatchRunner}, under a deadline one minute before the run's
  *    lease ends. A sync that hits it stops, and a transient `CYCLE_DEADLINE`
@@ -377,10 +424,10 @@ async function queueFirstSync(
  */
 export async function runRoutineCredentialSync(
   context: BackgroundJobContext,
-  credential: ClaimedCredential,
+  claimed: ClaimedCredential,
   adapter: Pick<ProviderSyncAdapter, 'sync' | 'recordTransientFailure' | 'interactiveFamily'>,
 ): Promise<RoutineCredentialResult> {
-  const key = { userId: credential.userId, boardType: credential.boardType };
+  const key = { userId: claimed.userId, boardType: claimed.boardType };
   let control = await readProviderSyncControl(context.database, key);
   if (!control) {
     await context.transaction((transaction) => ensureProviderSyncControl(transaction, key));
@@ -389,9 +436,9 @@ export async function runRoutineCredentialSync(
   if (!control?.linked) return { result: 'skipped', reason: 'NOT_LINKED' };
   const fence: ProviderSyncFence = { ...key, linkGeneration: control.linkGeneration, runId: context.runId };
 
-  if (credential.lastSyncAt === null) {
+  if (claimed.lastSyncAt === null) {
     try {
-      return await queueFirstSync(context, fence, adapter);
+      return await queueFirstSync(context, fence, claimed, adapter);
     } catch (error) {
       if (error instanceof StaleLinkGenerationError) return { result: 'skipped', reason: 'STALE_LINK_GENERATION' };
       if (error instanceof CredentialLeaseLostError) return { result: 'skipped', reason: 'CREDENTIAL_BUSY' };
@@ -401,8 +448,12 @@ export async function runRoutineCredentialSync(
     }
   }
 
+  let credential: ClaimedCredential;
   try {
-    if ((await takeLease(context, fence)) === 'busy') return { result: 'skipped', reason: 'CREDENTIAL_BUSY' };
+    const lease = await takeRoutineLease(context, fence, claimed);
+    if (lease.status === 'busy') return { result: 'skipped', reason: 'CREDENTIAL_BUSY' };
+    if (lease.status === 'relinked') return { result: 'skipped', reason: 'CREDENTIAL_RELINKED' };
+    credential = lease.credential;
   } catch (error) {
     if (error instanceof StaleLinkGenerationError) return { result: 'skipped', reason: 'STALE_LINK_GENERATION' };
     throw error;

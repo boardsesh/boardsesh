@@ -242,6 +242,35 @@ export async function claimCredentialForRun(
   });
 }
 
+/**
+ * Re-read a claimed credential inside a fenced transaction, `FOR SHARE`, so no
+ * relink can rewrite it before the transaction commits. Call it after the
+ * control row is locked (the fenced-batch lock order in
+ * provider-sync-control.ts puts the credential row after the control row).
+ */
+export async function readCredentialForShare(
+  transaction: DrizzleDb,
+  key: { userId: string; boardType: string },
+): Promise<ClaimedCredential | null> {
+  const [row] = await transaction
+    .select()
+    .from(auroraCredentials)
+    .where(and(eq(auroraCredentials.userId, key.userId), eq(auroraCredentials.boardType, key.boardType)))
+    .limit(1)
+    .for('share');
+  return row ?? null;
+}
+
+/**
+ * True when `current` is still the row a claim returned: same row id, and no
+ * write since the claim stamped it (`updated_at` moves on every credential
+ * write: a relink, another run's claim, a token refresh, a status change).
+ */
+export function isSameClaimedCredential(claimed: ClaimedCredential, current: ClaimedCredential | null): boolean {
+  if (!current || current.id !== claimed.id) return false;
+  return current.updatedAt.getTime() === claimed.updatedAt.getTime();
+}
+
 /** The longest a provider's Retry-After may park one credential. */
 export const CREDENTIAL_RETRY_AFTER_CAP_MS = 6 * 60 * 60 * 1000;
 

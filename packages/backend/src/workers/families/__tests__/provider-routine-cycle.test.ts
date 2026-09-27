@@ -9,7 +9,7 @@ import { encrypt } from '@boardsesh/crypto';
 import { createDb } from '@boardsesh/db/client';
 import { BACKGROUND_JOB_QUEUES } from '@boardsesh/db/background-jobs';
 import { auroraCredentials, backgroundJobRuns, providerSyncControls } from '@boardsesh/db/schema';
-import { acquireCredentialSyncLease, rotateLinkGeneration } from '@boardsesh/db/queries';
+import { acquireCredentialSyncLease, claimNextCredentialForSync, rotateLinkGeneration } from '@boardsesh/db/queries';
 import { enqueueBackgroundJob, executeBackgroundJob, handlerForRole, type BackgroundJobPayload } from '../../jobs';
 import { InvalidJobPayloadError, type BackgroundJobContext } from '../types';
 import {
@@ -480,5 +480,106 @@ describe('runRoutineCredentialSync first-sync fallback', () => {
       ),
     ).rejects.toThrow('INVALID_PAYLOAD');
     expect(synced).toEqual([]);
+  });
+});
+
+describe('runRoutineCredentialSync binds the run to the credential as it is now', () => {
+  const enqueued: unknown[] = [];
+  function routineContext(): BackgroundJobContext {
+    return {
+      runId: randomUUID(),
+      family: 'provider-routine-cycle',
+      signal: new AbortController().signal,
+      expiresAt: Date.now() + 60 * 60 * 1000,
+      database,
+      transaction: (callback) => database.transaction(callback),
+      enqueue: async (_transaction, request) => {
+        enqueued.push(request);
+        throw new Error('enqueue not expected');
+      },
+    };
+  }
+
+  const claim = (userId: string) =>
+    database.transaction((transaction) =>
+      claimNextCredentialForSync(transaction, {
+        candidateFilter: eq(auroraCredentials.userId, userId),
+        excludeLeased: true,
+      }),
+    );
+
+  /** What saveAuroraCredential does to a relinked account: a new generation and new secrets, in one transaction. */
+  const relink = (userId: string) =>
+    database.transaction(async (transaction) => {
+      await rotateLinkGeneration(transaction, { userId, boardType: FIXTURE_BOARD, linked: true });
+      await transaction
+        .update(auroraCredentials)
+        .set({ encryptedPassword: encrypt('the-new-accounts-password'), updatedAt: sql`now()` })
+        .where(and(eq(auroraCredentials.userId, userId), eq(auroraCredentials.boardType, FIXTURE_BOARD)));
+    });
+
+  beforeEach(() => {
+    enqueued.length = 0;
+  });
+
+  it('skips a credential relinked between the claim and the fence, signing in with nothing', async () => {
+    const fetchMock = stubAuroraLogin(() => new Response('{}', { status: 200 }));
+    const claimed = await claim('routine-a');
+    expect(claimed?.userId).toBe('routine-a');
+    const before = (await credentials())['routine-a'];
+
+    // The relink lands after the claim returned its snapshot but before the
+    // routine sync reads the control row: the fence would adopt the new
+    // generation while the snapshot still carries the old account's secrets.
+    await relink('routine-a');
+    const context = routineContext();
+    const adapter = await loadProviderSyncAdapter(context, 'aurora');
+
+    const outcome = await runRoutineCredentialSync(context, claimed!, adapter);
+
+    expect(outcome).toEqual({ result: 'skipped', reason: 'CREDENTIAL_RELINKED' });
+    // No sign-in with either account's secrets, and nothing recorded.
+    expect(fetchMock).not.toHaveBeenCalled();
+    const after = (await credentials())['routine-a'];
+    expect(after).toMatchObject({
+      syncStatus: before.syncStatus,
+      lastSyncAt: before.lastSyncAt,
+      consecutiveFailures: before.consecutiveFailures,
+      lastSyncError: before.lastSyncError,
+    });
+    const control = (await controls()).find((row) => row.userId === 'routine-a');
+    expect(control).toMatchObject({ activeRunId: null, activeLeaseUntil: null });
+  });
+
+  it('applies the same check to the first-sync handoff: nothing queued for a relinked account', async () => {
+    await removeAccounts();
+    await insertAccount('routine-a', 3, { neverSynced: true });
+    const claimed = await claim('routine-a');
+    await relink('routine-a');
+    const context = routineContext();
+    const adapter = await loadProviderSyncAdapter(context, 'aurora');
+
+    const outcome = await runRoutineCredentialSync(context, claimed!, adapter);
+
+    expect(outcome).toEqual({ result: 'skipped', reason: 'CREDENTIAL_RELINKED' });
+    expect(enqueued).toEqual([]);
+    const control = (await controls()).find((row) => row.userId === 'routine-a');
+    expect(control).toMatchObject({ activeRunId: null, pendingRunId: null });
+  });
+
+  it('syncs the row it re-read, not the snapshot, when nothing changed', async () => {
+    const claimed = await claim('routine-a');
+    const seen: unknown[] = [];
+    adapterOverride.sync = async (_context, credential) => {
+      seen.push(credential);
+      return { status: 'active' };
+    };
+    const context = routineContext();
+    const adapter = await loadProviderSyncAdapter(context, 'aurora');
+
+    expect(await runRoutineCredentialSync(context, claimed!, adapter)).toEqual({ result: 'synced' });
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).not.toBe(claimed);
+    expect(seen[0]).toMatchObject({ id: claimed!.id, userId: 'routine-a' });
   });
 });
