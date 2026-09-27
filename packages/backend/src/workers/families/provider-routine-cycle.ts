@@ -25,6 +25,7 @@ export type RoutineCycleStop =
   | 'PROVIDER_THROTTLED'
   | 'CYCLE_DEADLINE'
   | 'CYCLE_DEADLINE_NEAR'
+  | 'CYCLE_LATE'
   | 'ABORTED';
 
 /**
@@ -96,10 +97,17 @@ export const providerRoutineCycleFamily: BackgroundJobFamilyModule<ProviderRouti
     // Started with under a minute of lease left: not even one credential could
     // run. End at once, before loading the provider adapter or claiming.
     if (context.expiresAt - Date.now() < ROUTINE_CREDENTIAL_DEADLINE_MARGIN_MS) {
-      logger.info('[worker] routine cycle skipped', {
+      // The same summary every cycle ends with, so one query covers them all.
+      logger.info('[worker] routine cycle finished', {
         runId: context.runId,
         provider: payload.provider,
-        code: 'CYCLE_LATE',
+        stop: 'CYCLE_LATE' satisfies RoutineCycleStop,
+        attempted: 0,
+        synced: 0,
+        failed: 0,
+        skipped: 0,
+        queued: 0,
+        elapsedMs: 0,
       });
       return;
     }

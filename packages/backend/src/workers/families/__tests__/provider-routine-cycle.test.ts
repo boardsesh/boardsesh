@@ -13,6 +13,7 @@ import { acquireCredentialSyncLease, claimNextCredentialForSync, rotateLinkGener
 import { enqueueBackgroundJob, executeBackgroundJob, handlerForRole, type BackgroundJobPayload } from '../../jobs';
 import { InvalidJobPayloadError, type BackgroundJobContext } from '../types';
 import { providerRoutineCycleFamily } from '../provider-routine-cycle';
+import { logger } from '../../../utils/logger';
 import {
   ROUTINE_CREDENTIAL_DEADLINE_MARGIN_MS,
   loadProviderSyncAdapter,
@@ -661,6 +662,7 @@ describe('a routine cycle near the end of its lease', () => {
     const before = await credentials();
     const context = nearDeadlineContext(ROUTINE_CREDENTIAL_DEADLINE_MARGIN_MS - 1_000);
     const transaction = vi.spyOn(context, 'transaction');
+    const info = vi.spyOn(logger, 'info');
 
     await providerRoutineCycleFamily.execute(context, { provider: 'aurora' });
 
@@ -668,6 +670,12 @@ describe('a routine cycle near the end of its lease', () => {
     expect(transaction).not.toHaveBeenCalled();
     expect(synced).toEqual([]);
     expect(await credentials()).toEqual(before);
+    // The same summary line every cycle ends with, with the late stop.
+    expect(info).toHaveBeenCalledWith(
+      '[worker] routine cycle finished',
+      expect.objectContaining({ stop: 'CYCLE_LATE', attempted: 0, synced: 0, skipped: 0 }),
+    );
+    info.mockRestore();
   });
 
   it('stops claiming once the lease runs down to the last minute mid-cycle, moving no further attempt clock', async () => {
