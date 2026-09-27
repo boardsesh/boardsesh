@@ -38,7 +38,12 @@ export type BackgroundJobFamilyOptions = {
   heartbeatSeconds: number;
 };
 
-export type BackgroundJobScheduleRequest<Payload> = { payload: Payload; singletonKey?: string };
+export type BackgroundJobScheduleRequest<Payload> = {
+  payload: Payload;
+  singletonKey?: string;
+  /** Overrides the schedule's role for this one job. */
+  role?: BackgroundWorkerRole;
+};
 
 export type BackgroundJobSchedule<Payload> = {
   /** Stable within the family; the pg-boss schedule key is `<family>:<key>`. */
@@ -46,6 +51,11 @@ export type BackgroundJobSchedule<Payload> = {
   cron: string;
   /** Defaults to UTC. */
   tz?: string;
+  /**
+   * The role its jobs run on. Required when the family serves more than one
+   * role; `startBatchSchedules` refuses to register the schedule without it.
+   */
+  role?: BackgroundWorkerRole;
   /** Runs in the backend on each tick. Return one entry per job to enqueue. */
   fanOut(database: DbInstance): Promise<Array<BackgroundJobScheduleRequest<Payload>>>;
 };

@@ -276,6 +276,38 @@ describe('durable worker jobs', () => {
     expect(next.runId).not.toBe(first.runId);
   });
 
+  it('gives a new run its own slot once the key holder is running', async () => {
+    const enqueue = () =>
+      enqueueBackgroundJob(database, boss, { role, family: 'worker-probe', payload: {}, singletonKey: 'board-9' });
+    const first = await enqueue();
+    expect((await fetch()).id).toBe(first.runId);
+    const second = await enqueue();
+    expect(second.alreadyQueued).toBe(false);
+    expect(second.runId).not.toBe(first.runId);
+    expect((await run(second.runId)).status).toBe('queued');
+  });
+
+  it('retries once when the queued twin leaves between the dropped send and the lookup', async () => {
+    const enqueue = () =>
+      enqueueBackgroundJob(database, boss, { role, family: 'worker-probe', payload: {}, singletonKey: 'board-11' });
+    // A dropped send with no queued holder: the twin was fetched in between.
+    vi.spyOn(boss, 'send').mockResolvedValueOnce(null);
+    const accepted = await enqueue();
+    expect(accepted.alreadyQueued).toBe(false);
+    expect((await run(accepted.runId)).status).toBe('queued');
+    expect(await database.select().from(backgroundJobRuns)).toHaveLength(1);
+  });
+
+  it('returns the running holder when both tries are dropped without a queued holder', async () => {
+    const enqueue = () =>
+      enqueueBackgroundJob(database, boss, { role, family: 'worker-probe', payload: {}, singletonKey: 'board-12' });
+    const first = await enqueue();
+    expect((await fetch()).id).toBe(first.runId);
+    vi.spyOn(boss, 'send').mockResolvedValueOnce(null).mockResolvedValueOnce(null);
+    expect(await enqueue()).toEqual({ runId: first.runId, alreadyQueued: true });
+    expect(await database.select().from(backgroundJobRuns)).toHaveLength(1);
+  });
+
   it('rejects a payload the family schema refuses before anything is written', async () => {
     await expect(
       enqueueBackgroundJob(database, boss, { role, family: 'worker-probe', payload: { unexpected: true } }),

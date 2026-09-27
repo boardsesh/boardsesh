@@ -78,11 +78,14 @@ queue like any other family. pg-boss cannot change a queue's policy after
 **Always pass a singleton key.** `stately` admits one queued plus one active job
 per `singletonKey`, and a job without one shares the empty key with every other
 keyless job on that queue: the second enqueue is silently dropped.
-`enqueueBackgroundJobOn` therefore always sends one: the family's
-`singletonKey(payload)` if it has one, else the caller's override, else the run
-ID (no dedup). pg-boss sees it as `<family>:<key>`, so two families on one queue
-never dedupe against each other; the ledger stores the unprefixed key in
-`background_job_runs.singleton_key`.
+`enqueueBackgroundJobOn` therefore always sends one: the caller's
+`singletonKey` override if given, else the family's `singletonKey(payload)`,
+else the run ID (no dedup). pg-boss sees it as `<family>:<key>`, so two families
+on one queue never dedupe against each other; the ledger stores the unprefixed
+key in `background_job_runs.singleton_key`. A stately queue also has one `retry`
+slot per key: when two runs share a key and both fail, the second one's retry
+insert collides and it lands in `failed` with `retry_count < retry_limit`, so a
+keyed family must coalesce its work before enqueue rather than rely on retries.
 
 ## Job families
 
@@ -102,7 +105,9 @@ module. The module declares:
   authenticate: no credentials, tokens or provider URLs.
 - `singletonKey(payload)` (optional): the natural dedup key, such as a
   credential ID.
-- `schedules` (optional): `{ key, cron, tz?, fanOut(db) }` entries (see below).
+- `schedules` (optional): `{ key, cron, tz?, role?, fanOut(db) }` entries (see
+  below). `role` is required when the family serves more than one role; each
+  `fanOut` result may also carry its own `role`.
 - `execute(context, payload)`. `context` carries `runId`, `family`, `signal`,
   `transaction(callback)` for every write (the attempt fence) and `database`
   for unfenced reads only. Provider HTTP goes through neither.
@@ -130,23 +135,31 @@ drops the send because a queued job already holds the key, the ledger insert is
 rolled back to a savepoint, the existing queued run is found through its key,
 `ALREADY_QUEUED` is logged and that run's ID is returned with
 `alreadyQueued: true`. The rollback is a savepoint, not a DELETE, because worker
-logins deliberately cannot delete ledger rows.
+logins deliberately cannot delete ledger rows. If the queued twin was fetched
+(or cancelled) between the dropped send and the lookup, the enqueue tries once
+more, which normally succeeds because the queued slot is now free; if it is
+dropped again with no queued holder, the running holder's run is returned. It
+never throws out of the caller's transaction for a dedup.
 
 ### Schedules and `BATCH_FAMILIES_ENABLED`
 
 Only the backend registers schedules; the worker's queue client is built with
 `schedule: false`. On boot the backend reads `BATCH_FAMILIES_ENABLED`, a comma
-list of family names (unset or empty: none; an unknown name refuses to register
-anything and logs an error). For every schedule of an enabled family it calls
+list of family names (unset or empty: none). An unknown name, or an enabled
+multi-role family whose schedule names no role, removes every family schedule,
+registers nothing and logs an error; the backend still boots. For every schedule
+of an enabled family it calls
 `boss.schedule('background-schedule', cron, { family, key }, { key:
 '<family>:<key>', tz: tz ?? 'UTC', missed: 'once' })`, and it unschedules every
 other key on that queue, so disabling a family removes its schedules on the next
 boot. With at least one family enabled it also starts one
 `background-schedule` consumer (`localConcurrency: 1`) that runs the schedule's
 `fanOut(db)` and enqueues one job per result. `ALREADY_QUEUED` counts as
-success. A failed fan-out throws so pg-boss retries the tick; a failed single
-enqueue is counted and skipped, since retrying the tick would duplicate every
-job that did enqueue under a run-ID key.
+success. A failed fan-out throws so pg-boss retries the tick. A failed single
+enqueue is logged with a bounded code (never payload contents), counted and
+skipped, since retrying the tick would duplicate every job that did enqueue
+under a run-ID key. When every request in a tick fails, nothing was enqueued, so
+the tick throws and pg-boss retries it.
 
 ## Attempts, retries and reconciliation
 

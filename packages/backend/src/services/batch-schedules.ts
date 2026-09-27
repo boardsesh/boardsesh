@@ -3,7 +3,8 @@
  *
  * - **Opt-in per family.** `BATCH_FAMILIES_ENABLED` is a comma list of family
  *   names. Unset or empty registers nothing, so shipping a family's code never
- *   starts its cron; an unknown name refuses to start instead of guessing.
+ *   starts its cron; an unknown name removes every family schedule and throws
+ *   instead of guessing.
  * - **One trigger queue.** Each family schedule is a pg-boss schedule on
  *   `background-schedule` keyed `<family>:<key>`, carrying `{ family, key }`.
  *   Disabling a family removes its schedules on the next boot.
@@ -21,7 +22,7 @@ import {
   isBackgroundJobFamily,
   type BackgroundJobFamily,
 } from '@boardsesh/db/background-jobs';
-import { allFamilies, findFamily } from '../workers/families';
+import { allFamilies, findFamily, type BackgroundJobFamilyModule } from '../workers/families';
 import { enqueueBackgroundJob } from '../workers/jobs';
 import { logger } from '../utils/logger';
 
@@ -77,17 +78,59 @@ export async function runScheduleTick(
         family: family.name,
         payload: request.payload,
         singletonKey: request.singletonKey,
+        role: request.role ?? schedule.role,
       });
       if (accepted.alreadyQueued) summary.alreadyQueued++;
       else summary.enqueued++;
-    } catch {
+    } catch (error) {
       // One bad request must not starve the rest, and retrying the tick would
-      // duplicate every job that did enqueue under a run-ID key.
+      // duplicate every job that did enqueue under a run-ID key. Log only a
+      // bounded code: driver messages can carry SQL and payload values.
       summary.failed++;
+      logger.warn('[batch-schedules] enqueue failed', {
+        family: family.name,
+        key,
+        code: boundedErrorCode(error),
+      });
     }
   }
   logger.info('[batch-schedules] tick fanned out', { family: family.name, key, ...summary });
+  // Nothing enqueued, so a pg-boss retry of the tick cannot duplicate work.
+  if (requests.length && summary.failed === requests.length) throw new Error('SCHEDULE_TICK_FAILED');
   return summary;
+}
+
+/** Our own errors are bare codes (`INVALID_PAYLOAD`); anything else is summarised. */
+function boundedErrorCode(error: unknown): string {
+  return error instanceof Error && /^[A-Z][A-Z0-9_]{0,63}$/.test(error.message) ? error.message : 'ENQUEUE_FAILED';
+}
+
+/**
+ * A schedule's jobs need one role. A family serving several roles must name it
+ * on the schedule, so a misconfigured family fails at boot rather than on every
+ * tick with FAMILY_ROLE_REQUIRED.
+ */
+export function assertScheduleRoles(family: BackgroundJobFamilyModule): void {
+  for (const schedule of family.schedules ?? []) {
+    const key = scheduleKey(family.name, schedule.key);
+    if (schedule.role && !family.roles.includes(schedule.role)) {
+      throw new Error(`Schedule ${key} names role ${schedule.role}, which family ${family.name} does not serve`);
+    }
+    if (!schedule.role && family.roles.length !== 1) {
+      throw new Error(`Schedule ${key} must name a role: family ${family.name} serves ${family.roles.join(', ')}`);
+    }
+  }
+}
+
+/** Unschedule every family key on the trigger queue except `keepKeys`, including keys no longer in code. */
+async function sweepSchedules(boss: PgBoss, keepKeys: ReadonlySet<string>): Promise<void> {
+  const registeredKeys = allFamilies().flatMap((family) =>
+    (family.schedules ?? []).map((schedule) => scheduleKey(family.name, schedule.key)),
+  );
+  const existingKeys = (await boss.getSchedules(BACKGROUND_SCHEDULE_QUEUE)).map((existing) => existing.key);
+  for (const key of new Set([...registeredKeys, ...existingKeys])) {
+    if (!keepKeys.has(key)) await boss.unschedule(BACKGROUND_SCHEDULE_QUEUE, key);
+  }
 }
 
 export async function startBatchSchedules(
@@ -95,28 +138,28 @@ export async function startBatchSchedules(
   database: DbInstance,
   environment: Readonly<Record<string, string | undefined>> = process.env,
 ): Promise<void> {
-  // Validate before touching pg-boss so a typo never half-applies.
-  const enabledFamilies = new Set<string>(enabledBatchFamilies(environment));
-  const enabledKeys = new Set<string>();
-  for (const family of allFamilies()) {
-    for (const schedule of family.schedules ?? []) {
-      const key = scheduleKey(family.name, schedule.key);
-      if (enabledFamilies.has(family.name)) {
-        enabledKeys.add(key);
-        await boss.schedule(
-          BACKGROUND_SCHEDULE_QUEUE,
-          schedule.cron,
-          { family: family.name, key: schedule.key },
-          { key, tz: schedule.tz ?? 'UTC', missed: 'once' },
-        );
-      } else {
-        await boss.unschedule(BACKGROUND_SCHEDULE_QUEUE, key);
-      }
-    }
+  let enabledFamilies: Set<string>;
+  try {
+    enabledFamilies = new Set<string>(enabledBatchFamilies(environment));
+    for (const family of allFamilies()) if (enabledFamilies.has(family.name)) assertScheduleRoles(family);
+  } catch (error) {
+    // A typo must not leave last boot's schedules firing into a queue nobody
+    // consumes: remove them all, then let the caller log the error.
+    await sweepSchedules(boss, new Set());
+    throw error;
   }
-  // Also drop schedules whose family or key no longer exists in code.
-  for (const existing of await boss.getSchedules(BACKGROUND_SCHEDULE_QUEUE)) {
-    if (!enabledKeys.has(existing.key)) await boss.unschedule(BACKGROUND_SCHEDULE_QUEUE, existing.key);
+  const enabledSchedules = allFamilies()
+    .filter((family) => enabledFamilies.has(family.name))
+    .flatMap((family) => (family.schedules ?? []).map((schedule) => ({ family, schedule })));
+  const enabledKeys = new Set(enabledSchedules.map(({ family, schedule }) => scheduleKey(family.name, schedule.key)));
+  await sweepSchedules(boss, enabledKeys);
+  for (const { family, schedule } of enabledSchedules) {
+    await boss.schedule(
+      BACKGROUND_SCHEDULE_QUEUE,
+      schedule.cron,
+      { family: family.name, key: schedule.key },
+      { key: scheduleKey(family.name, schedule.key), tz: schedule.tz ?? 'UTC', missed: 'once' },
+    );
   }
   // With nothing enabled there is nothing to fan out: no poller, no behaviour change.
   if (!enabledFamilies.size) return;

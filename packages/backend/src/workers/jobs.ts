@@ -57,7 +57,11 @@ function parseFamilyPayload(family: BackgroundJobFamilyModule, payload: unknown)
   return parsedPayload as Record<string, unknown>;
 }
 
-function requireFamilyRole(family: BackgroundJobFamilyModule, role: BackgroundWorkerRole | undefined) {
+/** The role a run lands on: the caller's, checked against the family, or the family's only role. */
+export function requireFamilyRole(
+  family: Pick<BackgroundJobFamilyModule, 'roles'>,
+  role: BackgroundWorkerRole | undefined,
+): BackgroundWorkerRole {
   if (role) {
     if (!family.roles.includes(role)) throw new Error('FAMILY_ROLE_MISMATCH');
     return role;
@@ -113,8 +117,8 @@ export async function enqueueBackgroundJobOn(
   const queue = BACKGROUND_JOB_QUEUES[role];
   const queueSingletonKey = `${family.name}:${singletonKey}`;
   const { deadlineSeconds, ...jobOptions } = family.options;
-  try {
-    return await transaction.transaction(async (savepoint) => {
+  const insertAndSend = () =>
+    transaction.transaction(async (savepoint) => {
       const inserted = await savepoint
         .insert(backgroundJobRuns)
         .values({
@@ -144,27 +148,43 @@ export async function enqueueBackgroundJobOn(
       if (jobId !== runId) throw new Error('JOB_ENQUEUE_FAILED');
       return { runId, alreadyQueued: false };
     });
-  } catch (error) {
-    if (!(error instanceof AlreadyQueuedSignal)) throw error;
+  /** The run holding this key in `state` (`stately` admits one per state), if the ledger agrees. */
+  const holderRun = async (state: 'created' | 'active') => {
+    const jobs = await boss.findJobs(queue, { key: queueSingletonKey, db: enqueueOn(transaction) });
+    const holder = jobs.find((job) => job.state === state);
+    if (!holder) return undefined;
+    const [existing] = await transaction
+      .select({ id: backgroundJobRuns.id })
+      .from(backgroundJobRuns)
+      .where(
+        and(
+          eq(backgroundJobRuns.id, holder.id),
+          eq(backgroundJobRuns.family, family.name),
+          eq(backgroundJobRuns.singletonKey, singletonKey),
+        ),
+      );
+    return existing;
+  };
+  const deduplicated = (existingRunId: string): EnqueueBackgroundJobResult => {
+    logger.info('[worker] enqueue deduplicated', { code: 'ALREADY_QUEUED', family: family.name, runId: existingRunId });
+    return { runId: existingRunId, alreadyQueued: true };
+  };
+  // Two tries: between a dropped send and the holder lookup, the queued twin can
+  // be fetched to `active` (or cancelled), which frees the `created` slot. A
+  // throw here would roll back the caller's whole transaction, so retry instead.
+  for (let tries = 0; tries < 2; tries++) {
+    try {
+      return await insertAndSend();
+    } catch (error) {
+      if (!(error instanceof AlreadyQueuedSignal)) throw error;
+    }
+    const queuedHolder = await holderRun('created');
+    if (queuedHolder) return deduplicated(queuedHolder.id);
   }
-  // `stately` admits one job per key in `created`; that is the one that won.
-  const queuedJobs = await boss.findJobs(queue, { key: queueSingletonKey, queued: true, db: enqueueOn(transaction) });
-  const holder = queuedJobs.find((job) => job.state === 'created');
-  const [existing] = holder
-    ? await transaction
-        .select({ id: backgroundJobRuns.id })
-        .from(backgroundJobRuns)
-        .where(
-          and(
-            eq(backgroundJobRuns.id, holder.id),
-            eq(backgroundJobRuns.family, family.name),
-            eq(backgroundJobRuns.singletonKey, singletonKey),
-          ),
-        )
-    : [];
-  if (!existing) throw new Error('JOB_ENQUEUE_FAILED');
-  logger.info('[worker] enqueue deduplicated', { code: 'ALREADY_QUEUED', family: family.name, runId: existing.id });
-  return { runId: existing.id, alreadyQueued: true };
+  // Still dropped with no queued holder: the key is busy with a running twin.
+  const activeHolder = await holderRun('active');
+  if (!activeHolder) throw new Error('JOB_ENQUEUE_FAILED');
+  return deduplicated(activeHolder.id);
 }
 
 export async function enqueueBackgroundJob(
