@@ -9,7 +9,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AURORA_BOARDS } from '@boardsesh/shared-schema';
 import type { DbInstance } from '@boardsesh/db/client';
 import { BackgroundJobError, requireFamily, type BackgroundJobContext } from '..';
-import { AURORA_SHARED_SYNC_COOLDOWN_MS } from '../aurora-shared-sync';
+import {
+  AURORA_SHARED_SYNC_COOLDOWN_MS,
+  AURORA_SHARED_SYNC_DEADLINE_SECONDS,
+  orderBoardsByLeastRecentSharedSync,
+} from '../aurora-shared-sync';
 import { KILTER_CATALOG_SYNC_COOLDOWN_MS } from '../kilter-catalog-sync';
 
 const runners = vi.hoisted(() => ({
@@ -124,17 +128,44 @@ describe('family contracts', () => {
       expireInSeconds: 3600,
       retryLimit: 1,
       retryDelay: 300,
-      deadlineSeconds: 7200,
+      deadlineSeconds: AURORA_SHARED_SYNC_DEADLINE_SECONDS,
       heartbeatSeconds: 300,
       priority: -5,
     });
+    // Five boards queue behind each other on the one-at-a-time worker, each
+    // with an hour's lease: the last one's deadline must outlast the other four.
+    const boardCount = AURORA_BOARDS.filter((board) => board !== 'kilter').length;
+    expect(AURORA_SHARED_SYNC_DEADLINE_SECONDS).toBeGreaterThan(boardCount * 3600);
     expect(family.payload.safeParse({ board: 'kilter' }).success).toBe(false);
     expect(family.singletonKey?.({ board: 'decoy' })).toBe('decoy');
     expect(family.schedules?.map(({ key, cron }) => ({ key, cron }))).toEqual([{ key: 'hourly', cron: '7 * * * *' }]);
-    const boards = (await family.schedules![0].fanOut({} as DbInstance)).map(
+    // decoy ran most recently, tension an hour before it, the rest never.
+    const stampRows = [
+      { boardType: 'decoy', stamp: '2026-09-27 10:07:00.000000#finished:x' },
+      { boardType: 'tension', stamp: '2026-09-27 09:07:00.000000' },
+    ];
+    const database = {
+      select: () => ({ from: () => ({ where: async () => stampRows }) }),
+    } as unknown as DbInstance;
+    const boards = (await family.schedules![0].fanOut(database)).map(
       (request) => (request.payload as { board: string }).board,
     );
-    expect(boards.sort()).toEqual(AURORA_BOARDS.filter((board) => board !== 'kilter').sort());
+    expect([...boards].sort()).toEqual(AURORA_BOARDS.filter((board) => board !== 'kilter').sort());
+    expect(boards.slice(-2)).toEqual(['tension', 'decoy']);
+  });
+
+  it('orders the shared sync fan-out never-run first, then oldest stamp first, ties in list order', () => {
+    expect(
+      orderBoardsByLeastRecentSharedSync(
+        ['a', 'b', 'c', 'd'],
+        new Map<string, string | null>([
+          ['a', '2026-09-27 10:00:00.000000'],
+          ['b', '2026-09-27 08:00:00.000000#claim:x'],
+          ['c', null],
+          ['d', 'not a stamp'],
+        ]),
+      ),
+    ).toEqual(['c', 'd', 'b', 'a']);
   });
 
   it('kilter-catalog-sync, moonboard-locations-sync and climb-stats-self-heal: one run per tick', async () => {

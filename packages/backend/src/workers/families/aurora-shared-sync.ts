@@ -1,4 +1,8 @@
 import { z } from 'zod';
+import { and, eq, inArray } from 'drizzle-orm';
+import type { DbInstance } from '@boardsesh/db/client';
+import { SHARED_SYNC_COOLDOWN_CURSOR } from '@boardsesh/db/queries';
+import { boardSharedSyncs } from '@boardsesh/db/schema';
 import { logger } from '../../utils/logger';
 import { boundedErrorFields } from './job-logging';
 import { AURORA_USER_SYNC_BOARDS } from './aurora-user-sync';
@@ -16,6 +20,61 @@ export type AuroraSharedSyncPayload = z.infer<typeof auroraSharedSyncPayload>;
  * away a second writer (the daemon during a botched cutover, a replayed run).
  */
 export const AURORA_SHARED_SYNC_COOLDOWN_MS = 50 * 60 * 1000;
+
+/** When a stored cooldown stamp (`YYYY-MM-DD HH:MM:SS.ffffff[#marker]`, UTC) was taken; null when unreadable. */
+function stampTime(stamp: string | null): number | null {
+  if (!stamp) return null;
+  const parsed = Date.parse(`${stamp.split('#', 1)[0].replace(' ', 'T')}Z`);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+/**
+ * The boards in the order their shared sync last ran: never-run (or
+ * unreadable) first, then oldest stamp first; ties keep the given order. The
+ * routine worker takes one job at a time in enqueue order, so the board that
+ * has waited longest runs first and a board late in a slow hour is not always
+ * the same one.
+ */
+export function orderBoardsByLeastRecentSharedSync<Board extends string>(
+  boards: readonly Board[],
+  stamps: ReadonlyMap<string, string | null>,
+): Board[] {
+  return boards
+    .map((board, index) => ({ board, index, at: stampTime(stamps.get(board) ?? null) }))
+    .sort((left, right) => {
+      if (left.at !== right.at) {
+        if (left.at === null) return -1;
+        if (right.at === null) return 1;
+        return left.at - right.at;
+      }
+      return left.index - right.index;
+    })
+    .map(({ board }) => board);
+}
+
+async function boardsInSharedSyncOrder(database: DbInstance): Promise<Array<(typeof AURORA_USER_SYNC_BOARDS)[number]>> {
+  const rows = await database
+    .select({ boardType: boardSharedSyncs.boardType, stamp: boardSharedSyncs.lastSynchronizedAt })
+    .from(boardSharedSyncs)
+    .where(
+      and(
+        eq(boardSharedSyncs.tableName, SHARED_SYNC_COOLDOWN_CURSOR),
+        inArray(boardSharedSyncs.boardType, [...AURORA_USER_SYNC_BOARDS]),
+      ),
+    );
+  return orderBoardsByLeastRecentSharedSync(
+    AURORA_USER_SYNC_BOARDS,
+    new Map(rows.map((row) => [row.boardType, row.stamp])),
+  );
+}
+
+/**
+ * The absolute deadline covers the whole hourly fan-out, not one run: the
+ * routine worker runs one job at a time, so the last of the five boards can
+ * wait behind four others that each hold an hour's lease. 5 x 3600 s plus
+ * the slack for a routine cycle or a Kilter catalog run in between.
+ */
+export const AURORA_SHARED_SYNC_DEADLINE_SECONDS = 6 * 60 * 60;
 
 /**
  * The board-wide half of the Aurora daemon, on its own schedule: products,
@@ -41,7 +100,7 @@ export const auroraSharedSyncFamily: BackgroundJobFamilyModule<AuroraSharedSyncP
     retryDelay: 300,
     retryBackoff: true,
     retryDelayMax: 300,
-    deadlineSeconds: 7200,
+    deadlineSeconds: AURORA_SHARED_SYNC_DEADLINE_SECONDS,
     // One Aurora page (up to ~2000 records with its climb_stats upsert) or one
     // 25-gym location batch holds the run-row lock at a time.
     heartbeatSeconds: 300,
@@ -54,7 +113,9 @@ export const auroraSharedSyncFamily: BackgroundJobFamilyModule<AuroraSharedSyncP
     {
       key: 'hourly',
       cron: '7 * * * *',
-      fanOut: async () => AURORA_USER_SYNC_BOARDS.map((board) => ({ payload: { board } })),
+      // Least recently synced board first, so a slow hour delays a different
+      // board each time rather than always the last in the list.
+      fanOut: async (database) => (await boardsInSharedSyncOrder(database)).map((board) => ({ payload: { board } })),
     },
   ],
   async execute(context, payload) {
