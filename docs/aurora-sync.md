@@ -423,8 +423,10 @@ before with one deliberate exception, the first bullet:
   the hourly `climb-stats-self-heal` to drain. The daemon passes no runner and
   keeps the inline recompute.
 - A 429 from Aurora carries `Retry-After` into `AuroraRequestError.retryAfterMs`
-  and the `SyncOutcome`; the routine cycle parks that credential for the delay
-  (in place of the backoff step the 429 was charged) and stops.
+  and the `SyncOutcome`; the routine cycle stores the end of the delay in
+  `aurora_credentials.provider_retry_after_until`, takes back the backoff step
+  the 429 was charged, and stops. The claim waits for the later of that time
+  and the failure backoff, never their sum.
 - `recordAuroraSyncFailure(db, cred, message)` is the failure bookkeeping on its
   own, for a failure a job sees and the runner does not (the routine cycle's
   per-credential `CYCLE_DEADLINE`).

@@ -3,7 +3,7 @@ import { and, eq, isNotNull, or, sql } from 'drizzle-orm';
 
 import { db } from '../db/client';
 import { auroraCredentials } from '@boardsesh/db/schema';
-import { claimNextCredentialForSync } from '@boardsesh/db/queries';
+import { claimNextCredentialForSync, deferCredentialSyncAttempt } from '@boardsesh/db/queries';
 
 // ---------------------------------------------------------------------------
 // Credential selection + exponential backoff (real DB)
@@ -69,6 +69,7 @@ async function seedCredential(opts: {
  */
 async function pickNextKilterCredential(): Promise<string | null> {
   const claimed = await claimNextCredentialForSync(db, {
+    excludeLeased: true,
     candidateFilter: and(
       eq(auroraCredentials.boardType, 'kilter'),
       isNotNull(auroraCredentials.encryptedRefreshToken),
@@ -194,6 +195,56 @@ describe('credential selection + backoff (real DB)', () => {
     });
 
     expect(await pickNextKilterCredential()).toBe(USER_H1);
+  });
+
+  it('holds a throttled credential for the later of Retry-After and its backoff, not their sum', async () => {
+    // Nine failures before this attempt; the attempt that just got the 429 was
+    // charged a tenth. Last attempted 7 hours ago, so the 6-hour backoff alone
+    // has passed.
+    await seedCredential({
+      userId: USER_FAIL,
+      syncStatus: 'error',
+      consecutiveFailures: 10,
+      lastSyncAttemptAt: sql`now() - interval '7 hours'`,
+    });
+    await deferCredentialSyncAttempt(db, {
+      userId: USER_FAIL,
+      boardType: 'kilter',
+      delayMs: 60 * 60 * 1000,
+      forgiveFailure: true,
+    });
+
+    // Inside the Retry-After: held.
+    expect(await pickNextKilterCredential()).toBeNull();
+    const [held] = await db.execute<{ failures: number; attempt_in_past: boolean }>(sql`
+      SELECT consecutive_failures AS failures, last_sync_attempt_at < now() AS attempt_in_past
+        FROM aurora_credentials WHERE user_id = ${USER_FAIL} AND board_type = 'kilter'`);
+    // The 429's failure step is taken back, and the attempt clock is not pushed
+    // into the future (that is what used to add the two holds together).
+    expect(Number(held.failures)).toBe(9);
+    expect(held.attempt_in_past).toBe(true);
+
+    // The Retry-After ends: the backoff has long passed, so it is claimable at
+    // once, not a further 6 hours later.
+    await db.execute(sql`
+      UPDATE aurora_credentials SET provider_retry_after_until = now() - interval '1 second'
+       WHERE user_id = ${USER_FAIL} AND board_type = 'kilter'`);
+    expect(await pickNextKilterCredential()).toBe(USER_FAIL);
+  });
+
+  it('keeps a throttled credential in its backoff after a shorter Retry-After ends', async () => {
+    // Nine failures, attempted an hour ago: the 6-hour backoff has 5 hours left.
+    await seedCredential({
+      userId: USER_FAIL,
+      syncStatus: 'error',
+      consecutiveFailures: 9,
+      lastSyncAttemptAt: sql`now() - interval '1 hour'`,
+    });
+    await db.execute(sql`
+      UPDATE aurora_credentials SET provider_retry_after_until = now() - interval '1 second'
+       WHERE user_id = ${USER_FAIL} AND board_type = 'kilter'`);
+
+    expect(await pickNextKilterCredential()).toBeNull();
   });
 
   it('sorts a never-attempted credential first (NULLS FIRST)', async () => {

@@ -135,10 +135,12 @@ export async function claimNextCredentialForSync(
     candidateFilter: SQL | undefined;
     /**
      * Skip credentials a background run is syncing right now (a live lease on
-     * the `provider_sync_controls` row) and links marked unlinked. Off by
-     * default so the daemons keep claiming exactly what they claimed before.
+     * the `provider_sync_controls` row) and links marked unlinked. Required, so
+     * no caller can forget it: every real claimer (both daemons and the
+     * routine cycle) passes true. Only a test that isolates the claim's own
+     * ordering and gap passes false.
      */
-    excludeLeased?: boolean;
+    excludeLeased: boolean;
   },
 ): Promise<ClaimedCredential | null> {
   return db.transaction(async (tx) => {
@@ -244,15 +246,16 @@ export async function claimCredentialForRun(
 export const CREDENTIAL_RETRY_AFTER_CAP_MS = 6 * 60 * 60 * 1000;
 
 /**
- * Push a credential's attempt clock into the future after the provider asked
- * us to back off (HTTP 429 with Retry-After). `last_sync_attempt_at = now() +
- * delay` keeps it out of {@link claimNextCredentialForSync} until the delay has
- * passed (the reclaim gap and the backoff both compare against it) and sorts it
- * to the back of the queue. The delay is clamped to 0 ..
+ * Hold a credential until the provider's Retry-After has passed (HTTP 429).
+ * Writes `provider_retry_after_until = now() + delay`, which
+ * {@link credentialRetryReadySql} checks next to the failure backoff: the
+ * credential becomes claimable once the LATER of the two has passed, never
+ * their sum. The attempt clock is left alone (the claim already stamped it),
+ * so the backoff still counts from the attempt. The delay is clamped to 0 ..
  * {@link CREDENTIAL_RETRY_AFTER_CAP_MS} so a hostile or garbled header cannot
  * park an account for longer than the failure backoff's own cap.
  *
- * "Sync now" is unaffected: {@link claimCredentialForRun} ignores the clock.
+ * "Sync now" is unaffected: {@link claimCredentialForRun} ignores both holds.
  */
 export async function deferCredentialSyncAttempt(
   db: DrizzleDb,
@@ -262,7 +265,8 @@ export async function deferCredentialSyncAttempt(
     delayMs: number;
     /**
      * Take back the `consecutive_failures` step the throttled attempt was just
-     * charged: the park replaces that backoff step instead of adding to it.
+     * charged: a throttle is the provider's pacing, not a failing account, so
+     * it should not grow the backoff.
      */
     forgiveFailure?: boolean;
   },
@@ -273,7 +277,7 @@ export async function deferCredentialSyncAttempt(
   await db
     .update(auroraCredentials)
     .set({
-      lastSyncAttemptAt: sql`now() + make_interval(secs => ${delayMs / 1000}::double precision)`,
+      providerRetryAfterUntil: sql`now() + make_interval(secs => ${delayMs / 1000}::double precision)`,
       ...(options.forgiveFailure
         ? { consecutiveFailures: sql`GREATEST(COALESCE(${auroraCredentials.consecutiveFailures}, 0) - 1, 0)` }
         : {}),

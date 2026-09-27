@@ -680,7 +680,7 @@ it, then succeeds and logs `[worker] routine cycle finished` with the reason:
 | `MAX_CREDENTIALS` | `ROUTINE_CYCLE_MAX_CREDENTIALS` credentials attempted (default 4, 1 to 50) |
 | `BUDGET` | `ROUTINE_CYCLE_BUDGET_MS` passed (default 180 000, at most 400 000), checked before each claim; a started credential finishes |
 | `NO_CREDENTIALS` | nothing is due |
-| `PROVIDER_THROTTLED` | the provider answered 429 with `Retry-After`: that credential's `last_sync_attempt_at` is set to `now() + delay` (capped at 6 h), which keeps it out of the claim and at the back of the queue, and the cycle ends |
+| `PROVIDER_THROTTLED` | the provider answered 429 with `Retry-After`: that credential's `provider_retry_after_until` is set to `now() + delay` (capped at 6 h) and the failure step the 429 was charged is taken back. The claim waits for the later of that time and the failure backoff (`last_sync_attempt_at + backoff(n)`), never their sum, and the cycle ends |
 | `CYCLE_DEADLINE` | a credential's sync was still running one minute before the lease ends: it is stopped, a transient `CYCLE_DEADLINE` failure is recorded on it under the still-live fence (so `consecutive_failures` backoff parks it and `last_sync_error` shows it), and the cycle ends |
 | `ABORTED` | shutdown or a lost attempt; the run records the abort |
 
@@ -717,7 +717,11 @@ credential then goes through `runRoutineCredentialSync`
 (`workers/families/provider-sync-batch.ts`), the same adapter and fences as a
 first-link sync: read the link generation (creating the control row of a
 credential linked before rows existed), take the lease, sync with every write
-behind `fencedBatchRunner`, release the lease. A lease another run holds, a
+behind `fencedBatchRunner`, release the lease. A never-synced account is
+instead handed to its interactive family in one fenced transaction that takes
+the lease, queues (or joins) the interactive run, records it as pending and
+hands the lease back, so no committed lease sits between the check and the
+enqueue. `excludeLeased` is a required option: every claimer passes it. A lease another run holds, a
 relink or unlink mid-sync, or a lease lost mid-sync is a logged skip. A
 credential's own failure (bad password, provider down, a database error while
 applying) is recorded on the credential through the daemons' bookkeeping. None

@@ -139,7 +139,7 @@ describe('credential claim under concurrent daemon instances (real DB)', () => {
 
     // Instance B runs the real claim while A still holds A's row lock. It must
     // return the OTHER credential, and must not block waiting on the lock.
-    const second = await claimNextCredentialForSync(db, { candidateFilter: KILTER_CANDIDATES });
+    const second = await claimNextCredentialForSync(db, { candidateFilter: KILTER_CANDIDATES, excludeLeased: true });
     expect(second?.userId).toBe(USER_B);
 
     first.release();
@@ -154,7 +154,7 @@ describe('credential claim under concurrent daemon instances (real DB)', () => {
 
     // No second candidate to fall through to: the loser must get null rather
     // than block on the lock or throw. Idling one cycle is the correct outcome.
-    const second = await claimNextCredentialForSync(db, { candidateFilter: KILTER_CANDIDATES });
+    const second = await claimNextCredentialForSync(db, { candidateFilter: KILTER_CANDIDATES, excludeLeased: true });
     expect(second).toBeNull();
 
     first.release();
@@ -167,7 +167,7 @@ describe('credential claim under concurrent daemon instances (real DB)', () => {
     const before = await readAttemptClock(USER_A);
     expect(before).not.toBeNull();
 
-    const claimed = await claimNextCredentialForSync(db, { candidateFilter: KILTER_CANDIDATES });
+    const claimed = await claimNextCredentialForSync(db, { candidateFilter: KILTER_CANDIDATES, excludeLeased: true });
     expect(claimed?.userId).toBe(USER_A);
 
     // Stamped in the same transaction as the lock — this is what makes the row
@@ -179,7 +179,7 @@ describe('credential claim under concurrent daemon instances (real DB)', () => {
     expect(claimed?.lastSyncAttemptAt?.getTime()).toBeGreaterThan(before!.getTime());
 
     // The next claim therefore picks the other credential, not the same one.
-    const next = await claimNextCredentialForSync(db, { candidateFilter: KILTER_CANDIDATES });
+    const next = await claimNextCredentialForSync(db, { candidateFilter: KILTER_CANDIDATES, excludeLeased: true });
     expect(next?.userId).toBe(USER_B);
   });
 
@@ -191,7 +191,9 @@ describe('credential claim under concurrent daemon instances (real DB)', () => {
     // double-hand the flake in #3987 caught.
     await seedCredential(USER_A, sql`now()`);
 
-    expect(await claimNextCredentialForSync(db, { candidateFilter: KILTER_CANDIDATES })).toBeNull();
+    expect(
+      await claimNextCredentialForSync(db, { candidateFilter: KILTER_CANDIDATES, excludeLeased: true }),
+    ).toBeNull();
   });
 
   it('re-admits a credential once the reclaim gap has elapsed', async () => {
@@ -200,7 +202,7 @@ describe('credential claim under concurrent daemon instances (real DB)', () => {
     const staleSeconds = Math.round(CREDENTIAL_MIN_RECLAIM_GAP_MS / 1000) * 2;
     await seedCredential(USER_A, sql`now() - make_interval(secs => ${staleSeconds})`);
 
-    const claimed = await claimNextCredentialForSync(db, { candidateFilter: KILTER_CANDIDATES });
+    const claimed = await claimNextCredentialForSync(db, { candidateFilter: KILTER_CANDIDATES, excludeLeased: true });
     expect(claimed?.userId).toBe(USER_A);
   });
 
@@ -216,8 +218,8 @@ describe('credential claim under concurrent daemon instances (real DB)', () => {
       await seedCredential(USER_B, sql`now() - interval '10 minutes'`);
 
       const [first, second] = await Promise.all([
-        claimNextCredentialForSync(db, { candidateFilter: KILTER_CANDIDATES }),
-        claimNextCredentialForSync(db, { candidateFilter: KILTER_CANDIDATES }),
+        claimNextCredentialForSync(db, { candidateFilter: KILTER_CANDIDATES, excludeLeased: true }),
+        claimNextCredentialForSync(db, { candidateFilter: KILTER_CANDIDATES, excludeLeased: true }),
       ]);
 
       // Either claimer may legitimately come back empty (it lost the row and

@@ -28,8 +28,8 @@ export type RoutineCycleStop =
  * - `ROUTINE_CYCLE_BUDGET_MS` (default 180 000) has passed (checked before each
  *   claim; a started credential finishes),
  * - no credential is due, or
- * - the provider throttled us (429 with `Retry-After`): that credential's
- *   attempt clock is pushed out by the delay and the cycle ends early with a
+ * - the provider throttled us (429 with `Retry-After`): that credential is
+ *   held until `provider_retry_after_until` and the cycle ends early with a
  *   logged `PROVIDER_THROTTLED`.
  *
  * The claim is the daemon's (`claimNextCredentialForSync`: fairness by attempt

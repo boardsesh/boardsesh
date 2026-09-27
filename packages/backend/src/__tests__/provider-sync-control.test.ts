@@ -245,9 +245,12 @@ describe('credential claims', () => {
     const filter = eq(auroraCredentials.syncStatus, 'active');
 
     // The daemon claim would skip this row (reclaim gap + backoff); a named claim does not.
-    expect(await claimNextCredentialForSync(database, { candidateFilter: eq(auroraCredentials.userId, USER_ID) })).toBe(
-      null,
-    );
+    expect(
+      await claimNextCredentialForSync(database, {
+        candidateFilter: eq(auroraCredentials.userId, USER_ID),
+        excludeLeased: true,
+      }),
+    ).toBe(null);
     const claimed = await claimCredentialForRun(database, { ...key, candidateFilter: filter });
     expect(claimed?.userId).toBe(USER_ID);
 

@@ -514,7 +514,8 @@ The daemon stays the owner of routine syncs until the cutover sets
 - A 429 from Keycloak, the REST portal or PowerSync carries `Retry-After` into
   `KilterApiError.retryAfterMs` and the `SyncOutcome` (a PowerSync 429 is now
   `rate_limited`; it was a transient `powersync` error before). The routine
-  cycle parks that credential for the delay and stops.
+  cycle holds that credential until `provider_retry_after_until` (the later of
+  it and the failure backoff, never their sum) and stops.
 - The Keycloak refresh (`getStoredKilterAccessToken`) is unchanged and stays
   outside every fence, on the worker's pool. It is not a short transaction: it
   holds the credential row `FOR UPDATE` across the Keycloak HTTP call (up to

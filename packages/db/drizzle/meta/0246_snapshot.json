@@ -1,5 +1,5 @@
 {
-  "id": "e24e640b-af10-4a6e-aa44-bdad85d62b06",
+  "id": "ff66ec33-63ec-4324-a3f3-da308cbdec08",
   "prevId": "65853469-857d-431e-85ec-2bb8bf83df56",
   "version": "7",
   "dialect": "postgresql",
@@ -3536,6 +3536,12 @@
         "last_sync_attempt_at": {
           "name": "last_sync_attempt_at",
           "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "provider_retry_after_until": {
+          "name": "provider_retry_after_until",
+          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         },

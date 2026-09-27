@@ -302,7 +302,7 @@ export const ROUTINE_CREDENTIAL_DEADLINE_MARGIN_MS = 60_000;
 export type RoutineCredentialResult = {
   result: 'synced' | 'failed' | 'skipped' | 'queued';
   reason?: 'NOT_LINKED' | 'CREDENTIAL_BUSY' | 'STALE_LINK_GENERATION' | 'CYCLE_DEADLINE' | 'FIRST_SYNC';
-  /** Set when the provider throttled us; the credential's attempt clock now waits it out. */
+  /** Set when the provider throttled us; the credential is held until the delay has passed. */
   retryAfterMs?: number;
   /** For `queued`: the interactive run the account was handed to, and whether it already existed. */
   runId?: string;
@@ -314,8 +314,13 @@ export type RoutineCredentialResult = {
  * one that can take longer than a routine cycle's lease, and the interactive
  * family has 30 minutes. Coalesces onto a pending interactive run (a link or
  * "Sync now" already queued) exactly as "Sync now" does, and records the new
- * run as `pending_run_id` so a later "Sync now" joins it. Runs under the fences
- * in one transaction, so the run commits with the check.
+ * run as `pending_run_id` so a later "Sync now" joins it.
+ *
+ * One transaction under the fences does all of it: take the credential lease
+ * (another run holding it live is a skip), enqueue or coalesce, record the
+ * pending run, and hand the lease back so the interactive run can take it.
+ * There is no committed lease before the enqueue, so no gap in which the lease
+ * could be lost and the enqueue silently abandoned.
  */
 async function queueFirstSync(
   context: BackgroundJobContext,
@@ -329,13 +334,19 @@ async function queueFirstSync(
       throw new CredentialLeaseLostError();
     }
     const pending = await coalesceInteractiveRun(transaction, key);
-    if (pending) return { result: 'queued', reason: 'FIRST_SYNC', runId: pending.runId, coalesced: true };
-    const { runId } = await context.enqueue(transaction, {
-      family: adapter.interactiveFamily,
-      payload: { ...key, linkGeneration: fence.linkGeneration, requestedBy: 'routine' },
-    });
-    await setPendingProviderSyncRun(transaction, { ...key, runId });
-    return { result: 'queued', reason: 'FIRST_SYNC', runId, coalesced: false };
+    let queued: RoutineCredentialResult;
+    if (pending) {
+      queued = { result: 'queued', reason: 'FIRST_SYNC', runId: pending.runId, coalesced: true };
+    } else {
+      const { runId } = await context.enqueue(transaction, {
+        family: adapter.interactiveFamily,
+        payload: { ...key, linkGeneration: fence.linkGeneration, requestedBy: 'routine' },
+      });
+      await setPendingProviderSyncRun(transaction, { ...key, runId });
+      queued = { result: 'queued', reason: 'FIRST_SYNC', runId, coalesced: false };
+    }
+    await releaseCredentialSyncLease(transaction, fence);
+    return queued;
   });
 }
 
@@ -346,18 +357,19 @@ async function queueFirstSync(
  *
  * 1. read the link generation, unfenced (creating the control row for a
  *    credential linked before rows existed, without a new generation);
- * 2. take the credential lease under the fences; a live lease another run
+ * 2. an account that has never synced (`last_sync_at IS NULL`) is handed to
+ *    its interactive family instead, in one fenced transaction
+ *    ({@link queueFirstSync});
+ * 3. take the credential lease under the fences; a live lease another run
  *    holds (a first-link or "Sync now" run that started after the claim) is a
  *    skip;
- * 3. an account that has never synced (`last_sync_at IS NULL`) is handed to
- *    its interactive family instead ({@link queueFirstSync});
  * 4. otherwise run the adapter with every write behind
  *    {@link fencedBatchRunner}, under a deadline one minute before the run's
  *    lease ends. A sync that hits it stops, and a transient `CYCLE_DEADLINE`
  *    failure is recorded on the credential while the fence is still live, so
  *    backoff parks it and the operator can see it;
- * 5. on a provider 429 with `Retry-After`, push the credential's attempt clock
- *    out by that much, still under the fences;
+ * 5. on a provider 429 with `Retry-After`, hold the credential until then
+ *    (`provider_retry_after_until`), still under the fences;
  * 6. release the lease.
  *
  * Only a shutdown, a lost attempt or a database error throws: those end the
@@ -377,6 +389,18 @@ export async function runRoutineCredentialSync(
   if (!control?.linked) return { result: 'skipped', reason: 'NOT_LINKED' };
   const fence: ProviderSyncFence = { ...key, linkGeneration: control.linkGeneration, runId: context.runId };
 
+  if (credential.lastSyncAt === null) {
+    try {
+      return await queueFirstSync(context, fence, adapter);
+    } catch (error) {
+      if (error instanceof StaleLinkGenerationError) return { result: 'skipped', reason: 'STALE_LINK_GENERATION' };
+      if (error instanceof CredentialLeaseLostError) return { result: 'skipped', reason: 'CREDENTIAL_BUSY' };
+      // A row the interactive family's payload refuses (a board type written
+      // before #5453) syncs inline instead, where the runner quarantines it.
+      if (!(error instanceof Error && error.message === 'INVALID_PAYLOAD')) throw error;
+    }
+  }
+
   try {
     if ((await takeLease(context, fence)) === 'busy') return { result: 'skipped', reason: 'CREDENTIAL_BUSY' };
   } catch (error) {
@@ -389,16 +413,6 @@ export async function runRoutineCredentialSync(
   );
   const fenced = fencedBatchRunner(context, fence);
   try {
-    if (credential.lastSyncAt === null) {
-      try {
-        return await queueFirstSync(context, fence, adapter);
-      } catch (error) {
-        // A row the interactive family's payload refuses (a board type written
-        // before #5453) syncs inline instead, where the runner quarantines it.
-        if (!(error instanceof Error && error.message === 'INVALID_PAYLOAD')) throw error;
-      }
-    }
-
     let outcome: ProviderSyncOutcome;
     try {
       outcome = await adapter.sync(credential, fenced, AbortSignal.any([context.signal, deadline]));

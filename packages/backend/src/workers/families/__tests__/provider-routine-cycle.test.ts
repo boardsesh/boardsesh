@@ -2,7 +2,7 @@ process.env.AURORA_CREDENTIALS_SECRET = process.env.AURORA_CREDENTIALS_SECRET ??
 
 import { randomUUID } from 'node:crypto';
 import postgres from 'postgres';
-import { and, eq, inArray, like, sql } from 'drizzle-orm';
+import { and, eq, inArray, like, or, sql } from 'drizzle-orm';
 import { PgBoss } from 'pg-boss';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { encrypt } from '@boardsesh/crypto';
@@ -105,11 +105,27 @@ async function removeAccounts() {
   await database.execute(sql`DELETE FROM users WHERE id LIKE 'routine-%'`);
 }
 
+/** The cycle runs this file created; cleanup deletes only these and the interactive runs they queued. */
+const cycleRunIds: string[] = [];
+
+async function removeRuns() {
+  await database
+    .delete(backgroundJobRuns)
+    .where(
+      or(
+        cycleRunIds.length > 0 ? inArray(backgroundJobRuns.id, cycleRunIds) : undefined,
+        sql`${backgroundJobRuns.payload}->>'userId' LIKE 'routine-%'`,
+      ),
+    );
+  cycleRunIds.length = 0;
+}
+
 async function runCycle(signal = new AbortController().signal) {
   const { runId } = await enqueueBackgroundJob(database, boss, {
     family: 'provider-routine-cycle',
     payload: { provider: 'aurora' },
   });
+  cycleRunIds.push(runId);
   const [job] = await boss.fetch<BackgroundJobPayload>(queue, { includeMetadata: true, batchSize: 1 });
   expect(job?.id).toBe(runId);
   const result = await executeBackgroundJob(database, boss, job, handlerForRole(role), signal);
@@ -168,7 +184,7 @@ beforeAll(async () => {
 beforeEach(async () => {
   await boss.deleteAllJobs(queue);
   await boss.deleteAllJobs(BACKGROUND_JOB_QUEUES['interactive-import']);
-  await database.delete(backgroundJobRuns);
+  await removeRuns();
   await removeAccounts();
   await insertAccount('routine-a', 3);
   await insertAccount('routine-b', 2);
@@ -180,6 +196,7 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 afterAll(async () => {
+  await removeRuns();
   await removeAccounts();
   await boss.stop({ graceful: true, close: true });
   await owner.end();
@@ -316,11 +333,14 @@ describe('provider-routine-cycle', () => {
     expect(result).toBe('succeeded');
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const after = await credentials();
-    const [{ parkedFor }] = await database.execute<{ parkedFor: number }>(sql`
-      SELECT extract(epoch FROM last_sync_attempt_at - now())::float AS "parkedFor"
+    const [{ parkedFor, attemptInPast }] = await database.execute<{ parkedFor: number; attemptInPast: boolean }>(sql`
+      SELECT extract(epoch FROM provider_retry_after_until - now())::float AS "parkedFor",
+             last_sync_attempt_at <= now() AS "attemptInPast"
         FROM aurora_credentials WHERE user_id = 'routine-a' AND board_type = ${FIXTURE_BOARD}`);
     expect(parkedFor).toBeGreaterThan(100);
     expect(parkedFor).toBeLessThanOrEqual(121);
+    // The hold has its own column; the attempt clock stays the claim's stamp.
+    expect(attemptInPast).toBe(true);
     // A transient failure, status untouched; the park replaces the backoff
     // step the failure was charged, so the delay is not counted twice.
     expect(after['routine-a']).toMatchObject({ syncStatus: 'active', consecutiveFailures: 0 });
