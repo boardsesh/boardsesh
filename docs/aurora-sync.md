@@ -372,8 +372,18 @@ after a climber links a Tension, Decoy, Touchstone, Grasshopper or So iLL
 account, and when they tap "Sync now". Full contract:
 [background-workers.md, "Provider sync families"](background-workers.md#provider-sync-families).
 
-What changes in this package to make that possible, with no change for the
-daemon:
+What changes in this package to make that possible. The daemon behaves as
+before with one deliberate exception, the first bullet:
+
+- Every page transaction, the daemon's included, now takes the user tick
+  advisory lock (`acquireUserTickMutationLock`) before its first row lock. The
+  daemon used to take it only on reaching the ascents table, after it had
+  already locked `board_users`, `board_walls` and `board_climbs` rows. A
+  worker's fenced batch takes the tick lock first, so a daemon and a job syncing
+  the same just-linked account could each hold what the other waited for: a
+  deadlock. One order for every writer removes it; the cost is that a page
+  with no ascents also waits for the climber's own tick edits, for as long as
+  one of those takes.
 
 - `SyncRunnerConfig` takes `db` (the worker's pool; the runner then opens none of
   its own and `close()` leaves it alone), `transaction` (a batch runner) and

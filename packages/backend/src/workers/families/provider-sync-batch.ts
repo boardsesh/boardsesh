@@ -92,8 +92,8 @@ function fenceFailure(error: unknown): unknown {
  *    `CREDENTIAL_BUSY`. The daemons take no lease: they share the tick lock
  *    order instead, and an overlap costs one duplicate, idempotent sync;
  *    a manual request first records that the climber is waiting;
- * b. claim the named credential (`claimCredentialForRun`, unfenced: it only
- *    stamps the attempt clock);
+ * b. claim the named credential (`claimCredentialForRun`) in a fenced
+ *    transaction: it stamps the attempt clock, which a stale run must not;
  * c. run the provider sync with every write going through
  *    {@link fencedBatchRunner};
  * d. release the lease, and clear `pending_run_id` unless a retry is coming.
@@ -128,17 +128,17 @@ export async function runProviderSync(
   // Retrying attempts keep `pending_run_id` so a "Sync now" meanwhile joins this run.
   let retryComing = true;
   try {
-    const credential = await claimCredentialForRun(context.database, {
-      ...key,
-      candidateFilter: provider.candidateFilter,
-    });
-    if (!credential) {
-      retryComing = false;
-      throw new BackgroundJobError('CREDENTIAL_UNAVAILABLE', { retryable: false });
-    }
+    // Fenced like any write: a run gone stale since step a must not stamp the
+    // new link's attempt clock. Two statements, no HTTP; the fence takes the
+    // control row before the claim takes the credential row.
+    const fenced = fencedBatchRunner(context, fence);
     let outcome: ProviderSyncOutcome;
     try {
-      outcome = await provider.sync(credential, fencedBatchRunner(context, fence));
+      const credential = await fenced((transaction) =>
+        claimCredentialForRun(transaction, { ...key, candidateFilter: provider.candidateFilter }),
+      );
+      if (!credential) throw new BackgroundJobError('CREDENTIAL_UNAVAILABLE', { retryable: false });
+      outcome = await provider.sync(credential, fenced);
     } catch (error) {
       const translated = fenceFailure(error);
       if (translated instanceof BackgroundJobError && !translated.retryable) retryComing = false;

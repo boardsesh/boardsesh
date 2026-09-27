@@ -518,19 +518,35 @@ export async function saveAuroraCredential(input: {
   };
 }
 
-async function revokeKilterRefreshToken(userId: string, credentialDb: Pick<typeof db, 'select'>): Promise<boolean> {
+/**
+ * Read (and lock, for this transaction) the Kilter refresh token an unlink is
+ * about to delete, so it can be revoked after the transaction commits.
+ */
+async function readKilterRefreshTokenForRevocation(
+  userId: string,
+  credentialDb: Pick<typeof db, 'select'>,
+): Promise<string | null> {
   const [credential] = await credentialDb
     .select({ encryptedRefreshToken: auroraCredentials.encryptedRefreshToken })
     .from(auroraCredentials)
     .where(and(eq(auroraCredentials.userId, userId), eq(auroraCredentials.boardType, KILTER_BOARD_TYPE)))
     .for('update')
     .limit(1);
+  return credential?.encryptedRefreshToken ?? null;
+}
 
-  if (!credential?.encryptedRefreshToken || !KILTER_OAUTH_CLIENT_ID) return true;
+/**
+ * Revoke a Kilter refresh token at Keycloak. Runs with no transaction open:
+ * the call can take up to its 30 s timeout, and holding the control or
+ * credential row across it would stall a sync batch (and, behind that batch's
+ * tick lock, the climber's own tick edits) for as long.
+ */
+async function revokeKilterRefreshToken(encryptedRefreshToken: string | null): Promise<boolean> {
+  if (!encryptedRefreshToken || !KILTER_OAUTH_CLIENT_ID) return true;
 
   let revocationFailed = false;
   try {
-    const refreshToken = decrypt(credential.encryptedRefreshToken);
+    const refreshToken = decrypt(encryptedRefreshToken);
     await revokeRefreshToken(
       refreshToken,
       {
@@ -701,20 +717,24 @@ export async function deleteAuroraCredential(
   userId: string,
   boardType: AuroraBoardName,
 ): Promise<DeleteAuroraCredentialResult> {
-  const localRevocationSucceeded = await db.transaction(async (tx) => {
+  const refreshTokenToRevoke = await db.transaction(async (tx) => {
     // Unlinked, not deleted: the control row outlives the credential so a sync
     // queued before the unlink still finds a generation to fail against. First,
     // for the same lock-order reason as the link path.
     await rotateLinkGeneration(tx, { userId, boardType, linked: false });
-    const revoked = boardType === KILTER_BOARD_TYPE ? await revokeKilterRefreshToken(userId, tx) : true;
+    const encryptedRefreshToken =
+      boardType === KILTER_BOARD_TYPE ? await readKilterRefreshTokenForRevocation(userId, tx) : null;
     await tx
       .delete(auroraCredentials)
       .where(and(eq(auroraCredentials.userId, userId), eq(auroraCredentials.boardType, boardType)));
     await tx
       .delete(userBoardMappings)
       .where(and(eq(userBoardMappings.userId, userId), eq(userBoardMappings.boardType, boardType)));
-    return revoked;
+    return encryptedRefreshToken;
   });
+  // After the commit: the link is gone locally whatever Keycloak answers, and a
+  // failed revocation is reported, not rolled back.
+  const localRevocationSucceeded = await revokeKilterRefreshToken(refreshTokenToRevoke);
   if (boardType === KILTER_BOARD_TYPE) await notifyKilterCredentialChange();
 
   if (!localRevocationSucceeded) {

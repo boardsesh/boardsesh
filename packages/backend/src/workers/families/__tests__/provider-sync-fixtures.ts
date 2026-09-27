@@ -75,8 +75,9 @@ export async function removeFixtures(database: DbInstance, userIds: readonly str
     await database.execute(sql`DELETE FROM provider_sync_controls WHERE user_id = ${userId}`);
     await database.execute(sql`DELETE FROM users WHERE id = ${userId}`);
   }
+  await database.execute(sql`DELETE FROM board_climb_ratings WHERE climb_uuid LIKE 'psync-%'`);
   await database.execute(sql`DELETE FROM playlist_climbs WHERE climb_uuid LIKE 'psync-%'`);
-  await database.execute(sql`DELETE FROM playlists WHERE aurora_id LIKE 'psync-%'`);
+  await database.execute(sql`DELETE FROM playlists WHERE aurora_id LIKE 'psync-%' OR kilter_id LIKE 'psync-%'`);
   await database.execute(sql`DELETE FROM board_circuits WHERE uuid LIKE 'psync-%'`);
   await database.execute(sql`DELETE FROM board_tags WHERE entity_uuid LIKE 'psync-%'`);
   await database.execute(sql`DELETE FROM board_user_syncs WHERE user_id = ${AURORA_USER_ID}`);
@@ -85,7 +86,7 @@ export async function removeFixtures(database: DbInstance, userIds: readonly str
   for (const climbUuid of climbUuids) {
     await database.execute(sql`DELETE FROM board_climbs WHERE uuid = ${climbUuid}`);
   }
-  await database.execute(sql`DELETE FROM board_climbs WHERE uuid LIKE 'psync-draft-%'`);
+  await database.execute(sql`DELETE FROM board_climbs WHERE uuid LIKE 'psync-draft-%' OR uuid LIKE 'psync-kclimb-%'`);
 }
 
 export function ascentRow(uuid: string, climbUuid: string, climbedAt: string) {
@@ -201,4 +202,115 @@ export function stubAuroraApi(options: {
   });
   vi.stubGlobal('fetch', fetchMock);
   return { fetchMock, requests };
+}
+
+export const KILTER_SUB = 'psync-kilter-sub';
+
+/** A user, a Kilter climb and a linked Kilter credential with its control row. */
+export async function insertLinkedKilterAccount(
+  database: DbInstance,
+  userId: string,
+  climbUuid: string,
+): Promise<{ linkGeneration: string }> {
+  await database.execute(sql`
+    INSERT INTO users (id, email, name, created_at, updated_at)
+    VALUES (${userId}, ${userId + '@test.com'}, 'Kilter Sync Tester', now(), now())
+    ON CONFLICT (id) DO NOTHING
+  `);
+  await database.execute(sql`
+    INSERT INTO board_climbs (uuid, board_type, layout_id, setter_username, name, frames, frames_count, is_draft, is_listed, edge_left, edge_right, edge_bottom, edge_top, created_at)
+    VALUES (${climbUuid}, 'kilter', 1, 'test-setter', 'Kilter Sync Test Climb', 'p1r1', 1, false, true, 0, 100, 0, 150, '2024-01-01')
+    ON CONFLICT (uuid) DO NOTHING
+  `);
+  await database
+    .insert(auroraCredentials)
+    .values({ userId, boardType: 'kilter', encryptedRefreshToken: encrypt('kilter-refresh'), syncStatus: 'pending' })
+    .onConflictDoNothing();
+  return database.transaction((transaction) =>
+    rotateLinkGeneration(transaction, { userId, boardType: 'kilter', linked: true }),
+  );
+}
+
+/**
+ * Stand-in for Kilter's PowerSync stream: one snapshot carrying a log, a
+ * rating and a circuit with one climb, then checkpoint_complete.
+ */
+export function stubKilterPowerSync(climbUuid: string) {
+  const common = { user_uuid: KILTER_SUB, gym_uuid: null, wall_uuid: null, product_layout_uuid: null };
+  const ops = [
+    {
+      op_id: '1',
+      op: 'PUT',
+      object_type: 'logs',
+      object_id: 'psync-klog-1',
+      data: {
+        ...common,
+        id: 'psync-klog-1',
+        log_uuid: 'psync-klog-1',
+        climb_uuid: climbUuid,
+        angle: 40,
+        flashed: 0,
+        topped: 1,
+        attempts: 3,
+        created_at: '2026-05-01 10:00:00',
+      },
+    },
+    {
+      op_id: '2',
+      op: 'PUT',
+      object_type: 'climb_ratings',
+      object_id: 'psync-krating-1',
+      data: {
+        ...common,
+        id: 'psync-krating-1',
+        climb_rating_uuid: 'psync-krating-1',
+        climb_uuid: climbUuid,
+        angle: 40,
+        rating: 3,
+        difficulty_grade_id: 20,
+        comment: null,
+        created_at: '2026-05-01 10:05:00',
+      },
+    },
+    {
+      op_id: '3',
+      op: 'PUT',
+      object_type: 'circuits',
+      object_id: 'psync-kcircuit-1',
+      data: {
+        ...common,
+        id: 'psync-kcircuit-1',
+        circuit_uuid: 'psync-kcircuit-1',
+        name: 'Kilter warmups',
+        description: null,
+        color: 'FF0000',
+        is_public: 0,
+      },
+    },
+    {
+      op_id: '4',
+      op: 'PUT',
+      object_type: 'circuit_climbs',
+      object_id: 'psync-kcircuit-climb-1',
+      data: {
+        id: 'psync-kcircuit-climb-1',
+        circuit_uuid: 'psync-kcircuit-1',
+        climb_uuid: climbUuid,
+        angle: 40,
+        position: 0,
+      },
+    },
+  ];
+  const body = [JSON.stringify({ data: { bucket: 'user', data: ops } }), JSON.stringify({ checkpoint_complete: {} })]
+    .map((line) => `${line}\n`)
+    .join('');
+  const fetchMock = vi.fn(async (input: string | URL | Request) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+    if (url.endsWith('/sync/stream')) {
+      return new Response(body, { status: 200, headers: { 'content-type': 'application/x-ndjson' } });
+    }
+    throw new Error(`Unexpected request in test: ${url}`);
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  return { fetchMock };
 }

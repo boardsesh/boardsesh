@@ -13,6 +13,16 @@ vi.mock('@boardsesh/aurora-sync/api', async (importOriginal) => ({
   },
 }));
 
+const revokeMock = vi.hoisted(() => {
+  // Read once at import by the credential service; set so an unlink revokes.
+  process.env.KILTER_OAUTH_CLIENT_ID = process.env.KILTER_OAUTH_CLIENT_ID ?? 'enqueue-test-client';
+  return vi.fn(async (_refreshToken: string) => {});
+});
+vi.mock('@boardsesh/kilter-sync/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@boardsesh/kilter-sync/api')>()),
+  revokeRefreshToken: (refreshToken: string) => revokeMock(refreshToken),
+}));
+
 // The producer enqueues on the backend's pg-boss; point it at this file's instance.
 const queueHolder = vi.hoisted(() => ({ boss: null as PgBoss | null }));
 vi.mock('../services/job-queue', async (importOriginal) => ({
@@ -179,7 +189,18 @@ describe('linking a board queues its first sync', () => {
     expect(run).toMatchObject({ id: result.syncRunId, family: 'kilter-user-sync' });
     const linkedGeneration = (await controlRow('kilter')).linkGeneration;
 
-    await deleteAuroraCredential(USER_ID, 'kilter');
+    // The revocation is HTTP: it must run after the unlink committed, with no
+    // row lock held. Read from another connection while it "runs".
+    let credentialsDuringRevoke: number | null = null;
+    revokeMock.mockImplementationOnce(async () => {
+      const rows = await owner`SELECT 1 FROM aurora_credentials WHERE user_id = ${USER_ID} AND board_type = 'kilter'`;
+      credentialsDuringRevoke = rows.length;
+    });
+
+    expect(await deleteAuroraCredential(USER_ID, 'kilter')).toEqual({ success: true });
+
+    expect(revokeMock).toHaveBeenCalledWith('refresh');
+    expect(credentialsDuringRevoke).toBe(0);
 
     const control = await controlRow('kilter');
     expect(control).toMatchObject({ linked: false, pendingRunId: null });

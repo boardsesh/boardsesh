@@ -1,14 +1,22 @@
 import { z } from 'zod';
-import { SyncRunner, syncableAuroraCredentialsFilter } from '@boardsesh/aurora-sync/runner';
-import { AURORA_BOARDS } from '@boardsesh/shared-schema';
+import type { AuroraBoardName } from '@boardsesh/shared-schema';
 import { logger } from '../../utils/logger';
 import { runProviderSync } from './provider-sync-batch';
 import type { BackgroundJobFamilyModule } from './types';
 
-/** Every Aurora board this family syncs. Kilter has its own family and OAuth flow. */
-export const AURORA_USER_SYNC_BOARDS = AURORA_BOARDS.filter(
-  (board): board is Exclude<(typeof AURORA_BOARDS)[number], 'kilter'> => board !== 'kilter',
-);
+/**
+ * Every Aurora board this family syncs; Kilter has its own family and OAuth
+ * flow. Spelled out rather than derived from `AURORA_BOARDS` so the registry,
+ * which every backend and worker boot imports, never loads the shared-schema
+ * barrel. families.test.ts pins it to `AURORA_BOARDS` minus Kilter.
+ */
+export const AURORA_USER_SYNC_BOARDS = [
+  'tension',
+  'decoy',
+  'touchstone',
+  'grasshopper',
+  'soill',
+] as const satisfies ReadonlyArray<Exclude<AuroraBoardName, 'kilter'>>;
 
 /**
  * `userId` is the `users.id` text key. New ids are UUIDs, but the column is
@@ -45,16 +53,21 @@ export const auroraUserSyncFamily: BackgroundJobFamilyModule<AuroraUserSyncPaylo
     retryDelayMax: 300,
     deadlineSeconds: 7200,
     // A fenced batch holds the run-row lock, so no heartbeat lands while one
-    // runs, and a batch longer than this loses its attempt. A first sync's
-    // biggest batch (one Aurora page, one 500-op Kilter flush, all circuits at
-    // once) runs over a homelab-to-Railway link; 120 s leaves room for it.
-    heartbeatSeconds: 120,
+    // runs, and pg-boss fails the job at heartbeat_on + this. That makes it
+    // the ceiling on one batch: a first sync's biggest (one Aurora page or one
+    // 500-op Kilter flush, plus its stats recompute, or all circuits at once)
+    // over a homelab-to-Railway link must finish inside it.
+    heartbeatSeconds: 300,
   },
   payload: auroraUserSyncPayload,
   // The generation is part of the key: a relink queues its own run instead of
   // being deduplicated onto the old generation's run, which would only fail.
   singletonKey: (payload) => `${payload.userId}:${payload.boardType}:${payload.linkGeneration}`,
   async execute(context, payload) {
+    // Loaded here, not at module scope: the registry is imported on every
+    // backend, operator and worker boot, and the sync runners pull in the
+    // whole provider stack that only this family's worker ever runs.
+    const { SyncRunner, syncableAuroraCredentialsFilter } = await import('@boardsesh/aurora-sync/runner');
     await runProviderSync(context, payload, {
       candidateFilter: syncableAuroraCredentialsFilter(),
       async sync(credential, transaction) {

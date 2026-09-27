@@ -39,7 +39,8 @@ export type RunCycleOptions = {
   /**
    * Runs every credential write and every user-sync flush in one transaction
    * behind the caller's fences. The Keycloak token refresh never runs inside
-   * it: it keeps its own short `FOR UPDATE` transaction on the credential row.
+   * it: its own transaction holds the credential row `FOR UPDATE` across the
+   * Keycloak call (up to 30 s), which must never happen inside a fence.
    */
   transaction?: SyncBatchRunner;
   /** Cancels the PowerSync stream and stops before the next flush. */

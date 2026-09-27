@@ -2,7 +2,9 @@ import type { PgBoss } from 'pg-boss';
 import { describe, expect, it } from 'vitest';
 import { createDb } from '@boardsesh/db/client';
 import { BACKGROUND_WORKER_ROLES } from '@boardsesh/db/background-jobs';
+import { AURORA_BOARDS } from '@boardsesh/shared-schema';
 import { allFamilies, familiesForRole, requireFamily } from '../families';
+import { AURORA_USER_SYNC_BOARDS } from '../families/aurora-user-sync';
 import { enqueueBackgroundJob, requireFamilyRole } from '../jobs';
 
 describe('family registry', () => {
@@ -23,6 +25,12 @@ describe('family registry', () => {
       'kilter-user-sync',
     ]);
     expect(() => requireFamily('no-such-family')).toThrow('UNKNOWN_FAMILY');
+  });
+});
+
+describe('aurora-user-sync boards', () => {
+  it('covers every Aurora board except Kilter, which has its own family', () => {
+    expect([...AURORA_USER_SYNC_BOARDS].sort()).toEqual(AURORA_BOARDS.filter((board) => board !== 'kilter').sort());
   });
 });
 

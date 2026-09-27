@@ -63,6 +63,22 @@ vi.mock('../../../../db/src/queries/grade-model/index.ts', async (importOriginal
   };
 });
 
+// Keycloak is the one Kilter call the grant proof cannot run for real: the
+// refresh grant and the JWKS signature check. Everything behind them (the
+// stored-token lock, the PowerSync apply, the stats recompute) runs as the
+// restricted role.
+vi.mock('../../../../kilter-sync/src/api/keycloak.ts', async (importOriginal) => {
+  // Untyped on purpose: a typed `import()` of a path outside this package's
+  // rootDir would pull the file into the backend's tsc program.
+  const actual = await importOriginal<Record<string, unknown>>();
+  return {
+    ...actual,
+    refreshAccessToken: async () => ({ access_token: 'kilter-access', expires_in: 300, token_type: 'Bearer' }),
+    // The sub the PowerSync fixture's rows belong to (KILTER_SUB).
+    verifyKeycloakToken: async () => ({ sub: 'psync-kilter-sub', preferredUsername: 'kilter-climber' }),
+  };
+});
+
 describe('owner-only queue initialization', () => {
   it('allows runtime scheduling and worker DML without schema CREATE', async () => {
     const role = `detector_test_${randomUUID().replaceAll('-', '')}`;

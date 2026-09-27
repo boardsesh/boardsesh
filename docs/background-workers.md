@@ -81,7 +81,7 @@ The existing runtime and detector grant contracts remain supported.
 | Grant | Tables |
 | --- | --- |
 | SELECT, UPDATE | `aurora_credentials`, `provider_sync_controls` |
-| SELECT | `users`, `user_profiles`, `user_board_mappings`, `board_climb_aliases` |
+| SELECT | `users (id, name)`, `user_profiles (user_id, display_name)`, `user_board_mappings`, `board_climb_aliases` |
 | SELECT, INSERT, UPDATE, DELETE | `boardsesh_ticks`, `logbook_sync_skips`, `board_users`, `board_walls`, `board_climbs`, `board_tags`, `board_circuits`, `board_user_syncs`, `board_climb_stats`, `board_climb_ratings`, `playlists`, `playlist_climbs`, `playlist_ownership` |
 | INSERT | `sync_deletions` (the `boardsesh_ticks` and `playlist*` delete triggers write it as the caller) |
 
@@ -154,8 +154,8 @@ module. The module declares:
 | `export-board-snapshots` | `batch` | 2,700 s | 1, after 300 s | 20 h (live scan: skips itself after 840 s) | mode (`nightly`, `live-scan`) |
 | `refresh-moonboard-angle-estimates` | `batch` | 1,800 s | 1, after 900 s | 6 days | `weekly` |
 | `refresh-moonboard-wide-angle-estimates` | `batch` | 7,200 s | 1, after 900 s | 6 days | `weekly` |
-| `aurora-user-sync` | `interactive-import` | 1800 s (heartbeat 120 s) | 3, 30 s backoff to 300 s | 2 h | `userId:boardType:linkGeneration` |
-| `kilter-user-sync` | `interactive-import` | 1800 s (heartbeat 120 s) | 3, 30 s backoff to 300 s | 2 h | `userId:kilter:linkGeneration` |
+| `aurora-user-sync` | `interactive-import` | 1800 s (heartbeat 300 s) | 3, 30 s backoff to 300 s | 2 h | `userId:boardType:linkGeneration` |
+| `kilter-user-sync` | `interactive-import` | 1800 s (heartbeat 300 s) | 3, 30 s backoff to 300 s | 2 h | `userId:kilter:linkGeneration` |
 
 Throw `BackgroundJobError(code)` from `execute` to record a bounded,
 credential-free `error_code` (`/^[A-Z][A-Z0-9_]{0,63}$/`); pass
@@ -510,17 +510,23 @@ serialize instead of deadlocking. Provider HTTP
 (Aurora login and `/sync`, Keycloak, PowerSync) always runs between batches.
 The Kilter token refresh keeps its own unfenced `FOR UPDATE` transaction on the
 credential row, exactly as the daemon runs it. A fenced batch holds the run-row lock, so
-no heartbeat lands while it runs; the families' 120 s heartbeat window is what
-bounds one batch (one Aurora page, one 500-op Kilter flush, the circuits phase).
+no heartbeat lands while it runs, and pg-boss fails an active job at
+`heartbeat_on + heartbeatSeconds`. The families' 300 s heartbeat window is
+therefore a hard ceiling on one batch: one Aurora page or one 500-op Kilter
+flush, each with the stats recompute it triggers, or the whole circuits phase.
+A batch that needs longer can never succeed. First syncs fit today; PR-3's
+routine cycle must move `recomputeClimbStatsBulk` out of the page transaction
+into its own chunked batches rather than lean on this window.
 
 ### One run
 
 1. Under the fences, check the generation and take the lease. Another run's live
    lease ends the attempt with a retryable `CREDENTIAL_BUSY`; a manual request
    first sets `notify_requester` (nothing reads it yet; a later PR notifies).
-2. Claim the named credential with `claimCredentialForRun`: no 30 s reclaim gap,
-   no backoff, but the daemon's own eligibility filter, so an expired credential
-   is `CREDENTIAL_UNAVAILABLE`.
+2. Claim the named credential with `claimCredentialForRun`, inside a fenced
+   transaction so a run gone stale cannot stamp the new link's attempt clock: no
+   30 s reclaim gap, no backoff, but the daemon's own eligibility filter, so an
+   expired credential is `CREDENTIAL_UNAVAILABLE`.
 3. Run the provider sync with `skipSharedSync` / `skipCatalogSync`: the
    board-wide half stays with the daemon (and later its own family).
 4. Release the lease and clear `pending_run_id`, unless a retry is coming.
@@ -546,6 +552,8 @@ then `requestProviderSyncOn`, which enqueues the family run and sets
 otherwise). The run commits with the link: a throw after the enqueue rolls back
 both. `deleteAuroraCredential` rotates with `linked = false`; the control row
 outlives the credential so a job queued before the unlink still fails its check.
+For Kilter it reads the refresh token in that transaction and revokes it at
+Keycloak only after the commit, so no row lock is held across the HTTP call.
 
 The GraphQL mutation `requestProviderSync(boardType)` is "Sync now": 5 a minute
 per user, then one transaction that locks the control row, refuses an unlinked
@@ -562,18 +570,23 @@ board's family is enabled, so the app hides "Sync now" until it is.
 
 ### Cutover
 
-1. Run the migrator (0244, 0245 and the new grants, with `role=login` entries).
-2. Deploy the backend with `BATCH_FAMILIES_ENABLED=aurora-user-sync,kilter-user-sync`.
-   Links now queue runs; "Sync now" works.
-3. Unpause the `interactive-import` worker (`WORKER_PAUSED=false`) with
+1. Run the migrator (0244, 0245 and the new grants, with `<worker-role>=<login>`
+   entries).
+2. Unpause the `interactive-import` worker (`WORKER_PAUSED=false`) with
    `AURORA_CREDENTIALS_SECRET` and `KILTER_OAUTH_CLIENT_ID` (plus
-   `KILTER_OAUTH_CLIENT_SECRET` for a confidential client).
+   `KILTER_OAUTH_CLIENT_SECRET` for a confidential client). With no family
+   enabled nothing is queued, so it idles.
+3. Deploy the backend with `BATCH_FAMILIES_ENABLED=aurora-user-sync,kilter-user-sync`.
+   Links now queue runs and "Sync now" works. In the other order, every link
+   made before the worker is up queues a run nobody consumes, and its card reads
+   "Syncing" until the run's 2 h deadline.
 
 The daemons keep running and keep owning routine syncs until PR-3. The overlap
 costs at most one duplicate, idempotent sync of a just-linked account: the
-daemon claim does not look at the lease yet. Rollback: remove the families from
-`BATCH_FAMILIES_ENABLED` and pause the worker; queued runs expire at their
-deadline and the reconciler clears the control rows.
+daemon claim does not look at the lease yet. Rollback, in reverse: remove the
+families from `BATCH_FAMILIES_ENABLED` first, then pause the worker once its
+queue is empty; runs left queued expire at their deadline and the reconciler
+clears the control rows.
 
 ## Attempts, retries and reconciliation
 

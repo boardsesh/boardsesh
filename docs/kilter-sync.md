@@ -475,8 +475,11 @@ contract: [background-workers.md, "Provider sync families"](background-workers.m
   refusal or an abort ends the sync at once instead of being collected as a
   failed phase.
 - The Keycloak refresh (`getStoredKilterAccessToken`) is unchanged and stays
-  outside every fence: its own short `FOR UPDATE` transaction on the credential
-  row, on the worker's pool. It never reads or writes the link generation.
+  outside every fence, on the worker's pool. It is not a short transaction: it
+  holds the credential row `FOR UPDATE` across the Keycloak HTTP call (up to
+  its 30 s timeout) so a rotating refresh token is read and written under one
+  lock. Anything else that locks that row (the daemon's claim, an unlink) waits
+  for it. It never reads or writes the link generation.
 - `SyncRunnerConfig.db` injects the worker's pool; the runner then opens none of
   its own. A job skips the catalog piggyback (`skipCatalogSync`).
 - `syncableKilterCredentialsFilter()` is exported for the job's named claim.
