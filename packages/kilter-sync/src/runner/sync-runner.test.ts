@@ -104,7 +104,12 @@ type SyncRunnerPrivates = {
   runCycleForCredential: (db: RunnerDb, cred: KilterCredentialRecord) => Promise<void>;
   syncCredentialCycle: (db: RunnerDb, cred: KilterCredentialRecord, options: unknown) => Promise<void>;
   getClient: () => { client: unknown; db: RunnerDb };
-  maybeRunCatalogSync: (db: RunnerDb, cred: KilterCredentialRecord, currentToken: string) => Promise<void>;
+  maybeRunCatalogSync: (
+    db: RunnerDb,
+    cred: KilterCredentialRecord,
+    currentToken: string,
+    signal?: AbortSignal,
+  ) => Promise<void>;
   maybeRepairKilterStats: (...args: unknown[]) => Promise<void>;
   maybeSnapshotHistory: (...args: unknown[]) => Promise<void>;
 };
@@ -544,6 +549,29 @@ describe('SyncRunner catalog-sync cooldown claim', () => {
       cooldownMs: 60_000,
     });
     expect(mockSyncKilterCatalog).toHaveBeenCalledTimes(1);
+  });
+
+  it("hands the daemon's stop signal to the catalog pull and stops quietly when it fires", async () => {
+    mockClaimSharedSyncSlot.mockResolvedValue('2026-07-31 23:00:00.000000');
+    const runner = new SyncRunner({ sharedSyncCooldownMs: 60_000 });
+    const privates = runner as unknown as SyncRunnerPrivates;
+    const repair = vi.spyOn(privates, 'maybeRepairKilterStats').mockResolvedValue(undefined);
+    const errors: Error[] = [];
+    (runner as unknown as { handleError: (error: Error) => void }).handleError = (error) => errors.push(error);
+    const { db } = createDbShim();
+    const controller = new AbortController();
+    mockSyncKilterCatalog.mockImplementation(async () => {
+      controller.abort(new Error('daemon stopping'));
+    });
+
+    await privates.maybeRunCatalogSync(db, credential(), 'access-token', controller.signal);
+
+    expect(mockSyncKilterCatalog.mock.calls[0][0]).toMatchObject({ signal: controller.signal });
+    // The abort stops the run before the weekly maintenance, and a shutdown is
+    // not reported as a catalog failure; the slot is still re-stamped.
+    expect(repair).not.toHaveBeenCalled();
+    expect(errors).toEqual([]);
+    expect(mockStampSharedSyncFinished).toHaveBeenCalledTimes(1);
   });
 
   it('skips the catalog pull entirely when another instance holds the slot', async () => {

@@ -457,7 +457,7 @@ export class SyncRunner {
     // the shared catalog if its cooldown has elapsed. Reuses this user's token.
     // A background job skips it: the catalog sync runs on its own schedule there.
     if (options.skipCatalogSync) return;
-    await this.maybeRunCatalogSync(db, cred, accessToken);
+    await this.maybeRunCatalogSync(db, cred, accessToken, options.signal ?? this.daemonController?.signal);
   }
 
   /**
@@ -474,7 +474,13 @@ export class SyncRunner {
    * an optimisation — it can legitimately be held by two instances during a
    * stall — so this claim carries the guarantee.
    */
-  private async maybeRunCatalogSync(db: RunnerDb, cred: KilterCredentialRecord, currentToken: string): Promise<void> {
+  private async maybeRunCatalogSync(
+    db: RunnerDb,
+    cred: KilterCredentialRecord,
+    currentToken: string,
+    /** The daemon's stop signal: a shutdown ends the catalog pull at its next page. */
+    signal?: AbortSignal,
+  ): Promise<void> {
     const board = KILTER_BOARD_TYPE;
     const cooldownMs = this.getCatalogSyncCooldownMs();
     const cursor = { boardType: board, cursorName: CATALOG_SYNC_COOLDOWN_CURSOR };
@@ -523,16 +529,20 @@ export class SyncRunner {
         log: (message) => this.log(message),
         applyDeletions: this.config.applyCatalogDeletions ?? true,
         deleteBatchLimit: this.config.deleteBatchLimit,
+        signal,
       });
 
       // After a fresh catalog pull, run the two weekly board-wide maintenance
       // jobs (each self-gated by a 7-day watermark, so calling them every
       // catalog cycle is cheap). A failure in either must not poison the
       // catalog result — the counts already committed.
-      await this.maybeRepairKilterStats(db, tokenProvider);
-      await this.maybeSnapshotHistory(db);
+      signal?.throwIfAborted();
+      await this.maybeRepairKilterStats(db, tokenProvider, { signal });
+      signal?.throwIfAborted();
+      await this.maybeSnapshotHistory(db, { signal });
     } catch (error) {
-      this.handleError(error instanceof Error ? error : new Error(String(error)), { board });
+      // A shutdown is not a catalog failure: the daemon is stopping.
+      if (!signal?.aborted) this.handleError(error instanceof Error ? error : new Error(String(error)), { board });
     } finally {
       // Re-stamp so the cooldown runs from the END of the work, success or not.
       // Error-swallowing by design: this runs after the user-half has committed
