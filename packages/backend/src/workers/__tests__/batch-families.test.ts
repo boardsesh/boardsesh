@@ -14,6 +14,8 @@ const jobs = vi.hoisted(() => ({
   runRefreshClimbGrades: vi.fn(),
   runRefreshClimbNeighbors: vi.fn(),
   orderBoardsByClimbCount: vi.fn(),
+  runMoonboardAngleEstimates: vi.fn(),
+  runMoonboardWideAngleEstimates: vi.fn(),
 }));
 
 vi.mock('@boardsesh/db/jobs', async (importOriginal) => {
@@ -21,13 +23,15 @@ vi.mock('@boardsesh/db/jobs', async (importOriginal) => {
   return { ...actual, ...jobs };
 });
 
-const { CLIMB_NEIGHBOR_BOARDS, ClimbNeighborsInterruptedError, GradeGatesFailedError } =
+const { CLIMB_NEIGHBOR_BOARDS, ClimbNeighborsInterruptedError, GradeGatesFailedError, MoonboardFitUnusableError } =
   await import('@boardsesh/db/jobs');
 const { BackgroundJobError, familiesForRole, requireFamily } = await import('../families');
 const { refreshRecommendationsFamily } = await import('../families/refresh-recommendations');
 const { refreshHoldFeaturesFamily } = await import('../families/refresh-hold-features');
 const { refreshClimbGradesFamily } = await import('../families/refresh-climb-grades');
 const { refreshClimbNeighborsFamily } = await import('../families/refresh-climb-neighbors');
+const { refreshMoonboardAngleEstimatesFamily } = await import('../families/refresh-moonboard-angle-estimates');
+const { refreshMoonboardWideAngleEstimatesFamily } = await import('../families/refresh-moonboard-wide-angle-estimates');
 
 type Context = Parameters<typeof refreshRecommendationsFamily.execute>[0];
 
@@ -77,6 +81,8 @@ describe('batch family registration', () => {
         'refresh-hold-features',
         'refresh-climb-grades',
         'refresh-climb-neighbors',
+        'refresh-moonboard-angle-estimates',
+        'refresh-moonboard-wide-angle-estimates',
       ]),
     );
     for (const role of ['interactive-import', 'routine-provider', 'maintenance-delivery'] as const) {
@@ -84,6 +90,8 @@ describe('batch family registration', () => {
     }
     expect(requireFamily('refresh-climb-grades')).toBe(refreshClimbGradesFamily);
     expect(requireFamily('refresh-climb-neighbors')).toBe(refreshClimbNeighborsFamily);
+    expect(requireFamily('refresh-moonboard-angle-estimates')).toBe(refreshMoonboardAngleEstimatesFamily);
+    expect(requireFamily('refresh-moonboard-wide-angle-estimates')).toBe(refreshMoonboardWideAngleEstimatesFamily);
   });
 
   it('keeps each lease inside pg-boss limits and each heartbeat window valid', () => {
@@ -92,20 +100,53 @@ describe('batch family registration', () => {
       refreshHoldFeaturesFamily,
       refreshClimbGradesFamily,
       refreshClimbNeighborsFamily,
+      refreshMoonboardAngleEstimatesFamily,
+      refreshMoonboardWideAngleEstimatesFamily,
     ]) {
+      // pg-boss's own attempt-lease cap. Weekly families still fit under it
+      // even with an hours-long publish (see refresh-moonboard-wide-angle-estimates).
       expect(family.options.expireInSeconds).toBeLessThanOrEqual(24 * 60 * 60);
       expect(family.options.heartbeatSeconds).toBeGreaterThanOrEqual(10);
       expect(family.options.heartbeatSeconds).toBeLessThan(family.options.expireInSeconds);
-      expect(family.options.deadlineSeconds).toBeLessThan(24 * 60 * 60);
+      // The absolute run deadline across retries has no pg-boss cap; a week is
+      // this codebase's own outer bound for a batch family's retry budget.
+      expect(family.options.deadlineSeconds).toBeLessThan(7 * 24 * 60 * 60);
       expect(family.options.retryBackoff).toBe(true);
     }
     expect(refreshRecommendationsFamily.options).toMatchObject({
       expireInSeconds: 1200,
       retryLimit: 2,
       retryDelay: 300,
+      deadlineSeconds: 72_000,
     });
-    expect(refreshHoldFeaturesFamily.options).toMatchObject({ expireInSeconds: 1200, retryLimit: 2, retryDelay: 300 });
-    expect(refreshClimbGradesFamily.options).toMatchObject({ expireInSeconds: 1800, retryLimit: 1, retryDelay: 900 });
+    expect(refreshHoldFeaturesFamily.options).toMatchObject({
+      expireInSeconds: 1200,
+      retryLimit: 2,
+      retryDelay: 300,
+      deadlineSeconds: 72_000,
+    });
+    expect(refreshClimbGradesFamily.options).toMatchObject({
+      expireInSeconds: 1800,
+      retryLimit: 1,
+      retryDelay: 900,
+      deadlineSeconds: 72_000,
+    });
+    expect(refreshMoonboardAngleEstimatesFamily.options).toMatchObject({
+      expireInSeconds: 1800,
+      retryLimit: 1,
+      retryDelay: 900,
+      deadlineSeconds: 518_400,
+      heartbeatSeconds: 300,
+    });
+    expect(refreshMoonboardWideAngleEstimatesFamily.options).toMatchObject({
+      expireInSeconds: 1800,
+      retryLimit: 1,
+      retryDelay: 900,
+      deadlineSeconds: 518_400,
+      // Sized close to the family's own expire ceiling: the measured publish
+      // transaction (~1429 s for 2.89M rows) leaves little slack otherwise.
+      heartbeatSeconds: 1700,
+    });
     expect(refreshClimbNeighborsFamily.options).toEqual({
       expireInSeconds: 21_600,
       retryLimit: 2,
@@ -117,15 +158,27 @@ describe('batch family registration', () => {
     });
   });
 
-  it('schedules one nightly UTC job each, fanned out with the default payload', async () => {
+  it('schedules one nightly or weekly UTC job each, fanned out with the default payload', async () => {
     expect(refreshRecommendationsFamily.schedules?.map(({ key, cron, tz }) => ({ key, cron, tz }))).toEqual([
       { key: 'nightly', cron: '0 6 * * *', tz: undefined },
     ]);
     expect(refreshHoldFeaturesFamily.schedules?.map(({ cron }) => cron)).toEqual(['15 6 * * *']);
     expect(refreshClimbGradesFamily.schedules?.map(({ cron }) => cron)).toEqual(['30 6 * * *']);
+    expect(refreshMoonboardAngleEstimatesFamily.schedules?.map(({ key, cron }) => ({ key, cron }))).toEqual([
+      { key: 'weekly', cron: '0 8 * * 1' },
+    ]);
+    expect(refreshMoonboardWideAngleEstimatesFamily.schedules?.map(({ key, cron }) => ({ key, cron }))).toEqual([
+      { key: 'weekly', cron: '30 8 * * 1' },
+    ]);
     expect(await refreshRecommendationsFamily.schedules?.[0].fanOut(database)).toEqual([{ payload: {} }]);
     expect(await refreshHoldFeaturesFamily.schedules?.[0].fanOut(database)).toEqual([{ payload: { board: 'kilter' } }]);
     expect(await refreshClimbGradesFamily.schedules?.[0].fanOut(database)).toEqual([{ payload: {} }]);
+    expect(await refreshMoonboardAngleEstimatesFamily.schedules?.[0].fanOut(database)).toEqual([
+      { payload: { publish: true } },
+    ]);
+    expect(await refreshMoonboardWideAngleEstimatesFamily.schedules?.[0].fanOut(database)).toEqual([
+      { payload: { publish: true } },
+    ]);
   });
 
   it('fans the neighbours schedule out to one job per board, cheapest first', async () => {
@@ -194,6 +247,26 @@ describe('payloads and dedup keys', () => {
     expect(refreshClimbGradesFamily.payload.safeParse({ allowEmptyBacktest: true }).success).toBe(false);
     expect(refreshClimbGradesFamily.payload.safeParse({ contentPriorFile: '/tmp/x' }).success).toBe(false);
     expect(refreshClimbGradesFamily.singletonKey?.({ refit: true })).toBe('nightly');
+  });
+
+  it('refresh-moonboard-angle-estimates defaults publish to true and keys on one weekly slot', () => {
+    expect(refreshMoonboardAngleEstimatesFamily.payload.parse({})).toEqual({ publish: true });
+    expect(refreshMoonboardAngleEstimatesFamily.payload.parse({ publish: false, validateOnly: true })).toEqual({
+      publish: false,
+      validateOnly: true,
+    });
+    expect(refreshMoonboardAngleEstimatesFamily.payload.safeParse({ board: 'kilter' }).success).toBe(false);
+    expect(refreshMoonboardAngleEstimatesFamily.singletonKey?.({ publish: true })).toBe('weekly');
+  });
+
+  it('refresh-moonboard-wide-angle-estimates defaults publish to true and keys on one weekly slot', () => {
+    expect(refreshMoonboardWideAngleEstimatesFamily.payload.parse({})).toEqual({ publish: true });
+    expect(refreshMoonboardWideAngleEstimatesFamily.payload.parse({ publish: false, dryRun: true })).toEqual({
+      publish: false,
+      dryRun: true,
+    });
+    expect(refreshMoonboardWideAngleEstimatesFamily.payload.safeParse({ validateOnly: true }).success).toBe(false);
+    expect(refreshMoonboardWideAngleEstimatesFamily.singletonKey?.({ publish: true })).toBe('weekly');
   });
 });
 
@@ -335,5 +408,69 @@ describe('execute', () => {
     const outage = new Error('connection reset');
     jobs.runRefreshClimbGrades.mockRejectedValue(outage);
     await expect(refreshClimbGradesFamily.execute(context('refresh-climb-grades').context, {})).rejects.toBe(outage);
+  });
+
+  it('refresh-moonboard-angle-estimates writes through the fence with the parsed payload', async () => {
+    const { context: jobContext, transaction } = context('refresh-moonboard-angle-estimates');
+    await refreshMoonboardAngleEstimatesFamily.execute(jobContext, { publish: true, validateOnly: false });
+    const [options] = jobs.runMoonboardAngleEstimates.mock.calls[0];
+    expect(options).toMatchObject({
+      db: database,
+      signal: jobContext.signal,
+      publish: true,
+      validateOnly: false,
+      dryRun: false,
+    });
+    expect(await writeThrough(options)).toBe(fencedTransaction);
+    expect(transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it('refresh-moonboard-angle-estimates maps an unusable fit to a non-retryable FIT_UNUSABLE', async () => {
+    jobs.runMoonboardAngleEstimates.mockRejectedValue(new MoonboardFitUnusableError(['no dual-angle sample']));
+    const failure = await refreshMoonboardAngleEstimatesFamily
+      .execute(context('refresh-moonboard-angle-estimates').context, { publish: true })
+      .catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(BackgroundJobError);
+    expect(failure).toMatchObject({ code: 'FIT_UNUSABLE', retryable: false });
+  });
+
+  it('refresh-moonboard-angle-estimates lets any other failure retry', async () => {
+    const outage = new Error('connection reset');
+    jobs.runMoonboardAngleEstimates.mockRejectedValue(outage);
+    await expect(
+      refreshMoonboardAngleEstimatesFamily.execute(context('refresh-moonboard-angle-estimates').context, {
+        publish: true,
+      }),
+    ).rejects.toBe(outage);
+  });
+
+  it('refresh-moonboard-wide-angle-estimates writes through the fence with the parsed payload', async () => {
+    const { context: jobContext, transaction } = context('refresh-moonboard-wide-angle-estimates');
+    await refreshMoonboardWideAngleEstimatesFamily.execute(jobContext, { publish: true, dryRun: false });
+    const [options] = jobs.runMoonboardWideAngleEstimates.mock.calls[0];
+    expect(options).toMatchObject({ db: database, signal: jobContext.signal, publish: true, dryRun: false });
+    expect(await writeThrough(options)).toBe(fencedTransaction);
+    expect(transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it('refresh-moonboard-wide-angle-estimates maps an unusable fit to a non-retryable FIT_UNUSABLE', async () => {
+    jobs.runMoonboardWideAngleEstimates.mockRejectedValue(
+      new MoonboardFitUnusableError(['no angle-surface coverage from any shape board']),
+    );
+    const failure = await refreshMoonboardWideAngleEstimatesFamily
+      .execute(context('refresh-moonboard-wide-angle-estimates').context, { publish: true })
+      .catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(BackgroundJobError);
+    expect(failure).toMatchObject({ code: 'FIT_UNUSABLE', retryable: false });
+  });
+
+  it('refresh-moonboard-wide-angle-estimates lets any other failure retry', async () => {
+    const outage = new Error('connection reset');
+    jobs.runMoonboardWideAngleEstimates.mockRejectedValue(outage);
+    await expect(
+      refreshMoonboardWideAngleEstimatesFamily.execute(context('refresh-moonboard-wide-angle-estimates').context, {
+        publish: true,
+      }),
+    ).rejects.toBe(outage);
   });
 });

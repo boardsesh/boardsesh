@@ -33,6 +33,13 @@ export const NEIGHBOR_SMALL_LAYOUT = 9901;
 export const NEIGHBOR_LARGE_LAYOUT = 9902;
 export const NEIGHBOR_SMALL_CLIMBS = ['nb-a', 'nb-b'].map((name) => `${FIXTURE_PREFIX}${name}`);
 export const NEIGHBOR_LARGE_CLIMBS = ['nb-c', 'nb-d', 'nb-e', 'nb-f'].map((name) => `${FIXTURE_PREFIX}${name}`);
+/**
+ * A second MoonBoard climb, graded at BOTH 25° and 40°, so the same-board
+ * angle-estimate job (refresh-moonboard-angle-estimates) has a one-row dual-
+ * angle training sample to fit a pooled delta from (buildCell only requires
+ * n >= 1; ANGLE_CELL_MIN_CLIMBS gates band-level cells, not the pooled fit).
+ */
+export const MOONBOARD_DUAL_ANGLE_CLIMB = `${FIXTURE_PREFIX}moon-dual`;
 const LAYOUT = 8;
 const SIZE = 17;
 const PLACEMENTS = [9001, 9002, 9003, 9004, 9005, 9006];
@@ -79,6 +86,17 @@ export async function seedBatchJobFixture(db: JobDatabase): Promise<void> {
       isDraft: false,
       isListed: true,
     },
+    {
+      uuid: MOONBOARD_DUAL_ANGLE_CLIMB,
+      boardType: 'moonboard',
+      layoutId: 1,
+      setterUsername: 'fixture-moon-setter',
+      name: MOONBOARD_DUAL_ANGLE_CLIMB,
+      frames: '',
+      framesCount: 1,
+      isDraft: false,
+      isListed: true,
+    },
   ]);
   // Quality and ascents clear the crowd-favorites (4.0, 20+) and hidden-gems
   // (4.5, 5..50) bars; MIN_ASCENTS for hold features is 20.
@@ -102,6 +120,28 @@ export async function seedBatchJobFixture(db: JobDatabase): Promise<void> {
     difficultyAverage: 20,
     displayDifficulty: 20,
   });
+  // Graded at both angles, 40° harder than 25° — the sign the same-board
+  // angle-estimate job's pooled fit requires to be usable.
+  await db.insert(dbSchema.boardClimbStats).values([
+    {
+      boardType: 'moonboard',
+      climbUuid: MOONBOARD_DUAL_ANGLE_CLIMB,
+      angle: 25,
+      ascensionistCount: 5,
+      qualityAverage: 3,
+      difficultyAverage: 15,
+      displayDifficulty: 15,
+    },
+    {
+      boardType: 'moonboard',
+      climbUuid: MOONBOARD_DUAL_ANGLE_CLIMB,
+      angle: 40,
+      ascensionistCount: 5,
+      qualityAverage: 3,
+      difficultyAverage: 18,
+      displayDifficulty: 18,
+    },
+  ]);
   await db
     .insert(dbSchema.boardHoles)
     .values(

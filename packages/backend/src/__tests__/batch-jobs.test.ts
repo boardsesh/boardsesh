@@ -1,8 +1,9 @@
 /**
  * The batch families end to end against the test Postgres, on the short
  * fixture in helpers/batch-job-fixture.ts: what each job writes, that every
- * write goes through the context's transaction, how a grade gate failure ends
- * the run, and how a neighbours run stopped by its signal resumes. The same jobs under the restricted batch login are proven in
+ * write goes through the context's transaction, how a grade gate or MoonBoard fit
+ * failure ends the run, and how a neighbours run stopped by its signal resumes.
+ * The same jobs under the restricted batch login are proven in
  * services/__tests__/job-queue-roles.test.ts.
  */
 import { randomUUID } from 'node:crypto';
@@ -11,6 +12,8 @@ import { and, eq, inArray, like, sql } from 'drizzle-orm';
 import * as dbSchema from '@boardsesh/db/schema';
 import {
   ClimbNeighborsInterruptedError,
+  MoonboardFitUnusableError,
+  runMoonboardWideAngleEstimates,
   runRefreshClimbGrades,
   runRefreshClimbNeighbors,
   type JobDatabase,
@@ -22,11 +25,14 @@ import { BackgroundJobError, type BackgroundJobContext } from '../workers/famili
 import { refreshClimbGradesFamily } from '../workers/families/refresh-climb-grades';
 import { refreshClimbNeighborsFamily } from '../workers/families/refresh-climb-neighbors';
 import { refreshHoldFeaturesFamily } from '../workers/families/refresh-hold-features';
+import { refreshMoonboardAngleEstimatesFamily } from '../workers/families/refresh-moonboard-angle-estimates';
+import { refreshMoonboardWideAngleEstimatesFamily } from '../workers/families/refresh-moonboard-wide-angle-estimates';
 import { refreshRecommendationsFamily } from '../workers/families/refresh-recommendations';
 import {
   FIXTURE_PREFIX,
   KILTER_CLIMBS,
   MOONBOARD_CLIMB,
+  MOONBOARD_DUAL_ANGLE_CLIMB,
   NEIGHBOR_BOARD,
   NEIGHBOR_LARGE_CLIMBS,
   NEIGHBOR_LARGE_LAYOUT,
@@ -262,6 +268,67 @@ describe('batch families on the test database', () => {
     expect(
       await db.$count(dbSchema.boardGradeCoefficients, eq(dbSchema.boardGradeCoefficients.kind, 'gate_results')),
     ).toBe(gateRunsBefore + 1);
+  });
+
+  // MoonBoard is a CROWD_MEAN_BOARDS member (constants.ts), so the earlier
+  // refresh-climb-grades test above already wrote its own (confirmed/
+  // provisional) rows for these fixture climbs at their REAL angles. These
+  // assertions scope by this job's own confidence tier so they only see what
+  // THIS job wrote, at the angle each climb is missing.
+  const angleEstimateRows = () =>
+    db
+      .select()
+      .from(dbSchema.boardClimbGrades)
+      .where(eq(dbSchema.boardClimbGrades.confidence, 'moonboard_angle_estimate'));
+
+  it('refresh-moonboard-angle-estimates writes nothing on a dry run', async () => {
+    const dry = contextFor(db, 'refresh-moonboard-angle-estimates');
+    await refreshMoonboardAngleEstimatesFamily.execute(dry.context, { publish: false, dryRun: true });
+    expect(dry.transactions.calls).toBe(0);
+    expect(await angleEstimateRows()).toHaveLength(0);
+  });
+
+  it('refresh-moonboard-angle-estimates publishes the transposed estimate in one fenced batch', async () => {
+    const live = contextFor(db, 'refresh-moonboard-angle-estimates');
+    await refreshMoonboardAngleEstimatesFamily.execute(live.context, { publish: true, dryRun: false });
+    // Coefficients + the estimate upsert + the (empty) reap are one transaction.
+    expect(live.transactions.calls).toBe(1);
+    const estimates = await angleEstimateRows();
+    // MOONBOARD_CLIMB is only graded at 40°, so its estimate lands at 25°; the
+    // dual-angle training climb is real at both angles and is never a target.
+    expect(estimates).toMatchObject([{ boardType: 'moonboard', climbUuid: MOONBOARD_CLIMB, angle: 25 }]);
+    const coefficients = await db
+      .select()
+      .from(dbSchema.boardGradeCoefficients)
+      .where(eq(dbSchema.boardGradeCoefficients.kind, 'moonboard_angle_offset'));
+    expect(coefficients.length).toBeGreaterThan(0);
+    expect(estimates.some((row) => row.climbUuid === MOONBOARD_DUAL_ANGLE_CLIMB)).toBe(false);
+  });
+
+  it('refresh-moonboard-wide-angle-estimates fails FIT_UNUSABLE without writing when no shape board has angle-surface coverage', async () => {
+    // The fixture's Kilter climbs each carry stats at one angle only, well
+    // under the model's ANGLE_CELL_MIN_CLIMBS=30 pooled floor, so Kilter and
+    // Tension both contribute zero angle-surface coverage here — the same
+    // "empty environment" case the CLI's own guard exists for.
+    const { context, transactions } = contextFor(db, 'refresh-moonboard-wide-angle-estimates');
+    const failure = await refreshMoonboardWideAngleEstimatesFamily
+      .execute(context, { publish: true, dryRun: false })
+      .catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(BackgroundJobError);
+    expect(failure).toMatchObject({ code: 'FIT_UNUSABLE', retryable: false });
+    expect(transactions.calls).toBe(0);
+  });
+
+  it('refresh-moonboard-wide-angle-estimates throws the same MoonboardFitUnusableError the CLI catches, regardless of dryRun', async () => {
+    const failure = await runMoonboardWideAngleEstimates({
+      db,
+      signal: new AbortController().signal,
+      transact: (callback) => db.transaction(callback),
+      log: silentLog,
+      dryRun: true,
+      publish: false,
+    }).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(MoonboardFitUnusableError);
   });
 });
 

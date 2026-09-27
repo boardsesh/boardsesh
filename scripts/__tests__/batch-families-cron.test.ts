@@ -16,6 +16,8 @@ import { exportBoardSnapshotsFamily } from '../../packages/backend/src/workers/f
 import { refreshClimbGradesFamily } from '../../packages/backend/src/workers/families/refresh-climb-grades';
 import { refreshClimbNeighborsFamily } from '../../packages/backend/src/workers/families/refresh-climb-neighbors';
 import { refreshHoldFeaturesFamily } from '../../packages/backend/src/workers/families/refresh-hold-features';
+import { refreshMoonboardAngleEstimatesFamily } from '../../packages/backend/src/workers/families/refresh-moonboard-angle-estimates';
+import { refreshMoonboardWideAngleEstimatesFamily } from '../../packages/backend/src/workers/families/refresh-moonboard-wide-angle-estimates';
 import { refreshRecommendationsFamily } from '../../packages/backend/src/workers/families/refresh-recommendations';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -37,6 +39,16 @@ const PINS = [
     family: exportBoardSnapshotsFamily,
     workflow: 'export-board-snapshots.yml',
     crons: ['15 7 * * *', '7,22,37,52 * * * *'],
+  },
+  {
+    family: refreshMoonboardAngleEstimatesFamily,
+    workflow: 'refresh-moonboard-angle-estimates.yml',
+    crons: ['0 8 * * 1'],
+  },
+  {
+    family: refreshMoonboardWideAngleEstimatesFamily,
+    workflow: 'refresh-moonboard-wide-angle-estimates.yml',
+    crons: ['30 8 * * 1'],
   },
 ] as const;
 

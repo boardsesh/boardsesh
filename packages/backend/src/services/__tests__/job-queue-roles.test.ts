@@ -20,10 +20,13 @@ import type { BackgroundJobContext } from '../../workers/families';
 import { refreshClimbGradesFamily } from '../../workers/families/refresh-climb-grades';
 import { refreshClimbNeighborsFamily } from '../../workers/families/refresh-climb-neighbors';
 import { refreshHoldFeaturesFamily } from '../../workers/families/refresh-hold-features';
+import { refreshMoonboardAngleEstimatesFamily } from '../../workers/families/refresh-moonboard-angle-estimates';
+import { refreshMoonboardWideAngleEstimatesFamily } from '../../workers/families/refresh-moonboard-wide-angle-estimates';
 import { refreshRecommendationsFamily } from '../../workers/families/refresh-recommendations';
 import {
   FIXTURE_PREFIX,
   KILTER_CLIMBS,
+  MOONBOARD_CLIMB,
   NEIGHBOR_BOARD,
   NEIGHBOR_LARGE_CLIMBS,
   NEIGHBOR_LARGE_LAYOUT,
@@ -266,6 +269,28 @@ describe('batch worker grants', () => {
         .from(dbSchema.boardClimbNeighborRuns)
         .where(eq(dbSchema.boardClimbNeighborRuns.boardType, NEIGHBOR_BOARD));
       expect(neighborRun.fullBuildStartedAt).toBeNull();
+      // The two MoonBoard estimate families need no grants beyond the grade
+      // job's own list above (board_climb_stats/board_climbs SELECT,
+      // board_climb_grades and board_grade_coefficients DML) — proven by
+      // running both for real under the same restricted role.
+      await refreshMoonboardAngleEstimatesFamily.execute(context('refresh-moonboard-angle-estimates'), {
+        publish: true,
+      });
+      expect(
+        await ownerDatabase
+          .select()
+          .from(dbSchema.boardClimbGrades)
+          .where(eq(dbSchema.boardClimbGrades.confidence, 'moonboard_angle_estimate')),
+      ).toMatchObject([{ boardType: 'moonboard', climbUuid: MOONBOARD_CLIMB, angle: 25 }]);
+      // The fixture's Kilter climbs are single-angle, so the wide-angle job has
+      // no shape-board coverage here — this is still a real run under the
+      // restricted role, ending in the typed error rather than a permission
+      // denial.
+      await expect(
+        refreshMoonboardWideAngleEstimatesFamily.execute(context('refresh-moonboard-wide-angle-estimates'), {
+          publish: true,
+        }),
+      ).rejects.toMatchObject({ code: 'FIT_UNUSABLE' });
 
       // Nothing beyond the list: no user data it does not need, no catalog writes.
       await expect(restricted`SELECT email FROM users LIMIT 1`).rejects.toThrow('permission denied');
