@@ -200,7 +200,7 @@ module. The module declares:
 | `refresh-moonboard-wide-angle-estimates` | `batch` | 7,200 s | 1, after 900 s | 6 days | `weekly` |
 | `aurora-user-sync` | `interactive-import` | 1800 s (heartbeat 300 s) | 3, 30 s backoff to 300 s | 2 h | `userId:boardType:linkGeneration` |
 | `kilter-user-sync` | `interactive-import` | 1800 s (heartbeat 300 s) | 3, 30 s backoff to 300 s | 2 h | `userId:kilter:linkGeneration` |
-| `provider-routine-cycle` | `routine-provider` | 600 s (heartbeat 300 s) | none | 75 min | `aurora` / `kilter` |
+| `provider-routine-cycle` | `routine-provider` | 600 s (heartbeat 300 s) | none | 6 h | `aurora` / `kilter` |
 | `aurora-shared-sync` | `routine-provider` | 3600 s (heartbeat 300 s) | 1, after 300 s | 6 h | the board |
 | `kilter-catalog-sync` | `routine-provider` | 3600 s (heartbeat 300 s) | 1, after 300 s | 2 h | `kilter` |
 | `moonboard-locations-sync` | `routine-provider` | 1800 s (heartbeat 120 s) | 1, after 600 s | 24 h | `moonboard` |
@@ -609,6 +609,15 @@ A credential failure goes through the same bookkeeping as the daemon
 (`consecutive_failures`, `last_sync_error`, status rules). A fence refusal or an
 abort is never recorded against the account.
 
+A provider 429 with `Retry-After` is not an error code: the attempts pg-boss
+would retry with (seconds to minutes apart) would all land inside a window
+the provider often sets at an hour. The run instead queues a follow-up of the
+same family and payload with `startAfter` set to the delay (at most 6 h; the
+follow-up's deadline counts from then), records it as `pending_run_id` in the
+lease holder's fenced transaction, logs `PROVIDER_THROTTLED` and succeeds. The
+singleton key is unchanged, so a run already queued for the account absorbs
+the follow-up instead.
+
 ### Producers, "Sync now" and coalescing
 
 `saveAuroraCredential`, `saveKilterCredential` and the Kilter password path call
@@ -728,13 +737,16 @@ the cycles never run dry), and a budget above 150 000 (two cycles would then
 fill the whole 300 s). If you change `ROUTINE_CYCLE_BUDGET_MS`, keep twice
 its value well under 300 000.
 
-The run's absolute deadline is 75 minutes, not the lease's 10: the routine
-worker runs one job at a time, so a cycle can sit queued behind an hourly
-`aurora-shared-sync` or `kilter-catalog-sync` whose own lease is an hour. With
-a 15-minute deadline such a cycle would already be past it when fetched and
-fail at claim; 3600 + 900 s covers the wait. A cycle that waited that long
-simply runs late; the next one is queued behind it (one queued plus one active
-per provider).
+The run's absolute deadline is 6 hours, not the lease's 10 minutes, the same
+full-fan-out budget as `aurora-shared-sync`: the routine worker runs one job at
+a time, and a cycle queued just after :07 waits behind all five hourly
+`aurora-shared-sync` runs (and the `kilter-catalog-sync` at :23), each with an
+hour's lease, at the same priority. With a shorter deadline such a cycle would
+already be past it when fetched and fail at claim, and the later ticks would
+coalesce onto that doomed run. A cycle that waited that long simply runs late;
+the next one is queued behind it (one queued plus one active per provider). A
+cycle that starts with under a minute of its lease left ends at once with a
+logged `CYCLE_LATE`, before it loads the adapter or claims anything.
 
 The claim is the daemon's `claimNextCredentialForSync` (attempt-clock fairness,
 failure backoff, the 30 s reclaim gap) with `excludeLeased`, run inside the

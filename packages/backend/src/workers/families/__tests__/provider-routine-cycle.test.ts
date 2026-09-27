@@ -631,20 +631,36 @@ describe('a routine cycle near the end of its lease', () => {
     };
   }
 
-  it('claims nothing, so no attempt clock moves, with under a minute of lease left', async () => {
+  it('ends a cycle that starts with under a minute of lease left before loading anything (CYCLE_LATE)', async () => {
     const synced: string[] = [];
     adapterOverride.sync = recordingSync(synced);
     const before = await credentials();
+    const context = nearDeadlineContext(ROUTINE_CREDENTIAL_DEADLINE_MARGIN_MS - 1_000);
+    const transaction = vi.spyOn(context, 'transaction');
 
-    await providerRoutineCycleFamily.execute(nearDeadlineContext(ROUTINE_CREDENTIAL_DEADLINE_MARGIN_MS - 1_000), {
+    await providerRoutineCycleFamily.execute(context, { provider: 'aurora' });
+
+    // Not one fenced batch: no claim, no control row, no attempt clock.
+    expect(transaction).not.toHaveBeenCalled();
+    expect(synced).toEqual([]);
+    expect(await credentials()).toEqual(before);
+  });
+
+  it('stops claiming once the lease runs down to the last minute mid-cycle, moving no further attempt clock', async () => {
+    // Enough lease to start and sync one credential, which takes half a second;
+    // after it, under a minute is left.
+    const synced: string[] = [];
+    adapterOverride.sync = recordingSync(synced, () => new Promise((resolve) => setTimeout(resolve, 500)));
+    const before = await credentials();
+
+    await providerRoutineCycleFamily.execute(nearDeadlineContext(ROUTINE_CREDENTIAL_DEADLINE_MARGIN_MS + 300), {
       provider: 'aurora',
     });
 
-    expect(synced).toEqual([]);
+    expect(synced).toEqual(['routine-a']);
     const after = await credentials();
-    for (const account of ACCOUNTS) {
-      expect(after[account].lastSyncAttemptAt).toEqual(before[account].lastSyncAttemptAt);
-    }
+    expect(after['routine-b'].lastSyncAttemptAt).toEqual(before['routine-b'].lastSyncAttemptAt);
+    expect(after['routine-c'].lastSyncAttemptAt).toEqual(before['routine-c'].lastSyncAttemptAt);
   });
 
   it('skips a claimed credential whose lease ran down before it started, recording nothing', async () => {

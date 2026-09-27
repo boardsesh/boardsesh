@@ -105,7 +105,7 @@ describe('family contracts', () => {
       expireInSeconds: 600,
       retryLimit: 0,
       // Longer than the lease: a cycle may wait behind an hour-long board-wide job.
-      deadlineSeconds: 4500,
+      deadlineSeconds: AURORA_SHARED_SYNC_DEADLINE_SECONDS,
       heartbeatSeconds: 300,
     });
     expect(family.payload.safeParse({ provider: 'aurora' }).success).toBe(true);

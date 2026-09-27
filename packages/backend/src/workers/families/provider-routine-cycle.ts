@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { claimNextCredentialForSync } from '@boardsesh/db/queries';
 import { logger } from '../../utils/logger';
 import { routineCycleLimits } from '../config';
+import { AURORA_SHARED_SYNC_DEADLINE_SECONDS } from './aurora-shared-sync';
 import {
   ROUTINE_CREDENTIAL_DEADLINE_MARGIN_MS,
   loadProviderSyncAdapter,
@@ -67,11 +68,13 @@ export const providerRoutineCycleFamily: BackgroundJobFamilyModule<ProviderRouti
     // neither matters.
     retryBackoff: true,
     retryDelayMax: 0,
-    // Longer than the lease on purpose: a cycle can sit queued behind an hourly
-    // board-wide job whose own lease is 3600 s (one routine-provider worker runs
-    // one job at a time). With 900 s such a cycle would be past its deadline by
-    // the time it was fetched and fail at claim. 3600 + 900 covers the wait.
-    deadlineSeconds: 4500,
+    // Much longer than the lease on purpose: one routine-provider worker runs
+    // one job at a time, and the :07 fan-out queues five aurora-shared-sync runs
+    // (plus the Kilter catalog at :23) at the cycle's own priority, each with a
+    // 3600 s lease. A cycle queued behind them waits for all of them; with a
+    // shorter deadline it would expire at claim and later ticks would coalesce
+    // onto the doomed holder. The same full-fan-out budget as the shared sync.
+    deadlineSeconds: AURORA_SHARED_SYNC_DEADLINE_SECONDS,
     // One fenced batch (an Aurora page, a 500-op Kilter flush, a 500-key stats
     // recompute) must finish inside this window: it holds the run-row lock, so
     // no heartbeat lands while it runs.
@@ -89,6 +92,16 @@ export const providerRoutineCycleFamily: BackgroundJobFamilyModule<ProviderRouti
     },
   ],
   async execute(context, payload) {
+    // Started with under a minute of lease left: not even one credential could
+    // run. End at once, before loading the provider adapter or claiming.
+    if (context.expiresAt - Date.now() < ROUTINE_CREDENTIAL_DEADLINE_MARGIN_MS) {
+      logger.info('[worker] routine cycle skipped', {
+        runId: context.runId,
+        provider: payload.provider,
+        code: 'CYCLE_LATE',
+      });
+      return;
+    }
     const limits = routineCycleLimits();
     const adapter = await loadProviderSyncAdapter(context, payload.provider);
     const startedAt = Date.now();
