@@ -71,8 +71,10 @@ grant contracts remain supported.
 | `background-job-reconcile` | `singleton` | backend (reconciliation) |
 
 The per-role queues replace the `background-probe-<role>` queues, which were
-`standard` and are no longer created or consumed. Probes now ride the family
-queue like any other family. pg-boss cannot change a queue's policy after
+`standard` and are no longer created or consumed. A probe still queued in one
+at deploy time is never run; probes are disposable, so re-send it with
+`operator.ts probe`. The old queues stay in the `pgboss` schema, unused. Probes
+now ride the family queue like any other family. pg-boss cannot change a queue's policy after
 `createQueue`, so a policy change always means a new queue name.
 
 **Always pass a singleton key.** `stately` admits one queued plus one active job
