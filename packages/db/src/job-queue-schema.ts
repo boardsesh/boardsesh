@@ -107,6 +107,102 @@ const PROVIDER_SYNC_GRANTS: readonly WorkerTableGrant[] = [
   { table: 'sync_deletions', privileges: ['INSERT'] },
 ];
 
+const CATALOG_WRITE: readonly TablePrivilege[] = ['SELECT', 'INSERT', 'UPDATE'];
+
+/**
+ * What the routine-provider role's board-wide families write on top of a user
+ * sync: the Aurora shared sync (aurora-sync `shared-sync.ts`, via
+ * `db/table-select.ts`), the Kilter catalog sync with its deletions, stats
+ * repair and history snapshot (kilter-sync `catalog-*.ts`, `deletions.ts`,
+ * `stats-repair.ts`), and the public location syncs for Aurora, Kilter and
+ * MoonBoard (`@boardsesh/location-sync`'s `upsert.ts`, the gym-wall crawl).
+ */
+const ROUTINE_PROVIDER_EXTRA_GRANTS: readonly WorkerTableGrant[] = [
+  // The routine cycle creates the control row of a credential linked before
+  // control rows existed (ON CONFLICT DO NOTHING, no new generation), so it can
+  // fence that account's batches like any other.
+  { table: 'provider_sync_controls', privileges: ['INSERT'] },
+  // Aurora's shared catalog tables.
+  { table: 'board_products', privileges: CATALOG_WRITE },
+  { table: 'board_sets', privileges: CATALOG_WRITE },
+  { table: 'board_product_sizes', privileges: CATALOG_WRITE },
+  { table: 'board_holes', privileges: CATALOG_WRITE },
+  { table: 'board_layouts', privileges: CATALOG_WRITE },
+  { table: 'board_placement_roles', privileges: CATALOG_WRITE },
+  { table: 'board_leds', privileges: CATALOG_WRITE },
+  { table: 'board_placements', privileges: CATALOG_WRITE },
+  { table: 'board_product_sizes_layouts_sets', privileges: CATALOG_WRITE },
+  { table: 'board_beta_links', privileges: CATALOG_WRITE },
+  { table: 'board_attempts', privileges: CATALOG_WRITE },
+  { table: 'board_kits', privileges: CATALOG_WRITE },
+  { table: 'board_climb_holds', privileges: CATALOG_WRITE },
+  // Aurora's per-table cursors, the shared-sync and catalog cooldown slots and
+  // the weekly repair and snapshot watermarks.
+  { table: 'board_shared_syncs', privileges: CATALOG_WRITE },
+  { table: 'board_climb_stats_history', privileges: ['SELECT', 'INSERT'] },
+  // Kilter's catalog: folded aliases (and the deletions that drop them), the
+  // layout map, and the backlog of climbs it could not ingest.
+  { table: 'board_climb_aliases', privileges: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'] },
+  { table: 'board_layout_aliases', privileges: CATALOG_WRITE },
+  { table: 'board_climb_ingest_skips', privileges: CATALOG_WRITE },
+  // "New climbs from a setter you follow": who follows whom, and the notification.
+  { table: 'setter_follows', privileges: ['SELECT'] },
+  { table: 'user_follows', privileges: ['SELECT'] },
+  { table: 'notifications', privileges: ['SELECT', 'INSERT'] },
+  // Public gym and board locations.
+  { table: 'gyms', privileges: CATALOG_WRITE },
+  { table: 'user_boards', privileges: CATALOG_WRITE },
+  { table: 'location_sync_gym_sources', privileges: CATALOG_WRITE },
+  { table: 'kilter_wall_sources', privileges: CATALOG_WRITE },
+  // Read only: the physical gym match weighs a candidate by its claims,
+  // members, followers and comments before adopting it.
+  { table: 'gym_claims', privileges: ['SELECT'] },
+  { table: 'gym_members', privileges: ['SELECT'] },
+  { table: 'gym_follows', privileges: ['SELECT'] },
+  { table: 'comments', privileges: ['SELECT'], columns: ['entity_id', 'entity_type', 'deleted_at'] },
+  // The system user that owns public catalog boards, created on first use
+  // (ON CONFLICT DO NOTHING). Drizzle names every column of the table in the
+  // INSERT, defaults included, so each needs the column grant; none is readable.
+  {
+    table: 'users',
+    privileges: ['INSERT'],
+    columns: ['id', 'name', 'email', 'emailVerified', 'image', 'created_at', 'updated_at'],
+  },
+];
+
+/**
+ * What `climb-stats-self-heal` reads and writes: the stale-key scan and the
+ * bulk recompute (`climb-stats/self-heal.ts`, `recompute.ts`). Column grants
+ * keep the tick notes, comments and the rest of a climber's row out of reach.
+ */
+const CLIMB_STATS_SELF_HEAL_GRANTS: readonly WorkerTableGrant[] = [
+  {
+    table: 'boardsesh_ticks',
+    privileges: ['SELECT'],
+    columns: [
+      'id',
+      'user_id',
+      'board_type',
+      'climb_uuid',
+      'angle',
+      'status',
+      'origin',
+      'quality',
+      'difficulty',
+      'climbed_at',
+      'updated_at',
+      'kilter_id',
+      'kilter_synced_at',
+      'kilter_detached_at',
+    ],
+  },
+  { table: 'board_climbs', privileges: ['SELECT'], columns: ['uuid', 'board_type', 'user_id'] },
+  { table: 'board_climb_stats', privileges: ['SELECT', 'INSERT', 'UPDATE'] },
+  // The first ascensionist's crown: COALESCE(display_name, name).
+  { table: 'users', privileges: ['SELECT'], columns: ['id', 'name'] },
+  { table: 'user_profiles', privileges: ['SELECT'], columns: ['user_id', 'display_name'] },
+];
+
 /**
  * Data grants per worker role, on top of the pg-boss DML and the ledger every
  * worker login gets. Each list is exactly what that role's families read and
@@ -116,10 +212,13 @@ const PROVIDER_SYNC_GRANTS: readonly WorkerTableGrant[] = [
  * ship later add their lists in the PR that ships them.
  */
 export const WORKER_ROLE_DATA_GRANTS: Record<BackgroundWorkerRole, readonly WorkerTableGrant[]> = {
-  // aurora-user-sync, kilter-user-sync (and the routine cycle after them).
+  // aurora-user-sync, kilter-user-sync.
   'interactive-import': PROVIDER_SYNC_GRANTS,
-  'routine-provider': PROVIDER_SYNC_GRANTS,
-  'maintenance-delivery': [],
+  // provider-routine-cycle (a user sync), aurora-shared-sync,
+  // kilter-catalog-sync, moonboard-locations-sync.
+  'routine-provider': [...PROVIDER_SYNC_GRANTS, ...ROUTINE_PROVIDER_EXTRA_GRANTS],
+  // climb-stats-self-heal.
+  'maintenance-delivery': CLIMB_STATS_SELF_HEAL_GRANTS,
   // refresh-recommendations, refresh-hold-features, refresh-climb-grades,
   // refresh-climb-neighbors, export-board-snapshots.
   batch: [

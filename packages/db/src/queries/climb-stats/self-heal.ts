@@ -21,17 +21,16 @@ const SELF_HEAL_BATCH = 5000;
 export type SelfHealResult = { keysHealed: number };
 
 /**
- * One bounded pass of the recompute self-heal: find keys where a flash/send
- * tick was updated more recently than the board_climb_stats row it feeds
- * (the signature of a debounced recompute that a deploy dropped), and
- * re-derive them with recomputeClimbStatsBulk. Bounded by a recent-tick window
- * (served by boardsesh_ticks_flash_send_updated_at_idx) and a hard LIMIT, so
- * one pass is cheap and never runs away.
+ * The keys one self-heal pass would re-derive: flash/send ticks updated within
+ * the lookback window more recently than the board_climb_stats row they feed
+ * (the signature of a debounced recompute that a deploy dropped, or of a
+ * deferred sync recompute a crash lost). Bounded by the recent-tick window
+ * (served by boardsesh_ticks_flash_send_updated_at_idx) and a hard LIMIT.
  */
-export async function selfHealStaleClimbStats(
+export async function findStaleClimbStatsKeys(
   db: DrizzleDb,
   opts: { limit?: number; lookbackHours?: number } = {},
-): Promise<SelfHealResult> {
+): Promise<ClimbStatsKey[]> {
   const limit = opts.limit ?? SELF_HEAL_BATCH;
   const lookbackHours = opts.lookbackHours ?? SELF_HEAL_LOOKBACK_HOURS;
 
@@ -50,13 +49,24 @@ export async function selfHealStaleClimbStats(
     `),
   );
 
-  if (rows.length === 0) return { keysHealed: 0 };
-
-  const keys: ClimbStatsKey[] = rows.map((row) => ({
+  return rows.map((row) => ({
     boardType: row.board_type,
     climbUuid: row.climb_uuid,
     angle: row.angle,
   }));
+}
+
+/**
+ * One bounded pass of the recompute self-heal: find the stale keys
+ * ({@link findStaleClimbStatsKeys}) and re-derive them with
+ * recomputeClimbStatsBulk. One pass is cheap and never runs away.
+ */
+export async function selfHealStaleClimbStats(
+  db: DrizzleDb,
+  opts: { limit?: number; lookbackHours?: number } = {},
+): Promise<SelfHealResult> {
+  const keys = await findStaleClimbStatsKeys(db, opts);
+  if (keys.length === 0) return { keysHealed: 0 };
   await recomputeClimbStatsBulk(db, keys);
   return { keysHealed: keys.length };
 }

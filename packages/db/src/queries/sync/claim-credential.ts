@@ -239,3 +239,58 @@ export async function claimCredentialForRun(
     return { ...candidate, lastSyncAttemptAt: claim.lastSyncAttemptAt, updatedAt: claim.updatedAt };
   });
 }
+
+/** The longest a provider's Retry-After may park one credential. */
+export const CREDENTIAL_RETRY_AFTER_CAP_MS = 6 * 60 * 60 * 1000;
+
+/**
+ * Push a credential's attempt clock into the future after the provider asked
+ * us to back off (HTTP 429 with Retry-After). `last_sync_attempt_at = now() +
+ * delay` keeps it out of {@link claimNextCredentialForSync} until the delay has
+ * passed (the reclaim gap and the backoff both compare against it) and sorts it
+ * to the back of the queue. The delay is clamped to 0 ..
+ * {@link CREDENTIAL_RETRY_AFTER_CAP_MS} so a hostile or garbled header cannot
+ * park an account for longer than the failure backoff's own cap.
+ *
+ * "Sync now" is unaffected: {@link claimCredentialForRun} ignores the clock.
+ */
+export async function deferCredentialSyncAttempt(
+  db: DrizzleDb,
+  options: { userId: string; boardType: string; delayMs: number },
+): Promise<void> {
+  const delayMs = Number.isFinite(options.delayMs)
+    ? Math.min(Math.max(0, options.delayMs), CREDENTIAL_RETRY_AFTER_CAP_MS)
+    : 0;
+  await db
+    .update(auroraCredentials)
+    .set({
+      lastSyncAttemptAt: sql`now() + make_interval(secs => ${delayMs / 1000}::double precision)`,
+      updatedAt: sql`now()`,
+    })
+    .where(and(eq(auroraCredentials.userId, options.userId), eq(auroraCredentials.boardType, options.boardType)));
+}
+
+/**
+ * The credential whose token a board-wide job borrows: an `active` credential
+ * for the board (plus the runner's own eligibility filter), most recently
+ * synced first. The most recent success is the one most likely to still hold a
+ * working token or password. Null when the board has no healthy credential.
+ */
+export async function findSharedSyncDonorCredential(
+  db: DrizzleDb,
+  options: { boardType: string; candidateFilter: SQL | undefined },
+): Promise<ClaimedCredential | null> {
+  const [donor] = await db
+    .select()
+    .from(auroraCredentials)
+    .where(
+      and(
+        eq(auroraCredentials.boardType, options.boardType),
+        eq(auroraCredentials.syncStatus, 'active'),
+        options.candidateFilter,
+      ),
+    )
+    .orderBy(sql`${auroraCredentials.lastSyncAt} DESC NULLS LAST`)
+    .limit(1);
+  return donor ?? null;
+}

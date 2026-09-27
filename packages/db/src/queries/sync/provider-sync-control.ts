@@ -118,6 +118,22 @@ export async function ensureProviderSyncControl(transaction: ProviderSyncDb, key
     .onConflictDoNothing();
 }
 
+/**
+ * Read the control row without locking it: the generation a routine sync
+ * fences its batches with. The fence re-checks it under `FOR SHARE` in every
+ * batch, so a relink between this read and the first batch is caught there.
+ */
+export async function readProviderSyncControl(
+  database: ProviderSyncDb,
+  key: ProviderSyncKey,
+): Promise<{ linkGeneration: string; linked: boolean } | undefined> {
+  const [row] = await database
+    .select({ linkGeneration: providerSyncControls.linkGeneration, linked: providerSyncControls.linked })
+    .from(providerSyncControls)
+    .where(keyMatches(key));
+  return row;
+}
+
 /** Lock the control row for a read-modify-write (the "Sync now" path). */
 export async function lockProviderSyncControl(transaction: ProviderSyncDb, key: ProviderSyncKey) {
   const [row] = await transaction.select().from(providerSyncControls).where(keyMatches(key)).for('update');
