@@ -117,11 +117,16 @@ freshness as well as failures; independent monitors must detect primary outages.
 ## Deployment and evidence gates
 
 The `Background Worker Image` workflow builds the dependency-scoped
-`Dockerfile.worker`, publishes a commit-tagged image and provenance, and leaves
-deployment to a separately reviewed, **digest-pinned** Ansible change:
-[blackheathdc-ansible #419](https://github.com/marcodejongh/blackheathdc-ansible/pull/419).
-Its dedicated inventory and VM allocation checks leave deployment disabled and
-workers paused by default. Existing daemon and detector definitions are untouched.
+`Dockerfile.worker`, publishes a commit-tagged image and provenance, and
+dispatches the digest to the homelab. See
+[`docs/homelab-deploys.md`](homelab-deploys.md) for the trigger, the trust
+model and the kill switch, and
+[blackheathdc-ansible #419](https://github.com/marcodejongh/blackheathdc-ansible/pull/419)
+for the original digest-pinned deploy design. The dispatch only updates the
+pinned digest in the ansible inventory and re-applies the play; it does not by
+itself turn a deploy on. The ansible inventory keeps deploy disabled and
+workers paused until the owner enables them there. Existing daemon and
+detector definitions are untouched.
 
 Deploy schema/queues first, compatible consumers second, producers last. Run
 probes and fail/retry/drain drills before enabling a real family. Pause and drain

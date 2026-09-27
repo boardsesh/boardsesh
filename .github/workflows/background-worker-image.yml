@@ -45,6 +45,8 @@ jobs:
       packages: write
       attestations: write
       id-token: write
+    outputs:
+      digest: ${{ steps.image.outputs.digest }}
     steps:
       - uses: actions/checkout@v6
       - uses: docker/setup-buildx-action@v4
@@ -72,3 +74,57 @@ jobs:
           subject-name: ghcr.io/boardsesh/boardsesh-worker
           subject-digest: ${{ steps.image.outputs.digest }}
           push-to-registry: true
+
+  # Tells the private blackheathdc-ansible repo a new worker image exists so
+  # its own self-hosted runner can pull and deploy it. This job never runs on
+  # a self-hosted runner itself and holds no homelab secrets -- see
+  # docs/homelab-deploys.md for the trust model and the kill switch.
+  dispatch-homelab:
+    needs: image
+    if: github.event_name == 'push' && vars.HOMELAB_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    environment: Homelab
+    permissions: {}
+    timeout-minutes: 5
+    steps:
+      - name: Validate digest and dispatch homelab deploy
+        shell: bash
+        env:
+          HOMELAB_DISPATCH_TOKEN: ${{ secrets.HOMELAB_DISPATCH_TOKEN }}
+          IMAGE_DIGEST: ${{ needs.image.outputs.digest }}
+          COMMIT_SHA: ${{ github.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+
+          if [[ ! "$IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::worker image digest is not a valid sha256 digest: '$IMAGE_DIGEST'"
+            exit 1
+          fi
+
+          payload="$(jq -n \
+            --arg digest "$IMAGE_DIGEST" \
+            --arg sha "$COMMIT_SHA" \
+            --arg run_url "$RUN_URL" \
+            '{event_type: "boardsesh-worker-image", client_payload: {digest: $digest, sha: $sha, run_url: $run_url}}')"
+
+          # The token must never appear in argv (visible to any other process
+          # on the runner via `ps` or /proc/<pid>/cmdline, or in a workflow
+          # re-run's rendered step command). curl --config - reads options,
+          # including the Authorization header, from stdin instead.
+          printf 'header = "Authorization: Bearer %s"\n' "$HOMELAB_DISPATCH_TOKEN" | curl --fail-with-body --silent --show-error \
+            --config - \
+            -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Content-Type: application/json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            -d "$payload" \
+            "https://api.github.com/repos/marcodejongh/blackheathdc-ansible/dispatches"
+
+          echo "::notice::Dispatched homelab worker deploy for digest ${IMAGE_DIGEST}"
+          {
+            echo "### Homelab worker deploy dispatched"
+            echo ""
+            echo "- digest: \`${IMAGE_DIGEST}\`"
+            echo "- sha: \`${COMMIT_SHA}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
