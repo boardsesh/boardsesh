@@ -1,3 +1,5 @@
+process.env.AURORA_CREDENTIALS_SECRET = process.env.AURORA_CREDENTIALS_SECRET ?? 'test-aurora-secret';
+
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import postgres from 'postgres';
@@ -13,6 +15,9 @@ import {
   parseWorkerLogin,
   POPULAR_BOARD_CONFIGS_REFRESH_QUEUE,
 } from '@boardsesh/db/job-queue-schema';
+import { BACKGROUND_JOB_QUEUES } from '@boardsesh/db/background-jobs';
+import { createDb, type DbInstance } from '@boardsesh/db/client';
+import { auroraCredentials, backgroundJobRuns, providerSyncControls } from '@boardsesh/db/schema';
 import { retrySprayDetectionAttempt } from '@boardsesh/db/queries';
 import * as dbSchema from '@boardsesh/db/schema';
 import { SPRAY_DETECTION_QUEUE, SPRAY_DETECTION_RECONCILE_QUEUE } from '@boardsesh/shared-schema';

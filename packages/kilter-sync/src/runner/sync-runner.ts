@@ -124,6 +124,31 @@ export async function recordKilterFailure(
   return { status, transient: false };
 }
 
+/**
+ * Filter mirrors aurora-sync's syncableCredentialsFilter — board_type scoped,
+ * refresh token present, syncStatus ∈ {pending, active, error} (skip disabled +
+ * expired). Exported so a background job claiming one named credential applies
+ * exactly the daemon's eligibility.
+ */
+export function syncableKilterCredentialsFilter() {
+  return and(
+    eq(auroraCredentials.boardType, KILTER_BOARD_TYPE),
+    // Dead password-era links (encrypted_refresh_token IS NULL) are the
+    // pre-OAuth credentials that can no longer sync. Migration 0171
+    // reconciled the existing ones to sync_status='expired' with an accurate
+    // re-link message; this filter is the explicit, permanent skip so they
+    // never re-enter the hot selection path (and never spam a per-cycle log).
+    isNotNull(auroraCredentials.encryptedRefreshToken),
+    // The allowed set is positive (pending/active/error). 'expired' and
+    // 'disabled' are excluded by omission.
+    or(
+      eq(auroraCredentials.syncStatus, 'pending'),
+      eq(auroraCredentials.syncStatus, 'active'),
+      eq(auroraCredentials.syncStatus, 'error'),
+    ),
+  );
+}
+
 export class SyncRunner {
   private config: SyncRunnerConfig;
   private daemonController: AbortController | null = null;
@@ -623,31 +648,8 @@ export class SyncRunner {
     return getStoredKilterAccessToken(db, cred.userId, this.getKeycloakClient());
   }
 
-  /**
-   * Filter mirrors aurora-sync's syncableCredentialsFilter — board_type
-   * scoped, refresh token present, syncStatus ∈ {pending, active, error}
-   * (skip disabled + expired).
-   */
   private syncableCredentialsFilter() {
-    return and(
-      eq(auroraCredentials.boardType, KILTER_BOARD_TYPE),
-      // Dead password-era links (encrypted_refresh_token IS NULL) are the
-      // pre-OAuth credentials that can no longer sync. Migration 0171
-      // reconciled the existing ones to sync_status='expired' with an
-      // accurate re-link message; this filter is the explicit, permanent
-      // skip so they never re-enter the hot selection path (and never
-      // spam a per-cycle log). Surfacing a re-link prompt in the UI is a
-      // separate product follow-up.
-      isNotNull(auroraCredentials.encryptedRefreshToken),
-      // The allowed set is positive (pending/active/error). 'expired'
-      // and 'disabled' are excluded by omission — adding explicit
-      // ne() clauses for them would be dead code given the or().
-      or(
-        eq(auroraCredentials.syncStatus, 'pending'),
-        eq(auroraCredentials.syncStatus, 'active'),
-        eq(auroraCredentials.syncStatus, 'error'),
-      ),
-    );
+    return syncableKilterCredentialsFilter();
   }
 
   /**

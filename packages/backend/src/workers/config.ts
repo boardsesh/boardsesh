@@ -40,3 +40,33 @@ export function configureWorkerPools(): void {
   process.env.DB_POOL_MAX = '2';
   process.env.PGBOSS_POOL_SIZE = '1';
 }
+
+/**
+ * Secrets a family's provider client reads at run time. Missing ones would
+ * only surface on the first job, as a failed sync the climber sees; checking at
+ * startup turns that into a worker that refuses to start.
+ */
+export const PROVIDER_FAMILY_SECRETS: Readonly<Record<string, readonly string[]>> = {
+  'aurora-user-sync': ['AURORA_CREDENTIALS_SECRET'],
+  'kilter-user-sync': ['AURORA_CREDENTIALS_SECRET', 'KILTER_OAUTH_CLIENT_ID'],
+};
+
+/**
+ * Refuse to start a worker whose role serves a provider family without that
+ * family's secrets. `families` is what the role serves (`familiesForRole`);
+ * passed in so this module never imports the registry and the sync packages
+ * behind it before `configureWorkerPools` has run.
+ */
+export function requireProviderSecrets(
+  role: BackgroundWorkerRole,
+  families: Iterable<{ name: string }>,
+  environment: Readonly<Record<string, string | undefined>> = process.env,
+): void {
+  const missing = new Set<string>();
+  for (const family of families) {
+    for (const secret of PROVIDER_FAMILY_SECRETS[family.name] ?? []) {
+      if (!environment[secret]) missing.add(secret);
+    }
+  }
+  if (missing.size) throw new Error(`Worker role ${role} needs ${[...missing].sort().join(', ')}`);
+}

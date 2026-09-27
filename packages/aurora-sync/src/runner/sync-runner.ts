@@ -147,6 +147,25 @@ type CredentialFailureUpdate = {
   lastSyncError?: string | null;
 };
 
+/**
+ * Which credentials this runner can sync: a live status, the secrets a login
+ * needs, and any board but Kilter. Exported so a background job claiming one
+ * named credential applies exactly the daemon's eligibility.
+ */
+export function syncableAuroraCredentialsFilter() {
+  return and(
+    or(
+      eq(auroraCredentials.syncStatus, 'pending'),
+      eq(auroraCredentials.syncStatus, 'active'),
+      eq(auroraCredentials.syncStatus, 'error'),
+    ),
+    isNotNull(auroraCredentials.encryptedUsername),
+    isNotNull(auroraCredentials.encryptedPassword),
+    isNotNull(auroraCredentials.auroraUserId),
+    ne(auroraCredentials.boardType, KILTER_BOARD_TYPE),
+  );
+}
+
 export class SyncRunner {
   private config: SyncRunnerConfig;
   private daemonController: AbortController | null = null;
@@ -530,17 +549,7 @@ export class SyncRunner {
   }
 
   private syncableCredentialsFilter() {
-    return and(
-      or(
-        eq(auroraCredentials.syncStatus, 'pending'),
-        eq(auroraCredentials.syncStatus, 'active'),
-        eq(auroraCredentials.syncStatus, 'error'),
-      ),
-      isNotNull(auroraCredentials.encryptedUsername),
-      isNotNull(auroraCredentials.encryptedPassword),
-      isNotNull(auroraCredentials.auroraUserId),
-      ne(auroraCredentials.boardType, KILTER_BOARD_TYPE),
-    );
+    return syncableAuroraCredentialsFilter();
   }
 
   private async getActiveCredentials(): Promise<CredentialRecord[]> {

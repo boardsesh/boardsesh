@@ -1969,4 +1969,24 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
     ON "user_hold_classifications" ("user_id", "board_type", "layout_id", "size_id", "hold_id");
   DROP TABLE IF EXISTS provider_sync_controls;
   ${providerSyncControlsSchema}
+
+  -- The Aurora applier's skip log (migration 0187). The worker grant proof in
+  -- job-queue-roles.test.ts grants on it, so it has to exist here.
+  DROP TABLE IF EXISTS logbook_sync_skips;
+  DROP TYPE IF EXISTS logbook_sync_skip_reason;
+  CREATE TYPE logbook_sync_skip_reason AS ENUM('invalid_angle', 'invalid_identity', 'normalize_failed', 'db_write_rejected');
+  CREATE TABLE logbook_sync_skips (
+    "id" bigserial PRIMARY KEY NOT NULL,
+    "user_id" text NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
+    "board_type" text NOT NULL,
+    "aurora_type" text NOT NULL,
+    "aurora_id" text NOT NULL,
+    "reason" logbook_sync_skip_reason NOT NULL,
+    "detail" text,
+    "payload" jsonb,
+    "first_seen_at" timestamp with time zone DEFAULT now() NOT NULL,
+    "last_seen_at" timestamp with time zone DEFAULT now() NOT NULL,
+    "seen_count" integer DEFAULT 1 NOT NULL
+  );
+  CREATE UNIQUE INDEX logbook_sync_skips_row_unique ON logbook_sync_skips (user_id, board_type, aurora_type, aurora_id);
 `;

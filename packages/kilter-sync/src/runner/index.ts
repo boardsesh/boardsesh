@@ -1,4 +1,4 @@
-export { SyncRunner, recordKilterFailure } from './sync-runner';
+export { SyncRunner, recordKilterFailure, syncableKilterCredentialsFilter } from './sync-runner';
 export type {
   SyncRunnerConfig,
   SyncSummary,

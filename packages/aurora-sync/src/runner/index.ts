@@ -1,4 +1,4 @@
-export { SyncRunner } from './sync-runner';
+export { SyncRunner, syncableAuroraCredentialsFilter } from './sync-runner';
 export type {
   SyncRunnerConfig,
   SyncSummary,
