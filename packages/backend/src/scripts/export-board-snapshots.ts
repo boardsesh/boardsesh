@@ -30,7 +30,8 @@
 import { pathToFileURL } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
-import { gzipSync } from 'node:zlib';
+import { promisify } from 'node:util';
+import { gzip } from 'node:zlib';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -119,6 +120,16 @@ const SNAPSHOT_TABLES: readonly SnapshotTableName[] = ['board_climbs', 'board_cl
 // required table names, so an extra snapshot_meta row is backwards-compatible.
 const DELETIONS_SNAPSHOT_META_TABLE = 'sync_deletions';
 const SNAPSHOT_EXPORT_APPLICATION_PREFIX = 'boardsesh-snapshot-export-';
+
+// On the libuv pool, not the event loop: gzipping kilter's 271 MB artifact
+// takes seconds, and the batch worker's heartbeat timer shares this loop.
+export const gzipAsync = promisify(gzip);
+
+// A replay boundary this far behind builtAt is still safe, but it means some
+// session (often an unrelated role's forgotten open transaction) held a
+// transaction open that long, and every client bootstrapping from the artifact
+// replays that much more tombstone history. Worth a warning, never a failure.
+const STALE_REPLAY_BOUNDARY_WARN_MS = 60 * 60 * 1000;
 
 // The SEPARATE per-layout grades artifact's single table (issue #4310). It is
 // not folded into SNAPSHOT_TABLES on purpose: the client verifies a whole-layout
@@ -1376,7 +1387,14 @@ export async function runExportWithOptions(
           `(board=${options.boardFilter ?? '*'}, layout=${options.layoutFilter ?? '*'})`,
       );
     }
+    // Which replay-observer mode this login gets (probeDeletionReplayBoundary):
+    // true counts every role's transactions, false only its own. Logged once
+    // per run because it depends on the login's grants, not on this code.
+    const [observer] = await sqlClient<{ reads_all_stats: boolean }[]>`
+      SELECT pg_has_role('pg_read_all_stats', 'USAGE') AS reads_all_stats
+    `;
     log.info('[export-snapshots] starting run', {
+      readsAllStats: observer?.reads_all_stats === true,
       dryRun: options.dryRun,
       filtered: isFilteredRun,
       gzip: options.gzip,
@@ -1470,6 +1488,17 @@ export async function runExportWithOptions(
         if (keyPrefix === LIVE_SNAPSHOT_KEY_PREFIX && !options.dryRun && result.deletionsReplayFrom === null) {
           throw new Error(`live gzip deletion replay boundary unavailable: ${result.deletionsReplayFallbackReason}`);
         }
+        if (result.deletionsReplayFrom !== null) {
+          const boundaryLagMs = Date.parse(builtAt) - Date.parse(result.deletionsReplayFrom);
+          if (boundaryLagMs > STALE_REPLAY_BOUNDARY_WARN_MS) {
+            log.warn('[export-snapshots] deletion replay boundary is more than an hour before builtAt', {
+              boardType: pair.boardType,
+              layoutId: pair.layoutId,
+              deletionsReplayFrom: result.deletionsReplayFrom,
+              lagSeconds: Math.round(boundaryLagMs / 1000),
+            });
+          }
+        }
 
         const rawBuffer = readFileSync(filePath);
         // Encoding default is IDENTITY until transparent Content-Encoding: gzip
@@ -1478,7 +1507,7 @@ export async function runExportWithOptions(
         // client treats a gzip-on-disk artifact as a failed download (it has no
         // JS gunzip). The manifest's contentEncoding field keeps the client
         // agnostic, so flipping to --gzip later needs no app update.
-        const uploadBody = options.gzip ? gzipSync(rawBuffer) : rawBuffer;
+        const uploadBody = options.gzip ? await gzipAsync(rawBuffer) : rawBuffer;
         const contentEncoding = options.gzip ? ('gzip' as const) : ('identity' as const);
         // Colon-free key stamp: ISO colons are legal in S3 keys but historically
         // trip CDNs/URL parsers, and getPublicUrl does no percent-encoding.
@@ -1492,7 +1521,7 @@ export async function runExportWithOptions(
         // imported.
         const gradesKey = `${keyPrefix}/${pair.boardType}/${pair.layoutId}/${keyStamp}-grades.db`;
         const gradesRawBuffer = result.grades ? readFileSync(result.grades.filePath) : null;
-        const gradesUploadBody = gradesRawBuffer ? gzipSync(gradesRawBuffer) : null;
+        const gradesUploadBody = gradesRawBuffer ? await gzipAsync(gradesRawBuffer) : null;
 
         if (options.dryRun) {
           log.info('[export-snapshots] built (dry-run, not uploaded)', {

@@ -18,6 +18,8 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import { sql } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CATALOG_SNAPSHOT_TABLES } from '@boardsesh/db/catalog-snapshot';
+import type { DbInstance } from '@boardsesh/db/client';
+import * as dbSchema from '@boardsesh/db/schema';
 import { initializeJobQueueSchema } from '@boardsesh/db/job-queue-schema';
 
 vi.mock('../../storage/s3', () => ({
@@ -33,6 +35,7 @@ const { db } = await import('../../db/client');
 const { getFromS3Strict, uploadToS3 } = await import('../../storage/s3');
 const { exportLayoutSnapshot, runExportWithOptions } = await import('../../scripts/export-board-snapshots');
 const { catalogColumnsFor, runCatalogExportWithOptions } = await import('../../scripts/export-board-catalog');
+const { exportBoardSnapshotsFamily } = await import('../../workers/families/export-board-snapshots');
 
 const BOARD = 'kilter';
 // Far from every other fixture's layout ids, so a shared worker DB never mixes them.
@@ -245,6 +248,48 @@ describe('export-board-snapshots under the batch login', () => {
       expect(uploadedKeys().at(-1)).toBe('board-snapshots/v1-catalog/manifest.json');
       for (const { name } of CATALOG_SNAPSHOT_TABLES) {
         expect(await catalogColumnsFor(restricted, name)).toEqual(await catalogColumnsFor(owner, name));
+      }
+
+      // The family's own ledger reads, under the same login: a scan yields to a
+      // running snapshot run, and a stale retry fails instead of succeeding.
+      const familyDatabase = drizzle(restricted, { schema: dbSchema }) as unknown as DbInstance;
+      const runRow = (overrides: Partial<typeof dbSchema.backgroundJobRuns.$inferInsert>) => ({
+        id: randomUUID(),
+        queue: 'background-batch',
+        role: 'batch' as const,
+        family: 'export-board-snapshots',
+        payload: { mode: 'live-scan' },
+        deadlineAt: new Date(Date.now() + 60 * 60 * 1000),
+        ...overrides,
+      });
+      const familyContext = (runId: string) => ({
+        runId,
+        family: 'export-board-snapshots' as const,
+        signal: new AbortController().signal,
+        database: familyDatabase,
+        transaction: () => Promise.reject(new Error('no fenced statement expected')),
+      });
+      const running = runRow({ status: 'running', attemptNumber: 0, startedAt: new Date(), heartbeatAt: new Date() });
+      const waitingScan = runRow({ status: 'running', attemptNumber: 0 });
+      const staleRetry = runRow({
+        status: 'running',
+        attemptNumber: 1,
+        createdAt: new Date(Date.now() - 20 * 60 * 1000),
+      });
+      const ownerDatabase = drizzle(owner, { schema: dbSchema });
+      await ownerDatabase.insert(dbSchema.backgroundJobRuns).values([running, waitingScan, staleRetry]);
+      try {
+        vi.mocked(uploadToS3).mockClear();
+        await exportBoardSnapshotsFamily.execute(familyContext(waitingScan.id), { mode: 'live-scan' });
+        expect(uploadToS3).not.toHaveBeenCalled();
+        await expect(
+          exportBoardSnapshotsFamily.execute(familyContext(waitingScan.id), { mode: 'nightly' }),
+        ).rejects.toMatchObject({ code: 'SNAPSHOT_RUN_ACTIVE' });
+        await expect(
+          exportBoardSnapshotsFamily.execute(familyContext(staleRetry.id), { mode: 'live-scan' }),
+        ).rejects.toMatchObject({ code: 'LIVE_SCAN_STALE' });
+      } finally {
+        await owner`DELETE FROM background_job_runs WHERE id IN ${owner([running.id, waitingScan.id, staleRetry.id])}`;
       }
 
       // Nothing beyond the list: no account links, no catalogue writes.

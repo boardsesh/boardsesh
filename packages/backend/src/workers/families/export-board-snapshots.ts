@@ -1,4 +1,4 @@
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, ne, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { backgroundJobRuns } from '@boardsesh/db/schema';
 import { DEFAULT_CATALOG_KEY_PREFIX, runCatalogExportWithOptions } from '../../scripts/export-board-catalog';
@@ -14,9 +14,6 @@ import { isS3Configured } from '../../storage/s3';
 import { logger } from '../../utils/logger';
 import { BackgroundJobError, type BackgroundJobContext, type BackgroundJobFamilyModule } from './types';
 
-/** One dedup key for both modes: a scan queues behind the nightly, never beside it. */
-export const EXPORT_BOARD_SNAPSHOTS_KEY = 'export-board-snapshots';
-
 /** The live scan's rebuild threshold: one full 500-row GraphQL sync page, as in the workflow. */
 export const LIVE_SCAN_REFRESH_THRESHOLD = 500;
 
@@ -26,6 +23,9 @@ export const LIVE_SCAN_REFRESH_THRESHOLD = 500;
  * 15 minutes anyway, so running it late only duplicates that one.
  */
 export const LIVE_SCAN_MAX_AGE_SECONDS = 840;
+
+/** The heartbeat window; also how fresh another run's heartbeat must be to count as running. */
+const HEARTBEAT_SECONDS = 120;
 
 const payload = z
   .object({
@@ -81,13 +81,42 @@ async function readsAllSessions(context: BackgroundJobContext): Promise<boolean>
   return row?.reads_all_stats === true;
 }
 
-/** Seconds since the run was enqueued, by the database clock. Null when the row is missing. */
-async function runAgeSeconds(context: BackgroundJobContext): Promise<number | null> {
+/**
+ * This run's age since enqueue (by the database clock) and which attempt this
+ * is (0 for the first). Null when the row is missing.
+ */
+async function runAge(context: BackgroundJobContext): Promise<{ ageSeconds: number; attemptNumber: number } | null> {
   const [run] = await context.database
-    .select({ ageSeconds: sql<string>`extract(epoch from clock_timestamp() - ${backgroundJobRuns.createdAt})` })
+    .select({
+      ageSeconds: sql<string>`extract(epoch from clock_timestamp() - ${backgroundJobRuns.createdAt})`,
+      attemptNumber: backgroundJobRuns.attemptNumber,
+    })
     .from(backgroundJobRuns)
     .where(eq(backgroundJobRuns.id, context.runId));
-  return run ? Number(run.ageSeconds) : null;
+  return run ? { ageSeconds: Number(run.ageSeconds), attemptNumber: run.attemptNumber } : null;
+}
+
+/**
+ * Whether another export-board-snapshots run is running now. The two modes have
+ * separate dedup keys, and one batch replica at WORKER_CONCURRENCY=1 already
+ * runs them one at a time; this catches a second replica or an overlapping
+ * deploy. A row only counts while its heartbeat is fresh, so a worker that died
+ * mid-run blocks nothing once its heartbeat window has passed.
+ */
+async function anotherRunActive(context: BackgroundJobContext): Promise<boolean> {
+  const rows = await context.database
+    .select({ id: backgroundJobRuns.id })
+    .from(backgroundJobRuns)
+    .where(
+      and(
+        eq(backgroundJobRuns.family, 'export-board-snapshots'),
+        eq(backgroundJobRuns.status, 'running'),
+        ne(backgroundJobRuns.id, context.runId),
+        sql`coalesce(${backgroundJobRuns.heartbeatAt}, ${backgroundJobRuns.startedAt}) > clock_timestamp() - make_interval(secs => ${HEARTBEAT_SECONDS})`,
+      ),
+    )
+    .limit(1);
+  return rows.length > 0;
 }
 
 /**
@@ -115,16 +144,20 @@ export const exportBoardSnapshotsFamily: BackgroundJobFamilyModule<ExportRequest
     // payload).
     deadlineSeconds: 72_000,
     // The fence holds the run lock only for a SELECT 1, so the window is sized
-    // for the event loop instead: gzipSync of the largest artifact (kilter,
-    // about 271 MB raw) and the synchronous SQLite inserts block the heartbeat
-    // timer for several seconds at a time, and the touch then queues for one
-    // of the pool's two connections while the other holds the export
-    // transaction. 120 s covers that with a wide margin, and a dead worker is
-    // still noticed within two minutes rather than at the 45-minute lease.
-    heartbeatSeconds: 120,
+    // for the event loop instead: the synchronous SQLite inserts and reading
+    // the largest artifact (kilter, about 271 MB raw) back into memory block
+    // the heartbeat timer for seconds at a time (the gzip itself runs on the
+    // libuv pool), and the touch then queues for one of the pool's two
+    // connections while the other holds the export transaction. 120 s covers
+    // that with a wide margin, and a dead worker is still noticed within two
+    // minutes rather than at the 45-minute lease.
+    heartbeatSeconds: HEARTBEAT_SECONDS,
   },
   payload,
-  singletonKey: () => EXPORT_BOARD_SNAPSHOTS_KEY,
+  // One key per mode. A shared key would let a queued scan drop the nightly
+  // (the only pass that refreshes identity and the catalogue, rebuilds
+  // sub-threshold layouts and prunes) and take the key's one retry slot.
+  singletonKey: ({ mode }) => mode,
   schedules: [
     { key: 'nightly', cron: '15 7 * * *', fanOut: async () => [{ payload: { mode: 'nightly' } }] },
     { key: 'live-scan', cron: '7,22,37,52 * * * *', fanOut: async () => [{ payload: { mode: 'live-scan' } }] },
@@ -137,15 +170,31 @@ export const exportBoardSnapshotsFamily: BackgroundJobFamilyModule<ExportRequest
     }
 
     if (request.mode === 'live-scan') {
-      const ageSeconds = await runAgeSeconds(context);
-      if (ageSeconds !== null && ageSeconds > LIVE_SCAN_MAX_AGE_SECONDS) {
+      const age = await runAge(context);
+      if (age && age.ageSeconds > LIVE_SCAN_MAX_AGE_SECONDS) {
+        // A first attempt that waited in the queue is superseded by the next
+        // scan and succeeds quietly. A retry that old follows a failed attempt:
+        // succeeding would make a scan that keeps failing read green, so it
+        // fails the run instead.
+        if (age.attemptNumber > 0) throw new BackgroundJobError('LIVE_SCAN_STALE', { retryable: false });
         log.info('[export-snapshots] live scan skipped: it waited too long to start', {
           code: 'LIVE_SCAN_STALE',
-          ageSeconds: Math.round(ageSeconds),
+          ageSeconds: Math.round(age.ageSeconds),
           maxAgeSeconds: LIVE_SCAN_MAX_AGE_SECONDS,
         });
         return;
       }
+    }
+
+    if (await anotherRunActive(context)) {
+      // Two exporters on one prefix each merge an older manifest, and the later
+      // write drops the other's entries. A scan yields (the next one is at most
+      // 15 minutes away); the nightly retries after retryDelay.
+      if (request.mode === 'nightly') throw new BackgroundJobError('SNAPSHOT_RUN_ACTIVE');
+      log.info('[export-snapshots] live scan skipped: another snapshot run is running', {
+        code: 'SNAPSHOT_RUN_ACTIVE',
+      });
+      return;
     }
 
     // Once the fence has refused an attempt, every later pass would do its

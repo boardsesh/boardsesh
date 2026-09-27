@@ -828,12 +828,16 @@ describe('runExportWithOptions — worker hooks', () => {
 
   it('sends its progress lines to the injected logger', async () => {
     await seedClimb('kilter', 1, 'k1-a');
-    const lines: string[] = [];
-    const record = (message: string) => {
-      lines.push(message);
+    const lines: Array<{ message: string; meta?: Record<string, unknown> }> = [];
+    const record = (message: string, meta?: Record<string, unknown>) => {
+      lines.push({ message, meta });
     };
     await runExportWithOptions(liveOptions, { log: { info: record, warn: record, error: record } });
-    expect(lines).toContain('[export-snapshots] starting run');
-    expect(lines).toContain('[export-snapshots] manifest uploaded');
+    const messages = lines.map(({ message }) => message);
+    expect(messages).toContain('[export-snapshots] manifest uploaded');
+    // The observer mode, once per run: the test login is a superuser.
+    expect(lines.find(({ message }) => message === '[export-snapshots] starting run')?.meta).toMatchObject({
+      readsAllStats: true,
+    });
   });
 });

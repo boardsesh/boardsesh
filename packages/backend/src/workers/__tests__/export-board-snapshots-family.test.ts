@@ -40,7 +40,6 @@ vi.mock('../../storage/s3', () => ({
 
 const { familiesForRole, requireFamily } = await import('../families');
 const {
-  EXPORT_BOARD_SNAPSHOTS_KEY,
   LIVE_SCAN_MAX_AGE_SECONDS,
   LIVE_SCAN_REFRESH_THRESHOLD,
   exportBoardSnapshotsFamily: family,
@@ -49,20 +48,35 @@ const {
 type Context = Parameters<typeof family.execute>[0];
 type ExportCall = [SnapshotExportOptions, SnapshotExportDependencies];
 
-/** A database that answers the family's two reads: the stats grant and the run's age. */
-function fakeDatabase(options: { readsAllStats?: boolean; ageSeconds?: number | null } = {}) {
-  const { readsAllStats = true, ageSeconds = 5 } = options;
+type FakeDatabaseOptions = {
+  readsAllStats?: boolean;
+  ageSeconds?: number | null;
+  attemptNumber?: number;
+  otherRunActive?: boolean;
+};
+
+/**
+ * A database that answers the family's reads: the stats grant, this run's age
+ * and attempt, and whether another snapshot run is running.
+ */
+function fakeDatabase(options: FakeDatabaseOptions = {}) {
+  const { readsAllStats = true, ageSeconds = 5, attemptNumber = 0, otherRunActive = false } = options;
   return {
     execute: vi.fn(async () => [{ reads_all_stats: readsAllStats }]),
-    select: vi.fn(() => ({
+    select: vi.fn((fields: Record<string, unknown>) => ({
       from: () => ({
-        where: async () => (ageSeconds === null ? [] : [{ ageSeconds: String(ageSeconds) }]),
+        where: () => {
+          if ('ageSeconds' in fields) {
+            return Promise.resolve(ageSeconds === null ? [] : [{ ageSeconds: String(ageSeconds), attemptNumber }]);
+          }
+          return { limit: async () => (otherRunActive ? [{ id: 'other-run' }] : []) };
+        },
       }),
     })),
   } as unknown as DbInstance;
 }
 
-function context(options: Parameters<typeof fakeDatabase>[0] & { signal?: AbortSignal } = {}) {
+function context(options: FakeDatabaseOptions & { signal?: AbortSignal } = {}) {
   const fencedStatements: unknown[] = [];
   const transaction = vi.fn(async (callback: (transaction: never) => Promise<unknown>) =>
     callback({ execute: async (statement: unknown) => fencedStatements.push(statement) } as never),
@@ -107,10 +121,10 @@ describe('registration, schedules and options', () => {
     expect(await family.schedules?.[1].fanOut(database)).toEqual([{ payload: { mode: 'live-scan' } }]);
   });
 
-  it('shares one dedup key across both modes, so a scan queues behind the nightly', () => {
-    expect(family.singletonKey?.({ mode: 'nightly' })).toBe(EXPORT_BOARD_SNAPSHOTS_KEY);
-    expect(family.singletonKey?.({ mode: 'live-scan' })).toBe(EXPORT_BOARD_SNAPSHOTS_KEY);
-    expect(family.singletonKey?.({ mode: 'nightly', board: 'kilter', layout: 8 })).toBe(EXPORT_BOARD_SNAPSHOTS_KEY);
+  it('keys each mode separately, so a queued scan can never drop the nightly', () => {
+    expect(family.singletonKey?.({ mode: 'nightly' })).toBe('nightly');
+    expect(family.singletonKey?.({ mode: 'live-scan' })).toBe('live-scan');
+    expect(family.singletonKey?.({ mode: 'nightly', board: 'kilter', layout: 8 })).toBe('nightly');
   });
 
   it("keeps the workflow's 45-minute budget, one retry after 300 s and a valid heartbeat", () => {
@@ -211,9 +225,30 @@ describe('live scan', () => {
     expect(exportCalls()[0][0]).toMatchObject({ refreshThreshold: 50, boardFilter: 'kilter', layoutFilter: 8 });
   });
 
-  it('skips, and succeeds, when it waited longer than 14 minutes to start', async () => {
+  it('skips, and succeeds, when its first attempt waited longer than 14 minutes to start', async () => {
     await expect(
       family.execute(context({ ageSeconds: LIVE_SCAN_MAX_AGE_SECONDS + 1 }).context, { mode: 'live-scan' }),
+    ).resolves.toBeUndefined();
+    expect(exporter.runExportWithOptions).not.toHaveBeenCalled();
+  });
+
+  it('fails a retry that old, so a scan that keeps failing never reads green', async () => {
+    await expect(
+      family.execute(context({ ageSeconds: LIVE_SCAN_MAX_AGE_SECONDS + 1, attemptNumber: 1 }).context, {
+        mode: 'live-scan',
+      }),
+    ).rejects.toMatchObject({ code: 'LIVE_SCAN_STALE', retryable: false });
+    expect(exporter.runExportWithOptions).not.toHaveBeenCalled();
+  });
+
+  it('runs a retry that is still inside the age limit', async () => {
+    await family.execute(context({ ageSeconds: 600, attemptNumber: 1 }).context, { mode: 'live-scan' });
+    expect(exporter.runExportWithOptions).toHaveBeenCalledTimes(1);
+  });
+
+  it('yields, and succeeds, while another snapshot run is running', async () => {
+    await expect(
+      family.execute(context({ otherRunActive: true }).context, { mode: 'live-scan' }),
     ).resolves.toBeUndefined();
     expect(exporter.runExportWithOptions).not.toHaveBeenCalled();
   });
@@ -224,12 +259,21 @@ describe('live scan', () => {
   });
 
   it('never applies the age limit to the nightly', async () => {
-    await family.execute(context({ ageSeconds: 3 * 60 * 60 }).context, { mode: 'nightly' });
+    await family.execute(context({ ageSeconds: 3 * 60 * 60, attemptNumber: 1 }).context, { mode: 'nightly' });
     expect(exporter.runExportWithOptions).toHaveBeenCalledTimes(2);
   });
 });
 
 describe('nightly', () => {
+  it('retries later while another snapshot run is running', async () => {
+    await expect(family.execute(context({ otherRunActive: true }).context, { mode: 'nightly' })).rejects.toMatchObject({
+      code: 'SNAPSHOT_RUN_ACTIVE',
+      retryable: true,
+    });
+    expect(exporter.runExportWithOptions).not.toHaveBeenCalled();
+    expect(exporter.runCatalogExportWithOptions).not.toHaveBeenCalled();
+  });
+
   it('runs identity, then gzip, then the catalogue, like the workflow', async () => {
     const order: string[] = [];
     exporter.runExportWithOptions.mockImplementation(async (options: SnapshotExportOptions) => {

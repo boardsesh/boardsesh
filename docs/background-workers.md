@@ -262,7 +262,7 @@ job's signal.
 | `AWS_S3_BUCKET_NAME`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_ENDPOINT_URL`, `AWS_DEFAULT_REGION` | The Tigris snapshot bucket, the same values as the workflow's `Production` secrets. Not the `SNAPSHOTS_*` names, which select the R2 rehearsal bucket. |
 | `SNAPSHOT_PUBLIC_BASE_URL` | `https://boardsesh-board-snapshots.t3.tigrisfiles.io`. Required: without it the run fails with `SNAPSHOT_PUBLIC_BASE_URL_UNSET` instead of publishing URLs clients cannot read. |
 | `SYNC_STABILITY_WINDOW_SECONDS` | Only when the backend sets it; the export must use the same window. |
-| `/tmp` | tmpfs, 2 GB. One layout's SQLite files live there during its export (kilter's largest is about 271 MB raw). |
+| `/tmp` | tmpfs, 2 GB. One layout's SQLite files live there during its export (kilter's largest is about 271 MB raw). Tmpfs pages are charged to the container's memory cgroup, so a memory limit must cover them on top of the 4 GB heap. |
 
 The family is described in full, with its cutover, in `docs/board-snapshots.md`
 ("Batch worker owner").
@@ -314,12 +314,12 @@ node --import tsx packages/backend/src/workers/operator.ts enqueue export-board-
 Each family has one dedup key (per board for hold features and neighbours, per
 mode for snapshots), so a manual run enqueued while the nightly run is queued
 returns that queued run with `ALREADY_QUEUED`; enqueue again once it has started.
-The two snapshot modes additionally refuse to overlap in `execute`: a live scan
-yields while another snapshot run is running, and a nightly retries later. The reverse holds
-too: a manual run still queued when the nightly schedule fires takes that
-key's place, and the nightly job returns it with `ALREADY_QUEUED`. A queued
-`dryRun` therefore swallows its board's nightly run (it writes nothing and
-moves no watermark), so enqueue dry runs after the 06:45 fan-out has started.
+The reverse holds too: a manual run still queued when the nightly schedule fires
+takes that key's place, and the nightly job returns it with `ALREADY_QUEUED`. A
+queued neighbours `dryRun` therefore swallows its board's nightly run (it writes
+nothing and moves no watermark), so enqueue dry runs after the 06:45 fan-out has
+started. The two snapshot modes also refuse to overlap in `execute`: a live scan
+yields while another snapshot run is running, and a nightly retries later.
 
 `refresh-climb-neighbors` fans its schedule out to one job per board
 (`CLIMB_NEIGHBOR_BOARDS`, every board but spray), cheapest first by

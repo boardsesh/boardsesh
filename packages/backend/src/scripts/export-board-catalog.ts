@@ -29,7 +29,6 @@
 
 import { pathToFileURL } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
-import { gzipSync } from 'node:zlib';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -46,6 +45,7 @@ import {
   type CatalogSnapshotTableName,
 } from '@boardsesh/db/catalog-snapshot';
 import {
+  gzipAsync,
   publicUrlForKey,
   snapshotPublicBaseUrl,
   type SnapshotExportDependencies,
@@ -338,7 +338,7 @@ export async function runCatalogExportWithOptions(
     signal?.throwIfAborted();
 
     const rawBuffer = readFileSync(filePath);
-    const uploadBody = gzipSync(rawBuffer);
+    const uploadBody = await gzipAsync(rawBuffer);
     const keyStamp = builtAt.replace(/[:.]/g, '-');
     const key = `${options.keyPrefix}/${keyStamp}.db`;
     const canBuildPublicUrl = isS3Configured('snapshots') || snapshotPublicBaseUrl() !== '';
