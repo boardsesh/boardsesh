@@ -27,6 +27,9 @@ affected layout so a bulk gap does not remain in the first-download path.
 `.github/workflows/export-board-snapshots.yml` runs `export-board-snapshots.ts` at **07:15 UTC** daily
 for the full export and at **:07, :22, :37, and :52 every hour** for a bounded live-prefix scan
 (`workflow_dispatch` also available), with `environment: Production` so it gets the Production secrets.
+The workflow is the owner today. The batch worker's `export-board-snapshots` family runs the same passes
+on the same crons and takes over at its cutover (see [Batch worker owner](#batch-worker-owner-export-board-snapshots-family));
+exactly one of them publishes at any time.
 `concurrency.group: export-board-snapshots` with `cancel-in-progress: false` means overlapping runs queue
 instead of stepping on each other. GitHub retains at most one pending run and may replace it with a newer
 one; the eight-minute offset from the preceding bounded scan makes the nightly unlikely to enter that
@@ -103,12 +106,19 @@ For every `(board_type, layout_id)` pair with at least one climb (`discoverLayou
    `row_count`, `schema_version` (`LATEST_SCHEMA_VERSION`), and `format_version`. The transaction also
    captures a conservative tombstone boundary into a metadata-only `sync_deletions` row: the oldest of
    run `builtAt`, export-transaction start minus `SYNC_STABILITY_WINDOW_SECONDS`, and the oldest active
-   same-role transaction start. A second primary-pool connection samples `pg_stat_activity` while the
+   transaction start it can see. A second primary-pool connection samples `pg_stat_activity` while the
    export transaction is open but before its first artifact SELECT fixes the `REPEATABLE READ` snapshot.
    That ordering covers a delete transaction that began before the snapshot but committed after it.
+   Which transactions count depends on what the export's login can see. PostgreSQL shows a session's
+   state and `xact_start` only to its own role and to members of `pg_read_all_stats`. With
+   `pg_read_all_stats` (the batch worker's login) every role's client sessions count. Without it (the
+   workflow, which shares the writers' login) only same-role sessions count and any visible other-role
+   client fails closed; other roles' sessions are invisible in that mode, so it is only as safe as the
+   premise that every writer uses the export's login. The batch family therefore refuses to run without
+   `pg_read_all_stats` rather than fall back to that mode.
    The row is omitted (clients use the legacy scoped-watermark fallback) if the pool has fewer than two
-   connections, the activity probe fails, another-role client or prepared transaction exists in the
-   database, activity tracking/visibility is incomplete, or any timestamp is invalid. Every per-layout
+   connections, the activity probe fails, a prepared transaction exists in the database, activity
+   tracking/visibility is incomplete, or any timestamp is invalid. Every per-layout
    build/upload log carries `deletionsReplayFrom` and `deletionsReplayFallbackReason`: success is a
    timestamp plus a null reason; fallback is a null timestamp plus one stable, low-cardinality reason.
 5. Uploads the SQLite file to `<keyPrefix>/<boardType>/<layoutId>/<builtAt-colon-free>.db` — identity by
@@ -153,6 +163,107 @@ avoid dropping data on a broken read:
 | Missing (404/NoSuchKey)        | proceed, merge against empty (legitimately a first run) | same                                                                                                                               |
 | S3 read error (anything else)  | **THROW**, no upload happens                            | **THROW**, no upload happens                                                                                                       |
 | Present but invalid JSON/shape | **THROW** (can't reconstruct entries it would drop)     | warn + merge against empty (rebuilds every live layout anyway; only vanished layouts' entries are lost, and those drop regardless) |
+
+### Batch worker owner (`export-board-snapshots` family)
+
+`packages/backend/src/workers/families/export-board-snapshots.ts` runs the same exporter
+(`runExportWithOptions` and `runCatalogExportWithOptions`) on the homelab batch worker
+(`docs/background-workers.md`, "Batch families"). It stays off until `BATCH_FAMILIES_ENABLED` names it,
+and the workflow above keeps publishing until the cutover PR removes its `schedule:`. Part of #5800; it
+implements the job side of #5622.
+
+| Schedule key | Cron (UTC) | Payload | What runs |
+| --- | --- | --- | --- |
+| `nightly` | `15 7 * * *` | `{ "mode": "nightly" }` | identity `v1`, then gzip `v1-gzip`, then `v1-catalog` |
+| `live-scan` | `7,22,37,52 * * * *` | `{ "mode": "live-scan" }` | gzip `v1-gzip` with `--refresh-threshold 500` |
+
+The payload also takes `board`, `layout` (needs `board`), `refreshThreshold` and, on the nightly only,
+`gzipOnly`. They narrow a run the way the workflow's dispatch inputs do: a threshold skips the identity
+and catalogue passes, and a board or layout skips the catalogue. There is no dry run and no storage
+target; the R2 rehearsal (`storage_target: r2`) stays a `workflow_dispatch` of the workflow.
+
+- **One publisher at a time.** Both modes share the singleton key `export-board-snapshots` on the
+  stately batch queue, which holds one running and one queued job per key. A scan that fires during the
+  nightly queues behind it, and further scans are dropped with `ALREADY_QUEUED` in the backend log (not
+  a failure). The flip side: a nightly that fires while a scan is already queued (the scan before it
+  still running at 07:15, which only a long bulk rebuild does) is dropped too, and that day's identity
+  and catalogue refresh waits for the next night or an operator run. The live prefix is unaffected;
+  the scans keep it current.
+- **A late scan skips itself.** The ledger deadline is per family, so the scan checks its own age
+  instead: a scan that starts more than 840 s after it was enqueued logs `LIVE_SCAN_STALE` and succeeds
+  without exporting. The next scan is at most 15 minutes away.
+- **Nightly failures.** The identity and gzip passes publish independent manifests, so a failed identity
+  pass no longer stops the gzip pass the fleet reads. Either failure fails the run with
+  `SNAPSHOT_PASS_FAILED` after both have run, and the one retry (300 s later) repeats them. A catalogue
+  failure is logged and the run still succeeds, as its only consumer is the dev-db image
+  ([When the catalogue pass fails](#when-the-catalogue-pass-fails)). An abort (lease expiry at 45
+  minutes, shutdown) stops at the next layout and publishes no manifest.
+- **The fence.** The family writes no Postgres rows. Right before each manifest upload it runs
+  `SELECT 1` through the attempt fence, so an attempt that has lost its run throws instead of
+  publishing. Every S3 request runs outside the fence. A small race remains: an attempt can lose its run
+  between that check and the manifest `PUT` finishing, and a newer attempt can publish first. That is
+  acceptable because both manifests name only artifacts already on S3 (artifacts are immutable and
+  uploaded first), every run merges the previous manifest rather than replacing it, and the next scan
+  or nightly writes a fresh merge within 15 minutes.
+- **Reads** go through the exporter's own `createPool()`, which on the worker is the same two-connection
+  pool as the rest of the job (`DB_POOL_MAX=2`): one connection holds the layout's `REPEATABLE READ`
+  export, the other runs the replay observer and the heartbeat. The heartbeat window is 120 s because
+  `gzipSync` of a large artifact and the synchronous SQLite inserts block the event loop for seconds at
+  a time.
+
+**Environment** on the batch container, in the vault env file, beside the common worker variables:
+`AWS_S3_BUCKET_NAME`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_ENDPOINT_URL`,
+`AWS_DEFAULT_REGION` (the same Tigris values as the `Production` environment), and
+`SNAPSHOT_PUBLIC_BASE_URL=https://boardsesh-board-snapshots.t3.tigrisfiles.io`.
+`SYNC_STABILITY_WINDOW_SECONDS` only when the backend sets it. Do not set the `SNAPSHOTS_*` variables:
+they select a different bucket (the R2 rehearsal's). The run fails without retrying when the bucket is
+unconfigured (`SNAPSHOT_STORAGE_UNCONFIGURED`) or `SNAPSHOT_PUBLIC_BASE_URL` is empty
+(`SNAPSHOT_PUBLIC_BASE_URL_UNSET`), because a manifest of path-style Tigris URLs returns 403 to every
+client.
+
+**Scratch space.** Each layout's SQLite file is written under `os.tmpdir()` and then read whole into
+memory and gzipped (`kilter:1` is about 271 MB raw, 103 MB gzipped). Mount `/tmp` as a 2 GB tmpfs on the
+batch container; peak use is one layout plus its grades file, well under 1 GB, and tmpfs counts against
+the VM's 8 GiB.
+
+**Grants.** `batch=<login>` in `MIGRATION_WORKER_ROLES` adds SELECT on `board_climbs`,
+`board_climb_stats`, `board_climb_grades` and the catalogue tables, with `board_beta_links` limited to
+the columns the catalogue publishes. The replay observer also needs `pg_read_all_stats`, which the
+migrator cannot grant (it is not a superuser, and predefined roles never go in a migration). The admin
+grants it once when provisioning the login:
+
+```sql
+GRANT pg_read_all_stats TO boardsesh_worker_batch WITH ADMIN FALSE, INHERIT TRUE, SET FALSE;
+```
+
+Without it the family fails at once with `SNAPSHOT_OBSERVER_UNPRIVILEGED`: the batch login shares no role
+with the writers, so it would see none of their transactions, and the live gzip pass would refuse every
+layout. `pg_read_all_stats` also lets the login read other sessions' query text; the observer reads
+only `state` and `xact_start`, and nothing it reads is logged.
+
+**Cutover** (last in #5800's order, after neighbors). Two exporters on one prefix each merge an
+older manifest and the later write drops the other's entries, so unlike recommendations the owners
+never overlap:
+
+1. On the homelab, confirm the DR snapshot timers from `roles/boardsesh_dr` in blackheathdc-ansible are
+   disabled (`systemctl list-timers` on the DR host lists none). Their defaults are disabled, but check
+   what is deployed: #5622 allows one publisher across Actions, Ansible timers and pg-boss.
+2. Grant `pg_read_all_stats` (above), and deploy the environment and the 2 GB `/tmp`.
+3. `gh workflow disable export-board-snapshots.yml`, which stops both schedules at once, then run one
+   operator nightly:
+   `node --import tsx packages/backend/src/workers/operator.ts enqueue export-board-snapshots '{"mode":"nightly"}'`.
+   Every `[export-snapshots] uploaded` line must carry a `deletionsReplayFrom`. If it fails,
+   `gh workflow enable export-board-snapshots.yml` puts the workflow back.
+4. The same day, add the family to the backend's `BATCH_FAMILIES_ENABLED` and redeploy.
+5. In a follow-up PR, delete the workflow's `schedule:` (keep `workflow_dispatch`, which keeps the R2
+   rehearsal), update `scripts/__tests__/batch-families-cron.test.ts` and
+   `scripts/__tests__/snapshot-export-workflow.test.ts`, then `gh workflow enable` it again for manual
+   runs.
+6. Wait for three nights of `succeeded` nightly rows and compare each night's manifest with the one
+   before (entry count, per-layout row counts).
+
+Rollback: remove the family from `BATCH_FAMILIES_ENABLED` (the backend unschedules it on boot), then
+`gh workflow enable` the workflow and restore its `schedule:` if step 5 landed.
 
 ### Storage layout and cache headers
 
@@ -1079,6 +1190,18 @@ in-memory map loses exactly that one. `unknown` is an explicit, expected value.
 
 From CI: trigger `.github/workflows/export-board-snapshots.yml` via `workflow_dispatch` (GitHub UI or
 `gh workflow run export-board-snapshots.yml`).
+
+From the batch worker host, once the family owns the schedule (worker environment plus
+`WORKER_OPERATOR_ENABLED=true`):
+
+```sh
+node --import tsx packages/backend/src/workers/operator.ts enqueue export-board-snapshots '{"mode":"nightly"}'
+node --import tsx packages/backend/src/workers/operator.ts enqueue export-board-snapshots '{"mode":"nightly","board":"kilter","gzipOnly":true}'
+node --import tsx packages/backend/src/workers/operator.ts enqueue export-board-snapshots '{"mode":"live-scan"}'
+```
+
+A run enqueued while a scan or nightly is already queued returns that queued run (`ALREADY_QUEUED`);
+enqueue again once it has started.
 
 From a local shell, from `packages/backend/`:
 

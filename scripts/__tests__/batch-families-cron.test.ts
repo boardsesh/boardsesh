@@ -12,6 +12,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
+import { exportBoardSnapshotsFamily } from '../../packages/backend/src/workers/families/export-board-snapshots';
 import { refreshClimbGradesFamily } from '../../packages/backend/src/workers/families/refresh-climb-grades';
 import { refreshClimbNeighborsFamily } from '../../packages/backend/src/workers/families/refresh-climb-neighbors';
 import { refreshHoldFeaturesFamily } from '../../packages/backend/src/workers/families/refresh-hold-features';
@@ -26,20 +27,26 @@ function workflow(name: string): Workflow {
 }
 
 const PINS = [
-  { family: refreshRecommendationsFamily, workflow: 'refresh-recommendations.yml', cron: '0 6 * * *' },
-  { family: refreshHoldFeaturesFamily, workflow: 'refresh-hold-features.yml', cron: '15 6 * * *' },
-  { family: refreshClimbGradesFamily, workflow: 'refresh-climb-grades.yml', cron: '30 6 * * *' },
+  { family: refreshRecommendationsFamily, workflow: 'refresh-recommendations.yml', crons: ['0 6 * * *'] },
+  { family: refreshHoldFeaturesFamily, workflow: 'refresh-hold-features.yml', crons: ['15 6 * * *'] },
+  { family: refreshClimbGradesFamily, workflow: 'refresh-climb-grades.yml', crons: ['30 6 * * *'] },
   // The workflow runs a matrix job per board; the family fans out one job per board.
-  { family: refreshClimbNeighborsFamily, workflow: 'refresh-climb-neighbors.yml', cron: '45 6 * * *' },
+  { family: refreshClimbNeighborsFamily, workflow: 'refresh-climb-neighbors.yml', crons: ['45 6 * * *'] },
+  // The nightly identity/gzip/catalogue export, then the 15-minute live scan.
+  {
+    family: exportBoardSnapshotsFamily,
+    workflow: 'export-board-snapshots.yml',
+    crons: ['15 7 * * *', '7,22,37,52 * * * *'],
+  },
 ] as const;
 
 describe('batch family crons', () => {
-  it.each(PINS)('$workflow and its family fire at $cron UTC', ({ family, workflow: name, cron }) => {
+  it.each(PINS)('$workflow and its family fire at $crons UTC', ({ family, workflow: name, crons }) => {
     const schedules = family.schedules ?? [];
-    expect(schedules.map((schedule) => schedule.cron)).toEqual([cron]);
+    expect(schedules.map((schedule) => schedule.cron)).toEqual(crons);
     expect(schedules.every((schedule) => (schedule.tz ?? 'UTC') === 'UTC')).toBe(true);
     const { on } = workflow(name);
-    expect(on.schedule?.map((entry) => entry.cron)).toEqual([cron]);
+    expect(on.schedule?.map((entry) => entry.cron)).toEqual(crons);
     // Cutover keeps the manual trigger for backfills and dry runs.
     expect(on).toHaveProperty('workflow_dispatch');
   });

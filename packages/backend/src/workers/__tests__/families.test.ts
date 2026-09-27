@@ -16,6 +16,7 @@ describe('family registry', () => {
       'refresh-hold-features',
       'refresh-climb-grades',
       'refresh-climb-neighbors',
+      'export-board-snapshots',
     ]);
     expect(() => requireFamily('no-such-family')).toThrow('UNKNOWN_FAMILY');
   });

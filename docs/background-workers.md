@@ -137,6 +137,7 @@ module. The module declares:
 | `refresh-hold-features` | `batch` | 1,200 s | 2, 300 s backoff to 900 s | 20 h | board |
 | `refresh-climb-grades` | `batch` | 1,800 s | 1, after 900 s | 20 h | `nightly` |
 | `refresh-climb-neighbors` | `batch` | 21,600 s | 2, 300 s backoff to 900 s | 22 h | board |
+| `export-board-snapshots` | `batch` | 2,700 s | 1, after 300 s | 20 h (live scan: skips itself after 840 s) | mode (`nightly`, `live-scan`) |
 
 Throw `BackgroundJobError(code)` from `execute` to record a bounded,
 credential-free `error_code` (`/^[A-Z][A-Z0-9_]{0,63}$/`); pass
@@ -185,7 +186,7 @@ the tick throws and pg-boss retries it.
 
 ## Batch families
 
-Four nightly data jobs that run on GitHub Actions can also run on the batch
+Five scheduled data jobs that run on GitHub Actions can also run on the batch
 worker, once `BATCH_FAMILIES_ENABLED` names them. The job bodies live in `packages/db/src/jobs/` (package export
 `@boardsesh/db/jobs`) and take `{ db, signal, transact, log, ...params }`: `db`
 for reads, `transact` for every write batch, and they throw instead of exiting.
@@ -199,6 +200,7 @@ attempt fence (`context.transaction`). The worker never imports
 | `refresh-hold-features` | `15 6 * * *` | `{ board = 'kilter', dryRun?, shadow? }` | 30 s | `board_hold_features`, the shadow `user_hold_classifications` | `refresh-hold-features.yml` |
 | `refresh-climb-grades` | `30 6 * * *` | `{ refit?, dryRun?, validateOnly? }` | 900 s | `board_grade_coefficients`, `board_climb_grades` | `refresh-climb-grades.yml` |
 | `refresh-climb-neighbors` | `45 6 * * *`, one job per board | `{ board, full?, dryRun?, refillGaps? }` | 60 s | `board_climb_neighbors`, `board_climb_neighbor_runs`, `board_climb_neighbor_group_runs` | `refresh-climb-neighbors.yml` |
+| `export-board-snapshots` | `15 7 * * *` (`nightly`), `7,22,37,52 * * * *` (`live-scan`) | `{ mode, board?, layout?, refreshThreshold?, gzipOnly? }` | 120 s | nothing in Postgres; SQLite artifacts and manifests to the snapshot bucket | `export-board-snapshots.yml` |
 
 Measured on GitHub Actions against production in Sep 2026: recommendations
 about 25 s, hold features about 60 s, grades about 4 minutes, of which the
@@ -253,6 +255,18 @@ stay CLI-only, as in the workflow. Every heavy grade read runs with
 The PostHog request runs outside every fence with a 60 s timeout joined to the
 job's signal.
 
+`export-board-snapshots` adds the snapshot bucket and a scratch disk:
+
+| Variable or mount | Value |
+| --- | --- |
+| `AWS_S3_BUCKET_NAME`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_ENDPOINT_URL`, `AWS_DEFAULT_REGION` | The Tigris snapshot bucket, the same values as the workflow's `Production` secrets. Not the `SNAPSHOTS_*` names, which select the R2 rehearsal bucket. |
+| `SNAPSHOT_PUBLIC_BASE_URL` | `https://boardsesh-board-snapshots.t3.tigrisfiles.io`. Required: without it the run fails with `SNAPSHOT_PUBLIC_BASE_URL_UNSET` instead of publishing URLs clients cannot read. |
+| `SYNC_STABILITY_WINDOW_SECONDS` | Only when the backend sets it; the export must use the same window. |
+| `/tmp` | tmpfs, 2 GB. One layout's SQLite files live there during its export (kilter's largest is about 271 MB raw). |
+
+The family is described in full, with its cutover, in `docs/board-snapshots.md`
+("Batch worker owner").
+
 **Grants.** `batch=<login>` gets SELECT on the catalog and history the jobs scan
 (`board_climbs`, `board_climb_stats`, `board_climb_holds`, `board_placements`,
 `board_holes`, `board_sets`, `board_product_sizes_layouts_sets`,
@@ -269,11 +283,20 @@ above: `board_setter_stats`, `board_climb_send_stats`, `playlists`,
 `board_climb_neighbors` (SELECT, INSERT, DELETE), `board_climb_neighbor_runs`
 and `board_climb_neighbor_group_runs`. The neighbours job reads only
 `board_climbs` besides its own tables. On `users` it may read `id` and insert `(id, name, email)` only, for the two
-reserved system users. The grade publish creates a temporary table, so the
+reserved system users. For `export-board-snapshots` it also reads the catalogue
+tables (`board_products`, `board_layouts`, `board_product_sizes`,
+`board_placement_roles`, `board_leds`, `board_kits`, `board_difficulty_grades`,
+`board_attempts`, and `board_beta_links` without `created_by_user_id`,
+`tick_uuid` and `board_id`). Its deletion replay observer needs
+`pg_read_all_stats` as well, which the migrator cannot grant: the admin runs
+`GRANT pg_read_all_stats TO boardsesh_worker_batch WITH ADMIN FALSE, INHERIT
+TRUE, SET FALSE` once when provisioning the login, and the family refuses to run
+(`SNAPSHOT_OBSERVER_UNPRIVILEGED`) without it. The grade publish creates a temporary table, so the
 database must keep PostgreSQL's default TEMPORARY privilege for PUBLIC.
 `packages/backend/src/services/__tests__/job-queue-roles.test.ts` runs every
-family under exactly these grants; a job that starts reading or writing a new
-table fails there until the list grows.
+family under exactly these grants, and `job-queue-roles-snapshots.test.ts` runs
+the snapshot exporter under a real login with them plus `pg_read_all_stats`; a
+job that starts reading or writing a new table fails there until the list grows.
 
 **Operator runs** (on the batch host, with the worker environment and
 `WORKER_OPERATOR_ENABLED=true`):
@@ -285,11 +308,14 @@ node --import tsx packages/backend/src/workers/operator.ts enqueue refresh-climb
 node --import tsx packages/backend/src/workers/operator.ts enqueue refresh-climb-grades '{"validateOnly":true}'
 node --import tsx packages/backend/src/workers/operator.ts enqueue refresh-climb-neighbors '{"board":"kilter","full":true}'
 node --import tsx packages/backend/src/workers/operator.ts enqueue refresh-climb-neighbors '{"board":"moonboard","refillGaps":true}'
+node --import tsx packages/backend/src/workers/operator.ts enqueue export-board-snapshots '{"mode":"nightly"}'
 ```
 
-Each family has one dedup key (per board for hold features and neighbours), so
-a manual run enqueued while the nightly run is queued returns that queued run
-with `ALREADY_QUEUED`; enqueue again once it has started. The reverse holds
+Each family has one dedup key (per board for hold features and neighbours, per
+mode for snapshots), so a manual run enqueued while the nightly run is queued
+returns that queued run with `ALREADY_QUEUED`; enqueue again once it has started.
+The two snapshot modes additionally refuse to overlap in `execute`: a live scan
+yields while another snapshot run is running, and a nightly retries later. The reverse holds
 too: a manual run still queued when the nightly schedule fires takes that
 key's place, and the nightly job returns it with `ALREADY_QUEUED`. A queued
 `dryRun` therefore swallows its board's nightly run (it writes nothing and
@@ -323,7 +349,8 @@ both are hand-enqueued runs on the batch VM:
    50 s bound, or the heartbeat goes up before the family is enabled.
 
 **Cutover, one family at a time** (recommendations, then hold features, then
-grades, then neighbours):
+grades, then neighbours; snapshots last, with their own no-overlap steps in
+`docs/board-snapshots.md`):
 
 1. Deploy the migrator with `batch=boardsesh_worker_batch` in
    `MIGRATION_WORKER_ROLES`, and the batch worker with the environment above
