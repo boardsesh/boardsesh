@@ -31,7 +31,8 @@ export type RoutineCycleStop =
  * The daemons' routine sync, as a bounded job: every 5 minutes, per provider,
  * claim and sync the next due credentials until one of
  *
- * - `ROUTINE_CYCLE_MAX_CREDENTIALS` (default 4) have been attempted,
+ * - `ROUTINE_CYCLE_MAX_CREDENTIALS` (default 4) have been attempted (synced,
+ *   failed or handed to the interactive family; a skip does not count),
  * - `ROUTINE_CYCLE_BUDGET_MS` (default 120 000) has passed (checked before each
  *   claim; a started credential finishes),
  * - no credential is due, or
@@ -69,9 +70,9 @@ export const providerRoutineCycleFamily: BackgroundJobFamilyModule<ProviderRouti
     retryBackoff: true,
     retryDelayMax: 0,
     // Much longer than the lease on purpose: one routine-provider worker runs
-    // one job at a time, and the :07 fan-out queues five aurora-shared-sync runs
-    // (plus the Kilter catalog at :23) at the cycle's own priority, each with a
-    // 3600 s lease. A cycle queued behind them waits for all of them; with a
+    // one job at a time, and the :07 fan-out queues an aurora-shared-sync run per
+    // Aurora board (plus the Kilter catalog at :23) at the cycle's own
+    // priority, each with a 3600 s lease. A cycle queued behind them waits for all of them; with a
     // shorter deadline it would expire at claim and later ticks would coalesce
     // onto the doomed holder. The same full-fan-out budget as the shared sync.
     deadlineSeconds: AURORA_SHARED_SYNC_DEADLINE_SECONDS,
@@ -131,9 +132,12 @@ export const providerRoutineCycleFamily: BackgroundJobFamilyModule<ProviderRouti
         stop = 'NO_CREDENTIALS';
         break;
       }
-      attempted += 1;
       const outcome = await runRoutineCredentialSync(context, credential, adapter);
       tally[outcome.result] += 1;
+      // Only a credential the provider was (or will be) asked about counts
+      // toward the limit: a skip (busy, relinked, out of lease) called no one.
+      // The loop still ends, on the budget or when no credential is due.
+      if (outcome.result !== 'skipped') attempted += 1;
       if (outcome.reason === 'CYCLE_DEADLINE_NEAR') {
         logger.warn('[worker] routine credential skipped near the cycle deadline', {
           runId: context.runId,

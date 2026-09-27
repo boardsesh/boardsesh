@@ -436,6 +436,47 @@ describe('the drain racing a page that re-marks old keys', () => {
   });
 });
 
+describe('the drain when a live flush holds every old marker', () => {
+  it('stops after one batch instead of spinning through maxBatches', async () => {
+    await insertLinkedTensionAccount(database, ASCENT_USER, ASCENT_CLIMB);
+    await database.execute(sql`
+      INSERT INTO climb_stats_recompute_pending (board_type, climb_uuid, angle, requested_at)
+      VALUES (${FIXTURE_BOARD}, ${ASCENT_CLIMB}, 40, now() - interval '10 minutes')`);
+
+    // A live flush holds the marker's row lock until released.
+    let release: () => void = () => {};
+    let locked: () => void = () => {};
+    const lockTaken = new Promise<void>((resolve) => {
+      locked = resolve;
+    });
+    const flush = database.transaction(async (transaction) => {
+      await transaction.execute(sql`
+        SELECT 1 FROM climb_stats_recompute_pending WHERE climb_uuid = ${ASCENT_CLIMB} FOR UPDATE`);
+      locked();
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    });
+    await lockTaken;
+
+    let batches = 0;
+    const counting = ((callback) => {
+      batches += 1;
+      return database.transaction(callback);
+    }) as SyncBatchRunner;
+    try {
+      // One key, batches of one: a full pick every time, all of it locked.
+      expect(await drainPendingClimbStatsRecomputes(counting, { batchKeys: 1, maxBatches: 20 })).toBe(0);
+      expect(batches).toBe(1);
+    } finally {
+      release();
+      await flush;
+    }
+    // The marker is still there for the next pass.
+    expect(await countRows('climb_stats_recompute_pending', ASCENT_CLIMB)).toBe(1);
+  });
+});
+
 describe('pending markers under a non-UTC session TimeZone', () => {
   /** A batch runner whose transactions read and write timestamps in Sydney time. */
   const sydneyBatch = ((callback) =>

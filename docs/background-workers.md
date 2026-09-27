@@ -692,7 +692,7 @@ it, then succeeds and logs `[worker] routine cycle finished` with the reason:
 
 | Stop | When |
 | --- | --- |
-| `MAX_CREDENTIALS` | `ROUTINE_CYCLE_MAX_CREDENTIALS` credentials attempted (default 4, 1 to 50) |
+| `MAX_CREDENTIALS` | `ROUTINE_CYCLE_MAX_CREDENTIALS` credentials attempted (default 4, 1 to 50): synced, failed or handed to the interactive family; a skipped credential (busy, relinked, out of lease) does not count |
 | `BUDGET` | `ROUTINE_CYCLE_BUDGET_MS` passed (default 120 000, at most 150 000), checked before each claim; a started credential finishes |
 | `NO_CREDENTIALS` | nothing is due |
 | `PROVIDER_THROTTLED` | the provider answered 429 with `Retry-After`: that credential's `provider_retry_after_until` is set to `now() + delay` (capped at 6 h) and the failure step the 429 was charged is taken back. The claim waits for the later of that time and the failure backoff (`last_sync_attempt_at + backoff(n)`), never their sum, and the cycle ends |
@@ -742,8 +742,9 @@ the default of 120 000 is what leaves the board-wide jobs their room.
 
 The run's absolute deadline is 6 hours, not the lease's 10 minutes, the same
 full-fan-out budget as `aurora-shared-sync`: the routine worker runs one job at
-a time, and a cycle queued just after :07 waits behind all five hourly
-`aurora-shared-sync` runs (and the `kilter-catalog-sync` at :23), each with an
+a time, and a cycle queued just after :07 waits behind the whole hourly
+`aurora-shared-sync` fan-out, one run for every board in `AURORA_BOARDS` except
+Kilter (and the `kilter-catalog-sync` at :23), each with an
 hour's lease, at the same priority. With a shorter deadline such a cycle would
 already be past it when fetched and fail at claim, and the later ticks would
 coalesce onto that doomed run. A cycle that waited that long simply runs late;
@@ -778,14 +779,15 @@ one is 5 minutes away.
 
 ### The board-wide families
 
-`aurora-shared-sync` fans out one run per Aurora board (five) at :07, least
-recently synced board first (by its `board_shared_syncs` cooldown stamp;
-never-run boards lead). The routine worker runs one job at a time, so the
-fifth board can wait behind four runs that each hold an hour's lease; its
-6-hour deadline covers that wait plus a routine cycle or a Kilter catalog run
-in between, so a late board runs late instead of expiring at claim. The Kilter
-catalog (queued at :23) and the routine cycle can wait behind the same five
-runs, so they carry the same 6-hour deadline.
+`aurora-shared-sync` fans out one run for every board in `AURORA_BOARDS`
+except Kilter at :07, least recently synced board first (by its
+`board_shared_syncs` cooldown stamp; never-run boards lead). The routine worker
+runs one job at a time, so the last board can wait behind every other board's
+run, each holding an hour's lease; its 6-hour deadline covers that wait plus a
+routine cycle or a Kilter catalog run in between, so a late board runs late
+instead of expiring at claim (a test fails if the board count times 3600 s
+ever reaches the deadline). The Kilter catalog (queued at :23) and the routine
+cycle can wait behind the same runs, so they carry the same 6-hour deadline.
 
 `aurora-shared-sync` and `kilter-catalog-sync` borrow a token from the board's
 most recently successful `active` credential (Kilter falls back to the
@@ -861,9 +863,21 @@ together.
    logs one line and exits 0. Because they exit 0, the ansible change must land
    first and set the daemon services' compose restart policy to `on-failure`
    (or stop the units); under `always` or `unless-stopped` Docker restarts a
-   clean exit in a loop. Wait for their `sync_daemon_leases` rows to go stale (a
-   stopped daemon releases its lease; check that no row's `heartbeat_at`
-   moves).
+   clean exit in a loop. Then wait until neither daemon holds its lease. A
+   running daemon renews its `sync_daemon_leases` row every 30 s
+   (`DAEMON_LEASE_HEARTBEAT_MS`) and another instance may take it over once the
+   heartbeat is 90 s old (`DAEMON_LEASE_TTL_MS`); a daemon that shuts down
+   cleanly deletes its row, and a disabled one never writes it. The signal:
+
+   ```sql
+   SELECT daemon_name, heartbeat_at, now() - heartbeat_at AS age
+     FROM sync_daemon_leases
+    WHERE daemon_name IN ('aurora-sync', 'kilter-sync');
+   ```
+
+   returns no rows, or only rows whose `age` is over 90 s and still growing
+   when you run it again a minute later. Until then a daemon may still be
+   syncing, and step 4 would run the families beside it.
 4. Add `provider-routine-cycle,aurora-shared-sync,kilter-catalog-sync,moonboard-locations-sync,climb-stats-self-heal`
    to `BATCH_FAMILIES_ENABLED` and redeploy the backend.
 5. Unpause the `routine-provider` worker (`WORKER_PAUSED=false`, with

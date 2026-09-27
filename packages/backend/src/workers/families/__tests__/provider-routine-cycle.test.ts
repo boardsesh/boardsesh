@@ -39,12 +39,19 @@ const adapterOverride = vi.hoisted(() => ({
       ) => Promise<ProviderSyncOutcome>),
 }));
 
+/** Credentials the routine sync reports as a relink skip, without syncing them. */
+const skipAsRelinked = vi.hoisted(() => new Set<string>());
+
 vi.mock('../provider-sync-batch', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../provider-sync-batch')>();
   const { and: andSql, like: likeSql } = await import('drizzle-orm');
   const { auroraCredentials: credentials } = await import('@boardsesh/db/schema');
   return {
     ...actual,
+    runRoutineCredentialSync: (async (context, claimed, adapter) =>
+      skipAsRelinked.has(claimed.userId)
+        ? { result: 'skipped', reason: 'CREDENTIAL_RELINKED' }
+        : actual.runRoutineCredentialSync(context, claimed, adapter)) as typeof actual.runRoutineCredentialSync,
     loadProviderSyncAdapter: async (context: BackgroundJobContext, provider: 'aurora' | 'kilter') => {
       const real = await actual.loadProviderSyncAdapter(context, provider);
       const override = adapterOverride.sync;
@@ -236,6 +243,23 @@ describe('provider-routine-cycle', () => {
 
     expect(result).toBe('succeeded');
     expect(synced).toEqual(['routine-a']);
+  });
+
+  it('does not count a skipped credential toward ROUTINE_CYCLE_MAX_CREDENTIALS', async () => {
+    vi.stubEnv('ROUTINE_CYCLE_MAX_CREDENTIALS', '2');
+    // routine-a (the oldest) is claimed, then skipped as relinked since the claim.
+    skipAsRelinked.add('routine-a');
+    const synced: string[] = [];
+    adapterOverride.sync = recordingSync(synced);
+
+    try {
+      expect((await runCycle()).result).toBe('succeeded');
+    } finally {
+      skipAsRelinked.clear();
+    }
+
+    // The skip left both of the limit's slots for real syncs.
+    expect(synced).toEqual(['routine-b', 'routine-c']);
   });
 
   it('skips a credential another run holds a live lease on', async () => {
