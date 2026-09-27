@@ -9,14 +9,14 @@
  */
 import { posthogConfigFromEnvironment, runRefreshRecommendations } from '../src/jobs/index.js';
 import { createScriptDb } from './db-connection.js';
-import { cliJobLogger } from './job-cli.js';
+import { cliAbortSignal, cliJobLogger } from './job-cli.js';
 
 async function main(): Promise<void> {
   const { db, close } = createScriptDb();
   try {
     await runRefreshRecommendations({
       db,
-      signal: new AbortController().signal,
+      signal: cliAbortSignal(),
       log: cliJobLogger(),
       posthog: posthogConfigFromEnvironment(process.env),
     });

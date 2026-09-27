@@ -17,7 +17,7 @@
  */
 import { GradeGatesFailedError, runRefreshClimbGrades } from '../src/jobs/index.js';
 import { createScriptDb } from './db-connection.js';
-import { cliJobLogger } from './job-cli.js';
+import { cliAbortSignal, cliJobLogger } from './job-cli.js';
 
 async function main(argv: string[]): Promise<void> {
   const contentPriorFile = argv
@@ -27,7 +27,7 @@ async function main(argv: string[]): Promise<void> {
   try {
     await runRefreshClimbGrades({
       db,
-      signal: new AbortController().signal,
+      signal: cliAbortSignal(),
       log: cliJobLogger(),
       refit: argv.includes('--refit-coefficients'),
       dryRun: argv.includes('--dry-run'),

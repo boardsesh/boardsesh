@@ -189,16 +189,21 @@ describe('batch families on the test database', () => {
   });
 
   it('refresh-climb-grades fails GATES_FAILED without writing when the backtest has no sample', async () => {
+    const coefficientsBefore = await db.$count(dbSchema.boardGradeCoefficients);
     const { context, transactions } = contextFor(db, 'refresh-climb-grades');
     const failure = await refreshClimbGradesFamily.execute(context, {}).catch((error: unknown) => error);
     expect(failure).toBeInstanceOf(BackgroundJobError);
     expect(failure).toMatchObject({ code: 'GATES_FAILED', retryable: false });
     expect(transactions.calls).toBe(0);
-    expect(await db.select().from(dbSchema.boardGradeCoefficients)).toHaveLength(0);
+    expect(await db.$count(dbSchema.boardGradeCoefficients)).toBe(coefficientsBefore);
   });
 
   it('refresh-climb-grades publishes coefficients, gates and grades in one batch', async () => {
     const database: JobDatabase = db;
+    const gateRunsBefore = await db.$count(
+      dbSchema.boardGradeCoefficients,
+      eq(dbSchema.boardGradeCoefficients.kind, 'gate_results'),
+    );
     const transacts = { calls: 0 };
     const transact: JobTransact = (callback) => {
       transacts.calls += 1;
@@ -223,10 +228,8 @@ describe('batch families on the test database', () => {
       .from(dbSchema.boardClimbGrades)
       .where(inArray(dbSchema.boardClimbGrades.climbUuid, KILTER_CLIMBS));
     expect(grades).toHaveLength(KILTER_CLIMBS.length);
-    const gateRuns = await db
-      .select()
-      .from(dbSchema.boardGradeCoefficients)
-      .where(eq(dbSchema.boardGradeCoefficients.kind, 'gate_results'));
-    expect(gateRuns).toHaveLength(1);
+    expect(
+      await db.$count(dbSchema.boardGradeCoefficients, eq(dbSchema.boardGradeCoefficients.kind, 'gate_results')),
+    ).toBe(gateRunsBefore + 1);
   });
 });

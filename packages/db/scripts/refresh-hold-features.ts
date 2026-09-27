@@ -9,7 +9,7 @@
  */
 import { runRefreshHoldFeatures } from '../src/jobs/index.js';
 import { createScriptDb } from './db-connection.js';
-import { cliJobLogger } from './job-cli.js';
+import { cliAbortSignal, cliJobLogger } from './job-cli.js';
 
 async function main(argv: string[]): Promise<void> {
   const boardArgument = argv.find((argument) => argument.startsWith('--board='));
@@ -17,7 +17,7 @@ async function main(argv: string[]): Promise<void> {
   try {
     await runRefreshHoldFeatures({
       db,
-      signal: new AbortController().signal,
+      signal: cliAbortSignal(),
       log: cliJobLogger(),
       board: boardArgument ? boardArgument.slice('--board='.length) : 'kilter',
       dryRun: argv.includes('--dry-run'),

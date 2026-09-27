@@ -82,7 +82,14 @@ async function listLayouts(db: JobDatabase, board: string): Promise<number[]> {
   return rows.map((row) => toNumber(row.layout_id));
 }
 
-async function loadPlacements(db: JobDatabase, board: string, layout: number): Promise<PlacementRow[]> {
+async function loadPlacements(
+  db: JobDatabase,
+  signal: AbortSignal,
+  board: string,
+  layout: number,
+): Promise<PlacementRow[]> {
+  // Checked before the query: an aborted run never starts another scan.
+  signal.throwIfAborted();
   return (await db.execute(sql`
     SELECT p.id AS placement_id, p.layout_id, p.hole_id, p.set_id,
            h.x AS x, h.y AS y, h.name AS hole_name, s.name AS set_name
@@ -94,7 +101,9 @@ async function loadPlacements(db: JobDatabase, board: string, layout: number): P
 }
 
 /** One graded observation per (climb, angle); the climb's holds are shared across its angles. */
-async function loadStats(db: JobDatabase, board: string, layout: number): Promise<StatRow[]> {
+async function loadStats(db: JobDatabase, signal: AbortSignal, board: string, layout: number): Promise<StatRow[]> {
+  // Checked before the query: an aborted run never starts another scan.
+  signal.throwIfAborted();
   const placementCoverage = moonBoardPlacementCoverageSql({
     boardType: sql.raw('c.board_type'),
     climbUuid: sql.raw('c.uuid'),
@@ -114,7 +123,9 @@ async function loadStats(db: JobDatabase, board: string, layout: number): Promis
   `)) as unknown as StatRow[];
 }
 
-async function loadHolds(db: JobDatabase, board: string, layout: number): Promise<HoldRow[]> {
+async function loadHolds(db: JobDatabase, signal: AbortSignal, board: string, layout: number): Promise<HoldRow[]> {
+  // Checked before the query: an aborted run never starts another scan.
+  signal.throwIfAborted();
   const placementMatch = climbHoldPlacementMatchSql({
     boardType: sql.raw('ch.board_type'),
     climbHoldId: sql.raw('ch.hold_id'),
@@ -152,7 +163,14 @@ async function loadHolds(db: JobDatabase, board: string, layout: number): Promis
   `)) as unknown as HoldRow[];
 }
 
-async function canonicalSizeId(db: JobDatabase, board: string, layout: number): Promise<number | null> {
+async function canonicalSizeId(
+  db: JobDatabase,
+  signal: AbortSignal,
+  board: string,
+  layout: number,
+): Promise<number | null> {
+  // Checked before the query: an aborted run never starts another scan.
+  signal.throwIfAborted();
   const rows = (await db.execute(sql`
     SELECT product_size_id FROM board_product_sizes_layouts_sets
     WHERE board_type = ${board} AND layout_id = ${layout} AND product_size_id IS NOT NULL
@@ -272,13 +290,14 @@ export type RefreshHoldFeaturesResult = { layouts: number; features: number; cla
 
 async function processLayout(
   db: JobDatabase,
+  signal: AbortSignal,
   transact: JobTransact,
   log: JobLogger,
   options: RefreshHoldFeaturesParams,
   layout: number,
 ): Promise<{ features: number; classifications: number }> {
   const { board, dryRun, shadow } = options;
-  const placements = await loadPlacements(db, board, layout);
+  const placements = await loadPlacements(db, signal, board, layout);
   if (placements.length === 0) return { features: 0, classifications: 0 };
 
   const geomInput: PlacementGeom[] = placements
@@ -295,8 +314,8 @@ async function processLayout(
 
   // One after the other: the worker's pool is two connections and the heartbeat
   // needs one of them.
-  const stats = await loadStats(db, board, layout);
-  const holds = await loadHolds(db, board, layout);
+  const stats = await loadStats(db, signal, board, layout);
+  const holds = await loadHolds(db, signal, board, layout);
   const byClimb = groupHoldsByClimb(holds);
   const observations = buildObservations(stats, byClimb);
   const difficulty = estimateHoldDifficulty(observations);
@@ -347,7 +366,7 @@ async function processLayout(
 
   const classificationRows: ClassificationRow[] = [];
   if (shadow) {
-    const sizeId = await canonicalSizeId(db, board, layout);
+    const sizeId = await canonicalSizeId(db, signal, board, layout);
     if (sizeId !== null) {
       for (const placement of placements) {
         const placementId = toNumber(placement.placement_id);
@@ -371,6 +390,7 @@ async function processLayout(
   }
 
   if (!dryRun) {
+    signal.throwIfAborted();
     // One batch per layout: a few hundred rows, and never half a layout.
     await transact(async (transaction) => {
       await upsertFeatures(transaction, featureRows);
@@ -412,7 +432,7 @@ export async function runRefreshHoldFeatures(options: RefreshHoldFeaturesOptions
   let totalClassifications = 0;
   for (const layout of layouts) {
     signal.throwIfAborted();
-    const result = await processLayout(db, transact, log, { board, dryRun, shadow }, layout);
+    const result = await processLayout(db, signal, transact, log, { board, dryRun, shadow }, layout);
     totalFeatures += result.features;
     totalClassifications += result.classifications;
   }

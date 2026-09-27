@@ -16,6 +16,7 @@ import { randomUUID } from 'node:crypto';
 import { eq, inArray, like, sql } from 'drizzle-orm';
 import * as dbSchema from '@boardsesh/db/schema';
 import type { JobDatabase } from '@boardsesh/db/jobs';
+import { rowsOf } from '@boardsesh/db/queries';
 
 export const FIXTURE_PREFIX = 'batch-job-fixture-';
 export const KILTER_CLIMBS = ['alpha', 'bravo', 'charlie', 'delta', 'echo', 'foxtrot'].map(
@@ -26,7 +27,17 @@ const LAYOUT = 8;
 const SIZE = 17;
 const PLACEMENTS = [9001, 9002, 9003, 9004, 9005, 9006];
 
+/**
+ * The database clock when the fixture was seeded. Coefficient rows carry no
+ * climb, so the ones the jobs wrote are told apart by when they were written.
+ */
+let seededAt: string | undefined;
+
 export async function seedBatchJobFixture(db: JobDatabase): Promise<void> {
+  const [clock] = rowsOf<{ seeded_at: string }>(
+    await db.execute(sql`SELECT clock_timestamp()::timestamp::text AS seeded_at`),
+  );
+  seededAt = clock?.seeded_at;
   const publishedAt = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   await db.insert(dbSchema.boardClimbs).values([
     ...KILTER_CLIMBS.map((uuid, index) => ({
@@ -133,7 +144,11 @@ export async function clearBatchJobFixture(db: JobDatabase): Promise<void> {
     .delete(dbSchema.userHoldClassifications)
     .where(eq(dbSchema.userHoldClassifications.userId, 'system-hold-classifier'));
   await db.delete(dbSchema.boardClimbGrades).where(like(dbSchema.boardClimbGrades.climbUuid, `${FIXTURE_PREFIX}%`));
-  await db.delete(dbSchema.boardGradeCoefficients);
+  if (seededAt) {
+    await db
+      .delete(dbSchema.boardGradeCoefficients)
+      .where(sql`${dbSchema.boardGradeCoefficients.createdAt} >= ${seededAt}::timestamp`);
+  }
   await db
     .delete(dbSchema.boardClimbStatsHistory)
     .where(like(dbSchema.boardClimbStatsHistory.climbUuid, `${FIXTURE_PREFIX}%`));

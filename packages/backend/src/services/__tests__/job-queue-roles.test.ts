@@ -224,6 +224,16 @@ describe('batch worker grants', () => {
       // The list is authoritative: re-running with a bare login strips it.
       await initializeJobQueueSchema(drizzle(owner), undefined, undefined, [role]);
       await expect(restricted`SELECT uuid FROM board_climbs LIMIT 1`).rejects.toThrow('permission denied');
+      // Column-level grants too: a table-level REVOKE alone would leave these.
+      await expect(restricted`SELECT climb_uuid FROM boardsesh_ticks LIMIT 1`).rejects.toThrow('permission denied');
+      await expect(restricted`SELECT gym_id FROM user_boards LIMIT 1`).rejects.toThrow('permission denied');
+      await expect(restricted`SELECT id FROM users LIMIT 1`).rejects.toThrow('permission denied');
+      const [leftover] = await owner`
+        SELECT count(*)::int AS columns
+        FROM pg_attribute attribute
+        CROSS JOIN LATERAL aclexplode(attribute.attacl) AS privilege
+        WHERE attribute.attacl IS NOT NULL AND privilege.grantee = to_regrole(${role})`;
+      expect(leftover.columns).toBe(0);
       expect(await restricted`SELECT id FROM background_job_runs LIMIT 1`).toBeDefined();
     } finally {
       await restricted.end();

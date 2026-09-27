@@ -25,3 +25,20 @@ export function cliJobLogger(environment: Readonly<Record<string, string | undef
     },
   };
 }
+
+/**
+ * The job's abort signal for a CLI run. The first SIGINT or SIGTERM aborts it:
+ * the job stops at its next batch boundary and no half-written batch commits.
+ * A second one exits at once.
+ */
+export function cliAbortSignal(): AbortSignal {
+  const controller = new AbortController();
+  const stop = (signal: NodeJS.Signals) => {
+    if (controller.signal.aborted) process.exit(130);
+    console.warn(`[job] ${signal}: stopping after the current batch (send again to exit now)`);
+    controller.abort(new Error(`Interrupted by ${signal}`));
+  };
+  process.on('SIGINT', stop);
+  process.on('SIGTERM', stop);
+  return controller.signal;
+}

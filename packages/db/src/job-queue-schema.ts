@@ -160,36 +160,52 @@ export function parseWorkerLogin(entry: string): WorkerLogin {
   return { login, role: role as BackgroundWorkerRole };
 }
 
-function grantStatement(grant: WorkerTableGrant, login: string): string {
-  for (const identifier of [grant.table, ...(grant.columns ?? [])]) {
-    if (!IDENTIFIER.test(identifier)) throw new Error('Invalid grant identifier');
+/**
+ * A SQL string literal (what `quote_literal` returns). Every value passed here
+ * already matched IDENTIFIER; this is the second guard, not the only one.
+ */
+function sqlLiteral(value: string): string {
+  if (!IDENTIFIER.test(value)) throw new Error('Invalid grant identifier');
+  return `'${value.replaceAll("'", "''")}'`;
+}
+
+function sqlTextArray(values: readonly string[]): string {
+  return `ARRAY[${values.map(sqlLiteral).join(', ')}]::text[]`;
+}
+
+/** One GRANT, built inside PL/pgSQL with format('%I') for every identifier. */
+function grantExecute(grant: WorkerTableGrant): string {
+  const privileges = grant.privileges.join(', ');
+  if (!/^(SELECT|INSERT|UPDATE|DELETE)(, (SELECT|INSERT|UPDATE|DELETE))*$/.test(privileges)) {
+    throw new Error('Invalid grant privilege');
   }
-  const columns = grant.columns ? ` (${grant.columns.map((column) => `"${column}"`).join(', ')})` : '';
-  const privileges = grant.privileges.map((privilege) => `${privilege}${columns}`).join(', ');
-  return `GRANT ${privileges} ON public."${grant.table}" TO "${login}"`;
+  if (!grant.columns) {
+    return `  EXECUTE format('GRANT ${privileges} ON public.%I TO %I', ${sqlLiteral(grant.table)}, grantee_name);`;
+  }
+  // Column grants: every listed privilege applies to the listed columns only.
+  const columnList = `(SELECT string_agg(quote_ident(column_name), ', ') FROM unnest(${sqlTextArray(grant.columns)}) AS column_name)`;
+  const perPrivilege = grant.privileges.map((privilege) => `${privilege} (%1$s)`).join(', ');
+  return `  EXECUTE format('GRANT ${perPrivilege} ON public.%2$I TO %3$I', ${columnList}, ${sqlLiteral(grant.table)}, grantee_name);`;
 }
 
 /**
  * One login's whole grant set as a single `DO` block: one statement is one
  * transaction, so a migration that runs while a worker is mid-job never leaves
- * the login between the revoke and the grants. Identifiers are validated
- * before they are spliced in.
+ * the login between the revoke and the grants. Inside the block every
+ * identifier goes through format('%I'); the values come from validated
+ * literals.
+ *
+ * A table-level REVOKE leaves column-level grants in place, so the block also
+ * revokes each column the login holds a grant on. Without that, a login moved
+ * from `batch=` to a bare entry would keep reading the tick columns.
  */
 function workerGrantBlock(login: string, role: BackgroundWorkerRole | undefined): string {
-  if (!IDENTIFIER.test(login)) throw new Error('Invalid job queue role');
   const grants = [LEDGER_GRANT, ...(role ? WORKER_ROLE_DATA_GRANTS[role] : [])];
   const insertTables = [
     ...new Set(grants.filter((grant) => grant.privileges.includes('INSERT')).map((grant) => grant.table)),
   ];
-  const tableList = insertTables.length ? insertTables.map((table) => `'${table}'`).join(', ') : `''`;
-  return `DO $grants$
-DECLARE
-  owned_sequence text;
-BEGIN
-  GRANT USAGE ON SCHEMA public TO "${login}";
-  REVOKE ALL ON ALL TABLES IN SCHEMA public FROM "${login}";
-  REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM "${login}";
-${grants.map((grant) => `  ${grantStatement(grant, login)};`).join('\n')}
+  const sequenceGrants = insertTables.length
+    ? `
   -- Serial and identity columns: the sequences the inserts draw from.
   FOR owned_sequence IN
     SELECT sequence.relname
@@ -199,10 +215,33 @@ ${grants.map((grant) => `  ${grantStatement(grant, login)};`).join('\n')}
       JOIN pg_namespace namespace ON namespace.oid = owner.relnamespace
      WHERE dependency.deptype IN ('a', 'i')
        AND namespace.nspname = 'public'
-       AND owner.relname IN (${tableList})
+       AND owner.relname = ANY(${sqlTextArray(insertTables)})
   LOOP
-    EXECUTE format('GRANT USAGE ON SEQUENCE public.%I TO %I', owned_sequence, '${login}');
+    EXECUTE format('GRANT USAGE ON SEQUENCE public.%I TO %I', owned_sequence, grantee_name);
+  END LOOP;`
+    : '';
+  return `DO $grants$
+DECLARE
+  grantee_name text := ${sqlLiteral(login)};
+  owned_sequence text;
+  granted_column record;
+BEGIN
+  EXECUTE format('GRANT USAGE ON SCHEMA public TO %I', grantee_name);
+  EXECUTE format('REVOKE ALL ON ALL TABLES IN SCHEMA public FROM %I', grantee_name);
+  EXECUTE format('REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM %I', grantee_name);
+  FOR granted_column IN
+    SELECT DISTINCT relation.relname AS table_name, attribute.attname AS column_name
+      FROM pg_attribute attribute
+      JOIN pg_class relation ON relation.oid = attribute.attrelid
+      JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
+      CROSS JOIN LATERAL aclexplode(attribute.attacl) AS privilege
+     WHERE namespace.nspname = 'public'
+       AND attribute.attacl IS NOT NULL
+       AND privilege.grantee = to_regrole(grantee_name)
+  LOOP
+    EXECUTE format('REVOKE ALL (%I) ON public.%I FROM %I', granted_column.column_name, granted_column.table_name, grantee_name);
   END LOOP;
+${grants.map(grantExecute).join('\n')}${sequenceGrants}
 END
 $grants$`;
 }
