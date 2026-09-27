@@ -38,14 +38,22 @@ on purpose.
 The public `boardsesh/boardsesh` repo does not host a self-hosted runner and
 never will for this workflow. `dispatch-homelab` runs on GitHub-hosted
 `ubuntu-latest`, carries no permissions (`permissions: {}`), and touches one
-secret: `HOMELAB_DISPATCH_TOKEN`. That token can tell the ansible repo a new
-image exists and nothing more. It cannot read homelab secrets or reach a VM.
+secret: `HOMELAB_DISPATCH_TOKEN`. That token is a fine-grained PAT with
+`Contents: write` on the private `blackheathdc-ansible` repo, and that repo has
+no branch protection of its own, so anyone who got hold of the token could push
+to its `main` and run its deploy workflow on the homelab runner. It cannot
+read homelab secrets or reach a VM directly; the risk is what its deploy
+workflow could be made to do. Three things keep that risk bounded: the token
+is stored only as an environment secret on this repo's `Homelab` environment,
+whose branch policy limits it to jobs building `main` here, so a pull request
+never sees it; the `HOMELAB_DEPLOY_ENABLED` kill switch (see "Kill switch"
+below) stops any dispatch, leaked token or not, without touching the workflow;
+and the token gets rotated right away if there is ever a reason to suspect it
+leaked.
 
-`HOMELAB_DISPATCH_TOKEN` is a fine-grained GitHub PAT scoped to just the
-`blackheathdc-ansible` repo, with `Contents: write` (the minimum scope
-`repository_dispatch` needs). It is stored as an environment secret on the
-`Homelab` environment, whose branch policy restricts deploys to `main` with no
-required reviewers, so the job never blocks on a wait timer or an approval.
+`Contents: write` is the minimum scope `repository_dispatch` needs; there is no
+narrower one. The `Homelab` environment's branch policy has no required
+reviewers, so the job never blocks on a wait timer or an approval.
 
 The token itself never appears on a command line. If it did, any other
 process on the runner could read it via `ps` or `/proc/<pid>/cmdline`.

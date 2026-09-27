@@ -39,21 +39,32 @@ describe('worker configuration', () => {
       }).paused,
     ).toBe(true);
   });
-  it('refuses a role serving a provider family without that family’s secrets', () => {
+  it('refuses an unpaused role serving a provider family without that family’s secrets', () => {
     const families = [{ name: 'worker-probe' }, { name: 'aurora-user-sync' }, { name: 'kilter-user-sync' }];
-    expect(() => requireProviderSecrets('interactive-import', families, {})).toThrow(
+    expect(() => requireProviderSecrets('interactive-import', families, false, {})).toThrow(
       'AURORA_CREDENTIALS_SECRET, KILTER_OAUTH_CLIENT_ID',
     );
     expect(() =>
-      requireProviderSecrets('interactive-import', families, { AURORA_CREDENTIALS_SECRET: 'secret' }),
+      requireProviderSecrets('interactive-import', families, false, { AURORA_CREDENTIALS_SECRET: 'secret' }),
     ).toThrow('KILTER_OAUTH_CLIENT_ID');
-    expect(() =>
-      requireProviderSecrets('interactive-import', families, {
+    expect(
+      requireProviderSecrets('interactive-import', families, false, {
         AURORA_CREDENTIALS_SECRET: 'secret',
         KILTER_OAUTH_CLIENT_ID: 'client',
       }),
-    ).not.toThrow();
+    ).toBe(true);
     // A role with no provider family needs nothing.
-    expect(() => requireProviderSecrets('batch', [{ name: 'worker-probe' }], {})).not.toThrow();
+    expect(requireProviderSecrets('batch', [{ name: 'worker-probe' }], false, {})).toBe(true);
+  });
+  it('lets a paused role start without provider secrets, but reports it unready', () => {
+    const families = [{ name: 'worker-probe' }, { name: 'aurora-user-sync' }, { name: 'kilter-user-sync' }];
+    expect(() => requireProviderSecrets('interactive-import', families, true, {})).not.toThrow();
+    expect(requireProviderSecrets('interactive-import', families, true, {})).toBe(false);
+    expect(
+      requireProviderSecrets('interactive-import', families, true, {
+        AURORA_CREDENTIALS_SECRET: 'secret',
+        KILTER_OAUTH_CLIENT_ID: 'client',
+      }),
+    ).toBe(true);
   });
 });
