@@ -200,9 +200,9 @@ module. The module declares:
 | `refresh-moonboard-wide-angle-estimates` | `batch` | 7,200 s | 1, after 900 s | 6 days | `weekly` |
 | `aurora-user-sync` | `interactive-import` | 1800 s (heartbeat 300 s) | 3, 30 s backoff to 300 s | 2 h | `userId:boardType:linkGeneration` |
 | `kilter-user-sync` | `interactive-import` | 1800 s (heartbeat 300 s) | 3, 30 s backoff to 300 s | 2 h | `userId:kilter:linkGeneration` |
-| `provider-routine-cycle` | `routine-provider` | 600 s (heartbeat 300 s) | none | 6 h | `aurora` / `kilter` |
-| `aurora-shared-sync` | `routine-provider` | 3600 s (heartbeat 300 s) | 1, after 300 s | 6 h | the board |
-| `kilter-catalog-sync` | `routine-provider` | 3600 s (heartbeat 300 s) | 1, after 300 s | 6 h | `kilter` |
+| `provider-routine-cycle` | `routine-provider` | 600 s (heartbeat 300 s) | none | 41 100 s (the fan-out budget) | `aurora` / `kilter` |
+| `aurora-shared-sync` | `routine-provider` | 3600 s (heartbeat 300 s) | 1, after 300 s | 41 100 s (the fan-out budget) | the board |
+| `kilter-catalog-sync` | `routine-provider` | 3600 s (heartbeat 300 s) | 1, after 300 s | 41 100 s (the fan-out budget) | `kilter` |
 | `moonboard-locations-sync` | `routine-provider` | 1800 s (heartbeat 120 s) | 1, after 600 s | 24 h | `moonboard` |
 | `climb-stats-self-heal` | `maintenance-delivery` | 900 s (heartbeat 120 s) | 1, after 300 s | 1 h | `climb-stats` |
 
@@ -740,8 +740,9 @@ need more than the whole 300 s). The worker refuses to start with
 `ROUTINE_CYCLE_BUDGET_MS` above 150 000, and the error states this arithmetic;
 the default of 120 000 is what leaves the board-wide jobs their room.
 
-The run's absolute deadline is 6 hours, not the lease's 10 minutes, the same
-full-fan-out budget as `aurora-shared-sync`: the routine worker runs one job at
+The run's absolute deadline is the full-fan-out budget
+(`AURORA_SHARED_SYNC_DEADLINE_SECONDS`, about 11.4 hours today), not the
+lease's 10 minutes: the routine worker runs one job at
 a time, and a cycle queued just after :07 waits behind the whole hourly
 `aurora-shared-sync` fan-out, one run for every board in `AURORA_BOARDS` except
 Kilter (and the `kilter-catalog-sync` at :23), each with an
@@ -783,11 +784,14 @@ one is 5 minutes away.
 except Kilter at :07, least recently synced board first (by its
 `board_shared_syncs` cooldown stamp; never-run boards lead). The routine worker
 runs one job at a time, so the last board can wait behind every other board's
-run, each holding an hour's lease; its 6-hour deadline covers that wait plus a
-routine cycle or a Kilter catalog run in between, so a late board runs late
-instead of expiring at claim (a test fails if the board count times 3600 s
-ever reaches the deadline). The Kilter catalog (queued at :23) and the routine
-cycle can wait behind the same runs, so they carry the same 6-hour deadline.
+run, and each of those may use its hour's lease and its one retry. The
+deadline (`AURORA_SHARED_SYNC_DEADLINE_SECONDS`) is derived from the family's
+own options: boards x (lease x (1 + retryLimit) + retryDelay x retryLimit)
+plus an hour of slack for the routine cycles and a Kilter catalog run, so
+five boards give 5 x (7200 + 300) + 3600 = 41 100 s, about 11.4 hours. A late
+board runs late instead of expiring at claim, and a test fails if the options
+ever outgrow the budget. The Kilter catalog (queued at :23) and the routine
+cycle can wait behind the same runs, so they carry the same deadline.
 
 `aurora-shared-sync` and `kilter-catalog-sync` borrow a token from the board's
 most recently successful `active` credential (Kilter falls back to the

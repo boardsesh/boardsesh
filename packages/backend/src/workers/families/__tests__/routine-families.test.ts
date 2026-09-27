@@ -132,10 +132,14 @@ describe('family contracts', () => {
       heartbeatSeconds: 300,
       priority: 0,
     });
-    // Five boards queue behind each other on the one-at-a-time worker, each
-    // with an hour's lease: the last one's deadline must outlast the other four.
+    // Every board's run queues behind the others on the one-at-a-time worker,
+    // each with its lease, its retry and the retry delay: the last one's
+    // deadline must outlast all of them, derived from the family's options.
     const boardCount = AURORA_BOARDS.filter((board) => board !== 'kilter').length;
-    expect(AURORA_SHARED_SYNC_DEADLINE_SECONDS).toBeGreaterThan(boardCount * 3600);
+    const { expireInSeconds, retryLimit, retryDelay } = family.options;
+    expect(AURORA_SHARED_SYNC_DEADLINE_SECONDS).toBeGreaterThan(
+      boardCount * (expireInSeconds * (1 + retryLimit) + retryDelay * retryLimit),
+    );
     expect(family.payload.safeParse({ board: 'kilter' }).success).toBe(false);
     expect(family.singletonKey?.({ board: 'decoy' })).toBe('decoy');
     expect(family.schedules?.map(({ key, cron }) => ({ key, cron }))).toEqual([{ key: 'hourly', cron: '7 * * * *' }]);
