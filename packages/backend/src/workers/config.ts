@@ -24,8 +24,9 @@ export function workerConfig(environment: Readonly<Record<string, string | undef
     (!local && database.searchParams.get('sslmode') !== 'verify-full')
   )
     throw new Error('DATABASE_URL must unambiguously verify TLS for remote PostgreSQL');
-  // Validated for every role so a typo fails at boot, not on the first routine cycle.
+  // Validated for every role so a typo fails at boot, not on the first run.
   routineCycleLimits(environment);
+  selfHealMaxDrainBatches(environment);
   const healthPort = Number(environment.HEALTH_PORT ?? 9090);
   if (!Number.isInteger(healthPort) || healthPort < 1 || healthPort > 65535) throw new Error('Invalid HEALTH_PORT');
   return {
@@ -63,19 +64,21 @@ export const PROVIDER_FAMILY_SECRETS: Readonly<Record<string, readonly string[]>
 };
 
 /** Defaults for one `provider-routine-cycle` run; see docs/background-workers.md. */
-// 120 s a cycle: two providers every 5 minutes then offer the one-at-a-time
-// routine worker at most 240 s of cycles per 300 s, leaving room for the
-// board-wide jobs (docs/background-workers.md, "Queue share").
+// 120 s a cycle (also the maximum): two providers every 5 minutes then offer
+// the one-at-a-time routine worker 240 s of cycles per 300 s plus the last
+// credentials' overrun, leaving room for the board-wide jobs
+// (docs/background-workers.md, "Queue share").
 export const ROUTINE_CYCLE_DEFAULTS = { maxCredentials: 4, budgetMs: 120_000 } as const;
 
 /**
- * The most `ROUTINE_CYCLE_BUDGET_MS` may be. Two providers queue a cycle every
- * 300 s on the one-at-a-time routine worker; above 150 000 each, the cycles
- * alone would need more than the whole window and the board-wide jobs would
- * never run. This is the hard limit; the default (120 000) is what leaves the
- * board-wide jobs their headroom (docs/background-workers.md, "Queue share").
+ * The most `ROUTINE_CYCLE_BUDGET_MS` may be, and also its default. Two
+ * providers queue a cycle every 300 s on the one-at-a-time routine worker, and
+ * the budget is soft: the credential running when it passes finishes (up to
+ * the lease). So 2 x 120 s plus that last credential's overrun must fit the
+ * 300 s window, with room left for the board-wide jobs
+ * (docs/background-workers.md, "Queue share").
  */
-export const ROUTINE_CYCLE_BUDGET_MAX_MS = 150_000;
+export const ROUTINE_CYCLE_BUDGET_MAX_MS = 120_000;
 
 /**
  * How much one routine cycle may do: at most `maxCredentials` credentials, and
@@ -102,10 +105,31 @@ export function routineCycleLimits(environment: Readonly<Record<string, string |
       'ROUTINE_CYCLE_BUDGET_MS',
       ROUTINE_CYCLE_DEFAULTS.budgetMs,
       ROUTINE_CYCLE_BUDGET_MAX_MS,
-      `at most ${ROUTINE_CYCLE_BUDGET_MAX_MS}: two providers queue a cycle every 300 000 ms, ` +
-        `so 2 x budget must stay within the window to leave the board-wide jobs room`,
+      `at most ${ROUTINE_CYCLE_BUDGET_MAX_MS}: two providers queue a cycle every 300 000 ms and the ` +
+        `last credential may run past the budget up to the lease, so 2 x budget plus that overrun ` +
+        `must fit the window and leave the board-wide jobs room`,
     ),
   };
+}
+
+/**
+ * How many batches of 500 keys one `climb-stats-self-heal` drain may run
+ * (`SELF_HEAL_MAX_DRAIN_BATCHES`, default 20, 1 to 200). Raise it only to work
+ * off a backlog the job logs as `SELF_HEAL_DRAIN_CAPPED`: every batch holds the
+ * run-row lock while it recomputes.
+ */
+export function selfHealMaxDrainBatches(
+  environment: Readonly<Record<string, string | undefined>> = process.env,
+): number {
+  const raw = environment.SELF_HEAL_MAX_DRAIN_BATCHES;
+  // The same 20 as SELF_HEAL_DEFAULT_MAX_DRAIN_BATCHES in @boardsesh/db, spelled
+  // out here because this module must not import the database packages before
+  // configureWorkerPools has run.
+  if (raw === undefined || raw.trim() === '') return 20;
+  if (!/^\d+$/.test(raw.trim())) throw new Error('Invalid SELF_HEAL_MAX_DRAIN_BATCHES');
+  const value = Number(raw.trim());
+  if (value < 1 || value > 200) throw new Error('Invalid SELF_HEAL_MAX_DRAIN_BATCHES');
+  return value;
 }
 
 /**

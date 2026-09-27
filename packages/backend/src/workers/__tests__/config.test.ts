@@ -4,6 +4,7 @@ import {
   ROUTINE_CYCLE_DEFAULTS,
   requireProviderSecrets,
   routineCycleLimits,
+  selfHealMaxDrainBatches,
   workerConfig,
 } from '../config';
 
@@ -88,16 +89,27 @@ describe('worker configuration', () => {
     { ROUTINE_CYCLE_MAX_CREDENTIALS: 'many' },
     { ROUTINE_CYCLE_BUDGET_MS: '0' },
     // Two cycles per 300 s window must leave the board-wide jobs room.
-    { ROUTINE_CYCLE_BUDGET_MS: '150001' },
+    { ROUTINE_CYCLE_BUDGET_MS: '120001' },
+    { SELF_HEAL_MAX_DRAIN_BATCHES: '0' },
+    { SELF_HEAL_MAX_DRAIN_BATCHES: '201' },
+    { SELF_HEAL_MAX_DRAIN_BATCHES: 'lots' },
     { ROUTINE_CYCLE_BUDGET_MS: '-1' },
   ])('fails worker startup on an invalid routine limit %j', (override) => {
     expect(() => workerConfig({ ...environment, ...override })).toThrow();
   });
-  it('caps the cycle budget at half the 300 s window and says why', () => {
-    expect(ROUTINE_CYCLE_BUDGET_MAX_MS).toBe(150_000);
-    expect(routineCycleLimits({ ROUTINE_CYCLE_BUDGET_MS: '150000' }).budgetMs).toBe(150_000);
-    expect(() => routineCycleLimits({ ROUTINE_CYCLE_BUDGET_MS: '180000' })).toThrow(
-      /at most 150000: two providers queue a cycle every 300 000 ms/,
+  it('caps the cycle budget at its default, leaving room for the last credential to overrun, and says why', () => {
+    expect(ROUTINE_CYCLE_BUDGET_MAX_MS).toBe(120_000);
+    expect(ROUTINE_CYCLE_DEFAULTS.budgetMs).toBe(ROUTINE_CYCLE_BUDGET_MAX_MS);
+    expect(routineCycleLimits({ ROUTINE_CYCLE_BUDGET_MS: '120000' }).budgetMs).toBe(120_000);
+    expect(() => routineCycleLimits({ ROUTINE_CYCLE_BUDGET_MS: '150000' })).toThrow(
+      /at most 120000: .*last credential may run past the budget up to the lease/,
+    );
+  });
+  it('reads the self-heal drain cap, default 20 batches', () => {
+    expect(selfHealMaxDrainBatches({})).toBe(20);
+    expect(selfHealMaxDrainBatches({ SELF_HEAL_MAX_DRAIN_BATCHES: '50' })).toBe(50);
+    expect(() => selfHealMaxDrainBatches({ SELF_HEAL_MAX_DRAIN_BATCHES: '201' })).toThrow(
+      'Invalid SELF_HEAL_MAX_DRAIN_BATCHES',
     );
   });
   it('needs both provider secrets for the routine families, and none for MoonBoard or the self-heal', () => {

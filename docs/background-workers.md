@@ -693,7 +693,7 @@ it, then succeeds and logs `[worker] routine cycle finished` with the reason:
 | Stop | When |
 | --- | --- |
 | `MAX_CREDENTIALS` | `ROUTINE_CYCLE_MAX_CREDENTIALS` credentials attempted (default 4, 1 to 50): synced, failed or handed to the interactive family; a skipped credential (busy, relinked, out of lease) does not count |
-| `BUDGET` | `ROUTINE_CYCLE_BUDGET_MS` passed (default 120 000, at most 150 000), checked before each claim; a started credential finishes |
+| `BUDGET` | `ROUTINE_CYCLE_BUDGET_MS` passed (default and maximum 120 000), checked before each claim; a started credential finishes |
 | `NO_CREDENTIALS` | nothing is due |
 | `PROVIDER_THROTTLED` | the provider answered 429 with `Retry-After`: that credential's `provider_retry_after_until` is set to `now() + delay` (capped at 6 h) and the failure step the 429 was charged is taken back. The claim waits for the later of that time and the failure backoff (`last_sync_attempt_at + backoff(n)`), never their sum, and the cycle ends |
 | `CYCLE_DEADLINE` | a credential's sync was still running one minute before the lease ends: it is stopped, a transient `CYCLE_DEADLINE` failure is recorded on it under the still-live fence (so `consecutive_failures` backoff parks it and `last_sync_error` shows it), and the cycle ends |
@@ -725,20 +725,22 @@ queue has the same pg-boss priority (0), so pg-boss hands them out in the order
 they were queued. The arithmetic that keeps the board-wide jobs moving:
 
 - two routine cycles (Aurora and Kilter) are queued every 5 minutes, each
-  claiming credentials for at most `ROUTINE_CYCLE_BUDGET_MS` (default
-  120 000) plus the one credential it started, so cycles take at most about
-  240 s of every 300 s and leave the rest for `aurora-shared-sync`,
-  `kilter-catalog-sync` and `moonboard-locations-sync`;
+  claiming credentials for at most `ROUTINE_CYCLE_BUDGET_MS` (120 000, also the
+  maximum). The budget is soft: the credential running when it passes
+  finishes, up to the lease. So each cycle takes 120 s plus that last
+  credential's overrun, and 2 x 120 s plus the overruns has to fit the 300 s
+  window with room left for `aurora-shared-sync`, `kilter-catalog-sync` and
+  `moonboard-locations-sync`;
 - those are singleton-keyed (one queued per board), so a board-wide job
   queued at :07 waits for at most the cycles queued before it, never for the
   cycles queued after it.
 
 Two things break this, so do neither: a board-wide family with a LOWER
 priority than the cycle (it would wait behind every cycle ever queued, since
-the cycles never run dry), and a budget above 150 000 (two cycles would then
-need more than the whole 300 s). The worker refuses to start with
-`ROUTINE_CYCLE_BUDGET_MS` above 150 000, and the error states this arithmetic;
-the default of 120 000 is what leaves the board-wide jobs their room.
+the cycles never run dry), and a larger budget (two cycles plus their last
+credentials' overrun would fill the whole 300 s). The worker refuses to start
+with `ROUTINE_CYCLE_BUDGET_MS` above 120 000, and the error states this
+arithmetic; lower is safer.
 
 The run's absolute deadline is the full-fan-out budget
 (`AURORA_SHARED_SYNC_DEADLINE_SECONDS`, about 11.4 hours today), not the
@@ -827,8 +829,10 @@ takes the run signal, the Kilter reference stream included. Details:
 ([moonboard-sync.md](moonboard-sync.md#scheduled-sync)).
 
 `climb-stats-self-heal` first drains `climb_stats_recompute_pending` (rows
-older than two minutes, oldest first, `FOR UPDATE SKIP LOCKED`, up to 20
-batches of 500), then scans flash and send ticks from the last 3 hours that are
+older than two minutes, oldest first, `FOR UPDATE SKIP LOCKED`, up to
+`SELF_HEAL_MAX_DRAIN_BATCHES` batches of 500, default 20, 1 to 200; a drain
+that stops at the cap logs `SELF_HEAL_DRAIN_CAPPED` with the pending rows
+left, the sign of a backlog the hourly pass is not keeping up with), then scans flash and send ticks from the last 3 hours that are
 newer than their stats row (at most 5000 keys) and recomputes them in fenced
 batches of 500.
 
@@ -888,7 +892,8 @@ together.
    `AURORA_CREDENTIALS_SECRET`, `KILTER_OAUTH_CLIENT_ID`, optionally
    `KILTER_OAUTH_CLIENT_SECRET`, `MOONBOARD_USERNAME`, `MOONBOARD_PASSWORD`,
    and `ROUTINE_CYCLE_*` only to change the defaults) and the
-   `maintenance-delivery` worker.
+   `maintenance-delivery` worker (`SELF_HEAL_MAX_DRAIN_BATCHES` only to work
+   off a logged backlog).
 6. Watch `/metrics` until each family has three green runs:
    `boardsesh_worker_last_success_seconds{role="routine-provider"}` under 600 s,
    `oldest_pending_seconds` under 7200, `board_shared_syncs` cursors moving
