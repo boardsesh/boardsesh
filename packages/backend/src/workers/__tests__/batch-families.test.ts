@@ -133,13 +133,15 @@ describe('batch family registration', () => {
       { key: 'nightly', cron: '45 6 * * *', tz: undefined },
     ]);
     jobs.orderBoardsByClimbCount.mockResolvedValue(['soill', 'touchstone', 'moonboard', 'kilter']);
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-09-28T06:45:00Z')); // a Monday
     const requests = await refreshClimbNeighborsFamily.schedules?.[0].fanOut(database);
     expect(jobs.orderBoardsByClimbCount).toHaveBeenCalledWith(database, CLIMB_NEIGHBOR_BOARDS);
     expect(requests).toEqual([
-      { payload: { board: 'soill' } },
-      { payload: { board: 'touchstone' } },
-      { payload: { board: 'moonboard' } },
-      { payload: { board: 'kilter' } },
+      { payload: { board: 'soill', refillGaps: false } },
+      { payload: { board: 'touchstone', refillGaps: false } },
+      { payload: { board: 'moonboard', refillGaps: false } },
+      { payload: { board: 'kilter', refillGaps: false } },
     ]);
     // Every fanned-out payload is one the worker accepts, keyed by its board.
     for (const request of requests ?? []) {
@@ -273,15 +275,22 @@ describe('execute', () => {
     expect(transaction).toHaveBeenCalledTimes(1);
   });
 
-  it('refresh-climb-neighbors refills gaps on Sundays (UTC) unless the payload says otherwise', async () => {
+  it('refresh-climb-neighbors decides the gap scan at fan-out, so a retry after midnight keeps it', async () => {
+    jobs.orderBoardsByClimbCount.mockResolvedValue(['soill', 'kilter']);
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-09-27T06:45:00Z')); // a Sunday
+    const requests = (await refreshClimbNeighborsFamily.schedules?.[0].fanOut(database)) ?? [];
+    expect(requests.map(({ payload }) => payload)).toEqual([
+      { board: 'soill', refillGaps: true },
+      { board: 'kilter', refillGaps: true },
+    ]);
+
+    // Kilter's attempt runs (or retries) on Monday: the stored payload still scans.
+    vi.setSystemTime(new Date('2026-09-28T00:30:00Z'));
+    await refreshClimbNeighborsFamily.execute(context('refresh-climb-neighbors').context, requests[1].payload);
+    // A Sunday execute without the field (an operator enqueue) does not scan.
+    vi.setSystemTime(new Date('2026-09-27T12:00:00Z'));
     await refreshClimbNeighborsFamily.execute(context('refresh-climb-neighbors').context, { board: 'kilter' });
-    await refreshClimbNeighborsFamily.execute(context('refresh-climb-neighbors').context, {
-      board: 'kilter',
-      refillGaps: false,
-    });
-    vi.setSystemTime(new Date('2026-09-28T06:45:00Z')); // a Monday
     await refreshClimbNeighborsFamily.execute(context('refresh-climb-neighbors').context, {
       board: 'kilter',
       refillGaps: true,

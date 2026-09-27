@@ -72,7 +72,8 @@ two callers:
   (`45 6 * * *` UTC, pinned to the workflow's cron by
   `scripts/__tests__/batch-families-cron.test.ts`) fans out one job per board,
   cheapest first (`orderBoardsByClimbCount`), and the batch worker runs them one
-  at a time. Payload `{ board, full?, dryRun?, refillGaps? }`, one dedup key per
+  at a time. Payload `{ board, full?, dryRun?, refillGaps? }` (the fan-out
+  sets `refillGaps` once per night, true on Sundays UTC; unset means no scan), one dedup key per
   board, a 6-hour lease, two retries. It runs only once
   `BATCH_FAMILIES_ENABLED` names it; the workflow keeps its schedule until the
   cutover PR removes it. **That PR lands the same day the family is enabled**:
@@ -178,7 +179,8 @@ dropped below it gets refilled.
 
 Finding those lists means grouping every neighbour row on the board (Kilter: 192k
 rows, 20-36 s; MoonBoard: 2.3M rows), so the scan runs **weekly**, on the run
-that starts on a Sunday (UTC), and on any run given `--refill-gaps`. A full build
+that starts on a Sunday (UTC; for the family, the run fanned out on a Sunday,
+retries included), and on any run given `--refill-gaps` or `"refillGaps":true`. A full build
 never needs it. Deletes are rare (5 in a day of prod stats), and a list that lost
 a row is still correct, one entry short: clients show 10-12 of its 25, so the
 cost of waiting is at most a week of one fewer candidate below the fold.

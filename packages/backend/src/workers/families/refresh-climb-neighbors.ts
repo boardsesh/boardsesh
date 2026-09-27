@@ -14,7 +14,12 @@ const payload = z
     board: z.enum(CLIMB_NEIGHBOR_BOARDS),
     full: z.boolean().optional(),
     dryRun: z.boolean().optional(),
-    /** Unset: the Sunday (UTC) run scans for lists that lost a row, as the workflow does. */
+    /**
+     * Also scan for lists that lost a row. The nightly fan-out decides it once
+     * (the Sunday UTC run, as the workflow does) and writes it into every
+     * payload, so a retry or a start delayed past midnight keeps the decision.
+     * Unset means no scan.
+     */
     refillGaps: z.boolean().optional(),
   })
   .strict();
@@ -58,8 +63,12 @@ export const refreshClimbNeighborsFamily: BackgroundJobFamilyModule<RefreshClimb
       cron: '45 6 * * *',
       // One job per board, cheapest first: the stately queue hands them to the
       // batch worker in enqueue order, so the small catalogues finish before Kilter.
-      fanOut: async (database) =>
-        (await orderBoardsByClimbCount(database, CLIMB_NEIGHBOR_BOARDS)).map((board) => ({ payload: { board } })),
+      // The gap-scan decision is taken here, once per night, not per attempt.
+      fanOut: async (database) => {
+        const refillGaps = isGapRefillDay(new Date());
+        const boards = await orderBoardsByClimbCount(database, CLIMB_NEIGHBOR_BOARDS);
+        return boards.map((board) => ({ payload: { board, refillGaps } }));
+      },
     },
   ],
   async execute(context, { board, full, dryRun, refillGaps }) {
@@ -72,7 +81,7 @@ export const refreshClimbNeighborsFamily: BackgroundJobFamilyModule<RefreshClimb
         boards: [board],
         full: full ?? false,
         dryRun: dryRun ?? false,
-        refillGaps: refillGaps ?? isGapRefillDay(new Date()),
+        refillGaps: refillGaps ?? false,
       });
     } catch (error) {
       // Stopped between chunks (the job's own error), or mid-batch: the fence

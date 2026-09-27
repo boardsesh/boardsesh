@@ -298,8 +298,11 @@ moves no watermark), so enqueue dry runs after the 06:45 fan-out has started.
 `refresh-climb-neighbors` fans its schedule out to one job per board
 (`CLIMB_NEIGHBOR_BOARDS`, every board but spray), cheapest first by
 `orderBoardsByClimbCount`, and the batch worker runs them one at a time in that
-order. `refillGaps` unset means the Sunday (UTC) run scans for lists that lost
-a row, as the workflow does; `true` or `false` forces it. A run stopped by its
+order. The fan-out decides the gap scan once per night (`isGapRefillDay`: the
+Sunday UTC run scans for lists that lost a row, as the workflow does) and
+writes `refillGaps` into every payload, so a retry or a start delayed past
+midnight keeps it. A payload without `refillGaps` (a hand-enqueued run) does
+not scan; pass `"refillGaps":true` to scan. A run stopped by its
 signal (shutdown, the lease, a lost attempt), whether between batches or
 inside one (the fence's AbortError), fails `INTERRUPTED` and retries: a full
 build resumes from its recorded groups and lists, and an incremental run's

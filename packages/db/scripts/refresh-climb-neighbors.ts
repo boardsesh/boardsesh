@@ -18,7 +18,7 @@
 import type { BoardName } from '@boardsesh/shared-schema';
 import { CLIMB_NEIGHBOR_BOARDS, isGapRefillDay, runRefreshClimbNeighbors } from '../src/jobs/index.js';
 import { createScriptDb } from './db-connection.js';
-import { cliJobLogger } from './job-cli.js';
+import { cliAbortSignal, cliJobLogger } from './job-cli.js';
 
 function parseBoards(requested: string | undefined): BoardName[] {
   if (!requested) return [...CLIMB_NEIGHBOR_BOARDS];
@@ -38,7 +38,8 @@ async function main(argv: string[]): Promise<void> {
   try {
     await runRefreshClimbNeighbors({
       db,
-      signal: new AbortController().signal,
+      // SIGINT/SIGTERM stop the run between chunks, watermark untouched.
+      signal: cliAbortSignal(),
       log: cliJobLogger(),
       boards,
       full: argv.includes('--full'),

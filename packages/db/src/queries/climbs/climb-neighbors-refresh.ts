@@ -613,17 +613,18 @@ export async function refreshClimbNeighborsForBoard(
     }
 
     if (full && !dryRun && !result.interrupted) {
+      const completedAt = new Date();
       await transact((transaction) =>
         transaction
           .insert(boardClimbNeighborGroupRuns)
-          .values({ boardType, layoutId: group.layoutId, sizeId: group.sizeId ?? 0, completedAt: new Date() })
+          .values({ boardType, layoutId: group.layoutId, sizeId: group.sizeId ?? 0, completedAt })
           .onConflictDoUpdate({
             target: [
               boardClimbNeighborGroupRuns.boardType,
               boardClimbNeighborGroupRuns.layoutId,
               boardClimbNeighborGroupRuns.sizeId,
             ],
-            set: { completedAt: new Date() },
+            set: { completedAt },
           }),
       );
     }
@@ -677,12 +678,13 @@ export async function refreshClimbNeighborsForBoard(
         .where(and(eq(boardClimbNeighbors.boardType, boardType), lt(boardClimbNeighbors.computedAt, buildStartedAt)));
     }
     // The watermark moves only here, once every group on the board is done.
+    const computedAt = new Date();
     await transaction
       .insert(boardClimbNeighborRuns)
-      .values({ boardType, lastSyncSeq: nextSyncSeq, computedAt: new Date() })
+      .values({ boardType, lastSyncSeq: nextSyncSeq, computedAt })
       .onConflictDoUpdate({
         target: boardClimbNeighborRuns.boardType,
-        set: { lastSyncSeq: nextSyncSeq, computedAt: new Date(), fullBuildStartedAt: null, fullBuildSyncSeq: null },
+        set: { lastSyncSeq: nextSyncSeq, computedAt, fullBuildStartedAt: null, fullBuildSyncSeq: null },
       });
   });
   log(
