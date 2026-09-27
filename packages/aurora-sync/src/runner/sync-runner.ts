@@ -150,6 +150,8 @@ type CredentialFailureUpdate = {
   lastSyncAttemptAt?: Date;
   consecutiveFailures?: number;
   lastSyncError?: string | null;
+  /** Cleared on success: a sync that went through ends any provider Retry-After hold. */
+  providerRetryAfterUntil?: null;
 };
 
 /**
@@ -758,6 +760,9 @@ export class SyncRunner {
       lastSyncAttemptAt: succeededAt,
       consecutiveFailures: 0,
       lastSyncError: null,
+      // A sync that went through (a "Sync now" or first-link run can succeed
+      // inside a routine Retry-After hold) ends the hold.
+      providerRetryAfterUntil: null,
     });
 
     // Piggyback shared sync onto user sync — the user's fresh token
@@ -1209,6 +1214,10 @@ export class SyncRunner {
 
     if (credentialFailureUpdate.lastSyncError !== undefined) {
       updateData.lastSyncError = credentialFailureUpdate.lastSyncError;
+    }
+
+    if (credentialFailureUpdate.providerRetryAfterUntil !== undefined) {
+      updateData.providerRetryAfterUntil = credentialFailureUpdate.providerRetryAfterUntil;
     }
 
     await this.writeCredential(async (db) => {

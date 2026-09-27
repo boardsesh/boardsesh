@@ -308,12 +308,14 @@ describe('SyncRunner login failure handling', () => {
     expect(updateStoredToken).toHaveBeenCalledWith('user-123', 'decoy', 'fresh-token');
     // Success now also advances the attempt clock and clears the general
     // backoff counter + observability error.
+    // It also ends any provider Retry-After hold.
     expect(updateCredentialStatus).toHaveBeenCalledWith('user-123', 'decoy', 'active', null, expect.any(Date), {
       credentialFailureCount: 0,
       lastCredentialFailureAt: null,
       lastSyncAttemptAt: expect.any(Date),
       consecutiveFailures: 0,
       lastSyncError: null,
+      providerRetryAfterUntil: null,
     });
   });
 

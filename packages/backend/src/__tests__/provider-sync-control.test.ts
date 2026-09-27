@@ -160,6 +160,27 @@ describe('link generation', () => {
   });
 });
 
+describe('relink and the provider Retry-After hold', () => {
+  const holdOf = async () =>
+    (
+      await database
+        .select({ until: auroraCredentials.providerRetryAfterUntil })
+        .from(auroraCredentials)
+        .where(eq(auroraCredentials.userId, USER_ID))
+    )[0].until;
+
+  it('a relink ends the hold; an unlink leaves it', async () => {
+    const until = new Date(Date.now() + 5 * 60 * 60 * 1000);
+    await insertCredential(USER_ID, { providerRetryAfterUntil: until });
+
+    await database.transaction((tx) => rotateLinkGeneration(tx, { ...key, linked: false }));
+    expect(await holdOf()).toEqual(until);
+
+    await database.transaction((tx) => rotateLinkGeneration(tx, { ...key, linked: true }));
+    expect(await holdOf()).toBeNull();
+  });
+});
+
 describe('fence errors', () => {
   it('are the fence refusals only, never an error that merely looks like an abort', () => {
     expect(isSyncFenceError(new StaleLinkGenerationError())).toBe(true);

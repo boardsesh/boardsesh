@@ -452,6 +452,7 @@ export async function saveAuroraCredential(input: {
           consecutiveFailures: 0,
           lastSyncAttemptAt: null,
           lastSyncError: null,
+          providerRetryAfterUntil: null,
           updatedAt: now,
         })
         .where(and(eq(auroraCredentials.userId, input.userId), eq(auroraCredentials.boardType, input.boardType)));
@@ -615,6 +616,7 @@ export async function saveKilterCredential(input: {
           consecutiveFailures: 0,
           lastSyncAttemptAt: null,
           lastSyncError: null,
+          providerRetryAfterUntil: null,
           updatedAt: now,
         })
         .where(and(eq(auroraCredentials.userId, input.userId), eq(auroraCredentials.boardType, KILTER_BOARD_TYPE)));

@@ -29,6 +29,7 @@ import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import type { BackgroundJobStatus } from '../../background-jobs';
 import { backgroundJobRuns } from '../../schema/app/background-job-runs';
 import { providerSyncControls } from '../../schema/app/provider-sync-controls';
+import { auroraCredentials } from '../../schema/auth/mappings';
 import { BackgroundJobAttemptLostError } from '../background-jobs';
 
 /** Any Drizzle Postgres database or transaction. */
@@ -103,6 +104,15 @@ export async function rotateLinkGeneration(
       },
     })
     .returning({ linkGeneration: providerSyncControls.linkGeneration });
+  if (input.linked) {
+    // A relink is a fresh start: a Retry-After hold earned by the old link
+    // must not keep the new one out of the routine claim for up to 6 h. After
+    // the control row, as the lock order above requires.
+    await transaction
+      .update(auroraCredentials)
+      .set({ providerRetryAfterUntil: null })
+      .where(and(eq(auroraCredentials.userId, input.userId), eq(auroraCredentials.boardType, input.boardType)));
+  }
   return { linkGeneration: row.linkGeneration };
 }
 

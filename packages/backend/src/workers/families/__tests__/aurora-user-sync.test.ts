@@ -98,6 +98,11 @@ afterAll(async () => {
 describe('aurora-user-sync', () => {
   it('syncs every page, marks the credential active and clears the lease and pending run', async () => {
     const { linkGeneration } = await insertLinkedTensionAccount(database, USER_ID, CLIMB_UUID);
+    // A routine cycle's Retry-After hold, still running: a "Sync now" that goes
+    // through must end it, or the routine claim skips the account for hours.
+    await database.execute(sql`
+      UPDATE aurora_credentials SET provider_retry_after_until = now() + interval '5 hours'
+       WHERE user_id = ${USER_ID} AND board_type = ${FIXTURE_BOARD}`);
     const aurora = stubAuroraApi({ pages: [fullSyncPage(CLIMB_UUID)] });
     const runId = await enqueueSync(linkGeneration);
 
@@ -110,6 +115,7 @@ describe('aurora-user-sync', () => {
     expect(credential.syncStatus).toBe('active');
     expect(credential.lastSyncAt).toBeInstanceOf(Date);
     expect(credential.consecutiveFailures).toBe(0);
+    expect(credential.providerRetryAfterUntil).toBeNull();
     const control = await controlRow();
     expect(control).toMatchObject({ activeRunId: null, activeLeaseUntil: null, pendingRunId: null });
   });

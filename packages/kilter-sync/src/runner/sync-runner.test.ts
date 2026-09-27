@@ -228,6 +228,8 @@ describe('SyncRunner.syncNextUser', () => {
       syncError: null,
       consecutiveFailures: 0,
       lastSyncError: null,
+      // A sync that went through ends any provider Retry-After hold.
+      providerRetryAfterUntil: null,
     });
     expect(activeUpdate?.set.lastSyncAt).toBeInstanceOf(Date);
     expect(activeUpdate?.set.lastSyncAttemptAt).toBeInstanceOf(Date);

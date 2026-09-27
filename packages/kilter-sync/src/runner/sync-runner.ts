@@ -437,6 +437,9 @@ export class SyncRunner {
           // observability field stops showing a stale error.
           consecutiveFailures: 0,
           lastSyncError: null,
+          // A sync that went through (a "Sync now" or first-link run can
+          // succeed inside a routine Retry-After hold) ends the hold.
+          providerRetryAfterUntil: null,
           updatedAt: now,
         })
         .where(and(eq(auroraCredentials.userId, cred.userId), eq(auroraCredentials.boardType, KILTER_BOARD_TYPE)));
