@@ -5,11 +5,12 @@ J01 (#5614, epic #5613) adds an independent backend worker entry point and
 durable attempt/settlement infrastructure. PR-1 of #5800 adds the family
 registry: every job names a family, and the worker dispatches on it.
 `worker-probe` is served by every role. PR-B1 of #5800 adds the first three
-batch families and PR-B3 the similar-climbs refresh (below); each stays off
-until `BATCH_FAMILIES_ENABLED` names it, and its GitHub Actions workflow keeps
-running until the cutover. **Personal
-imports, delivery and the other cron migrations are still separate issues.**
-Starting this image does not replace a sync daemon.
+batch families, PR-B2 the two weekly MoonBoard estimate families and PR-B3
+the similar-climbs refresh (below); each stays off until
+`BATCH_FAMILIES_ENABLED` names it, and its GitHub Actions workflow keeps
+running until the cutover. **Personal imports, delivery and the other cron
+migrations are still separate issues.** Starting this image does not replace
+a sync daemon.
 
 ## Placement and connection budget
 
@@ -138,6 +139,8 @@ module. The module declares:
 | `refresh-climb-grades` | `batch` | 1,800 s | 1, after 900 s | 20 h | `nightly` |
 | `refresh-climb-neighbors` | `batch` | 21,600 s | 2, 300 s backoff to 900 s | 22 h | board |
 | `export-board-snapshots` | `batch` | 2,700 s | 1, after 300 s | 20 h (live scan: skips itself after 840 s) | mode (`nightly`, `live-scan`) |
+| `refresh-moonboard-angle-estimates` | `batch` | 1,800 s | 1, after 900 s | 6 days | `weekly` |
+| `refresh-moonboard-wide-angle-estimates` | `batch` | 1,800 s | 1, after 900 s | 6 days | `weekly` |
 
 Throw `BackgroundJobError(code)` from `execute` to record a bounded,
 credential-free `error_code` (`/^[A-Z][A-Z0-9_]{0,63}$/`); pass
@@ -186,12 +189,13 @@ the tick throws and pg-boss retries it.
 
 ## Batch families
 
-Five scheduled data jobs that run on GitHub Actions can also run on the batch
-worker, once `BATCH_FAMILIES_ENABLED` names them. The job bodies live in `packages/db/src/jobs/` (package export
-`@boardsesh/db/jobs`) and take `{ db, signal, transact, log, ...params }`: `db`
-for reads, `transact` for every write batch, and they throw instead of exiting.
-The CLIs in `packages/db/scripts/` pass `db.transaction`; the families pass the
-attempt fence (`context.transaction`). The worker never imports
+Seven scheduled data jobs that run on GitHub Actions (two of them weekly) can
+also run on the batch worker, once `BATCH_FAMILIES_ENABLED` names them. The job
+bodies live in `packages/db/src/jobs/` (package export `@boardsesh/db/jobs`)
+and take `{ db, signal, transact, log, ...params }`: `db` for reads, `transact`
+for every write batch, and they throw instead of exiting. The CLIs in
+`packages/db/scripts/` pass `db.transaction`; the families pass the attempt
+fence (`context.transaction`). The worker never imports
 `scripts/db-connection.ts`, which loads dotenv files and exits on a missing URL.
 
 | Family | Cron (UTC) | Payload | Heartbeat | Writes | Workflow it replaces |
@@ -201,6 +205,8 @@ attempt fence (`context.transaction`). The worker never imports
 | `refresh-climb-grades` | `30 6 * * *` | `{ refit?, dryRun?, validateOnly? }` | 900 s | `board_grade_coefficients`, `board_climb_grades` | `refresh-climb-grades.yml` |
 | `refresh-climb-neighbors` | `45 6 * * *`, one job per board | `{ board, full?, dryRun?, refillGaps? }` | 60 s | `board_climb_neighbors`, `board_climb_neighbor_runs`, `board_climb_neighbor_group_runs` | `refresh-climb-neighbors.yml` |
 | `export-board-snapshots` | `15 7 * * *` (`nightly`), `7,22,37,52 * * * *` (`live-scan`) | `{ mode, board?, layout?, refreshThreshold?, gzipOnly? }` | 120 s | nothing in Postgres; SQLite artifacts and manifests to the snapshot bucket | `export-board-snapshots.yml` |
+| `refresh-moonboard-angle-estimates` | `0 8 * * 1` | `{ publish = true, validateOnly?, dryRun? }` | 300 s | `board_grade_coefficients`, `board_climb_grades` | `refresh-moonboard-angle-estimates.yml` |
+| `refresh-moonboard-wide-angle-estimates` | `30 8 * * 1` | `{ publish = true, dryRun? }` | 1,700 s | `board_climb_grades` (no coefficient persistence — the angle surface is refit from `board_climb_stats` every run) | `refresh-moonboard-wide-angle-estimates.yml` |
 
 Measured on GitHub Actions against production in Sep 2026: recommendations
 about 25 s, hold features about 60 s, grades about 4 minutes, of which the
@@ -208,6 +214,9 @@ publish transaction was 69 s with 99.7% of rows held by hysteresis. The
 neighbours job takes seconds per board on a normal night; full builds of every
 board ran on 2026-09-25 in about 9 minutes for Kilter (295k climbs in one
 layout) and 13 for MoonBoard (2.3M rows).
+The MoonBoard angle-estimate job took about 157 s end to end (publish ~131 s,
+216k rows); the MoonBoard wide-angle job about 24 minutes end to end, of which
+the publish transaction alone was **~1,429 s for 2.89M rows**.
 
 **A fenced write batch must finish inside the heartbeat window.** The fence
 holds the run row's lock until it commits, and the worker's heartbeat needs
@@ -233,6 +242,24 @@ awaits, so the job also yields to the event loop before every chunk and every
 longest batch, not to its whole run, keep reads out of the fence, and never
 run more than a few seconds of synchronous work without an await.
 
+**Both MoonBoard estimate jobs also publish in one transaction**, matching
+their CLI's own atomicity contract (coefficients, if any, the estimate upsert
+and the stale-row reap commit together or not at all). For the angle job that
+transaction is small (measured ~131 s), so its heartbeat gets the usual
+several-times-over margin (300 s). The wide-angle job's transaction can run
+into the millions of rows — measured ~1,429 s against production's 2.89M-row
+catalog — leaving almost no slack under the family's own 1,800 s `expireInSeconds`
+ceiling (itself fixed to match the GitHub Actions workflow's 30-minute
+timeout). Its heartbeat is set to 1,700 s: as close to that ceiling as is safe
+(100 s of margin) rather than to a fraction of it, because neither our own
+heartbeat check nor pg-boss's own attempt lease can be touched while the
+transaction is held. If MoonBoard's catalog grows enough to push the publish
+past roughly 1,700 s, `expireInSeconds` (and therefore the GitHub Actions
+workflow's own timeout, while it still runs) must grow with it — or the job
+must be restructured to commit per chunk, the way `refresh-hold-features`
+commits once per layout, trading one all-or-nothing publish for a much smaller
+heartbeat.
+
 `refresh-climb-grades` fails a blocking validation gate with
 `BackgroundJobError('GATES_FAILED', { retryable: false })`: nothing was
 written, and the same data fails the same gate. The payload cannot set
@@ -241,6 +268,11 @@ stay CLI-only, as in the workflow. Every heavy grade read runs with
 `max_parallel_workers_per_gather = 0` in its own short transaction (a session
 `SET` would reach only one of the worker's two pooled connections).
 `refresh-hold-features` runs its reads one at a time for the same pool budget.
+Both MoonBoard estimate jobs fail an unusable fit (no usable dual-angle sample,
+or zero angle-surface coverage from either shape board) with
+`BackgroundJobError('FIT_UNUSABLE', { retryable: false })`, thrown from the
+jobs' own `MoonboardFitUnusableError`: nothing was written, and a retry would
+only refit the same unusable data.
 
 **Batch container environment**, beyond the common worker variables:
 
@@ -292,7 +324,11 @@ tables (`board_products`, `board_layouts`, `board_product_sizes`,
 `GRANT pg_read_all_stats TO boardsesh_worker_batch WITH ADMIN FALSE, INHERIT
 TRUE, SET FALSE` once when provisioning the login, and the family refuses to run
 (`SNAPSHOT_OBSERVER_UNPRIVILEGED`) without it. The grade publish creates a temporary table, so the
-database must keep PostgreSQL's default TEMPORARY privilege for PUBLIC.
+database must keep PostgreSQL's default TEMPORARY privilege for PUBLIC. Both
+MoonBoard estimate jobs need no grants beyond this list: they read only
+`board_climb_stats` and `board_climbs` (already granted for the grade job) and
+write only `board_climb_grades` and, for the angle job,
+`board_grade_coefficients` (both already granted).
 `packages/backend/src/services/__tests__/job-queue-roles.test.ts` runs every
 family under exactly these grants, and `job-queue-roles-snapshots.test.ts` runs
 the snapshot exporter under a real login with them plus `pg_read_all_stats`; a
@@ -309,11 +345,14 @@ node --import tsx packages/backend/src/workers/operator.ts enqueue refresh-climb
 node --import tsx packages/backend/src/workers/operator.ts enqueue refresh-climb-neighbors '{"board":"kilter","full":true}'
 node --import tsx packages/backend/src/workers/operator.ts enqueue refresh-climb-neighbors '{"board":"moonboard","refillGaps":true}'
 node --import tsx packages/backend/src/workers/operator.ts enqueue export-board-snapshots '{"mode":"nightly"}'
+node --import tsx packages/backend/src/workers/operator.ts enqueue refresh-moonboard-angle-estimates '{"validateOnly":true}'
+node --import tsx packages/backend/src/workers/operator.ts enqueue refresh-moonboard-wide-angle-estimates '{"dryRun":true,"publish":false}'
 ```
 
 Each family has one dedup key (per board for hold features and neighbours, per
-mode for snapshots), so a manual run enqueued while the nightly run is queued
-returns that queued run with `ALREADY_QUEUED`; enqueue again once it has started.
+mode for snapshots, one weekly slot for both MoonBoard jobs), so a manual run
+enqueued while the nightly or weekly run is queued returns that queued run with
+`ALREADY_QUEUED`; enqueue again once it has started.
 The reverse holds too: a manual run still queued when the nightly schedule fires
 takes that key's place, and the nightly job returns it with `ALREADY_QUEUED`. A
 queued neighbours `dryRun` therefore swallows its board's nightly run (it writes
@@ -349,8 +388,8 @@ both are hand-enqueued runs on the batch VM:
    50 s bound, or the heartbeat goes up before the family is enabled.
 
 **Cutover, one family at a time** (recommendations, then hold features, then
-grades, then neighbours; snapshots last, with their own no-overlap steps in
-`docs/board-snapshots.md`):
+grades, then neighbours, then the two MoonBoard estimate jobs; snapshots last,
+with their own no-overlap steps in `docs/board-snapshots.md`):
 
 1. Deploy the migrator with `batch=boardsesh_worker_batch` in
    `MIGRATION_WORKER_ROLES`, and the batch worker with the environment above
@@ -377,6 +416,11 @@ grades, then neighbours; snapshots last, with their own no-overlap steps in
    stay empty until those climbs are touched again or the next full build. Do
    not dispatch the workflow for a board while its family job runs, and enable
    the family only after the two measurements above.
+   **The two MoonBoard estimate jobs are the same kind of exception, and to
+   each other:** the workflows are offset 30 minutes so they never overlap,
+   because both are single-transaction publishes and the wide-angle job's can
+   run into the millions of rows — cut both over in the same PR, disabling both
+   workflow schedules that day, rather than staggering the two.
 3. Wait for three `succeeded` ledger rows for the family, and compare their
    log output (row counts per phase) with the same nights' workflow logs. For
    neighbours, whose workflow schedule is already gone, three `succeeded` rows

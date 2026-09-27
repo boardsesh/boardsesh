@@ -344,9 +344,15 @@ per-grade-band delta between the two angles from the ~5,983 problems that do
 carry a real grade at both (reading `difficulty_average` — the userGrade-backed
 column above, not the setter's raw label — held-out MAE 0.879 vs 1.026 for the
 setter-label version, non-monotonic pairs 7.6% vs 13.0%), and
-`packages/db/scripts/refresh-moonboard-angle-estimates.ts` transposes each
+`packages/db/src/jobs/refresh-moonboard-angle-estimates.ts` transposes each
 single-angle problem's grade onto its missing angle and writes it as an ordinary
-`board_climb_grades` row tiered `moonboard_angle_estimate`.
+`board_climb_grades` row tiered `moonboard_angle_estimate`. It is run weekly by
+the `refresh-moonboard-angle-estimates` GitHub Actions workflow through the CLI
+`packages/db/scripts/refresh-moonboard-angle-estimates.ts`; the batch worker's
+`refresh-moonboard-angle-estimates` family runs the same code
+(docs/background-workers.md, "Batch families") and will own this schedule once
+that family is cut over — an unusable pooled fit ends the run with
+`FIT_UNUSABLE` there instead of a nonzero exit code.
 
 What keeps it honest:
 
@@ -372,10 +378,10 @@ It is deliberately outside the EB pipeline above: even though MoonBoard is now
 a `CROWD_MEAN_BOARDS` member, no type is shared between this mechanism and the
 blend, and rows are stamped `model_version = 'moonboard-angle-v1'` rather than
 `GRADE_MODEL_VERSION` so a transposed row is never mistaken for one that went
-through the blend. Its own weekly job
-(`.github/workflows/refresh-moonboard-angle-estimates.yml`) owns cleanup too:
-nothing else writes rows at THIS model_version, so an estimate whose problem
-has since been climbed at that angle is reaped in the same transaction.
+through the blend. Its own weekly job (today the `refresh-moonboard-angle-estimates.yml` workflow,
+soon the same-named batch family) owns cleanup too: nothing else writes rows at
+THIS model_version, so an estimate whose problem has since been climbed at
+that angle is reaped in the same transaction.
 
 Three separate producers now write `board_climb_grades` rows for MoonBoard —
 the nightly EB pipeline (dual-graded problems, `confirmed`/`provisional`, model
@@ -414,12 +420,20 @@ per-angle offset table `estimateAngleSurface` fits for the cross-angle
 projection above, from Kilter and Tension — and applies it as a relative shift
 to MoonBoard's own known grade at 25°/40° (preferring a real angle over a
 transposed one when both exist).
-`packages/db/scripts/refresh-moonboard-wide-angle-estimates.ts` writes the
+`packages/db/src/jobs/refresh-moonboard-wide-angle-estimates.ts` writes the
 result as a `board_climb_grades` row tiered `moonboard_wide_angle_estimate`,
-`model_version = 'moonboard-wide-angle-v1'`.
+`model_version = 'moonboard-wide-angle-v1'`. It is run weekly by the
+`refresh-moonboard-wide-angle-estimates` GitHub Actions workflow through the
+CLI `packages/db/scripts/refresh-moonboard-wide-angle-estimates.ts`; the batch
+worker's `refresh-moonboard-wide-angle-estimates` family runs the same code
+(docs/background-workers.md, "Batch families") and will own this schedule once
+cut over. Its single publish transaction can run into the millions of rows
+(measured ~1,429 s for 2.89M rows against production, Sep 2026), which is why
+that family's heartbeat sits close to its own expire ceiling rather than the
+smaller margin the other batch families use.
 
 Both MoonBoard estimate jobs share one upsert
-(`packages/db/scripts/grade-estimate-upsert.ts`) that skips a row unless one of
+(`packages/db/src/jobs/grade-estimate-upsert.ts`) that skips a row unless one of
 its values moved (`IS DISTINCT FROM` on every overwritten column except
 `coeff_version`, which is minted per run). An unchanged row keeps its
 `computed_at`, which is the offline sync cursor, so devices don't download it
