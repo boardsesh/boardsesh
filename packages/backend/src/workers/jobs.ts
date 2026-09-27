@@ -12,7 +12,13 @@ import {
 } from '@boardsesh/db/queries';
 import { enqueueOn } from '../services/job-queue';
 import { logger } from '../utils/logger';
-import { BackgroundJobError, familiesForRole, requireFamily, type BackgroundJobFamilyModule } from './families';
+import {
+  BackgroundJobError,
+  InvalidJobPayloadError,
+  familiesForRole,
+  requireFamily,
+  type BackgroundJobFamilyModule,
+} from './families';
 
 export type { BackgroundJobContext } from './families';
 
@@ -110,7 +116,7 @@ export async function enqueueBackgroundJobOn(
   const family = requireFamily(input.family);
   const role = requireFamilyRole(family, input.role);
   const payload = parseFamilyPayload(family, input.payload);
-  if (!payload) throw new Error('INVALID_PAYLOAD');
+  if (!payload) throw new InvalidJobPayloadError();
   const runId = requireRunId(input.runId ?? randomUUID());
   const singletonKey = input.singletonKey ?? family.singletonKey?.(payload) ?? runId;
   if (!singletonKey || singletonKey.length > 200) throw new Error('INVALID_SINGLETON_KEY');

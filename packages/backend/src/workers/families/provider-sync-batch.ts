@@ -37,7 +37,7 @@ import {
   type SyncBatchRunner,
 } from '@boardsesh/db/queries';
 import { logger } from '../../utils/logger';
-import { BackgroundJobError, type BackgroundJobContext } from './types';
+import { BackgroundJobError, InvalidJobPayloadError, type BackgroundJobContext } from './types';
 
 /** A lease outlives one batch by a wide margin; every batch renews it. */
 export const CREDENTIAL_LEASE_TTL_MS = 10 * 60 * 1000;
@@ -397,7 +397,7 @@ export async function runRoutineCredentialSync(
       if (error instanceof CredentialLeaseLostError) return { result: 'skipped', reason: 'CREDENTIAL_BUSY' };
       // A row the interactive family's payload refuses (a board type written
       // before #5453) syncs inline instead, where the runner quarantines it.
-      if (!(error instanceof Error && error.message === 'INVALID_PAYLOAD')) throw error;
+      if (!(error instanceof InvalidJobPayloadError)) throw error;
     }
   }
 

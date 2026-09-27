@@ -20,7 +20,7 @@ import { kilterCatalogSyncFamily } from './kilter-catalog-sync';
 import { moonBoardLocationsSyncFamily } from './moonboard-locations-sync';
 import { climbStatsSelfHealFamily } from './climb-stats-self-heal';
 
-export { BackgroundJobError } from './types';
+export { BackgroundJobError, InvalidJobPayloadError } from './types';
 export type { BackgroundJobContext, BackgroundJobFamilyModule, BackgroundJobFamilyOptions } from './types';
 
 /** Every family, keyed by name. The `satisfies` fails the build when a name has no module. */

@@ -100,6 +100,20 @@ export type BackgroundJobFamilyModule<Payload = unknown> = {
  * `retryable: false` ends the run now instead of spending pg-boss retries on a
  * failure no retry can fix. Any other thrown error records `ATTEMPT_FAILED`.
  */
+/**
+ * A payload the family's schema refuses, at enqueue. Its message stays the
+ * bare `INVALID_PAYLOAD` code that callers log and summarise; code that needs
+ * to tell it apart from other failures checks the class, never the message.
+ */
+export class InvalidJobPayloadError extends Error {
+  readonly code = 'INVALID_PAYLOAD';
+
+  constructor() {
+    super('INVALID_PAYLOAD');
+    this.name = 'InvalidJobPayloadError';
+  }
+}
+
 export class BackgroundJobError extends Error {
   readonly code: string;
   readonly retryable: boolean;

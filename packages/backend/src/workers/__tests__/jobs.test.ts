@@ -29,7 +29,7 @@ import {
   type BackgroundJobHandler,
   type BackgroundJobPayload,
 } from '../jobs';
-import { BackgroundJobError, type BackgroundJobFamilyModule } from '../families';
+import { BackgroundJobError, InvalidJobPayloadError, type BackgroundJobFamilyModule } from '../families';
 import { workerProbeFamily } from '../families/worker-probe';
 
 const role = 'interactive-import' as const;
@@ -317,9 +317,14 @@ describe('durable worker jobs', () => {
   });
 
   it('rejects a payload the family schema refuses before anything is written', async () => {
-    await expect(
-      enqueueBackgroundJob(database, boss, { role, family: 'worker-probe', payload: { unexpected: true } }),
-    ).rejects.toThrow('INVALID_PAYLOAD');
+    const refused = enqueueBackgroundJob(database, boss, {
+      role,
+      family: 'worker-probe',
+      payload: { unexpected: true },
+    });
+    // A typed error, so callers branch on the class and never on the message.
+    await expect(refused).rejects.toBeInstanceOf(InvalidJobPayloadError);
+    await expect(refused).rejects.toThrow('INVALID_PAYLOAD');
     await expect(enqueueBackgroundJob(database, boss, { role, family: 'no-such-family', payload: {} })).rejects.toThrow(
       'UNKNOWN_FAMILY',
     );

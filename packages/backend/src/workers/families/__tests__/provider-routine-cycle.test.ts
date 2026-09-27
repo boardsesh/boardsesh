@@ -11,7 +11,7 @@ import { BACKGROUND_JOB_QUEUES } from '@boardsesh/db/background-jobs';
 import { auroraCredentials, backgroundJobRuns, providerSyncControls } from '@boardsesh/db/schema';
 import { acquireCredentialSyncLease, rotateLinkGeneration } from '@boardsesh/db/queries';
 import { enqueueBackgroundJob, executeBackgroundJob, handlerForRole, type BackgroundJobPayload } from '../../jobs';
-import type { BackgroundJobContext } from '../types';
+import { InvalidJobPayloadError, type BackgroundJobContext } from '../types';
 import {
   ROUTINE_CREDENTIAL_DEADLINE_MARGIN_MS,
   loadProviderSyncAdapter,
@@ -421,5 +421,64 @@ describe('provider-routine-cycle', () => {
     expect(credential).toMatchObject({ consecutiveFailures: 1, lastSyncError: 'CYCLE_DEADLINE', syncStatus: 'active' });
     const control = (await controls()).find((row) => row.userId === 'routine-a');
     expect(control?.activeRunId).toBeNull();
+  });
+});
+
+describe('runRoutineCredentialSync first-sync fallback', () => {
+  function contextWithEnqueue(enqueue: BackgroundJobContext['enqueue']): BackgroundJobContext {
+    return {
+      runId: randomUUID(),
+      family: 'provider-routine-cycle',
+      signal: new AbortController().signal,
+      expiresAt: Date.now() + 60 * 60 * 1000,
+      database,
+      transaction: (callback) => database.transaction(callback),
+      enqueue,
+    };
+  }
+
+  const inlineAdapter = (synced: string[]) => ({
+    interactiveFamily: 'aurora-user-sync' as const,
+    sync: async (credential: { userId: string }) => {
+      synced.push(credential.userId);
+      return { status: 'active' as const };
+    },
+    recordTransientFailure: async () => {},
+  });
+
+  it('syncs inline when the interactive family refuses the payload (the typed error)', async () => {
+    await removeAccounts();
+    await insertAccount('routine-a', 3, { neverSynced: true });
+    const [claimed] = await database.select().from(auroraCredentials).where(eq(auroraCredentials.userId, 'routine-a'));
+    const synced: string[] = [];
+
+    const outcome = await runRoutineCredentialSync(
+      contextWithEnqueue(async () => {
+        throw new InvalidJobPayloadError();
+      }),
+      claimed,
+      inlineAdapter(synced) as unknown as Parameters<typeof runRoutineCredentialSync>[2],
+    );
+
+    expect(outcome).toMatchObject({ result: 'synced' });
+    expect(synced).toEqual(['routine-a']);
+  });
+
+  it('does not treat another error that merely says INVALID_PAYLOAD as a refused payload', async () => {
+    await removeAccounts();
+    await insertAccount('routine-a', 3, { neverSynced: true });
+    const [claimed] = await database.select().from(auroraCredentials).where(eq(auroraCredentials.userId, 'routine-a'));
+    const synced: string[] = [];
+
+    await expect(
+      runRoutineCredentialSync(
+        contextWithEnqueue(async () => {
+          throw new Error('INVALID_PAYLOAD');
+        }),
+        claimed,
+        inlineAdapter(synced) as unknown as Parameters<typeof runRoutineCredentialSync>[2],
+      ),
+    ).rejects.toThrow('INVALID_PAYLOAD');
+    expect(synced).toEqual([]);
   });
 });
