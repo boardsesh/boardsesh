@@ -383,6 +383,44 @@ describe('a recompute batch racing a sync page', () => {
   });
 });
 
+describe('pending markers under a non-UTC session TimeZone', () => {
+  /** A batch runner whose transactions read and write timestamps in Sydney time. */
+  const sydneyBatch = ((callback) =>
+    database.transaction(async (transaction) => {
+      await transaction.execute(sql`SET LOCAL TIME ZONE 'Australia/Sydney'`);
+      return callback(transaction);
+    })) as SyncBatchRunner;
+
+  it('clears the marker it observed, in the recompute batch and in the drain', async () => {
+    await insertLinkedTensionAccount(database, ASCENT_USER, ASCENT_CLIMB);
+    const key: ClimbStatsKey = { boardType: FIXTURE_BOARD, climbUuid: ASCENT_CLIMB, angle: 40 };
+    // A marker with sub-millisecond precision: a lossy round-trip would leave it behind.
+    const markAt = (age: string) =>
+      database.execute(sql`
+        INSERT INTO climb_stats_recompute_pending (board_type, climb_uuid, angle, requested_at)
+        VALUES (${key.boardType}, ${key.climbUuid}, ${key.angle}, now() - ${age}::interval - interval '123 microseconds')`);
+
+    await markAt('1 minute');
+    await recomputeClimbStatsInBatches(sydneyBatch, [key]);
+    expect(await countRows('climb_stats_recompute_pending', ASCENT_CLIMB)).toBe(0);
+
+    await markAt('10 minutes');
+    await drainPendingClimbStatsRecomputes(sydneyBatch);
+    expect(await countRows('climb_stats_recompute_pending', ASCENT_CLIMB)).toBe(0);
+  });
+
+  it('writes requested_at as UTC ISO text whatever the session zone', async () => {
+    const [row] = await database.transaction(async (transaction) => {
+      await transaction.execute(sql`SET LOCAL TIME ZONE 'Australia/Sydney'`);
+      return transaction.execute<{ text: string; same: boolean }>(sql`
+        SELECT to_char(ts AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS text,
+               (to_char(ts AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'))::timestamptz = ts AS same
+          FROM (SELECT timestamptz '2026-09-27 12:00:00.123456+00' AS ts) AS fixture`);
+    });
+    expect(row).toEqual({ text: '2026-09-27T12:00:00.123456Z', same: true });
+  });
+});
+
 describe('Kilter flush transactions and the stats recompute', () => {
   it('recomputes a logs flush after it commits when a batch runner is injected', async () => {
     await insertLinkedKilterAccount(database, KILTER_USER, KILTER_CLIMB);

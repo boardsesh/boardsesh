@@ -73,7 +73,13 @@ export async function markClimbStatsRecomputePending(
   }
 }
 
-/** A pending row as a batch observed it while holding its lock. */
+/**
+ * A pending row as a batch observed it while holding its lock. `requested_at`
+ * travels as a UTC ISO-8601 string with microseconds
+ * (`2026-09-27T12:00:00.123456Z`, via `to_char(... AT TIME ZONE 'UTC', ...)`):
+ * the same text under any session TimeZone, and exact when it goes back into
+ * `timestamptz` for the conditional DELETE.
+ */
 type ObservedMarker = { board_type: string; climb_uuid: string; angle: number; requested_at: string };
 
 function toKey(marker: ObservedMarker): ClimbStatsKey {
@@ -128,7 +134,7 @@ async function recomputeAndClear(transaction: DrizzleDb, keys: readonly ClimbSta
         FROM jsonb_to_recordset(${keysPayload(keys)}::jsonb) AS k(board_type text, climb_uuid text, angle integer)
       ON CONFLICT (board_type, climb_uuid, angle)
         DO UPDATE SET requested_at = LEAST(pending.requested_at, excluded.requested_at)
-      RETURNING pending.board_type, pending.climb_uuid, pending.angle, pending.requested_at::text AS requested_at
+      RETURNING pending.board_type, pending.climb_uuid, pending.angle, to_char(pending.requested_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS requested_at
     `),
   );
   await recomputeClimbStatsBulk(transaction, [...keys]);
@@ -178,7 +184,7 @@ export async function drainPendingClimbStatsRecomputes(
       // the DELETE: its upsert waits for this commit and then inserts afresh.
       const markers = rowsOf<ObservedMarker>(
         await transaction.execute(sql`
-          SELECT board_type, climb_uuid, angle, requested_at::text AS requested_at
+          SELECT board_type, climb_uuid, angle, to_char(requested_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS requested_at
             FROM climb_stats_recompute_pending
            WHERE requested_at < now() - make_interval(secs => ${olderThanSeconds}::double precision)
            ORDER BY requested_at
