@@ -11,7 +11,9 @@ import {
   BACKGROUND_JOB_RECONCILE_QUEUE,
   BACKGROUND_SCHEDULE_QUEUE,
   BACKGROUND_SCHEDULE_QUEUE_OPTIONS,
+  BACKGROUND_WORKER_ROLES,
   jobQueueTransactionAdapter,
+  type BackgroundWorkerRole,
 } from './background-jobs';
 
 /**
@@ -54,6 +56,103 @@ const CLIMB_POPULARITY_REFRESH_QUEUE_OPTIONS = {
   retryDelay: 300,
 } as const;
 
+type TablePrivilege = 'SELECT' | 'INSERT' | 'UPDATE' | 'DELETE';
+
+/** One GRANT on a `public` table, optionally limited to some columns. */
+export type WorkerTableGrant = {
+  table: string;
+  privileges: readonly TablePrivilege[];
+  columns?: readonly string[];
+};
+
+/**
+ * Data grants per worker role, on top of the pg-boss DML and the ledger every
+ * worker login gets. Each list is exactly what that role's families read and
+ * write, and is proven by running every family under the restricted role in
+ * packages/backend/src/services/__tests__/job-queue-roles.test.ts. Sequences
+ * owned by a table the role may INSERT into get USAGE. Roles whose families
+ * ship later add their lists in the PR that ships them.
+ */
+export const WORKER_ROLE_DATA_GRANTS: Record<BackgroundWorkerRole, readonly WorkerTableGrant[]> = {
+  'interactive-import': [],
+  'routine-provider': [],
+  'maintenance-delivery': [],
+  // refresh-recommendations, refresh-hold-features, refresh-climb-grades.
+  batch: [
+    // Catalog and history the three jobs scan.
+    { table: 'board_climbs', privileges: ['SELECT'] },
+    { table: 'board_climb_stats', privileges: ['SELECT'] },
+    { table: 'board_climb_holds', privileges: ['SELECT'] },
+    { table: 'board_placements', privileges: ['SELECT'] },
+    { table: 'board_holes', privileges: ['SELECT'] },
+    { table: 'board_sets', privileges: ['SELECT'] },
+    { table: 'board_product_sizes_layouts_sets', privileges: ['SELECT'] },
+    { table: 'board_climb_embeddings', privileges: ['SELECT'] },
+    { table: 'board_climb_aliases', privileges: ['SELECT'] },
+    // The grade model's rater and behaviour evidence: every tick, plus which gym
+    // a tick's board belongs to (two columns of user_boards, nothing else).
+    { table: 'boardsesh_ticks', privileges: ['SELECT'] },
+    { table: 'user_boards', privileges: ['SELECT'], columns: ['id', 'gym_id'] },
+    // The recommendations job's writes.
+    { table: 'board_setter_stats', privileges: ['SELECT', 'INSERT', 'UPDATE'] },
+    { table: 'board_climb_send_stats', privileges: ['SELECT', 'INSERT', 'DELETE'] },
+    { table: 'playlists', privileges: ['SELECT', 'INSERT', 'UPDATE'] },
+    { table: 'playlist_ownership', privileges: ['SELECT', 'INSERT'] },
+    { table: 'playlist_climbs', privileges: ['SELECT', 'INSERT', 'DELETE'] },
+    // Written by the playlist_climbs delete trigger (offline sync tombstones).
+    { table: 'sync_deletions', privileges: ['INSERT'] },
+    { table: 'board_climb_stats_history', privileges: ['SELECT', 'INSERT'] },
+    // The weekly history-snapshot watermark.
+    { table: 'board_shared_syncs', privileges: ['SELECT', 'INSERT', 'UPDATE'] },
+    // The two reserved system users. ON CONFLICT (id) reads the id; no other
+    // column of users is readable or writable.
+    { table: 'users', privileges: ['SELECT'], columns: ['id'] },
+    { table: 'users', privileges: ['INSERT'], columns: ['id', 'name', 'email'] },
+    // The hold-features job's writes.
+    { table: 'board_hold_features', privileges: ['SELECT', 'INSERT', 'UPDATE'] },
+    { table: 'user_hold_classifications', privileges: ['SELECT', 'INSERT', 'UPDATE'] },
+    // The grade job's writes.
+    { table: 'board_climb_grades', privileges: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'] },
+    { table: 'board_grade_coefficients', privileges: ['SELECT', 'INSERT', 'UPDATE'] },
+  ],
+};
+
+/** The table-level ledger grant every worker login needs; its DELETE stays with the backend. */
+const LEDGER_GRANT: WorkerTableGrant = {
+  table: 'background_job_runs',
+  privileges: ['SELECT', 'INSERT', 'UPDATE'],
+};
+
+const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+export type WorkerLogin = { login: string; role?: BackgroundWorkerRole };
+
+/**
+ * Parse one `MIGRATION_WORKER_ROLES` entry: `<worker-role>=<login>` grants the
+ * role's data tables, a bare `<login>` only the queue and ledger.
+ */
+export function parseWorkerLogin(entry: string): WorkerLogin {
+  const separator = entry.indexOf('=');
+  if (separator < 0) {
+    if (!IDENTIFIER.test(entry)) throw new Error('Invalid job queue role');
+    return { login: entry };
+  }
+  const role = entry.slice(0, separator);
+  const login = entry.slice(separator + 1);
+  if (!(BACKGROUND_WORKER_ROLES as readonly string[]).includes(role)) throw new Error('Invalid worker role');
+  if (!IDENTIFIER.test(login)) throw new Error('Invalid job queue role');
+  return { login, role: role as BackgroundWorkerRole };
+}
+
+function grantStatement(grant: WorkerTableGrant, login: string): string {
+  for (const identifier of [grant.table, ...(grant.columns ?? [])]) {
+    if (!IDENTIFIER.test(identifier)) throw new Error('Invalid grant identifier');
+  }
+  const columns = grant.columns ? ` (${grant.columns.map((column) => `"${column}"`).join(', ')})` : '';
+  const privileges = grant.privileges.map((privilege) => `${privilege}${columns}`).join(', ');
+  return `GRANT ${privileges} ON public."${grant.table}" TO "${login}"`;
+}
+
 /** Only the deployment's reserved migration-owner connection may execute this. */
 export async function initializeJobQueueSchema(
   database: Parameters<typeof jobQueueTransactionAdapter>[0],
@@ -61,8 +160,9 @@ export async function initializeJobQueueSchema(
   detectorRole?: string,
   workerRoles: readonly string[] = [],
 ): Promise<void> {
-  for (const role of [runtimeRole, detectorRole, ...workerRoles]) {
-    if (role && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(role)) throw new Error('Invalid job queue role');
+  const workerLogins = workerRoles.map(parseWorkerLogin);
+  for (const role of [runtimeRole, detectorRole]) {
+    if (role && !IDENTIFIER.test(role)) throw new Error('Invalid job queue role');
   }
   const adapter = jobQueueTransactionAdapter(database);
   const boss = new PgBoss({ db: adapter, supervise: false, schedule: false });
@@ -114,7 +214,7 @@ export async function initializeJobQueueSchema(
     await boss.createQueue(BACKGROUND_JOB_RECONCILE_QUEUE, { partition: false, ...reconcileOptions });
     const { policy: _reconcilePolicy, ...mutableReconcileOptions } = reconcileOptions;
     await boss.updateQueue(BACKGROUND_JOB_RECONCILE_QUEUE, mutableReconcileOptions);
-    for (const role of [runtimeRole, detectorRole, ...workerRoles]) {
+    for (const role of [runtimeRole, detectorRole, ...workerLogins.map(({ login }) => login)]) {
       if (!role) continue;
       // Identifiers were validated above. No database/schema CREATE or ownership.
       await adapter.executeSql(`GRANT USAGE ON SCHEMA pgboss TO "${role}"`);
@@ -124,9 +224,32 @@ export async function initializeJobQueueSchema(
     }
     // Restricted worker logins are pre-provisioned by operators. This source
     // runs only in the deployment migrator, never at worker startup.
-    for (const role of workerRoles) {
-      await adapter.executeSql(`GRANT USAGE ON SCHEMA public TO "${role}"`);
-      await adapter.executeSql(`GRANT SELECT, INSERT, UPDATE ON public.background_job_runs TO "${role}"`);
+    // The lists are authoritative: revoke first, so a table dropped from a
+    // role's list (or a login moved to another role) loses its grant here.
+    for (const { login, role } of workerLogins) {
+      await adapter.executeSql(`GRANT USAGE ON SCHEMA public TO "${login}"`);
+      await adapter.executeSql(`REVOKE ALL ON ALL TABLES IN SCHEMA public FROM "${login}"`);
+      await adapter.executeSql(`REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM "${login}"`);
+      const grants = [LEDGER_GRANT, ...(role ? WORKER_ROLE_DATA_GRANTS[role] : [])];
+      for (const grant of grants) await adapter.executeSql(grantStatement(grant, login));
+      const insertTables = grants.filter((grant) => grant.privileges.includes('INSERT')).map((grant) => grant.table);
+      if (!insertTables.length) continue;
+      // Serial and identity columns: the sequences the inserts draw from.
+      const owned = await adapter.executeSql(
+        `SELECT sequence.relname AS sequence_name
+           FROM pg_depend dependency
+           JOIN pg_class sequence ON sequence.oid = dependency.objid AND sequence.relkind = 'S'
+           JOIN pg_class owner ON owner.oid = dependency.refobjid
+           JOIN pg_namespace namespace ON namespace.oid = owner.relnamespace
+          WHERE dependency.deptype IN ('a', 'i')
+            AND namespace.nspname = 'public'
+            AND owner.relname = ANY($1::text[])`,
+        [insertTables],
+      );
+      for (const row of owned.rows as Array<{ sequence_name: string }>) {
+        if (!IDENTIFIER.test(row.sequence_name)) throw new Error('Invalid grant identifier');
+        await adapter.executeSql(`GRANT USAGE ON SEQUENCE public."${row.sequence_name}" TO "${login}"`);
+      }
     }
     if (detectorRole) {
       await adapter.executeSql(`GRANT USAGE ON SCHEMA public TO "${detectorRole}"`);
