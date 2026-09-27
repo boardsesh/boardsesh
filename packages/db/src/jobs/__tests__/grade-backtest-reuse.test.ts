@@ -3,13 +3,13 @@ import { test } from 'node:test';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { GateResult } from '../src/queries/grade-model/index.js';
+import type { GateResult } from '../../queries/grade-model';
 import {
   findReusableBacktest,
   gradeModelCodeHash,
   reusedBacktestGates,
   type StoredGateRun,
-} from './grade-backtest-reuse.js';
+} from '../grade-backtest-reuse';
 
 const MODEL = 'v2.1';
 const HASH = 'a'.repeat(64);

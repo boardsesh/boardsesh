@@ -66,6 +66,11 @@
       "import": "./src/queries/index.ts",
       "default": "./src/queries/index.ts"
     },
+    "./jobs": {
+      "types": "./src/jobs/index.ts",
+      "import": "./src/jobs/index.ts",
+      "default": "./src/jobs/index.ts"
+    },
     "./testing/dedup-replay": {
       "types": "./src/testing/dedup-replay.ts",
       "import": "./src/testing/dedup-replay.ts",

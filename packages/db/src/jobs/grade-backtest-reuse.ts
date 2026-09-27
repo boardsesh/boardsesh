@@ -18,14 +18,14 @@ import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { GateResult } from '../src/queries/grade-model/index.js';
+import type { GateResult } from '../queries/grade-model';
 
 export const BACKTEST_GATE_NAMES = ['tail_backtest', 'head_holdout'] as const;
 
-const GRADE_MODEL_SOURCE_DIR = fileURLToPath(new URL('../src/queries/grade-model/', import.meta.url));
-// The nightly script owns the backtest sample size and the gate wiring, so an
-// edit there must also force a real backtest.
-const GRADE_REFRESH_SCRIPT = fileURLToPath(new URL('./refresh-climb-grades.ts', import.meta.url));
+const GRADE_MODEL_SOURCE_DIR = fileURLToPath(new URL('../queries/grade-model/', import.meta.url));
+// The job body owns the backtest sample size and the gate wiring, so an edit
+// there must also force a real backtest.
+const GRADE_REFRESH_JOB = fileURLToPath(new URL('./refresh-climb-grades.ts', import.meta.url));
 
 function listSourceFiles(directory: string): string[] {
   const files: string[] = [];
@@ -43,14 +43,14 @@ function listSourceFiles(directory: string): string[] {
 
 /**
  * sha256 over every grade-model source file (relative path + contents, in path
- * order) plus the refresh script itself. The nightly job runs from a source
- * checkout, so any change to the blend, the gates, the backtest SQL or the
+ * order) plus the job body itself. The CLI and the worker image both run from
+ * source, so any change to the blend, the gates, the backtest SQL or the
  * sample size gives a new hash and forces a real backtest, even when
  * GRADE_MODEL_VERSION was not bumped.
  */
 export function gradeModelCodeHash(
   sourceDirectory: string = GRADE_MODEL_SOURCE_DIR,
-  extraFiles: readonly string[] = [GRADE_REFRESH_SCRIPT],
+  extraFiles: readonly string[] = [GRADE_REFRESH_JOB],
 ): string {
   const hash = createHash('sha256');
   const files = listSourceFiles(sourceDirectory)
