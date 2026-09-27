@@ -120,9 +120,14 @@ afterward.
 
 `--report-json <path>` writes a JSON summary once the run ends. The write is a
 temp file plus a rename in the same directory, so a poller never reads a
-half-written file, and any stale report already at that path is deleted before
-the run touches the database, so a crash that happens before this run gets to
-write its own report can never look like this run's result. The shape is
+half-written file. Before the run touches the database, the script also probes
+that the report's directory actually accepts a write (creates and removes a
+small file there) and refuses to start otherwise: a directory can exist and
+still be read-only, and without this check that would only surface after every
+board has already committed, when the final write has nothing left to fix. Any
+stale report already at the path is then deleted, so a crash that happens
+before this run gets to write its own report can never look like this run's
+result. The shape is
 `{ version: 1, dryRun, startedAt, finishedAt, boards: [...], totals: {...},
 error?, failedFile? }`, where `boards` and `totals` mirror the per-board and
 running counters described above, one entry per board file processed. `dryRun`
@@ -151,12 +156,17 @@ without it, a long-enough run has its connection silently closed and reopened
 after 30-60 minutes, which drops the lock with no error raised, and every
 board after that point writes with no mutual exclusion at all. Second, as a
 backstop against that setting being lost or against any other unexpected
-disconnect, the script re-checks that the lock is still actually held,
-immediately before every board's transaction, and aborts the run with a clear
-message the moment it is not. Point `DB_URL` at a direct connection, never a
-transaction-pooling proxy (PgBouncer transaction mode, a pooled Neon/RDS-Proxy
-endpoint): those hand out a different backend connection per statement, so a
-session lock taken through one protects nothing.
+disconnect, the script re-checks that the lock is still actually held before
+every board, TWICE: once cheaply before staging that board's records (skips
+the work if the lock is already known lost), and once more, authoritatively,
+as the literal first statement inside that board's own transaction. The second
+check is what actually matters: staging can take long enough for a connection
+drop to happen in between, and only a check that runs on the transaction's own
+reserved connection is guaranteed to see whatever backend is about to do the
+writing. Point `DB_URL` at a direct connection, never a transaction-pooling
+proxy (PgBouncer transaction mode, a pooled Neon/RDS-Proxy endpoint): those
+hand out a different backend connection per statement, so a session lock taken
+through one protects nothing.
 
 ### Withdrawn problems
 

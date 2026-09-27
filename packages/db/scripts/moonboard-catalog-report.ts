@@ -147,6 +147,29 @@ export function reportJsonTargetIsDirectory(reportPath: string): boolean {
 }
 
 /**
+ * True when the directory `reportPath` lives in actually accepts a write.
+ * Probes by creating and immediately removing a small file there, rather than
+ * just checking that the directory exists: a directory can exist and still be
+ * read-only (wrong permissions, a read-only bind mount, a full disk on some
+ * filesystems), and without this check that isn't discovered until AFTER
+ * every board has already committed, when the final `writeCatalogRunReportAtomic`
+ * call throws with nothing left to do about it. Checked up front, alongside
+ * `reportJsonParentDirExists` and `reportJsonTargetIsDirectory`, so it fails
+ * the run before real work starts instead of after.
+ */
+export function reportJsonDirectoryIsWritable(reportPath: string): boolean {
+  const parentDir = path.dirname(reportPath);
+  const probePath = path.join(parentDir, `.${path.basename(reportPath)}.${process.pid}.writable-probe`);
+  try {
+    fs.writeFileSync(probePath, '');
+    fs.rmSync(probePath, { force: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Removes any report already sitting at `reportPath`. Called once, right
  * after the path is validated and before the run touches the database, so a
  * STALE report from a previous run (still showing `version: 1` and a clean

@@ -8,6 +8,7 @@ import {
   writeCatalogRunReportAtomic,
   reportJsonParentDirExists,
   reportJsonTargetIsDirectory,
+  reportJsonDirectoryIsWritable,
   clearExistingCatalogReport,
   zeroCatalogRunCounters,
   type CatalogBoardRunReport,
@@ -159,6 +160,56 @@ void test('reportJsonTargetIsDirectory is true only when a directory already sit
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
 });
+
+void test('reportJsonDirectoryIsWritable is true for a normal writable directory', () => {
+  const tempDir = makeTempDir();
+  try {
+    assert.equal(reportJsonDirectoryIsWritable(path.join(tempDir, 'report.json')), true);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+void test('reportJsonDirectoryIsWritable leaves no probe file behind after a successful probe', () => {
+  const tempDir = makeTempDir();
+  try {
+    reportJsonDirectoryIsWritable(path.join(tempDir, 'report.json'));
+    assert.deepEqual(fs.readdirSync(tempDir), []);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+void test('reportJsonDirectoryIsWritable is false when the directory does not exist', () => {
+  const tempDir = makeTempDir();
+  try {
+    assert.equal(reportJsonDirectoryIsWritable(path.join(tempDir, 'nope', 'report.json')), false);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+// chmod-based permission denial has no effect when the test runner is root
+// (root ignores the write-permission bit), which is common in CI containers —
+// skip rather than produce a false pass/fail that depends on the runtime uid.
+const runningAsRoot = typeof process.getuid === 'function' && process.getuid() === 0;
+
+void test(
+  'reportJsonDirectoryIsWritable is false for a directory with no write permission',
+  { skip: runningAsRoot ? 'chmod has no effect when running as root' : false },
+  () => {
+    const tempDir = makeTempDir();
+    const readOnlyDir = path.join(tempDir, 'read-only');
+    fs.mkdirSync(readOnlyDir);
+    fs.chmodSync(readOnlyDir, 0o555);
+    try {
+      assert.equal(reportJsonDirectoryIsWritable(path.join(readOnlyDir, 'report.json')), false);
+    } finally {
+      fs.chmodSync(readOnlyDir, 0o755);
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  },
+);
 
 void test('clearExistingCatalogReport removes a report left by a previous run', () => {
   const tempDir = makeTempDir();

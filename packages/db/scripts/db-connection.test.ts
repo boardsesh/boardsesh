@@ -1,7 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import postgres from 'postgres';
-import { describeDatabaseHost, isLocalDatabaseUrl, scriptDatabaseConnectionOptions } from './db-connection.js';
+import {
+  describeDatabaseHost,
+  isLocalDatabaseUrl,
+  resolveScriptDatabaseUrl,
+  scriptDatabaseConnectionOptions,
+} from './db-connection.js';
 
 // Real automation paths this must recognize as local, verified against the
 // repo (see db-connection.ts's doc comment for the file:line evidence):
@@ -146,4 +151,62 @@ void test('describeDatabaseHost is not confused by "@" or "/" inside the passwor
 void test('describeDatabaseHost fails closed to "unknown" on a malformed URL', () => {
   assert.equal(describeDatabaseHost('not a url at all'), 'unknown');
   assert.equal(describeDatabaseHost(''), 'unknown');
+});
+
+// resolveScriptDatabaseUrl is getScriptDatabaseUrl's THROW-instead-of-exit
+// twin, for a caller (the MoonBoard catalog importer) that needs to run its
+// own cleanup before the process ends. Every case here mirrors one of
+// getScriptDatabaseUrl's own conditions, so the two can never silently drift.
+void test('resolveScriptDatabaseUrl and its env-var precedence / Vercel guard', async (t) => {
+  const savedEnv = {
+    DB_URL: process.env.DB_URL,
+    DATABASE_URL: process.env.DATABASE_URL,
+    POSTGRES_URL: process.env.POSTGRES_URL,
+    VERCEL: process.env.VERCEL,
+  };
+  const clearDbEnv = () => {
+    delete process.env.DB_URL;
+    delete process.env.DATABASE_URL;
+    delete process.env.POSTGRES_URL;
+    delete process.env.VERCEL;
+  };
+  t.after(() => {
+    clearDbEnv();
+    for (const [key, value] of Object.entries(savedEnv)) {
+      if (value !== undefined) process.env[key] = value;
+    }
+  });
+
+  await t.test('throws rather than exiting when no URL env var is set', () => {
+    clearDbEnv();
+    assert.throws(() => resolveScriptDatabaseUrl(), /DATABASE_URL, POSTGRES_URL, or DB_URL is not set/);
+  });
+
+  await t.test('DB_URL wins over DATABASE_URL and POSTGRES_URL', () => {
+    clearDbEnv();
+    process.env.DB_URL = 'postgresql://user:pass@db-url.example/db';
+    process.env.DATABASE_URL = 'postgresql://user:pass@database-url.example/db';
+    process.env.POSTGRES_URL = 'postgresql://user:pass@postgres-url.example/db';
+    assert.equal(resolveScriptDatabaseUrl(), 'postgresql://user:pass@db-url.example/db');
+  });
+
+  await t.test('DATABASE_URL is used when DB_URL is unset', () => {
+    clearDbEnv();
+    process.env.DATABASE_URL = 'postgresql://user:pass@database-url.example/db';
+    assert.equal(resolveScriptDatabaseUrl(), 'postgresql://user:pass@database-url.example/db');
+  });
+
+  await t.test('throws when VERCEL is set and the resolved URL is local', () => {
+    clearDbEnv();
+    process.env.DB_URL = 'postgresql://user:pass@localhost:5432/db';
+    process.env.VERCEL = '1';
+    assert.throws(() => resolveScriptDatabaseUrl(), /Refusing to run with local DATABASE_URL in Vercel build/);
+  });
+
+  await t.test('does not throw when VERCEL is set but the resolved URL is remote', () => {
+    clearDbEnv();
+    process.env.DB_URL = 'postgresql://user:pass@direct.example:5432/db';
+    process.env.VERCEL = '1';
+    assert.equal(resolveScriptDatabaseUrl(), 'postgresql://user:pass@direct.example:5432/db');
+  });
 });

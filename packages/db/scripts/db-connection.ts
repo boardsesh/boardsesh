@@ -12,11 +12,18 @@ config({ path: path.resolve(__dirname, '../../../.env.local') });
 config({ path: path.resolve(__dirname, '../../web/.env.local') });
 config({ path: path.resolve(__dirname, '../../web/.env.development.local') });
 
-export function getScriptDatabaseUrl(): string {
+/**
+ * Same env-var resolution and Vercel/local guard as `getScriptDatabaseUrl`,
+ * but THROWS instead of calling `process.exit`. For a caller that needs to
+ * run its own cleanup — writing a `--report-json` failure report, releasing a
+ * lock — before the process ends, an immediate `process.exit` from inside a
+ * helper skips all of that. `getScriptDatabaseUrl` below is unchanged for
+ * every other (fire-and-forget) script caller.
+ */
+export function resolveScriptDatabaseUrl(): string {
   const databaseUrl = process.env.DB_URL || process.env.DATABASE_URL || process.env.POSTGRES_URL;
   if (!databaseUrl) {
-    console.error('DATABASE_URL, POSTGRES_URL, or DB_URL is not set');
-    process.exit(1);
+    throw new Error('DATABASE_URL, POSTGRES_URL, or DB_URL is not set');
   }
 
   const isLocalUrl =
@@ -28,11 +35,19 @@ export function getScriptDatabaseUrl(): string {
   // against a localhost service container on purpose, so a CI term here would
   // exit(1) on every one of those jobs.
   if (process.env.VERCEL && isLocalUrl) {
-    console.error('Refusing to run with local DATABASE_URL in Vercel build');
-    process.exit(1);
+    throw new Error('Refusing to run with local DATABASE_URL in Vercel build');
   }
 
   return databaseUrl;
+}
+
+export function getScriptDatabaseUrl(): string {
+  try {
+    return resolveScriptDatabaseUrl();
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
 }
 
 /**

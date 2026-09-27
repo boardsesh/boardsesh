@@ -57,6 +57,52 @@ void test(
 );
 
 void test(
+  'a lock check run on the transaction handle catches a connection recycled between staging and the transaction, and the transaction aborts',
+  { skip: !adminUrl },
+  async () => {
+    // Mirrors the real production shape: import-moonboard-catalog.ts runs a
+    // cheap lock check on `db` BEFORE staging a board's records, then opens
+    // `db.transaction(async (tx) => ...)`. If the connection is silently
+    // recycled in between — here forced with a short max_lifetime, standing
+    // in for the real 30-60 minute default firing mid-staging — postgres.js
+    // transparently reconnects to serve the transaction on a BRAND NEW
+    // backend that never held the lock. The pre-staging check (on `db`)
+    // cannot see that coming, since it already passed before the recycle; only
+    // a check run on `tx` itself, as the transaction's first statement, can
+    // catch it before any write happens.
+    const client = postgres(adminUrl!, { max: 1, max_lifetime: 2, onnotice: () => {} });
+    try {
+      const db = drizzle(client);
+      const acquireResult = await acquireCatalogImportLock(db);
+      assert.equal(acquireResult.acquired, true);
+      if (!acquireResult.acquired) return; // narrows the type for TS below; unreachable given the assertion above
+      const originalBackendPid = acquireResult.backendPid;
+
+      // The pre-staging check passes immediately: nothing has gone wrong yet.
+      assert.deepEqual(await assertCatalogImportLockHeld(db, originalBackendPid), { ok: true });
+
+      // Wait past max_lifetime — postgres.js recycles the connection the next
+      // time it's used, exactly like staging taking long enough for the real
+      // (30-60 minute) timer to fire in an actual run.
+      await new Promise((resolve) => setTimeout(resolve, 2500));
+
+      let checkResultInsideTx: Awaited<ReturnType<typeof assertCatalogImportLockHeld>> | undefined;
+      await assert.rejects(() =>
+        db.transaction(async (tx) => {
+          checkResultInsideTx = await assertCatalogImportLockHeld(tx, originalBackendPid);
+          if (!checkResultInsideTx.ok) {
+            throw new Error(`Run lock lost inside the board transaction: ${checkResultInsideTx.reason}`);
+          }
+        }),
+      );
+      assert.equal(checkResultInsideTx?.ok, false);
+    } finally {
+      await client.end();
+    }
+  },
+);
+
+void test(
   'assertCatalogImportLockHeld catches a silent reconnect after max_lifetime elapses',
   { skip: !adminUrl },
   async () => {
