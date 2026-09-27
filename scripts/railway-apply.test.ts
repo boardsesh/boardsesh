@@ -67,7 +67,9 @@ import {
   parseArgs,
   previousConfigurationInput,
   PROBE_ATTEMPTS,
+  PROBE_MAX_MIGRATING_POLLS,
   PROBE_REQUIRED_CONSECUTIVE_OK,
+  XPREM_MIGRATING_BODY,
   probeService,
   resetAuthScheme,
   rollbackAppliedDeployments,
@@ -1643,6 +1645,67 @@ describe('probeService', () => {
       );
       expect(error).toBeUndefined();
       expect(calls).toBe(answers.length);
+    } finally {
+      captured.restore();
+    }
+  });
+
+  it("waits out xprem's first-boot storage migration without spending probe attempts", async () => {
+    // 3.2.x backfills from the bucket on first boot and answers 503 with this body
+    // meanwhile. On 2026-09-26 that outlasted a 90-second probe; 3.2.5 resumes and
+    // logs progress, so the probe waits for it instead of rolling it back.
+    const captured = captureConsole();
+    const migratingPolls = PROBE_ATTEMPTS * 3;
+    let calls = 0;
+    const stub = (async () => {
+      calls += 1;
+      if (calls <= migratingPolls) {
+        return new Response(`${XPREM_MIGRATING_BODY}, updates are on hold\n`, { status: 503 });
+      }
+      return new Response('', { status: 200 });
+    }) as typeof globalThis.fetch;
+    try {
+      const { error } = await withFetch(stub, () =>
+        probeService({ baseUrl: OTA_BASE_URL, paths: ['/ready'] }, async () => {}),
+      );
+      expect(error).toBeUndefined();
+      expect(calls).toBe(migratingPolls + PROBE_REQUIRED_CONSECUTIVE_OK);
+    } finally {
+      captured.restore();
+    }
+  });
+
+  it('gives up on a migration that outlasts its budget, and says so', async () => {
+    const captured = captureConsole();
+    let calls = 0;
+    const stub = (async () => {
+      calls += 1;
+      return new Response(XPREM_MIGRATING_BODY, { status: 503 });
+    }) as typeof globalThis.fetch;
+    try {
+      const { error } = await withFetch(stub, () =>
+        probeService({ baseUrl: OTA_BASE_URL, paths: ['/ready'] }, async () => {}),
+      );
+      expect(error?.message).toMatch(/storage migration still running/);
+      expect(calls).toBe(PROBE_MAX_MIGRATING_POLLS + PROBE_ATTEMPTS);
+    } finally {
+      captured.restore();
+    }
+  });
+
+  it('still counts any other 503 against the probe attempts', async () => {
+    const captured = captureConsole();
+    let calls = 0;
+    const stub = (async () => {
+      calls += 1;
+      return new Response('Application failed to respond', { status: 503 });
+    }) as typeof globalThis.fetch;
+    try {
+      const { error } = await withFetch(stub, () =>
+        probeService({ baseUrl: OTA_BASE_URL, paths: ['/ready'] }, async () => {}),
+      );
+      expect(error?.message).toMatch(/probe failed.*503/);
+      expect(calls).toBe(PROBE_ATTEMPTS);
     } finally {
       captured.restore();
     }

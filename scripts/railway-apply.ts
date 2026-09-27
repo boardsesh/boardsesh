@@ -119,6 +119,25 @@ export const PROBE_ATTEMPTS = 18;
 export const PROBE_REQUIRED_CONSECUTIVE_OK = 3;
 const PROBE_RETRY_DELAY_MS = 5_000;
 
+/**
+ * xprem's answer while its first-boot migrations run: `/hc` says 200, every other
+ * path says 503 with this body (bootHandler in cmd/api/main.go). It means "still
+ * starting", not "broken", so those polls do not spend PROBE_ATTEMPTS.
+ *
+ * 3.2.x backfills `updates.asset_mapping` from the bucket on first boot, one read
+ * per update. On 2026-09-26 that outlasted a 90-second probe twice. The 3.2.4
+ * backfill ran in one transaction, so each rollback threw its work away (xprem#277).
+ * 3.2.5 commits per update and logs `Backfilled i/N`, so waiting is now productive.
+ */
+export const XPREM_MIGRATING_BODY = 'storage migration in progress';
+
+/**
+ * How many polls (every PROBE_RETRY_DELAY_MS) a path may spend in the migrating
+ * state: 360 polls is 30 minutes. railway-drift.yml's apply timeout is sized above
+ * this plus the deploy wait and a full rollback.
+ */
+export const PROBE_MAX_MIGRATING_POLLS = 360;
+
 /** Railway's DeploymentStatus enum, from live introspection of the schema. */
 const ACTIVE_DEPLOYMENT_STATUSES = new Set([
   'BUILDING',
@@ -938,12 +957,16 @@ export async function probeService(
     const url = `${verify.baseUrl}${path}`;
     let lastFailure = '';
     let consecutiveOk = 0;
+    let attempts = 0;
+    let migratingPolls = 0;
 
     // Polled, because this runs during the switchover the service's own
     // drainingSeconds exists to cover. A 502/503 from the edge in that window is
     // indistinguishable from a broken server, and treating it as one would roll
-    // back a perfectly healthy production deployment. See PROBE_ATTEMPTS.
-    for (let attempt = 1; attempt <= PROBE_ATTEMPTS; attempt += 1) {
+    // back a perfectly healthy production deployment. See PROBE_ATTEMPTS, and
+    // XPREM_MIGRATING_BODY for the one 503 that means "wait longer".
+    for (;;) {
+      let migrating = false;
       try {
         const response = await fetch(url, { signal: AbortSignal.timeout(15_000) });
         if (response.ok) {
@@ -952,17 +975,34 @@ export async function probeService(
         } else {
           consecutiveOk = 0;
           lastFailure = `HTTP ${response.status}`;
+          const body = response.status === 503 ? (await response.text()).slice(0, 500) : '';
+          migrating = body.includes(XPREM_MIGRATING_BODY);
         }
       } catch (error) {
         consecutiveOk = 0;
         lastFailure = error instanceof Error ? error.message : String(error);
       }
-      if (attempt < PROBE_ATTEMPTS) {
-        if (consecutiveOk === 0) {
-          console.warn(`[railway-apply] probe ${url} attempt ${attempt}/${PROBE_ATTEMPTS}: ${lastFailure}; retrying.`);
+
+      if (migrating && migratingPolls < PROBE_MAX_MIGRATING_POLLS) {
+        migratingPolls += 1;
+        if (migratingPolls === 1 || migratingPolls % 12 === 0) {
+          const waitedMinutes = Math.round((migratingPolls * PROBE_RETRY_DELAY_MS) / 60_000);
+          console.log(
+            `[railway-apply] probe ${url}: xprem is running its storage migration ` +
+              `(${waitedMinutes} of ${Math.round((PROBE_MAX_MIGRATING_POLLS * PROBE_RETRY_DELAY_MS) / 60_000)} min); waiting.`,
+          );
         }
         await sleep(PROBE_RETRY_DELAY_MS);
+        continue;
       }
+      if (migrating) lastFailure = `${lastFailure} (storage migration still running after the migration budget)`;
+
+      attempts += 1;
+      if (attempts >= PROBE_ATTEMPTS) break;
+      if (consecutiveOk === 0) {
+        console.warn(`[railway-apply] probe ${url} attempt ${attempts}/${PROBE_ATTEMPTS}: ${lastFailure}; retrying.`);
+      }
+      await sleep(PROBE_RETRY_DELAY_MS);
     }
 
     if (consecutiveOk < PROBE_REQUIRED_CONSECUTIVE_OK) {

@@ -156,10 +156,10 @@ jobs:
     # enforced in mobile-ota-publish-workflow.test.ts from the ladder in
     # scripts/lib/mobile-publish-retry.ts — raise both together or not at all.
     # Costs nothing on a healthy publish, which finishes in well under 10 minutes.
-    # On top of that budget: up to 55 minutes waiting for a Railway Config run on the
+    # On top of that budget: up to 85 minutes waiting for a Railway Config run on the
     # same commit (scripts/mobile-ota-server-ready.mjs), which only happens on the
     # rare push that also rolls the OTA server.
-    timeout-minutes: 210
+    timeout-minutes: 240
     # Gates EOO_TOKEN + GOOGLE_MAPS_API_KEY + the EXPO_UPDATES_URL variable.
     environment: Production
 

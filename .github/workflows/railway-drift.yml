@@ -74,8 +74,10 @@ jobs:
     # Above the tool's own worst case, deliberately: waitForDeployment budgets
     # 90 x 10s and rollbackDeployment another 90 x 10s, so a deployment that never
     # settles burns 15 minutes before the rollback even starts. A 30-minute job
-    # would be killed mid-rollback, which is worse than either outcome.
-    timeout-minutes: 50
+    # would be killed mid-rollback, which is worse than either outcome. On top of
+    # that, probeService may wait up to 30 minutes for xprem's first-boot storage
+    # migration (PROBE_MAX_MIGRATING_POLLS): 15 + 30 + 1.5 + 15 is 61.5 minutes.
+    timeout-minutes: 80
     environment: Production
     steps:
       - name: Checkout repository
