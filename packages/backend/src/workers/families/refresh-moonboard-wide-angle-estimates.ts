@@ -14,32 +14,28 @@ const payload = z
  * Weekly MoonBoard wide-angle estimate refresh (`@boardsesh/db/jobs`,
  * docs/boardsesh-grade.md). Borrows Kilter/Tension's fitted angle-effect shape
  * to estimate every MoonBoard problem's grade outside the catalog's own
- * 25°/40°, then publishes in one fenced transaction. Zero angle-surface
- * coverage from either shape board fails the run with `FIT_UNUSABLE` and no
- * retry: nothing was written.
- *
- * This family's own catalog scan can run into the millions of rows (2.89M
- * measured against production Sep 2026, ~1429 s for the publish alone) — see
- * docs/background-workers.md for why its heartbeat sits close to its expire
- * ceiling rather than the smaller margin the other batch families use.
+ * 25°/40°, then publishes in fenced chunks of ~50k rows, each climb's whole
+ * angle ladder in one chunk. Zero angle-surface coverage from either shape
+ * board fails the run with `FIT_UNUSABLE` and no retry: nothing was written.
+ * `dryRun` wins over `publish`, so `{ dryRun: true }` writes nothing.
  */
 export const refreshMoonboardWideAngleEstimatesFamily: BackgroundJobFamilyModule<z.infer<typeof payload>> = {
   name: 'refresh-moonboard-wide-angle-estimates',
   roles: ['batch'],
   options: {
-    // Matches the GitHub Actions workflow's own 30-minute timeout.
-    expireInSeconds: 1800,
+    // The whole run (fit, plan and every chunk) must end inside this lease.
+    // Measured ~24 minutes end to end on GitHub Actions (Sep 2026); 2 h leaves
+    // room for a batch VM several times slower.
+    expireInSeconds: 7200,
     retryLimit: 1,
     retryDelay: 900,
     retryBackoff: true,
     retryDelayMax: 900,
     deadlineSeconds: 518_400,
-    // Measured Sep 2026: the publish transaction alone (2.89M rows, upserted
-    // 500 at a time) took ~1429 s — no touch can land while it's held, so the
-    // heartbeat is sized as close to the 1800 s expire ceiling as is safe
-    // (100 s of margin) rather than to a fraction of it. If catalog growth
-    // pushes the publish past ~1700 s, expireInSeconds must grow with it.
-    heartbeatSeconds: 1700,
+    // Only one publish chunk (~50k rows) holds the fence at a time. At the
+    // measured ~0.49 ms per row that is ~25 s, against a 290 s bound (this
+    // heartbeat minus the 10 s touch lag): about 11x slack.
+    heartbeatSeconds: 300,
   },
   payload,
   singletonKey: () => 'weekly',
@@ -51,7 +47,7 @@ export const refreshMoonboardWideAngleEstimatesFamily: BackgroundJobFamilyModule
         signal: context.signal,
         transact: fencedTransact(context),
         log: jobLogger(context),
-        publish,
+        publish: publish && !dryRun,
         dryRun: dryRun ?? false,
       });
     } catch (error) {

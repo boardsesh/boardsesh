@@ -33,6 +33,9 @@ import {
   KILTER_CLIMBS,
   MOONBOARD_CLIMB,
   MOONBOARD_DUAL_ANGLE_CLIMB,
+  MOONBOARD_STALE_WIDE_ANGLE,
+  MOONBOARD_STALE_WIDE_CLIMB,
+  MOONBOARD_WIDE_LADDER_ANGLES,
   NEIGHBOR_BOARD,
   NEIGHBOR_LARGE_CLIMBS,
   NEIGHBOR_LARGE_LAYOUT,
@@ -44,6 +47,7 @@ import {
   posthogSendRows,
   seedBatchJobFixture,
   seedClimbNeighborFixture,
+  seedWideAngleShapeFixture,
 } from './helpers/batch-job-fixture';
 
 // The Tension benchmark holdout gates need at least 100 hashed-out benchmark
@@ -281,9 +285,11 @@ describe('batch families on the test database', () => {
       .from(dbSchema.boardClimbGrades)
       .where(eq(dbSchema.boardClimbGrades.confidence, 'moonboard_angle_estimate'));
 
-  it('refresh-moonboard-angle-estimates writes nothing on a dry run', async () => {
+  it('refresh-moonboard-angle-estimates writes nothing on a dry run, even with publish defaulted on', async () => {
     const dry = contextFor(db, 'refresh-moonboard-angle-estimates');
-    await refreshMoonboardAngleEstimatesFamily.execute(dry.context, { publish: false, dryRun: true });
+    const payload = refreshMoonboardAngleEstimatesFamily.payload.parse({ dryRun: true });
+    expect(payload.publish).toBe(true);
+    await refreshMoonboardAngleEstimatesFamily.execute(dry.context, payload);
     expect(dry.transactions.calls).toBe(0);
     expect(await angleEstimateRows()).toHaveLength(0);
   });
@@ -329,6 +335,103 @@ describe('batch families on the test database', () => {
       publish: false,
     }).catch((error: unknown) => error);
     expect(failure).toBeInstanceOf(MoonboardFitUnusableError);
+  });
+  describe('refresh-moonboard-wide-angle-estimates with a Tension angle surface', () => {
+    const wideRows = () =>
+      db
+        .select()
+        .from(dbSchema.boardClimbGrades)
+        .where(eq(dbSchema.boardClimbGrades.confidence, 'moonboard_wide_angle_estimate'));
+    const ladders = async () => {
+      const byClimb = new Map<string, number[]>();
+      for (const row of await wideRows())
+        byClimb.set(row.climbUuid, [...(byClimb.get(row.climbUuid) ?? []), row.angle]);
+      for (const angles of byClimb.values()) angles.sort((left, right) => left - right);
+      return byClimb;
+    };
+    const targets = [MOONBOARD_CLIMB, MOONBOARD_DUAL_ANGLE_CLIMB];
+    // Already ascending: MOONBOARD_WIDE_ANGLES is.
+    const fullLadder = [...MOONBOARD_WIDE_LADDER_ANGLES];
+
+    beforeAll(async () => {
+      await seedWideAngleShapeFixture(db);
+    });
+
+    it('writes nothing on a dry run, even with publish defaulted on', async () => {
+      const dry = contextFor(db, 'refresh-moonboard-wide-angle-estimates');
+      const payload = refreshMoonboardWideAngleEstimatesFamily.payload.parse({ dryRun: true });
+      expect(payload.publish).toBe(true);
+      await refreshMoonboardWideAngleEstimatesFamily.execute(dry.context, payload);
+      expect(dry.transactions.calls).toBe(0);
+      // Only last week's stale row, untouched.
+      expect(await wideRows()).toMatchObject([
+        { climbUuid: MOONBOARD_STALE_WIDE_CLIMB, angle: MOONBOARD_STALE_WIDE_ANGLE, coeffVersion: 'fixture-last-week' },
+      ]);
+    });
+
+    it('an interrupted publish leaves whole ladders only, and the retry completes it with committed rows as no-ops', async () => {
+      // One climb per chunk (13 rows each), aborted right after the first commit.
+      const controller = new AbortController();
+      const commits = { calls: 0 };
+      const interrupted: JobTransact = async (callback) => {
+        commits.calls += 1;
+        const result = await db.transaction((transaction) => callback(transaction));
+        controller.abort();
+        return result;
+      };
+      const failure = await runMoonboardWideAngleEstimates({
+        db,
+        signal: controller.signal,
+        transact: interrupted,
+        log: silentLog,
+        dryRun: false,
+        publish: true,
+        chunkRows: MOONBOARD_WIDE_LADDER_ANGLES.length,
+      }).catch((error: unknown) => error);
+      expect(failure).toMatchObject({ name: 'AbortError' });
+      expect(commits.calls).toBe(1);
+
+      const afterInterrupt = await ladders();
+      const committed = targets.filter((climbUuid) => afterInterrupt.has(climbUuid));
+      expect(committed).toHaveLength(1);
+      expect(afterInterrupt.get(committed[0])).toEqual(fullLadder);
+      // The reap runs after every upsert chunk, so the stale row is still there.
+      expect(afterInterrupt.get(MOONBOARD_STALE_WIDE_CLIMB)).toEqual([MOONBOARD_STALE_WIDE_ANGLE]);
+
+      // The retry re-plans from scratch through a worker context's fence at
+      // the default chunk size: one upsert chunk and one reap chunk.
+      const retry = contextFor(db, 'refresh-moonboard-wide-angle-estimates');
+      const result = await runMoonboardWideAngleEstimates({
+        db,
+        signal: retry.context.signal,
+        transact: (callback) => retry.context.transaction((transaction) => callback(transaction)),
+        log: silentLog,
+        dryRun: false,
+        publish: true,
+      });
+      expect(retry.transactions.calls).toBe(2);
+      expect(result).toMatchObject({ planned: 2 * fullLadder.length, deleted: 1 });
+      // Only the climb the first attempt never committed is written again.
+      expect(result.written).toBe(fullLadder.length);
+
+      const afterRetry = await ladders();
+      expect([...afterRetry.keys()].sort()).toEqual([...targets].sort());
+      for (const climbUuid of targets) expect(afterRetry.get(climbUuid)).toEqual(fullLadder);
+    });
+
+    it('a second weekly run through the family changes nothing', async () => {
+      const { context, transactions } = contextFor(db, 'refresh-moonboard-wide-angle-estimates');
+      const before = await wideRows();
+      await refreshMoonboardWideAngleEstimatesFamily.execute(context, { publish: true });
+      // One upsert chunk, no reap chunk.
+      expect(transactions.calls).toBe(1);
+      const after = await wideRows();
+      const stamps = (rows: typeof before) =>
+        rows
+          .map((row) => `${row.climbUuid} ${row.angle} ${row.computedAt}`)
+          .sort((left, right) => left.localeCompare(right));
+      expect(stamps(after)).toEqual(stamps(before));
+    });
   });
 });
 

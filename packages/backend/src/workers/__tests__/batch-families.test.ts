@@ -95,24 +95,24 @@ describe('batch family registration', () => {
   });
 
   it('keeps each lease inside pg-boss limits and each heartbeat window valid', () => {
-    for (const family of [
+    const nightly = [
       refreshRecommendationsFamily,
       refreshHoldFeaturesFamily,
       refreshClimbGradesFamily,
       refreshClimbNeighborsFamily,
-      refreshMoonboardAngleEstimatesFamily,
-      refreshMoonboardWideAngleEstimatesFamily,
-    ]) {
-      // pg-boss's own attempt-lease cap. Weekly families still fit under it
-      // even with an hours-long publish (see refresh-moonboard-wide-angle-estimates).
+    ];
+    const weekly = [refreshMoonboardAngleEstimatesFamily, refreshMoonboardWideAngleEstimatesFamily];
+    for (const family of [...nightly, ...weekly]) {
+      // pg-boss's own attempt-lease cap.
       expect(family.options.expireInSeconds).toBeLessThanOrEqual(24 * 60 * 60);
       expect(family.options.heartbeatSeconds).toBeGreaterThanOrEqual(10);
       expect(family.options.heartbeatSeconds).toBeLessThan(family.options.expireInSeconds);
-      // The absolute run deadline across retries has no pg-boss cap; a week is
-      // this codebase's own outer bound for a batch family's retry budget.
-      expect(family.options.deadlineSeconds).toBeLessThan(7 * 24 * 60 * 60);
       expect(family.options.retryBackoff).toBe(true);
     }
+    // A nightly run must give up before the next night's run is due.
+    for (const family of nightly) expect(family.options.deadlineSeconds).toBeLessThan(24 * 60 * 60);
+    // A weekly run gets six days, so it still ends before the next Monday.
+    for (const family of weekly) expect(family.options.deadlineSeconds).toBeLessThanOrEqual(6 * 24 * 60 * 60);
     expect(refreshRecommendationsFamily.options).toMatchObject({
       expireInSeconds: 1200,
       retryLimit: 2,
@@ -136,16 +136,17 @@ describe('batch family registration', () => {
       retryLimit: 1,
       retryDelay: 900,
       deadlineSeconds: 518_400,
-      heartbeatSeconds: 300,
+      // One publish transaction, ~131 s measured on GitHub Actions.
+      heartbeatSeconds: 600,
     });
     expect(refreshMoonboardWideAngleEstimatesFamily.options).toMatchObject({
-      expireInSeconds: 1800,
+      // The whole chunked run (~24 min measured) must end inside the lease.
+      expireInSeconds: 7200,
       retryLimit: 1,
       retryDelay: 900,
       deadlineSeconds: 518_400,
-      // Sized close to the family's own expire ceiling: the measured publish
-      // transaction (~1429 s for 2.89M rows) leaves little slack otherwise.
-      heartbeatSeconds: 1700,
+      // Sized to one ~50k-row publish chunk, not the whole publish.
+      heartbeatSeconds: 300,
     });
     expect(refreshClimbNeighborsFamily.options).toEqual({
       expireInSeconds: 21_600,
@@ -451,6 +452,19 @@ describe('execute', () => {
     expect(options).toMatchObject({ db: database, signal: jobContext.signal, publish: true, dryRun: false });
     expect(await writeThrough(options)).toBe(fencedTransaction);
     expect(transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it('both MoonBoard families let dryRun win over a defaulted publish', async () => {
+    await refreshMoonboardAngleEstimatesFamily.execute(
+      context('refresh-moonboard-angle-estimates').context,
+      refreshMoonboardAngleEstimatesFamily.payload.parse({ dryRun: true }),
+    );
+    expect(jobs.runMoonboardAngleEstimates.mock.calls[0][0]).toMatchObject({ publish: false, dryRun: true });
+    await refreshMoonboardWideAngleEstimatesFamily.execute(
+      context('refresh-moonboard-wide-angle-estimates').context,
+      refreshMoonboardWideAngleEstimatesFamily.payload.parse({ dryRun: true }),
+    );
+    expect(jobs.runMoonboardWideAngleEstimates.mock.calls[0][0]).toMatchObject({ publish: false, dryRun: true });
   });
 
   it('refresh-moonboard-wide-angle-estimates maps an unusable fit to a non-retryable FIT_UNUSABLE', async () => {

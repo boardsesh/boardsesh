@@ -17,7 +17,8 @@ const payload = z
  * dual-graded minority, then publishes coefficients and estimate rows in one
  * fenced transaction. An unusable pooled fit fails the run with
  * `FIT_UNUSABLE` and no retry: nothing was written, and the same data fails
- * the same fit.
+ * the same fit. `dryRun` wins over `publish`, so `{ dryRun: true }` writes
+ * nothing.
  */
 export const refreshMoonboardAngleEstimatesFamily: BackgroundJobFamilyModule<z.infer<typeof payload>> = {
   name: 'refresh-moonboard-angle-estimates',
@@ -33,10 +34,10 @@ export const refreshMoonboardAngleEstimatesFamily: BackgroundJobFamilyModule<z.i
     retryDelayMax: 900,
     deadlineSeconds: 518_400,
     // The publish (coefficients + upserts + reap) is one transaction, and the
-    // heartbeat can't be touched while it's held. Measured publish is ~131 s;
-    // 300 s gives over 2x margin against catalog growth while staying well
-    // under the family's own 1800 s expire ceiling.
-    heartbeatSeconds: 300,
+    // heartbeat can't be touched while it's held. Measured publish is ~131 s
+    // on GitHub Actions. 600 s, less the 10 s touch lag, bounds the batch at
+    // 590 s: about 4.5x the measurement, for a slower batch VM and growth.
+    heartbeatSeconds: 600,
   },
   payload,
   singletonKey: () => 'weekly',
@@ -48,7 +49,7 @@ export const refreshMoonboardAngleEstimatesFamily: BackgroundJobFamilyModule<z.i
         signal: context.signal,
         transact: fencedTransact(context),
         log: jobLogger(context),
-        publish,
+        publish: publish && !dryRun,
         validateOnly: validateOnly ?? false,
         dryRun: dryRun ?? false,
       });
