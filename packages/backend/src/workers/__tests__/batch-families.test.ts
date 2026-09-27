@@ -85,7 +85,12 @@ describe('batch family registration', () => {
         'refresh-moonboard-wide-angle-estimates',
       ]),
     );
-    for (const role of ['interactive-import', 'routine-provider', 'maintenance-delivery'] as const) {
+    expect(familiesForRole('interactive-import').map((family) => family.name)).toEqual([
+      'worker-probe',
+      'aurora-user-sync',
+      'kilter-user-sync',
+    ]);
+    for (const role of ['routine-provider', 'maintenance-delivery'] as const) {
       expect(familiesForRole(role).map((family) => family.name)).toEqual(['worker-probe']);
     }
     expect(requireFamily('refresh-climb-grades')).toBe(refreshClimbGradesFamily);

@@ -4,10 +4,9 @@ import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
-import { eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { PgBoss } from 'pg-boss';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { DbInstance } from '@boardsesh/db/client';
 import { runRefreshClimbGrades, runRefreshClimbNeighbors, type JobDatabase } from '@boardsesh/db/jobs';
 import {
   CLIMB_POPULARITY_REFRESH_QUEUE,
@@ -21,6 +20,23 @@ import { auroraCredentials, backgroundJobRuns, providerSyncControls } from '@boa
 import { retrySprayDetectionAttempt } from '@boardsesh/db/queries';
 import * as dbSchema from '@boardsesh/db/schema';
 import { SPRAY_DETECTION_QUEUE, SPRAY_DETECTION_RECONCILE_QUEUE } from '@boardsesh/shared-schema';
+import { assertWorkerPrivileges } from '../job-queue-client';
+import {
+  enqueueBackgroundJob,
+  executeBackgroundJob,
+  handlerForRole,
+  type BackgroundJobPayload,
+} from '../../workers/jobs';
+import {
+  FIXTURE_BOARD,
+  ensureBackgroundJobSchema,
+  fullSyncPage,
+  insertLinkedKilterAccount,
+  insertLinkedTensionAccount,
+  removeFixtures,
+  stubAuroraApi,
+  stubKilterPowerSync,
+} from '../../workers/families/__tests__/provider-sync-fixtures';
 import type { BackgroundJobContext } from '../../workers/families';
 import { refreshClimbGradesFamily } from '../../workers/families/refresh-climb-grades';
 import { refreshClimbNeighborsFamily } from '../../workers/families/refresh-climb-neighbors';
@@ -352,6 +368,163 @@ describe('batch worker grants', () => {
     } finally {
       await restricted.end();
       await clearBatchJobFixture(ownerDatabase);
+      await owner.unsafe(`DROP OWNED BY "${role}"`);
+      await owner.unsafe(`DROP ROLE "${role}"`);
+      await owner.end();
+    }
+  }, 60_000);
+});
+
+describe('provider sync worker grants', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
+  /**
+   * The proof that PROVIDER_SYNC_TABLE_GRANTS is enough: one real Aurora user
+   * sync, every applier branch, executed entirely as an interactive-import
+   * login that holds nothing but what the migrator granted it.
+   */
+  it('lets an interactive-import login run a whole Aurora and Kilter user sync and nothing more', async () => {
+    const role = `psync_worker_${randomUUID().replaceAll('-', '')}`;
+    const userId = 'psync-grant-user';
+    const climbUuid = 'psync-climb-grant';
+    const kilterUserId = 'psync-grant-kilter-user';
+    const kilterClimbUuid = 'psync-kclimb-grant';
+    const queue = BACKGROUND_JOB_QUEUES['interactive-import'];
+    const owner = postgres(process.env.DATABASE_URL!, { max: 1, onnotice: () => {} });
+    const database = createDb();
+    const ownerBoss = new PgBoss({
+      connectionString: process.env.DATABASE_URL!,
+      max: 1,
+      migrate: false,
+      supervise: false,
+      schedule: false,
+    });
+    ownerBoss.on('error', () => {});
+    const workerUrl = new URL(process.env.DATABASE_URL!);
+    workerUrl.searchParams.set('options', `-c role=${role}`);
+    const restrictedClient = postgres(workerUrl.toString(), { max: 2, onnotice: () => {} });
+    const restrictedDatabase = drizzle(restrictedClient) as unknown as DbInstance;
+    const restrictedBoss = new PgBoss({
+      connectionString: workerUrl.toString(),
+      max: 1,
+      migrate: false,
+      supervise: false,
+      schedule: false,
+    });
+    restrictedBoss.on('error', () => {});
+    try {
+      await owner.unsafe(`CREATE ROLE "${role}" NOLOGIN`);
+      await ensureBackgroundJobSchema(owner, [`interactive-import=${role}`]);
+      await ownerBoss.start();
+      await restrictedBoss.start();
+      await ownerBoss.deleteAllJobs(queue);
+      await database.delete(backgroundJobRuns);
+      await removeFixtures(database, [userId, kilterUserId], [climbUuid, kilterClimbUuid]);
+      const { linkGeneration } = await insertLinkedTensionAccount(database, userId, climbUuid);
+      stubAuroraApi({ pages: [fullSyncPage(climbUuid)] });
+      // The backend enqueues; only the worker side runs restricted.
+      const { runId } = await enqueueBackgroundJob(database, ownerBoss, {
+        family: 'aurora-user-sync',
+        payload: { userId, boardType: FIXTURE_BOARD, linkGeneration, requestedBy: 'link' },
+      });
+
+      await assertWorkerPrivileges(restrictedBoss.getDb());
+      const [job] = await restrictedBoss.fetch<BackgroundJobPayload>(queue, { includeMetadata: true, batchSize: 1 });
+      const result = await executeBackgroundJob(
+        restrictedDatabase,
+        restrictedBoss,
+        job,
+        handlerForRole('interactive-import'),
+        new AbortController().signal,
+      );
+
+      const [run] = await database.select().from(backgroundJobRuns).where(eq(backgroundJobRuns.id, runId));
+      const [credential] = await database
+        .select()
+        .from(auroraCredentials)
+        .where(and(eq(auroraCredentials.userId, userId), eq(auroraCredentials.boardType, FIXTURE_BOARD)));
+      // On a missing grant, last_sync_error names the table the worker was refused.
+      expect({ result, errorCode: run.errorCode, lastSyncError: credential.lastSyncError }).toEqual({
+        result: 'succeeded',
+        errorCode: null,
+        lastSyncError: null,
+      });
+      expect(credential.syncStatus).toBe('active');
+      const ticks = await database.execute<{ count: number }>(
+        sql`SELECT count(*)::int AS count FROM boardsesh_ticks WHERE user_id = ${userId}`,
+      );
+      expect(ticks[0].count).toBe(2);
+      const [control] = await database
+        .select()
+        .from(providerSyncControls)
+        .where(eq(providerSyncControls.userId, userId));
+      expect(control.activeRunId).toBeNull();
+
+      // Kilter, as the same login: the token refresh's FOR UPDATE, the log,
+      // rating and circuit appliers and the stats recompute behind them.
+      vi.stubEnv('KILTER_OAUTH_CLIENT_ID', 'grant-test-client');
+      stubKilterPowerSync(kilterClimbUuid);
+      const kilterLink = await insertLinkedKilterAccount(database, kilterUserId, kilterClimbUuid);
+      const { runId: kilterRunId } = await enqueueBackgroundJob(database, ownerBoss, {
+        family: 'kilter-user-sync',
+        payload: {
+          userId: kilterUserId,
+          boardType: 'kilter',
+          linkGeneration: kilterLink.linkGeneration,
+          requestedBy: 'link',
+        },
+      });
+      const [kilterJob] = await restrictedBoss.fetch<BackgroundJobPayload>(queue, {
+        includeMetadata: true,
+        batchSize: 1,
+      });
+      const kilterResult = await executeBackgroundJob(
+        restrictedDatabase,
+        restrictedBoss,
+        kilterJob,
+        handlerForRole('interactive-import'),
+        new AbortController().signal,
+      );
+      const [kilterRun] = await database.select().from(backgroundJobRuns).where(eq(backgroundJobRuns.id, kilterRunId));
+      const [kilterCredential] = await database
+        .select()
+        .from(auroraCredentials)
+        .where(and(eq(auroraCredentials.userId, kilterUserId), eq(auroraCredentials.boardType, 'kilter')));
+      expect({
+        result: kilterResult,
+        errorCode: kilterRun.errorCode,
+        lastSyncError: kilterCredential.lastSyncError,
+      }).toEqual({ result: 'succeeded', errorCode: null, lastSyncError: null });
+      const kilterRows = await database.execute<{ ticks: number; ratings: number; playlists: number }>(sql`
+        SELECT
+          (SELECT count(*)::int FROM boardsesh_ticks WHERE user_id = ${kilterUserId}) AS ticks,
+          (SELECT count(*)::int FROM board_climb_ratings WHERE user_id = ${kilterUserId}) AS ratings,
+          (SELECT count(*)::int FROM playlist_ownership WHERE user_id = ${kilterUserId}) AS playlists
+      `);
+      expect(kilterRows[0]).toEqual({ ticks: 1, ratings: 1, playlists: 1 });
+
+      // And the grant stops at the sync tables: no ledger DELETE, nothing unrelated.
+      const restricted = restrictedBoss.getDb();
+      await expect(restricted.executeSql('SELECT email FROM public.users LIMIT 1')).rejects.toThrow(
+        'permission denied',
+      );
+      await expect(restricted.executeSql('DELETE FROM public.background_job_runs WHERE false')).rejects.toThrow(
+        'permission denied',
+      );
+      await expect(restricted.executeSql('SELECT 1 FROM public.user_favorites LIMIT 1')).rejects.toThrow(
+        'permission denied',
+      );
+      await expect(restricted.executeSql('DELETE FROM public.aurora_credentials WHERE false')).rejects.toThrow(
+        'permission denied',
+      );
+    } finally {
+      await restrictedBoss.stop({ graceful: true, close: true });
+      await ownerBoss.stop({ graceful: true, close: true });
+      await restrictedClient.end();
+      await removeFixtures(database, [userId, kilterUserId], [climbUuid, kilterClimbUuid]);
       await owner.unsafe(`DROP OWNED BY "${role}"`);
       await owner.unsafe(`DROP ROLE "${role}"`);
       await owner.end();

@@ -72,8 +72,10 @@ grants before granting, so a table removed from a list (or a login moved to a
 bare entry) loses its grant on the next migration. Each login's revoke and
 grants run as one `DO` block, a single transaction, so a migration during a
 running job never leaves the login with nothing. A worker login may not be the
-runtime or detector login; the migrator refuses it. The data grants of `batch` are under "Batch families"; the provider roles' are below. Runtime users must never be migration owners.
-The existing runtime and detector grant contracts remain supported.
+runtime or detector login; the migrator refuses it. The `batch` data grants are
+listed under "Batch families", the provider roles' below. Runtime users must
+never be migration owners. The existing runtime and detector grant contracts
+remain supported.
 
 `interactive-import` and `routine-provider` share the provider sync list
 (`PROVIDER_SYNC_GRANTS`):
@@ -201,6 +203,10 @@ enqueue is logged with a bounded code (never payload contents), counted and
 skipped, since retrying the tick would duplicate every job that did enqueue
 under a run-ID key. When every request in a tick fails, nothing was enqueued, so
 the tick throws and pg-boss retries it.
+
+The same list gates producers that are not schedules: a link and "Sync now"
+queue `aurora-user-sync` / `kilter-user-sync` runs only while those names are
+listed (see "Provider sync families").
 
 ## Batch families
 
@@ -474,9 +480,6 @@ with their own no-overlap steps in `docs/board-snapshots.md`):
 Rollback: remove the family from `BATCH_FAMILIES_ENABLED` (the backend
 unschedules it on boot) and restore the workflow's `schedule:` if step 4
 already landed.
-The same list gates producers that are not schedules: a link and "Sync now"
-queue `aurora-user-sync` / `kilter-user-sync` runs only while those names are
-listed (see "Provider sync families").
 
 ## Provider sync families
 
