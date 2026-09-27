@@ -137,6 +137,54 @@ describeWithDatabase('Aurora climb_stats upsert skips unchanged rows (real DB)',
   });
 });
 
+describeWithDatabase(
+  'Aurora climb_stats upsert: empty payloads reach only existing (climb, angle) pairs (real DB)',
+  () => {
+    const emptyStat = (climbUuid: string, angle: number): ClimbStats =>
+      auroraStat(climbUuid, {
+        angle,
+        display_difficulty: null,
+        ascensionist_count: 0,
+        difficulty_average: null,
+        quality_average: null,
+        fa_username: null,
+        fa_at: null,
+      });
+
+    async function anglesOf(climbUuid: string): Promise<number[]> {
+      const rows = rowsFromResult<{ angle: number }>(
+        await db.execute(sql`
+        SELECT angle FROM board_climb_stats
+         WHERE board_type = ${BOARD} AND climb_uuid = ${climbUuid} ORDER BY angle`),
+      );
+      return rows.map((row) => row.angle);
+    }
+
+    it('does not treat a climb as existing at an angle only another climb has', async () => {
+      const tag = uniqueTag();
+      const climbAt40 = `${tag}-at40`;
+      const climbAt45 = `${tag}-at45`;
+      // climbAt40 has a row at 40 only; climbAt45 at 45 only. Across the two
+      // climbs, both angles exist, which is the shape a climbs x angles pre-read
+      // cannot tell apart from the pairs themselves.
+      await upsertClimbStats(db, BOARD, [auroraStat(climbAt40, { angle: 40 }), auroraStat(climbAt45, { angle: 45 })]);
+
+      const pass = await upsertClimbStats(db, BOARD, [
+        emptyStat(climbAt40, 40),
+        emptyStat(climbAt40, 45),
+        emptyStat(climbAt45, 40),
+        emptyStat(climbAt45, 45),
+      ]);
+
+      // Only the two existing pairs reach the upsert; the two new empty keys are dropped.
+      expect(pass.received).toBe(4);
+      expect(pass.offered).toBe(2);
+      expect(await anglesOf(climbAt40)).toEqual([40]);
+      expect(await anglesOf(climbAt45)).toEqual([45]);
+    });
+  },
+);
+
 describeWithDatabase('syncSharedData: per-pass climb_stats write counts (real DB)', () => {
   const client = postgres(getWorkerDatabaseUrl(), { max: 1, prepare: false, onnotice: () => {} });
   const clientDb = drizzle(client);

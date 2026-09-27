@@ -194,6 +194,23 @@ describe('syncSharedData loop', () => {
     expect(mockSharedSync).toHaveBeenCalledTimes(3);
   });
 
+  it('does not treat a page without _complete as the last page', async () => {
+    const lines: string[] = [];
+    mockSharedSync
+      .mockResolvedValueOnce({
+        shared_syncs: [{ table_name: 'climbs', last_synchronized_at: '2026-01-01 00:00:00' }],
+      } satisfies SyncData)
+      .mockResolvedValueOnce(
+        complete({ shared_syncs: [{ table_name: 'climbs', last_synchronized_at: '2026-02-01 00:00:00' }] }),
+      );
+
+    const result = await syncSharedData(fakePostgresClient(), 'decoy', 'token', (line) => lines.push(line));
+
+    expect(mockSharedSync).toHaveBeenCalledTimes(2);
+    expect(result.complete).toBe(true);
+    expect(lines.some((line) => line.includes('has no _complete flag'))).toBe(true);
+  });
+
   it('stops at MAX_SYNC_ATTEMPTS even when Aurora never reports _complete', async () => {
     // Always partial — never complete.
     mockSharedSync.mockResolvedValue(partial({ shared_syncs: [] }));
@@ -899,7 +916,7 @@ describe('board_climb_stats empty-row guard (issue #4068)', () => {
     },
   );
 
-  it('bounds the existing-row pre-read by both candidate UUID and angle', async () => {
+  it('bounds the existing-row pre-read by the exact (climb, angle) pairs', async () => {
     mockSharedSync.mockResolvedValueOnce(
       complete({
         climb_stats: [stat({ climb_uuid: 'ANGLE-40', angle: 40 }), stat({ climb_uuid: 'ANGLE-50', angle: 50 })],
@@ -910,9 +927,17 @@ describe('board_climb_stats empty-row guard (issue #4068)', () => {
 
     expect(shimClimbStatSelectPredicates).toHaveLength(1);
     const predicateQuery = dialect.sqlToQuery(shimClimbStatSelectPredicates[0]);
-    expect(predicateQuery.sql).toContain('"climb_uuid" in');
-    expect(predicateQuery.sql).toContain('"angle" in');
-    expect(predicateQuery.params).toEqual(['decoy', 'ANGLE-40', 'ANGLE-50', 40, 50]);
+    // A tuple IN over the pairs, not two IN lists (their cross product would
+    // also read ANGLE-40 at 50 and ANGLE-50 at 40).
+    expect(predicateQuery.sql).toContain('("board_climb_stats"."climb_uuid", "board_climb_stats"."angle") IN (');
+    expect(predicateQuery.sql).not.toContain('"climb_uuid" in');
+    expect(predicateQuery.params).toEqual([
+      'decoy',
+      JSON.stringify([
+        { climb_uuid: 'ANGLE-40', angle: 40 },
+        { climb_uuid: 'ANGLE-50', angle: 50 },
+      ]),
+    ]);
   });
 
   it('skips the existing-row pre-read entirely when every payload in the batch is non-empty', async () => {

@@ -641,16 +641,22 @@ export async function upsertClimbStats(
     const emptyMappedValues = mappedValues.filter((value) => isEmptyUpstreamClimbStat(value));
     const existingKeys = new Set<string>();
     if (emptyMappedValues.length > 0) {
-      const candidateClimbUuids = [...new Set(emptyMappedValues.map((value) => value.climbUuid))];
-      const candidateAngles = [...new Set(emptyMappedValues.map((value) => value.angle))];
+      // Match the exact (climb, angle) pairs. Two separate IN lists would
+      // select their cross product: every candidate climb at every candidate
+      // angle, a read up to |climbs| x |angles| rows for a batch of N keys.
+      const candidatePairs = JSON.stringify(
+        emptyMappedValues.map((value) => ({ climb_uuid: value.climbUuid, angle: value.angle })),
+      );
       const existingRows = await db
         .select({ climbUuid: climbStatsSchema.climbUuid, angle: climbStatsSchema.angle })
         .from(climbStatsSchema)
         .where(
           and(
             eq(climbStatsSchema.boardType, board),
-            inArray(climbStatsSchema.climbUuid, candidateClimbUuids),
-            inArray(climbStatsSchema.angle, candidateAngles),
+            sql`(${climbStatsSchema.climbUuid}, ${climbStatsSchema.angle}) IN (
+              SELECT pair.climb_uuid, pair.angle
+                FROM jsonb_to_recordset(${candidatePairs}::jsonb) AS pair(climb_uuid text, angle integer)
+            )`,
           ),
         );
       for (const row of existingRows) existingKeys.add(climbStatKey(row.climbUuid, row.angle));
@@ -1122,7 +1128,8 @@ export type SyncSharedDataOptions = {
  * the daemon's fresh login, or the donor credential a background job borrows)
  * to authenticate against Aurora's `/sync` endpoint.
  *
- * Loops until the response's `_complete` flag is true, persisting each batch
+ * Loops until the response's `_complete` flag is exactly true (Aurora sends it
+ * on every page: false while more remain), persisting each batch
  * before requesting the next. Provider HTTP always runs between transactions.
  * After a successful sync, fires setter-follow notifications for any
  * newly-published climbs. `db` is for reads; every write goes through
@@ -1241,7 +1248,15 @@ export async function syncSharedData(
       totalResults[tableName].synced += synced;
     }
 
-    isComplete = syncResults._complete !== false;
+    // Aurora's /sync contract: every page carries `_complete`, false while
+    // more pages remain and true on the last one. Only an explicit true ends
+    // the pass. A page without the flag is not proof the tail was reached, so
+    // it is logged as a contract break and paging continues (bounded by
+    // MAX_SYNC_ATTEMPTS); stopping there would stamp a partial pass complete.
+    if (typeof syncResults._complete !== 'boolean') {
+      log(`[SharedSync] Batch ${attempts} for ${board} has no _complete flag; treating it as not complete`);
+    }
+    isComplete = syncResults._complete === true;
     if (!isComplete) {
       log(`[SharedSync] Batch ${attempts} not complete, continuing...`);
     }

@@ -41,7 +41,11 @@ The `@boardsesh/aurora-sync` package provides the shared sync implementation. It
 
 - Request data from Aurora `/sync` endpoint with last sync timestamps
 - Aurora returns only data changed since last sync
-- Uses `_complete` flag for pagination of large datasets
+- Uses `_complete` flag for pagination of large datasets. Aurora sends it on every
+  page: `false` while more pages remain, `true` on the last one. The shared sync
+  ends a pass only on an explicit `true`; a page without the flag is logged
+  (`has no _complete flag`) and paging continues, capped at 100 pages. The user
+  sync still reads a missing flag as complete.
 
 ### 4. Database Writes
 
