@@ -457,6 +457,33 @@ than persisting an unrenewable credential.
 
 Account linking is gated client-side by the `kilter-oauth-linking` PostHog feature flag. The app reads the flag (`useFeatureFlag('kilter-oauth-linking')`) and only shows the Kilter sign-in card when it's on (or when a Kilter account is already linked, so it stays manageable if the flag flips off). Toggling the flag in PostHog rolls the importer in or out without a redeploy. The backend OAuth/password endpoints stay authenticated and rate-limited but no longer enforce a user allowlist.
 
+## Worker families
+
+The daemon below is still the current owner of routine syncs until PR-3. Since
+PR-2 the `kilter-user-sync` family (role `interactive-import`) also syncs one
+account right after a climber links Kilter, and when they tap "Sync now". Full
+contract: [background-workers.md, "Provider sync families"](background-workers.md#provider-sync-families).
+
+- `runCycleForCredential(db, cred, { transaction, signal, skipCatalogSync })` is
+  public and returns a `SyncOutcome`. The daemon calls it too, so both record
+  failures through the same `recordKilterFailure(tx, cred, err)`: a transient
+  failure stamps the attempt clock, bumps `consecutive_failures` and writes
+  `last_sync_error`; a permanent one sets `error`, or `expired` for
+  `invalid_grant`.
+- `syncKilterUserData` takes `transaction` and `signal`. Each phase flush runs
+  through the batch runner; the signal cancels the PowerSync stream. A fence
+  refusal or an abort ends the sync at once instead of being collected as a
+  failed phase.
+- The Keycloak refresh (`getStoredKilterAccessToken`) is unchanged and stays
+  outside every fence: its own short `FOR UPDATE` transaction on the credential
+  row, on the worker's pool. It never reads or writes the link generation.
+- `SyncRunnerConfig.db` injects the worker's pool; the runner then opens none of
+  its own. A job skips the catalog piggyback (`skipCatalogSync`).
+- `syncableKilterCredentialsFilter()` is exported for the job's named claim.
+
+A worker serving this family refuses to start without `KILTER_OAUTH_CLIENT_ID`
+and `AURORA_CREDENTIALS_SECRET`.
+
 ## Daemon
 
 Same loop shape as aurora-sync's daemon: one user per cycle, random 1–15 min jitter between cycles, Sydney quiet hours (`10pm–7am`), transient errors (HTTP 5xx, network, timeout) leave `syncStatus` untouched for retry, while Keycloak `invalid_grant` is treated as permanent and routes to `syncStatus = 'expired'`.

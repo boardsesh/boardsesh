@@ -362,6 +362,38 @@ the write risk.
 If you add a new writer to `board_climb_stats`, decide which side it owns and
 recompute `ascensionist_count` in the same statement that updates that side.
 
+## Worker families
+
+The daemon below is still the current owner of routine syncs; it keeps
+syncing every credential in turn until PR-3 moves that to a
+`provider-routine-cycle` family. Since PR-2 a worker also syncs one account on
+demand: the `aurora-user-sync` family (role `interactive-import`) runs right
+after a climber links a Tension, Decoy, Touchstone, Grasshopper or So iLL
+account, and when they tap "Sync now". Full contract:
+[background-workers.md, "Provider sync families"](background-workers.md#provider-sync-families).
+
+What changes in this package to make that possible, with no change for the
+daemon:
+
+- `SyncRunnerConfig` takes `db` (the worker's pool; the runner then opens none of
+  its own and `close()` leaves it alone), `transaction` (a batch runner) and
+  `signal`.
+- `syncCredential(cred, { transaction, signal, skipSharedSync })` is the public
+  one-credential path. It returns a `SyncOutcome` (`active` / `error` /
+  `expired`, plus `transient`) and records a failure exactly as `syncNextUser`
+  does, because `syncNextUser` now calls it. A fence refusal or an abort is
+  rethrown instead of being recorded on the credential.
+- `syncUserData(db, board, token, auroraUserId, userId, { tables, log,
+  transaction, signal })` runs each Aurora page in one transaction through the
+  batch runner and checks the signal between pages. Aurora HTTP happens between
+  those transactions, never inside one; `signIn` and `userSync` combine the
+  caller's signal with their 30 s timeout.
+- `syncableAuroraCredentialsFilter()` is exported so the job claims a named
+  credential under exactly the daemon's eligibility.
+
+A job-driven runner skips the shared sync (`skipSharedSync`): it still needs a
+raw client, and the board-wide half stays on the daemon for now.
+
 ## CLI Usage
 
 ### Installation
