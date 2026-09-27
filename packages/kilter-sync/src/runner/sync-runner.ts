@@ -11,9 +11,11 @@ import {
   acquireOrRenewDaemonLease,
   claimNextCredentialForSync,
   claimSharedSyncSlot,
+  deferCredentialSyncAttempt,
   findSharedSyncDonorCredential,
   getCredentialFleetSnapshot,
   readSharedSyncCursor,
+  SHARED_SYNC_PROVIDER_HOLD_CAP_MS,
   releaseDaemonLease,
   snapshotClimbStatsHistoryIfDue,
   stampSharedSyncFinished,
@@ -571,6 +573,8 @@ export class SyncRunner {
     nextCooldownMs?: number,
     /** The scheduled job's attempt fence: a run that lost its lease does not stamp. */
     transaction?: SyncBatchRunner,
+    /** Kilter's Retry-After: the slot stays closed at least this long. */
+    providerHoldMs?: number,
   ): Promise<void> {
     try {
       const stamp = (database: RunnerDb) =>
@@ -579,6 +583,7 @@ export class SyncRunner {
           claimToken,
           fullCooldownMs: cooldownMs,
           ...(nextCooldownMs === undefined ? {} : { nextCooldownMs }),
+          ...(providerHoldMs === undefined ? {} : { providerHoldMs }),
         });
       const finalized = transaction ? await transaction(stamp) : await stamp(db);
       if (!finalized) {
@@ -650,6 +655,7 @@ export class SyncRunner {
     const startedAt = Date.now();
     const fromStart = () => Math.max(0, cooldownMs - (Date.now() - startedAt));
     let nextCooldownMs = cooldownMs;
+    let providerHoldMs: number | undefined;
     try {
       this.log(`[kilter-catalog] scheduled catalog sync (${tokenSource} token)`);
       await syncKilterCatalog({
@@ -670,9 +676,50 @@ export class SyncRunner {
     } catch (error) {
       const permanent = !options.signal?.aborted && error instanceof KilterApiError && !isTransientKilterError(error);
       nextCooldownMs = permanent ? fromStart() : Math.min(TRANSIENT_CATALOG_SYNC_COOLDOWN_MS, cooldownMs);
+      // Kilter said how long to wait (429 with Retry-After): keep the slot
+      // closed that long, at least the five-minute retry cooldown, and hold the
+      // donor credential whose token was throttled (the test account has none).
+      if (!options.signal?.aborted && error instanceof KilterApiError && error.retryAfterMs !== undefined) {
+        providerHoldMs = Math.max(
+          TRANSIENT_CATALOG_SYNC_COOLDOWN_MS,
+          Math.min(error.retryAfterMs, SHARED_SYNC_PROVIDER_HOLD_CAP_MS),
+        );
+        this.log(`[kilter-catalog] PROVIDER_THROTTLED: holding the catalog for ${providerHoldMs} ms`);
+        if (donor) await this.holdDonorSafely(donor.userId, providerHoldMs, transaction, db);
+      }
       throw error;
     } finally {
-      await this.stampCatalogSyncFinishedSafely(db, cursor, claimToken, cooldownMs, nextCooldownMs, transaction);
+      await this.stampCatalogSyncFinishedSafely(
+        db,
+        cursor,
+        claimToken,
+        cooldownMs,
+        nextCooldownMs,
+        transaction,
+        providerHoldMs,
+      );
+    }
+  }
+
+  /**
+   * Put the donor credential inside the provider's hold
+   * (`provider_retry_after_until`), so neither the routine claim nor the next
+   * donor pick uses it before then. Only the hold: no failure is recorded
+   * against a borrowed credential. Best effort, never throws.
+   */
+  private async holdDonorSafely(
+    userId: string,
+    holdMs: number,
+    transaction: SyncBatchRunner | undefined,
+    db: RunnerDb,
+  ): Promise<void> {
+    try {
+      const hold = (database: RunnerDb) =>
+        deferCredentialSyncAttempt(database, { userId, boardType: KILTER_BOARD_TYPE, delayMs: holdMs });
+      if (transaction) await transaction(hold);
+      else await hold(db);
+    } catch (holdError) {
+      this.log(`[kilter-catalog] could not hold the donor credential: ${String(holdError)}`);
     }
   }
 

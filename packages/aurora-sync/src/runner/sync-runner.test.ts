@@ -48,6 +48,7 @@ const {
   mockCrawlGymWalls,
   mockFindGymsDueForWallCrawl,
   mockClaimSharedSyncSlot,
+  mockDeferCredentialSyncAttempt,
   mockStampSharedSyncFinished,
   mockReadSharedSyncCursor,
   mockFindSharedSyncDonorCredential,
@@ -63,6 +64,7 @@ const {
   mockCrawlGymWalls: vi.fn(),
   mockFindGymsDueForWallCrawl: vi.fn(),
   mockClaimSharedSyncSlot: vi.fn(),
+  mockDeferCredentialSyncAttempt: vi.fn(),
   mockStampSharedSyncFinished: vi.fn(),
   mockReadSharedSyncCursor: vi.fn(),
   mockFindSharedSyncDonorCredential: vi.fn(),
@@ -80,6 +82,7 @@ vi.mock('@boardsesh/db/queries', async (importOriginal) => {
   return {
     ...actual,
     claimSharedSyncSlot: mockClaimSharedSyncSlot,
+    deferCredentialSyncAttempt: mockDeferCredentialSyncAttempt,
     stampSharedSyncFinished: mockStampSharedSyncFinished,
     readSharedSyncCursor: mockReadSharedSyncCursor,
     findGymsDueForWallCrawl: mockFindGymsDueForWallCrawl,
@@ -1317,6 +1320,44 @@ describe('SyncRunner.runSharedSyncJob (the aurora-shared-sync job)', () => {
     await expect(runner.runSharedSyncJob('tension', { transaction, runId: 'run-8' })).rejects.toThrow('503');
 
     expect(mockStampSharedSyncFinished.mock.calls[0][1]).toMatchObject({ nextCooldownMs: 5 * 60_000 });
+  });
+
+  it("closes the slot for Aurora's Retry-After and holds the donor, on a 429", async () => {
+    mockDeferCredentialSyncAttempt.mockReset();
+    mockDeferCredentialSyncAttempt.mockResolvedValue(undefined);
+    mockFindSharedSyncDonorCredential.mockResolvedValue(donorCredential());
+    mockSyncSharedData.mockRejectedValueOnce(
+      new AuroraRequestError({ code: 'rate_limited', message: 'slow down', status: 429, retryAfterMs: 3_600_000 }),
+    );
+    const runner = new SyncRunner({ db: injectedDb, onLog: () => {} });
+
+    await expect(runner.runSharedSyncJob('tension', { transaction, runId: 'run-9' })).rejects.toThrow('slow down');
+
+    expect(mockStampSharedSyncFinished.mock.calls[0][1]).toMatchObject({
+      nextCooldownMs: 5 * 60_000,
+      providerHoldMs: 3_600_000,
+    });
+    expect(mockDeferCredentialSyncAttempt.mock.calls[0][1]).toMatchObject({
+      userId: donorCredential().userId,
+      boardType: donorCredential().boardType,
+      delayMs: 3_600_000,
+    });
+    // Only the hold: no failure step is charged to a borrowed credential.
+    expect(mockDeferCredentialSyncAttempt.mock.calls[0][1]).not.toHaveProperty('forgiveFailure');
+  });
+
+  it('holds for at least the five-minute retry cooldown on a short Retry-After', async () => {
+    mockDeferCredentialSyncAttempt.mockReset();
+    mockDeferCredentialSyncAttempt.mockResolvedValue(undefined);
+    mockFindSharedSyncDonorCredential.mockResolvedValue(donorCredential());
+    mockSyncSharedData.mockRejectedValueOnce(
+      new AuroraRequestError({ code: 'rate_limited', message: 'slow down', status: 429, retryAfterMs: 10_000 }),
+    );
+    const runner = new SyncRunner({ db: injectedDb, onLog: () => {} });
+
+    await expect(runner.runSharedSyncJob('tension', { transaction })).rejects.toThrow('slow down');
+
+    expect(mockStampSharedSyncFinished.mock.calls[0][1]).toMatchObject({ providerHoldMs: 5 * 60_000 });
   });
 
   it('does no work and claims nothing when the board has no healthy credential', async () => {

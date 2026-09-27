@@ -268,6 +268,13 @@ describe('aurora-shared-sync execute', () => {
     expect(failure).toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
   });
 
+  it('ends as a logged PROVIDER_THROTTLED success on a 429 with Retry-After: no pg-boss retry into the hold', async () => {
+    runners.runSharedSyncJob.mockRejectedValue(
+      new AuroraRequestError({ code: 'rate_limited', message: 'slow down', status: 429, retryAfterMs: 3_600_000 }),
+    );
+    await expect(family.execute(fakeContext('aurora-shared-sync'), { board: 'decoy' })).resolves.toBeUndefined();
+  });
+
   it('maps a permanent Aurora failure to SHARED_SYNC_FAILED without a retry', async () => {
     runners.runSharedSyncJob.mockRejectedValue(
       new AuroraRequestError({ code: 'http', message: 'Aurora HTTP 400', status: 400 }),
@@ -309,12 +316,16 @@ describe('kilter-catalog-sync execute', () => {
     },
   );
 
-  it('retries a throttled or unreachable Kilter, and gives up on a permanent refusal', async () => {
-    runners.runCatalogSyncJob.mockRejectedValueOnce(new KilterApiError('rate_limited', 'slow down', 429, 30_000));
+  it('retries an unreachable Kilter, waits out a Retry-After, and gives up on a permanent refusal', async () => {
+    runners.runCatalogSyncJob.mockRejectedValueOnce(new KilterApiError('rate_limited', 'slow down', 429));
     await expect(family.execute(fakeContext('kilter-catalog-sync'), {})).rejects.toMatchObject({
       code: 'PROVIDER_UNAVAILABLE',
       retryable: true,
     });
+    // With a Retry-After the runner already closed the slot for that long: a
+    // logged PROVIDER_THROTTLED success, no retry into the hold.
+    runners.runCatalogSyncJob.mockRejectedValueOnce(new KilterApiError('rate_limited', 'slow down', 429, 3_600_000));
+    await expect(family.execute(fakeContext('kilter-catalog-sync'), {})).resolves.toBeUndefined();
     runners.runCatalogSyncJob.mockRejectedValueOnce(new KilterApiError('invalid_grant', 'relink'));
     await expect(family.execute(fakeContext('kilter-catalog-sync'), {})).rejects.toMatchObject({
       code: 'CATALOG_SYNC_FAILED',

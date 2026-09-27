@@ -29,6 +29,7 @@ const {
   mockSyncKilterUserData,
   mockSyncKilterCatalog,
   mockClaimSharedSyncSlot,
+  mockDeferCredentialSyncAttempt,
   mockStampSharedSyncFinished,
   mockReadSharedSyncCursor,
   mockFindSharedSyncDonorCredential,
@@ -44,6 +45,7 @@ const {
   mockSyncKilterUserData: vi.fn(),
   mockSyncKilterCatalog: vi.fn(),
   mockClaimSharedSyncSlot: vi.fn(),
+  mockDeferCredentialSyncAttempt: vi.fn(),
   mockStampSharedSyncFinished: vi.fn(),
   mockReadSharedSyncCursor: vi.fn(),
   mockFindSharedSyncDonorCredential: vi.fn(),
@@ -78,6 +80,7 @@ vi.mock('@boardsesh/db/queries', async (importOriginal) => {
   return {
     ...actual,
     claimSharedSyncSlot: mockClaimSharedSyncSlot,
+    deferCredentialSyncAttempt: mockDeferCredentialSyncAttempt,
     stampSharedSyncFinished: mockStampSharedSyncFinished,
     readSharedSyncCursor: mockReadSharedSyncCursor,
     findSharedSyncDonorCredential: mockFindSharedSyncDonorCredential,
@@ -827,6 +830,28 @@ describe('SyncRunner.runCatalogSyncJob (the kilter-catalog-sync job)', () => {
       'relink',
     );
     expect(mockStampSharedSyncFinished.mock.calls[1][1].nextCooldownMs).toBeGreaterThan(3_600_000 - 5_000);
+  });
+
+  it("closes the slot for Kilter's Retry-After and holds the donor credential, on a 429", async () => {
+    mockDeferCredentialSyncAttempt.mockReset();
+    mockDeferCredentialSyncAttempt.mockResolvedValue(undefined);
+    mockFindSharedSyncDonorCredential.mockResolvedValue(credential());
+    const { runner } = injectedRunner();
+    mockSyncKilterCatalog.mockRejectedValueOnce(new KilterApiError('rate_limited', 'slow down', 429, 3_600_000));
+
+    await expect(runner.runCatalogSyncJob({ cooldownMs: 3_600_000, environment: noPasswordEnv })).rejects.toThrow(
+      'slow down',
+    );
+
+    expect(mockStampSharedSyncFinished.mock.calls[0][1]).toMatchObject({
+      nextCooldownMs: 5 * 60_000,
+      providerHoldMs: 3_600_000,
+    });
+    expect(mockDeferCredentialSyncAttempt.mock.calls[0][1]).toMatchObject({
+      userId: credential().userId,
+      boardType: KILTER_BOARD_TYPE,
+      delayMs: 3_600_000,
+    });
   });
 
   it('claims as its run, so a retry after an abort re-claims the slot the stopped attempt could not re-stamp', async () => {

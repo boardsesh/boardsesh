@@ -45,7 +45,7 @@ export const kilterCatalogSyncFamily: BackgroundJobFamilyModule<KilterCatalogSyn
     retryDelay: 300,
     retryBackoff: true,
     retryDelayMax: 300,
-    // Queued at :23, it can wait behind the five hour-long :07 shared syncs on
+    // Queued at :23, it can wait behind every hour-long :07 shared sync on
     // the one-at-a-time worker at the same priority: the same full-fan-out
     // budget, so it runs late instead of expiring at claim.
     deadlineSeconds: AURORA_SHARED_SYNC_DEADLINE_SECONDS,
@@ -88,6 +88,18 @@ export const kilterCatalogSyncFamily: BackgroundJobFamilyModule<KilterCatalogSyn
       });
     } catch (error) {
       if (context.signal.aborted || !(error instanceof KilterApiError)) throw error;
+      if (error.retryAfterMs !== undefined) {
+        // Kilter asked us to wait: the runner closed the slot and held the
+        // donor for that long, so a pg-boss retry minutes from now could only
+        // find the slot closed. The next hourly tick after the hold runs it.
+        logger.warn('[worker] catalog sync throttled', {
+          runId: context.runId,
+          family: context.family,
+          code: 'PROVIDER_THROTTLED',
+          retryAfterMs: error.retryAfterMs,
+        });
+        return;
+      }
       if (isTransientKilterError(error)) throw new BackgroundJobError('PROVIDER_UNAVAILABLE');
       throw new BackgroundJobError('CATALOG_SYNC_FAILED', { retryable: false });
     }

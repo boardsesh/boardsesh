@@ -70,9 +70,11 @@ async function boardsInSharedSyncOrder(database: DbInstance): Promise<Array<(typ
 
 /**
  * The absolute deadline covers the whole hourly fan-out, not one run: the
- * routine worker runs one job at a time, so the last of the five boards can
- * wait behind four others that each hold an hour's lease. 5 x 3600 s plus
- * the slack for a routine cycle or a Kilter catalog run in between.
+ * routine worker runs one job at a time, so the last board of the fan-out
+ * (every board in AURORA_BOARDS except Kilter) can wait behind all the others,
+ * each holding an hour's lease: boards x 3600 s plus the slack for a routine
+ * cycle or a Kilter catalog run in between. routine-families.test.ts fails if
+ * the board count ever outgrows it.
  */
 export const AURORA_SHARED_SYNC_DEADLINE_SECONDS = 6 * 60 * 60;
 
@@ -151,6 +153,17 @@ export const auroraSharedSyncFamily: BackgroundJobFamilyModule<AuroraSharedSyncP
       });
     } catch (error) {
       if (context.signal.aborted || !isAuroraRequestError(error)) throw error;
+      if (error.retryAfterMs !== undefined) {
+        // Aurora asked us to wait: the runner closed the slot and held the
+        // donor for that long, so a pg-boss retry minutes from now could only
+        // find the slot closed. The next hourly tick after the hold runs it.
+        logger.warn('[worker] shared sync throttled', {
+          ...logContext,
+          code: 'PROVIDER_THROTTLED',
+          retryAfterMs: error.retryAfterMs,
+        });
+        return;
+      }
       // Aurora itself failed. A transport failure, a 429 or a 5xx is worth the
       // retry (the slot was re-stamped with the five-minute cooldown, by the
       // same classifier); anything else is not.

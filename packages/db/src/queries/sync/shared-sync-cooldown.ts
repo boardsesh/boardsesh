@@ -15,6 +15,9 @@ export const CATALOG_SYNC_COOLDOWN_CURSOR = '__local_catalog_sync__';
 
 export type SharedSyncClaimToken = string;
 
+/** The longest a provider's Retry-After may close a board-wide sync slot. */
+export const SHARED_SYNC_PROVIDER_HOLD_CAP_MS = 6 * 60 * 60 * 1000;
+
 /**
  * `last_synchronized_at` is TEXT across this table, holding Aurora's
  * `YYYY-MM-DD HH:MM:SS.ffffff` (no zone, UTC). Synthetic cooldown rows append
@@ -76,12 +79,14 @@ export async function claimSharedSyncSlot(
   },
 ): Promise<SharedSyncClaimToken | null> {
   const claimToken = dbCursorValue('claim', 0, options.ownerRunId);
+  // Exact, not a suffix match: the marker's second `#` segment must be a claim
+  // (`claim:<uuid>`), and the whole tail after the `#run:` sentinel must equal
+  // this run's id.
   const heldBySameRun =
     options.ownerRunId === undefined
       ? sql`false`
-      : sql`(position('#claim:' in ${boardSharedSyncs.lastSynchronizedAt}) > 0
-             AND right(${boardSharedSyncs.lastSynchronizedAt}, ${`${RUN_OWNER_TAG}${options.ownerRunId}`.length})
-                 = ${`${RUN_OWNER_TAG}${options.ownerRunId}`})`;
+      : sql`(split_part(${boardSharedSyncs.lastSynchronizedAt}, '#', 2) LIKE 'claim:%'
+             AND substring(${boardSharedSyncs.lastSynchronizedAt} from '#run:([^#]+)$') = ${options.ownerRunId})`;
   const rows = await db
     .insert(boardSharedSyncs)
     .values({
@@ -130,6 +135,13 @@ export async function stampSharedSyncFinished(
     claimToken: SharedSyncClaimToken;
     fullCooldownMs: number;
     nextCooldownMs?: number;
+    /**
+     * The provider asked us to wait this long (429 with Retry-After): keep the
+     * slot closed at least that long from now, beyond the full cooldown if it
+     * has to, capped at {@link SHARED_SYNC_PROVIDER_HOLD_CAP_MS}. The one case
+     * the marker may point past now.
+     */
+    providerHoldMs?: number;
     /** @deprecated Ignored. PostgreSQL is the sole clock source. */
     now?: Date;
   },
@@ -137,7 +149,13 @@ export async function stampSharedSyncFinished(
   const fullCooldownMs = Math.max(0, options.fullCooldownMs);
   const requestedNextCooldownMs = options.nextCooldownMs ?? fullCooldownMs;
   const nextCooldownMs = Math.max(0, Math.min(requestedNextCooldownMs, fullCooldownMs));
-  const eligibilityBackdateMs = fullCooldownMs - nextCooldownMs;
+  const providerHoldMs =
+    options.providerHoldMs === undefined
+      ? 0
+      : Math.min(Math.max(0, options.providerHoldMs), SHARED_SYNC_PROVIDER_HOLD_CAP_MS);
+  // Negative when the provider's hold outlasts the full cooldown: the marker is
+  // then dated in the future, by exactly the difference.
+  const eligibilityBackdateMs = fullCooldownMs - Math.max(nextCooldownMs, providerHoldMs);
   const rows = await db
     .update(boardSharedSyncs)
     .set({ lastSynchronizedAt: dbCursorValue('finished', eligibilityBackdateMs) })

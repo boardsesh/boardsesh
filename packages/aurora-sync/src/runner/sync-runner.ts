@@ -12,11 +12,13 @@ import {
   claimNextCredentialForSync,
   claimSharedSyncSlot,
   credentialBackoffMs,
+  deferCredentialSyncAttempt,
   findGymsDueForWallCrawl,
   findSharedSyncDonorCredential,
   getCredentialFleetSnapshot,
   isSyncFenceError,
   readSharedSyncCursor,
+  SHARED_SYNC_PROVIDER_HOLD_CAP_MS,
   releaseDaemonLease,
   selfHealStaleClimbStats,
   stampSharedSyncFinished,
@@ -869,10 +871,12 @@ export class SyncRunner {
     nextCooldownMs: number,
     /** The scheduled job's attempt fence: a run that lost its lease does not stamp. */
     transaction?: SyncBatchRunner,
+    /** Aurora's Retry-After: the slot stays closed at least this long. */
+    providerHoldMs?: number,
   ): Promise<void> {
     try {
       const stamp = (database: RunnerDb) =>
-        stampSharedSyncFinished(database, { ...cursor, claimToken, fullCooldownMs, nextCooldownMs });
+        stampSharedSyncFinished(database, { ...cursor, claimToken, fullCooldownMs, nextCooldownMs, providerHoldMs });
       const finalized = transaction ? await transaction(stamp) : await stamp(db);
       if (!finalized) {
         this.log(`[SyncRunner] Shared-sync claim ownership changed for ${boardType}; leaving the newer cursor intact`);
@@ -950,6 +954,7 @@ export class SyncRunner {
     const startedAt = Date.now();
     const fromStart = () => Math.max(0, cooldownMs - (Date.now() - startedAt));
     let nextCooldownMs = cooldownMs;
+    let providerHoldMs: number | undefined;
     const work = { transaction: options.transaction, signal };
     try {
       let tokenSource: 'stored' | 'login' = 'stored';
@@ -982,6 +987,18 @@ export class SyncRunner {
         !signal?.aborted && isAuroraRequestError(error) && !isTransientSharedSyncAuroraError(error)
           ? fromStart()
           : Math.min(TRANSIENT_SHARED_SYNC_COOLDOWN_MS, cooldownMs);
+      // Aurora said how long to wait (429 with Retry-After): keep the slot
+      // closed that long, at least the five-minute retry cooldown, and hold the
+      // donor's own credential for the same time, since the throttle was on
+      // its token.
+      if (!signal?.aborted && isAuroraRequestError(error) && error.retryAfterMs !== undefined) {
+        providerHoldMs = Math.max(
+          TRANSIENT_SHARED_SYNC_COOLDOWN_MS,
+          Math.min(error.retryAfterMs, SHARED_SYNC_PROVIDER_HOLD_CAP_MS),
+        );
+        this.log(`[SyncRunner] PROVIDER_THROTTLED shared sync for ${board}: holding for ${providerHoldMs} ms`);
+        await this.holdDonorSafely(donor, providerHoldMs, options.transaction);
+      }
       throw error;
     } finally {
       await this.stampSharedSyncFinishedSafely(
@@ -992,7 +1009,25 @@ export class SyncRunner {
         cooldownMs,
         nextCooldownMs,
         options.transaction,
+        providerHoldMs,
       );
+    }
+  }
+
+  /**
+   * Put the donor credential inside the provider's hold
+   * (`provider_retry_after_until`), so neither the routine claim nor the next
+   * donor pick uses it before then. Only the hold: no failure is recorded
+   * against a borrowed credential. Best effort, never throws.
+   */
+  private async holdDonorSafely(donor: CredentialRecord, holdMs: number, transaction?: SyncBatchRunner): Promise<void> {
+    try {
+      const hold = (database: RunnerDb) =>
+        deferCredentialSyncAttempt(database, { userId: donor.userId, boardType: donor.boardType, delayMs: holdMs });
+      if (transaction) await transaction(hold);
+      else await hold(this.getClient().db);
+    } catch (holdError) {
+      this.log(`[SyncRunner] Could not hold the donor credential: ${this.formatErrorMessage(holdError)}`);
     }
   }
 
