@@ -11,7 +11,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { PgBoss } from 'pg-boss';
 import { createDb } from '@boardsesh/db/client';
 import { initializeJobQueueSchema } from '@boardsesh/db/job-queue-schema';
-import { BACKGROUND_JOB_QUEUES } from '@boardsesh/db/background-jobs';
+import { BACKGROUND_JOB_QUEUES, BACKGROUND_JOB_QUEUE_OPTIONS } from '@boardsesh/db/background-jobs';
 import { backgroundJobRuns } from '@boardsesh/db/schema';
 import {
   claimBackgroundJobRun,
@@ -21,7 +21,16 @@ import {
 } from '@boardsesh/db/queries';
 import { enqueueOn } from '../../services/job-queue';
 import { assertQueuePrimary, assertWorkerPrivileges } from '../../services/job-queue-client';
-import { enqueueWorkerProbe, executeBackgroundJob, handlerForRole, type BackgroundJobPayload } from '../jobs';
+import {
+  enqueueBackgroundJob,
+  enqueueWorkerProbe,
+  executeBackgroundJob,
+  handlerForRole,
+  type BackgroundJobHandler,
+  type BackgroundJobPayload,
+} from '../jobs';
+import { BackgroundJobError, type BackgroundJobFamilyModule } from '../families';
+import { workerProbeFamily } from '../families/worker-probe';
 
 const role = 'interactive-import' as const;
 const queue = BACKGROUND_JOB_QUEUES[role];
@@ -38,6 +47,13 @@ const owner = postgres(process.env.DATABASE_URL!, { max: 1, onnotice: () => {} }
 const run = async (id: string) =>
   (await database.select().from(backgroundJobRuns).where(eq(backgroundJobRuns.id, id)))[0];
 const fetch = async () => (await boss.fetch<BackgroundJobPayload>(queue, { includeMetadata: true, batchSize: 1 }))[0];
+/** The probe family with its body swapped out, as the only family the handler knows. */
+const probeHandlerWith = (execute: BackgroundJobFamilyModule['execute']): BackgroundJobHandler => ({
+  ...handlerForRole(role),
+  resolveFamily: (name) => (name === 'worker-probe' ? { ...workerProbeFamily, execute } : undefined),
+});
+const execute = async (handler: BackgroundJobHandler = handlerForRole(role)) =>
+  executeBackgroundJob(database, boss, await fetch(), handler, new AbortController().signal);
 
 beforeAll(async () => {
   // Local test-worker databases persist between runs. Apply the generated
@@ -46,6 +62,13 @@ beforeAll(async () => {
   if (!existingLedger.ledger) {
     await owner.unsafe(
       readFileSync(new URL('../../../../db/drizzle/0241_background_job_runs.sql', import.meta.url), 'utf8'),
+    );
+  }
+  const [familyColumn] = await owner`SELECT 1 AS present FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'background_job_runs' AND column_name = 'family'`;
+  if (!familyColumn) {
+    await owner.unsafe(
+      readFileSync(new URL('../../../../db/drizzle/0243_background_job_families.sql', import.meta.url), 'utf8'),
     );
   }
   await initializeJobQueueSchema(drizzle(owner));
@@ -131,14 +154,11 @@ describe('durable worker jobs', () => {
       database,
       boss,
       first,
-      {
-        ...handlerForRole(role),
-        execute: async () => {
-          entered();
-          await gate;
-          if (throws) throw new Error('old handler failed');
-        },
-      },
+      probeHandlerWith(async () => {
+        entered();
+        await gate;
+        if (throws) throw new Error('old handler failed');
+      }),
       new AbortController().signal,
     );
     await handlerEntered;
@@ -177,12 +197,9 @@ describe('durable worker jobs', () => {
         database,
         boss,
         first,
-        {
-          ...handlerForRole(role),
-          execute: async () => {
-            throw new Error('private provider URL');
-          },
-        },
+        probeHandlerWith(async () => {
+          throw new Error('private provider URL');
+        }),
         new AbortController().signal,
       ),
     ).toBe('failed');
@@ -212,6 +229,118 @@ describe('durable worker jobs', () => {
       expect((await run(id)).status).toBe(state === 'cancelled' ? 'cancelled' : 'failed');
     },
   );
+
+  it('records the family, payload and key on the run and applies the family options per job', async () => {
+    const id = await enqueueWorkerProbe(database, boss, role);
+    expect(await run(id)).toMatchObject({ family: 'worker-probe', payload: {}, singletonKey: id, status: 'queued' });
+    const deadlineMs = (await run(id)).deadlineAt.getTime() - Date.now();
+    expect(deadlineMs).toBeGreaterThan(workerProbeFamily.options.deadlineSeconds * 1000 - 60_000);
+    expect(deadlineMs).toBeLessThanOrEqual(workerProbeFamily.options.deadlineSeconds * 1000);
+    // The queue default differs, so this proves the per-job option won.
+    expect(BACKGROUND_JOB_QUEUE_OPTIONS.expireInSeconds).not.toBe(workerProbeFamily.options.expireInSeconds);
+    const [queueRow] = await owner`SELECT expire_seconds, policy FROM pgboss.queue WHERE name = ${queue}`;
+    expect(queueRow).toMatchObject({ expire_seconds: BACKGROUND_JOB_QUEUE_OPTIONS.expireInSeconds, policy: 'stately' });
+    const [jobRow] = await owner`SELECT expire_seconds, retry_limit, heartbeat_seconds, singleton_key, data
+      FROM pgboss.job WHERE name = ${queue} AND id = ${id}`;
+    expect(jobRow).toMatchObject({
+      expire_seconds: workerProbeFamily.options.expireInSeconds,
+      retry_limit: workerProbeFamily.options.retryLimit,
+      heartbeat_seconds: workerProbeFamily.options.heartbeatSeconds,
+      singleton_key: `worker-probe:${id}`,
+      data: { runId: id },
+    });
+    expect(await execute()).toBe('succeeded');
+    expect((await run(id)).status).toBe('succeeded');
+  });
+
+  it('returns the queued run for a duplicate singleton key and leaves exactly one run row', async () => {
+    const enqueue = () =>
+      enqueueBackgroundJob(database, boss, { role, family: 'worker-probe', payload: {}, singletonKey: 'board-7' });
+    const first = await enqueue();
+    expect(first.alreadyQueued).toBe(false);
+    const [second, third] = await Promise.all([enqueue(), enqueue()]);
+    expect(second).toEqual({ runId: first.runId, alreadyQueued: true });
+    expect(third).toEqual({ runId: first.runId, alreadyQueued: true });
+    const runs = await database
+      .select()
+      .from(backgroundJobRuns)
+      .where(and(eq(backgroundJobRuns.family, 'worker-probe'), eq(backgroundJobRuns.singletonKey, 'board-7')));
+    expect(runs.map((ledgerRun) => ledgerRun.id)).toEqual([first.runId]);
+    const [{ jobs }] = await owner`SELECT count(*)::int AS jobs FROM pgboss.job WHERE name = ${queue}`;
+    expect(jobs).toBe(1);
+    // Once the holder is active, stately admits one more queued run for the key.
+    const job = await fetch();
+    expect(job.id).toBe(first.runId);
+    const next = await enqueue();
+    expect(next.alreadyQueued).toBe(false);
+    expect(next.runId).not.toBe(first.runId);
+  });
+
+  it('rejects a payload the family schema refuses before anything is written', async () => {
+    await expect(
+      enqueueBackgroundJob(database, boss, { role, family: 'worker-probe', payload: { unexpected: true } }),
+    ).rejects.toThrow('INVALID_PAYLOAD');
+    await expect(enqueueBackgroundJob(database, boss, { role, family: 'no-such-family', payload: {} })).rejects.toThrow(
+      'UNKNOWN_FAMILY',
+    );
+    expect(await database.select().from(backgroundJobRuns)).toHaveLength(0);
+  });
+
+  it.each([
+    ['UNKNOWN_FAMILY', { family: 'retired-family' }],
+    ['INVALID_PAYLOAD', { payload: { unexpected: true } }],
+  ] as const)('fails a run with %s without retrying and keeps polling', async (errorCode, corruption) => {
+    const id = await enqueueWorkerProbe(database, boss, role);
+    await database.update(backgroundJobRuns).set(corruption).where(eq(backgroundJobRuns.id, id));
+    expect(await execute()).toBe('failed');
+    expect(await run(id)).toMatchObject({ status: 'failed', errorCode, attemptToken: null });
+    expect((await boss.getJobById(queue, id))?.state).toBe('cancelled');
+    // The next job on the same queue still runs.
+    const nextId = await enqueueWorkerProbe(database, boss, role);
+    expect(await execute()).toBe('succeeded');
+    expect((await run(nextId)).status).toBe('succeeded');
+  });
+
+  it('records a family error code, retrying unless the family says otherwise', async () => {
+    const retryableId = await enqueueWorkerProbe(database, boss, role);
+    expect(
+      await execute(
+        probeHandlerWith(async () => {
+          throw new BackgroundJobError('PROVIDER_UNAVAILABLE');
+        }),
+      ),
+    ).toBe('failed');
+    expect(await run(retryableId)).toMatchObject({ status: 'retrying', errorCode: 'PROVIDER_UNAVAILABLE' });
+    await boss.deleteAllJobs(queue);
+    const permanentId = await enqueueWorkerProbe(database, boss, role);
+    expect(
+      await execute(
+        probeHandlerWith(async () => {
+          throw new BackgroundJobError('CREDENTIAL_REVOKED', { retryable: false });
+        }),
+      ),
+    ).toBe('failed');
+    expect(await run(permanentId)).toMatchObject({ status: 'failed', errorCode: 'CREDENTIAL_REVOKED' });
+    expect(() => new BackgroundJobError('https://user:secret@example.com')).toThrow('INVALID_ERROR_CODE');
+  });
+
+  it('hands execute the run, family, an unfenced reader and the validated payload', async () => {
+    const id = await enqueueWorkerProbe(database, boss, role);
+    const seen: unknown[] = [];
+    expect(
+      await execute(
+        probeHandlerWith(async (context, payload) => {
+          seen.push(context.runId, context.family, payload);
+          const [ledgerRun] = await context.database
+            .select({ status: backgroundJobRuns.status })
+            .from(backgroundJobRuns)
+            .where(eq(backgroundJobRuns.id, context.runId));
+          seen.push(ledgerRun.status);
+        }),
+      ),
+    ).toBe('succeeded');
+    expect(seen).toEqual([id, 'worker-probe', {}, 'running']);
+  });
 
   it('rejects the backend runtime login even though it has no DDL privileges', async () => {
     // Mirrors migration-runtime-acl.ts: CRUD on every application table, pg-boss
@@ -304,7 +433,16 @@ describe('durable worker jobs', () => {
       const invokeOperator = (connectionUrl: string) =>
         promisify(execFile)(
           process.execPath,
-          ['--import', 'tsx', fileURLToPath(new URL('../operator.ts', import.meta.url)), 'enqueue', operatorRunId],
+          [
+            '--import',
+            'tsx',
+            fileURLToPath(new URL('../operator.ts', import.meta.url)),
+            'enqueue',
+            'worker-probe',
+            '{}',
+            '--id',
+            operatorRunId,
+          ],
           {
             cwd: fileURLToPath(new URL('../../../../../', import.meta.url)),
             env: {

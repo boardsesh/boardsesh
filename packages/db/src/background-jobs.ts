@@ -33,21 +33,62 @@ export const BACKGROUND_WORKER_ROLES = [
 export type BackgroundWorkerRole = (typeof BACKGROUND_WORKER_ROLES)[number];
 export type BackgroundJobStatus = 'queued' | 'running' | 'retrying' | 'succeeded' | 'failed' | 'cancelled';
 
+/**
+ * Job families: the unit a worker dispatches on. The run row carries the family
+ * and its validated payload; the queue carries only `{ runId }`. Each later
+ * family is added here by the PR that ships its module.
+ */
+export const BACKGROUND_JOB_FAMILIES = ['worker-probe'] as const;
+
+export type BackgroundJobFamily = (typeof BACKGROUND_JOB_FAMILIES)[number];
+
+export function isBackgroundJobFamily(name: string): name is BackgroundJobFamily {
+  return (BACKGROUND_JOB_FAMILIES as readonly string[]).includes(name);
+}
+
+/**
+ * One family queue per role; each worker consumes only its own. `stately`
+ * allows one queued plus one active job per singleton key, so every send MUST
+ * pass a `singletonKey` (the run ID when the family has no natural key):
+ * without one, every job on the queue shares the empty key and a second
+ * enqueue is silently dropped.
+ */
 export const BACKGROUND_JOB_QUEUES: Record<BackgroundWorkerRole, string> = {
-  'interactive-import': 'background-probe-interactive-import',
-  'routine-provider': 'background-probe-routine-provider',
-  'maintenance-delivery': 'background-probe-maintenance-delivery',
-  batch: 'background-probe-batch',
+  'interactive-import': 'background-interactive-import',
+  'routine-provider': 'background-routine-provider',
+  'maintenance-delivery': 'background-maintenance-delivery',
+  batch: 'background-batch',
 };
 
-export const BACKGROUND_PROBE_JOB_OPTIONS = {
-  policy: 'standard',
+/**
+ * Queue-level defaults. Every family sends its own expiry/retry/heartbeat
+ * options per job, so these apply only to a send that omits them. The policy is
+ * immutable once `createQueue` has run.
+ */
+export const BACKGROUND_JOB_QUEUE_OPTIONS = {
+  policy: 'stately',
   retryLimit: 3,
   retryDelay: 15,
   retryBackoff: true,
   retryDelayMax: 120,
-  expireInSeconds: 120,
+  expireInSeconds: 300,
   heartbeatSeconds: 30,
+  retentionSeconds: 7 * 24 * 60 * 60,
+  deleteAfterSeconds: 7 * 24 * 60 * 60,
+} as const satisfies Omit<Queue, 'name'>;
+
+/**
+ * The backend-owned schedule trigger queue. `boss.schedule()` drops one
+ * `{ family, key }` job here per cron tick; the backend's handler runs the
+ * schedule's fan-out and enqueues the real family jobs. Workers never consume it.
+ */
+export const BACKGROUND_SCHEDULE_QUEUE = 'background-schedule';
+
+export const BACKGROUND_SCHEDULE_QUEUE_OPTIONS = {
+  policy: 'standard',
+  retryLimit: 2,
+  retryDelay: 30,
+  expireInSeconds: 300,
   retentionSeconds: 7 * 24 * 60 * 60,
   deleteAfterSeconds: 7 * 24 * 60 * 60,
 } as const satisfies Omit<Queue, 'name'>;

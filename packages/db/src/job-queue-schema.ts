@@ -7,8 +7,10 @@ import {
 } from '@boardsesh/shared-schema';
 import {
   BACKGROUND_JOB_QUEUES,
+  BACKGROUND_JOB_QUEUE_OPTIONS,
   BACKGROUND_JOB_RECONCILE_QUEUE,
-  BACKGROUND_PROBE_JOB_OPTIONS,
+  BACKGROUND_SCHEDULE_QUEUE,
+  BACKGROUND_SCHEDULE_QUEUE_OPTIONS,
   jobQueueTransactionAdapter,
 } from './background-jobs';
 
@@ -92,13 +94,21 @@ export async function initializeJobQueueSchema(
     });
     const { policy: _climbPopularityPolicy, ...mutableClimbPopularityOptions } = CLIMB_POPULARITY_REFRESH_QUEUE_OPTIONS;
     await boss.updateQueue(CLIMB_POPULARITY_REFRESH_QUEUE, mutableClimbPopularityOptions);
+    // Family queues are stately. A queue created under an earlier policy keeps
+    // it (pg-boss cannot change a policy), which is why these are new names
+    // rather than the retired `background-probe-<role>` queues.
+    const { policy: _familyPolicy, ...mutableFamilyOptions } = BACKGROUND_JOB_QUEUE_OPTIONS;
     for (const queue of Object.values(BACKGROUND_JOB_QUEUES)) {
-      await boss.createQueue(queue, { partition: false, ...BACKGROUND_PROBE_JOB_OPTIONS });
-      const { policy: _policy, ...mutableOptions } = BACKGROUND_PROBE_JOB_OPTIONS;
-      await boss.updateQueue(queue, mutableOptions);
+      await boss.createQueue(queue, { partition: false, ...BACKGROUND_JOB_QUEUE_OPTIONS });
+      await boss.updateQueue(queue, mutableFamilyOptions);
     }
+    await boss.createQueue(BACKGROUND_SCHEDULE_QUEUE, { partition: false, ...BACKGROUND_SCHEDULE_QUEUE_OPTIONS });
+    const { policy: _schedulePolicy, ...mutableScheduleOptions } = BACKGROUND_SCHEDULE_QUEUE_OPTIONS;
+    await boss.updateQueue(BACKGROUND_SCHEDULE_QUEUE, mutableScheduleOptions);
+    // The reconcile pass has always run under a 120 s lease; keep it.
     const reconcileOptions = {
-      ...BACKGROUND_PROBE_JOB_OPTIONS,
+      ...BACKGROUND_JOB_QUEUE_OPTIONS,
+      expireInSeconds: 120,
       policy: 'singleton' as const,
     };
     await boss.createQueue(BACKGROUND_JOB_RECONCILE_QUEUE, { partition: false, ...reconcileOptions });

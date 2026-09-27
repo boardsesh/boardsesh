@@ -2,9 +2,11 @@
 
 The queue foundation shipped through #5587 (superseding the unmerged #5547).
 J01 (#5614, epic #5613) adds an independent backend worker entry point and
-durable attempt/settlement infrastructure. The first registered family is a
-probe for each role. **Personal imports, delivery and existing cron migrations
-are still separate issues.** Starting this image does not replace a sync daemon.
+durable attempt/settlement infrastructure. PR-1 of #5800 adds the family
+registry: every job names a family, and the worker dispatches on it. The only
+registered family is `worker-probe`, served by every role. **Personal imports,
+delivery and existing cron migrations are still separate issues.** Starting this
+image does not replace a sync daemon.
 
 ## Placement and connection budget
 
@@ -52,18 +54,110 @@ Operators pre-provision dedicated logins, then run the existing deployment
 migrator with `MIGRATION_WORKER_ROLES` containing the comma-separated names:
 `boardsesh_worker_interactive_import`, `boardsesh_worker_routine_provider`,
 `boardsesh_worker_maintenance_delivery`, `boardsesh_worker_batch`.
-The owner pre-creates queues and grants pg-boss DML plus SELECT/INSERT/UPDATE
+The owner pre-creates queues (below) and grants pg-boss DML plus SELECT/INSERT/UPDATE
 on `background_job_runs`. No provider/user-data grants are added in this slice.
 Runtime users must never be migration owners. The existing runtime and detector
 grant contracts remain supported.
 
+## Queues
+
+| Queue | Policy | Consumer |
+| --- | --- | --- |
+| `background-interactive-import` | `stately` | `interactive-import` worker |
+| `background-routine-provider` | `stately` | `routine-provider` worker |
+| `background-maintenance-delivery` | `stately` | `maintenance-delivery` worker |
+| `background-batch` | `stately` | `batch` worker |
+| `background-schedule` | `standard` | backend (schedule fan-out) |
+| `background-job-reconcile` | `singleton` | backend (reconciliation) |
+
+The per-role queues replace the `background-probe-<role>` queues, which were
+`standard` and are no longer created or consumed. Probes now ride the family
+queue like any other family. pg-boss cannot change a queue's policy after
+`createQueue`, so a policy change always means a new queue name.
+
+**Always pass a singleton key.** `stately` admits one queued plus one active job
+per `singletonKey`, and a job without one shares the empty key with every other
+keyless job on that queue: the second enqueue is silently dropped.
+`enqueueBackgroundJobOn` therefore always sends one: the family's
+`singletonKey(payload)` if it has one, else the caller's override, else the run
+ID (no dedup). pg-boss sees it as `<family>:<key>`, so two families on one queue
+never dedupe against each other; the ledger stores the unprefixed key in
+`background_job_runs.singleton_key`.
+
+## Job families
+
+A family module lives in `packages/backend/src/workers/families/<name>.ts`,
+is listed in `BACKGROUND_JOB_FAMILIES` (`packages/db/src/background-jobs.ts`)
+and registered in `families/index.ts`. The build fails if a listed name has no
+module. The module declares:
+
+- `name` and `roles`: the worker roles allowed to run it (most have one).
+- `options`: `expireInSeconds` (one attempt's lease, at most 24 h),
+  `retryLimit`, `retryDelay`, `retryBackoff`, `retryDelayMax`,
+  `heartbeatSeconds` (at least 10), and `deadlineSeconds`, the absolute
+  deadline for the whole run across retries (`deadline_at`). All of them go on
+  each job at `send()`; the queue defaults apply to nothing we send.
+- `payload`: a zod schema. It runs at enqueue and again before `execute`. The
+  payload must be a JSON object and must name what to work on, never how to
+  authenticate: no credentials, tokens or provider URLs.
+- `singletonKey(payload)` (optional): the natural dedup key, such as a
+  credential ID.
+- `schedules` (optional): `{ key, cron, tz?, fanOut(db) }` entries (see below).
+- `execute(context, payload)`. `context` carries `runId`, `family`, `signal`,
+  `transaction(callback)` for every write (the attempt fence) and `database`
+  for unfenced reads only. Provider HTTP goes through neither.
+
+| Family | Roles | Lease | Retries | Deadline | Key |
+| --- | --- | --- | --- | --- | --- |
+| `worker-probe` | all four | 120 s | 3, 15 s backoff to 120 s | 24 h | run ID |
+
+Throw `BackgroundJobError(code)` from `execute` to record a bounded,
+credential-free `error_code` (`/^[A-Z][A-Z0-9_]{0,63}$/`); pass
+`{ retryable: false }` to end the run now instead of spending retries. Any other
+error records `ATTEMPT_FAILED` and retries. A run whose family the worker's role
+does not serve fails with `UNKNOWN_FAMILY`, and a stored payload the schema now
+rejects fails with `INVALID_PAYLOAD`; both cancel the pg-boss job (no retry),
+and the worker keeps polling. Deploy consumers before producers so a new family
+never reaches a worker that cannot run it.
+
+### Enqueueing and dedup
+
+`enqueueBackgroundJobOn(transaction, boss, { family, payload, role?, runId?,
+singletonKey? })` validates the payload, inserts the run row and sends
+`{ runId }` inside the caller's transaction (`enqueueBackgroundJob` opens one).
+`role` is required only for a family with more than one role. When pg-boss
+drops the send because a queued job already holds the key, the ledger insert is
+rolled back to a savepoint, the existing queued run is found through its key,
+`ALREADY_QUEUED` is logged and that run's ID is returned with
+`alreadyQueued: true`. The rollback is a savepoint, not a DELETE, because worker
+logins deliberately cannot delete ledger rows.
+
+### Schedules and `BATCH_FAMILIES_ENABLED`
+
+Only the backend registers schedules; the worker's queue client is built with
+`schedule: false`. On boot the backend reads `BATCH_FAMILIES_ENABLED`, a comma
+list of family names (unset or empty: none; an unknown name refuses to register
+anything and logs an error). For every schedule of an enabled family it calls
+`boss.schedule('background-schedule', cron, { family, key }, { key:
+'<family>:<key>', tz: tz ?? 'UTC', missed: 'once' })`, and it unschedules every
+other key on that queue, so disabling a family removes its schedules on the next
+boot. With at least one family enabled it also starts one
+`background-schedule` consumer (`localConcurrency: 1`) that runs the schedule's
+`fanOut(db)` and enqueues one job per result. `ALREADY_QUEUED` counts as
+success. A failed fan-out throws so pg-boss retries the tick; a failed single
+enqueue is counted and skipped, since retrying the tick would duplicate every
+job that did enqueue under a run-ID key.
+
 ## Attempts, retries and reconciliation
 
-Queue payloads contain only `{ runId }`. The run UUID is also the pg-boss job ID
-and enqueue idempotency key. A run plus its queue insertion commit in the same
-transaction. Probe requests expire after 24 hours; queue retries use a
-120-second attempt deadline, 30-second heartbeat, three retries with 15-second
-exponential backoff capped at 120 seconds, and seven-day queue retention.
+Queue payloads contain only `{ runId }`; the run row carries `family`,
+`payload` and `singleton_key`. The run UUID is also the pg-boss job ID and
+enqueue idempotency key. A run plus its queue insertion commit in the same
+transaction. Leases, retries and the run deadline come from the family (the
+probe: 24-hour deadline, 120-second attempt lease, 30-second heartbeat, three
+retries with 15-second exponential backoff capped at 120 seconds); queues keep
+seven-day retention. Workers touch the job at least three times per heartbeat
+window.
 
 Claims lock the run, then its pg-boss row, and check retry count, live lease and
 absolute deadline. Each data batch uses `withBackgroundJobAttempt`; it checks
@@ -89,22 +183,27 @@ expiry become explicit outcomes; stale attempts lose their token. The supervisor
 owns actual requeueing. Up to 100 terminal ledger rows older than 30 days are
 removed per invocation. Active/retryable records are never purged.
 
-## Operator probes and health
+## Operator commands and health
 
 Operator commands run on a trusted host, authenticated by OS access and a
 restricted database login; there is no public enqueue API. Set
 `WORKER_OPERATOR_ENABLED=true` explicitly. With the same worker environment:
 
 ```sh
-node --import tsx packages/backend/src/workers/operator.ts enqueue <request-uuid>
+node --import tsx packages/backend/src/workers/operator.ts enqueue <family> ['<json-payload>'] [--id <request-uuid>]
 node --import tsx packages/backend/src/workers/operator.ts status <run-uuid>
-node --import tsx packages/backend/src/workers/operator.ts replay <failed-run-uuid> <new-request-uuid>
+node --import tsx packages/backend/src/workers/operator.ts replay <failed-run-uuid> [--id <request-uuid>]
+node --import tsx packages/backend/src/workers/operator.ts probe [<request-uuid>]
 ```
 
-Reuse the request UUID after a lost acknowledgement. Replay accepts only a
-failed/cancelled run in the configured role and creates a new probe; it never
-blindly replays external provider side effects. Omitting a new request UUID
-generates one and prints it. No command accepts arbitrary payloads or SQL.
+`enqueue` accepts only a family that `WORKER_ROLE` serves, and only a payload
+that family's schema accepts (default `{}`). Reuse the request UUID after a lost
+acknowledgement. Replay accepts only a failed/cancelled run in the configured
+role and enqueues a new run with the same family and payload, revalidated
+against today's schema; it keeps an explicit singleton key and lets a run-ID key
+default again. It never blindly replays external provider side effects beyond
+what the family itself does. Omitting `--id` generates a UUID and prints it.
+`probe` is the old `enqueue`. No command accepts a queue name or SQL.
 
 Private `/health` reports readiness, role and pause state; stale database contact
 returns 503. `/metrics` exports role-labelled readiness, pause, active/pending

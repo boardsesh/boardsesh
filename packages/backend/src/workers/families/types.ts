@@ -1,0 +1,87 @@
+import type { ZodType } from 'zod';
+import type { DbInstance } from '@boardsesh/db/client';
+import type {
+  BackgroundJobFamily as BackgroundJobFamilyName,
+  BackgroundWorkerRole,
+} from '@boardsesh/db/background-jobs';
+import type { BackgroundJobTransaction } from '@boardsesh/db/queries';
+
+/**
+ * What a family's `execute` gets. Three database paths, each with one job:
+ *
+ * - `transaction(callback)`: every WRITE. It runs under the attempt fence, so a
+ *   batch commits only while this attempt still owns the run and its lease.
+ * - `database`: unfenced READS only (planning a batch, loading a cursor). A write
+ *   here escapes the fence and can land after a newer attempt has taken over.
+ * - Provider HTTP goes through neither: never hold a fence open across a
+ *   network call.
+ */
+export type BackgroundJobContext = {
+  runId: string;
+  family: BackgroundJobFamilyName;
+  signal: AbortSignal;
+  database: DbInstance;
+  transaction<T>(callback: (transaction: BackgroundJobTransaction) => Promise<T>): Promise<T>;
+};
+
+/** Per-job pg-boss options plus the ledger deadline, applied at `send()` time. */
+export type BackgroundJobFamilyOptions = {
+  /** One attempt's lease. pg-boss caps this at 24 h. */
+  expireInSeconds: number;
+  retryLimit: number;
+  retryDelay: number;
+  retryBackoff: boolean;
+  retryDelayMax: number;
+  /** Absolute deadline for the whole run, across every retry (`deadline_at`). */
+  deadlineSeconds: number;
+  /** pg-boss heartbeat window; must be at least 10. */
+  heartbeatSeconds: number;
+};
+
+export type BackgroundJobScheduleRequest<Payload> = { payload: Payload; singletonKey?: string };
+
+export type BackgroundJobSchedule<Payload> = {
+  /** Stable within the family; the pg-boss schedule key is `<family>:<key>`. */
+  key: string;
+  cron: string;
+  /** Defaults to UTC. */
+  tz?: string;
+  /** Runs in the backend on each tick. Return one entry per job to enqueue. */
+  fanOut(database: DbInstance): Promise<Array<BackgroundJobScheduleRequest<Payload>>>;
+};
+
+/**
+ * A family module. Methods use method syntax on purpose: it keeps a
+ * `BackgroundJobFamilyModule<ProbePayload>` assignable to the registry's
+ * `BackgroundJobFamilyModule<unknown>`, and the registry only ever calls
+ * `execute`/`singletonKey` with a payload the same module's schema produced.
+ */
+export type BackgroundJobFamilyModule<Payload = unknown> = {
+  name: BackgroundJobFamilyName;
+  /** The worker roles that may run this family. Most families have exactly one. */
+  roles: readonly BackgroundWorkerRole[];
+  options: BackgroundJobFamilyOptions;
+  payload: ZodType<Payload>;
+  /** Dedup key on the stately queue. Omit it and every run is its own key. */
+  singletonKey?(payload: Payload): string;
+  schedules?: ReadonlyArray<BackgroundJobSchedule<Payload>>;
+  execute(context: BackgroundJobContext, payload: Payload): Promise<void>;
+};
+
+/**
+ * Throw from `execute` to record a bounded, credential-free `error_code`.
+ * `retryable: false` ends the run now instead of spending pg-boss retries on a
+ * failure no retry can fix. Any other thrown error records `ATTEMPT_FAILED`.
+ */
+export class BackgroundJobError extends Error {
+  readonly code: string;
+  readonly retryable: boolean;
+
+  constructor(code: string, options: { retryable?: boolean } = {}) {
+    if (!/^[A-Z][A-Z0-9_]{0,63}$/.test(code)) throw new Error('INVALID_ERROR_CODE');
+    super(code);
+    this.name = 'BackgroundJobError';
+    this.code = code;
+    this.retryable = options.retryable ?? true;
+  }
+}
