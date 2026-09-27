@@ -19,6 +19,8 @@ describe('family registry', () => {
       'export-board-snapshots',
       'refresh-moonboard-angle-estimates',
       'refresh-moonboard-wide-angle-estimates',
+      'aurora-user-sync',
+      'kilter-user-sync',
     ]);
     expect(() => requireFamily('no-such-family')).toThrow('UNKNOWN_FAMILY');
   });
