@@ -1,7 +1,15 @@
 import { and, count, eq, isNull, ne, sql } from 'drizzle-orm';
 import { AuroraClimbingClient, assertAuroraBoardName } from '@boardsesh/aurora-sync/api';
 import { decrypt, encrypt } from '@boardsesh/crypto';
-import { auroraCredentials, boardClimbs, boardseshTicks, userBoardMappings } from '@boardsesh/db/schema';
+import {
+  auroraCredentials,
+  boardClimbs,
+  boardseshTicks,
+  providerSyncControls,
+  userBoardMappings,
+} from '@boardsesh/db/schema';
+import { rotateLinkGeneration, setPendingProviderSyncRun } from '@boardsesh/db/queries';
+import type { BackgroundJobFamily } from '@boardsesh/db/background-jobs';
 import { AURORA_BOARDS, type AuroraBoardName } from '@boardsesh/shared-schema';
 import {
   KILTER_BOARD_TYPE,
@@ -12,6 +20,9 @@ import {
 } from '@boardsesh/kilter-sync/api';
 import { db } from '../db/client';
 import { logger } from '../utils/logger';
+import { enqueueBackgroundJobOn } from '../workers/jobs';
+import { enabledBatchFamilies } from './batch-schedules';
+import { requireJobQueue } from './job-queue';
 
 const KILTER_OAUTH_CLIENT_ID = process.env.KILTER_OAUTH_CLIENT_ID;
 const KILTER_OAUTH_CLIENT_SECRET = process.env.KILTER_OAUTH_CLIENT_SECRET;
@@ -23,6 +34,8 @@ export type AuroraCredentialStatus = {
   lastSyncAt: string | null;
   syncStatus: string;
   syncError: string | null;
+  /** The queued or running interactive sync for this link, if any: the card shows "Syncing". */
+  pendingRunId: string | null;
   createdAt: string;
 };
 
@@ -67,6 +80,44 @@ export class DuplicateBoardLinkError extends Error {
 // the guard helpers can run on the same tx as the write (consistent read) without
 // an `any`.
 type CredentialTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/** The interactive sync family for a board: Kilter has its own OAuth client, every other board is Aurora. */
+export function providerSyncFamily(
+  boardType: string,
+): Extract<BackgroundJobFamily, 'aurora-user-sync' | 'kilter-user-sync'> {
+  return boardType === KILTER_BOARD_TYPE ? 'kilter-user-sync' : 'aurora-user-sync';
+}
+
+/**
+ * Queue an interactive sync of one link inside the caller's transaction, and
+ * point the control row's `pending_run_id` at it. Returns null, and queues
+ * nothing, while the board's family is not listed in `BATCH_FAMILIES_ENABLED`:
+ * until then the daemons are the only thing syncing, exactly as before.
+ *
+ * Transactional on purpose: the job commits with the link. A throw anywhere
+ * after this call rolls back the credential, the new generation and the job
+ * together, so a failed link never leaves a run behind (and a run never
+ * exists for a link that did not commit).
+ */
+export async function requestProviderSyncOn(
+  transaction: CredentialTransaction,
+  input: { userId: string; boardType: string; linkGeneration: string; requestedBy: 'link' | 'manual' },
+): Promise<string | null> {
+  const family = providerSyncFamily(input.boardType);
+  if (!enabledBatchFamilies().includes(family)) return null;
+  const { runId } = await enqueueBackgroundJobOn(transaction, requireJobQueue(), {
+    role: 'interactive-import',
+    family,
+    payload: {
+      userId: input.userId,
+      boardType: input.boardType,
+      linkGeneration: input.linkGeneration,
+      requestedBy: input.requestedBy,
+    },
+  });
+  await setPendingProviderSyncRun(transaction, { userId: input.userId, boardType: input.boardType, runId });
+  return runId;
+}
 
 /**
  * Advisory-lock namespace for the duplicate board-account-link guards —
@@ -208,6 +259,7 @@ export async function getAuroraCredentialStatuses(userId: string): Promise<Auror
         syncError: auroraCredentials.syncError,
         createdAt: auroraCredentials.createdAt,
         boardUsername: userBoardMappings.boardUsername,
+        pendingRunId: providerSyncControls.pendingRunId,
       })
       .from(auroraCredentials)
       .leftJoin(
@@ -215,6 +267,13 @@ export async function getAuroraCredentialStatuses(userId: string): Promise<Auror
         and(
           eq(userBoardMappings.userId, auroraCredentials.userId),
           eq(userBoardMappings.boardType, auroraCredentials.boardType),
+        ),
+      )
+      .leftJoin(
+        providerSyncControls,
+        and(
+          eq(providerSyncControls.userId, auroraCredentials.userId),
+          eq(providerSyncControls.boardType, auroraCredentials.boardType),
         ),
       )
       .where(eq(auroraCredentials.userId, userId)),
@@ -243,6 +302,7 @@ export async function getAuroraCredentialStatuses(userId: string): Promise<Auror
       lastSyncAt: credential.lastSyncAt?.toISOString() ?? null,
       syncStatus: credential.syncStatus,
       syncError: credential.syncError,
+      pendingRunId: credential.pendingRunId ?? null,
       createdAt: credential.createdAt.toISOString(),
     });
   }
@@ -257,6 +317,7 @@ export async function getAuroraCredentialStatuses(userId: string): Promise<Auror
       lastSyncAt: null,
       syncStatus: 'linked',
       syncError: null,
+      pendingRunId: null,
       createdAt: mapping.linkedAt.toISOString(),
     });
   }
@@ -316,7 +377,7 @@ export async function saveAuroraCredential(input: {
   boardType: AuroraBoardName;
   username: string;
   password: string;
-}): Promise<AuroraCredentialStatus> {
+}): Promise<AuroraCredentialStatus & { syncRunId?: string }> {
   // Before ANY network call. `assertAuroraBoardName` lives next to `HOST_BASES`
   // in @boardsesh/aurora-sync, so the GraphQL edge and the sync runner share one
   // definition. Belt to `AuroraBoardNameSchema`'s braces: the schema stops a bad
@@ -339,13 +400,23 @@ export async function saveAuroraCredential(input: {
   const encryptedPassword = encrypt(input.password);
   const encryptedToken = encrypt(loginResponse.token);
 
-  await db.transaction(async (tx) => {
+  const syncRunId = await db.transaction(async (tx) => {
     // Block the link if another Boardsesh user already actively owns this upstream
     // account. Runs before either the INSERT or UPDATE branch below.
     await assertNoConflictingAuroraOwner(tx, {
       userId: input.userId,
       boardType: input.boardType,
       auroraUserId: loginResponse.user_id,
+    });
+
+    // A new generation fences off every sync queued for the previous link. The
+    // control row is locked before the credential row: that is the order a
+    // fenced sync batch takes them in, so a relink waits for an in-flight batch
+    // instead of deadlocking with it.
+    const { linkGeneration } = await rotateLinkGeneration(tx, {
+      userId: input.userId,
+      boardType: input.boardType,
+      linked: true,
     });
 
     const existingCredential = await tx
@@ -419,6 +490,13 @@ export async function saveAuroraCredential(input: {
         boardUsername: input.username,
       });
     }
+
+    return requestProviderSyncOn(tx, {
+      userId: input.userId,
+      boardType: input.boardType,
+      linkGeneration,
+      requestedBy: 'link',
+    });
   });
 
   return {
@@ -428,7 +506,9 @@ export async function saveAuroraCredential(input: {
     lastSyncAt: null,
     syncStatus: 'pending',
     syncError: null,
+    pendingRunId: syncRunId,
     createdAt: now.toISOString(),
+    ...(syncRunId ? { syncRunId } : {}),
   };
 }
 
@@ -471,14 +551,21 @@ export async function saveKilterCredential(input: {
   refreshToken: string;
   kilterUserId: string;
   username?: string;
-}): Promise<void> {
+}): Promise<{ syncRunId?: string }> {
   const now = new Date();
   const encryptedRefreshToken = encrypt(input.refreshToken);
 
-  await db.transaction(async (tx) => {
+  const syncRunId = await db.transaction(async (tx) => {
     // Block the link if another Boardsesh user already actively owns this Kilter
     // account. Runs before either the INSERT or UPDATE branch below.
     await assertNoConflictingKilterOwner(tx, { userId: input.userId, kilterUserId: input.kilterUserId });
+
+    // New generation before the credential write (see saveAuroraCredential).
+    const { linkGeneration } = await rotateLinkGeneration(tx, {
+      userId: input.userId,
+      boardType: KILTER_BOARD_TYPE,
+      linked: true,
+    });
 
     const existingCredential = await tx
       .select({ id: auroraCredentials.id })
@@ -544,8 +631,16 @@ export async function saveKilterCredential(input: {
         boardUsername: input.username ?? null,
       });
     }
+
+    return requestProviderSyncOn(tx, {
+      userId: input.userId,
+      boardType: KILTER_BOARD_TYPE,
+      linkGeneration,
+      requestedBy: 'link',
+    });
   });
   await notifyKilterCredentialChange();
+  return syncRunId ? { syncRunId } : {};
 }
 
 /**
@@ -561,7 +656,7 @@ export async function saveKilterCredentialViaPassword(input: {
   userId: string;
   username: string;
   password: string;
-}): Promise<void> {
+}): Promise<{ syncRunId?: string }> {
   if (!KILTER_OAUTH_CLIENT_ID) {
     throw new KilterApiError('invalid_client', 'Kilter OAuth client is not configured');
   }
@@ -588,7 +683,7 @@ export async function saveKilterCredentialViaPassword(input: {
   const tokenToVerify = tokens.id_token ?? tokens.access_token;
   const { sub, preferredUsername } = await verifyKeycloakToken(tokenToVerify);
 
-  await saveKilterCredential({
+  return saveKilterCredential({
     userId: input.userId,
     refreshToken: tokens.refresh_token,
     kilterUserId: sub,
@@ -601,6 +696,10 @@ export async function deleteAuroraCredential(
   boardType: AuroraBoardName,
 ): Promise<DeleteAuroraCredentialResult> {
   const localRevocationSucceeded = await db.transaction(async (tx) => {
+    // Unlinked, not deleted: the control row outlives the credential so a sync
+    // queued before the unlink still finds a generation to fail against. First,
+    // for the same lock-order reason as the link path.
+    await rotateLinkGeneration(tx, { userId, boardType, linked: false });
     const revoked = boardType === KILTER_BOARD_TYPE ? await revokeKilterRefreshToken(userId, tx) : true;
     await tx
       .delete(auroraCredentials)

@@ -32,6 +32,20 @@ export type AuroraCredentialStatus = {
   userId?: number;
   syncedAt?: string;
   hasToken: boolean;
+  /** pending | active | error | expired, or 'linked' for a mapping with no credential. */
+  syncStatus?: string | null;
+  syncError?: string | null;
+  /** The queued or running sync this account is waiting on, if any. */
+  pendingRunId?: string | null;
+};
+
+/** A "Sync now" request: the run that will sync the account. */
+export type ProviderSyncRequest = {
+  runId: string;
+  /** queued | running | retrying */
+  status: string;
+  /** True when the request joined a run that was already waiting. */
+  coalesced: boolean;
 };
 
 export type SaveAuroraCredentialInput = {

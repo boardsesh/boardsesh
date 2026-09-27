@@ -275,6 +275,13 @@ export const mutationsTypeDefs = /* GraphQL */ `
     """
     deleteAuroraCredential(boardType: String!): Boolean!
 
+    """
+    Pull the latest logbook from a linked board account now.
+    Joins a sync that is already waiting instead of queueing a second one.
+    Rate limited to 5 requests a minute.
+    """
+    requestProviderSync(boardType: String!): ProviderSyncRequest!
+
     # ============================================
     # Favorites Mutations (require auth)
     # ============================================

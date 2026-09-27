@@ -453,6 +453,12 @@ export type AuroraCredentialStatus = {
   boardType: Scalars['String']['output'];
   /** Whether a valid token is stored */
   hasToken: Scalars['Boolean']['output'];
+  /** The queued or running sync this account is waiting on, if any */
+  pendingRunId?: Maybe<Scalars['ID']['output']>;
+  /** Machine code or message from the last failed sync, when there is one */
+  syncError?: Maybe<Scalars['String']['output']>;
+  /** Sync state of the stored credential: pending, active, error, expired, or linked (no credential) */
+  syncStatus?: Maybe<Scalars['String']['output']>;
   /** When credentials were last synced (ISO 8601) */
   syncedAt?: Maybe<Scalars['String']['output']>;
   /** Aurora user ID (after successful sync) */
@@ -4076,6 +4082,12 @@ export type Mutation = {
    * notified). Requires authentication.
    */
   requestGymClaim: RequestGymClaimResult;
+  /**
+   * Pull the latest logbook from a linked board account now.
+   * Joins a sync that is already waiting instead of queueing a second one.
+   * Rate limited to 5 requests a minute.
+   */
+  requestProviderSync: ProviderSyncRequest;
   requestSprayWallDetection: SprayWallDetection;
   /**
    * Resolve a BLE serial for clients that can disambiguate. Returns a single
@@ -4760,6 +4772,11 @@ export type MutationReportSprayWallArgs = {
 /** Root mutation type for all write operations. */
 export type MutationRequestGymClaimArgs = {
   input: RequestGymClaimInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationRequestProviderSyncArgs = {
+  boardType: Scalars['String']['input'];
 };
 
 /** Root mutation type for all write operations. */
@@ -5622,6 +5639,17 @@ export type ProposeSprayWallResetInput = {
    */
   versionId: Scalars['ID']['input'];
   wallUuid: Scalars['ID']['input'];
+};
+
+/** A "Sync now" request for one linked board account. */
+export type ProviderSyncRequest = {
+  __typename?: 'ProviderSyncRequest';
+  /** True when the request joined a run that was already waiting, instead of queueing a new one */
+  coalesced: Scalars['Boolean']['output'];
+  /** The background run that will sync the account */
+  runId: Scalars['ID']['output'];
+  /** That run's status: queued, running or retrying */
+  status: Scalars['String']['output'];
 };
 
 /** Public-facing user profile for social features. */
@@ -10495,6 +10523,7 @@ export type ResolversTypes = ResolversObject<{
   ProposalType: ProposalType;
   ProposalVoteSummary: ResolverTypeWrapper<ProposalVoteSummary>;
   ProposeSprayWallResetInput: ProposeSprayWallResetInput;
+  ProviderSyncRequest: ResolverTypeWrapper<ProviderSyncRequest>;
   PublicUserProfile: ResolverTypeWrapper<PublicUserProfile>;
   PublishSprayWallVersionInput: PublishSprayWallVersionInput;
   QaLabel: ResolverTypeWrapper<QaLabel>;
@@ -10934,6 +10963,7 @@ export type ResolversParentTypes = ResolversObject<{
   ProposalConnection: ProposalConnection;
   ProposalVoteSummary: ProposalVoteSummary;
   ProposeSprayWallResetInput: ProposeSprayWallResetInput;
+  ProviderSyncRequest: ProviderSyncRequest;
   PublicUserProfile: PublicUserProfile;
   PublishSprayWallVersionInput: PublishSprayWallVersionInput;
   QaLabel: QaLabel;
@@ -11300,6 +11330,9 @@ export type AuroraCredentialStatusResolvers<
 > = ResolversObject<{
   boardType?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   hasToken?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  pendingRunId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
+  syncError?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  syncStatus?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   syncedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   userId?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   username?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
@@ -13454,6 +13487,12 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationRequestGymClaimArgs, 'input'>
   >;
+  requestProviderSync?: Resolver<
+    ResolversTypes['ProviderSyncRequest'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationRequestProviderSyncArgs, 'boardType'>
+  >;
   requestSprayWallDetection?: Resolver<
     ResolversTypes['SprayWallDetection'],
     ParentType,
@@ -14111,6 +14150,16 @@ export type ProposalVoteSummaryResolvers<
   requiredUpvotes?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   weightedDownvotes?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   weightedUpvotes?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type ProviderSyncRequestResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['ProviderSyncRequest'] = ResolversParentTypes['ProviderSyncRequest'],
+> = ResolversObject<{
+  coalesced?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  runId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  status?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -16479,6 +16528,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   Proposal?: ProposalResolvers<ContextType>;
   ProposalConnection?: ProposalConnectionResolvers<ContextType>;
   ProposalVoteSummary?: ProposalVoteSummaryResolvers<ContextType>;
+  ProviderSyncRequest?: ProviderSyncRequestResolvers<ContextType>;
   PublicUserProfile?: PublicUserProfileResolvers<ContextType>;
   QaLabel?: QaLabelResolvers<ContextType>;
   QaPreview?: QaPreviewResolvers<ContextType>;
