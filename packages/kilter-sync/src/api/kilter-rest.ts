@@ -224,14 +224,22 @@ async function catalogGet<T>(path: string, accessToken: string, signal?: AbortSi
     }
 
     if (response.status === 429 && attempt < CATALOG_MAX_RETRIES) {
-      // Honour Retry-After when present (seconds or an HTTP date, capped so a
-      // garbled header cannot stall the catalog for hours), else exponential
-      // backoff capped at 30s.
+      // Honour Retry-After when present (seconds or an HTTP date), else
+      // exponential backoff capped at 30s.
       const retryAfterMs = responseRetryAfterMs(response);
+      if (retryAfterMs !== undefined && retryAfterMs > CATALOG_RETRY_AFTER_CAP_MS) {
+        // Longer than this request may sleep: retrying inside the window would
+        // only call Kilter again while it asked us not to. Hand the whole delay
+        // to the runner, which parks the catalog slot and the donor for it.
+        throw new KilterApiError(
+          'rate_limited',
+          `${path} rate limited for ${retryAfterMs}ms (Retry-After)`,
+          429,
+          retryAfterMs,
+        );
+      }
       const backoffMs =
-        retryAfterMs !== undefined && retryAfterMs > 0
-          ? Math.min(CATALOG_RETRY_AFTER_CAP_MS, retryAfterMs)
-          : Math.min(30_000, 1000 * 2 ** attempt);
+        retryAfterMs !== undefined && retryAfterMs > 0 ? retryAfterMs : Math.min(30_000, 1000 * 2 ** attempt);
       attempt += 1;
       await sleep(backoffMs, signal);
       continue;
