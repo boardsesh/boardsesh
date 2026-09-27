@@ -1203,7 +1203,8 @@ function donorCredential(overrides: Partial<CredentialRecord> = {}): CredentialR
 
 describe('SyncRunner.runSharedSyncJob (the aurora-shared-sync job)', () => {
   const injectedDb = {} as never;
-  const transaction = vi.fn();
+  // The job's attempt fence: runs the batch on the database it was given.
+  const transaction = vi.fn(async (callback: (tx: never) => Promise<unknown>) => callback(injectedDb)) as never;
 
   beforeEach(() => {
     for (const mock of [
@@ -1246,6 +1247,10 @@ describe('SyncRunner.runSharedSyncJob (the aurora-shared-sync job)', () => {
     });
     // The locations sync gets the same fence.
     expect(mockSyncAuroraBoardLocations.mock.calls[0][0]).toMatchObject({ board: 'tension', transaction });
+    // The claim and the stamp ran inside the fence too.
+    expect(vi.mocked(transaction as (callback: unknown) => Promise<unknown>).mock.calls.length).toBeGreaterThanOrEqual(
+      2,
+    );
     expect(mockStampSharedSyncFinished.mock.calls[0][1]).toMatchObject({
       claimToken: 'claim-token',
       fullCooldownMs: 50 * 60_000,
@@ -1309,6 +1314,24 @@ describe('SyncRunner.runSharedSyncJob (the aurora-shared-sync job)', () => {
     expect(mockSignIn).toHaveBeenCalledWith('plain-enc-user', 'plain-enc-pass', { signal: undefined });
     expect(mockSyncSharedData.mock.calls[1][2]).toBe('fresh-token');
     expect(updateCredentialStatus).not.toHaveBeenCalled();
+  });
+
+  it('stops after the re-login when the job was stopped while it logged in', async () => {
+    mockFindSharedSyncDonorCredential.mockResolvedValue(donorCredential());
+    mockSyncSharedData.mockRejectedValueOnce(
+      new AuroraRequestError({ code: 'http', message: 'Aurora HTTP 401', status: 401 }),
+    );
+    const shutdown = new AbortController();
+    mockSignIn.mockImplementation(async () => {
+      shutdown.abort();
+      return { token: 'fresh-token' };
+    });
+    const runner = new SyncRunner({ db: injectedDb, onLog: () => {} });
+
+    await expect(runner.runSharedSyncJob('decoy', { signal: shutdown.signal })).rejects.toThrow();
+
+    // No second pass with the fresh token.
+    expect(mockSyncSharedData).toHaveBeenCalledTimes(1);
   });
 
   it('logs in straight away when the donor has no stored token', async () => {

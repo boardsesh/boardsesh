@@ -108,6 +108,8 @@ const nullableBool = (value: unknown): boolean | null => (value == null ? null :
 export async function pullKilterReference(args: {
   accessToken: string;
   log?: (message: string) => void;
+  /** Cancels the reference stream (a background job's shutdown or lost lease). */
+  signal?: AbortSignal;
 }): Promise<KilterReferencePull> {
   // A PowerSync stream can emit multiple PUT ops for the same row (initial
   // snapshot then updates, or the same row surfaced by both the `global` and
@@ -124,6 +126,7 @@ export async function pullKilterReference(args: {
 
   await streamKilterPowerSync({
     accessToken: args.accessToken,
+    signal: args.signal,
     streams: ['global', 'global_gyms'],
     onOp: (op: PowerSyncOp) => {
       if (op.op !== 'PUT' || !op.data) return;

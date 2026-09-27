@@ -862,14 +862,13 @@ export class SyncRunner {
     claimToken: SharedSyncClaimToken,
     fullCooldownMs: number,
     nextCooldownMs: number,
+    /** The scheduled job's attempt fence: a run that lost its lease does not stamp. */
+    transaction?: SyncBatchRunner,
   ): Promise<void> {
     try {
-      const finalized = await stampSharedSyncFinished(db, {
-        ...cursor,
-        claimToken,
-        fullCooldownMs,
-        nextCooldownMs,
-      });
+      const stamp = (database: RunnerDb) =>
+        stampSharedSyncFinished(database, { ...cursor, claimToken, fullCooldownMs, nextCooldownMs });
+      const finalized = transaction ? await transaction(stamp) : await stamp(db);
       if (!finalized) {
         this.log(`[SyncRunner] Shared-sync claim ownership changed for ${boardType}; leaving the newer cursor intact`);
       }
@@ -932,7 +931,11 @@ export class SyncRunner {
 
     const cooldownMs = Math.max(0, options.cooldownMs ?? this.getSharedSyncCooldownMs());
     const cursor = { boardType: board, cursorName: SHARED_SYNC_COOLDOWN_CURSOR };
-    const claimToken = await claimSharedSyncSlot(db, { ...cursor, cooldownMs });
+    // The claim and the stamp go through the job's fence too: a run that lost
+    // its lease neither claims nor stamps.
+    const claimToken = options.transaction
+      ? await options.transaction((tx) => claimSharedSyncSlot(tx, { ...cursor, cooldownMs }))
+      : await claimSharedSyncSlot(db, { ...cursor, cooldownMs });
     if (claimToken === null) return { status: 'cooldown', lastRunAt: await readSharedSyncCursor(db, cursor) };
 
     // The slot's marker is stamped when the run ends; backdating it by the
@@ -958,6 +961,8 @@ export class SyncRunner {
         this.log(`[SyncRunner] Stored token for ${board} was rejected; logging in once`);
         tokenSource = 'login';
         token = await this.signInDonor(donor, board, signal);
+        // The login can outlive a shutdown or a lost lease; stop before the second pass.
+        signal?.throwIfAborted();
         await this.runBoardSharedWork(board, token, work);
       }
       nextCooldownMs = fromStart();
@@ -969,7 +974,15 @@ export class SyncRunner {
           : Math.min(TRANSIENT_SHARED_SYNC_COOLDOWN_MS, cooldownMs);
       throw error;
     } finally {
-      await this.stampSharedSyncFinishedSafely(db, cursor, board, claimToken, cooldownMs, nextCooldownMs);
+      await this.stampSharedSyncFinishedSafely(
+        db,
+        cursor,
+        board,
+        claimToken,
+        cooldownMs,
+        nextCooldownMs,
+        options.transaction,
+      );
     }
   }
 

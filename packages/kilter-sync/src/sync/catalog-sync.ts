@@ -8,7 +8,7 @@ import {
   boardPlacements,
   type NewBoardClimb,
 } from '@boardsesh/db/schema';
-import { populateDenormalizedColumns, mergeCatalogCharacteristicsSql } from '@boardsesh/db/queries';
+import { isSyncFenceError, populateDenormalizedColumns, mergeCatalogCharacteristicsSql } from '@boardsesh/db/queries';
 import { isNoMatchClimb, CLIMB_CHARACTERISTICS } from '@boardsesh/shared-schema';
 
 import type { KilterTokenProvider } from '../api/token-provider';
@@ -43,6 +43,26 @@ import type { LocationSyncSummary } from '@boardsesh/location-sync';
 
 type DrizzleDb = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
 
+/**
+ * Runs one bounded write batch. A background job passes its attempt fence, so
+ * a run that lost its lease throws at its next batch instead of writing on
+ * alongside its replacement. The CLI and the daemon default to running the
+ * callback on the plain database, exactly as before.
+ */
+export type CatalogWriteRunner = <Result>(callback: (db: DrizzleDb) => Promise<Result>) => Promise<Result>;
+
+/** Stats rows per write batch, so a big layout group's upsert never holds one fence for long. */
+export const CATALOG_STATS_WRITE_BATCH = 5000;
+
+/**
+ * True for an error that means "stop": a lost attempt fence or an abort. The
+ * catalog's best-effort steps (backlog, locations, notifications, deletions,
+ * a reroute) must rethrow these instead of logging and carrying on.
+ */
+function mustStop(error: unknown, signal: AbortSignal | undefined): boolean {
+  return isSyncFenceError(error) || Boolean(signal?.aborted);
+}
+
 const KILTER = 'kilter';
 const BATCH = 1000;
 
@@ -72,10 +92,17 @@ export type SyncKilterCatalogArgs = {
   suppressNotifications?: boolean;
   /**
    * Checked between layout groups and before each closing step (backlog,
-   * locations, notifications, deletions): a background job that lost its lease
-   * or is shutting down stops at the next boundary.
+   * locations, notifications, deletions), and passed to every Kilter request:
+   * a background job that lost its lease or is shutting down stops at the next
+   * request or boundary.
    */
   signal?: AbortSignal;
+  /**
+   * Runs every write batch (each layout flush, re-list, stats chunk, backlog,
+   * layout aliases, locations, notifications, the deletion apply). A job
+   * passes its attempt fence here. Defaults to the plain database.
+   */
+  transaction?: CatalogWriteRunner;
 };
 
 export type KilterCatalogSummary = {
@@ -960,6 +987,7 @@ async function relistCanonicals(db: DrizzleDb, canonicalUuids: string[]): Promis
  */
 type SyncBoardLayoutGroupArgs = {
   db: DrizzleDb;
+  write: CatalogWriteRunner;
   state: TokenState;
   boardLayoutId: number;
   gripsLayoutUuids: string[];
@@ -978,6 +1006,7 @@ type SyncBoardLayoutGroupArgs = {
 async function syncBoardLayoutGroup(args: SyncBoardLayoutGroupArgs): Promise<GroupResult> {
   const {
     db,
+    write,
     state,
     boardLayoutId,
     gripsLayoutUuids,
@@ -1028,7 +1057,7 @@ async function syncBoardLayoutGroup(args: SyncBoardLayoutGroupArgs): Promise<Gro
     // must never leave a canonical committed without its holds/aliases/denorm
     // columns (see #3538: a stranded climb matches on UUID identity on every
     // later run and never gets its holds re-derived).
-    await flushKilterLayoutBatch(db, batch.newClimbInserts, batch.newHoldRows, batch.aliasRows);
+    await write((tx) => flushKilterLayoutBatch(tx, batch.newClimbInserts, batch.newHoldRows, batch.aliasRows));
     result.canonicalsInserted += batch.newClimbInserts.length;
     result.aliasesUpserted += batch.aliasRows.length;
     log(
@@ -1061,7 +1090,7 @@ async function syncBoardLayoutGroup(args: SyncBoardLayoutGroupArgs): Promise<Gro
   //    relistsBlockedByDeletionHistory) instead of re-listed, and with no
   //    deletion list at all nothing is re-listed through this path.
   if (canonicalsToRelist.size > 0) {
-    const relistedCount = await relistCanonicals(db, [...canonicalsToRelist]);
+    const relistedCount = await write((tx) => relistCanonicals(tx, [...canonicalsToRelist]));
     result.canonicalsRelisted += relistedCount;
     log(`[kilter-catalog] layout group ${boardLayoutId}: re-listed ${relistedCount} canonical(s) Kilter still lists`);
   }
@@ -1084,7 +1113,7 @@ async function syncBoardLayoutGroup(args: SyncBoardLayoutGroupArgs): Promise<Gro
       foldCatalogStatOnce(statsByCanonicalAngle, seenSourceStats, stat, canonicalUuid);
     }
   }
-  const statsOutcome = await upsertCatalogStats(db, statsByCanonicalAngle);
+  const statsOutcome = await upsertCatalogStats(write, statsByCanonicalAngle);
   result.statsUpserted += statsOutcome.sent;
   result.statsWritten += statsOutcome.written;
 
@@ -1097,7 +1126,7 @@ async function syncBoardLayoutGroup(args: SyncBoardLayoutGroupArgs): Promise<Gro
  * is how many it actually inserted or changed (see upsertKilterStats).
  */
 async function upsertCatalogStats(
-  db: DrizzleDb,
+  write: CatalogWriteRunner,
   statsByCanonicalAngle: Map<string, StatAccum>,
 ): Promise<{ sent: number; written: number }> {
   const statRows: KilterStatsUpsertRow[] = [...statsByCanonicalAngle.values()]
@@ -1114,7 +1143,11 @@ async function upsertCatalogStats(
       faAt: accum.faAt,
       upstreamAscensionistCount: accum.kilterCount,
     }));
-  const written = await upsertKilterStats(db, statRows, { policy: 'raise-only' });
+  let written = 0;
+  for (let start = 0; start < statRows.length; start += CATALOG_STATS_WRITE_BATCH) {
+    const chunk = statRows.slice(start, start + CATALOG_STATS_WRITE_BATCH);
+    written += await write((tx) => upsertKilterStats(tx, chunk, { policy: 'raise-only' }));
+  }
   return { sent: statRows.length, written };
 }
 
@@ -1186,6 +1219,8 @@ function pushRerouteFallbackSkip(result: GroupResult, candidate: RerouteCandidat
 
 type IngestRerouteCandidatesArgs = {
   db: DrizzleDb;
+  write: CatalogWriteRunner;
+  signal?: AbortSignal;
   candidates: RerouteCandidate[];
   openSkips: Map<string, string>;
   deletedLowerUuids: ReadonlySet<string> | null;
@@ -1225,6 +1260,7 @@ async function ingestRerouteCandidates(args: IngestRerouteCandidatesArgs): Promi
     try {
       const layoutResult = await ingestRerouteCandidatesForLayout({
         db: args.db,
+        write: args.write,
         targetLayoutId,
         candidates: layoutCandidates,
         holeToPlacement,
@@ -1235,6 +1271,7 @@ async function ingestRerouteCandidates(args: IngestRerouteCandidatesArgs): Promi
       });
       mergeGroupResult(result, layoutResult);
     } catch (error) {
+      if (mustStop(error, args.signal)) throw error;
       args.log(
         `[kilter-catalog] reroute onto layout ${targetLayoutId} failed (${error instanceof Error ? error.message : String(error)}); ${layoutCandidates.length} climb(s) stay in the backlog`,
       );
@@ -1246,6 +1283,7 @@ async function ingestRerouteCandidates(args: IngestRerouteCandidatesArgs): Promi
 
 async function ingestRerouteCandidatesForLayout(input: {
   db: DrizzleDb;
+  write: CatalogWriteRunner;
   targetLayoutId: number;
   candidates: RerouteCandidate[];
   holeToPlacement: Map<number, number>;
@@ -1254,8 +1292,17 @@ async function ingestRerouteCandidatesForLayout(input: {
   existingSelfAliasLower: Set<string>;
   log: (message: string) => void;
 }): Promise<GroupResult> {
-  const { db, targetLayoutId, candidates, holeToPlacement, openSkips, deletedLowerUuids, existingSelfAliasLower, log } =
-    input;
+  const {
+    db,
+    write,
+    targetLayoutId,
+    candidates,
+    holeToPlacement,
+    openSkips,
+    deletedLowerUuids,
+    existingSelfAliasLower,
+    log,
+  } = input;
   const result = createGroupResult();
   const candidateLowerUuids = candidates.map((candidate) => candidate.climb.climbUuid.toLowerCase());
   const candidateFingerprints = [...new Set(candidates.map((candidate) => candidate.fingerprint))];
@@ -1360,12 +1407,12 @@ async function ingestRerouteCandidatesForLayout(input: {
     stagedCandidates.push(candidate);
   }
 
-  await flushKilterLayoutBatch(db, batch.newClimbInserts, batch.newHoldRows, batch.aliasRows);
+  await write((tx) => flushKilterLayoutBatch(tx, batch.newClimbInserts, batch.newHoldRows, batch.aliasRows));
   result.canonicalsInserted += batch.newClimbInserts.length;
   result.aliasesUpserted += batch.aliasRows.length;
   result.climbsRerouted += recoveredCount;
   if (canonicalsToRelist.size > 0) {
-    result.canonicalsRelisted += await relistCanonicals(db, [...canonicalsToRelist]);
+    result.canonicalsRelisted += await write((tx) => relistCanonicals(tx, [...canonicalsToRelist]));
   }
 
   // The source layout is the only place these climbs' stats are served from, so
@@ -1388,7 +1435,7 @@ async function ingestRerouteCandidatesForLayout(input: {
       foldCatalogStatOnce(statsByCanonicalAngle, seenSourceStats, stat, canonicalUuid);
     }
   }
-  const statsOutcome = await upsertCatalogStats(db, statsByCanonicalAngle);
+  const statsOutcome = await upsertCatalogStats(write, statsByCanonicalAngle);
   result.statsUpserted += statsOutcome.sent;
   result.statsWritten += statsOutcome.written;
 
@@ -1404,8 +1451,10 @@ async function ingestRerouteCandidatesForLayout(input: {
 export async function syncKilterCatalog(args: SyncKilterCatalogArgs): Promise<KilterCatalogSummary> {
   const log = args.log ?? (() => {});
   const state: TokenState = { provider: args.tokenProvider, token: await args.tokenProvider(), signal: args.signal };
+  const write: CatalogWriteRunner = args.transaction ?? ((callback) => callback(args.db));
 
-  const reference = args.reference ?? (await pullKilterReference({ accessToken: state.token, log }));
+  const reference =
+    args.reference ?? (await pullKilterReference({ accessToken: state.token, log, signal: args.signal }));
   const resolver = await buildLayoutResolver(args.db);
 
   const allListedLayouts = reference.productLayouts.filter((layout) => layout.isListed);
@@ -1518,6 +1567,7 @@ export async function syncKilterCatalog(args: SyncKilterCatalogArgs): Promise<Ki
     args.signal?.throwIfAborted();
     const groupResult = await syncBoardLayoutGroup({
       db: args.db,
+      write,
       state,
       boardLayoutId,
       gripsLayoutUuids,
@@ -1539,6 +1589,8 @@ export async function syncKilterCatalog(args: SyncKilterCatalogArgs): Promise<Ki
   // write below, so a successful reroute never leaves a skip row behind.
   const rerouteResult = await ingestRerouteCandidates({
     db: args.db,
+    write,
+    signal: args.signal,
     candidates: [...rerouteCandidates.values()],
     openSkips,
     deletedLowerUuids,
@@ -1554,7 +1606,7 @@ export async function syncKilterCatalog(args: SyncKilterCatalogArgs): Promise<Ki
   // A failure here must not fail the catalog run — the climbs are already in.
   try {
     if (allSkips.length > 0) {
-      await persistSkips(args.db, allSkips);
+      await write((tx) => persistSkips(tx, allSkips));
       summary.skipsRecorded = allSkips.length;
       const byReason = summarizeSkipReasons(allSkips)
         .map((entry) => `${entry.count} ${entry.reason}`)
@@ -1563,11 +1615,12 @@ export async function syncKilterCatalog(args: SyncKilterCatalogArgs): Promise<Ki
       log(`[kilter-catalog] ${allSkips.length} climb(s) unmapped (${byReason}); sample: ${sample}`);
     }
     if (allResolvedSkipUuids.length > 0) {
-      await markSkipsResolved(args.db, KILTER, allResolvedSkipUuids);
+      await write((tx) => markSkipsResolved(tx, KILTER, allResolvedSkipUuids));
       summary.skipsResolved = allResolvedSkipUuids.length;
       log(`[kilter-catalog] recovered ${allResolvedSkipUuids.length} previously-unmapped climb(s)`);
     }
   } catch (error) {
+    if (mustStop(error, args.signal)) throw error;
     summary.skipsWriteFailed = true;
     log(
       `[kilter-catalog] SKIP BACKLOG WRITE FAILED — ${allSkips.length} unmapped climb(s) went unrecorded: ${error instanceof Error ? error.message : String(error)}`,
@@ -1578,7 +1631,7 @@ export async function syncKilterCatalog(args: SyncKilterCatalogArgs): Promise<Ki
   // Persist the layout uuid → layout_id mappings discovered this run.
   const newAliases = resolver.drainNewAliases();
   if (newAliases.length > 0) {
-    await persistLayoutAliases(args.db, newAliases);
+    await write((tx) => persistLayoutAliases(tx, newAliases));
   }
   const unmapped = resolver.unmapped();
   if (unmapped.length > 0) {
@@ -1588,8 +1641,16 @@ export async function syncKilterCatalog(args: SyncKilterCatalogArgs): Promise<Ki
   }
 
   try {
-    summary.locations = await syncKilterLocations({ db: args.db, reference, resolver, log });
+    summary.locations = await syncKilterLocations({
+      db: args.db,
+      reference,
+      resolver,
+      log,
+      transaction: args.transaction,
+      signal: args.signal,
+    });
   } catch (error) {
+    if (mustStop(error, args.signal)) throw error;
     log(`[kilter-locations] failed: ${error instanceof Error ? error.message : String(error)}`);
   }
 
@@ -1599,8 +1660,9 @@ export async function syncKilterCatalog(args: SyncKilterCatalogArgs): Promise<Ki
     );
   } else if (allNewCanonicals.length > 0) {
     try {
-      await createSetterSyncNotifications(args.db, allNewCanonicals, log);
+      await write((tx) => createSetterSyncNotifications(tx, allNewCanonicals, log));
     } catch (error) {
+      if (mustStop(error, args.signal)) throw error;
       log(`[kilter-catalog] setter notifications failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
@@ -1613,8 +1675,10 @@ export async function syncKilterCatalog(args: SyncKilterCatalogArgs): Promise<Ki
     try {
       summary.deletions = await reconcileDeletions(args.db, deletedUuids, args.applyDeletions ?? false, log, {
         batchLimit: args.deleteBatchLimit,
+        transaction: args.transaction,
       });
     } catch (error) {
+      if (mustStop(error, args.signal)) throw error;
       log(`[kilter-catalog] deletion reconciliation failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }

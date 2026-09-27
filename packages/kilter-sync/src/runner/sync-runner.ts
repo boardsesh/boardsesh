@@ -21,6 +21,7 @@ import {
   isSyncFenceError,
   markWeeklyCursorDone,
   type SharedSyncClaimToken,
+  type SyncBatchRunner,
 } from '@boardsesh/db/queries';
 import {
   DEFAULT_DAEMON_OPTIONS,
@@ -555,14 +556,18 @@ export class SyncRunner {
     cooldownMs: number,
     /** The scheduled job's shorter retry cooldown; the daemon always takes the full one. */
     nextCooldownMs?: number,
+    /** The scheduled job's attempt fence: a run that lost its lease does not stamp. */
+    transaction?: SyncBatchRunner,
   ): Promise<void> {
     try {
-      const finalized = await stampSharedSyncFinished(db, {
-        ...cursor,
-        claimToken,
-        fullCooldownMs: cooldownMs,
-        ...(nextCooldownMs === undefined ? {} : { nextCooldownMs }),
-      });
+      const stamp = (database: RunnerDb) =>
+        stampSharedSyncFinished(database, {
+          ...cursor,
+          claimToken,
+          fullCooldownMs: cooldownMs,
+          ...(nextCooldownMs === undefined ? {} : { nextCooldownMs }),
+        });
+      const finalized = transaction ? await transaction(stamp) : await stamp(db);
       if (!finalized) {
         this.log(
           `[KilterSyncRunner] Catalog-sync claim ownership changed for ${KILTER_BOARD_TYPE}; leaving the newer cursor intact`,
@@ -620,7 +625,9 @@ export class SyncRunner {
 
     const cooldownMs = Math.max(0, options.cooldownMs ?? this.getCatalogSyncCooldownMs());
     const cursor = { boardType: KILTER_BOARD_TYPE, cursorName: CATALOG_SYNC_COOLDOWN_CURSOR };
-    const claimToken = await claimSharedSyncSlot(db, { ...cursor, cooldownMs });
+    const { transaction, signal } = options;
+    const write: SyncBatchRunner = transaction ?? ((callback) => callback(db));
+    const claimToken = await write((tx) => claimSharedSyncSlot(tx, { ...cursor, cooldownMs }));
     if (claimToken === null) return { status: 'cooldown', lastRunAt: await readSharedSyncCursor(db, cursor) };
 
     // Measure the cooldown from the claim, not the end of the run: see
@@ -636,12 +643,13 @@ export class SyncRunner {
         log: (message) => this.log(message),
         applyDeletions: this.config.applyCatalogDeletions ?? true,
         deleteBatchLimit: this.config.deleteBatchLimit,
-        signal: options.signal,
+        signal,
+        transaction,
       });
-      options.signal?.throwIfAborted();
-      await this.maybeRepairKilterStats(db, tokenProvider);
-      options.signal?.throwIfAborted();
-      await this.maybeSnapshotHistory(db);
+      signal?.throwIfAborted();
+      await this.maybeRepairKilterStats(db, tokenProvider, { transaction, signal });
+      signal?.throwIfAborted();
+      await this.maybeSnapshotHistory(db, { transaction, signal });
       nextCooldownMs = fromStart();
       return { status: 'synced', tokenSource };
     } catch (error) {
@@ -649,7 +657,7 @@ export class SyncRunner {
       nextCooldownMs = permanent ? fromStart() : Math.min(TRANSIENT_CATALOG_SYNC_COOLDOWN_MS, cooldownMs);
       throw error;
     } finally {
-      await this.stampCatalogSyncFinishedSafely(db, cursor, claimToken, cooldownMs, nextCooldownMs);
+      await this.stampCatalogSyncFinishedSafely(db, cursor, claimToken, cooldownMs, nextCooldownMs, transaction);
     }
   }
 
@@ -663,35 +671,52 @@ export class SyncRunner {
    * with the same token provider. Errors are swallowed (logged) so a repair
    * failure never fails the catalog cycle.
    */
-  async maybeRepairKilterStats(db: RunnerDb, tokenProvider: KilterTokenProvider): Promise<void> {
+  async maybeRepairKilterStats(
+    db: RunnerDb,
+    tokenProvider: KilterTokenProvider,
+    options: Pick<CatalogSyncJobOptions, 'transaction' | 'signal'> = {},
+  ): Promise<void> {
     if (!(await isWeeklyCursorDue(db, KILTER_BOARD_TYPE, SyncRunner.KILTER_STATS_REPAIR_CURSOR))) {
       return;
     }
     this.log('[kilter-stats-repair] weekly reconciliation is due — applying');
+    const write: SyncBatchRunner = options.transaction ?? ((callback) => callback(db));
     try {
       const summary = await repairKilterCatalogStats({
         db,
         tokenProvider,
         apply: true,
         log: (message) => this.log(message),
+        signal: options.signal,
+        transaction: options.transaction,
       });
       // Commit the watermark only on success so a failed repair retries next
       // cycle instead of skipping the week.
-      await markWeeklyCursorDone(db, KILTER_BOARD_TYPE, SyncRunner.KILTER_STATS_REPAIR_CURSOR);
+      await write((tx) => markWeeklyCursorDone(tx, KILTER_BOARD_TYPE, SyncRunner.KILTER_STATS_REPAIR_CURSOR));
       this.log(
         `[kilter-stats-repair] applied — ${summary.changedKilterRows} count rows, ` +
           `${summary.formulaRowsRecomputed} formula rows`,
       );
     } catch (error) {
+      // A lost attempt fence or an abort stops the job; anything else is the
+      // repair's own failure and must not fail the catalog run.
+      if (options.signal?.aborted || isSyncFenceError(error)) throw error;
       this.handleError(error instanceof Error ? error : new Error(String(error)), { board: KILTER_BOARD_TYPE });
     }
   }
 
   /** Weekly board_climb_stats_history snapshot for kilter (see item 5). */
-  async maybeSnapshotHistory(db: RunnerDb): Promise<void> {
+  async maybeSnapshotHistory(
+    db: RunnerDb,
+    options: Pick<CatalogSyncJobOptions, 'transaction' | 'signal'> = {},
+  ): Promise<void> {
     try {
-      await snapshotClimbStatsHistoryIfDue(db, KILTER_BOARD_TYPE, (message) => this.log(message));
+      const snapshot = (database: RunnerDb) =>
+        snapshotClimbStatsHistoryIfDue(database, KILTER_BOARD_TYPE, (message) => this.log(message));
+      if (options.transaction) await options.transaction(snapshot);
+      else await snapshot(db);
     } catch (error) {
+      if (options.signal?.aborted || isSyncFenceError(error)) throw error;
       this.handleError(error instanceof Error ? error : new Error(String(error)), { board: KILTER_BOARD_TYPE });
     }
   }

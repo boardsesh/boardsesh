@@ -8,7 +8,9 @@ import {
   type PublicBoardLocationInput,
   type SizeEdgesInput,
   upsertPublicBoardLocations,
+  upsertPublicBoardLocationsInBatches,
   boardUuidForSource,
+  type LocationWriteBatchRunner,
 } from '@boardsesh/location-sync';
 import type { KilterReferencePull, KilterRefGym, KilterRefProductLayout, KilterRefWall } from './reference-pull';
 import type { LayoutResolver } from './layout-resolver';
@@ -252,11 +254,23 @@ export async function syncKilterLocations(args: {
   reference: KilterReferencePull;
   resolver: LayoutResolver;
   log?: (message: string) => void;
+  /**
+   * Runs the writes in batches of whole gyms, then the wall sources in one more
+   * batch, each in one transaction (a background job's attempt fence). Unset,
+   * the writes go straight to `db` as before.
+   */
+  transaction?: LocationWriteBatchRunner;
+  signal?: AbortSignal;
 }): Promise<LocationSyncSummary> {
   const { records, skipped } = buildKilterLocationRecords(args.reference, args.resolver);
-  const summary = await upsertPublicBoardLocations(args.db, records, {
-    logger: toLocationSyncLogger(args.log),
-  });
+  const summary = args.transaction
+    ? await upsertPublicBoardLocationsInBatches(args.transaction, records, {
+        logger: toLocationSyncLogger(args.log),
+        signal: args.signal,
+      })
+    : await upsertPublicBoardLocations(args.db, records, {
+        logger: toLocationSyncLogger(args.log),
+      });
   // Persist selectors from the reference snapshot, never reconstruct a wall
   // from layout/serial alone. Keep source rows so merge tombstones still resolve.
   const validRecords = records.filter(
@@ -291,7 +305,9 @@ export async function syncKilterLocations(args: {
       setIds: record.setIds,
     });
   }
-  await upsertKilterWallSources(args.db, [...mappingsByKey.values()]);
+  const mappings = [...mappingsByKey.values()];
+  if (args.transaction) await args.transaction((transaction) => upsertKilterWallSources(transaction, mappings));
+  else await upsertKilterWallSources(args.db, mappings);
   // Merge the upsert-side skips (e.g. invalid coordinates) with the kilter-side
   // skips (unlisted / unmapped / unsupported) and dedupe — boardsSkipped tracks
   // the deduped length so the count and the array stay in step.

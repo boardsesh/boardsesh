@@ -64,6 +64,13 @@ export type SyncOutcome = {
 /** Options for {@link SyncRunner.runCatalogSyncJob}. */
 export type CatalogSyncJobOptions = {
   signal?: AbortSignal;
+  /**
+   * Runs every write batch of the job: the slot claim and stamp, each catalog
+   * flush, stats chunk, location and deletion batch, the weekly repair's apply
+   * and watermark, and the history snapshot. A background job passes its
+   * attempt fence, so a run that lost its lease stops at its next batch.
+   */
+  transaction?: SyncBatchRunner;
   /** Overrides the runner's catalog cooldown for this claim. */
   cooldownMs?: number;
   /** Where the ROPC fallback token comes from. Defaults to `process.env`. */
