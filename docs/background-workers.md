@@ -3,10 +3,12 @@
 The queue foundation shipped through #5587 (superseding the unmerged #5547).
 J01 (#5614, epic #5613) adds an independent backend worker entry point and
 durable attempt/settlement infrastructure. PR-1 of #5800 adds the family
-registry: every job names a family, and the worker dispatches on it. The only
-registered family is `worker-probe`, served by every role. **Personal imports,
-delivery and existing cron migrations are still separate issues.** Starting this
-image does not replace a sync daemon.
+registry: every job names a family, and the worker dispatches on it.
+`worker-probe` is served by every role. PR-B1 of #5800 adds the first three
+batch families (below); each stays off until `BATCH_FAMILIES_ENABLED` names
+it, and its GitHub Actions workflow keeps running until the cutover. **Personal
+imports, delivery and the other cron migrations are still separate issues.**
+Starting this image does not replace a sync daemon.
 
 ## Placement and connection budget
 
@@ -51,13 +53,23 @@ supervision and the singleton, once-per-minute reconciliation schedule, so
 homelab availability is not required for detecting failed or expired work.
 
 Operators pre-provision dedicated logins, then run the existing deployment
-migrator with `MIGRATION_WORKER_ROLES` containing the comma-separated names:
-`boardsesh_worker_interactive_import`, `boardsesh_worker_routine_provider`,
-`boardsesh_worker_maintenance_delivery`, `boardsesh_worker_batch`.
-The owner pre-creates queues (below) and grants pg-boss DML plus SELECT/INSERT/UPDATE
-on `background_job_runs`. No provider/user-data grants are added in this slice.
-Runtime users must never be migration owners. The existing runtime and detector
-grant contracts remain supported.
+migrator with `MIGRATION_WORKER_ROLES`, a comma list of `<worker-role>=<login>`
+entries:
+
+```sh
+MIGRATION_WORKER_ROLES=interactive-import=boardsesh_worker_interactive_import,routine-provider=boardsesh_worker_routine_provider,maintenance-delivery=boardsesh_worker_maintenance_delivery,batch=boardsesh_worker_batch
+```
+
+The owner pre-creates queues (below) and grants every listed login pg-boss DML
+plus SELECT/INSERT/UPDATE on `background_job_runs`. A `<worker-role>=` prefix
+adds that role's data grants from `WORKER_ROLE_DATA_GRANTS` in
+`packages/db/src/job-queue-schema.ts`, plus USAGE on the sequences behind
+those tables; a bare login gets the queue and ledger only. The lists are
+authoritative: the migrator revokes a login's `public` table and sequence
+grants before granting, so a table removed from a list (or a login moved to a
+bare entry) loses its grant on the next migration. Today only `batch` has data
+grants (see "Batch families"). Runtime users must never be migration owners.
+The existing runtime and detector grant contracts remain supported.
 
 ## Queues
 
@@ -117,6 +129,9 @@ module. The module declares:
 | Family | Roles | Lease | Retries | Deadline | Key |
 | --- | --- | --- | --- | --- | --- |
 | `worker-probe` | all four | 120 s | 3, 15 s backoff to 120 s | 24 h | run ID |
+| `refresh-recommendations` | `batch` | 1,200 s | 2, 300 s backoff to 900 s | 20 h | `nightly` |
+| `refresh-hold-features` | `batch` | 1,200 s | 2, 300 s backoff to 900 s | 20 h | board |
+| `refresh-climb-grades` | `batch` | 1,800 s | 1, after 900 s | 20 h | `nightly` |
 
 Throw `BackgroundJobError(code)` from `execute` to record a bounded,
 credential-free `error_code` (`/^[A-Z][A-Z0-9_]{0,63}$/`); pass
@@ -162,6 +177,110 @@ enqueue is logged with a bounded code (never payload contents), counted and
 skipped, since retrying the tick would duplicate every job that did enqueue
 under a run-ID key. When every request in a tick fails, nothing was enqueued, so
 the tick throws and pg-boss retries it.
+
+## Batch families
+
+Three nightly data jobs that ran only on GitHub Actions now also run on the
+batch worker. The job bodies live in `packages/db/src/jobs/` (package export
+`@boardsesh/db/jobs`) and take `{ db, signal, transact, log, ...params }`: `db`
+for reads, `transact` for every write batch, and they throw instead of exiting.
+The CLIs in `packages/db/scripts/` pass `db.transaction`; the families pass the
+attempt fence (`context.transaction`). The worker never imports
+`scripts/db-connection.ts`, which loads dotenv files and exits on a missing URL.
+
+| Family | Cron (UTC) | Payload | Heartbeat | Writes | Workflow it replaces |
+| --- | --- | --- | --- | --- | --- |
+| `refresh-recommendations` | `0 6 * * *` | `{}` | 30 s | `board_setter_stats`, `board_climb_send_stats`, the public cohort playlists, the weekly `board_climb_stats_history` catch-up | `refresh-recommendations.yml` |
+| `refresh-hold-features` | `15 6 * * *` | `{ board = 'kilter', dryRun?, shadow? }` | 30 s | `board_hold_features`, the shadow `user_hold_classifications` | `refresh-hold-features.yml` |
+| `refresh-climb-grades` | `30 6 * * *` | `{ refit?, dryRun?, validateOnly? }` | 900 s | `board_grade_coefficients`, `board_climb_grades` | `refresh-climb-grades.yml` |
+
+Measured on GitHub Actions against production in Sep 2026: recommendations
+about 25 s, hold features about 60 s, grades about 4 minutes, of which the
+publish transaction was 69 s with 99.7% of rows held by hysteresis.
+
+**A fenced write batch must finish inside the heartbeat window.** The fence
+holds the run row's lock until it commits, and the worker's heartbeat needs
+that lock, so no touch lands while a batch runs; the fence then rechecks the
+heartbeat before commit. A batch longer than `heartbeatSeconds` therefore
+always loses its attempt. Recommendations and hold features write in short
+batches (the longest are the setter-stats upsert, about 8 s, and the weekly
+MoonBoard history snapshot, about 5 s). The grade publish is one transaction
+on purpose (coefficients, gates and every board's grades commit together), so
+that family's heartbeat is 900 s. Size any new family's heartbeat to its
+longest batch, not to its whole run.
+
+`refresh-climb-grades` fails a blocking validation gate with
+`BackgroundJobError('GATES_FAILED', { retryable: false })`: nothing was
+written, and the same data fails the same gate. The payload cannot set
+`allowEmptyBacktest`, `publishCrossAngleEstimates` or `contentPriorFile`; those
+stay CLI-only, as in the workflow. Every heavy grade read runs with
+`max_parallel_workers_per_gather = 0` in its own short transaction (a session
+`SET` would reach only one of the worker's two pooled connections).
+`refresh-hold-features` runs its reads one at a time for the same pool budget.
+
+**Batch container environment**, beyond the common worker variables:
+
+| Variable | Value |
+| --- | --- |
+| `WORKER_ROLE` | `batch` |
+| `NODE_OPTIONS` | `--max-old-space-size=4096` (the grade job holds every board's stats in memory) |
+| `POSTHOG_PERSONAL_API_KEY` | PostHog personal key with query access. Unset: the send stats are skipped and the run logs a warning. |
+| `POSTHOG_PROJECT_ID` | Optional, default `412845` |
+| `POSTHOG_HOST` | Optional, default `https://us.posthog.com` |
+
+The PostHog request runs outside every fence with a 60 s timeout joined to the
+job's signal.
+
+**Grants.** `batch=<login>` gets SELECT on the catalog and history the jobs scan
+(`board_climbs`, `board_climb_stats`, `board_climb_holds`, `board_placements`,
+`board_holes`, `board_sets`, `board_product_sizes_layouts_sets`,
+`board_climb_embeddings`, `board_climb_aliases`), SELECT on `boardsesh_ticks`
+and on `user_boards (id, gym_id)` for the grade model's evidence, and the writes
+above: `board_setter_stats`, `board_climb_send_stats`, `playlists`,
+`playlist_ownership`, `playlist_climbs`, `sync_deletions` (INSERT, from the
+`playlist_climbs` delete trigger), `board_climb_stats_history`,
+`board_shared_syncs` (the weekly snapshot watermark), `board_hold_features`,
+`user_hold_classifications`, `board_climb_grades`, `board_grade_coefficients`.
+On `users` it may read `id` and insert `(id, name, email)` only, for the two
+reserved system users. The grade publish creates a temporary table, so the
+database must keep PostgreSQL's default TEMPORARY privilege for PUBLIC.
+`packages/backend/src/services/__tests__/job-queue-roles.test.ts` runs every
+family under exactly these grants; a job that starts reading or writing a new
+table fails there until the list grows.
+
+**Operator runs** (on the batch host, with the worker environment and
+`WORKER_OPERATOR_ENABLED=true`):
+
+```sh
+node --import tsx packages/backend/src/workers/operator.ts enqueue refresh-recommendations
+node --import tsx packages/backend/src/workers/operator.ts enqueue refresh-hold-features '{"board":"tension","dryRun":true}'
+node --import tsx packages/backend/src/workers/operator.ts enqueue refresh-climb-grades '{"refit":true}'
+node --import tsx packages/backend/src/workers/operator.ts enqueue refresh-climb-grades '{"validateOnly":true}'
+```
+
+Each family has one dedup key (per board for hold features), so a manual run
+enqueued while the nightly run is queued returns that queued run with
+`ALREADY_QUEUED`; enqueue again once it has started.
+
+**Cutover, one family at a time** (recommendations, then hold features, then
+grades):
+
+1. Deploy the migrator with `batch=boardsesh_worker_batch` in
+   `MIGRATION_WORKER_ROLES`, and the batch worker with the environment above
+   and `WORKER_PAUSED=false`.
+2. Add the family to the backend's `BATCH_FAMILIES_ENABLED` and redeploy. The
+   Actions workflow keeps running too, on the same cron but hours late (GitHub
+   started these 06:00 UTC crons at 10:40 to 11:50 in Sep 2026). Every job is
+   idempotent, so the overlap costs one duplicate run a night.
+3. Wait for three `succeeded` ledger rows for the family, and compare their
+   log output (row counts per phase) with the same nights' workflow logs.
+4. In a follow-up PR, delete that workflow's `schedule:` block and keep
+   `workflow_dispatch` for manual runs. Update the pin in
+   `scripts/__tests__/batch-families-cron.test.ts` in the same PR.
+
+Rollback: remove the family from `BATCH_FAMILIES_ENABLED` (the backend
+unschedules it on boot) and restore the workflow's `schedule:` if step 4
+already landed.
 
 ## Attempts, retries and reconciliation
 

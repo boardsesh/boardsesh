@@ -1873,4 +1873,94 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   ${climbNeighborResumableBuildsSchema}
   DROP TABLE IF EXISTS board_climb_popularity, board_climb_popularity_runs;
   ${climbPopularitySchema}
+
+  CREATE UNIQUE INDEX IF NOT EXISTS "playlists_generated_recommendation_idx" ON "playlists" ("generated_recommendation");
+
+  -- The batch jobs' tables (refresh-recommendations, refresh-hold-features,
+  -- refresh-climb-grades), as migrations 0034-0036, 0117, 0148, 0174 and 0175
+  -- leave them.
+  CREATE TABLE IF NOT EXISTS "board_setter_stats" (
+    "board_type" text NOT NULL,
+    "setter_username" text NOT NULL,
+    "climb_count" integer DEFAULT 0 NOT NULL,
+    "total_ascents" bigint DEFAULT 0 NOT NULL,
+    "avg_ascents_per_climb" double precision DEFAULT 0 NOT NULL,
+    "avg_quality" double precision,
+    "setter_score" double precision DEFAULT 0 NOT NULL,
+    "updated_at" timestamp DEFAULT now() NOT NULL,
+    PRIMARY KEY ("board_type", "setter_username")
+  );
+  CREATE TABLE IF NOT EXISTS "board_climb_send_stats" (
+    "board_type" text NOT NULL,
+    "climb_uuid" text NOT NULL,
+    "send_count_30d" integer DEFAULT 0 NOT NULL,
+    "sender_count_30d" integer DEFAULT 0 NOT NULL,
+    "send_count_90d" integer DEFAULT 0 NOT NULL,
+    "last_sent_at" timestamp,
+    "updated_at" timestamp DEFAULT now() NOT NULL,
+    PRIMARY KEY ("board_type", "climb_uuid")
+  );
+  CREATE TABLE IF NOT EXISTS "board_grade_coefficients" (
+    "coeff_version" text NOT NULL,
+    "kind" text NOT NULL,
+    "key" text NOT NULL,
+    "payload" jsonb NOT NULL,
+    "created_at" timestamp DEFAULT now() NOT NULL,
+    PRIMARY KEY ("coeff_version", "kind", "key")
+  );
+  CREATE TABLE IF NOT EXISTS "board_hold_features" (
+    "board_type" text NOT NULL,
+    "placement_id" integer NOT NULL,
+    "layout_id" integer,
+    "hole_id" integer,
+    "set_id" integer,
+    "x" integer,
+    "y" integer,
+    "norm_x" double precision,
+    "norm_y" double precision,
+    "edge_dist" double precision,
+    "neighbor_dist" double precision,
+    "is_kickboard" boolean DEFAULT false NOT NULL,
+    "hand_difficulty" double precision,
+    "foot_difficulty" double precision,
+    "hand_sample_count" integer DEFAULT 0 NOT NULL,
+    "foot_sample_count" integer DEFAULT 0 NOT NULL,
+    "pull_direction" integer,
+    "coarse_type" text,
+    "feature_version" text NOT NULL,
+    "updated_at" timestamp DEFAULT now() NOT NULL,
+    PRIMARY KEY ("board_type", "placement_id")
+  );
+  CREATE TABLE IF NOT EXISTS "board_climb_embeddings" (
+    "board_type" text NOT NULL,
+    "climb_uuid" text NOT NULL,
+    "angle" integer NOT NULL,
+    "content_prior" double precision,
+    "content_sd" double precision,
+    "embedding" real[],
+    "model_version" text NOT NULL,
+    "updated_at" timestamp DEFAULT now() NOT NULL,
+    "sync_seq" bigserial NOT NULL,
+    PRIMARY KEY ("board_type", "climb_uuid", "angle")
+  );
+  DO $$ BEGIN
+    CREATE TYPE "hold_type" AS ENUM ('jug', 'sloper', 'pinch', 'crimp', 'pocket');
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END $$;
+  CREATE TABLE IF NOT EXISTS "user_hold_classifications" (
+    "id" bigserial PRIMARY KEY NOT NULL,
+    "user_id" text NOT NULL REFERENCES "users"("id") ON DELETE cascade,
+    "board_type" text NOT NULL,
+    "layout_id" integer NOT NULL,
+    "size_id" integer NOT NULL,
+    "hold_id" integer NOT NULL,
+    "hold_type" "hold_type",
+    "hand_rating" integer,
+    "foot_rating" integer,
+    "pull_direction" integer,
+    "created_at" timestamp DEFAULT now() NOT NULL,
+    "updated_at" timestamp DEFAULT now() NOT NULL
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS "user_hold_classifications_unique_idx"
+    ON "user_hold_classifications" ("user_id", "board_type", "layout_id", "size_id", "hold_id");
 `;

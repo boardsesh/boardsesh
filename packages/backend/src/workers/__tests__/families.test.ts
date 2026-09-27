@@ -10,7 +10,12 @@ describe('family registry', () => {
     for (const role of BACKGROUND_WORKER_ROLES) {
       expect(familiesForRole(role).map((family) => family.name)).toContain('worker-probe');
     }
-    expect(allFamilies().map((family) => family.name)).toEqual(['worker-probe']);
+    expect(allFamilies().map((family) => family.name)).toEqual([
+      'worker-probe',
+      'refresh-recommendations',
+      'refresh-hold-features',
+      'refresh-climb-grades',
+    ]);
     expect(() => requireFamily('no-such-family')).toThrow('UNKNOWN_FAMILY');
   });
 });

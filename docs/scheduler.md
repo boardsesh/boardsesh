@@ -154,6 +154,8 @@ unused and may be retained until its normal secret-rotation review.
 - The GitHub-Actions-scheduled jobs (`refresh-recommendations`,
   `refresh-climb-grades`, `refresh-climb-neighbors`, `refresh-content-model`, `refresh-hold-features`,
   `export-board-snapshots`, `refresh-acknowledgements`) are a separate thing.
+  They are moving to the homelab batch worker instead: see
+  `docs/background-workers.md`, "Batch families".
 - **`user-sync-cron` (#1875) needs no decision — the route is gone.**
   `git grep user-sync-cron` returns only three prose mentions
   (`docs/aurora-sync.md` ×2, `docs/branch-deploys.md`), all describing its
