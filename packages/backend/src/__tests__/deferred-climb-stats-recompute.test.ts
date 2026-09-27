@@ -459,14 +459,15 @@ describe('the self-heal drain cap', () => {
   });
 });
 
-describe('the drain when a live flush holds every old marker', () => {
-  it('stops after one batch instead of spinning through maxBatches', async () => {
+describe('the drain when a live flush holds the oldest markers', () => {
+  it('steps past the locked rows to the next oldest instead of stalling, and stops at the end', async () => {
     await insertLinkedTensionAccount(database, ASCENT_USER, ASCENT_CLIMB);
+    // Angle 40 is the oldest and a live flush holds it; 45 is free.
     await database.execute(sql`
-      INSERT INTO climb_stats_recompute_pending (board_type, climb_uuid, angle, requested_at)
-      VALUES (${FIXTURE_BOARD}, ${ASCENT_CLIMB}, 40, now() - interval '10 minutes')`);
+      INSERT INTO climb_stats_recompute_pending (board_type, climb_uuid, angle, requested_at) VALUES
+        (${FIXTURE_BOARD}, ${ASCENT_CLIMB}, 40, now() - interval '20 minutes'),
+        (${FIXTURE_BOARD}, ${ASCENT_CLIMB}, 45, now() - interval '10 minutes')`);
 
-    // A live flush holds the marker's row lock until released.
     let release: () => void = () => {};
     let locked: () => void = () => {};
     const lockTaken = new Promise<void>((resolve) => {
@@ -474,7 +475,8 @@ describe('the drain when a live flush holds every old marker', () => {
     });
     const flush = database.transaction(async (transaction) => {
       await transaction.execute(sql`
-        SELECT 1 FROM climb_stats_recompute_pending WHERE climb_uuid = ${ASCENT_CLIMB} FOR UPDATE`);
+        SELECT 1 FROM climb_stats_recompute_pending
+         WHERE climb_uuid = ${ASCENT_CLIMB} AND angle = 40 FOR UPDATE`);
       locked();
       await new Promise<void>((resolve) => {
         release = resolve;
@@ -488,15 +490,17 @@ describe('the drain when a live flush holds every old marker', () => {
       return database.transaction(callback);
     }) as SyncBatchRunner;
     try {
-      // One key, batches of one: a full pick every time, all of it locked.
-      expect(await drainPendingClimbStatsRecomputes(counting, { batchKeys: 1, maxBatches: 20 })).toBe(0);
-      expect(batches).toBe(1);
+      // Batches of one: the first pick is the locked 40, the next one 45.
+      expect(await drainPendingClimbStatsRecomputes(counting, { batchKeys: 1, maxBatches: 20 })).toBe(1);
+      // 40 (skipped), 45 (recomputed), then an empty pick: not 20 batches.
+      expect(batches).toBe(3);
     } finally {
       release();
       await flush;
     }
-    // The marker is still there for the next pass.
-    expect(await countRows('climb_stats_recompute_pending', ASCENT_CLIMB)).toBe(1);
+    const left = await database.execute<{ angle: number }>(sql`
+      SELECT angle FROM climb_stats_recompute_pending WHERE climb_uuid = ${ASCENT_CLIMB}`);
+    expect(left.map((row) => row.angle)).toEqual([40]);
   });
 });
 

@@ -169,7 +169,8 @@ export async function recomputeClimbStatsInBatches(
  * `olderThanMs`, oldest first, `batchKeys` per transaction, at most
  * `maxBatches` transactions. Returns how many keys it recomputed.
  *
- * Each batch picks its keys by age, then locks them in the canonical
+ * Each batch picks its keys by age (past any rows a live flush held on an
+ * earlier pick), then locks them in the canonical
  * `(board_type, climb_uuid, angle)` order every other writer of these rows
  * uses (the page's mark, {@link recomputeAndClear}), with `SKIP LOCKED` so it
  * never waits on a live flush. Then the same recompute and conditional DELETE
@@ -184,6 +185,9 @@ export async function drainPendingClimbStatsRecomputes(
   const batchKeys = options.batchKeys ?? CLIMB_STATS_RECOMPUTE_BATCH_KEYS;
   const maxBatches = options.maxBatches ?? 20;
   let drained = 0;
+  // Rows a live flush held on an earlier pick: skipped over, not re-picked, so
+  // one locked batch at the head of the queue cannot stall the drain.
+  let skippedOver = 0;
   for (let batch = 0; batch < maxBatches; batch += 1) {
     const { picked, recomputed } = await runBatch(async (transaction) => {
       // 1. The oldest keys, unlocked: age decides WHICH rows, never the lock order.
@@ -192,8 +196,9 @@ export async function drainPendingClimbStatsRecomputes(
           SELECT board_type, climb_uuid, angle
             FROM climb_stats_recompute_pending
            WHERE requested_at < now() - make_interval(secs => ${olderThanSeconds}::double precision)
-           ORDER BY requested_at
+           ORDER BY requested_at, board_type, climb_uuid, angle
            LIMIT ${batchKeys}
+          OFFSET ${skippedOver}
         `),
       );
       if (oldest.length === 0) return { picked: 0, recomputed: 0 };
@@ -217,9 +222,10 @@ export async function drainPendingClimbStatsRecomputes(
       return { picked: oldest.length, recomputed: markers.length };
     });
     drained += recomputed;
-    // A short pick means the backlog is empty. A full pick whose rows were all
-    // locked by live flushes stops too: the next hourly pass retries them.
-    if (picked < batchKeys || recomputed === 0) break;
+    // A short pick means the backlog is exhausted. Otherwise the recomputed
+    // rows are gone and the locked ones stay at the front: step past those.
+    if (picked < batchKeys) break;
+    skippedOver += picked - recomputed;
   }
   return drained;
 }
