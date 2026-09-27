@@ -56,6 +56,10 @@ vi.mock('../../../../src/components/ActivityIndicator', () => ({
   ActivityIndicator: () => createElement('div', { 'data-spinner': 'true' }),
 }));
 
+vi.mock('../../../../src/components/ble/DevicePickerSheetHost', () => ({
+  DevicePickerSheetHost: () => null,
+}));
+
 vi.mock('../../../../src/lib/graphql/use-active-board', () => ({
   useActiveBoard: () => ({ data: activeBoard.current, isPending: activeBoard.current === undefined }),
 }));
