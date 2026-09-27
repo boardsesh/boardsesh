@@ -1524,10 +1524,11 @@ export async function bootstrapScopeFromSnapshot(params: {
           //
           // New artifacts carry a metadata-only sync_deletions row whose
           // timestamp is the oldest of run builtAt, the export transaction's
-          // stability boundary, and every visible same-role active transaction
-          // start. That covers a long DELETE transaction which was invisible to
-          // the artifact's REPEATABLE READ snapshot but later commits with an
-          // older deleted_at. Old/malformed artifacts retain the pre-existing
+          // stability boundary, and the start of every active transaction the
+          // exporter's observer counts (every role's with pg_read_all_stats,
+          // otherwise its own role's). That covers a long DELETE transaction
+          // which was invisible to the artifact's REPEATABLE READ snapshot but
+          // later commits with an older deleted_at. Old/malformed artifacts retain the pre-existing
           // min(scoped watermarks) compatibility path. New live gzip exports
           // refuse publication without the stronger boundary above.
           const minWatermark =

@@ -26,7 +26,7 @@ import { LATEST_SCHEMA_VERSION, type SnapshotManifest, type SnapshotManifestEntr
 import { createPool } from '@boardsesh/db/client';
 import { db } from '../db/client';
 import { uploadToS3, getFromS3Strict, deleteFromS3, listS3Objects } from '../storage/s3';
-import { runExport, mergeManifestEntries } from '../scripts/export-board-snapshots';
+import { runExport, runExportWithOptions, mergeManifestEntries } from '../scripts/export-board-snapshots';
 
 const MANIFEST_KEY = 'board-snapshots/v1/manifest.json';
 
@@ -780,5 +780,64 @@ describe('runExport — board_climb_grades artifacts', () => {
 
     const tensionEntry = gzipManifest().entries.find((entry) => entry.boardType === 'tension')!;
     expect(tensionEntry.grades?.key).toBe(`${GZIP_PREFIX}/tension/9/old-grades.db`);
+  });
+});
+
+describe('runExportWithOptions — worker hooks', () => {
+  const GZIP_PREFIX = 'board-snapshots/v1-gzip';
+  const GZIP_MANIFEST_KEY = `${GZIP_PREFIX}/manifest.json`;
+  const liveOptions = { dryRun: false, gzip: true, keyPrefix: GZIP_PREFIX };
+
+  // The batch worker passes its attempt fence here: every artifact is already
+  // on S3, and the manifest that names them is not.
+  it('runs the pre-publish hook after every artifact upload and before the manifest', async () => {
+    await seedClimb('kilter', 1, 'k1-a');
+    await seedClimb('kilter', 2, 'k2-a');
+    const uploadsAtHook: string[][] = [];
+    await runExportWithOptions(liveOptions, {
+      beforeManifestPublish: async () => {
+        uploadsAtHook.push(vi.mocked(uploadToS3).mock.calls.map(([, , key]) => key));
+      },
+    });
+    expect(uploadsAtHook).toHaveLength(1);
+    expect(uploadsAtHook[0]).toHaveLength(2);
+    expect(uploadsAtHook[0]).not.toContain(GZIP_MANIFEST_KEY);
+    expect(vi.mocked(uploadToS3).mock.calls.at(-1)?.[2]).toBe(GZIP_MANIFEST_KEY);
+  });
+
+  it('publishes no manifest and prunes nothing when the pre-publish hook throws', async () => {
+    await seedClimb('kilter', 1, 'k1-a');
+    await expect(
+      runExportWithOptions(liveOptions, {
+        beforeManifestPublish: async () => {
+          throw new Error('ATTEMPT_LOST');
+        },
+      }),
+    ).rejects.toThrow('ATTEMPT_LOST');
+    expect(vi.mocked(uploadToS3).mock.calls.map(([, , key]) => key)).not.toContain(GZIP_MANIFEST_KEY);
+    expect(listS3Objects).not.toHaveBeenCalled();
+  });
+
+  it('stops at the next layout on abort, without recording it as a layout failure or publishing', async () => {
+    await seedClimb('kilter', 1, 'k1-a');
+    const abort = new AbortController();
+    abort.abort(new Error('lease expired'));
+    await expect(runExportWithOptions(liveOptions, { signal: abort.signal })).rejects.toThrow('lease expired');
+    expect(uploadToS3).not.toHaveBeenCalled();
+  });
+
+  it('sends its progress lines to the injected logger', async () => {
+    await seedClimb('kilter', 1, 'k1-a');
+    const lines: Array<{ message: string; meta?: Record<string, unknown> }> = [];
+    const record = (message: string, meta?: Record<string, unknown>) => {
+      lines.push({ message, meta });
+    };
+    await runExportWithOptions(liveOptions, { log: { info: record, warn: record, error: record } });
+    const messages = lines.map(({ message }) => message);
+    expect(messages).toContain('[export-snapshots] manifest uploaded');
+    // The observer mode, once per run: the test login is a superuser.
+    expect(lines.find(({ message }) => message === '[export-snapshots] starting run')?.meta).toMatchObject({
+      readsAllStats: true,
+    });
   });
 });
