@@ -2,7 +2,12 @@ import { z } from 'zod';
 import { claimNextCredentialForSync } from '@boardsesh/db/queries';
 import { logger } from '../../utils/logger';
 import { routineCycleLimits } from '../config';
-import { loadProviderSyncAdapter, runRoutineCredentialSync, type SyncProvider } from './provider-sync-batch';
+import {
+  ROUTINE_CREDENTIAL_DEADLINE_MARGIN_MS,
+  loadProviderSyncAdapter,
+  runRoutineCredentialSync,
+  type SyncProvider,
+} from './provider-sync-batch';
 import type { BackgroundJobFamilyModule } from './types';
 
 const ROUTINE_PROVIDERS = ['aurora', 'kilter'] as const satisfies readonly SyncProvider[];
@@ -18,6 +23,7 @@ export type RoutineCycleStop =
   | 'NO_CREDENTIALS'
   | 'PROVIDER_THROTTLED'
   | 'CYCLE_DEADLINE'
+  | 'CYCLE_DEADLINE_NEAR'
   | 'ABORTED';
 
 /**
@@ -98,6 +104,13 @@ export const providerRoutineCycleFamily: BackgroundJobFamilyModule<ProviderRouti
         stop = 'BUDGET';
         break;
       }
+      // Less than the one-minute deadline margin left on the lease: a claimed
+      // credential could not even start. Stop before claiming, so no attempt
+      // clock is stamped for a sync that never runs.
+      if (context.expiresAt - Date.now() <= ROUTINE_CREDENTIAL_DEADLINE_MARGIN_MS) {
+        stop = 'CYCLE_DEADLINE_NEAR';
+        break;
+      }
       const credential = await context.transaction((transaction) =>
         claimNextCredentialForSync(transaction, { candidateFilter: adapter.candidateFilter, excludeLeased: true }),
       );
@@ -108,6 +121,15 @@ export const providerRoutineCycleFamily: BackgroundJobFamilyModule<ProviderRouti
       attempted += 1;
       const outcome = await runRoutineCredentialSync(context, credential, adapter);
       tally[outcome.result] += 1;
+      if (outcome.reason === 'CYCLE_DEADLINE_NEAR') {
+        logger.warn('[worker] routine credential skipped near the cycle deadline', {
+          runId: context.runId,
+          provider: payload.provider,
+          code: 'CYCLE_DEADLINE_NEAR',
+        });
+        stop = 'CYCLE_DEADLINE_NEAR';
+        break;
+      }
       if (outcome.reason === 'CYCLE_DEADLINE') {
         // The lease is nearly spent: claiming another credential could only
         // end the same way.

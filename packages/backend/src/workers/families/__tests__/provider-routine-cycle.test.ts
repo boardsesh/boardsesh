@@ -12,6 +12,7 @@ import { auroraCredentials, backgroundJobRuns, providerSyncControls } from '@boa
 import { acquireCredentialSyncLease, claimNextCredentialForSync, rotateLinkGeneration } from '@boardsesh/db/queries';
 import { enqueueBackgroundJob, executeBackgroundJob, handlerForRole, type BackgroundJobPayload } from '../../jobs';
 import { InvalidJobPayloadError, type BackgroundJobContext } from '../types';
+import { providerRoutineCycleFamily } from '../provider-routine-cycle';
 import {
   ROUTINE_CREDENTIAL_DEADLINE_MARGIN_MS,
   loadProviderSyncAdapter,
@@ -612,5 +613,57 @@ describe('queue share on the routine-provider queue', () => {
     // At a lower priority the shared job would wait behind both new cycles,
     // and every cycle after them; at the same priority FIFO order runs it now.
     expect(await fetchNext()).toBe(sharedSync);
+  });
+});
+
+describe('a routine cycle near the end of its lease', () => {
+  function nearDeadlineContext(leftMs: number): BackgroundJobContext {
+    return {
+      runId: randomUUID(),
+      family: 'provider-routine-cycle',
+      signal: new AbortController().signal,
+      expiresAt: Date.now() + leftMs,
+      database,
+      transaction: (callback) => database.transaction(callback),
+      enqueue: async () => {
+        throw new Error('enqueue not expected');
+      },
+    };
+  }
+
+  it('claims nothing, so no attempt clock moves, with under a minute of lease left', async () => {
+    const synced: string[] = [];
+    adapterOverride.sync = recordingSync(synced);
+    const before = await credentials();
+
+    await providerRoutineCycleFamily.execute(nearDeadlineContext(ROUTINE_CREDENTIAL_DEADLINE_MARGIN_MS - 1_000), {
+      provider: 'aurora',
+    });
+
+    expect(synced).toEqual([]);
+    const after = await credentials();
+    for (const account of ACCOUNTS) {
+      expect(after[account].lastSyncAttemptAt).toEqual(before[account].lastSyncAttemptAt);
+    }
+  });
+
+  it('skips a claimed credential whose lease ran down before it started, recording nothing', async () => {
+    const fetchMock = stubAuroraLogin(() => new Response('{}', { status: 200 }));
+    const [claimed] = await database.select().from(auroraCredentials).where(eq(auroraCredentials.userId, 'routine-a'));
+    const context = nearDeadlineContext(ROUTINE_CREDENTIAL_DEADLINE_MARGIN_MS - 1_000);
+    const adapter = await loadProviderSyncAdapter(context, 'aurora');
+    const before = (await credentials())['routine-a'];
+
+    expect(await runRoutineCredentialSync(context, claimed, adapter)).toEqual({
+      result: 'skipped',
+      reason: 'CYCLE_DEADLINE_NEAR',
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect((await credentials())['routine-a']).toMatchObject({
+      consecutiveFailures: before.consecutiveFailures,
+      lastSyncError: before.lastSyncError,
+    });
+    const control = (await controls()).find((row) => row.userId === 'routine-a');
+    expect(control).toMatchObject({ activeRunId: null });
   });
 });

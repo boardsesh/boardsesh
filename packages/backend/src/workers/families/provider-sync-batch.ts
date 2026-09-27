@@ -309,6 +309,7 @@ export type RoutineCredentialResult = {
     | 'STALE_LINK_GENERATION'
     | 'CREDENTIAL_RELINKED'
     | 'CYCLE_DEADLINE'
+    | 'CYCLE_DEADLINE_NEAR'
     | 'FIRST_SYNC';
   /** Set when the provider throttled us; the credential is held until the delay has passed. */
   retryAfterMs?: number;
@@ -459,9 +460,15 @@ export async function runRoutineCredentialSync(
     throw error;
   }
 
-  const deadline = AbortSignal.timeout(
-    Math.max(1_000, context.expiresAt - Date.now() - ROUTINE_CREDENTIAL_DEADLINE_MARGIN_MS),
-  );
+  // No floor: a credential with under a minute of lease left is not started
+  // at all. The cycle checks before claiming; this covers the lease running
+  // down between the claim and here. Its lease goes back untouched.
+  const remainingMs = context.expiresAt - Date.now() - ROUTINE_CREDENTIAL_DEADLINE_MARGIN_MS;
+  if (remainingMs <= 0) {
+    await releaseLease(context, fence);
+    return { result: 'skipped', reason: 'CYCLE_DEADLINE_NEAR' };
+  }
+  const deadline = AbortSignal.timeout(remainingMs);
   const fenced = fencedBatchRunner(context, fence);
   try {
     let outcome: ProviderSyncOutcome;

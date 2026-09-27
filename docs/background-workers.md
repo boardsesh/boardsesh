@@ -686,6 +686,7 @@ it, then succeeds and logs `[worker] routine cycle finished` with the reason:
 | `NO_CREDENTIALS` | nothing is due |
 | `PROVIDER_THROTTLED` | the provider answered 429 with `Retry-After`: that credential's `provider_retry_after_until` is set to `now() + delay` (capped at 6 h) and the failure step the 429 was charged is taken back. The claim waits for the later of that time and the failure backoff (`last_sync_attempt_at + backoff(n)`), never their sum, and the cycle ends |
 | `CYCLE_DEADLINE` | a credential's sync was still running one minute before the lease ends: it is stopped, a transient `CYCLE_DEADLINE` failure is recorded on it under the still-live fence (so `consecutive_failures` backoff parks it and `last_sync_error` shows it), and the cycle ends |
+| `CYCLE_DEADLINE_NEAR` | under a minute of the lease was left before the next claim (nothing is claimed, so no attempt clock moves), or before a claimed credential started (it is skipped, its lease handed back, nothing recorded on it) |
 | `ABORTED` | shutdown or a lost attempt; the run records the abort |
 
 Both limits are validated at worker startup. Why these numbers: 4 credentials
