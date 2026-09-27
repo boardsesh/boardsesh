@@ -45,9 +45,14 @@ import {
   CATALOG_SNAPSHOT_REDACTED_VALUE,
   type CatalogSnapshotTableName,
 } from '@boardsesh/db/catalog-snapshot';
-import { publicUrlForKey, snapshotPublicBaseUrl } from './export-board-snapshots';
+import {
+  publicUrlForKey,
+  snapshotPublicBaseUrl,
+  type SnapshotExportDependencies,
+  type SnapshotExportLogger,
+} from './export-board-snapshots';
 
-const DEFAULT_CATALOG_KEY_PREFIX = 'board-snapshots/v1-catalog';
+export const DEFAULT_CATALOG_KEY_PREFIX = 'board-snapshots/v1-catalog';
 const SAFE_KEY_PREFIX = /^[a-z0-9]+(?:[/-][a-z0-9]+)*$/;
 const ARTIFACT_CONTENT_TYPE = 'application/x-sqlite3';
 const MANIFEST_CACHE_CONTROL = 'public, max-age=300';
@@ -239,10 +244,13 @@ export async function buildCatalogArtifact(params: {
   return tables;
 }
 
-type ExportOptions = { dryRun: boolean; keyPrefix: string };
+export type CatalogExportOptions = { dryRun: boolean; keyPrefix: string };
 
-export function parseArgs(argv: string[]): ExportOptions {
-  const options: ExportOptions = { dryRun: false, keyPrefix: DEFAULT_CATALOG_KEY_PREFIX };
+/** The per-layout export's injection points, minus the replay observer it has no use for. The CLI passes none. */
+export type CatalogExportDependencies = Omit<SnapshotExportDependencies, 'requireAllRolesVisible'>;
+
+export function parseArgs(argv: string[]): CatalogExportOptions {
+  const options: CatalogExportOptions = { dryRun: false, keyPrefix: DEFAULT_CATALOG_KEY_PREFIX };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--dry-run') {
@@ -266,7 +274,12 @@ export function parseArgs(argv: string[]): ExportOptions {
  * at and that are past the grace window. Never fatal: a failed prune costs
  * storage, a failed export costs correctness.
  */
-async function pruneStaleArtifacts(manifest: CatalogManifest, nowMs: number, keyPrefix: string): Promise<void> {
+async function pruneStaleArtifacts(
+  manifest: CatalogManifest,
+  nowMs: number,
+  keyPrefix: string,
+  log: SnapshotExportLogger,
+): Promise<void> {
   try {
     const referencedKeys = new Set([manifest.artifact.key, `${keyPrefix}/manifest.json`]);
     const cutoffMs = nowMs - PRUNE_GRACE_MS;
@@ -279,22 +292,33 @@ async function pruneStaleArtifacts(manifest: CatalogManifest, nowMs: number, key
         await deleteFromS3('snapshots', object.key);
         prunedCount += 1;
       } catch (error) {
-        logger.warn('[export-catalog] failed to prune stale artifact — continuing', {
+        log.warn('[export-catalog] failed to prune stale artifact — continuing', {
           key: object.key,
           error: error instanceof Error ? error.message : String(error),
         });
       }
     }
-    logger.info('[export-catalog] prune complete', { scanned: objects.length, pruned: prunedCount });
+    log.info('[export-catalog] prune complete', { scanned: objects.length, pruned: prunedCount });
   } catch (error) {
-    logger.warn('[export-catalog] artifact prune failed — continuing (prune is never fatal)', {
+    log.warn('[export-catalog] artifact prune failed — continuing (prune is never fatal)', {
       error: error instanceof Error ? error.message : String(error),
     });
   }
 }
 
+/** The CLI's entry: parse argv, then run with the default pool and logger. */
 export async function runCatalogExport(argv: string[]): Promise<void> {
-  const options = parseArgs(argv);
+  await runCatalogExportWithOptions(parseArgs(argv));
+}
+
+/** One catalogue export. Throws instead of exiting. */
+export async function runCatalogExportWithOptions(
+  options: CatalogExportOptions,
+  dependencies: CatalogExportDependencies = {},
+): Promise<void> {
+  const log = dependencies.log ?? logger;
+  const signal = dependencies.signal;
+  signal?.throwIfAborted();
   if (!options.dryRun && !isS3Configured('snapshots')) {
     throw new Error('S3 is not configured — set the AWS_* env vars or pass --dry-run');
   }
@@ -307,10 +331,11 @@ export async function runCatalogExport(argv: string[]): Promise<void> {
   // `db` in packages/backend/src/db/client.ts holds a reference to the drizzle
   // wrapper built over it, so ending it here would break every later caller in
   // the process. Same contract as export-board-snapshots.ts.
-  const sqlClient = createPool();
+  const sqlClient = dependencies.sqlClient ?? createPool();
 
   try {
     const tables = await buildCatalogArtifact({ sqlClient, filePath, builtAt });
+    signal?.throwIfAborted();
 
     const rawBuffer = readFileSync(filePath);
     const uploadBody = gzipSync(rawBuffer);
@@ -336,7 +361,7 @@ export async function runCatalogExport(argv: string[]): Promise<void> {
     const rowTotal = Object.values(tables).reduce((sum, stats) => sum + stats.rowCount, 0);
 
     if (options.dryRun) {
-      logger.info('[export-catalog] built (dry-run, not uploaded)', {
+      log.info('[export-catalog] built (dry-run, not uploaded)', {
         filePath,
         rows: rowTotal,
         rawBytes: rawBuffer.length,
@@ -345,13 +370,15 @@ export async function runCatalogExport(argv: string[]): Promise<void> {
         durationMs: Date.now() - startedAt,
       });
       // Leave the artifact on disk so a dry run can be inspected with sqlite3.
-      logger.info('[export-catalog] dry-run artifact retained', { filePath });
+      log.info('[export-catalog] dry-run artifact retained', { filePath });
       return;
     }
 
     // Artifact first, manifest last: a reader must never see a key that is not
     // on S3 yet.
     await uploadToS3('snapshots', uploadBody, key, ARTIFACT_CONTENT_TYPE, { contentEncoding: 'gzip' });
+    signal?.throwIfAborted();
+    await dependencies.beforeManifestPublish?.();
     await uploadToS3(
       'snapshots',
       Buffer.from(JSON.stringify(manifest)),
@@ -361,14 +388,14 @@ export async function runCatalogExport(argv: string[]): Promise<void> {
         cacheControl: MANIFEST_CACHE_CONTROL,
       },
     );
-    logger.info('[export-catalog] published', {
+    log.info('[export-catalog] published', {
       key,
       rows: rowTotal,
       uploadBytes: uploadBody.length,
       durationMs: Date.now() - startedAt,
     });
 
-    await pruneStaleArtifacts(manifest, Date.now(), options.keyPrefix);
+    await pruneStaleArtifacts(manifest, Date.now(), options.keyPrefix, log);
   } finally {
     if (!options.dryRun) rmSync(workDir, { recursive: true, force: true });
   }
