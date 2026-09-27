@@ -37,7 +37,10 @@ budget is `DB_POOL_MAX=2`, `PGBOSS_POOL_SIZE=1`, `WORKER_CONCURRENCY=1`; incompa
 values fail startup. Pools are configured before dynamic handler imports.
 `READ_REPLICA_URL` is rejected. `WORKER_PAUSED` defaults to `true`; only the
 literal `false` enables consumption. A connected paused worker is healthy and
-reports its paused state separately.
+reports its paused state separately. A paused worker also skips the
+provider-secret check below that would otherwise refuse to start it, warning
+once with the missing env var names instead and reporting
+`providerSecretsReady: false` on `/health`.
 
 Both drivers check the actual writable primary. Remote URLs require
 `sslmode=verify-full`, disallow conflicting/overriding connection parameters,

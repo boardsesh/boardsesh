@@ -1,4 +1,5 @@
 import { BACKGROUND_WORKER_ROLES, type BackgroundWorkerRole } from '@boardsesh/db/background-jobs';
+import { logger } from '../utils/logger';
 
 export function workerConfig(environment: Readonly<Record<string, string | undefined>> = process.env) {
   const role = environment.WORKER_ROLE;
@@ -56,17 +57,30 @@ export const PROVIDER_FAMILY_SECRETS: Readonly<Record<string, readonly string[]>
  * family's secrets. `families` is what the role serves (`familiesForRole`);
  * passed in so this module never imports the registry and the sync packages
  * behind it before `configureWorkerPools` has run.
+ *
+ * A paused worker starts anyway: the homelab's first deploy is deliberately
+ * paused with only `DATABASE_URL` set, and a paused worker must start and
+ * report healthy. Missing secrets are logged once at warn, as a bounded list
+ * of env var NAMES only (never values), and the return value tells the caller
+ * to report `providerSecretsReady: false`. An unpaused worker keeps the
+ * fail-fast behaviour and throws before connecting.
  */
 export function requireProviderSecrets(
   role: BackgroundWorkerRole,
   families: Iterable<{ name: string }>,
+  paused: boolean,
   environment: Readonly<Record<string, string | undefined>> = process.env,
-): void {
+): boolean {
   const missing = new Set<string>();
   for (const family of families) {
     for (const secret of PROVIDER_FAMILY_SECRETS[family.name] ?? []) {
       if (!environment[secret]) missing.add(secret);
     }
   }
-  if (missing.size) throw new Error(`Worker role ${role} needs ${[...missing].sort().join(', ')}`);
+  if (!missing.size) return true;
+  const missingNames = [...missing].sort();
+  const message = `Worker role ${role} needs ${missingNames.join(', ')}`;
+  if (!paused) throw new Error(message);
+  logger.warn(`[worker] starting paused without provider secrets: ${message}`, { missing: missingNames });
+  return false;
 }

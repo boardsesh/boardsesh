@@ -10,8 +10,9 @@ import { requireProviderSecrets, type WorkerConfig } from './config';
 import { familiesForRole } from './families';
 
 export async function startWorker(config: WorkerConfig) {
-  // Before any connection: a worker missing a provider secret never claims a job.
-  requireProviderSecrets(config.role, familiesForRole(config.role));
+  // Before any connection: a worker missing a provider secret never claims a
+  // job, unless paused, when it starts anyway and reports it via /health.
+  const providerSecretsReady = requireProviderSecrets(config.role, familiesForRole(config.role), config.paused);
   const database = createDb();
   const boss = createJobQueueClient({ connectionString: config.databaseUrl, poolSize: 1, owner: 'worker' });
   const handler = handlerForRole(config.role);
@@ -37,6 +38,7 @@ export async function startWorker(config: WorkerConfig) {
       const samples = {
         ready: Number(healthy),
         paused: Number(config.paused),
+        provider_secrets_ready: Number(providerSecretsReady),
         active,
         pending,
         oldest_pending_seconds: oldest ? Math.max(0, (Date.now() - oldest.getTime()) / 1000) : 0,
@@ -60,7 +62,7 @@ export async function startWorker(config: WorkerConfig) {
       return;
     }
     response.writeHead(healthy ? 200 : 503, { 'Content-Type': 'application/json' });
-    response.end(JSON.stringify({ ready: healthy, paused: config.paused, role: config.role }));
+    response.end(JSON.stringify({ ready: healthy, paused: config.paused, role: config.role, providerSecretsReady }));
   });
   const probe = async () => {
     try {
