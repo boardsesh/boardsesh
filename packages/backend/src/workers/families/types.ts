@@ -35,7 +35,13 @@ export type BackgroundJobContext = {
    */
   enqueue(
     transaction: BackgroundJobTransaction,
-    input: { family: string; payload: unknown; role?: BackgroundWorkerRole; singletonKey?: string },
+    input: {
+      family: string;
+      payload: unknown;
+      role?: BackgroundWorkerRole;
+      singletonKey?: string;
+      startAfterSeconds?: number;
+    },
   ): Promise<{ runId: string; alreadyQueued: boolean }>;
 };
 

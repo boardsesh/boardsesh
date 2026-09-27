@@ -215,6 +215,9 @@ function fenceFailure(error: unknown): unknown {
   return error;
 }
 
+/** The longest a first-link or "Sync now" follow-up waits for a provider's Retry-After. */
+export const INTERACTIVE_RETRY_AFTER_CAP_MS = 6 * 60 * 60 * 1000;
+
 /**
  * The provider-agnostic body of `aurora-user-sync` and `kilter-user-sync`:
  *
@@ -229,6 +232,10 @@ function fenceFailure(error: unknown): unknown {
  * c. run the provider sync with every write going through
  *    {@link fencedBatchRunner};
  * d. release the lease, and clear `pending_run_id` unless a retry is coming.
+ *
+ * A provider 429 with `Retry-After` is not retried by pg-boss: this run queues
+ * its own follow-up for when the provider said (at most 6 h), records it as
+ * the pending run, and ends as done with a logged `PROVIDER_THROTTLED`.
  *
  * A stale generation fails the run without retrying; nothing was written.
  */
@@ -274,6 +281,47 @@ export async function runProviderSync(
     }
     if (outcome.status === 'active') {
       retryComing = false;
+      return;
+    }
+    if (outcome.retryAfterMs !== undefined) {
+      // The provider asked us to wait (429 with Retry-After), often an hour.
+      // pg-boss's own retries (seconds to minutes apart) would spend every
+      // attempt inside that window. Instead queue this sync again for when the
+      // provider said, in the lease holder's fenced transaction, and end this
+      // run as done. The singleton key is unchanged, so a twin already queued
+      // (a "Sync now" meanwhile) absorbs it; either way it becomes the pending
+      // run a later "Sync now" joins.
+      const delayMs = Math.min(Math.max(0, outcome.retryAfterMs), INTERACTIVE_RETRY_AFTER_CAP_MS);
+      // The same fences as fencedBatchRunner, on the job's own transaction
+      // (the enqueue needs it): generation current, lease still ours.
+      let followUpRunId: string;
+      try {
+        followUpRunId = await context.transaction(async (transaction) => {
+          await enterFence(transaction, fence);
+          if (!(await acquireCredentialSyncLease(transaction, { ...fence, ttlMs: CREDENTIAL_LEASE_TTL_MS }))) {
+            throw new CredentialLeaseLostError();
+          }
+          const { runId } = await context.enqueue(transaction, {
+            family: context.family,
+            payload: request,
+            startAfterSeconds: Math.ceil(delayMs / 1000),
+          });
+          await setPendingProviderSyncRun(transaction, { ...key, runId });
+          return runId;
+        });
+      } catch (error) {
+        const translated = fenceFailure(error);
+        if (translated instanceof BackgroundJobError && !translated.retryable) retryComing = false;
+        throw translated;
+      }
+      retryComing = false;
+      logger.info('[worker] provider sync throttled', {
+        runId: context.runId,
+        family: context.family,
+        code: 'PROVIDER_THROTTLED',
+        retryAfterMs: delayMs,
+        followUpRunId,
+      });
       return;
     }
     // The failure is already recorded on the credential. A transient one is

@@ -85,6 +85,11 @@ export type EnqueueBackgroundJobInput = {
   runId?: string;
   /** Overrides the family's own key. Defaults to the family's key, then the run ID. */
   singletonKey?: string;
+  /**
+   * Hold the job this many seconds before a worker may fetch it (pg-boss
+   * `startAfter`). The run's deadline starts counting after the delay.
+   */
+  startAfterSeconds?: number;
 };
 
 export type EnqueueBackgroundJobResult = {
@@ -123,6 +128,7 @@ export async function enqueueBackgroundJobOn(
   const queue = BACKGROUND_JOB_QUEUES[role];
   const queueSingletonKey = `${family.name}:${singletonKey}`;
   const { deadlineSeconds, ...jobOptions } = family.options;
+  const startAfterSeconds = Math.max(0, Math.ceil(input.startAfterSeconds ?? 0));
   const insertAndSend = () =>
     transaction.transaction(async (savepoint) => {
       const inserted = await savepoint
@@ -135,7 +141,7 @@ export async function enqueueBackgroundJobOn(
           payload,
           singletonKey,
           status: 'queued',
-          deadlineAt: new Date(Date.now() + deadlineSeconds * 1000),
+          deadlineAt: new Date(Date.now() + (startAfterSeconds + deadlineSeconds) * 1000),
         })
         .onConflictDoNothing()
         .returning({ id: backgroundJobRuns.id });
@@ -148,7 +154,13 @@ export async function enqueueBackgroundJobOn(
       const jobId = await boss.send(
         queue,
         { runId },
-        { ...jobOptions, id: runId, singletonKey: queueSingletonKey, db: enqueueOn(savepoint) },
+        {
+          ...jobOptions,
+          id: runId,
+          singletonKey: queueSingletonKey,
+          ...(startAfterSeconds > 0 ? { startAfter: startAfterSeconds } : {}),
+          db: enqueueOn(savepoint),
+        },
       );
       if (jobId === null) throw new AlreadyQueuedSignal();
       if (jobId !== runId) throw new Error('JOB_ENQUEUE_FAILED');
