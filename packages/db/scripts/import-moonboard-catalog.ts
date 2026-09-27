@@ -16,7 +16,7 @@ import {
   type MoonBoardCatalogFile,
 } from './moonboard-catalog-helpers.js';
 import { stageCatalogBatch } from './moonboard-catalog-batch.js';
-import { describeDatabaseHost, getScriptDatabaseUrl } from './db-connection.js';
+import { describeDatabaseHost, resolveScriptDatabaseUrl } from './db-connection.js';
 import { formatUnmappedMoonBoardGrades } from './moonboard-helpers.js';
 import {
   acquireCatalogImportLock,
@@ -30,6 +30,7 @@ import {
   writeCatalogRunReportAtomic,
   reportJsonParentDirExists,
   reportJsonTargetIsDirectory,
+  reportJsonDirectoryIsWritable,
   clearExistingCatalogReport,
   type CatalogBoardRunReport,
 } from './moonboard-catalog-report.js';
@@ -350,6 +351,14 @@ async function importMoonBoardCatalog() {
       process.exitCode = 1;
       return;
     }
+    // Proves the directory actually accepts a write, not just that it exists —
+    // a read-only directory would otherwise let every board commit and only
+    // then discover the final report can never be written.
+    if (!reportJsonDirectoryIsWritable(reportJsonPath)) {
+      console.error(`❌ --report-json directory is not writable: ${path.dirname(reportJsonPath)}`);
+      process.exitCode = 1;
+      return;
+    }
     // A STALE report from a previous run must never be mistaken for this
     // run's result if this run dies before it gets a chance to write its own.
     clearExistingCatalogReport(reportJsonPath);
@@ -390,7 +399,12 @@ async function importMoonBoardCatalog() {
   // bare.
   let client: postgres.Sql | undefined;
   try {
-    const databaseUrl = getScriptDatabaseUrl();
+    // resolveScriptDatabaseUrl, not getScriptDatabaseUrl: the latter calls
+    // process.exit on a missing/refused URL, which would skip the finally
+    // below and this function's own report-writing entirely — a run a
+    // scheduler cannot even get a report FOR. Throwing here lands in the
+    // catch below like any other pre-lock failure.
+    const databaseUrl = resolveScriptDatabaseUrl();
     console.info(`🔄 Importing MoonBoard catalog to: ${describeDatabaseHost(databaseUrl)}`);
 
     // ONE direct connection for the script's whole lifetime — every per-board
@@ -419,23 +433,39 @@ async function importMoonBoardCatalog() {
         } = await buildExistingIndex(client, db);
 
         for (const file of files) {
+          // Set as the very first thing for this file — before even reading
+          // it — and cleared on every "not actually this file's problem" exit
+          // (skipped, filtered out) or clean completion below. A missing,
+          // truncated, or malformed catalog file is exactly the kind of
+          // failure this exists to name: readFileSync/JSON.parse throwing
+          // must still land on the right file in the report, not blame
+          // whichever file happened to run before it.
+          failedFile = file;
+
           const raw = fs.readFileSync(path.join(catalogDir, file), 'utf-8');
           const dump: MoonBoardCatalogFile = JSON.parse(raw);
           const layoutId = HOLDSETUP_TO_LAYOUT[dump.holdsetup];
           if (!layoutId) {
             console.warn(`⚠️  ${file}: unknown holdsetup ${dump.holdsetup}, skipping`);
+            failedFile = undefined; // a skip, not a failure
             continue;
           }
-          if (onlyHoldsetup !== undefined && dump.holdsetup !== onlyHoldsetup) continue;
+          if (onlyHoldsetup !== undefined && dump.holdsetup !== onlyHoldsetup) {
+            failedFile = undefined; // filtered out by --holdsetup, not a failure
+            continue;
+          }
 
-          // Set before this board's writes start, cleared once it finishes
-          // cleanly — if anything below throws, the report says which board
-          // was in flight when it happened.
-          failedFile = file;
-
-          const lockCheck = await assertCatalogImportLockHeld(db, lockBackendPid);
-          if (!lockCheck.ok) {
-            throw new Error(`Run lock lost before importing ${file}: ${lockCheck.reason}`);
+          // Cheap early check: skip the (potentially large) staging work below
+          // entirely if the lock is already known lost. This alone is NOT
+          // sufficient — a session drop between this check and the
+          // transaction opening below would let postgres.js reconnect for
+          // db.transaction() on a backend that never held the lock, and this
+          // check would have nothing left to say about it. The authoritative
+          // check is the one taken on `tx` as the transaction's first
+          // statement, below.
+          const preStagingLockCheck = await assertCatalogImportLockHeld(db, lockBackendPid);
+          if (!preStagingLockCheck.ok) {
+            throw new Error(`Run lock lost before importing ${file}: ${preStagingLockCheck.reason}`);
           }
 
           console.info(
@@ -490,6 +520,21 @@ async function importMoonBoardCatalog() {
           // re-run. On a dry run it always ends in DRY_RUN_ROLLBACK.
           try {
             await db.transaction(async (tx) => {
+              // The AUTHORITATIVE lock check, run on `tx` — the transaction's
+              // own reserved connection — as literally the first statement.
+              // The pre-staging check above runs on `db` and can pass, then a
+              // session drop during (potentially slow) staging lets
+              // postgres.js silently hand db.transaction() a BRAND NEW
+              // backend that never held the lock; every write below would
+              // then commit with no mutual exclusion at all. Checking on `tx`
+              // itself closes that gap: the check and the writes are
+              // guaranteed to share the same backend, because they are
+              // literally the same connection.
+              const txLockCheck = await assertCatalogImportLockHeld(tx, lockBackendPid);
+              if (!txLockCheck.ok) {
+                throw new Error(`Run lock lost inside the board transaction for ${file}: ${txLockCheck.reason}`);
+              }
+
               // Climbs — for matched rows the identity columns are already correct, so
               // refresh only the method-derived fields (characteristics/description).
               for (let i = 0; i < climbRecords.length; i += BATCH_SIZE) {
