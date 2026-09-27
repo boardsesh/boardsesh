@@ -158,14 +158,16 @@
         "title": "Konto-Verknüpfung entfernen",
         "description": "Willst du dein {{boardName}}-Konto wirklich trennen?",
         "ok": "Ja, trennen"
-      }
+      },
+      "syncNow": "Jetzt synchronisieren"
     },
     "status": {
       "connected": "Verbunden",
       "error": "Fehler",
       "expired": "Abgelaufen",
       "syncing": "Wird synchronisiert",
-      "duplicateAccountCircuits": "Circuits synchronisieren gerade nicht: Ein anderes Boardsesh-Konto hängt an diesem Board-Login, deshalb pausiert die Playlist-Sync für euch beide. Deine Begehungen und Bewertungen kommen weiter an."
+      "duplicateAccountCircuits": "Circuits synchronisieren gerade nicht: Ein anderes Boardsesh-Konto hängt an diesem Board-Login, deshalb pausiert die Playlist-Sync für euch beide. Deine Begehungen und Bewertungen kommen weiter an.",
+      "syncingHint": "Wird synchronisiert, schau gleich noch mal rein"
     },
     "unsynced": {
       "title_one": "{{count}} Eintrag wartet auf die Sync",
@@ -331,7 +333,11 @@
       "importInterrupted": "Der Import hat vorher aufgehört. Die Datei nochmal zu importieren ist unbedenklich.",
       "requestDataFailed": "E-Mail ließ sich nicht öffnen. Versuch es nochmal.",
       "requestDataCopyFailed": "Die Anfrage ließ sich nicht kopieren. Versuch es nochmal.",
-      "passwordHelp": "Deine Zugangsdaten werden vor dem Speichern verschlüsselt."
+      "passwordHelp": "Deine Zugangsdaten werden vor dem Speichern verschlüsselt.",
+      "syncNowRateLimited": "Langsam, du hast gerade erst gefragt. Versuch es in einer Minute noch mal.",
+      "syncNowUnavailable": "Jetzt synchronisieren ist noch nicht eingeschaltet. Dein Routenbuch synchronisiert sich weiter von selbst.",
+      "syncNowNotLinked": "Verbinde dieses Konto neu, um es zu synchronisieren.",
+      "syncNowFailed": "Die Synchronisierung konnte nicht starten. Versuch es gleich noch mal."
     }
   },
   "feedbackDialog": {

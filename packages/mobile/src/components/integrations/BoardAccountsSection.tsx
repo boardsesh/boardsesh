@@ -31,6 +31,13 @@ import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
 import { useConfirm } from '../../providers/dialog-provider';
 import { useFeatureFlag } from '../../providers/feature-flags-provider';
+import { getHttpClient } from '../../lib/graphql/client';
+import {
+  REQUEST_PROVIDER_SYNC,
+  type RequestProviderSyncMutationResponse,
+  type RequestProviderSyncMutationVariables,
+} from '../../lib/graphql/operations';
+import { extractGraphqlCode, isGraphqlRateLimitedError } from '../../lib/graphql/extract-error-message';
 import { borderRadius, spacing } from '../../theme/tokens';
 import {
   deleteAuroraCredential,
@@ -213,6 +220,30 @@ function getMoonBoardProgressLabel(t: TFunction<'settings'>, progress: MoonBoard
   }
 }
 
+const SYNCABLE_SYNC_STATUSES = new Set(['pending', 'active', 'error']);
+
+/** While a board sync is waiting, re-read the cards this often so "Syncing" clears on its own. */
+const PENDING_SYNC_REFRESH_MS = 20_000;
+
+function requestProviderSync(boardType: AuroraBoardName) {
+  return getHttpClient().request<RequestProviderSyncMutationResponse, RequestProviderSyncMutationVariables>(
+    REQUEST_PROVIDER_SYNC,
+    { boardType },
+  );
+}
+
+function getSyncNowErrorMessage(t: TFunction<'settings'>, error: unknown): string {
+  if (isGraphqlRateLimitedError(error)) return t('aurora.mobile.syncNowRateLimited');
+  switch (extractGraphqlCode(error)) {
+    case 'PROVIDER_SYNC_UNAVAILABLE':
+      return t('aurora.mobile.syncNowUnavailable');
+    case 'PROVIDER_NOT_LINKED':
+      return t('aurora.mobile.syncNowNotLinked');
+    default:
+      return t('aurora.mobile.syncNowFailed');
+  }
+}
+
 function getMoonBoardImportErrorMessage(t: TFunction<'settings'>, error: unknown): string {
   const errorCode = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
   if (errorCode === 'moonboard_import_interrupted') {
@@ -232,6 +263,8 @@ export function BoardAccountsSection() {
   const credentialsQuery = useQuery({
     queryKey: AURORA_CREDENTIALS_QUERY_KEY,
     queryFn: getAuroraCredentials,
+    refetchInterval: (query) =>
+      query.state.data?.credentials.some((credential) => credential.pendingRunId) ? PENDING_SYNC_REFRESH_MS : false,
   });
   const unsyncedQuery = useQuery({
     queryKey: AURORA_UNSYNCED_QUERY_KEY,
@@ -265,6 +298,16 @@ export function BoardAccountsSection() {
     },
     onError: (error) => {
       showToast(errorMessageFor(error, t), 'error');
+    },
+  });
+
+  const syncNowMutation = useMutation({
+    mutationFn: requestProviderSync,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: AURORA_CREDENTIALS_QUERY_KEY });
+    },
+    onError: (error) => {
+      showToast(getSyncNowErrorMessage(t, error), isGraphqlRateLimitedError(error) ? 'warning' : 'error');
     },
   });
 
@@ -496,6 +539,11 @@ export function BoardAccountsSection() {
               isRemoving={
                 deleteCredentialMutation.isPending && deleteCredentialMutation.variables === cardConfig.boardType
               }
+              isSyncing={
+                Boolean(credential?.pendingRunId) ||
+                (syncNowMutation.isPending && syncNowMutation.variables === cardConfig.boardType)
+              }
+              onSyncNow={() => syncNowMutation.mutate(cardConfig.boardType)}
               systemColors={systemColors}
               brandColors={brandColors}
               onImport={() => handleImportPress(cardConfig.boardType)}
@@ -931,11 +979,14 @@ type BoardAccountCardProps = {
   unsyncedCounts: { ascents: number; climbs: number };
   isLast: boolean;
   isRemoving: boolean;
+  /** A sync of this account is queued or running. */
+  isSyncing: boolean;
   systemColors: ReturnType<typeof useTheme>['systemColors'];
   brandColors: ReturnType<typeof useTheme>['brandColors'];
   onImport: () => void;
   onLink: () => void;
   onRequestData: () => void;
+  onSyncNow: () => void;
   onUnlink: () => void;
 };
 
@@ -946,11 +997,13 @@ function BoardAccountCard({
   unsyncedCounts,
   isLast,
   isRemoving,
+  isSyncing,
   systemColors,
   brandColors,
   onImport,
   onLink,
   onRequestData,
+  onSyncNow,
   onUnlink,
 }: BoardAccountCardProps) {
   const { t } = useTranslation('settings');
@@ -963,6 +1016,9 @@ function BoardAccountCard({
         : boardName;
   const totalUnsynced = unsyncedCounts.ascents + unsyncedCounts.climbs;
   const isExpired = credential?.syncStatus === 'expired';
+  // Only a stored credential can sync: a bare mapping ('linked') or an expired
+  // one needs the climber to (re)connect first.
+  const canSyncNow = credential ? SYNCABLE_SYNC_STATUSES.has(credential.syncStatus) : false;
   // The sync daemons write a machine-readable code here for conditions the
   // client is expected to explain in the viewer's language (#3526). Everything
   // else in `sync_error` is still free text from an older path — those keep the
@@ -1002,7 +1058,11 @@ function BoardAccountCard({
             style={[styles.statusPill, { backgroundColor: credential ? brandColors.primaryFill : systemColors.fill }]}
           >
             <Text variant="caption1" color={credential ? brandColors.onPrimary : systemColors.secondaryLabel}>
-              {credential ? t('aurora.status.connected') : t('aurora.mobile.notConnected')}
+              {!credential
+                ? t('aurora.mobile.notConnected')
+                : isSyncing && !isExpired
+                  ? t('aurora.status.syncing')
+                  : t('aurora.status.connected')}
             </Text>
           </View>
         ) : null}
@@ -1027,6 +1087,14 @@ function BoardAccountCard({
               </Text>
             </View>
           ) : null}
+          {isSyncing && !isExpired ? (
+            <View style={styles.syncingRow}>
+              <ActivityIndicator size="small" />
+              <Text variant="footnote" color={systemColors.secondaryLabel}>
+                {t('aurora.status.syncingHint')}
+              </Text>
+            </View>
+          ) : null}
           {totalUnsynced > 0 ? (
             <View style={[styles.warningBlock, { backgroundColor: systemColors.tertiaryBackground }]}>
               <Icon name="warning" size={18} color={brandColors.warning} />
@@ -1037,6 +1105,16 @@ function BoardAccountCard({
           ) : null}
           <View style={styles.actionRow}>
             {isExpired ? <Button title={t('aurora.card.reconnect')} icon="link" size="small" onPress={onLink} /> : null}
+            {canSyncNow ? (
+              <Button
+                title={t('aurora.card.syncNow')}
+                icon="refresh"
+                size="small"
+                loading={isSyncing}
+                disabled={isSyncing}
+                onPress={onSyncNow}
+              />
+            ) : null}
             <Button title={t('aurora.card.import')} icon="upload" variant="outlined" size="small" onPress={onImport} />
             <Button
               title={t('aurora.card.unlink')}
@@ -1331,6 +1409,12 @@ const styles = StyleSheet.create({
   },
   warningText: {
     flex: 1,
+  },
+  syncingRow: {
+    marginTop: spacing[3],
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[2],
   },
   actionRow: {
     flexDirection: 'row',

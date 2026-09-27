@@ -158,14 +158,16 @@
         "title": "Remove account link",
         "description": "Are you sure you want to unlink your {{boardName}} account?",
         "ok": "Yes, unlink"
-      }
+      },
+      "syncNow": "Sync now"
     },
     "status": {
       "connected": "Connected",
       "error": "Error",
       "expired": "Expired",
       "syncing": "Syncing",
-      "duplicateAccountCircuits": "Circuits aren't syncing: another Boardsesh account is connected to this board login, so playlist sync is paused for both of you. Your sends and ratings still come through."
+      "duplicateAccountCircuits": "Circuits aren't syncing: another Boardsesh account is connected to this board login, so playlist sync is paused for both of you. Your sends and ratings still come through.",
+      "syncingHint": "Syncing, check back in a bit"
     },
     "unsynced": {
       "title_one": "{{count}} item pending sync",
@@ -331,7 +333,11 @@
       "importInterrupted": "Import stopped before it finished. Re-importing the file is safe.",
       "requestDataFailed": "Couldn't open email. Try again.",
       "requestDataCopyFailed": "Couldn't copy the request. Try again.",
-      "passwordHelp": "Your credentials are encrypted before they are stored."
+      "passwordHelp": "Your credentials are encrypted before they are stored.",
+      "syncNowRateLimited": "Slow down, you just asked. Try again in a minute.",
+      "syncNowUnavailable": "Sync now isn't switched on yet. Your logbook still syncs on its own.",
+      "syncNowNotLinked": "Reconnect this account to sync it.",
+      "syncNowFailed": "Couldn't start a sync. Try again in a bit."
     }
   },
   "feedbackDialog": {
