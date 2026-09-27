@@ -94,7 +94,9 @@ the GBM can't provide). The Deep Sets grade head still trails the GBM by ~0.13 M
 
 `board_hold_features` (`packages/db/src/schema/app/hold-features.ts`) holds one
 row per placement, regenerated nightly by
-`packages/db/scripts/refresh-hold-features.ts`:
+`packages/db/src/jobs/refresh-hold-features.ts` (CLI:
+`packages/db/scripts/refresh-hold-features.ts`; batch worker family
+`refresh-hold-features`):
 
 - **Geometry** (`packages/db/src/queries/hold-features/geometry.ts`) — normalized
   position, edge & nearest-neighbour distance, and a geometry-derived pull

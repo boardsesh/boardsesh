@@ -38,7 +38,12 @@ export type BackgroundJobStatus = 'queued' | 'running' | 'retrying' | 'succeeded
  * and its validated payload; the queue carries only `{ runId }`. Each later
  * family is added here by the PR that ships its module.
  */
-export const BACKGROUND_JOB_FAMILIES = ['worker-probe'] as const;
+export const BACKGROUND_JOB_FAMILIES = [
+  'worker-probe',
+  'refresh-recommendations',
+  'refresh-hold-features',
+  'refresh-climb-grades',
+] as const;
 
 export type BackgroundJobFamily = (typeof BACKGROUND_JOB_FAMILIES)[number];
 

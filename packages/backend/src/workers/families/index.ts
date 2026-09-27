@@ -4,6 +4,9 @@ import {
   type BackgroundWorkerRole,
 } from '@boardsesh/db/background-jobs';
 import type { BackgroundJobFamilyModule } from './types';
+import { refreshClimbGradesFamily } from './refresh-climb-grades';
+import { refreshHoldFeaturesFamily } from './refresh-hold-features';
+import { refreshRecommendationsFamily } from './refresh-recommendations';
 import { workerProbeFamily } from './worker-probe';
 
 export { BackgroundJobError } from './types';
@@ -12,6 +15,9 @@ export type { BackgroundJobContext, BackgroundJobFamilyModule, BackgroundJobFami
 /** Every family, keyed by name. The `satisfies` fails the build when a name has no module. */
 const FAMILY_MODULES = {
   'worker-probe': workerProbeFamily,
+  'refresh-recommendations': refreshRecommendationsFamily,
+  'refresh-hold-features': refreshHoldFeaturesFamily,
+  'refresh-climb-grades': refreshClimbGradesFamily,
 } satisfies Record<BackgroundJobFamily, BackgroundJobFamilyModule>;
 
 const registry: ReadonlyMap<string, BackgroundJobFamilyModule> = new Map(

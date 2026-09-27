@@ -84,6 +84,14 @@ afterAll(async () => {
   await owner.end();
 });
 
+/**
+ * Each child process (operator run, worker boot, worker settling a probe) gets
+ * this long. A cold tsx start plus a 2 s poll interval fits in 5 s on an idle
+ * box but not reliably under a full parallel backend suite in CI; polls return
+ * as soon as they pass, so the happy path is no slower.
+ */
+const CHILD_PROCESS_BUDGET_MS = 15_000;
+
 describe('durable worker jobs', () => {
   it('atomically enqueues one ID-only job and preserves idempotency after lost acknowledgement', async () => {
     const id = randomUUID();
@@ -400,140 +408,148 @@ describe('durable worker jobs', () => {
     }
   });
 
-  it('boots and settles under worker grants without DDL or personal data privileges', async () => {
-    const roleName = `worker_test_${randomUUID().replaceAll('-', '')}`;
-    const password = randomUUID();
-    let child: ChildProcess | undefined;
-    const stopChild = async () => {
-      if (!child || child.exitCode !== null) return;
-      const running = child;
-      const exited = new Promise<void>((resolve) => running.once('exit', () => resolve()));
-      running.kill('SIGTERM');
-      const force = setTimeout(() => running.kill('SIGKILL'), 5000);
-      try {
-        await exited;
-      } finally {
-        clearTimeout(force);
-        child = undefined;
-      }
-    };
-    const workerUrl = new URL(process.env.DATABASE_URL!);
-    workerUrl.searchParams.set('options', `-c role=${roleName}`);
-    const restricted = new PgBoss({
-      connectionString: workerUrl.toString(),
-      max: 1,
-      migrate: false,
-      schedule: false,
-      supervise: false,
-    });
-    restricted.on('error', () => {});
-    try {
-      await owner.unsafe(`CREATE ROLE "${roleName}" LOGIN PASSWORD '${password}'`);
-      await initializeJobQueueSchema(drizzle(owner), undefined, undefined, [roleName]);
-      await restricted.start();
-      await assertQueuePrimary(restricted.getDb());
-      await assertWorkerPrivileges(restricted.getDb());
-      await expect(restricted.getDb().executeSql('CREATE TABLE public.worker_forbidden (id int)')).rejects.toThrow(
-        'permission denied',
-      );
-      await expect(restricted.getDb().executeSql('SELECT * FROM public.users LIMIT 1')).rejects.toThrow(
-        'permission denied',
-      );
-      const id = await enqueueWorkerProbe(database, boss, role);
-      const [job] = await restricted.fetch<BackgroundJobPayload>(queue, { includeMetadata: true });
-      expect(job.id).toBe(id);
-      // Restricted-role transactions, including pg-boss settlement, share the same connection.
-      await database.transaction(async (transaction) => {
-        await transaction.execute(sql.raw(`SET LOCAL ROLE "${roleName}"`));
-        expect(
-          await transaction
-            .select()
-            .from(backgroundJobRuns)
-            .where(and(eq(backgroundJobRuns.id, id), eq(backgroundJobRuns.role, role))),
-        ).toHaveLength(1);
+  it(
+    'boots and settles under worker grants without DDL or personal data privileges',
+    async () => {
+      const roleName = `worker_test_${randomUUID().replaceAll('-', '')}`;
+      const password = randomUUID();
+      let child: ChildProcess | undefined;
+      const stopChild = async () => {
+        if (!child || child.exitCode !== null) return;
+        const running = child;
+        const exited = new Promise<void>((resolve) => running.once('exit', () => resolve()));
+        running.kill('SIGTERM');
+        const force = setTimeout(() => running.kill('SIGKILL'), 5000);
+        try {
+          await exited;
+        } finally {
+          clearTimeout(force);
+          child = undefined;
+        }
+      };
+      const workerUrl = new URL(process.env.DATABASE_URL!);
+      workerUrl.searchParams.set('options', `-c role=${roleName}`);
+      const restricted = new PgBoss({
+        connectionString: workerUrl.toString(),
+        max: 1,
+        migrate: false,
+        schedule: false,
+        supervise: false,
       });
-      await expect(assertWorkerPrivileges(boss.getDb())).rejects.toThrow('restricted');
-      const socket = createServer();
-      await new Promise<void>((resolve) => socket.listen(0, '127.0.0.1', resolve));
-      const address = socket.address();
-      if (!address || typeof address === 'string') throw new Error('Missing test port');
-      await new Promise<void>((resolve) => socket.close(() => resolve()));
-      const loginUrl = new URL(process.env.DATABASE_URL!);
-      loginUrl.username = roleName;
-      loginUrl.password = password;
-      const operatorRunId = randomUUID();
-      const invokeOperator = (connectionUrl: string) =>
-        promisify(execFile)(
-          process.execPath,
-          [
-            '--import',
-            'tsx',
-            fileURLToPath(new URL('../operator.ts', import.meta.url)),
-            'enqueue',
-            'worker-probe',
-            '{}',
-            '--id',
-            operatorRunId,
-          ],
-          {
+      restricted.on('error', () => {});
+      try {
+        await owner.unsafe(`CREATE ROLE "${roleName}" LOGIN PASSWORD '${password}'`);
+        await initializeJobQueueSchema(drizzle(owner), undefined, undefined, [roleName]);
+        await restricted.start();
+        await assertQueuePrimary(restricted.getDb());
+        await assertWorkerPrivileges(restricted.getDb());
+        await expect(restricted.getDb().executeSql('CREATE TABLE public.worker_forbidden (id int)')).rejects.toThrow(
+          'permission denied',
+        );
+        await expect(restricted.getDb().executeSql('SELECT * FROM public.users LIMIT 1')).rejects.toThrow(
+          'permission denied',
+        );
+        const id = await enqueueWorkerProbe(database, boss, role);
+        const [job] = await restricted.fetch<BackgroundJobPayload>(queue, { includeMetadata: true });
+        expect(job.id).toBe(id);
+        // Restricted-role transactions, including pg-boss settlement, share the same connection.
+        await database.transaction(async (transaction) => {
+          await transaction.execute(sql.raw(`SET LOCAL ROLE "${roleName}"`));
+          expect(
+            await transaction
+              .select()
+              .from(backgroundJobRuns)
+              .where(and(eq(backgroundJobRuns.id, id), eq(backgroundJobRuns.role, role))),
+          ).toHaveLength(1);
+        });
+        await expect(assertWorkerPrivileges(boss.getDb())).rejects.toThrow('restricted');
+        const socket = createServer();
+        await new Promise<void>((resolve) => socket.listen(0, '127.0.0.1', resolve));
+        const address = socket.address();
+        if (!address || typeof address === 'string') throw new Error('Missing test port');
+        await new Promise<void>((resolve) => socket.close(() => resolve()));
+        const loginUrl = new URL(process.env.DATABASE_URL!);
+        loginUrl.username = roleName;
+        loginUrl.password = password;
+        const operatorRunId = randomUUID();
+        const invokeOperator = (connectionUrl: string) =>
+          promisify(execFile)(
+            process.execPath,
+            [
+              '--import',
+              'tsx',
+              fileURLToPath(new URL('../operator.ts', import.meta.url)),
+              'enqueue',
+              'worker-probe',
+              '{}',
+              '--id',
+              operatorRunId,
+            ],
+            {
+              cwd: fileURLToPath(new URL('../../../../../', import.meta.url)),
+              env: {
+                ...process.env,
+                DATABASE_URL: connectionUrl,
+                WORKER_ROLE: role,
+                WORKER_OPERATOR_ENABLED: 'true',
+                DB_POOL_MAX: '2',
+                PGBOSS_POOL_SIZE: '1',
+                READ_REPLICA_URL: '',
+              },
+              timeout: CHILD_PROCESS_BUDGET_MS,
+            },
+          );
+        await expect(invokeOperator(process.env.DATABASE_URL!)).rejects.toMatchObject({ code: 1 });
+        expect(await run(operatorRunId)).toBeUndefined();
+        expect(await boss.getJobById(queue, operatorRunId)).toBeNull();
+        await invokeOperator(loginUrl.toString());
+        expect((await run(operatorRunId)).status).toBe('queued');
+        expect((await boss.getJobById(queue, operatorRunId))?.data).toEqual({ runId: operatorRunId });
+        const startChild = (paused: boolean) => {
+          child = spawn(process.execPath, ['--import', 'tsx', fileURLToPath(new URL('../index.ts', import.meta.url))], {
             cwd: fileURLToPath(new URL('../../../../../', import.meta.url)),
             env: {
               ...process.env,
-              DATABASE_URL: connectionUrl,
+              DATABASE_URL: loginUrl.toString(),
               WORKER_ROLE: role,
-              WORKER_OPERATOR_ENABLED: 'true',
+              WORKER_PAUSED: String(paused),
+              HEALTH_PORT: String(address.port),
               DB_POOL_MAX: '2',
               PGBOSS_POOL_SIZE: '1',
               READ_REPLICA_URL: '',
             },
-            timeout: 5000,
-          },
-        );
-      await expect(invokeOperator(process.env.DATABASE_URL!)).rejects.toMatchObject({ code: 1 });
-      expect(await run(operatorRunId)).toBeUndefined();
-      expect(await boss.getJobById(queue, operatorRunId)).toBeNull();
-      await invokeOperator(loginUrl.toString());
-      expect((await run(operatorRunId)).status).toBe('queued');
-      expect((await boss.getJobById(queue, operatorRunId))?.data).toEqual({ runId: operatorRunId });
-      const startChild = (paused: boolean) => {
-        child = spawn(process.execPath, ['--import', 'tsx', fileURLToPath(new URL('../index.ts', import.meta.url))], {
-          cwd: fileURLToPath(new URL('../../../../../', import.meta.url)),
-          env: {
-            ...process.env,
-            DATABASE_URL: loginUrl.toString(),
-            WORKER_ROLE: role,
-            WORKER_PAUSED: String(paused),
-            HEALTH_PORT: String(address.port),
-            DB_POOL_MAX: '2',
-            PGBOSS_POOL_SIZE: '1',
-            READ_REPLICA_URL: '',
-          },
-          stdio: 'ignore',
-        });
-      };
-      const health = async () => {
-        try {
-          return await (await globalThis.fetch(`http://127.0.0.1:${address.port}/health`)).json();
-        } catch {
-          return null;
-        }
-      };
-      startChild(true);
-      await expect.poll(health, { timeout: 5000 }).toMatchObject({ ready: true, paused: true, role });
-      const probeId = await enqueueWorkerProbe(database, boss, role);
-      expect((await run(probeId)).status).toBe('queued');
-      await stopChild();
-      startChild(false);
-      await expect.poll(async () => (await run(probeId)).status, { timeout: 5000 }).toBe('succeeded');
-      expect((await boss.getJobById(queue, probeId))?.state).toBe('completed');
-      const [connections] =
-        await owner`SELECT count(*)::int AS count FROM pg_stat_activity WHERE usename = ${roleName}`;
-      expect(connections.count).toBeLessThanOrEqual(3);
-    } finally {
-      await stopChild();
-      await restricted.stop({ graceful: true, close: true });
-      await owner.unsafe(`DROP OWNED BY "${roleName}"`);
-      await owner.unsafe(`DROP ROLE "${roleName}"`);
-    }
-  }, 20_000);
+            stdio: 'ignore',
+          });
+        };
+        const health = async () => {
+          try {
+            return await (await globalThis.fetch(`http://127.0.0.1:${address.port}/health`)).json();
+          } catch {
+            return null;
+          }
+        };
+        startChild(true);
+        await expect
+          .poll(health, { timeout: CHILD_PROCESS_BUDGET_MS })
+          .toMatchObject({ ready: true, paused: true, role });
+        const probeId = await enqueueWorkerProbe(database, boss, role);
+        expect((await run(probeId)).status).toBe('queued');
+        await stopChild();
+        startChild(false);
+        await expect
+          .poll(async () => (await run(probeId)).status, { timeout: CHILD_PROCESS_BUDGET_MS })
+          .toBe('succeeded');
+        expect((await boss.getJobById(queue, probeId))?.state).toBe('completed');
+        const [connections] =
+          await owner`SELECT count(*)::int AS count FROM pg_stat_activity WHERE usename = ${roleName}`;
+        expect(connections.count).toBeLessThanOrEqual(3);
+      } finally {
+        await stopChild();
+        await restricted.stop({ graceful: true, close: true });
+        await owner.unsafe(`DROP OWNED BY "${roleName}"`);
+        await owner.unsafe(`DROP ROLE "${roleName}"`);
+      }
+    },
+    6 * CHILD_PROCESS_BUDGET_MS,
+  );
 });

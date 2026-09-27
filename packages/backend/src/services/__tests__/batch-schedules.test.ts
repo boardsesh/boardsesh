@@ -4,8 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { BACKGROUND_SCHEDULE_QUEUE } from '@boardsesh/db/background-jobs';
 import type { BackgroundJobFamilyModule } from '../../workers/families';
 
-// Fake families: the real registry has only the probe, which has no schedules
-// and serves every role. The family list is swapped so env validation accepts them.
+// Fake families, so the wiring is tested apart from the real registry's
+// schedules. The family list is swapped so env validation accepts them.
 const fakes = vi.hoisted(() => {
   const fanOut = vi.fn<() => Promise<Array<{ payload: object; singletonKey?: string; role?: string }>>>();
   const families: Array<Record<string, unknown>> = [];

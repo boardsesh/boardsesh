@@ -11,7 +11,11 @@ Code map:
 - Model math: `packages/db/src/queries/grade-model/` — `constants.ts` (every
   threshold), `coefficients.ts` (the estimators), `blend.ts` (the posterior),
   `gates.ts` (validation), `types.ts`.
-- Pipeline: `packages/db/scripts/refresh-climb-grades.ts`.
+- Pipeline: `packages/db/src/jobs/refresh-climb-grades.ts`, run nightly by the
+  `refresh-climb-grades` GitHub Actions workflow through the CLI
+  `packages/db/scripts/refresh-climb-grades.ts`. The batch worker's
+  `refresh-climb-grades` family runs the same code (docs/background-workers.md,
+  "Batch families"); a blocking gate there ends the run with `GATES_FAILED`.
 - Output tables: `packages/db/src/schema/app/climb-grades.ts`.
 - Tests: `packages/db/src/queries/grade-model/__tests__/grade-model.test.ts`.
 - GraphQL: `boardseshGrade` (single climb+angle) and `boardseshGradesForAngles`
@@ -617,7 +621,7 @@ The history backtest (`tail_backtest` + `head_holdout`) is the one exception to
 verdict depends only on the coefficient set, `GRADE_MODEL_VERSION` and the
 grade-model code. So a night reuses the last evaluated verdict when all three
 match it: same `coeff_version`, same model version, and the same sha256 of the
-`packages/db/src/queries/grade-model/` sources plus `refresh-climb-grades.ts` (stored as `gradeModelHash` in
+`packages/db/src/queries/grade-model/` sources plus `src/jobs/refresh-climb-grades.ts` (stored as `gradeModelHash` in
 each `gate_results` payload). The reused entries keep the original metrics, are
 marked `skipped: true`, and their `detail` names the run they came from. A refit
 (weekly or `--refit-coefficients`), any grade-model code change, `--dry-run`,
@@ -728,7 +732,7 @@ These are real and we'd rather state them than paper over them.
   design + phased rollout: `docs/climb2vec.md`. **Groundwork shipped:** the
   generated per-hold feature substrate (`board_hold_features` — geometry +
   de-confounded behavioral difficulty per placement, refreshed nightly by
-  `scripts/refresh-hold-features.ts`), which also refills the dormant
+  `src/jobs/refresh-hold-features.ts`), which also refills the dormant
   `user_hold_classifications` layer with algorithmic data.
 
 ### Running it
