@@ -167,8 +167,14 @@ export async function recomputeClimbStatsInBatches(
 /**
  * Drain the pending keys a stopped worker left behind: rows older than
  * `olderThanMs`, oldest first, `batchKeys` per transaction, at most
- * `maxBatches` transactions. `SKIP LOCKED`, so it never waits on a live flush
- * holding the same rows. Returns how many keys it recomputed.
+ * `maxBatches` transactions. Returns how many keys it recomputed.
+ *
+ * Each batch picks its keys by age, then locks them in the canonical
+ * `(board_type, climb_uuid, angle)` order every other writer of these rows
+ * uses (the page's mark, {@link recomputeAndClear}), with `SKIP LOCKED` so it
+ * never waits on a live flush. Then the same recompute and conditional DELETE
+ * as {@link recomputeAndClear}: a page re-marking one of these keys waits on
+ * the lock and its marker lands after this batch commits.
  */
 export async function drainPendingClimbStatsRecomputes(
   runBatch: RecomputeBatchRunner,
@@ -179,26 +185,41 @@ export async function drainPendingClimbStatsRecomputes(
   const maxBatches = options.maxBatches ?? 20;
   let drained = 0;
   for (let batch = 0; batch < maxBatches; batch += 1) {
-    const recomputed = await runBatch(async (transaction) => {
-      // Locked for the rest of the batch, so no page can re-mark them before
-      // the DELETE: its upsert waits for this commit and then inserts afresh.
-      const markers = rowsOf<ObservedMarker>(
+    const { picked, recomputed } = await runBatch(async (transaction) => {
+      // 1. The oldest keys, unlocked: age decides WHICH rows, never the lock order.
+      const oldest = rowsOf<{ board_type: string; climb_uuid: string; angle: number }>(
         await transaction.execute(sql`
-          SELECT board_type, climb_uuid, angle, to_char(requested_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS requested_at
+          SELECT board_type, climb_uuid, angle
             FROM climb_stats_recompute_pending
            WHERE requested_at < now() - make_interval(secs => ${olderThanSeconds}::double precision)
            ORDER BY requested_at
            LIMIT ${batchKeys}
-             FOR UPDATE SKIP LOCKED
         `),
       );
-      if (markers.length === 0) return 0;
-      await recomputeClimbStatsBulk(transaction, markers.map(toKey));
-      await clearObservedPending(transaction, markers);
-      return markers.length;
+      if (oldest.length === 0) return { picked: 0, recomputed: 0 };
+      // 2. Lock them in key order, skipping any a live flush holds. A row that
+      //    went away since step 1 is simply not returned.
+      const markers = rowsOf<ObservedMarker>(
+        await transaction.execute(sql`
+          SELECT pending.board_type, pending.climb_uuid, pending.angle,
+                 to_char(pending.requested_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS requested_at
+            FROM climb_stats_recompute_pending pending
+            JOIN jsonb_to_recordset(${JSON.stringify(oldest)}::jsonb) AS k(board_type text, climb_uuid text, angle integer)
+              ON pending.board_type = k.board_type AND pending.climb_uuid = k.climb_uuid AND pending.angle = k.angle
+           ORDER BY pending.board_type, pending.climb_uuid, pending.angle
+             FOR UPDATE OF pending SKIP LOCKED
+        `),
+      );
+      if (markers.length > 0) {
+        await recomputeClimbStatsBulk(transaction, markers.map(toKey));
+        await clearObservedPending(transaction, markers);
+      }
+      return { picked: oldest.length, recomputed: markers.length };
     });
     drained += recomputed;
-    if (recomputed < batchKeys) break;
+    // A short pick means the backlog is empty. A full pick whose rows were all
+    // locked by live flushes stops too: the next hourly pass retries them.
+    if (picked < batchKeys || recomputed === 0) break;
   }
   return drained;
 }

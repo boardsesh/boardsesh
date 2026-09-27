@@ -383,6 +383,59 @@ describe('a recompute batch racing a sync page', () => {
   });
 });
 
+describe('the drain racing a page that re-marks old keys', () => {
+  const dialect = new PgDialect();
+  const statementText = (query: SQL | string) => (typeof query === 'string' ? query : dialect.sqlToQuery(query).sql);
+
+  it('locks in key order, keeps the page waiting, and leaves both re-marks for the next pass', async () => {
+    await insertLinkedTensionAccount(database, ASCENT_USER, ASCENT_CLIMB);
+    // Canonical order is angle 40 then 45; by age it is the other way round,
+    // which is the order the drain used to lock them in.
+    const early: ClimbStatsKey = { boardType: FIXTURE_BOARD, climbUuid: ASCENT_CLIMB, angle: 40 };
+    const late: ClimbStatsKey = { boardType: FIXTURE_BOARD, climbUuid: ASCENT_CLIMB, angle: 45 };
+    await database.execute(sql`
+      INSERT INTO climb_stats_recompute_pending (board_type, climb_uuid, angle, requested_at) VALUES
+        (${early.boardType}, ${early.climbUuid}, ${early.angle}, now() - interval '10 minutes'),
+        (${late.boardType}, ${late.climbUuid}, ${late.angle}, now() - interval '20 minutes')`);
+
+    let lockStatement = '';
+    let page: Promise<void> | undefined;
+    let pageWaited = false;
+    const runBatch = ((callback) =>
+      database.transaction((transaction) => {
+        const intercepted = new Proxy(transaction, {
+          get(target, property, receiver) {
+            if (property !== 'execute') return Reflect.get(target, property, receiver);
+            return async (query: SQL) => {
+              const text = statementText(query);
+              if (text.includes('FOR UPDATE')) lockStatement = text;
+              if (!page && text.includes('DELETE FROM climb_stats_recompute_pending')) {
+                // A page writes ticks on both keys and re-marks them, in key order.
+                page = database.transaction((pageTransaction) =>
+                  markClimbStatsRecomputePending(pageTransaction, [late, early]),
+                );
+                pageWaited = await Promise.race([
+                  page.then(() => false),
+                  new Promise<boolean>((resolve) => setTimeout(() => resolve(true), 300)),
+                ]);
+              }
+              return target.execute(query);
+            };
+          },
+        });
+        return callback(intercepted);
+      })) as SyncBatchRunner;
+
+    expect(await drainPendingClimbStatsRecomputes(runBatch, { maxBatches: 1 })).toBe(2);
+    await page;
+
+    expect(lockStatement).toMatch(/ORDER BY "?pending"?\.board_type, "?pending"?\.climb_uuid, "?pending"?\.angle/);
+    expect(pageWaited).toBe(true);
+    // Both re-marks survive the drain's DELETE, for the next flush or pass.
+    expect(await countRows('climb_stats_recompute_pending', ASCENT_CLIMB)).toBe(2);
+  });
+});
+
 describe('pending markers under a non-UTC session TimeZone', () => {
   /** A batch runner whose transactions read and write timestamps in Sydney time. */
   const sydneyBatch = ((callback) =>
