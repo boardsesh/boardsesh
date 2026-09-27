@@ -11,10 +11,15 @@
  * board, or `--board=a,b`) and the batch worker's `refresh-climb-neighbors`
  * family, one board per job (docs/background-workers.md).
  *
- * Every write batch goes through `transact`: the build-state row, each chunk of
- * up to 1,000 lists, each finished group, and the closing sweep + watermark.
- * The longest measured in production is one MoonBoard chunk, about 4 s with
- * its compute (Sep 2026). Reads go through `db`, never inside a batch.
+ * Every write batch goes through `transact`: the build-state row, the
+ * work-set delete, each chunk of up to 1,000 lists, each finished group, and
+ * the closing sweep + watermark. The longest measured in production is one
+ * MoonBoard chunk, about 4 s with its compute (Sep 2026); each group's log
+ * line reports its longest write batch. Reads go through `db`, never inside a
+ * batch. Scoring is synchronous, so the worker's heartbeat timer runs only
+ * between awaits: the chunk loop yields before every 1,000 lists (about 2-4 s
+ * of scoring, dry runs included), and the incremental expansion yields every
+ * 500 changed climbs.
  *
  * `signal` stops the run between chunks. Finished chunks and groups stay
  * recorded and the watermark does not move, so the run throws
@@ -57,9 +62,12 @@ export type RefreshClimbNeighborsResult = {
 };
 
 /**
- * `signal` stopped the run before every board was done. Nothing is lost: the
- * next run resumes a full build from its recorded groups and lists, and an
- * incremental run's watermark has not moved, so its work set is scored again.
+ * `signal` stopped the run before every board was done. The next run resumes a
+ * full build from its recorded groups and lists. An incremental run's
+ * watermark has not moved, so the next run scores the same work set again and
+ * finds the same displaced lists (they are rewritten in place, never emptied
+ * up front). Until then the changed climbs themselves show no list: their own
+ * lists are deleted before any recompute.
  */
 export class ClimbNeighborsInterruptedError extends Error {
   readonly boardType: BoardName;
