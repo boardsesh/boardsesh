@@ -351,7 +351,7 @@ the `refresh-moonboard-angle-estimates` GitHub Actions workflow through the CLI
 `packages/db/scripts/refresh-moonboard-angle-estimates.ts`; the batch worker's
 `refresh-moonboard-angle-estimates` family runs the same code
 (docs/background-workers.md, "Batch families") and will own this schedule once
-that family is cut over — an unusable pooled fit ends the run with
+that family is cut over. An unusable pooled fit ends the run with
 `FIT_UNUSABLE` there instead of a nonzero exit code.
 
 What keeps it honest:
@@ -427,10 +427,24 @@ result as a `board_climb_grades` row tiered `moonboard_wide_angle_estimate`,
 CLI `packages/db/scripts/refresh-moonboard-wide-angle-estimates.ts`; the batch
 worker's `refresh-moonboard-wide-angle-estimates` family runs the same code
 (docs/background-workers.md, "Batch families") and will own this schedule once
-cut over. Its single publish transaction can run into the millions of rows
-(measured ~1,429 s for 2.89M rows against production, Sep 2026), which is why
-that family's heartbeat sits close to its own expire ceiling rather than the
-smaller margin the other batch families use.
+cut over. Its output runs into the millions of rows: one publish of 2.89M rows
+took ~1,429 s against production (Sep 2026), but that was an insert-only run
+from before the `IS DISTINCT FROM` guard below, so every row was a real write.
+The steady state has not been measured yet; before the family is enabled it
+gets measured on the Sep 28 Actions run and on a `{"dryRun":true}` batch-VM
+run with its peak RSS.
+
+The publish commits in chunks of about 50,000 rows keyed on `climb_uuid`
+(about 3,850 climbs times 13 angles), and every angle of a climb lands in the
+same chunk; the stale-row reap follows in chunks of its own. So while a publish
+is running, readers can see this week's surface for some climbs and last
+week's for others, but each climb's 13-angle ladder always comes from one run.
+Unchanged rows are skipped by the guard, so only climbs whose integer grade
+moved are in that mix. An interrupted run leaves a committed prefix of whole
+climbs; the retry re-plans and the committed rows become no-ops. A generation
+column that would switch the whole surface at once was rejected: it rewrites
+all 2.89M rows every week and re-sends about 1.2M rows to every MoonBoard
+device.
 
 Both MoonBoard estimate jobs share one upsert
 (`packages/db/src/jobs/grade-estimate-upsert.ts`) that skips a row unless one of

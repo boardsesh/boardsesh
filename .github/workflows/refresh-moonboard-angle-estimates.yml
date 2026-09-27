@@ -5,7 +5,7 @@ name: Refresh MoonBoard Angle Estimates
 # problem with a `moonboard_angle_estimate` row in board_climb_grades. Rows the
 # run no longer stands behind (the problem has since been climbed at that angle,
 # delisted, or lost its grade) are reaped in the same transaction. Idempotent: a
-# row whose values did not move is left alone (packages/db/scripts/grade-estimate-upsert.ts),
+# row whose values did not move is left alone (packages/db/src/jobs/grade-estimate-upsert.ts),
 # so its computed_at sync cursor stays put and devices don't download it again.
 #
 # Weekly rather than nightly: the training sample is ~6k problems and moves

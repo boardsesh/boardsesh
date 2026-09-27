@@ -21,8 +21,10 @@
  * `refresh-moonboard-angle-estimates` family (docs/background-workers.md). An
  * unusable pooled fit throws {@link MoonboardFitUnusableError}: nothing is
  * written. The publish (coefficients + estimate upserts + stale-row reap) is
- * one fenced transaction, on purpose — see docs/background-workers.md for why
- * that pins this family's heartbeat close to its own expire ceiling.
+ * one fenced transaction, on purpose: it is ~216k rows (~131 s measured on
+ * GitHub Actions, Sep 2026), so it fits the family's 600 s heartbeat whole
+ * (docs/background-workers.md). The much larger wide-angle job commits in
+ * chunks instead.
  */
 import { sql } from 'drizzle-orm';
 import { boardGradeCoefficients } from '../schema/app/climb-grades';
@@ -196,7 +198,7 @@ export type RefreshMoonboardAngleEstimatesParams = {
   validateOnly: boolean;
   /** Full plan including row shapes, write nothing. */
   dryRun: boolean;
-  /** The only flag that writes. */
+  /** The only flag that writes, and only when `dryRun` and `validateOnly` are off. */
   publish: boolean;
 };
 
@@ -235,7 +237,9 @@ export async function runMoonboardAngleEstimates(
   const plan = planMoonboardAngleEstimates(targets, coefficients, existing, coefficients.coeffVersion);
   reportPlan(plan, log);
 
-  if (!publish) {
+  // dryRun wins over publish: `{ dryRun: true }` on a payload whose publish
+  // defaults to true must still write nothing.
+  if (!publish || dryRun) {
     log.info(
       dryRun
         ? '[moon-angle] dry run — no coefficients or grade rows written.'

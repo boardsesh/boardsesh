@@ -205,8 +205,8 @@ fence (`context.transaction`). The worker never imports
 | `refresh-climb-grades` | `30 6 * * *` | `{ refit?, dryRun?, validateOnly? }` | 900 s | `board_grade_coefficients`, `board_climb_grades` | `refresh-climb-grades.yml` |
 | `refresh-climb-neighbors` | `45 6 * * *`, one job per board | `{ board, full?, dryRun?, refillGaps? }` | 60 s | `board_climb_neighbors`, `board_climb_neighbor_runs`, `board_climb_neighbor_group_runs` | `refresh-climb-neighbors.yml` |
 | `export-board-snapshots` | `15 7 * * *` (`nightly`), `7,22,37,52 * * * *` (`live-scan`) | `{ mode, board?, layout?, refreshThreshold?, gzipOnly? }` | 120 s | nothing in Postgres; SQLite artifacts and manifests to the snapshot bucket | `export-board-snapshots.yml` |
-| `refresh-moonboard-angle-estimates` | `0 8 * * 1` | `{ publish = true, validateOnly?, dryRun? }` | 300 s | `board_grade_coefficients`, `board_climb_grades` | `refresh-moonboard-angle-estimates.yml` |
-| `refresh-moonboard-wide-angle-estimates` | `30 8 * * 1` | `{ publish = true, dryRun? }` | 1,700 s | `board_climb_grades` (no coefficient persistence — the angle surface is refit from `board_climb_stats` every run) | `refresh-moonboard-wide-angle-estimates.yml` |
+| `refresh-moonboard-angle-estimates` | `0 8 * * 1` | `{ publish = true, validateOnly?, dryRun? }` | 600 s | `board_grade_coefficients`, `board_climb_grades` | `refresh-moonboard-angle-estimates.yml` |
+| `refresh-moonboard-wide-angle-estimates` | `30 8 * * 1` | `{ publish = true, dryRun? }` | 300 s | `board_climb_grades` (no coefficients: the angle surface is refit from `board_climb_stats` every run) | `refresh-moonboard-wide-angle-estimates.yml` |
 
 Measured on GitHub Actions against production in Sep 2026: recommendations
 about 25 s, hold features about 60 s, grades about 4 minutes, of which the
@@ -216,7 +216,12 @@ board ran on 2026-09-25 in about 9 minutes for Kilter (295k climbs in one
 layout) and 13 for MoonBoard (2.3M rows).
 The MoonBoard angle-estimate job took about 157 s end to end (publish ~131 s,
 216k rows); the MoonBoard wide-angle job about 24 minutes end to end, of which
-the publish transaction alone was **~1,429 s for 2.89M rows**.
+the publish alone was **~1,429 s for 2.89M rows**. That wide-angle number is
+from an insert-only run before the `IS DISTINCT FROM` guard existed, so every
+row was a real write. The steady state, where most rows are unchanged, has not
+been measured yet. Before enabling either MoonBoard family, measure it twice:
+the Sep 28 GitHub Actions run (the first weekly run with the guard), and a
+`{"dryRun":true}` run on the batch VM, noting its duration and peak RSS.
 
 **A fenced write batch must finish inside the heartbeat window.** The fence
 holds the run row's lock until it commits, and the worker's heartbeat needs
@@ -242,23 +247,37 @@ awaits, so the job also yields to the event loop before every chunk and every
 longest batch, not to its whole run, keep reads out of the fence, and never
 run more than a few seconds of synchronous work without an await.
 
-**Both MoonBoard estimate jobs also publish in one transaction**, matching
-their CLI's own atomicity contract (coefficients, if any, the estimate upsert
-and the stale-row reap commit together or not at all). For the angle job that
-transaction is small (measured ~131 s), so its heartbeat gets the usual
-several-times-over margin (300 s). The wide-angle job's transaction can run
-into the millions of rows — measured ~1,429 s against production's 2.89M-row
-catalog — leaving almost no slack under the family's own 1,800 s `expireInSeconds`
-ceiling (itself fixed to match the GitHub Actions workflow's 30-minute
-timeout). Its heartbeat is set to 1,700 s: as close to that ceiling as is safe
-(100 s of margin) rather than to a fraction of it, because neither our own
-heartbeat check nor pg-boss's own attempt lease can be touched while the
-transaction is held. If MoonBoard's catalog grows enough to push the publish
-past roughly 1,700 s, `expireInSeconds` (and therefore the GitHub Actions
-workflow's own timeout, while it still runs) must grow with it — or the job
-must be restructured to commit per chunk, the way `refresh-hold-features`
-commits once per layout, trading one all-or-nothing publish for a much smaller
-heartbeat.
+**The MoonBoard angle-estimate job publishes in one transaction**, matching
+its CLI's own atomicity contract (coefficients, the estimate upsert and the
+stale-row reap commit together or not at all). That transaction is small
+(~131 s measured on Actions), so its heartbeat is 600 s: a 590 s bound once the
+10 s touch lag is taken off, about 4.5 times the measurement.
+
+**The wide-angle job commits in chunks.** One transaction of 2.89M rows took
+~1,429 s on Actions. Under the 1,700 s heartbeat first proposed it fails
+whenever the batch VM is more than about 1.18 times slower, rolls back after
+writing everything, and holds the run row's lock the whole time, so the
+reconciler's `lockRun ... FOR UPDATE` waits behind it. Instead the upserts
+commit in keyset chunks of about 50,000 rows by `climb_uuid` (about 3,850
+climbs times 13 angles), each chunk one fenced `transact` call. All of a climb's angles land in
+the same chunk. The stale-row reap runs after every upsert chunk, in fenced
+chunks of its own. The job checks its abort signal between chunks and before
+every 500-row statement. At the measured ~0.49 ms per row a chunk takes about
+25 s, so the family's heartbeat is 300 s (a 290 s bound, about 11 times one
+chunk). Its `expireInSeconds` is 7,200 s: pg-boss ends the lease at
+`started_on + expireInSeconds` no matter how often the job is touched, so the
+whole run (fit, plan and every chunk, ~24 minutes on Actions) has to fit inside
+it.
+
+The trade-off, accepted on purpose: while a publish is running, readers can
+see this week's surface for some climbs and last week's for others. Each
+climb's 13-angle ladder is always from a single run. The upsert skips rows
+whose values did not move, so the mix only touches climbs whose integer grade
+changed this week. An interrupted run leaves a committed prefix of whole
+climbs; the retry re-plans from scratch and the rows already committed are
+no-ops. A generation column that would flip the whole surface at once was
+rejected: it would rewrite all 2.89M rows every week and re-send about 1.2M
+rows to every MoonBoard device.
 
 `refresh-climb-grades` fails a blocking validation gate with
 `BackgroundJobError('GATES_FAILED', { retryable: false })`: nothing was
@@ -325,10 +344,12 @@ tables (`board_products`, `board_layouts`, `board_product_sizes`,
 TRUE, SET FALSE` once when provisioning the login, and the family refuses to run
 (`SNAPSHOT_OBSERVER_UNPRIVILEGED`) without it. The grade publish creates a temporary table, so the
 database must keep PostgreSQL's default TEMPORARY privilege for PUBLIC. Both
-MoonBoard estimate jobs need no grants beyond this list: they read only
-`board_climb_stats` and `board_climbs` (already granted for the grade job) and
-write only `board_climb_grades` and, for the angle job,
-`board_grade_coefficients` (both already granted).
+MoonBoard estimate jobs need no grants beyond this list: they read
+`board_climb_stats`, `board_climbs` and `board_climb_grades` (their own
+earlier estimates and, for the wide-angle job, the angle job's 25°/40° rows),
+and write only `board_climb_grades` and, for the angle job,
+`board_grade_coefficients`. All of these are already granted for the grade
+job.
 `packages/backend/src/services/__tests__/job-queue-roles.test.ts` runs every
 family under exactly these grants, and `job-queue-roles-snapshots.test.ts` runs
 the snapshot exporter under a real login with them plus `pg_read_all_stats`; a
@@ -346,7 +367,7 @@ node --import tsx packages/backend/src/workers/operator.ts enqueue refresh-climb
 node --import tsx packages/backend/src/workers/operator.ts enqueue refresh-climb-neighbors '{"board":"moonboard","refillGaps":true}'
 node --import tsx packages/backend/src/workers/operator.ts enqueue export-board-snapshots '{"mode":"nightly"}'
 node --import tsx packages/backend/src/workers/operator.ts enqueue refresh-moonboard-angle-estimates '{"validateOnly":true}'
-node --import tsx packages/backend/src/workers/operator.ts enqueue refresh-moonboard-wide-angle-estimates '{"dryRun":true,"publish":false}'
+node --import tsx packages/backend/src/workers/operator.ts enqueue refresh-moonboard-wide-angle-estimates '{"dryRun":true}'
 ```
 
 Each family has one dedup key (per board for hold features and neighbours, per
@@ -416,11 +437,14 @@ with their own no-overlap steps in `docs/board-snapshots.md`):
    stay empty until those climbs are touched again or the next full build. Do
    not dispatch the workflow for a board while its family job runs, and enable
    the family only after the two measurements above.
-   **The two MoonBoard estimate jobs are the same kind of exception, and to
-   each other:** the workflows are offset 30 minutes so they never overlap,
-   because both are single-transaction publishes and the wide-angle job's can
-   run into the millions of rows — cut both over in the same PR, disabling both
-   workflow schedules that day, rather than staggering the two.
+   **The two MoonBoard estimate jobs:** cut both over in the same PR and
+   disable both workflow schedules that day. On Actions the 30-minute cron
+   offset does not keep them apart (GitHub started the Sep 21 runs about 6.7
+   hours late), and a workflow run could overlap a worker run of the same job.
+   On the worker they cannot overlap each other: the batch worker runs one
+   job at a time (`WORKER_CONCURRENCY=1`), so one waits for the other, and the
+   two jobs write disjoint rows anyway (the angle job only 25°/40°, the
+   wide-angle job every other angle).
 3. Wait for three `succeeded` ledger rows for the family, and compare their
    log output (row counts per phase) with the same nights' workflow logs. For
    neighbours, whose workflow schedule is already gone, three `succeeded` rows

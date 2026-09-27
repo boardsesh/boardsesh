@@ -15,12 +15,28 @@
  * (flags --dry-run, --publish) and the batch worker's
  * `refresh-moonboard-wide-angle-estimates` family (docs/background-workers.md).
  * Zero angle-surface coverage from any shape board throws
- * {@link MoonboardFitUnusableError}: nothing is written. The publish (upserts +
- * stale-row reap) is one fenced transaction — this job's output can run into
- * the millions of rows, so docs/background-workers.md sizes this family's
- * heartbeat close to its own expire ceiling; there is no coefficient
- * persistence step here (the angle surface is refit from board_climb_stats
- * every run, never stored).
+ * {@link MoonboardFitUnusableError}: nothing is written. There is no
+ * coefficient persistence step here (the angle surface is refit from
+ * board_climb_stats every run, never stored).
+ *
+ * The publish commits in chunks, not one transaction. The output is ~2.89M
+ * rows (production, Sep 2026), and one transaction that size took ~1,429 s on
+ * GitHub Actions: too close to any fence or lease a worker can hold, and the
+ * run row's lock would stall the reconciler for the whole time. So the upserts
+ * commit in keyset chunks of about {@link PUBLISH_CHUNK_ROWS} rows by
+ * climb_uuid (~3,850 climbs x 13 angles), each chunk one `transact` call, and
+ * every one of a climb's angles lands in the same chunk. The stale-row reap
+ * runs after all upserts, in chunks of its own.
+ *
+ * Accepted trade-off: while a publish is running, readers can see this week's
+ * surface for some climbs and last week's for others. Each climb's 13-angle
+ * ladder is always from one run. Only rows whose values moved are rewritten
+ * (the IS DISTINCT FROM guard in grade-estimate-upsert.ts), so the mix is
+ * limited to climbs whose integer grade changed. An interrupted run leaves a
+ * committed prefix of whole climbs; the retry re-plans from scratch, and the
+ * rows the first attempt committed are no-ops. A generation column that would
+ * flip the whole surface at once was rejected: it rewrites all 2.89M rows
+ * every week and re-sends ~1.2M rows to every MoonBoard device.
  */
 import { sql } from 'drizzle-orm';
 import { MOONBOARD_WIDE_ANGLES } from '@boardsesh/board-config';
@@ -33,7 +49,7 @@ import {
   type GradeCoefficients,
 } from '../queries/grade-model';
 import { rowsOf } from '../queries/util/rows';
-import { upsertGradeEstimates } from './grade-estimate-upsert';
+import { chunkRowsByClimb, upsertGradeEstimates } from './grade-estimate-upsert';
 import { MoonboardFitUnusableError } from './refresh-moonboard-angle-estimates';
 import {
   MOONBOARD_BOARD_TYPE,
@@ -52,6 +68,12 @@ export { MOONBOARD_WIDE_ANGLE_MODEL_VERSION } from './moonboard-wide-angle-estim
 
 const READ_PAGE_ROWS = 20000;
 const DELETE_BATCH = 500;
+/**
+ * Rows per committed publish chunk. At the measured ~0.49 ms per row (1,429 s
+ * for 2.89M rows, insert-only, on GitHub Actions) one chunk is about 25 s,
+ * against the family's 290 s bound (300 s heartbeat minus the 10 s touch lag).
+ */
+const PUBLISH_CHUNK_ROWS = 50_000;
 const SAMPLE_ROWS = 5;
 
 async function loadShapeCoefficients(db: JobDatabase, log: JobLogger): Promise<GradeCoefficients> {
@@ -115,13 +137,22 @@ async function loadExistingKeys(db: JobDatabase): Promise<MoonboardWideAngleEsti
  * the same-board transpose only targets the OTHER of those same two angles.
  * That is a construction-time invariant, not something the schema enforces.
  */
-async function upsertEstimates(db: JobDatabase, plan: MoonboardWideAngleEstimatePlan): Promise<number> {
-  return upsertGradeEstimates(db, plan.upserts);
+async function upsertEstimates(
+  db: JobDatabase,
+  rows: MoonboardWideAngleEstimatePlan['upserts'],
+  signal: AbortSignal,
+): Promise<number> {
+  return upsertGradeEstimates(db, rows, undefined, signal);
 }
 
-async function reapStaleEstimates(db: JobDatabase, reaps: readonly MoonboardWideAngleEstimateKey[]): Promise<number> {
+async function reapStaleEstimates(
+  db: JobDatabase,
+  reaps: readonly MoonboardWideAngleEstimateKey[],
+  signal: AbortSignal,
+): Promise<number> {
   let deleted = 0;
   for (let start = 0; start < reaps.length; start += DELETE_BATCH) {
+    signal.throwIfAborted();
     const batch = reaps.slice(start, start + DELETE_BATCH);
     const keys = batch.map((key) => sql`(${key.climbUuid}, ${key.angle})`);
     await db.execute(sql`
@@ -149,11 +180,15 @@ function reportPlan(plan: MoonboardWideAngleEstimatePlan, log: JobLogger): void 
 export type RefreshMoonboardWideAngleEstimatesParams = {
   /** Full plan including row shapes, write nothing. */
   dryRun: boolean;
-  /** The only flag that writes. */
+  /** The only flag that writes, and only when `dryRun` is off. */
   publish: boolean;
 };
 
-export type RefreshMoonboardWideAngleEstimatesOptions = JobRunOptions & RefreshMoonboardWideAngleEstimatesParams;
+export type RefreshMoonboardWideAngleEstimatesOptions = JobRunOptions &
+  RefreshMoonboardWideAngleEstimatesParams & {
+    /** Rows per committed chunk; defaults to {@link PUBLISH_CHUNK_ROWS}. Tests shrink it. */
+    chunkRows?: number;
+  };
 
 export type RefreshMoonboardWideAngleEstimatesResult = {
   coeffVersion: string;
@@ -197,7 +232,9 @@ export async function runMoonboardWideAngleEstimates(
   );
   reportPlan(plan, log);
 
-  if (!publish) {
+  // dryRun wins over publish: `{ dryRun: true }` on a payload whose publish
+  // defaults to true must still write nothing.
+  if (!publish || dryRun) {
     log.info(
       dryRun
         ? '[moon-wide] dry run — no grade rows written.'
@@ -212,13 +249,26 @@ export async function runMoonboardWideAngleEstimates(
     };
   }
 
-  // Between the fit/plan (all reads) and the publish (the fenced write).
-  signal.throwIfAborted();
-
-  const { written, deleted } = await transact(async (transaction) => ({
-    written: await upsertEstimates(transaction, plan),
-    deleted: await reapStaleEstimates(transaction, plan.reaps),
-  }));
+  const chunkRows = options.chunkRows ?? PUBLISH_CHUNK_ROWS;
+  const upsertChunks = chunkRowsByClimb(plan.upserts, chunkRows);
+  const reapChunks = chunkRowsByClimb(plan.reaps, chunkRows);
+  let written = 0;
+  for (const [index, chunk] of upsertChunks.entries()) {
+    // Between chunks the fence is released, so an abort lands here or inside
+    // the upsert loop (rolling back only the chunk in flight).
+    signal.throwIfAborted();
+    const changed = await transact((transaction) => upsertEstimates(transaction, chunk, signal));
+    written += changed;
+    log.info(
+      `[moon-wide] upsert chunk ${index + 1}/${upsertChunks.length}: ${chunk.length} rows, ${changed} changed (committed)`,
+    );
+  }
+  let deleted = 0;
+  for (const [index, chunk] of reapChunks.entries()) {
+    signal.throwIfAborted();
+    deleted += await transact((transaction) => reapStaleEstimates(transaction, chunk, signal));
+    log.info(`[moon-wide] reap chunk ${index + 1}/${reapChunks.length}: ${chunk.length} rows (committed)`);
+  }
   log.info(
     `[moon-wide] published ${written} changed estimate rows (${plan.upserts.length - written} unchanged, left alone), reaped ${deleted} stale rows.`,
   );
