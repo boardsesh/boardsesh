@@ -423,6 +423,124 @@ describe('refreshClimbNeighborsForBoard', () => {
   });
 });
 
+describe('incremental runs on a busy group', () => {
+  // Layout 11: eight climbs (s0-s7) sharing 10 of 12 holds pairwise, so each
+  // lists the other seven, and two (u0, u1) that only resemble each other.
+  const LAYOUT = 11;
+  const SIMILAR = range(0, 7).map((variant) => `s${variant}`);
+
+  beforeAll(async () => {
+    await reset();
+    for (const [variant, uuid] of SIMILAR.entries()) {
+      await insertClimb({ uuid, layoutId: LAYOUT, holds: [...range(1, 10), 20 + variant] });
+    }
+    await insertClimb({ uuid: 'u0', layoutId: LAYOUT, holds: range(100, 110) });
+    await insertClimb({ uuid: 'u1', layoutId: LAYOUT, holds: [...range(100, 109), 111] });
+    await settleClimbs();
+    await refreshClimbNeighborsForBoard(db, { boardType: BOARD });
+  });
+  afterAll(reset);
+
+  async function editClimb(uuid: string, holds: number[]): Promise<void> {
+    await db
+      .update(dbSchema.boardClimbs)
+      .set({ frames: framesFor(holds) })
+      .where(eq(dbSchema.boardClimbs.uuid, PREFIX + uuid));
+  }
+
+  /** Fold every pending edit in and let the watermark pass it. */
+  async function catchUp(): Promise<void> {
+    await settleClimbs();
+    await refreshClimbNeighborsForBoard(db, { boardType: BOARD });
+  }
+
+  /**
+   * Run a refresh while a setImmediate ticker counts event-loop turns, and
+   * return the tick seen by each expansion call (`neighborsOf(uuid)` with no
+   * threshold; the chunk loop always passes one).
+   */
+  async function ticksAtExpansion(options: { expansionYieldEvery?: number }): Promise<number[]> {
+    let ticks = 0;
+    let ticking = true;
+    const tick = () => {
+      ticks += 1;
+      if (ticking) setImmediate(tick);
+    };
+    setImmediate(tick);
+    const original = ClimbNeighborIndex.prototype.neighborsOf;
+    const seen: number[] = [];
+    const spy = vi.spyOn(ClimbNeighborIndex.prototype, 'neighborsOf').mockImplementation(function (
+      this: ClimbNeighborIndex,
+      ...args: Parameters<ClimbNeighborIndex['neighborsOf']>
+    ) {
+      if (args.length === 1) seen.push(ticks);
+      return original.apply(this, args);
+    });
+    try {
+      await refreshClimbNeighborsForBoard(db, { boardType: BOARD, ...options });
+    } finally {
+      ticking = false;
+      spy.mockRestore();
+    }
+    return seen;
+  }
+
+  it('the expansion loop yields to the event loop, so the heartbeat timer can run', async () => {
+    // Without a yield inside the batch size, both expansions run in one turn.
+    await editClimb('s1', [...range(1, 10), 31]);
+    await editClimb('s2', [...range(1, 10), 32]);
+    const unyielded = await ticksAtExpansion({});
+    expect(unyielded).toHaveLength(2);
+    expect(new Set(unyielded).size).toBe(1);
+    await catchUp();
+
+    await editClimb('s1', [...range(1, 10), 21]);
+    await editClimb('s2', [...range(1, 10), 22]);
+    const yielded = await ticksAtExpansion({ expansionYieldEvery: 1 });
+    expect(yielded).toHaveLength(2);
+    expect(yielded[1]).toBeGreaterThan(yielded[0]);
+    await catchUp();
+  });
+
+  it('a run stopped during expansion writes nothing and leaves the displaced lists whole', async () => {
+    // s0 moves away from the others: s2..s7 each list it until they are rewritten.
+    await editClimb('s0', range(200, 210));
+    const before = await watermark();
+    const stopped = await refreshClimbNeighborsForBoard(db, {
+      boardType: BOARD,
+      expansionYieldEvery: 1,
+      shouldContinue: () => false,
+    });
+    expect(stopped.interrupted).toBe(true);
+    expect(stopped.rowsWritten).toBe(0);
+    expect(await watermark()).toBe(before);
+    // Only the changed climb's own list goes up front; the lists naming it
+    // stay whole, so the next run still finds them.
+    expect(await neighbourList('s0')).toEqual([]);
+    expect((await neighbourList('s3')).map(({ neighbor }) => neighbor)).toContain('s0');
+    expect(await neighbourList('s3')).toHaveLength(SIMILAR.length - 1);
+
+    const resumed = await refreshClimbNeighborsForBoard(db, { boardType: BOARD });
+    expect(resumed.interrupted).toBe(false);
+    expect(await rowsNaming('s0')).toBe(0);
+    expect(await neighbourList('s3')).toHaveLength(SIMILAR.length - 2);
+    await catchUp();
+  });
+
+  it('recomputes the whole group once most of it changed', async () => {
+    for (const [offset, uuid] of SIMILAR.slice(1, 7).entries()) {
+      await editClimb(uuid, [...range(1, 10), 40 + offset]);
+    }
+    const result = await refreshClimbNeighborsForBoard(db, { boardType: BOARD });
+    const [group] = result.groups;
+    // Six of ten changed: every list is rewritten, u0 and u1 included,
+    // though expansion would never have reached them.
+    expect(group).toMatchObject({ layoutId: LAYOUT, indexedClimbs: 10, climbsProcessed: 10 });
+    expect(await neighbourList('u0')).toEqual([{ neighbor: 'u1', rank: 1, shared: 10 }]);
+    expect(await neighbourList('s1')).toHaveLength(SIMILAR.length - 2);
+  });
+});
+
 describe('a full build survives being cut off', () => {
   beforeAll(reset);
   afterAll(reset);

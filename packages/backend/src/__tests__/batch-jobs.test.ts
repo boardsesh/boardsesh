@@ -1,28 +1,43 @@
 /**
- * The three batch families end to end against the test Postgres, on the short
+ * The batch families end to end against the test Postgres, on the short
  * fixture in helpers/batch-job-fixture.ts: what each job writes, that every
- * write goes through the context's transaction, and how a grade gate failure
- * ends the run. The same jobs under the restricted batch login are proven in
+ * write goes through the context's transaction, how a grade gate failure ends
+ * the run, and how a neighbours run stopped by its signal resumes. The same jobs under the restricted batch login are proven in
  * services/__tests__/job-queue-roles.test.ts.
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
-import { and, eq, inArray, like } from 'drizzle-orm';
+import { and, eq, inArray, like, sql } from 'drizzle-orm';
 import * as dbSchema from '@boardsesh/db/schema';
-import { runRefreshClimbGrades, type JobDatabase, type JobTransact } from '@boardsesh/db/jobs';
+import {
+  ClimbNeighborsInterruptedError,
+  runRefreshClimbGrades,
+  runRefreshClimbNeighbors,
+  type JobDatabase,
+  type JobTransact,
+} from '@boardsesh/db/jobs';
 import type { DbInstance } from '@boardsesh/db/client';
 import { db } from '../db/client';
 import { BackgroundJobError, type BackgroundJobContext } from '../workers/families';
 import { refreshClimbGradesFamily } from '../workers/families/refresh-climb-grades';
+import { refreshClimbNeighborsFamily } from '../workers/families/refresh-climb-neighbors';
 import { refreshHoldFeaturesFamily } from '../workers/families/refresh-hold-features';
 import { refreshRecommendationsFamily } from '../workers/families/refresh-recommendations';
 import {
   FIXTURE_PREFIX,
   KILTER_CLIMBS,
   MOONBOARD_CLIMB,
+  NEIGHBOR_BOARD,
+  NEIGHBOR_LARGE_CLIMBS,
+  NEIGHBOR_LARGE_LAYOUT,
+  NEIGHBOR_SMALL_CLIMBS,
+  NEIGHBOR_SMALL_LAYOUT,
   clearBatchJobFixture,
+  clearClimbNeighborState,
+  insertNeighborClimb,
   posthogSendRows,
   seedBatchJobFixture,
+  seedClimbNeighborFixture,
 } from './helpers/batch-job-fixture';
 
 // The Tension benchmark holdout gates need at least 100 hashed-out benchmark
@@ -47,17 +62,33 @@ vi.mock('../../../db/src/queries/grade-model/index.ts', async (importOriginal) =
 
 const silentLog = { info: () => {}, warn: () => {} };
 
-/** A context whose fence is a plain transaction, counting the write batches it runs. */
-function contextFor(database: DbInstance, family: BackgroundJobContext['family']) {
+/**
+ * A context whose fence is a plain transaction, counting the write batches it
+ * runs. Like the worker's fence it refuses to start, or to return from, a
+ * batch once the signal has fired (an AbortError). `afterTransaction` runs
+ * after each batch has returned, so a test can stop the run between batches.
+ */
+function contextFor(
+  database: DbInstance,
+  family: BackgroundJobContext['family'],
+  {
+    signal = new AbortController().signal,
+    afterTransaction,
+  }: { signal?: AbortSignal; afterTransaction?: () => Promise<void> } = {},
+) {
   const transactions = { calls: 0 };
   const context: BackgroundJobContext = {
     runId: randomUUID(),
     family,
-    signal: new AbortController().signal,
+    signal,
     database,
-    transaction: (callback) => {
+    transaction: async (callback) => {
       transactions.calls += 1;
-      return database.transaction(callback);
+      signal.throwIfAborted();
+      const result = await database.transaction(callback);
+      signal.throwIfAborted();
+      await afterTransaction?.();
+      return result;
     },
   };
   return { context, transactions };
@@ -231,5 +262,178 @@ describe('batch families on the test database', () => {
     expect(
       await db.$count(dbSchema.boardGradeCoefficients, eq(dbSchema.boardGradeCoefficients.kind, 'gate_results')),
     ).toBe(gateRunsBefore + 1);
+  });
+});
+
+describe('refresh-climb-neighbors on the test database', () => {
+  const lateClimb = `${FIXTURE_PREFIX}nb-late`;
+
+  async function listOf(uuid: string): Promise<string[]> {
+    const rows = await db
+      .select({ neighbor: dbSchema.boardClimbNeighbors.neighborUuid })
+      .from(dbSchema.boardClimbNeighbors)
+      .where(eq(dbSchema.boardClimbNeighbors.climbUuid, uuid))
+      .orderBy(dbSchema.boardClimbNeighbors.rank);
+    return rows.map(({ neighbor }) => neighbor);
+  }
+
+  async function runRow() {
+    const [row] = await db
+      .select()
+      .from(dbSchema.boardClimbNeighborRuns)
+      .where(eq(dbSchema.boardClimbNeighborRuns.boardType, NEIGHBOR_BOARD));
+    return row;
+  }
+
+  async function finishedLayouts(): Promise<number[]> {
+    const rows = await db
+      .select({ layoutId: dbSchema.boardClimbNeighborGroupRuns.layoutId })
+      .from(dbSchema.boardClimbNeighborGroupRuns)
+      .where(eq(dbSchema.boardClimbNeighborGroupRuns.boardType, NEIGHBOR_BOARD));
+    return rows.map(({ layoutId }) => layoutId).sort((left, right) => left - right);
+  }
+
+  async function highestSyncSeq(): Promise<number> {
+    const [row] = await db
+      .select({ seq: sql<string>`MAX(${dbSchema.boardClimbs.syncSeq})::text` })
+      .from(dbSchema.boardClimbs)
+      .where(eq(dbSchema.boardClimbs.boardType, NEIGHBOR_BOARD));
+    return Number(row?.seq ?? 0);
+  }
+
+  beforeAll(async () => {
+    await clearBatchJobFixture(db);
+    await seedClimbNeighborFixture(db);
+  });
+
+  afterAll(async () => {
+    await clearBatchJobFixture(db);
+  });
+
+  it('writes nothing on a dry run', async () => {
+    const { context, transactions } = contextFor(db, 'refresh-climb-neighbors');
+    await refreshClimbNeighborsFamily.execute(context, { board: NEIGHBOR_BOARD, dryRun: true });
+    expect(transactions.calls).toBe(0);
+    expect(await listOf(NEIGHBOR_LARGE_CLIMBS[0])).toEqual([]);
+    expect(await runRow()).toBeUndefined();
+  });
+
+  it('builds a new board in full, every write through the transaction, then folds a new climb in', async () => {
+    const database: JobDatabase = db;
+    const transacts = { calls: 0 };
+    const transact: JobTransact = (callback) => {
+      transacts.calls += 1;
+      return database.transaction((transaction) => callback(transaction));
+    };
+    const result = await runRefreshClimbNeighbors({
+      db: database,
+      signal: new AbortController().signal,
+      transact,
+      log: silentLog,
+      boards: [NEIGHBOR_BOARD],
+      full: false,
+      dryRun: false,
+      refillGaps: false,
+    });
+    const [board] = result.boards;
+    // No watermark row yet, so the first run is a full build.
+    expect(board).toMatchObject({ boardType: NEIGHBOR_BOARD, full: true, interrupted: false });
+    // The build-state row, one chunk and one finished-group row per group, then
+    // the sweep with the watermark.
+    expect(transacts.calls).toBe(2 + 2 * board.groups.length);
+    expect(await listOf(NEIGHBOR_SMALL_CLIMBS[0])).toEqual([NEIGHBOR_SMALL_CLIMBS[1]]);
+    for (const uuid of NEIGHBOR_LARGE_CLIMBS) {
+      expect([...(await listOf(uuid))].sort()).toEqual(NEIGHBOR_LARGE_CLIMBS.filter((other) => other !== uuid).sort());
+    }
+    const built = await runRow();
+    expect(built.lastSyncSeq).toBe(await highestSyncSeq());
+    expect(built.fullBuildStartedAt).toBeNull();
+
+    // The next night, through the family: one new climb on the large layout.
+    await insertNeighborClimb(db, {
+      uuid: lateClimb,
+      layoutId: NEIGHBOR_LARGE_LAYOUT,
+      holds: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 40],
+    });
+    const { context, transactions } = contextFor(db, 'refresh-climb-neighbors');
+    await refreshClimbNeighborsFamily.execute(context, { board: NEIGHBOR_BOARD, refillGaps: false });
+    // The work-set delete, the one chunk of touched lists, the watermark.
+    expect(transactions.calls).toBe(3);
+    expect(await listOf(lateClimb)).toHaveLength(NEIGHBOR_LARGE_CLIMBS.length);
+    expect(await listOf(NEIGHBOR_LARGE_CLIMBS[0])).toContain(lateClimb);
+    // The new climb has not settled, so the watermark stays for the next run to rescore it.
+    expect((await runRow()).lastSyncSeq).toBe(built.lastSyncSeq);
+  });
+
+  it('a run stopped by its signal between batches fails INTERRUPTED, and the retry resumes the build', async () => {
+    await db.delete(dbSchema.boardClimbs).where(eq(dbSchema.boardClimbs.uuid, lateClimb));
+    await clearClimbNeighborState(db);
+
+    // Abort once the small layout's group is recorded, as a shutdown would.
+    const controller = new AbortController();
+    const { context: stopped } = contextFor(db, 'refresh-climb-neighbors', {
+      signal: controller.signal,
+      afterTransaction: async () => {
+        if ((await finishedLayouts()).includes(NEIGHBOR_SMALL_LAYOUT)) controller.abort();
+      },
+    });
+    const failure = await refreshClimbNeighborsFamily
+      .execute(stopped, { board: NEIGHBOR_BOARD, full: true, refillGaps: false })
+      .catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(BackgroundJobError);
+    expect(failure).toMatchObject({ code: 'INTERRUPTED', retryable: true });
+    expect(await finishedLayouts()).toEqual([NEIGHBOR_SMALL_LAYOUT]);
+    expect(await listOf(NEIGHBOR_SMALL_CLIMBS[0])).toEqual([NEIGHBOR_SMALL_CLIMBS[1]]);
+    expect(await listOf(NEIGHBOR_LARGE_CLIMBS[0])).toEqual([]);
+    const cutOff = await runRow();
+    expect(cutOff.lastSyncSeq).toBe(0);
+    expect(cutOff.fullBuildStartedAt).not.toBeNull();
+
+    // The retry is the same payload; the build state makes it resume, not restart.
+    const { context } = contextFor(db, 'refresh-climb-neighbors');
+    await refreshClimbNeighborsFamily.execute(context, { board: NEIGHBOR_BOARD, full: true, refillGaps: false });
+    expect(await finishedLayouts()).toEqual([NEIGHBOR_SMALL_LAYOUT, NEIGHBOR_LARGE_LAYOUT].sort((a, b) => a - b));
+    expect(await listOf(NEIGHBOR_LARGE_CLIMBS[0])).toHaveLength(NEIGHBOR_LARGE_CLIMBS.length - 1);
+    const resumed = await runRow();
+    expect(resumed.lastSyncSeq).toBe(cutOff.fullBuildSyncSeq);
+    expect(resumed.fullBuildStartedAt).toBeNull();
+  });
+
+  it('the job body throws ClimbNeighborsInterruptedError when stopped between chunks', async () => {
+    await clearClimbNeighborState(db);
+    const controller = new AbortController();
+    const failure = await runRefreshClimbNeighbors({
+      db,
+      signal: controller.signal,
+      log: {
+        info: (line) => {
+          if (line.includes(`layout ${NEIGHBOR_SMALL_LAYOUT}:`) && line.includes('processed')) controller.abort();
+        },
+        warn: () => {},
+      },
+      boards: [NEIGHBOR_BOARD],
+      full: true,
+      dryRun: false,
+      refillGaps: false,
+    }).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(ClimbNeighborsInterruptedError);
+    expect(failure).toMatchObject({ boardType: NEIGHBOR_BOARD });
+    expect(await finishedLayouts()).toEqual([NEIGHBOR_SMALL_LAYOUT]);
+  });
+
+  it('a family run whose fenced batch aborts fails INTERRUPTED, not ATTEMPT_FAILED', async () => {
+    await clearClimbNeighborState(db);
+    const aborted = new AbortController();
+    aborted.abort();
+    // The first write (the build-state row) meets the fence's AbortError.
+    const { context, transactions } = contextFor(db, 'refresh-climb-neighbors', { signal: aborted.signal });
+    const failure = await refreshClimbNeighborsFamily
+      .execute(context, { board: NEIGHBOR_BOARD, refillGaps: false })
+      .catch((error: unknown) => error);
+    expect(transactions.calls).toBe(1);
+    expect(failure).toBeInstanceOf(BackgroundJobError);
+    expect(failure).toMatchObject({ code: 'INTERRUPTED', retryable: true });
+    expect(await runRow()).toBeUndefined();
   });
 });

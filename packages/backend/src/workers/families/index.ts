@@ -5,6 +5,7 @@ import {
 } from '@boardsesh/db/background-jobs';
 import type { BackgroundJobFamilyModule } from './types';
 import { refreshClimbGradesFamily } from './refresh-climb-grades';
+import { refreshClimbNeighborsFamily } from './refresh-climb-neighbors';
 import { refreshHoldFeaturesFamily } from './refresh-hold-features';
 import { refreshRecommendationsFamily } from './refresh-recommendations';
 import { workerProbeFamily } from './worker-probe';
@@ -18,6 +19,7 @@ const FAMILY_MODULES = {
   'refresh-recommendations': refreshRecommendationsFamily,
   'refresh-hold-features': refreshHoldFeaturesFamily,
   'refresh-climb-grades': refreshClimbGradesFamily,
+  'refresh-climb-neighbors': refreshClimbNeighborsFamily,
 } satisfies Record<BackgroundJobFamily, BackgroundJobFamilyModule>;
 
 const registry: ReadonlyMap<string, BackgroundJobFamilyModule> = new Map(

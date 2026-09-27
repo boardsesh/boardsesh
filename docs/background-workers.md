@@ -5,8 +5,9 @@ J01 (#5614, epic #5613) adds an independent backend worker entry point and
 durable attempt/settlement infrastructure. PR-1 of #5800 adds the family
 registry: every job names a family, and the worker dispatches on it.
 `worker-probe` is served by every role. PR-B1 of #5800 adds the first three
-batch families (below); each stays off until `BATCH_FAMILIES_ENABLED` names
-it, and its GitHub Actions workflow keeps running until the cutover. **Personal
+batch families and PR-B3 the similar-climbs refresh (below); each stays off
+until `BATCH_FAMILIES_ENABLED` names it, and its GitHub Actions workflow keeps
+running until the cutover. **Personal
 imports, delivery and the other cron migrations are still separate issues.**
 Starting this image does not replace a sync daemon.
 
@@ -135,6 +136,7 @@ module. The module declares:
 | `refresh-recommendations` | `batch` | 1,200 s | 2, 300 s backoff to 900 s | 20 h | `nightly` |
 | `refresh-hold-features` | `batch` | 1,200 s | 2, 300 s backoff to 900 s | 20 h | board |
 | `refresh-climb-grades` | `batch` | 1,800 s | 1, after 900 s | 20 h | `nightly` |
+| `refresh-climb-neighbors` | `batch` | 21,600 s | 2, 300 s backoff to 900 s | 22 h | board |
 
 Throw `BackgroundJobError(code)` from `execute` to record a bounded,
 credential-free `error_code` (`/^[A-Z][A-Z0-9_]{0,63}$/`); pass
@@ -183,7 +185,7 @@ the tick throws and pg-boss retries it.
 
 ## Batch families
 
-Three nightly data jobs that run on GitHub Actions can also run on the batch
+Four nightly data jobs that run on GitHub Actions can also run on the batch
 worker, once `BATCH_FAMILIES_ENABLED` names them. The job bodies live in `packages/db/src/jobs/` (package export
 `@boardsesh/db/jobs`) and take `{ db, signal, transact, log, ...params }`: `db`
 for reads, `transact` for every write batch, and they throw instead of exiting.
@@ -196,10 +198,14 @@ attempt fence (`context.transaction`). The worker never imports
 | `refresh-recommendations` | `0 6 * * *` | `{}` | 30 s | `board_setter_stats`, `board_climb_send_stats`, the public cohort playlists, the weekly `board_climb_stats_history` catch-up | `refresh-recommendations.yml` |
 | `refresh-hold-features` | `15 6 * * *` | `{ board = 'kilter', dryRun?, shadow? }` | 30 s | `board_hold_features`, the shadow `user_hold_classifications` | `refresh-hold-features.yml` |
 | `refresh-climb-grades` | `30 6 * * *` | `{ refit?, dryRun?, validateOnly? }` | 900 s | `board_grade_coefficients`, `board_climb_grades` | `refresh-climb-grades.yml` |
+| `refresh-climb-neighbors` | `45 6 * * *`, one job per board | `{ board, full?, dryRun?, refillGaps? }` | 60 s | `board_climb_neighbors`, `board_climb_neighbor_runs`, `board_climb_neighbor_group_runs` | `refresh-climb-neighbors.yml` |
 
 Measured on GitHub Actions against production in Sep 2026: recommendations
 about 25 s, hold features about 60 s, grades about 4 minutes, of which the
-publish transaction was 69 s with 99.7% of rows held by hysteresis.
+publish transaction was 69 s with 99.7% of rows held by hysteresis. The
+neighbours job takes seconds per board on a normal night; full builds of every
+board ran on 2026-09-25 in about 9 minutes for Kilter (295k climbs in one
+layout) and 13 for MoonBoard (2.3M rows).
 
 **A fenced write batch must finish inside the heartbeat window.** The fence
 holds the run row's lock until it commits, and the worker's heartbeat needs
@@ -212,8 +218,18 @@ short batches (the longest are the setter-stats upsert, about 8 s, and the
 weekly MoonBoard history snapshot, about 5 s). The grade publish is one
 transaction on purpose (coefficients, gates and every board's grades commit
 together), so that family's heartbeat is 900 s. Its honesty report is a plain
-read outside the fence. Size any new family's heartbeat to its longest batch,
-not to its whole run, and keep reads out of the fence.
+read outside the fence. The neighbours job commits each chunk of up to 1,000
+lists as one batch: the heaviest measured, on MoonBoard (12 rows a list), took
+about 4 s including its compute, and the closing sweep plus watermark 0.6 s.
+Its heartbeat is 60 s, a 50 s bound, because the batch VM's round trips to the
+Railway primary are longer than a GitHub runner's and not yet measured. Each
+group's log line reports its longest write batch (`longest write batch N.Ns`)
+and the board's last line its closing batch, so the bound can be checked on
+the VM. Its scoring is synchronous and the heartbeat timer only runs between
+awaits, so the job also yields to the event loop before every chunk and every
+500 climbs of an incremental expansion. Size any new family's heartbeat to its
+longest batch, not to its whole run, keep reads out of the fence, and never
+run more than a few seconds of synchronous work without an await.
 
 `refresh-climb-grades` fails a blocking validation gate with
 `BackgroundJobError('GATES_FAILED', { retryable: false })`: nothing was
@@ -229,7 +245,7 @@ stay CLI-only, as in the workflow. Every heavy grade read runs with
 | Variable | Value |
 | --- | --- |
 | `WORKER_ROLE` | `batch` |
-| `NODE_OPTIONS` | `--max-old-space-size=4096` (the grade job holds every board's stats in memory) |
+| `NODE_OPTIONS` | `--max-old-space-size=4096` (the grade job holds every board's stats in memory; the neighbours job holds one layout's climbs and hold index, Kilter layout 1 the largest) |
 | `POSTHOG_PERSONAL_API_KEY` | PostHog personal key with query access. Unset: the send stats are skipped and the run logs a warning. |
 | `POSTHOG_PROJECT_ID` | Optional, default `412845` |
 | `POSTHOG_HOST` | Optional, default `https://us.posthog.com` |
@@ -249,8 +265,10 @@ above: `board_setter_stats`, `board_climb_send_stats`, `playlists`,
 `playlist_ownership`, `playlist_climbs`, `sync_deletions` (INSERT, from the
 `playlist_climbs` delete trigger), `board_climb_stats_history`,
 `board_shared_syncs` (the weekly snapshot watermark), `board_hold_features`,
-`user_hold_classifications`, `board_climb_grades`, `board_grade_coefficients`.
-On `users` it may read `id` and insert `(id, name, email)` only, for the two
+`user_hold_classifications`, `board_climb_grades`, `board_grade_coefficients`,
+`board_climb_neighbors` (SELECT, INSERT, DELETE), `board_climb_neighbor_runs`
+and `board_climb_neighbor_group_runs`. The neighbours job reads only
+`board_climbs` besides its own tables. On `users` it may read `id` and insert `(id, name, email)` only, for the two
 reserved system users. The grade publish creates a temporary table, so the
 database must keep PostgreSQL's default TEMPORARY privilege for PUBLIC.
 `packages/backend/src/services/__tests__/job-queue-roles.test.ts` runs every
@@ -265,14 +283,47 @@ node --import tsx packages/backend/src/workers/operator.ts enqueue refresh-recom
 node --import tsx packages/backend/src/workers/operator.ts enqueue refresh-hold-features '{"board":"tension","dryRun":true}'
 node --import tsx packages/backend/src/workers/operator.ts enqueue refresh-climb-grades '{"refit":true}'
 node --import tsx packages/backend/src/workers/operator.ts enqueue refresh-climb-grades '{"validateOnly":true}'
+node --import tsx packages/backend/src/workers/operator.ts enqueue refresh-climb-neighbors '{"board":"kilter","full":true}'
+node --import tsx packages/backend/src/workers/operator.ts enqueue refresh-climb-neighbors '{"board":"moonboard","refillGaps":true}'
 ```
 
-Each family has one dedup key (per board for hold features), so a manual run
-enqueued while the nightly run is queued returns that queued run with
-`ALREADY_QUEUED`; enqueue again once it has started.
+Each family has one dedup key (per board for hold features and neighbours), so
+a manual run enqueued while the nightly run is queued returns that queued run
+with `ALREADY_QUEUED`; enqueue again once it has started. The reverse holds
+too: a manual run still queued when the nightly schedule fires takes that
+key's place, and the nightly job returns it with `ALREADY_QUEUED`. A queued
+`dryRun` therefore swallows its board's nightly run (it writes nothing and
+moves no watermark), so enqueue dry runs after the 06:45 fan-out has started.
+
+`refresh-climb-neighbors` fans its schedule out to one job per board
+(`CLIMB_NEIGHBOR_BOARDS`, every board but spray), cheapest first by
+`orderBoardsByClimbCount`, and the batch worker runs them one at a time in that
+order. The fan-out decides the gap scan once per night (`isGapRefillDay`: the
+Sunday UTC run scans for lists that lost a row, as the workflow does) and
+writes `refillGaps` into every payload, so a retry or a start delayed past
+midnight keeps it. A payload without `refillGaps` (a hand-enqueued run) does
+not scan; pass `"refillGaps":true` to scan. A run stopped by its
+signal (shutdown, the lease, a lost attempt), whether between batches or
+inside one (the fence's AbortError), fails `INTERRUPTED` and retries: a full
+build resumes from its recorded groups and lists, and an incremental run's
+watermark has not moved, so it scores the same work set again. Only the
+changed climbs' own lists are deleted before rescoring; lists that name a
+changed climb are rewritten in place, so a stopped run never leaves them short.
+
+**Before enabling `refresh-climb-neighbors`** (an acceptance item of #5800).
+The worker runs a registered family whether or not its schedule is enabled, so
+both are hand-enqueued runs on the batch VM:
+
+1. A Kilter full build (`{"board":"kilter","full":true}`): record the batch
+   container's peak RSS against its memory limit. Kilter layout 1 (295k
+   climbs) is the largest single group the job holds in memory.
+2. A MoonBoard full build (`{"board":"moonboard","full":true}`): record the
+   longest `longest write batch` and the closing batch from its log. MoonBoard
+   writes the most rows per chunk; the longest batch must stay well inside the
+   50 s bound, or the heartbeat goes up before the family is enabled.
 
 **Cutover, one family at a time** (recommendations, then hold features, then
-grades):
+grades, then neighbours):
 
 1. Deploy the migrator with `batch=boardsesh_worker_batch` in
    `MIGRATION_WORKER_ROLES`, and the batch worker with the environment above
@@ -286,11 +337,29 @@ grades):
    enabled (step 4 for grades lands with this step, not after it). Two
    overlapping grade publishes are single long transactions over the same rows
    and can deadlock, and on a refit night both would persist a coefficient set.
+   **Neighbours is the other exception:** both crons are `45 6 * * *`, and
+   only GitHub's lateness keeps the two apart, so the cutover PR deletes the
+   workflow's `schedule:` the same day the family is enabled (step 4 lands
+   with this step). Two runs on one board at once write the same lists: the
+   second writer fails on the list's primary key (the family retries, the
+   workflow job goes red). The watermark is never corrupted by that, though
+   it may move backwards, which only rescores some climbs. A full build
+   overlapping an incremental run is worse: the incremental run's closing
+   upsert clears the build's resume state, and the build's closing sweep
+   deletes lists the incremental run rewrote before the build started, which
+   stay empty until those climbs are touched again or the next full build. Do
+   not dispatch the workflow for a board while its family job runs, and enable
+   the family only after the two measurements above.
 3. Wait for three `succeeded` ledger rows for the family, and compare their
-   log output (row counts per phase) with the same nights' workflow logs.
-4. In a follow-up PR, delete that workflow's `schedule:` block and keep
-   `workflow_dispatch` for manual runs. Update the pin in
-   `scripts/__tests__/batch-families-cron.test.ts` in the same PR.
+   log output (row counts per phase) with the same nights' workflow logs. For
+   neighbours, whose workflow schedule is already gone, three `succeeded` rows
+   per board plus spot checks of a few lists per board (the similar strip on
+   the web climb page, or `board_climb_neighbors` against the live query as an
+   admin).
+4. In a follow-up PR (for grades and neighbours, the same day as step 2),
+   delete that workflow's `schedule:` block and keep `workflow_dispatch` for
+   manual runs. Update the pin in `scripts/__tests__/batch-families-cron.test.ts`
+   in the same PR (and, for neighbours, `climb-neighbors-workflow.test.ts`).
 
 Rollback: remove the family from `BATCH_FAMILIES_ENABLED` (the backend
 unschedules it on boot) and restore the workflow's `schedule:` if step 4

@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 import { refreshClimbGradesFamily } from '../../packages/backend/src/workers/families/refresh-climb-grades';
+import { refreshClimbNeighborsFamily } from '../../packages/backend/src/workers/families/refresh-climb-neighbors';
 import { refreshHoldFeaturesFamily } from '../../packages/backend/src/workers/families/refresh-hold-features';
 import { refreshRecommendationsFamily } from '../../packages/backend/src/workers/families/refresh-recommendations';
 
@@ -28,6 +29,8 @@ const PINS = [
   { family: refreshRecommendationsFamily, workflow: 'refresh-recommendations.yml', cron: '0 6 * * *' },
   { family: refreshHoldFeaturesFamily, workflow: 'refresh-hold-features.yml', cron: '15 6 * * *' },
   { family: refreshClimbGradesFamily, workflow: 'refresh-climb-grades.yml', cron: '30 6 * * *' },
+  // The workflow runs a matrix job per board; the family fans out one job per board.
+  { family: refreshClimbNeighborsFamily, workflow: 'refresh-climb-neighbors.yml', cron: '45 6 * * *' },
 ] as const;
 
 describe('batch family crons', () => {

@@ -2,11 +2,11 @@ import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
-import { inArray } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { PgBoss } from 'pg-boss';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { DbInstance } from '@boardsesh/db/client';
-import { runRefreshClimbGrades, type JobDatabase } from '@boardsesh/db/jobs';
+import { runRefreshClimbGrades, runRefreshClimbNeighbors, type JobDatabase } from '@boardsesh/db/jobs';
 import {
   CLIMB_POPULARITY_REFRESH_QUEUE,
   initializeJobQueueSchema,
@@ -18,13 +18,20 @@ import * as dbSchema from '@boardsesh/db/schema';
 import { SPRAY_DETECTION_QUEUE, SPRAY_DETECTION_RECONCILE_QUEUE } from '@boardsesh/shared-schema';
 import type { BackgroundJobContext } from '../../workers/families';
 import { refreshClimbGradesFamily } from '../../workers/families/refresh-climb-grades';
+import { refreshClimbNeighborsFamily } from '../../workers/families/refresh-climb-neighbors';
 import { refreshHoldFeaturesFamily } from '../../workers/families/refresh-hold-features';
 import { refreshRecommendationsFamily } from '../../workers/families/refresh-recommendations';
 import {
+  FIXTURE_PREFIX,
   KILTER_CLIMBS,
+  NEIGHBOR_BOARD,
+  NEIGHBOR_LARGE_CLIMBS,
+  NEIGHBOR_LARGE_LAYOUT,
   clearBatchJobFixture,
+  insertNeighborClimb,
   posthogSendRows,
   seedBatchJobFixture,
+  seedClimbNeighborFixture,
 } from '../../__tests__/helpers/batch-job-fixture';
 
 // The Tension benchmark holdout gates need 100+ hashed-out benchmark rows; the
@@ -171,6 +178,7 @@ describe('batch worker grants', () => {
       await initializeJobQueueSchema(drizzle(owner), undefined, undefined, [`batch=${role}`]);
       await clearBatchJobFixture(ownerDatabase);
       await seedBatchJobFixture(ownerDatabase);
+      await seedClimbNeighborFixture(ownerDatabase);
       vi.stubGlobal('fetch', async () => Response.json({ results: posthogSendRows() }));
       vi.stubEnv('POSTHOG_PERSONAL_API_KEY', 'test-personal-key');
 
@@ -212,6 +220,53 @@ describe('batch worker grants', () => {
           .where(inArray(dbSchema.boardClimbGrades.climbUuid, KILTER_CLIMBS)),
       ).toHaveLength(KILTER_CLIMBS.length);
 
+      // The neighbours job, every write path: a full build (build state, chunks,
+      // finished groups, the sweep and watermark), an incremental night with
+      // the gap scan (the work-set delete), and a build cut off and resumed.
+      await refreshClimbNeighborsFamily.execute(context('refresh-climb-neighbors'), { board: NEIGHBOR_BOARD });
+      await insertNeighborClimb(ownerDatabase, {
+        uuid: `${FIXTURE_PREFIX}nb-late`,
+        layoutId: NEIGHBOR_LARGE_LAYOUT,
+        holds: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 40],
+      });
+      await refreshClimbNeighborsFamily.execute(context('refresh-climb-neighbors'), {
+        board: NEIGHBOR_BOARD,
+        refillGaps: true,
+      });
+      expect(
+        await ownerDatabase
+          .select()
+          .from(dbSchema.boardClimbNeighbors)
+          .where(eq(dbSchema.boardClimbNeighbors.climbUuid, NEIGHBOR_LARGE_CLIMBS[0])),
+      ).toHaveLength(NEIGHBOR_LARGE_CLIMBS.length);
+      const stopped = new AbortController();
+      await expect(
+        runRefreshClimbNeighbors({
+          db: database,
+          signal: stopped.signal,
+          transact: (callback) => database.transaction((transaction) => callback(transaction)),
+          log: {
+            info: (line) => {
+              if (line.includes('processed')) stopped.abort();
+            },
+            warn: () => {},
+          },
+          boards: [NEIGHBOR_BOARD],
+          full: true,
+          dryRun: false,
+          refillGaps: false,
+        }),
+      ).rejects.toMatchObject({ name: 'ClimbNeighborsInterruptedError' });
+      await refreshClimbNeighborsFamily.execute(context('refresh-climb-neighbors'), {
+        board: NEIGHBOR_BOARD,
+        refillGaps: false,
+      });
+      const [neighborRun] = await ownerDatabase
+        .select()
+        .from(dbSchema.boardClimbNeighborRuns)
+        .where(eq(dbSchema.boardClimbNeighborRuns.boardType, NEIGHBOR_BOARD));
+      expect(neighborRun.fullBuildStartedAt).toBeNull();
+
       // Nothing beyond the list: no user data it does not need, no catalog writes.
       await expect(restricted`SELECT email FROM users LIMIT 1`).rejects.toThrow('permission denied');
       await expect(restricted`SELECT comment FROM boardsesh_ticks LIMIT 1`).rejects.toThrow('permission denied');
@@ -219,6 +274,7 @@ describe('batch worker grants', () => {
       await expect(restricted`SELECT name FROM user_boards LIMIT 1`).rejects.toThrow('permission denied');
       await expect(restricted`SELECT id FROM aurora_credentials LIMIT 1`).rejects.toThrow('permission denied');
       await expect(restricted`DELETE FROM board_climbs WHERE uuid = 'none'`).rejects.toThrow('permission denied');
+      await expect(restricted`UPDATE board_climbs SET name = name WHERE false`).rejects.toThrow('permission denied');
       await expect(restricted`DELETE FROM background_job_runs WHERE false`).rejects.toThrow('permission denied');
 
       // The list is authoritative: re-running with a bare login strips it.
