@@ -541,6 +541,11 @@ move to a cloud spot runner pool — tracked in #5131).
 `["self-hosted","bs-ci"]` is no longer a legal value for this variable; the
 labels match nothing.
 
+The homelab deploy path for `boardsesh-worker` images (see
+[`docs/homelab-deploys.md`](homelab-deploys.md)) is a separate trust domain
+from the retired CI fleet above: it dispatches to a runner in a different,
+private repo rather than running self-hosted jobs here.
+
 ### Why a second variable
 
 `CI_RUNNER_LINUX` routes CI. This is deliberately separate, because the two are

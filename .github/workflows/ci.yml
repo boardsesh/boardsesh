@@ -235,6 +235,10 @@ jobs:
               - 'scripts/__tests__/service-image-build-cache.test.ts'
               - '.github/workflows/sync-deploy.yml'
               - '.github/workflows/branch-deploy.yml'
+              # The dispatch-homelab job, and the spec that pins it (also read
+              # via readFileSync, so a workflow-only edit needs the same call-out).
+              - '.github/workflows/background-worker-image.yml'
+              - 'scripts/__tests__/homelab-dispatch-workflow.test.ts'
             # Everything scripts/store-metadata-limits.test.ts reads via fs at
             # run time, plus the test itself.
             storeMetadata:
@@ -909,6 +913,7 @@ jobs:
           scripts/cloudflare-apply.test.ts
           scripts/__tests__/ci-docker-web-workflow.test.ts
           scripts/__tests__/service-image-build-cache.test.ts
+          scripts/__tests__/homelab-dispatch-workflow.test.ts
 
   listing-guards:
     needs: [changes]
