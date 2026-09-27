@@ -23,6 +23,10 @@ const climbPopularitySchema = readFileSync(
   new URL('../../../db/drizzle/0242_climb_popularity.sql', import.meta.url),
   'utf8',
 );
+const climbStatsRecomputePendingSchema = readFileSync(
+  new URL('../../../db/drizzle/0246_climb_stats_recompute_pending.sql', import.meta.url),
+  'utf8',
+);
 const providerSyncControlsSchema = readFileSync(
   new URL('../../../db/drizzle/0244_provider_sync_controls.sql', import.meta.url),
   'utf8',
@@ -1969,6 +1973,8 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
     ON "user_hold_classifications" ("user_id", "board_type", "layout_id", "size_id", "hold_id");
   DROP TABLE IF EXISTS provider_sync_controls;
   ${providerSyncControlsSchema}
+  DROP TABLE IF EXISTS climb_stats_recompute_pending;
+  ${climbStatsRecomputePendingSchema}
 
   -- The Aurora applier's skip log (migration 0187). The worker grant proof in
   -- job-queue-roles.test.ts grants on it, so it has to exist here.

@@ -20,8 +20,23 @@ export type BackgroundJobContext = {
   runId: string;
   family: BackgroundJobFamilyName;
   signal: AbortSignal;
+  /**
+   * When this attempt's pg-boss lease ends (epoch ms). `signal` aborts at it;
+   * a family that wants to stop cleanly before then (and record why) derives
+   * its own, earlier deadline from this.
+   */
+  expiresAt: number;
   database: DbInstance;
   transaction<T>(callback: (transaction: BackgroundJobTransaction) => Promise<T>): Promise<T>;
+  /**
+   * Queue another family's run inside one of this run's transactions, so the
+   * run commits (or rolls back) with that batch. Same semantics as
+   * `enqueueBackgroundJobOn`, on this worker's queue client.
+   */
+  enqueue(
+    transaction: BackgroundJobTransaction,
+    input: { family: string; payload: unknown; role?: BackgroundWorkerRole; singletonKey?: string },
+  ): Promise<{ runId: string; alreadyQueued: boolean }>;
 };
 
 /** Per-job pg-boss options plus the ledger deadline, applied at `send()` time. */

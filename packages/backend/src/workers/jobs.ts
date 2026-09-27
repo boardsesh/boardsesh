@@ -309,7 +309,9 @@ export async function executeBackgroundJob(
         runId: job.id,
         family: family.name,
         signal,
+        expiresAt: job.startedOn.getTime() + job.expireInSeconds * 1000,
         database,
+        enqueue: (transaction, input) => enqueueBackgroundJobOn(transaction, boss, input),
         transaction: (callback) =>
           withBackgroundJobAttempt(database, job.id, token, async (transaction) => {
             signal.throwIfAborted();

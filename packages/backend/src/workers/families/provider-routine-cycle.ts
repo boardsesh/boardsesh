@@ -12,7 +12,13 @@ const providerRoutineCyclePayload = z.object({ provider: z.enum(ROUTINE_PROVIDER
 export type ProviderRoutineCyclePayload = z.infer<typeof providerRoutineCyclePayload>;
 
 /** Why a cycle stopped claiming. Logged, never an error: every one of these is a successful run. */
-export type RoutineCycleStop = 'MAX_CREDENTIALS' | 'BUDGET' | 'NO_CREDENTIALS' | 'PROVIDER_THROTTLED' | 'ABORTED';
+export type RoutineCycleStop =
+  | 'MAX_CREDENTIALS'
+  | 'BUDGET'
+  | 'NO_CREDENTIALS'
+  | 'PROVIDER_THROTTLED'
+  | 'CYCLE_DEADLINE'
+  | 'ABORTED';
 
 /**
  * The daemons' routine sync, as a bounded job: every 5 minutes, per provider,
@@ -30,7 +36,10 @@ export type RoutineCycleStop = 'MAX_CREDENTIALS' | 'BUDGET' | 'NO_CREDENTIALS' |
  * clock, failure backoff, the 30 s reclaim gap) plus `excludeLeased`, run inside
  * the attempt fence so a run gone stale cannot stamp an attempt clock. Each
  * credential then syncs through the same fences and adapter as a first-link
- * sync (provider-sync-batch.ts). A credential's own failure (bad password,
+ * sync (provider-sync-batch.ts), under a deadline one minute before the lease
+ * ends (hitting it records a transient `CYCLE_DEADLINE` failure and ends the
+ * cycle). An account that has never synced is handed to its interactive family
+ * (a 30-minute lease) instead of synced here. A credential's own failure (bad password,
  * provider down, relinked mid-sync) is recorded on the credential and never
  * fails the run; only a database or queue error, an abort or a lost attempt
  * does. The run never retries: the next cycle is 5 minutes away.
@@ -52,7 +61,11 @@ export const providerRoutineCycleFamily: BackgroundJobFamilyModule<ProviderRouti
     // neither matters.
     retryBackoff: true,
     retryDelayMax: 0,
-    deadlineSeconds: 900,
+    // Longer than the lease on purpose: a cycle can sit queued behind an hourly
+    // board-wide job whose own lease is 3600 s (one routine-provider worker runs
+    // one job at a time). With 900 s such a cycle would be past its deadline by
+    // the time it was fetched and fail at claim. 3600 + 900 covers the wait.
+    deadlineSeconds: 4500,
     // One fenced batch (an Aurora page, a 500-op Kilter flush, a 500-key stats
     // recompute) must finish inside this window: it holds the run-row lock, so
     // no heartbeat lands while it runs.
@@ -73,7 +86,7 @@ export const providerRoutineCycleFamily: BackgroundJobFamilyModule<ProviderRouti
     const limits = routineCycleLimits();
     const adapter = await loadProviderSyncAdapter(context, payload.provider);
     const startedAt = Date.now();
-    const tally = { synced: 0, failed: 0, skipped: 0 };
+    const tally = { synced: 0, failed: 0, skipped: 0, queued: 0 };
     let attempted = 0;
     let stop: RoutineCycleStop = 'MAX_CREDENTIALS';
     while (attempted < limits.maxCredentials) {
@@ -95,6 +108,17 @@ export const providerRoutineCycleFamily: BackgroundJobFamilyModule<ProviderRouti
       attempted += 1;
       const outcome = await runRoutineCredentialSync(context, credential, adapter);
       tally[outcome.result] += 1;
+      if (outcome.reason === 'CYCLE_DEADLINE') {
+        // The lease is nearly spent: claiming another credential could only
+        // end the same way.
+        logger.warn('[worker] routine credential stopped at the cycle deadline', {
+          runId: context.runId,
+          provider: payload.provider,
+          code: 'CYCLE_DEADLINE',
+        });
+        stop = 'CYCLE_DEADLINE';
+        break;
+      }
       if (outcome.reason) {
         logger.info('[worker] routine credential skipped', {
           runId: context.runId,

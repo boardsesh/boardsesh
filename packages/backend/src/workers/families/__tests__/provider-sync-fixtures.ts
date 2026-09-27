@@ -83,6 +83,7 @@ export async function removeFixtures(database: DbInstance, userIds: readonly str
   await database.execute(sql`DELETE FROM board_user_syncs WHERE user_id = ${AURORA_USER_ID}`);
   await database.execute(sql`DELETE FROM board_users WHERE id = ${AURORA_USER_ID}`);
   await database.execute(sql`DELETE FROM board_climb_stats WHERE climb_uuid LIKE 'psync-%'`);
+  await database.execute(sql`DELETE FROM climb_stats_recompute_pending WHERE climb_uuid LIKE 'psync-%'`);
   for (const climbUuid of climbUuids) {
     await database.execute(sql`DELETE FROM board_climbs WHERE uuid = ${climbUuid}`);
   }

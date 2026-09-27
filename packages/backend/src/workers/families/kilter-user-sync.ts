@@ -8,7 +8,7 @@ const kilterUserSyncPayload = z
     userId: providerSyncUserId,
     boardType: z.literal('kilter'),
     linkGeneration: z.uuid(),
-    requestedBy: z.enum(['link', 'manual']),
+    requestedBy: z.enum(['link', 'manual', 'routine']),
   })
   .strict();
 

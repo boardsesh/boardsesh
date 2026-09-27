@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { PgBoss } from 'pg-boss';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { encrypt } from '@boardsesh/crypto';
 import { BACKGROUND_JOB_QUEUES, type BackgroundWorkerRole } from '@boardsesh/db/background-jobs';
@@ -88,6 +88,8 @@ const KILTER_CLIMB = 'psync-kclimb-rgrant';
 const DONOR_USER = 'psync-donor-rgrant';
 const FOLLOWER_USER = 'psync-rgrant-follower';
 const HEAL_USER = 'psync-rgrant-healer';
+// Linked but never synced: the routine cycle hands it to the interactive family.
+const FIRST_SYNC_USER = 'psync-rgrant-first';
 const SHARED_BOARD = 'soill';
 const SHARED_CLIMB = 'psync-shared-climb';
 const HEAL_CLIMB = 'psync-heal-climb';
@@ -455,9 +457,10 @@ async function proveRoutineGrants({ full, ownerUrl }: Proof) {
   const cleanup = async () => {
     await removeFixtures(
       database,
-      [AURORA_USER, KILTER_USER, DONOR_USER, FOLLOWER_USER, HEAL_USER],
+      [AURORA_USER, KILTER_USER, DONOR_USER, FOLLOWER_USER, HEAL_USER, FIRST_SYNC_USER],
       [AURORA_CLIMB, KILTER_CLIMB, HEAL_CLIMB],
     );
+    await database.execute(sql`DELETE FROM background_job_runs WHERE payload->>'userId' = ${FIRST_SYNC_USER}`);
     await database.execute(sql`DELETE FROM notifications WHERE recipient_id = ${FOLLOWER_USER}`);
     await database.execute(sql`DELETE FROM setter_follows WHERE follower_id = ${FOLLOWER_USER}`);
     await database.execute(sql`DELETE FROM users WHERE id = ${FOLLOWER_USER}`);
@@ -544,7 +547,11 @@ async function proveRoutineGrants({ full, ownerUrl }: Proof) {
     await ownerBoss.start();
     await routine.boss.start();
     await maintenance.boss.start();
-    for (const queue of [BACKGROUND_JOB_QUEUES['routine-provider'], BACKGROUND_JOB_QUEUES['maintenance-delivery']]) {
+    for (const queue of [
+      BACKGROUND_JOB_QUEUES['routine-provider'],
+      BACKGROUND_JOB_QUEUES['maintenance-delivery'],
+      BACKGROUND_JOB_QUEUES['interactive-import'],
+    ]) {
       await ownerBoss.deleteAllJobs(queue);
     }
     await cleanup();
@@ -554,6 +561,12 @@ async function proveRoutineGrants({ full, ownerUrl }: Proof) {
     // Fixtures, written as the owner.
     await insertLinkedTensionAccount(database, AURORA_USER, AURORA_CLIMB);
     await insertLinkedKilterAccount(database, KILTER_USER, KILTER_CLIMB);
+    // Both synced once before, so the cycle syncs them itself.
+    await database
+      .update(auroraCredentials)
+      .set({ lastSyncAt: new Date(Date.now() - 24 * 60 * 60 * 1000) })
+      .where(inArray(auroraCredentials.userId, [AURORA_USER, KILTER_USER]));
+    await insertLinkedTensionAccount(database, FIRST_SYNC_USER, AURORA_CLIMB);
     await database.execute(sql`
       INSERT INTO users (id, email, name, created_at, updated_at)
       VALUES (${DONOR_USER}, ${DONOR_USER + '@test.com'}, 'Donor', now(), now()),
@@ -628,6 +641,13 @@ async function proveRoutineGrants({ full, ownerUrl }: Proof) {
         sql`SELECT count(*)::int AS count FROM provider_sync_controls WHERE user_id = ${AURORA_USER} AND linked`,
       ),
     ).toBe(1);
+    // The never-synced account went to the interactive queue, as the routine login.
+    expect(
+      await count(sql`SELECT count(*)::int AS count FROM background_job_runs r
+                       JOIN provider_sync_controls c ON c.pending_run_id = r.id
+                      WHERE r.family = 'aurora-user-sync' AND c.user_id = ${FIRST_SYNC_USER}
+                        AND r.payload->>'requestedBy' = 'routine'`),
+    ).toBe(1);
 
     // 2. The Aurora shared sync: every catalog table, the history snapshot, the
     //    setter notification, and (migrated schema) the pins and a crawl slice.
@@ -685,8 +705,17 @@ async function proveRoutineGrants({ full, ownerUrl }: Proof) {
       expect(await count(sql`SELECT count(*)::int AS count FROM gyms WHERE name = ${MOONBOARD_GYM}`)).toBe(1);
     }
 
-    // 5. The stats self-heal, as the maintenance login.
+    // 5. The stats self-heal, as the maintenance login: a key a stopped worker
+    //    left pending, and a send whose recompute a deploy dropped.
+    await database.execute(sql`
+      INSERT INTO climb_stats_recompute_pending (board_type, climb_uuid, angle, requested_at)
+      VALUES ('kilter', ${HEAL_CLIMB}, 45, now() - interval '5 minutes')`);
     await runAs('maintenance-delivery', maintenance, 'climb-stats-self-heal', {});
+    expect(
+      await count(
+        sql`SELECT count(*)::int AS count FROM climb_stats_recompute_pending WHERE climb_uuid = ${HEAL_CLIMB}`,
+      ),
+    ).toBe(0);
     expect(
       await count(sql`SELECT boardsesh_ascensionist_count::int AS count FROM board_climb_stats
                        WHERE board_type = 'kilter' AND climb_uuid = ${HEAL_CLIMB} AND angle = 40`),

@@ -29,7 +29,7 @@ const auroraUserSyncPayload = z
     userId: providerSyncUserId,
     boardType: z.enum(AURORA_USER_SYNC_BOARDS),
     linkGeneration: z.uuid(),
-    requestedBy: z.enum(['link', 'manual']),
+    requestedBy: z.enum(['link', 'manual', 'routine']),
   })
   .strict();
 

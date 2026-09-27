@@ -128,6 +128,16 @@ describe('owner-only queue initialization', () => {
       await expect(restricted`CREATE TABLE public.detector_forbidden (id int)`).rejects.toThrow('permission denied');
       await expect(restricted`CREATE TABLE pgboss.detector_forbidden (id int)`).rejects.toThrow('permission denied');
       await runtime.start();
+      // Jobs a previous run of this file left queued (it failed half-way, or a
+      // retry reuses the worker database) would make the `exclusive` sends
+      // below come back null.
+      for (const queue of [
+        POPULAR_BOARD_CONFIGS_REFRESH_QUEUE,
+        CLIMB_POPULARITY_REFRESH_QUEUE,
+        SPRAY_DETECTION_QUEUE,
+      ]) {
+        await runtime.deleteAllJobs(queue);
+      }
       await runtime.schedule(SPRAY_DETECTION_RECONCILE_QUEUE, '* * * * *');
       // The popular-configs refresh: created by the owner, scheduled and
       // requested by the runtime role.
@@ -202,6 +212,10 @@ describe('batch worker grants', () => {
       runId: randomUUID(),
       family,
       signal: new AbortController().signal,
+      expiresAt: Date.now() + 60 * 60 * 1000,
+      enqueue: async () => {
+        throw new Error('enqueue not expected');
+      },
       database,
       transaction: (callback) => database.transaction(callback),
     });

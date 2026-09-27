@@ -29,7 +29,12 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 /** Projects with dedicated CI jobs because they need services/libs `test-default` lacks. */
-export const INFRA_PROJECTS: ReadonlySet<string> = new Set(['backend', 'location-sync', 'moonboard-ocr']);
+export const INFRA_PROJECTS: ReadonlySet<string> = new Set([
+  'backend',
+  'backend-serial',
+  'location-sync',
+  'moonboard-ocr',
+]);
 
 /** Reads a project's `vite.config.ts` source, given its path relative to the repo root. */
 export type ConfigReader = (relativePath: string) => string;

@@ -132,6 +132,7 @@ export default defineConfig({
     projects: [
       './packages/web/vite.config.ts',
       './packages/backend/vite.config.ts',
+      './packages/backend/vite.serial.config.ts',
       './packages/moonboard-ocr/vite.config.ts',
       './packages/board-constants/vite.config.ts',
       './packages/aurora-sync/vite.config.ts',
@@ -999,6 +1000,13 @@ export default defineConfig({
       },
       'test:web': {
         command: 'vp test run --project web',
+        cache: false,
+      },
+      // Both backend projects: `backend-serial` holds the files that share
+      // roles, pg-boss queues and the job ledger and must run one at a time
+      // (packages/backend/vitest-serial-files.ts).
+      'test:backend': {
+        command: 'vp test run --project backend --project backend-serial',
         cache: false,
       },
       // The offline-sync engine suites live in their own Vitest project

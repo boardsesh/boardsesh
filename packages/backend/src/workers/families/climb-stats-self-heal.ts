@@ -1,5 +1,9 @@
 import { z } from 'zod';
-import { findStaleClimbStatsKeys, recomputeClimbStatsInBatches } from '@boardsesh/db/queries';
+import {
+  drainPendingClimbStatsRecomputes,
+  findStaleClimbStatsKeys,
+  recomputeClimbStatsInBatches,
+} from '@boardsesh/db/queries';
 import { logger } from '../../utils/logger';
 import type { BackgroundJobFamilyModule } from './types';
 
@@ -11,11 +15,15 @@ export type ClimbStatsSelfHealPayload = z.infer<typeof climbStatsSelfHealPayload
 export const SELF_HEAL_BATCH_KEYS = 500;
 
 /**
- * The Aurora daemon's hourly recompute self-heal, as a job: find flash/send
- * ticks from the last 3 hours that are newer than the `board_climb_stats` row
- * they feed (at most 5000 keys) and re-derive those rows. It catches a
- * debounced tick recompute a backend deploy dropped, and a deferred sync
- * recompute a crashed or aborted worker never ran.
+ * The Aurora daemon's hourly recompute self-heal, as a job, in two steps:
+ *
+ * 1. drain `climb_stats_recompute_pending`: keys a sync job's page committed
+ *    but whose recompute never ran (the worker stopped first), older than two
+ *    minutes, oldest first, up to 20 batches of 500. These include keys with no
+ *    stats row yet and keys whose tick was deleted, which step 2 cannot see;
+ * 2. find flash/send ticks from the last 3 hours that are newer than the
+ *    `board_climb_stats` row they feed (at most 5000 keys) and re-derive those
+ *    rows: a debounced tick recompute a backend deploy dropped.
  *
  * Pure database work: the key scan is an unfenced read, and the recompute runs
  * through the attempt fence in batches of 500 keys, so no batch holds the
@@ -37,11 +45,15 @@ export const climbStatsSelfHealFamily: BackgroundJobFamilyModule<ClimbStatsSelfH
   singletonKey: () => 'climb-stats',
   schedules: [{ key: 'hourly', cron: '13 * * * *', fanOut: async () => [{ payload: {} }] }],
   async execute(context) {
+    // First the keys a sync job marked and never got to recompute (it stopped
+    // between a page and its flush), oldest first; then the tick scan.
+    const drained = await drainPendingClimbStatsRecomputes(context.transaction, { batchKeys: SELF_HEAL_BATCH_KEYS });
     const keys = await findStaleClimbStatsKeys(context.database);
     const healed = await recomputeClimbStatsInBatches(context.transaction, keys, SELF_HEAL_BATCH_KEYS);
     logger.info('[worker] climb stats self-heal finished', {
       runId: context.runId,
       family: context.family,
+      pendingKeysDrained: drained,
       keysHealed: healed,
     });
   },

@@ -73,6 +73,10 @@ function fakeContext(family: BackgroundJobContext['family']): BackgroundJobConte
     runId: '00000000-0000-4000-8000-000000000001',
     family,
     signal: new AbortController().signal,
+    expiresAt: Date.now() + 60 * 60 * 1000,
+    enqueue: async () => {
+      throw new Error('enqueue not expected');
+    },
     database: untouchable,
     transaction: vi.fn(async () => {
       throw new Error('transaction used');
@@ -96,7 +100,8 @@ describe('family contracts', () => {
     expect(family.options).toMatchObject({
       expireInSeconds: 600,
       retryLimit: 0,
-      deadlineSeconds: 900,
+      // Longer than the lease: a cycle may wait behind an hour-long board-wide job.
+      deadlineSeconds: 4500,
       heartbeatSeconds: 300,
     });
     expect(family.payload.safeParse({ provider: 'aurora' }).success).toBe(true);

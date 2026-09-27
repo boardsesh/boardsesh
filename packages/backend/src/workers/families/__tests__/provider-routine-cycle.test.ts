@@ -12,7 +12,13 @@ import { auroraCredentials, backgroundJobRuns, providerSyncControls } from '@boa
 import { acquireCredentialSyncLease, rotateLinkGeneration } from '@boardsesh/db/queries';
 import { enqueueBackgroundJob, executeBackgroundJob, handlerForRole, type BackgroundJobPayload } from '../../jobs';
 import type { BackgroundJobContext } from '../types';
-import type { ProviderSyncAdapter, ProviderSyncOutcome } from '../provider-sync-batch';
+import {
+  ROUTINE_CREDENTIAL_DEADLINE_MARGIN_MS,
+  loadProviderSyncAdapter,
+  runRoutineCredentialSync,
+  type ProviderSyncAdapter,
+  type ProviderSyncOutcome,
+} from '../provider-sync-batch';
 import { AURORA_USER_ID, FIXTURE_BOARD, ensureBackgroundJobSchema } from './provider-sync-fixtures';
 
 /**
@@ -28,6 +34,7 @@ const adapterOverride = vi.hoisted(() => ({
         context: BackgroundJobContext,
         credential: { userId: string },
         transaction: Parameters<ProviderSyncAdapter['sync']>[1],
+        signal?: AbortSignal,
       ) => Promise<ProviderSyncOutcome>),
 }));
 
@@ -43,7 +50,9 @@ vi.mock('../provider-sync-batch', async (importOriginal) => {
       return {
         ...real,
         candidateFilter: andSql(real.candidateFilter, likeSql(credentials.userId, 'routine-%')),
-        sync: override ? (credential, transaction) => override(context, credential, transaction) : real.sync,
+        sync: override
+          ? (credential, transaction, signal) => override(context, credential, transaction, signal)
+          : real.sync,
       } satisfies ProviderSyncAdapter;
     },
   };
@@ -63,8 +72,12 @@ const boss = new PgBoss({
 });
 boss.on('error', () => {});
 
-/** A linked Tension account whose last attempt was `hoursAgo` hours ago, so claims go a, b, c. */
-async function insertAccount(userId: string, hoursAgo: number): Promise<string> {
+/**
+ * A linked Tension account whose last attempt was `hoursAgo` hours ago, so
+ * claims go a, b, c. It synced once before unless `neverSynced`: a never-synced
+ * account is handed to the interactive family instead of synced in the cycle.
+ */
+async function insertAccount(userId: string, hoursAgo: number, { neverSynced = false } = {}): Promise<string> {
   await database.execute(sql`
     INSERT INTO users (id, email, name, created_at, updated_at)
     VALUES (${userId}, ${userId + '@test.com'}, 'Routine Tester', now(), now())
@@ -78,6 +91,7 @@ async function insertAccount(userId: string, hoursAgo: number): Promise<string> 
     auroraUserId: AURORA_USER_ID,
     syncStatus: 'active',
     lastSyncAttemptAt: new Date(Date.now() - hoursAgo * 60 * 60 * 1000),
+    lastSyncAt: neverSynced ? null : new Date(Date.now() - 24 * 60 * 60 * 1000),
   });
   const { linkGeneration } = await database.transaction((transaction) =>
     rotateLinkGeneration(transaction, { userId, boardType: FIXTURE_BOARD, linked: true }),
@@ -153,6 +167,7 @@ beforeAll(async () => {
 });
 beforeEach(async () => {
   await boss.deleteAllJobs(queue);
+  await boss.deleteAllJobs(BACKGROUND_JOB_QUEUES['interactive-import']);
   await database.delete(backgroundJobRuns);
   await removeAccounts();
   await insertAccount('routine-a', 3);
@@ -242,13 +257,14 @@ describe('provider-routine-cycle', () => {
     );
     expect(synced).toEqual(['routine-a']);
     const after = await credentials();
-    expect(after['routine-a'].lastSyncAt).not.toBeNull();
+    expect(after['routine-a'].lastSyncAt!.getTime()).toBeGreaterThan(before['routine-a'].lastSyncAt!.getTime());
     expect(after['routine-b'].lastSyncAttemptAt).toEqual(before['routine-b'].lastSyncAttemptAt);
   });
 
   it('skips an account relinked mid-sync and carries on with the next', async () => {
     const synced: string[] = [];
     const record = recordingSync(synced);
+    const before = await credentials();
     adapterOverride.sync = async (context, credential, transaction) => {
       if (credential.userId === 'routine-a') {
         // The climber relinks while their sync is between two batches.
@@ -263,7 +279,7 @@ describe('provider-routine-cycle', () => {
 
     expect(synced).toEqual(['routine-b', 'routine-c']);
     // The stale batch rolled back: nothing was written for the relinked account.
-    expect((await credentials())['routine-a'].lastSyncAt).toBeNull();
+    expect((await credentials())['routine-a'].lastSyncAt).toEqual(before['routine-a'].lastSyncAt);
   });
 
   it('records a credential failure on the account and still succeeds', async () => {
@@ -305,9 +321,85 @@ describe('provider-routine-cycle', () => {
         FROM aurora_credentials WHERE user_id = 'routine-a' AND board_type = ${FIXTURE_BOARD}`);
     expect(parkedFor).toBeGreaterThan(100);
     expect(parkedFor).toBeLessThanOrEqual(121);
-    // A transient failure: backoff counted, status untouched.
-    expect(after['routine-a']).toMatchObject({ syncStatus: 'active', consecutiveFailures: 1 });
+    // A transient failure, status untouched; the park replaces the backoff
+    // step the failure was charged, so the delay is not counted twice.
+    expect(after['routine-a']).toMatchObject({ syncStatus: 'active', consecutiveFailures: 0 });
+    expect(after['routine-a'].lastSyncError).toBeTruthy();
     expect(after['routine-b'].lastSyncAttemptAt).toEqual(before['routine-b'].lastSyncAttemptAt);
     expect(after['routine-c'].lastSyncAttemptAt).toEqual(before['routine-c'].lastSyncAttemptAt);
+  });
+
+  it('hands a never-synced account to its interactive family and coalesces onto that run', async () => {
+    await removeAccounts();
+    const linkGeneration = await insertAccount('routine-a', 3, { neverSynced: true });
+    await insertAccount('routine-b', 2);
+    const synced: string[] = [];
+    adapterOverride.sync = recordingSync(synced);
+
+    expect((await runCycle()).result).toBe('succeeded');
+
+    // The first sync goes to the 30-minute interactive lease; the cycle moves on.
+    expect(synced).toEqual(['routine-b']);
+    const interactive = await database
+      .select()
+      .from(backgroundJobRuns)
+      .where(eq(backgroundJobRuns.family, 'aurora-user-sync'));
+    expect(interactive).toHaveLength(1);
+    expect(interactive[0]).toMatchObject({
+      role: 'interactive-import',
+      status: 'queued',
+      payload: { userId: 'routine-a', boardType: FIXTURE_BOARD, linkGeneration, requestedBy: 'routine' },
+    });
+    const control = (await controls()).find((row) => row.userId === 'routine-a');
+    expect(control).toMatchObject({ pendingRunId: interactive[0].id, activeRunId: null });
+
+    // The next cycle that claims it joins the queued run instead of queueing another.
+    await database
+      .update(auroraCredentials)
+      .set({ lastSyncAttemptAt: new Date(Date.now() - 3 * 60 * 60 * 1000) })
+      .where(eq(auroraCredentials.userId, 'routine-a'));
+    expect((await runCycle()).result).toBe('succeeded');
+    expect(
+      await database.select().from(backgroundJobRuns).where(eq(backgroundJobRuns.family, 'aurora-user-sync')),
+    ).toHaveLength(1);
+    expect(synced).toEqual(['routine-b']);
+  });
+
+  it('stops a credential at the cycle deadline and records a transient CYCLE_DEADLINE failure', async () => {
+    // Aurora's login hangs until the request is aborted.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        (_input: string | URL | Request, init?: RequestInit) =>
+          new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true });
+          }),
+      ),
+    );
+    const [claimed] = await database.select().from(auroraCredentials).where(eq(auroraCredentials.userId, 'routine-a'));
+    const shutdown = new AbortController();
+    const context: BackgroundJobContext = {
+      runId: randomUUID(),
+      family: 'provider-routine-cycle',
+      signal: shutdown.signal,
+      // One second of deadline left once the one-minute margin is taken off.
+      expiresAt: Date.now() + ROUTINE_CREDENTIAL_DEADLINE_MARGIN_MS + 1_000,
+      database,
+      transaction: (callback) => database.transaction(callback),
+      enqueue: async () => {
+        throw new Error('enqueue not expected');
+      },
+    };
+    const adapter = await loadProviderSyncAdapter(context, 'aurora');
+
+    const outcome = await runRoutineCredentialSync(context, claimed, adapter);
+
+    expect(outcome).toEqual({ result: 'failed', reason: 'CYCLE_DEADLINE' });
+    expect(shutdown.signal.aborted).toBe(false);
+    const credential = (await credentials())['routine-a'];
+    // Backoff counts it and the operator can see it; the climber's card does not change.
+    expect(credential).toMatchObject({ consecutiveFailures: 1, lastSyncError: 'CYCLE_DEADLINE', syncStatus: 'active' });
+    const control = (await controls()).find((row) => row.userId === 'routine-a');
+    expect(control?.activeRunId).toBeNull();
   });
 });

@@ -46,6 +46,10 @@ function context(family: Context['family']) {
     runId: '00000000-0000-4000-8000-000000000001',
     family,
     signal: new AbortController().signal,
+    expiresAt: Date.now() + 60 * 60 * 1000,
+    enqueue: async () => {
+      throw new Error('enqueue not expected');
+    },
     database,
     transaction: transaction as Context['transaction'],
   };
@@ -90,9 +94,17 @@ describe('batch family registration', () => {
       'aurora-user-sync',
       'kilter-user-sync',
     ]);
-    for (const role of ['routine-provider', 'maintenance-delivery'] as const) {
-      expect(familiesForRole(role).map((family) => family.name)).toEqual(['worker-probe']);
-    }
+    expect(familiesForRole('routine-provider').map((family) => family.name)).toEqual([
+      'worker-probe',
+      'provider-routine-cycle',
+      'aurora-shared-sync',
+      'kilter-catalog-sync',
+      'moonboard-locations-sync',
+    ]);
+    expect(familiesForRole('maintenance-delivery').map((family) => family.name)).toEqual([
+      'worker-probe',
+      'climb-stats-self-heal',
+    ]);
     expect(requireFamily('refresh-climb-grades')).toBe(refreshClimbGradesFamily);
     expect(requireFamily('refresh-climb-neighbors')).toBe(refreshClimbNeighborsFamily);
     expect(requireFamily('refresh-moonboard-angle-estimates')).toBe(refreshMoonboardAngleEstimatesFamily);

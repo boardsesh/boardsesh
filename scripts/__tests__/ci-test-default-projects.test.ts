@@ -98,6 +98,6 @@ describe('selectTestDefaultProjects', () => {
   });
 
   it('documents the infra projects excluded by default', () => {
-    expect([...INFRA_PROJECTS].sort()).toEqual(['backend', 'location-sync', 'moonboard-ocr']);
+    expect([...INFRA_PROJECTS].sort()).toEqual(['backend', 'backend-serial', 'location-sync', 'moonboard-ocr']);
   });
 });

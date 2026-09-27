@@ -1230,12 +1230,12 @@ jobs:
               selection=""
             fi
             # shellcheck disable=SC2086 # $selection is an intentionally split flag pair
-            vp test run --project backend $selection \
+            vp test run --project backend --project backend-serial $selection \
               --shard=${{ matrix.shard }}/${{ matrix.total }} \
               --reporter=verbose --reporter=github-actions \
               --reporter=junit --outputFile.junit=./packages/backend/test-results/junit-backend-${{ matrix.shard }}.xml
           else
-            vp test run --project backend \
+            vp test run --project backend --project backend-serial \
               --shard=${{ matrix.shard }}/${{ matrix.total }} \
               --reporter=verbose --reporter=github-actions \
               --reporter=junit --outputFile.junit=./packages/backend/test-results/junit-backend-${{ matrix.shard }}.xml
