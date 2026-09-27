@@ -75,15 +75,24 @@ two callers:
   at a time. Payload `{ board, full?, dryRun?, refillGaps? }`, one dedup key per
   board, a 6-hour lease, two retries. It runs only once
   `BATCH_FAMILIES_ENABLED` names it; the workflow keeps its schedule until the
-  cutover PR removes it.
+  cutover PR removes it. **That PR lands the same day the family is enabled**:
+  both crons are `45 6 * * *`, and only GitHub's lateness keeps the two runs
+  apart (see "Don't run two at once" below).
 
 Every write goes through the caller's `transact`: the CLI's is a plain
 transaction, the family's is the worker's attempt fence, so a chunk commits
 only while that attempt still owns the run. The job stops between chunks when
 its signal aborts (worker shutdown, the lease running out, a lost attempt),
-exactly as a cut-off CI job does, and throws `ClimbNeighborsInterruptedError`;
-the family records `INTERRUPTED` and pg-boss retries, and the retry resumes
+exactly as a cut-off CI job does, and throws `ClimbNeighborsInterruptedError`.
+A signal that fires mid-batch surfaces as the fence's AbortError instead. The
+family records `INTERRUPTED` for both, pg-boss retries, and the retry resumes
 from what was recorded (below).
+
+Scoring is synchronous CPU work, and the worker's heartbeat timer only runs
+between awaits, so the job yields to the event loop before every chunk (dry
+runs included) and every 500 climbs while an incremental run collects the
+lists to rewrite. Each group's log line ends with its longest write batch, and
+the board's last line with the closing batch, both in seconds.
 The per-board logic lives in `packages/db/src/queries/climbs/climb-neighbors-refresh.ts` so
 the backend test suite can run it against a real Postgres.
 
@@ -105,15 +114,19 @@ changes are scored again the next night, which gives the same rows.
 Per board, per comparison group (layout, or layout + wall on Woods), smallest
 group first:
 
-1. Delete every row naming a work-set climb, in either direction.
+1. Delete each work-set climb's own list. A list that names a work-set climb
+   (a "displaced" list) is found here but left in place: step 3 rewrites it
+   whole in one transaction, so a run stopped in between leaves it complete
+   (with a stale entry) and the next run finds it again.
 2. Load the group's eligible climbs (`uuid, frames`, parsed with the same
    `parseFramesToHoldEntries` the resolver uses) into an in-memory
    hold → climbs index.
 3. Recompute, from scratch, every list that can have changed: the work-set
    climbs, their above-0.5 neighbours (the new climb may now rank in their
-   top 25), the lists that lost a row in step 1, and, on the weekly gap-scan
-   run, any list now shorter than when it was written (see below). Each chunk of
-   lists is replaced in one transaction.
+   top 25), the displaced lists from step 1, and, on the weekly gap-scan
+   run, any list now shorter than when it was written (see below). When more
+   than half the group's climbs changed, the whole group is recomputed
+   instead. Each chunk of lists is replaced in one transaction.
 4. Advance the watermark, once every group on the board is done.
 
 Each group logs climbs processed, rows written and seconds. A group with 5,000 or
@@ -177,8 +190,8 @@ rewrites a climb's `board_climb_holds` when its frames change. In the same
 transaction it deletes that climb's **own** `board_climb_neighbors` list, so
 until the next run the edited climb shows no similar climbs rather than a list
 scored on holds it no longer uses. Its slot in other climbs' lists stays until
-the next nightly run: the update bumped `sync_seq`, so the job deletes every row
-naming the climb and rewrites each list it sat in (step 1 and 3 above). Until
+the next nightly run: the update bumped `sync_seq`, so the job rewrites each
+list it sat in (steps 1 and 3 above). Until
 then those lists can still show it, at its pre-edit score, for up to a day.
 Deleting those slots in the mutation too would leave each of those lists one
 row short, a gap only the weekly scan finds.
@@ -210,11 +223,24 @@ runs are enqueued on the batch host with
   `INTERRUPTED` means the signal stopped it and a retry resumes; after the last
   retry the next night does. `ATTEMPT_FAILED` is anything else (a database
   error); check the worker log for the board and group it reached.
-- **Don't run two at once on one board.** Two runs writing the same lists
-  collide on the primary key. The workflow's per-board concurrency group and
-  the family's per-board dedup key each prevent it on their own side, not
-  across the two; don't dispatch the workflow for a board while its family job
-  runs.
+- **Don't run two at once on one board.** The workflow's per-board
+  concurrency group and the family's per-board dedup key each prevent it on
+  their own side, not across the two, and both fire at 06:45 UTC: remove the
+  workflow's `schedule:` the day the family is enabled, and don't dispatch the
+  workflow for a board while its family job runs. What an overlap does:
+  - two runs writing the same list: the second writer fails on the list's
+    primary key (the family retries; the workflow job goes red);
+  - the watermark is never corrupted, but it can move backwards when the
+    earlier run finishes last, which only rescores some climbs the next night;
+  - a full build overlapping an incremental run: the incremental run's
+    closing write clears the build's resume state, and the build's closing
+    sweep deletes lists the incremental run rewrote before the build started.
+    Those stay empty until their climbs are touched again; `full` on that
+    board repairs it.
+- **A manual dry run can swallow a night.** A `dryRun` job still queued when
+  the 06:45 fan-out runs holds that board's dedup key, so the nightly job
+  returns it (`ALREADY_QUEUED`) and the board gets only the dry run that
+  night. Enqueue dry runs after the nightly jobs have started.
 - **Locally**: `vp run db:refresh-climb-neighbors -- --board=kilter --dry-run`
   (then without `--dry-run`, or with `--full`). Uses `DB_URL` / `DATABASE_URL`
   like the other `packages/db` scripts.
@@ -226,8 +252,10 @@ runs are enqueued on the batch host with
 - **Memory**: the job holds one group's `(uuid, frames)` and hold index in memory
   at a time. The biggest is Kilter layout 1, with about 295k eligible climbs.
   The workflow gives node 4 GB, and so does the batch container
-  (`NODE_OPTIONS=--max-old-space-size=4096`). The container's peak RSS on a
-  Kilter full build must be measured before the family is enabled (#5800).
+  (`NODE_OPTIONS=--max-old-space-size=4096`). Before the family is enabled
+  (#5800), hand-run on the batch VM a Kilter full build to record the
+  container's peak RSS, and a MoonBoard full build to record its longest
+  write batch against the 50 s heartbeat bound.
 - **Check it worked**: the front-door similar strip should load cold in well
   under a second, and `seq_scan` on `board_climb_holds` in `pg_stat_user_tables`
   should stop climbing.

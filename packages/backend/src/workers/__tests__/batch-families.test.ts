@@ -308,6 +308,20 @@ describe('execute', () => {
     ).rejects.toBe(outage);
   });
 
+  it('refresh-climb-neighbors maps a fence abort (signal fired mid-batch) to INTERRUPTED too', async () => {
+    const { context: jobContext } = context('refresh-climb-neighbors');
+    const controller = new AbortController();
+    jobs.runRefreshClimbNeighbors.mockImplementation(async () => {
+      controller.abort();
+      controller.signal.throwIfAborted();
+    });
+    const failure = await refreshClimbNeighborsFamily
+      .execute({ ...jobContext, signal: controller.signal }, { board: 'kilter' })
+      .catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(BackgroundJobError);
+    expect(failure).toMatchObject({ code: 'INTERRUPTED', retryable: true });
+  });
+
   it('refresh-climb-grades lets any other failure retry', async () => {
     const outage = new Error('connection reset');
     jobs.runRefreshClimbGrades.mockRejectedValue(outage);

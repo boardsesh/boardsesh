@@ -62,17 +62,33 @@ vi.mock('../../../db/src/queries/grade-model/index.ts', async (importOriginal) =
 
 const silentLog = { info: () => {}, warn: () => {} };
 
-/** A context whose fence is a plain transaction, counting the write batches it runs. */
-function contextFor(database: DbInstance, family: BackgroundJobContext['family']) {
+/**
+ * A context whose fence is a plain transaction, counting the write batches it
+ * runs. Like the worker's fence it refuses to start, or to return from, a
+ * batch once the signal has fired (an AbortError). `afterTransaction` runs
+ * after each batch has returned, so a test can stop the run between batches.
+ */
+function contextFor(
+  database: DbInstance,
+  family: BackgroundJobContext['family'],
+  {
+    signal = new AbortController().signal,
+    afterTransaction,
+  }: { signal?: AbortSignal; afterTransaction?: () => Promise<void> } = {},
+) {
   const transactions = { calls: 0 };
   const context: BackgroundJobContext = {
     runId: randomUUID(),
     family,
-    signal: new AbortController().signal,
+    signal,
     database,
-    transaction: (callback) => {
+    transaction: async (callback) => {
       transactions.calls += 1;
-      return database.transaction(callback);
+      signal.throwIfAborted();
+      const result = await database.transaction(callback);
+      signal.throwIfAborted();
+      await afterTransaction?.();
+      return result;
     },
   };
   return { context, transactions };
@@ -349,11 +365,43 @@ describe('refresh-climb-neighbors on the test database', () => {
     expect((await runRow()).lastSyncSeq).toBe(built.lastSyncSeq);
   });
 
-  it('a run stopped by its signal throws, and the next run resumes the build where it stopped', async () => {
+  it('a run stopped by its signal between batches fails INTERRUPTED, and the retry resumes the build', async () => {
     await db.delete(dbSchema.boardClimbs).where(eq(dbSchema.boardClimbs.uuid, lateClimb));
     await clearClimbNeighborState(db);
 
     // Abort once the small layout's group is recorded, as a shutdown would.
+    const controller = new AbortController();
+    const { context: stopped } = contextFor(db, 'refresh-climb-neighbors', {
+      signal: controller.signal,
+      afterTransaction: async () => {
+        if ((await finishedLayouts()).includes(NEIGHBOR_SMALL_LAYOUT)) controller.abort();
+      },
+    });
+    const failure = await refreshClimbNeighborsFamily
+      .execute(stopped, { board: NEIGHBOR_BOARD, full: true, refillGaps: false })
+      .catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(BackgroundJobError);
+    expect(failure).toMatchObject({ code: 'INTERRUPTED', retryable: true });
+    expect(await finishedLayouts()).toEqual([NEIGHBOR_SMALL_LAYOUT]);
+    expect(await listOf(NEIGHBOR_SMALL_CLIMBS[0])).toEqual([NEIGHBOR_SMALL_CLIMBS[1]]);
+    expect(await listOf(NEIGHBOR_LARGE_CLIMBS[0])).toEqual([]);
+    const cutOff = await runRow();
+    expect(cutOff.lastSyncSeq).toBe(0);
+    expect(cutOff.fullBuildStartedAt).not.toBeNull();
+
+    // The retry is the same payload; the build state makes it resume, not restart.
+    const { context } = contextFor(db, 'refresh-climb-neighbors');
+    await refreshClimbNeighborsFamily.execute(context, { board: NEIGHBOR_BOARD, full: true, refillGaps: false });
+    expect(await finishedLayouts()).toEqual([NEIGHBOR_SMALL_LAYOUT, NEIGHBOR_LARGE_LAYOUT].sort((a, b) => a - b));
+    expect(await listOf(NEIGHBOR_LARGE_CLIMBS[0])).toHaveLength(NEIGHBOR_LARGE_CLIMBS.length - 1);
+    const resumed = await runRow();
+    expect(resumed.lastSyncSeq).toBe(cutOff.fullBuildSyncSeq);
+    expect(resumed.fullBuildStartedAt).toBeNull();
+  });
+
+  it('the job body throws ClimbNeighborsInterruptedError when stopped between chunks', async () => {
+    await clearClimbNeighborState(db);
     const controller = new AbortController();
     const failure = await runRefreshClimbNeighbors({
       db,
@@ -369,35 +417,23 @@ describe('refresh-climb-neighbors on the test database', () => {
       dryRun: false,
       refillGaps: false,
     }).catch((error: unknown) => error);
-
     expect(failure).toBeInstanceOf(ClimbNeighborsInterruptedError);
     expect(failure).toMatchObject({ boardType: NEIGHBOR_BOARD });
     expect(await finishedLayouts()).toEqual([NEIGHBOR_SMALL_LAYOUT]);
-    expect(await listOf(NEIGHBOR_SMALL_CLIMBS[0])).toEqual([NEIGHBOR_SMALL_CLIMBS[1]]);
-    expect(await listOf(NEIGHBOR_LARGE_CLIMBS[0])).toEqual([]);
-    const cutOff = await runRow();
-    expect(cutOff.lastSyncSeq).toBe(0);
-    expect(cutOff.fullBuildStartedAt).not.toBeNull();
-
-    // The retry is a plain nightly payload; the build state makes it resume.
-    const { context } = contextFor(db, 'refresh-climb-neighbors');
-    await refreshClimbNeighborsFamily.execute(context, { board: NEIGHBOR_BOARD, refillGaps: false });
-    expect(await finishedLayouts()).toEqual([NEIGHBOR_SMALL_LAYOUT, NEIGHBOR_LARGE_LAYOUT].sort((a, b) => a - b));
-    expect(await listOf(NEIGHBOR_LARGE_CLIMBS[0])).toHaveLength(NEIGHBOR_LARGE_CLIMBS.length - 1);
-    const resumed = await runRow();
-    expect(resumed.lastSyncSeq).toBe(cutOff.fullBuildSyncSeq);
-    expect(resumed.fullBuildStartedAt).toBeNull();
   });
 
-  it('a family run stopped by its signal fails INTERRUPTED and stays retryable', async () => {
+  it('a family run whose fenced batch aborts fails INTERRUPTED, not ATTEMPT_FAILED', async () => {
     await clearClimbNeighborState(db);
-    const { context } = contextFor(db, 'refresh-climb-neighbors');
     const aborted = new AbortController();
     aborted.abort();
+    // The first write (the build-state row) meets the fence's AbortError.
+    const { context, transactions } = contextFor(db, 'refresh-climb-neighbors', { signal: aborted.signal });
     const failure = await refreshClimbNeighborsFamily
-      .execute({ ...context, signal: aborted.signal }, { board: NEIGHBOR_BOARD, refillGaps: false })
+      .execute(context, { board: NEIGHBOR_BOARD, refillGaps: false })
       .catch((error: unknown) => error);
+    expect(transactions.calls).toBe(1);
     expect(failure).toBeInstanceOf(BackgroundJobError);
     expect(failure).toMatchObject({ code: 'INTERRUPTED', retryable: true });
+    expect(await runRow()).toBeUndefined();
   });
 });

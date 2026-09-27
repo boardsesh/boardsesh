@@ -26,8 +26,9 @@ export type RefreshClimbNeighborsPayload = z.infer<typeof payload>;
  * docs/similar-climbs.md). The schedule fans out one job per board, cheapest
  * first, and the batch worker runs them one at a time. Each chunk of up to
  * 1,000 lists commits in its own fenced batch; the watermark moves in the last
- * one. A run stopped by its signal (shutdown, lease, lost attempt) fails
- * `INTERRUPTED` and retries, and the retry resumes from what was recorded.
+ * one. A run stopped by its signal (shutdown, lease, lost attempt), between
+ * batches or inside one, fails `INTERRUPTED` and retries, and the retry resumes
+ * from what was recorded.
  */
 export const refreshClimbNeighborsFamily: BackgroundJobFamilyModule<RefreshClimbNeighborsPayload> = {
   name: 'refresh-climb-neighbors',
@@ -74,7 +75,12 @@ export const refreshClimbNeighborsFamily: BackgroundJobFamilyModule<RefreshClimb
         refillGaps: refillGaps ?? isGapRefillDay(new Date()),
       });
     } catch (error) {
-      if (error instanceof ClimbNeighborsInterruptedError) throw new BackgroundJobError('INTERRUPTED');
+      // Stopped between chunks (the job's own error), or mid-batch: the fence
+      // throws an AbortError once the signal fires, and nearly every await is a
+      // fenced batch. Either way the retry resumes from what was recorded.
+      if (error instanceof ClimbNeighborsInterruptedError || context.signal.aborted) {
+        throw new BackgroundJobError('INTERRUPTED', { retryable: true });
+      }
       throw error;
     }
   },
