@@ -1206,6 +1206,12 @@ jobs:
           cache: ${{ runner.environment == 'github-hosted' }}
       - name: Install dependencies
         run: vp install --frozen-lockfile
+      # `backend` is sharded across the matrix; `backend-serial` is not. Its
+      # files share cluster-wide state (Postgres roles, the worker-grant block,
+      # the pg-boss queues and job ledger), so they run once, in one job, one
+      # file at a time (the project's `fileParallelism: false`). Sharding them
+      # would split the set across jobs; a second project in the same run would
+      # put them beside `backend` files.
       - name: Run backend tests (shard ${{ matrix.shard }}/${{ matrix.total }})
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5433/boardsesh_backend_test
@@ -1214,6 +1220,7 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
         run: |
           mkdir -p packages/backend/test-results
+          selection=""
           if [ "$EVENT_NAME" = "pull_request" ]; then
             # A change to the dependency graph itself has no module-graph edge
             # to any spec, so `--changed` selects nothing that exercises it.
@@ -1229,23 +1236,31 @@ jobs:
               echo "::notice title=Full backend suite::install inputs changed; running the whole backend project, not --changed"
               selection=""
             fi
-            # shellcheck disable=SC2086 # $selection is an intentionally split flag pair
-            vp test run --project backend --project backend-serial $selection \
-              --shard=${{ matrix.shard }}/${{ matrix.total }} \
-              --reporter=verbose --reporter=github-actions \
-              --reporter=junit --outputFile.junit=./packages/backend/test-results/junit-backend-${{ matrix.shard }}.xml
-          else
-            vp test run --project backend --project backend-serial \
-              --shard=${{ matrix.shard }}/${{ matrix.total }} \
-              --reporter=verbose --reporter=github-actions \
-              --reporter=junit --outputFile.junit=./packages/backend/test-results/junit-backend-${{ matrix.shard }}.xml
           fi
+          echo "BACKEND_TEST_SELECTION=$selection" >> "$GITHUB_ENV"
+          # shellcheck disable=SC2086 # $selection is an intentionally split flag pair
+          vp test run --project backend $selection \
+            --shard=${{ matrix.shard }}/${{ matrix.total }} \
+            --reporter=verbose --reporter=github-actions \
+            --reporter=junit --outputFile.junit=./packages/backend/test-results/junit-backend-${{ matrix.shard }}.xml
+      - name: Run backend-serial tests (one job, not sharded)
+        if: ${{ !cancelled() && matrix.shard == 1 }}
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5433/boardsesh_backend_test
+          REDIS_URL: redis://localhost:6380
+        run: |
+          mkdir -p packages/backend/test-results
+          # shellcheck disable=SC2086 # the same selection as the backend step
+          vp test run --project backend-serial $BACKEND_TEST_SELECTION \
+            --reporter=verbose --reporter=github-actions \
+            --reporter=junit --outputFile.junit=./packages/backend/test-results/junit-backend-serial.xml
       - name: Upload test results
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: test-results-backend-${{ matrix.shard }}
-          path: packages/backend/test-results/junit-backend-${{ matrix.shard }}.xml
+          # Shard 1 also carries junit-backend-serial.xml.
+          path: packages/backend/test-results/junit-backend-*.xml
           retention-days: 7
 
   test-ocr:
