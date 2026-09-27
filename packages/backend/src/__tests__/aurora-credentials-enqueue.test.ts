@@ -52,7 +52,12 @@ import { createDb } from '@boardsesh/db/client';
 import { BACKGROUND_JOB_QUEUES } from '@boardsesh/db/background-jobs';
 import { auroraCredentials, backgroundJobRuns, providerSyncControls } from '@boardsesh/db/schema';
 import { db } from '../db/client';
-import { deleteAuroraCredential, saveAuroraCredential, saveKilterCredential } from '../services/aurora-credentials';
+import {
+  deleteAuroraCredential,
+  getAuroraCredentialStatuses,
+  saveAuroraCredential,
+  saveKilterCredential,
+} from '../services/aurora-credentials';
 import { executeBackgroundJob, handlerForRole, type BackgroundJobPayload } from '../workers/jobs';
 import { ensureBackgroundJobSchema } from '../workers/families/__tests__/provider-sync-fixtures';
 
@@ -178,6 +183,19 @@ describe('linking a board queues its first sync', () => {
     expect(status.syncAvailable).toBe(false);
     expect(await runs()).toEqual([]);
     expect(await controlRow()).toMatchObject({ linked: true, pendingRunId: null });
+  });
+
+  it('still links, queueing nothing, when BATCH_FAMILIES_ENABLED has a typo', async () => {
+    process.env.BATCH_FAMILIES_ENABLED = 'aurora-user-sync,aurora-usr-sync';
+
+    const status = await link();
+
+    expect(status.syncRunId).toBeUndefined();
+    expect(status.syncAvailable).toBe(false);
+    expect(await runs()).toEqual([]);
+    expect(await controlRow()).toMatchObject({ linked: true, pendingRunId: null });
+    const [listed] = await getAuroraCredentialStatuses(USER_ID);
+    expect(listed).toMatchObject({ boardType: 'tension', syncAvailable: false });
   });
 
   it('queues a kilter-user-sync run for a Kilter link and marks the row unlinked on unlink', async () => {

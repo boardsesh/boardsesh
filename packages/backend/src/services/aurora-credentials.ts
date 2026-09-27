@@ -21,7 +21,7 @@ import {
 import { db } from '../db/client';
 import { logger } from '../utils/logger';
 import { enqueueBackgroundJobOn } from '../workers/jobs';
-import { enabledBatchFamilies } from './batch-schedules';
+import { enabledBatchFamiliesOrNone } from './batch-schedules';
 import { requireJobQueue } from './job-queue';
 
 const KILTER_OAUTH_CLIENT_ID = process.env.KILTER_OAUTH_CLIENT_ID;
@@ -106,7 +106,7 @@ export async function requestProviderSyncOn(
   input: { userId: string; boardType: string; linkGeneration: string; requestedBy: 'link' | 'manual' },
 ): Promise<string | null> {
   const family = providerSyncFamily(input.boardType);
-  if (!enabledBatchFamilies().includes(family)) return null;
+  if (!enabledBatchFamiliesOrNone().has(family)) return null;
   const { runId } = await enqueueBackgroundJobOn(transaction, requireJobQueue(), {
     role: 'interactive-import',
     family,
@@ -291,7 +291,7 @@ export async function getAuroraCredentialStatuses(userId: string): Promise<Auror
   ]);
 
   const statusesByBoard = new Map<string, AuroraCredentialStatus>();
-  const enabledFamilies = enabledBatchFamilies();
+  const enabledFamilies = enabledBatchFamiliesOrNone();
 
   for (const credential of credentials) {
     statusesByBoard.set(credential.boardType, {
@@ -306,7 +306,7 @@ export async function getAuroraCredentialStatuses(userId: string): Promise<Auror
       syncStatus: credential.syncStatus,
       syncError: credential.syncError,
       pendingRunId: credential.pendingRunId ?? null,
-      syncAvailable: enabledFamilies.includes(providerSyncFamily(credential.boardType)),
+      syncAvailable: enabledFamilies.has(providerSyncFamily(credential.boardType)),
       createdAt: credential.createdAt.toISOString(),
     });
   }
@@ -512,7 +512,7 @@ export async function saveAuroraCredential(input: {
     syncStatus: 'pending',
     syncError: null,
     pendingRunId: syncRunId,
-    syncAvailable: enabledBatchFamilies().includes(providerSyncFamily(input.boardType)),
+    syncAvailable: enabledBatchFamiliesOrNone().has(providerSyncFamily(input.boardType)),
     createdAt: now.toISOString(),
     ...(syncRunId ? { syncRunId } : {}),
   };

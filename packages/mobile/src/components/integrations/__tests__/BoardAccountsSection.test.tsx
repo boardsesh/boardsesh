@@ -77,6 +77,7 @@ type MutationOptions = {
   mutationFn: (vars: unknown) => unknown;
   onSuccess?: (result: unknown, vars: unknown) => unknown;
   onError?: (error: unknown, variables: unknown) => unknown;
+  onSettled?: (result: unknown, error: unknown, variables: unknown) => unknown;
 };
 
 vi.mock('@tanstack/react-query', () => ({
@@ -94,9 +95,17 @@ vi.mock('@tanstack/react-query', () => ({
   },
   useMutation: (opts: MutationOptions) => ({
     mutate: (vars: unknown) => {
-      void Promise.resolve(opts.mutationFn(vars))
-        .then((result) => opts.onSuccess?.(result, vars))
-        .catch((error) => opts.onError?.(error, vars));
+      // Like TanStack: hook-level callbacks run for every call, onSettled last.
+      void Promise.resolve(opts.mutationFn(vars)).then(
+        async (result) => {
+          await opts.onSuccess?.(result, vars);
+          await opts.onSettled?.(result, null, vars);
+        },
+        async (error) => {
+          await opts.onError?.(error, vars);
+          await opts.onSettled?.(undefined, error, vars);
+        },
+      );
     },
     isPending: false,
     variables: undefined,
@@ -612,6 +621,48 @@ describe('BoardAccountsSection — Sync now', () => {
     fireEvent.click(button(container, 'aurora.card.syncNow')!);
 
     await waitFor(() => expect(mocks.showToast).toHaveBeenCalledWith('aurora.mobile.syncNowRateLimited', 'warning'));
+  });
+
+  it('keeps each board disabled until its own request settles, whatever is tapped after', async () => {
+    mocks.credentials = [
+      tensionCredential(),
+      tensionCredential({ boardType: 'kilter', auroraUsername: 'kilter-climber' }),
+    ];
+    mocks.flags = { 'kilter-oauth-linking': true };
+    const settleByBoard = new Map<string, () => void>();
+    mocks.requestSync.mockImplementation(
+      (_document: unknown, variables: unknown) =>
+        new Promise((resolve) => {
+          const { boardType } = variables as { boardType: string };
+          settleByBoard.set(boardType, () =>
+            resolve({ requestProviderSync: { runId: `run-${boardType}`, status: 'queued', coalesced: false } }),
+          );
+        }),
+    );
+    const { container } = render(<BoardAccountsSection />);
+    const syncButtons = () =>
+      Array.from(container.querySelectorAll('[data-button="aurora.card.syncNow"]')) as HTMLButtonElement[];
+    expect(syncButtons()).toHaveLength(2);
+
+    fireEvent.click(syncButtons()[0]);
+    fireEvent.click(syncButtons()[1]);
+    // A second tap on the first board while its request is still out does nothing.
+    fireEvent.click(syncButtons()[0]);
+
+    await waitFor(() => expect(mocks.requestSync).toHaveBeenCalledTimes(2));
+    expect(syncButtons().map((syncButton) => syncButton.disabled)).toEqual([true, true]);
+
+    await act(async () => {
+      settleByBoard.get('kilter')?.();
+    });
+    // The other board's request is still out, so its button stays disabled.
+    const stillDisabled = syncButtons().filter((syncButton) => syncButton.disabled);
+    expect(stillDisabled).toHaveLength(1);
+
+    await act(async () => {
+      settleByBoard.get('tension')?.();
+    });
+    await waitFor(() => expect(syncButtons().every((syncButton) => !syncButton.disabled)).toBe(true));
   });
 
   it('offers no Sync now while the backend does not run it for this board', () => {

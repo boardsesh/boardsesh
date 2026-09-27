@@ -42,6 +42,35 @@ export function enabledBatchFamilies(
   return [...new Set(names.filter(isBackgroundJobFamily))];
 }
 
+let requestPathFamilies: { raw: string | undefined; families: ReadonlySet<BackgroundJobFamily> } | null = null;
+
+/**
+ * `enabledBatchFamilies` for request paths (a link, "Sync now", the credential
+ * status): never throws. An invalid `BATCH_FAMILIES_ENABLED` is an operator
+ * typo, and it must not fail every credential request or roll back a valid
+ * link; it disables every family here instead, exactly as boot leaves the
+ * schedules unregistered. The validation error is logged once per value, and
+ * the parse is memoised on the raw string so the hot status read does not
+ * re-split it. Boot (`startBatchSchedules`) keeps the throwing variant.
+ */
+export function enabledBatchFamiliesOrNone(
+  environment: Readonly<Record<string, string | undefined>> = process.env,
+): ReadonlySet<BackgroundJobFamily> {
+  const raw = environment.BATCH_FAMILIES_ENABLED;
+  if (requestPathFamilies && requestPathFamilies.raw === raw) return requestPathFamilies.families;
+  let families: ReadonlySet<BackgroundJobFamily>;
+  try {
+    families = new Set(enabledBatchFamilies(environment));
+  } catch (error) {
+    logger.error('[batch-schedules] BATCH_FAMILIES_ENABLED is invalid; request paths treat every family as off', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    families = new Set();
+  }
+  requestPathFamilies = { raw, families };
+  return families;
+}
+
 export function scheduleKey(family: string, key: string): string {
   return `${family}:${key}`;
 }

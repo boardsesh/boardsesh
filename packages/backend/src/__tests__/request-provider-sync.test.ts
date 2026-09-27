@@ -126,6 +126,14 @@ describe('requestProviderSync', () => {
     await expect(syncNow()).rejects.toMatchObject({ extensions: { code: 'PROVIDER_SYNC_UNAVAILABLE' } });
   });
 
+  it('answers unavailable, not an error, when BATCH_FAMILIES_ENABLED has a typo', async () => {
+    await linkTension();
+    process.env.BATCH_FAMILIES_ENABLED = 'aurora-user-sync,aurora-usr-sync';
+
+    await expect(syncNow()).rejects.toMatchObject({ extensions: { code: 'PROVIDER_SYNC_UNAVAILABLE' } });
+    expect(await db.select().from(backgroundJobRuns)).toEqual([]);
+  });
+
   it('rejects a board that is not an Aurora board', async () => {
     await expect(syncNow('moonboard')).rejects.toThrow();
   });

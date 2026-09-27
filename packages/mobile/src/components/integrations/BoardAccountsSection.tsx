@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useState } from 'react';
+import { memo, useCallback, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Linking, Modal, ScrollView, StyleSheet, View } from 'react-native';
 import { File } from 'expo-file-system';
 import * as Clipboard from 'expo-clipboard';
@@ -301,6 +301,15 @@ export function BoardAccountsSection() {
     },
   });
 
+  // Boards with a Sync now request in flight. Per board, not the mutation's
+  // own isPending/variables: one observer only remembers its latest call, so a
+  // tap on a second board would re-enable the first and let it be sent again
+  // against the shared 5-a-minute limit. A board leaves this set once its
+  // request settled and the refetched card carries its pendingRunId.
+  // The ref answers "already in flight?" synchronously for a double tap; the
+  // state copy re-renders the cards.
+  const syncRequestsInFlight = useRef(new Set<AuroraBoardName>());
+  const [syncRequests, setSyncRequests] = useState<ReadonlySet<AuroraBoardName>>(() => new Set());
   const syncNowMutation = useMutation({
     mutationFn: requestProviderSync,
     onSuccess: async () => {
@@ -309,7 +318,22 @@ export function BoardAccountsSection() {
     onError: (error) => {
       showToast(getSyncNowErrorMessage(t, error), isGraphqlRateLimitedError(error) ? 'warning' : 'error');
     },
+    // Hook-level, so it runs for every request, not only the latest one.
+    onSettled: (_result, _error, boardType) => {
+      syncRequestsInFlight.current.delete(boardType);
+      setSyncRequests(new Set(syncRequestsInFlight.current));
+    },
   });
+  const { mutate: requestSync } = syncNowMutation;
+  const handleSyncNow = useCallback(
+    (boardType: AuroraBoardName) => {
+      if (syncRequestsInFlight.current.has(boardType)) return;
+      syncRequestsInFlight.current.add(boardType);
+      setSyncRequests(new Set(syncRequestsInFlight.current));
+      requestSync(boardType);
+    },
+    [requestSync],
+  );
 
   const stepLabels = useMemo(
     () => ({
@@ -539,11 +563,8 @@ export function BoardAccountsSection() {
               isRemoving={
                 deleteCredentialMutation.isPending && deleteCredentialMutation.variables === cardConfig.boardType
               }
-              isSyncing={
-                Boolean(credential?.pendingRunId) ||
-                (syncNowMutation.isPending && syncNowMutation.variables === cardConfig.boardType)
-              }
-              onSyncNow={() => syncNowMutation.mutate(cardConfig.boardType)}
+              isSyncing={Boolean(credential?.pendingRunId) || syncRequests.has(cardConfig.boardType)}
+              onSyncNow={() => handleSyncNow(cardConfig.boardType)}
               systemColors={systemColors}
               brandColors={brandColors}
               onImport={() => handleImportPress(cardConfig.boardType)}
