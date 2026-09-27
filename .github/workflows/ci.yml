@@ -413,6 +413,13 @@ jobs:
               # The weekly MoonBoard estimate upsert must skip unchanged rows so
               # devices don't re-download them; proved against real Postgres.
               - 'packages/db/scripts/grade-estimate-upsert*'
+              # The unattended-runner contract (report + run lock) for the
+              # catalog importer: the lock integration test needs this job's
+              # real Postgres to prove pg_try_advisory_lock genuinely blocks a
+              # second session and that a recycled connection loses the lock.
+              - 'packages/db/scripts/import-moonboard-catalog*'
+              - 'packages/db/scripts/moonboard-catalog-report*'
+              - 'packages/db/scripts/moonboard-catalog-run-lock*'
               # Defines the test:migration-journal script this job's new step
               # invokes, so editing it has to run the job that depends on it.
               - 'packages/db/package.json'
@@ -726,6 +733,10 @@ jobs:
           src/queries/climb-stats/__tests__/moonboard-residual-dedup-replay.integration.test.ts
           scripts/grade-estimate-upsert.test.ts
           scripts/grade-estimate-upsert.integration.test.ts
+          scripts/moonboard-catalog-report.test.ts
+          scripts/moonboard-catalog-run-lock.test.ts
+          scripts/moonboard-catalog-run-lock.integration.test.ts
+          scripts/import-moonboard-catalog-args.test.ts
       # A trigger function with no pinned search_path cannot resolve an
       # unqualified type or table while pg_restore holds search_path at '',
       # which aborts a --data-only restore on the first affected table with zero
