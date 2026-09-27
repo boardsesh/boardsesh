@@ -1,13 +1,15 @@
 process.env.AURORA_CREDENTIALS_SECRET = process.env.AURORA_CREDENTIALS_SECRET ?? 'test-aurora-secret';
 
 import { randomUUID } from 'node:crypto';
-import { sql } from 'drizzle-orm';
+import { sql, type SQL } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDb } from '@boardsesh/db/client';
 import {
   CLIMB_STATS_RECOMPUTE_BATCH_KEYS,
   DeferredClimbStatsRecompute,
   PENDING_RECOMPUTE_ORPHAN_AGE_MS,
+  drainPendingClimbStatsRecomputes,
   markClimbStatsRecomputePending,
   recomputeClimbStatsInBatches,
   type ClimbStatsKey,
@@ -77,7 +79,7 @@ function countingRunner() {
 const key = (index: number): ClimbStatsKey => ({ boardType: 'tension', climbUuid: `climb-${index}`, angle: 40 });
 
 describe('recomputeClimbStatsInBatches', () => {
-  it('runs one transaction per 500 distinct keys: lock the pending rows, seed, update, clear', async () => {
+  it('runs one transaction per 500 distinct keys: upsert-and-lock the markers, seed, update, clear', async () => {
     const { runBatch, batches } = countingRunner();
     const keys = Array.from({ length: 1_200 }, (_, index) => key(index));
 
@@ -328,6 +330,56 @@ describe('climb_stats_recompute_pending orphan clock', () => {
       SELECT (extract(epoch FROM now() - requested_at) * 1000)::float8 AS age_ms
         FROM climb_stats_recompute_pending WHERE climb_uuid = ${PENDING_CLIMB}`);
     expect(Number(row.age_ms)).toBeGreaterThan(PENDING_RECOMPUTE_ORPHAN_AGE_MS);
+  });
+});
+
+describe('a recompute batch racing a sync page', () => {
+  const dialect = new PgDialect();
+  const statementText = (query: SQL | string) => (typeof query === 'string' ? query : dialect.sqlToQuery(query).sql);
+
+  it('keeps the marker a page writes between the recompute and its DELETE, for the next drain', async () => {
+    await insertLinkedTensionAccount(database, ASCENT_USER, ASCENT_CLIMB);
+    // The stale-scan path: the key has no pending row when its batch starts.
+    const raceKey: ClimbStatsKey = { boardType: FIXTURE_BOARD, climbUuid: ASCENT_CLIMB, angle: 40 };
+    expect(await countRows('climb_stats_recompute_pending', ASCENT_CLIMB)).toBe(0);
+
+    let page: Promise<void> | undefined;
+    let pageWaited = false;
+    const runBatch = ((callback) =>
+      database.transaction((transaction) => {
+        const intercepted = new Proxy(transaction, {
+          get(target, property, receiver) {
+            if (property !== 'execute') return Reflect.get(target, property, receiver);
+            return async (query: SQL) => {
+              if (!page && statementText(query).includes('DELETE FROM climb_stats_recompute_pending')) {
+                // The recompute has read the ticks; a page now changes a tick
+                // and marks the key, in its own transaction.
+                page = database.transaction((pageTransaction) =>
+                  markClimbStatsRecomputePending(pageTransaction, [raceKey]),
+                );
+                pageWaited = await Promise.race([
+                  page.then(() => false),
+                  new Promise<boolean>((resolve) => setTimeout(() => resolve(true), 300)),
+                ]);
+              }
+              return target.execute(query);
+            };
+          },
+        });
+        return callback(intercepted);
+      })) as SyncBatchRunner;
+
+    await recomputeClimbStatsInBatches(runBatch, [raceKey]);
+    await page;
+
+    // The page's upsert waited on the batch's marker lock, so its marker landed
+    // after the DELETE and survives.
+    expect(pageWaited).toBe(true);
+    expect(await countRows('climb_stats_recompute_pending', ASCENT_CLIMB)).toBe(1);
+
+    // The next pass takes it.
+    await drainPendingClimbStatsRecomputes((callback) => database.transaction(callback), { olderThanMs: 0 });
+    expect(await countRows('climb_stats_recompute_pending', ASCENT_CLIMB)).toBe(0);
   });
 });
 

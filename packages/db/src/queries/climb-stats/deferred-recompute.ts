@@ -64,40 +64,75 @@ export async function markClimbStatsRecomputePending(
   for (let start = 0; start < distinct.length; start += CLIMB_STATS_RECOMPUTE_BATCH_KEYS) {
     const payload = keysPayload(distinct.slice(start, start + CLIMB_STATS_RECOMPUTE_BATCH_KEYS));
     await transaction.execute(sql`
-      INSERT INTO climb_stats_recompute_pending (board_type, climb_uuid, angle)
+      INSERT INTO climb_stats_recompute_pending AS pending (board_type, climb_uuid, angle)
       SELECT k.board_type, k.climb_uuid, k.angle
         FROM jsonb_to_recordset(${payload}::jsonb) AS k(board_type text, climb_uuid text, angle integer)
       ON CONFLICT (board_type, climb_uuid, angle)
-        DO UPDATE SET requested_at = LEAST(climb_stats_recompute_pending.requested_at, excluded.requested_at)
+        DO UPDATE SET requested_at = LEAST(pending.requested_at, excluded.requested_at)
     `);
   }
 }
 
-async function clearPending(transaction: DrizzleDb, keys: readonly ClimbStatsKey[]): Promise<void> {
+/** A pending row as a batch observed it while holding its lock. */
+type ObservedMarker = { board_type: string; climb_uuid: string; angle: number; requested_at: string };
+
+function toKey(marker: ObservedMarker): ClimbStatsKey {
+  return { boardType: marker.board_type, climbUuid: marker.climb_uuid, angle: marker.angle };
+}
+
+/**
+ * Delete the pending rows this batch recomputed: only a row whose
+ * `requested_at` is no newer than the value the batch observed under its lock.
+ * The batch holds every one of these row locks until it commits, so nothing can
+ * re-mark them in between; the comparison states that contract in the
+ * statement itself rather than leaving it to the lock alone.
+ */
+async function clearObservedPending(transaction: DrizzleDb, markers: readonly ObservedMarker[]): Promise<void> {
   await transaction.execute(sql`
     DELETE FROM climb_stats_recompute_pending pending
-     USING jsonb_to_recordset(${keysPayload(keys)}::jsonb) AS k(board_type text, climb_uuid text, angle integer)
+     USING jsonb_to_recordset(${JSON.stringify(markers)}::jsonb)
+             AS k(board_type text, climb_uuid text, angle integer, requested_at timestamptz)
      WHERE pending.board_type = k.board_type AND pending.climb_uuid = k.climb_uuid AND pending.angle = k.angle
+       AND pending.requested_at <= k.requested_at
   `);
 }
 
 /**
  * Recompute one batch of keys and clear their pending rows, in one
- * transaction. The pending rows are locked first, in key order, so a
- * concurrent page re-marking one of these keys either committed before the
- * recompute's snapshot or re-inserts its row after this DELETE.
+ * transaction.
+ *
+ * Every key gets a locked pending row BEFORE the recompute reads any tick: an
+ * upsert inserts a marker for a key that has none (the stale-scan self-heal's
+ * keys usually have none) and takes the row lock on one that does, keeping its
+ * oldest `requested_at`. The order that makes this safe under READ COMMITTED:
+ *
+ * 1. this batch holds the marker lock (or the uncommitted insert) for each key;
+ * 2. a sync page writing a tick for one of these keys marks it in its own
+ *    transaction, so its upsert waits on (1) until this batch commits, and its
+ *    tick change is either committed before the recompute's statements read the
+ *    ticks (so they see it) or not yet visible (so its marker lands after this
+ *    batch's DELETE and survives for the next flush or drain);
+ * 3. the DELETE removes only the rows this batch observed, at no newer
+ *    `requested_at` than it saw.
+ *
+ * Without the marker lock, a key with no pending row locked nothing: a page
+ * could commit a tick change and a new marker between the recompute's read and
+ * the DELETE, the DELETE's fresh snapshot removed that marker, and a deleted or
+ * downgraded final send was then invisible to the tick scan for good.
  */
 async function recomputeAndClear(transaction: DrizzleDb, keys: readonly ClimbStatsKey[]): Promise<void> {
-  await transaction.execute(sql`
-    SELECT 1
-      FROM climb_stats_recompute_pending pending
-      JOIN jsonb_to_recordset(${keysPayload(keys)}::jsonb) AS k(board_type text, climb_uuid text, angle integer)
-        ON pending.board_type = k.board_type AND pending.climb_uuid = k.climb_uuid AND pending.angle = k.angle
-     ORDER BY pending.board_type, pending.climb_uuid, pending.angle
-       FOR UPDATE OF pending
-  `);
+  const markers = rowsOf<ObservedMarker>(
+    await transaction.execute(sql`
+      INSERT INTO climb_stats_recompute_pending AS pending (board_type, climb_uuid, angle)
+      SELECT k.board_type, k.climb_uuid, k.angle
+        FROM jsonb_to_recordset(${keysPayload(keys)}::jsonb) AS k(board_type text, climb_uuid text, angle integer)
+      ON CONFLICT (board_type, climb_uuid, angle)
+        DO UPDATE SET requested_at = LEAST(pending.requested_at, excluded.requested_at)
+      RETURNING pending.board_type, pending.climb_uuid, pending.angle, pending.requested_at::text AS requested_at
+    `),
+  );
   await recomputeClimbStatsBulk(transaction, [...keys]);
-  await clearPending(transaction, keys);
+  await clearObservedPending(transaction, markers);
 }
 
 /**
@@ -139,20 +174,22 @@ export async function drainPendingClimbStatsRecomputes(
   let drained = 0;
   for (let batch = 0; batch < maxBatches; batch += 1) {
     const recomputed = await runBatch(async (transaction) => {
-      const keys = rowsOf<{ board_type: string; climb_uuid: string; angle: number }>(
+      // Locked for the rest of the batch, so no page can re-mark them before
+      // the DELETE: its upsert waits for this commit and then inserts afresh.
+      const markers = rowsOf<ObservedMarker>(
         await transaction.execute(sql`
-          SELECT board_type, climb_uuid, angle
+          SELECT board_type, climb_uuid, angle, requested_at::text AS requested_at
             FROM climb_stats_recompute_pending
            WHERE requested_at < now() - make_interval(secs => ${olderThanSeconds}::double precision)
            ORDER BY requested_at
            LIMIT ${batchKeys}
              FOR UPDATE SKIP LOCKED
         `),
-      ).map((row) => ({ boardType: row.board_type, climbUuid: row.climb_uuid, angle: row.angle }));
-      if (keys.length === 0) return 0;
-      await recomputeClimbStatsBulk(transaction, keys);
-      await clearPending(transaction, keys);
-      return keys.length;
+      );
+      if (markers.length === 0) return 0;
+      await recomputeClimbStatsBulk(transaction, markers.map(toKey));
+      await clearObservedPending(transaction, markers);
+      return markers.length;
     });
     drained += recomputed;
     if (recomputed < batchKeys) break;

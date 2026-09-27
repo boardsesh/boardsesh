@@ -115,7 +115,7 @@ these grants. A table the appliers start writing fails that test first.
 | --- | --- |
 | SELECT | `boardsesh_ticks (id, user_id, board_type, climb_uuid, angle, status, origin, quality, difficulty, climbed_at, updated_at, kilter_id, kilter_synced_at, kilter_detached_at)`, `board_climbs (uuid, board_type, user_id)`, `users (id, name)`, `user_profiles (user_id, display_name)` |
 | SELECT, INSERT, UPDATE | `board_climb_stats` |
-| SELECT, UPDATE, DELETE | `climb_stats_recompute_pending` (UPDATE because the drain reads it `FOR UPDATE SKIP LOCKED`) |
+| SELECT, INSERT, UPDATE, DELETE | `climb_stats_recompute_pending` (UPDATE because the drain reads it `FOR UPDATE SKIP LOCKED`; INSERT because every recompute batch first upserts a marker per key to hold its lock) |
 
 No application SQL function is called directly; the trigger functions these
 writes fire (the `sync_seq` stamps, the location triggers) run as the caller,
@@ -201,7 +201,7 @@ module. The module declares:
 | `aurora-user-sync` | `interactive-import` | 1800 s (heartbeat 300 s) | 3, 30 s backoff to 300 s | 2 h | `userId:boardType:linkGeneration` |
 | `kilter-user-sync` | `interactive-import` | 1800 s (heartbeat 300 s) | 3, 30 s backoff to 300 s | 2 h | `userId:kilter:linkGeneration` |
 | `provider-routine-cycle` | `routine-provider` | 600 s (heartbeat 300 s) | none | 75 min | `aurora` / `kilter` |
-| `aurora-shared-sync` | `routine-provider` | 3600 s (heartbeat 300 s), priority -5 | 1, after 300 s | 2 h | the board |
+| `aurora-shared-sync` | `routine-provider` | 3600 s (heartbeat 300 s), priority -5 | 1, after 300 s | 6 h | the board |
 | `kilter-catalog-sync` | `routine-provider` | 3600 s (heartbeat 300 s) | 1, after 300 s | 2 h | `kilter` |
 | `moonboard-locations-sync` | `routine-provider` | 1800 s (heartbeat 120 s) | 1, after 600 s | 24 h | `moonboard` |
 | `climb-stats-self-heal` | `maintenance-delivery` | 900 s (heartbeat 120 s) | 1, after 300 s | 1 h | `climb-stats` |
@@ -570,9 +570,13 @@ batch runner the appliers write the `(climb, angle)` keys they touched to
 `climb_stats_recompute_pending` in the page or flush transaction itself (an
 upsert, so the key commits with the ticks), and after the page or flush commits
 the keys are recomputed in batches of at most 500 (`DeferredClimbStatsRecompute`:
-lock the pending rows, one seed INSERT, one aggregate UPDATE, delete the rows),
-every batch its own fenced transaction. The daemons, which pass no batch runner,
-keep the inline recompute and never write the table. A worker that stops between
+upsert a pending row per key, inserting one where none exists, which holds its
+lock for the whole batch; one seed INSERT, one aggregate UPDATE; delete only the
+rows it observed, at no newer `requested_at`), every batch its own fenced
+transaction. A page re-marking one of those keys waits on that lock, so its
+marker lands after the batch commits and survives. The daemons, which pass no
+batch runner, keep the inline recompute; only their hourly self-heal writes the
+table, through the same batches. A worker that stops between
 a page and its recompute leaves the rows behind, and the hourly
 `climb-stats-self-heal` drains every row older than two minutes, oldest first.
 That covers what its tick scan cannot see: a key with no stats row yet (a
@@ -665,7 +669,7 @@ Kilter); MoonBoard's credentials are optional.
 | Family | Cron (UTC) | Fan-out | What one run does |
 | --- | --- | --- | --- |
 | `provider-routine-cycle` | `*/5 * * * *` | `{ provider: 'aurora' }`, `{ provider: 'kilter' }` | Syncs the next due credentials of one provider |
-| `aurora-shared-sync` | `7 * * * *` | one per Aurora board but Kilter | Shared `/sync`, history snapshot, gym locations, one wall-crawl slice |
+| `aurora-shared-sync` | `7 * * * *` | one per Aurora board but Kilter, least recently synced first | Shared `/sync`, history snapshot, gym locations, one wall-crawl slice |
 | `kilter-catalog-sync` | `23 * * * *` | one | Kilter catalog, weekly stats repair, weekly history snapshot |
 | `moonboard-locations-sync` | `41 3 * * *` | one | MoonBoard gyms and boards |
 | `climb-stats-self-heal` | `13 * * * *` | one | Re-derives stats rows a dropped or deferred recompute left behind |
@@ -730,6 +734,13 @@ bookkeeping, an abort or a lost attempt does. The run never retries: the next
 one is 5 minutes away.
 
 ### The board-wide families
+
+`aurora-shared-sync` fans out one run per Aurora board (five) at :07, least
+recently synced board first (by its `board_shared_syncs` cooldown stamp;
+never-run boards lead). The routine worker runs one job at a time, so the
+fifth board can wait behind four runs that each hold an hour's lease; its
+6-hour deadline covers that wait plus a routine cycle or a Kilter catalog run
+in between, so a late board runs late instead of expiring at claim.
 
 `aurora-shared-sync` and `kilter-catalog-sync` borrow a token from the board's
 most recently successful `active` credential (Kilter falls back to the

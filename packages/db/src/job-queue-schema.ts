@@ -202,8 +202,9 @@ const CLIMB_STATS_SELF_HEAL_GRANTS: readonly WorkerTableGrant[] = [
   { table: 'board_climbs', privileges: ['SELECT'], columns: ['uuid', 'board_type', 'user_id'] },
   { table: 'board_climb_stats', privileges: ['SELECT', 'INSERT', 'UPDATE'] },
   // Pending keys a stopped worker left behind: read `FOR UPDATE SKIP LOCKED`
-  // (which needs UPDATE), recomputed, deleted.
-  { table: 'climb_stats_recompute_pending', privileges: ['SELECT', 'UPDATE', 'DELETE'] },
+  // (which needs UPDATE), recomputed, deleted. The tick scan's recompute also
+  // upserts a marker for each of its keys first (INSERT) to hold its lock.
+  { table: 'climb_stats_recompute_pending', privileges: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'] },
   // The first ascensionist's crown: COALESCE(display_name, name).
   { table: 'users', privileges: ['SELECT'], columns: ['id', 'name'] },
   { table: 'user_profiles', privileges: ['SELECT'], columns: ['user_id', 'display_name'] },
