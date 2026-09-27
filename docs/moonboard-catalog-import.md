@@ -118,29 +118,45 @@ output. It checks `--help` for both `--report-json` and `--dry-run` before ever
 starting a real run, discards stdout/stderr, and reads the report back
 afterward.
 
-`--report-json <path>` writes a JSON summary once the run ends, whether it
-succeeded, rolled back as a dry run, or failed partway through. The write is a
+`--report-json <path>` writes a JSON summary once the run ends. The write is a
 temp file plus a rename in the same directory, so a poller never reads a
-half-written file. The shape is `{ version: 1, dryRun, startedAt, finishedAt,
-boards: [...], totals: {...}, error? }`, where `boards` and `totals` mirror the
-per-board and running counters described above, one entry per board file
-processed. `dryRun` is the literal flag value the run was invoked with, not a
-guess, so a caller can confirm a rehearsal never committed and a real run
-never rolled back. `version` is fixed at `1` for now; a caller should reject
-anything else. `error` is present only when the run failed after doing at
-least some work.
+half-written file, and any stale report already at that path is deleted before
+the run touches the database, so a crash that happens before this run gets to
+write its own report can never look like this run's result. The shape is
+`{ version: 1, dryRun, startedAt, finishedAt, boards: [...], totals: {...},
+error?, failedFile? }`, where `boards` and `totals` mirror the per-board and
+running counters described above, one entry per board file processed. `dryRun`
+is the literal flag value the run was invoked with, not a guess, so a caller
+can confirm a rehearsal never committed and a real run never rolled back.
+`version` is fixed at `1` for now; a caller should reject anything else.
+
+A report is written on success, on a `--dry-run` rollback, and on any failure
+that happens once argument parsing has succeeded and the `--report-json` path
+itself is valid: a bad or empty catalog directory, the run lock already held,
+an unreachable database, and a failure partway through a board all produce a
+report with `error` set. `failedFile` additionally names the board file that
+was being imported when the failure happened, when there was one. Exit code is
+75 when another run already holds the lock, so a scheduler can tell "someone
+else is running this, retry later" apart from every other failure, which exits
+1.
 
 Before touching any board, the script takes a session-scoped Postgres advisory
 lock and holds it for the whole run, releasing it in a `finally` block on every
-path — success, dry-run rollback, or failure. If another run already holds the
-lock, the new one exits non-zero immediately, before opening any transaction.
-This is what makes a scheduler's retry loop safe: two overlapping invocations
-can never interleave their writes. The lock only works because the script keeps
-one direct Postgres connection for its entire lifetime and runs every per-board
-transaction on it — point `DB_URL` at a direct connection, never a
+path: success, dry-run rollback, or failure. If another run already holds the
+lock, the new one exits without opening any transaction. This is what makes a
+scheduler's retry loop safe, so two overlapping invocations never interleave
+their writes, but only together with two other things. First, the script
+disables postgres.js's default connection recycling (`max_lifetime: null`):
+without it, a long-enough run has its connection silently closed and reopened
+after 30-60 minutes, which drops the lock with no error raised, and every
+board after that point writes with no mutual exclusion at all. Second, as a
+backstop against that setting being lost or against any other unexpected
+disconnect, the script re-checks that the lock is still actually held,
+immediately before every board's transaction, and aborts the run with a clear
+message the moment it is not. Point `DB_URL` at a direct connection, never a
 transaction-pooling proxy (PgBouncer transaction mode, a pooled Neon/RDS-Proxy
-endpoint), since those hand out a different backend connection per statement
-and the lock would end up protecting nothing.
+endpoint): those hand out a different backend connection per statement, so a
+session lock taken through one protects nothing.
 
 ### Withdrawn problems
 

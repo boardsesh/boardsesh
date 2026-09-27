@@ -26,6 +26,18 @@ void test('--report-json without a value is rejected', () => {
   assert.throws(() => parseCatalogCliArgs(['--report-json']), /needs a value/);
 });
 
+void test('--report-json swallowing the next flag is rejected, not silently accepted as the path', () => {
+  // The bug this guards: `['/cat', '--report-json', '--dry-run']` used to parse
+  // to `reportJsonPath: '--dry-run'` and run for real with no report written
+  // where the operator expected one.
+  assert.throws(() => parseCatalogCliArgs(['/tmp/app-catalog', '--report-json', '--dry-run']), /needs a value/);
+  assert.throws(() => parseCatalogCliArgs(['--report-json', '--holdsetup', '21']), /needs a value/);
+});
+
+void test('--report-json with an empty-string value is rejected', () => {
+  assert.throws(() => parseCatalogCliArgs(['--report-json', '']), /needs a value/);
+});
+
 void test('--report-json and --dry-run combine independently', () => {
   const parsed = parseCatalogCliArgs(['--dry-run', '--report-json', '/tmp/report.json']);
   assert.equal(parsed.dryRun, true);
