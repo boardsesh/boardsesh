@@ -94,10 +94,14 @@ describe('worker configuration', () => {
       { name: 'kilter-catalog-sync' },
       { name: 'moonboard-locations-sync' },
     ];
-    expect(() => requireProviderSecrets('routine-provider', routine, {})).toThrow(
+    expect(() => requireProviderSecrets('routine-provider', routine, false, {})).toThrow(
       'AURORA_CREDENTIALS_SECRET, KILTER_OAUTH_CLIENT_ID',
     );
-    expect(() => requireProviderSecrets('routine-provider', [{ name: 'moonboard-locations-sync' }], {})).not.toThrow();
-    expect(() => requireProviderSecrets('maintenance-delivery', [{ name: 'climb-stats-self-heal' }], {})).not.toThrow();
+    expect(() =>
+      requireProviderSecrets('routine-provider', [{ name: 'moonboard-locations-sync' }], false, {}),
+    ).not.toThrow();
+    expect(() =>
+      requireProviderSecrets('maintenance-delivery', [{ name: 'climb-stats-self-heal' }], false, {}),
+    ).not.toThrow();
   });
 });
