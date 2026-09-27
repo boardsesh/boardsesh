@@ -5,7 +5,9 @@ import {
   resolveDefaultAuroraLocationConfig,
   toLocationSyncLogger,
   upsertPublicBoardLocations,
+  upsertPublicBoardLocationsInBatches,
   type LocationSyncSummary,
+  type LocationWriteBatchRunner,
   type PublicBoardLocationInput,
 } from '@boardsesh/location-sync';
 import type { AuroraBoardName } from '../api/types';
@@ -234,6 +236,13 @@ export async function syncAuroraBoardLocations(args: {
    */
   fetchGymUser?: (pin: AuroraPin) => Promise<AuroraGymUser | undefined>;
   log?: (message: string) => void;
+  /**
+   * Runs the writes in batches of whole gyms, each in one transaction (a
+   * background job's attempt fence). Unset, the writes go straight to `db` as
+   * they always have. Provider HTTP runs before the first batch either way.
+   */
+  transaction?: LocationWriteBatchRunner;
+  signal?: AbortSignal;
 }): Promise<LocationSyncSummary> {
   const pins = await fetchAuroraPins(args.board);
   const pinsWithUsers: AuroraPinWithUser[] = [];
@@ -266,9 +275,14 @@ export async function syncAuroraBoardLocations(args: {
   );
 
   const { records, skipped } = buildAuroraLocationRecords(args.board, pinsWithUsers, crawledGymSourceKeys);
-  const summary = await upsertPublicBoardLocations(args.db, records, {
-    logger: toLocationSyncLogger(args.log),
-  });
+  const summary = args.transaction
+    ? await upsertPublicBoardLocationsInBatches(args.transaction, records, {
+        logger: toLocationSyncLogger(args.log),
+        signal: args.signal,
+      })
+    : await upsertPublicBoardLocations(args.db, records, {
+        logger: toLocationSyncLogger(args.log),
+      });
 
   // Stamped AFTER the upsert, so a gym is only marked once its data is actually
   // written. Stamping first meant a transient upsert failure left the gym
@@ -282,7 +296,8 @@ export async function syncAuroraBoardLocations(args: {
     .filter(({ user }) => user !== undefined)
     .map(({ pin }) => `${args.board}:${pin.id}`);
   if (readGymSourceKeys.length > 0) {
-    await markGymWallsCrawled(args.db, readGymSourceKeys);
+    if (args.transaction) await args.transaction((transaction) => markGymWallsCrawled(transaction, readGymSourceKeys));
+    else await markGymWallsCrawled(args.db, readGymSourceKeys);
   }
   // Without credentials EVERY gym reports "walls unavailable", which buries the
   // real skips (unsupported configs) under thousands of identical lines. Collapse
@@ -362,6 +377,9 @@ export async function crawlGymWallsForSourceKeys(args: {
   sourceKeys: string[];
   fetchGymUser: (pin: AuroraPin) => Promise<AuroraGymUser | undefined>;
   log?: (message: string) => void;
+  /** As for {@link syncAuroraBoardLocations}: fenced write batches, HTTP between them. */
+  transaction?: LocationWriteBatchRunner;
+  signal?: AbortSignal;
 }): Promise<number> {
   if (args.sourceKeys.length === 0) return 0;
 
@@ -388,6 +406,7 @@ export async function crawlGymWallsForSourceKeys(args: {
       continue;
     }
 
+    args.signal?.throwIfAborted();
     const user = await args.fetchGymUser(pin);
     if (!user) continue; // Unstamped: retried next cycle.
     pinsWithUsers.push({ pin, user });
@@ -399,9 +418,17 @@ export async function crawlGymWallsForSourceKeys(args: {
     // pass the wanted set so a gym whose walls came back empty keeps whatever
     // it already had rather than reverting to the guess.
     const { records } = buildAuroraLocationRecords(args.board, pinsWithUsers, wanted);
-    await upsertPublicBoardLocations(args.db, records, { logger: toLocationSyncLogger(args.log) });
+    if (args.transaction) {
+      await upsertPublicBoardLocationsInBatches(args.transaction, records, {
+        logger: toLocationSyncLogger(args.log),
+        signal: args.signal,
+      });
+    } else {
+      await upsertPublicBoardLocations(args.db, records, { logger: toLocationSyncLogger(args.log) });
+    }
   }
 
-  await markGymWallsCrawled(args.db, crawledSourceKeys);
+  if (args.transaction) await args.transaction((transaction) => markGymWallsCrawled(transaction, crawledSourceKeys));
+  else await markGymWallsCrawled(args.db, crawledSourceKeys);
   return crawledSourceKeys.length;
 }

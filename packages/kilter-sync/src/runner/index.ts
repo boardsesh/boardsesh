@@ -7,4 +7,6 @@ export type {
   RunnerDb,
   RunCycleOptions,
   SyncOutcome,
+  CatalogSyncJobOptions,
+  CatalogSyncJobResult,
 } from './types';

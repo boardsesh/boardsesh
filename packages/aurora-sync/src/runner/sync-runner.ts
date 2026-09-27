@@ -13,6 +13,7 @@ import {
   claimSharedSyncSlot,
   credentialBackoffMs,
   findGymsDueForWallCrawl,
+  findSharedSyncDonorCredential,
   getCredentialFleetSnapshot,
   isSyncFenceError,
   readSharedSyncCursor,
@@ -42,7 +43,9 @@ import type { LocationSyncSummary } from '@boardsesh/location-sync';
 import { isAuroraBoardName, type AuroraBoardName } from '../api/types';
 import {
   DaemonLease,
+  SYNC_DAEMON_DISABLED_MESSAGE,
   formatSyncHealthSummary as formatSharedSyncHealthSummary,
+  isSyncDaemonDisabled,
   resolveDaemonOptions,
   runDaemonLoop,
   type SyncHealthSnapshot,
@@ -55,6 +58,8 @@ import type {
   SyncErrorContext,
   SyncCredentialOptions,
   SyncOutcome,
+  SharedSyncJobOptions,
+  SharedSyncJobResult,
 } from './types';
 
 type RunnerClient = ReturnType<typeof postgres>;
@@ -344,6 +349,7 @@ export class SyncRunner {
         // A deadlock or serialization failure is the database, not the
         // account: worth a retry, like an Aurora outage.
         transient: isTransientAuroraError(error) || /code=(40P01|40001)\b/.test(errorMsg),
+        retryAfterMs: isAuroraRequestError(error) ? error.retryAfterMs : undefined,
       };
     } finally {
       this.callOptions = null;
@@ -473,6 +479,12 @@ export class SyncRunner {
   }
 
   async runDaemon(options: DaemonOptions = {}): Promise<void> {
+    // The worker families own routine syncs once this is set; see
+    // docs/aurora-sync.md. Checked before the lease or the pool is touched.
+    if (isSyncDaemonDisabled(process.env)) {
+      this.log(`[SyncRunner] ${SYNC_DAEMON_DISABLED_MESSAGE}`);
+      return;
+    }
     if (this.daemonController && !this.daemonController.signal.aborted) {
       throw new Error('Daemon mode is already running');
     }
@@ -587,6 +599,10 @@ export class SyncRunner {
     const { db } = this.getClient();
     const claimed = await claimNextCredentialForSync(db, {
       candidateFilter: this.syncableCredentialsFilter(),
+      // Skip an account a background job is syncing right now (a live lease on
+      // its provider_sync_controls row), so a daemon and a worker never sync
+      // one credential at the same time.
+      excludeLeased: true,
     });
 
     return claimed as CredentialRecord | null;
@@ -761,15 +777,8 @@ export class SyncRunner {
    */
   private async maybeRunSharedSync(boardType: AuroraBoardName, token: string, userId: string): Promise<void> {
     const cooldownMs = this.getSharedSyncCooldownMs();
-    const { client, db } = this.getClient();
+    const { db } = this.getClient();
     const cursor = { boardType, cursorName: SHARED_SYNC_COOLDOWN_CURSOR };
-    // syncSharedData still takes a raw postgres-js client, which an injected
-    // database does not come with. Such a runner leaves the shared sync to its
-    // own job rather than opening a second pool behind the caller's back.
-    if (!client) {
-      this.log(`[SyncRunner] Skipping shared sync for ${boardType}: this runner has no pool of its own`);
-      return;
-    }
 
     // Claiming stamps the cursor, so a concurrent caller (another instance, or
     // the next user-sync landing while we're still working) is turned away.
@@ -803,11 +812,7 @@ export class SyncRunner {
     let nextCooldownMs = cooldownMs;
     try {
       this.log(`[SyncRunner] Running shared sync for ${boardType} using ${userId}'s token...`);
-      await syncSharedData(client, boardType, token, this.log.bind(this));
-      if (this.isLocationBoard(boardType)) {
-        await syncAuroraBoardLocations({ db, board: boardType, log: this.log.bind(this) });
-        await this.crawlGymWallSlice(boardType, token);
-      }
+      await this.runBoardSharedWork(boardType, token, {});
     } catch (sharedError) {
       nextCooldownMs = sharedSyncCooldownAfterError(sharedError, cooldownMs);
       const sharedErrorMessage = this.formatErrorMessage(sharedError);
@@ -861,6 +866,110 @@ export class SyncRunner {
     }
   }
 
+  /**
+   * The board-wide half of a sync, on one token: Aurora's shared `/sync`, then
+   * for gym boards the public locations and a slice of the wall crawl. The
+   * daemon runs it piggybacked on a user sync; `runSharedSyncJob` runs it on a
+   * schedule with fenced write batches.
+   */
+  private async runBoardSharedWork(
+    boardType: AuroraBoardName,
+    token: string,
+    options: Pick<SharedSyncJobOptions, 'transaction' | 'signal'>,
+  ): Promise<void> {
+    const { db } = this.getClient();
+    await syncSharedData(db, boardType, token, this.log.bind(this), options);
+    if (this.isLocationBoard(boardType)) {
+      await syncAuroraBoardLocations({ db, board: boardType, log: this.log.bind(this), ...options });
+      await this.crawlGymWallSlice(boardType, token, options);
+    }
+  }
+
+  /**
+   * The scheduled shared sync for one board (the `aurora-shared-sync` job).
+   *
+   * 1. Borrow a token from the board's most recently successful `active`
+   *    credential: its stored token, or a fresh login with its password when
+   *    none is stored. No healthy credential: `no_donor`, nothing claimed.
+   * 2. Claim the same `board_shared_syncs` cooldown slot the daemon uses. A
+   *    refused claim is `cooldown`: another run (or the daemon) did this board
+   *    recently.
+   * 3. Run {@link runBoardSharedWork}. A stored token Aurora rejects (401/403)
+   *    earns one fresh login and one more try.
+   * 4. Re-stamp the slot from the end of the work. Success and permanent Aurora
+   *    failures get the full cooldown. A transient Aurora failure, an abort or
+   *    a database error gets the five-minute one, so the job's retry can run.
+   *
+   * Nothing here is ever recorded against the donor's credential: a failed
+   * borrowed login or a failed crawl is the board's problem, not the climber's.
+   * Failures are thrown for the job to record.
+   */
+  async runSharedSyncJob(board: AuroraBoardName, options: SharedSyncJobOptions = {}): Promise<SharedSyncJobResult> {
+    if (board === KILTER_BOARD_TYPE) throw new Error('Kilter has its own catalog sync');
+    const { db } = this.getClient();
+    const { signal } = options;
+    const donor = await findSharedSyncDonorCredential(db, {
+      boardType: board,
+      candidateFilter: syncableAuroraCredentialsFilter(),
+    });
+    if (!donor) return { status: 'no_donor' };
+
+    const cooldownMs = Math.max(0, options.cooldownMs ?? this.getSharedSyncCooldownMs());
+    const cursor = { boardType: board, cursorName: SHARED_SYNC_COOLDOWN_CURSOR };
+    const claimToken = await claimSharedSyncSlot(db, { ...cursor, cooldownMs });
+    if (claimToken === null) return { status: 'cooldown', lastRunAt: await readSharedSyncCursor(db, cursor) };
+
+    let nextCooldownMs = cooldownMs;
+    const work = { transaction: options.transaction, signal };
+    try {
+      let tokenSource: 'stored' | 'login' = 'stored';
+      let token = this.storedDonorToken(donor);
+      if (token === null) {
+        tokenSource = 'login';
+        token = await this.signInDonor(donor, board, signal);
+      }
+      this.log(`[SyncRunner] Scheduled shared sync for ${board} (${tokenSource} token)`);
+      try {
+        await this.runBoardSharedWork(board, token, work);
+      } catch (error) {
+        const rejected = isAuroraRequestError(error) && (error.status === 401 || error.status === 403);
+        if (tokenSource !== 'stored' || !rejected || signal?.aborted) throw error;
+        this.log(`[SyncRunner] Stored token for ${board} was rejected; logging in once`);
+        tokenSource = 'login';
+        token = await this.signInDonor(donor, board, signal);
+        await this.runBoardSharedWork(board, token, work);
+      }
+      return { status: 'synced', tokenSource };
+    } catch (error) {
+      nextCooldownMs =
+        !signal?.aborted && isAuroraRequestError(error)
+          ? sharedSyncCooldownAfterError(error, cooldownMs)
+          : Math.min(TRANSIENT_SHARED_SYNC_COOLDOWN_MS, cooldownMs);
+      throw error;
+    } finally {
+      await this.stampSharedSyncFinishedSafely(db, cursor, board, claimToken, cooldownMs, nextCooldownMs);
+    }
+  }
+
+  /** The donor's stored Aurora token, or null when there is none or it does not decrypt. */
+  private storedDonorToken(donor: CredentialRecord): string | null {
+    if (!donor.auroraToken) return null;
+    try {
+      return decrypt(donor.auroraToken);
+    } catch {
+      return null;
+    }
+  }
+
+  /** Log in as the donor. The credential row is never touched: this is a borrowed login. */
+  private async signInDonor(donor: CredentialRecord, board: AuroraBoardName, signal?: AbortSignal): Promise<string> {
+    if (!donor.encryptedUsername || !donor.encryptedPassword) throw new Error('Donor credential has no password');
+    const client = new AuroraClimbingClient({ boardName: board });
+    const login = await client.signIn(decrypt(donor.encryptedUsername), decrypt(donor.encryptedPassword), { signal });
+    if (!login.token) throw new Error('Login succeeded but no token returned');
+    return login.token;
+  }
+
   private static readonly SELF_HEAL_COOLDOWN_MS = 60 * 60 * 1000;
 
   /**
@@ -886,7 +995,11 @@ export class SyncRunner {
    * personal sync. The crawl is best-effort catalog upkeep; it must never cost
    * a user their account sync.
    */
-  private async crawlGymWallSlice(board: AuroraLocationBoardName, token: string): Promise<void> {
+  private async crawlGymWallSlice(
+    board: AuroraLocationBoardName,
+    token: string,
+    options: Pick<SharedSyncJobOptions, 'transaction' | 'signal'> = {},
+  ): Promise<void> {
     const { db } = this.getClient();
     try {
       const dueSourceKeys = await findGymsDueForWallCrawl(db, { provider: board, limit: GYM_WALL_CRAWL_SLICE });
@@ -900,9 +1013,13 @@ export class SyncRunner {
         sourceKeys: dueSourceKeys,
         fetchGymUser,
         log: this.log.bind(this),
+        transaction: options.transaction,
+        signal: options.signal,
       });
       this.log(`[SyncRunner] Wall crawl for ${board}: ${crawled}/${dueSourceKeys.length} gym(s) read`);
     } catch (error) {
+      // A stopped job or a lost fence is not a crawl failure: the job must stop.
+      if (options.signal?.aborted || isSyncFenceError(error)) throw error;
       // Logged, never rethrown — see the contract above.
       this.log(
         `[SyncRunner] Wall crawl for ${board} failed (shared sync unaffected): ${this.formatErrorMessage(error)}`,

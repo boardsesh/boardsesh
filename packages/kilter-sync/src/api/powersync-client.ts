@@ -1,5 +1,5 @@
 import { KILTER_POWERSYNC_STREAM_URL } from './types';
-import { KilterApiError } from './errors';
+import { KilterApiError, responseRetryAfterMs } from './errors';
 
 /**
  * Streams Kilter's PowerSync `/sync/stream` endpoint and yields parsed
@@ -254,6 +254,14 @@ export async function streamKilterPowerSync(args: {
     const text = await response.text().catch(() => '');
     if (response.status === 401) {
       throw new KilterApiError('unauthorized', `PowerSync stream rejected token: ${text.slice(0, 200)}`, 401);
+    }
+    if (response.status === 429) {
+      throw new KilterApiError(
+        'rate_limited',
+        `PowerSync stream rate-limited: ${text.slice(0, 200)}`,
+        429,
+        responseRetryAfterMs(response),
+      );
     }
     throw new KilterApiError(
       'powersync',

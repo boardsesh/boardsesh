@@ -38,17 +38,6 @@ vi.mock('@boardsesh/board-constants/hold-states', async (importOriginal) => {
   return { ...actual, convertLitUpHoldsStringToMap: mockConvertLitUpHolds };
 });
 
-// drizzle() returns a client we never actually issue queries against; the
-// shim below replaces its surface area entirely. We only mock `drizzle`
-// itself so the import doesn't fail.
-vi.mock('drizzle-orm/postgres-js', async () => {
-  const actual = await vi.importActual<typeof import('drizzle-orm/postgres-js')>('drizzle-orm/postgres-js');
-  return {
-    ...actual,
-    drizzle: vi.fn(() => createDbShim()),
-  };
-});
-
 import type { SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import {
@@ -72,8 +61,8 @@ import {
  */
 /**
  * Every row handed to a `.values(...)` call on the shim, in call order.
- * Module-level because the shim is built inside the mocked `drizzle()`
- * factory, which the test never gets a handle on. Suites that read it clear
+ * Module-level because every call builds a fresh shim (fakePostgresClient),
+ * which the test never keeps a handle on. Suites that read it clear
  * it in their own `beforeEach` and filter by climb uuid, so rows written by
  * another suite cannot be mistaken for theirs.
  */
@@ -424,13 +413,11 @@ describe('syncSharedData cursor merge', () => {
 });
 
 /**
- * postgres.js client stub. `syncSharedData` only uses it as the argument to
- * `drizzle()` — which we mock to return our shim — so the real client is
- * never invoked. Casting is fine here because no method on the actual client
- * surface is called.
+ * The database `syncSharedData` reads from and, through its default batch
+ * runner (`db.transaction`), writes to: the recording shim above.
  */
 function fakePostgresClient(): never {
-  return {} as never;
+  return createDbShim() as never;
 }
 
 type FollowerRow = { followerId: string; setterUsername: string };

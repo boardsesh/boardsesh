@@ -57,7 +57,28 @@ export type SyncOutcome = {
   status: 'active' | 'error' | 'expired';
   error?: string;
   transient?: boolean;
+  /** Kilter answered 429 with a readable `Retry-After`: how long it asked us to wait. */
+  retryAfterMs?: number;
 };
+
+/** Options for {@link SyncRunner.runCatalogSyncJob}. */
+export type CatalogSyncJobOptions = {
+  signal?: AbortSignal;
+  /** Overrides the runner's catalog cooldown for this claim. */
+  cooldownMs?: number;
+  /** Where the ROPC fallback token comes from. Defaults to `process.env`. */
+  environment?: Readonly<Record<string, string | undefined>>;
+};
+
+/**
+ * How a scheduled catalog sync ended when it did not throw: it ran (with a
+ * linked climber's refresh token, or the ROPC test account), another run holds
+ * the cooldown slot, or there is no token source at all.
+ */
+export type CatalogSyncJobResult =
+  | { status: 'synced'; tokenSource: 'credential' | 'password' }
+  | { status: 'cooldown'; lastRunAt: Date | null }
+  | { status: 'no_donor' };
 
 export type SyncSummary = {
   total: number;

@@ -1,4 +1,4 @@
-export { SyncRunner, syncableAuroraCredentialsFilter } from './sync-runner';
+export { SyncRunner, sharedSyncCooldownAfterError, syncableAuroraCredentialsFilter } from './sync-runner';
 export type {
   SyncRunnerConfig,
   SyncSummary,
@@ -7,4 +7,6 @@ export type {
   DaemonOptions,
   SyncCredentialOptions,
   SyncOutcome,
+  SharedSyncJobOptions,
+  SharedSyncJobResult,
 } from './types';

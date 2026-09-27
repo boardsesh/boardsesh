@@ -11,6 +11,7 @@ import {
   acquireOrRenewDaemonLease,
   claimNextCredentialForSync,
   claimSharedSyncSlot,
+  findSharedSyncDonorCredential,
   getCredentialFleetSnapshot,
   readSharedSyncCursor,
   releaseDaemonLease,
@@ -24,7 +25,9 @@ import {
 import {
   DEFAULT_DAEMON_OPTIONS,
   DaemonLease,
+  SYNC_DAEMON_DISABLED_MESSAGE,
   formatSyncHealthSummary,
+  isSyncDaemonDisabled,
   resolveDaemonOptions,
   runDaemonLoop,
   type ResolvedDaemonOptions,
@@ -51,6 +54,8 @@ import type {
   SyncRunnerConfig,
   SyncSummary,
   KilterCredentialRecord,
+  CatalogSyncJobOptions,
+  CatalogSyncJobResult,
 } from './types';
 
 // Catalog cooldown: a full per-cycle catalog pull is expensive, so the daemon
@@ -58,6 +63,9 @@ import type {
 // (compare-and-set), mirroring aurora-sync's shared-sync cooldown; overridable
 // via config.sharedSyncCooldownMs.
 const DEFAULT_CATALOG_SYNC_COOLDOWN_MS = 60 * 60 * 1000;
+// After a transient failure (Kilter throttling or down, an abort, a database
+// blip) the scheduled job's one retry must be able to claim again.
+const TRANSIENT_CATALOG_SYNC_COOLDOWN_MS = 5 * 60 * 1000;
 
 /**
  * Hourly gate for the read-only fleet health summary. Mirrors aurora-sync: the
@@ -147,6 +155,11 @@ export function syncableKilterCredentialsFilter() {
       eq(auroraCredentials.syncStatus, 'error'),
     ),
   );
+}
+
+/** How long Kilter asked us to wait, when the failure was a 429 carrying `Retry-After`. */
+function retryAfterOf(error: Error): number | undefined {
+  return error instanceof KilterApiError ? error.retryAfterMs : undefined;
 }
 
 export class SyncRunner {
@@ -340,6 +353,7 @@ export class SyncRunner {
         status: recorded.status === 'expired' ? 'expired' : 'error',
         error: err.message,
         transient: recorded.transient,
+        retryAfterMs: retryAfterOf(err),
       };
     }
   }
@@ -539,12 +553,15 @@ export class SyncRunner {
     cursor: { boardType: string; cursorName: string },
     claimToken: SharedSyncClaimToken,
     cooldownMs: number,
+    /** The scheduled job's shorter retry cooldown; the daemon always takes the full one. */
+    nextCooldownMs?: number,
   ): Promise<void> {
     try {
       const finalized = await stampSharedSyncFinished(db, {
         ...cursor,
         claimToken,
         fullCooldownMs: cooldownMs,
+        ...(nextCooldownMs === undefined ? {} : { nextCooldownMs }),
       });
       if (!finalized) {
         this.log(
@@ -558,6 +575,78 @@ export class SyncRunner {
     }
   }
 
+  /**
+   * The scheduled catalog sync (the `kilter-catalog-sync` job): the daemon's
+   * catalog piggyback, on its own.
+   *
+   * 1. Token: a refresh-grant provider for the most recently successful
+   *    `active` Kilter credential (the refresh keeps its own `FOR UPDATE`
+   *    transaction on that row, exactly as a user sync does), else the ROPC
+   *    test account from `KILTER_TEST_USERNAME`/`KILTER_TEST_PASSWORD`, else
+   *    `no_donor` with nothing claimed.
+   * 2. Claim the catalog cooldown slot the daemon uses; refused is `cooldown`.
+   * 3. Catalog sync (deletions applied as the daemon does), then the weekly
+   *    stats repair and history snapshot, each gated by its own 7-day cursor.
+   * 4. Re-stamp the slot from the end of the work: full cooldown on success or
+   *    a permanent Kilter failure, five minutes otherwise so the retry runs.
+   *
+   * The writes go straight to the database, as the daemon's do: the claim is
+   * the single-writer guarantee, and the catalog interleaves provider requests
+   * with its writes too finely to put each behind an attempt fence. The signal
+   * stops it between layout groups.
+   */
+  async runCatalogSyncJob(options: CatalogSyncJobOptions = {}): Promise<CatalogSyncJobResult> {
+    const { db } = this.getClient();
+    const environment = options.environment ?? process.env;
+    const donor = await findSharedSyncDonorCredential(db, {
+      boardType: KILTER_BOARD_TYPE,
+      candidateFilter: syncableKilterCredentialsFilter(),
+    });
+    let tokenProvider: KilterTokenProvider;
+    let tokenSource: 'credential' | 'password';
+    if (donor) {
+      tokenProvider = await this.buildUserTokenProvider(donor.userId);
+      tokenSource = 'credential';
+    } else if (environment.KILTER_TEST_USERNAME && environment.KILTER_TEST_PASSWORD) {
+      tokenProvider = this.buildPasswordTokenProvider(
+        environment.KILTER_TEST_USERNAME,
+        environment.KILTER_TEST_PASSWORD,
+      );
+      tokenSource = 'password';
+    } else {
+      return { status: 'no_donor' };
+    }
+
+    const cooldownMs = Math.max(0, options.cooldownMs ?? this.getCatalogSyncCooldownMs());
+    const cursor = { boardType: KILTER_BOARD_TYPE, cursorName: CATALOG_SYNC_COOLDOWN_CURSOR };
+    const claimToken = await claimSharedSyncSlot(db, { ...cursor, cooldownMs });
+    if (claimToken === null) return { status: 'cooldown', lastRunAt: await readSharedSyncCursor(db, cursor) };
+
+    let nextCooldownMs = cooldownMs;
+    try {
+      this.log(`[kilter-catalog] scheduled catalog sync (${tokenSource} token)`);
+      await syncKilterCatalog({
+        db,
+        tokenProvider,
+        log: (message) => this.log(message),
+        applyDeletions: this.config.applyCatalogDeletions ?? true,
+        deleteBatchLimit: this.config.deleteBatchLimit,
+        signal: options.signal,
+      });
+      options.signal?.throwIfAborted();
+      await this.maybeRepairKilterStats(db, tokenProvider);
+      options.signal?.throwIfAborted();
+      await this.maybeSnapshotHistory(db);
+      return { status: 'synced', tokenSource };
+    } catch (error) {
+      const permanent = !options.signal?.aborted && error instanceof KilterApiError && !isTransientKilterError(error);
+      nextCooldownMs = permanent ? cooldownMs : Math.min(TRANSIENT_CATALOG_SYNC_COOLDOWN_MS, cooldownMs);
+      throw error;
+    } finally {
+      await this.stampCatalogSyncFinishedSafely(db, cursor, claimToken, cooldownMs, nextCooldownMs);
+    }
+  }
+
   // Synthetic board_shared_syncs cursor gating the weekly stats-repair.
   private static readonly KILTER_STATS_REPAIR_CURSOR = '__local_kilter_stats_repair__';
 
@@ -568,7 +657,7 @@ export class SyncRunner {
    * with the same token provider. Errors are swallowed (logged) so a repair
    * failure never fails the catalog cycle.
    */
-  private async maybeRepairKilterStats(db: RunnerDb, tokenProvider: KilterTokenProvider): Promise<void> {
+  async maybeRepairKilterStats(db: RunnerDb, tokenProvider: KilterTokenProvider): Promise<void> {
     if (!(await isWeeklyCursorDue(db, KILTER_BOARD_TYPE, SyncRunner.KILTER_STATS_REPAIR_CURSOR))) {
       return;
     }
@@ -593,7 +682,7 @@ export class SyncRunner {
   }
 
   /** Weekly board_climb_stats_history snapshot for kilter (see item 5). */
-  private async maybeSnapshotHistory(db: RunnerDb): Promise<void> {
+  async maybeSnapshotHistory(db: RunnerDb): Promise<void> {
     try {
       await snapshotClimbStatsHistoryIfDue(db, KILTER_BOARD_TYPE, (message) => this.log(message));
     } catch (error) {
@@ -679,7 +768,13 @@ export class SyncRunner {
    * the same user and syncing them twice.
    */
   private async getNextCredentialToSync(db: RunnerDb): Promise<KilterCredentialRecord | null> {
-    return claimNextCredentialForSync(db, { candidateFilter: this.syncableCredentialsFilter() });
+    return claimNextCredentialForSync(db, {
+      candidateFilter: this.syncableCredentialsFilter(),
+      // Skip an account a background job is syncing right now (a live lease
+      // on its provider_sync_controls row), so a daemon and a worker never sync
+      // one credential at the same time.
+      excludeLeased: true,
+    });
   }
 
   private async getCredential(db: RunnerDb, userId: string): Promise<KilterCredentialRecord | null> {
@@ -725,6 +820,12 @@ export class SyncRunner {
   }
 
   async runDaemon(options: DaemonOptions = {}): Promise<void> {
+    // The worker families own routine syncs once this is set; see
+    // docs/kilter-sync.md. Checked before the lease or the pool is touched.
+    if (isSyncDaemonDisabled(process.env)) {
+      this.log(`[KilterSyncRunner] ${SYNC_DAEMON_DISABLED_MESSAGE}`);
+      return;
+    }
     const resolved: ResolvedDaemonOptions = resolveDaemonOptions(options);
     this.daemonController = new AbortController();
     const lease = this.getLease();

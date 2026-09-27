@@ -11,6 +11,7 @@ import {
   NATURAL_KEY_TOLERANCE_SECONDS,
   acquireUserTickMutationLock,
   type ClimbStatsKey,
+  type ClimbStatsRecompute,
   type TickTimeSample,
 } from '@boardsesh/db/queries';
 import { convertQuality } from '@boardsesh/shared-schema';
@@ -939,6 +940,9 @@ export async function applyAuroraAscents(
   boardName: AuroraBoardName,
   userId: string,
   data: AuroraApiRow[],
+  // A background job passes a collector here and recomputes after the page
+  // commits, in its own bounded batches (DeferredClimbStatsRecompute).
+  recompute: ClimbStatsRecompute = recomputeClimbStatsBulk,
 ): Promise<void> {
   if (data.length === 0) return;
   const now = new Date().toISOString();
@@ -994,7 +998,7 @@ export async function applyAuroraAscents(
     skips,
   );
 
-  await recomputeClimbStatsBulk(db, touchedKeys);
+  await recompute(db, touchedKeys);
 }
 
 /** Apply a full bids payload: claim/update/insert attempts (no tombstones). */
@@ -1003,6 +1007,7 @@ export async function applyAuroraBids(
   boardName: AuroraBoardName,
   userId: string,
   data: AuroraApiRow[],
+  recompute: ClimbStatsRecompute = recomputeClimbStatsBulk,
 ): Promise<void> {
   if (data.length === 0) return;
   const now = new Date().toISOString();
@@ -1044,5 +1049,5 @@ export async function applyAuroraBids(
     skips,
   );
 
-  await recomputeClimbStatsBulk(db, touchedKeys);
+  await recompute(db, touchedKeys);
 }

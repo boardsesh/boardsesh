@@ -68,7 +68,28 @@ export type SyncOutcome = {
   status: 'active' | 'error' | 'expired';
   error?: string;
   transient?: boolean;
+  /** Aurora answered 429 with a readable `Retry-After`: how long it asked us to wait. */
+  retryAfterMs?: number;
 };
+
+/** Options for {@link SyncRunner.runSharedSyncJob}. */
+export type SharedSyncJobOptions = {
+  /** Runs every board-wide write batch (a background job's attempt fence). */
+  transaction?: SyncBatchRunner;
+  signal?: AbortSignal;
+  /** Overrides the runner's shared-sync cooldown for this claim. */
+  cooldownMs?: number;
+};
+
+/**
+ * How a scheduled shared sync ended when it did not throw: it ran, another run
+ * holds the cooldown slot, or the board has no healthy credential to borrow a
+ * token from.
+ */
+export type SharedSyncJobResult =
+  | { status: 'synced'; tokenSource: 'stored' | 'login' }
+  | { status: 'cooldown'; lastRunAt: Date | null }
+  | { status: 'no_donor' };
 
 // The daemon loop itself lives in @boardsesh/sync-runtime (shared with
 // kilter-sync). This package used to carry a forked copy of both the type and

@@ -70,6 +70,12 @@ export type SyncKilterCatalogArgs = {
    * a genuinely new climb worth notifying about.
    */
   suppressNotifications?: boolean;
+  /**
+   * Checked between layout groups and before each closing step (backlog,
+   * locations, notifications, deletions): a background job that lost its lease
+   * or is shutting down stops at the next boundary.
+   */
+  signal?: AbortSignal;
 };
 
 export type KilterCatalogSummary = {
@@ -1508,6 +1514,7 @@ export async function syncKilterCatalog(args: SyncKilterCatalogArgs): Promise<Ki
   const existingSelfAliasLower = byBoardLayout.size > 0 ? await loadKilterSelfAliasLower(args.db) : new Set<string>();
 
   for (const [boardLayoutId, gripsLayoutUuids] of byBoardLayout) {
+    args.signal?.throwIfAborted();
     const groupResult = await syncBoardLayoutGroup({
       db: args.db,
       state,
@@ -1524,6 +1531,7 @@ export async function syncKilterCatalog(args: SyncKilterCatalogArgs): Promise<Ki
     addGroupResult(summary, collected, groupResult);
   }
 
+  args.signal?.throwIfAborted();
   // Reroute pass: climbs Kilter tagged with the wrong layout, ingested onto the
   // layout their holds actually place on. It runs after every group, so a climb
   // seen under several Grips layouts is rerouted once, and before the backlog
@@ -1565,6 +1573,7 @@ export async function syncKilterCatalog(args: SyncKilterCatalogArgs): Promise<Ki
     );
   }
 
+  args.signal?.throwIfAborted();
   // Persist the layout uuid → layout_id mappings discovered this run.
   const newAliases = resolver.drainNewAliases();
   if (newAliases.length > 0) {
@@ -1598,6 +1607,7 @@ export async function syncKilterCatalog(args: SyncKilterCatalogArgs): Promise<Ki
   // Deletion reconciliation runs last (report-only unless applyDeletions), over
   // the list fetched once at the top of the run. With no list it doesn't run at
   // all — the empty summary.deletions report stands.
+  args.signal?.throwIfAborted();
   if (deletedUuids !== null && deletedLowerUuids !== null) {
     try {
       summary.deletions = await reconcileDeletions(args.db, deletedUuids, args.applyDeletions ?? false, log, {

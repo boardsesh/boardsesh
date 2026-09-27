@@ -1,9 +1,7 @@
 import { sharedSync } from '../api/shared-sync-api';
 import { type SyncOptions, type AuroraBoardName, SHARED_SYNC_TABLES } from '../api/types';
 import { sql, eq, and, inArray, isNull, isNotNull, type SQL } from 'drizzle-orm';
-import { drizzle } from 'drizzle-orm/postgres-js';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
-import type postgres from 'postgres';
 import type {
   Attempt,
   BetaLink,
@@ -1103,22 +1101,42 @@ export type SharedSyncResult = {
   climbStatsWrites: ClimbStatsWriteCounts;
 };
 
+/** Runs one write batch in one transaction, behind whatever fences its owner applies. */
+export type SharedSyncBatchRunner = <Result>(callback: (transaction: DrizzleDb) => Promise<Result>) => Promise<Result>;
+
+export type SyncSharedDataOptions = {
+  /**
+   * Runs every write batch (one per Aurora page, then the history snapshot, the
+   * required_set_ids heal and the setter notifications) in one transaction.
+   * Defaults to `db.transaction`. A background job passes its attempt fence, so
+   * a run that lost its lease stops writing at the next batch.
+   */
+  transaction?: SharedSyncBatchRunner;
+  /** Checked between pages and passed to the Aurora request. */
+  signal?: AbortSignal;
+};
+
 /**
  * Sync shared (non-user-specific) board data — products, sizes, layouts, climbs,
- * climb stats, beta links, etc. Uses the supplied `token` (typically a fresh
- * user token from the daemon) to authenticate against Aurora's `/sync` endpoint.
+ * climb stats, beta links, etc. Uses the supplied `token` (a climber's token:
+ * the daemon's fresh login, or the donor credential a background job borrows)
+ * to authenticate against Aurora's `/sync` endpoint.
  *
  * Loops until the response's `_complete` flag is true, persisting each batch
- * before requesting the next. After a successful sync, fires setter-follow
- * notifications for any newly-published climbs.
+ * before requesting the next. Provider HTTP always runs between transactions.
+ * After a successful sync, fires setter-follow notifications for any
+ * newly-published climbs. `db` is for reads; every write goes through
+ * `options.transaction`.
  */
 export async function syncSharedData(
-  pgClient: ReturnType<typeof postgres>,
+  db: DrizzleDb,
   board: AuroraBoardName,
   token: string,
   log: (message: string) => void = console.info,
+  options: SyncSharedDataOptions = {},
 ): Promise<SharedSyncResult> {
-  const db = drizzle(pgClient);
+  const { signal } = options;
+  const runBatch: SharedSyncBatchRunner = options.transaction ?? ((callback) => db.transaction(callback));
 
   const allSyncTimes = await getAllSharedSyncTimes(db, board);
   // Single source of truth for cursors across batches — keyed by table name.
@@ -1151,10 +1169,12 @@ export async function syncSharedData(
   let attempts = 0;
 
   while (!isComplete && attempts < MAX_SYNC_ATTEMPTS) {
+    // Between pages: a stopped job ends here, with every earlier page committed.
+    signal?.throwIfAborted();
     attempts++;
     log(`[SharedSync] Batch ${attempts} for ${board}`);
 
-    const syncResults = await sharedSync(board, buildSyncParams(), token);
+    const syncResults = await sharedSync(board, buildSyncParams(), token, signal);
 
     // Per-batch tallies, reset on every run of the transaction callback and
     // folded into the pass totals only once the transaction has committed. A
@@ -1163,7 +1183,7 @@ export async function syncSharedData(
     let batchClimbStatsWrites = emptyClimbStatsWriteCounts();
     let batchNewClimbs: NewClimbInfo[] = [];
     let batchSyncedByTable = new Map<string, number>();
-    await db.transaction(async (tx) => {
+    await runBatch(async (tx) => {
       batchClimbStatsWrites = emptyClimbStatsWriteCounts();
       batchNewClimbs = [];
       batchSyncedByTable = new Map();
@@ -1264,8 +1284,10 @@ export async function syncSharedData(
   // loop so it snapshots the freshly-synced counts. A failure here must not
   // fail the sync (the user/shared data already committed).
   try {
-    await snapshotClimbStatsHistoryIfDue(db, board, log);
+    signal?.throwIfAborted();
+    await runBatch((tx) => snapshotClimbStatsHistoryIfDue(tx, board, log));
   } catch (error) {
+    if (signal?.aborted) throw error;
     log(
       `[SharedSync] climb_stats_history snapshot failed for ${board} (sync was OK): ${
         error instanceof Error ? error.message : String(error)
@@ -1278,16 +1300,20 @@ export async function syncSharedData(
   // the catalog (see shouldHealRequiredSetIds).
   if (shouldHealRequiredSetIds(totalResults)) {
     try {
-      await healRequiredSetIds(db, board, log);
+      signal?.throwIfAborted();
+      await runBatch((tx) => healRequiredSetIds(tx, board, log));
     } catch (error) {
+      if (signal?.aborted) throw error;
       log(`[SharedSync] required_set_ids heal failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
   if (allNewClimbs.length > 0) {
     try {
-      await createSetterSyncNotifications(db, board, allNewClimbs, log);
+      signal?.throwIfAborted();
+      await runBatch((tx) => createSetterSyncNotifications(tx, board, allNewClimbs, log));
     } catch (error) {
+      if (signal?.aborted) throw error;
       log(
         `[SharedSync] Failed to create setter notifications: ${error instanceof Error ? error.message : String(error)}`,
       );

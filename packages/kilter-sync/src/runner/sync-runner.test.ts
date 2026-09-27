@@ -31,6 +31,12 @@ const {
   mockClaimSharedSyncSlot,
   mockStampSharedSyncFinished,
   mockReadSharedSyncCursor,
+  mockFindSharedSyncDonorCredential,
+  mockClaimNextCredentialForSync,
+  mockIsWeeklyCursorDue,
+  mockMarkWeeklyCursorDone,
+  mockSnapshotHistory,
+  mockRepairKilterCatalogStats,
 } = vi.hoisted(() => ({
   mockDecrypt: vi.fn(),
   mockEncrypt: vi.fn(),
@@ -40,6 +46,12 @@ const {
   mockClaimSharedSyncSlot: vi.fn(),
   mockStampSharedSyncFinished: vi.fn(),
   mockReadSharedSyncCursor: vi.fn(),
+  mockFindSharedSyncDonorCredential: vi.fn(),
+  mockClaimNextCredentialForSync: vi.fn(),
+  mockIsWeeklyCursorDue: vi.fn(),
+  mockMarkWeeklyCursorDone: vi.fn(),
+  mockSnapshotHistory: vi.fn(),
+  mockRepairKilterCatalogStats: vi.fn(),
 }));
 
 vi.mock('@boardsesh/crypto', () => ({
@@ -68,8 +80,17 @@ vi.mock('@boardsesh/db/queries', async (importOriginal) => {
     claimSharedSyncSlot: mockClaimSharedSyncSlot,
     stampSharedSyncFinished: mockStampSharedSyncFinished,
     readSharedSyncCursor: mockReadSharedSyncCursor,
+    findSharedSyncDonorCredential: mockFindSharedSyncDonorCredential,
+    claimNextCredentialForSync: mockClaimNextCredentialForSync,
+    isWeeklyCursorDue: mockIsWeeklyCursorDue,
+    markWeeklyCursorDone: mockMarkWeeklyCursorDone,
+    snapshotClimbStatsHistoryIfDue: mockSnapshotHistory,
   };
 });
+
+vi.mock('../sync/stats-repair', () => ({
+  repairKilterCatalogStats: mockRepairKilterCatalogStats,
+}));
 
 vi.mock('../sync/catalog-sync', () => ({
   syncKilterCatalog: mockSyncKilterCatalog,
@@ -651,5 +672,173 @@ describe('SyncRunner.runCycleForCredential concurrency', () => {
       status: 'active',
     });
     expect(cycle).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('SyncRunner.runCatalogSyncJob (the kilter-catalog-sync job)', () => {
+  const noPasswordEnv = {};
+
+  beforeEach(() => {
+    for (const mock of [
+      mockSyncKilterCatalog,
+      mockClaimSharedSyncSlot,
+      mockStampSharedSyncFinished,
+      mockReadSharedSyncCursor,
+      mockFindSharedSyncDonorCredential,
+      mockIsWeeklyCursorDue,
+      mockMarkWeeklyCursorDone,
+      mockSnapshotHistory,
+      mockRepairKilterCatalogStats,
+      mockRefreshAccessToken,
+      mockDecrypt,
+    ]) {
+      mock.mockReset();
+    }
+    mockSyncKilterCatalog.mockResolvedValue({});
+    mockClaimSharedSyncSlot.mockResolvedValue('claim-token');
+    mockStampSharedSyncFinished.mockResolvedValue(true);
+    mockIsWeeklyCursorDue.mockResolvedValue(false);
+    mockSnapshotHistory.mockResolvedValue({ written: 0, skipped: true });
+    mockRepairKilterCatalogStats.mockResolvedValue({ changedKilterRows: 3, formulaRowsRecomputed: 4 });
+    mockDecrypt.mockImplementation((value: string) => `decrypted-${value}`);
+    mockRefreshAccessToken.mockResolvedValue({ access_token: 'donor-access', expires_in: 300 });
+    process.env.KILTER_OAUTH_CLIENT_ID = 'kilter-test-client';
+  });
+
+  function injectedRunner() {
+    const { db } = createDbShim();
+    return { db, runner: new SyncRunner({ db, onLog: () => {} }) };
+  }
+
+  it("pulls the catalog with a linked climber's refresh token and stamps the slot", async () => {
+    mockFindSharedSyncDonorCredential.mockResolvedValue(credential());
+    const { db, runner } = injectedRunner();
+
+    const result = await runner.runCatalogSyncJob({ cooldownMs: 50 * 60_000, environment: noPasswordEnv });
+
+    expect(result).toEqual({ status: 'synced', tokenSource: 'credential' });
+    expect(mockFindSharedSyncDonorCredential.mock.calls[0][1]).toMatchObject({ boardType: KILTER_BOARD_TYPE });
+    expect(mockClaimSharedSyncSlot.mock.calls[0][1]).toMatchObject({
+      cursorName: CATALOG_SYNC_COOLDOWN_CURSOR,
+      cooldownMs: 50 * 60_000,
+    });
+    const catalogArgs = mockSyncKilterCatalog.mock.calls[0][0];
+    expect(catalogArgs).toMatchObject({ db, applyDeletions: true });
+    // The provider refreshes through the donor's stored token.
+    expect(await catalogArgs.tokenProvider()).toBe('donor-access');
+    expect(mockStampSharedSyncFinished.mock.calls[0][1]).toMatchObject({
+      claimToken: 'claim-token',
+      nextCooldownMs: 50 * 60_000,
+    });
+    // Weekly jobs not due: neither runs, the snapshot helper still checks its own gate.
+    expect(mockRepairKilterCatalogStats).not.toHaveBeenCalled();
+    expect(mockSnapshotHistory).toHaveBeenCalledWith(db, KILTER_BOARD_TYPE, expect.any(Function));
+  });
+
+  it('runs the weekly stats repair when its cursor is due and marks it done', async () => {
+    mockFindSharedSyncDonorCredential.mockResolvedValue(credential());
+    mockIsWeeklyCursorDue.mockResolvedValue(true);
+    const { runner } = injectedRunner();
+
+    await runner.runCatalogSyncJob({ environment: noPasswordEnv });
+
+    expect(mockRepairKilterCatalogStats).toHaveBeenCalledWith(expect.objectContaining({ apply: true }));
+    expect(mockMarkWeeklyCursorDone).toHaveBeenCalledWith(
+      expect.anything(),
+      KILTER_BOARD_TYPE,
+      '__local_kilter_stats_repair__',
+    );
+  });
+
+  it('falls back to the ROPC test account when no climber is linked', async () => {
+    mockFindSharedSyncDonorCredential.mockResolvedValue(null);
+    const { runner } = injectedRunner();
+
+    const result = await runner.runCatalogSyncJob({
+      environment: { KILTER_TEST_USERNAME: 'tester', KILTER_TEST_PASSWORD: 'secret' },
+    });
+
+    expect(result).toEqual({ status: 'synced', tokenSource: 'password' });
+  });
+
+  it('does nothing and claims nothing without any token source', async () => {
+    mockFindSharedSyncDonorCredential.mockResolvedValue(null);
+    const { runner } = injectedRunner();
+
+    expect(await runner.runCatalogSyncJob({ environment: noPasswordEnv })).toEqual({ status: 'no_donor' });
+    expect(mockClaimSharedSyncSlot).not.toHaveBeenCalled();
+  });
+
+  it('does nothing inside the cooldown and leaves the slot alone', async () => {
+    mockFindSharedSyncDonorCredential.mockResolvedValue(credential());
+    mockClaimSharedSyncSlot.mockResolvedValue(null);
+    const lastRunAt = new Date('2026-09-27T11:23:00Z');
+    mockReadSharedSyncCursor.mockResolvedValue(lastRunAt);
+    const { runner } = injectedRunner();
+
+    expect(await runner.runCatalogSyncJob({ environment: noPasswordEnv })).toEqual({ status: 'cooldown', lastRunAt });
+    expect(mockSyncKilterCatalog).not.toHaveBeenCalled();
+    expect(mockStampSharedSyncFinished).not.toHaveBeenCalled();
+  });
+
+  it('throws after stamping the short cooldown for a throttled pull, the full one for a permanent failure', async () => {
+    mockFindSharedSyncDonorCredential.mockResolvedValue(credential());
+    const { runner } = injectedRunner();
+
+    mockSyncKilterCatalog.mockRejectedValueOnce(new KilterApiError('rate_limited', 'slow down', 429, 60_000));
+    await expect(runner.runCatalogSyncJob({ cooldownMs: 3_600_000, environment: noPasswordEnv })).rejects.toThrow(
+      'slow down',
+    );
+    expect(mockStampSharedSyncFinished.mock.calls[0][1]).toMatchObject({ nextCooldownMs: 5 * 60_000 });
+
+    mockSyncKilterCatalog.mockRejectedValueOnce(new KilterApiError('invalid_grant', 'relink'));
+    await expect(runner.runCatalogSyncJob({ cooldownMs: 3_600_000, environment: noPasswordEnv })).rejects.toThrow(
+      'relink',
+    );
+    expect(mockStampSharedSyncFinished.mock.calls[1][1]).toMatchObject({ nextCooldownMs: 3_600_000 });
+  });
+});
+
+describe('SyncRunner daemon switch, claim and throttle', () => {
+  beforeEach(() => {
+    mockClaimNextCredentialForSync.mockReset();
+    mockSyncKilterUserData.mockReset();
+    mockRefreshAccessToken.mockReset();
+    mockDecrypt.mockImplementation((value: string) => `decrypted-${value}`);
+    process.env.KILTER_OAUTH_CLIENT_ID = 'kilter-test-client';
+  });
+
+  it('returns without claiming anything when SYNC_DAEMON_DISABLED=true', async () => {
+    vi.stubEnv('SYNC_DAEMON_DISABLED', 'true');
+    const lines: string[] = [];
+    const { db } = createDbShim();
+    const runner = new SyncRunner({ db, onLog: (line) => lines.push(line) });
+
+    await runner.runDaemon();
+
+    expect(lines).toEqual([expect.stringContaining('SYNC_DAEMON_DISABLED=true')]);
+    expect(mockClaimNextCredentialForSync).not.toHaveBeenCalled();
+    vi.unstubAllEnvs();
+  });
+
+  it('claims with excludeLeased, so it never syncs an account a worker holds', async () => {
+    mockClaimNextCredentialForSync.mockResolvedValue(null);
+    const { db } = createDbShim();
+    const runner = new SyncRunner({ db, onLog: () => {} });
+
+    await (runner as unknown as SyncRunnerPrivates).getNextCredentialToSync(db);
+
+    expect(mockClaimNextCredentialForSync.mock.calls[0][1]).toMatchObject({ excludeLeased: true });
+  });
+
+  it('reports the Retry-After Kilter sent with a 429', async () => {
+    mockRefreshAccessToken.mockResolvedValue({ access_token: 'access', expires_in: 300 });
+    mockSyncKilterUserData.mockRejectedValue(new KilterApiError('rate_limited', 'slow down', 429, 45_000));
+    const { db } = createDbShim();
+    const runner = new SyncRunner({ db, onLog: () => {}, onError: () => {} });
+
+    const outcome = await runner.runCycleForCredential(db, credential({ userId: 'throttled-user' }));
+
+    expect(outcome).toMatchObject({ status: 'error', transient: true, retryAfterMs: 45_000 });
   });
 });

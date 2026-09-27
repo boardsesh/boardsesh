@@ -1,3 +1,5 @@
+import { parseRetryAfterMs } from '@boardsesh/sync-runtime';
+
 export type AuroraErrorCode =
   | 'http'
   | 'timeout'
@@ -14,6 +16,8 @@ type AuroraRequestErrorOptions = {
   url?: string;
   details?: unknown;
   cause?: unknown;
+  /** From a 429's `Retry-After` header, when Aurora sent a readable one. */
+  retryAfterMs?: number;
 };
 
 type AuroraResponseErrorMessages = {
@@ -36,6 +40,8 @@ export class AuroraRequestError extends Error {
   readonly url?: string;
   readonly details?: unknown;
   readonly transient: boolean;
+  /** How long Aurora asked us to wait (HTTP 429 `Retry-After`), when it said. */
+  readonly retryAfterMs?: number;
 
   constructor(options: AuroraRequestErrorOptions) {
     super(options.message, options.cause !== undefined ? { cause: options.cause } : undefined);
@@ -46,6 +52,7 @@ export class AuroraRequestError extends Error {
     this.url = options.url;
     this.details = options.details;
     this.transient = TRANSIENT_AURORA_ERROR_CODES.has(options.code);
+    this.retryAfterMs = options.retryAfterMs;
   }
 }
 
@@ -122,6 +129,7 @@ export async function createAuroraResponseError(
       statusText: response.statusText,
       url,
       details,
+      retryAfterMs: readRetryAfterMs(response),
     });
   }
 
@@ -160,6 +168,13 @@ export function createAuroraInvalidResponseError(url: string, cause?: unknown): 
     url,
     cause,
   });
+}
+
+/** The 429's `Retry-After`, if the response carries a readable one. */
+function readRetryAfterMs(response: Response): number | undefined {
+  // Test doubles (and a broken proxy) can hand back a response without headers.
+  const header = typeof response.headers?.get === 'function' ? response.headers.get('retry-after') : null;
+  return parseRetryAfterMs(header);
 }
 
 async function readAuroraErrorDetails(response: Response): Promise<unknown> {

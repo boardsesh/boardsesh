@@ -1,5 +1,5 @@
 import { KILTER_PORTAL_HOST } from './types';
-import { KilterApiError } from './errors';
+import { KilterApiError, responseRetryAfterMs } from './errors';
 
 /**
  * REST client primitives for the Kilter push surface (/api/logs/bulk,
@@ -113,7 +113,7 @@ async function ensureOk(path: string, response: Response): Promise<void> {
     throw new KilterApiError('unauthorized', `${path} returned 401 — access token rejected`, 401);
   }
   if (response.status === 429) {
-    throw new KilterApiError('rate_limited', `${path} rate-limited`, 429);
+    throw new KilterApiError('rate_limited', `${path} rate-limited`, 429, responseRetryAfterMs(response));
   }
   throw new KilterApiError('http', `${path} returned ${response.status}: ${text.slice(0, 200)}`, response.status);
 }
@@ -180,6 +180,7 @@ export type KilterCatalogStat = {
 // ~180k climbs / tens of MB), so the 30s push timeout is far too short.
 const CATALOG_TIMEOUT_MS = 240_000;
 const CATALOG_MAX_RETRIES = 5;
+const CATALOG_RETRY_AFTER_CAP_MS = 5 * 60 * 1000;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -204,10 +205,14 @@ async function catalogGet<T>(path: string, accessToken: string): Promise<T[]> {
     }
 
     if (response.status === 429 && attempt < CATALOG_MAX_RETRIES) {
-      // Honour Retry-After when present, else exponential backoff capped at 30s.
-      const retryAfter = Number(response.headers.get('retry-after'));
+      // Honour Retry-After when present (seconds or an HTTP date, capped so a
+      // garbled header cannot stall the catalog for hours), else exponential
+      // backoff capped at 30s.
+      const retryAfterMs = responseRetryAfterMs(response);
       const backoffMs =
-        Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : Math.min(30_000, 1000 * 2 ** attempt);
+        retryAfterMs !== undefined && retryAfterMs > 0
+          ? Math.min(CATALOG_RETRY_AFTER_CAP_MS, retryAfterMs)
+          : Math.min(30_000, 1000 * 2 ** attempt);
       attempt += 1;
       await sleep(backoffMs);
       continue;
