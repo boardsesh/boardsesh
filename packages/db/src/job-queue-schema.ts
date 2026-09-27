@@ -77,7 +77,8 @@ export const WORKER_ROLE_DATA_GRANTS: Record<BackgroundWorkerRole, readonly Work
   'interactive-import': [],
   'routine-provider': [],
   'maintenance-delivery': [],
-  // refresh-recommendations, refresh-hold-features, refresh-climb-grades.
+  // refresh-recommendations, refresh-hold-features, refresh-climb-grades,
+  // refresh-climb-neighbors.
   batch: [
     // Catalog and history the three jobs scan.
     { table: 'board_climbs', privileges: ['SELECT'] },
@@ -130,6 +131,12 @@ export const WORKER_ROLE_DATA_GRANTS: Record<BackgroundWorkerRole, readonly Work
     // The grade job's writes.
     { table: 'board_climb_grades', privileges: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'] },
     { table: 'board_grade_coefficients', privileges: ['SELECT', 'INSERT', 'UPDATE'] },
+    // The neighbours job's writes: the lists, the per-board watermark and
+    // build state, and the groups a full build has finished. It reads only
+    // board_climbs besides these.
+    { table: 'board_climb_neighbors', privileges: ['SELECT', 'INSERT', 'DELETE'] },
+    { table: 'board_climb_neighbor_runs', privileges: ['SELECT', 'INSERT', 'UPDATE'] },
+    { table: 'board_climb_neighbor_group_runs', privileges: ['SELECT', 'INSERT', 'UPDATE'] },
   ],
 };
 
