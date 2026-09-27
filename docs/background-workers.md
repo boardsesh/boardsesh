@@ -613,8 +613,10 @@ A provider 429 with `Retry-After` is not an error code: the attempts pg-boss
 would retry with (seconds to minutes apart) would all land inside a window
 the provider often sets at an hour. The run instead queues a follow-up of the
 same family and payload with `startAfter` set to the delay (at most 6 h; the
-follow-up's deadline counts from then), records it as `pending_run_id` in the
-lease holder's fenced transaction, logs `PROVIDER_THROTTLED` and succeeds. The
+follow-up's deadline counts from then), records it as `pending_run_id` and
+sets the credential's `provider_retry_after_until` (so the routine claim waits
+too; the 429's failure step is taken back) in the lease holder's fenced
+transaction, logs `PROVIDER_THROTTLED` and succeeds. The
 singleton key is unchanged, so a run already queued for the account absorbs
 the follow-up instead.
 

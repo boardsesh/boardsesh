@@ -137,6 +137,12 @@ describe('aurora-user-sync', () => {
     // Its deadline counts from when it may start.
     expect(followUp.deadlineAt.getTime() - Date.now()).toBeGreaterThan(3600_000);
     expect((await controlRow()).pendingRunId).toBe(followUp.id);
+    // The routine claim honours the same hold, and the 429 costs no backoff step.
+    const credential = await credentialRow();
+    const heldUntilMs = credential.providerRetryAfterUntil!.getTime() - Date.now();
+    expect(heldUntilMs).toBeGreaterThan(3600_000 - 60_000);
+    expect(heldUntilMs).toBeLessThanOrEqual(3600_000 + 5_000);
+    expect(credential.consecutiveFailures).toBe(0);
     // Nothing is fetchable before then.
     expect(await boss.fetch(queue, { batchSize: 1 })).toEqual([]);
   });

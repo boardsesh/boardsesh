@@ -307,6 +307,11 @@ export async function runProviderSync(
             startAfterSeconds: Math.ceil(delayMs / 1000),
           });
           await setPendingProviderSyncRun(transaction, { ...key, runId });
+          // Hold the credential for the routine claim too, or a routine cycle
+          // would pick it up after the ordinary backoff and call the provider
+          // inside the window it asked for. Replaces the failure step the 429
+          // was charged, as the routine cycle does.
+          await deferCredentialSyncAttempt(transaction, { ...key, delayMs, forgiveFailure: true });
           return runId;
         });
       } catch (error) {
