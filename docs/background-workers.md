@@ -140,7 +140,7 @@ module. The module declares:
 | `refresh-climb-neighbors` | `batch` | 21,600 s | 2, 300 s backoff to 900 s | 22 h | board |
 | `export-board-snapshots` | `batch` | 2,700 s | 1, after 300 s | 20 h (live scan: skips itself after 840 s) | mode (`nightly`, `live-scan`) |
 | `refresh-moonboard-angle-estimates` | `batch` | 1,800 s | 1, after 900 s | 6 days | `weekly` |
-| `refresh-moonboard-wide-angle-estimates` | `batch` | 1,800 s | 1, after 900 s | 6 days | `weekly` |
+| `refresh-moonboard-wide-angle-estimates` | `batch` | 7,200 s | 1, after 900 s | 6 days | `weekly` |
 
 Throw `BackgroundJobError(code)` from `execute` to record a bounded,
 credential-free `error_code` (`/^[A-Z][A-Z0-9_]{0,63}$/`); pass

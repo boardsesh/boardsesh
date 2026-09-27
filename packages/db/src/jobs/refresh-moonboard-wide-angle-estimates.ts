@@ -155,13 +155,16 @@ async function reapStaleEstimates(
     signal.throwIfAborted();
     const batch = reaps.slice(start, start + DELETE_BATCH);
     const keys = batch.map((key) => sql`(${key.climbUuid}, ${key.angle})`);
-    await db.execute(sql`
+    const removed = await db.execute(sql`
       DELETE FROM board_climb_grades
       WHERE board_type = ${MOONBOARD_BOARD_TYPE}
         AND confidence = ${CONFIDENCE.moonboardWideAngleEstimate}
         AND (climb_uuid, angle) IN (${sql.join(keys, sql`, `)})
+      RETURNING 1
     `);
-    deleted += batch.length;
+    // Rows actually removed: a retry after a committed prefix can find some
+    // keys already gone, so the batch size would overcount.
+    deleted += rowsOf(removed).length;
   }
   return deleted;
 }
