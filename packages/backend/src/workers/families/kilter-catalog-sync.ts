@@ -59,7 +59,7 @@ export const kilterCatalogSyncFamily: BackgroundJobFamilyModule<KilterCatalogSyn
   schedules: [{ key: 'hourly', cron: '23 * * * *', fanOut: async () => [{ payload: {} }] }],
   async execute(context) {
     // Loaded here, not at module scope; see loadProviderSyncAdapter.
-    const [{ SyncRunner }, { KilterApiError, isTransientKilterError }] = await Promise.all([
+    const [{ SyncRunner }, { DonorRelinkedError, KilterApiError, isTransientKilterError }] = await Promise.all([
       import('@boardsesh/kilter-sync/runner'),
       import('@boardsesh/kilter-sync/api'),
     ]);
@@ -87,7 +87,11 @@ export const kilterCatalogSyncFamily: BackgroundJobFamilyModule<KilterCatalogSyn
         runId: context.runId,
       });
     } catch (error) {
-      if (context.signal.aborted || !(error instanceof KilterApiError)) throw error;
+      if (context.signal.aborted) throw error;
+      // The borrowed donor was relinked mid-run: its token is the new link's
+      // now. Retry, and the next attempt picks a donor afresh.
+      if (error instanceof DonorRelinkedError) throw new BackgroundJobError('DONOR_RELINKED');
+      if (!(error instanceof KilterApiError)) throw error;
       if (error.retryAfterMs !== undefined) {
         // Kilter asked us to wait: the runner closed the slot and held the
         // donor for that long, so a pg-boss retry minutes from now could only

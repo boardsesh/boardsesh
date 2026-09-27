@@ -1,13 +1,19 @@
 process.env.AURORA_CREDENTIALS_SECRET = process.env.AURORA_CREDENTIALS_SECRET ?? 'test-aurora-secret';
 
 import { randomUUID } from 'node:crypto';
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDb } from '@boardsesh/db/client';
-import { BackgroundJobAttemptLostError } from '@boardsesh/db/queries';
+import { auroraCredentials } from '@boardsesh/db/schema';
+import {
+  BackgroundJobAttemptLostError,
+  findSharedSyncDonorCredential,
+  rotateLinkGeneration,
+} from '@boardsesh/db/queries';
 import type { BackgroundJobContext } from '../types';
 import { kilterCatalogSyncFamily } from '../kilter-catalog-sync';
 import { createSetterSyncNotifications } from '@boardsesh/kilter-sync/sync';
+import { DonorRelinkedError, getStoredKilterAccessToken } from '@boardsesh/kilter-sync/api';
 import { insertLinkedKilterAccount, removeFixtures } from './provider-sync-fixtures';
 
 // Keycloak stands in for the donor's token refresh; everything behind it runs.
@@ -287,5 +293,34 @@ describe("Kilter setter notifications across a run's flushes", () => {
       runKey: randomUUID(),
     });
     expect(await rows()).toHaveLength(2);
+  });
+});
+
+describe("the catalog donor's token, pinned to the link it was borrowed under", () => {
+  const client = { clientId: 'fence-test-client' };
+  const borrow = async () => {
+    const donor = await findSharedSyncDonorCredential(database, {
+      boardType: 'kilter',
+      candidateFilter: eq(auroraCredentials.userId, DONOR),
+    });
+    if (!donor) throw new Error('expected the fixture donor');
+    return { credentialId: donor.id, linkGeneration: donor.linkGeneration };
+  };
+
+  it('refreshes the token while the link is unchanged', async () => {
+    const binding = await borrow();
+    await expect(getStoredKilterAccessToken(database, DONOR, client, true, binding)).resolves.toBe('kilter-access');
+  });
+
+  it("refuses the new link's token after a relink mid-run (DONOR_RELINKED), without a refresh", async () => {
+    const binding = await borrow();
+    // The climber relinks while the catalog job runs on the borrowed link.
+    await database.transaction((transaction) =>
+      rotateLinkGeneration(transaction, { userId: DONOR, boardType: 'kilter', linked: true }),
+    );
+
+    await expect(getStoredKilterAccessToken(database, DONOR, client, true, binding)).rejects.toBeInstanceOf(
+      DonorRelinkedError,
+    );
   });
 });

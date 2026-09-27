@@ -42,7 +42,7 @@ import type { LocationSyncSummary } from '@boardsesh/location-sync';
 import { KILTER_BOARD_TYPE } from '../api/types';
 import { isTransientKilterError, KilterApiError } from '../api/errors';
 import type { KeycloakClientConfig } from '../api/keycloak';
-import { getStoredKilterAccessToken } from '../api/stored-token';
+import { getStoredKilterAccessToken, type StoredTokenLinkBinding } from '../api/stored-token';
 import { passwordTokenProvider, type KilterTokenProvider } from '../api/token-provider';
 import { syncKilterUserData } from '../sync/user-sync';
 import { syncKilterCatalog, type KilterCatalogSummary } from '../sync/catalog-sync';
@@ -629,7 +629,12 @@ export class SyncRunner {
     let tokenProvider: KilterTokenProvider;
     let tokenSource: 'credential' | 'password';
     if (donor) {
-      tokenProvider = await this.buildUserTokenProvider(donor.userId);
+      // Pinned to the link it was picked under: after a relink mid-run the
+      // provider fails (DONOR_RELINKED) instead of refreshing the new link's token.
+      tokenProvider = await this.buildUserTokenProvider(
+        donor.userId,
+        donor.id === undefined ? undefined : { credentialId: donor.id, linkGeneration: donor.linkGeneration ?? null },
+      );
       tokenSource = 'credential';
     } else if (environment.KILTER_TEST_USERNAME && environment.KILTER_TEST_PASSWORD) {
       tokenProvider = this.buildPasswordTokenProvider(
@@ -846,9 +851,9 @@ export class SyncRunner {
   }
 
   /** Build a refresh-grant token provider from a linked user's stored credential. */
-  async buildUserTokenProvider(userId: string): Promise<KilterTokenProvider> {
+  async buildUserTokenProvider(userId: string, binding?: StoredTokenLinkBinding): Promise<KilterTokenProvider> {
     const { db } = this.getClient();
-    return () => getStoredKilterAccessToken(db, userId, this.getKeycloakClient());
+    return () => getStoredKilterAccessToken(db, userId, this.getKeycloakClient(), false, binding);
   }
 
   /** Build a ROPC token provider for local testing (KILTER_TEST_USERNAME/PASSWORD). */

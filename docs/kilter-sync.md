@@ -245,8 +245,13 @@ backdated by the run's length, so a long pull never makes the next hourly tick
 wait), then the catalog, the weekly stats repair and the weekly history
 snapshot. A transient failure, an abort or a database error re-stamps a
 five-minute cooldown so the job's one retry can run; a permanent Kilter
-failure keeps the full one. The catalog's REST client honours `Retry-After`
-(capped at 5 minutes), else backs off exponentially up to 30 s. Every write
+failure keeps the full one. The catalog's REST client waits out a
+`Retry-After` of up to 5 minutes and retries, else backs off exponentially up
+to 30 s; a longer `Retry-After` is not slept on: the request fails at once as
+`rate_limited` with the delay, and the job closes the catalog slot and holds
+the donor for it. The donor's token is pinned to the link it was borrowed
+under: after a relink mid-run the token read fails with a retryable
+`DONOR_RELINKED` instead of refreshing the new link's token. Every write
 of the job goes through the attempt fence (`syncKilterCatalog`'s and
 `repairKilterCatalogStats`'s `transaction` option, and the slot claim and
 stamp): each layout flush, stats in chunks of 5000 rows, the backlog, layout

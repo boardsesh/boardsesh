@@ -53,7 +53,7 @@ vi.mock('@boardsesh/kilter-sync/runner', async (importOriginal) => {
 vi.mock('@boardsesh/moonboard-sync/sync', () => ({ syncMoonBoardLocations: runners.syncMoonBoardLocations }));
 
 const { AuroraRequestError } = await import('@boardsesh/aurora-sync/api');
-const { KilterApiError } = await import('@boardsesh/kilter-sync/api');
+const { DonorRelinkedError, KilterApiError } = await import('@boardsesh/kilter-sync/api');
 
 /** A context whose database and transaction fail the test if anything touches them. */
 function fakeContext(family: BackgroundJobContext['family']): BackgroundJobContext & {
@@ -324,6 +324,14 @@ describe('kilter-catalog-sync execute', () => {
       await expect(family.execute(fakeContext('kilter-catalog-sync'), {})).resolves.toBeUndefined();
     },
   );
+
+  it('retries with DONOR_RELINKED when the borrowed donor was relinked mid-run', async () => {
+    runners.runCatalogSyncJob.mockRejectedValueOnce(new DonorRelinkedError());
+    await expect(family.execute(fakeContext('kilter-catalog-sync'), {})).rejects.toMatchObject({
+      code: 'DONOR_RELINKED',
+      retryable: true,
+    });
+  });
 
   it('retries an unreachable Kilter, waits out a Retry-After, and gives up on a permanent refusal', async () => {
     runners.runCatalogSyncJob.mockRejectedValueOnce(new KilterApiError('rate_limited', 'slow down', 429));
