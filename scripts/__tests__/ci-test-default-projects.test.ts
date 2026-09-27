@@ -1,4 +1,7 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { SERIAL_TEST_FILES } from '../../packages/backend/vitest-serial-files.ts';
 import { describe, expect, it } from 'vitest';
 import { INFRA_PROJECTS, selectTestDefaultProjects, type ConfigReader } from '../ci-test-default-projects';
 
@@ -140,5 +143,33 @@ describe('where the backend projects run in CI', () => {
 
   it('runs the two projects one after the other in `vp run test:backend`', () => {
     expect(rootConfig).toContain("command: 'vp test run --project backend && vp test run --project backend-serial'");
+  });
+});
+
+describe('which backend tests must run in backend-serial', () => {
+  const backendRoot = fileURLToPath(new URL('../../packages/backend/', import.meta.url));
+
+  function testFiles(directory: string): string[] {
+    return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) return entry.name === 'node_modules' ? [] : testFiles(path);
+      return entry.name.endsWith('.test.ts') ? [path] : [];
+    });
+  }
+
+  it('lists every backend test that starts a real PgBoss', () => {
+    const startsPgBoss = testFiles(join(backendRoot, 'src'))
+      .filter((path) => /new PgBoss\(|boss\.start\(\)|startJobQueue\(/.test(readFileSync(path, 'utf8')))
+      .map((path) => relative(backendRoot, path).split('\\').join('/'));
+    expect(startsPgBoss.length).toBeGreaterThan(0);
+    for (const file of startsPgBoss) expect(SERIAL_TEST_FILES).toContain(file);
+  });
+
+  it('runs the Kilter catalog fence test serially (it drives the shared kilter catalog cursor)', () => {
+    expect(SERIAL_TEST_FILES).toContain('src/workers/families/__tests__/kilter-catalog-fence.test.ts');
+  });
+
+  it('lists only files that exist', () => {
+    for (const file of SERIAL_TEST_FILES) expect(() => readFileSync(join(backendRoot, file))).not.toThrow();
   });
 });
