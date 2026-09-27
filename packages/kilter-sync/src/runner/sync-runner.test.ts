@@ -835,7 +835,7 @@ describe('SyncRunner.runCatalogSyncJob (the kilter-catalog-sync job)', () => {
   it("closes the slot for Kilter's Retry-After and holds the donor credential, on a 429", async () => {
     mockDeferCredentialSyncAttempt.mockReset();
     mockDeferCredentialSyncAttempt.mockResolvedValue(undefined);
-    mockFindSharedSyncDonorCredential.mockResolvedValue(credential());
+    mockFindSharedSyncDonorCredential.mockResolvedValue({ ...credential(), id: 52n, linkGeneration: null });
     const { runner } = injectedRunner();
     mockSyncKilterCatalog.mockRejectedValueOnce(new KilterApiError('rate_limited', 'slow down', 429, 3_600_000));
 
@@ -851,6 +851,8 @@ describe('SyncRunner.runCatalogSyncJob (the kilter-catalog-sync job)', () => {
       userId: credential().userId,
       boardType: KILTER_BOARD_TYPE,
       delayMs: 3_600_000,
+      // Bound to the borrowed link (no control row yet), not updated_at.
+      onlyLink: { id: 52n, linkGeneration: null },
     });
   });
 

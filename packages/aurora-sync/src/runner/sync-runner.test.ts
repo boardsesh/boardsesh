@@ -1325,7 +1325,9 @@ describe('SyncRunner.runSharedSyncJob (the aurora-shared-sync job)', () => {
   it("closes the slot for Aurora's Retry-After and holds the donor, on a 429", async () => {
     mockDeferCredentialSyncAttempt.mockReset();
     mockDeferCredentialSyncAttempt.mockResolvedValue(undefined);
-    mockFindSharedSyncDonorCredential.mockResolvedValue(donorCredential());
+    // The donor as findSharedSyncDonorCredential returns it: its row id and
+    // the link generation it was read under.
+    mockFindSharedSyncDonorCredential.mockResolvedValue({ ...donorCredential(), id: 41n, linkGeneration: 'gen-a' });
     mockSyncSharedData.mockRejectedValueOnce(
       new AuroraRequestError({ code: 'rate_limited', message: 'slow down', status: 429, retryAfterMs: 3_600_000 }),
     );
@@ -1344,6 +1346,10 @@ describe('SyncRunner.runSharedSyncJob (the aurora-shared-sync job)', () => {
     });
     // Only the hold: no failure step is charged to a borrowed credential.
     expect(mockDeferCredentialSyncAttempt.mock.calls[0][1]).not.toHaveProperty('forgiveFailure');
+    // Bound to the borrowed link, so a relink mid-run is left unheld.
+    expect(mockDeferCredentialSyncAttempt.mock.calls[0][1]).toMatchObject({
+      onlyLink: { id: 41n, linkGeneration: 'gen-a' },
+    });
   });
 
   it('holds for at least the five-minute retry cooldown on a short Retry-After', async () => {

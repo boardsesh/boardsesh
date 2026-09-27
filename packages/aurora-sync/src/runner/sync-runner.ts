@@ -1023,10 +1023,23 @@ export class SyncRunner {
    * donor pick uses it before then. Only the hold: no failure is recorded
    * against a borrowed credential. Best effort, never throws.
    */
-  private async holdDonorSafely(donor: CredentialRecord, holdMs: number, transaction?: SyncBatchRunner): Promise<void> {
+  private async holdDonorSafely(
+    donor: CredentialRecord & { id?: bigint; linkGeneration?: string | null },
+    holdMs: number,
+    transaction?: SyncBatchRunner,
+  ): Promise<void> {
     try {
+      // Bound to the link the donor was borrowed under: a relink during the
+      // run leaves its replacement credential unheld.
+      const onlyLink =
+        donor.id === undefined ? undefined : { id: donor.id, linkGeneration: donor.linkGeneration ?? null };
       const hold = (database: RunnerDb) =>
-        deferCredentialSyncAttempt(database, { userId: donor.userId, boardType: donor.boardType, delayMs: holdMs });
+        deferCredentialSyncAttempt(database, {
+          userId: donor.userId,
+          boardType: donor.boardType,
+          delayMs: holdMs,
+          ...(onlyLink ? { onlyLink } : {}),
+        });
       if (transaction) await transaction(hold);
       else await hold(this.getClient().db);
     } catch (holdError) {

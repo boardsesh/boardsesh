@@ -298,11 +298,36 @@ export async function deferCredentialSyncAttempt(
      * it should not grow the backoff.
      */
     forgiveFailure?: boolean;
+    /**
+     * Hold only the exact link the caller read: the same credential row, and
+     * the same link generation (null: no control row yet). A relink since then
+     * rotates the generation, so its replacement credential is left alone.
+     * The board-wide jobs pass the donor they borrowed; a relink mid-run must
+     * not put the old token's throttle on the new link. Not `updated_at`: a
+     * donor's own token refresh moves that without any relink.
+     */
+    onlyLink?: { id: bigint; linkGeneration: string | null };
   },
 ): Promise<void> {
   const delayMs = Number.isFinite(options.delayMs)
     ? Math.min(Math.max(0, options.delayMs), CREDENTIAL_RETRY_AFTER_CAP_MS)
     : 0;
+  const sameLink =
+    options.onlyLink === undefined
+      ? undefined
+      : and(
+          eq(auroraCredentials.id, options.onlyLink.id),
+          options.onlyLink.linkGeneration === null
+            ? sql`NOT EXISTS (
+                SELECT 1 FROM ${providerSyncControls}
+                 WHERE ${providerSyncControls.userId} = ${auroraCredentials.userId}
+                   AND ${providerSyncControls.boardType} = ${auroraCredentials.boardType})`
+            : sql`EXISTS (
+                SELECT 1 FROM ${providerSyncControls}
+                 WHERE ${providerSyncControls.userId} = ${auroraCredentials.userId}
+                   AND ${providerSyncControls.boardType} = ${auroraCredentials.boardType}
+                   AND ${providerSyncControls.linkGeneration} = ${options.onlyLink.linkGeneration})`,
+        );
   await db
     .update(auroraCredentials)
     .set({
@@ -312,8 +337,17 @@ export async function deferCredentialSyncAttempt(
         : {}),
       updatedAt: sql`now()`,
     })
-    .where(and(eq(auroraCredentials.userId, options.userId), eq(auroraCredentials.boardType, options.boardType)));
+    .where(
+      and(eq(auroraCredentials.userId, options.userId), eq(auroraCredentials.boardType, options.boardType), sameLink),
+    );
 }
+
+/**
+ * A borrowed donor credential, with the link generation it was read under
+ * (null when it has no control row yet), so a hold put on it later can be
+ * bound to this exact link ({@link deferCredentialSyncAttempt}'s `onlyLink`).
+ */
+export type SharedSyncDonor = ClaimedCredential & { linkGeneration: string | null };
 
 /**
  * The credential whose token a board-wide job borrows: an `active` credential
@@ -325,10 +359,17 @@ export async function deferCredentialSyncAttempt(
 export async function findSharedSyncDonorCredential(
   db: DrizzleDb,
   options: { boardType: string; candidateFilter: SQL | undefined },
-): Promise<ClaimedCredential | null> {
+): Promise<SharedSyncDonor | null> {
   const [donor] = await db
-    .select()
+    .select({ credential: auroraCredentials, linkGeneration: providerSyncControls.linkGeneration })
     .from(auroraCredentials)
+    .leftJoin(
+      providerSyncControls,
+      and(
+        eq(providerSyncControls.userId, auroraCredentials.userId),
+        eq(providerSyncControls.boardType, auroraCredentials.boardType),
+      ),
+    )
     .where(
       and(
         eq(auroraCredentials.boardType, options.boardType),
@@ -341,5 +382,5 @@ export async function findSharedSyncDonorCredential(
     )
     .orderBy(sql`${auroraCredentials.lastSyncAt} DESC NULLS LAST`)
     .limit(1);
-  return donor ?? null;
+  return donor ? { ...donor.credential, linkGeneration: donor.linkGeneration } : null;
 }

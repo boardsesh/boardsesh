@@ -688,7 +688,7 @@ export class SyncRunner {
           Math.min(error.retryAfterMs, SHARED_SYNC_PROVIDER_HOLD_CAP_MS),
         );
         this.log(`[kilter-catalog] PROVIDER_THROTTLED: holding the catalog for ${providerHoldMs} ms`);
-        if (donor) await this.holdDonorSafely(donor.userId, providerHoldMs, transaction, db);
+        if (donor) await this.holdDonorSafely(donor, providerHoldMs, transaction, db);
       }
       throw error;
     } finally {
@@ -711,14 +711,25 @@ export class SyncRunner {
    * against a borrowed credential. Best effort, never throws.
    */
   private async holdDonorSafely(
-    userId: string,
+    donor: { userId: string; id?: bigint; linkGeneration?: string | null },
     holdMs: number,
     transaction: SyncBatchRunner | undefined,
     db: RunnerDb,
   ): Promise<void> {
     try {
+      // Bound to the link the donor was borrowed under: a relink during the
+      // run leaves its replacement credential unheld. (Its own token refresh
+      // during the run moves updated_at, so the link generation, not
+      // updated_at, is what identifies it.)
+      const onlyLink =
+        donor.id === undefined ? undefined : { id: donor.id, linkGeneration: donor.linkGeneration ?? null };
       const hold = (database: RunnerDb) =>
-        deferCredentialSyncAttempt(database, { userId, boardType: KILTER_BOARD_TYPE, delayMs: holdMs });
+        deferCredentialSyncAttempt(database, {
+          userId: donor.userId,
+          boardType: KILTER_BOARD_TYPE,
+          delayMs: holdMs,
+          ...(onlyLink ? { onlyLink } : {}),
+        });
       if (transaction) await transaction(hold);
       else await hold(db);
     } catch (holdError) {
