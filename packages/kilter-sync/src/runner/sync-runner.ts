@@ -587,8 +587,9 @@ export class SyncRunner {
    * 2. Claim the catalog cooldown slot the daemon uses; refused is `cooldown`.
    * 3. Catalog sync (deletions applied as the daemon does), then the weekly
    *    stats repair and history snapshot, each gated by its own 7-day cursor.
-   * 4. Re-stamp the slot from the end of the work: full cooldown on success or
-   *    a permanent Kilter failure, five minutes otherwise so the retry runs.
+   * 4. Re-stamp the slot: the full cooldown measured from the claim on success
+   *    or a permanent Kilter failure (the marker is backdated by the run's
+   *    length), five minutes from the end otherwise so the retry runs.
    *
    * The writes go straight to the database, as the daemon's do: the claim is
    * the single-writer guarantee, and the catalog interleaves provider requests
@@ -622,6 +623,10 @@ export class SyncRunner {
     const claimToken = await claimSharedSyncSlot(db, { ...cursor, cooldownMs });
     if (claimToken === null) return { status: 'cooldown', lastRunAt: await readSharedSyncCursor(db, cursor) };
 
+    // Measure the cooldown from the claim, not the end of the run: see
+    // aurora-sync's runSharedSyncJob.
+    const startedAt = Date.now();
+    const fromStart = () => Math.max(0, cooldownMs - (Date.now() - startedAt));
     let nextCooldownMs = cooldownMs;
     try {
       this.log(`[kilter-catalog] scheduled catalog sync (${tokenSource} token)`);
@@ -637,10 +642,11 @@ export class SyncRunner {
       await this.maybeRepairKilterStats(db, tokenProvider);
       options.signal?.throwIfAborted();
       await this.maybeSnapshotHistory(db);
+      nextCooldownMs = fromStart();
       return { status: 'synced', tokenSource };
     } catch (error) {
       const permanent = !options.signal?.aborted && error instanceof KilterApiError && !isTransientKilterError(error);
-      nextCooldownMs = permanent ? cooldownMs : Math.min(TRANSIENT_CATALOG_SYNC_COOLDOWN_MS, cooldownMs);
+      nextCooldownMs = permanent ? fromStart() : Math.min(TRANSIENT_CATALOG_SYNC_COOLDOWN_MS, cooldownMs);
       throw error;
     } finally {
       await this.stampCatalogSyncFinishedSafely(db, cursor, claimToken, cooldownMs, nextCooldownMs);

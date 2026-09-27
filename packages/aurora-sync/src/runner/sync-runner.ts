@@ -171,6 +171,31 @@ export function syncableAuroraCredentialsFilter() {
   );
 }
 
+/**
+ * Record a failed attempt on the credential's scheduler fields: the attempt
+ * clock, `consecutive_failures` (backoff) and `last_sync_error`. Never
+ * `sync_status`/`sync_error`, which the specific failure branches own (a
+ * transient failure must not flip the card to 'error'). Exported so a
+ * background job can record a failure the runner itself never saw, such as the
+ * routine cycle's per-credential deadline.
+ */
+export async function recordAuroraSyncFailure(
+  db: RunnerDb,
+  cred: Pick<CredentialRecord, 'userId' | 'boardType'>,
+  errorMsg: string,
+): Promise<void> {
+  const attemptAt = new Date();
+  await db
+    .update(auroraCredentials)
+    .set({
+      lastSyncAttemptAt: attemptAt,
+      consecutiveFailures: sql`COALESCE(${auroraCredentials.consecutiveFailures}, 0) + 1`,
+      lastSyncError: errorMsg,
+      updatedAt: attemptAt,
+    })
+    .where(and(eq(auroraCredentials.userId, cred.userId), eq(auroraCredentials.boardType, cred.boardType)));
+}
+
 export class SyncRunner {
   private config: SyncRunnerConfig;
   private daemonController: AbortController | null = null;
@@ -387,18 +412,7 @@ export class SyncRunner {
    * row in one cycle (e.g. recordInvalidCredentialFailure + this).
    */
   private async recordSyncFailure(cred: CredentialRecord, errorMsg: string): Promise<void> {
-    const attemptAt = new Date();
-    await this.writeCredential(async (db) => {
-      await db
-        .update(auroraCredentials)
-        .set({
-          lastSyncAttemptAt: attemptAt,
-          consecutiveFailures: sql`COALESCE(${auroraCredentials.consecutiveFailures}, 0) + 1`,
-          lastSyncError: errorMsg,
-          updatedAt: attemptAt,
-        })
-        .where(and(eq(auroraCredentials.userId, cred.userId), eq(auroraCredentials.boardType, cred.boardType)));
-    });
+    await this.writeCredential((db) => recordAuroraSyncFailure(db, cred, errorMsg));
 
     // consecutive_failures is incremented in SQL above; mirror the resulting
     // value in JS to fire the FLAPPING event exactly once, when the streak
@@ -896,9 +910,11 @@ export class SyncRunner {
    *    recently.
    * 3. Run {@link runBoardSharedWork}. A stored token Aurora rejects (401/403)
    *    earns one fresh login and one more try.
-   * 4. Re-stamp the slot from the end of the work. Success and permanent Aurora
-   *    failures get the full cooldown. A transient Aurora failure, an abort or
-   *    a database error gets the five-minute one, so the job's retry can run.
+   * 4. Re-stamp the slot. Success and permanent Aurora failures get the full
+   *    cooldown measured from the claim (the marker is backdated by the run's
+   *    length, so a long run never makes the next hourly tick wait). A
+   *    transient Aurora failure, an abort or a database error gets five minutes
+   *    from the end, so the job's retry can run.
    *
    * Nothing here is ever recorded against the donor's credential: a failed
    * borrowed login or a failed crawl is the board's problem, not the climber's.
@@ -919,6 +935,11 @@ export class SyncRunner {
     const claimToken = await claimSharedSyncSlot(db, { ...cursor, cooldownMs });
     if (claimToken === null) return { status: 'cooldown', lastRunAt: await readSharedSyncCursor(db, cursor) };
 
+    // The slot's marker is stamped when the run ends; backdating it by the
+    // run's length measures the cooldown from the claim instead, so a run
+    // longer than (cron period - cooldown) does not refuse the next tick.
+    const startedAt = Date.now();
+    const fromStart = () => Math.max(0, cooldownMs - (Date.now() - startedAt));
     let nextCooldownMs = cooldownMs;
     const work = { transaction: options.transaction, signal };
     try {
@@ -939,11 +960,12 @@ export class SyncRunner {
         token = await this.signInDonor(donor, board, signal);
         await this.runBoardSharedWork(board, token, work);
       }
+      nextCooldownMs = fromStart();
       return { status: 'synced', tokenSource };
     } catch (error) {
       nextCooldownMs =
-        !signal?.aborted && isAuroraRequestError(error)
-          ? sharedSyncCooldownAfterError(error, cooldownMs)
+        !signal?.aborted && isAuroraRequestError(error) && !isTransientSharedSyncAuroraError(error)
+          ? fromStart()
           : Math.min(TRANSIENT_SHARED_SYNC_COOLDOWN_MS, cooldownMs);
       throw error;
     } finally {

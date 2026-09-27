@@ -728,7 +728,8 @@ describe('SyncRunner.runCatalogSyncJob (the kilter-catalog-sync job)', () => {
     expect(await catalogArgs.tokenProvider()).toBe('donor-access');
     expect(mockStampSharedSyncFinished.mock.calls[0][1]).toMatchObject({
       claimToken: 'claim-token',
-      nextCooldownMs: 50 * 60_000,
+      // Backdated by the run's length: measured from the claim, not the end.
+      nextCooldownMs: expect.toSatisfy((value: number) => value <= 50 * 60_000 && value > 50 * 60_000 - 5_000),
     });
     // Weekly jobs not due: neither runs, the snapshot helper still checks its own gate.
     expect(mockRepairKilterCatalogStats).not.toHaveBeenCalled();
@@ -795,7 +796,7 @@ describe('SyncRunner.runCatalogSyncJob (the kilter-catalog-sync job)', () => {
     await expect(runner.runCatalogSyncJob({ cooldownMs: 3_600_000, environment: noPasswordEnv })).rejects.toThrow(
       'relink',
     );
-    expect(mockStampSharedSyncFinished.mock.calls[1][1]).toMatchObject({ nextCooldownMs: 3_600_000 });
+    expect(mockStampSharedSyncFinished.mock.calls[1][1].nextCooldownMs).toBeGreaterThan(3_600_000 - 5_000);
   });
 });
 

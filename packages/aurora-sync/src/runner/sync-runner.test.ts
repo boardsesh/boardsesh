@@ -1249,7 +1249,29 @@ describe('SyncRunner.runSharedSyncJob (the aurora-shared-sync job)', () => {
     expect(mockStampSharedSyncFinished.mock.calls[0][1]).toMatchObject({
       claimToken: 'claim-token',
       fullCooldownMs: 50 * 60_000,
-      nextCooldownMs: 50 * 60_000,
+      // Backdated by the run's length: measured from the claim, not the end.
+      nextCooldownMs: expect.toSatisfy((value: number) => value <= 50 * 60_000 && value > 50 * 60_000 - 5_000),
+    });
+  });
+
+  it('measures the cooldown from the claim, so a long run never makes the next hourly tick wait', async () => {
+    mockFindSharedSyncDonorCredential.mockResolvedValue(donorCredential());
+    let now = Date.parse('2026-09-27T11:07:00Z');
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => now);
+    // The shared sync takes 20 minutes.
+    mockSyncSharedData.mockImplementation(async () => {
+      now += 20 * 60_000;
+      return {};
+    });
+    const runner = new SyncRunner({ db: injectedDb, onLog: () => {} });
+
+    await runner.runSharedSyncJob('tension', { cooldownMs: 50 * 60_000 });
+
+    clock.mockRestore();
+    // The marker is backdated by 20 minutes: 50 minutes from the claim, 30 from the end.
+    expect(mockStampSharedSyncFinished.mock.calls[0][1]).toMatchObject({
+      fullCooldownMs: 50 * 60_000,
+      nextCooldownMs: 30 * 60_000,
     });
   });
 
@@ -1310,7 +1332,7 @@ describe('SyncRunner.runSharedSyncJob (the aurora-shared-sync job)', () => {
       new AuroraRequestError({ code: 'http', message: 'Aurora HTTP 400', status: 400 }),
     );
     await expect(runner.runSharedSyncJob('decoy', { cooldownMs: 60 * 60_000 })).rejects.toThrow('HTTP 400');
-    expect(mockStampSharedSyncFinished.mock.calls[1][1]).toMatchObject({ nextCooldownMs: 60 * 60_000 });
+    expect(mockStampSharedSyncFinished.mock.calls[1][1].nextCooldownMs).toBeGreaterThan(60 * 60_000 - 5_000);
 
     // A database error is not Aurora's: the job's retry must be able to run.
     mockSyncSharedData.mockRejectedValueOnce(new Error('permission denied for table board_climbs'));

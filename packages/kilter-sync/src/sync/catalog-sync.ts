@@ -131,7 +131,8 @@ async function processBatches<T>(rows: T[], fn: (chunk: T[]) => Promise<void>): 
  * Run a REST call, refreshing the access token once on 401. A full catalog
  * pull can outlast a single access-token TTL, so we re-mint rather than fail.
  */
-type TokenState = { provider: KilterTokenProvider; token: string };
+/** `signal` rides along so every catalog request of a run stops with it. */
+type TokenState = { provider: KilterTokenProvider; token: string; signal?: AbortSignal };
 async function withToken<T>(state: TokenState, call: (token: string) => Promise<T>): Promise<T> {
   try {
     return await call(state.token);
@@ -1000,7 +1001,7 @@ async function syncBoardLayoutGroup(args: SyncBoardLayoutGroupArgs): Promise<Gro
   // lower(sourceUuid) → canonicalUuid, for routing stats. Spans the whole group.
   const climbUuidToCanonical = new Map<string, string>();
   for (const gripsLayoutUuid of gripsLayoutUuids) {
-    const climbs = await withToken(state, (token) => fetchLayoutClimbs(token, gripsLayoutUuid));
+    const climbs = await withToken(state, (token) => fetchLayoutClimbs(token, gripsLayoutUuid, state.signal));
 
     const batch = createStagingBatch();
     const context: StageCatalogClimbContext = {
@@ -1069,7 +1070,7 @@ async function syncBoardLayoutGroup(args: SyncBoardLayoutGroupArgs): Promise<Gro
   const statsByCanonicalAngle = new Map<string, StatAccum>();
   const seenSourceStats = new Set<string>();
   for (const gripsLayoutUuid of gripsLayoutUuids) {
-    const stats = await withToken(state, (token) => fetchLayoutClimbStats(token, gripsLayoutUuid));
+    const stats = await withToken(state, (token) => fetchLayoutClimbStats(token, gripsLayoutUuid, state.signal));
     for (const stat of stats) {
       const lowerStatUuid = stat.climbUuid.toLowerCase();
       const canonicalUuid = climbUuidToCanonical.get(lowerStatUuid);
@@ -1402,7 +1403,7 @@ async function ingestRerouteCandidatesForLayout(input: {
 
 export async function syncKilterCatalog(args: SyncKilterCatalogArgs): Promise<KilterCatalogSummary> {
   const log = args.log ?? (() => {});
-  const state: TokenState = { provider: args.tokenProvider, token: await args.tokenProvider() };
+  const state: TokenState = { provider: args.tokenProvider, token: await args.tokenProvider(), signal: args.signal };
 
   const reference = args.reference ?? (await pullKilterReference({ accessToken: state.token, log }));
   const resolver = await buildLayoutResolver(args.db);
@@ -1499,7 +1500,7 @@ export async function syncKilterCatalog(args: SyncKilterCatalogArgs): Promise<Ki
   let deletedUuids: string[] | null = null;
   let deletedListError: string | null = null;
   try {
-    deletedUuids = await withToken(state, (token) => fetchDeletedClimbUuids(token));
+    deletedUuids = await withToken(state, (token) => fetchDeletedClimbUuids(token, state.signal));
   } catch (error) {
     deletedListError = error instanceof Error ? error.message : String(error);
   }
