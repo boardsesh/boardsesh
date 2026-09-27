@@ -61,3 +61,57 @@ describe('MoonBoardClient.authenticate', () => {
     await expect(client.authenticate('user@example.com', 'wrong')).rejects.toThrow(/still on login form/);
   });
 });
+
+describe('MoonBoardClient stop signal', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  /** A fetch that never answers until its signal aborts, as a hung MoonBoard would. */
+  function hangingFetch() {
+    return vi.fn(
+      (_input: string | URL | Request, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true });
+        }),
+    );
+  }
+
+  it('ends the login when the caller stops, well before the request timeout', async () => {
+    const fetchMock = hangingFetch();
+    vi.stubGlobal('fetch', fetchMock);
+    const controller = new AbortController();
+    const client = new MoonBoardClient('https://moonboard.test');
+
+    const login = client.authenticate('user@example.com', 'secret', controller.signal);
+    controller.abort(new Error('worker stopping'));
+
+    await expect(login).rejects.toThrow('worker stopping');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('ends the map-marker request when the caller stops', async () => {
+    const loginForm = `<form id="frmLogin">
+      <input name="__RequestVerificationToken" value="csrf-token">
+      <input name="form_key" value="form-key">
+    </form>`;
+    const hang = hangingFetch();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(htmlResponse(loginForm))
+      .mockResolvedValueOnce(new Response(null, { status: 302, headers: { location: '/account' } }))
+      .mockResolvedValueOnce(htmlResponse('<main>Account</main>'))
+      .mockImplementationOnce(hang);
+    vi.stubGlobal('fetch', fetchMock);
+    const controller = new AbortController();
+    const client = new MoonBoardClient('https://moonboard.test');
+    await client.authenticate('user@example.com', 'secret', controller.signal);
+
+    const markers = client.getMapMarkers(controller.signal);
+    controller.abort(new Error('worker stopping'));
+
+    await expect(markers).rejects.toThrow('worker stopping');
+    // Every request carried a signal tied to the caller's.
+    for (const [, init] of fetchMock.mock.calls) expect((init as RequestInit).signal).toBeInstanceOf(AbortSignal);
+  });
+});

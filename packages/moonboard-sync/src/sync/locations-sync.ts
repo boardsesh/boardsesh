@@ -110,12 +110,12 @@ export async function syncMoonBoardLocations(args: {
    * always run before the first batch.
    */
   transaction?: LocationWriteBatchRunner;
-  /** Checked between write batches. */
+  /** Ends the MoonBoard requests early and is checked between write batches. */
   signal?: AbortSignal;
 }): Promise<LocationSyncSummary> {
   const client = new MoonBoardClient();
-  await client.authenticate(args.username, args.password);
-  const markers = await client.getMapMarkers();
+  await client.authenticate(args.username, args.password, args.signal);
+  const markers = await client.getMapMarkers(args.signal);
   args.signal?.throwIfAborted();
   const records = buildMoonBoardLocationRecords(markers);
   // Both paths resolve each gym the same way: an existing alias, else the

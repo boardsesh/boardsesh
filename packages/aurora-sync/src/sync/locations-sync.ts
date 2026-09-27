@@ -234,7 +234,7 @@ export async function syncAuroraBoardLocations(args: {
    * Omitted (or returning undefined) means every gym falls back to the default
    * config, which is exactly the pre-enrichment behaviour.
    */
-  fetchGymUser?: (pin: AuroraPin) => Promise<AuroraGymUser | undefined>;
+  fetchGymUser?: (pin: AuroraPin, signal?: AbortSignal) => Promise<AuroraGymUser | undefined>;
   log?: (message: string) => void;
   /**
    * Runs the writes in batches of whole gyms, each in one transaction (a
@@ -242,9 +242,10 @@ export async function syncAuroraBoardLocations(args: {
    * they always have. Provider HTTP runs before the first batch either way.
    */
   transaction?: LocationWriteBatchRunner;
+  /** Ends the pins request, the gym reads (and their pacing sleeps) and the write batches early. */
   signal?: AbortSignal;
 }): Promise<LocationSyncSummary> {
-  const pins = await fetchAuroraPins(args.board);
+  const pins = await fetchAuroraPins(args.board, args.signal);
   const pinsWithUsers: AuroraPinWithUser[] = [];
   if (args.fetchGymUser) {
     args.log?.(`[aurora-locations] ${args.board}: reading walls for ${pins.gyms.length} gym(s)`);
@@ -255,7 +256,8 @@ export async function syncAuroraBoardLocations(args: {
     // that means hours for a full crawl, so log progress periodically —
     // otherwise the only production signal is a per-gym failure line, and a
     // healthy run looks identical to a stalled one.
-    const user = args.fetchGymUser ? await args.fetchGymUser(pin) : undefined;
+    args.signal?.throwIfAborted();
+    const user = args.fetchGymUser ? await args.fetchGymUser(pin, args.signal) : undefined;
     pinsWithUsers.push({ pin, user });
     // Log on the interval AND on the last gym: a 476-gym run whose final line
     // is "read 450/476" leaves an operator unable to tell completion from a
@@ -375,7 +377,7 @@ export async function crawlGymWallsForSourceKeys(args: {
   db: DrizzleDb;
   board: AuroraLocationBoardName;
   sourceKeys: string[];
-  fetchGymUser: (pin: AuroraPin) => Promise<AuroraGymUser | undefined>;
+  fetchGymUser: (pin: AuroraPin, signal?: AbortSignal) => Promise<AuroraGymUser | undefined>;
   log?: (message: string) => void;
   /** As for {@link syncAuroraBoardLocations}: fenced write batches, HTTP between them. */
   transaction?: LocationWriteBatchRunner;
@@ -387,7 +389,7 @@ export async function crawlGymWallsForSourceKeys(args: {
   // a published record still needs the gym's name and coordinates, and the pin
   // list is the same source the full sync uses. Cheaper and more consistent than
   // reconstructing them from our own rows.
-  const pins = await fetchAuroraPins(args.board);
+  const pins = await fetchAuroraPins(args.board, args.signal);
   const pinsById = new Map(pins.gyms.map((pin) => [pin.id, pin]));
 
   const wanted = new Set(args.sourceKeys);
@@ -407,7 +409,7 @@ export async function crawlGymWallsForSourceKeys(args: {
     }
 
     args.signal?.throwIfAborted();
-    const user = await args.fetchGymUser(pin);
+    const user = await args.fetchGymUser(pin, args.signal);
     if (!user) continue; // Unstamped: retried next cycle.
     pinsWithUsers.push({ pin, user });
     crawledSourceKeys.push(sourceKey);

@@ -35,7 +35,24 @@ export function auroraLocationCredentials(
   return { username, password };
 }
 
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+/** Wait `ms`, or reject with the signal's reason as soon as it aborts. */
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason);
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal?.reason);
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
 
 /**
  * Aurora answers a rejected session with 422, which `errors.ts` maps to
@@ -57,7 +74,7 @@ function isExpiredSessionError(error: unknown): boolean {
  * few times, then that gym is skipped and reported. One unreachable gym must
  * not cost us the other few thousand.
  */
-export type GymUserFetcher = (pin: AuroraPin) => Promise<AuroraGymUser | undefined>;
+export type GymUserFetcher = (pin: AuroraPin, signal?: AbortSignal) => Promise<AuroraGymUser | undefined>;
 
 /**
  * A fetcher over a session the caller already holds.
@@ -174,7 +191,9 @@ function pacedGymUserFetcher(args: {
   log?: (message: string) => void;
 }): GymUserFetcher {
   let nextRequestAtMs = 0;
-  return async (pin: AuroraPin): Promise<AuroraGymUser | undefined> => {
+  // A stop signal ends the pacing sleep and the request in flight, and is
+  // rethrown as itself: a stopped job is not a failed gym to log and skip.
+  return async (pin: AuroraPin, signal?: AbortSignal): Promise<AuroraGymUser | undefined> => {
     // Once the session is unrecoverable there is nothing left to try, so skip
     // straight to the default-config fallback rather than spending a request
     // per remaining gym.
@@ -186,13 +205,15 @@ function pacedGymUserFetcher(args: {
     // The refresh buys one extra pass, once.
     let attemptBudget = MAX_ATTEMPTS_PER_GYM;
     for (let attempt = 1; attempt <= attemptBudget; attempt += 1) {
+      signal?.throwIfAborted();
       const waitMs = nextRequestAtMs - Date.now();
-      if (waitMs > 0) await sleep(waitMs);
+      if (waitMs > 0) await sleep(waitMs, signal);
       nextRequestAtMs = Date.now() + MIN_REQUEST_INTERVAL_MS;
 
       try {
-        return await fetchAuroraGymUser(args.board, pin.id, args.getToken());
+        return await fetchAuroraGymUser(args.board, pin.id, args.getToken(), signal);
       } catch (error) {
+        if (signal?.aborted) throw signal.reason;
         if (isExpiredSessionError(error) && !sessionRefreshedForThisGym) {
           sessionRefreshedForThisGym = true;
           if (await args.refreshExpiredSession()) {
