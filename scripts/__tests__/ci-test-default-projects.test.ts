@@ -131,6 +131,13 @@ describe('where the backend projects run in CI', () => {
     expect(serialStep.split('\n')[1]).toContain('matrix.shard == 1');
   });
 
+  it('orders `backend-serial` after `backend` when one run holds both (the root `vp test`)', () => {
+    const serialConfig = readFileSync(new URL('../../packages/backend/vite.serial.config.ts', import.meta.url), 'utf8');
+    const backendConfig = readFileSync(new URL('../../packages/backend/vite.config.ts', import.meta.url), 'utf8');
+    const groupOrder = (source: string) => Number(/groupOrder:\s*(\d+)/.exec(source)?.[1] ?? '0');
+    expect(groupOrder(serialConfig)).toBeGreaterThan(groupOrder(backendConfig));
+  });
+
   it('runs the two projects one after the other in `vp run test:backend`', () => {
     expect(rootConfig).toContain("command: 'vp test run --project backend && vp test run --project backend-serial'");
   });

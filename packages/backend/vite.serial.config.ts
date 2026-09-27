@@ -11,6 +11,10 @@ export default defineConfig({
     exclude: ['**/node_modules/**', '**/dist/**'],
     fileParallelism: false,
     maxWorkers: 1,
+    // fileParallelism only serializes files within this project. In a run with
+    // other projects (the root `vp test`), a higher group order starts these
+    // files only after every group-0 project (`backend` among them) finished.
+    sequence: { groupOrder: 1 },
     globalSetup: ['./src/__tests__/global-setup.ts'],
     setupFiles: ['./src/__tests__/setup.ts'],
     testTimeout: 10000,
