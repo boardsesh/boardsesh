@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseRetryAfterMs } from './retry-after';
+import { RETRY_AFTER_PARSE_CEILING_MS, parseRetryAfterMs } from './retry-after';
 import { isSyncDaemonDisabled } from './daemon-switch';
 
 describe('parseRetryAfterMs', () => {
@@ -17,6 +17,27 @@ describe('parseRetryAfterMs', () => {
     expect(parseRetryAfterMs('', now)).toBeUndefined();
     expect(parseRetryAfterMs('-5', now)).toBeUndefined();
     expect(parseRetryAfterMs('soon', now)).toBeUndefined();
+    expect(parseRetryAfterMs('   ', now)).toBeUndefined();
+    expect(parseRetryAfterMs(undefined, now)).toBeUndefined();
+    expect(parseRetryAfterMs('NaN', now)).toBeUndefined();
+    expect(parseRetryAfterMs('1.5', now)).toBeUndefined();
+  });
+
+  it('caps a huge delta at a finite ceiling instead of overflowing', () => {
+    const twentyNines = parseRetryAfterMs('9'.repeat(20), now);
+    expect(twentyNines).toBe(RETRY_AFTER_PARSE_CEILING_MS);
+    expect(Number.isFinite(twentyNines)).toBe(true);
+    // A string long enough that Number() itself returns Infinity.
+    expect(parseRetryAfterMs('9'.repeat(400), now)).toBe(RETRY_AFTER_PARSE_CEILING_MS);
+    // One second past the ceiling is clamped; the ceiling itself is not.
+    const ceilingSeconds = RETRY_AFTER_PARSE_CEILING_MS / 1000;
+    expect(parseRetryAfterMs(String(ceilingSeconds), now)).toBe(RETRY_AFTER_PARSE_CEILING_MS);
+    expect(parseRetryAfterMs(String(ceilingSeconds + 1), now)).toBe(RETRY_AFTER_PARSE_CEILING_MS);
+  });
+
+  it('treats a date before now as now and caps a far-future date', () => {
+    expect(parseRetryAfterMs('Thu, 01 Jan 1970 00:00:00 GMT', now)).toBe(0);
+    expect(parseRetryAfterMs('Fri, 31 Dec 9999 23:59:59 GMT', now)).toBe(RETRY_AFTER_PARSE_CEILING_MS);
   });
 });
 
