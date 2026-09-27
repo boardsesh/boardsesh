@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
-import { upsertGradeEstimates, type GradeEstimateRow } from './grade-estimate-upsert.js';
+import { upsertGradeEstimates, type GradeEstimateRow } from '../grade-estimate-upsert';
 
 /**
  * The weekly MoonBoard estimate jobs must leave an unchanged row alone: same
@@ -11,7 +11,7 @@ import { upsertGradeEstimates, type GradeEstimateRow } from './grade-estimate-up
  * server MIGRATION_REPLAY_DB_URL points at (CI's db-migrations job sets it).
  *
  *   MIGRATION_REPLAY_DB_URL=postgres://postgres:password@localhost:5432/postgres \
- *     vp exec tsx --test scripts/grade-estimate-upsert.integration.test.ts
+ *     vp exec tsx --test src/jobs/__tests__/grade-estimate-upsert.integration.test.ts
  */
 const adminUrl = process.env.MIGRATION_REPLAY_DB_URL;
 
