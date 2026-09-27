@@ -201,7 +201,7 @@ module. The module declares:
 | `aurora-user-sync` | `interactive-import` | 1800 s (heartbeat 300 s) | 3, 30 s backoff to 300 s | 2 h | `userId:boardType:linkGeneration` |
 | `kilter-user-sync` | `interactive-import` | 1800 s (heartbeat 300 s) | 3, 30 s backoff to 300 s | 2 h | `userId:kilter:linkGeneration` |
 | `provider-routine-cycle` | `routine-provider` | 600 s (heartbeat 300 s) | none | 75 min | `aurora` / `kilter` |
-| `aurora-shared-sync` | `routine-provider` | 3600 s (heartbeat 300 s), priority -5 | 1, after 300 s | 6 h | the board |
+| `aurora-shared-sync` | `routine-provider` | 3600 s (heartbeat 300 s) | 1, after 300 s | 6 h | the board |
 | `kilter-catalog-sync` | `routine-provider` | 3600 s (heartbeat 300 s) | 1, after 300 s | 2 h | `kilter` |
 | `moonboard-locations-sync` | `routine-provider` | 1800 s (heartbeat 120 s) | 1, after 600 s | 24 h | `moonboard` |
 | `climb-stats-self-heal` | `maintenance-delivery` | 900 s (heartbeat 120 s) | 1, after 300 s | 1 h | `climb-stats` |
@@ -682,7 +682,7 @@ it, then succeeds and logs `[worker] routine cycle finished` with the reason:
 | Stop | When |
 | --- | --- |
 | `MAX_CREDENTIALS` | `ROUTINE_CYCLE_MAX_CREDENTIALS` credentials attempted (default 4, 1 to 50) |
-| `BUDGET` | `ROUTINE_CYCLE_BUDGET_MS` passed (default 180 000, at most 400 000), checked before each claim; a started credential finishes |
+| `BUDGET` | `ROUTINE_CYCLE_BUDGET_MS` passed (default 120 000, at most 400 000), checked before each claim; a started credential finishes |
 | `NO_CREDENTIALS` | nothing is due |
 | `PROVIDER_THROTTLED` | the provider answered 429 with `Retry-After`: that credential's `provider_retry_after_until` is set to `now() + delay` (capped at 6 h) and the failure step the 429 was charged is taken back. The claim waits for the later of that time and the failure backoff (`last_sync_attempt_at + backoff(n)`), never their sum, and the cycle ends |
 | `CYCLE_DEADLINE` | a credential's sync was still running one minute before the lease ends: it is stopped, a transient `CYCLE_DEADLINE` failure is recorded on it under the still-live fence (so `consecutive_failures` backoff parks it and `last_sync_error` shows it), and the cycle ends |
@@ -705,6 +705,27 @@ records the run as `pending_run_id`. If a link or "Sync now" run is already
 pending it joins that run instead of queueing another. This needs the
 `interactive-import` worker to be running, which the provider sync cutover
 (above) already requires.
+
+### Queue share
+
+The `routine-provider` worker runs one job at a time, and every family on its
+queue has the same pg-boss priority (0), so pg-boss hands them out in the order
+they were queued. The arithmetic that keeps the board-wide jobs moving:
+
+- two routine cycles (Aurora and Kilter) are queued every 5 minutes, each
+  claiming credentials for at most `ROUTINE_CYCLE_BUDGET_MS` (default
+  120 000) plus the one credential it started, so cycles take at most about
+  240 s of every 300 s and leave the rest for `aurora-shared-sync`,
+  `kilter-catalog-sync` and `moonboard-locations-sync`;
+- those are singleton-keyed (one queued per board), so a board-wide job
+  queued at :07 waits for at most the cycles queued before it, never for the
+  cycles queued after it.
+
+Two things break this, so do neither: a board-wide family with a LOWER
+priority than the cycle (it would wait behind every cycle ever queued, since
+the cycles never run dry), and a budget above 150 000 (two cycles would then
+fill the whole 300 s). If you change `ROUTINE_CYCLE_BUDGET_MS`, keep twice
+its value well under 300 000.
 
 The run's absolute deadline is 75 minutes, not the lease's 10: the routine
 worker runs one job at a time, so a cycle can sit queued behind an hourly
@@ -792,6 +813,26 @@ batches of 500.
 Exactly one owner at every step; never run the daemons and the families
 together.
 
+0. Prove the grants on a fully migrated database first: a private,
+   throwaway copy of the dev DB image, never a shared or remote database (and
+   never `vp run db:migrate`, which follows your `.env` wherever it points).
+   The full proof runs every routine family, gym locations and the Kilter
+   catalog included, as the restricted roles; CI runs only the test-schema
+   half.
+
+   ```bash
+   docker run -d --rm --name routine-grants-db -p 5440:5432 --shm-size=256m \
+     -e POSTGRES_PASSWORD=password -e POSTGRES_DB=main \
+     ghcr.io/boardsesh/boardsesh-dev-db@sha256:<the digest in docker-compose.yml>
+   (cd packages/db && DATABASE_URL=postgresql://postgres:password@localhost:5440/main \
+     vp exec tsx scripts/migrate.ts)
+   ROUTINE_GRANTS_DATABASE_URL=postgresql://postgres:password@localhost:5440/main \
+     vp test run --project backend-serial job-queue-roles-routine
+   docker rm -f routine-grants-db
+   ```
+
+   Both tests in that file must pass; the second is the one that needs the
+   URL (it is skipped without it).
 1. Run the migrator with the new grants
    (`routine-provider=<login>`, `maintenance-delivery=<login>` entries).
 2. Deploy the backend with the new code and `BATCH_FAMILIES_ENABLED` still

@@ -583,3 +583,34 @@ describe('runRoutineCredentialSync binds the run to the credential as it is now'
     expect(seen[0]).toMatchObject({ id: claimed!.id, userId: 'routine-a' });
   });
 });
+
+describe('queue share on the routine-provider queue', () => {
+  const enqueue = async (family: string, payload: Record<string, unknown>) => {
+    const { runId } = await enqueueBackgroundJob(database, boss, { family, payload });
+    cycleRunIds.push(runId);
+    return runId;
+  };
+  const fetchNext = async () => {
+    const [job] = await boss.fetch<BackgroundJobPayload>(queue, { includeMetadata: true, batchSize: 1 });
+    return job?.id;
+  };
+
+  it('fetches a board-wide job no later than third behind two routine cycles, even as new cycles arrive', async () => {
+    const auroraCycle = await enqueue('provider-routine-cycle', { provider: 'aurora' });
+    const kilterCycle = await enqueue('provider-routine-cycle', { provider: 'kilter' });
+    const sharedSync = await enqueue('aurora-shared-sync', { board: 'tension' });
+
+    // Each cycle finishes and the next five-minute tick queues its successor
+    // before the worker fetches again: the stream of cycles never runs dry.
+    expect(await fetchNext()).toBe(auroraCycle);
+    await boss.complete(queue, auroraCycle);
+    await enqueue('provider-routine-cycle', { provider: 'aurora' });
+    expect(await fetchNext()).toBe(kilterCycle);
+    await boss.complete(queue, kilterCycle);
+    await enqueue('provider-routine-cycle', { provider: 'kilter' });
+
+    // At a lower priority the shared job would wait behind both new cycles,
+    // and every cycle after them; at the same priority FIFO order runs it now.
+    expect(await fetchNext()).toBe(sharedSync);
+  });
+});

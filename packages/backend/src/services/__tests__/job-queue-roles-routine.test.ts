@@ -47,8 +47,11 @@ import {
  *   locations (Aurora pins and the wall crawl, MoonBoard markers) and the whole
  *   Kilter catalog job. Run it by hand before changing either grant list:
  *
- *     ROUTINE_GRANTS_DATABASE_URL=postgresql://postgres:…@localhost:5440/main \
- *       vp test run --project backend packages/backend/src/services/__tests__/job-queue-roles-routine.test.ts
+ *     ROUTINE_GRANTS_DATABASE_URL=postgresql://postgres:password@localhost:5440/main \
+ *       vp test run --project backend-serial job-queue-roles-routine
+ *
+ * The full recipe (a private dev DB container, migrated) is step 0 of the
+ * routine cutover in docs/background-workers.md.
  */
 
 // Keycloak is the one Kilter call no fixture can stand in for: the refresh

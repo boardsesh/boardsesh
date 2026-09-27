@@ -30,6 +30,9 @@ export const moonBoardLocationsSyncFamily: BackgroundJobFamilyModule<MoonBoardLo
     retryBackoff: true,
     retryDelayMax: 600,
     deadlineSeconds: 86400,
+    // Equal to the routine cycle, so FIFO order keeps it from waiting behind
+    // an endless stream of cycles (docs/background-workers.md, "Queue share").
+    priority: 0,
     // One 25-gym batch (about 25 gym resolutions and 225 board upserts) holds
     // the run-row lock at a time.
     heartbeatSeconds: 120,

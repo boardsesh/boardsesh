@@ -45,6 +45,9 @@ export const kilterCatalogSyncFamily: BackgroundJobFamilyModule<KilterCatalogSyn
     retryBackoff: true,
     retryDelayMax: 300,
     deadlineSeconds: 7200,
+    // Equal to the routine cycle, so FIFO order keeps it from waiting behind
+    // an endless stream of cycles (docs/background-workers.md, "Queue share").
+    priority: 0,
     heartbeatSeconds: 300,
   },
   payload: kilterCatalogSyncPayload,

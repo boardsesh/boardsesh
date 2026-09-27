@@ -63,7 +63,10 @@ export const PROVIDER_FAMILY_SECRETS: Readonly<Record<string, readonly string[]>
 };
 
 /** Defaults for one `provider-routine-cycle` run; see docs/background-workers.md. */
-export const ROUTINE_CYCLE_DEFAULTS = { maxCredentials: 4, budgetMs: 180_000 } as const;
+// 120 s a cycle: two providers every 5 minutes then offer the one-at-a-time
+// routine worker at most 240 s of cycles per 300 s, leaving room for the
+// board-wide jobs (docs/background-workers.md, "Queue share").
+export const ROUTINE_CYCLE_DEFAULTS = { maxCredentials: 4, budgetMs: 120_000 } as const;
 
 /**
  * How much one routine cycle may do: at most `maxCredentials` credentials, and

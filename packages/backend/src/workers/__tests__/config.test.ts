@@ -68,8 +68,8 @@ describe('worker configuration', () => {
     ).toBe(true);
   });
   it('reads the routine cycle limits, with defaults of 4 credentials and 3 minutes', () => {
-    expect(routineCycleLimits({})).toEqual({ maxCredentials: 4, budgetMs: 180_000 });
-    expect(ROUTINE_CYCLE_DEFAULTS).toEqual({ maxCredentials: 4, budgetMs: 180_000 });
+    expect(routineCycleLimits({})).toEqual({ maxCredentials: 4, budgetMs: 120_000 });
+    expect(ROUTINE_CYCLE_DEFAULTS).toEqual({ maxCredentials: 4, budgetMs: 120_000 });
     expect(routineCycleLimits({ ROUTINE_CYCLE_MAX_CREDENTIALS: '10', ROUTINE_CYCLE_BUDGET_MS: '60000' })).toEqual({
       maxCredentials: 10,
       budgetMs: 60_000,

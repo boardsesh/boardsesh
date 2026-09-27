@@ -130,7 +130,7 @@ describe('family contracts', () => {
       retryDelay: 300,
       deadlineSeconds: AURORA_SHARED_SYNC_DEADLINE_SECONDS,
       heartbeatSeconds: 300,
-      priority: -5,
+      priority: 0,
     });
     // Five boards queue behind each other on the one-at-a-time worker, each
     // with an hour's lease: the last one's deadline must outlast the other four.
@@ -180,6 +180,7 @@ describe('family contracts', () => {
           retryDelay: 300,
           deadlineSeconds: 7200,
           heartbeatSeconds: 300,
+          priority: 0,
         },
       },
       {
@@ -192,6 +193,7 @@ describe('family contracts', () => {
           retryDelay: 600,
           deadlineSeconds: 86400,
           heartbeatSeconds: 120,
+          priority: 0,
         },
       },
       {

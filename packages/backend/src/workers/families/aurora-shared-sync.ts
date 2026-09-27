@@ -104,8 +104,10 @@ export const auroraSharedSyncFamily: BackgroundJobFamilyModule<AuroraSharedSyncP
     // One Aurora page (up to ~2000 records with its climb_stats upsert) or one
     // 25-gym location batch holds the run-row lock at a time.
     heartbeatSeconds: 300,
-    // Board-wide upkeep yields to the routine cycle on the shared queue.
-    priority: -5,
+    // The same priority as the routine cycle, never lower: pg-boss fetches
+    // FIFO within a priority, and two routine cycles can keep a lower
+    // priority waiting forever (docs/background-workers.md, "Queue share").
+    priority: 0,
   },
   payload: auroraSharedSyncPayload,
   singletonKey: (payload) => payload.board,

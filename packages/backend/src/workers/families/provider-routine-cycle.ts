@@ -25,7 +25,7 @@ export type RoutineCycleStop =
  * claim and sync the next due credentials until one of
  *
  * - `ROUTINE_CYCLE_MAX_CREDENTIALS` (default 4) have been attempted,
- * - `ROUTINE_CYCLE_BUDGET_MS` (default 180 000) has passed (checked before each
+ * - `ROUTINE_CYCLE_BUDGET_MS` (default 120 000) has passed (checked before each
  *   claim; a started credential finishes),
  * - no credential is due, or
  * - the provider throttled us (429 with `Retry-After`): that credential is
@@ -52,7 +52,7 @@ export const providerRoutineCycleFamily: BackgroundJobFamilyModule<ProviderRouti
   name: 'provider-routine-cycle',
   roles: ['routine-provider'],
   options: {
-    // The soft budget (at most 400 s, default 180 s) plus one credential's sync
+    // The soft budget (at most 400 s, default 120 s) plus one credential's sync
     // must fit in this lease; the signal aborts at it.
     expireInSeconds: 600,
     retryLimit: 0,
