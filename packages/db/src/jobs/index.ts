@@ -28,3 +28,14 @@ export {
   type RefreshClimbGradesParams,
   type RefreshClimbGradesResult,
 } from './refresh-climb-grades';
+export {
+  runRefreshClimbNeighbors,
+  ClimbNeighborsInterruptedError,
+  CLIMB_NEIGHBOR_BOARDS,
+  isGapRefillDay,
+  orderBoardsByClimbCount,
+  type ClimbNeighborRefreshResult,
+  type RefreshClimbNeighborsOptions,
+  type RefreshClimbNeighborsParams,
+  type RefreshClimbNeighborsResult,
+} from './refresh-climb-neighbors';

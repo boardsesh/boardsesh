@@ -1,16 +1,13 @@
 /**
- * Nightly similar-climbs refresh: folds every climb that changed since the last
- * run into board_climb_neighbors (top-25 hold-overlap neighbours per climb),
- * which the `similarClimbs` resolver serves to every non-admin caller.
- *
- * Watermark-driven per board (board_climb_neighbor_runs.last_sync_seq), so a
- * normal night only touches new and edited climbs plus the lists they land in.
- * Spray walls are never materialised. Design + runbook: docs/similar-climbs.md.
+ * Nightly similar-climbs refresh (board_climb_neighbors). The job body is
+ * `src/jobs/refresh-climb-neighbors.ts`; the batch worker's
+ * `refresh-climb-neighbors` family runs the same body, one board per job.
+ * Design + runbook: docs/similar-climbs.md.
  *
  * Run locally: `node --import tsx packages/db/scripts/refresh-climb-neighbors.ts`
- * Flags: --board=<name> (default: every board but spray) · --full (rebuild the
- * board(s) from scratch, ignoring the watermark; a board with no watermark row
- * gets a full build on its first run without it) ·
+ * Flags: --board=<name>[,<name>] (default: every board but spray) · --full
+ * (rebuild the board(s) from scratch, ignoring the watermark; a board with no
+ * watermark row gets a full build on its first run without it) ·
  * --dry-run (compute and count, write nothing) · --refill-gaps (also run the
  * whole-board scan for lists that lost a row; the Sunday UTC run does it anyway).
  *
@@ -19,67 +16,43 @@
  * run cheapest first. CI runs one board per matrix job instead.
  */
 import type { BoardName } from '@boardsesh/shared-schema';
+import { CLIMB_NEIGHBOR_BOARDS, isGapRefillDay, runRefreshClimbNeighbors } from '../src/jobs/index.js';
 import { createScriptDb } from './db-connection.js';
-import {
-  CLIMB_NEIGHBOR_BOARDS,
-  isGapRefillDay,
-  orderBoardsByClimbCount,
-  refreshClimbNeighborsForBoard,
-} from '../src/queries/climbs/climb-neighbors-refresh.js';
+import { cliJobLogger } from './job-cli.js';
 
 function parseBoards(requested: string | undefined): BoardName[] {
-  const materialised = CLIMB_NEIGHBOR_BOARDS;
-  if (!requested) return [...materialised];
+  if (!requested) return [...CLIMB_NEIGHBOR_BOARDS];
   const boards = requested.split(',').map((board) => board.trim());
   for (const board of boards) {
-    if (!(materialised as readonly string[]).includes(board)) {
-      throw new Error(`--board=${board} is not a materialised board. Use one of: ${materialised.join(', ')}`);
+    if (!(CLIMB_NEIGHBOR_BOARDS as readonly string[]).includes(board)) {
+      throw new Error(`--board=${board} is not a materialised board. Use one of: ${CLIMB_NEIGHBOR_BOARDS.join(', ')}`);
     }
   }
   return boards as BoardName[];
 }
 
-async function main(): Promise<void> {
-  const argv = process.argv.slice(2);
-  const get = (flag: string): string | undefined =>
-    argv.find((arg) => arg.startsWith(`${flag}=`))?.slice(flag.length + 1);
-  const requestedBoards = parseBoards(get('--board'));
-  const full = argv.includes('--full');
-  const dryRun = argv.includes('--dry-run');
-  // The gap scan reads every neighbour row on the board; gaps only come from
-  // deleted climbs now, so it runs weekly (docs/similar-climbs.md).
-  const refillGappedLists = argv.includes('--refill-gaps') || isGapRefillDay(new Date());
-
+async function main(argv: string[]): Promise<void> {
+  const boardArgument = argv.find((argument) => argument.startsWith('--board='));
+  const boards = parseBoards(boardArgument?.slice('--board='.length));
   const { db, close } = createScriptDb();
-  const startedAt = Date.now();
   try {
-    // Cheapest boards first: the small catalogues are served before Kilter.
-    const boards = await orderBoardsByClimbCount(db, requestedBoards);
-    console.log(
-      `[refresh-climb-neighbors] boards=${boards.join(',')}${full ? ' --full' : ''}${dryRun ? ' --dry-run' : ''}` +
-        (refillGappedLists ? ' (with gap refill)' : ''),
-    );
-    let totalRows = 0;
-    for (const boardType of boards) {
-      const result = await refreshClimbNeighborsForBoard(db, {
-        boardType,
-        full,
-        dryRun,
-        refillGappedLists,
-        log: (line) => console.log(`[refresh-climb-neighbors] ${line}`),
-      });
-      totalRows += result.rowsWritten;
-    }
-    console.log(
-      `[refresh-climb-neighbors] done: ${totalRows} rows ${dryRun ? 'computed' : 'written'} in ` +
-        `${((Date.now() - startedAt) / 1000).toFixed(1)}s`,
-    );
+    await runRefreshClimbNeighbors({
+      db,
+      signal: new AbortController().signal,
+      log: cliJobLogger(),
+      boards,
+      full: argv.includes('--full'),
+      dryRun: argv.includes('--dry-run'),
+      // The gap scan reads every neighbour row on the board; gaps only come from
+      // deleted climbs now, so it runs weekly (docs/similar-climbs.md).
+      refillGaps: argv.includes('--refill-gaps') || isGapRefillDay(new Date()),
+    });
   } finally {
     await close();
   }
 }
 
-main().catch((error: unknown) => {
+main(process.argv.slice(2)).catch((error: unknown) => {
   console.error('[refresh-climb-neighbors] failed:', error);
   process.exit(1);
 });

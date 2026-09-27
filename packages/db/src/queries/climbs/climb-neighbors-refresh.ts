@@ -16,9 +16,10 @@ import {
 import { distinctHoldIds, storedWoodsSizeId } from './frames-hold-entries';
 
 /**
- * The watermark-driven refresh behind `packages/db/scripts/refresh-climb-neighbors.ts`.
- * Lives in the package (not the script) so the backend Vitest suite, which has
- * a real Postgres, can run it end to end. Design: docs/similar-climbs.md.
+ * The watermark-driven refresh behind the `refresh-climb-neighbors` job
+ * (`src/jobs/refresh-climb-neighbors.ts`, run by the CLI in `scripts/` and by
+ * the batch worker's family). Lives in the package so the backend Vitest suite,
+ * which has a real Postgres, can run it end to end. Design: docs/similar-climbs.md.
  *
  * Per board:
  *  1. Work set = every climb whose `sync_seq` moved past the board's watermark
@@ -47,6 +48,15 @@ import { distinctHoldIds, storedWoodsSizeId } from './frames-hold-entries';
 
 export type ClimbNeighborRefreshDb = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
 
+/**
+ * Runs one write batch in a transaction. Structurally the `JobTransact` of
+ * `@boardsesh/db/jobs`: the batch worker passes its attempt fence, so a batch
+ * commits only while that attempt still owns the run.
+ */
+export type ClimbNeighborTransact = <Result>(
+  callback: (transaction: ClimbNeighborRefreshDb) => Promise<Result>,
+) => Promise<Result>;
+
 export type ClimbNeighborRefreshOptions = {
   boardType: BoardName;
   /** Rebuild every list on the board, ignoring the watermark. Implied on a board's first run. */
@@ -62,6 +72,12 @@ export type ClimbNeighborRefreshOptions = {
   shouldContinue?: () => boolean;
   /** Lists written per transaction. Tests shrink it to stop mid-group. */
   chunkSize?: number;
+  /**
+   * Runs every write batch: the build-state row, each chunk of lists, each
+   * finished group, and the closing sweep + watermark. Defaults to
+   * `db.transaction`. Reads always go through `db`, never inside a batch.
+   */
+  transact?: ClimbNeighborTransact;
   /**
    * Incremental runs only: also scan the whole board for lists shorter than
    * their `list_size` and refill them. The scan reads every row on the board
@@ -223,6 +239,7 @@ export async function refreshClimbNeighborsForBoard(
     shouldContinue = () => true,
     chunkSize = RECOMPUTE_CHUNK,
     refillGappedLists = true,
+    transact = (callback) => db.transaction((transaction) => callback(transaction)),
   }: ClimbNeighborRefreshOptions,
 ): Promise<ClimbNeighborRefreshResult> {
   const result: ClimbNeighborRefreshResult = {
@@ -305,13 +322,15 @@ export async function refreshClimbNeighborsForBoard(
   const buildStartedAt = resuming && run.fullBuildStartedAt ? run.fullBuildStartedAt : runStartedAt;
 
   if (full && !resuming && !dryRun) {
-    await db
-      .insert(boardClimbNeighborRuns)
-      .values({ boardType, lastSyncSeq: 0, fullBuildStartedAt: buildStartedAt, fullBuildSyncSeq: nextSyncSeq })
-      .onConflictDoUpdate({
-        target: boardClimbNeighborRuns.boardType,
-        set: { fullBuildStartedAt: buildStartedAt, fullBuildSyncSeq: nextSyncSeq },
-      });
+    await transact((transaction) =>
+      transaction
+        .insert(boardClimbNeighborRuns)
+        .values({ boardType, lastSyncSeq: 0, fullBuildStartedAt: buildStartedAt, fullBuildSyncSeq: nextSyncSeq })
+        .onConflictDoUpdate({
+          target: boardClimbNeighborRuns.boardType,
+          set: { fullBuildStartedAt: buildStartedAt, fullBuildSyncSeq: nextSyncSeq },
+        }),
+    );
   }
 
   const groups = new Map<string, Group>();
@@ -426,14 +445,16 @@ export async function refreshClimbNeighborsForBoard(
         if (key) addToGroup(groups, key, climb.uuid);
       }
       if (!dryRun) {
-        await db
-          .delete(boardClimbNeighbors)
-          .where(
-            and(
-              eq(boardClimbNeighbors.boardType, boardType),
-              or(inArray(boardClimbNeighbors.climbUuid, uuids), inArray(boardClimbNeighbors.neighborUuid, uuids)),
+        await transact((transaction) =>
+          transaction
+            .delete(boardClimbNeighbors)
+            .where(
+              and(
+                eq(boardClimbNeighbors.boardType, boardType),
+                or(inArray(boardClimbNeighbors.climbUuid, uuids), inArray(boardClimbNeighbors.neighborUuid, uuids)),
+              ),
             ),
-          );
+        );
       }
     }
   }
@@ -519,7 +540,7 @@ export async function refreshClimbNeighborsForBoard(
       if (!dryRun) {
         // One transaction per chunk: a reader sees a climb's old list or its new
         // one, never an empty gap between the delete and the insert.
-        await db.transaction(async (tx) => {
+        await transact(async (tx) => {
           await tx
             .delete(boardClimbNeighbors)
             .where(and(eq(boardClimbNeighbors.boardType, boardType), inArray(boardClimbNeighbors.climbUuid, uuids)));
@@ -541,17 +562,19 @@ export async function refreshClimbNeighborsForBoard(
     }
 
     if (full && !dryRun && !result.interrupted) {
-      await db
-        .insert(boardClimbNeighborGroupRuns)
-        .values({ boardType, layoutId: group.layoutId, sizeId: group.sizeId ?? 0, completedAt: new Date() })
-        .onConflictDoUpdate({
-          target: [
-            boardClimbNeighborGroupRuns.boardType,
-            boardClimbNeighborGroupRuns.layoutId,
-            boardClimbNeighborGroupRuns.sizeId,
-          ],
-          set: { completedAt: new Date() },
-        });
+      await transact((transaction) =>
+        transaction
+          .insert(boardClimbNeighborGroupRuns)
+          .values({ boardType, layoutId: group.layoutId, sizeId: group.sizeId ?? 0, completedAt: new Date() })
+          .onConflictDoUpdate({
+            target: [
+              boardClimbNeighborGroupRuns.boardType,
+              boardClimbNeighborGroupRuns.layoutId,
+              boardClimbNeighborGroupRuns.sizeId,
+            ],
+            set: { completedAt: new Date() },
+          }),
+      );
     }
 
     const stat: ClimbNeighborGroupStat = {
@@ -588,23 +611,26 @@ export async function refreshClimbNeighborsForBoard(
     return result;
   }
 
-  if (full) {
-    // Every list this build wrote carries computed_at >= buildStartedAt (across
-    // every resumed run of it); anything older belongs to a climb that is no
-    // longer eligible (hidden, unlisted, drafted, gone multi-frame).
-    await db
-      .delete(boardClimbNeighbors)
-      .where(and(eq(boardClimbNeighbors.boardType, boardType), lt(boardClimbNeighbors.computedAt, buildStartedAt)));
-  }
-
-  // The watermark moves only here, once every group on the board is done.
-  await db
-    .insert(boardClimbNeighborRuns)
-    .values({ boardType, lastSyncSeq: nextSyncSeq, computedAt: new Date() })
-    .onConflictDoUpdate({
-      target: boardClimbNeighborRuns.boardType,
-      set: { lastSyncSeq: nextSyncSeq, computedAt: new Date(), fullBuildStartedAt: null, fullBuildSyncSeq: null },
-    });
+  // One batch: a full build's closing sweep commits with the watermark that
+  // ends the build, so a retry either resumes the build or finds it done.
+  await transact(async (transaction) => {
+    if (full) {
+      // Every list this build wrote carries computed_at >= buildStartedAt (across
+      // every resumed run of it); anything older belongs to a climb that is no
+      // longer eligible (hidden, unlisted, drafted, gone multi-frame).
+      await transaction
+        .delete(boardClimbNeighbors)
+        .where(and(eq(boardClimbNeighbors.boardType, boardType), lt(boardClimbNeighbors.computedAt, buildStartedAt)));
+    }
+    // The watermark moves only here, once every group on the board is done.
+    await transaction
+      .insert(boardClimbNeighborRuns)
+      .values({ boardType, lastSyncSeq: nextSyncSeq, computedAt: new Date() })
+      .onConflictDoUpdate({
+        target: boardClimbNeighborRuns.boardType,
+        set: { lastSyncSeq: nextSyncSeq, computedAt: new Date(), fullBuildStartedAt: null, fullBuildSyncSeq: null },
+      });
+  });
   log(`[${boardType}] watermark ${previousSyncSeq} → ${nextSyncSeq}, ${result.rowsWritten} rows written`);
   return result;
 }
