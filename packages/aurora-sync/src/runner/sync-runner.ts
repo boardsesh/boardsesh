@@ -1127,11 +1127,14 @@ export class SyncRunner {
     this.lastSelfHealAt = now;
     try {
       const { db } = this.getClient();
-      const { pendingKeysDrained, keysHealed } = await selfHealStaleClimbStats(db);
+      const { pendingKeysDrained, keysHealed, pendingRemaining } = await selfHealStaleClimbStats(db);
       if (keysHealed > 0 || pendingKeysDrained > 0) {
         this.log(
           `[SyncRunner] Recompute self-heal: re-derived ${keysHealed} stale climb-stat key(s), drained ${pendingKeysDrained} pending key(s)`,
         );
+      }
+      if (pendingRemaining !== undefined) {
+        this.log(`[SyncRunner] Recompute self-heal drain capped: ${pendingRemaining} pending key(s) left`);
       }
     } catch (error) {
       this.handleError(error instanceof Error ? error : new Error(String(error)), {});

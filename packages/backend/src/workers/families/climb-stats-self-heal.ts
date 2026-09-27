@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { selfHealStaleClimbStats } from '@boardsesh/db/queries';
 import { logger } from '../../utils/logger';
+import { selfHealMaxDrainBatches } from '../config';
 import type { BackgroundJobFamilyModule } from './types';
 
 const climbStatsSelfHealPayload = z.object({}).strict();
@@ -44,10 +45,23 @@ export const climbStatsSelfHealFamily: BackgroundJobFamilyModule<ClimbStatsSelfH
   async execute(context) {
     // First the keys a sync job marked and never got to recompute (it stopped
     // between a page and its flush), oldest first; then the tick scan.
-    const { pendingKeysDrained, keysHealed } = await selfHealStaleClimbStats(context.database, {
+    const maxDrainBatches = selfHealMaxDrainBatches();
+    const { pendingKeysDrained, keysHealed, pendingRemaining } = await selfHealStaleClimbStats(context.database, {
       runBatch: context.transaction,
       batchKeys: SELF_HEAL_BATCH_KEYS,
+      maxDrainBatches,
     });
+    if (pendingRemaining !== undefined) {
+      // The drain stopped at its cap with keys still waiting: a backlog this
+      // hourly pass is not keeping up with.
+      logger.warn('[worker] climb stats self-heal drain capped', {
+        runId: context.runId,
+        family: context.family,
+        code: 'SELF_HEAL_DRAIN_CAPPED',
+        maxDrainBatches,
+        pendingRemaining,
+      });
+    }
     logger.info('[worker] climb stats self-heal finished', {
       runId: context.runId,
       family: context.family,

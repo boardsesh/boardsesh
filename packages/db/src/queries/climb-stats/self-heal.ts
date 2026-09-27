@@ -23,7 +23,19 @@ type DrizzleDb = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
 const SELF_HEAL_LOOKBACK_HOURS = 3;
 const SELF_HEAL_BATCH = 5000;
 
-export type SelfHealResult = { pendingKeysDrained: number; keysHealed: number };
+export type SelfHealResult = {
+  pendingKeysDrained: number;
+  keysHealed: number;
+  /**
+   * Set only when the drain stopped at its batch cap: the pending rows still
+   * left (of any age), so a backlog the hourly pass cannot keep up with shows
+   * in the logs.
+   */
+  pendingRemaining?: number;
+};
+
+/** Batches one self-heal drain runs at most by default: 20 x 500 keys. */
+export const SELF_HEAL_DEFAULT_MAX_DRAIN_BATCHES = 20;
 
 /** Runs one write batch in one transaction, behind whatever fences its owner applies. */
 type SelfHealBatchRunner = <Result>(callback: (transaction: DrizzleDb) => Promise<Result>) => Promise<Result>;
@@ -79,12 +91,32 @@ export async function findStaleClimbStatsKeys(
  */
 export async function selfHealStaleClimbStats(
   db: DrizzleDb,
-  opts: { limit?: number; lookbackHours?: number; batchKeys?: number; runBatch?: SelfHealBatchRunner } = {},
+  opts: {
+    limit?: number;
+    lookbackHours?: number;
+    batchKeys?: number;
+    /** The drain's batch cap (`SELF_HEAL_MAX_DRAIN_BATCHES` for the job). */
+    maxDrainBatches?: number;
+    runBatch?: SelfHealBatchRunner;
+  } = {},
 ): Promise<SelfHealResult> {
   const runBatch: SelfHealBatchRunner = opts.runBatch ?? ((callback) => db.transaction(callback));
   const batchKeys = opts.batchKeys ?? CLIMB_STATS_RECOMPUTE_BATCH_KEYS;
-  const pendingKeysDrained = await drainPendingClimbStatsRecomputes(runBatch, { batchKeys });
+  const maxDrainBatches = opts.maxDrainBatches ?? SELF_HEAL_DEFAULT_MAX_DRAIN_BATCHES;
+  const pendingKeysDrained = await drainPendingClimbStatsRecomputes(runBatch, {
+    batchKeys,
+    maxBatches: maxDrainBatches,
+  });
+  // Every batch came back full: the drain stopped at its cap, not at the end of
+  // the backlog. Count what is left so the caller can say so.
+  let pendingRemaining: number | undefined;
+  if (pendingKeysDrained >= maxDrainBatches * batchKeys) {
+    const [row] = rowsOf<{ count: number }>(
+      await db.execute(sql`SELECT count(*)::int AS count FROM climb_stats_recompute_pending`),
+    );
+    pendingRemaining = Number(row?.count ?? 0);
+  }
   const keys = await findStaleClimbStatsKeys(db, opts);
   const keysHealed = await recomputeClimbStatsInBatches(runBatch, keys, batchKeys);
-  return { pendingKeysDrained, keysHealed };
+  return { pendingKeysDrained, keysHealed, ...(pendingRemaining === undefined ? {} : { pendingRemaining }) };
 }

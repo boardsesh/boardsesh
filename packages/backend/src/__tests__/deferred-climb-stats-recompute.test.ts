@@ -12,6 +12,7 @@ import {
   drainPendingClimbStatsRecomputes,
   markClimbStatsRecomputePending,
   recomputeClimbStatsInBatches,
+  selfHealStaleClimbStats,
   type ClimbStatsKey,
   type ProviderSyncDb,
   type SyncBatchRunner,
@@ -433,6 +434,28 @@ describe('the drain racing a page that re-marks old keys', () => {
     expect(pageWaited).toBe(true);
     // Both re-marks survive the drain's DELETE, for the next flush or pass.
     expect(await countRows('climb_stats_recompute_pending', ASCENT_CLIMB)).toBe(2);
+  });
+});
+
+describe('the self-heal drain cap', () => {
+  it('reports the pending keys left when the drain stops at its cap', async () => {
+    await insertLinkedTensionAccount(database, ASCENT_USER, ASCENT_CLIMB);
+    for (const angle of [40, 45, 50]) {
+      await database.execute(sql`
+        INSERT INTO climb_stats_recompute_pending (board_type, climb_uuid, angle, requested_at)
+        VALUES (${FIXTURE_BOARD}, ${ASCENT_CLIMB}, ${angle}, now() - interval '10 minutes')`);
+    }
+
+    // Batches of one key, at most two: the third key is left for the next pass.
+    const capped = await selfHealStaleClimbStats(database, { batchKeys: 1, maxDrainBatches: 2 });
+    expect(capped.pendingKeysDrained).toBe(2);
+    expect(capped.pendingRemaining).toBeGreaterThanOrEqual(1);
+    expect(await countRows('climb_stats_recompute_pending', ASCENT_CLIMB)).toBe(1);
+
+    // A drain that reaches the end of the backlog reports nothing remaining.
+    const finished = await selfHealStaleClimbStats(database, { batchKeys: 1, maxDrainBatches: 5 });
+    expect(finished.pendingKeysDrained).toBe(1);
+    expect(finished.pendingRemaining).toBeUndefined();
   });
 });
 
