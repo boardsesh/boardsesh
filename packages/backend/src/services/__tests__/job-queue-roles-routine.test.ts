@@ -761,15 +761,24 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('routine-provider and maintenance-delivery worker grants', () => {
-  it('run the routine cycle, the Aurora shared catalog and the self-heal as the restricted roles (test schema)', async () => {
-    await proveRoutineGrants({ full: false, ownerUrl: process.env.DATABASE_URL! });
-  }, 120_000);
+/** The test database's owner connection; empty when none is configured, which skips the proof. */
+const TEST_OWNER_URL = process.env.DATABASE_URL ?? '';
+/** A migrated database for the full proof; empty (the usual case) skips it. */
+const MIGRATED_OWNER_URL = process.env.ROUTINE_GRANTS_DATABASE_URL ?? '';
 
-  it.skipIf(!process.env.ROUTINE_GRANTS_DATABASE_URL)(
+describe('routine-provider and maintenance-delivery worker grants', () => {
+  it.skipIf(TEST_OWNER_URL === '')(
+    'run the routine cycle, the Aurora shared catalog and the self-heal as the restricted roles (test schema)',
+    async () => {
+      await proveRoutineGrants({ full: false, ownerUrl: TEST_OWNER_URL });
+    },
+    120_000,
+  );
+
+  it.skipIf(MIGRATED_OWNER_URL === '')(
     'run every routine family, locations and the Kilter catalog included (migrated schema)',
     async () => {
-      await proveRoutineGrants({ full: true, ownerUrl: process.env.ROUTINE_GRANTS_DATABASE_URL! });
+      await proveRoutineGrants({ full: true, ownerUrl: MIGRATED_OWNER_URL });
     },
     300_000,
   );
