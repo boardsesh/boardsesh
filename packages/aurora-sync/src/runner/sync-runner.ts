@@ -907,8 +907,9 @@ export class SyncRunner {
    * 2. Claim the same `board_shared_syncs` cooldown slot the daemon uses. A
    *    refused claim is `cooldown`: another run (or the daemon) did this board
    *    recently.
-   * 3. Run {@link runBoardSharedWork}. A stored token Aurora rejects (401/403)
-   *    earns one fresh login and one more try.
+   * 3. Run {@link runBoardSharedWork}. A stored token Aurora rejects (401,
+   *    403, or the 422 `invalid_credentials` it answers an expired session
+   *    with) earns one fresh login and one more try.
    * 4. Re-stamp the slot. Success and permanent Aurora failures get the full
    *    cooldown measured from the claim (the marker is backdated by the run's
    *    length, so a long run never makes the next hourly tick wait). A
@@ -956,7 +957,11 @@ export class SyncRunner {
       try {
         await this.runBoardSharedWork(board, token, work);
       } catch (error) {
-        const rejected = isAuroraRequestError(error) && (error.status === 401 || error.status === 403);
+        // Aurora answers an expired session with 422 (`invalid_credentials`),
+        // not only 401/403: all three mean "this token is no good".
+        const rejected =
+          isAuroraRequestError(error) &&
+          (error.status === 401 || error.status === 403 || error.code === 'invalid_credentials');
         if (tokenSource !== 'stored' || !rejected || signal?.aborted) throw error;
         this.log(`[SyncRunner] Stored token for ${board} was rejected; logging in once`);
         tokenSource = 'login';

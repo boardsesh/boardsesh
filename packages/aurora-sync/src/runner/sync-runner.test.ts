@@ -1316,6 +1316,34 @@ describe('SyncRunner.runSharedSyncJob (the aurora-shared-sync job)', () => {
     expect(updateCredentialStatus).not.toHaveBeenCalled();
   });
 
+  it('logs in once with the donor password when Aurora answers the stored token with 422 (expired session)', async () => {
+    mockFindSharedSyncDonorCredential.mockResolvedValue(donorCredential());
+    mockSyncSharedData
+      .mockRejectedValueOnce(
+        new AuroraRequestError({ code: 'invalid_credentials', message: 'Aurora HTTP 422', status: 422 }),
+      )
+      .mockResolvedValueOnce({});
+    mockSignIn.mockResolvedValue({ token: 'fresh-token' });
+    const runner = new SyncRunner({ db: injectedDb, onLog: () => {} });
+
+    expect(await runner.runSharedSyncJob('decoy', { transaction })).toEqual({ status: 'synced', tokenSource: 'login' });
+    expect(mockSignIn).toHaveBeenCalledTimes(1);
+    expect(mockSyncSharedData.mock.calls[1][2]).toBe('fresh-token');
+  });
+
+  it('does not log in again when the fresh login is itself rejected', async () => {
+    mockFindSharedSyncDonorCredential.mockResolvedValue(donorCredential({ auroraToken: null }));
+    mockSignIn.mockResolvedValue({ token: 'fresh-token' });
+    mockSyncSharedData.mockRejectedValueOnce(
+      new AuroraRequestError({ code: 'invalid_credentials', message: 'Aurora HTTP 422', status: 422 }),
+    );
+    const runner = new SyncRunner({ db: injectedDb, onLog: () => {} });
+
+    await expect(runner.runSharedSyncJob('decoy')).rejects.toMatchObject({ code: 'invalid_credentials' });
+    expect(mockSignIn).toHaveBeenCalledTimes(1);
+    expect(mockSyncSharedData).toHaveBeenCalledTimes(1);
+  });
+
   it('stops after the re-login when the job was stopped while it logged in', async () => {
     mockFindSharedSyncDonorCredential.mockResolvedValue(donorCredential());
     mockSyncSharedData.mockRejectedValueOnce(

@@ -439,8 +439,9 @@ A job-driven runner skips the shared sync (`skipSharedSync`); the
 
 1. borrow a token from the board's most recently successful `active`
    credential (`findSharedSyncDonorCredential`): its stored `aurora_token`,
-   or a login with its password when none is stored or Aurora rejects it (401
-   or 403). Nothing is ever recorded against that credential;
+   or a login with its password when none is stored or Aurora rejects it (401,
+   403, or the 422 `invalid_credentials` Aurora returns for an expired
+   session). Nothing is ever recorded against that credential;
 2. claim the board's `__local_shared_sync__` slot with a 50-minute cooldown
    (the daemon uses 60) measured from the claim, so the next hourly tick finds
    it free however long this run takes;
