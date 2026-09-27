@@ -160,6 +160,9 @@ export class SyncRunner {
   // False when the caller injected `db`: the caller owns that pool, so this
   // runner never opens one of its own and stop() never ends it.
   private readonly ownsPool: boolean;
+  // One credential cycle at a time per runner, like aurora-sync's
+  // syncCredential: set synchronously on entry, before the first await.
+  private syncing = false;
   private lease: DaemonLease | null = null;
   // Per-process identity for the daemon lease, minted once so a renewal reads
   // as "still us" rather than a takeover.
@@ -290,6 +293,20 @@ export class SyncRunner {
     db: RunnerDb,
     cred: KilterCredentialRecord,
     options: RunCycleOptions = {},
+  ): Promise<SyncOutcome> {
+    if (this.syncing) throw new Error('KilterSyncRunner is already syncing a credential');
+    this.syncing = true;
+    try {
+      return await this.runGuardedCycle(db, cred, options);
+    } finally {
+      this.syncing = false;
+    }
+  }
+
+  private async runGuardedCycle(
+    db: RunnerDb,
+    cred: KilterCredentialRecord,
+    options: RunCycleOptions,
   ): Promise<SyncOutcome> {
     const resolved: RunCycleOptions = {
       ...options,

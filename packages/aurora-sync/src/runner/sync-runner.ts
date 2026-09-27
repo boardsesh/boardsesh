@@ -179,6 +179,10 @@ export class SyncRunner {
   // syncs one credential at a time (the daemon loop and a job both do), and
   // syncCredential refuses a second concurrent call.
   private callOptions: SyncCredentialOptions | null = null;
+  // Set synchronously on entry, before the first await, so a second
+  // concurrent syncCredential on this instance is refused instead of
+  // overwriting the first call's options mid-flight.
+  private syncing = false;
   private lease: DaemonLease | null = null;
   // Per-process identity for the daemon lease. Minted once per SyncRunner so a
   // renewal is recognised as "still us" rather than a takeover.
@@ -320,7 +324,8 @@ export class SyncRunner {
    * board-wide shared sync to its own schedule.
    */
   async syncCredential(cred: CredentialRecord, options: SyncCredentialOptions = {}): Promise<SyncOutcome> {
-    if (this.callOptions) throw new Error('SyncRunner is already syncing a credential');
+    if (this.syncing) throw new Error('SyncRunner is already syncing a credential');
+    this.syncing = true;
     this.callOptions = options;
     try {
       await this.syncSingleCredential(cred);
@@ -342,6 +347,7 @@ export class SyncRunner {
       };
     } finally {
       this.callOptions = null;
+      this.syncing = false;
     }
   }
 
