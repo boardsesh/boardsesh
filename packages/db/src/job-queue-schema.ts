@@ -78,9 +78,9 @@ export const WORKER_ROLE_DATA_GRANTS: Record<BackgroundWorkerRole, readonly Work
   'routine-provider': [],
   'maintenance-delivery': [],
   // refresh-recommendations, refresh-hold-features, refresh-climb-grades,
-  // refresh-climb-neighbors.
+  // refresh-climb-neighbors, export-board-snapshots.
   batch: [
-    // Catalog and history the three jobs scan.
+    // Catalog and history the jobs scan.
     { table: 'board_climbs', privileges: ['SELECT'] },
     { table: 'board_climb_stats', privileges: ['SELECT'] },
     { table: 'board_climb_holds', privileges: ['SELECT'] },
@@ -137,6 +137,42 @@ export const WORKER_ROLE_DATA_GRANTS: Record<BackgroundWorkerRole, readonly Work
     { table: 'board_climb_neighbors', privileges: ['SELECT', 'INSERT', 'DELETE'] },
     { table: 'board_climb_neighbor_runs', privileges: ['SELECT', 'INSERT', 'UPDATE'] },
     { table: 'board_climb_neighbor_group_runs', privileges: ['SELECT', 'INSERT', 'UPDATE'] },
+    // export-board-snapshots writes nothing. The per-layout artifacts read
+    // board_climbs, board_climb_stats and board_climb_grades (above); the
+    // catalogue artifact reads every CATALOG_SNAPSHOT_TABLES entry. Its deletion
+    // replay observer also needs pg_read_all_stats, a predefined role this
+    // migrator cannot grant: the admin grants it when provisioning the login
+    // (docs/background-workers.md).
+    { table: 'board_products', privileges: ['SELECT'] },
+    { table: 'board_layouts', privileges: ['SELECT'] },
+    { table: 'board_product_sizes', privileges: ['SELECT'] },
+    { table: 'board_placement_roles', privileges: ['SELECT'] },
+    { table: 'board_leds', privileges: ['SELECT'] },
+    { table: 'board_kits', privileges: ['SELECT'] },
+    { table: 'board_difficulty_grades', privileges: ['SELECT'] },
+    { table: 'board_attempts', privileges: ['SELECT'] },
+    // Every column except the three the catalogue drops
+    // (CATALOG_SNAPSHOT_EXCLUDED_COLUMNS: who attached a link, and to which tick
+    // and wall). The catalogue lists columns through information_schema.columns,
+    // which shows only granted ones, so a new column must be added here or the
+    // export silently leaves it out; job-queue-roles-snapshots.test.ts compares the
+    // restricted column lists with the owner's.
+    {
+      table: 'board_beta_links',
+      privileges: ['SELECT'],
+      columns: [
+        'board_type',
+        'climb_uuid',
+        'link',
+        'foreign_username',
+        'angle',
+        'thumbnail',
+        'is_listed',
+        'created_at',
+        'shortcode',
+        'video_identity',
+      ],
+    },
   ],
 };
 
