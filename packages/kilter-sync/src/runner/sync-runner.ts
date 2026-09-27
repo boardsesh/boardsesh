@@ -666,6 +666,9 @@ export class SyncRunner {
         deleteBatchLimit: this.config.deleteBatchLimit,
         signal,
         transaction,
+        // Keys the run's setter notifications, so a retry of this run does not
+        // notify anyone twice.
+        runKey: options.runId,
       });
       signal?.throwIfAborted();
       await this.maybeRepairKilterStats(db, tokenProvider, { transaction, signal });

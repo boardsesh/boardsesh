@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { sharedSync } from '../api/shared-sync-api';
 import { type SyncOptions, type AuroraBoardName, SHARED_SYNC_TABLES } from '../api/types';
 import { sql, eq, and, inArray, isNull, isNotNull, type SQL } from 'drizzle-orm';
@@ -30,6 +31,7 @@ import {
   conflictSetChangesRowSql,
   conflictSetEntries,
   setterSyncNotificationUuid,
+  setterSyncRunNotificationUuid,
   snapshotClimbStatsHistoryIfDue,
 } from '@boardsesh/db/queries';
 import { commandCountFromResult } from '@boardsesh/db/client';
@@ -1112,6 +1114,12 @@ export type SharedSyncBatchRunner = <Result>(callback: (transaction: DrizzleDb) 
 
 export type SyncSharedDataOptions = {
   /**
+   * Identifies this sync run for its setter notifications: a follower gets one
+   * per setter per run. A background job passes its run id; unset, each call
+   * is its own run.
+   */
+  runKey?: string;
+  /**
    * Runs every write batch (one per Aurora page, with that page's setter
    * notifications, then the history snapshot and the required_set_ids heal)
    * in one transaction.
@@ -1146,6 +1154,10 @@ export async function syncSharedData(
 ): Promise<SharedSyncResult> {
   const { signal } = options;
   const runBatch: SharedSyncBatchRunner = options.transaction ?? ((callback) => db.transaction(callback));
+  // One notification per follower per setter for the whole pass, however many
+  // pages its climbs span: the job's run id (so its retries dedup too), or one
+  // key for this pass.
+  const runKey = options.runKey ?? randomUUID();
 
   const allSyncTimes = await getAllSharedSyncTimes(db, board);
   // Single source of truth for cursors across batches — keyed by table name.
@@ -1250,7 +1262,9 @@ export async function syncSharedData(
       if (batchNewClimbs.length > 0) {
         const pageNewClimbs = batchNewClimbs;
         try {
-          await tx.transaction((savepoint) => createSetterSyncNotifications(savepoint, board, pageNewClimbs, log));
+          await tx.transaction((savepoint) =>
+            createSetterSyncNotifications(savepoint, board, pageNewClimbs, log, { runKey }),
+          );
         } catch (error) {
           if (signal?.aborted) throw error;
           log(
@@ -1356,6 +1370,13 @@ export async function createSetterSyncNotifications(
   boardName: AuroraBoardName,
   newClimbs: NewClimbInfo[],
   log: (message: string) => void,
+  /**
+   * The sync run these climbs belong to. With it, a follower gets one
+   * notification per setter per run however many pages the climbs span (see
+   * setterSyncRunNotificationUuid); without it, one per call, keyed on the
+   * batch's head climb.
+   */
+  options: { runKey?: string } = {},
 ): Promise<void> {
   const climbsBySetter = new Map<string, NewClimbInfo[]>();
   for (const climb of newClimbs) {
@@ -1440,7 +1461,10 @@ export async function createSetterSyncNotifications(
     // backstop for that, independent of the cooldown claim that stops the two
     // runs overlapping in the first place. See setterSyncNotificationUuid.
     const notificationValues = Array.from(recipientIds).map((recipientId) => ({
-      uuid: setterSyncNotificationUuid({ recipientId, entityId: firstClimbUuid, actorId }),
+      uuid:
+        options.runKey === undefined
+          ? setterSyncNotificationUuid({ recipientId, entityId: firstClimbUuid, actorId })
+          : setterSyncRunNotificationUuid({ recipientId, setterUsername, runKey: options.runKey }),
       recipientId,
       actorId,
       type: 'new_climbs_synced' as const,

@@ -58,3 +58,29 @@ export function setterSyncNotificationUuid(input: {
     SETTER_SYNC_NOTIFICATION_NAMESPACE,
   );
 }
+
+/**
+ * Deterministic uuid for ONE sync run's "new climbs from <setter>" notification
+ * to one follower. A run writes its notifications flush by flush (each page or
+ * layout flush commits its own, so a stopped run never loses them), and a
+ * setter's new climbs can span several flushes: keying on the run, not on a
+ * flush's head climb, gives a follower one notification per setter per run.
+ * The first flush inserts it (its head climb as `entity_id`); every later
+ * flush of the run, and a retried flush, collides on `notifications.uuid` and
+ * leaves it as it is. Pair with `.onConflictDoNothing()`.
+ *
+ * `runKey` is the background job's run id (stable across its attempts, so a
+ * retry of the same run dedups too), or one random key per daemon pass. Two
+ * DIFFERENT runs no longer dedup each other here: the board-wide slot claim is
+ * what keeps two runs from overlapping.
+ */
+export function setterSyncRunNotificationUuid(input: {
+  recipientId: string;
+  setterUsername: string;
+  runKey: string;
+}): string {
+  return uuidv5(
+    `new_climbs_synced_run|${input.recipientId}|${input.setterUsername}|${input.runKey}`,
+    SETTER_SYNC_NOTIFICATION_NAMESPACE,
+  );
+}

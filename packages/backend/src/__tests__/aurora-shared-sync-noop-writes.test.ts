@@ -331,6 +331,79 @@ describeWithDatabase('Aurora climbs upsert skips unchanged rows (real DB)', () =
   });
 });
 
+describeWithDatabase('syncSharedData: one setter notification per follower per run (real DB)', () => {
+  it('announces a setter once per run although its new climbs span two pages, and a retry adds none', async () => {
+    const tag = uniqueTag();
+    const follower = `${tag}-follower`;
+    const setter = `${tag}-setter`;
+    const climbs = [`${tag}-climb-a`, `${tag}-climb-b`, `${tag}-climb-c`];
+    const climb = (uuid: string): Climb => ({
+      uuid,
+      name: 'Notify me once',
+      description: '',
+      hsm: 1,
+      edge_left: 0,
+      edge_right: 100,
+      edge_bottom: 0,
+      edge_top: 100,
+      frames_count: 1,
+      frames_pace: 0,
+      frames: 'p1r5',
+      setter_id: 7,
+      setter_username: setter,
+      layout_id: 9,
+      is_draft: false,
+      is_listed: true,
+      created_at: '2024-01-01 00:00:00',
+      updated_at: '2024-01-01 00:00:00',
+      angle: 40,
+    });
+    const notificationRows = async () =>
+      rowsFromResult<{ entity_id: string }>(
+        await db.execute(sql`
+          SELECT entity_id FROM notifications
+           WHERE recipient_id = ${follower} AND type = 'new_climbs_synced'`),
+      );
+    const cleanup = async () => {
+      await db.execute(sql`DELETE FROM notifications WHERE recipient_id = ${follower}`);
+      await db.execute(sql`DELETE FROM setter_follows WHERE follower_id = ${follower}`);
+      await db.execute(sql`DELETE FROM board_climbs WHERE uuid IN (${climbs[0]}, ${climbs[1]}, ${climbs[2]})`);
+      await db.execute(sql`DELETE FROM users WHERE id = ${follower}`);
+      await db.execute(sql`DELETE FROM board_shared_syncs WHERE board_type = ${BOARD}`);
+    };
+
+    await cleanup();
+    await db.execute(sql`
+      INSERT INTO users (id, email, name, created_at, updated_at)
+      VALUES (${follower}, ${follower + '@test.com'}, 'Follower', now(), now())`);
+    await db.execute(sql`INSERT INTO setter_follows (follower_id, setter_username) VALUES (${follower}, ${setter})`);
+    const runKey = `run-${tag}`;
+
+    try {
+      mockSharedSync.mockReset();
+      mockSharedSync
+        .mockResolvedValueOnce({
+          _complete: false,
+          climbs: [climb(climbs[0])],
+          shared_syncs: [{ table_name: 'climbs', last_synchronized_at: '2026-09-01 00:00:00.000000' }],
+        })
+        .mockResolvedValueOnce({ _complete: true, climbs: [climb(climbs[1])] });
+      await syncSharedData(db, BOARD, 'token', () => {}, { runKey });
+
+      expect(await notificationRows()).toEqual([{ entity_id: climbs[0] }]);
+
+      // A retry of the same run that finds another new climb by the setter.
+      mockSharedSync.mockReset();
+      mockSharedSync.mockResolvedValueOnce({ _complete: true, climbs: [climb(climbs[2])] });
+      await syncSharedData(db, BOARD, 'token', () => {}, { runKey });
+
+      expect(await notificationRows()).toEqual([{ entity_id: climbs[0] }]);
+    } finally {
+      await cleanup();
+    }
+  });
+});
+
 describeWithDatabase('syncSharedData: setter notifications commit with their page (real DB)', () => {
   it('keeps page 1 notifications when the attempt is lost before page 2, and the retry adds page 2 once', async () => {
     const tag = uniqueTag();

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { and, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import {
@@ -90,6 +91,12 @@ export type SyncKilterCatalogArgs = {
    * a genuinely new climb worth notifying about.
    */
   suppressNotifications?: boolean;
+  /**
+   * Identifies this run for its setter notifications: a follower gets one per
+   * setter per run. A background job passes its run id; unset, each call is
+   * its own run.
+   */
+  runKey?: string;
   /**
    * Checked between layout groups and before each closing step (backlog,
    * locations, notifications, deletions), and passed to every Kilter request:
@@ -1556,12 +1563,18 @@ export async function syncKilterCatalog(args: SyncKilterCatalogArgs): Promise<Ki
   };
   const collected: CollectedGroupOutputs = { newCanonicals: [], skips: [], resolvedSkipUuids: [] };
   const allNewCanonicals = collected.newCanonicals;
+  // One notification per follower per setter for the whole run, however many
+  // layout flushes its new climbs span: the job's run id (so its retries dedup
+  // too), or one key for this run.
+  const runKey = args.runKey ?? randomUUID();
   // In a savepoint, so a notification failure is logged and the flush's
   // catalog rows still commit; a lost fence or a stop still ends the run.
   const notify: NotifyNewCanonicals = async (transaction, newCanonicals) => {
     if (newCanonicals.length === 0 || args.suppressNotifications) return;
     try {
-      await transaction.transaction((savepoint) => createSetterSyncNotifications(savepoint, newCanonicals, log));
+      await transaction.transaction((savepoint) =>
+        createSetterSyncNotifications(savepoint, newCanonicals, log, { runKey }),
+      );
     } catch (error) {
       if (mustStop(error, args.signal)) throw error;
       log(`[kilter-catalog] setter notifications failed: ${error instanceof Error ? error.message : String(error)}`);

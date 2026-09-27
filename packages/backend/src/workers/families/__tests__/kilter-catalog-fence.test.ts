@@ -7,6 +7,7 @@ import { createDb } from '@boardsesh/db/client';
 import { BackgroundJobAttemptLostError } from '@boardsesh/db/queries';
 import type { BackgroundJobContext } from '../types';
 import { kilterCatalogSyncFamily } from '../kilter-catalog-sync';
+import { createSetterSyncNotifications } from '@boardsesh/kilter-sync/sync';
 import { insertLinkedKilterAccount, removeFixtures } from './provider-sync-fixtures';
 
 // Keycloak stands in for the donor's token refresh; everything behind it runs.
@@ -258,5 +259,33 @@ describe('kilter-catalog-sync behind the attempt fence', () => {
       SELECT last_synchronized_at AS value FROM board_shared_syncs
        WHERE board_type = 'kilter' AND table_name = '__local_catalog_sync__'`);
     expect(cursor.value).toContain('#claim:');
+  });
+});
+
+describe("Kilter setter notifications across a run's flushes", () => {
+  const rows = async () =>
+    database.execute<{ uuid: string; entity_id: string }>(sql`
+      SELECT uuid, entity_id FROM notifications
+       WHERE recipient_id = ${FOLLOWER} AND type = 'new_climbs_synced'`);
+  const newClimb = (uuid: string) => ({ uuid, setterUsername: SETTER, layoutId: CATALOG_ID, name: uuid });
+
+  it('gives a follower one notification per setter per run, however many flushes it spans', async () => {
+    const runKey = randomUUID();
+    // Two layout flushes of one run, each with a new climb by the same setter;
+    // the second flush is then retried.
+    await createSetterSyncNotifications(database, [newClimb('PSYNCKFENCE-FLUSH-1')], () => {}, { runKey });
+    await createSetterSyncNotifications(database, [newClimb('PSYNCKFENCE-FLUSH-2')], () => {}, { runKey });
+    await createSetterSyncNotifications(database, [newClimb('PSYNCKFENCE-FLUSH-2')], () => {}, { runKey });
+
+    const once = await rows();
+    expect(once).toHaveLength(1);
+    // The first flush's head climb names it.
+    expect(once[0].entity_id).toBe('PSYNCKFENCE-FLUSH-1');
+
+    // A later run is a new notification.
+    await createSetterSyncNotifications(database, [newClimb('PSYNCKFENCE-FLUSH-3')], () => {}, {
+      runKey: randomUUID(),
+    });
+    expect(await rows()).toHaveLength(2);
   });
 });

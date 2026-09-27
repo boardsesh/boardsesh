@@ -897,13 +897,14 @@ export class SyncRunner {
   private async runBoardSharedWork(
     boardType: AuroraBoardName,
     token: string,
-    options: Pick<SharedSyncJobOptions, 'transaction' | 'signal'>,
+    options: Pick<SharedSyncJobOptions, 'transaction' | 'signal'> & { runKey?: string },
   ): Promise<void> {
     const { db } = this.getClient();
-    await syncSharedData(db, boardType, token, this.log.bind(this), options);
+    const { runKey, ...fenced } = options;
+    await syncSharedData(db, boardType, token, this.log.bind(this), { ...fenced, runKey });
     if (this.isLocationBoard(boardType)) {
-      await syncAuroraBoardLocations({ db, board: boardType, log: this.log.bind(this), ...options });
-      await this.crawlGymWallSlice(boardType, token, options);
+      await syncAuroraBoardLocations({ db, board: boardType, log: this.log.bind(this), ...fenced });
+      await this.crawlGymWallSlice(boardType, token, fenced);
     }
   }
 
@@ -955,7 +956,9 @@ export class SyncRunner {
     const fromStart = () => Math.max(0, cooldownMs - (Date.now() - startedAt));
     let nextCooldownMs = cooldownMs;
     let providerHoldMs: number | undefined;
-    const work = { transaction: options.transaction, signal };
+    // The run id keys the pass's setter notifications, so a retry of this run
+    // does not notify anyone twice.
+    const work = { transaction: options.transaction, signal, runKey: options.runId };
     try {
       let tokenSource: 'stored' | 'login' = 'stored';
       let token = this.storedDonorToken(donor);
