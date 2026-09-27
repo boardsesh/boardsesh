@@ -19,8 +19,10 @@ export function parseRetryAfterMs(header: string | null | undefined, now: number
   const value = header.trim();
   if (value === '') return undefined;
   if (/^\d+$/.test(value)) {
-    // Compare in seconds before multiplying: `Number('9'.repeat(20)) * 1000`
-    // is past MAX_SAFE_INTEGER, and a long enough string is Infinity.
+    // Cap before returning: `Number('9'.repeat(20)) * 1000` is past
+    // MAX_SAFE_INTEGER, and a long enough string makes Number() Infinity.
+    // The product is only compared against the ceiling, never returned when
+    // it exceeds it.
     const seconds = Number(value);
     if (!Number.isFinite(seconds) || seconds * 1000 > RETRY_AFTER_PARSE_CEILING_MS) return RETRY_AFTER_PARSE_CEILING_MS;
     return seconds * 1000;
