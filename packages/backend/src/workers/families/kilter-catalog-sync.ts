@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { logger } from '../../utils/logger';
 import { boundedErrorFields } from './job-logging';
 import { BackgroundJobError, type BackgroundJobFamilyModule } from './types';
-import { AURORA_SHARED_SYNC_DEADLINE_SECONDS } from './aurora-shared-sync';
+import { BOARD_WIDE_FAN_OUT_DEADLINE_SECONDS, KILTER_CATALOG_SYNC_BUDGET } from './fan-out-budget';
 
 const kilterCatalogSyncPayload = z.object({}).strict();
 
@@ -40,15 +40,15 @@ export const kilterCatalogSyncFamily: BackgroundJobFamilyModule<KilterCatalogSyn
   name: 'kilter-catalog-sync',
   roles: ['routine-provider'],
   options: {
-    expireInSeconds: 3600,
-    retryLimit: 1,
-    retryDelay: 300,
+    expireInSeconds: KILTER_CATALOG_SYNC_BUDGET.expireInSeconds,
+    retryLimit: KILTER_CATALOG_SYNC_BUDGET.retryLimit,
+    retryDelay: KILTER_CATALOG_SYNC_BUDGET.retryDelay,
     retryBackoff: true,
-    retryDelayMax: 300,
+    retryDelayMax: KILTER_CATALOG_SYNC_BUDGET.retryDelay,
     // Queued at :23, it can wait behind every hour-long :07 shared sync on
-    // the one-at-a-time worker at the same priority: the same full-fan-out
-    // budget, so it runs late instead of expiring at claim.
-    deadlineSeconds: AURORA_SHARED_SYNC_DEADLINE_SECONDS,
+    // the one-at-a-time worker at the same priority: the full-fan-out
+    // budget (fan-out-budget.ts), so it runs late instead of expiring at claim.
+    deadlineSeconds: BOARD_WIDE_FAN_OUT_DEADLINE_SECONDS,
     // Equal to the routine cycle, so FIFO order keeps it from waiting behind
     // an endless stream of cycles (docs/background-workers.md, "Queue share").
     priority: 0,

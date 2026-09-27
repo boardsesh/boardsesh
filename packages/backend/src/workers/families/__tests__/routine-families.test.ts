@@ -135,11 +135,16 @@ describe('family contracts', () => {
     // Every board's run queues behind the others on the one-at-a-time worker,
     // each with its lease, its retry and the retry delay: the last one's
     // deadline must outlast all of them, derived from the family's options.
+    // The Kilter catalog queues behind the same fan-out with its own budget.
     const boardCount = AURORA_BOARDS.filter((board) => board !== 'kilter').length;
-    const { expireInSeconds, retryLimit, retryDelay } = family.options;
+    const worst = ({ expireInSeconds, retryLimit, retryDelay }: typeof family.options) =>
+      expireInSeconds * (1 + retryLimit) + retryDelay * retryLimit;
     expect(AURORA_SHARED_SYNC_DEADLINE_SECONDS).toBeGreaterThan(
-      boardCount * (expireInSeconds * (1 + retryLimit) + retryDelay * retryLimit),
+      boardCount * worst(family.options) + worst(requireFamily('kilter-catalog-sync').options),
     );
+    for (const name of ['kilter-catalog-sync', 'provider-routine-cycle']) {
+      expect(requireFamily(name).options.deadlineSeconds).toBe(AURORA_SHARED_SYNC_DEADLINE_SECONDS);
+    }
     expect(family.payload.safeParse({ board: 'kilter' }).success).toBe(false);
     expect(family.singletonKey?.({ board: 'decoy' })).toBe('decoy');
     expect(family.schedules?.map(({ key, cron }) => ({ key, cron }))).toEqual([{ key: 'hourly', cron: '7 * * * *' }]);

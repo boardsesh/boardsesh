@@ -6,6 +6,7 @@ import { boardSharedSyncs } from '@boardsesh/db/schema';
 import { logger } from '../../utils/logger';
 import { boundedErrorFields } from './job-logging';
 import { AURORA_USER_SYNC_BOARDS } from './aurora-user-sync';
+import { AURORA_SHARED_SYNC_BUDGET, BOARD_WIDE_FAN_OUT_DEADLINE_SECONDS } from './fan-out-budget';
 import { BackgroundJobError, type BackgroundJobFamilyModule } from './types';
 
 const auroraSharedSyncPayload = z.object({ board: z.enum(AURORA_USER_SYNC_BOARDS) }).strict();
@@ -68,29 +69,11 @@ async function boardsInSharedSyncOrder(database: DbInstance): Promise<Array<(typ
   );
 }
 
-/** One shared-sync attempt's lease, its retries, and the wait before a retry. */
-const AURORA_SHARED_SYNC_EXPIRE_SECONDS = 3600;
-const AURORA_SHARED_SYNC_RETRY_LIMIT = 1;
-const AURORA_SHARED_SYNC_RETRY_DELAY_SECONDS = 300;
-/** Room for the routine cycles and a Kilter catalog run the fan-out shares the worker with. */
-const FAN_OUT_SLACK_SECONDS = 3600;
-
 /**
- * The absolute deadline covers the whole hourly fan-out, not one run: the
- * routine worker runs one job at a time, so the last board of the fan-out
- * (every board in AURORA_BOARDS except Kilter) can wait behind all the others.
- * Each of those may use its lease AND its retry (plus the retry delay), so the
- * budget is boards x (expire x (1 + retryLimit) + retryDelay x retryLimit),
- * plus slack for the cycles and the Kilter catalog. Derived from the family's
- * own options, so changing a lease or the retry budget moves it too.
- * kilter-catalog-sync and provider-routine-cycle wait behind the same fan-out
- * and share it.
+ * The deadline of the hourly fan-out and everything queued behind it; see
+ * fan-out-budget.ts for the derivation. Re-exported under its old name.
  */
-export const AURORA_SHARED_SYNC_DEADLINE_SECONDS =
-  AURORA_USER_SYNC_BOARDS.length *
-    (AURORA_SHARED_SYNC_EXPIRE_SECONDS * (1 + AURORA_SHARED_SYNC_RETRY_LIMIT) +
-      AURORA_SHARED_SYNC_RETRY_DELAY_SECONDS * AURORA_SHARED_SYNC_RETRY_LIMIT) +
-  FAN_OUT_SLACK_SECONDS;
+export const AURORA_SHARED_SYNC_DEADLINE_SECONDS = BOARD_WIDE_FAN_OUT_DEADLINE_SECONDS;
 
 /**
  * The board-wide half of the Aurora daemon, on its own schedule: products,
@@ -111,11 +94,11 @@ export const auroraSharedSyncFamily: BackgroundJobFamilyModule<AuroraSharedSyncP
   name: 'aurora-shared-sync',
   roles: ['routine-provider'],
   options: {
-    expireInSeconds: AURORA_SHARED_SYNC_EXPIRE_SECONDS,
-    retryLimit: AURORA_SHARED_SYNC_RETRY_LIMIT,
-    retryDelay: AURORA_SHARED_SYNC_RETRY_DELAY_SECONDS,
+    expireInSeconds: AURORA_SHARED_SYNC_BUDGET.expireInSeconds,
+    retryLimit: AURORA_SHARED_SYNC_BUDGET.retryLimit,
+    retryDelay: AURORA_SHARED_SYNC_BUDGET.retryDelay,
     retryBackoff: true,
-    retryDelayMax: AURORA_SHARED_SYNC_RETRY_DELAY_SECONDS,
+    retryDelayMax: AURORA_SHARED_SYNC_BUDGET.retryDelay,
     deadlineSeconds: AURORA_SHARED_SYNC_DEADLINE_SECONDS,
     // One Aurora page (up to ~2000 records with its climb_stats upsert) or one
     // 25-gym location batch holds the run-row lock at a time.

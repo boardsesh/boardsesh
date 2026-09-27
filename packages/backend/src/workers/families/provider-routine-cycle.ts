@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { claimNextCredentialForSync } from '@boardsesh/db/queries';
 import { logger } from '../../utils/logger';
 import { routineCycleLimits } from '../config';
-import { AURORA_SHARED_SYNC_DEADLINE_SECONDS } from './aurora-shared-sync';
+import { BOARD_WIDE_FAN_OUT_DEADLINE_SECONDS } from './fan-out-budget';
 import {
   ROUTINE_CREDENTIAL_DEADLINE_MARGIN_MS,
   loadProviderSyncAdapter,
@@ -75,7 +75,7 @@ export const providerRoutineCycleFamily: BackgroundJobFamilyModule<ProviderRouti
     // priority, each with a 3600 s lease. A cycle queued behind them waits for all of them; with a
     // shorter deadline it would expire at claim and later ticks would coalesce
     // onto the doomed holder. The same full-fan-out budget as the shared sync.
-    deadlineSeconds: AURORA_SHARED_SYNC_DEADLINE_SECONDS,
+    deadlineSeconds: BOARD_WIDE_FAN_OUT_DEADLINE_SECONDS,
     // One fenced batch (an Aurora page, a 500-op Kilter flush, a 500-key stats
     // recompute) must finish inside this window: it holds the run-row lock, so
     // no heartbeat lands while it runs.
