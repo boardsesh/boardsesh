@@ -269,7 +269,10 @@ describe('export-board-snapshots under the batch login', () => {
         database: familyDatabase,
         transaction: () => Promise.reject(new Error('no fenced statement expected')),
       });
-      const running = runRow({ status: 'running', attemptNumber: 0, startedAt: new Date(), heartbeatAt: new Date() });
+      // Its last touch is past one heartbeat window (120 s) but inside three:
+      // a stall, not a dead worker, so it still counts as running.
+      const stalled = new Date(Date.now() - 200 * 1000);
+      const running = runRow({ status: 'running', attemptNumber: 0, startedAt: stalled, heartbeatAt: stalled });
       const waitingScan = runRow({ status: 'running', attemptNumber: 0 });
       const staleRetry = runRow({
         status: 'running',

@@ -191,8 +191,8 @@ target; the R2 rehearsal (`storage_target: r2`) stays a `workflow_dispatch` of t
   a scan can never drop the nightly, which is the only pass that refreshes the identity prefix and the
   catalogue, rebuilds sub-threshold layouts and prunes. One batch replica at `WORKER_CONCURRENCY=1`
   already runs them one at a time; `execute` also checks the ledger for another `export-board-snapshots`
-  run that is `running` with a heartbeat inside the last 120 s (a crashed worker's row stops counting
-  after that). A scan that finds one logs `SNAPSHOT_RUN_ACTIVE` and succeeds without exporting; a nightly
+  run that is `running` with a heartbeat inside the last 360 s, three heartbeat windows, so a stalled
+  touch does not make a healthy run look dead (a crashed worker's row stops counting after that). A scan that finds one logs `SNAPSHOT_RUN_ACTIVE` and succeeds without exporting; a nightly
   throws a retryable `SNAPSHOT_RUN_ACTIVE` and tries again 300 s later.
 - **A late scan skips itself.** The ledger deadline is per family, so the scan checks its own age
   instead. A first attempt that starts more than 840 s after it was enqueued logs `LIVE_SCAN_STALE` and
@@ -244,7 +244,9 @@ grants it once when provisioning the login:
 GRANT pg_read_all_stats TO boardsesh_worker_batch WITH ADMIN FALSE, INHERIT TRUE, SET FALSE;
 ```
 
-Without it the family fails at once with `SNAPSHOT_OBSERVER_UNPRIVILEGED`: the batch login shares no role
+Every run logs `[export-snapshots] replay observer grant` with `readsAllStats` before doing anything
+else, so a first deploy without the grant is visible in the log. Without it the family then fails at
+once with `SNAPSHOT_OBSERVER_UNPRIVILEGED`: the batch login shares no role
 with the writers, so it would see none of their transactions, and the live gzip pass would refuse every
 layout. `pg_read_all_stats` also lets the login read other sessions' query text; the observer reads
 only `state` and `xact_start`, and nothing it reads is logged.

@@ -24,8 +24,16 @@ export const LIVE_SCAN_REFRESH_THRESHOLD = 500;
  */
 export const LIVE_SCAN_MAX_AGE_SECONDS = 840;
 
-/** The heartbeat window; also how fresh another run's heartbeat must be to count as running. */
+/** The pg-boss heartbeat window (see `heartbeatSeconds` below). */
 const HEARTBEAT_SECONDS = 120;
+
+/**
+ * How fresh another run's heartbeat must be for it to count as running: three
+ * heartbeat windows. One window would let a transient stall (a slow touch, a
+ * blocked event loop) make a healthy run look dead and let a second export
+ * through; a worker that really died still stops blocking after six minutes.
+ */
+export const ACTIVE_RUN_WINDOW_SECONDS = 3 * HEARTBEAT_SECONDS;
 
 const payload = z
   .object({
@@ -100,8 +108,8 @@ async function runAge(context: BackgroundJobContext): Promise<{ ageSeconds: numb
  * Whether another export-board-snapshots run is running now. The two modes have
  * separate dedup keys, and one batch replica at WORKER_CONCURRENCY=1 already
  * runs them one at a time; this catches a second replica or an overlapping
- * deploy. A row only counts while its heartbeat is fresh, so a worker that died
- * mid-run blocks nothing once its heartbeat window has passed.
+ * deploy. A row only counts while its heartbeat is inside
+ * ACTIVE_RUN_WINDOW_SECONDS, so a worker that died mid-run stops blocking.
  */
 async function anotherRunActive(context: BackgroundJobContext): Promise<boolean> {
   const rows = await context.database
@@ -112,7 +120,7 @@ async function anotherRunActive(context: BackgroundJobContext): Promise<boolean>
         eq(backgroundJobRuns.family, 'export-board-snapshots'),
         eq(backgroundJobRuns.status, 'running'),
         ne(backgroundJobRuns.id, context.runId),
-        sql`coalesce(${backgroundJobRuns.heartbeatAt}, ${backgroundJobRuns.startedAt}) > clock_timestamp() - make_interval(secs => ${HEARTBEAT_SECONDS})`,
+        sql`coalesce(${backgroundJobRuns.heartbeatAt}, ${backgroundJobRuns.startedAt}) > clock_timestamp() - make_interval(secs => ${ACTIVE_RUN_WINDOW_SECONDS})`,
       ),
     )
     .limit(1);
@@ -139,7 +147,13 @@ export const exportBoardSnapshotsFamily: BackgroundJobFamilyModule<ExportRequest
     retryDelay: 300,
     retryBackoff: true,
     retryDelayMax: 300,
-    // The live scan does not use this deadline: it skips itself after
+    // The absolute cap for a run across every attempt. Heartbeats renew the
+    // lease, never this deadline, so it must outlive a run whose attempts are
+    // kept alive by heartbeat renewals on slow infrastructure (a stalled S3
+    // upload, a slow homelab uplink), plus time queued and the retry delay,
+    // not just two 45-minute leases. 20 h matches the other batch families
+    // and still ends a wedged nightly before the next one is due. The live
+    // scan does not rely on it: it skips itself after
     // LIVE_SCAN_MAX_AGE_SECONDS (the ledger deadline is per family, not per
     // payload).
     deadlineSeconds: 72_000,
@@ -165,7 +179,12 @@ export const exportBoardSnapshotsFamily: BackgroundJobFamilyModule<ExportRequest
   async execute(context, request) {
     const log: SnapshotExportLogger = logger.child({ family: context.family, runId: context.runId });
     requireSnapshotStorage();
-    if (!(await readsAllSessions(context))) {
+    // pg_read_all_stats is a manual provisioning step (docs/board-snapshots.md),
+    // so say on every run whether this login has it: a first deploy without
+    // the grant then shows in the log, not only as the failure below.
+    const readsAllStats = await readsAllSessions(context);
+    log.info('[export-snapshots] replay observer grant', { mode: request.mode, readsAllStats });
+    if (!readsAllStats) {
       throw new BackgroundJobError('SNAPSHOT_OBSERVER_UNPRIVILEGED', { retryable: false });
     }
 

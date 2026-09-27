@@ -40,6 +40,7 @@ vi.mock('../../storage/s3', () => ({
 
 const { familiesForRole, requireFamily } = await import('../families');
 const {
+  ACTIVE_RUN_WINDOW_SECONDS,
   LIVE_SCAN_MAX_AGE_SECONDS,
   LIVE_SCAN_REFRESH_THRESHOLD,
   exportBoardSnapshotsFamily: family,
@@ -138,6 +139,10 @@ describe('registration, schedules and options', () => {
     expect(family.options.heartbeatSeconds).toBeLessThan(family.options.expireInSeconds);
     expect(family.options.retryDelayMax).toBeGreaterThanOrEqual(family.options.retryDelay);
   });
+
+  it('counts another run as running for three heartbeat windows, not one', () => {
+    expect(ACTIVE_RUN_WINDOW_SECONDS).toBe(3 * family.options.heartbeatSeconds);
+  });
 });
 
 describe('payload', () => {
@@ -184,6 +189,25 @@ describe('guards', () => {
       retryable: false,
     });
     expect(exporter.runExportWithOptions).not.toHaveBeenCalled();
+  });
+
+  it('logs whether the login holds pg_read_all_stats before refusing a login without it', async () => {
+    const { logger } = await import('../../utils/logger');
+    const info = vi.fn();
+    const child = vi
+      .spyOn(logger, 'child')
+      .mockReturnValue({ info, warn: vi.fn(), error: vi.fn() } as unknown as ReturnType<typeof logger.child>);
+    try {
+      await expect(
+        family.execute(context({ readsAllStats: false }).context, { mode: 'live-scan' }),
+      ).rejects.toMatchObject({ code: 'SNAPSHOT_OBSERVER_UNPRIVILEGED' });
+      expect(info).toHaveBeenCalledWith('[export-snapshots] replay observer grant', {
+        mode: 'live-scan',
+        readsAllStats: false,
+      });
+    } finally {
+      child.mockRestore();
+    }
   });
 
   it('refuses a login that cannot see the writers’ transactions', async () => {
