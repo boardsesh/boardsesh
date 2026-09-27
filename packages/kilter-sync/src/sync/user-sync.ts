@@ -319,10 +319,16 @@ export async function syncKilterUserData({
       await runBatch((tx) => applyLogs(tx, userId, batch, aliasCache, log));
       return;
     }
-    await runBatch((tx) => {
-      deferredStats.begin();
-      return applyLogs(tx, userId, batch, aliasCache, log, deferredStats.collect);
-    });
+    try {
+      await runBatch((tx) => {
+        deferredStats.begin();
+        return applyLogs(tx, userId, batch, aliasCache, log, deferredStats.collect);
+      });
+    } catch (error) {
+      // The flush rolled back: none of its keys is owed a recompute.
+      deferredStats.rollback();
+      throw error;
+    }
     deferredStats.commit();
     // The flush's logs are in; now their stats, in batches of their own.
     await deferredStats.flush(runBatch);

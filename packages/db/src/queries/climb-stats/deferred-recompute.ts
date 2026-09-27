@@ -169,8 +169,9 @@ export async function recomputeClimbStatsInBatches(
  * `olderThanMs`, oldest first, `batchKeys` per transaction, at most
  * `maxBatches` transactions. Returns how many keys it recomputed.
  *
- * Each batch picks its keys by age (past any rows a live flush held on an
- * earlier pick), then locks them in the canonical
+ * Each batch picks its keys by age, past the last key the previous batch
+ * picked (keyset, so rows a live flush holds are stepped past, not waited
+ * on), then locks them in the canonical
  * `(board_type, climb_uuid, angle)` order every other writer of these rows
  * uses (the page's mark, {@link recomputeAndClear}), with `SKIP LOCKED` so it
  * never waits on a live flush. Then the same recompute and conditional DELETE
@@ -185,23 +186,32 @@ export async function drainPendingClimbStatsRecomputes(
   const batchKeys = options.batchKeys ?? CLIMB_STATS_RECOMPUTE_BATCH_KEYS;
   const maxBatches = options.maxBatches ?? 20;
   let drained = 0;
-  // Rows a live flush held on an earlier pick: skipped over, not re-picked, so
-  // one locked batch at the head of the queue cannot stall the drain.
-  let skippedOver = 0;
+  // Keyset position: the last key PICKED (recomputed or skipped). The next pick
+  // starts after it, so rows a live flush still holds are stepped past and a
+  // row freed meanwhile is not skipped for an unrelated one, as an OFFSET would.
+  let after: ObservedMarker | undefined;
   for (let batch = 0; batch < maxBatches; batch += 1) {
-    const { picked, recomputed } = await runBatch(async (transaction) => {
-      // 1. The oldest keys, unlocked: age decides WHICH rows, never the lock order.
-      const oldest = rowsOf<{ board_type: string; climb_uuid: string; angle: number }>(
+    const afterKey = after;
+    const { oldest, recomputed } = await runBatch(async (transaction) => {
+      // 1. The oldest keys past the last pick, unlocked: age decides WHICH rows,
+      //    never the lock order.
+      const picked = rowsOf<ObservedMarker>(
         await transaction.execute(sql`
-          SELECT board_type, climb_uuid, angle
+          SELECT board_type, climb_uuid, angle,
+                 to_char(requested_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS requested_at
             FROM climb_stats_recompute_pending
            WHERE requested_at < now() - make_interval(secs => ${olderThanSeconds}::double precision)
+             ${
+               afterKey === undefined
+                 ? sql``
+                 : sql`AND (requested_at, board_type, climb_uuid, angle)
+                         > (${afterKey.requested_at}::timestamptz, ${afterKey.board_type}, ${afterKey.climb_uuid}, ${afterKey.angle}::integer)`
+             }
            ORDER BY requested_at, board_type, climb_uuid, angle
            LIMIT ${batchKeys}
-          OFFSET ${skippedOver}
         `),
       );
-      if (oldest.length === 0) return { picked: 0, recomputed: 0 };
+      if (picked.length === 0) return { oldest: picked, recomputed: 0 };
       // 2. Lock them in key order, skipping any a live flush holds. A row that
       //    went away since step 1 is simply not returned.
       const markers = rowsOf<ObservedMarker>(
@@ -209,7 +219,8 @@ export async function drainPendingClimbStatsRecomputes(
           SELECT pending.board_type, pending.climb_uuid, pending.angle,
                  to_char(pending.requested_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS requested_at
             FROM climb_stats_recompute_pending pending
-            JOIN jsonb_to_recordset(${JSON.stringify(oldest)}::jsonb) AS k(board_type text, climb_uuid text, angle integer)
+            JOIN jsonb_to_recordset(${JSON.stringify(picked)}::jsonb)
+                   AS k(board_type text, climb_uuid text, angle integer, requested_at text)
               ON pending.board_type = k.board_type AND pending.climb_uuid = k.climb_uuid AND pending.angle = k.angle
            ORDER BY pending.board_type, pending.climb_uuid, pending.angle
              FOR UPDATE OF pending SKIP LOCKED
@@ -219,13 +230,12 @@ export async function drainPendingClimbStatsRecomputes(
         await recomputeClimbStatsBulk(transaction, markers.map(toKey));
         await clearObservedPending(transaction, markers);
       }
-      return { picked: oldest.length, recomputed: markers.length };
+      return { oldest: picked, recomputed: markers.length };
     });
     drained += recomputed;
-    // A short pick means the backlog is exhausted. Otherwise the recomputed
-    // rows are gone and the locked ones stay at the front: step past those.
-    if (picked < batchKeys) break;
-    skippedOver += picked - recomputed;
+    // A short pick means the backlog past the last key is exhausted.
+    if (oldest.length < batchKeys) break;
+    after = oldest[oldest.length - 1];
   }
   return drained;
 }
@@ -244,9 +254,16 @@ export async function drainPendingClimbStatsRecomputes(
 export class DeferredClimbStatsRecompute {
   private staged: ClimbStatsKey[] = [];
   private committed = new Map<string, ClimbStatsKey>();
+  /** Whether a write transaction is open: `begin()` opens it, `commit()`/`rollback()` close it. */
+  private open = false;
 
-  /** Stands in for the recompute inside a write transaction. */
+  /**
+   * Stands in for the recompute inside a write transaction. Refuses to stage
+   * outside `begin()`…`commit()`: keys staged with no batch open could belong
+   * to an attempt that rolled back, and a later `commit()` would keep them.
+   */
   readonly collect: ClimbStatsRecompute = async (transaction, keys) => {
+    if (!this.open) throw new Error('DeferredClimbStatsRecompute.collect() outside begin()/commit()');
     if (keys.length === 0) return;
     await markClimbStatsRecomputePending(transaction, keys);
     this.staged.push(...keys);
@@ -255,12 +272,21 @@ export class DeferredClimbStatsRecompute {
   /** Start a write transaction: drop whatever an earlier, rolled-back attempt staged. */
   begin(): void {
     this.staged = [];
+    this.open = true;
   }
 
   /** The write transaction committed: its keys are now owed a recompute. */
   commit(): void {
+    if (!this.open) throw new Error('DeferredClimbStatsRecompute.commit() without begin()');
     for (const key of this.staged) this.committed.set(keyOf(key), key);
     this.staged = [];
+    this.open = false;
+  }
+
+  /** The write transaction rolled back: forget what it staged. */
+  rollback(): void {
+    this.staged = [];
+    this.open = false;
   }
 
   get pendingKeys(): number {

@@ -128,6 +128,31 @@ describe('DeferredClimbStatsRecompute', () => {
     expect(deferred.pendingKeys).toBe(0);
   });
 
+  it('refuses to stage outside a batch, so a rolled-back attempt never reaches commit', async () => {
+    const deferred = new DeferredClimbStatsRecompute();
+    const transaction = { execute: async () => [] } as unknown as ProviderSyncDb;
+
+    // No batch open yet.
+    await expect(deferred.collect(transaction, [key(1)])).rejects.toThrow('outside begin()/commit()');
+
+    // An attempt stages a key and its transaction throws: the caller rolls back.
+    deferred.begin();
+    await deferred.collect(transaction, [key(1)]);
+    deferred.rollback();
+    // Staging again without a new begin() is refused, not added to the dead attempt.
+    await expect(deferred.collect(transaction, [key(2)])).rejects.toThrow('outside begin()/commit()');
+    expect(() => deferred.commit()).toThrow('without begin()');
+
+    // The retry opens its own batch; only its key is owed a recompute.
+    deferred.begin();
+    await deferred.collect(transaction, [key(3)]);
+    deferred.commit();
+    expect(deferred.pendingKeys).toBe(1);
+    const { runBatch, batches } = countingRunner();
+    expect(await deferred.flush(runBatch)).toBe(1);
+    expect(batches).toEqual([4]);
+  });
+
   it('keeps the keys of the batches that did not commit, so a retried flush still recomputes them', async () => {
     const deferred = new DeferredClimbStatsRecompute();
     const transaction = { execute: async () => [] } as unknown as ProviderSyncDb;
@@ -501,6 +526,57 @@ describe('the drain when a live flush holds the oldest markers', () => {
     const left = await database.execute<{ angle: number }>(sql`
       SELECT angle FROM climb_stats_recompute_pending WHERE climb_uuid = ${ASCENT_CLIMB}`);
     expect(left.map((row) => row.angle)).toEqual([40]);
+  });
+});
+
+describe('the drain resuming after a key a live flush let go of', () => {
+  it('pages by key, so a locked row freed mid-drain does not make it skip an unrelated one', async () => {
+    await insertLinkedTensionAccount(database, ASCENT_USER, ASCENT_CLIMB);
+    // 40 is the oldest and held by a live flush that deletes it on commit;
+    // 45 and 50 are free.
+    await database.execute(sql`
+      INSERT INTO climb_stats_recompute_pending (board_type, climb_uuid, angle, requested_at) VALUES
+        (${FIXTURE_BOARD}, ${ASCENT_CLIMB}, 40, now() - interval '30 minutes'),
+        (${FIXTURE_BOARD}, ${ASCENT_CLIMB}, 45, now() - interval '20 minutes'),
+        (${FIXTURE_BOARD}, ${ASCENT_CLIMB}, 50, now() - interval '10 minutes')`);
+
+    let release: () => void = () => {};
+    let locked: () => void = () => {};
+    const lockTaken = new Promise<void>((resolve) => {
+      locked = resolve;
+    });
+    const flush = database.transaction(async (transaction) => {
+      await transaction.execute(sql`
+        SELECT 1 FROM climb_stats_recompute_pending
+         WHERE climb_uuid = ${ASCENT_CLIMB} AND angle = 40 FOR UPDATE`);
+      locked();
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      // The flush recomputed 40 and clears it.
+      await transaction.execute(sql`
+        DELETE FROM climb_stats_recompute_pending WHERE climb_uuid = ${ASCENT_CLIMB} AND angle = 40`);
+    });
+    await lockTaken;
+
+    let batches = 0;
+    const flushCommitsAfterFirstBatch = (async (callback) => {
+      batches += 1;
+      const result = await database.transaction(callback);
+      if (batches === 1) {
+        // Between the drain's batches the flush commits: 40 is gone.
+        release();
+        await flush;
+      }
+      return result;
+    }) as SyncBatchRunner;
+
+    // Batches of one: 40 (skipped, locked), then 45 and 50. Paging by offset
+    // would have stepped over 45 once 40 disappeared.
+    expect(await drainPendingClimbStatsRecomputes(flushCommitsAfterFirstBatch, { batchKeys: 1, maxBatches: 20 })).toBe(
+      2,
+    );
+    expect(await countRows('climb_stats_recompute_pending', ASCENT_CLIMB)).toBe(0);
   });
 });
 

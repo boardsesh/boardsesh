@@ -713,6 +713,9 @@ export async function syncUserData(
           await deferredStats.flush(runBatch);
         }
       } catch (error) {
+        // A page that rolled back owes no recompute; after a commit this is a
+        // no-op (nothing is staged).
+        deferredStats?.rollback();
         // A fence refusal or an abort is not a database failure: rethrow it as
         // itself so the caller can tell "stop" from "this credential failed".
         if (signal?.aborted || isSyncFenceError(error)) throw error;
