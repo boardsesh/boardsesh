@@ -1569,10 +1569,26 @@ export function BluetoothProvider({
     };
   }, [boardName, layoutId, sizeId, setIds]);
 
-  // True while a route hosts its own picker (the play route) so the app-root
-  // picker below stays suppressed — a root picker would otherwise land behind the
-  // modal route, and presenting it forces the route to dismiss.
-  const [pickerHostedExternally, setPickerHostedExternally] = useState(false);
+  // Stack (not a boolean) of route-hosted picker claims — e.g. the play route
+  // pushes on mount and pops on unmount — so the app-root picker below stays
+  // suppressed whenever ANY route hosts its own (a root picker would otherwise
+  // land behind the modal route, and presenting it forces the route to
+  // dismiss). A route can mount its host while another route's host is still
+  // mounted underneath it (e.g. create-climb pushes the player on top without
+  // fully unmounting): the stack's LAST entry is the one that actually renders
+  // the sheet, so exactly one host ever shows it, and popping the top hands the
+  // claim back to whichever host is still mounted below — never to the root
+  // while any host remains registered. A plain boolean can't express that
+  // hand-back and would either double-present or drop back to the root picker
+  // prematurely.
+  const [externalHostStack, setExternalHostStack] = useState<readonly string[]>([]);
+  const registerExternalHost = useCallback((hostId: string) => {
+    setExternalHostStack((stack) => [...stack, hostId]);
+    return () => {
+      setExternalHostStack((stack) => stack.filter((id) => id !== hostId));
+    };
+  }, []);
+  const activeExternalHostId = externalHostStack.length > 0 ? externalHostStack[externalHostStack.length - 1] : null;
 
   // handlePickerSelect, handleMismatchSwitch and the auto-connect effect all
   // need the latest pickerState / resolvedPickerBoards / currentBoardConfig, but
@@ -2286,11 +2302,20 @@ export function BluetoothProvider({
       pickerState,
       onSelect: handlePickerSelect,
       currentBoardConfig,
-      setHostedExternally: setPickerHostedExternally,
+      registerExternalHost,
+      activeExternalHostId,
       onNoLeds: takeVirtualWallAfterPickerDismiss,
       onScanAgain: handlePickerScanAgain,
     }),
-    [pickerState, handlePickerSelect, currentBoardConfig, takeVirtualWallAfterPickerDismiss, handlePickerScanAgain],
+    [
+      pickerState,
+      handlePickerSelect,
+      currentBoardConfig,
+      registerExternalHost,
+      activeExternalHostId,
+      takeVirtualWallAfterPickerDismiss,
+      handlePickerScanAgain,
+    ],
   );
 
   return (
@@ -2326,9 +2351,8 @@ export function BluetoothProvider({
         {(virtualWallHeld || ledless) && <VirtualWallHolderWatch onHolderChange={handleVirtualWallHolderChange} />}
         <BlePickerHostContext.Provider value={pickerHostValue}>{children}</BlePickerHostContext.Provider>
         {/* App-root picker, for connects off the tab screens / accessory bar.
-            Suppressed while a route (the player) hosts its own — see
-            DevicePickerSheetHost. */}
-        {pickerState && !pickerHostedExternally && (
+            Suppressed while any route hosts its own — see DevicePickerSheetHost. */}
+        {pickerState && externalHostStack.length === 0 && (
           <DevicePickerSheet
             key={pickerState.sessionId}
             devices={pickerState.devices}

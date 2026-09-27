@@ -156,6 +156,9 @@ export default function CreateClimbRoute() {
   useUnsupportedBoardExit(exitReason != null, exitMessage);
 
   // Leave the climb list visible under the transparent modal while it dismisses.
+  // Still claim the picker while dismissing: dropping the claim here would let
+  // the app-root picker flash in behind this still-mounted modal for the one
+  // frame before useUnsupportedBoardExit finishes leaving.
   if (exitReason != null) {
     return <DevicePickerSheetHost registerExternal />;
   }
