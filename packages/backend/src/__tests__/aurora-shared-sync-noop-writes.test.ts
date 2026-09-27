@@ -3,6 +3,7 @@ import { sql } from 'drizzle-orm';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { rowsFromResult } from '@boardsesh/db/client';
+import { BackgroundJobAttemptLostError } from '@boardsesh/db/queries';
 import { syncSharedData, upsertClimbStats } from '@boardsesh/aurora-sync/sync';
 import type { BetaLink, Climb, ClimbStats, SyncData } from '@boardsesh/aurora-sync/api';
 import { db } from '../db/client';
@@ -326,6 +327,94 @@ describeWithDatabase('Aurora climbs upsert skips unchanged rows (real DB)', () =
       expect(rowB.xmin).not.toBe(inserted[1].xmin);
     } finally {
       await client.end();
+    }
+  });
+});
+
+describeWithDatabase('syncSharedData: setter notifications commit with their page (real DB)', () => {
+  it('keeps page 1 notifications when the attempt is lost before page 2, and the retry adds page 2 once', async () => {
+    const tag = uniqueTag();
+    const follower = `${tag}-follower`;
+    const setters = [`${tag}-setter-a`, `${tag}-setter-b`];
+    const climbs = [`${tag}-climb-a`, `${tag}-climb-b`];
+    const climb = (uuid: string, setterUsername: string): Climb => ({
+      uuid,
+      name: 'Notify me',
+      description: '',
+      hsm: 1,
+      edge_left: 0,
+      edge_right: 100,
+      edge_bottom: 0,
+      edge_top: 100,
+      frames_count: 1,
+      frames_pace: 0,
+      frames: 'p1r5',
+      setter_id: 7,
+      setter_username: setterUsername,
+      layout_id: 9,
+      is_draft: false,
+      is_listed: true,
+      created_at: '2024-01-01 00:00:00',
+      updated_at: '2024-01-01 00:00:00',
+      angle: 40,
+    });
+    const notificationsFor = async (climbUuid: string) =>
+      rowsFromResult<{ count: number }>(
+        await db.execute(sql`
+          SELECT count(*)::int AS count FROM notifications
+           WHERE recipient_id = ${follower} AND type = 'new_climbs_synced' AND entity_id = ${climbUuid}`),
+      )[0].count;
+    const cleanup = async () => {
+      await db.execute(sql`DELETE FROM notifications WHERE recipient_id = ${follower}`);
+      await db.execute(sql`DELETE FROM setter_follows WHERE follower_id = ${follower}`);
+      await db.execute(sql`DELETE FROM board_climbs WHERE uuid IN (${climbs[0]}, ${climbs[1]})`);
+      await db.execute(sql`DELETE FROM users WHERE id = ${follower}`);
+      await db.execute(sql`DELETE FROM board_shared_syncs WHERE board_type = ${BOARD}`);
+    };
+
+    await cleanup();
+    await db.execute(sql`
+      INSERT INTO users (id, email, name, created_at, updated_at)
+      VALUES (${follower}, ${follower + '@test.com'}, 'Follower', now(), now())`);
+    for (const setter of setters) {
+      await db.execute(sql`INSERT INTO setter_follows (follower_id, setter_username) VALUES (${follower}, ${setter})`);
+    }
+
+    try {
+      mockSharedSync.mockReset();
+      mockSharedSync
+        .mockResolvedValueOnce({
+          _complete: false,
+          climbs: [climb(climbs[0], setters[0])],
+          shared_syncs: [{ table_name: 'climbs', last_synchronized_at: '2026-09-01 00:00:00.000000' }],
+        })
+        .mockResolvedValueOnce({ _complete: true, climbs: [climb(climbs[1], setters[1])] });
+      // Page 1 commits; the attempt is lost before page 2's batch.
+      let batches = 0;
+      const losesAfterPageOne = ((callback) => {
+        batches += 1;
+        if (batches > 1) return Promise.reject(new BackgroundJobAttemptLostError());
+        return db.transaction(callback);
+      }) as NonNullable<Parameters<typeof syncSharedData>[4]>['transaction'];
+
+      await expect(
+        syncSharedData(db, BOARD, 'token', () => {}, { transaction: losesAfterPageOne }),
+      ).rejects.toBeInstanceOf(BackgroundJobAttemptLostError);
+      expect(await notificationsFor(climbs[0])).toBe(1);
+      expect(await notificationsFor(climbs[1])).toBe(0);
+
+      // The replacement attempt: Aurora re-sends both climbs from the cursor.
+      mockSharedSync.mockReset();
+      mockSharedSync.mockResolvedValueOnce({
+        _complete: true,
+        climbs: [climb(climbs[0], setters[0]), climb(climbs[1], setters[1])],
+      });
+      await syncSharedData(db, BOARD, 'token', () => {}, { transaction: (callback) => db.transaction(callback) });
+
+      expect(await notificationsFor(climbs[0])).toBe(1);
+      expect(await notificationsFor(climbs[1])).toBe(1);
+    } finally {
+      await cleanup();
     }
   });
 });

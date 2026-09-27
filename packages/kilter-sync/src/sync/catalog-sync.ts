@@ -985,6 +985,9 @@ async function relistCanonicals(db: DrizzleDb, canonicalUuids: string[]): Promis
  * fully in-memory; new canonicals + their holds + aliases are flushed per Grips
  * layout, then stats for the whole group are accumulated and upserted.
  */
+/** Announces a flush's new canonicals to their setters' followers, in the flush's transaction. */
+type NotifyNewCanonicals = (transaction: DrizzleDb, newCanonicals: NewClimbInfo[]) => Promise<void>;
+
 type SyncBoardLayoutGroupArgs = {
   db: DrizzleDb;
   write: CatalogWriteRunner;
@@ -1000,6 +1003,8 @@ type SyncBoardLayoutGroupArgs = {
   existingSelfAliasLower: Set<string>;
   /** Collects climbs Kilter tagged with the wrong layout, for the final reroute pass. */
   reroute: RerouteContext;
+  /** Announces a flush's new canonicals inside that flush's transaction. */
+  notify: NotifyNewCanonicals;
   log: (message: string) => void;
 };
 
@@ -1015,6 +1020,7 @@ async function syncBoardLayoutGroup(args: SyncBoardLayoutGroupArgs): Promise<Gro
     holeToPlacement,
     existingSelfAliasLower,
     reroute,
+    notify,
     log,
   } = args;
   const result = createGroupResult();
@@ -1033,6 +1039,7 @@ async function syncBoardLayoutGroup(args: SyncBoardLayoutGroupArgs): Promise<Gro
     const climbs = await withToken(state, (token) => fetchLayoutClimbs(token, gripsLayoutUuid, state.signal));
 
     const batch = createStagingBatch();
+    const newCanonicalsBefore = result.newCanonicals.length;
     const context: StageCatalogClimbContext = {
       index,
       sourceLayoutUuid: gripsLayoutUuid,
@@ -1056,8 +1063,15 @@ async function syncBoardLayoutGroup(args: SyncBoardLayoutGroupArgs): Promise<Gro
     // The whole flush runs in one transaction — a crash/kill between steps
     // must never leave a canonical committed without its holds/aliases/denorm
     // columns (see #3538: a stranded climb matches on UUID identity on every
-    // later run and never gets its holds re-derived).
-    await write((tx) => flushKilterLayoutBatch(tx, batch.newClimbInserts, batch.newHoldRows, batch.aliasRows));
+    // later run and never gets its holds re-derived). The flush's setter
+    // notifications commit with it too: once these canonicals exist, no later
+    // run sees them as new, so a run that stopped before an end-of-run
+    // notification batch would have left them unannounced for good.
+    const flushNewCanonicals = result.newCanonicals.slice(newCanonicalsBefore);
+    await write(async (tx) => {
+      await flushKilterLayoutBatch(tx, batch.newClimbInserts, batch.newHoldRows, batch.aliasRows);
+      await notify(tx, flushNewCanonicals);
+    });
     result.canonicalsInserted += batch.newClimbInserts.length;
     result.aliasesUpserted += batch.aliasRows.length;
     log(
@@ -1220,6 +1234,7 @@ function pushRerouteFallbackSkip(result: GroupResult, candidate: RerouteCandidat
 type IngestRerouteCandidatesArgs = {
   db: DrizzleDb;
   write: CatalogWriteRunner;
+  notify: NotifyNewCanonicals;
   signal?: AbortSignal;
   candidates: RerouteCandidate[];
   openSkips: Map<string, string>;
@@ -1261,6 +1276,7 @@ async function ingestRerouteCandidates(args: IngestRerouteCandidatesArgs): Promi
       const layoutResult = await ingestRerouteCandidatesForLayout({
         db: args.db,
         write: args.write,
+        notify: args.notify,
         targetLayoutId,
         candidates: layoutCandidates,
         holeToPlacement,
@@ -1284,6 +1300,7 @@ async function ingestRerouteCandidates(args: IngestRerouteCandidatesArgs): Promi
 async function ingestRerouteCandidatesForLayout(input: {
   db: DrizzleDb;
   write: CatalogWriteRunner;
+  notify: NotifyNewCanonicals;
   targetLayoutId: number;
   candidates: RerouteCandidate[];
   holeToPlacement: Map<number, number>;
@@ -1407,7 +1424,12 @@ async function ingestRerouteCandidatesForLayout(input: {
     stagedCandidates.push(candidate);
   }
 
-  await write((tx) => flushKilterLayoutBatch(tx, batch.newClimbInserts, batch.newHoldRows, batch.aliasRows));
+  // As in syncBoardLayoutGroup: the flush announces its own new canonicals.
+  const flushNewCanonicals = [...result.newCanonicals];
+  await write(async (tx) => {
+    await flushKilterLayoutBatch(tx, batch.newClimbInserts, batch.newHoldRows, batch.aliasRows);
+    await input.notify(tx, flushNewCanonicals);
+  });
   result.canonicalsInserted += batch.newClimbInserts.length;
   result.aliasesUpserted += batch.aliasRows.length;
   result.climbsRerouted += recoveredCount;
@@ -1534,6 +1556,17 @@ export async function syncKilterCatalog(args: SyncKilterCatalogArgs): Promise<Ki
   };
   const collected: CollectedGroupOutputs = { newCanonicals: [], skips: [], resolvedSkipUuids: [] };
   const allNewCanonicals = collected.newCanonicals;
+  // In a savepoint, so a notification failure is logged and the flush's
+  // catalog rows still commit; a lost fence or a stop still ends the run.
+  const notify: NotifyNewCanonicals = async (transaction, newCanonicals) => {
+    if (newCanonicals.length === 0 || args.suppressNotifications) return;
+    try {
+      await transaction.transaction((savepoint) => createSetterSyncNotifications(savepoint, newCanonicals, log));
+    } catch (error) {
+      if (mustStop(error, args.signal)) throw error;
+      log(`[kilter-catalog] setter notifications failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
   const allSkips = collected.skips;
   const allResolvedSkipUuids = collected.resolvedSkipUuids;
 
@@ -1576,6 +1609,7 @@ export async function syncKilterCatalog(args: SyncKilterCatalogArgs): Promise<Ki
       holeToPlacement: await holeToPlacementFor(boardLayoutId),
       existingSelfAliasLower,
       reroute: { holeToPlacementByLayout, candidates: rerouteCandidates },
+      notify,
       log,
     });
     summary.gripsLayoutsProcessed += gripsLayoutUuids.length;
@@ -1590,6 +1624,7 @@ export async function syncKilterCatalog(args: SyncKilterCatalogArgs): Promise<Ki
   const rerouteResult = await ingestRerouteCandidates({
     db: args.db,
     write,
+    notify,
     signal: args.signal,
     candidates: [...rerouteCandidates.values()],
     openSkips,
@@ -1658,13 +1693,6 @@ export async function syncKilterCatalog(args: SyncKilterCatalogArgs): Promise<Ki
     log(
       `[kilter-catalog] suppressed setter notifications for ${allNewCanonicals.length} new canonical(s) (bulk ingest)`,
     );
-  } else if (allNewCanonicals.length > 0) {
-    try {
-      await write((tx) => createSetterSyncNotifications(tx, allNewCanonicals, log));
-    } catch (error) {
-      if (mustStop(error, args.signal)) throw error;
-      log(`[kilter-catalog] setter notifications failed: ${error instanceof Error ? error.message : String(error)}`);
-    }
   }
 
   // Deletion reconciliation runs last (report-only unless applyDeletions), over

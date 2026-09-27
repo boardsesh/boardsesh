@@ -1112,8 +1112,9 @@ export type SharedSyncBatchRunner = <Result>(callback: (transaction: DrizzleDb) 
 
 export type SyncSharedDataOptions = {
   /**
-   * Runs every write batch (one per Aurora page, then the history snapshot, the
-   * required_set_ids heal and the setter notifications) in one transaction.
+   * Runs every write batch (one per Aurora page, with that page's setter
+   * notifications, then the history snapshot and the required_set_ids heal)
+   * in one transaction.
    * Defaults to `db.transaction`. A background job passes its attempt fence, so
    * a run that lost its lease stops writing at the next batch.
    */
@@ -1131,8 +1132,9 @@ export type SyncSharedDataOptions = {
  * Loops until the response's `_complete` flag is exactly true (Aurora sends it
  * on every page: false while more remain), persisting each batch
  * before requesting the next. Provider HTTP always runs between transactions.
- * After a successful sync, fires setter-follow notifications for any
- * newly-published climbs. `db` is for reads; every write goes through
+ * Each page also creates the setter-follow notifications for the climbs it
+ * published, in the same transaction as the page's writes and cursor advance.
+ * `db` is for reads; every write goes through
  * `options.transaction`.
  */
 export async function syncSharedData(
@@ -1237,6 +1239,25 @@ export async function syncSharedData(
           sharedSyncMap.set(sync.table_name, sync.last_synchronized_at);
         }
       }
+
+      // The page's setter notifications commit with its climbs and its cursor.
+      // New-climb detection is a pre-read, so once this page commits its
+      // climbs are no longer "new": a run that stopped before an end-of-run
+      // notification batch left them unannounced for good, because the retry
+      // could not rediscover them. The notification uuids are deterministic,
+      // so a page Aurora sends twice announces nothing twice. In a savepoint,
+      // so a notification failure is logged and the page still commits.
+      if (batchNewClimbs.length > 0) {
+        const pageNewClimbs = batchNewClimbs;
+        try {
+          await tx.transaction((savepoint) => createSetterSyncNotifications(savepoint, board, pageNewClimbs, log));
+        } catch (error) {
+          if (signal?.aborted) throw error;
+          log(
+            `[SharedSync] Failed to create setter notifications: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+      }
     });
 
     addClimbStatsWriteCounts(climbStatsWrites, batchClimbStatsWrites);
@@ -1320,18 +1341,6 @@ export async function syncSharedData(
     } catch (error) {
       if (signal?.aborted) throw error;
       log(`[SharedSync] required_set_ids heal failed: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
-
-  if (allNewClimbs.length > 0) {
-    try {
-      signal?.throwIfAborted();
-      await runBatch((tx) => createSetterSyncNotifications(tx, board, allNewClimbs, log));
-    } catch (error) {
-      if (signal?.aborted) throw error;
-      log(
-        `[SharedSync] Failed to create setter notifications: ${error instanceof Error ? error.message : String(error)}`,
-      );
     }
   }
 

@@ -114,7 +114,7 @@ After every successful per-user sync, the daemon also runs a shared sync for tha
 | attempts                   | board_attempts                     |
 | kits                       | board_kits                         |
 
-When the climbs upsert sees previously-unseen UUIDs, the daemon also writes `new_climbs_synced` rows into the `notifications` table for each follower of the climb's setter (`setter_follows` and any linked `user_follows` accounts).
+When the climbs upsert sees previously-unseen UUIDs, the daemon also writes `new_climbs_synced` rows into the `notifications` table for each follower of the climb's setter (`setter_follows` and any linked `user_follows` accounts). They are written in the same transaction as the page that inserted the climbs (in a savepoint, so a failure is logged and the page still commits): a later run no longer sees those climbs as new, so notifications left for an end-of-run batch were lost whenever the run stopped first.
 
 The board-wide pull is gated by a synthetic cursor in `board_shared_syncs`.
 PostgreSQL writes the UTC marker and a fresh UUID atomically; each claim returns
@@ -446,14 +446,17 @@ A job-driven runner skips the shared sync (`skipSharedSync`); the
    (the daemon uses 60) measured from the claim, so the next hourly tick finds
    it free however long this run takes;
 3. `syncSharedData(db, board, token, log, { transaction, signal })`, which now
-   takes the drizzle database (reads) and a batch runner (every page, the
-   history snapshot, the required_set_ids heal and the notifications), then
+   takes the drizzle database (reads) and a batch runner (every page with
+   its own setter notifications, the history snapshot and the
+   required_set_ids heal), then
    the gym locations and one wall-crawl slice in batches of 25 gyms;
 4. re-stamp the slot: on success or a permanent Aurora failure the full
    cooldown from the claim (the end-of-run marker is backdated by the run's
-   length); five minutes from the end after a transient one, an abort or a
-   database error,
-   so the job's one retry can run.
+   length); five minutes from the end after a transient one or a database
+   error, so the job's one retry can run. An abort or a lost lease cannot
+   re-stamp (the fence refuses the write), so the claim carries the run id
+   (`#run:<id>`) and that run's retry re-claims its own slot whatever its age.
+   The Kilter catalog job claims the same way.
 
 No donor is a logged `SHARED_SYNC_NO_DONOR` and a held slot a logged
 `SHARED_SYNC_COOLDOWN`; both runs succeed without work.

@@ -25,6 +25,8 @@ const CATALOG_ID = 990_401;
 const PRODUCT = 'Psync Fence Product';
 const PLU = 'psync-fence-plu';
 const CATALOG_CLIMB = 'PSYNCKFENCE00000000000000000001';
+const FOLLOWER = 'psync-kfence-follower';
+const SETTER = 'psync-fence-setter';
 const HOLES = [990_411, 990_412, 990_413];
 const PLACEMENTS = [990_421, 990_422, 990_423];
 
@@ -61,7 +63,8 @@ function stubKilter() {
   ]
     .map((line) => `${line}\n`)
     .join('');
-  const at = '2026-09-01T00:00:00Z';
+  // Recent, so the new canonical is young enough to announce to followers.
+  const at = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: string | URL | Request) => {
@@ -85,7 +88,7 @@ function stubKilter() {
             frameCount: 1,
             framesPace: 0,
             userUuid: null,
-            username: 'psync-fence-setter',
+            username: SETTER,
             productName: PRODUCT,
             productLayoutUuid: PLU,
             allowMatch: false,
@@ -154,7 +157,14 @@ const catalogRows = () =>
     + (SELECT count(*) FROM board_climb_stats WHERE upper(climb_uuid) = ${CATALOG_CLIMB})
   )::int AS count`);
 
+const setterNotifications = () =>
+  count(sql`SELECT count(*)::int AS count FROM notifications
+             WHERE recipient_id = ${FOLLOWER} AND type = 'new_climbs_synced'`);
+
 async function cleanup() {
+  await database.execute(sql`DELETE FROM notifications WHERE recipient_id = ${FOLLOWER}`);
+  await database.execute(sql`DELETE FROM setter_follows WHERE follower_id = ${FOLLOWER}`);
+  await database.execute(sql`DELETE FROM users WHERE id = ${FOLLOWER}`);
   await removeFixtures(database, [DONOR], [DONOR_CLIMB]);
   await database.execute(sql`DELETE FROM board_climb_stats WHERE upper(climb_uuid) = ${CATALOG_CLIMB}`);
   await database.execute(sql`DELETE FROM board_climb_holds WHERE upper(climb_uuid) = ${CATALOG_CLIMB}`);
@@ -173,6 +183,12 @@ beforeEach(async () => {
   await cleanup();
   vi.stubEnv('KILTER_OAUTH_CLIENT_ID', 'fence-test-client');
   await insertLinkedKilterAccount(database, DONOR, DONOR_CLIMB);
+  await database.execute(sql`
+    INSERT INTO users (id, email, name, created_at, updated_at)
+    VALUES (${FOLLOWER}, ${FOLLOWER + '@test.com'}, 'Fence follower', now(), now())`);
+  await database.execute(
+    sql`INSERT INTO setter_follows (follower_id, setter_username) VALUES (${FOLLOWER}, ${SETTER})`,
+  );
   await database.execute(sql`UPDATE aurora_credentials SET sync_status = 'active', last_sync_at = now()
                               WHERE user_id = ${DONOR}`);
   await database.execute(sql`
@@ -211,6 +227,21 @@ describe('kilter-catalog-sync behind the attempt fence', () => {
       SELECT last_synchronized_at AS value FROM board_shared_syncs
        WHERE board_type = 'kilter' AND table_name = '__local_catalog_sync__'`);
     expect(cursor.value).toContain('#finished:');
+    expect(await setterNotifications()).toBe(1);
+  });
+
+  it("announces a flush's new climb in the flush itself, so a later lost attempt cannot drop it", async () => {
+    // The claim and the first layout flush commit; everything after is lost.
+    const { context } = fencedContext(2);
+
+    await expect(kilterCatalogSyncFamily.execute(context, {})).rejects.toBeInstanceOf(BackgroundJobAttemptLostError);
+
+    expect(await count(sql`SELECT count(*)::int AS count FROM board_climbs WHERE upper(uuid) = ${CATALOG_CLIMB}`)).toBe(
+      1,
+    );
+    // Committed with the climb: the retry sees the climb as existing and would
+    // never announce it.
+    expect(await setterNotifications()).toBe(1);
   });
 
   it('stops at the first flush once the attempt is lost, and writes nothing further', async () => {
@@ -222,6 +253,7 @@ describe('kilter-catalog-sync behind the attempt fence', () => {
     // No climb, skip row, layout alias or stats row, and the stamp was refused
     // too: the slot keeps the claim, so the replacement attempt owns it.
     expect(await catalogRows()).toBe(0);
+    expect(await setterNotifications()).toBe(0);
     const [cursor] = await database.execute<{ value: string }>(sql`
       SELECT last_synchronized_at AS value FROM board_shared_syncs
        WHERE board_type = 'kilter' AND table_name = '__local_catalog_sync__'`);
