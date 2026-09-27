@@ -98,4 +98,27 @@ describe('Kilter stats upsert', () => {
     expect(three.params).toHaveLength(10);
     expect(three.params[2]).toEqual(['a', 'b', 'c']);
   });
+
+  it('sends NULL, never undefined, for an unset nullable column', () => {
+    // The catalog fold leaves grade, quality and FA fields unset on its
+    // accumulators when Grips sends none. postgres-js refuses undefined inside
+    // an array param (UNDEFINED_VALUE), so one such row failed the whole chunk
+    // and stopped every Kilter stats write in production on 2026-09-27.
+    const unset = {
+      ...row('a'),
+      displayDifficulty: undefined,
+      difficultyAverage: undefined,
+      qualityAverage: undefined,
+      faUsername: undefined,
+      faAt: undefined,
+    } as unknown as KilterStatsUpsertRow;
+    const { params } = dialect.sqlToQuery(
+      buildKilterStatsUpsert([unset, row('b')], { policy: 'raise-only', syncedAt: '2026-09-27T00:00:00.000Z' }),
+    );
+    const arrays = params.filter((param): param is unknown[] => Array.isArray(param));
+    expect(arrays).toHaveLength(8);
+    for (const values of arrays) expect(values).not.toContain(undefined);
+    // display_difficulty, difficulty_average, quality_average, fa_username, fa_at
+    for (const index of [4, 5, 6, 7, 8]) expect((params[index] as unknown[])[0]).toBeNull();
+  });
 });

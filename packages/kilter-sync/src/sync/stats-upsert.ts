@@ -133,6 +133,10 @@ export function kilterStatsConflictWhere(set: SetEntry[]): SQL {
  * is the same for any chunk size. The multi-row VALUES form it replaces minted
  * one queryid per distinct remainder, 852 of them for this one writer.
  *
+ * Nullable columns map undefined to null: the catalog fold leaves fields unset
+ * when Grips sends none, and postgres-js rejects undefined inside an array param
+ * (UNDEFINED_VALUE), which failed every chunk that held such a row.
+ *
  * Raw SQL because Drizzle's insert().select() must name every table column in
  * table order, and board_climb_stats has defaulted columns (sync_seq,
  * updated_at, the Boardsesh aggregates) this writer must leave to their
@@ -163,13 +167,13 @@ export function buildKilterStatsUpsert(
       FROM unnest(
         ${sql.param(rows.map((row) => row.climbUuid))}::text[],
         ${sql.param(rows.map((row) => row.angle))}::integer[],
-        ${sql.param(rows.map((row) => row.displayDifficulty))}::double precision[],
-        ${sql.param(rows.map((row) => row.difficultyAverage))}::double precision[],
-        ${sql.param(rows.map((row) => row.qualityAverage))}::double precision[],
-        ${sql.param(rows.map((row) => row.faUsername))}::text[],
+        ${sql.param(rows.map((row) => row.displayDifficulty ?? null))}::double precision[],
+        ${sql.param(rows.map((row) => row.difficultyAverage ?? null))}::double precision[],
+        ${sql.param(rows.map((row) => row.qualityAverage ?? null))}::double precision[],
+        ${sql.param(rows.map((row) => row.faUsername ?? null))}::text[],
         -- postgres-js has no serializer for timestamp[] or bigint[] params, so
         -- these two travel as text[] and are cast per element above.
-        ${sql.param(rows.map((row) => row.faAt))}::text[],
+        ${sql.param(rows.map((row) => row.faAt ?? null))}::text[],
         ${sql.param(rows.map((row) => String(row.upstreamAscensionistCount)))}::text[]
       ) AS incoming(climb_uuid, angle, display_difficulty, difficulty_average, quality_average, fa_username, fa_at, upstream_count)
     ON CONFLICT (board_type, climb_uuid, angle) DO UPDATE SET ${assignments}
