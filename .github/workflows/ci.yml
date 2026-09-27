@@ -1237,7 +1237,6 @@ jobs:
               selection=""
             fi
           fi
-          echo "BACKEND_TEST_SELECTION=$selection" >> "$GITHUB_ENV"
           # shellcheck disable=SC2086 # $selection is an intentionally split flag pair
           vp test run --project backend $selection \
             --shard=${{ matrix.shard }}/${{ matrix.total }} \
@@ -1250,8 +1249,10 @@ jobs:
           REDIS_URL: redis://localhost:6380
         run: |
           mkdir -p packages/backend/test-results
-          # shellcheck disable=SC2086 # the same selection as the backend step
-          vp test run --project backend-serial $BACKEND_TEST_SELECTION \
+          # Always the whole list, never `--changed`: these files guard shared
+          # cluster state (roles, grants, the job queues), which a change far
+          # from them can break, and all of them together take about a minute.
+          vp test run --project backend-serial \
             --reporter=verbose --reporter=github-actions \
             --reporter=junit --outputFile.junit=./packages/backend/test-results/junit-backend-serial.xml
       - name: Upload test results

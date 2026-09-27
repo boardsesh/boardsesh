@@ -129,6 +129,10 @@ describe('where the backend projects run in CI', () => {
     const serialRuns = vpTestRuns.filter((run) => run.includes('--project backend-serial'));
     expect(serialRuns).toHaveLength(1);
     expect(serialRuns[0]).not.toContain('--shard');
+    // The whole list on every run: no `--changed` selection, which would skip
+    // the files that guard shared cluster state on most PRs.
+    expect(serialRuns[0]).not.toContain('--changed');
+    expect(serialRuns[0]).not.toContain('$');
     expect(serialRuns[0].match(/--project /g)).toHaveLength(1);
     const serialStep = ciWorkflow.slice(ciWorkflow.indexOf('- name: Run backend-serial tests'));
     expect(serialStep.split('\n')[1]).toContain('matrix.shard == 1');
