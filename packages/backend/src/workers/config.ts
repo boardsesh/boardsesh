@@ -24,6 +24,8 @@ export function workerConfig(environment: Readonly<Record<string, string | undef
     (!local && database.searchParams.get('sslmode') !== 'verify-full')
   )
     throw new Error('DATABASE_URL must unambiguously verify TLS for remote PostgreSQL');
+  // Validated for every role so a typo fails at boot, not on the first routine cycle.
+  routineCycleLimits(environment);
   const healthPort = Number(environment.HEALTH_PORT ?? 9090);
   if (!Number.isInteger(healthPort) || healthPort < 1 || healthPort > 65535) throw new Error('Invalid HEALTH_PORT');
   return {
@@ -50,7 +52,43 @@ export function configureWorkerPools(): void {
 export const PROVIDER_FAMILY_SECRETS: Readonly<Record<string, readonly string[]>> = {
   'aurora-user-sync': ['AURORA_CREDENTIALS_SECRET'],
   'kilter-user-sync': ['AURORA_CREDENTIALS_SECRET', 'KILTER_OAUTH_CLIENT_ID'],
+  // Both providers, every cycle.
+  'provider-routine-cycle': ['AURORA_CREDENTIALS_SECRET', 'KILTER_OAUTH_CLIENT_ID'],
+  // The borrowed donor token (or password) is encrypted with it.
+  'aurora-shared-sync': ['AURORA_CREDENTIALS_SECRET'],
+  // The donor's refresh token, refreshed through Keycloak.
+  'kilter-catalog-sync': ['AURORA_CREDENTIALS_SECRET', 'KILTER_OAUTH_CLIENT_ID'],
+  // moonboard-locations-sync: MOONBOARD_USERNAME/PASSWORD are optional on
+  // purpose. Without them each run succeeds as a logged skip (#3863).
 };
+
+/** Defaults for one `provider-routine-cycle` run; see docs/background-workers.md. */
+export const ROUTINE_CYCLE_DEFAULTS = { maxCredentials: 4, budgetMs: 180_000 } as const;
+
+/**
+ * How much one routine cycle may do: at most `maxCredentials` credentials, and
+ * no new credential once `budgetMs` has passed. The budget is soft (a started
+ * credential finishes), so it must leave room inside the family's 600 s lease:
+ * at most 400 s here. Overridden by `ROUTINE_CYCLE_MAX_CREDENTIALS` /
+ * `ROUTINE_CYCLE_BUDGET_MS`.
+ */
+export function routineCycleLimits(environment: Readonly<Record<string, string | undefined>> = process.env): {
+  maxCredentials: number;
+  budgetMs: number;
+} {
+  const read = (name: string, fallback: number, max: number): number => {
+    const raw = environment[name];
+    if (raw === undefined || raw.trim() === '') return fallback;
+    if (!/^\d+$/.test(raw.trim())) throw new Error(`Invalid ${name}`);
+    const value = Number(raw.trim());
+    if (value < 1 || value > max) throw new Error(`Invalid ${name}`);
+    return value;
+  };
+  return {
+    maxCredentials: read('ROUTINE_CYCLE_MAX_CREDENTIALS', ROUTINE_CYCLE_DEFAULTS.maxCredentials, 50),
+    budgetMs: read('ROUTINE_CYCLE_BUDGET_MS', ROUTINE_CYCLE_DEFAULTS.budgetMs, 400_000),
+  };
+}
 
 /**
  * Refuse to start a worker whose role serves a provider family without that

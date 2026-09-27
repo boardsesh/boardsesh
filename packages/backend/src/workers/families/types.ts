@@ -36,6 +36,8 @@ export type BackgroundJobFamilyOptions = {
   deadlineSeconds: number;
   /** pg-boss heartbeat window; must be at least 10. */
   heartbeatSeconds: number;
+  /** pg-boss fetch priority on the role's queue: higher runs first. Defaults to 0. */
+  priority?: number;
 };
 
 export type BackgroundJobScheduleRequest<Payload> = {

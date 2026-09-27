@@ -221,6 +221,9 @@ importers:
       '@boardsesh/kiosk':
         specifier: workspace:*
         version: link:../shared/kiosk
+      '@boardsesh/moonboard-sync':
+        specifier: workspace:*
+        version: link:../moonboard-sync
       '@boardsesh/offline-sync':
         specifier: workspace:*
         version: link:../shared/offline-sync

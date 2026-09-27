@@ -25,7 +25,10 @@ import {
   assertLinkGenerationCurrent,
   claimCredentialForRun,
   clearPendingProviderSyncRun,
+  deferCredentialSyncAttempt,
+  ensureProviderSyncControl,
   markProviderSyncRequesterWaiting,
+  readProviderSyncControl,
   releaseCredentialSyncLease,
   type ClaimedCredential,
   type ProviderSyncDb,
@@ -65,7 +68,72 @@ export type ProviderSyncOutcome = {
   status: 'active' | 'error' | 'expired';
   error?: string;
   transient?: boolean;
+  /** The provider answered 429 with a readable `Retry-After`. */
+  retryAfterMs?: number;
 };
+
+export type SyncProvider = 'aurora' | 'kilter';
+
+/**
+ * The provider-specific half every provider sync family shares: which
+ * credentials the provider's runner can sync, and how to sync one claimed
+ * credential with every write going through the caller's fenced runner.
+ */
+export type ProviderSyncAdapter = {
+  provider: SyncProvider;
+  candidateFilter: SQL | undefined;
+  sync(credential: ClaimedCredential, transaction: SyncBatchRunner): Promise<ProviderSyncOutcome>;
+};
+
+/**
+ * Build the adapter for `provider`: the one place a family turns a claimed
+ * credential into a runner call. Aurora skips the board-wide shared sync and
+ * Kilter the catalog: both have their own scheduled families. Every user-sync
+ * page or flush, and every credential write, goes through `transaction`; the
+ * appliers recompute climb stats after each page commits, in batches of their
+ * own, because `transaction` is set.
+ *
+ * The runners are loaded here, not at module scope: the registry is imported on
+ * every backend, operator and worker boot, and the sync runners pull in the
+ * whole provider stack that only a provider worker ever runs.
+ */
+export async function loadProviderSyncAdapter(
+  context: BackgroundJobContext,
+  provider: SyncProvider,
+): Promise<ProviderSyncAdapter> {
+  const onLog = (message: string) => logger.debug(message, { runId: context.runId, family: context.family });
+  // The outcome carries the failure; the message can hold provider detail, so
+  // only the bounded code ever reaches the ledger.
+  const onError = () => {};
+  if (provider === 'aurora') {
+    const { SyncRunner, syncableAuroraCredentialsFilter } = await import('@boardsesh/aurora-sync/runner');
+    return {
+      provider,
+      candidateFilter: syncableAuroraCredentialsFilter(),
+      sync(credential, transaction) {
+        const runner = new SyncRunner({ db: context.database, transaction, signal: context.signal, onLog, onError });
+        return runner.syncCredential(credential, { skipSharedSync: true });
+      },
+    };
+  }
+  const { SyncRunner, syncableKilterCredentialsFilter } = await import('@boardsesh/kilter-sync/runner');
+  return {
+    provider,
+    candidateFilter: syncableKilterCredentialsFilter(),
+    sync(credential, transaction) {
+      // The Keycloak token refresh runs unfenced on the worker's pool, exactly
+      // as the daemon does it: its own transaction holds the credential row
+      // `FOR UPDATE` across the Keycloak call, so rotating refresh tokens are
+      // read and written under one lock.
+      const runner = new SyncRunner({ db: context.database, onLog, onError });
+      return runner.runCycleForCredential(context.database, credential, {
+        transaction,
+        signal: context.signal,
+        skipCatalogSync: true,
+      });
+    },
+  };
+}
 
 export type ProviderSyncRequest = {
   userId: string;
@@ -73,6 +141,44 @@ export type ProviderSyncRequest = {
   linkGeneration: string;
   requestedBy: 'link' | 'manual';
 };
+
+/**
+ * Under the fences, check the generation and take the credential lease.
+ * `'busy'` when another run holds a live one; `onBusy` runs in the same
+ * transaction first. A stale generation throws `StaleLinkGenerationError`.
+ */
+async function takeLease(
+  context: BackgroundJobContext,
+  fence: ProviderSyncFence,
+  onBusy?: (transaction: ProviderSyncDb) => Promise<void>,
+): Promise<'leased' | 'busy'> {
+  return context.transaction(async (transaction) => {
+    await enterFence(transaction, fence);
+    if (await acquireCredentialSyncLease(transaction, { ...fence, ttlMs: CREDENTIAL_LEASE_TTL_MS })) return 'leased';
+    await onBusy?.(transaction);
+    return 'busy';
+  });
+}
+
+/** Best effort: a lost attempt cannot write, and the reconciler clears the lease once the run is terminal. */
+async function releaseLease(
+  context: BackgroundJobContext,
+  fence: ProviderSyncFence,
+  alsoInTransaction?: (transaction: ProviderSyncDb) => Promise<void>,
+): Promise<void> {
+  await context
+    .transaction(async (transaction) => {
+      await releaseCredentialSyncLease(transaction, fence);
+      await alsoInTransaction?.(transaction);
+    })
+    .catch((error: unknown) => {
+      logger.warn('[worker] provider sync lease release skipped', {
+        runId: context.runId,
+        family: context.family,
+        code: error instanceof Error ? error.name : 'UNKNOWN',
+      });
+    });
+}
 
 /** Translate a fence refusal into the bounded code the run records. */
 function fenceFailure(error: unknown): unknown {
@@ -103,23 +209,17 @@ function fenceFailure(error: unknown): unknown {
 export async function runProviderSync(
   context: BackgroundJobContext,
   request: ProviderSyncRequest,
-  provider: {
-    candidateFilter: SQL | undefined;
-    sync(credential: ClaimedCredential, transaction: SyncBatchRunner): Promise<ProviderSyncOutcome>;
-  },
+  provider: Pick<ProviderSyncAdapter, 'candidateFilter' | 'sync'>,
 ): Promise<void> {
   const fence: ProviderSyncFence = { ...request, runId: context.runId };
   const key = { userId: request.userId, boardType: request.boardType };
 
   let started: 'leased' | 'busy';
   try {
-    started = await context.transaction(async (transaction) => {
-      await enterFence(transaction, fence);
-      if (await acquireCredentialSyncLease(transaction, { ...fence, ttlMs: CREDENTIAL_LEASE_TTL_MS })) return 'leased';
+    started = await takeLease(context, fence, async (transaction) => {
       // Nothing reads this flag yet: its consumer is #5618, which tells the
       // climber when the run holding the lease finishes.
       if (request.requestedBy === 'manual') await markProviderSyncRequesterWaiting(transaction, key);
-      return 'busy';
     });
   } catch (error) {
     throw fenceFailure(error);
@@ -159,19 +259,85 @@ export async function runProviderSync(
       retryable: false,
     });
   } finally {
-    // Best effort: a lost attempt cannot write here, and the backend
-    // reconciler clears the lease and pending run once the run is terminal.
-    await context
-      .transaction(async (transaction) => {
-        await releaseCredentialSyncLease(transaction, fence);
-        if (!retryComing) await clearPendingProviderSyncRun(transaction, { ...key, runId: context.runId });
-      })
-      .catch((error: unknown) => {
-        logger.warn('[worker] provider sync lease release skipped', {
-          runId: context.runId,
-          family: context.family,
-          code: error instanceof Error ? error.name : 'UNKNOWN',
-        });
-      });
+    await releaseLease(context, fence, async (transaction) => {
+      if (!retryComing) await clearPendingProviderSyncRun(transaction, { ...key, runId: context.runId });
+    });
+  }
+}
+
+/**
+ * How one credential of a routine cycle ended. `failed` means the provider
+ * sync failed and the runner already recorded it on the credential; `skipped`
+ * means nothing was synced because another run holds the account or it was
+ * relinked or unlinked meanwhile. Neither fails the cycle.
+ */
+export type RoutineCredentialResult = {
+  result: 'synced' | 'failed' | 'skipped';
+  reason?: 'NOT_LINKED' | 'CREDENTIAL_BUSY' | 'STALE_LINK_GENERATION';
+  /** Set when the provider throttled us; the credential's attempt clock now waits it out. */
+  retryAfterMs?: number;
+};
+
+/**
+ * Sync one credential the routine cycle already claimed
+ * (`claimNextCredentialForSync`, which stamped its attempt clock), through the
+ * same fences and adapter as a first-link sync:
+ *
+ * 1. read the link generation, unfenced (creating the control row for a
+ *    credential linked before rows existed, without a new generation);
+ * 2. take the credential lease under the fences; a live lease another run
+ *    holds (a first-link or "Sync now" run that started after the claim) is a
+ *    skip;
+ * 3. run the adapter with every write behind {@link fencedBatchRunner};
+ * 4. on a provider 429 with `Retry-After`, push the credential's attempt clock
+ *    out by that much, still under the fences;
+ * 5. release the lease.
+ *
+ * A credential failure is already recorded by the runner and comes back as
+ * `failed`. A relink, an unlink or a lost lease mid-sync comes back as
+ * `skipped`. Only an abort, a lost attempt or a database error throws: those
+ * end the whole cycle.
+ */
+export async function runRoutineCredentialSync(
+  context: BackgroundJobContext,
+  credential: ClaimedCredential,
+  adapter: Pick<ProviderSyncAdapter, 'sync'>,
+): Promise<RoutineCredentialResult> {
+  const key = { userId: credential.userId, boardType: credential.boardType };
+  let control = await readProviderSyncControl(context.database, key);
+  if (!control) {
+    await context.transaction((transaction) => ensureProviderSyncControl(transaction, key));
+    control = await readProviderSyncControl(context.database, key);
+  }
+  if (!control?.linked) return { result: 'skipped', reason: 'NOT_LINKED' };
+  const fence: ProviderSyncFence = { ...key, linkGeneration: control.linkGeneration, runId: context.runId };
+
+  try {
+    if ((await takeLease(context, fence)) === 'busy') return { result: 'skipped', reason: 'CREDENTIAL_BUSY' };
+  } catch (error) {
+    if (error instanceof StaleLinkGenerationError) return { result: 'skipped', reason: 'STALE_LINK_GENERATION' };
+    throw error;
+  }
+
+  try {
+    const fenced = fencedBatchRunner(context, fence);
+    const outcome = await adapter.sync(credential, fenced);
+    const result = outcome.status === 'active' ? 'synced' : 'failed';
+    if (outcome.retryAfterMs === undefined) return { result };
+    const delayMs = outcome.retryAfterMs;
+    try {
+      await fenced((transaction) => deferCredentialSyncAttempt(transaction, { ...key, delayMs }));
+    } catch (error) {
+      // Relinked or taken over since: that run owns the clock now. The
+      // throttle still ends this cycle.
+      if (!(error instanceof StaleLinkGenerationError || error instanceof CredentialLeaseLostError)) throw error;
+    }
+    return { result, retryAfterMs: delayMs };
+  } catch (error) {
+    if (error instanceof StaleLinkGenerationError) return { result: 'skipped', reason: 'STALE_LINK_GENERATION' };
+    if (error instanceof CredentialLeaseLostError) return { result: 'skipped', reason: 'CREDENTIAL_BUSY' };
+    throw error;
+  } finally {
+    await releaseLease(context, fence);
   }
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { requireProviderSecrets, workerConfig } from '../config';
+import { ROUTINE_CYCLE_DEFAULTS, requireProviderSecrets, routineCycleLimits, workerConfig } from '../config';
 
 const environment = { WORKER_ROLE: 'interactive-import', DATABASE_URL: 'postgresql://worker:secret@localhost/test' };
 
@@ -66,5 +66,38 @@ describe('worker configuration', () => {
         KILTER_OAUTH_CLIENT_ID: 'client',
       }),
     ).toBe(true);
+  });
+  it('reads the routine cycle limits, with defaults of 4 credentials and 3 minutes', () => {
+    expect(routineCycleLimits({})).toEqual({ maxCredentials: 4, budgetMs: 180_000 });
+    expect(ROUTINE_CYCLE_DEFAULTS).toEqual({ maxCredentials: 4, budgetMs: 180_000 });
+    expect(routineCycleLimits({ ROUTINE_CYCLE_MAX_CREDENTIALS: '10', ROUTINE_CYCLE_BUDGET_MS: '60000' })).toEqual({
+      maxCredentials: 10,
+      budgetMs: 60_000,
+    });
+  });
+  it.each([
+    { ROUTINE_CYCLE_MAX_CREDENTIALS: '0' },
+    { ROUTINE_CYCLE_MAX_CREDENTIALS: '51' },
+    { ROUTINE_CYCLE_MAX_CREDENTIALS: '4.5' },
+    { ROUTINE_CYCLE_MAX_CREDENTIALS: 'many' },
+    { ROUTINE_CYCLE_BUDGET_MS: '0' },
+    // The budget is soft, so it has to leave a credential's worth of the 600 s lease.
+    { ROUTINE_CYCLE_BUDGET_MS: '400001' },
+    { ROUTINE_CYCLE_BUDGET_MS: '-1' },
+  ])('fails worker startup on an invalid routine limit %j', (override) => {
+    expect(() => workerConfig({ ...environment, ...override })).toThrow();
+  });
+  it('needs both provider secrets for the routine families, and none for MoonBoard or the self-heal', () => {
+    const routine = [
+      { name: 'provider-routine-cycle' },
+      { name: 'aurora-shared-sync' },
+      { name: 'kilter-catalog-sync' },
+      { name: 'moonboard-locations-sync' },
+    ];
+    expect(() => requireProviderSecrets('routine-provider', routine, {})).toThrow(
+      'AURORA_CREDENTIALS_SECRET, KILTER_OAUTH_CLIENT_ID',
+    );
+    expect(() => requireProviderSecrets('routine-provider', [{ name: 'moonboard-locations-sync' }], {})).not.toThrow();
+    expect(() => requireProviderSecrets('maintenance-delivery', [{ name: 'climb-stats-self-heal' }], {})).not.toThrow();
   });
 });

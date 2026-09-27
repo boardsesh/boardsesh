@@ -1,6 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { sql } from 'drizzle-orm';
 import postgres from 'postgres';
+import { drizzle } from 'drizzle-orm/postgres-js';
 import { rowsFromResult } from '@boardsesh/db/client';
 import { syncSharedData, upsertClimbStats } from '@boardsesh/aurora-sync/sync';
 import type { BetaLink, Climb, ClimbStats, SyncData } from '@boardsesh/aurora-sync/api';
@@ -138,6 +139,7 @@ describeWithDatabase('Aurora climb_stats upsert skips unchanged rows (real DB)',
 
 describeWithDatabase('syncSharedData: per-pass climb_stats write counts (real DB)', () => {
   const client = postgres(getWorkerDatabaseUrl(), { max: 1, prepare: false, onnotice: () => {} });
+  const clientDb = drizzle(client);
 
   beforeEach(async () => {
     mockSharedSync.mockReset();
@@ -158,7 +160,7 @@ describeWithDatabase('syncSharedData: per-pass climb_stats write counts (real DB
     const logLines: string[] = [];
     mockSharedSync.mockResolvedValue(complete({ climb_stats: stats }));
 
-    const firstRun = await syncSharedData(client, BOARD, 'token', (line) => logLines.push(line));
+    const firstRun = await syncSharedData(clientDb, BOARD, 'token', (line) => logLines.push(line));
     expect(firstRun.climbStatsWrites).toEqual({ received: 2, offered: 2, written: 2 });
     expect(logLines).toContain(`[SharedSync] ${BOARD} climb_stats writes: received=2 offered=2 written=2 unchanged=0`);
     const rowBefore = await statsRow(stats[0].climb_uuid);
@@ -166,7 +168,7 @@ describeWithDatabase('syncSharedData: per-pass climb_stats write counts (real DB
 
     // Aurora re-sends the same rows: nothing is written.
     logLines.length = 0;
-    const secondRun = await syncSharedData(client, BOARD, 'token', (line) => logLines.push(line));
+    const secondRun = await syncSharedData(clientDb, BOARD, 'token', (line) => logLines.push(line));
     expect(secondRun.climbStatsWrites).toEqual({ received: 2, offered: 2, written: 0 });
     expect(logLines).toContain(`[SharedSync] ${BOARD} climb_stats writes: received=2 offered=2 written=0 unchanged=2`);
     // The row was not rewritten, so its xmin and stamp stay where they were.
@@ -178,6 +180,7 @@ describeWithDatabase('Aurora beta_links upsert skips unchanged rows (real DB)', 
   it('rewrites a re-sent link only when a column changed', async () => {
     const tag = uniqueTag();
     const client = postgres(getWorkerDatabaseUrl(), { max: 1, prepare: false, onnotice: () => {} });
+    const clientDb = drizzle(client);
     try {
       const link: BetaLink = {
         climb_uuid: `${tag}-beta`,
@@ -199,14 +202,14 @@ describeWithDatabase('Aurora beta_links upsert skips unchanged rows (real DB)', 
       };
       mockSharedSync.mockReset();
       mockSharedSync.mockResolvedValue({ _complete: true, beta_links: [link] });
-      await syncSharedData(client, BOARD, 'token', () => {});
+      await syncSharedData(clientDb, BOARD, 'token', () => {});
       const inserted = await betaLinkRow();
 
-      await syncSharedData(client, BOARD, 'token', () => {});
+      await syncSharedData(clientDb, BOARD, 'token', () => {});
       expect(await betaLinkRow()).toEqual(inserted);
 
       mockSharedSync.mockResolvedValue({ _complete: true, beta_links: [{ ...link, thumbnail: 'thumb2.jpg' }] });
-      await syncSharedData(client, BOARD, 'token', () => {});
+      await syncSharedData(clientDb, BOARD, 'token', () => {});
       const changed = await betaLinkRow();
       expect(changed.thumbnail).toBe('thumb2.jpg');
       expect(changed.xmin).not.toBe(inserted.xmin);
@@ -220,6 +223,7 @@ describeWithDatabase('Aurora climbs upsert skips unchanged rows (real DB)', () =
   it('rewrites a re-sent climb only when one of its five written columns changed', async () => {
     const tag = uniqueTag();
     const client = postgres(getWorkerDatabaseUrl(), { max: 1, prepare: false, onnotice: () => {} });
+    const clientDb = drizzle(client);
     const auroraClimb = (uuid: string, overrides: Partial<Climb> = {}): Climb => ({
       uuid,
       name: 'Crimp city',
@@ -255,11 +259,11 @@ describeWithDatabase('Aurora climbs upsert skips unchanged rows (real DB)', () =
     try {
       mockSharedSync.mockReset();
       mockSharedSync.mockResolvedValue({ _complete: true, climbs: climbUuids.map((uuid) => auroraClimb(uuid)) });
-      await syncSharedData(client, BOARD, 'token', () => {});
+      await syncSharedData(clientDb, BOARD, 'token', () => {});
       const inserted = await climbRows();
 
       // Identical re-send: neither row gets a new tuple.
-      await syncSharedData(client, BOARD, 'token', () => {});
+      await syncSharedData(clientDb, BOARD, 'token', () => {});
       expect(await climbRows()).toEqual(inserted);
 
       // A renamed b rewrites b and only b.
@@ -267,7 +271,7 @@ describeWithDatabase('Aurora climbs upsert skips unchanged rows (real DB)', () =
         _complete: true,
         climbs: [auroraClimb(climbUuids[0]), auroraClimb(climbUuids[1], { name: 'Crimp city (renamed)' })],
       });
-      await syncSharedData(client, BOARD, 'token', () => {});
+      await syncSharedData(clientDb, BOARD, 'token', () => {});
       const [rowA, rowB] = await climbRows();
       expect(rowA).toEqual(inserted[0]);
       expect(rowB.name).toBe('Crimp city (renamed)');

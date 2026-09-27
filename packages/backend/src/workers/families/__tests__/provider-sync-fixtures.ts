@@ -232,10 +232,11 @@ export async function insertLinkedKilterAccount(
 }
 
 /**
- * Stand-in for Kilter's PowerSync stream: one snapshot carrying a log, a
- * rating and a circuit with one climb, then checkpoint_complete.
+ * Kilter's PowerSync user stream for the fixture account, as NDJSON: one
+ * snapshot carrying a log, a rating and a circuit with one climb, then
+ * checkpoint_complete.
  */
-export function stubKilterPowerSync(climbUuid: string) {
+export function kilterUserSyncBody(climbUuid: string): string {
   const common = { user_uuid: KILTER_SUB, gym_uuid: null, wall_uuid: null, product_layout_uuid: null };
   const ops = [
     {
@@ -301,9 +302,14 @@ export function stubKilterPowerSync(climbUuid: string) {
       },
     },
   ];
-  const body = [JSON.stringify({ data: { bucket: 'user', data: ops } }), JSON.stringify({ checkpoint_complete: {} })]
+  return [JSON.stringify({ data: { bucket: 'user', data: ops } }), JSON.stringify({ checkpoint_complete: {} })]
     .map((line) => `${line}\n`)
     .join('');
+}
+
+/** Stand-in for Kilter's PowerSync stream serving {@link kilterUserSyncBody}. */
+export function stubKilterPowerSync(climbUuid: string) {
+  const body = kilterUserSyncBody(climbUuid);
   const fetchMock = vi.fn(async (input: string | URL | Request) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
     if (url.endsWith('/sync/stream')) {

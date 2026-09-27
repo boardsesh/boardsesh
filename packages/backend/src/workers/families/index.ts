@@ -14,6 +14,11 @@ import { refreshRecommendationsFamily } from './refresh-recommendations';
 import { workerProbeFamily } from './worker-probe';
 import { auroraUserSyncFamily } from './aurora-user-sync';
 import { kilterUserSyncFamily } from './kilter-user-sync';
+import { providerRoutineCycleFamily } from './provider-routine-cycle';
+import { auroraSharedSyncFamily } from './aurora-shared-sync';
+import { kilterCatalogSyncFamily } from './kilter-catalog-sync';
+import { moonBoardLocationsSyncFamily } from './moonboard-locations-sync';
+import { climbStatsSelfHealFamily } from './climb-stats-self-heal';
 
 export { BackgroundJobError } from './types';
 export type { BackgroundJobContext, BackgroundJobFamilyModule, BackgroundJobFamilyOptions } from './types';
@@ -30,6 +35,11 @@ const FAMILY_MODULES = {
   'refresh-moonboard-wide-angle-estimates': refreshMoonboardWideAngleEstimatesFamily,
   'aurora-user-sync': auroraUserSyncFamily,
   'kilter-user-sync': kilterUserSyncFamily,
+  'provider-routine-cycle': providerRoutineCycleFamily,
+  'aurora-shared-sync': auroraSharedSyncFamily,
+  'kilter-catalog-sync': kilterCatalogSyncFamily,
+  'moonboard-locations-sync': moonBoardLocationsSyncFamily,
+  'climb-stats-self-heal': climbStatsSelfHealFamily,
 } satisfies Record<BackgroundJobFamily, BackgroundJobFamilyModule>;
 
 const registry: ReadonlyMap<string, BackgroundJobFamilyModule> = new Map(
