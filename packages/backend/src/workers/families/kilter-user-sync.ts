@@ -33,7 +33,11 @@ export const kilterUserSyncFamily: BackgroundJobFamilyModule<KilterUserSyncPaylo
     retryBackoff: true,
     retryDelayMax: 300,
     deadlineSeconds: 7200,
-    heartbeatSeconds: 30,
+    // A fenced batch holds the run-row lock, so no heartbeat lands while one
+    // runs, and a batch longer than this loses its attempt. A first sync's
+    // biggest batch (one Aurora page, one 500-op Kilter flush, all circuits at
+    // once) runs over a homelab-to-Railway link; 120 s leaves room for it.
+    heartbeatSeconds: 120,
   },
   payload: kilterUserSyncPayload,
   singletonKey: (payload) => `${payload.userId}:${payload.boardType}:${payload.linkGeneration}`,

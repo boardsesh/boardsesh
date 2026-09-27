@@ -44,7 +44,11 @@ export const auroraUserSyncFamily: BackgroundJobFamilyModule<AuroraUserSyncPaylo
     retryBackoff: true,
     retryDelayMax: 300,
     deadlineSeconds: 7200,
-    heartbeatSeconds: 30,
+    // A fenced batch holds the run-row lock, so no heartbeat lands while one
+    // runs, and a batch longer than this loses its attempt. A first sync's
+    // biggest batch (one Aurora page, one 500-op Kilter flush, all circuits at
+    // once) runs over a homelab-to-Railway link; 120 s leaves room for it.
+    heartbeatSeconds: 120,
   },
   payload: auroraUserSyncPayload,
   // The generation is part of the key: a relink queues its own run instead of

@@ -72,9 +72,22 @@ grants before granting, so a table removed from a list (or a login moved to a
 bare entry) loses its grant on the next migration. Each login's revoke and
 grants run as one `DO` block, a single transaction, so a migration during a
 running job never leaves the login with nothing. A worker login may not be the
-runtime or detector login; the migrator refuses it. Today only `batch` has data
-grants (see "Batch families"). Runtime users must never be migration owners.
+runtime or detector login; the migrator refuses it. The data grants of `batch` are under "Batch families"; the provider roles' are below. Runtime users must never be migration owners.
 The existing runtime and detector grant contracts remain supported.
+
+`interactive-import` and `routine-provider` share the provider sync list
+(`PROVIDER_SYNC_GRANTS`):
+
+| Grant | Tables |
+| --- | --- |
+| SELECT, UPDATE | `aurora_credentials`, `provider_sync_controls` |
+| SELECT | `users`, `user_profiles`, `user_board_mappings`, `board_climb_aliases` |
+| SELECT, INSERT, UPDATE, DELETE | `boardsesh_ticks`, `logbook_sync_skips`, `board_users`, `board_walls`, `board_climbs`, `board_tags`, `board_circuits`, `board_user_syncs`, `board_climb_stats`, `board_climb_ratings`, `playlists`, `playlist_climbs`, `playlist_ownership` |
+| INSERT | `sync_deletions` (the `boardsesh_ticks` and `playlist*` delete triggers write it as the caller) |
+
+It is proven, not trusted: `services/__tests__/job-queue-roles.test.ts` runs a
+whole Aurora user sync (every applier branch) as a NOLOGIN role holding only
+these grants. A table the appliers start writing fails that test first.
 
 ## Queues
 
@@ -141,8 +154,8 @@ module. The module declares:
 | `export-board-snapshots` | `batch` | 2,700 s | 1, after 300 s | 20 h (live scan: skips itself after 840 s) | mode (`nightly`, `live-scan`) |
 | `refresh-moonboard-angle-estimates` | `batch` | 1,800 s | 1, after 900 s | 6 days | `weekly` |
 | `refresh-moonboard-wide-angle-estimates` | `batch` | 7,200 s | 1, after 900 s | 6 days | `weekly` |
-| `aurora-user-sync` | `interactive-import` | 1800 s | 3, 30 s backoff to 300 s | 2 h | `userId:boardType:linkGeneration` |
-| `kilter-user-sync` | `interactive-import` | 1800 s | 3, 30 s backoff to 300 s | 2 h | `userId:kilter:linkGeneration` |
+| `aurora-user-sync` | `interactive-import` | 1800 s (heartbeat 120 s) | 3, 30 s backoff to 300 s | 2 h | `userId:boardType:linkGeneration` |
+| `kilter-user-sync` | `interactive-import` | 1800 s (heartbeat 120 s) | 3, 30 s backoff to 300 s | 2 h | `userId:kilter:linkGeneration` |
 
 Throw `BackgroundJobError(code)` from `execute` to record a bounded,
 credential-free `error_code` (`/^[A-Z][A-Z0-9_]{0,63}$/`); pass
@@ -493,7 +506,9 @@ then the control row, then credential and tick rows. The link producers and
 relink waits for an in-flight batch instead of deadlocking with it. Provider HTTP
 (Aurora login and `/sync`, Keycloak, PowerSync) always runs between batches.
 The Kilter token refresh keeps its own unfenced `FOR UPDATE` transaction on the
-credential row, exactly as the daemon runs it.
+credential row, exactly as the daemon runs it. A fenced batch holds the run-row lock, so
+no heartbeat lands while it runs; the families' 120 s heartbeat window is what
+bounds one batch (one Aurora page, one 500-op Kilter flush, the circuits phase).
 
 ### One run
 
