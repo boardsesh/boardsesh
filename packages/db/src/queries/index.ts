@@ -7,6 +7,7 @@ export * from './sync/credential-fleet-snapshot';
 export * from './sync/weekly-gate';
 export * from './sync/upstream-playlist-owners';
 export * from './sync/claim-credential';
+export * from './sync/provider-sync-control';
 export * from './sync/daemon-lease';
 export * from './sync/shared-sync-cooldown';
 export * from './sync/gym-wall-crawl';

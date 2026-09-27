@@ -1709,6 +1709,20 @@
       "when": 1790475462904,
       "tag": "0243_background_job_families",
       "breakpoints": true
+    },
+    {
+      "idx": 244,
+      "version": "7",
+      "when": 1790476922155,
+      "tag": "0244_provider_sync_controls",
+      "breakpoints": true
+    },
+    {
+      "idx": 245,
+      "version": "7",
+      "when": 1790476928909,
+      "tag": "0245_provider_sync_controls_backfill",
+      "breakpoints": true
     }
   ]
 }

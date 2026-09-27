@@ -1,6 +1,7 @@
 import { and, eq, sql, type SQL } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import { auroraCredentials } from '../../schema/auth/mappings';
+import { providerSyncControls } from '../../schema/app/provider-sync-controls';
 import { credentialRetryReadySql } from './credential-backoff';
 
 type DrizzleDb = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
@@ -15,9 +16,9 @@ export type ClaimedCredential = typeof auroraCredentials.$inferSelect;
  * — see the EvalPlanQual note on {@link claimNextCredentialForSync}. The
  * daemon's shortest cycle is 1 minute (`DEFAULT_DAEMON_OPTIONS.minDelayMinutes`
  * in @boardsesh/sync-runtime), so no real caller wants to re-claim inside this
- * window. A future "sync now" path that calls the claim directly would, and
- * would silently get nothing back — give it its own path rather than shrinking
- * this gap.
+ * window. The "sync now" and first-link paths would, and would silently get
+ * nothing back, so they use {@link claimCredentialForRun} instead; never shrink
+ * this gap to serve them.
  */
 export const CREDENTIAL_MIN_RECLAIM_GAP_MS = 30_000;
 
@@ -35,6 +36,26 @@ function credentialReclaimGapElapsedSql(): SQL {
   return sql`(
     ${auroraCredentials.lastSyncAttemptAt} IS NULL
     OR ${auroraCredentials.lastSyncAttemptAt} <= now() - make_interval(secs => ${RECLAIM_GAP_SECONDS})
+  )`;
+}
+
+/**
+ * TRUE unless the credential's control row says a background run holds a live
+ * lease on it, or the link was unlinked. A `NOT EXISTS` rather than a join so
+ * the claim's `FOR UPDATE` locks only the credential row, never the control
+ * row: the control row comes before the credential in the fenced-batch lock
+ * order (see provider-sync-control.ts), and a join would take them backwards.
+ * A credential with no control row yet is claimable.
+ */
+function credentialNotLeasedSql(): SQL {
+  return sql`NOT EXISTS (
+    SELECT 1 FROM ${providerSyncControls}
+    WHERE ${providerSyncControls.userId} = ${auroraCredentials.userId}
+      AND ${providerSyncControls.boardType} = ${auroraCredentials.boardType}
+      AND (
+        ${providerSyncControls.linked} = false
+        OR (${providerSyncControls.activeRunId} IS NOT NULL AND ${providerSyncControls.activeLeaseUntil} > clock_timestamp())
+      )
   )`;
 }
 
@@ -110,13 +131,28 @@ function credentialReclaimGapElapsedSql(): SQL {
  */
 export async function claimNextCredentialForSync(
   db: DrizzleDb,
-  options: { candidateFilter: SQL | undefined },
+  options: {
+    candidateFilter: SQL | undefined;
+    /**
+     * Skip credentials a background run is syncing right now (a live lease on
+     * the `provider_sync_controls` row) and links marked unlinked. Off by
+     * default so the daemons keep claiming exactly what they claimed before.
+     */
+    excludeLeased?: boolean;
+  },
 ): Promise<ClaimedCredential | null> {
   return db.transaction(async (tx) => {
     const candidates = await tx
       .select()
       .from(auroraCredentials)
-      .where(and(options.candidateFilter, credentialRetryReadySql(), credentialReclaimGapElapsedSql()))
+      .where(
+        and(
+          options.candidateFilter,
+          credentialRetryReadySql(),
+          credentialReclaimGapElapsedSql(),
+          options.excludeLeased ? credentialNotLeasedSql() : undefined,
+        ),
+      )
       // Order by the ATTEMPT clock (bumped on every attempt), not last_sync_at
       // (bumped only on success): a persistently failing credential must rotate
       // to the back rather than sorting to the front every cycle and wedging
@@ -149,6 +185,57 @@ export async function claimNextCredentialForSync(
     const claim = stamped[0];
     if (!claim) return null;
 
+    return { ...candidate, lastSyncAttemptAt: claim.lastSyncAttemptAt, updatedAt: claim.updatedAt };
+  });
+}
+
+/**
+ * Claim ONE named credential for a run that was asked for it: a link, a relink
+ * or "Sync now". This is the separate path the reclaim-gap note above asks for.
+ *
+ * It differs from {@link claimNextCredentialForSync} on purpose:
+ *
+ * - No reclaim gap and no backoff predicate. A climber who just linked or
+ *   tapped "Sync now" should not be turned away because the daemon touched the
+ *   row 10 s ago or because the last attempt failed. The gap exists to stop two
+ *   claimers picking the SAME next row; here the caller already named the row,
+ *   and the run's credential lease (provider_sync_controls) is what keeps two
+ *   runs off it.
+ * - No ordering, and it waits for the row lock instead of skipping it: the lock
+ *   is only ever held for a claim's two statements or a Kilter token refresh.
+ *
+ * `candidateFilter` still applies (sync_status, required secrets), so an
+ * expired or half-written credential is not claimed. Stamps
+ * `last_sync_attempt_at` like the daemon claim, so the daemon's fairness clock
+ * sees the attempt and moves on to other credentials.
+ */
+export async function claimCredentialForRun(
+  db: DrizzleDb,
+  options: { userId: string; boardType: string; candidateFilter: SQL | undefined },
+): Promise<ClaimedCredential | null> {
+  return db.transaction(async (tx) => {
+    const [candidate] = await tx
+      .select()
+      .from(auroraCredentials)
+      .where(
+        and(
+          eq(auroraCredentials.userId, options.userId),
+          eq(auroraCredentials.boardType, options.boardType),
+          options.candidateFilter,
+        ),
+      )
+      .limit(1)
+      .for('update');
+    if (!candidate) return null;
+    const [claim] = await tx
+      .update(auroraCredentials)
+      .set({ lastSyncAttemptAt: sql`now()`, updatedAt: sql`now()` })
+      .where(and(eq(auroraCredentials.userId, candidate.userId), eq(auroraCredentials.boardType, candidate.boardType)))
+      .returning({
+        lastSyncAttemptAt: auroraCredentials.lastSyncAttemptAt,
+        updatedAt: auroraCredentials.updatedAt,
+      });
+    if (!claim) return null;
     return { ...candidate, lastSyncAttemptAt: claim.lastSyncAttemptAt, updatedAt: claim.updatedAt };
   });
 }

@@ -23,6 +23,10 @@ const climbPopularitySchema = readFileSync(
   new URL('../../../db/drizzle/0242_climb_popularity.sql', import.meta.url),
   'utf8',
 );
+const providerSyncControlsSchema = readFileSync(
+  new URL('../../../db/drizzle/0244_provider_sync_controls.sql', import.meta.url),
+  'utf8',
+);
 
 export const schemaSQL = `
   DROP TABLE IF EXISTS "board_session_queues" CASCADE;
@@ -1963,4 +1967,6 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   );
   CREATE UNIQUE INDEX IF NOT EXISTS "user_hold_classifications_unique_idx"
     ON "user_hold_classifications" ("user_id", "board_type", "layout_id", "size_id", "hold_id");
+  DROP TABLE IF EXISTS provider_sync_controls;
+  ${providerSyncControlsSchema}
 `;
