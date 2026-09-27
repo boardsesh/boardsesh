@@ -45,11 +45,13 @@ ENV
 
 # 1. Rehearse. Writes everything, commits nothing.
 op run --env-file=/tmp/prod-db.env -- \
-  vp run '@boardsesh/db#db:import-moonboard-catalog' /path/to/catalog --dry-run
+  vp run '@boardsesh/db#db:import-moonboard-catalog' /path/to/catalog --dry-run \
+    --report-json /tmp/moonboard-import-report.json
 
 # 2. The real import.
 op run --env-file=/tmp/prod-db.env -- \
-  vp run '@boardsesh/db#db:import-moonboard-catalog' /path/to/catalog
+  vp run '@boardsesh/db#db:import-moonboard-catalog' /path/to/catalog \
+    --report-json /tmp/moonboard-import-report.json
 
 # 3. Derive required_set_ids for the climbs step 2 inserted.
 op run --env-file=/tmp/prod-db.env -- vp run db:backfill-moonboard-set-ids
@@ -108,6 +110,37 @@ cross-problem duplicate group needing manual dedup.
 Unmapped grades are reported by name. Add them to `MOONBOARD_GRADE_TO_DIFFICULTY`
 in `moonboard-helpers.ts` and re-run; until then those configurations import with
 a null grade, indistinguishable from an ungraded project.
+
+### Unattended runs
+
+A scheduler can call this script directly instead of a person watching the
+output. It checks `--help` for both `--report-json` and `--dry-run` before ever
+starting a real run, discards stdout/stderr, and reads the report back
+afterward.
+
+`--report-json <path>` writes a JSON summary once the run ends, whether it
+succeeded, rolled back as a dry run, or failed partway through. The write is a
+temp file plus a rename in the same directory, so a poller never reads a
+half-written file. The shape is `{ version: 1, dryRun, startedAt, finishedAt,
+boards: [...], totals: {...}, error? }`, where `boards` and `totals` mirror the
+per-board and running counters described above, one entry per board file
+processed. `dryRun` is the literal flag value the run was invoked with, not a
+guess, so a caller can confirm a rehearsal never committed and a real run
+never rolled back. `version` is fixed at `1` for now; a caller should reject
+anything else. `error` is present only when the run failed after doing at
+least some work.
+
+Before touching any board, the script takes a session-scoped Postgres advisory
+lock and holds it for the whole run, releasing it in a `finally` block on every
+path — success, dry-run rollback, or failure. If another run already holds the
+lock, the new one exits non-zero immediately, before opening any transaction.
+This is what makes a scheduler's retry loop safe: two overlapping invocations
+can never interleave their writes. The lock only works because the script keeps
+one direct Postgres connection for its entire lifetime and runs every per-board
+transaction on it — point `DB_URL` at a direct connection, never a
+transaction-pooling proxy (PgBouncer transaction mode, a pooled Neon/RDS-Proxy
+endpoint), since those hand out a different backend connection per statement
+and the lock would end up protecting nothing.
 
 ### Withdrawn problems
 

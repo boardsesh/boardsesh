@@ -18,6 +18,18 @@ import {
 import { stageCatalogBatch } from './moonboard-catalog-batch.js';
 import { describeDatabaseHost, getScriptDatabaseUrl } from './db-connection.js';
 import { formatUnmappedMoonBoardGrades } from './moonboard-helpers.js';
+import {
+  acquireCatalogImportLock,
+  releaseCatalogImportLock,
+  MOONBOARD_CATALOG_IMPORT_LOCK_KEY,
+} from './moonboard-catalog-run-lock.js';
+import {
+  zeroCatalogRunCounters,
+  buildCatalogRunReport,
+  writeCatalogRunReportAtomic,
+  reportJsonParentDirExists,
+  type CatalogBoardRunReport,
+} from './moonboard-catalog-report.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -61,6 +73,21 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Rehearse against the real target first with --dry-run: it does every write,
 // then rolls each file's transaction back, so constraints are exercised for
 // real and the counters are the ones a live run would print.
+//
+// UNATTENDED RUNS: --report-json <path> writes a machine-readable summary
+// after the run (success, dry-run rollback, or failure after partial work) —
+// see moonboard-catalog-report.ts. Before touching any board, the script also
+// takes a SESSION-scoped Postgres advisory lock (moonboard-catalog-run-lock.ts)
+// so two invocations can never interleave their per-board transactions. A
+// session-scoped lock only means anything because this script keeps ONE direct
+// connection (`postgres(databaseUrl, { max: 1 })` below) for its whole
+// lifetime — every per-board transaction runs on that same connection, so the
+// lock genuinely covers all of them. Point DB_URL at a direct connection
+// string, never a transaction-pooling proxy (PgBouncer transaction mode, a
+// pooled Neon/RDS-Proxy endpoint): those hand out a different backend
+// connection per statement, which would make the lock and the writes it is
+// meant to protect land on different connections entirely. See
+// moonboard-catalog-run-lock.ts for the full explanation.
 // =============================================================================
 
 const DEFAULT_DIR = path.join(__dirname, '../data/moonboard/app-catalog');
@@ -147,10 +174,32 @@ const DRY_RUN_ROLLBACK = new Error('__dry_run_rollback__');
 // Flags that consume the following argv entry. Needed so the positional catalog
 // directory can be told apart from a flag's value — otherwise
 // `--holdsetup 21` with no directory reads "21" as the path.
-const VALUE_FLAGS = new Set(['--holdsetup']);
-const BOOLEAN_FLAGS = new Set(['--dry-run']);
+const VALUE_FLAGS = new Set(['--holdsetup', '--report-json']);
+const BOOLEAN_FLAGS = new Set(['--dry-run', '--help']);
 
-export type CatalogCliArgs = { positional: string[]; holdsetup?: number; dryRun: boolean };
+export type CatalogCliArgs = {
+  positional: string[];
+  holdsetup?: number;
+  dryRun: boolean;
+  help: boolean;
+  reportJsonPath?: string;
+};
+
+// Shared between the --help output and the usage line printed on a parse
+// error, so the two can never drift out of sync with each other or with the
+// flags actually recognised below. A scheduler that shells out `--help` and
+// checks the output for `--report-json` and `--dry-run` reads this text.
+export const CATALOG_USAGE_TEXT = `Usage: vp run '@boardsesh/db#db:import-moonboard-catalog' [/path/to/app-catalog] [options]
+
+Options:
+  --holdsetup <n>       Import only the file whose 'holdsetup' matches n.
+  --dry-run             Attempt every write, then roll each file's transaction
+                        back. Nothing is committed.
+  --report-json <path>  After the run, write a machine-readable JSON report to
+                        <path> (temp file + rename, so a reader never sees a
+                        partial write). Written on success, on a --dry-run
+                        rollback, and on failure after partial work.
+  --help                Show this help text.`;
 
 /**
  * Parse argv, rejecting anything unrecognised.
@@ -163,6 +212,8 @@ export function parseCatalogCliArgs(argv: string[]): CatalogCliArgs {
   const positional: string[] = [];
   let holdsetup: number | undefined;
   let dryRun = false;
+  let help = false;
+  let reportJsonPath: string | undefined;
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -173,22 +224,27 @@ export function parseCatalogCliArgs(argv: string[]): CatalogCliArgs {
       continue;
     }
     if (BOOLEAN_FLAGS.has(arg)) {
-      dryRun = true;
+      if (arg === '--dry-run') dryRun = true;
+      else if (arg === '--help') help = true;
       continue;
     }
     if (VALUE_FLAGS.has(arg)) {
       const value = argv[++i];
       if (value === undefined) throw new Error(`${arg} needs a value`);
-      const parsed = Number(value);
-      if (!Number.isInteger(parsed)) throw new Error(`${arg} needs an integer, got "${value}"`);
-      holdsetup = parsed;
+      if (arg === '--holdsetup') {
+        const parsed = Number(value);
+        if (!Number.isInteger(parsed)) throw new Error(`${arg} needs an integer, got "${value}"`);
+        holdsetup = parsed;
+      } else if (arg === '--report-json') {
+        reportJsonPath = value;
+      }
       continue;
     }
     if (arg.startsWith('-')) throw new Error(`Unknown flag: ${arg}`);
     positional.push(arg);
   }
 
-  return { positional, holdsetup, dryRun };
+  return { positional, holdsetup, dryRun, help, reportJsonPath };
 }
 
 async function importMoonBoardCatalog() {
@@ -197,19 +253,31 @@ async function importMoonBoardCatalog() {
     cli = parseCatalogCliArgs(process.argv.slice(2));
   } catch (error) {
     console.error(`❌ ${(error as Error).message}`);
-    console.error(
-      "   Usage: vp run '@boardsesh/db#db:import-moonboard-catalog' [/path/to/app-catalog] [--holdsetup N] [--dry-run]",
-    );
+    console.error(CATALOG_USAGE_TEXT);
     process.exit(1);
+  }
+
+  if (cli.help) {
+    console.info(CATALOG_USAGE_TEXT);
+    process.exit(0);
   }
 
   const catalogDir = cli.positional[0] ? path.resolve(process.cwd(), cli.positional[0]) : DEFAULT_DIR;
   const onlyHoldsetup = cli.holdsetup;
   const dryRun = cli.dryRun;
+  const reportJsonPath = cli.reportJsonPath ? path.resolve(process.cwd(), cli.reportJsonPath) : undefined;
 
   if (!fs.existsSync(catalogDir) || !fs.statSync(catalogDir).isDirectory()) {
     console.error(`❌ Catalog directory not found: ${catalogDir}`);
-    console.error("   Usage: vp run '@boardsesh/db#db:import-moonboard-catalog' [/path/to/app-catalog]");
+    console.error(CATALOG_USAGE_TEXT);
+    process.exit(1);
+  }
+
+  // Checked up front, before any DB work starts: a typo'd --report-json
+  // directory should fail the run immediately, not after a real import has
+  // already done its writes and is only then unable to report on them.
+  if (reportJsonPath !== undefined && !reportJsonParentDirExists(reportJsonPath)) {
+    console.error(`❌ --report-json parent directory not found: ${path.dirname(reportJsonPath)}`);
     process.exit(1);
   }
 
@@ -229,26 +297,27 @@ async function importMoonBoardCatalog() {
     console.info('🧪 DRY RUN — every write is attempted and then rolled back. Nothing is committed.');
   }
 
+  // ONE direct connection for the script's whole lifetime — every per-board
+  // transaction below runs on it, which is what makes the session-scoped
+  // advisory lock taken next actually cover all of them. See the file header
+  // and moonboard-catalog-run-lock.ts.
   const client = postgres(databaseUrl, { max: 1 });
   const db = drizzle(client);
 
-  const totals = {
-    problems: 0,
-    matched: 0,
-    inserted: 0,
-    climbs: 0,
-    stats: 0,
-    holds: 0,
-    skippedProblems: 0,
-    skippedAmbiguous: 0,
-    skippedDrifted: 0,
-    skippedHijacked: 0,
-    foldedInBatch: 0,
-    sharedClimbInBatch: 0,
-    withdrawn: 0,
-    withdrawnWithClimbs: 0,
-    unlisted: 0,
-  };
+  const lockAcquired = await acquireCatalogImportLock(db);
+  if (!lockAcquired) {
+    console.error(
+      `❌ Another MoonBoard catalog import already holds the run lock ` +
+        `(advisory key ${MOONBOARD_CATALOG_IMPORT_LOCK_KEY}). Exiting without touching data.`,
+    );
+    await client.end();
+    process.exit(1);
+  }
+
+  const startedAt = new Date();
+  const boards: CatalogBoardRunReport[] = [];
+  const totals = zeroCatalogRunCounters();
+  let runError: string | undefined;
 
   try {
     const {
@@ -450,6 +519,27 @@ async function importMoonBoardCatalog() {
       totals.withdrawn += counters.withdrawn;
       totals.withdrawnWithClimbs += counters.withdrawnWithClimbs;
       totals.unlisted += unlistedThisFile;
+
+      boards.push({
+        holdsetup: dump.holdsetup,
+        layoutId,
+        file,
+        problems: dump.problems.length,
+        matched: counters.matched,
+        inserted: counters.inserted,
+        climbs: climbRecords.length,
+        stats: statsRecords.length,
+        holds: holdsRecords.length,
+        skippedProblems: counters.skippedProblems,
+        skippedAmbiguous: counters.skippedAmbiguous,
+        skippedDrifted: counters.skippedDrifted,
+        skippedHijacked: counters.skippedHijacked,
+        foldedInBatch: counters.foldedInBatch,
+        sharedClimbInBatch: counters.sharedClimbInBatch,
+        withdrawn: counters.withdrawn,
+        withdrawnWithClimbs: counters.withdrawnWithClimbs,
+        unlisted: unlistedThisFile,
+      });
     }
 
     console.info(dryRun ? '\n🧪 Dry run completed — nothing was committed.' : '\n✅ Import completed!');
@@ -516,14 +606,36 @@ async function importMoonBoardCatalog() {
           `at the matched climb while they stay listed. Reconcile them by hand, then re-run this import.`,
       );
     }
-
-    await client.end();
-    process.exit(0);
   } catch (error) {
+    runError = error instanceof Error ? error.message : String(error);
     console.error('❌ Import failed:', error);
-    await client.end();
-    process.exit(1);
+  } finally {
+    // Released on every path — success, dry-run rollback, or failure — so a
+    // crash never leaves the next run permanently locked out.
+    await releaseCatalogImportLock(db);
   }
+
+  if (reportJsonPath !== undefined) {
+    const report = buildCatalogRunReport({
+      dryRun,
+      startedAt,
+      finishedAt: new Date(),
+      boards,
+      totals,
+      error: runError,
+    });
+    try {
+      writeCatalogRunReportAtomic(reportJsonPath, report);
+    } catch (writeError) {
+      console.error('❌ Failed to write --report-json report:', writeError);
+      // A run a scheduler cannot verify is a failed run from its point of
+      // view, even when the import itself succeeded.
+      runError = runError ?? (writeError instanceof Error ? writeError.message : String(writeError));
+    }
+  }
+
+  await client.end();
+  process.exit(runError === undefined ? 0 : 1);
 }
 
 // Only run when invoked as a script — the arg parser above is imported by
