@@ -246,6 +246,8 @@ describe('aurora-shared-sync execute', () => {
       transaction: context.transaction,
       signal: context.signal,
       cooldownMs: AURORA_SHARED_SYNC_COOLDOWN_MS,
+      // The retry of this run re-claims the slot it left claimed.
+      runId: context.runId,
     });
     expect(runners.auroraConfigs[0]).toMatchObject({ db: context.database, signal: context.signal });
   });
@@ -295,6 +297,7 @@ describe('kilter-catalog-sync execute', () => {
       signal: context.signal,
       transaction: context.transaction,
       cooldownMs: KILTER_CATALOG_SYNC_COOLDOWN_MS,
+      runId: context.runId,
     });
   });
 

@@ -79,6 +79,11 @@ export type SharedSyncJobOptions = {
   signal?: AbortSignal;
   /** Overrides the runner's shared-sync cooldown for this claim. */
   cooldownMs?: number;
+  /**
+   * The background run making the claim. Its retry re-claims a slot the run
+   * left claimed (an abort or a lost lease cannot re-stamp it on the way out).
+   */
+  runId?: string;
 };
 
 /**

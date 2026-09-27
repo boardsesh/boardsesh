@@ -1282,6 +1282,43 @@ describe('SyncRunner.runSharedSyncJob (the aurora-shared-sync job)', () => {
     });
   });
 
+  it('claims as its run, so a retry after an abort re-claims the slot the stopped attempt could not re-stamp', async () => {
+    mockFindSharedSyncDonorCredential.mockResolvedValue(donorCredential());
+    const shutdown = new AbortController();
+    // The run is stopped mid-sync; its fence refuses every write after that,
+    // including the five-minute re-stamp on the way out.
+    mockSyncSharedData.mockImplementationOnce(async () => {
+      shutdown.abort();
+      throw new Error('aborted');
+    });
+    const fence = vi.fn(async (callback: (tx: never) => Promise<unknown>) => {
+      if (shutdown.signal.aborted) throw new Error('attempt fence refused');
+      return callback(injectedDb);
+    }) as never;
+    const runner = new SyncRunner({ db: injectedDb, onLog: () => {} });
+
+    await expect(
+      runner.runSharedSyncJob('tension', { transaction: fence, signal: shutdown.signal, runId: 'run-7' }),
+    ).rejects.toThrow('aborted');
+
+    // The claim carried the run id (the database lets that run re-claim it;
+    // see shared-sync-cooldown-cas.test.ts), and the refused re-stamp is swallowed.
+    expect(mockClaimSharedSyncSlot.mock.calls[0][1]).toMatchObject({ ownerRunId: 'run-7' });
+    expect(mockStampSharedSyncFinished).not.toHaveBeenCalled();
+  });
+
+  it('keeps the five-minute re-stamp for an ordinary provider failure', async () => {
+    mockFindSharedSyncDonorCredential.mockResolvedValue(donorCredential());
+    mockSyncSharedData.mockRejectedValueOnce(
+      new AuroraRequestError({ code: 'http', message: 'Aurora HTTP 503', status: 503 }),
+    );
+    const runner = new SyncRunner({ db: injectedDb, onLog: () => {} });
+
+    await expect(runner.runSharedSyncJob('tension', { transaction, runId: 'run-8' })).rejects.toThrow('503');
+
+    expect(mockStampSharedSyncFinished.mock.calls[0][1]).toMatchObject({ nextCooldownMs: 5 * 60_000 });
+  });
+
   it('does no work and claims nothing when the board has no healthy credential', async () => {
     mockFindSharedSyncDonorCredential.mockResolvedValue(null);
     const runner = new SyncRunner({ db: injectedDb, onLog: () => {} });

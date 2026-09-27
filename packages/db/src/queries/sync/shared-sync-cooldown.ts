@@ -23,13 +23,22 @@ export type SharedSyncClaimToken = string;
  * with identical or badly skewed clocks can never reuse an ownership token.
  * Existing timestamp-only rows remain compatible: every read/cast uses the
  * portion before the first `#`.
+ *
+ * A claim a background job makes also ends in `#run:<run id>`. A retry of the same
+ * run is the same owner, so it may re-claim its own slot whatever the
+ * cooldown: a run stopped by an abort, a deadline or a lost lease cannot
+ * re-stamp the slot on its way out (its fence refuses the write), and without
+ * this its own retry would find the slot "held" and succeed without syncing.
  */
-function dbCursorValue(kind: 'claim' | 'finished', backdateMs = 0) {
+const RUN_OWNER_TAG = '#run:';
+
+function dbCursorValue(kind: 'claim' | 'finished', backdateMs = 0, ownerRunId?: string) {
+  const owner = ownerRunId === undefined ? sql`''` : sql`${`${RUN_OWNER_TAG}${ownerRunId}`}`;
   return sql<string>`to_char(
     (clock_timestamp() at time zone 'utc')
       - make_interval(secs => ${backdateMs / 1000}::double precision),
     'YYYY-MM-DD HH24:MI:SS.US'
-  ) || ${`#${kind}:`} || gen_random_uuid()::text`;
+  ) || ${`#${kind}:`} || gen_random_uuid()::text || ${owner}`;
 }
 
 /**
@@ -56,11 +65,23 @@ export async function claimSharedSyncSlot(
     boardType: string;
     cursorName: string;
     cooldownMs: number;
+    /**
+     * The background job run making the claim. A claim marker this run left
+     * (still a `#claim:`, never finished) is its own: it re-claims it at once.
+     * The daemons pass none.
+     */
+    ownerRunId?: string;
     /** @deprecated Ignored. PostgreSQL is the sole clock and identity source. */
     now?: Date;
   },
 ): Promise<SharedSyncClaimToken | null> {
-  const claimToken = dbCursorValue('claim');
+  const claimToken = dbCursorValue('claim', 0, options.ownerRunId);
+  const heldBySameRun =
+    options.ownerRunId === undefined
+      ? sql`false`
+      : sql`(position('#claim:' in ${boardSharedSyncs.lastSynchronizedAt}) > 0
+             AND right(${boardSharedSyncs.lastSynchronizedAt}, ${`${RUN_OWNER_TAG}${options.ownerRunId}`.length})
+                 = ${`${RUN_OWNER_TAG}${options.ownerRunId}`})`;
   const rows = await db
     .insert(boardSharedSyncs)
     .values({
@@ -73,8 +94,9 @@ export async function claimSharedSyncSlot(
       // Generate a fresh value on the UPDATE path too. Reusing
       // excluded.last_synchronized_at would still be DB-clock based, but this
       // makes the ownership identity local to the lock-protected winning write.
-      set: { lastSynchronizedAt: dbCursorValue('claim') },
+      set: { lastSynchronizedAt: dbCursorValue('claim', 0, options.ownerRunId) },
       setWhere: sql`${boardSharedSyncs.lastSynchronizedAt} IS NULL
+        OR ${heldBySameRun}
         OR split_part(${boardSharedSyncs.lastSynchronizedAt}, '#', 1)::timestamp
              < (clock_timestamp() at time zone 'utc')
                - make_interval(secs => ${options.cooldownMs / 1000}::double precision)`,

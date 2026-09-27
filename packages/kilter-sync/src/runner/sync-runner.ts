@@ -640,7 +640,9 @@ export class SyncRunner {
     const cursor = { boardType: KILTER_BOARD_TYPE, cursorName: CATALOG_SYNC_COOLDOWN_CURSOR };
     const { transaction, signal } = options;
     const write: SyncBatchRunner = transaction ?? ((callback) => callback(db));
-    const claimToken = await write((tx) => claimSharedSyncSlot(tx, { ...cursor, cooldownMs }));
+    const claimToken = await write((tx) =>
+      claimSharedSyncSlot(tx, { ...cursor, cooldownMs, ownerRunId: options.runId }),
+    );
     if (claimToken === null) return { status: 'cooldown', lastRunAt: await readSharedSyncCursor(db, cursor) };
 
     // Measure the cooldown from the claim, not the end of the run: see

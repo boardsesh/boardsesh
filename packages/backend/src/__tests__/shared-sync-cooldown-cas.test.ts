@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { describe, it, expect, beforeEach, afterEach } from 'vite-plus/test';
 import { and, eq, sql } from 'drizzle-orm';
 
@@ -245,5 +246,57 @@ describe('shared-sync cooldown compare-and-set (real DB)', () => {
     } finally {
       await db.delete(boardSharedSyncs).where(eq(boardSharedSyncs.boardType, otherBoard.boardType));
     }
+  });
+});
+
+describe('a background run re-claiming its own slot (real DB)', () => {
+  beforeEach(clearFixtures);
+  afterEach(clearFixtures);
+
+  it('lets a retry of the same run re-claim the claim it left, and nobody else', async () => {
+    const runId = randomUUID();
+    const first = await claimSharedSyncSlot(db, { ...CURSOR, cooldownMs: COOLDOWN_MS, ownerRunId: runId });
+    expect(first).toMatch(new RegExp(`#claim:[0-9a-f-]+#run:${runId}$`));
+
+    // The attempt stopped without re-stamping (its fence refused the write).
+    // Another run, and the daemon, still see the slot as held.
+    expect(await claimSharedSyncSlot(db, { ...CURSOR, cooldownMs: COOLDOWN_MS, ownerRunId: randomUUID() })).toBeNull();
+    expect(await claimSharedSyncSlot(db, { ...CURSOR, cooldownMs: COOLDOWN_MS })).toBeNull();
+
+    // The same run's retry is the same owner: it gets a fresh token.
+    const retry = await claimSharedSyncSlot(db, { ...CURSOR, cooldownMs: COOLDOWN_MS, ownerRunId: runId });
+    expect(retry).not.toBeNull();
+    expect(retry).not.toBe(first);
+    // The first attempt's token no longer finishes the slot.
+    expect(await stampSharedSyncFinished(db, { ...CURSOR, claimToken: first!, fullCooldownMs: COOLDOWN_MS })).toBe(
+      false,
+    );
+  });
+
+  it('does not re-claim once the run finished the slot, even as the same run', async () => {
+    const runId = randomUUID();
+    const token = await claimSharedSyncSlot(db, { ...CURSOR, cooldownMs: COOLDOWN_MS, ownerRunId: runId });
+    expect(await stampSharedSyncFinished(db, { ...CURSOR, claimToken: token!, fullCooldownMs: COOLDOWN_MS })).toBe(
+      true,
+    );
+
+    expect(await claimSharedSyncSlot(db, { ...CURSOR, cooldownMs: COOLDOWN_MS, ownerRunId: runId })).toBeNull();
+  });
+
+  it('keeps the five-minute retry path for an ordinary failure', async () => {
+    const runId = randomUUID();
+    const token = await claimSharedSyncSlot(db, { ...CURSOR, cooldownMs: COOLDOWN_MS, ownerRunId: runId });
+    // A transient provider failure re-stamps a cooldown that is already over,
+    // as the runner does with its five-minute retry cooldown once it elapses.
+    expect(
+      await stampSharedSyncFinished(db, {
+        ...CURSOR,
+        claimToken: token!,
+        fullCooldownMs: COOLDOWN_MS,
+        nextCooldownMs: 0,
+      }),
+    ).toBe(true);
+
+    expect(await claimSharedSyncSlot(db, { ...CURSOR, cooldownMs: COOLDOWN_MS, ownerRunId: runId })).not.toBeNull();
   });
 });

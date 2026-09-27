@@ -940,8 +940,8 @@ export class SyncRunner {
     // The claim and the stamp go through the job's fence too: a run that lost
     // its lease neither claims nor stamps.
     const claimToken = options.transaction
-      ? await options.transaction((tx) => claimSharedSyncSlot(tx, { ...cursor, cooldownMs }))
-      : await claimSharedSyncSlot(db, { ...cursor, cooldownMs });
+      ? await options.transaction((tx) => claimSharedSyncSlot(tx, { ...cursor, cooldownMs, ownerRunId: options.runId }))
+      : await claimSharedSyncSlot(db, { ...cursor, cooldownMs, ownerRunId: options.runId });
     if (claimToken === null) return { status: 'cooldown', lastRunAt: await readSharedSyncCursor(db, cursor) };
 
     // The slot's marker is stamped when the run ends; backdating it by the

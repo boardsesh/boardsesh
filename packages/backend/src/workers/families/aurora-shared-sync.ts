@@ -146,6 +146,8 @@ export const auroraSharedSyncFamily: BackgroundJobFamilyModule<AuroraSharedSyncP
         transaction: context.transaction,
         signal: context.signal,
         cooldownMs: AURORA_SHARED_SYNC_COOLDOWN_MS,
+        // A retry of this run re-claims the slot this run left claimed.
+        runId: context.runId,
       });
     } catch (error) {
       if (context.signal.aborted || !isAuroraRequestError(error)) throw error;

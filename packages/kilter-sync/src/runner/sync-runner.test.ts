@@ -828,6 +828,35 @@ describe('SyncRunner.runCatalogSyncJob (the kilter-catalog-sync job)', () => {
     );
     expect(mockStampSharedSyncFinished.mock.calls[1][1].nextCooldownMs).toBeGreaterThan(3_600_000 - 5_000);
   });
+
+  it('claims as its run, so a retry after an abort re-claims the slot the stopped attempt could not re-stamp', async () => {
+    mockFindSharedSyncDonorCredential.mockResolvedValue(credential());
+    const { db, runner } = injectedRunner();
+    const shutdown = new AbortController();
+    mockSyncKilterCatalog.mockImplementationOnce(async () => {
+      shutdown.abort();
+      throw new Error('aborted');
+    });
+    // The fence refuses every write once the run is stopped, the re-stamp included.
+    const fence = (async (callback: (tx: RunnerDb) => Promise<unknown>) => {
+      if (shutdown.signal.aborted) throw new Error('attempt fence refused');
+      return callback(db);
+    }) as never;
+
+    await expect(
+      runner.runCatalogSyncJob({
+        transaction: fence,
+        signal: shutdown.signal,
+        runId: 'run-7',
+        environment: noPasswordEnv,
+      }),
+    ).rejects.toThrow('aborted');
+
+    // The claim carried the run id (the database lets that run re-claim it;
+    // see shared-sync-cooldown-cas.test.ts), and the refused re-stamp is swallowed.
+    expect(mockClaimSharedSyncSlot.mock.calls[0][1]).toMatchObject({ ownerRunId: 'run-7' });
+    expect(mockStampSharedSyncFinished).not.toHaveBeenCalled();
+  });
 });
 
 describe('SyncRunner daemon switch, claim and throttle', () => {

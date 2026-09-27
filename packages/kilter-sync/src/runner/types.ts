@@ -73,6 +73,11 @@ export type CatalogSyncJobOptions = {
   transaction?: SyncBatchRunner;
   /** Overrides the runner's catalog cooldown for this claim. */
   cooldownMs?: number;
+  /**
+   * The background run making the claim. Its retry re-claims a slot the run
+   * left claimed (an abort or a lost lease cannot re-stamp it on the way out).
+   */
+  runId?: string;
   /** Where the ROPC fallback token comes from. Defaults to `process.env`. */
   environment?: Readonly<Record<string, string | undefined>>;
 };

@@ -79,6 +79,8 @@ export const kilterCatalogSyncFamily: BackgroundJobFamilyModule<KilterCatalogSyn
         signal: context.signal,
         transaction: context.transaction,
         cooldownMs: KILTER_CATALOG_SYNC_COOLDOWN_MS,
+        // A retry of this run re-claims the slot this run left claimed.
+        runId: context.runId,
       });
     } catch (error) {
       if (context.signal.aborted || !(error instanceof KilterApiError)) throw error;
