@@ -741,11 +741,17 @@ transient provider failure is a retryable `PROVIDER_UNAVAILABLE` and re-stamps
 a five-minute cooldown so the retry can claim; a permanent one is
 `SHARED_SYNC_FAILED` / `CATALOG_SYNC_FAILED` with no retry. A step the runner
 swallows on purpose (a wall crawl, the weekly stats repair) logs its error class
-and SQLSTATE, never its message. The Aurora shared sync writes through the
-attempt fence (one transaction per Aurora page, per 25 gyms, and for the
-snapshot, heal and notifications); the Kilter catalog writes directly, as the
-daemon does, because it interleaves requests and writes per layout, and the
-slot is its single-writer guarantee. Details:
+and SQLSTATE, never its message, but a lost attempt fence or an abort is
+always rethrown. Both jobs write only through the attempt fence, the slot
+claim and stamp included, so a run that outlived its lease stops at its next
+batch instead of writing beside its replacement. The Aurora shared sync uses
+one transaction per Aurora page, per 25 gyms, and for the snapshot, heal and
+notifications. The Kilter catalog uses one per layout flush, per 5000 stats
+rows, and for the backlog, layout aliases, each 25-gym location batch, the
+wall sources, notifications, the deletion apply, the weekly repair's apply
+(one atomic transaction, the largest batch on a big catalog) and its
+watermark, and the history snapshot. Provider HTTP runs between batches and
+takes the run signal, the Kilter reference stream included. Details:
 [aurora-sync.md](aurora-sync.md#worker-families),
 [kilter-sync.md](kilter-sync.md#cooldown--piggyback).
 

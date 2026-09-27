@@ -289,22 +289,17 @@ export async function runProviderSync(
   }
 }
 
-/**
- * How one credential of a routine cycle ended. `failed` means the provider
- * sync failed and the runner already recorded it on the credential; `skipped`
- * means nothing was synced because another run holds the account or it was
- * relinked or unlinked meanwhile. Neither fails the cycle.
- */
 /** How long before the run's lease ends a credential's sync is stopped and recorded. */
 export const ROUTINE_CREDENTIAL_DEADLINE_MARGIN_MS = 60_000;
 
+/**
+ * How one credential of a routine cycle ended. `failed`: the provider sync
+ * failed and the failure is recorded on the credential. `skipped`: nothing
+ * synced, because another run holds the account or it was relinked or
+ * unlinked meanwhile. `queued`: a never-synced account was handed to its
+ * interactive family. None of them fails the cycle.
+ */
 export type RoutineCredentialResult = {
-  /**
-   * `failed`: the provider sync failed and the failure is recorded on the
-   * credential. `skipped`: nothing synced, another run holds the account or it
-   * was relinked or unlinked meanwhile. `queued`: a never-synced account was
-   * handed to its interactive family. None of them fails the cycle.
-   */
   result: 'synced' | 'failed' | 'skipped' | 'queued';
   reason?: 'NOT_LINKED' | 'CREDENTIAL_BUSY' | 'STALE_LINK_GENERATION' | 'CYCLE_DEADLINE' | 'FIRST_SYNC';
   /** Set when the provider throttled us; the credential's attempt clock now waits it out. */

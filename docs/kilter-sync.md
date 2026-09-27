@@ -246,11 +246,16 @@ wait), then the catalog, the weekly stats repair and the weekly history
 snapshot. A transient failure, an abort or a database error re-stamps a
 five-minute cooldown so the job's one retry can run; a permanent Kilter
 failure keeps the full one. The catalog's REST client honours `Retry-After`
-(capped at 5 minutes), else backs off exponentially up to 30 s. The catalog
-writes are not behind the attempt fence (it interleaves requests and writes
-per layout); the slot is the single-writer guarantee, as it is for the daemon,
-and the job's signal stops it at the next REST request (the catalog GETs and
-their 429 backoff take the signal) or layout group.
+(capped at 5 minutes), else backs off exponentially up to 30 s. Every write
+of the job goes through the attempt fence (`syncKilterCatalog`'s and
+`repairKilterCatalogStats`'s `transaction` option, and the slot claim and
+stamp): each layout flush, stats in chunks of 5000 rows, the backlog, layout
+aliases, locations in 25-gym batches, notifications, the deletion apply, the
+repair's atomic apply and watermark, and the history snapshot. A run that
+outlived its lease throws at its next batch, and the catalog's best-effort
+steps rethrow a lost fence instead of logging it. The job's signal reaches
+the reference stream, every REST request and the 429 backoff. The CLI and the
+daemon pass no runner and write as before.
 
 ### Prerequisite: fingerprint backfill
 

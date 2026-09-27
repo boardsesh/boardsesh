@@ -23,11 +23,17 @@ export const KILTER_CATALOG_SYNC_COOLDOWN_MS = 50 * 60 * 1000;
  * logged `CATALOG_SYNC_COOLDOWN`, no token source a logged
  * `CATALOG_SYNC_NO_DONOR`, both successful runs with no work.
  *
- * Unlike the Aurora shared sync, the catalog's writes are not behind the
- * attempt fence: the catalog interleaves Kilter requests with its writes per
- * layout, and the cooldown claim is the single-writer guarantee, as it is for
- * the daemon. The signal stops it between layout groups; Kilter's REST client
- * honours Retry-After on its own.
+ * Every write batch goes through the attempt fence (`context.transaction`):
+ * the slot claim and stamp, each layout flush and stats chunk (at most 5000
+ * rows), the backlog, layout aliases, locations (25 gyms a batch), setter
+ * notifications, the deletion apply, the weekly repair's apply and watermark,
+ * and the history snapshot. A run that outlived its lease or lost its attempt
+ * throws at its next batch instead of writing on beside its replacement.
+ * Kilter's REST and PowerSync requests run between batches and take the run
+ * signal; the REST client honours Retry-After on its own. The weekly repair's
+ * apply stays one atomic transaction (the authoritative upsert plus the
+ * materialized recompute), so on a very large catalog it is the batch closest
+ * to the 300 s heartbeat window.
  */
 export const kilterCatalogSyncFamily: BackgroundJobFamilyModule<KilterCatalogSyncPayload> = {
   name: 'kilter-catalog-sync',
@@ -68,6 +74,7 @@ export const kilterCatalogSyncFamily: BackgroundJobFamilyModule<KilterCatalogSyn
     try {
       result = await runner.runCatalogSyncJob({
         signal: context.signal,
+        transaction: context.transaction,
         cooldownMs: KILTER_CATALOG_SYNC_COOLDOWN_MS,
       });
     } catch (error) {
