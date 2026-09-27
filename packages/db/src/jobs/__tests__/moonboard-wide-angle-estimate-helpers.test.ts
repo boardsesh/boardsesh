@@ -7,8 +7,8 @@ import {
   buildMoonboardWideAngleTargetSql,
   planMoonboardWideAngleEstimates,
   type MoonboardWideAngleTarget,
-} from './moonboard-wide-angle-estimate-helpers.js';
-import { CONFIDENCE, type GradeCoefficients } from '../src/queries/grade-model/index.js';
+} from '../moonboard-wide-angle-estimate-helpers';
+import { CONFIDENCE, type GradeCoefficients } from '../../queries/grade-model';
 
 const dialect = new PgDialect();
 const sqlText = (query: SQL): string => dialect.sqlToQuery(query).sql;

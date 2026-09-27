@@ -8,6 +8,8 @@ import { exportBoardSnapshotsFamily } from './export-board-snapshots';
 import { refreshClimbGradesFamily } from './refresh-climb-grades';
 import { refreshClimbNeighborsFamily } from './refresh-climb-neighbors';
 import { refreshHoldFeaturesFamily } from './refresh-hold-features';
+import { refreshMoonboardAngleEstimatesFamily } from './refresh-moonboard-angle-estimates';
+import { refreshMoonboardWideAngleEstimatesFamily } from './refresh-moonboard-wide-angle-estimates';
 import { refreshRecommendationsFamily } from './refresh-recommendations';
 import { workerProbeFamily } from './worker-probe';
 
@@ -22,6 +24,8 @@ const FAMILY_MODULES = {
   'refresh-climb-grades': refreshClimbGradesFamily,
   'refresh-climb-neighbors': refreshClimbNeighborsFamily,
   'export-board-snapshots': exportBoardSnapshotsFamily,
+  'refresh-moonboard-angle-estimates': refreshMoonboardAngleEstimatesFamily,
+  'refresh-moonboard-wide-angle-estimates': refreshMoonboardWideAngleEstimatesFamily,
 } satisfies Record<BackgroundJobFamily, BackgroundJobFamilyModule>;
 
 const registry: ReadonlyMap<string, BackgroundJobFamilyModule> = new Map(

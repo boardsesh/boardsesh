@@ -17,7 +17,7 @@
  */
 import { sql, type SQL } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
-import { boardClimbGrades } from '../src/schema/app/climb-grades.js';
+import { boardClimbGrades } from '../schema/app/climb-grades';
 
 export type GradeEstimateRow = typeof boardClimbGrades.$inferInsert;
 export type GradeEstimateWriter = Pick<PgDatabase<PgQueryResultHKT>, 'insert'>;
@@ -62,15 +62,19 @@ export const gradeEstimateConflictUpdate = {
 /**
  * Upsert `rows` in batches and return how many were actually inserted or
  * changed. Rows whose values already match are skipped by Postgres, so they
- * keep their computed_at and are not re-sent to devices.
+ * keep their computed_at and are not re-sent to devices. `signal` is checked
+ * before every statement, so an abort inside a caller's transaction rolls it
+ * back within one 500-row statement.
  */
 export async function upsertGradeEstimates(
   db: GradeEstimateWriter,
   rows: readonly GradeEstimateRow[],
   batchSize: number = GRADE_ESTIMATE_UPSERT_BATCH,
+  signal?: AbortSignal,
 ): Promise<number> {
   let written = 0;
   for (let start = 0; start < rows.length; start += batchSize) {
+    signal?.throwIfAborted();
     const changed = await db
       .insert(boardClimbGrades)
       .values(rows.slice(start, start + batchSize))
@@ -79,4 +83,34 @@ export async function upsertGradeEstimates(
     written += changed.length;
   }
   return written;
+}
+
+/**
+ * Split `rows` into chunks of at most `maxRows`, never splitting one climb
+ * across two chunks, so a publish that commits one chunk per transaction keeps
+ * each climb's angle ladder consistent: all of a climb's rows land in the same
+ * commit. Climbs keep their first-seen order (the caller's keyset order on
+ * climb_uuid). A single climb with more than `maxRows` rows gets a chunk of
+ * its own rather than being split.
+ */
+export function chunkRowsByClimb<Row extends { climbUuid: string }>(rows: readonly Row[], maxRows: number): Row[][] {
+  if (!Number.isInteger(maxRows) || maxRows < 1)
+    throw new Error(`chunkRowsByClimb: maxRows must be >= 1, got ${maxRows}`);
+  const byClimb = new Map<string, Row[]>();
+  for (const row of rows) {
+    const climbRows = byClimb.get(row.climbUuid);
+    if (climbRows) climbRows.push(row);
+    else byClimb.set(row.climbUuid, [row]);
+  }
+  const chunks: Row[][] = [];
+  let current: Row[] = [];
+  for (const climbRows of byClimb.values()) {
+    if (current.length > 0 && current.length + climbRows.length > maxRows) {
+      chunks.push(current);
+      current = [];
+    }
+    current.push(...climbRows);
+  }
+  if (current.length > 0) chunks.push(current);
+  return chunks;
 }

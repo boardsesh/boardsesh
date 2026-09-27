@@ -412,7 +412,9 @@ jobs:
               - 'packages/db/src/queries/climb-stats/__tests__/moonboard-residual-dedup-replay.integration.test.ts'
               # The weekly MoonBoard estimate upsert must skip unchanged rows so
               # devices don't re-download them; proved against real Postgres.
-              - 'packages/db/scripts/grade-estimate-upsert*'
+              - 'packages/db/src/jobs/grade-estimate-upsert*'
+              # `*` stops at `/`, so the tests under __tests__/ need their own entry.
+              - 'packages/db/src/jobs/__tests__/grade-estimate-upsert*.test.ts'
               # The unattended-runner contract (report + run lock) for the
               # catalog importer: the lock integration test needs this job's
               # real Postgres to prove pg_try_advisory_lock genuinely blocks a
@@ -731,8 +733,8 @@ jobs:
           scripts/moonboard-reconciliation-report.integration.test.ts
           src/queries/climb-stats/__tests__/moonboard-snapped-angle-repair.integration.test.ts
           src/queries/climb-stats/__tests__/moonboard-residual-dedup-replay.integration.test.ts
-          scripts/grade-estimate-upsert.test.ts
-          scripts/grade-estimate-upsert.integration.test.ts
+          src/jobs/__tests__/grade-estimate-upsert.test.ts
+          src/jobs/__tests__/grade-estimate-upsert.integration.test.ts
           scripts/moonboard-catalog-report.test.ts
           scripts/moonboard-catalog-run-lock.test.ts
           scripts/moonboard-catalog-run-lock.integration.test.ts

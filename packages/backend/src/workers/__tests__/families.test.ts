@@ -17,6 +17,8 @@ describe('family registry', () => {
       'refresh-climb-grades',
       'refresh-climb-neighbors',
       'export-board-snapshots',
+      'refresh-moonboard-angle-estimates',
+      'refresh-moonboard-wide-angle-estimates',
     ]);
     expect(() => requireFamily('no-such-family')).toThrow('UNKNOWN_FAMILY');
   });

@@ -20,10 +20,15 @@ import type { BackgroundJobContext } from '../../workers/families';
 import { refreshClimbGradesFamily } from '../../workers/families/refresh-climb-grades';
 import { refreshClimbNeighborsFamily } from '../../workers/families/refresh-climb-neighbors';
 import { refreshHoldFeaturesFamily } from '../../workers/families/refresh-hold-features';
+import { refreshMoonboardAngleEstimatesFamily } from '../../workers/families/refresh-moonboard-angle-estimates';
+import { refreshMoonboardWideAngleEstimatesFamily } from '../../workers/families/refresh-moonboard-wide-angle-estimates';
 import { refreshRecommendationsFamily } from '../../workers/families/refresh-recommendations';
 import {
   FIXTURE_PREFIX,
   KILTER_CLIMBS,
+  MOONBOARD_CLIMB,
+  MOONBOARD_STALE_WIDE_CLIMB,
+  MOONBOARD_WIDE_LADDER_ANGLES,
   NEIGHBOR_BOARD,
   NEIGHBOR_LARGE_CLIMBS,
   NEIGHBOR_LARGE_LAYOUT,
@@ -32,6 +37,7 @@ import {
   posthogSendRows,
   seedBatchJobFixture,
   seedClimbNeighborFixture,
+  seedWideAngleShapeFixture,
 } from '../../__tests__/helpers/batch-job-fixture';
 
 // The Tension benchmark holdout gates need 100+ hashed-out benchmark rows; the
@@ -266,6 +272,37 @@ describe('batch worker grants', () => {
         .from(dbSchema.boardClimbNeighborRuns)
         .where(eq(dbSchema.boardClimbNeighborRuns.boardType, NEIGHBOR_BOARD));
       expect(neighborRun.fullBuildStartedAt).toBeNull();
+      // The two MoonBoard estimate families need no grants beyond the grade
+      // job's own list above (board_climb_stats/board_climbs SELECT,
+      // board_climb_grades and board_grade_coefficients DML, including the
+      // SELECT both jobs make on board_climb_grades), proven by running both
+      // for real under the same restricted role.
+      await refreshMoonboardAngleEstimatesFamily.execute(context('refresh-moonboard-angle-estimates'), {
+        publish: true,
+      });
+      expect(
+        await ownerDatabase
+          .select()
+          .from(dbSchema.boardClimbGrades)
+          .where(eq(dbSchema.boardClimbGrades.confidence, 'moonboard_angle_estimate')),
+      ).toMatchObject([{ boardType: 'moonboard', climbUuid: MOONBOARD_CLIMB, angle: 25 }]);
+      // The wide-angle job needs a shape board: the owner seeds a Tension angle
+      // surface and one stale wide estimate, then the family publishes (chunked
+      // upserts, then the reap's DELETE) under the restricted role.
+      await seedWideAngleShapeFixture(ownerDatabase);
+      await refreshMoonboardWideAngleEstimatesFamily.execute(context('refresh-moonboard-wide-angle-estimates'), {
+        publish: true,
+      });
+      const wide = await ownerDatabase
+        .select()
+        .from(dbSchema.boardClimbGrades)
+        .where(eq(dbSchema.boardClimbGrades.confidence, 'moonboard_wide_angle_estimate'));
+      const ladder = wide
+        .filter((row) => row.climbUuid === MOONBOARD_CLIMB)
+        .map((row) => row.angle)
+        .sort((left, right) => left - right);
+      expect(ladder).toEqual([...MOONBOARD_WIDE_LADDER_ANGLES]);
+      expect(wide.some((row) => row.climbUuid === MOONBOARD_STALE_WIDE_CLIMB)).toBe(false);
 
       // Nothing beyond the list: no user data it does not need, no catalog writes.
       await expect(restricted`SELECT email FROM users LIMIT 1`).rejects.toThrow('permission denied');

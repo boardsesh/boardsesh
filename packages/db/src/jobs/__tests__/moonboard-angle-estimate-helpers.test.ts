@@ -11,12 +11,8 @@ import {
   planMoonboardAngleEstimates,
   type MoonboardAngleEstimateKey,
   type MoonboardSingleAngleTarget,
-} from './moonboard-angle-estimate-helpers.js';
-import {
-  CONFIDENCE,
-  MOONBOARD_ANGLE_MODEL_VERSION,
-  type MoonboardAngleCoefficients,
-} from '../src/queries/grade-model/index.js';
+} from '../moonboard-angle-estimate-helpers';
+import { CONFIDENCE, MOONBOARD_ANGLE_MODEL_VERSION, type MoonboardAngleCoefficients } from '../../queries/grade-model';
 
 const dialect = new PgDialect();
 const sqlText = (query: SQL): string => dialect.sqlToQuery(query).sql;
