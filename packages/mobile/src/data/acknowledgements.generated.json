@@ -1,14 +1,14 @@
 {
-  "generatedAt": "2026-09-21T13:48:53.860Z",
+  "generatedAt": "2026-09-28T15:09:29.128Z",
   "contributors": [
     {
       "login": "marcodejongh",
       "name": "Marco de Jongh",
       "avatarUrl": "https://avatars.githubusercontent.com/u/1107647?u=63993f18e3d652404c7a04ae91a5f7a505fdef5c&v=4",
       "htmlUrl": "https://github.com/marcodejongh",
-      "pullRequests": 3841,
-      "issues": 1268,
-      "contributions": 5109
+      "pullRequests": 3967,
+      "issues": 1344,
+      "contributions": 5311
     },
     {
       "login": "ES-Alexander",
@@ -20,6 +20,15 @@
       "contributions": 110
     },
     {
+      "login": "alejandrosanchezcabana",
+      "name": "Alex Sánchez",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/10997544?u=41ac204494f58d9a5f32b3652af16a75c20869df&v=4",
+      "htmlUrl": "https://github.com/alejandrosanchezcabana",
+      "pullRequests": 28,
+      "issues": 2,
+      "contributions": 30
+    },
+    {
       "login": "azuttre",
       "name": "Helter Skilter",
       "avatarUrl": "https://avatars.githubusercontent.com/u/3766782?u=9f484b4611ad060ec18326e2a53fd044b1ee9b1a&v=4",
@@ -27,15 +36,6 @@
       "pullRequests": 27,
       "issues": 2,
       "contributions": 29
-    },
-    {
-      "login": "alejandrosanchezcabana",
-      "name": "Alex Sánchez",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/10997544?u=41ac204494f58d9a5f32b3652af16a75c20869df&v=4",
-      "htmlUrl": "https://github.com/alejandrosanchezcabana",
-      "pullRequests": 26,
-      "issues": 2,
-      "contributions": 28
     },
     {
       "login": "fallaciousreasoning",
