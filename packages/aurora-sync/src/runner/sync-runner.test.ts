@@ -737,6 +737,27 @@ describe('SyncRunner shared-sync per-board throttle', () => {
     expect(mockStampSharedSyncFinished).toHaveBeenCalledTimes(1);
   });
 
+  it("extends the shared-sync slot for Aurora's Retry-After on the daemon piggyback path too", async () => {
+    // This path has no borrowed donor to hold (it runs on the real user's own
+    // token), but the slot is the same per-board cursor runSharedSyncJob holds
+    // — without this, a one-hour Retry-After was followed by another crawl
+    // after the flat five-minute transient cooldown.
+    mockClaimSharedSyncSlot.mockResolvedValue('2026-07-31 23:00:00.000000');
+    mockFindGymsDueForWallCrawl.mockResolvedValue(['tension:269111']);
+    mockCrawlGymWalls.mockRejectedValue(
+      new AuroraRequestError({ code: 'rate_limited', message: 'slow down', status: 429, retryAfterMs: 3_600_000 }),
+    );
+    const runner = new SyncRunner({ sharedSyncCooldownMs: 50 * 60_000 });
+    const runnerPrivates = runner as unknown as SyncRunnerPrivates;
+
+    await expect(runnerPrivates.maybeRunSharedSync('tension', 'borrowed-token', 'user-1')).resolves.toBeUndefined();
+
+    expect(mockStampSharedSyncFinished.mock.calls[0][1]).toMatchObject({
+      nextCooldownMs: 5 * 60_000,
+      providerHoldMs: 3_600_000,
+    });
+  });
+
   it("lets a crawl's rate limit escape crawlGymWallSlice instead of swallowing it", async () => {
     // Unlike an ordinary crawl failure (tested above), a 429 from the crawl is a
     // real hold, not a per-gym blip. It must reach runBoardSharedWork's caller so
@@ -744,8 +765,8 @@ describe('SyncRunner shared-sync per-board throttle', () => {
     // borrowed donor get parked for it — swallowing it here would keep the crawl
     // contacting Aurora for the rest of the slice during the hold. (The daemon's
     // maybeRunSharedSync piggyback path has no borrowed-donor concept to hold —
-    // it runs on the real user's own token — so it only gets the slot/cooldown
-    // adjustment, not a donor hold.)
+    // it runs on the real user's own token — so it only extends the shared-sync
+    // slot for the Retry-After, not a donor hold.)
     mockFindGymsDueForWallCrawl.mockResolvedValue(['tension:269111']);
     const rateLimited = new AuroraRequestError({
       code: 'rate_limited',

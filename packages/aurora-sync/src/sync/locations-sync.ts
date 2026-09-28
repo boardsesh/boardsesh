@@ -14,6 +14,7 @@ import type { AuroraBoardName } from '../api/types';
 import { AURORA_BOARDS } from '../api/types';
 import { fetchAuroraPins, type AuroraPin } from '../api/pins-api';
 import type { AuroraGymUser } from '../api/gym-walls-api';
+import { isAuroraRequestError } from '../api/errors';
 import { findCrawledGymSourceKeys, markGymWallsCrawled } from '@boardsesh/db/queries';
 import type { Wall } from '../api/sync-api-types';
 
@@ -250,6 +251,12 @@ export async function syncAuroraBoardLocations(args: {
   if (args.fetchGymUser) {
     args.log?.(`[aurora-locations] ${args.board}: reading walls for ${pins.gyms.length} gym(s)`);
   }
+  // Set when a rate limit stops the read loop early: rethrown AFTER the flush
+  // below, so a late-crawl 429 loses nothing already read (a full crawl is
+  // hours long, and this buffers every gym in memory until the single upsert
+  // at the end — see `crawlGymWallsForSourceKeys` for why a retry starting
+  // over from the first gym would be its own regression).
+  let rateLimitedError: unknown;
   for (const [pinIndex, pin] of pins.gyms.entries()) {
     // Sequential on purpose: Aurora rate-limits per board, and a fan-out over
     // several thousand gyms would trip it immediately. At ~30 requests a minute
@@ -257,7 +264,16 @@ export async function syncAuroraBoardLocations(args: {
     // otherwise the only production signal is a per-gym failure line, and a
     // healthy run looks identical to a stalled one.
     args.signal?.throwIfAborted();
-    const user = args.fetchGymUser ? await args.fetchGymUser(pin, args.signal) : undefined;
+    let user: AuroraGymUser | undefined;
+    if (args.fetchGymUser) {
+      try {
+        user = await args.fetchGymUser(pin, args.signal);
+      } catch (error) {
+        if (!isAuroraRequestError(error) || error.code !== 'rate_limited') throw error;
+        rateLimitedError = error;
+        break;
+      }
+    }
     pinsWithUsers.push({ pin, user });
     // Log on the interval AND on the last gym: a 476-gym run whose final line
     // is "read 450/476" leaves an operator unable to tell completion from a
@@ -341,6 +357,10 @@ export async function syncAuroraBoardLocations(args: {
   args.log?.(
     `[aurora-locations] ${args.board}: upserted ${mergedSummary.boardsUpserted}/${mergedSummary.boardsSeen} board(s), ${mergedSummary.gymsUpserted} gym(s), skipped ${mergedSummary.boardsSkipped}`,
   );
+  // Now that everything read so far is flushed, let the rate limit stop the
+  // caller (and, for `syncAllAuroraBoardLocations`, the remaining boards) —
+  // it just costs nothing already read.
+  if (rateLimitedError !== undefined) throw rateLimitedError;
   return mergedSummary;
 }
 
@@ -395,6 +415,10 @@ export async function crawlGymWallsForSourceKeys(args: {
   const wanted = new Set(args.sourceKeys);
   const crawledSourceKeys: string[] = [];
   const pinsWithUsers: AuroraPinWithUser[] = [];
+  // Set when a rate limit stops the slice early: rethrown AFTER the flush
+  // below (same reasoning as syncAuroraBoardLocations), so it costs nothing
+  // already read in this slice.
+  let rateLimitedError: unknown;
 
   for (const sourceKey of args.sourceKeys) {
     // `{board}:{pin id}`; anything else is not a gym alias for this provider.
@@ -409,7 +433,14 @@ export async function crawlGymWallsForSourceKeys(args: {
     }
 
     args.signal?.throwIfAborted();
-    const user = await args.fetchGymUser(pin, args.signal);
+    let user: AuroraGymUser | undefined;
+    try {
+      user = await args.fetchGymUser(pin, args.signal);
+    } catch (error) {
+      if (!isAuroraRequestError(error) || error.code !== 'rate_limited') throw error;
+      rateLimitedError = error;
+      break;
+    }
     if (!user) continue; // Unstamped: retried next cycle.
     pinsWithUsers.push({ pin, user });
     crawledSourceKeys.push(sourceKey);
@@ -432,5 +463,8 @@ export async function crawlGymWallsForSourceKeys(args: {
 
   if (args.transaction) await args.transaction((transaction) => markGymWallsCrawled(transaction, crawledSourceKeys));
   else await markGymWallsCrawled(args.db, crawledSourceKeys);
+  // Now that everything read so far is flushed and stamped, let the rate
+  // limit stop the caller — it costs nothing already read in this slice.
+  if (rateLimitedError !== undefined) throw rateLimitedError;
   return crawledSourceKeys.length;
 }
