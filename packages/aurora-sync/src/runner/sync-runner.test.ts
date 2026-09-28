@@ -10,6 +10,7 @@ import {
   type SyncHealthSnapshot,
 } from './sync-runner';
 import type { AuroraBoardName } from '../api/types';
+import type { AuroraLocationBoardName } from '../sync/locations-sync';
 import type { CredentialRecord, SyncErrorContext } from './types';
 
 type SyncRunnerPrivates = {
@@ -27,6 +28,11 @@ type SyncRunnerPrivates = {
   updateStoredToken: (userId: string, boardType: string, token: string) => Promise<void>;
   syncSingleCredential: (cred: CredentialRecord) => Promise<void>;
   maybeRunSharedSync: (boardType: AuroraBoardName, token: string, userId: string) => Promise<void>;
+  crawlGymWallSlice: (
+    board: AuroraLocationBoardName,
+    token: string,
+    options?: { transaction?: unknown; signal?: AbortSignal },
+  ) => Promise<void>;
   getActiveCredentials: () => Promise<CredentialRecord[]>;
   getNextCredentialToSync: () => Promise<CredentialRecord | null>;
   recordSyncFailure: (cred: CredentialRecord, errorMsg: string) => Promise<void>;
@@ -729,6 +735,26 @@ describe('SyncRunner shared-sync per-board throttle', () => {
     // The shared sync itself still counts as a success, so the cooldown is
     // stamped normally rather than dropping to the transient retry window.
     expect(mockStampSharedSyncFinished).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets a crawl's rate limit escape crawlGymWallSlice instead of swallowing it", async () => {
+    // Unlike an ordinary crawl failure (tested above), a 429 from the crawl is a
+    // real hold, not a per-gym blip. It must reach runBoardSharedWork's caller
+    // so runSharedSyncJob can park the shared-sync slot and the donor for it —
+    // swallowing it here would keep the crawl contacting Aurora for the rest of
+    // the slice during the hold.
+    mockFindGymsDueForWallCrawl.mockResolvedValue(['tension:269111']);
+    const rateLimited = new AuroraRequestError({
+      code: 'rate_limited',
+      message: 'slow down',
+      status: 429,
+      retryAfterMs: 3_600_000,
+    });
+    mockCrawlGymWalls.mockRejectedValue(rateLimited);
+    const runner = new SyncRunner({ sharedSyncCooldownMs: 60_000 });
+    const runnerPrivates = runner as unknown as SyncRunnerPrivates;
+
+    await expect(runnerPrivates.crawlGymWallSlice('tension', 'borrowed-token')).rejects.toBe(rateLimited);
   });
 
   it('does not crawl walls for a board with no location support', async () => {

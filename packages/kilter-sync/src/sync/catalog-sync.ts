@@ -1597,6 +1597,11 @@ export async function syncKilterCatalog(args: SyncKilterCatalogArgs): Promise<Ki
   try {
     deletedUuids = await withToken(state, (token) => fetchDeletedClimbUuids(token, state.signal));
   } catch (error) {
+    // A rate limit carries Kilter's Retry-After: rethrow it rather than
+    // treating it as an ordinary unavailable deletion list, so the runner
+    // parks the catalog slot and the donor for it instead of moving on to
+    // every layout request during the hold.
+    if (error instanceof KilterApiError && error.code === 'rate_limited') throw error;
     deletedListError = error instanceof Error ? error.message : String(error);
   }
   const deletedLowerUuids = buildDeletedLowerUuidSet(deletedUuids);

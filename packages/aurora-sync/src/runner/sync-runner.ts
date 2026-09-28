@@ -1085,11 +1085,15 @@ export class SyncRunner {
    * Reuses the borrowed credential the shared sync is already running on, so it
    * adds no login of its own.
    *
-   * EVERY failure is swallowed here. The token belongs to a real climber, and
-   * this method sits inside `maybeRunSharedSync`'s try — letting a crawl error
-   * escape would attribute it to their credential and could quarantine their
-   * personal sync. The crawl is best-effort catalog upkeep; it must never cost
-   * a user their account sync.
+   * Every failure but a rate limit is swallowed here. The token belongs to a
+   * real climber, and this method sits inside `maybeRunSharedSync`'s try —
+   * letting an ordinary crawl error escape would cost a user their shared-sync
+   * cooldown for no benefit. The crawl is best-effort catalog upkeep. A 429
+   * does escape: Aurora's Retry-After is a real hold, not a per-gym blip, and
+   * `runSharedSyncJob` already parks the shared-sync slot and the donor
+   * credential (never a failure on it, just a hold) for exactly this error —
+   * swallowing it here would keep the crawl contacting Aurora, one gym at a
+   * time, for the rest of the slice during the hold.
    */
   private async crawlGymWallSlice(
     board: AuroraLocationBoardName,
@@ -1116,7 +1120,9 @@ export class SyncRunner {
     } catch (error) {
       // A stopped job or a lost fence is not a crawl failure: the job must stop.
       if (options.signal?.aborted || isSyncFenceError(error)) throw error;
-      // Logged, never rethrown — see the contract above.
+      // A rate limit escapes too — see the contract above.
+      if (isAuroraRequestError(error) && error.code === 'rate_limited') throw error;
+      // Everything else is logged, never rethrown — see the contract above.
       this.log(
         `[SyncRunner] Wall crawl for ${board} failed (shared sync unaffected): ${this.formatErrorMessage(error)}`,
       );
