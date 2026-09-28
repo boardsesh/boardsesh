@@ -1,5 +1,5 @@
 import { KILTER_PORTAL_HOST } from './types';
-import { KilterApiError } from './errors';
+import { KilterApiError, responseRetryAfterMs } from './errors';
 
 /**
  * REST client primitives for the Kilter push surface (/api/logs/bulk,
@@ -113,7 +113,7 @@ async function ensureOk(path: string, response: Response): Promise<void> {
     throw new KilterApiError('unauthorized', `${path} returned 401 — access token rejected`, 401);
   }
   if (response.status === 429) {
-    throw new KilterApiError('rate_limited', `${path} rate-limited`, 429);
+    throw new KilterApiError('rate_limited', `${path} rate-limited`, 429, responseRetryAfterMs(response));
   }
   throw new KilterApiError('http', `${path} returned ${response.status}: ${text.slice(0, 200)}`, response.status);
 }
@@ -180,23 +180,43 @@ export type KilterCatalogStat = {
 // ~180k climbs / tens of MB), so the 30s push timeout is far too short.
 const CATALOG_TIMEOUT_MS = 240_000;
 const CATALOG_MAX_RETRIES = 5;
+const CATALOG_RETRY_AFTER_CAP_MS = 5 * 60 * 1000;
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason);
+      return;
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal?.reason);
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
 }
 
 // GET a catalog endpoint with a generous timeout and exponential backoff on
 // 429. Returns the parsed JSON array. Non-429 errors propagate immediately.
-async function catalogGet<T>(path: string, accessToken: string): Promise<T[]> {
+// A caller's signal (a background job's shutdown or lost lease) cuts the
+// request and any backoff short, and surfaces as itself, not as a timeout.
+async function catalogGet<T>(path: string, accessToken: string, signal?: AbortSignal): Promise<T[]> {
   let attempt = 0;
   for (;;) {
+    signal?.throwIfAborted();
     let response: Response;
     try {
+      const timeout = AbortSignal.timeout(CATALOG_TIMEOUT_MS);
       response = await fetch(`https://${KILTER_PORTAL_HOST}${path}`, {
         headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' },
-        signal: AbortSignal.timeout(CATALOG_TIMEOUT_MS),
+        signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
       });
     } catch (err) {
+      if (signal?.aborted) throw signal.reason;
       if (err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')) {
         throw new KilterApiError('timeout', `${path} timed out after ${CATALOG_TIMEOUT_MS}ms`);
       }
@@ -204,12 +224,24 @@ async function catalogGet<T>(path: string, accessToken: string): Promise<T[]> {
     }
 
     if (response.status === 429 && attempt < CATALOG_MAX_RETRIES) {
-      // Honour Retry-After when present, else exponential backoff capped at 30s.
-      const retryAfter = Number(response.headers.get('retry-after'));
+      // Honour Retry-After when present (seconds or an HTTP date), else
+      // exponential backoff capped at 30s.
+      const retryAfterMs = responseRetryAfterMs(response);
+      if (retryAfterMs !== undefined && retryAfterMs > CATALOG_RETRY_AFTER_CAP_MS) {
+        // Longer than this request may sleep: retrying inside the window would
+        // only call Kilter again while it asked us not to. Hand the whole delay
+        // to the runner, which parks the catalog slot and the donor for it.
+        throw new KilterApiError(
+          'rate_limited',
+          `${path} rate limited for ${retryAfterMs}ms (Retry-After)`,
+          429,
+          retryAfterMs,
+        );
+      }
       const backoffMs =
-        Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : Math.min(30_000, 1000 * 2 ** attempt);
+        retryAfterMs !== undefined && retryAfterMs > 0 ? retryAfterMs : Math.min(30_000, 1000 * 2 ** attempt);
       attempt += 1;
-      await sleep(backoffMs);
+      await sleep(backoffMs, signal);
       continue;
     }
 
@@ -219,16 +251,32 @@ async function catalogGet<T>(path: string, accessToken: string): Promise<T[]> {
 }
 
 /** All climbs for one product layout (the catalog read path). */
-export function fetchLayoutClimbs(accessToken: string, productLayoutUuid: string): Promise<KilterCatalogClimb[]> {
-  return catalogGet<KilterCatalogClimb>(`/api/climbs/all/${encodeURIComponent(productLayoutUuid)}`, accessToken);
+export function fetchLayoutClimbs(
+  accessToken: string,
+  productLayoutUuid: string,
+  signal?: AbortSignal,
+): Promise<KilterCatalogClimb[]> {
+  return catalogGet<KilterCatalogClimb>(
+    `/api/climbs/all/${encodeURIComponent(productLayoutUuid)}`,
+    accessToken,
+    signal,
+  );
 }
 
 /** All (climb, angle) stats for one product layout. */
-export function fetchLayoutClimbStats(accessToken: string, productLayoutUuid: string): Promise<KilterCatalogStat[]> {
-  return catalogGet<KilterCatalogStat>(`/api/climb-stat/all/${encodeURIComponent(productLayoutUuid)}`, accessToken);
+export function fetchLayoutClimbStats(
+  accessToken: string,
+  productLayoutUuid: string,
+  signal?: AbortSignal,
+): Promise<KilterCatalogStat[]> {
+  return catalogGet<KilterCatalogStat>(
+    `/api/climb-stat/all/${encodeURIComponent(productLayoutUuid)}`,
+    accessToken,
+    signal,
+  );
 }
 
 /** UUIDs Kilter has deleted server-side, for deletion reconciliation. */
-export function fetchDeletedClimbUuids(accessToken: string): Promise<string[]> {
-  return catalogGet<string>('/api/climbs/delteduuids', accessToken);
+export function fetchDeletedClimbUuids(accessToken: string, signal?: AbortSignal): Promise<string[]> {
+  return catalogGet<string>('/api/climbs/delteduuids', accessToken, signal);
 }

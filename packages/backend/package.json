@@ -43,6 +43,7 @@
     "@boardsesh/gym-claim": "workspace:*",
     "@boardsesh/kilter-sync": "workspace:*",
     "@boardsesh/kiosk": "workspace:*",
+    "@boardsesh/moonboard-sync": "workspace:*",
     "@boardsesh/offline-sync": "workspace:*",
     "@boardsesh/pr-body": "workspace:*",
     "@boardsesh/queue": "workspace:*",

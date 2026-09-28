@@ -19,3 +19,5 @@ export { sanitizeFirstAscent, FIRST_ASCENT_EARLIEST_MS } from './sanitize-first-
 export type { FirstAscentFields } from './sanitize-first-ascent';
 export { formatSyncHealthSummary } from './health-summary';
 export type { SyncHealthSnapshot } from './health-summary';
+export { RETRY_AFTER_PARSE_CEILING_MS, parseRetryAfterMs } from './retry-after';
+export { isSyncDaemonDisabled, SYNC_DAEMON_DISABLED_MESSAGE } from './daemon-switch';

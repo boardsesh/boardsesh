@@ -1,7 +1,9 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { sql } from 'drizzle-orm';
 import postgres from 'postgres';
+import { drizzle } from 'drizzle-orm/postgres-js';
 import { rowsFromResult } from '@boardsesh/db/client';
+import { BackgroundJobAttemptLostError } from '@boardsesh/db/queries';
 import { syncSharedData, upsertClimbStats } from '@boardsesh/aurora-sync/sync';
 import type { BetaLink, Climb, ClimbStats, SyncData } from '@boardsesh/aurora-sync/api';
 import { db } from '../db/client';
@@ -136,8 +138,57 @@ describeWithDatabase('Aurora climb_stats upsert skips unchanged rows (real DB)',
   });
 });
 
+describeWithDatabase(
+  'Aurora climb_stats upsert: empty payloads reach only existing (climb, angle) pairs (real DB)',
+  () => {
+    const emptyStat = (climbUuid: string, angle: number): ClimbStats =>
+      auroraStat(climbUuid, {
+        angle,
+        display_difficulty: null,
+        ascensionist_count: 0,
+        difficulty_average: null,
+        quality_average: null,
+        fa_username: null,
+        fa_at: null,
+      });
+
+    async function anglesOf(climbUuid: string): Promise<number[]> {
+      const rows = rowsFromResult<{ angle: number }>(
+        await db.execute(sql`
+        SELECT angle FROM board_climb_stats
+         WHERE board_type = ${BOARD} AND climb_uuid = ${climbUuid} ORDER BY angle`),
+      );
+      return rows.map((row) => row.angle);
+    }
+
+    it('does not treat a climb as existing at an angle only another climb has', async () => {
+      const tag = uniqueTag();
+      const climbAt40 = `${tag}-at40`;
+      const climbAt45 = `${tag}-at45`;
+      // climbAt40 has a row at 40 only; climbAt45 at 45 only. Across the two
+      // climbs, both angles exist, which is the shape a climbs x angles pre-read
+      // cannot tell apart from the pairs themselves.
+      await upsertClimbStats(db, BOARD, [auroraStat(climbAt40, { angle: 40 }), auroraStat(climbAt45, { angle: 45 })]);
+
+      const pass = await upsertClimbStats(db, BOARD, [
+        emptyStat(climbAt40, 40),
+        emptyStat(climbAt40, 45),
+        emptyStat(climbAt45, 40),
+        emptyStat(climbAt45, 45),
+      ]);
+
+      // Only the two existing pairs reach the upsert; the two new empty keys are dropped.
+      expect(pass.received).toBe(4);
+      expect(pass.offered).toBe(2);
+      expect(await anglesOf(climbAt40)).toEqual([40]);
+      expect(await anglesOf(climbAt45)).toEqual([45]);
+    });
+  },
+);
+
 describeWithDatabase('syncSharedData: per-pass climb_stats write counts (real DB)', () => {
   const client = postgres(getWorkerDatabaseUrl(), { max: 1, prepare: false, onnotice: () => {} });
+  const clientDb = drizzle(client);
 
   beforeEach(async () => {
     mockSharedSync.mockReset();
@@ -158,7 +209,7 @@ describeWithDatabase('syncSharedData: per-pass climb_stats write counts (real DB
     const logLines: string[] = [];
     mockSharedSync.mockResolvedValue(complete({ climb_stats: stats }));
 
-    const firstRun = await syncSharedData(client, BOARD, 'token', (line) => logLines.push(line));
+    const firstRun = await syncSharedData(clientDb, BOARD, 'token', (line) => logLines.push(line));
     expect(firstRun.climbStatsWrites).toEqual({ received: 2, offered: 2, written: 2 });
     expect(logLines).toContain(`[SharedSync] ${BOARD} climb_stats writes: received=2 offered=2 written=2 unchanged=0`);
     const rowBefore = await statsRow(stats[0].climb_uuid);
@@ -166,7 +217,7 @@ describeWithDatabase('syncSharedData: per-pass climb_stats write counts (real DB
 
     // Aurora re-sends the same rows: nothing is written.
     logLines.length = 0;
-    const secondRun = await syncSharedData(client, BOARD, 'token', (line) => logLines.push(line));
+    const secondRun = await syncSharedData(clientDb, BOARD, 'token', (line) => logLines.push(line));
     expect(secondRun.climbStatsWrites).toEqual({ received: 2, offered: 2, written: 0 });
     expect(logLines).toContain(`[SharedSync] ${BOARD} climb_stats writes: received=2 offered=2 written=0 unchanged=2`);
     // The row was not rewritten, so its xmin and stamp stay where they were.
@@ -178,6 +229,7 @@ describeWithDatabase('Aurora beta_links upsert skips unchanged rows (real DB)', 
   it('rewrites a re-sent link only when a column changed', async () => {
     const tag = uniqueTag();
     const client = postgres(getWorkerDatabaseUrl(), { max: 1, prepare: false, onnotice: () => {} });
+    const clientDb = drizzle(client);
     try {
       const link: BetaLink = {
         climb_uuid: `${tag}-beta`,
@@ -199,14 +251,14 @@ describeWithDatabase('Aurora beta_links upsert skips unchanged rows (real DB)', 
       };
       mockSharedSync.mockReset();
       mockSharedSync.mockResolvedValue({ _complete: true, beta_links: [link] });
-      await syncSharedData(client, BOARD, 'token', () => {});
+      await syncSharedData(clientDb, BOARD, 'token', () => {});
       const inserted = await betaLinkRow();
 
-      await syncSharedData(client, BOARD, 'token', () => {});
+      await syncSharedData(clientDb, BOARD, 'token', () => {});
       expect(await betaLinkRow()).toEqual(inserted);
 
       mockSharedSync.mockResolvedValue({ _complete: true, beta_links: [{ ...link, thumbnail: 'thumb2.jpg' }] });
-      await syncSharedData(client, BOARD, 'token', () => {});
+      await syncSharedData(clientDb, BOARD, 'token', () => {});
       const changed = await betaLinkRow();
       expect(changed.thumbnail).toBe('thumb2.jpg');
       expect(changed.xmin).not.toBe(inserted.xmin);
@@ -220,6 +272,7 @@ describeWithDatabase('Aurora climbs upsert skips unchanged rows (real DB)', () =
   it('rewrites a re-sent climb only when one of its five written columns changed', async () => {
     const tag = uniqueTag();
     const client = postgres(getWorkerDatabaseUrl(), { max: 1, prepare: false, onnotice: () => {} });
+    const clientDb = drizzle(client);
     const auroraClimb = (uuid: string, overrides: Partial<Climb> = {}): Climb => ({
       uuid,
       name: 'Crimp city',
@@ -255,11 +308,11 @@ describeWithDatabase('Aurora climbs upsert skips unchanged rows (real DB)', () =
     try {
       mockSharedSync.mockReset();
       mockSharedSync.mockResolvedValue({ _complete: true, climbs: climbUuids.map((uuid) => auroraClimb(uuid)) });
-      await syncSharedData(client, BOARD, 'token', () => {});
+      await syncSharedData(clientDb, BOARD, 'token', () => {});
       const inserted = await climbRows();
 
       // Identical re-send: neither row gets a new tuple.
-      await syncSharedData(client, BOARD, 'token', () => {});
+      await syncSharedData(clientDb, BOARD, 'token', () => {});
       expect(await climbRows()).toEqual(inserted);
 
       // A renamed b rewrites b and only b.
@@ -267,13 +320,174 @@ describeWithDatabase('Aurora climbs upsert skips unchanged rows (real DB)', () =
         _complete: true,
         climbs: [auroraClimb(climbUuids[0]), auroraClimb(climbUuids[1], { name: 'Crimp city (renamed)' })],
       });
-      await syncSharedData(client, BOARD, 'token', () => {});
+      await syncSharedData(clientDb, BOARD, 'token', () => {});
       const [rowA, rowB] = await climbRows();
       expect(rowA).toEqual(inserted[0]);
       expect(rowB.name).toBe('Crimp city (renamed)');
       expect(rowB.xmin).not.toBe(inserted[1].xmin);
     } finally {
       await client.end();
+    }
+  });
+});
+
+describeWithDatabase('syncSharedData: one setter notification per follower per run (real DB)', () => {
+  it('announces a setter once per run although its new climbs span two pages, and a retry adds none', async () => {
+    const tag = uniqueTag();
+    const follower = `${tag}-follower`;
+    const setter = `${tag}-setter`;
+    const climbs = [`${tag}-climb-a`, `${tag}-climb-b`, `${tag}-climb-c`];
+    const climb = (uuid: string): Climb => ({
+      uuid,
+      name: 'Notify me once',
+      description: '',
+      hsm: 1,
+      edge_left: 0,
+      edge_right: 100,
+      edge_bottom: 0,
+      edge_top: 100,
+      frames_count: 1,
+      frames_pace: 0,
+      frames: 'p1r5',
+      setter_id: 7,
+      setter_username: setter,
+      layout_id: 9,
+      is_draft: false,
+      is_listed: true,
+      created_at: '2024-01-01 00:00:00',
+      updated_at: '2024-01-01 00:00:00',
+      angle: 40,
+    });
+    const notificationRows = async () =>
+      rowsFromResult<{ entity_id: string }>(
+        await db.execute(sql`
+          SELECT entity_id FROM notifications
+           WHERE recipient_id = ${follower} AND type = 'new_climbs_synced'`),
+      );
+    const cleanup = async () => {
+      await db.execute(sql`DELETE FROM notifications WHERE recipient_id = ${follower}`);
+      await db.execute(sql`DELETE FROM setter_follows WHERE follower_id = ${follower}`);
+      await db.execute(sql`DELETE FROM board_climbs WHERE uuid IN (${climbs[0]}, ${climbs[1]}, ${climbs[2]})`);
+      await db.execute(sql`DELETE FROM users WHERE id = ${follower}`);
+      await db.execute(sql`DELETE FROM board_shared_syncs WHERE board_type = ${BOARD}`);
+    };
+
+    await cleanup();
+    await db.execute(sql`
+      INSERT INTO users (id, email, name, created_at, updated_at)
+      VALUES (${follower}, ${follower + '@test.com'}, 'Follower', now(), now())`);
+    await db.execute(sql`INSERT INTO setter_follows (follower_id, setter_username) VALUES (${follower}, ${setter})`);
+    const runKey = `run-${tag}`;
+
+    try {
+      mockSharedSync.mockReset();
+      mockSharedSync
+        .mockResolvedValueOnce({
+          _complete: false,
+          climbs: [climb(climbs[0])],
+          shared_syncs: [{ table_name: 'climbs', last_synchronized_at: '2026-09-01 00:00:00.000000' }],
+        })
+        .mockResolvedValueOnce({ _complete: true, climbs: [climb(climbs[1])] });
+      await syncSharedData(db, BOARD, 'token', () => {}, { runKey });
+
+      expect(await notificationRows()).toEqual([{ entity_id: climbs[0] }]);
+
+      // A retry of the same run that finds another new climb by the setter.
+      mockSharedSync.mockReset();
+      mockSharedSync.mockResolvedValueOnce({ _complete: true, climbs: [climb(climbs[2])] });
+      await syncSharedData(db, BOARD, 'token', () => {}, { runKey });
+
+      expect(await notificationRows()).toEqual([{ entity_id: climbs[0] }]);
+    } finally {
+      await cleanup();
+    }
+  });
+});
+
+describeWithDatabase('syncSharedData: setter notifications commit with their page (real DB)', () => {
+  it('keeps page 1 notifications when the attempt is lost before page 2, and the retry adds page 2 once', async () => {
+    const tag = uniqueTag();
+    const follower = `${tag}-follower`;
+    const setters = [`${tag}-setter-a`, `${tag}-setter-b`];
+    const climbs = [`${tag}-climb-a`, `${tag}-climb-b`];
+    const climb = (uuid: string, setterUsername: string): Climb => ({
+      uuid,
+      name: 'Notify me',
+      description: '',
+      hsm: 1,
+      edge_left: 0,
+      edge_right: 100,
+      edge_bottom: 0,
+      edge_top: 100,
+      frames_count: 1,
+      frames_pace: 0,
+      frames: 'p1r5',
+      setter_id: 7,
+      setter_username: setterUsername,
+      layout_id: 9,
+      is_draft: false,
+      is_listed: true,
+      created_at: '2024-01-01 00:00:00',
+      updated_at: '2024-01-01 00:00:00',
+      angle: 40,
+    });
+    const notificationsFor = async (climbUuid: string) =>
+      rowsFromResult<{ count: number }>(
+        await db.execute(sql`
+          SELECT count(*)::int AS count FROM notifications
+           WHERE recipient_id = ${follower} AND type = 'new_climbs_synced' AND entity_id = ${climbUuid}`),
+      )[0].count;
+    const cleanup = async () => {
+      await db.execute(sql`DELETE FROM notifications WHERE recipient_id = ${follower}`);
+      await db.execute(sql`DELETE FROM setter_follows WHERE follower_id = ${follower}`);
+      await db.execute(sql`DELETE FROM board_climbs WHERE uuid IN (${climbs[0]}, ${climbs[1]})`);
+      await db.execute(sql`DELETE FROM users WHERE id = ${follower}`);
+      await db.execute(sql`DELETE FROM board_shared_syncs WHERE board_type = ${BOARD}`);
+    };
+
+    await cleanup();
+    await db.execute(sql`
+      INSERT INTO users (id, email, name, created_at, updated_at)
+      VALUES (${follower}, ${follower + '@test.com'}, 'Follower', now(), now())`);
+    for (const setter of setters) {
+      await db.execute(sql`INSERT INTO setter_follows (follower_id, setter_username) VALUES (${follower}, ${setter})`);
+    }
+
+    try {
+      mockSharedSync.mockReset();
+      mockSharedSync
+        .mockResolvedValueOnce({
+          _complete: false,
+          climbs: [climb(climbs[0], setters[0])],
+          shared_syncs: [{ table_name: 'climbs', last_synchronized_at: '2026-09-01 00:00:00.000000' }],
+        })
+        .mockResolvedValueOnce({ _complete: true, climbs: [climb(climbs[1], setters[1])] });
+      // Page 1 commits; the attempt is lost before page 2's batch.
+      let batches = 0;
+      const losesAfterPageOne = ((callback) => {
+        batches += 1;
+        if (batches > 1) return Promise.reject(new BackgroundJobAttemptLostError());
+        return db.transaction(callback);
+      }) as NonNullable<Parameters<typeof syncSharedData>[4]>['transaction'];
+
+      await expect(
+        syncSharedData(db, BOARD, 'token', () => {}, { transaction: losesAfterPageOne }),
+      ).rejects.toBeInstanceOf(BackgroundJobAttemptLostError);
+      expect(await notificationsFor(climbs[0])).toBe(1);
+      expect(await notificationsFor(climbs[1])).toBe(0);
+
+      // The replacement attempt: Aurora re-sends both climbs from the cursor.
+      mockSharedSync.mockReset();
+      mockSharedSync.mockResolvedValueOnce({
+        _complete: true,
+        climbs: [climb(climbs[0], setters[0]), climb(climbs[1], setters[1])],
+      });
+      await syncSharedData(db, BOARD, 'token', () => {}, { transaction: (callback) => db.transaction(callback) });
+
+      expect(await notificationsFor(climbs[0])).toBe(1);
+      expect(await notificationsFor(climbs[1])).toBe(1);
+    } finally {
+      await cleanup();
     }
   });
 });

@@ -11,6 +11,8 @@ import {
   assertLinkGenerationCurrent,
   claimCredentialForRun,
   claimNextCredentialForSync,
+  deferCredentialSyncAttempt,
+  findSharedSyncDonorCredential,
   clearFinishedProviderSyncRuns,
   coalesceInteractiveRun,
   releaseCredentialSyncLease,
@@ -160,6 +162,84 @@ describe('link generation', () => {
   });
 });
 
+describe('a board-wide job holding the donor it borrowed', () => {
+  const holdOf = async () =>
+    (
+      await database
+        .select({ until: auroraCredentials.providerRetryAfterUntil })
+        .from(auroraCredentials)
+        .where(eq(auroraCredentials.userId, USER_ID))
+    )[0].until;
+  const borrow = async () => {
+    const donor = await findSharedSyncDonorCredential(database, {
+      boardType: 'tension',
+      candidateFilter: eq(auroraCredentials.userId, USER_ID),
+    });
+    if (!donor) throw new Error('expected a donor');
+    return donor;
+  };
+  const holdBorrowed = (donor: Awaited<ReturnType<typeof borrow>>) =>
+    deferCredentialSyncAttempt(database, {
+      ...key,
+      delayMs: 60 * 60 * 1000,
+      onlyLink: { id: donor.id, linkGeneration: donor.linkGeneration },
+    });
+
+  it('holds the donor when its link is unchanged', async () => {
+    await insertCredential(USER_ID, { lastSyncAt: new Date() });
+    await database.transaction((tx) => rotateLinkGeneration(tx, { ...key, linked: true }));
+    const donor = await borrow();
+    expect(donor.linkGeneration).not.toBeNull();
+
+    await holdBorrowed(donor);
+    expect(await holdOf()).not.toBeNull();
+  });
+
+  it('leaves a credential relinked during the run unheld', async () => {
+    await insertCredential(USER_ID, { lastSyncAt: new Date() });
+    await database.transaction((tx) => rotateLinkGeneration(tx, { ...key, linked: true }));
+    const donor = await borrow();
+
+    // The climber relinks while the shared sync runs on the old token.
+    await database.transaction((tx) => rotateLinkGeneration(tx, { ...key, linked: true }));
+    await holdBorrowed(donor);
+
+    expect(await holdOf()).toBeNull();
+  });
+
+  it('binds a donor read before any control row existed to that state', async () => {
+    await insertCredential(USER_ID, { lastSyncAt: new Date() });
+    const donor = await borrow();
+    expect(donor.linkGeneration).toBeNull();
+
+    // A first link since then creates the control row: that is a relink too.
+    await database.transaction((tx) => rotateLinkGeneration(tx, { ...key, linked: true }));
+    await holdBorrowed(donor);
+    expect(await holdOf()).toBeNull();
+  });
+});
+
+describe('relink and the provider Retry-After hold', () => {
+  const holdOf = async () =>
+    (
+      await database
+        .select({ until: auroraCredentials.providerRetryAfterUntil })
+        .from(auroraCredentials)
+        .where(eq(auroraCredentials.userId, USER_ID))
+    )[0].until;
+
+  it('a relink ends the hold; an unlink leaves it', async () => {
+    const until = new Date(Date.now() + 5 * 60 * 60 * 1000);
+    await insertCredential(USER_ID, { providerRetryAfterUntil: until });
+
+    await database.transaction((tx) => rotateLinkGeneration(tx, { ...key, linked: false }));
+    expect(await holdOf()).toEqual(until);
+
+    await database.transaction((tx) => rotateLinkGeneration(tx, { ...key, linked: true }));
+    expect(await holdOf()).toBeNull();
+  });
+});
+
 describe('fence errors', () => {
   it('are the fence refusals only, never an error that merely looks like an abort', () => {
     expect(isSyncFenceError(new StaleLinkGenerationError())).toBe(true);
@@ -245,9 +325,12 @@ describe('credential claims', () => {
     const filter = eq(auroraCredentials.syncStatus, 'active');
 
     // The daemon claim would skip this row (reclaim gap + backoff); a named claim does not.
-    expect(await claimNextCredentialForSync(database, { candidateFilter: eq(auroraCredentials.userId, USER_ID) })).toBe(
-      null,
-    );
+    expect(
+      await claimNextCredentialForSync(database, {
+        candidateFilter: eq(auroraCredentials.userId, USER_ID),
+        excludeLeased: true,
+      }),
+    ).toBe(null);
     const claimed = await claimCredentialForRun(database, { ...key, candidateFilter: filter });
     expect(claimed?.userId).toBe(USER_ID);
 

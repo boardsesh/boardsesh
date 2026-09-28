@@ -24,6 +24,9 @@ export function workerConfig(environment: Readonly<Record<string, string | undef
     (!local && database.searchParams.get('sslmode') !== 'verify-full')
   )
     throw new Error('DATABASE_URL must unambiguously verify TLS for remote PostgreSQL');
+  // Validated for every role so a typo fails at boot, not on the first run.
+  routineCycleLimits(environment);
+  selfHealMaxDrainBatches(environment);
   const healthPort = Number(environment.HEALTH_PORT ?? 9090);
   if (!Number.isInteger(healthPort) || healthPort < 1 || healthPort > 65535) throw new Error('Invalid HEALTH_PORT');
   return {
@@ -50,7 +53,84 @@ export function configureWorkerPools(): void {
 export const PROVIDER_FAMILY_SECRETS: Readonly<Record<string, readonly string[]>> = {
   'aurora-user-sync': ['AURORA_CREDENTIALS_SECRET'],
   'kilter-user-sync': ['AURORA_CREDENTIALS_SECRET', 'KILTER_OAUTH_CLIENT_ID'],
+  // Both providers, every cycle.
+  'provider-routine-cycle': ['AURORA_CREDENTIALS_SECRET', 'KILTER_OAUTH_CLIENT_ID'],
+  // The borrowed donor token (or password) is encrypted with it.
+  'aurora-shared-sync': ['AURORA_CREDENTIALS_SECRET'],
+  // The donor's refresh token, refreshed through Keycloak.
+  'kilter-catalog-sync': ['AURORA_CREDENTIALS_SECRET', 'KILTER_OAUTH_CLIENT_ID'],
+  // moonboard-locations-sync: MOONBOARD_USERNAME/PASSWORD are optional on
+  // purpose. Without them each run succeeds as a logged skip (#3863).
 };
+
+/** Defaults for one `provider-routine-cycle` run; see docs/background-workers.md. */
+// 120 s a cycle (also the maximum): two providers every 5 minutes then offer
+// the one-at-a-time routine worker 240 s of cycles per 300 s plus the last
+// credentials' overrun, leaving room for the board-wide jobs
+// (docs/background-workers.md, "Queue share").
+export const ROUTINE_CYCLE_DEFAULTS = { maxCredentials: 4, budgetMs: 120_000 } as const;
+
+/**
+ * The most `ROUTINE_CYCLE_BUDGET_MS` may be, and also its default. Two
+ * providers queue a cycle every 300 s on the one-at-a-time routine worker, and
+ * the budget is soft: the credential running when it passes finishes (up to
+ * the lease). So 2 x 120 s plus that last credential's overrun must fit the
+ * 300 s window, with room left for the board-wide jobs
+ * (docs/background-workers.md, "Queue share").
+ */
+export const ROUTINE_CYCLE_BUDGET_MAX_MS = 120_000;
+
+/**
+ * How much one routine cycle may do: at most `maxCredentials` credentials, and
+ * no new credential once `budgetMs` has passed. The budget is soft (a started
+ * credential finishes). Overridden by `ROUTINE_CYCLE_MAX_CREDENTIALS` /
+ * `ROUTINE_CYCLE_BUDGET_MS` (at most {@link ROUTINE_CYCLE_BUDGET_MAX_MS}).
+ */
+export function routineCycleLimits(environment: Readonly<Record<string, string | undefined>> = process.env): {
+  maxCredentials: number;
+  budgetMs: number;
+} {
+  const read = (name: string, fallback: number, max: number, tooHigh?: string): number => {
+    const raw = environment[name];
+    if (raw === undefined || raw.trim() === '') return fallback;
+    if (!/^\d+$/.test(raw.trim())) throw new Error(`Invalid ${name}`);
+    const value = Number(raw.trim());
+    if (value > max && tooHigh) throw new Error(`Invalid ${name}: ${tooHigh}`);
+    if (value < 1 || value > max) throw new Error(`Invalid ${name}`);
+    return value;
+  };
+  return {
+    maxCredentials: read('ROUTINE_CYCLE_MAX_CREDENTIALS', ROUTINE_CYCLE_DEFAULTS.maxCredentials, 50),
+    budgetMs: read(
+      'ROUTINE_CYCLE_BUDGET_MS',
+      ROUTINE_CYCLE_DEFAULTS.budgetMs,
+      ROUTINE_CYCLE_BUDGET_MAX_MS,
+      `at most ${ROUTINE_CYCLE_BUDGET_MAX_MS}: two providers queue a cycle every 300 000 ms and the ` +
+        `last credential may run past the budget up to the lease, so 2 x budget plus that overrun ` +
+        `must fit the window and leave the board-wide jobs room`,
+    ),
+  };
+}
+
+/**
+ * How many batches of 500 keys one `climb-stats-self-heal` drain may run
+ * (`SELF_HEAL_MAX_DRAIN_BATCHES`, default 20, 1 to 200). Raise it only to work
+ * off a backlog the job logs as `SELF_HEAL_DRAIN_CAPPED`: every batch holds the
+ * run-row lock while it recomputes.
+ */
+export function selfHealMaxDrainBatches(
+  environment: Readonly<Record<string, string | undefined>> = process.env,
+): number {
+  const raw = environment.SELF_HEAL_MAX_DRAIN_BATCHES;
+  // The same 20 as SELF_HEAL_DEFAULT_MAX_DRAIN_BATCHES in @boardsesh/db, spelled
+  // out here because this module must not import the database packages before
+  // configureWorkerPools has run.
+  if (raw === undefined || raw.trim() === '') return 20;
+  if (!/^\d+$/.test(raw.trim())) throw new Error('Invalid SELF_HEAL_MAX_DRAIN_BATCHES');
+  const value = Number(raw.trim());
+  if (value < 1 || value > 200) throw new Error('Invalid SELF_HEAL_MAX_DRAIN_BATCHES');
+  return value;
+}
 
 /**
  * Refuse to start a worker whose role serves a provider family without that

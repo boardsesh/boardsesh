@@ -91,6 +91,10 @@ function contextFor(
     runId: randomUUID(),
     family,
     signal,
+    expiresAt: Date.now() + 60 * 60 * 1000,
+    enqueue: async () => {
+      throw new Error('enqueue not expected');
+    },
     database,
     transaction: async (callback) => {
       transactions.calls += 1;

@@ -96,8 +96,64 @@ afterAll(async () => {
 });
 
 describe('aurora-user-sync', () => {
+  it('queues its own follow-up for when Aurora said on a 429, and ends without a pg-boss retry', async () => {
+    const { linkGeneration } = await insertLinkedTensionAccount(database, USER_ID, CLIMB_UUID);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL | Request) => {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+        if (url.endsWith('/sessions')) {
+          return new Response(JSON.stringify({ session: { token: 'aurora-session-token', user_id: AURORA_USER_ID } }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
+        if (url.endsWith('/sync'))
+          return new Response('slow down', { status: 429, headers: { 'retry-after': '3600' } });
+        throw new Error(`Unexpected request in test: ${url}`);
+      }),
+    );
+    const runId = await enqueueSync(linkGeneration, 'manual');
+
+    expect(await executeNext()).toBe('succeeded');
+
+    // This run is settled; its pg-boss job is completed, not waiting to retry.
+    expect((await runRow(runId)).status).toBe('succeeded');
+    expect((await boss.getJobById(queue, runId))?.state).toBe('completed');
+    // One follow-up, same payload, held for about an hour, now the pending run.
+    const followUps = (await database.select().from(backgroundJobRuns)).filter((run) => run.id !== runId);
+    expect(followUps).toHaveLength(1);
+    const [followUp] = followUps;
+    expect(followUp).toMatchObject({
+      family: 'aurora-user-sync',
+      status: 'queued',
+      payload: { userId: USER_ID, boardType: FIXTURE_BOARD, linkGeneration, requestedBy: 'manual' },
+    });
+    const job = await boss.getJobById(queue, followUp.id);
+    expect(job?.state).toBe('created');
+    const heldForMs = new Date(job!.startAfter).getTime() - Date.now();
+    expect(heldForMs).toBeGreaterThan(3600_000 - 60_000);
+    expect(heldForMs).toBeLessThanOrEqual(3600_000 + 5_000);
+    // Its deadline counts from when it may start.
+    expect(followUp.deadlineAt.getTime() - Date.now()).toBeGreaterThan(3600_000);
+    expect((await controlRow()).pendingRunId).toBe(followUp.id);
+    // The routine claim honours the same hold, and the 429 costs no backoff step.
+    const credential = await credentialRow();
+    const heldUntilMs = credential.providerRetryAfterUntil!.getTime() - Date.now();
+    expect(heldUntilMs).toBeGreaterThan(3600_000 - 60_000);
+    expect(heldUntilMs).toBeLessThanOrEqual(3600_000 + 5_000);
+    expect(credential.consecutiveFailures).toBe(0);
+    // Nothing is fetchable before then.
+    expect(await boss.fetch(queue, { batchSize: 1 })).toEqual([]);
+  });
+
   it('syncs every page, marks the credential active and clears the lease and pending run', async () => {
     const { linkGeneration } = await insertLinkedTensionAccount(database, USER_ID, CLIMB_UUID);
+    // A routine cycle's Retry-After hold, still running: a "Sync now" that goes
+    // through must end it, or the routine claim skips the account for hours.
+    await database.execute(sql`
+      UPDATE aurora_credentials SET provider_retry_after_until = now() + interval '5 hours'
+       WHERE user_id = ${USER_ID} AND board_type = ${FIXTURE_BOARD}`);
     const aurora = stubAuroraApi({ pages: [fullSyncPage(CLIMB_UUID)] });
     const runId = await enqueueSync(linkGeneration);
 
@@ -110,6 +166,7 @@ describe('aurora-user-sync', () => {
     expect(credential.syncStatus).toBe('active');
     expect(credential.lastSyncAt).toBeInstanceOf(Date);
     expect(credential.consecutiveFailures).toBe(0);
+    expect(credential.providerRetryAfterUntil).toBeNull();
     const control = await controlRow();
     expect(control).toMatchObject({ activeRunId: null, activeLeaseUntil: null, pendingRunId: null });
   });

@@ -175,6 +175,31 @@ describe('linking a board queues its first sync', () => {
     fetchSpy.mockRestore();
   });
 
+  it('a relink through either saver ends a provider Retry-After hold', async () => {
+    const holdOf = async (boardType: string) =>
+      (
+        await db
+          .select({ until: auroraCredentials.providerRetryAfterUntil })
+          .from(auroraCredentials)
+          .where(and(eq(auroraCredentials.userId, USER_ID), eq(auroraCredentials.boardType, boardType)))
+      )[0].until;
+    const hold = (boardType: string) =>
+      db
+        .update(auroraCredentials)
+        .set({ providerRetryAfterUntil: new Date(Date.now() + 5 * 60 * 60 * 1000) })
+        .where(and(eq(auroraCredentials.userId, USER_ID), eq(auroraCredentials.boardType, boardType)));
+
+    await link('pw1');
+    await hold('tension');
+    await link('pw2');
+    expect(await holdOf('tension')).toBeNull();
+
+    await saveKilterCredential({ userId: USER_ID, refreshToken: 'refresh-1', kilterUserId: 'kc-sub-1' });
+    await hold('kilter');
+    await saveKilterCredential({ userId: USER_ID, refreshToken: 'refresh-2', kilterUserId: 'kc-sub-1' });
+    expect(await holdOf('kilter')).toBeNull();
+  });
+
   it('queues nothing while the family is not enabled, but still records the link generation', async () => {
     const status = await link();
 

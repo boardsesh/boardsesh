@@ -2,6 +2,7 @@
 import { program } from 'commander';
 import { credentialBackoffMs } from '@boardsesh/db/queries';
 import { SyncRunner } from '../runner/sync-runner';
+import { isOperatorLogLine } from './log-filter';
 import { AURORA_BOARDS } from '../api/types';
 import { AURORA_LOCATION_BOARDS, type AuroraLocationBoardName } from '../sync/locations-sync';
 
@@ -17,23 +18,7 @@ function createRunner(verbose: boolean): SyncRunner {
     onLog: verbose
       ? console.info
       : (msg: string) => {
-          if (
-            msg.includes('✓') ||
-            msg.includes('✗') ||
-            msg.includes('Found') ||
-            msg.includes('Daemon') ||
-            msg.includes('Quiet hours') ||
-            msg.includes('Waiting') ||
-            msg.includes('No users') ||
-            msg.includes('Transient') ||
-            // Stuck-credential observability events (see SyncRunner):
-            // CREDENTIAL QUARANTINED / CREDENTIAL FLAPPING and the hourly
-            // "Sync health" fleet summary must surface in non-verbose prod logs.
-            msg.includes('CREDENTIAL') ||
-            msg.includes('Sync health')
-          ) {
-            console.info(msg);
-          }
+          if (isOperatorLogLine(msg)) console.info(msg);
         },
     onError: (error, context) => {
       // Surface the failure ledger snapshot so a stuck/quarantined credential is

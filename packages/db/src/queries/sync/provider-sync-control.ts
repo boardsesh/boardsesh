@@ -29,6 +29,7 @@ import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import type { BackgroundJobStatus } from '../../background-jobs';
 import { backgroundJobRuns } from '../../schema/app/background-job-runs';
 import { providerSyncControls } from '../../schema/app/provider-sync-controls';
+import { auroraCredentials } from '../../schema/auth/mappings';
 import { BackgroundJobAttemptLostError } from '../background-jobs';
 
 /** Any Drizzle Postgres database or transaction. */
@@ -103,6 +104,15 @@ export async function rotateLinkGeneration(
       },
     })
     .returning({ linkGeneration: providerSyncControls.linkGeneration });
+  if (input.linked) {
+    // A relink is a fresh start: a Retry-After hold earned by the old link
+    // must not keep the new one out of the routine claim for up to 6 h. After
+    // the control row, as the lock order above requires.
+    await transaction
+      .update(auroraCredentials)
+      .set({ providerRetryAfterUntil: null })
+      .where(and(eq(auroraCredentials.userId, input.userId), eq(auroraCredentials.boardType, input.boardType)));
+  }
   return { linkGeneration: row.linkGeneration };
 }
 
@@ -116,6 +126,22 @@ export async function ensureProviderSyncControl(transaction: ProviderSyncDb, key
     .insert(providerSyncControls)
     .values({ userId: key.userId, boardType: key.boardType, linked: true })
     .onConflictDoNothing();
+}
+
+/**
+ * Read the control row without locking it: the generation a routine sync
+ * fences its batches with. The fence re-checks it under `FOR SHARE` in every
+ * batch, so a relink between this read and the first batch is caught there.
+ */
+export async function readProviderSyncControl(
+  database: ProviderSyncDb,
+  key: ProviderSyncKey,
+): Promise<{ linkGeneration: string; linked: boolean } | undefined> {
+  const [row] = await database
+    .select({ linkGeneration: providerSyncControls.linkGeneration, linked: providerSyncControls.linked })
+    .from(providerSyncControls)
+    .where(keyMatches(key));
+  return row;
 }
 
 /** Lock the control row for a read-modify-write (the "Sync now" path). */

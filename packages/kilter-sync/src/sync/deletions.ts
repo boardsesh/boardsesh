@@ -200,7 +200,11 @@ export async function reconcileDeletions(
   deletedUuids: string[],
   applyDeletions: boolean,
   log: (message: string) => void,
-  options?: { batchLimit?: number },
+  options?: {
+    batchLimit?: number;
+    /** Runs the one apply transaction (a background job's attempt fence). Defaults to `db.transaction`. */
+    transaction?: <Result>(callback: (tx: DrizzleDb) => Promise<Result>) => Promise<Result>;
+  },
 ): Promise<DeletionReport> {
   // A non-positive batch limit would silently stall the drain (0 changes/run,
   // never erroring); fall back to the default instead.
@@ -360,7 +364,8 @@ export async function reconcileDeletions(
     batchLimit,
   );
   // Apply both writes atomically so a crash can't leave the batch half-applied.
-  await db.transaction(async (tx) => {
+  const runApply = options?.transaction ?? ((callback) => db.transaction(callback));
+  await runApply(async (tx) => {
     if (aliasBatch.length > 0) {
       // source='kilter' + board_type guards belt-and-suspenders the classifier.
       await tx

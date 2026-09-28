@@ -26,6 +26,14 @@ export type KilterStatsRepairArgs = {
   log?: (message: string) => void;
   reference?: KilterReferencePull;
   layoutUuids?: string[];
+  /** Cancels the reference stream and every stats request. */
+  signal?: AbortSignal;
+  /**
+   * Runs the one atomic apply (the authoritative upsert plus the materialized
+   * recompute). A background job passes its attempt fence. Defaults to
+   * `db.transaction`.
+   */
+  transaction?: <Result>(callback: (tx: DrizzleDb) => Promise<Result>) => Promise<Result>;
 };
 
 export type KilterStatsRepairTopRow = {
@@ -314,7 +322,8 @@ async function recomputeMaterializedTotals(db: DrizzleDb): Promise<number> {
 export async function repairKilterCatalogStats(args: KilterStatsRepairArgs): Promise<KilterStatsRepairSummary> {
   const log = args.log ?? (() => {});
   const state: TokenState = { provider: args.tokenProvider, token: await args.tokenProvider() };
-  const reference = args.reference ?? (await pullKilterReference({ accessToken: state.token, log }));
+  const reference =
+    args.reference ?? (await pullKilterReference({ accessToken: state.token, log, signal: args.signal }));
   const resolver = await buildLayoutResolver(args.db);
   const wantedLayoutUuids = args.layoutUuids ? new Set(args.layoutUuids) : null;
 
@@ -345,7 +354,8 @@ export async function repairKilterCatalogStats(args: KilterStatsRepairArgs): Pro
     const canonicalBySourceUuid = await loadCanonicalMap(args.db, boardLayoutId);
     gripsLayoutsProcessed += gripsLayoutUuids.length;
     for (const gripsLayoutUuid of gripsLayoutUuids) {
-      const stats = await withToken(state, (token) => fetchLayoutClimbStats(token, gripsLayoutUuid));
+      args.signal?.throwIfAborted();
+      const stats = await withToken(state, (token) => fetchLayoutClimbStats(token, gripsLayoutUuid, args.signal));
       for (const stat of stats) {
         statsSeen += 1;
         const sourceKey = catalogStatSourceKey(stat);
@@ -379,7 +389,8 @@ export async function repairKilterCatalogStats(args: KilterStatsRepairArgs): Pro
   if (args.apply) {
     // Atomic: a crash between the kilter-count overwrite and the materialized
     // recompute would otherwise leave ascensionist_count stale until re-run.
-    await args.db.transaction(async (tx) => {
+    const runApply = args.transaction ?? ((callback) => args.db.transaction(callback));
+    await runApply(async (tx) => {
       await upsertRepairedStats(tx, statValues);
       formulaRowsRecomputed = await recomputeMaterializedTotals(tx);
     });

@@ -1,4 +1,5 @@
 import { defineConfig } from 'vite-plus';
+import { SERIAL_TEST_FILES } from './vitest-serial-files.ts';
 
 export default defineConfig({
   test: {
@@ -6,7 +7,8 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['src/**/*.test.ts'],
-    exclude: ['**/node_modules/**', '**/dist/**'],
+    // These run one at a time in the backend-serial project (vite.serial.config.ts).
+    exclude: ['**/node_modules/**', '**/dist/**', ...SERIAL_TEST_FILES],
     globalSetup: ['./src/__tests__/global-setup.ts'],
     setupFiles: ['./src/__tests__/setup.ts'],
     testTimeout: 10000,

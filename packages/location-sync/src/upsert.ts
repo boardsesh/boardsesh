@@ -925,3 +925,59 @@ export async function upsertPublicBoardLocations(
     skipped,
   };
 }
+
+/** Runs one write batch in one transaction, behind whatever fences its owner applies. */
+export type LocationWriteBatchRunner = <Result>(
+  callback: (transaction: DrizzleDb) => Promise<Result>,
+) => Promise<Result>;
+
+/** Gyms per write batch: small enough that one batch stays well under a minute over a slow link. */
+export const LOCATION_UPSERT_GYMS_PER_BATCH = 25;
+
+/**
+ * {@link upsertPublicBoardLocations} split into batches of whole gyms, each in
+ * its own `runBatch` transaction. A background job passes its attempt fence:
+ * one batch holds the run-row lock (which blocks the job's heartbeat) for a
+ * bounded time, and a run that lost its lease stops at the next batch.
+ *
+ * A gym and all of its boards always land in the same batch, so the gym
+ * resolution (alias, physical match, first-run adoption of a seeded gym) sees
+ * exactly what the single-call version sees. The summaries are added up.
+ */
+export async function upsertPublicBoardLocationsInBatches(
+  runBatch: LocationWriteBatchRunner,
+  records: PublicBoardLocationInput[],
+  options: { logger?: LocationSyncLogger; gymsPerBatch?: number; signal?: AbortSignal } = {},
+): Promise<LocationSyncSummary> {
+  const gymsPerBatch = options.gymsPerBatch ?? LOCATION_UPSERT_GYMS_PER_BATCH;
+  if (!Number.isInteger(gymsPerBatch) || gymsPerBatch <= 0) throw new Error('Invalid gyms per batch');
+  const byGym = new Map<string, PublicBoardLocationInput[]>();
+  for (const record of records) {
+    const group = byGym.get(record.gymSourceKey) ?? [];
+    group.push(record);
+    byGym.set(record.gymSourceKey, group);
+  }
+  const groups = [...byGym.values()];
+  const total: LocationSyncSummary = {
+    boardsSeen: 0,
+    boardsUpserted: 0,
+    boardsSkipped: 0,
+    gymsSeen: 0,
+    gymsUpserted: 0,
+    skipped: [],
+  };
+  for (let start = 0; start < groups.length; start += gymsPerBatch) {
+    options.signal?.throwIfAborted();
+    const batch = groups.slice(start, start + gymsPerBatch).flat();
+    const summary = await runBatch((transaction) =>
+      upsertPublicBoardLocations(transaction, batch, { logger: options.logger }),
+    );
+    total.boardsSeen += summary.boardsSeen;
+    total.boardsUpserted += summary.boardsUpserted;
+    total.boardsSkipped += summary.boardsSkipped;
+    total.gymsSeen += summary.gymsSeen;
+    total.gymsUpserted += summary.gymsUpserted;
+    total.skipped.push(...summary.skipped);
+  }
+  return total;
+}

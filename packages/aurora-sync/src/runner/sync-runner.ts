@@ -12,10 +12,13 @@ import {
   claimNextCredentialForSync,
   claimSharedSyncSlot,
   credentialBackoffMs,
+  deferCredentialSyncAttempt,
   findGymsDueForWallCrawl,
+  findSharedSyncDonorCredential,
   getCredentialFleetSnapshot,
   isSyncFenceError,
   readSharedSyncCursor,
+  SHARED_SYNC_PROVIDER_HOLD_CAP_MS,
   releaseDaemonLease,
   selfHealStaleClimbStats,
   stampSharedSyncFinished,
@@ -42,7 +45,9 @@ import type { LocationSyncSummary } from '@boardsesh/location-sync';
 import { isAuroraBoardName, type AuroraBoardName } from '../api/types';
 import {
   DaemonLease,
+  SYNC_DAEMON_DISABLED_MESSAGE,
   formatSyncHealthSummary as formatSharedSyncHealthSummary,
+  isSyncDaemonDisabled,
   resolveDaemonOptions,
   runDaemonLoop,
   type SyncHealthSnapshot,
@@ -55,6 +60,8 @@ import type {
   SyncErrorContext,
   SyncCredentialOptions,
   SyncOutcome,
+  SharedSyncJobOptions,
+  SharedSyncJobResult,
 } from './types';
 
 type RunnerClient = ReturnType<typeof postgres>;
@@ -145,6 +152,8 @@ type CredentialFailureUpdate = {
   lastSyncAttemptAt?: Date;
   consecutiveFailures?: number;
   lastSyncError?: string | null;
+  /** Cleared on success: a sync that went through ends any provider Retry-After hold. */
+  providerRetryAfterUntil?: null;
 };
 
 /**
@@ -164,6 +173,31 @@ export function syncableAuroraCredentialsFilter() {
     isNotNull(auroraCredentials.auroraUserId),
     ne(auroraCredentials.boardType, KILTER_BOARD_TYPE),
   );
+}
+
+/**
+ * Record a failed attempt on the credential's scheduler fields: the attempt
+ * clock, `consecutive_failures` (backoff) and `last_sync_error`. Never
+ * `sync_status`/`sync_error`, which the specific failure branches own (a
+ * transient failure must not flip the card to 'error'). Exported so a
+ * background job can record a failure the runner itself never saw, such as the
+ * routine cycle's per-credential deadline.
+ */
+export async function recordAuroraSyncFailure(
+  db: RunnerDb,
+  cred: Pick<CredentialRecord, 'userId' | 'boardType'>,
+  errorMsg: string,
+): Promise<void> {
+  const attemptAt = new Date();
+  await db
+    .update(auroraCredentials)
+    .set({
+      lastSyncAttemptAt: attemptAt,
+      consecutiveFailures: sql`COALESCE(${auroraCredentials.consecutiveFailures}, 0) + 1`,
+      lastSyncError: errorMsg,
+      updatedAt: attemptAt,
+    })
+    .where(and(eq(auroraCredentials.userId, cred.userId), eq(auroraCredentials.boardType, cred.boardType)));
 }
 
 export class SyncRunner {
@@ -344,6 +378,7 @@ export class SyncRunner {
         // A deadlock or serialization failure is the database, not the
         // account: worth a retry, like an Aurora outage.
         transient: isTransientAuroraError(error) || /code=(40P01|40001)\b/.test(errorMsg),
+        retryAfterMs: isAuroraRequestError(error) ? error.retryAfterMs : undefined,
       };
     } finally {
       this.callOptions = null;
@@ -381,18 +416,7 @@ export class SyncRunner {
    * row in one cycle (e.g. recordInvalidCredentialFailure + this).
    */
   private async recordSyncFailure(cred: CredentialRecord, errorMsg: string): Promise<void> {
-    const attemptAt = new Date();
-    await this.writeCredential(async (db) => {
-      await db
-        .update(auroraCredentials)
-        .set({
-          lastSyncAttemptAt: attemptAt,
-          consecutiveFailures: sql`COALESCE(${auroraCredentials.consecutiveFailures}, 0) + 1`,
-          lastSyncError: errorMsg,
-          updatedAt: attemptAt,
-        })
-        .where(and(eq(auroraCredentials.userId, cred.userId), eq(auroraCredentials.boardType, cred.boardType)));
-    });
+    await this.writeCredential((db) => recordAuroraSyncFailure(db, cred, errorMsg));
 
     // consecutive_failures is incremented in SQL above; mirror the resulting
     // value in JS to fire the FLAPPING event exactly once, when the streak
@@ -473,6 +497,12 @@ export class SyncRunner {
   }
 
   async runDaemon(options: DaemonOptions = {}): Promise<void> {
+    // The worker families own routine syncs once this is set; see
+    // docs/aurora-sync.md. Checked before the lease or the pool is touched.
+    if (isSyncDaemonDisabled(process.env)) {
+      this.log(`[SyncRunner] ${SYNC_DAEMON_DISABLED_MESSAGE}`);
+      return;
+    }
     if (this.daemonController && !this.daemonController.signal.aborted) {
       throw new Error('Daemon mode is already running');
     }
@@ -587,6 +617,10 @@ export class SyncRunner {
     const { db } = this.getClient();
     const claimed = await claimNextCredentialForSync(db, {
       candidateFilter: this.syncableCredentialsFilter(),
+      // Skip an account a background job is syncing right now (a live lease on
+      // its provider_sync_controls row), so a daemon and a worker never sync
+      // one credential at the same time.
+      excludeLeased: true,
     });
 
     return claimed as CredentialRecord | null;
@@ -728,6 +762,9 @@ export class SyncRunner {
       lastSyncAttemptAt: succeededAt,
       consecutiveFailures: 0,
       lastSyncError: null,
+      // A sync that went through (a "Sync now" or first-link run can succeed
+      // inside a routine Retry-After hold) ends the hold.
+      providerRetryAfterUntil: null,
     });
 
     // Piggyback shared sync onto user sync — the user's fresh token
@@ -761,15 +798,8 @@ export class SyncRunner {
    */
   private async maybeRunSharedSync(boardType: AuroraBoardName, token: string, userId: string): Promise<void> {
     const cooldownMs = this.getSharedSyncCooldownMs();
-    const { client, db } = this.getClient();
+    const { db } = this.getClient();
     const cursor = { boardType, cursorName: SHARED_SYNC_COOLDOWN_CURSOR };
-    // syncSharedData still takes a raw postgres-js client, which an injected
-    // database does not come with. Such a runner leaves the shared sync to its
-    // own job rather than opening a second pool behind the caller's back.
-    if (!client) {
-      this.log(`[SyncRunner] Skipping shared sync for ${boardType}: this runner has no pool of its own`);
-      return;
-    }
 
     // Claiming stamps the cursor, so a concurrent caller (another instance, or
     // the next user-sync landing while we're still working) is turned away.
@@ -803,11 +833,7 @@ export class SyncRunner {
     let nextCooldownMs = cooldownMs;
     try {
       this.log(`[SyncRunner] Running shared sync for ${boardType} using ${userId}'s token...`);
-      await syncSharedData(client, boardType, token, this.log.bind(this));
-      if (this.isLocationBoard(boardType)) {
-        await syncAuroraBoardLocations({ db, board: boardType, log: this.log.bind(this) });
-        await this.crawlGymWallSlice(boardType, token);
-      }
+      await this.runBoardSharedWork(boardType, token, {});
     } catch (sharedError) {
       nextCooldownMs = sharedSyncCooldownAfterError(sharedError, cooldownMs);
       const sharedErrorMessage = this.formatErrorMessage(sharedError);
@@ -843,14 +869,15 @@ export class SyncRunner {
     claimToken: SharedSyncClaimToken,
     fullCooldownMs: number,
     nextCooldownMs: number,
+    /** The scheduled job's attempt fence: a run that lost its lease does not stamp. */
+    transaction?: SyncBatchRunner,
+    /** Aurora's Retry-After: the slot stays closed at least this long. */
+    providerHoldMs?: number,
   ): Promise<void> {
     try {
-      const finalized = await stampSharedSyncFinished(db, {
-        ...cursor,
-        claimToken,
-        fullCooldownMs,
-        nextCooldownMs,
-      });
+      const stamp = (database: RunnerDb) =>
+        stampSharedSyncFinished(database, { ...cursor, claimToken, fullCooldownMs, nextCooldownMs, providerHoldMs });
+      const finalized = transaction ? await transaction(stamp) : await stamp(db);
       if (!finalized) {
         this.log(`[SyncRunner] Shared-sync claim ownership changed for ${boardType}; leaving the newer cursor intact`);
       }
@@ -859,6 +886,184 @@ export class SyncRunner {
       this.handleError(stampError instanceof Error ? stampError : new Error(stampErrorMessage), { board: boardType });
       this.log(`[SyncRunner] Could not re-stamp the shared-sync cooldown for ${boardType}: ${stampErrorMessage}`);
     }
+  }
+
+  /**
+   * The board-wide half of a sync, on one token: Aurora's shared `/sync`, then
+   * for gym boards the public locations and a slice of the wall crawl. The
+   * daemon runs it piggybacked on a user sync; `runSharedSyncJob` runs it on a
+   * schedule with fenced write batches.
+   */
+  private async runBoardSharedWork(
+    boardType: AuroraBoardName,
+    token: string,
+    options: Pick<SharedSyncJobOptions, 'transaction' | 'signal'> & { runKey?: string },
+  ): Promise<void> {
+    const { db } = this.getClient();
+    const { runKey, ...fenced } = options;
+    await syncSharedData(db, boardType, token, this.log.bind(this), { ...fenced, runKey });
+    if (this.isLocationBoard(boardType)) {
+      await syncAuroraBoardLocations({ db, board: boardType, log: this.log.bind(this), ...fenced });
+      await this.crawlGymWallSlice(boardType, token, fenced);
+    }
+  }
+
+  /**
+   * The scheduled shared sync for one board (the `aurora-shared-sync` job).
+   *
+   * 1. Borrow a token from the board's most recently successful `active`
+   *    credential: its stored token, or a fresh login with its password when
+   *    none is stored. No healthy credential: `no_donor`, nothing claimed.
+   * 2. Claim the same `board_shared_syncs` cooldown slot the daemon uses. A
+   *    refused claim is `cooldown`: another run (or the daemon) did this board
+   *    recently.
+   * 3. Run {@link runBoardSharedWork}. A stored token Aurora rejects (401,
+   *    403, or the 422 `invalid_credentials` it answers an expired session
+   *    with) earns one fresh login and one more try.
+   * 4. Re-stamp the slot. Success and permanent Aurora failures get the full
+   *    cooldown measured from the claim (the marker is backdated by the run's
+   *    length, so a long run never makes the next hourly tick wait). A
+   *    transient Aurora failure, an abort or a database error gets five minutes
+   *    from the end, so the job's retry can run.
+   *
+   * Nothing here is ever recorded against the donor's credential: a failed
+   * borrowed login or a failed crawl is the board's problem, not the climber's.
+   * Failures are thrown for the job to record.
+   */
+  async runSharedSyncJob(board: AuroraBoardName, options: SharedSyncJobOptions = {}): Promise<SharedSyncJobResult> {
+    if (board === KILTER_BOARD_TYPE) throw new Error('Kilter has its own catalog sync');
+    const { db } = this.getClient();
+    const { signal } = options;
+    const donor = await findSharedSyncDonorCredential(db, {
+      boardType: board,
+      candidateFilter: syncableAuroraCredentialsFilter(),
+    });
+    if (!donor) return { status: 'no_donor' };
+
+    const cooldownMs = Math.max(0, options.cooldownMs ?? this.getSharedSyncCooldownMs());
+    const cursor = { boardType: board, cursorName: SHARED_SYNC_COOLDOWN_CURSOR };
+    // The claim and the stamp go through the job's fence too: a run that lost
+    // its lease neither claims nor stamps.
+    const claimToken = options.transaction
+      ? await options.transaction((tx) => claimSharedSyncSlot(tx, { ...cursor, cooldownMs, ownerRunId: options.runId }))
+      : await claimSharedSyncSlot(db, { ...cursor, cooldownMs, ownerRunId: options.runId });
+    if (claimToken === null) return { status: 'cooldown', lastRunAt: await readSharedSyncCursor(db, cursor) };
+
+    // The slot's marker is stamped when the run ends; backdating it by the
+    // run's length measures the cooldown from the claim instead, so a run
+    // longer than (cron period - cooldown) does not refuse the next tick.
+    const startedAt = Date.now();
+    const fromStart = () => Math.max(0, cooldownMs - (Date.now() - startedAt));
+    let nextCooldownMs = cooldownMs;
+    let providerHoldMs: number | undefined;
+    // The run id keys the pass's setter notifications, so a retry of this run
+    // does not notify anyone twice.
+    const work = { transaction: options.transaction, signal, runKey: options.runId };
+    try {
+      let tokenSource: 'stored' | 'login' = 'stored';
+      let token = this.storedDonorToken(donor);
+      if (token === null) {
+        tokenSource = 'login';
+        token = await this.signInDonor(donor, board, signal);
+      }
+      this.log(`[SyncRunner] Scheduled shared sync for ${board} (${tokenSource} token)`);
+      try {
+        await this.runBoardSharedWork(board, token, work);
+      } catch (error) {
+        // Aurora answers an expired session with 422 (`invalid_credentials`),
+        // not only 401/403: all three mean "this token is no good".
+        const rejected =
+          isAuroraRequestError(error) &&
+          (error.status === 401 || error.status === 403 || error.code === 'invalid_credentials');
+        if (tokenSource !== 'stored' || !rejected || signal?.aborted) throw error;
+        this.log(`[SyncRunner] Stored token for ${board} was rejected; logging in once`);
+        tokenSource = 'login';
+        token = await this.signInDonor(donor, board, signal);
+        // The login can outlive a shutdown or a lost lease; stop before the second pass.
+        signal?.throwIfAborted();
+        await this.runBoardSharedWork(board, token, work);
+      }
+      nextCooldownMs = fromStart();
+      return { status: 'synced', tokenSource };
+    } catch (error) {
+      nextCooldownMs =
+        !signal?.aborted && isAuroraRequestError(error) && !isTransientSharedSyncAuroraError(error)
+          ? fromStart()
+          : Math.min(TRANSIENT_SHARED_SYNC_COOLDOWN_MS, cooldownMs);
+      // Aurora said how long to wait (429 with Retry-After): keep the slot
+      // closed that long, at least the five-minute retry cooldown, and hold the
+      // donor's own credential for the same time, since the throttle was on
+      // its token.
+      if (!signal?.aborted && isAuroraRequestError(error) && error.retryAfterMs !== undefined) {
+        providerHoldMs = Math.max(
+          TRANSIENT_SHARED_SYNC_COOLDOWN_MS,
+          Math.min(error.retryAfterMs, SHARED_SYNC_PROVIDER_HOLD_CAP_MS),
+        );
+        this.log(`[SyncRunner] PROVIDER_THROTTLED shared sync for ${board}: holding for ${providerHoldMs} ms`);
+        await this.holdDonorSafely(donor, providerHoldMs, options.transaction);
+      }
+      throw error;
+    } finally {
+      await this.stampSharedSyncFinishedSafely(
+        db,
+        cursor,
+        board,
+        claimToken,
+        cooldownMs,
+        nextCooldownMs,
+        options.transaction,
+        providerHoldMs,
+      );
+    }
+  }
+
+  /**
+   * Put the donor credential inside the provider's hold
+   * (`provider_retry_after_until`), so neither the routine claim nor the next
+   * donor pick uses it before then. Only the hold: no failure is recorded
+   * against a borrowed credential. Best effort, never throws.
+   */
+  private async holdDonorSafely(
+    donor: CredentialRecord & { id?: bigint; linkGeneration?: string | null },
+    holdMs: number,
+    transaction?: SyncBatchRunner,
+  ): Promise<void> {
+    try {
+      // Bound to the link the donor was borrowed under: a relink during the
+      // run leaves its replacement credential unheld.
+      const onlyLink =
+        donor.id === undefined ? undefined : { id: donor.id, linkGeneration: donor.linkGeneration ?? null };
+      const hold = (database: RunnerDb) =>
+        deferCredentialSyncAttempt(database, {
+          userId: donor.userId,
+          boardType: donor.boardType,
+          delayMs: holdMs,
+          ...(onlyLink ? { onlyLink } : {}),
+        });
+      if (transaction) await transaction(hold);
+      else await hold(this.getClient().db);
+    } catch (holdError) {
+      this.log(`[SyncRunner] Could not hold the donor credential: ${this.formatErrorMessage(holdError)}`);
+    }
+  }
+
+  /** The donor's stored Aurora token, or null when there is none or it does not decrypt. */
+  private storedDonorToken(donor: CredentialRecord): string | null {
+    if (!donor.auroraToken) return null;
+    try {
+      return decrypt(donor.auroraToken);
+    } catch {
+      return null;
+    }
+  }
+
+  /** Log in as the donor. The credential row is never touched: this is a borrowed login. */
+  private async signInDonor(donor: CredentialRecord, board: AuroraBoardName, signal?: AbortSignal): Promise<string> {
+    if (!donor.encryptedUsername || !donor.encryptedPassword) throw new Error('Donor credential has no password');
+    const client = new AuroraClimbingClient({ boardName: board });
+    const login = await client.signIn(decrypt(donor.encryptedUsername), decrypt(donor.encryptedPassword), { signal });
+    if (!login.token) throw new Error('Login succeeded but no token returned');
+    return login.token;
   }
 
   private static readonly SELF_HEAL_COOLDOWN_MS = 60 * 60 * 1000;
@@ -886,7 +1091,11 @@ export class SyncRunner {
    * personal sync. The crawl is best-effort catalog upkeep; it must never cost
    * a user their account sync.
    */
-  private async crawlGymWallSlice(board: AuroraLocationBoardName, token: string): Promise<void> {
+  private async crawlGymWallSlice(
+    board: AuroraLocationBoardName,
+    token: string,
+    options: Pick<SharedSyncJobOptions, 'transaction' | 'signal'> = {},
+  ): Promise<void> {
     const { db } = this.getClient();
     try {
       const dueSourceKeys = await findGymsDueForWallCrawl(db, { provider: board, limit: GYM_WALL_CRAWL_SLICE });
@@ -900,9 +1109,13 @@ export class SyncRunner {
         sourceKeys: dueSourceKeys,
         fetchGymUser,
         log: this.log.bind(this),
+        transaction: options.transaction,
+        signal: options.signal,
       });
       this.log(`[SyncRunner] Wall crawl for ${board}: ${crawled}/${dueSourceKeys.length} gym(s) read`);
     } catch (error) {
+      // A stopped job or a lost fence is not a crawl failure: the job must stop.
+      if (options.signal?.aborted || isSyncFenceError(error)) throw error;
       // Logged, never rethrown — see the contract above.
       this.log(
         `[SyncRunner] Wall crawl for ${board} failed (shared sync unaffected): ${this.formatErrorMessage(error)}`,
@@ -927,9 +1140,14 @@ export class SyncRunner {
     this.lastSelfHealAt = now;
     try {
       const { db } = this.getClient();
-      const { keysHealed } = await selfHealStaleClimbStats(db);
-      if (keysHealed > 0) {
-        this.log(`[SyncRunner] Recompute self-heal: re-derived ${keysHealed} stale climb-stat key(s)`);
+      const { pendingKeysDrained, keysHealed, pendingRemaining } = await selfHealStaleClimbStats(db);
+      if (keysHealed > 0 || pendingKeysDrained > 0) {
+        this.log(
+          `[SyncRunner] Recompute self-heal: re-derived ${keysHealed} stale climb-stat key(s), drained ${pendingKeysDrained} pending key(s)`,
+        );
+      }
+      if (pendingRemaining !== undefined) {
+        this.log(`[SyncRunner] Recompute self-heal drain capped: ${pendingRemaining} pending key(s) left`);
       }
     } catch (error) {
       this.handleError(error instanceof Error ? error : new Error(String(error)), {});
@@ -1050,6 +1268,10 @@ export class SyncRunner {
 
     if (credentialFailureUpdate.lastSyncError !== undefined) {
       updateData.lastSyncError = credentialFailureUpdate.lastSyncError;
+    }
+
+    if (credentialFailureUpdate.providerRetryAfterUntil !== undefined) {
+      updateData.providerRetryAfterUntil = credentialFailureUpdate.providerRetryAfterUntil;
     }
 
     await this.writeCredential(async (db) => {

@@ -86,6 +86,10 @@ function context(options: FakeDatabaseOptions & { signal?: AbortSignal } = {}) {
     runId: '00000000-0000-4000-8000-000000000001',
     family: 'export-board-snapshots',
     signal: options.signal ?? new AbortController().signal,
+    expiresAt: Date.now() + 60 * 60 * 1000,
+    enqueue: async () => {
+      throw new Error('enqueue not expected');
+    },
     database: fakeDatabase(options),
     transaction: transaction as Context['transaction'],
   };

@@ -38,8 +38,9 @@ dataset has walls for Kilter but not for any Aurora board.
 
 ## The two paths
 
-**Hourly, unauthenticated (discovery).** `syncAuroraBoardLocations` piggybacks on
-the shared-sync slot and walks every pin. It keeps new gyms appearing and is what
+**Hourly, unauthenticated (discovery).** `syncAuroraBoardLocations` rides the
+shared-sync slot (the daemon's piggyback, or after the worker cutover the hourly
+`aurora-shared-sync` job) and walks every pin. It keeps new gyms appearing and is what
 publishes the default config for a gym nobody has read yet.
 
 **Continuous, authenticated (enrichment).** Each shared-sync cycle also reads a
@@ -62,11 +63,13 @@ their real configuration.
 
 ## Rules that are load-bearing
 
-**Crawl failures never touch the credential.** The daemon crawls on the *borrowed*
-credential the shared sync is already using, which belongs to a real climber. The
+**Crawl failures never touch the credential.** The daemon (and the
+`aurora-shared-sync` job after it) crawls on the *borrowed* credential the
+shared sync is already using, which belongs to a real climber. The
 crawl step swallows every error: an escaping one would be recorded against their
 credential and could quarantine their personal sync. Catalog upkeep must never
-cost a user their account sync.
+cost a user their account sync. The one exception is a stopped job: an abort or
+a lost attempt fence ends the crawl so the job stops writing.
 
 **An enriched gym is never re-guessed.** The hourly pins-only run cannot read
 walls, so without a guard it would republish the default over every enriched row
@@ -103,8 +106,10 @@ AURORA_LOCATION_PASSWORD_TENSION
 With none configured the crawl is a no-op and every gym keeps the default config,
 which is exactly the pre-enrichment behaviour — dev and CI need no secrets.
 
-The daemon path needs no secret at all: it reuses the shared sync's borrowed
-session.
+The daemon path and the `aurora-shared-sync` job need no secret at all: they
+reuse the shared sync's borrowed session. The job writes the gyms in fenced
+batches of 25, each its own transaction, so none holds the job's run-row lock
+for long.
 
 ## Running it by hand
 

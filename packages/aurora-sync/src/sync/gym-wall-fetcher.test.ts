@@ -100,7 +100,7 @@ describe('createAuroraGymUserFetcher', () => {
 
     await drain(fetcher!(PIN));
 
-    expect(mocks.fetchAuroraGymUser).toHaveBeenCalledWith('tension', 42, 'session-token');
+    expect(mocks.fetchAuroraGymUser).toHaveBeenCalledWith('tension', 42, 'session-token', undefined);
   });
 
   it('paces successive gyms so the crawl stays under Aurora rate limits', async () => {
@@ -154,7 +154,7 @@ describe('createAuroraGymUserFetcher', () => {
     const result = await drain(fetcher!(PIN));
 
     expect(mocks.signIn).toHaveBeenCalledTimes(2);
-    expect(mocks.fetchAuroraGymUser).toHaveBeenLastCalledWith('tension', 42, 'second');
+    expect(mocks.fetchAuroraGymUser).toHaveBeenLastCalledWith('tension', 42, 'second', undefined);
     expect(result).toEqual({ id: 42, walls: [] });
   });
 
@@ -250,7 +250,7 @@ describe('createAuroraGymUserFetcherForToken', () => {
     await drain(fetcher(PIN));
 
     expect(mocks.signIn).not.toHaveBeenCalled();
-    expect(mocks.fetchAuroraGymUser).toHaveBeenCalledWith('tension', 42, 'borrowed');
+    expect(mocks.fetchAuroraGymUser).toHaveBeenCalledWith('tension', 42, 'borrowed', undefined);
   });
 
   it('ends the slice on an expired token rather than re-authenticating', async () => {
@@ -274,5 +274,46 @@ describe('createAuroraGymUserFetcherForToken', () => {
 
     expect(await drain(fetcher(PIN))).toEqual({ id: 42, walls: [] });
     expect(mocks.fetchAuroraGymUser).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('gym fetcher stop signal', () => {
+  it('passes the signal to each gym read', async () => {
+    const fetcher = createAuroraGymUserFetcherForToken({ board: 'tension', token: 'borrowed' });
+    const controller = new AbortController();
+
+    await drain(fetcher(PIN, controller.signal));
+
+    expect(mocks.fetchAuroraGymUser).toHaveBeenCalledWith('tension', 42, 'borrowed', controller.signal);
+  });
+
+  it('ends the pacing sleep when the job stops, without reading the next gym', async () => {
+    const fetcher = createAuroraGymUserFetcherForToken({ board: 'tension', token: 'borrowed' });
+    const controller = new AbortController();
+    await drain(fetcher(PIN, controller.signal));
+
+    // The second gym waits out the 2.1 s pacing; the stop lands during that wait.
+    const second = fetcher({ ...PIN, id: 43 }, controller.signal);
+    const settled = expect(second).rejects.toThrow('worker stopping');
+    controller.abort(new Error('worker stopping'));
+    await settled;
+
+    expect(mocks.fetchAuroraGymUser).toHaveBeenCalledTimes(1);
+  });
+
+  it('rethrows a stop during a read instead of logging the gym as unreadable', async () => {
+    const log = vi.fn();
+    const fetcher = createAuroraGymUserFetcherForToken({ board: 'tension', token: 'borrowed', log });
+    const controller = new AbortController();
+    mocks.fetchAuroraGymUser.mockImplementationOnce(async () => {
+      controller.abort(new Error('worker stopping'));
+      throw new AuroraRequestError({ code: 'timeout', message: 'aborted' });
+    });
+
+    const settled = expect(fetcher(PIN, controller.signal)).rejects.toThrow('worker stopping');
+    await vi.runAllTimersAsync();
+    await settled;
+    expect(mocks.fetchAuroraGymUser).toHaveBeenCalledTimes(1);
+    expect(log).not.toHaveBeenCalled();
   });
 });

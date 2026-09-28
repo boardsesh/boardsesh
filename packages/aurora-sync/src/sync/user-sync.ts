@@ -11,10 +11,13 @@ import {
 import { normalizePlaylistColor } from '@boardsesh/shared-schema';
 import { DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR } from '@boardsesh/shared-schema/sync-error-codes';
 import {
+  DeferredClimbStatsRecompute,
   acquireUserTickMutationLock,
   foreignPlaylistOwnerGuard,
   isSyncFenceError,
+  recomputeClimbStatsBulk,
   selectUpstreamPlaylistOwners,
+  type ClimbStatsRecompute,
   type SyncBatchRunner,
 } from '@boardsesh/db/queries';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
@@ -127,6 +130,7 @@ export async function upsertTableData(
   nextAuthUserId: string,
   data: AuroraApiRow[],
   log: (message: string) => void = console.info,
+  recompute: ClimbStatsRecompute = recomputeClimbStatsBulk,
 ): Promise<UpsertResult> {
   if (data.length === 0) return { synced: 0, skipped: 0 };
 
@@ -250,7 +254,7 @@ export async function upsertTableData(
       if (nextAuthUserId) {
         // Timezone-correct write + cross-source claim + soft-delete + edit
         // guard all live in the shared apply module (see apply-user-logbook.ts).
-        await applyAuroraAscents(db, boardName, nextAuthUserId, data);
+        await applyAuroraAscents(db, boardName, nextAuthUserId, data, recompute);
       } else {
         log(`  Skipping ascents sync: no NextAuth user ID provided`);
         return { synced: 0, skipped: data.length, skippedReason: 'No NextAuth user ID provided' };
@@ -260,7 +264,7 @@ export async function upsertTableData(
 
     case 'bids': {
       if (nextAuthUserId) {
-        await applyAuroraBids(db, boardName, nextAuthUserId, data);
+        await applyAuroraBids(db, boardName, nextAuthUserId, data, recompute);
       } else {
         log(`  Skipping bids sync: no NextAuth user ID provided`);
         return { synced: 0, skipped: data.length, skippedReason: 'No NextAuth user ID provided' };
@@ -584,6 +588,15 @@ export type SyncUserDataOptions = {
   transaction?: SyncBatchRunner;
   /** Checked between pages and passed to the Aurora request. */
   signal?: AbortSignal;
+  /**
+   * Recompute `board_climb_stats` after each page commits, in its own batches of
+   * at most 500 keys, instead of inside the page transaction. Defaults to on
+   * when `transaction` is given: a background job's fenced batch holds the
+   * run-row lock, so no heartbeat lands while it runs, and keeping the
+   * recompute out of the page keeps every batch well inside the heartbeat
+   * window. The daemon (no `transaction`) keeps the inline recompute.
+   */
+  deferStatsRecompute?: boolean;
 };
 
 /**
@@ -602,6 +615,9 @@ export async function syncUserData(
 ): Promise<SyncUserDataResult> {
   const { tables = USER_TABLES, log = console.info, signal } = options;
   const runBatch: SyncBatchRunner = options.transaction ?? ((callback) => db.transaction(callback));
+  const deferredStats =
+    (options.deferStatsRecompute ?? options.transaction !== undefined) ? new DeferredClimbStatsRecompute() : null;
+  const recompute = deferredStats?.collect ?? recomputeClimbStatsBulk;
   try {
     const syncParams: SyncOptions = {
       tables,
@@ -637,6 +653,7 @@ export async function syncUserData(
 
       try {
         await runBatch(async (tx) => {
+          deferredStats?.begin();
           // Every page takes the user tick lock before its first row lock, so
           // the daemon and a fenced worker batch (which takes it first too)
           // lock in one order. Taken only when the ascents table was reached,
@@ -657,6 +674,7 @@ export async function syncUserData(
                 nextAuthUserId,
                 data,
                 log,
+                recompute,
               );
 
               if (!totalResults[tableName]) {
@@ -689,7 +707,15 @@ export async function syncUserData(
             };
           }
         });
+        if (deferredStats) {
+          deferredStats.commit();
+          // The page's rows are in; now its stats, in batches of their own.
+          await deferredStats.flush(runBatch);
+        }
       } catch (error) {
+        // A page that rolled back owes no recompute; after a commit this is a
+        // no-op (nothing is staged).
+        deferredStats?.rollback();
         // A fence refusal or an abort is not a database failure: rethrow it as
         // itself so the caller can tell "stop" from "this credential failed".
         if (signal?.aborted || isSyncFenceError(error)) throw error;

@@ -83,6 +83,7 @@ export async function removeFixtures(database: DbInstance, userIds: readonly str
   await database.execute(sql`DELETE FROM board_user_syncs WHERE user_id = ${AURORA_USER_ID}`);
   await database.execute(sql`DELETE FROM board_users WHERE id = ${AURORA_USER_ID}`);
   await database.execute(sql`DELETE FROM board_climb_stats WHERE climb_uuid LIKE 'psync-%'`);
+  await database.execute(sql`DELETE FROM climb_stats_recompute_pending WHERE climb_uuid LIKE 'psync-%'`);
   for (const climbUuid of climbUuids) {
     await database.execute(sql`DELETE FROM board_climbs WHERE uuid = ${climbUuid}`);
   }
@@ -232,10 +233,11 @@ export async function insertLinkedKilterAccount(
 }
 
 /**
- * Stand-in for Kilter's PowerSync stream: one snapshot carrying a log, a
- * rating and a circuit with one climb, then checkpoint_complete.
+ * Kilter's PowerSync user stream for the fixture account, as NDJSON: one
+ * snapshot carrying a log, a rating and a circuit with one climb, then
+ * checkpoint_complete.
  */
-export function stubKilterPowerSync(climbUuid: string) {
+export function kilterUserSyncBody(climbUuid: string): string {
   const common = { user_uuid: KILTER_SUB, gym_uuid: null, wall_uuid: null, product_layout_uuid: null };
   const ops = [
     {
@@ -301,9 +303,14 @@ export function stubKilterPowerSync(climbUuid: string) {
       },
     },
   ];
-  const body = [JSON.stringify({ data: { bucket: 'user', data: ops } }), JSON.stringify({ checkpoint_complete: {} })]
+  return [JSON.stringify({ data: { bucket: 'user', data: ops } }), JSON.stringify({ checkpoint_complete: {} })]
     .map((line) => `${line}\n`)
     .join('');
+}
+
+/** Stand-in for Kilter's PowerSync stream serving {@link kilterUserSyncBody}. */
+export function stubKilterPowerSync(climbUuid: string) {
+  const body = kilterUserSyncBody(climbUuid);
   const fetchMock = vi.fn(async (input: string | URL | Request) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
     if (url.endsWith('/sync/stream')) {

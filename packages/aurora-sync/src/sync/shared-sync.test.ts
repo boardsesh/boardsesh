@@ -38,17 +38,6 @@ vi.mock('@boardsesh/board-constants/hold-states', async (importOriginal) => {
   return { ...actual, convertLitUpHoldsStringToMap: mockConvertLitUpHolds };
 });
 
-// drizzle() returns a client we never actually issue queries against; the
-// shim below replaces its surface area entirely. We only mock `drizzle`
-// itself so the import doesn't fail.
-vi.mock('drizzle-orm/postgres-js', async () => {
-  const actual = await vi.importActual<typeof import('drizzle-orm/postgres-js')>('drizzle-orm/postgres-js');
-  return {
-    ...actual,
-    drizzle: vi.fn(() => createDbShim()),
-  };
-});
-
 import type { SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import {
@@ -72,8 +61,8 @@ import {
  */
 /**
  * Every row handed to a `.values(...)` call on the shim, in call order.
- * Module-level because the shim is built inside the mocked `drizzle()`
- * factory, which the test never gets a handle on. Suites that read it clear
+ * Module-level because every call builds a fresh shim (fakePostgresClient),
+ * which the test never keeps a handle on. Suites that read it clear
  * it in their own `beforeEach` and filter by climb uuid, so rows written by
  * another suite cannot be mistaken for theirs.
  */
@@ -203,6 +192,23 @@ describe('syncSharedData loop', () => {
     await syncSharedData(fakePostgresClient(), 'decoy', 'token');
 
     expect(mockSharedSync).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not treat a page without _complete as the last page', async () => {
+    const lines: string[] = [];
+    mockSharedSync
+      .mockResolvedValueOnce({
+        shared_syncs: [{ table_name: 'climbs', last_synchronized_at: '2026-01-01 00:00:00' }],
+      } satisfies SyncData)
+      .mockResolvedValueOnce(
+        complete({ shared_syncs: [{ table_name: 'climbs', last_synchronized_at: '2026-02-01 00:00:00' }] }),
+      );
+
+    const result = await syncSharedData(fakePostgresClient(), 'decoy', 'token', (line) => lines.push(line));
+
+    expect(mockSharedSync).toHaveBeenCalledTimes(2);
+    expect(result.complete).toBe(true);
+    expect(lines.some((line) => line.includes('has no _complete flag'))).toBe(true);
   });
 
   it('stops at MAX_SYNC_ATTEMPTS even when Aurora never reports _complete', async () => {
@@ -424,13 +430,11 @@ describe('syncSharedData cursor merge', () => {
 });
 
 /**
- * postgres.js client stub. `syncSharedData` only uses it as the argument to
- * `drizzle()` — which we mock to return our shim — so the real client is
- * never invoked. Casting is fine here because no method on the actual client
- * surface is called.
+ * The database `syncSharedData` reads from and, through its default batch
+ * runner (`db.transaction`), writes to: the recording shim above.
  */
 function fakePostgresClient(): never {
-  return {} as never;
+  return createDbShim() as never;
 }
 
 type FollowerRow = { followerId: string; setterUsername: string };
@@ -912,7 +916,7 @@ describe('board_climb_stats empty-row guard (issue #4068)', () => {
     },
   );
 
-  it('bounds the existing-row pre-read by both candidate UUID and angle', async () => {
+  it('bounds the existing-row pre-read by the exact (climb, angle) pairs', async () => {
     mockSharedSync.mockResolvedValueOnce(
       complete({
         climb_stats: [stat({ climb_uuid: 'ANGLE-40', angle: 40 }), stat({ climb_uuid: 'ANGLE-50', angle: 50 })],
@@ -923,9 +927,17 @@ describe('board_climb_stats empty-row guard (issue #4068)', () => {
 
     expect(shimClimbStatSelectPredicates).toHaveLength(1);
     const predicateQuery = dialect.sqlToQuery(shimClimbStatSelectPredicates[0]);
-    expect(predicateQuery.sql).toContain('"climb_uuid" in');
-    expect(predicateQuery.sql).toContain('"angle" in');
-    expect(predicateQuery.params).toEqual(['decoy', 'ANGLE-40', 'ANGLE-50', 40, 50]);
+    // A tuple IN over the pairs, not two IN lists (their cross product would
+    // also read ANGLE-40 at 50 and ANGLE-50 at 40).
+    expect(predicateQuery.sql).toContain('("board_climb_stats"."climb_uuid", "board_climb_stats"."angle") IN (');
+    expect(predicateQuery.sql).not.toContain('"climb_uuid" in');
+    expect(predicateQuery.params).toEqual([
+      'decoy',
+      JSON.stringify([
+        { climb_uuid: 'ANGLE-40', angle: 40 },
+        { climb_uuid: 'ANGLE-50', angle: 50 },
+      ]),
+    ]);
   });
 
   it('skips the existing-row pre-read entirely when every payload in the batch is non-empty', async () => {

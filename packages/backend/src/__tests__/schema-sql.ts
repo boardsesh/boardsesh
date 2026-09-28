@@ -23,6 +23,10 @@ const climbPopularitySchema = readFileSync(
   new URL('../../../db/drizzle/0242_climb_popularity.sql', import.meta.url),
   'utf8',
 );
+const climbStatsRecomputePendingSchema = readFileSync(
+  new URL('../../../db/drizzle/0246_climb_stats_recompute_pending.sql', import.meta.url),
+  'utf8',
+);
 const providerSyncControlsSchema = readFileSync(
   new URL('../../../db/drizzle/0244_provider_sync_controls.sql', import.meta.url),
   'utf8',
@@ -1969,6 +1973,8 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
     ON "user_hold_classifications" ("user_id", "board_type", "layout_id", "size_id", "hold_id");
   DROP TABLE IF EXISTS provider_sync_controls;
   ${providerSyncControlsSchema}
+  DROP TABLE IF EXISTS climb_stats_recompute_pending;
+  ${climbStatsRecomputePendingSchema}
 
   -- The Aurora applier's skip log (migration 0187). The worker grant proof in
   -- job-queue-roles.test.ts grants on it, so it has to exist here.
@@ -1989,4 +1995,38 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
     "seen_count" integer DEFAULT 1 NOT NULL
   );
   CREATE UNIQUE INDEX logbook_sync_skips_row_unique ON logbook_sync_skips (user_id, board_type, aurora_type, aurora_id);
+
+  -- The Kilter catalog's layout map (0113) and ingest backlog (0187, 0231).
+  -- The routine-provider grant list names both, and the migrator refuses to
+  -- grant on a table that does not exist, so they have to exist here.
+  DROP TABLE IF EXISTS board_layout_aliases;
+  CREATE TABLE board_layout_aliases (
+    "board_type" text NOT NULL,
+    "layout_uuid" text NOT NULL,
+    "layout_id" integer NOT NULL,
+    "source" text NOT NULL,
+    "first_seen_at" timestamp DEFAULT now() NOT NULL,
+    "last_seen_at" timestamp DEFAULT now() NOT NULL,
+    CONSTRAINT "board_layout_aliases_board_type_layout_uuid_pk" PRIMARY KEY ("board_type", "layout_uuid"),
+    CONSTRAINT "board_layout_aliases_uuid_non_empty" CHECK ("layout_uuid" <> '')
+  );
+  DROP TABLE IF EXISTS board_climb_ingest_skips;
+  CREATE TABLE board_climb_ingest_skips (
+    "board_type" text NOT NULL,
+    "climb_uuid" text NOT NULL,
+    "layout_id" integer,
+    "source_layout_uuid" text,
+    "reason" text NOT NULL,
+    "detail" text,
+    "raw_holds" text NOT NULL,
+    "frames_count" integer,
+    "climb_name" text,
+    "setter_username" text,
+    "first_seen_at" timestamp DEFAULT now() NOT NULL,
+    "last_seen_at" timestamp DEFAULT now() NOT NULL,
+    "resolved_at" timestamp,
+    "rejected_at" timestamp,
+    "rejected_reason" text,
+    CONSTRAINT "board_climb_ingest_skips_board_type_climb_uuid_pk" PRIMARY KEY ("board_type", "climb_uuid")
+  );
 `;

@@ -57,7 +57,40 @@ export type SyncOutcome = {
   status: 'active' | 'error' | 'expired';
   error?: string;
   transient?: boolean;
+  /** Kilter answered 429 with a readable `Retry-After`: how long it asked us to wait. */
+  retryAfterMs?: number;
 };
+
+/** Options for {@link SyncRunner.runCatalogSyncJob}. */
+export type CatalogSyncJobOptions = {
+  signal?: AbortSignal;
+  /**
+   * Runs every write batch of the job: the slot claim and stamp, each catalog
+   * flush, stats chunk, location and deletion batch, the weekly repair's apply
+   * and watermark, and the history snapshot. A background job passes its
+   * attempt fence, so a run that lost its lease stops at its next batch.
+   */
+  transaction?: SyncBatchRunner;
+  /** Overrides the runner's catalog cooldown for this claim. */
+  cooldownMs?: number;
+  /**
+   * The background run making the claim. Its retry re-claims a slot the run
+   * left claimed (an abort or a lost lease cannot re-stamp it on the way out).
+   */
+  runId?: string;
+  /** Where the ROPC fallback token comes from. Defaults to `process.env`. */
+  environment?: Readonly<Record<string, string | undefined>>;
+};
+
+/**
+ * How a scheduled catalog sync ended when it did not throw: it ran (with a
+ * linked climber's refresh token, or the ROPC test account), another run holds
+ * the cooldown slot, or there is no token source at all.
+ */
+export type CatalogSyncJobResult =
+  | { status: 'synced'; tokenSource: 'credential' | 'password' }
+  | { status: 'cooldown'; lastRunAt: Date | null }
+  | { status: 'no_donor' };
 
 export type SyncSummary = {
   total: number;

@@ -418,6 +418,42 @@ describe('syncAllAuroraBoardLocations fetcher dispatch', () => {
     }
   });
 
+  it('hands the stop signal to the pins request and every gym read, and stops between gyms', async () => {
+    const pinSignals: Array<AbortSignal | undefined> = [];
+    const readSignals: Array<AbortSignal | undefined> = [];
+    const controller = new AbortController();
+
+    vi.doMock('../api/pins-api', () => ({
+      fetchAuroraPins: (_board: string, signal?: AbortSignal) => {
+        pinSignals.push(signal);
+        return Promise.resolve({ gyms: [BOARD_HOUSE_PIN, { ...BOARD_HOUSE_PIN, id: 999 }] });
+      },
+    }));
+    vi.resetModules();
+
+    try {
+      const { syncAuroraBoardLocations: syncBoard } = await import('./locations-sync');
+      const run = syncBoard({
+        db: {} as never,
+        board: 'tension',
+        signal: controller.signal,
+        fetchGymUser: (_pin, signal) => {
+          readSignals.push(signal);
+          // The job stops while the first gym is read: the second is never asked for.
+          controller.abort(new Error('worker stopping'));
+          return Promise.resolve(undefined);
+        },
+      });
+
+      await expect(run).rejects.toThrow('worker stopping');
+      expect(pinSignals).toEqual([controller.signal]);
+      expect(readSignals).toEqual([controller.signal]);
+    } finally {
+      vi.doUnmock('../api/pins-api');
+      vi.resetModules();
+    }
+  });
+
   it('logs progress on the interval and always on the last gym', async () => {
     // The only production signal during a multi-hour crawl that a healthy run
     // isn't a stalled one — a run ending on "read 450/476" is indistinguishable

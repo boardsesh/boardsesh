@@ -11,8 +11,11 @@ import {
   acquireOrRenewDaemonLease,
   claimNextCredentialForSync,
   claimSharedSyncSlot,
+  deferCredentialSyncAttempt,
+  findSharedSyncDonorCredential,
   getCredentialFleetSnapshot,
   readSharedSyncCursor,
+  SHARED_SYNC_PROVIDER_HOLD_CAP_MS,
   releaseDaemonLease,
   snapshotClimbStatsHistoryIfDue,
   stampSharedSyncFinished,
@@ -20,11 +23,14 @@ import {
   isSyncFenceError,
   markWeeklyCursorDone,
   type SharedSyncClaimToken,
+  type SyncBatchRunner,
 } from '@boardsesh/db/queries';
 import {
   DEFAULT_DAEMON_OPTIONS,
   DaemonLease,
+  SYNC_DAEMON_DISABLED_MESSAGE,
   formatSyncHealthSummary,
+  isSyncDaemonDisabled,
   resolveDaemonOptions,
   runDaemonLoop,
   type ResolvedDaemonOptions,
@@ -36,7 +42,7 @@ import type { LocationSyncSummary } from '@boardsesh/location-sync';
 import { KILTER_BOARD_TYPE } from '../api/types';
 import { isTransientKilterError, KilterApiError } from '../api/errors';
 import type { KeycloakClientConfig } from '../api/keycloak';
-import { getStoredKilterAccessToken } from '../api/stored-token';
+import { getStoredKilterAccessToken, type StoredTokenLinkBinding } from '../api/stored-token';
 import { passwordTokenProvider, type KilterTokenProvider } from '../api/token-provider';
 import { syncKilterUserData } from '../sync/user-sync';
 import { syncKilterCatalog, type KilterCatalogSummary } from '../sync/catalog-sync';
@@ -51,6 +57,8 @@ import type {
   SyncRunnerConfig,
   SyncSummary,
   KilterCredentialRecord,
+  CatalogSyncJobOptions,
+  CatalogSyncJobResult,
 } from './types';
 
 // Catalog cooldown: a full per-cycle catalog pull is expensive, so the daemon
@@ -58,6 +66,9 @@ import type {
 // (compare-and-set), mirroring aurora-sync's shared-sync cooldown; overridable
 // via config.sharedSyncCooldownMs.
 const DEFAULT_CATALOG_SYNC_COOLDOWN_MS = 60 * 60 * 1000;
+// After a transient failure (Kilter throttling or down, an abort, a database
+// blip) the scheduled job's one retry must be able to claim again.
+const TRANSIENT_CATALOG_SYNC_COOLDOWN_MS = 5 * 60 * 1000;
 
 /**
  * Hourly gate for the read-only fleet health summary. Mirrors aurora-sync: the
@@ -147,6 +158,11 @@ export function syncableKilterCredentialsFilter() {
       eq(auroraCredentials.syncStatus, 'error'),
     ),
   );
+}
+
+/** How long Kilter asked us to wait, when the failure was a 429 carrying `Retry-After`. */
+function retryAfterOf(error: Error): number | undefined {
+  return error instanceof KilterApiError ? error.retryAfterMs : undefined;
 }
 
 export class SyncRunner {
@@ -340,6 +356,7 @@ export class SyncRunner {
         status: recorded.status === 'expired' ? 'expired' : 'error',
         error: err.message,
         transient: recorded.transient,
+        retryAfterMs: retryAfterOf(err),
       };
     }
   }
@@ -422,6 +439,9 @@ export class SyncRunner {
           // observability field stops showing a stale error.
           consecutiveFailures: 0,
           lastSyncError: null,
+          // A sync that went through (a "Sync now" or first-link run can
+          // succeed inside a routine Retry-After hold) ends the hold.
+          providerRetryAfterUntil: null,
           updatedAt: now,
         })
         .where(and(eq(auroraCredentials.userId, cred.userId), eq(auroraCredentials.boardType, KILTER_BOARD_TYPE)));
@@ -442,7 +462,7 @@ export class SyncRunner {
     // the shared catalog if its cooldown has elapsed. Reuses this user's token.
     // A background job skips it: the catalog sync runs on its own schedule there.
     if (options.skipCatalogSync) return;
-    await this.maybeRunCatalogSync(db, cred, accessToken);
+    await this.maybeRunCatalogSync(db, cred, accessToken, options.signal ?? this.daemonController?.signal);
   }
 
   /**
@@ -459,7 +479,13 @@ export class SyncRunner {
    * an optimisation — it can legitimately be held by two instances during a
    * stall — so this claim carries the guarantee.
    */
-  private async maybeRunCatalogSync(db: RunnerDb, cred: KilterCredentialRecord, currentToken: string): Promise<void> {
+  private async maybeRunCatalogSync(
+    db: RunnerDb,
+    cred: KilterCredentialRecord,
+    currentToken: string,
+    /** The daemon's stop signal: a shutdown ends the catalog pull at its next page. */
+    signal?: AbortSignal,
+  ): Promise<void> {
     const board = KILTER_BOARD_TYPE;
     const cooldownMs = this.getCatalogSyncCooldownMs();
     const cursor = { boardType: board, cursorName: CATALOG_SYNC_COOLDOWN_CURSOR };
@@ -508,16 +534,20 @@ export class SyncRunner {
         log: (message) => this.log(message),
         applyDeletions: this.config.applyCatalogDeletions ?? true,
         deleteBatchLimit: this.config.deleteBatchLimit,
+        signal,
       });
 
       // After a fresh catalog pull, run the two weekly board-wide maintenance
       // jobs (each self-gated by a 7-day watermark, so calling them every
       // catalog cycle is cheap). A failure in either must not poison the
       // catalog result — the counts already committed.
-      await this.maybeRepairKilterStats(db, tokenProvider);
-      await this.maybeSnapshotHistory(db);
+      signal?.throwIfAborted();
+      await this.maybeRepairKilterStats(db, tokenProvider, { signal });
+      signal?.throwIfAborted();
+      await this.maybeSnapshotHistory(db, { signal });
     } catch (error) {
-      this.handleError(error instanceof Error ? error : new Error(String(error)), { board });
+      // A shutdown is not a catalog failure: the daemon is stopping.
+      if (!signal?.aborted) this.handleError(error instanceof Error ? error : new Error(String(error)), { board });
     } finally {
       // Re-stamp so the cooldown runs from the END of the work, success or not.
       // Error-swallowing by design: this runs after the user-half has committed
@@ -539,13 +569,23 @@ export class SyncRunner {
     cursor: { boardType: string; cursorName: string },
     claimToken: SharedSyncClaimToken,
     cooldownMs: number,
+    /** The scheduled job's shorter retry cooldown; the daemon always takes the full one. */
+    nextCooldownMs?: number,
+    /** The scheduled job's attempt fence: a run that lost its lease does not stamp. */
+    transaction?: SyncBatchRunner,
+    /** Kilter's Retry-After: the slot stays closed at least this long. */
+    providerHoldMs?: number,
   ): Promise<void> {
     try {
-      const finalized = await stampSharedSyncFinished(db, {
-        ...cursor,
-        claimToken,
-        fullCooldownMs: cooldownMs,
-      });
+      const stamp = (database: RunnerDb) =>
+        stampSharedSyncFinished(database, {
+          ...cursor,
+          claimToken,
+          fullCooldownMs: cooldownMs,
+          ...(nextCooldownMs === undefined ? {} : { nextCooldownMs }),
+          ...(providerHoldMs === undefined ? {} : { providerHoldMs }),
+        });
+      const finalized = transaction ? await transaction(stamp) : await stamp(db);
       if (!finalized) {
         this.log(
           `[KilterSyncRunner] Catalog-sync claim ownership changed for ${KILTER_BOARD_TYPE}; leaving the newer cursor intact`,
@@ -555,6 +595,150 @@ export class SyncRunner {
       this.handleError(stampError instanceof Error ? stampError : new Error(String(stampError)), {
         board: KILTER_BOARD_TYPE,
       });
+    }
+  }
+
+  /**
+   * The scheduled catalog sync (the `kilter-catalog-sync` job): the daemon's
+   * catalog piggyback, on its own.
+   *
+   * 1. Token: a refresh-grant provider for the most recently successful
+   *    `active` Kilter credential (the refresh keeps its own `FOR UPDATE`
+   *    transaction on that row, exactly as a user sync does), else the ROPC
+   *    test account from `KILTER_TEST_USERNAME`/`KILTER_TEST_PASSWORD`, else
+   *    `no_donor` with nothing claimed.
+   * 2. Claim the catalog cooldown slot the daemon uses; refused is `cooldown`.
+   * 3. Catalog sync (deletions applied as the daemon does), then the weekly
+   *    stats repair and history snapshot, each gated by its own 7-day cursor.
+   * 4. Re-stamp the slot: the full cooldown measured from the claim on success
+   *    or a permanent Kilter failure (the marker is backdated by the run's
+   *    length), five minutes from the end otherwise so the retry runs.
+   *
+   * The writes go straight to the database, as the daemon's do: the claim is
+   * the single-writer guarantee, and the catalog interleaves provider requests
+   * with its writes too finely to put each behind an attempt fence. The signal
+   * stops it between layout groups.
+   */
+  async runCatalogSyncJob(options: CatalogSyncJobOptions = {}): Promise<CatalogSyncJobResult> {
+    const { db } = this.getClient();
+    const environment = options.environment ?? process.env;
+    const donor = await findSharedSyncDonorCredential(db, {
+      boardType: KILTER_BOARD_TYPE,
+      candidateFilter: syncableKilterCredentialsFilter(),
+    });
+    let tokenProvider: KilterTokenProvider;
+    let tokenSource: 'credential' | 'password';
+    if (donor) {
+      // Pinned to the link it was picked under: after a relink mid-run the
+      // provider fails (DONOR_RELINKED) instead of refreshing the new link's token.
+      tokenProvider = await this.buildUserTokenProvider(
+        donor.userId,
+        donor.id === undefined ? undefined : { credentialId: donor.id, linkGeneration: donor.linkGeneration ?? null },
+      );
+      tokenSource = 'credential';
+    } else if (environment.KILTER_TEST_USERNAME && environment.KILTER_TEST_PASSWORD) {
+      tokenProvider = this.buildPasswordTokenProvider(
+        environment.KILTER_TEST_USERNAME,
+        environment.KILTER_TEST_PASSWORD,
+      );
+      tokenSource = 'password';
+    } else {
+      return { status: 'no_donor' };
+    }
+
+    const cooldownMs = Math.max(0, options.cooldownMs ?? this.getCatalogSyncCooldownMs());
+    const cursor = { boardType: KILTER_BOARD_TYPE, cursorName: CATALOG_SYNC_COOLDOWN_CURSOR };
+    const { transaction, signal } = options;
+    const write: SyncBatchRunner = transaction ?? ((callback) => callback(db));
+    const claimToken = await write((tx) =>
+      claimSharedSyncSlot(tx, { ...cursor, cooldownMs, ownerRunId: options.runId }),
+    );
+    if (claimToken === null) return { status: 'cooldown', lastRunAt: await readSharedSyncCursor(db, cursor) };
+
+    // Measure the cooldown from the claim, not the end of the run: see
+    // aurora-sync's runSharedSyncJob.
+    const startedAt = Date.now();
+    const fromStart = () => Math.max(0, cooldownMs - (Date.now() - startedAt));
+    let nextCooldownMs = cooldownMs;
+    let providerHoldMs: number | undefined;
+    try {
+      this.log(`[kilter-catalog] scheduled catalog sync (${tokenSource} token)`);
+      await syncKilterCatalog({
+        db,
+        tokenProvider,
+        log: (message) => this.log(message),
+        applyDeletions: this.config.applyCatalogDeletions ?? true,
+        deleteBatchLimit: this.config.deleteBatchLimit,
+        signal,
+        transaction,
+        // Keys the run's setter notifications, so a retry of this run does not
+        // notify anyone twice.
+        runKey: options.runId,
+      });
+      signal?.throwIfAborted();
+      await this.maybeRepairKilterStats(db, tokenProvider, { transaction, signal });
+      signal?.throwIfAborted();
+      await this.maybeSnapshotHistory(db, { transaction, signal });
+      nextCooldownMs = fromStart();
+      return { status: 'synced', tokenSource };
+    } catch (error) {
+      const permanent = !options.signal?.aborted && error instanceof KilterApiError && !isTransientKilterError(error);
+      nextCooldownMs = permanent ? fromStart() : Math.min(TRANSIENT_CATALOG_SYNC_COOLDOWN_MS, cooldownMs);
+      // Kilter said how long to wait (429 with Retry-After): keep the slot
+      // closed that long, at least the five-minute retry cooldown, and hold the
+      // donor credential whose token was throttled (the test account has none).
+      if (!options.signal?.aborted && error instanceof KilterApiError && error.retryAfterMs !== undefined) {
+        providerHoldMs = Math.max(
+          TRANSIENT_CATALOG_SYNC_COOLDOWN_MS,
+          Math.min(error.retryAfterMs, SHARED_SYNC_PROVIDER_HOLD_CAP_MS),
+        );
+        this.log(`[kilter-catalog] PROVIDER_THROTTLED: holding the catalog for ${providerHoldMs} ms`);
+        if (donor) await this.holdDonorSafely(donor, providerHoldMs, transaction, db);
+      }
+      throw error;
+    } finally {
+      await this.stampCatalogSyncFinishedSafely(
+        db,
+        cursor,
+        claimToken,
+        cooldownMs,
+        nextCooldownMs,
+        transaction,
+        providerHoldMs,
+      );
+    }
+  }
+
+  /**
+   * Put the donor credential inside the provider's hold
+   * (`provider_retry_after_until`), so neither the routine claim nor the next
+   * donor pick uses it before then. Only the hold: no failure is recorded
+   * against a borrowed credential. Best effort, never throws.
+   */
+  private async holdDonorSafely(
+    donor: { userId: string; id?: bigint; linkGeneration?: string | null },
+    holdMs: number,
+    transaction: SyncBatchRunner | undefined,
+    db: RunnerDb,
+  ): Promise<void> {
+    try {
+      // Bound to the link the donor was borrowed under: a relink during the
+      // run leaves its replacement credential unheld. (Its own token refresh
+      // during the run moves updated_at, so the link generation, not
+      // updated_at, is what identifies it.)
+      const onlyLink =
+        donor.id === undefined ? undefined : { id: donor.id, linkGeneration: donor.linkGeneration ?? null };
+      const hold = (database: RunnerDb) =>
+        deferCredentialSyncAttempt(database, {
+          userId: donor.userId,
+          boardType: KILTER_BOARD_TYPE,
+          delayMs: holdMs,
+          ...(onlyLink ? { onlyLink } : {}),
+        });
+      if (transaction) await transaction(hold);
+      else await hold(db);
+    } catch (holdError) {
+      this.log(`[kilter-catalog] could not hold the donor credential: ${String(holdError)}`);
     }
   }
 
@@ -568,35 +752,52 @@ export class SyncRunner {
    * with the same token provider. Errors are swallowed (logged) so a repair
    * failure never fails the catalog cycle.
    */
-  private async maybeRepairKilterStats(db: RunnerDb, tokenProvider: KilterTokenProvider): Promise<void> {
+  async maybeRepairKilterStats(
+    db: RunnerDb,
+    tokenProvider: KilterTokenProvider,
+    options: Pick<CatalogSyncJobOptions, 'transaction' | 'signal'> = {},
+  ): Promise<void> {
     if (!(await isWeeklyCursorDue(db, KILTER_BOARD_TYPE, SyncRunner.KILTER_STATS_REPAIR_CURSOR))) {
       return;
     }
     this.log('[kilter-stats-repair] weekly reconciliation is due — applying');
+    const write: SyncBatchRunner = options.transaction ?? ((callback) => callback(db));
     try {
       const summary = await repairKilterCatalogStats({
         db,
         tokenProvider,
         apply: true,
         log: (message) => this.log(message),
+        signal: options.signal,
+        transaction: options.transaction,
       });
       // Commit the watermark only on success so a failed repair retries next
       // cycle instead of skipping the week.
-      await markWeeklyCursorDone(db, KILTER_BOARD_TYPE, SyncRunner.KILTER_STATS_REPAIR_CURSOR);
+      await write((tx) => markWeeklyCursorDone(tx, KILTER_BOARD_TYPE, SyncRunner.KILTER_STATS_REPAIR_CURSOR));
       this.log(
         `[kilter-stats-repair] applied — ${summary.changedKilterRows} count rows, ` +
           `${summary.formulaRowsRecomputed} formula rows`,
       );
     } catch (error) {
+      // A lost attempt fence or an abort stops the job; anything else is the
+      // repair's own failure and must not fail the catalog run.
+      if (options.signal?.aborted || isSyncFenceError(error)) throw error;
       this.handleError(error instanceof Error ? error : new Error(String(error)), { board: KILTER_BOARD_TYPE });
     }
   }
 
   /** Weekly board_climb_stats_history snapshot for kilter (see item 5). */
-  private async maybeSnapshotHistory(db: RunnerDb): Promise<void> {
+  async maybeSnapshotHistory(
+    db: RunnerDb,
+    options: Pick<CatalogSyncJobOptions, 'transaction' | 'signal'> = {},
+  ): Promise<void> {
     try {
-      await snapshotClimbStatsHistoryIfDue(db, KILTER_BOARD_TYPE, (message) => this.log(message));
+      const snapshot = (database: RunnerDb) =>
+        snapshotClimbStatsHistoryIfDue(database, KILTER_BOARD_TYPE, (message) => this.log(message));
+      if (options.transaction) await options.transaction(snapshot);
+      else await snapshot(db);
     } catch (error) {
+      if (options.signal?.aborted || isSyncFenceError(error)) throw error;
       this.handleError(error instanceof Error ? error : new Error(String(error)), { board: KILTER_BOARD_TYPE });
     }
   }
@@ -650,9 +851,9 @@ export class SyncRunner {
   }
 
   /** Build a refresh-grant token provider from a linked user's stored credential. */
-  async buildUserTokenProvider(userId: string): Promise<KilterTokenProvider> {
+  async buildUserTokenProvider(userId: string, binding?: StoredTokenLinkBinding): Promise<KilterTokenProvider> {
     const { db } = this.getClient();
-    return () => getStoredKilterAccessToken(db, userId, this.getKeycloakClient());
+    return () => getStoredKilterAccessToken(db, userId, this.getKeycloakClient(), false, binding);
   }
 
   /** Build a ROPC token provider for local testing (KILTER_TEST_USERNAME/PASSWORD). */
@@ -679,7 +880,13 @@ export class SyncRunner {
    * the same user and syncing them twice.
    */
   private async getNextCredentialToSync(db: RunnerDb): Promise<KilterCredentialRecord | null> {
-    return claimNextCredentialForSync(db, { candidateFilter: this.syncableCredentialsFilter() });
+    return claimNextCredentialForSync(db, {
+      candidateFilter: this.syncableCredentialsFilter(),
+      // Skip an account a background job is syncing right now (a live lease
+      // on its provider_sync_controls row), so a daemon and a worker never sync
+      // one credential at the same time.
+      excludeLeased: true,
+    });
   }
 
   private async getCredential(db: RunnerDb, userId: string): Promise<KilterCredentialRecord | null> {
@@ -725,6 +932,12 @@ export class SyncRunner {
   }
 
   async runDaemon(options: DaemonOptions = {}): Promise<void> {
+    // The worker families own routine syncs once this is set; see
+    // docs/kilter-sync.md. Checked before the lease or the pool is touched.
+    if (isSyncDaemonDisabled(process.env)) {
+      this.log(`[KilterSyncRunner] ${SYNC_DAEMON_DISABLED_MESSAGE}`);
+      return;
+    }
     const resolved: ResolvedDaemonOptions = resolveDaemonOptions(options);
     this.daemonController = new AbortController();
     const lease = this.getLease();

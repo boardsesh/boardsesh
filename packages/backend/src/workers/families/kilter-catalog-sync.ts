@@ -1,0 +1,122 @@
+import { z } from 'zod';
+import { logger } from '../../utils/logger';
+import { boundedErrorFields } from './job-logging';
+import { BackgroundJobError, type BackgroundJobFamilyModule } from './types';
+import { BOARD_WIDE_FAN_OUT_DEADLINE_SECONDS, KILTER_CATALOG_SYNC_BUDGET } from './fan-out-budget';
+
+const kilterCatalogSyncPayload = z.object({}).strict();
+
+export type KilterCatalogSyncPayload = z.infer<typeof kilterCatalogSyncPayload>;
+
+/** As `AURORA_SHARED_SYNC_COOLDOWN_MS`: under the hourly cron, so the end-of-run stamp never skips a tick. */
+export const KILTER_CATALOG_SYNC_COOLDOWN_MS = 50 * 60 * 1000;
+
+/**
+ * The Kilter daemon's catalog piggyback, on its own schedule: the full Kilter
+ * catalog (climbs, stats, aliases, locations, deletions applied as the daemon
+ * applies them), then the weekly stats repair and weekly history snapshot, each
+ * behind its own 7-day cursor in `board_shared_syncs`.
+ *
+ * The token comes from the most recently successful linked Kilter account
+ * (refreshed exactly as a user sync refreshes it, in its own `FOR UPDATE`
+ * transaction), else the `KILTER_TEST_USERNAME`/`KILTER_TEST_PASSWORD` account.
+ * The daemon's catalog cooldown slot keeps it to one writer: refused is a
+ * logged `CATALOG_SYNC_COOLDOWN`, no token source a logged
+ * `CATALOG_SYNC_NO_DONOR`, both successful runs with no work.
+ *
+ * Every write batch goes through the attempt fence (`context.transaction`):
+ * the slot claim and stamp, each layout flush and stats chunk (at most 5000
+ * rows), the backlog, layout aliases, locations (25 gyms a batch), setter
+ * notifications, the deletion apply, the weekly repair's apply and watermark,
+ * and the history snapshot. A run that outlived its lease or lost its attempt
+ * throws at its next batch instead of writing on beside its replacement.
+ * Kilter's REST and PowerSync requests run between batches and take the run
+ * signal; the REST client honours Retry-After on its own. The weekly repair's
+ * apply stays one atomic transaction (the authoritative upsert plus the
+ * materialized recompute), so on a very large catalog it is the batch closest
+ * to the 300 s heartbeat window.
+ */
+export const kilterCatalogSyncFamily: BackgroundJobFamilyModule<KilterCatalogSyncPayload> = {
+  name: 'kilter-catalog-sync',
+  roles: ['routine-provider'],
+  options: {
+    expireInSeconds: KILTER_CATALOG_SYNC_BUDGET.expireInSeconds,
+    retryLimit: KILTER_CATALOG_SYNC_BUDGET.retryLimit,
+    retryDelay: KILTER_CATALOG_SYNC_BUDGET.retryDelay,
+    retryBackoff: true,
+    retryDelayMax: KILTER_CATALOG_SYNC_BUDGET.retryDelay,
+    // Queued at :23, it can wait behind every hour-long :07 shared sync on
+    // the one-at-a-time worker at the same priority: the full-fan-out
+    // budget (fan-out-budget.ts), so it runs late instead of expiring at claim.
+    deadlineSeconds: BOARD_WIDE_FAN_OUT_DEADLINE_SECONDS,
+    // Equal to the routine cycle, so FIFO order keeps it from waiting behind
+    // an endless stream of cycles (docs/background-workers.md, "Queue share").
+    priority: 0,
+    heartbeatSeconds: 300,
+  },
+  payload: kilterCatalogSyncPayload,
+  singletonKey: () => 'kilter',
+  schedules: [{ key: 'hourly', cron: '23 * * * *', fanOut: async () => [{ payload: {} }] }],
+  async execute(context) {
+    // Loaded here, not at module scope; see loadProviderSyncAdapter.
+    const [{ SyncRunner }, { DonorRelinkedError, KilterApiError, isTransientKilterError }] = await Promise.all([
+      import('@boardsesh/kilter-sync/runner'),
+      import('@boardsesh/kilter-sync/api'),
+    ]);
+    const runner = new SyncRunner({
+      db: context.database,
+      signal: context.signal,
+      onLog: (message) => logger.debug(message, { runId: context.runId, family: context.family }),
+      // A step the runner swallows (a crawl, the weekly repair) still leaves a
+      // trace: the error's class and SQLSTATE, never its message.
+      onError: (error) =>
+        logger.warn('[worker] catalog sync step failed', {
+          runId: context.runId,
+          family: context.family,
+          ...boundedErrorFields(error),
+        }),
+    });
+    const logContext = { runId: context.runId, family: context.family };
+    let result;
+    try {
+      result = await runner.runCatalogSyncJob({
+        signal: context.signal,
+        transaction: context.transaction,
+        cooldownMs: KILTER_CATALOG_SYNC_COOLDOWN_MS,
+        // A retry of this run re-claims the slot this run left claimed.
+        runId: context.runId,
+      });
+    } catch (error) {
+      if (context.signal.aborted) throw error;
+      // The borrowed donor was relinked mid-run: its token is the new link's
+      // now. Retry, and the next attempt picks a donor afresh.
+      if (error instanceof DonorRelinkedError) throw new BackgroundJobError('DONOR_RELINKED');
+      if (!(error instanceof KilterApiError)) throw error;
+      if (error.retryAfterMs !== undefined) {
+        // Kilter asked us to wait: the runner closed the slot and held the
+        // donor for that long, so a pg-boss retry minutes from now could only
+        // find the slot closed. The next hourly tick after the hold runs it.
+        logger.warn('[worker] catalog sync throttled', {
+          runId: context.runId,
+          family: context.family,
+          code: 'PROVIDER_THROTTLED',
+          retryAfterMs: error.retryAfterMs,
+        });
+        return;
+      }
+      if (isTransientKilterError(error)) throw new BackgroundJobError('PROVIDER_UNAVAILABLE');
+      throw new BackgroundJobError('CATALOG_SYNC_FAILED', { retryable: false });
+    }
+    if (result.status === 'cooldown') {
+      logger.info('[worker] catalog sync skipped', {
+        ...logContext,
+        code: 'CATALOG_SYNC_COOLDOWN',
+        lastRunAt: result.lastRunAt?.toISOString() ?? null,
+      });
+    } else if (result.status === 'no_donor') {
+      logger.warn('[worker] catalog sync skipped', { ...logContext, code: 'CATALOG_SYNC_NO_DONOR' });
+    } else {
+      logger.info('[worker] catalog sync finished', { ...logContext, tokenSource: result.tokenSource });
+    }
+  },
+};

@@ -20,8 +20,29 @@ export type BackgroundJobContext = {
   runId: string;
   family: BackgroundJobFamilyName;
   signal: AbortSignal;
+  /**
+   * When this attempt's pg-boss lease ends (epoch ms). `signal` aborts at it;
+   * a family that wants to stop cleanly before then (and record why) derives
+   * its own, earlier deadline from this.
+   */
+  expiresAt: number;
   database: DbInstance;
   transaction<T>(callback: (transaction: BackgroundJobTransaction) => Promise<T>): Promise<T>;
+  /**
+   * Queue another family's run inside one of this run's transactions, so the
+   * run commits (or rolls back) with that batch. Same semantics as
+   * `enqueueBackgroundJobOn`, on this worker's queue client.
+   */
+  enqueue(
+    transaction: BackgroundJobTransaction,
+    input: {
+      family: string;
+      payload: unknown;
+      role?: BackgroundWorkerRole;
+      singletonKey?: string;
+      startAfterSeconds?: number;
+    },
+  ): Promise<{ runId: string; alreadyQueued: boolean }>;
 };
 
 /** Per-job pg-boss options plus the ledger deadline, applied at `send()` time. */
@@ -36,6 +57,8 @@ export type BackgroundJobFamilyOptions = {
   deadlineSeconds: number;
   /** pg-boss heartbeat window; must be at least 10. */
   heartbeatSeconds: number;
+  /** pg-boss fetch priority on the role's queue: higher runs first. Defaults to 0. */
+  priority?: number;
 };
 
 export type BackgroundJobScheduleRequest<Payload> = {
@@ -83,6 +106,20 @@ export type BackgroundJobFamilyModule<Payload = unknown> = {
  * `retryable: false` ends the run now instead of spending pg-boss retries on a
  * failure no retry can fix. Any other thrown error records `ATTEMPT_FAILED`.
  */
+/**
+ * A payload the family's schema refuses, at enqueue. Its message stays the
+ * bare `INVALID_PAYLOAD` code that callers log and summarise; code that needs
+ * to tell it apart from other failures checks the class, never the message.
+ */
+export class InvalidJobPayloadError extends Error {
+  readonly code = 'INVALID_PAYLOAD';
+
+  constructor() {
+    super('INVALID_PAYLOAD');
+    this.name = 'InvalidJobPayloadError';
+  }
+}
+
 export class BackgroundJobError extends Error {
   readonly code: string;
   readonly retryable: boolean;

@@ -23,6 +23,11 @@ describe('family registry', () => {
       'refresh-moonboard-wide-angle-estimates',
       'aurora-user-sync',
       'kilter-user-sync',
+      'provider-routine-cycle',
+      'aurora-shared-sync',
+      'kilter-catalog-sync',
+      'moonboard-locations-sync',
+      'climb-stats-self-heal',
     ]);
     expect(() => requireFamily('no-such-family')).toThrow('UNKNOWN_FAMILY');
   });

@@ -1,7 +1,6 @@
 import { z } from 'zod';
-import { logger } from '../../utils/logger';
 import { providerSyncUserId } from './aurora-user-sync';
-import { runProviderSync } from './provider-sync-batch';
+import { loadProviderSyncAdapter, runProviderSync } from './provider-sync-batch';
 import type { BackgroundJobFamilyModule } from './types';
 
 const kilterUserSyncPayload = z
@@ -9,7 +8,7 @@ const kilterUserSyncPayload = z
     userId: providerSyncUserId,
     boardType: z.literal('kilter'),
     linkGeneration: z.uuid(),
-    requestedBy: z.enum(['link', 'manual']),
+    requestedBy: z.enum(['link', 'manual', 'routine']),
   })
   .strict();
 
@@ -35,32 +34,15 @@ export const kilterUserSyncFamily: BackgroundJobFamilyModule<KilterUserSyncPaylo
     deadlineSeconds: 7200,
     // A fenced batch holds the run-row lock, so no heartbeat lands while one
     // runs, and pg-boss fails the job at heartbeat_on + this. That makes it
-    // the ceiling on one batch: a first sync's biggest (one Aurora page or one
-    // 500-op Kilter flush, plus its stats recompute, or all circuits at once)
-    // over a homelab-to-Railway link must finish inside it.
+    // the ceiling on one batch: a first sync's biggest (one Aurora page, one
+    // 500-op Kilter flush or all circuits at once; the stats recompute runs
+    // after each, in batches of at most 500 keys) over a homelab-to-Railway
+    // link must finish inside it.
     heartbeatSeconds: 300,
   },
   payload: kilterUserSyncPayload,
   singletonKey: (payload) => `${payload.userId}:${payload.boardType}:${payload.linkGeneration}`,
   async execute(context, payload) {
-    // Loaded here, not at module scope: the registry is imported on every
-    // backend, operator and worker boot, and the sync runners pull in the
-    // whole provider stack that only this family's worker ever runs.
-    const { SyncRunner, syncableKilterCredentialsFilter } = await import('@boardsesh/kilter-sync/runner');
-    await runProviderSync(context, payload, {
-      candidateFilter: syncableKilterCredentialsFilter(),
-      async sync(credential, transaction) {
-        const runner = new SyncRunner({
-          db: context.database,
-          onLog: (message) => logger.debug(message, { runId: context.runId, family: context.family }),
-          onError: () => {},
-        });
-        return runner.runCycleForCredential(context.database, credential, {
-          transaction,
-          signal: context.signal,
-          skipCatalogSync: true,
-        });
-      },
-    });
+    await runProviderSync(context, payload, await loadProviderSyncAdapter(context, 'kilter'));
   },
 };

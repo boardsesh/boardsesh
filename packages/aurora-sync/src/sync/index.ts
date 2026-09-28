@@ -6,7 +6,13 @@ export {
   climbCharacteristicsConflictSql,
   upsertClimbStats,
 } from './shared-sync';
-export type { SharedSyncResult, NewClimbInfo, ClimbStatsWriteCounts } from './shared-sync';
+export type {
+  SharedSyncResult,
+  NewClimbInfo,
+  ClimbStatsWriteCounts,
+  SharedSyncBatchRunner,
+  SyncSharedDataOptions,
+} from './shared-sync';
 export {
   AURORA_LOCATION_BOARDS,
   buildAuroraLocationRecords,

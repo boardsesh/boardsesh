@@ -8,9 +8,10 @@ registry: every job names a family, and the worker dispatches on it.
 batch families, PR-B2 the two weekly MoonBoard estimate families and PR-B3
 the similar-climbs refresh (below); each stays off until
 `BATCH_FAMILIES_ENABLED` names it, and its GitHub Actions workflow keeps
-running until the cutover. **Personal imports, delivery and the other cron
-migrations are still separate issues.** Starting this image does not replace
-a sync daemon.
+running until the cutover. PR-2 adds the first-link and "Sync now" provider
+syncs; PR-3 the routine provider cycle, the board-wide catalog and location
+syncs, and the stats self-heal (see "Routine provider sync"). The Aurora and
+Kilter daemons keep owning routine syncs until the documented cutover.
 
 ## Placement and connection budget
 
@@ -40,7 +41,9 @@ literal `false` enables consumption. A connected paused worker is healthy and
 reports its paused state separately. A paused worker also skips the
 provider-secret check below that would otherwise refuse to start it, warning
 once with the missing env var names instead and reporting
-`providerSecretsReady: false` on `/health`.
+`providerSecretsReady: false` on `/health`. `ROUTINE_CYCLE_MAX_CREDENTIALS` and
+`ROUTINE_CYCLE_BUDGET_MS` (see "Routine provider sync") are validated at startup
+for every role; an invalid value fails startup.
 
 Both drivers check the actual writable primary. Remote URLs require
 `sslmode=verify-full`, disallow conflicting/overriding connection parameters,
@@ -87,12 +90,48 @@ remain supported.
 | --- | --- |
 | SELECT, UPDATE | `aurora_credentials`, `provider_sync_controls` |
 | SELECT | `users (id, name)`, `user_profiles (user_id, display_name)`, `user_board_mappings`, `board_climb_aliases` |
-| SELECT, INSERT, UPDATE, DELETE | `boardsesh_ticks`, `logbook_sync_skips`, `board_users`, `board_walls`, `board_climbs`, `board_tags`, `board_circuits`, `board_user_syncs`, `board_climb_stats`, `board_climb_ratings`, `playlists`, `playlist_climbs`, `playlist_ownership` |
+| SELECT, INSERT, UPDATE, DELETE | `boardsesh_ticks`, `logbook_sync_skips`, `board_users`, `board_walls`, `board_climbs`, `board_tags`, `board_circuits`, `board_user_syncs`, `board_climb_stats`, `board_climb_ratings`, `playlists`, `playlist_climbs`, `playlist_ownership`, `climb_stats_recompute_pending` |
 | INSERT | `sync_deletions` (the `boardsesh_ticks` and `playlist*` delete triggers write it as the caller) |
 
 It is proven, not trusted: `services/__tests__/job-queue-roles.test.ts` runs a
 whole Aurora user sync (every applier branch) as a NOLOGIN role holding only
 these grants. A table the appliers start writing fails that test first.
+
+`routine-provider` adds what the board-wide families write
+(`ROUTINE_PROVIDER_EXTRA_GRANTS`):
+
+| Grant | Tables |
+| --- | --- |
+| SELECT, INSERT, UPDATE | `board_products`, `board_sets`, `board_product_sizes`, `board_holes`, `board_layouts`, `board_placement_roles`, `board_leds`, `board_placements`, `board_product_sizes_layouts_sets`, `board_beta_links`, `board_attempts`, `board_kits`, `board_climb_holds`, `board_shared_syncs`, `board_layout_aliases`, `board_climb_ingest_skips`, `gyms`, `user_boards`, `location_sync_gym_sources`, `kilter_wall_sources` |
+| SELECT, INSERT, UPDATE, DELETE | `board_climb_aliases` (Kilter's folded aliases and the deletions that drop them) |
+| SELECT, INSERT | `board_climb_stats_history`, `notifications` |
+| SELECT | `setter_follows`, `user_follows`, `gym_claims`, `gym_members`, `gym_follows`, `comments (entity_id, entity_type, deleted_at)` |
+| INSERT | `provider_sync_controls` (a control row for a credential linked before rows existed), `users (id, name, email, emailVerified, image, created_at, updated_at)` (the system user that owns public catalog boards; none of it readable) |
+
+`maintenance-delivery` gets exactly what `climb-stats-self-heal` needs
+(`CLIMB_STATS_SELF_HEAL_GRANTS`):
+
+| Grant | Tables |
+| --- | --- |
+| SELECT | `boardsesh_ticks (id, user_id, board_type, climb_uuid, angle, status, origin, quality, difficulty, climbed_at, updated_at, kilter_id, kilter_synced_at, kilter_detached_at)`, `board_climbs (uuid, board_type, user_id)`, `users (id, name)`, `user_profiles (user_id, display_name)` |
+| SELECT, INSERT, UPDATE | `board_climb_stats` |
+| SELECT, INSERT, UPDATE, DELETE | `climb_stats_recompute_pending` (UPDATE because the drain reads it `FOR UPDATE SKIP LOCKED`; INSERT because every recompute batch first upserts a marker per key to hold its lock) |
+
+No application SQL function is called directly; the trigger functions these
+writes fire (the `sync_seq` stamps, the location triggers) run as the caller,
+and their sequences are owned by the tables the role may INSERT into, so the
+migrator's sequence grant covers them. PostGIS functions keep their default
+`EXECUTE` for `PUBLIC`.
+
+Both lists are proven by `services/__tests__/job-queue-roles-routine.test.ts`,
+which runs every routine family end to end as the restricted roles with the
+providers' HTTP replaced by fixtures, and fails on a failed run or on any
+`permission denied` (or SQLSTATE `42501`) a runner swallowed and logged. The
+backend test schema has no PostGIS and no Kilter catalog tables, so CI proves
+the routine cycle, the Aurora shared catalog and the self-heal; the full proof
+(gym locations, MoonBoard, the Kilter catalog) runs against a migrated database
+named by `ROUTINE_GRANTS_DATABASE_URL`, such as the dev DB image with its
+pending migrations applied. Run it before changing either list.
 
 ## Queues
 
@@ -161,6 +200,11 @@ module. The module declares:
 | `refresh-moonboard-wide-angle-estimates` | `batch` | 7,200 s | 1, after 900 s | 6 days | `weekly` |
 | `aurora-user-sync` | `interactive-import` | 1800 s (heartbeat 300 s) | 3, 30 s backoff to 300 s | 2 h | `userId:boardType:linkGeneration` |
 | `kilter-user-sync` | `interactive-import` | 1800 s (heartbeat 300 s) | 3, 30 s backoff to 300 s | 2 h | `userId:kilter:linkGeneration` |
+| `provider-routine-cycle` | `routine-provider` | 600 s (heartbeat 300 s) | none | 48 600 s (the fan-out budget) | `aurora` / `kilter` |
+| `aurora-shared-sync` | `routine-provider` | 3600 s (heartbeat 300 s) | 1, after 300 s | 48 600 s (the fan-out budget) | the board |
+| `kilter-catalog-sync` | `routine-provider` | 3600 s (heartbeat 300 s) | 1, after 300 s | 48 600 s (the fan-out budget) | `kilter` |
+| `moonboard-locations-sync` | `routine-provider` | 1800 s (heartbeat 120 s) | 1, after 600 s | 24 h | `moonboard` |
+| `climb-stats-self-heal` | `maintenance-delivery` | 900 s (heartbeat 120 s) | 1, after 300 s | 1 h | `climb-stats` |
 
 Throw `BackgroundJobError(code)` from `execute` to record a bounded,
 credential-free `error_code` (`/^[A-Z][A-Z0-9_]{0,63}$/`); pass
@@ -488,8 +532,9 @@ already landed.
 
 `aurora-user-sync` and `kilter-user-sync` sync one climber's linked account:
 right after they link it, and when they tap "Sync now". The payload is
-`{ userId, boardType, linkGeneration, requestedBy: 'link' | 'manual' }`; it
-names the account, never how to log in. Worker startup fails when a role serves
+`{ userId, boardType, linkGeneration, requestedBy: 'link' | 'manual' | 'routine' }`
+(`routine`: the routine cycle handed over a never-synced account); it names the
+account, never how to log in. Worker startup fails when a role serves
 either family and `AURORA_CREDENTIALS_SECRET` (both) or `KILTER_OAUTH_CLIENT_ID`
 (Kilter) is missing.
 
@@ -518,11 +563,25 @@ The Kilter token refresh keeps its own unfenced `FOR UPDATE` transaction on the
 credential row, exactly as the daemon runs it. A fenced batch holds the run-row lock, so
 no heartbeat lands while it runs, and pg-boss fails an active job at
 `heartbeat_on + heartbeatSeconds`. The families' 300 s heartbeat window is
-therefore a hard ceiling on one batch: one Aurora page or one 500-op Kilter
-flush, each with the stats recompute it triggers, or the whole circuits phase.
-A batch that needs longer can never succeed. First syncs fit today; PR-3's
-routine cycle must move `recomputeClimbStatsBulk` out of the page transaction
-into its own chunked batches rather than lean on this window.
+therefore a hard ceiling on one batch: one Aurora page, one 500-op Kilter
+flush, or the whole circuits phase. A batch that needs longer can never
+succeed. The stats recompute those batches trigger is not part of them: with a
+batch runner the appliers write the `(climb, angle)` keys they touched to
+`climb_stats_recompute_pending` in the page or flush transaction itself (an
+upsert, so the key commits with the ticks), and after the page or flush commits
+the keys are recomputed in batches of at most 500 (`DeferredClimbStatsRecompute`:
+upsert a pending row per key, inserting one where none exists, which holds its
+lock for the whole batch; one seed INSERT, one aggregate UPDATE; delete only the
+rows it observed, at no newer `requested_at`), every batch its own fenced
+transaction. A page re-marking one of those keys waits on that lock, so its
+marker lands after the batch commits and survives. The daemons, which pass no
+batch runner, keep the inline recompute; only their hourly self-heal writes the
+table, through the same batches. A worker that stops between
+a page and its recompute leaves the rows behind, and the hourly
+`climb-stats-self-heal` drains every row older than two minutes, oldest first.
+That covers what its tick scan cannot see: a key with no stats row yet (a
+first-link climber's own climbs), a key whose tick was deleted or downgraded,
+and keys past the scan's 5000-row limit.
 
 ### One run
 
@@ -534,7 +593,8 @@ into its own chunked batches rather than lean on this window.
    30 s reclaim gap, no backoff, but the daemon's own eligibility filter, so an
    expired credential is `CREDENTIAL_UNAVAILABLE`.
 3. Run the provider sync with `skipSharedSync` / `skipCatalogSync`: the
-   board-wide half stays with the daemon (and later its own family).
+   board-wide half runs on its own schedule (`aurora-shared-sync`,
+   `kilter-catalog-sync`), or piggybacked on the daemon until the cutover.
 4. Release the lease and clear `pending_run_id`, unless a retry is coming.
 
 | Error code | Retries | Meaning |
@@ -548,6 +608,17 @@ into its own chunked batches rather than lean on this window.
 A credential failure goes through the same bookkeeping as the daemon
 (`consecutive_failures`, `last_sync_error`, status rules). A fence refusal or an
 abort is never recorded against the account.
+
+A provider 429 with `Retry-After` is not an error code: the attempts pg-boss
+would retry with (seconds to minutes apart) would all land inside a window
+the provider often sets at an hour. The run instead queues a follow-up of the
+same family and payload with `startAfter` set to the delay (at most 6 h; the
+follow-up's deadline counts from then), records it as `pending_run_id` and
+sets the credential's `provider_retry_after_until` (so the routine claim waits
+too; the 429's failure step is taken back) in the lease holder's fenced
+transaction, logs `PROVIDER_THROTTLED` and succeeds. The
+singleton key is unchanged, so a run already queued for the account absorbs
+the follow-up instead.
 
 ### Producers, "Sync now" and coalescing
 
@@ -587,12 +658,258 @@ board's family is enabled, so the app hides "Sync now" until it is.
    made before the worker is up queues a run nobody consumes, and its card reads
    "Syncing" until the run's 2 h deadline.
 
-The daemons keep running and keep owning routine syncs until PR-3. The overlap
-costs at most one duplicate, idempotent sync of a just-linked account: the
-daemon claim does not look at the lease yet. Rollback, in reverse: remove the
+The daemons keep running and keep owning routine syncs until the routine
+cutover below. Their claim skips an account a run holds a live lease on
+(`excludeLeased`), so a daemon never starts syncing an account a worker is
+syncing; a daemon sync already in flight when a link lands costs at most one
+duplicate, idempotent sync. Rollback, in reverse: remove the
 families from `BATCH_FAMILIES_ENABLED` first, then pause the worker once its
 queue is empty; runs left queued expire at their deadline and the reconciler
 clears the control rows.
+
+## Routine provider sync
+
+Five families take over what the Aurora and Kilter daemons do on their own
+clock, plus MoonBoard's locations, which had no schedule at all. All run on the
+`routine-provider` worker except the self-heal, which runs on
+`maintenance-delivery`. Worker startup refuses a role that serves
+`provider-routine-cycle`, `aurora-shared-sync` or `kilter-catalog-sync` without
+`AURORA_CREDENTIALS_SECRET` (and `KILTER_OAUTH_CLIENT_ID` for the two that touch
+Kilter); MoonBoard's credentials are optional.
+
+| Family | Cron (UTC) | Fan-out | What one run does |
+| --- | --- | --- | --- |
+| `provider-routine-cycle` | `*/5 * * * *` | `{ provider: 'aurora' }`, `{ provider: 'kilter' }` | Syncs the next due credentials of one provider |
+| `aurora-shared-sync` | `7 * * * *` | one per Aurora board but Kilter, least recently synced first | Shared `/sync`, history snapshot, gym locations, one wall-crawl slice |
+| `kilter-catalog-sync` | `23 * * * *` | one | Kilter catalog, weekly stats repair, weekly history snapshot |
+| `moonboard-locations-sync` | `41 3 * * *` | one | MoonBoard gyms and boards |
+| `climb-stats-self-heal` | `13 * * * *` | one | Re-derives stats rows a dropped or deferred recompute left behind |
+
+### The routine cycle
+
+Each run claims and syncs credentials one at a time until one of these stops
+it, then succeeds and logs `[worker] routine cycle finished` with the reason:
+
+| Stop | When |
+| --- | --- |
+| `MAX_CREDENTIALS` | `ROUTINE_CYCLE_MAX_CREDENTIALS` credentials attempted (default 4, 1 to 50): synced, failed or handed to the interactive family; a skipped credential (busy, relinked, out of lease) does not count |
+| `BUDGET` | `ROUTINE_CYCLE_BUDGET_MS` passed (default and maximum 120 000), checked before each claim; a started credential finishes |
+| `NO_CREDENTIALS` | nothing is due |
+| `PROVIDER_THROTTLED` | the provider answered 429 with `Retry-After`: that credential's `provider_retry_after_until` is set to `now() + delay` (capped at 6 h) and the failure step the 429 was charged is taken back. The claim waits for the later of that time and the failure backoff (`last_sync_attempt_at + backoff(n)`), never their sum, and the cycle ends |
+| `CYCLE_DEADLINE` | a credential's sync was still running one minute before the lease ends: it is stopped, a transient `CYCLE_DEADLINE` failure is recorded on it under the still-live fence (so `consecutive_failures` backoff parks it and `last_sync_error` shows it), and the cycle ends |
+| `CYCLE_DEADLINE_NEAR` | under a minute of the lease was left before the next claim (nothing is claimed, so no attempt clock moves), or before a claimed credential started (it is skipped, its lease handed back, nothing recorded on it) |
+| `CYCLE_LATE` | the cycle started with under a minute of its lease left: nothing loaded or claimed, zero tallies |
+| `ABORTED` | shutdown or a lost attempt; the run records the abort |
+
+Both limits are validated at worker startup. Why these numbers: 4 credentials
+every 5 minutes is 48 an hour per provider, about ten times the daemon's one
+every 1 to 15 minutes, on the worker's fixed 2 + 1 connections. The 3-minute
+budget leaves the rest of the 600 s lease for the credential in flight: an
+incremental Aurora sync is a login and one or two pages, a Kilter one a token
+refresh and one PowerSync snapshot. The 300 s heartbeat window bounds one
+fenced batch (a page, a 500-op flush, a 500-key recompute), not a credential;
+a credential gets its own deadline, one minute before the lease ends.
+
+An account that has never synced (`last_sync_at IS NULL`) is not synced in the
+cycle: a full first import can outlast a 600 s lease. The cycle hands it to its
+interactive family (`aurora-user-sync` / `kilter-user-sync`, 30-minute lease)
+with `requestedBy: 'routine'`, enqueued inside the fenced transaction, and
+records the run as `pending_run_id`. If a link or "Sync now" run is already
+pending it joins that run instead of queueing another. This needs the
+`interactive-import` worker to be running, which the provider sync cutover
+(above) already requires.
+
+### Queue share
+
+The `routine-provider` worker runs one job at a time, and every family on its
+queue has the same pg-boss priority (0), so pg-boss hands them out in the order
+they were queued. The arithmetic that keeps the board-wide jobs moving:
+
+- two routine cycles (Aurora and Kilter) are queued every 5 minutes, each
+  claiming credentials for at most `ROUTINE_CYCLE_BUDGET_MS` (120 000, also the
+  maximum). The budget is soft: the credential running when it passes
+  finishes, up to the lease. So each cycle takes 120 s plus that last
+  credential's overrun, and 2 x 120 s plus the overruns has to fit the 300 s
+  window with room left for `aurora-shared-sync`, `kilter-catalog-sync` and
+  `moonboard-locations-sync`;
+- those are singleton-keyed (one queued per board), so a board-wide job
+  queued at :07 waits for at most the cycles queued before it, never for the
+  cycles queued after it.
+
+Two things break this, so do neither: a board-wide family with a LOWER
+priority than the cycle (it would wait behind every cycle ever queued, since
+the cycles never run dry), and a larger budget (two cycles plus their last
+credentials' overrun would fill the whole 300 s). The worker refuses to start
+with `ROUTINE_CYCLE_BUDGET_MS` above 120 000, and the error states this
+arithmetic; lower is safer.
+
+The run's absolute deadline is the full-fan-out budget
+(`BOARD_WIDE_FAN_OUT_DEADLINE_SECONDS`, 13.5 hours today), not the
+lease's 10 minutes: the routine worker runs one job at
+a time, and a cycle queued just after :07 waits behind the whole hourly
+`aurora-shared-sync` fan-out, one run for every board in `AURORA_BOARDS` except
+Kilter (and the `kilter-catalog-sync` at :23), each with an
+hour's lease, at the same priority. With a shorter deadline such a cycle would
+already be past it when fetched and fail at claim, and the later ticks would
+coalesce onto that doomed run. A cycle that waited that long simply runs late;
+the next one is queued behind it (one queued plus one active per provider). A
+cycle that starts with under a minute of its lease left ends at once, before it
+loads the adapter or claims anything, with the usual `routine cycle finished`
+summary: `stop: CYCLE_LATE` and zero tallies.
+
+The claim is the daemon's `claimNextCredentialForSync` (attempt-clock fairness,
+failure backoff, the 30 s reclaim gap) with `excludeLeased`, run inside the
+attempt fence so a run gone stale cannot stamp an attempt clock. Each claimed
+credential then goes through `runRoutineCredentialSync`
+(`workers/families/provider-sync-batch.ts`), the same adapter and fences as a
+first-link sync: read the link generation (creating the control row of a
+credential linked before rows existed), take the lease, sync with every write
+behind `fencedBatchRunner`, release the lease. The claim's row is only a
+snapshot, so the transaction that takes the lease also re-reads the credential
+`FOR SHARE` (after the control row, the fenced-batch lock order) and syncs that
+row; if it was rewritten since the claim (a relink rotates the generation the
+fence was just read from and replaces the secrets), the lease goes straight
+back and the credential is a logged `CREDENTIAL_RELINKED` skip, left to the
+relink's own interactive run. A never-synced account is
+instead handed to its interactive family in one fenced transaction that takes
+the lease, queues (or joins) the interactive run, records it as pending and
+hands the lease back, so no committed lease sits between the check and the
+enqueue. `excludeLeased` is a required option: every claimer passes it. A lease another run holds, a
+relink or unlink mid-sync, or a lease lost mid-sync is a logged skip. A
+credential's own failure (bad password, provider down, a database error while
+applying) is recorded on the credential through the daemons' bookkeeping. None
+of these fails the run; only a database or queue error outside that
+bookkeeping, an abort or a lost attempt does. The run never retries: the next
+one is 5 minutes away.
+
+### The board-wide families
+
+`aurora-shared-sync` fans out one run for every board in `AURORA_BOARDS`
+except Kilter at :07, least recently synced board first (by its
+`board_shared_syncs` cooldown stamp; never-run boards lead). The routine worker
+runs one job at a time, so the last board can wait behind every other board's
+run and the Kilter catalog's, and each may use its hour's lease and its one
+retry. The deadline (`BOARD_WIDE_FAN_OUT_DEADLINE_SECONDS`, in
+`workers/families/fan-out-budget.ts`) is derived from both families' own
+options: boards x worst(shared) + worst(catalog) + an hour of slack for the
+routine cycles, where worst = lease x (1 + retryLimit) + retryDelay x
+retryLimit. Five boards give 5 x 7500 + 7500 + 3600 = 48 600 s, 13.5 hours. A
+late board runs late instead of expiring at claim, and a test fails if the
+options ever outgrow the budget. The Kilter catalog (queued at :23) and the routine
+cycle can wait behind the same runs, so they carry the same deadline.
+
+`aurora-shared-sync` and `kilter-catalog-sync` borrow a token from the board's
+most recently successful `active` credential (Kilter falls back to the
+`KILTER_TEST_USERNAME`/`KILTER_TEST_PASSWORD` account) and never record
+anything against it. They claim the daemons' `board_shared_syncs` cooldown slot
+with 50 minutes, measured from the claim: the slot is re-stamped when a run
+ends, backdated by the run's length, so however long a run takes the next
+hourly tick finds it free (and a second writer inside the hour is still turned
+away). A held slot succeeds as a logged
+`SHARED_SYNC_COOLDOWN` / `CATALOG_SYNC_COOLDOWN`, no credential to borrow as
+`SHARED_SYNC_NO_DONOR` / `CATALOG_SYNC_NO_DONOR`; neither does any work. A
+transient provider failure is a retryable `PROVIDER_UNAVAILABLE` and re-stamps
+a five-minute cooldown so the retry can claim; a permanent one is
+`SHARED_SYNC_FAILED` / `CATALOG_SYNC_FAILED` with no retry. A 429 with
+`Retry-After` closes the slot and holds the borrowed donor (bound to the link it
+was borrowed under) for that long, and the run succeeds as a logged
+`PROVIDER_THROTTLED`. A Kilter donor relinked mid-run is a retryable
+`DONOR_RELINKED`: its token belongs to the new link. A step the runner
+swallows on purpose (a wall crawl, the weekly stats repair) logs its error class
+and SQLSTATE, never its message, but a lost attempt fence or an abort is
+always rethrown. Both jobs write only through the attempt fence, the slot
+claim and stamp included, so a run that outlived its lease stops at its next
+batch instead of writing beside its replacement. The Aurora shared sync uses
+one transaction per Aurora page, per 25 gyms, and for the snapshot, heal and
+notifications. The Kilter catalog uses one per layout flush, per 5000 stats
+rows, and for the backlog, layout aliases, each 25-gym location batch, the
+wall sources, notifications, the deletion apply, the weekly repair's apply
+(one atomic transaction, the largest batch on a big catalog) and its
+watermark, and the history snapshot. Provider HTTP runs between batches and
+takes the run signal, the Kilter reference stream included. Details:
+[aurora-sync.md](aurora-sync.md#worker-families),
+[kilter-sync.md](kilter-sync.md#cooldown--piggyback).
+
+`moonboard-locations-sync` logs in with `MOONBOARD_USERNAME` /
+`MOONBOARD_PASSWORD`. Without them the run succeeds as a logged
+`MOONBOARD_CREDENTIALS_ABSENT` and writes nothing, not even a freshness marker
+([moonboard-sync.md](moonboard-sync.md#scheduled-sync)).
+
+`climb-stats-self-heal` first drains `climb_stats_recompute_pending` (rows
+older than two minutes, oldest first, `FOR UPDATE SKIP LOCKED`, up to
+`SELF_HEAL_MAX_DRAIN_BATCHES` batches of 500, default 20, 1 to 200; a drain
+that stops at the cap logs `SELF_HEAL_DRAIN_CAPPED` with the pending rows
+left, the sign of a backlog the hourly pass is not keeping up with), then scans flash and send ticks from the last 3 hours that are
+newer than their stats row (at most 5000 keys) and recomputes them in fenced
+batches of 500.
+
+### Routine cutover
+
+Exactly one owner at every step; never run the daemons and the families
+together.
+
+0. Prove the grants on a fully migrated database first: a private,
+   throwaway copy of the dev DB image, never a shared or remote database (and
+   never `vp run db:migrate`, which follows your `.env` wherever it points).
+   The full proof runs every routine family, gym locations and the Kilter
+   catalog included, as the restricted roles; CI runs only the test-schema
+   half.
+
+   ```bash
+   docker run -d --rm --name routine-grants-db -p 5440:5432 --shm-size=256m \
+     -e POSTGRES_PASSWORD=password -e POSTGRES_DB=main \
+     ghcr.io/boardsesh/boardsesh-dev-db@sha256:<the digest in docker-compose.yml>
+   (cd packages/db && DATABASE_URL=postgresql://postgres:password@localhost:5440/main \
+     vp exec tsx scripts/migrate.ts)
+   ROUTINE_GRANTS_DATABASE_URL=postgresql://postgres:password@localhost:5440/main \
+     vp test run --project backend-serial job-queue-roles-routine
+   docker rm -f routine-grants-db
+   ```
+
+   Both tests in that file must pass; the second is the one that needs the
+   URL (it is skipped without it).
+1. Run the migrator with the new grants
+   (`routine-provider=<login>`, `maintenance-delivery=<login>` entries).
+2. Deploy the backend with the new code and `BATCH_FAMILIES_ENABLED` still
+   limited to the families already live. The workers can take the new image
+   now: with nothing enabled nothing is queued.
+3. On the sync host set `SYNC_DAEMON_DISABLED=true`
+   (`roles/boardsesh_sync/templates/sync.env.j2`) and restart the daemons: each
+   logs one line and exits 0. Because they exit 0, the ansible change must land
+   first and set the daemon services' compose restart policy to `on-failure`
+   (or stop the units); under `always` or `unless-stopped` Docker restarts a
+   clean exit in a loop. Then wait until neither daemon holds its lease. A
+   running daemon renews its `sync_daemon_leases` row every 30 s
+   (`DAEMON_LEASE_HEARTBEAT_MS`) and another instance may take it over once the
+   heartbeat is 90 s old (`DAEMON_LEASE_TTL_MS`); a daemon that shuts down
+   cleanly deletes its row, and a disabled one never writes it. The signal:
+
+   ```sql
+   SELECT daemon_name, heartbeat_at, now() - heartbeat_at AS age
+     FROM sync_daemon_leases
+    WHERE daemon_name IN ('aurora-sync', 'kilter-sync');
+   ```
+
+   returns no rows, or only rows whose `age` is over 90 s and still growing
+   when you run it again a minute later. Until then a daemon may still be
+   syncing, and step 4 would run the families beside it.
+4. Add `provider-routine-cycle,aurora-shared-sync,kilter-catalog-sync,moonboard-locations-sync,climb-stats-self-heal`
+   to `BATCH_FAMILIES_ENABLED` and redeploy the backend.
+5. Unpause the `routine-provider` worker (`WORKER_PAUSED=false`, with
+   `AURORA_CREDENTIALS_SECRET`, `KILTER_OAUTH_CLIENT_ID`, optionally
+   `KILTER_OAUTH_CLIENT_SECRET`, `MOONBOARD_USERNAME`, `MOONBOARD_PASSWORD`,
+   and `ROUTINE_CYCLE_*` only to change the defaults) and the
+   `maintenance-delivery` worker (`SELF_HEAL_MAX_DRAIN_BATCHES` only to work
+   off a logged backlog).
+6. Watch `/metrics` until each family has three green runs:
+   `boardsesh_worker_last_success_seconds{role="routine-provider"}` under 600 s,
+   `oldest_pending_seconds` under 7200, `board_shared_syncs` cursors moving
+   hourly, and no MoonBoard duplicates in `/admin/gym-duplicates`.
+
+Rollback is the same list backwards: pause the two workers, remove the five
+families from `BATCH_FAMILIES_ENABLED` and redeploy, wait for their queued runs
+to reach a terminal state, then unset `SYNC_DAEMON_DISABLED` and restart the
+daemons.
 
 ## Attempts, retries and reconciliation
 

@@ -21,7 +21,9 @@ import {
   selectUpstreamPlaylistOwners,
   acquireUserTickMutationLock,
   isSyncFenceError,
+  DeferredClimbStatsRecompute,
   type ClimbStatsKey,
+  type ClimbStatsRecompute,
   type SyncBatchRunner,
   type TickTimeSample,
 } from '@boardsesh/db/queries';
@@ -151,6 +153,14 @@ export type SyncKilterUserDataArgs = {
   transaction?: SyncBatchRunner;
   /** Cancels the PowerSync stream and stops before the next flush. */
   signal?: AbortSignal;
+  /**
+   * Recompute `board_climb_stats` after each logs flush commits, in its own
+   * batches of at most 500 keys, instead of inside the flush transaction.
+   * Defaults to on when `transaction` is given (a background job, whose fenced
+   * batch blocks its heartbeat for as long as it runs); the daemon keeps the
+   * inline recompute.
+   */
+  deferStatsRecompute?: boolean;
 };
 
 export type SyncKilterUserDataResult = {
@@ -258,8 +268,10 @@ export async function syncKilterUserData({
   log = (msg) => console.warn(msg),
   transaction,
   signal,
+  deferStatsRecompute,
 }: SyncKilterUserDataArgs): Promise<SyncKilterUserDataResult> {
   const runBatch: SyncBatchRunner = transaction ?? ((callback) => db.transaction(callback));
+  const deferredStats = (deferStatsRecompute ?? transaction !== undefined) ? new DeferredClimbStatsRecompute() : null;
   // Buffer ops by object_type so we can apply them in dependency order.
   // PowerSync delivers ops as a snapshot; each PUT carries the full row,
   // so we don't need to preserve the wire ordering — only the FK
@@ -303,7 +315,23 @@ export async function syncKilterUserData({
   async function flushLogs(): Promise<void> {
     if (buffer.logs.length === 0) return;
     const batch = buffer.logs.splice(0, buffer.logs.length);
-    await runBatch((tx) => applyLogs(tx, userId, batch, aliasCache, log));
+    if (!deferredStats) {
+      await runBatch((tx) => applyLogs(tx, userId, batch, aliasCache, log));
+      return;
+    }
+    try {
+      await runBatch((tx) => {
+        deferredStats.begin();
+        return applyLogs(tx, userId, batch, aliasCache, log, deferredStats.collect);
+      });
+    } catch (error) {
+      // The flush rolled back: none of its keys is owed a recompute.
+      deferredStats.rollback();
+      throw error;
+    }
+    deferredStats.commit();
+    // The flush's logs are in; now their stats, in batches of their own.
+    await deferredStats.flush(runBatch);
   }
 
   async function flushClimbRatings(): Promise<void> {
@@ -659,6 +687,9 @@ export async function applyLogs(
   ops: PowerSyncOp[],
   aliasCache: Map<string, string>,
   log: (msg: string) => void,
+  // A background job passes a collector here and recomputes after the flush
+  // commits, in its own bounded batches (DeferredClimbStatsRecompute).
+  recompute: ClimbStatsRecompute = recomputeClimbStatsBulk,
 ): Promise<void> {
   if (ops.length === 0) return;
 
@@ -733,7 +764,7 @@ export async function applyLogs(
   }
 
   if (puts.length === 0) {
-    await recomputeClimbStatsBulk(tx, [...touchedKeys.values()]);
+    await recompute(tx, [...touchedKeys.values()]);
     return;
   }
 
@@ -1129,7 +1160,7 @@ export async function applyLogs(
   // kilter_id) wrote nothing, so its key has nothing to recompute. PowerSync
   // redelivers whole logbooks, so most of a typical flush is identical re-syncs.
   for (const n of inserts) addTouchedKey(n.canonical, n.raw.angle);
-  await recomputeClimbStatsBulk(tx, [...touchedKeys.values()]);
+  await recompute(tx, [...touchedKeys.values()]);
 }
 
 /**

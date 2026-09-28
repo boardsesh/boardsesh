@@ -135,10 +135,12 @@ export async function claimNextCredentialForSync(
     candidateFilter: SQL | undefined;
     /**
      * Skip credentials a background run is syncing right now (a live lease on
-     * the `provider_sync_controls` row) and links marked unlinked. Off by
-     * default so the daemons keep claiming exactly what they claimed before.
+     * the `provider_sync_controls` row) and links marked unlinked. Required, so
+     * no caller can forget it: every real claimer (both daemons and the
+     * routine cycle) passes true. Only a test that isolates the claim's own
+     * ordering and gap passes false.
      */
-    excludeLeased?: boolean;
+    excludeLeased: boolean;
   },
 ): Promise<ClaimedCredential | null> {
   return db.transaction(async (tx) => {
@@ -238,4 +240,147 @@ export async function claimCredentialForRun(
     if (!claim) return null;
     return { ...candidate, lastSyncAttemptAt: claim.lastSyncAttemptAt, updatedAt: claim.updatedAt };
   });
+}
+
+/**
+ * Re-read a claimed credential inside a fenced transaction, `FOR SHARE`, so no
+ * relink can rewrite it before the transaction commits. Call it after the
+ * control row is locked (the fenced-batch lock order in
+ * provider-sync-control.ts puts the credential row after the control row).
+ */
+export async function readCredentialForShare(
+  transaction: DrizzleDb,
+  key: { userId: string; boardType: string },
+): Promise<ClaimedCredential | null> {
+  const [row] = await transaction
+    .select()
+    .from(auroraCredentials)
+    .where(and(eq(auroraCredentials.userId, key.userId), eq(auroraCredentials.boardType, key.boardType)))
+    .limit(1)
+    .for('share');
+  return row ?? null;
+}
+
+/**
+ * True when `current` is still the row a claim returned: same row id, and no
+ * write since the claim stamped it (`updated_at` moves on every credential
+ * write: a relink, another run's claim, a token refresh, a status change).
+ */
+export function isSameClaimedCredential(claimed: ClaimedCredential, current: ClaimedCredential | null): boolean {
+  if (!current || current.id !== claimed.id) return false;
+  return current.updatedAt.getTime() === claimed.updatedAt.getTime();
+}
+
+/** The longest a provider's Retry-After may park one credential. */
+export const CREDENTIAL_RETRY_AFTER_CAP_MS = 6 * 60 * 60 * 1000;
+
+/**
+ * Hold a credential until the provider's Retry-After has passed (HTTP 429).
+ * Writes `provider_retry_after_until = now() + delay`, which
+ * {@link credentialRetryReadySql} checks next to the failure backoff: the
+ * credential becomes claimable once the LATER of the two has passed, never
+ * their sum. The attempt clock is left alone (the claim already stamped it),
+ * so the backoff still counts from the attempt. The delay is clamped to 0 ..
+ * {@link CREDENTIAL_RETRY_AFTER_CAP_MS} so a hostile or garbled header cannot
+ * park an account for longer than the failure backoff's own cap.
+ *
+ * "Sync now" is unaffected: {@link claimCredentialForRun} ignores both holds.
+ */
+export async function deferCredentialSyncAttempt(
+  db: DrizzleDb,
+  options: {
+    userId: string;
+    boardType: string;
+    delayMs: number;
+    /**
+     * Take back the `consecutive_failures` step the throttled attempt was just
+     * charged: a throttle is the provider's pacing, not a failing account, so
+     * it should not grow the backoff.
+     */
+    forgiveFailure?: boolean;
+    /**
+     * Hold only the exact link the caller read: the same credential row, and
+     * the same link generation (null: no control row yet). A relink since then
+     * rotates the generation, so its replacement credential is left alone.
+     * The board-wide jobs pass the donor they borrowed; a relink mid-run must
+     * not put the old token's throttle on the new link. Not `updated_at`: a
+     * donor's own token refresh moves that without any relink.
+     */
+    onlyLink?: { id: bigint; linkGeneration: string | null };
+  },
+): Promise<void> {
+  const delayMs = Number.isFinite(options.delayMs)
+    ? Math.min(Math.max(0, options.delayMs), CREDENTIAL_RETRY_AFTER_CAP_MS)
+    : 0;
+  const sameLink =
+    options.onlyLink === undefined
+      ? undefined
+      : and(
+          eq(auroraCredentials.id, options.onlyLink.id),
+          options.onlyLink.linkGeneration === null
+            ? sql`NOT EXISTS (
+                SELECT 1 FROM ${providerSyncControls}
+                 WHERE ${providerSyncControls.userId} = ${auroraCredentials.userId}
+                   AND ${providerSyncControls.boardType} = ${auroraCredentials.boardType})`
+            : sql`EXISTS (
+                SELECT 1 FROM ${providerSyncControls}
+                 WHERE ${providerSyncControls.userId} = ${auroraCredentials.userId}
+                   AND ${providerSyncControls.boardType} = ${auroraCredentials.boardType}
+                   AND ${providerSyncControls.linkGeneration} = ${options.onlyLink.linkGeneration})`,
+        );
+  await db
+    .update(auroraCredentials)
+    .set({
+      providerRetryAfterUntil: sql`now() + make_interval(secs => ${delayMs / 1000}::double precision)`,
+      ...(options.forgiveFailure
+        ? { consecutiveFailures: sql`GREATEST(COALESCE(${auroraCredentials.consecutiveFailures}, 0) - 1, 0)` }
+        : {}),
+      updatedAt: sql`now()`,
+    })
+    .where(
+      and(eq(auroraCredentials.userId, options.userId), eq(auroraCredentials.boardType, options.boardType), sameLink),
+    );
+}
+
+/**
+ * A borrowed donor credential, with the link generation it was read under
+ * (null when it has no control row yet), so a hold put on it later can be
+ * bound to this exact link ({@link deferCredentialSyncAttempt}'s `onlyLink`).
+ */
+export type SharedSyncDonor = ClaimedCredential & { linkGeneration: string | null };
+
+/**
+ * The credential whose token a board-wide job borrows: an `active` credential
+ * for the board (plus the runner's own eligibility filter), most recently
+ * synced first. The most recent success is the one most likely to still hold a
+ * working token or password. A credential inside a provider Retry-After hold
+ * is skipped. Null when the board has no healthy credential.
+ */
+export async function findSharedSyncDonorCredential(
+  db: DrizzleDb,
+  options: { boardType: string; candidateFilter: SQL | undefined },
+): Promise<SharedSyncDonor | null> {
+  const [donor] = await db
+    .select({ credential: auroraCredentials, linkGeneration: providerSyncControls.linkGeneration })
+    .from(auroraCredentials)
+    .leftJoin(
+      providerSyncControls,
+      and(
+        eq(providerSyncControls.userId, auroraCredentials.userId),
+        eq(providerSyncControls.boardType, auroraCredentials.boardType),
+      ),
+    )
+    .where(
+      and(
+        eq(auroraCredentials.boardType, options.boardType),
+        eq(auroraCredentials.syncStatus, 'active'),
+        // A credential the provider asked us to leave alone is no donor either:
+        // borrowing it would call the provider inside the window it set.
+        sql`(${auroraCredentials.providerRetryAfterUntil} IS NULL OR ${auroraCredentials.providerRetryAfterUntil} <= now())`,
+        options.candidateFilter,
+      ),
+    )
+    .orderBy(sql`${auroraCredentials.lastSyncAt} DESC NULLS LAST`)
+    .limit(1);
+  return donor ? { ...donor.credential, linkGeneration: donor.linkGeneration } : null;
 }

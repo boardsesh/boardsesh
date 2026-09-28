@@ -1,9 +1,8 @@
+import { randomUUID } from 'node:crypto';
 import { sharedSync } from '../api/shared-sync-api';
 import { type SyncOptions, type AuroraBoardName, SHARED_SYNC_TABLES } from '../api/types';
 import { sql, eq, and, inArray, isNull, isNotNull, type SQL } from 'drizzle-orm';
-import { drizzle } from 'drizzle-orm/postgres-js';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
-import type postgres from 'postgres';
 import type {
   Attempt,
   BetaLink,
@@ -32,6 +31,7 @@ import {
   conflictSetChangesRowSql,
   conflictSetEntries,
   setterSyncNotificationUuid,
+  setterSyncRunNotificationUuid,
   snapshotClimbStatsHistoryIfDue,
 } from '@boardsesh/db/queries';
 import { commandCountFromResult } from '@boardsesh/db/client';
@@ -643,16 +643,22 @@ export async function upsertClimbStats(
     const emptyMappedValues = mappedValues.filter((value) => isEmptyUpstreamClimbStat(value));
     const existingKeys = new Set<string>();
     if (emptyMappedValues.length > 0) {
-      const candidateClimbUuids = [...new Set(emptyMappedValues.map((value) => value.climbUuid))];
-      const candidateAngles = [...new Set(emptyMappedValues.map((value) => value.angle))];
+      // Match the exact (climb, angle) pairs. Two separate IN lists would
+      // select their cross product: every candidate climb at every candidate
+      // angle, a read up to |climbs| x |angles| rows for a batch of N keys.
+      const candidatePairs = JSON.stringify(
+        emptyMappedValues.map((value) => ({ climb_uuid: value.climbUuid, angle: value.angle })),
+      );
       const existingRows = await db
         .select({ climbUuid: climbStatsSchema.climbUuid, angle: climbStatsSchema.angle })
         .from(climbStatsSchema)
         .where(
           and(
             eq(climbStatsSchema.boardType, board),
-            inArray(climbStatsSchema.climbUuid, candidateClimbUuids),
-            inArray(climbStatsSchema.angle, candidateAngles),
+            sql`(${climbStatsSchema.climbUuid}, ${climbStatsSchema.angle}) IN (
+              SELECT pair.climb_uuid, pair.angle
+                FROM jsonb_to_recordset(${candidatePairs}::jsonb) AS pair(climb_uuid text, angle integer)
+            )`,
           ),
         );
       for (const row of existingRows) existingKeys.add(climbStatKey(row.climbUuid, row.angle));
@@ -1103,22 +1109,55 @@ export type SharedSyncResult = {
   climbStatsWrites: ClimbStatsWriteCounts;
 };
 
+/** Runs one write batch in one transaction, behind whatever fences its owner applies. */
+export type SharedSyncBatchRunner = <Result>(callback: (transaction: DrizzleDb) => Promise<Result>) => Promise<Result>;
+
+export type SyncSharedDataOptions = {
+  /**
+   * Identifies this sync run for its setter notifications: a follower gets one
+   * per setter per run. A background job passes its run id; unset, each call
+   * is its own run.
+   */
+  runKey?: string;
+  /**
+   * Runs every write batch (one per Aurora page, with that page's setter
+   * notifications, then the history snapshot and the required_set_ids heal)
+   * in one transaction.
+   * Defaults to `db.transaction`. A background job passes its attempt fence, so
+   * a run that lost its lease stops writing at the next batch.
+   */
+  transaction?: SharedSyncBatchRunner;
+  /** Checked between pages and passed to the Aurora request. */
+  signal?: AbortSignal;
+};
+
 /**
  * Sync shared (non-user-specific) board data — products, sizes, layouts, climbs,
- * climb stats, beta links, etc. Uses the supplied `token` (typically a fresh
- * user token from the daemon) to authenticate against Aurora's `/sync` endpoint.
+ * climb stats, beta links, etc. Uses the supplied `token` (a climber's token:
+ * the daemon's fresh login, or the donor credential a background job borrows)
+ * to authenticate against Aurora's `/sync` endpoint.
  *
- * Loops until the response's `_complete` flag is true, persisting each batch
- * before requesting the next. After a successful sync, fires setter-follow
- * notifications for any newly-published climbs.
+ * Loops until the response's `_complete` flag is exactly true (Aurora sends it
+ * on every page: false while more remain), persisting each batch
+ * before requesting the next. Provider HTTP always runs between transactions.
+ * Each page also creates the setter-follow notifications for the climbs it
+ * published, in the same transaction as the page's writes and cursor advance.
+ * `db` is for reads; every write goes through
+ * `options.transaction`.
  */
 export async function syncSharedData(
-  pgClient: ReturnType<typeof postgres>,
+  db: DrizzleDb,
   board: AuroraBoardName,
   token: string,
   log: (message: string) => void = console.info,
+  options: SyncSharedDataOptions = {},
 ): Promise<SharedSyncResult> {
-  const db = drizzle(pgClient);
+  const { signal } = options;
+  const runBatch: SharedSyncBatchRunner = options.transaction ?? ((callback) => db.transaction(callback));
+  // One notification per follower per setter for the whole pass, however many
+  // pages its climbs span: the job's run id (so its retries dedup too), or one
+  // key for this pass.
+  const runKey = options.runKey ?? randomUUID();
 
   const allSyncTimes = await getAllSharedSyncTimes(db, board);
   // Single source of truth for cursors across batches — keyed by table name.
@@ -1151,10 +1190,12 @@ export async function syncSharedData(
   let attempts = 0;
 
   while (!isComplete && attempts < MAX_SYNC_ATTEMPTS) {
+    // Between pages: a stopped job ends here, with every earlier page committed.
+    signal?.throwIfAborted();
     attempts++;
     log(`[SharedSync] Batch ${attempts} for ${board}`);
 
-    const syncResults = await sharedSync(board, buildSyncParams(), token);
+    const syncResults = await sharedSync(board, buildSyncParams(), token, signal);
 
     // Per-batch tallies, reset on every run of the transaction callback and
     // folded into the pass totals only once the transaction has committed. A
@@ -1163,7 +1204,7 @@ export async function syncSharedData(
     let batchClimbStatsWrites = emptyClimbStatsWriteCounts();
     let batchNewClimbs: NewClimbInfo[] = [];
     let batchSyncedByTable = new Map<string, number>();
-    await db.transaction(async (tx) => {
+    await runBatch(async (tx) => {
       batchClimbStatsWrites = emptyClimbStatsWriteCounts();
       batchNewClimbs = [];
       batchSyncedByTable = new Map();
@@ -1210,6 +1251,27 @@ export async function syncSharedData(
           sharedSyncMap.set(sync.table_name, sync.last_synchronized_at);
         }
       }
+
+      // The page's setter notifications commit with its climbs and its cursor.
+      // New-climb detection is a pre-read, so once this page commits its
+      // climbs are no longer "new": a run that stopped before an end-of-run
+      // notification batch left them unannounced for good, because the retry
+      // could not rediscover them. The notification uuids are deterministic,
+      // so a page Aurora sends twice announces nothing twice. In a savepoint,
+      // so a notification failure is logged and the page still commits.
+      if (batchNewClimbs.length > 0) {
+        const pageNewClimbs = batchNewClimbs;
+        try {
+          await tx.transaction((savepoint) =>
+            createSetterSyncNotifications(savepoint, board, pageNewClimbs, log, { runKey }),
+          );
+        } catch (error) {
+          if (signal?.aborted) throw error;
+          log(
+            `[SharedSync] Failed to create setter notifications: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+      }
     });
 
     addClimbStatsWriteCounts(climbStatsWrites, batchClimbStatsWrites);
@@ -1221,7 +1283,15 @@ export async function syncSharedData(
       totalResults[tableName].synced += synced;
     }
 
-    isComplete = syncResults._complete !== false;
+    // Aurora's /sync contract: every page carries `_complete`, false while
+    // more pages remain and true on the last one. Only an explicit true ends
+    // the pass. A page without the flag is not proof the tail was reached, so
+    // it is logged as a contract break and paging continues (bounded by
+    // MAX_SYNC_ATTEMPTS); stopping there would stamp a partial pass complete.
+    if (typeof syncResults._complete !== 'boolean') {
+      log(`[SharedSync] Batch ${attempts} for ${board} has no _complete flag; treating it as not complete`);
+    }
+    isComplete = syncResults._complete === true;
     if (!isComplete) {
       log(`[SharedSync] Batch ${attempts} not complete, continuing...`);
     }
@@ -1264,8 +1334,10 @@ export async function syncSharedData(
   // loop so it snapshots the freshly-synced counts. A failure here must not
   // fail the sync (the user/shared data already committed).
   try {
-    await snapshotClimbStatsHistoryIfDue(db, board, log);
+    signal?.throwIfAborted();
+    await runBatch((tx) => snapshotClimbStatsHistoryIfDue(tx, board, log));
   } catch (error) {
+    if (signal?.aborted) throw error;
     log(
       `[SharedSync] climb_stats_history snapshot failed for ${board} (sync was OK): ${
         error instanceof Error ? error.message : String(error)
@@ -1278,19 +1350,11 @@ export async function syncSharedData(
   // the catalog (see shouldHealRequiredSetIds).
   if (shouldHealRequiredSetIds(totalResults)) {
     try {
-      await healRequiredSetIds(db, board, log);
+      signal?.throwIfAborted();
+      await runBatch((tx) => healRequiredSetIds(tx, board, log));
     } catch (error) {
+      if (signal?.aborted) throw error;
       log(`[SharedSync] required_set_ids heal failed: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
-
-  if (allNewClimbs.length > 0) {
-    try {
-      await createSetterSyncNotifications(db, board, allNewClimbs, log);
-    } catch (error) {
-      log(
-        `[SharedSync] Failed to create setter notifications: ${error instanceof Error ? error.message : String(error)}`,
-      );
     }
   }
 
@@ -1306,6 +1370,13 @@ export async function createSetterSyncNotifications(
   boardName: AuroraBoardName,
   newClimbs: NewClimbInfo[],
   log: (message: string) => void,
+  /**
+   * The sync run these climbs belong to. With it, a follower gets one
+   * notification per setter per run however many pages the climbs span (see
+   * setterSyncRunNotificationUuid); without it, one per call, keyed on the
+   * batch's head climb.
+   */
+  options: { runKey?: string } = {},
 ): Promise<void> {
   const climbsBySetter = new Map<string, NewClimbInfo[]>();
   for (const climb of newClimbs) {
@@ -1390,7 +1461,10 @@ export async function createSetterSyncNotifications(
     // backstop for that, independent of the cooldown claim that stops the two
     // runs overlapping in the first place. See setterSyncNotificationUuid.
     const notificationValues = Array.from(recipientIds).map((recipientId) => ({
-      uuid: setterSyncNotificationUuid({ recipientId, entityId: firstClimbUuid, actorId }),
+      uuid:
+        options.runKey === undefined
+          ? setterSyncNotificationUuid({ recipientId, entityId: firstClimbUuid, actorId })
+          : setterSyncRunNotificationUuid({ recipientId, setterUsername, runKey: options.runKey }),
       recipientId,
       actorId,
       type: 'new_climbs_synced' as const,
