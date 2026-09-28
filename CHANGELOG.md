@@ -4,6 +4,13 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-09-28
+
+### New
+
+- Your linked Kilter and Tension logbooks now sync around the clock ([#5879](https://github.com/boardsesh/boardsesh/pull/5879))
+  MoonBoard gyms show up on the map on their own
+
 ## 2026-09-27
 
 ### New

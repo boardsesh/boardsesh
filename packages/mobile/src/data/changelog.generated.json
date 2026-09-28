@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-09-27T08:52:41.384Z",
+  "generatedAt": "2026-09-28T11:57:08.575Z",
   "entries": [
+    {
+      "prNumber": 5879,
+      "category": "new",
+      "title": "Your linked Kilter and Tension logbooks now sync around the clock",
+      "mergedAt": "2026-09-28T11:55:05Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5879",
+      "body": "MoonBoard gyms show up on the map on their own"
+    },
     {
       "prNumber": 5873,
       "category": "new",
