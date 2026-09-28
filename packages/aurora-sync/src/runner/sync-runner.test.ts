@@ -739,10 +739,13 @@ describe('SyncRunner shared-sync per-board throttle', () => {
 
   it("lets a crawl's rate limit escape crawlGymWallSlice instead of swallowing it", async () => {
     // Unlike an ordinary crawl failure (tested above), a 429 from the crawl is a
-    // real hold, not a per-gym blip. It must reach runBoardSharedWork's caller
-    // so runSharedSyncJob can park the shared-sync slot and the donor for it —
-    // swallowing it here would keep the crawl contacting Aurora for the rest of
-    // the slice during the hold.
+    // real hold, not a per-gym blip. It must reach runBoardSharedWork's caller so
+    // that, on the runSharedSyncJob scheduled path, the shared-sync slot and the
+    // borrowed donor get parked for it — swallowing it here would keep the crawl
+    // contacting Aurora for the rest of the slice during the hold. (The daemon's
+    // maybeRunSharedSync piggyback path has no borrowed-donor concept to hold —
+    // it runs on the real user's own token — so it only gets the slot/cooldown
+    // adjustment, not a donor hold.)
     mockFindGymsDueForWallCrawl.mockResolvedValue(['tension:269111']);
     const rateLimited = new AuroraRequestError({
       code: 'rate_limited',

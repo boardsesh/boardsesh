@@ -1090,10 +1090,13 @@ export class SyncRunner {
    * letting an ordinary crawl error escape would cost a user their shared-sync
    * cooldown for no benefit. The crawl is best-effort catalog upkeep. A 429
    * does escape: Aurora's Retry-After is a real hold, not a per-gym blip, and
-   * `runSharedSyncJob` already parks the shared-sync slot and the donor
-   * credential (never a failure on it, just a hold) for exactly this error —
-   * swallowing it here would keep the crawl contacting Aurora, one gym at a
-   * time, for the rest of the slice during the hold.
+   * on the `runSharedSyncJob` scheduled path that already parks the shared-sync
+   * slot and the borrowed donor credential (never a failure on it, just a hold)
+   * for exactly this error — swallowing it here would keep the crawl
+   * contacting Aurora, one gym at a time, for the rest of the slice during the
+   * hold. `maybeRunSharedSync`'s daemon piggyback path has no borrowed-donor
+   * concept to hold (it runs on the real user's own token), so there the 429
+   * only gets the slot/cooldown adjustment already in place for any error.
    */
   private async crawlGymWallSlice(
     board: AuroraLocationBoardName,
