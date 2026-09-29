@@ -2,7 +2,7 @@ import { Readable } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import type { DbInstance } from '@boardsesh/db/client';
 import type { backgroundJobRuns } from '@boardsesh/db/schema';
-import type { BackgroundJobContext } from '../workers/families/types';
+import { BackgroundJobError, type BackgroundJobContext } from '../workers/families/types';
 import type { BoardseshUserDataArchive } from './user-data-export-archive';
 
 type Run = typeof backgroundJobRuns.$inferSelect;
@@ -335,6 +335,28 @@ describe('weekly user exports', () => {
     await service.generateUserDataExport(context, payload);
     const companion = JSON.parse(storageMocks.uploadToS3.mock.calls[1][1].toString()) as { user: { username: string } };
     expect(companion.user.username).toBe('Immutable winner');
+  });
+  it('retries when a winning archive is not readable yet and reuses it on the next execution', async () => {
+    const winningArchive = { ...archive, user: { ...archive.user, name: 'Delayed immutable winner' } };
+    storageMocks.getFromS3Strict
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ stream: Readable.from([Buffer.from(JSON.stringify(winningArchive))]) });
+    storageMocks.uploadToS3.mockRejectedValueOnce(
+      Object.assign(new Error('Exists'), { $metadata: { httpStatusCode: 412 } }),
+    );
+    const failure = await userDataExportFamily.execute(context, payload).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(Error);
+    expect(failure).not.toBeInstanceOf(BackgroundJobError);
+    expect(failure).toMatchObject({ message: 'EXPORT_ARCHIVE_MISSING' });
+    expect(archiveMocks.buildUserDataArchive).toHaveBeenCalledOnce();
+    expect(storageMocks.uploadToS3).toHaveBeenCalledOnce();
+
+    await expect(userDataExportFamily.execute(context, payload)).resolves.toBeUndefined();
+    expect(archiveMocks.buildUserDataArchive).toHaveBeenCalledOnce();
+    expect(storageMocks.uploadToS3).toHaveBeenCalledTimes(2);
+    const companion = JSON.parse(storageMocks.uploadToS3.mock.calls[1][1].toString()) as { user: { username: string } };
+    expect(companion.user.username).toBe('Delayed immutable winner');
   });
   it('creates only the archive for a non-Aurora board', async () => {
     archiveMocks.buildUserDataArchive.mockResolvedValue({ ...archive, boardType: 'spray' });

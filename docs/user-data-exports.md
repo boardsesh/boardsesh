@@ -65,6 +65,12 @@ one automatic retry per run; five-minute attempt lease; 30-second heartbeat;
 minutes while budget remains. User-filtered queries are indexed including drafts.
 Storage failures do not masquerade as cache misses and cause regeneration.
 
+Queries return the climber's own records. Playlist result rows grow linearly with
+climb memberships in owned playlists, plus one row for each empty playlist. The
+full archive and its serialized output are materialized in memory, so peak memory
+grows with personal history. Monitor large logbooks; generation has no record cap
+or pagination and does not silently truncate records.
+
 ## Private storage and retention
 
 Objects remain under `user-data-exports/` in `boardsesh-user-private`, with no
