@@ -33,6 +33,7 @@ import { gymOwnerReassignTypeDefs } from './gym-owner-reassign';
 import { holdOutlineOverridesTypeDefs } from './hold-outline-overrides';
 import { sprayWallsTypeDefs, sprayWallResetTypeDefs, sprayWallModerationTypeDefs } from './spray-walls';
 import { sprayDetectionTypeDefs } from './spray-detection';
+import { userDataExportTypeDefs } from './user-data-export';
 
 export const typeDefs = [
   scalarTypeDefs,
@@ -72,4 +73,5 @@ export const typeDefs = [
   feedbackTypeDefs,
   qaTypeDefs,
   boardPresenceTypeDefs,
+  userDataExportTypeDefs,
 ];

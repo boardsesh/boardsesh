@@ -210,6 +210,87 @@ const CLIMB_STATS_SELF_HEAL_GRANTS: readonly WorkerTableGrant[] = [
   { table: 'user_profiles', privileges: ['SELECT'], columns: ['user_id', 'display_name'] },
 ];
 
+/** Personal archives: selected climbing fields only, with no credentials or catalogue writes. */
+const USER_DATA_EXPORT_GRANTS: readonly WorkerTableGrant[] = [
+  { table: 'users', privileges: ['SELECT'], columns: ['id', 'name', 'email', 'created_at'] },
+  {
+    table: 'boardsesh_ticks',
+    privileges: ['SELECT'],
+    columns: [
+      'id',
+      'uuid',
+      'user_id',
+      'board_type',
+      'climb_uuid',
+      'angle',
+      'status',
+      'attempt_count',
+      'quality',
+      'difficulty',
+      'comment',
+      'is_mirror',
+      'is_benchmark',
+      'board_id',
+      'session_id',
+      'origin',
+      'climbed_at',
+      'created_at',
+      'updated_at',
+    ],
+  },
+  {
+    table: 'board_climbs',
+    privileges: ['SELECT'],
+    columns: [
+      'uuid',
+      'board_type',
+      'user_id',
+      'name',
+      'layout_id',
+      'frames',
+      'frames_count',
+      'frames_pace',
+      'angle',
+      'created_at',
+      'updated_at',
+      'is_draft',
+      'is_listed',
+      'description',
+      'characteristics',
+    ],
+  },
+  { table: 'board_climb_aliases', privileges: ['SELECT'], columns: ['board_type', 'alias_uuid', 'canonical_uuid'] },
+  { table: 'board_difficulty_grades', privileges: ['SELECT'], columns: ['board_type', 'difficulty', 'boulder_name'] },
+  {
+    table: 'user_favorites',
+    privileges: ['SELECT'],
+    columns: ['id', 'user_id', 'board_name', 'climb_uuid', 'angle', 'created_at', 'updated_at'],
+  },
+  {
+    table: 'playlists',
+    privileges: ['SELECT'],
+    columns: [
+      'id',
+      'uuid',
+      'board_type',
+      'layout_id',
+      'name',
+      'color',
+      'icon',
+      'description',
+      'is_public',
+      'created_at',
+      'updated_at',
+    ],
+  },
+  { table: 'playlist_ownership', privileges: ['SELECT'], columns: ['playlist_id', 'user_id', 'role'] },
+  {
+    table: 'playlist_climbs',
+    privileges: ['SELECT'],
+    columns: ['id', 'playlist_id', 'climb_uuid', 'angle', 'position', 'added_at', 'updated_at'],
+  },
+];
+
 /**
  * Data grants per worker role, on top of the pg-boss DML and the ledger every
  * worker login gets. Each list is exactly what that role's families read and
@@ -224,8 +305,8 @@ export const WORKER_ROLE_DATA_GRANTS: Record<BackgroundWorkerRole, readonly Work
   // provider-routine-cycle (a user sync), aurora-shared-sync,
   // kilter-catalog-sync, moonboard-locations-sync.
   'routine-provider': [...PROVIDER_SYNC_GRANTS, ...ROUTINE_PROVIDER_EXTRA_GRANTS],
-  // climb-stats-self-heal.
-  'maintenance-delivery': CLIMB_STATS_SELF_HEAL_GRANTS,
+  // climb-stats-self-heal, user-data-export.
+  'maintenance-delivery': [...CLIMB_STATS_SELF_HEAL_GRANTS, ...USER_DATA_EXPORT_GRANTS],
   // refresh-recommendations, refresh-hold-features, refresh-climb-grades,
   // refresh-climb-neighbors, export-board-snapshots.
   batch: [

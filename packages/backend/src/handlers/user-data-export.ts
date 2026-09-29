@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'http';
+import { GraphQLError } from 'graphql';
 import { applyCorsHeaders } from './cors';
 import { pipeStreamToResponse } from './http-utils';
 import { validateToken } from '../middleware/auth';
@@ -7,6 +8,8 @@ import {
   getDownloadableUserDataExport,
   getUserDataExportStatus,
   requestUserDataExport,
+  requireExportUser,
+  exportPeriodStart,
   type UserDataExportStatus,
 } from '../services/user-data-export';
 
@@ -27,6 +30,14 @@ async function authenticate(req: IncomingMessage, res: ServerResponse): Promise<
 
   const authResult = await validateToken(token);
   if (!authResult) {
+    sendJson(res, 401, { error: 'Invalid or expired token' });
+    return null;
+  }
+
+  try {
+    await requireExportUser(authResult.userId);
+  } catch (error) {
+    if (!(error instanceof GraphQLError)) throw error;
     sendJson(res, 401, { error: 'Invalid or expired token' });
     return null;
   }
@@ -95,7 +106,14 @@ export async function handleUserDataExportDownload(req: IncomingMessage, res: Se
   const boardType = parseBoardType(url, res);
   if (!boardType) return;
 
-  const file = await getDownloadableUserDataExport(userId, boardType);
+  const period = url.searchParams.get('period') ?? undefined;
+  try {
+    if (period) exportPeriodStart(period);
+  } catch {
+    sendJson(res, 400, { error: 'Invalid export period' });
+    return;
+  }
+  const file = await getDownloadableUserDataExport(userId, boardType, period);
   if (!file) {
     sendJson(res, 404, { error: 'Export is not ready' });
     return;

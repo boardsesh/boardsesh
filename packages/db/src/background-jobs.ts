@@ -54,6 +54,7 @@ export const BACKGROUND_JOB_FAMILIES = [
   'kilter-catalog-sync',
   'moonboard-locations-sync',
   'climb-stats-self-heal',
+  'user-data-export',
 ] as const;
 
 export type BackgroundJobFamily = (typeof BACKGROUND_JOB_FAMILIES)[number];

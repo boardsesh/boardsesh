@@ -4091,6 +4091,8 @@ export type Mutation = {
    */
   requestProviderSync: ProviderSyncRequest;
   requestSprayWallDetection: SprayWallDetection;
+  /** Prepare a weekly climbing archive and, where supported, its Aurora companion. */
+  requestUserDataExport: UserDataExportStatus;
   /**
    * Resolve a BLE serial for clients that can disambiguate. Returns a single
    * `board` when the serial is unambiguous (remembered choice, only one match,
@@ -4784,6 +4786,11 @@ export type MutationRequestProviderSyncArgs = {
 /** Root mutation type for all write operations. */
 export type MutationRequestSprayWallDetectionArgs = {
   input: RequestSprayWallDetectionInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationRequestUserDataExportArgs = {
+  boardType: Scalars['String']['input'];
 };
 
 /** Root mutation type for all write operations. */
@@ -6486,6 +6493,10 @@ export type Query = {
    * Includes both directly created climbs and Aurora-imported climbs linked via board credentials.
    */
   userClimbs: PlaylistClimbsResult;
+  /** The signed-in climber's recent cached export; defaults to this UTC ISO week. */
+  userDataExport: UserDataExportStatus;
+  /** A five-minute private browser download; no user ID is accepted. */
+  userDataExportDownload: UserDataExportDownloadLink;
   /**
    * Get user's favorite climbs with full climb data.
    * Requires authentication.
@@ -7248,6 +7259,19 @@ export type QueryUserClimbPercentileArgs = {
 /** Root query type for all read operations. */
 export type QueryUserClimbsArgs = {
   input: UserClimbsInput;
+};
+
+/** Root query type for all read operations. */
+export type QueryUserDataExportArgs = {
+  boardType: Scalars['String']['input'];
+  period?: InputMaybe<Scalars['String']['input']>;
+};
+
+/** Root query type for all read operations. */
+export type QueryUserDataExportDownloadArgs = {
+  boardType: Scalars['String']['input'];
+  format: UserDataExportFormat;
+  period: Scalars['String']['input'];
 };
 
 /** Root query type for all read operations. */
@@ -9980,6 +10004,39 @@ export type UserClimbsInput = {
   userId: Scalars['ID']['input'];
 };
 
+export type UserDataExportDownloadLink = {
+  __typename?: 'UserDataExportDownloadLink';
+  expiresAt: Scalars['String']['output'];
+  filename: Scalars['String']['output'];
+  url: Scalars['String']['output'];
+};
+
+export type UserDataExportFile = {
+  __typename?: 'UserDataExportFile';
+  expiresAt: Scalars['String']['output'];
+  exportedAt: Scalars['String']['output'];
+  fileSize?: Maybe<Scalars['Float']['output']>;
+  filename: Scalars['String']['output'];
+  format: UserDataExportFormat;
+};
+
+export type UserDataExportFormat = 'aurora' | 'boardsesh';
+
+export type UserDataExportState = 'failed' | 'generating' | 'not_requested' | 'ready' | 'unavailable';
+
+export type UserDataExportStatus = {
+  __typename?: 'UserDataExportStatus';
+  boardType: Scalars['String']['output'];
+  completedAt?: Maybe<Scalars['String']['output']>;
+  error?: Maybe<Scalars['String']['output']>;
+  files: Array<UserDataExportFile>;
+  period: Scalars['String']['output'];
+  refreshAt: Scalars['String']['output'];
+  requestedAt?: Maybe<Scalars['String']['output']>;
+  retryAt?: Maybe<Scalars['String']['output']>;
+  status: UserDataExportState;
+};
+
 /** Event when a user joins the session. */
 export type UserJoined = {
   __typename?: 'UserJoined';
@@ -10692,6 +10749,11 @@ export type ResolversTypes = ResolversObject<{
   UserBoardConnection: ResolverTypeWrapper<UserBoardConnection>;
   UserClimbPercentile: ResolverTypeWrapper<UserClimbPercentile>;
   UserClimbsInput: UserClimbsInput;
+  UserDataExportDownloadLink: ResolverTypeWrapper<UserDataExportDownloadLink>;
+  UserDataExportFile: ResolverTypeWrapper<UserDataExportFile>;
+  UserDataExportFormat: UserDataExportFormat;
+  UserDataExportState: UserDataExportState;
+  UserDataExportStatus: ResolverTypeWrapper<UserDataExportStatus>;
   UserJoined: ResolverTypeWrapper<UserJoined>;
   UserLeft: ResolverTypeWrapper<UserLeft>;
   UserPresenceChanged: ResolverTypeWrapper<UserPresenceChanged>;
@@ -11115,6 +11177,9 @@ export type ResolversParentTypes = ResolversObject<{
   UserBoardConnection: UserBoardConnection;
   UserClimbPercentile: UserClimbPercentile;
   UserClimbsInput: UserClimbsInput;
+  UserDataExportDownloadLink: UserDataExportDownloadLink;
+  UserDataExportFile: UserDataExportFile;
+  UserDataExportStatus: UserDataExportStatus;
   UserJoined: UserJoined;
   UserLeft: UserLeft;
   UserPresenceChanged: UserPresenceChanged;
@@ -13502,6 +13567,12 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationRequestSprayWallDetectionArgs, 'input'>
   >;
+  requestUserDataExport?: Resolver<
+    ResolversTypes['UserDataExportStatus'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationRequestUserDataExportArgs, 'boardType'>
+  >;
   resolveBoardCandidatesForSerial?: Resolver<
     ResolversTypes['ResolveBoardResult'],
     ParentType,
@@ -15003,6 +15074,18 @@ export type QueryResolvers<
     ContextType,
     RequireFields<QueryUserClimbsArgs, 'input'>
   >;
+  userDataExport?: Resolver<
+    ResolversTypes['UserDataExportStatus'],
+    ParentType,
+    ContextType,
+    RequireFields<QueryUserDataExportArgs, 'boardType'>
+  >;
+  userDataExportDownload?: Resolver<
+    ResolversTypes['UserDataExportDownloadLink'],
+    ParentType,
+    ContextType,
+    RequireFields<QueryUserDataExportDownloadArgs, 'boardType' | 'format' | 'period'>
+  >;
   userFavoriteClimbs?: Resolver<
     ResolversTypes['PlaylistClimbsResult'],
     ParentType,
@@ -16274,6 +16357,45 @@ export type UserClimbPercentileResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type UserDataExportDownloadLinkResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['UserDataExportDownloadLink'] =
+    ResolversParentTypes['UserDataExportDownloadLink'],
+> = ResolversObject<{
+  expiresAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  filename?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  url?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type UserDataExportFileResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['UserDataExportFile'] = ResolversParentTypes['UserDataExportFile'],
+> = ResolversObject<{
+  expiresAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  exportedAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  fileSize?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
+  filename?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  format?: Resolver<ResolversTypes['UserDataExportFormat'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type UserDataExportStatusResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['UserDataExportStatus'] = ResolversParentTypes['UserDataExportStatus'],
+> = ResolversObject<{
+  boardType?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  completedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  error?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  files?: Resolver<Array<ResolversTypes['UserDataExportFile']>, ParentType, ContextType>;
+  period?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  refreshAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  requestedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  retryAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  status?: Resolver<ResolversTypes['UserDataExportState'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type UserJoinedResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['UserJoined'] = ResolversParentTypes['UserJoined'],
@@ -16621,6 +16743,9 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   UserBoard?: UserBoardResolvers<ContextType>;
   UserBoardConnection?: UserBoardConnectionResolvers<ContextType>;
   UserClimbPercentile?: UserClimbPercentileResolvers<ContextType>;
+  UserDataExportDownloadLink?: UserDataExportDownloadLinkResolvers<ContextType>;
+  UserDataExportFile?: UserDataExportFileResolvers<ContextType>;
+  UserDataExportStatus?: UserDataExportStatusResolvers<ContextType>;
   UserJoined?: UserJoinedResolvers<ContextType>;
   UserLeft?: UserLeftResolvers<ContextType>;
   UserPresenceChanged?: UserPresenceChangedResolvers<ContextType>;

@@ -305,7 +305,9 @@ fi
 # measured 2,057,562, so it moves the ratchet to 2,058,000.
 # #5813 (hold heatmap v2: ranked buckets, legend, brush-following create board)
 # adds ~1.1 KB and measured 2,058,624, so it moves the ratchet to 2,061,000.
-BOARDSESH_WEB_EAGER_BROTLI_BUDGET="${BOARDSESH_WEB_EAGER_BROTLI_BUDGET:-2061000}"
+# Export settings add ~2.7 KB of compressed copy across the four bundled locales.
+# Keep the eager budget bounded while allowing those translations (#5886).
+BOARDSESH_WEB_EAGER_BROTLI_BUDGET="${BOARDSESH_WEB_EAGER_BROTLI_BUDGET:-2065000}"
 node "$ROOT_DIR/scripts/lib/check-expo-web-eager-budget.mjs" \
   "$OUTPUT_DIR" \
   "$BOARDSESH_WEB_EAGER_BROTLI_BUDGET" \

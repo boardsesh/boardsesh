@@ -935,6 +935,22 @@ export interface R2Cors {
   maxAgeSeconds: number;
 }
 
+/** Keep foreign lifecycle transitions intact when updating our one managed rule. */
+export interface R2LifecycleRule {
+  id: string;
+  enabled: boolean;
+  conditions: { prefix: string };
+  deleteObjectsTransition?: { condition?: { type: string; maxAge?: number; date?: string } };
+  [property: string]: unknown;
+}
+
+export const USER_EXPORT_LIFECYCLE_RULE: R2LifecycleRule = {
+  id: 'boardsesh-user-data-exports-14d',
+  enabled: true,
+  conditions: { prefix: 'user-data-exports/' },
+  deleteObjectsTransition: { condition: { type: 'Age', maxAge: 14 * 24 * 60 * 60 } },
+};
+
 export interface R2BucketDesired {
   name: string;
   /** Hostname serving this bucket publicly, or null when it must stay unreachable. */
@@ -947,6 +963,8 @@ export interface R2BucketDesired {
    * rather than silently cleared.
    */
   cors?: R2Cors;
+  /** Only this rule ID is managed; all other lifecycle rules remain untouched. */
+  lifecycleRule?: R2LifecycleRule;
   /**
    * Cloudflare location hint, applied only at creation time and immutable
    * afterwards. Omitted lets Cloudflare choose on first write.
@@ -958,7 +976,12 @@ export const desiredR2Buckets: readonly R2BucketDesired[] = [
   // Avatars, gym images, beta-link thumbnails and every resize variant.
   { name: 'boardsesh-user-media', customDomain: MEDIA_HOSTNAME, r2DevDomainEnabled: false },
   // User data exports and MoonBoard OCR submissions. MUST stay domain-less.
-  { name: 'boardsesh-user-private', customDomain: null, r2DevDomainEnabled: false },
+  {
+    name: 'boardsesh-user-private',
+    customDomain: null,
+    r2DevDomainEnabled: false,
+    lifecycleRule: USER_EXPORT_LIFECYCLE_RULE,
+  },
   // Repo-owned board art, icons and brand marks — the catalogue behind
   // assets.boardsesh.com, moving off Tigris (which serves it HTTP/1.1 from a
   // single region, measured 614 ms TTFB and 4.62 s for 24 images from Sydney,

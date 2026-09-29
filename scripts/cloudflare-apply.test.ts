@@ -1846,6 +1846,7 @@ describe('the apply loop, driven end to end against a stubbed Cloudflare API', (
         }
         return envelope({});
       }
+      if (url.pathname.endsWith('/lifecycle')) return envelope({ rules: [] });
       throw new Error(`Unstubbed Cloudflare request: ${method} ${url.pathname}`);
     });
 

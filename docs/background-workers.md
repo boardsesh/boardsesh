@@ -108,14 +108,23 @@ these grants. A table the appliers start writing fails that test first.
 | SELECT | `setter_follows`, `user_follows`, `gym_claims`, `gym_members`, `gym_follows`, `comments (entity_id, entity_type, deleted_at)` |
 | INSERT | `provider_sync_controls` (a control row for a credential linked before rows existed), `users (id, name, email, emailVerified, image, created_at, updated_at)` (the system user that owns public catalog boards; none of it readable) |
 
-`maintenance-delivery` gets exactly what `climb-stats-self-heal` needs
-(`CLIMB_STATS_SELF_HEAL_GRANTS`):
+`maintenance-delivery` gets the grants `climb-stats-self-heal` needs
+(`CLIMB_STATS_SELF_HEAL_GRANTS`), plus the narrowly selected export fields
+(`USER_DATA_EXPORT_GRANTS`):
 
 | Grant | Tables |
 | --- | --- |
 | SELECT | `boardsesh_ticks (id, user_id, board_type, climb_uuid, angle, status, origin, quality, difficulty, climbed_at, updated_at, kilter_id, kilter_synced_at, kilter_detached_at)`, `board_climbs (uuid, board_type, user_id)`, `users (id, name)`, `user_profiles (user_id, display_name)` |
 | SELECT, INSERT, UPDATE | `board_climb_stats` |
 | SELECT, INSERT, UPDATE, DELETE | `climb_stats_recompute_pending` (UPDATE because the drain reads it `FOR UPDATE SKIP LOCKED`; INSERT because every recompute batch first upserts a marker per key to hold its lock) |
+
+The export family adds SELECT on account email/creation date, tick notes and
+other archived climbing fields, authored climb frames/drafts, aliases, grade
+labels, favorites, and owned-playlist collections. It adds no credential access
+or application-table writes. The lists in `packages/db/src/job-queue-schema.ts`
+are authoritative and a restricted-role export test proves them. Supply this
+worker with `PRIVATE_*` storage configuration before enabling `user-data-export`
+in `BATCH_FAMILIES_ENABLED`. See [user-data-exports.md](./user-data-exports.md).
 
 No application SQL function is called directly; the trigger functions these
 writes fire (the `sync_seq` stamps, the location triggers) run as the caller,
@@ -205,6 +214,7 @@ module. The module declares:
 | `kilter-catalog-sync` | `routine-provider` | 3600 s (heartbeat 300 s) | 1, after 300 s | 48 600 s (the fan-out budget) | `kilter` |
 | `moonboard-locations-sync` | `routine-provider` | 1800 s (heartbeat 120 s) | 1, after 600 s | 24 h | `moonboard` |
 | `climb-stats-self-heal` | `maintenance-delivery` | 900 s (heartbeat 120 s) | 1, after 300 s | 1 h | `climb-stats` |
+| `user-data-export` | `maintenance-delivery` | 300 s (heartbeat 30 s) | 1, after 15 s | 30 min | `userId:boardType:ISO-week` |
 
 Throw `BackgroundJobError(code)` from `execute` to record a bounded,
 credential-free `error_code` (`/^[A-Z][A-Z0-9_]{0,63}$/`); pass

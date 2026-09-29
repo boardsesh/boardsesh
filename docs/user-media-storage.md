@@ -79,6 +79,10 @@ Check it after any storage env change. `source=legacy` on `media` in production 
 
 ## Serving
 
+Private climbing archives use short-lived browser-download links. Their weekly
+cache, formats, 14-day retention, and worker rollout are documented in
+[user-data-exports.md](./user-data-exports.md).
+
 Objects are reached through the backend's `/static/*` routes, which stream them out of the `media` bucket:
 
 | Route | Handler |

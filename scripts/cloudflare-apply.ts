@@ -55,6 +55,7 @@ import type {
   FullyManagedDnsRecordDesired,
   R2BucketDesired,
   R2Cors,
+  R2LifecycleRule,
   SslMode,
 } from '../infra/cloudflare/config';
 import {
@@ -63,6 +64,8 @@ import {
   diffR2Bucket,
   r2CorsHasUnmanagedRules,
   r2CorsMatches,
+  mergeR2LifecycleRule,
+  r2LifecycleRuleMatches,
   resolveRulePhase,
   upsertCacheRule,
 } from '../infra/cloudflare/plan';
@@ -317,10 +320,11 @@ async function fetchR2State(
       continue;
     }
     const bucketPath = `/accounts/${accountId}/r2/buckets/${encodeURIComponent(bucket.name)}`;
-    const [domains, managedDomain, corsState] = await Promise.all([
+    const [domains, managedDomain, corsState, lifecycleRules] = await Promise.all([
       cfRequest<R2CustomDomainListing>(token, 'GET', `${bucketPath}/domains/custom`),
       cfRequest<R2ManagedDomain>(token, 'GET', `${bucketPath}/domains/managed`),
       bucket.cors ? fetchR2Cors(token, accountId, bucket.name) : Promise.resolve(null),
+      bucket.lifecycleRule ? fetchR2LifecycleRules(token, accountId, bucket.name) : Promise.resolve(null),
     ]);
     state.set(bucket.name, {
       name: bucket.name,
@@ -331,6 +335,7 @@ async function fetchR2State(
       })),
       r2DevDomainEnabled: managedDomain.enabled,
       ...(corsState ? { cors: corsState.cors, corsRuleCount: corsState.ruleCount } : { cors: null }),
+      lifecycleRules,
     });
   }
   return state;
@@ -389,6 +394,57 @@ async function putR2Cors(token: string, accountId: string, bucketName: string, c
   console.log(`[cf-apply] set CORS on R2 bucket ${bucketName}`);
 }
 
+async function fetchR2LifecycleRules(
+  token: string,
+  accountId: string,
+  bucketName: string,
+): Promise<R2LifecycleRule[] | null> {
+  try {
+    const response = await cfRequest<{ rules?: unknown }>(
+      token,
+      'GET',
+      `/accounts/${accountId}/r2/buckets/${encodeURIComponent(bucketName)}/lifecycle`,
+    );
+    if (!Array.isArray(response.rules)) return null;
+    const validRules = response.rules.every(
+      (rule: unknown): rule is R2LifecycleRule =>
+        typeof rule === 'object' &&
+        rule !== null &&
+        'id' in rule &&
+        typeof rule.id === 'string' &&
+        rule.id.length > 0 &&
+        'enabled' in rule &&
+        typeof rule.enabled === 'boolean' &&
+        'conditions' in rule &&
+        typeof rule.conditions === 'object' &&
+        rule.conditions !== null &&
+        'prefix' in rule.conditions &&
+        typeof rule.conditions.prefix === 'string',
+    );
+    return validRules ? (response.rules as R2LifecycleRule[]) : null;
+  } catch (error) {
+    if (isNotFoundError(error)) return [];
+    if (isAuthorizationError(error)) return null;
+    throw error;
+  }
+}
+
+/** Re-read before a whole-policy PUT so unrelated rules added since planning survive. */
+export async function applyR2LifecycleRule(
+  token: string,
+  accountId: string,
+  bucketName: string,
+  desired: R2LifecycleRule,
+): Promise<void> {
+  const existing = await fetchR2LifecycleRules(token, accountId, bucketName);
+  if (!existing) throw new Error(`Cannot read lifecycle rules on ${bucketName}; refusing to replace them`);
+  if (r2LifecycleRuleMatches(existing, desired)) return;
+  await cfRequest(token, 'PUT', `/accounts/${accountId}/r2/buckets/${encodeURIComponent(bucketName)}/lifecycle`, {
+    rules: mergeR2LifecycleRule(existing, desired),
+  });
+  console.log(`[cf-apply] set lifecycle rule ${desired.id} on R2 bucket ${bucketName}`);
+}
+
 async function applyR2Bucket(
   token: string,
   accountId: string,
@@ -407,6 +463,17 @@ async function applyR2Bucket(
   }
 
   const bucketPath = `/accounts/${accountId}/r2/buckets/${encodeURIComponent(desired.name)}`;
+
+  if (desired.lifecycleRule) {
+    // This path can also be entered for an unrelated domain change; enforce the
+    // lifecycle read/ownership guard here as well as in the dry-run diff.
+    if (live.lifecycleRules) {
+      mergeR2LifecycleRule(live.lifecycleRules, desired.lifecycleRule);
+      await applyR2LifecycleRule(token, accountId, desired.name, desired.lifecycleRule);
+    } else {
+      console.warn(`[cf-apply] SKIPPED lifecycle on ${desired.name}: existing policy could not be read`);
+    }
+  }
 
   if (!desired.r2DevDomainEnabled && live.r2DevDomainEnabled) {
     await cfRequest(token, 'PUT', `${bucketPath}/domains/managed`, { enabled: false });

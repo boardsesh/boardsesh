@@ -20,6 +20,7 @@ import type {
   DnsRecordDesired,
   R2BucketDesired,
   R2Cors,
+  R2LifecycleRule,
   RateLimitRuleDesired,
   RedirectRuleDesired,
   ResponseHeaderRuleDesired,
@@ -554,6 +555,26 @@ export interface LiveR2Bucket {
    * delete the rest. See diffR2Bucket.
    */
   corsRuleCount?: number;
+  /** Null/absent means unreadable, never permission to replace the policy. */
+  lifecycleRules?: R2LifecycleRule[] | null;
+}
+
+/** Merge one owned ID, preserving every foreign rule and rejecting ambiguous ownership. */
+export function mergeR2LifecycleRule(
+  existing: readonly R2LifecycleRule[],
+  desired: R2LifecycleRule,
+): R2LifecycleRule[] {
+  const matching = existing.filter((rule) => rule.id === desired.id);
+  if (matching.length > 1 || matching.some((rule) => rule.conditions.prefix !== desired.conditions.prefix)) {
+    throw new Error(`Lifecycle rule ${desired.id} has conflicting ownership`);
+  }
+  if (!matching.length) return [...existing, desired];
+  return existing.map((rule) => (rule.id === desired.id ? desired : rule));
+}
+
+export function r2LifecycleRuleMatches(existing: readonly R2LifecycleRule[], desired: R2LifecycleRule): boolean {
+  const matching = existing.filter((rule) => rule.id === desired.id);
+  return matching.length === 1 && jsonEqual(matching[0], desired);
 }
 
 /**
@@ -636,6 +657,28 @@ export function diffR2Bucket(desired: R2BucketDesired, live: LiveR2Bucket | null
       summary: `R2 ${desired.name}: will disable public r2.dev URL`,
       detail: 'The managed development URL bypasses the custom-domain cache and access rules.',
     });
+  }
+
+  if (desired.lifecycleRule) {
+    let conflict: string | undefined;
+    if (!live.lifecycleRules) {
+      conflict = 'Lifecycle policy could not be read; existing rules must be preserved.';
+    } else {
+      try {
+        mergeR2LifecycleRule(live.lifecycleRules, desired.lifecycleRule);
+      } catch (error) {
+        conflict = error instanceof Error ? error.message : 'Conflicting lifecycle rule ownership';
+      }
+    }
+    if (conflict || !r2LifecycleRuleMatches(live.lifecycleRules ?? [], desired.lifecycleRule)) {
+      changes.push({
+        resource: 'r2-bucket',
+        r2BucketName: desired.name,
+        summary: `R2 ${desired.name}: ${conflict ? 'cannot update' : 'will set'} lifecycle rule ${desired.lifecycleRule.id}`,
+        detail: conflict ?? `Expire generated export copies after 14 days; preserve other lifecycle rules.`,
+        blocked: Boolean(conflict),
+      });
+    }
   }
 
   if (desired.customDomain === null) {

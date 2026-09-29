@@ -160,6 +160,10 @@ type Documents = {
   '\n  query GetUserProfileStats($userId: ID!) {\n    userProfileStats(userId: $userId) {\n      totalDistinctClimbs\n      layoutStats {\n        layoutKey\n        boardType\n        layoutId\n        distinctClimbCount\n        gradeCounts {\n          grade\n          count\n        }\n      }\n    }\n  }\n': typeof types.GetUserProfileStatsDocument;
   '\n  query GetUserClimbPercentile($userId: ID!) {\n    userClimbPercentile(userId: $userId) {\n      totalDistinctClimbs\n      percentile\n      totalActiveUsers\n    }\n  }\n': typeof types.GetUserClimbPercentileDocument;
   '\n  mutation UpdateTick($uuid: ID!, $input: UpdateTickInput!) {\n    updateTick(uuid: $uuid, input: $input) {\n      uuid\n      status\n      attemptCount\n      quality\n      difficulty\n      isBenchmark\n      comment\n      climbedAt\n      angle\n      updatedAt\n    }\n  }\n': typeof types.UpdateTickDocument;
+  '\n  fragment UserDataExportStatusFields on UserDataExportStatus {\n    boardType\n    period\n    status\n    refreshAt\n    requestedAt\n    completedAt\n    retryAt\n    error\n    files {\n      format\n      filename\n      fileSize\n      exportedAt\n      expiresAt\n    }\n  }\n': typeof types.UserDataExportStatusFieldsFragmentDoc;
+  '\n  query GetUserDataExport($boardType: String!, $period: String) {\n    userDataExport(boardType: $boardType, period: $period) {\n      ...UserDataExportStatusFields\n    }\n  }\n  \n': typeof types.GetUserDataExportDocument;
+  '\n  mutation RequestUserDataExport($boardType: String!) {\n    requestUserDataExport(boardType: $boardType) {\n      ...UserDataExportStatusFields\n    }\n  }\n  \n': typeof types.RequestUserDataExportDocument;
+  '\n  query GetUserDataExportDownload($boardType: String!, $period: String!, $format: UserDataExportFormat!) {\n    userDataExportDownload(boardType: $boardType, period: $period, format: $format) {\n      url\n      expiresAt\n      filename\n    }\n  }\n': typeof types.GetUserDataExportDownloadDocument;
 };
 const documents: Documents = {
   '\n  query GetDeleteAccountInfo {\n    deleteAccountInfo {\n      publishedClimbCount\n    }\n  }\n':
@@ -449,6 +453,14 @@ const documents: Documents = {
     types.GetUserClimbPercentileDocument,
   '\n  mutation UpdateTick($uuid: ID!, $input: UpdateTickInput!) {\n    updateTick(uuid: $uuid, input: $input) {\n      uuid\n      status\n      attemptCount\n      quality\n      difficulty\n      isBenchmark\n      comment\n      climbedAt\n      angle\n      updatedAt\n    }\n  }\n':
     types.UpdateTickDocument,
+  '\n  fragment UserDataExportStatusFields on UserDataExportStatus {\n    boardType\n    period\n    status\n    refreshAt\n    requestedAt\n    completedAt\n    retryAt\n    error\n    files {\n      format\n      filename\n      fileSize\n      exportedAt\n      expiresAt\n    }\n  }\n':
+    types.UserDataExportStatusFieldsFragmentDoc,
+  '\n  query GetUserDataExport($boardType: String!, $period: String) {\n    userDataExport(boardType: $boardType, period: $period) {\n      ...UserDataExportStatusFields\n    }\n  }\n  \n':
+    types.GetUserDataExportDocument,
+  '\n  mutation RequestUserDataExport($boardType: String!) {\n    requestUserDataExport(boardType: $boardType) {\n      ...UserDataExportStatusFields\n    }\n  }\n  \n':
+    types.RequestUserDataExportDocument,
+  '\n  query GetUserDataExportDownload($boardType: String!, $period: String!, $format: UserDataExportFormat!) {\n    userDataExportDownload(boardType: $boardType, period: $period, format: $format) {\n      url\n      expiresAt\n      filename\n    }\n  }\n':
+    types.GetUserDataExportDownloadDocument,
 };
 
 /**
@@ -1341,6 +1353,30 @@ export function graphql(
 export function graphql(
   source: '\n  mutation UpdateTick($uuid: ID!, $input: UpdateTickInput!) {\n    updateTick(uuid: $uuid, input: $input) {\n      uuid\n      status\n      attemptCount\n      quality\n      difficulty\n      isBenchmark\n      comment\n      climbedAt\n      angle\n      updatedAt\n    }\n  }\n',
 ): (typeof documents)['\n  mutation UpdateTick($uuid: ID!, $input: UpdateTickInput!) {\n    updateTick(uuid: $uuid, input: $input) {\n      uuid\n      status\n      attemptCount\n      quality\n      difficulty\n      isBenchmark\n      comment\n      climbedAt\n      angle\n      updatedAt\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  fragment UserDataExportStatusFields on UserDataExportStatus {\n    boardType\n    period\n    status\n    refreshAt\n    requestedAt\n    completedAt\n    retryAt\n    error\n    files {\n      format\n      filename\n      fileSize\n      exportedAt\n      expiresAt\n    }\n  }\n',
+): (typeof documents)['\n  fragment UserDataExportStatusFields on UserDataExportStatus {\n    boardType\n    period\n    status\n    refreshAt\n    requestedAt\n    completedAt\n    retryAt\n    error\n    files {\n      format\n      filename\n      fileSize\n      exportedAt\n      expiresAt\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  query GetUserDataExport($boardType: String!, $period: String) {\n    userDataExport(boardType: $boardType, period: $period) {\n      ...UserDataExportStatusFields\n    }\n  }\n  \n',
+): (typeof documents)['\n  query GetUserDataExport($boardType: String!, $period: String) {\n    userDataExport(boardType: $boardType, period: $period) {\n      ...UserDataExportStatusFields\n    }\n  }\n  \n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  mutation RequestUserDataExport($boardType: String!) {\n    requestUserDataExport(boardType: $boardType) {\n      ...UserDataExportStatusFields\n    }\n  }\n  \n',
+): (typeof documents)['\n  mutation RequestUserDataExport($boardType: String!) {\n    requestUserDataExport(boardType: $boardType) {\n      ...UserDataExportStatusFields\n    }\n  }\n  \n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  query GetUserDataExportDownload($boardType: String!, $period: String!, $format: UserDataExportFormat!) {\n    userDataExportDownload(boardType: $boardType, period: $period, format: $format) {\n      url\n      expiresAt\n      filename\n    }\n  }\n',
+): (typeof documents)['\n  query GetUserDataExportDownload($boardType: String!, $period: String!, $format: UserDataExportFormat!) {\n    userDataExportDownload(boardType: $boardType, period: $period, format: $format) {\n      url\n      expiresAt\n      filename\n    }\n  }\n'];
 
 export function graphql(source: string) {
   return (documents as any)[source] ?? {};
