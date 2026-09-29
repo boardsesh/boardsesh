@@ -27,6 +27,8 @@
     "offline": "Conéctate a internet para preparar o descargar tu exportación.",
     "unavailable": "Las exportaciones no están disponibles por ahora. Reinténtalo más tarde.",
     "failed": "No se ha podido preparar tu exportación. Reinténtalo.",
+    "archiveInvalid": "No se puede leer esta exportación guardada. Contacta con el equipo de asistencia o inténtalo la próxima semana.",
+    "tooLarge": "Esta exportación es demasiado grande para prepararla. Contacta con el equipo de asistencia.",
     "loadFailed": "No se ha podido comprobar tu exportación. Actualiza para reintentarlo.",
     "requestFailed": "No se ha podido preparar tu exportación. Reinténtalo.",
     "downloadFailed": "No se ha podido abrir la descarga. Pulsa Descargar JSON para obtener un enlace nuevo.",

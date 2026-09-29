@@ -15,12 +15,19 @@ import {
   users,
 } from '@boardsesh/db/schema';
 import { db } from '../db/client';
-import { buildAuroraExportFromArchive, buildUserDataArchive } from '../services/user-data-export-archive';
+import {
+  buildAuroraExportFromArchive,
+  buildUserDataArchive,
+  MAX_USER_DATA_EXPORT_BYTES,
+  MAX_USER_DATA_EXPORT_ROWS,
+} from '../services/user-data-export-archive';
 import { isAuroraBoardType } from '../services/user-data-export-format';
 
 const fixturePrefix = `export-fidelity-${randomUUID()}`;
 const fixtureUserId = `${fixturePrefix}-user`;
 const foreignUserId = `${fixturePrefix}-foreign`;
+const oversizedUserId = `${fixturePrefix}-oversized`;
+const manyRowsUserId = `${fixturePrefix}-many-rows`;
 const fixtureClimbUuids: string[] = [];
 const fixturePlaylistIds: bigint[] = [];
 const fixtureSprayBoardUuids: string[] = [];
@@ -32,7 +39,7 @@ describe('weekly archive fidelity for every supported board', () => {
     if (fixtureClimbUuids.length) await db.delete(boardClimbs).where(inArray(boardClimbs.uuid, fixtureClimbUuids));
     if (fixtureSprayBoardUuids.length)
       await db.delete(sprayWalls).where(inArray(sprayWalls.boardUuid, fixtureSprayBoardUuids));
-    await db.delete(users).where(inArray(users.id, [fixtureUserId, foreignUserId]));
+    await db.delete(users).where(inArray(users.id, [fixtureUserId, foreignUserId, oversizedUserId, manyRowsUserId]));
   });
 
   it.each(SUPPORTED_BOARDS)('retains identifiers, unresolved records, and drafts on %s', async (boardType) => {
@@ -249,6 +256,33 @@ describe('weekly archive fidelity for every supported board', () => {
     await expect(buildUserDataArchive(db, `${fixturePrefix}-deleted`, 'kilter', '2026-W40')).rejects.toThrow(
       'EXPORT_USER_MISSING',
     );
+  });
+
+  it('rejects an oversized comment before loading personal rows', async () => {
+    await db.insert(users).values({ id: oversizedUserId, email: `${oversizedUserId}@example.com` });
+    await db.insert(boardseshTicks).values({
+      uuid: `${fixturePrefix}-oversized-tick`,
+      userId: oversizedUserId,
+      boardType: 'kilter',
+      climbUuid: `${fixturePrefix}-unresolved`,
+      status: 'attempt',
+      angle: 40,
+      comment: sql`repeat('x', ${MAX_USER_DATA_EXPORT_BYTES + 1})`,
+      climbedAt: '2026-09-29T12:34:56Z',
+    });
+    await expect(buildUserDataArchive(db, oversizedUserId, 'kilter', '2026-W40')).rejects.toThrow('EXPORT_TOO_LARGE');
+  });
+
+  it('rejects a history above the row budget instead of silently truncating it', async () => {
+    await db.insert(users).values({ id: manyRowsUserId, email: `${manyRowsUserId}@example.com` });
+    // Drizzle cannot express generate_series; one indexed fixture insert avoids
+    // 20,001 network round trips and keeps this boundary test inexpensive.
+    await db.execute(sql`
+      INSERT INTO user_favorites (user_id, board_name, climb_uuid, angle)
+      SELECT ${manyRowsUserId}, 'kilter', 'fixture-' || ordinal, 40
+      FROM generate_series(1, ${MAX_USER_DATA_EXPORT_ROWS + 1}) AS ordinal
+    `);
+    await expect(buildUserDataArchive(db, manyRowsUserId, 'kilter', '2026-W40')).rejects.toThrow('EXPORT_TOO_LARGE');
   });
 
   it('does not query after cancellation', async () => {

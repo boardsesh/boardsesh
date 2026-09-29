@@ -10029,6 +10029,8 @@ export type UserDataExportStatus = {
   boardType: Scalars['String']['output'];
   completedAt?: Maybe<Scalars['String']['output']>;
   error?: Maybe<Scalars['String']['output']>;
+  /** A stable failure code for localized client guidance, when available. */
+  errorCode?: Maybe<Scalars['String']['output']>;
   files: Array<UserDataExportFile>;
   period: Scalars['String']['output'];
   refreshAt: Scalars['String']['output'];
@@ -16387,6 +16389,7 @@ export type UserDataExportStatusResolvers<
   boardType?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   completedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   error?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  errorCode?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   files?: Resolver<Array<ResolversTypes['UserDataExportFile']>, ParentType, ContextType>;
   period?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   refreshAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;

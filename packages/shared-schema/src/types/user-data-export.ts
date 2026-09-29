@@ -21,6 +21,7 @@ export type UserDataExportStatus = {
   completedAt?: string;
   retryAt?: string;
   error?: string;
+  errorCode?: 'EXPORT_ARCHIVE_INVALID' | 'EXPORT_TOO_LARGE';
   /**
    * @deprecated Legacy authenticated Aurora HTTP download. New clients should
    * request a fresh userDataExportDownload link instead of proxying file bytes.

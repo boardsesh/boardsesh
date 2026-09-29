@@ -30,6 +30,8 @@ export const userDataExportTypeDefs = /* GraphQL */ `
     completedAt: String
     retryAt: String
     error: String
+    "A stable failure code for localized client guidance, when available."
+    errorCode: String
   }
 
   type UserDataExportDownloadLink {

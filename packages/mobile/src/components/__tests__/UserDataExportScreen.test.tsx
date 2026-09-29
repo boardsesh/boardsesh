@@ -333,6 +333,21 @@ describe('cached export states and browser download', () => {
     expect((screen.getByRole('button', { name: 'export.retry' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
+  it.each([
+    ['EXPORT_ARCHIVE_INVALID', 'export.archiveInvalid'],
+    ['EXPORT_TOO_LARGE', 'export.tooLarge'],
+  ] as const)('shows actionable guidance for %s without offering an ineffective retry', (errorCode, copy) => {
+    mocks.status = exportStatus({
+      status: 'failed',
+      errorCode,
+      retryAt: new Date(Date.now() + 86_400_000).toISOString(),
+    });
+    render(<UserDataExportScreen />);
+    expect(screen.getByText(copy)).not.toBeNull();
+    expect(screen.queryByRole('button', { name: 'export.retry' })).toBeNull();
+    expect(screen.queryByText('export.retryAt')).toBeNull();
+  });
+
   it('shows a visible error if the browser cannot open a fresh link', async () => {
     mocks.status = readyExport();
     mocks.download.mockRejectedValue(new Error('browser blocked'));

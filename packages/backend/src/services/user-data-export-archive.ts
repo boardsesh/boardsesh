@@ -98,7 +98,118 @@ export type BoardseshUserDataArchive = {
   climbs: ArchiveClimb[];
 };
 
+// Query and upload limits are deliberately all-or-nothing: an oversized history
+// fails rather than producing a plausible archive with missing records.
+export const MAX_USER_DATA_EXPORT_ROWS = 20_000;
+export const MAX_USER_DATA_EXPORT_BYTES = 32 * 1024 * 1024;
+
 const timestamp = (date: Date | string): string => (typeof date === 'string' ? date : date.toISOString());
+
+function checkedRowCount(total: number, rows: readonly unknown[]): number {
+  const next = total + rows.length;
+  if (next > MAX_USER_DATA_EXPORT_ROWS) throw new Error('EXPORT_TOO_LARGE');
+  return next;
+}
+
+/** Indexed, user-scoped aggregates reject oversized source data before fetching it. */
+async function checkArchiveBudget(database: DbInstance, userId: string, boardType: BoardName): Promise<void> {
+  const climbVisibility = sprayClimbVisibilityCondition(
+    { boardType: boardClimbs.boardType, layoutId: boardClimbs.layoutId },
+    userId,
+  );
+  const [tickBudget, favoriteBudget, playlistBudget, climbBudget] = await Promise.all([
+    database
+      .select({
+        count: sql<string>`count(*)::text`,
+        bytes: sql<string>`coalesce(sum(octet_length(coalesce(${boardseshTicks.comment}, '')) + octet_length(coalesce(${boardClimbs.name}, ''))), 0)::text`,
+      })
+      .from(boardseshTicks)
+      .leftJoin(
+        boardClimbAliases,
+        and(
+          eq(boardseshTicks.climbUuid, boardClimbAliases.aliasUuid),
+          eq(boardseshTicks.boardType, boardClimbAliases.boardType),
+        ),
+      )
+      .leftJoin(
+        boardClimbs,
+        and(
+          eq(boardseshTicks.boardType, boardClimbs.boardType),
+          sql`COALESCE(${boardClimbAliases.canonicalUuid}, ${boardseshTicks.climbUuid}) = ${boardClimbs.uuid}`,
+          climbVisibility,
+        ),
+      )
+      .where(and(eq(boardseshTicks.userId, userId), eq(boardseshTicks.boardType, boardType))),
+    database
+      .select({
+        count: sql<string>`count(*)::text`,
+        bytes: sql<string>`coalesce(sum(octet_length(coalesce(${boardClimbs.name}, ''))), 0)::text`,
+      })
+      .from(userFavorites)
+      .leftJoin(
+        boardClimbAliases,
+        and(
+          eq(userFavorites.climbUuid, boardClimbAliases.aliasUuid),
+          eq(userFavorites.boardName, boardClimbAliases.boardType),
+        ),
+      )
+      .leftJoin(
+        boardClimbs,
+        and(
+          eq(userFavorites.boardName, boardClimbs.boardType),
+          sql`COALESCE(${boardClimbAliases.canonicalUuid}, ${userFavorites.climbUuid}) = ${boardClimbs.uuid}`,
+          climbVisibility,
+        ),
+      )
+      .where(and(eq(userFavorites.userId, userId), eq(userFavorites.boardName, boardType))),
+    database
+      .select({
+        count: sql<string>`count(*)::text`,
+        bytes: sql<string>`coalesce(sum(octet_length(${playlists.name}) + octet_length(coalesce(${playlists.description}, '')) + octet_length(coalesce(${boardClimbs.name}, ''))), 0)::text`,
+      })
+      .from(playlists)
+      .innerJoin(
+        playlistOwnership,
+        and(eq(playlistOwnership.playlistId, playlists.id), eq(playlistOwnership.userId, userId)),
+      )
+      .leftJoin(playlistClimbs, eq(playlistClimbs.playlistId, playlists.id))
+      .leftJoin(
+        boardClimbAliases,
+        and(
+          eq(playlistClimbs.climbUuid, boardClimbAliases.aliasUuid),
+          eq(playlists.boardType, boardClimbAliases.boardType),
+        ),
+      )
+      .leftJoin(
+        boardClimbs,
+        and(
+          eq(playlists.boardType, boardClimbs.boardType),
+          sql`COALESCE(${boardClimbAliases.canonicalUuid}, ${playlistClimbs.climbUuid}) = ${boardClimbs.uuid}`,
+          climbVisibility,
+        ),
+      )
+      .where(and(eq(playlists.boardType, boardType), eq(playlistOwnership.role, 'owner'))),
+    database
+      .select({
+        count: sql<string>`count(*)::text`,
+        bytes: sql<string>`coalesce(sum(octet_length(coalesce(${boardClimbs.name}, '')) + octet_length(coalesce(${boardClimbs.frames}, '')) + octet_length(coalesce(${boardClimbs.description}, '')) + octet_length(coalesce(array_to_string(${boardClimbs.characteristics}, ''), ''))), 0)::text`,
+      })
+      .from(boardClimbs)
+      .where(and(eq(boardClimbs.userId, userId), eq(boardClimbs.boardType, boardType), climbVisibility)),
+  ]);
+  const sourceRows =
+    Number(tickBudget[0]?.count ?? 0) +
+    Number(favoriteBudget[0]?.count ?? 0) +
+    Number(playlistBudget[0]?.count ?? 0) +
+    Number(climbBudget[0]?.count ?? 0);
+  const sourceBytes =
+    Number(tickBudget[0]?.bytes ?? 0) +
+    Number(favoriteBudget[0]?.bytes ?? 0) +
+    Number(playlistBudget[0]?.bytes ?? 0) +
+    Number(climbBudget[0]?.bytes ?? 0);
+  if (sourceRows > MAX_USER_DATA_EXPORT_ROWS || sourceBytes > MAX_USER_DATA_EXPORT_BYTES)
+    throw new Error('EXPORT_TOO_LARGE');
+}
 
 /** One read of each personal collection serves both download formats. */
 export async function buildUserDataArchive(
@@ -115,6 +226,9 @@ export async function buildUserDataArchive(
     .where(eq(users.id, userId))
     .limit(1);
   if (!user) throw new Error('EXPORT_USER_MISSING');
+  await checkArchiveBudget(database, userId, boardType);
+  signal?.throwIfAborted();
+  let loadedRows = 0;
   const climbVisibility = sprayClimbVisibilityCondition(
     { boardType: boardClimbs.boardType, layoutId: boardClimbs.layoutId },
     userId,
@@ -167,7 +281,9 @@ export async function buildUserDataArchive(
       ),
     )
     .where(and(eq(boardseshTicks.userId, userId), eq(boardseshTicks.boardType, boardType)))
-    .orderBy(asc(boardseshTicks.climbedAt), asc(boardseshTicks.createdAt), asc(boardseshTicks.uuid));
+    .orderBy(asc(boardseshTicks.climbedAt), asc(boardseshTicks.createdAt), asc(boardseshTicks.uuid))
+    .limit(MAX_USER_DATA_EXPORT_ROWS - loadedRows + 1);
+  loadedRows = checkedRowCount(loadedRows, ticks);
   signal?.throwIfAborted();
   const favorites = await database
     .select({
@@ -196,7 +312,9 @@ export async function buildUserDataArchive(
       ),
     )
     .where(and(eq(userFavorites.userId, userId), eq(userFavorites.boardName, boardType)))
-    .orderBy(asc(userFavorites.createdAt), asc(userFavorites.id));
+    .orderBy(asc(userFavorites.createdAt), asc(userFavorites.id))
+    .limit(MAX_USER_DATA_EXPORT_ROWS - loadedRows + 1);
+  loadedRows = checkedRowCount(loadedRows, favorites);
   signal?.throwIfAborted();
   const playlistRows = await database
     .select({
@@ -241,7 +359,9 @@ export async function buildUserDataArchive(
       ),
     )
     .where(and(eq(playlists.boardType, boardType), eq(playlistOwnership.role, 'owner')))
-    .orderBy(asc(playlists.createdAt), asc(playlists.id), asc(playlistClimbs.position), asc(playlistClimbs.id));
+    .orderBy(asc(playlists.createdAt), asc(playlists.id), asc(playlistClimbs.position), asc(playlistClimbs.id))
+    .limit(MAX_USER_DATA_EXPORT_ROWS - loadedRows + 1);
+  loadedRows = checkedRowCount(loadedRows, playlistRows);
   signal?.throwIfAborted();
   const climbs = await database
     .select({
@@ -261,7 +381,9 @@ export async function buildUserDataArchive(
     })
     .from(boardClimbs)
     .where(and(eq(boardClimbs.userId, userId), eq(boardClimbs.boardType, boardType), climbVisibility))
-    .orderBy(asc(boardClimbs.createdAt), asc(boardClimbs.uuid));
+    .orderBy(asc(boardClimbs.createdAt), asc(boardClimbs.uuid))
+    .limit(MAX_USER_DATA_EXPORT_ROWS - loadedRows + 1);
+  checkedRowCount(loadedRows, climbs);
   signal?.throwIfAborted();
   const archivedPlaylists = new Map<string, ArchivePlaylist>();
   for (const row of playlistRows) {

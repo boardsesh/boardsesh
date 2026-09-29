@@ -27,6 +27,8 @@
     "offline": "Connect to the internet to prepare or download your export.",
     "unavailable": "Exports are temporarily unavailable. Try again later.",
     "failed": "Your export could not be prepared. Try again.",
+    "archiveInvalid": "This saved export cannot be read. Contact support or try again next week.",
+    "tooLarge": "This export is too large to prepare. Contact support for help.",
     "loadFailed": "Could not check your export. Refresh to try again.",
     "requestFailed": "Could not prepare your export. Try again.",
     "downloadFailed": "Could not open your download. Tap Download JSON to get a fresh link.",

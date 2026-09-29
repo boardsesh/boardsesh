@@ -16,6 +16,7 @@ const EXPORT_STATUS_FIELDS = gql`
     completedAt
     retryAt
     error
+    errorCode
     files {
       format
       filename

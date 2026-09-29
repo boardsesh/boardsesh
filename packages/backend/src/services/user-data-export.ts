@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { and, desc, eq } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import type { DbInstance } from '@boardsesh/db/client';
@@ -24,6 +25,7 @@ import { getIsoWeekPeriod, isAuroraBoardType, type AuroraJsonExport } from './us
 import {
   buildAuroraExportFromArchive,
   buildUserDataArchive,
+  MAX_USER_DATA_EXPORT_BYTES,
   type BoardseshUserDataArchive,
 } from './user-data-export-archive';
 import { getJobQueue } from './job-queue';
@@ -38,6 +40,8 @@ export const USER_DATA_EXPORT_RETENTION_MS = 14 * 86400_000;
 export const USER_DATA_EXPORT_RETRY_MS = 5 * 60_000;
 const FAILURE_MESSAGE = 'Export generation failed. Try again later.';
 const UNAVAILABLE_MESSAGE = 'Export service is temporarily unavailable.';
+const INVALID_ARCHIVE_MESSAGE = 'Stored export is invalid. Contact support.';
+const TOO_LARGE_MESSAGE = 'Export is too large to create. Contact support.';
 const NON_TERMINAL = new Set(['queued', 'running', 'retrying']);
 
 type ExportRun = typeof backgroundJobRuns.$inferSelect;
@@ -130,25 +134,39 @@ async function readRuns(database: Pick<DbInstance, 'select'>, payload: UserDataE
     .limit(2);
 }
 
+function blockingExportFailure(run: ExportRun | undefined): 'EXPORT_ARCHIVE_INVALID' | 'EXPORT_TOO_LARGE' | undefined {
+  if (run?.status !== 'failed') return undefined;
+  return run.errorCode === 'EXPORT_ARCHIVE_INVALID' || run.errorCode === 'EXPORT_TOO_LARGE' ? run.errorCode : undefined;
+}
+
 function exportStatus(
   payload: UserDataExportJobPayload,
   files: UserDataExportFile[],
   runs: ExportRun[],
 ): UserDataExportStatus {
   const latest = runs[0];
-  const complete = files.length === expectedFormats(payload.boardType).length;
-  const status = complete
-    ? 'ready'
-    : latest && NON_TERMINAL.has(latest.status)
-      ? 'generating'
-      : latest
-        ? 'failed'
-        : 'not_requested';
-  const aurora = files.find((file) => file.format === 'aurora');
-  const boardsesh = files.find((file) => file.format === 'boardsesh');
+  const failureCode = blockingExportFailure(latest);
+  const invalidArchive = failureCode === 'EXPORT_ARCHIVE_INVALID';
+  const tooLarge = failureCode === 'EXPORT_TOO_LARGE';
+  // A HEAD can still find an immutable object after the worker rejects its
+  // contents. Do not advertise that object or issue another download link.
+  const availableFiles = invalidArchive ? files.filter((file) => file.format !== 'boardsesh') : files;
+  const complete = availableFiles.length === expectedFormats(payload.boardType).length;
+  const status =
+    invalidArchive || tooLarge
+      ? 'failed'
+      : latest && NON_TERMINAL.has(latest.status)
+        ? 'generating'
+        : complete
+          ? 'ready'
+          : latest
+            ? 'failed'
+            : 'not_requested';
+  const aurora = availableFiles.find((file) => file.format === 'aurora');
+  const boardsesh = availableFiles.find((file) => file.format === 'boardsesh');
   const retryAt =
     status === 'failed'
-      ? runs.length >= 2
+      ? invalidArchive || tooLarge || runs.length >= 2
         ? refreshAt(payload.period)
         : latest
           ? new Date((latest.finishedAt ?? latest.createdAt).getTime() + USER_DATA_EXPORT_RETRY_MS).toISOString()
@@ -158,12 +176,20 @@ function exportStatus(
     boardType: payload.boardType,
     period: payload.period,
     status,
-    files,
+    files: availableFiles,
     refreshAt: refreshAt(payload.period),
     requestedAt: latest?.createdAt.toISOString(),
     completedAt: complete ? boardsesh?.exportedAt : undefined,
     retryAt,
-    error: status === 'failed' ? FAILURE_MESSAGE : undefined,
+    error:
+      status === 'failed'
+        ? invalidArchive
+          ? INVALID_ARCHIVE_MESSAGE
+          : tooLarge
+            ? TOO_LARGE_MESSAGE
+            : FAILURE_MESSAGE
+        : undefined,
+    ...(failureCode ? { errorCode: failureCode } : {}),
     ...(aurora
       ? {
           // Deprecated legacy HTTP compatibility; new clients request a signed format-specific link.
@@ -200,8 +226,8 @@ export async function getUserDataExportStatus(
       await reconcileBackgroundJobRun(db, runs[0].id);
       runs = await readRuns(db, payload);
     }
-    // Publishing can finish between HEAD and ledger reads. A terminal ledger
-    // must not stop polling while its newly published files are already ready.
+    // Publishing can finish between HEAD and ledger reads. Re-read metadata
+    // after terminal settlement, while respecting a known invalid archive.
     if (files.length !== expectedFormats(boardType).length && runs[0] && !NON_TERMINAL.has(runs[0].status))
       files = await readFiles(payload);
     return exportStatus(payload, files, runs);
@@ -218,14 +244,18 @@ export async function requestUserDataExport(userId: string, boardType: BoardName
   try {
     // No object-store network request holds a user row lock.
     const files = await readFiles(payload);
+    const observedRuns = await readRuns(db, payload);
+    if (blockingExportFailure(observedRuns[0])) return exportStatus(payload, files, observedRuns);
     if (files.length === expectedFormats(boardType).length) {
-      logger.info('[user-data-export] cached files reused', {
-        boardType,
-        period: payload.period,
-        cacheReuse: true,
-        fileBytes: files.reduce((total, file) => total + (file.fileSize ?? 0), 0),
-      });
-      return exportStatus(payload, files, []);
+      const cached = exportStatus(payload, files, observedRuns);
+      if (cached.status === 'ready')
+        logger.info('[user-data-export] cached files reused', {
+          boardType,
+          period: payload.period,
+          cacheReuse: true,
+          fileBytes: files.reduce((total, file) => total + (file.fileSize ?? 0), 0),
+        });
+      return cached;
     }
     if (!enabledBatchFamiliesOrNone().has(USER_DATA_EXPORT_FAMILY)) return { ...unavailableStatus(payload), files };
     const boss = getJobQueue();
@@ -240,6 +270,9 @@ export async function requestUserDataExport(userId: string, boardType: BoardName
         runs = await readRuns(transaction, payload);
       }
       const latest = runs[0];
+      // These failures describe the immutable weekly artifact or a snapshot
+      // that cannot fit the export limit. Another same-week run cannot repair it.
+      if (blockingExportFailure(latest)) return exportStatus(payload, files, runs);
       if (latest && NON_TERMINAL.has(latest.status)) return exportStatus(payload, files, runs);
       if (
         runs.length >= 2 ||
@@ -257,8 +290,7 @@ export async function requestUserDataExport(userId: string, boardType: BoardName
     // that terminal response against fresh objects after releasing the lock.
     if (requested.status === 'failed') {
       const publishedFiles = await readFiles(payload);
-      if (publishedFiles.length === expectedFormats(boardType).length) return exportStatus(payload, publishedFiles, []);
-      return { ...requested, files: publishedFiles };
+      return exportStatus(payload, publishedFiles, await readRuns(db, payload));
     }
     return requested;
   } catch (error) {
@@ -278,7 +310,23 @@ async function downloadableFile(userId: string, boardType: BoardName, period: st
   await requireExportUser(userId);
   if (!isRecentExportPeriod(period)) return null;
   if (!expectedFormats(boardType).includes(format) || !isS3Configured('private')) return null;
-  const file = (await readFiles({ userId, boardType, period })).find((candidate) => candidate.format === format);
+  const payload = { userId, boardType, period };
+  if (format === 'boardsesh') {
+    const latest = (await readRuns(db, payload))[0];
+    if (blockingExportFailure(latest) === 'EXPORT_ARCHIVE_INVALID') return null;
+    if (latest && NON_TERMINAL.has(latest.status)) {
+      // A companion can still be generating after its archive was uploaded.
+      // Validate on an explicit download tap, never on the polling path.
+      try {
+        if (!(await readStoredArchive(payload))) return null;
+      } catch (error) {
+        if (error instanceof Error && ['EXPORT_ARCHIVE_INVALID', 'EXPORT_TOO_LARGE'].includes(error.message))
+          return null;
+        throw error;
+      }
+    }
+  }
+  const file = (await readFiles(payload)).find((candidate) => candidate.format === format);
   if (!file) return null;
   return { file, key: userDataExportKey(userId, boardType, period, format) };
 }
@@ -325,8 +373,21 @@ async function readStoredArchive(payload: UserDataExportJobPayload): Promise<Boa
     userDataExportKey(payload.userId, payload.boardType, payload.period, 'boardsesh'),
   );
   if (!object) return null;
+  if (object.contentLength !== undefined && object.contentLength > MAX_USER_DATA_EXPORT_BYTES) {
+    object.stream.destroy();
+    throw new Error('EXPORT_TOO_LARGE');
+  }
   const chunks: Buffer[] = [];
-  for await (const chunk of object.stream) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  let totalBytes = 0;
+  for await (const chunk of object.stream) {
+    const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    totalBytes += bytes.length;
+    if (totalBytes > MAX_USER_DATA_EXPORT_BYTES) {
+      object.stream.destroy();
+      throw new Error('EXPORT_TOO_LARGE');
+    }
+    chunks.push(bytes);
+  }
   let archive: unknown;
   try {
     archive = JSON.parse(Buffer.concat(chunks).toString('utf8'));
@@ -362,17 +423,43 @@ async function readStoredArchive(payload: UserDataExportJobPayload): Promise<Boa
   return archive as BoardseshUserDataArchive;
 }
 
+async function verifyStoredArchiveDigest(payload: UserDataExportJobPayload, expectedDigest: string): Promise<void> {
+  const object = await getFromS3Strict(
+    'private',
+    userDataExportKey(payload.userId, payload.boardType, payload.period, 'boardsesh'),
+  );
+  if (!object) throw new Error('EXPORT_ARCHIVE_MISSING');
+  if (object.contentLength !== undefined && object.contentLength > MAX_USER_DATA_EXPORT_BYTES) {
+    object.stream.destroy();
+    throw new Error('EXPORT_TOO_LARGE');
+  }
+  const digest = createHash('sha256');
+  let totalBytes = 0;
+  for await (const chunk of object.stream) {
+    const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    totalBytes += bytes.length;
+    if (totalBytes > MAX_USER_DATA_EXPORT_BYTES) {
+      object.stream.destroy();
+      throw new Error('EXPORT_TOO_LARGE');
+    }
+    digest.update(bytes);
+  }
+  if (digest.digest('hex') !== expectedDigest) throw new Error('EXPORT_ARCHIVE_INVALID');
+}
+
 async function storeImmutableExport(
   context: BackgroundJobContext,
   payload: UserDataExportJobPayload,
   format: UserDataExportFormat,
   content: unknown,
   exportedAt: string,
-): Promise<boolean> {
+): Promise<string | null> {
   context.signal.throwIfAborted();
   await context.transaction((transaction) => requireExportUser(payload.userId, transaction));
   context.signal.throwIfAborted();
-  const buffer = Buffer.from(JSON.stringify(content, null, 2));
+  const serialized = JSON.stringify(content, null, 2);
+  if (Buffer.byteLength(serialized, 'utf8') > MAX_USER_DATA_EXPORT_BYTES) throw new Error('EXPORT_TOO_LARGE');
+  const buffer = Buffer.from(serialized);
   try {
     await uploadToS3(
       'private',
@@ -396,13 +483,13 @@ async function storeImmutableExport(
       fileBytes: buffer.length,
       cacheReuse: false,
     });
-    return true;
+    return createHash('sha256').update(buffer).digest('hex');
   } catch (error) {
     const status =
       error && typeof error === 'object' && '$metadata' in error
         ? (error.$metadata as { httpStatusCode?: number } | undefined)?.httpStatusCode
         : undefined;
-    if (status === 412 || (error instanceof Error && error.name === 'PreconditionFailed')) return false;
+    if (status === 412 || (error instanceof Error && error.name === 'PreconditionFailed')) return null;
     throw error;
   }
 }
@@ -423,9 +510,17 @@ export async function generateUserDataExport(
       payload.period,
       context.signal,
     );
-    const stored = await storeImmutableExport(context, payload, 'boardsesh', archive, archive.exportedAt);
-    if (!stored) archive = await readStoredArchive(payload);
-    if (!archive) throw new Error('EXPORT_ARCHIVE_MISSING');
+    const uploadedDigest = await storeImmutableExport(context, payload, 'boardsesh', archive, archive.exportedAt);
+    if (uploadedDigest) {
+      // Stream one bounded read-back after a fresh write. The digest proves
+      // the private object matches the validated in-memory archive without
+      // materializing or parsing another full copy in worker memory.
+      await verifyStoredArchiveDigest(payload, uploadedDigest);
+    } else {
+      // A conditional-write winner may have different content; validate it.
+      archive = await readStoredArchive(payload);
+      if (!archive) throw new Error('EXPORT_ARCHIVE_MISSING');
+    }
   }
   context.signal.throwIfAborted();
   if (isAuroraBoardType(payload.boardType)) {

@@ -65,17 +65,32 @@ reads its injected primary database, loads personal collections once, and uses
 the immutable archive to produce a missing Aurora companion. Conditional uploads
 preserve a winning snapshot across retries and overlapping attempts.
 
+The worker checks a fresh private upload once with a bounded streaming SHA-256
+read-back. Status polling uses object metadata and the job ledger, so it never
+downloads the archive body. A known-invalid immutable file is hidden from
+Boardsesh downloads and cannot be regenerated under the same weekly key; the
+climber sees a support message and can request a new snapshot next week. Damage
+that occurs after a successful verification cannot be detected by metadata alone.
+
 Limits: one active job per existing worker process; two runs per user/board/week;
 one automatic retry per run; five-minute attempt lease; 30-second heartbeat;
-30-minute overall deadline. Terminal failure permits another run after five
-minutes while budget remains. User-filtered queries are indexed including drafts.
+30-minute overall deadline. Recoverable terminal failure permits another run
+after five minutes while budget remains; invalid archives and oversized
+snapshots wait until the next week. User-filtered queries are indexed including drafts.
 Storage failures do not masquerade as cache misses and cause regeneration.
 
 Queries return the climber's own records. Playlist result rows grow linearly with
 climb memberships in owned playlists, plus one row for each empty playlist. The
-full archive and its serialized output are materialized in memory, so peak memory
-grows with personal history. Monitor large logbooks; generation has no record cap
-or pagination and does not silently truncate records.
+full archive and its serialized output are materialized in memory. Generation
+preflights user-scoped row counts and large text fields, then limits each collection
+query to the remaining 20,000-row budget plus one. Both formats have a 32 MiB
+serialized JSON limit; cached archive reads enforce the same cap from Content-Length
+and actual streamed bytes. `EXPORT_TOO_LARGE` stops the job without an automatic
+retry or a partial upload. The climber's underlying records remain untouched; an
+operator must arrange another full-fidelity export path for histories above these
+limits. Preflight counts can race with writes, so bounded queries and the final
+serialized-byte check remain necessary. A single source field can still require
+temporary memory before its size is detected.
 
 ## Private storage and retention
 

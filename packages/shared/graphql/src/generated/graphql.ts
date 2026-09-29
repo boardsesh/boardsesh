@@ -10026,6 +10026,8 @@ export type UserDataExportStatus = {
   boardType: Scalars['String']['output'];
   completedAt?: Maybe<Scalars['String']['output']>;
   error?: Maybe<Scalars['String']['output']>;
+  /** A stable failure code for localized client guidance, when available. */
+  errorCode?: Maybe<Scalars['String']['output']>;
   files: Array<UserDataExportFile>;
   period: Scalars['String']['output'];
   refreshAt: Scalars['String']['output'];
@@ -13969,6 +13971,7 @@ export type UserDataExportStatusFieldsFragment = {
   completedAt?: string | null;
   retryAt?: string | null;
   error?: string | null;
+  errorCode?: string | null;
   files: Array<{
     __typename?: 'UserDataExportFile';
     format: UserDataExportFormat;
@@ -13996,6 +13999,7 @@ export type GetUserDataExportQuery = {
     completedAt?: string | null;
     retryAt?: string | null;
     error?: string | null;
+    errorCode?: string | null;
     files: Array<{
       __typename?: 'UserDataExportFile';
       format: UserDataExportFormat;
@@ -14023,6 +14027,7 @@ export type RequestUserDataExportMutation = {
     completedAt?: string | null;
     retryAt?: string | null;
     error?: string | null;
+    errorCode?: string | null;
     files: Array<{
       __typename?: 'UserDataExportFile';
       format: UserDataExportFormat;
@@ -14520,6 +14525,7 @@ export const UserDataExportStatusFieldsFragmentDoc = {
           { kind: 'Field', name: { kind: 'Name', value: 'completedAt' } },
           { kind: 'Field', name: { kind: 'Name', value: 'retryAt' } },
           { kind: 'Field', name: { kind: 'Name', value: 'error' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'errorCode' } },
           {
             kind: 'Field',
             name: { kind: 'Name', value: 'files' },
@@ -23133,6 +23139,7 @@ export const GetUserDataExportDocument = {
           { kind: 'Field', name: { kind: 'Name', value: 'completedAt' } },
           { kind: 'Field', name: { kind: 'Name', value: 'retryAt' } },
           { kind: 'Field', name: { kind: 'Name', value: 'error' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'errorCode' } },
           {
             kind: 'Field',
             name: { kind: 'Name', value: 'files' },
@@ -23202,6 +23209,7 @@ export const RequestUserDataExportDocument = {
           { kind: 'Field', name: { kind: 'Name', value: 'completedAt' } },
           { kind: 'Field', name: { kind: 'Name', value: 'retryAt' } },
           { kind: 'Field', name: { kind: 'Name', value: 'error' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'errorCode' } },
           {
             kind: 'Field',
             name: { kind: 'Name', value: 'files' },

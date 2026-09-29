@@ -181,6 +181,14 @@ function AccountUserDataExportScreen({ userId }: { userId: string }) {
     }
   })();
   const retryWaiting = !!exportStatus?.retryAt && Date.parse(exportStatus.retryAt) > Date.now();
+  const terminalFailure =
+    exportStatus?.errorCode === 'EXPORT_ARCHIVE_INVALID' || exportStatus?.errorCode === 'EXPORT_TOO_LARGE';
+  const failureCopy =
+    exportStatus?.errorCode === 'EXPORT_ARCHIVE_INVALID'
+      ? t('export.archiveInvalid')
+      : exportStatus?.errorCode === 'EXPORT_TOO_LARGE'
+        ? t('export.tooLarge')
+        : t('export.failed');
   const fileExpired = !!selectedFile && Date.parse(selectedFile.expiresAt) <= Date.now();
 
   return (
@@ -221,8 +229,8 @@ function AccountUserDataExportScreen({ userId }: { userId: string }) {
         {exportStatus?.status === 'unavailable' ? <Text>{t('export.unavailable')}</Text> : null}
         {exportStatus?.status === 'failed' ? (
           <>
-            <Text color={brandColors.error}>{t('export.failed')}</Text>
-            {retryWaiting && exportStatus.retryAt ? (
+            <Text color={brandColors.error}>{failureCopy}</Text>
+            {!terminalFailure && retryWaiting && exportStatus.retryAt ? (
               <Text>{t('export.retryAt', { date: formatDate(exportStatus.retryAt) })}</Text>
             ) : null}
           </>
@@ -254,7 +262,8 @@ function AccountUserDataExportScreen({ userId }: { userId: string }) {
             />
           </>
         ) : null}
-        {exportStatus && (exportStatus.status === 'not_requested' || exportStatus.status === 'failed') ? (
+        {exportStatus &&
+        (exportStatus.status === 'not_requested' || (exportStatus.status === 'failed' && !terminalFailure)) ? (
           <Button
             title={exportStatus.status === 'failed' ? t('export.retry') : t('export.generate')}
             loading={busy}

@@ -56,6 +56,8 @@ export const userDataExportFamily: BackgroundJobFamilyModule<z.infer<typeof payl
         throw new BackgroundJobError('EXPORT_USER_MISSING', { retryable: false });
       if (error instanceof Error && error.message === 'EXPORT_ARCHIVE_INVALID')
         throw new BackgroundJobError('EXPORT_ARCHIVE_INVALID', { retryable: false });
+      if (error instanceof Error && error.message === 'EXPORT_TOO_LARGE')
+        throw new BackgroundJobError('EXPORT_TOO_LARGE', { retryable: false });
       throw error;
     }
   },

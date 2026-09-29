@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import type { DbInstance } from '@boardsesh/db/client';
 import type { backgroundJobRuns } from '@boardsesh/db/schema';
 import { BackgroundJobError, type BackgroundJobContext } from '../workers/families/types';
-import type { BoardseshUserDataArchive } from './user-data-export-archive';
+import { MAX_USER_DATA_EXPORT_BYTES, type BoardseshUserDataArchive } from './user-data-export-archive';
 
 type Run = typeof backgroundJobRuns.$inferSelect;
 const fixtures = vi.hoisted(() => ({ live: true, enabled: true, queue: true, runs: [] as Run[] }));
@@ -34,6 +34,7 @@ const storageMocks = vi.hoisted(() => ({
 }));
 const archiveMocks = vi.hoisted(() => ({ buildUserDataArchive: vi.fn() }));
 const jobMocks = vi.hoisted(() => ({ enqueueBackgroundJobOn: vi.fn(), reconcileBackgroundJobRun: vi.fn() }));
+const storedObjects = new Map<string, Buffer>();
 vi.mock('../storage/s3', () => storageMocks);
 vi.mock('../db/client', () => ({ db: databaseMocks, dbRead: databaseMocks }));
 vi.mock('./job-queue', () => ({ getJobQueue: () => (fixtures.queue ? {} : null) }));
@@ -99,10 +100,17 @@ beforeEach(() => {
   fixtures.enabled = true;
   fixtures.queue = true;
   fixtures.runs = [];
+  storedObjects.clear();
   storageMocks.isS3Configured.mockReturnValue(true);
   storageMocks.getS3ObjectMetadataStrict.mockResolvedValue(null);
-  storageMocks.getFromS3Strict.mockResolvedValue(null);
-  storageMocks.uploadToS3.mockResolvedValue({ key: 'stored' });
+  storageMocks.getFromS3Strict.mockImplementation(async (_bucket: string, key: string) => {
+    const buffer = storedObjects.get(key);
+    return buffer ? { stream: Readable.from([buffer]) } : null;
+  });
+  storageMocks.uploadToS3.mockImplementation(async (_bucket: string, buffer: Buffer, key: string) => {
+    storedObjects.set(key, buffer);
+    return { key };
+  });
   storageMocks.presignGetObject.mockResolvedValue({
     url: 'https://storage.test/signed',
     expiresAt: new Date(NOW.getTime() + 300000).toISOString(),
@@ -162,6 +170,7 @@ describe('weekly user exports', () => {
     expect(status.files.map((file) => file.format)).toEqual(['boardsesh', 'aurora']);
     expect(status.refreshAt).toBe('2026-10-05T00:00:00.000Z');
     expect(jobMocks.enqueueBackgroundJobOn).not.toHaveBeenCalled();
+    expect(storageMocks.getFromS3Strict).not.toHaveBeenCalled();
   });
   it('reports completion from the full archive when a preserved companion has an older date', async () => {
     const legacyExportedAt = new Date(NOW.getTime() - 86400000).toISOString();
@@ -276,6 +285,42 @@ describe('weekly user exports', () => {
     expect(archiveMocks.buildUserDataArchive).not.toHaveBeenCalled();
     expect(storageMocks.uploadToS3).not.toHaveBeenCalled();
   });
+  it('rejects an oversized serialized archive before any upload', async () => {
+    archiveMocks.buildUserDataArchive.mockResolvedValue({
+      ...archive,
+      user: { ...archive.user, name: 'x'.repeat(MAX_USER_DATA_EXPORT_BYTES) },
+    });
+    await expect(userDataExportFamily.execute(context, payload)).rejects.toMatchObject({
+      code: 'EXPORT_TOO_LARGE',
+      retryable: false,
+    });
+    expect(storageMocks.uploadToS3).not.toHaveBeenCalled();
+  });
+  it('rejects a cached archive with an oversized Content-Length before reading it', async () => {
+    const stream = Readable.from([]);
+    storageMocks.getFromS3Strict.mockResolvedValue({ stream, contentLength: MAX_USER_DATA_EXPORT_BYTES + 1 });
+    await expect(userDataExportFamily.execute(context, payload)).rejects.toMatchObject({
+      code: 'EXPORT_TOO_LARGE',
+      retryable: false,
+    });
+    expect(stream.destroyed).toBe(true);
+    expect(storageMocks.uploadToS3).not.toHaveBeenCalled();
+  });
+  it('rejects cached bytes beyond the cap even when Content-Length is too small', async () => {
+    const chunk = Buffer.alloc(1024 * 1024, 32);
+    const stream = Readable.from(
+      (function* () {
+        for (let index = 0; index < 33; index += 1) yield chunk;
+      })(),
+    );
+    storageMocks.getFromS3Strict.mockResolvedValue({ stream, contentLength: 1 });
+    await expect(userDataExportFamily.execute(context, payload)).rejects.toMatchObject({
+      code: 'EXPORT_TOO_LARGE',
+      retryable: false,
+    });
+    expect(stream.destroyed).toBe(true);
+    expect(storageMocks.uploadToS3).not.toHaveBeenCalled();
+  });
   it.each([
     ['schema version', { ...archive, schemaVersion: 2 }],
     ['owner', { ...archive, user: { ...archive.user, id: 'other-user' } }],
@@ -362,6 +407,121 @@ describe('weekly user exports', () => {
     archiveMocks.buildUserDataArchive.mockResolvedValue({ ...archive, boardType: 'spray' });
     await service.generateUserDataExport(context, { ...payload, boardType: 'spray' });
     expect(storageMocks.uploadToS3).toHaveBeenCalledOnce();
+    expect(storageMocks.getFromS3Strict).toHaveBeenCalledTimes(2);
+    fixtures.runs = [run('succeeded')];
+    storageMocks.getS3ObjectMetadataStrict.mockResolvedValue(metadata);
+    expect((await service.getUserDataExportStatus('user-1', 'spray')).status).toBe('ready');
+    expect(storageMocks.getFromS3Strict).toHaveBeenCalledTimes(2);
+  });
+  it.each(['moonboard', 'spray'] as const)(
+    'does not advertise a corrupt newly stored %s archive or sign it',
+    async (boardType) => {
+      const boardPayload = { ...payload, boardType };
+      archiveMocks.buildUserDataArchive.mockResolvedValue({ ...archive, boardType });
+      storageMocks.uploadToS3.mockImplementation(async (_bucket: string, _buffer: Buffer, key: string) => {
+        storedObjects.set(key, Buffer.from('{"schemaVersion":1,"user":"corrupt"}'));
+        return { key };
+      });
+      await expect(userDataExportFamily.execute(context, boardPayload)).rejects.toMatchObject({
+        code: 'EXPORT_ARCHIVE_INVALID',
+        retryable: false,
+      });
+      expect(storageMocks.uploadToS3).toHaveBeenCalledOnce();
+      expect(storageMocks.getFromS3Strict).toHaveBeenCalledTimes(2);
+
+      fixtures.runs = [{ ...run('failed'), errorCode: 'EXPORT_ARCHIVE_INVALID' }];
+      storageMocks.getS3ObjectMetadataStrict.mockResolvedValue(metadata);
+      const status = await service.getUserDataExportStatus('user-1', boardType);
+      expect(status).toMatchObject({
+        status: 'failed',
+        files: [],
+        retryAt: '2026-10-05T00:00:00.000Z',
+        errorCode: 'EXPORT_ARCHIVE_INVALID',
+      });
+      expect((await service.requestUserDataExport('user-1', boardType)).status).toBe('failed');
+      expect(jobMocks.enqueueBackgroundJobOn).not.toHaveBeenCalled();
+      await expect(
+        service.getUserDataExportDownloadLink('user-1', boardType, payload.period, 'boardsesh'),
+      ).rejects.toMatchObject({ extensions: { code: 'NOT_FOUND' } });
+      expect(storageMocks.presignGetObject).not.toHaveBeenCalled();
+      // Status, request, and link checks use metadata and ledger only.
+      expect(storageMocks.getFromS3Strict).toHaveBeenCalledTimes(2);
+    },
+  );
+  it('keeps an independent Aurora companion available when the Boardsesh archive is invalid', async () => {
+    fixtures.runs = [{ ...run('failed'), errorCode: 'EXPORT_ARCHIVE_INVALID' }];
+    storageMocks.getS3ObjectMetadataStrict.mockResolvedValue(metadata);
+    const status = await service.getUserDataExportStatus('user-1', 'kilter');
+    expect(status.status).toBe('failed');
+    expect(status.files.map((file) => file.format)).toEqual(['aurora']);
+    expect(status.completedAt).toBeUndefined();
+    await expect(
+      service.getUserDataExportDownloadLink('user-1', 'kilter', payload.period, 'boardsesh'),
+    ).rejects.toMatchObject({
+      extensions: { code: 'NOT_FOUND' },
+    });
+    await expect(
+      service.getUserDataExportDownloadLink('user-1', 'kilter', payload.period, 'aurora'),
+    ).resolves.toMatchObject({
+      filename: 'boardsesh-kilter-export-2026-W40.json',
+    });
+    expect(storageMocks.presignGetObject).toHaveBeenCalledOnce();
+    expect(jobMocks.enqueueBackgroundJobOn).not.toHaveBeenCalled();
+  });
+  it('validates a partial archive only when a climber taps download during generation', async () => {
+    fixtures.runs = [run('running')];
+    storageMocks.getS3ObjectMetadataStrict.mockImplementation(async (_bucket, key: string) =>
+      key.endsWith('.boardsesh.json') ? metadata : null,
+    );
+    const status = await service.getUserDataExportStatus('user-1', 'kilter');
+    expect(status.status).toBe('generating');
+    expect(status.files.map((file) => file.format)).toEqual(['boardsesh']);
+    expect(storageMocks.getFromS3Strict).not.toHaveBeenCalled();
+
+    storedObjects.set(
+      service.userDataExportKey(payload.userId, payload.boardType, payload.period, 'boardsesh'),
+      Buffer.from('not json'),
+    );
+    await expect(
+      service.getUserDataExportDownloadLink('user-1', 'kilter', payload.period, 'boardsesh'),
+    ).rejects.toMatchObject({
+      extensions: { code: 'NOT_FOUND' },
+    });
+    expect(storageMocks.presignGetObject).not.toHaveBeenCalled();
+
+    storedObjects.set(
+      service.userDataExportKey(payload.userId, payload.boardType, payload.period, 'boardsesh'),
+      Buffer.from(JSON.stringify(archive)),
+    );
+    await expect(
+      service.getUserDataExportDownloadLink('user-1', 'kilter', payload.period, 'boardsesh'),
+    ).resolves.toMatchObject({
+      filename: 'boardsesh-kilter-archive-2026-W40.json',
+    });
+    expect(storageMocks.getFromS3Strict).toHaveBeenCalledTimes(2);
+  });
+  it('reports a size-limit failure without hiding a valid partial Boardsesh archive', async () => {
+    fixtures.runs = [{ ...run('failed'), errorCode: 'EXPORT_TOO_LARGE' }];
+    storageMocks.getS3ObjectMetadataStrict.mockImplementation(async (_bucket, key: string) =>
+      key.endsWith('.boardsesh.json') ? metadata : null,
+    );
+    fixtures.enabled = false;
+    const status = await service.getUserDataExportStatus('user-1', 'kilter');
+    expect(status).toMatchObject({
+      status: 'failed',
+      errorCode: 'EXPORT_TOO_LARGE',
+      retryAt: '2026-10-05T00:00:00.000Z',
+    });
+    expect(status.error).toContain('too large');
+    expect(status.files.map((file) => file.format)).toEqual(['boardsesh']);
+    expect((await service.requestUserDataExport('user-1', 'kilter')).status).toBe('failed');
+    await expect(
+      service.getUserDataExportDownloadLink('user-1', 'kilter', payload.period, 'boardsesh'),
+    ).resolves.toMatchObject({
+      filename: 'boardsesh-kilter-archive-2026-W40.json',
+    });
+    expect(storageMocks.getFromS3Strict).not.toHaveBeenCalled();
+    expect(jobMocks.enqueueBackgroundJobOn).not.toHaveBeenCalled();
   });
   it('signs an attachment for legacy files without stored disposition and keeps the requested week', async () => {
     storageMocks.getS3ObjectMetadataStrict.mockImplementation(async (_bucket, key: string) =>
