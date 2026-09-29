@@ -240,7 +240,9 @@ multi-role family whose schedule names no role, removes every family schedule,
 registers nothing and logs an error; the backend still boots. For every schedule
 of an enabled family it calls
 `boss.schedule('background-schedule', cron, { family, key }, { key:
-'<family>:<key>', tz: tz ?? 'UTC', missed: 'once' })`, and it unschedules every
+'<family>/<key>', tz: tz ?? 'UTC', missed: 'once' })` (pg-boss allows only
+letters, digits, `_`, `.`, `-` and `/` in a schedule key, so not `:`), and it
+unschedules every
 other key on that queue, so disabling a family removes its schedules on the next
 boot. With at least one family enabled it also starts one
 `background-schedule` consumer (`localConcurrency: 1`) that runs the schedule's

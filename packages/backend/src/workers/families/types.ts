@@ -69,7 +69,7 @@ export type BackgroundJobScheduleRequest<Payload> = {
 };
 
 export type BackgroundJobSchedule<Payload> = {
-  /** Stable within the family; the pg-boss schedule key is `<family>:<key>`. */
+  /** Stable within the family; the pg-boss schedule key is `<family>/<key>`. */
   key: string;
   cron: string;
   /** Defaults to UTC. */
