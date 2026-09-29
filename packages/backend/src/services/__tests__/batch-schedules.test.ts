@@ -124,7 +124,7 @@ describe('assertScheduleRoles', () => {
   });
 
   it('refuses a multi-role schedule without a role, or with one the family does not serve', () => {
-    expect(() => assertScheduleRoles(asModule(multiFake))).toThrow('multi-fake:daily must name a role');
+    expect(() => assertScheduleRoles(asModule(multiFake))).toThrow('multi-fake/daily must name a role');
     const wrong = { ...multiFake, schedules: [{ ...multiFake.schedules[0], role: 'interactive-import' }] };
     expect(() => assertScheduleRoles(asModule(wrong))).toThrow('does not serve');
   });
@@ -132,31 +132,31 @@ describe('assertScheduleRoles', () => {
 
 describe('startBatchSchedules', () => {
   it('registers nothing and unschedules every key when no family is enabled', async () => {
-    const { boss, asPgBoss, unscheduledKeys } = fakeBoss(['batch-fake:hourly', 'retired-family:daily']);
+    const { boss, asPgBoss, unscheduledKeys } = fakeBoss(['batch-fake/hourly', 'retired-family/daily']);
     await startBatchSchedules(asPgBoss, database, {});
     expect(boss.schedule).not.toHaveBeenCalled();
     expect(boss.work).not.toHaveBeenCalled();
-    expect(unscheduledKeys()).toEqual(new Set(['batch-fake:hourly', 'batch-fake:nightly', 'retired-family:daily']));
+    expect(unscheduledKeys()).toEqual(new Set(['batch-fake/hourly', 'batch-fake/nightly', 'retired-family/daily']));
     expect(boss.unschedule.mock.calls.every(([queue]) => queue === BACKGROUND_SCHEDULE_QUEUE)).toBe(true);
   });
 
   it('sweeps stale keys, then schedules each enabled schedule and starts one worker', async () => {
-    const { boss, asPgBoss } = fakeBoss(['batch-fake:hourly', 'retired-family:daily']);
+    const { boss, asPgBoss } = fakeBoss(['batch-fake/hourly', 'retired-family/daily']);
     await startBatchSchedules(asPgBoss, database, { BATCH_FAMILIES_ENABLED: 'batch-fake' });
-    expect(boss.unschedule.mock.calls).toEqual([[BACKGROUND_SCHEDULE_QUEUE, 'retired-family:daily']]);
+    expect(boss.unschedule.mock.calls).toEqual([[BACKGROUND_SCHEDULE_QUEUE, 'retired-family/daily']]);
     expect(boss.unschedule.mock.invocationCallOrder[0]).toBeLessThan(boss.schedule.mock.invocationCallOrder[0]);
     expect(boss.schedule.mock.calls).toEqual([
       [
         BACKGROUND_SCHEDULE_QUEUE,
         '7 * * * *',
         { family: 'batch-fake', key: 'hourly' },
-        { key: 'batch-fake:hourly', tz: 'UTC', missed: 'once' },
+        { key: 'batch-fake/hourly', tz: 'UTC', missed: 'once' },
       ],
       [
         BACKGROUND_SCHEDULE_QUEUE,
         '0 3 * * *',
         { family: 'batch-fake', key: 'nightly' },
-        { key: 'batch-fake:nightly', tz: 'Australia/Sydney', missed: 'once' },
+        { key: 'batch-fake/nightly', tz: 'Australia/Sydney', missed: 'once' },
       ],
     ]);
     expect(boss.work).toHaveBeenCalledTimes(1);
@@ -167,11 +167,11 @@ describe('startBatchSchedules', () => {
   });
 
   it('on an unknown family, removes every schedule and throws without scheduling', async () => {
-    const { boss, asPgBoss, unscheduledKeys } = fakeBoss(['batch-fake:hourly', 'retired-family:daily']);
+    const { boss, asPgBoss, unscheduledKeys } = fakeBoss(['batch-fake/hourly', 'retired-family/daily']);
     await expect(
       startBatchSchedules(asPgBoss, database, { BATCH_FAMILIES_ENABLED: 'batch-fake,typo' }),
     ).rejects.toThrow('typo');
-    expect(unscheduledKeys()).toEqual(new Set(['batch-fake:hourly', 'batch-fake:nightly', 'retired-family:daily']));
+    expect(unscheduledKeys()).toEqual(new Set(['batch-fake/hourly', 'batch-fake/nightly', 'retired-family/daily']));
     expect(boss.schedule).not.toHaveBeenCalled();
     expect(boss.work).not.toHaveBeenCalled();
   });

@@ -6,7 +6,7 @@
  *   starts its cron; an unknown name removes every family schedule and throws
  *   instead of guessing.
  * - **One trigger queue.** Each family schedule is a pg-boss schedule on
- *   `background-schedule` keyed `<family>:<key>`, carrying `{ family, key }`.
+ *   `background-schedule` keyed `<family>/<key>`, carrying `{ family, key }`.
  *   Disabling a family removes its schedules on the next boot.
  * - **The backend fans out, workers execute.** The trigger handler runs the
  *   schedule's `fanOut` here and enqueues one family job per result onto the
@@ -71,8 +71,11 @@ export function enabledBatchFamiliesOrNone(
   return families;
 }
 
+/** pg-boss's own rule for a schedule key (`assertKey`); `:` is not allowed. */
+export const SCHEDULE_KEY_PATTERN = /^[\w.\-/]+$/;
+
 export function scheduleKey(family: string, key: string): string {
-  return `${family}:${key}`;
+  return `${family}/${key}`;
 }
 
 const scheduleTickPayload = z.object({ family: z.string().min(1), key: z.string().min(1) }).strict();
