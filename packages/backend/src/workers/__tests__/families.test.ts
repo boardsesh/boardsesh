@@ -28,6 +28,7 @@ describe('family registry', () => {
       'kilter-catalog-sync',
       'moonboard-locations-sync',
       'climb-stats-self-heal',
+      'user-data-export',
     ]);
     expect(() => requireFamily('no-such-family')).toThrow('UNKNOWN_FAMILY');
   });

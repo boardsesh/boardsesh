@@ -54,6 +54,8 @@ export const userDataExportFamily: BackgroundJobFamilyModule<z.infer<typeof payl
         (error instanceof Error && error.message === 'EXPORT_USER_MISSING')
       )
         throw new BackgroundJobError('EXPORT_USER_MISSING', { retryable: false });
+      if (error instanceof Error && error.message === 'EXPORT_ARCHIVE_INVALID')
+        throw new BackgroundJobError('EXPORT_ARCHIVE_INVALID', { retryable: false });
       throw error;
     }
   },

@@ -47,6 +47,7 @@ vi.mock('./user-data-export-archive', async (importOriginal) => ({
   buildUserDataArchive: archiveMocks.buildUserDataArchive,
 }));
 const service = await import('./user-data-export');
+const { userDataExportFamily } = await import('../workers/families/user-data-export');
 const { logger } = await import('../utils/logger');
 const NOW = new Date('2026-09-29T12:00:00Z');
 const payload = { userId: 'user-1', boardType: 'kilter' as const, period: '2026-W40' };
@@ -114,6 +115,7 @@ beforeEach(() => {
   });
   vi.spyOn(logger, 'error').mockImplementation(() => logger);
   vi.spyOn(logger, 'info').mockImplementation(() => logger);
+  vi.spyOn(logger, 'warn').mockImplementation(() => logger);
 });
 afterEach(() => {
   vi.restoreAllMocks();
@@ -160,6 +162,15 @@ describe('weekly user exports', () => {
     expect(status.files.map((file) => file.format)).toEqual(['boardsesh', 'aurora']);
     expect(status.refreshAt).toBe('2026-10-05T00:00:00.000Z');
     expect(jobMocks.enqueueBackgroundJobOn).not.toHaveBeenCalled();
+  });
+  it('reports completion from the full archive when a preserved companion has an older date', async () => {
+    const legacyExportedAt = new Date(NOW.getTime() - 86400000).toISOString();
+    storageMocks.getS3ObjectMetadataStrict.mockImplementation(async (_bucket, key: string) =>
+      key.endsWith('.boardsesh.json') ? metadata : { ...metadata, metadata: { 'exported-at': legacyExportedAt } },
+    );
+    const status = await service.getUserDataExportStatus('user-1', 'kilter');
+    expect(status.completedAt).toBe(archive.exportedAt);
+    expect(status.files.find((file) => file.format === 'aurora')?.exportedAt).toBe(legacyExportedAt);
   });
   it.each(['status', 'request'] as const)(
     'observes files published between initial HEAD and terminal ledger during %s',
@@ -249,6 +260,62 @@ describe('weekly user exports', () => {
         acl: null,
       },
     ]);
+  });
+  it('stops retries for malformed cached JSON without leaking personal bytes', async () => {
+    const personalBytes = 'sensitive cached personal note';
+    storageMocks.getFromS3Strict.mockResolvedValue({
+      stream: Readable.from([Buffer.from(`{"note":"${personalBytes}"`)]),
+    });
+    await expect(userDataExportFamily.execute(context, payload)).rejects.toMatchObject({
+      name: 'BackgroundJobError',
+      code: 'EXPORT_ARCHIVE_INVALID',
+      message: 'EXPORT_ARCHIVE_INVALID',
+      retryable: false,
+    });
+    expect(JSON.stringify(vi.mocked(logger.warn).mock.calls)).not.toContain(personalBytes);
+    expect(archiveMocks.buildUserDataArchive).not.toHaveBeenCalled();
+    expect(storageMocks.uploadToS3).not.toHaveBeenCalled();
+  });
+  it.each([
+    ['schema version', { ...archive, schemaVersion: 2 }],
+    ['owner', { ...archive, user: { ...archive.user, id: 'other-user' } }],
+    ['board', { ...archive, boardType: 'tension' }],
+    ['period', { ...archive, period: '2026-W39' }],
+    ['collection shape', { ...archive, ticks: null }],
+  ])('stops retries for an immutable archive with an invalid %s', async (_field, invalidArchive) => {
+    storageMocks.getFromS3Strict.mockResolvedValue({
+      stream: Readable.from([Buffer.from(JSON.stringify(invalidArchive))]),
+    });
+    await expect(userDataExportFamily.execute(context, payload)).rejects.toMatchObject({
+      code: 'EXPORT_ARCHIVE_INVALID',
+      retryable: false,
+    });
+    expect(archiveMocks.buildUserDataArchive).not.toHaveBeenCalled();
+    expect(storageMocks.uploadToS3).not.toHaveBeenCalled();
+  });
+  it.each(['request', 'body'] as const)(
+    'preserves retryable transient archive-read failures during the %s',
+    async (stage) => {
+      const failure = Object.assign(new Error('Transient storage outage'), { $metadata: { httpStatusCode: 503 } });
+      if (stage === 'request') storageMocks.getFromS3Strict.mockRejectedValue(failure);
+      else
+        storageMocks.getFromS3Strict.mockResolvedValue({
+          stream: Readable.from(
+            (async function* () {
+              yield Buffer.from('{"partial":');
+              throw failure;
+            })(),
+          ),
+        });
+      await expect(userDataExportFamily.execute(context, payload)).rejects.toBe(failure);
+      expect(archiveMocks.buildUserDataArchive).not.toHaveBeenCalled();
+      expect(storageMocks.uploadToS3).not.toHaveBeenCalled();
+    },
+  );
+  it('returns no legacy Aurora stream for a non-Aurora board', async () => {
+    await expect(service.getDownloadableUserDataExport('user-1', 'spray')).resolves.toBeNull();
+    expect(storageMocks.getS3ObjectMetadataStrict).not.toHaveBeenCalled();
+    expect(storageMocks.getFromS3Strict).not.toHaveBeenCalled();
   });
   it('preserves a legacy companion while adding the full archive', async () => {
     storageMocks.getS3ObjectMetadataStrict.mockResolvedValue(metadata);

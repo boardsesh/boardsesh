@@ -145,6 +145,7 @@ function exportStatus(
         ? 'failed'
         : 'not_requested';
   const aurora = files.find((file) => file.format === 'aurora');
+  const boardsesh = files.find((file) => file.format === 'boardsesh');
   const retryAt =
     status === 'failed'
       ? runs.length >= 2
@@ -160,11 +161,12 @@ function exportStatus(
     files,
     refreshAt: refreshAt(payload.period),
     requestedAt: latest?.createdAt.toISOString(),
-    completedAt: complete ? files[0]?.exportedAt : undefined,
+    completedAt: complete ? boardsesh?.exportedAt : undefined,
     retryAt,
     error: status === 'failed' ? FAILURE_MESSAGE : undefined,
     ...(aurora
       ? {
+          // Deprecated legacy HTTP compatibility; new clients request a signed format-specific link.
           downloadUrl: `/api/user-data-export/download?boardType=${encodeURIComponent(payload.boardType)}&period=${payload.period}`,
           fileSize: aurora.fileSize,
         }
@@ -300,7 +302,7 @@ export async function getUserDataExportDownloadLink(
 
 export async function getDownloadableUserDataExport(
   userId: string,
-  boardType: AuroraBoardName,
+  boardType: BoardName,
   period = getIsoWeekPeriod().label,
 ): Promise<DownloadableUserDataExport | null> {
   const download = await downloadableFile(userId, boardType, period, 'aurora');
@@ -325,7 +327,14 @@ async function readStoredArchive(payload: UserDataExportJobPayload): Promise<Boa
   if (!object) return null;
   const chunks: Buffer[] = [];
   for await (const chunk of object.stream) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-  const archive: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+  let archive: unknown;
+  try {
+    archive = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+  } catch {
+    // Parser messages may include cached personal bytes. An immutable corrupt
+    // object cannot recover on retry, so report only the bounded failure code.
+    throw new Error('EXPORT_ARCHIVE_INVALID');
+  }
   if (
     !archive ||
     typeof archive !== 'object' ||

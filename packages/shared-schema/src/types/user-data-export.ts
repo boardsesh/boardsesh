@@ -21,7 +21,10 @@ export type UserDataExportStatus = {
   completedAt?: string;
   retryAt?: string;
   error?: string;
-  /** Legacy authenticated HTTP download, retained for existing Aurora clients. */
+  /**
+   * @deprecated Legacy authenticated Aurora HTTP download. New clients should
+   * request a fresh userDataExportDownload link instead of proxying file bytes.
+   */
   downloadUrl?: string;
   fileSize?: number;
 };

@@ -83,6 +83,12 @@ Private climbing archives use short-lived browser-download links. Their weekly
 cache, formats, 14-day retention, and worker rollout are documented in
 [user-data-exports.md](./user-data-exports.md).
 
+Export week keys are accepted for 21 days from their Monday, while each file
+expires 14 days after its snapshot was created. A late-Sunday snapshot can still
+be valid in the third calendar week. An accepted week key can therefore return
+`files: []` when no snapshot exists or it has expired; it does not extend retention
+or permit an expired download.
+
 Objects are reached through the backend's `/static/*` routes, which stream them out of the `media` bucket:
 
 | Route | Handler |

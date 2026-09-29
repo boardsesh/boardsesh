@@ -42,6 +42,16 @@ still exists, including on retained legacy Aurora HTTP export/download routes.
 A validated period lets a job crossing Monday finish polling and download its
 original snapshot. Refreshing a completed older snapshot selects the current week.
 
+The period lookup window is 21 days from the ISO week's Monday; file availability
+is separately limited to 14 days from snapshot creation. This preserves a
+late-Sunday snapshot into the third calendar week. A valid period can return
+`files: []` after expiry or when no file was prepared. Clients use the returned
+status and file metadata rather than treating an accepted period as a ready file.
+
+The legacy `downloadUrl` field remains an authenticated Aurora-only REST proxy
+for existing clients and is deprecated. New clients request
+`userDataExportDownload` to obtain a direct private-storage link.
+
 The `user-data-export` family uses the existing `maintenance-delivery` worker.
 Producers serialize on the account row and reuse matching queued/running/retrying
 ledger jobs. pg-boss `stately` alone permits an active plus queued twin. The worker
@@ -79,9 +89,9 @@ physical cleanup is pending. Only generated copies expire; source records remain
 3. Converge Cloudflare retention using its existing dry-run/apply workflow. Verify
    the prefix and age; a newly created bucket needs a second converge. Resolve any
    blocked policy before enabling exports.
-4. Enable the producer family through existing background-family configuration.
-   Deploy backend/mobile; verify a named browser download and repeated-download
-   cache reuse.
+4. Add `user-data-export` to the backend's existing `BATCH_FAMILIES_ENABLED`
+   comma-separated list, preserving its other enabled families. Deploy
+   backend/mobile; verify a named browser download and repeated-download cache reuse.
 5. Observe duration, bytes, cache reuse, and failures. Validate large logbooks and
    actual iOS/Android browser downloads before completing device QA.
 
