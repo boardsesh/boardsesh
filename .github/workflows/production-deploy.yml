@@ -590,6 +590,10 @@ jobs:
           MIGRATION_RUNTIME_ROLE: boardsesh_runtime
           MIGRATION_RUNTIME_SCHEMAS: public drizzle
           VERIFY_MIGRATION_JOURNAL: '1'
+          # `<worker-role>=<login>` list for the pg-boss worker logins
+          # (docs/background-workers.md). Environment variables are not
+          # exported to steps on their own; unset, the queue step grants none.
+          MIGRATION_WORKER_ROLES: ${{ vars.MIGRATION_WORKER_ROLES }}
         run: vp exec pnpm --filter @boardsesh/db run db:migrate
 
       - name: Initialize local place search
