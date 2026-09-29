@@ -213,6 +213,10 @@ const CLIMB_STATS_SELF_HEAL_GRANTS: readonly WorkerTableGrant[] = [
 /** Personal archives: selected climbing fields only, with no credentials or catalogue writes. */
 const USER_DATA_EXPORT_GRANTS: readonly WorkerTableGrant[] = [
   { table: 'users', privileges: ['SELECT'], columns: ['id', 'name', 'email', 'created_at'] },
+  // The shared spray visibility predicate reads only access-control fields.
+  { table: 'spray_walls', privileges: ['SELECT'], columns: ['board_uuid', 'layout_id', 'deleted_at', 'hidden_at'] },
+  { table: 'user_boards', privileges: ['SELECT'], columns: ['uuid', 'owner_id', 'gym_id', 'is_public', 'deleted_at'] },
+  { table: 'gym_members', privileges: ['SELECT'], columns: ['gym_id', 'user_id'] },
   {
     table: 'boardsesh_ticks',
     privileges: ['SELECT'],

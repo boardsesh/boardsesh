@@ -60,6 +60,7 @@ import type {
 } from '../infra/cloudflare/config';
 import {
   MANAGED_RULE_PHASES,
+  R2LifecyclePolicyBlockedError,
   buildPlan,
   diffR2Bucket,
   r2CorsHasUnmanagedRules,
@@ -437,21 +438,25 @@ export async function applyR2LifecycleRule(
   desired: R2LifecycleRule,
 ): Promise<void> {
   const existing = await fetchR2LifecycleRules(token, accountId, bucketName);
-  if (!existing) throw new Error(`Cannot read lifecycle rules on ${bucketName}; refusing to replace them`);
+  if (!existing) {
+    throw new R2LifecyclePolicyBlockedError(`Cannot read lifecycle rules on ${bucketName}; refusing to replace them`);
+  }
+  const merged = mergeR2LifecycleRule(existing, desired);
   if (r2LifecycleRuleMatches(existing, desired)) return;
   await cfRequest(token, 'PUT', `/accounts/${accountId}/r2/buckets/${encodeURIComponent(bucketName)}/lifecycle`, {
-    rules: mergeR2LifecycleRule(existing, desired),
+    rules: merged,
   });
   console.log(`[cf-apply] set lifecycle rule ${desired.id} on R2 bucket ${bucketName}`);
 }
 
+/** Returns whether lifecycle work remains blocked after converging the other attributes. */
 async function applyR2Bucket(
   token: string,
   accountId: string,
   zoneId: string,
   desired: R2BucketDesired,
   live: LiveR2Bucket | null,
-): Promise<void> {
+): Promise<boolean> {
   if (!live || !live.exists) {
     await cfRequest(token, 'POST', `/accounts/${accountId}/r2/buckets`, {
       name: desired.name,
@@ -459,19 +464,25 @@ async function applyR2Bucket(
     });
     console.log(`[cf-apply] created R2 bucket ${desired.name}`);
     // The domain needs the bucket to exist first; the next run attaches it.
-    return;
+    return false;
   }
 
   const bucketPath = `/accounts/${accountId}/r2/buckets/${encodeURIComponent(desired.name)}`;
+  let lifecycleBlocked = false;
 
   if (desired.lifecycleRule) {
     // This path can also be entered for an unrelated domain change; enforce the
     // lifecycle read/ownership guard here as well as in the dry-run diff.
-    if (live.lifecycleRules) {
+    try {
+      if (!live.lifecycleRules) {
+        throw new R2LifecyclePolicyBlockedError('Existing policy could not be read');
+      }
       mergeR2LifecycleRule(live.lifecycleRules, desired.lifecycleRule);
       await applyR2LifecycleRule(token, accountId, desired.name, desired.lifecycleRule);
-    } else {
-      console.warn(`[cf-apply] SKIPPED lifecycle on ${desired.name}: existing policy could not be read`);
+    } catch (error) {
+      if (!(error instanceof R2LifecyclePolicyBlockedError)) throw error;
+      lifecycleBlocked = true;
+      console.warn(`[cf-apply] SKIPPED lifecycle on ${desired.name}: ${error.message}`);
     }
   }
 
@@ -506,12 +517,13 @@ async function applyR2Bucket(
       `[cf-apply] SKIPPED CORS on ${desired.name}: bucket has ${live.corsRuleCount} rules and this tool ` +
         'writes a single-rule policy. Reconcile them in the Cloudflare dashboard first.',
     );
-    return;
+    return lifecycleBlocked;
   }
 
   if (desired.cors && !r2CorsMatches(live.cors, desired.cors)) {
     await putR2Cors(token, accountId, desired.name, desired.cors);
   }
+  return lifecycleBlocked;
 }
 
 async function fetchDnsRecord(token: string, zoneId: string, name: string): Promise<LiveDnsRecord | null> {
@@ -772,7 +784,12 @@ export async function runCloudflareApply(argv: string[] = process.argv.slice(2))
         console.log(`[cf-apply] skipped: ${change.summary} (${bucket.name} already converged)`);
         continue;
       }
-      await applyR2Bucket(token, accountId, zoneId, bucket, r2State.get(bucket.name) ?? null);
+      const lifecycleBlocked = await applyR2Bucket(token, accountId, zoneId, bucket, r2State.get(bucket.name) ?? null);
+      // A fresh lifecycle read may discover a block that did not exist in the
+      // plan. Keep the nonzero result without counting an existing block twice.
+      if (lifecycleBlocked && !changes.some((planned) => planned.blocked && planned.r2BucketName === bucket.name)) {
+        blockedRemaining += 1;
+      }
       appliedR2Buckets.add(bucket.name);
       console.log(`[cf-apply] applied: ${change.summary}`);
       continue;

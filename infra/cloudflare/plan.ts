@@ -559,14 +559,34 @@ export interface LiveR2Bucket {
   lifecycleRules?: R2LifecycleRule[] | null;
 }
 
-/** Merge one owned ID, preserving every foreign rule and rejecting ambiguous ownership. */
+/** A policy read/ownership block must not prevent unrelated bucket security changes. */
+export class R2LifecyclePolicyBlockedError extends Error {
+  override readonly name = 'R2LifecyclePolicyBlockedError';
+}
+
+/** Merge one owned ID, preserving foreign rules that cannot shorten export retention. */
 export function mergeR2LifecycleRule(
   existing: readonly R2LifecycleRule[],
   desired: R2LifecycleRule,
 ): R2LifecycleRule[] {
   const matching = existing.filter((rule) => rule.id === desired.id);
   if (matching.length > 1 || matching.some((rule) => rule.conditions.prefix !== desired.conditions.prefix)) {
-    throw new Error(`Lifecycle rule ${desired.id} has conflicting ownership`);
+    throw new R2LifecyclePolicyBlockedError(`Lifecycle rule ${desired.id} has conflicting ownership`);
+  }
+  if (desired.enabled && desired.deleteObjectsTransition) {
+    const conflicting = existing.find(
+      (rule) =>
+        rule.id !== desired.id &&
+        rule.enabled &&
+        rule.deleteObjectsTransition &&
+        (rule.conditions.prefix.startsWith(desired.conditions.prefix) ||
+          desired.conditions.prefix.startsWith(rule.conditions.prefix)),
+    );
+    if (conflicting) {
+      throw new R2LifecyclePolicyBlockedError(
+        `Lifecycle deletion rule ${conflicting.id} overlaps the prefix owned by ${desired.id}`,
+      );
+    }
   }
   if (!matching.length) return [...existing, desired];
   return existing.map((rule) => (rule.id === desired.id ? desired : rule));

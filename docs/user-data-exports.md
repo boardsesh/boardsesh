@@ -16,6 +16,12 @@ are strings; unresolved climb references remain present. This is a personal
 climbing archive, not a board catalogue, authentication backup, or wall-photo
 export.
 
+Spray-wall climb metadata follows wall access when the snapshot is generated.
+If a wall becomes private or gym membership ends, personal tick notes, favorites,
+and playlist references remain in the export, while inaccessible climb names and
+authored definitions are omitted. Climbs on the climber's own private walls remain
+available.
+
 Aurora JSON is an additional format for Kilter, Tension, Decoy, Touchstone,
 Grasshopper, and So iLL. Its existing `user`, `ascents`, `attempts`, `circuits`,
 `climbs`, and `likes` shape is preserved. It identifies climbs by name and omits

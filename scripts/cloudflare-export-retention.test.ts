@@ -10,6 +10,12 @@ const foreignRule: R2LifecycleRule = {
   conditions: { prefix: '' },
   abortMultipartUploadsTransition: { condition: { type: 'Age', maxAge: 86_400 } },
 };
+const foreignDeletionRule: R2LifecycleRule = {
+  id: 'external-expiry',
+  enabled: true,
+  conditions: { prefix: 'user-data-exports/' },
+  deleteObjectsTransition: { condition: { type: 'Age', maxAge: 86_400 } },
+};
 
 function liveBucket(lifecycleRules: R2LifecycleRule[] | null): LiveR2Bucket {
   return {
@@ -60,6 +66,32 @@ describe('generated export retention', () => {
     }
   });
 
+  it.each(['', 'user-data-', 'user-data-exports/', 'user-data-exports/climber/'])(
+    'blocks enabled foreign deletion on an overlapping prefix %j, including an already matching owned rule',
+    (prefix) => {
+      const overlappingRule = { ...foreignDeletionRule, conditions: { prefix } };
+      for (const rules of [[overlappingRule], [USER_EXPORT_LIFECYCLE_RULE, overlappingRule]]) {
+        expect(() => mergeR2LifecycleRule(rules, USER_EXPORT_LIFECYCLE_RULE)).toThrow('overlaps');
+        expect(diffR2Bucket(privateBucket, liveBucket(rules))).toEqual([
+          expect.objectContaining({ blocked: true, detail: expect.stringContaining('external-expiry') }),
+        ]);
+      }
+    },
+  );
+
+  it('preserves disabled deletion and unrelated foreign deletion rules verbatim', () => {
+    const preserved = [
+      foreignRule,
+      { ...foreignDeletionRule, enabled: false },
+      { ...foreignDeletionRule, id: 'avatar-expiry', conditions: { prefix: 'avatars/' } },
+      { ...foreignDeletionRule, id: 'backup-expiry', conditions: { prefix: 'user-data-exports-backup/' } },
+    ];
+    expect(mergeR2LifecycleRule(preserved, USER_EXPORT_LIFECYCLE_RULE)).toEqual([
+      ...preserved,
+      USER_EXPORT_LIFECYCLE_RULE,
+    ]);
+  });
+
   it('re-reads the live policy and preserves every unrelated rule in the API PUT', async () => {
     const fetchMock = vi
       .fn()
@@ -89,6 +121,16 @@ describe('generated export retention', () => {
     vi.stubGlobal('fetch', fetchMock);
     await applyR2LifecycleRule('test-token', 'test-account', privateBucket.name, USER_EXPORT_LIFECYCLE_RULE);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-checks foreign deletion on the fresh read even when the owned rule already matches', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(envelope({ rules: [USER_EXPORT_LIFECYCLE_RULE, foreignDeletionRule] }));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(
+      applyR2LifecycleRule('test-token', 'test-account', privateBucket.name, USER_EXPORT_LIFECYCLE_RULE),
+    ).rejects.toThrow('overlaps');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ method: 'GET' });
   });
 
   it('refuses malformed successful reads instead of clearing unknown lifecycle rules', async () => {

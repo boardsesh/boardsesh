@@ -1,5 +1,6 @@
 import { and, asc, eq, sql } from 'drizzle-orm';
 import type { DbInstance } from '@boardsesh/db/client';
+import { sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
 import {
   boardClimbAliases,
   boardClimbs,
@@ -114,6 +115,10 @@ export async function buildUserDataArchive(
     .where(eq(users.id, userId))
     .limit(1);
   if (!user) throw new Error('EXPORT_USER_MISSING');
+  const climbVisibility = sprayClimbVisibilityCondition(
+    { boardType: boardClimbs.boardType, layoutId: boardClimbs.layoutId },
+    userId,
+  );
   const ticks = await database
     .select({
       id: boardseshTicks.id,
@@ -151,6 +156,7 @@ export async function buildUserDataArchive(
       and(
         eq(boardseshTicks.boardType, boardClimbs.boardType),
         sql`COALESCE(${boardClimbAliases.canonicalUuid}, ${boardseshTicks.climbUuid}) = ${boardClimbs.uuid}`,
+        climbVisibility,
       ),
     )
     .leftJoin(
@@ -186,6 +192,7 @@ export async function buildUserDataArchive(
       and(
         eq(userFavorites.boardName, boardClimbs.boardType),
         sql`COALESCE(${boardClimbAliases.canonicalUuid}, ${userFavorites.climbUuid}) = ${boardClimbs.uuid}`,
+        climbVisibility,
       ),
     )
     .where(and(eq(userFavorites.userId, userId), eq(userFavorites.boardName, boardType)))
@@ -230,6 +237,7 @@ export async function buildUserDataArchive(
       and(
         eq(playlists.boardType, boardClimbs.boardType),
         sql`COALESCE(${boardClimbAliases.canonicalUuid}, ${playlistClimbs.climbUuid}) = ${boardClimbs.uuid}`,
+        climbVisibility,
       ),
     )
     .where(and(eq(playlists.boardType, boardType), eq(playlistOwnership.role, 'owner')))
@@ -252,7 +260,7 @@ export async function buildUserDataArchive(
       characteristics: boardClimbs.characteristics,
     })
     .from(boardClimbs)
-    .where(and(eq(boardClimbs.userId, userId), eq(boardClimbs.boardType, boardType)))
+    .where(and(eq(boardClimbs.userId, userId), eq(boardClimbs.boardType, boardType), climbVisibility))
     .orderBy(asc(boardClimbs.createdAt), asc(boardClimbs.uuid));
   signal?.throwIfAborted();
   const archivedPlaylists = new Map<string, ArchivePlaylist>();

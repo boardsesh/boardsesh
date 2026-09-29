@@ -9,6 +9,7 @@ import {
   playlistClimbs,
   playlistOwnership,
   playlists,
+  sprayWalls,
   userFavorites,
   userBoards,
   users,
@@ -22,12 +23,15 @@ const fixtureUserId = `${fixturePrefix}-user`;
 const foreignUserId = `${fixturePrefix}-foreign`;
 const fixtureClimbUuids: string[] = [];
 const fixturePlaylistIds: bigint[] = [];
+const fixtureSprayBoardUuids: string[] = [];
 const largeIdBase = BigInt(Date.now()) * 100000n;
 
 describe('weekly archive fidelity for every supported board', () => {
   afterAll(async () => {
     if (fixturePlaylistIds.length) await db.delete(playlists).where(inArray(playlists.id, fixturePlaylistIds));
     if (fixtureClimbUuids.length) await db.delete(boardClimbs).where(inArray(boardClimbs.uuid, fixtureClimbUuids));
+    if (fixtureSprayBoardUuids.length)
+      await db.delete(sprayWalls).where(inArray(sprayWalls.boardUuid, fixtureSprayBoardUuids));
     await db.delete(users).where(inArray(users.id, [fixtureUserId, foreignUserId]));
   });
 
@@ -65,6 +69,11 @@ describe('weekly archive fidelity for every supported board', () => {
       setIds: '1',
       name: 'Archive fixture installation',
     });
+    if (boardType === 'spray') {
+      const boardUuid = `${fixturePrefix}-${boardType}-installation`;
+      fixtureSprayBoardUuids.push(boardUuid);
+      await db.insert(sprayWalls).values({ boardUuid, layoutId });
+    }
     fixtureClimbUuids.push(canonicalUuid, draftUuid, foreignUuid);
     await db.insert(boardClimbs).values([
       { uuid: canonicalUuid, boardType, layoutId, name: 'Canonical route', createdAt: timestamp.toISOString() },
