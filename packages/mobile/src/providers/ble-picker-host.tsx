@@ -13,10 +13,21 @@ export type BlePickerHostValue = {
   onSelect: (deviceId: string) => void;
   /** The active board config, for the picker's match display. */
   currentBoardConfig: BleBoardConfig | undefined;
-  /** A route-level host calls this to suppress the app-root picker while it owns
-   *  the picker — otherwise a root-presented sheet lands behind the modal route
-   *  (and presenting it forces the route to dismiss). */
-  setHostedExternally: (hosted: boolean) => void;
+  /**
+   * A route-level host calls this on mount with its own id, to suppress the
+   * app-root picker while any host is registered — otherwise a root-presented
+   * sheet lands behind the modal route (and presenting it forces the route to
+   * dismiss). Returns an unregister function to call on unmount. Multiple
+   * hosts can be registered at once (e.g. the player pushed on top of
+   * create-climb without unmounting it); only the most-recently-registered one
+   * (see `activeExternalHostId`) actually renders the sheet, and unregistering
+   * hands the claim back to whichever registration is still underneath.
+   */
+  registerExternalHost: (hostId: string) => () => void;
+  /** The id of the host that currently owns the picker (the top of the
+   *  registration stack), or null when none is registered. A registered host
+   *  renders the sheet only when this equals its own id. */
+  activeExternalHostId: string | null;
   /**
    * Take the wall with no Bluetooth, for the picker's "this wall has no lights"
    * offer after a scan that found nothing. Passed down rather than read back out

@@ -20,6 +20,11 @@ const showToast = vi.hoisted(() => vi.fn());
 // test can assert WHICH wall it opened on — the point of the fallback rules.
 const editorBoard = vi.hoisted(() => ({ latest: null as null | Record<string, unknown> }));
 
+// Every mount of the route must claim the BLE picker (#5868) — captured so a
+// future early return that forgets to render the host fails loudly instead of
+// silently dropping back to the app-root picker landing behind this modal.
+const devicePickerHostMounts = vi.hoisted(() => ({ count: 0, lastRegisterExternal: undefined as boolean | undefined }));
+
 vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles },
@@ -50,6 +55,14 @@ vi.mock('../../../../src/components/create-climb/CreateClimbScreen', () => ({
 
 vi.mock('../../../../src/components/ActivityIndicator', () => ({
   ActivityIndicator: () => createElement('div', { 'data-spinner': 'true' }),
+}));
+
+vi.mock('../../../../src/components/ble/DevicePickerSheetHost', () => ({
+  DevicePickerSheetHost: (props: { registerExternal?: boolean }) => {
+    devicePickerHostMounts.count += 1;
+    devicePickerHostMounts.lastRegisterExternal = props.registerExternal;
+    return null;
+  },
 }));
 
 vi.mock('../../../../src/lib/graphql/use-active-board', () => ({
@@ -84,6 +97,8 @@ beforeEach(() => {
   activeBoard.current = null;
   activeBoardPending.current = false;
   editorBoard.latest = null;
+  devicePickerHostMounts.count = 0;
+  devicePickerHostMounts.lastRegisterExternal = undefined;
   router.canGoBack.mockReturnValue(false);
 });
 
@@ -252,6 +267,34 @@ describe('CreateClimbRoute unresolvable board (#4760)', () => {
     render(<CreateClimbRoute />);
 
     expect(showToast).not.toHaveBeenCalled();
+  });
+});
+
+// #5868: the app-root BLE picker lands behind this transparentModal route, so
+// every branch of this route (not just the resolved-editor one) must claim the
+// picker via DevicePickerSheetHost — otherwise the root instance un-suppresses
+// itself and presents behind whichever branch forgot to render it.
+describe('CreateClimbRoute BLE picker host (#5868)', () => {
+  it('claims the picker while the editor is open', () => {
+    activeBoard.current = KILTER_ACTIVE_BOARD;
+    render(<CreateClimbRoute />);
+    expect(devicePickerHostMounts.count).toBe(1);
+    expect(devicePickerHostMounts.lastRegisterExternal).toBe(true);
+  });
+
+  it('claims the picker while the active-board query is still loading', () => {
+    activeBoard.current = undefined;
+    activeBoardPending.current = true;
+    render(<CreateClimbRoute />);
+    expect(devicePickerHostMounts.count).toBe(1);
+    expect(devicePickerHostMounts.lastRegisterExternal).toBe(true);
+  });
+
+  it('claims the picker while an unsupported board is dismissing the route', () => {
+    activeBoard.current = null;
+    render(<CreateClimbRoute />);
+    expect(devicePickerHostMounts.count).toBe(1);
+    expect(devicePickerHostMounts.lastRegisterExternal).toBe(true);
   });
 });
 

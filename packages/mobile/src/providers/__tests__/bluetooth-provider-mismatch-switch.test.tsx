@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { render, waitFor, cleanup, act } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createElement, type ReactNode } from 'react';
+import { createElement, Fragment, type ReactNode } from 'react';
 import type { ClimbQueueItem } from '@boardsesh/queue';
 import type { BoardSerialConfig } from '@boardsesh/graphql/operations';
 import type { BoardPresenceClimb, UserBoard } from '@boardsesh/shared-schema';
@@ -215,6 +215,7 @@ vi.mock('../../lib/climb-to-queue-item', () => ({
 }));
 
 import { BluetoothProvider, useBluetoothContext } from '../bluetooth-provider';
+import { DevicePickerSheetHost } from '../../components/ble/DevicePickerSheetHost';
 
 let capturedBluetooth: ReturnType<typeof useBluetoothContext> | null = null;
 
@@ -696,6 +697,63 @@ describe('BluetoothProvider mismatch switch', () => {
     // The picker is only cancelled once the switch goes through — on failure it
     // stays open so the user can still pick a device or use Connect anyway.
     expect(pickerState.handleCancel).not.toHaveBeenCalled();
+  });
+});
+
+// #5868: two routes (e.g. create-climb, then the player pushed on top without
+// unmounting it) can each host their own DevicePickerSheetHost at once. Only
+// one may ever render the actual sheet — a plain boolean claim can't express
+// "hand back to whichever host is still mounted underneath", so this exercises
+// the real stack-based registration end to end (no DevicePickerSheetHost mock).
+describe('BluetoothProvider external picker host stacking (#5868)', () => {
+  beforeEach(() => {
+    resolvedBoards.value = new Map();
+    bluetooth.state.isConnected = false;
+    bluetooth.state.loading = false;
+    bluetooth.state.pickerState = null;
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  function sheetCount(container: HTMLElement) {
+    return container.querySelectorAll('[data-testid="device-picker"]').length;
+  }
+
+  function renderHosts(hostKeys: string[]) {
+    return createElement(BluetoothProvider, {
+      ...KILTER_PROPS,
+      children: createElement(
+        Fragment,
+        null,
+        ...hostKeys.map((key) => createElement(DevicePickerSheetHost, { key, registerExternal: true })),
+      ),
+    });
+  }
+
+  it('renders exactly one sheet as a second host mounts on top and unwinds back off', () => {
+    bluetooth.state.pickerState = makeMismatchingPickerState();
+
+    // create-climb mounts first and claims the picker.
+    const { container, rerender } = render(renderHosts(['create']));
+    expect(sheetCount(container)).toBe(1);
+
+    // The player is pushed on top WITHOUT create-climb unmounting (its route
+    // stays in the stack underneath) — still exactly one sheet, now the
+    // player's.
+    rerender(renderHosts(['create', 'play']));
+    expect(sheetCount(container)).toBe(1);
+
+    // Dismissing the player hands the claim back to create-climb — never to
+    // the app-root instance, since create-climb is still registered.
+    rerender(renderHosts(['create']));
+    expect(sheetCount(container)).toBe(1);
+
+    // Finally dismissing create-climb hands the claim back to the app-root
+    // instance, which now un-suppresses.
+    rerender(createElement(BluetoothProvider, { ...KILTER_PROPS, children: createElement('div', null) }));
+    expect(sheetCount(container)).toBe(1);
   });
 });
 

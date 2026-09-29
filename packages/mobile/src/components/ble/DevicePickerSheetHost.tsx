@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useId } from 'react';
 import { useResolvedBleDeviceBoards } from '../../lib/ble/resolve-serials';
 import { useBlePickerHost } from '../../providers/ble-picker-host';
 import { DevicePickerSheet } from './DevicePickerSheet';
@@ -18,20 +18,36 @@ type DevicePickerSheetHostProps = {
 /**
  * Renders the BLE device picker from the shared picker-host context. Hosted at
  * app root by BluetoothProvider (for connects off the tab screens / accessory
- * bar) and, with `registerExternal`, inside the play route so a connect from the
- * lightbulb presents over the player instead of dismissing it.
+ * bar) and, with `registerExternal`, inside the play and create-climb routes so
+ * a connect from their lightbulb presents over the route instead of behind it.
+ *
+ * Two `registerExternal` hosts can be mounted at once (e.g. the player is
+ * pushed on top of create-climb without unmounting it), so registering alone
+ * doesn't decide whether THIS instance renders the sheet — only the
+ * most-recently-registered host (`activeExternalHostId`) does. Rendering
+ * unconditionally here would double-present the same picker session into two
+ * sheet hosts and trip the sheet coordinator's displacement handling.
  */
 export function DevicePickerSheetHost({ registerExternal = false }: DevicePickerSheetHostProps) {
-  const { pickerState, onSelect, currentBoardConfig, setHostedExternally, onNoLeds, onScanAgain } = useBlePickerHost();
+  const hostId = useId();
+  const {
+    pickerState,
+    onSelect,
+    currentBoardConfig,
+    registerExternalHost,
+    activeExternalHostId,
+    onNoLeds,
+    onScanAgain,
+  } = useBlePickerHost();
   const resolvedBoards = useResolvedBleDeviceBoards(pickerState?.devices ?? EMPTY_DEVICES);
 
   useEffect(() => {
-    if (!registerExternal) return;
-    setHostedExternally(true);
-    return () => setHostedExternally(false);
-  }, [registerExternal, setHostedExternally]);
+    if (!registerExternal) return undefined;
+    return registerExternalHost(hostId);
+  }, [registerExternal, registerExternalHost, hostId]);
 
   if (!pickerState) return null;
+  if (registerExternal && activeExternalHostId !== hostId) return null;
 
   return (
     <DevicePickerSheet

@@ -6,6 +6,7 @@ import { getBoardCapabilities, WOODS_ANGLES, WOODS_LAYOUTS, woodsSizeIdToDimensi
 // The schema includes spray walls; the board-picker list deliberately excludes them.
 import { SUPPORTED_BOARDS, type BoardName, type UserBoard } from '@boardsesh/shared-schema';
 import { CreateClimbScreen } from '../../../src/components/create-climb/CreateClimbScreen';
+import { DevicePickerSheetHost } from '../../../src/components/ble/DevicePickerSheetHost';
 import { ActivityIndicator } from '../../../src/components/ActivityIndicator';
 import { useActiveBoard } from '../../../src/lib/graphql/use-active-board';
 import { createClimbScreenKey } from '../../../src/lib/create-climb-screen-key';
@@ -155,33 +156,48 @@ export default function CreateClimbRoute() {
   useUnsupportedBoardExit(exitReason != null, exitMessage);
 
   // Leave the climb list visible under the transparent modal while it dismisses.
-  if (exitReason != null) return null;
+  // Still claim the picker while dismissing: dropping the claim here would let
+  // the app-root picker flash in behind this still-mounted modal for the one
+  // frame before useUnsupportedBoardExit finishes leaving.
+  if (exitReason != null) {
+    return <DevicePickerSheetHost registerExternal />;
+  }
 
   // The only honest spinner left: the active-board query hasn't answered yet.
   if (!resolvedBoard) {
     return (
-      <View style={styles.loading}>
-        <ActivityIndicator size="large" />
-      </View>
+      <>
+        <View style={styles.loading}>
+          <ActivityIndicator size="large" />
+        </View>
+        <DevicePickerSheetHost registerExternal />
+      </>
     );
   }
 
   return (
-    // Key by the edited climb AND the board's hold-identity tuple so switching
-    // drafts OR boards (e.g. a bare-open screen while the active board changes)
-    // remounts the editor — a clean re-seed, fresh undo history, and dropped
-    // holds that don't exist on the new layout/size. Angle is excluded so a
-    // session-sync angle change doesn't wipe an in-progress paint.
-    <CreateClimbScreen
-      key={createClimbScreenKey(params.editClimbUuid, resolvedBoard, params.forkFrames)}
-      board={resolvedBoard}
-      forkFrames={params.forkFrames}
-      forkName={params.forkName}
-      forkDescription={params.forkDescription}
-      forkCharacteristics={params.forkCharacteristics}
-      forkDifficulty={params.forkDifficulty}
-      editClimbUuid={params.editClimbUuid}
-    />
+    <>
+      {/* Key by the edited climb AND the board's hold-identity tuple so switching
+          drafts OR boards (e.g. a bare-open screen while the active board changes)
+          remounts the editor — a clean re-seed, fresh undo history, and dropped
+          holds that don't exist on the new layout/size. Angle is excluded so a
+          session-sync angle change doesn't wipe an in-progress paint. */}
+      <CreateClimbScreen
+        key={createClimbScreenKey(params.editClimbUuid, resolvedBoard, params.forkFrames)}
+        board={resolvedBoard}
+        forkFrames={params.forkFrames}
+        forkName={params.forkName}
+        forkDescription={params.forkDescription}
+        forkCharacteristics={params.forkCharacteristics}
+        forkDifficulty={params.forkDifficulty}
+        editClimbUuid={params.editClimbUuid}
+      />
+      {/* Host the BLE device picker from inside this route so a connect from the
+          create-climb lightbulb presents OVER this transparentModal route instead
+          of behind it. Claims the picker, suppressing the app-root instance while
+          mounted — same fix as app/play.tsx (#5868). */}
+      <DevicePickerSheetHost registerExternal />
+    </>
   );
 }
 
