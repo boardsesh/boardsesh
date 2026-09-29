@@ -831,11 +831,26 @@ export class SyncRunner {
     }
 
     let nextCooldownMs = cooldownMs;
+    // Aurora's Retry-After, when the failure carries one: this path has no
+    // borrowed donor to hold (it runs on the real user's own token), but the
+    // shared-sync slot is the SAME per-board cursor runSharedSyncJob holds —
+    // extending it here keeps the next piggybacked user sync from retrying
+    // the same board before the hold Aurora asked for is up.
+    let providerHoldMs: number | undefined;
     try {
       this.log(`[SyncRunner] Running shared sync for ${boardType} using ${userId}'s token...`);
       await this.runBoardSharedWork(boardType, token, {});
     } catch (sharedError) {
       nextCooldownMs = sharedSyncCooldownAfterError(sharedError, cooldownMs);
+      if (isAuroraRequestError(sharedError) && sharedError.retryAfterMs !== undefined) {
+        providerHoldMs = Math.max(
+          TRANSIENT_SHARED_SYNC_COOLDOWN_MS,
+          Math.min(sharedError.retryAfterMs, SHARED_SYNC_PROVIDER_HOLD_CAP_MS),
+        );
+        this.log(
+          `[SyncRunner] PROVIDER_THROTTLED shared sync for ${boardType}: holding the slot for ${providerHoldMs} ms`,
+        );
+      }
       const sharedErrorMessage = this.formatErrorMessage(sharedError);
       this.handleError(sharedError instanceof Error ? sharedError : new Error(sharedErrorMessage), {
         board: boardType,
@@ -851,7 +866,16 @@ export class SyncRunner {
       // end of the work. Canonical transient Aurora failures get the shorter
       // retry cooldown. Finalization is fenced by claimToken, so a stalled
       // finisher cannot overwrite a newer claimant's full marker.
-      await this.stampSharedSyncFinishedSafely(db, cursor, boardType, claimToken, cooldownMs, nextCooldownMs);
+      await this.stampSharedSyncFinishedSafely(
+        db,
+        cursor,
+        boardType,
+        claimToken,
+        cooldownMs,
+        nextCooldownMs,
+        undefined,
+        providerHoldMs,
+      );
     }
   }
 
@@ -1085,11 +1109,19 @@ export class SyncRunner {
    * Reuses the borrowed credential the shared sync is already running on, so it
    * adds no login of its own.
    *
-   * EVERY failure is swallowed here. The token belongs to a real climber, and
-   * this method sits inside `maybeRunSharedSync`'s try — letting a crawl error
-   * escape would attribute it to their credential and could quarantine their
-   * personal sync. The crawl is best-effort catalog upkeep; it must never cost
-   * a user their account sync.
+   * Every failure but a rate limit is swallowed here. The token belongs to a
+   * real climber, and this method sits inside `maybeRunSharedSync`'s try —
+   * letting an ordinary crawl error escape would cost a user their shared-sync
+   * cooldown for no benefit. The crawl is best-effort catalog upkeep. A 429
+   * does escape: Aurora's Retry-After is a real hold, not a per-gym blip, and
+   * on the `runSharedSyncJob` scheduled path that already parks the shared-sync
+   * slot and the borrowed donor credential (never a failure on it, just a hold)
+   * for exactly this error — swallowing it here would keep the crawl
+   * contacting Aurora, one gym at a time, for the rest of the slice during the
+   * hold. `maybeRunSharedSync`'s daemon piggyback path has no borrowed-donor
+   * concept to hold (it runs on the real user's own token), so there the 429
+   * only extends the shared-sync slot for the same Retry-After — no
+   * credential is held, since none was borrowed.
    */
   private async crawlGymWallSlice(
     board: AuroraLocationBoardName,
@@ -1116,7 +1148,9 @@ export class SyncRunner {
     } catch (error) {
       // A stopped job or a lost fence is not a crawl failure: the job must stop.
       if (options.signal?.aborted || isSyncFenceError(error)) throw error;
-      // Logged, never rethrown — see the contract above.
+      // A rate limit escapes too — see the contract above.
+      if (isAuroraRequestError(error) && error.code === 'rate_limited') throw error;
+      // Everything else is logged, never rethrown — see the contract above.
       this.log(
         `[SyncRunner] Wall crawl for ${board} failed (shared sync unaffected): ${this.formatErrorMessage(error)}`,
       );

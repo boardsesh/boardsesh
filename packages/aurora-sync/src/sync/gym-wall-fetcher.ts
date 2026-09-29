@@ -2,6 +2,7 @@ import AuroraClimbingClient from '../api/aurora-client';
 import { fetchAuroraGymUser, type AuroraGymUser } from '../api/gym-walls-api';
 import type { AuroraPin } from '../api/pins-api';
 import { isAuroraRequestError, isTransientAuroraError } from '../api/errors';
+
 import type { AuroraLocationBoardName } from './locations-sync';
 
 /**
@@ -222,6 +223,14 @@ function pacedGymUserFetcher(args: {
           }
           return undefined;
         }
+        if (isAuroraRequestError(error) && error.code === 'rate_limited') {
+          // Aurora told us how long to back off. Retrying inside this gym's
+          // pacing window (a few seconds) would only spend more of that
+          // budget, and swallowing it here would let the loop move on to
+          // every remaining gym in the slice during the hold. Let it stop the
+          // whole slice so the caller can honour the real Retry-After.
+          throw error;
+        }
         if (attempt >= attemptBudget || !isTransientAuroraError(error)) {
           args.log?.(
             `[aurora-locations] ${args.board}: could not read gym ${pin.id} (${pin.name ?? 'unnamed'}): ${
@@ -230,8 +239,8 @@ function pacedGymUserFetcher(args: {
           );
           return undefined;
         }
-        // Back off further on a retry — a 429 means the pacing above was not
-        // enough for whatever else is talking to Aurora right now.
+        // A transient non-rate-limit failure (network, timeout, 5xx): back off
+        // a little further on a retry.
         nextRequestAtMs = Date.now() + MIN_REQUEST_INTERVAL_MS * (attempt + 1);
       }
     }

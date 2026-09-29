@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuroraGymUser } from '../api/gym-walls-api';
 import type { Wall } from '../api/sync-api-types';
+import { AuroraRequestError } from '../api/errors';
 
 const mocks = vi.hoisted(() => ({
   fetchAuroraPins: vi.fn(),
@@ -169,6 +170,36 @@ describe('crawlGymWallsForSourceKeys', () => {
     expect(mocks.markGymWallsCrawled).toHaveBeenCalledWith({}, ['tension:269111']);
     const [, records] = mocks.upsertPublicBoardLocations.mock.calls[0] ?? [null, []];
     expect(records).toEqual([]);
+  });
+
+  it('flushes what it already read before rethrowing a mid-slice rate limit', async () => {
+    // Without this, a 429 partway through the (small, ~25-gym) slice would
+    // discard the gyms already read in this cycle right along with it.
+    const requestedIds: number[] = [];
+
+    const run = crawlGymWallsForSourceKeys({
+      db: {} as never,
+      board: 'tension',
+      sourceKeys: ['tension:269111', 'tension:253398', 'tension:269112'],
+      fetchGymUser: (pin) => {
+        requestedIds.push(pin.id);
+        if (pin.id === 253398) {
+          return Promise.reject(
+            new AuroraRequestError({ code: 'rate_limited', message: 'slow down', retryAfterMs: 3_600_000 }),
+          );
+        }
+        return Promise.resolve(gymUser([wall()]));
+      },
+    });
+
+    await expect(run).rejects.toMatchObject({ code: 'rate_limited', retryAfterMs: 3_600_000 });
+    // The third gym in the slice is never asked for.
+    expect(requestedIds).toEqual([269111, 253398]);
+    // The first gym's read is flushed rather than discarded.
+    const [, records] = mocks.upsertPublicBoardLocations.mock.calls[0] ?? [null, []];
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({ sourceKey: 'tension:269111' });
+    expect(mocks.markGymWallsCrawled).toHaveBeenCalledWith({}, ['tension:269111']);
   });
 
   it('does no work at all for an empty slice', async () => {
