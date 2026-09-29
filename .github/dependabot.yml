@@ -6,11 +6,21 @@
 version: 2
 updates:
   # GitHub has no 'pnpm' ecosystem; 'npm' is the one that reads pnpm lockfiles.
+  #
+  # cooldown: pnpm 11 refuses lockfile entries published less than 24 hours ago
+  # (ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION). A Dependabot PR that bumps a package
+  # on its release day therefore fails every image build for up to a day
+  # (nodemailer 10.0.12, 2026-09-28). Two days keeps Dependabot behind that cutoff
+  # with margin, and still lets it pick up releases that survived their first day.
   - package-ecosystem: 'npm' # Matches the pnpm-lock.yaml at the repo root
     directory: '/'
     schedule:
       interval: 'weekly'
+    cooldown:
+      default-days: 2
   - package-ecosystem: 'npm' # Isolated Expo web runtime and its nested pnpm-lock.yaml
     directory: '/packages/mobile/web-runtime'
     schedule:
       interval: 'weekly'
+    cooldown:
+      default-days: 2
