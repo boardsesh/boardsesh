@@ -214,6 +214,17 @@ describe('weekly user exports', () => {
     }
     expect(storageMocks.getS3ObjectMetadataStrict).not.toHaveBeenCalled();
   });
+  it('returns null for malformed legacy periods while preserving GraphQL input errors', async () => {
+    await expect(service.getDownloadableUserDataExport('user-1', 'kilter', 'bad-week')).resolves.toBeNull();
+    await expect(service.getUserDataExportStatus('user-1', 'kilter', 'bad-week')).rejects.toMatchObject({
+      extensions: { code: 'BAD_USER_INPUT' },
+    });
+    await expect(
+      service.getUserDataExportDownloadLink('user-1', 'kilter', 'bad-week', 'boardsesh'),
+    ).rejects.toMatchObject({ extensions: { code: 'BAD_USER_INPUT' } });
+    expect(storageMocks.getS3ObjectMetadataStrict).not.toHaveBeenCalled();
+    expect(storageMocks.presignGetObject).not.toHaveBeenCalled();
+  });
   it.each(['queued', 'running', 'retrying'] as const)('coalesces onto an existing %s run', async (state) => {
     fixtures.runs = [run(state)];
     expect(await service.requestUserDataExport('user-1', 'kilter')).toMatchObject({ status: 'generating' });

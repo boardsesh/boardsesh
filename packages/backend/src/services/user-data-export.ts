@@ -215,8 +215,10 @@ export async function getUserDataExportStatus(
 ): Promise<UserDataExportStatus> {
   await requireExportUser(userId);
   const selectedPeriod = period ?? getIsoWeekPeriod().label;
-  if (!isRecentExportPeriod(selectedPeriod))
+  if (!isRecentExportPeriod(selectedPeriod)) {
+    exportPeriodStart(selectedPeriod);
     throw new GraphQLError('Export period is unavailable', { extensions: { code: 'BAD_USER_INPUT' } });
+  }
   const payload = { userId, boardType, period: selectedPeriod };
   if (!isS3Configured('private')) return unavailableStatus(payload);
   try {
@@ -301,7 +303,12 @@ export async function requestUserDataExport(userId: string, boardType: BoardName
 }
 
 function isRecentExportPeriod(period: string): boolean {
-  const start = exportPeriodStart(period).getTime();
+  let start: number;
+  try {
+    start = exportPeriodStart(period).getTime();
+  } catch {
+    return false;
+  }
   // A late-Sunday file can remain valid through the third calendar week.
   return start <= Date.now() && start + 21 * 86400_000 > Date.now();
 }
@@ -338,7 +345,10 @@ export async function getUserDataExportDownloadLink(
   format: UserDataExportFormat,
 ): Promise<UserDataExportDownloadLink> {
   const download = await downloadableFile(userId, boardType, period, format);
-  if (!download) throw new GraphQLError('Export is not ready or has expired', { extensions: { code: 'NOT_FOUND' } });
+  if (!download) {
+    exportPeriodStart(period);
+    throw new GraphQLError('Export is not ready or has expired', { extensions: { code: 'NOT_FOUND' } });
+  }
   const remainingSeconds = Math.floor((Date.parse(download.file.expiresAt) - Date.now()) / 1000);
   if (remainingSeconds < 1) throw new GraphQLError('Export has expired', { extensions: { code: 'NOT_FOUND' } });
   const signed = await presignGetObject('private', download.key, Math.min(300, remainingSeconds), {
