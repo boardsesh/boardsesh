@@ -36,6 +36,10 @@
  * `UIImage(named:)`, avoiding a synchronous bundle-directory scan on every
  * reload before SDWebImage handles the file URL.
  *
+ * For expo-sqlite, async operations keep their connection alive through
+ * statement finalization. Native statements are marked finalized even when
+ * sqlite3_finalize returns an error; otherwise cleanup can reuse a freed pointer.
+ *
  * For expo-updates, the patch makes a binary's embedded `commitTime` HEAD's
  * committer date instead of the moment the build bundled, so update ordering
  * follows commit order (#5021). A dropped patch is invisible everywhere: the
@@ -120,6 +124,40 @@ export interface PatchRule {
  * package that has neither a rule nor an allowlist entry.
  */
 export const RULES: readonly PatchRule[] = [
+  ...(['src/SQLiteDatabase.ts', 'build/SQLiteDatabase.js'] as const).map((file) => ({
+    package: 'expo-sqlite',
+    file,
+    sentinels: [
+      'beginAsyncOperation',
+      'pendingAsyncOperations',
+      'closePromise',
+      'finalizeStatementWithErrorPreservation',
+    ],
+    patchedKey: 'expo-sqlite@57.0.2',
+  })),
+  // Pin the consecutive finalize/state/error sequence, not a global state
+  // assignment: moving it after the throw leaves the native pointer freed but
+  // still reusable whenever SQLite reports the statement's execution error.
+  {
+    package: 'expo-sqlite',
+    file: 'android/src/main/java/expo/modules/sqlite/SQLiteModule.kt',
+    sentinels: [
+      `val result = statement.ref.sqlite3_finalize()
+    statement.isFinalized = true
+    if (result != NativeDatabaseBinding.SQLITE_OK)`,
+    ],
+    patchedKey: 'expo-sqlite@57.0.2',
+  },
+  {
+    package: 'expo-sqlite',
+    file: 'ios/SQLiteModule.swift',
+    sentinels: [
+      `let result = exsqlite3_finalize(statement.pointer)
+    statement.isFinalized = true
+    if (result != SQLITE_OK)`,
+    ],
+    patchedKey: 'expo-sqlite@57.0.2',
+  },
   {
     package: 'react-native-ble-plx',
     file: 'android/src/main/java/com/bleplx/adapter/BleModule.java',

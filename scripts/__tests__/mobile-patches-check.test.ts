@@ -53,6 +53,114 @@ function makeEnv(opts: {
   };
 }
 
+describe('the shipped expo-sqlite lifetime guards', () => {
+  const sqliteKey = 'expo-sqlite@57.0.2';
+  const sqliteRules = REAL_RULES.filter((rule) => rule.package === 'expo-sqlite');
+  const helperSource = `
+beginAsyncOperation();
+pendingAsyncOperations.add(operation);
+closePromise = closeWhenDrained();
+finalizeStatementWithErrorPreservation(statement, failure);
+`;
+  const nativeFixtures = [
+    {
+      file: 'android/src/main/java/expo/modules/sqlite/SQLiteModule.kt',
+      source: `
+  private fun finalize(statement: NativeStatement, database: NativeDatabase) {
+    val result = statement.ref.sqlite3_finalize()
+    statement.isFinalized = true
+    if (result != NativeDatabaseBinding.SQLITE_OK) {
+      throw SQLiteErrorException(database.ref.convertSqlLiteErrorToString())
+    }
+  }
+`,
+    },
+    {
+      file: 'ios/SQLiteModule.swift',
+      source: `
+  private func finalize(statement: NativeStatement, database: NativeDatabase) throws {
+    let result = exsqlite3_finalize(statement.pointer)
+    statement.isFinalized = true
+    if (result != SQLITE_OK) {
+      throw SQLiteErrorException(convertSqlLiteErrorToString(database))
+    }
+  }
+`,
+    },
+  ];
+
+  function checkSqliteSources(overrides: Record<string, string> = {}, version = '57.0.2') {
+    return checkPatchesApplied(
+      sqliteRules,
+      makeEnv({
+        patchedDependencies: { [sqliteKey]: `patches/${sqliteKey}.patch` },
+        versions: { 'expo-sqlite': version },
+        files: {
+          'expo-sqlite::src/SQLiteDatabase.ts': helperSource,
+          'expo-sqlite::build/SQLiteDatabase.js': helperSource,
+          ...Object.fromEntries(nativeFixtures.map(({ file, source }) => [`expo-sqlite::${file}`, source])),
+          ...overrides,
+        },
+      }),
+    );
+  }
+
+  it('guards both JavaScript copies and both native platforms', () => {
+    expect(sqliteRules.map(({ file }) => file)).toEqual([
+      'src/SQLiteDatabase.ts',
+      'build/SQLiteDatabase.js',
+      'android/src/main/java/expo/modules/sqlite/SQLiteModule.kt',
+      'ios/SQLiteModule.swift',
+    ]);
+    expect(checkSqliteSources().errors).toEqual([]);
+  });
+
+  it('rejects a version bump even when the old patch symbols remain', () => {
+    const result = checkSqliteSources({}, '57.0.3');
+
+    expect(result.errors).toHaveLength(4);
+    expect(result.errors.every((error) => error.includes('version drift'))).toBe(true);
+  });
+
+  it.each(['src/SQLiteDatabase.ts', 'build/SQLiteDatabase.js'])(
+    'rejects a dropped lifecycle or error-preservation helper in %s',
+    (file) => {
+      for (const helper of [
+        'beginAsyncOperation',
+        'pendingAsyncOperations',
+        'closePromise',
+        'finalizeStatementWithErrorPreservation',
+      ]) {
+        const result = checkSqliteSources({ [`expo-sqlite::${file}`]: helperSource.replace(helper, 'removedHelper') });
+
+        expect(result.errors).toEqual([expect.stringContaining(`is missing "${helper}"`)]);
+      }
+    },
+  );
+
+  it.each(nativeFixtures)('rejects finalized state moved after an error in $file', ({ file, source }) => {
+    const lateFinalizedState = source
+      .replace('    statement.isFinalized = true\n', '')
+      .replace('    }\n  }', '    }\n    statement.isFinalized = true\n  }');
+
+    expect(lateFinalizedState).not.toBe(source);
+    // An unrelated earlier state assignment cannot stand in for the finalize path.
+    const result = checkSqliteSources({
+      [`expo-sqlite::${file}`]: `statement.isFinalized = true\n${lateFinalizedState}`,
+    });
+
+    expect(result.errors).toEqual([expect.stringContaining(`${file} is missing`)]);
+  });
+
+  it.each(nativeFixtures)('rejects a dropped finalized state in $file', ({ file, source }) => {
+    const result = checkSqliteSources({
+      [`expo-sqlite::${file}`]: source.replace('    statement.isFinalized = true\n', ''),
+    });
+
+    expect(result.errors).toEqual([expect.stringContaining(`${file} is missing`)]);
+  });
+});
+
 describe('checkPatchesApplied', () => {
   it('passes when configured, version matches, and all sentinels are present', () => {
     const env = makeEnv({
