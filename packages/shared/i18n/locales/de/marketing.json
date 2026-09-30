@@ -114,21 +114,21 @@
       "title": "Frische Beta"
     },
     "showcase": {
-      "title": "Sieh es an der Wand",
-      "lead": "Zwanzig Sekunden: Boulder am Board beleuchten, eine Warteschlange teilen und Begehungen eintragen.",
-      "videoLabel": "Boardsesh in zwanzig Sekunden: einen Boulder am Board beleuchten, Boards wechseln, eine Warteschlange teilen und Begehungen eintragen",
+      "videoLabel": "Demo: ein Kilter Board vom Handy beleuchten, Boards wechseln, eine Crew-Warteschlange führen und eine Begehung eintragen.",
       "scenes": {
         "hook": "Dein Board. Vom Handy beleuchtet.",
         "light": "Wische, und das Board folgt.",
         "boards": "Jedes Board. Eine App.",
+        "wall": "Sieh, was an der Wand läuft.",
         "crew": "Deine Crew. Eine Warteschlange.",
+        "workouts": "Gib deiner Session einen Plan.",
+        "island": "Steuere die Wand über die Dynamic Island.",
         "log": "Jede Begehung im Blick.",
         "outro": "Weniger Handy. Mehr Wand."
       },
-      "playHint": "Tippe auf Play, um es zu sehen.",
       "unsupported": "Dein Browser kann dieses Video nicht abspielen.",
-      "pause": "Video pausieren",
-      "play": "Video abspielen"
+      "pause": "Demo pausieren",
+      "play": "Demo abspielen"
     },
     "features": {
       "title": "Board-Abend, geregelt",

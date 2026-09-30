@@ -114,21 +114,21 @@
       "title": "Fresh beta"
     },
     "showcase": {
-      "title": "See it on the wall",
-      "lead": "Twenty seconds of lighting climbs, sharing a queue and logging sends.",
-      "videoLabel": "Boardsesh in twenty seconds: lighting a climb, switching boards, sharing a queue and logging sends",
+      "videoLabel": "Demo: lighting a Kilter board from a phone, switching boards, running a crew queue and logging a send.",
       "scenes": {
         "hook": "Your board. Lit from your phone.",
         "light": "Swipe, and the wall follows.",
         "boards": "Every board. One app.",
+        "wall": "See what's on the wall.",
         "crew": "Your crew. One queue.",
+        "workouts": "Give your session a plan.",
+        "island": "Control the wall from the island.",
         "log": "Remember every send.",
         "outro": "Less phone. More wall."
       },
-      "playHint": "Press play to watch it.",
       "unsupported": "Your browser can't play this video.",
-      "pause": "Pause the video",
-      "play": "Play the video"
+      "pause": "Pause demo",
+      "play": "Play demo"
     },
     "features": {
       "title": "Board night, sorted",

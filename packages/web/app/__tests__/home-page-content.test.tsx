@@ -24,10 +24,11 @@ function resolveMarketingKey(key: string): string {
   return typeof node === 'string' ? node : key;
 }
 
+let mockLanguage = 'en-US';
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string) => resolveMarketingKey(key),
-    i18n: { language: 'en-US', changeLanguage: () => Promise.resolve() },
+    i18n: { language: mockLanguage, changeLanguage: () => Promise.resolve() },
   }),
 }));
 
@@ -63,6 +64,8 @@ vi.mock('@/app/hooks/use-autoplay-video', () => ({
   useAutoplayVideo: () => ({
     videoRef: { current: null },
     showsControls: false,
+    prefersReducedMotion: false,
+    autoplayRefused: false,
     isPlaying: false,
     userPaused: false,
     toggleUserPaused: () => undefined,
@@ -129,12 +132,14 @@ describe('HomePageContent', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    mockLanguage = 'en-US';
     loadSpy.mockRestore();
     openSpy.mockRestore();
     setUserAgent(ORIGINAL_UA);
   });
 
-  it('explains the app before discovery and shows three real board captures', () => {
+  it('explains the app before discovery and shows three real board captures outside English', () => {
+    mockLanguage = 'es';
     render(
       <HomePageContent featureStrip={<section data-testid="features" />} gymSearch={<section data-testid="gyms" />} />,
     );
@@ -146,18 +151,24 @@ describe('HomePageContent', () => {
     expect(screen.getByAltText(resolveMarketingKey('home.hero.moonboardShotAlt'))).toBeTruthy();
   });
 
-  it('places the showcase video between the hero and the feature strip', () => {
+  it('shows the demo video in the hero on the English page, in place of the phone stack', () => {
     render(<HomePageContent featureStrip={<section data-testid="features" />} />);
-    const showcaseHeading = screen.getByRole('heading', { name: resolveMarketingKey('home.showcase.title') });
     const heroHeading = screen.getByRole('heading', { level: 1 });
+    const video = screen.getByLabelText(resolveMarketingKey('home.showcase.videoLabel'));
     const featureSection = screen.getByTestId('features');
-    expect(heroHeading.compareDocumentPosition(showcaseHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(showcaseHeading.compareDocumentPosition(featureSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(screen.getByLabelText(resolveMarketingKey('home.showcase.videoLabel'))).toBeTruthy();
-    for (const scene of ['hook', 'light', 'boards', 'crew', 'log', 'outro']) {
-      expect(screen.getByText(resolveMarketingKey(`home.showcase.scenes.${scene}`))).toBeTruthy();
-    }
-    expect(screen.getByRole('button', { name: resolveMarketingKey('home.showcase.pause') })).toBeTruthy();
+    expect(heroHeading.compareDocumentPosition(video) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(video.compareDocumentPosition(featureSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByAltText(resolveMarketingKey('home.hero.playShotAlt'))).toBeNull();
+    expect(screen.queryByRole('heading', { name: /see it on the wall/i })).toBeNull();
+    expect(document.querySelectorAll('figcaption li')).toHaveLength(9);
+    expect(screen.getByRole('button', { name: resolveMarketingKey('home.showcase.play') })).toBeTruthy();
+  });
+
+  it.each(['es', 'fr', 'de'])('keeps the phone stack and no video in the %s hero', (language) => {
+    mockLanguage = language;
+    render(<HomePageContent featureStrip={<section data-testid="features" />} />);
+    expect(screen.getByAltText(resolveMarketingKey('home.hero.playShotAlt'))).toBeTruthy();
+    expect(document.querySelector('video')).toBeNull();
   });
 
   describe('hero install CTA', () => {

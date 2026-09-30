@@ -83,7 +83,10 @@ export default function HomePageContent({
   featureStrip,
   supportBlock,
 }: HomePageContentProps) {
-  const { t } = useTranslation('marketing');
+  const { t, i18n } = useTranslation('marketing');
+  // The video's text is burned in English, so only the English page shows it;
+  // every other locale keeps the phone stack.
+  const showsHeroVideo = i18n.language === 'en-US';
   const { platform: installPlatform, nativeStore } = useInstallPlatform();
 
   // Hero CTA drives app installs. The store, label and icon follow the detected
@@ -205,32 +208,38 @@ export default function HomePageContent({
             />
           </Box>
           <Box className={styles.previewGroup}>
-            <Box className={styles.heroPreview}>
-              <MarketingScreenshot
-                shot="tension"
-                alt={t('home.hero.tensionShotAlt')}
-                sizes="(max-width: 760px) 42vw, 230px"
-                className={`${styles.previewPhone} ${styles.previewLeft}`}
-              />
-              <MarketingScreenshot
-                shot="moonboard"
-                alt={t('home.hero.moonboardShotAlt')}
-                sizes="(max-width: 760px) 42vw, 230px"
-                className={`${styles.previewPhone} ${styles.previewRight}`}
-              />
-              <MarketingScreenshot
-                shot="kilter"
-                alt={t('home.hero.playShotAlt')}
-                sizes="(max-width: 760px) 48vw, 260px"
-                preload
-                className={`${styles.previewPhone} ${styles.previewPrimary}`}
-              />
-            </Box>
-            <MarketingPreviewSwitch />
+            {showsHeroVideo ? (
+              <Box className={`${styles.heroPreview} ${styles.heroShowcase}`}>
+                <HomeShowcaseVideo />
+              </Box>
+            ) : (
+              <>
+                <Box className={styles.heroPreview}>
+                  <MarketingScreenshot
+                    shot="tension"
+                    alt={t('home.hero.tensionShotAlt')}
+                    sizes="(max-width: 760px) 42vw, 230px"
+                    className={`${styles.previewPhone} ${styles.previewLeft}`}
+                  />
+                  <MarketingScreenshot
+                    shot="moonboard"
+                    alt={t('home.hero.moonboardShotAlt')}
+                    sizes="(max-width: 760px) 42vw, 230px"
+                    className={`${styles.previewPhone} ${styles.previewRight}`}
+                  />
+                  <MarketingScreenshot
+                    shot="kilter"
+                    alt={t('home.hero.playShotAlt')}
+                    sizes="(max-width: 760px) 48vw, 260px"
+                    preload
+                    className={`${styles.previewPhone} ${styles.previewPrimary}`}
+                  />
+                </Box>
+                <MarketingPreviewSwitch />
+              </>
+            )}
           </Box>
         </Box>
-
-        <HomeShowcaseVideo />
 
         {featureStrip}
         <PopularBoardRail boards={initialBoards ?? []} />

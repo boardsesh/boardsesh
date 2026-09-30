@@ -1,24 +1,20 @@
-.section {
-  min-width: 0;
-}
-
-/* One rounded card, the same border and radius as the other homepage cards. */
+/* The hero video card: 9:16, as wide as fits beside the hero copy without the
+   card outgrowing the viewport height (header and 120px of breathing room). */
 .figure {
   position: relative;
   isolation: isolate;
-  width: 100%;
-  max-width: 1200px;
+  width: min(400px, calc((100dvh - var(--global-header-height) - 120px) * 9 / 16));
+  aspect-ratio: 9 / 16;
   margin: 0;
   overflow: hidden;
-  aspect-ratio: 16 / 9;
   border: 1px solid var(--separator);
   border-radius: var(--border-radius-xl);
   background: var(--semantic-surface);
 }
 
-/* The poster sits UNDER the video. A <video> with no poster attribute paints
-   nothing until its first frame decodes, so the image shows through until then
-   and the video simply covers it once it plays. */
+/* The poster and the video share one box, so the video can never be larger than
+   the poster. The video is invisible until its first frame is playing: a video
+   with no frame yet paints black in some Safari versions. */
 .poster,
 .video {
   position: absolute;
@@ -33,17 +29,8 @@
   opacity: 0;
 }
 
-/* Stays invisible until the first frame is playing, so Safari never flashes a
-   black rectangle over the poster. */
 .video[data-active='true'] {
   opacity: 1;
-}
-
-.poster img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
 }
 
 .toggle {
@@ -55,17 +42,16 @@
   border: 1px solid var(--separator);
 }
 
-/* Explains the native controls. Always in the layout (hidden, not removed) so
-   it appearing does not push the page down. */
-.hint {
-  min-height: 1.5em;
-  margin-top: var(--spacing-2);
-  color: var(--neutral-500);
-  line-height: 1.5;
-}
-
-.hintHidden {
-  visibility: hidden;
+/* Poster with nothing playing (data saver, reduced motion): the play button is
+   the call to action, so it sits in the middle. */
+.toggleCentered {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 1;
+  transform: translate(-50%, -50%);
+  background: var(--semantic-surface);
+  border: 1px solid var(--separator);
 }
 
 .sceneList {
@@ -78,7 +64,6 @@
   clip-path: inset(50%);
   white-space: nowrap;
   border: 0;
-  list-style: none;
 }
 
 .sceneList ul {
@@ -87,10 +72,11 @@
   list-style: none;
 }
 
+/* Phone: the hero copy comes first and the card sits directly below it at full
+   content width, capped so it never takes more than 70% of the screen height. */
 @media (max-width: 760px) {
   .figure {
-    aspect-ratio: 9 / 16;
-    max-width: 420px;
+    width: min(100%, calc(70svh * 9 / 16));
     margin-inline: auto;
   }
 }

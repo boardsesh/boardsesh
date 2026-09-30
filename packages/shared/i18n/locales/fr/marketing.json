@@ -114,21 +114,21 @@
       "title": "Beta fraîche"
     },
     "showcase": {
-      "title": "Vois-le sur le mur",
-      "lead": "Vingt secondes pour allumer des blocs, partager une file et noter tes croix.",
-      "videoLabel": "Boardsesh en vingt secondes : allumer un bloc, changer de board, partager une file et noter ses croix",
+      "videoLabel": "Démo : allumer une board Kilter depuis un téléphone, changer de board, gérer une file de groupe et noter une croix.",
       "scenes": {
         "hook": "Ta board. Allumée depuis ton téléphone.",
         "light": "Balaie, et le mur suit.",
         "boards": "Toutes les boards. Une seule appli.",
+        "wall": "Vois ce qu'il y a sur le mur.",
         "crew": "Ton crew. Une seule file.",
+        "workouts": "Donne un plan à ta séance.",
+        "island": "Pilote le mur depuis la Dynamic Island.",
         "log": "Garde la trace de chaque croix.",
         "outro": "Moins de téléphone. Plus de mur."
       },
-      "playHint": "Appuie sur lecture pour le voir.",
       "unsupported": "Ton navigateur ne peut pas lire cette vidéo.",
-      "pause": "Mettre la vidéo en pause",
-      "play": "Lancer la vidéo"
+      "pause": "Mettre la démo en pause",
+      "play": "Lancer la démo"
     },
     "features": {
       "title": "La soirée board, réglée",

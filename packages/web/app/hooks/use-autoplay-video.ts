@@ -29,12 +29,21 @@ type UseAutoplayVideoOptions = {
   rootMargin?: string;
   /** Share of the video that must be visible to count as in view. */
   threshold?: number;
+  /**
+   * When false the hook neither plays nor pauses, leaving the video to the
+   * caller (for example until its source has been chosen). Defaults to true.
+   */
+  enabled?: boolean;
 };
 
 type UseAutoplayVideoResult = {
   videoRef: React.RefObject<HTMLVideoElement | null>;
   /** True for reduced-motion readers and when the browser refused autoplay. */
   showsControls: boolean;
+  /** `null` until the client has looked. */
+  prefersReducedMotion: boolean | null;
+  /** True when the browser rejected `play()`. */
+  autoplayRefused: boolean;
   /** True once the video has actually started producing frames. */
   isPlaying: boolean;
   /** True after the reader pressed pause; scrolling never restarts the video then. */
@@ -55,6 +64,7 @@ type UseAutoplayVideoResult = {
 export function useAutoplayVideo({
   rootMargin = '200px 0px',
   threshold,
+  enabled = true,
 }: UseAutoplayVideoOptions = {}): UseAutoplayVideoResult {
   const videoRef = React.useRef<HTMLVideoElement>(null);
   const prefersReducedMotion = usePrefersReducedMotion();
@@ -90,19 +100,21 @@ export function useAutoplayVideo({
 
   React.useEffect(() => {
     const video = videoRef.current;
-    if (!video || prefersReducedMotion === null) return;
+    if (!enabled || !video || prefersReducedMotion === null) return;
     if (prefersReducedMotion || !inView || userPaused) {
       video.pause();
       return;
     }
     void video.play().catch(() => setAutoplayRefused(true));
-  }, [prefersReducedMotion, inView, userPaused]);
+  }, [enabled, prefersReducedMotion, inView, userPaused]);
 
   const toggleUserPaused = React.useCallback(() => setUserPaused((paused) => !paused), []);
 
   return {
     videoRef,
     showsControls: prefersReducedMotion === true || autoplayRefused,
+    prefersReducedMotion,
+    autoplayRefused,
     isPlaying,
     userPaused,
     toggleUserPaused,

@@ -29,10 +29,11 @@ function stubReducedMotion(matches: boolean) {
   );
 }
 
-function Harness({ rootMargin, threshold }: { rootMargin?: string; threshold?: number }) {
+function Harness({ rootMargin, threshold, enabled }: { rootMargin?: string; threshold?: number; enabled?: boolean }) {
   const { videoRef, showsControls, userPaused, isPlaying, toggleUserPaused } = useAutoplayVideo({
     rootMargin,
     threshold,
+    enabled,
   });
   return (
     <div>
@@ -83,6 +84,16 @@ describe('useAutoplayVideo', () => {
     pauseSpy.mockClear();
     scrollIntoView(false);
     expect(pauseSpy).toHaveBeenCalled();
+  });
+
+  it('leaves the video alone while disabled and plays once enabled', () => {
+    const { rerender } = render(<Harness enabled={false} />);
+    scrollIntoView(true);
+    expect(playSpy).not.toHaveBeenCalled();
+    expect(pauseSpy).not.toHaveBeenCalled();
+
+    rerender(<Harness enabled />);
+    expect(playSpy).toHaveBeenCalledTimes(1);
   });
 
   it('uses the default rootMargin unless one is passed', () => {
