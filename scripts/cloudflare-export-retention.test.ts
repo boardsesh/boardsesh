@@ -107,6 +107,20 @@ describe('generated export retention', () => {
     });
   });
 
+  it('adds retention when Cloudflare omits the optional rules list', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(envelope({})).mockResolvedValueOnce(envelope({}));
+    vi.stubGlobal('fetch', fetchMock);
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await applyR2LifecycleRule('test-token', 'test-account', privateBucket.name, USER_EXPORT_LIFECYCLE_RULE);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1][1]).toMatchObject({
+      method: 'PUT',
+      body: JSON.stringify({ rules: [USER_EXPORT_LIFECYCLE_RULE] }),
+    });
+  });
+
   it('never replaces lifecycle rules after an authorization failure', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ success: false }), { status: 403 }));
     vi.stubGlobal('fetch', fetchMock);
@@ -134,7 +148,7 @@ describe('generated export retention', () => {
   });
 
   it('refuses malformed successful reads instead of clearing unknown lifecycle rules', async () => {
-    for (const result of [{}, { rules: null }, { rules: [{}] }]) {
+    for (const result of [{ rules: null }, { rules: [{}] }]) {
       const fetchMock = vi.fn().mockResolvedValue(envelope(result));
       vi.stubGlobal('fetch', fetchMock);
       await expect(
