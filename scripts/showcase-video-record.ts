@@ -81,6 +81,7 @@ import {
   parseSessionIdFromInviteUrl,
   parseSignalRequest,
   resolveTrimSeconds,
+  restoredSessionId,
   sessionStarted,
   sessionVisibilityIsOff,
   type AnchorArrival,
@@ -538,7 +539,10 @@ function patchedSecondaryApp(appPath: string, port: number): string {
   rmSync(SECONDARY_APP_DIR, { recursive: true, force: true });
   mkdirSync(SECONDARY_APP_DIR, { recursive: true });
   const target = resolve(SECONDARY_APP_DIR, 'Boardsesh.app');
-  cpSync(appPath, target, { recursive: true });
+  // `cp -c` clones on APFS: the 190 MB bundle costs no disk until a file in it
+  // changes (only Info.plist and the signature do).
+  if (spawnSync('cp', ['-cR', appPath, target]).status !== 0) cpSync(appPath, target, { recursive: true });
+  onCleanup('second phone app copy', () => rmSync(SECONDARY_APP_DIR, { recursive: true, force: true }));
   const plist = resolve(target, 'Info.plist');
   const replaced = spawnSync('plutil', [
     '-replace',
@@ -606,19 +610,28 @@ async function preparePhone(
 /** Cold-start the app (fresh JS state, so one-shot deep-link params fire again) and wait for home. */
 async function relaunch(phone: Phone): Promise<LogWindow> {
   const window = new LogWindow(phone.metroLog);
-  simctl(['terminate', phone.device.udid, APP_ID]);
-  // SIMCTL_CHILD_TZ pins the app to UTC, like every screenshot capture.
-  const launch = simctl(['launch', phone.device.udid, APP_ID], { ...process.env, SIMCTL_CHILD_TZ: 'UTC' });
-  if (launch.status !== 0) throw new Error(`simctl launch on ${phone.device.name} failed: ${launch.stderr.trim()}`);
-  const deadline = Date.now() + HOME_READY_TIMEOUT_MS;
-  while (Date.now() < deadline) {
-    window.pull();
-    if (countHomeReady(window.text) > 0) return window;
-    await sleep(1000);
+  // A brand-new simulator's first launch can sit on the dev-client launcher
+  // ("Searching for development servers") instead of loading the baked URL;
+  // the next launch loads it. So try a few times inside the overall budget.
+  const attempts = 3;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    simctl(['terminate', phone.device.udid, APP_ID]);
+    // SIMCTL_CHILD_TZ pins the app to UTC, like every screenshot capture.
+    const launch = simctl(['launch', phone.device.udid, APP_ID], { ...process.env, SIMCTL_CHILD_TZ: 'UTC' });
+    if (launch.status !== 0) throw new Error(`simctl launch on ${phone.device.name} failed: ${launch.stderr.trim()}`);
+    const deadline = Date.now() + HOME_READY_TIMEOUT_MS / attempts;
+    while (Date.now() < deadline) {
+      window.pull();
+      if (countHomeReady(window.text) > 0) return window;
+      await sleep(1000);
+    }
+    console.warn(`${LOG} ${phone.role}: app not home after launch ${attempt}/${attempts}.`);
   }
+  const screenshot = resolve(LOG_DIR, `${phone.role}-not-home.png`);
+  simctl(['io', phone.device.udid, 'screenshot', screenshot]);
   throw new Error(
-    `${phone.role} never reached home within ${HOME_READY_TIMEOUT_MS / 1000}s. Last Metro lines:\n` +
-      window.text.split('\n').slice(-25).join('\n'),
+    `${phone.role} never reached home within ${HOME_READY_TIMEOUT_MS / 1000}s (screen: ${relative(ROOT_DIR, screenshot)}). ` +
+      `Last Metro lines:\n${window.text.split('\n').slice(-25).join('\n')}`,
   );
 }
 
@@ -780,7 +793,26 @@ async function recordTake(context: RunContext, take: ShowcaseTake): Promise<Take
   const { primary, signal } = context;
   console.log(`\n${LOG} === ${take.id}: ${take.summary}`);
   signal.reset();
-  const window = await relaunch(primary);
+  let window = await relaunch(primary);
+  const leftover = take.teardownFlows.length > 0 ? restoredSessionId(window.text) : null;
+  if (leftover) {
+    // An earlier run died before its teardown; end that session first, or the
+    // Record tab opens in-session and the setup flows tap the wrong things.
+    console.warn(`${LOG} [${take.id}] ending session ${leftover} left over from an earlier run...`);
+    crewSessionOpen = true;
+    await runTeardownFlows(context, take);
+    if (crewSessionOpen) {
+      return {
+        takeId: take.id,
+        problems: [
+          `[${take.id}] a session left over from an earlier run (${leftover}) would not end; end it in the app`,
+        ],
+        frames: 0,
+        seconds: 0,
+      };
+    }
+    window = await relaunch(primary);
+  }
   const primeStatus = await runMaestro({
     udid: primary.device.udid,
     flowFile: writeNavigationFlow(`prime-${take.id}`, take.primeLinks, 3000),
@@ -883,6 +915,10 @@ let crewSessionOpen = false;
 
 async function runTeardownFlows(context: RunContext, take: ShowcaseTake): Promise<void> {
   if (!crewSessionOpen) return;
+  // Relaunch first: a sheet left open by an aborted take (the invite sheet,
+  // the queue) would swallow the Stop tap. The app restores the session on
+  // launch, so the Record tab comes back in-session.
+  await relaunch(context.primary);
   const window = new LogWindow(context.primary.metroLog);
   for (const flow of take.teardownFlows) {
     await runMaestro({
@@ -951,7 +987,7 @@ async function prepareCrew(context: RunContext, take: ShowcaseTake): Promise<{ u
   }
   console.log(`${LOG} [${take.id}] hidden session ${sessionId} started; sending the second phone in.`);
 
-  await relaunch(secondary);
+  const secondaryWindow = await relaunch(secondary);
   const joinStatus = await runMaestro({
     udid: secondary.device.udid,
     flowFile: writeNavigationFlow(`${take.id}-join-link`, [`join/${sessionId}`], 1500),
@@ -967,6 +1003,21 @@ async function prepareCrew(context: RunContext, take: ShowcaseTake): Promise<{ u
       signalUrl: signal.url,
     })) === 0;
   if (!joined) return `[${take.id}] the second phone could not join session ${sessionId}; see its Maestro log`;
+  // The Join tap is a coordinate; prove it landed before filming a take whose
+  // whole point is the second account's row.
+  const joinDeadline = Date.now() + 15_000;
+  while (!secondaryWindow.text.includes('[analytics] Session Joined') && Date.now() < joinDeadline) {
+    secondaryWindow.pull();
+    await sleep(500);
+  }
+  if (!secondaryWindow.text.includes('[analytics] Session Joined')) {
+    const screenshot = resolve(LOG_DIR, 'crew-secondary-join.png');
+    simctl(['io', secondary.device.udid, 'screenshot', screenshot]);
+    return (
+      `[${take.id}] the second phone never logged "Session Joined" (screen: ${relative(ROOT_DIR, screenshot)}). ` +
+      `Check the Join point in ${take.secondary.joinFlow}.`
+    );
+  }
   const toClimbs = await runMaestro({
     udid: secondary.device.udid,
     flowFile: writeNavigationFlow(`${take.id}-secondary-climbs`, ['home', 'climbs'], 2500),

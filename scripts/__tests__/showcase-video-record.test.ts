@@ -20,6 +20,7 @@ import {
   parseSessionIdFromInviteUrl,
   parseSignalRequest,
   resolveTrimSeconds,
+  restoredSessionId,
   sessionStarted,
   sessionVisibilityIsOff,
   type TakeCheckInput,
@@ -172,6 +173,14 @@ describe('logs', () => {
     expect(sessionVisibilityIsOff(inSession)).toBe(false);
     expect(sessionVisibilityIsOff('')).toBe(false);
     expect(sessionStarted(' INFO  [analytics] Session Started {"boardName": "kilter"}')).toBe(true);
+  });
+
+  it('spots a session the app restored on launch', () => {
+    const none = ' INFO  [session] restored from store: (none)';
+    const some = ' INFO  [session] restored from store: 667186b5-f0e5-4f56-92bf-8646f87d3f81';
+    expect(restoredSessionId(none)).toBeNull();
+    expect(restoredSessionId(`${none}\n${some}`)).toBe('667186b5-f0e5-4f56-92bf-8646f87d3f81');
+    expect(restoredSessionId(`${some}\n${none}`)).toBeNull();
   });
 });
 

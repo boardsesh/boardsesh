@@ -373,6 +373,17 @@ export function sessionVisibilityIsOff(logText: string): boolean {
   return Boolean(last && /"isPublic":\s*false/.test(last) && /"phase":\s*"pre_session"/.test(last));
 }
 
+/**
+ * The session the app picked back up on launch (`[session] restored from
+ * store: <id>`), or null. A crew take that died before its teardown leaves one
+ * behind, and the next run has to end it before it can start a fresh one.
+ */
+export function restoredSessionId(logText: string): string | null {
+  const matches = [...logText.matchAll(/\[session\] restored from store: (\S+)/g)];
+  const last = matches[matches.length - 1]?.[1];
+  return last && last !== '(none)' ? last : null;
+}
+
 /** The app logged the session starting (the Start tap landed). */
 export function sessionStarted(logText: string): boolean {
   return logText.includes('[analytics] Session Started');

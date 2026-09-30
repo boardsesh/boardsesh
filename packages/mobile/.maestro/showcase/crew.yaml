@@ -28,7 +28,7 @@ name: showcase take - a friend adds a climb
 #   50%,47% -> 50%,95%  drag the invite sheet down to close it
 #   40%,88%             the now-playing bar above the tab bar -> play view
 #   91%,90%             the queue button, bottom right of the play view
-#   50%,62%             the first row after the playing climb in the queue sheet
+#   50%,60%             the first row after the playing climb in the queue sheet
 #   50%,7%              the backdrop above the reaction menu
 
 - evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/flow-start')}
@@ -62,7 +62,7 @@ name: showcase take - a friend adds a climb
 
 # Long press the new row: the reaction menu, with "Play next".
 - longPressOn:
-    point: '50%,62%'
+    point: '50%,60%'
 - extendedWaitUntil:
     visible: 'zzz-showcase-pause'
     timeout: 2000
