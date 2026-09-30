@@ -11,8 +11,9 @@
  * Not a Playwright test project, for the same reason as capture-design-mockups:
  * a file:// page needs no dev server, database or signed-in user.
  *
- * Usage: vp run video:render [-- --target <name>|all] [--stills] [--measure] [--from-frame <n>]
- *                            [--format 16x9|9x16] [--placeholder-footage] [--skip-web] [--no-donation-line]
+ * Usage: vp run video:render [-- --platform ios|android] [--target <name>|all] [--stills] [--measure]
+ *                            [--from-frame <n>] [--format 16x9|9x16] [--placeholder-footage] [--skip-web]
+ *                            [--no-donation-line] [--work-dir <dir>]
  */
 import { chromium, type Page } from '@playwright/test';
 import sharp from 'sharp';
@@ -44,9 +45,9 @@ import { themeTokens } from '../app/theme/theme-config';
 import {
   SHOWCASE_FPS,
   SHOWCASE_OUT_DIR,
-  SHOWCASE_MARKS_DIR,
   SHOWCASE_TAKE_IDS,
   type ShowcaseMarksFile,
+  type ShowcaseWorkDirs,
   type ShowcaseAnchorsFile,
   type ShowcaseCalloutName,
   type ShowcaseTakeId,
@@ -66,7 +67,6 @@ import {
   SHOWCASE_LIGHT_ROLE_COLORS,
   SHOWCASE_FRAMES_DIR,
   SHOWCASE_PERSPECTIVE,
-  SHOWCASE_PHONE,
   SHOWCASE_PLACEHOLDER_TAKES,
   SHOWCASE_SHARE_COPY,
   SHOWCASE_STAGE_COPY,
@@ -82,9 +82,13 @@ import {
   SHOWCASE_WEB_MAX_BYTES,
   SHOWCASE_WORKOUT_BEATS,
   SHOWCASE_SCENE_STAGING,
-  SHOWCASE_TAKE_EDITS,
+  SHOWCASE_TAKE_EDITS_BY_PLATFORM,
   SHOWCASE_DRAWN_PLACEHOLDER_MARKER,
   anchorsFilePath,
+  copyForPlatform,
+  marksFilePath,
+  renderWorkDirs,
+  showcasePhone,
   buildBoardRenderUrl,
   buildClimbSearchRequest,
   buildAppPreviewArgs,
@@ -132,6 +136,7 @@ import {
   type IslandQueue,
   type RenderArgs,
   type ShowcaseCopy,
+  type ShowcasePhone,
   type ShowcaseStageData,
   type StillFrame,
   type StageBoards,
@@ -140,6 +145,7 @@ import {
 } from '../../../scripts/lib/showcase-video/render';
 import { FFMPEG_BIN, FFPROBE_BIN, HELP_CLIP_POSTER_ENCODE } from '../../../scripts/lib/help-clips';
 import {
+  SHOWCASE_ANDROID_TARGET_NAMES,
   SHOWCASE_TARGET_NAMES,
   appPreviewProblems,
   assertTargetLength,
@@ -147,10 +153,10 @@ import {
   selectTargets,
   textOutsideSafeArea,
   type TargetSelection,
+  type AnyShowcaseTarget as ShowcaseTarget,
   type ProbedMedia,
   type ShowcaseDeliverable,
   type ShowcaseRendition,
-  type ShowcaseTarget,
   type TextBox,
 } from '../../../scripts/lib/showcase-video/targets';
 
@@ -164,9 +170,15 @@ const USAGE = `Usage: vp run video:render [-- <flags>]
 
 Renders the showcase video's targets from marketing/showcase-video/ and the recorded takes.
 
-  --target <name>        One target, repeatable or comma-separated: ${SHOWCASE_TARGET_NAMES.join(', ')};
-                         all for every one. Default: homepage + social (what vp run video ships).
-                         Outputs: docs/showcase-video.md, "Targets"
+  --platform ios|android Whose recording to cut (default ios): its footage (work/ or work/android/),
+                         phone mockup, copy and targets
+  --target <name>        One target, repeatable or comma-separated, of the platform's registry;
+                         all for every one of them.
+                           ios:     ${SHOWCASE_TARGET_NAMES.join(', ')}
+                                    (default homepage + social, what vp run video ships)
+                           android: ${SHOWCASE_ANDROID_TARGET_NAMES.join(', ')}
+                                    (default homepage-android + social-android)
+                         Outputs: docs/showcase-video.md, "Targets" and "Android cuts (renderer)"
   --stills               Contact sheets only (settled + mid-transition frames per scene)
                          → ${relative(REPO_ROOT, SHOWCASE_STILLS_DIR)}/
   --poster-frame <n>     Frame the web cut opens on and its poster shows (default ${SHOWCASE_WEB_POSTER_FRAME}; brag.* keep frame 0)
@@ -179,6 +191,8 @@ Renders the showcase video's targets from marketing/showcase-video/ and the reco
   --skip-web             Leave out the homepage target (the lite hero encodes and poster)
   --no-donation-line     Leave "Paid for by the climbers who use it." out of every target's outro
                          (store and ad targets never have it); leaves out the homepage
+  --work-dir <dir>       Read footage/, anchors/ and marks/ from <dir> instead of the platform's
+                         work dir (a scratch copy, to try a layout before a recording lands)
   --help                 Show this message`;
 
 const log = (message: string) => console.log(`[video:render] ${message}`);
@@ -296,17 +310,17 @@ function describePlaceholder(take: PlaceholderTake): string {
 /** Written into every generated take directory; a directory without it holds real footage. */
 const PLACEHOLDER_MARKER = 'PLACEHOLDER';
 
-async function buildPlaceholderFootage(): Promise<void> {
+async function buildPlaceholderFootage(dirs: ShowcaseWorkDirs): Promise<void> {
   for (const takeId of SHOWCASE_TAKE_IDS) {
     const take = SHOWCASE_PLACEHOLDER_TAKES[takeId];
-    const dir = footageTakeDir(takeId);
+    const dir = footageTakeDir(takeId, dirs);
     // Never overwrite a recording: only a directory this flag made is rebuilt.
     if (countFrames(dir) > 0 && !existsSync(resolve(dir, PLACEHOLDER_MARKER))) {
       log(`placeholder ${takeId}: real footage in place, left alone`);
       continue;
     }
     rmSync(dir, { recursive: true, force: true });
-    rmSync(anchorsFilePath(takeId), { force: true });
+    rmSync(anchorsFilePath(takeId, dirs), { force: true });
     const screens = await placeholderScreens(takeId, take);
     if (!screens) continue;
     mkdirSync(dir, { recursive: true });
@@ -317,8 +331,8 @@ async function buildPlaceholderFootage(): Promise<void> {
     if (take.source.kind === 'island') {
       writeFileSync(resolve(dir, SHOWCASE_DRAWN_PLACEHOLDER_MARKER), 'Drawn placeholder: never in the final cut.\n');
     }
-    mkdirSync(dirname(anchorsFilePath(takeId)), { recursive: true });
-    writeFileSync(anchorsFilePath(takeId), `${JSON.stringify(placeholderAnchorsFile(takeId, take), null, 2)}\n`);
+    mkdirSync(dirname(anchorsFilePath(takeId, dirs)), { recursive: true });
+    writeFileSync(anchorsFilePath(takeId, dirs), `${JSON.stringify(placeholderAnchorsFile(takeId, take), null, 2)}\n`);
     log(`placeholder ${takeId}: ${countFrames(dir)} frames from ${describePlaceholder(take)}`);
   }
 }
@@ -334,16 +348,17 @@ function countFrames(dir: string): number {
   return readdirSync(dir).filter((name) => /^\d{5}\.jpg$/.test(name)).length;
 }
 
-const isPlaceholder = (takeId: ShowcaseTakeId) => existsSync(resolve(footageTakeDir(takeId), PLACEHOLDER_MARKER));
+const isPlaceholder = (takeId: ShowcaseTakeId, dirs: ShowcaseWorkDirs) =>
+  existsSync(resolve(footageTakeDir(takeId, dirs), PLACEHOLDER_MARKER));
 
 /**
  * A recorded take's marks (`work/marks/<take>.json`), or null for a generated
  * placeholder (it has none). A recorded take whose marks file is missing stops
  * the render.
  */
-function readMarks(takeId: ShowcaseTakeId): Record<string, number> | null {
-  if (isPlaceholder(takeId)) return null;
-  const path = resolve(SHOWCASE_MARKS_DIR, `${takeId}.json`);
+function readMarks(takeId: ShowcaseTakeId, dirs: ShowcaseWorkDirs): Record<string, number> | null {
+  if (isPlaceholder(takeId, dirs)) return null;
+  const path = marksFilePath(takeId, dirs);
   if (!existsSync(path)) {
     throw new Error(
       `Missing marks for take "${takeId}": ${relative(REPO_ROOT, path)}. Re-record it with video:record.`,
@@ -363,19 +378,24 @@ function readMarks(takeId: ShowcaseTakeId): Record<string, number> | null {
 function readEdit(
   takeId: ShowcaseTakeId,
   frameCount: number,
+  source: FootageSource,
   sceneLength = sceneOfTake(takeId).endFrame - sceneOfTake(takeId).startFrame,
 ): ResolvedTakeEdit | undefined {
-  const edit = SHOWCASE_TAKE_EDITS[takeId];
+  const edit = SHOWCASE_TAKE_EDITS_BY_PLATFORM[source.platform][takeId];
   if (!edit) return undefined;
-  const marks = readMarks(takeId);
+  const marks = readMarks(takeId, source.dirs);
   if (!marks) return undefined;
   const resolved = resolveTakeEdit(takeId, edit, marks, sceneLength, frameCount);
   resolved.warnings.forEach(warn);
   return resolved;
 }
 
-function readAnchors(takeId: ShowcaseTakeId, edit: ResolvedTakeEdit | undefined): ShowcaseAnchorsFile {
-  const path = anchorsFilePath(takeId);
+function readAnchors(
+  takeId: ShowcaseTakeId,
+  edit: ResolvedTakeEdit | undefined,
+  dirs: ShowcaseWorkDirs,
+): ShowcaseAnchorsFile {
+  const path = anchorsFilePath(takeId, dirs);
   if (!existsSync(path)) throw new Error(`Missing anchors for take "${takeId}": ${path}`);
   const parsed = JSON.parse(readFileSync(path, 'utf8')) as ShowcaseAnchorsFile;
   if (parsed.takeId !== takeId || !parsed.screen || !parsed.anchors) {
@@ -389,15 +409,19 @@ function readAnchors(takeId: ShowcaseTakeId, edit: ResolvedTakeEdit | undefined)
  * Every take with footage. A missing board take is skipped (the pile-up uses
  * the boards that were recorded); any other missing take stops the render.
  */
-function loadTakes(allowDrawnPlaceholders: boolean): {
+function loadTakes(
+  allowDrawnPlaceholders: boolean,
+  source: FootageSource,
+): {
   takes: Partial<Record<ShowcaseTakeId, StageTake>>;
   anchors: Partial<Record<ShowcaseTakeId, ShowcaseAnchorsFile>>;
   edits: Partial<Record<ShowcaseTakeId, ResolvedTakeEdit>>;
 } {
+  const { dirs } = source;
   const drawn = (takeId: ShowcaseTakeId) =>
-    existsSync(resolve(footageTakeDir(takeId), SHOWCASE_DRAWN_PLACEHOLDER_MARKER));
+    existsSync(resolve(footageTakeDir(takeId, dirs), SHOWCASE_DRAWN_PLACEHOLDER_MARKER));
   const missing = SHOWCASE_TAKE_IDS.filter(
-    (takeId) => countFrames(footageTakeDir(takeId)) === 0 || (drawn(takeId) && !allowDrawnPlaceholders),
+    (takeId) => countFrames(footageTakeDir(takeId, dirs)) === 0 || (drawn(takeId) && !allowDrawnPlaceholders),
   );
   for (const takeId of missing.filter(drawn)) {
     warn(`take "${takeId}" is a drawn placeholder; only a --placeholder-footage render shows it`);
@@ -405,8 +429,10 @@ function loadTakes(allowDrawnPlaceholders: boolean): {
   const required = missing.filter((takeId) => !SHOWCASE_OPTIONAL_TAKES.includes(takeId));
   if (required.length > 0) {
     throw new Error(
-      `No footage for ${required.join(', ')} under ${relative(REPO_ROOT, dirname(footageTakeDir('light')))}. ` +
-        'Record the takes, or pass --placeholder-footage to build stand-ins from the help clips.',
+      `No footage for ${required.join(', ')} under ${relative(REPO_ROOT, dirs.footage)}. ` +
+        (source.platform === 'ios'
+          ? 'Record the takes, or pass --placeholder-footage to build stand-ins from the help clips.'
+          : `Record them with vp run video:record -- --platform ${source.platform}.`),
     );
   }
   for (const takeId of missing) warn(`no footage for optional take "${takeId}"; the cut goes without it`);
@@ -414,13 +440,13 @@ function loadTakes(allowDrawnPlaceholders: boolean): {
   const anchors: Partial<Record<ShowcaseTakeId, ShowcaseAnchorsFile>> = {};
   const edits: Partial<Record<ShowcaseTakeId, ResolvedTakeEdit>> = {};
   for (const takeId of SHOWCASE_TAKE_IDS.filter((candidate) => !missing.includes(candidate))) {
-    const frameCount = countFrames(footageTakeDir(takeId));
-    const edit = readEdit(takeId, frameCount);
+    const frameCount = countFrames(footageTakeDir(takeId, dirs));
+    const edit = readEdit(takeId, frameCount, source);
     if (edit) edits[takeId] = edit;
-    const file = readAnchors(takeId, edit);
+    const file = readAnchors(takeId, edit, dirs);
     anchors[takeId] = file;
     takes[takeId] = {
-      frameUrlBase: `${pathToFileURL(footageTakeDir(takeId)).href}/`,
+      frameUrlBase: `${pathToFileURL(footageTakeDir(takeId, dirs)).href}/`,
       frameCount,
       segments: takeSegments(sceneOfTake(takeId), edit),
       screen: file.screen,
@@ -434,11 +460,11 @@ function loadTakes(allowDrawnPlaceholders: boolean): {
  * The motif's holds: detected on the light take at the moment the rings land on
  * it, inside the board-surface anchor. Falls back to the hand-traced set.
  */
-async function resolveHolds(take: StageTake, anchors: ShowcaseAnchorsFile): Promise<LitHold[]> {
+async function resolveHolds(take: StageTake, anchors: ShowcaseAnchorsFile, dirs: ShowcaseWorkDirs): Promise<LitHold[]> {
   // Rings land 18 frames after the phone is released at L-4 of the hook.
   const landLocal = 18 - SHOWCASE_CHOREO.backgroundLeadIn;
   const index = footageAt(take.segments, landLocal, take.frameCount);
-  const framePath = resolve(footageTakeDir('light'), `${String(index + 1).padStart(5, '0')}.jpg`);
+  const framePath = resolve(footageTakeDir('light', dirs), `${String(index + 1).padStart(5, '0')}.jpg`);
   const { data, info } = await sharp(framePath).removeAlpha().raw().toBuffer({ resolveWithObject: true });
   const toPixels = info.width / anchors.screen.width;
   const surface = anchors.anchors['board-surface']?.[0];
@@ -503,9 +529,14 @@ function gradeColors(): ShowcaseStageData['grades'] {
 
 // --- stage data --------------------------------------------------------------------------------
 
-/** Everything read from disk once per run: footage, anchors, holds, copy. */
+/** Where a run's recording is: whose it is, and the dirs it is read from. */
+type FootageSource = Readonly<{ platform: RenderArgs['platform']; dirs: ShowcaseWorkDirs }>;
+
+/** Everything read from disk once per run: footage, anchors, holds, copy, and the phone it sits in. */
 type Footage = Readonly<{
+  source: FootageSource;
   copy: ShowcaseCopy;
+  phone: ShowcasePhone;
   takes: Partial<Record<ShowcaseTakeId, StageTake>>;
   anchors: Partial<Record<ShowcaseTakeId, ShowcaseAnchorsFile>>;
   holds: LitHold[];
@@ -514,6 +545,7 @@ type Footage = Readonly<{
 /** One cut of the motion stage: its timeline, the edits at its scene lengths, and what the stage shows. */
 type Prepared = Readonly<{
   copy: ShowcaseCopy;
+  phone: ShowcasePhone;
   takes: Partial<Record<ShowcaseTakeId, StageTake>>;
   anchors: Partial<Record<ShowcaseTakeId, ShowcaseAnchorsFile>>;
   holds: LitHold[];
@@ -524,14 +556,27 @@ type Prepared = Readonly<{
   timeline: ShowcaseTimeline;
 }>;
 
-async function loadFootage(allowDrawnPlaceholders: boolean): Promise<Footage> {
-  const copy = JSON.parse(readFileSync(SHOWCASE_STAGE_COPY, 'utf8')) as ShowcaseCopy;
-  const { takes, anchors } = loadTakes(allowDrawnPlaceholders);
+async function loadFootage(allowDrawnPlaceholders: boolean, source: FootageSource): Promise<Footage> {
+  const shared = JSON.parse(readFileSync(SHOWCASE_STAGE_COPY, 'utf8')) as ShowcaseCopy;
+  const copy = copyForPlatform(shared, source.platform);
+  const { takes, anchors } = loadTakes(allowDrawnPlaceholders, source);
   const light = takes.light;
   const lightAnchors = anchors.light;
   if (!light || !lightAnchors) throw new Error('The light take is required');
-  const holds = await resolveHolds(light, lightAnchors);
-  return { copy, takes, anchors, holds };
+  const holds = await resolveHolds(light, lightAnchors, source.dirs);
+  const phone = showcasePhone(source.platform, await footageAspect(source.dirs));
+  log(
+    `${source.platform} footage from ${relative(REPO_ROOT, source.dirs.footage)}; phone ${phone.width}x${phone.height}, ` +
+      `screen ${phone.screenWidth}x${phone.screenHeight}`,
+  );
+  return { source, copy, phone, takes, anchors, holds };
+}
+
+/** Width / height of the recorded frames (the light take's first), which the phone's screen matches. */
+async function footageAspect(dirs: ShowcaseWorkDirs): Promise<number> {
+  const { width, height } = await sharp(resolve(footageTakeDir('light', dirs), '00001.jpg')).metadata();
+  if (!width || !height) throw new Error("Could not read the light take's first frame size");
+  return width / height;
 }
 
 /** The motion cut a target asks for: its scenes and lengths, its copy, the edits resolved at those lengths. */
@@ -549,7 +594,7 @@ function prepareCut(footage: Footage, target: ShowcaseTarget, donationLine: bool
     for (const takeId of scene.takes) {
       const take = footage.takes[takeId];
       if (!take) continue;
-      const edit = readEdit(takeId, take.frameCount, scene.endFrame - scene.startFrame);
+      const edit = readEdit(takeId, take.frameCount, footage.source, scene.endFrame - scene.startFrame);
       if (edit) edits[takeId] = edit;
       takes[takeId] = { ...take, segments: takeSegments(scene, edit) };
     }
@@ -579,7 +624,17 @@ function prepareCut(footage: Footage, target: ShowcaseTarget, donationLine: bool
     warn(`${target.name}: reading budget short in "${report.sceneId}"`);
   }
   assertTargetLength(target, timeline.totalFrames);
-  return { copy, takes, anchors: footage.anchors, holds: footage.holds, callouts, boards, edits, timeline };
+  return {
+    copy,
+    phone: footage.phone,
+    takes,
+    anchors: footage.anchors,
+    holds: footage.holds,
+    callouts,
+    boards,
+    edits,
+    timeline,
+  };
 }
 
 /** Scene-local frame the workouts footage's rest pill shows its first value, so the checklist's countdown starts with it. */
@@ -600,7 +655,12 @@ function pillBand(rendition: ShowcaseRendition): CalloutStage['band'] {
 function stageData(prepared: Prepared, rendition: ShowcaseRendition, measure: boolean): ShowcaseStageData {
   const { format, stage } = rendition;
   const { width, height } = rendition.size;
-  const calloutStage: CalloutStage = { poses: stage.poses, layout: stage.callouts, band: pillBand(rendition) };
+  const calloutStage: CalloutStage = {
+    poses: stage.poses,
+    layout: stage.callouts,
+    band: pillBand(rendition),
+    phone: prepared.phone,
+  };
   return {
     format,
     width,
@@ -611,7 +671,7 @@ function stageData(prepared: Prepared, rendition: ShowcaseRendition, measure: bo
     measure,
     choreo: SHOWCASE_CHOREO,
     layout: stage.callouts,
-    phone: SHOWCASE_PHONE,
+    phone: prepared.phone,
     poses: stage.poses,
     headlineTop: stage.headlineTop,
     safeArea: rendition.safeArea,
@@ -663,7 +723,7 @@ function fullBleedData(footage: Footage, target: ShowcaseTarget, rendition: Show
     const caption = footage.copy.appStore.captions[clip.caption];
     if (!caption)
       throw new Error(`${target.name}: no caption "${clip.caption}" in ${relative(REPO_ROOT, SHOWCASE_STAGE_COPY)}`);
-    const marks = readMarks(clip.take);
+    const marks = readMarks(clip.take, footage.source.dirs);
     const segments = marks
       ? resolveTakeEdit(clip.take, { segments: clip.segments }, marks, clip.frames, take.frameCount).segments
       : [[SHOWCASE_TAKE_LEAD_FRAMES, SHOWCASE_TAKE_LEAD_FRAMES + clip.frames] as const];
@@ -1149,11 +1209,12 @@ async function main(): Promise<void> {
   const { picks, notes } = selectTargets(args);
   notes.forEach(warn);
   if (picks.length === 0) throw new Error('Nothing to render: the flags left out every target');
-  log(`targets: ${picks.map(({ target }) => target.name).join(', ')}`);
+  log(`${args.platform} targets: ${picks.map(({ target }) => target.name).join(', ')}`);
+  const source: FootageSource = { platform: args.platform, dirs: renderWorkDirs(args.platform, args.workDir) };
   mkdirSync(SHOWCASE_FRAMES_DIR, { recursive: true });
-  if (args.placeholderFootage) await buildPlaceholderFootage();
+  if (args.placeholderFootage) await buildPlaceholderFootage(source.dirs);
   writeTokens();
-  const footage = await loadFootage(args.placeholderFootage);
+  const footage = await loadFootage(args.placeholderFootage, source);
   const cuts = await planCuts(footage, picks, args);
   for (const cut of cuts) {
     log(

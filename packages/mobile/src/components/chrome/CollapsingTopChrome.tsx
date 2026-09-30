@@ -144,6 +144,7 @@ export function CollapsingTopChrome({
             onPress={onOpenBoardSwitcher}
             accessibilityHint={boardPillAccessibilityHint}
             badge={boardBadge}
+            showcaseAnchor={anchorBoardButton}
           />
           <MaterialAngleAction />
           <MaterialLightbulbAction />

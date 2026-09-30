@@ -4,6 +4,7 @@ import { useTheme } from '../../providers/theme-provider';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { formatActiveBoardLabel } from '../../lib/boards/active-board-label';
 import { hapticLight } from '../../lib/haptics';
+import { useShowcaseAnchor } from '../../lib/showcase-anchor';
 import { spacing } from '../../theme/tokens';
 import { PressableSurface } from '../PressableSurface';
 import { Text } from '../Text';
@@ -18,6 +19,9 @@ type BoardSwitcherButtonProps = {
   /** Show a brand-coloured dot near the trailing caret — the one-time onboarding
    *  cue pointing a new user at this control. */
   badge?: boolean;
+  /** Screenshot mode only: log this button's rect as the showcase video's
+   *  `board-history-button` (the Material twin of the glass board glyph). */
+  showcaseAnchor?: boolean;
 };
 
 /**
@@ -29,8 +33,15 @@ type BoardSwitcherButtonProps = {
  * itself, renders nothing when none is set, and fires the haptic here while the
  * caller injects what a tap does. Lives where `Appbar.Content` did, `flex: 1`.
  */
-export function BoardSwitcherButton({ onPress, accessibilityHint, badge = false }: BoardSwitcherButtonProps) {
+export function BoardSwitcherButton({
+  onPress,
+  accessibilityHint,
+  badge = false,
+  showcaseAnchor = false,
+}: BoardSwitcherButtonProps) {
   const { systemColors, brandColors } = useTheme();
+  // PressableSurface takes onLayout but no ref; the anchor measures the event's target.
+  const { onLayout: anchorOnLayout } = useShowcaseAnchor('board-history-button', showcaseAnchor);
   const { data: activeBoard } = useActiveBoard();
 
   // Drop the angle from the title — it now rides as its own chip in the filter row,
@@ -53,6 +64,7 @@ export function BoardSwitcherButton({ onPress, accessibilityHint, badge = false 
       accessibilityLabel={boardLabel}
       accessibilityHint={accessibilityHint}
       style={styles.press}
+      onLayout={anchorOnLayout}
     >
       <Text variant="title3" numberOfLines={1} ellipsizeMode="tail" color={systemColors.label} style={styles.label}>
         {boardLabel}

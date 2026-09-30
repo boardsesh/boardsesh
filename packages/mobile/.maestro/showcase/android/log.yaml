@@ -1,0 +1,57 @@
+appId: com.boardsesh.app.dev
+name: showcase take - the logbook fills itself (Android)
+---
+# Take: log -> .boardsesh/showcase-video/work/android/footage/log/
+#
+# The Android twin of ../log.yaml; that file says what the take shows.
+#
+# Coordinates (1080x2424 emulator, 411x923 dp, portrait):
+#   50%,78% -> 50%,40%  a slow drag up: "Your progress" lands at ~30%
+#   86%,30%             "Filters", right of the "Your progress" title
+#   50%,48%             Kilter in the filter sheet's Board list
+#   50%,53%             Tension
+#   12%,91%             Done, bottom left of the sheet
+#
+# Marks (work/android/marks/log.json): scrolled, filter-kilter, filter-tension.
+
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/flow-start')}
+
+- extendedWaitUntil:
+    visible: 'zzz-showcase-pause'
+    timeout: 800
+    optional: true
+
+- swipe:
+    start: '50%,78%'
+    end: '50%,40%'
+    duration: 1800
+- waitForAnimationToEnd
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/scrolled')}
+
+- tapOn:
+    point: '86%,30%'
+- waitForAnimationToEnd
+- tapOn:
+    point: '50%,48%'
+- tapOn:
+    point: '12%,91%'
+- waitForAnimationToEnd
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/filter-kilter')}
+- extendedWaitUntil:
+    visible: 'zzz-showcase-pause'
+    timeout: 1200
+    optional: true
+
+- tapOn:
+    point: '86%,30%'
+- waitForAnimationToEnd
+- tapOn:
+    point: '50%,53%'
+- tapOn:
+    point: '12%,91%'
+- waitForAnimationToEnd
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/filter-tension')}
+- extendedWaitUntil:
+    visible: 'zzz-showcase-pause'
+    timeout: 1800
+    optional: true

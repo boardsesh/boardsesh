@@ -31,6 +31,33 @@ export const SHOWCASE_ANCHORS_DIR = resolve(SHOWCASE_WORK_ROOT, 'work/anchors');
 export const SHOWCASE_MARKS_DIR = resolve(SHOWCASE_WORK_ROOT, 'work/marks');
 export const SHOWCASE_OUT_DIR = resolve(SHOWCASE_WORK_ROOT, 'out');
 
+/**
+ * The phone the takes were recorded on. iOS is the default and keeps the
+ * original `work/<kind>/` paths; every other platform records into
+ * `work/<platform>/<kind>/`, so an Android run never overwrites the iOS
+ * footage the homepage is cut from.
+ */
+export const SHOWCASE_PLATFORMS = ['ios', 'android'] as const;
+export type ShowcasePlatform = (typeof SHOWCASE_PLATFORMS)[number];
+export const DEFAULT_SHOWCASE_PLATFORM: ShowcasePlatform = 'ios';
+
+export function isShowcasePlatform(value: unknown): value is ShowcasePlatform {
+  return (SHOWCASE_PLATFORMS as readonly unknown[]).includes(value);
+}
+
+export type ShowcaseWorkDirs = Readonly<{ raw: string; footage: string; anchors: string; marks: string }>;
+
+/** Where one platform's recording lives. iOS: `work/footage`; Android: `work/android/footage`. */
+export function showcaseWorkDirs(platform: ShowcasePlatform = DEFAULT_SHOWCASE_PLATFORM): ShowcaseWorkDirs {
+  const base = platform === 'ios' ? resolve(SHOWCASE_WORK_ROOT, 'work') : resolve(SHOWCASE_WORK_ROOT, 'work', platform);
+  return {
+    raw: resolve(base, 'raw'),
+    footage: resolve(base, 'footage'),
+    anchors: resolve(base, 'anchors'),
+    marks: resolve(base, 'marks'),
+  };
+}
+
 /** Shipped web encodes and posters (committed, uploaded by the static-asset sync). */
 export const SHOWCASE_WEB_VIDEO_DIR = resolve(REPO_ROOT, 'packages/web/public/videos/home');
 export const SHOWCASE_WEB_POSTER_DIR = resolve(REPO_ROOT, 'packages/web/public/images/home');
@@ -41,8 +68,11 @@ export const SHOWCASE_WEB_POSTER_DIR = resolve(REPO_ROOT, 'packages/web/public/i
  * sharp). Height follows the recording's aspect.
  */
 export const SHOWCASE_FOOTAGE_WIDTH = 800;
-export const footageFramePath = (takeId: ShowcaseTakeId, frameIndex: number): string =>
-  resolve(SHOWCASE_FOOTAGE_DIR, takeId, `${String(frameIndex + 1).padStart(5, '0')}.jpg`);
+export const footageFramePath = (
+  takeId: ShowcaseTakeId,
+  frameIndex: number,
+  platform: ShowcasePlatform = DEFAULT_SHOWCASE_PLATFORM,
+): string => resolve(showcaseWorkDirs(platform).footage, takeId, `${String(frameIndex + 1).padStart(5, '0')}.jpg`);
 
 /**
  * Every recorded take. A scene may use more than one (the boards scene shows
@@ -105,7 +135,7 @@ export type ShowcaseCalloutName = ShowcaseAnchorName | ShowcaseStaticAnchorName;
  *
  *   [showcase-anchor] {"name":"wall-pill","x":24,"y":118,"width":132,"height":32}
  *
- * Coordinates are `measureInWindow` points (not pixels). The recorder stamps
+ * Coordinates are `measureInWindow` points (not pixels; dp on Android). The recorder stamps
  * each line with the time it arrived, relative to the take's recording start.
  */
 export const SHOWCASE_ANCHOR_LOG_PREFIX = '[showcase-anchor]';
@@ -124,7 +154,10 @@ export type ShowcaseAnchorSample = ShowcaseAnchorRect & Readonly<{ t: number }>;
  */
 export type ShowcaseAnchorsFile = Readonly<{
   takeId: ShowcaseTakeId;
-  /** Screen size in points (e.g. 440x956 on an iPhone 16 Pro Max), to map points onto footage. */
+  /**
+   * Screen size in points (e.g. 440x956 on an iPhone 16 Pro Max; 411x923 dp on
+   * the 1080x2424, 420 dpi Android emulator), to map points onto footage.
+   */
   screen: Readonly<{ width: number; height: number }>;
   anchors: Partial<Record<ShowcaseCalloutName, readonly ShowcaseAnchorSample[]>>;
 }>;

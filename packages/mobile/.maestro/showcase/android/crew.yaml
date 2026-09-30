@@ -1,0 +1,64 @@
+appId: com.boardsesh.app.dev
+name: showcase take - a friend adds a climb (Android)
+---
+# Take: crew -> .boardsesh/showcase-video/work/android/footage/crew/
+#
+# The Android twin of ../crew.yaml; that file says what the take shows and how
+# the two phones meet through the recorder's signal server. The second phone
+# is the iOS simulator running ../crew-secondary.yaml (see "Android" in
+# docs/showcase-video.md for why).
+#
+# Marks (work/android/marks/crew.json): invite-closed, queue-open, crew-added,
+# row-landed.
+#
+# Coordinates (1080x2424 emulator, 411x923 dp, portrait):
+#   50%,52% -> 50%,95%  drag the invite sheet down to close it
+#   40%,86%             the now-playing bar above the tab bar -> play view
+#   90%,89%             the queue button, bottom right of the play view
+#   50%,51% -> 50%,8%   drag the queue sheet from half to full height
+
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/flow-start')}
+
+- extendedWaitUntil:
+    visible: 'zzz-showcase-pause'
+    timeout: 1800
+    optional: true
+
+- swipe:
+    start: '50%,52%'
+    end: '50%,95%'
+    duration: 400
+- waitForAnimationToEnd
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/invite-closed')}
+
+- tapOn:
+    point: '40%,86%'
+- waitForAnimationToEnd
+
+- tapOn:
+    point: '90%,89%'
+- waitForAnimationToEnd
+# The queue sheet opens at half height, where the history rows above the
+# current climb can push the new row below the fold: drag it to full height.
+- swipe:
+    start: '50%,51%'
+    end: '50%,8%'
+    duration: 600
+- waitForAnimationToEnd
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/queue-open')}
+
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/set/crew-add')}
+- extendedWaitUntil:
+    visible: 'zzz-showcase-pause'
+    timeout: 5000
+    optional: true
+
+# Hold on the landed row. No long press: on the Android queue sheet an
+# injected long press (Maestro's, or adb's raw DOWN / UP 1.2 s apart) arrives as
+# a tap and plays the row instead of opening the reaction menu, so the Android
+# cut has no "Play next" beat (see "Android recording" in docs/showcase-video.md).
+# Long enough that the take outlasts its scene.
+- extendedWaitUntil:
+    visible: 'zzz-showcase-pause'
+    timeout: 4500
+    optional: true

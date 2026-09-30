@@ -1,0 +1,57 @@
+appId: com.boardsesh.app.dev
+name: showcase take - the session notification (Android)
+---
+# Take: lock-screen -> .boardsesh/showcase-video/work/android/footage/lock-screen/
+#
+# Android has no Dynamic Island; its counterpart is the ongoing "session"
+# notification (BoardSessionService). Records: the play view with the climb on
+# the wall, Home, a swipe down from the status bar that opens the shade with
+# the session notification expanded (thumbnail, climb, grade, "1 / 3",
+# Relight wall / Next), and a tap on Next: the climb changes without opening
+# the app.
+#
+# The notification's buttons live in System UI, outside the app, so they log
+# no anchors. The recorder writes the rects from the take registry (measured on
+# a recorded frame) from the `island-expanded` mark on; the mark keeps the iOS
+# name so the renderer's scene reads both platforms the same way.
+#
+# Next is found by its text: System UI's notification actions are in the
+# accessibility tree, and where the notification sits depends on the quick
+# settings above it.
+#
+# Marks (work/android/marks/lock-screen.json): home, island-expanded, next-tapped.
+#
+# Coordinates (1080x2424 emulator, 411x923 dp, portrait):
+#   50%,1% -> 50%,70%  a slow drag down from the status bar: the shade
+
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/flow-start')}
+
+- extendedWaitUntil:
+    visible: 'zzz-showcase-pause'
+    timeout: 1000
+    optional: true
+
+- pressKey: home
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/home')}
+- extendedWaitUntil:
+    visible: 'zzz-showcase-pause'
+    timeout: 1500
+    optional: true
+
+- swipe:
+    start: '50%,1%'
+    end: '50%,70%'
+    duration: 500
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/island-expanded')}
+- extendedWaitUntil:
+    visible: 'zzz-showcase-pause'
+    timeout: 1500
+    optional: true
+
+- tapOn:
+    text: 'Next'
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/next-tapped')}
+- extendedWaitUntil:
+    visible: 'zzz-showcase-pause'
+    timeout: 3000
+    optional: true

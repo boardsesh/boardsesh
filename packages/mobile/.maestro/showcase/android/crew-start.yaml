@@ -1,0 +1,21 @@
+appId: com.boardsesh.app.dev
+name: showcase setup - crew, start the session (Android)
+---
+# Setup for take: crew (primary phone, NOT recorded)
+#
+# Android has no `simctl pbpaste`, so the recorder cannot read a copied invite
+# link back. This only taps Start on the (already hidden) session. The
+# recorder then relaunches the app, which logs `[session] restored from store:
+# <id>`, reads the id from that line, and runs crew-invite.yaml to leave the
+# invite sheet open for the take.
+#
+# Coordinates (1080x2424 emulator, 411x923 dp, portrait):
+#   83%,80%  Start, the pill above the now-playing bar on the pre-session Record tab
+
+- tapOn:
+    point: '83%,80%'
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: 'zzz-showcase-pause'
+    timeout: 2000
+    optional: true

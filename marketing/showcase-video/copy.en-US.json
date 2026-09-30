@@ -94,5 +94,13 @@
     "tagline": "Less phone. More *wall.*",
     "pill": "Free, no ads. iOS & Android.",
     "donation": "Paid for by the climbers who use it."
+  },
+  "android": {
+    "lock-screen": {
+      "headline": "Control the\nwall from\n*notifications.*",
+      "callouts": {
+        "lock-relight": "Relight wall"
+      }
+    }
   }
 }

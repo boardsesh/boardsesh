@@ -192,6 +192,7 @@ function ClimbTopChromeComponent({
             onPress={onOpenBoardDetail}
             accessibilityHint={t('mobile.search.boardSwitcherHint')}
             badge={showBoardBadge}
+            showcaseAnchor
           />
           {canCreate ? (
             <Appbar.Action
