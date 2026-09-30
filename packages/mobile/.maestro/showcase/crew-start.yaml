@@ -1,0 +1,42 @@
+appId: com.boardsesh.app
+name: showcase setup - crew, start the session and copy the invite
+---
+# Setup for take: crew (primary phone, NOT recorded)
+#
+# Starts the (already hidden, see session-private.yaml) session, opens the invite
+# sheet and taps "Copy link". The recorder reads the link back with
+# `xcrun simctl pbpaste`, takes the session id from it, and sends the second
+# phone to ://join/<id>. The sheet stays open, so recording starts on the QR.
+#
+# Coordinates (iPhone 16 Pro Max portrait):
+#   84%,82%  Start, the pill above the tab bar on the pre-session Record tab
+#   50%,29%  the "Invite climbers" row on the in-session Record tab
+#   28%,83%  "Copy link" in the invite sheet
+
+- tapOn:
+    point: '84%,82%'
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: 'zzz-showcase-pause'
+    timeout: 2000
+    optional: true
+
+# Starting a session lands on Climbs; go back to the session screen.
+- openLink: com.boardsesh.app://record
+- tapOn:
+    text: 'Open'
+    optional: true
+- waitForAnimationToEnd
+
+- tapOn:
+    point: '50%,29%'
+- waitForAnimationToEnd
+
+- tapOn:
+    point: '28%,83%'
+
+# Let the "copied" toast fade before the recorder starts filming the QR.
+- extendedWaitUntil:
+    visible: 'zzz-showcase-pause'
+    timeout: 3000
+    optional: true

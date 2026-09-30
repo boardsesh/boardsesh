@@ -591,10 +591,21 @@ export default defineConfig({
         command: 'tsx scripts/help-convert-clips.ts',
         cache: false,
       },
-      // Homepage showcase video: renders marketing/showcase-video/ frame by frame
-      // in Chromium and encodes brag.mp4 + the web cut. See its --help.
+      // Homepage showcase video. `video:record` drives the simulators and
+      // writes the footage + anchors under .boardsesh/showcase-video/work
+      // (runbook: docs/showcase-video.md); `video:render` renders
+      // marketing/showcase-video/ frame by frame in Chromium and encodes
+      // brag.mp4 + the web cut (see its --help). `video` runs both.
+      'video:record': {
+        command: 'tsx scripts/showcase-video-record.ts',
+        cache: false,
+      },
       'video:render': {
         command: 'tsx packages/web/scripts/render-showcase-video.ts',
+        cache: false,
+      },
+      video: {
+        command: 'vp run video:record && vp run video:render',
         cache: false,
       },
       // Two-way i18n guard: catalog keys with no reference, code references with

@@ -1,0 +1,25 @@
+appId: com.boardsesh.app
+name: showcase setup - live session hidden
+---
+# Setup for every take that starts a live session: crew, workouts, lock-screen
+# (primary phone, NOT recorded; the take registry's `privateSession`)
+#
+# Turns "Show this session live" OFF on the Record tab before the session
+# starts, so the recording never shows up in anyone's "Climbing now" rail or a
+# board's queue preview. The switch starts ON on every launch (PreSessionView
+# holds it in component state), so one tap always means OFF.
+#
+# The recorder checks the app logged `Session Visibility Changed
+# {"isPublic": false, "phase": "pre_session"}` before it runs anything
+# that taps Start; without that line it refuses to go on.
+#
+# The take's deep links end on ://record, on a freshly launched app with no
+# session running, so the pre-session view is up (with the now-playing bar, which
+# puts Start at 84%,82%).
+#
+# Coordinates (iPhone 16 Pro Max portrait):
+#   85%,52%  the "Show this session live" switch
+
+- tapOn:
+    point: '85%,52%'
+- waitForAnimationToEnd

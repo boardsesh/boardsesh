@@ -1,0 +1,37 @@
+appId: com.boardsesh.app
+name: showcase setup - lock-screen, a session on the wall
+---
+# Setup for take: lock-screen (primary phone, NOT recorded)
+#
+# Starts the (already hidden, see session-private.yaml) session on the Tension
+# wall and queues two more climbs so the Live Activity has somewhere to go.
+# The recorder then relaunches the app and runs lock-screen-arm.yaml (that
+# file says why the relaunch).
+#
+# The Live Activity starts only on a dev-client built with the push
+# entitlement (scripts/screenshot-sim.entitlements, aps-environment): it is
+# requested with `pushType: .token`, and ActivityKit refuses that without it.
+#
+# Coordinates (iPhone 16 Pro Max portrait):
+#   84%,82%             Start (pre-session Record tab, now-playing bar up); lands on Climbs
+#   15%,35% -> 85%,35%  swipe the 2nd climb row right: add to queue
+#   15%,47% -> 85%,47%  swipe the 3rd climb row right: add to queue
+
+- tapOn:
+    point: '84%,82%'
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: 'zzz-showcase-pause'
+    timeout: 2000
+    optional: true
+
+- swipe:
+    start: '15%,35%'
+    end: '85%,35%'
+    duration: 600
+- waitForAnimationToEnd
+- swipe:
+    start: '15%,47%'
+    end: '85%,47%'
+    duration: 600
+- waitForAnimationToEnd
