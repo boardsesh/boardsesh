@@ -149,6 +149,30 @@ describe('generated export retention', () => {
     });
   });
 
+  it('preserves other condition fields when a legacy rule omits only the prefix', async () => {
+    const legacyRule = {
+      id: 'abort-incomplete-multipart-uploads',
+      enabled: true,
+      conditions: { futureCondition: 'keep-me' },
+      abortMultipartUploadsTransition: { condition: { type: 'Age', maxAge: 604_800 } },
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(envelope({ rules: [legacyRule] }))
+      .mockResolvedValueOnce(envelope({}));
+    vi.stubGlobal('fetch', fetchMock);
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await applyR2LifecycleRule('test-token', 'test-account', privateBucket.name, USER_EXPORT_LIFECYCLE_RULE);
+
+    expect(fetchMock.mock.calls[1][1]).toMatchObject({
+      method: 'PUT',
+      body: JSON.stringify({
+        rules: [{ ...legacyRule, conditions: { ...legacyRule.conditions, prefix: '' } }, USER_EXPORT_LIFECYCLE_RULE],
+      }),
+    });
+  });
+
   it('never replaces lifecycle rules after an authorization failure', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ success: false }), { status: 403 }));
     vi.stubGlobal('fetch', fetchMock);
