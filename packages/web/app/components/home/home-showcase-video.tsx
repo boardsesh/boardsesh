@@ -180,17 +180,20 @@ export default function HomeShowcaseVideo() {
     }
   }, [videoRef, autoplayAllowed, sourceReady, userPaused, toggleUserPaused, ensureSource]);
 
-  const scenes = [
-    { id: 'hook', headline: t('home.showcase.scenes.hook') },
-    { id: 'light', headline: t('home.showcase.scenes.light') },
-    { id: 'boards', headline: t('home.showcase.scenes.boards') },
-    { id: 'wall', headline: t('home.showcase.scenes.wall') },
-    { id: 'crew', headline: t('home.showcase.scenes.crew') },
-    { id: 'workouts', headline: t('home.showcase.scenes.workouts') },
-    { id: 'island', headline: t('home.showcase.scenes.island') },
-    { id: 'log', headline: t('home.showcase.scenes.log') },
-    { id: 'outro', headline: t('home.showcase.scenes.outro') },
-  ];
+  const scenes = React.useMemo(
+    () => [
+      { id: 'hook', headline: t('home.showcase.scenes.hook') },
+      { id: 'light', headline: t('home.showcase.scenes.light') },
+      { id: 'boards', headline: t('home.showcase.scenes.boards') },
+      { id: 'wall', headline: t('home.showcase.scenes.wall') },
+      { id: 'crew', headline: t('home.showcase.scenes.crew') },
+      { id: 'workouts', headline: t('home.showcase.scenes.workouts') },
+      { id: 'island', headline: t('home.showcase.scenes.island') },
+      { id: 'log', headline: t('home.showcase.scenes.log') },
+      { id: 'outro', headline: t('home.showcase.scenes.outro') },
+    ],
+    [t],
+  );
   // Autoplay held back by the reader's settings and autoplay refused by the
   // browser look the same: the poster stays and a big play button starts it.
   const idleWaitingForPlay = (holdsAutoplay || autoplayRefused) && !isShowingVideo && videoPaused;
