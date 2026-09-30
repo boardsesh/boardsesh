@@ -43,7 +43,9 @@ import { themeTokens } from '../app/theme/theme-config';
 import {
   SHOWCASE_FPS,
   SHOWCASE_OUT_DIR,
+  SHOWCASE_MARKS_DIR,
   SHOWCASE_TAKE_IDS,
+  type ShowcaseMarksFile,
   type ShowcaseAnchorsFile,
   type ShowcaseCalloutName,
   type ShowcaseTakeId,
@@ -110,6 +112,9 @@ import {
   webCutSeconds,
   footageAt,
   takeSegments,
+  localAtFootage,
+  resolveTakeEdit,
+  type ResolvedTakeEdit,
   workoutTickFrames,
   type LitHold,
   type PlaceholderBoardRender,
@@ -301,15 +306,37 @@ function countFrames(dir: string): number {
   return readdirSync(dir).filter((name) => /^\d{5}\.jpg$/.test(name)).length;
 }
 
-function readAnchors(takeId: ShowcaseTakeId): ShowcaseAnchorsFile {
+/**
+ * The take's edit resolved against its recorded marks. A take with no edit
+ * (the boards) or a generated placeholder (no marks) plays from one second in.
+ * A recorded take whose marks file or needed marks are missing stops the render.
+ */
+function readEdit(takeId: ShowcaseTakeId, frameCount: number): ResolvedTakeEdit | undefined {
+  const edit = SHOWCASE_TAKE_EDITS[takeId];
+  if (!edit) return undefined;
+  const path = resolve(SHOWCASE_MARKS_DIR, `${takeId}.json`);
+  if (existsSync(resolve(footageTakeDir(takeId), PLACEHOLDER_MARKER))) return undefined;
+  if (!existsSync(path)) {
+    throw new Error(
+      `Missing marks for take "${takeId}": ${relative(REPO_ROOT, path)}. Re-record it with video:record.`,
+    );
+  }
+  const file = JSON.parse(readFileSync(path, 'utf8')) as ShowcaseMarksFile;
+  if (file.takeId !== takeId || typeof file.marks !== 'object')
+    throw new Error(`${path} is not a marks file for "${takeId}"`);
+  const scene = sceneOfTake(takeId);
+  return resolveTakeEdit(takeId, edit, file.marks, scene.endFrame - scene.startFrame, frameCount);
+}
+
+function readAnchors(takeId: ShowcaseTakeId, edit: ResolvedTakeEdit | undefined): ShowcaseAnchorsFile {
   const path = anchorsFilePath(takeId);
   if (!existsSync(path)) throw new Error(`Missing anchors for take "${takeId}": ${path}`);
   const parsed = JSON.parse(readFileSync(path, 'utf8')) as ShowcaseAnchorsFile;
   if (parsed.takeId !== takeId || !parsed.screen || !parsed.anchors) {
     throw new Error(`${path} is not a ShowcaseAnchorsFile for "${takeId}"`);
   }
-  // Sorted and with header-only anchors grown, once, here.
-  return prepareAnchorsFile(parsed);
+  // Sorted, moved by the edit's sheet and scroll corrections, header-only anchors grown: once, here.
+  return prepareAnchorsFile(parsed, edit?.anchorShifts);
 }
 
 /**
@@ -319,6 +346,7 @@ function readAnchors(takeId: ShowcaseTakeId): ShowcaseAnchorsFile {
 function loadTakes(allowDrawnPlaceholders: boolean): {
   takes: Partial<Record<ShowcaseTakeId, StageTake>>;
   anchors: Partial<Record<ShowcaseTakeId, ShowcaseAnchorsFile>>;
+  edits: Partial<Record<ShowcaseTakeId, ResolvedTakeEdit>>;
 } {
   const drawn = (takeId: ShowcaseTakeId) =>
     existsSync(resolve(footageTakeDir(takeId), SHOWCASE_DRAWN_PLACEHOLDER_MARKER));
@@ -338,18 +366,22 @@ function loadTakes(allowDrawnPlaceholders: boolean): {
   for (const takeId of missing) warn(`no footage for optional take "${takeId}"; the cut goes without it`);
   const takes: Partial<Record<ShowcaseTakeId, StageTake>> = {};
   const anchors: Partial<Record<ShowcaseTakeId, ShowcaseAnchorsFile>> = {};
+  const edits: Partial<Record<ShowcaseTakeId, ResolvedTakeEdit>> = {};
   for (const takeId of SHOWCASE_TAKE_IDS.filter((candidate) => !missing.includes(candidate))) {
-    const file = readAnchors(takeId);
+    const frameCount = countFrames(footageTakeDir(takeId));
+    const edit = readEdit(takeId, frameCount);
+    if (edit) edits[takeId] = edit;
+    const file = readAnchors(takeId, edit);
     anchors[takeId] = file;
     takes[takeId] = {
       frameUrlBase: `${pathToFileURL(footageTakeDir(takeId)).href}/`,
-      frameCount: countFrames(footageTakeDir(takeId)),
-      segments: takeSegments(takeId, sceneOfTake(takeId)),
+      frameCount,
+      segments: takeSegments(sceneOfTake(takeId), edit),
       screen: file.screen,
       anchors: file.anchors,
     };
   }
-  return { takes, anchors };
+  return { takes, anchors, edits };
 }
 
 /**
@@ -432,13 +464,14 @@ type Prepared = Readonly<{
   holds: LitHold[];
   callouts: Partial<Record<ShowcaseScene['id'], ShowcaseCalloutName[]>>;
   boards: StageBoards;
+  edits: Partial<Record<ShowcaseTakeId, ResolvedTakeEdit>>;
   /** The cut for the footage at hand (a skippable scene without its take is dropped). */
   timeline: ShowcaseTimeline;
 }>;
 
 async function prepare(allowDrawnPlaceholders: boolean): Promise<Prepared> {
   const copy = JSON.parse(readFileSync(SHOWCASE_STAGE_COPY, 'utf8')) as ShowcaseCopy;
-  const { takes, anchors } = loadTakes(allowDrawnPlaceholders);
+  const { takes, anchors, edits } = loadTakes(allowDrawnPlaceholders);
   const light = takes.light;
   const lightAnchors = anchors.light;
   if (!light || !lightAnchors) throw new Error('The light take is required');
@@ -451,7 +484,12 @@ async function prepare(allowDrawnPlaceholders: boolean): Promise<Prepared> {
   const callouts: Prepared['callouts'] = {};
   for (const scene of timeline.scenes) {
     if (scene.callouts.length === 0) continue;
-    const resolved = resolveSceneCallouts(scene, anchors[scene.takes[0]] ?? null, sceneCalloutCopy(copy, scene.id));
+    const resolved = resolveSceneCallouts(
+      scene,
+      anchors[scene.takes[0]] ?? null,
+      sceneCalloutCopy(copy, scene.id),
+      edits[scene.takes[0]],
+    );
     resolved.warnings.forEach(warn);
     callouts[scene.id] = resolved.callouts;
   }
@@ -463,7 +501,14 @@ async function prepare(allowDrawnPlaceholders: boolean): Promise<Prepared> {
     if (report.haveFrames < report.needFrames) warn(`reading budget short: ${line}`);
     else log(`reading budget ok: ${line}`);
   }
-  return { copy, takes, anchors, holds, callouts, boards, timeline };
+  return { copy, takes, anchors, holds, callouts, boards, edits, timeline };
+}
+
+/** Scene-local frame the workouts footage's rest pill shows its first value, so the checklist's countdown starts with it. */
+function restFromFootage(prepared: Prepared): number | null {
+  const edit = prepared.edits.workouts;
+  const first = edit?.restPill[0];
+  return edit && first ? localAtFootage(edit.segments, first[0]) : null;
 }
 
 function stageData(format: ShowcaseFormat, prepared: Prepared, measure: boolean): ShowcaseStageData {
@@ -485,16 +530,26 @@ function stageData(format: ShowcaseFormat, prepared: Prepared, measure: boolean)
       const anchorsFile = prepared.anchors[scene.takes[0]];
       const callouts: StageCallout[] =
         names.length > 0 && anchorsFile
-          ? layoutSceneCallouts(format, scene, names, anchorsFile, sceneCalloutCopy(prepared.copy, scene.id))
+          ? layoutSceneCallouts(
+              format,
+              scene,
+              names,
+              anchorsFile,
+              sceneCalloutCopy(prepared.copy, scene.id),
+              prepared.edits[scene.takes[0]],
+            )
           : [];
       return { ...scene, callouts };
     }),
     takes: prepared.takes,
     boards: prepared.boards,
-    workout: workoutTickFrames(prepared.copy.workouts.rows.map((row) => row.grade)),
+    workout: workoutTickFrames(
+      prepared.copy.workouts.rows.map((row) => row.grade),
+      restFromFootage(prepared),
+    ),
     workoutBeats: SHOWCASE_WORKOUT_BEATS,
     staging: SHOWCASE_SCENE_STAGING,
-    restPill: SHOWCASE_TAKE_EDITS.workouts?.restPill ?? [],
+    restPill: prepared.edits.workouts?.restPill ?? [],
     lightRoles: SHOWCASE_LIGHT_ROLE_COLORS,
     holds: prepared.holds,
     copy: prepared.copy,

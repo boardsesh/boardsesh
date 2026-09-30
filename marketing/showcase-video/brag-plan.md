@@ -22,32 +22,33 @@ on any run.
 
 ## Storyboard (frames at 30 fps)
 
-| #   | Scene       | Frames    | Background | Copy                                | On screen (footage frames of the take)                                                                                           |
-| --- | ----------- | --------- | ---------- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | hook        | 0–72      | dark       | Your board. Lit from your _phone._  | Dot grid + the light take's lit holds as rings on a line; amber spark runs start→finish (12–48)                                  |
-| 2   | light       | 72–204    | dark       | Swipe, and the wall _follows._      | Rings land on the footage's holds; the bulb lights (88), then the swipe to the next climb; "On the wall", "Swipe for next"      |
-| 3   | boards      | 204–342   | lavender   | Every board. One _app._             | Kilter, Tension, MoonBoard rise; Woods, Decoy, Touchstone, Grasshopper crowd in; So iLL pops up into the middle                  |
-| 4   | wall        | 342–507   | dark       | See what's on the _wall._           | Board button tap (48–168, "Board history" then "On the wall now"), cut to the sheet dragged up (255–300, "Lit on this wall")      |
-| 5   | crew        | 507–681   | lavender   | Your crew. One _queue._             | Invite QR (0–56), the second phone's row with its avatar (296–366), the long-press "Play next" (440–488)                         |
-| 6   | workouts    | 681–843   | dark       | Give your session a _plan._         | Pyramid picked (30–90), cut to the rest pill counting (304–406); the checklist ticks V2 → V6 → V4 and its countdown reads the pill |
-| 7   | lock-screen | 843–969   | lavender   | Control the wall from the _island._ | The real Dynamic Island: "Masquerade · 2 of 4 · V3", Next tapped, "Putty · 3 of 4 · V2" (200–326); zoomed onto the island       |
-| 8   | log         | 969–1119  | dark       | Remember every _send._              | "Every board" filter (90–141), cut to Kilter picked and the calendar redrawn (230–329, "Activity")                              |
-| 9   | outro       | 1119–1248 | dark       | Less phone. More _wall._            | Mark, `boardsesh` wordmark, dots line drawn by the spark, "Free, no ads. iOS & Android." pill; loop closer                       |
+| #   | Scene       | Frames    | Background | Copy                                | On screen (cut on the take's marks)                                                                                          |
+| --- | ----------- | --------- | ---------- | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| 1   | hook        | 0–72      | dark       | Your board. Lit from your _phone._  | Dot grid + the light take's lit holds as rings on a line; amber spark runs start→finish (12–48)                              |
+| 2   | light       | 72–204    | dark       | Swipe, and the wall _follows._      | From `bulb-tapped`: the bulb lights, then `next-1`'s swipe; "On the wall", "Swipe for next"                                 |
+| 3   | boards      | 204–342   | lavender   | Every board. One _app._             | Kilter, Tension, MoonBoard rise; Woods, Decoy, Touchstone, Grasshopper crowd in; So iLL pops up into the middle              |
+| 4   | wall        | 342–507   | dark       | See what's on the _wall._           | The board-button tap up to `sheet-open` ("Board history", "On the wall now"), cut to `history-shown` ("Lit on this wall")    |
+| 5   | crew        | 507–657   | lavender   | Your crew. One _queue._             | The invite QR (before `invite-closed`), the row landing (`row-landed`, "Who queued it"), the long-press menu ("Play next")   |
+| 6   | workouts    | 657–819   | dark       | Give your session a _plan._         | `pyramid-picked`, cut to the rest pill counting after `rest-armed`; the checklist ticks V2 → V6 → V4 and reads the pill     |
+| 7   | lock-screen | 819–969   | lavender   | Control the wall from the _island._ | The real Dynamic Island: `island-expanded` on "Masquerade", cut to `next-tapped` and ~2.5 s of "Putty"; zoomed on the island |
+| 8   | log         | 969–1119  | dark       | Remember every _send._              | The "Every board" filter after `scrolled`, cut to Kilter picked (`filter-kilter`) and the calendar redrawn ("Activity")     |
+| 9   | outro       | 1119–1248 | dark       | Less phone. More _wall._            | Mark, `boardsesh` wordmark, dots line drawn by the spark, "Free, no ads. iOS & Android." pill; loop closer                   |
 
-`SHOWCASE_TAKE_EDITS` in `scripts/lib/showcase-video/render.ts` holds these
-footage ranges (hard cuts between them), each callout's window, and the anchor
-corrections the recording needs: anchors inside a native sheet are measured
-from the sheet's top (wall sheet 462 pt, 145 pt dragged up; invite sheet 405;
-queue sheet 322), and the log take's anchors keep their pre-scroll `y` (−338 pt,
-−415 once the Kilter view drops a footnote). Every value was read off the
-recorded frames and checked with `--measure`; re-check them after a re-record.
+`SHOWCASE_TAKE_EDITS` in `scripts/lib/showcase-video/render.ts` holds the
+footage each scene plays, each callout's window and the anchor corrections, all
+as offsets from the take's marks (`work/marks/<take>.json`, written by the
+recorder), so a re-record needs no edits. Anchors inside a native sheet are
+measured from the sheet's top (wall sheet 462 pt, 145 pt once dragged up from
+`history-shown`; invite sheet 405; queue sheet 322), and the log take's anchors
+keep their pre-scroll `y` (−338 pt from `scrolled`, −415 once the Kilter view
+drops a footnote). A render stops when a mark it needs is missing.
 
 The island scene shows only the recorder's footage of the real Live Activity.
 `--placeholder-footage` draws a stand-in island for layout work (tagged
 PLACEHOLDER ISLAND and marked on disk, so a render without that flag never
 shows it) and never overwrites a recorded take. Without a recorded
-`lock-screen` take the scene is dropped, the cut closes up to 1122 frames
-(37.4 s) and backgrounds re-alternate (log turns lavender).
+`lock-screen` take the scene is dropped, the cut closes up to 1098 frames
+(36.6 s) and backgrounds re-alternate (log turns lavender).
 
 Scene lengths meet the reading budget: 0.3 s per visible word between the
 first word landing and the exit starting, counting every board label and
@@ -101,7 +102,7 @@ holds them.
 
 ```sh
 vp run video:render -- --stills                         # contact sheets from the recorded takes
-vp run video:render -- --stills --measure               # anchor boxes over the footage (check after a re-record)
+vp run video:render -- --stills --measure               # anchor boxes over the recorded footage
 vp run video:render -- --placeholder-footage --stills   # stand-ins for takes not recorded yet
 vp run video:render -- --frame 264 --format 16x9        # one full-size frame
 vp run video:render                                      # both formats, all deliverables

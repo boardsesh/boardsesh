@@ -43,6 +43,8 @@ import {
   segmentsLength,
   takeSegments,
   SHOWCASE_TAKE_EDITS,
+  marksNeeded,
+  resolveTakeEdit,
   pickPlaceholderClimb,
   boardTakeLabel,
   buildMasterArgs,
@@ -83,6 +85,49 @@ import {
 } from '../lib/showcase-video/render';
 import { SHOWCASE_SCENES, SHOWCASE_TOTAL_FRAMES } from '../lib/showcase-video/timeline';
 import type { ShowcaseTakeId } from '../lib/showcase-video/contract';
+
+/** The marks of the recording the edit was tuned on (work/marks/*.json), seconds. */
+const RECORDED_MARKS: Partial<Record<ShowcaseTakeId, Record<string, number>>> = {
+  light: { 'bulb-tapped': 2.655, 'next-1': 5.576, 'next-2': 8.463 },
+  wall: { 'sheet-open': 5.438, 'history-shown': 10.242 },
+  crew: {
+    'invite-closed': 4.591,
+    'queue-open': 8.384,
+    'row-landed': 10.981,
+    'crew-added': 12.09,
+    'play-next-menu': 17.66,
+  },
+  workouts: { 'pyramid-picked': 2.954, 'rest-armed': 6.959, 'rest-pill': 11.189, started: 17.177 },
+  'lock-screen': { home: 4.149, 'island-expanded': 10.077, 'next-tapped': 12.859 },
+  log: { scrolled: 5.005, 'filter-kilter': 10.252, 'filter-tension': 17.871 },
+};
+const RECORDED_FRAMES: Partial<Record<ShowcaseTakeId, number>> = {
+  light: 418,
+  wall: 504,
+  crew: 766,
+  workouts: 721,
+  'lock-screen': 588,
+  log: 716,
+};
+
+/** The marks each take's flow raises, from the table in docs/showcase-video.md. */
+const DOCUMENTED_MARKS: Partial<Record<ShowcaseTakeId, readonly string[]>> = {
+  light: ['bulb-tapped', 'next-1', 'next-2'],
+  wall: ['sheet-open', 'history-shown'],
+  crew: ['invite-closed', 'queue-open', 'crew-added', 'row-landed', 'play-next-menu'],
+  workouts: ['pyramid-picked', 'rest-armed', 'rest-pill', 'started'],
+  'lock-screen': ['home', 'island-expanded', 'next-tapped'],
+  log: ['scrolled', 'filter-kilter', 'filter-tension'],
+};
+
+function resolvedEdit(takeId: ShowcaseTakeId) {
+  const edit = SHOWCASE_TAKE_EDITS[takeId];
+  const marks = RECORDED_MARKS[takeId];
+  const frames = RECORDED_FRAMES[takeId];
+  const scene = SHOWCASE_SCENES.find((candidate) => candidate.takes.includes(takeId));
+  if (!edit || !marks || !frames || !scene) throw new Error(`no edit for ${takeId}`);
+  return resolveTakeEdit(takeId, edit, marks, scene.endFrame - scene.startFrame, frames);
+}
 
 const copy = JSON.parse(readFileSync(SHOWCASE_STAGE_COPY, 'utf8')) as ShowcaseCopy;
 const sceneOf = (id: string) => {
@@ -174,7 +219,7 @@ describe('anchors', () => {
 
   it('plays a take without an edit from one second in, and clamps at the ends', () => {
     const boards = sceneOf('boards');
-    expect(takeSegments('boards-woods', boards)).toEqual([[30, 30 + boards.endFrame - boards.startFrame]]);
+    expect(takeSegments(boards)).toEqual([[30, 30 + boards.endFrame - boards.startFrame]]);
     expect(footageFrameIndex(boards, boards.startFrame, 400)).toBe(30);
     expect(footageFrameIndex(boards, 0, 400)).toBe(0);
     expect(footageFrameIndex(boards, 10_000, 400)).toBe(399);
@@ -685,7 +730,7 @@ describe('island scene', () => {
     if (!staging) throw new Error('island staging missing');
     expect(staging.zoomPose).toBe('ISLAND');
     const island = sceneOf('lock-screen');
-    const timings = calloutTimings(island, 'lock-screen', island.callouts);
+    const timings = calloutTimings(island, island.callouts, resolvedEdit('lock-screen'));
     expect(timings['lock-next']?.enter).toBeGreaterThan(SHOWCASE_CHOREO.calloutStart + staging.calloutDelay - 1);
     expect(copy['lock-screen'].callouts).toMatchObject({ 'lock-relight': 'Reconnect board' });
     expect(copy['lock-screen'].headline).not.toMatch(/unlock/i);
@@ -733,16 +778,67 @@ describe('callout legibility', () => {
 
 describe('the edit', () => {
   it('fills every scene exactly with footage, and every callout window sits in a range the scene plays', () => {
-    for (const [takeId, edit] of Object.entries(SHOWCASE_TAKE_EDITS)) {
-      const scene = SHOWCASE_SCENES.find((candidate) => candidate.takes.includes(takeId as never));
-      if (!scene || !edit) throw new Error(`no scene for ${takeId}`);
+    for (const takeId of Object.keys(SHOWCASE_TAKE_EDITS) as ShowcaseTakeId[]) {
+      const scene = SHOWCASE_SCENES.find((candidate) => candidate.takes.includes(takeId));
+      if (!scene) throw new Error(`no scene for ${takeId}`);
+      const edit = resolvedEdit(takeId);
       expect(segmentsLength(edit.segments), takeId).toBe(scene.endFrame - scene.startFrame);
       for (const [from, to] of edit.segments) expect(to, takeId).toBeGreaterThan(from);
-      for (const [name, window] of Object.entries(edit.callouts ?? {})) {
+      for (const [name, window] of Object.entries(edit.callouts)) {
         expect(scene.callouts, `${takeId}/${name}`).toContain(name);
         expect(localAtFootage(edit.segments, window[0]), `${takeId}/${name}`).not.toBeNull();
       }
     }
+  });
+
+  it('reads only marks the recorder documents for each take', () => {
+    for (const [takeId, edit] of Object.entries(SHOWCASE_TAKE_EDITS)) {
+      if (!edit) continue;
+      for (const mark of marksNeeded(edit))
+        expect(DOCUMENTED_MARKS[takeId as ShowcaseTakeId], `${takeId}/${mark}`).toContain(mark);
+    }
+  });
+
+  it('places cuts on marks: a re-record that moves every mark moves the cut, not its length', () => {
+    const edit = SHOWCASE_TAKE_EDITS['lock-screen'];
+    if (!edit) throw new Error('island edit missing');
+    const island = sceneOf('lock-screen');
+    const length = island.endFrame - island.startFrame;
+    const early = resolveTakeEdit('lock-screen', edit, { 'island-expanded': 10, 'next-tapped': 13 }, length, 600);
+    const late = resolveTakeEdit('lock-screen', edit, { 'island-expanded': 12, 'next-tapped': 15 }, length, 600);
+    expect(late.segments.map(([from, to]) => [from - 60, to - 60])).toEqual(early.segments);
+    // Expanded island first, then the cut to Next and ~2.5 s of the new climb.
+    expect(early.segments[0][0]).toBe(300 - 9);
+    expect(early.segments[1]).toEqual([390 - 36, 390 - 36 + length - 39]);
+    expect(early.segments[1][1] - 390).toBeGreaterThanOrEqual(75);
+  });
+
+  it('fails clearly when a mark is missing or a segment runs off the footage', () => {
+    const edit = SHOWCASE_TAKE_EDITS['lock-screen'];
+    if (!edit) throw new Error('island edit missing');
+    const island = sceneOf('lock-screen');
+    const length = island.endFrame - island.startFrame;
+    expect(() => resolveTakeEdit('lock-screen', edit, { 'island-expanded': 10 }, length, 600)).toThrow(
+      /"lock-screen" is missing mark\(s\) next-tapped/,
+    );
+    expect(() =>
+      resolveTakeEdit('lock-screen', edit, { 'island-expanded': 10, 'next-tapped': 13 }, length, 400),
+    ).toThrow(/runs off its 400 footage frames/);
+  });
+
+  it('resolves anchor shifts and the rest pill against marks', () => {
+    const log = resolvedEdit('log');
+    // scrolled 5.005 s (frame 150) - 1.5 s; filter-kilter 10.252 s (frame 308) - 1.2 s.
+    expect(log.anchorShifts['activity-calendar']).toEqual([
+      { from: 105, dy: -338 },
+      { from: 272, dy: -415 },
+    ]);
+    const crew = resolvedEdit('crew');
+    expect(crew.anchorShifts['invite-qr']).toEqual([{ from: 0, dy: 405 }]);
+    const workouts = resolvedEdit('workouts');
+    expect(workouts.restPill.map(([, value]) => value)).toEqual(['0:29', '0:28', '0:26', '0:25']);
+    const first = workouts.restPill[0][0];
+    expect(localAtFootage(workouts.segments, first)).not.toBeNull();
   });
 
   it('maps scene frames to footage across hard cuts, and back', () => {
@@ -781,7 +877,7 @@ describe('the edit', () => {
 
   it('gives windowed callouts their own entrance and exit', () => {
     const crew = sceneOf('crew');
-    const timings = calloutTimings(crew, 'crew', crew.callouts);
+    const timings = calloutTimings(crew, crew.callouts, resolvedEdit('crew'));
     const enters = crew.callouts.map((name) => timings[name]?.enter ?? -1);
     expect(enters[1]).toBeGreaterThan(enters[0]);
     expect(enters[2]).toBeGreaterThan(enters[1]);

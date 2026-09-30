@@ -73,17 +73,17 @@ export const SHOWCASE_SCENES: readonly ShowcaseScene[] = [
   {
     id: 'crew',
     startFrame: 507,
-    endFrame: 681,
+    endFrame: 657,
     background: 'light',
     takes: ['crew'],
     callouts: ['invite-qr', 'queue-row-avatar', 'play-next'],
   },
-  { id: 'workouts', startFrame: 681, endFrame: 843, background: 'dark', takes: ['workouts'], callouts: [] },
+  { id: 'workouts', startFrame: 657, endFrame: 819, background: 'dark', takes: ['workouts'], callouts: [] },
   // The Dynamic Island scene. Id and take keep their lock-screen names so the
   // recorder and the anchors contract stay put.
   {
     id: 'lock-screen',
-    startFrame: 843,
+    startFrame: 819,
     endFrame: 969,
     background: 'light',
     takes: ['lock-screen'],

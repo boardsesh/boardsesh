@@ -69,7 +69,9 @@ describe('showcase timeline', () => {
     const timeline = resolveTimeline(new Set(SHOWCASE_TAKE_IDS.filter((takeId) => takeId !== 'lock-screen')));
     expect(timeline.skipped).toEqual(['lock-screen']);
     expect(timeline.scenes.map((scene) => scene.id)).not.toContain('lock-screen');
-    expect(timeline.totalFrames).toBe(SHOWCASE_TOTAL_FRAMES - 126);
+    const island = SHOWCASE_SCENES.find((scene) => scene.id === 'lock-screen');
+    if (!island) throw new Error('island scene missing');
+    expect(timeline.totalFrames).toBe(SHOWCASE_TOTAL_FRAMES - (island.endFrame - island.startFrame));
     expect(timeline.totalFrames / 30).toBeGreaterThan(36);
     timeline.scenes.forEach((scene, index) => {
       if (index > 0) expect(scene.startFrame).toBe(timeline.scenes[index - 1].endFrame);

@@ -259,8 +259,7 @@ export const SHOWCASE_ANCHOR_EXTEND_DOWN: Partial<Record<ShowcaseCalloutName, nu
  */
 export function prepareAnchorsFile(
   file: ShowcaseAnchorsFile,
-  shifts: Partial<Record<ShowcaseCalloutName, readonly AnchorShift[]>> = SHOWCASE_TAKE_EDITS[file.takeId]
-    ?.anchorShifts ?? {},
+  shifts: ResolvedTakeEdit['anchorShifts'] = {},
 ): ShowcaseAnchorsFile {
   const anchors: Partial<Record<ShowcaseCalloutName, ShowcaseAnchorSample[]>> = {};
   for (const [name, samples] of Object.entries(file.anchors) as [ShowcaseCalloutName, ShowcaseAnchorSample[]][]) {
@@ -276,13 +275,18 @@ export function prepareAnchorsFile(
 // --- footage timing ------------------------------------------------------
 
 /**
- * Takes run one second ahead of their scene (the phone arrives before the
- * text), so footage frame 0 lines up with `scene.startFrame - 30`.
+ * A take without an edit (the boards) plays from one second in, since the
+ * phone arrives before the scene's text.
  */
 export const SHOWCASE_TAKE_LEAD_FRAMES = SHOWCASE_FPS;
 
-export function footageFrameIndex(scene: ShowcaseScene, frame: number, frameCount: number): number {
-  return footageAt(takeSegments(scene.takes[0], scene), frame - scene.startFrame, frameCount);
+export function footageFrameIndex(
+  scene: ShowcaseScene,
+  frame: number,
+  frameCount: number,
+  edit?: ResolvedTakeEdit,
+): number {
+  return footageAt(takeSegments(scene, edit), frame - scene.startFrame, frameCount);
 }
 
 // --- the edit: which footage each scene shows ---------------------------------
@@ -290,135 +294,218 @@ export function footageFrameIndex(scene: ShowcaseScene, frame: number, frameCoun
 /** Footage frames `[from, to)` of a take, 0-based (frame 0 is `00001.jpg`). */
 export type FootageRange = readonly [number, number];
 
-/** A vertical correction for an anchor, in points, from footage frame `from` on. */
-export type AnchorShift = Readonly<{ from: number; dy: number }>;
+/** A moment in a take: `at` seconds after (or before, when negative) one of its marks. */
+export type MarkTime = Readonly<{ mark: string; at: number }>;
 
 /**
- * How a scene cuts its take: the footage ranges it plays back to back (a hard
- * cut between ranges, never a dissolve), when each callout may be up, and the
- * anchor corrections the recording needs. Every number here was read off the
- * recorded frames and checked with `--measure`; re-check after a re-record.
+ * A stretch of a take relative to a mark, in seconds: `mark + from` up to
+ * `mark + to`. A scene's last segment leaves `to` out and runs until the scene
+ * is full. Lengths are counted from `to - from`, not from the mark, so a
+ * re-recorded mark moves a segment without changing the cut's timing.
+ */
+export type MarkSpan = Readonly<{ mark: string; from: number; to?: number }>;
+
+/** A vertical correction for an anchor, in points, from a moment on (`from: null` is the whole take). */
+export type AnchorShift = Readonly<{ from: MarkTime | null; dy: number }>;
+
+/**
+ * How a scene cuts its take, all relative to the take's marks
+ * (`work/marks/<take>.json`, docs/showcase-video.md), so a re-record needs no
+ * edits here: the footage it plays (hard cuts between segments), when each
+ * callout may be up, and the anchor corrections the recording needs.
  */
 export type TakeEdit = Readonly<{
-  /** Played in order; their lengths sum to the scene's length. */
-  segments: readonly FootageRange[];
+  /** Played in order; the last one fills the scene. */
+  segments: readonly MarkSpan[];
   /**
-   * Footage frames each callout's target is on screen and still. A callout
-   * enters when its window starts (not before the scene's first words) and
-   * retracts when it ends, so a scene can point at three moments in turn.
+   * When each callout's target is on screen and still. A callout enters when
+   * its window starts (not before the scene's first words) and retracts when it
+   * ends, so a scene can point at three moments in turn.
    */
-  callouts?: Partial<Record<ShowcaseCalloutName, FootageRange>>;
+  callouts?: Partial<Record<ShowcaseCalloutName, MarkSpan>>;
   /**
    * Anchors the app measures in a native sheet's own window (y from the sheet's
-   * top) or before a scroll (they re-log on layout, not on scroll). Piecewise
-   * `dy`, keyed by footage frame; see docs/showcase-video.md.
+   * top) or before a scroll (they re-log on layout, not on scroll): piecewise
+   * `dy`; see docs/showcase-video.md.
    */
   anchorShifts?: Partial<Record<ShowcaseCalloutName, readonly AnchorShift[]>>;
-  /**
-   * The rest pill the footage shows: `[footage frame, value]` from that frame on.
-   * The workouts checklist's countdown reads the same value on the same frame.
-   */
-  restPill?: readonly (readonly [number, string])[];
+  /** The rest pill the footage shows, value by value; the workouts checklist reads the same value. */
+  restPill?: ReadonlyArray<Readonly<{ at: MarkTime; value: string }>>;
+}>;
+
+/** A `TakeEdit` resolved against one recording's marks: footage frames throughout. */
+export type ResolvedTakeEdit = Readonly<{
+  segments: readonly FootageRange[];
+  callouts: Partial<Record<ShowcaseCalloutName, FootageRange>>;
+  anchorShifts: Partial<Record<ShowcaseCalloutName, ReadonlyArray<Readonly<{ from: number; dy: number }>>>>;
+  restPill: readonly (readonly [number, string])[];
 }>;
 
 /**
  * The edit, per take. A take without an entry plays from one second in, for
- * its scene's length (the boards). Frames are footage frames at 30 fps.
+ * its scene's length (the boards). Offsets are seconds from the named mark;
+ * each was checked with `--measure` on the recorded frames.
  */
 export const SHOWCASE_TAKE_EDITS: Partial<Record<ShowcaseTakeId, TakeEdit>> = {
-  // The bulb lights at frame 88 (local 18, as the callouts land); the first
-  // swipe to the next climb runs 168–180.
-  light: { segments: [[70, 202]] },
-  // Board-button tap at ~93, sheet at its middle detent from ~120; the drag up
-  // to "Lit on this wall" settles by ~250.
+  // From just before the bulb tap (it lights a few frames after), through the
+  // first swipe to the next climb (`next-1`).
+  light: { segments: [{ mark: 'bulb-tapped', from: -0.3 }] },
+  // The climbs list, the board-button tap and the sheet opening at its middle
+  // detent; cut to the sheet dragged up on "Lit on this wall".
   wall: {
     segments: [
-      [48, 168],
-      [255, 300],
+      { mark: 'sheet-open', from: -3.8, to: 0.2 },
+      { mark: 'history-shown', from: -0.5 },
     ],
     callouts: {
-      'board-history-button': [48, 94],
-      'now-on-wall': [120, 168],
-      'wall-history': [255, 300],
+      'board-history-button': { mark: 'sheet-open', from: -3.8, to: -2.8 },
+      'now-on-wall': { mark: 'sheet-open', from: -2.4, to: 0.2 },
+      'wall-history': { mark: 'history-shown', from: -0.5, to: 1.0 },
     },
     anchorShifts: {
-      // The wall sheet's top: 462 pt at its middle detent, 145 pt once dragged up.
+      // The wall sheet's top: 462 pt at its middle detent, 145 pt dragged up.
       'now-on-wall': [
-        { from: 0, dy: 462 },
-        { from: 240, dy: 145 },
+        { from: null, dy: 462 },
+        { from: { mark: 'history-shown', at: -0.8 }, dy: 145 },
       ],
       'wall-history': [
-        { from: 0, dy: 462 },
-        { from: 240, dy: 145 },
+        { from: null, dy: 462 },
+        { from: { mark: 'history-shown', at: -0.8 }, dy: 145 },
       ],
     },
   },
-  // The invite QR (0–56), the second phone's row landing with its avatar
-  // (~324), the long-press menu's "Play next" (from ~440).
+  // The invite QR; the second phone's row landing with its avatar; the
+  // long-press menu's "Play next".
   crew: {
     segments: [
-      [0, 56],
-      [296, 366],
-      [440, 488],
+      { mark: 'invite-closed', from: -4.5, to: -3.0 },
+      { mark: 'row-landed', from: -0.8, to: 1.2 },
+      { mark: 'play-next-menu', from: -2.6 },
     ],
     callouts: {
-      'invite-qr': [0, 56],
-      'queue-row-avatar': [324, 366],
-      'play-next': [440, 488],
+      'invite-qr': { mark: 'invite-closed', from: -4.5, to: -3.0 },
+      'queue-row-avatar': { mark: 'row-landed', from: 0.1, to: 1.2 },
+      'play-next': { mark: 'play-next-menu', from: -2.5, to: -1.0 },
     },
     anchorShifts: {
       // The invite sheet's top, and the queue sheet's top at its detent.
-      'invite-qr': [{ from: 0, dy: 405 }],
-      'queue-row-avatar': [{ from: 0, dy: 322 }],
+      'invite-qr': [{ from: null, dy: 405 }],
+      'queue-row-avatar': [{ from: null, dy: 322 }],
     },
   },
-  // Pyramid picked (the target-grade row appears at ~60), then the fixed-window
-  // rest pill counting down from 0:29 (306). The checklist's rest countdown
-  // starts on that frame (`SHOWCASE_WORKOUT_BEATS.restStart`, local 64) and
-  // reads `restPill`, so both show the same value.
+  // Pyramid picked (the target-grade row appears), then the fixed-window rest
+  // pill counting. The checklist's countdown starts on the pill's first value
+  // and reads `restPill`, so both show the same value on the same frame.
   workouts: {
     segments: [
-      [30, 90],
-      [304, 406],
+      { mark: 'pyramid-picked', from: -1.9, to: 0.1 },
+      { mark: 'rest-armed', from: 1.4 },
     ],
     restPill: [
-      [306, '0:29'],
-      [314, '0:28'],
-      [346, '0:27'],
-      [376, '0:26'],
-      [406, '0:25'],
+      { at: { mark: 'rest-armed', at: 1.43 }, value: '0:29' },
+      { at: { mark: 'rest-armed', at: 1.63 }, value: '0:28' },
+      { at: { mark: 'rest-armed', at: 4.33 }, value: '0:26' },
+      { at: { mark: 'rest-armed', at: 4.73 }, value: '0:25' },
     ],
   },
-  // The island is expanded on "Masquerade · 2 of 4" from ~90; Next is pressed
-  // at ~248 and the island shows "Putty · 3 of 4" from ~280.
-  'lock-screen': { segments: [[200, 326]] },
-  // The calendar for all boards (after the scroll), then the Filters sheet with
-  // Kilter picked, Done (~270), and the calendar redrawn for Kilter (~276).
+  // The real Dynamic Island expanded on "Masquerade"; cut to just before Next
+  // and about 2.5 s of the island on "Putty".
+  'lock-screen': {
+    segments: [
+      { mark: 'island-expanded', from: -0.3, to: 1.0 },
+      { mark: 'next-tapped', from: -1.2 },
+    ],
+  },
+  // The Progress filter after the scroll; cut to the Filters sheet with Kilter
+  // picked, Done, and the calendar redrawn for Kilter.
   log: {
     segments: [
-      [90, 141],
-      [230, 329],
+      { mark: 'scrolled', from: -1.2, to: 0.5 },
+      { mark: 'filter-kilter', from: -2.8 },
     ],
     callouts: {
-      'profile-board-filter': [90, 141],
-      'activity-calendar': [276, 329],
+      'profile-board-filter': { mark: 'scrolled', from: -1.2, to: 0.5 },
+      'activity-calendar': { mark: 'filter-kilter', from: -0.9, to: 0.5 },
     },
     anchorShifts: {
-      // Both logged before the scroll (~70–80) moved the page up 338 pt. The
-      // Kilter view (Done at ~270) drops the records card's footnote, which
-      // lifts the calendar another 77 pt.
-      'profile-board-filter': [{ from: 80, dy: -338 }],
+      // Both logged before the scroll, which moved the page up 338 pt. The
+      // Kilter view drops the records card's footnote, which lifts the calendar
+      // another 77 pt.
+      'profile-board-filter': [{ from: { mark: 'scrolled', at: -1.5 }, dy: -338 }],
       'activity-calendar': [
-        { from: 80, dy: -338 },
-        { from: 270, dy: -415 },
+        { from: { mark: 'scrolled', at: -1.5 }, dy: -338 },
+        { from: { mark: 'filter-kilter', at: -1.2 }, dy: -415 },
       ],
     },
   },
 };
 
-/** The footage ranges a scene plays for a take: its edit, or one second in for the scene's length. */
-export function takeSegments(takeId: ShowcaseTakeId, scene: ShowcaseScene): readonly FootageRange[] {
-  const edit = SHOWCASE_TAKE_EDITS[takeId];
+/** Every mark an edit reads, so a render can say up front which are missing. */
+export function marksNeeded(edit: TakeEdit): string[] {
+  const names = [
+    ...edit.segments.map((span) => span.mark),
+    ...Object.values(edit.callouts ?? {}).map((span) => span.mark),
+    ...Object.values(edit.anchorShifts ?? {}).flatMap((shifts) => shifts.flatMap((shift) => shift.from?.mark ?? [])),
+    ...(edit.restPill ?? []).map((step) => step.at.mark),
+  ];
+  return [...new Set(names)];
+}
+
+/**
+ * An edit against one recording: every mark-relative time becomes a footage
+ * frame. Throws, naming the take and the marks, when a mark the edit needs is
+ * missing or a segment runs off the footage, so a re-record that lost a step
+ * fails the render instead of cutting the wrong moment.
+ */
+export function resolveTakeEdit(
+  takeId: ShowcaseTakeId,
+  edit: TakeEdit,
+  marks: Readonly<Record<string, number>>,
+  sceneLength: number,
+  frameCount: number,
+): ResolvedTakeEdit {
+  const missing = marksNeeded(edit).filter((name) => typeof marks[name] !== 'number');
+  if (missing.length > 0) {
+    throw new Error(
+      `Take "${takeId}" is missing mark(s) ${missing.join(', ')} (has: ${Object.keys(marks).join(', ') || 'none'}). ` +
+        'Re-record it, or check its flow still raises them (docs/showcase-video.md).',
+    );
+  }
+  const frameAt = (time: MarkTime) => Math.round(marks[time.mark] * SHOWCASE_FPS) + Math.round(time.at * SHOWCASE_FPS);
+  const span = (value: MarkSpan, fill?: number): FootageRange => {
+    const start = frameAt({ mark: value.mark, at: value.from });
+    const length = value.to === undefined ? (fill ?? 0) : Math.round((value.to - value.from) * SHOWCASE_FPS);
+    return [start, start + length];
+  };
+  const segments: FootageRange[] = [];
+  edit.segments.forEach((value, index) => {
+    const used = segments.reduce((sum, [from, to]) => sum + to - from, 0);
+    const last = index === edit.segments.length - 1;
+    segments.push(span(value, last ? sceneLength - used : undefined));
+  });
+  const total = segments.reduce((sum, [from, to]) => sum + to - from, 0);
+  if (total !== sceneLength) {
+    throw new Error(`Take "${takeId}": the edit plays ${total} frames, the scene needs ${sceneLength}`);
+  }
+  for (const [from, to] of segments) {
+    if (from < 0 || to > frameCount || to <= from) {
+      throw new Error(`Take "${takeId}": segment ${from}..${to} runs off its ${frameCount} footage frames`);
+    }
+  }
+  const callouts: Partial<Record<ShowcaseCalloutName, FootageRange>> = {};
+  for (const [name, value] of Object.entries(edit.callouts ?? {}) as [ShowcaseCalloutName, MarkSpan][]) {
+    callouts[name] = span(value);
+  }
+  const anchorShifts: ResolvedTakeEdit['anchorShifts'] = {};
+  for (const [name, shifts] of Object.entries(edit.anchorShifts ?? {}) as [ShowcaseCalloutName, AnchorShift[]][]) {
+    anchorShifts[name] = shifts.map((shift) => ({ from: shift.from ? frameAt(shift.from) : 0, dy: shift.dy }));
+  }
+  const restPill = (edit.restPill ?? []).map((step) => [frameAt(step.at), step.value] as const);
+  return { segments, callouts, anchorShifts, restPill };
+}
+
+/** The footage ranges a scene plays: its resolved edit, or one second in for the scene's length. */
+export function takeSegments(scene: ShowcaseScene, edit?: ResolvedTakeEdit): readonly FootageRange[] {
   if (edit) return edit.segments;
   return [[SHOWCASE_TAKE_LEAD_FRAMES, SHOWCASE_TAKE_LEAD_FRAMES + scene.endFrame - scene.startFrame]];
 }
@@ -454,11 +541,12 @@ export const segmentsLength = (segments: readonly FootageRange[]): number =>
 
 /**
  * Samples with piecewise shifts applied: a sample at every original and shift
- * time, each the rect in force then, moved by the shift in force then.
+ * time, each the rect in force then, moved by the shift in force then. Shift
+ * times are footage frames.
  */
 export function applyAnchorShifts(
   samples: readonly ShowcaseAnchorSample[],
-  shifts: readonly AnchorShift[],
+  shifts: ReadonlyArray<Readonly<{ from: number; dy: number }>>,
 ): ShowcaseAnchorSample[] {
   if (shifts.length === 0 || samples.length === 0) return samples.slice();
   const sorted = sortAnchorSamples(samples);
@@ -481,17 +569,16 @@ export type CalloutTiming = Readonly<{ enter: number; exit: number; at: number }
  */
 export function calloutTimings(
   scene: ShowcaseScene,
-  takeId: ShowcaseTakeId,
   names: readonly ShowcaseCalloutName[],
+  edit?: ResolvedTakeEdit,
 ): Partial<Record<ShowcaseCalloutName, CalloutTiming>> {
-  const edit = SHOWCASE_TAKE_EDITS[takeId];
-  const segments = takeSegments(takeId, scene);
+  const segments = takeSegments(scene, edit);
   const length = scene.endFrame - scene.startFrame;
   const lastExit = length - SHOWCASE_CHOREO.calloutsOutEndFromEnd;
   const delay = SHOWCASE_SCENE_STAGING[scene.id]?.calloutDelay ?? 0;
   const timings: Partial<Record<ShowcaseCalloutName, CalloutTiming>> = {};
   names.forEach((name, index) => {
-    const window = edit?.callouts?.[name];
+    const window = edit?.callouts[name];
     const windowStart = window ? localAtFootage(segments, window[0]) : null;
     if (window && windowStart !== null) {
       const windowEnd = windowStart + window[1] - window[0];
@@ -1145,11 +1232,12 @@ export function resolveSceneCallouts(
   scene: ShowcaseScene,
   anchorsFile: ShowcaseAnchorsFile | null,
   labels: CalloutCopy,
+  edit?: ResolvedTakeEdit,
 ): { callouts: ShowcaseCalloutName[]; warnings: string[] } {
   const callouts: ShowcaseCalloutName[] = [];
   const warnings: string[] = [];
   const take = scene.takes[0];
-  const timings = calloutTimings(scene, take, scene.callouts);
+  const timings = calloutTimings(scene, scene.callouts, edit);
   for (const name of scene.callouts) {
     const samples = anchorsFile?.anchors[name];
     const rect = samples ? anchorAt(samples, timings[name]?.at ?? 0) : null;
@@ -1170,10 +1258,11 @@ export function layoutSceneCallouts(
   names: readonly ShowcaseCalloutName[],
   anchorsFile: ShowcaseAnchorsFile,
   labels: CalloutCopy,
+  edit?: ResolvedTakeEdit,
 ): StageCallout[] {
   const canvas = SHOWCASE_CANVAS[format];
   const calloutPose = SHOWCASE_POSES[format][SHOWCASE_SCENE_STAGING[scene.id]?.zoomPose ?? 'CALLOUT'];
-  const timings = calloutTimings(scene, scene.takes[0], names);
+  const timings = calloutTimings(scene, names, edit);
   const timing = (name: ShowcaseCalloutName) => {
     const found = timings[name];
     if (!found) throw new Error(`No timing for callout ${name}`);
@@ -1279,7 +1368,11 @@ export const SHOWCASE_WORKOUT_BEATS = {
 } as const;
 
 /** Tick frame per row; the rest countdown runs after the hardest row and delays the rows after it. */
-export function workoutTickFrames(grades: readonly string[]): {
+export function workoutTickFrames(
+  grades: readonly string[],
+  /** Local frame the footage's rest pill first shows a value, when there is footage. */
+  restFromFootage?: number | null,
+): {
   ticks: number[];
   restRow: number;
   restStart: number;
@@ -1288,7 +1381,7 @@ export function workoutTickFrames(grades: readonly string[]): {
   const value = (grade: string) => Number.parseInt(grade.replace(/[^0-9]/g, ''), 10) || 0;
   const top = grades.reduce((best, grade, index) => (value(grade) > value(grades[best]) ? index : best), 0);
   const { firstTick, tickGap, restFrames } = SHOWCASE_WORKOUT_BEATS;
-  const restStart = Math.max(firstTick + top * tickGap + 6, SHOWCASE_WORKOUT_BEATS.restStart);
+  const restStart = Math.max(firstTick + top * tickGap + 6, restFromFootage ?? SHOWCASE_WORKOUT_BEATS.restStart);
   const ticks = grades.map((_, index) => firstTick + index * tickGap + (index > top ? restFrames - tickGap + 6 : 0));
   return { ticks, restRow: Math.min(top + 1, grades.length - 1), restStart, restEnd: restStart + restFrames };
 }

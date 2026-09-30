@@ -263,8 +263,12 @@ anchor goes in the take's `anchorMarks`.
 
 The renderer corrects both per take in `SHOWCASE_TAKE_EDITS`
 (`scripts/lib/showcase-video/render.ts`), next to each scene's footage ranges
-and callout windows. After a re-record, check every callout with
-`vp run video:render -- --stills --measure` and adjust the numbers there.
+and callout windows. Every time there is an offset from one of the take's
+marks (a scroll correction applies from `scrolled`, the wall sheet's drag from
+`history-shown`), so a re-record needs no edits. A render stops, naming the
+take and the marks, when a mark the edit reads is missing or a segment runs
+off the footage; `vp run video:render -- --stills --measure` shows every
+callout box over the recorded frames when you want to look.
 
 ## Adding or changing a take
 
