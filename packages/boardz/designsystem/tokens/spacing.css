@@ -1,0 +1,38 @@
+:root {
+  --space-0: 0px;
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 8px;
+  --space-4: 12px;
+  --space-5: 16px;
+  --space-6: 20px;
+  --space-7: 24px;
+  --space-8: 32px;
+  --space-9: 40px;
+  --space-10: 48px;
+  --space-11: 64px;
+
+  --radius-xs: 3px;    /* mono tags (BM) */
+  --radius-sm: 5px;    /* badges */
+  --radius-tag: 8px;   /* grade tags, chips */
+  --radius-md: 10px;   /* buttons, inputs, control strips */
+  --radius-lg: 14px;   /* cards, panels */
+  --radius-xl: 20px;   /* sheets, dialogs */
+  --radius-pill: 999px;
+
+  --hairline: 1px;
+  --crop-mark: 9px;
+
+  --tap-min: 44px;
+  --tap-board: 56px;
+
+  --bp-tablet: 744px;
+  --bp-desktop: 1120px;
+  --gutter-phone: 20px;
+  --gutter-tablet: 24px;
+  --gutter-desktop: 32px;
+  --sidebar-w: 248px;
+  --rail-w: 76px;
+  --tabbar-h: 64px;
+  --topbar-h: 52px;
+}

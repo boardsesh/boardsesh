@@ -1,0 +1,29 @@
+<!-- @dsCard group="Components" viewport="700x420" name="Navigation" subtitle="Tabs, phone TabBar, sidebar NavItem (expanded + rail)" -->
+<!DOCTYPE html>
+<html data-theme="light"><head><meta charset="utf-8"><title>Navigation</title>
+<link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<script src="../../_ds_bundle.js"></script>
+<script src="../../assets/ds-runtime.js"></script>
+<style>body{background:var(--bg-app);padding:24px}</style>
+</head><body><div id="root"></div>
+<script type="text/babel">
+BoardzReady.then(ns => { const {Tabs,TabBar,NavItem} = ns;
+const NAV=[{value:'problems',label:'Problems',icon:'layout-grid'},{value:'lists',label:'Lists',icon:'bookmark'},{value:'rankings',label:'Rankings',icon:'trophy'},{value:'history',label:'History',icon:'history'},{value:'settings',label:'Settings',icon:'settings'}];
+function Demo(){
+const [t,setT]=React.useState('beta');
+const [tab,setTab]=React.useState('problems');
+return <div style={{display:'grid',gridTemplateColumns:'1fr 200px 76px',gap:24,alignItems:'start'}}>
+ <div style={{display:'flex',flexDirection:'column',gap:28}}>
+  <Tabs value={t} onChange={setT} items={[{value:'beta',label:'Beta',count:3},{value:'ascents',label:'Ascents',count:241},{value:'info',label:'Info'}]}/>
+  <div style={{width:390,maxWidth:'100%',border:'1px solid var(--border-2)',borderRadius:14,overflow:'hidden'}}><TabBar items={NAV} value={tab} onChange={setTab}/></div>
+ </div>
+ <div style={{display:'flex',flexDirection:'column',gap:2}}>{NAV.map(n=><NavItem key={n.value} icon={n.icon} label={n.label} count={n.value==='lists'?4:undefined} active={tab===n.value} onClick={()=>setTab(n.value)}/>)}</div>
+ <div style={{display:'flex',flexDirection:'column',gap:2}}>{NAV.map(n=><NavItem key={n.value} collapsed icon={n.icon} label={n.label} active={tab===n.value} onClick={()=>setTab(n.value)}/>)}</div>
+</div>;
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<Demo/>); });
+</script></body></html>

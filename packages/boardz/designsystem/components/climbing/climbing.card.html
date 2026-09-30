@@ -1,0 +1,44 @@
+<!-- @dsCard group="Components" viewport="700x640" name="Climbing" subtitle="BoardView, GradeBadge, ProblemRow, ReadoutStrip, ConnectionPill, HoldMarker, StarRating, VideoThumb" -->
+<!DOCTYPE html>
+<html data-theme="light"><head><meta charset="utf-8"><title>Climbing</title>
+<link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<script src="../../_ds_bundle.js"></script>
+<script src="../../assets/ds-runtime.js"></script>
+<style>body{background:var(--bg-app);padding:24px}.lbl{font:400 10px/1 var(--font-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--fg-3)}</style>
+</head><body><div id="root"></div>
+<script type="text/babel">
+BoardzReady.then(ns => { const {BoardView,GradeBadge,ProblemRow,ReadoutStrip,ConnectionPill,HoldMarker,StarRating,VideoThumb,holdCoords} = ns;
+const HOLDS=[{r:4,c:4,role:'start'},{r:5,c:6,role:'start'},{r:1,c:3,role:'foot'},{r:2,c:7,role:'foot'},{r:8,c:5,role:'hand'},{r:10,c:2,role:'hand'},{r:12,c:4,role:'hand'},{r:13,c:7,role:'hand'},{r:15,c:3,role:'hand'},{r:16,c:6,role:'hand'},{r:18,c:5,role:'finish'}];
+function Demo(){
+const [stars,setStars]=React.useState(2);
+return <div style={{display:'grid',gridTemplateColumns:'250px minmax(0,1fr)',gap:28}}>
+ <div style={{display:'flex',flexDirection:'column',gap:12}}>
+  <BoardView board="moon" holds={HOLDS}/>
+  <div style={{display:'flex',flexWrap:'wrap',gap:'8px 14px',justifyContent:'center'}}>{['start','hand','foot','finish'].map(r=><HoldMarker key={r} role={r} label/>)}</div>
+  {holdCoords?<div style={{fontFamily:'var(--font-mono)',fontSize:10,color:'var(--fg-2)',textAlign:'center'}}>{holdCoords(HOLDS,'hand')}</div>:null}
+ </div>
+ <div style={{display:'flex',flexDirection:'column',gap:18,minWidth:0}}>
+  <div style={{display:'flex',alignItems:'flex-end',justifyContent:'space-between'}}>
+   <div><div style={{fontSize:28,fontWeight:600,letterSpacing:'-0.04em',lineHeight:1}}>Heel Yeah</div><div style={{fontSize:13,color:'var(--fg-3)',marginTop:6}}>Lena Park · Apr 2025</div></div>
+   <GradeBadge grade="7A+" variant="display" size="lg"/>
+  </div>
+  <ReadoutStrip items={[{label:'Sends',value:'241'},{label:'Flash',value:'28%'},{label:'Quality',value:'2.9'},{label:'Beta',value:3}]}/>
+  <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}><GradeBadge grade="6C+"/><GradeBadge grade="7A" variant="solid"/><GradeBadge grade="V8" variant="soft"/><GradeBadge grade="6B" size="sm" variant="solid"/><span style={{flex:1}}/><ConnectionPill status="connected" boardName="Moonboard 2024"/><ConnectionPill status="scanning"/><ConnectionPill status="disconnected" compact/></div>
+  <div style={{margin:'0 -20px',borderTop:'1px solid var(--border-2)'}}>
+   <ProblemRow index={1} problem={{name:'Warm-up Ladder',grade:'6A',setter:'Setter Team',ascents:'4,810',quality:2.2,benchmark:true,sent:true}}/>
+   <ProblemRow index={2} selected problem={{name:'Crimp Lord',grade:'6C+',setter:'Ben Moon',ascents:'1,204',quality:2.9,benchmark:true}}/>
+   <ProblemRow index={3} problem={{name:'Left Hand Path',grade:'7A',setter:'Lena Park',ascents:'312',quality:2.3,favorite:true}} onFavorite={()=>{}}/>
+  </div>
+  <div style={{display:'grid',gridTemplateColumns:'repeat(3,minmax(0,1fr)) auto',gap:10,alignItems:'start'}}>
+   <VideoThumb duration="0:42" author="@lenapark" aspect="4 / 5"/><VideoThumb duration="0:28" author="@kai.climbs" aspect="4 / 5"/><VideoThumb duration="1:08" author="@jo_ko" aspect="4 / 5"/>
+   <StarRating value={stars} onChange={setStars} size={20}/>
+  </div>
+ </div>
+</div>;
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<Demo/>); });
+</script></body></html>

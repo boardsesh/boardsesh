@@ -1,0 +1,16 @@
+:root {
+  --dur-instant: 80ms;
+  --dur-fast: 140ms;
+  --dur-base: 220ms;
+  --dur-slow: 360ms;
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+@keyframes bz-spin { to { transform: rotate(360deg); } }
+@keyframes bz-pulse { 0% { box-shadow: 0 0 0 0 currentColor; opacity: 1; } 70% { box-shadow: 0 0 0 6px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+@keyframes bz-sheet-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
+@keyframes bz-dialog-in { from { opacity: 0; transform: translateY(8px) scale(0.98); } to { opacity: 1; transform: none; } }
+@keyframes bz-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes bz-toast-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+@keyframes bz-led-on { from { opacity: 0.2; } to { opacity: 1; } }

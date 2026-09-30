@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&family=Geist+Mono:wght@300..600&display=swap">
+<style>body{margin:0;background:#DAD8D2;-webkit-font-smoothing:antialiased}a{color:#151618}a:hover{color:#44464A}</style>
+</helmet>
+<div style="display:flex;flex-direction:column;gap:56px;padding:80px;width:max-content;font-family:'Geist',system-ui,sans-serif;color:#151618">
+  <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:80px">
+    <div style="display:flex;flex-direction:column;gap:18px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="width:28px;height:28px;border-radius:8px;background:#151618;color:#F4F3EF;display:flex;align-items:center;justify-content:center;font-family:'Geist Mono',monospace;font-size:13px;font-weight:500">A</span>
+        <span style="font-family:'Geist Mono',monospace;font-size:11px;letter-spacing:0.08em;color:#5E6064">DIRECTION A · INSTRUMENT</span>
+      </div>
+      <div style="font-size:88px;font-weight:600;letter-spacing:-0.055em;line-height:0.85">Graphite</div>
+    </div>
+    <div style="max-width:560px;font-size:18px;line-height:1.5;color:#44464A;text-wrap:pretty;padding-bottom:6px">A precision instrument for your wall. Ink, paper and hairlines, with numbers you can read from the mat. The only color on screen is the light on the board.</div>
+  </div>
+
+  <div style="display:flex;gap:72px;align-items:flex-start">
+    <div style="width:420px;flex-shrink:0;display:flex;flex-direction:column;gap:32px">
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <span style="font-family:'Geist Mono',monospace;font-size:10px;letter-spacing:0.08em;color:#5E6064">LIGHT</span>
+        <div style="display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px">
+          <div style="display:flex;flex-direction:column;gap:6px"><div style="height:52px;border-radius:8px;background:#F4F3EF;box-shadow:inset 0 0 0 1px rgba(21,22,24,0.10)"></div><span style="font-size:12px;font-weight:500">Paper</span><span style="font-family:'Geist Mono',monospace;font-size:10px;color:#5E6064">F4F3EF</span></div>
+          <div style="display:flex;flex-direction:column;gap:6px"><div style="height:52px;border-radius:8px;background:#FFFFFF;box-shadow:inset 0 0 0 1px rgba(21,22,24,0.10)"></div><span style="font-size:12px;font-weight:500">Surface</span><span style="font-family:'Geist Mono',monospace;font-size:10px;color:#5E6064">FFFFFF</span></div>
+          <div style="display:flex;flex-direction:column;gap:6px"><div style="height:52px;border-radius:8px;background:#D8D6D0;box-shadow:inset 0 0 0 1px rgba(21,22,24,0.10)"></div><span style="font-size:12px;font-weight:500">Hairline</span><span style="font-family:'Geist Mono',monospace;font-size:10px;color:#5E6064">D8D6D0</span></div>
+          <div style="display:flex;flex-direction:column;gap:6px"><div style="height:52px;border-radius:8px;background:#686A6E"></div><span style="font-size:12px;font-weight:500">Pencil</span><span style="font-family:'Geist Mono',monospace;font-size:10px;color:#5E6064">686A6E</span></div>
+          <div style="display:flex;flex-direction:column;gap:6px"><div style="height:52px;border-radius:8px;background:#44464A"></div><span style="font-size:12px;font-weight:500">Graphite</span><span style="font-family:'Geist Mono',monospace;font-size:10px;color:#5E6064">44464A</span></div>
+          <div style="display:flex;flex-direction:column;gap:6px"><div style="height:52px;border-radius:8px;background:#151618"></div><span style="font-size:12px;font-weight:500">Ink</span><span style="font-family:'Geist Mono',monospace;font-size:10px;color:#5E6064">151618</span></div>
+        </div>
+        <span style="font-family:'Geist Mono',monospace;font-size:10px;letter-spacing:0.08em;color:#5E6064;margin-top:10px">DARK</span>
+        <div style="display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px">
+          <div style="display:flex;flex-direction:column;gap:6px"><div style="height:52px;border-radius:8px;background:#0E0F10"></div><span style="font-size:12px;font-weight:500">Ink</span><span style="font-family:'Geist Mono',monospace;font-size:10px;color:#5E6064">0E0F10</span></div>
+          <div style="display:flex;flex-direction:column;gap:6px"><div style="height:52px;border-radius:8px;background:#161719"></div><span style="font-size:12px;font-weight:500">Surface</span><span style="font-family:'Geist Mono',monospace;font-size:10px;color:#5E6064">161719</span></div>
+          <div style="display:flex;flex-direction:column;gap:6px"><div style="height:52px;border-radius:8px;background:#26282B"></div><span style="font-size:12px;font-weight:500">Hairline</span><span style="font-family:'Geist Mono',monospace;font-size:10px;color:#5E6064">26282B</span></div>
+          <div style="display:flex;flex-direction:column;gap:6px"><div style="height:52px;border-radius:8px;background:#8A8C90"></div><span style="font-size:12px;font-weight:500">Pencil</span><span style="font-family:'Geist Mono',monospace;font-size:10px;color:#5E6064">8A8C90</span></div>
+          <div style="display:flex;flex-direction:column;gap:6px"><div style="height:52px;border-radius:8px;background:#A9AAAD"></div><span style="font-size:12px;font-weight:500">Graphite</span><span style="font-family:'Geist Mono',monospace;font-size:10px;color:#5E6064">A9AAAD</span></div>
+          <div style="display:flex;flex-direction:column;gap:6px"><div style="height:52px;border-radius:8px;background:#EDECE8;box-shadow:inset 0 0 0 1px rgba(21,22,24,0.10)"></div><span style="font-size:12px;font-weight:500">Paper</span><span style="font-family:'Geist Mono',monospace;font-size:10px;color:#5E6064">EDECE8</span></div>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <span style="font-family:'Geist Mono',monospace;font-size:10px;letter-spacing:0.08em;color:#5E6064">LIGHT IS THE ONLY COLOR</span>
+        <div style="height:64px;border-radius:12px;background:#131416;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));align-items:center">
+          <div style="display:flex;align-items:center;justify-content:center;gap:9px"><span style="width:18px;height:18px;box-sizing:border-box;border-radius:50%;border:2px solid #2BD66B;background:rgba(43,214,107,0.15);box-shadow:0 0 12px 2px rgba(43,214,107,0.5)"></span><span style="font-family:'Geist Mono',monospace;font-size:10px;letter-spacing:0.08em;color:#A9AAAD">START</span></div>
+          <div style="display:flex;align-items:center;justify-content:center;gap:9px"><span style="width:18px;height:18px;box-sizing:border-box;border-radius:50%;border:2px solid #3D86FF;background:rgba(61,134,255,0.15);box-shadow:0 0 12px 2px rgba(61,134,255,0.5)"></span><span style="font-family:'Geist Mono',monospace;font-size:10px;letter-spacing:0.08em;color:#A9AAAD">HAND</span></div>
+          <div style="display:flex;align-items:center;justify-content:center;gap:9px"><span style="width:18px;height:18px;box-sizing:border-box;border-radius:50%;border:2px solid #FFC53D;background:rgba(255,197,61,0.15);box-shadow:0 0 12px 2px rgba(255,197,61,0.5)"></span><span style="font-family:'Geist Mono',monospace;font-size:10px;letter-spacing:0.08em;color:#A9AAAD">FOOT</span></div>
+          <div style="display:flex;align-items:center;justify-content:center;gap:9px"><span style="width:18px;height:18px;box-sizing:border-box;border-radius:50%;border:2px solid #FF4A3D;background:rgba(255,74,61,0.15);box-shadow:0 0 12px 2px rgba(255,74,61,0.5)"></span><span style="font-family:'Geist Mono',monospace;font-size:10px;letter-spacing:0.08em;color:#A9AAAD">FINISH</span></div>
+        </div>
+        <span style="font-size:13px;line-height:1.5;color:#5E6064">Hold colors follow each board's own LEDs. The board panel stays dark in both themes so the lights read true.</span>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:16px;padding:22px;background:#F4F3EF;border-radius:14px;box-shadow:inset 0 0 0 1px rgba(21,22,24,0.08)">
+        <div style="display:flex;justify-content:space-between;font-family:'Geist Mono',monospace;font-size:10px;letter-spacing:0.08em;color:#5E6064"><span>GEIST · INTERFACE</span><span>GEIST MONO · DATA</span></div>
+        <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:16px">
+          <span style="font-size:34px;font-weight:600;letter-spacing:-0.04em;line-height:1">Heel Yeah</span>
+          <span style="font-family:'Geist Mono',monospace;font-weight:300;font-size:68px;letter-spacing:-0.07em;line-height:0.78">7A+</span>
+        </div>
+        <div style="font-size:15px;line-height:1.5;color:#44464A">Heel on the second move, then trust the crimp. Body 15 / 22.</div>
+        <div style="display:flex;gap:18px;font-family:'Geist Mono',monospace;font-size:11px;letter-spacing:0.06em;color:#44464A"><span>E4 G5 → F18</span><span>241 SENDS</span><span>FLASH 28%</span><span>40°</span></div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <span style="font-family:'Geist Mono',monospace;font-size:10px;letter-spacing:0.08em;color:#5E6064">COMPONENTS</span>
+        <div style="display:flex;gap:8px;align-items:center">
+          <span style="height:48px;padding:0 18px;border-radius:10px;background:#151618;color:#F4F3EF;display:flex;align-items:center;gap:10px;font-size:15px;font-weight:600"><span style="width:8px;height:8px;border-radius:50%;background:#3D86FF;box-shadow:0 0 8px 2px rgba(61,134,255,0.55)"></span>Light it up</span>
+          <span style="height:48px;padding:0 16px;border-radius:10px;box-shadow:inset 0 0 0 1px #A9A7A0;display:flex;align-items:center;gap:8px;font-size:15px;font-weight:500"><svg width="17" height="17" viewBox="0 0 24 24" style="display:block;flex-shrink:0;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round"><path d="M20 6 9 17l-5-5"></path></svg>Log</span>
+          <span style="width:48px;height:48px;border-radius:10px;box-shadow:inset 0 0 0 1px #A9A7A0;display:flex;align-items:center;justify-content:center"><svg width="18" height="18" viewBox="0 0 24 24" style="display:block;flex-shrink:0;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"></path></svg></span>
+        </div>
+        <div style="display:flex;height:44px;border-radius:10px;box-shadow:inset 0 0 0 1px #A9A7A0;overflow:hidden">
+          <span style="flex:1.2;display:flex;align-items:center;justify-content:center;gap:5px;background:#151618;color:#F4F3EF;font-size:13px;font-weight:500">6A – 7B</span>
+          <span style="flex:1.4;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;color:#44464A;border-left:1px solid #A9A7A0">Benchmarks</span>
+          <span style="flex:1.1;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;color:#44464A;border-left:1px solid #A9A7A0">Not sent</span>
+          <span style="flex:0.9;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;color:#44464A;border-left:1px solid #A9A7A0">Beta</span>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <span style="width:50px;height:30px;border-radius:8px;box-shadow:inset 0 0 0 1px #A9A7A0;display:flex;align-items:center;justify-content:center;font-family:'Geist Mono',monospace;font-size:14px;font-weight:500">6C+</span>
+          <span style="width:50px;height:30px;border-radius:8px;background:#151618;color:#F4F3EF;display:flex;align-items:center;justify-content:center;font-family:'Geist Mono',monospace;font-size:14px;font-weight:500">7A</span>
+          <span style="font-size:13px;color:#5E6064;margin-left:6px">Outline = open · Filled = sent</span>
+        </div>
+      </div>
+    </div>
+
+    <div data-screen-label="A · Problems (light)" style="width:390px;height:844px;flex-shrink:0;border-radius:54px;overflow:hidden;position:relative;display:flex;flex-direction:column;background:#F4F3EF;color:#151618;box-shadow:0 0 0 11px #111214, 0 50px 90px -30px rgba(0,0,0,0.45)">
+      <div style="height:54px;flex-shrink:0;display:flex;align-items:center;justify-content:space-between;padding:6px 28px 0 40px">
+        <span style="font-size:16px;font-weight:600">9:41</span>
+        <div style="display:flex;align-items:center;gap:6px">
+          <svg width="16" height="16" viewBox="0 0 24 24" style="display:block;flex-shrink:0;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round"><path d="M2 20h.01"></path><path d="M7 20v-4"></path><path d="M12 20v-8"></path><path d="M17 20V8"></path><path d="M22 4v16"></path></svg>
+          <svg width="16" height="16" viewBox="0 0 24 24" style="display:block;flex-shrink:0;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round"><path d="M12 20h.01"></path><path d="M2 8.82a15 15 0 0 1 20 0"></path><path d="M5 12.859a10 10 0 0 1 14 0"></path><path d="M8.5 16.429a5 5 0 0 1 7 0"></path></svg>
+          <svg width="24" height="24" viewBox="0 0 24 24" style="display:block;flex-shrink:0;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round"><rect width="16" height="10" x="2" y="7" rx="2" ry="2"></rect><line x1="22" x2="22" y1="11" y2="13"></line><line x1="6" x2="6" y1="11" y2="13"></line><line x1="10" x2="10" y1="11" y2="13"></line><line x1="14" x2="14" y1="11" y2="13"></line></svg>
+        </div>
+      </div>
+      <div style="padding:10px 20px 0;display:flex;flex-direction:column;gap:14px">
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <span style="font-family:'Geist Mono',monospace;font-size:11px;letter-spacing:0.08em;color:#686A6E">MOONBOARD 2024 · 40°</span>
+          <span style="height:26px;padding:0 10px;border-radius:13px;display:flex;align-items:center;gap:7px;box-shadow:inset 0 0 0 1px #D8D6D0;font-family:'Geist Mono',monospace;font-size:10px;letter-spacing:0.08em;color:#44464A"><span style="width:6px;height:6px;border-radius:50%;background:#2BD66B;box-shadow:0 0 6px 1px rgba(43,214,107,0.7)"></span>CONNECTED</span>
+        </div>
+        <div style="display:flex;align-items:baseline;justify-content:space-between">
+          <span style="font-size:38px;font-weight:600;letter-spacing:-0.045em;line-height:1">Problems</span>
+          <span style="font-family:'Geist Mono',monospace;font-size:12px;color:#686A6E">2,318</span>
+        </div>
+        <div style="display:flex;gap:8px">
+          <div style="flex:1;height:44px;border-radius:10px;background:#FFFFFF;box-shadow:inset 0 0 0 1px #DDDBD4;display:flex;align-items:center;gap:10px;padding:0 14px;color:#686A6E;font-size:15px">
+            <svg width="18" height="18" viewBox="0 0 24 24" style="display:block;flex-shrink:0;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+            <span>Search problems or setters</span>
+          </div>
+          <div style="width:44px;height:44px;border-radius:10px;box-shadow:inset 0 0 0 1px #D0CEC7;display:flex;align-items:center;justify-content:center">
+            <svg width="18" height="18" viewBox="0 0 24 24" style="display:block;flex-shrink:0;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round"><line x1="21" x2="14" y1="4" y2="4"></line><line x1="10" x2="3" y1="4" y2="4"></line><line x1="21" x2="12" y1="12" y2="12"></line><line x1="8" x2="3" y1="12" y2="12"></line><line x1="21" x2="16" y1="20" y2="20"></line><line x1="12" x2="3" y1="20" y2="20"></line><line x1="14" x2="14" y1="2" y2="6"></line><line x1="8" x2="8" y1="10" y2="14"></line><line x1="16" x2="16" y1="18" y2="22"></line></svg>
+          </div>
+        </div>
+        <div style="display:flex;height:44px;border-radius:10px;box-shadow:inset 0 0 0 1px #D0CEC7;overflow:hidden">
+          <span style="flex:1.2;display:flex;align-items:center;justify-content:center;gap:5px;background:#151618;color:#F4F3EF;font-size:13px;font-weight:500">6A – 7B<svg width="13" height="13" viewBox="0 0 24 24" style="display:block;flex-shrink:0;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round"><path d="m6 9 6 6 6-6"></path></svg></span>
+          <span style="flex:1.4;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;color:#44464A;border-left:1px solid #D0CEC7">Benchmarks</span>
+          <span style="flex:1.1;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;color:#44464A;border-left:1px solid #D0CEC7">Not sent</span>
+          <span style="flex:0.9;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;color:#44464A;border-left:1px solid #D0CEC7">Beta</span>
+        </div>
+      </div>
+      <div style="margin-top:20px;display:flex;align-items:center;padding:0 20px 8px;border-bottom:1px solid #D8D6D0;font-family:'Geist Mono',monospace;font-size:10px;letter-spacing:0.08em;color:#686A6E">
+        <span style="width:34px">NO.</span>
+        <span style="flex:1">PROBLEM</span>
+        <span style="display:flex;align-items:center;gap:4px;color:#44464A">MOST SENT<svg width="11" height="11" viewBox="0 0 24 24" style="display:block;flex-shrink:0;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round"><path d="M12 5v14"></path><path d="m19 12-7 7-7-7"></path></svg></span>
+      </div>
+      <div style="flex:1;min-height:0;overflow:hidden">
+        <sc-for list="{{ problems }}" as="p" hint-placeholder-count="7">
+          <div style="height:62px;display:flex;align-items:center;padding:0 20px;border-bottom:1px solid #E4E2DC">
+            <span style="width:34px;flex-shrink:0;font-family:'Geist Mono',monospace;font-size:11px;color:#686A6E">{{ p.n }}</span>
+            <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
+              <span style="font-size:16px;font-weight:500;letter-spacing:-0.015em">{{ p.name }}</span>
+              <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:#686A6E">
+                <span>{{ p.setter }}</span>
+                <span style="font-family:'Geist Mono',monospace;font-size:11px">{{ p.sends }}</span>
+                <span style="font-family:'Geist Mono',monospace;font-size:11px">★{{ p.q }}</span>
+                <sc-if value="{{ p.bench }}" hint-placeholder-val="{{ false }}"><span style="font-family:'Geist Mono',monospace;font-size:9px;letter-spacing:0.06em;padding:2px 4px;border-radius:3px;box-shadow:inset 0 0 0 1px #BDBBB4;color:#44464A">BM</span></sc-if>
+              </div>
+            </div>
+            <sc-if value="{{ p.sent }}" hint-placeholder-val="{{ false }}"><span style="width:50px;height:30px;flex-shrink:0;border-radius:8px;background:#151618;color:#F4F3EF;display:flex;align-items:center;justify-content:center;font-family:'Geist Mono',monospace;font-size:14px;font-weight:500">{{ p.grade }}</span></sc-if>
+            <sc-if value="{{ p.open }}" hint-placeholder-val="{{ true }}"><span style="width:50px;height:30px;flex-shrink:0;border-radius:8px;box-shadow:inset 0 0 0 1px #BDBBB4;display:flex;align-items:center;justify-content:center;font-family:'Geist Mono',monospace;font-size:14px;font-weight:500">{{ p.grade }}</span></sc-if>
+          </div>
+        </sc-for>
+      </div>
+      <div style="height:84px;flex-shrink:0;position:relative;border-top:1px solid #D8D6D0;background:#F4F3EF;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));padding-top:10px">
+        <div style="position:relative;display:flex;flex-direction:column;align-items:center;gap:5px;color:#151618">
+          <span style="position:absolute;top:-11px;width:20px;height:2px;border-radius:1px;background:#151618"></span>
+          <svg width="22" height="22" viewBox="0 0 24 24" style="display:block;flex-shrink:0;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round"><rect width="7" height="7" x="3" y="3" rx="1"></rect><rect width="7" height="7" x="14" y="3" rx="1"></rect><rect width="7" height="7" x="14" y="14" rx="1"></rect><rect width="7" height="7" x="3" y="14" rx="1"></rect></svg>
+          <span style="font-size:10px;font-weight:600">Problems</span>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:5px;color:#7C7E82">
+          <svg width="22" height="22" viewBox="0 0 24 24" style="display:block;flex-shrink:0;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"></path></svg>
+          <span style="font-size:10px;font-weight:500">Lists</span>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:5px;color:#7C7E82">
+          <svg width="22" height="22" viewBox="0 0 24 24" style="display:block;flex-shrink:0;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"></path><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"></path><path d="M4 22h16"></path><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"></path><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"></path><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"></path></svg>
+          <span style="font-size:10px;font-weight:500">Rankings</span>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:5px;color:#7C7E82">
+          <svg width="22" height="22" viewBox="0 0 24 24" style="display:block;flex-shrink:0;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path><path d="M12 7v5l4 2"></path></svg>
+          <span style="font-size:10px;font-weight:500">History</span>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:5px;color:#7C7E82">
+          <svg width="22" height="22" viewBox="0 0 24 24" style="display:block;flex-shrink:0;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+          <span style="font-size:10px;font-weight:500">Settings</span>
+        </div>
+        <span style="position:absolute;left:50%;bottom:8px;width:134px;height:5px;margin-left:-67px;border-radius:3px;background:#151618"></span>
+      </div>
+    </div>
+
+    <div data-screen-label="A · Problem detail (dark)" style="width:390px;height:844px;flex-shrink:0;border-radius:54px;overflow:hidden;position:relative;display:flex;flex-direction:column;background:#0E0F10;color:#EDECE8;box-shadow:0 0 0 11px #111214, 0 50px 90px -30px rgba(0,0,0,0.55)">
+      <div style="height:54px;flex-shrink:0;display:flex;align-items:center;justify-content:space-between;padding:6px 28px 0 40px">
+        <span style="font-size:16px;font-weight:600">9:41</span>
+        <div style="display:flex;align-items:center;gap:6px">
+          <svg width="16" height="16" viewBox="0 0 24 24" style="display:block;flex-shrink:0;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round"><path d="M2 20h.01"></path><path d="M7 20v-4"></path><path d="M12 20v-8"></path><path d="M17 20V8"></path><path d="M22 4v16"></path></svg>
+          <svg width="16" height="16" viewBox="0 0 24 24" style="display:block;flex-shrink:0;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round"><path d="M12 20h.01"></path><path d="M2 8.82a15 15 0 0 1 20 0"></path><path d="M5 12.859a10 10 0 0 1 14 0"></path><path d="M8.5 16.429a5 5 0 0 1 7 0"></path></svg>
+          <svg width="24" height="24" viewBox="0 0 24 24" style="display:block;flex-shrink:0;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round"><rect width="16" height="10" x="2" y="7" rx="2" ry="2"></rect><line x1="22" x2="22" y1="11" y2="13"></line><line x1="6" x2="6" y1="11" y2="13"></line><line x1="10" x2="10" y1="11" y2="13"></line><line x1="14" x2="14" y1="11" y2="13"></line></svg>
+        </div>
+      </div>
+      <div style="height:52px;flex-shrink:0;display:flex;align-items:center;padding:0 8px">
+        <span style="width:44px;height:44px;display:flex;align-items:center;justify-content:center"><svg width="24" height="24" viewBox="0 0 24 24" style="display:block;flex-shrink:0;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round"><path d="m15 18-6-6 6-6"></path></svg></span>
+        <span style="flex:1;text-align:center;font-family:'Geist Mono',monospace;font-size:11px;letter-spacing:0.08em;color:#8A8C90">NO. 0142 · MOONBOARD 2024</span>
+        <span style="width:44px;height:44px;display:flex;align-items:center;justify-content:center"><svg width="20" height="20" viewBox="0 0 24 24" style="display:block;flex-shrink:0;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"></path></svg></span>
+      </div>
+      <div style="padding:8px 20px 0;display:flex;align-items:flex-end;justify-content:space-between;gap:16px">
+        <div style="display:flex;flex-direction:column;gap:8px;min-width:0">
+          <span style="font-size:30px;font-weight:600;letter-spacing:-0.04em;line-height:1">Heel Yeah</span>
+          <span style="display:flex;align-items:center;gap:8px;font-size:13px;color:#8A8C90">Lena Park · Apr 2025<span style="height:18px;padding:0 6px;border-radius:4px;box-shadow:inset 0 0 0 1px #3A3C40;display:flex;align-items:center;font-family:'Geist Mono',monospace;font-size:9px;letter-spacing:0.08em;color:#A9AAAD">BENCHMARK</span></span>
+        </div>
+        <span style="font-family:'Geist Mono',monospace;font-weight:300;font-size:64px;letter-spacing:-0.07em;line-height:0.78">7A+</span>
+      </div>
+      <div style="margin:16px auto 0;display:flex;gap:7px">
+        <div style="display:flex;flex-direction:column;width:14px">
+          <sc-for list="{{ rowLabels }}" as="l" hint-placeholder-count="18"><span style="height:23px;display:flex;align-items:center;justify-content:flex-end;font-family:'Geist Mono',monospace;font-size:9px;color:#55575C">{{ l }}</span></sc-for>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:5px">
+          <div style="position:relative;width:253px;height:414px;border-radius:6px;background-color:#131416;background-image:radial-gradient(circle,#2B2D31 1.3px,transparent 1.8px);background-size:23px 23px;box-shadow:0 0 0 1px #222326">
+            <sc-for list="{{ dim }}" as="d" hint-placeholder-count="0"><span style="position:absolute;left:{{ d.x }};top:{{ d.y }};width:{{ d.w }};height:{{ d.h }};border-radius:42%;background:#2A2C30;transform:{{ d.t }}"></span></sc-for>
+            <sc-for list="{{ lit }}" as="h" hint-placeholder-count="0"><span style="position:absolute;left:{{ h.x }};top:{{ h.y }};width:20px;height:20px;margin:-10px 0 0 -10px;box-sizing:border-box;border-radius:50%;border:2px solid {{ h.color }};background:{{ h.tint }};box-shadow:{{ h.glow }}"></span></sc-for>
+            <span style="position:absolute;left:-6px;top:-6px;width:9px;height:9px;border-left:1px solid #55575C;border-top:1px solid #55575C"></span>
+            <span style="position:absolute;right:-6px;top:-6px;width:9px;height:9px;border-right:1px solid #55575C;border-top:1px solid #55575C"></span>
+            <span style="position:absolute;left:-6px;bottom:-6px;width:9px;height:9px;border-left:1px solid #55575C;border-bottom:1px solid #55575C"></span>
+            <span style="position:absolute;right:-6px;bottom:-6px;width:9px;height:9px;border-right:1px solid #55575C;border-bottom:1px solid #55575C"></span>
+          </div>
+          <div style="display:flex">
+            <sc-for list="{{ colLabels }}" as="l" hint-placeholder-count="11"><span style="width:23px;text-align:center;font-family:'Geist Mono',monospace;font-size:9px;color:#55575C">{{ l }}</span></sc-for>
+          </div>
+        </div>
+        <div style="width:14px"></div>
+      </div>
+      <div style="margin:12px 20px 0;display:flex;justify-content:center;gap:14px;font-family:'Geist Mono',monospace;font-size:10px;letter-spacing:0.03em;color:#A9AAAD">
+        <span style="display:flex;align-items:center;gap:6px"><span style="width:6px;height:6px;border-radius:50%;background:#2BD66B;box-shadow:0 0 6px #2BD66B"></span>E4 G5</span>
+        <span style="display:flex;align-items:center;gap:6px"><span style="width:6px;height:6px;border-radius:50%;background:#3D86FF;box-shadow:0 0 6px #3D86FF"></span>F8 C10 E12 H13 D15 G16</span>
+        <span style="display:flex;align-items:center;gap:6px"><span style="width:6px;height:6px;border-radius:50%;background:#FF4A3D;box-shadow:0 0 6px #FF4A3D"></span>F18</span>
+        <span style="display:flex;align-items:center;gap:6px"><span style="width:6px;height:6px;border-radius:50%;background:#FFC53D;box-shadow:0 0 6px #FFC53D"></span>D1 H2</span>
+      </div>
+      <div style="margin:14px 20px 0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border-top:1px solid #26282B;border-bottom:1px solid #26282B">
+        <div style="padding:10px 0;display:flex;flex-direction:column;gap:5px"><span style="font-family:'Geist Mono',monospace;font-size:9px;letter-spacing:0.08em;color:#8A8C90">SENDS</span><span style="font-family:'Geist Mono',monospace;font-size:17px">241</span></div>
+        <div style="padding:10px 0 10px 12px;border-left:1px solid #26282B;display:flex;flex-direction:column;gap:5px"><span style="font-family:'Geist Mono',monospace;font-size:9px;letter-spacing:0.08em;color:#8A8C90">FLASH</span><span style="font-family:'Geist Mono',monospace;font-size:17px">28%</span></div>
+        <div style="padding:10px 0 10px 12px;border-left:1px solid #26282B;display:flex;flex-direction:column;gap:5px"><span style="font-family:'Geist Mono',monospace;font-size:9px;letter-spacing:0.08em;color:#8A8C90">QUALITY</span><span style="font-family:'Geist Mono',monospace;font-size:17px">2.9</span></div>
+        <div style="padding:10px 0 10px 12px;border-left:1px solid #26282B;display:flex;flex-direction:column;gap:5px"><span style="font-family:'Geist Mono',monospace;font-size:9px;letter-spacing:0.08em;color:#8A8C90">BETA</span><span style="font-family:'Geist Mono',monospace;font-size:17px">3</span></div>
+      </div>
+      <div style="margin-top:auto;padding:12px 16px 34px;display:flex;gap:8px">
+        <div style="flex:1;height:54px;border-radius:12px;background:#EDECE8;color:#0E0F10;display:flex;align-items:center;justify-content:center;gap:10px;font-size:16px;font-weight:600"><span style="width:8px;height:8px;border-radius:50%;background:#3D86FF;box-shadow:0 0 8px 2px rgba(61,134,255,0.6)"></span>Light it up</div>
+        <div style="width:112px;height:54px;border-radius:12px;box-shadow:inset 0 0 0 1px #3A3C40;display:flex;align-items:center;justify-content:center;gap:8px;font-size:16px;font-weight:500"><svg width="18" height="18" viewBox="0 0 24 24" style="display:block;flex-shrink:0;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round"><path d="M20 6 9 17l-5-5"></path></svg>Log</div>
+      </div>
+      <span style="position:absolute;left:50%;bottom:8px;width:134px;height:5px;margin-left:-67px;border-radius:3px;background:#EDECE8"></span>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    const C = 11, R = 18;
+    const LED = { start: '#2BD66B', hand: '#3D86FF', foot: '#FFC53D', finish: '#FF4A3D' };
+    const route = [[4,4,'start'],[6,5,'start'],[3,1,'foot'],[7,2,'foot'],[5,8,'hand'],[2,10,'hand'],[4,12,'hand'],[7,13,'hand'],[3,15,'hand'],[6,16,'hand'],[5,18,'finish']];
+    const pos = (c, r) => ({ x: ((c + 0.5) / C * 100).toFixed(2) + '%', y: ((R - r + 0.5) / R * 100).toFixed(2) + '%' });
+    const lit = route.map(([c, r, k]) => ({ ...pos(c, r), color: LED[k], tint: LED[k] + '26', glow: '0 0 12px 2px ' + LED[k] + '8C' }));
+    const on = new Set(route.map(([c, r]) => c + ',' + r));
+    let s = 11; const rnd = () => (s = (s * 9301 + 49297) % 233280) / 233280;
+    const dim = [];
+    for (let r = 1; r <= R; r++) for (let c = 0; c < C; c++) {
+      const a = rnd(), w = 8 + Math.round(rnd() * 7), h = 7 + Math.round(rnd() * 6), t = Math.round(rnd() * 180);
+      if (a > 0.52 && !on.has(c + ',' + r)) continue;
+      dim.push({ ...pos(c, r), w: w + 'px', h: h + 'px', t: 'translate(-50%, -50%) rotate(' + t + 'deg)' });
+    }
+    const problems = [
+      ['Warm-up Ladder', '6A', 'Setter Team', '4,810', '2.2', true, true],
+      ['Toe Jam', '6B', 'Max Ruiz', '1,530', '2.4', false, true],
+      ['Crimp Lord', '6C+', 'Ben Moon', '1,204', '2.9', true, true],
+      ['Pinch Me', '6B+', 'Sam Ortiz', '902', '2.7', false, true],
+      ['The Slopey Bit', '6C', 'Ari Chen', '640', '1.4', false, false],
+      ['Left Hand Path', '7A', 'Lena Park', '312', '2.3', false, false],
+      ['Heel Yeah', '7A+', 'Lena Park', '241', '2.9', true, false],
+      ['Dyno-mite', '7B', 'Jo Ko', '188', '2.8', true, false],
+    ].map((p, i) => ({ n: String(i + 1).padStart(2, '0'), name: p[0], grade: p[1], setter: p[2], sends: p[3], q: p[4], bench: p[5], sent: p[6], open: !p[6] }));
+    return { lit, dim, problems, rowLabels: Array.from({ length: R }, (_, i) => String(R - i)), colLabels: 'ABCDEFGHIJK'.split('') };
+  }
+}
+</script>
+</body>
+</html>

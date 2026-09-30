@@ -1,0 +1,46 @@
+:root {
+  --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --text-3xs: 9px;
+  --text-2xs: 10px;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-md: 15px;
+  --text-lg: 17px;
+  --text-xl: 20px;
+  --text-2xl: 24px;
+  --text-3xl: 30px;
+  --text-4xl: 38px;
+  --text-5xl: 64px;
+
+  --leading-none: 0.8;
+  --leading-tight: 1;
+  --leading-snug: 1.25;
+  --leading-normal: 1.5;
+
+  --tracking-display: -0.045em;
+  --tracking-title: -0.03em;
+  --tracking-tight: -0.015em;
+  --tracking-readout: -0.07em;
+  --tracking-label: 0.08em;
+
+  --weight-light: 300;
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+
+  /* Semantic roles */
+  --type-display: 600 var(--text-4xl)/var(--leading-tight) var(--font-sans);
+  --type-title-1: 600 var(--text-3xl)/var(--leading-tight) var(--font-sans);
+  --type-title-2: 600 var(--text-2xl)/var(--leading-snug) var(--font-sans);
+  --type-title-3: 500 var(--text-lg)/var(--leading-snug) var(--font-sans);
+  --type-body: 400 var(--text-md)/var(--leading-normal) var(--font-sans);
+  --type-body-strong: 500 var(--text-md)/var(--leading-normal) var(--font-sans);
+  --type-small: 400 var(--text-sm)/var(--leading-normal) var(--font-sans);
+  --type-caption: 400 var(--text-xs)/var(--leading-snug) var(--font-sans);
+  --type-label: 400 var(--text-2xs)/1 var(--font-mono);        /* UPPERCASE, --tracking-label */
+  --type-readout: 300 var(--text-5xl)/var(--leading-none) var(--font-mono); /* big grade, --tracking-readout */
+  --type-value: 400 var(--text-lg)/1 var(--font-mono);         /* readout strip values */
+  --type-grade: 500 14px/1 var(--font-mono);
+}

@@ -1,0 +1,76 @@
+{
+  "name": "boardz",
+  "private": true,
+  "main": "expo-router/entry",
+  "scripts": {
+    "start": "expo start --dev-client",
+    "ios": "expo run:ios --device",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@boardsesh/ble-protocol": "workspace:*",
+    "@boardsesh/board-config": "workspace:*",
+    "@boardsesh/board-constants": "workspace:*",
+    "@boardsesh/climb-filters": "workspace:*",
+    "@boardsesh/graphql": "workspace:*",
+    "@boardsesh/play-view": "workspace:*",
+    "@boardsesh/playlist-generator": "workspace:*",
+    "@boardsesh/profile-stats": "workspace:*",
+    "@boardsesh/shared-schema": "workspace:*",
+    "@expo-google-fonts/geist": "0.4.2",
+    "@expo-google-fonts/geist-mono": "0.4.3",
+    "@react-native-async-storage/async-storage": "3.1.1",
+    "@shopify/flash-list": "2.3.2",
+    "@tanstack/react-query": "^5.101.4",
+    "expo": "57.0.18",
+    "expo-audio": "57.0.4",
+    "expo-constants": "57.0.16",
+    "expo-crypto": "57.0.2",
+    "expo-dev-client": "57.0.16",
+    "expo-font": "57.0.2",
+    "expo-haptics": "57.0.2",
+    "expo-image": "57.0.3",
+    "expo-keep-awake": "57.0.1",
+    "expo-linking": "57.0.8",
+    "expo-router": "57.0.17",
+    "expo-secure-store": "57.0.2",
+    "expo-symbols": "57.0.2",
+    "graphql": "^16.14.2",
+    "graphql-request": "^7.4.0",
+    "lucide-react-native": "1.48.0",
+    "react": "19.2.3",
+    "react-native": "0.86.3",
+    "react-native-ble-plx": "3.5.1",
+    "react-native-gesture-handler": "~2.32.0",
+    "react-native-reanimated": "4.5.3",
+    "react-native-safe-area-context": "~5.8.0",
+    "react-native-screens": "4.26.2",
+    "react-native-svg": "15.15.5",
+    "react-native-worklets": "0.10.1"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.18",
+    "babel-plugin-react-compiler": "1.0.0",
+    "react-dom": "19.2.3",
+    "typescript": "~7.0.2",
+    "vitest": "^4.1.10"
+  },
+  "expo": {
+    "autolinking": {
+      "buildFromSource": [
+        "react-native-screens",
+        "expo-dev-launcher"
+      ]
+    },
+    "install": {
+      "exclude": [
+        "@react-native-async-storage/async-storage",
+        "@shopify/flash-list",
+        "react-native-reanimated",
+        "react-native-safe-area-context",
+        "react-native-svg",
+        "typescript"
+      ]
+    }
+  }
+}

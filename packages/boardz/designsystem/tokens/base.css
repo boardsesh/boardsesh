@@ -1,0 +1,16 @@
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  font-family: var(--font-sans);
+  font-size: var(--text-md);
+  line-height: var(--leading-normal);
+  color: var(--fg-1);
+  background: var(--bg-app);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+a { color: var(--fg-1); text-decoration: underline; text-decoration-color: var(--border-strong); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+a:hover { text-decoration-color: var(--fg-1); }
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+::selection { background: var(--fg-1); color: var(--bg-app); }

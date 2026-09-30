@@ -1,0 +1,168 @@
+/* Boardz · Graphite — ink, paper and hairlines. The only chroma in the UI is light (LEDs). */
+
+/* ---------- Base palette ---------- */
+:root {
+  --paper-0: #FFFFFF;
+  --paper-25: #FAFAF8;
+  --paper-50: #F4F3EF;
+  --paper-100: #EAE9E4;
+  --paper-150: #E4E2DC;
+  --paper-200: #D6D4CD;
+  --paper-300: #BDBBB4;
+  --paper-400: #A9A7A0;
+  --graphite-400: #8A8C90;
+  --graphite-500: #686A6E;
+  --graphite-600: #44464A;
+  --graphite-700: #2A2C2F;
+  --graphite-750: #202124;
+  --graphite-800: #1F2023;
+  --graphite-850: #161719;
+  --graphite-900: #131416;
+  --graphite-950: #0E0F10;
+  --ink: #151618;
+
+  /* LEDs — generic status lights (connection, toasts, the "Light it up" dot) */
+  --led-green: #2BD66B;
+  --led-blue: #3D86FF;
+  --led-amber: #FFC53D;
+  --led-red: #FF4A3D;
+
+  /* Hold LED conventions per board, as lit on the wall */
+  --led-moon-start: #2BD66B;
+  --led-moon-hand: #3D86FF;
+  --led-moon-foot: #FFC53D;
+  --led-moon-finish: #FF4A3D;
+  --led-kilter-start: #00E676;
+  --led-kilter-hand: #00CFFF;
+  --led-kilter-foot: #FF9E1B;
+  --led-kilter-finish: #E040FB;
+  --led-tension-start: #2BD66B;
+  --led-tension-hand: #3D86FF;
+  --led-tension-foot: #B06CFF;
+  --led-tension-finish: #FF4A3D;
+
+  --hold-start: var(--led-moon-start);
+  --hold-hand: var(--led-moon-hand);
+  --hold-foot: var(--led-moon-foot);
+  --hold-finish: var(--led-moon-finish);
+
+  /* Board panel stays dark in both themes so LEDs read true */
+  --board-panel: #131416;
+  --board-panel-edge: #222326;
+  --board-hole: #2B2D31;
+  --board-hold: #2A2C30;
+}
+
+/* ---------- Light theme (default) ---------- */
+:root {
+  --bg-app: var(--paper-50);
+  --bg-surface: var(--paper-0);
+  --bg-surface-2: var(--paper-25);
+  --bg-surface-3: var(--paper-100);
+  --bg-inverse: var(--ink);
+
+  --fg-1: var(--ink);
+  --fg-2: var(--graphite-600);
+  --fg-3: var(--graphite-500);
+  --fg-4: var(--paper-400);
+  --fg-inverse: var(--paper-50);
+  --fg-on-accent: var(--paper-50);
+
+  --border-1: var(--paper-150);
+  --border-2: var(--paper-200);
+  --border-strong: var(--paper-400);
+
+  /* The accent IS ink: primary actions, selected, sent */
+  --accent: var(--ink);
+  --accent-hover: #2A2B2E;
+  --accent-press: #000000;
+  --accent-soft: var(--paper-100);
+  --accent-fg: var(--ink);
+  --focus-ring: var(--ink);
+
+  --success: #2F7D52;
+  --success-soft: #E3EEE6;
+  --danger: #B93A2B;
+  --danger-hover: #9E2F22;
+  --danger-soft: #F6E3DF;
+  --warning: #8A6100;
+  --warning-soft: #F4EAD2;
+  --info: #2D5DB8;
+  --info-soft: #E2E8F4;
+
+  --star: var(--ink);
+  --board-label: #7C7E82;
+  --switch-thumb: #FFFFFF;
+
+  /* Grade bands — difficulty ramp, used only on grades (tags, readouts, charts) */
+  --grade-1: #2A7347;  /* ≤6A+ · ≤V3 */
+  --grade-2: #1C6E74;  /* 6B–6B+ · V4 */
+  --grade-3: #2F5FC4;  /* 6C–6C+ · V5 */
+  --grade-4: #6A45BE;  /* 7A–7A+ · V6–V7 */
+  --grade-5: #AD2F78;  /* 7B–7B+ · V8 */
+  --grade-6: #BF3A2B;  /* 7C–7C+ · V9–V10 */
+  --grade-7: #151618;  /* 8A+ · V11+ */
+  --grade-on: #FFFFFF;
+
+  --overlay: rgba(14, 15, 16, 0.36);
+  --shadow-1: 0 0 0 0 transparent;
+  --shadow-2: 0 1px 2px rgba(21, 22, 24, 0.06), 0 8px 24px -8px rgba(21, 22, 24, 0.18);
+  --shadow-3: 0 2px 6px rgba(21, 22, 24, 0.06), 0 24px 64px -16px rgba(21, 22, 24, 0.30);
+  color-scheme: light;
+}
+
+/* ---------- Dark theme ---------- */
+[data-theme="dark"] {
+  --bg-app: var(--graphite-950);
+  --bg-surface: var(--graphite-850);
+  --bg-surface-2: var(--graphite-900);
+  --bg-surface-3: var(--graphite-750);
+  --bg-inverse: #EDECE8;
+
+  --fg-1: #EDECE8;
+  --fg-2: #A9AAAD;
+  --fg-3: var(--graphite-400);
+  --fg-4: #5E6064;
+  --fg-inverse: var(--graphite-950);
+  --fg-on-accent: var(--graphite-950);
+
+  --border-1: var(--graphite-800);
+  --border-2: var(--graphite-700);
+  --border-strong: #45474B;
+
+  --accent: #EDECE8;
+  --accent-hover: #FFFFFF;
+  --accent-press: #D6D5D0;
+  --accent-soft: var(--graphite-750);
+  --accent-fg: #EDECE8;
+  --focus-ring: #EDECE8;
+
+  --success: #5CC48A;
+  --success-soft: rgba(92, 196, 138, 0.12);
+  --danger: #F0705E;
+  --danger-hover: #F58A7A;
+  --danger-soft: rgba(240, 112, 94, 0.12);
+  --warning: #E0B04A;
+  --warning-soft: rgba(224, 176, 74, 0.12);
+  --info: #86A8F0;
+  --info-soft: rgba(134, 168, 240, 0.12);
+
+  --star: #EDECE8;
+  --board-label: #6E7074;
+  --switch-thumb: #A9AAAD;
+
+  --grade-1: #4CD68A;
+  --grade-2: #3CC6C4;
+  --grade-3: #6E9BFF;
+  --grade-4: #A98BFF;
+  --grade-5: #F06BB5;
+  --grade-6: #FF6B5B;
+  --grade-7: #EDECE8;
+  --grade-on: #0E0F10;
+
+  --overlay: rgba(0, 0, 0, 0.60);
+  --shadow-1: 0 0 0 0 transparent;
+  --shadow-2: 0 8px 24px -6px rgba(0, 0, 0, 0.55);
+  --shadow-3: 0 24px 64px -12px rgba(0, 0, 0, 0.70);
+  color-scheme: dark;
+}

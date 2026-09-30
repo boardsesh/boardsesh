@@ -1,0 +1,148 @@
+<!-- @dsCard group="Boardz App" viewport="1280x860" name="App — click-through" subtitle="Phone, tablet and desktop in Graphite; connect, filter, light, log" -->
+<!DOCTYPE html>
+<html data-theme="light"><head><meta charset="utf-8"><title>Boardz — App UI kit</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<script src="../../assets/ds-runtime.js"></script>
+<script src="data.js"></script>
+<style>html,body{margin:0;height:100%;background:#1A1B1D !important}</style>
+</head><body><div id="root" style="height:100%"></div>
+<script type="text/babel" src="Shell.jsx"></script>
+<script type="text/babel" src="ProblemsScreen.jsx"></script>
+<script type="text/babel" src="ProblemDetail.jsx"></script>
+<script type="text/babel" src="OtherScreens.jsx"></script>
+<script type="text/babel">
+const SIZES = { phone: [390, 844], tablet: [1180, 820], desktop: [1440, 900] };
+const TITLES = { problems: 'Problems', lists: 'Lists', rankings: 'Rankings', history: 'History', settings: 'Settings' };
+const saved = k => { try { return JSON.parse(localStorage.getItem('bz-kit-' + k)); } catch (e) { return null; } };
+const save = (k, v) => localStorage.setItem('bz-kit-' + k, JSON.stringify(v));
+
+function App() {
+  const B = window.Boardz, D = window.BZ_DATA;
+  const [device, setDevice] = React.useState(saved('device') || (window.innerWidth < 700 ? 'phone' : 'desktop'));
+  const [theme, setTheme] = React.useState(saved('theme') || 'light');
+  const [tab, setTab] = React.useState('problems');
+  const [problems, setProblems] = React.useState(D.problems);
+  const [selId, setSelId] = React.useState(7);
+  const [detail, setDetail] = React.useState(false);
+  const [conn, setConn] = React.useState('connected');
+  const [lit, setLit] = React.useState(null);
+  const [sheet, setSheet] = React.useState(null);
+  const [toastMsg, setToastMsg] = React.useState(null);
+  const [settings, setSettings] = React.useState({ board: 'moon', angle: '40°', autoLight: true, mirror: false, grades: 'font', awake: true });
+  const [filters, setFilters] = React.useState({ min: '6A', max: '8B', bench: false, unsent: false, fav: false, beta: false, sort: 'popular' });
+  const [vp, setVp] = React.useState([window.innerWidth, window.innerHeight]);
+  const tRef = React.useRef();
+
+  React.useEffect(() => { const r = () => setVp([window.innerWidth, window.innerHeight]); addEventListener('resize', r); return () => removeEventListener('resize', r); }, []);
+  React.useEffect(() => { save('theme', theme); }, [theme]);
+  React.useEffect(() => { save('device', device); setDetail(false); }, [device]);
+
+  const toast = t => { clearTimeout(tRef.current); setToastMsg(t); tRef.current = setTimeout(() => setToastMsg(null), 2600); };
+  const upd = (id, fn) => setProblems(ps => ps.map(p => p.id === id ? fn(p) : p));
+  const phone = device === 'phone';
+  const ctx = {
+    tab, setTab: v => { setTab(v); setDetail(false); }, theme, setTheme, settings, setSettings, problems, filters, setFilters, conn, lit, selId, split: !phone,
+    g: gr => settings.grades === 'v' ? D.V[gr] : gr,
+    sentCount: problems.filter(p => p.sent).length,
+    open: (id, jump) => { setSelId(id); setDetail(true); if (jump) setTab('problems'); if (settings.autoLight && conn === 'connected') setLit(id); },
+    close: () => setDetail(false),
+    toggleFav: id => upd(id, p => ({ ...p, favorite: !p.favorite })),
+    lightUp: id => {
+      if (conn !== 'connected') { setSheet('connect'); return; }
+      setLit(lit === id ? null : id);
+      if (lit !== id) toast({ tone: 'accent', title: 'Lit up', message: 'Board’s glowing. Crush it.' });
+    },
+    connectOpen: sheet === 'connect', openConnect: () => setSheet('connect'), closeConnect: () => setSheet(null),
+    connectTo: d => { setConn('connected'); setSettings(s => ({ ...s, board: d.type })); setSheet(null); toast({ tone: 'success', title: 'Board connected', message: d.name + ' is live.' }); },
+    disconnect: () => { setConn('disconnected'); setLit(null); setSheet(null); },
+    filtersOpen: sheet === 'filters', openFilters: () => setSheet('filters'), closeFilters: () => setSheet(null),
+    logOpen: sheet === 'log', openLog: () => setSheet('log'), closeLog: () => setSheet(null),
+    logAscent: (id, res, tries) => {
+      setSheet(null);
+      if (res !== 'attempt') upd(id, p => ({ ...p, sent: true, ascents: p.ascents + 1 }));
+      toast(res === 'flash' ? { tone: 'accent', title: 'Flashed!', message: 'First go. Filthy.' }
+        : res === 'send' ? { tone: 'success', title: 'Sent in ' + tries, message: 'Logged to your history.' }
+        : { tone: 'info', title: tries + ' attempts saved', message: 'It’ll go next session.' });
+    },
+    toast,
+  };
+
+  const p = problems.find(x => x.id === selId);
+  const [W, H] = SIZES[device];
+  const scale = Math.min(1, (vp[0] - 40) / (W + 20), (vp[1] - 100) / (H + 20));
+  const b = D.BOARDS[settings.board];
+  const pad = phone ? 20 : device === 'tablet' ? 24 : 32;
+  const META = { problems: b.label + ' · ' + settings.angle, lists: D.lists.length + ' lists', rankings: b.label + ' · points = grade × sends', history: 'September 2026', settings: 'Boardz 3.2' };
+  const COUNT = { problems: '2,318' };
+  const pill = <B.ConnectionPill status={conn} boardName={phone ? undefined : b.label} compact={false} onClick={ctx.openConnect} />;
+  const screen = {
+    lists: <ListsScreen ctx={ctx} pad={pad} device={device} />, rankings: <RankingsScreen ctx={ctx} pad={pad} />,
+    history: <HistoryScreen ctx={ctx} pad={pad} device={device} />, settings: <SettingsScreen ctx={ctx} pad={pad} />,
+  }[tab];
+
+  let body;
+  if (phone) {
+    body = (
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+        <StatusBar />
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+          {tab === 'problems' && detail ? <ProblemDetail ctx={ctx} p={p} device="phone" /> : <>
+            <PageHeader title={TITLES[tab]} meta={META[tab]} count={COUNT[tab]} right={pill} />
+            <div style={{ flex: 1, minHeight: 0, overflowY: tab === 'problems' ? 'hidden' : 'auto' }}>
+              {tab === 'problems' ? <ProblemList ctx={ctx} /> : screen}
+            </div>
+          </>}
+        </div>
+        {!(tab === 'problems' && detail) ? <B.TabBar items={NAV} value={tab} onChange={ctx.setTab} style={{ height: 84, paddingBottom: 20 }} /> : <div style={{ height: 20, flexShrink: 0 }} />}
+      </div>
+    );
+  } else {
+    body = (
+      <div style={{ display: 'flex', height: '100%' }}>
+        {device === 'desktop' ? <Sidebar ctx={ctx} /> : <Rail ctx={ctx} />}
+        <main style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+          {tab === 'problems' ? (
+            <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
+              <div style={{ width: device === 'desktop' ? 420 : 380, flexShrink: 0, display: 'flex', flexDirection: 'column', borderRight: '1px solid var(--border-2)', paddingTop: 16 }}>
+                <PageHeader title="Problems" meta={META.problems} count={COUNT.problems} right={device === 'tablet' ? pill : null} />
+                <div style={{ flex: 1, minHeight: 0 }}><ProblemList ctx={ctx} /></div>
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}><ProblemDetail ctx={ctx} p={p} device={device} /></div>
+            </div>
+          ) : <>
+            <div style={{ paddingTop: 16 }}><PageHeader title={TITLES[tab]} meta={META[tab]} pad={pad} right={device === 'tablet' ? pill : null} /></div>
+            <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>{screen}</div>
+          </>}
+        </main>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+      <div data-theme="dark" style={{ height: 76, display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0, background: 'transparent' }}>
+        <B.SegmentedControl size="sm" value={device} onChange={setDevice} options={[{ value: 'phone', label: 'Phone', icon: 'smartphone' }, { value: 'tablet', label: 'Tablet', icon: 'tablet' }, { value: 'desktop', label: 'Desktop', icon: 'monitor' }]} />
+        <B.SegmentedControl size="sm" value={theme} onChange={setTheme} options={[{ value: 'light', label: 'Light', icon: 'sun' }, { value: 'dark', label: 'Dark', icon: 'moon' }]} />
+      </div>
+      <div style={{ width: W * scale, height: H * scale, flexShrink: 0 }}>
+        <div data-theme={theme} data-screen-label={device + ' · ' + tab} style={{ width: W, height: H, transform: 'scale(' + scale + ')', transformOrigin: '0 0', position: 'relative', overflow: 'hidden', background: 'var(--bg-app)', color: 'var(--fg-1)', fontFamily: 'var(--font-sans)', borderRadius: phone ? 50 : 14, boxShadow: '0 0 0 ' + (phone ? 10 : 6) + 'px #0B0B0C, 0 30px 80px rgba(0,0,0,0.5)' }}>
+          {body}
+          {phone ? <span style={{ position: 'absolute', left: '50%', bottom: 8, width: 134, height: 5, marginLeft: -67, borderRadius: 3, background: 'var(--fg-1)', zIndex: 70 }} /> : null}
+          <FiltersSheet ctx={ctx} phone={phone} />
+          <LogSheet ctx={ctx} p={p} phone={phone} />
+          <ConnectSheet ctx={ctx} phone={phone} />
+          {toastMsg ? <div style={{ position: 'absolute', left: 0, right: 0, bottom: phone ? 100 : 28, display: 'flex', justifyContent: 'center', zIndex: 60, padding: '0 16px' }}>
+            <B.Toast {...toastMsg} onClose={() => setToastMsg(null)} style={{ width: '100%', maxWidth: 380 }} />
+          </div> : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+BoardzReady.then(() => ReactDOM.createRoot(document.getElementById('root')).render(<App />));
+</script></body></html>

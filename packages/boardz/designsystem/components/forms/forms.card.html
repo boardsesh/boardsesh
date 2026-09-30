@@ -1,0 +1,44 @@
+<!-- @dsCard group="Components" viewport="700x560" name="Forms" subtitle="TextField, Select, SegmentedControl strip, Checkbox, Radio, Switch, Stepper" -->
+<!DOCTYPE html>
+<html data-theme="light"><head><meta charset="utf-8"><title>Forms</title>
+<link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<script src="../../_ds_bundle.js"></script>
+<script src="../../assets/ds-runtime.js"></script>
+<style>body{background:var(--bg-app);padding:24px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:22px 28px}.col{display:flex;flex-direction:column;gap:14px}</style>
+</head><body><div id="root"></div>
+<script type="text/babel">
+BoardzReady.then(ns => { const {TextField,Select,SegmentedControl,Checkbox,Radio,Switch,Stepper} = ns;
+function Demo(){
+const [q,setQ]=React.useState('crimp');
+const [ang,setAng]=React.useState('40°');
+const [f,setF]=React.useState(['range']);
+const [c1,setC1]=React.useState(true);
+const [r,setR]=React.useState('font');
+const [s1,setS1]=React.useState(true);
+const [s2,setS2]=React.useState(false);
+const [n,setN]=React.useState(3);
+return <div className="col" style={{gap:22}}>
+ <SegmentedControl multiple fullWidth size="lg" value={f} onChange={setF} options={[{value:'range',label:'6A – 7B',grow:1.2},{value:'bench',label:'Benchmarks',grow:1.4},{value:'unsent',label:'Not sent',grow:1.1},{value:'beta',label:'Beta',grow:0.9}]}/>
+ <div className="grid">
+  <div className="col">
+   <TextField icon="search" placeholder="Search problems or setters" value={q} onChange={setQ} clearable/>
+   <TextField label="Beta notes" placeholder="Heel on the second move…" multiline rows={2}/>
+   <Select label="Board" value="moon" options={[{value:'moon',label:'Moonboard 2024'},{value:'kilter',label:'Kilter Homewall'},{value:'tension',label:'Tension Board 2'}]}/>
+  </div>
+  <div className="col">
+   <SegmentedControl value={ang} onChange={setAng} options={['25°','40°','50°']}/>
+   <Checkbox checked={c1} onChange={setC1} label="Benchmarks only" description="The board's official graded set"/>
+   <div style={{display:'flex',gap:20}}><Radio name="g" value="font" checked={r==='font'} onChange={setR} label="Font"/><Radio name="g" value="v" checked={r==='v'} onChange={setR} label="V-scale"/></div>
+   <Switch label="Auto-light on open" checked={s1} onChange={setS1}/>
+   <Switch label="Mirror problems" checked={s2} onChange={setS2}/>
+   <Stepper label="Attempts" value={n} onChange={setN} min={1}/>
+  </div>
+ </div>
+</div>;
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<Demo/>); });
+</script></body></html>

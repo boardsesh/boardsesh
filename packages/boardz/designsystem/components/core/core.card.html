@@ -1,0 +1,30 @@
+<!-- @dsCard group="Components" viewport="700x540" name="Core" subtitle="Button, IconButton, Badge, Chip, Card, Avatar" -->
+<!DOCTYPE html>
+<html data-theme="light"><head><meta charset="utf-8"><title>Core</title>
+<link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<script src="../../_ds_bundle.js"></script>
+<script src="../../assets/ds-runtime.js"></script>
+<style>body{background:var(--bg-app);padding:24px}.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.col{display:flex;flex-direction:column;gap:16px}.lbl{font:400 10px/1 var(--font-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--fg-3);width:96px;flex-shrink:0}</style>
+</head><body><div id="root"></div>
+<script type="text/babel">
+BoardzReady.then(ns => { const {Icon,Button,IconButton,Badge,Chip,Card,Avatar} = ns;
+function Demo(){
+const [sel,setSel]=React.useState(['Benchmarks']);
+const [fav,setFav]=React.useState(true);
+const t=l=>setSel(s=>s.includes(l)?s.filter(x=>x!==l):[...s,l]);
+return <div className="col">
+ <div className="row"><span className="lbl">Button</span><Button led>Light it up</Button><Button variant="secondary" icon="check">Log</Button><Button variant="tonal" icon="plus">Add to list</Button><Button variant="ghost">Skip</Button><Button variant="danger" size="sm">Delete</Button></div>
+ <div className="row"><span className="lbl">Sizes</span><Button size="sm">Small</Button><Button size="md">Medium</Button><Button size="lg">Large</Button><Button size="xl" led>Board mode</Button></div>
+ <div className="row"><span className="lbl">States</span><Button loading>Pairing</Button><Button disabled>Disabled</Button><Button variant="secondary" iconRight="chevron-right">Next</Button></div>
+ <div className="row"><span className="lbl">IconButton</span><IconButton icon="chevron-left" label="Back"/><IconButton icon="heart" label="Favorite" active={fav} onClick={()=>setFav(!fav)}/><IconButton icon="sliders-horizontal" label="Filters" variant="secondary"/><IconButton icon="share" label="Share" variant="tonal"/><IconButton icon="lightbulb" label="Light" variant="primary"/></div>
+ <div className="row"><span className="lbl">Chip</span>{['Benchmarks','Not sent','Has beta'].map(l=><Chip key={l} label={l} selected={sel.includes(l)} onClick={()=>t(l)}/>)}<Chip label="6B – 7A" selected onRemove={()=>{}}/><Chip icon="arrow-up-down" label="Most sent" size="sm"/></div>
+ <div className="row"><span className="lbl">Badge</span><Badge mono outline>Benchmark</Badge><Badge mono outline>40°</Badge><Badge mono outline size="xs">BM</Badge><Badge tone="success" dot>Sent</Badge><Badge tone="danger" dot>Failed</Badge><Badge tone="info" dot>Syncing</Badge><Badge tone="accent" mono>New</Badge></div>
+ <div className="row"><span className="lbl">Card · Avatar</span><Card interactive style={{display:'flex',gap:12,alignItems:'center',width:250}}><Avatar name="Lena Park" size={40}/><div><div style={{fontWeight:500}}>Lena Park</div><div style={{fontFamily:'var(--font-mono)',fontSize:11,color:'var(--fg-3)'}}>128 SENDS · 7B MAX</div></div></Card><Card selected padding={12} style={{fontSize:13}}>Selected</Card><Avatar name="Sam Ortiz" ring="var(--fg-1)"/><Avatar name="Jo Ko" size={28}/></div>
+</div>;
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<Demo/>); });
+</script></body></html>

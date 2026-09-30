@@ -1,0 +1,34 @@
+<!-- @dsCard group="Components" viewport="700x440" name="Feedback" subtitle="Toast (LED dots), Tooltip, Sheet as dialog" -->
+<!DOCTYPE html>
+<html data-theme="light"><head><meta charset="utf-8"><title>Feedback</title>
+<link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<script src="../../_ds_bundle.js"></script>
+<script src="../../assets/ds-runtime.js"></script>
+<style>body{background:var(--bg-app);padding:24px}</style>
+</head><body><div id="root"></div>
+<script type="text/babel">
+BoardzReady.then(ns => { const {Toast,Tooltip,Sheet,Button,IconButton,Stepper} = ns;
+function Demo(){
+const [open,setOpen]=React.useState(true);
+return <div style={{display:'grid',gridTemplateColumns:'320px 1fr',gap:24,alignItems:'start'}}>
+ <div style={{display:'flex',flexDirection:'column',gap:10}}>
+  <Toast tone="accent" title="Flashed!" message="First go. Filthy." onClose={()=>{}}/>
+  <Toast tone="success" title="Board connected" message="Moonboard 2024 is ready."/>
+  <Toast tone="danger" title="Lost the board" message="Move closer and retry." actionLabel="Retry"/>
+  <div style={{paddingTop:40,display:'flex',gap:12}}><Tooltip label="Favorite" forceOpen><IconButton icon="heart" label="Favorite" variant="secondary"/></Tooltip></div>
+ </div>
+ <div style={{position:'relative',height:380,borderRadius:14,overflow:'hidden',boxShadow:'inset 0 0 0 1px var(--border-2)',background:'var(--bg-surface-3)'}}>
+  {!open?<div style={{padding:16}}><Button onClick={()=>setOpen(true)}>Open sheet</Button></div>:null}
+  <Sheet contained open={open} onClose={()=>setOpen(false)} title="Log it" variant="dialog" width={300}
+   footer={<Button fullWidth size="lg" icon="check" onClick={()=>setOpen(false)}>Save send</Button>}>
+   <Stepper label="Attempts" value={3} onChange={()=>{}}/>
+  </Sheet>
+ </div>
+</div>;
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<Demo/>); });
+</script></body></html>

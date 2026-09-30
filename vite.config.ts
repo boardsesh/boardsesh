@@ -44,6 +44,8 @@ export default defineConfig({
     // undone by the next regeneration and re-red CI. Mirrored in .prettierignore.
     ignore: [
       'design/**',
+      // Boardz's design system hand-off: kept exactly as exported.
+      'packages/boardz/designsystem/**',
       '**/generated/**',
       '**/board-controller/**',
       'CHANGELOG.md',
@@ -62,7 +64,14 @@ export default defineConfig({
     // design/, **/generated/** and the drizzle SQL journal are generated or
     // hand-off artefacts nobody edits to satisfy a linter. Matches the fmt
     // ignore list above.
-    ignorePatterns: ['**/board-controller/**', 'embedded/**', 'design/**', '**/generated/**', 'packages/db/drizzle/**'],
+    ignorePatterns: [
+      '**/board-controller/**',
+      'embedded/**',
+      'design/**',
+      'packages/boardz/designsystem/**',
+      '**/generated/**',
+      'packages/db/drizzle/**',
+    ],
     options: {
       typeAware: true,
       typeCheck: true,
@@ -185,6 +194,7 @@ export default defineConfig({
       './packages/shared/static-assets/vite.config.ts',
       './packages/shared-schema/vite.config.ts',
       './packages/mobile/vite.config.ts',
+      './packages/boardz/vite.config.ts',
       './scripts/vite.config.ts',
       './deploy/app-subdomain/vite.config.ts',
     ],
@@ -1000,6 +1010,25 @@ export default defineConfig({
       },
       'test:web': {
         command: 'vp test run --project web',
+        cache: false,
+      },
+      // Boardz, the lean iPhone app in packages/boardz. Its Apple bundle id and
+      // team come from packages/boardz/.env.local, which Expo CLI loads itself,
+      // so nothing has to pass through vp's filtered task environment.
+      'test:boardz': {
+        command: 'vp test run --project boardz',
+        cache: false,
+      },
+      'typecheck:boardz': {
+        command: 'pnpm --filter boardz run typecheck',
+        dependsOn: ['build:shared', 'build:constants'],
+      },
+      'dev:boardz': {
+        command: 'pnpm --filter boardz run start',
+        cache: false,
+      },
+      'ios:boardz': {
+        command: 'pnpm --filter boardz run ios',
         cache: false,
       },
       // Both backend projects: `backend-serial` holds the files that share
