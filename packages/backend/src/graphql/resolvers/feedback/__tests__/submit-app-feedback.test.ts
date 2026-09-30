@@ -13,7 +13,8 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vite-plus/test';
-import { sql } from 'drizzle-orm';
+import { desc, sql } from 'drizzle-orm';
+import { appFeedback } from '@boardsesh/db/schema';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import type { FeedbackIssuePayload } from '../../../../services/github-feedback';
 
@@ -101,12 +102,25 @@ type StoredRow = {
 };
 
 const readLatestRow = async (): Promise<StoredRow> => {
-  const result = await db.execute(sql`
-    SELECT id, user_id, source, comment, rating, platform, contact_consent,
-           screenshot_keys, context, github_issue_number, github_issue_url
-    FROM app_feedback ORDER BY id DESC LIMIT 1
-  `);
-  return Array.from(result as Iterable<StoredRow>)[0];
+  const [row] = await db
+    .select({
+      id: appFeedback.id,
+      user_id: appFeedback.userId,
+      source: appFeedback.source,
+      comment: appFeedback.comment,
+      rating: appFeedback.rating,
+      platform: appFeedback.platform,
+      contact_consent: appFeedback.contactConsent,
+      screenshot_keys: appFeedback.screenshotKeys,
+      context: appFeedback.context,
+      github_issue_number: appFeedback.githubIssueNumber,
+      github_issue_url: appFeedback.githubIssueUrl,
+    })
+    .from(appFeedback)
+    .orderBy(desc(appFeedback.id))
+    .limit(1);
+  if (!row) throw new Error('Expected a persisted feedback report');
+  return { ...row, id: row.id.toString() };
 };
 
 const bugInput = (overrides: Record<string, unknown> = {}) => ({

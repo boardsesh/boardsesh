@@ -158,6 +158,9 @@ export const feedbackTypeDefs = /* GraphQL */ `
     sessionName: String
     url: String
     userAgent: String
+    """
+    Private identifiers. Any resolver returning this context must require admin access.
+    """
     diagnostics: FeedbackDiagnostics
   }
 
