@@ -550,6 +550,7 @@ jobs:
       base_fingerprint_ios: ${{ steps.compat.outputs.base_fingerprint_ios }}
       base_fingerprint_android: ${{ steps.compat.outputs.base_fingerprint_android }}
       behind_main: ${{ steps.behind.outputs.behind_main }}
+      baseline_ref: ${{ steps.baseline.outputs.ref }}
     steps:
       # A manual request can wait behind another branch mutation. Re-check the
       # gate's pinned SHA before any deployment or PR-code execution so a queued
@@ -611,6 +612,27 @@ jobs:
               description: `Publishing ${process.env.BRANCH}…`,
             });
 
+      # The fingerprint a preview must match is the one on the PR's BASE branch:
+      # main's for an ordinary PR, the release train's for a PR into release/next
+      # (whose TestFlight build runs the train's fingerprint, not main's). Comparing
+      # every PR against main told each train PR it was "behind a native change on
+      # main" and published nothing, though its bundle matched a shipped build.
+      # Allowlisted, so a PR aimed at any other branch still compares against main.
+      # Runs before any PR-author code.
+      - name: Resolve the baseline branch
+        id: baseline
+        uses: actions/github-script@v7
+        env:
+          PR_NUMBER: ${{ needs.gate.outputs.pr_number }}
+        with:
+          script: |
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner, repo: context.repo.repo, pull_number: Number(process.env.PR_NUMBER),
+            });
+            const ref = ['main', 'release/next'].includes(pr.base.ref) ? pr.base.ref : 'main';
+            core.info(`baseline=${ref} (PR base ${pr.base.ref})`);
+            core.setOutput('ref', ref);
+
       - name: Checkout PR head (pinned to the gate-captured SHA)
         uses: actions/checkout@v4
         with:
@@ -637,10 +659,12 @@ jobs:
       # Materialize origin/main as a sibling worktree so the OTA-compat check can diff
       # the PR fingerprint against main (per platform) and skip publishing a platform
       # that is a native change (undeliverable to any shipped binary).
-      - name: Materialize origin/main baseline
+      - name: Materialize the baseline branch
+        env:
+          BASELINE: ${{ steps.baseline.outputs.ref }}
         run: |
-          git fetch origin main --depth=1
-          git worktree add "$RUNNER_TEMP/main-baseline" origin/main
+          git fetch origin "$BASELINE" --depth=1
+          git worktree add "$RUNNER_TEMP/main-baseline" "origin/$BASELINE"
 
       - name: Install dependencies (main baseline)
         working-directory: ${{ runner.temp }}/main-baseline
@@ -660,22 +684,24 @@ jobs:
       # already landed on main (a rebase republishes it). Containment answers that for
       # free — the baseline fetch above already put origin/main in this repo. The
       # shallow main is fine: we only ask whether its tip is in the PR's history.
-      - name: Detect whether the PR is behind main
+      - name: Detect whether the PR is behind its baseline
         id: behind
+        env:
+          BASELINE: ${{ steps.baseline.outputs.ref }}
         run: |
           # --is-ancestor answers 0 (contained), 1 (not contained) or >1 on a real
           # error. Keep those three apart: folding an error into "not contained"
           # would tell a genuinely native PR to rebase, which is the opposite of
           # what it needs. `unknown` falls back to the generic message.
           set +e
-          git merge-base --is-ancestor origin/main HEAD
+          git merge-base --is-ancestor "origin/$BASELINE" HEAD
           ancestry=$?
           set -e
           case "$ancestry" in
             0) behind=false ;;
             1) behind=true ;;
             *) behind=unknown
-               echo "::warning::Could not determine whether this PR is behind main (git exit $ancestry)." ;;
+               echo "::warning::Could not determine whether this PR is behind $BASELINE (git exit $ancestry)." ;;
           esac
           echo "behind_main=$behind" >> "$GITHUB_OUTPUT"
 
@@ -811,6 +837,7 @@ jobs:
           BASE_FINGERPRINT_IOS: ${{ needs.publish.outputs.base_fingerprint_ios }}
           BASE_FINGERPRINT_ANDROID: ${{ needs.publish.outputs.base_fingerprint_android }}
           BEHIND_MAIN: ${{ needs.publish.outputs.behind_main }}
+          BASELINE_REF: ${{ needs.publish.outputs.baseline_ref }}
           # 'false' means the branch was NOT reset before this publish, so a revision
           # that ships nothing leaves the previous revision's bundle in place.
           NEEDS_RESET: ${{ needs.gate.outputs.needs_reset }}
@@ -842,13 +869,14 @@ jobs:
             // behind-main wording promises only that rebasing is the next step, not
             // that it is sufficient — after the rebase this same check re-runs and
             // says "needs a TestFlight/Play build" if a native delta really remains.
+            const baseline = process.env.BASELINE_REF || 'main';
             const behindMain = process.env.BEHIND_MAIN === 'true';
             // success | skipped (native change) | failure | (didn't run)
             const cell = (outcome, verdict) => {
               if (outcome === 'success') return `✅ published \`${sha}\``;
               if (verdict === 'native-change-required') {
                 return behindMain
-                  ? '⚠️ behind a native change on `main` — rebase, then re-check'
+                  ? `⚠️ behind a native change on \`${baseline}\` — rebase, then re-check`
                   : '⚠️ native change — needs a TestFlight/Play build';
               }
               // A failing publish step now has a second cause worth naming: the upload
@@ -869,7 +897,9 @@ jobs:
               // Two unresolved hashes are equal but tell you nothing — rendering that
               // as "matches main" would invent a reassurance out of a failed resolve.
               if (mine === '—') return '`—` (unresolved)';
-              return mine === theirs ? `\`${mine}\` (matches \`main\`)` : `\`${mine}\` · main \`${theirs}\``;
+              return mine === theirs
+                ? `\`${mine}\` (matches \`${baseline}\`)`
+                : `\`${mine}\` · ${baseline} \`${theirs}\``;
             };
             const iosFingerprint = fingerprintCell(process.env.FINGERPRINT_IOS, process.env.BASE_FINGERPRINT_IOS);
             const androidFingerprint = fingerprintCell(
@@ -904,13 +934,13 @@ jobs:
               deployDesc = `OTA branch ${branch} ready`;
             } else if (nativeOnly && behindMain) {
               headline =
-                `No \`${branch}\` preview was published: this PR is **behind a native change on \`main\`**, so ` +
-                `its bundle targets a fingerprint no current build runs. Rebase onto \`main\` and push. If this ` +
+                `No \`${branch}\` preview was published: this PR is **behind a native change on \`${baseline}\`**, so ` +
+                `its bundle targets a fingerprint no current build runs. Rebase onto \`${baseline}\` and push. If this ` +
                 `PR adds no native code of its own, that republishes the preview against the fingerprint ` +
                 `testers are on; if it does, this check will then say so and it needs a TestFlight/Play build.` +
                 staleNote;
               deployState = 'inactive';
-              deployDesc = `${branch}: behind a native change on main — rebase, then re-check`;
+              deployDesc = `${branch}: behind a native change on ${baseline} — rebase, then re-check`;
             } else if (nativeOnly) {
               headline =
                 `This PR is a **native change**, so it can't ride OTA — ship a TestFlight/Play build to test it. ` +
@@ -943,8 +973,8 @@ jobs:
               `| Android | ${androidCell} | ${androidFingerprint} |`,
               '',
               '<sub>Delivers only to a build whose fingerprint matches this commit (a JS-only change vs ' +
-                '`main`). A native change can\'t ride OTA — ship a TestFlight/Play build. A fingerprint that ' +
-                'no longer matches `main` means the preview is invisible to current builds until this PR is ' +
+                `\`${baseline}\`). A native change can't ride OTA — ship a TestFlight/Play build. A fingerprint that ` +
+                `no longer matches \`${baseline}\` means the preview is invisible to current builds until this PR is ` +
                 'rebased. Closing the PR removes the branch.</sub>',
             ].join('\n');
 

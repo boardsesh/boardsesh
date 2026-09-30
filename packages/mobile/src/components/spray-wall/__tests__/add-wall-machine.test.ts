@@ -257,35 +257,25 @@ describe('addWallReducer — no model on this phone', () => {
 });
 
 describe('addWallReducer — review and publish', () => {
-  it('saving holds unlocks Done without leaving the editor', () => {
-    const state = addWallReducer(atReview(), { type: 'HOLDS_SAVED', holdCount: 42 });
-    expect(state.step).toBe('review');
-    expect(state.hasSavedHolds).toBe(true);
+  it('a commit from the editor moves straight on to publish', () => {
+    const state = addWallReducer(atReview(), { type: 'REVIEW_COMMITTED', holdCount: 42 });
+    expect(state.step).toBe('publish');
     expect(state.savedHoldCount).toBe(42);
+    expect(state.publish).toEqual({ running: false, error: null });
   });
 
-  it('keeps Done unlocked after a save that only deleted holds', () => {
-    // The summary reports what ONE save applied, so a correcting pass that only
-    // removes holds writes zero. Gating on that count would re-lock a wall that
-    // is finished.
-    const state = run(
-      [
-        { type: 'HOLDS_SAVED', holdCount: 40 },
-        { type: 'HOLDS_SAVED', holdCount: 0 },
-      ],
-      atReview(),
-    );
-    expect(state.hasSavedHolds).toBe(true);
-    expect(addWallReducer(state, { type: 'REVIEW_DONE' }).step).toBe('publish');
-  });
-
-  it('refuses to publish a wall with no holds saved', () => {
+  it('refuses to publish a wall with no holds', () => {
     const state = atReview();
-    expect(addWallReducer(state, { type: 'REVIEW_DONE' }).step).toBe('review');
+    expect(addWallReducer(state, { type: 'REVIEW_COMMITTED', holdCount: 0 })).toBe(state);
+  });
+
+  it('ignores a commit that arrives off the review step', () => {
+    const state = run([{ type: 'META_DONE' }]);
+    expect(addWallReducer(state, { type: 'REVIEW_COMMITTED', holdCount: 5 })).toBe(state);
   });
 
   it('moves to publish once holds exist', () => {
-    const state = run([{ type: 'HOLDS_SAVED', holdCount: 12 }, { type: 'REVIEW_DONE' }], atReview());
+    const state = run([{ type: 'REVIEW_COMMITTED', holdCount: 12 }], atReview());
     expect(state.step).toBe('publish');
     expect(state.savedHoldCount).toBe(12);
   });
@@ -293,8 +283,7 @@ describe('addWallReducer — review and publish', () => {
   it('keeps the draft when publishing fails, so it can be retried', () => {
     const state = run(
       [
-        { type: 'HOLDS_SAVED', holdCount: 12 },
-        { type: 'REVIEW_DONE' },
+        { type: 'REVIEW_COMMITTED', holdCount: 12 },
         { type: 'PUBLISH_STARTED' },
         { type: 'PUBLISH_FAILED', message: 'server said no' },
       ],
@@ -307,12 +296,7 @@ describe('addWallReducer — review and publish', () => {
 
   it('finishes on done', () => {
     const state = run(
-      [
-        { type: 'HOLDS_SAVED', holdCount: 12 },
-        { type: 'REVIEW_DONE' },
-        { type: 'PUBLISH_STARTED' },
-        { type: 'PUBLISHED' },
-      ],
+      [{ type: 'REVIEW_COMMITTED', holdCount: 12 }, { type: 'PUBLISH_STARTED' }, { type: 'PUBLISHED' }],
       atReview(),
     );
     expect(state.step).toBe('done');
@@ -331,12 +315,7 @@ describe('leavingKeepsDraft', () => {
 
   it('is false once the wall is published — there is no draft left to keep', () => {
     const published = run(
-      [
-        { type: 'HOLDS_SAVED', holdCount: 1 },
-        { type: 'REVIEW_DONE' },
-        { type: 'PUBLISH_STARTED' },
-        { type: 'PUBLISHED' },
-      ],
+      [{ type: 'REVIEW_COMMITTED', holdCount: 1 }, { type: 'PUBLISH_STARTED' }, { type: 'PUBLISHED' }],
       atReview(),
     );
     expect(leavingKeepsDraft(published)).toBe(false);
@@ -378,12 +357,7 @@ describe('addWallReducer — picking up an abandoned wall', () => {
     expect(hasUnfinishedWall(created)).toBe(true);
 
     const published = run(
-      [
-        { type: 'HOLDS_SAVED', holdCount: 3 },
-        { type: 'REVIEW_DONE' },
-        { type: 'PUBLISH_STARTED' },
-        { type: 'PUBLISHED' },
-      ],
+      [{ type: 'REVIEW_COMMITTED', holdCount: 3 }, { type: 'PUBLISH_STARTED' }, { type: 'PUBLISHED' }],
       atReview(),
     );
     expect(hasUnfinishedWall(published)).toBe(false);
@@ -403,12 +377,7 @@ describe('addWallReducer — picking up an abandoned wall', () => {
 describe('addWallReducer — publishing is latched separately from binding', () => {
   function published(): AddWallState {
     return run(
-      [
-        { type: 'HOLDS_SAVED', holdCount: 3 },
-        { type: 'REVIEW_DONE' },
-        { type: 'PUBLISH_STARTED' },
-        { type: 'PUBLISHED' },
-      ],
+      [{ type: 'REVIEW_COMMITTED', holdCount: 3 }, { type: 'PUBLISH_STARTED' }, { type: 'PUBLISHED' }],
       atReview(),
     );
   }
@@ -428,8 +397,7 @@ describe('addWallReducer — publishing is latched separately from binding', () 
   it('is not latched when the publish itself failed', () => {
     const state = run(
       [
-        { type: 'HOLDS_SAVED', holdCount: 3 },
-        { type: 'REVIEW_DONE' },
+        { type: 'REVIEW_COMMITTED', holdCount: 3 },
         { type: 'PUBLISH_STARTED' },
         { type: 'PUBLISH_FAILED', message: 'server said no' },
       ],
@@ -441,29 +409,25 @@ describe('addWallReducer — publishing is latched separately from binding', () 
 });
 
 describe('addWallReducer — a resumed draft that already has holds', () => {
-  it('unlocks Done without a gratuitous edit', () => {
-    // The editor loads persisted holds as CLEAN state, so its own Save is
-    // disabled (nothing is dirty). A Done gated on "this session saved
-    // something" would leave a climber who saved and walked away unable to
-    // publish at all.
+  it('publishes without a gratuitous edit', () => {
+    // The editor loads persisted holds ON and clean, so its commit has nothing to
+    // write and reports the wall's count straight away.
     const state = addWallReducer(initialAddWallState(), {
       type: 'RESUMED_AT_REVIEW',
       draft: DRAFT,
       savedHoldCount: 42,
     });
-    expect(state.hasSavedHolds).toBe(true);
     expect(state.savedHoldCount).toBe(42);
-    expect(addWallReducer(state, { type: 'REVIEW_DONE' }).step).toBe('publish');
+    expect(addWallReducer(state, { type: 'REVIEW_COMMITTED', holdCount: 42 }).step).toBe('publish');
   });
 
-  it('leaves Done locked for a draft with no holds on it yet', () => {
+  it('never counts a negative stored total', () => {
     const state = addWallReducer(initialAddWallState(), {
       type: 'RESUMED_AT_REVIEW',
       draft: DRAFT,
-      savedHoldCount: 0,
+      savedHoldCount: -3,
     });
-    expect(state.hasSavedHolds).toBe(false);
-    expect(addWallReducer(state, { type: 'REVIEW_DONE' }).step).toBe('review');
+    expect(state.savedHoldCount).toBe(0);
   });
 });
 
@@ -488,12 +452,7 @@ describe('shouldConfirmLeave', () => {
 
   it('stops asking once the wall is published', () => {
     const published = run(
-      [
-        { type: 'HOLDS_SAVED', holdCount: 1 },
-        { type: 'REVIEW_DONE' },
-        { type: 'PUBLISH_STARTED' },
-        { type: 'PUBLISHED' },
-      ],
+      [{ type: 'REVIEW_COMMITTED', holdCount: 1 }, { type: 'PUBLISH_STARTED' }, { type: 'PUBLISHED' }],
       atReview(),
     );
     expect(shouldConfirmLeave(published)).toBe(false);

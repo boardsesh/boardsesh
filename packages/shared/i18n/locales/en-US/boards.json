@@ -769,68 +769,68 @@
     "errorGeneric": "Something went wrong. Try again."
   },
   "sprayEditor": {
-    "tools": {
-      "label": "What your finger does",
-      "pan": "Pan",
-      "add": "Add",
-      "move": "Move",
-      "draw": "Draw"
-    },
-    "size": {
-      "s": "S",
-      "m": "M",
-      "l": "L",
-      "xl": "XL"
-    },
-    "threshold": {
-      "label": "Confidence cut-off",
-      "value": "Showing finds above {{percent}}%"
-    },
-    "counts": {
-      "alive_one": "{{count}} hold",
-      "alive_other": "{{count}} holds",
-      "pending": "{{value}} to review",
-      "hidden": "{{value}} hidden",
-      "unsaved": "{{value}} unsaved"
-    },
-    "actions": {
-      "merge": "Merge",
-      "delete": "Delete",
+    "bar": {
+      "holds_one": "{{count}} hold",
+      "holds_other": "{{count}} holds",
+      "maybes_one": "{{count}} maybe",
+      "maybes_other": "{{count}} maybes",
+      "withMaybes": "{{holds}} · {{maybes}}",
       "undo": "Undo",
-      "redo": "Redo",
-      "accept": "Keep",
-      "reject": "Drop",
-      "acceptAll": "Keep all",
-      "save": "Save the wall"
+      "menuHint": "Opens options for all your holds"
     },
-    "status": {
-      "readOnly": "This wall isn't yours to edit.",
-      "pan": "Drag to move the photo. Tap a hold to pick it.",
-      "add": "Tap bare wall for a hold, or draw round one.",
-      "move": "Drag a hold to where it really is.",
-      "draw": "Pick a hold, then draw its edge.",
-      "oneSelected": "Hold #{{id}} is picked.",
-      "twoSelected": "Two picked. Merge makes them one.",
-      "oneSelectedNew": "Your new hold is picked.",
-      "manySelected": "{{value}} holds picked. Delete takes them all off."
+    "menu": {
+      "keepMaybes": "Keep all maybes",
+      "hideMaybes": "Hide maybes",
+      "showMaybes": "Show maybes",
+      "startOver": "Start over",
+      "close": "Close"
     },
+    "startOver": {
+      "title": "Start over?",
+      "body": "Every hold goes back to how it was when you opened the wall. You can undo this.",
+      "confirm": "Start over",
+      "cancel": "Keep editing"
+    },
+    "chips": {
+      "smaller": "Smaller",
+      "bigger": "Bigger",
+      "trace": "Trace",
+      "join": "Join",
+      "remove": "Remove"
+    },
+    "banner": {
+      "trace": "Draw round the hold with one finger",
+      "join": "Tap the hold to join it with",
+      "cancel": "Cancel"
+    },
+    "a11y": {
+      "wall": "Your wall photo: {{summary}}",
+      "holdValue": "Hold {{position}} of {{total}}, {{role}}",
+      "noHold": "No hold picked",
+      "hint": "Swipe up or down to move through the holds. Double-tap to switch one on or off.",
+      "joinHint": "Swipe up or down to the hold to join with, then double-tap.",
+      "role": {
+        "on": "on",
+        "maybe": "maybe",
+        "off": "off"
+      },
+      "actions": {
+        "smaller": "Make smaller",
+        "bigger": "Make bigger",
+        "remove": "Remove",
+        "addHold": "Add a hold in the middle of the view"
+      }
+    },
+    "readOnly": "This wall isn't yours to edit.",
     "errors": {
-      "nothingToMove": "Pick a hold first, then drag it.",
-      "pickOneToRedraw": "Pick one hold, then draw its edge.",
-      "mergeNeedsTwo": "Pick two holds to merge them.",
-      "tooManyHolds": "A wall carries up to {{max}} holds. Drop a few and save again.",
-      "saveFailed": "Saving the wall failed.",
+      "tooManyHolds": "That's the {{max}} hold limit. Switch some off to add more.",
+      "saveFailed": "Couldn't save your holds. Try again.",
       "strokeNotClosed": "That loop missed the hold. Draw all the way round it.",
       "strokeTooBig": "That loop is far bigger than a hold. Zoom in and trace the hold itself.",
       "strokeTooDetailed": "That stroke has too much detail to store. Trace the edge in one pass.",
       "strokeTooShort": "That stroke is too short. Draw a full loop round the hold.",
-      "allHoldsOffWall": "Those holds land off the wall. Move them back onto the photo and save again.",
-      "someHoldsOffWall_one": "{{count}} hold landed off the wall and wasn't saved.",
-      "someHoldsOffWall_other": "{{count}} holds landed off the wall and weren't saved."
-    },
-    "toast": {
-      "saved_one": "Saved {{count}} hold",
-      "saved_other": "Saved {{count}} holds"
+      "someHoldsOffWall_one": "{{count}} hold lands off the wall. Move it back onto the photo or switch it off.",
+      "someHoldsOffWall_other": "{{count}} holds land off the wall. Move them back onto the photo or switch them off."
     },
     "empty": {
       "noPhoto": "This wall has no photo to edit yet."
@@ -886,17 +886,17 @@
       "title": "Looking for holds"
     },
     "review": {
-      "found": "{{value}} holds to check",
-      "nothingFound": "Nothing found. Draw the holds yourself.",
-      "manualOnly": "This build can't suggest holds. Draw them yourself.",
-      "detectionFailed": "Finding holds went wrong. Draw them yourself.",
-      "done": "Done"
+      "publish": "Publish wall",
+      "nothingFound": "No holds spotted. Tap the wall to add them.",
+      "detectionFailed": "Couldn't spot holds this time. Tap the wall to add them.",
+      "manualOnly": "Tap the wall to add your holds.",
+      "retry": "Try again"
     },
     "publish": {
       "title": "Put it on your boards",
-      "body": "Your holds are saved. Publish the wall and you can start setting.",
-      "cta": "Add this wall",
-      "failed": "Publishing the wall failed."
+      "working": "Publishing your wall…",
+      "failed": "Publishing the wall failed.",
+      "retry": "Try again"
     },
     "done": {
       "body": "Setting your wall up…"
@@ -905,7 +905,10 @@
       "title": "Leave this wall for now?",
       "body": "Your wall and its photo are saved. Pick it up where you left off.",
       "stay": "Keep going",
-      "go": "Leave"
+      "go": "Leave",
+      "unsavedTitle": "Leave without publishing?",
+      "unsavedBody": "Your hold changes won't be kept. The wall and its photo stay saved.",
+      "discard": "Leave anyway"
     },
     "resume": {
       "checking": "Looking for a wall you started…",

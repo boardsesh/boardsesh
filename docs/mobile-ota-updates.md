@@ -1404,6 +1404,11 @@ above — no per-tester build. Workflow: `.github/workflows/mobile-ota-preview.y
   that falls behind a native change on `main` publishes neither platform and `pr-<number>` keeps
   serving the last revision that did publish — better for a tester than an empty branch, but the
   sticky comment says which, so an unchanged picker entry is not read as "this commit is live".
+- **A preview is compared against the PR's base branch.** A PR into `release/next` is diffed against
+  `release/next` — the fingerprint its TestFlight build runs — and every other PR against `main`.
+  The base comes from the API in a trusted step before any PR-author code runs, allowlisted to
+  those two branches. Before this, every train PR read as "behind a native change on `main`" and
+  published nothing, though its bundle matched a shipped build (#5898).
 - **An identical export is skipped, and the publish says so.** Xprem refuses to create an update whose
   bundle matches one already in storage (`There is no change in the update for android, ignored` /
   `No changes found in the update, nothing to deploy`) and `eoas` exits **0** either way. Ordinarily

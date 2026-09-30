@@ -5,8 +5,8 @@
  * a question a test can ask without a GraphQL client, a board, or a gesture.
  * Three things are decided here and nowhere else:
  *
- *  - which holds go on the wire at all (dirty, and ruled on — a pending
- *    candidate is drawn but never written);
+ *  - which holds go on the wire at all (dirty and ON — a maybe is drawn but
+ *    never written, and a switched-off hold is removed, never upserted);
  *  - what frame they go in (canonical, via the version's homography);
  *  - whether each one keeps its silhouette (the backend's own ring contract,
  *    imported rather than restated — see `ring-contract.ts`).
@@ -19,7 +19,12 @@
 import { MAX_HOLDS_PER_WALL } from '@boardsesh/board-config';
 import { mapPhotoHoldToCanonical } from '../../lib/spray/spray-hold-canonical';
 import { ringForTheWire } from './ring-contract';
-import { allHolds, type SprayEditorHoldSource, type SprayEditorState } from './spray-hold-editor-reducer';
+import {
+  allHolds,
+  sprayEditorReducer,
+  type SprayEditorHoldSource,
+  type SprayEditorState,
+} from './spray-hold-editor-reducer';
 
 /** One hold as `SprayWallHoldInput` wants it. `id` absent = allocate a new catalogue id. */
 export type SprayHoldWireInput = {
@@ -77,7 +82,7 @@ const EMPTY_PLAN: SprayHoldWritePlan = {
 };
 
 /**
- * What Save would send for this state, at this version's homography.
+ * What a commit would send for this state, at this version's homography.
  *
  * `homography` is the DRAFT version's stored photo→canonical matrix. A version
  * whose anchors were never solved carries the identity, which is exactly right:
@@ -88,14 +93,28 @@ export function buildSprayHoldWritePlan(state: SprayEditorState, homography: rea
   const writtenIds: number[] = [];
   const unmappableIds: number[] = [];
   let outlinesDropped = 0;
-  // Every hold that would be on the wall once this save lands: the removals have
-  // already left `state.holds`, and a pending candidate is not on the wall.
+  // Every hold that would be on the wall once this save lands: removed holds
+  // have left `state.holds`, and neither a pending find nor a switched-off hold
+  // is on the wall.
   let aliveAfterSave = 0;
+  const removeIds = [...state.removedIds];
+  // Membership check for the loop below; a wall carries up to 1500 holds.
+  const queuedRemovals = new Set(removeIds);
 
   for (const hold of allHolds(state)) {
-    // A candidate awaiting a verdict is not work in progress — it is a proposal.
+    // A find awaiting a verdict is not work in progress — it is a proposal.
     // Saving must not turn it into a hold on somebody's wall.
     if (hold.review === 'pending') continue;
+    if (hold.review === 'rejected') {
+      // Switched off. A stored one comes off the draft — the toggle already
+      // queued it, and this makes sure no path can leave one both OFF on screen
+      // and alive on the wall. A local one simply never goes out.
+      if (hold.id > 0 && !queuedRemovals.has(hold.id)) {
+        queuedRemovals.add(hold.id);
+        removeIds.push(hold.id);
+      }
+      continue;
+    }
 
     // A hold the server already carries stays alive whatever happens to this
     // save, so it counts now. A hold this session drew counts only if it
@@ -138,14 +157,14 @@ export function buildSprayHoldWritePlan(state: SprayEditorState, homography: rea
     });
   }
 
-  if (upsert.length === 0 && state.removedIds.length === 0) {
+  if (upsert.length === 0 && removeIds.length === 0) {
     return unmappableIds.length === 0 ? EMPTY_PLAN : { ...EMPTY_PLAN, unmappableIds };
   }
 
   return {
     upsert,
     writtenIds,
-    removeIds: [...state.removedIds],
+    removeIds,
     unmappableIds,
     outlinesDropped,
     // One condition, not two: `upsert` is a subset of the alive holds, so
@@ -155,7 +174,27 @@ export function buildSprayHoldWritePlan(state: SprayEditorState, homography: rea
   };
 }
 
-/** Is there anything for Save to do? */
+/** Is there anything for a commit to write? */
 export function planHasWork(plan: SprayHoldWritePlan): boolean {
   return plan.upsert.length > 0 || plan.removeIds.length > 0;
+}
+
+/**
+ * Everything Publish needs from the editor, in one pure step: the confident
+ * finds accepted, then the write plan for the result.
+ *
+ * Idempotent by construction. Accepting the defaults of a state whose defaults
+ * are already accepted changes nothing (the reducer hands back the SAME object),
+ * so running this twice on its own output yields the same plan. And once
+ * `MARK_SAVED` has cleared the written holds' dirty flags, running it again
+ * yields a plan with nothing to upsert — a second press can never add the same
+ * hold twice. The screen still refuses a second press while one is in flight;
+ * this is what makes the retry after a failure safe as well.
+ */
+export function prepareCommit(
+  state: SprayEditorState,
+  homography: readonly number[],
+): { state: SprayEditorState; plan: SprayHoldWritePlan } {
+  const accepted = sprayEditorReducer(state, { type: 'ACCEPT_DEFAULTS' });
+  return { state: accepted, plan: buildSprayHoldWritePlan(accepted, homography) };
 }

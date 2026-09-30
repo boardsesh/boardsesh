@@ -118,15 +118,10 @@ export type AddWallState = {
     error: string | null;
   };
   /**
-   * Whether the editor has ever reported a successful save.
-   *
-   * LATCHED, and that is the point: the summary reports what ONE save applied,
-   * so a second save that only deletes holds writes zero — and a gate on the
-   * count would re-lock "Done" on a wall that is finished. What unlocks
-   * publishing is that the draft has been written to at all.
+   * How many holds the draft carries: what a resumed draft already had, then
+   * what the editor's commit left on it. Display and telemetry only — the
+   * editor itself refuses to commit an empty wall.
    */
-  hasSavedHolds: boolean;
-  /** What the most recent save wrote. Display only — it is not the wall's total. */
   savedHoldCount: number;
 };
 
@@ -151,8 +146,8 @@ export type AddWallAction =
   | { type: 'DETECTION_FINISHED'; candidates: readonly SprayHoldCandidate[] }
   | { type: 'DETECTION_UNAVAILABLE' }
   | { type: 'DETECTION_FAILED' }
-  | { type: 'HOLDS_SAVED'; holdCount: number }
-  | { type: 'REVIEW_DONE' }
+  /** The editor saved every hold onto the draft; publishing is all that is left. */
+  | { type: 'REVIEW_COMMITTED'; holdCount: number }
   | { type: 'PUBLISH_STARTED' }
   | { type: 'PUBLISH_FAILED'; message: string }
   | { type: 'PUBLISHED' }
@@ -172,7 +167,6 @@ export function initialAddWallState(): AddWallState {
     upload: { running: false, progress: null, error: null, attempts: 0 },
     detection: { outcome: 'idle', done: 0, total: 0, candidates: NO_CANDIDATES },
     publish: { running: false, error: null },
-    hasSavedHolds: false,
     savedHoldCount: 0,
   };
 }
@@ -265,12 +259,8 @@ export function addWallReducer(state: AddWallState, action: AddWallAction): AddW
       // A draft version with a photo: the holds are the only thing left. No
       // second detector run — the candidates from the first pass were either
       // ruled on or are gone, and re-suggesting over saved holds would draw
-      // every one of them twice.
-      //
-      // Holds already on the draft ARE saved holds, and saying so is what
-      // unlocks Done. The editor loads them clean, so its Save is disabled
-      // (nothing dirty) — a Done still waiting for a save of its own would leave
-      // the climber unable to publish without a pointless edit.
+      // every one of them twice. The editor loads the saved holds ON, so its
+      // Publish goes straight through without a pointless edit.
       const resumedHolds = Math.max(0, action.savedHoldCount ?? 0);
       return {
         ...state,
@@ -282,7 +272,6 @@ export function addWallReducer(state: AddWallState, action: AddWallAction): AddW
         },
         draft: action.draft,
         detection: { outcome: 'idle', done: 0, total: 0, candidates: NO_CANDIDATES },
-        hasSavedHolds: state.hasSavedHolds || resumedHolds > 0,
         savedHoldCount: resumedHolds,
       };
     }
@@ -393,20 +382,18 @@ export function addWallReducer(state: AddWallState, action: AddWallAction): AddW
         },
       };
 
-    case 'HOLDS_SAVED':
-      // Stays on `review`. Saving is not leaving: a climber who has just written
-      // forty holds very often wants to keep going, and advancing out from under
-      // them would make the editor's own Save feel like a commit it is not. What
-      // it does is unlock "Done".
-      return { ...state, hasSavedHolds: true, savedHoldCount: action.holdCount };
-
-    case 'REVIEW_DONE':
-      // Refused with nothing saved. Publishing a version with no holds creates a
-      // wall that cannot hold a climb, and the draft is still there to be
-      // finished — so the honest answer is "save your holds first", which is
-      // what the disabled action says.
-      if (state.step !== 'review' || !state.hasSavedHolds) return state;
-      return { ...state, step: 'publish', publish: { running: false, error: null } };
+    case 'REVIEW_COMMITTED':
+      // One button saves and publishes: the editor's commit is the save, and
+      // landing here starts the publish (the screen runs it from an effect).
+      // Refused off the review step, and for an empty wall — publishing a
+      // version with no holds creates a wall that cannot hold a climb.
+      if (state.step !== 'review' || !(action.holdCount > 0)) return state;
+      return {
+        ...state,
+        step: 'publish',
+        savedHoldCount: action.holdCount,
+        publish: { running: false, error: null },
+      };
 
     case 'PUBLISH_STARTED':
       return { ...state, step: 'publish', publish: { running: true, error: null } };

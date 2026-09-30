@@ -1,151 +1,146 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { StyleSheet } from 'react-native';
-import Animated, { useAnimatedProps, type SharedValue } from 'react-native-reanimated';
+import Animated, { runOnJS, useAnimatedProps, useAnimatedReaction, type SharedValue } from 'react-native-reanimated';
 import Svg, { Path } from 'react-native-svg';
-import { placementRingPathData, radiusRingToBoardPx, ringToPathData } from './stroke';
-import { isHiddenByThreshold, type SprayEditorHold } from './spray-hold-editor-reducer';
+import { overlays } from '../../theme/tokens';
+import { useTheme } from '../../providers/theme-provider';
+import { holdRole, type SprayEditorHold } from './spray-hold-editor-reducer';
+import { holdPathData } from './spray-hold-path';
 
 const AnimatedPath = Animated.createAnimatedComponent(Path);
 
 /**
- * Below this confidence a candidate is drawn as "the detector was guessing".
+ * The zoom levels the ring strokes are re-thickened at.
  *
- * Separate from the slider's threshold, and it has to be: the slider is the
- * owner's own cut-off and moves, while this is a fixed reading of the detector's
- * scale. Without it, every candidate the slider currently shows would look
- * equally certain the moment the slider moved below it.
+ * The rings live inside the board's zoom transform, and a reanimated `scale`
+ * magnifies a stroke exactly as it magnifies the photo — `vectorEffect` cancels
+ * the SVG's own viewBox scale, not a transform applied to the view around it. So
+ * every stroke width is divided by the current zoom. Snapped to five steps
+ * rather than tracked live so a pinch re-renders the layer at most four times
+ * instead of every frame; between steps a ring runs at most 1.5x its intended
+ * weight, which is not something a thumb on a photo can see.
  */
-export const LOW_CONFIDENCE_CEILING = 0.75;
+export const ZOOM_STROKE_STEPS = [1, 1.5, 2, 3, 4] as const;
+
+/** The step a live zoom scale snaps to. Worklet-callable. */
+export function zoomStrokeStep(scale: number): number {
+  'worklet';
+  let step: number = ZOOM_STROKE_STEPS[0];
+  for (const candidate of ZOOM_STROKE_STEPS) {
+    if (scale >= candidate) step = candidate;
+  }
+  return step;
+}
 
 /**
- * Role colours for the wall editor.
+ * Ring styles, in SCREEN points at 1x zoom (`vectorEffect="non-scaling-stroke"`
+ * strokes and dashes in the SVG's client space, so these are points, not photo
+ * pixels, on both platforms).
  *
- * Fixed rather than theme-derived, for the reason the catalogue editor's are
- * (`OUTLINE_EDITOR_COLORS`): these strokes sit over an arbitrary photograph of
- * somebody's garage, so they are chosen against wood and plastic rather than
- * against the app's surfaces. Velvet Send tokens still dress every pixel of the
- * chrome around the board — this is the board.
+ * Hue backs the state up; the line pattern carries it, because the wall behind
+ * is a photograph of multicoloured plastic and any single hue disappears on
+ * some of it. ON is solid white over a dark halo, a MAYBE is a dashed accent
+ * over the same halo, OFF is a faint dotted white ghost with no halo at all.
  */
-export const SPRAY_EDITOR_COLORS = {
-  /** A hold on the wall, drawn or corrected by a human. */
-  manual: '#34D399',
-  /** A hold on the wall that came from the detector and has been accepted. */
-  accepted: '#5EEAD4',
-  /** A candidate awaiting a verdict, and the detector was confident. */
-  candidate: '#60A5FA',
-  /** A candidate awaiting a verdict, and the detector was not. */
-  lowConfidence: '#F59E0B',
-  /** Under the tools right now. */
-  selected: '#FFFFFF',
-  /** The stroke under the finger. */
-  draft: '#FDE047',
-} as const;
-
-const STROKE_WIDTH = {
-  manual: 1.6,
-  accepted: 1.4,
-  candidate: 1.2,
-  lowConfidence: 1.2,
-  selected: 2.6,
-  draft: 2.4,
+const RING = {
+  onWidth: 2,
+  maybeWidth: 2,
+  /** How much wider the dark halo is than the line it sits under. */
+  haloExtra: 2,
+  offWidth: 1.5,
+  offOpacity: 0.4,
+  draftWidth: 2.5,
+  maybeDash: [5, 4],
+  offDash: [1, 4],
 } as const;
 
 type SprayHoldSvgLayerProps = {
-  /** Every hold in the editor, in id order. Hidden candidates are filtered here. */
+  /** Every hold in the editor, in id order. */
   holds: readonly SprayEditorHold[];
-  /** The slider's current cut-off. */
-  threshold: number;
-  selectedIds: readonly number[];
-  /** The live stroke in board px, written by `DrawStrokeOverlay`. */
+  /** Draw the maybes at all. Off while the climber has hidden them. */
+  showMaybes: boolean;
+  /**
+   * The hold `SelectedHoldOverlay` is drawing, or null. Drawn here only as the
+   * faint OFF ghost, so the ring the overlay moves is the one ring at full
+   * strength: at rest the overlay's ring sits over the ghost, and during a drag
+   * the ghost marks where the hold came from.
+   */
+  selectedId: number | null;
+  /** The live stroke in board px, written by `DrawStrokeOverlay` during Trace. */
   draftPointsSV: SharedValue<number[]>;
+  /** The board's live zoom, from `FilterBoardTransformContext`. */
+  scaleSV: SharedValue<number>;
   boardWidth: number;
   boardHeight: number;
   renderWidth: number;
   renderHeight: number;
 };
 
-/** A hold's boundary as an SVG subpath: its traced ring, or the circle at `r`. */
-function holdPathData(hold: SprayEditorHold): string {
-  const placement = { id: hold.id, cx: hold.cx, cy: hold.cy, r: hold.r };
-  return hold.outline ? ringToPathData(radiusRingToBoardPx(hold.outline, placement)) : placementRingPathData(placement);
-}
-
 /**
  * Every hold on the wall, in one SVG.
  *
  * Concatenated by ROLE rather than per hold, exactly as `OutlineSvgLayer` does
  * and for the same reason: a wall may carry 1500 holds, and one `<Path>` each
- * would be 1500 native views to mount and diff on a phone. Five buckets plus the
- * selection plus the live stroke is seven nodes however big the wall is, and each
- * bucket rebuilds only when its own contents change.
+ * would be 1500 native views to mount and diff on a phone. Three roles, two of
+ * them doubled for the halo, plus the live Trace stroke is six nodes however big
+ * the wall is. Each hold's path string is built only when the holds change; a
+ * selection only re-joins the buckets, moving the selected hold into the OFF
+ * bucket as a ghost while `SelectedHoldOverlay` draws its ring.
  *
  * Coordinates are BOARD px — which on a wall are the photograph's own pixels —
- * mapped to the rendered box by the `viewBox`, so nothing here knows the zoom.
+ * mapped to the rendered box by the `viewBox`.
  */
 export const SprayHoldSvgLayer = React.memo(function SprayHoldSvgLayer({
   holds,
-  threshold,
-  selectedIds,
+  showMaybes,
+  selectedId,
   draftPointsSV,
+  scaleSV,
   boardWidth,
   boardHeight,
   renderWidth,
   renderHeight,
 }: SprayHoldSvgLayerProps) {
+  const { brandColors } = useTheme();
+  const zoomStep = useZoomStrokeStep(scaleSV);
+
+  // The expensive half — one path string per hold — keyed on the holds alone,
+  // so a selection on a 1500-hold wall only re-joins strings.
+  const holdPaths = useMemo(
+    () => holds.map((hold) => ({ id: hold.id, role: holdRole(hold), path: holdPathData(hold) })),
+    [holds],
+  );
+
   const buckets = useMemo(() => {
-    const manual: string[] = [];
-    const accepted: string[] = [];
-    const candidate: string[] = [];
-    const lowConfidence: string[] = [];
-
-    for (const hold of holds) {
-      if (isHiddenByThreshold(hold, threshold)) continue;
-      const path = holdPathData(hold);
-      if (hold.review === 'pending') {
-        ((hold.confidence ?? 0) < LOW_CONFIDENCE_CEILING ? lowConfidence : candidate).push(path);
-      } else if (hold.source === 'AUTO') {
-        accepted.push(path);
-      } else {
-        manual.push(path);
-      }
+    const on: string[] = [];
+    const maybe: string[] = [];
+    const off: string[] = [];
+    for (const { id, role, path } of holdPaths) {
+      // The selected hold is a ghost whatever its role: its real ring is the
+      // overlay's, and drawing both would show two rings mid-drag.
+      if (id === selectedId || role === 'off') off.push(path);
+      else if (role === 'on') on.push(path);
+      else maybe.push(path);
     }
+    return { on: on.join(''), maybe: maybe.join(''), off: off.join('') };
+  }, [holdPaths, selectedId]);
 
+  // Arrays and widths memoised on the step, so a render that did not move the
+  // zoom hands react-native-svg the same prop identities to diff.
+  const stroke = useMemo(() => {
+    const scaled = (points: number) => points / zoomStep;
     return {
-      manual: manual.join(''),
-      accepted: accepted.join(''),
-      candidate: candidate.join(''),
-      lowConfidence: lowConfidence.join(''),
+      on: scaled(RING.onWidth),
+      onHalo: scaled(RING.onWidth + RING.haloExtra),
+      maybe: scaled(RING.maybeWidth),
+      maybeHalo: scaled(RING.maybeWidth + RING.haloExtra),
+      off: scaled(RING.offWidth),
+      draft: scaled(RING.draftWidth),
+      draftHalo: scaled(RING.draftWidth + RING.haloExtra),
+      maybeDash: RING.maybeDash.map(scaled),
+      offDash: RING.offDash.map(scaled),
     };
-  }, [holds, threshold]);
-
-  // Drawn again on top in white so the selection reads over whichever role colour
-  // it already carries. An O(1) Set rather than `includes` per hold: merge puts
-  // two ids in here and a wall puts 1500 holds through the loop.
-  const selectedPath = useMemo(() => {
-    if (selectedIds.length === 0) return '';
-    const wanted = new Set(selectedIds);
-    return holds
-      .filter((hold) => wanted.has(hold.id))
-      .map(holdPathData)
-      .join('');
-  }, [holds, selectedIds]);
-
-  /**
-   * Dash patterns, memoised on the board width.
-   *
-   * `strokeDasharray` takes an ARRAY, and a fresh literal on every render is a
-   * new prop identity for react-native-svg to diff — on a component that
-   * re-renders on every single tap, because `selectedIds` moves. The length is
-   * scaled off the board's own size so it reads the same on a 1000 px photo and
-   * a 4000 px one.
-   */
-  const dashes = useMemo(() => {
-    const dashLength = Math.max(2, boardWidth / 300);
-    return {
-      lowConfidence: [dashLength, dashLength * 2] as const,
-      candidate: [dashLength * 2, dashLength] as const,
-    };
-  }, [boardWidth]);
+  }, [zoomStep]);
 
   const draftProps = useAnimatedProps(() => {
     'worklet';
@@ -160,6 +155,8 @@ export const SprayHoldSvgLayer = React.memo(function SprayHoldSvgLayer({
 
   if (renderWidth <= 0 || renderHeight <= 0) return null;
 
+  const maybePath = showMaybes ? buckets.maybe : '';
+
   return (
     <Svg
       pointerEvents="none"
@@ -169,49 +166,59 @@ export const SprayHoldSvgLayer = React.memo(function SprayHoldSvgLayer({
       viewBox={`0 0 ${boardWidth} ${boardHeight}`}
     >
       <Path
-        d={buckets.lowConfidence}
+        d={buckets.off}
         fill="none"
-        stroke={SPRAY_EDITOR_COLORS.lowConfidence}
-        strokeWidth={STROKE_WIDTH.lowConfidence}
-        strokeOpacity={0.9}
-        strokeDasharray={dashes.lowConfidence}
+        stroke={overlays.onScrim}
+        strokeOpacity={RING.offOpacity}
+        strokeWidth={stroke.off}
+        strokeDasharray={stroke.offDash}
+        strokeLinecap="round"
         vectorEffect="non-scaling-stroke"
       />
       <Path
-        d={buckets.candidate}
+        d={maybePath}
         fill="none"
-        stroke={SPRAY_EDITOR_COLORS.candidate}
-        strokeWidth={STROKE_WIDTH.candidate}
-        strokeOpacity={0.9}
-        strokeDasharray={dashes.candidate}
+        stroke={overlays.scrim}
+        strokeWidth={stroke.maybeHalo}
+        strokeDasharray={stroke.maybeDash}
         vectorEffect="non-scaling-stroke"
       />
       <Path
-        d={buckets.accepted}
+        d={maybePath}
         fill="none"
-        stroke={SPRAY_EDITOR_COLORS.accepted}
-        strokeWidth={STROKE_WIDTH.accepted}
+        stroke={brandColors.accent}
+        strokeWidth={stroke.maybe}
+        strokeDasharray={stroke.maybeDash}
         vectorEffect="non-scaling-stroke"
       />
       <Path
-        d={buckets.manual}
+        d={buckets.on}
         fill="none"
-        stroke={SPRAY_EDITOR_COLORS.manual}
-        strokeWidth={STROKE_WIDTH.manual}
+        stroke={overlays.scrim}
+        strokeWidth={stroke.onHalo}
         vectorEffect="non-scaling-stroke"
       />
       <Path
-        d={selectedPath}
+        d={buckets.on}
         fill="none"
-        stroke={SPRAY_EDITOR_COLORS.selected}
-        strokeWidth={STROKE_WIDTH.selected}
+        stroke={overlays.onScrim}
+        strokeWidth={stroke.on}
         vectorEffect="non-scaling-stroke"
       />
       <AnimatedPath
         animatedProps={draftProps}
         fill="none"
-        stroke={SPRAY_EDITOR_COLORS.draft}
-        strokeWidth={STROKE_WIDTH.draft}
+        stroke={overlays.scrim}
+        strokeWidth={stroke.draftHalo}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        vectorEffect="non-scaling-stroke"
+      />
+      <AnimatedPath
+        animatedProps={draftProps}
+        fill="none"
+        stroke={overlays.onScrim}
+        strokeWidth={stroke.draft}
         strokeLinecap="round"
         strokeLinejoin="round"
         vectorEffect="non-scaling-stroke"
@@ -219,3 +226,21 @@ export const SprayHoldSvgLayer = React.memo(function SprayHoldSvgLayer({
     </Svg>
   );
 });
+
+/**
+ * The live zoom, snapped to {@link ZOOM_STROKE_STEPS}, as React state.
+ *
+ * `runOnJS` fires only when the snapped step changes — at most four times per
+ * pinch — never per frame.
+ */
+export function useZoomStrokeStep(scaleSV: SharedValue<number>): number {
+  const [step, setStep] = useState(1);
+  useAnimatedReaction(
+    () => zoomStrokeStep(scaleSV.value),
+    (current, previous) => {
+      if (current !== previous) runOnJS(setStep)(current);
+    },
+    [scaleSV],
+  );
+  return step;
+}

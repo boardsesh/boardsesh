@@ -729,7 +729,7 @@ describe('mobile OTA preview branch isolation + S3 lifecycle coupling', () => {
     // give one message. Containment is the free signal: origin/main is already
     // fetched for the baseline worktree.
     const preview = readWorkflow(OTA_PREVIEW);
-    expect(preview).toContain('git merge-base --is-ancestor origin/main HEAD');
+    expect(preview).toContain('git merge-base --is-ancestor "origin/$BASELINE" HEAD');
     expect(preview).toContain('behind_main: ${{ steps.behind.outputs.behind_main }}');
     // Three-valued on purpose. --is-ancestor exits >1 on a real error, and folding
     // that into "not contained" would tell a genuinely native PR to rebase — the
@@ -740,8 +740,23 @@ describe('mobile OTA preview branch isolation + S3 lifecycle coupling', () => {
     // main AND add native code of its own, and containment cannot separate those
     // without a third fingerprint resolve. Promising a rebase is sufficient would
     // be wrong in that overlap.
-    expect(preview).toContain('behind a native change on `main` — rebase, then re-check');
+    expect(preview).toContain('behind a native change on \\`${baseline}\\` — rebase, then re-check');
     expect(preview).toContain('needs a TestFlight/Play build');
+  });
+
+  it('compares a release-train PR against release/next, not main', () => {
+    // A PR into release/next ships to the train's TestFlight build, whose fingerprint
+    // is the train's. Diffing it against main reported every train PR as "behind a
+    // native change on main" and published nothing (#5898). The base comes from the
+    // API before any PR-author code runs, and is allowlisted so a PR aimed anywhere
+    // else still compares against main.
+    const preview = readWorkflow(OTA_PREVIEW);
+    expect(preview).toContain("const ref = ['main', 'release/next'].includes(pr.base.ref) ? pr.base.ref : 'main';");
+    expect(preview).toContain('git worktree add "$RUNNER_TEMP/main-baseline" "origin/$BASELINE"');
+    expect(preview).not.toContain('git worktree add "$RUNNER_TEMP/main-baseline" origin/main');
+    expect(preview.indexOf('- name: Resolve the baseline branch')).toBeLessThan(
+      preview.indexOf('- name: Install dependencies (PR tree)'),
+    );
   });
 
   it('lists the sweep inventory with the dashboard admin session, not the eoo_ key', () => {

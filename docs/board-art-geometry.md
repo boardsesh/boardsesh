@@ -760,7 +760,7 @@ version. The toolbar says so.
 
 SW-08 (#5441) gave the editor a second **target**. `outline-editor/editor-target.ts` names
 the two and what each may do — and it is one pure function, `editorTargetCapabilities`,
-because the gate, the toolbar, the SVG layer and the write path all branch on the same
+because the gate, the editor chrome, the SVG layer and the write path all branch on the same
 answer and a capability computed twice is a capability that will disagree with itself.
 
 | | `catalogue` | `sprayWall` |
@@ -776,26 +776,26 @@ The catalogue path is untouched by all of it. `DrawStrokeOverlay`, `stroke.ts`,
 `OutlineSvgLayer` and `OutlineCanvasScreen` are the same files they were, which is what
 keeps the `manualActivation` + `pinchRef` coexistence and the round-trip ring algebra from
 drifting. The wall target reuses them rather than forking them: `SprayHoldEditorScreen`
-mounts the *same* `DrawStrokeOverlay`, and reads what a stroke MEANT through the active tool
-instead of changing what a stroke IS.
+mounts the *same* `DrawStrokeOverlay` for its one-shot Trace tool, and everything else — tap
+to switch a ring off or on, tap bare wall to add one, long press to pick one up and move it —
+goes through its own `SprayEditGestureOverlay` (see `docs/spray-walls.md`, "The hold
+editor").
 
-That reading is `spray-hold-tools.ts`, and it is pure. `classifyStroke` answers tap or drag
-on the stroke's BOUNDING BOX rather than its endpoints — a loop drawn around a hold ends
-roughly where it began, and judging it by its endpoints would call every traced outline a
-tap. A tap places a circle at the wall's median hold radius; a loop goes through
-`buildOutlineRing` unchanged, so a wall gets exactly the ring a board would, with the centre
-at the polygon centroid and the radius the equivalent-area one. A merge is the convex hull
-of the two silhouettes — a real polygon union is a clipping library this app will not grow
-for one tool, and a hull always contains both holds, is always simple, and always contains
-its own centroid, so the ring contract is always satisfiable.
+The geometry behind those tools is `spray-hold-tools.ts`, and it is pure. A tap places a
+circle at the wall's median hold radius; a traced loop goes through `buildOutlineRing`
+unchanged, so a wall gets exactly the ring a board would, with the centre at the polygon
+centroid and the radius the equivalent-area one. A join is the convex hull of the two
+silhouettes — a real polygon union is a clipping library this app will not grow for one
+tool, and a hull always contains both holds, is always simple, and always contains its own
+centroid, so the ring contract is always satisfiable.
 
 State is one reducer with undo (`spray-hold-editor-reducer.ts`), modelled on `framesReducer`
-in `@boardsesh/create-climb-react`: a present, a capped past, a future, snapshot-based
+in `@boardsesh/create-climb-react`: a present and a capped past (no redo), snapshot-based
 because a merge is not trivially invertible. Two rules in it are load-bearing rather than
 stylistic. A hold this session DREW is dropped outright on delete while one the wall already
 had is recorded for `removeSprayWallHolds` — the server's own split, because a climb set on
 an inherited hold has to stay findable. And a merge keeps the STORED hold as the survivor
-even when it is the second id selected, so the merge is a correction of a hold with history
+even when it is the second hold tapped, so the merge is a correction of a hold with history
 rather than a delete-plus-add that orphans every climb on it.
 
 The ring contract is imported, never restated. `outline-editor/ring-contract.ts` calls

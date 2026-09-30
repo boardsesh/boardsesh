@@ -1,7 +1,7 @@
 // "Add a spray wall", end to end (epic #5346, SW-09).
 //
-// Name it → photograph it → optionally mark its corners → upload → let the phone
-// suggest holds → correct them → publish. One route, not seven: the steps share
+// Name it → photograph it → optionally mark its corners → upload → let the
+// server suggest holds → correct them → publish. One route, not seven: the steps share
 // state that must survive going back (`add-wall-machine.ts` is the transition
 // table), and two of them — the anchors and the hold editor — are full-screen
 // pan-and-pinch surfaces, which `docs/mobile-sheets-vs-routes.md` rule 3 puts on
@@ -36,7 +36,12 @@ import { Button } from '../Button';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { GymPickerSheet } from '../board-discovery/GymPickerSheet';
 import { SprayCornerMarker } from './SprayCornerMarker';
-import { SprayHoldEditorScreen } from '../outline-editor/SprayHoldEditorScreen';
+import {
+  confirmDiscardSprayEdits,
+  SprayHoldEditorScreen,
+  type SprayEditorNotice,
+  type SprayHoldSaveSummary,
+} from '../outline-editor/SprayHoldEditorScreen';
 import { BoardIdentityFields, BoardVisibilityFields, SectionLabel } from '../board-discovery/BoardMetaFields';
 import { SPRAY_ANGLE_OPTIONS, useSprayWallBuilder } from '../board-discovery/use-spray-wall-builder';
 import { AngleSlider } from '../play-drawer/AngleSlider';
@@ -75,6 +80,7 @@ import {
   type AddWallStep,
   type CreatedWall,
   type CreatedWallDraft,
+  type DetectionOutcome,
 } from './add-wall-machine';
 import { findResumableWall, planUploadRetry, resumeTargetFor, startOverPlan } from './resume-draft';
 
@@ -538,9 +544,45 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
     }
   }, [state, publishVersionAsync, updateVisibilityAsync, queryClient, builder, finish, router, t]);
 
+  /**
+   * Publish runs by itself the moment the editor's commit lands — "Publish wall"
+   * is one button, and a second screen asking to publish again would be the
+   * three-commit flow this replaced. Once per draft: a failure stays on the
+   * publish step with its error and Retry, and never re-fires on its own.
+   */
+  const autoPublishedVersionRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (state.step !== 'publish' || !state.draft) return;
+    if (state.publish.running || state.publish.error) return;
+    if (autoPublishedVersionRef.current === state.draft.versionId) return;
+    autoPublishedVersionRef.current = state.draft.versionId;
+    void publish();
+  }, [state.step, state.draft, state.publish.running, state.publish.error, publish]);
+
+  /**
+   * Whether the editor holds decisions it has not written. Only the editor
+   * knows, and it says so through `onDirtyChange`. A ref: nothing renders on it,
+   * and every way out reads it at the moment it is taken.
+   */
+  const editorDirtyRef = useRef(false);
+  const onEditorDirtyChange = useCallback((dirty: boolean) => {
+    editorDirtyRef.current = dirty;
+  }, []);
+
   /** Ask, then run `onConfirm` — or run it straight away when there is nothing to ask about. */
   const confirmLeave = useCallback(
     (onConfirm: () => void) => {
+      if (state.step === 'review' && editorDirtyRef.current && !isBusy(state)) {
+        // Unwritten hold changes: the wall is kept, the changes are not, and the
+        // dialog says exactly that.
+        confirmDiscardSprayEdits(true, onConfirm, {
+          title: t('sprayWizard.leave.unsavedTitle'),
+          message: t('sprayWizard.leave.unsavedBody'),
+          keep: t('sprayWizard.leave.stay'),
+          discard: t('sprayWizard.leave.discard'),
+        });
+        return;
+      }
       if (!shouldConfirmLeave(state)) {
         onConfirm();
         return;
@@ -596,45 +638,47 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
   }, [state, leave]);
 
   const candidateCount = state.detection.candidates.length;
-  const onHoldsSaved = useCallback(
-    ({ written }: { written: number; removed: number }) => {
-      trackSprayEvent(sprayHoldsReviewed({ holdCount: written, candidateCount, hadCandidates: candidateCount > 0 }));
-      dispatch({ type: 'HOLDS_SAVED', holdCount: written });
+  const onHoldsCommitted = useCallback(
+    ({ written, removed, holdCount }: SprayHoldSaveSummary) => {
+      // A resumed draft with nothing changed commits without writing; nothing
+      // was reviewed, so nothing is reported.
+      if (written > 0 || removed > 0) {
+        trackSprayEvent(sprayHoldsReviewed({ holdCount: written, candidateCount, hadCandidates: candidateCount > 0 }));
+      }
+      editorDirtyRef.current = false;
+      dispatch({ type: 'REVIEW_COMMITTED', holdCount });
     },
     [candidateCount],
+  );
+
+  const retryDetection = useCallback(() => dispatch({ type: 'DETECTION_STARTED' }), []);
+  const reviewNotice = useMemo(
+    () => reviewNoticeFor(state.detection.outcome, t, retryDetection),
+    [state.detection.outcome, t, retryDetection],
   );
 
   // ============================================
   // Render
   // ============================================
 
-  // The editor is its own full-screen surface with its own toolbar and its own
-  // save. It gets the whole screen rather than being boxed into the wizard's
-  // scroll view, which would put a second scroller around a pinch-zoom board.
+  // The editor is its own full-screen surface with its own floating bar and its
+  // own Publish button. It gets the whole screen rather than being boxed into
+  // the wizard's scroll view, which would put a second scroller around a
+  // pinch-zoom board.
   if (state.step === 'review' && state.draft) {
     return (
-      <View style={styles.flex}>
-        <View style={[styles.reviewBar, { borderBottomColor: systemColors.separator }]}>
-          <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.reviewHint}>
-            {detectionSummary(state, t)}
-          </Text>
-          <Button
-            title={t('sprayWizard.review.done')}
-            variant="filled"
-            onPress={() => dispatch({ type: 'REVIEW_DONE' })}
-            disabled={!state.hasSavedHolds}
-          />
-        </View>
-        <SprayHoldEditorScreen
-          wallUuid={state.draft.wallUuid}
-          layoutId={state.draft.layoutId}
-          versionId={state.draft.versionId}
-          versionNumber={state.draft.versionNumber}
-          viewerCanEdit={state.draft.viewerCanEdit}
-          candidates={state.detection.candidates}
-          onSaved={onHoldsSaved}
-        />
-      </View>
+      <SprayHoldEditorScreen
+        wallUuid={state.draft.wallUuid}
+        layoutId={state.draft.layoutId}
+        versionId={state.draft.versionId}
+        versionNumber={state.draft.versionNumber}
+        viewerCanEdit={state.draft.viewerCanEdit}
+        candidates={state.detection.candidates}
+        primaryLabel={t('sprayWizard.review.publish')}
+        notice={reviewNotice}
+        onCommitted={onHoldsCommitted}
+        onDirtyChange={onEditorDirtyChange}
+      />
     );
   }
 
@@ -803,14 +847,18 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
         {state.step === 'publish' ? (
           <>
             <Text variant="title3">{t('sprayWizard.publish.title')}</Text>
-            <Text variant="subheadline" color={systemColors.secondaryLabel}>
-              {t('sprayWizard.publish.body')}
-            </Text>
             {state.publish.error ? (
               <Text variant="subheadline" color={iosSystemColors.systemRed} accessibilityLiveRegion="polite">
                 {state.publish.error}
               </Text>
-            ) : null}
+            ) : (
+              <View style={styles.doneBlock}>
+                <ActivityIndicator />
+                <Text variant="subheadline" color={systemColors.secondaryLabel} accessibilityLiveRegion="polite">
+                  {t('sprayWizard.publish.working')}
+                </Text>
+              </View>
+            )}
           </>
         ) : null}
 
@@ -890,9 +938,9 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
           <Button title={t('sprayWizard.upload.retry')} variant="filled" size="large" onPress={retryUpload} />
         ) : null}
 
-        {state.step === 'publish' ? (
+        {state.step === 'publish' && state.publish.error ? (
           <Button
-            title={t('sprayWizard.publish.cta')}
+            title={t('sprayWizard.publish.retry')}
             variant="filled"
             size="large"
             onPress={() => void publish()}
@@ -924,19 +972,20 @@ function previewHeight(width: number, photo: { width: number; height: number }):
   return (width * photo.height) / photo.width;
 }
 
-/** What the review bar says about where its candidates came from. */
-function detectionSummary(
-  state: { detection: { outcome: string; candidates: readonly unknown[] } },
-  t: (key: string, options?: Record<string, unknown>) => string,
-): string {
-  if (state.detection.outcome === 'unavailable') return t('sprayWizard.review.manualOnly');
-  if (state.detection.outcome === 'failed') return t('sprayWizard.review.detectionFailed');
-  if (state.detection.candidates.length === 0) return t('sprayWizard.review.nothingFound');
-  // `{{value}}` and not `{{count}}`: the four catalogs interpolate `value`, and
-  // i18next leaves an unmatched placeholder in the string verbatim — so the wrong
-  // name here does not fall back, it ships "{{value}} holds to check" to a
-  // climber. It is also i18next's plural key, which these strings do not use.
-  return t('sprayWizard.review.found', { value: state.detection.candidates.length });
+/**
+ * What the editor says over an empty wall, by how detection went. Shown only
+ * while the wall has no rings at all, so a scan that found holds says nothing.
+ */
+function reviewNoticeFor(outcome: DetectionOutcome, t: (key: string) => string, retry: () => void): SprayEditorNotice {
+  if (outcome === 'failed') {
+    return {
+      message: t('sprayWizard.review.detectionFailed'),
+      actionLabel: t('sprayWizard.review.retry'),
+      onAction: retry,
+    };
+  }
+  if (outcome === 'done') return { message: t('sprayWizard.review.nothingFound') };
+  return { message: t('sprayWizard.review.manualOnly') };
 }
 
 /** A determinate bar when the work can count itself, a spinner when it cannot. */
@@ -1011,17 +1060,6 @@ const styles = StyleSheet.create({
     gap: spacing[3],
     paddingVertical: spacing[8],
     alignItems: 'center',
-  },
-  reviewBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[3],
-    paddingHorizontal: spacing[4],
-    paddingVertical: spacing[2],
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  reviewHint: {
-    flex: 1,
   },
   footer: {
     paddingHorizontal: spacing[4],
