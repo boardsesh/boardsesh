@@ -34,6 +34,7 @@ import {
   HOLD_STATE_MAP,
   V_GRADE_COLORS,
   getHoldDisplayColor,
+  getVGradeColor,
   readableTextColor,
   type HoldStateInfo,
 } from '@boardsesh/board-constants';
@@ -78,6 +79,7 @@ import {
   SHOWCASE_WEB_MAX_BYTES,
   SHOWCASE_WORKOUT_BEATS,
   SHOWCASE_SCENE_STAGING,
+  SHOWCASE_DRAWN_PLACEHOLDER_MARKER,
   anchorsFilePath,
   buildBoardRenderUrl,
   buildClimbSearchRequest,
@@ -93,8 +95,8 @@ import {
   layoutSceneCallouts,
   parseRenderArgs,
   placeholderAnchorsFile,
-  placeholderCardSvg,
-  pickPlaceholderClimb,
+  islandOverlaySvg,
+  pickPlaceholderClimbs,
   planBoards,
   prepareAnchorsFile,
   readingBudgetReport,
@@ -108,6 +110,8 @@ import {
   type LitHold,
   type PlaceholderBoardRender,
   type PlaceholderClimb,
+  type PlaceholderTake,
+  type IslandQueue,
   type RenderArgs,
   type ShowcaseCopy,
   type ShowcaseFormat,
@@ -146,53 +150,109 @@ const warn = (message: string) => console.warn(`[video:render] warning: ${messag
 
 const PLACEHOLDER_CACHE_DIR = resolve(SHOWCASE_FRAMES_DIR, '../placeholder-cache');
 
+type CachedClimb = Readonly<{ climb: PlaceholderClimb; imagePath: string }>;
+
 /**
- * A real board render for a board phone with no recording: the board's most
- * popular climb, drawn by the public `/render/board`, in an app-like screen.
- * Both downloads are cached, so a re-render works offline. Null when either
- * request fails: the take then has no footage and the pile-up goes without it.
+ * The board's `count` most popular graded climbs and their `/render/board`
+ * images, from the cache when present (so a re-render works offline).
  */
-async function renderBoardScreen(
-  takeId: ShowcaseTakeId,
+async function fetchPlaceholderClimbs(
+  cacheKey: string,
   board: PlaceholderBoardRender,
-  output: string,
-): Promise<string | null> {
+  count: number,
+): Promise<CachedClimb[]> {
   mkdirSync(PLACEHOLDER_CACHE_DIR, { recursive: true });
-  const climbPath = resolve(PLACEHOLDER_CACHE_DIR, `${takeId}.json`);
-  const imagePath = resolve(PLACEHOLDER_CACHE_DIR, `${takeId}.png`);
-  try {
-    if (!existsSync(climbPath) || !existsSync(imagePath)) {
-      const request = buildClimbSearchRequest(board);
-      const response = await fetch(request.url, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: request.body,
-      });
-      if (!response.ok) throw new Error(`searchClimbs answered ${response.status}`);
-      const payload = (await response.json()) as {
-        data?: { searchClimbs?: { climbs?: Parameters<typeof pickPlaceholderClimb>[0] } };
-      };
-      const climb = pickPlaceholderClimb(payload.data?.searchClimbs?.climbs ?? []);
-      if (!climb) throw new Error('no graded climb to show');
+  const paths = Array.from({ length: count }, (_, index) => ({
+    climbPath: resolve(PLACEHOLDER_CACHE_DIR, `${cacheKey}${count > 1 ? `-${index}` : ''}.json`),
+    imagePath: resolve(PLACEHOLDER_CACHE_DIR, `${cacheKey}${count > 1 ? `-${index}` : ''}.png`),
+  }));
+  if (paths.some(({ climbPath, imagePath }) => !existsSync(climbPath) || !existsSync(imagePath))) {
+    const request = buildClimbSearchRequest(board);
+    const response = await fetch(request.url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: request.body,
+    });
+    if (!response.ok) throw new Error(`searchClimbs answered ${response.status}`);
+    const payload = (await response.json()) as {
+      data?: { searchClimbs?: { climbs?: Parameters<typeof pickPlaceholderClimbs>[0] } };
+    };
+    const climbs = pickPlaceholderClimbs(payload.data?.searchClimbs?.climbs ?? [], count);
+    if (climbs.length < count) throw new Error(`only ${climbs.length} graded climbs to show`);
+    for (const [index, climb] of climbs.entries()) {
       const image = await fetch(buildBoardRenderUrl(board, climb.frames));
       if (!image.ok) throw new Error(`/render/board answered ${image.status}`);
-      writeFileSync(imagePath, Buffer.from(await image.arrayBuffer()));
-      writeFileSync(climbPath, `${JSON.stringify(climb, null, 2)}\n`);
+      writeFileSync(paths[index].imagePath, Buffer.from(await image.arrayBuffer()));
+      writeFileSync(paths[index].climbPath, `${JSON.stringify(climb, null, 2)}\n`);
     }
-    const climb = JSON.parse(readFileSync(climbPath, 'utf8')) as PlaceholderClimb;
-    const boardImage = sharp(readFileSync(imagePath));
-    const { width, height } = await boardImage.metadata();
-    const screen = renderedBoardScreen(climb, { width, height });
-    const boardPng = await boardImage.resize(screen.board.width, screen.board.height).png().toBuffer();
-    await sharp(Buffer.from(screen.svg))
-      .composite([{ input: boardPng, left: screen.board.left, top: screen.board.top }])
+  }
+  return paths.map(({ climbPath, imagePath }) => ({
+    climb: JSON.parse(readFileSync(climbPath, 'utf8')) as PlaceholderClimb,
+    imagePath,
+  }));
+}
+
+/** A dark, app-like screen around a real board render, optionally under the drawn island. */
+async function composeBoardScreen(cached: CachedClimb, output: string, queue?: IslandQueue): Promise<void> {
+  const boardImage = sharp(readFileSync(cached.imagePath));
+  const { width, height } = await boardImage.metadata();
+  const screen = renderedBoardScreen(cached.climb, { width, height });
+  const layers: sharp.OverlayOptions[] = [
+    {
+      input: await boardImage.clone().resize(screen.board.width, screen.board.height).png().toBuffer(),
+      left: screen.board.left,
+      top: screen.board.top,
+    },
+  ];
+  if (queue) {
+    const gradeColor = getVGradeColor(cached.climb.grade) ?? '#A78BFA';
+    const island = islandOverlaySvg(cached.climb, queue, gradeColor);
+    layers.push({ input: Buffer.from(island.svg), left: 0, top: 0 });
+    const thumbnail = await boardImage
+      .clone()
+      .resize(island.thumbnail.width, island.thumbnail.height, { fit: 'cover' })
       .png()
-      .toFile(output);
-    return `${climb.name} (${climb.grade}) from /render/board`;
+      .toBuffer();
+    layers.push({ input: thumbnail, left: island.thumbnail.left, top: island.thumbnail.top });
+  }
+  await sharp(Buffer.from(screen.svg)).composite(layers).png().toFile(output);
+}
+
+/**
+ * The screens a generated placeholder take is cut from: one board render, or
+ * for the drawn island the climb before and after the Next tap. Null when the
+ * render cannot be fetched; the take then has no footage and sits out.
+ */
+async function placeholderScreens(takeId: ShowcaseTakeId, take: PlaceholderTake): Promise<string[] | null> {
+  const { source } = take;
+  if (source.kind !== 'render' && source.kind !== 'island') return [];
+  mkdirSync(SHOWCASE_FRAMES_DIR, { recursive: true });
+  try {
+    if (source.kind === 'render') {
+      const [cached] = await fetchPlaceholderClimbs(takeId, source.board, 1);
+      const output = resolve(SHOWCASE_FRAMES_DIR, `placeholder-${takeId}.png`);
+      await composeBoardScreen(cached, output);
+      return [output];
+    }
+    const climbs = await fetchPlaceholderClimbs(takeId, source.board, 2);
+    const outputs: string[] = [];
+    for (const [index, cached] of climbs.entries()) {
+      const output = resolve(SHOWCASE_FRAMES_DIR, `placeholder-${takeId}-${index}.png`);
+      await composeBoardScreen(cached, output, { ...source.queue, index: source.queue.index + index });
+      outputs.push(output);
+    }
+    return outputs;
   } catch (error) {
-    warn(`${takeId}: no board render (${error instanceof Error ? error.message : 'failed'}); it sits out the pile-up`);
+    warn(`${takeId}: no board render (${error instanceof Error ? error.message : 'failed'}); it sits out the cut`);
     return null;
   }
+}
+
+function describePlaceholder(take: PlaceholderTake): string {
+  const { source } = take;
+  if (source.kind === 'render') return `a ${source.board.boardName} /render/board climb`;
+  if (source.kind === 'island') return `a DRAWN island over ${source.board.boardName} /render/board climbs`;
+  return source.file;
 }
 
 async function buildPlaceholderFootage(): Promise<void> {
@@ -201,28 +261,18 @@ async function buildPlaceholderFootage(): Promise<void> {
     const dir = footageTakeDir(takeId);
     rmSync(dir, { recursive: true, force: true });
     rmSync(anchorsFilePath(takeId), { force: true });
-    let screenImage: string | undefined;
-    let source = '';
-    if (take.source.kind === 'card' || take.source.kind === 'render') {
-      screenImage = resolve(SHOWCASE_FRAMES_DIR, `placeholder-${takeId}.png`);
-      mkdirSync(SHOWCASE_FRAMES_DIR, { recursive: true });
-      if (take.source.kind === 'card') {
-        await sharp(Buffer.from(placeholderCardSvg(take.source.card)))
-          .png()
-          .toFile(screenImage);
-        source = `a "${take.source.card.title}" card`;
-      } else {
-        const rendered = await renderBoardScreen(takeId, take.source.board, screenImage);
-        if (!rendered) continue;
-        source = rendered;
-      }
-    } else source = take.source.file;
+    const screens = await placeholderScreens(takeId, take);
+    if (!screens) continue;
     mkdirSync(dir, { recursive: true });
-    await execFileAsync(FFMPEG_BIN, buildPlaceholderFootageArgs(takeId, take, dir, screenImage));
-    if (screenImage) rmSync(screenImage, { force: true });
+    await execFileAsync(FFMPEG_BIN, buildPlaceholderFootageArgs(takeId, take, dir, screens));
+    for (const screen of screens) rmSync(screen, { force: true });
+    // A drawn stand-in is marked, so only a --placeholder-footage run shows it.
+    if (take.source.kind === 'island') {
+      writeFileSync(resolve(dir, SHOWCASE_DRAWN_PLACEHOLDER_MARKER), 'Drawn placeholder: never in the final cut.\n');
+    }
     mkdirSync(dirname(anchorsFilePath(takeId)), { recursive: true });
     writeFileSync(anchorsFilePath(takeId), `${JSON.stringify(placeholderAnchorsFile(takeId, take), null, 2)}\n`);
-    log(`placeholder ${takeId}: ${countFrames(dir)} frames from ${source}`);
+    log(`placeholder ${takeId}: ${countFrames(dir)} frames from ${describePlaceholder(take)}`);
   }
 }
 
@@ -246,11 +296,18 @@ function readAnchors(takeId: ShowcaseTakeId): ShowcaseAnchorsFile {
  * Every take with footage. A missing board take is skipped (the pile-up uses
  * the boards that were recorded); any other missing take stops the render.
  */
-function loadTakes(): {
+function loadTakes(allowDrawnPlaceholders: boolean): {
   takes: Partial<Record<ShowcaseTakeId, StageTake>>;
   anchors: Partial<Record<ShowcaseTakeId, ShowcaseAnchorsFile>>;
 } {
-  const missing = SHOWCASE_TAKE_IDS.filter((takeId) => countFrames(footageTakeDir(takeId)) === 0);
+  const drawn = (takeId: ShowcaseTakeId) =>
+    existsSync(resolve(footageTakeDir(takeId), SHOWCASE_DRAWN_PLACEHOLDER_MARKER));
+  const missing = SHOWCASE_TAKE_IDS.filter(
+    (takeId) => countFrames(footageTakeDir(takeId)) === 0 || (drawn(takeId) && !allowDrawnPlaceholders),
+  );
+  for (const takeId of missing.filter(drawn)) {
+    warn(`take "${takeId}" is a drawn placeholder; only a --placeholder-footage render shows it`);
+  }
   const required = missing.filter((takeId) => !SHOWCASE_OPTIONAL_TAKES.includes(takeId));
   if (required.length > 0) {
     throw new Error(
@@ -258,7 +315,7 @@ function loadTakes(): {
         'Record the takes, or pass --placeholder-footage to build stand-ins from the help clips.',
     );
   }
-  for (const takeId of missing) warn(`no footage for optional take "${takeId}"; the boards scene goes without it`);
+  for (const takeId of missing) warn(`no footage for optional take "${takeId}"; the cut goes without it`);
   const takes: Partial<Record<ShowcaseTakeId, StageTake>> = {};
   const anchors: Partial<Record<ShowcaseTakeId, ShowcaseAnchorsFile>> = {};
   for (const takeId of SHOWCASE_TAKE_IDS.filter((candidate) => !missing.includes(candidate))) {
@@ -359,9 +416,9 @@ type Prepared = Readonly<{
   timeline: ShowcaseTimeline;
 }>;
 
-async function prepare(): Promise<Prepared> {
+async function prepare(allowDrawnPlaceholders: boolean): Promise<Prepared> {
   const copy = JSON.parse(readFileSync(SHOWCASE_STAGE_COPY, 'utf8')) as ShowcaseCopy;
-  const { takes, anchors } = loadTakes();
+  const { takes, anchors } = loadTakes(allowDrawnPlaceholders);
   const light = takes.light;
   const lightAnchors = anchors.light;
   if (!light || !lightAnchors) throw new Error('The light take is required');
@@ -735,7 +792,7 @@ async function main(): Promise<void> {
   mkdirSync(SHOWCASE_FRAMES_DIR, { recursive: true });
   if (args.placeholderFootage) await buildPlaceholderFootage();
   writeTokens();
-  const prepared = await prepare();
+  const prepared = await prepare(args.placeholderFootage);
   for (const format of args.formats) {
     const data = stageData(format, prepared, args.measure);
     if (args.frame !== null) await renderSingleFrame(format, data, args.frame);

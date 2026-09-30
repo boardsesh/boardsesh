@@ -1375,27 +1375,18 @@ export const SHOWCASE_STORE_STILL_DIR = resolve(SHOWCASE_WEB_POSTER_DIR, '../app
 /** iPhone 16 Pro Max in points; every committed clip and store still is 1320x2868 scaled to 736x1600. */
 export const PLACEHOLDER_SCREEN = { width: 440, height: 956 } as const;
 
-/**
- * A generated stand-in screen: a flat card with a title and, optionally, the
- * boxes a static anchor points at. Only the lock screen uses one: a board phone
- * never shows a card (see `PlaceholderBoardRender`).
- */
-export type PlaceholderCard = Readonly<{
-  background: string;
-  ink: string;
-  title: string;
-  subtitle: string;
-  /** Labelled buttons, in screen points, drawn inside an expanded Dynamic Island. */
-  boxes?: ReadonlyArray<Readonly<{ label: string; rect: ShowcaseAnchorRect }>>;
-}>;
-
 export type PlaceholderSource =
   | Readonly<{ kind: 'video'; file: string; seek: number }>
   /** One frame of a help clip, held for the whole take. */
   | Readonly<{ kind: 'frame'; file: string; at: number }>
   | Readonly<{ kind: 'still'; file: string }>
-  | Readonly<{ kind: 'card'; card: PlaceholderCard }>
-  | Readonly<{ kind: 'render'; board: PlaceholderBoardRender }>;
+  | Readonly<{ kind: 'render'; board: PlaceholderBoardRender }>
+  /**
+   * The drawn Dynamic Island, placeholder-only: the board's two most popular
+   * climbs as rendered screens, each under an expanded island showing that
+   * climb, switching (the "Next" tap) `nextAt` seconds into the take.
+   */
+  | Readonly<{ kind: 'island'; board: PlaceholderBoardRender; nextAt: number; queue: IslandQueue }>;
 
 /**
  * A board phone with no committed recording: a real climb on that board, drawn
@@ -1436,9 +1427,11 @@ export type PlaceholderClimb = Readonly<{ name: string; grade: string; setter: s
  * The climb to show: the most popular one with a grade and a name that fits
  * the header. `difficulty` reads like `6a/V3`; the screen shows the V grade.
  */
-export function pickPlaceholderClimb(
+export function pickPlaceholderClimbs(
   climbs: ReadonlyArray<Readonly<{ name: string; difficulty: string; frames: string; setter_username: string }>>,
-): PlaceholderClimb | null {
+  count: number,
+): PlaceholderClimb[] {
+  const picked: PlaceholderClimb[] = [];
   for (const climb of climbs) {
     const name = climb.name.trim();
     const grade = climb.difficulty
@@ -1446,10 +1439,14 @@ export function pickPlaceholderClimb(
       .find((part) => /^V\d/.test(part.trim()))
       ?.trim();
     if (!grade || !name || name.length > 18 || !climb.frames) continue;
-    return { name, grade, setter: climb.setter_username, frames: climb.frames };
+    picked.push({ name, grade, setter: climb.setter_username, frames: climb.frames });
+    if (picked.length === count) break;
   }
-  return null;
+  return picked;
 }
+
+export const pickPlaceholderClimb = (climbs: Parameters<typeof pickPlaceholderClimbs>[0]): PlaceholderClimb | null =>
+  pickPlaceholderClimbs(climbs, 1)[0] ?? null;
 
 /** The public board image for a climb: Aura drawing on the app's dark play field. */
 export function buildBoardRenderUrl(board: PlaceholderBoardRender, frames: string): string {
@@ -1512,20 +1509,97 @@ const boardRender = (boardName: string, layoutId: number, sizeId: number, setIds
 });
 
 /**
- * Where the island placeholder draws the expanded Live Activity's buttons
- * (points). The take id is still `lock-screen`; the scene now shows the
- * Dynamic Island.
+ * Where the drawn island placeholder puts the expanded Live Activity's
+ * controls, in points, following `ClimbSessionLiveActivity.swift`: leading
+ * board thumbnail (48x60), centre climb name over "N of M · angle", trailing
+ * grade numeral, and a bottom row of Prev, the bulb (ReconnectBoardIntent),
+ * mirror (MirrorClimbIntent) and Next.
  */
+export const ISLAND_LAYOUT = {
+  island: { x: 10, y: 10, width: 420, height: 196, radius: 48 },
+  thumbnail: { x: 30, y: 50, width: 48, height: 60, radius: 10 },
+  prev: { x: 30, y: 140, width: 114, height: 44 },
+  bulb: { x: 148, y: 140, width: 44, height: 44 },
+  mirror: { x: 196, y: 142, width: 40, height: 40 },
+  next: { x: 240, y: 140, width: 170, height: 44 },
+} as const;
+
 const ISLAND_BUTTONS = {
-  'lock-relight': { x: 150, y: 134, width: 52, height: 48 },
-  'lock-mirror': { x: 214, y: 134, width: 52, height: 48 },
-  'lock-next': { x: 300, y: 134, width: 108, height: 48 },
+  'lock-relight': ISLAND_LAYOUT.bulb,
+  'lock-mirror': ISLAND_LAYOUT.mirror,
+  'lock-next': ISLAND_LAYOUT.next,
 } as const satisfies Record<string, ShowcaseAnchorRect>;
+
+/** Queue position and angle the island's metadata line shows: "3 of 12 · 40°". */
+export type IslandQueue = Readonly<{ index: number; total: number; angle: number }>;
+
+/**
+ * The drawn Dynamic Island for the placeholder take, over a screen of the same
+ * climb: the expanded island's SVG (without the thumbnail image, which the
+ * renderer composites at `thumbnail`), marked as a placeholder under it.
+ * Placeholder-only: the final cut shows the recorder's footage of the real
+ * Live Activity or drops the scene.
+ */
+export function islandOverlaySvg(
+  climb: PlaceholderClimb,
+  queue: IslandQueue,
+  gradeColor: string,
+): { svg: string; thumbnail: { left: number; top: number; width: number; height: number } } {
+  const { width, height } = PLACEHOLDER_CARD_SIZE;
+  const scale = width / PLACEHOLDER_SCREEN.width;
+  const px = (value: number) => (value * scale).toFixed(1);
+  const { island, thumbnail, prev, bulb, mirror, next } = ISLAND_LAYOUT;
+  const violet = '#A78BFA';
+  const bulbX = bulb.x + bulb.width / 2;
+  const bulbY = bulb.y + bulb.height / 2;
+  const mirrorX = mirror.x + mirror.width / 2;
+  const mirrorY = mirror.y + mirror.height / 2;
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" font-family="Helvetica, Arial, sans-serif">` +
+    `<rect x="${px(island.x)}" y="${px(island.y)}" width="${px(island.width)}" height="${px(island.height)}" rx="${px(island.radius)}" fill="#000000"/>` +
+    `<rect x="${px(thumbnail.x)}" y="${px(thumbnail.y)}" width="${px(thumbnail.width)}" height="${px(thumbnail.height)}" rx="${px(thumbnail.radius)}" fill="#1A1424"/>` +
+    `<text x="${px(92)}" y="${px(76)}" font-size="${px(17)}" font-weight="700" fill="#F5F2FB">${escapeXml(climb.name)}</text>` +
+    `<text x="${px(92)}" y="${px(100)}" font-size="${px(15)}" fill="#A9A2B6">${queue.index} of ${queue.total} · ${queue.angle}°</text>` +
+    `<text x="${px(410)}" y="${px(86)}" font-size="${px(24)}" font-weight="800" text-anchor="end" fill="${gradeColor}">${escapeXml(climb.grade)}</text>` +
+    `<text x="${px(prev.x + prev.width / 2)}" y="${px(prev.y + 27)}" font-size="${px(15)}" font-weight="600" text-anchor="middle" fill="${violet}">‹ Prev</text>` +
+    // The lit bulb: amber glyph with its soft glow, the only warm accent.
+    `<circle cx="${px(bulbX)}" cy="${px(bulbY - 3)}" r="${px(12)}" fill="#FBBF24" fill-opacity="0.25"/>` +
+    `<circle cx="${px(bulbX)}" cy="${px(bulbY - 3)}" r="${px(7)}" fill="#FBBF24"/>` +
+    `<rect x="${px(bulbX - 4)}" y="${px(bulbY + 5)}" width="${px(8)}" height="${px(5)}" rx="${px(1.5)}" fill="#FBBF24"/>` +
+    // Mirror: two arrows round a circle.
+    `<path d="M ${px(mirrorX - 9)} ${px(mirrorY - 2)} A ${px(9)} ${px(9)} 0 0 1 ${px(mirrorX + 8)} ${px(mirrorY - 5)}" fill="none" stroke="#F5F2FB" stroke-width="${px(2.4)}" stroke-linecap="round"/>` +
+    `<path d="M ${px(mirrorX + 9)} ${px(mirrorY + 2)} A ${px(9)} ${px(9)} 0 0 1 ${px(mirrorX - 8)} ${px(mirrorY + 5)}" fill="none" stroke="#F5F2FB" stroke-width="${px(2.4)}" stroke-linecap="round"/>` +
+    `<path d="M ${px(mirrorX + 4)} ${px(mirrorY - 9)} L ${px(mirrorX + 9)} ${px(mirrorY - 5)} L ${px(mirrorX + 4)} ${px(mirrorY - 1)}" fill="none" stroke="#F5F2FB" stroke-width="${px(2.4)}" stroke-linecap="round" stroke-linejoin="round"/>` +
+    `<path d="M ${px(mirrorX - 4)} ${px(mirrorY + 9)} L ${px(mirrorX - 9)} ${px(mirrorY + 5)} L ${px(mirrorX - 4)} ${px(mirrorY + 1)}" fill="none" stroke="#F5F2FB" stroke-width="${px(2.4)}" stroke-linecap="round" stroke-linejoin="round"/>` +
+    `<text x="${px(next.x + next.width / 2)}" y="${px(next.y + 27)}" font-size="${px(15)}" font-weight="600" text-anchor="middle" fill="${violet}">Next ›</text>` +
+    `<rect x="${px(120)}" y="${px(214)}" width="${px(200)}" height="${px(22)}" rx="${px(11)}" fill="#FF8A3D"/>` +
+    `<text x="${px(220)}" y="${px(229)}" font-size="${px(12)}" font-weight="700" text-anchor="middle" fill="#16111F">PLACEHOLDER ISLAND</text>` +
+    `</svg>`;
+  const box = (value: number) => Math.round(value * scale);
+  return {
+    svg,
+    thumbnail: {
+      left: box(thumbnail.x),
+      top: box(thumbnail.y),
+      width: box(thumbnail.width),
+      height: box(thumbnail.height),
+    },
+  };
+}
+
+/**
+ * Takes whose placeholder is drawn rather than recorded or rendered. Their
+ * footage directory gets this marker, and a render without
+ * `--placeholder-footage` treats such a take as missing, so the final cut never
+ * shows a drawn island.
+ */
+export const SHOWCASE_DRAWN_PLACEHOLDER_MARKER = 'DRAWN-PLACEHOLDER';
 
 /**
  * Stand-in footage until the recorder lands real takes: committed help clips
  * (real app recordings), store screenshots, real board renders for the boards
- * with neither, and a plain card for the lock screen. Anchor rects are hand-measured on those sources in points.
+ * with neither, and (placeholder-only) a drawn Dynamic Island. Anchor rects are hand-measured on those sources in
+ * points.
  * Where the source has no such control (`invite-qr` on the queue still, the
  * activity calendar on the profile still) the anchor borrows a nearby element
  * so the callout layout can still be judged.
@@ -1579,19 +1653,12 @@ export const SHOWCASE_PLACEHOLDER_TAKES: Record<ShowcaseTakeId, PlaceholderTake>
     },
   },
   'lock-screen': {
+    // Next is tapped 3.2 s in: scene frame 66, once the callouts are up.
     source: {
-      kind: 'card',
-      card: {
-        background: '#E9E3F7',
-        ink: '#16111F',
-        title: 'Dynamic Island',
-        subtitle: 'Placeholder until this take is recorded',
-        boxes: [
-          { label: 'bulb', rect: ISLAND_BUTTONS['lock-relight'] },
-          { label: 'mirror', rect: ISLAND_BUTTONS['lock-mirror'] },
-          { label: 'Next', rect: ISLAND_BUTTONS['lock-next'] },
-        ],
-      },
+      kind: 'island',
+      board: { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: [1, 20], angle: 40 },
+      nextAt: 3.2,
+      queue: { index: 3, total: 12, angle: 40 },
     },
     anchors: { ...ISLAND_BUTTONS },
   },
@@ -1604,53 +1671,55 @@ export const SHOWCASE_PLACEHOLDER_TAKES: Record<ShowcaseTakeId, PlaceholderTake>
   },
 };
 
-/** Card placeholders are drawn at the store-screenshot size, 736x1600. */
+/** Generated placeholder screens are drawn at the store-screenshot size, 736x1600. */
 export const PLACEHOLDER_CARD_SIZE = { width: 736, height: 1600 } as const;
 
 const escapeXml = (text: string) =>
   text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
-/** SVG for a card placeholder, for Sharp to rasterise. Pure, so the test can read it. */
-export function placeholderCardSvg(card: PlaceholderCard): string {
-  const { width, height } = PLACEHOLDER_CARD_SIZE;
-  const scale = width / PLACEHOLDER_SCREEN.width;
-  const px = (value: number) => (value * scale).toFixed(1);
-  // The expanded island: white controls on black, across the top of the screen.
-  const boxes = (card.boxes ?? [])
-    .map(
-      ({ label, rect }) =>
-        `<rect x="${px(rect.x)}" y="${px(rect.y)}" width="${px(rect.width)}" height="${px(rect.height)}" rx="${px(rect.height / 2)}" fill="#FFFFFF" fill-opacity="0.16" stroke="#FFFFFF" stroke-opacity="0.4" stroke-width="3"/>` +
-        `<text x="${px(rect.x + rect.width / 2)}" y="${px(rect.y + rect.height / 2 + 6)}" font-size="${px(16)}" text-anchor="middle" fill="#FFFFFF">${escapeXml(label)}</text>`,
-    )
-    .join('');
-  const island = card.boxes?.length
-    ? `<rect x="${px(10)}" y="${px(10)}" width="${px(420)}" height="${px(188)}" rx="${px(46)}" fill="#000000"/>` +
-      `<text x="${px(34)}" y="${px(58)}" font-size="${px(19)}" font-weight="700" fill="#FFFFFF">Boardsesh session</text>` +
-      `<text x="${px(34)}" y="${px(90)}" font-size="${px(16)}" fill="#FFFFFF" fill-opacity="0.6">On the wall</text>`
-    : '';
-  return (
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" font-family="Helvetica, Arial, sans-serif">` +
-    `<rect width="100%" height="100%" fill="${card.background}"/>` +
-    `<text x="${width / 2}" y="${px(440)}" font-size="${px(34)}" font-weight="700" text-anchor="middle" fill="${card.ink}">${escapeXml(card.title)}</text>` +
-    `<text x="${width / 2}" y="${px(474)}" font-size="${px(15)}" text-anchor="middle" fill="${card.ink}" fill-opacity="0.6">${escapeXml(card.subtitle)}</text>` +
-    island +
-    boxes +
-    `</svg>`
-  );
-}
-
 /**
- * ffmpeg for one placeholder take. `cardImage` is the rasterised screen for a
- * `card` or `render` source (the renderer draws it with Sharp first).
+ * ffmpeg for one placeholder take. `screens` are the rasterised screens for a
+ * `render` source (one) or an `island` source (the climb before and after the
+ * Next tap); the renderer draws them with Sharp first.
  */
 export function buildPlaceholderFootageArgs(
   takeId: ShowcaseTakeId,
   take: PlaceholderTake,
   outDir: string,
-  cardImage?: string,
+  screens: readonly string[] = [],
 ): string[] {
   const seconds = requiredTakeSeconds(takeId);
+  const frames = String(Math.ceil(seconds * SHOWCASE_FPS));
   const { source } = take;
+  if (source.kind === 'island') {
+    if (screens.length !== 2) throw new Error(`Take "${takeId}" needs its two island screens drawn first`);
+    const before = source.nextAt.toFixed(3);
+    const after = (seconds - source.nextAt + 1).toFixed(3);
+    return [
+      '-y',
+      '-loglevel',
+      'error',
+      '-loop',
+      '1',
+      '-t',
+      before,
+      '-i',
+      screens[0],
+      '-loop',
+      '1',
+      '-t',
+      after,
+      '-i',
+      screens[1],
+      '-filter_complex',
+      `[0:v]fps=${SHOWCASE_FPS},setsar=1[a];[1:v]fps=${SHOWCASE_FPS},setsar=1[b];[a][b]concat=n=2:v=1,scale=${SHOWCASE_FOOTAGE_WIDTH}:-2:flags=lanczos`,
+      '-frames:v',
+      frames,
+      '-q:v',
+      '3',
+      resolve(outDir, '%05d.jpg'),
+    ];
+  }
   let input: string[];
   let hold = '';
   if (source.kind === 'video') input = ['-ss', String(source.seek), '-i', resolve(HELP_CLIP_VIDEO_DIR, source.file)];
@@ -1660,8 +1729,8 @@ export function buildPlaceholderFootageArgs(
     hold = 'trim=end_frame=1,loop=loop=-1:size=1:start=0,setpts=N/30/TB,';
   } else if (source.kind === 'still') input = ['-loop', '1', '-i', resolve(SHOWCASE_STORE_STILL_DIR, source.file)];
   else {
-    if (!cardImage) throw new Error(`Take "${takeId}" is a generated placeholder; rasterise it first`);
-    input = ['-loop', '1', '-i', cardImage];
+    if (!screens[0]) throw new Error(`Take "${takeId}" is a generated placeholder; rasterise it first`);
+    input = ['-loop', '1', '-i', screens[0]];
   }
   return [
     '-y',
@@ -1672,7 +1741,7 @@ export function buildPlaceholderFootageArgs(
     '-vf',
     `${hold}fps=${SHOWCASE_FPS},scale=${SHOWCASE_FOOTAGE_WIDTH}:-2:flags=lanczos,tpad=stop_mode=clone:stop_duration=${Math.ceil(seconds)}`,
     '-frames:v',
-    String(Math.ceil(seconds * SHOWCASE_FPS)),
+    frames,
     '-q:v',
     '3',
     resolve(outDir, '%05d.jpg'),

@@ -52,7 +52,10 @@ import {
   parseRenderArgs,
   pileupArrivalFrames,
   placeholderAnchorsFile,
-  placeholderCardSvg,
+  ISLAND_LAYOUT,
+  SHOWCASE_DRAWN_PLACEHOLDER_MARKER,
+  islandOverlaySvg,
+  pickPlaceholderClimbs,
   planBoards,
   planLeaders,
   prepareAnchorsFile,
@@ -558,24 +561,51 @@ describe('anchor preparation', () => {
   });
 });
 
-describe('placeholder cards', () => {
-  it('draws the island with the buttons its static anchors point at, escaped', () => {
+describe('island placeholder', () => {
+  const climb = { name: 'Rock & Roll', grade: 'V5', setter: 'x', frames: 'p1r1' };
+
+  it('mirrors the Live Activity: climb name, "N of M · angle", grade, and Prev / bulb / mirror / Next', () => {
+    const { svg, thumbnail } = islandOverlaySvg(climb, { index: 3, total: 12, angle: 40 }, '#F03E3E');
+    expect(svg).toContain('Rock &amp; Roll');
+    expect(svg).toContain('3 of 12 \u00B7 40\u00B0');
+    expect(svg).toContain('>V5<');
+    expect(svg).toContain('Prev');
+    expect(svg).toContain('Next');
+    expect(svg).toContain('PLACEHOLDER ISLAND');
+    expect(thumbnail.width).toBeGreaterThan(0);
+  });
+
+  it('points the static anchors at the drawn buttons, all on screen', () => {
     const take = SHOWCASE_PLACEHOLDER_TAKES['lock-screen'];
-    if (take.source.kind !== 'card') throw new Error('lock-screen placeholder should be a card');
-    const svg = placeholderCardSvg(take.source.card);
-    expect(svg).toContain('Boardsesh session');
-    expect(svg).toContain('>Next<');
+    expect(take.source.kind).toBe('island');
+    expect(take.anchors['lock-relight']).toEqual(ISLAND_LAYOUT.bulb);
+    expect(take.anchors['lock-mirror']).toEqual(ISLAND_LAYOUT.mirror);
+    expect(take.anchors['lock-next']).toEqual(ISLAND_LAYOUT.next);
     for (const name of ['lock-next', 'lock-relight', 'lock-mirror'] as const) {
       expect(anchorOnScreen(take.anchors[name] ?? null, PLACEHOLDER_SCREEN), name).toBe(true);
     }
-    expect(placeholderCardSvg({ ...take.source.card, title: 'A & <B>' })).toContain('A &amp; &lt;B&gt;');
+  });
+
+  it('cuts the take from the two climbs, switching on the Next tap', () => {
+    const take = SHOWCASE_PLACEHOLDER_TAKES['lock-screen'];
+    if (take.source.kind !== 'island') throw new Error('island placeholder expected');
+    const args = buildPlaceholderFootageArgs('lock-screen', take, '/f/island', ['/s/a.png', '/s/b.png']);
+    expect(args).toContain('/s/a.png');
+    expect(args).toContain('/s/b.png');
+    expect(args[args.indexOf('-t') + 1]).toBe(take.source.nextAt.toFixed(3));
+    expect(args[args.indexOf('-filter_complex') + 1]).toMatch(/concat=n=2/);
+    expect(() => buildPlaceholderFootageArgs('lock-screen', take, '/f/island', [])).toThrow(/two island screens/);
+  });
+
+  it('marks drawn footage so only a placeholder render shows it', () => {
+    expect(SHOWCASE_DRAWN_PLACEHOLDER_MARKER).toMatch(/PLACEHOLDER/);
   });
 });
 
 describe('board placeholders', () => {
-  it('never gives a board phone a generated card: every one is a recording, a store still or a real render', () => {
+  it('never draws a board phone: every one is a recording, a store still or a real render', () => {
     for (const takeId of sceneOf('boards').takes) {
-      expect(SHOWCASE_PLACEHOLDER_TAKES[takeId].source.kind, takeId).not.toBe('card');
+      expect(['video', 'still', 'render'], takeId).toContain(SHOWCASE_PLACEHOLDER_TAKES[takeId].source.kind);
     }
     expect(SHOWCASE_PLACEHOLDER_TAKES['boards-woods'].source.kind).toBe('render');
   });
@@ -609,6 +639,9 @@ describe('board placeholders', () => {
       ]),
     ).toEqual({ name: 'Iceman', grade: 'V3', setter: 'x', frames: 'p1r1' });
     expect(pickPlaceholderClimb([climb('Font only', '6a')])).toBeNull();
+    expect(
+      pickPlaceholderClimbs([climb('One', 'V1'), climb('Two', 'V2'), climb('Three', 'V3')], 2).map((c) => c.name),
+    ).toEqual(['One', 'Two']);
   });
 });
 

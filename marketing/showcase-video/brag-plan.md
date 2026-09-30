@@ -34,8 +34,13 @@ on any run.
 | 8   | log         | 902–1016  | dark       | Remember every _send._              | Callouts "Every board", "Activity"                                                                                                                        |
 | 9   | outro       | 1016–1145 | dark       | Less phone. More _wall._            | Mark, `boardsesh` wordmark, dots line drawn by the spark, "Free, no ads. iOS & Android." pill; loop closer                                                |
 
-The island scene needs a Live Activity, which the simulator may refuse to
-start. Without the `lock-screen` take the scene is dropped, the cut closes up
+The island scene shows only the recorder's footage of the real Live Activity:
+the Dynamic Island expanded over a climb playing in the dark app, then Next
+changing the climb. `--placeholder-footage` draws a stand-in island (mirroring
+`ClimbSessionLiveActivity.swift`: board thumbnail, climb name, "N of M · 40°",
+grade, Prev / bulb / mirror / Next) over two real Kilter renders, tagged
+PLACEHOLDER ISLAND and marked on disk, so a render without that flag never
+shows it. Without a recorded `lock-screen` take the scene is dropped, the cut closes up
 to 1019 frames (34.0 s) and backgrounds re-alternate (log turns lavender), so
 the render degrades with a warning instead of failing.
 
@@ -62,6 +67,8 @@ holds them.
 - Callouts are sized for a phone: 84 px pills with 36 px labels in 16:9
   (7.3 CSS px when the cut plays 390 px wide), 72 px pills with 32 px labels in
   9:16 (11.6 CSS px), 4 px leaders. `calloutLabelCssPx` computes it.
+- No phone screen is ever white or lavender: every take and placeholder is the
+  dark app.
 - Every board phone shows a real lit board: a recording, a store screenshot, or
   (placeholder only) the board's most popular climb drawn by the public
   `/render/board`. A board with none of those sits out the pile-up; no board is
