@@ -1,8 +1,7 @@
 export const feedbackTypeDefs = /* GraphQL */ `
   """
-  Free-form debug context attached to a feedback submission. Stored as jsonb.
-  Every field is optional — anonymous submissions made outside a board route
-  may carry only \`url\` / \`userAgent\`.
+  Private, best-effort telemetry identifiers for feedback investigation.
+  Available only through the authenticated admin dashboard.
   """
   input FeedbackDiagnosticsInput {
     schemaVersion: Int
@@ -38,6 +37,11 @@ export const feedbackTypeDefs = /* GraphQL */ `
     otaIsEmbedded: Boolean
   }
 
+  """
+  Free-form debug context attached to a feedback submission. Stored as jsonb.
+  Every field is optional — anonymous submissions made outside a board route
+  may carry only \`url\` / \`userAgent\`.
+  """
   input FeedbackContextInput {
     climbUuid: String
     climbName: String

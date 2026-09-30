@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Redirect } from 'expo-router';
 import { ActivityIndicator, Alert, StyleSheet, View } from 'react-native';
 import { reportError } from '../lib/error-reporting';
@@ -10,7 +10,11 @@ import {
   canNativeAbortSentryCrash,
   setSentryDiagnosticTestContext,
 } from '../lib/sentry';
-import { scheduleUncaughtSentryTestError, beginSentryDiagnosticTest } from '../lib/sentry-diagnostics';
+import {
+  scheduleUncaughtSentryTestError,
+  beginSentryDiagnosticTest,
+  createSentryDiagnosticTestRunId,
+} from '../lib/sentry-diagnostics';
 import { useProfile } from '../lib/graphql/hooks';
 import { useConfirm } from '../providers/dialog-provider';
 import { useTheme } from '../providers/theme-provider';
@@ -22,10 +26,12 @@ export function SentryDiagnosticsScreen() {
   const { systemColors } = useTheme();
   const { data: profile, isLoading: profileLoading } = useProfile();
   const confirm = useConfirm();
+  const [testRunId, setTestRunId] = useState<string | null>(null);
 
   const sendHandledEvent = useCallback(() => {
     hapticLight();
     const testRunId = beginSentryDiagnosticTest('handled');
+    setTestRunId(testRunId);
     reportError(new Error('Sentry test event (handled) — diagnostics'), {
       tags: { source: 'sentry-test', kind: 'handled', testRunId },
     });
@@ -42,17 +48,21 @@ export function SentryDiagnosticsScreen() {
 
   const throwUncaughtError = useCallback(() => {
     hapticError();
-    setSentryDiagnosticTestContext('uncaught-js', beginSentryDiagnosticTest('uncaught-js'));
+    const testRunId = beginSentryDiagnosticTest('uncaught-js');
+    setTestRunId(testRunId);
+    setSentryDiagnosticTestContext('uncaught-js', testRunId);
     scheduleUncaughtSentryTestError();
   }, []);
 
   const triggerNativeCrash = useCallback(async () => {
     hapticLight();
+    const testRunId = createSentryDiagnosticTestRunId();
+    setTestRunId(testRunId);
     const confirmed = await confirm({
       // i18n-ignore-next-line — tester-only screen
       title: 'Force a native crash?',
       // i18n-ignore-next-line — tester-only screen
-      message: 'The app crashes immediately. The crash uploads to Sentry on the next launch.',
+      message: `The app crashes immediately. The crash uploads to Sentry on the next launch. Test run: ${testRunId}`,
       // i18n-ignore-next-line — tester-only screen
       confirmLabel: 'Crash',
       // i18n-ignore-next-line — tester-only screen
@@ -60,16 +70,18 @@ export function SentryDiagnosticsScreen() {
     });
     if (!confirmed) return;
     hapticError();
-    setSentryDiagnosticTestContext('java-exception', beginSentryDiagnosticTest('java-exception'));
+    setSentryDiagnosticTestContext('java-exception', beginSentryDiagnosticTest('java-exception', testRunId));
     nativeSentryCrash();
   }, [confirm]);
 
   const triggerNativeAbort = useCallback(async () => {
+    const testRunId = createSentryDiagnosticTestRunId();
+    setTestRunId(testRunId);
     const confirmed = await confirm({
       // i18n-ignore-next-line — tester-only screen
       title: 'Force a C/C++ abort?',
       // i18n-ignore-next-line — tester-only screen
-      message: 'The app crashes immediately. Reopen it to upload the native backtrace and tombstone.',
+      message: `The app crashes immediately. Reopen it to upload the native backtrace and tombstone. Test run: ${testRunId}`,
       // i18n-ignore-next-line — tester-only screen
       confirmLabel: 'Crash',
       // i18n-ignore-next-line — tester-only screen
@@ -81,7 +93,7 @@ export function SentryDiagnosticsScreen() {
       Alert.alert('Native abort unavailable', 'Install a release binary with native diagnostics and Sentry enabled.');
       return;
     }
-    setSentryDiagnosticTestContext('native-abort', beginSentryDiagnosticTest('native-abort'));
+    setSentryDiagnosticTestContext('native-abort', beginSentryDiagnosticTest('native-abort', testRunId));
     nativeAbortSentryCrash();
   }, [confirm]);
 
@@ -100,6 +112,13 @@ export function SentryDiagnosticsScreen() {
               label: 'Sentry',
               // i18n-ignore-next-line — tester-only screen
               value: isSentryEnabled ? 'Active' : 'Disabled in this build',
+            },
+            {
+              kind: 'info',
+              key: 'test-run',
+              // i18n-ignore-next-line — tester-only screen
+              label: 'Test run ID',
+              value: testRunId ?? '—',
             },
             {
               kind: 'action',
@@ -137,7 +156,7 @@ export function SentryDiagnosticsScreen() {
         },
       ],
     }),
-    [sendHandledEvent, throwUncaughtError, triggerNativeCrash, triggerNativeAbort],
+    [sendHandledEvent, throwUncaughtError, triggerNativeCrash, triggerNativeAbort, testRunId],
   );
 
   if (!__DEV__) {
