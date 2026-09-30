@@ -851,7 +851,7 @@
       "someHoldsOffWall_one": "{{count}} presa cae fuera del muro. Devuélvela a la foto o desactívala.",
       "someHoldsOffWall_other": "{{count}} presas caen fuera del muro. Devuélvelas a la foto o desactívalas.",
       "cornersCross": "Dos lados se cruzan. Toca las esquinas en orden alrededor de la presa.",
-      "cornersTooFew": "Toca al menos 3 esquinas alrededor de la presa.",
+      "cornersTooFew": "Esas esquinas están demasiado juntas o en línea. Toca al menos 3 alrededor de la presa.",
       "cornersHollow": "Esa forma es demasiado hueca. Toca las esquinas por el borde exterior de la presa."
     },
     "empty": {

@@ -17,6 +17,13 @@ const TAP_MAX_DURATION_MS = 300;
 /** Furthest a finger can travel and still read as a tap, in screen points. */
 const TAP_MAX_DISTANCE_PT = 15;
 
+/**
+ * How long after a close a tap is ignored. A quick double tap on the first
+ * corner would otherwise close the outline and then start a new one on the
+ * same spot, leaving a stray corner that blocks Publish.
+ */
+const AFTER_CLOSE_QUIET_MS = 250;
+
 type PolygonTapOverlayProps = {
   /**
    * The corners placed so far, in BOARD px, flat `[x0, y0, x1, y1, ...]`. Owned
@@ -94,6 +101,7 @@ export const PolygonTapOverlay = React.memo(function PolygonTapOverlay({
   // mid-session has wedged iOS before (see use-zoom-pan-gesture).
   const boardScaleSV = useSharedValue(boardScale);
   const maxVerticesSV = useSharedValue(maxVertices);
+  const lastCloseAtSV = useSharedValue(0);
   useEffect(() => {
     boardScaleSV.value = boardScale;
   }, [boardScale, boardScaleSV]);
@@ -130,6 +138,7 @@ export const PolygonTapOverlay = React.memo(function PolygonTapOverlay({
 
         const current = verticesSV.value;
         const count = current.length / 2;
+        if (count === 0 && Date.now() - lastCloseAtSV.value < AFTER_CLOSE_QUIET_MS) return;
         if (count >= 3) {
           // Screen points → board px at the live zoom, capped by the outline's
           // own size so a small hold's next corner is not read as closing it.
@@ -149,6 +158,7 @@ export const PolygonTapOverlay = React.memo(function PolygonTapOverlay({
           if (deltaX * deltaX + deltaY * deltaY <= closeRadius * closeRadius) {
             // Emptied here, on the UI thread, before JS hears of it.
             verticesSV.value = [];
+            lastCloseAtSV.value = Date.now();
             runOnJS(handleClose)(current);
             return;
           }
@@ -175,6 +185,7 @@ export const PolygonTapOverlay = React.memo(function PolygonTapOverlay({
     containerHeightSV,
     boardScaleSV,
     maxVerticesSV,
+    lastCloseAtSV,
     pinchRef,
   ]);
 

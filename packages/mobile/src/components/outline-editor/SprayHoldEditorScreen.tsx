@@ -750,8 +750,10 @@ export function SprayHoldEditorScreen({
    */
   const closeCorners = useCallback(
     (cornerBoardPoints: number[]) => {
+      // Only onto an empty board: a corner tapped while JS was deciding starts
+      // the climber's next attempt, and wins over the refused one.
       const restore = () => {
-        cornersSV.value = cornerBoardPoints;
+        if (cornersSV.value.length === 0) cornersSV.value = cornerBoardPoints;
       };
       if (!canEditRef.current) {
         restore();

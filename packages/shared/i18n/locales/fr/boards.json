@@ -851,7 +851,7 @@
       "someHoldsOffWall_one": "{{count}} prise tombe en dehors du mur. Remets-la sur la photo ou désactive-la.",
       "someHoldsOffWall_other": "{{count}} prises tombent en dehors du mur. Remets-les sur la photo ou désactive-les.",
       "cornersCross": "Deux côtés se croisent. Touche les coins dans l'ordre autour de la prise.",
-      "cornersTooFew": "Touche au moins 3 coins autour de la prise.",
+      "cornersTooFew": "Ces coins sont trop rapprochés ou alignés. Touche au moins 3 coins autour de la prise.",
       "cornersHollow": "Cette forme est trop creuse. Touche les coins le long du bord extérieur de la prise."
     },
     "empty": {

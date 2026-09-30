@@ -168,6 +168,11 @@ export function useZoomPanGesture({
 
   const pinchFocalX = useSharedValue(0);
   const pinchFocalY = useSharedValue(0);
+  // `pinchPans` only: the pointer count and the gesture's own scale at the last
+  // rebase. A finger lifting or landing mid-pinch moves the focal point to a new
+  // midpoint in one frame; rebasing there keeps the board from lurching.
+  const pinchPointers = useSharedValue(0);
+  const pinchScaleBase = useSharedValue(1);
 
   // Mirror JS values onto the UI thread so worklets can gate without putting
   // them in gesture useMemo deps — recomposing gestures mid-session left
@@ -266,11 +271,27 @@ export function useZoomPanGesture({
         savedTranslateY.value = translateY.value;
         pinchFocalX.value = event.focalX;
         pinchFocalY.value = event.focalY;
+        pinchPointers.value = event.numberOfPointers;
+        pinchScaleBase.value = 1;
       })
       .onUpdate((event) => {
         'worklet';
         if (!enabledSV.value) return;
-        const newScale = clampPinchScale(savedScale.value * event.scale, MIN_SCALE, maxScaleSV.value);
+        if (pinchPansSV.value && event.numberOfPointers !== pinchPointers.value) {
+          savedScale.value = scale.value;
+          savedTranslateX.value = translateX.value;
+          savedTranslateY.value = translateY.value;
+          pinchFocalX.value = event.focalX;
+          pinchFocalY.value = event.focalY;
+          pinchPointers.value = event.numberOfPointers;
+          pinchScaleBase.value = event.scale > 0 ? event.scale : 1;
+          return;
+        }
+        const newScale = clampPinchScale(
+          (savedScale.value * event.scale) / pinchScaleBase.value,
+          MIN_SCALE,
+          maxScaleSV.value,
+        );
 
         const focalOffsetX = pinchFocalX.value - containerWidthSV.value / 2;
         const focalOffsetY = pinchFocalY.value - containerHeightSV.value / 2;
@@ -378,6 +399,8 @@ export function useZoomPanGesture({
     savedTranslateY,
     pinchFocalX,
     pinchFocalY,
+    pinchPointers,
+    pinchScaleBase,
     isZoomedSV,
     isPinchingSV,
     isPinchingMirrorSV,
