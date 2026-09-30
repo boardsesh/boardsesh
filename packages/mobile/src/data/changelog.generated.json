@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-09-29T12:32:27.671Z",
+  "generatedAt": "2026-09-30T06:28:26.759Z",
   "entries": [
+    {
+      "prNumber": 5893,
+      "category": "new",
+      "title": "Download your climbing history from Settings, across every board.",
+      "mergedAt": "2026-09-30T06:26:06Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5893",
+      "body": "Keep a Boardsesh archive or download Aurora JSON where available."
+    },
     {
       "prNumber": 5872,
       "category": "fixed",

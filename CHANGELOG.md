@@ -4,6 +4,13 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-09-30
+
+### New
+
+- Download your climbing history from Settings, across every board. ([#5893](https://github.com/boardsesh/boardsesh/pull/5893))
+  Keep a Boardsesh archive or download Aurora JSON where available.
+
 ## 2026-09-29
 
 ### Fixed
