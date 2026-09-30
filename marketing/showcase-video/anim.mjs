@@ -50,12 +50,21 @@ export const easeIn = cubicBezier(0.5, 0, 0.75, 0);
 
 /**
  * Step response of a damped spring released from 0 towards 1, `seconds` after
- * release. `period` is the undamped natural period. Under-damped for zeta < 1.
+ * release: x'' + 2ζωx' + ω²(x - 1) = 0 from x = x' = 0. `period` is the
+ * undamped natural period. Under-damped for ζ < 1, critically damped at ζ = 1,
+ * overdamped above.
  */
 export function spring(seconds, { zeta = 0.78, period = 0.55 } = {}) {
   if (seconds <= 0) return 0;
   const omega = (2 * Math.PI) / period;
-  if (zeta >= 1) return 1 - Math.exp(-omega * seconds) * (1 + omega * seconds);
+  if (zeta === 1) return 1 - Math.exp(-omega * seconds) * (1 + omega * seconds);
+  if (zeta > 1) {
+    // Overdamped: two real roots, x = 1 - (r2 e^(r1 t) - r1 e^(r2 t)) / (r2 - r1).
+    const root = omega * Math.sqrt(zeta * zeta - 1);
+    const r1 = -zeta * omega + root;
+    const r2 = -zeta * omega - root;
+    return 1 - (r2 * Math.exp(r1 * seconds) - r1 * Math.exp(r2 * seconds)) / (r2 - r1);
+  }
   const damped = omega * Math.sqrt(1 - zeta * zeta);
   const decay = Math.exp(-zeta * omega * seconds);
   return 1 - decay * (Math.cos(damped * seconds) + ((zeta * omega) / damped) * Math.sin(damped * seconds));
@@ -251,4 +260,38 @@ export function backgroundAt(scenes, frame, lead, out) {
     current = next;
   }
   return { from: current, to: current, amount: 1 };
+}
+
+/**
+ * Orthogonal path through `points` with rounded bends of radius `radius`, as an
+ * SVG `d`. Consecutive points closer than half a pixel collapse into one. No
+ * points is an empty path; one point is a bare move (it draws nothing).
+ */
+export function orthoPath(points, radius = 10) {
+  const clean = points.filter(
+    (point, index) => index === 0 || Math.hypot(point.x - points[index - 1].x, point.y - points[index - 1].y) > 0.5,
+  );
+  if (clean.length === 0) return '';
+  const first = `M${clean[0].x.toFixed(2)} ${clean[0].y.toFixed(2)}`;
+  if (clean.length === 1) return first;
+  let path = first;
+  for (let index = 1; index < clean.length - 1; index += 1) {
+    const previous = clean[index - 1];
+    const corner = clean[index];
+    const next = clean[index + 1];
+    const into = Math.hypot(corner.x - previous.x, corner.y - previous.y);
+    const out = Math.hypot(next.x - corner.x, next.y - corner.y);
+    const bend = Math.min(radius, into / 2, out / 2);
+    const before = {
+      x: corner.x - ((corner.x - previous.x) / into) * bend,
+      y: corner.y - ((corner.y - previous.y) / into) * bend,
+    };
+    const after = {
+      x: corner.x + ((next.x - corner.x) / out) * bend,
+      y: corner.y + ((next.y - corner.y) / out) * bend,
+    };
+    path += ` L${before.x.toFixed(2)} ${before.y.toFixed(2)} Q${corner.x.toFixed(2)} ${corner.y.toFixed(2)} ${after.x.toFixed(2)} ${after.y.toFixed(2)}`;
+  }
+  const last = clean[clean.length - 1];
+  return `${path} L${last.x.toFixed(2)} ${last.y.toFixed(2)}`;
 }

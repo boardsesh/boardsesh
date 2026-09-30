@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   anchorAt as stageAnchorAt,
   backgroundAt,
+  orthoPath,
   mixOklab,
   projectPoint as stageProjectPoint,
   spring,
@@ -844,6 +845,86 @@ describe('web posters and the lite encode', () => {
     const seconds = webCutSeconds();
     for (const max of [SHOWCASE_WEB_LITE.maxWebmBytes, SHOWCASE_WEB_LITE.maxMp4Bytes]) {
       expect((webBitrateFor(max, seconds) * 1000 * seconds) / 8).toBeLessThan(max * 0.9);
+    }
+  });
+});
+
+describe('stage geometry and motion edge cases', () => {
+  it('draws no leader for no points and a bare move for one', () => {
+    expect(orthoPath([])).toBe('');
+    expect(orthoPath([{ x: 3, y: 4 }])).toBe('M3.00 4.00');
+    // Points that collapse to one (under half a pixel apart) are one point.
+    expect(
+      orthoPath([
+        { x: 3, y: 4 },
+        { x: 3.2, y: 4.1 },
+      ]),
+    ).toBe('M3.00 4.00');
+    expect(
+      orthoPath([
+        { x: 0, y: 0 },
+        { x: 10, y: 0 },
+      ]),
+    ).toBe('M0.00 0.00 L10.00 0.00');
+    expect(
+      orthoPath([
+        { x: 0, y: 0 },
+        { x: 100, y: 0 },
+        { x: 100, y: 50 },
+      ]),
+    ).toBe('M0.00 0.00 L90.00 0.00 Q100.00 0.00 100.00 10.00 L100.00 50.00');
+  });
+
+  /** RK4 over x'' = -2ζωx' - ω²(x - 1), from rest at 0: the ODE the spring solves. */
+  function integrate(seconds: number, zeta: number, period: number): number {
+    const omega = (2 * Math.PI) / period;
+    const steps = Math.ceil(seconds * 4000);
+    const dt = seconds / steps;
+    let x = 0;
+    let v = 0;
+    const accel = (position: number, velocity: number) => -2 * zeta * omega * velocity - omega * omega * (position - 1);
+    for (let step = 0; step < steps; step += 1) {
+      const k1x = v;
+      const k1v = accel(x, v);
+      const k2x = v + (dt / 2) * k1v;
+      const k2v = accel(x + (dt / 2) * k1x, v + (dt / 2) * k1v);
+      const k3x = v + (dt / 2) * k2v;
+      const k3v = accel(x + (dt / 2) * k2x, v + (dt / 2) * k2v);
+      const k4x = v + dt * k3v;
+      const k4v = accel(x + dt * k3x, v + dt * k3v);
+      x += (dt / 6) * (k1x + 2 * k2x + 2 * k3x + k4x);
+      v += (dt / 6) * (k1v + 2 * k2v + 2 * k3v + k4v);
+    }
+    return x;
+  }
+
+  it('matches a numerical integration in all three damping regimes', () => {
+    for (const zeta of [0.3, 0.55, 0.78, 1, 1.4, 2.5]) {
+      for (const period of [0.42, 0.55]) {
+        for (const seconds of [0.05, 0.13, 0.3, 0.6, 1.2]) {
+          expect(spring(seconds, { zeta, period }), `ζ ${zeta}, T ${period}, t ${seconds}`).toBeCloseTo(
+            integrate(seconds, zeta, period),
+            6,
+          );
+        }
+      }
+    }
+  });
+
+  it('keeps the under-damped spring the stage uses (ζ 0.78) bit-for-bit unchanged', () => {
+    // The formula the stage has always used for ζ < 1; the rendered video depends on it.
+    const before = (seconds: number, zeta: number, period: number) => {
+      if (seconds <= 0) return 0;
+      const omega = (2 * Math.PI) / period;
+      const damped = omega * Math.sqrt(1 - zeta * zeta);
+      const decay = Math.exp(-zeta * omega * seconds);
+      return 1 - decay * (Math.cos(damped * seconds) + ((zeta * omega) / damped) * Math.sin(damped * seconds));
+    };
+    for (let frame = 0; frame <= 90; frame += 1) {
+      expect(Object.is(spring(frame / 30), before(frame / 30, 0.78, 0.55)), `frame ${frame}`).toBe(true);
+      expect(Object.is(spring(frame / 30, { zeta: 0.55, period: 0.42 }), before(frame / 30, 0.55, 0.42))).toBe(true);
+      expect(Object.is(spring(frame / 30, { zeta: 0.62, period: 0.42 }), before(frame / 30, 0.62, 0.42))).toBe(true);
+      expect(Object.is(spring(frame / 30, { zeta: 0.5, period: 0.5 }), before(frame / 30, 0.5, 0.5))).toBe(true);
     }
   });
 });

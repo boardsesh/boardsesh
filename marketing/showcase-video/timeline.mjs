@@ -8,6 +8,7 @@
 import {
   anchorAt,
   backgroundAt,
+  orthoPath,
   catmullRomPolyline,
   clamp,
   easeIn,
@@ -199,34 +200,6 @@ function poseAt(keys, frame) {
 }
 
 const sortKeys = (keys) => keys.sort((a, b) => a.frame - b.frame);
-
-/** Orthogonal path through `points` with rounded bends of radius `radius`. */
-function orthoPath(points, radius = 10) {
-  const clean = points.filter(
-    (point, index) => index === 0 || Math.hypot(point.x - points[index - 1].x, point.y - points[index - 1].y) > 0.5,
-  );
-  if (clean.length < 2) return `M${clean[0].x} ${clean[0].y}`;
-  let path = `M${clean[0].x.toFixed(2)} ${clean[0].y.toFixed(2)}`;
-  for (let index = 1; index < clean.length - 1; index += 1) {
-    const previous = clean[index - 1];
-    const corner = clean[index];
-    const next = clean[index + 1];
-    const into = Math.hypot(corner.x - previous.x, corner.y - previous.y);
-    const out = Math.hypot(next.x - corner.x, next.y - corner.y);
-    const bend = Math.min(radius, into / 2, out / 2);
-    const before = {
-      x: corner.x - ((corner.x - previous.x) / into) * bend,
-      y: corner.y - ((corner.y - previous.y) / into) * bend,
-    };
-    const after = {
-      x: corner.x + ((next.x - corner.x) / out) * bend,
-      y: corner.y + ((next.y - corner.y) / out) * bend,
-    };
-    path += ` L${before.x.toFixed(2)} ${before.y.toFixed(2)} Q${corner.x.toFixed(2)} ${corner.y.toFixed(2)} ${after.x.toFixed(2)} ${after.y.toFixed(2)}`;
-  }
-  const last = clean[clean.length - 1];
-  return `${path} L${last.x.toFixed(2)} ${last.y.toFixed(2)}`;
-}
 
 // --- scene lookup ------------------------------------------------------------------
 

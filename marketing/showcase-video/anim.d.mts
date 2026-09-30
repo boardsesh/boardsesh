@@ -42,3 +42,4 @@ export function backgroundAt(
   lead: number,
   out: number,
 ): StageBackground;
+export function orthoPath(points: readonly Point[], radius?: number): string;
