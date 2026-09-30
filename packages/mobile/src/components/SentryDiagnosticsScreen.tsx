@@ -13,6 +13,7 @@ import {
 import {
   scheduleUncaughtSentryTestError,
   beginSentryDiagnosticTest,
+  finishUnavailableSentryNativeAbort,
   createSentryDiagnosticTestRunId,
 } from '../lib/sentry-diagnostics';
 import { useProfile } from '../lib/graphql/hooks';
@@ -93,8 +94,12 @@ export function SentryDiagnosticsScreen() {
       Alert.alert('Native abort unavailable', 'Install a release binary with native diagnostics and Sentry enabled.');
       return;
     }
-    setSentryDiagnosticTestContext('native-abort', beginSentryDiagnosticTest('native-abort', testRunId));
-    nativeAbortSentryCrash();
+    const recordedRunId = beginSentryDiagnosticTest('native-abort', testRunId);
+    if (!nativeAbortSentryCrash(recordedRunId)) {
+      finishUnavailableSentryNativeAbort(recordedRunId);
+      // i18n-ignore-next-line — tester-only screen
+      Alert.alert('Native abort unavailable', 'Native crash metadata could not be prepared. The app did not crash.');
+    }
   }, [confirm]);
 
   const model = useMemo<SwitcherFormModel>(

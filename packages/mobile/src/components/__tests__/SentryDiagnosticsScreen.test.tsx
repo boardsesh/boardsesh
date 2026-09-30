@@ -33,6 +33,7 @@ vi.mock('../../lib/sentry-diagnostics', async (importOriginal) => {
     ...actual,
     createSentryDiagnosticTestRunId: () => 'visible-test-run',
     beginSentryDiagnosticTest: vi.fn(actual.beginSentryDiagnosticTest),
+    finishUnavailableSentryNativeAbort: vi.fn(actual.finishUnavailableSentryNativeAbort),
   };
 });
 vi.mock('../../lib/graphql/hooks', () => ({ useProfile: () => ({ data: { isTester: true }, isLoading: false }) }));
@@ -46,11 +47,12 @@ vi.mock('../SwitcherForm', () => ({
 }));
 
 import { SentryDiagnosticsScreen } from '../SentryDiagnosticsScreen';
-import { beginSentryDiagnosticTest } from '../../lib/sentry-diagnostics';
+import { beginSentryDiagnosticTest, finishUnavailableSentryNativeAbort } from '../../lib/sentry-diagnostics';
 
 beforeEach(() => {
   vi.clearAllMocks();
   controls.canAbort.mockReturnValue(true);
+  controls.abort.mockReturnValue(true);
   controls.confirm.mockResolvedValue(true);
 });
 
@@ -70,8 +72,8 @@ it('shows a run ID before crashing and records that exact confirmation ID', asyn
     value: 'visible-test-run',
   });
   expect(beginSentryDiagnosticTest).toHaveBeenCalledWith('native-abort', 'visible-test-run');
-  expect(controls.stamp).toHaveBeenCalledWith('native-abort', 'visible-test-run');
-  expect(controls.abort).toHaveBeenCalledOnce();
+  expect(controls.stamp).not.toHaveBeenCalled();
+  expect(controls.abort).toHaveBeenCalledExactlyOnceWith('visible-test-run');
 });
 
 it('does not leave test tags or an active crash operation when confirmation is cancelled', async () => {
@@ -91,4 +93,13 @@ it('reports unavailable native capture without labeling later real crashes as te
   expect(beginSentryDiagnosticTest).not.toHaveBeenCalled();
   expect(controls.stamp).not.toHaveBeenCalled();
   expect(controls.abort).not.toHaveBeenCalled();
+});
+
+it('finishes the diagnostic operation when native preparation declines the crash', async () => {
+  controls.abort.mockReturnValue(false);
+  render(<SentryDiagnosticsScreen />);
+  await tapAbort();
+  expect(finishUnavailableSentryNativeAbort).toHaveBeenCalledWith('visible-test-run');
+  expect(controls.alert).toHaveBeenCalledWith('Native abort unavailable', expect.any(String));
+  expect(controls.stamp).not.toHaveBeenCalled();
 });

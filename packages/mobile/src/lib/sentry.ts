@@ -1,7 +1,8 @@
 import type { ComponentType } from 'react';
 import * as Sentry from '@sentry/react-native';
 import { nativeMobileDiagnostics } from '../../modules/mobile-diagnostics/src';
-import { setDiagnosticSink } from './mobile-diagnostics';
+import { getDiagnosticSnapshot, setDiagnosticSink } from './mobile-diagnostics';
+import { canRunNativeAbort, runNativeAbort } from './sentry-native-abort';
 import { installGlobalErrorCapture } from './global-error-capture';
 import { resolveAppEnvironment } from './app-environment';
 import type { InterruptedLiveActivityIntentDiagnostic } from './live-activity/live-activity-plugin';
@@ -566,18 +567,12 @@ export function setSentryDiagnosticTestContext(kind: string, testRunId: string):
 }
 
 export function canNativeAbortSentryCrash(): boolean {
-  return (
-    isSentryEnabled &&
-    nativeMobileDiagnostics?.nativeInitVersion === 1 &&
-    typeof nativeMobileDiagnostics.crashNativeAbort === 'function'
-  );
+  return canRunNativeAbort(isSentryEnabled, nativeMobileDiagnostics);
 }
 
-/** Real libc abort, distinct from Sentry.nativeCrash's Java exception on Android. */
-export function nativeAbortSentryCrash(): boolean {
-  if (!canNativeAbortSentryCrash()) return false;
-  nativeMobileDiagnostics?.crashNativeAbort?.();
-  return true;
+/** Real libc abort with native scope attribution in the same call, avoiding async RN setters. */
+export function nativeAbortSentryCrash(testRunId: string): boolean {
+  return runNativeAbort(isSentryEnabled, nativeMobileDiagnostics, testRunId, getDiagnosticSnapshot());
 }
 
 // Wrap the RN global error handler regardless of whether Sentry is enabled: the

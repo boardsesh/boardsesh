@@ -181,3 +181,18 @@ events. Keep the PR draft until device qualification and the required Astra/Fabl
 BLE review are complete. On this change, Linux can validate prebuild output,
 TypeScript, tests, bundles, and pipeline contracts; iOS compilation and native
 crash receipt remain device/release checks.
+
+The owned abort requires `nativeAbortVersion >= 2`, independently of early
+`nativeInitVersion`. The confirmation run ID and current diagnostic snapshot go
+through one synchronous Expo call. Native code validates a 32 KB UTF-8 limit
+before updating scope. Cocoa stamps tags and the dedicated
+`contexts.mobile_diagnostics_native_abort` snapshot synchronously into SentryCrash.
+Android executes direct runtime NativeScope JNI tags, the JSON snapshot in
+`extra.mobile_diagnostics_native_abort`, and libc abort together on Sentry's single-thread
+executor, after earlier scope observers. This avoids React Native's async
+setters and Android's queued NDK observers. A pending job times out after five
+seconds and cannot crash later; once the atomic action starts, the call cannot
+report unavailable while that action still runs. Missing SDK/NDK support or
+preparation failure removes partial test attribution and reports unavailable,
+without a fallback crash. Older binaries
+with only abort capability v1 cannot run this qualification test.
