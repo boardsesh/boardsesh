@@ -326,6 +326,7 @@ function ClimbTopChromeComponent({
       createAccessibilityLabel={t('mobile.create.fab.ariaLabel')}
       onOpenBoardSwitcher={onOpenBoardDetail}
       boardBadge={showBoardBadge}
+      anchorBoardButton
       onHeightChange={onHeightChange}
       hideLight
     >

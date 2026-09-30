@@ -24,6 +24,12 @@ export const SHOWCASE_ANCHOR_NAMES = [
   'queue-row-avatar',
   'play-next',
   'profile-board-filter',
+  'board-history-button',
+  'now-on-wall',
+  'wall-history',
+  'workout-type',
+  'rest-timer',
+  'activity-calendar',
 ] as const;
 export type ShowcaseAnchorName = (typeof SHOWCASE_ANCHOR_NAMES)[number];
 

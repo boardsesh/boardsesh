@@ -100,8 +100,9 @@ in `packages/mobile/src/lib/screenshot-mode.ts`.
 
 ### Fake Bluetooth and showcase anchors
 
-Two screenshot-mode switches exist for the homepage showcase video (see
-`docs/showcase-video.md` for the recorder and renderer):
+Two screenshot-mode switches exist for the homepage showcase video. The recorder and
+renderer are documented in `docs/showcase-video.md`, which lands with the recorder PR; until
+that merges, `scripts/lib/showcase-video/contract.ts` is the reference.
 
 - `EXPO_PUBLIC_SCREENSHOT_FAKE_BLE=1` (honoured only with `EXPO_PUBLIC_SCREENSHOT_MODE=1`)
   makes the app act as if a real board were in range, since the simulator has no Bluetooth.
@@ -117,9 +118,22 @@ Two screenshot-mode switches exist for the homepage showcase video (see
   `[showcase-anchor] {"name":"wall-pill","x":24,"y":118,"width":132,"height":32}`, in
   `measureInWindow` points. Each logs on layout and again 250 ms and 700 ms later, so a
   sheet that springs in still reports where it settled, and a repeat of the same rect is
-  skipped. The names are `wall-pill`, `board-surface`, `invite-qr`, `queue-row-avatar`
-  (first upcoming queue row only), `play-next` (the long-press menu row) and
-  `profile-board-filter` (the Progress tab's Filter button). The hook is
+  skipped. The names:
+  - `wall-pill`, `board-surface`: the play view's wall-state pill and board.
+  - `invite-qr`: the QR code in the session invite sheet.
+  - `queue-row-avatar`: the added-by avatar on the first upcoming queue row only.
+  - `play-next`: the Play next row in the long-press climb menu.
+  - `profile-board-filter`: the Progress tab's Filter button.
+  - `board-history-button`: the board glyph at the top right of the Climbs list (liquid
+    glass chrome only), which opens the board sheet.
+  - `now-on-wall`, `wall-history`: that sheet's lit-climb hero and its "Lit on this wall"
+    header. Only the sheet reports them, never the iPad column or the Wall tab.
+  - `workout-type`: the selected tile in the Session tab's workout shelf.
+  - `rest-timer`: the rest timer's on/off row.
+  - `activity-calendar`: the Progress tab's activity calendar grid.
+
+  The Live Activity buttons (`lock-next`, `lock-relight`, `lock-mirror`) can't log from a
+  widget, so the recorder authors those rects itself. The hook is
   `packages/mobile/src/lib/showcase-anchor.ts`; the contract it must match is
   `scripts/lib/showcase-video/contract.ts`.
 
