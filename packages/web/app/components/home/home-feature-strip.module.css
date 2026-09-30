@@ -80,3 +80,8 @@
     max-width: 300px;
   }
 }
+
+.previewSwitch {
+  display: flex;
+  margin-bottom: var(--spacing-6);
+}

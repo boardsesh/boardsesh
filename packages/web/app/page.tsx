@@ -4,6 +4,7 @@ import { getServerTranslation } from '@/app/lib/i18n/server';
 import { getLocale } from '@/app/lib/i18n/get-locale';
 import I18nProvider from '@/app/components/providers/i18n-provider';
 import SiteJsonLd from '@/app/components/seo/site-json-ld';
+import ShowcaseVideoJsonLd from '@/app/components/seo/showcase-video-json-ld';
 import { getBoardDiscovery } from './lib/server-board-discovery';
 import { getRecentBetaLinks } from './lib/server-recent-beta-links';
 import HomePageContent from './home-page-content';
@@ -48,6 +49,9 @@ export default async function Home() {
       {/* The hero's Next Image owns its responsive preload. Board and beta
           thumbnails now sit below the hero and must not compete with it. */}
       <SiteJsonLd />
+      {/* The hero video is English-only (its text is burned in), so only the
+          English page describes it to crawlers. */}
+      {locale === 'en-US' ? <ShowcaseVideoJsonLd /> : null}
       {/* The three marketing sections are async server components, so they are
           rendered HERE and handed down as slots: HomePageContent is a client
           component (the hero reads the visitor's platform) and cannot await

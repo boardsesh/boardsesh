@@ -113,6 +113,23 @@
     "recentBeta": {
       "title": "Beta fresca"
     },
+    "showcase": {
+      "videoLabel": "Demo: encender un plafón Kilter desde el móvil, cambiar de plafón, llevar una cola de grupo y registrar un encadene.",
+      "scenes": {
+        "hook": "Tu plafón. Encendido desde el móvil.",
+        "light": "Desliza y el plafón te sigue.",
+        "boards": "Todos los plafones. Una app.",
+        "wall": "Mira qué hay en el plafón.",
+        "crew": "Tu grupo. Una cola.",
+        "workouts": "Dale un plan a tu sesión.",
+        "island": "Controla el plafón desde la Dynamic Island.",
+        "log": "Recuerda cada encadene.",
+        "outro": "Menos móvil. Más plafón."
+      },
+      "unsupported": "Tu navegador no puede reproducir este vídeo.",
+      "pause": "Pausar demo",
+      "play": "Reproducir demo"
+    },
     "features": {
       "title": "Noche de plafón, resuelta",
       "lead": "Del primer bloque al último encadene, comparte toda la sesión.",

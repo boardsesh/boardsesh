@@ -4,12 +4,16 @@ import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { PageCard, PageSection } from '@/app/components/ui/page-shell';
-import { MarketingScreenshot, type MarketingShot } from '@/app/components/marketing/marketing-screenshot';
+import {
+  MarketingScreenshot,
+  MarketingPreviewSwitch,
+  type MarketingShot,
+} from '@/app/components/marketing/marketing-screenshot';
 import styles from './home-feature-strip.module.css';
 
 /** The benefits stay server-rendered; only each image reads the shared preview choice. */
 export default async function HomeFeatureStrip() {
-  const { t } = await getServerTranslation('marketing');
+  const { t, locale } = await getServerTranslation('marketing');
   const features: { id: MarketingShot; title: string; body: string; alt: string }[] = [
     {
       id: 'queue',
@@ -34,6 +38,13 @@ export default async function HomeFeatureStrip() {
   return (
     <Box className={styles.strip}>
       <PageSection className={styles.section} title={t('home.features.title')} lead={t('home.features.lead')}>
+        {/* On the English page the hero shows the demo video, so the iOS/Android
+            choice for these screenshots lives here. Other locales keep it in the hero. */}
+        {locale === 'en-US' ? (
+          <Box className={styles.previewSwitch}>
+            <MarketingPreviewSwitch />
+          </Box>
+        ) : null}
         <Box component="ul" className={styles.grid}>
           {features.map((feature) => (
             <PageCard

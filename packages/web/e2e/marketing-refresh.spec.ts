@@ -61,7 +61,13 @@ for (const browserProfile of platformBrowsers) {
       expect(html).not.toContain(`/images/app/${oppositePlatform}/`);
       expect(html).not.toContain(encodeURIComponent(`/images/app/${oppositePlatform}/`));
       const screenshots = page.locator('[data-marketing-shot]');
-      await expect(screenshots).toHaveCount(6);
+      // English hero: the demo video replaces the three-phone stack, so only the
+      // feature strip's three shots remain.
+      await expect(screenshots).toHaveCount(3);
+      const showcase = page.locator('figure:has(video)');
+      await expect(showcase).toHaveCount(1);
+      await expect(showcase.locator('img[fetchpriority="high"]')).toHaveCount(1);
+      await expect(showcase.getByRole('button', { name: /^(Pause|Play) demo$/ })).toHaveCount(1);
       for (const screenshot of await screenshots.all()) {
         await screenshot.scrollIntoViewIfNeeded();
         await expect(screenshot).toHaveAttribute('data-preview-platform', browserProfile.platform);
@@ -91,6 +97,24 @@ for (const browserProfile of platformBrowsers) {
   });
 }
 
+test('non-English homepages keep the six-shot phone stack and no demo video', async ({ browser, baseURL }) => {
+  const context = await browser.newContext({
+    baseURL,
+    ignoreHTTPSErrors,
+    userAgent: platformBrowsers[3].userAgent,
+    viewport: { width: 1440, height: 1000 },
+  });
+  try {
+    const page = await context.newPage();
+    await page.goto('/de');
+    await expect(page.locator('[data-marketing-shot]')).toHaveCount(6);
+    await expect(page.locator('video')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'iOS', exact: true })).toHaveCount(1);
+  } finally {
+    await context.close();
+  }
+});
+
 test('desktop preview switching persists when navigating to About', async ({ browser, baseURL }) => {
   const context = await browser.newContext({
     baseURL,
@@ -102,7 +126,7 @@ test('desktop preview switching persists when navigating to About', async ({ bro
     const page = await context.newPage();
     await page.goto('/');
     await page.getByRole('button', { name: 'iOS', exact: true }).click();
-    await expect(page.locator('[data-preview-platform="ios"]')).toHaveCount(6);
+    await expect(page.locator('[data-preview-platform="ios"]')).toHaveCount(3);
     await page.getByTestId('marketing-header').getByRole('link', { name: 'About', exact: true }).click();
     await expect(page).toHaveURL(/\/about$/);
     await expect(

@@ -24,10 +24,11 @@ function resolveMarketingKey(key: string): string {
   return typeof node === 'string' ? node : key;
 }
 
+let mockLanguage = 'en-US';
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string) => resolveMarketingKey(key),
-    i18n: { language: 'en-US', changeLanguage: () => Promise.resolve() },
+    i18n: { language: mockLanguage, changeLanguage: () => Promise.resolve() },
   }),
 }));
 
@@ -56,6 +57,19 @@ vi.mock('@/app/lib/ble/capacitor-utils', () => ({
 
 vi.mock('next-auth/react', () => ({
   useSession: () => ({ data: null, status: 'unauthenticated' }),
+}));
+
+// jsdom has neither matchMedia nor a playable <video>; the hook has its own suite.
+vi.mock('@/app/hooks/use-autoplay-video', () => ({
+  useAutoplayVideo: () => ({
+    videoRef: { current: null },
+    showsControls: false,
+    prefersReducedMotion: false,
+    autoplayRefused: false,
+    isShowingVideo: false,
+    userPaused: false,
+    toggleUserPaused: () => undefined,
+  }),
 }));
 
 vi.mock('@/app/components/beta-videos/home-recent-beta-section', () => ({
@@ -100,6 +114,7 @@ function setUserAgent(ua: string) {
 
 describe('HomePageContent', () => {
   let openSpy: ReturnType<typeof vi.spyOn>;
+  let loadSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -107,14 +122,24 @@ describe('HomePageContent', () => {
     mockIsCapacitorWebView.mockReturnValue(false);
     mockWaitForCapacitor.mockResolvedValue(false);
     openSpy = vi.spyOn(window, 'open').mockReturnValue(null);
+    // The showcase picks its video source from matchMedia; jsdom has neither that nor load().
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })),
+    );
+    loadSpy = vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => undefined);
   });
 
   afterEach(() => {
+    vi.unstubAllGlobals();
+    mockLanguage = 'en-US';
+    loadSpy.mockRestore();
     openSpy.mockRestore();
     setUserAgent(ORIGINAL_UA);
   });
 
-  it('explains the app before discovery and shows three real board captures', () => {
+  it('explains the app before discovery and shows three real board captures outside English', () => {
+    mockLanguage = 'es';
     render(
       <HomePageContent featureStrip={<section data-testid="features" />} gymSearch={<section data-testid="gyms" />} />,
     );
@@ -124,6 +149,26 @@ describe('HomePageContent', () => {
     expect(screen.getByAltText(resolveMarketingKey('home.hero.playShotAlt'))).toBeTruthy();
     expect(screen.getByAltText(resolveMarketingKey('home.hero.tensionShotAlt'))).toBeTruthy();
     expect(screen.getByAltText(resolveMarketingKey('home.hero.moonboardShotAlt'))).toBeTruthy();
+  });
+
+  it('shows the demo video in the hero on the English page, in place of the phone stack', () => {
+    render(<HomePageContent featureStrip={<section data-testid="features" />} />);
+    const heroHeading = screen.getByRole('heading', { level: 1 });
+    const video = screen.getByLabelText(resolveMarketingKey('home.showcase.videoLabel'));
+    const featureSection = screen.getByTestId('features');
+    expect(heroHeading.compareDocumentPosition(video) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(video.compareDocumentPosition(featureSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByAltText(resolveMarketingKey('home.hero.playShotAlt'))).toBeNull();
+    expect(screen.queryByRole('heading', { name: /see it on the wall/i })).toBeNull();
+    expect(document.querySelectorAll('figcaption li')).toHaveLength(9);
+    expect(screen.getByRole('button', { name: resolveMarketingKey('home.showcase.play') })).toBeTruthy();
+  });
+
+  it.each(['es', 'fr', 'de'])('keeps the phone stack and no video in the %s hero', (language) => {
+    mockLanguage = language;
+    render(<HomePageContent featureStrip={<section data-testid="features" />} />);
+    expect(screen.getByAltText(resolveMarketingKey('home.hero.playShotAlt'))).toBeTruthy();
+    expect(document.querySelector('video')).toBeNull();
   });
 
   describe('hero install CTA', () => {

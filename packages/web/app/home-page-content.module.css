@@ -94,6 +94,12 @@
   );
   pointer-events: none;
 }
+.heroShowcase {
+  display: flex;
+  justify-content: center;
+  max-width: none;
+  aspect-ratio: auto;
+}
 .previewPhone {
   position: absolute;
   display: block;
@@ -150,6 +156,10 @@
   .heroPreview {
     justify-self: center;
     max-width: 390px;
+  }
+
+  .heroShowcase {
+    max-width: none;
   }
 
   .heroActions {
