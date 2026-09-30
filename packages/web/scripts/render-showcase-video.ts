@@ -43,11 +43,12 @@ import {
   SHOWCASE_FPS,
   SHOWCASE_OUT_DIR,
   SHOWCASE_TAKE_IDS,
-  type ShowcaseAnchorName,
   type ShowcaseAnchorsFile,
+  type ShowcaseCalloutName,
   type ShowcaseTakeId,
 } from '../../../scripts/lib/showcase-video/contract';
 import {
+  SHOWCASE_OPTIONAL_TAKES,
   SHOWCASE_POSTER_FRAME,
   SHOWCASE_SCENES,
   SHOWCASE_TOTAL_FRAMES,
@@ -58,6 +59,7 @@ import {
   SHOWCASE_CANVAS,
   SHOWCASE_CHOREO,
   SHOWCASE_DEVICE_SCALE,
+  SHOWCASE_LIGHT_ROLE_COLORS,
   SHOWCASE_FRAMES_DIR,
   SHOWCASE_PERSPECTIVE,
   SHOWCASE_PHONE,
@@ -70,8 +72,10 @@ import {
   SHOWCASE_STAGE_TOKENS,
   SHOWCASE_STILLS_DIR,
   SHOWCASE_TAKE_LEAD_FRAMES,
+  SHOWCASE_WEB_BITRATE_KBPS,
   SHOWCASE_WEB_FALLBACK_MP4,
   SHOWCASE_WEB_MAX_BYTES,
+  SHOWCASE_WORKOUT_BEATS,
   anchorsFilePath,
   buildDurationProbeArgs,
   buildFramePngArgs,
@@ -85,17 +89,22 @@ import {
   layoutSceneCallouts,
   parseRenderArgs,
   placeholderAnchorsFile,
+  placeholderCardSvg,
+  planBoards,
+  prepareAnchorsFile,
   readingBudgetReport,
+  sceneCalloutCopy,
   resolveSceneCallouts,
   showcaseOutputs,
   stillFramesForScene,
-  webBitrateKbps,
   webCutSeconds,
+  workoutTickFrames,
   type LitHold,
   type RenderArgs,
   type ShowcaseCopy,
   type ShowcaseFormat,
   type ShowcaseStageData,
+  type StageBoards,
   type StageCallout,
   type StageTake,
 } from '../../../scripts/lib/showcase-video/render';
@@ -113,11 +122,12 @@ Renders the homepage showcase video from marketing/showcase-video/.
 
   --stills               Contact sheets only (settled + mid-transition frames per scene)
                          → ${relative(REPO_ROOT, SHOWCASE_STILLS_DIR)}/
+  --frame <n>            One frame as a full-size PNG → ${relative(REPO_ROOT, SHOWCASE_STILLS_DIR)}/
   --measure              Draw every anchor box over the footage (debug; never ships)
   --from-frame <n>       Start at frame n (writes a preview, skips the web encodes)
   --format 16x9|9x16     One format only (default: both)
   --placeholder-footage  Rebuild stand-in footage + anchors from the committed help
-                         clips and store screenshots before rendering
+                         clips, store screenshots and generated cards before rendering
   --skip-web             Stop after brag.mp4 / brag.jpg (no web encodes or posters)
   --help                 Show this message`;
 
@@ -132,10 +142,20 @@ async function buildPlaceholderFootage(): Promise<void> {
     const dir = footageTakeDir(takeId);
     rmSync(dir, { recursive: true, force: true });
     mkdirSync(dir, { recursive: true });
-    await execFileAsync(FFMPEG_BIN, buildPlaceholderFootageArgs(takeId, take, dir));
+    let cardImage: string | undefined;
+    if (take.source.kind === 'card') {
+      cardImage = resolve(SHOWCASE_FRAMES_DIR, `placeholder-${takeId}.png`);
+      mkdirSync(SHOWCASE_FRAMES_DIR, { recursive: true });
+      await sharp(Buffer.from(placeholderCardSvg(take.source.card)))
+        .png()
+        .toFile(cardImage);
+    }
+    await execFileAsync(FFMPEG_BIN, buildPlaceholderFootageArgs(takeId, take, dir, cardImage));
+    if (cardImage) rmSync(cardImage, { force: true });
     mkdirSync(dirname(anchorsFilePath(takeId)), { recursive: true });
     writeFileSync(anchorsFilePath(takeId), `${JSON.stringify(placeholderAnchorsFile(takeId, take), null, 2)}\n`);
-    log(`placeholder ${takeId}: ${countFrames(dir)} frames from ${take.source.file}`);
+    const source = take.source.kind === 'card' ? `a "${take.source.card.title}" card` : take.source.file;
+    log(`placeholder ${takeId}: ${countFrames(dir)} frames from ${source}`);
   }
 }
 
@@ -151,23 +171,30 @@ function readAnchors(takeId: ShowcaseTakeId): ShowcaseAnchorsFile {
   if (parsed.takeId !== takeId || !parsed.screen || !parsed.anchors) {
     throw new Error(`${path} is not a ShowcaseAnchorsFile for "${takeId}"`);
   }
-  return parsed;
+  // Sorted and with header-only anchors grown, once, here.
+  return prepareAnchorsFile(parsed);
 }
 
+/**
+ * Every take with footage. A missing board take is skipped (the pile-up uses
+ * the boards that were recorded); any other missing take stops the render.
+ */
 function loadTakes(): {
-  takes: Record<ShowcaseTakeId, StageTake>;
-  anchors: Record<ShowcaseTakeId, ShowcaseAnchorsFile>;
+  takes: Partial<Record<ShowcaseTakeId, StageTake>>;
+  anchors: Partial<Record<ShowcaseTakeId, ShowcaseAnchorsFile>>;
 } {
   const missing = SHOWCASE_TAKE_IDS.filter((takeId) => countFrames(footageTakeDir(takeId)) === 0);
-  if (missing.length > 0) {
+  const required = missing.filter((takeId) => !SHOWCASE_OPTIONAL_TAKES.includes(takeId));
+  if (required.length > 0) {
     throw new Error(
-      `No footage for ${missing.join(', ')} under ${relative(REPO_ROOT, dirname(footageTakeDir('light')))}. ` +
+      `No footage for ${required.join(', ')} under ${relative(REPO_ROOT, dirname(footageTakeDir('light')))}. ` +
         'Record the takes, or pass --placeholder-footage to build stand-ins from the help clips.',
     );
   }
-  const takes = {} as Record<ShowcaseTakeId, StageTake>;
-  const anchors = {} as Record<ShowcaseTakeId, ShowcaseAnchorsFile>;
-  for (const takeId of SHOWCASE_TAKE_IDS) {
+  for (const takeId of missing) warn(`no footage for optional take "${takeId}"; the boards scene goes without it`);
+  const takes: Partial<Record<ShowcaseTakeId, StageTake>> = {};
+  const anchors: Partial<Record<ShowcaseTakeId, ShowcaseAnchorsFile>> = {};
+  for (const takeId of SHOWCASE_TAKE_IDS.filter((candidate) => !missing.includes(candidate))) {
     const file = readAnchors(takeId);
     anchors[takeId] = file;
     takes[takeId] = {
@@ -256,30 +283,36 @@ function gradeColors(): ShowcaseStageData['grades'] {
 
 type Prepared = Readonly<{
   copy: ShowcaseCopy;
-  takes: Record<ShowcaseTakeId, StageTake>;
-  anchors: Record<ShowcaseTakeId, ShowcaseAnchorsFile>;
+  takes: Partial<Record<ShowcaseTakeId, StageTake>>;
+  anchors: Partial<Record<ShowcaseTakeId, ShowcaseAnchorsFile>>;
   holds: LitHold[];
-  callouts: Partial<Record<ShowcaseScene['id'], ShowcaseAnchorName[]>>;
+  callouts: Partial<Record<ShowcaseScene['id'], ShowcaseCalloutName[]>>;
+  boards: StageBoards;
 }>;
 
 async function prepare(): Promise<Prepared> {
   const copy = JSON.parse(readFileSync(SHOWCASE_STAGE_COPY, 'utf8')) as ShowcaseCopy;
   const { takes, anchors } = loadTakes();
-  const holds = await resolveHolds(takes.light, anchors.light);
+  const light = takes.light;
+  const lightAnchors = anchors.light;
+  if (!light || !lightAnchors) throw new Error('The light take is required');
+  const holds = await resolveHolds(light, lightAnchors);
   const callouts: Prepared['callouts'] = {};
   for (const scene of SHOWCASE_SCENES) {
     if (scene.callouts.length === 0) continue;
-    const labels = scene.id === 'light' ? copy.light.callouts : scene.id === 'crew' ? copy.crew.callouts : {};
-    const resolved = resolveSceneCallouts(scene, anchors[scene.takes[0]] ?? null, labels);
+    const resolved = resolveSceneCallouts(scene, anchors[scene.takes[0]] ?? null, sceneCalloutCopy(copy, scene.id));
     resolved.warnings.forEach(warn);
     callouts[scene.id] = resolved.callouts;
   }
+  const boardsScene = SHOWCASE_SCENES.find((scene) => scene.id === 'boards') as ShowcaseScene;
+  const boards = planBoards(boardsScene.takes, new Set(Object.keys(takes) as ShowcaseTakeId[]));
+  log(`boards: ${boards.arrival.length} phones (${boards.arrival.map((takeId) => boards.labels[takeId]).join(', ')})`);
   for (const report of readingBudgetReport(copy)) {
     const line = `${report.sceneId}: ${report.words} words need ${report.needFrames} frames, have ${report.haveFrames}`;
     if (report.haveFrames < report.needFrames) warn(`reading budget short: ${line}`);
     else log(`reading budget ok: ${line}`);
   }
-  return { copy, takes, anchors, holds, callouts };
+  return { copy, takes, anchors, holds, callouts, boards };
 }
 
 function stageData(format: ShowcaseFormat, prepared: Prepared, measure: boolean): ShowcaseStageData {
@@ -298,12 +331,18 @@ function stageData(format: ShowcaseFormat, prepared: Prepared, measure: boolean)
     poses: SHOWCASE_POSES[format],
     scenes: SHOWCASE_SCENES.map((scene) => {
       const names = prepared.callouts[scene.id] ?? [];
-      const labels = scene.id === 'light' ? prepared.copy.light.callouts : prepared.copy.crew.callouts;
+      const anchorsFile = prepared.anchors[scene.takes[0]];
       const callouts: StageCallout[] =
-        names.length > 0 ? layoutSceneCallouts(format, names, prepared.anchors[scene.takes[0]], labels) : [];
+        names.length > 0 && anchorsFile
+          ? layoutSceneCallouts(format, names, anchorsFile, sceneCalloutCopy(prepared.copy, scene.id))
+          : [];
       return { ...scene, callouts };
     }),
     takes: prepared.takes,
+    boards: prepared.boards,
+    workout: workoutTickFrames(prepared.copy.workouts.rows.map((row) => row.grade)),
+    workoutBeats: SHOWCASE_WORKOUT_BEATS,
+    lightRoles: SHOWCASE_LIGHT_ROLE_COLORS,
     holds: prepared.holds,
     copy: prepared.copy,
     grades: gradeColors(),
@@ -437,6 +476,23 @@ async function renderStills(format: ShowcaseFormat, data: ShowcaseStageData, mea
   return written;
 }
 
+async function renderSingleFrame(format: ShowcaseFormat, data: ShowcaseStageData, frame: number): Promise<void> {
+  mkdirSync(SHOWCASE_STILLS_DIR, { recursive: true });
+  const { width, height } = SHOWCASE_CANVAS[format];
+  const { browser, page, client } = await openStage(format, data);
+  try {
+    await renderFrame(page, frame);
+    const output = resolve(SHOWCASE_STILLS_DIR, `${format}-frame-${String(frame).padStart(4, '0')}.png`);
+    await sharp(await capture(client))
+      .resize(width, height, { kernel: 'lanczos3' })
+      .png()
+      .toFile(output);
+    log(`frame: ${relative(REPO_ROOT, output)}`);
+  } finally {
+    await browser.close();
+  }
+}
+
 // --- full render ------------------------------------------------------------------------------
 
 async function renderMezzanine(format: ShowcaseFormat, data: ShowcaseStageData, fromFrame: number, output: string) {
@@ -500,8 +556,8 @@ const kb = (bytes: number) => `${(bytes / 1000).toFixed(0)} kB`;
 async function encodeWeb(format: ShowcaseFormat, mezzanine: string): Promise<void> {
   const outputs = showcaseOutputs(format);
   mkdirSync(dirname(outputs.webWebm), { recursive: true });
-  const seconds = webCutSeconds();
-  const bitrateKbps = webBitrateKbps(SHOWCASE_WEB_MAX_BYTES, seconds);
+  const bitrateKbps = SHOWCASE_WEB_BITRATE_KBPS;
+  log(`${format}: web cut ${webCutSeconds().toFixed(1)} s at ${bitrateKbps} kbit/s`);
 
   const webm = { input: mezzanine, output: outputs.webWebm, bitrateKbps, passLog: outputs.passLog };
   await execFileAsync(FFMPEG_BIN, buildWebmPassArgs(webm, 1));
@@ -544,11 +600,33 @@ async function renderVideo(format: ShowcaseFormat, data: ShowcaseStageData, args
   const tag = args.measure ? '-measure' : args.fromFrame > 0 ? `-from-${args.fromFrame}` : '';
   const mezzanine = outputs.mezzanine.replace(/\.mkv$/, `${tag}.mkv`);
   const master = outputs.master.replace(/\.mp4$/, `${tag}.mp4`);
-  await renderMezzanine(format, data, args.fromFrame, mezzanine);
-  mkdirSync(SHOWCASE_OUT_DIR, { recursive: true });
-  await execFileAsync(FFMPEG_BIN, buildMasterArgs(mezzanine, master));
-  log(`${relative(REPO_ROOT, master)}: ${kb(statSync(master).size)} (${await probe(master)})`);
-  if (preview) return;
+  try {
+    await renderMezzanine(format, data, args.fromFrame, mezzanine);
+    mkdirSync(SHOWCASE_OUT_DIR, { recursive: true });
+    await execFileAsync(FFMPEG_BIN, buildMasterArgs(mezzanine, master));
+    log(`${relative(REPO_ROOT, master)}: ${kb(statSync(master).size)} (${await probe(master)})`);
+    if (!preview) await finishDeliverables(format, mezzanine, args);
+  } finally {
+    removeIntermediates(mezzanine, outputs.passLog);
+  }
+}
+
+/**
+ * The mezzanine (~60–120 MB a format) and the two-pass logs only exist to feed
+ * the encodes. Disk is tight, so they go as soon as the encodes are done, or
+ * the render fails.
+ */
+function removeIntermediates(mezzanine: string, passLog: string): void {
+  rmSync(mezzanine, { force: true });
+  const dir = dirname(passLog);
+  if (!existsSync(dir)) return;
+  const prefix = passLog.slice(dir.length + 1);
+  for (const name of readdirSync(dir)) if (name.startsWith(prefix)) rmSync(resolve(dir, name), { force: true });
+  log(`removed intermediates for ${relative(REPO_ROOT, mezzanine)}`);
+}
+
+async function finishDeliverables(format: ShowcaseFormat, mezzanine: string, args: RenderArgs): Promise<void> {
+  const outputs = showcaseOutputs(format);
 
   await sharp(await framePng(mezzanine, SHOWCASE_POSTER_FRAME))
     .jpeg({ quality: 92, mozjpeg: true })
@@ -574,7 +652,8 @@ async function main(): Promise<void> {
   const prepared = await prepare();
   for (const format of args.formats) {
     const data = stageData(format, prepared, args.measure);
-    if (args.stills) await renderStills(format, data, args.measure);
+    if (args.frame !== null) await renderSingleFrame(format, data, args.frame);
+    else if (args.stills) await renderStills(format, data, args.measure);
     else await renderVideo(format, data, args);
   }
 }

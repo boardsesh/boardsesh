@@ -10,13 +10,15 @@ import {
   SHOWCASE_WEB_VIDEO_DIR,
   SHOWCASE_WORK_ROOT,
   anchorAt,
-  type ShowcaseAnchorName,
+  sortAnchorSamples,
   type ShowcaseAnchorRect,
   type ShowcaseAnchorSample,
   type ShowcaseAnchorsFile,
+  type ShowcaseCalloutName,
   type ShowcaseTakeId,
 } from './contract';
 import { HELP_CLIP_VIDEO_DIR } from '../help-clips';
+import { BOARD_TYPE_LABELS } from '../../../packages/board-constants/src/board-type-labels';
 import { SHOWCASE_SCENES, SHOWCASE_TOTAL_FRAMES, requiredTakeSeconds, type ShowcaseScene } from './timeline';
 
 /**
@@ -218,6 +220,32 @@ export function anchorOnScreen(
   return ((right - left) * (bottom - top)) / (rect.width * rect.height) >= minVisible;
 }
 
+/**
+ * Anchors that mark only the top of what a callout means: the app logs the
+ * history section's header line, but "Lit on this wall" is the list under it,
+ * so its box grows downward by this many points (clamped to the screen).
+ */
+export const SHOWCASE_ANCHOR_EXTEND_DOWN: Partial<Record<ShowcaseCalloutName, number>> = {
+  'wall-history': 300,
+};
+
+/**
+ * An anchors file as the stage should read it: every list sorted by `t` (what
+ * `anchorAt` needs; see `sortAnchorSamples`) and the header-only anchors grown
+ * over the content they introduce. Run once on load, never per frame.
+ */
+export function prepareAnchorsFile(file: ShowcaseAnchorsFile): ShowcaseAnchorsFile {
+  const anchors: Partial<Record<ShowcaseCalloutName, ShowcaseAnchorSample[]>> = {};
+  for (const [name, samples] of Object.entries(file.anchors) as [ShowcaseCalloutName, ShowcaseAnchorSample[]][]) {
+    const extend = SHOWCASE_ANCHOR_EXTEND_DOWN[name] ?? 0;
+    anchors[name] = sortAnchorSamples(samples).map((sample) => ({
+      ...sample,
+      height: Math.max(sample.height, Math.min(sample.height + extend, file.screen.height - 24 - sample.y)),
+    }));
+  }
+  return { ...file, anchors };
+}
+
 // --- footage timing ------------------------------------------------------
 
 /**
@@ -265,37 +293,55 @@ export function countWords(text: string): number {
   return (text.match(/[\p{L}\p{N}]+(?:['’][\p{L}]+)?/gu) ?? []).length;
 }
 
-export type ShowcaseRow = Readonly<{ name: string; grade: string; time: string }>;
+type CalloutCopy = Partial<Record<ShowcaseCalloutName, string>>;
+type SceneCopy = Readonly<{ headline: string; callouts?: CalloutCopy }>;
+
+/** One step of the workouts checklist: a name, the grade chip, and the rest that follows it. */
+export type WorkoutRow = Readonly<{ name: string; grade: string; rest: string }>;
+
 export type ShowcaseCopy = Readonly<{
-  hook: Readonly<{ headline: string }>;
-  light: Readonly<{ headline: string; callouts: Partial<Record<ShowcaseAnchorName, string>> }>;
-  boards: Readonly<{ headline: string; labels: readonly string[] }>;
-  crew: Readonly<{ headline: string; callouts: Partial<Record<ShowcaseAnchorName, string>> }>;
-  log: Readonly<{ headline: string; rows: readonly ShowcaseRow[] }>;
+  hook: SceneCopy;
+  light: SceneCopy;
+  boards: SceneCopy;
+  wall: SceneCopy;
+  crew: SceneCopy;
+  workouts: SceneCopy &
+    Readonly<{
+      rows: readonly WorkoutRow[];
+      /** Label on the rest countdown, and the values it counts through. */
+      restLabel: string;
+      restCountdown: readonly string[];
+    }>;
+  'lock-screen': SceneCopy;
+  log: SceneCopy;
   outro: Readonly<{ wordmark: string; tagline: string; pill: string }>;
 }>;
 
-/** The text on screen once a scene has settled, by scene. */
+/** `boards-soill` → "So iLL", from the one brand-name map the apps use. */
+export function boardTakeLabel(takeId: ShowcaseTakeId): string {
+  const boardType = takeId.replace(/^boards-/, '');
+  return BOARD_TYPE_LABELS[boardType] ?? boardType;
+}
+
+export const sceneCalloutCopy = (copy: ShowcaseCopy, sceneId: ShowcaseScene['id']): CalloutCopy =>
+  sceneId === 'outro' ? {} : (copy[sceneId].callouts ?? {});
+
+/**
+ * The text on screen once a scene has settled. Grade chips, rest times and
+ * timestamps are glanced at, not read, so they do not count.
+ */
 export function sceneVisibleText(
   scene: ShowcaseScene,
   copy: ShowcaseCopy,
-  callouts: readonly ShowcaseAnchorName[] = scene.callouts,
+  callouts: readonly ShowcaseCalloutName[] = scene.callouts,
+  boardTakes: readonly ShowcaseTakeId[] = scene.takes,
 ): string[] {
-  switch (scene.id) {
-    case 'hook':
-      return [copy.hook.headline];
-    case 'light':
-      return [copy.light.headline, ...callouts.map((name) => copy.light.callouts[name] ?? '')];
-    case 'boards':
-      return [copy.boards.headline, ...copy.boards.labels];
-    case 'crew':
-      return [copy.crew.headline, ...callouts.map((name) => copy.crew.callouts[name] ?? '')];
-    case 'log':
-      // Grade chips and timestamps are glanced at, not read.
-      return [copy.log.headline, ...copy.log.rows.map((row) => row.name)];
-    case 'outro':
-      return [copy.outro.wordmark, copy.outro.tagline, copy.outro.pill];
-  }
+  if (scene.id === 'outro') return [copy.outro.wordmark, copy.outro.tagline, copy.outro.pill];
+  const labels = sceneCalloutCopy(copy, scene.id);
+  const text = [copy[scene.id].headline, ...callouts.map((name) => labels[name] ?? '')];
+  if (scene.id === 'boards') text.push(...boardTakes.map(boardTakeLabel));
+  if (scene.id === 'workouts') text.push(...copy.workouts.rows.map((row) => row.name), copy.workouts.restLabel);
+  return text;
 }
 
 /**
@@ -327,6 +373,7 @@ export function readingBudgetReport(
   scenes: readonly ShowcaseScene[] = SHOWCASE_SCENES,
 ): ReadingBudgetReport[] {
   return scenes.map((scene) => {
+    // Every board phone and every callout present: the worst case.
     const words = sceneVisibleText(scene, copy)
       .map((text) => countWords(text.replace(/\*/g, '')))
       .reduce((sum, count) => sum + count, 0);
@@ -363,6 +410,32 @@ export function parseHeadline(headline: string): HeadlineWord[][] {
 export type CalloutRole = 'start' | 'hand' | 'finish';
 export const CALLOUT_ROLES: readonly CalloutRole[] = ['start', 'hand', 'finish'];
 
+/**
+ * Role hues for callouts on the lavender scenes. The LED hues (#00FF00,
+ * #4DF5FD, #FF00FF) vanish on #F4F1FB, so light scenes draw the same roles a
+ * step darker: each clears 3:1 against the background (the render test checks).
+ * Start is the Velvet Send light `success`.
+ */
+export const SHOWCASE_LIGHT_ROLE_COLORS: Record<CalloutRole, string> = {
+  start: '#047857',
+  hand: '#0E7490',
+  finish: '#A21CAF',
+};
+export const SHOWCASE_STAGE_LIGHT = '#F4F1FB';
+
+/** WCAG 2 contrast ratio between two `#RRGGBB` colours. */
+export function contrastRatio(first: string, second: string): number {
+  const luminance = (hex: string) => {
+    const channels = [1, 3, 5].map((offset) => Number.parseInt(hex.slice(offset, offset + 2), 16) / 255);
+    const [red, green, blue] = channels.map((channel) =>
+      channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4,
+    );
+    return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+  };
+  const [lighter, darker] = [luminance(first), luminance(second)].sort((a, b) => b - a);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
 export const SHOWCASE_CALLOUT_LAYOUT = {
   boxPadding: 8,
   gutterX: 1340,
@@ -376,22 +449,57 @@ export const SHOWCASE_CALLOUT_LAYOUT = {
   portraitMinGap: 76,
 } as const;
 
-export function calloutSlots(count: number): number[] {
+/**
+ * Pill slots for a scene. When the boxes sit low on the screen (the lock
+ * screen's buttons), the column slides down with them, up to 180 px, so the
+ * leaders stay short.
+ */
+export function calloutSlots(count: number, meanBoxY = 540): number[] {
   if (count <= 0) return [];
-  if (count === 1) return [540];
-  if (count === 2) return [420, 660];
-  return [360, 540, 720].slice(0, count);
+  const base = count === 1 ? [540] : count === 2 ? [420, 660] : [360, 540, 720].slice(0, count);
+  const shift = Math.max(0, Math.min(180, meanBoxY - 540));
+  return base.map((slot) => slot + shift);
 }
 
 type Segment = Readonly<{ x1: number; y1: number; x2: number; y2: number }>;
 
-function leaderSegments(start: CanvasPoint, gutterX: number, slotY: number, pillX: number): Segment[] {
+/**
+ * How a leader leaves its box: from the side (the usual case), or from the top
+ * when running sideways would cut through another callout's box (a row of
+ * buttons, like the lock screen's).
+ */
+export type LeaderExit = 'side' | 'top';
+
+/** The 16:9 leader, as the stage draws it: box → gutter → pill slot → pill. */
+export function leaderPoints(
+  box: CanvasRect,
+  exit: LeaderExit,
+  laneY: number,
+  gutterX: number,
+  slotY: number,
+  pillX: number,
+): CanvasPoint[] {
+  if (exit === 'top') {
+    const x = box.x + box.width / 2;
+    return [
+      { x, y: box.y },
+      { x, y: laneY },
+      { x: gutterX, y: laneY },
+      { x: gutterX, y: slotY },
+      { x: pillX, y: slotY },
+    ];
+  }
+  const y = box.y + box.height / 2;
   return [
-    { x1: start.x, y1: start.y, x2: gutterX, y2: start.y },
-    { x1: gutterX, y1: start.y, x2: gutterX, y2: slotY },
-    { x1: gutterX, y1: slotY, x2: pillX, y2: slotY },
+    { x: box.x + box.width, y },
+    { x: gutterX, y },
+    { x: gutterX, y: slotY },
+    { x: pillX, y: slotY },
   ];
 }
+
+const toSegments = (points: readonly CanvasPoint[]): Segment[] =>
+  points.slice(1).map((point, index) => ({ x1: points[index].x, y1: points[index].y, x2: point.x, y2: point.y }));
 
 function segmentsCross(a: Segment, b: Segment): boolean {
   const aHorizontal = a.y1 === a.y2;
@@ -416,6 +524,13 @@ function segmentsCross(a: Segment, b: Segment): boolean {
   return within(vertical.x1, horizontal.x1, horizontal.x2) && within(horizontal.y1, vertical.y1, vertical.y2);
 }
 
+/** True when a horizontal run at `y` between `fromX` and `toX` passes through `box`. */
+function runHitsBox(fromX: number, toX: number, y: number, box: CanvasRect): boolean {
+  const left = Math.min(fromX, toX);
+  const right = Math.max(fromX, toX);
+  return y > box.y && y < box.y + box.height && right > box.x + 1 && left < box.x + box.width - 1;
+}
+
 function permutations<T>(items: readonly T[]): T[][] {
   if (items.length <= 1) return [items.slice()];
   return items.flatMap((item, index) =>
@@ -423,58 +538,119 @@ function permutations<T>(items: readonly T[]): T[][] {
   );
 }
 
+export type LeaderPlan = Readonly<{ exit: LeaderExit; laneY: number; gutterX: number; slotY: number }>;
+
 /**
- * One gutter x per leader so no two leaders cross or run on top of each other.
- * Leaders leave their box's right edge, run to their gutter, drop to their pill
- * slot and run into the pill. With at most three callouts, trying every order of
- * the gutter offsets is cheap and exact.
+ * 16:9 leaders for one scene's (padded) boxes. A box whose sideways run would
+ * cut through another box leaves from its top on its own lane (the leftmost
+ * box on the highest lane, so the risers never cross). Then every order of
+ * pill slots and gutter offsets is tried and the one with the fewest crossings
+ * wins, preferring slots in callout order and gutters near the nominal x.
+ * With at most three callouts that is 36 layouts: cheap and exact.
  */
-export function assignLeaderGutters(
-  starts: readonly CanvasPoint[],
-  slots: readonly number[],
+export function planLeaders(
+  boxes: readonly CanvasRect[],
   layout: Readonly<{ gutterX: number; gutterPitch: number; pillX: number }> = SHOWCASE_CALLOUT_LAYOUT,
-): number[] {
-  const offsets = starts.map((_, index) => layout.gutterX - index * layout.gutterPitch);
-  let best = offsets;
+): LeaderPlan[] {
+  const exits: LeaderExit[] = boxes.map((box, index) =>
+    boxes.some(
+      (other, otherIndex) =>
+        otherIndex !== index && runHitsBox(box.x + box.width, layout.gutterX, box.y + box.height / 2, other),
+    )
+      ? 'top'
+      : 'side',
+  );
+  const topOfAll = Math.min(...boxes.map((box) => box.y));
+  const lanes = boxes.map((box, index) => {
+    if (exits[index] !== 'top') return 0;
+    const risersToTheRight = boxes.filter((other, otherIndex) => exits[otherIndex] === 'top' && other.x > box.x).length;
+    return topOfAll - 22 - 18 * risersToTheRight;
+  });
+  const meanY = boxes.reduce((sum, box) => sum + box.y + box.height / 2, 0) / Math.max(1, boxes.length);
+  const slots = calloutSlots(boxes.length, meanY);
+  const offsets = boxes.map((_, index) => layout.gutterX - index * layout.gutterPitch);
+  let best: LeaderPlan[] = boxes.map((_, index) => ({
+    exit: exits[index],
+    laneY: lanes[index],
+    gutterX: offsets[index],
+    slotY: slots[index],
+  }));
   let bestScore = Number.POSITIVE_INFINITY;
-  for (const candidate of permutations(offsets)) {
-    const paths = starts.map((start, index) => leaderSegments(start, candidate[index], slots[index], layout.pillX));
-    let crossings = 0;
-    for (let first = 0; first < paths.length; first += 1) {
-      for (let second = first + 1; second < paths.length; second += 1) {
-        for (const a of paths[first]) for (const b of paths[second]) if (segmentsCross(a, b)) crossings += 1;
+  for (const slotOrder of permutations(slots)) {
+    for (const gutters of permutations(offsets)) {
+      const paths = boxes.map((box, index) =>
+        toSegments(leaderPoints(box, exits[index], lanes[index], gutters[index], slotOrder[index], layout.pillX)),
+      );
+      let crossings = 0;
+      for (let first = 0; first < paths.length; first += 1) {
+        for (let second = first + 1; second < paths.length; second += 1) {
+          for (const a of paths[first]) for (const b of paths[second]) if (segmentsCross(a, b)) crossings += 1;
+        }
       }
-    }
-    // Prefer fewer crossings, then the gutters closest to the nominal one.
-    const drift = candidate.reduce((sum, value, index) => sum + Math.abs(value - layout.gutterX) * (index + 1), 0);
-    const score = crossings * 10_000 + drift;
-    if (score < bestScore) {
-      bestScore = score;
-      best = candidate;
+      const slotDrift = slotOrder.reduce((sum, slot, index) => sum + Math.abs(slot - slots[index]), 0);
+      const gutterDrift = gutters.reduce(
+        (sum, value, index) => sum + Math.abs(value - layout.gutterX) * (index + 1),
+        0,
+      );
+      const score = crossings * 10_000 + slotDrift + gutterDrift;
+      if (score < bestScore) {
+        bestScore = score;
+        best = boxes.map((_, index) => ({
+          exit: exits[index],
+          laneY: lanes[index],
+          gutterX: gutters[index],
+          slotY: slotOrder[index],
+        }));
+      }
     }
   }
   return best;
 }
 
-export type PortraitPill = Readonly<{ side: 'left' | 'right'; y: number }>;
+export type PortraitPill = Readonly<{ side: 'left' | 'right'; y: number; exit: LeaderExit }>;
 
 /**
  * 9:16 callouts: pills alternate left/right beside the phone on short leaders,
- * each level with its box where possible, nudged apart on the same side.
+ * each level with its box where possible, nudged apart on the same side. A box
+ * that cannot reach either side without crossing another box gets its pill
+ * stacked above the boxes instead, on a riser from its top.
  */
 export function layoutPortraitPills(
   boxes: readonly CanvasRect[],
-  canvasHeight: number,
-  minGap: number = SHOWCASE_CALLOUT_LAYOUT.portraitMinGap,
+  canvas: Readonly<{ width: number; height: number }>,
+  layout: Readonly<{
+    portraitPillInset: number;
+    portraitPillWidth: number;
+    portraitMinGap: number;
+  }> = SHOWCASE_CALLOUT_LAYOUT,
 ): PortraitPill[] {
+  const { portraitPillInset: inset, portraitPillWidth: width, portraitMinGap: minGap } = layout;
+  const leftEdge = inset + width;
+  const rightEdge = canvas.width - inset - width;
+  const clear = (index: number, side: 'left' | 'right') => {
+    const box = boxes[index];
+    const y = box.y + box.height / 2;
+    const [from, to] = side === 'left' ? [box.x, leftEdge] : [box.x + box.width, rightEdge];
+    return !boxes.some((other, otherIndex) => otherIndex !== index && runHitsBox(from, to, y, other));
+  };
+  const topOfAll = Math.min(...boxes.map((box) => box.y));
   const placed: PortraitPill[] = [];
+  let risers = 0;
   boxes.forEach((box, index) => {
-    const side = index % 2 === 0 ? 'left' : 'right';
-    let y = box.y + box.height / 2;
-    for (const other of placed) {
-      if (other.side === side && Math.abs(other.y - y) < minGap) y = other.y + minGap;
+    const preferred = index % 2 === 0 ? 'left' : 'right';
+    const other = preferred === 'left' ? 'right' : 'left';
+    const side = clear(index, preferred) ? preferred : clear(index, other) ? other : null;
+    if (!side) {
+      const riserSide = box.x + box.width / 2 < canvas.width / 2 ? 'left' : 'right';
+      placed.push({ side: riserSide, y: topOfAll - 56 - minGap * risers, exit: 'top' });
+      risers += 1;
+      return;
     }
-    placed.push({ side, y: Math.max(minGap, Math.min(canvasHeight - minGap, y)) });
+    let y = box.y + box.height / 2;
+    for (const pill of placed) {
+      if (pill.side === side && Math.abs(pill.y - y) < minGap) y = pill.y + minGap;
+    }
+    placed.push({ side, y: Math.max(minGap, Math.min(canvas.height - minGap, y)), exit: 'side' });
   });
   return placed;
 }
@@ -586,20 +762,40 @@ export function orderHoldsForClimb(holds: readonly LitHold[]): LitHold[] {
 // --- stage data ----------------------------------------------------------------
 
 export type StageCallout = Readonly<{
-  name: ShowcaseAnchorName;
+  name: ShowcaseCalloutName;
   label: string;
   role: CalloutRole;
   /** 16:9: pill slot y and the leader's gutter x. 9:16: pill side and y. */
   slotY: number;
   gutterX: number;
   side: 'left' | 'right';
+  /** Side exit, or a riser from the box top (to `laneY` in 16:9, to the pill in 9:16). */
+  exit: LeaderExit;
+  laneY: number;
 }>;
 
 export type StageTake = Readonly<{
   frameUrlBase: string;
   frameCount: number;
   screen: Readonly<{ width: number; height: number }>;
-  anchors: Partial<Record<ShowcaseAnchorName, readonly ShowcaseAnchorSample[]>>;
+  anchors: Partial<Record<ShowcaseCalloutName, readonly ShowcaseAnchorSample[]>>;
+}>;
+
+/**
+ * The boards pile-up: which phones arrive, in what order, and where they end
+ * up left to right. Only takes with footage are listed.
+ */
+export type StageBoards = Readonly<{
+  /** Arrival order: the first `neatCount` rise together, the rest crowd in. */
+  arrival: readonly ShowcaseTakeId[];
+  /** Left-to-right order once everyone has squeezed in. */
+  final: readonly ShowcaseTakeId[];
+  /** The persistent phone's take (it carries on from the previous scene). */
+  main: ShowcaseTakeId;
+  neatCount: number;
+  /** Local frame each phone arrives at, in arrival order (see `pileupArrivalFrames`). */
+  arrivalFrames: readonly number[];
+  labels: Readonly<Partial<Record<ShowcaseTakeId, string>>>;
 }>;
 
 /** Everything `window.showcaseInit(data)` receives; the page reads nothing else. */
@@ -626,6 +822,11 @@ export type ShowcaseStageData = Readonly<{
     }>
   >;
   takes: Partial<Record<ShowcaseTakeId, StageTake>>;
+  boards: StageBoards;
+  workout: ReturnType<typeof workoutTickFrames>;
+  workoutBeats: typeof SHOWCASE_WORKOUT_BEATS;
+  /** Light-scene callout hues; dark scenes use the tokens' LED hues. */
+  lightRoles: Record<CalloutRole, string>;
   /** Lit holds of the light take's first frame, in screen points. */
   holds: readonly LitHold[];
   copy: ShowcaseCopy;
@@ -644,9 +845,9 @@ export type ShowcaseStageData = Readonly<{
 export function resolveSceneCallouts(
   scene: ShowcaseScene,
   anchorsFile: ShowcaseAnchorsFile | null,
-  labels: Partial<Record<ShowcaseAnchorName, string>>,
-): { callouts: ShowcaseAnchorName[]; warnings: string[] } {
-  const callouts: ShowcaseAnchorName[] = [];
+  labels: CalloutCopy,
+): { callouts: ShowcaseCalloutName[]; warnings: string[] } {
+  const callouts: ShowcaseCalloutName[] = [];
   const warnings: string[] = [];
   const take = scene.takes[0];
   const t = (SHOWCASE_TAKE_LEAD_FRAMES + SHOWCASE_CHOREO.calloutStart) / SHOWCASE_FPS;
@@ -666,9 +867,9 @@ export function resolveSceneCallouts(
 /** Pill slots and leader gutters for a scene's callouts, from where the anchors sit when the callouts land. */
 export function layoutSceneCallouts(
   format: ShowcaseFormat,
-  names: readonly ShowcaseAnchorName[],
+  names: readonly ShowcaseCalloutName[],
   anchorsFile: ShowcaseAnchorsFile,
-  labels: Partial<Record<ShowcaseAnchorName, string>>,
+  labels: CalloutCopy,
 ): StageCallout[] {
   const canvas = SHOWCASE_CANVAS[format];
   const calloutPose = SHOWCASE_POSES[format].CALLOUT;
@@ -679,21 +880,25 @@ export function layoutSceneCallouts(
     return screenToCanvas(rect, anchorsFile.screen, calloutPose, canvas);
   });
   const roles = names.map((_, index) => CALLOUT_ROLES[Math.min(index, CALLOUT_ROLES.length - 1)]);
+  // The boxes as the stage draws them: padded.
+  const pad = SHOWCASE_CALLOUT_LAYOUT.boxPadding;
+  const padded = boxes.map((box) => ({
+    x: box.x - pad,
+    y: box.y - pad,
+    width: box.width + pad * 2,
+    height: box.height + pad * 2,
+  }));
   if (format === '16x9') {
-    const slots = calloutSlots(names.length);
-    const pad = SHOWCASE_CALLOUT_LAYOUT.boxPadding;
-    const starts = boxes.map((box) => ({ x: box.x + box.width + pad, y: box.y + box.height / 2 }));
-    const gutters = assignLeaderGutters(starts, slots);
+    const plans = planLeaders(padded);
     return names.map((name, index) => ({
       name,
       label: labels[name] ?? name,
       role: roles[index],
-      slotY: slots[index],
-      gutterX: gutters[index],
       side: 'right',
+      ...plans[index],
     }));
   }
-  const pills = layoutPortraitPills(boxes, canvas.height);
+  const pills = layoutPortraitPills(padded, canvas);
   return names.map((name, index) => ({
     name,
     label: labels[name] ?? name,
@@ -701,7 +906,109 @@ export function layoutSceneCallouts(
     slotY: pills[index].y,
     gutterX: 0,
     side: pills[index].side,
+    exit: pills[index].exit,
+    laneY: 0,
   }));
+}
+
+// --- boards pile-up ----------------------------------------------------------------
+
+/** How many board phones rise together before the rest crowd in. */
+export const SHOWCASE_NEAT_BOARDS = 3;
+
+/** Local frames of the pile-up. The last arrival waits a beat, then squeezes in. */
+export const SHOWCASE_PILEUP = {
+  firstArrival: 40,
+  arrivalGap: 6,
+  squeezePause: 5,
+  /** Nominal squeeze frame with every board present (for the stills). */
+  squeeze: 40 + 3 * 6 + 6 + 5,
+} as const;
+
+/**
+ * Local arrival frame for each phone in arrival order. The neat phones ride the
+ * scene change (the persistent one is released with the background at L-4);
+ * the rest come in fast, and the last one pauses before it squeezes in.
+ */
+export function pileupArrivalFrames(arrivalCount: number, neatCount: number, mainIndex: number): number[] {
+  const frames: number[] = [];
+  let neatSeen = 0;
+  for (let index = 0; index < arrivalCount; index += 1) {
+    if (index < neatCount) {
+      frames.push(index === mainIndex ? -4 : neatSeen === 0 ? -2 : 3);
+      if (index !== mainIndex) neatSeen += 1;
+      continue;
+    }
+    const pileIndex = index - neatCount;
+    const isLast = index === arrivalCount - 1 && pileIndex > 0;
+    frames.push(
+      SHOWCASE_PILEUP.firstArrival +
+        pileIndex * SHOWCASE_PILEUP.arrivalGap +
+        (isLast ? SHOWCASE_PILEUP.squeezePause : 0),
+    );
+  }
+  return frames;
+}
+
+/** Local frames of the workouts checklist: ticks every 12 frames, a rest countdown after the top set. */
+export const SHOWCASE_WORKOUT_BEATS = {
+  rowsIn: 18,
+  rowStagger: 4,
+  firstTick: 34,
+  tickGap: 12,
+  restStart: 76,
+  restFrames: 26,
+} as const;
+
+/** Tick frame per row; the rest countdown runs after the hardest row and delays the rows after it. */
+export function workoutTickFrames(grades: readonly string[]): {
+  ticks: number[];
+  restRow: number;
+  restStart: number;
+  restEnd: number;
+} {
+  const value = (grade: string) => Number.parseInt(grade.replace(/[^0-9]/g, ''), 10) || 0;
+  const top = grades.reduce((best, grade, index) => (value(grade) > value(grades[best]) ? index : best), 0);
+  const { firstTick, tickGap, restFrames } = SHOWCASE_WORKOUT_BEATS;
+  const restStart = firstTick + top * tickGap + 6;
+  const ticks = grades.map((_, index) => firstTick + index * tickGap + (index > top ? restFrames - tickGap + 6 : 0));
+  return { ticks, restRow: Math.min(top + 1, grades.length - 1), restStart, restEnd: restStart + restFrames };
+}
+
+/**
+ * Left-to-right order once the pile-up settles: the three neat phones keep the
+ * middle, newcomers take the flanks, and the last arrival squeezes in beside
+ * the persistent phone.
+ */
+export const SHOWCASE_BOARDS_FINAL_ORDER: readonly ShowcaseTakeId[] = [
+  'boards-touchstone',
+  'boards-woods',
+  'boards-kilter',
+  'boards-tension',
+  'boards-soill',
+  'boards-moonboard',
+  'boards-decoy',
+  'boards-grasshopper',
+];
+
+/**
+ * The pile-up for whichever board takes have footage. The persistent phone is
+ * Tension when it was recorded, else the first neat arrival.
+ */
+export function planBoards(
+  arrivalOrder: readonly ShowcaseTakeId[],
+  available: ReadonlySet<ShowcaseTakeId>,
+): StageBoards {
+  const arrival = arrivalOrder.filter((takeId) => available.has(takeId));
+  if (arrival.length === 0) throw new Error('The boards scene needs at least one board take with footage');
+  const final = SHOWCASE_BOARDS_FINAL_ORDER.filter((takeId) => arrival.includes(takeId));
+  for (const takeId of arrival) if (!final.includes(takeId)) final.push(takeId);
+  const neatCount = Math.min(SHOWCASE_NEAT_BOARDS, arrival.length);
+  const main = arrival.slice(0, neatCount).includes('boards-tension') ? 'boards-tension' : arrival[0];
+  const labels: Partial<Record<ShowcaseTakeId, string>> = {};
+  for (const takeId of arrival) labels[takeId] = boardTakeLabel(takeId);
+  const arrivalFrames = pileupArrivalFrames(arrival.length, neatCount, arrival.indexOf(main));
+  return { arrival, final, main, neatCount, arrivalFrames, labels };
 }
 
 // --- stills ----------------------------------------------------------------------
@@ -729,6 +1036,17 @@ export function stillFramesForScene(scene: ShowcaseScene, totalFrames = SHOWCASE
     { frame: Math.min(totalFrames - 1, scene.endFrame + 1), label: 'next +1' },
   ];
   if (scene.id === 'hook') frames.splice(1, 0, { frame: 24, label: 'spark' });
+  if (scene.id === 'boards') {
+    frames.splice(
+      4,
+      0,
+      { frame: scene.startFrame + SHOWCASE_PILEUP.firstArrival + 8, label: 'crowding' },
+      { frame: scene.startFrame + SHOWCASE_PILEUP.squeeze + 3, label: 'squeeze' },
+    );
+  }
+  if (scene.id === 'workouts') {
+    frames.splice(4, 0, { frame: scene.startFrame + SHOWCASE_WORKOUT_BEATS.restStart + 12, label: 'rest' });
+  }
   if (scene.id === 'outro') {
     frames.splice(4, 2, { frame: totalFrames - 12, label: 'closer -12' }, { frame: totalFrames - 1, label: 'last' });
     frames.push({ frame: 0, label: 'frame 0' });
@@ -740,8 +1058,17 @@ export function stillFramesForScene(scene: ShowcaseScene, totalFrames = SHOWCASE
 
 // --- encoding ------------------------------------------------------------------------
 
-/** Hard gate: `scripts/check-large-files.mjs` fails at 2 MB; stay clear of it. */
-export const SHOWCASE_WEB_MAX_BYTES = 1_800_000;
+/**
+ * Hard gate per web file. The four files are allowlisted in
+ * `scripts/check-large-files.mjs` (whose own limit is 2 MB), so this is the
+ * only ceiling they have.
+ */
+export const SHOWCASE_WEB_MAX_BYTES = 4_000_000;
+/**
+ * Target bitrate for the web cut: the visual quality the 22 s cut shipped at
+ * (1.4–1.6 MB), kept for the longer cut rather than spending the whole budget.
+ */
+export const SHOWCASE_WEB_BITRATE_KBPS = 580;
 export const SHOWCASE_MASTER_CRF = 18;
 /** The web cut drops frame 0 (the poster, which the page shows before playback) and loops 1..end. */
 export const SHOWCASE_WEB_FIRST_FRAME = 1;
@@ -750,10 +1077,8 @@ export const SHOWCASE_WEB_FALLBACK_MP4 = { width: 1280, height: 720 } as const;
 export const webCutSeconds = (totalFrames = SHOWCASE_TOTAL_FRAMES): number =>
   (totalFrames - SHOWCASE_WEB_FIRST_FRAME) / SHOWCASE_FPS;
 
-/** Video bitrate (kbit/s) that lands a `seconds`-long encode under `maxBytes` with `headroom` spare. */
-export function webBitrateKbps(maxBytes: number, seconds: number, headroom = 0.12): number {
-  return Math.floor((maxBytes * 8 * (1 - headroom)) / seconds / 1000);
-}
+/** Bytes an encode at `kbps` for `seconds` should come to, before container overhead. */
+export const expectedWebBytes = (kbps: number, seconds: number): number => (kbps * 1000 * seconds) / 8;
 
 const BT709 = [
   '-colorspace',
@@ -977,16 +1302,52 @@ export const SHOWCASE_STORE_STILL_DIR = resolve(SHOWCASE_WEB_POSTER_DIR, '../app
 /** iPhone 16 Pro Max in points; every committed clip and store still is 1320x2868 scaled to 736x1600. */
 export const PLACEHOLDER_SCREEN = { width: 440, height: 956 } as const;
 
-export type PlaceholderTake = Readonly<{
-  source: Readonly<{ kind: 'video'; file: string; seek: number }> | Readonly<{ kind: 'still'; file: string }>;
-  anchors: Partial<Record<ShowcaseAnchorName, ShowcaseAnchorRect>>;
+/**
+ * A generated stand-in screen: a flat card with a title and, optionally, the
+ * boxes a static anchor points at. Used where no committed recording exists.
+ */
+export type PlaceholderCard = Readonly<{
+  background: string;
+  ink: string;
+  title: string;
+  subtitle: string;
+  /** Labelled boxes, in screen points. */
+  boxes?: ReadonlyArray<Readonly<{ label: string; rect: ShowcaseAnchorRect }>>;
+  /** A large clock, for the lock screen. */
+  clock?: string;
 }>;
+
+export type PlaceholderSource =
+  | Readonly<{ kind: 'video'; file: string; seek: number }>
+  /** One frame of a help clip, held for the whole take. */
+  | Readonly<{ kind: 'frame'; file: string; at: number }>
+  | Readonly<{ kind: 'still'; file: string }>
+  | Readonly<{ kind: 'card'; card: PlaceholderCard }>;
+
+export type PlaceholderTake = Readonly<{
+  source: PlaceholderSource;
+  anchors: Partial<Record<ShowcaseCalloutName, ShowcaseAnchorRect>>;
+}>;
+
+const boardCard = (title: string): PlaceholderSource => ({
+  kind: 'card',
+  card: { background: '#15101E', ink: '#F5F2FB', title, subtitle: 'Placeholder until this board is recorded' },
+});
+
+/** Where the lock-screen placeholder draws its Live Activity buttons (points). */
+const LOCK_BUTTONS = {
+  'lock-relight': { x: 150, y: 780, width: 52, height: 52 },
+  'lock-mirror': { x: 214, y: 780, width: 52, height: 52 },
+  'lock-next': { x: 300, y: 780, width: 108, height: 52 },
+} as const satisfies Record<string, ShowcaseAnchorRect>;
 
 /**
  * Stand-in footage until the recorder lands real takes: committed help clips
- * (real app recordings) and store screenshots. Anchor rects are hand-measured on
- * those sources in points. `invite-qr` has no QR on the queue still, so it
- * borrows the history button to keep the three-callout layout honest.
+ * (real app recordings), store screenshots, and plain generated cards where
+ * neither exists. Anchor rects are hand-measured on those sources in points.
+ * Where the source has no such control (`invite-qr` on the queue still, the
+ * activity calendar on the profile still) the anchor borrows a nearby element
+ * so the callout layout can still be judged.
  */
 export const SHOWCASE_PLACEHOLDER_TAKES: Record<ShowcaseTakeId, PlaceholderTake> = {
   light: {
@@ -999,6 +1360,19 @@ export const SHOWCASE_PLACEHOLDER_TAKES: Record<ShowcaseTakeId, PlaceholderTake>
   'boards-kilter': { source: { kind: 'still', file: 'kilter.webp' }, anchors: {} },
   'boards-tension': { source: { kind: 'still', file: 'tension.webp' }, anchors: {} },
   'boards-moonboard': { source: { kind: 'still', file: 'moonboard.webp' }, anchors: {} },
+  'boards-woods': { source: boardCard('Woods'), anchors: {} },
+  'boards-decoy': { source: boardCard('Decoy'), anchors: {} },
+  'boards-touchstone': { source: boardCard('Touchstone'), anchors: {} },
+  'boards-grasshopper': { source: boardCard('Grasshopper'), anchors: {} },
+  'boards-soill': { source: boardCard('So iLL'), anchors: {} },
+  wall: {
+    source: { kind: 'still', file: 'wall-status.webp' },
+    anchors: {
+      'board-history-button': { x: 371, y: 73, width: 51, height: 51 },
+      'now-on-wall': { x: 132, y: 81, width: 230, height: 35 },
+      'wall-history': { x: 8, y: 181, width: 424, height: 24 },
+    },
+  },
   crew: {
     source: { kind: 'still', file: 'queue.webp' },
     anchors: {
@@ -1007,25 +1381,109 @@ export const SHOWCASE_PLACEHOLDER_TAKES: Record<ShowcaseTakeId, PlaceholderTake>
       'play-next': { x: 18, y: 359, width: 412, height: 102 },
     },
   },
-  log: { source: { kind: 'video', file: 'logbook-swipe-edit-delete.mp4', seek: 0 }, anchors: {} },
+  workouts: {
+    source: { kind: 'frame', file: 'start-playlist-queue.mp4', at: 1.5 },
+    anchors: {
+      'workout-type': { x: 16, y: 187, width: 103, height: 47 },
+      'rest-timer': { x: 22, y: 817, width: 396, height: 48 },
+    },
+  },
+  'lock-screen': {
+    source: {
+      kind: 'card',
+      card: {
+        background: '#E9E3F7',
+        ink: '#16111F',
+        title: 'Lock screen',
+        subtitle: 'Placeholder until this take is recorded',
+        clock: '9:41',
+        boxes: [
+          { label: 'bulb', rect: LOCK_BUTTONS['lock-relight'] },
+          { label: 'mirror', rect: LOCK_BUTTONS['lock-mirror'] },
+          { label: 'Next', rect: LOCK_BUTTONS['lock-next'] },
+        ],
+      },
+    },
+    anchors: { ...LOCK_BUTTONS },
+  },
+  log: {
+    source: { kind: 'still', file: 'profile-overview.webp' },
+    anchors: {
+      'profile-board-filter': { x: 16, y: 290, width: 124, height: 20 },
+      'activity-calendar': { x: 18, y: 686, width: 405, height: 150 },
+    },
+  },
 };
 
-export function buildPlaceholderFootageArgs(takeId: ShowcaseTakeId, take: PlaceholderTake, outDir: string): string[] {
+/** Card placeholders are drawn at the store-screenshot size, 736x1600. */
+export const PLACEHOLDER_CARD_SIZE = { width: 736, height: 1600 } as const;
+
+const escapeXml = (text: string) =>
+  text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+/** SVG for a card placeholder, for Sharp to rasterise. Pure, so the test can read it. */
+export function placeholderCardSvg(card: PlaceholderCard): string {
+  const { width, height } = PLACEHOLDER_CARD_SIZE;
+  const scale = width / PLACEHOLDER_SCREEN.width;
+  const px = (value: number) => (value * scale).toFixed(1);
+  const boxes = (card.boxes ?? [])
+    .map(
+      ({ label, rect }) =>
+        `<rect x="${px(rect.x)}" y="${px(rect.y)}" width="${px(rect.width)}" height="${px(rect.height)}" rx="${px(rect.height / 2)}" fill="${card.ink}" fill-opacity="0.1" stroke="${card.ink}" stroke-opacity="0.35" stroke-width="3"/>` +
+        `<text x="${px(rect.x + rect.width / 2)}" y="${px(rect.y + rect.height / 2 + 6)}" font-size="${px(16)}" text-anchor="middle" fill="${card.ink}">${escapeXml(label)}</text>`,
+    )
+    .join('');
+  const panel = card.boxes?.length
+    ? `<rect x="${px(16)}" y="${px(700)}" width="${px(408)}" height="${px(150)}" rx="${px(28)}" fill="${card.ink}" fill-opacity="0.06"/>` +
+      `<text x="${px(36)}" y="${px(742)}" font-size="${px(20)}" font-weight="700" fill="${card.ink}">Boardsesh session</text>`
+    : '';
+  const clock = card.clock
+    ? `<text x="${width / 2}" y="${px(210)}" font-size="${px(96)}" font-weight="700" text-anchor="middle" fill="${card.ink}">${escapeXml(card.clock)}</text>`
+    : '';
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" font-family="Helvetica, Arial, sans-serif">` +
+    `<rect width="100%" height="100%" fill="${card.background}"/>` +
+    clock +
+    `<text x="${width / 2}" y="${px(card.clock ? 300 : 440)}" font-size="${px(34)}" font-weight="700" text-anchor="middle" fill="${card.ink}">${escapeXml(card.title)}</text>` +
+    `<text x="${width / 2}" y="${px(card.clock ? 332 : 474)}" font-size="${px(15)}" text-anchor="middle" fill="${card.ink}" fill-opacity="0.6">${escapeXml(card.subtitle)}</text>` +
+    panel +
+    boxes +
+    `</svg>`
+  );
+}
+
+/**
+ * ffmpeg for one placeholder take. `cardImage` is the rasterised card for a
+ * `card` source (the renderer draws it with Sharp first).
+ */
+export function buildPlaceholderFootageArgs(
+  takeId: ShowcaseTakeId,
+  take: PlaceholderTake,
+  outDir: string,
+  cardImage?: string,
+): string[] {
   const seconds = requiredTakeSeconds(takeId);
-  const input =
-    take.source.kind === 'video'
-      ? ['-ss', String(take.source.seek), '-i', resolve(HELP_CLIP_VIDEO_DIR, take.source.file)]
-      : ['-loop', '1', '-i', resolve(SHOWCASE_STORE_STILL_DIR, take.source.file)];
+  const { source } = take;
+  let input: string[];
+  let hold = '';
+  if (source.kind === 'video') input = ['-ss', String(source.seek), '-i', resolve(HELP_CLIP_VIDEO_DIR, source.file)];
+  else if (source.kind === 'frame') {
+    input = ['-ss', String(source.at), '-i', resolve(HELP_CLIP_VIDEO_DIR, source.file)];
+    // Keep only the first frame and repeat it.
+    hold = 'trim=end_frame=1,loop=loop=-1:size=1:start=0,setpts=N/30/TB,';
+  } else if (source.kind === 'still') input = ['-loop', '1', '-i', resolve(SHOWCASE_STORE_STILL_DIR, source.file)];
+  else {
+    if (!cardImage) throw new Error(`Take "${takeId}" is a card placeholder; rasterise it first`);
+    input = ['-loop', '1', '-i', cardImage];
+  }
   return [
     '-y',
     '-loglevel',
     'error',
     ...input,
-    '-t',
-    String(seconds),
     // A clip shorter than the take holds its last frame.
     '-vf',
-    `fps=${SHOWCASE_FPS},scale=${SHOWCASE_FOOTAGE_WIDTH}:-2:flags=lanczos,tpad=stop_mode=clone:stop_duration=${Math.ceil(seconds)}`,
+    `${hold}fps=${SHOWCASE_FPS},scale=${SHOWCASE_FOOTAGE_WIDTH}:-2:flags=lanczos,tpad=stop_mode=clone:stop_duration=${Math.ceil(seconds)}`,
     '-frames:v',
     String(Math.ceil(seconds * SHOWCASE_FPS)),
     '-q:v',
@@ -1035,8 +1493,8 @@ export function buildPlaceholderFootageArgs(takeId: ShowcaseTakeId, take: Placeh
 }
 
 export function placeholderAnchorsFile(takeId: ShowcaseTakeId, take: PlaceholderTake): ShowcaseAnchorsFile {
-  const anchors: Partial<Record<ShowcaseAnchorName, ShowcaseAnchorSample[]>> = {};
-  for (const [name, rect] of Object.entries(take.anchors) as [ShowcaseAnchorName, ShowcaseAnchorRect][]) {
+  const anchors: Partial<Record<ShowcaseCalloutName, ShowcaseAnchorSample[]>> = {};
+  for (const [name, rect] of Object.entries(take.anchors) as [ShowcaseCalloutName, ShowcaseAnchorRect][]) {
     anchors[name] = [{ t: 0, ...rect }];
   }
   return { takeId, screen: PLACEHOLDER_SCREEN, anchors };
@@ -1046,6 +1504,8 @@ export function placeholderAnchorsFile(takeId: ShowcaseTakeId, take: Placeholder
 
 export type RenderArgs = Readonly<{
   stills: boolean;
+  /** One frame as a full-size PNG, for a close look (`--frame <n>`). */
+  frame: number | null;
   measure: boolean;
   fromFrame: number;
   formats: readonly ShowcaseFormat[];
@@ -1054,33 +1514,47 @@ export type RenderArgs = Readonly<{
   help: boolean;
 }>;
 
+function parseFrameNumber(flag: string, value: string): number {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed) || parsed < 0 || parsed >= SHOWCASE_TOTAL_FRAMES || String(parsed) !== value) {
+    throw new Error(`${flag} must be an integer in 0..${SHOWCASE_TOTAL_FRAMES - 1}`);
+  }
+  return parsed;
+}
+
 export function parseRenderArgs(argv: readonly string[]): RenderArgs {
   let stills = false;
+  let frame: number | null = null;
   let measure = false;
   let fromFrame = 0;
   let formats: ShowcaseFormat[] = [...SHOWCASE_FORMATS];
   let placeholderFootage = false;
   let skipWeb = false;
+  const result = (help: boolean): RenderArgs => ({
+    stills,
+    frame,
+    measure,
+    fromFrame,
+    formats,
+    placeholderFootage,
+    skipWeb,
+    help,
+  });
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
     if (argument === '--') continue;
-    if (argument === '--help' || argument === '-h')
-      return { stills, measure, fromFrame, formats, placeholderFootage, skipWeb, help: true };
+    if (argument === '--help' || argument === '-h') return result(true);
     if (argument === '--stills') stills = true;
     else if (argument === '--measure') measure = true;
     else if (argument === '--placeholder-footage') placeholderFootage = true;
     else if (argument === '--skip-web') skipWeb = true;
-    else if (argument === '--from-frame' || argument === '--format') {
+    else if (argument === '--from-frame' || argument === '--format' || argument === '--frame') {
       const value = argv[index + 1];
       if (!value || value.startsWith('--')) throw new Error(`${argument} needs a value`);
       index += 1;
-      if (argument === '--from-frame') {
-        const parsed = Number.parseInt(value, 10);
-        if (!Number.isInteger(parsed) || parsed < 0 || parsed >= SHOWCASE_TOTAL_FRAMES || String(parsed) !== value) {
-          throw new Error(`--from-frame must be an integer in 0..${SHOWCASE_TOTAL_FRAMES - 1}`);
-        }
-        fromFrame = parsed;
-      } else {
+      if (argument === '--from-frame') fromFrame = parseFrameNumber(argument, value);
+      else if (argument === '--frame') frame = parseFrameNumber(argument, value);
+      else {
         if (!(SHOWCASE_FORMATS as readonly string[]).includes(value)) {
           throw new Error(`--format must be one of ${SHOWCASE_FORMATS.join(', ')}`);
         }
@@ -1088,5 +1562,5 @@ export function parseRenderArgs(argv: readonly string[]): RenderArgs {
       }
     } else throw new Error(`Unknown option: ${argument}`);
   }
-  return { stills, measure, fromFrame, formats, placeholderFootage, skipWeb, help: false };
+  return result(false);
 }

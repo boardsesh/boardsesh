@@ -23,6 +23,7 @@ import {
   RestTimerLengthControl,
 } from '../queue-control/RestTimerSheet';
 import { spacing } from '../../theme/tokens';
+import { ShowcaseAnchorView } from '../../lib/showcase-anchor';
 
 /**
  * The arm switch plus, once armed, the controls a climber sets a session up
@@ -56,12 +57,14 @@ export function RestTimerArmRow() {
       {/* No clock above the switch. This card is where you TURN THE TIMER ON;
           the running count belongs to the pill that floats over every tab, and a
           second copy sitting above its own on/off switch just competed with it. */}
-      <SwitchRow
-        label={t('mobile.restTimer.armLabel')}
-        description={t('mobile.restTimer.armDescription')}
-        value={armed}
-        onValueChange={handleArm}
-      />
+      <ShowcaseAnchorView name="rest-timer">
+        <SwitchRow
+          label={t('mobile.restTimer.armLabel')}
+          description={t('mobile.restTimer.armDescription')}
+          value={armed}
+          onValueChange={handleArm}
+        />
+      </ShowcaseAnchorView>
       {armed ? (
         <View style={styles.controls}>
           {/* `inset={false}`: the length and cadence blocks pull back out

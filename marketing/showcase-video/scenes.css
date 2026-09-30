@@ -65,8 +65,6 @@ body {
   width: calc(var(--w) * 1px);
   height: calc(var(--h) * 1px);
   overflow: hidden;
-  perspective: 2200px;
-  perspective-origin: 50% 50%;
   font-family: 'Inter Tight', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   text-rendering: geometricPrecision;
@@ -90,6 +88,38 @@ body {
 }
 svg.layer {
   overflow: visible;
+}
+
+/*
+ * Stacking: background, glow and the motif's grid sit at the bottom; phones
+ * (z 2 up, later board arrivals on top) above their shadows; everything drawn
+ * over the footage above the phones.
+ */
+.phones {
+  z-index: 5;
+  perspective: 2200px;
+  perspective-origin: 50% 50%;
+}
+.phone-shadow {
+  z-index: 1;
+}
+.motif-front {
+  z-index: 30;
+}
+#callouts {
+  z-index: 31;
+}
+#pills {
+  z-index: 32;
+}
+#text {
+  z-index: 33;
+}
+#measure {
+  z-index: 34;
+}
+.grain {
+  z-index: 35;
 }
 
 /* --- glow behind the phone ------------------------------------------------ */
@@ -170,6 +200,7 @@ svg.layer {
     rotateZ(calc(var(--rz) * 1deg));
   transform-origin: 50% 50%;
   will-change: transform;
+  z-index: var(--z, 2);
 }
 .phone-body {
   position: absolute;
@@ -314,8 +345,8 @@ svg.layer {
 .headline[data-scene='boards'] .line {
   display: inline;
 }
-.headline[data-scene='log'] {
-  top: 236px;
+.headline[data-scene='workouts'] {
+  top: 150px;
   transform: none;
 }
 
@@ -333,6 +364,15 @@ svg.layer {
   opacity: var(--o, 0);
   filter: blur(calc(var(--b, 0) * 1px));
   white-space: nowrap;
+}
+/* 9:16 stacks two rows of phones, so a label can sit over the row behind: give it a chip. */
+#stage[data-format='9x16'] .board-label {
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: color-mix(in srgb, #fff 88%, transparent);
+  box-shadow: 0 4px 14px rgba(40, 20, 80, 0.12);
+  color: var(--ink-on-light);
+  font-size: 24px;
 }
 
 /* --- callouts -------------------------------------------------------------------- */
@@ -361,6 +401,23 @@ svg.layer {
   stroke: currentColor;
   filter: drop-shadow(0 0 7px color-mix(in srgb, var(--role) 70%, transparent));
 }
+/*
+ * Lavender scenes: the LED hues vanish on #F4F1FB, so the same roles draw a
+ * step darker (each >= 3:1 on the background), with a soft shadow in place of
+ * the glow and a bordered pill.
+ */
+.callout.tone-light[data-role='start'] {
+  --role: var(--role-start-light, #047857);
+}
+.callout.tone-light[data-role='hand'] {
+  --role: var(--role-hand-light, #0e7490);
+}
+.callout.tone-light[data-role='finish'] {
+  --role: var(--role-finish-light, #a21caf);
+}
+.callout.tone-light {
+  filter: drop-shadow(0 2px 5px color-mix(in srgb, var(--role) 30%, transparent));
+}
 .pill {
   position: absolute;
   left: calc(var(--px) * 1px);
@@ -385,6 +442,13 @@ svg.layer {
   transform-origin: 0 50%;
   will-change: transform, opacity;
 }
+.pill.tone-light {
+  border: 1.5px solid rgba(22, 17, 31, 0.12);
+  box-shadow:
+    0 10px 26px rgba(40, 20, 80, 0.14),
+    0 1px 3px rgba(40, 20, 80, 0.12);
+  filter: none;
+}
 .pill .dot {
   width: 14px;
   height: 14px;
@@ -394,6 +458,9 @@ svg.layer {
     0 0 0 3px rgba(22, 17, 31, 0.1),
     0 0 10px color-mix(in srgb, var(--role) 80%, transparent);
   flex: none;
+}
+.pill.tone-light .dot {
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--role) 16%, transparent);
 }
 .pill[data-side='left'] {
   width: 250px;
@@ -405,20 +472,24 @@ svg.layer {
   justify-content: center;
 }
 
-/* --- log checklist --------------------------------------------------------------------- */
+/* --- workouts checklist (dark scene) --------------------------------------------------- */
 
 .checklist {
   position: absolute;
   left: 144px;
-  top: 494px;
-  width: 780px;
+  top: 404px;
+  width: 700px;
   opacity: var(--on, 0);
 }
 .row {
+  position: relative;
   display: flex;
   align-items: center;
-  height: 84px;
+  height: 70px;
   gap: 18px;
+  padding: 0 14px;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--ink) calc(var(--hi, 0) * 7%), transparent);
   opacity: var(--o, 0);
   filter: blur(calc(var(--b, 0) * 1px));
   transform: translateX(calc(var(--x, 0) * 1px));
@@ -436,11 +507,11 @@ svg.layer {
 }
 .check .ring {
   fill: none;
-  stroke: color-mix(in srgb, var(--ink-on-light) 28%, transparent);
+  stroke: color-mix(in srgb, var(--ink) 30%, transparent);
   stroke-width: 2.5;
 }
 .check .fill {
-  fill: var(--accent-on-light);
+  fill: var(--glow-dark);
 }
 .check .tick {
   fill: none;
@@ -449,16 +520,11 @@ svg.layer {
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-.row .name {
-  font-weight: 700;
-  font-size: 36px;
-  letter-spacing: -0.02em;
-  color: var(--ink-on-light);
-  white-space: nowrap;
-}
 .row .chip {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  min-width: 58px;
   height: 36px;
   padding: 0 12px;
   border-radius: 10px;
@@ -469,19 +535,82 @@ svg.layer {
   letter-spacing: -0.01em;
   flex: none;
 }
-.row .time {
+.row .name {
+  font-weight: 700;
+  font-size: 38px;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.row .rest {
+  position: relative;
   margin-left: auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 190px;
+  height: 44px;
+}
+.row .time {
   font-family: 'Geist Mono', ui-monospace, monospace;
   font-weight: 500;
   font-size: 24px;
-  color: var(--sub-on-light);
+  color: var(--sub);
+  opacity: var(--time-o, 1);
+}
+.rest-timer {
+  position: absolute;
+  right: 0;
+  top: 0;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 16px 0 10px;
+  border-radius: 22px;
+  background: color-mix(in srgb, var(--amber) 16%, transparent);
+  color: var(--ink);
+  opacity: var(--timer-o, 0);
+}
+.rest-timer svg {
+  overflow: visible;
+  transform: rotate(-90deg);
+}
+.rest-track {
+  fill: none;
+  stroke: color-mix(in srgb, var(--amber) 30%, transparent);
+  stroke-width: 3.5;
+}
+.rest-ring {
+  fill: none;
+  stroke: var(--amber);
+  stroke-width: 3.5;
+  stroke-linecap: round;
+}
+.rest-label {
+  font-weight: 700;
+  font-size: 22px;
+}
+.rest-digits {
+  position: relative;
+  width: 70px;
+  height: 30px;
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-weight: 500;
+  font-size: 24px;
+}
+.rest-digits .digit {
+  position: absolute;
+  inset: 0;
+  line-height: 30px;
+  opacity: var(--digit-on, 0);
 }
 .progress {
   position: relative;
   height: 4px;
-  margin: 18px 0 0 54px;
+  margin: 16px 14px 0 68px;
   border-radius: 2px;
-  background: color-mix(in srgb, var(--ink-on-light) 10%, transparent);
+  background: color-mix(in srgb, var(--ink) 12%, transparent);
   opacity: var(--track-o, 0);
 }
 .progress .fill {
@@ -489,7 +618,7 @@ svg.layer {
   inset: 0 auto 0 0;
   width: calc(var(--p, 0) * 100%);
   border-radius: 2px;
-  background: var(--amber);
+  background: var(--accent);
 }
 
 /* --- outro ------------------------------------------------------------------------------ */
@@ -587,9 +716,12 @@ svg.layer {
 #stage[data-format='9x16'] .headline[data-scene='boards'] .line {
   display: block;
 }
+#stage[data-format='9x16'] .headline[data-scene='workouts'] {
+  top: 180px;
+}
 #stage[data-format='9x16'] .checklist {
   left: 96px;
-  top: 452px;
+  top: 440px;
   width: 888px;
 }
 #stage[data-format='9x16'] .outro .wordmark {

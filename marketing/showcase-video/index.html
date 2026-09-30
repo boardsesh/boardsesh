@@ -47,13 +47,12 @@
         />
       </svg>
 
-      <!-- Phones are direct children of #stage so its perspective applies. -->
-      <div class="phone-shadow" id="shadowLeft"></div>
-      <div class="phone-shadow" id="shadowRight"></div>
-      <div class="phone-shadow" id="shadowMain"></div>
-      <div class="phone-rig" id="phoneLeft"></div>
-      <div class="phone-rig" id="phoneRight"></div>
-      <div class="phone-rig" id="phoneMain"></div>
+      <!--
+        timeline.mjs fills this with the phones (one per board take, plus the
+        persistent one). The layer carries the stage's perspective, so the
+        phones' 3D stays inside it and never stacks above the text layers.
+      -->
+      <div class="layer phones" id="phones"></div>
 
       <svg class="layer motif-front" id="motifFront" aria-hidden="true">
         <defs>

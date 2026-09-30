@@ -45,21 +45,31 @@ export const footageFramePath = (takeId: ShowcaseTakeId, frameIndex: number): st
 
 /**
  * Every recorded take. A scene may use more than one (the boards scene shows
- * three phones, one take each).
+ * several phones, one take per board).
  */
 export const SHOWCASE_TAKE_IDS = [
   'light',
   'boards-kilter',
   'boards-tension',
   'boards-moonboard',
+  'boards-woods',
+  'boards-decoy',
+  'boards-touchstone',
+  'boards-grasshopper',
+  'boards-soill',
+  'wall',
   'crew',
+  'workouts',
+  'lock-screen',
   'log',
 ] as const;
 export type ShowcaseTakeId = (typeof SHOWCASE_TAKE_IDS)[number];
 
 /**
  * Callout targets the app reports in screenshot mode. The mobile hook
- * `useShowcaseAnchor(name)` accepts exactly these names.
+ * `useShowcaseAnchor(name)` accepts exactly these names, and the mobile drift
+ * test (`packages/mobile/src/lib/__tests__/showcase-anchor.test.ts`) pins this
+ * list against the app's copy.
  */
 export const SHOWCASE_ANCHOR_NAMES = [
   'wall-pill',
@@ -68,8 +78,25 @@ export const SHOWCASE_ANCHOR_NAMES = [
   'queue-row-avatar',
   'play-next',
   'profile-board-filter',
+  'board-history-button',
+  'now-on-wall',
+  'wall-history',
+  'workout-type',
+  'rest-timer',
+  'activity-calendar',
 ] as const;
 export type ShowcaseAnchorName = (typeof SHOWCASE_ANCHOR_NAMES)[number];
+
+/**
+ * Callout targets the app can't log: the Live Activity's lock-screen buttons
+ * run in a widget process, outside the JS bundle. The recorder authors their
+ * rects from a measured reference capture instead.
+ */
+export const SHOWCASE_STATIC_ANCHOR_NAMES = ['lock-next', 'lock-relight', 'lock-mirror'] as const;
+export type ShowcaseStaticAnchorName = (typeof SHOWCASE_STATIC_ANCHOR_NAMES)[number];
+
+/** Anything a scene may point a callout at: app-logged or recorder-authored. */
+export type ShowcaseCalloutName = ShowcaseAnchorName | ShowcaseStaticAnchorName;
 
 /**
  * What the app prints (via `console.log`, which Metro forwards) whenever an
@@ -88,13 +115,23 @@ export type ShowcaseAnchorLogLine = ShowcaseAnchorRect & Readonly<{ name: Showca
 /** One sample: where the anchor was from `t` seconds into the trimmed take onward. */
 export type ShowcaseAnchorSample = ShowcaseAnchorRect & Readonly<{ t: number }>;
 
-/** `work/anchors/<takeId>.json`, written by the recorder, read by the renderer. */
+/**
+ * `work/anchors/<takeId>.json`, written by the recorder, read by the renderer.
+ * Keyed by callout name, so a take can carry recorder-authored static anchors
+ * (the lock-screen buttons) beside the app-logged ones. Each list is sorted
+ * ascending by `t` (see `anchorAt` and `sortAnchorSamples`).
+ */
 export type ShowcaseAnchorsFile = Readonly<{
   takeId: ShowcaseTakeId;
   /** Screen size in points (e.g. 440x956 on an iPhone 16 Pro Max), to map points onto footage. */
   screen: Readonly<{ width: number; height: number }>;
-  anchors: Partial<Record<ShowcaseAnchorName, readonly ShowcaseAnchorSample[]>>;
+  anchors: Partial<Record<ShowcaseCalloutName, readonly ShowcaseAnchorSample[]>>;
 }>;
+
+/** Samples in ascending `t`, the order `anchorAt` needs. Returns a new array; stable for equal `t`. */
+export function sortAnchorSamples(samples: readonly ShowcaseAnchorSample[]): ShowcaseAnchorSample[] {
+  return [...samples].sort((a, b) => a.t - b.t);
+}
 
 export function parseShowcaseAnchorLine(line: string): ShowcaseAnchorLogLine | null {
   const at = line.indexOf(SHOWCASE_ANCHOR_LOG_PREFIX);
@@ -117,7 +154,16 @@ export function parseShowcaseAnchorLine(line: string): ShowcaseAnchorLogLine | n
   }
 }
 
-/** The anchor rect in force at `t` seconds: the last sample at or before `t`, else the first. */
+/**
+ * The anchor rect in force at `t` seconds: the last sample at or before `t`,
+ * else the first.
+ *
+ * `samples` MUST be sorted ascending by `t`: the scan stops at the first sample
+ * after `t`, so an unsorted list silently returns a stale rect. The recorder
+ * writes each list through `sortAnchorSamples`, and a reader that can't vouch
+ * for its input should run it through `sortAnchorSamples` once on load (cheap:
+ * a take logs tens of samples), not per frame.
+ */
 export function anchorAt(samples: readonly ShowcaseAnchorSample[], t: number): ShowcaseAnchorRect | null {
   if (samples.length === 0) return null;
   let current = samples[0];

@@ -4,18 +4,53 @@
     "headline": "Swipe, and the\nwall *follows.*",
     "callouts": { "wall-pill": "On the wall", "board-surface": "Swipe for next" }
   },
-  "boards": { "headline": "Every board. One *app.*", "labels": ["Kilter", "Tension", "MoonBoard"] },
+  "boards": { "headline": "Every board.\nOne *app.*" },
+  "wall": {
+    "headline": "See what's on\nthe *wall.*",
+    "callouts": {
+      "board-history-button": "Board history",
+      "now-on-wall": "On the wall now",
+      "wall-history": "Lit on this wall"
+    }
+  },
   "crew": {
     "headline": "Your crew.\nOne *queue.*",
     "callouts": { "invite-qr": "Scan to join", "queue-row-avatar": "Who queued it", "play-next": "Play next" }
   },
+  "workouts": {
+    "headline": "Give your\nsession a *plan.*",
+    "rows": [
+      { "name": "Warm-up", "grade": "V2", "rest": "1:30" },
+      { "name": "Build", "grade": "V4", "rest": "2:00" },
+      { "name": "Build", "grade": "V5", "rest": "2:30" },
+      { "name": "Top", "grade": "V6", "rest": "3:00" },
+      { "name": "Down", "grade": "V5", "rest": "2:30" },
+      { "name": "Down", "grade": "V4", "rest": "2:00" }
+    ],
+    "restLabel": "Rest",
+    "restCountdown": [
+      "3:00",
+      "2:45",
+      "2:30",
+      "2:15",
+      "2:00",
+      "1:45",
+      "1:30",
+      "1:15",
+      "1:00",
+      "0:45",
+      "0:30",
+      "0:15",
+      "0:00"
+    ]
+  },
+  "lock-screen": {
+    "headline": "Change climbs\nwithout\n*unlocking.*",
+    "callouts": { "lock-next": "Next", "lock-relight": "Relight wall", "lock-mirror": "Mirror climb" }
+  },
   "log": {
     "headline": "Remember\nevery *send.*",
-    "rows": [
-      { "name": "Masquerade", "grade": "V3", "time": "18:12" },
-      { "name": "An easy problem", "grade": "V4+", "time": "18:31" },
-      { "name": "Lightest Pair of Shorts", "grade": "V4", "time": "18:47" }
-    ]
+    "callouts": { "profile-board-filter": "Every board", "activity-calendar": "Activity" }
   },
   "outro": {
     "wordmark": "boardsesh",

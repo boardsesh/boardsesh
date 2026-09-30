@@ -24,6 +24,7 @@ import {
 } from 'react';
 import { FlatList, Pressable, RefreshControl, StyleSheet, View, type ColorValue } from 'react-native';
 import { BottomSheetFlatList } from '@expo/ui/community/bottom-sheet';
+import { ShowcaseAnchorView } from '../../lib/showcase-anchor';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import {
@@ -624,35 +625,39 @@ function NowOnTheWallPanelComponent(
         {canSwitchGymWall && gymWallsExpanded && onSelectGymWall ? (
           <GymWallSwitcher activeBoard={activeBoard ?? null} onSelectBoard={onSelectGymWall} />
         ) : null}
-        {canUseInteractiveRows && rowBoard && currentClimb ? (
-          <InteractiveHeroRow
-            climb={currentClimb}
-            rowBoard={rowBoard}
-            boardConfig={boardConfig}
-            labelColor={systemColors.label}
-            secondaryColor={systemColors.secondaryLabel}
-            accentColor={brandColors.warning}
-            surfaceColor={systemColors.secondaryBackground}
-            formattedGrade={currentClimb.grade ? heroGrade.label : null}
-            gradeColor={heroGrade.color}
-            isActionLoading={heroActionLoading}
-            onPress={onClimbPress ? handleInteractiveClimbPress : undefined}
-            onAddToQueue={handleInteractiveAddToQueue}
-            onOpenPlaylist={handleInteractiveOpenPlaylist}
-            onOpenActions={handleInteractiveOpenActions}
-          />
-        ) : (
-          <NowOnTheWallHero
-            climb={currentClimb}
-            boardConfig={boardConfig}
-            labelColor={systemColors.label}
-            secondaryColor={systemColors.secondaryLabel}
-            accentColor={brandColors.warning}
-            surfaceColor={systemColors.secondaryBackground}
-            formattedGrade={currentClimb?.grade ? heroGrade.label : null}
-            gradeColor={heroGrade.color}
-          />
-        )}
+        {/* Showcase anchors (screenshot mode): the board sheet only, never the
+            iPad kiosk column or the Wall tab, so one panel reports each name. */}
+        <ShowcaseAnchorView name="now-on-wall" enabled={variant === 'sheet'}>
+          {canUseInteractiveRows && rowBoard && currentClimb ? (
+            <InteractiveHeroRow
+              climb={currentClimb}
+              rowBoard={rowBoard}
+              boardConfig={boardConfig}
+              labelColor={systemColors.label}
+              secondaryColor={systemColors.secondaryLabel}
+              accentColor={brandColors.warning}
+              surfaceColor={systemColors.secondaryBackground}
+              formattedGrade={currentClimb.grade ? heroGrade.label : null}
+              gradeColor={heroGrade.color}
+              isActionLoading={heroActionLoading}
+              onPress={onClimbPress ? handleInteractiveClimbPress : undefined}
+              onAddToQueue={handleInteractiveAddToQueue}
+              onOpenPlaylist={handleInteractiveOpenPlaylist}
+              onOpenActions={handleInteractiveOpenActions}
+            />
+          ) : (
+            <NowOnTheWallHero
+              climb={currentClimb}
+              boardConfig={boardConfig}
+              labelColor={systemColors.label}
+              secondaryColor={systemColors.secondaryLabel}
+              accentColor={brandColors.warning}
+              surfaceColor={systemColors.secondaryBackground}
+              formattedGrade={currentClimb?.grade ? heroGrade.label : null}
+              gradeColor={heroGrade.color}
+            />
+          )}
+        </ShowcaseAnchorView>
         {/* Sheet only: the column variant is also the wall-mounted iPad kiosk,
             where a passer-by's "Join" or "Start" would act on the kiosk's
             account. */}
@@ -716,9 +721,11 @@ function NowOnTheWallPanelComponent(
           </View>
         ) : null}
         {visibleHistory.length > 0 ? (
-          <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.sectionHeader}>
-            {t('mobile.boardPresence.historyHeader')}
-          </Text>
+          <ShowcaseAnchorView name="wall-history" enabled={variant === 'sheet'}>
+            <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.sectionHeader}>
+              {t('mobile.boardPresence.historyHeader')}
+            </Text>
+          </ShowcaseAnchorView>
         ) : null}
       </View>
     );

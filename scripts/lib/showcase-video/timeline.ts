@@ -1,21 +1,38 @@
-import { SHOWCASE_FPS, type ShowcaseAnchorName, type ShowcaseTakeId } from './contract';
+import { SHOWCASE_FPS, type ShowcaseCalloutName, type ShowcaseTakeId } from './contract';
 
 /**
  * The storyboard, in frames at 30 fps. Scenes are back to back with no gaps;
- * `timeline.test` holds that and the 18–22 s runtime the brag format asks for.
- * Background alternates so two busy layouts never crossfade.
+ * `showcase-video-timeline.test` holds that and the 36–42 s runtime.
+ *
+ * Backgrounds alternate from the boards scene on, so two busy layouts never
+ * meet on the same background. The two dark→dark joins are deliberate: hook →
+ * light is a match cut (the motif's rings land on the footage), and log →
+ * outro hands a phone scene to the centred end card, which then loops into the
+ * hook.
  */
-export type ShowcaseSceneId = 'hook' | 'light' | 'boards' | 'crew' | 'log' | 'outro';
+export type ShowcaseSceneId =
+  | 'hook'
+  | 'light'
+  | 'boards'
+  | 'wall'
+  | 'crew'
+  | 'workouts'
+  | 'lock-screen'
+  | 'log'
+  | 'outro';
 
 export type ShowcaseScene = Readonly<{
   id: ShowcaseSceneId;
   startFrame: number;
   endFrame: number;
   background: 'dark' | 'light';
-  /** Takes whose footage the scene shows, in on-screen order. */
+  /**
+   * Takes whose footage the scene shows. For the boards pile-up this is the
+   * arrival order: the first three rise together, the rest crowd in after.
+   */
   takes: readonly ShowcaseTakeId[];
-  /** Callouts, in climb-role order (start, hand, finish). Dark scenes only. */
-  callouts: readonly ShowcaseAnchorName[];
+  /** Callouts, in climb-role order (start, hand, finish). Either background. */
+  callouts: readonly ShowcaseCalloutName[];
 }>;
 
 export const SHOWCASE_SCENES: readonly ShowcaseScene[] = [
@@ -31,21 +48,54 @@ export const SHOWCASE_SCENES: readonly ShowcaseScene[] = [
   {
     id: 'boards',
     startFrame: 192,
-    endFrame: 282,
+    endFrame: 330,
     background: 'light',
-    takes: ['boards-kilter', 'boards-tension', 'boards-moonboard'],
+    takes: [
+      'boards-kilter',
+      'boards-tension',
+      'boards-moonboard',
+      'boards-woods',
+      'boards-decoy',
+      'boards-touchstone',
+      'boards-grasshopper',
+      'boards-soill',
+    ],
     callouts: [],
   },
   {
-    id: 'crew',
-    startFrame: 282,
-    endFrame: 410,
+    id: 'wall',
+    startFrame: 330,
+    endFrame: 486,
     background: 'dark',
+    takes: ['wall'],
+    callouts: ['board-history-button', 'now-on-wall', 'wall-history'],
+  },
+  {
+    id: 'crew',
+    startFrame: 486,
+    endFrame: 614,
+    background: 'light',
     takes: ['crew'],
     callouts: ['invite-qr', 'queue-row-avatar', 'play-next'],
   },
-  { id: 'log', startFrame: 410, endFrame: 528, background: 'light', takes: ['log'], callouts: [] },
-  { id: 'outro', startFrame: 528, endFrame: 657, background: 'dark', takes: [], callouts: [] },
+  { id: 'workouts', startFrame: 614, endFrame: 776, background: 'dark', takes: ['workouts'], callouts: [] },
+  {
+    id: 'lock-screen',
+    startFrame: 776,
+    endFrame: 902,
+    background: 'light',
+    takes: ['lock-screen'],
+    callouts: ['lock-next', 'lock-relight', 'lock-mirror'],
+  },
+  {
+    id: 'log',
+    startFrame: 902,
+    endFrame: 1016,
+    background: 'dark',
+    takes: ['log'],
+    callouts: ['profile-board-filter', 'activity-calendar'],
+  },
+  { id: 'outro', startFrame: 1016, endFrame: 1145, background: 'dark', takes: [], callouts: [] },
 ];
 
 export const SHOWCASE_TOTAL_FRAMES = SHOWCASE_SCENES[SHOWCASE_SCENES.length - 1].endFrame;
@@ -54,12 +104,24 @@ export const SHOWCASE_TOTAL_FRAMES = SHOWCASE_SCENES[SHOWCASE_SCENES.length - 1]
 export const SHOWCASE_POSTER_FRAME = 0;
 
 /**
+ * Takes a scene can do without: any board phone. The recorder may skip a board
+ * type it cannot reach, and the pile-up then uses however many arrived (at
+ * least one).
+ */
+export const SHOWCASE_OPTIONAL_TAKES: readonly ShowcaseTakeId[] =
+  SHOWCASE_SCENES.find((scene) => scene.id === 'boards')?.takes ?? [];
+
+/** Footage asked of a take no scene uses (every take has a scene in this cut). */
+export const DEFAULT_TAKE_SECONDS = 6;
+
+/**
  * Seconds of footage each take must supply: the scene's length plus a second of
  * slack either side, because the phone arrives before the scene's text and
- * leaves after it. The recorder's self-check fails a take shorter than this.
+ * leaves after it. The recorder's self-check fails a take shorter than this. A
+ * take no scene uses gets `DEFAULT_TAKE_SECONDS`.
  */
 export function requiredTakeSeconds(takeId: ShowcaseTakeId): number {
   const scene = SHOWCASE_SCENES.find((candidate) => candidate.takes.includes(takeId));
-  if (!scene) throw new Error(`No scene uses take "${takeId}"`);
+  if (!scene) return DEFAULT_TAKE_SECONDS;
   return (scene.endFrame - scene.startFrame) / SHOWCASE_FPS + 2;
 }
