@@ -47,10 +47,13 @@ type PolygonTapOverlayProps = {
    * see `DrawStrokeOverlay` for why a second detector must not claim it.
    */
   pinchRef: MutableRefObject<GestureType | undefined>;
-  /** Most corners a polygon may have; a tap past it is ignored. */
+  /** Most corners a polygon may have; a tap past it fires `onVertexLimit`. */
   maxVertices: number;
-  /** Fired after each corner is added, with the new corner count. */
-  onVertexCountChange: (count: number) => void;
+  /**
+   * Fired after each corner is added — for feedback (a haptic, clearing an
+   * error). The count itself is read from `verticesSV`, its one source.
+   */
+  onVertexAdded: () => void;
   /** Fired when a tap is refused because the outline already has `maxVertices` corners. */
   onVertexLimit: () => void;
   /**
@@ -92,7 +95,7 @@ export const PolygonTapOverlay = React.memo(function PolygonTapOverlay({
   boardScale,
   pinchRef,
   maxVertices,
-  onVertexCountChange,
+  onVertexAdded,
   onVertexLimit,
   onClose,
 }: PolygonTapOverlayProps) {
@@ -109,10 +112,10 @@ export const PolygonTapOverlay = React.memo(function PolygonTapOverlay({
     maxVerticesSV.value = maxVertices;
   }, [maxVertices, maxVerticesSV]);
 
-  const callbacksRef = useRef({ onVertexCountChange, onVertexLimit, onClose });
-  callbacksRef.current = { onVertexCountChange, onVertexLimit, onClose };
+  const callbacksRef = useRef({ onVertexAdded, onVertexLimit, onClose });
+  callbacksRef.current = { onVertexAdded, onVertexLimit, onClose };
   // Captured once by the gesture memo — only closes over the stable ref.
-  const handleVertexCountChange = (count: number) => callbacksRef.current.onVertexCountChange(count);
+  const handleVertexAdded = () => callbacksRef.current.onVertexAdded();
   const handleVertexLimit = () => callbacksRef.current.onVertexLimit();
   const handleClose = (vertices: number[]) => callbacksRef.current.onClose(vertices);
 
@@ -168,13 +171,13 @@ export const PolygonTapOverlay = React.memo(function PolygonTapOverlay({
           return;
         }
         verticesSV.value = [...current, boardX, boardY];
-        runOnJS(handleVertexCountChange)(count + 1);
+        runOnJS(handleVertexAdded)();
       });
 
     // A RELATION on the board's pinch, not a composition of it.
     tap.simultaneousWithExternalGesture(pinchRef);
     return tap;
-    // handleVertexCountChange/handleVertexLimit/handleClose are intentionally not deps — they're
+    // handleVertexAdded/handleVertexLimit/handleClose are intentionally not deps — they're
     // captured once and read render-scoped values through callbacksRef.
   }, [
     verticesSV,

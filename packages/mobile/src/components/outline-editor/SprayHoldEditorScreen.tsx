@@ -1330,7 +1330,7 @@ export function SprayHoldEditorScreen({
             boardScale={boardScale}
             pinchRef={context.pinchRef}
             maxVertices={POLYGON_MAX_VERTICES}
-            onVertexCountChange={handleCornerAdded}
+            onVertexAdded={handleCornerAdded}
             onVertexLimit={handleCornerLimit}
             onClose={closeCorners}
           />
