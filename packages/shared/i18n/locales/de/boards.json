@@ -2,7 +2,7 @@
   "sprayDetection": {
     "queued": "In der Warteschlange…",
     "running": "Suche nach Griffen…",
-    "slow": "Volle Wände dauern etwas länger",
+    "slow": "Wände mit vielen Griffen dauern etwas länger",
     "connection": "Die Grifferkennung ist nicht erreichbar. Versuch es mit Verbindung erneut.",
     "failed": "Die Grifferkennung konnte nicht abgeschlossen werden. Dein Foto ist gespeichert.",
     "resumeHint": "Du kannst später weitermachen. Deine veröffentlichte Wand bleibt unverändert.",
@@ -789,14 +789,14 @@
     },
     "startOver": {
       "title": "Neu anfangen?",
-      "body": "Alle Griffe kommen zurück in den Zustand beim Öffnen der Wand. Du kannst das rückgängig machen.",
+      "body": "Alle Griffe werden auf den Stand vom Öffnen der Wand zurückgesetzt. Du kannst das rückgängig machen.",
       "confirm": "Neu anfangen",
       "cancel": "Weiter bearbeiten"
     },
     "chips": {
       "smaller": "Kleiner",
       "bigger": "Größer",
-      "trace": "Nachzeichnen",
+      "trace": "Umranden",
       "join": "Verbinden",
       "remove": "Entfernen"
     },

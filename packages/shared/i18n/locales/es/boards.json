@@ -794,9 +794,9 @@
       "cancel": "Seguir editando"
     },
     "chips": {
-      "smaller": "Más pequeña",
-      "bigger": "Más grande",
-      "trace": "Repasar",
+      "smaller": "Reducir",
+      "bigger": "Agrandar",
+      "trace": "Trazar",
       "join": "Unir",
       "remove": "Quitar"
     },
