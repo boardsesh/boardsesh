@@ -12,6 +12,11 @@ function isTransientBleState(state: State): boolean {
 }
 
 export async function waitForBlePoweredOn(timeoutMs = DEFAULT_BLE_POWERED_ON_TIMEOUT_MS): Promise<boolean> {
+  // The fake-Bluetooth screenshot build (see screenshot-fake-adapter.ts) runs on
+  // a simulator whose radio reads Unsupported. Inlined so it folds away elsewhere.
+  if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' && process.env.EXPO_PUBLIC_SCREENSHOT_FAKE_BLE === '1')
+    return true;
+
   let currentState: State;
   try {
     currentState = await bleManager.state();

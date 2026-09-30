@@ -6,6 +6,7 @@ import {
 } from '../../../modules/live-activity/src/index';
 import { RNBleAdapter } from './adapter';
 import { NativeIosBleAdapter, nativeBleSupportsBoard, nativeBleSupportsConnectionAdoption } from './native-ios-adapter';
+import { ScreenshotFakeBleAdapter } from './screenshot-fake-adapter';
 import type { BleAdapterOptions, BluetoothAdapter, BoardScanFamily, DevicePickerFn } from './types';
 
 // Returns the BluetoothAdapter implementation appropriate for the current
@@ -25,11 +26,19 @@ import type { BleAdapterOptions, BluetoothAdapter, BoardScanFamily, DevicePicker
 // without-response and would encode a Woods climb as Aurora, so on older
 // binaries such a board stays on RNBleAdapter, which keeps the Swift encoder
 // from ever seeing its configuration.
+//
+// A screenshot build with EXPO_PUBLIC_SCREENSHOT_FAKE_BLE=1 gets a fake adapter
+// that connects to a pretend board, because the simulator has no Bluetooth (see
+// screenshot-fake-adapter.ts). The raw env comparison is inlined on purpose so
+// the branch folds away in every other build (see ../screenshot-mode.ts).
 export function createBluetoothAdapter(
   devicePicker: DevicePickerFn,
   scanFamily: BoardScanFamily,
   options?: BleAdapterOptions,
 ): BluetoothAdapter {
+  if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' && process.env.EXPO_PUBLIC_SCREENSHOT_FAKE_BLE === '1') {
+    return new ScreenshotFakeBleAdapter(scanFamily, options);
+  }
   const nativeCanServe = !options?.preferWriteWithResponse || nativeBleSupportsBoard(options.boardName);
   if (Platform.OS === 'ios' && boardBleNative && nativeCanServe) {
     return new NativeIosBleAdapter(devicePicker, scanFamily, options);
@@ -60,6 +69,9 @@ export function isNativeIosBleAdapter(adapter: BluetoothAdapter): adapter is Nat
 export function subscribeNativeBleConnected(
   listener: (payload: NativeBleConnectedEvent) => void,
 ): { remove: () => void } | null {
+  // The fake-Bluetooth screenshot build has no native connection to adopt.
+  if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' && process.env.EXPO_PUBLIC_SCREENSHOT_FAKE_BLE === '1')
+    return null;
   if (!boardBleNative || !nativeBleSupportsConnectionAdoption()) return null;
   return boardBleNative.addListener('connected', listener);
 }
@@ -69,6 +81,8 @@ export function subscribeNativeBleConnected(
  * older iOS binaries, and on any native error.
  */
 export async function getNativeBleConnectedDevice(): Promise<NativeBleConnectedDevice | null> {
+  if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' && process.env.EXPO_PUBLIC_SCREENSHOT_FAKE_BLE === '1')
+    return null;
   const native = boardBleNative;
   if (!native || typeof native.getConnectedDevice !== 'function') return null;
   try {

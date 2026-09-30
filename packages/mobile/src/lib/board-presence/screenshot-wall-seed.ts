@@ -25,6 +25,7 @@ import type {
   BoardPresenceClimb,
   BoardPresenceStats,
   Climb,
+  ClimbQueueItemInput,
   UserBoard,
 } from '@boardsesh/shared-schema';
 import type { MobileBoardPresenceClient } from './board-presence-client';
@@ -94,6 +95,46 @@ export function publishScreenshotWallClimbs(climbs: BoardPresenceClimb[], holder
   }
 }
 
+/** How many lit climbs the seed keeps once reports start stacking up. */
+const SCREENSHOT_WALL_HISTORY_CAP = 20;
+
+/**
+ * The highest `seq` handed out so far. The reducer drops any event at or below
+ * the last seq it saw, and a seed re-publish (Climbs screen mount) resets the
+ * seed's own numbers, so reports count from here rather than from the seed.
+ */
+let lastReportedSeq = 0;
+
+/**
+ * Fake-Bluetooth screenshot builds only (`EXPO_PUBLIC_SCREENSHOT_FAKE_BLE=1`):
+ * the climb the phone just wrote to its pretend board becomes the lit climb, the
+ * way the server echoes a real report back over the wall feed. Without it the
+ * wall would stay on the seeded climb and the play view's pill could never say
+ * "On the wall" for the climb on screen. The sender is the seeded board owner,
+ * the account doing the capture.
+ */
+function recordScreenshotWallReport(item: ClimbQueueItemInput, angle: number | null): void {
+  const highestSeedSeq = seedClimbs.reduce((highest, climb) => Math.max(highest, climb.seq), 0);
+  lastReportedSeq = Math.max(lastReportedSeq, highestSeedSeq) + 1;
+  const owner = seedClimbs[0];
+  const reported: BoardPresenceClimb = {
+    climbUuid: item.climb.uuid,
+    queueItemUuid: item.uuid,
+    name: item.climb.name,
+    grade: item.climb.difficulty,
+    gradeColor: null,
+    frames: item.climb.frames,
+    angle: angle ?? item.climb.angle,
+    setter: item.climb.setter_username,
+    sentByDisplayName: owner?.sentByDisplayName ?? null,
+    sentByAvatarUrl: owner?.sentByAvatarUrl ?? null,
+    sentByUserId: owner?.sentByUserId ?? null,
+    sentAt: new Date(currentNowMs()).toISOString(),
+    seq: lastReportedSeq,
+  };
+  publishScreenshotWallClimbs([reported, ...seedClimbs].slice(0, SCREENSHOT_WALL_HISTORY_CAP), seedHolder);
+}
+
 /**
  * Resolve once the seed has climbs. The board-presence hook calls
  * `fetchRecentClimbs`/`fetchStats` ONCE, at app boot — before the Climbs screen
@@ -152,7 +193,8 @@ function seedRecentSenders(lastSentAt: string): BoardClimbRecentSender[] {
 /**
  * A `MobileBoardPresenceClient` that serves the module seed instead of a
  * graphql-ws transport. Every feed method reads the published climbs; the
- * resolve/report methods are inert stubs (BLE never connects in the simulator).
+ * resolve/report methods are inert stubs (BLE never connects in the simulator),
+ * except that a fake-Bluetooth build's reports light the reported climb.
  */
 export function createScreenshotBoardPresenceClient(): MobileBoardPresenceClient {
   const resolvedBoard = {
@@ -215,7 +257,10 @@ export function createScreenshotBoardPresenceClient(): MobileBoardPresenceClient
     async reportDisconnect() {
       return true;
     },
-    async reportClimb() {
+    async reportClimb(_boardId, climb, angle) {
+      if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' && process.env.EXPO_PUBLIC_SCREENSHOT_FAKE_BLE === '1') {
+        recordScreenshotWallReport(climb, angle);
+      }
       return true;
     },
     async resolveBoardForSerial() {

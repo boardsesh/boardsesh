@@ -55,6 +55,24 @@ import { isSupportedLocale, type Locale } from '@boardsesh/i18n';
  * `EXPO_PUBLIC_SCREENSHOT_NOW` whenever `--fixtures` is on, from the fixture
  * set's `frozenNow`. A capture without fixtures leaves it unset and runs on the
  * live clock.
+ *
+ * ## Fake Bluetooth
+ *
+ * `EXPO_PUBLIC_SCREENSHOT_FAKE_BLE=1` (only honoured together with
+ * `EXPO_PUBLIC_SCREENSHOT_MODE=1`) makes the app behave as if a real board were
+ * in range, for footage recorded on the simulator, which has no Bluetooth. The
+ * lightbulb connects straight away with no device picker, frame writes succeed
+ * without leaving the phone, and the screenshot presence seed lights each
+ * reported climb, so the play view's pill reads "On the wall". The pieces:
+ * `createBluetoothAdapter` returns `ScreenshotFakeBleAdapter`
+ * (`ble/screenshot-fake-adapter.ts`), the radio-state, permission and
+ * quickstart-scan checks stand down, native connection adoption reports nothing,
+ * and the seed client's `reportClimb` echoes the climb back.
+ *
+ * Like every flag here, each of those call sites inlines the raw pair
+ * `process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' &&
+ * process.env.EXPO_PUBLIC_SCREENSHOT_FAKE_BLE === '1'` rather than importing a
+ * shared boolean, so a normal build folds every branch to `false`.
  */
 
 /**

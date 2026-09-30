@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // All mock state lives inside vi.hoisted so it's initialized before the
 // vi.mock factories run (vi.mock is hoisted above regular top-level code).
@@ -42,7 +42,13 @@ const platformMock = harness.platform;
 const RNBleAdapter = harness.RNBleAdapter;
 const NativeIosBleAdapter = harness.NativeIosBleAdapter;
 
-import { createBluetoothAdapter, isNativeIosBleAdapter } from '../adapter-factory';
+import {
+  createBluetoothAdapter,
+  getNativeBleConnectedDevice,
+  isNativeIosBleAdapter,
+  subscribeNativeBleConnected,
+} from '../adapter-factory';
+import { ScreenshotFakeBleAdapter } from '../screenshot-fake-adapter';
 
 const noopPicker = () => Promise.resolve('');
 
@@ -136,5 +142,66 @@ describe('isNativeIosBleAdapter', () => {
     // unused here — we're only checking the branching logic.)
     expect(isNativeIosBleAdapter(nativeInstance)).toBe(true);
     expect(isNativeIosBleAdapter(rnInstance)).toBe(false);
+  });
+});
+
+describe('screenshot fake-Bluetooth gate', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  const nativeWithAdoption = () => ({
+    addListener: vi.fn(() => ({ remove: vi.fn() })),
+    getConnectedDevice: vi.fn(async () => ({ deviceId: 'real-board', name: 'Kilter Board#1@3' })),
+  });
+
+  it.each([
+    ['neither flag', undefined, undefined],
+    ['screenshot mode alone', '1', undefined],
+    ['fake BLE without screenshot mode', undefined, '1'],
+    ['a fake-BLE value other than 1', '1', 'true'],
+  ])('returns the real adapters with %s', (_label, screenshotMode, fakeBle) => {
+    if (screenshotMode !== undefined) vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', screenshotMode);
+    if (fakeBle !== undefined) vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_FAKE_BLE', fakeBle);
+    platformMock.OS = 'ios';
+    harness.module.boardBleNative = { _placeholder: true };
+    const iosAdapter = createBluetoothAdapter(noopPicker, 'aurora');
+    platformMock.OS = 'android';
+    const androidAdapter = createBluetoothAdapter(noopPicker, 'aurora');
+
+    expect(iosAdapter).not.toBeInstanceOf(ScreenshotFakeBleAdapter);
+    expect(androidAdapter).not.toBeInstanceOf(ScreenshotFakeBleAdapter);
+    expect(NativeIosBleAdapter).toHaveBeenCalledTimes(1);
+    expect(RNBleAdapter).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns the fake adapter on both platforms when both flags are 1', () => {
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_FAKE_BLE', '1');
+    harness.module.boardBleNative = { _placeholder: true };
+
+    platformMock.OS = 'ios';
+    const iosAdapter = createBluetoothAdapter(noopPicker, 'aurora', { boardName: 'kilter' });
+    platformMock.OS = 'android';
+    const androidAdapter = createBluetoothAdapter(noopPicker, 'moonboard', { boardName: 'moonboard' });
+
+    expect(iosAdapter).toBeInstanceOf(ScreenshotFakeBleAdapter);
+    expect(androidAdapter).toBeInstanceOf(ScreenshotFakeBleAdapter);
+    expect(isNativeIosBleAdapter(iosAdapter)).toBe(false);
+    expect(NativeIosBleAdapter).not.toHaveBeenCalled();
+    expect(RNBleAdapter).not.toHaveBeenCalled();
+  });
+
+  it('turns native connection adoption off only when both flags are 1', async () => {
+    const native = nativeWithAdoption();
+    harness.module.boardBleNative = native;
+    expect(await getNativeBleConnectedDevice()).toEqual({ deviceId: 'real-board', name: 'Kilter Board#1@3' });
+
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_FAKE_BLE', '1');
+    expect(subscribeNativeBleConnected(vi.fn())).toBeNull();
+    expect(await getNativeBleConnectedDevice()).toBeNull();
+    expect(native.addListener).not.toHaveBeenCalled();
+    expect(native.getConnectedDevice).toHaveBeenCalledTimes(1);
   });
 });
