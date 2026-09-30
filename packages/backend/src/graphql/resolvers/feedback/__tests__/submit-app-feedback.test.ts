@@ -95,6 +95,7 @@ type StoredRow = {
   platform: string;
   contact_consent: boolean | null;
   screenshot_keys: string[] | null;
+  context: { diagnostics?: Record<string, unknown> } | null;
   github_issue_number: number | null;
   github_issue_url: string | null;
 };
@@ -102,7 +103,7 @@ type StoredRow = {
 const readLatestRow = async (): Promise<StoredRow> => {
   const result = await db.execute(sql`
     SELECT id, user_id, source, comment, rating, platform, contact_consent,
-           screenshot_keys, github_issue_number, github_issue_url
+           screenshot_keys, context, github_issue_number, github_issue_url
     FROM app_feedback ORDER BY id DESC LIMIT 1
   `);
   return Array.from(result as Iterable<StoredRow>)[0];
@@ -125,6 +126,34 @@ beforeEach(async () => {
 });
 
 describe('submitAppFeedback', () => {
+  it('persists nested private diagnostics while dropping invalid optional fields', async () => {
+    const reporter = await freshReporter();
+    await feedbackMutations.submitAppFeedback(
+      null,
+      {
+        input: bugInput({
+          context: {
+            diagnostics: {
+              schemaVersion: 1,
+              launchId: 'launch-private',
+              reportId: 'report-private',
+              previousLaunchCrashed: false,
+              otaBranch: 'x'.repeat(101),
+            },
+          },
+        }),
+      },
+      authCtx(reporter),
+    );
+    const row = await readLatestRow();
+    expect(row.context?.diagnostics).toEqual({
+      schemaVersion: 1,
+      launchId: 'launch-private',
+      reportId: 'report-private',
+      previousLaunchCrashed: false,
+    });
+  });
+
   it('stores a bug report, opens an issue, and writes the issue link back onto the row', async () => {
     const reporter = await freshReporter();
 

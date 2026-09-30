@@ -207,6 +207,7 @@ export type AppFeedbackContext = {
   __typename?: 'AppFeedbackContext';
   climbName?: Maybe<Scalars['String']['output']>;
   climbUuid?: Maybe<Scalars['String']['output']>;
+  diagnostics?: Maybe<FeedbackDiagnostics>;
   difficulty?: Maybe<Scalars['String']['output']>;
   sessionId?: Maybe<Scalars['String']['output']>;
   sessionName?: Maybe<Scalars['String']['output']>;
@@ -2212,19 +2213,55 @@ export type FavoritesCount = {
   count: Scalars['Int']['output'];
 };
 
-/**
- * Free-form debug context attached to a feedback submission. Stored as jsonb.
- * Every field is optional — anonymous submissions made outside a board route
- * may carry only `url` / `userAgent`.
- */
 export type FeedbackContextInput = {
   climbName?: InputMaybe<Scalars['String']['input']>;
   climbUuid?: InputMaybe<Scalars['String']['input']>;
+  diagnostics?: InputMaybe<FeedbackDiagnosticsInput>;
   difficulty?: InputMaybe<Scalars['String']['input']>;
   sessionId?: InputMaybe<Scalars['String']['input']>;
   sessionName?: InputMaybe<Scalars['String']['input']>;
   url?: InputMaybe<Scalars['String']['input']>;
   userAgent?: InputMaybe<Scalars['String']['input']>;
+};
+
+export type FeedbackDiagnostics = {
+  __typename?: 'FeedbackDiagnostics';
+  easClientId?: Maybe<Scalars['String']['output']>;
+  lastUserOperationId?: Maybe<Scalars['String']['output']>;
+  launchId?: Maybe<Scalars['String']['output']>;
+  nativeStartupId?: Maybe<Scalars['String']['output']>;
+  otaBranch?: Maybe<Scalars['String']['output']>;
+  otaIsEmbedded?: Maybe<Scalars['Boolean']['output']>;
+  otaRuntimeVersion?: Maybe<Scalars['String']['output']>;
+  otaUpdateId?: Maybe<Scalars['String']['output']>;
+  posthogDistinctId?: Maybe<Scalars['String']['output']>;
+  posthogSessionId?: Maybe<Scalars['String']['output']>;
+  previousLaunchCrashed?: Maybe<Scalars['Boolean']['output']>;
+  previousLaunchId?: Maybe<Scalars['String']['output']>;
+  reportId?: Maybe<Scalars['String']['output']>;
+  schemaVersion?: Maybe<Scalars['Int']['output']>;
+};
+
+/**
+ * Free-form debug context attached to a feedback submission. Stored as jsonb.
+ * Every field is optional — anonymous submissions made outside a board route
+ * may carry only `url` / `userAgent`.
+ */
+export type FeedbackDiagnosticsInput = {
+  easClientId?: InputMaybe<Scalars['String']['input']>;
+  lastUserOperationId?: InputMaybe<Scalars['String']['input']>;
+  launchId?: InputMaybe<Scalars['String']['input']>;
+  nativeStartupId?: InputMaybe<Scalars['String']['input']>;
+  otaBranch?: InputMaybe<Scalars['String']['input']>;
+  otaIsEmbedded?: InputMaybe<Scalars['Boolean']['input']>;
+  otaRuntimeVersion?: InputMaybe<Scalars['String']['input']>;
+  otaUpdateId?: InputMaybe<Scalars['String']['input']>;
+  posthogDistinctId?: InputMaybe<Scalars['String']['input']>;
+  posthogSessionId?: InputMaybe<Scalars['String']['input']>;
+  previousLaunchCrashed?: InputMaybe<Scalars['Boolean']['input']>;
+  previousLaunchId?: InputMaybe<Scalars['String']['input']>;
+  reportId?: InputMaybe<Scalars['String']['input']>;
+  schemaVersion?: InputMaybe<Scalars['Int']['input']>;
 };
 
 /**

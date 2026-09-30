@@ -4,6 +4,40 @@ export const feedbackTypeDefs = /* GraphQL */ `
   Every field is optional — anonymous submissions made outside a board route
   may carry only \`url\` / \`userAgent\`.
   """
+  input FeedbackDiagnosticsInput {
+    schemaVersion: Int
+    reportId: String
+    launchId: String
+    previousLaunchId: String
+    nativeStartupId: String
+    lastUserOperationId: String
+    posthogDistinctId: String
+    posthogSessionId: String
+    easClientId: String
+    otaUpdateId: String
+    otaBranch: String
+    otaRuntimeVersion: String
+    previousLaunchCrashed: Boolean
+    otaIsEmbedded: Boolean
+  }
+
+  type FeedbackDiagnostics {
+    schemaVersion: Int
+    reportId: String
+    launchId: String
+    previousLaunchId: String
+    nativeStartupId: String
+    lastUserOperationId: String
+    posthogDistinctId: String
+    posthogSessionId: String
+    easClientId: String
+    otaUpdateId: String
+    otaBranch: String
+    otaRuntimeVersion: String
+    previousLaunchCrashed: Boolean
+    otaIsEmbedded: Boolean
+  }
+
   input FeedbackContextInput {
     climbUuid: String
     climbName: String
@@ -12,6 +46,7 @@ export const feedbackTypeDefs = /* GraphQL */ `
     sessionName: String
     url: String
     userAgent: String
+    diagnostics: FeedbackDiagnosticsInput
   }
 
   """
@@ -119,6 +154,7 @@ export const feedbackTypeDefs = /* GraphQL */ `
     sessionName: String
     url: String
     userAgent: String
+    diagnostics: FeedbackDiagnostics
   }
 
   """
