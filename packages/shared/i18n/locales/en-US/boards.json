@@ -1,8 +1,7 @@
 {
   "sprayDetection": {
-    "queued": "Getting in line…",
-    "running": "Looking for holds…",
-    "slow": "Busy walls take a little longer",
+    "queued": "Your photo is queued for hold recognition.",
+    "running": "Finding holds in your photo…",
     "connection": "Can't reach your recognition job. Try again when you're connected.",
     "failed": "We couldn't finish finding holds. Your photo is saved.",
     "resumeHint": "You can leave and resume later. Your published wall stays unchanged.",
@@ -828,7 +827,8 @@
         "bigger": "Make bigger",
         "remove": "Remove",
         "addHold": "Add a hold in the middle of the view"
-      }
+      },
+      "revealed": "Holds found: {{summary}}"
     },
     "readOnly": "This wall isn't yours to edit.",
     "errors": {
@@ -893,6 +893,12 @@
     },
     "detect": {
       "title": "Looking for holds"
+    },
+    "scan": {
+      "queued": "Getting in line…",
+      "running": "Looking for holds…",
+      "slow": "Busy walls take a little longer",
+      "resumeHint": "You can leave and resume later."
     },
     "review": {
       "publish": "Publish wall",

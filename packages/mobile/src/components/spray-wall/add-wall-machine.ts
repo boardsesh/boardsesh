@@ -239,6 +239,64 @@ export function isBusy(state: AddWallState): boolean {
   return state.upload.running || state.publish.running;
 }
 
+/** What the hold editor knows that the machine does not, read at the moment of leaving. */
+export type EditorLeaveState = {
+  /** It holds decisions it has not written. */
+  dirty: boolean;
+  /**
+   * Its commit is in flight, or the publish moment is playing before it hands
+   * over. The holds may already be saved, and the wall is about to publish.
+   */
+  handingOver: boolean;
+};
+
+/**
+ * What a way out does right now.
+ *
+ * `block` swallows the removal with no dialog. It covers the editor's save and
+ * its publish moment: a dialog there would ask about work the climber has just
+ * been told is saved, and whichever answer they gave would race the hand-over
+ * (leave early and the wall is never published; leave late and the stale
+ * answer pops the route mid-publish). The moment is short, so a second swipe
+ * after it gets the ordinary question.
+ *
+ * `confirmDiscard` is the editor's unwritten changes; `confirm` is the generic
+ * "the draft is kept" question; `leave` goes without asking.
+ */
+export type LeaveDecision = 'leave' | 'block' | 'confirm' | 'confirmDiscard';
+
+export function leaveDecision(state: AddWallState, editor: EditorLeaveState): LeaveDecision {
+  if (state.step === 'review' && editor.handingOver) return 'block';
+  if (state.step === 'review' && editor.dirty && !isBusy(state)) return 'confirmDiscard';
+  return shouldConfirmLeave(state) ? 'confirm' : 'leave';
+}
+
+/** Where the flow stood when a leave dialog was put up. */
+export type LeaveCheckpoint = {
+  step: AddWallStep;
+  publishRunning: boolean;
+};
+
+export function leaveCheckpoint(state: AddWallState): LeaveCheckpoint {
+  return { step: state.step, publishRunning: state.publish.running };
+}
+
+/**
+ * Whether a "Leave" pressed on a dialog may still go through.
+ *
+ * The dialog's answer is a closure over the flow as it was when it opened. If
+ * the flow has since started publishing (the editor handed over under it, or
+ * the auto-publish kicked off), popping the route now would strand the publish
+ * the climber never agreed to abandon, so the answer is dropped and the next
+ * swipe asks again about what is really happening.
+ */
+export function leaveStillApplies(askedAt: LeaveCheckpoint, state: AddWallState, editor: EditorLeaveState): boolean {
+  if (leaveDecision(state, editor) === 'block') return false;
+  const enteredPublish = askedAt.step !== state.step && (state.step === 'publish' || state.step === 'done');
+  const publishStarted = state.publish.running && !askedAt.publishRunning;
+  return !enteredPublish && !publishStarted;
+}
+
 export function addWallReducer(state: AddWallState, action: AddWallAction): AddWallState {
   switch (action.type) {
     case 'RESUME_CHECK_STARTED':

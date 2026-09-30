@@ -1,8 +1,7 @@
 {
   "sprayDetection": {
-    "queued": "Esperando turno…",
-    "running": "Buscando presas…",
-    "slow": "Los muros con muchas presas tardan un poco más",
+    "queued": "Tu foto está en cola para reconocer las presas.",
+    "running": "Buscando presas en tu foto…",
     "connection": "No podemos acceder al reconocimiento. Inténtalo cuando tengas conexión.",
     "failed": "No pudimos terminar de buscar las presas. Tu foto está guardada.",
     "resumeHint": "Puedes salir y continuar más tarde. Tu muro publicado no cambia.",
@@ -828,7 +827,8 @@
         "bigger": "Hacer más grande",
         "remove": "Quitar",
         "addHold": "Añadir una presa en el centro de la vista"
-      }
+      },
+      "revealed": "Presas encontradas: {{summary}}"
     },
     "readOnly": "No puedes editar este muro.",
     "errors": {
@@ -893,6 +893,12 @@
     },
     "detect": {
       "title": "Buscando presas"
+    },
+    "scan": {
+      "queued": "Esperando turno…",
+      "running": "Buscando presas…",
+      "slow": "Los muros con muchas presas tardan un poco más",
+      "resumeHint": "Puedes salir y continuar más tarde."
     },
     "review": {
       "publish": "Publicar muro",

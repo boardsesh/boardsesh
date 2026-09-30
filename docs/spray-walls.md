@@ -736,11 +736,21 @@ What the editor does with a wall is decided by this document rather than by tast
   scan (`revealOnMount`) the ring layer is revealed by a 700 ms top-to-bottom
   clip of one wrapper view, with the scan band riding its edge, then the maybes
   fade in (one SVG group's opacity) and a success buzz closes it; a resumed
-  draft opens without it. A toggled, added or undone hold is marked by
-  `SprayHoldSpotlight`, one small box at that hold that springs, ripples or
-  pulses violet. Publishing sweeps the ON rings violet (`SprayPublishSweep`)
-  and turns the count capsule into a checkmark, and `onCommitted` fires once
-  that has played, about 700 ms later. Every frame is a UI-thread transform,
+  draft opens without it. The board, the bars and the "?" take no touch until
+  the reveal ends, so a tap cannot land on a ring that is not drawn yet. A
+  toggled, added or undone hold is marked by `SprayHoldSpotlight`, one small
+  box at that hold that springs, ripples or pulses violet; a ring switched off
+  pops in the OFF ghost's dotted style, never as a solid ON ring. Publishing
+  sweeps the ON rings violet (`SprayPublishSweep`) and turns the count capsule
+  into a checkmark, and `onCommitted` fires once that has played, about 700 ms
+  later. From the press until then `onHandoverChange(true)` tells the host, and
+  the wizard swallows every back gesture without a dialog (`leaveDecision` in
+  `add-wall-machine.ts`): the dirty flag is already clear, so the generic
+  "draft kept" question would otherwise appear, and either answer would race
+  the hand-over. A Leave pressed on an older dialog is re-checked when pressed
+  (`leaveStillApplies`) and dropped if publishing began under it. A screen
+  reader hears each hint as it appears, the counts when the reveal ends,
+  "Holds saved", then "Publishing your wall…". Every frame is a UI-thread transform,
   opacity or clip height; the ring SVG never re-renders for an animation. With
   Reduce Motion the reveal is a 150 ms fade, taps change the rings with no
   extra motion, the undo halo is a static 300 ms highlight, the count only

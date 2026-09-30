@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
+  ReduceMotion,
   runOnJS,
   useAnimatedStyle,
   useReducedMotion,
@@ -169,6 +170,15 @@ export type SprayHoldEditorScreenProps = {
   onCommitted?: (summary: SprayHoldSaveSummary) => void;
   /** Whether leaving now would throw away a decision. Fired on change only. */
   onDirtyChange?: (dirty: boolean) => void;
+  /**
+   * True from the moment the primary button starts a commit until the editor
+   * has handed over (`onCommitted`) or the save failed. Fired on change only.
+   *
+   * The host must not remove the screen while it is true, and must not ask
+   * about it either: the holds may already be saved (the dirty flag is clear),
+   * and removing the screen cancels the hand-over that would publish them.
+   */
+  onHandoverChange?: (handingOver: boolean) => void;
 };
 
 /**
@@ -203,6 +213,7 @@ export function SprayHoldEditorScreen({
   notice,
   onCommitted,
   onDirtyChange,
+  onHandoverChange,
 }: SprayHoldEditorScreenProps) {
   const { systemColors, motion } = useTheme();
   const reduceMotion = useReducedMotion();
@@ -257,12 +268,26 @@ export function SprayHoldEditorScreen({
   const handoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onCommittedRef = useRef(onCommitted);
   onCommittedRef.current = onCommitted;
+  const onHandoverChangeRef = useRef(onHandoverChange);
+  onHandoverChangeRef.current = onHandoverChange;
   const reduceMotionRef = useRef(reduceMotion);
   reduceMotionRef.current = reduceMotion;
+
+  /** Sets `committingRef` and tells the host, once per change. */
+  const setHandingOver = useCallback((handingOver: boolean) => {
+    if (committingRef.current === handingOver) return;
+    committingRef.current = handingOver;
+    onHandoverChangeRef.current?.(handingOver);
+  }, []);
 
   useEffect(
     () => () => {
       if (handoverTimerRef.current != null) clearTimeout(handoverTimerRef.current);
+      // A host that removed the screen anyway must not keep believing it is busy.
+      if (committingRef.current) {
+        committingRef.current = false;
+        onHandoverChangeRef.current?.(false);
+      }
     },
     [],
   );
@@ -422,11 +447,21 @@ export function SprayHoldEditorScreen({
   const announceNextRef = useRef(false);
 
   const committing = saveHolds.isPending;
-  const canEdit = viewerCanEdit && !committing && !celebrating;
+  // Nothing takes a touch until the rings have finished arriving: a tap during
+  // the sweep would land on a ring that is not drawn yet.
+  const canEdit = viewerCanEdit && !committing && !celebrating && revealDone;
   const canEditRef = useRef(canEdit);
   canEditRef.current = canEdit;
   const toolRef = useRef(tool);
   toolRef.current = tool;
+
+  /** Says what the reveal found, once it has. A ref so the reveal effect need not re-run on a count. */
+  const announceRevealRef = useRef(() => {});
+  announceRevealRef.current = () => {
+    AccessibilityInfo.announceForAccessibility(
+      t('sprayEditor.a11y.revealed', { summary: sprayCountSummary(t, countsRef.current, showMaybes) }),
+    );
+  };
 
   const hints = useSprayEditorHints({
     enabled: viewerCanEdit && !SCREENSHOT_MODE,
@@ -448,21 +483,31 @@ export function SprayHoldEditorScreen({
       setRevealDone(true);
       return;
     }
-    const finish = () => {
+    // Always ends the reveal, even when the animation was cut short: input is
+    // locked until it does, so a reveal that never finished would leave a wall
+    // that cannot be edited.
+    const finish = (finished: boolean) => {
+      if (!finished) {
+        revealSV.value = 1;
+        maybeRevealSV.value = 1;
+      }
       hapticSuccess();
       setRevealDone(true);
+      announceRevealRef.current();
     };
     if (reduceMotion) {
-      maybeRevealSV.value = withTiming(1, { duration: REVEAL_FADE_MS });
-      revealSV.value = withTiming(1, { duration: REVEAL_FADE_MS }, (finished) => {
-        if (finished) runOnJS(finish)();
+      // `Never`: with the default (`System`) Reduce Motion would skip the fade
+      // itself and the rings would jump in, which is what this path replaces.
+      const fade = { duration: REVEAL_FADE_MS, reduceMotion: ReduceMotion.Never };
+      maybeRevealSV.value = withTiming(1, fade);
+      revealSV.value = withTiming(1, fade, (finished) => {
+        runOnJS(finish)(finished === true);
       });
       return;
     }
     revealSV.value = withTiming(1, { ...timingFor(motion.emphasized), duration: REVEAL_MS }, (finished) => {
-      if (!finished) return;
-      maybeRevealSV.value = withTiming(1, { duration: MAYBE_FADE_MS });
-      runOnJS(finish)();
+      if (finished) maybeRevealSV.value = withTiming(1, { duration: MAYBE_FADE_MS });
+      runOnJS(finish)(finished === true);
     });
   }, [revealOnMount, seeded, boardRender.height, holdCount, reduceMotion, motion.emphasized, revealSV, maybeRevealSV]);
 
@@ -523,7 +568,7 @@ export function SprayHoldEditorScreen({
       if (turningOn) hapticLight();
       else hapticSelection();
       dispatch({ type: 'TOGGLE_HOLD', id: hold.id });
-      pulseSpotlight('toggle', hold);
+      pulseSpotlight(turningOn ? 'toggleOn' : 'toggleOff', hold);
       recordHint(holdRole(hold) === 'maybe' ? 'maybe' : 'toggle');
       return true;
     },
@@ -727,20 +772,27 @@ export function SprayHoldEditorScreen({
    * screen for its publish step) the moment `onCommitted` fires. `committingRef`
    * stays set until then, so the button cannot start a second commit.
    */
-  const celebrateThenHandOver = useCallback((summary: SprayHoldSaveSummary) => {
-    committingRef.current = true;
-    hapticSuccess();
-    setCelebrating(true);
-    handoverTimerRef.current = setTimeout(
-      () => {
-        handoverTimerRef.current = null;
-        committingRef.current = false;
-        setCelebrating(false);
-        onCommittedRef.current?.(summary);
-      },
-      reduceMotionRef.current ? CELEBRATION_REDUCED_MS : CELEBRATION_MS,
-    );
-  }, []);
+  const celebrateThenHandOver = useCallback(
+    (summary: SprayHoldSaveSummary) => {
+      setHandingOver(true);
+      hapticSuccess();
+      setCelebrating(true);
+      AccessibilityInfo.announceForAccessibility(t('sprayEditor.bar.saved'));
+      handoverTimerRef.current = setTimeout(
+        () => {
+          handoverTimerRef.current = null;
+          setCelebrating(false);
+          // Hand over first, THEN drop the flag: the host moves on inside
+          // `onCommitted`, so there is no moment where it could see the editor
+          // idle on a step it is about to leave.
+          onCommittedRef.current?.(summary);
+          setHandingOver(false);
+        },
+        reduceMotionRef.current ? CELEBRATION_REDUCED_MS : CELEBRATION_MS,
+      );
+    },
+    [setHandingOver, t],
+  );
 
   const handlePrimary = useCallback(() => {
     if (!viewerCanEdit || homography == null || committingRef.current) return;
@@ -770,7 +822,7 @@ export function SprayHoldEditorScreen({
       return;
     }
 
-    committingRef.current = true;
+    setHandingOver(true);
     // Stamped BEFORE the request so a payload registered while it was in flight —
     // a presigned-photo refresh, say — cannot be mistaken for its answer.
     saveStartedAtMsRef.current = Date.now();
@@ -800,7 +852,7 @@ export function SprayHoldEditorScreen({
           celebrateThenHandOver({ ...result, holdCount });
         },
         onError: (error: unknown) => {
-          committingRef.current = false;
+          setHandingOver(false);
           hapticWarning();
           setErrorText(extractGraphqlMessage(error) ?? t('sprayEditor.errors.saveFailed'));
         },
@@ -815,6 +867,7 @@ export function SprayHoldEditorScreen({
     versionNumber,
     versionId,
     celebrateThenHandOver,
+    setHandingOver,
     t,
   ]);
 
@@ -910,6 +963,9 @@ export function SprayHoldEditorScreen({
 
   const handleWallAccessibilityAction = useCallback(
     (actionName: string, viewCentreX: number, viewCentreY: number) => {
+      // The same lock a finger meets: nothing during the reveal, a save, or the
+      // hand-over that follows it.
+      if (!canEditRef.current || committingRef.current) return;
       switch (actionName) {
         case 'increment':
           stepWallCursor(1);
@@ -1034,8 +1090,9 @@ export function SprayHoldEditorScreen({
               renderHeight={boardRender.height}
             />
           ) : null}
+          {/* Outside the reveal's clip, so held back until the rings are all in. */}
           <SprayHoldSpotlight
-            pulse={spotlight}
+            pulse={revealDone ? spotlight : null}
             reduceMotion={reduceMotion}
             scaleSV={context.scaleSV}
             boardScale={boardScale}
@@ -1144,6 +1201,27 @@ export function SprayHoldEditorScreen({
     ],
   );
 
+  const wallIsEmpty = counts.on + counts.maybes + counts.off === 0;
+  const banner = bannerFor({
+    tool,
+    errorText,
+    viewerCanEdit,
+    notice: wallIsEmpty ? notice : undefined,
+    onCancel: handleCancelTool,
+    t,
+  });
+  const boardShowing = !isLoading && wall != null && !isUnavailable && homography != null;
+  // A hint only when nothing more urgent is on the line, the rings have finished
+  // arriving, and the climber is free to act on it.
+  const hint = boardShowing && hints.hint && revealDone && !banner && tool === 'edit' && canEdit ? hints.hint : null;
+  const hintLine = hint ? hintText(hint, t) : null;
+
+  // A tip slides in without taking focus, so a screen reader would never hear
+  // it. Said once each time a different one appears.
+  useEffect(() => {
+    if (hintLine) AccessibilityInfo.announceForAccessibility(hintLine);
+  }, [hintLine]);
+
   if (isLoading) {
     return (
       <View style={[styles.centered, { backgroundColor: systemColors.background }]}>
@@ -1161,19 +1239,6 @@ export function SprayHoldEditorScreen({
       </View>
     );
   }
-
-  const wallIsEmpty = counts.on + counts.maybes + counts.off === 0;
-  const banner = bannerFor({
-    tool,
-    errorText,
-    viewerCanEdit,
-    notice: wallIsEmpty ? notice : undefined,
-    onCancel: handleCancelTool,
-    t,
-  });
-  // A hint only when nothing more urgent is on the line, the rings have finished
-  // arriving, and the climber is free to act on it.
-  const hint = hints.hint && revealDone && !banner && tool === 'edit' && canEdit ? hints.hint : null;
 
   return (
     <View style={[styles.container, { backgroundColor: systemColors.background }]} onLayout={handleAreaLayout}>
@@ -1202,11 +1267,11 @@ export function SprayHoldEditorScreen({
         </View>
       ) : null}
 
-      {hint ? (
+      {hint && hintLine ? (
         <View pointerEvents="box-none" style={styles.bannerSlot}>
           <OnboardingTipBanner
             solid
-            text={hintText(hint, t)}
+            text={hintLine}
             dismissLabel={t('sprayEditor.hints.dismiss')}
             onDismiss={() => hints.dismiss(hint)}
           />

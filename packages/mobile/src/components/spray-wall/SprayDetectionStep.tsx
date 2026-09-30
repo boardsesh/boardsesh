@@ -49,13 +49,21 @@ export function SprayDetectionStep({
 
   const failed = detection?.status === 'failed' || detection?.status === 'cancelled';
   const unreachable = query.isError || retry.isError;
+  const running = detection?.status === 'running';
+  // The full-screen scan is the add-a-wall flow's alone, with its own short
+  // lines. The spinner below is also the reset flow's, and keeps the wording
+  // that says what is being waited on.
   const message = unreachable
     ? t('sprayDetection.connection')
     : failed
       ? t('sprayDetection.failed')
-      : detection?.status === 'running'
-        ? t('sprayDetection.running')
-        : t('sprayDetection.queued');
+      : photo
+        ? running
+          ? t('sprayWizard.scan.running')
+          : t('sprayWizard.scan.queued')
+        : running
+          ? t('sprayDetection.running')
+          : t('sprayDetection.queued');
 
   // Restarted by every retry, so a second attempt gets its own eight seconds.
   const [slowEpoch, setSlowEpoch] = useState(0);
@@ -78,7 +86,8 @@ export function SprayDetectionStep({
       <SprayScanPhoto
         photo={photo}
         message={message}
-        detail={slow && !stopped ? t('sprayDetection.slow') : null}
+        detail={slow && !stopped ? t('sprayWizard.scan.slow') : null}
+        resumeHint={t('sprayWizard.scan.resumeHint')}
         failed={stopped}
         retry={{ label: t('sprayDetection.retry'), onPress: handleRetry, disabled: retry.isPending }}
         manual={onManual ? { label: t('sprayDetection.manual'), onPress: onManual } : undefined}

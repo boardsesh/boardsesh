@@ -22,7 +22,16 @@
 // per wall").
 
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import {
+  AccessibilityInfo,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 import { Image } from 'expo-image';
 import { useNavigation, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -76,8 +85,11 @@ import {
   addWallReducer,
   initialAddWallState,
   isBusy,
-  shouldConfirmLeave,
+  leaveCheckpoint,
+  leaveDecision,
+  leaveStillApplies,
   type AddWallStep,
+  type EditorLeaveState,
   type CreatedWall,
   type CreatedWallDraft,
   type DetectionOutcome,
@@ -484,6 +496,9 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
     if (!draft || !wall || state.publish.running) return;
     dispatch({ type: 'PUBLISH_STARTED' });
     hapticSelection();
+    // The editor just said "Holds saved"; this is the next thing that happens,
+    // and the spinner's own live region only speaks on Android.
+    AccessibilityInfo.announceForAccessibility(t('sprayWizard.publish.working'));
     try {
       // Skipped once the version is already published. Publishing and binding
       // the wall as the active board are two writes behind one button, and
@@ -560,22 +575,52 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
   }, [state.step, state.draft, state.publish.running, state.publish.error, publish]);
 
   /**
-   * Whether the editor holds decisions it has not written. Only the editor
-   * knows, and it says so through `onDirtyChange`. A ref: nothing renders on it,
-   * and every way out reads it at the moment it is taken.
+   * What only the editor knows about leaving: whether it holds decisions it has
+   * not written (`onDirtyChange`), and whether its commit is in flight or its
+   * publish moment is playing (`onHandoverChange`). Refs: nothing renders on
+   * them, and every way out reads them at the moment it is taken.
    */
   const editorDirtyRef = useRef(false);
+  const editorHandingOverRef = useRef(false);
   const onEditorDirtyChange = useCallback((dirty: boolean) => {
     editorDirtyRef.current = dirty;
   }, []);
+  const onEditorHandoverChange = useCallback((handingOver: boolean) => {
+    editorHandingOverRef.current = handingOver;
+  }, []);
+  const readEditorLeaveState = useCallback(
+    (): EditorLeaveState => ({ dirty: editorDirtyRef.current, handingOver: editorHandingOverRef.current }),
+    [],
+  );
 
-  /** Ask, then run `onConfirm` — or run it straight away when there is nothing to ask about. */
+  const stateRef = useRef(state);
+  stateRef.current = state;
+
+  /**
+   * Ask, then run `onConfirm` — or run it straight away when there is nothing to
+   * ask about, or drop it when the editor is mid-hand-over (`leaveDecision`).
+   *
+   * The dialog's Leave re-checks the flow when it is pressed, not when it was
+   * shown: a publish that started under the dialog must not be popped by an
+   * answer given before it began.
+   */
   const confirmLeave = useCallback(
     (onConfirm: () => void) => {
-      if (state.step === 'review' && editorDirtyRef.current && !isBusy(state)) {
+      const decision = leaveDecision(state, readEditorLeaveState());
+      if (decision === 'block') return;
+      if (decision === 'leave') {
+        onConfirm();
+        return;
+      }
+      const askedAt = leaveCheckpoint(state);
+      const confirmed = () => {
+        if (!leaveStillApplies(askedAt, stateRef.current, readEditorLeaveState())) return;
+        onConfirm();
+      };
+      if (decision === 'confirmDiscard') {
         // Unwritten hold changes: the wall is kept, the changes are not, and the
         // dialog says exactly that.
-        confirmDiscardSprayEdits(true, onConfirm, {
+        confirmDiscardSprayEdits(true, confirmed, {
           title: t('sprayWizard.leave.unsavedTitle'),
           message: t('sprayWizard.leave.unsavedBody'),
           keep: t('sprayWizard.leave.stay'),
@@ -583,16 +628,12 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
         });
         return;
       }
-      if (!shouldConfirmLeave(state)) {
-        onConfirm();
-        return;
-      }
       Alert.alert(t('sprayWizard.leave.title'), t('sprayWizard.leave.body'), [
         { text: t('sprayWizard.leave.stay'), style: 'cancel' },
-        { text: t('sprayWizard.leave.go'), onPress: onConfirm },
+        { text: t('sprayWizard.leave.go'), onPress: confirmed },
       ]);
     },
-    [state, t],
+    [state, t, readEditorLeaveState],
   );
 
   const leave = useCallback(() => confirmLeave(() => router.back()), [confirmLeave, router]);
@@ -608,8 +649,6 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
   const navigation = useNavigation();
   const confirmLeaveRef = useRef(confirmLeave);
   confirmLeaveRef.current = confirmLeave;
-  const stateRef = useRef(state);
-  stateRef.current = state;
 
   useEffect(() => {
     // Typed loosely on purpose: `useNavigation()` here is the Expo Router stack's
@@ -618,13 +657,16 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
     const subscribe = (navigation as unknown as { addListener?: NavigationRemoveSubscribe }).addListener;
     if (typeof subscribe !== 'function') return;
     return subscribe.call(navigation, 'beforeRemove', (event: NavigationRemoveEvent) => {
-      if (!shouldConfirmLeave(stateRef.current)) return;
+      const decision = leaveDecision(stateRef.current, readEditorLeaveState());
+      if (decision === 'leave') return;
       event.preventDefault();
+      // Mid-hand-over: swallowed without a dialog. See `leaveDecision`.
+      if (decision === 'block') return;
       confirmLeaveRef.current(() => {
         (navigation as unknown as { dispatch: (action: unknown) => void }).dispatch(event.data.action);
       });
     });
-  }, [navigation]);
+  }, [navigation, readEditorLeaveState]);
 
   const goBack = useCallback(() => {
     if (isBusy(state)) return;
@@ -699,6 +741,7 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
         notice={reviewNotice}
         onCommitted={onHoldsCommitted}
         onDirtyChange={onEditorDirtyChange}
+        onHandoverChange={onEditorHandoverChange}
       />
     );
   }

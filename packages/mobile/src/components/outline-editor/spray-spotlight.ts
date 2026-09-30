@@ -2,10 +2,12 @@ import type { HoldGeometry } from './spray-hold-tools';
 import type { SprayEditorHold } from './spray-hold-editor-reducer';
 
 /**
- * What the single spotlight is marking. `toggle` and `add` follow a tap, `undo`
- * rings the hold an undo just put back.
+ * What the single spotlight is marking. `toggleOn`, `toggleOff` and `add` follow
+ * a tap, `undo` rings the hold an undo just put back. The two toggles are apart
+ * because each pops in the style the ring is switching TO: a solid ON ring for
+ * a hold switched on, the faint dotted OFF ghost for one switched off.
  */
-export type SpraySpotlightKind = 'toggle' | 'add' | 'undo';
+export type SpraySpotlightKind = 'toggleOn' | 'toggleOff' | 'add' | 'undo';
 
 /**
  * One spotlight moment. `key` changes every time, so the same hold tapped twice

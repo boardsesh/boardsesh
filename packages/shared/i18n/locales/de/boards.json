@@ -1,8 +1,7 @@
 {
   "sprayDetection": {
-    "queued": "In der Warteschlange…",
-    "running": "Suche nach Griffen…",
-    "slow": "Wände mit vielen Griffen dauern etwas länger",
+    "queued": "Dein Foto wartet auf die Grifferkennung.",
+    "running": "Griffe auf deinem Foto werden gesucht…",
     "connection": "Die Grifferkennung ist nicht erreichbar. Versuch es mit Verbindung erneut.",
     "failed": "Die Grifferkennung konnte nicht abgeschlossen werden. Dein Foto ist gespeichert.",
     "resumeHint": "Du kannst später weitermachen. Deine veröffentlichte Wand bleibt unverändert.",
@@ -828,7 +827,8 @@
         "bigger": "Größer machen",
         "remove": "Entfernen",
         "addHold": "Griff in der Mitte der Ansicht hinzufügen"
-      }
+      },
+      "revealed": "Gefundene Griffe: {{summary}}"
     },
     "readOnly": "Du kannst diese Wand nicht bearbeiten.",
     "errors": {
@@ -893,6 +893,12 @@
     },
     "detect": {
       "title": "Suche nach Griffen"
+    },
+    "scan": {
+      "queued": "In der Warteschlange…",
+      "running": "Suche nach Griffen…",
+      "slow": "Wände mit vielen Griffen dauern etwas länger",
+      "resumeHint": "Du kannst später weitermachen."
     },
     "review": {
       "publish": "Wand veröffentlichen",

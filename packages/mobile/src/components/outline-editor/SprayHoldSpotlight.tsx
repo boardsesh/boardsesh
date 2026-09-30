@@ -15,7 +15,7 @@ import { overlays } from '../../theme/tokens';
 import { brandColorsDark } from '../../theme/colors';
 import { springs } from '../../theme/animations';
 import { holdPathData } from './spray-hold-path';
-import { useZoomStrokeStep } from './SprayHoldSvgLayer';
+import { RING, useZoomStrokeStep } from './SprayHoldSvgLayer';
 import type { SpraySpotlightPulse } from './spray-spotlight';
 
 /** How far past the hold's own reach the box extends, so the add ripple has room to grow. */
@@ -43,7 +43,7 @@ type SprayHoldSpotlightProps = {
 
 /**
  * The one spotlight the editor animates: a toggled hold's ring pops back to
- * size (snappy spring), an added one bounces in and throws a ripple, and an
+ * size (snappy spring) in the style it is switching to, an added one bounces in and throws a ripple, and an
  * undone one gets a short violet halo.
  *
  * One hold at a time, in one small box positioned at that hold, and every
@@ -61,6 +61,7 @@ export const SprayHoldSpotlight = React.memo(function SprayHoldSpotlight({
   boardScale,
 }: SprayHoldSpotlightProps) {
   const zoomStep = useZoomStrokeStep(scaleSV);
+  const offDash = useMemo(() => RING.offDash.map((dash) => dash / zoomStep), [zoomStep]);
   const ringScaleSV = useSharedValue(1);
   const ringOpacitySV = useSharedValue(0);
   const rippleScaleSV = useSharedValue(1);
@@ -108,7 +109,7 @@ export const SprayHoldSpotlight = React.memo(function SprayHoldSpotlight({
     }
     // A tap already changed the ring layer; with Reduce Motion that is the whole answer.
     if (reduceMotion) return;
-    if (pulseKind === 'toggle') {
+    if (pulseKind === 'toggleOn' || pulseKind === 'toggleOff') {
       ringScaleSV.value = 1.3;
       ringScaleSV.value = withSpring(1, springs.snappy);
       ringOpacitySV.value = 1;
@@ -186,20 +187,37 @@ export const SprayHoldSpotlight = React.memo(function SprayHoldSpotlight({
           ) : null}
           <Animated.View style={[StyleSheet.absoluteFill, ringStyle]}>
             <Svg width={shape.sizeRender} height={shape.sizeRender} viewBox={viewBox}>
-              <Path
-                d={shape.path}
-                fill="none"
-                stroke={overlays.scrim}
-                strokeWidth={STROKE.ringHalo / zoomStep}
-                vectorEffect="non-scaling-stroke"
-              />
-              <Path
-                d={shape.path}
-                fill="none"
-                stroke={overlays.onScrim}
-                strokeWidth={STROKE.ring / zoomStep}
-                vectorEffect="non-scaling-stroke"
-              />
+              {pulse.kind === 'toggleOff' ? (
+                // The OFF ghost, exactly as the ring layer draws it: switching a
+                // hold off must never flash a solid ON ring.
+                <Path
+                  d={shape.path}
+                  fill="none"
+                  stroke={overlays.onScrim}
+                  strokeOpacity={RING.offOpacity}
+                  strokeWidth={RING.offWidth / zoomStep}
+                  strokeDasharray={offDash}
+                  strokeLinecap="round"
+                  vectorEffect="non-scaling-stroke"
+                />
+              ) : (
+                <>
+                  <Path
+                    d={shape.path}
+                    fill="none"
+                    stroke={overlays.scrim}
+                    strokeWidth={STROKE.ringHalo / zoomStep}
+                    vectorEffect="non-scaling-stroke"
+                  />
+                  <Path
+                    d={shape.path}
+                    fill="none"
+                    stroke={overlays.onScrim}
+                    strokeWidth={STROKE.ring / zoomStep}
+                    vectorEffect="non-scaling-stroke"
+                  />
+                </>
+              )}
             </Svg>
           </Animated.View>
         </>

@@ -43,7 +43,7 @@ export function zoomStrokeStep(scale: number): number {
  * some of it. ON is solid white over a dark halo, a MAYBE is a dashed accent
  * over the same halo, OFF is a faint dotted white ghost with no halo at all.
  */
-const RING = {
+export const RING = {
   onWidth: 2,
   maybeWidth: 2,
   /** How much wider the dark halo is than the line it sits under. */

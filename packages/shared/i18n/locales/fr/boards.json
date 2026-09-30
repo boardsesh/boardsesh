@@ -1,8 +1,7 @@
 {
   "sprayDetection": {
-    "queued": "En file d'attente…",
-    "running": "Recherche des prises…",
-    "slow": "Les murs très chargés prennent un peu plus de temps",
+    "queued": "Ta photo attend la reconnaissance des prises.",
+    "running": "Recherche des prises sur ta photo…",
     "connection": "La reconnaissance est inaccessible. Réessaie une fois connecté·e.",
     "failed": "La recherche des prises n'a pas abouti. Ta photo est enregistrée.",
     "resumeHint": "Tu peux quitter et reprendre plus tard. Ton mur publié reste inchangé.",
@@ -828,7 +827,8 @@
         "bigger": "Rendre plus grande",
         "remove": "Retirer",
         "addHold": "Ajouter une prise au centre de la vue"
-      }
+      },
+      "revealed": "Prises trouvées : {{summary}}"
     },
     "readOnly": "Ce mur n'est pas le tien, tu ne peux pas le modifier.",
     "errors": {
@@ -893,6 +893,12 @@
     },
     "detect": {
       "title": "Recherche des prises"
+    },
+    "scan": {
+      "queued": "En file d'attente…",
+      "running": "Recherche des prises…",
+      "slow": "Les murs très chargés prennent un peu plus de temps",
+      "resumeHint": "Tu peux quitter et reprendre plus tard."
     },
     "review": {
       "publish": "Publier le mur",
