@@ -8,8 +8,13 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- See Boardsesh in action at the top of boardsesh.com: a one-minute tour of lighting climbs, sharing a queue and logging sends. ([#5908](https://github.com/boardsesh/boardsesh/pull/5908))
 - Download your climbing history from Settings, across every board. ([#5893](https://github.com/boardsesh/boardsesh/pull/5893))
   Keep a Boardsesh archive or download Aurora JSON where available.
+
+### Fixed
+
+- A spray wall you finish later now keeps the visibility you picked when you started it. ([#5796](https://github.com/boardsesh/boardsesh/pull/5796))
 
 ## 2026-09-29
 
