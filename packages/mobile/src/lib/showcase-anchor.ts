@@ -80,6 +80,9 @@ function useScreenshotShowcaseAnchor(name: ShowcaseAnchorName, enabled = true): 
 
   const ref = useCallback((instance: Measurable | null) => {
     instanceRef.current = instance;
+    // A view that unmounts and comes back at the same rect (a sheet closed and
+    // reopened) must log again, or the recorder never learns it reappeared.
+    if (instance === null) lastLineRef.current = null;
   }, []);
 
   const onLayout = useCallback(

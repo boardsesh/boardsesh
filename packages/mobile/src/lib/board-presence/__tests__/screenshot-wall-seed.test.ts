@@ -4,6 +4,7 @@ import {
   SCREENSHOT_SEED_BOARD_ID,
   buildScreenshotWallSeed,
   createScreenshotBoardPresenceClient,
+  _resetScreenshotWallSeedForTests,
   publishScreenshotWallClimbs,
 } from '../screenshot-wall-seed';
 
@@ -26,7 +27,7 @@ function makeClimb(overrides: Partial<BoardPresenceClimb> = {}): BoardPresenceCl
 
 // Module-level seed state persists across tests; reset it so each case starts clean.
 afterEach(() => {
-  publishScreenshotWallClimbs([], null);
+  _resetScreenshotWallSeedForTests();
   vi.unstubAllEnvs();
 });
 
@@ -197,7 +198,7 @@ describe('screenshot-wall-seed', () => {
     expect(events).toHaveLength(1);
   });
 
-  it('lights each reported climb with a rising seq under fake Bluetooth, surviving a seed re-publish', async () => {
+  it('lights each reported climb with a rising seq under fake Bluetooth, keeping every report across a seed re-publish', async () => {
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_FAKE_BLE', '1');
     const client = createScreenshotBoardPresenceClient();
@@ -228,9 +229,15 @@ describe('screenshot-wall-seed', () => {
     const firstSeq = (events.at(-1) as { climb: BoardPresenceClimb }).climb.seq;
     expect(firstSeq).toBeGreaterThan(100);
 
-    // The Climbs screen re-publishing the seed must not rewind the numbering,
-    // or the reducer would drop the next report as stale.
+    // The Climbs screen re-publishing the seed must neither drop the report
+    // (the wall stays on it) nor rewind the numbering, or the reducer would drop
+    // the next report as stale.
     publishScreenshotWallClimbs([seeded], null);
+    expect((events.at(-1) as { climb: BoardPresenceClimb }).climb.climbUuid).toBe('first-report');
+    expect((await client.fetchRecentClimbs(SCREENSHOT_SEED_BOARD_ID)).map((climb) => climb.climbUuid)).toEqual([
+      'first-report',
+      'seeded',
+    ]);
     await client.reportClimb(SCREENSHOT_SEED_BOARD_ID, makeQueueItem('second-report'), null);
     const second = (events.at(-1) as { climb: BoardPresenceClimb }).climb;
     expect(second.climbUuid).toBe('second-report');
@@ -238,6 +245,7 @@ describe('screenshot-wall-seed', () => {
     expect(second.seq).toBeGreaterThan(firstSeq);
     expect((await client.fetchRecentClimbs(SCREENSHOT_SEED_BOARD_ID)).map((climb) => climb.climbUuid)).toEqual([
       'second-report',
+      'first-report',
       'seeded',
     ]);
   });

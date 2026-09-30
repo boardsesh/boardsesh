@@ -1,3 +1,4 @@
+import Module from 'node:module';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // All mock state lives inside vi.hoisted so it's initialized before the
@@ -48,7 +49,9 @@ import {
   isNativeIosBleAdapter,
   subscribeNativeBleConnected,
 } from '../adapter-factory';
-import { ScreenshotFakeBleAdapter } from '../screenshot-fake-adapter';
+import * as screenshotFakeAdapterModule from '../screenshot-fake-adapter';
+
+const { ScreenshotFakeBleAdapter } = screenshotFakeAdapterModule;
 
 const noopPicker = () => Promise.resolve('');
 
@@ -146,7 +149,27 @@ describe('isNativeIosBleAdapter', () => {
 });
 
 describe('screenshot fake-Bluetooth gate', () => {
+  // The factory `require`s the fake adapter inside its gated branch so Metro
+  // drops the module from normal builds. Under vitest that call reaches Node's
+  // CommonJS loader, which can't resolve an extensionless `.ts` path; hand it
+  // the module this file already imported (the same class, so instanceof holds).
+  // Every other request goes to the real loader.
+  type RequireFn = typeof Module.prototype.require;
+  const realRequire = Object.getOwnPropertyDescriptor(Module.prototype, 'require')?.value as RequireFn;
+  const requireSpy = vi.fn();
+  beforeEach(() => {
+    requireSpy.mockClear();
+    Module.prototype.require = function (this: Module, id: string) {
+      if (id === './screenshot-fake-adapter') {
+        requireSpy(id);
+        return screenshotFakeAdapterModule;
+      }
+      return realRequire.call(this, id);
+    } as RequireFn;
+  });
+
   afterEach(() => {
+    Module.prototype.require = realRequire;
     vi.unstubAllEnvs();
   });
 
@@ -171,6 +194,8 @@ describe('screenshot fake-Bluetooth gate', () => {
 
     expect(iosAdapter).not.toBeInstanceOf(ScreenshotFakeBleAdapter);
     expect(androidAdapter).not.toBeInstanceOf(ScreenshotFakeBleAdapter);
+    // The fake module is only loaded inside the gated branch.
+    expect(requireSpy).not.toHaveBeenCalled();
     expect(NativeIosBleAdapter).toHaveBeenCalledTimes(1);
     expect(RNBleAdapter).toHaveBeenCalledTimes(1);
   });

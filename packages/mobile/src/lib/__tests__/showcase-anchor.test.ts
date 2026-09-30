@@ -3,10 +3,18 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { renderHook } from '@testing-library/react';
+import { render, renderHook } from '@testing-library/react';
+import { createElement, type ReactNode } from 'react';
 import type { LayoutChangeEvent } from 'react-native';
 
-vi.mock('react-native', () => ({ View: 'View' }));
+// Records every View the wrapper renders, so a test can read the props it got.
+const renderedViews = vi.hoisted(() => ({ props: [] as Record<string, unknown>[] }));
+vi.mock('react-native', () => ({
+  View: (props: { children?: ReactNode; collapsable?: boolean }) => {
+    renderedViews.props.push(props);
+    return createElement('div', { 'data-testid': 'anchor-view' }, props.children);
+  },
+}));
 
 type ShowcaseAnchorModule = typeof import('../showcase-anchor');
 
@@ -42,6 +50,7 @@ let logSpy: ReturnType<typeof vi.spyOn>;
 
 beforeEach(() => {
   logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+  renderedViews.props = [];
 });
 
 afterEach(() => {
@@ -137,6 +146,61 @@ describe('useShowcaseAnchor in screenshot mode', () => {
 
     rerender({ enabled: false });
     expect(result.current).toEqual({ ref: undefined, onLayout: undefined });
+  });
+
+  it('logs the same rect again after the view detaches and comes back', async () => {
+    const { useShowcaseAnchor } = await loadShowcaseAnchor(true);
+    const { result } = renderHook(() => useShowcaseAnchor('invite-qr'));
+    const view = fakeView({ x: 100, y: 420, width: 200, height: 200 });
+
+    result.current.ref?.(view);
+    result.current.onLayout?.(layoutEvent());
+    result.current.onLayout?.(layoutEvent());
+    expect(logSpy).toHaveBeenCalledTimes(1);
+
+    // The sheet closes (ref detaches) and reopens at the very same rect.
+    result.current.ref?.(null);
+    result.current.ref?.(view);
+    result.current.onLayout?.(layoutEvent());
+    expect(logSpy).toHaveBeenCalledTimes(2);
+    expect(logSpy).toHaveBeenLastCalledWith(
+      '[showcase-anchor] {"name":"invite-qr","x":100,"y":420,"width":200,"height":200}',
+    );
+  });
+
+  it('wraps an enabled ShowcaseAnchorView in a measured, non-collapsable View', async () => {
+    const { ShowcaseAnchorView } = await loadShowcaseAnchor(true);
+    const { getByTestId, getByText } = render(
+      createElement(ShowcaseAnchorView, { name: 'play-next', children: createElement('span', null, 'Play next') }),
+    );
+
+    expect(getByTestId('anchor-view').textContent).toBe('Play next');
+    expect(getByText('Play next')).toBeTruthy();
+    expect(renderedViews.props).toHaveLength(1);
+    expect(renderedViews.props[0]).toMatchObject({ collapsable: false });
+    expect(renderedViews.props[0].onLayout).toBeTypeOf('function');
+    expect(renderedViews.props[0].ref).toBeTypeOf('function');
+
+    const onLayout = renderedViews.props[0].onLayout as (event: LayoutChangeEvent) => void;
+    onLayout(layoutEvent(fakeView({ x: 24, y: 610, width: 360, height: 52 })));
+    expect(logSpy).toHaveBeenLastCalledWith(
+      '[showcase-anchor] {"name":"play-next","x":24,"y":610,"width":360,"height":52}',
+    );
+  });
+
+  it('renders a disabled ShowcaseAnchorView without a wrapper', async () => {
+    const { ShowcaseAnchorView } = await loadShowcaseAnchor(true);
+    const { queryByTestId, getByText } = render(
+      createElement(ShowcaseAnchorView, {
+        name: 'play-next',
+        enabled: false,
+        children: createElement('span', null, 'Preview'),
+      }),
+    );
+
+    expect(getByText('Preview')).toBeTruthy();
+    expect(queryByTestId('anchor-view')).toBeNull();
+    expect(renderedViews.props).toHaveLength(0);
   });
 
   it('stops re-measuring once the view unmounts', async () => {

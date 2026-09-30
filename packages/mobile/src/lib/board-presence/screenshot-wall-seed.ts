@@ -77,9 +77,31 @@ export const SCREENSHOT_SEED_BOARD_ID = 999_000;
 
 type SeedListener = () => void;
 
+/** The climbs the app published (the board's real climbs). */
+let publishedClimbs: BoardPresenceClimb[] = [];
+/**
+ * Climbs the fake-Bluetooth build reported lighting, newest first. Kept apart
+ * from `publishedClimbs` so a re-publish (the Climbs screen mounting) can't drop
+ * them: the wall stays on the last reported climb.
+ */
+let reportedClimbs: BoardPresenceClimb[] = [];
+/** What every feed method serves: reports on top of the published climbs. */
 let seedClimbs: BoardPresenceClimb[] = [];
 let seedHolder: BoardConnectionHolder | null = null;
 const listeners = new Set<SeedListener>();
+
+/** How many lit climbs the seed keeps once reports start stacking up. */
+const SCREENSHOT_WALL_HISTORY_CAP = 20;
+
+function refreshSeed(): void {
+  seedClimbs =
+    reportedClimbs.length > 0
+      ? [...reportedClimbs, ...publishedClimbs].slice(0, SCREENSHOT_WALL_HISTORY_CAP)
+      : publishedClimbs;
+  for (const listener of listeners) {
+    listener();
+  }
+}
 
 /**
  * Publish the climbs to show on the wall (newest first — index 0 is the lit
@@ -88,20 +110,15 @@ const listeners = new Set<SeedListener>();
  * survives any screen unmounting before the flow reaches the wall tab.
  */
 export function publishScreenshotWallClimbs(climbs: BoardPresenceClimb[], holder: BoardConnectionHolder | null): void {
-  seedClimbs = climbs;
+  publishedClimbs = climbs;
   seedHolder = holder;
-  for (const listener of listeners) {
-    listener();
-  }
+  refreshSeed();
 }
-
-/** How many lit climbs the seed keeps once reports start stacking up. */
-const SCREENSHOT_WALL_HISTORY_CAP = 20;
 
 /**
  * The highest `seq` handed out so far. The reducer drops any event at or below
- * the last seq it saw, and a seed re-publish (Climbs screen mount) resets the
- * seed's own numbers, so reports count from here rather than from the seed.
+ * the last seq it saw, so reports keep counting up from here even if a
+ * re-publish brings the published climbs' own (lower) numbers back.
  */
 let lastReportedSeq = 0;
 
@@ -116,7 +133,7 @@ let lastReportedSeq = 0;
 function recordScreenshotWallReport(item: ClimbQueueItemInput, angle: number | null): void {
   const highestSeedSeq = seedClimbs.reduce((highest, climb) => Math.max(highest, climb.seq), 0);
   lastReportedSeq = Math.max(lastReportedSeq, highestSeedSeq) + 1;
-  const owner = seedClimbs[0];
+  const owner = publishedClimbs[0] ?? seedClimbs[0];
   const reported: BoardPresenceClimb = {
     climbUuid: item.climb.uuid,
     queueItemUuid: item.uuid,
@@ -132,7 +149,17 @@ function recordScreenshotWallReport(item: ClimbQueueItemInput, angle: number | n
     sentAt: new Date(currentNowMs()).toISOString(),
     seq: lastReportedSeq,
   };
-  publishScreenshotWallClimbs([reported, ...seedClimbs].slice(0, SCREENSHOT_WALL_HISTORY_CAP), seedHolder);
+  reportedClimbs = [reported, ...reportedClimbs].slice(0, SCREENSHOT_WALL_HISTORY_CAP);
+  refreshSeed();
+}
+
+/** Tests only: forget everything published and reported. */
+export function _resetScreenshotWallSeedForTests(): void {
+  publishedClimbs = [];
+  reportedClimbs = [];
+  seedClimbs = [];
+  seedHolder = null;
+  lastReportedSeq = 0;
 }
 
 /**

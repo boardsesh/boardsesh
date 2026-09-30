@@ -344,7 +344,7 @@ function QueueListComponent({
               drag={dragControls}
               rowIndex={index}
               queueIndex={row.queueIndex}
-              showcaseAvatarAnchor={index === firstFutureRowIndex}
+              showcaseAvatarAnchor={process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' && index === firstFutureRowIndex}
               isDraggable={!isEditMode}
               showAddedBy={showAddedBy}
               viewerUserId={viewerUserId}
