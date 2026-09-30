@@ -117,6 +117,13 @@ function sanitizeAttributes(attributes: DiagnosticAttributes = {}): DiagnosticAt
   return sanitized;
 }
 
+function mergeAttributes(existing: DiagnosticAttributes, incoming?: DiagnosticAttributes): DiagnosticAttributes {
+  const latest = sanitizeAttributes(incoming);
+  // Reserve bounded space for the latest phase/failure evidence. Invalid or
+  // private incoming fields cannot displace previously accepted attributes.
+  return sanitizeAttributes({ ...latest, ...existing, ...latest });
+}
+
 const LAUNCH_STRING_KEYS = [
   'launchId',
   'previousLaunchId',
@@ -274,7 +281,7 @@ export function createDiagnosticRecorder(
         operation.phase = phase.replace(/[^a-zA-Z0-9_.:-]/g, '_').slice(0, 64);
         operation.updatedAt = now();
         operation.durationMs = Math.max(0, operation.updatedAt - startedAt);
-        operation.attributes = sanitizeAttributes({ ...operation.attributes, ...attributes });
+        operation.attributes = mergeAttributes(operation.attributes, attributes);
         record(operation);
       },
       finish(outcome, attributes) {
@@ -283,7 +290,7 @@ export function createDiagnosticRecorder(
         operation.outcome = outcome;
         operation.updatedAt = now();
         operation.durationMs = Math.max(0, operation.updatedAt - startedAt);
-        operation.attributes = sanitizeAttributes({ ...operation.attributes, ...attributes });
+        operation.attributes = mergeAttributes(operation.attributes, attributes);
         if (latestStartedByFlow[flow] === operation.id) completed[flow] = copyOperation(operation);
         record(operation);
       },

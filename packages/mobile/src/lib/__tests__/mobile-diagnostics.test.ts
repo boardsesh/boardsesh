@@ -4,6 +4,33 @@ import { bootstrapDiagnosticLaunch, canAttributePreviousNativeCrash } from '../d
 import { diagnosticGraphqlOperationName } from '../graphql/request-diagnostics';
 
 describe('bounded operation diagnostics', () => {
+  it('retains new phase and failure evidence when the attribute budget is full', () => {
+    const recorder = createDiagnosticRecorder();
+    const operation = recorder.begin('ble', 'connect', {
+      attributes: {
+        source: 'lightbulb',
+        boardName: 'kilter',
+        layoutId: 8,
+        sizeId: 25,
+        angle: 40,
+        climbUuid: 'climb',
+        sessionId: 'session',
+        attempt: 1,
+        permission: 'granted',
+        adapter: 'on',
+        scanFamily: 'aurora',
+        targeted: true,
+      },
+    });
+    operation.step('write', { writeType: 'with-response', attempt: 2, token: 'secret' });
+    expect(recorder.snapshot().active[0].attributes).toMatchObject({ writeType: 'with-response', attempt: 2 });
+    operation.finish('failure', { failureCategory: 'native', errorCode: 'write-failed', packet: 'private' });
+    const snapshot = recorder.snapshot();
+    expect(snapshot.completed.ble?.attributes).toMatchObject({ failureCategory: 'native', errorCode: 'write-failed' });
+    expect(Object.keys(snapshot.completed.ble!.attributes)).toHaveLength(12);
+    expect(JSON.stringify(snapshot)).not.toMatch(/secret|private/);
+  });
+
   it('keeps simultaneous flows and ignores stale completion and callbacks', () => {
     let timestamp = 100;
     let sequence = 0;
