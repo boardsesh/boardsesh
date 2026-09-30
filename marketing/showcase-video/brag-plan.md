@@ -57,8 +57,17 @@ holds them.
 ## Rules the stage keeps
 
 - No CSS transitions or animations, no `Date`, no `Math.random`.
+- A background change is the new colour revealed as a circle growing from the
+  phone (L−4..L+6), never an OKLab crossfade: a crossfade passes through a
+  flat mid-grey that reads as a dropped frame when the phone stands still. The
+  renderer fails on any frame whose luma is a flat fill (`isFlatFrame`).
+- Web posters (`showcase-poster*.webp`, `showcase-hero-9x16.webp`) come from
+  frame 132, the light scene settled (`SHOWCASE_WEB_POSTER_FRAME`,
+  `--poster-frame`); `brag.mp4` and `brag.jpg` keep frame 0, the hook.
+- `showcase-9x16-lite.{webm,mp4}` is the phone encode: 720x1280, bitrates
+  sized to ≤ 1.3 MB (VP9) and ≤ 1.9 MB (H.264).
 - Footage cuts hard at scene boundaries; only the phones move across a
-  background change (OKLab tween, L−4..L+6). New text starts at L+6.
+  background change (L−4..L+6). New text starts at L+6.
 - Backgrounds alternate from the boards scene on. The two dark→dark joins are
   deliberate: hook → light is the match cut, log → outro hands a phone to the
   centred end card.

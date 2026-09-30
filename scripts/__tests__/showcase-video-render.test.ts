@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   anchorAt as stageAnchorAt,
+  backgroundAt,
   mixOklab,
   projectPoint as stageProjectPoint,
   spring,
@@ -26,6 +27,10 @@ import {
   SHOWCASE_WEB_MAX_BYTES,
   SHOWCASE_CALLOUT_LAYOUT,
   SHOWCASE_SCENE_STAGING,
+  SHOWCASE_WEB_LITE,
+  SHOWCASE_WEB_POSTER_FRAME,
+  isFlatFrame,
+  webBitrateFor,
   anchorOnScreen,
   buildBoardRenderUrl,
   buildClimbSearchRequest,
@@ -769,6 +774,62 @@ describe('the edit', () => {
       const timing = timings[name];
       if (!timing) throw new Error(name);
       expect(timing.exit - timing.enter, name).toBeGreaterThanOrEqual(26);
+    }
+  });
+});
+
+describe('no flat frames', () => {
+  it('never fills the stage with a mix of two backgrounds, only one colour revealed over the other', () => {
+    const { backgroundLeadIn, backgroundLeadOut } = SHOWCASE_CHOREO;
+    let transitions = 0;
+    for (let frame = 0; frame < SHOWCASE_TOTAL_FRAMES; frame += 1) {
+      const background = backgroundAt(SHOWCASE_SCENES, frame, backgroundLeadIn, backgroundLeadOut);
+      expect(['dark', 'light']).toContain(background.from);
+      expect(['dark', 'light']).toContain(background.to);
+      expect(background.amount).toBeGreaterThanOrEqual(0);
+      expect(background.amount).toBeLessThanOrEqual(1);
+      if (background.from !== background.to) transitions += 1;
+    }
+    // Six background changes (boards, wall, crew, workouts, island, log), 10 frames each.
+    expect(transitions).toBe(6 * (backgroundLeadIn + backgroundLeadOut));
+  });
+
+  it('reveals the crew scene over the wall scene where the grey frame was', () => {
+    const crew = sceneOf('crew');
+    const mid = backgroundAt(SHOWCASE_SCENES, crew.startFrame, 4, 6);
+    expect(mid).toMatchObject({ from: 'dark', to: 'light' });
+    expect(backgroundAt(SHOWCASE_SCENES, crew.startFrame + 6, 4, 6)).toEqual({ from: 'light', to: 'light', amount: 1 });
+    expect(backgroundAt(SHOWCASE_SCENES, crew.startFrame - 5, 4, 6)).toEqual({ from: 'dark', to: 'dark', amount: 1 });
+  });
+
+  it('flags a flat fill and passes a real frame', () => {
+    expect(isFlatFrame(new Uint8Array(48 * 27).fill(122))).toBe(true);
+    const phoneOnGrey = new Uint8Array(48 * 27).fill(122);
+    for (let y = 5; y < 22; y += 1) for (let x = 20; x < 28; x += 1) phoneOnGrey[y * 48 + x] = 10;
+    expect(isFlatFrame(phoneOnGrey)).toBe(false);
+    expect(isFlatFrame([])).toBe(true);
+  });
+});
+
+describe('web posters and the lite encode', () => {
+  it('takes the web posters from the settled light scene, not the hook', () => {
+    const light = sceneOf('light');
+    expect(SHOWCASE_WEB_POSTER_FRAME).toBeGreaterThan(light.startFrame + 40);
+    expect(SHOWCASE_WEB_POSTER_FRAME).toBeLessThan(light.endFrame - SHOWCASE_CHOREO.settleEndFromEnd);
+    expect(parseRenderArgs([]).posterFrame).toBe(SHOWCASE_WEB_POSTER_FRAME);
+    expect(parseRenderArgs(['--poster-frame', '105']).posterFrame).toBe(105);
+    const portrait = showcaseOutputs('9x16');
+    expect(portrait.heroPoster?.endsWith('/images/home/showcase-hero-9x16.webp')).toBe(true);
+    expect(portrait.liteWebm?.endsWith('/videos/home/showcase-9x16-lite.webm')).toBe(true);
+    expect(portrait.liteMp4?.endsWith('/videos/home/showcase-9x16-lite.mp4')).toBe(true);
+    expect(showcaseOutputs('16x9').liteWebm).toBeNull();
+  });
+
+  it('sizes the lite encode to its caps', () => {
+    expect(SHOWCASE_WEB_LITE.size).toEqual({ width: 720, height: 1280 });
+    const seconds = webCutSeconds();
+    for (const max of [SHOWCASE_WEB_LITE.maxWebmBytes, SHOWCASE_WEB_LITE.maxMp4Bytes]) {
+      expect((webBitrateFor(max, seconds) * 1000 * seconds) / 8).toBeLessThan(max * 0.9);
     }
   });
 });

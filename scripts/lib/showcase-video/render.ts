@@ -59,6 +59,11 @@ export type ShowcaseOutputs = Readonly<{
   webWebm: string;
   webMp4: string;
   poster: string;
+  /** 9:16 only: the homepage hero's poster, from the web poster frame. */
+  heroPoster: string | null;
+  /** 9:16 only: the lighter phone encode (`SHOWCASE_WEB_LITE`). */
+  liteWebm: string | null;
+  liteMp4: string | null;
   passLog: string;
 }>;
 
@@ -72,6 +77,9 @@ export function showcaseOutputs(format: ShowcaseFormat): ShowcaseOutputs {
     webWebm: resolve(SHOWCASE_WEB_VIDEO_DIR, `showcase${suffix}.webm`),
     webMp4: resolve(SHOWCASE_WEB_VIDEO_DIR, `showcase${suffix}.mp4`),
     poster: resolve(SHOWCASE_WEB_POSTER_DIR, `showcase-poster${suffix}.webp`),
+    heroPoster: format === '9x16' ? resolve(SHOWCASE_WEB_POSTER_DIR, 'showcase-hero-9x16.webp') : null,
+    liteWebm: format === '9x16' ? resolve(SHOWCASE_WEB_VIDEO_DIR, 'showcase-9x16-lite.webm') : null,
+    liteMp4: format === '9x16' ? resolve(SHOWCASE_WEB_VIDEO_DIR, 'showcase-9x16-lite.mp4') : null,
     passLog: resolve(SHOWCASE_FRAMES_DIR, `showcase${suffix}-pass`),
   };
 }
@@ -1394,6 +1402,44 @@ export const SHOWCASE_WEB_MAX_BYTES = 4_000_000;
  * (1.4–1.6 MB), kept for the longer cut rather than spending the whole budget.
  */
 export const SHOWCASE_WEB_BITRATE_KBPS = 580;
+
+/**
+ * The frame the WEB posters come from (`showcase-poster*.webp` and
+ * `showcase-hero-9x16.webp`): the light scene settled, "Swipe, and the wall
+ * follows." over the lit phone with both callouts up. `brag.mp4` and `brag.jpg`
+ * keep frame 0, the hook, for social. `--poster-frame` overrides it.
+ */
+export const SHOWCASE_WEB_POSTER_FRAME = 132;
+
+/**
+ * The lighter 9:16 encode for phones: 720x1280, a bitrate that lands each file
+ * under its cap for the cut's length (`webBitrateFor`).
+ */
+export const SHOWCASE_WEB_LITE = {
+  size: { width: 720, height: 1280 },
+  maxWebmBytes: 1_300_000,
+  maxMp4Bytes: 1_900_000,
+} as const;
+
+/** Video bitrate (kbit/s) that lands a `seconds`-long encode under `maxBytes`, keeping `headroom` spare. */
+export function webBitrateFor(maxBytes: number, seconds: number, headroom = 0.12): number {
+  return Math.floor((maxBytes * 8 * (1 - headroom)) / seconds / 1000);
+}
+
+/**
+ * True when a frame is a flat fill: the standard deviation of its luma (0–255,
+ * any sampling) is under `threshold`. The renderer checks every frame at 48 px
+ * wide and fails the render on one.
+ */
+export function isFlatFrame(luma: ArrayLike<number>, threshold = 3): boolean {
+  if (luma.length === 0) return true;
+  let sum = 0;
+  for (let index = 0; index < luma.length; index += 1) sum += luma[index];
+  const mean = sum / luma.length;
+  let variance = 0;
+  for (let index = 0; index < luma.length; index += 1) variance += (luma[index] - mean) ** 2;
+  return Math.sqrt(variance / luma.length) < threshold;
+}
 export const SHOWCASE_MASTER_CRF = 18;
 /** The web cut drops frame 0 (the poster, which the page shows before playback) and loops 1..end. */
 export const SHOWCASE_WEB_FIRST_FRAME = 1;
@@ -2012,6 +2058,8 @@ export function placeholderAnchorsFile(takeId: ShowcaseTakeId, take: Placeholder
 
 export type RenderArgs = Readonly<{
   stills: boolean;
+  /** Frame for the web posters (`SHOWCASE_WEB_POSTER_FRAME` unless `--poster-frame`). */
+  posterFrame: number;
   /** One frame as a full-size PNG, for a close look (`--frame <n>`). */
   frame: number | null;
   measure: boolean;
@@ -2032,6 +2080,7 @@ function parseFrameNumber(flag: string, value: string): number {
 
 export function parseRenderArgs(argv: readonly string[]): RenderArgs {
   let stills = false;
+  let posterFrame: number = SHOWCASE_WEB_POSTER_FRAME;
   let frame: number | null = null;
   let measure = false;
   let fromFrame = 0;
@@ -2040,6 +2089,7 @@ export function parseRenderArgs(argv: readonly string[]): RenderArgs {
   let skipWeb = false;
   const result = (help: boolean): RenderArgs => ({
     stills,
+    posterFrame,
     frame,
     measure,
     fromFrame,
@@ -2056,12 +2106,18 @@ export function parseRenderArgs(argv: readonly string[]): RenderArgs {
     else if (argument === '--measure') measure = true;
     else if (argument === '--placeholder-footage') placeholderFootage = true;
     else if (argument === '--skip-web') skipWeb = true;
-    else if (argument === '--from-frame' || argument === '--format' || argument === '--frame') {
+    else if (
+      argument === '--from-frame' ||
+      argument === '--format' ||
+      argument === '--frame' ||
+      argument === '--poster-frame'
+    ) {
       const value = argv[index + 1];
       if (!value || value.startsWith('--')) throw new Error(`${argument} needs a value`);
       index += 1;
       if (argument === '--from-frame') fromFrame = parseFrameNumber(argument, value);
       else if (argument === '--frame') frame = parseFrameNumber(argument, value);
+      else if (argument === '--poster-frame') posterFrame = parseFrameNumber(argument, value);
       else {
         if (!(SHOWCASE_FORMATS as readonly string[]).includes(value)) {
           throw new Error(`--format must be one of ${SHOWCASE_FORMATS.join(', ')}`);

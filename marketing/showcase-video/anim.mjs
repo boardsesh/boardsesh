@@ -231,3 +231,24 @@ export function polylinePath(points) {
     .map((point, index) => `${index === 0 ? 'M' : 'L'}${point.x.toFixed(2)} ${point.y.toFixed(2)}`)
     .join(' ');
 }
+
+/**
+ * The stage background at `frame`: the scene's own colour, or during a change
+ * (L-lead..L+out) the new colour revealed as a growing circle over the old one.
+ * `from`/`to` are 'dark' | 'light' and `amount` 0..1 is the reveal. Never a mix
+ * of the two: an OKLab crossfade passes through a flat mid-grey that reads as
+ * a dropped frame when nothing else moves.
+ */
+export function backgroundAt(scenes, frame, lead, out) {
+  let current = scenes[0].background;
+  for (let index = 1; index < scenes.length; index += 1) {
+    const boundary = scenes[index].startFrame;
+    const next = scenes[index].background;
+    if (frame < boundary - lead) break;
+    if (frame < boundary + out && next !== current) {
+      return { from: current, to: next, amount: easeInOut(progress(frame, boundary - lead, lead + out)) };
+    }
+    current = next;
+  }
+  return { from: current, to: current, amount: 1 };
+}

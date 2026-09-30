@@ -74,6 +74,10 @@ import {
   SHOWCASE_STAGE_TOKENS,
   SHOWCASE_STILLS_DIR,
   SHOWCASE_WEB_BITRATE_KBPS,
+  SHOWCASE_WEB_LITE,
+  SHOWCASE_WEB_POSTER_FRAME,
+  isFlatFrame,
+  webBitrateFor,
   SHOWCASE_WEB_FALLBACK_MP4,
   SHOWCASE_WEB_MAX_BYTES,
   SHOWCASE_WORKOUT_BEATS,
@@ -136,6 +140,7 @@ Renders the homepage showcase video from marketing/showcase-video/.
 
   --stills               Contact sheets only (settled + mid-transition frames per scene)
                          → ${relative(REPO_ROOT, SHOWCASE_STILLS_DIR)}/
+  --poster-frame <n>     Frame for the web posters (default ${SHOWCASE_WEB_POSTER_FRAME}; brag.jpg stays frame 0)
   --frame <n>            One frame as a full-size PNG → ${relative(REPO_ROOT, SHOWCASE_STILLS_DIR)}/
   --measure              Draw every anchor box over the footage (debug; never ships)
   --from-frame <n>       Start at frame n (writes a preview, skips the web encodes)
@@ -673,7 +678,11 @@ async function renderMezzanine(format: ShowcaseFormat, data: ShowcaseStageData, 
   try {
     for (let frame = fromFrame; frame < data.totalFrames; frame += 1) {
       await renderFrame(page, frame);
-      await write(await capture(client));
+      const png = await capture(client);
+      // A flat fill is a render fault (an undecoded screen, a mid-grey crossfade): stop.
+      const luma = await sharp(png).resize(48).greyscale().raw().toBuffer();
+      if (isFlatFrame(luma)) throw new Error(`${format}: frame ${frame} is a flat fill`);
+      await write(png);
       if ((frame + 1) % 60 === 0) {
         const rate = (frame + 1 - fromFrame) / ((Date.now() - started) / 1000);
         log(`${format}: frame ${frame + 1}/${data.totalFrames} (${rate.toFixed(1)} fps)`);
@@ -709,7 +718,12 @@ async function frameDifference(first: Buffer, second: Buffer): Promise<number> {
 
 const kb = (bytes: number) => `${(bytes / 1000).toFixed(0)} kB`;
 
-async function encodeWeb(format: ShowcaseFormat, mezzanine: string, totalFrames: number): Promise<void> {
+async function encodeWeb(
+  format: ShowcaseFormat,
+  mezzanine: string,
+  totalFrames: number,
+  posterFrame: number,
+): Promise<void> {
   const outputs = showcaseOutputs(format);
   mkdirSync(dirname(outputs.webWebm), { recursive: true });
   const bitrateKbps = SHOWCASE_WEB_BITRATE_KBPS;
@@ -743,11 +757,36 @@ async function encodeWeb(format: ShowcaseFormat, mezzanine: string, totalFrames:
   if (mp4Bytes > SHOWCASE_WEB_MAX_BYTES)
     throw new Error(`${outputs.webMp4} is ${mp4Bytes} bytes, over ${SHOWCASE_WEB_MAX_BYTES}`);
 
+  const seconds = webCutSeconds(totalFrames);
+  if (outputs.liteWebm && outputs.liteMp4) {
+    const { size, maxWebmBytes, maxMp4Bytes } = SHOWCASE_WEB_LITE;
+    const lite = [
+      { output: outputs.liteWebm, max: maxWebmBytes, build: buildWebmPassArgs },
+      { output: outputs.liteMp4, max: maxMp4Bytes, build: buildWebMp4PassArgs },
+    ];
+    for (const { output, max, build } of lite) {
+      const encode = {
+        input: mezzanine,
+        output,
+        size,
+        bitrateKbps: webBitrateFor(max, seconds),
+        passLog: `${outputs.passLog}-lite`,
+      };
+      await execFileAsync(FFMPEG_BIN, build(encode, 1));
+      await execFileAsync(FFMPEG_BIN, build(encode, 2));
+      const bytes = statSync(output).size;
+      log(`${relative(REPO_ROOT, output)}: ${kb(bytes)} at ${encode.bitrateKbps} kbit/s, ${size.width}x${size.height}`);
+      if (bytes > max) throw new Error(`${output} is ${bytes} bytes, over ${max}`);
+    }
+  }
+
   mkdirSync(dirname(outputs.poster), { recursive: true });
-  await sharp(await framePng(mezzanine, SHOWCASE_POSTER_FRAME))
-    .webp(HELP_CLIP_POSTER_ENCODE)
-    .toFile(outputs.poster);
-  log(`${relative(REPO_ROOT, outputs.poster)}: ${kb(statSync(outputs.poster).size)}`);
+  const poster = await framePng(mezzanine, posterFrame);
+  for (const path of [outputs.poster, outputs.heroPoster]) {
+    if (!path) continue;
+    await sharp(poster).webp(HELP_CLIP_POSTER_ENCODE).toFile(path);
+    log(`${relative(REPO_ROOT, path)}: ${kb(statSync(path).size)} (frame ${posterFrame})`);
+  }
 }
 
 async function renderVideo(format: ShowcaseFormat, data: ShowcaseStageData, args: RenderArgs): Promise<void> {
@@ -798,7 +837,7 @@ async function finishDeliverables(
     await framePng(mezzanine, SHOWCASE_POSTER_FRAME),
   );
   log(`${format}: loop seam (frame ${data.totalFrames - 1} vs 0) mean difference ${seam.toFixed(2)}/255`);
-  if (!args.skipWeb) await encodeWeb(format, mezzanine, data.totalFrames);
+  if (!args.skipWeb) await encodeWeb(format, mezzanine, data.totalFrames, args.posterFrame);
 }
 
 async function main(): Promise<void> {

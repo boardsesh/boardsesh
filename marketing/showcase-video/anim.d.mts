@@ -35,3 +35,10 @@ export function catmullRomPolyline(points: readonly Point[], samplesPerSegment?:
 export function pointAtLength(curve: Curve, length: number): Point;
 export function lengthNearest(curve: Curve, point: Point): number;
 export function polylinePath(points: readonly Point[]): string;
+export type StageBackground = { from: 'dark' | 'light'; to: 'dark' | 'light'; amount: number };
+export function backgroundAt(
+  scenes: ReadonlyArray<Readonly<{ startFrame: number; background: 'dark' | 'light' }>>,
+  frame: number,
+  lead: number,
+  out: number,
+): StageBackground;

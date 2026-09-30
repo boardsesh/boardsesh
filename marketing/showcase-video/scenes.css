@@ -84,7 +84,12 @@ body {
   pointer-events: none;
 }
 .bg {
-  background: var(--bg, var(--stage-dark));
+  /* The new scene's colour, revealed as a circle from the phone (timeline.mjs). */
+  background: radial-gradient(
+    circle at var(--bg-x, 50%) var(--bg-y, 50%),
+    var(--bg-to, var(--stage-dark)) var(--bg-r, 200vmax),
+    var(--bg-from, var(--stage-dark)) calc(var(--bg-r, 200vmax) + 1.5px)
+  );
 }
 svg.layer {
   overflow: visible;

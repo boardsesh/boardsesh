@@ -7,6 +7,7 @@
 
 import {
   anchorAt,
+  backgroundAt,
   catmullRomPolyline,
   clamp,
   easeIn,
@@ -14,7 +15,6 @@ import {
   easeOut,
   lengthNearest,
   lerp,
-  mixOklab,
   pointAtLength,
   polylinePath,
   progress,
@@ -1124,12 +1124,23 @@ export function renderAt(frame) {
   visible = [];
   const sceneIndex = sceneIndexAt(frame);
   const lightMix = lightMixAt(frame);
+  const mainPose = poseAt(ui.mainKeys, frame);
+  // The new background grows out of the phone as a circle (see anim.mjs backgroundAt).
+  const background = backgroundAt(data.scenes, frame, data.choreo.backgroundLeadIn, data.choreo.backgroundLeadOut);
+  const colour = (tone) => (tone === 'light' ? data.palette.stageLight : data.palette.stageDark);
+  const reach = Math.hypot(
+    Math.max(mainPose.cx, data.width - mainPose.cx),
+    Math.max(mainPose.cy, data.height - mainPose.cy),
+  );
   setVars(ui.stage, {
     'light-mix': lightMix,
-    bg: mixOklab(data.palette.stageDark, data.palette.stageLight, lightMix),
+    'bg-from': colour(background.from),
+    'bg-to': colour(background.to),
+    'bg-x': `${mainPose.cx.toFixed(1)}px`,
+    'bg-y': `${mainPose.cy.toFixed(1)}px`,
+    'bg-r': `${(background.amount * reach * 1.02).toFixed(1)}px`,
   });
 
-  const mainPose = poseAt(ui.mainKeys, frame);
   const lightScene = sceneById('light');
   const footageOpacity = frame < lightScene.endFrame ? easeOut(progress(frame, lightScene.startFrame + 8, 14)) : 1;
   applyPhone(ui.main, mainPose, mainTake(sceneIndex), frame, footageOpacity);
