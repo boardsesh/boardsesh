@@ -413,26 +413,23 @@ async function fetchR2LifecycleRules(
       console.warn(`[cf-apply] R2 lifecycle GET for ${bucketName} returned a non-array rules value`);
       return null;
     }
-    const validRules = response.rules.every(
-      (rule: unknown): rule is R2LifecycleRule =>
-        typeof rule === 'object' &&
-        rule !== null &&
-        'id' in rule &&
-        typeof rule.id === 'string' &&
-        rule.id.length > 0 &&
-        'enabled' in rule &&
-        typeof rule.enabled === 'boolean' &&
-        'conditions' in rule &&
-        typeof rule.conditions === 'object' &&
-        rule.conditions !== null &&
-        'prefix' in rule.conditions &&
-        typeof rule.conditions.prefix === 'string',
-    );
-    if (!validRules) {
-      console.warn(`[cf-apply] R2 lifecycle GET for ${bucketName} returned a malformed rule`);
+    const rules = response.rules.map(normalizeR2LifecycleRule);
+    const invalidIndex = rules.findIndex((rule) => rule === null);
+    if (invalidIndex !== -1) {
+      const invalidRule = response.rules[invalidIndex];
+      const fields = typeof invalidRule === 'object' && invalidRule !== null ? invalidRule : null;
+      const conditions = fields && 'conditions' in fields ? fields.conditions : undefined;
+      const prefix =
+        typeof conditions === 'object' && conditions !== null && 'prefix' in conditions ? conditions.prefix : undefined;
+      console.warn(
+        `[cf-apply] R2 lifecycle GET for ${bucketName} returned malformed rule #${invalidIndex}` +
+          ` (id: ${typeof (fields && 'id' in fields ? fields.id : undefined)},` +
+          ` enabled: ${typeof (fields && 'enabled' in fields ? fields.enabled : undefined)},` +
+          ` prefix: ${typeof prefix})`,
+      );
       return null;
     }
-    return response.rules as R2LifecycleRule[];
+    return rules as R2LifecycleRule[];
   } catch (error) {
     if (isNotFoundError(error)) return [];
     if (isAuthorizationError(error)) {
@@ -441,6 +438,21 @@ async function fetchR2LifecycleRules(
     }
     throw error;
   }
+}
+
+/** Older bucket-wide rules can omit the prefix; Cloudflare treats that as all keys. */
+function normalizeR2LifecycleRule(rule: unknown): R2LifecycleRule | null {
+  if (typeof rule !== 'object' || rule === null) return null;
+  if (!('id' in rule) || typeof rule.id !== 'string' || !rule.id) return null;
+  if (!('enabled' in rule) || typeof rule.enabled !== 'boolean') return null;
+
+  const rawConditions = 'conditions' in rule ? rule.conditions : undefined;
+  if (rawConditions !== undefined && (typeof rawConditions !== 'object' || rawConditions === null)) return null;
+  const conditions = rawConditions ?? {};
+  const prefix = 'prefix' in conditions ? conditions.prefix : '';
+  if (typeof prefix !== 'string') return null;
+
+  return { ...rule, id: rule.id, enabled: rule.enabled, conditions: { ...conditions, prefix } };
 }
 
 /** Re-read before a whole-policy PUT so unrelated rules added since planning survive. */

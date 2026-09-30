@@ -126,6 +126,29 @@ describe('generated export retention', () => {
     expect(warn).not.toHaveBeenCalled();
   });
 
+  it('preserves a bucket-wide multipart rule whose legacy response omits conditions', async () => {
+    const legacyMultipartRule = {
+      id: 'abort-incomplete-multipart-uploads',
+      enabled: true,
+      abortMultipartUploadsTransition: { condition: { type: 'Age', maxAge: 604_800 } },
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(envelope({ rules: [legacyMultipartRule] }))
+      .mockResolvedValueOnce(envelope({}));
+    vi.stubGlobal('fetch', fetchMock);
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await applyR2LifecycleRule('test-token', 'test-account', privateBucket.name, USER_EXPORT_LIFECYCLE_RULE);
+
+    expect(fetchMock.mock.calls[1][1]).toMatchObject({
+      method: 'PUT',
+      body: JSON.stringify({
+        rules: [{ ...legacyMultipartRule, conditions: { prefix: '' } }, USER_EXPORT_LIFECYCLE_RULE],
+      }),
+    });
+  });
+
   it('never replaces lifecycle rules after an authorization failure', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ success: false }), { status: 403 }));
     vi.stubGlobal('fetch', fetchMock);
@@ -168,7 +191,8 @@ describe('generated export retention', () => {
       `[cf-apply] R2 lifecycle GET for ${privateBucket.name} returned a non-array rules value`,
     );
     expect(warn).toHaveBeenCalledWith(
-      `[cf-apply] R2 lifecycle GET for ${privateBucket.name} returned a malformed rule`,
+      `[cf-apply] R2 lifecycle GET for ${privateBucket.name} returned malformed rule #0` +
+        ' (id: undefined, enabled: undefined, prefix: undefined)',
     );
   });
 });
