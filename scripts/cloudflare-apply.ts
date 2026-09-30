@@ -406,7 +406,13 @@ async function fetchR2LifecycleRules(
       'GET',
       `/accounts/${accountId}/r2/buckets/${encodeURIComponent(bucketName)}/lifecycle`,
     );
-    if (!Array.isArray(response.rules)) return null;
+    // Cloudflare's lifecycle GET schema makes `rules` optional. An omitted list
+    // is an empty policy; explicit null or malformed rules are still unreadable.
+    if (response.rules === undefined) return [];
+    if (!Array.isArray(response.rules)) {
+      console.warn(`[cf-apply] R2 lifecycle GET for ${bucketName} returned a non-array rules value`);
+      return null;
+    }
     const validRules = response.rules.every(
       (rule: unknown): rule is R2LifecycleRule =>
         typeof rule === 'object' &&
@@ -422,10 +428,17 @@ async function fetchR2LifecycleRules(
         'prefix' in rule.conditions &&
         typeof rule.conditions.prefix === 'string',
     );
-    return validRules ? (response.rules as R2LifecycleRule[]) : null;
+    if (!validRules) {
+      console.warn(`[cf-apply] R2 lifecycle GET for ${bucketName} returned a malformed rule`);
+      return null;
+    }
+    return response.rules as R2LifecycleRule[];
   } catch (error) {
     if (isNotFoundError(error)) return [];
-    if (isAuthorizationError(error)) return null;
+    if (isAuthorizationError(error)) {
+      console.warn(`[cf-apply] R2 lifecycle GET for ${bucketName} was denied by Cloudflare`);
+      return null;
+    }
     throw error;
   }
 }

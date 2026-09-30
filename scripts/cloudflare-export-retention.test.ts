@@ -107,13 +107,34 @@ describe('generated export retention', () => {
     });
   });
 
+  it('adds retention when Cloudflare omits the optional rules list', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(envelope({})).mockResolvedValueOnce(envelope({}));
+    vi.stubGlobal('fetch', fetchMock);
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await applyR2LifecycleRule('test-token', 'test-account', privateBucket.name, USER_EXPORT_LIFECYCLE_RULE);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1][1]).toMatchObject({
+      method: 'PUT',
+      body: JSON.stringify({ rules: [USER_EXPORT_LIFECYCLE_RULE] }),
+    });
+    expect(log).toHaveBeenCalledWith(
+      `[cf-apply] set lifecycle rule ${USER_EXPORT_LIFECYCLE_RULE.id} on R2 bucket ${privateBucket.name}`,
+    );
+    expect(warn).not.toHaveBeenCalled();
+  });
+
   it('never replaces lifecycle rules after an authorization failure', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ success: false }), { status: 403 }));
     vi.stubGlobal('fetch', fetchMock);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     await expect(
       applyR2LifecycleRule('test-token', 'test-account', privateBucket.name, USER_EXPORT_LIFECYCLE_RULE),
     ).rejects.toThrow('refusing to replace');
     expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(`[cf-apply] R2 lifecycle GET for ${privateBucket.name} was denied by Cloudflare`);
   });
 
   it('does not write an already matching policy', async () => {
@@ -134,7 +155,8 @@ describe('generated export retention', () => {
   });
 
   it('refuses malformed successful reads instead of clearing unknown lifecycle rules', async () => {
-    for (const result of [{}, { rules: null }, { rules: [{}] }]) {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    for (const result of [{ rules: null }, { rules: [{}] }]) {
       const fetchMock = vi.fn().mockResolvedValue(envelope(result));
       vi.stubGlobal('fetch', fetchMock);
       await expect(
@@ -142,5 +164,11 @@ describe('generated export retention', () => {
       ).rejects.toThrow('refusing to replace');
       expect(fetchMock).toHaveBeenCalledTimes(1);
     }
+    expect(warn).toHaveBeenCalledWith(
+      `[cf-apply] R2 lifecycle GET for ${privateBucket.name} returned a non-array rules value`,
+    );
+    expect(warn).toHaveBeenCalledWith(
+      `[cf-apply] R2 lifecycle GET for ${privateBucket.name} returned a malformed rule`,
+    );
   });
 });
