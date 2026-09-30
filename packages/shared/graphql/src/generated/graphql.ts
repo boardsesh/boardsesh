@@ -4088,6 +4088,8 @@ export type Mutation = {
    */
   requestProviderSync: ProviderSyncRequest;
   requestSprayWallDetection: SprayWallDetection;
+  /** Prepare a weekly climbing archive and, where supported, its Aurora companion. */
+  requestUserDataExport: UserDataExportStatus;
   /**
    * Resolve a BLE serial for clients that can disambiguate. Returns a single
    * `board` when the serial is unambiguous (remembered choice, only one match,
@@ -4781,6 +4783,11 @@ export type MutationRequestProviderSyncArgs = {
 /** Root mutation type for all write operations. */
 export type MutationRequestSprayWallDetectionArgs = {
   input: RequestSprayWallDetectionInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationRequestUserDataExportArgs = {
+  boardType: Scalars['String']['input'];
 };
 
 /** Root mutation type for all write operations. */
@@ -6483,6 +6490,10 @@ export type Query = {
    * Includes both directly created climbs and Aurora-imported climbs linked via board credentials.
    */
   userClimbs: PlaylistClimbsResult;
+  /** The signed-in climber's recent cached export; defaults to this UTC ISO week. */
+  userDataExport: UserDataExportStatus;
+  /** A five-minute private browser download; no user ID is accepted. */
+  userDataExportDownload: UserDataExportDownloadLink;
   /**
    * Get user's favorite climbs with full climb data.
    * Requires authentication.
@@ -7245,6 +7256,19 @@ export type QueryUserClimbPercentileArgs = {
 /** Root query type for all read operations. */
 export type QueryUserClimbsArgs = {
   input: UserClimbsInput;
+};
+
+/** Root query type for all read operations. */
+export type QueryUserDataExportArgs = {
+  boardType: Scalars['String']['input'];
+  period?: InputMaybe<Scalars['String']['input']>;
+};
+
+/** Root query type for all read operations. */
+export type QueryUserDataExportDownloadArgs = {
+  boardType: Scalars['String']['input'];
+  format: UserDataExportFormat;
+  period: Scalars['String']['input'];
 };
 
 /** Root query type for all read operations. */
@@ -9975,6 +9999,41 @@ export type UserClimbsInput = {
   sortBy?: InputMaybe<Scalars['String']['input']>;
   /** The Boardsesh user ID */
   userId: Scalars['ID']['input'];
+};
+
+export type UserDataExportDownloadLink = {
+  __typename?: 'UserDataExportDownloadLink';
+  expiresAt: Scalars['String']['output'];
+  filename: Scalars['String']['output'];
+  url: Scalars['String']['output'];
+};
+
+export type UserDataExportFile = {
+  __typename?: 'UserDataExportFile';
+  expiresAt: Scalars['String']['output'];
+  exportedAt: Scalars['String']['output'];
+  fileSize?: Maybe<Scalars['Float']['output']>;
+  filename: Scalars['String']['output'];
+  format: UserDataExportFormat;
+};
+
+export type UserDataExportFormat = 'aurora' | 'boardsesh';
+
+export type UserDataExportState = 'failed' | 'generating' | 'not_requested' | 'ready' | 'unavailable';
+
+export type UserDataExportStatus = {
+  __typename?: 'UserDataExportStatus';
+  boardType: Scalars['String']['output'];
+  completedAt?: Maybe<Scalars['String']['output']>;
+  error?: Maybe<Scalars['String']['output']>;
+  /** A stable failure code for localized client guidance, when available. */
+  errorCode?: Maybe<Scalars['String']['output']>;
+  files: Array<UserDataExportFile>;
+  period: Scalars['String']['output'];
+  refreshAt: Scalars['String']['output'];
+  requestedAt?: Maybe<Scalars['String']['output']>;
+  retryAt?: Maybe<Scalars['String']['output']>;
+  status: UserDataExportState;
 };
 
 /** Event when a user joins the session. */
@@ -13902,6 +13961,100 @@ export type UpdateTickMutation = {
   };
 };
 
+export type UserDataExportStatusFieldsFragment = {
+  __typename?: 'UserDataExportStatus';
+  boardType: string;
+  period: string;
+  status: UserDataExportState;
+  refreshAt: string;
+  requestedAt?: string | null;
+  completedAt?: string | null;
+  retryAt?: string | null;
+  error?: string | null;
+  errorCode?: string | null;
+  files: Array<{
+    __typename?: 'UserDataExportFile';
+    format: UserDataExportFormat;
+    filename: string;
+    fileSize?: number | null;
+    exportedAt: string;
+    expiresAt: string;
+  }>;
+};
+
+export type GetUserDataExportQueryVariables = Exact<{
+  boardType: Scalars['String']['input'];
+  period?: InputMaybe<Scalars['String']['input']>;
+}>;
+
+export type GetUserDataExportQuery = {
+  __typename?: 'Query';
+  userDataExport: {
+    __typename?: 'UserDataExportStatus';
+    boardType: string;
+    period: string;
+    status: UserDataExportState;
+    refreshAt: string;
+    requestedAt?: string | null;
+    completedAt?: string | null;
+    retryAt?: string | null;
+    error?: string | null;
+    errorCode?: string | null;
+    files: Array<{
+      __typename?: 'UserDataExportFile';
+      format: UserDataExportFormat;
+      filename: string;
+      fileSize?: number | null;
+      exportedAt: string;
+      expiresAt: string;
+    }>;
+  };
+};
+
+export type RequestUserDataExportMutationVariables = Exact<{
+  boardType: Scalars['String']['input'];
+}>;
+
+export type RequestUserDataExportMutation = {
+  __typename?: 'Mutation';
+  requestUserDataExport: {
+    __typename?: 'UserDataExportStatus';
+    boardType: string;
+    period: string;
+    status: UserDataExportState;
+    refreshAt: string;
+    requestedAt?: string | null;
+    completedAt?: string | null;
+    retryAt?: string | null;
+    error?: string | null;
+    errorCode?: string | null;
+    files: Array<{
+      __typename?: 'UserDataExportFile';
+      format: UserDataExportFormat;
+      filename: string;
+      fileSize?: number | null;
+      exportedAt: string;
+      expiresAt: string;
+    }>;
+  };
+};
+
+export type GetUserDataExportDownloadQueryVariables = Exact<{
+  boardType: Scalars['String']['input'];
+  period: Scalars['String']['input'];
+  format: UserDataExportFormat;
+}>;
+
+export type GetUserDataExportDownloadQuery = {
+  __typename?: 'Query';
+  userDataExportDownload: {
+    __typename?: 'UserDataExportDownloadLink';
+    url: string;
+    expiresAt: string;
+    filename: string;
+  };
+};
+
 export const SessionFeedItemFieldsFragmentDoc = {
   kind: 'Document',
   definitions: [
@@ -14354,6 +14507,44 @@ export const SprayDetectionFieldsFragmentDoc = {
     },
   ],
 } as unknown as DocumentNode<SprayDetectionFieldsFragment, unknown>;
+export const UserDataExportStatusFieldsFragmentDoc = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'FragmentDefinition',
+      name: { kind: 'Name', value: 'UserDataExportStatusFields' },
+      typeCondition: { kind: 'NamedType', name: { kind: 'Name', value: 'UserDataExportStatus' } },
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'period' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'status' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'refreshAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'requestedAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'completedAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'retryAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'error' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'errorCode' } },
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'files' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'format' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'filename' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'fileSize' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'exportedAt' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'expiresAt' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<UserDataExportStatusFieldsFragment, unknown>;
 export const GetDeleteAccountInfoDocument = {
   kind: 'Document',
   definitions: [
@@ -22888,3 +23079,217 @@ export const UpdateTickDocument = {
     },
   ],
 } as unknown as DocumentNode<UpdateTickMutation, UpdateTickMutationVariables>;
+export const GetUserDataExportDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetUserDataExport' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'boardType' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'String' } } },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'period' } },
+          type: { kind: 'NamedType', name: { kind: 'Name', value: 'String' } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'userDataExport' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'boardType' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'boardType' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'period' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'period' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [{ kind: 'FragmentSpread', name: { kind: 'Name', value: 'UserDataExportStatusFields' } }],
+            },
+          },
+        ],
+      },
+    },
+    {
+      kind: 'FragmentDefinition',
+      name: { kind: 'Name', value: 'UserDataExportStatusFields' },
+      typeCondition: { kind: 'NamedType', name: { kind: 'Name', value: 'UserDataExportStatus' } },
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'period' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'status' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'refreshAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'requestedAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'completedAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'retryAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'error' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'errorCode' } },
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'files' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'format' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'filename' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'fileSize' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'exportedAt' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'expiresAt' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetUserDataExportQuery, GetUserDataExportQueryVariables>;
+export const RequestUserDataExportDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'RequestUserDataExport' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'boardType' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'String' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'requestUserDataExport' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'boardType' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'boardType' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [{ kind: 'FragmentSpread', name: { kind: 'Name', value: 'UserDataExportStatusFields' } }],
+            },
+          },
+        ],
+      },
+    },
+    {
+      kind: 'FragmentDefinition',
+      name: { kind: 'Name', value: 'UserDataExportStatusFields' },
+      typeCondition: { kind: 'NamedType', name: { kind: 'Name', value: 'UserDataExportStatus' } },
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'period' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'status' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'refreshAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'requestedAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'completedAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'retryAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'error' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'errorCode' } },
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'files' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'format' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'filename' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'fileSize' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'exportedAt' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'expiresAt' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<RequestUserDataExportMutation, RequestUserDataExportMutationVariables>;
+export const GetUserDataExportDownloadDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetUserDataExportDownload' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'boardType' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'String' } } },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'period' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'String' } } },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'format' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'UserDataExportFormat' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'userDataExportDownload' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'boardType' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'boardType' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'period' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'period' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'format' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'format' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'url' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'expiresAt' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'filename' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetUserDataExportDownloadQuery, GetUserDataExportDownloadQueryVariables>;

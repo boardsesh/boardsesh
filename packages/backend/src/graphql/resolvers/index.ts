@@ -13,6 +13,7 @@ import { tickMutations } from './ticks/mutations';
 import { climbStatsSubscriptions } from './ticks/climb-stats-subscriptions';
 import { userQueries } from './users/queries';
 import { userMutations } from './users/mutations';
+import { userDataExportQueries, userDataExportMutations } from './users/data-export';
 import { climbQueries } from './climbs/queries';
 import { climbMutations } from './climbs/mutations';
 import { climbFieldResolvers } from './climbs/field-resolvers';
@@ -99,6 +100,7 @@ export const resolvers = {
     ...climbQueries,
     ...tickQueries,
     ...userQueries,
+    ...userDataExportQueries,
     ...favoriteQueries,
     ...favoriteClimbsQuery,
     ...playlistQueries,
@@ -151,6 +153,7 @@ export const resolvers = {
     ...tickMutations,
     ...climbMutations,
     ...userMutations,
+    ...userDataExportMutations,
     ...favoriteMutations,
     ...playlistMutations,
     ...controllerMutations,

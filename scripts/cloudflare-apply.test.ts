@@ -13,6 +13,7 @@ import {
   ASSETS_HOSTNAME,
   ASSETS_STAGING_HOSTNAME,
   SNAPSHOTS_HOSTNAME,
+  USER_EXPORT_LIFECYCLE_RULE,
   desiredR2Buckets,
   BACKEND_BOARD_RENDER_CACHE_RULE_DESCRIPTION,
   BOARD_CONTENT_CHALLENGE_RULE_DESCRIPTION,
@@ -49,6 +50,7 @@ import type {
   FullyManagedDnsRecordDesired,
   R2BucketDesired,
   R2Cors,
+  R2LifecycleRule,
 } from '../infra/cloudflare/config';
 import {
   MANAGED_RULE_PHASES,
@@ -1806,7 +1808,10 @@ describe('the apply loop, driven end to end against a stubbed Cloudflare API', (
   }
 
   /** Stub the API with every managed phase EMPTY, so all of them are drift. */
-  function stubCloudflareApi(dnsByName: Record<string, LiveDnsRecord[]>): RecordedRequest[] {
+  function stubCloudflareApi(
+    dnsByName: Record<string, LiveDnsRecord[]>,
+    readLifecycleRules: (bucketName: string) => unknown = () => [],
+  ): RecordedRequest[] {
     const requests: RecordedRequest[] = [];
     const envelope = (result: unknown) =>
       new Response(JSON.stringify({ success: true, errors: [], messages: [], result }), { status: 200 });
@@ -1845,6 +1850,10 @@ describe('the apply loop, driven end to end against a stubbed Cloudflare API', (
           });
         }
         return envelope({});
+      }
+      if (url.pathname.endsWith('/lifecycle')) {
+        const bucketName = decodeURIComponent(url.pathname.split('/').at(-2)!);
+        return envelope({ rules: method === 'GET' ? readLifecycleRules(bucketName) : [] });
       }
       throw new Error(`Unstubbed Cloudflare request: ${method} ${url.pathname}`);
     });
@@ -1908,6 +1917,76 @@ describe('the apply loop, driven end to end against a stubbed Cloudflare API', (
     expect(assetChangeLogs.filter((message) => message.startsWith('[cf-apply] applied:'))).toHaveLength(1);
     expect(assetChangeLogs.filter((message) => message.startsWith('[cf-apply] skipped:'))).toHaveLength(2);
   });
+
+  it.each([
+    { ...USER_EXPORT_LIFECYCLE_RULE, conditions: { prefix: 'spray-walls/' } },
+    {
+      id: 'foreign-export-expiry',
+      enabled: true,
+      conditions: { prefix: '' },
+      deleteObjectsTransition: { condition: { type: 'Age', maxAge: 86_400 } },
+    },
+  ] satisfies R2LifecycleRule[])(
+    'keeps applying security changes while lifecycle ownership is blocked by $id',
+    async (conflictingRule) => {
+      const requests = stubCloudflareApi(dnsResponses(liveApexDnsRecord()), (bucketName) =>
+        bucketName === 'boardsesh-user-private' ? [conflictingRule] : [],
+      );
+      vi.stubEnv('CLOUDFLARE_ACCOUNT_ID', 'account-1');
+
+      expect(await runCloudflareApply(['--apply'])).toBe(1);
+
+      const privateBucketPath = '/client/v4/accounts/account-1/r2/buckets/boardsesh-user-private';
+      expect(requests).toContainEqual({
+        method: 'PUT',
+        pathname: `${privateBucketPath}/domains/managed`,
+        body: { enabled: false },
+      });
+      expect(requests.some((request) => request.method === 'PUT' && request.pathname.endsWith('/lifecycle'))).toBe(
+        false,
+      );
+      expect(
+        requests.some((request) => request.method === 'POST' && request.pathname.endsWith('/domains/custom')),
+      ).toBe(true);
+      expect(requests.some((request) => request.method === 'PUT' && request.pathname.endsWith('/cors'))).toBe(true);
+    },
+  );
+
+  it.each(['overlap', 'unreadable'])(
+    'continues security changes and exits nonzero when a fresh lifecycle read becomes %s',
+    async (freshRead) => {
+      let privateReads = 0;
+      const requests = stubCloudflareApi(dnsResponses(liveApexDnsRecord()), (bucketName) => {
+        if (bucketName !== 'boardsesh-user-private') return [];
+        privateReads += 1;
+        if (privateReads === 1) return [USER_EXPORT_LIFECYCLE_RULE];
+        return freshRead === 'unreadable'
+          ? null
+          : [
+              USER_EXPORT_LIFECYCLE_RULE,
+              {
+                id: 'added-during-apply',
+                enabled: true,
+                conditions: { prefix: 'user-data-exports/climber/' },
+                deleteObjectsTransition: { condition: { type: 'Age', maxAge: 86_400 } },
+              },
+            ];
+      });
+      vi.stubEnv('CLOUDFLARE_ACCOUNT_ID', 'account-1');
+
+      expect(await runCloudflareApply(['--apply'])).toBe(1);
+
+      expect(privateReads).toBe(2);
+      expect(requests).toContainEqual({
+        method: 'PUT',
+        pathname: '/client/v4/accounts/account-1/r2/buckets/boardsesh-user-private/domains/managed',
+        body: { enabled: false },
+      });
+      expect(requests.some((request) => request.method === 'PUT' && request.pathname.endsWith('/lifecycle'))).toBe(
+        false,
+      );
+    },
+  );
 
   it('sends the apex redirect rule verbatim in the dynamic-redirect PUT', async () => {
     const requests = stubCloudflareApi(dnsResponses(liveApexDnsRecord()));

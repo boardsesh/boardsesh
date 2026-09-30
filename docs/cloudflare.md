@@ -24,6 +24,12 @@ use only their custom domain. `boardsesh-user-private` and `boardsesh-ota-v3` al
 The apply disables a drifted `r2.dev` URL automatically, but reports an unexpected custom domain as `BLOCKED`
 instead of detaching a hostname during a routine converge. Buckets are created when absent and never deleted.
 
+The private user bucket owns lifecycle rule `boardsesh-user-data-exports-14d`:
+objects under `user-data-exports/` expire after 14 days. The tool preserves every
+other lifecycle rule and refuses unreadable policies or conflicting ownership.
+A newly created bucket needs a second converge to install retention. See
+[user-data-exports.md](./user-data-exports.md) for rollout and access expiry.
+
 ### Token scopes
 
 R2 is **account**-scoped, unlike everything else here, so managing it needs two things the zone work does not:

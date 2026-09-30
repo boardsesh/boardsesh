@@ -30,5 +30,6 @@ export const backgroundJobRuns = pgTable(
   (table) => [
     index('background_job_runs_status_created_idx').on(table.status, table.createdAt),
     index('background_job_runs_family_status_created_idx').on(table.family, table.status, table.createdAt),
+    index('background_job_runs_family_singleton_created_idx').on(table.family, table.singletonKey, table.createdAt),
   ],
 );

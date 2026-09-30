@@ -64,6 +64,7 @@ const SETTINGS_PAGES = [
   'storage',
   'edit',
   'integrations',
+  'export',
   'watch-pair',
   'branch-switcher',
   'dev-servers',

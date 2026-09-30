@@ -24,6 +24,8 @@ vi.mock('../services/user-data-export', () => ({
   getDownloadableUserDataExport: getDownloadableUserDataExportMock,
   getUserDataExportStatus: vi.fn(),
   requestUserDataExport: vi.fn(),
+  requireExportUser: vi.fn().mockResolvedValue(undefined),
+  exportPeriodStart: vi.fn(),
 }));
 
 const { handleStaticAvatar, handleStaticBetaThumbnail } = await import('../handlers/static');

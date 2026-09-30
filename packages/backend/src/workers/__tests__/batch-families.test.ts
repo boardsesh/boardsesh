@@ -104,6 +104,7 @@ describe('batch family registration', () => {
     expect(familiesForRole('maintenance-delivery').map((family) => family.name)).toEqual([
       'worker-probe',
       'climb-stats-self-heal',
+      'user-data-export',
     ]);
     expect(requireFamily('refresh-climb-grades')).toBe(refreshClimbGradesFamily);
     expect(requireFamily('refresh-climb-neighbors')).toBe(refreshClimbNeighborsFamily);

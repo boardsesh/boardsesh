@@ -1092,6 +1092,12 @@ export default function MoreScreen() {
           icon: 'editProfile',
           onPress: navAction(() => router.push('/settings/edit')),
         },
+        {
+          kind: 'nav',
+          key: 'exportData',
+          label: tSettings('export.title'),
+          onPress: navAction(() => router.push('/settings/export')),
+        },
       ],
     });
     sections.push({ key: 'accountActions', rows: accountActionRows });

@@ -25,5 +25,6 @@ export const SERIAL_TEST_FILES = [
   'src/__tests__/aurora-credentials-enqueue.test.ts',
   'src/__tests__/request-provider-sync.test.ts',
   'src/__tests__/provider-sync-control.test.ts',
+  'src/__tests__/user-data-export-jobs.test.ts',
   'src/__tests__/spray-detection.test.ts',
 ];

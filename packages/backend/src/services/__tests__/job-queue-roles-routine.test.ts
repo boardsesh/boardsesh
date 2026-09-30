@@ -733,7 +733,7 @@ async function proveRoutineGrants({ full, ownerUrl }: Proof) {
     await expect(routineDb.executeSql('DELETE FROM public.gyms WHERE false')).rejects.toThrow('permission denied');
     await expect(routineDb.executeSql('SELECT body FROM public.comments LIMIT 1')).rejects.toThrow('permission denied');
     const maintenanceDb = maintenance.boss.getDb();
-    await expect(maintenanceDb.executeSql('SELECT comment FROM public.boardsesh_ticks LIMIT 1')).rejects.toThrow(
+    await expect(maintenanceDb.executeSql('SELECT id FROM public.aurora_credentials LIMIT 1')).rejects.toThrow(
       'permission denied',
     );
     await expect(maintenanceDb.executeSql('UPDATE public.board_climbs SET name = name WHERE false')).rejects.toThrow(

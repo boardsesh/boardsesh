@@ -400,6 +400,10 @@ export const boardClimbs = pgTable(
     userIdIdx: index('board_climbs_user_id_idx')
       .on(table.userId)
       .where(sql`${table.userId} IS NOT NULL AND ${table.isDraft} = false`),
+    // Personal archives include drafts as well as published climbs.
+    userExportIdx: index('board_climbs_user_export_idx')
+      .on(table.userId, table.boardType)
+      .where(sql`${table.userId} IS NOT NULL`),
     // Index for climb name lookups (used by JSON import to resolve names to UUIDs)
     nameIdx: index('board_climbs_name_idx').on(table.boardType, table.name),
     // Note: a GIN index on compatible_size_ids already exists from migration 0073

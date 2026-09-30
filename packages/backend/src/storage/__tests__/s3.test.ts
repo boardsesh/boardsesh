@@ -5,6 +5,8 @@ const awsMocks = vi.hoisted(() => ({
   clientConfig: vi.fn(),
   send: vi.fn(),
 }));
+const signerMocks = vi.hoisted(() => ({ getSignedUrl: vi.fn() }));
+vi.mock('@aws-sdk/s3-request-presigner', () => signerMocks);
 
 vi.mock('@aws-sdk/client-s3', () => {
   class MockCommand {
@@ -82,6 +84,7 @@ describe('s3 storage', () => {
     setEnv(LEGACY_ENV);
     awsMocks.clientConfig.mockClear();
     awsMocks.send.mockReset();
+    signerMocks.getSignedUrl.mockReset().mockResolvedValue('https://storage.test/signed');
   });
 
   describe('legacy AWS_* fallback', () => {
@@ -328,6 +331,56 @@ describe('s3 storage', () => {
     // The lenient getFromS3 still maps that same failure to null (caller contract).
     awsMocks.send.mockRejectedValueOnce(new Error('connection reset'));
     await expect(getFromS3('snapshots', 'broken.json')).resolves.toBeNull();
+  });
+
+  it('strict metadata distinguishes missing objects from outages while tolerant callers retain their fallback', async () => {
+    const { getS3ObjectMetadata, getS3ObjectMetadataStrict } = await import('../s3');
+    awsMocks.send.mockRejectedValueOnce(Object.assign(new Error('missing'), { $metadata: { httpStatusCode: 404 } }));
+    await expect(getS3ObjectMetadataStrict('private', 'missing')).resolves.toBeNull();
+    const outage = Object.assign(new Error('storage unavailable'), { $metadata: { httpStatusCode: 503 } });
+    awsMocks.send.mockRejectedValueOnce(outage);
+    await expect(getS3ObjectMetadataStrict('private', 'broken')).rejects.toBe(outage);
+    awsMocks.send.mockRejectedValueOnce(outage);
+    await expect(getS3ObjectMetadata('private', 'broken')).resolves.toBeNull();
+  });
+
+  it('stores exports as immutable private attachments', async () => {
+    const { uploadToS3 } = await import('../s3');
+    setEnv(LEGACY_ENV, R2_PRIVATE_ENV);
+    await uploadToS3(
+      'private',
+      Buffer.from('{}'),
+      'user-data-exports/u/kilter/2026-W40.boardsesh.json',
+      'application/json',
+      {
+        acl: null,
+        cacheControl: 'private, no-store',
+        ifNoneMatch: '*',
+        contentDisposition: 'attachment; filename="archive.json"',
+        metadata: { 'exported-at': '2026-09-29T12:00:00Z' },
+      },
+    );
+    expect(lastCommandInput()).toMatchObject({
+      Bucket: 'boardsesh-user-private',
+      IfNoneMatch: '*',
+      ContentDisposition: 'attachment; filename="archive.json"',
+      CacheControl: 'private, no-store',
+    });
+    expect(lastCommandInput()).not.toHaveProperty('ACL');
+  });
+
+  it('signs attachment overrides for legacy exports without publishing the private bucket', async () => {
+    const { presignGetObject } = await import('../s3');
+    setEnv(LEGACY_ENV, R2_PRIVATE_ENV);
+    await presignGetObject('private', 'user-data-exports/u/kilter/2026-W40.json', 300, {
+      contentDisposition: 'attachment; filename="export.json"',
+    });
+    expect(signerMocks.getSignedUrl.mock.calls[0][1].input).toEqual({
+      Bucket: 'boardsesh-user-private',
+      Key: 'user-data-exports/u/kilter/2026-W40.json',
+      ResponseContentDisposition: 'attachment; filename="export.json"',
+    });
+    expect(signerMocks.getSignedUrl.mock.calls[0][2]).toEqual({ expiresIn: 300 });
   });
 
   it('listS3Objects follows continuation tokens across pages and skips keyless entries', async () => {

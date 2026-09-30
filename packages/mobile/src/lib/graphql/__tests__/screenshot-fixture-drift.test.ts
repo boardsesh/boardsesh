@@ -41,6 +41,7 @@ import * as sharedTicks from '@boardsesh/graphql/operations/ticks';
 import * as sharedSprayWalls from '@boardsesh/graphql/operations/spray-walls';
 import * as sharedSprayDetection from '@boardsesh/graphql/operations/spray-detection';
 import * as sharedAccount from '@boardsesh/graphql/operations/account';
+import * as sharedUserDataExport from '@boardsesh/graphql/operations/user-data-export';
 import * as sharedActivityFeed from '@boardsesh/graphql/operations/activity-feed';
 import * as sharedBetaLinks from '@boardsesh/graphql/operations/beta-links';
 import * as sharedBoardPresence from '@boardsesh/graphql/operations/board-presence';
@@ -154,6 +155,7 @@ const SHARED_OPERATION_MODULES: Record<string, Record<string, unknown>> = {
   '@boardsesh/graphql/operations/spray-walls': sharedSprayWalls,
   '@boardsesh/graphql/operations/spray-detection': sharedSprayDetection,
   '@boardsesh/graphql/operations/account': sharedAccount,
+  '@boardsesh/graphql/operations/user-data-export': sharedUserDataExport,
   '@boardsesh/graphql/operations/activity-feed': sharedActivityFeed,
   '@boardsesh/graphql/operations/beta-links': sharedBetaLinks,
   '@boardsesh/graphql/operations/board-presence': sharedBoardPresence,

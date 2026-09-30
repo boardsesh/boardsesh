@@ -76,6 +76,7 @@ export default function SettingsLayout() {
       <Stack.Screen name="storage" options={{ title: t('mobile.settings.storage.title') }} />
       <Stack.Screen name="edit" options={{ title: tSettings('profile.editAction') }} />
       <Stack.Screen name="integrations" options={{ title: tSettings('integrations.title') }} />
+      <Stack.Screen name="export" options={{ title: tSettings('export.title') }} />
       <Stack.Screen name="watch-pair" options={{ title: tSettings('watchPairing.title') }} />
       {/* i18n-ignore-next-line — preview-only screen */}
       <Stack.Screen name="branch-switcher" options={{ title: 'Branch Switcher' }} />
