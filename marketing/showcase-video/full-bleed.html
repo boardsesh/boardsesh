@@ -67,7 +67,8 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        background: color-mix(in srgb, var(--token-stage-dark, #110a20) 96%, transparent);
+        /* Opaque: nothing of the status bar under it may show through. */
+        background: var(--token-stage-dark, #110a20);
         border: 2px solid color-mix(in srgb, var(--token-accent-dark, #a78bfa) 45%, transparent);
         box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
         color: var(--token-ink-dark, #f5f2fb);

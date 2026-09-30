@@ -311,15 +311,16 @@ export const SHOWCASE_TARGETS: Record<ShowcaseTargetName, ShowcaseTarget> = {
     summary: 'Apple App Preview: the app footage full-bleed at 886x1920 with one-line captions',
     layout: 'full-bleed',
     scenes: [],
-    // Caption bars sit over the status bar, except on the island clip, whose
-    // top is the Dynamic Island: there it sits over the empty wallpaper.
+    // Caption bars are opaque and cover the status bar (14–126 px), except on
+    // the island clip, whose top is the Dynamic Island: there the bar sits
+    // over the empty wallpaper.
     clips: [
       // Ends on the first swipe's climb, before the second swipe starts.
-      { take: 'light', caption: 'light', captionTop: 22, segments: [{ mark: 'bulb-tapped', from: -0.3 }], frames: 150 },
+      { take: 'light', caption: 'light', captionTop: 14, segments: [{ mark: 'bulb-tapped', from: -0.3 }], frames: 150 },
       {
         take: 'wall',
         caption: 'wall',
-        captionTop: 22,
+        captionTop: 14,
         segments: [
           { mark: 'sheet-open', from: -3.4, to: 0.5 },
           { mark: 'history-shown', from: -0.5 },
@@ -329,7 +330,7 @@ export const SHOWCASE_TARGETS: Record<ShowcaseTargetName, ShowcaseTarget> = {
       {
         take: 'crew',
         caption: 'crew',
-        captionTop: 22,
+        captionTop: 14,
         segments: [
           { mark: 'invite-closed', from: -4.5, to: -2.3 },
           { mark: 'row-landed', from: -0.6, to: 2.0 },
@@ -347,7 +348,7 @@ export const SHOWCASE_TARGETS: Record<ShowcaseTargetName, ShowcaseTarget> = {
       {
         take: 'log',
         caption: 'log',
-        captionTop: 22,
+        captionTop: 14,
         segments: [
           { mark: 'scrolled', from: -1.0, to: 0.6 },
           { mark: 'filter-kilter', from: -2.2 },
