@@ -1,2 +1,12 @@
-export { SyncRunner } from './sync-runner';
-export type { SyncRunnerConfig, SyncSummary, KilterCredentialRecord, RunnerClient, RunnerDb } from './types';
+export { SyncRunner, recordKilterFailure, syncableKilterCredentialsFilter } from './sync-runner';
+export type {
+  SyncRunnerConfig,
+  SyncSummary,
+  KilterCredentialRecord,
+  RunnerClient,
+  RunnerDb,
+  RunCycleOptions,
+  SyncOutcome,
+  CatalogSyncJobOptions,
+  CatalogSyncJobResult,
+} from './types';

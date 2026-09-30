@@ -14,7 +14,7 @@
  * only one instance in the cluster does the sweep on any given tick. Without
  * the lock, N instances would each push N times for every session, eating
  * into APNs' per-activity rate budget. Same pattern as
- * `warmPopularConfigsCache` in social/boards.ts.
+ * `refreshPopularConfigsCache` in services/popular-board-configs.ts.
  */
 
 import { activityPushTokens } from '@boardsesh/db/schema/app';

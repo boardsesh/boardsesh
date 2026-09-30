@@ -1,6 +1,20 @@
 export { searchClimbs, MAX_SEARCH_PAGE, clampSearchPage } from './search-climbs';
 export { mergeCatalogCharacteristicsSql } from './catalog-characteristics';
-export { createClimbFilters, gradeValueSql, hiddenClimbCondition } from './create-climb-filters';
+export {
+  createClimbFilters,
+  gradeValueSql,
+  hiddenClimbCondition,
+  personalGradeRangeCondition,
+  buildPersonalGradeSubquery,
+  buildPersonalGradeJoinTarget,
+  effectiveDifficultySql,
+  personalGradeColumnSql,
+  clampToBoulderScaleSql,
+  PERSONAL_GRADE_MIN_ID,
+  PERSONAL_GRADE_MAX_ID,
+  PERSONAL_GRADE_ALIAS,
+} from './create-climb-filters';
+export type { PersonalGradeScope, PersonalGradeSubquery, PersonalGradeJoinTarget } from './create-climb-filters';
 export {
   boardClimbStatsAtSetAngle,
   browsedAngleRestrictionSql,
@@ -19,7 +33,13 @@ export { populateDenormalizedColumns } from './populate-denormalized-columns';
 export { getSetterStats } from './setter-stats';
 export { getHoldHeatmapData, normalizeHoldHeatmapRow } from './hold-heatmap';
 export type { HoldHeatmapData } from './hold-heatmap';
-export { followedAuthorCondition } from './followed-authors';
+export {
+  followedAuthorCondition,
+  followedAuthorListCondition,
+  followedAuthorListsAreEmpty,
+  resolveFollowedAuthorLists,
+  type FollowedAuthorLists,
+} from './followed-authors';
 export type { SetterStat } from './setter-stats';
 export type { BoardRouteParams, ClimbSearchParams, ClimbSearchInputLike, ClimbRow, ClimbSearchResult } from './types';
 export { mapSearchInputToParams } from './types';
@@ -45,9 +65,25 @@ export {
 } from './climb-neighbors';
 export {
   CLIMB_NEIGHBOR_BOARDS,
+  CLIMB_NEIGHBOR_GAP_REFILL_UTC_DAY,
+  isGapRefillDay,
   orderBoardsByClimbCount,
   refreshClimbNeighborsForBoard,
   type ClimbNeighborRefreshDb,
   type ClimbNeighborRefreshOptions,
   type ClimbNeighborRefreshResult,
 } from './climb-neighbors-refresh';
+export {
+  FULL_CHUNK_STATS_ROWS,
+  FULL_REBUILD_INTERVAL_MS,
+  INCREMENTAL_CHUNK_CLIMBS,
+  INCREMENTAL_MAX_CLIMBS,
+  WATERMARK_SLACK,
+  isClimbPopularityReady,
+  refreshClimbPopularity,
+  refreshClimbPopularityForBoard,
+  resetClimbPopularityReadinessForTests,
+  type ClimbPopularityBoardResult,
+  type ClimbPopularityDb,
+  type ClimbPopularityRefreshOptions,
+} from './climb-popularity';

@@ -23,6 +23,12 @@ export const SaveAuroraCredentialInputSchema = z.object({
 });
 
 /**
+ * The board a "Sync now" names. Every Aurora-family board, Kilter included: each
+ * has a sync family (`aurora-user-sync`, `kilter-user-sync`).
+ */
+export const ProviderSyncBoardTypeSchema = AuroraBoardNameSchema;
+
+/**
  * Delete account input validation schema
  */
 export const DeleteAccountInputSchema = z.object({

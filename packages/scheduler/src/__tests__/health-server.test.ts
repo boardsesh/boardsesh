@@ -22,6 +22,8 @@ const jobStatus: JobStatus = {
   runCount: 1,
   failureCount: 0,
   skippedCount: 0,
+  expectedLastRunAt: '2026-08-11T05:00:00.000Z',
+  overdue: false,
 };
 
 let openServer: HealthServer | null = null;
@@ -84,6 +86,28 @@ describe('createHealthServer', () => {
     const neverRun = { ...jobStatus, lastRunAt: null, lastSuccessAt: null, lastDurationMs: null, runCount: 0 };
     const disabledAndBroken = { ...jobStatus, name: 'other', scheduled: false, lastError: 'HTTP 500' };
     const baseUrl = await startServer(() => [neverRun, disabledAndBroken]);
+
+    expect((await fetch(`${baseUrl}/health/jobs`)).status).toBe(200);
+  });
+
+  it('503s /health/jobs for an overdue job while /health stays 200', async () => {
+    // A dead ticker produces no failure, only silence. `overdue` turns that
+    // silence into a 503 an external probe can alert on; liveness stays green
+    // because a restart is not the fix for a missed slot.
+    const overdueJob = { ...jobStatus, expectedLastRunAt: '2026-08-12T05:00:00.000Z', overdue: true };
+    const baseUrl = await startServer(() => [overdueJob]);
+
+    const jobsResponse = await fetch(`${baseUrl}/health/jobs`);
+    expect(jobsResponse.status).toBe(503);
+    const body = (await jobsResponse.json()) as { degraded: boolean; jobs: JobStatus[] };
+    expect(body.degraded).toBe(true);
+    expect(body.jobs[0]).toMatchObject({ overdue: true, expectedLastRunAt: '2026-08-12T05:00:00.000Z' });
+
+    expect((await fetch(`${baseUrl}/health`)).status).toBe(200);
+  });
+
+  it('ignores an overdue flag on a disabled job', async () => {
+    const baseUrl = await startServer(() => [{ ...jobStatus, scheduled: false, overdue: true }]);
 
     expect((await fetch(`${baseUrl}/health/jobs`)).status).toBe(200);
   });

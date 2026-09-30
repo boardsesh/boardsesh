@@ -1,13 +1,58 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseCatalogCliArgs } from './import-moonboard-catalog.js';
+import { parseCatalogCliArgs, CATALOG_USAGE_TEXT } from './import-moonboard-catalog.js';
 
 // This importer writes to production. Every case below exists so a mistyped
 // invocation fails loudly instead of quietly doing the wrong import.
 
 void test('no arguments is a real (non-dry) run of the default directory', () => {
   const parsed = parseCatalogCliArgs([]);
-  assert.deepEqual(parsed, { positional: [], holdsetup: undefined, dryRun: false });
+  assert.deepEqual(parsed, {
+    positional: [],
+    holdsetup: undefined,
+    dryRun: false,
+    help: false,
+    reportJsonPath: undefined,
+  });
+});
+
+void test('--report-json is recognised and consumes its value', () => {
+  const parsed = parseCatalogCliArgs(['/tmp/app-catalog', '--report-json', '/tmp/report.json']);
+  assert.equal(parsed.reportJsonPath, '/tmp/report.json');
+  assert.deepEqual(parsed.positional, ['/tmp/app-catalog']);
+});
+
+void test('--report-json without a value is rejected', () => {
+  assert.throws(() => parseCatalogCliArgs(['--report-json']), /needs a value/);
+});
+
+void test('--report-json swallowing the next flag is rejected, not silently accepted as the path', () => {
+  // The bug this guards: `['/cat', '--report-json', '--dry-run']` used to parse
+  // to `reportJsonPath: '--dry-run'` and run for real with no report written
+  // where the operator expected one.
+  assert.throws(() => parseCatalogCliArgs(['/tmp/app-catalog', '--report-json', '--dry-run']), /needs a value/);
+  assert.throws(() => parseCatalogCliArgs(['--report-json', '--holdsetup', '21']), /needs a value/);
+});
+
+void test('--report-json with an empty-string value is rejected', () => {
+  assert.throws(() => parseCatalogCliArgs(['--report-json', '']), /needs a value/);
+});
+
+void test('--report-json and --dry-run combine independently', () => {
+  const parsed = parseCatalogCliArgs(['--dry-run', '--report-json', '/tmp/report.json']);
+  assert.equal(parsed.dryRun, true);
+  assert.equal(parsed.reportJsonPath, '/tmp/report.json');
+});
+
+void test('--help is recognised', () => {
+  assert.equal(parseCatalogCliArgs(['--help']).help, true);
+});
+
+// The unattended-runner contract: a scheduler shells out `--help` and checks
+// the captured output before ever invoking a real (or dry-run) import.
+void test('the usage text documents both --report-json and --dry-run', () => {
+  assert.match(CATALOG_USAGE_TEXT, /--report-json/);
+  assert.match(CATALOG_USAGE_TEXT, /--dry-run/);
 });
 
 void test('a catalog directory is read as the positional argument', () => {

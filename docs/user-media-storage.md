@@ -79,6 +79,16 @@ Check it after any storage env change. `source=legacy` on `media` in production 
 
 ## Serving
 
+Private climbing archives use short-lived browser-download links. Their weekly
+cache, formats, 14-day retention, and worker rollout are documented in
+[user-data-exports.md](./user-data-exports.md).
+
+Export week keys are accepted for 21 days from their Monday, while each file
+expires 14 days after its snapshot was created. A late-Sunday snapshot can still
+be valid in the third calendar week. An accepted week key can therefore return
+`files: []` when no snapshot exists or it has expired; it does not extend retention
+or permit an expired download.
+
 Objects are reached through the backend's `/static/*` routes, which stream them out of the `media` bucket:
 
 | Route | Handler |
@@ -199,7 +209,7 @@ The source bucket is therefore listed in full on every run, including a `--prefi
 
 ## Manual steps this repo does not automate
 
-`infra/railway/config.ts` manages a different Railway project and is `assert-only` for anything carrying storage credentials, so these are dashboard actions:
+`infra/railway/config.ts` manages the OTA services in this project and lists `boardsesh-backend` only as inventory — it asserts nothing about the service carrying these credentials — so these are dashboard actions:
 
 - Creating the two R2 buckets and their scoped API tokens (Cloudflare dashboard).
 - Attaching `media.boardsesh.com` to `boardsesh-user-media`, which is what makes it public.

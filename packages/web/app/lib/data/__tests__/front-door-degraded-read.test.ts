@@ -21,9 +21,17 @@ vi.mock('@/app/lib/graphql/server-cached-client', () => ({
   createCachedGraphQLQuery: () => async () => queryImpl.current(),
 }));
 
-vi.mock('@sentry/nextjs', () => ({ captureMessage: captureMessageMock }));
+vi.mock('@sentry/nextjs', () => ({
+  captureMessage: captureMessageMock,
+  withScope: (callback: (scope: { setFingerprint: () => void; setTag: () => void; setExtra: () => void }) => void) =>
+    callback({ setFingerprint: () => {}, setTag: () => {}, setExtra: () => {} }),
+}));
 
-import { getFrontDoorBetaLinks, getFrontDoorSimilarClimbs } from '../front-door-data.server';
+import {
+  __resetFrontDoorReportingForTests,
+  getFrontDoorBetaLinks,
+  getFrontDoorSimilarClimbs,
+} from '../front-door-data.server';
 
 /** What `AbortController.abort()` produces once graphql-request rethrows it. */
 function abortError(): Error {
@@ -31,13 +39,12 @@ function abortError(): Error {
 }
 
 describe('front-door reads distinguish "timed out" from "empty"', () => {
-  beforeEach(async () => {
+  beforeEach(() => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
-    // Drive both sections back to "recovered" so the module's once-per-outage
-    // dedupe Set cannot carry state in from another test file in this worker.
+    // Reset the report-interval latch so it cannot carry state in from
+    // another test file in this worker.
+    __resetFrontDoorReportingForTests();
     queryImpl.current = async () => ({ similarClimbs: [], betaLinks: [] });
-    await getFrontDoorSimilarClimbs({ boardType: 'kilter', layoutId: 8, climbUuid: 'warmup', angle: 40 });
-    await getFrontDoorBetaLinks({ boardType: 'kilter', climbUuid: 'warmup' });
   });
 
   it('reports similar climbs as unavailable when the deadline fires', async () => {

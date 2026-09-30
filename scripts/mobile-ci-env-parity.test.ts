@@ -231,10 +231,12 @@ describe('mobile CI env parity (OTA fingerprint invariant)', () => {
     );
   });
 
-  it('keeps the OTA publish on the self-hosted production branch', () => {
+  it('stages main while direct publishes retain the production branch', () => {
     const ota = readWorkflow(OTA);
-    expect(ota).toMatch(/--channel production --platform ios/);
-    expect(ota).toMatch(/--channel production --platform android/);
+    expect(ota).toContain("'pr-staging' || 'production'");
+    expect(ota).toContain('--channel "$OTA_BRANCH" --platform ios');
+    expect(ota).toContain('--channel "$OTA_BRANCH" --platform android');
+    expect(readWorkflow('production-deploy.yml')).toContain('scripts/mobile-ota-promote.ts');
   });
 
   it('bakes the fixed production + branch-surfing request headers in app.config', () => {
@@ -285,10 +287,16 @@ describe('mobile CI env parity (OTA fingerprint invariant)', () => {
     for (const { name, platform } of expectedWorkflowResolvers) {
       const source = readWorkflow(name);
       const resolverCalls = source.match(/vp exec expo-updates runtimeversion:resolve/g) ?? [];
-      expect(resolverCalls, `${name} must have exactly one explicit runtimeVersion resolver`).toHaveLength(1);
+      expect(resolverCalls, `${name} must resolve each explicit fingerprint`).toHaveLength(name === OTA ? 3 : 1);
       expect(source).toContain(
         `cd packages/mobile && vp exec expo-updates runtimeversion:resolve --platform ${platform}`,
       );
+      if (name === OTA) {
+        expect(source).toContain(
+          'env -u GOOGLE_MAPS_API_KEY vp exec expo-updates runtimeversion:resolve --platform ios',
+        );
+        expect(source).toContain('vp exec expo-updates runtimeversion:resolve --platform android');
+      }
     }
 
     const nativeGate = readFileSync(NATIVE_GATE, 'utf8');

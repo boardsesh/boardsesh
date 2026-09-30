@@ -13,6 +13,11 @@ export const CLIMB_STATS_HISTORY = gql`
   }
 `;
 
+export type ClimbStatsHistoryVariables = {
+  boardName: string;
+  climbUuid: string;
+};
+
 export type ClimbStatsHistoryEntry = {
   angle: number;
   ascensionistCount: number | null;

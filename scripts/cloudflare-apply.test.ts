@@ -13,10 +13,12 @@ import {
   ASSETS_HOSTNAME,
   ASSETS_STAGING_HOSTNAME,
   SNAPSHOTS_HOSTNAME,
+  USER_EXPORT_LIFECYCLE_RULE,
   desiredR2Buckets,
   BACKEND_BOARD_RENDER_CACHE_RULE_DESCRIPTION,
   BOARD_CONTENT_CHALLENGE_RULE_DESCRIPTION,
   BOARD_RENDER_CACHE_RULE_DESCRIPTION,
+  AUTOMATION_DEFAULT_DENY_RULE_DESCRIPTION,
   CACHE_RULE_DESCRIPTION,
   CRAWLER_ALLOW_RULE_DESCRIPTION,
   CRAWLER_ALLOW_TOKENS,
@@ -42,11 +44,13 @@ import {
   buildWwwHtmlCachePathPrefixes,
   desiredCloudflareState,
 } from '../infra/cloudflare/config';
+import { isBlockedCrawler } from '../packages/web/app/lib/crawler-policy';
 import type {
   DnsRecordDesired,
   FullyManagedDnsRecordDesired,
   R2BucketDesired,
   R2Cors,
+  R2LifecycleRule,
 } from '../infra/cloudflare/config';
 import {
   MANAGED_RULE_PHASES,
@@ -883,6 +887,7 @@ describe('www cost-control rules (#4650)', () => {
       'Screaming Frog SEO Spider/21.4',
       'Mozilla/5.0 (compatible; YandexBot/3.0; +http://yandex.com/bots)',
       'Mozilla/5.0 (compatible; YandexRenderResourcesBot/1.0; +http://yandex.com/bots)',
+      'Lightpanda/1.0',
     ];
     for (const userAgent of blockedUserAgents) {
       const matched = CRAWLER_BLOCK_TOKENS.some((token) => userAgent.toLowerCase().includes(token));
@@ -1047,6 +1052,232 @@ describe('www cost-control rules (#4650)', () => {
   });
 });
 
+describe('automation default-deny (allow-list model)', () => {
+  const ruleByDescription = (description: string) => {
+    const rule = desired.wafRules.find((candidate) => candidate.description === description);
+    expect(rule, description).toBeDefined();
+    return rule!;
+  };
+  const allowRule = ruleByDescription(CRAWLER_ALLOW_RULE_DESCRIPTION);
+  const blockRule = ruleByDescription(CRAWLER_BLOCK_RULE_DESCRIPTION);
+  const defaultDenyRule = ruleByDescription(AUTOMATION_DEFAULT_DENY_RULE_DESCRIPTION);
+  const challengeRule = ruleByDescription(BOARD_CONTENT_CHALLENGE_RULE_DESCRIPTION);
+
+  // Tokens read back out of the SHIPPED expressions, so the verdict below is
+  // what Cloudflare will evaluate rather than a restatement of the lists.
+  const tokensIn = (expression: string): string[] =>
+    [...expression.matchAll(/lower\(http\.user_agent\) contains "([^"]*)"/g)].map(([, token]) => token);
+  const allowTokens = tokensIn(allowRule.expression);
+  const blockTokens = tokensIn(blockRule.expression);
+  const signatureTokens = tokensIn(defaultDenyRule.expression);
+
+  /** The edge verdict for a GET of a www page: allow (skip) → block → default-deny. */
+  const blockedAtEdge = (userAgent: string): boolean => {
+    const normalized = userAgent.toLowerCase();
+    if (allowTokens.some((token) => normalized.includes(token))) return false;
+    if (blockTokens.some((token) => normalized.includes(token))) return true;
+    return signatureTokens.some((token) => normalized.includes(token));
+  };
+
+  // Every self-identified agent seen in 6,012 Railway HTTP log entries (12
+  // windows, www and ws, 2026-09-19..26), plus the app and browser strings the
+  // rule must never touch. Adding a token? Run the new agent through here.
+  const mustPass: [string, string][] = [
+    ['iOS app (CFNetwork)', 'Boardsesh/1 CFNetwork/3860.700.2 Darwin/25.6.0'],
+    ['iOS app (native)', 'Boardsesh/2.5.0 (iPhone; iOS 26.6.1; Scale/3.00)'],
+    ['Android app', 'okhttp/4.12.0'],
+    ['Android app (Dalvik)', 'Dalvik/2.1.0 (Linux; U; Android 17; Pixel 9 Pro Build/CP2A.260805.005.A1)'],
+    ['Cubot phone', 'Dalvik/2.1.0 (Linux; U; Android 12; CUBOT P50 Build/SP1A.210812.016)'],
+    [
+      'Cubot phone browser',
+      'Mozilla/5.0 (Linux; Android 12; CUBOT P50) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36',
+    ],
+    ['Huawei ArkWeb', 'com.huawei.hmos.browser (phone;OpenHarmony-6.1.1.120;SGT-AL00B) NetworkSDK/8.0.16.302'],
+    [
+      'Huawei browser',
+      'Mozilla/5.0 (Phone; OpenHarmony 5.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36 ArkWeb/4.1.6.1 Mobile HuaweiBrowser/5.0.4.300',
+    ],
+    ['Samsung Pass', 'SamsungPass (Android; Samsung Electronics)'],
+    // In-app and OEM browsers whose UAs carry app or device tokens a bare
+    // `bot` or `python` could collide with. None of these do today.
+    [
+      'Facebook in-app (iOS)',
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 [FBAN/FBIOS;FBAV/470.0.0.40.97;FBBV/620335452;FBDV/iPhone15,2;FBMD/iPhone;FBSN/iOS;FBSV/17.5;FBSS/3;FBID/phone;FBLC/en_US;FBOP/5;FBRV/0]',
+    ],
+    [
+      'Instagram in-app (Android WebView)',
+      'Mozilla/5.0 (Linux; Android 14; SM-S918B Build/UP1A.231005.007; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/125.0.6422.165 Mobile Safari/537.36 Instagram 334.0.0.42.95 Android (34/14; 480dpi; 1080x2340; samsung; SM-S918B; dm3q; qcom; en_US; 606473723)',
+    ],
+    [
+      'TikTok in-app (iOS)',
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 musical_ly_35.1.0 JsSdk/2.0 NetType/WIFI Channel/App Store ByteLocale/en Region/US ByteFullLocale/en isDarkMode/0 WKWebView/1 BytedanceWebview/d8a21c6 FalconTag/',
+    ],
+    [
+      'Samsung Internet',
+      'Mozilla/5.0 (Linux; Android 14; SAMSUNG SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/25.0 Chrome/121.0.0.0 Mobile Safari/537.36',
+    ],
+    [
+      'MIUI browser',
+      'Mozilla/5.0 (Linux; U; Android 13; en-us; 2201117TG Build/TKQ1.221114.001) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/112.0.5615.136 Mobile Safari/537.36 XiaoMi/MiuiBrowser/14.7.0-gn',
+    ],
+    [
+      'Electron (Slack desktop)',
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Slack/4.39.95 Chrome/126.0.6478.183 Electron/31.3.1 Safari/537.36',
+    ],
+    ['Firefox Android', 'Mozilla/5.0 (Android 14; Mobile; rv:130.0) Gecko/130.0 Firefox/130.0'],
+    [
+      'Safari',
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15',
+    ],
+    ['Opera Presto', 'Opera/9.80 (X11; Linux i686; U; en) Presto/2.2.15 Version/10.00'],
+    ['our servers (undici)', 'node'],
+    ['empty UA', ''],
+    ['production smoke', 'boardsesh-production-smoke/1.0'],
+    ['ESP32 board controller (thumbnail fetch)', 'ESP32HTTPClient'],
+    [
+      'Snapchat unfurler',
+      'Mozilla/5.0 (compatible; Snap URL Preview Service; bot; snapchat; https://developers.snap.com/robots)',
+    ],
+    [
+      'AppleNewsBot',
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15 (AppleNewsBot/0.1; +http://www.apple.com/go/applebot)',
+    ],
+    ['DuckDuckGo favicons', 'Mozilla/5.0 (compatible; DuckDuckGo-Favicons-Bot/1.0; +http://duckduckgo.com)'],
+    ['DuckAssistBot', 'DuckAssistBot/1.2; (+http://duckduckgo.com/duckassistbot.html)'],
+    ['Kagibot', 'Mozilla/5.0 (compatible; Kagibot/1.0; +https://kagi.com/bot)'],
+    ['AdsBot-Google', 'AdsBot-Google (+http://www.google.com/adsbot.html)'],
+    ['msnbot-media', 'msnbot-media/1.1 (+http://search.msn.com/msnbot.htm)'],
+    ['Sentry uptime', 'SentryUptimeBot/1.0 (+http://docs.sentry.io/product/alerts/uptime-monitoring/)'],
+    ['Apple AASA', 'AASA-Bot/1.0.0'],
+    ['Android asset links', 'GoogleAssociationService'],
+    [
+      'Googlebot',
+      'Mozilla/5.0 (Linux; Android 6.0.1; Nexus 5X Build/MMB29P) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.8010.52 Mobile Safari/537.36 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+    ],
+    [
+      'bingbot',
+      'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm) Chrome/116.0.1938.76 Safari/537.36',
+    ],
+    [
+      'Applebot',
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15 (Applebot/0.1; +http://www.apple.com/go/applebot)',
+    ],
+    [
+      'Facebook/Twitter unfurler',
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_1) AppleWebKit/601.2.4 (KHTML, like Gecko) Version/9.0.1 Safari/601.2.4 facebookexternalhit/1.1 Facebot Twitterbot/1.0',
+    ],
+    [
+      'ChatGPT-User',
+      'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; ChatGPT-User/1.0; +https://openai.com/bot',
+    ],
+    ['Mastodon', 'Mastodon/4.2.1 (http.rb/5.1.1; +https://mastodon.social/) Bot'],
+    ['Internet Archive', 'Mozilla/5.0 (compatible; archive.org_bot +http://www.archive.org/details/archive.org_bot)'],
+    [
+      'old IE (browser-shaped scraper, out of scope)',
+      'Mozilla/4.0 (compatible; MSIE 6.0b; Windows NT 5.0; .NET CLR 1.1.4322)',
+    ],
+  ];
+
+  const mustBlock: [string, string][] = [
+    ['Lightpanda', 'Lightpanda/1.0'],
+    [
+      'meta-webindexer',
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 (compatible; meta-webindexer/1.1 (+https://developers.facebook.com/docs/sharing/webmasters/crawler))',
+    ],
+    ['curl', 'curl/8.9.1'],
+    ['python-requests', 'python-requests/2.32.3'],
+    ['aiohttp', 'Python/3.12 aiohttp/3.9.5'],
+    ['Go', 'Go-http-client/1.1'],
+    ['Java', 'Java/17.0.2'],
+    ['Apache HttpClient', 'Apache-HttpClient/4.5.14 (Java/17.0.2)'],
+    ['wget', 'Wget/1.21.4'],
+    ['libwww', 'libwww-perl/6.72'],
+    ['Scrapy', 'Scrapy/2.11.2 (+https://scrapy.org)'],
+    [
+      'HeadlessChrome',
+      'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/126.0.0.0 Safari/537.36',
+    ],
+    ['an unnamed bot', 'Mozilla/5.0 (compatible; SomeNewBot/1.0; +https://example.com/bot)'],
+    ['an unnamed spider', 'ExampleSpider/2.0'],
+    ['GPTBot', 'Mozilla/5.0 (compatible; GPTBot/1.4; +https://openai.com/gptbot)'],
+    ['AhrefsBot', 'Mozilla/5.0 (compatible; AhrefsBot/7.0; +http://ahrefs.com/robot/)'],
+    ['YandexBot', 'Mozilla/5.0 (compatible; YandexBot/3.0; +http://yandex.com/bots)'],
+    [
+      'SeznamBot',
+      'Mozilla/5.0 (compatible; SeznamBot/4.0; +https://o-seznam.cz/napoveda/vyhledavani/en/seznambot-crawler/)',
+    ],
+  ];
+
+  it.each(mustPass)('lets %s through at the edge and the origin', (_label, userAgent) => {
+    expect(blockedAtEdge(userAgent)).toBe(false);
+    expect(isBlockedCrawler(userAgent, { method: 'GET', pathname: '/kilter' })).toBe(false);
+  });
+
+  it.each(mustBlock)('blocks %s at the edge and the origin', (_label, userAgent) => {
+    expect(blockedAtEdge(userAgent)).toBe(true);
+    expect(isBlockedCrawler(userAgent, { method: 'GET', pathname: '/kilter' })).toBe(true);
+  });
+
+  it('only ever matches GET on www and ws', () => {
+    // POST is the mobile app's GraphQL traffic; assets, snapshots and updates
+    // serve the apps and OTA clients.
+    expect(defaultDenyRule.action).toBe('block');
+    expect(
+      defaultDenyRule.expression.startsWith(
+        `((http.host eq "${WWW_HOSTNAME}" or http.host eq "${WS_HOSTNAME}") and http.request.method eq "GET" and `,
+      ),
+    ).toBe(true);
+    expect(isBlockedCrawler('curl/8.9.1', { method: 'POST', pathname: '/graphql' })).toBe(false);
+  });
+
+  it('leaves health, .well-known and the API surfaces alone', () => {
+    // mobile-ota-production.yml polls ws /health with bare curl while it waits
+    // for the backend; a 403 there would stall every OTA publish.
+    for (const path of ['/health', '/health/db', '/api/health', '/robots.txt']) {
+      expect(defaultDenyRule.expression).toContain(`http.request.uri.path eq "${path}"`);
+      expect(isBlockedCrawler('curl/8.9.1', { method: 'GET', pathname: path })).toBe(false);
+    }
+    for (const prefix of ['/.well-known/', '/api/v1/', '/v1/partner/']) {
+      expect(defaultDenyRule.expression).toContain(`starts_with(http.request.uri.path, "${prefix}")`);
+      expect(isBlockedCrawler('Go-http-client/1.1', { method: 'GET', pathname: `${prefix}x` })).toBe(false);
+    }
+    // Named crawlers stay blocked everywhere: the exemption is for the
+    // default-deny only.
+    expect(isBlockedCrawler('Lightpanda/1.0', { method: 'POST', pathname: '/health' })).toBe(true);
+    expect(isBlockedCrawler('Lightpanda/1.0', { method: 'GET', pathname: '/robots.txt' })).toBe(true);
+    expect(isBlockedCrawler('SomeNewBot/1.0', { method: 'GET', pathname: '/robots.txt' })).toBe(false);
+  });
+
+  it('runs after the allow rule and before the challenge', () => {
+    // The allow rule's skip is what exempts allow-listed agents; this rule
+    // has no "unless" of its own.
+    const rules = desired.wafRules;
+    expect(rules.indexOf(allowRule)).toBeLessThan(rules.indexOf(defaultDenyRule));
+    expect(rules.indexOf(blockRule)).toBeLessThan(rules.indexOf(defaultDenyRule));
+    expect(rules.indexOf(defaultDenyRule)).toBeLessThan(rules.indexOf(challengeRule));
+    expect(rules.indexOf(challengeRule)).toBe(rules.length - 1);
+  });
+
+  it('balances its parentheses', () => {
+    const opens = defaultDenyRule.expression.split('(').length - 1;
+    const closes = defaultDenyRule.expression.split(')').length - 1;
+    expect(opens).toBe(closes);
+  });
+
+  it('never carries a signature token the apps or our servers send', () => {
+    for (const appUserAgent of [
+      'okhttp/4.12.0',
+      'Boardsesh/1 CFNetwork/3860.700.2 Darwin/25.6.0',
+      'Dalvik/2.1.0',
+      'node',
+    ]) {
+      for (const token of signatureTokens) {
+        expect(appUserAgent.toLowerCase()).not.toContain(token);
+      }
+    }
+  });
+});
+
 describe('managed rule ordering and foreign-rule safety', () => {
   const liveRule = (description: string, extra: Partial<RulesetRule> = {}): RulesetRule => ({
     id: `${description}-id`,
@@ -1069,6 +1300,7 @@ describe('managed rule ordering and foreign-rule safety', () => {
     expect(rules.map((rule) => rule.description)).toEqual([
       CRAWLER_ALLOW_RULE_DESCRIPTION,
       CRAWLER_BLOCK_RULE_DESCRIPTION,
+      AUTOMATION_DEFAULT_DENY_RULE_DESCRIPTION,
       // Last on purpose: it is the only rule that can catch an ordinary browser
       // string, so both UA verdicts must be reached first.
       BOARD_CONTENT_CHALLENGE_RULE_DESCRIPTION,
@@ -1576,7 +1808,10 @@ describe('the apply loop, driven end to end against a stubbed Cloudflare API', (
   }
 
   /** Stub the API with every managed phase EMPTY, so all of them are drift. */
-  function stubCloudflareApi(dnsByName: Record<string, LiveDnsRecord[]>): RecordedRequest[] {
+  function stubCloudflareApi(
+    dnsByName: Record<string, LiveDnsRecord[]>,
+    readLifecycleRules: (bucketName: string) => unknown = () => [],
+  ): RecordedRequest[] {
     const requests: RecordedRequest[] = [];
     const envelope = (result: unknown) =>
       new Response(JSON.stringify({ success: true, errors: [], messages: [], result }), { status: 200 });
@@ -1615,6 +1850,10 @@ describe('the apply loop, driven end to end against a stubbed Cloudflare API', (
           });
         }
         return envelope({});
+      }
+      if (url.pathname.endsWith('/lifecycle')) {
+        const bucketName = decodeURIComponent(url.pathname.split('/').at(-2)!);
+        return envelope({ rules: method === 'GET' ? readLifecycleRules(bucketName) : [] });
       }
       throw new Error(`Unstubbed Cloudflare request: ${method} ${url.pathname}`);
     });
@@ -1678,6 +1917,76 @@ describe('the apply loop, driven end to end against a stubbed Cloudflare API', (
     expect(assetChangeLogs.filter((message) => message.startsWith('[cf-apply] applied:'))).toHaveLength(1);
     expect(assetChangeLogs.filter((message) => message.startsWith('[cf-apply] skipped:'))).toHaveLength(2);
   });
+
+  it.each([
+    { ...USER_EXPORT_LIFECYCLE_RULE, conditions: { prefix: 'spray-walls/' } },
+    {
+      id: 'foreign-export-expiry',
+      enabled: true,
+      conditions: { prefix: '' },
+      deleteObjectsTransition: { condition: { type: 'Age', maxAge: 86_400 } },
+    },
+  ] satisfies R2LifecycleRule[])(
+    'keeps applying security changes while lifecycle ownership is blocked by $id',
+    async (conflictingRule) => {
+      const requests = stubCloudflareApi(dnsResponses(liveApexDnsRecord()), (bucketName) =>
+        bucketName === 'boardsesh-user-private' ? [conflictingRule] : [],
+      );
+      vi.stubEnv('CLOUDFLARE_ACCOUNT_ID', 'account-1');
+
+      expect(await runCloudflareApply(['--apply'])).toBe(1);
+
+      const privateBucketPath = '/client/v4/accounts/account-1/r2/buckets/boardsesh-user-private';
+      expect(requests).toContainEqual({
+        method: 'PUT',
+        pathname: `${privateBucketPath}/domains/managed`,
+        body: { enabled: false },
+      });
+      expect(requests.some((request) => request.method === 'PUT' && request.pathname.endsWith('/lifecycle'))).toBe(
+        false,
+      );
+      expect(
+        requests.some((request) => request.method === 'POST' && request.pathname.endsWith('/domains/custom')),
+      ).toBe(true);
+      expect(requests.some((request) => request.method === 'PUT' && request.pathname.endsWith('/cors'))).toBe(true);
+    },
+  );
+
+  it.each(['overlap', 'unreadable'])(
+    'continues security changes and exits nonzero when a fresh lifecycle read becomes %s',
+    async (freshRead) => {
+      let privateReads = 0;
+      const requests = stubCloudflareApi(dnsResponses(liveApexDnsRecord()), (bucketName) => {
+        if (bucketName !== 'boardsesh-user-private') return [];
+        privateReads += 1;
+        if (privateReads === 1) return [USER_EXPORT_LIFECYCLE_RULE];
+        return freshRead === 'unreadable'
+          ? null
+          : [
+              USER_EXPORT_LIFECYCLE_RULE,
+              {
+                id: 'added-during-apply',
+                enabled: true,
+                conditions: { prefix: 'user-data-exports/climber/' },
+                deleteObjectsTransition: { condition: { type: 'Age', maxAge: 86_400 } },
+              },
+            ];
+      });
+      vi.stubEnv('CLOUDFLARE_ACCOUNT_ID', 'account-1');
+
+      expect(await runCloudflareApply(['--apply'])).toBe(1);
+
+      expect(privateReads).toBe(2);
+      expect(requests).toContainEqual({
+        method: 'PUT',
+        pathname: '/client/v4/accounts/account-1/r2/buckets/boardsesh-user-private/domains/managed',
+        body: { enabled: false },
+      });
+      expect(requests.some((request) => request.method === 'PUT' && request.pathname.endsWith('/lifecycle'))).toBe(
+        false,
+      );
+    },
+  );
 
   it('sends the apex redirect rule verbatim in the dynamic-redirect PUT', async () => {
     const requests = stubCloudflareApi(dnsResponses(liveApexDnsRecord()));

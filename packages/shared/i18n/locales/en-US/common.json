@@ -331,7 +331,9 @@
         "quickActionsButton": "Show quick-actions button",
         "quickActionsButtonDescription": "Add a ⋮ button to each climb that opens queue, tick, playlists and more. You can always long-press instead.",
         "boardseshGrades": "Show Boardsesh grades",
-        "boardseshGradesDescription": "Grades built from real sends across boards. The setter's grade stays until enough sends come in."
+        "boardseshGradesDescription": "Grades built from real sends across boards. The setter's grade stays until enough sends come in.",
+        "personalGrades": "Use my grades",
+        "personalGradesDescription": "Show the grade you gave a climb instead of the crowd's, and sort and filter by it."
       },
       "offline": {
         "title": "Offline",
@@ -686,6 +688,12 @@
       "headChangedChip": "Head changed since",
       "crashedChip": "Crashed on launch",
       "nothingNewToast": "Nothing new for #{{prNumber}} on this build — its next publish applies on relaunch",
+      "stagingTitle": "Staging",
+      "stagingBody": "Try the next mobile update before it reaches production.",
+      "productionTitle": "Production",
+      "productionBody": "Use live updates going forward; this bundle may remain until a newer one ships.",
+      "stagingNextLaunch": "Staging is selected — its next update applies on relaunch",
+      "productionNextLaunch": "Production is selected; this bundle may remain until a newer update ships",
       "buildingChip": "Building",
       "buildingNewerChip": "Building newer",
       "buildingToast": "Still publishing — it appears here when the bundle lands",

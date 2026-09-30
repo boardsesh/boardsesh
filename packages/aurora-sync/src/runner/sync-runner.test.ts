@@ -10,6 +10,7 @@ import {
   type SyncHealthSnapshot,
 } from './sync-runner';
 import type { AuroraBoardName } from '../api/types';
+import type { AuroraLocationBoardName } from '../sync/locations-sync';
 import type { CredentialRecord, SyncErrorContext } from './types';
 
 type SyncRunnerPrivates = {
@@ -27,6 +28,11 @@ type SyncRunnerPrivates = {
   updateStoredToken: (userId: string, boardType: string, token: string) => Promise<void>;
   syncSingleCredential: (cred: CredentialRecord) => Promise<void>;
   maybeRunSharedSync: (boardType: AuroraBoardName, token: string, userId: string) => Promise<void>;
+  crawlGymWallSlice: (
+    board: AuroraLocationBoardName,
+    token: string,
+    options?: { transaction?: unknown; signal?: AbortSignal },
+  ) => Promise<void>;
   getActiveCredentials: () => Promise<CredentialRecord[]>;
   getNextCredentialToSync: () => Promise<CredentialRecord | null>;
   recordSyncFailure: (cred: CredentialRecord, errorMsg: string) => Promise<void>;
@@ -48,8 +54,11 @@ const {
   mockCrawlGymWalls,
   mockFindGymsDueForWallCrawl,
   mockClaimSharedSyncSlot,
+  mockDeferCredentialSyncAttempt,
   mockStampSharedSyncFinished,
   mockReadSharedSyncCursor,
+  mockFindSharedSyncDonorCredential,
+  mockClaimNextCredentialForSync,
 } = vi.hoisted(() => ({
   mockDecrypt: vi.fn(),
   mockEncrypt: vi.fn(),
@@ -61,8 +70,11 @@ const {
   mockCrawlGymWalls: vi.fn(),
   mockFindGymsDueForWallCrawl: vi.fn(),
   mockClaimSharedSyncSlot: vi.fn(),
+  mockDeferCredentialSyncAttempt: vi.fn(),
   mockStampSharedSyncFinished: vi.fn(),
   mockReadSharedSyncCursor: vi.fn(),
+  mockFindSharedSyncDonorCredential: vi.fn(),
+  mockClaimNextCredentialForSync: vi.fn(),
 }));
 
 // The cooldown now lives in board_shared_syncs behind a compare-and-set instead
@@ -76,9 +88,12 @@ vi.mock('@boardsesh/db/queries', async (importOriginal) => {
   return {
     ...actual,
     claimSharedSyncSlot: mockClaimSharedSyncSlot,
+    deferCredentialSyncAttempt: mockDeferCredentialSyncAttempt,
     stampSharedSyncFinished: mockStampSharedSyncFinished,
     readSharedSyncCursor: mockReadSharedSyncCursor,
     findGymsDueForWallCrawl: mockFindGymsDueForWallCrawl,
+    findSharedSyncDonorCredential: mockFindSharedSyncDonorCredential,
+    claimNextCredentialForSync: mockClaimNextCredentialForSync,
   };
 });
 
@@ -302,12 +317,14 @@ describe('SyncRunner login failure handling', () => {
     expect(updateStoredToken).toHaveBeenCalledWith('user-123', 'decoy', 'fresh-token');
     // Success now also advances the attempt clock and clears the general
     // backoff counter + observability error.
+    // It also ends any provider Retry-After hold.
     expect(updateCredentialStatus).toHaveBeenCalledWith('user-123', 'decoy', 'active', null, expect.any(Date), {
       credentialFailureCount: 0,
       lastCredentialFailureAt: null,
       lastSyncAttemptAt: expect.any(Date),
       consecutiveFailures: 0,
       lastSyncError: null,
+      providerRetryAfterUntil: null,
     });
   });
 
@@ -484,7 +501,7 @@ describe('SyncRunner shared-sync per-board throttle', () => {
       cooldownMs: 60_000,
     });
     expect(mockSyncSharedData).toHaveBeenCalledTimes(1);
-    expect(mockSyncSharedData).toHaveBeenCalledWith(expect.anything(), 'decoy', 'token-abc', expect.any(Function));
+    expect(mockSyncSharedData).toHaveBeenCalledWith(expect.anything(), 'decoy', 'token-abc', expect.any(Function), {});
     expect(mockSyncAuroraBoardLocations).toHaveBeenCalledTimes(1);
   });
 
@@ -718,6 +735,50 @@ describe('SyncRunner shared-sync per-board throttle', () => {
     // The shared sync itself still counts as a success, so the cooldown is
     // stamped normally rather than dropping to the transient retry window.
     expect(mockStampSharedSyncFinished).toHaveBeenCalledTimes(1);
+  });
+
+  it("extends the shared-sync slot for Aurora's Retry-After on the daemon piggyback path too", async () => {
+    // This path has no borrowed donor to hold (it runs on the real user's own
+    // token), but the slot is the same per-board cursor runSharedSyncJob holds
+    // — without this, a one-hour Retry-After was followed by another crawl
+    // after the flat five-minute transient cooldown.
+    mockClaimSharedSyncSlot.mockResolvedValue('2026-07-31 23:00:00.000000');
+    mockFindGymsDueForWallCrawl.mockResolvedValue(['tension:269111']);
+    mockCrawlGymWalls.mockRejectedValue(
+      new AuroraRequestError({ code: 'rate_limited', message: 'slow down', status: 429, retryAfterMs: 3_600_000 }),
+    );
+    const runner = new SyncRunner({ sharedSyncCooldownMs: 50 * 60_000 });
+    const runnerPrivates = runner as unknown as SyncRunnerPrivates;
+
+    await expect(runnerPrivates.maybeRunSharedSync('tension', 'borrowed-token', 'user-1')).resolves.toBeUndefined();
+
+    expect(mockStampSharedSyncFinished.mock.calls[0][1]).toMatchObject({
+      nextCooldownMs: 5 * 60_000,
+      providerHoldMs: 3_600_000,
+    });
+  });
+
+  it("lets a crawl's rate limit escape crawlGymWallSlice instead of swallowing it", async () => {
+    // Unlike an ordinary crawl failure (tested above), a 429 from the crawl is a
+    // real hold, not a per-gym blip. It must reach runBoardSharedWork's caller so
+    // that, on the runSharedSyncJob scheduled path, the shared-sync slot and the
+    // borrowed donor get parked for it — swallowing it here would keep the crawl
+    // contacting Aurora for the rest of the slice during the hold. (The daemon's
+    // maybeRunSharedSync piggyback path has no borrowed-donor concept to hold —
+    // it runs on the real user's own token — so it only extends the shared-sync
+    // slot for the Retry-After, not a donor hold.)
+    mockFindGymsDueForWallCrawl.mockResolvedValue(['tension:269111']);
+    const rateLimited = new AuroraRequestError({
+      code: 'rate_limited',
+      message: 'slow down',
+      status: 429,
+      retryAfterMs: 3_600_000,
+    });
+    mockCrawlGymWalls.mockRejectedValue(rateLimited);
+    const runner = new SyncRunner({ sharedSyncCooldownMs: 60_000 });
+    const runnerPrivates = runner as unknown as SyncRunnerPrivates;
+
+    await expect(runnerPrivates.crawlGymWallSlice('tension', 'borrowed-token')).rejects.toBe(rateLimited);
   });
 
   it('does not crawl walls for a board with no location support', async () => {
@@ -1149,5 +1210,371 @@ describe('SyncRunner.getSyncHealthSnapshot', () => {
       inBackoff: 0,
       oldestAttemptAt: null,
     });
+  });
+});
+
+describe('SyncRunner.syncCredential concurrency', () => {
+  it('refuses a second concurrent call on the same runner, and accepts the next one after', async () => {
+    const runner = new SyncRunner({ onLog: () => {} });
+    const runnerPrivates = runner as unknown as SyncRunnerPrivates;
+    let finishFirst!: () => void;
+    const firstHeld = new Promise<void>((resolve) => (finishFirst = resolve));
+    const syncSingle = vi
+      .spyOn(runnerPrivates, 'syncSingleCredential')
+      .mockImplementationOnce(() => firstHeld)
+      .mockResolvedValue(undefined);
+
+    const first = runner.syncCredential(createCredential({ userId: 'user-first' }));
+    // The second call arrives while the first is still awaiting its sync.
+    await expect(runner.syncCredential(createCredential({ userId: 'user-second' }))).rejects.toThrow('already syncing');
+    finishFirst();
+    await expect(first).resolves.toEqual({ status: 'active' });
+
+    await expect(runner.syncCredential(createCredential({ userId: 'user-third' }))).resolves.toEqual({
+      status: 'active',
+    });
+    expect(syncSingle).toHaveBeenCalledTimes(2);
+  });
+});
+
+function donorCredential(overrides: Partial<CredentialRecord> = {}): CredentialRecord {
+  return {
+    userId: 'donor-user',
+    boardType: 'tension',
+    encryptedUsername: 'enc-user',
+    encryptedPassword: 'enc-pass',
+    auroraUserId: 7,
+    auroraToken: 'enc-token',
+    syncStatus: 'active',
+    syncError: null,
+    credentialFailureCount: 0,
+    lastCredentialFailureAt: null,
+    lastSyncAt: new Date('2026-09-27T10:00:00Z'),
+    lastSyncAttemptAt: new Date('2026-09-27T10:00:00Z'),
+    consecutiveFailures: 0,
+    ...overrides,
+  };
+}
+
+describe('SyncRunner.runSharedSyncJob (the aurora-shared-sync job)', () => {
+  const injectedDb = {} as never;
+  // The job's attempt fence: runs the batch on the database it was given.
+  const transaction = vi.fn(async (callback: (tx: never) => Promise<unknown>) => callback(injectedDb)) as never;
+
+  beforeEach(() => {
+    for (const mock of [
+      mockFindSharedSyncDonorCredential,
+      mockClaimSharedSyncSlot,
+      mockStampSharedSyncFinished,
+      mockReadSharedSyncCursor,
+      mockSyncSharedData,
+      mockSyncAuroraBoardLocations,
+      mockFindGymsDueForWallCrawl,
+      mockDecrypt,
+      mockSignIn,
+    ]) {
+      mock.mockReset();
+    }
+    mockDecrypt.mockImplementation((value: string) => `plain-${value}`);
+    mockClaimSharedSyncSlot.mockResolvedValue('claim-token');
+    mockStampSharedSyncFinished.mockResolvedValue(true);
+    mockSyncSharedData.mockResolvedValue({});
+    mockSyncAuroraBoardLocations.mockResolvedValue({});
+    mockFindGymsDueForWallCrawl.mockResolvedValue([]);
+  });
+
+  it("borrows the donor's stored token, routes writes through the fence and stamps the slot", async () => {
+    mockFindSharedSyncDonorCredential.mockResolvedValue(donorCredential());
+    const runner = new SyncRunner({ db: injectedDb, onLog: () => {} });
+
+    const result = await runner.runSharedSyncJob('tension', { transaction, cooldownMs: 50 * 60_000 });
+
+    expect(result).toEqual({ status: 'synced', tokenSource: 'stored' });
+    expect(mockFindSharedSyncDonorCredential.mock.calls[0][1]).toMatchObject({ boardType: 'tension' });
+    expect(mockClaimSharedSyncSlot.mock.calls[0][1]).toMatchObject({
+      boardType: 'tension',
+      cursorName: SHARED_SYNC_COOLDOWN_CURSOR,
+      cooldownMs: 50 * 60_000,
+    });
+    expect(mockSignIn).not.toHaveBeenCalled();
+    expect(mockSyncSharedData).toHaveBeenCalledWith(injectedDb, 'tension', 'plain-enc-token', expect.any(Function), {
+      transaction,
+    });
+    // The locations sync gets the same fence.
+    expect(mockSyncAuroraBoardLocations.mock.calls[0][0]).toMatchObject({ board: 'tension', transaction });
+    // The claim and the stamp ran inside the fence too.
+    expect(vi.mocked(transaction as (callback: unknown) => Promise<unknown>).mock.calls.length).toBeGreaterThanOrEqual(
+      2,
+    );
+    expect(mockStampSharedSyncFinished.mock.calls[0][1]).toMatchObject({
+      claimToken: 'claim-token',
+      fullCooldownMs: 50 * 60_000,
+      // Backdated by the run's length: measured from the claim, not the end.
+      nextCooldownMs: expect.toSatisfy((value: number) => value <= 50 * 60_000 && value > 50 * 60_000 - 5_000),
+    });
+  });
+
+  it('measures the cooldown from the claim, so a long run never makes the next hourly tick wait', async () => {
+    mockFindSharedSyncDonorCredential.mockResolvedValue(donorCredential());
+    let now = Date.parse('2026-09-27T11:07:00Z');
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => now);
+    // The shared sync takes 20 minutes.
+    mockSyncSharedData.mockImplementation(async () => {
+      now += 20 * 60_000;
+      return {};
+    });
+    const runner = new SyncRunner({ db: injectedDb, onLog: () => {} });
+
+    await runner.runSharedSyncJob('tension', { cooldownMs: 50 * 60_000 });
+
+    clock.mockRestore();
+    // The marker is backdated by 20 minutes: 50 minutes from the claim, 30 from the end.
+    expect(mockStampSharedSyncFinished.mock.calls[0][1]).toMatchObject({
+      fullCooldownMs: 50 * 60_000,
+      nextCooldownMs: 30 * 60_000,
+    });
+  });
+
+  it('claims as its run, so a retry after an abort re-claims the slot the stopped attempt could not re-stamp', async () => {
+    mockFindSharedSyncDonorCredential.mockResolvedValue(donorCredential());
+    const shutdown = new AbortController();
+    // The run is stopped mid-sync; its fence refuses every write after that,
+    // including the five-minute re-stamp on the way out.
+    mockSyncSharedData.mockImplementationOnce(async () => {
+      shutdown.abort();
+      throw new Error('aborted');
+    });
+    const fence = vi.fn(async (callback: (tx: never) => Promise<unknown>) => {
+      if (shutdown.signal.aborted) throw new Error('attempt fence refused');
+      return callback(injectedDb);
+    }) as never;
+    const runner = new SyncRunner({ db: injectedDb, onLog: () => {} });
+
+    await expect(
+      runner.runSharedSyncJob('tension', { transaction: fence, signal: shutdown.signal, runId: 'run-7' }),
+    ).rejects.toThrow('aborted');
+
+    // The claim carried the run id (the database lets that run re-claim it;
+    // see shared-sync-cooldown-cas.test.ts), and the refused re-stamp is swallowed.
+    expect(mockClaimSharedSyncSlot.mock.calls[0][1]).toMatchObject({ ownerRunId: 'run-7' });
+    expect(mockStampSharedSyncFinished).not.toHaveBeenCalled();
+  });
+
+  it('keeps the five-minute re-stamp for an ordinary provider failure', async () => {
+    mockFindSharedSyncDonorCredential.mockResolvedValue(donorCredential());
+    mockSyncSharedData.mockRejectedValueOnce(
+      new AuroraRequestError({ code: 'http', message: 'Aurora HTTP 503', status: 503 }),
+    );
+    const runner = new SyncRunner({ db: injectedDb, onLog: () => {} });
+
+    await expect(runner.runSharedSyncJob('tension', { transaction, runId: 'run-8' })).rejects.toThrow('503');
+
+    expect(mockStampSharedSyncFinished.mock.calls[0][1]).toMatchObject({ nextCooldownMs: 5 * 60_000 });
+  });
+
+  it("closes the slot for Aurora's Retry-After and holds the donor, on a 429", async () => {
+    mockDeferCredentialSyncAttempt.mockReset();
+    mockDeferCredentialSyncAttempt.mockResolvedValue(undefined);
+    // The donor as findSharedSyncDonorCredential returns it: its row id and
+    // the link generation it was read under.
+    mockFindSharedSyncDonorCredential.mockResolvedValue({ ...donorCredential(), id: 41n, linkGeneration: 'gen-a' });
+    mockSyncSharedData.mockRejectedValueOnce(
+      new AuroraRequestError({ code: 'rate_limited', message: 'slow down', status: 429, retryAfterMs: 3_600_000 }),
+    );
+    const runner = new SyncRunner({ db: injectedDb, onLog: () => {} });
+
+    await expect(runner.runSharedSyncJob('tension', { transaction, runId: 'run-9' })).rejects.toThrow('slow down');
+
+    expect(mockStampSharedSyncFinished.mock.calls[0][1]).toMatchObject({
+      nextCooldownMs: 5 * 60_000,
+      providerHoldMs: 3_600_000,
+    });
+    expect(mockDeferCredentialSyncAttempt.mock.calls[0][1]).toMatchObject({
+      userId: donorCredential().userId,
+      boardType: donorCredential().boardType,
+      delayMs: 3_600_000,
+    });
+    // Only the hold: no failure step is charged to a borrowed credential.
+    expect(mockDeferCredentialSyncAttempt.mock.calls[0][1]).not.toHaveProperty('forgiveFailure');
+    // Bound to the borrowed link, so a relink mid-run is left unheld.
+    expect(mockDeferCredentialSyncAttempt.mock.calls[0][1]).toMatchObject({
+      onlyLink: { id: 41n, linkGeneration: 'gen-a' },
+    });
+  });
+
+  it('holds for at least the five-minute retry cooldown on a short Retry-After', async () => {
+    mockDeferCredentialSyncAttempt.mockReset();
+    mockDeferCredentialSyncAttempt.mockResolvedValue(undefined);
+    mockFindSharedSyncDonorCredential.mockResolvedValue(donorCredential());
+    mockSyncSharedData.mockRejectedValueOnce(
+      new AuroraRequestError({ code: 'rate_limited', message: 'slow down', status: 429, retryAfterMs: 10_000 }),
+    );
+    const runner = new SyncRunner({ db: injectedDb, onLog: () => {} });
+
+    await expect(runner.runSharedSyncJob('tension', { transaction })).rejects.toThrow('slow down');
+
+    expect(mockStampSharedSyncFinished.mock.calls[0][1]).toMatchObject({ providerHoldMs: 5 * 60_000 });
+  });
+
+  it('does no work and claims nothing when the board has no healthy credential', async () => {
+    mockFindSharedSyncDonorCredential.mockResolvedValue(null);
+    const runner = new SyncRunner({ db: injectedDb, onLog: () => {} });
+
+    expect(await runner.runSharedSyncJob('decoy')).toEqual({ status: 'no_donor' });
+    expect(mockClaimSharedSyncSlot).not.toHaveBeenCalled();
+    expect(mockSyncSharedData).not.toHaveBeenCalled();
+  });
+
+  it('does no work when the cooldown slot is held, and leaves the slot alone', async () => {
+    mockFindSharedSyncDonorCredential.mockResolvedValue(donorCredential());
+    mockClaimSharedSyncSlot.mockResolvedValue(null);
+    const lastRunAt = new Date('2026-09-27T11:30:00Z');
+    mockReadSharedSyncCursor.mockResolvedValue(lastRunAt);
+    const runner = new SyncRunner({ db: injectedDb, onLog: () => {} });
+
+    expect(await runner.runSharedSyncJob('tension')).toEqual({ status: 'cooldown', lastRunAt });
+    expect(mockSyncSharedData).not.toHaveBeenCalled();
+    expect(mockStampSharedSyncFinished).not.toHaveBeenCalled();
+  });
+
+  it('logs in once with the donor password when the stored token is rejected, without touching the credential', async () => {
+    mockFindSharedSyncDonorCredential.mockResolvedValue(donorCredential());
+    mockSyncSharedData
+      .mockRejectedValueOnce(new AuroraRequestError({ code: 'http', message: 'Aurora HTTP 401', status: 401 }))
+      .mockResolvedValueOnce({});
+    mockSignIn.mockResolvedValue({ token: 'fresh-token' });
+    const runner = new SyncRunner({ db: injectedDb, onLog: () => {} });
+    const updateCredentialStatus = vi.spyOn(runner as unknown as SyncRunnerPrivates, 'updateCredentialStatus');
+
+    expect(await runner.runSharedSyncJob('decoy', { transaction })).toEqual({ status: 'synced', tokenSource: 'login' });
+    expect(mockSignIn).toHaveBeenCalledWith('plain-enc-user', 'plain-enc-pass', { signal: undefined });
+    expect(mockSyncSharedData.mock.calls[1][2]).toBe('fresh-token');
+    expect(updateCredentialStatus).not.toHaveBeenCalled();
+  });
+
+  it('logs in once with the donor password when Aurora answers the stored token with 422 (expired session)', async () => {
+    mockFindSharedSyncDonorCredential.mockResolvedValue(donorCredential());
+    mockSyncSharedData
+      .mockRejectedValueOnce(
+        new AuroraRequestError({ code: 'invalid_credentials', message: 'Aurora HTTP 422', status: 422 }),
+      )
+      .mockResolvedValueOnce({});
+    mockSignIn.mockResolvedValue({ token: 'fresh-token' });
+    const runner = new SyncRunner({ db: injectedDb, onLog: () => {} });
+
+    expect(await runner.runSharedSyncJob('decoy', { transaction })).toEqual({ status: 'synced', tokenSource: 'login' });
+    expect(mockSignIn).toHaveBeenCalledTimes(1);
+    expect(mockSyncSharedData.mock.calls[1][2]).toBe('fresh-token');
+  });
+
+  it('does not log in again when the fresh login is itself rejected', async () => {
+    mockFindSharedSyncDonorCredential.mockResolvedValue(donorCredential({ auroraToken: null }));
+    mockSignIn.mockResolvedValue({ token: 'fresh-token' });
+    mockSyncSharedData.mockRejectedValueOnce(
+      new AuroraRequestError({ code: 'invalid_credentials', message: 'Aurora HTTP 422', status: 422 }),
+    );
+    const runner = new SyncRunner({ db: injectedDb, onLog: () => {} });
+
+    await expect(runner.runSharedSyncJob('decoy')).rejects.toMatchObject({ code: 'invalid_credentials' });
+    expect(mockSignIn).toHaveBeenCalledTimes(1);
+    expect(mockSyncSharedData).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops after the re-login when the job was stopped while it logged in', async () => {
+    mockFindSharedSyncDonorCredential.mockResolvedValue(donorCredential());
+    mockSyncSharedData.mockRejectedValueOnce(
+      new AuroraRequestError({ code: 'http', message: 'Aurora HTTP 401', status: 401 }),
+    );
+    const shutdown = new AbortController();
+    mockSignIn.mockImplementation(async () => {
+      shutdown.abort();
+      return { token: 'fresh-token' };
+    });
+    const runner = new SyncRunner({ db: injectedDb, onLog: () => {} });
+
+    await expect(runner.runSharedSyncJob('decoy', { signal: shutdown.signal })).rejects.toThrow();
+
+    // No second pass with the fresh token.
+    expect(mockSyncSharedData).toHaveBeenCalledTimes(1);
+  });
+
+  it('logs in straight away when the donor has no stored token', async () => {
+    mockFindSharedSyncDonorCredential.mockResolvedValue(donorCredential({ auroraToken: null }));
+    mockSignIn.mockResolvedValue({ token: 'fresh-token' });
+    const runner = new SyncRunner({ db: injectedDb, onLog: () => {} });
+
+    expect(await runner.runSharedSyncJob('decoy')).toEqual({ status: 'synced', tokenSource: 'login' });
+    expect(mockSyncSharedData.mock.calls[0][2]).toBe('fresh-token');
+  });
+
+  it('throws a failure after stamping the short cooldown for a transient error and the full one otherwise', async () => {
+    mockFindSharedSyncDonorCredential.mockResolvedValue(donorCredential());
+    const runner = new SyncRunner({ db: injectedDb, onLog: () => {} });
+
+    mockSyncSharedData.mockRejectedValueOnce(new AuroraRequestError({ code: 'timeout', message: 'timed out' }));
+    await expect(runner.runSharedSyncJob('decoy', { cooldownMs: 60 * 60_000 })).rejects.toThrow('timed out');
+    expect(mockStampSharedSyncFinished.mock.calls[0][1]).toMatchObject({ nextCooldownMs: 5 * 60_000 });
+
+    mockSyncSharedData.mockRejectedValueOnce(
+      new AuroraRequestError({ code: 'http', message: 'Aurora HTTP 400', status: 400 }),
+    );
+    await expect(runner.runSharedSyncJob('decoy', { cooldownMs: 60 * 60_000 })).rejects.toThrow('HTTP 400');
+    expect(mockStampSharedSyncFinished.mock.calls[1][1].nextCooldownMs).toBeGreaterThan(60 * 60_000 - 5_000);
+
+    // A database error is not Aurora's: the job's retry must be able to run.
+    mockSyncSharedData.mockRejectedValueOnce(new Error('permission denied for table board_climbs'));
+    await expect(runner.runSharedSyncJob('decoy', { cooldownMs: 60 * 60_000 })).rejects.toThrow('permission denied');
+    expect(mockStampSharedSyncFinished.mock.calls[2][1]).toMatchObject({ nextCooldownMs: 5 * 60_000 });
+  });
+
+  it('refuses Kilter, which has its own catalog job', async () => {
+    const runner = new SyncRunner({ db: injectedDb, onLog: () => {} });
+    await expect(runner.runSharedSyncJob('kilter')).rejects.toThrow('Kilter has its own catalog sync');
+  });
+});
+
+describe('SyncRunner daemon switch and claim', () => {
+  beforeEach(() => {
+    mockClaimNextCredentialForSync.mockReset();
+    vi.unstubAllEnvs();
+  });
+
+  it('returns without claiming anything when SYNC_DAEMON_DISABLED=true', async () => {
+    vi.stubEnv('SYNC_DAEMON_DISABLED', 'true');
+    const lines: string[] = [];
+    const runner = new SyncRunner({ db: {} as never, onLog: (line) => lines.push(line) });
+
+    await runner.runDaemon({ minDelayMinutes: 0, maxDelayMinutes: 0 });
+
+    expect(lines).toEqual([expect.stringContaining('SYNC_DAEMON_DISABLED=true')]);
+    expect(mockClaimNextCredentialForSync).not.toHaveBeenCalled();
+    vi.unstubAllEnvs();
+  });
+
+  it('claims with excludeLeased, so it never syncs an account a worker holds', async () => {
+    mockClaimNextCredentialForSync.mockResolvedValue(null);
+    const runner = new SyncRunner({ db: {} as never, onLog: () => {} });
+
+    await (runner as unknown as SyncRunnerPrivates).getNextCredentialToSync();
+
+    expect(mockClaimNextCredentialForSync.mock.calls[0][1]).toMatchObject({ excludeLeased: true });
+  });
+
+  it('reports the Retry-After Aurora sent with a 429', async () => {
+    mockDecrypt.mockImplementation((value: string) => `plain-${value}`);
+    mockSignIn.mockRejectedValue(
+      new AuroraRequestError({ code: 'rate_limited', message: 'slow down', status: 429, retryAfterMs: 90_000 }),
+    );
+    const runner = new SyncRunner({
+      db: {} as never,
+      transaction: async (callback) => callback({} as never),
+      onLog: () => {},
+      onError: () => {},
+    });
+    vi.spyOn(runner as unknown as SyncRunnerPrivates, 'recordSyncFailure').mockResolvedValue(undefined);
+
+    const outcome = await runner.syncCredential(donorCredential());
+
+    expect(outcome).toMatchObject({ status: 'error', transient: true, retryAfterMs: 90_000 });
   });
 });

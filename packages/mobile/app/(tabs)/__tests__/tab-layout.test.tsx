@@ -225,6 +225,7 @@ vi.mock('expo-router/unstable-native-tabs', () => {
       labelStyle,
       tintColor,
       badgeBackgroundColor,
+      unstable_nativeProps,
     }: {
       children?: ReactNode;
       minimizeBehavior?: string;
@@ -232,6 +233,7 @@ vi.mock('expo-router/unstable-native-tabs', () => {
       labelStyle?: unknown;
       tintColor?: unknown;
       badgeBackgroundColor?: string;
+      unstable_nativeProps?: { ios?: { bottomAccessoryHidden?: boolean } };
     }) =>
       createElement(
         'nav',
@@ -242,6 +244,7 @@ vi.mock('expo-router/unstable-native-tabs', () => {
           'data-label-style': JSON.stringify(labelStyle),
           'data-tint-color': typeof tintColor === 'string' ? tintColor : '',
           'data-badge-background-color': badgeBackgroundColor ?? '',
+          'data-bottom-accessory-hidden': String(unstable_nativeProps?.ios?.bottomAccessoryHidden ?? false),
         },
         children,
       ),
@@ -747,6 +750,31 @@ describe('TabLayout', () => {
     rerender(<TabLayout />);
 
     expect(container.querySelector('[data-bottom-accessory="true"]')).toBe(host);
+    expect(accessoryMounts.count).toBe(1);
+  });
+
+  it('hides the accessory platter on the hold and zone filter boards without unmounting its host', () => {
+    // Their controls sit where the platter draws. Hidden through the native prop so the
+    // host never detaches with the bar on screen (#5055).
+    cfg.nativeAccessoryActive = true;
+    cfg.hasCurrentClimb = true;
+    cfg.segments = ['(tabs)', 'climbs'];
+
+    const { container, rerender } = render(<TabLayout />);
+    const tabs = () => container.querySelector('[data-tabs="true"]');
+    const host = container.querySelector('[data-bottom-accessory="true"]');
+    expect(tabs()?.getAttribute('data-bottom-accessory-hidden')).toBe('false');
+
+    for (const route of ['holds', 'zone']) {
+      cfg.segments = ['(tabs)', 'climbs', route];
+      rerender(<TabLayout />);
+      expect(tabs()?.getAttribute('data-bottom-accessory-hidden')).toBe('true');
+      expect(container.querySelector('[data-bottom-accessory="true"]')).toBe(host);
+    }
+
+    cfg.segments = ['(tabs)', 'climbs'];
+    rerender(<TabLayout />);
+    expect(tabs()?.getAttribute('data-bottom-accessory-hidden')).toBe('false');
     expect(accessoryMounts.count).toBe(1);
   });
 

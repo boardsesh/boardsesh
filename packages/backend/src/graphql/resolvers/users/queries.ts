@@ -10,6 +10,7 @@ import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, validateInput } from '../shared/helpers';
 import { BoardNameSchema } from '../../../validation/schemas';
 import { getAuroraCredentialStatuses } from '../../../services/aurora-credentials';
+import { mapAuroraCredentialStatus } from './credential-status';
 import { loadProfileRoleFlags } from './role-flags';
 import { FAVORITE_COUNT_SUBQUERY } from './favorite-count';
 
@@ -66,13 +67,7 @@ export const userQueries = {
 
     const credentials = await getAuroraCredentialStatuses(ctx.userId);
 
-    return credentials.map((credential) => ({
-      boardType: credential.boardType,
-      username: credential.auroraUsername,
-      userId: credential.auroraUserId ?? undefined,
-      syncedAt: credential.lastSyncAt ?? undefined,
-      hasToken: credential.syncStatus !== 'linked',
-    }));
+    return credentials.map(mapAuroraCredentialStatus);
   },
 
   /**

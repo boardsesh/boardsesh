@@ -1,6 +1,116 @@
 {
-  "generatedAt": "2026-09-25T23:41:46.011Z",
+  "generatedAt": "2026-09-29T12:32:27.671Z",
   "entries": [
+    {
+      "prNumber": 5872,
+      "category": "fixed",
+      "title": "Fixed: the lightbulb button in Create a climb now opens the Bluetooth device picker again.",
+      "mergedAt": "2026-09-29T11:33:30Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5872"
+    },
+    {
+      "prNumber": 5879,
+      "category": "new",
+      "title": "Your linked Kilter and Tension logbooks now sync around the clock",
+      "mergedAt": "2026-09-28T11:55:05Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5879",
+      "body": "MoonBoard gyms show up on the map on their own"
+    },
+    {
+      "prNumber": 5873,
+      "category": "new",
+      "title": "Link your Kilter or Tension account and your logbook starts syncing right away",
+      "mergedAt": "2026-09-27T08:39:38Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5873",
+      "body": "Tap Sync now on a linked board to pull your latest sends"
+    },
+    {
+      "prNumber": 5835,
+      "category": "improved",
+      "title": "Old MoonBoard climb links now show that climb's grades, ascents, similar climbs and beta",
+      "mergedAt": "2026-09-26T05:31:26Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5835"
+    },
+    {
+      "prNumber": 5837,
+      "category": "improved",
+      "title": "Your You page stops reloading your whole logbook every time you switch back to it. New ticks still show up the moment you open it.",
+      "mergedAt": "2026-09-26T05:13:26Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5837",
+      "body": "Grade-by-angle bars on a climb load instantly on boards you've downloaded, even with no signal."
+    },
+    {
+      "prNumber": 5840,
+      "category": "improved",
+      "title": "Grade-filtered climb lists load faster, most of all on big boards",
+      "mergedAt": "2026-09-26T05:12:15Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5840"
+    },
+    {
+      "prNumber": 5802,
+      "category": "fixed",
+      "title": "Fine-tune your rest timer in 5-second steps instead of 15 — dial in exactly the rest you want.",
+      "mergedAt": "2026-09-26T04:30:39Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5802"
+    },
+    {
+      "prNumber": 5823,
+      "category": "improved",
+      "title": "Pick Staging or Production from the preview list when testing an update.",
+      "mergedAt": "2026-09-26T03:30:07Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5823"
+    },
+    {
+      "prNumber": 5830,
+      "category": "improved",
+      "title": "MoonBoard boards stop re-downloading every grade each week, so syncing is faster and uses less data",
+      "mergedAt": "2026-09-26T03:26:27Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5830"
+    },
+    {
+      "prNumber": 5818,
+      "category": "fixed",
+      "title": "Popular boards stay listed while we ship updates, instead of disappearing for a few minutes",
+      "mergedAt": "2026-09-26T02:55:00Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5818"
+    },
+    {
+      "prNumber": 5809,
+      "category": "improved",
+      "title": "The create and hold-filter boards no longer draw dots on every hold; tap the holds themselves",
+      "mergedAt": "2026-09-26T01:33:40Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5809"
+    },
+    {
+      "prNumber": 5813,
+      "category": "new",
+      "title": "Hold heatmap redesigned. Used holds are shaded violet inside their own shapes, and they are ranked so the hot holds stand out.",
+      "mergedAt": "2026-09-26T01:33:04Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5813",
+      "body": "Three modes: Climbs, Starts & finishes, and Grade.\nOn the create board, the heatmap follows your brush.\nThe flame now stays put while you browse."
+    },
+    {
+      "prNumber": 5806,
+      "category": "fixed",
+      "title": "Settings has a back button again, so you can always get out",
+      "mergedAt": "2026-09-26T00:20:48Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5806"
+    },
+    {
+      "prNumber": 5807,
+      "category": "fixed",
+      "title": "The current climb bar no longer covers the hold-type buttons when you search by holds",
+      "mergedAt": "2026-09-26T00:12:56Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5807"
+    },
+    {
+      "prNumber": 5143,
+      "category": "new",
+      "title": "The grade you gave a climb is now the grade you see on it, and the one it sorts and filters by. The crowd's number sits underneath when the two disagree.",
+      "mergedAt": "2026-09-26T00:12:14Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5143",
+      "body": "Grade a climb you haven't sent yet — handy on boards where everything reads sandbagged."
+    },
     {
       "prNumber": 5790,
       "category": "fixed",

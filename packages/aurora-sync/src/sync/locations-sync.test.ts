@@ -418,6 +418,115 @@ describe('syncAllAuroraBoardLocations fetcher dispatch', () => {
     }
   });
 
+  it('flushes what it already read before rethrowing a mid-crawl rate limit', async () => {
+    // A full crawl is thousands of gyms over hours, buffered in memory until
+    // one upsert at the end. Without flushing first, a late 429 would discard
+    // every already-read gym and a retry would start over from the first one.
+    const upsertedRecords: Array<{ sourceKey: string }> = [];
+    const stamped: string[][] = [];
+
+    vi.doMock('../api/pins-api', () => ({
+      fetchAuroraPins: () =>
+        Promise.resolve({
+          gyms: [BOARD_HOUSE_PIN, { ...BOARD_HOUSE_PIN, id: 999 }, { ...BOARD_HOUSE_PIN, id: 1000 }],
+        }),
+    }));
+    vi.doMock('@boardsesh/location-sync', async (importOriginal) => ({
+      ...(await importOriginal<typeof import('@boardsesh/location-sync')>()),
+      upsertPublicBoardLocations: (_db: unknown, records: Array<{ sourceKey: string }>) => {
+        upsertedRecords.push(...records);
+        return Promise.resolve({
+          boardsSeen: 0,
+          boardsUpserted: 0,
+          boardsSkipped: 0,
+          gymsSeen: 0,
+          gymsUpserted: 0,
+          skipped: [],
+        });
+      },
+    }));
+    vi.doMock('@boardsesh/db/queries', async (importOriginal) => ({
+      ...(await importOriginal<typeof import('@boardsesh/db/queries')>()),
+      findCrawledGymSourceKeys: () => Promise.resolve(new Set<string>()),
+      markGymWallsCrawled: (_db: unknown, keys: string[]) => {
+        stamped.push(keys);
+        return Promise.resolve();
+      },
+    }));
+    vi.resetModules();
+
+    try {
+      const { syncAuroraBoardLocations: syncBoard } = await import('./locations-sync');
+      // Constructed from the SAME module instance `locations-sync.ts` resolved
+      // after the reset above — the statically-imported `AuroraRequestError`
+      // at this file's top is a different class object post-`vi.resetModules`,
+      // so `instanceof` inside the reloaded module would never match it.
+      const { AuroraRequestError: ReloadedAuroraRequestError } = await import('../api/errors');
+      // Gym 123 reads fine; 999 is rate limited; 1000 must never be asked for.
+      const requestedIds: number[] = [];
+      const run = syncBoard({
+        db: {} as never,
+        board: 'tension',
+        fetchGymUser: (pin) => {
+          requestedIds.push(pin.id);
+          if (pin.id === 999) {
+            return Promise.reject(
+              new ReloadedAuroraRequestError({ code: 'rate_limited', message: 'slow down', retryAfterMs: 3_600_000 }),
+            );
+          }
+          return Promise.resolve({ id: pin.id, walls: [makeWall()], gym: null });
+        },
+      });
+
+      await expect(run).rejects.toMatchObject({ code: 'rate_limited', retryAfterMs: 3_600_000 });
+      expect(requestedIds).toEqual([123, 999]);
+      // Gym 123's read is flushed to the database rather than discarded.
+      expect(upsertedRecords.map((record) => record.sourceKey)).toEqual(['tension:123']);
+      expect(stamped).toEqual([['tension:123']]);
+    } finally {
+      vi.doUnmock('../api/pins-api');
+      vi.doUnmock('@boardsesh/location-sync');
+      vi.doUnmock('@boardsesh/db/queries');
+      vi.resetModules();
+    }
+  });
+
+  it('hands the stop signal to the pins request and every gym read, and stops between gyms', async () => {
+    const pinSignals: Array<AbortSignal | undefined> = [];
+    const readSignals: Array<AbortSignal | undefined> = [];
+    const controller = new AbortController();
+
+    vi.doMock('../api/pins-api', () => ({
+      fetchAuroraPins: (_board: string, signal?: AbortSignal) => {
+        pinSignals.push(signal);
+        return Promise.resolve({ gyms: [BOARD_HOUSE_PIN, { ...BOARD_HOUSE_PIN, id: 999 }] });
+      },
+    }));
+    vi.resetModules();
+
+    try {
+      const { syncAuroraBoardLocations: syncBoard } = await import('./locations-sync');
+      const run = syncBoard({
+        db: {} as never,
+        board: 'tension',
+        signal: controller.signal,
+        fetchGymUser: (_pin, signal) => {
+          readSignals.push(signal);
+          // The job stops while the first gym is read: the second is never asked for.
+          controller.abort(new Error('worker stopping'));
+          return Promise.resolve(undefined);
+        },
+      });
+
+      await expect(run).rejects.toThrow('worker stopping');
+      expect(pinSignals).toEqual([controller.signal]);
+      expect(readSignals).toEqual([controller.signal]);
+    } finally {
+      vi.doUnmock('../api/pins-api');
+      vi.resetModules();
+    }
+  });
+
   it('logs progress on the interval and always on the last gym', async () => {
     // The only production signal during a multi-hour crawl that a healthy run
     // isn't a stalled one — a run ending on "read 450/476" is indistinguishable

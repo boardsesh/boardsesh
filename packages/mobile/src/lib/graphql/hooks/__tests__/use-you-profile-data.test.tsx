@@ -16,6 +16,8 @@ vi.mock('../use-you-data', () => ({
   useUserClimbPercentile: vi.fn(() => ({ ...settledQuery, data: null })),
 }));
 
+vi.mock('expo-router', () => ({ useIsFocused: () => true }));
+
 vi.mock('../../../../hooks/use-grade-format', () => ({
   useGradeFormat: () => ({ gradeFormat: 'v-grade' }),
 }));

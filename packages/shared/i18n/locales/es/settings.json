@@ -1,4 +1,46 @@
 {
+  "export": {
+    "title": "Exportar datos de escalada",
+    "description": "Guarda tu historial de escalada, listas y bloques en JSON. Elige un tipo de plafón.",
+    "weekly": "Preparamos una copia por plafón cada semana UTC. Las descargas reutilizan esa copia hasta la semana siguiente.",
+    "expiry": "Los archivos caducan 14 días después de crearse. Cada descarga en el navegador usa un enlace nuevo que dura 5 minutos.",
+    "boardType": "Tipo de plafón",
+    "sprayWalls": "Muros spray",
+    "format": "Formato del archivo",
+    "boardseshFormat": "JSON de Boardsesh",
+    "auroraFormat": "JSON de Aurora",
+    "boardseshDescription": "Tu archivo completo de escalada de Boardsesh para este tipo de plafón, con tu historial, listas y bloques creados.",
+    "auroraDescription": "Datos de escalada en formato Aurora para herramientas compatibles o equipos de soporte. Descargar este archivo no transfiere tu historial a la aplicación oficial de un plafón.",
+    "signIn": "Inicia sesión para exportar tus datos de escalada.",
+    "notRequested": "Todavía no hay una exportación preparada esta semana.",
+    "generate": "Preparar exportación",
+    "retry": "Reintentar",
+    "generating": "Preparando tus datos de escalada…",
+    "pollStopped": "Tu exportación sigue preparándose. Pulsa Actualizar para comprobarlo de nuevo.",
+    "ready": "Tu exportación está lista",
+    "exportedAt": "Copia creada: {{date}}",
+    "expiresAt": "El archivo caduca: {{date}}",
+    "refreshAt": "Podrás obtener una nueva copia a partir del {{date}}.",
+    "retryAt": "Puedes reintentarlo a partir del {{date}}.",
+    "download": "Descargar JSON",
+    "refresh": "Actualizar",
+    "offline": "Conéctate a internet para preparar o descargar tu exportación.",
+    "unavailable": "Las exportaciones no están disponibles por ahora. Reinténtalo más tarde.",
+    "failed": "No se ha podido preparar tu exportación. Reinténtalo.",
+    "archiveInvalid": "No se puede leer esta exportación guardada. Contacta con el equipo de asistencia o inténtalo la próxima semana.",
+    "tooLarge": "Esta exportación es demasiado grande para prepararla. Contacta con el equipo de asistencia.",
+    "loadFailed": "No se ha podido comprobar tu exportación. Actualiza para reintentarlo.",
+    "requestFailed": "No se ha podido preparar tu exportación. Reinténtalo.",
+    "downloadFailed": "No se ha podido abrir la descarga. Pulsa Descargar JSON para obtener un enlace nuevo.",
+    "rateLimited": "Has solicitado demasiadas exportaciones. Reinténtalo más tarde.",
+    "outboxReadFailed": "No se ha podido comprobar si tus cambios se han sincronizado. Reinténtalo antes de exportar.",
+    "unsyncedTitle": "Algunos cambios no se han sincronizado",
+    "unsyncedMessage": "Hay cambios sin sincronizar en este dispositivo ({{count}}). Espera a que se sincronicen para incluirlos o exporta los datos ya sincronizados. Esta copia se reutiliza hasta la semana siguiente.",
+    "exportSynced": "Exportar datos sincronizados",
+    "waitForSync": "Esperar a la sincronización",
+    "fileExpired": "Este archivo ha caducado. Actualiza para comprobar si hay una exportación nueva.",
+    "formatUnavailable": "Este formato no está disponible para la exportación actual."
+  },
   "metadata": {
     "settings": {
       "title": "Ajustes",
@@ -158,14 +200,16 @@
         "title": "Quitar vínculo de cuenta",
         "description": "¿Seguro que quieres desvincular tu cuenta de {{boardName}}?",
         "ok": "Sí, desvincular"
-      }
+      },
+      "syncNow": "Sincronizar ahora"
     },
     "status": {
       "connected": "Vinculado",
       "error": "Error",
       "expired": "Caducado",
       "syncing": "Sincronizando",
-      "duplicateAccountCircuits": "Los circuitos no se están sincronizando: otra cuenta de Boardsesh usa este mismo inicio de sesión del plafón, así que la sincronización de playlists está en pausa para las dos. Tus encadenes y valoraciones siguen llegando."
+      "duplicateAccountCircuits": "Los circuitos no se están sincronizando: otra cuenta de Boardsesh usa este mismo inicio de sesión del plafón, así que la sincronización de playlists está en pausa para las dos. Tus encadenes y valoraciones siguen llegando.",
+      "syncingHint": "Sincronizando, vuelve en un rato"
     },
     "unsynced": {
       "title_one": "{{count}} elemento pendiente de sincronizar",
@@ -218,7 +262,11 @@
       "importInterrupted": "La importación se detuvo antes de terminar. Volver a importar el archivo es seguro.",
       "requestDataFailed": "No se pudo abrir el correo. Inténtalo de nuevo.",
       "requestDataCopyFailed": "No se pudo copiar la solicitud. Inténtalo de nuevo.",
-      "passwordHelp": "Tus credenciales se cifran antes de guardarse."
+      "passwordHelp": "Tus credenciales se cifran antes de guardarse.",
+      "syncNowRateLimited": "Más despacio, acabas de pedirlo. Vuelve a intentarlo en un minuto.",
+      "syncNowUnavailable": "Sincronizar ahora aún no está activado. Tu logbook se sigue sincronizando solo.",
+      "syncNowNotLinked": "Vuelve a conectar esta cuenta para sincronizarla.",
+      "syncNowFailed": "No se pudo iniciar la sincronización. Inténtalo de nuevo en un rato."
     },
     "import": {
       "steps": {

@@ -41,4 +41,19 @@ void describe('credential backoff', () => {
     assert.equal(isCredentialInBackoff(withinWindow, attemptAt, 2), true);
     assert.equal(isCredentialInBackoff(pastWindow, attemptAt, 2), false);
   });
+
+  void it('holds for the later of Retry-After and the backoff, never their sum', () => {
+    const attemptAt = new Date('2026-07-08T00:00:00Z');
+    const hour = 60 * 60 * 1000;
+    const retryAfterUntil = new Date(attemptAt.getTime() + hour);
+    // 9 failures → 6 h backoff, longer than the 1 h Retry-After.
+    assert.equal(isCredentialInBackoff(new Date(attemptAt.getTime() + 2 * hour), attemptAt, 9, retryAfterUntil), true);
+    assert.equal(isCredentialInBackoff(new Date(attemptAt.getTime() + 6 * hour), attemptAt, 9, retryAfterUntil), false);
+    // 1 failure → 2 min backoff, shorter than the Retry-After.
+    assert.equal(
+      isCredentialInBackoff(new Date(attemptAt.getTime() + 30 * 60 * 1000), attemptAt, 1, retryAfterUntil),
+      true,
+    );
+    assert.equal(isCredentialInBackoff(new Date(attemptAt.getTime() + hour), attemptAt, 1, retryAfterUntil), false);
+  });
 });

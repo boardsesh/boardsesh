@@ -1,6 +1,6 @@
 import { createHash } from 'crypto';
 import { storedWoodsSizeId } from './woods-authoring';
-import { eq, and, gte, desc, asc, inArray, sql } from 'drizzle-orm';
+import { eq, and, gt, asc, inArray, sql } from 'drizzle-orm';
 import {
   type CheckMoonBoardClimbDuplicatesInput,
   type ClimbSearchInput,
@@ -578,13 +578,31 @@ export const climbQueries = {
   },
 
   /**
-   * Get climb stats history for the last 12 months
+   * One entry per angle the climb has been sent at, from the live stats table.
+   *
+   * The name is historical. This used to return up to twelve months of weekly
+   * and daily snapshots from `board_climb_stats_history` — a mean of 1,320
+   * scattered rows per call, 2.9 s cold on a popular Kilter climb — and every
+   * live caller (the mobile play drawer's grade bars, crowd label and angle
+   * sheet) kept only the newest row per angle and threw the rest away. The web
+   * chart that drew the series was dead code and is gone. Reading the current
+   * row per angle gives those callers the same shape with fresher numbers, in
+   * about 1 ms and ~18 buffers through the stats primary key.
+   *
+   * `ascensionist_count > 0` is the snapshot writer's own filter, so an angle
+   * nobody has sent never appeared here and still does not. `createdAt` is the
+   * stats row's `updated_at`: the moment these numbers were current, which is
+   * what the old snapshot timestamp meant too.
    */
   climbStatsHistory: async (
     _: unknown,
     { boardName, climbUuid }: { boardName: string; climbUuid: string },
     ctx: ConnectionContext,
   ) => {
+    // Its own bucket, at the same 60/min as climbStatsForAngles: the drawer
+    // keys it on climbUuid and caches it for five minutes, so this only bites a
+    // scraper walking uuids through an unauthenticated resolver.
+    await applyRateLimit(ctx, 60, 'climb-stats-history');
     validateInput(BoardNameSchema, boardName, 'boardName');
     validateInput(ExternalUUIDSchema, climbUuid, 'climbUuid');
 
@@ -592,42 +610,35 @@ export const climbQueries = {
       throw new Error(`Invalid board name: ${boardName}. Must be one of: ${SUPPORTED_BOARDS.join(', ')}`);
     }
 
-    const twelveMonthsAgo = new Date();
-    twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
-
     const rows = await db
       .select({
-        angle: dbSchema.boardClimbStatsHistory.angle,
-        ascensionistCount: dbSchema.boardClimbStatsHistory.ascensionistCount,
-        qualityAverage: dbSchema.boardClimbStatsHistory.qualityAverage,
-        difficultyAverage: dbSchema.boardClimbStatsHistory.difficultyAverage,
-        displayDifficulty: dbSchema.boardClimbStatsHistory.displayDifficulty,
-        createdAt: dbSchema.boardClimbStatsHistory.createdAt,
+        angle: dbSchema.boardClimbStats.angle,
+        ascensionistCount: dbSchema.boardClimbStats.ascensionistCount,
+        qualityAverage: dbSchema.boardClimbStats.qualityAverage,
+        difficultyAverage: dbSchema.boardClimbStats.difficultyAverage,
+        displayDifficulty: dbSchema.boardClimbStats.displayDifficulty,
+        updatedAt: dbSchema.boardClimbStats.updatedAt,
       })
-      .from(dbSchema.boardClimbStatsHistory)
+      .from(dbSchema.boardClimbStats)
       .where(
         and(
-          eq(dbSchema.boardClimbStatsHistory.boardType, boardName),
-          eq(dbSchema.boardClimbStatsHistory.climbUuid, climbUuid),
-          gte(dbSchema.boardClimbStatsHistory.createdAt, twelveMonthsAgo.toISOString()),
-          // The same rule `climbStatsForAngles` carries, for the same rows a month
-          // at a time: a retained uuid would otherwise buy the twelve-month
-          // ascent, quality and grade trajectory of a climb on a wall that has
-          // since gone private. This resolver is unauthenticated, so the viewer is
-          // whatever the socket carries and usually null. A no-op on the other
-          // eight board types.
+          eq(dbSchema.boardClimbStats.boardType, boardName),
+          eq(dbSchema.boardClimbStats.climbUuid, climbUuid),
+          gt(dbSchema.boardClimbStats.ascensionistCount, 0),
+          // The same rule `climbStatsForAngles` carries: a retained uuid must not
+          // keep buying the ascent, quality and grade numbers of a climb on a
+          // wall that has since gone private. This resolver is unauthenticated,
+          // so the viewer is whatever the socket carries and usually null. A
+          // no-op on the other eight board types.
           sprayReferenceVisibilityCondition(
-            {
-              boardType: dbSchema.boardClimbStatsHistory.boardType,
-              climbUuid: dbSchema.boardClimbStatsHistory.climbUuid,
-            },
+            { boardType: dbSchema.boardClimbStats.boardType, climbUuid: dbSchema.boardClimbStats.climbUuid },
             ctx?.userId,
           ),
         ),
       )
-      .orderBy(desc(dbSchema.boardClimbStatsHistory.createdAt));
+      .orderBy(asc(dbSchema.boardClimbStats.angle));
 
-    return rows;
+    return rows.map(({ updatedAt, ...row }) => ({ ...row, createdAt: updatedAt.toISOString() }));
   },
 
   /**

@@ -277,12 +277,12 @@ encodes the resolved opacity (`veil-<fieldhex>-<pct>`). A board already measurin
 zero (light mode, or the MoonBoards above) keeps sharing the key, since the ceiling
 changes nothing there.
 
-The same trade decides depth. The create board's discoverability dots — the faint
-marks that say "this hold is tappable" — are drawn UNDER the rendered holds
-(`HoldMarkerLayer`, in `LayeredClimbImage`'s `underOverlay` slot), while the
-transparent tap targets stay on top where the touches are. A dot painted over a lit
-hold lands in the middle of its fill and its role glyph; a dot under one marks the
-unlit holds it is actually for.
+The same trade decides depth. Anything the create board draws on the wall rather
+than on the climb (the heatmap) goes UNDER the rendered holds, in
+`LayeredClimbImage`'s `underOverlay` slot, while the invisible full-bleed tap
+overlay stays on top where the touches are. The board used to draw a round
+"discoverability" dot on every hold in that slot; those are gone, and the board
+photo itself is the target.
 
 Note this applies to the **create** board only. The hold-filter and zone boards draw
 their own overlays and never feed the renderer any frames, so no veil is rendered there

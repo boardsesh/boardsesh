@@ -54,7 +54,7 @@ import type { OfflineDatabase, QueryInvalidator, SqlExecutor, SqlValue } from '.
 import { offlineBoardKey, type OfflineBoardScope } from '../offline-board-key';
 import { climbsScopeFilter } from '../sync/board-scope-sql';
 import { isScopeDownloadComplete } from '../sync/checkpoints';
-import { invalidateKeysForTable } from '../sync/invalidate-keys';
+import { invalidateKeysForTable, scopedInvalidateFilters } from '../sync/invalidate-keys';
 import { runPullWrite } from '../sync/pull-write';
 import { decodeHoldSetIds, editPostings, encodeHoldSet, encodePostings, holdStateToRole } from './query';
 
@@ -799,8 +799,12 @@ export async function ensureHoldIndex(
 
   const changed = result.holdSetsWritten + result.holdSetsDeleted + result.postingsWritten > 0;
   if (options.queryClient && changed) {
+    // Scoped to this board, and never cancelling a fetch already in flight: the
+    // heatmap's own queryFn runs this very build (it joins it above), so a
+    // cancelling refetch would throw away the answer the build was for and
+    // start the aggregate over. The in-flight fetch reads the finished index.
     for (const key of invalidateKeysForTable('board_climb_hold_sets') ?? []) {
-      options.queryClient.invalidateQueries({ queryKey: key });
+      options.queryClient.invalidateQueries(scopedInvalidateFilters(key, scope), { cancelRefetch: false });
     }
   }
   return result;

@@ -37,6 +37,13 @@ type ActionButtonProps = {
   accessibilityHint?: string;
   /** Swap the glyph for a spinner while the action's work is in flight. */
   busy?: boolean;
+  /**
+   * Makes the button a toggle: `togglebutton` role with `checked` state, which
+   * is what VoiceOver/TalkBack read as "on"/"off". Omitted → a plain button.
+   */
+  checked?: boolean;
+  /** Spoken after the label, e.g. the heatmap's current mode. */
+  accessibilityValueText?: string;
 };
 
 export function ActionButton({
@@ -50,6 +57,8 @@ export function ActionButton({
   accessibilityLabel,
   accessibilityHint,
   busy = false,
+  checked,
+  accessibilityValueText,
 }: ActionButtonProps) {
   const { dim, icon } = SIZES[size];
   const buttonStyle: ViewStyle[] = [
@@ -68,10 +77,11 @@ export function ActionButton({
     <Pressable
       onPress={onPress}
       disabled={disabled}
-      accessibilityRole="button"
+      accessibilityRole={checked === undefined ? 'button' : 'togglebutton'}
       accessibilityLabel={accessibilityLabel}
       accessibilityHint={accessibilityHint}
-      accessibilityState={{ disabled, selected: active, busy }}
+      accessibilityState={checked === undefined ? { disabled, selected: active, busy } : { disabled, checked, busy }}
+      accessibilityValue={accessibilityValueText ? { text: accessibilityValueText } : undefined}
       style={({ pressed }) => [
         ...buttonStyle,
         disabled && drawerActionBarStyles.actionButtonDisabled,

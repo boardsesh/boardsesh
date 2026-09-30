@@ -66,6 +66,8 @@ type Climb {
   boardseshDifficulty: Float
   "Boardsesh grade confidence tier: 'confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate' | 'moonboard_angle_estimate' | 'moonboard_wide_angle_estimate'. All three estimate tiers cover an angle with no ascents: cross_angle_estimate is projected from the climb's other angles, moonboard_angle_estimate is a MoonBoard grade transposed from the board's other fixed angle, and moonboard_wide_angle_estimate is a MoonBoard grade borrowed from another board's angle-effect shape (moonboard-wide-angles flag angles). Null when no grade row exists."
   boardseshConfidence: String
+  "The signed-in climber's OWN grade for this climb at this angle: the difficulty of their latest tick that carries one, clamped to the boulder scale. Populated only when the search asked for useMyGrades — that search's filter and difficulty sort key off exactly this value (falling back to the crowd's grade where it is null), so a row can never disagree with its own position in the list. Never round-tripped through the party queue: it is one climber's private opinion, not a property of the climb."
+  myDifficulty: Int
   "Board configuration to draw this climb on, resolved against its setter's boards. Populated by userClimbs; null wherever the board is already known from the route."
   renderBoard: RenderBoardConfig
   """
@@ -279,6 +281,8 @@ input ClimbSearchInput {
   minUserRating: Int
   "Only show climbs the user has rated at this angle (requires auth)"
   onlyRatedByMe: Boolean
+  "Key the grade filter and the difficulty sort off the climber's own grade instead of the crowd's: the difficulty of their latest tick for this climb+angle that carries one, clamped to the boulder scale, falling back to the rounded display difficulty where they never graded it. Keeps a re-graded climb in the band its row already displays. (requires auth)"
+  useMyGrades: Boolean
   "Show only the user's draft climbs (requires auth)"
   onlyDrafts: Boolean
   "Show only unclimbed projects (climbs with 0 ascents)"
@@ -892,8 +896,8 @@ type Angle {
 }
 
 """
-A single snapshot of climb statistics from the history table.
-Captured during shared sync to track trends over time.
+Current climb statistics at one angle. The name is historical: entries used to
+be snapshots from the history table, and now come from the live stats row.
 """
 type ClimbStatsHistoryEntry {
   "Board angle in degrees"
@@ -906,7 +910,7 @@ type ClimbStatsHistoryEntry {
   difficultyAverage: Float
   "Display difficulty value"
   displayDifficulty: Float
-  "When this snapshot was recorded"
+  "When these numbers were last updated (ISO 8601)"
   createdAt: String!
 }
 
@@ -1088,6 +1092,26 @@ type AuroraCredentialStatus {
   syncedAt: String
   "Whether a valid token is stored"
   hasToken: Boolean!
+  "Sync state of the stored credential: pending, active, error, expired, or linked (no credential)"
+  syncStatus: String
+  "Machine code or message from the last failed sync, when there is one"
+  syncError: String
+  "The queued or running sync this account is waiting on, if any"
+  pendingRunId: ID
+  "Whether Sync now can queue a run for this account (its board's sync is switched on)"
+  syncAvailable: Boolean
+}
+
+"""
+A "Sync now" request for one linked board account.
+"""
+type ProviderSyncRequest {
+  "The background run that will sync the account"
+  runId: ID!
+  "That run's status: queued, running or retrying"
+  status: String!
+  "True when the request joined a run that was already waiting, instead of queueing a new one"
+  coalesced: Boolean!
 }
 
 """
@@ -6490,8 +6514,8 @@ type Query {
   setterStats(input: SetterStatsInput!): [SetterStat!]!
 
   """
-  Get climb stats history for a climb over the last 12 months.
-  Returns snapshots captured during shared sync for trend analysis.
+  Current statistics for a climb, one entry per angle it has been sent at.
+  Despite the name this is no longer a time series; prefer climbStatsForAngles.
   """
   climbStatsHistory(boardName: String!, climbUuid: ID!): [ClimbStatsHistoryEntry!]!
 
@@ -7724,6 +7748,13 @@ type Mutation {
   Delete stored Aurora credentials for a board type.
   """
   deleteAuroraCredential(boardType: String!): Boolean!
+
+  """
+  Pull the latest logbook from a linked board account now.
+  Joins a sync that is already waiting instead of queueing a second one.
+  Rate limited to 5 requests a minute.
+  """
+  requestProviderSync(boardType: String!): ProviderSyncRequest!
 
   # ============================================
   # Favorites Mutations (require auth)
@@ -9717,4 +9748,61 @@ type BoardPresenceStats {
   topGrade: String
   "ISO 8601 timestamp of the most recent send on this wall"
   lastSentAt: String
+}
+
+enum UserDataExportFormat {
+  boardsesh
+  aurora
+}
+
+enum UserDataExportState {
+  not_requested
+  generating
+  ready
+  failed
+  unavailable
+}
+
+type UserDataExportFile {
+  format: UserDataExportFormat!
+  filename: String!
+  fileSize: Float
+  exportedAt: String!
+  expiresAt: String!
+}
+
+type UserDataExportStatus {
+  boardType: String!
+  period: String!
+  status: UserDataExportState!
+  files: [UserDataExportFile!]!
+  refreshAt: String!
+  requestedAt: String
+  completedAt: String
+  retryAt: String
+  error: String
+  "A stable failure code for localized client guidance, when available."
+  errorCode: String
+}
+
+type UserDataExportDownloadLink {
+  url: String!
+  expiresAt: String!
+  filename: String!
+}
+
+extend type Query {
+  "The signed-in climber's recent cached export; defaults to this UTC ISO week."
+  userDataExport(boardType: String!, period: String): UserDataExportStatus!
+  "A five-minute private browser download; no user ID is accepted."
+  userDataExportDownload(
+    boardType: String!
+    period: String!
+    format: UserDataExportFormat!
+  ): UserDataExportDownloadLink!
+}
+
+extend type Mutation {
+  "Prepare a weekly climbing archive and, where supported, its Aurora companion."
+  requestUserDataExport(boardType: String!): UserDataExportStatus!
 }

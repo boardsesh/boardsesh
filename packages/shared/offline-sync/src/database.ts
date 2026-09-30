@@ -43,5 +43,8 @@ export interface OfflineDatabase extends SqlExecutor {
  * app passes its real QueryClient, tests pass a recording fake.
  */
 export interface QueryInvalidator {
-  invalidateQueries(filters: { queryKey: readonly unknown[] }): unknown;
+  invalidateQueries(
+    filters: { queryKey: readonly unknown[]; predicate?: (query: { queryKey: readonly unknown[] }) => boolean },
+    options?: { cancelRefetch?: boolean },
+  ): unknown;
 }

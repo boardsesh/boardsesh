@@ -561,10 +561,9 @@ function scannableSentinels(argumentValues: Record<string, unknown>): Sentinel[]
  * Two different claims live in this one list, and the reason text says which.
  * Most rows are genuinely inapplicable: the field answers with counts, ids the
  * caller already sent, or rows that are not climbs. But some are **seed gaps** —
- * `recentBetaLinks`, `climbStatsHistory`, `followingClimbAscents`, `gymKiosk(s)`,
- * the board-presence rows and `eventsReplay` all read state this sweep does not
- * create (an enriched beta link, a stats history row, a follow, a kiosk, a live
- * queue event, Redis). Their negative half still runs and still has to pass;
+ * `recentBetaLinks`, `followingClimbAscents`, `gymKiosk(s)`, the board-presence
+ * rows and `eventsReplay` all read state this sweep does not create (an
+ * enriched beta link, a follow, a kiosk, a live queue event, Redis). Their negative half still runs and still has to pass;
  * what is unproven is the owner half, so seeding what they read is an
  * improvement, not a rule change.
  */
@@ -582,7 +581,7 @@ const NOT_APPLICABLE: Record<string, string> = {
 
   // --- stats and grades: numbers keyed on a uuid the caller already holds -----
   'Query.angles': 'the static angle catalogue for a board type; the layout id is not read',
-  'Query.climbStatsHistory': 'ascent/quality/grade numbers only, and the seed logs no history rows',
+  'Query.climbStatsHistory': 'ascent/quality/grade numbers per angle, never a name or a frame',
   'Query.climbStatsForAngles': 'counts and grades per angle, never a name or a frame',
   'Query.climbStatsForClimbs': 'counts and grades per uuid, echoing only the uuids the caller sent',
   'Query.boardseshGrade': 'the Boardsesh grade model writes no spray rows, so there is nothing to answer with',

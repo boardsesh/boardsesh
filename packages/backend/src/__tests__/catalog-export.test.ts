@@ -31,7 +31,13 @@ import {
 } from '@boardsesh/db/catalog-snapshot';
 import { uploadToS3, deleteFromS3, listS3Objects } from '../storage/s3';
 import { db } from '../db/client';
-import { buildCatalogArtifact, catalogColumnsFor, parseArgs, runCatalogExport } from '../scripts/export-board-catalog';
+import {
+  buildCatalogArtifact,
+  catalogColumnsFor,
+  parseArgs,
+  runCatalogExport,
+  runCatalogExportWithOptions,
+} from '../scripts/export-board-catalog';
 
 const BUILT_AT = '2026-08-26T07:15:58.102Z';
 // A value that must never appear in a published artifact.
@@ -264,6 +270,46 @@ describe('runCatalogExport', () => {
     await runCatalogExport(['--dry-run']);
     expect(uploadToS3).not.toHaveBeenCalled();
     expect(deleteFromS3).not.toHaveBeenCalled();
+  });
+
+  // The batch worker's attempt fence: checked after the artifact is on S3 and
+  // before the manifest, so a stale attempt never publishes.
+  it('runs the pre-publish hook between the artifact and the manifest, and a throw publishes nothing', async () => {
+    vi.mocked(listS3Objects).mockResolvedValue([]);
+    const uploadsAtHook: string[][] = [];
+    await runCatalogExportWithOptions(
+      { dryRun: false, keyPrefix: CATALOG_PREFIX },
+      {
+        beforeManifestPublish: async () => {
+          uploadsAtHook.push(vi.mocked(uploadToS3).mock.calls.map(([, , key]) => key));
+        },
+      },
+    );
+    expect(uploadsAtHook).toHaveLength(1);
+    expect(uploadsAtHook[0]).toHaveLength(1);
+    expect(uploadsAtHook[0][0]).not.toBe(MANIFEST_KEY);
+    expect(vi.mocked(uploadToS3).mock.calls.at(-1)?.[2]).toBe(MANIFEST_KEY);
+
+    vi.clearAllMocks();
+    await expect(
+      runCatalogExportWithOptions(
+        { dryRun: false, keyPrefix: CATALOG_PREFIX },
+        {
+          beforeManifestPublish: async () => {
+            throw new Error('ATTEMPT_LOST');
+          },
+        },
+      ),
+    ).rejects.toThrow('ATTEMPT_LOST');
+    expect(vi.mocked(uploadToS3).mock.calls.map(([, , key]) => key)).not.toContain(MANIFEST_KEY);
+    expect(listS3Objects).not.toHaveBeenCalled();
+  });
+
+  it('stops before reading anything when the signal is already aborted', async () => {
+    await expect(
+      runCatalogExportWithOptions({ dryRun: false, keyPrefix: CATALOG_PREFIX }, { signal: AbortSignal.abort() }),
+    ).rejects.toThrow();
+    expect(uploadToS3).not.toHaveBeenCalled();
   });
 });
 

@@ -1399,14 +1399,19 @@ export function useUserBetaLinks(
 export { useSimilarClimbs } from './use-similar-climbs';
 
 /**
- * Last-12-months stats snapshots for a climb, one row per (angle, snapshot).
- * Powers the Community "grade by angle" histogram.
+ * Per-angle stats for a climb (grade, stars, sends). Every consumer keeps the
+ * newest entry per angle. Powers the Community "grade by angle" histogram and
+ * the angle picker.
+ *
+ * offlineAwareRequest answers it from local board_climb_stats when the climb's
+ * layout is downloaded (offline, and local-first while online), with the server
+ * as the fallback; a completed stats sync invalidates ['climbStatsHistory'].
  */
 export function useClimbStatsHistory(boardName: string, climbUuid: string | null) {
   return useQuery({
     queryKey: ['climbStatsHistory', boardName, climbUuid],
     queryFn: () =>
-      getHttpClient().request<ClimbStatsHistoryResponse>(CLIMB_STATS_HISTORY, {
+      offlineAwareRequest<ClimbStatsHistoryResponse>(CLIMB_STATS_HISTORY, {
         boardName,
         climbUuid: climbUuid!,
       }),

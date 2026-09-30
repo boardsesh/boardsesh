@@ -1,8 +1,20 @@
 # Production deploys: the concurrency group, and what to do when main stops shipping
 
-`production-deploy.yml` is the only production deployer. Every push to `main`
-starts a run; the run builds web and backend in parallel, gates on both builds
-passing, migrates, then deploys.
+`production-deploy.yml` is the only main-push production deployer. Every push to
+`main` starts a run; web, backend, and mobile OTA staging can run in parallel.
+Service deploys gate on successful builds; mobile OTA promotion additionally
+requires the live backend to serve the staged GraphQL schema.
+
+Migrations run as the dedicated `boardsesh_migrator` role against a known,
+direct PostgreSQL endpoint (`migrate.ts` also holds one session for `SET ROLE`,
+which a transaction-pooling proxy could not keep). Before migrating, the job runs `verify-direct-database.ts`: it compares
+the non-credential `host:port/database` of the `MIGRATOR_DATABASE_URL` secret
+with the Production-environment variable `DATABASE_DIRECT_ENDPOINT`, then runs a
+TLS `SELECT 1`. Any other endpoint, a missing variable, a failed login or a network
+error stops the deploy; there is no fallback to the runtime URL.
+`DATABASE_DIRECT_ENDPOINT` must exist before this step reaches `main`, set to the
+endpoint `MIGRATOR_DATABASE_URL` uses today. Change it deliberately if Railway
+replaces the database's TCP proxy; a password rotation does not change it.
 
 ## Architecture
 
@@ -22,6 +34,23 @@ attempted build has passed, and only then do the deploy jobs run —
 `deploy-web-railway` and `deploy-production-backend`. Whether the web deploy
 runs at all is controlled by the `WEB_DEPLOY_TARGETS` Production-environment
 variable — see [Web deploy targets](#web-deploy-targets) below.
+
+`stage-mobile-ota` calls the mobile publisher to upload the exact iOS and Android
+exports to the tester-only `pr-staging` branch during those builds. It archives
+both exports and their runtime fingerprints. `promote-mobile-ota` waits for the
+attempted builds and backend deploy, checks the live schema once, then uploads
+the archived bytes to the existing `production` branch. It never maps the
+production channel to staging and never re-exports JS. A staging failure does
+not hold web/backend, but marks the run failed and alerts the deploy channel.
+The stage captures each platform's production manifest ID before it publishes;
+promotion fails if a manual or native republish changed either ID meanwhile.
+If the live schema is not ready, promotion fails closed; the next cumulative
+run picks up the unpromoted mobile change. See [mobile OTA updates](mobile-ota-updates.md).
+New main pushes do not cancel or invalidate an in-flight staged OTA: the runs
+are serialized, and the next run publishes the remaining commits. The live
+schema check and per-platform production manifest baseline still protect each
+promotion. An in-flight run does not overwrite a newer main commit with its
+generated changelog; the next run refreshes that file.
 
 www left Vercel on 2026-09-01 (#4655); the workflow's Vercel half — the second
 `next build` inside `build-web`, the `deploy-web` job, and the `check-rollback`
@@ -322,9 +351,14 @@ hand-written server) since the standalone `server.js` is generated at build time
 
 `overlapSeconds` (the other teardown knob) keeps both deployments serving at
 once. It is deliberately unset. Overlap would double the backend's Postgres
-footprint — 5 replicas x `DB_POOL_MAX` 10 — against a shared `max_connections`
-of 200 that has been exhausted before (see
-[db-connectivity.md](./db-connectivity.md)). Railway only sends SIGTERM once the
+footprint — 2 replicas x (`DB_POOL_MAX` 10 + `PGBOSS_POOL_SIZE` 4) = 28 (down from 3
+replicas on 2026-09-26; see [railway-cost-reduction.md](./railway-cost-reduction.md)) — against
+a shared `max_connections` of 100 since the PG18 cutover (200 on PG16, where it
+was exhausted). Even the 15 s drain already puts both fleets on the database at
+once: about 92 connections at the ceiling against 97 non-superuser slots. A
+pooler would cap that, but PgBouncer is parked; see
+[db-connectivity.md](./db-connectivity.md#pgbouncer-parked) for why and when to
+revisit it. Railway only sends SIGTERM once the
 replacement deployment is already healthy, so there is no capacity gap for
 overlap to cover; draining alone addresses the severed-request case.
 
@@ -506,6 +540,11 @@ move to a cloud spot runner pool — tracked in #5131).
 
 `["self-hosted","bs-ci"]` is no longer a legal value for this variable; the
 labels match nothing.
+
+The homelab deploy path for `boardsesh-worker` images (see
+[`docs/homelab-deploys.md`](homelab-deploys.md)) is a separate trust domain
+from the retired CI fleet above: it dispatches to a runner in a different,
+private repo rather than running self-hosted jobs here.
 
 ### Why a second variable
 

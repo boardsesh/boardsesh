@@ -37,14 +37,25 @@ export function credentialBackoffMs(consecutiveFailures: number): number {
  * True when a credential is still inside its backoff window (should be skipped).
  * Mirrors {@link credentialRetryReadySql}; used for in-process decisions/tests.
  */
-export function isCredentialInBackoff(now: Date, lastSyncAttemptAt: Date | null, consecutiveFailures: number): boolean {
+export function isCredentialInBackoff(
+  now: Date,
+  lastSyncAttemptAt: Date | null,
+  consecutiveFailures: number,
+  providerRetryAfterUntil: Date | null = null,
+): boolean {
+  // The provider's Retry-After and the failure backoff each hold the
+  // credential on their own; it is ready once the later of the two has passed.
+  if (providerRetryAfterUntil !== null && now.getTime() < providerRetryAfterUntil.getTime()) return true;
   if (consecutiveFailures <= 0 || lastSyncAttemptAt === null) return false;
   return now.getTime() < lastSyncAttemptAt.getTime() + credentialBackoffMs(consecutiveFailures);
 }
 
 /**
  * SQL predicate for `getNextCredentialToSync`: TRUE when the credential is
- * eligible for another attempt (not inside its backoff window). Keep in lockstep
+ * eligible for another attempt: past the provider's Retry-After
+ * (`provider_retry_after_until`) AND outside its failure backoff window. Two
+ * independent holds, so the credential waits for the later of the two and
+ * never their sum. Keep in lockstep
  * with {@link credentialBackoffMs}. Postgres interval arithmetic mirrors the JS:
  * base 2 min · 2^min(n-1, 20), capped at 6 h.
  *
@@ -57,11 +68,17 @@ export function isCredentialInBackoff(now: Date, lastSyncAttemptAt: Date | null,
  */
 export function credentialRetryReadySql(): SQL {
   return sql`(
-    ${auroraCredentials.consecutiveFailures} <= 0
-    OR ${auroraCredentials.lastSyncAttemptAt} IS NULL
-    OR ${auroraCredentials.lastSyncAttemptAt} + LEAST(
-         interval '2 minutes' * power(2, LEAST(GREATEST(${auroraCredentials.consecutiveFailures} - 1, 0), ${MAX_BACKOFF_DOUBLINGS})),
-         interval '6 hours'
-       ) <= now()
+    (
+      ${auroraCredentials.providerRetryAfterUntil} IS NULL
+      OR ${auroraCredentials.providerRetryAfterUntil} <= now()
+    )
+    AND (
+      ${auroraCredentials.consecutiveFailures} <= 0
+      OR ${auroraCredentials.lastSyncAttemptAt} IS NULL
+      OR ${auroraCredentials.lastSyncAttemptAt} + LEAST(
+           interval '2 minutes' * power(2, LEAST(GREATEST(${auroraCredentials.consecutiveFailures} - 1, 0), ${MAX_BACKOFF_DOUBLINGS})),
+           interval '6 hours'
+         ) <= now()
+    )
   )`;
 }

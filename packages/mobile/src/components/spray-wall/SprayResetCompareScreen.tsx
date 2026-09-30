@@ -341,7 +341,6 @@ export function SprayResetCompareScreen({
           holdTargets={holdTargets}
           activeHoldId={selectedKey}
           onHoldTap={handleRingTap}
-          showHoldMarkers={false}
           renderWidth={boardRender.width}
           renderHeight={boardRender.height}
           renderInTransform={renderInTransform}

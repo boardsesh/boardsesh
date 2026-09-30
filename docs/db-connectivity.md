@@ -189,6 +189,13 @@ The distributed Redis lock those reads' warm-up jobs take is not a substitute:
 it only stops a second _node_ from refreshing, and it is not held on the
 resolver path at all.
 
+`popularBoardConfigs` has since left this pattern entirely: its readers never
+run the statement. A daily pg-boss job computes the list and writes it over the
+old one (`packages/backend/src/services/popular-board-configs.ts`); a reader on
+a miss gets the last list its process saw, or `[]`, and queues a refresh. The
+statement itself now tests `required_set_ids <@ set_ids` instead of walking
+every hold, about 30 s for all configs where it was 548 s.
+
 **When adding a cache-with-fallthrough on a read that costs more than a few
 hundred milliseconds, wrap the fall-through.** The Redis hit rate is not the
 safety property; the concurrency of the miss is.
@@ -220,13 +227,13 @@ rather than an error.
 
 `packages/web/app/lib/db/read-deadline.ts` bounds one read client-side. It races
 the pending query against a timer and rejects with `DbReadTimeoutError`
-(`code: 'DB_READ_TIMEOUT'`) when the timer wins. It is wired at four
-front-door reads — the two statements behind `getClimb`, the all-angles
+(`code: 'DB_READ_TIMEOUT'`) when the timer wins. It is wired at three
+front-door reads — the alias-resolving `getClimb` statement, the all-angles
 stats select, and the shared climb search — and deliberately **not** inside
 `withConnectRetry` or `packages/db`, where it would change behaviour for the
 backend, the sync runners and every script.
 
-**Cancellation covers three of the four.** On a timeout the helper calls
+**Cancellation covers two of the three.** On a timeout the helper calls
 `query.cancel()` the way the health probe does, so a timed-out statement does not
 fire later against a recovered pool. That only works for raw postgres.js
 queries. The list front door's search is drizzle-issued and exposes no
@@ -242,8 +249,8 @@ internally (`Query.cancel()` returns `null`), so a failure to open it surfaces a
 an unhandled rejection the runtime logs. Accepted: a zombie statement firing
 against a recovered pool is worse than a log line.
 
-**One budget per request, not per statement.** The climb page issues three reads
-in sequence, so three independent 6 s deadlines would be an ~18 s request
+**One budget per request, not per statement.** The climb page issues two reads
+in sequence, so two independent 6 s deadlines would be a ~12 s request
 ceiling — the opposite of shedding load. `app/lib/db/request-read-budget.ts`
 puts one deadline timestamp in React's per-render `cache` scope and hands each
 read whatever the earlier ones left, floored at 500 ms. Outside a render scope
@@ -336,12 +343,16 @@ rejects startup parameters that are not in `ignore_startup_parameters`, and
 paths, chosen by what the URL actually points at:
 
 - **Direct Postgres** — set `DB_STATEMENT_TIMEOUT_MS` on the deployment.
+  Production's `boardsesh-backend` and `boardsesh-web` connect directly and
+  take `45000`; the sync daemons do not get it (see "Runaway guards" in
+  [railway-cost-reduction.md](./railway-cost-reduction.md)).
 - **Pooled (PgBouncer) URL** — do it database-side instead, with
   `ALTER ROLE <app_role> SET statement_timeout = '8s'`, which passes through a
   pooler transparently.
 
-`psql "$DATABASE_URL" -c 'show pool_mode;'` tells you which you have: a direct
-Postgres errors, PgBouncer answers.
+Every production URL is direct today ("PgBouncer: parked" below). Do not use
+`SHOW pool_mode` on the application database to tell them apart: PgBouncer
+forwards it to PostgreSQL there. Check the host and port in the URL instead.
 
 ### There is no web health probe
 
@@ -369,6 +380,52 @@ Not covered:
   retry at the job level; routing them through the shared builder is a separate
   change (it would also add `ssl: 'require'`, which their local runs do not
   currently use).
+
+## PgBouncer: parked
+
+**Status: parked 2026-09-26, never deployed.** Every client connects straight to the PG18 primary.
+
+- **Why it was built:** Vercel serverless fan-out, where every function instance
+  opened its own pool (#4842, #4861).
+- **Why it is parked:** www now runs as one Railway container. Production holds
+  about 50 of the 97 connections open to application roles, and Sentry shows
+  zero `53300` (too many connections) errors since the PG18 cutover on 2026-09-20.
+- **What remains:** the postgres.js driver patch for a FATAL during startup
+  (next section), the `postgres.error_code` Sentry tags on web, and the
+  migration direct-endpoint guard ([production-deploy.md](./production-deploy.md)).
+- **Full design:** PR #4849, merge commit `2d22fb8d4`, image
+  `ghcr.io/boardsesh/boardsesh-pgbouncer@sha256:efde5a9496817cc3be00383ca741681d74f44ab7c08bc8fd7b6ecd71db105918`.
+- **Revisit when:** the first `53300` lands in Sentry, steady client connections
+  pass 75, or the backend wants `overlapSeconds`.
+
+Count connections before and after any pool change:
+
+```sql
+SELECT usename, application_name, count(*)
+FROM pg_stat_activity
+WHERE backend_type = 'client backend'
+GROUP BY 1, 2
+ORDER BY 3 DESC;
+```
+
+### A FATAL during startup, and the driver patch that handles it
+
+postgres.js fetches array types on a connection's first ReadyForQuery, before it
+sends the caller's statement. When the server answers that fetch with a FATAL
+and closes (found against PgBouncer's `query_wait_timeout`, but any server that
+ends a session during startup takes the same path), the stock 3.4.9 driver never handled the
+fetch's promise (Node exits on the unhandled rejection unless something like
+Sentry catches it), returned early from `closed()` without clearing the failed
+query, and delivered the error to the caller only because the next socket's
+login tripped over that stale state.
+
+The workspace patch (`packages/db/patches/postgres@3.4.9.patch`, see #5299
+above) handles the fetch's promise, fails the connect with the server's error
+when the socket closes after an error during startup, and clears the query state
+before any startup reconnect. `postgres-disconnect.test.ts` pins this on both
+entry points against a fake server that sends a FATAL during startup: no
+unhandled rejection, one socket, the server's error, and the caller's statement
+written once.
 
 ## Health endpoints
 

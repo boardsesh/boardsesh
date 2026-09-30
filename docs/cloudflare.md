@@ -24,6 +24,12 @@ use only their custom domain. `boardsesh-user-private` and `boardsesh-ota-v3` al
 The apply disables a drifted `r2.dev` URL automatically, but reports an unexpected custom domain as `BLOCKED`
 instead of detaching a hostname during a routine converge. Buckets are created when absent and never deleted.
 
+The private user bucket owns lifecycle rule `boardsesh-user-data-exports-14d`:
+objects under `user-data-exports/` expire after 14 days. The tool preserves every
+other lifecycle rule and refuses unreadable policies or conflicting ownership.
+A newly created bucket needs a second converge to install retention. See
+[user-data-exports.md](./user-data-exports.md) for rollout and access expiry.
+
 ### Token scopes
 
 R2 is **account**-scoped, unlike everything else here, so managing it needs two things the zone work does not:
@@ -405,7 +411,9 @@ with the Vercel web deployment; disabling only the new Cloudflare rule is safe
 but sends every image to Railway. Never disable the `ws` proxy to roll this route
 back because GraphQL, WebSockets, and `/og` share that hostname.
 
-- **Crawler rules** — two rules in `http_request_firewall_custom`, in this order:
+- **Crawler rules** — the first two of the four rules in
+  `http_request_firewall_custom`, in this order (the automation default-deny
+  and the climb-view challenge follow them, both described below):
   1. `skip` (all remaining custom rules) for search engines and share-card
      unfurlers. Brave runs its **own** index rather than reselling Bing or
      Google, so it is allowlisted explicitly. **Scoped to `GET`.** `skip` with
@@ -422,8 +430,8 @@ back because GraphQL, WebSockets, and `/og` share that hostname.
      automated AI training and search crawlers and **Yandex**, using the shared
      tokens in `packages/web/app/lib/crawler-policy.ts`. Google, Bing,
      DuckDuckGo, Apple, Brave, Baidu, Qwant and the share-card unfurlers remain
-     allowed. Human-triggered AI fetchers
-     are not added to this automated-crawler list.
+     allowed. Human-triggered AI fetchers (ChatGPT-User, Claude-User,
+     Perplexity-User) are on the allow list, not this one.
 
   **Yandex moved from the allow list to the block list on 2026-09-11.** It was
   added to the allow list four days earlier, in the AI-crawler commit, with no
@@ -561,6 +569,60 @@ back because GraphQL, WebSockets, and `/og` share that hostname.
 `lower()` on every user-agent comparison is required, not stylistic:
 Cloudflare's `contains` is case-sensitive, so a bare `contains "AhrefsBot"`
 installs cleanly and matches nothing. A test pins that too.
+
+**Self-identified automation is default-denied (2026-09-26).** A third WAF rule,
+`boardsesh:automation-default-deny`, sits after the allow rule and the block
+rule and before the challenge. It blocks a `GET` to www or ws whose UA carries a
+generic automation signature (`bot`, `crawler`, `spider`, `scraper`,
+`headless`, `python`, `go-http-client`, `java/`, `libwww`, `wget/`, `curl/`,
+`scrapy`, `httpclient`) unless the agent is on the allow list. The "unless" is
+rule order: the allow rule's `skip` runs first. So a crawler now has to be
+named to get in, instead of named to be kept out.
+
+Why: `Lightpanda/1.0`, a headless browser for AI agents, was 96% of a www log
+sample and 43% of a ws one that day. It was on no list. It is now named in
+`COST_BLOCKED_CRAWLER_TOKENS` too, because its bare UA carries no signature.
+
+The limits, on purpose:
+- Only agents that say they are automated. Real climbers send `Mozilla/…`, and
+  a browser string only matches when it names itself (`compatible;
+  Googlebot/2.1`). Browser-shaped scrapers stay the challenge's and the rate
+  limit's job.
+- `GET` only, so the mobile app's GraphQL POSTs are never caught. The app's own
+  UAs (`Boardsesh/… CFNetwork`, `okhttp`, `Dalvik`) and our servers' `node`
+  carry no signature, and a test pins that.
+- Exempt paths: `/health`, `/health/db`, `/api/health` (CI polls them with bare
+  curl), `/robots.txt` (so an unlisted bot can read the Disallow lines; named
+  crawlers still get the block rule there), `/.well-known/` (deep-link
+  association files) and the two API surfaces `/api/v1/` and `/v1/partner/`,
+  whose intended clients are scripts and partner servers.
+- Allowed on top of the search engines and unfurlers, because each carries
+  `bot` and would otherwise be caught: the Snapchat unfurler, AppleNewsBot,
+  DuckDuckGo's favicon fetcher and DuckAssistBot, Kagibot, AdsBot-Google,
+  msnbot-media, Sentry's uptime check, the iOS and Android deep-link fetchers,
+  our ESP32 board controller (`ESP32HTTPClient`) and the Internet Archive.
+  SeznamBot stays blocked by name.
+- The web middleware applies the same rule at the origin through
+  `isBlockedCrawler`, for requests that reach Railway directly. There the
+  automation default-deny runs only in a production build without
+  `BOARDSESH_E2E=1` (the CI e2e shards set it): dev and e2e never arrive by
+  the Railway hostname, and Playwright's headless Chromium says
+  `HeadlessChrome`. Named crawlers are refused in every environment.
+
+The zone is on the Free plan, which allows 5 custom rules in total. This rule
+is the fourth, so one slot is left. Anything new should extend an existing
+rule's expression before it takes that slot.
+
+The SEO-scraper tokens on the block rule are now mostly redundant. Keep them for
+one release, then prune them.
+
+**To let an agent in**, add a lowercase substring of its UA to
+`CRAWLER_ALLOW_TOKENS` in `packages/web/app/lib/crawler-policy.ts` (web and
+Cloudflare both read it), with a comment saying who it is and why we want it.
+Add its full UA to the `mustPass` fixture in `scripts/cloudflare-apply.test.ts`.
+The merge deploys both the edge rule and the web middleware. To keep one out
+that carries no signature (as Lightpanda did), add it to
+`COST_BLOCKED_CRAWLER_TOKENS` or `AI_CRAWLER_TOKENS` and to `mustBlock`.
 
 **What this does not catch.** UA blocking only stops crawlers that identify
 themselves honestly. A UA-rotating farm walked ~2,500 climb-view URLs on

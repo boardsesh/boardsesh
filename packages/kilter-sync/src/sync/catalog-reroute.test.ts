@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getTableName, type Table } from 'drizzle-orm';
 
 import type { KilterCatalogClimb, KilterCatalogStat } from '../api/kilter-rest';
+import { KilterApiError } from '../api/errors';
 import type { KilterReferencePull } from './reference-pull';
 
 // The REST layer and the three side-effect passes are mocked so a whole
@@ -112,17 +113,23 @@ function createFakeDb(queues: TableQueues) {
     return stub;
   }
 
+  const insertResult = () => ({
+    onConflictDoUpdate: () => Promise.resolve([]),
+    onConflictDoNothing: () => Promise.resolve([]),
+    returning: () => Promise.resolve([]),
+    then: (onFulfilled: (rows: Rows) => unknown) => Promise.resolve([]).then(onFulfilled),
+  });
   const writer = {
     insert: (table: Table) => ({
       values: (values: Rows | Record<string, unknown>) => {
         inserts.push({ table: getTableName(table), values: Array.isArray(values) ? values : [values] });
-        const written = {
-          onConflictDoUpdate: () => Promise.resolve([]),
-          onConflictDoNothing: () => Promise.resolve([]),
-          returning: () => Promise.resolve([]),
-          then: (onFulfilled: (rows: Rows) => unknown) => Promise.resolve([]).then(onFulfilled),
-        };
-        return written;
+        return insertResult();
+      },
+      // insert().select(unnest …) carries its rows as SQL params; record the
+      // write without them.
+      select: () => {
+        inserts.push({ table: getTableName(table), values: [] });
+        return insertResult();
       },
     }),
     update: (table: Table) => ({
@@ -283,5 +290,17 @@ void describe('a failed /delteduuids fetch', () => {
       // And reconciliation never ran on a list we don't have.
       expect(deletionMocks.reconcileDeletions).not.toHaveBeenCalled();
     });
+  });
+
+  it('rethrows a rate limit instead of treating it as an ordinary unavailable list', () => {
+    // A 429 with Retry-After is not an ordinary unavailable deletion list: it
+    // must reach the runner so it can park the catalog slot and the donor,
+    // rather than carrying on into every layout request during the hold.
+    restMocks.fetchDeletedClimbUuids.mockRejectedValue(
+      new KilterApiError('rate_limited', '/climbs/delteduuids rate limited', 429, 3_600_000),
+    );
+    const { db } = createFakeDb(baseQueues());
+
+    return expect(runCatalog(db)).rejects.toMatchObject({ code: 'rate_limited', retryAfterMs: 3_600_000 });
   });
 });

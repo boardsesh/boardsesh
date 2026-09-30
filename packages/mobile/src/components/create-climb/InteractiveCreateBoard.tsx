@@ -17,7 +17,6 @@ import { useZoomPanGesture } from '../play-drawer/use-zoom-pan-gesture';
 import { spacing } from '../../theme/tokens';
 import { EDITING_VEIL_OPACITY } from '../../lib/board-render-settings';
 import type { BoardHoldTarget } from '../../lib/create-board-holds';
-import { HoldMarkerLayer } from './HoldMarkerLayer';
 import { PaintedHoldsLayer } from './PaintedHoldsLayer';
 import { buildHoldHitTargets } from './holdLayout';
 import { useRestHoldTapGesture } from './use-rest-hold-tap-gesture';
@@ -46,7 +45,6 @@ type InteractiveCreateBoardProps = {
   onPaint: (holdId: number) => void;
   onLongPressHold: (holdId: number) => void;
   mirrored?: boolean;
-  showAllHolds?: boolean;
   /** Exact on-screen board size, computed by the drawer up front so the board
    *  renders immediately (no onLayout round-trip while the sheet animates in). */
   renderWidth: number;
@@ -118,7 +116,6 @@ export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard
   onPaint,
   onLongPressHold,
   mirrored = false,
-  showAllHolds = false,
   renderWidth,
   renderHeight,
   overlay,
@@ -221,30 +218,18 @@ export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard
     [litUpHoldsMap, holdById, boardWidth, boardHeight, renderWidth, mirrored],
   );
 
-  // The wall's own marks — the discoverability dots, and whatever the caller
-  // draws on the board — go UNDER the rendered holds. Above them, a dot lands in
-  // the middle of a lit hold's fill and its role glyph. Memoized for the same
-  // reason as the fallback: a fresh element per render would defeat
-  // BoardImageNative's React.memo on every zoom tick.
+  // Whatever the caller draws on the board (the heatmap) goes UNDER the
+  // rendered holds, so it never covers a lit hold's fill and role glyph.
+  // Memoized for the same reason as the fallback: a fresh element per render
+  // would defeat BoardImageNative's React.memo on every zoom tick.
   const underOverlay = useMemo(
-    () => (
-      <>
-        <HoldMarkerLayer
-          holdTargets={holdTargets}
-          boardWidth={boardWidth}
-          boardHeight={boardHeight}
-          measuredWidth={renderWidth}
-          mirrored={mirrored}
-          showAllHolds={showAllHolds}
-        />
-        {overlay ? (
-          <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-            {overlay}
-          </View>
-        ) : null}
-      </>
-    ),
-    [holdTargets, boardWidth, boardHeight, renderWidth, mirrored, showAllHolds, overlay],
+    () =>
+      overlay ? (
+        <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+          {overlay}
+        </View>
+      ) : null,
+    [overlay],
   );
 
   return (
@@ -271,12 +256,11 @@ export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard
 
             {/* At-rest tap overlay: one full-bleed detector inside the (identity)
                 zoom transform, so its local x/y are already board-local px. It
-                replaces the per-hold detectors HoldTargetLayer used to mount,
-                whose overlapping inflated squares resolved by z-order rather
-                than by distance (#4496). Race(longPress, tap) with a small
-                movement budget on both legs, so a drag still reaches the
-                CreateDrawer's scroll instead of becoming a whole-board
-                long-press. The dots stay in HoldMarkerLayer, under the holds. */}
+                replaces the per-hold detectors the board used to mount, whose
+                overlapping inflated squares resolved by z-order rather than by
+                distance (#4496). Race(longPress, tap) with a small movement
+                budget on both legs, so a drag still reaches the CreateDrawer's
+                scroll instead of becoming a whole-board long-press. */}
             {!isZoomed && restGesture ? (
               <GestureDetector gesture={restGesture}>
                 <View collapsable={false} style={StyleSheet.absoluteFill} />

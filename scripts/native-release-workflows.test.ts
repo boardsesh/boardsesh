@@ -61,10 +61,22 @@ describe('native release workflow contracts', () => {
 
   // The amendment to the train design: release/next publishes production OTAs
   // too, so testers on the train binary are not stuck on the JS it was built
-  // with. main keeps publishing for the store fleet.
+  // with. main keeps publishing for the store fleet, but since #5823 it does so
+  // through production-deploy.yml, which calls this workflow to stage the OTA
+  // alongside the service builds, so main is no longer a push trigger here.
   it('publishes production OTAs from both main and the release train', () => {
-    const triggers = parse(productionOta)['on'] as { push?: { branches?: string[] } };
-    expect(triggers.push?.branches).toEqual(['main', releaseBranch]);
+    const triggers = parse(productionOta)['on'] as {
+      push?: { branches?: string[] };
+      workflow_call?: { inputs?: Record<string, unknown> };
+    };
+    expect(triggers.push?.branches).toEqual([releaseBranch]);
+    expect(triggers.workflow_call?.inputs).toHaveProperty('stage_for_production_deploy');
+    const productionDeploy = parse(workflow('production-deploy.yml')) as {
+      on: { push?: { branches?: string[] } };
+      jobs: Record<string, { uses?: string }>;
+    };
+    expect(productionDeploy.on.push?.branches).toEqual(['main']);
+    expect(productionDeploy.jobs['stage-mobile-ota']?.uses).toBe('./.github/workflows/mobile-ota-production.yml');
   });
 
   // xprem serves the newest commitTime FOR A GIVEN runtimeVersion. While the

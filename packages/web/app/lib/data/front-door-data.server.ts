@@ -71,23 +71,73 @@ const BETA_LINKS_REVALIDATE_SECONDS = 3600;
  */
 const FRONT_DOOR_BACKEND_TIMEOUT_MS = 3000;
 
-// Once per section per OUTAGE, not per render. A backend wedge fails every
-// climb-view render for as long as it lasts, so one log line says the same
-// thing as ten thousand — but latching it for the process lifetime would turn
-// a broken -> recovered -> broken cycle into a silent second outage. A
-// successful render re-arms the key, so each distinct outage costs exactly
-// one console.error + one Sentry message.
-const reportedFrontDoorFailures = new Set<string>();
+type FrontDoorSectionName = 'similar-climbs' | 'beta-links';
+
+/**
+ * At most once per section per 15-minute window, not once per outage.
+ *
+ * The previous design latched a section the first time it failed and only
+ * unlatched it on the next successful render (a `Set`). That made a flapping
+ * backend — down, up, down, up — file one Sentry event per flap, because
+ * every recovery re-armed the trap: BOARDSESH-FF alone minted 29k events in
+ * 12 days this way. A time-based latch reports at most once per section per
+ * `FRONT_DOOR_REPORT_INTERVAL_MS`, however many times it flaps in between, and
+ * keeps reporting on the same cadence for as long as the outage continues —
+ * a wedged backend still gets a heartbeat roughly every 15 minutes instead of
+ * going silent forever after the first event.
+ *
+ * The message and fingerprint are also fixed strings now (see
+ * `classifyFrontDoorError` / the `Sentry.withScope` call below) rather
+ * than embedding the error text. The old message interpolated the raw error —
+ * "Rate limit exceeded. Try again in 29 seconds" — and Sentry groups issues by
+ * message, so every distinct retry-after value minted its own issue. Grouping
+ * now happens on a stable `errorClass`; the compacted error text survives only
+ * as `extra.error`, which Sentry never groups on, so it cannot resurrect the
+ * per-value fanout.
+ */
+const FRONT_DOOR_REPORT_INTERVAL_MS = 15 * 60_000;
+
+const lastReportedAtMsBySection = new Map<FrontDoorSectionName, number>();
+
+/** Test-only: clears the report-interval latch between test cases/files. */
+export function __resetFrontDoorReportingForTests(): void {
+  lastReportedAtMsBySection.clear();
+}
+
+type FrontDoorErrorClass = 'timeout' | 'rate-limited' | 'backend-error';
+
+/**
+ * Buckets the compacted error text into a small, stable set of classes used
+ * for the Sentry fingerprint. Never put the raw retry-after / abort text back
+ * into the message or fingerprint — that is exactly what caused the fanout.
+ */
+function classifyFrontDoorError(compactError: string): FrontDoorErrorClass {
+  // The 3 s deadline aborts via AbortController ("AbortError: This operation
+  // was aborted"); the other two spellings cover a transport-level timeout.
+  if (/AbortError|aborted|timed out|timeout/i.test(compactError)) {
+    return 'timeout';
+  }
+  if (/Rate limit exceeded/i.test(compactError)) {
+    return 'rate-limited';
+  }
+  return 'backend-error';
+}
 
 function reportFrontDoorOutage(
-  section: 'similar-climbs' | 'beta-links',
+  section: FrontDoorSectionName,
   params: { boardType: BoardName; climbUuid: string },
   error: unknown,
+  nowMs: number = Date.now(),
 ): void {
-  if (reportedFrontDoorFailures.has(section)) {
+  // Check-and-set runs synchronously, before any await, so concurrent renders
+  // failing in the same tick still produce exactly one report. The log line
+  // shares the latch: a wedged backend fails every render, and one line per
+  // window says the same thing as one per render at a fraction of the cost.
+  const lastReportedAtMs = lastReportedAtMsBySection.get(section);
+  if (lastReportedAtMs !== undefined && nowMs - lastReportedAtMs < FRONT_DOOR_REPORT_INTERVAL_MS) {
     return;
   }
-  reportedFrontDoorFailures.add(section);
+  lastReportedAtMsBySection.set(section, nowMs);
 
   const compactError = compactErrorMessage(error);
   console.error(`Front door: ${section} unavailable, rendering the section's degraded state`, {
@@ -95,11 +145,17 @@ function reportFrontDoorOutage(
     climbUuid: params.climbUuid,
     error: compactError,
   });
-  Sentry.captureMessage(`Front door ${section} unavailable: ${compactError}`, 'warning');
-}
 
-function reportFrontDoorRecovered(section: 'similar-climbs' | 'beta-links'): void {
-  reportedFrontDoorFailures.delete(section);
+  const errorClass = classifyFrontDoorError(compactError);
+  Sentry.withScope((scope) => {
+    scope.setFingerprint(['front-door-unavailable', section, errorClass]);
+    scope.setTag('front_door_section', section);
+    scope.setTag('front_door_error_class', errorClass);
+    scope.setExtra('error', compactError);
+    scope.setExtra('boardType', params.boardType);
+    scope.setExtra('climbUuid', params.climbUuid);
+    Sentry.captureMessage(`Front door ${section} unavailable`, 'warning');
+  });
 }
 
 type SimilarClimbsQueryVariables = {
@@ -139,7 +195,6 @@ export async function getFrontDoorSimilarClimbs(params: {
         limit: params.limit ?? 10,
       },
     });
-    reportFrontDoorRecovered('similar-climbs');
     return { status: 'loaded', items: response.similarClimbs ?? [] };
   } catch (error) {
     reportFrontDoorOutage('similar-climbs', params, error);
@@ -160,7 +215,6 @@ export async function getFrontDoorBetaLinks(params: {
 
   try {
     const response = await query({ boardType: params.boardType, climbUuid: params.climbUuid });
-    reportFrontDoorRecovered('beta-links');
     return { status: 'loaded', items: dedupeBetaLinks(mapBetaLinksResponse(response.betaLinks ?? [])) };
   } catch (error) {
     reportFrontDoorOutage('beta-links', params, error);

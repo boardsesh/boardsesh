@@ -1,7 +1,7 @@
 import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose';
 
 import { KILTER_IDP_HOST, KILTER_OAUTH_TOKEN_URL, KILTER_OIDC_REALM } from './types';
-import { KilterApiError } from './errors';
+import { KilterApiError, responseRetryAfterMs } from './errors';
 
 /**
  * Standard OIDC token-endpoint responses. Keycloak uses the OpenID Connect
@@ -78,7 +78,12 @@ async function tokenRequest(body: URLSearchParams, config: KeycloakClientConfig)
       throw new KilterApiError('invalid_client', oidcError.error_description ?? 'Keycloak rejected client credentials');
     }
     if (response.status === 429) {
-      throw new KilterApiError('rate_limited', 'Keycloak rate-limited the token endpoint', 429);
+      throw new KilterApiError(
+        'rate_limited',
+        'Keycloak rate-limited the token endpoint',
+        429,
+        responseRetryAfterMs(response),
+      );
     }
     throw new KilterApiError(
       'http',

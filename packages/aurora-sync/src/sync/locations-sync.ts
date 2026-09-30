@@ -5,13 +5,16 @@ import {
   resolveDefaultAuroraLocationConfig,
   toLocationSyncLogger,
   upsertPublicBoardLocations,
+  upsertPublicBoardLocationsInBatches,
   type LocationSyncSummary,
+  type LocationWriteBatchRunner,
   type PublicBoardLocationInput,
 } from '@boardsesh/location-sync';
 import type { AuroraBoardName } from '../api/types';
 import { AURORA_BOARDS } from '../api/types';
 import { fetchAuroraPins, type AuroraPin } from '../api/pins-api';
 import type { AuroraGymUser } from '../api/gym-walls-api';
+import { isAuroraRequestError } from '../api/errors';
 import { findCrawledGymSourceKeys, markGymWallsCrawled } from '@boardsesh/db/queries';
 import type { Wall } from '../api/sync-api-types';
 
@@ -232,21 +235,45 @@ export async function syncAuroraBoardLocations(args: {
    * Omitted (or returning undefined) means every gym falls back to the default
    * config, which is exactly the pre-enrichment behaviour.
    */
-  fetchGymUser?: (pin: AuroraPin) => Promise<AuroraGymUser | undefined>;
+  fetchGymUser?: (pin: AuroraPin, signal?: AbortSignal) => Promise<AuroraGymUser | undefined>;
   log?: (message: string) => void;
+  /**
+   * Runs the writes in batches of whole gyms, each in one transaction (a
+   * background job's attempt fence). Unset, the writes go straight to `db` as
+   * they always have. Provider HTTP runs before the first batch either way.
+   */
+  transaction?: LocationWriteBatchRunner;
+  /** Ends the pins request, the gym reads (and their pacing sleeps) and the write batches early. */
+  signal?: AbortSignal;
 }): Promise<LocationSyncSummary> {
-  const pins = await fetchAuroraPins(args.board);
+  const pins = await fetchAuroraPins(args.board, args.signal);
   const pinsWithUsers: AuroraPinWithUser[] = [];
   if (args.fetchGymUser) {
     args.log?.(`[aurora-locations] ${args.board}: reading walls for ${pins.gyms.length} gym(s)`);
   }
+  // Set when a rate limit stops the read loop early: rethrown AFTER the flush
+  // below, so a late-crawl 429 loses nothing already read (a full crawl is
+  // hours long, and this buffers every gym in memory until the single upsert
+  // at the end — see `crawlGymWallsForSourceKeys` for why a retry starting
+  // over from the first gym would be its own regression).
+  let rateLimitedError: unknown;
   for (const [pinIndex, pin] of pins.gyms.entries()) {
     // Sequential on purpose: Aurora rate-limits per board, and a fan-out over
     // several thousand gyms would trip it immediately. At ~30 requests a minute
     // that means hours for a full crawl, so log progress periodically —
     // otherwise the only production signal is a per-gym failure line, and a
     // healthy run looks identical to a stalled one.
-    const user = args.fetchGymUser ? await args.fetchGymUser(pin) : undefined;
+    args.signal?.throwIfAborted();
+    let user: AuroraGymUser | undefined;
+    if (args.fetchGymUser) {
+      try {
+        user = await args.fetchGymUser(pin, args.signal);
+      } catch (error) {
+        if (!isAuroraRequestError(error) || error.code !== 'rate_limited') throw error;
+        rateLimitedError = error;
+        break;
+      }
+    }
     pinsWithUsers.push({ pin, user });
     // Log on the interval AND on the last gym: a 476-gym run whose final line
     // is "read 450/476" leaves an operator unable to tell completion from a
@@ -266,9 +293,14 @@ export async function syncAuroraBoardLocations(args: {
   );
 
   const { records, skipped } = buildAuroraLocationRecords(args.board, pinsWithUsers, crawledGymSourceKeys);
-  const summary = await upsertPublicBoardLocations(args.db, records, {
-    logger: toLocationSyncLogger(args.log),
-  });
+  const summary = args.transaction
+    ? await upsertPublicBoardLocationsInBatches(args.transaction, records, {
+        logger: toLocationSyncLogger(args.log),
+        signal: args.signal,
+      })
+    : await upsertPublicBoardLocations(args.db, records, {
+        logger: toLocationSyncLogger(args.log),
+      });
 
   // Stamped AFTER the upsert, so a gym is only marked once its data is actually
   // written. Stamping first meant a transient upsert failure left the gym
@@ -282,7 +314,8 @@ export async function syncAuroraBoardLocations(args: {
     .filter(({ user }) => user !== undefined)
     .map(({ pin }) => `${args.board}:${pin.id}`);
   if (readGymSourceKeys.length > 0) {
-    await markGymWallsCrawled(args.db, readGymSourceKeys);
+    if (args.transaction) await args.transaction((transaction) => markGymWallsCrawled(transaction, readGymSourceKeys));
+    else await markGymWallsCrawled(args.db, readGymSourceKeys);
   }
   // Without credentials EVERY gym reports "walls unavailable", which buries the
   // real skips (unsupported configs) under thousands of identical lines. Collapse
@@ -324,6 +357,10 @@ export async function syncAuroraBoardLocations(args: {
   args.log?.(
     `[aurora-locations] ${args.board}: upserted ${mergedSummary.boardsUpserted}/${mergedSummary.boardsSeen} board(s), ${mergedSummary.gymsUpserted} gym(s), skipped ${mergedSummary.boardsSkipped}`,
   );
+  // Now that everything read so far is flushed, let the rate limit stop the
+  // caller (and, for `syncAllAuroraBoardLocations`, the remaining boards) —
+  // it just costs nothing already read.
+  if (rateLimitedError !== undefined) throw rateLimitedError;
   return mergedSummary;
 }
 
@@ -360,8 +397,11 @@ export async function crawlGymWallsForSourceKeys(args: {
   db: DrizzleDb;
   board: AuroraLocationBoardName;
   sourceKeys: string[];
-  fetchGymUser: (pin: AuroraPin) => Promise<AuroraGymUser | undefined>;
+  fetchGymUser: (pin: AuroraPin, signal?: AbortSignal) => Promise<AuroraGymUser | undefined>;
   log?: (message: string) => void;
+  /** As for {@link syncAuroraBoardLocations}: fenced write batches, HTTP between them. */
+  transaction?: LocationWriteBatchRunner;
+  signal?: AbortSignal;
 }): Promise<number> {
   if (args.sourceKeys.length === 0) return 0;
 
@@ -369,12 +409,16 @@ export async function crawlGymWallsForSourceKeys(args: {
   // a published record still needs the gym's name and coordinates, and the pin
   // list is the same source the full sync uses. Cheaper and more consistent than
   // reconstructing them from our own rows.
-  const pins = await fetchAuroraPins(args.board);
+  const pins = await fetchAuroraPins(args.board, args.signal);
   const pinsById = new Map(pins.gyms.map((pin) => [pin.id, pin]));
 
   const wanted = new Set(args.sourceKeys);
   const crawledSourceKeys: string[] = [];
   const pinsWithUsers: AuroraPinWithUser[] = [];
+  // Set when a rate limit stops the slice early: rethrown AFTER the flush
+  // below (same reasoning as syncAuroraBoardLocations), so it costs nothing
+  // already read in this slice.
+  let rateLimitedError: unknown;
 
   for (const sourceKey of args.sourceKeys) {
     // `{board}:{pin id}`; anything else is not a gym alias for this provider.
@@ -388,7 +432,15 @@ export async function crawlGymWallsForSourceKeys(args: {
       continue;
     }
 
-    const user = await args.fetchGymUser(pin);
+    args.signal?.throwIfAborted();
+    let user: AuroraGymUser | undefined;
+    try {
+      user = await args.fetchGymUser(pin, args.signal);
+    } catch (error) {
+      if (!isAuroraRequestError(error) || error.code !== 'rate_limited') throw error;
+      rateLimitedError = error;
+      break;
+    }
     if (!user) continue; // Unstamped: retried next cycle.
     pinsWithUsers.push({ pin, user });
     crawledSourceKeys.push(sourceKey);
@@ -399,9 +451,20 @@ export async function crawlGymWallsForSourceKeys(args: {
     // pass the wanted set so a gym whose walls came back empty keeps whatever
     // it already had rather than reverting to the guess.
     const { records } = buildAuroraLocationRecords(args.board, pinsWithUsers, wanted);
-    await upsertPublicBoardLocations(args.db, records, { logger: toLocationSyncLogger(args.log) });
+    if (args.transaction) {
+      await upsertPublicBoardLocationsInBatches(args.transaction, records, {
+        logger: toLocationSyncLogger(args.log),
+        signal: args.signal,
+      });
+    } else {
+      await upsertPublicBoardLocations(args.db, records, { logger: toLocationSyncLogger(args.log) });
+    }
   }
 
-  await markGymWallsCrawled(args.db, crawledSourceKeys);
+  if (args.transaction) await args.transaction((transaction) => markGymWallsCrawled(transaction, crawledSourceKeys));
+  else await markGymWallsCrawled(args.db, crawledSourceKeys);
+  // Now that everything read so far is flushed and stamped, let the rate
+  // limit stop the caller — it costs nothing already read in this slice.
+  if (rateLimitedError !== undefined) throw rateLimitedError;
   return crawledSourceKeys.length;
 }

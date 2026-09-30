@@ -23,6 +23,8 @@ import { useCreateClimbScreen, type CreateClimbBoard } from './use-create-climb-
 import { useHoldHeatmap } from '../../lib/graphql/hooks/use-hold-heatmap';
 import { useCatalogQuerySourceState } from '../../lib/offline/use-catalog-query-source';
 import { heatmapSearchInput } from '../play-drawer/heatmap/heatmap-search-input';
+import { useActiveBoard } from '../../lib/graphql/use-active-board';
+import { heatMetricForBrush, type CreateHeatmap } from './create-heatmap';
 
 type CreateClimbScreenProps = {
   board: CreateClimbBoard;
@@ -102,9 +104,10 @@ export function CreateClimbScreen({
   const [longPressHoldId, setLongPressHoldId] = useState<number | null>(null);
 
   // The hold heatmap over the whole board (the create board has no list filters
-  // to follow): the downloaded board answers, or the admin resolver, or, for a
-  // board that is not on this phone, a line under the board saying so. Inline
-  // rather than a toast: toasts draw behind this native sheet.
+  // to follow), counting the role the active brush paints: the downloaded board
+  // answers, or the admin resolver, or, for a board that is not on this phone,
+  // a line with a Download button where the autosave note sits. Inline rather
+  // than a toast: toasts draw behind this native sheet.
   const [heatmapActive, setHeatmapActive] = useState(false);
   const heatmapInput = useMemo(
     () =>
@@ -125,15 +128,55 @@ export function CreateClimbScreen({
     [board.boardName, board.layoutId, board.sizeId],
   );
   const { source: heatmapSource, isResolving: heatmapSourceResolving } = useCatalogQuerySourceState(heatmapScope);
-  const heatmap = useHoldHeatmap(heatmapInput, heatmapSource, heatmapActive && !heatmapSourceResolving);
-  const heatmapNotice = !heatmapActive
-    ? null
-    : heatmapSource === 'download' && !heatmapSourceResolving
-      ? t('mobile.heatmap.needsDownload')
-      : heatmap.isError
-        ? t('mobile.heatmap.loadFailed')
-        : null;
-  const toggleHeatmap = useCallback(() => setHeatmapActive((active) => !active), []);
+  // Counts only: no brush colours by grade, so the grade column is never read.
+  const heatmapQuery = useHoldHeatmap(heatmapInput, heatmapSource, heatmapActive && !heatmapSourceResolving);
+  const { data: activeBoard } = useActiveBoard();
+  const heatmapDownloadBoard =
+    activeBoard &&
+    activeBoard.boardType === board.boardName &&
+    activeBoard.layoutId === board.layoutId &&
+    activeBoard.sizeId === board.sizeId
+      ? activeBoard
+      : null;
+  const { selectedBrush, setSelectedBrush } = controller;
+  const toggleHeatmap = useCallback(() => {
+    // Switching heat on with the eraser in hand would show nothing at all: pick
+    // up the Hand brush, whose heat is the most useful default.
+    if (!heatmapActive && selectedBrush === 'OFF') setSelectedBrush('HAND');
+    // Functional, so two taps before a re-render still land as on → off.
+    setHeatmapActive((active) => !active);
+  }, [heatmapActive, selectedBrush, setSelectedBrush]);
+  const heatmapStatus: CreateHeatmap['status'] =
+    heatmapSource === 'download' && !heatmapSourceResolving
+      ? 'download'
+      : heatmapQuery.isError
+        ? 'error'
+        : heatmapQuery.isUnavailable
+          ? 'unavailable'
+          : 'ready';
+  const heatmap = useMemo<CreateHeatmap>(
+    () => ({
+      active: heatmapActive,
+      busy: heatmapActive && (heatmapSourceResolving || heatmapQuery.isFetching),
+      statsByHoldId: heatmapQuery.statsByHoldId,
+      metric: heatMetricForBrush(selectedBrush),
+      climbCount: heatmapQuery.climbCount,
+      status: heatmapStatus,
+      downloadBoard: heatmapDownloadBoard,
+      toggle: toggleHeatmap,
+    }),
+    [
+      heatmapActive,
+      heatmapSourceResolving,
+      heatmapQuery.isFetching,
+      heatmapQuery.statsByHoldId,
+      selectedBrush,
+      heatmapQuery.climbCount,
+      heatmapStatus,
+      heatmapDownloadBoard,
+      toggleHeatmap,
+    ],
+  );
 
   const boardHolds = useMemo(
     () =>
@@ -252,11 +295,7 @@ export function CreateClimbScreen({
         onLoadDraft={handleLoadDraft}
         onClose={handleClose}
         onViewDuplicate={handleViewDuplicate}
-        heatmapActive={heatmapActive}
-        heatmapBusy={heatmapActive && (heatmapSourceResolving || heatmap.isFetching)}
-        heatmapStatsByHoldId={heatmap.statsByHoldId}
-        heatmapNotice={heatmapNotice}
-        onToggleHeatmap={toggleHeatmap}
+        heatmap={heatmap}
       />
 
       <HoldRoleSheet

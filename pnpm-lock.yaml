@@ -17,7 +17,7 @@ patchedDependencies:
   expo-image@57.0.3: 68cfa579530a19eff0353bb5b9c0ea543980992877a93a69d832471f6ef91f60
   expo-modules-core@57.0.14: 331eed2dd882dcc370d019393cf1222dc6c4b3672862cc5b6711e83d57a80b54
   expo-updates@57.0.19: 67f24f95aa789e95b632312352bca97ddc9fd5264328d4c85a8fcc929f96f50a
-  postgres@3.4.9: cc5ffa34588bf5dddc62453336cff1d96554d55969995042e368f24147ff75c8
+  postgres@3.4.9: c9d57c6587ebb9a43c7f01fa63c3950592b1fe72e2e2c56ce93e2bd1ec419fcf
   react-native-ble-plx@3.5.1: 243c7040f835074cd999a8719675046d66acf9fe2e88948c40d11d8133f181c4
   react-native-screens@4.26.2: 6b77eaedcf3b2210551b4099df209748d8135cff58ee4d89c3b20d8e6d2cf246
 
@@ -79,7 +79,7 @@ importers:
         version: 7.0.2001
       postgres:
         specifier: 3.4.9
-        version: 3.4.9(patch_hash=cc5ffa34588bf5dddc62453336cff1d96554d55969995042e368f24147ff75c8)
+        version: 3.4.9(patch_hash=c9d57c6587ebb9a43c7f01fa63c3950592b1fe72e2e2c56ce93e2bd1ec419fcf)
       semver:
         specifier: ^7.8.5
         version: 7.8.5
@@ -145,10 +145,10 @@ importers:
         version: 17.4.2
       drizzle-orm:
         specifier: ^0.45.2
-        version: 0.45.2(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(expo-sqlite@57.0.2(expo@57.0.18)(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1))(@types/react@19.2.18)(bufferutil@4.1.0)(react@19.2.8)(supports-color@8.1.1))(react@19.2.8))(pg@8.23.0)(postgres@3.4.9(patch_hash=cc5ffa34588bf5dddc62453336cff1d96554d55969995042e368f24147ff75c8))
+        version: 0.45.2(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(expo-sqlite@57.0.2(expo@57.0.18)(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1))(@types/react@19.2.18)(bufferutil@4.1.0)(react@19.2.8)(supports-color@8.1.1))(react@19.2.8))(pg@8.23.0)(postgres@3.4.9(patch_hash=c9d57c6587ebb9a43c7f01fa63c3950592b1fe72e2e2c56ce93e2bd1ec419fcf))
       postgres:
         specifier: 3.4.9
-        version: 3.4.9(patch_hash=cc5ffa34588bf5dddc62453336cff1d96554d55969995042e368f24147ff75c8)
+        version: 3.4.9(patch_hash=c9d57c6587ebb9a43c7f01fa63c3950592b1fe72e2e2c56ce93e2bd1ec419fcf)
       tsx:
         specifier: ^4.23.1
         version: 4.23.12
@@ -222,6 +222,9 @@ importers:
       '@boardsesh/kiosk':
         specifier: workspace:*
         version: link:../shared/kiosk
+      '@boardsesh/moonboard-sync':
+        specifier: workspace:*
+        version: link:../moonboard-sync
       '@boardsesh/offline-sync':
         specifier: workspace:*
         version: link:../shared/offline-sync
@@ -275,7 +278,7 @@ importers:
         version: 17.4.2
       drizzle-orm:
         specifier: ^0.45.2
-        version: 0.45.2(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(expo-sqlite@57.0.2(expo@57.0.18)(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1))(@types/react@19.2.18)(bufferutil@4.1.0)(react@19.2.8)(supports-color@8.1.1))(react@19.2.8))(pg@8.23.0)(postgres@3.4.9(patch_hash=cc5ffa34588bf5dddc62453336cff1d96554d55969995042e368f24147ff75c8))
+        version: 0.45.2(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(expo-sqlite@57.0.2(expo@57.0.18)(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1))(@types/react@19.2.18)(bufferutil@4.1.0)(react@19.2.8)(supports-color@8.1.1))(react@19.2.8))(pg@8.23.0)(postgres@3.4.9(patch_hash=c9d57c6587ebb9a43c7f01fa63c3950592b1fe72e2e2c56ce93e2bd1ec419fcf))
       graphql:
         specifier: ^16.14.2
         version: 16.14.2
@@ -351,7 +354,7 @@ importers:
         version: 0.31.10
       postgres:
         specifier: 3.4.9
-        version: 3.4.9(patch_hash=cc5ffa34588bf5dddc62453336cff1d96554d55969995042e368f24147ff75c8)
+        version: 3.4.9(patch_hash=c9d57c6587ebb9a43c7f01fa63c3950592b1fe72e2e2c56ce93e2bd1ec419fcf)
       typescript:
         specifier: ~7.0.2
         version: 7.0.2
@@ -414,7 +417,7 @@ importers:
         version: link:../sync-runtime
       drizzle-orm:
         specifier: ^0.45.2
-        version: 0.45.2(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(expo-sqlite@57.0.2(expo@57.0.18)(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1))(@types/react@19.2.18)(bufferutil@4.1.0)(react@19.2.8)(supports-color@8.1.1))(react@19.2.8))(pg@8.23.0)(postgres@3.4.9(patch_hash=cc5ffa34588bf5dddc62453336cff1d96554d55969995042e368f24147ff75c8))
+        version: 0.45.2(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(expo-sqlite@57.0.2(expo@57.0.18)(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1))(@types/react@19.2.18)(bufferutil@4.1.0)(react@19.2.8)(supports-color@8.1.1))(react@19.2.8))(pg@8.23.0)(postgres@3.4.9(patch_hash=c9d57c6587ebb9a43c7f01fa63c3950592b1fe72e2e2c56ce93e2bd1ec419fcf))
       next-auth:
         specifier: ^4.24.15
         version: 4.24.15(next@16.3.5(@babel/core@7.29.7(supports-color@8.1.1))(@opentelemetry/api@1.9.1)(@playwright/test@1.62.1)(@types/node@25.9.5)(babel-plugin-macros@3.1.0)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(nodemailer@9.0.5)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -423,7 +426,7 @@ importers:
         version: 12.33.0
       postgres:
         specifier: 3.4.9
-        version: 3.4.9(patch_hash=cc5ffa34588bf5dddc62453336cff1d96554d55969995042e368f24147ff75c8)
+        version: 3.4.9(patch_hash=c9d57c6587ebb9a43c7f01fa63c3950592b1fe72e2e2c56ce93e2bd1ec419fcf)
       uuid:
         specifier: ^14.0.1
         version: 14.0.2
@@ -469,7 +472,7 @@ importers:
         version: link:../shared-schema
       drizzle-orm:
         specifier: ^0.45.2
-        version: 0.45.2(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(expo-sqlite@57.0.2(expo@57.0.18)(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1))(@types/react@19.2.18)(bufferutil@4.1.0)(react@19.2.8)(supports-color@8.1.1))(react@19.2.8))(pg@8.23.0)(postgres@3.4.9(patch_hash=cc5ffa34588bf5dddc62453336cff1d96554d55969995042e368f24147ff75c8))
+        version: 0.45.2(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(expo-sqlite@57.0.2(expo@57.0.18)(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1))(@types/react@19.2.18)(bufferutil@4.1.0)(react@19.2.8)(supports-color@8.1.1))(react@19.2.8))(pg@8.23.0)(postgres@3.4.9(patch_hash=c9d57c6587ebb9a43c7f01fa63c3950592b1fe72e2e2c56ce93e2bd1ec419fcf))
       onnxruntime-node:
         specifier: 1.30.0
         version: 1.30.0
@@ -511,13 +514,13 @@ importers:
         version: 17.4.2
       drizzle-orm:
         specifier: ^0.45.2
-        version: 0.45.2(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(expo-sqlite@57.0.2(expo@57.0.18)(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1))(@types/react@19.2.18)(bufferutil@4.1.0)(react@19.2.8)(supports-color@8.1.1))(react@19.2.8))(pg@8.23.0)(postgres@3.4.9(patch_hash=cc5ffa34588bf5dddc62453336cff1d96554d55969995042e368f24147ff75c8))
+        version: 0.45.2(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(expo-sqlite@57.0.2(expo@57.0.18)(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1))(@types/react@19.2.18)(bufferutil@4.1.0)(react@19.2.8)(supports-color@8.1.1))(react@19.2.8))(pg@8.23.0)(postgres@3.4.9(patch_hash=c9d57c6587ebb9a43c7f01fa63c3950592b1fe72e2e2c56ce93e2bd1ec419fcf))
       jose:
         specifier: ^6.2.6
         version: 6.2.10
       postgres:
         specifier: 3.4.9
-        version: 3.4.9(patch_hash=cc5ffa34588bf5dddc62453336cff1d96554d55969995042e368f24147ff75c8)
+        version: 3.4.9(patch_hash=c9d57c6587ebb9a43c7f01fa63c3950592b1fe72e2e2c56ce93e2bd1ec419fcf)
       tsx:
         specifier: ^4.23.1
         version: 4.23.12
@@ -545,7 +548,7 @@ importers:
         version: link:../shared-schema
       drizzle-orm:
         specifier: ^0.45.2
-        version: 0.45.2(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(expo-sqlite@57.0.2(expo@57.0.18)(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1))(@types/react@19.2.18)(bufferutil@4.1.0)(react@19.2.8)(supports-color@8.1.1))(react@19.2.8))(pg@8.23.0)(postgres@3.4.9(patch_hash=cc5ffa34588bf5dddc62453336cff1d96554d55969995042e368f24147ff75c8))
+        version: 0.45.2(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(expo-sqlite@57.0.2(expo@57.0.18)(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1))(@types/react@19.2.18)(bufferutil@4.1.0)(react@19.2.8)(supports-color@8.1.1))(react@19.2.8))(pg@8.23.0)(postgres@3.4.9(patch_hash=c9d57c6587ebb9a43c7f01fa63c3950592b1fe72e2e2c56ce93e2bd1ec419fcf))
     devDependencies:
       '@types/node':
         specifier: ^25.9.5
@@ -695,8 +698,8 @@ importers:
         specifier: ^5.101.4
         version: 5.101.4(react@19.2.3)
       '@xprem/control-center':
-        specifier: 3.1.2
-        version: 3.1.2(expo-constants@57.0.16)(expo-updates@57.0.19(patch_hash=67f24f95aa789e95b632312352bca97ddc9fd5264328d4c85a8fcc929f96f50a)(expo-dev-client@57.0.16(expo@57.0.18)(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1))(@types/react@19.2.18)(bufferutil@4.1.0)(react@19.2.3)(supports-color@8.1.1)))(expo@57.0.18)(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1))(@types/react@19.2.18)(bufferutil@4.1.0)(react@19.2.3)(supports-color@8.1.1))(react@19.2.3)(supports-color@8.1.1))(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1))(@types/react@19.2.18)(bufferutil@4.1.0)(react@19.2.3)(supports-color@8.1.1))(react@19.2.3)
+        specifier: 3.2.4
+        version: 3.2.4(expo-constants@57.0.16)(expo-updates@57.0.19(patch_hash=67f24f95aa789e95b632312352bca97ddc9fd5264328d4c85a8fcc929f96f50a)(expo-dev-client@57.0.16(expo@57.0.18)(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1))(@types/react@19.2.18)(bufferutil@4.1.0)(react@19.2.3)(supports-color@8.1.1)))(expo@57.0.18)(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1))(@types/react@19.2.18)(bufferutil@4.1.0)(react@19.2.3)(supports-color@8.1.1))(react@19.2.3)(supports-color@8.1.1))(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1))(@types/react@19.2.18)(bufferutil@4.1.0)(react@19.2.3)(supports-color@8.1.1))(react@19.2.3)
       dayjs:
         specifier: ^1.11.21
         version: 1.11.23
@@ -948,14 +951,14 @@ importers:
         version: 17.4.2
       drizzle-orm:
         specifier: ^0.45.2
-        version: 0.45.2(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(expo-sqlite@57.0.2(expo@57.0.18)(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1))(@types/react@19.2.18)(bufferutil@4.1.0)(react@19.2.8)(supports-color@8.1.1))(react@19.2.8))(pg@8.23.0)(postgres@3.4.9(patch_hash=cc5ffa34588bf5dddc62453336cff1d96554d55969995042e368f24147ff75c8))
+        version: 0.45.2(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(expo-sqlite@57.0.2(expo@57.0.18)(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1))(@types/react@19.2.18)(bufferutil@4.1.0)(react@19.2.8)(supports-color@8.1.1))(react@19.2.8))(pg@8.23.0)(postgres@3.4.9(patch_hash=c9d57c6587ebb9a43c7f01fa63c3950592b1fe72e2e2c56ce93e2bd1ec419fcf))
+      tsx:
+        specifier: ^4.23.1
+        version: 4.23.12
     devDependencies:
       '@types/node':
         specifier: ^25.9.5
         version: 25.9.5
-      tsx:
-        specifier: ^4.23.1
-        version: 4.23.12
       typescript:
         specifier: ~7.0.2
         version: 7.0.2
@@ -1337,6 +1340,9 @@ importers:
 
   packages/shared/logbook:
     dependencies:
+      '@boardsesh/board-constants':
+        specifier: workspace:*
+        version: link:../../board-constants
       '@boardsesh/graphql':
         specifier: workspace:*
         version: link:../graphql
@@ -1818,7 +1824,7 @@ importers:
         version: 17.4.2
       drizzle-orm:
         specifier: ^0.45.2
-        version: 0.45.2(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(expo-sqlite@57.0.2(expo@57.0.18)(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1))(@types/react@19.2.18)(bufferutil@4.1.0)(react@19.2.8)(supports-color@8.1.1))(react@19.2.8))(pg@8.23.0)(postgres@3.4.9(patch_hash=cc5ffa34588bf5dddc62453336cff1d96554d55969995042e368f24147ff75c8))
+        version: 0.45.2(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(expo-sqlite@57.0.2(expo@57.0.18)(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1))(@types/react@19.2.18)(bufferutil@4.1.0)(react@19.2.8)(supports-color@8.1.1))(react@19.2.8))(pg@8.23.0)(postgres@3.4.9(patch_hash=c9d57c6587ebb9a43c7f01fa63c3950592b1fe72e2e2c56ce93e2bd1ec419fcf))
       emoji-mart:
         specifier: ^5.6.0
         version: 5.6.0
@@ -6585,8 +6591,8 @@ packages:
     resolution: {integrity: sha512-5AXjrcMClTryPe9LgZrygpB1lj7s0S9E0+W+AHaVKAVyHanafK86iPSvG5xHVSp/jC+VH1UXu0TAEmY279xH7A==}
     engines: {node: '>=14.6'}
 
-  '@xprem/control-center@3.1.2':
-    resolution: {integrity: sha512-ASm4N6Y05c00NYKR5Cbd73cSRi5arOUWymNWhTkZUZcKtydZUHMfvhVjMDPrLQs2vqoSH2GKn9o6xOh+X9X9vQ==}
+  '@xprem/control-center@3.2.4':
+    resolution: {integrity: sha512-FUUjoRDWJ6ZgtEjFLgfLbX43zahVlhUOWPjQjAPVKZLOPYl68guamnhZpl8g7j+2xmkX11cXbDjxLlvp7ldW6w==}
     peerDependencies:
       expo-constants: '*'
       expo-updates: '>=0.29.0'
@@ -17491,7 +17497,7 @@ snapshots:
 
   '@xmldom/xmldom@0.9.12': {}
 
-  '@xprem/control-center@3.1.2(expo-constants@57.0.16)(expo-updates@57.0.19(patch_hash=67f24f95aa789e95b632312352bca97ddc9fd5264328d4c85a8fcc929f96f50a)(expo-dev-client@57.0.16(expo@57.0.18)(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1))(@types/react@19.2.18)(bufferutil@4.1.0)(react@19.2.3)(supports-color@8.1.1)))(expo@57.0.18)(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1))(@types/react@19.2.18)(bufferutil@4.1.0)(react@19.2.3)(supports-color@8.1.1))(react@19.2.3)(supports-color@8.1.1))(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1))(@types/react@19.2.18)(bufferutil@4.1.0)(react@19.2.3)(supports-color@8.1.1))(react@19.2.3)':
+  '@xprem/control-center@3.2.4(expo-constants@57.0.16)(expo-updates@57.0.19(patch_hash=67f24f95aa789e95b632312352bca97ddc9fd5264328d4c85a8fcc929f96f50a)(expo-dev-client@57.0.16(expo@57.0.18)(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1))(@types/react@19.2.18)(bufferutil@4.1.0)(react@19.2.3)(supports-color@8.1.1)))(expo@57.0.18)(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1))(@types/react@19.2.18)(bufferutil@4.1.0)(react@19.2.3)(supports-color@8.1.1))(react@19.2.3)(supports-color@8.1.1))(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1))(@types/react@19.2.18)(bufferutil@4.1.0)(react@19.2.3)(supports-color@8.1.1))(react@19.2.3)':
     dependencies:
       expo-constants: 57.0.16(expo@57.0.18)(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1))(@types/react@19.2.18)(bufferutil@4.1.0)(react@19.2.3)(supports-color@8.1.1))(supports-color@8.1.1)
       expo-updates: 57.0.19(patch_hash=67f24f95aa789e95b632312352bca97ddc9fd5264328d4c85a8fcc929f96f50a)(expo-dev-client@57.0.16(expo@57.0.18)(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1))(@types/react@19.2.18)(bufferutil@4.1.0)(react@19.2.3)(supports-color@8.1.1)))(expo@57.0.18)(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1))(@types/react@19.2.18)(bufferutil@4.1.0)(react@19.2.3)(supports-color@8.1.1))(react@19.2.3)(supports-color@8.1.1)
@@ -18488,13 +18494,13 @@ snapshots:
       esbuild: 0.25.12
       tsx: 4.23.12
 
-  drizzle-orm@0.45.2(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(expo-sqlite@57.0.2(expo@57.0.18)(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1))(@types/react@19.2.18)(bufferutil@4.1.0)(react@19.2.8)(supports-color@8.1.1))(react@19.2.8))(pg@8.23.0)(postgres@3.4.9(patch_hash=cc5ffa34588bf5dddc62453336cff1d96554d55969995042e368f24147ff75c8)):
+  drizzle-orm@0.45.2(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(expo-sqlite@57.0.2(expo@57.0.18)(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1))(@types/react@19.2.18)(bufferutil@4.1.0)(react@19.2.8)(supports-color@8.1.1))(react@19.2.8))(pg@8.23.0)(postgres@3.4.9(patch_hash=c9d57c6587ebb9a43c7f01fa63c3950592b1fe72e2e2c56ce93e2bd1ec419fcf)):
     optionalDependencies:
       '@opentelemetry/api': 1.9.1
       '@types/pg': 8.23.1
       expo-sqlite: 57.0.2(expo@57.0.18)(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1))(@types/react@19.2.18)(bufferutil@4.1.0)(react@19.2.8)(supports-color@8.1.1))(react@19.2.8)
       pg: 8.23.0
-      postgres: 3.4.9(patch_hash=cc5ffa34588bf5dddc62453336cff1d96554d55969995042e368f24147ff75c8)
+      postgres: 3.4.9(patch_hash=c9d57c6587ebb9a43c7f01fa63c3950592b1fe72e2e2c56ce93e2bd1ec419fcf)
 
   dset@3.1.4: {}
 
@@ -21211,7 +21217,7 @@ snapshots:
     dependencies:
       xtend: 4.0.2
 
-  postgres@3.4.9(patch_hash=cc5ffa34588bf5dddc62453336cff1d96554d55969995042e368f24147ff75c8): {}
+  postgres@3.4.9(patch_hash=c9d57c6587ebb9a43c7f01fa63c3950592b1fe72e2e2c56ce93e2bd1ec419fcf): {}
 
   posthog-js-lite@4.10.4:
     dependencies:

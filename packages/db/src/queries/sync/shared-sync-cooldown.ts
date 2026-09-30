@@ -15,6 +15,9 @@ export const CATALOG_SYNC_COOLDOWN_CURSOR = '__local_catalog_sync__';
 
 export type SharedSyncClaimToken = string;
 
+/** The longest a provider's Retry-After may close a board-wide sync slot. */
+export const SHARED_SYNC_PROVIDER_HOLD_CAP_MS = 6 * 60 * 60 * 1000;
+
 /**
  * `last_synchronized_at` is TEXT across this table, holding Aurora's
  * `YYYY-MM-DD HH:MM:SS.ffffff` (no zone, UTC). Synthetic cooldown rows append
@@ -23,13 +26,22 @@ export type SharedSyncClaimToken = string;
  * with identical or badly skewed clocks can never reuse an ownership token.
  * Existing timestamp-only rows remain compatible: every read/cast uses the
  * portion before the first `#`.
+ *
+ * A claim a background job makes also ends in `#run:<run id>`. A retry of the same
+ * run is the same owner, so it may re-claim its own slot whatever the
+ * cooldown: a run stopped by an abort, a deadline or a lost lease cannot
+ * re-stamp the slot on its way out (its fence refuses the write), and without
+ * this its own retry would find the slot "held" and succeed without syncing.
  */
-function dbCursorValue(kind: 'claim' | 'finished', backdateMs = 0) {
+const RUN_OWNER_TAG = '#run:';
+
+function dbCursorValue(kind: 'claim' | 'finished', backdateMs = 0, ownerRunId?: string) {
+  const owner = ownerRunId === undefined ? sql`''` : sql`${`${RUN_OWNER_TAG}${ownerRunId}`}`;
   return sql<string>`to_char(
     (clock_timestamp() at time zone 'utc')
       - make_interval(secs => ${backdateMs / 1000}::double precision),
     'YYYY-MM-DD HH24:MI:SS.US'
-  ) || ${`#${kind}:`} || gen_random_uuid()::text`;
+  ) || ${`#${kind}:`} || gen_random_uuid()::text || ${owner}`;
 }
 
 /**
@@ -56,11 +68,25 @@ export async function claimSharedSyncSlot(
     boardType: string;
     cursorName: string;
     cooldownMs: number;
+    /**
+     * The background job run making the claim. A claim marker this run left
+     * (still a `#claim:`, never finished) is its own: it re-claims it at once.
+     * The daemons pass none.
+     */
+    ownerRunId?: string;
     /** @deprecated Ignored. PostgreSQL is the sole clock and identity source. */
     now?: Date;
   },
 ): Promise<SharedSyncClaimToken | null> {
-  const claimToken = dbCursorValue('claim');
+  const claimToken = dbCursorValue('claim', 0, options.ownerRunId);
+  // Exact, not a suffix match: the marker's second `#` segment must be a claim
+  // (`claim:<uuid>`), and the whole tail after the `#run:` sentinel must equal
+  // this run's id.
+  const heldBySameRun =
+    options.ownerRunId === undefined
+      ? sql`false`
+      : sql`(split_part(${boardSharedSyncs.lastSynchronizedAt}, '#', 2) LIKE 'claim:%'
+             AND substring(${boardSharedSyncs.lastSynchronizedAt} from '#run:([^#]+)$') = ${options.ownerRunId})`;
   const rows = await db
     .insert(boardSharedSyncs)
     .values({
@@ -73,8 +99,9 @@ export async function claimSharedSyncSlot(
       // Generate a fresh value on the UPDATE path too. Reusing
       // excluded.last_synchronized_at would still be DB-clock based, but this
       // makes the ownership identity local to the lock-protected winning write.
-      set: { lastSynchronizedAt: dbCursorValue('claim') },
+      set: { lastSynchronizedAt: dbCursorValue('claim', 0, options.ownerRunId) },
       setWhere: sql`${boardSharedSyncs.lastSynchronizedAt} IS NULL
+        OR ${heldBySameRun}
         OR split_part(${boardSharedSyncs.lastSynchronizedAt}, '#', 1)::timestamp
              < (clock_timestamp() at time zone 'utc')
                - make_interval(secs => ${options.cooldownMs / 1000}::double precision)`,
@@ -108,6 +135,13 @@ export async function stampSharedSyncFinished(
     claimToken: SharedSyncClaimToken;
     fullCooldownMs: number;
     nextCooldownMs?: number;
+    /**
+     * The provider asked us to wait this long (429 with Retry-After): keep the
+     * slot closed at least that long from now, beyond the full cooldown if it
+     * has to, capped at {@link SHARED_SYNC_PROVIDER_HOLD_CAP_MS}. The one case
+     * the marker may point past now.
+     */
+    providerHoldMs?: number;
     /** @deprecated Ignored. PostgreSQL is the sole clock source. */
     now?: Date;
   },
@@ -115,7 +149,13 @@ export async function stampSharedSyncFinished(
   const fullCooldownMs = Math.max(0, options.fullCooldownMs);
   const requestedNextCooldownMs = options.nextCooldownMs ?? fullCooldownMs;
   const nextCooldownMs = Math.max(0, Math.min(requestedNextCooldownMs, fullCooldownMs));
-  const eligibilityBackdateMs = fullCooldownMs - nextCooldownMs;
+  const providerHoldMs =
+    options.providerHoldMs === undefined
+      ? 0
+      : Math.min(Math.max(0, options.providerHoldMs), SHARED_SYNC_PROVIDER_HOLD_CAP_MS);
+  // Negative when the provider's hold outlasts the full cooldown: the marker is
+  // then dated in the future, by exactly the difference.
+  const eligibilityBackdateMs = fullCooldownMs - Math.max(nextCooldownMs, providerHoldMs);
   const rows = await db
     .update(boardSharedSyncs)
     .set({ lastSynchronizedAt: dbCursorValue('finished', eligibilityBackdateMs) })

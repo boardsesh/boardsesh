@@ -125,7 +125,11 @@ export interface GateResult {
   passed: boolean;
   /** Board scope for gates that must not aggregate unlike catalogs. */
   boardType?: string;
-  /** A dev-only insufficient-sample waiver; never makes projections eligible. */
+  /**
+   * The gate was not evaluated this run: a dev-only insufficient-sample waiver,
+   * or a backtest verdict reused from an earlier run with identical inputs
+   * (scripts/grade-backtest-reuse.ts). Never makes projections eligible.
+   */
   skipped?: boolean;
   /** Human-readable metric summary, e.g. "MAE 0.31 vs raw 0.44 (−30%)". */
   detail: string;

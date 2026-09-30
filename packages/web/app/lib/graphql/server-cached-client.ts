@@ -109,17 +109,15 @@ export function createCachedGraphQLQuery<T = unknown, V extends Variables = Vari
   };
 }
 
+const COMMUNITY_STATS_REVALIDATE_SECONDS = 21_600;
+
 /**
- * Server-side cached fetch of discover playlists (public, no auth needed).
- *
- * Surfaces per-stream `hasMore` + `totalCount` so the client hook can seed
- * pagination state without firing a redundant first request.
- */
-/**
- * The two numbers the hero quotes. Cached for five minutes and fail-soft: the
+ * The two numbers the hero quotes. Cached for six hours and fail-soft: the
  * homepage must render with or without them, and the copy has a no-count sibling
  * for exactly that. Never call this without the cache — it aggregates over an
- * events table, not a materialised row.
+ * events table, not a materialised row. Six hours, not five minutes: both are
+ * rolling 30-day totals, so a quarter-day of lag moves them by well under 1%,
+ * and every expiry costs that aggregate once per web instance.
  */
 export async function cachedCommunityStats(): Promise<{
   climbersLast30Days: number;
@@ -129,7 +127,11 @@ export async function cachedCommunityStats(): Promise<{
   type Response = GetCommunityStatsQueryResponse;
 
   try {
-    const query = createCachedGraphQLQuery<Response>(GET_COMMUNITY_STATS, 'community-stats', 300);
+    const query = createCachedGraphQLQuery<Response>(
+      GET_COMMUNITY_STATS,
+      'community-stats',
+      COMMUNITY_STATS_REVALIDATE_SECONDS,
+    );
     const result = await query({});
     const { climbersLast30Days, litLast30Days } = result.communityStats;
     // A zero is not a number worth printing: it reads as "nobody uses this"

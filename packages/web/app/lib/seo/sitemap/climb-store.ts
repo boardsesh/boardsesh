@@ -392,11 +392,19 @@ export type ClimbShardPage = StoredClimbPage & { source: ClimbShardSource };
  * against, and a replica-lagged URL table meeting a fresh summary would turn
  * every crawl of a new last page into a spurious 503.
  *
- * The count is a second statement, so a refresh can commit between the two reads.
- * That tear is bounded and self-describing: the swap itself is one transaction,
- * so each statement sees a complete epoch, and the worst case — an empty slice
- * against a non-zero count — is exactly the transient disagreement the route
- * handler already 503s with `no-store`.
+ * The total is the `item_count` of the climbs row in `sitemap_shard_refreshes`,
+ * not a `count(*)` over the URL table. The refresh writes that row and swaps the
+ * URL table in one transaction, so the two always describe the same epoch, and a
+ * one-row primary-key read replaces a full scan of ~130k rows (10.5 ms and ~400
+ * block reads per page fetch on prod). No summary row means no refresh has ever
+ * committed, which is the same "never populated" the empty table used to signal.
+ *
+ * The total is still a second statement, so a refresh can commit between the two
+ * reads. That tear is bounded and self-describing: each statement sees a
+ * complete epoch, and the worst case — an empty slice against a non-zero count —
+ * is exactly the transient disagreement the route handler already 503s with
+ * `no-store`. A summary over an EMPTY URL table is not a tear (no refresh
+ * commits that), so it returns null and the caller takes the live build.
  */
 export async function fetchStoredClimbPage(page: number): Promise<StoredClimbPage | null> {
   const start = (page - 1) * CLIMB_URLS_PER_SHARD;
@@ -406,14 +414,23 @@ export async function fetchStoredClimbPage(page: number): Promise<StoredClimbPag
     .where(and(gte(sitemapClimbUrls.ordinal, start), lt(sitemapClimbUrls.ordinal, start + CLIMB_URLS_PER_SHARD)))
     .orderBy(asc(sitemapClimbUrls.ordinal));
 
-  const [totalRow] = await dbz.select({ totalItems: sql<number>`count(*)::int` }).from(sitemapClimbUrls);
-  const totalItems = totalRow?.totalItems ?? 0;
+  const refresh = await fetchStoredClimbRefresh();
+  const totalItems = refresh?.itemCount ?? 0;
 
-  // An EMPTY table is "never populated" — the refresher's empty guard means it
+  // No summary row is "never populated" — the refresher's empty guard means it
   // never commits a zero-row swap — so the caller falls back to the live build.
   // An empty SLICE of a populated table is not: that verdict (transient tear vs
   // out-of-range) belongs to the route handler, which has the summary in hand.
   if (totalItems === 0) {
+    return null;
+  }
+
+  // A summary with no URL rows under it — the table truncated or restored
+  // without its summary row — is "never populated" too, not a tear. A refresh
+  // never commits a summary over an empty table, so a 503 here would never
+  // clear on its own. Only an in-range empty slice pays the extra probe; a
+  // healthy page and a genuine past-the-end page both skip it.
+  if (pageRows.length === 0 && start < totalItems && !(await hasStoredClimbUrls())) {
     return null;
   }
 

@@ -15,7 +15,7 @@ MoonBoard locations intentionally cover every configured layout, not just the 20
 
 Rows are upserted by deterministic UUID. The sync does not delete rows that disappear upstream.
 
-A human edit or deletion freezes that row by setting `sync_frozen_at`, so later source pulls cannot overwrite it. A global admin can release the freeze from `/admin/location-sync`; the action clears only the marker, requires a recorded reason, and writes `location_sync_unfreeze_audit`. The separate gym-owner/approved-claim guard remains in force. There is no MoonBoard location schedule in production today: operators run `moonboard-sync locations` by hand. So a released freeze changes nothing on its own — the next manual run is what may refresh or resurrect the matching row.
+A human edit or deletion freezes that row by setting `sync_frozen_at`, so later source pulls cannot overwrite it. A global admin can release the freeze from `/admin/location-sync`; the action clears only the marker, requires a recorded reason, and writes `location_sync_unfreeze_audit`. The separate gym-owner/approved-claim guard remains in force. The `moonboard-locations-sync` worker family runs the sync daily at 03:41 UTC (see [Scheduled sync](#scheduled-sync)), so a released freeze takes effect at the next run, which may refresh or resurrect the matching row.
 
 ## Gym identity (source keys)
 
@@ -32,6 +32,26 @@ Why not full-precision coordinates: they made the key change on every pin nudge,
 The coarse cell keeps the key stable across the whole realistic pin-correction range while keeping far-apart same-named gyms distinct. The rare correction that crosses a cell boundary **and** lands in the 20-150 m band mints one twin that surfaces in `/admin/gym-duplicates` for a human merge — the fallback is a manual merge, never a silently wrong one.
 
 When the sync first runs against a database whose MoonBoard gyms were seeded without source aliases (as in prod today), each marker resolves its existing gym through the name + location physical match and adopts it (aliases the stable key onto it), so no separate backfill migration is needed.
+
+## Scheduled sync
+
+The `moonboard-locations-sync` family (role `routine-provider`, see
+[background-workers.md](background-workers.md#routine-provider-sync)) is the
+production schedule: `41 3 * * *` UTC, once enabled in `BATCH_FAMILIES_ENABLED`.
+It logs in with `MOONBOARD_USERNAME` / `MOONBOARD_PASSWORD` from the worker's
+environment, reads the markers, and writes through the same
+`upsertPublicBoardLocations` as the CLI, in fenced batches of 25 gyms. The
+first run adopts the seeded gyms through the physical match described above.
+
+| Outcome | What the run records |
+| --- | --- |
+| Synced | `succeeded`; `/metrics` last success moves; `moonboard locations finished` log line with the counts |
+| No credentials | `succeeded` with a `MOONBOARD_CREDENTIALS_ABSENT` warning, and **nothing written**: no gym, no alias, no freshness marker, so a missing secret never reads as a fresh sync (#3863) |
+| Login or marker request failed | `failed` after one retry 10 minutes later; the error code is `ATTEMPT_FAILED` |
+
+Lease 30 minutes, heartbeat window 2 minutes (one 25-gym batch), deadline 24 h.
+MoonBoard's endpoints are not rate limited by a `Retry-After` today; the run
+makes three requests.
 
 ## CLI
 

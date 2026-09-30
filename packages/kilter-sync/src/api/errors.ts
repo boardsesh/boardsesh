@@ -1,3 +1,5 @@
+import { parseRetryAfterMs } from '@boardsesh/sync-runtime';
+
 /**
  * Errors the runner uses to decide between "back off, retry later" and
  * "mark this credential errored, escalate to the user". The aurora-sync
@@ -21,10 +23,18 @@ export class KilterApiError extends Error {
     public readonly code: KilterErrorCode,
     message: string,
     public readonly httpStatus?: number,
+    /** How long Kilter asked us to wait (HTTP 429 `Retry-After`), when it said. */
+    public readonly retryAfterMs?: number,
   ) {
     super(message);
     this.name = 'KilterApiError';
   }
+}
+
+/** A response's `Retry-After`, if it carries a readable one. Test doubles may have no headers. */
+export function responseRetryAfterMs(response: Response): number | undefined {
+  const header = typeof response.headers?.get === 'function' ? response.headers.get('retry-after') : null;
+  return parseRetryAfterMs(header);
 }
 
 /**

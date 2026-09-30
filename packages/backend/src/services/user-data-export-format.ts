@@ -248,14 +248,27 @@ function buildCircuitExports(rows: ExportCircuitRow[]): AuroraJsonExport['circui
 }
 
 function buildClimbExports(boardType: AuroraBoardName, climbs: ExportClimbRow[]): AuroraJsonExport['climbs'] {
-  return climbs.map((climb) => ({
-    name: climb.name ?? climb.uuid,
-    layout: getLayoutName(boardType, climb.layoutId),
-    created_at: climb.createdAt ? formatTimestamp(climb.createdAt) : new Date(0).toISOString(),
-    is_draft: climb.isDraft,
-    holds: framesToExportHolds(boardType, climb.layoutId, climb.frames),
-    ...(climb.description ? { description: climb.description } : {}),
-  }));
+  // Only layouts used in this export are retained, and only for this call.
+  const coordinatesByLayout = new Map<number, Map<number, { x: number; y: number }>>();
+  return climbs.map((climb) => {
+    let holds: AuroraJsonExport['climbs'][number]['holds'] = [];
+    if (climb.frames) {
+      let coordinates = coordinatesByLayout.get(climb.layoutId);
+      if (!coordinates) {
+        coordinates = buildPlacementCoordinateMap(boardType, climb.layoutId);
+        coordinatesByLayout.set(climb.layoutId, coordinates);
+      }
+      holds = exportHoldsFromFrames(boardType, climb.frames, coordinates);
+    }
+    return {
+      name: climb.name ?? climb.uuid,
+      layout: getLayoutName(boardType, climb.layoutId),
+      created_at: climb.createdAt ? formatTimestamp(climb.createdAt) : new Date(0).toISOString(),
+      is_draft: climb.isDraft,
+      holds,
+      ...(climb.description ? { description: climb.description } : {}),
+    };
+  });
 }
 
 export function framesToExportHolds(
@@ -264,8 +277,15 @@ export function framesToExportHolds(
   frames: string | null | undefined,
 ): Array<{ x: number; y: number; role: string }> {
   if (!frames) return [];
-
   const placementCoordinates = buildPlacementCoordinateMap(boardType, layoutId);
+  return exportHoldsFromFrames(boardType, frames, placementCoordinates);
+}
+
+function exportHoldsFromFrames(
+  boardType: AuroraBoardName,
+  frames: string,
+  placementCoordinates: ReadonlyMap<number, { x: number; y: number }>,
+): Array<{ x: number; y: number; role: string }> {
   const firstFrame = convertLitUpHoldsStringToMap(frames, boardType as BoardName)[0] ?? {};
 
   return Object.entries(firstFrame)

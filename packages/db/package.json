@@ -6,6 +6,11 @@
   "main": "src/index.ts",
   "types": "src/index.ts",
   "exports": {
+    "./background-jobs": {
+      "types": "./src/background-jobs.ts",
+      "import": "./src/background-jobs.ts",
+      "default": "./src/background-jobs.ts"
+    },
     "./job-queue-schema": {
       "types": "./src/job-queue-schema.ts",
       "import": "./src/job-queue-schema.ts",
@@ -60,6 +65,11 @@
       "types": "./src/queries/index.ts",
       "import": "./src/queries/index.ts",
       "default": "./src/queries/index.ts"
+    },
+    "./jobs": {
+      "types": "./src/jobs/index.ts",
+      "import": "./src/jobs/index.ts",
+      "default": "./src/jobs/index.ts"
     },
     "./testing/dedup-replay": {
       "types": "./src/testing/dedup-replay.ts",

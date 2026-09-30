@@ -82,6 +82,32 @@ export function resolveChartColors(variant: UiVariant, colorScheme: 'light' | 'd
 }
 
 /**
+ * The five-stop data ramp the hold heatmap draws with, few → many.
+ *
+ * One violet hue ordered by luminance, never a role hue: the board already
+ * spends green / cyan / magenta / amber on Start / Hand / Finish / Foot, so a
+ * green-to-red ramp read as "all feet" on a busy wall. Luminance alone carries
+ * the order, which is what keeps it readable for every colour-vision type.
+ * Brightness rises toward "many" on the dark field and falls toward "many" on
+ * the light one, so the hottest hold is always the one with the most contrast
+ * against the sheet. Plain strings: the renderer's hold-state map and the
+ * legend both need hex. Pinned by `heat-ramp.test.ts` (strictly monotonic,
+ * at least 1.3:1 between neighbours).
+ */
+export type HeatRamp = readonly [string, string, string, string, string];
+
+export const heatRampByScheme = {
+  // Violet end to end: a near-white top stop read as an unheated grey hold on
+  // the board photo, and a near-white cold stop faded the same way in light mode.
+  dark: ['#4C1D95', '#6D28D9', '#8B5CF6', '#A78BFA', '#C4B5FD'],
+  light: ['#C4B5FD', '#A78BFA', '#7C3AED', '#5B21B6', '#2E1065'],
+} as const satisfies Record<'light' | 'dark', HeatRamp>;
+
+export function resolveHeatRamp(colorScheme: 'light' | 'dark'): HeatRamp {
+  return heatRampByScheme[colorScheme];
+}
+
+/**
  * Section-caption treatment. Liquid Glass uses the HIG group caption (uppercased,
  * dimmed, tracked-out); Material uses sentence case (the M3 app bar / onSurfaceVariant
  * carries the hierarchy instead). Keyed on VARIANT, not `Platform.OS` — fixing the

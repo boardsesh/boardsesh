@@ -132,12 +132,6 @@
       "to": "To"
     }
   },
-  "analytics": {
-    "noData": "No analytics data available yet. Data is collected during sync.",
-    "ascentsOverTime": "Ascents Over Time",
-    "qualityOverTime": "Quality Over Time",
-    "gradeOverTime": "Grade Over Time"
-  },
   "mobile": {
     "account": "Account",
     "signOut": "Sign out"

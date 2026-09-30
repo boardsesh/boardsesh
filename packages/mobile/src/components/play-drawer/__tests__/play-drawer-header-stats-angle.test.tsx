@@ -10,6 +10,9 @@ vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: unknown) => styles },
   Platform: { OS: 'ios' },
   PlatformColor: (name: string) => name,
+  // The header reads fontScale to decide whether the crowd's second grade line
+  // fits (#4796); default Dynamic Type here.
+  useWindowDimensions: () => ({ width: 390, height: 844, scale: 3, fontScale: 1 }),
   Pressable: ({
     children,
     onLongPress,

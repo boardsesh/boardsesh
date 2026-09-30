@@ -121,6 +121,7 @@ import {
 import { ONBOARDING_TIP_QUICKACTIONS_KEY } from '@boardsesh/key-value-storage';
 import { useClimbQuickActionsButton } from '../../../src/lib/climb-quick-actions-button-preference';
 import { useAuth } from '../../../src/providers/auth-provider';
+import { usePersonalGradesActive } from '../../../src/hooks/use-personal-grades';
 import { ensureBackgroundsCached } from '../../../src/lib/background-image-cache';
 import {
   getRecentFilters,
@@ -668,6 +669,10 @@ function ClimbListInner() {
     };
   }, [activeBoard, colorScheme]);
 
+  // Personal grades (#4828): only reaches the query when a grade bound or a
+  // difficulty sort is active — `toClimbSearchInput` owns that scoping — so an
+  // unfiltered browse is unaffected and stays Redis-cacheable.
+  const personalGrades = usePersonalGradesActive();
   const searchInput = useMemo(
     () =>
       mergeBoardFilters(
@@ -675,11 +680,11 @@ function ClimbListInner() {
           filtersForBoard(filters, boardName),
           { boardName, layoutId, sizeId, setIds, angle },
           { page: 0, pageSize: PAGE_SIZE },
-          { name },
+          { name, personalGrades },
         ),
         boardFilters,
       ),
-    [boardName, layoutId, sizeId, setIds, angle, name, filters, boardFilters],
+    [boardName, layoutId, sizeId, setIds, angle, name, filters, boardFilters, personalGrades],
   );
 
   const {

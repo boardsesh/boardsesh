@@ -98,6 +98,7 @@ function readEnvInt(name: string, fallback: number): number {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 }
 
+/** The retry label for an error that provably never reached PostgreSQL, or null. */
 export function connectErrorCode(error: unknown): string | null {
   if (!error || typeof error !== 'object') return null;
   const { code } = error as { code?: unknown };

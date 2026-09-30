@@ -31,6 +31,13 @@ const mocks = vi.hoisted(() => ({
   linkStarted: vi.fn(),
   linkSucceeded: vi.fn(),
   linkFailed: vi.fn(),
+  requestSync: vi.fn((_document: unknown, _variables: unknown) =>
+    Promise.resolve({ requestProviderSync: { runId: 'run-1', status: 'queued', coalesced: false } }),
+  ),
+}));
+
+vi.mock('../../../lib/graphql/client', () => ({
+  getHttpClient: () => ({ request: mocks.requestSync }),
 }));
 
 vi.mock('../../../lib/integrations/board-link-analytics', () => ({
@@ -70,6 +77,7 @@ type MutationOptions = {
   mutationFn: (vars: unknown) => unknown;
   onSuccess?: (result: unknown, vars: unknown) => unknown;
   onError?: (error: unknown, variables: unknown) => unknown;
+  onSettled?: (result: unknown, error: unknown, variables: unknown) => unknown;
 };
 
 vi.mock('@tanstack/react-query', () => ({
@@ -87,9 +95,17 @@ vi.mock('@tanstack/react-query', () => ({
   },
   useMutation: (opts: MutationOptions) => ({
     mutate: (vars: unknown) => {
-      void Promise.resolve(opts.mutationFn(vars))
-        .then((result) => opts.onSuccess?.(result, vars))
-        .catch((error) => opts.onError?.(error, vars));
+      // Like TanStack: hook-level callbacks run for every call, onSettled last.
+      void Promise.resolve(opts.mutationFn(vars)).then(
+        async (result) => {
+          await opts.onSuccess?.(result, vars);
+          await opts.onSettled?.(result, null, vars);
+        },
+        async (error) => {
+          await opts.onError?.(error, vars);
+          await opts.onSettled?.(undefined, error, vars);
+        },
+      );
     },
     isPending: false,
     variables: undefined,
@@ -551,6 +567,117 @@ describe('BoardAccountsSection — sync_error on a connected board card (#3526)'
 
     expect(container.textContent).not.toContain('aurora.status.error');
     expect(container.textContent).not.toContain('aurora.status.duplicateAccountCircuits');
+  });
+});
+
+describe('BoardAccountsSection — Sync now', () => {
+  const tensionCredential = (overrides: Partial<AuroraCredentialStatus> = {}): AuroraCredentialStatus => ({
+    boardType: 'tension',
+    auroraUsername: 'climber',
+    auroraUserId: 144574,
+    lastSyncAt: '2026-07-25T00:00:00.000Z',
+    syncStatus: 'active',
+    syncError: null,
+    pendingRunId: null,
+    syncAvailable: true,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    ...overrides,
+  });
+
+  beforeEach(() => {
+    mocks.flags = {};
+    mocks.credentials = [];
+    mocks.showToast.mockReset();
+    mocks.invalidate.mockClear();
+    mocks.requestSync.mockClear();
+  });
+
+  it('asks the backend to sync the board and refreshes the card', async () => {
+    mocks.credentials = [tensionCredential()];
+    const { container } = render(<BoardAccountsSection />);
+
+    fireEvent.click(button(container, 'aurora.card.syncNow')!);
+
+    await waitFor(() => expect(mocks.requestSync).toHaveBeenCalledTimes(1));
+    expect(mocks.requestSync.mock.calls[0][1]).toEqual({ boardType: 'tension' });
+    await waitFor(() => expect(mocks.invalidate).toHaveBeenCalled());
+    expect(mocks.showToast).not.toHaveBeenCalled();
+  });
+
+  it('shows the syncing state while a sync is waiting, and does not offer a second one', () => {
+    mocks.credentials = [tensionCredential({ pendingRunId: 'run-1' })];
+    const { container } = render(<BoardAccountsSection />);
+
+    expect(container.textContent).toContain('aurora.status.syncingHint');
+    expect(container.textContent).toContain('aurora.status.syncing');
+    expect(button(container, 'aurora.card.syncNow')?.disabled).toBe(true);
+  });
+
+  it('asks the climber to slow down when the backend rate limits the request', async () => {
+    mocks.credentials = [tensionCredential()];
+    mocks.requestSync.mockRejectedValueOnce({ response: { errors: [{ extensions: { code: 'RATE_LIMITED' } }] } });
+    const { container } = render(<BoardAccountsSection />);
+
+    fireEvent.click(button(container, 'aurora.card.syncNow')!);
+
+    await waitFor(() => expect(mocks.showToast).toHaveBeenCalledWith('aurora.mobile.syncNowRateLimited', 'warning'));
+  });
+
+  it('keeps each board disabled until its own request settles, whatever is tapped after', async () => {
+    mocks.credentials = [
+      tensionCredential(),
+      tensionCredential({ boardType: 'kilter', auroraUsername: 'kilter-climber' }),
+    ];
+    mocks.flags = { 'kilter-oauth-linking': true };
+    const settleByBoard = new Map<string, () => void>();
+    mocks.requestSync.mockImplementation(
+      (_document: unknown, variables: unknown) =>
+        new Promise((resolve) => {
+          const { boardType } = variables as { boardType: string };
+          settleByBoard.set(boardType, () =>
+            resolve({ requestProviderSync: { runId: `run-${boardType}`, status: 'queued', coalesced: false } }),
+          );
+        }),
+    );
+    const { container } = render(<BoardAccountsSection />);
+    const syncButtons = () =>
+      Array.from(container.querySelectorAll('[data-button="aurora.card.syncNow"]')) as HTMLButtonElement[];
+    expect(syncButtons()).toHaveLength(2);
+
+    fireEvent.click(syncButtons()[0]);
+    fireEvent.click(syncButtons()[1]);
+    // A second tap on the first board while its request is still out does nothing.
+    fireEvent.click(syncButtons()[0]);
+
+    await waitFor(() => expect(mocks.requestSync).toHaveBeenCalledTimes(2));
+    expect(syncButtons().map((syncButton) => syncButton.disabled)).toEqual([true, true]);
+
+    await act(async () => {
+      settleByBoard.get('kilter')?.();
+    });
+    // The other board's request is still out, so its button stays disabled.
+    const stillDisabled = syncButtons().filter((syncButton) => syncButton.disabled);
+    expect(stillDisabled).toHaveLength(1);
+
+    await act(async () => {
+      settleByBoard.get('tension')?.();
+    });
+    await waitFor(() => expect(syncButtons().every((syncButton) => !syncButton.disabled)).toBe(true));
+  });
+
+  it('offers no Sync now while the backend does not run it for this board', () => {
+    mocks.credentials = [tensionCredential({ syncAvailable: false })];
+    const { container } = render(<BoardAccountsSection />);
+
+    expect(button(container, 'aurora.card.syncNow')).toBeNull();
+  });
+
+  it('offers no Sync now on an account that has to be reconnected first', () => {
+    mocks.credentials = [tensionCredential({ syncStatus: 'expired' })];
+    const { container } = render(<BoardAccountsSection />);
+
+    expect(button(container, 'aurora.card.syncNow')).toBeNull();
+    expect(button(container, 'aurora.card.reconnect')).not.toBeNull();
   });
 });
 

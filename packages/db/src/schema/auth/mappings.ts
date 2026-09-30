@@ -59,6 +59,11 @@ export const auroraCredentials = pgTable(
     // so a deterministically-failing credential rotates to the back of the
     // queue without masquerading as a fresh successful sync. Not user-facing.
     lastSyncAttemptAt: timestamp('last_sync_attempt_at'),
+    // provider_retry_after_until = when the provider's last HTTP 429
+    // Retry-After ends. A claim waits for the LATER of this and the failure
+    // backoff (last_sync_attempt_at + backoff(n)), never their sum. NULL when
+    // the provider never throttled this credential.
+    providerRetryAfterUntil: timestamp('provider_retry_after_until', { withTimezone: true }),
     syncStatus: text('sync_status').default('pending').notNull(), // 'pending' | 'active' | 'error' | 'expired'
     syncError: text('sync_error'),
     credentialFailureCount: integer('credential_failure_count').default(0).notNull(),

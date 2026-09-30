@@ -397,11 +397,6 @@
           "title": "Similar climbs live on your phone",
           "body": "Download {{name}} to see climbs that share these holds",
           "cta": "Download {{name}}"
-        },
-        "holdHeatmap": {
-          "title": "See where the climbs are",
-          "body": "Download {{name}} to light up the holds climbers use most",
-          "cta": "Download {{name}}"
         }
       }
     },

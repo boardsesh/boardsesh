@@ -129,6 +129,8 @@ export const iconMap = {
 
   // Create climb
   flame: { ios: 'flame', android: 'fire' },
+  // The heatmap toggle while it is on.
+  'flame.fill': { ios: 'flame.fill', android: 'fire' },
   lock: { ios: 'lock', android: 'lock-outline' },
   visibility: { ios: 'eye', android: 'eye-outline' },
   'visibility.off': { ios: 'eye.slash', android: 'eye-off-outline' },

@@ -26,7 +26,7 @@ import {
   resolveDetailPaneWidth,
   WALL_COLUMN_WIDTH,
 } from '../../src/theme/size-class';
-import { tabsActiveSegment } from '../../src/lib/route-segments';
+import { isAccessoryHiddenRoute, tabsActiveSegment } from '../../src/lib/route-segments';
 import { useKeepAwakeWhile } from '../../src/hooks/use-keep-awake-while';
 import { SIDEBAR_WIDTH } from '../../src/theme/layout';
 import { getAppEntryTab } from '../../src/lib/app-entry-route';
@@ -57,6 +57,10 @@ const renderHiddenTabBar = () => null;
 // flag): enabled=false renders a plain display:none View, skipping freeze
 // (react-native-screens Screen.js:63,123).
 const JS_TABS_SCREEN_OPTIONS = { headerShown: false, freezeOnBlur: true } as const;
+
+// Hoisted so NativeTabs sees a stable prop object; only the route flips between them.
+const ACCESSORY_SHOWN_NATIVE_PROPS = { ios: { bottomAccessoryHidden: false } } as const;
+const ACCESSORY_HIDDEN_NATIVE_PROPS = { ios: { bottomAccessoryHidden: true } } as const;
 
 /**
  * Bottom tabs. The system Liquid Glass tab bar (`expo-router/unstable-native-tabs`)
@@ -128,6 +132,13 @@ export default function TabLayout() {
   // route-typed tuple (see route-segments.ts).
   const segments = useSegments();
   const onWallTab = tabsActiveSegment(segments) === 'wall';
+  // The hold-type and zone filter boards keep their controls at the bottom of the
+  // screen, right where the accessory platter draws. Hide the platter there through
+  // the native `bottomAccessoryHidden` prop instead of unmounting the host (#5055);
+  // see `isAccessoryHiddenRoute`.
+  const accessoryNativeProps = isAccessoryHiddenRoute(segments)
+    ? ACCESSORY_HIDDEN_NATIVE_PROPS
+    : ACCESSORY_SHOWN_NATIVE_PROPS;
   // Kiosk stays lit: hold the screen awake while the "On the Wall" tab is the
   // focused destination (iPad-only — /wall is unreachable elsewhere). Released
   // on navigate-away and unmount so other tabs don't hold the lock.
@@ -325,6 +336,7 @@ export default function TabLayout() {
     // build if either hunk ever stops applying after a dep bump.
     <NativeTabs
       minimizeBehavior="onScrollDown"
+      unstable_nativeProps={accessoryNativeProps}
       iconColor={{ default: systemColors.secondaryLabel, selected: systemColors.label }}
       labelStyle={{ default: { color: systemColors.secondaryLabel }, selected: { color: systemColors.label } }}
       tintColor={systemColors.label}

@@ -131,8 +131,8 @@ export const queriesTypeDefs = /* GraphQL */ `
     setterStats(input: SetterStatsInput!): [SetterStat!]!
 
     """
-    Get climb stats history for a climb over the last 12 months.
-    Returns snapshots captured during shared sync for trend analysis.
+    Current statistics for a climb, one entry per angle it has been sent at.
+    Despite the name this is no longer a time series; prefer climbStatsForAngles.
     """
     climbStatsHistory(boardName: String!, climbUuid: ID!): [ClimbStatsHistoryEntry!]!
 

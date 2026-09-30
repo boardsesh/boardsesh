@@ -15,6 +15,13 @@ export type AuroraCredentialStatus = {
   lastSyncAt: string | null;
   syncStatus: string;
   syncError: string | null;
+  /**
+   * The sync this account is waiting on, queued by a link or "Sync now". Null
+   * once it finished; absent from backends older than the field.
+   */
+  pendingRunId?: string | null;
+  /** The backend can run "Sync now" for this account. Absent from older backends. */
+  syncAvailable?: boolean;
   createdAt: string;
 };
 

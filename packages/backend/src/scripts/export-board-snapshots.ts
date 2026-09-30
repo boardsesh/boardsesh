@@ -22,14 +22,16 @@
 // higher-cursor ones — see the pool call-site comment in runExport.
 //
 // Structure: a testable core (`exportLayoutSnapshot`, `boardSnapshotDdlStatements`,
-// `discoverLayoutPairs`) under a thin CLI (`runExport`). The CLI is only invoked
-// when this module is the process entry, so importing it in a test has no side
-// effects.
+// `discoverLayoutPairs`) under one pass (`runExportWithOptions`, also run by the
+// batch worker's `export-board-snapshots` family) and a thin CLI (`runExport`).
+// The CLI is only invoked when this module is the process entry, so importing it
+// in a test has no side effects.
 
 import { pathToFileURL } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
-import { gzipSync } from 'node:zlib';
+import { promisify } from 'node:util';
+import { gzip } from 'node:zlib';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -63,8 +65,8 @@ import { logger } from '../utils/logger';
 // (identity, unchanged for the live fleet) and `board-snapshots/v1-gzip` side by
 // side. Each prefix is a self-contained, single-encoding manifest: the merge and
 // prune logic below scope entirely to whichever prefix the run targets.
-const DEFAULT_SNAPSHOT_KEY_PREFIX = 'board-snapshots/v1';
-const LIVE_SNAPSHOT_KEY_PREFIX = 'board-snapshots/v1-gzip';
+export const DEFAULT_SNAPSHOT_KEY_PREFIX = 'board-snapshots/v1';
+export const LIVE_SNAPSHOT_KEY_PREFIX = 'board-snapshots/v1-gzip';
 // A safe key prefix: lowercase alphanumerics separated by single `-`/`/`, no
 // leading/trailing separator and no `..`. It's spliced into S3 object keys and
 // the manifest path, so validate it (mirrors SAFE_IDENTIFIER's intent for keys).
@@ -118,6 +120,16 @@ const SNAPSHOT_TABLES: readonly SnapshotTableName[] = ['board_climbs', 'board_cl
 // required table names, so an extra snapshot_meta row is backwards-compatible.
 const DELETIONS_SNAPSHOT_META_TABLE = 'sync_deletions';
 const SNAPSHOT_EXPORT_APPLICATION_PREFIX = 'boardsesh-snapshot-export-';
+
+// On the libuv pool, not the event loop: gzipping kilter's 271 MB artifact
+// takes seconds, and the batch worker's heartbeat timer shares this loop.
+export const gzipAsync = promisify(gzip);
+
+// A replay boundary this far behind builtAt is still safe, but it means some
+// session (often an unrelated role's forgotten open transaction) held a
+// transaction open that long, and every client bootstrapping from the artifact
+// replays that much more tombstone history. Worth a warning, never a failure.
+const STALE_REPLAY_BOUNDARY_WARN_MS = 60 * 60 * 1000;
 
 // The SEPARATE per-layout grades artifact's single table (issue #4310). It is
 // not folded into SNAPSHOT_TABLES on purpose: the client verifies a whole-layout
@@ -375,6 +387,69 @@ async function hasDeltaAtThreshold(params: {
   return rows.length >= threshold;
 }
 
+/**
+ * The layout's climb uuids when it has FEWER than `threshold` climbs, else null.
+ *
+ * `LIMIT threshold` caps the read at one probe's worth of rows. `enable_seqscan`
+ * is switched off for this one statement (SET LOCAL, reset at commit) because
+ * board_type and layout_id are estimated independently: moonboard layout 1 has
+ * 128 climbs but is planned as ~130k, and with a LIMIT the planner then seq-scans
+ * all of board_climbs (190 ms, 46k buffers on the replica) instead of reading
+ * board_climbs_layout_filter_idx (1 ms, 120 buffers).
+ */
+async function smallLayoutClimbUuids(sqlClient: Sql, pair: LayoutPair, threshold: number): Promise<string[] | null> {
+  const rows = await sqlClient.begin(async (tx) => {
+    await tx.unsafe('SET LOCAL enable_seqscan = off');
+    return tx<{ uuid: string }[]>`
+      SELECT uuid FROM board_climbs
+      WHERE board_type = ${pair.boardType} AND layout_id = ${pair.layoutId}
+      LIMIT ${threshold}
+    `;
+  });
+  if (rows.length >= threshold) return null;
+  return rows.map((row) => String(row.uuid));
+}
+
+/**
+ * {@link hasDeltaAtThreshold} for a layout whose every climb uuid is known.
+ * Rows are reached through the table's (board_type, climb_uuid, angle) primary
+ * key, one probe per climb, instead of walking the board-wide cursor index and
+ * throwing away every row that belongs to another layout. For a tiny layout the
+ * board-wide walk is the expensive shape: moonboard layout 1's grades probe from
+ * epoch read 954k buffers in 3.2 s on the replica; this form reads 522 in 29 ms.
+ * Same scope as the EXISTS form: the uuids are exactly the layout's climbs.
+ */
+async function hasSmallLayoutDeltaAtThreshold(params: {
+  sqlClient: Sql;
+  pair: LayoutPair;
+  climbUuids: string[];
+  tableName: 'board_climb_stats' | 'board_climb_grades';
+  watermark: SnapshotWatermark;
+  threshold: number;
+}): Promise<boolean> {
+  const { sqlClient, pair, climbUuids, tableName, watermark, threshold } = params;
+  if (climbUuids.length === 0) return false;
+  const cursorColumn = cursorColumnFor(tableName);
+  const rows = await sqlClient.unsafe(
+    `SELECT 1
+     FROM ${tableName}
+     WHERE board_type = $1
+       AND climb_uuid = ANY($2::text[])
+       AND ${cursorColumn} < now() - make_interval(secs => $3)
+       AND (${cursorColumn}, sync_seq) > ($4::timestamp, $5::bigint)
+     LIMIT $6`,
+    [
+      pair.boardType,
+      climbUuids,
+      DEFAULT_STABILITY_WINDOW_SECONDS,
+      watermark.watermarkUpdatedAt,
+      watermark.watermarkSyncSeq,
+      threshold,
+    ],
+  );
+  return rows.length >= threshold;
+}
+
 type RefreshReason = SnapshotTableName | SnapshotGradesTableName | 'missing-entry' | 'stale-schema';
 
 /** Return the first reason this pair needs a new artifact, or null when current. */
@@ -413,7 +488,28 @@ async function layoutRefreshReason(params: {
     });
   }
 
+  // A layout with fewer climbs than the threshold can never put `threshold`
+  // climb rows past any watermark, so its board_climbs probe is skipped outright,
+  // and its stats/grades probes go through the per-climb primary key.
+  const smallLayoutUuids = await smallLayoutClimbUuids(sqlClient, pair, threshold);
+
   for (const { tableName, watermark } of tableWatermarks) {
+    if (smallLayoutUuids) {
+      if (tableName === 'board_climbs') continue;
+      if (
+        await hasSmallLayoutDeltaAtThreshold({
+          sqlClient,
+          pair,
+          climbUuids: smallLayoutUuids,
+          tableName,
+          watermark,
+          threshold,
+        })
+      ) {
+        return tableName;
+      }
+      continue;
+    }
     if (await hasDeltaAtThreshold({ sqlClient, pair, tableName, watermark, threshold })) {
       return tableName;
     }
@@ -421,11 +517,60 @@ async function layoutRefreshReason(params: {
   return null;
 }
 
+// The streamed SELECT carries one extra computed column: the cursor timestamp as
+// integer microseconds since the epoch. It is the ORDER key for the in-stream
+// watermark below — exact to the microsecond and independent of how the driver
+// renders the timestamp — and is never written into the artifact.
+const WATERMARK_CURSOR_ALIAS = 'watermark_cursor_micros';
+
+/**
+ * The running maximum `(cursor, sync_seq)` keyset over streamed rows. Ordering
+ * uses the Postgres-computed microsecond value and a BigInt sync_seq, so it
+ * matches `ORDER BY cursor DESC, sync_seq DESC` exactly — never a string compare
+ * of rendered timestamps, which misorders mixed sub-second precision
+ * ('…:00.5' vs '…:00.25'). The reported watermark is the WINNING row's raw
+ * cursor value run through the same `toIso` the old per-table watermark query
+ * used, so the artifact's snapshot_meta is byte-identical to that query's.
+ */
+export class KeysetWatermarkTracker {
+  private bestMicros: bigint | null = null;
+  private bestSyncSeq: bigint | null = null;
+  private bestRawCursor: unknown = null;
+  private bestRawSyncSeq: unknown = null;
+
+  observe(cursorMicros: unknown, rawCursor: unknown, rawSyncSeq: unknown): void {
+    const micros = BigInt(String(cursorMicros));
+    const syncSeq = BigInt(String(rawSyncSeq));
+    if (
+      this.bestMicros === null ||
+      this.bestSyncSeq === null ||
+      micros > this.bestMicros ||
+      (micros === this.bestMicros && syncSeq > this.bestSyncSeq)
+    ) {
+      this.bestMicros = micros;
+      this.bestSyncSeq = syncSeq;
+      this.bestRawCursor = rawCursor;
+      this.bestRawSyncSeq = rawSyncSeq;
+    }
+  }
+
+  /** Empty scope → the epoch sentinel, so a client resumes from the start. */
+  result(): SnapshotWatermark {
+    if (this.bestMicros === null) {
+      return { watermarkUpdatedAt: EPOCH_WATERMARK_UPDATED_AT, watermarkSyncSeq: EPOCH_WATERMARK_SYNC_SEQ };
+    }
+    return { watermarkUpdatedAt: toIso(this.bestRawCursor), watermarkSyncSeq: String(this.bestRawSyncSeq) };
+  }
+}
+
 /**
  * Stream one table's scoped rows from Postgres through the shared row shaping into
  * the SQLite artifact, batched into multi-row INSERTs. Returns the number of rows
- * written; the watermark is computed separately (see `tableWatermark`) from the
- * same repeatable-read snapshot.
+ * written and the table's watermark: the greatest `(cursor, sync_seq)` keyset over
+ * exactly the rows written, tracked while streaming. Rows and watermark come from
+ * one statement in the export's REPEATABLE READ snapshot, so the watermark can
+ * never cover a row the artifact omitted, and no second query walks the
+ * board-wide cursor index backwards to find it.
  */
 async function streamTableIntoSqlite(
   tx: TransactionSql,
@@ -435,9 +580,16 @@ async function streamTableIntoSqlite(
   whereClause: string,
   params: (string | number)[],
   streamBatchSize: number,
-): Promise<number> {
+): Promise<SnapshotTableExportResult> {
   assertSafeColumns(columns);
-  const selectSql = `SELECT ${columns.join(', ')} FROM ${tableName} WHERE ${whereClause}`;
+  const cursorColumn = cursorColumnFor(tableName);
+  if (!columns.includes(cursorColumn) || !columns.includes('sync_seq')) {
+    throw new Error(`Snapshot table ${tableName} must export ${cursorColumn} and sync_seq to derive its watermark`);
+  }
+  const selectSql =
+    `SELECT ${columns.join(', ')}, ` +
+    `(EXTRACT(EPOCH FROM ${cursorColumn}) * 1000000)::bigint AS ${WATERMARK_CURSOR_ALIAS} ` +
+    `FROM ${tableName} WHERE ${whereClause}`;
   const chunkSize = multiRowChunkSize(columns.length);
   const insertSqlByRowCount = new Map<number, string>();
   const insertSqlFor = (rowCount: number): string => {
@@ -452,6 +604,7 @@ async function streamTableIntoSqlite(
   };
 
   let rowCount = 0;
+  const watermark = new KeysetWatermarkTracker();
   const pending: RawRow[] = [];
   const flush = (): void => {
     if (pending.length === 0) return;
@@ -464,51 +617,21 @@ async function streamTableIntoSqlite(
   };
 
   for await (const batch of tx.unsafe(selectSql, params).cursor(streamBatchSize)) {
-    for (const rawRow of batch) {
-      pending.push(normalizeRow(rawRow as RawRow));
+    for (const streamedRow of batch) {
+      const { [WATERMARK_CURSOR_ALIAS]: cursorMicros, ...rawRow } = streamedRow as RawRow;
+      watermark.observe(cursorMicros, rawRow[cursorColumn], rawRow.sync_seq);
+      pending.push(normalizeRow(rawRow));
       rowCount += 1;
     }
     flush();
   }
   flush();
-  return rowCount;
-}
-
-/**
- * Compute a table's watermark (the greatest `(updated_at, sync_seq)` keyset over
- * the scoped rows) inside the same transaction/snapshot as the row stream, so it
- * never covers a row the artifact omitted. Postgres orders the timestamps as real
- * timestamps — never string-compared in JS, which would misorder mixed sub-second
- * precision. Empty scope → the epoch sentinel, so a client resumes from the start.
- */
-async function tableWatermark(
-  tx: TransactionSql,
-  tableName: SnapshotTableName | SnapshotGradesTableName,
-  whereClause: string,
-  params: (string | number)[],
-): Promise<{ watermarkUpdatedAt: string; watermarkSyncSeq: string }> {
-  const cursorColumn = cursorColumnFor(tableName);
-  const rows = await tx.unsafe(
-    `SELECT ${cursorColumn} AS cursor_at, sync_seq
-     FROM ${tableName}
-     WHERE ${whereClause}
-     ORDER BY ${cursorColumn} DESC, sync_seq DESC
-     LIMIT 1`,
-    params,
-  );
-  const watermarkRow = rows[0] as unknown as { cursor_at: unknown; sync_seq: unknown } | undefined;
-  if (!watermarkRow) {
-    return { watermarkUpdatedAt: EPOCH_WATERMARK_UPDATED_AT, watermarkSyncSeq: EPOCH_WATERMARK_SYNC_SEQ };
-  }
-  return {
-    watermarkUpdatedAt: toIso(watermarkRow.cursor_at),
-    watermarkSyncSeq: String(watermarkRow.sync_seq),
-  };
+  return { rowCount, ...watermark.result() };
 }
 
 type DeletionReplayProbeRow = {
   export_xact_start: unknown;
-  oldest_same_role_xact_start: unknown;
+  oldest_peer_xact_start: unknown;
   visibility_established: boolean;
 };
 
@@ -560,22 +683,39 @@ export function selectDeletionReplayBoundary(params: {
  * delete cannot commit after the RR snapshot is fixed but before pg_stat_activity
  * notices it has disappeared.
  *
- * Fail closed. PostgreSQL exposes full activity details to ordinary users only
- * for sessions owned by the same role. Production writers and this exporter use
- * that one role; ANY other-role client in this database, hidden/disabled peer
- * state, a prepared transaction (not represented in pg_stat_activity), a
- * missing exporter row, or a query/pool failure returns a bounded fallback
- * reason. The artifact then omits this optional row and clients use the older
- * scoped-row watermark rewind. `runExport` logs the boundary or that stable
- * reason for every layout without exposing peer-session details.
+ * Fail closed. PostgreSQL shows a session's details (backend_type, state,
+ * xact_start) only to its own role and to roles with the privileges of
+ * `pg_read_all_stats` (superusers included). Two modes follow from that:
+ *
+ * - Full visibility (the exporter's role has `pg_read_all_stats`, which the
+ *   admin grants the batch worker login): every client backend in this
+ *   database counts, whatever its role, and the boundary is the oldest open
+ *   transaction among them. A session whose details are still hidden fails
+ *   closed.
+ * - Same role (the GitHub Actions exporter, which shares the writers' login):
+ *   only same-role transactions count, and ANY visible other-role client fails
+ *   closed. Other roles' rows carry no backend_type in this mode, so this
+ *   check cannot see them at all; the mode is only as safe as the premise that
+ *   every writer of the snapshot tables uses the exporter's role. A caller
+ *   whose role is NOT the writers' (the batch worker) sets
+ *   `requireAllRolesVisible`, and without `pg_read_all_stats` it then always
+ *   gets the fallback instead of a boundary that ignored the writers.
+ *
+ * In both modes hidden/disabled peer state, a prepared transaction (not
+ * represented in pg_stat_activity), a missing exporter row, or a query/pool
+ * failure returns a bounded fallback reason. The artifact then omits this
+ * optional row and clients use the older scoped-row watermark rewind. The
+ * export logs the boundary or that stable reason for every layout without
+ * exposing peer-session details.
  */
 async function probeDeletionReplayBoundary(params: {
   sqlClient: Sql;
   applicationName: string;
   artifactBuiltAt: string;
   stabilityWindowSeconds: number;
+  requireAllRolesVisible: boolean;
 }): Promise<DeletionReplayMetadataResult> {
-  const { sqlClient, applicationName, artifactBuiltAt, stabilityWindowSeconds } = params;
+  const { sqlClient, applicationName, artifactBuiltAt, stabilityWindowSeconds, requireAllRolesVisible } = params;
   // The observer must not queue behind the export connection forever. The
   // production primary pool has max=10; a generic/max=1 caller still gets a
   // valid artifact, just without this optional optimization.
@@ -585,18 +725,22 @@ async function probeDeletionReplayBoundary(params: {
   }
   try {
     const rows = await sqlClient.unsafe(
-      `SELECT
+      `WITH observer AS (
+         SELECT pg_has_role('pg_read_all_stats', 'USAGE') AS reads_all_stats
+       )
+       SELECT
          exporter.xact_start AS export_xact_start,
          (
            SELECT min(peer.xact_start)
            FROM pg_stat_activity peer
            WHERE peer.datname = exporter.datname
-             AND peer.usesysid = exporter.usesysid
+             AND (observer.reads_all_stats OR peer.usesysid = exporter.usesysid)
              AND peer.backend_type = 'client backend'
              AND peer.pid NOT IN (exporter.pid, pg_backend_pid())
              AND peer.xact_start IS NOT NULL
-         ) AS oldest_same_role_xact_start,
+         ) AS oldest_peer_xact_start,
          current_setting('track_activities', true) = 'on'
+           AND (observer.reads_all_stats OR NOT $2::boolean)
            AND exporter.xact_start IS NOT NULL
            AND NOT EXISTS (
              SELECT 1
@@ -607,20 +751,28 @@ async function probeDeletionReplayBoundary(params: {
              SELECT 1
              FROM pg_stat_activity peer
              WHERE peer.datname = exporter.datname
-               AND peer.backend_type = 'client backend'
                AND peer.pid NOT IN (exporter.pid, pg_backend_pid())
                AND (
-                 peer.usesysid IS DISTINCT FROM exporter.usesysid
-                 OR peer.state IS NULL
-                 OR peer.state = 'disabled'
-                 OR (peer.state <> 'idle' AND peer.xact_start IS NULL)
+                 -- Full visibility: a role's session we still cannot read.
+                 -- Background processes have no role and never count.
+                 (observer.reads_all_stats AND peer.usesysid IS NOT NULL AND peer.backend_type IS NULL)
+                 OR (
+                   peer.backend_type = 'client backend'
+                   AND (
+                     (NOT observer.reads_all_stats AND peer.usesysid IS DISTINCT FROM exporter.usesysid)
+                     OR peer.state IS NULL
+                     OR peer.state = 'disabled'
+                     OR (peer.state <> 'idle' AND peer.xact_start IS NULL)
+                   )
+                 )
                )
            ) AS visibility_established
        FROM pg_stat_activity exporter
+       CROSS JOIN observer
        WHERE exporter.datname = current_database()
          AND exporter.backend_type = 'client backend'
          AND exporter.application_name = $1`,
-      [applicationName],
+      [applicationName, requireAllRolesVisible],
     );
     if (rows.length !== 1) {
       return {
@@ -638,7 +790,7 @@ async function probeDeletionReplayBoundary(params: {
     const deletionsReplayFrom = selectDeletionReplayBoundary({
       artifactBuiltAt,
       exportTransactionStartedAt: probe.export_xact_start,
-      oldestActiveTransactionStartedAt: probe.oldest_same_role_xact_start,
+      oldestActiveTransactionStartedAt: probe.oldest_peer_xact_start,
       stabilityWindowSeconds,
       visibilityEstablished: true,
     });
@@ -716,6 +868,8 @@ export async function exportLayoutSnapshot(params: {
   gradesFilePath?: string;
   stabilityWindowSeconds?: number;
   streamBatchSize?: number;
+  /** See probeDeletionReplayBoundary: refuse a same-role-only replay boundary. */
+  requireAllRolesVisible?: boolean;
 }): Promise<LayoutSnapshotResult> {
   const { sqlClient, boardType, layoutId, filePath, builtAt, gradesFilePath } = params;
   const stabilityWindowSeconds = params.stabilityWindowSeconds ?? DEFAULT_STABILITY_WINDOW_SECONDS;
@@ -749,12 +903,13 @@ export async function exportLayoutSnapshot(params: {
         applicationName: exportApplicationName,
         artifactBuiltAt: builtAt,
         stabilityWindowSeconds,
+        requireAllRolesVisible: params.requireAllRolesVisible ?? false,
       });
 
       const climbColumns = TABLE_CONFIGS.board_climbs.localColumns;
       const statsColumns = TABLE_CONFIGS.board_climb_stats.localColumns;
 
-      const climbRowCount = await streamTableIntoSqlite(
+      const climbsResult = await streamTableIntoSqlite(
         tx,
         sqliteDb,
         'board_climbs',
@@ -763,9 +918,7 @@ export async function exportLayoutSnapshot(params: {
         scopeParams,
         streamBatchSize,
       );
-      const climbWatermark = await tableWatermark(tx, 'board_climbs', CLIMBS_WHERE, scopeParams);
-
-      const statsRowCount = await streamTableIntoSqlite(
+      const statsResult = await streamTableIntoSqlite(
         tx,
         sqliteDb,
         'board_climb_stats',
@@ -774,16 +927,15 @@ export async function exportLayoutSnapshot(params: {
         scopeParams,
         streamBatchSize,
       );
-      const statsWatermark = await tableWatermark(tx, 'board_climb_stats', STATS_WHERE, scopeParams);
 
       const tables = {
-        board_climbs: { rowCount: climbRowCount, ...climbWatermark },
-        board_climb_stats: { rowCount: statsRowCount, ...statsWatermark },
+        board_climbs: climbsResult,
+        board_climb_stats: statsResult,
       } satisfies Record<SnapshotTableName, SnapshotTableExportResult>;
 
       if (!gradesDb) return { tables, gradesTables: null, ...deletionReplayMetadata };
 
-      const gradesRowCount = await streamTableIntoSqlite(
+      const gradesResult = await streamTableIntoSqlite(
         tx,
         gradesDb,
         'board_climb_grades',
@@ -792,13 +944,12 @@ export async function exportLayoutSnapshot(params: {
         scopeParams,
         streamBatchSize,
       );
-      const gradesWatermark = await tableWatermark(tx, 'board_climb_grades', GRADES_WHERE, scopeParams);
 
       return {
         tables,
         ...deletionReplayMetadata,
         gradesTables: {
-          board_climb_grades: { rowCount: gradesRowCount, ...gradesWatermark },
+          board_climb_grades: gradesResult,
         } satisfies Record<SnapshotGradesTableName, SnapshotTableExportResult>,
       };
     });
@@ -853,7 +1004,7 @@ export async function exportLayoutSnapshot(params: {
 
 // --- CLI ----------------------------------------------------------------------
 
-type ExportOptions = {
+export type SnapshotExportOptions = {
   dryRun: boolean;
   // Off by default: upload artifacts uncompressed until transparent
   // Content-Encoding: gzip decode is verified on-device (see the encoding
@@ -866,8 +1017,49 @@ type ExportOptions = {
   layoutFilter?: number;
 };
 
-function parseArgs(argv: string[]): ExportOptions {
-  const options: ExportOptions = { dryRun: false, gzip: false, keyPrefix: DEFAULT_SNAPSHOT_KEY_PREFIX };
+/** Structured progress lines. The backend's winston logger satisfies it, and so does `logger.child(...)`. */
+export type SnapshotExportLogger = {
+  info(message: string, meta?: Record<string, unknown>): void;
+  warn(message: string, meta?: Record<string, unknown>): void;
+  error(message: string, meta?: Record<string, unknown>): void;
+};
+
+/**
+ * What a caller other than the CLI can inject. Every field is optional and the
+ * CLI passes none of them.
+ */
+export type SnapshotExportDependencies = {
+  /**
+   * Checked before each layout and before the manifest upload. A layout that is
+   * already streaming finishes first (its REPEATABLE READ transaction does not
+   * watch the signal); an abort never publishes a manifest.
+   */
+  signal?: AbortSignal;
+  log?: SnapshotExportLogger;
+  /**
+   * The primary pool the export reads. Defaults to `createPool()`. It must
+   * carry drizzle's timestamp parsers (see the call site in
+   * runExportWithOptions) and allow at least two connections, or the deletion
+   * replay observer falls back.
+   */
+  sqlClient?: Sql;
+  /**
+   * Awaited immediately before the manifest upload, after every artifact is on
+   * S3. A throw aborts the run with the previous manifest still live. The
+   * batch worker passes its attempt fence here.
+   */
+  beforeManifestPublish?: () => Promise<void>;
+  /**
+   * Set when the export runs under a login other than the writers' (the batch
+   * worker). The deletion replay boundary then counts every role's open
+   * transactions, and without `pg_read_all_stats` the live gzip pass fails
+   * closed rather than publish a boundary blind to the writers.
+   */
+  requireAllRolesVisible?: boolean;
+};
+
+export function parseArgs(argv: string[]): SnapshotExportOptions {
+  const options: SnapshotExportOptions = { dryRun: false, gzip: false, keyPrefix: DEFAULT_SNAPSHOT_KEY_PREFIX };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--') continue; // vp forwards a literal `--` into argv
@@ -1033,10 +1225,11 @@ export function mergeManifestEntries(params: {
 async function fetchPreviousManifest(options: {
   isFilteredRun: boolean;
   manifestKey: string;
+  log: SnapshotExportLogger;
 }): Promise<SnapshotManifest | null> {
   const manifestObject = await getFromS3Strict('snapshots', options.manifestKey);
   if (!manifestObject) {
-    logger.warn('[export-snapshots] no previous manifest on S3 (first run?) — merging against empty');
+    options.log.warn('[export-snapshots] no previous manifest on S3 (first run?) — merging against empty');
     return null;
   }
   const chunks: Buffer[] = [];
@@ -1058,7 +1251,7 @@ async function fetchPreviousManifest(options: {
         `previous manifest at ${options.manifestKey} is invalid (${invalidReason}); a filtered run cannot merge safely — aborting before any upload`,
       );
     }
-    logger.warn(
+    options.log.warn(
       '[export-snapshots] previous manifest invalid — unfiltered run rebuilds everything, merging against empty',
       {
         reason: invalidReason,
@@ -1077,7 +1270,12 @@ async function fetchPreviousManifest(options: {
  * manifest provably references every artifact that must survive. Defensive by
  * design: any prune failure is logged and swallowed, never failing the run.
  */
-async function pruneStaleArtifacts(manifest: SnapshotManifest, nowMs: number, keyPrefix: string): Promise<void> {
+async function pruneStaleArtifacts(
+  manifest: SnapshotManifest,
+  nowMs: number,
+  keyPrefix: string,
+  log: SnapshotExportLogger,
+): Promise<void> {
   try {
     const referencedKeys = new Set<string>(manifest.entries.map((entry) => entry.key));
     // Grades artifacts live under the same prefix but are NOT in `entries`, so
@@ -1098,15 +1296,15 @@ async function pruneStaleArtifacts(manifest: SnapshotManifest, nowMs: number, ke
         await deleteFromS3('snapshots', object.key);
         prunedCount += 1;
       } catch (error) {
-        logger.warn('[export-snapshots] failed to prune stale artifact — continuing', {
+        log.warn('[export-snapshots] failed to prune stale artifact — continuing', {
           key: object.key,
           error: error instanceof Error ? error.message : String(error),
         });
       }
     }
-    logger.info('[export-snapshots] prune complete', { scanned: objects.length, pruned: prunedCount });
+    log.info('[export-snapshots] prune complete', { scanned: objects.length, pruned: prunedCount });
   } catch (error) {
-    logger.warn('[export-snapshots] artifact prune failed — continuing (prune is never fatal)', {
+    log.warn('[export-snapshots] artifact prune failed — continuing (prune is never fatal)', {
       error: error instanceof Error ? error.message : String(error),
     });
   }
@@ -1114,8 +1312,21 @@ async function pruneStaleArtifacts(manifest: SnapshotManifest, nowMs: number, ke
 
 type LayoutFailure = LayoutPair & { error: string };
 
+/** The CLI's entry: parse argv, then run with the default pool and logger. */
 export async function runExport(argv: string[]): Promise<void> {
-  const options = parseArgs(argv);
+  await runExportWithOptions(parseArgs(argv));
+}
+
+/**
+ * One export pass. Throws instead of exiting: a failed layout still lets every
+ * other layout publish, then the pass throws at the end.
+ */
+export async function runExportWithOptions(
+  options: SnapshotExportOptions,
+  dependencies: SnapshotExportDependencies = {},
+): Promise<void> {
+  const log = dependencies.log ?? logger;
+  const signal = dependencies.signal;
   const builtAt = new Date().toISOString();
   const isFilteredRun = options.boardFilter !== undefined || options.layoutFilter !== undefined;
   const isThresholdRefresh = options.refreshThreshold !== undefined;
@@ -1155,7 +1366,9 @@ export async function runExport(argv: string[]): Promise<void> {
   // packages/db/src/client/postgres.ts), so the pool carries drizzle's
   // transparent timestamp parsers and streamed rows match the resolver shaping.
   // Closed by the CLI entry below, not here — tests share the cached pool.
-  const sqlClient = createPool();
+  // The batch worker's createPool() is this same cached pool, under its own
+  // login (DB_POOL_MAX=2: one export transaction plus the replay observer).
+  const sqlClient = dependencies.sqlClient ?? createPool();
   const workDir = mkdtempSync(join(tmpdir(), 'board-snapshots-'));
   const newEntries: SnapshotManifestEntry[] = [];
   const failures: LayoutFailure[] = [];
@@ -1174,7 +1387,14 @@ export async function runExport(argv: string[]): Promise<void> {
           `(board=${options.boardFilter ?? '*'}, layout=${options.layoutFilter ?? '*'})`,
       );
     }
-    logger.info('[export-snapshots] starting run', {
+    // Which replay-observer mode this login gets (probeDeletionReplayBoundary):
+    // true counts every role's transactions, false only its own. Logged once
+    // per run because it depends on the login's grants, not on this code.
+    const [observer] = await sqlClient<{ reads_all_stats: boolean }[]>`
+      SELECT pg_has_role('pg_read_all_stats', 'USAGE') AS reads_all_stats
+    `;
+    log.info('[export-snapshots] starting run', {
+      readsAllStats: observer?.reads_all_stats === true,
       dryRun: options.dryRun,
       filtered: isFilteredRun,
       gzip: options.gzip,
@@ -1189,7 +1409,7 @@ export async function runExport(argv: string[]): Promise<void> {
     // run aborts with S3 completely untouched (matrix in fetchPreviousManifest).
     const previousManifest = options.dryRun
       ? null
-      : await fetchPreviousManifest({ isFilteredRun: isFilteredRun || isThresholdRefresh, manifestKey });
+      : await fetchPreviousManifest({ isFilteredRun: isFilteredRun || isThresholdRefresh, manifestKey, log });
 
     let pairs = discoveredPairs;
     if (options.refreshThreshold !== undefined && previousManifest) {
@@ -1198,6 +1418,7 @@ export async function runExport(argv: string[]): Promise<void> {
       );
       const stalePairs: LayoutPair[] = [];
       for (const pair of discoveredPairs) {
+        signal?.throwIfAborted();
         const reason = await layoutRefreshReason({
           sqlClient,
           pair,
@@ -1207,7 +1428,7 @@ export async function runExport(argv: string[]): Promise<void> {
         });
         if (reason) {
           stalePairs.push(pair);
-          logger.info('[export-snapshots] threshold refresh selected layout', {
+          log.info('[export-snapshots] threshold refresh selected layout', {
             boardType: pair.boardType,
             layoutId: pair.layoutId,
             reason,
@@ -1223,7 +1444,7 @@ export async function runExport(argv: string[]): Promise<void> {
     // upload objects, or prune. A missing manifest is different — every pair
     // lacks an entry and is rebuilt so the live prefix can recover.
     if (isThresholdRefresh && pairs.length === 0) {
-      logger.info('[export-snapshots] threshold refresh complete — no stale layouts', {
+      log.info('[export-snapshots] threshold refresh complete — no stale layouts', {
         scanned: discoveredPairs.length,
         threshold: options.refreshThreshold,
         keyPrefix,
@@ -1232,6 +1453,10 @@ export async function runExport(argv: string[]): Promise<void> {
     }
 
     for (const pair of pairs) {
+      // Outside the per-layout catch on purpose: an abort (lease expiry,
+      // shutdown) ends the pass here instead of being recorded as one more
+      // failed layout, and no manifest is published.
+      signal?.throwIfAborted();
       const startedAt = Date.now();
       const filePath = join(workDir, `${pair.boardType}-${pair.layoutId}.db`);
       const gradesFilePath = join(workDir, `${pair.boardType}-${pair.layoutId}-grades.db`);
@@ -1242,6 +1467,7 @@ export async function runExport(argv: string[]): Promise<void> {
           layoutId: pair.layoutId,
           filePath,
           builtAt,
+          requireAllRolesVisible: dependencies.requireAllRolesVisible ?? false,
           // GZIP PASS ONLY. The nightly runs twice — once at the identity `v1`
           // prefix kept as a rollback target, once at `v1-gzip` where the fleet
           // actually points. Publishing grades only in the gzip pass means a
@@ -1262,6 +1488,17 @@ export async function runExport(argv: string[]): Promise<void> {
         if (keyPrefix === LIVE_SNAPSHOT_KEY_PREFIX && !options.dryRun && result.deletionsReplayFrom === null) {
           throw new Error(`live gzip deletion replay boundary unavailable: ${result.deletionsReplayFallbackReason}`);
         }
+        if (result.deletionsReplayFrom !== null) {
+          const boundaryLagMs = Date.parse(builtAt) - Date.parse(result.deletionsReplayFrom);
+          if (boundaryLagMs > STALE_REPLAY_BOUNDARY_WARN_MS) {
+            log.warn('[export-snapshots] deletion replay boundary is more than an hour before builtAt', {
+              boardType: pair.boardType,
+              layoutId: pair.layoutId,
+              deletionsReplayFrom: result.deletionsReplayFrom,
+              lagSeconds: Math.round(boundaryLagMs / 1000),
+            });
+          }
+        }
 
         const rawBuffer = readFileSync(filePath);
         // Encoding default is IDENTITY until transparent Content-Encoding: gzip
@@ -1270,7 +1507,7 @@ export async function runExport(argv: string[]): Promise<void> {
         // client treats a gzip-on-disk artifact as a failed download (it has no
         // JS gunzip). The manifest's contentEncoding field keeps the client
         // agnostic, so flipping to --gzip later needs no app update.
-        const uploadBody = options.gzip ? gzipSync(rawBuffer) : rawBuffer;
+        const uploadBody = options.gzip ? await gzipAsync(rawBuffer) : rawBuffer;
         const contentEncoding = options.gzip ? ('gzip' as const) : ('identity' as const);
         // Colon-free key stamp: ISO colons are legal in S3 keys but historically
         // trip CDNs/URL parsers, and getPublicUrl does no percent-encoding.
@@ -1284,10 +1521,10 @@ export async function runExport(argv: string[]): Promise<void> {
         // imported.
         const gradesKey = `${keyPrefix}/${pair.boardType}/${pair.layoutId}/${keyStamp}-grades.db`;
         const gradesRawBuffer = result.grades ? readFileSync(result.grades.filePath) : null;
-        const gradesUploadBody = gradesRawBuffer ? gzipSync(gradesRawBuffer) : null;
+        const gradesUploadBody = gradesRawBuffer ? await gzipAsync(gradesRawBuffer) : null;
 
         if (options.dryRun) {
-          logger.info('[export-snapshots] built (dry-run, not uploaded)', {
+          log.info('[export-snapshots] built (dry-run, not uploaded)', {
             boardType: pair.boardType,
             layoutId: pair.layoutId,
             climbs: result.tables.board_climbs.rowCount,
@@ -1341,7 +1578,7 @@ export async function runExport(argv: string[]): Promise<void> {
                 contentEncoding: 'gzip',
               })
             : null;
-          logger.info('[export-snapshots] uploaded', {
+          log.info('[export-snapshots] uploaded', {
             boardType: pair.boardType,
             layoutId: pair.layoutId,
             climbs: result.tables.board_climbs.rowCount,
@@ -1384,7 +1621,7 @@ export async function runExport(argv: string[]): Promise<void> {
         // (its old artifact is immutable, so it stays valid).
         const message = error instanceof Error ? error.message : String(error);
         failures.push({ boardType: pair.boardType, layoutId: pair.layoutId, error: message });
-        logger.error('[export-snapshots] layout export failed — continuing with remaining layouts', {
+        log.error('[export-snapshots] layout export failed — continuing with remaining layouts', {
           boardType: pair.boardType,
           layoutId: pair.layoutId,
           error: message,
@@ -1396,7 +1633,7 @@ export async function runExport(argv: string[]): Promise<void> {
     }
 
     if (options.dryRun) {
-      logger.info('[export-snapshots] dry-run complete — manifest NOT uploaded', {
+      log.info('[export-snapshots] dry-run complete — manifest NOT uploaded', {
         entries: newEntries.length,
         failedLayouts: failures.length,
         totalGzipBytes: newEntries.reduce((sum, entry) => sum + entry.bytes, 0),
@@ -1419,10 +1656,12 @@ export async function runExport(argv: string[]): Promise<void> {
         generatedAt: new Date().toISOString(),
         entries: mergedEntries,
       };
+      signal?.throwIfAborted();
+      await dependencies.beforeManifestPublish?.();
       await uploadToS3('snapshots', Buffer.from(JSON.stringify(manifest)), manifestKey, 'application/json', {
         cacheControl: MANIFEST_CACHE_CONTROL,
       });
-      logger.info('[export-snapshots] manifest uploaded', {
+      log.info('[export-snapshots] manifest uploaded', {
         entries: mergedEntries.length,
         refreshed: newEntries.length,
         key: manifestKey,
@@ -1434,7 +1673,7 @@ export async function runExport(argv: string[]): Promise<void> {
       // run's key prefix, so a gzip run never prunes the identity prefix's
       // artifacts (and vice versa).
       if (!isFilteredRun && !isThresholdRefresh && failures.length === 0) {
-        await pruneStaleArtifacts(manifest, Date.now(), keyPrefix);
+        await pruneStaleArtifacts(manifest, Date.now(), keyPrefix, log);
       }
     }
 

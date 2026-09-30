@@ -16,8 +16,24 @@ import {
   type MoonBoardCatalogFile,
 } from './moonboard-catalog-helpers.js';
 import { stageCatalogBatch } from './moonboard-catalog-batch.js';
-import { describeDatabaseHost, getScriptDatabaseUrl } from './db-connection.js';
+import { describeDatabaseHost, resolveScriptDatabaseUrl } from './db-connection.js';
 import { formatUnmappedMoonBoardGrades } from './moonboard-helpers.js';
+import {
+  acquireCatalogImportLock,
+  assertCatalogImportLockHeld,
+  releaseCatalogImportLock,
+  MOONBOARD_CATALOG_IMPORT_LOCK_KEY,
+} from './moonboard-catalog-run-lock.js';
+import {
+  zeroCatalogRunCounters,
+  buildCatalogRunReport,
+  writeCatalogRunReportAtomic,
+  reportJsonParentDirExists,
+  reportJsonTargetIsDirectory,
+  reportJsonDirectoryIsWritable,
+  clearExistingCatalogReport,
+  type CatalogBoardRunReport,
+} from './moonboard-catalog-report.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -61,6 +77,32 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Rehearse against the real target first with --dry-run: it does every write,
 // then rolls each file's transaction back, so constraints are exercised for
 // real and the counters are the ones a live run would print.
+//
+// UNATTENDED RUNS: --report-json <path> writes a machine-readable summary
+// after the run — see moonboard-catalog-report.ts. A report is written on
+// success, on a --dry-run rollback, and on every failure that happens once
+// argv parsing has succeeded and the --report-json path itself checks out
+// (bad catalog dir, empty catalog dir, the run lock already held, an
+// unreachable database, a failure partway through a board). Exit code is 75
+// (EX_TEMPFAIL) when another run already holds the lock, so a scheduler can
+// tell "someone else is running this, retry later" apart from every other
+// failure (exit 1).
+//
+// Before touching any board, the script takes a SESSION-scoped Postgres
+// advisory lock (moonboard-catalog-run-lock.ts) so two invocations can never
+// interleave their per-board transactions, and re-checks that the lock is
+// still held immediately before every board's transaction
+// (assertCatalogImportLockHeld) — a session-scoped lock only means anything
+// because this script keeps ONE direct connection (`postgres(databaseUrl, {
+// max: 1, max_lifetime: null })` below) for its whole lifetime AND that
+// connection is never silently swapped out from under it; `max_lifetime:
+// null` disables postgres.js's default 30-60 minute connection recycling for
+// exactly that reason; the re-check is the backstop if it ever comes back.
+// Point DB_URL at a direct connection string, never a transaction-pooling
+// proxy (PgBouncer transaction mode, a pooled Neon/RDS-Proxy endpoint): those
+// hand out a different backend connection per statement, which would make the
+// lock and the writes it is meant to protect land on different connections
+// entirely. See moonboard-catalog-run-lock.ts for the full explanation.
 // =============================================================================
 
 const DEFAULT_DIR = path.join(__dirname, '../data/moonboard/app-catalog');
@@ -144,13 +186,45 @@ async function buildExistingIndex(
 // constraint, index and trigger for real, then rolls the whole file back.
 const DRY_RUN_ROLLBACK = new Error('__dry_run_rollback__');
 
+// sysexits.h EX_TEMPFAIL: "temporary failure, indicating something that is not
+// really an error". Used only when another run already holds the import lock,
+// so a scheduler's retry loop can tell "someone else is running this right
+// now, try again later" apart from every other failure (plain exit 1).
+const EX_TEMPFAIL = 75;
+
 // Flags that consume the following argv entry. Needed so the positional catalog
 // directory can be told apart from a flag's value — otherwise
 // `--holdsetup 21` with no directory reads "21" as the path.
-const VALUE_FLAGS = new Set(['--holdsetup']);
-const BOOLEAN_FLAGS = new Set(['--dry-run']);
+const VALUE_FLAGS = new Set(['--holdsetup', '--report-json']);
+const BOOLEAN_FLAGS = new Set(['--dry-run', '--help']);
 
-export type CatalogCliArgs = { positional: string[]; holdsetup?: number; dryRun: boolean };
+export type CatalogCliArgs = {
+  positional: string[];
+  holdsetup?: number;
+  dryRun: boolean;
+  help: boolean;
+  reportJsonPath?: string;
+};
+
+// Shared between the --help output and the usage line printed on a parse
+// error, so the two can never drift out of sync with each other or with the
+// flags actually recognised below. A scheduler that shells out `--help` and
+// checks the output for `--report-json` and `--dry-run` reads this text.
+export const CATALOG_USAGE_TEXT = `Usage: vp run '@boardsesh/db#db:import-moonboard-catalog' [/path/to/app-catalog] [options]
+
+Options:
+  --holdsetup <n>       Import only the file whose 'holdsetup' matches n.
+  --dry-run             Attempt every write, then roll each file's transaction
+                        back. Nothing is committed.
+  --report-json <path>  After the run, write a machine-readable JSON report to
+                        <path> (temp file + rename, so a reader never sees a
+                        partial write). Written on success, on a --dry-run
+                        rollback, and on every failure once this flag's own
+                        value has been validated (lock held, bad catalog
+                        directory, unreachable database, mid-board failure).
+                        Exit code is 75 when another run already holds the
+                        lock, 1 for every other failure.
+  --help                Show this help text.`;
 
 /**
  * Parse argv, rejecting anything unrecognised.
@@ -163,6 +237,8 @@ export function parseCatalogCliArgs(argv: string[]): CatalogCliArgs {
   const positional: string[] = [];
   let holdsetup: number | undefined;
   let dryRun = false;
+  let help = false;
+  let reportJsonPath: string | undefined;
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -173,44 +249,128 @@ export function parseCatalogCliArgs(argv: string[]): CatalogCliArgs {
       continue;
     }
     if (BOOLEAN_FLAGS.has(arg)) {
-      dryRun = true;
+      if (arg === '--dry-run') dryRun = true;
+      else if (arg === '--help') help = true;
       continue;
     }
     if (VALUE_FLAGS.has(arg)) {
       const value = argv[++i];
-      if (value === undefined) throw new Error(`${arg} needs a value`);
-      const parsed = Number(value);
-      if (!Number.isInteger(parsed)) throw new Error(`${arg} needs an integer, got "${value}"`);
-      holdsetup = parsed;
+      // A missing, empty, or `-`-prefixed value is never a legitimate flag
+      // value here (no holdsetup or report path starts with a dash) — it is
+      // almost always the NEXT flag having been swallowed, e.g.
+      // `--report-json --dry-run` silently reading "--dry-run" as the report
+      // path and then running for real with no report ever written where
+      // expected. Rejecting outright is what makes that fail loudly instead.
+      if (value === undefined || value === '' || value.startsWith('-')) {
+        throw new Error(`${arg} needs a value`);
+      }
+      if (arg === '--holdsetup') {
+        const parsed = Number(value);
+        if (!Number.isInteger(parsed)) throw new Error(`${arg} needs an integer, got "${value}"`);
+        holdsetup = parsed;
+      } else if (arg === '--report-json') {
+        reportJsonPath = value;
+      }
       continue;
     }
     if (arg.startsWith('-')) throw new Error(`Unknown flag: ${arg}`);
     positional.push(arg);
   }
 
-  return { positional, holdsetup, dryRun };
+  return { positional, holdsetup, dryRun, help, reportJsonPath };
 }
 
 async function importMoonBoardCatalog() {
+  const startedAt = new Date();
+
   let cli: CatalogCliArgs;
   try {
     cli = parseCatalogCliArgs(process.argv.slice(2));
   } catch (error) {
     console.error(`❌ ${(error as Error).message}`);
-    console.error(
-      "   Usage: vp run '@boardsesh/db#db:import-moonboard-catalog' [/path/to/app-catalog] [--holdsetup N] [--dry-run]",
-    );
-    process.exit(1);
+    console.error(CATALOG_USAGE_TEXT);
+    process.exitCode = 1;
+    return;
+  }
+
+  if (cli.help) {
+    console.info(CATALOG_USAGE_TEXT);
+    return;
   }
 
   const catalogDir = cli.positional[0] ? path.resolve(process.cwd(), cli.positional[0]) : DEFAULT_DIR;
   const onlyHoldsetup = cli.holdsetup;
   const dryRun = cli.dryRun;
+  const reportJsonPath = cli.reportJsonPath ? path.resolve(process.cwd(), cli.reportJsonPath) : undefined;
+
+  const boards: CatalogBoardRunReport[] = [];
+  const totals = zeroCatalogRunCounters();
+  let runError: string | undefined;
+  let failedFile: string | undefined;
+  let exitCode = 0;
+
+  // Writes the --report-json report, if one was requested, with whatever
+  // state has accumulated so far, then sets the process exit code. Called
+  // from every exit path below — including ones that never get near the
+  // database — so a scheduler polling the report path always gets an answer,
+  // never silence.
+  const finish = (): void => {
+    if (reportJsonPath !== undefined) {
+      const report = buildCatalogRunReport({
+        dryRun,
+        startedAt,
+        finishedAt: new Date(),
+        boards,
+        totals,
+        error: runError,
+        failedFile,
+      });
+      try {
+        writeCatalogRunReportAtomic(reportJsonPath, report);
+      } catch (writeError) {
+        console.error('❌ Failed to write --report-json report:', writeError);
+        // A run a scheduler cannot verify is a failed run from its point of
+        // view, even when the import itself succeeded.
+        runError = runError ?? (writeError instanceof Error ? writeError.message : String(writeError));
+        if (exitCode === 0) exitCode = 1;
+      }
+    }
+    process.exitCode = exitCode;
+  };
+
+  // Validated and prepared before anything else touches the catalog directory
+  // or the database, so every failure from here on has somewhere to report to.
+  if (reportJsonPath !== undefined) {
+    if (reportJsonTargetIsDirectory(reportJsonPath)) {
+      console.error(`❌ --report-json target is a directory, not a file: ${reportJsonPath}`);
+      process.exitCode = 1;
+      return;
+    }
+    if (!reportJsonParentDirExists(reportJsonPath)) {
+      console.error(`❌ --report-json parent directory not found: ${path.dirname(reportJsonPath)}`);
+      process.exitCode = 1;
+      return;
+    }
+    // Proves the directory actually accepts a write, not just that it exists —
+    // a read-only directory would otherwise let every board commit and only
+    // then discover the final report can never be written.
+    if (!reportJsonDirectoryIsWritable(reportJsonPath)) {
+      console.error(`❌ --report-json directory is not writable: ${path.dirname(reportJsonPath)}`);
+      process.exitCode = 1;
+      return;
+    }
+    // A STALE report from a previous run must never be mistaken for this
+    // run's result if this run dies before it gets a chance to write its own.
+    clearExistingCatalogReport(reportJsonPath);
+  }
 
   if (!fs.existsSync(catalogDir) || !fs.statSync(catalogDir).isDirectory()) {
     console.error(`❌ Catalog directory not found: ${catalogDir}`);
-    console.error("   Usage: vp run '@boardsesh/db#db:import-moonboard-catalog' [/path/to/app-catalog]");
-    process.exit(1);
+    console.error(CATALOG_USAGE_TEXT);
+    runError = `Catalog directory not found: ${catalogDir}`;
+    exitCode = 1;
+    finish();
+    return;
   }
 
   const files = fs
@@ -219,314 +379,431 @@ async function importMoonBoardCatalog() {
     .sort();
   if (files.length === 0) {
     console.error(`❌ No .json catalog files in ${catalogDir}`);
-    process.exit(1);
+    runError = `No .json catalog files in ${catalogDir}`;
+    exitCode = 1;
+    finish();
+    return;
   }
 
-  const databaseUrl = getScriptDatabaseUrl();
-  console.info(`🔄 Importing MoonBoard catalog to: ${describeDatabaseHost(databaseUrl)}`);
   console.info(`📂 Reading catalog from: ${catalogDir} (${files.length} files)`);
   if (dryRun) {
     console.info('🧪 DRY RUN — every write is attempted and then rolled back. Nothing is committed.');
   }
 
-  const client = postgres(databaseUrl, { max: 1 });
-  const db = drizzle(client);
-
-  const totals = {
-    problems: 0,
-    matched: 0,
-    inserted: 0,
-    climbs: 0,
-    stats: 0,
-    holds: 0,
-    skippedProblems: 0,
-    skippedAmbiguous: 0,
-    skippedDrifted: 0,
-    skippedHijacked: 0,
-    foldedInBatch: 0,
-    sharedClimbInBatch: 0,
-    withdrawn: 0,
-    withdrawnWithClimbs: 0,
-    unlisted: 0,
-  };
-
+  // Everything from here on touches the database, so it is wrapped in one
+  // try/catch/finally: any throw (DB unreachable, the lock check failing
+  // mid-run, a board's transaction failing) lands in the catch below, the
+  // finally always attempts to close the connection, and finish() below
+  // always runs afterward — no path here can skip writing the report or leave
+  // an unhandled rejection for the caller at the bottom of this file to catch
+  // bare.
+  let client: postgres.Sql | undefined;
   try {
-    const {
-      index: existingIndex,
-      climbUuids: existingClimbUuids,
-      canonicalByAlias,
-    } = await buildExistingIndex(client, db);
+    // resolveScriptDatabaseUrl, not getScriptDatabaseUrl: the latter calls
+    // process.exit on a missing/refused URL, which would skip the finally
+    // below and this function's own report-writing entirely — a run a
+    // scheduler cannot even get a report FOR. Throwing here lands in the
+    // catch below like any other pre-lock failure.
+    const databaseUrl = resolveScriptDatabaseUrl();
+    console.info(`🔄 Importing MoonBoard catalog to: ${describeDatabaseHost(databaseUrl)}`);
 
-    for (const file of files) {
-      const raw = fs.readFileSync(path.join(catalogDir, file), 'utf-8');
-      const dump: MoonBoardCatalogFile = JSON.parse(raw);
-      const layoutId = HOLDSETUP_TO_LAYOUT[dump.holdsetup];
-      if (!layoutId) {
-        console.warn(`⚠️  ${file}: unknown holdsetup ${dump.holdsetup}, skipping`);
-        continue;
-      }
-      if (onlyHoldsetup !== undefined && dump.holdsetup !== onlyHoldsetup) continue;
+    // ONE direct connection for the script's whole lifetime — every per-board
+    // transaction below runs on it, which is what makes the session-scoped
+    // advisory lock taken next actually cover all of them. `max_lifetime:
+    // null` disables postgres.js's default 30-60 minute connection recycling,
+    // which would otherwise silently swap this connection out mid-run and
+    // drop the lock with it. See the file header and
+    // moonboard-catalog-run-lock.ts.
+    client = postgres(databaseUrl, { max: 1, max_lifetime: null });
+    const db = drizzle(client);
 
-      console.info(`\n📖 ${file} — holdsetup ${dump.holdsetup} → layout ${layoutId}, ${dump.problems.length} problems`);
+    const lockResult = await acquireCatalogImportLock(db);
+    if (!lockResult.acquired) {
+      runError = `Another MoonBoard catalog import already holds the run lock (advisory key ${MOONBOARD_CATALOG_IMPORT_LOCK_KEY})`;
+      exitCode = EX_TEMPFAIL;
+      console.error(`❌ ${runError}. Exiting without touching data.`);
+    } else {
+      const lockBackendPid = lockResult.backendPid;
 
-      const {
-        climbs: climbRecords,
-        stats: statsRecords,
-        holds: holdsRecords,
-        aliases: aliasRecords,
-        withdrawnClimbUuids,
-        withdrawnSamples,
-        counters,
-        unmappedGrades,
-      } = stageCatalogBatch({
-        problems: dump.problems,
-        layoutId,
-        existingIndex,
-        existingClimbUuids,
-        canonicalByAlias,
-      });
+      try {
+        const {
+          index: existingIndex,
+          climbUuids: existingClimbUuids,
+          canonicalByAlias,
+        } = await buildExistingIndex(client, db);
 
-      console.info(
-        `   ${counters.matched} matched existing, ${counters.inserted} new; ` +
-          `${counters.foldedInBatch} folded onto an earlier same-holds problem; ` +
-          `${counters.skippedProblems} problems skipped, ` +
-          `${counters.skippedAmbiguous} skipped as ambiguous (duplicate listed rows), ` +
-          `${counters.skippedDrifted} skipped as drifted (holds changed under an imported climb), ` +
-          `${counters.skippedHijacked} skipped to protect climb rows a merge would repoint; ` +
-          `${counters.withdrawn} withdrawn upstream (${withdrawnClimbUuids.length} climbs to unlist)`,
-      );
-      if (withdrawnSamples.length > 0) {
-        console.info('   Withdrawn upstream (first few):');
-        for (const sample of withdrawnSamples) {
-          console.info(`     ${sample.problemId} "${sample.name}" → ${sample.climbUuids.join(', ')}`);
+        for (const file of files) {
+          // Set as the very first thing for this file — before even reading
+          // it — and cleared on every "not actually this file's problem" exit
+          // (skipped, filtered out) or clean completion below. A missing,
+          // truncated, or malformed catalog file is exactly the kind of
+          // failure this exists to name: readFileSync/JSON.parse throwing
+          // must still land on the right file in the report, not blame
+          // whichever file happened to run before it.
+          failedFile = file;
+
+          const raw = fs.readFileSync(path.join(catalogDir, file), 'utf-8');
+          const dump: MoonBoardCatalogFile = JSON.parse(raw);
+          const layoutId = HOLDSETUP_TO_LAYOUT[dump.holdsetup];
+          if (!layoutId) {
+            console.warn(`⚠️  ${file}: unknown holdsetup ${dump.holdsetup}, skipping`);
+            failedFile = undefined; // a skip, not a failure
+            continue;
+          }
+          if (onlyHoldsetup !== undefined && dump.holdsetup !== onlyHoldsetup) {
+            failedFile = undefined; // filtered out by --holdsetup, not a failure
+            continue;
+          }
+
+          // Cheap early check: skip the (potentially large) staging work below
+          // entirely if the lock is already known lost. This alone is NOT
+          // sufficient — a session drop between this check and the
+          // transaction opening below would let postgres.js reconnect for
+          // db.transaction() on a backend that never held the lock, and this
+          // check would have nothing left to say about it. The authoritative
+          // check is the one taken on `tx` as the transaction's first
+          // statement, below.
+          const preStagingLockCheck = await assertCatalogImportLockHeld(db, lockBackendPid);
+          if (!preStagingLockCheck.ok) {
+            throw new Error(`Run lock lost before importing ${file}: ${preStagingLockCheck.reason}`);
+          }
+
+          console.info(
+            `\n📖 ${file} — holdsetup ${dump.holdsetup} → layout ${layoutId}, ${dump.problems.length} problems`,
+          );
+
+          const {
+            climbs: climbRecords,
+            stats: statsRecords,
+            holds: holdsRecords,
+            aliases: aliasRecords,
+            withdrawnClimbUuids,
+            withdrawnSamples,
+            counters,
+            unmappedGrades,
+          } = stageCatalogBatch({
+            problems: dump.problems,
+            layoutId,
+            existingIndex,
+            existingClimbUuids,
+            canonicalByAlias,
+          });
+
+          console.info(
+            `   ${counters.matched} matched existing, ${counters.inserted} new; ` +
+              `${counters.foldedInBatch} folded onto an earlier same-holds problem; ` +
+              `${counters.skippedProblems} problems skipped, ` +
+              `${counters.skippedAmbiguous} skipped as ambiguous (duplicate listed rows), ` +
+              `${counters.skippedDrifted} skipped as drifted (holds changed under an imported climb), ` +
+              `${counters.skippedHijacked} skipped to protect climb rows a merge would repoint; ` +
+              `${counters.withdrawn} withdrawn upstream (${withdrawnClimbUuids.length} climbs to unlist)`,
+          );
+          if (withdrawnSamples.length > 0) {
+            console.info('   Withdrawn upstream (first few):');
+            for (const sample of withdrawnSamples) {
+              console.info(`     ${sample.problemId} "${sample.name}" → ${sample.climbUuids.join(', ')}`);
+            }
+          }
+          if (unmappedGrades.size > 0) {
+            console.warn(
+              `   ⚠️  Unmapped MoonBoard grades, imported with a NULL grade — add them to MOONBOARD_GRADE_TO_DIFFICULTY: ${formatUnmappedMoonBoardGrades(unmappedGrades)}`,
+            );
+          }
+
+          // Counted inside the transaction, read after it. On a dry run the
+          // transaction is rolled back but this keeps its value, which is the
+          // point: the rehearsal reports what a real run would change.
+          let unlistedThisFile = 0;
+
+          // One transaction per board: a crash mid-file never leaves a climb without
+          // its holds/aliases, and completed boards stay committed for an idempotent
+          // re-run. On a dry run it always ends in DRY_RUN_ROLLBACK.
+          try {
+            await db.transaction(async (tx) => {
+              // The AUTHORITATIVE lock check, run on `tx` — the transaction's
+              // own reserved connection — as literally the first statement.
+              // The pre-staging check above runs on `db` and can pass, then a
+              // session drop during (potentially slow) staging lets
+              // postgres.js silently hand db.transaction() a BRAND NEW
+              // backend that never held the lock; every write below would
+              // then commit with no mutual exclusion at all. Checking on `tx`
+              // itself closes that gap: the check and the writes are
+              // guaranteed to share the same backend, because they are
+              // literally the same connection.
+              const txLockCheck = await assertCatalogImportLockHeld(tx, lockBackendPid);
+              if (!txLockCheck.ok) {
+                throw new Error(`Run lock lost inside the board transaction for ${file}: ${txLockCheck.reason}`);
+              }
+
+              // Climbs — for matched rows the identity columns are already correct, so
+              // refresh only the method-derived fields (characteristics/description).
+              for (let i = 0; i < climbRecords.length; i += BATCH_SIZE) {
+                await tx
+                  .insert(boardClimbs)
+                  .values(climbRecords.slice(i, i + BATCH_SIZE))
+                  .onConflictDoUpdate({
+                    target: boardClimbs.uuid,
+                    setWhere: isNull(boardClimbs.userId),
+                    set: {
+                      characteristics: mergeCatalogCharacteristicsSql(
+                        boardClimbs.characteristics,
+                        sql`excluded.characteristics`,
+                        Object.values(CLIMB_CHARACTERISTICS).filter(isMethodCharacteristic),
+                      ),
+                      description: sql`excluded.description`,
+                    },
+                  });
+              }
+
+              // Stats — monotonic merge: take the new grade/benchmark, but never null
+              // out an existing grade/quality or shrink the upstream count. The total is
+              // rebuilt as upstream + existing Boardsesh, so re-running the import repairs
+              // any climb whose count was previously clobbered by a tick recompute without
+              // dropping the ticks it has since accrued.
+              //
+              // The NEW upstream count this upsert resolves to: monotonic GREATEST of the
+              // stored and incoming snapshot. Defined ONCE and reused for the count SET,
+              // the total, AND the blend weight — a SET expression reads the OLD value of
+              // a bare column, so the blend must weight by this NEW resolved count. Single
+              // source keeps the three in lockstep if the count policy ever changes.
+              const resolvedUpstreamAscensionistCount = sql`greatest(coalesce(excluded.upstream_ascensionist_count, 0), coalesce(${boardClimbStats.upstreamAscensionistCount}, 0))`;
+              const blendedQuality = blendedQualityAverageSql({
+                upstreamQualityAverage: sql`coalesce(excluded.upstream_quality_average, ${boardClimbStats.upstreamQualityAverage})`,
+                upstreamAscensionistCount: resolvedUpstreamAscensionistCount,
+                boardseshQualitySum: sql`${boardClimbStats.boardseshQualitySum}`,
+                boardseshQualityCount: sql`${boardClimbStats.boardseshQualityCount}`,
+              });
+              for (let i = 0; i < statsRecords.length; i += BATCH_SIZE) {
+                await tx
+                  .insert(boardClimbStats)
+                  .values(statsRecords.slice(i, i + BATCH_SIZE))
+                  .onConflictDoUpdate({
+                    target: [boardClimbStats.boardType, boardClimbStats.climbUuid, boardClimbStats.angle],
+                    // Existing-side refs must be table-qualified — a bare column name is
+                    // ambiguous between the target row and `excluded` in ON CONFLICT.
+                    set: {
+                      displayDifficulty: sql`coalesce(excluded.display_difficulty, ${boardClimbStats.displayDifficulty})`,
+                      benchmarkDifficulty: sql`excluded.benchmark_difficulty`,
+                      difficultyAverage: sql`coalesce(excluded.difficulty_average, ${boardClimbStats.difficultyAverage})`,
+                      upstreamAscensionistCount: resolvedUpstreamAscensionistCount,
+                      ascensionistCount: sql`${resolvedUpstreamAscensionistCount} + coalesce(${boardClimbStats.boardseshAscensionistCount}, 0)`,
+                      // Manufacturer average lands in upstream_quality_average; quality_average
+                      // is the blend of it and Boardsesh's own votes.
+                      upstreamQualityAverage: sql`coalesce(excluded.upstream_quality_average, ${boardClimbStats.upstreamQualityAverage})`,
+                      qualityAverage: blendedQuality,
+                      qualityNormalized: sql`true`,
+                      upstreamSyncedAt: sql`excluded.upstream_synced_at`,
+                    },
+                  });
+              }
+
+              for (let i = 0; i < holdsRecords.length; i += BATCH_SIZE) {
+                await tx
+                  .insert(boardClimbHolds)
+                  .values(holdsRecords.slice(i, i + BATCH_SIZE))
+                  .onConflictDoNothing();
+              }
+
+              // Self-aliases so resolveCanonicalClimbUuid always hits, plus id-based
+              // aliases (moonboard:{id}:{angle} → canonical) so problem-id lookups from
+              // the logbook importer resolve merged/legacy climbs.
+              for (let i = 0; i < aliasRecords.length; i += BATCH_SIZE) {
+                await tx
+                  .insert(boardClimbAliases)
+                  .values(aliasRecords.slice(i, i + BATCH_SIZE))
+                  .onConflictDoUpdate({
+                    target: [boardClimbAliases.boardType, boardClimbAliases.aliasUuid],
+                    set: catalogAliasConflictUpdate(),
+                  });
+              }
+
+              // Stop listing climbs whose problem upstream has withdrawn. Rows,
+              // holds, aliases, ticks and beta links all stay — the climb just leaves
+              // search, matching what the MoonBoard app itself shows.
+              //
+              // `user_id IS NULL` is the same fence buildExistingIndex applies: a
+              // Boardsesh-native climb is never collateral, even if a withdrawn
+              // problem's alias chain somehow pointed at one. The IS DISTINCT FROM
+              // predicate makes a re-run a no-op instead of rewriting rows that are
+              // already unlisted, so the returned count is "what actually changed".
+              for (let i = 0; i < withdrawnClimbUuids.length; i += BATCH_SIZE) {
+                const unlistedRows = await tx
+                  .update(boardClimbs)
+                  .set({ isListed: false })
+                  .where(
+                    and(
+                      eq(boardClimbs.boardType, 'moonboard'),
+                      isNull(boardClimbs.userId),
+                      inArray(boardClimbs.uuid, withdrawnClimbUuids.slice(i, i + BATCH_SIZE)),
+                      sql`${boardClimbs.isListed} IS DISTINCT FROM false`,
+                    ),
+                  )
+                  .returning({ uuid: boardClimbs.uuid });
+                unlistedThisFile += unlistedRows.length;
+              }
+
+              if (dryRun) throw DRY_RUN_ROLLBACK;
+            });
+          } catch (error) {
+            // A dry run always lands here. Anything else is a real failure.
+            if (error !== DRY_RUN_ROLLBACK) throw error;
+          }
+
+          console.info(
+            `   ✓ climbs ${climbRecords.length}, stats ${statsRecords.length}, holds ${holdsRecords.length}` +
+              `, unlisted ${unlistedThisFile}`,
+          );
+          totals.problems += dump.problems.length;
+          totals.matched += counters.matched;
+          totals.inserted += counters.inserted;
+          totals.climbs += climbRecords.length;
+          totals.stats += statsRecords.length;
+          totals.holds += holdsRecords.length;
+          totals.skippedProblems += counters.skippedProblems;
+          totals.skippedAmbiguous += counters.skippedAmbiguous;
+          totals.skippedDrifted += counters.skippedDrifted;
+          totals.skippedHijacked += counters.skippedHijacked;
+          totals.foldedInBatch += counters.foldedInBatch;
+          totals.sharedClimbInBatch += counters.sharedClimbInBatch;
+          totals.withdrawn += counters.withdrawn;
+          totals.withdrawnWithClimbs += counters.withdrawnWithClimbs;
+          totals.unlisted += unlistedThisFile;
+
+          boards.push({
+            holdsetup: dump.holdsetup,
+            layoutId,
+            file,
+            problems: dump.problems.length,
+            matched: counters.matched,
+            inserted: counters.inserted,
+            climbs: climbRecords.length,
+            stats: statsRecords.length,
+            holds: holdsRecords.length,
+            skippedProblems: counters.skippedProblems,
+            skippedAmbiguous: counters.skippedAmbiguous,
+            skippedDrifted: counters.skippedDrifted,
+            skippedHijacked: counters.skippedHijacked,
+            foldedInBatch: counters.foldedInBatch,
+            sharedClimbInBatch: counters.sharedClimbInBatch,
+            withdrawn: counters.withdrawn,
+            withdrawnWithClimbs: counters.withdrawnWithClimbs,
+            unlisted: unlistedThisFile,
+          });
+          failedFile = undefined; // this board completed cleanly
+        }
+
+        console.info(dryRun ? '\n🧪 Dry run completed — nothing was committed.' : '\n✅ Import completed!');
+        console.info(`   Matched existing: ${totals.matched}`);
+        console.info(`   Newly inserted:   ${totals.inserted}`);
+        console.info(`   Climbs upserted:  ${totals.climbs}`);
+        console.info(`   Stats upserted:   ${totals.stats}`);
+        console.info(`   Holds upserted:   ${totals.holds}`);
+        console.info(`   Problems skipped: ${totals.skippedProblems}`);
+        console.info(
+          `   Withdrawn:        ${totals.withdrawn} upstream, ${totals.withdrawnWithClimbs} of them own climb rows, ` +
+            `${totals.unlisted} climbs unlisted`,
+        );
+
+        // Every problem in the capture takes exactly one of these paths. Printing
+        // the reconciliation — rather than leaving an operator to add it up — is how
+        // a silent drop becomes visible instead of looking like a rounding error.
+        const accountedFor =
+          totals.matched +
+          totals.inserted +
+          totals.sharedClimbInBatch +
+          totals.skippedProblems +
+          totals.skippedAmbiguous +
+          totals.skippedDrifted +
+          totals.skippedHijacked;
+        console.info(
+          `   Shared a climb:   ${totals.sharedClimbInBatch} problems collapsed onto another problem's climb ` +
+            `(${totals.foldedInBatch} of them brand new); their ids still resolve to it`,
+        );
+        if (accountedFor === totals.problems) {
+          console.info(`   Accounted for:    ${accountedFor}/${totals.problems} problems ✓`);
+        } else {
+          console.error(
+            `   ⚠️  Accounting mismatch: ${accountedFor} of ${totals.problems} problems accounted for ` +
+              `(${totals.problems - accountedFor} unexplained). Every problem should land in exactly one counter — ` +
+              `a gap means a code path is dropping problems without saying so.`,
+          );
+        }
+        if (totals.foldedInBatch > 0) {
+          console.info(
+            `   Folded in batch:  ${totals.foldedInBatch} — problems that share their holds with an earlier problem in ` +
+              `the same file and were collapsed onto it; both problem ids still resolve to the surviving climb.`,
+          );
+        }
+        if (totals.skippedAmbiguous > 0) {
+          console.error(
+            `   ⚠️  Problems skipped as ambiguous: ${totals.skippedAmbiguous} — several listed rows share their holds. ` +
+              `If this database predates the moonboard_angle_dedup_backfill migration (#3849), run it and re-run this import to pick ` +
+              `these up. If it's already migrated, these are cross-problem duplicate groups the dedup migration left alone on purpose ` +
+              `and they need deduping by hand.`,
+          );
+        }
+        if (totals.skippedDrifted > 0) {
+          console.error(
+            `   ⚠️  Problems skipped as drifted: ${totals.skippedDrifted} — their holds no longer match the climb rows ` +
+              `they already own, so inserting would duplicate the climb and redirect the old rows' ticks. Reconcile ` +
+              `those rows by hand, then re-run this import.`,
+          );
+        }
+        if (totals.skippedHijacked > 0) {
+          console.error(
+            `   ⚠️  Problems skipped to protect existing rows: ${totals.skippedHijacked} — their holds matched one climb ` +
+              `while the problem also owns other live climb rows, so merging would repoint those rows (and their ticks) ` +
+              `at the matched climb while they stay listed. Reconcile them by hand, then re-run this import.`,
+          );
+        }
+      } catch (error) {
+        runError = error instanceof Error ? error.message : String(error);
+        console.error('❌ Import failed:', error);
+        exitCode = 1;
+      } finally {
+        // Released on every path — success, dry-run rollback, or failure — so
+        // a crash never leaves the next run permanently locked out. Wrapped so
+        // a dropped connection here (the lock check above already caught a
+        // silent reconnect; this is for one that happens after the last
+        // commit, on the way out) cannot turn a completed import into
+        // something that looks unreleased, or throw away the report this
+        // function is about to write.
+        try {
+          await releaseCatalogImportLock(db);
+        } catch (releaseError) {
+          console.error('⚠️  Failed to release the run lock (log only):', releaseError);
         }
       }
-      if (unmappedGrades.size > 0) {
-        console.warn(
-          `   ⚠️  Unmapped MoonBoard grades, imported with a NULL grade — add them to MOONBOARD_GRADE_TO_DIFFICULTY: ${formatUnmappedMoonBoardGrades(unmappedGrades)}`,
-        );
-      }
-
-      // Counted inside the transaction, read after it. On a dry run the
-      // transaction is rolled back but this keeps its value, which is the
-      // point: the rehearsal reports what a real run would change.
-      let unlistedThisFile = 0;
-
-      // One transaction per board: a crash mid-file never leaves a climb without
-      // its holds/aliases, and completed boards stay committed for an idempotent
-      // re-run. On a dry run it always ends in DRY_RUN_ROLLBACK.
-      try {
-        await db.transaction(async (tx) => {
-          // Climbs — for matched rows the identity columns are already correct, so
-          // refresh only the method-derived fields (characteristics/description).
-          for (let i = 0; i < climbRecords.length; i += BATCH_SIZE) {
-            await tx
-              .insert(boardClimbs)
-              .values(climbRecords.slice(i, i + BATCH_SIZE))
-              .onConflictDoUpdate({
-                target: boardClimbs.uuid,
-                setWhere: isNull(boardClimbs.userId),
-                set: {
-                  characteristics: mergeCatalogCharacteristicsSql(
-                    boardClimbs.characteristics,
-                    sql`excluded.characteristics`,
-                    Object.values(CLIMB_CHARACTERISTICS).filter(isMethodCharacteristic),
-                  ),
-                  description: sql`excluded.description`,
-                },
-              });
-          }
-
-          // Stats — monotonic merge: take the new grade/benchmark, but never null
-          // out an existing grade/quality or shrink the upstream count. The total is
-          // rebuilt as upstream + existing Boardsesh, so re-running the import repairs
-          // any climb whose count was previously clobbered by a tick recompute without
-          // dropping the ticks it has since accrued.
-          //
-          // The NEW upstream count this upsert resolves to: monotonic GREATEST of the
-          // stored and incoming snapshot. Defined ONCE and reused for the count SET,
-          // the total, AND the blend weight — a SET expression reads the OLD value of
-          // a bare column, so the blend must weight by this NEW resolved count. Single
-          // source keeps the three in lockstep if the count policy ever changes.
-          const resolvedUpstreamAscensionistCount = sql`greatest(coalesce(excluded.upstream_ascensionist_count, 0), coalesce(${boardClimbStats.upstreamAscensionistCount}, 0))`;
-          const blendedQuality = blendedQualityAverageSql({
-            upstreamQualityAverage: sql`coalesce(excluded.upstream_quality_average, ${boardClimbStats.upstreamQualityAverage})`,
-            upstreamAscensionistCount: resolvedUpstreamAscensionistCount,
-            boardseshQualitySum: sql`${boardClimbStats.boardseshQualitySum}`,
-            boardseshQualityCount: sql`${boardClimbStats.boardseshQualityCount}`,
-          });
-          for (let i = 0; i < statsRecords.length; i += BATCH_SIZE) {
-            await tx
-              .insert(boardClimbStats)
-              .values(statsRecords.slice(i, i + BATCH_SIZE))
-              .onConflictDoUpdate({
-                target: [boardClimbStats.boardType, boardClimbStats.climbUuid, boardClimbStats.angle],
-                // Existing-side refs must be table-qualified — a bare column name is
-                // ambiguous between the target row and `excluded` in ON CONFLICT.
-                set: {
-                  displayDifficulty: sql`coalesce(excluded.display_difficulty, ${boardClimbStats.displayDifficulty})`,
-                  benchmarkDifficulty: sql`excluded.benchmark_difficulty`,
-                  difficultyAverage: sql`coalesce(excluded.difficulty_average, ${boardClimbStats.difficultyAverage})`,
-                  upstreamAscensionistCount: resolvedUpstreamAscensionistCount,
-                  ascensionistCount: sql`${resolvedUpstreamAscensionistCount} + coalesce(${boardClimbStats.boardseshAscensionistCount}, 0)`,
-                  // Manufacturer average lands in upstream_quality_average; quality_average
-                  // is the blend of it and Boardsesh's own votes.
-                  upstreamQualityAverage: sql`coalesce(excluded.upstream_quality_average, ${boardClimbStats.upstreamQualityAverage})`,
-                  qualityAverage: blendedQuality,
-                  qualityNormalized: sql`true`,
-                  upstreamSyncedAt: sql`excluded.upstream_synced_at`,
-                },
-              });
-          }
-
-          for (let i = 0; i < holdsRecords.length; i += BATCH_SIZE) {
-            await tx
-              .insert(boardClimbHolds)
-              .values(holdsRecords.slice(i, i + BATCH_SIZE))
-              .onConflictDoNothing();
-          }
-
-          // Self-aliases so resolveCanonicalClimbUuid always hits, plus id-based
-          // aliases (moonboard:{id}:{angle} → canonical) so problem-id lookups from
-          // the logbook importer resolve merged/legacy climbs.
-          for (let i = 0; i < aliasRecords.length; i += BATCH_SIZE) {
-            await tx
-              .insert(boardClimbAliases)
-              .values(aliasRecords.slice(i, i + BATCH_SIZE))
-              .onConflictDoUpdate({
-                target: [boardClimbAliases.boardType, boardClimbAliases.aliasUuid],
-                set: catalogAliasConflictUpdate(),
-              });
-          }
-
-          // Stop listing climbs whose problem upstream has withdrawn. Rows,
-          // holds, aliases, ticks and beta links all stay — the climb just leaves
-          // search, matching what the MoonBoard app itself shows.
-          //
-          // `user_id IS NULL` is the same fence buildExistingIndex applies: a
-          // Boardsesh-native climb is never collateral, even if a withdrawn
-          // problem's alias chain somehow pointed at one. The IS DISTINCT FROM
-          // predicate makes a re-run a no-op instead of rewriting rows that are
-          // already unlisted, so the returned count is "what actually changed".
-          for (let i = 0; i < withdrawnClimbUuids.length; i += BATCH_SIZE) {
-            const unlistedRows = await tx
-              .update(boardClimbs)
-              .set({ isListed: false })
-              .where(
-                and(
-                  eq(boardClimbs.boardType, 'moonboard'),
-                  isNull(boardClimbs.userId),
-                  inArray(boardClimbs.uuid, withdrawnClimbUuids.slice(i, i + BATCH_SIZE)),
-                  sql`${boardClimbs.isListed} IS DISTINCT FROM false`,
-                ),
-              )
-              .returning({ uuid: boardClimbs.uuid });
-            unlistedThisFile += unlistedRows.length;
-          }
-
-          if (dryRun) throw DRY_RUN_ROLLBACK;
-        });
-      } catch (error) {
-        // A dry run always lands here. Anything else is a real failure.
-        if (error !== DRY_RUN_ROLLBACK) throw error;
-      }
-
-      console.info(
-        `   ✓ climbs ${climbRecords.length}, stats ${statsRecords.length}, holds ${holdsRecords.length}` +
-          `, unlisted ${unlistedThisFile}`,
-      );
-      totals.problems += dump.problems.length;
-      totals.matched += counters.matched;
-      totals.inserted += counters.inserted;
-      totals.climbs += climbRecords.length;
-      totals.stats += statsRecords.length;
-      totals.holds += holdsRecords.length;
-      totals.skippedProblems += counters.skippedProblems;
-      totals.skippedAmbiguous += counters.skippedAmbiguous;
-      totals.skippedDrifted += counters.skippedDrifted;
-      totals.skippedHijacked += counters.skippedHijacked;
-      totals.foldedInBatch += counters.foldedInBatch;
-      totals.sharedClimbInBatch += counters.sharedClimbInBatch;
-      totals.withdrawn += counters.withdrawn;
-      totals.withdrawnWithClimbs += counters.withdrawnWithClimbs;
-      totals.unlisted += unlistedThisFile;
     }
-
-    console.info(dryRun ? '\n🧪 Dry run completed — nothing was committed.' : '\n✅ Import completed!');
-    console.info(`   Matched existing: ${totals.matched}`);
-    console.info(`   Newly inserted:   ${totals.inserted}`);
-    console.info(`   Climbs upserted:  ${totals.climbs}`);
-    console.info(`   Stats upserted:   ${totals.stats}`);
-    console.info(`   Holds upserted:   ${totals.holds}`);
-    console.info(`   Problems skipped: ${totals.skippedProblems}`);
-    console.info(
-      `   Withdrawn:        ${totals.withdrawn} upstream, ${totals.withdrawnWithClimbs} of them own climb rows, ` +
-        `${totals.unlisted} climbs unlisted`,
-    );
-
-    // Every problem in the capture takes exactly one of these paths. Printing
-    // the reconciliation — rather than leaving an operator to add it up — is how
-    // a silent drop becomes visible instead of looking like a rounding error.
-    const accountedFor =
-      totals.matched +
-      totals.inserted +
-      totals.sharedClimbInBatch +
-      totals.skippedProblems +
-      totals.skippedAmbiguous +
-      totals.skippedDrifted +
-      totals.skippedHijacked;
-    console.info(
-      `   Shared a climb:   ${totals.sharedClimbInBatch} problems collapsed onto another problem's climb ` +
-        `(${totals.foldedInBatch} of them brand new); their ids still resolve to it`,
-    );
-    if (accountedFor === totals.problems) {
-      console.info(`   Accounted for:    ${accountedFor}/${totals.problems} problems ✓`);
-    } else {
-      console.error(
-        `   ⚠️  Accounting mismatch: ${accountedFor} of ${totals.problems} problems accounted for ` +
-          `(${totals.problems - accountedFor} unexplained). Every problem should land in exactly one counter — ` +
-          `a gap means a code path is dropping problems without saying so.`,
-      );
-    }
-    if (totals.foldedInBatch > 0) {
-      console.info(
-        `   Folded in batch:  ${totals.foldedInBatch} — problems that share their holds with an earlier problem in ` +
-          `the same file and were collapsed onto it; both problem ids still resolve to the surviving climb.`,
-      );
-    }
-    if (totals.skippedAmbiguous > 0) {
-      console.error(
-        `   ⚠️  Problems skipped as ambiguous: ${totals.skippedAmbiguous} — several listed rows share their holds. ` +
-          `If this database predates the moonboard_angle_dedup_backfill migration (#3849), run it and re-run this import to pick ` +
-          `these up. If it's already migrated, these are cross-problem duplicate groups the dedup migration left alone on purpose ` +
-          `and they need deduping by hand.`,
-      );
-    }
-    if (totals.skippedDrifted > 0) {
-      console.error(
-        `   ⚠️  Problems skipped as drifted: ${totals.skippedDrifted} — their holds no longer match the climb rows ` +
-          `they already own, so inserting would duplicate the climb and redirect the old rows' ticks. Reconcile ` +
-          `those rows by hand, then re-run this import.`,
-      );
-    }
-    if (totals.skippedHijacked > 0) {
-      console.error(
-        `   ⚠️  Problems skipped to protect existing rows: ${totals.skippedHijacked} — their holds matched one climb ` +
-          `while the problem also owns other live climb rows, so merging would repoint those rows (and their ticks) ` +
-          `at the matched climb while they stay listed. Reconcile them by hand, then re-run this import.`,
-      );
-    }
-
-    await client.end();
-    process.exit(0);
   } catch (error) {
+    // Anything before or around the lock dance itself lands here: the
+    // database being unreachable, `postgres()`/`drizzle()` throwing, etc.
+    runError = runError ?? (error instanceof Error ? error.message : String(error));
     console.error('❌ Import failed:', error);
-    await client.end();
-    process.exit(1);
+    if (exitCode === 0) exitCode = 1;
+  } finally {
+    if (client !== undefined) {
+      try {
+        await client.end();
+      } catch (endError) {
+        console.error('⚠️  Failed to close the database connection (log only):', endError);
+      }
+    }
   }
+
+  finish();
 }
 
 // Only run when invoked as a script — the arg parser above is imported by
 // import-moonboard-catalog-args.test.ts, which must not kick off an import.
 const isDirectRun = process.argv[1] ? import.meta.url === pathToFileURL(process.argv[1]).href : false;
-if (isDirectRun) void importMoonBoardCatalog();
+if (isDirectRun) {
+  // importMoonBoardCatalog() handles every expected failure internally (it
+  // always writes the report and sets process.exitCode itself) — this catch
+  // is only a last-resort safety net against something genuinely unexpected,
+  // so `void` above never turns into an unhandled rejection.
+  importMoonBoardCatalog().catch((error) => {
+    console.error('❌ Unhandled error in MoonBoard catalog import:', error);
+    process.exitCode = 1;
+  });
+}

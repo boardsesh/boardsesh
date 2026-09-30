@@ -5,7 +5,11 @@
 
 import * as Sentry from '@sentry/nextjs';
 import { isProductionSentryEnvironment, resolveSentryEnvironment } from '@boardsesh/db/client/config';
-import { resolveWebTracesSampleRate, WEB_TRACE_PROPAGATION_TARGETS } from './app/lib/observability/sentry-tracing';
+import {
+  resolveWebTracesSampleRate,
+  WEB_IGNORED_SPANS,
+  WEB_TRACE_PROPAGATION_TARGETS,
+} from './app/lib/observability/sentry-tracing';
 
 Sentry.init({
   dsn: 'https://f55e6626faf787ae5291ad75b010ea14@o4510644927660032.ingest.us.sentry.io/4510644930150400',
@@ -41,4 +45,9 @@ Sentry.init({
 
   // Node defaults this to *every* host. Must be set. See the constant.
   tracePropagationTargets: WEB_TRACE_PROPAGATION_TARGETS,
+
+  // Same list as the server config. The edge SDK (@sentry/vercel-edge) ships
+  // no Graphql integration, so there is nothing to filter out of
+  // `integrations` here; the list covers the tunnel forward and any Next span.
+  ignoreSpans: WEB_IGNORED_SPANS,
 });

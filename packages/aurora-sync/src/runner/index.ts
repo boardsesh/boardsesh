@@ -1,2 +1,17 @@
-export { SyncRunner } from './sync-runner';
-export type { SyncRunnerConfig, SyncSummary, SyncError, CredentialRecord, DaemonOptions } from './types';
+export {
+  SyncRunner,
+  recordAuroraSyncFailure,
+  sharedSyncCooldownAfterError,
+  syncableAuroraCredentialsFilter,
+} from './sync-runner';
+export type {
+  SyncRunnerConfig,
+  SyncSummary,
+  SyncError,
+  CredentialRecord,
+  DaemonOptions,
+  SyncCredentialOptions,
+  SyncOutcome,
+  SharedSyncJobOptions,
+  SharedSyncJobResult,
+} from './types';

@@ -1377,7 +1377,10 @@ describe('the holds index at the end of a pull cycle', () => {
     });
 
     expect((await getHoldSet(db, 'indexed'))?.map((entry) => entry.holdId)).toEqual([1, 2]);
-    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['similarClimbs'] });
+    expect(invalidateQueries).toHaveBeenCalledWith(
+      { queryKey: ['similarClimbs'], predicate: expect.any(Function) },
+      { cancelRefetch: false },
+    );
     expect(onProgress).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'idle' }));
   });
 

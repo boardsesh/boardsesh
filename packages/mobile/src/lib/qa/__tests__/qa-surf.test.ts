@@ -44,11 +44,13 @@ vi.mock('../../legacy-ota-channel-migration', () => ({
 import {
   BRANCH_SURFING_UNAVAILABLE_MESSAGE,
   listPrBranches,
+  listQaBranches,
   qaSurfingAvailable,
   readRefusedPrNumber,
   readRunningPrNumber,
   surfToPr,
   surfToProduction,
+  surfToStaging,
 } from '../qa-surf';
 
 const SURF_CONFIG = {
@@ -122,6 +124,19 @@ describe('readRefusedPrNumber', () => {
 });
 
 describe('listPrBranches', () => {
+  it('offers staging separately from numbered PR previews', async () => {
+    surf.listBranches.mockResolvedValue({
+      total: 2,
+      branches: [
+        { name: 'pr-staging', lastUpdateAt: '2026-08-26T11:00:00.000Z' },
+        { name: 'pr-100', lastUpdateAt: '2026-08-26T10:00:00.000Z' },
+      ],
+    });
+    await expect(listQaBranches()).resolves.toEqual({
+      staging: { lastUpdateAt: '2026-08-26T11:00:00.000Z' },
+      previews: [{ prNumber: 100, branch: 'pr-100', lastUpdateAt: '2026-08-26T10:00:00.000Z' }],
+    });
+  });
   it('keeps only pr-<n> branches, freshest first', () => {
     surf.listBranches.mockResolvedValue({
       total: 4,
@@ -186,6 +201,11 @@ describe('listPrBranches', () => {
 });
 
 describe('surfToPr / surfToProduction', () => {
+  it('pins the staged branch without remapping production', async () => {
+    surf.surfTo.mockResolvedValue('reloading');
+    await expect(surfToStaging()).resolves.toBe('reloading');
+    expect(surf.surfTo).toHaveBeenCalledWith(SURF_CONFIG, 'pr-staging');
+  });
   it('pins the PR branch and reports the outcome', async () => {
     surf.surfTo.mockResolvedValue('reloading');
     await expect(surfToPr(4792)).resolves.toBe('reloading');

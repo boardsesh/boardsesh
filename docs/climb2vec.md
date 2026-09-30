@@ -66,7 +66,7 @@ pgvector needed at ~10⁵ climbs/board (it stays a drop-in later swap, same
 | **1a** | **Training matrix + offline eval** ✅ (this PR) | `extract-training-matrix.ts` + `ml/climb2vec/` (Deep Sets encoder, GBM/ridge baselines, leakage-free eval). Feasibility numbers below.                                                                                                        |
 | 1b     | Content-model export ✅ (this PR)               | `board_climb_embeddings` + score extract + `train_export.py` + `load-content-model.ts` + weekly `refresh-content-model.yml`. Tuning (ordinal/contrastive) iterates here.                                                                      |
 | **2**  | **`content_prior` into the blend** ✅ (this PR) | Cold-tail grades use the geometry estimate: `content_prior` enters `computePosteriorGrade` Regime 3 (no crowd, no cross-angle prior) as `provisional`, persisted to `board_climb_grades.content_prior`. Gate-safe (never touches crowd rows). |
-| **3a** | **Similarity data layer** ✅ (this PR)          | `board_climb_similar` + numpy top-K (`similarity_export.py`) + `load-similarity.ts`, folded into the content-model workflow. Blending into the `similarClimbs` resolver/UI (Jaccard fallback) is a focused follow-up.                         |
+| **3a** | **Similarity data layer** (paused)              | `board_climb_similar` + numpy top-K (`similarity_export.py`) + `load-similarity.ts`. Nothing reads the table yet, so the weekly workflow stopped rebuilding it. Run both scripts by hand when the `similarClimbs` blend lands.                |
 | 4      | "Also sent" item-item CF                        | Co-send neighbors from `boardsesh_ticks` + a climb-detail rail.                                                                                                                                                                               |
 | 5      | Style / anti-style recs                         | Per-user style centroids → "recommended in your style" / "train your anti-style".                                                                                                                                                             |
 | 6      | Generalize to Tension + MoonBoard               | First-ever MoonBoard grades (`content_only`); multi-board similarity.                                                                                                                                                                         |
@@ -94,7 +94,9 @@ the GBM can't provide). The Deep Sets grade head still trails the GBM by ~0.13 M
 
 `board_hold_features` (`packages/db/src/schema/app/hold-features.ts`) holds one
 row per placement, regenerated nightly by
-`packages/db/scripts/refresh-hold-features.ts`:
+`packages/db/src/jobs/refresh-hold-features.ts` (CLI:
+`packages/db/scripts/refresh-hold-features.ts`; batch worker family
+`refresh-hold-features`):
 
 - **Geometry** (`packages/db/src/queries/hold-features/geometry.ts`) — normalized
   position, edge & nearest-neighbour distance, and a geometry-derived pull

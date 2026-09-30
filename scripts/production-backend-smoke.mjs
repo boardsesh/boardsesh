@@ -4,6 +4,11 @@ import { fileURLToPath } from 'node:url';
 
 const scriptPath = fileURLToPath(import.meta.url);
 const DEFAULT_BASE_URL = 'https://ws.boardsesh.com';
+// Named so the edge knows who it is. The Cloudflare automation default-deny
+// lists `boardsesh-production-smoke` on CRAWLER_ALLOW_TOKENS
+// (packages/web/app/lib/crawler-policy.ts); bare Node sends `node`, which is
+// unlisted and only passes because it carries no bot signature today.
+const SMOKE_USER_AGENT = 'boardsesh-production-smoke/1.0';
 const DEFAULT_ATTEMPTS = 12;
 const DEFAULT_RETRY_DELAY_MS = 5_000;
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -180,6 +185,7 @@ async function checkBackendSchemaOnce({
         'Cache-Control': 'no-cache, no-store, max-age=0',
         'Content-Type': 'application/json',
         Pragma: 'no-cache',
+        'User-Agent': SMOKE_USER_AGENT,
       },
       body: JSON.stringify({ query: INTROSPECTION_QUERY }),
       signal: abortController.signal,
@@ -216,6 +222,7 @@ async function checkBackendIdentityOnce({
         Accept: 'application/json',
         'Cache-Control': 'no-cache, no-store, max-age=0',
         Pragma: 'no-cache',
+        'User-Agent': SMOKE_USER_AGENT,
       },
       signal: abortController.signal,
     });
@@ -267,6 +274,7 @@ async function checkBoardRenderOnce({
         Accept: 'image/webp',
         'Cache-Control': 'no-cache, no-store, max-age=0',
         Pragma: 'no-cache',
+        'User-Agent': SMOKE_USER_AGENT,
       },
       signal: abortController.signal,
     });

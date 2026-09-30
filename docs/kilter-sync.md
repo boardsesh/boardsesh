@@ -159,7 +159,7 @@ Implemented in [`packages/kilter-sync/src/sync/catalog-sync.ts`](../packages/kil
 3. **Catalog REST pull**, grouped by resolved `board_layouts.id` so the existing catalog loads once per board layout: `GET /api/climbs/all/{productLayoutUuid}` (full per-layout array, no pagination) + `GET /api/climb-stat/all/{productLayoutUuid}`. `--layouts` scopes which layouts are *pulled*, but not the hole→placement preload the reroute resolver needs: every listed layout still resolves, so a scoped run also persists those layout aliases and reports unmapped layouts from outside the filter.
 4. **Parse + remap** (`sync/catalog-parse.ts`): Grips `climb_concat` is `h{holeId}p{code}[s{start}][e{end}]`; the legacy catalog stores `frames` as `p{placementId}r{code}`. `board_placements(layout_id, hole_id) → id` (unique per layout) bridges the two, so `climb_concat` is rewritten to the canonical Aurora frames format and routed through the existing `convertLitUpHoldsStringToMap`. This guarantees byte-identical `board_climb_holds` / `hold_fingerprint` to the legacy data (verified 366/366 in Phase 0).
 5. **Dedup** (see [Climb dedup](#climb-dedup)) — **UUID-first** (Grips inherited Aurora's climb UUIDs, so ~80% of climbs already exist as their own canonical), then hold-fingerprint for new UUIDs.
-6. **Upsert** `board_climbs` (new canonicals only) + `board_climb_holds` + `board_climb_aliases`, then `board_climb_stats`, writing the Grips count into `upstream_ascensionist_count` (see below). Setter notifications fire for newly-inserted canonicals (`sync/notifications.ts`, ported from aurora-sync).
+6. **Upsert** `board_climbs` (new canonicals only) + `board_climb_holds` + `board_climb_aliases`, then `board_climb_stats`, writing the Grips count into `upstream_ascensionist_count` (see below). Setter notifications fire for newly-inserted canonicals (`sync/notifications.ts`, ported from aurora-sync), in the same transaction as the layout flush that inserted them: once a canonical exists no later run sees it as new, so a run that stopped before an end-of-run notification batch would have left it unannounced.
 7. **Deletion reconciliation** (`sync/deletions.ts`) via `GET /api/climbs/delteduuids` — gated, report-only by default. The deletion list is fetched **once per run**, right after the skip backlog is loaded, and shared with the identity re-list in step 5. A failed or empty fetch leaves it null, which disables both (see [Climb dedup](#climb-dedup)) — an absent list is not evidence that nothing was deleted.
 
 ### Verified REST/PowerSync contract (Phase 0, 2026-06-02)
@@ -235,6 +235,32 @@ successful per-user cycle, `runCycleForCredential` calls `maybeRunCatalogSync`
 with that user's token; success and failure both keep the full cooldown from
 the end of the catalog run, and a catalog failure never poisons the user's
 credential.
+
+After the worker cutover the `kilter-catalog-sync` job owns it instead (hourly
+at :23, `SyncRunner.runCatalogSyncJob`): a refresh-grant token from the most
+recently successful `active` Kilter credential (else the
+`KILTER_TEST_USERNAME`/`KILTER_TEST_PASSWORD` account), the same slot claimed
+with a 50-minute cooldown measured from the claim (the end-of-run marker is
+backdated by the run's length, so a long pull never makes the next hourly tick
+wait), then the catalog, the weekly stats repair and the weekly history
+snapshot. A transient failure, an abort or a database error re-stamps a
+five-minute cooldown so the job's one retry can run; a permanent Kilter
+failure keeps the full one. The catalog's REST client waits out a
+`Retry-After` of up to 5 minutes and retries, else backs off exponentially up
+to 30 s; a longer `Retry-After` is not slept on: the request fails at once as
+`rate_limited` with the delay, and the job closes the catalog slot and holds
+the donor for it. The donor's token is pinned to the link it was borrowed
+under: after a relink mid-run the token read fails with a retryable
+`DONOR_RELINKED` instead of refreshing the new link's token. Every write
+of the job goes through the attempt fence (`syncKilterCatalog`'s and
+`repairKilterCatalogStats`'s `transaction` option, and the slot claim and
+stamp): each layout flush, stats in chunks of 5000 rows, the backlog, layout
+aliases, locations in 25-gym batches, notifications, the deletion apply, the
+repair's atomic apply and watermark, and the history snapshot. A run that
+outlived its lease throws at its next batch, and the catalog's best-effort
+steps rethrow a lost fence instead of logging it. The job's signal reaches
+the reference stream, every REST request and the 429 backoff. The CLI and the
+daemon pass no runner and write as before.
 
 ### Prerequisite: fingerprint backfill
 
@@ -366,6 +392,8 @@ Why the guard is load-bearing: on 2026-09-15 Kilter's `/climbs/all` still return
 
 **Stats accumulation (worked example).** Two listed climbs `A` (count 18) and `B` (count 5) with identical holds collapse onto one canonical: `A` is canonical with `upstream_ascensionist_count = 18`, `B` aliases to `A` and its 5 ascents accumulate → 23. The accumulation is computed **in memory per `(canonical, angle)` and written as an overwrite** (not `+=`), so re-running recomputes the same 23 — idempotent. If the same source climb stat appears through multiple Grips `product_layout_uuid`s that collapse to one Boardsesh layout, it is counted once by `(source climb UUID, angle)`. Display fields (`difficulty/quality/fa`) come only from the canonical climb's own stat row.
 
+**Unchanged rows are not rewritten.** The catalog sync and `repair-stats` share one upsert (`stats-upsert.ts`). Its `ON CONFLICT … WHERE` writes a row only when a SET column would change, when `upstream_synced_at` is NULL, or when the stamp is over 24 h old on a row with `boardsesh_ascensionist_count > 0`. The tick recompute's push-back absorption reads that stamp (`kilter_synced_at < upstream_synced_at - 48h`), so on Kilter it means "last changed upstream, or confirmed within a day", not "last pass". A stamp can lag by up to 24 h but never runs ahead, so absorption is delayed, never premature. Before this, each pass rewrote all ~420k Kilter rows although a few thousand changed. The same rule covers the other catalog writers: a pure alias refreshes `last_seen_at` at most once a day unless its `source` changes, and `kilter_wall_sources` rows are written only when a mapped column or `is_listed` changes. The self-alias set loads once per run, not once per layout.
+
 ### `ascensionist_count` — one upstream column plus Boardsesh
 
 `board_climb_stats.ascensionist_count` is the materialized count the search hot path reads. It sums two owned columns: `upstream_ascensionist_count` — the board's single manufacturer/upstream count — and `boardsesh_ascensionist_count`, the independent Boardsesh-native contribution:
@@ -455,7 +483,60 @@ than persisting an unrenewable credential.
 
 Account linking is gated client-side by the `kilter-oauth-linking` PostHog feature flag. The app reads the flag (`useFeatureFlag('kilter-oauth-linking')`) and only shows the Kilter sign-in card when it's on (or when a Kilter account is already linked, so it stays manageable if the flag flips off). Toggling the flag in PostHog rolls the importer in or out without a redeploy. The backend OAuth/password endpoints stay authenticated and rate-limited but no longer enforce a user allowlist.
 
+## Worker families
+
+Three worker families replace the daemon. Full contracts and the cutover:
+[background-workers.md](background-workers.md#routine-provider-sync).
+
+| Family | Role | What it does |
+| --- | --- | --- |
+| `kilter-user-sync` | `interactive-import` | One account, right after a climber links Kilter and when they tap "Sync now" |
+| `provider-routine-cycle` (`{ provider: 'kilter' }`) | `routine-provider` | Every 5 minutes: the daemon's one-credential cycle, up to 4 credentials a run |
+| `kilter-catalog-sync` | `routine-provider` | Hourly at :23: the catalog, the weekly stats repair and history snapshot (see [Cooldown + piggyback](#cooldown--piggyback)) |
+
+The daemon stays the owner of routine syncs until the cutover sets
+`SYNC_DAEMON_DISABLED=true` on the sync host; from then on
+`kilter-sync daemon` logs one line and exits 0.
+
+- `runCycleForCredential(db, cred, { transaction, signal, skipCatalogSync })` is
+  public and returns a `SyncOutcome`. The daemon calls it too, so both record
+  failures through the same `recordKilterFailure(tx, cred, err)`: a transient
+  failure stamps the attempt clock, bumps `consecutive_failures` and writes
+  `last_sync_error`; a permanent one sets `error`, or `expired` for
+  `invalid_grant`.
+- `syncKilterUserData` takes `transaction` and `signal`. Each phase flush runs
+  through the batch runner; the signal cancels the PowerSync stream. A fence
+  refusal or an abort ends the sync at once instead of being collected as a
+  failed phase.
+- With a batch runner the stats recompute leaves the logs flush
+  (`deferStatsRecompute`, on by default when `transaction` is set): `applyLogs`
+  collects the keys it wrote, and once the flush commits they are recomputed in
+  batches of at most 500 keys, one transaction each, so no fenced batch blocks
+  the job's heartbeat for long. The keys are written to
+  `climb_stats_recompute_pending` in the flush itself and cleared by the batch
+  that recomputes them; a worker that stops in between leaves them for the
+  hourly self-heal. The daemon keeps the inline recompute.
+- A 429 from Keycloak, the REST portal or PowerSync carries `Retry-After` into
+  `KilterApiError.retryAfterMs` and the `SyncOutcome` (a PowerSync 429 is now
+  `rate_limited`; it was a transient `powersync` error before). The routine
+  cycle holds that credential until `provider_retry_after_until` (the later of
+  it and the failure backoff, never their sum) and stops.
+- The Keycloak refresh (`getStoredKilterAccessToken`) is unchanged and stays
+  outside every fence, on the worker's pool. It is not a short transaction: it
+  holds the credential row `FOR UPDATE` across the Keycloak HTTP call (up to
+  its 30 s timeout) so a rotating refresh token is read and written under one
+  lock. Anything else that locks that row (the daemon's claim, an unlink) waits
+  for it. It never reads or writes the link generation.
+- `SyncRunnerConfig.db` injects the worker's pool; the runner then opens none of
+  its own. A job skips the catalog piggyback (`skipCatalogSync`).
+- `syncableKilterCredentialsFilter()` is exported for the job's named claim.
+
+A worker serving this family refuses to start without `KILTER_OAUTH_CLIENT_ID`
+and `AURORA_CREDENTIALS_SECRET`.
+
 ## Daemon
+
+`SYNC_DAEMON_DISABLED=true` (the literal `true`) makes `kilter-sync daemon` log one line and exit 0 before it touches the lease or the pool, so the ansible service goes idle without its unit being deleted (its compose restart policy must not restart a clean exit). The claim skips an account a background job holds a live lease on (`excludeLeased`), so a daemon and a worker never sync one credential at the same time.
 
 Same loop shape as aurora-sync's daemon: one user per cycle, random 1–15 min jitter between cycles, Sydney quiet hours (`10pm–7am`), transient errors (HTTP 5xx, network, timeout) leave `syncStatus` untouched for retry, while Keycloak `invalid_grant` is treated as permanent and routes to `syncStatus = 'expired'`.
 
@@ -511,6 +592,8 @@ op run --env-file=packages/kilter-sync/.env.1password -- vp exec kilter-sync dae
 | `KILTER_SYNC_HOST`           | no                 | Override PowerSync host (sandbox)                                  |
 | `KILTER_PORTAL_HOST`         | no                 | Override REST portal host (sandbox)                                |
 | `DATABASE_URL`               | yes                | Same Postgres as everything else                                   |
+| `SYNC_DAEMON_DISABLED`       | no                 | `true` once the worker families own routine syncs: the daemon exits 0 |
+| `KILTER_TEST_USERNAME` / `KILTER_TEST_PASSWORD` | no | ROPC fallback token for the catalog when no Kilter account is linked (never in production) |
 
 ## Open wire questions
 

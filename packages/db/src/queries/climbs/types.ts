@@ -67,6 +67,14 @@ export type ClimbSearchParams = {
   // keeping never-rated climbs; `onlyRatedByMe` keeps only rated climbs.
   minUserRating?: number;
   onlyRatedByMe?: boolean;
+  /**
+   * Key the grade filter and the difficulty sort off the climber's OWN grade —
+   * the difficulty of their latest tick for (user, board_type, climb_uuid,
+   * angle) that carries one, clamped to the boulder scale, falling back to
+   * ROUND(display_difficulty) where they never graded the climb (#4828).
+   * Needs a userId; ignored for anonymous searches and for drafts queries.
+   */
+  useMyGrades?: boolean;
   onlyDrafts?: boolean;
   projectsOnly?: boolean;
   /**
@@ -143,6 +151,7 @@ export type ClimbSearchInputLike = {
   showOnlyCompleted?: boolean | null;
   minUserRating?: number | null;
   onlyRatedByMe?: boolean | null;
+  useMyGrades?: boolean | null;
   onlyDrafts?: boolean | null;
   projectsOnly?: boolean | null;
   holdIntegrity?: string | null;
@@ -269,6 +278,7 @@ export function mapSearchInputToParams(input: ClimbSearchInputLike): ClimbSearch
     // minRating above), so collapse it rather than emitting `>= 0`.
     minUserRating: input.minUserRating || undefined,
     onlyRatedByMe: input.onlyRatedByMe ?? undefined,
+    useMyGrades: input.useMyGrades ?? undefined,
     onlyDrafts: input.onlyDrafts ?? undefined,
     projectsOnly: input.projectsOnly ?? undefined,
     // The GraphQL enum is SCREAMING_CASE and the param is lower case. ANY is the
@@ -341,6 +351,12 @@ export type ClimbRow = {
   /** Boardsesh grade confidence tier; null when no grade row (or a DB value outside
    *  the known tiers, narrowed by `toConfidenceTier` at the mapping site). */
   boardseshConfidence: ConfidenceTier | null;
+  /** The climber's OWN grade for this climb at this angle: the difficulty of
+   *  their latest graded tick, clamped to the boulder scale. Null when they
+   *  never graded it, when the search was anonymous, or when `useMyGrades` was
+   *  not asked for — the row was then filtered and ordered by the crowd's grade
+   *  and must not claim otherwise (#4828). */
+  myDifficulty?: number | null;
   /** `board_climbs.compatible_size_ids` — the product sizes this climb fits on.
    *  Null when the denormalised columns haven't been populated (drafts, legacy
    *  rows), which imposes no constraint. Carried so client-side size checks

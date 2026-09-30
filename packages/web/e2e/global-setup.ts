@@ -1,4 +1,4 @@
-import { chromium, type FullConfig } from '@playwright/test';
+import { chromium, devices, type FullConfig } from '@playwright/test';
 
 const BOARD_URL = '/kilter/original/12x12-square/screw_bolt/40/list';
 // The SSR front door's row marker (`static-climb-row.tsx`), plus the classic
@@ -29,7 +29,10 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
 
   const browser = await chromium.launch();
   try {
-    const context = await browser.newContext({ baseURL });
+    // Match the chromium project's Desktop Chrome profile. A bare context
+    // sends Playwright's default `HeadlessChrome` UA, which the crawler
+    // policy's automation default-deny refuses in a production build.
+    const context = await browser.newContext({ ...devices['Desktop Chrome'], baseURL });
     const page = await context.newPage();
 
     // 1. Server reachable + board route renders climb rows

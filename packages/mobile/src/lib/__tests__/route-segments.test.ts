@@ -5,6 +5,7 @@ import {
   isTopLevelTabRoute,
   isAccessorySurfaceRoute,
   isAccessoryHostRoute,
+  isAccessoryHiddenRoute,
   isTabsChromeRoute,
 } from '../route-segments';
 
@@ -145,5 +146,20 @@ describe('isAccessoryHostRoute', () => {
     for (const segments of routes) {
       expect(isAccessoryHostRoute(segments)).toBe(isTabsChromeRoute(segments));
     }
+  });
+});
+
+describe('isAccessoryHiddenRoute', () => {
+  it('is true on the hold-type and zone filter boards', () => {
+    expect(isAccessoryHiddenRoute(['(tabs)', 'climbs', 'holds'])).toBe(true);
+    expect(isAccessoryHiddenRoute(['(tabs)', 'climbs', 'zone'])).toBe(true);
+  });
+
+  it('is false everywhere else', () => {
+    expect(isAccessoryHiddenRoute(['(tabs)', 'climbs'])).toBe(false);
+    expect(isAccessoryHiddenRoute(['(tabs)', 'climbs', 'setters'])).toBe(false);
+    expect(isAccessoryHiddenRoute(['(tabs)', 'home', 'holds'])).toBe(false);
+    expect(isAccessoryHiddenRoute(['play'])).toBe(false);
+    expect(isAccessoryHiddenRoute([])).toBe(false);
   });
 });

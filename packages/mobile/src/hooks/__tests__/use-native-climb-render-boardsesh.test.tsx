@@ -1061,3 +1061,222 @@ describe('useNativeClimbRender render mode', () => {
     expect(_unsupportedRenderSignaturesForTests.size).toBe(0);
   });
 });
+
+// The hold heatmap draws its buckets as synthetic codes (900–904) filled into
+// each hold's silhouette, through the same hook every board surface uses.
+describe('useNativeClimbRender heatmap seams', () => {
+  const nativeModule = {
+    boardRendererNative: {},
+    renderHoldsOverlay: vi.fn<(configJson: string, cacheKey: string) => Promise<string>>(),
+    probeBoardseshRendererSupport: vi.fn<() => Promise<boolean>>(),
+  };
+  const HEAT_STATES = { 900: { color: '#4C1D95' }, 904: { color: '#F5F3FF' } } as const;
+  const OTHER_HEAT_STATES = { 900: { color: '#DDD6FE' }, 904: { color: '#2E1065' } } as const;
+  const HEAT_FRAMES = 'p1r900p2r904';
+
+  function sentConfigs(): Record<string, unknown>[] {
+    return nativeModule.renderHoldsOverlay.mock.calls.map(([configJson]) => JSON.parse(configJson));
+  }
+  function sentKeys(): string[] {
+    return nativeModule.renderHoldsOverlay.mock.calls.map(([, cacheKey]) => cacheKey);
+  }
+
+  beforeEach(() => {
+    nativeModule.renderHoldsOverlay.mockReset();
+    nativeModule.renderHoldsOverlay.mockResolvedValue('file:///overlay.png');
+    nativeModule.probeBoardseshRendererSupport.mockReset();
+    nativeModule.probeBoardseshRendererSupport.mockResolvedValue(true);
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    _setNativeModuleForTests(nativeModule as unknown as Parameters<typeof _setNativeModuleForTests>[0]);
+    // A climber who picked the classic drawing: the override still asks for Aura.
+    boardRenderSettingsRef.current = { ...DEFAULT_BOARD_RENDER_SETTINGS, mode: 'classic' };
+  });
+
+  it('merges the extra hold states over the board map and fills the marks', async () => {
+    renderHook(() =>
+      useNativeClimbRender({
+        ...GRASSHOPPER,
+        frames: HEAT_FRAMES,
+        extraHoldStates: HEAT_STATES,
+        markStyleOverride: 'fill',
+        maxVeilOpacity: EDITING_VEIL_OPACITY,
+      }),
+    );
+
+    await waitFor(() => expect(sentConfigs().some((config) => config.render_mode === 'aura')).toBe(true));
+    const auraConfig = sentConfigs().find((config) => config.render_mode === 'aura');
+    expect(auraConfig?.mark_style).toBe('fill');
+    const holdStateMap = asRecord(auraConfig?.hold_state_map);
+    expect(holdStateMap[900]).toEqual({ color: '#4C1D95' });
+    expect(holdStateMap[904]).toEqual({ color: '#F5F3FF' });
+    // The board's own roles are still there, untouched.
+    expect(holdStateMap[2]).toBeDefined();
+    // No wash on the heat layer: the photo under it has to stay readable.
+    expect(auraConfig && 'veil' in auraConfig).toBe(false);
+  });
+
+  it('keys the PNG on the extra states, so a scheme flip cannot reuse the other ramp', async () => {
+    const first = renderHook(() =>
+      useNativeClimbRender({
+        ...GRASSHOPPER,
+        frames: HEAT_FRAMES,
+        extraHoldStates: HEAT_STATES,
+        markStyleOverride: 'fill',
+      }),
+    );
+    await waitFor(() => expect(sentConfigs().some((config) => config.render_mode === 'aura')).toBe(true));
+    const firstKeys = sentKeys();
+    first.unmount();
+
+    renderHook(() =>
+      useNativeClimbRender({
+        ...GRASSHOPPER,
+        frames: HEAT_FRAMES,
+        extraHoldStates: OTHER_HEAT_STATES,
+        markStyleOverride: 'fill',
+      }),
+    );
+    await waitFor(() => expect(sentKeys().some((cacheKey) => !firstKeys.includes(cacheKey))).toBe(true));
+  });
+
+  it('builds a different config-cache entry for different extras on the same board', () => {
+    const inputs = boardseshInputs({ markStyle: 'fill' });
+    const withHeat = _getBoardConfigForTests(
+      'grasshopper',
+      1,
+      5,
+      '1',
+      false,
+      undefined,
+      {},
+      {},
+      1,
+      1,
+      'default.xs-a',
+      inputs,
+      HEAT_FRAMES,
+      HEAT_STATES,
+    );
+    const plain = _getBoardConfigForTests('grasshopper', 1, 5, '1', false, undefined, {}, {}, 1, 1, 'default', inputs);
+    expect(asRecord(asRecord(withHeat?.configBase).hold_state_map)[900]).toEqual({ color: '#4C1D95' });
+    expect(asRecord(asRecord(plain?.configBase).hold_state_map)[900]).toBeUndefined();
+  });
+
+  it('leaves every other surface byte-identical: no extras, no override → same config and key', async () => {
+    boardRenderSettingsRef.current = { ...DEFAULT_BOARD_RENDER_SETTINGS, mode: 'aura' };
+    const plain = renderHook(() => useNativeClimbRender({ ...GRASSHOPPER, frames: GRASSHOPPER_FRAMES }));
+    await waitFor(() => expect(sentConfigs().some((config) => config.render_mode === 'aura')).toBe(true));
+    const plainCalls = nativeModule.renderHoldsOverlay.mock.calls.map(([json, key]) => [json, key]);
+    plain.unmount();
+    _renderedOverlaysForTests.clear();
+    _inflightRendersForTests.clear();
+    nativeModule.renderHoldsOverlay.mockClear();
+
+    renderHook(() =>
+      useNativeClimbRender({
+        ...GRASSHOPPER,
+        frames: GRASSHOPPER_FRAMES,
+        extraHoldStates: undefined,
+        markStyleOverride: undefined,
+      }),
+    );
+    await waitFor(() => expect(sentConfigs().some((config) => config.render_mode === 'aura')).toBe(true));
+    const explicitCalls = nativeModule.renderHoldsOverlay.mock.calls.map(([json, key]) => [json, key]);
+    // Same config JSON, byte for byte, under the same cache key.
+    expect(explicitCalls.at(-1)).toEqual(plainCalls.at(-1));
+    const [, cacheKey] = plainCalls.at(-1) ?? [];
+    expect(cacheKey).toBeDefined();
+    const auraConfig = sentConfigs().find((config) => config.render_mode === 'aura');
+    expect(auraConfig?.mark_style).toBe('glow');
+    expect(Object.keys(asRecord(auraConfig?.hold_state_map)).some((code) => Number(code) >= 900)).toBe(false);
+
+    // And the config builder hands back the cached board config untouched.
+    const inputs = boardseshInputs();
+    const withoutArg = _getBoardConfigForTests(
+      'grasshopper',
+      1,
+      5,
+      '1',
+      false,
+      undefined,
+      {},
+      {},
+      1,
+      1,
+      'default',
+      inputs,
+    );
+    const withUndefined = _getBoardConfigForTests(
+      'grasshopper',
+      1,
+      5,
+      '1',
+      false,
+      undefined,
+      {},
+      {},
+      1,
+      1,
+      'default',
+      inputs,
+      '',
+      undefined,
+    );
+    expect(JSON.stringify(withUndefined?.configBase)).toBe(JSON.stringify(withoutArg?.configBase));
+  });
+
+  it('keys the heat PNG on the extras without splitting the board-config cache', () => {
+    // The extras are merged over the cached entry on the way out, so the same
+    // board config serves every heat map.
+    const inputs = boardseshInputs({ markStyle: 'fill' });
+    const first = _getBoardConfigForTests(
+      'grasshopper',
+      1,
+      5,
+      '1',
+      false,
+      undefined,
+      {},
+      {},
+      1,
+      1,
+      'sig',
+      inputs,
+      '',
+      HEAT_STATES,
+    );
+    const second = _getBoardConfigForTests(
+      'grasshopper',
+      1,
+      5,
+      '1',
+      false,
+      undefined,
+      {},
+      {},
+      1,
+      1,
+      'sig',
+      inputs,
+      '',
+      OTHER_HEAT_STATES,
+    );
+    expect(asRecord(asRecord(first?.configBase).hold_state_map)[900]).toEqual({ color: '#4C1D95' });
+    expect(asRecord(asRecord(second?.configBase).hold_state_map)[900]).toEqual({ color: '#DDD6FE' });
+    expect(asRecord(first?.configBase).holds).toBe(asRecord(second?.configBase).holds);
+  });
+
+  it('stays classic, and says so, when the binary cannot draw the fill', async () => {
+    nativeModule.probeBoardseshRendererSupport.mockResolvedValue(false);
+    const { result } = renderHook(() =>
+      useNativeClimbRender({
+        ...GRASSHOPPER,
+        frames: HEAT_FRAMES,
+        extraHoldStates: HEAT_STATES,
+        markStyleOverride: 'fill',
+      }),
+    );
+    await waitFor(() => expect(result.current.boardseshRendererAvailable).toBe(false));
+    expect(sentConfigs().every((config) => config.render_mode === undefined)).toBe(true);
+  });
+});

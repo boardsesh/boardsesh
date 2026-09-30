@@ -183,6 +183,14 @@
       "singleAngle_one": "At {{angle}}° · old grade {{crowd}} · Boardsesh grade {{boardsesh}} · {{count}} send",
       "singleAngle_other": "At {{angle}}° · old grade {{crowd}} · Boardsesh grade {{boardsesh}} · {{count}} sends",
       "crowdOnlyNote": "Not enough cross-board sends yet to compare by angle."
+    },
+    "yours": {
+      "label": "Your grade",
+      "meta": "At {{angle}}°",
+      "boardGrade": "Board grade",
+      "community": "Community grade",
+      "matches": "You agree with it.",
+      "emptyBody": "Reckon it's sandbagged? Give it your own grade. No send needed."
     }
   },
   "similarClimbs": {
@@ -409,7 +417,8 @@
     "tick": {
       "dateLabel": "Date",
       "timeLabel": "Time",
-      "gradeLabel": "Grade",
+      "gradeLabel": "My grade",
+      "gradeHelp": "The grade you'll see on this climb from now on. No send needed.",
       "starsLabel": "Stars",
       "triesLabel": "Tries",
       "noteLabel": "Note",
@@ -713,8 +722,6 @@
       "settings": {
         "draftLabel": "Save as draft",
         "draftDescription": "Drafts stay private until you publish them.",
-        "showAllHoldsLabel": "Show all holds",
-        "showAllHoldsDescription": "Highlight every tappable hold on the board.",
         "noMatchLabel": "No matching",
         "noMatchDescription": "Hands can't match on the same hold",
         "noKickboardLabel": "No kickboard",
@@ -751,7 +758,7 @@
         "publishedToast": "Climb published"
       },
       "autosave": {
-        "onDevice": "Saved on this phone",
+        "onDevice": "Draft saved on this phone",
         "inAccount": "Draft saved to your account",
         "unsyncedEdits": "Latest edits are on this phone only",
         "notStored": "Sign in to keep this draft",
@@ -832,26 +839,39 @@
       "title": "Setter's notes"
     },
     "heatmap": {
-      "show": "Show hold heatmap",
-      "hide": "Hide hold heatmap",
+      "toggle": "Heatmap",
       "modeLabel": "Color holds by",
       "modes": {
-        "uses": "Most used",
-        "ascents": "Most sent",
-        "difficulty": "Grade"
+        "climbs": "Climbs",
+        "startsFinishes": "Starts & finishes",
+        "grade": "Grade"
       },
-      "legendLow": "Fewer",
-      "legendHigh": "More",
-      "legendEasy": "Easier",
-      "legendHard": "Harder",
-      "filtered": "Filtered · {{summary}}",
+      "legend": {
+        "fewClimbs": "Few climbs",
+        "manyClimbs": "Many climbs",
+        "easier": "Easier",
+        "harder": "Harder",
+        "allEqual": "Every hold used equally"
+      },
+      "climbCount_one": "{{formattedCount}} climb",
+      "climbCount_other": "{{formattedCount}} climbs",
+      "firstRun": {
+        "climbsDark": "Brighter holds are in more climbs",
+        "climbsLight": "Darker holds are in more climbs",
+        "startsFinishesDark": "Brighter holds are in more starts and finishes",
+        "startsFinishesLight": "Darker holds are in more starts and finishes",
+        "grade": "Purple holds show up on harder climbs, yellow on easier ones"
+      },
       "wholeBoard": "Whole board",
+      "holdPicksSkipped": "{{summary}} · hold picks skipped offline",
       "wholeBoardHint": "Counts every climb on the board instead",
       "useFiltersHint": "Counts only the climbs your filters match",
-      "filterUnsupported": "The heatmap can't follow a hold filter yet. Tap the chip to see the whole board.",
+      "filterUnsupported": "The heatmap can't follow these filters offline. Tap the chip to see the whole board.",
       "empty": "No climbs match these filters.",
-      "loadFailed": "Couldn't load the heatmap. Try again in a moment.",
-      "needsDownload": "Download this board to see where the climbs are.",
+      "loadFailed": "Heatmap didn't load. Try again in a minute.",
+      "needsDownload": "Download this board to see which holds get used.",
+      "downloadLine": "Download {{name}} to see which holds get used",
+      "download": "Download",
       "unavailable": "Heatmap isn't available right now."
     }
   },

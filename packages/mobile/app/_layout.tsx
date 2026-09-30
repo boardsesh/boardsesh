@@ -121,7 +121,7 @@ import '../modules/memory-trim/src/index';
 
 markStartup('root.module.ready');
 // The root layout chunk arrived and evaluated, so the ErrorBoundary below exists
-// from here on: the shell's chunk-recovery script (public/index.html) stands
+// from here on: the shell's chunk-recovery script (index.html in public/) stands
 // down. No-op on native (#5611).
 markRootLayoutLoaded();
 void SplashScreen.preventAutoHideAsync();

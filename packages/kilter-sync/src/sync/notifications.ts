@@ -1,7 +1,7 @@
 import { inArray } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import { setterFollows, userBoardMappings, userFollows, notifications } from '@boardsesh/db/schema';
-import { setterSyncNotificationUuid } from '@boardsesh/db/queries';
+import { setterSyncNotificationUuid, setterSyncRunNotificationUuid } from '@boardsesh/db/queries';
 
 type DrizzleDb = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
 
@@ -33,6 +33,13 @@ export async function createSetterSyncNotifications(
   db: DrizzleDb,
   newClimbs: NewClimbInfo[],
   log: (message: string) => void,
+  /**
+   * The sync run these climbs belong to. With it, a follower gets one
+   * notification per setter per run however many flushes the climbs span
+   * (see setterSyncRunNotificationUuid); without it, one per call, keyed on
+   * the batch's head climb.
+   */
+  options: { runKey?: string } = {},
 ): Promise<void> {
   const climbsBySetter = new Map<string, NewClimbInfo[]>();
   for (const climb of newClimbs) {
@@ -96,7 +103,10 @@ export async function createSetterSyncNotifications(
     // two catalog syncs running at once both classify the same climbs as new.
     // See setterSyncNotificationUuid.
     const values = [...recipientIds].map((recipientId) => ({
-      uuid: setterSyncNotificationUuid({ recipientId, entityId: firstClimbUuid, actorId }),
+      uuid:
+        options.runKey === undefined
+          ? setterSyncNotificationUuid({ recipientId, entityId: firstClimbUuid, actorId })
+          : setterSyncRunNotificationUuid({ recipientId, setterUsername, runKey: options.runKey }),
       recipientId,
       actorId,
       type: 'new_climbs_synced' as const,

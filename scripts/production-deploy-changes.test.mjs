@@ -69,10 +69,12 @@ void test('ignores incomplete runs and malformed head SHAs from the Actions resp
 });
 
 void test('classifies changed paths with the production workflow semantics', () => {
+  assert.equal(classifyChangedFiles(['packages/mobile/src/data/changelog.generated.json']).ota, false);
   assert.deepEqual(classifyChangedFiles(['docs/deployments.md']), {
     web: false,
     backend: false,
     app: false,
+    ota: false,
     cloudflare: false,
     staticAssets: false,
   });
@@ -80,6 +82,7 @@ void test('classifies changed paths with the production workflow semantics', () 
     web: true,
     backend: true,
     app: false,
+    ota: false,
     cloudflare: false,
     staticAssets: false,
   });
@@ -87,6 +90,7 @@ void test('classifies changed paths with the production workflow semantics', () 
     web: false,
     backend: true,
     app: true,
+    ota: true,
     cloudflare: false,
     staticAssets: false,
   });
@@ -94,6 +98,7 @@ void test('classifies changed paths with the production workflow semantics', () 
     web: true,
     backend: true,
     app: true,
+    ota: true,
     cloudflare: false,
     staticAssets: false,
   });
@@ -101,6 +106,7 @@ void test('classifies changed paths with the production workflow semantics', () 
     web: false,
     backend: true,
     app: false,
+    ota: false,
     cloudflare: false,
     staticAssets: false,
   });
@@ -108,6 +114,7 @@ void test('classifies changed paths with the production workflow semantics', () 
     web: false,
     backend: false,
     app: false,
+    ota: false,
     cloudflare: false,
     staticAssets: false,
   });
@@ -124,6 +131,7 @@ void test('the deploy watchdog never queues a deploy of its own', () => {
       web: false,
       backend: false,
       app: false,
+      ota: false,
       cloudflare: false,
       staticAssets: false,
     });
@@ -143,12 +151,13 @@ void test('a watchdog file alongside real code still deploys the real code', () 
     web: true,
     backend: true,
     app: false,
+    ota: false,
     cloudflare: false,
     staticAssets: false,
   });
   assert.deepEqual(
     classifyChangedFiles(['.github/workflows/production-deploy-watchdog.yml', 'packages/mobile/app/index.tsx']),
-    { web: false, backend: true, app: true, cloudflare: false, staticAssets: false },
+    { web: false, backend: true, app: true, ota: true, cloudflare: false, staticAssets: false },
   );
 });
 
@@ -158,6 +167,7 @@ void test('treats the production workflow and its detector as affecting every ta
       web: true,
       backend: true,
       app: true,
+      ota: true,
       cloudflare: true,
       staticAssets: true,
     });
@@ -179,11 +189,15 @@ void test('keeps production deploy unit tests CI-only', () => {
     'scripts/railway-deployment-rollback.test.mjs',
     'scripts/railway-deployment-status.test.mjs',
     'scripts/production-smoke.test.ts',
+    'scripts/mobile-ota-promote.test.ts',
+    'scripts/mobile-ota-schema-ready.test.mjs',
+    'scripts/mobile-ota-stage-verify.test.ts',
   ]) {
     assert.deepEqual(classifyChangedFiles([filePath]), {
       web: false,
       backend: false,
       app: false,
+      ota: false,
       cloudflare: false,
       staticAssets: false,
     });
@@ -201,6 +215,7 @@ void test('treats every input of the app.boardsesh.com export as app-affecting',
       web: true,
       backend: false,
       app: true,
+      ota: false,
       cloudflare: false,
       staticAssets: false,
     });
@@ -211,6 +226,7 @@ void test('treats every input of the app.boardsesh.com export as app-affecting',
       web: true,
       backend: true,
       app: true,
+      ota: true,
       cloudflare: false,
       staticAssets: false,
     });
@@ -220,6 +236,7 @@ void test('treats every input of the app.boardsesh.com export as app-affecting',
     web: true,
     backend: false,
     app: true,
+    ota: true,
     cloudflare: false,
     staticAssets: false,
   });
@@ -276,6 +293,7 @@ void test('treats every deployed Cloudflare Pages config file as app-affecting',
       web: true,
       backend: false,
       app: true,
+      ota: false,
       cloudflare: false,
       staticAssets: false,
     });
@@ -310,7 +328,7 @@ void test('a Cloudflare zone-config change converges the edge without a web depl
   ]) {
     assert.deepEqual(
       classifyChangedFiles([filePath]),
-      { web: false, backend: false, app: false, cloudflare: true, staticAssets: false },
+      { web: false, backend: false, app: false, ota: false, cloudflare: true, staticAssets: false },
       `${filePath} must converge Cloudflare and nothing else`,
     );
   }
@@ -338,7 +356,7 @@ void test('routes every web deploy input at the web target and nothing else', ()
   ]) {
     assert.deepEqual(
       classifyChangedFiles([filePath]),
-      { web: true, backend: false, app: false, cloudflare: false, staticAssets: false },
+      { web: true, backend: false, app: false, ota: false, cloudflare: false, staticAssets: false },
       filePath,
     );
   }
@@ -362,6 +380,7 @@ void test('the shared Railway deployment controls deploy both services', () => {
         web: !filePath.endsWith('.md'),
         backend: true,
         app: false,
+        ota: false,
         cloudflare: false,
         staticAssets: false,
       },
@@ -383,6 +402,7 @@ void test('keeps every backend build and runtime control path backend-affecting'
       web: true,
       backend: true,
       app: isRootInstallInput,
+      ota: isRootInstallInput,
       cloudflare: false,
       staticAssets: false,
     });
@@ -504,7 +524,7 @@ void test('compares the successful deployment baseline through the current head'
   ]);
   assert.equal(
     formatGitHubOutputs(result),
-    `web=true\nbackend=true\napp=false\ncloudflare=false\nstatic_assets=false\ndeployment_base_sha=${BASE_SHA}`,
+    `web=true\nbackend=true\napp=false\nota=false\ncloudflare=false\nstatic_assets=false\ndeployment_base_sha=${BASE_SHA}`,
   );
 });
 

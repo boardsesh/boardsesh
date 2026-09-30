@@ -19,7 +19,7 @@ export type AuroraPinsResponse = {
   gyms: AuroraPin[];
 };
 
-export async function fetchAuroraPins(board: AuroraBoardName): Promise<AuroraPinsResponse> {
+export async function fetchAuroraPins(board: AuroraBoardName, signal?: AbortSignal): Promise<AuroraPinsResponse> {
   const requestUrl = new URL('/pins', WEB_HOSTS[board]);
   requestUrl.searchParams.set('gyms', '1');
   const url = requestUrl.toString();
@@ -32,7 +32,7 @@ export async function fetchAuroraPins(board: AuroraBoardName): Promise<AuroraPin
         'Content-Type': 'application/json',
         'User-Agent': auroraUserAgent(board),
       },
-      signal: AbortSignal.timeout(30000),
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30000)]) : AbortSignal.timeout(30000),
     });
 
     await assertAuroraResponseOk(response, url);
@@ -47,6 +47,8 @@ export async function fetchAuroraPins(board: AuroraBoardName): Promise<AuroraPin
     }
     return parsed as AuroraPinsResponse;
   } catch (error) {
+    // The caller stopped: that is not a timeout, and must not be retried as one.
+    if (signal?.aborted) throw signal.reason;
     if (isAuroraRequestError(error)) {
       throw error;
     }

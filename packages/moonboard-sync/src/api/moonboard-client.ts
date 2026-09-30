@@ -86,6 +86,12 @@ async function assertNotLoginForm(response: Response, context: string): Promise<
   }
 }
 
+/** The per-request timeout, combined with the caller's stop signal when there is one. */
+function requestSignal(signal?: AbortSignal): AbortSignal {
+  const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+  return signal ? AbortSignal.any([signal, timeout]) : timeout;
+}
+
 export class MoonBoardClient {
   private readonly host: string;
   private sessionCookies: string[] = [];
@@ -104,10 +110,10 @@ export class MoonBoardClient {
     return this.sessionCookies.join('; ');
   }
 
-  async authenticate(username: string, password: string): Promise<void> {
+  async authenticate(username: string, password: string, signal?: AbortSignal): Promise<void> {
     const loginPageResponse = await fetch(`${this.host}/account/login`, {
       method: 'GET',
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      signal: requestSignal(signal),
     });
     if (!loginPageResponse.ok) {
       throw new Error(`MoonBoard login page failed: ${loginPageResponse.status}`);
@@ -144,7 +150,7 @@ export class MoonBoardClient {
         form_key: formKey,
       }),
       redirect: 'manual',
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      signal: requestSignal(signal),
     });
     this.storeResponseCookies(loginResponse);
 
@@ -157,7 +163,7 @@ export class MoonBoardClient {
       const redirectResponse = await fetch(redirectUrl, {
         method: 'GET',
         headers: { Cookie: this.cookieHeader() },
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        signal: requestSignal(signal),
       });
       this.storeResponseCookies(redirectResponse);
       if (!redirectResponse.ok) {
@@ -173,7 +179,7 @@ export class MoonBoardClient {
     this.authenticated = true;
   }
 
-  async getMapMarkers(): Promise<MoonBoardMarker[]> {
+  async getMapMarkers(signal?: AbortSignal): Promise<MoonBoardMarker[]> {
     if (!this.authenticated) {
       throw new Error('MoonBoard authentication required before fetching map markers');
     }
@@ -187,7 +193,7 @@ export class MoonBoardClient {
         'X-Requested-With': 'XMLHttpRequest',
         Cookie: this.cookieHeader(),
       },
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      signal: requestSignal(signal),
     });
 
     const respondedJson = response.headers.get('x-responded-json');

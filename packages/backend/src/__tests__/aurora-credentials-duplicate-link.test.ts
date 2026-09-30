@@ -158,7 +158,8 @@ describe('duplicate upstream account link guard', () => {
 
       await expect(
         saveKilterCredential({ userId: USER_A, refreshToken: 'refresh-2', kilterUserId: KILTER_SUB }),
-      ).resolves.toBeUndefined();
+        // No sync family is enabled here, so no run is queued.
+      ).resolves.toEqual({});
 
       expect(await mappingRows(USER_A, 'kilter')).toHaveLength(1);
     });
@@ -172,7 +173,8 @@ describe('duplicate upstream account link guard', () => {
 
       await expect(
         saveKilterCredential({ userId: USER_B, refreshToken: 'refresh-2', kilterUserId: KILTER_SUB }),
-      ).resolves.toBeUndefined();
+        // No sync family is enabled here, so no run is queued.
+      ).resolves.toEqual({});
 
       expect(await mappingRows(USER_B, 'kilter')).toHaveLength(1);
     });
@@ -190,7 +192,8 @@ describe('duplicate upstream account link guard', () => {
 
       await expect(
         saveKilterCredential({ userId: USER_B, refreshToken: 'refresh-b', kilterUserId: KILTER_SUB, username: 'b' }),
-      ).resolves.toBeUndefined();
+        // No sync family is enabled here, so no run is queued.
+      ).resolves.toEqual({});
 
       expect(await mappingRows(USER_B, 'kilter')).toHaveLength(1);
     });

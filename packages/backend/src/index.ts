@@ -10,6 +10,11 @@ import { logger } from './utils/logger';
 import { FORCE_SHUTDOWN_TIMEOUT_MS } from './shutdown-timing';
 import { startJobQueue, stopJobQueue } from './services/job-queue';
 import { startSprayDetectionMaintenance } from './services/spray-detection-maintenance';
+import { startBackgroundJobMaintenance } from './services/background-job-maintenance';
+import { startBatchSchedules } from './services/batch-schedules';
+import { db } from './db/client';
+import { startPopularBoardConfigsRefresh } from './services/popular-board-configs';
+import { startClimbPopularityRefresh } from './services/climb-popularity-refresh';
 
 async function main() {
   const { wss, httpServer, cleanupIntervals, shutdownServices } = await startServer();
@@ -24,6 +29,22 @@ async function main() {
   // call `startJobQueue()` directly, which is the honest way to test it.
   const jobQueue = await startJobQueue();
   await startSprayDetectionMaintenance(jobQueue);
+  await startBackgroundJobMaintenance(jobQueue, db);
+  // Not fatal: without it no family schedule fires, which is also the state
+  // with BATCH_FAMILIES_ENABLED unset. Work already queued is unaffected.
+  await startBatchSchedules(jobQueue, db).catch((error: unknown) => {
+    logger.error('[BatchSchedules] Could not register family schedules', { error });
+  });
+  // Not fatal: without the job the rail keeps serving the list already in
+  // Redis, which is a better outcome than a backend that will not boot.
+  await startPopularBoardConfigsRefresh(jobQueue).catch((error: unknown) => {
+    logger.error('[PopularConfigs] Could not register the refresh job', { error });
+  });
+  // Not fatal either: without the job the popular sort keeps reading the
+  // table as last refreshed, or the old aggregation for a board never built.
+  await startClimbPopularityRefresh(jobQueue).catch((error: unknown) => {
+    logger.error('[ClimbPopularity] Could not register the refresh job', { error });
+  });
 
   let shuttingDown = false;
 

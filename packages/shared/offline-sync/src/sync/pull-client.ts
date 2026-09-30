@@ -115,6 +115,7 @@ import {
  */
 export type { SchemaDriftReporter } from './schema-compatibility';
 import { reportExtraColumn, type SchemaDriftReporter } from './schema-compatibility';
+import { scopedInvalidateFilters } from './invalidate-keys';
 
 /**
  * What a report site inside the bootstrap phase supplies. `reason` and `aborted`
@@ -1043,7 +1044,12 @@ async function syncTable(
     // A later fetch/validation/write can fail after earlier pages committed.
     // Those changes must become visible even if the next retry has no rows.
     if (totalProcessed > 0) {
-      for (const key of config.invalidateKeys) queryClient.invalidateQueries({ queryKey: key });
+      // A per-board table only changed this board: board-scoped keys (the
+      // heatmap, similar climbs) refresh for it alone.
+      const changedBoard = config.isPerBoard ? boardScope : undefined;
+      for (const key of config.invalidateKeys) {
+        queryClient.invalidateQueries(scopedInvalidateFilters(key, changedBoard));
+      }
     }
   }
 }

@@ -107,11 +107,19 @@ function printServerSetup(): void {
       `USE_DASHBOARD=true`,
       `STORAGE_MODE=s3`,
       `S3_BUCKET_NAME=${BUCKET}`,
-      `AWS_BASE_ENDPOINT=<S3-compatible endpoint; e.g. https://t3.storage.dev for Tigris>`,
+      `AWS_BASE_ENDPOINT=<current S3-compatible provider endpoint>`,
       `AWS_REGION=auto`,
       `AWS_ACCESS_KEY_ID=<bucket key id>`,
       `AWS_SECRET_ACCESS_KEY=<bucket secret>`,
-      `CACHE_MODE=local`,
+      // Redis, not local: local mode caches in the Go heap with no bound and
+      // reached 1.7 GB (2.3M objects) after 21 days in production. xprem has no
+      // default REDIS_PORT. The prefix names OTA keys in the shared Redis.
+      // CACHE_MODE=local remains a valid fallback for a single replica.
+      `CACHE_MODE=redis`,
+      `REDIS_HOST=\${{Redis.REDISHOST}}`,
+      `REDIS_PORT=\${{Redis.REDISPORT}}`,
+      `REDIS_PASSWORD=\${{Redis.REDISPASSWORD}}`,
+      `CACHE_KEY_PREFIX=boardsesh-ota`,
       `PROMETHEUS_ENABLED=true`,
     ].join('\n'),
   );
@@ -234,8 +242,8 @@ function setupPreview(): void {
     ),
   );
   log('');
-  log(`Apply via the S3 API (${BUCKET} is Tigris on t3.storage.dev — pass its --endpoint-url; any`);
-  log('S3-compatible provider works the same). FIRST get-bucket-lifecycle-configuration and MERGE —');
+  log(`Apply via the S3 API for ${BUCKET}, passing the current provider's --endpoint-url.`);
+  log('FIRST get-bucket-lifecycle-configuration and MERGE —');
   log('put-bucket-lifecycle-configuration REPLACES all rules:');
   log(`  aws s3api put-bucket-lifecycle-configuration --bucket ${BUCKET} \\`);
   log('    --lifecycle-configuration file://lifecycle.json --endpoint-url <S3 endpoint>');
@@ -288,7 +296,7 @@ function printRunbook(): void {
   log('Run these phases as infra comes online:');
   log('');
   log('  1. (cloud) create the boardsesh-ota-v3 bucket + a dedicated Railway Postgres,');
-  log('       deploy ghcr.io/mercuretechnologies/xprem:v3.1.2 on Railway,');
+  log('       deploy ghcr.io/mercuretechnologies/xprem:v3.2.5 on Railway,');
   log('       point updates.boardsesh.com at it (see docs/mobile-ota-updates.md).');
   log('  2. vp run mobile:ota-setup keys');
   log('       → prints the V3 Railway env block + the cert-export steps.');

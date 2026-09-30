@@ -32,11 +32,12 @@ Postgres and left V2 running untouched while its fleet drained. The URL cutover 
   their binary. Only a **store update** recovers one.
 - There is no cross-server backport and V2 cannot be revived — its bucket is gone. Recovery for a
   stranded install is store-side only.
-- V3 is the Railway service `boardsesh-ota-v3` (image `ghcr.io/mercuretechnologies/xprem:v3.1.2` —
+- V3 is the Railway service `boardsesh-ota-v3` (image `ghcr.io/mercuretechnologies/xprem:v3.2.5` —
   see [Versions](#versions-the-cli-pin-and-the-server-image)), backed by a dedicated Railway Postgres
   and the S3-compatible bucket `boardsesh-ota-v3`. Verify its current provider through the storage
-  migration gate below; the bucket name alone does not distinguish R2 from Tigris. Railway currently
-  pulls that exact release through the **pre-rename** repository path
+  migration gate below; the bucket name alone does not distinguish R2 from Tigris. Its endpoint is
+  managed in Railway so a stale checked-in value cannot undo a storage-provider migration. Railway
+  currently pulls that exact release through the **pre-rename** repository path
   (`ghcr.io/mercuretechnologies/expo-open-ota`, same tag) — upstream
   renamed expo-open-ota → xprem at v3.1.0 and still publishes both names, so a Railway service that
   doesn't say `xprem` is not a sign the server is behind. Branch surfing answering on the live server
@@ -51,23 +52,73 @@ Postgres and left V2 running untouched while its fleet drained. The URL cutover 
 
 ### Versions: the CLI pin and the server image
 
-One version governs both halves of the self-hosted path, and it lives in exactly one place:
-`EOAS_PACKAGE_SPEC` in `scripts/lib/eoas.ts`, currently **`eoas@3.1.2`**. The matching server image is
-`ghcr.io/mercuretechnologies/xprem:v3.1.2`, which is deployed on Railway. `scripts/__tests__/eoas-version-parity.test.ts` fails CI
-if this doc, the setup runbook or the rollback helper drifts off the pin — root `scripts/` has no
+One version governs both halves of the self-hosted path, and each half has a constant:
+`EOAS_PACKAGE_SPEC` in `scripts/lib/eoas.ts` (currently **`eoas@3.2.5`**) is the CLI we publish with,
+and `OTA_SERVER_VERSION` in `infra/railway/config.ts` is the image Railway runs
+(`ghcr.io/mercuretechnologies/xprem:v3.2.5`). `scripts/__tests__/eoas-version-parity.test.ts` fails CI
+if this doc, the setup runbook or the rollback helper drifts off either — root `scripts/` has no
 typecheck task, so nothing else would catch it.
 
-**The CLI may lead the server; it must never trail it.** Neither side exchanges a version and there
-is no version endpoint, so confirm the deployed image in Railway after a bump. Two features require
-the server on v3.1.2:
+**Upgrading is a PR, not a dashboard edit.** `vp run ota:image-bump` opens it — one draft PR for the
+newest stable release and, separately, one for the newest prerelease — bumping both constants in the
+same commit. Merging it rolls the image, waits for the deployment, probes the server and rolls back
+if it does not answer. See [railway.md](./railway.md).
 
-- server-side reuse of the previous update's assets (xprem #165) — see
-  [The throttle](#the-throttle-and-what-actually-fixes-it) for what that is worth;
-- `vp run mobile:ota-rollback -- --mode republish`: 3.1.2 lists republish candidates through a new
-  `.../runtimeVersion/<rv>/publish-groups` route that 3.0.5 does not serve, and can pass
-  `?publishGroup=` on the republish call itself; back-compat for older clients is server-side
-  (xprem #168). The helper prints a warning before running it. `--mode embedded` — the mode the
-  incident runbook uses — is unaffected.
+**The CLI and the server move together.** Neither side exchanges a version and there is no version
+endpoint. `infra/railway/plan.ts` blocks an image ahead of the pin, and the version-parity test
+asserts the same without touching the API. The older rule, that the CLI may lead the server, stopped
+holding at 3.2.0 (below): across that line neither side may lead.
+
+#### The 3.2 upgrade (3.1.2 to 3.2.5)
+
+**History.** On 2026-09-26, #5861 moved everything to 3.2.4, and two applies rolled it back
+automatically (#5864 reverted the pins). Both times `/ready` answered 503 throughout, because of the
+first boot, not the server:
+
+- 3.2.2 added a Postgres migration, `backfill_update_asset_mapping`, that reads the bucket once per
+  existing update to fill `updates.asset_mapping`. In 3.2.4 it ran in ONE transaction and logged
+  nothing until it ended, so each rollback threw its work away.
+- Until migrations finish, xprem serves `/hc` = 200 but answers every other path, manifests
+  included, with 503 "storage migration in progress". Railway's healthcheck is `/hc`, so it swaps
+  the booting container in, and devices get 503 on update checks for the whole backfill. They keep
+  running their current bundle.
+
+**What changed for the retry.**
+- **3.2.5 is resumable.** Upstream fixed it after we reported it (xprem#277, xprem#278). The
+  backfill commits per update and logs `Backfilled i/N` every 100, so an interrupted boot resumes
+  instead of restarting.
+- **The probe waits for the migration.** `probeService` treats that specific 503 body as "still
+  booting" and waits up to 30 minutes for it without spending probe attempts. Any other 503 still
+  rolls back. Watch the deployment's logs for the `Backfilled` lines.
+- **The control center stays on 3.2.4.** 3.2.5 changed only the server migration, and 3.2.5 of the
+  package was under pnpm's one-day release-age floor.
+
+The 3.2 SQL migrations from the first attempt stay applied, and 3.1.2 ignores them.
+
+What the retry has to respect:
+
+
+- **The upload protocol broke in both directions.** `requestUploadUrl` now takes a `files` list
+  (path, SHA-256 hash, md5 cache key, role) instead of `fileNames`, and "no changes" moved from a
+  406 on `markUpdateAsUploaded` to a 406 on `requestUploadUrl`. eoas 3.2.x against a 3.1.x server
+  fails with `No file names provided`; eoas 3.1.x against a 3.2.x server fails too, because the
+  server has no fallback. `scripts/mobile-ota-promote.ts` speaks this protocol itself, so it moves
+  with `EOAS_PACKAGE_SPEC` as well.
+- **One PR moves the image, the CLI and the promote script.** On that push, Railway Config rolls the
+  server while production-deploy stages the OTA. `scripts/mobile-ota-server-ready.mjs` makes the
+  staging publish and the promote step wait for the Railway Config run on the same commit, and
+  fail if it did not succeed. Every other push returns from it at once.
+- **Assets are content-addressed from 3.2.0.** Uploads land at `{appId}/cas/<sha256>` and each update
+  maps its files there (`updates.asset_mapping`). Updates published before the upgrade keep being
+  served from their old folders. The first boot runs the Postgres migrations for this (`blobs`,
+  `bundle_patches`, `updates.asset_mapping`, `apps.git_url`) plus a backfill.
+- **Rolling back is a one-way door after the first 3.2 publish.** 3.1.2 knows nothing about the
+  `cas/` layout, so it cannot serve an update published on 3.2. Going back means reverting the
+  version PR, so `OTA_SERVER_VERSION`, `EOAS_PACKAGE_SPEC` and the promote script move back
+  together (the version-parity test fails on a partial revert), and then republishing the current
+  JS with the old CLI. The 3.2 schema changes can stay; 3.1.2 ignores the new tables and column.
+- **Bundle diffing stays off.** `BUNDLE_DIFFING` is unset. Patches are served from the server itself
+  rather than the CDN, and each diff job peaks at about six times the bundle size in memory.
 
 After any bump: re-verify `/hc` = 200, `/ready` = 200, a header-carrying manifest + asset probe, and
 run `eoas doctor`.
@@ -76,8 +127,11 @@ run `eoas doctor`.
 
 - **Never drop `expo-app-id`, `expo-channel-name`, or `xprem-branch`.** Self-hosted clients bake all
   three in `updates.requestHeaders`; xprem's branch API overrides only `xprem-branch`.
-- **Move the `eoas` pin first, the V3 server image second — never the other way round.** A CLI that
-  trails the server can 404 on app-scoped routes. Re-verify after every bump (above).
+- **Move the `eoas` pin and the V3 server image in one commit.** A CLI that trails the server can 404
+  on app-scoped routes, and since 3.2.0 a CLI that leads it cannot upload at all. `vp run
+  ota:image-bump` moves both together, `infra/railway/plan.ts` blocks an image ahead of the pin, and
+  the publish waits for the server to roll (see [The 3.2 upgrade](#the-32-upgrade-312-to-324)).
+  Re-verify after every bump (above).
 - **Dashboard creds are production-release creds.** `/dashboard` mints API keys, exports the cert,
   remaps channels, and runs rollouts — treat the admin login as production-release access (one admin,
   read-only members).
@@ -151,9 +205,25 @@ instead of throwing. For `@expo/ui` sheets the guard lives in `patches/@expo%2Fu
 
 ## Publishing a production update
 
-**Automatic.** Every push to `main` **or `release/next`** that touches the mobile
-app runs `.github/workflows/mobile-ota-production.yml`, which publishes a
-production OTA. `main` serves the store fleet; `release/next` (the release train,
+**Automatic.** A mobile-affecting push to `main` is detected by
+`.github/workflows/production-deploy.yml`. It calls the OTA workflow to publish
+both platform exports to the tester-only `pr-staging` branch while web and backend
+build. Once the backend deploy succeeds (or is unchanged), a one-shot live
+GraphQL-schema check must pass before those same archived export bytes are uploaded
+to the existing `production` branch. No runner polls while the backend builds;
+an OTA staging failure does not stop service deploys, but fails the overall run
+and leaves production OTA unchanged. Production deploys are serialized, so a
+newer main push waits while the current staged OTA finishes; the next run then
+stages changes since the last successful production deploy. If main advanced,
+the in-flight run leaves its generated changelog for the newer run to publish.
+The stage records each platform's production manifest ID before publishing;
+promotion refuses to overwrite a manual or native republish that changed either ID.
+The promoter uses each archived export's `metadata.json` for asset media types,
+matching the pinned `eoas` uploader even though Metro names the files by content
+hash without extensions.
+
+Pushes to `release/next` still run `.github/workflows/mobile-ota-production.yml`
+directly. `main` serves the store fleet; `release/next` (the release train,
 see `docs/mobile-store-release.md`) serves the testers running the train's
 TestFlight / Play-internal binary, so they get JS as fast as everyone else —
 including after a `main` → `release/next` sync.
@@ -172,8 +242,9 @@ changelog regeneration and push-back, the Sentry release, the health probe and t
 Discord notification. Because
 runtimeVersion is a fingerprint, this is safe to run on every push: a native change publishes an
 OTA whose fingerprint no current binary has yet, so it only lands once the matching store build
-ships. Until the server is wired (no `EXPO_UPDATES_URL` variable or committed cert), the workflow
-skips with a green no-op. The matching native builds (`ios-testflight-rn` / `android-apk-rn`) run
+ships. If the server is not wired (no `EXPO_UPDATES_URL` variable or committed cert), main
+staging fails; direct release-train/manual publishes retain the old green no-op.
+The matching native builds (`ios-testflight-rn` / `android-apk-rn`) run
 on the same push but are **fingerprint-gated** — they only build when the fingerprint is new (see
 [Native-build gating](#native-build-gating-ota-only-when-the-fingerprint-is-unchanged) below).
 Matching fingerprints are necessary but not sufficient: an OTA published while a native build is
@@ -206,7 +277,7 @@ its external map and uploads the OTA bundle to our storage via the server. `eoas
 URL from `updates.url` in `app.config.ts`, so `EXPO_UPDATES_URL` must be present.
 **Auth is `EOO_TOKEN`, not an Expo token:** the V3 control-plane server rejects Expo tokens, so
 publish/rollback need an app-scoped `eoo_` key minted in the dashboard. The CLI is pinned to
-**`eoas@3.1.2`** via `EOAS_PACKAGE_SPEC` in `scripts/lib/eoas.ts` (V3 routes are app-scoped; a `v2`
+**`eoas@3.2.5`** via `EOAS_PACKAGE_SPEC` in `scripts/lib/eoas.ts` (V3 routes are app-scoped; a `v2`
 CLI 404s) — see [Versions](#versions-the-cli-pin-and-the-server-image) for the pin↔image rule. Every
 self-hosted publish also passes `--upload-rate 5` to pace its asset uploads; the reasoning is below.
 
@@ -256,7 +327,7 @@ superseded.
   only: `requestUploadUrl` loads the previous update's `metadata.json` for the same
   app/branch/runtimeVersion/platform, server-side-copies everything already there, and hands back
   upload URLs for the remainder — roughly 380 uploads down to a handful on a repeat publish to a
-  branch. **It needs the Railway image on `xprem:v3.1.2`**; until then the CLI-side halves above are
+  branch. **It needs the Railway image on `xprem:v3.2.5`**; until then the CLI-side halves above are
   what we have. It degrades safely (an unavailable copy just falls back to a normal upload).
 
 The whole-command retry ladder below is therefore now a **backstop**, not the first line of defence.
@@ -329,9 +400,13 @@ client requesting an unmapped channel gets `No branch mapping found`. Mapping is
 **cannot map** (it 403s with "This action requires a dashboard session").
 
 - **Production** is mapped once, by hand, in the dashboard — nothing on `main` remaps it.
-- **Per-PR previews are branches, not channels.** The production channel enables xprem Branch
-  Surfing with the narrow pattern `pr-*`; the branch API in `@xprem/control-center` sends
-  `xprem-branch: pr-N`. No per-PR channel or mapping is created.
+- **PR previews and staging are branches, not channels.** The production channel enables xprem Branch
+  Surfing with the narrow pattern `pr-*`; the picker sends `xprem-branch: pr-N` for a PR or
+  `xprem-branch: pr-staging` for the staged main update. No extra channel mapping is created.
+  Production in the picker clears the branch override. Staging is intentionally selectable
+  before the backend schema is promoted, so it is for testers; the staging export itself
+  is promoted byte-for-byte after the schema gate. The `pr-` S3 lifecycle rule also
+  covers staging assets, so a stale staging update expires after 14 days.
 - **Branch Surfing is ON** for `production` with the pattern `pr-*` (enabled 2026-09-01, once native
   builds carrying the picker and the baked `xprem-branch` header had reached testers — that ordering
   is the prerequisite, because a binary without the header cannot surf). While it was off, every
@@ -699,8 +774,8 @@ exactly — see the parity check above).
 ## Publish ordering: an OTA must not outrun the backend schema
 
 A fingerprint says nothing about the **backend**. An OTA whose JS sends a new GraphQL argument or
-field only works once the live backend serves that schema. `mobile-ota-production.yml` and
-`production-deploy.yml` both run off the same push to `main`, and the OTA is usually faster. It
+field only works once the live backend serves that schema. The old mobile workflow
+and production deploy both ran off the same push to `main`, and the OTA was usually faster. It
 happened on 2026-09-08 (#5370):
 
 | time (UTC) | event |
@@ -710,32 +785,21 @@ happened on 2026-09-08 (#5370):
 
 For those 19 minutes updated phones got `GRAPHQL_VALIDATION_FAILED`.
 
-The `await-backend-schema` job now runs before `publish`. Every 60 seconds it:
+The main OTA now uploads to `pr-staging` while web and backend build. Promotion
+starts only after the backend deploy and all attempted builds succeed. It reads
+`release` from the live, healthy backend and requires an exact Git diff match
+for both `packages/shared-schema/src/schema.ts` and its `schema/` directory
+against the staged commit. A 503, missing release SHA, unavailable Git history,
+or different schema fails closed. It does not poll or wait on a runner.
+The same one-shot check guards direct main dispatches, including native-build
+republishes; `release/next` retains its separate fingerprint guard.
 
-1. Takes `need`, the last commit at or before the OTA's commit that touched
-   `packages/shared-schema/src/schema`.
-2. Fetches `origin/main` and reads `release` from `https://ws.boardsesh.com/health`. A 503 still
-   carries `release`; an unstamped build reports `development`, which never passes.
-3. **Passes** when `release` is a full SHA that contains `need` (`git merge-base --is-ancestor`), or
-   when `git diff release OTA-commit -- packages/shared-schema/src/schema` is empty. The second rule
-   covers a deploy hold or a rollback where the backend is behind but its schema is the same.
-4. **Keeps waiting** only while `production-deploy.yml` has a queued, in-progress or waiting run on
-   `main`, for at most 60 minutes. For the first 3 minutes it also waits when no deploy is listed,
-   because GitHub can register the deploy run a little after the OTA run.
-
-The decision is the pure function in `scripts/mobile-ota-backend-gate.ts`, unit-tested in
-`scripts/mobile-ota-backend-gate.test.ts`.
-
-**It fails open.** On the 60-minute cap, with no deploy running, or if the gate job itself breaks,
-the OTA publishes anyway: the job writes a `::warning::`, a line in the run summary, and a Discord
-post to the deploy channel, and `publish` runs with `if: !cancelled()`. Holding mobile back behind a
-wedged backend deploy (see `docs/production-deploy.md`) would be worse than the window it closes.
-A republish dispatched by a native build (`expect_fingerprint` set) skips the wait; its JS was
-already gated when the push to `main` published it.
-
-The gate job has no `environment:`, so it adds no approval step, and it adds no workflow-level env
-(that block is locked by `scripts/mobile-ci-env-parity.test.ts`). It narrows the window. Schema
-changes still have to stay backward-compatible for the store fleet.
+The staged bundle is visible only to someone who chooses Staging in the picker.
+That person may encounter a feature waiting for the backend change; the production
+fleet cannot receive it until promotion. Because xprem only loads a *newer* update,
+choosing Production clears the staging pin but may leave the currently running
+staging JS until a newer production update ships. The picker says so. Schema
+changes still have to stay backward-compatible for older store binaries.
 
 ## Backporting a JS fix to an approved release (release anchors)
 
@@ -1065,7 +1129,8 @@ Postgres, server, DNS) stay manual. Run it with no argument for the ordered runb
    before boot. It seals the signing key in Postgres; **never regenerate it** (doing so makes every
    sealed key unreadable).
 4. **Deploy the server** — Railway service running
-   `ghcr.io/mercuretechnologies/xprem:v3.1.2` (see the
+   `ghcr.io/mercuretechnologies/xprem:v3.2.5`, which `infra/railway/config.ts` declares and
+   `vp run railway:apply` keeps deployed (see the
    [deployment](https://mercuretechnologies.github.io/expo-open-ota/docs/deployment/railway) /
    [env reference](https://mercuretechnologies.github.io/expo-open-ota/docs/reference/environment)
    docs). Required env:
@@ -1074,7 +1139,21 @@ Postgres, server, DNS) stay manual. Run it with no argument for the ordered runb
    - `STORAGE_MODE` = `s3`, plus `S3_BUCKET_NAME` (`boardsesh-ota-v3`), `AWS_REGION` (`auto`),
      `AWS_BASE_ENDPOINT` (the selected S3-compatible account endpoint), and
      `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`
-   - `CACHE_MODE` = `local` (fine at one replica)
+   - `CACHE_MODE` = `redis`, with `REDIS_HOST` = `${{Redis.REDISHOST}}`, `REDIS_PORT` =
+     `${{Redis.REDISPORT}}`, `REDIS_PASSWORD` = `${{Redis.REDISPASSWORD}}` (the project's
+     Railway Redis, over the private network) and `CACHE_KEY_PREFIX` = `boardsesh-ota`. Local
+     mode caches in the Go heap with no size bound or eviction: in production it reached a
+     1.7 GB live heap (2.3M objects) after 21 days. The backend keeps its own keys in the same
+     Redis; the prefix keeps OTA keys easy to tell apart (unset, xprem uses `expoopenota`). xprem
+     has no default for `REDIS_PORT` and panics if it cannot reach Redis. `vp run railway:apply` asserts all of this (see
+     [railway.md](./railway.md)). `CACHE_MODE` = `local` still works as a fallback at one
+     replica, if Redis is down or being replaced; expect the heap to grow again while it runs.
+     **Redis is now a hard dependency of OTA delivery.** xprem opens the cache once, in a
+     `sync.Once`, and pings `REDIS_HOST:REDIS_PORT`; if that ping fails it panics. The first cache
+     use is the bucket-migration lock at boot, so an unreachable Redis crashes the server before it
+     serves any update. The mitigation is the service's restart policy set to `ALWAYS`, so it keeps
+     retrying until Redis answers. The likely time for this race is Railway's Redis auto-update
+     window (weekends), when Redis restarts and the OTA server may boot while it is down.
    - `DB_URL` + `DB_KEYS_MASTER_KEY_B64` (from steps 2–3)
    - `USE_DASHBOARD=true`, `ADMIN_EMAIL` (a bare address), and a policy-compliant `ADMIN_PASSWORD`
      (≥8 chars, upper/lower/digit/special — first boot crash-loops otherwise). These are the
@@ -1106,7 +1185,7 @@ Postgres, server, DNS) stay manual. Run it with no argument for the ordered runb
    build).
 9. **Verify** — a header-carrying `GET https://updates.boardsesh.com/manifest` (with `expo-app-id`,
    `expo-channel-name: production`, platform/runtime headers) returns 200 with signature `keyid
-main` after the first publish, and its assets load. `vp dlx eoas@3.1.2 doctor --channel=production`
+main` after the first publish, and its assets load. `vp dlx eoas@3.2.5 doctor --channel=production`
    should be clean.
 
 ### Durability: Postgres holds the only private key
@@ -1251,7 +1330,8 @@ the sheet opening while closing climb search.
 
 Every user on a surfing-capable binary gets Boardsesh's **Test a PR preview** row in the
 user drawer and under **Previews** on the More tab. Both open the themed preview screen,
-which lists compatible PR branches and explains "Previews are switched off" or "Nothing
+which lists compatible PR branches, Staging when available, and Production to return
+to the live feed. It explains "Previews are switched off" or "Nothing
 to test right now" when appropriate. The row is hidden only on a binary that cannot surf.
 
 A user whose profile has `isTester` is also *prompted* without asking: on every cold

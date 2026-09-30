@@ -2,7 +2,13 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { and, eq, inArray } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { boardClimbs, setterFollows, userFollows, userBoardMappings, users } from '@boardsesh/db/schema';
-import { followedAuthorCondition, getSetterStats } from '@boardsesh/db/queries';
+import {
+  followedAuthorCondition,
+  followedAuthorListCondition,
+  followedAuthorListsAreEmpty,
+  getSetterStats,
+  resolveFollowedAuthorLists,
+} from '@boardsesh/db/queries';
 import { db } from '../db/client';
 import { followedAuthorQueries } from '../graphql/resolvers/social/followed-authors';
 import { climbQueries } from '../graphql/resolvers/climbs/queries';
@@ -89,6 +95,39 @@ describe('followed authors', () => {
       'native-display-name',
     ]);
     expect(stats.every((setter) => setter.climb_count === 1)).toBe(true);
+  });
+
+  it('resolves to value lists that select exactly what the correlated rule selects', async () => {
+    const lists = await resolveFollowedAuthorLists(db, viewerId, 'kilter');
+    expect([...lists.setterUsernames].sort()).toEqual(['accountless-setter', 'linked-setter']);
+    expect([...lists.userIds].sort()).toEqual([creatorId, unmappedId].sort());
+
+    const layoutClimbs = and(eq(boardClimbs.layoutId, layoutId), eq(boardClimbs.boardType, 'kilter'));
+    const correlated = await db
+      .select({ uuid: boardClimbs.uuid })
+      .from(boardClimbs)
+      .where(and(layoutClimbs, followedAuthorCondition(viewerId)));
+    const bound = await db
+      .select({ uuid: boardClimbs.uuid })
+      .from(boardClimbs)
+      .where(and(layoutClimbs, followedAuthorListCondition(lists)));
+    expect(bound.map((climb) => climb.uuid).sort()).toEqual(correlated.map((climb) => climb.uuid).sort());
+
+    // The mapping arm is per board type: a followed user's kilter name is not a
+    // tension setter.
+    expect((await resolveFollowedAuthorLists(db, viewerId, 'tension')).setterUsernames).toEqual(['accountless-setter']);
+  });
+
+  it('answers a viewer who follows nobody with [] and no lists', async () => {
+    const lists = await resolveFollowedAuthorLists(db, 'followed-authors-nobody', 'kilter');
+    expect(followedAuthorListsAreEmpty(lists)).toBe(true);
+    const stats = await getSetterStats(
+      db,
+      { board_name: 'kilter', layout_id: layoutId, size_id: 1, set_ids: [1], angle: 40 },
+      undefined,
+      'followed-authors-nobody',
+    );
+    expect(stats).toEqual([]);
   });
 
   it('disables shared search caching and requires authentication for the filter', async () => {

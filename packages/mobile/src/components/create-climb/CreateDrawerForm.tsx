@@ -39,13 +39,11 @@ type CreateDrawerFormProps = {
   anyFeetAvailable: boolean;
   isDraft: boolean;
   onChangeIsDraft: (next: boolean) => void;
-  showAllHolds: boolean;
-  onChangeShowAllHolds: (next: boolean) => void;
 };
 
 /**
  * The below-the-fold create form: the description text area and the climb-rule /
- * editor toggles (no-match, save-as-draft, show-all-holds). Board (BLE) connect
+ * editor toggles (no-match, save-as-draft). Board (BLE) connect
  * lives in the header lightbulb. Expects an spacing[4]-horizontally-padded
  * parent (the switches bleed to the drawer edges).
  */
@@ -68,8 +66,6 @@ export function CreateDrawerForm({
   anyFeetAvailable,
   isDraft,
   onChangeIsDraft,
-  showAllHolds,
-  onChangeShowAllHolds,
 }: CreateDrawerFormProps) {
   const { t } = useTranslation('climbs');
   const { systemColors } = useTheme();
@@ -145,12 +141,6 @@ export function CreateDrawerForm({
           description={t('mobile.create.settings.draftDescription')}
           value={isDraft}
           onValueChange={onChangeIsDraft}
-        />
-        <SwitchRow
-          label={t('mobile.create.settings.showAllHoldsLabel')}
-          description={t('mobile.create.settings.showAllHoldsDescription')}
-          value={showAllHolds}
-          onValueChange={onChangeShowAllHolds}
         />
       </View>
     </View>

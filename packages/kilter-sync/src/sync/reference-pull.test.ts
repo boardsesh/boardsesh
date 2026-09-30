@@ -2,10 +2,14 @@ import { describe, expect, it, vi } from 'vitest';
 
 // Capture the ops the mocked PowerSync stream should replay. vi.hoisted so the
 // vi.mock factory (hoisted above imports) can close over it safely.
-const hoisted = vi.hoisted(() => ({ ops: [] as Array<Record<string, unknown>> }));
+const hoisted = vi.hoisted(() => ({ ops: [] as Array<Record<string, unknown>>, signals: [] as unknown[] }));
 
 vi.mock('../api/powersync-client', () => ({
-  streamKilterPowerSync: async (args: { onOp: (op: Record<string, unknown>) => void | Promise<void> }) => {
+  streamKilterPowerSync: async (args: {
+    onOp: (op: Record<string, unknown>) => void | Promise<void>;
+    signal?: AbortSignal;
+  }) => {
+    hoisted.signals.push(args.signal);
     for (const op of hoisted.ops) {
       await args.onOp(op);
     }
@@ -77,5 +81,15 @@ describe('pullKilterReference', () => {
   it('throws when no product_layouts stream (cannot enumerate the catalog)', async () => {
     hoisted.ops = [put('walls', 'row-1', { wall_uuid: 'wall-a', is_listed: 1 })];
     await expect(pullKilterReference({ accessToken: 'token' })).rejects.toThrow(/no product_layouts/);
+  });
+
+  it("hands the caller's signal to the reference stream, so a stopped job does not wait out its timeout", async () => {
+    hoisted.ops = [layoutOp];
+    hoisted.signals = [];
+    const controller = new AbortController();
+
+    await pullKilterReference({ accessToken: 'token', signal: controller.signal });
+
+    expect(hoisted.signals).toEqual([controller.signal]);
   });
 });

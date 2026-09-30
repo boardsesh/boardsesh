@@ -1,3 +1,5 @@
+import type { ProviderSyncDb, SyncBatchRunner } from '@boardsesh/db/queries';
+
 /**
  * Context passed to the `onError` callback. `userId`/`board` are the original
  * pair; the rest is the per-credential failure ledger snapshot so a callback
@@ -34,7 +36,65 @@ export type SyncRunnerConfig = {
    * behaviours that let followers get duplicate setter notifications.
    */
   sharedSyncCooldownMs?: number;
+  /**
+   * A database the caller owns (a background worker's pool). When set the
+   * runner never opens its own `postgres` pool and `close()` leaves this one
+   * alone. Unset, the runner connects to `DATABASE_URL` itself (the daemon).
+   */
+  db?: ProviderSyncDb;
+  /** Default batch runner for credential writes and user-sync pages. See {@link SyncCredentialOptions}. */
+  transaction?: SyncBatchRunner;
+  /** Default abort signal for provider requests and between pages. */
+  signal?: AbortSignal;
 };
+
+export type SyncCredentialOptions = {
+  /**
+   * Runs every credential write and every user-sync page in one transaction
+   * behind the caller's fences. Provider HTTP never runs inside it.
+   */
+  transaction?: SyncBatchRunner;
+  /** Stops the sync between pages and cancels an in-flight provider request. */
+  signal?: AbortSignal;
+  /** Leave the board-wide shared sync to its own schedule. */
+  skipSharedSync?: boolean;
+};
+
+/**
+ * How one credential's sync ended. `transient` marks a failure a retry may fix
+ * (Aurora down, a timeout); the credential's status is left as it was then.
+ */
+export type SyncOutcome = {
+  status: 'active' | 'error' | 'expired';
+  error?: string;
+  transient?: boolean;
+  /** Aurora answered 429 with a readable `Retry-After`: how long it asked us to wait. */
+  retryAfterMs?: number;
+};
+
+/** Options for {@link SyncRunner.runSharedSyncJob}. */
+export type SharedSyncJobOptions = {
+  /** Runs every board-wide write batch (a background job's attempt fence). */
+  transaction?: SyncBatchRunner;
+  signal?: AbortSignal;
+  /** Overrides the runner's shared-sync cooldown for this claim. */
+  cooldownMs?: number;
+  /**
+   * The background run making the claim. Its retry re-claims a slot the run
+   * left claimed (an abort or a lost lease cannot re-stamp it on the way out).
+   */
+  runId?: string;
+};
+
+/**
+ * How a scheduled shared sync ended when it did not throw: it ran, another run
+ * holds the cooldown slot, or the board has no healthy credential to borrow a
+ * token from.
+ */
+export type SharedSyncJobResult =
+  | { status: 'synced'; tokenSource: 'stored' | 'login' }
+  | { status: 'cooldown'; lastRunAt: Date | null }
+  | { status: 'no_donor' };
 
 // The daemon loop itself lives in @boardsesh/sync-runtime (shared with
 // kilter-sync). This package used to carry a forked copy of both the type and

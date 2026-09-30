@@ -28,9 +28,10 @@ export const DEFAULT_POOL_IDLE_TIMEOUT_S = 30;
 export const SERVERLESS_DEFAULT_POOL_MAX = 3;
 export const SERVERLESS_DEFAULT_POOL_IDLE_TIMEOUT_S = 5;
 /**
- * `getClimb` issues two sequential statements and drizzle's connect-retry can
- * hold a slot while it re-dials, so a pool of one serialises everything behind
- * a single connection. Clamp rather than trust a typo in a dashboard.
+ * A climb page issues its climb and all-angle reads sequentially, and drizzle's
+ * connect-retry can hold a slot while it re-dials. A pool of one serialises
+ * every request behind a single connection. Clamp rather than trust a typo in
+ * a dashboard.
  */
 export const MIN_POOL_MAX = 2;
 /**

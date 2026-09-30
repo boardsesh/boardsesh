@@ -400,6 +400,10 @@ export const boardClimbs = pgTable(
     userIdIdx: index('board_climbs_user_id_idx')
       .on(table.userId)
       .where(sql`${table.userId} IS NOT NULL AND ${table.isDraft} = false`),
+    // Personal archives include drafts as well as published climbs.
+    userExportIdx: index('board_climbs_user_export_idx')
+      .on(table.userId, table.boardType)
+      .where(sql`${table.userId} IS NOT NULL`),
     // Index for climb name lookups (used by JSON import to resolve names to UUIDs)
     nameIdx: index('board_climbs_name_idx').on(table.boardType, table.name),
     // Note: a GIN index on compatible_size_ids already exists from migration 0073
@@ -428,7 +432,9 @@ export const boardClimbs = pgTable(
 //     UUIDs — the alias_uuid is precisely the UUID we did NOT promote to
 //     board_climbs. A FK would block every non-canonical insert.
 //
-// last_seen_at is refreshed on every ingest via ON CONFLICT DO UPDATE.
+// last_seen_at is refreshed via ON CONFLICT DO UPDATE. The Kilter catalog sync
+// refreshes it at most once a day per alias (unless source changes), so treat
+// it as "confirmed upstream within the last day", not "seen this run".
 // Importers may also repair canonical_uuid when a later dedup pass identifies
 // the true survivor; first_seen_at is stamped on insert and never touched again.
 //
@@ -738,6 +744,12 @@ export const boardClimbStats = pgTable(
     // the tick recompute — it records manufacturer-count provenance, not
     // Boardsesh activity. Lets downstream reasoning tell "upstream owns this
     // row's FA/difficulty" from "these fields were only ever tick-derived".
+    // The tick recompute's push-back absorption rule reads it
+    // (kilter_synced_at < upstream_synced_at - 48h). The Kilter Grips writers
+    // restamp a row only when a value changes, or daily while Boardsesh ascents
+    // count on it (kilter-sync stats-upsert.ts), so on Kilter it reads "last
+    // changed upstream", not "last pass". The Aurora shared sync also writes it
+    // only with a real change (aurora-sync shared-sync.ts).
     upstreamSyncedAt: timestamp('upstream_synced_at', { mode: 'string' }),
     // Provenance marker for display_difficulty: non-NULL = the grade was
     // written from Boardsesh ticks (UTC wall time); NULL = upstream's, or never

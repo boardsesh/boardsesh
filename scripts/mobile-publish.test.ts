@@ -106,6 +106,14 @@ describe('mobile publish argument routing', () => {
     expect(args).not.toContain('--dumpSourcemap');
   });
 
+  it('retains the exact staged export and source maps for later production promotion', () => {
+    const args = buildSelfHostedEoasArgs('pr-staging', 'ios', 'next main update', { allowDirtyTree: true });
+    expect(args).toContain('--disableRepositoryCheck');
+    expect(args).toContain('--dumpSourcemap');
+    expect(args).toContain('dist');
+    expect(args).toContain('pr-staging');
+  });
+
   it('keeps the EAS preview command arguments unchanged', () => {
     const args = buildEasUpdateArgs('fix-branch', 'preview message', 'all');
 

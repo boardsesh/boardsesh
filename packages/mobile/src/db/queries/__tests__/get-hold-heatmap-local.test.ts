@@ -12,7 +12,7 @@ import { createTestDatabase, type TestSqliteDb } from '@boardsesh/offline-sync/t
 // The parser module reports build failures as breadcrumbs; keep Sentry out of it.
 vi.mock('../../../lib/error-reporting', () => ({ addErrorBreadcrumb: vi.fn() }));
 
-import { getHoldHeatmapLocal } from '../get-hold-heatmap-local';
+import { getHoldHeatmapLocal, getHoldHeatmapLocalWithCount } from '../get-hold-heatmap-local';
 
 const OWNER = 'me';
 const SCOPE = { boardType: 'kilter', layoutId: 1, sizeId: 10 };
@@ -125,6 +125,18 @@ describe('getHoldHeatmapLocal', () => {
         averageDifficulty: 16,
       },
     ]);
+  });
+
+  it('counts the climbs it folded, and skips the grade and ascent columns when asked', async () => {
+    const { holdStats, climbCount } = await getHoldHeatmapLocalWithCount(db, makeInput(), { withStats: false });
+    // alpha and bravo: the hidden, draft and other-size climbs are outside the list.
+    expect(climbCount).toBe(2);
+    expect(holdStats.map((stat) => [stat.holdId, stat.totalUses])).toEqual([
+      [1, 2],
+      [2, 2],
+      [3, 1],
+    ]);
+    expect(holdStats.every((stat) => stat.averageDifficulty === null && stat.totalAscents === 0)).toBe(true);
   });
 
   it('follows the list filters: a grade range keeps only the climbs in it', async () => {

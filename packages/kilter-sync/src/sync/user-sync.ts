@@ -20,7 +20,11 @@ import {
   myPlaylistOwnerEdge,
   selectUpstreamPlaylistOwners,
   acquireUserTickMutationLock,
+  isSyncFenceError,
+  DeferredClimbStatsRecompute,
   type ClimbStatsKey,
+  type ClimbStatsRecompute,
+  type SyncBatchRunner,
   type TickTimeSample,
 } from '@boardsesh/db/queries';
 
@@ -141,6 +145,22 @@ export type SyncKilterUserDataArgs = {
    * surfacing to the daemon's log.
    */
   log?: (msg: string) => void;
+  /**
+   * Runs each phase's writes in one transaction. Defaults to `db.transaction`.
+   * A background job passes its fenced runner here so every flush commits only
+   * while the job still owns its attempt, the link generation and the lease.
+   */
+  transaction?: SyncBatchRunner;
+  /** Cancels the PowerSync stream and stops before the next flush. */
+  signal?: AbortSignal;
+  /**
+   * Recompute `board_climb_stats` after each logs flush commits, in its own
+   * batches of at most 500 keys, instead of inside the flush transaction.
+   * Defaults to on when `transaction` is given (a background job, whose fenced
+   * batch blocks its heartbeat for as long as it runs); the daemon keeps the
+   * inline recompute.
+   */
+  deferStatsRecompute?: boolean;
 };
 
 export type SyncKilterUserDataResult = {
@@ -246,7 +266,12 @@ export async function syncKilterUserData({
   userId,
   accessToken,
   log = (msg) => console.warn(msg),
+  transaction,
+  signal,
+  deferStatsRecompute,
 }: SyncKilterUserDataArgs): Promise<SyncKilterUserDataResult> {
+  const runBatch: SyncBatchRunner = transaction ?? ((callback) => db.transaction(callback));
+  const deferredStats = (deferStatsRecompute ?? transaction !== undefined) ? new DeferredClimbStatsRecompute() : null;
   // Buffer ops by object_type so we can apply them in dependency order.
   // PowerSync delivers ops as a snapshot; each PUT carries the full row,
   // so we don't need to preserve the wire ordering — only the FK
@@ -290,7 +315,23 @@ export async function syncKilterUserData({
   async function flushLogs(): Promise<void> {
     if (buffer.logs.length === 0) return;
     const batch = buffer.logs.splice(0, buffer.logs.length);
-    await db.transaction((tx) => applyLogs(tx, userId, batch, aliasCache, log));
+    if (!deferredStats) {
+      await runBatch((tx) => applyLogs(tx, userId, batch, aliasCache, log));
+      return;
+    }
+    try {
+      await runBatch((tx) => {
+        deferredStats.begin();
+        return applyLogs(tx, userId, batch, aliasCache, log, deferredStats.collect);
+      });
+    } catch (error) {
+      // The flush rolled back: none of its keys is owed a recompute.
+      deferredStats.rollback();
+      throw error;
+    }
+    deferredStats.commit();
+    // The flush's logs are in; now their stats, in batches of their own.
+    await deferredStats.flush(runBatch);
   }
 
   async function flushClimbRatings(): Promise<void> {
@@ -302,7 +343,7 @@ export async function syncKilterUserData({
     // next flush would skip those climb/angle keys as already claimed, silently
     // leaving no rating at all. That is reachable today: a failing flush is
     // caught by runPhase and the sync continues to the next one.
-    const committedClaims = await db.transaction((tx) =>
+    const committedClaims = await runBatch((tx) =>
       applyClimbRatings(tx, userId, batch, aliasCache, log, claimedRatingKeys),
     );
     for (const [naturalKey, claim] of committedClaims) {
@@ -328,9 +369,13 @@ export async function syncKilterUserData({
   // First failure per phase wins — later ones are the same cause re-hit.
   const phaseErrors = new Map<string, Error>();
   async function runPhase(name: string, phase: () => Promise<void>): Promise<void> {
+    signal?.throwIfAborted();
     try {
       await phase();
     } catch (error) {
+      // A fence refusal or an abort means "stop writing", not "this phase hit a
+      // bad row": end the whole sync now instead of running the next phase.
+      if (signal?.aborted || isSyncFenceError(error)) throw error;
       const failure = error instanceof Error ? error : new Error(String(error));
       log(`[kilter-sync] ${name} phase failed for user ${userId}: ${failure.message}`);
       if (!phaseErrors.has(name)) {
@@ -341,6 +386,7 @@ export async function syncKilterUserData({
 
   await streamKilterPowerSync({
     accessToken,
+    signal,
     streams: ['user_buckets', 'circuit_buckets'],
     onOp: async (op) => {
       switch (op.object_type) {
@@ -449,7 +495,7 @@ export async function syncKilterUserData({
 
   let circuitsResult: SyncKilterUserDataResult = { skippedForeignCircuits: 0 };
   await runPhase('circuits', async () => {
-    circuitsResult = await db.transaction((tx) =>
+    circuitsResult = await runBatch((tx) =>
       applyCircuits(tx, userId, buffer.circuits, filteredCircuitClimbs, aliasCache, log),
     );
   });
@@ -584,7 +630,24 @@ type ExistingKilterTick = {
   kilterType: 'attempts' | 'logs' | null;
   updatedAt: string;
   kilterSyncedAt: string | null;
+  origin: (typeof boardseshTicks.$inferSelect)['origin'];
 };
+
+/**
+ * The recompute's push-back absorption rule drops a native tick pushed to
+ * Kilter from the Boardsesh count once kilter_synced_at < upstream_synced_at -
+ * 48h (recompute.ts). Time passing alone never re-runs it, so a skipped re-sync
+ * of such a tick still recomputes its key: PowerSync redelivers the logbook
+ * every cycle, which is what eventually absorbs the push. Only native sends past
+ * the 48 h window qualify, a small slice of any logbook.
+ */
+const ABSORPTION_WINDOW_MS = 48 * 60 * 60 * 1000;
+function mayNeedAbsorptionRecompute(stored: ExistingKilterTick, nowMs: number): boolean {
+  if (stored.origin !== 'native') return false;
+  if (stored.status !== 'flash' && stored.status !== 'send') return false;
+  if (stored.kilterSyncedAt === null) return false;
+  return Date.parse(stored.kilterSyncedAt) < nowMs - ABSORPTION_WINDOW_MS;
+}
 
 /** True when the row carries a local edit newer than the last successful sync. */
 function isLocallyEditedSinceKilterSync(stored: ExistingKilterTick): boolean {
@@ -624,6 +687,9 @@ export async function applyLogs(
   ops: PowerSyncOp[],
   aliasCache: Map<string, string>,
   log: (msg: string) => void,
+  // A background job passes a collector here and recomputes after the flush
+  // commits, in its own bounded batches (DeferredClimbStatsRecompute).
+  recompute: ClimbStatsRecompute = recomputeClimbStatsBulk,
 ): Promise<void> {
   if (ops.length === 0) return;
 
@@ -698,7 +764,7 @@ export async function applyLogs(
   }
 
   if (puts.length === 0) {
-    await recomputeClimbStatsBulk(tx, [...touchedKeys.values()]);
+    await recompute(tx, [...touchedKeys.values()]);
     return;
   }
 
@@ -766,6 +832,7 @@ export async function applyLogs(
       kilterType: boardseshTicks.kilterType,
       updatedAt: boardseshTicks.updatedAt,
       kilterSyncedAt: boardseshTicks.kilterSyncedAt,
+      origin: boardseshTicks.origin,
     })
     .from(boardseshTicks)
     .where(inArray(boardseshTicks.kilterId, incomingKilterIds));
@@ -919,6 +986,7 @@ export async function applyLogs(
   const adoptions: Array<{ uuid: string; kilterId: string; fields: LogTickFields }> = [];
   const inserts: NormalisedLog[] = [];
 
+  const nowMs = Date.now();
   for (const n of normalised) {
     const existing = kilterIdMap.get(n.raw.log_uuid);
     if (existing) {
@@ -937,8 +1005,11 @@ export async function applyLogs(
       // the local edit is pending push-back and Kilter's stale snapshot must
       // not stomp it. And skip a no-op re-sync (payload identical) so we don't
       // churn updated_at / re-ship the row to offline clients for nothing.
-      if (isLocallyEditedSinceKilterSync(existing)) continue;
-      if (!kilterPayloadDiffers(n.fields, existing)) continue;
+      if (isLocallyEditedSinceKilterSync(existing) || !kilterPayloadDiffers(n.fields, existing)) {
+        // Nothing to write, but a pushed native send may now be absorbable.
+        if (mayNeedAbsorptionRecompute(existing, nowMs)) addTouchedKey(existing.climbUuid, existing.angle);
+        continue;
+      }
       updatesByKilterId.push({ uuid: existing.uuid, fields: n.fields });
       continue;
     }
@@ -1016,7 +1087,7 @@ export async function applyLogs(
       angle: number;
     }>;
     for (const row of priorKeys) addTouchedKey(row.climb_uuid, Number(row.angle));
-    await tx.execute(sql`
+    const updatedKeyResult = await tx.execute(sql`
       UPDATE boardsesh_ticks AS t SET
         climb_uuid = u.climb_uuid,
         angle = u.angle,
@@ -1050,7 +1121,15 @@ export async function applyLogs(
         -- advisory-lock protocol may have made a local edit after our SELECT.
         -- Keep this comparison inside Postgres so microseconds are not lost.
         AND (t.kilter_synced_at IS NULL OR t.updated_at <= t.kilter_synced_at)
+      RETURNING t.climb_uuid, t.angle
     `);
+    // The NEW key of each row the UPDATE actually wrote (the guard above can
+    // skip a locally edited one).
+    const updatedKeys = (Array.isArray(updatedKeyResult) ? updatedKeyResult : []) as Array<{
+      climb_uuid: string;
+      angle: number;
+    }>;
+    for (const row of updatedKeys) addTouchedKey(row.climb_uuid, Number(row.angle));
   }
 
   if (inserts.length > 0) {
@@ -1075,10 +1154,13 @@ export async function applyLogs(
     );
   }
 
-  // Recompute board_climb_stats for every (climb, angle) this flush touched —
-  // new pulls, status changes on updates/adoptions, and removed rows.
-  for (const n of normalised) addTouchedKey(n.canonical, n.raw.angle);
-  await recomputeClimbStatsBulk(tx, [...touchedKeys.values()]);
+  // Recompute board_climb_stats for every (climb, angle) this flush wrote — new
+  // pulls, updates/adoptions (old and new key), and removed rows. A log skipped
+  // above (identical re-sync, local edit pending push-back, divergent or foreign
+  // kilter_id) wrote nothing, so its key has nothing to recompute. PowerSync
+  // redelivers whole logbooks, so most of a typical flush is identical re-syncs.
+  for (const n of inserts) addTouchedKey(n.canonical, n.raw.angle);
+  await recompute(tx, [...touchedKeys.values()]);
 }
 
 /**

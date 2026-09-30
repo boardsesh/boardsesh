@@ -11,8 +11,8 @@ import { boardClimbs } from '../boards/unified';
  *
  * Written by `packages/db/scripts/refresh-climb-neighbors.ts` (nightly,
  * watermark-driven, see `board_climb_neighbor_runs`). `updateClimb` deletes a
- * climb's rows in both directions when its holds change, so a stale neighbour
- * never outlives an edit. See docs/similar-climbs.md.
+ * climb's own list when its holds change; the next nightly run removes it from
+ * other climbs' lists and rewrites them. See docs/similar-climbs.md.
  */
 export const boardClimbNeighbors = pgTable(
   'board_climb_neighbors',
@@ -29,8 +29,8 @@ export const boardClimbNeighbors = pgTable(
     rank: integer('rank').notNull(),
     /**
      * How many rows this climb's list had when it was written. A list whose row
-     * count has since dropped below it lost a row outside the job (an edit's
-     * invalidation, a deleted climb's FK cascade) and is refilled next run.
+     * count has since dropped below it lost a row outside the job (a deleted
+     * climb's FK cascade) and is refilled by the weekly gap scan.
      */
     listSize: integer('list_size').notNull(),
     computedAt: timestamp('computed_at').defaultNow().notNull(),

@@ -13,7 +13,11 @@ vi.mock('react-native-mmkv', () => {
 
 import { runMigrations } from '@boardsesh/offline-sync';
 import { createTestDatabase, type TestSqliteDb } from '@boardsesh/offline-sync/testing';
-import { isBoardDownloadedLocally, hasDownloadedBoardData } from '../board-download-status';
+import {
+  isBoardDownloadedLocally,
+  hasDownloadedBoardData,
+  isClimbLayoutDownloadedLocally,
+} from '../board-download-status';
 import { markScopeDownloadComplete } from '@boardsesh/offline-sync';
 import { setSetting, resetAllSettings } from '../../../settings/hooks';
 
@@ -117,5 +121,61 @@ describe('hasDownloadedBoardData', () => {
   it('is true for a partial download with no scope-complete marker', async () => {
     await insertClimb(db, { uuid: 'a' });
     expect(await hasDownloadedBoardData(db)).toBe(true);
+  });
+});
+
+describe('isClimbLayoutDownloadedLocally', () => {
+  let db: TestSqliteDb;
+
+  beforeEach(async () => {
+    mockStorage.clear();
+    resetAllSettings();
+    db = createTestDatabase();
+    await runMigrations(db);
+  });
+
+  it("is true when a size of the climb's own layout that the climb fits finished downloading", async () => {
+    await insertClimb(db, { uuid: 'a', layoutId: 1, compatibleSizeIds: [5, 7] });
+    setSetting('syncEnabledBoards', ['kilter:1:7']);
+    await markScopeDownloadComplete(db, 'kilter:1:7');
+    expect(await isClimbLayoutDownloadedLocally(db, 'kilter', 'a')).toBe(true);
+  });
+
+  it('is false when the only completed size of the layout is one the climb does not fit', async () => {
+    // The stats pull is scoped by compatible_size_ids, so a finished kilter:1:7
+    // never pulled this climb's stats, even though the row is here (kilter:1:5
+    // is still downloading).
+    await insertClimb(db, { uuid: 'a', layoutId: 1, compatibleSizeIds: [5] });
+    setSetting('syncEnabledBoards', ['kilter:1:5', 'kilter:1:7']);
+    await markScopeDownloadComplete(db, 'kilter:1:7');
+    expect(await isClimbLayoutDownloadedLocally(db, 'kilter', 'a')).toBe(false);
+  });
+
+  it('ignores size for a board that is not size-scoped', async () => {
+    await insertClimb(db, { uuid: 'm', boardType: 'moonboard', layoutId: 2, compatibleSizeIds: null });
+    setSetting('syncEnabledBoards', ['moonboard:2:1']);
+    await markScopeDownloadComplete(db, 'moonboard:2:1');
+    expect(await isClimbLayoutDownloadedLocally(db, 'moonboard', 'm')).toBe(true);
+  });
+
+  it('is false when only a different layout of the board type is downloaded', async () => {
+    await insertClimb(db, { uuid: 'a', layoutId: 1 });
+    setSetting('syncEnabledBoards', ['kilter:8:5']);
+    await markScopeDownloadComplete(db, 'kilter:8:5');
+    expect(await isClimbLayoutDownloadedLocally(db, 'kilter', 'a')).toBe(false);
+  });
+
+  it('is false while the layout download is still in flight', async () => {
+    await insertClimb(db, { uuid: 'a', layoutId: 1 });
+    setSetting('syncEnabledBoards', ['kilter:1:5']);
+    expect(await isClimbLayoutDownloadedLocally(db, 'kilter', 'a')).toBe(false);
+  });
+
+  it('is false for a climb that is not on the device, or on another board type', async () => {
+    await insertClimb(db, { uuid: 'a', layoutId: 1 });
+    setSetting('syncEnabledBoards', ['kilter:1:5']);
+    await markScopeDownloadComplete(db, 'kilter:1:5');
+    expect(await isClimbLayoutDownloadedLocally(db, 'kilter', 'missing')).toBe(false);
+    expect(await isClimbLayoutDownloadedLocally(db, 'tension', 'a')).toBe(false);
   });
 });

@@ -1,6 +1,11 @@
 import { sql } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
-import { recomputeClimbStatsBulk, type ClimbStatsKey } from './recompute';
+import type { ClimbStatsKey } from './recompute';
+import {
+  CLIMB_STATS_RECOMPUTE_BATCH_KEYS,
+  drainPendingClimbStatsRecomputes,
+  recomputeClimbStatsInBatches,
+} from './deferred-recompute';
 import { rowsOf } from '../util/rows';
 
 type DrizzleDb = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
@@ -18,20 +23,34 @@ type DrizzleDb = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
 const SELF_HEAL_LOOKBACK_HOURS = 3;
 const SELF_HEAL_BATCH = 5000;
 
-export type SelfHealResult = { keysHealed: number };
+export type SelfHealResult = {
+  pendingKeysDrained: number;
+  keysHealed: number;
+  /**
+   * Set only when the drain stopped at its batch cap: the pending rows still
+   * left (of any age), so a backlog the hourly pass cannot keep up with shows
+   * in the logs.
+   */
+  pendingRemaining?: number;
+};
+
+/** Batches one self-heal drain runs at most by default: 20 x 500 keys. */
+export const SELF_HEAL_DEFAULT_MAX_DRAIN_BATCHES = 20;
+
+/** Runs one write batch in one transaction, behind whatever fences its owner applies. */
+type SelfHealBatchRunner = <Result>(callback: (transaction: DrizzleDb) => Promise<Result>) => Promise<Result>;
 
 /**
- * One bounded pass of the recompute self-heal: find keys where a flash/send
- * tick was updated more recently than the board_climb_stats row it feeds
- * (the signature of a debounced recompute that a deploy dropped), and
- * re-derive them with recomputeClimbStatsBulk. Bounded by a recent-tick window
- * (served by boardsesh_ticks_flash_send_updated_at_idx) and a hard LIMIT, so
- * one pass is cheap and never runs away.
+ * The keys one self-heal pass would re-derive: flash/send ticks updated within
+ * the lookback window more recently than the board_climb_stats row they feed
+ * (the signature of a debounced recompute that a deploy dropped, or of a
+ * deferred sync recompute a crash lost). Bounded by the recent-tick window
+ * (served by boardsesh_ticks_flash_send_updated_at_idx) and a hard LIMIT.
  */
-export async function selfHealStaleClimbStats(
+export async function findStaleClimbStatsKeys(
   db: DrizzleDb,
   opts: { limit?: number; lookbackHours?: number } = {},
-): Promise<SelfHealResult> {
+): Promise<ClimbStatsKey[]> {
   const limit = opts.limit ?? SELF_HEAL_BATCH;
   const lookbackHours = opts.lookbackHours ?? SELF_HEAL_LOOKBACK_HOURS;
 
@@ -50,13 +69,54 @@ export async function selfHealStaleClimbStats(
     `),
   );
 
-  if (rows.length === 0) return { keysHealed: 0 };
-
-  const keys: ClimbStatsKey[] = rows.map((row) => ({
+  return rows.map((row) => ({
     boardType: row.board_type,
     climbUuid: row.climb_uuid,
     angle: row.angle,
   }));
-  await recomputeClimbStatsBulk(db, keys);
-  return { keysHealed: keys.length };
+}
+
+/**
+ * One bounded pass of the recompute self-heal, the single path both the
+ * Aurora daemon and the `climb-stats-self-heal` job run:
+ *
+ * 1. drain `climb_stats_recompute_pending` rows a stopped sync left behind
+ *    ({@link drainPendingClimbStatsRecomputes});
+ * 2. find the stale keys ({@link findStaleClimbStatsKeys}, an unfenced read)
+ *    and re-derive them with {@link recomputeClimbStatsInBatches}.
+ *
+ * Every write goes through `runBatch`, one bounded batch per transaction. A
+ * background job passes its attempt fence; the daemon takes the default, a
+ * plain transaction per batch.
+ */
+export async function selfHealStaleClimbStats(
+  db: DrizzleDb,
+  opts: {
+    limit?: number;
+    lookbackHours?: number;
+    batchKeys?: number;
+    /** The drain's batch cap (`SELF_HEAL_MAX_DRAIN_BATCHES` for the job). */
+    maxDrainBatches?: number;
+    runBatch?: SelfHealBatchRunner;
+  } = {},
+): Promise<SelfHealResult> {
+  const runBatch: SelfHealBatchRunner = opts.runBatch ?? ((callback) => db.transaction(callback));
+  const batchKeys = opts.batchKeys ?? CLIMB_STATS_RECOMPUTE_BATCH_KEYS;
+  const maxDrainBatches = opts.maxDrainBatches ?? SELF_HEAL_DEFAULT_MAX_DRAIN_BATCHES;
+  const pendingKeysDrained = await drainPendingClimbStatsRecomputes(runBatch, {
+    batchKeys,
+    maxBatches: maxDrainBatches,
+  });
+  // Every batch came back full: the drain stopped at its cap, not at the end of
+  // the backlog. Count what is left so the caller can say so.
+  let pendingRemaining: number | undefined;
+  if (pendingKeysDrained >= maxDrainBatches * batchKeys) {
+    const [row] = rowsOf<{ count: number }>(
+      await db.execute(sql`SELECT count(*)::int AS count FROM climb_stats_recompute_pending`),
+    );
+    pendingRemaining = Number(row?.count ?? 0);
+  }
+  const keys = await findStaleClimbStatsKeys(db, opts);
+  const keysHealed = await recomputeClimbStatsInBatches(runBatch, keys, batchKeys);
+  return { pendingKeysDrained, keysHealed, ...(pendingRemaining === undefined ? {} : { pendingRemaining }) };
 }

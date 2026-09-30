@@ -46,7 +46,13 @@ export async function getHoldHeatmapData(
   searchParams: ClimbSearchParams,
   userId?: string,
 ): Promise<HoldHeatmapData[]> {
-  const filters = createClimbFilters(params, searchParams, userId, {
+  // Personal grades (#4828) are deliberately dropped here rather than honoured.
+  // The grade filter they produce reads a `my_grade` alias that only the search
+  // paths and the count left-join (`filters.getPersonalGradeJoin()`); this
+  // aggregate spreads `getClimbStatsConditions()` without that join, so an
+  // inbound `useMyGrades` would raise 42P01 — a 500 rather than wrong rows.
+  // Honouring it properly means adding the join here too; see the search paths.
+  const filters = createClimbFilters(params, { ...searchParams, useMyGrades: false }, userId, {
     crossAngleStats: resolveCrossAngleStats(params, searchParams),
     restrictToBrowsedAngle: resolveBrowsedAngleRestriction(params, searchParams),
   });

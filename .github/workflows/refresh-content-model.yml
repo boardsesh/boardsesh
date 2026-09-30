@@ -3,8 +3,9 @@ name: Refresh Content Model
 # Weekly (offline): train the Climb2Vec hold-geometry model and score content_prior
 # + embeddings for every climb+angle into board_climb_embeddings. This is the ONE
 # workflow that runs Python — training genuinely needs a framework — and it only
-# WRITES board_climb_embeddings; the nightly grade + similarity jobs (pure TS) read
-# from it. Weekly cadence mirrors the grade-model coefficient refit.
+# WRITES board_climb_embeddings; the nightly grade job (pure TS) reads from it.
+# Weekly cadence mirrors the grade-model coefficient refit. It no longer rebuilds
+# board_climb_similar: nothing reads that table (see docs/climb2vec.md, phase 3a).
 on:
   schedule:
     - cron: '30 5 * * 0' # 05:30 UTC Sundays (before the daily grade/recs jobs)
@@ -69,10 +70,3 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           node --import tsx packages/db/scripts/load-content-model.ts --board="$BOARD" --in=ml/climb2vec/data/${BOARD}-content.jsonl
-
-      - name: Build + load similarity neighbours
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: |
-          (cd ml/climb2vec && python similarity_export.py --content data/${BOARD}-content.jsonl --out data/${BOARD}-similar.jsonl)
-          node --import tsx packages/db/scripts/load-similarity.ts --board="$BOARD" --in=ml/climb2vec/data/${BOARD}-similar.jsonl

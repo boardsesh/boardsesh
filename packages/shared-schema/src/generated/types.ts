@@ -453,6 +453,14 @@ export type AuroraCredentialStatus = {
   boardType: Scalars['String']['output'];
   /** Whether a valid token is stored */
   hasToken: Scalars['Boolean']['output'];
+  /** The queued or running sync this account is waiting on, if any */
+  pendingRunId?: Maybe<Scalars['ID']['output']>;
+  /** Whether Sync now can queue a run for this account (its board's sync is switched on) */
+  syncAvailable?: Maybe<Scalars['Boolean']['output']>;
+  /** Machine code or message from the last failed sync, when there is one */
+  syncError?: Maybe<Scalars['String']['output']>;
+  /** Sync state of the stored credential: pending, active, error, expired, or linked (no credential) */
+  syncStatus?: Maybe<Scalars['String']['output']>;
   /** When credentials were last synced (ISO 8601) */
   syncedAt?: Maybe<Scalars['String']['output']>;
   /** Aurora user ID (after successful sync) */
@@ -1100,6 +1108,8 @@ export type Climb = {
    * `board_climb_holds` table to join through.
    */
   missingHoldCount?: Maybe<Scalars['Int']['output']>;
+  /** The signed-in climber's OWN grade for this climb at this angle: the difficulty of their latest tick that carries one, clamped to the boulder scale. Populated only when the search asked for useMyGrades — that search's filter and difficulty sort key off exactly this value (falling back to the crowd's grade where it is null), so a row can never disagree with its own position in the list. Never round-tripped through the party queue: it is one climber's private opinion, not a property of the climb. */
+  myDifficulty?: Maybe<Scalars['Int']['output']>;
   /** Name/title of the climb */
   name: Scalars['String']['output'];
   /** ISO timestamp of when this climb was first published (null while still a draft) */
@@ -1343,6 +1353,8 @@ export type ClimbSearchInput = {
   sortSeed?: InputMaybe<Scalars['String']['input']>;
   /** A spray wall's uuid, presented as a capability. Only meaningful when boardName is 'spray': an UNLISTED wall's climbs are listable by a caller holding its uuid, the same way saveClimb accepts it as the right to set on one. A private wall does not open for it, and a uuid naming another wall is ignored. */
   sprayWallUuid?: InputMaybe<Scalars['String']['input']>;
+  /** Key the grade filter and the difficulty sort off the climber's own grade instead of the crowd's: the difficulty of their latest tick for this climb+angle that carries one, clamped to the boulder scale, falling back to the rounded display difficulty where they never graded it. Keeps a re-graded climb in the band its row already displays. (requires auth) */
+  useMyGrades?: InputMaybe<Scalars['Boolean']['input']>;
   /** Restrict results using this drawn zone */
   zoneBox?: InputMaybe<ZoneBoxInput>;
   /** How the zone should match climb holds. Defaults to allHolds when omitted. */
@@ -1439,8 +1451,8 @@ export type ClimbStatsForClimb = {
 };
 
 /**
- * A single snapshot of climb statistics from the history table.
- * Captured during shared sync to track trends over time.
+ * Current climb statistics at one angle. The name is historical: entries used to
+ * be snapshots from the history table, and now come from the live stats row.
  */
 export type ClimbStatsHistoryEntry = {
   __typename?: 'ClimbStatsHistoryEntry';
@@ -1448,7 +1460,7 @@ export type ClimbStatsHistoryEntry = {
   angle: Scalars['Int']['output'];
   /** Number of people who have completed this climb at this angle */
   ascensionistCount?: Maybe<Scalars['Int']['output']>;
-  /** When this snapshot was recorded */
+  /** When these numbers were last updated (ISO 8601) */
   createdAt: Scalars['String']['output'];
   /** Average difficulty rating */
   difficultyAverage?: Maybe<Scalars['Float']['output']>;
@@ -4072,7 +4084,15 @@ export type Mutation = {
    * notified). Requires authentication.
    */
   requestGymClaim: RequestGymClaimResult;
+  /**
+   * Pull the latest logbook from a linked board account now.
+   * Joins a sync that is already waiting instead of queueing a second one.
+   * Rate limited to 5 requests a minute.
+   */
+  requestProviderSync: ProviderSyncRequest;
   requestSprayWallDetection: SprayWallDetection;
+  /** Prepare a weekly climbing archive and, where supported, its Aurora companion. */
+  requestUserDataExport: UserDataExportStatus;
   /**
    * Resolve a BLE serial for clients that can disambiguate. Returns a single
    * `board` when the serial is unambiguous (remembered choice, only one match,
@@ -4759,8 +4779,18 @@ export type MutationRequestGymClaimArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationRequestProviderSyncArgs = {
+  boardType: Scalars['String']['input'];
+};
+
+/** Root mutation type for all write operations. */
 export type MutationRequestSprayWallDetectionArgs = {
   input: RequestSprayWallDetectionInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationRequestUserDataExportArgs = {
+  boardType: Scalars['String']['input'];
 };
 
 /** Root mutation type for all write operations. */
@@ -5620,6 +5650,17 @@ export type ProposeSprayWallResetInput = {
   wallUuid: Scalars['ID']['input'];
 };
 
+/** A "Sync now" request for one linked board account. */
+export type ProviderSyncRequest = {
+  __typename?: 'ProviderSyncRequest';
+  /** True when the request joined a run that was already waiting, instead of queueing a new one */
+  coalesced: Scalars['Boolean']['output'];
+  /** The background run that will sync the account */
+  runId: Scalars['ID']['output'];
+  /** That run's status: queued, running or retrying */
+  status: Scalars['String']['output'];
+};
+
 /** Public-facing user profile for social features. */
 export type PublicUserProfile = {
   __typename?: 'PublicUserProfile';
@@ -5918,8 +5959,8 @@ export type Query = {
    */
   climbStatsForClimbs: Array<ClimbStatsForClimb>;
   /**
-   * Get climb stats history for a climb over the last 12 months.
-   * Returns snapshots captured during shared sync for trend analysis.
+   * Current statistics for a climb, one entry per angle it has been sent at.
+   * Despite the name this is no longer a time series; prefer climbStatsForAngles.
    */
   climbStatsHistory: Array<ClimbStatsHistoryEntry>;
   /** Get comments for an entity. */
@@ -6452,6 +6493,10 @@ export type Query = {
    * Includes both directly created climbs and Aurora-imported climbs linked via board credentials.
    */
   userClimbs: PlaylistClimbsResult;
+  /** The signed-in climber's recent cached export; defaults to this UTC ISO week. */
+  userDataExport: UserDataExportStatus;
+  /** A five-minute private browser download; no user ID is accepted. */
+  userDataExportDownload: UserDataExportDownloadLink;
   /**
    * Get user's favorite climbs with full climb data.
    * Requires authentication.
@@ -7214,6 +7259,19 @@ export type QueryUserClimbPercentileArgs = {
 /** Root query type for all read operations. */
 export type QueryUserClimbsArgs = {
   input: UserClimbsInput;
+};
+
+/** Root query type for all read operations. */
+export type QueryUserDataExportArgs = {
+  boardType: Scalars['String']['input'];
+  period?: InputMaybe<Scalars['String']['input']>;
+};
+
+/** Root query type for all read operations. */
+export type QueryUserDataExportDownloadArgs = {
+  boardType: Scalars['String']['input'];
+  format: UserDataExportFormat;
+  period: Scalars['String']['input'];
 };
 
 /** Root query type for all read operations. */
@@ -9946,6 +10004,41 @@ export type UserClimbsInput = {
   userId: Scalars['ID']['input'];
 };
 
+export type UserDataExportDownloadLink = {
+  __typename?: 'UserDataExportDownloadLink';
+  expiresAt: Scalars['String']['output'];
+  filename: Scalars['String']['output'];
+  url: Scalars['String']['output'];
+};
+
+export type UserDataExportFile = {
+  __typename?: 'UserDataExportFile';
+  expiresAt: Scalars['String']['output'];
+  exportedAt: Scalars['String']['output'];
+  fileSize?: Maybe<Scalars['Float']['output']>;
+  filename: Scalars['String']['output'];
+  format: UserDataExportFormat;
+};
+
+export type UserDataExportFormat = 'aurora' | 'boardsesh';
+
+export type UserDataExportState = 'failed' | 'generating' | 'not_requested' | 'ready' | 'unavailable';
+
+export type UserDataExportStatus = {
+  __typename?: 'UserDataExportStatus';
+  boardType: Scalars['String']['output'];
+  completedAt?: Maybe<Scalars['String']['output']>;
+  error?: Maybe<Scalars['String']['output']>;
+  /** A stable failure code for localized client guidance, when available. */
+  errorCode?: Maybe<Scalars['String']['output']>;
+  files: Array<UserDataExportFile>;
+  period: Scalars['String']['output'];
+  refreshAt: Scalars['String']['output'];
+  requestedAt?: Maybe<Scalars['String']['output']>;
+  retryAt?: Maybe<Scalars['String']['output']>;
+  status: UserDataExportState;
+};
+
 /** Event when a user joins the session. */
 export type UserJoined = {
   __typename?: 'UserJoined';
@@ -10491,6 +10584,7 @@ export type ResolversTypes = ResolversObject<{
   ProposalType: ProposalType;
   ProposalVoteSummary: ResolverTypeWrapper<ProposalVoteSummary>;
   ProposeSprayWallResetInput: ProposeSprayWallResetInput;
+  ProviderSyncRequest: ResolverTypeWrapper<ProviderSyncRequest>;
   PublicUserProfile: ResolverTypeWrapper<PublicUserProfile>;
   PublishSprayWallVersionInput: PublishSprayWallVersionInput;
   QaLabel: ResolverTypeWrapper<QaLabel>;
@@ -10657,6 +10751,11 @@ export type ResolversTypes = ResolversObject<{
   UserBoardConnection: ResolverTypeWrapper<UserBoardConnection>;
   UserClimbPercentile: ResolverTypeWrapper<UserClimbPercentile>;
   UserClimbsInput: UserClimbsInput;
+  UserDataExportDownloadLink: ResolverTypeWrapper<UserDataExportDownloadLink>;
+  UserDataExportFile: ResolverTypeWrapper<UserDataExportFile>;
+  UserDataExportFormat: UserDataExportFormat;
+  UserDataExportState: UserDataExportState;
+  UserDataExportStatus: ResolverTypeWrapper<UserDataExportStatus>;
   UserJoined: ResolverTypeWrapper<UserJoined>;
   UserLeft: ResolverTypeWrapper<UserLeft>;
   UserPresenceChanged: ResolverTypeWrapper<UserPresenceChanged>;
@@ -10930,6 +11029,7 @@ export type ResolversParentTypes = ResolversObject<{
   ProposalConnection: ProposalConnection;
   ProposalVoteSummary: ProposalVoteSummary;
   ProposeSprayWallResetInput: ProposeSprayWallResetInput;
+  ProviderSyncRequest: ProviderSyncRequest;
   PublicUserProfile: PublicUserProfile;
   PublishSprayWallVersionInput: PublishSprayWallVersionInput;
   QaLabel: QaLabel;
@@ -11079,6 +11179,9 @@ export type ResolversParentTypes = ResolversObject<{
   UserBoardConnection: UserBoardConnection;
   UserClimbPercentile: UserClimbPercentile;
   UserClimbsInput: UserClimbsInput;
+  UserDataExportDownloadLink: UserDataExportDownloadLink;
+  UserDataExportFile: UserDataExportFile;
+  UserDataExportStatus: UserDataExportStatus;
   UserJoined: UserJoined;
   UserLeft: UserLeft;
   UserPresenceChanged: UserPresenceChanged;
@@ -11296,6 +11399,10 @@ export type AuroraCredentialStatusResolvers<
 > = ResolversObject<{
   boardType?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   hasToken?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  pendingRunId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
+  syncAvailable?: Resolver<Maybe<ResolversTypes['Boolean']>, ParentType, ContextType>;
+  syncError?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  syncStatus?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   syncedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   userId?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   username?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
@@ -11678,6 +11785,7 @@ export type ClimbResolvers<
   lostHolds?: Resolver<Maybe<Array<ResolversTypes['SprayWallHold']>>, ParentType, ContextType>;
   mirrored?: Resolver<Maybe<ResolversTypes['Boolean']>, ParentType, ContextType>;
   missingHoldCount?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  myDifficulty?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   name?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   published_at?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   quality_average?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
@@ -13449,11 +13557,23 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationRequestGymClaimArgs, 'input'>
   >;
+  requestProviderSync?: Resolver<
+    ResolversTypes['ProviderSyncRequest'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationRequestProviderSyncArgs, 'boardType'>
+  >;
   requestSprayWallDetection?: Resolver<
     ResolversTypes['SprayWallDetection'],
     ParentType,
     ContextType,
     RequireFields<MutationRequestSprayWallDetectionArgs, 'input'>
+  >;
+  requestUserDataExport?: Resolver<
+    ResolversTypes['UserDataExportStatus'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationRequestUserDataExportArgs, 'boardType'>
   >;
   resolveBoardCandidatesForSerial?: Resolver<
     ResolversTypes['ResolveBoardResult'],
@@ -14106,6 +14226,16 @@ export type ProposalVoteSummaryResolvers<
   requiredUpvotes?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   weightedDownvotes?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   weightedUpvotes?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type ProviderSyncRequestResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['ProviderSyncRequest'] = ResolversParentTypes['ProviderSyncRequest'],
+> = ResolversObject<{
+  coalesced?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  runId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  status?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -14945,6 +15075,18 @@ export type QueryResolvers<
     ParentType,
     ContextType,
     RequireFields<QueryUserClimbsArgs, 'input'>
+  >;
+  userDataExport?: Resolver<
+    ResolversTypes['UserDataExportStatus'],
+    ParentType,
+    ContextType,
+    RequireFields<QueryUserDataExportArgs, 'boardType'>
+  >;
+  userDataExportDownload?: Resolver<
+    ResolversTypes['UserDataExportDownloadLink'],
+    ParentType,
+    ContextType,
+    RequireFields<QueryUserDataExportDownloadArgs, 'boardType' | 'format' | 'period'>
   >;
   userFavoriteClimbs?: Resolver<
     ResolversTypes['PlaylistClimbsResult'],
@@ -16217,6 +16359,46 @@ export type UserClimbPercentileResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type UserDataExportDownloadLinkResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['UserDataExportDownloadLink'] =
+    ResolversParentTypes['UserDataExportDownloadLink'],
+> = ResolversObject<{
+  expiresAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  filename?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  url?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type UserDataExportFileResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['UserDataExportFile'] = ResolversParentTypes['UserDataExportFile'],
+> = ResolversObject<{
+  expiresAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  exportedAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  fileSize?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
+  filename?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  format?: Resolver<ResolversTypes['UserDataExportFormat'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type UserDataExportStatusResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['UserDataExportStatus'] = ResolversParentTypes['UserDataExportStatus'],
+> = ResolversObject<{
+  boardType?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  completedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  error?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  errorCode?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  files?: Resolver<Array<ResolversTypes['UserDataExportFile']>, ParentType, ContextType>;
+  period?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  refreshAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  requestedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  retryAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  status?: Resolver<ResolversTypes['UserDataExportState'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type UserJoinedResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['UserJoined'] = ResolversParentTypes['UserJoined'],
@@ -16474,6 +16656,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   Proposal?: ProposalResolvers<ContextType>;
   ProposalConnection?: ProposalConnectionResolvers<ContextType>;
   ProposalVoteSummary?: ProposalVoteSummaryResolvers<ContextType>;
+  ProviderSyncRequest?: ProviderSyncRequestResolvers<ContextType>;
   PublicUserProfile?: PublicUserProfileResolvers<ContextType>;
   QaLabel?: QaLabelResolvers<ContextType>;
   QaPreview?: QaPreviewResolvers<ContextType>;
@@ -16563,6 +16746,9 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   UserBoard?: UserBoardResolvers<ContextType>;
   UserBoardConnection?: UserBoardConnectionResolvers<ContextType>;
   UserClimbPercentile?: UserClimbPercentileResolvers<ContextType>;
+  UserDataExportDownloadLink?: UserDataExportDownloadLinkResolvers<ContextType>;
+  UserDataExportFile?: UserDataExportFileResolvers<ContextType>;
+  UserDataExportStatus?: UserDataExportStatusResolvers<ContextType>;
   UserJoined?: UserJoinedResolvers<ContextType>;
   UserLeft?: UserLeftResolvers<ContextType>;
   UserPresenceChanged?: UserPresenceChangedResolvers<ContextType>;

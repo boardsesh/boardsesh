@@ -150,12 +150,21 @@ const qa = vi.hoisted(() => ({
   surfingAvailable: true,
   listPrBranches: vi.fn(),
   surfToPr: vi.fn(),
+  surfToStaging: vi.fn(),
+  surfToProduction: vi.fn(),
+  staging: null as { lastUpdateAt: string } | null,
   refusedPrNumber: null as number | null,
 }));
 vi.mock('../../../lib/qa/qa-surf', () => ({
   qaSurfingAvailable: () => qa.surfingAvailable,
   listPrBranches: qa.listPrBranches,
+  listQaBranches: async (...args: unknown[]) => {
+    const branches = await qa.listPrBranches(...args);
+    return branches === null ? null : { previews: branches, staging: qa.staging };
+  },
   surfToPr: qa.surfToPr,
+  surfToStaging: qa.surfToStaging,
+  surfToProduction: qa.surfToProduction,
   readRefusedPrNumber: () => qa.refusedPrNumber,
 }));
 
@@ -202,11 +211,28 @@ beforeEach(() => {
   previews.lastOptions = undefined;
   qa.surfingAvailable = true;
   qa.refusedPrNumber = null;
+  qa.staging = null;
   qa.listPrBranches.mockReset().mockResolvedValue(BRANCHES);
   qa.surfToPr.mockReset().mockResolvedValue('reloading');
+  qa.surfToStaging.mockReset().mockResolvedValue('reloading');
+  qa.surfToProduction.mockReset().mockResolvedValue('reloading');
 });
 
 describe('QaPickScreen', () => {
+  it('offers production and a compatible staging update beside PR previews', async () => {
+    qa.staging = { lastUpdateAt: '2026-08-26T11:00:00.000Z' };
+    renderScreen();
+    fireEvent.click(await screen.findByLabelText('qa.pick.stagingTitle'));
+    expect(qa.surfToStaging).toHaveBeenCalledOnce();
+    expect(qa.surfToProduction).not.toHaveBeenCalled();
+  });
+
+  it('offers production even when no PR or staging update is available', async () => {
+    qa.listPrBranches.mockResolvedValue([]);
+    renderScreen();
+    fireEvent.click(await screen.findByLabelText('qa.pick.productionTitle'));
+    expect(qa.surfToProduction).toHaveBeenCalledOnce();
+  });
   it('renders a tappable row per loadable branch even with no PR metadata', async () => {
     // The branch list is the spine: GitHub being down must not cost a tester
     // the ability to load the branch.

@@ -362,6 +362,14 @@ describe('production-deploy web deploy targets', () => {
     expect(jobNames.length).toBeGreaterThan(10);
     for (const jobName of jobNames) {
       const job = mappingEntry(workflowSource, jobName, 2);
+      if (jobName === 'stage-mobile-ota') {
+        // GitHub does not allow timeout-minutes on a reusable-workflow caller.
+        // Its called publish job owns the timeout instead.
+        expect(job).toContain('uses: ./.github/workflows/mobile-ota-production.yml');
+        const otaWorkflow = readFileSync('.github/workflows/mobile-ota-production.yml', 'utf8');
+        expect(mappingEntry(otaWorkflow, 'publish', 2)).toMatch(/^ {4}timeout-minutes: \d+$/m);
+        continue;
+      }
       expect(job, jobName).toMatch(/^ {4}timeout-minutes: \d+$/m);
     }
   });

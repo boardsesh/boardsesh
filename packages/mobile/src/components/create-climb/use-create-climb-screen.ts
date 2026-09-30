@@ -445,7 +445,6 @@ export function useCreateClimbScreen({
   const [setterGradeDifficultyId, setSetterGradeDifficultyId] = useState<number | null>(() =>
     isForking && requiresSetterGrade(board.boardName) ? (forkDifficultyId ?? null) : null,
   );
-  const [showAllHolds, setShowAllHolds] = useState(false);
 
   // ---- Route mode. ----
   // Whether this climb is being authored as a route. Route-ness is inferred from
@@ -1829,8 +1828,6 @@ export function useCreateClimbScreen({
     confirmNewClimb,
     blankClimbEpoch,
     cancelNewClimb,
-    showAllHolds,
-    setShowAllHolds,
     // frames (route/circuit editing)
     frameCount,
     currentFrameIndex,

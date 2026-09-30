@@ -41,6 +41,10 @@ const SITEMAP_TTL_MS = SITEMAP_REVALIDATE_SECONDS * 1_000;
  * rejection is unverified here (the test mocks `unstable_cache` to a
  * pass-through), so do not lean on it.
  *
+ * An empty list is the same rule: the backend answers a cold cache with `[]`
+ * while its refresh job runs, and caching that for an hour would publish a
+ * sitemap with no boards.
+ *
  * `hasMore` is the same rule applied to the API cap. The listed-config count grows
  * with the board catalogue — a new vendor is one merge away — and 100 is the
  * schema ceiling, so the fix when this fires is paging (`offset`), not a bigger
@@ -57,6 +61,12 @@ const fetchAllBoardConfigs = unstable_cache(
         controller.signal,
       );
       const { configs, hasMore, totalCount } = result.popularBoardConfigs;
+      if (configs.length === 0) {
+        // The backend answers a cold cache with an empty list rather than run
+        // its statement inline, and there is always at least one listed config.
+        // An empty shard would tell Google every board page was deleted.
+        throw new Error('[sitemap] boards shard: the backend returned no board configs; its cache is still filling.');
+      }
       if (hasMore) {
         throw new Error(
           `[sitemap] boards shard truncated: ${configs.length} of ${totalCount} listed configs came back at the ${SITEMAP_LIMIT}-config API cap — page it with offset instead of raising the limit.`,

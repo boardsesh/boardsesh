@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   BACKEND_DEFAULT_SAMPLE_RATE,
   BACKEND_TRACE_PROPAGATION_TARGETS,
+  hasHttpRequest,
+  isGraphqlWsOperation,
+  isRedisDiagnosticRoot,
   isWebSocketUpgrade,
   resolveBackendRequestMethod,
   resolveBackendRequestPath,
@@ -105,7 +108,6 @@ describe('resolveBackendTracesSampleRate', () => {
   it('samples everything else at 10%', () => {
     expect(resolveBackendTracesSampleRate({ name: 'GET /join/xyz' })).toBe(BACKEND_DEFAULT_SAMPLE_RATE);
     expect(resolveBackendTracesSampleRate({ name: 'GET /integrations/strava' })).toBe(BACKEND_DEFAULT_SAMPLE_RATE);
-    expect(resolveBackendTracesSampleRate({})).toBe(BACKEND_DEFAULT_SAMPLE_RATE);
   });
 
   it('does not confuse a path that merely starts with a zeroed one', () => {
@@ -119,6 +121,109 @@ describe('resolveBackendTracesSampleRate', () => {
     expect(resolveBackendTracesSampleRate({ name: 'anonymous span', attributes: { 'url.path': '/graphql' } })).toBe(
       0.01,
     );
+  });
+});
+
+describe('resolveBackendTracesSampleRate: root spans with no HTTP request', () => {
+  // Measured over 14 days: ~1.0M stored db.redis ROOT spans from background
+  // loops, all sampled at the 10% default because they carry no URL or method.
+  const redisDiagnosticAttributes = {
+    'sentry.origin': 'auto.db.redis.diagnostic_channel',
+    // inferSpanData overwrites 'db.redis' with 'db' before the sampler runs.
+    'sentry.op': 'db',
+    'db.system.name': 'redis',
+  };
+
+  it('drops a background redis root span', () => {
+    expect(resolveBackendTracesSampleRate({ name: 'redis-xreadgroup', attributes: redisDiagnosticAttributes })).toBe(0);
+    expect(
+      resolveBackendTracesSampleRate({
+        name: 'redis-eval',
+        attributes: { ...redisDiagnosticAttributes, 'db.query.text': 'eval ? ? ?' },
+      }),
+    ).toBe(0);
+  });
+
+  it('drops a redis root by origin even if its name ever looks like an HTTP span', () => {
+    // A rename must not reopen the leak: the origin alone is enough.
+    expect(resolveBackendTracesSampleRate({ name: 'GET session:abc', attributes: redisDiagnosticAttributes })).toBe(0);
+  });
+
+  it('drops a redis root identified only by db.system.name', () => {
+    expect(resolveBackendTracesSampleRate({ name: 'redis-scan', attributes: { 'db.system.name': 'redis' } })).toBe(0);
+  });
+
+  it('drops graphql.parse and graphql.validate roots', () => {
+    expect(resolveBackendTracesSampleRate({ name: 'graphql.parse' })).toBe(0);
+    expect(resolveBackendTracesSampleRate({ name: 'graphql.validate' })).toBe(0);
+    expect(resolveBackendTracesSampleRate({ name: 'graphql.parse', parentSampled: true })).toBe(0);
+  });
+
+  it('drops a root span with nothing recognisable at all', () => {
+    // This used to fail open at 10%. It no longer does: every backend HTTP
+    // server span carries url.path and a method, so an empty context is
+    // background work, and background work was the ~1M-span leak.
+    expect(resolveBackendTracesSampleRate({})).toBe(0);
+    expect(resolveBackendTracesSampleRate({ name: 'some timer tick' })).toBe(0);
+  });
+
+  it('samples a graphql-ws operation by the name it has when the sampler runs', () => {
+    // graphql 16 + @sentry/node's vendored GraphQLInstrumentation: the execute
+    // span starts as `graphql.execute` and is renamed only after sampling.
+    expect(
+      resolveBackendTracesSampleRate({
+        name: 'graphql.execute',
+        attributes: { 'sentry.origin': 'auto.graphql.otel.graphql' },
+      }),
+    ).toBe(0.01);
+    expect(resolveBackendTracesSampleRate({ name: 'graphql.execute' })).toBe(0.01);
+    // graphql 17 diagnostics channel: named by operation at start.
+    expect(resolveBackendTracesSampleRate({ name: 'subscription BoardNowPlaying' })).toBe(0.01);
+    expect(resolveBackendTracesSampleRate({ name: 'query' })).toBe(0.01);
+  });
+
+  it('samples graphql-ws operations at the HTTP GraphQL rate', () => {
+    expect(resolveBackendTracesSampleRate({ name: 'mutation ReportBoardClimb (mutation ReportBoardClimb)' })).toBe(
+      0.01,
+    );
+    expect(resolveBackendTracesSampleRate({ name: 'query BoardConnection (query BoardConnection)' })).toBe(0.01);
+    expect(
+      resolveBackendTracesSampleRate({ name: 'subscription BoardNowPlaying (subscription BoardNowPlaying)' }),
+    ).toBe(0.01);
+  });
+
+  it('ignores parentSampled on graphql-ws operations too', () => {
+    expect(
+      resolveBackendTracesSampleRate({
+        name: 'mutation ReportBoardClimb (mutation ReportBoardClimb)',
+        parentSampled: true,
+      }),
+    ).toBe(0.01);
+  });
+
+  it('does not treat a name that merely contains "query" as a graphql-ws operation', () => {
+    expect(isGraphqlWsOperation('queryBoards')).toBe(false);
+    expect(isGraphqlWsOperation('subscriptions cleanup')).toBe(false);
+    expect(isGraphqlWsOperation('graphql.executeSomething')).toBe(false);
+    expect(isGraphqlWsOperation(undefined)).toBe(false);
+  });
+
+  it('still treats a request with only a URL, or only a method, as HTTP', () => {
+    expect(hasHttpRequest({ name: 'anonymous span', attributes: { 'url.path': '/graphql' } })).toBe(true);
+    expect(hasHttpRequest({ name: 'anonymous span', attributes: { 'http.url': 'http://host/og/climb' } })).toBe(true);
+    expect(hasHttpRequest({ name: 'anonymous span', normalizedRequest: { url: '/join/abc' } })).toBe(true);
+    expect(hasHttpRequest({ name: 'anonymous span', attributes: { 'http.request.method': 'GET' } })).toBe(true);
+    expect(hasHttpRequest({ name: 'GET /join/abc' })).toBe(true);
+    expect(hasHttpRequest({ name: 'redis-hget' })).toBe(false);
+  });
+
+  it('does not zero an HTTP request that carries a redis attribute', () => {
+    expect(
+      isRedisDiagnosticRoot({
+        name: 'GET /join/abc',
+        attributes: { 'db.system.name': 'redis', 'url.path': '/join/abc' },
+      }),
+    ).toBe(false);
   });
 });
 

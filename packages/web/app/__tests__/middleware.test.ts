@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, it, expect } from 'vite-plus/test';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vite-plus/test';
 import { NextRequest } from 'next/server';
 import { CLIMB_SESSION_COOKIE } from '@/app/lib/climb-session-cookie';
 import { DEFAULT_LOCALE, LOCALE_COOKIE, LOCALE_HEADER } from '@/app/lib/i18n/config';
@@ -12,7 +12,23 @@ function sp(params: Record<string, string> = {}): URLSearchParams {
   return new URLSearchParams(params);
 }
 
+const HEADLESS_CHROME_UA =
+  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/140.0.7339.16 Safari/537.36';
+
+// The automation default-deny runs only in a production build without
+// BOARDSESH_E2E (isOriginAutomationDefaultDenyEnabled). Vitest runs with
+// NODE_ENV=test, so the production-behaviour suites opt in explicitly.
+function stubProductionOrigin(): void {
+  vi.stubEnv('NODE_ENV', 'production');
+  vi.stubEnv('BOARDSESH_E2E', '');
+}
+
 describe('blocked crawler origin rejection', () => {
+  beforeEach(stubProductionOrigin);
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it.each([
     'GPTBot/1.4',
     'Claude-SearchBot/1.0',
@@ -22,6 +38,14 @@ describe('blocked crawler origin rejection', () => {
     // SSR path. See COST_BLOCKED_CRAWLER_TOKENS in app/lib/crawler-policy.ts.
     'Mozilla/5.0 (compatible; YandexBot/3.0; +http://yandex.com/bots)',
     'Mozilla/5.0 (compatible; YandexRenderResourcesBot/1.0; +http://yandex.com/bots)',
+    // Named on cost too: 483 of 501 www requests in one 16-second window on
+    // 2026-09-26.
+    'Lightpanda/1.0',
+    // Not named anywhere: caught by the automation default-deny because the
+    // UA says it is automated and CRAWLER_ALLOW_TOKENS does not list it.
+    'curl/8.9.1',
+    'python-requests/2.32.3',
+    'Mozilla/5.0 (compatible; SomeNewBot/1.0; +https://example.com/bot)',
   ])('rejects %s before rendering', (userAgent) => {
     const response = middleware(
       new NextRequest('https://boardsesh-web-production.up.railway.app/fr/setter/test', {
@@ -40,6 +64,10 @@ describe('blocked crawler origin rejection', () => {
     'facebookexternalhit/1.1',
     'ChatGPT-User/1.0',
     'Claude-User/1.0',
+    'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; ChatGPT-User/1.0; +https://openai.com/bot',
+    'SentryUptimeBot/1.0 (+http://docs.sentry.io/product/alerts/uptime-monitoring/)',
+    'boardsesh-production-smoke/1.0',
+    'okhttp/4.12.0',
     'Mozilla/5.0',
     // The reason COST_BLOCKED_CRAWLER_TOKENS spells out `yandexbot` and
     // `yandexrenderresourcesbot` instead of a bare `yandex`: these three are
@@ -53,6 +81,62 @@ describe('blocked crawler origin rejection', () => {
       new NextRequest('https://www.boardsesh.com/', { headers: { 'user-agent': userAgent } }),
     );
     expect(response.status).not.toBe(403);
+  });
+
+  it('only default-denies GET, so an automated write is left to the route', () => {
+    const response = middleware(
+      new NextRequest('https://www.boardsesh.com/', { method: 'POST', headers: { 'user-agent': 'curl/8.9.1' } }),
+    );
+    expect(response.status).not.toBe(403);
+  });
+
+  it('refuses headless Chromium in production', () => {
+    const response = middleware(
+      new NextRequest('https://boardsesh-web-production.up.railway.app/', {
+        headers: { 'user-agent': HEADLESS_CHROME_UA },
+      }),
+    );
+    expect(response.status).toBe(403);
+  });
+});
+
+describe('blocked crawler origin rejection outside production', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  function requestAs(userAgent: string): NextRequest {
+    return new NextRequest(`http://localhost:3000${LEGACY_LIST}`, { headers: { 'user-agent': userAgent } });
+  }
+
+  describe.each([
+    ['development', () => vi.stubEnv('NODE_ENV', 'development')],
+    ['test', () => vi.stubEnv('NODE_ENV', 'test')],
+    [
+      'a production build under e2e (BOARDSESH_E2E=1)',
+      () => {
+        vi.stubEnv('NODE_ENV', 'production');
+        vi.stubEnv('BOARDSESH_E2E', '1');
+      },
+    ],
+  ])('in %s', (_label, stubEnvironment) => {
+    beforeEach(stubEnvironment);
+
+    // Playwright's headless Chromium, as the e2e global setup and any bare
+    // browser context send it, plus the local scripts that curl the server.
+    it.each([HEADLESS_CHROME_UA, 'curl/8.9.1', 'python-requests/2.32.3'])(
+      'lets %s through: the default-deny is edge-only here',
+      (userAgent) => {
+        expect(middleware(requestAs(userAgent)).status).not.toBe(403);
+      },
+    );
+
+    it.each(['GPTBot/1.4', 'Lightpanda/1.0', 'Mozilla/5.0 (compatible; YandexBot/3.0; +http://yandex.com/bots)'])(
+      'still refuses the named crawler %s',
+      (userAgent) => {
+        expect(middleware(requestAs(userAgent)).status).toBe(403);
+      },
+    );
   });
 });
 
@@ -712,14 +796,32 @@ describe('middleware bot-gates the sticky locale redirect and cookie', () => {
   const CHROME_UA =
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36';
   const CRAWLER_UAS: [string, string][] = [
+    // Only crawlers that still reach this code. The SEO scrapers this list
+    // was written for (AhrefsBot, SemrushBot, DataForSeoBot, MJ12bot, DotBot)
+    // are now 403'd earlier by the crawler policy — pinned in the next test.
     ['Googlebot (named by Next)', GOOGLEBOT_UA],
+    ['bingbot', 'Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)'],
+    ['DuckDuckBot', 'Mozilla/5.0 (compatible; DuckDuckBot-Https/1.1; https://duckduckgo.com/duckduckbot)'],
+    ['archive.org_bot', 'Mozilla/5.0 (compatible; archive.org_bot +http://www.archive.org/details/archive.org_bot)'],
+  ];
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it.each([
     ['AhrefsBot', 'Mozilla/5.0 (compatible; AhrefsBot/7.0; +http://ahrefs.com/robot/)'],
     ['SemrushBot', 'Mozilla/5.0 (compatible; SemrushBot/7~bl; +http://www.semrush.com/bot.html)'],
     ['DataForSeoBot', 'Mozilla/5.0 (compatible; DataForSeoBot/1.0; +https://dataforseo.com/dataforseo-bot)'],
     ['MJ12bot', 'Mozilla/5.0 (compatible; MJ12bot/v1.4.8; http://mj12bot.com/)'],
     ['DotBot', 'Mozilla/5.0 (compatible; DotBot/1.2; +https://opensiteexplorer.org/dotbot; help@moz.com)'],
-    ['archive.org_bot', 'Mozilla/5.0 (compatible; archive.org_bot +http://www.archive.org/details/archive.org_bot)'],
-  ];
+  ])('403s %s before the locale gate is reached', (_label, crawlerUa) => {
+    // Unnamed SEO scrapers are caught by the production-only default-deny.
+    stubProductionOrigin();
+    const request = makeRequestWithUserAgent('/some/page', crawlerUa);
+    request.cookies.set(LOCALE_COOKIE, 'de');
+    expect(middleware(request).status).toBe(403);
+  });
 
   function makeRequestWithUserAgent(url: string, ua: string): NextRequest {
     return new NextRequest(new URL(url, 'http://localhost:3000'), {

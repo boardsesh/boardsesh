@@ -26,6 +26,13 @@ export type JobDefinition = {
    */
   readonly webPath?: string;
   /**
+   * Reports scheduled runs to a Sentry cron monitor. Off by default because
+   * each monitor is billed ($0.78/month beyond the first) — one job keeps it as
+   * the canary that the ticker itself is alive. Every other job's missed run is
+   * caught by the `overdue` flag on `/health/jobs` instead.
+   */
+  readonly sentryMonitor?: boolean;
+  /**
    * Must tolerate running concurrently with itself. The runner skips a *tick*
    * whose predecessor is still in flight, but `scheduler run <job>` (the
    * operator's on-demand trigger) goes straight to `run` and deliberately does

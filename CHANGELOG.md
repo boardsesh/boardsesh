@@ -4,6 +4,54 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-09-29
+
+### Fixed
+
+- Fixed: the lightbulb button in Create a climb now opens the Bluetooth device picker again. ([#5872](https://github.com/boardsesh/boardsesh/pull/5872))
+
+## 2026-09-28
+
+### New
+
+- Your linked Kilter and Tension logbooks now sync around the clock ([#5879](https://github.com/boardsesh/boardsesh/pull/5879))
+  MoonBoard gyms show up on the map on their own
+
+## 2026-09-27
+
+### New
+
+- Link your Kilter or Tension account and your logbook starts syncing right away ([#5873](https://github.com/boardsesh/boardsesh/pull/5873))
+  Tap Sync now on a linked board to pull your latest sends
+
+## 2026-09-26
+
+### New
+
+- Hold heatmap redesigned. Used holds are shaded violet inside their own shapes, and they are ranked so the hot holds stand out. ([#5813](https://github.com/boardsesh/boardsesh/pull/5813))
+  Three modes: Climbs, Starts & finishes, and Grade.
+  On the create board, the heatmap follows your brush.
+  The flame now stays put while you browse.
+- The grade you gave a climb is now the grade you see on it, and the one it sorts and filters by. The crowd's number sits underneath when the two disagree. ([#5143](https://github.com/boardsesh/boardsesh/pull/5143))
+  Grade a climb you haven't sent yet — handy on boards where everything reads sandbagged.
+
+### Improved
+
+- Old MoonBoard climb links now show that climb's grades, ascents, similar climbs and beta ([#5835](https://github.com/boardsesh/boardsesh/pull/5835))
+- Your You page stops reloading your whole logbook every time you switch back to it. New ticks still show up the moment you open it. ([#5837](https://github.com/boardsesh/boardsesh/pull/5837))
+  Grade-by-angle bars on a climb load instantly on boards you've downloaded, even with no signal.
+- Grade-filtered climb lists load faster, most of all on big boards ([#5840](https://github.com/boardsesh/boardsesh/pull/5840))
+- Pick Staging or Production from the preview list when testing an update. ([#5823](https://github.com/boardsesh/boardsesh/pull/5823))
+- MoonBoard boards stop re-downloading every grade each week, so syncing is faster and uses less data ([#5830](https://github.com/boardsesh/boardsesh/pull/5830))
+- The create and hold-filter boards no longer draw dots on every hold; tap the holds themselves ([#5809](https://github.com/boardsesh/boardsesh/pull/5809))
+
+### Fixed
+
+- Fine-tune your rest timer in 5-second steps instead of 15 — dial in exactly the rest you want. ([#5802](https://github.com/boardsesh/boardsesh/pull/5802))
+- Popular boards stay listed while we ship updates, instead of disappearing for a few minutes ([#5818](https://github.com/boardsesh/boardsesh/pull/5818))
+- Settings has a back button again, so you can always get out ([#5806](https://github.com/boardsesh/boardsesh/pull/5806))
+- The current climb bar no longer covers the hold-type buttons when you search by holds ([#5807](https://github.com/boardsesh/boardsesh/pull/5807))
+
 ## 2026-09-25
 
 ### New

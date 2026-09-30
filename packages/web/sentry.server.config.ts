@@ -8,8 +8,10 @@ import {
   redactSensitiveSpanUrls,
   resolveWebTracesSampleRate,
   tagRailwayRequestId,
+  WEB_IGNORED_SPANS,
   WEB_TRACE_PROPAGATION_TARGETS,
 } from './app/lib/observability/sentry-tracing';
+import { tagPostgresError } from '@/app/lib/observability/postgres-error-tags';
 
 Sentry.init({
   dsn: 'https://f55e6626faf787ae5291ad75b010ea14@o4510644927660032.ingest.us.sentry.io/4510644930150400',
@@ -24,6 +26,11 @@ Sentry.init({
   enabled: isProductionSentryEnvironment(),
 
   environment: resolveSentryEnvironment(),
+
+  // Normalise postgres.js and Drizzle wrapper shapes into queryable SQLSTATE
+  // tags. Production alerts can now match `postgres.error_code:53300` without
+  // relying on an English message or one particular error wrapper.
+  beforeSend: tagPostgresError,
 
   // Enable logs to be sent to Sentry
   enableLogs: true,
@@ -48,6 +55,17 @@ Sentry.init({
   // Keeps OAuth codes and session ids out of span URLs now that spans record
   // one per sampled request. See the constant's doc comment.
   beforeSendSpan: redactSensitiveSpanUrls,
+
+  // Next.js render internals, the tunnel's forward to Sentry, and GraphQL
+  // document parsing. ~2.2M stored spans in 14 days. See the constant.
+  ignoreSpans: WEB_IGNORED_SPANS,
+
+  // Web is a GraphQL CLIENT (graphql-request to the backend), not a server.
+  // The Graphql integration only wraps `graphql`'s parse inside graphql-request
+  // and produced ~246k `graphql.parse` spans in 7 days with no diagnostic value;
+  // the outbound `http.client` span to the backend already carries the latency.
+  // 'Graphql' is INTEGRATION_NAME in @sentry/node's tracing/graphql integration.
+  integrations: (defaultIntegrations) => defaultIntegrations.filter((integration) => integration.name !== 'Graphql'),
 });
 
 // Join key between a Railway HTTP log line and a Sentry event. Registered as a

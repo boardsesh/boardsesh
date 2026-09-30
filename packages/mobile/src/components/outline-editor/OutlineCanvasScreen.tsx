@@ -487,7 +487,6 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
           holdTargets={boardHolds.holdTargets}
           activeHoldId={selectedPlacementId}
           onHoldTap={handleHoldTap}
-          showHoldMarkers={false}
           renderWidth={boardRender.width}
           renderHeight={boardRender.height}
           renderInTransform={renderInTransform}

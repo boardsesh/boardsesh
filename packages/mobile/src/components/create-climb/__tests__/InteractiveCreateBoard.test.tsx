@@ -37,7 +37,6 @@ vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));
 vi.mock('../../../theme/tokens', () => ({ overlays: { scrim: '#000', onScrim: '#fff' }, spacing: { 2: 8 } }));
-vi.mock('../HoldMarkerLayer', () => ({ HoldMarkerLayer: () => createElement('div') }));
 vi.mock('../PaintedHoldsLayer', () => ({ PaintedHoldsLayer: () => createElement('div') }));
 vi.mock('../holdLayout', () => ({ buildHoldHitTargets: () => [] }));
 vi.mock('../use-zoomed-hold-tap-gesture', () => ({

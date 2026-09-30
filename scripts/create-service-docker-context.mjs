@@ -17,6 +17,10 @@ const scriptPath = fileURLToPath(import.meta.url);
 const defaultRepoRoot = resolve(dirname(scriptPath), '..');
 
 const services = {
+  worker: {
+    dockerfile: 'Dockerfile.worker',
+    rootPackageName: 'boardsesh-backend',
+  },
   'hold-detector': {
     dockerfile: 'Dockerfile.hold-detector',
     rootPackageName: '@boardsesh/hold-detector',

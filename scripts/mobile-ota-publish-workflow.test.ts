@@ -11,6 +11,7 @@ import { minimumPublishJobTimeoutMinutes, SELF_HOSTED_PUBLISH_JOB_OVERHEAD_MINUT
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const WORKFLOW_DIR = resolve(REPO_ROOT, '.github', 'workflows');
 const production = readFileSync(resolve(WORKFLOW_DIR, 'mobile-ota-production.yml'), 'utf8');
+const pipeline = readFileSync(resolve(WORKFLOW_DIR, 'production-deploy.yml'), 'utf8');
 const backport = readFileSync(resolve(WORKFLOW_DIR, 'mobile-ota-backport.yml'), 'utf8');
 const preview = readFileSync(resolve(WORKFLOW_DIR, 'mobile-ota-preview.yml'), 'utf8');
 
@@ -34,14 +35,89 @@ function stepBlock(workflow: string, stepName: string): string {
 }
 
 describe('production OTA workflow reliability', () => {
+  it('stages main alongside service builds, then promotes after backend deployment', () => {
+    const mobile = parse(production) as { on: { push: { branches: string[] } }; jobs: Record<string, unknown> };
+    const deploy = parse(pipeline) as {
+      jobs: Record<
+        string,
+        {
+          needs?: string[] | string;
+          uses?: string;
+          with?: Record<string, unknown>;
+          concurrency?: { group: string; queue: string };
+        }
+      >;
+    };
+    expect(mobile.on.push.branches).toEqual(['release/next']);
+    expect(deploy.jobs['stage-mobile-ota'].needs).toBe('detect-changes');
+    expect(deploy.jobs['stage-mobile-ota'].uses).toBe('./.github/workflows/mobile-ota-production.yml');
+    expect(deploy.jobs['stage-mobile-ota'].with?.stage_for_production_deploy).toBe(true);
+    expect(deploy.jobs['promote-mobile-ota'].needs).toContain('stage-mobile-ota');
+    expect(deploy.jobs['promote-mobile-ota'].needs).toContain('deploy-production-backend');
+    expect(deploy.jobs['promote-mobile-ota'].concurrency).toMatchObject({
+      group: 'mobile-ota-production',
+      queue: 'max',
+    });
+    const promotion = jobBlock(pipeline, 'promote-mobile-ota');
+    expect(promotion).toContain('scripts/mobile-ota-schema-ready.mjs');
+    expect(promotion).not.toContain('main advanced since staging');
+    expect(promotion).not.toContain('git diff --quiet "$GITHUB_SHA" origin/main');
+    expect(promotion).toContain('main advanced; leaving the changelog to the newer deploy');
+    expect(promotion).toContain('scripts/mobile-ota-promote.ts');
+    expect(promotion).toContain('ota-stage/ios');
+    expect(promotion).toContain('ota-stage/android');
+    expect(production).toContain("'pr-staging'");
+    expect(production).toContain('scripts/mobile-ota-stage-verify.ts');
+    expect(production).not.toContain('await-backend-schema:');
+  });
   it('serializes runs without cancelling an active publish and has enough retry time', () => {
-    expect(production).toContain('group: mobile-ota-production');
+    expect(production).toContain("'mobile-ota-staging' || 'mobile-ota-production'");
     expect(production).toContain('cancel-in-progress: false');
     const timeout = Number(jobBlock(production, 'publish').match(/timeout-minutes: (\d+)/)?.[1]);
     // iOS then Android in one job, so the job must outlast two full backoff
     // budgets. Killed mid-backoff, the run dies by timeout and never reports
     // `s3-slowdown` or fires the failure notification.
     expect(timeout).toBeGreaterThanOrEqual(minimumPublishJobTimeoutMinutes(2));
+  });
+
+  it('waits for a same-commit OTA server rollout before every upload to the server', () => {
+    const gateStep = 'Wait for the OTA server rollout on this commit';
+    // Staging: the gate runs before the first publish step.
+    const publishJob = jobBlock(production, 'publish');
+    expect(stepBlock(publishJob, gateStep)).toContain('node scripts/mobile-ota-server-ready.mjs');
+    expect(publishJob.indexOf(gateStep)).toBeLessThan(publishJob.indexOf('vp run mobile:publish'));
+    expect(parse(production).permissions).toMatchObject({ contents: 'read', actions: 'read' });
+    // Promotion: a second upload, so a second check before it.
+    const promotion = jobBlock(pipeline, 'promote-mobile-ota');
+    expect(stepBlock(promotion, gateStep)).toContain('node scripts/mobile-ota-server-ready.mjs');
+    expect(promotion.indexOf(gateStep)).toBeLessThan(promotion.indexOf('scripts/mobile-ota-promote.ts'));
+    // The gate diffs HEAD against its parent, so both checkouts need full history.
+    expect(publishJob).toMatch(/fetch-depth: 0/);
+    expect(promotion).toMatch(/fetch-depth: 0/);
+    const deployJobs = (parse(pipeline) as { jobs: Record<string, { permissions?: Record<string, string> }> }).jobs;
+    for (const jobName of ['stage-mobile-ota', 'promote-mobile-ota']) {
+      expect(deployJobs[jobName].permissions).toMatchObject({ actions: 'read' });
+    }
+  });
+
+  it('gives the staging publish room for the server-rollout wait on top of its retry budget', () => {
+    const gateSource = readFileSync(resolve(REPO_ROOT, 'scripts', 'mobile-ota-server-ready.mjs'), 'utf8');
+    const waitMinutes = Number(gateSource.match(/WAIT_BUDGET_MS = (\d+) \* 60_000/)?.[1]);
+    expect(waitMinutes).toBeGreaterThan(0);
+    const timeout = Number(jobBlock(production, 'publish').match(/timeout-minutes: (\d+)/)?.[1]);
+    expect(timeout).toBeGreaterThanOrEqual(minimumPublishJobTimeoutMinutes(2) + waitMinutes);
+  });
+
+  it('keeps the gate watching exactly the paths that trigger the Railway apply job', () => {
+    const railway = parse(readFileSync(resolve(WORKFLOW_DIR, 'railway-drift.yml'), 'utf8')) as {
+      on: { push: { paths: string[] } };
+    };
+    const gateSource = readFileSync(resolve(REPO_ROOT, 'scripts', 'mobile-ota-server-ready.mjs'), 'utf8');
+    const listed = gateSource.match(/RAILWAY_APPLY_PATHS = \[([\s\S]*?)\];/)?.[1] ?? '';
+    const gatePaths = [...listed.matchAll(/'([^']+)'/g)].map(([, path]) => path);
+    expect(gatePaths.map((path) => (path.endsWith('/') ? `${path}**` : path)).sort()).toEqual(
+      [...railway.on.push.paths].sort(),
+    );
   });
 
   it('keeps the job-overhead allowance above the steps it is meant to cover', () => {
@@ -195,7 +271,11 @@ describe('production OTA workflow reliability', () => {
       const { concurrency } = parse(source) as {
         concurrency: { group?: string; queue?: string; 'cancel-in-progress'?: boolean };
       };
-      expect(concurrency.group, `${name} must share the production lane`).toBe('mobile-ota-production');
+      if (name === 'mobile-ota-production.yml') {
+        expect(concurrency.group).toContain("'mobile-ota-staging' || 'mobile-ota-production'");
+      } else {
+        expect(concurrency.group, `${name} must share the production lane`).toBe('mobile-ota-production');
+      }
       expect(concurrency.queue, `${name} shares the lane, so it must queue too`).toBe('max');
       expect(concurrency['cancel-in-progress']).toBe(false);
     }
@@ -275,6 +355,23 @@ describe('backport OTA workflow upload pressure', () => {
       expect(overlay).toContain(implementationPath);
       expect(gitAddLine).toContain(implementationPath);
     }
+  });
+});
+
+describe('preview publish across an OTA server upgrade', () => {
+  it('skips, rather than fails, a preview whose eoas pin is ahead of the live server', () => {
+    const publishJob = jobBlock(preview, 'publish');
+    const pinStep = stepBlock(publishJob, 'Skip when this PR moves the eoas pin ahead of the live server');
+    expect(pinStep).toContain('scripts/lib/eoas.ts');
+    expect(pinStep).toContain('$RUNNER_TEMP/main-baseline');
+    for (const stepName of ['Publish iOS OTA', 'Publish Android OTA']) {
+      expect(stepBlock(publishJob, stepName)).toContain("steps.eoas_pin.outputs.moved != 'true'");
+    }
+    // The pin check reads the main baseline, so it must come after that exists.
+    expect(publishJob.indexOf('Materialize origin/main baseline')).toBeLessThan(
+      publishJob.indexOf('Skip when this PR moves the eoas pin'),
+    );
+    expect(stepBlock(publishJob, 'Finalize authoritative deployment state')).toContain('EOAS_PIN_MOVED');
   });
 });
 

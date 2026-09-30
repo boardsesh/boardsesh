@@ -22,8 +22,8 @@ export const boardConfigTypeDefs = /* GraphQL */ `
   }
 
   """
-  A single snapshot of climb statistics from the history table.
-  Captured during shared sync to track trends over time.
+  Current climb statistics at one angle. The name is historical: entries used to
+  be snapshots from the history table, and now come from the live stats row.
   """
   type ClimbStatsHistoryEntry {
     "Board angle in degrees"
@@ -36,7 +36,7 @@ export const boardConfigTypeDefs = /* GraphQL */ `
     difficultyAverage: Float
     "Display difficulty value"
     displayDifficulty: Float
-    "When this snapshot was recorded"
+    "When these numbers were last updated (ISO 8601)"
     createdAt: String!
   }
 

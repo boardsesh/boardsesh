@@ -132,6 +132,7 @@ export default defineConfig({
     projects: [
       './packages/web/vite.config.ts',
       './packages/backend/vite.config.ts',
+      './packages/backend/vite.serial.config.ts',
       './packages/moonboard-ocr/vite.config.ts',
       './packages/board-constants/vite.config.ts',
       './packages/aurora-sync/vite.config.ts',
@@ -722,7 +723,7 @@ export default defineConfig({
       },
       'test:service-deploy-inputs': {
         command:
-          'node --test scripts/check-service-deploy-inputs.test.mjs scripts/production-backend-smoke.test.mjs scripts/production-deploy-changes.test.mjs scripts/production-deploy-watchdog.test.mjs scripts/production-web-deploy-targets.test.mjs scripts/railway-deployment-rollback.test.mjs scripts/railway-deployment-status.test.mjs',
+          'node --test scripts/check-service-deploy-inputs.test.mjs scripts/production-backend-smoke.test.mjs scripts/production-deploy-changes.test.mjs scripts/production-deploy-watchdog.test.mjs scripts/production-web-deploy-targets.test.mjs scripts/railway-deployment-rollback.test.mjs scripts/railway-deployment-status.test.mjs scripts/mobile-ota-schema-ready.test.mjs scripts/mobile-ota-server-ready.test.mjs',
         cache: false,
       },
       'check:service-deploy-inputs': {
@@ -1001,6 +1002,16 @@ export default defineConfig({
         command: 'vp test run --project web',
         cache: false,
       },
+      // Both backend projects: `backend-serial` holds the files that share
+      // roles, pg-boss queues and the job ledger and must run one at a time
+      // (packages/backend/vitest-serial-files.ts).
+      // Two runs, one after the other: `backend-serial` files must never run
+      // beside `backend` files or each other (see vitest-serial-files.ts), and
+      // CI runs them the same way (unsharded, after the sharded backend step).
+      'test:backend': {
+        command: 'vp test run --project backend && vp test run --project backend-serial',
+        cache: false,
+      },
       // The offline-sync engine suites live in their own Vitest project
       // (packages/shared/offline-sync/vite.config.ts, name: 'offline-sync').
       // Neither `test:mobile` nor the backend project pulls them in, so a
@@ -1271,12 +1282,22 @@ export default defineConfig({
         cache: false,
       },
 
-      // Railway config-as-code for the OTA project (service + variable assertions
-      // and the ClickHouse retention check). Dry-run by default and exits non-zero
-      // on drift; forward `-- --apply` to converge what it can.
+      // Railway config-as-code for the OTA project (the server image, deploy
+      // settings, domains, variables and the ClickHouse retention check). Dry-run
+      // by default and exits non-zero on drift; forward `-- --apply` to converge,
+      // and `--allow-image-change` to let it roll a new server image.
       // See scripts/railway-apply.ts + docs/railway.md.
       'railway:apply': {
         command: 'tsx scripts/railway-apply.ts',
+        cache: false,
+      },
+
+      // Reports newer xprem releases — stable and prerelease tracked separately so
+      // a beta never displaces a stable upgrade — and rewrites the repo onto one
+      // with `-- --write <version>`. Drives .github/workflows/ota-image-bump.yml.
+      // See scripts/ota-image-bump.ts + docs/railway.md.
+      'ota:image-bump': {
+        command: 'tsx scripts/ota-image-bump.ts',
         cache: false,
       },
 

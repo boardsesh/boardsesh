@@ -19,6 +19,18 @@ const climbNeighborResumableBuildsSchema = readFileSync(
   new URL('../../../db/drizzle/0237_climb_neighbor_resumable_builds.sql', import.meta.url),
   'utf8',
 );
+const climbPopularitySchema = readFileSync(
+  new URL('../../../db/drizzle/0242_climb_popularity.sql', import.meta.url),
+  'utf8',
+);
+const climbStatsRecomputePendingSchema = readFileSync(
+  new URL('../../../db/drizzle/0246_climb_stats_recompute_pending.sql', import.meta.url),
+  'utf8',
+);
+const providerSyncControlsSchema = readFileSync(
+  new URL('../../../db/drizzle/0244_provider_sync_controls.sql', import.meta.url),
+  'utf8',
+);
 
 export const schemaSQL = `
   DROP TABLE IF EXISTS "board_session_queues" CASCADE;
@@ -1139,7 +1151,9 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
     "created_by_user_id" text,
     "tick_uuid" text,
     "board_id" bigint,
-    "video_identity" text
+    "video_identity" text,
+    -- Same key as prod (migration 0025); the Aurora shared sync upserts on it.
+    CONSTRAINT "board_beta_links_board_type_climb_uuid_link_pk" PRIMARY KEY ("board_type", "climb_uuid", "link")
   );
   ALTER TABLE "board_beta_links"
     ADD CONSTRAINT "board_beta_links_tick_uuid_boardsesh_ticks_uuid_fk"
@@ -1865,4 +1879,154 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   DROP TABLE IF EXISTS board_climb_neighbors, board_climb_neighbor_runs, board_climb_neighbor_group_runs;
   ${climbNeighborsSchema}
   ${climbNeighborResumableBuildsSchema}
+  DROP TABLE IF EXISTS board_climb_popularity, board_climb_popularity_runs;
+  ${climbPopularitySchema}
+
+  CREATE UNIQUE INDEX IF NOT EXISTS "playlists_generated_recommendation_idx" ON "playlists" ("generated_recommendation");
+
+  -- The batch jobs' tables (refresh-recommendations, refresh-hold-features,
+  -- refresh-climb-grades), as migrations 0034-0036, 0117, 0148, 0174 and 0175
+  -- leave them.
+  CREATE TABLE IF NOT EXISTS "board_setter_stats" (
+    "board_type" text NOT NULL,
+    "setter_username" text NOT NULL,
+    "climb_count" integer DEFAULT 0 NOT NULL,
+    "total_ascents" bigint DEFAULT 0 NOT NULL,
+    "avg_ascents_per_climb" double precision DEFAULT 0 NOT NULL,
+    "avg_quality" double precision,
+    "setter_score" double precision DEFAULT 0 NOT NULL,
+    "updated_at" timestamp DEFAULT now() NOT NULL,
+    PRIMARY KEY ("board_type", "setter_username")
+  );
+  CREATE TABLE IF NOT EXISTS "board_climb_send_stats" (
+    "board_type" text NOT NULL,
+    "climb_uuid" text NOT NULL,
+    "send_count_30d" integer DEFAULT 0 NOT NULL,
+    "sender_count_30d" integer DEFAULT 0 NOT NULL,
+    "send_count_90d" integer DEFAULT 0 NOT NULL,
+    "last_sent_at" timestamp,
+    "updated_at" timestamp DEFAULT now() NOT NULL,
+    PRIMARY KEY ("board_type", "climb_uuid")
+  );
+  CREATE TABLE IF NOT EXISTS "board_grade_coefficients" (
+    "coeff_version" text NOT NULL,
+    "kind" text NOT NULL,
+    "key" text NOT NULL,
+    "payload" jsonb NOT NULL,
+    "created_at" timestamp DEFAULT now() NOT NULL,
+    PRIMARY KEY ("coeff_version", "kind", "key")
+  );
+  CREATE TABLE IF NOT EXISTS "board_hold_features" (
+    "board_type" text NOT NULL,
+    "placement_id" integer NOT NULL,
+    "layout_id" integer,
+    "hole_id" integer,
+    "set_id" integer,
+    "x" integer,
+    "y" integer,
+    "norm_x" double precision,
+    "norm_y" double precision,
+    "edge_dist" double precision,
+    "neighbor_dist" double precision,
+    "is_kickboard" boolean DEFAULT false NOT NULL,
+    "hand_difficulty" double precision,
+    "foot_difficulty" double precision,
+    "hand_sample_count" integer DEFAULT 0 NOT NULL,
+    "foot_sample_count" integer DEFAULT 0 NOT NULL,
+    "pull_direction" integer,
+    "coarse_type" text,
+    "feature_version" text NOT NULL,
+    "updated_at" timestamp DEFAULT now() NOT NULL,
+    PRIMARY KEY ("board_type", "placement_id")
+  );
+  CREATE TABLE IF NOT EXISTS "board_climb_embeddings" (
+    "board_type" text NOT NULL,
+    "climb_uuid" text NOT NULL,
+    "angle" integer NOT NULL,
+    "content_prior" double precision,
+    "content_sd" double precision,
+    "embedding" real[],
+    "model_version" text NOT NULL,
+    "updated_at" timestamp DEFAULT now() NOT NULL,
+    "sync_seq" bigserial NOT NULL,
+    PRIMARY KEY ("board_type", "climb_uuid", "angle")
+  );
+  DO $$ BEGIN
+    CREATE TYPE "hold_type" AS ENUM ('jug', 'sloper', 'pinch', 'crimp', 'pocket');
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END $$;
+  CREATE TABLE IF NOT EXISTS "user_hold_classifications" (
+    "id" bigserial PRIMARY KEY NOT NULL,
+    "user_id" text NOT NULL REFERENCES "users"("id") ON DELETE cascade,
+    "board_type" text NOT NULL,
+    "layout_id" integer NOT NULL,
+    "size_id" integer NOT NULL,
+    "hold_id" integer NOT NULL,
+    "hold_type" "hold_type",
+    "hand_rating" integer,
+    "foot_rating" integer,
+    "pull_direction" integer,
+    "created_at" timestamp DEFAULT now() NOT NULL,
+    "updated_at" timestamp DEFAULT now() NOT NULL
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS "user_hold_classifications_unique_idx"
+    ON "user_hold_classifications" ("user_id", "board_type", "layout_id", "size_id", "hold_id");
+  DROP TABLE IF EXISTS provider_sync_controls;
+  ${providerSyncControlsSchema}
+  DROP TABLE IF EXISTS climb_stats_recompute_pending;
+  ${climbStatsRecomputePendingSchema}
+
+  -- The Aurora applier's skip log (migration 0187). The worker grant proof in
+  -- job-queue-roles.test.ts grants on it, so it has to exist here.
+  DROP TABLE IF EXISTS logbook_sync_skips;
+  DROP TYPE IF EXISTS logbook_sync_skip_reason;
+  CREATE TYPE logbook_sync_skip_reason AS ENUM('invalid_angle', 'invalid_identity', 'normalize_failed', 'db_write_rejected');
+  CREATE TABLE logbook_sync_skips (
+    "id" bigserial PRIMARY KEY NOT NULL,
+    "user_id" text NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
+    "board_type" text NOT NULL,
+    "aurora_type" text NOT NULL,
+    "aurora_id" text NOT NULL,
+    "reason" logbook_sync_skip_reason NOT NULL,
+    "detail" text,
+    "payload" jsonb,
+    "first_seen_at" timestamp with time zone DEFAULT now() NOT NULL,
+    "last_seen_at" timestamp with time zone DEFAULT now() NOT NULL,
+    "seen_count" integer DEFAULT 1 NOT NULL
+  );
+  CREATE UNIQUE INDEX logbook_sync_skips_row_unique ON logbook_sync_skips (user_id, board_type, aurora_type, aurora_id);
+
+  -- The Kilter catalog's layout map (0113) and ingest backlog (0187, 0231).
+  -- The routine-provider grant list names both, and the migrator refuses to
+  -- grant on a table that does not exist, so they have to exist here.
+  DROP TABLE IF EXISTS board_layout_aliases;
+  CREATE TABLE board_layout_aliases (
+    "board_type" text NOT NULL,
+    "layout_uuid" text NOT NULL,
+    "layout_id" integer NOT NULL,
+    "source" text NOT NULL,
+    "first_seen_at" timestamp DEFAULT now() NOT NULL,
+    "last_seen_at" timestamp DEFAULT now() NOT NULL,
+    CONSTRAINT "board_layout_aliases_board_type_layout_uuid_pk" PRIMARY KEY ("board_type", "layout_uuid"),
+    CONSTRAINT "board_layout_aliases_uuid_non_empty" CHECK ("layout_uuid" <> '')
+  );
+  DROP TABLE IF EXISTS board_climb_ingest_skips;
+  CREATE TABLE board_climb_ingest_skips (
+    "board_type" text NOT NULL,
+    "climb_uuid" text NOT NULL,
+    "layout_id" integer,
+    "source_layout_uuid" text,
+    "reason" text NOT NULL,
+    "detail" text,
+    "raw_holds" text NOT NULL,
+    "frames_count" integer,
+    "climb_name" text,
+    "setter_username" text,
+    "first_seen_at" timestamp DEFAULT now() NOT NULL,
+    "last_seen_at" timestamp DEFAULT now() NOT NULL,
+    "resolved_at" timestamp,
+    "rejected_at" timestamp,
+    "rejected_reason" text,
+    CONSTRAINT "board_climb_ingest_skips_board_type_climb_uuid_pk" PRIMARY KEY ("board_type", "climb_uuid")
+  );
 `;

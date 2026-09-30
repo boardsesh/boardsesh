@@ -37,9 +37,11 @@ import { resolveUiVariant, type UiVariant } from '../theme/resolve-ui-variant';
 import {
   resolveActionColors,
   resolveChartColors,
+  resolveHeatRamp,
   sectionCaptionByVariant,
   type ActionColors,
   type ChartColors,
+  type HeatRamp,
   type SectionCaption,
 } from '../theme/variants/variant-tokens';
 import { variantFeatures, type VariantFeatures } from '../theme/variants/variant-features';
@@ -154,6 +156,11 @@ type Theme = {
    * PlatformColor. Mirrors `systemColors` but is always hex/rgba.
    */
   chartColors: ChartColors;
+  /**
+   * The hold heatmap's five-stop ramp, few → many: one violet hue ordered by
+   * luminance for this scheme. See `heatRampByScheme` in variant-tokens.ts.
+   */
+  heatRamp: HeatRamp;
   /**
    * Opaque ground for form sheets (`surface="solid"`). MUST be a plain string —
    * @expo/ui reads `backgroundStyle.backgroundColor` with `typeof === 'string'`
@@ -415,6 +422,7 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
         brandPrimary: resolvedBrandColors.primary,
       }),
       chartColors: resolvedChartColors,
+      heatRamp: resolveHeatRamp(colorScheme),
       sheetSurface: resolvedChartColors.secondaryBackground,
       sectionCaption: sectionCaptionByVariant[variant],
       features: variantFeatures[variant],

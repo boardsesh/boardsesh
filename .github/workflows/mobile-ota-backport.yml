@@ -13,7 +13,7 @@ name: Mobile OTA Backport (Approved Release)
 # better to fail loudly. See docs/mobile-ota-updates.md.
 #
 # V2 is GONE (destroyed 2026-08-25): this backport publishes only to the V3 server
-# (updates.boardsesh.com) via eoas@3.1.2 (pinned in scripts/lib/eoas.ts, used by
+# (updates.boardsesh.com) via the eoas CLI pinned in scripts/lib/eoas.ts (used by
 # `vp run mobile:publish`), authenticated with EOO_TOKEN. It therefore reaches only
 # V3-fingerprint release anchors. Pre-V3 (old-fleet) binaries point at the deleted
 # V2 host, get no OTA at all, and recover only by store-updating to a V3 build.

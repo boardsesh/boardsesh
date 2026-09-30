@@ -8,7 +8,7 @@ import {
 } from '@boardsesh/graphql/operations';
 import type { CatalogQuerySource } from '../../offline/use-catalog-query-source';
 import { getHttpClient } from '../client';
-import { offlineAwareRequest, type LocalHoldHeatmapResponse } from '../offline-request';
+import { offlineAwareRequest, type LocalHoldHeatmapResponse, type LocalHoldHeatmapVariables } from '../offline-request';
 
 const HOLD_HEATMAP_STALE_TIME_MS = 5 * 60 * 1000;
 const EMPTY_STATS: HoldStat[] = [];
@@ -25,15 +25,30 @@ const EMPTY_STATS: HoldStat[] = [];
  *
  * The source is part of the key so an admin's network answer and the local one
  * never share a cache entry.
+ *
+ * `withStats` asks the phone for each climb's grade as well; only the grade mode
+ * needs it, so the count modes read the packed hold sets alone. It is part of the
+ * key for the same reason. The server always answers with everything.
  */
-export function useHoldHeatmap(input: ClimbSearchInput, source: CatalogQuerySource, enabled: boolean) {
+export function useHoldHeatmap(
+  input: ClimbSearchInput,
+  source: CatalogQuerySource,
+  enabled: boolean,
+  { withStats = false }: { withStats?: boolean } = {},
+) {
   const query = useQuery({
-    queryKey: ['holdHeatmap', source, input],
+    // The server always answers with everything, so only the phone's answer
+    // splits by mode; an admin switching mode reuses the one network entry.
+    queryKey: ['holdHeatmap', source, input, source === 'local' ? (withStats ? 'stats' : 'holds') : 'all'],
     queryFn: () => {
-      const variables: HoldHeatmapQueryVariables = { input };
-      return source === 'local'
-        ? offlineAwareRequest<LocalHoldHeatmapResponse>(HOLD_HEATMAP_QUERY, variables)
-        : getHttpClient().request<HoldHeatmapQueryResponse, HoldHeatmapQueryVariables>(HOLD_HEATMAP_QUERY, variables);
+      if (source === 'local') {
+        // Always explicit: the local resolver reads the grade column when told nothing.
+        const variables: LocalHoldHeatmapVariables = { input, withStats };
+        return offlineAwareRequest<LocalHoldHeatmapResponse>(HOLD_HEATMAP_QUERY, variables);
+      }
+      return getHttpClient().request<HoldHeatmapQueryResponse, HoldHeatmapQueryVariables>(HOLD_HEATMAP_QUERY, {
+        input,
+      });
     },
     enabled: enabled && source !== 'download',
     staleTime: HOLD_HEATMAP_STALE_TIME_MS,
@@ -51,9 +66,16 @@ export function useHoldHeatmap(input: ClimbSearchInput, source: CatalogQuerySour
     return stats;
   }, [holdStats]);
 
+  // The phone counts the climbs it folded; the admin network answer does not.
+  const climbCount =
+    query.data !== undefined && 'climbCount' in query.data && typeof query.data.climbCount === 'number'
+      ? query.data.climbCount
+      : null;
+
   return {
     holdStats,
     statsByHoldId,
+    climbCount,
     isFetching: query.isFetching,
     isSuccess: query.isSuccess,
     isUnavailable,

@@ -13,7 +13,7 @@
 //   - the TAP ladder is 0:30 → 10:00 in 30 s rungs, then back to `Off`. Twenty
 //     rungs is the most a thumb should ever walk, and past 10:00 nobody is
 //     tapping anyway — that is what the slider is for.
-//   - the SLIDER covers 0:15 → 1:00:00 at 15 s resolution. `Off` is not a
+//   - the SLIDER covers 0:15 → 1:00:00 at 5 s resolution. `Off` is not a
 //     position on it: it is a mode, reached by the tap-wrap.
 
 import { adjustValue, applyMagnet, clamp01, clampToRange, notchIndex } from '../value-slider.logic';
@@ -27,7 +27,7 @@ export const MIN_REST_LENGTH_SECONDS = 15;
 export const MAX_REST_LENGTH_SECONDS = 3600;
 
 /** What the slider quantises to, everywhere along the track. */
-export const REST_LENGTH_RESOLUTION_SECONDS = 15;
+export const REST_LENGTH_RESOLUTION_SECONDS = 5;
 
 /** One tap. */
 export const REST_LENGTH_TAP_STEP_SECONDS = 30;
@@ -56,15 +56,15 @@ export const DEFAULT_REST_LENGTH_SECONDS = 60;
  * (0:30–3:00) inside the first 4.6% of it — about 15pt on a 393pt screen, which
  * is the rail's bug again in a different control. At 2.5 the track spends its
  * pixels where the values are: 0:30 lands 11% along, 1:00 at 17%, 3:00 at 29%,
- * 10:00 at 48%, and the last quarter carries 30:00–1:00:00, where 15 s of
+ * 10:00 at 48%, and the last quarter carries 30:00–1:00:00, where 5 s of
  * precision is noise anyway.
  *
  * A power curve rather than the pace slider's logarithm because this range is
  * 240:1 with a floor that matters: a log track pins 0:15 and 1:00:00 the same
- * way, but spends a quarter of itself on 0:15–1:00, where there are only three
+ * way, but spends a quarter of itself on 0:15–1:00, where there are only nine
  * rungs to land on.
  *
- * The DOMAIN is untouched by this — still 15 s to an hour at 15 s resolution.
+ * The DOMAIN is untouched by this — still 15 s to an hour at 5 s resolution.
  * Only the pixels are shaped.
  */
 export const REST_LENGTH_CURVE = 2.5;
@@ -96,12 +96,12 @@ export const REST_LENGTH_MAGNET_SECONDS = 60;
 /**
  * How close a release has to land to take the magnet.
  *
- * Deliberately wider than half a notch (7.5 s) and no wider: at 10 s, landing on
- * 1:00 exactly takes a 20 s-wide band instead of a 15 s one — a third more
- * thumb — while 0:45 and 1:15 keep 12.5 s of their own 15 s and stay reachable.
+ * Deliberately wider than half a notch (2.5 s) and no wider: at 3 s, landing on
+ * 1:00 exactly takes a 6 s-wide band instead of a 5 s one — a fifth more
+ * thumb — while 0:55 and 1:05 keep 4.5 s of their own 5 s and stay reachable.
  * A magnet wide enough to swallow its neighbours is not a magnet, it is a gap.
  */
-export const REST_LENGTH_MAGNET_TOLERANCE_SECONDS = 10;
+export const REST_LENGTH_MAGNET_TOLERANCE_SECONDS = 3;
 
 /** Whether a persisted setting counts as a real rest length. `Off` (null) has no
  *  deadline, and neither does a zero — both mean "count up instead". */
@@ -130,7 +130,7 @@ export function clampRestLength(seconds: number): number {
 }
 
 /**
- * Clamp AND snap to the slider's 15 s resolution — `ValueSlider`'s `round` for
+ * Clamp AND snap to the slider's 5 s resolution — `ValueSlider`'s `round` for
  * this control, so it runs inside the gesture worklet.
  */
 export function quantizeRestLength(seconds: number): number {
@@ -143,9 +143,9 @@ export function quantizeRestLength(seconds: number): number {
 /**
  * What a release commits — `ValueSlider`'s `magnet` for this control.
  *
- * The window is judged on the RAW landing, not on the 15 s rung it would
- * otherwise round to, and that is the only order that does anything here: 52 s
- * rounds to 0:45, which is 15 s from the magnet and would never be pulled in.
+ * The window is judged on the RAW landing, not on the 5 s rung it would
+ * otherwise round to, and that is the only order that does anything here: 57 s
+ * rounds to 0:55, which is 5 s from the magnet and would never be pulled in.
  * Everything outside the window keeps the rung it landed on.
  */
 export function magnetRestLength(rounded: number, rawSeconds: number): number {
@@ -155,7 +155,7 @@ export function magnetRestLength(rounded: number, rawSeconds: number): number {
 }
 
 /**
- * One VoiceOver / TalkBack step, up or down — one notch, landing on the 15 s
+ * One VoiceOver / TalkBack step, up or down — one notch, landing on the 5 s
  * ladder and stopping at both ends. `Off` is not on the track, so it is not on
  * this ladder either: the tap gesture owns it.
  */

@@ -1,10 +1,14 @@
 import { isSizeScopedBoard } from '@boardsesh/board-config';
-import { and, eq, ilike, sql } from 'drizzle-orm';
+import { and, eq, ilike, sql, type SQL } from 'drizzle-orm';
 import type { DbInstance } from '../../client/postgres';
 import { boardClimbs, boardClimbStats } from '../../schema/index';
 import { withSerialPlan } from '../util/serial-plan';
 import type { BoardRouteParams, ClimbSearchParams } from './types';
-import { followedAuthorCondition } from './followed-authors';
+import {
+  followedAuthorListCondition,
+  followedAuthorListsAreEmpty,
+  resolveFollowedAuthorLists,
+} from './followed-authors';
 import { browsedAngleRestrictionSql, resolveBrowsedAngleRestriction } from './effective-stats';
 
 // Escape LIKE/ILIKE metacharacters so the setter search matches the typed text
@@ -144,8 +148,20 @@ export const getSetterStats = async (
   // a setter than to hide one. Mirrors `allowNullRequiredSets` in create-climb-filters.
   const allowNullRequiredSets = params.board_name === 'moonboard';
 
+  // "Following" counts: resolve the viewer's follows to value lists first. Most
+  // viewers follow nobody, and then no climb can qualify, so they get [] without
+  // touching board_climbs; the correlated EXISTS form this used to bind read the
+  // whole layout (~40k buffers) to find that out. The lists' mapping arm is
+  // resolved for `params.board_name`, which the WHERE below pins.
+  let followedAuthors: SQL | undefined;
+  if (followingUserId !== undefined) {
+    const lists = await resolveFollowedAuthorLists(db, followingUserId, params.board_name);
+    if (followedAuthorListsAreEmpty(lists)) return [];
+    followedAuthors = followedAuthorListCondition(lists);
+  }
+
   const whereConditions = [
-    ...(followingUserId !== undefined ? [followedAuthorCondition(followingUserId)] : []),
+    ...(followedAuthors ? [followedAuthors] : []),
     eq(boardClimbs.boardType, params.board_name),
     eq(boardClimbs.layoutId, params.layout_id),
     eq(boardClimbs.isListed, true),

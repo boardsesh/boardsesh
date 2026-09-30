@@ -61,7 +61,23 @@ vi.mock('../LightbulbHolderBadge', () => ({
 }));
 vi.mock('../../drawer-action-bar/DrawerActionBar', () => ({
   SIZES: { lg: { dim: 48, icon: 28 }, sm: { dim: 44, icon: 22 } },
-  ActionButton: ({ iconName }: { iconName?: string }) => createElement('div', { 'data-action': iconName }),
+  ActionButton: ({
+    iconName,
+    checked,
+    accessibilityLabel,
+    accessibilityValueText,
+  }: {
+    iconName?: string;
+    checked?: boolean;
+    accessibilityLabel?: string;
+    accessibilityValueText?: string;
+  }) =>
+    createElement('div', {
+      'data-action': iconName,
+      'data-checked': checked == null ? undefined : String(checked),
+      'data-label': accessibilityLabel,
+      'data-value': accessibilityValueText,
+    }),
   drawerActionBarStyles: {
     container: {},
     rowPrimary: {},
@@ -286,6 +302,37 @@ describe('PlayDrawerActionBar (secondary row swap)', () => {
     );
 
     expect(container.querySelector('[data-commit-bar="true"]')).toBeNull();
+  });
+
+  it('keeps the heatmap flame in its leading slot while the commit controls are up', () => {
+    // Browsing from search is exactly when the heatmap is wanted; the commit
+    // branch used to swallow the flame with the rest of the utilities.
+    const { container } = render(
+      createElement(PlayDrawerActionBar, { ...commitProps, onToggleHeatmap: vi.fn(), heatmapActive: false }),
+    );
+    const flame = container.querySelector('[data-action="flame"]');
+    expect(flame).toBeTruthy();
+    expect(container.querySelector('[data-commit-bar="true"]')).toBeTruthy();
+    // Before the commit pair, not after it.
+    expect(flame?.compareDocumentPosition(container.querySelector('[data-commit-bar="true"]') as Node)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  });
+
+  it('reads the flame as a toggle named "Heatmap", with the mode as its value while on', () => {
+    const { container } = render(
+      createElement(PlayDrawerActionBar, {
+        ...commitProps,
+        secondaryMode: 'actions',
+        onToggleHeatmap: vi.fn(),
+        heatmapActive: true,
+        heatmapMode: 'startsFinishes',
+      }),
+    );
+    const flame = container.querySelector('[data-action="flame.fill"]');
+    expect(flame?.getAttribute('data-checked')).toBe('true');
+    expect(flame?.getAttribute('data-label')).toBe('mobile.heatmap.toggle');
+    expect(flame?.getAttribute('data-value')).toBe('mobile.heatmap.modes.startsFinishes');
   });
 
   it('passes the context-sensitive commit label through', () => {

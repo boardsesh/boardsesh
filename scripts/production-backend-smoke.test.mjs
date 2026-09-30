@@ -115,6 +115,7 @@ void test('posts a no-cache introspection request to the base GraphQL endpoint',
   assert.equal(request.options.cache, 'no-store');
   assert.match(request.options.headers['Cache-Control'], /no-cache/);
   assert.match(request.options.headers.Pragma, /no-cache/);
+  assert.equal(request.options.headers['User-Agent'], 'boardsesh-production-smoke/1.0');
   assert.match(JSON.parse(request.options.body).query, /GroupedNotification/);
   assert.match(JSON.parse(request.options.body).query, /__type/);
 });

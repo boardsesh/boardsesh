@@ -9,7 +9,12 @@ vi.mock('next/cache', () => ({
   unstable_cache: (fn: (...args: never[]) => unknown) => fn,
 }));
 
-const backend = vi.hoisted(() => ({ hasMore: false, totalCount: 51, gate: null as null | Promise<void> }));
+const backend = vi.hoisted(() => ({
+  hasMore: false,
+  totalCount: 51,
+  empty: false,
+  gate: null as null | Promise<void>,
+}));
 
 const CONFIG: PopularBoardConfig = {
   boardType: 'kilter',
@@ -37,9 +42,9 @@ vi.mock('@/app/lib/graphql/server-cached-client', () => ({
     if (backend.gate) await backend.gate;
     return {
       popularBoardConfigs: {
-        configs: [CONFIG],
+        configs: backend.empty ? [] : [CONFIG],
         hasMore: backend.hasMore,
-        totalCount: backend.totalCount,
+        totalCount: backend.empty ? 0 : backend.totalCount,
       },
     };
   },
@@ -55,6 +60,7 @@ describe('getAllBoardConfigsOrThrow', () => {
     requestedInputs.length = 0;
     backend.hasMore = false;
     backend.totalCount = 51;
+    backend.empty = false;
     backend.gate = null;
   });
 
@@ -74,6 +80,16 @@ describe('getAllBoardConfigsOrThrow', () => {
     backend.totalCount = 137;
     await expect(getAllBoardConfigsOrThrow()).rejects.toThrow(/truncated/);
     await expect(getAllBoardConfigsOrThrow()).rejects.toThrow(/137/);
+  });
+
+  it('throws on an empty list instead of publishing a sitemap with no boards', async () => {
+    // The backend answers a cold cache with [] while its refresh job fills it.
+    backend.empty = true;
+    await expect(getAllBoardConfigsOrThrow()).rejects.toThrow(/no board configs/);
+
+    // Nothing was cached, so the call after the cache fills gets the list.
+    backend.empty = false;
+    await expect(getAllBoardConfigsOrThrow()).resolves.toEqual([CONFIG]);
   });
 
   it('serves a second call from cache instead of re-running the fetch', async () => {

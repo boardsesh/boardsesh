@@ -132,12 +132,6 @@
       "to": "Au"
     }
   },
-  "analytics": {
-    "noData": "Pas encore de données. Elles arrivent à la prochaine synchro.",
-    "ascentsOverTime": "Enchaînements dans le temps",
-    "qualityOverTime": "Qualité dans le temps",
-    "gradeOverTime": "Cotation dans le temps"
-  },
   "mobile": {
     "account": "Compte",
     "signOut": "Se déconnecter"

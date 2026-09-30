@@ -3,7 +3,9 @@ import {
   getMoonBoardLocationConfigs,
   toLocationSyncLogger,
   upsertPublicBoardLocations,
+  upsertPublicBoardLocationsInBatches,
   type LocationSyncSummary,
+  type LocationWriteBatchRunner,
   type PublicBoardLocationInput,
 } from '@boardsesh/location-sync';
 import { normalizeGymName } from '@boardsesh/db/queries';
@@ -101,14 +103,32 @@ export async function syncMoonBoardLocations(args: {
   username: string;
   password: string;
   log?: (message: string) => void;
+  /**
+   * Runs the writes in batches of whole gyms, each in one transaction: the
+   * `moonboard-locations-sync` job passes its attempt fence here. Unset (the
+   * CLI), every write goes straight to `db` as before. The MoonBoard requests
+   * always run before the first batch.
+   */
+  transaction?: LocationWriteBatchRunner;
+  /** Ends the MoonBoard requests early and is checked between write batches. */
+  signal?: AbortSignal;
 }): Promise<LocationSyncSummary> {
   const client = new MoonBoardClient();
-  await client.authenticate(args.username, args.password);
-  const markers = await client.getMapMarkers();
+  await client.authenticate(args.username, args.password, args.signal);
+  const markers = await client.getMapMarkers(args.signal);
+  args.signal?.throwIfAborted();
   const records = buildMoonBoardLocationRecords(markers);
-  const summary = await upsertPublicBoardLocations(args.db, records, {
-    logger: toLocationSyncLogger(args.log),
-  });
+  // Both paths resolve each gym the same way: an existing alias, else the
+  // name + location physical match, which is how the first run adopts the
+  // seeded gyms instead of minting duplicates (docs/moonboard-sync.md).
+  const summary = args.transaction
+    ? await upsertPublicBoardLocationsInBatches(args.transaction, records, {
+        logger: toLocationSyncLogger(args.log),
+        signal: args.signal,
+      })
+    : await upsertPublicBoardLocations(args.db, records, {
+        logger: toLocationSyncLogger(args.log),
+      });
   args.log?.(
     `[moonboard-locations] upserted ${summary.boardsUpserted}/${summary.boardsSeen} board(s), ${summary.gymsUpserted} gym(s), skipped ${summary.boardsSkipped}`,
   );

@@ -1,5 +1,12 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createServer, type IncomingMessage, type Server } from 'node:http';
+import {
+  createServer,
+  request as httpRequest,
+  type IncomingHttpHeaders,
+  type IncomingMessage,
+  type Server,
+} from 'node:http';
+import { brotliDecompressSync, gunzipSync } from 'node:zlib';
 
 /**
  * Cover for issue #4034: anonymous HTTP requests must key their rate-limit
@@ -246,6 +253,94 @@ describe('Yoga HTTP request wiring', () => {
     expect(response.status).toBe(401);
     expect(await response.json()).toMatchObject({
       errors: [{ message: 'Cron authentication required', extensions: { code: 'UNAUTHENTICATED' } }],
+    });
+  });
+
+  describe('response compression', () => {
+    // Introspection comfortably clears the 1 KB threshold without touching the DB.
+    const largeQuery = '{ __schema { types { name } } }';
+
+    /** Raw bytes over node:http, because undici's fetch decompresses transparently. */
+    function rawPost(
+      graphqlQuery: string,
+      acceptEncoding?: string,
+    ): Promise<{ status: number; headers: IncomingHttpHeaders; body: Buffer }> {
+      const body = JSON.stringify({ query: graphqlQuery });
+      return new Promise((resolve, reject) => {
+        const request = httpRequest(
+          graphqlUrl,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Content-Length': Buffer.byteLength(body),
+              ...(acceptEncoding === undefined ? {} : { 'Accept-Encoding': acceptEncoding }),
+            },
+          },
+          (response) => {
+            const chunks: Buffer[] = [];
+            response.on('data', (chunk: Buffer) => chunks.push(chunk));
+            response.on('end', () =>
+              resolve({ status: response.statusCode ?? 0, headers: response.headers, body: Buffer.concat(chunks) }),
+            );
+            response.on('error', reject);
+          },
+        );
+        request.on('error', reject);
+        request.end(body);
+      });
+    }
+
+    function decode(response: { headers: IncomingHttpHeaders; body: Buffer }): unknown {
+      const encoding = response.headers['content-encoding'];
+      const text =
+        encoding === 'gzip'
+          ? gunzipSync(response.body)
+          : encoding === 'br'
+            ? brotliDecompressSync(response.body)
+            : response.body;
+      return JSON.parse(text.toString('utf8'));
+    }
+
+    it('sends identity with no Content-Encoding when the client names no encoding', async () => {
+      const plain = await rawPost(largeQuery);
+
+      expect(plain.status).toBe(200);
+      expect(plain.headers['content-encoding']).toBeUndefined();
+      expect(plain.headers.vary).toMatch(/accept-encoding/i);
+      expect(plain.body.length).toBeGreaterThan(1024);
+      expect(decode(plain)).toMatchObject({ data: { __schema: { types: expect.any(Array) } } });
+    });
+
+    it.each([
+      ['gzip, deflate, br', 'br'],
+      ['br', 'br'],
+      ['gzip', 'gzip'],
+      ['deflate, gzip', 'gzip'],
+      ['br;q=1.0, gzip;q=0.8', 'br'],
+      ['br;q=0.5, gzip;q=0.8', 'gzip'],
+      ['gzip;q=0, br;q=0', undefined],
+      ['identity', undefined],
+    ])('Accept-Encoding "%s" gets %s', async (acceptEncoding, expectedEncoding) => {
+      const plain = await rawPost(largeQuery);
+      const negotiated = await rawPost(largeQuery, acceptEncoding);
+
+      expect(negotiated.status).toBe(200);
+      expect(negotiated.headers['content-encoding']).toBe(expectedEncoding);
+      expect(negotiated.headers.vary).toMatch(/accept-encoding/i);
+      expect(decode(negotiated)).toEqual(decode(plain));
+      if (expectedEncoding) {
+        // The identity length must not leak through; the adapter recomputes it for the encoded bytes.
+        expect(negotiated.headers['content-length']).toBe(String(negotiated.body.length));
+        expect(negotiated.body.length).toBeLessThan(plain.body.length / 3);
+      }
+    });
+
+    it('leaves a response under 1 KB uncompressed', async () => {
+      const small = await rawPost('{ __typename }', 'gzip, br');
+
+      expect(small.headers['content-encoding']).toBeUndefined();
+      expect(decode(small)).toEqual({ data: { __typename: 'Query' } });
     });
   });
 });

@@ -38,14 +38,16 @@ function wrapper({ children }: { children: ReactNode }) {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.request.mockResolvedValue({ holdHeatmap: [stat(2)] });
-  mocks.offlineAwareRequest.mockResolvedValue({ holdHeatmap: [stat(1)] });
+  mocks.offlineAwareRequest.mockResolvedValue({ holdHeatmap: [stat(1)], climbCount: 40 });
 });
 
 describe('useHoldHeatmap', () => {
   it('local: reads through the offline interceptor and indexes the stats by hold', async () => {
     const { result } = renderHook(() => useHoldHeatmap(input, 'local', true), { wrapper });
     await waitFor(() => expect(result.current.holdStats).toEqual([stat(1)]));
-    expect(mocks.offlineAwareRequest).toHaveBeenCalledWith(HOLD_HEATMAP_QUERY, { input });
+    // The count modes skip the grade column on the phone.
+    expect(mocks.offlineAwareRequest).toHaveBeenCalledWith(HOLD_HEATMAP_QUERY, { input, withStats: false });
+    expect(result.current.climbCount).toBe(40);
     expect(mocks.request).not.toHaveBeenCalled();
     expect(result.current.statsByHoldId.get(1)).toEqual(stat(1));
   });
@@ -55,6 +57,8 @@ describe('useHoldHeatmap', () => {
     await waitFor(() => expect(result.current.holdStats).toEqual([stat(2)]));
     expect(mocks.request).toHaveBeenCalledWith(HOLD_HEATMAP_QUERY, { input });
     expect(mocks.offlineAwareRequest).not.toHaveBeenCalled();
+    // The server answer has no count.
+    expect(result.current.climbCount).toBeNull();
   });
 
   it('download, or switched off: runs no query at all', async () => {
@@ -84,5 +88,11 @@ describe('useHoldHeatmap', () => {
     const { result } = renderHook(() => useHoldHeatmap(input, 'local', true), { wrapper });
     await waitFor(() => expect(result.current.isUnavailable).toBe(true));
     expect(result.current.holdStats).toEqual([]);
+  });
+
+  it('asks the phone for grades only in the grade mode, under its own cache key', async () => {
+    const { result } = renderHook(() => useHoldHeatmap(input, 'local', true, { withStats: true }), { wrapper });
+    await waitFor(() => expect(result.current.holdStats).toEqual([stat(1)]));
+    expect(mocks.offlineAwareRequest).toHaveBeenCalledWith(HOLD_HEATMAP_QUERY, { input, withStats: true });
   });
 });

@@ -12,11 +12,18 @@ config({ path: path.resolve(__dirname, '../../../.env.local') });
 config({ path: path.resolve(__dirname, '../../web/.env.local') });
 config({ path: path.resolve(__dirname, '../../web/.env.development.local') });
 
-export function getScriptDatabaseUrl(): string {
+/**
+ * Same env-var resolution and Vercel/local guard as `getScriptDatabaseUrl`,
+ * but THROWS instead of calling `process.exit`. For a caller that needs to
+ * run its own cleanup — writing a `--report-json` failure report, releasing a
+ * lock — before the process ends, an immediate `process.exit` from inside a
+ * helper skips all of that. `getScriptDatabaseUrl` below is unchanged for
+ * every other (fire-and-forget) script caller.
+ */
+export function resolveScriptDatabaseUrl(): string {
   const databaseUrl = process.env.DB_URL || process.env.DATABASE_URL || process.env.POSTGRES_URL;
   if (!databaseUrl) {
-    console.error('DATABASE_URL, POSTGRES_URL, or DB_URL is not set');
-    process.exit(1);
+    throw new Error('DATABASE_URL, POSTGRES_URL, or DB_URL is not set');
   }
 
   const isLocalUrl =
@@ -28,11 +35,19 @@ export function getScriptDatabaseUrl(): string {
   // against a localhost service container on purpose, so a CI term here would
   // exit(1) on every one of those jobs.
   if (process.env.VERCEL && isLocalUrl) {
-    console.error('Refusing to run with local DATABASE_URL in Vercel build');
-    process.exit(1);
+    throw new Error('Refusing to run with local DATABASE_URL in Vercel build');
   }
 
   return databaseUrl;
+}
+
+export function getScriptDatabaseUrl(): string {
+  try {
+    return resolveScriptDatabaseUrl();
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
 }
 
 /**
@@ -160,13 +175,41 @@ export function isLocalDatabaseUrl(databaseUrl: string): boolean {
   );
 }
 
+/**
+ * One-shot database scripts may use plaintext only for the repo's known local
+ * development hosts. Force TLS for remote URLs that omit it or permit
+ * plaintext, while preserving URL modes that also verify certificates.
+ */
+export function scriptDatabaseConnectionOptions(databaseUrl: string) {
+  const options = { max: 1 };
+  let parsedDatabaseUrl: URL;
+  try {
+    parsedDatabaseUrl = new URL(databaseUrl);
+  } catch {
+    // postgres-js rejects the URL; never turn a parse mismatch into plaintext.
+    return { ...options, ssl: 'require' as const };
+  }
+  const sslModes = parsedDatabaseUrl.searchParams.getAll('sslmode');
+  if (sslModes.length > 1) throw new Error('Database URL must not repeat sslmode');
+  const sslMode = sslModes[0];
+  const sslRootCertificate = parsedDatabaseUrl.searchParams.getAll('sslrootcert').at(-1);
+  // Match the current primary/replica contract even for localhost: an explicit
+  // trust request must not depend on NODE_TLS_REJECT_UNAUTHORIZED or URL defaults.
+  if (sslMode === 'verify-full' || sslRootCertificate === 'system') {
+    return { ...options, ssl: { rejectUnauthorized: true } };
+  }
+  if (isLocalDatabaseUrl(databaseUrl)) return options;
+  const driverRequiresTls = sslMode !== undefined && !['', 'disable', 'false', 'allow', 'prefer'].includes(sslMode);
+  return driverRequiresTls ? options : { ...options, ssl: 'require' as const };
+}
+
 type ScriptDb = ReturnType<typeof drizzle>;
 
 export function createScriptDb(url?: string): { db: ScriptDb; close: () => Promise<void> } {
   const databaseUrl = url ?? getScriptDatabaseUrl();
   // Scripts are short-lived one-shots and target the direct (non-pooled) URL,
   // so a single connection is sufficient and avoids opening 10 by default.
-  const client = postgres(databaseUrl, { max: 1 });
+  const client = postgres(databaseUrl, scriptDatabaseConnectionOptions(databaseUrl));
   const db = drizzle(client);
   return {
     db,

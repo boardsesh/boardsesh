@@ -100,7 +100,7 @@ describe('createAuroraGymUserFetcher', () => {
 
     await drain(fetcher!(PIN));
 
-    expect(mocks.fetchAuroraGymUser).toHaveBeenCalledWith('tension', 42, 'session-token');
+    expect(mocks.fetchAuroraGymUser).toHaveBeenCalledWith('tension', 42, 'session-token', undefined);
   });
 
   it('paces successive gyms so the crawl stays under Aurora rate limits', async () => {
@@ -121,7 +121,7 @@ describe('createAuroraGymUserFetcher', () => {
 
   it('retries a transient failure and returns the eventual result', async () => {
     mocks.fetchAuroraGymUser
-      .mockRejectedValueOnce(new AuroraRequestError({ code: 'rate_limited', message: 'slow down' }))
+      .mockRejectedValueOnce(new AuroraRequestError({ code: 'network', message: 'connection reset' }))
       .mockResolvedValueOnce({ id: 42, walls: [] });
 
     const fetcher = await createAuroraGymUserFetcher({ board: 'tension', env: CREDS });
@@ -132,7 +132,9 @@ describe('createAuroraGymUserFetcher', () => {
   });
 
   it('gives up after the attempt cap instead of retrying forever', async () => {
-    mocks.fetchAuroraGymUser.mockRejectedValue(new AuroraRequestError({ code: 'rate_limited', message: 'slow down' }));
+    mocks.fetchAuroraGymUser.mockRejectedValue(
+      new AuroraRequestError({ code: 'network', message: 'connection reset' }),
+    );
 
     const fetcher = await createAuroraGymUserFetcher({ board: 'tension', env: CREDS });
 
@@ -140,6 +142,26 @@ describe('createAuroraGymUserFetcher', () => {
     // crawl carries on to the next few thousand.
     await expect(drain(fetcher!(PIN))).resolves.toBeUndefined();
     expect(mocks.fetchAuroraGymUser).toHaveBeenCalledTimes(3);
+  });
+
+  it('lets a rate limit stop the slice instead of retrying or falling back', async () => {
+    // Aurora's Retry-After is a real hold, not a per-gym blip: retrying inside
+    // the pacing window would only spend more of that budget, and falling back
+    // to undefined would let the crawl hammer every remaining gym during the
+    // hold. See gym-wall-fetcher.ts.
+    mocks.fetchAuroraGymUser.mockRejectedValue(
+      new AuroraRequestError({ code: 'rate_limited', message: 'slow down', retryAfterMs: 3_600_000 }),
+    );
+
+    const fetcher = await createAuroraGymUserFetcher({ board: 'tension', env: CREDS });
+    // Attach the rejection handler before advancing timers (rather than the
+    // usual `drain`), since this rejects on the very first attempt with no
+    // pacing sleep to await first.
+    const settled = expect(fetcher!(PIN)).rejects.toMatchObject({ code: 'rate_limited', retryAfterMs: 3_600_000 });
+    await vi.runAllTimersAsync();
+    await settled;
+
+    expect(mocks.fetchAuroraGymUser).toHaveBeenCalledTimes(1);
   });
 
   it('signs in again and retries when the session expires mid-crawl', async () => {
@@ -154,7 +176,7 @@ describe('createAuroraGymUserFetcher', () => {
     const result = await drain(fetcher!(PIN));
 
     expect(mocks.signIn).toHaveBeenCalledTimes(2);
-    expect(mocks.fetchAuroraGymUser).toHaveBeenLastCalledWith('tension', 42, 'second');
+    expect(mocks.fetchAuroraGymUser).toHaveBeenLastCalledWith('tension', 42, 'second', undefined);
     expect(result).toEqual({ id: 42, walls: [] });
   });
 
@@ -163,8 +185,8 @@ describe('createAuroraGymUserFetcher', () => {
     // session bought on the last pass was thrown away unused and the gym fell
     // back to the guess with nothing in the log to say why.
     mocks.fetchAuroraGymUser
-      .mockRejectedValueOnce(new AuroraRequestError({ code: 'rate_limited', message: 'slow' }))
-      .mockRejectedValueOnce(new AuroraRequestError({ code: 'rate_limited', message: 'slow' }))
+      .mockRejectedValueOnce(new AuroraRequestError({ code: 'network', message: 'connection reset' }))
+      .mockRejectedValueOnce(new AuroraRequestError({ code: 'network', message: 'connection reset' }))
       .mockRejectedValueOnce(new AuroraRequestError({ code: 'invalid_credentials', message: 'expired' }))
       .mockResolvedValueOnce({ id: 42, walls: [] });
     mocks.signIn.mockResolvedValueOnce({ token: 'first' }).mockResolvedValueOnce({ token: 'second' });
@@ -226,9 +248,9 @@ describe('createAuroraGymUserFetcher', () => {
 
   it('keeps crawling after one gym fails', async () => {
     mocks.fetchAuroraGymUser
-      .mockRejectedValueOnce(new AuroraRequestError({ code: 'rate_limited', message: 'slow down' }))
-      .mockRejectedValueOnce(new AuroraRequestError({ code: 'rate_limited', message: 'slow down' }))
-      .mockRejectedValueOnce(new AuroraRequestError({ code: 'rate_limited', message: 'slow down' }))
+      .mockRejectedValueOnce(new AuroraRequestError({ code: 'network', message: 'connection reset' }))
+      .mockRejectedValueOnce(new AuroraRequestError({ code: 'network', message: 'connection reset' }))
+      .mockRejectedValueOnce(new AuroraRequestError({ code: 'network', message: 'connection reset' }))
       .mockResolvedValueOnce({ id: 43, walls: [] });
 
     const fetcher = await createAuroraGymUserFetcher({ board: 'tension', env: CREDS });
@@ -250,7 +272,7 @@ describe('createAuroraGymUserFetcherForToken', () => {
     await drain(fetcher(PIN));
 
     expect(mocks.signIn).not.toHaveBeenCalled();
-    expect(mocks.fetchAuroraGymUser).toHaveBeenCalledWith('tension', 42, 'borrowed');
+    expect(mocks.fetchAuroraGymUser).toHaveBeenCalledWith('tension', 42, 'borrowed', undefined);
   });
 
   it('ends the slice on an expired token rather than re-authenticating', async () => {
@@ -268,11 +290,67 @@ describe('createAuroraGymUserFetcherForToken', () => {
 
   it('still paces and retries transient failures', async () => {
     mocks.fetchAuroraGymUser
-      .mockRejectedValueOnce(new AuroraRequestError({ code: 'rate_limited', message: 'slow down' }))
+      .mockRejectedValueOnce(new AuroraRequestError({ code: 'network', message: 'connection reset' }))
       .mockResolvedValueOnce({ id: 42, walls: [] });
     const fetcher = createAuroraGymUserFetcherForToken({ board: 'tension', token: 'borrowed' });
 
     expect(await drain(fetcher(PIN))).toEqual({ id: 42, walls: [] });
     expect(mocks.fetchAuroraGymUser).toHaveBeenCalledTimes(2);
+  });
+
+  it('lets a rate limit stop the slice instead of retrying', async () => {
+    mocks.fetchAuroraGymUser.mockRejectedValue(
+      new AuroraRequestError({ code: 'rate_limited', message: 'slow down', retryAfterMs: 3_600_000 }),
+    );
+    const fetcher = createAuroraGymUserFetcherForToken({ board: 'tension', token: 'borrowed' });
+    // Attach the rejection handler before advancing timers (rather than the
+    // usual `drain`), since this rejects on the very first attempt with no
+    // pacing sleep to await first.
+    const settled = expect(fetcher(PIN)).rejects.toMatchObject({ code: 'rate_limited', retryAfterMs: 3_600_000 });
+    await vi.runAllTimersAsync();
+    await settled;
+
+    expect(mocks.fetchAuroraGymUser).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('gym fetcher stop signal', () => {
+  it('passes the signal to each gym read', async () => {
+    const fetcher = createAuroraGymUserFetcherForToken({ board: 'tension', token: 'borrowed' });
+    const controller = new AbortController();
+
+    await drain(fetcher(PIN, controller.signal));
+
+    expect(mocks.fetchAuroraGymUser).toHaveBeenCalledWith('tension', 42, 'borrowed', controller.signal);
+  });
+
+  it('ends the pacing sleep when the job stops, without reading the next gym', async () => {
+    const fetcher = createAuroraGymUserFetcherForToken({ board: 'tension', token: 'borrowed' });
+    const controller = new AbortController();
+    await drain(fetcher(PIN, controller.signal));
+
+    // The second gym waits out the 2.1 s pacing; the stop lands during that wait.
+    const second = fetcher({ ...PIN, id: 43 }, controller.signal);
+    const settled = expect(second).rejects.toThrow('worker stopping');
+    controller.abort(new Error('worker stopping'));
+    await settled;
+
+    expect(mocks.fetchAuroraGymUser).toHaveBeenCalledTimes(1);
+  });
+
+  it('rethrows a stop during a read instead of logging the gym as unreadable', async () => {
+    const log = vi.fn();
+    const fetcher = createAuroraGymUserFetcherForToken({ board: 'tension', token: 'borrowed', log });
+    const controller = new AbortController();
+    mocks.fetchAuroraGymUser.mockImplementationOnce(async () => {
+      controller.abort(new Error('worker stopping'));
+      throw new AuroraRequestError({ code: 'timeout', message: 'aborted' });
+    });
+
+    const settled = expect(fetcher(PIN, controller.signal)).rejects.toThrow('worker stopping');
+    await vi.runAllTimersAsync();
+    await settled;
+    expect(mocks.fetchAuroraGymUser).toHaveBeenCalledTimes(1);
+    expect(log).not.toHaveBeenCalled();
   });
 });

@@ -22,16 +22,27 @@ export const TABLE_INVALIDATE_KEYS: Record<string, InvalidateKeys> = {
   // (logbook-keys.ts builds ['logbook', boardName, …]).
   // ['localTicks'] — the "waiting to sync" badge clears once a tick lands.
   // ['climb'] — the detail's server-side ascent + vote counts.
-  // ['userTicks'] — the You tab's per-board tick fan-out (use-you-data.ts).
+  // ['userTicks'] / ['userProfileStats'] / ['userClimbPercentile'] — the You
+  //   page's three reads (use-you-data.ts). All three derive from the logbook,
+  //   so a synced or drained tick must reach the stats card too, not only the
+  //   charts. The You page keeps them disabled while it is off screen, so
+  //   this marks them stale and the refetch waits until the climber opens it.
   // ['searchClimbs'] / ['infiniteSearchClimbs'] / ['searchClimbsCount'] — a tick
   //   at a new angle grades a stats row server-side; the drainer fires these
   //   once the tick lands so the list refetches (the pull path is already
   //   covered by the board_climb_stats entry below).
+  //   Personal grades (#4828) add a second reason, and it holds on BOTH
+  //   consumers: a tick can carry the climber's own grade, and that grade is
+  //   what the list filters and sorts by, so a pulled or drained tick moves
+  //   climbs between grade bands. Without these keys the list keeps showing a
+  //   re-graded climb in the band it just left.
   boardsesh_ticks: [
     ['logbook'],
     ['localTicks'],
     ['climb'],
     ['userTicks'],
+    ['userProfileStats'],
+    ['userClimbPercentile'],
     ['searchClimbs'],
     ['infiniteSearchClimbs'],
     ['searchClimbsCount'],
@@ -111,6 +122,8 @@ export const TABLE_INVALIDATE_KEYS: Record<string, InvalidateKeys> = {
   // ['holdHeatmap'] too: stats colour the ascent and grade modes, and decide the
   // climb set for minAscents / minRating / grade-range filters. Only an active
   // query refetches, so this costs nothing unless the overlay is up.
+  // ['climbStatsHistory'] — the play drawer's per-angle stats, read local-first
+  // from this table once the climb's layout is downloaded.
   board_climb_stats: [
     ['searchClimbs'],
     ['infiniteSearchClimbs'],
@@ -118,6 +131,7 @@ export const TABLE_INVALIDATE_KEYS: Record<string, InvalidateKeys> = {
     ['climb'],
     ['setterStats'],
     ['holdHeatmap'],
+    ['climbStatsHistory'],
   ],
   // The stats keys plus the two grade-specific keys the play-drawer grade
   // section and the by-angle chart read.
@@ -155,4 +169,56 @@ export const TABLE_INVALIDATE_KEYS: Record<string, InvalidateKeys> = {
  */
 export function invalidateKeysForTable(tableName: string): InvalidateKeys | null {
   return TABLE_INVALIDATE_KEYS[tableName] ?? null;
+}
+
+/**
+ * Query-key heads whose keys name ONE board (an input object carrying
+ * `boardName`/`boardType` + `layoutId`). A change on one board has nothing to
+ * say to another board's entry, and the heatmap's aggregate is the most
+ * expensive read on the device — re-running it for a board nobody is looking at
+ * on every sync page is pure cost.
+ */
+const BOARD_SCOPED_KEY_HEADS: ReadonlySet<string> = new Set(['holdHeatmap', 'similarClimbs']);
+
+export type BoardScopeKey = { boardType: string; layoutId: number };
+
+type QueryKeyHolder = { queryKey: readonly unknown[] };
+
+function boardOfKeyPart(part: unknown): BoardScopeKey | null {
+  if (!part || typeof part !== 'object' || Array.isArray(part)) return null;
+  const record = part as Record<string, unknown>;
+  const input = record.input && typeof record.input === 'object' ? (record.input as Record<string, unknown>) : record;
+  const boardType = typeof input.boardName === 'string' ? input.boardName : input.boardType;
+  if (typeof boardType !== 'string' || typeof input.layoutId !== 'number') return null;
+  return { boardType, layoutId: input.layoutId };
+}
+
+/**
+ * True when a query's key belongs to `scope`'s board, or names no board at all
+ * (conservative: a key we cannot read is always refreshed).
+ */
+export function queryKeyMatchesBoardScope(queryKey: readonly unknown[], scope: BoardScopeKey): boolean {
+  // `['similarClimbs', boardName, climbUuid, layoutId, …]` (use-similar-climbs.ts)
+  // carries the board as plain positional values rather than an input object.
+  if (queryKey[0] === 'similarClimbs' && typeof queryKey[1] === 'string' && typeof queryKey[3] === 'number') {
+    return queryKey[1] === scope.boardType && queryKey[3] === scope.layoutId;
+  }
+  for (const part of queryKey) {
+    const board = boardOfKeyPart(part);
+    if (board) return board.boardType === scope.boardType && board.layoutId === scope.layoutId;
+  }
+  return true;
+}
+
+/**
+ * The filters to invalidate `key` with after a change on `scope`'s board:
+ * board-scoped heads get a predicate so only that board's entries refetch;
+ * every other key (and every change with no board) is invalidated whole.
+ */
+export function scopedInvalidateFilters(
+  key: readonly string[],
+  scope: BoardScopeKey | null | undefined,
+): { queryKey: readonly unknown[]; predicate?: (query: QueryKeyHolder) => boolean } {
+  if (!scope || !BOARD_SCOPED_KEY_HEADS.has(key[0] ?? '')) return { queryKey: key };
+  return { queryKey: key, predicate: (query) => queryKeyMatchesBoardScope(query.queryKey, scope) };
 }

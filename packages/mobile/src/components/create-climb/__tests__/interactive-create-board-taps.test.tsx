@@ -60,9 +60,8 @@ vi.mock('../use-zoomed-hold-tap-gesture', () => ({
   PAN_ACTIVATION_OFFSET: 8,
 }));
 
-// Renders its under-overlay slot, because that is where the board puts the
-// discoverability dots (under the rendered holds — see #4978). A mock that
-// drops the slot would hide the marker layer from this suite entirely.
+// Renders its under-overlay slot, so anything the board ever draws per hold
+// under the rendered holds shows up in this suite.
 vi.mock('../../BoardImageNative', () => ({
   BoardImageNative: ({ underOverlay }: { underOverlay?: ReactNode }) =>
     createElement('div', { 'data-board-image': 'true' }, underOverlay),
@@ -72,14 +71,6 @@ vi.mock('../../BoardImageNative', () => ({
 vi.mock('../../board-controls/ResetZoomButton', () => ({
   ResetZoomButton: ({ onPress }: { onPress?: () => void }) =>
     createElement('button', { 'data-reset-zoom': 'true', onClick: onPress }),
-}));
-vi.mock('../HoldMarkerLayer', () => ({
-  HoldMarkerLayer: () => createElement('div', { 'data-hold-markers': 'true' }),
-}));
-// The board no longer imports this. Mocked anyway so the "no per-hold layer"
-// assertion below is a real probe: if it is ever mounted again, it shows up.
-vi.mock('../HoldTargetLayer', () => ({
-  HoldTargetLayer: () => createElement('div', { 'data-hold-layer': 'true' }),
 }));
 vi.mock('../PaintedHoldsLayer', () => ({
   PaintedHoldsLayer: () => createElement('div', { 'data-painted': 'true' }),
@@ -122,16 +113,16 @@ describe('InteractiveCreateBoard hold taps', () => {
     zoomedTapCalls.length = 0;
   });
 
-  it('mounts no per-hold hit-testing layer, so nothing competes with the overlay', () => {
-    // HoldTargetLayer used to sit here with one inflated square per hold
+  it('mounts nothing per hold, so nothing competes with the overlay', () => {
+    // A per-hold layer used to sit here with one inflated square per hold
     // (max(ringDiameter * 1.6, 44) px). They overlap at fit-to-screen and
     // overlapping siblings resolve by z-order, so the last hold in the list won
-    // every touch inside its square (#4496). The dots it drew live in
-    // HoldMarkerLayer now, under the rendered holds and with no gesture at all.
+    // every touch inside its square (#4496). The dots that followed are gone
+    // too: the board image's under-overlay slot is empty.
     const { container } = renderBoard();
-    expect(container.querySelector('[data-board-image="true"]')).not.toBeNull();
-    expect(container.querySelector('[data-hold-markers="true"]')).not.toBeNull();
-    expect(container.querySelector('[data-hold-layer="true"]')).toBeNull();
+    const boardImage = container.querySelector('[data-board-image="true"]');
+    expect(boardImage).not.toBeNull();
+    expect(boardImage?.childElementCount).toBe(0);
   });
 
   it('feeds the at-rest overlay one hit circle per hold plus both hold handlers', () => {

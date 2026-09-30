@@ -59,6 +59,8 @@ export async function fetchAuroraGymUser(
   board: AuroraBoardName,
   gymUserId: number,
   token: string,
+  /** The caller's stop signal, combined with the 30 s request timeout. */
+  signal?: AbortSignal,
 ): Promise<AuroraGymUser | undefined> {
   const url = new URL(`/users/${gymUserId}`, WEB_HOSTS[board]).toString();
 
@@ -70,7 +72,7 @@ export async function fetchAuroraGymUser(
         Cookie: `token=${token}`,
         'User-Agent': auroraUserAgent(board),
       },
-      signal: AbortSignal.timeout(30000),
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30000)]) : AbortSignal.timeout(30000),
     });
 
     if (response.status === 404) return undefined;
@@ -106,6 +108,8 @@ export async function fetchAuroraGymUser(
     }
     return user;
   } catch (error) {
+    // The caller stopped: that is not a timeout, and must not be retried as one.
+    if (signal?.aborted) throw signal.reason;
     if (isAuroraRequestError(error)) {
       throw error;
     }

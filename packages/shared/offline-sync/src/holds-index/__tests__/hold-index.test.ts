@@ -347,8 +347,23 @@ describe('ensureHoldIndex — incremental', () => {
 
     await insertClimb({ uuid: 'new', seq: 3 });
     await ensureHoldIndex(db, KILTER_12, { parseHoldRows, queryClient });
-    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['similarClimbs'] });
-    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['holdHeatmap'] });
+    // Scoped to this board, and never cancelling a fetch in flight: the
+    // heatmap's own queryFn may be the caller that is waiting on this build.
+    const scopedCall = (head: string) => [
+      { queryKey: [head], predicate: expect.any(Function) },
+      { cancelRefetch: false },
+    ];
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith(...scopedCall('similarClimbs'));
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith(...scopedCall('holdHeatmap'));
+    const heatmapCall = queryClient.invalidateQueries.mock.calls.find(
+      ([filters]) => filters.queryKey[0] === 'holdHeatmap',
+    );
+    const predicate = heatmapCall?.[0].predicate as (query: { queryKey: readonly unknown[] }) => boolean;
+    const sameBoard = { boardName: KILTER_12.boardType, layoutId: KILTER_12.layoutId, sizeId: KILTER_12.sizeId };
+    expect(predicate({ queryKey: ['holdHeatmap', 'local', sameBoard] })).toBe(true);
+    expect(
+      predicate({ queryKey: ['holdHeatmap', 'local', { ...sameBoard, layoutId: KILTER_12.layoutId + 100 }] }),
+    ).toBe(false);
   });
 });
 

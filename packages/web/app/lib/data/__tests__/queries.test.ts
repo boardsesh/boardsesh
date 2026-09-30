@@ -32,13 +32,36 @@ vi.mock('@/app/lib/db/db', () => ({
   rowsFromResult: rowsFromResultMock,
 }));
 
+/** A MoonBoard canonical climb that an older, delisted uuid aliases onto. */
+const canonicalRow9 = {
+  uuid: 'canonical-uuid-9',
+  setter_username: 'setter9',
+  userId: null,
+  name: 'Merged Climb',
+  description: '',
+  layoutId: 3,
+  boardType: 'moonboard',
+  frames: 'p1r42',
+  framesCount: 1,
+  framesPace: 0,
+  angle: 40,
+  ascensionist_count: 5,
+  difficulty_id: 20,
+  quality_average: '3.50',
+  difficulty_error: '0.00',
+  benchmark_difficulty: null,
+  is_draft: false,
+  created_at: '2024-01-01T00:00:00.000Z',
+  published_at: '2024-01-01T00:00:00.000Z',
+  characteristics: null,
+};
+
 describe('getClimb', () => {
   beforeEach(() => {
     mockSqlTag.mockReset();
   });
 
   it('maps layoutId, boardType, and derives difficulty/is_no_match from characteristics', async () => {
-    mockSqlTag.mockResolvedValueOnce([]); // alias lookup: no alias, uuid unchanged
     mockSqlTag.mockResolvedValueOnce([
       {
         uuid: 'climb-uuid-1',
@@ -75,7 +98,7 @@ describe('getClimb', () => {
       }),
     );
 
-    expect(mockSqlTag).toHaveBeenCalledTimes(2);
+    expect(mockSqlTag).toHaveBeenCalledTimes(1);
     expect(climb.uuid).toBe('climb-uuid-1');
     expect(climb.layoutId).toBe(8);
     expect(climb.boardType).toBe('kilter');
@@ -85,7 +108,6 @@ describe('getClimb', () => {
   });
 
   it('derives is_no_match from the description prefix when characteristics is null', async () => {
-    mockSqlTag.mockResolvedValueOnce([]); // alias lookup: no alias, uuid unchanged
     mockSqlTag.mockResolvedValueOnce([
       {
         uuid: 'climb-uuid-2',
@@ -129,7 +151,6 @@ describe('getClimb', () => {
   });
 
   it('is_no_match is false when characteristics has no no_match token and the description does not start with "no match"', async () => {
-    mockSqlTag.mockResolvedValueOnce([]); // alias lookup: no alias, uuid unchanged
     mockSqlTag.mockResolvedValueOnce([
       {
         uuid: 'climb-uuid-3',
@@ -172,31 +193,9 @@ describe('getClimb', () => {
   });
 
   it('resolves an old/merged climb link through board_climb_aliases to the canonical uuid', async () => {
-    mockSqlTag.mockResolvedValueOnce([{ canonical_uuid: 'canonical-uuid-9' }]); // alias hit
-    mockSqlTag.mockResolvedValueOnce([
-      {
-        uuid: 'canonical-uuid-9',
-        setter_username: 'setter9',
-        userId: null,
-        name: 'Merged Climb',
-        description: '',
-        layoutId: 3,
-        boardType: 'moonboard',
-        frames: 'p1r42',
-        framesCount: 1,
-        framesPace: 0,
-        angle: 40,
-        ascensionist_count: 5,
-        difficulty_id: 20,
-        quality_average: '3.50',
-        difficulty_error: '0.00',
-        benchmark_difficulty: null,
-        is_draft: false,
-        created_at: '2024-01-01T00:00:00.000Z',
-        published_at: '2024-01-01T00:00:00.000Z',
-        characteristics: null,
-      },
-    ]);
+    // First read: the alias URL, which Postgres resolves to the canonical row.
+    // Second read: the canonical's own cache entry.
+    mockSqlTag.mockResolvedValueOnce([canonicalRow9]).mockResolvedValueOnce([canonicalRow9]);
 
     const climb = assertClimb(
       await getClimb({
@@ -209,20 +208,52 @@ describe('getClimb', () => {
       }),
     );
 
-    expect(mockSqlTag).toHaveBeenCalledTimes(2);
-    // The climb query (2nd call) must have queried by the RESOLVED canonical
-    // uuid, not the alias — otherwise this renders an empty husk instead of
-    // the merged climb's real data. Call args are [strings, ...interpolated
-    // values]; check the interpolated values only.
-    const [, ...climbQueryValues] = mockSqlTag.mock.calls[1];
-    expect(climbQueryValues).toContain('canonical-uuid-9');
-    expect(climbQueryValues).not.toContain('old-alias-uuid-9');
+    // The statement resolves the requested alias inside a CTE before it joins
+    // board_climbs. The canonical UUID is returned by Postgres rather than
+    // interpolated from JavaScript.
+    const [queryStrings, ...climbQueryValues] = mockSqlTag.mock.calls[0];
+    const climbQueryText = Array.from(queryStrings as TemplateStringsArray).join(' ');
+    expect(climbQueryText).toContain('resolved_climb AS NOT MATERIALIZED');
+    expect(climbQueryText).toContain('board_climb_aliases');
+    expect(climbQueryValues).toContain('old-alias-uuid-9');
     expect(climb.uuid).toBe('canonical-uuid-9');
+
+    // The row is then served from the canonical's own entry, so the
+    // `climb-${canonical}` revalidate also clears what the alias URL shows.
+    expect(mockSqlTag).toHaveBeenCalledTimes(2);
+    const [, ...canonicalQueryValues] = mockSqlTag.mock.calls[1];
+    expect(canonicalQueryValues).toContain('canonical-uuid-9');
+    expect(canonicalQueryValues).not.toContain('old-alias-uuid-9');
+  });
+
+  it('skips the alias lookup for a listed row: the probe sits behind an is_listed check', async () => {
+    mockSqlTag.mockResolvedValueOnce([{ ...canonicalRow9, uuid: 'listed-uuid' }]);
+
+    await getClimb({
+      board_name: 'moonboard',
+      layout_id: 3,
+      size_id: 1,
+      set_ids: [1],
+      angle: 40,
+      climb_uuid: 'listed-uuid',
+    });
+
+    // One statement: the requested uuid matched, so there is no second hop.
+    expect(mockSqlTag).toHaveBeenCalledTimes(1);
+    const [queryStrings] = mockSqlTag.mock.calls[0];
+    const climbQueryText = Array.from(queryStrings as TemplateStringsArray).join(' ');
+    // The alias probe is the ELSE branch of a CASE whose WHEN is the listed-row
+    // check, so Postgres never runs it for a listed climb. Reordering these
+    // would put the alias read back on every crawl hit.
+    const listedCheck = climbQueryText.indexOf('requested.is_listed');
+    const elseBranch = climbQueryText.indexOf('ELSE');
+    expect(listedCheck).toBeGreaterThan(-1);
+    expect(elseBranch).toBeGreaterThan(listedCheck);
+    expect(climbQueryText.indexOf('board_climb_aliases')).toBeGreaterThan(elseBranch);
   });
 
   it('resolves null when no row matches, instead of throwing on an undefined row', async () => {
-    mockSqlTag.mockResolvedValueOnce([]); // alias lookup: no alias
-    mockSqlTag.mockResolvedValueOnce([]); // climb select: no such climb
+    mockSqlTag.mockResolvedValueOnce([]); // no resolved climb row
 
     const climb = await getClimb({
       board_name: 'kilter',

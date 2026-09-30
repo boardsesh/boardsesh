@@ -14,6 +14,7 @@ import {
 import { migrationExecutionContractFromEnvironment, reserveMigrationOwnerSession } from './migration-owner-role.js';
 import { runMigrationWithRuntimeAclContract } from './migration-runtime-acl.js';
 import { initializeJobQueueSchema } from '../src/job-queue-schema.js';
+import { scriptDatabaseConnectionOptions } from './db-connection.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -62,7 +63,7 @@ async function runMigrations() {
   }
   console.info(`🔄 Running migrations on: ${dbHost}`);
 
-  const connectionPool = postgres(databaseUrl, { max: 1 });
+  const connectionPool = postgres(databaseUrl, scriptDatabaseConnectionOptions(databaseUrl));
   let closeMigrationSession: (() => Promise<void>) | undefined;
   try {
     // SET ROLE is session state. Reserve one physical connection so no pool
@@ -109,7 +110,14 @@ async function runMigrations() {
         },
         async () => {
           await migrate(db, { migrationsFolder });
-          await initializeJobQueueSchema(db, migrationContract.runtimeRole, process.env.MIGRATION_DETECTOR_ROLE);
+          await initializeJobQueueSchema(
+            db,
+            migrationContract.runtimeRole,
+            process.env.MIGRATION_DETECTOR_ROLE,
+            process.env.MIGRATION_WORKER_ROLES?.split(',')
+              .map((role) => role.trim())
+              .filter(Boolean),
+          );
         },
       );
       console.info(`🔒 Reconciled runtime ACLs for ${migrationContract.runtimeRole}`);

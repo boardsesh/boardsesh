@@ -11,7 +11,11 @@ Code map:
 - Model math: `packages/db/src/queries/grade-model/` — `constants.ts` (every
   threshold), `coefficients.ts` (the estimators), `blend.ts` (the posterior),
   `gates.ts` (validation), `types.ts`.
-- Pipeline: `packages/db/scripts/refresh-climb-grades.ts`.
+- Pipeline: `packages/db/src/jobs/refresh-climb-grades.ts`, run nightly by the
+  `refresh-climb-grades` GitHub Actions workflow through the CLI
+  `packages/db/scripts/refresh-climb-grades.ts`. The batch worker's
+  `refresh-climb-grades` family runs the same code (docs/background-workers.md,
+  "Batch families"); a blocking gate there ends the run with `GATES_FAILED`.
 - Output tables: `packages/db/src/schema/app/climb-grades.ts`.
 - Tests: `packages/db/src/queries/grade-model/__tests__/grade-model.test.ts`.
 - GraphQL: `boardseshGrade` (single climb+angle) and `boardseshGradesForAngles`
@@ -46,6 +50,62 @@ the mobile/Expo-web app's `boardsesh-grade` feature flag
 (`packages/mobile/src/providers/feature-flags-provider.tsx`) — the only
 client that renders a Boardsesh grade today; see "Which grade a client
 surfaces" under §3 for the rule every renderer follows.
+
+## 1b. Your own grade beats all of it (#4796, #4828)
+
+Everything above is about producing the best *crowd* number. It is deliberately
+not the number a climber sees first.
+
+**The rule:** if you have graded a climb yourself, that is the grade the app
+shows you for it — in the list, in the play drawer header, and in the Grades
+section. If you have not, you get the crowd's number as before (the Boardsesh
+grade where the toggle is on and one is trusted, otherwise the Aurora grade).
+Where your grade and the crowd's differ, the crowd's stays on screen underneath,
+demoted and marked; where they agree, nothing is added at all.
+
+Your grade is the difficulty of your LATEST graded tick for
+`(user, board_type, climb_uuid, angle)`, ordered `(climbed_at DESC, uuid DESC)`.
+Not the hardest — a stiff grade from one bad day must not stick. Ties break on
+`uuid` rather than the `boardsesh_ticks.id` bigserial because only the uuid ever
+reaches the client; ordering on the id server-side would let the two disagree
+about which grade is current. The shared implementation is
+`pickLatestGradedTick` in `packages/shared/logbook/src/personal-grade.ts`; the
+client read is `useMyGrade` (mobile), which is an O(1) lookup into the
+`logbookByClimbAngle` index `BoardProvider` already maintains.
+
+**Why this does not feed back into the model.** A personal grade changes what
+*you* see and how *your* searches sort and filter. It is never published, never
+shown to another climber, and never enters the model's input. The rater sample
+(`packages/db/src/queries/grade-model/raters.ts`) still selects
+`DISTINCT ON (user_id, board_type, canonical_uuid, angle)` over ticks with
+`status IN ('flash','send')` — one opinion per climber per climb per angle,
+exactly as before. The anti-echo property in §2 is untouched: the tick picker
+still opens on nothing selected, and the grade rail's reference chip stays on the
+community grade, so we never pre-fill the model's own output back into the
+ascent grades it is estimated from.
+
+**Grading a climb you have not sent** is allowed, which is #4828's literal ask.
+`boardsesh_ticks.difficulty` is nullable on any status, so an attempt can carry
+an opinion. That is safe because every consumer which must only hear from people
+who actually sent the climb already filters `status IN ('flash','send')`: the
+rater sample above, the profile and session OG cards, the board leaderboard and
+the session summary. Containment lives in those queries, not in the column being
+empty for attempts.
+
+**How common this is.** Measured on production, 2026-09-05:
+
+| board | ticks | graded | of graded, % differing from the listed grade |
+|---|---|---|---|
+| kilter | 375,157 | 71.0% | 14.9% |
+| tension | 64,765 | 79.3% | 15.1% |
+| moonboard | 15,405 | 10.3% | 36.6% |
+| woods | 92 | 27.2% | **100%** (22 of 22) |
+
+Two things follow. Most graded ticks *agree* with the listed grade, so the second
+line is rare and the list stays quiet — the design rests on agreement being
+common, not on personal grades being rare, which they are not. And on the Woods
+Board every single climber who gave a grade disagreed with the board's, which is
+precisely what both issues were reporting.
 
 ## 2. Data sources and their verified quirks
 
@@ -284,9 +344,15 @@ per-grade-band delta between the two angles from the ~5,983 problems that do
 carry a real grade at both (reading `difficulty_average` — the userGrade-backed
 column above, not the setter's raw label — held-out MAE 0.879 vs 1.026 for the
 setter-label version, non-monotonic pairs 7.6% vs 13.0%), and
-`packages/db/scripts/refresh-moonboard-angle-estimates.ts` transposes each
+`packages/db/src/jobs/refresh-moonboard-angle-estimates.ts` transposes each
 single-angle problem's grade onto its missing angle and writes it as an ordinary
-`board_climb_grades` row tiered `moonboard_angle_estimate`.
+`board_climb_grades` row tiered `moonboard_angle_estimate`. It is run weekly by
+the `refresh-moonboard-angle-estimates` GitHub Actions workflow through the CLI
+`packages/db/scripts/refresh-moonboard-angle-estimates.ts`; the batch worker's
+`refresh-moonboard-angle-estimates` family runs the same code
+(docs/background-workers.md, "Batch families") and will own this schedule once
+that family is cut over. An unusable pooled fit ends the run with
+`FIT_UNUSABLE` there instead of a nonzero exit code.
 
 What keeps it honest:
 
@@ -312,10 +378,10 @@ It is deliberately outside the EB pipeline above: even though MoonBoard is now
 a `CROWD_MEAN_BOARDS` member, no type is shared between this mechanism and the
 blend, and rows are stamped `model_version = 'moonboard-angle-v1'` rather than
 `GRADE_MODEL_VERSION` so a transposed row is never mistaken for one that went
-through the blend. Its own weekly job
-(`.github/workflows/refresh-moonboard-angle-estimates.yml`) owns cleanup too:
-nothing else writes rows at THIS model_version, so an estimate whose problem
-has since been climbed at that angle is reaped in the same transaction.
+through the blend. Its own weekly job (today the `refresh-moonboard-angle-estimates.yml` workflow,
+soon the same-named batch family) owns cleanup too: nothing else writes rows at
+THIS model_version, so an estimate whose problem has since been climbed at
+that angle is reaped in the same transaction.
 
 Three separate producers now write `board_climb_grades` rows for MoonBoard —
 the nightly EB pipeline (dual-graded problems, `confirmed`/`provisional`, model
@@ -354,9 +420,41 @@ per-angle offset table `estimateAngleSurface` fits for the cross-angle
 projection above, from Kilter and Tension — and applies it as a relative shift
 to MoonBoard's own known grade at 25°/40° (preferring a real angle over a
 transposed one when both exist).
-`packages/db/scripts/refresh-moonboard-wide-angle-estimates.ts` writes the
+`packages/db/src/jobs/refresh-moonboard-wide-angle-estimates.ts` writes the
 result as a `board_climb_grades` row tiered `moonboard_wide_angle_estimate`,
-`model_version = 'moonboard-wide-angle-v1'`.
+`model_version = 'moonboard-wide-angle-v1'`. It is run weekly by the
+`refresh-moonboard-wide-angle-estimates` GitHub Actions workflow through the
+CLI `packages/db/scripts/refresh-moonboard-wide-angle-estimates.ts`; the batch
+worker's `refresh-moonboard-wide-angle-estimates` family runs the same code
+(docs/background-workers.md, "Batch families") and will own this schedule once
+cut over. Its output runs into the millions of rows: one publish of 2.89M rows
+took ~1,429 s against production (Sep 2026), but that was an insert-only run
+from before the `IS DISTINCT FROM` guard below, so every row was a real write.
+The steady state has not been measured yet; before the family is enabled it
+gets measured on the Sep 28 Actions run and on a `{"dryRun":true}` batch-VM
+run with its peak RSS.
+
+The publish commits in chunks of about 50,000 rows keyed on `climb_uuid`
+(about 3,850 climbs times 13 angles), and every angle of a climb lands in the
+same chunk; the stale-row reap follows in chunks of its own. So while a publish
+is running, readers can see this week's surface for some climbs and last
+week's for others, but each climb's 13-angle ladder always comes from one run.
+Unchanged rows are skipped by the guard, so only climbs whose integer grade
+moved are in that mix. An interrupted run leaves a committed prefix of whole
+climbs; the retry re-plans and the committed rows become no-ops. A generation
+column that would switch the whole surface at once was rejected: it rewrites
+all 2.89M rows every week and re-sends about 1.2M rows to every MoonBoard
+device.
+
+Both MoonBoard estimate jobs share one upsert
+(`packages/db/src/jobs/grade-estimate-upsert.ts`) that skips a row unless one of
+its values moved (`IS DISTINCT FROM` on every overwritten column except
+`coeff_version`, which is minted per run). An unchanged row keeps its
+`computed_at`, which is the offline sync cursor, so devices don't download it
+again. Before this, every Monday run re-stamped all ~2.89M wide-angle rows and
+every MoonBoard device re-pulled its layout's share (about 1.2M rows for the
+largest layout). A row that did move carries that run's `coeff_version`; an
+unchanged one keeps the version of the run that last moved it.
 
 Validated by proxy, since MoonBoard itself has no wide-angle ground truth yet:
 using Kilter's fitted shape to predict Tension's own held-out angles beats "no
@@ -546,6 +644,20 @@ Coefficients are refit weekly and frozen between refits. Every nightly run
 evaluates the gates first and **writes zero grade rows if any blocking gate
 fails**. Results persist to `board_grade_coefficients` (kind `gate_results`).
 
+The history backtest (`tail_backtest` + `head_holdout`) is the one exception to
+"evaluates". It reads about 3.2M blocks of `board_climb_stats_history`, and its
+verdict depends only on the coefficient set, `GRADE_MODEL_VERSION` and the
+grade-model code. So a night reuses the last evaluated verdict when all three
+match it: same `coeff_version`, same model version, and the same sha256 of the
+`packages/db/src/queries/grade-model/` sources plus `src/jobs/refresh-climb-grades.ts` (stored as `gradeModelHash` in
+each `gate_results` payload). The reused entries keep the original metrics, are
+marked `skipped: true`, and their `detail` names the run they came from. A refit
+(weekly or `--refit-coefficients`), any grade-model code change, `--dry-run`,
+`--validate-only` and `--content-prior-file` always run it for real. The cost:
+new history rows and fresher truth reach the gate at the next refit, at most 7
+days later. Over Sep 2026 the nightly re-runs under frozen coefficients moved
+the improvement metric by under 0.01 (0.060–0.067) against the 0.01 tolerance.
+
 | Gate                             | Threshold                                                                                                                                               | Blocks?             | What a failure means                                                                                                                                   |
 | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `tail_backtest`                  | multi-angle shrunk MAE must not exceed raw MAE (+0.01 tolerance), n ≥ 100; improvement % reported against an aspirational 20% bar                       | yes                 | the blend makes sparse grades worse than doing nothing                                                                                                 |
@@ -648,7 +760,7 @@ These are real and we'd rather state them than paper over them.
   design + phased rollout: `docs/climb2vec.md`. **Groundwork shipped:** the
   generated per-hold feature substrate (`board_hold_features` — geometry +
   de-confounded behavioral difficulty per placement, refreshed nightly by
-  `scripts/refresh-hold-features.ts`), which also refills the dormant
+  `src/jobs/refresh-hold-features.ts`), which also refills the dormant
   `user_hold_classifications` layer with algorithmic data.
 
 ### Running it

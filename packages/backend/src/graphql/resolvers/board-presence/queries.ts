@@ -14,7 +14,7 @@ import { pubsub } from '../../../pubsub/index';
 import { readBoardHistoryPage, readMergedRecentHistory } from '../../../services/board-history';
 import { applyRateLimit, validateInput } from '../shared/helpers';
 import { BoardClimbRecentSendersArgsSchema } from '../../../validation/schemas';
-import { parsePostgresUtcTimestamp } from '../../../utils/postgres-timestamps';
+import { RECENT_CLIMB_SENDERS_FETCH_LIMIT, toRecentSenders } from './recent-senders';
 import {
   assertAnonReadableBoard,
   requireActiveBoardWithVisibilityById,
@@ -23,16 +23,6 @@ import {
 } from './shared';
 import { assertSprayBoardIsReadable } from '../climbs/spray-read-access';
 import { computeBoardPresenceStats, getCachedBoardPresenceStats, setCachedBoardPresenceStats } from './stats';
-
-const RECENT_CLIMB_SENDERS_LIMIT = 5;
-/**
- * Rows to ask Postgres for. Postgres applies the LIMIT, then we drop any row
- * whose `climbed_at` will not parse — so asking for exactly 5 would hand back 4
- * whenever a corrupt row landed in the top 5, with valid senders sitting just
- * under the cut and no way to reach them. Asking for a few extra absorbs that;
- * the result is sliced back to `RECENT_CLIMB_SENDERS_LIMIT`.
- */
-const RECENT_CLIMB_SENDERS_FETCH_LIMIT = RECENT_CLIMB_SENDERS_LIMIT + 3;
 
 export const boardPresenceQueries = {
   boardRecentHistory: async (_: unknown, { boardId }: { boardId: number }, ctx: ConnectionContext) => {
@@ -202,7 +192,14 @@ export const boardPresenceQueries = {
     const board = await requireActiveBoardWithVisibilityById(boardId);
     assertAnonReadableBoard(board, ctx.userId);
     await assertSprayBoardIsReadable(board, ctx.userId);
-    const validated = validateInput(BoardClimbRecentSendersArgsSchema, { climbUuid, angle }, 'recent senders');
+    // `boardType` comes from the bound board row, not the client: whether a
+    // negative tilt exists at all is a property of the hardware, so the angle
+    // bound cannot be checked without it.
+    const validated = validateInput(
+      BoardClimbRecentSendersArgsSchema,
+      { boardType: board.boardType, climbUuid, angle },
+      'recent senders',
+    );
 
     const canonicalClimbUuid = await resolveCanonicalClimbUuid(db, board.boardType, validated.climbUuid);
     // The alias fan-out stays a subquery rather than its own round-trip: a
@@ -253,20 +250,7 @@ export const boardPresenceQueries = {
       .orderBy(desc(latestSentAt), asc(dbSchema.boardseshTicks.userId))
       .limit(RECENT_CLIMB_SENDERS_FETCH_LIMIT);
 
-    const senders = rows.flatMap((row) => {
-      const lastSentAt = parsePostgresUtcTimestamp(row.lastSentAt);
-      return lastSentAt
-        ? [
-            {
-              userId: row.userId,
-              displayName: row.profileDisplayName ?? row.senderName ?? null,
-              avatarUrl: row.profileAvatarUrl ?? row.senderImage ?? null,
-              lastSentAt,
-            },
-          ]
-        : [];
-    });
-    return senders.slice(0, RECENT_CLIMB_SENDERS_LIMIT);
+    return toRecentSenders(rows);
   },
 
   /**

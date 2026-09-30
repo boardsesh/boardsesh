@@ -36,6 +36,8 @@ import type { z } from 'zod';
 import { GetTicksInputSchema, BoardNameSchema, AscentFeedInputSchema } from '../../../validation/schemas';
 import { climbNameLikePattern } from '@boardsesh/climb-filters';
 import { extractInstagramHandle } from '../beta-videos/queries';
+import { selectedFieldNames, isFieldSelected } from '../shared/selected-fields';
+import type { GraphQLResolveInfo } from 'graphql';
 
 // Benchmark resolution shared by the flat and grouped ascent feeds: a climb
 // counts as benchmark when the stats row says so or the tick itself was
@@ -383,8 +385,21 @@ export const tickQueries = {
     _: unknown,
     { userId, boardType }: { userId: string; boardType: string },
     ctx?: ConnectionContext,
+    info?: GraphQLResolveInfo,
   ): Promise<unknown[]> => {
     validateInput(BoardNameSchema, boardType, 'boardType');
+    // The two per-tick grade/quality joins are only paid for when the client asks
+    // for their fields. On a heavy logbook they are a third of the query's
+    // buffers: board_climb_grades is the largest single probe, and the
+    // board_climb_ratings join plans as a full seq scan on every call. The You
+    // page's GET_USER_TICKS never asks for effectiveQuality, so it skips the
+    // ratings join today; it still selects the two Boardsesh-grade fields no
+    // screen reads, and dropping them skips the grades join too. With no resolve
+    // info (a direct call) both joins stay on, so a caller never loses a field.
+    const selected = selectedFieldNames(info);
+    const needsGrades =
+      isFieldSelected(selected, 'boardseshDifficulty') || isFieldSelected(selected, 'boardseshConfidence');
+    const needsRatings = isFieldSelected(selected, 'effectiveQuality');
     // Public query, no authentication required — so an absent context is an
     // ANONYMOUS reader, never a hopeful value.
     const viewerUserId = ctx?.isAuthenticated ? (ctx.userId ?? null) : null;
@@ -420,17 +435,17 @@ export const tickQueries = {
     // /dev/shm (Sentry BOARDSESH-AK, pgCode 53100 — the largest remaining
     // source of it, #4528). Same guard the You-page fan-out below uses; a
     // serial plan only costs latency, it can't change the rows.
-    const results = await withSerialPlan(db, (transactionDb) =>
-      transactionDb
+    const results = await withSerialPlan(db, (transactionDb) => {
+      const query = transactionDb
         .select({
           tick: dbSchema.boardseshTicks,
           layoutId: dbSchema.boardClimbs.layoutId,
           effectiveDifficulty: sql<
             number | null
           >`COALESCE(${dbSchema.boardseshTicks.difficulty}, ${consensusDifficultyExpr})`,
-          boardseshDifficulty: boardseshDifficultyExpr,
-          boardseshConfidence: boardseshConfidenceExpr,
-          effectiveQuality: effectiveQualityExpr,
+          boardseshDifficulty: needsGrades ? boardseshDifficultyExpr : sql<null>`NULL`,
+          boardseshConfidence: needsGrades ? boardseshConfidenceExpr : sql<null>`NULL`,
+          effectiveQuality: needsRatings ? effectiveQualityExpr : sql<null>`NULL`,
         })
         .from(dbSchema.boardseshTicks)
         // Resolve dedup-merged climbs to their canonical UUID before joining
@@ -458,14 +473,16 @@ export const tickQueries = {
             eq(dbSchema.boardseshTicks.angle, dbSchema.boardClimbStats.angle),
           ),
         )
-        // Boardsesh grade at the tick's OWN angle (aliases resolved above). LEFT JOIN
-        // so an ungraded climb still returns; the grade fields come back NULL.
-        .leftJoin(dbSchema.boardClimbGrades, BOARDSESH_GRADE_TICK_JOIN)
-        // Synced-rating fallback for quality — see boardClimbRatingsJoinCondition.
-        .leftJoin(dbSchema.boardClimbRatings, boardClimbRatingsJoinCondition)
-        .where(and(...conditions))
-        .orderBy(desc(dbSchema.boardseshTicks.climbedAt)),
-    );
+        .$dynamic();
+      // Both joins are 1:1 (grades PK / ratings unique index on the join key), so
+      // leaving one out never changes the row set — only the fields it feeds.
+      // Boardsesh grade at the tick's OWN angle (aliases resolved above). LEFT JOIN
+      // so an ungraded climb still returns; the grade fields come back NULL.
+      if (needsGrades) query.leftJoin(dbSchema.boardClimbGrades, BOARDSESH_GRADE_TICK_JOIN);
+      // Synced-rating fallback for quality — see boardClimbRatingsJoinCondition.
+      if (needsRatings) query.leftJoin(dbSchema.boardClimbRatings, boardClimbRatingsJoinCondition);
+      return query.where(and(...conditions)).orderBy(desc(dbSchema.boardseshTicks.climbedAt));
+    });
 
     return results.map(
       ({ tick, layoutId, effectiveDifficulty, boardseshDifficulty, boardseshConfidence, effectiveQuality }) => ({

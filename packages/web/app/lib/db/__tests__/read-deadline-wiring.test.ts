@@ -8,7 +8,7 @@ import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
  * `db-pool-exhaustion.test.ts` proves it against a live Postgres — but both
  * would stay green if a refactor (or a merge that resolved a conflict by keeping
  * the old `await sql\`…\`` form) dropped the wrapper from the front-door reads.
- * This pins the four call sites by name.
+ * This pins the three call sites by name.
  */
 const { recordedReads, mockSqlTag } = vi.hoisted(() => ({
   recordedReads: [] as { label: string; ms: number | undefined }[],
@@ -68,14 +68,14 @@ describe('front-door reads run under a deadline', () => {
     mockSqlTag.mockClear();
   });
 
-  it('bounds the alias lookup and the climb select', async () => {
+  it('bounds the climb select that resolves aliases in its CTE', async () => {
     await getClimb(params);
 
-    expect(labels()).toEqual(['climb-alias', 'climb-select']);
+    expect(labels()).toEqual(['climb-select']);
   });
 
   it('bounds the all-angles stats read', async () => {
-    await getClimbStatsForAllAngles(params);
+    await getClimbStatsForAllAngles(params.board_name, params.climb_uuid);
 
     expect(labels()).toEqual(['climb-stats-all-angles']);
   });
@@ -98,7 +98,7 @@ describe('front-door reads run under a deadline', () => {
 
   it('gives every climb-page read a budget inside the 6 s ceiling', async () => {
     await getClimb(params);
-    await getClimbStatsForAllAngles(params);
+    await getClimbStatsForAllAngles(params.board_name, params.climb_uuid);
 
     for (const read of recordedReads) {
       expect(read.ms).toBeGreaterThan(0);

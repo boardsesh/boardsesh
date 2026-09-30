@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "MoonBoard public location sync utility for Boardsesh",
   "bin": {
-    "moonboard-sync": "./dist/cli/index.js"
+    "moonboard-sync": "./bin/moonboard-sync.mjs"
   },
   "type": "module",
   "main": "src/index.ts",
@@ -40,11 +40,11 @@
     "@boardsesh/location-sync": "workspace:*",
     "commander": "^15.0.0",
     "dotenv": "^17.4.2",
-    "drizzle-orm": "^0.45.2"
+    "drizzle-orm": "^0.45.2",
+    "tsx": "^4.23.1"
   },
   "devDependencies": {
     "@types/node": "^25.9.5",
-    "tsx": "^4.23.1",
     "typescript": "~7.0.2",
     "vitest": "^4.1.10"
   }

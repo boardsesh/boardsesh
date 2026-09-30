@@ -38,20 +38,10 @@ vi.mock('@boardsesh/board-constants/hold-states', async (importOriginal) => {
   return { ...actual, convertLitUpHoldsStringToMap: mockConvertLitUpHolds };
 });
 
-// drizzle() returns a client we never actually issue queries against; the
-// shim below replaces its surface area entirely. We only mock `drizzle`
-// itself so the import doesn't fail.
-vi.mock('drizzle-orm/postgres-js', async () => {
-  const actual = await vi.importActual<typeof import('drizzle-orm/postgres-js')>('drizzle-orm/postgres-js');
-  return {
-    ...actual,
-    drizzle: vi.fn(() => createDbShim()),
-  };
-});
-
 import type { SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import {
+  addClimbStatsWriteCounts,
   climbListingConflictSet,
   climbStatsUpstreamConflictSet,
   createSetterSyncNotifications,
@@ -71,8 +61,8 @@ import {
  */
 /**
  * Every row handed to a `.values(...)` call on the shim, in call order.
- * Module-level because the shim is built inside the mocked `drizzle()`
- * factory, which the test never gets a handle on. Suites that read it clear
+ * Module-level because every call builds a fresh shim (fakePostgresClient),
+ * which the test never keeps a handle on. Suites that read it clear
  * it in their own `beforeEach` and filter by climb uuid, so rows written by
  * another suite cannot be mistaken for theirs.
  */
@@ -86,6 +76,10 @@ const shimInsertedRows: Array<Record<string, unknown>> = [];
  * even if the write path stops using the helper.
  */
 const shimConflictSets: Array<Record<string, unknown>> = [];
+/** The `setWhere` recorded next to each `set` above (undefined when the write shipped none). */
+const shimConflictGuards: Array<{ set: Record<string, unknown>; setWhere: SQL | undefined }> = [];
+/** How many of the next transaction commits fail and re-run their callback. */
+let shimFailedCommitsRemaining = 0;
 const shimExistingClimbStatRows: Array<{ climbUuid: string; angle: number }> = [];
 const shimClimbStatSelectPredicates: SQL[] = [];
 
@@ -95,8 +89,19 @@ function createDbShim() {
     get(_target, prop) {
       if (prop === 'then') return undefined; // not a thenable, just chainable
       if (prop === Symbol.toPrimitive) return undefined;
+      // An awaited write resolves to the shim itself; it carries no command
+      // count, like a driver result that reports none.
+      if (prop === 'count' || prop === 'rowCount') return undefined;
       if (prop === 'transaction') {
-        return async (cb: (tx: typeof shim) => Promise<void>) => cb(shim);
+        // Like a retrying transaction wrapper: when a commit is set to fail,
+        // the callback runs again, and only the last run commits.
+        return async (cb: (tx: typeof shim) => Promise<void>) => {
+          await cb(shim);
+          while (shimFailedCommitsRemaining > 0) {
+            shimFailedCommitsRemaining -= 1;
+            await cb(shim);
+          }
+        };
       }
       if (prop === 'execute') return async () => undefined;
       if (prop === 'select') {
@@ -130,8 +135,11 @@ function createDbShim() {
           // Record conflict clauses so a test can assert on the SET a write
           // actually shipped, not on a helper re-invoked inside the test.
           if (prop === 'onConflictDoUpdate' && args[0] != null && typeof args[0] === 'object') {
-            const { set } = args[0] as { set?: Record<string, unknown> };
-            if (set != null) shimConflictSets.push(set);
+            const { set, setWhere } = args[0] as { set?: Record<string, unknown>; setWhere?: SQL };
+            if (set != null) {
+              shimConflictSets.push(set);
+              shimConflictGuards.push({ set, setWhere });
+            }
           }
           return shim;
         },
@@ -184,6 +192,23 @@ describe('syncSharedData loop', () => {
     await syncSharedData(fakePostgresClient(), 'decoy', 'token');
 
     expect(mockSharedSync).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not treat a page without _complete as the last page', async () => {
+    const lines: string[] = [];
+    mockSharedSync
+      .mockResolvedValueOnce({
+        shared_syncs: [{ table_name: 'climbs', last_synchronized_at: '2026-01-01 00:00:00' }],
+      } satisfies SyncData)
+      .mockResolvedValueOnce(
+        complete({ shared_syncs: [{ table_name: 'climbs', last_synchronized_at: '2026-02-01 00:00:00' }] }),
+      );
+
+    const result = await syncSharedData(fakePostgresClient(), 'decoy', 'token', (line) => lines.push(line));
+
+    expect(mockSharedSync).toHaveBeenCalledTimes(2);
+    expect(result.complete).toBe(true);
+    expect(lines.some((line) => line.includes('has no _complete flag'))).toBe(true);
   });
 
   it('stops at MAX_SYNC_ATTEMPTS even when Aurora never reports _complete', async () => {
@@ -405,13 +430,11 @@ describe('syncSharedData cursor merge', () => {
 });
 
 /**
- * postgres.js client stub. `syncSharedData` only uses it as the argument to
- * `drizzle()` — which we mock to return our shim — so the real client is
- * never invoked. Casting is fine here because no method on the actual client
- * surface is called.
+ * The database `syncSharedData` reads from and, through its default batch
+ * runner (`db.transaction`), writes to: the recording shim above.
  */
 function fakePostgresClient(): never {
-  return {} as never;
+  return createDbShim() as never;
 }
 
 type FollowerRow = { followerId: string; setterUsername: string };
@@ -893,7 +916,7 @@ describe('board_climb_stats empty-row guard (issue #4068)', () => {
     },
   );
 
-  it('bounds the existing-row pre-read by both candidate UUID and angle', async () => {
+  it('bounds the existing-row pre-read by the exact (climb, angle) pairs', async () => {
     mockSharedSync.mockResolvedValueOnce(
       complete({
         climb_stats: [stat({ climb_uuid: 'ANGLE-40', angle: 40 }), stat({ climb_uuid: 'ANGLE-50', angle: 50 })],
@@ -904,9 +927,17 @@ describe('board_climb_stats empty-row guard (issue #4068)', () => {
 
     expect(shimClimbStatSelectPredicates).toHaveLength(1);
     const predicateQuery = dialect.sqlToQuery(shimClimbStatSelectPredicates[0]);
-    expect(predicateQuery.sql).toContain('"climb_uuid" in');
-    expect(predicateQuery.sql).toContain('"angle" in');
-    expect(predicateQuery.params).toEqual(['decoy', 'ANGLE-40', 'ANGLE-50', 40, 50]);
+    // A tuple IN over the pairs, not two IN lists (their cross product would
+    // also read ANGLE-40 at 50 and ANGLE-50 at 40).
+    expect(predicateQuery.sql).toContain('("board_climb_stats"."climb_uuid", "board_climb_stats"."angle") IN (');
+    expect(predicateQuery.sql).not.toContain('"climb_uuid" in');
+    expect(predicateQuery.params).toEqual([
+      'decoy',
+      JSON.stringify([
+        { climb_uuid: 'ANGLE-40', angle: 40 },
+        { climb_uuid: 'ANGLE-50', angle: 50 },
+      ]),
+    ]);
   });
 
   it('skips the existing-row pre-read entirely when every payload in the batch is non-empty', async () => {
@@ -1007,6 +1038,166 @@ describe('board_climb_stats empty-row guard (issue #4068)', () => {
     // The grade is taken verbatim — this is what makes the marker meaningless.
     expect(render(statsConflictSet.displayDifficulty)).toBe('excluded.display_difficulty');
     expect(render(statsConflictSet.tickGradedAt)).toBe('null');
+  });
+});
+
+describe('no-op write guards (recorded from the real write path)', () => {
+  const dialect = new PgDialect();
+  const render = (fragment: SQL) => dialect.sqlToQuery(fragment).sql.toLowerCase().replace(/\s+/g, ' ').trim();
+
+  beforeEach(() => {
+    mockSharedSync.mockReset();
+    mockPopulateDenormalizedColumns.mockReset();
+    mockPopulateDenormalizedColumns.mockResolvedValue(undefined);
+    shimConflictSets.length = 0;
+    shimConflictGuards.length = 0;
+    shimInsertedRows.length = 0;
+  });
+
+  function writtenStatsRowsFor(climbUuids: string[]) {
+    return shimInsertedRows.filter(
+      (row) => 'upstreamQualityAverage' in row && climbUuids.includes(String(row.climbUuid)),
+    );
+  }
+
+  function recordedGuard(isTarget: (set: Record<string, unknown>) => boolean) {
+    const matches = shimConflictGuards.filter(({ set }) => isTarget(set));
+    expect(matches).toHaveLength(1);
+    const [{ set, setWhere }] = matches;
+    expect(setWhere).toBeDefined();
+    return { set, guard: render(setWhere as SQL) };
+  }
+
+  it('climb_stats: guards every SET column except the upstream_synced_at stamp', async () => {
+    mockSharedSync.mockResolvedValueOnce(
+      complete({
+        climb_stats: [
+          {
+            climb_uuid: 'GUARDED',
+            angle: 40,
+            display_difficulty: 20,
+            benchmark_difficulty: null,
+            ascensionist_count: 5,
+            difficulty_average: 20.1,
+            quality_average: 2,
+            fa_username: null,
+            fa_at: null,
+          },
+        ],
+      }),
+    );
+
+    await syncSharedData(fakePostgresClient(), 'decoy', 'token');
+
+    const { set, guard } = recordedGuard((recordedSet) => 'upstreamQualityAverage' in recordedSet);
+    const [storedTuple, incomingTuple] = guard.split(' is distinct from ');
+    const guardedColumns = [...storedTuple.matchAll(/"board_climb_stats"\."([a-z_]+)"/g)].map((match) => match[1]);
+    expect([...guardedColumns].sort()).toEqual(
+      [
+        'ascensionist_count',
+        'benchmark_difficulty',
+        'difficulty_average',
+        'display_difficulty',
+        'fa_at',
+        'fa_username',
+        'quality_average',
+        'quality_normalized',
+        'tick_graded_at',
+        'upstream_ascensionist_count',
+        'upstream_quality_average',
+      ].sort(),
+    );
+    // Every SET key but the stamp is in the guard, in the same order.
+    expect(Object.keys(set).filter((key) => key !== 'upstreamSyncedAt')).toHaveLength(guardedColumns.length);
+    // tick_graded_at is set to NULL, so a marked row always reads as changed (#4798).
+    expect(guardedColumns[guardedColumns.length - 1]).toBe('tick_graded_at');
+    expect(incomingTuple).toMatch(/, null\) or "board_climb_stats"\."upstream_synced_at" is null$/);
+    expect(render(set.upstreamSyncedAt as SQL)).toBe('excluded.upstream_synced_at');
+  });
+
+  it('beta_links and climbs: guard exactly the columns their SET writes', async () => {
+    mockSharedSync.mockResolvedValueOnce(
+      complete({
+        beta_links: [
+          {
+            climb_uuid: 'BETA',
+            link: 'https://example.com/v',
+            foreign_username: null,
+            angle: 40,
+            thumbnail: null,
+            is_listed: true,
+            created_at: '2024-01-01 00:00:00',
+          },
+        ],
+        climbs: [{ uuid: 'GUARDED-CLIMB', frames: 'p1r1', layout_id: 1, name: 'guarded climb' }],
+      } as Partial<SyncData>),
+    );
+
+    await syncSharedData(fakePostgresClient(), 'decoy', 'token');
+
+    const climb = recordedGuard((recordedSet) => 'characteristics' in recordedSet);
+    const [climbStoredTuple] = climb.guard.split(' is distinct from ');
+    expect(climbStoredTuple).toBe(
+      '("board_climbs"."is_draft", "board_climbs"."is_listed", "board_climbs"."name", "board_climbs"."description", "board_climbs"."characteristics")',
+    );
+    expect(Object.keys(climb.set)).toEqual(['isDraft', 'isListed', 'name', 'description', 'characteristics']);
+
+    const beta = recordedGuard((recordedSet) => 'thumbnail' in recordedSet);
+    expect(beta.guard).toBe(
+      '("board_beta_links"."foreign_username", "board_beta_links"."angle", "board_beta_links"."thumbnail", "board_beta_links"."is_listed", "board_beta_links"."created_at") is distinct from (excluded.foreign_username, excluded.angle, excluded.thumbnail, excluded.is_listed, excluded.created_at)',
+    );
+  });
+
+  it('keeps written unknown once any batch lacks a row count', () => {
+    const total = { received: 3, offered: 3, written: 3 };
+    addClimbStatsWriteCounts(total, { received: 2, offered: 1, written: null });
+    expect(total).toEqual({ received: 5, offered: 4, written: null });
+    addClimbStatsWriteCounts(total, { received: 1, offered: 1, written: 1 });
+    expect(total.written).toBeNull();
+    const known = { received: 1, offered: 1, written: 1 };
+    addClimbStatsWriteCounts(known, { received: 2, offered: 2, written: 0 });
+    expect(known).toEqual({ received: 3, offered: 3, written: 1 });
+  });
+
+  it('counts only the committed run of a retried transaction callback', async () => {
+    const stat = (climbUuid: string) => ({
+      climb_uuid: climbUuid,
+      angle: 40,
+      display_difficulty: 20,
+      benchmark_difficulty: null,
+      ascensionist_count: 5,
+      difficulty_average: 20.1,
+      quality_average: 2,
+      fa_username: null,
+      fa_at: null,
+    });
+    const lines: string[] = [];
+    mockSharedSync.mockResolvedValueOnce(complete({ climb_stats: [stat('RETRY-A'), stat('RETRY-B')] }));
+    shimFailedCommitsRemaining = 1;
+    try {
+      const result = await syncSharedData(fakePostgresClient(), 'decoy', 'token', (line) => lines.push(line));
+      // The callback ran twice; one pass of two rows is what committed.
+      expect(writtenStatsRowsFor(['RETRY-A', 'RETRY-B'])).toHaveLength(4);
+      // The shim reports no row count, so written is unknown rather than 0.
+      expect(result.climbStatsWrites).toEqual({ received: 2, offered: 2, written: null });
+      expect(result.results.climb_stats.synced).toBe(2);
+      expect(lines).toContain(
+        '[SharedSync] decoy climb_stats writes: received=2 offered=2 written=unknown unchanged=unknown',
+      );
+      expect(lines.filter((line) => line.includes('returned no row count'))).toHaveLength(1);
+    } finally {
+      shimFailedCommitsRemaining = 0;
+    }
+  });
+
+  it('reports climb_stats offered vs written', async () => {
+    const lines: string[] = [];
+    mockSharedSync.mockResolvedValueOnce(complete({ climb_stats: [] }));
+    const result = await syncSharedData(fakePostgresClient(), 'decoy', 'token', (line) => lines.push(line));
+    // No statement ran, so zero written is known, and there is no warning.
+    expect(result.climbStatsWrites).toEqual({ received: 0, offered: 0, written: 0 });
+    expect(lines).toContain('[SharedSync] decoy climb_stats writes: received=0 offered=0 written=0 unchanged=0');
+    expect(lines.filter((line) => line.includes('returned no row count'))).toHaveLength(0);
   });
 });
 
