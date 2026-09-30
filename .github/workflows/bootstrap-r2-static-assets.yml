@@ -44,15 +44,18 @@ jobs:
             fi
           done
           node -e '
-            const raw = process.env.STATIC_ASSETS_R2_AWS_ENDPOINT_URL ?? "";
-            let endpoint;
-            try { endpoint = new URL(raw); } catch { process.exitCode = 1; }
-            const suffix = ".r2.cloudflarestorage.com";
-            if (!endpoint || endpoint.protocol !== "https:" || !endpoint.hostname.endsWith(suffix) ||
-                endpoint.hostname === suffix.slice(1) || endpoint.username || endpoint.password || endpoint.port ||
-                endpoint.pathname !== "/" || endpoint.search || endpoint.hash) {
-              console.error("::error::STATIC_ASSETS_R2_AWS_ENDPOINT_URL must be an HTTPS Cloudflare R2 account endpoint.");
-              process.exitCode = 1;
+            for (const name of ["STATIC_ASSETS_AWS_ENDPOINT_URL", "STATIC_ASSETS_R2_AWS_ENDPOINT_URL"]) {
+              let endpoint;
+              try { endpoint = new URL(process.env[name] ?? ""); } catch { process.exitCode = 1; }
+              const allowedHost = endpoint && (name === "STATIC_ASSETS_AWS_ENDPOINT_URL"
+                ? ["t3.storage.dev", "fly.storage.tigris.dev"].includes(endpoint.hostname)
+                : /^[a-f0-9]{32}\.r2\.cloudflarestorage\.com$/.test(endpoint.hostname));
+              if (!endpoint || !allowedHost || endpoint.protocol !== "https:" ||
+                  endpoint.username || endpoint.password || endpoint.port ||
+                  endpoint.pathname !== "/" || endpoint.search || endpoint.hash) {
+                console.error(`::error::${name} must be the expected HTTPS storage account endpoint.`);
+                process.exitCode = 1;
+              }
             }
           '
 
