@@ -592,11 +592,16 @@ export default defineConfig({
         cache: false,
       },
       // Homepage showcase video. `video:record` drives the simulators and
-      // writes the footage + anchors under .boardsesh/showcase-video/work;
-      // `video:render` lays them into marketing/showcase-video and encodes.
-      // Runbook: docs/showcase-video.md.
+      // writes the footage + anchors under .boardsesh/showcase-video/work
+      // (runbook: docs/showcase-video.md); `video:render` renders
+      // marketing/showcase-video/ frame by frame in Chromium and encodes
+      // brag.mp4 + the web cut (see its --help). `video` runs both.
       'video:record': {
         command: 'tsx scripts/showcase-video-record.ts',
+        cache: false,
+      },
+      'video:render': {
+        command: 'tsx packages/web/scripts/render-showcase-video.ts',
         cache: false,
       },
       video: {

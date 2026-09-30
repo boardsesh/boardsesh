@@ -1,0 +1,585 @@
+#!/usr/bin/env node
+/**
+ * Renders the homepage showcase video from the stage in marketing/showcase-video/.
+ *
+ * Every frame is a pure function of its number: the stage exposes
+ * `window.renderAt(frame)`, this script screenshots Chromium at 2x for each
+ * frame and pipes the PNGs through a lanczos downscale into a near-lossless
+ * mezzanine, and every deliverable (brag.mp4, the web encodes, the posters) is
+ * cut from that mezzanine.
+ *
+ * Not a Playwright test project, for the same reason as capture-design-mockups:
+ * a file:// page needs no dev server, database or signed-in user.
+ *
+ * Usage: vp run video:render [-- --stills] [--measure] [--from-frame <n>] [--format 16x9|9x16]
+ *                            [--placeholder-footage] [--skip-web]
+ */
+import { chromium, type Page } from '@playwright/test';
+import sharp from 'sharp';
+import { execFile, spawn } from 'node:child_process';
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
+import { dirname, relative, resolve } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { promisify } from 'node:util';
+import {
+  HOLD_STATE_MAP,
+  V_GRADE_COLORS,
+  getHoldDisplayColor,
+  readableTextColor,
+  type HoldStateInfo,
+} from '@boardsesh/board-constants';
+import { brandColors, brandColorsDark, materialSurfaces } from '@boardsesh/velvet-tokens';
+import { themeTokens } from '../app/theme/theme-config';
+import {
+  SHOWCASE_FPS,
+  SHOWCASE_OUT_DIR,
+  SHOWCASE_TAKE_IDS,
+  type ShowcaseAnchorName,
+  type ShowcaseAnchorsFile,
+  type ShowcaseTakeId,
+} from '../../../scripts/lib/showcase-video/contract';
+import {
+  SHOWCASE_POSTER_FRAME,
+  SHOWCASE_SCENES,
+  SHOWCASE_TOTAL_FRAMES,
+  type ShowcaseScene,
+} from '../../../scripts/lib/showcase-video/timeline';
+import {
+  SHOWCASE_CALLOUT_LAYOUT,
+  SHOWCASE_CANVAS,
+  SHOWCASE_CHOREO,
+  SHOWCASE_DEVICE_SCALE,
+  SHOWCASE_FRAMES_DIR,
+  SHOWCASE_PERSPECTIVE,
+  SHOWCASE_PHONE,
+  SHOWCASE_PLACEHOLDER_TAKES,
+  SHOWCASE_POSES,
+  SHOWCASE_SHARE_COPY,
+  SHOWCASE_STAGE_COPY,
+  SHOWCASE_STAGE_HOLDS,
+  SHOWCASE_STAGE_HTML,
+  SHOWCASE_STAGE_TOKENS,
+  SHOWCASE_STILLS_DIR,
+  SHOWCASE_TAKE_LEAD_FRAMES,
+  SHOWCASE_WEB_FALLBACK_MP4,
+  SHOWCASE_WEB_MAX_BYTES,
+  anchorsFilePath,
+  buildDurationProbeArgs,
+  buildFramePngArgs,
+  buildMasterArgs,
+  buildMezzanineArgs,
+  buildPlaceholderFootageArgs,
+  buildWebMp4PassArgs,
+  buildWebmPassArgs,
+  detectLitHolds,
+  footageTakeDir,
+  layoutSceneCallouts,
+  parseRenderArgs,
+  placeholderAnchorsFile,
+  readingBudgetReport,
+  resolveSceneCallouts,
+  showcaseOutputs,
+  stillFramesForScene,
+  webBitrateKbps,
+  webCutSeconds,
+  type LitHold,
+  type RenderArgs,
+  type ShowcaseCopy,
+  type ShowcaseFormat,
+  type ShowcaseStageData,
+  type StageCallout,
+  type StageTake,
+} from '../../../scripts/lib/showcase-video/render';
+import { FFMPEG_BIN, FFPROBE_BIN, HELP_CLIP_POSTER_ENCODE } from '../../../scripts/lib/help-clips';
+
+const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = resolve(SCRIPT_DIR, '../../..');
+const MARK_PATH = resolve(REPO_ROOT, 'packages/mobile/assets/splash-icon.png');
+const execFileAsync = promisify(execFile);
+const FRAME_BUFFER_MAX_BYTES = 256 * 1024 * 1024;
+
+const USAGE = `Usage: vp run video:render [-- <flags>]
+
+Renders the homepage showcase video from marketing/showcase-video/.
+
+  --stills               Contact sheets only (settled + mid-transition frames per scene)
+                         → ${relative(REPO_ROOT, SHOWCASE_STILLS_DIR)}/
+  --measure              Draw every anchor box over the footage (debug; never ships)
+  --from-frame <n>       Start at frame n (writes a preview, skips the web encodes)
+  --format 16x9|9x16     One format only (default: both)
+  --placeholder-footage  Rebuild stand-in footage + anchors from the committed help
+                         clips and store screenshots before rendering
+  --skip-web             Stop after brag.mp4 / brag.jpg (no web encodes or posters)
+  --help                 Show this message`;
+
+const log = (message: string) => console.log(`[video:render] ${message}`);
+const warn = (message: string) => console.warn(`[video:render] warning: ${message}`);
+
+// --- footage -----------------------------------------------------------------------
+
+async function buildPlaceholderFootage(): Promise<void> {
+  for (const takeId of SHOWCASE_TAKE_IDS) {
+    const take = SHOWCASE_PLACEHOLDER_TAKES[takeId];
+    const dir = footageTakeDir(takeId);
+    rmSync(dir, { recursive: true, force: true });
+    mkdirSync(dir, { recursive: true });
+    await execFileAsync(FFMPEG_BIN, buildPlaceholderFootageArgs(takeId, take, dir));
+    mkdirSync(dirname(anchorsFilePath(takeId)), { recursive: true });
+    writeFileSync(anchorsFilePath(takeId), `${JSON.stringify(placeholderAnchorsFile(takeId, take), null, 2)}\n`);
+    log(`placeholder ${takeId}: ${countFrames(dir)} frames from ${take.source.file}`);
+  }
+}
+
+function countFrames(dir: string): number {
+  if (!existsSync(dir)) return 0;
+  return readdirSync(dir).filter((name) => /^\d{5}\.jpg$/.test(name)).length;
+}
+
+function readAnchors(takeId: ShowcaseTakeId): ShowcaseAnchorsFile {
+  const path = anchorsFilePath(takeId);
+  if (!existsSync(path)) throw new Error(`Missing anchors for take "${takeId}": ${path}`);
+  const parsed = JSON.parse(readFileSync(path, 'utf8')) as ShowcaseAnchorsFile;
+  if (parsed.takeId !== takeId || !parsed.screen || !parsed.anchors) {
+    throw new Error(`${path} is not a ShowcaseAnchorsFile for "${takeId}"`);
+  }
+  return parsed;
+}
+
+function loadTakes(): {
+  takes: Record<ShowcaseTakeId, StageTake>;
+  anchors: Record<ShowcaseTakeId, ShowcaseAnchorsFile>;
+} {
+  const missing = SHOWCASE_TAKE_IDS.filter((takeId) => countFrames(footageTakeDir(takeId)) === 0);
+  if (missing.length > 0) {
+    throw new Error(
+      `No footage for ${missing.join(', ')} under ${relative(REPO_ROOT, dirname(footageTakeDir('light')))}. ` +
+        'Record the takes, or pass --placeholder-footage to build stand-ins from the help clips.',
+    );
+  }
+  const takes = {} as Record<ShowcaseTakeId, StageTake>;
+  const anchors = {} as Record<ShowcaseTakeId, ShowcaseAnchorsFile>;
+  for (const takeId of SHOWCASE_TAKE_IDS) {
+    const file = readAnchors(takeId);
+    anchors[takeId] = file;
+    takes[takeId] = {
+      frameUrlBase: `${pathToFileURL(footageTakeDir(takeId)).href}/`,
+      frameCount: countFrames(footageTakeDir(takeId)),
+      screen: file.screen,
+      anchors: file.anchors,
+    };
+  }
+  return { takes, anchors };
+}
+
+/**
+ * The motif's holds: detected on the light take at the moment the rings land on
+ * it, inside the board-surface anchor. Falls back to the hand-traced set.
+ */
+async function resolveHolds(take: StageTake, anchors: ShowcaseAnchorsFile): Promise<LitHold[]> {
+  const light = SHOWCASE_SCENES.find((scene) => scene.id === 'light') as ShowcaseScene;
+  // Rings land 18 frames after the phone is released at L-4 of the hook.
+  const landFrame = light.startFrame - SHOWCASE_CHOREO.backgroundLeadIn + 18;
+  const index = Math.min(take.frameCount - 1, landFrame - light.startFrame + SHOWCASE_TAKE_LEAD_FRAMES);
+  const framePath = resolve(footageTakeDir('light'), `${String(index + 1).padStart(5, '0')}.jpg`);
+  const { data, info } = await sharp(framePath).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+  const toPixels = info.width / anchors.screen.width;
+  const surface = anchors.anchors['board-surface']?.[0];
+  const region = surface
+    ? {
+        x: surface.x * toPixels,
+        y: surface.y * toPixels,
+        width: surface.width * toPixels,
+        height: surface.height * toPixels,
+      }
+    : undefined;
+  const detected = detectLitHolds(data, info.width, info.height, info.channels, region, 30).map((hold) => ({
+    ...hold,
+    x: hold.x / toPixels,
+    y: hold.y / toPixels,
+  }));
+  if (detected.length >= 3) {
+    log(`motif: ${detected.length} lit holds detected on light frame ${index + 1}`);
+    return detected;
+  }
+  warn(
+    `only ${detected.length} lit holds detected on the light take; using ${relative(REPO_ROOT, SHOWCASE_STAGE_HOLDS)}`,
+  );
+  return (JSON.parse(readFileSync(SHOWCASE_STAGE_HOLDS, 'utf8')) as { holds: LitHold[] }).holds;
+}
+
+// --- tokens ------------------------------------------------------------------------------
+
+function roleColor(name: HoldStateInfo['name'], fallback: string): string {
+  const info = Object.values(HOLD_STATE_MAP.kilter).find((state) => state.name === name);
+  return info ? getHoldDisplayColor(info, 'aura') : fallback;
+}
+
+function writeTokens(): void {
+  const tokens: Record<string, string> = {
+    'stage-dark': themeTokens.semantic.background,
+    'stage-light': '#F4F1FB',
+    'ink-dark': materialSurfaces.dark.label,
+    'ink-light': materialSurfaces.light.label,
+    'sub-dark': materialSurfaces.dark.secondaryLabel,
+    'sub-light': materialSurfaces.light.secondaryLabel,
+    'accent-dark': materialSurfaces.dark.accent,
+    'accent-light': materialSurfaces.light.accent,
+    amber: brandColors.accent,
+    'glow-dark': brandColorsDark.primaryFill,
+    'role-start': roleColor('STARTING', '#00FF00'),
+    'role-hand': roleColor('HAND', '#4DF5FD'),
+    'role-finish': roleColor('FINISH', '#FF00FF'),
+  };
+  const lines = Object.entries(tokens).map(([name, value]) => `  --token-${name}: ${value};`);
+  const css = `/* Generated by packages/web/scripts/render-showcase-video.ts from @boardsesh/velvet-tokens,\n   @boardsesh/board-constants and the web theme. Do not edit. */\n:root {\n${lines.join('\n')}\n}\n`;
+  writeFileSync(SHOWCASE_STAGE_TOKENS, css);
+}
+
+function gradeColors(): ShowcaseStageData['grades'] {
+  const grades: Record<string, { background: string; ink: string }> = {};
+  for (const [grade, background] of Object.entries(V_GRADE_COLORS)) {
+    grades[grade] = { background, ink: readableTextColor(background) === '#000000' ? '#16111F' : '#FFFFFF' };
+  }
+  return grades;
+}
+
+// --- stage data --------------------------------------------------------------------------------
+
+type Prepared = Readonly<{
+  copy: ShowcaseCopy;
+  takes: Record<ShowcaseTakeId, StageTake>;
+  anchors: Record<ShowcaseTakeId, ShowcaseAnchorsFile>;
+  holds: LitHold[];
+  callouts: Partial<Record<ShowcaseScene['id'], ShowcaseAnchorName[]>>;
+}>;
+
+async function prepare(): Promise<Prepared> {
+  const copy = JSON.parse(readFileSync(SHOWCASE_STAGE_COPY, 'utf8')) as ShowcaseCopy;
+  const { takes, anchors } = loadTakes();
+  const holds = await resolveHolds(takes.light, anchors.light);
+  const callouts: Prepared['callouts'] = {};
+  for (const scene of SHOWCASE_SCENES) {
+    if (scene.callouts.length === 0) continue;
+    const labels = scene.id === 'light' ? copy.light.callouts : scene.id === 'crew' ? copy.crew.callouts : {};
+    const resolved = resolveSceneCallouts(scene, anchors[scene.takes[0]] ?? null, labels);
+    resolved.warnings.forEach(warn);
+    callouts[scene.id] = resolved.callouts;
+  }
+  for (const report of readingBudgetReport(copy)) {
+    const line = `${report.sceneId}: ${report.words} words need ${report.needFrames} frames, have ${report.haveFrames}`;
+    if (report.haveFrames < report.needFrames) warn(`reading budget short: ${line}`);
+    else log(`reading budget ok: ${line}`);
+  }
+  return { copy, takes, anchors, holds, callouts };
+}
+
+function stageData(format: ShowcaseFormat, prepared: Prepared, measure: boolean): ShowcaseStageData {
+  const { width, height } = SHOWCASE_CANVAS[format];
+  return {
+    format,
+    width,
+    height,
+    fps: SHOWCASE_FPS,
+    totalFrames: SHOWCASE_TOTAL_FRAMES,
+    perspective: SHOWCASE_PERSPECTIVE,
+    measure,
+    choreo: SHOWCASE_CHOREO,
+    layout: SHOWCASE_CALLOUT_LAYOUT,
+    phone: SHOWCASE_PHONE,
+    poses: SHOWCASE_POSES[format],
+    scenes: SHOWCASE_SCENES.map((scene) => {
+      const names = prepared.callouts[scene.id] ?? [];
+      const labels = scene.id === 'light' ? prepared.copy.light.callouts : prepared.copy.crew.callouts;
+      const callouts: StageCallout[] =
+        names.length > 0 ? layoutSceneCallouts(format, names, prepared.anchors[scene.takes[0]], labels) : [];
+      return { ...scene, callouts };
+    }),
+    takes: prepared.takes,
+    holds: prepared.holds,
+    copy: prepared.copy,
+    grades: gradeColors(),
+    palette: { stageDark: themeTokens.semantic.background, stageLight: '#F4F1FB' },
+    markUrl: pathToFileURL(MARK_PATH).href,
+    leadFrames: SHOWCASE_TAKE_LEAD_FRAMES,
+  };
+}
+
+// --- browser -----------------------------------------------------------------------------------
+
+async function openStage(format: ShowcaseFormat, data: ShowcaseStageData) {
+  const browser = await chromium.launch({ args: ['--allow-file-access-from-files', '--font-render-hinting=none'] });
+  const { width, height } = SHOWCASE_CANVAS[format];
+  const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: SHOWCASE_DEVICE_SCALE });
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  page.on('console', (message) => {
+    if (message.type() === 'error') errors.push(message.text());
+  });
+  await page.goto(pathToFileURL(SHOWCASE_STAGE_HTML).href, { waitUntil: 'load' });
+  await page.waitForFunction(
+    () => (window as unknown as { showcaseStageLoaded?: boolean }).showcaseStageLoaded === true,
+    null,
+    {
+      timeout: 10_000,
+    },
+  );
+  await page.evaluate(
+    (input) => {
+      (window as unknown as { showcaseInit: (value: unknown) => void }).showcaseInit(input);
+    },
+    data as unknown as Record<string, unknown>,
+  );
+  const fonts = await page.evaluate(async () => {
+    await Promise.all([
+      document.fonts.load('800 104px "Inter Tight"'),
+      document.fonts.load('700 24px "Inter Tight"'),
+      document.fonts.load('italic 400 120px "Instrument Serif"'),
+      document.fonts.load('500 24px "Geist Mono"'),
+    ]);
+    await document.fonts.ready;
+    return [...document.fonts].map((face) => ({ family: face.family.replace(/"/g, ''), status: face.status }));
+  });
+  for (const family of ['Inter Tight', 'Instrument Serif', 'Geist Mono']) {
+    if (!fonts.some((face) => face.family === family && face.status === 'loaded')) {
+      throw new Error(`Font "${family}" did not load: ${JSON.stringify(fonts)}`);
+    }
+  }
+  if (errors.length > 0) throw new Error(`Stage errors:\n${errors.join('\n')}`);
+  const client = await page.context().newCDPSession(page);
+  return { browser, page, client, errors };
+}
+
+async function renderFrame(page: Page, frame: number): Promise<void> {
+  const failed = await page.evaluate(async (target) => {
+    const stage = window as unknown as { renderAt: (value: number) => void; visibleImages: () => HTMLImageElement[] };
+    stage.renderAt(target);
+    const images = stage.visibleImages();
+    const results = await Promise.all(
+      images.map((image) =>
+        image
+          .decode()
+          .then(() => null)
+          .catch(() => image.getAttribute('src')),
+      ),
+    );
+    return results.filter((value): value is string => value !== null);
+  }, frame);
+  if (failed.length > 0) throw new Error(`Frame ${frame}: could not decode ${failed.join(', ')}`);
+}
+
+type CdpClient = Awaited<ReturnType<typeof openStage>>['client'];
+
+async function capture(client: CdpClient): Promise<Buffer> {
+  const { data } = (await client.send('Page.captureScreenshot', {
+    format: 'png',
+    optimizeForSpeed: true,
+    captureBeyondViewport: false,
+  })) as { data: string };
+  return Buffer.from(data, 'base64');
+}
+
+// --- stills --------------------------------------------------------------------------------------
+
+async function renderStills(format: ShowcaseFormat, data: ShowcaseStageData, measure: boolean): Promise<string[]> {
+  mkdirSync(SHOWCASE_STILLS_DIR, { recursive: true });
+  const { browser, page, client } = await openStage(format, data);
+  const written: string[] = [];
+  const cell = format === '16x9' ? { width: 960, height: 540, columns: 2 } : { width: 432, height: 768, columns: 4 };
+  try {
+    for (const [sceneIndex, scene] of SHOWCASE_SCENES.entries()) {
+      const tiles: sharp.OverlayOptions[] = [];
+      const stills = stillFramesForScene(scene);
+      for (const [index, still] of stills.entries()) {
+        await renderFrame(page, still.frame);
+        const shot = await sharp(await capture(client))
+          .resize(cell.width, cell.height, { kernel: 'lanczos3' })
+          .toBuffer();
+        const label = Buffer.from(
+          `<svg width="${cell.width}" height="34"><rect width="100%" height="34" fill="rgba(0,0,0,0.6)"/>` +
+            `<text x="10" y="23" font-family="Menlo, monospace" font-size="17" fill="#fff">` +
+            `${scene.id} · frame ${still.frame} · ${still.label}</text></svg>`,
+        );
+        const left = (index % cell.columns) * (cell.width + 8);
+        const top = Math.floor(index / cell.columns) * (cell.height + 8);
+        tiles.push({ input: shot, left, top }, { input: label, left, top });
+      }
+      const rows = Math.ceil(stills.length / cell.columns);
+      const output = resolve(
+        SHOWCASE_STILLS_DIR,
+        `${format}-${String(sceneIndex + 1).padStart(2, '0')}-${scene.id}${measure ? '-measure' : ''}.png`,
+      );
+      await sharp({
+        create: {
+          width: cell.columns * (cell.width + 8) - 8,
+          height: rows * (cell.height + 8) - 8,
+          channels: 3,
+          background: '#222',
+        },
+      })
+        .composite(tiles)
+        .png()
+        .toFile(output);
+      written.push(output);
+      log(`stills: ${relative(REPO_ROOT, output)}`);
+    }
+  } finally {
+    await browser.close();
+  }
+  return written;
+}
+
+// --- full render ------------------------------------------------------------------------------
+
+async function renderMezzanine(format: ShowcaseFormat, data: ShowcaseStageData, fromFrame: number, output: string) {
+  mkdirSync(dirname(output), { recursive: true });
+  const ffmpeg = spawn(FFMPEG_BIN, buildMezzanineArgs(format, output), { stdio: ['pipe', 'inherit', 'inherit'] });
+  const done = new Promise<void>((resolvePromise, reject) => {
+    ffmpeg.on('error', reject);
+    ffmpeg.on('close', (code) => (code === 0 ? resolvePromise() : reject(new Error(`ffmpeg exited with ${code}`))));
+  });
+  let pipeError: Error | null = null;
+  ffmpeg.stdin.on('error', (error) => {
+    pipeError = error;
+  });
+  const write = (chunk: Buffer) =>
+    new Promise<void>((resolvePromise, reject) => {
+      if (pipeError) reject(pipeError);
+      else if (ffmpeg.stdin.write(chunk)) resolvePromise();
+      else ffmpeg.stdin.once('drain', resolvePromise);
+    });
+  const { browser, page, client } = await openStage(format, data);
+  const started = Date.now();
+  try {
+    for (let frame = fromFrame; frame < SHOWCASE_TOTAL_FRAMES; frame += 1) {
+      await renderFrame(page, frame);
+      await write(await capture(client));
+      if ((frame + 1) % 60 === 0) {
+        const rate = (frame + 1 - fromFrame) / ((Date.now() - started) / 1000);
+        log(`${format}: frame ${frame + 1}/${SHOWCASE_TOTAL_FRAMES} (${rate.toFixed(1)} fps)`);
+      }
+    }
+  } finally {
+    ffmpeg.stdin.end();
+    await browser.close();
+  }
+  await done;
+}
+
+async function framePng(input: string, frame: number): Promise<Buffer> {
+  const { stdout } = await execFileAsync(FFMPEG_BIN, buildFramePngArgs(input, frame), {
+    encoding: 'buffer',
+    maxBuffer: FRAME_BUFFER_MAX_BYTES,
+  });
+  return stdout;
+}
+
+async function probe(file: string): Promise<string> {
+  const { stdout } = await execFileAsync(FFPROBE_BIN, buildDurationProbeArgs(file));
+  return stdout.trim().split('\n').join(' ');
+}
+
+/** Mean absolute difference (0–255) between two frames: the loop seam check. */
+async function frameDifference(first: Buffer, second: Buffer): Promise<number> {
+  const [a, b] = await Promise.all([first, second].map((png) => sharp(png).removeAlpha().raw().toBuffer()));
+  let total = 0;
+  for (let index = 0; index < a.length; index += 1) total += Math.abs(a[index] - b[index]);
+  return total / a.length;
+}
+
+const kb = (bytes: number) => `${(bytes / 1000).toFixed(0)} kB`;
+
+async function encodeWeb(format: ShowcaseFormat, mezzanine: string): Promise<void> {
+  const outputs = showcaseOutputs(format);
+  mkdirSync(dirname(outputs.webWebm), { recursive: true });
+  const seconds = webCutSeconds();
+  const bitrateKbps = webBitrateKbps(SHOWCASE_WEB_MAX_BYTES, seconds);
+
+  const webm = { input: mezzanine, output: outputs.webWebm, bitrateKbps, passLog: outputs.passLog };
+  await execFileAsync(FFMPEG_BIN, buildWebmPassArgs(webm, 1));
+  await execFileAsync(FFMPEG_BIN, buildWebmPassArgs(webm, 2));
+  const webmBytes = statSync(outputs.webWebm).size;
+  log(`${relative(REPO_ROOT, outputs.webWebm)}: ${kb(webmBytes)} at ${bitrateKbps} kbit/s`);
+  if (webmBytes > SHOWCASE_WEB_MAX_BYTES)
+    throw new Error(`${outputs.webWebm} is ${webmBytes} bytes, over ${SHOWCASE_WEB_MAX_BYTES}`);
+
+  const mp4 = { input: mezzanine, output: outputs.webMp4, bitrateKbps, passLog: outputs.passLog };
+  await execFileAsync(FFMPEG_BIN, buildWebMp4PassArgs(mp4, 1));
+  await execFileAsync(FFMPEG_BIN, buildWebMp4PassArgs(mp4, 2));
+  let mp4Bytes = statSync(outputs.webMp4).size;
+  if (mp4Bytes > SHOWCASE_WEB_MAX_BYTES) {
+    const size =
+      format === '16x9'
+        ? SHOWCASE_WEB_FALLBACK_MP4
+        : { width: SHOWCASE_WEB_FALLBACK_MP4.height, height: SHOWCASE_WEB_FALLBACK_MP4.width };
+    warn(
+      `${relative(REPO_ROOT, outputs.webMp4)} came out at ${kb(mp4Bytes)}; re-encoding at ${size.width}x${size.height}`,
+    );
+    await execFileAsync(FFMPEG_BIN, buildWebMp4PassArgs({ ...mp4, size }, 1));
+    await execFileAsync(FFMPEG_BIN, buildWebMp4PassArgs({ ...mp4, size }, 2));
+    mp4Bytes = statSync(outputs.webMp4).size;
+  }
+  log(`${relative(REPO_ROOT, outputs.webMp4)}: ${kb(mp4Bytes)} at ${bitrateKbps} kbit/s`);
+  if (mp4Bytes > SHOWCASE_WEB_MAX_BYTES)
+    throw new Error(`${outputs.webMp4} is ${mp4Bytes} bytes, over ${SHOWCASE_WEB_MAX_BYTES}`);
+
+  mkdirSync(dirname(outputs.poster), { recursive: true });
+  await sharp(await framePng(mezzanine, SHOWCASE_POSTER_FRAME))
+    .webp(HELP_CLIP_POSTER_ENCODE)
+    .toFile(outputs.poster);
+  log(`${relative(REPO_ROOT, outputs.poster)}: ${kb(statSync(outputs.poster).size)}`);
+}
+
+async function renderVideo(format: ShowcaseFormat, data: ShowcaseStageData, args: RenderArgs): Promise<void> {
+  const outputs = showcaseOutputs(format);
+  const preview = args.fromFrame > 0 || args.measure;
+  const tag = args.measure ? '-measure' : args.fromFrame > 0 ? `-from-${args.fromFrame}` : '';
+  const mezzanine = outputs.mezzanine.replace(/\.mkv$/, `${tag}.mkv`);
+  const master = outputs.master.replace(/\.mp4$/, `${tag}.mp4`);
+  await renderMezzanine(format, data, args.fromFrame, mezzanine);
+  mkdirSync(SHOWCASE_OUT_DIR, { recursive: true });
+  await execFileAsync(FFMPEG_BIN, buildMasterArgs(mezzanine, master));
+  log(`${relative(REPO_ROOT, master)}: ${kb(statSync(master).size)} (${await probe(master)})`);
+  if (preview) return;
+
+  await sharp(await framePng(mezzanine, SHOWCASE_POSTER_FRAME))
+    .jpeg({ quality: 92, mozjpeg: true })
+    .toFile(outputs.masterStill);
+  copyFileSync(SHOWCASE_SHARE_COPY, outputs.shareCopy);
+  const seam = await frameDifference(
+    await framePng(mezzanine, SHOWCASE_TOTAL_FRAMES - 1),
+    await framePng(mezzanine, SHOWCASE_POSTER_FRAME),
+  );
+  log(`${format}: loop seam (frame ${SHOWCASE_TOTAL_FRAMES - 1} vs 0) mean difference ${seam.toFixed(2)}/255`);
+  if (!args.skipWeb) await encodeWeb(format, mezzanine);
+}
+
+async function main(): Promise<void> {
+  const args = parseRenderArgs(process.argv.slice(2));
+  if (args.help) {
+    console.log(USAGE);
+    return;
+  }
+  mkdirSync(SHOWCASE_FRAMES_DIR, { recursive: true });
+  if (args.placeholderFootage) await buildPlaceholderFootage();
+  writeTokens();
+  const prepared = await prepare();
+  for (const format of args.formats) {
+    const data = stageData(format, prepared, args.measure);
+    if (args.stills) await renderStills(format, data, args.measure);
+    else await renderVideo(format, data, args);
+  }
+}
+
+main().catch((error: unknown) => {
+  console.error(error instanceof Error ? (error.stack ?? error.message) : 'Showcase render failed');
+  process.exitCode = 1;
+});
