@@ -23,7 +23,7 @@
     "refreshAt": "Une nouvelle copie sera disponible à partir du {{date}}.",
     "retryAt": "Réessaie à partir du {{date}}.",
     "download": "Télécharger le JSON",
-    "cleanupFailed": "Impossible de supprimer un fichier temporaire d’exportation. Redémarre Boardsesh, puis réessaie.",
+    "cleanupFailed": "Impossible de supprimer un fichier temporaire d’exportation. Réessaie l’exportation.",
     "sharingUnavailable": "Le partage est indisponible sur cet appareil. Ouvre Boardsesh dans un navigateur pour télécharger ton JSON.",
     "shareFailed": "Impossible de partager ton exportation. Appuie sur Enregistrer ou partager pour réessayer.",
     "nativeDownloadFailed": "Impossible de télécharger ton exportation. Vérifie ta connexion, puis appuie sur Enregistrer ou partager pour réessayer.",

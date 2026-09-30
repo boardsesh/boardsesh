@@ -4,6 +4,7 @@ import type { UserDataExportDownloadRequest } from '../user-data-export-action';
 const mocks = vi.hoisted(() => {
   const directories = new Set<string>();
   const files = new Map<string, number>();
+  const createFailures = new Map<string, number>();
   const deleteFailures = new Map<string, number>();
   const appState = { currentState: 'active' };
   const platform = { OS: 'ios' };
@@ -22,6 +23,11 @@ const mocks = vi.hoisted(() => {
       return directories.has(this.uri);
     }
     create(): void {
+      const remainingFailures = createFailures.get(this.uri) ?? 0;
+      if (remainingFailures > 0) {
+        createFailures.set(this.uri, remainingFailures - 1);
+        throw new Error('Filesystem creation unavailable');
+      }
       directories.add(this.uri);
     }
     delete(): void {
@@ -62,6 +68,7 @@ const mocks = vi.hoisted(() => {
   return {
     directories,
     files,
+    createFailures,
     deleteFailures,
     appState,
     platform,
@@ -148,6 +155,7 @@ beforeEach(async () => {
   vi.clearAllMocks();
   mocks.directories.clear();
   mocks.files.clear();
+  mocks.createFailures.clear();
   mocks.deleteFailures.clear();
   mocks.stateListeners.clear();
   mocks.generationListeners.clear();
@@ -308,6 +316,19 @@ describe('native export download and sharing', () => {
     await expect(nativeDownloads.openUserDataExportDownload(exportRequest())).resolves.toBeUndefined();
     expect(mocks.files.size).toBe(0);
   });
+  it('retries initialization after root directory creation fails', async () => {
+    mocks.createFailures.set(CACHE_DIRECTORY, 1);
+    await expect(nativeDownloads.initializeUserDataExportDownloads()).rejects.toMatchObject({
+      reason: 'cleanup_failed',
+    });
+    expect(mocks.directories.has(CACHE_DIRECTORY)).toBe(false);
+    expect(mocks.download).not.toHaveBeenCalled();
+    await expect(nativeDownloads.openUserDataExportDownload(exportRequest())).resolves.toBeUndefined();
+    expect(mocks.directories.has(CACHE_DIRECTORY)).toBe(true);
+    expect(mocks.download).toHaveBeenCalledOnce();
+    expect(mocks.shareAsync).toHaveBeenCalledOnce();
+    expect(mocks.files.size).toBe(0);
+  });
   it('aborts while checking sharing availability without starting a transfer', async () => {
     const availability = deferred<boolean>();
     const availabilityStarted = deferred<void>();
@@ -400,6 +421,26 @@ describe('native export download and sharing', () => {
     expect(mocks.shareAsync).toHaveBeenCalledOnce();
     finishNewShare.resolve();
     await newDownload;
+    expect(mocks.files.size).toBe(0);
+  });
+  it('keeps an already-registered generation 2 share intact during generation 1 cleanup', async () => {
+    await nativeDownloads.initializeUserDataExportDownloads();
+    changeGeneration(2);
+    const shareStarted = deferred<void>();
+    const dismissShare = deferred<void>();
+    mocks.shareAsync.mockImplementation(async () => {
+      shareStarted.resolve();
+      await dismissShare.promise;
+    });
+    const sharing = nativeDownloads.openUserDataExportDownload(exportRequest());
+    await shareStarted.promise;
+    const localUri = `${CACHE_DIRECTORY}/operation-1/${EXPORT_FILENAME}`;
+    const nativeSignal = mocks.MockFile.createDownloadTask.mock.calls[0][2].signal;
+    await nativeDownloads.clearUserDataExportDownloads(1);
+    expect(mocks.files.has(localUri)).toBe(true);
+    expect(nativeSignal.aborted).toBe(false);
+    dismissShare.resolve();
+    await expect(sharing).resolves.toBeUndefined();
     expect(mocks.files.size).toBe(0);
   });
   it('retries failed operation cleanup on foreground and reports only sanitized errors', async () => {

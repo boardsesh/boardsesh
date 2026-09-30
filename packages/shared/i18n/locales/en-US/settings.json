@@ -23,7 +23,7 @@
     "refreshAt": "A new snapshot is available from {{date}}.",
     "retryAt": "Try again from {{date}}.",
     "download": "Download JSON",
-    "cleanupFailed": "Could not remove a temporary export file. Restart Boardsesh, then try again.",
+    "cleanupFailed": "Could not remove a temporary export file. Try exporting again.",
     "sharingUnavailable": "Sharing is unavailable on this device. Open Boardsesh in a browser to download your JSON.",
     "shareFailed": "Could not share your export. Tap Save or share to try again.",
     "nativeDownloadFailed": "Could not download your export. Check your connection, then tap Save or share to try again.",

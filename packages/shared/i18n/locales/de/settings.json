@@ -23,7 +23,7 @@
     "refreshAt": "Eine neue Kopie ist ab {{date}} verfügbar.",
     "retryAt": "Versuche es ab {{date}} erneut.",
     "download": "JSON herunterladen",
-    "cleanupFailed": "Eine temporäre Exportdatei konnte nicht entfernt werden. Starte Boardsesh neu und versuche es erneut.",
+    "cleanupFailed": "Eine temporäre Exportdatei konnte nicht entfernt werden. Versuche den Export erneut.",
     "sharingUnavailable": "Teilen ist auf diesem Gerät nicht verfügbar. Öffne Boardsesh in einem Browser, um dein JSON herunterzuladen.",
     "shareFailed": "Dein Export konnte nicht geteilt werden. Tippe auf Speichern oder teilen, um es erneut zu versuchen.",
     "nativeDownloadFailed": "Dein Export konnte nicht heruntergeladen werden. Prüfe deine Verbindung und tippe auf Speichern oder teilen, um es erneut zu versuchen.",
