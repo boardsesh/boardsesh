@@ -782,7 +782,7 @@ function publicWallPhotoUrl(board: UserBoardRow, wall: SprayWallRow): string | n
  * copy just made is deleted rather than left in a world-readable bucket. Never
  * throws — the caller has already committed the publish.
  */
-async function refreshPublicWallPhoto(
+export async function refreshPublicWallPhoto(
   wallId: number,
   boardUuid: string,
   photoKey: string | null,
@@ -794,7 +794,17 @@ async function refreshPublicWallPhoto(
 ): Promise<void> {
   let nextKey: string | null = null;
   try {
-    nextKey = await copyWallPhotoToPublicBucket(boardUuid, photoKey);
+    // One retry on a THROW, never on a null (a null means there is nothing to
+    // copy, which a second try will not change). This runs after the publish has
+    // committed, and a resumed first publish has no later call from the client
+    // to heal a failed copy with (#5513) — so one transient object-storage error
+    // should not be enough to leave a public wall without a photo.
+    try {
+      nextKey = await copyWallPhotoToPublicBucket(boardUuid, photoKey);
+    } catch (firstError) {
+      logger.warn('Retrying a spray wall public photo copy', { boardUuid }, firstError);
+      nextKey = await copyWallPhotoToPublicBucket(boardUuid, photoKey);
+    }
     if (!nextKey) return;
 
     const result = await db.execute(sql`
@@ -807,6 +817,9 @@ async function refreshPublicWallPhoto(
         WHERE locked.id = ${wallId}
           AND locked.current_version_id = ${publishedVersionId}
           AND locked.deleted_at IS NULL
+          -- An admin-hidden wall reads as private to everybody but its owner, so
+          -- its photo has no business in the world-readable bucket either.
+          AND locked.hidden_at IS NULL
           AND board.is_public = true
           AND board.deleted_at IS NULL
         FOR UPDATE OF locked
@@ -901,7 +914,32 @@ export async function purgeSprayWallFeedItems(tx: SprayWriteExecutor, layoutId: 
  * inline object in the RETURN type gets there first — so the guard would read the
  * return type as the body and report that this function never locks.
  */
-type PublishedDraft = { version: SprayWallVersionRow; climbsChanged: number };
+type PublishedDraft = {
+  version: SprayWallVersionRow;
+  climbsChanged: number;
+  /** The creation-time visibility this publish applied to the board row, or null (#5513). */
+  appliedVisibility: PendingVisibility | null;
+};
+
+/** The pair `createSprayWall` parks on `spray_walls.pending_is_*` until the first publish. */
+type PendingVisibility = { isPublic: boolean; isUnlisted: boolean };
+
+/**
+ * The `spray_walls` columns that hold a creation-time visibility request.
+ *
+ * Both NULL when the climber left the wall private — nothing to apply, and the
+ * board row already says so. Otherwise always the full pair, so the publish that
+ * applies it never has to guess the half a client left out.
+ */
+function pendingVisibilityColumns(input: { isPublic?: boolean; isUnlisted?: boolean }): {
+  pendingIsPublic: boolean | null;
+  pendingIsUnlisted: boolean | null;
+} {
+  const isPublic = input.isPublic ?? false;
+  const isUnlisted = input.isUnlisted ?? false;
+  if (!isPublic && !isUnlisted) return { pendingIsPublic: null, pendingIsUnlisted: null };
+  return { pendingIsPublic: isPublic, pendingIsUnlisted: isUnlisted };
+}
 
 /**
  * Publish a draft version: supersede the previous generation, flip this one to
@@ -942,7 +980,12 @@ async function publishDraftUnderLock(
   // `wallNow?.currentVersionId == null`, which both guards below would read as
   // "nothing published yet" and publish straight through.
   const [wallNow] = await tx
-    .select({ currentVersionId: dbSchema.sprayWalls.currentVersionId })
+    .select({
+      currentVersionId: dbSchema.sprayWalls.currentVersionId,
+      boardUuid: dbSchema.sprayWalls.boardUuid,
+      pendingIsPublic: dbSchema.sprayWalls.pendingIsPublic,
+      pendingIsUnlisted: dbSchema.sprayWalls.pendingIsUnlisted,
+    })
     .from(dbSchema.sprayWalls)
     .where(and(eq(dbSchema.sprayWalls.id, wall.id), isNull(dbSchema.sprayWalls.deletedAt)))
     .limit(1);
@@ -1012,9 +1055,38 @@ async function publishDraftUnderLock(
   // climbers see.
   const alive = (await aliveHolds(tx, wall.id, row.versionNumber)).length;
 
+  // The visibility the owner picked when they created the wall, applied now that
+  // there is something to see (#5513). It is the OWNER's choice even when a gym
+  // admin presses publish: only the owner creates a wall, and only the owner can
+  // change a pending request (`updateSprayWall` clears it).
+  //
+  // FIRST publish only, decided on `current_version_id` read under the lock above
+  // rather than on the pair being non-null. The pair is also nulled on every
+  // publish below, but "exactly once" must not rest on every earlier writer having
+  // cleared it: a backend rolled back across this change publishes and changes
+  // visibility without knowing the columns exist, and a pair left standing through
+  // that would otherwise overturn the owner's later choice on their next reset.
+  const isFirstPublish = wallNow.currentVersionId == null;
+  const appliedVisibility: PendingVisibility | null =
+    isFirstPublish && (wallNow.pendingIsPublic != null || wallNow.pendingIsUnlisted != null)
+      ? { isPublic: wallNow.pendingIsPublic === true, isUnlisted: wallNow.pendingIsUnlisted === true }
+      : null;
+  if (appliedVisibility) {
+    await tx
+      .update(dbSchema.userBoards)
+      .set({ isPublic: appliedVisibility.isPublic, isUnlisted: appliedVisibility.isUnlisted })
+      .where(eq(dbSchema.userBoards.uuid, wallNow.boardUuid));
+  }
+
   await tx
     .update(dbSchema.sprayWalls)
-    .set({ currentVersionId: row.id, holdCount: alive, updatedAt: new Date() })
+    .set({
+      currentVersionId: row.id,
+      holdCount: alive,
+      pendingIsPublic: null,
+      pendingIsUnlisted: null,
+      updatedAt: new Date(),
+    })
     .where(eq(dbSchema.sprayWalls.id, wall.id));
 
   // The catalogue's join row carries the image filename every board reader looks
@@ -1048,7 +1120,7 @@ async function publishDraftUnderLock(
     });
   }
 
-  return { version: row, climbsChanged };
+  return { version: row, climbsChanged, appliedVisibility };
 }
 
 /**
@@ -1592,10 +1664,16 @@ export const sprayWallMutations = {
           latitude,
           longitude,
           gymId,
-          // Private by default: a wall is somebody's home until they say
-          // otherwise. Every other board type defaults public.
-          isPublic: validated.isPublic ?? false,
-          isUnlisted: validated.isUnlisted ?? false,
+          // ALWAYS private here, whatever the input asks for. The row exists from
+          // now on — the photo handler authorises against it — but it has no
+          // version, no photo and no holds, so a wall made public at creation would
+          // be a public board with nothing on it for as long as the wizard takes,
+          // and forever if it is abandoned. What the climber asked for is parked
+          // on `spray_walls.pending_is_*` below and applied by the first publish
+          // (#5513). Private is also the default: a wall is somebody's home until
+          // they say otherwise, where every other board type defaults public.
+          isPublic: false,
+          isUnlisted: false,
           hideLocation: validated.hideLocation ?? false,
           isOwned: true,
           angle: validated.angle,
@@ -1626,6 +1704,12 @@ export const sprayWallMutations = {
           referenceWidth: null,
           referenceHeight: null,
           holdCount: 0,
+          // The visibility the climber picked, held server-side until the first
+          // publish applies it. It used to live only in the wizard's React state,
+          // so a climber who closed the app and resumed the wall published it
+          // private whatever they had chosen (#5513). Nothing pending when they
+          // left it private — that is already what the board row says.
+          ...pendingVisibilityColumns(validated),
         })
         .returning();
 
@@ -1648,7 +1732,8 @@ export const sprayWallMutations = {
       userId,
       layoutId: created.wall.layoutId,
       gymId,
-      isPublic: created.board.isPublic,
+      pendingIsPublic: created.wall.pendingIsPublic,
+      pendingIsUnlisted: created.wall.pendingIsUnlisted,
     });
 
     return toGraphQLWall(created, userId, true);
@@ -1933,8 +2018,24 @@ export const sprayWallMutations = {
     // upload bandwidth. What that order costs is an orphaned object when the
     // transaction then fails, which the catch below cleans up. The other order
     // costs a public wall whose photo never got copied, which nothing cleans up.
+    //
+    // A wall that is already public but has no public copy is copied again, on ANY
+    // update that does not make it private — a rename heals it as well as a
+    // re-stated "public". That state is reachable: a publish commits the flag and
+    // makes the copy afterwards, best effort (it retries once, see
+    // `refreshPublicWallPhoto`), so a failed copy leaves a public wall with no
+    // photo to show. A resumed wizard run never re-states public after its
+    // publish, so the heal cannot wait for that one call. Costs one read and one
+    // copy, and only on a wall that is in that broken state.
+    //
+    // Never for an admin-hidden wall (#5797): it reads as private to everybody but
+    // its owner, so its photo has no business in the world-readable bucket even
+    // when the owner flips the flag. Re-checked under the lock below, since a hide
+    // can land while the copy is in flight.
+    const promoting = validated.isPublic === true && !board.isPublic;
+    const healing = board.isPublic && validated.isPublic !== false && wall.publicPhotoKey == null;
     const promotedPhotoKey =
-      validated.isPublic === true && !board.isPublic
+      wall.hiddenAt == null && (promoting || healing)
         ? await copyWallPhotoToPublicBucket(board.uuid, await publishedPhotoKey(wall))
         : null;
 
@@ -1975,7 +2076,12 @@ export const sprayWallMutations = {
         const losingPublic = goingPrivate && boardNow?.isPublic === true;
 
         const [wallNow] = await tx
-          .select({ publicPhotoKey: dbSchema.sprayWalls.publicPhotoKey })
+          .select({
+            publicPhotoKey: dbSchema.sprayWalls.publicPhotoKey,
+            hiddenAt: dbSchema.sprayWalls.hiddenAt,
+            pendingIsPublic: dbSchema.sprayWalls.pendingIsPublic,
+            pendingIsUnlisted: dbSchema.sprayWalls.pendingIsUnlisted,
+          })
           .from(dbSchema.sprayWalls)
           .where(eq(dbSchema.sprayWalls.id, wall.id))
           .limit(1);
@@ -2016,7 +2122,35 @@ export const sprayWallMutations = {
         // window where the two disagree is a window where a private wall's photo
         // has a world-readable URL.
         const wallUpdates: Partial<typeof dbSchema.sprayWalls.$inferInsert> = { updatedAt: new Date() };
-        if (promotedPhotoKey) {
+        // An explicit visibility change supersedes what the climber picked at
+        // creation (#5513) — field by field. Each flag this call states replaces
+        // its half of the pending pair; a flag it leaves out keeps the creation-time
+        // choice, exactly as the board row keeps a flag the update does not name.
+        // Without the first half, a wall made private again before its first
+        // publish would be flipped back by that publish; without the second,
+        // `{ isUnlisted: false }` alone would silently drop a pending public.
+        // Only while something is pending: there is nothing to merge into after
+        // the first publish, which clears the pair.
+        const hasPending = wallNow?.pendingIsPublic != null || wallNow?.pendingIsUnlisted != null;
+        if (hasPending && (validated.isPublic !== undefined || validated.isUnlisted !== undefined)) {
+          const merged = pendingVisibilityColumns({
+            isPublic: validated.isPublic ?? wallNow?.pendingIsPublic === true,
+            isUnlisted: validated.isUnlisted ?? wallNow?.pendingIsUnlisted === true,
+          });
+          wallUpdates.pendingIsPublic = merged.pendingIsPublic;
+          wallUpdates.pendingIsUnlisted = merged.pendingIsUnlisted;
+        }
+        // A copy made for a HEAL (the board already public, this call not stating
+        // it) has to find the board still public under the lock: a demotion that
+        // committed after the read above would otherwise get a world-readable photo
+        // key written onto a wall that is now private.
+        const stillPublic = validated.isPublic === true || boardNow?.isPublic === true;
+        if (promotedPhotoKey && (wallNow?.hiddenAt != null || !stillPublic)) {
+          // Hidden, or no longer public, while the copy was in flight: the copy is
+          // attached to nothing and goes on the post-commit delete list with the
+          // other orphans.
+          orphanedPublicKeys.push(promotedPhotoKey);
+        } else if (promotedPhotoKey) {
           wallUpdates.publicPhotoKey = promotedPhotoKey;
           // A wall promoted twice without an intervening demotion would strand the
           // first copy; the old key goes on the sweep list rather than being left.
@@ -2350,7 +2484,7 @@ export const sprayWallMutations = {
     await applyRateLimit(ctx, PUBLISH_RATE_LIMIT, 'commitSprayWallVersion');
 
     const validated = validateInput(CommitSprayWallVersionInputSchema, input, 'input');
-    const { wall } = await loadEditableWall(ctx, validated.wallUuid);
+    const { wall, board } = await loadEditableWall(ctx, validated.wallUuid);
 
     const committed = await db.transaction(async (tx) => {
       // EVERY check runs inside the lock, and the lock is the first statement.
@@ -2515,11 +2649,16 @@ export const sprayWallMutations = {
       // 4. …and publish, which is the moment every removal above becomes real.
       //    Same transaction and same lock, so a reset is atomic: there is no
       //    instant at which the holds have gone but the version has not landed.
-      const { version: published, climbsChanged } = await publishDraftUnderLock(tx, wall, Number(version.id));
+      const {
+        version: published,
+        climbsChanged,
+        appliedVisibility,
+      } = await publishDraftUnderLock(tx, wall, Number(version.id));
 
       return {
         published,
         climbsChanged,
+        appliedVisibility,
         // What is still on the wall from the previous generation, not the length
         // of the `kept` list: an alive hold the decisions never mention stays,
         // and a client that listed only what it had something to say about would
@@ -2537,6 +2676,22 @@ export const sprayWallMutations = {
       added: committed.addedCount,
       climbsChanged: committed.climbsChanged,
     });
+
+    // The same public-copy refresh `publishSprayWallVersion` makes, on the same
+    // condition. A reset of a public wall moves the photo climbers see, so the
+    // public copy has to follow it or the gym page keeps last generation's wall;
+    // and a version-1 commit is a wall's FIRST publish, so it can be the one that
+    // applies a public creation-time choice (#5513). After the commit and best
+    // effort, for the reasons given there — `refreshPublicWallPhoto` re-checks the
+    // board is still public under the row lock.
+    if (board.isPublic || committed.appliedVisibility?.isPublic) {
+      await refreshPublicWallPhoto(
+        wall.id,
+        wall.boardUuid,
+        committed.published.photoKey,
+        Number(committed.published.id),
+      );
+    }
 
     const deltas = await versionHoldDeltas([Number(committed.published.id)]);
     return {
@@ -2579,7 +2734,7 @@ export const sprayWallMutations = {
       });
     }
 
-    const published = await db.transaction(async (tx) => {
+    const publishedDraft = await db.transaction(async (tx) => {
       // Stated here as well as inside the helper. `pg_advisory_xact_lock` is
       // re-entrant within a transaction, so the second take costs nothing, and a
       // reader of this resolver sees the rule where the transaction opens rather
@@ -2589,9 +2744,9 @@ export const sprayWallMutations = {
       // this path and `commitSprayWallVersion` cannot drift on what publishing
       // means — the supersede, the hold count, the catalogue image and the
       // integrity recompute are one sequence with one owner.
-      const { version } = await publishDraftUnderLock(tx, found.wall, found.version.id);
-      return version;
+      return publishDraftUnderLock(tx, found.wall, found.version.id);
     });
+    const published = publishedDraft.version;
 
     logger.info('Spray wall version published', {
       layoutId: found.wall.layoutId,
@@ -2607,7 +2762,11 @@ export const sprayWallMutations = {
     // stale rather than wrong. `found.board.isPublic` is a fast path read before
     // the transaction; the write itself re-checks it under the wall's row lock, so a
     // demotion landing in this window cannot re-publish the photo.
-    if (found.board.isPublic) {
+    //
+    // A first publish that has just applied a public creation-time choice (#5513)
+    // needs the copy too: it is the moment the wall goes public, which is what
+    // `updateSprayWall` copies the photo for on any other promotion.
+    if (found.board.isPublic || publishedDraft.appliedVisibility?.isPublic) {
       await refreshPublicWallPhoto(found.wall.id, found.board.uuid, published.photoKey, published.id);
     }
 

@@ -345,7 +345,8 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
     // climber cannot see; the way on from a draft is detection, not upload.
     if (state.draft) return;
     // Only needed when there is no wall yet. A resumed wall already carries its
-    // name, angle and visibility on the row, so the meta step never ran.
+    // name, angle and requested visibility on the server, so the meta step never
+    // ran.
     const input = state.wall ? null : builder.buildCreateInput();
     if (!state.wall && !input) return;
 
@@ -483,11 +484,12 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
       // the wall as the active board are two writes behind one button, and
       // `publishSprayWallVersion` refuses a version that has already landed — so
       // a retry that re-ran both would turn a failed bind into a dead end.
-      // The visibility the climber chose, applied below rather than at creation:
-      // a wall is created private so an unfinished one is never discoverable as
-      // an unusable board. Read up here because the analytics payload needs it
-      // too — it is what the wall is ABOUT to be, where the row still says
-      // private.
+      // The visibility the climber chose in THIS run's meta step. The server
+      // already holds it from `createSprayWall` and the publish applies it
+      // (#5513) — which is what covers a resumed run, where this is null because
+      // the builder never saw the meta step. The write below re-states it for a
+      // backend that predates that. Read up here because the analytics payload
+      // needs it too — it is what the wall is ABOUT to be.
       const visibility = builder.pendingVisibility();
 
       if (!published) {
