@@ -64,6 +64,8 @@ export type ShowcaseRecordArgs = Readonly<{
   boards: string | null;
   envFile: string;
   skipAnchorCheck: boolean;
+  /** Record nothing: rejoin this session on the primary and end it (a crashed crew run's leftover). */
+  endSession: string | null;
 }>;
 
 function expectValue(flag: string, value: string | undefined): string {
@@ -94,6 +96,7 @@ export function parseRecordArgs(argv: readonly string[]): ShowcaseRecordArgs {
   let boards: string | null = null;
   let envFile = SHOWCASE_DEFAULT_ENV_FILE;
   let skipAnchorCheck = false;
+  let endSession: string | null = null;
   for (let index = 0; index < args.length; index++) {
     const flag = args[index];
     const value = args[index + 1];
@@ -131,6 +134,13 @@ export function parseRecordArgs(argv: readonly string[]): ShowcaseRecordArgs {
       case '--skip-anchor-check':
         skipAnchorCheck = true;
         break;
+      case '--end-session': {
+        const sessionId = parseSessionIdFromInviteUrl(`/join/${expectValue(flag, value)}`);
+        if (!sessionId) throw new Error('--end-session takes a session id (a UUID)');
+        endSession = sessionId;
+        index++;
+        break;
+      }
       default:
         throw new Error(`Unknown argument: ${flag}`);
     }
@@ -145,6 +155,7 @@ export function parseRecordArgs(argv: readonly string[]): ShowcaseRecordArgs {
     boards,
     envFile,
     skipAnchorCheck,
+    endSession,
   };
 }
 

@@ -47,6 +47,7 @@ describe('parseRecordArgs', () => {
       boards: null,
       envFile: SHOWCASE_DEFAULT_ENV_FILE,
       skipAnchorCheck: false,
+      endSession: null,
     });
   });
 
@@ -68,6 +69,8 @@ describe('parseRecordArgs', () => {
       '--env-file',
       '/tmp/secrets.env',
       '--skip-anchor-check',
+      '--end-session',
+      '667186B5-f0e5-4f56-92bf-8646f87d3f81',
     ]);
     expect(args).toEqual({
       only: ['crew', 'log'],
@@ -78,6 +81,7 @@ describe('parseRecordArgs', () => {
       boards: 'A|B|C',
       envFile: '/tmp/secrets.env',
       skipAnchorCheck: true,
+      endSession: '667186b5-f0e5-4f56-92bf-8646f87d3f81',
     });
   });
 
@@ -86,6 +90,7 @@ describe('parseRecordArgs', () => {
     expect(() => parseRecordArgs(['--backend', 'staging'])).toThrow(/prod or local/);
     expect(() => parseRecordArgs(['--fast'])).toThrow(/Unknown argument: --fast/);
     expect(() => parseRecordArgs(['--only'])).toThrow(/requires a value/);
+    expect(() => parseRecordArgs(['--end-session', 'abc'])).toThrow(/UUID/);
   });
 });
 

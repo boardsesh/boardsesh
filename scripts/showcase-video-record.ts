@@ -928,8 +928,11 @@ async function runTeardownFlows(context: RunContext, take: ShowcaseTake): Promis
       signalUrl: context.signal.url,
     });
   }
-  await sleep(2000);
-  window.pull();
+  const endedBy = Date.now() + 10_000;
+  while (!window.text.includes('[analytics] Session Ended') && Date.now() < endedBy) {
+    window.pull();
+    await sleep(500);
+  }
   if (window.text.includes('[analytics] Session Ended')) {
     crewSessionOpen = false;
     console.log(`${LOG} [${take.id}] live session ended.`);
@@ -939,6 +942,46 @@ async function runTeardownFlows(context: RunContext, take: ShowcaseTake): Promis
         `Session tab -> Stop -> End session on "${SHOWCASE_DEVICES.primary.name}".`,
     );
   }
+}
+
+/**
+ * `--end-session <id>`: end a crew session a crashed run left running. A fresh
+ * install forgets which session the app was in, so rejoin it by link first (the
+ * primary account created it, so the server lets it end it), then run the crew
+ * teardown.
+ */
+async function endStraySession(context: RunContext, sessionId: string): Promise<void> {
+  const crew = SHOWCASE_TAKES.find((take) => take.teardownFlows.length > 0 && take.secondary);
+  if (!crew?.secondary) throw new Error('No take in the registry knows how to end a session');
+  const { primary, signal } = context;
+  const window = await relaunch(primary);
+  await runMaestro({
+    udid: primary.device.udid,
+    flowFile: writeNavigationFlow('end-session-link', [`join/${sessionId}`], 1500),
+    label: 'end-session-link',
+    signalUrl: signal.url,
+  });
+  await runMaestro({
+    udid: primary.device.udid,
+    flowFile: showcaseFlowPath(crew.secondary.joinFlow),
+    label: 'end-session-join',
+    signalUrl: signal.url,
+  });
+  const joinedBy = Date.now() + 15_000;
+  while (!window.text.includes('[analytics] Session Joined') && Date.now() < joinedBy) {
+    window.pull();
+    await sleep(500);
+  }
+  if (!window.text.includes('[analytics] Session Joined')) {
+    const screenshot = resolve(LOG_DIR, 'end-session.png');
+    simctl(['io', primary.device.udid, 'screenshot', screenshot]);
+    throw new Error(
+      `Could not rejoin session ${sessionId}: already ended, or the Join point moved ` +
+        `(screen: ${relative(ROOT_DIR, screenshot)}).`,
+    );
+  }
+  crewSessionOpen = true;
+  await runTeardownFlows(context, crew);
 }
 
 /**
@@ -1247,7 +1290,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     // The recorder picks its own simulators; a selection meant for another tool
     // must not redirect it.
     delete process.env.BOARDSESH_IOS_SIMULATOR_UDID;
-    const needsSecondary = takes.some((take) => take.secondary);
+    const needsSecondary = !args.endSession && takes.some((take) => take.secondary);
     const credentials = resolveCredentials(args.backend, needsSecondary);
     mkdirSync(LOG_DIR, { recursive: true });
 
@@ -1295,6 +1338,11 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     }
 
     const context: RunContext = { args, primary, secondary, signal };
+    if (args.endSession) {
+      await endStraySession(context, args.endSession);
+      await teardown();
+      return crewSessionOpen ? 1 : 0;
+    }
     for (const take of takes) {
       try {
         results.push(await recordTake(context, take));
