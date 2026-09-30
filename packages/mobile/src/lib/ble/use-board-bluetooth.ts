@@ -54,6 +54,7 @@ import type {
 import type { HoldPlacement } from '../../components/board-renderer/types';
 import { track } from '../analytics';
 import { reportHandledError } from '../error-reporting';
+import { beginDiagnosticOperation, diagnosticErrorAttributes, type DiagnosticOperation } from '../mobile-diagnostics';
 import { clearBleDiagnosticsTags, setBleDiagnosticsTags } from '../sentry';
 import { buildHoldColorOverrideSignature, type HoldColorOverrides } from '../hold-color-overrides';
 import {
@@ -689,6 +690,7 @@ export function useBoardBluetooth({
   // the singleton BLE manager, and the first attempt's scan teardown kills
   // the second attempt's scan, stranding the picker.
   const connectInFlightRef = useRef(false);
+  const connectDiagnosticRef = useRef<DiagnosticOperation | null>(null);
   // True after an explicit user disconnect, false again on the next deliberate
   // connect. While set, the native-connection adoption path is ignored — it
   // would otherwise race the in-flight native disconnect and re-establish the
@@ -1085,7 +1087,20 @@ export function useBoardBluetooth({
       // untouched on every board.
       const framesToWrite = toFlatFrames(frames, boardName as BoardName);
 
+      const sendDiagnostic = beginDiagnosticOperation('ble', 'send', {
+        parentId: sendContext?.sendSource === 'connect' ? connectDiagnosticRef.current?.id : undefined,
+        userInitiated: !!sendContext && sendContext.sendSource !== 'auto' && sendContext.sendSource !== 'connect',
+        attributes: {
+          boardName,
+          layoutId,
+          sizeId,
+          climbUuid: sendContext?.climbUuid,
+          source: sendContext?.sendSource,
+          queued: true,
+        },
+      });
       const performSend = async (): Promise<boolean | undefined> => {
+        sendDiagnostic.step('encode');
         // Transport diagnostics of the write that just settled (#3230) — iOS
         // native adapter (full flow-control story) or ble-plx (MTU/chunking
         // only); null on web-era adapters and old binaries. Read from the
@@ -1096,8 +1111,16 @@ export function useBoardBluetooth({
         // let the fetch itself fail an already-settled send.
         let sendAdapter: BluetoothAdapter | null = null;
         let sendGeneration: number | null = null;
-        const fetchWriteDiagnostics = async (): Promise<BleWriteDiagnostics | null> =>
-          (await sendAdapter?.getLastWriteDiagnostics?.().catch(() => null)) ?? null;
+        const fetchWriteDiagnostics = async (): Promise<BleWriteDiagnostics | null> => {
+          const diagnostics = (await sendAdapter?.getLastWriteDiagnostics?.().catch(() => null)) ?? null;
+          sendDiagnostic.step('transport-result', {
+            mtu: diagnostics?.negotiatedMtu,
+            chunkSize: diagnostics?.chunkSize,
+            chunkCount: diagnostics?.chunkCount,
+            writeType: diagnostics?.writeType,
+          });
+          return diagnostics;
+        };
         try {
           // The send may have queued behind another write; by the time it runs
           // the connection generation may be gone (reconnect/disconnect) — bail
@@ -1309,6 +1332,7 @@ export function useBoardBluetooth({
           // wall (long-standing Aurora behaviour) without counting as one.
           if (frames === '') {
             const clearResult = getAuroraBluetoothPacket('', {}, boardName as AuroraBoardName, apiLevelRef.current);
+            sendDiagnostic.step('first-write', { byteCount: clearResult.packet.length });
             await adapterRef.current.write(clearResult.packet, combinedSignal);
             if (sendContext?.sendSource === 'clear') {
               track(SHARED_EVENTS.BoardLightsCleared, boardAnalyticsProperties);
@@ -1391,6 +1415,7 @@ export function useBoardBluetooth({
             console.warn(`[BLE] ${skippedCount} of ${result.totalPlacements} placements skipped`);
           }
 
+          sendDiagnostic.step('first-write', { byteCount: result.packet.length });
           await adapterRef.current.write(result.packet, combinedSignal);
           track(SHARED_EVENTS.ClimbSentToBoardSuccess, {
             ...boardAnalyticsProperties,
@@ -1413,6 +1438,7 @@ export function useBoardBluetooth({
           if (combinedSignal.aborted || (error instanceof DOMException && error.name === 'AbortError')) {
             return;
           }
+          sendDiagnostic.step('write-failed', diagnosticErrorAttributes(error));
           const bleFailureReason = classifyBleFailureReason(error);
           console.error('Error sending frames to board:', error);
           const writeDiagnostics = await fetchWriteDiagnostics();
@@ -1486,7 +1512,20 @@ export function useBoardBluetooth({
         () => undefined,
       );
       try {
-        return await queuedSend;
+        const sendResult = await queuedSend;
+        sendDiagnostic.finish(
+          combinedSignal.aborted
+            ? 'cancelled'
+            : sendResult === true
+              ? 'success'
+              : sendResult === false
+                ? 'failure'
+                : 'superseded',
+        );
+        return sendResult;
+      } catch (error) {
+        sendDiagnostic.finish('failure', diagnosticErrorAttributes(error));
+        throw error;
       } finally {
         releaseWriteActivity?.();
       }
@@ -1520,6 +1559,11 @@ export function useBoardBluetooth({
         return false;
       }
       connectInFlightRef.current = true;
+      const connectDiagnostic = beginDiagnosticOperation('ble', 'connect', {
+        userInitiated: true,
+        attributes: { boardName, layoutId, sizeId, targeted: !!(targetSerial || targetDeviceId) },
+      });
+      connectDiagnosticRef.current = connectDiagnostic;
       // A deliberate connect re-arms native-connection adoption after an
       // earlier explicit disconnect suppressed it.
       adoptionSuppressedRef.current = false;
@@ -1537,6 +1581,7 @@ export function useBoardBluetooth({
       // requestAndConnect), so the catch below can scope its cleanup to it.
       let connectPickerSessionId: number | null = null;
       const connectDevicePicker: DevicePickerFn = (subscribe, targetSearch) => {
+        connectDiagnostic.step('picker-present');
         const pickerPromise = devicePicker(subscribe, targetSearch);
         // The picker's executor ran synchronously, so the counter now holds its session.
         connectPickerSessionId ??= pickerSessionCounterRef.current;
@@ -1547,7 +1592,9 @@ export function useBoardBluetooth({
         // Bluetooth only: the Android 13+ notifications prompt waits until the
         // board is connected (below), so a first connect shows one system dialog
         // before the scan instead of two (#5654).
+        connectDiagnostic.step('permission-request');
         const permissionStatus = await requestBleRuntimePermissionStatus();
+        connectDiagnostic.step('permission-result', { permission: permissionStatus });
         if (permissionStatus === 'unsupported') {
           // Expo web in a browser with no Web Bluetooth. Not a denial: there is
           // nothing to allow, so no permission copy and no Permission Denied event.
@@ -1569,13 +1616,13 @@ export function useBoardBluetooth({
           return false;
         }
 
-        const adapter = createBluetoothAdapter(
-          connectDevicePicker,
-          scanFamilyForBoard(boardName),
-          adapterOptionsForBoard(boardName),
-        );
+        const adapter = createBluetoothAdapter(connectDevicePicker, scanFamilyForBoard(boardName), {
+          ...adapterOptionsForBoard(boardName),
+          onDiagnosticPhase: connectDiagnostic.step,
+        });
         connectAdapter = adapter;
 
+        connectDiagnostic.step('adapter-availability');
         const available = await adapter.isAvailable();
         if (!available) {
           // Blocked (iOS denial) and radio-off used to share "Bluetooth is off".
@@ -1657,6 +1704,7 @@ export function useBoardBluetooth({
           }
         }
 
+        connectDiagnostic.step('scan-and-connect');
         const connection = await adapter.requestAndConnect(targetSerial, targetDeviceId);
         apiLevelRef.current = parseApiLevel(connection.deviceName);
         configuredDeviceNameRef.current = connection.deviceName;
@@ -1750,8 +1798,18 @@ export function useBoardBluetooth({
         // resulting Climb Sent to Board Success/Failure/Skipped attributable to
         // this connect-time write instead of having to be inferred from a
         // millisecond gap against Bluetooth Connection Success.
+        const connectionDiagnostics = (await adapter.getConnectionDiagnostics?.().catch(() => null)) ?? null;
+        setBleDiagnosticsTags(connectionDiagnostics);
+        connectDiagnostic.step('transport-ready', {
+          mtu: connectionDiagnostics?.negotiatedMtu,
+          chunkSize: connectionDiagnostics?.chunkSize,
+          writeType: connectionDiagnostics?.chosenWriteType,
+          supportsWriteWithResponse: connectionDiagnostics?.supportsWriteWithResponse,
+          supportsWriteWithoutResponse: connectionDiagnostics?.supportsWriteWithoutResponse,
+        });
         let initialSendResult: boolean | undefined;
         if (initialFrames) {
+          connectDiagnostic.step('initial-write');
           initialSendResult = await sendFramesToBoard(initialFrames, mirrored, undefined, { sendSource: 'connect' });
         }
 
@@ -1832,16 +1890,15 @@ export function useBoardBluetooth({
         // Android 13+ only, and not awaited: the board is connected, and the
         // dialog doesn't hold up the write that lights the climb (#5654).
         void requestOptionalNotificationPermission();
-        // Connect-time BLE write diagnostics (iOS native adapter only; null on
-        // Android/web and on binaries too old to report them). Set as global
-        // Sentry tags so they ride any later write-stall report, and recorded on
-        // the success event so PostHog can correlate the chosen write type with
-        // send failures (#3181 follow-up).
-        // Never let a diagnostics fetch failure skip the success analytics below
-        // (getNativeBleConnectedDevice already swallows native errors → null, but
-        // be explicit so analytics parity can't regress).
-        const connectionDiagnostics = await getNativeBleConnectedDevice().catch(() => null);
-        setBleDiagnosticsTags(connectionDiagnostics);
+        // Reuse transport diagnostics captured before the initial write. Android
+        // gets these from its adapter; native iOS supplies its actual transport.
+        connectDiagnostic.step('connected', {
+          mtu: connectionDiagnostics?.negotiatedMtu,
+          chunkSize: connectionDiagnostics?.chunkSize,
+          writeType: connectionDiagnostics?.chosenWriteType,
+          supportsWriteWithResponse: connectionDiagnostics?.supportsWriteWithResponse,
+          supportsWriteWithoutResponse: connectionDiagnostics?.supportsWriteWithoutResponse,
+        });
         // apiLevel is the level parseApiLevel actually picked; deviceNamePresent
         // records whether an advertised name was even available. parseApiLevel
         // silently defaults to v2 when the name is missing/unparseable, and v2
@@ -1871,6 +1928,7 @@ export function useBoardBluetooth({
           bleManufacturerCompanyId: manufacturerCompanyId(connection.manufacturerData),
           bleServiceData: connection.serviceData ? JSON.stringify(connection.serviceData) : undefined,
         });
+        connectDiagnostic.finish('success', { degraded: initialSendResult === false });
         return true;
       } catch (error) {
         // Classify once, up front: it decides both whether this reaches error
@@ -1880,6 +1938,10 @@ export function useBoardBluetooth({
         // range, GATT timeout), not app bugs, so they go in as warnings. Genuine
         // faults (unavailable / service_missing / unknown) stay at error level.
         const failureCategory = classifyBleFailure(error);
+        connectDiagnostic.finish(failureCategory === 'user_cancelled' ? 'cancelled' : 'failure', {
+          ...diagnosticErrorAttributes(error),
+          failureCategory,
+        });
         const reportLevel = bleConnectReportLevel(failureCategory);
         if (reportLevel === null) {
           console.warn('Bluetooth device selection cancelled by user');
@@ -1968,6 +2030,8 @@ export function useBoardBluetooth({
           ...blePlxErrorCodes(error),
         });
       } finally {
+        connectDiagnostic.finish('failure', { failureCategory: 'incomplete-connect' });
+        if (connectDiagnosticRef.current === connectDiagnostic) connectDiagnosticRef.current = null;
         connectInFlightRef.current = false;
         setLoading(false);
       }

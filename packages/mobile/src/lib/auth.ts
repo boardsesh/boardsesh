@@ -1,3 +1,5 @@
+import { runAuthDiagnostic, classifySignInResult } from './auth-diagnostics';
+import type { DiagnosticOperation } from './mobile-diagnostics';
 import { AppState, Linking, Platform } from 'react-native';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import * as WebBrowser from 'expo-web-browser';
@@ -56,12 +58,14 @@ export type OAuthSignInResult =
  * against the provider's JWKS and returns our mobile JWT pair. Mirrors
  * signInWithCredentials' failure shape so the analytics classifier is reused.
  */
-export async function oauthNativeSignIn(
+async function oauthNativeSignInInternal(
+  operation: DiagnosticOperation,
   provider: AuthProvider,
   identityToken: string,
   extra?: { nonce?: string; name?: ForwardedName },
 ): Promise<OAuthSignInResult> {
   let response: Response;
+  operation.step('request');
   try {
     response = await fetch(`${BACKEND_URL}/auth/native/oauth`, {
       method: 'POST',
@@ -74,6 +78,7 @@ export async function oauthNativeSignIn(
     return { success: false, status: null, error: 'network' };
   }
 
+  operation.step('response', { status: response.status });
   if (!response.ok) {
     let serverError = `HTTP ${response.status}`;
     try {
@@ -88,6 +93,7 @@ export async function oauthNativeSignIn(
   }
 
   const data = (await response.json()) as { jwt: string; refreshToken: string; expiresAt: string };
+  operation.step('credential_persist');
   await storeTokens(data.jwt, data.refreshToken, data.expiresAt);
   return { success: true };
 }
@@ -107,7 +113,8 @@ function isAppleCancellation(error: unknown): boolean {
   return typeof error === 'object' && error !== null && (error as { code?: unknown }).code === 'ERR_REQUEST_CANCELED';
 }
 
-export async function signInWithApple(): Promise<OAuthSignInResult> {
+async function signInWithAppleInternal(operation: DiagnosticOperation): Promise<OAuthSignInResult> {
+  operation.step('provider_prepare', { kind: 'apple' });
   const rawNonce = generateNonce();
   // Hand Apple the hash; the token's `nonce` claim will be this value (Apple
   // echoes it unmodified). The backend re-hashes the raw nonce we send below.
@@ -116,6 +123,7 @@ export async function signInWithApple(): Promise<OAuthSignInResult> {
   });
   let credential: AppleAuthentication.AppleAuthenticationCredential;
   try {
+    operation.step('provider_present');
     credential = await AppleAuthentication.signInAsync({
       requestedScopes: [
         AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
@@ -134,13 +142,21 @@ export async function signInWithApple(): Promise<OAuthSignInResult> {
 
   // Apple delivers the name only on the first authorization; forward it when
   // present so a brand-new account gets a display name.
+  const identityToken = credential.identityToken;
   const fullName = credential.fullName;
   const name: ForwardedName | undefined =
     fullName && (fullName.givenName || fullName.familyName)
       ? { firstName: fullName.givenName ?? undefined, lastName: fullName.familyName ?? undefined }
       : undefined;
 
-  return oauthNativeSignIn('apple', credential.identityToken, { nonce: rawNonce, name });
+  return runAuthDiagnostic(
+    'login.exchange',
+    (exchange) => oauthNativeSignInInternal(exchange, 'apple', identityToken, { nonce: rawNonce, name }),
+    classifySignInResult,
+    { kind: 'apple' },
+    false,
+    operation.id,
+  );
 }
 
 let googleConfigured = false;
@@ -168,11 +184,13 @@ function isGoogleCancellation(error: unknown): boolean {
   );
 }
 
-export async function signInWithGoogle(): Promise<OAuthSignInResult> {
+async function signInWithGoogleInternal(operation: DiagnosticOperation): Promise<OAuthSignInResult> {
+  operation.step('provider_prepare', { kind: 'google' });
   configureGoogleSignin();
   try {
     // No-op on iOS; on Android ensures Play Services is present/updatable.
     await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+    operation.step('provider_present');
     const response = await GoogleSignin.signIn();
     if (response.type === 'cancelled') {
       return { success: false, cancelled: true };
@@ -181,7 +199,14 @@ export async function signInWithGoogle(): Promise<OAuthSignInResult> {
     if (!idToken) {
       return { success: false, status: null, error: 'no_id_token' };
     }
-    return oauthNativeSignIn('google', idToken);
+    return runAuthDiagnostic(
+      'login.exchange',
+      (exchange) => oauthNativeSignInInternal(exchange, 'google', idToken),
+      classifySignInResult,
+      { kind: 'google' },
+      false,
+      operation.id,
+    );
   } catch (error) {
     if (isGoogleCancellation(error)) return { success: false, cancelled: true };
     // An error that isn't one of the library's known status codes is, on Android,
@@ -217,8 +242,12 @@ const NATIVE_OAUTH_REDIRECT = 'com.boardsesh.app://auth/callback';
  * pair, and store it. Mirrors oauthNativeSignIn's failure shape so the analytics
  * classifier is reused.
  */
-async function exchangeTransferToken(transferToken: string): Promise<OAuthSignInResult> {
+async function exchangeTransferToken(
+  operation: DiagnosticOperation,
+  transferToken: string,
+): Promise<OAuthSignInResult> {
   let response: Response;
+  operation.step('request');
   try {
     response = await fetch(`${BACKEND_URL}/auth/native/exchange`, {
       method: 'POST',
@@ -231,6 +260,7 @@ async function exchangeTransferToken(transferToken: string): Promise<OAuthSignIn
     return { success: false, status: null, error: 'network' };
   }
 
+  operation.step('response', { status: response.status });
   if (!response.ok) {
     let serverError = `HTTP ${response.status}`;
     try {
@@ -251,6 +281,7 @@ async function exchangeTransferToken(transferToken: string): Promise<OAuthSignIn
     // A 200 with an unreadable body — keep this function's "never throws" contract.
     return { success: false, status: response.status, error: 'invalid_response' };
   }
+  operation.step('credential_persist');
   await storeTokens(data.jwt, data.refreshToken, data.expiresAt);
   return { success: true };
 }
@@ -282,13 +313,17 @@ async function exchangeTransferToken(transferToken: string): Promise<OAuthSignIn
  * Never throws: every outcome maps to an OAuthSignInResult (success / cancelled /
  * failure) so the caller treats it exactly like the native path.
  */
-async function signInWithProviderWeb(provider: AuthProvider): Promise<OAuthSignInResult> {
+async function signInWithProviderWeb(
+  operation: DiagnosticOperation,
+  provider: AuthProvider,
+): Promise<OAuthSignInResult> {
   const nativeCallbackUrl = `${WEB_BASE_URL}/api/auth/native/callback?next=${encodeURIComponent('/')}`;
   const startUrl = `${WEB_BASE_URL}/auth/native-start?provider=${provider}&callbackUrl=${encodeURIComponent(nativeCallbackUrl)}`;
 
   // Register the Linking url-listener BEFORE opening the browser (raceBrowserSignIn
   // does this) so no deep link can arrive un-listened. dismissBrowser is async-
   // wrapped so a synchronous throw from it can't reject the race's success branch.
+  operation.step('browser_present');
   const race = await raceBrowserSignIn(
     {
       platform: Platform.OS === 'android' ? 'android' : 'ios',
@@ -323,7 +358,8 @@ async function signInWithProviderWeb(provider: AuthProvider): Promise<OAuthSignI
   const transferToken = params.get('transferToken');
   if (!transferToken) return { success: false, status: null, error: 'no_transfer_token' };
 
-  return exchangeTransferToken(transferToken);
+  operation.step('exchange');
+  return exchangeTransferToken(operation, transferToken);
 }
 
 // Browser Google fallback — for when native GoogleSignin can't present its OAuth
@@ -333,7 +369,13 @@ async function signInWithProviderWeb(provider: AuthProvider): Promise<OAuthSignI
 // Registration attribution remains with useNativeOAuthSignIn; the argument is
 // intentionally unused here to keep the native and web platform APIs aligned.
 export function signInWithGoogleWeb(_isRegistration = false): Promise<OAuthSignInResult> {
-  return signInWithProviderWeb('google');
+  return runAuthDiagnostic(
+    'login.browser',
+    (operation) => signInWithProviderWeb(operation, 'google'),
+    classifySignInResult,
+    { kind: 'google' },
+    true,
+  );
 }
 
 // Browser Apple fallback — for when native Sign in with Apple throws a non-cancel
@@ -342,7 +384,13 @@ export function signInWithGoogleWeb(_isRegistration = false): Promise<OAuthSignI
 // As above, registration attribution is recorded by the hook rather than routed
 // through the native browser handoff.
 export function signInWithAppleWeb(_isRegistration = false): Promise<OAuthSignInResult> {
-  return signInWithProviderWeb('apple');
+  return runAuthDiagnostic(
+    'login.browser',
+    (operation) => signInWithProviderWeb(operation, 'apple'),
+    classifySignInResult,
+    { kind: 'apple' },
+    true,
+  );
 }
 
 export type CredentialsSignInResult = { success: true } | NativeAuthFailure;
@@ -352,8 +400,13 @@ export type RegistrationResult =
   | { success: true; authenticated: false; requiresVerification: false; autoLoginUnavailable: true }
   | NativeAuthFailure;
 
-export async function signInWithCredentials(email: string, password: string): Promise<CredentialsSignInResult> {
+async function signInWithCredentialsInternal(
+  operation: DiagnosticOperation,
+  email: string,
+  password: string,
+): Promise<CredentialsSignInResult> {
   let response: Response;
+  operation.step('request');
   try {
     response = await fetch(`${BACKEND_URL}/auth/native/credentials`, {
       method: 'POST',
@@ -366,6 +419,7 @@ export async function signInWithCredentials(email: string, password: string): Pr
     return { success: false, status: null, error: 'network' };
   }
 
+  operation.step('response', { status: response.status });
   if (!response.ok) {
     let serverError = `HTTP ${response.status}`;
     try {
@@ -380,6 +434,7 @@ export async function signInWithCredentials(email: string, password: string): Pr
   }
 
   const data = (await response.json()) as { jwt: string; refreshToken: string; expiresAt: string };
+  operation.step('credential_persist');
   await storeTokens(data.jwt, data.refreshToken, data.expiresAt);
   return { success: true };
 }
@@ -391,12 +446,14 @@ export async function signInWithCredentials(email: string, password: string): Pr
  * authenticated. A 409 (preserved in `status`) is how the UI tells "this email
  * already has an account" apart from a real failure. `name` is optional.
  */
-export async function registerWithCredentials(
+async function registerWithCredentialsInternal(
+  operation: DiagnosticOperation,
   email: string,
   password: string,
   name?: string,
 ): Promise<RegistrationResult> {
   let response: Response;
+  operation.step('request');
   try {
     response = await fetch(`${BACKEND_URL}/auth/native/register`, {
       method: 'POST',
@@ -409,6 +466,7 @@ export async function registerWithCredentials(
     return { success: false, status: null, error: 'network' };
   }
 
+  operation.step('response', { status: response.status });
   if (!response.ok) {
     let serverError = `HTTP ${response.status}`;
     try {
@@ -423,6 +481,7 @@ export async function registerWithCredentials(
   }
 
   const data = (await response.json()) as { jwt: string; refreshToken: string; expiresAt: string };
+  operation.step('credential_persist');
   await storeTokens(data.jwt, data.refreshToken, data.expiresAt);
   return { success: true };
 }
@@ -434,8 +493,12 @@ export type PasswordResetResult = { success: true } | NativeAuthFailure;
  * Always returns success=true on 2xx even though the backend is intentionally
  * non-committal about whether the email exists (user enumeration prevention).
  */
-export async function requestPasswordReset(email: string): Promise<PasswordResetResult> {
+async function requestPasswordResetInternal(
+  operation: DiagnosticOperation,
+  email: string,
+): Promise<PasswordResetResult> {
   let response: Response;
+  operation.step('request');
   try {
     response = await fetch(`${WEB_BASE_URL}/api/auth/forgot-password`, {
       method: 'POST',
@@ -447,6 +510,7 @@ export async function requestPasswordReset(email: string): Promise<PasswordReset
     return { success: false, status: null, error: 'network' };
   }
 
+  operation.step('response', { status: response.status });
   if (!response.ok) {
     let serverError = `HTTP ${response.status}`;
     try {
@@ -467,13 +531,15 @@ export async function requestPasswordReset(email: string): Promise<PasswordReset
  * Submit a new password using a reset token from the email link.
  * Calls the web API's reset-password endpoint.
  */
-export async function resetPassword(
+async function resetPasswordInternal(
+  operation: DiagnosticOperation,
   email: string,
   token: string,
   newPassword: string,
   confirmPassword: string,
 ): Promise<PasswordResetResult> {
   let response: Response;
+  operation.step('request');
   try {
     response = await fetch(`${WEB_BASE_URL}/api/auth/reset-password`, {
       method: 'POST',
@@ -485,6 +551,7 @@ export async function resetPassword(
     return { success: false, status: null, error: 'network' };
   }
 
+  operation.step('response', { status: response.status });
   if (!response.ok) {
     let serverError = `HTTP ${response.status}`;
     try {
@@ -501,7 +568,11 @@ export async function resetPassword(
   return { success: true };
 }
 
-export async function signOutForGeneration(signOutGeneration: number): Promise<boolean> {
+async function signOutForGenerationInternal(
+  operation: DiagnosticOperation,
+  signOutGeneration: number,
+): Promise<boolean> {
+  operation.step('credential_read');
   let refreshToken: string | null = null;
   try {
     refreshToken = await getRefreshToken();
@@ -511,6 +582,7 @@ export async function signOutForGeneration(signOutGeneration: number): Promise<b
   }
   if (!isAuthCredentialGenerationCurrent(signOutGeneration)) return false;
   const clearedGeneration = signOutGeneration + 1;
+  operation.step('credential_clear');
   const clearPromise = clearTokensForGeneration(signOutGeneration);
   if (refreshToken) {
     // Best-effort server-side revocation — don't block on failure
@@ -531,4 +603,72 @@ export async function signOutForGeneration(signOutGeneration: number): Promise<b
 
 export async function signOut(): Promise<void> {
   await signOutForGeneration(captureAuthCredentialGeneration());
+}
+
+export function oauthNativeSignIn(
+  provider: AuthProvider,
+  identityToken: string,
+  extra?: { nonce?: string; name?: ForwardedName },
+): Promise<OAuthSignInResult> {
+  return runAuthDiagnostic(
+    'login.exchange',
+    (operation) => oauthNativeSignInInternal(operation, provider, identityToken, extra),
+    classifySignInResult,
+    { kind: provider },
+  );
+}
+export function signInWithApple(): Promise<OAuthSignInResult> {
+  return runAuthDiagnostic('login.native', signInWithAppleInternal, classifySignInResult, { kind: 'apple' }, true);
+}
+export function signInWithGoogle(): Promise<OAuthSignInResult> {
+  return runAuthDiagnostic('login.native', signInWithGoogleInternal, classifySignInResult, { kind: 'google' }, true);
+}
+export function signInWithCredentials(email: string, password: string): Promise<CredentialsSignInResult> {
+  return runAuthDiagnostic(
+    'login.credentials',
+    (operation) => signInWithCredentialsInternal(operation, email, password),
+    classifySignInResult,
+    undefined,
+    true,
+  );
+}
+export function registerWithCredentials(email: string, password: string, name?: string): Promise<RegistrationResult> {
+  return runAuthDiagnostic(
+    'register.credentials',
+    (operation) => registerWithCredentialsInternal(operation, email, password, name),
+    classifySignInResult,
+    undefined,
+    true,
+  );
+}
+export function requestPasswordReset(email: string): Promise<PasswordResetResult> {
+  return runAuthDiagnostic(
+    'password_reset.request',
+    (operation) => requestPasswordResetInternal(operation, email),
+    classifySignInResult,
+    undefined,
+    true,
+  );
+}
+export function resetPassword(
+  email: string,
+  token: string,
+  newPassword: string,
+  confirmPassword: string,
+): Promise<PasswordResetResult> {
+  return runAuthDiagnostic(
+    'password_reset.submit',
+    (operation) => resetPasswordInternal(operation, email, token, newPassword, confirmPassword),
+    classifySignInResult,
+    undefined,
+    true,
+  );
+}
+export function signOutForGeneration(signOutGeneration: number): Promise<boolean> {
+  return runAuthDiagnostic(
+    'sign_out',
+    (operation) => signOutForGenerationInternal(operation, signOutGeneration),
+    (performed) => ({ outcome: performed ? 'success' : 'superseded' }),
+    { generation: signOutGeneration },
+  );
 }

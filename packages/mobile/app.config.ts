@@ -777,7 +777,30 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
       // the build-phase source-map + dSYM upload can find the Sentry project.
       // The auth token is supplied via the SENTRY_AUTH_TOKEN env var in CI
       // (never committed); url defaults to https://sentry.io/ (US region).
-      ['@sentry/react-native/expo', { organization: 'boardsesh', project: 'boardsesh' }],
+      // Expo source mods execute in reverse registration order: guard runs after official insertion.
+      './plugins/with-sentry-native-diagnostics',
+      [
+        '@sentry/react-native/expo',
+        {
+          organization: 'boardsesh',
+          project: 'boardsesh',
+          useNativeInit: true,
+          options: {
+            dsn: process.env.EXPO_PUBLIC_SENTRY_DSN || '',
+            environment: process.env.SENTRY_ENVIRONMENT || 'production',
+            enableNativeCrashHandling: true,
+            attachStacktrace: true,
+            tracesSampleRate: 0.1,
+            enableNdk: true,
+            enableNdkScopeSync: true,
+            enableTombstone: true,
+            enableHistoricalTombstoneReporting: false,
+            enableAppHangTracking: true,
+            appHangTimeoutInterval: 2,
+            maxBreadcrumbs: 100,
+          },
+        },
+      ],
     ],
     extra: {
       ...config.extra,

@@ -771,6 +771,14 @@ jobs:
         with:
           node-version: '22.x'
 
+      - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
+        with:
+          node-version: '22.x'
+          cache: true
+
+      - name: Install trusted diagnostics uploader dependencies
+        run: vp install --frozen-lockfile
+
       - name: Require live backend schema
         run: |
           set -euo pipefail
@@ -791,10 +799,11 @@ jobs:
       - name: Promote exact staged iOS and Android exports
         id: promote
         env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           EOO_TOKEN: ${{ secrets.EOO_TOKEN }}
           EXPO_UPDATES_URL: ${{ vars.EXPO_UPDATES_URL }}
         run: >-
-          node --experimental-strip-types scripts/mobile-ota-promote.ts
+          vp exec tsx scripts/mobile-ota-promote.ts
           --receipt ota-stage/receipt.json
           --ios-export ota-stage/ios
           --android-export ota-stage/android

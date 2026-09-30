@@ -1359,7 +1359,9 @@ describe('triggerSync / pullSync bindings', () => {
     );
 
     const options = triggerSyncCore.mock.calls[0][5] as SchedulerOptions;
-    expect(options.onProgress).toBe(onProgress);
+    const progress = { phase: 'user_data' as const, currentTable: null, documentsProcessed: 2 };
+    options.onProgress?.(progress);
+    expect(onProgress).toHaveBeenCalledExactlyOnceWith(progress);
     expect(options.onSchemaDrift).toBeTypeOf('function');
     expect(options.onCycleError).toBeTypeOf('function');
   });

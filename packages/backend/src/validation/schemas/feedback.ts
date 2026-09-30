@@ -32,6 +32,23 @@ function bestEffort<T extends z.ZodType>(schema: T) {
   return schema.optional().nullable().catch(null);
 }
 
+const FeedbackDiagnosticsInputSchema = z.object({
+  schemaVersion: bestEffort(z.literal(1)),
+  reportId: bestEffort(z.string().trim().min(1).max(200)),
+  launchId: bestEffort(z.string().trim().min(1).max(200)),
+  previousLaunchId: bestEffort(z.string().trim().min(1).max(200)),
+  nativeStartupId: bestEffort(z.string().trim().min(1).max(200)),
+  lastUserOperationId: bestEffort(z.string().trim().min(1).max(200)),
+  posthogDistinctId: bestEffort(z.string().trim().min(1).max(200)),
+  posthogSessionId: bestEffort(z.string().trim().min(1).max(200)),
+  easClientId: bestEffort(z.string().trim().min(1).max(200)),
+  otaUpdateId: bestEffort(z.string().trim().min(1).max(200)),
+  otaBranch: bestEffort(z.string().trim().min(1).max(100)),
+  otaRuntimeVersion: bestEffort(z.string().trim().min(1).max(200)),
+  previousLaunchCrashed: bestEffort(z.boolean()),
+  otaIsEmbedded: bestEffort(z.boolean()),
+});
+
 const FeedbackContextInputSchema = z.object({
   climbUuid: bestEffort(z.string().max(64)),
   climbName: bestEffort(z.string().max(200)),
@@ -40,6 +57,7 @@ const FeedbackContextInputSchema = z.object({
   sessionName: bestEffort(z.string().max(200)),
   url: bestEffort(z.string().max(1000)),
   userAgent: bestEffort(z.string().max(512)),
+  diagnostics: bestEffort(FeedbackDiagnosticsInputSchema),
 });
 // Deliberately NOT `.strict()`: an unknown key is a newer client talking to an
 // older server, and that must not cost the report. Zod strips unknown keys, and

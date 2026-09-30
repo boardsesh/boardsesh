@@ -18,9 +18,9 @@
  * uploading nothing useful again.
  */
 
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { existsSync, lstatSync, readdirSync, realpathSync, statSync } from 'node:fs';
+import { existsSync, lstatSync, readdirSync, realpathSync, statSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createSentryUploadEnvironment } from './mobile-upload-sourcemaps';
@@ -55,6 +55,7 @@ export interface UploadDsymsOptions {
 export interface UploadDsymsDependencies {
   resolveSentryCli?: (mobileDir: string) => string;
   spawnSentryCli?: SpawnSentryCli;
+  verifyUuids?: (archivePath: string, dsyms: ArchiveDsyms) => string[] | void;
 }
 
 export interface ArchiveDsyms {
@@ -147,6 +148,53 @@ export function collectArchiveDsyms(archivePathInput: string): ArchiveDsyms {
   return { dsymsDir, bundleNames, appBundleNames };
 }
 
+export function parseMachOUuids(output: string): string[] {
+  return [...output.matchAll(/UUID:\s*([A-Fa-f0-9-]{36})\s*\(([^)]+)\)/g)]
+    .map((match) => `${match[1].toLowerCase()}:${match[2]}`)
+    .sort();
+}
+export function assertMatchingMachOUuids(binary: string[], symbols: string[]): void {
+  if (!binary.length || binary.some((uuid) => !symbols.includes(uuid)))
+    throw new Error('Archive binary UUID/architecture has no matching dSYM.');
+}
+export function verifyArchiveUuids(archivePath: string, dsyms: ArchiveDsyms): string[] {
+  const applications = join(archivePath, 'Products', 'Applications');
+  if (!existsSync(applications)) throw new Error('Archive Products/Applications is missing.');
+  const uuids = (filename: string): string[] =>
+    parseMachOUuids(execFileSync('xcrun', ['dwarfdump', '--uuid', filename], { encoding: 'utf8' }));
+  const symbolUuids = dsyms.bundleNames.flatMap((name) => {
+    const dwarfDir = join(dsyms.dsymsDir, name, 'Contents', 'Resources', 'DWARF');
+    return readdirSync(dwarfDir).flatMap((payload) => uuids(join(dwarfDir, payload)));
+  });
+  const inventory: Array<{ bundle: string; uuids: string[] }> = [];
+  const inspectBundles = (directory: string): void => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const bundle = join(directory, entry.name);
+      if (/\.(app|appex)$/.test(entry.name)) {
+        const executable = execFileSync(
+          '/usr/libexec/PlistBuddy',
+          ['-c', 'Print CFBundleExecutable', join(bundle, 'Info.plist')],
+          { encoding: 'utf8' },
+        ).trim();
+        const binaryUuids = uuids(join(bundle, executable));
+        assertMatchingMachOUuids(binaryUuids, symbolUuids);
+        inventory.push({ bundle: entry.name, uuids: binaryUuids });
+      }
+      inspectBundles(bundle);
+    }
+  };
+  inspectBundles(applications);
+  if (!inventory.length) throw new Error('Archive has no owned app/extension binaries.');
+  const receiptDir = resolve('packages/mobile/diagnostic-artifacts/ios-native');
+  mkdirSync(receiptDir, { recursive: true });
+  writeFileSync(
+    join(receiptDir, 'inventory.json'),
+    JSON.stringify({ commit: process.env.GITHUB_SHA ?? null, inventory }, null, 2),
+  );
+  return [...new Set(inventory.flatMap((entry) => entry.uuids.map((uuid) => uuid.split(':')[0])))];
+}
+
 /**
  * Resolve the sentry-cli binary the same way the iOS build phase does: from
  * packages/mobile, where `@sentry/cli` is a direct dependency so pnpm's isolated
@@ -167,7 +215,8 @@ export function resolveSentryCli(mobileDirInput: string): string {
         "packages/mobile/package.json (pnpm's isolated linker does not surface transitive deps there).",
     );
   }
-  const getPath = (sentryCliModule as { getPath?: () => string }).getPath;
+  const cliExport = sentryCliModule as { getPath?: () => string; SentryCli?: { getPath?: () => string } };
+  const getPath = cliExport.getPath ?? cliExport.SentryCli?.getPath;
   if (typeof getPath !== 'function') {
     throw new Error('The installed @sentry/cli does not expose getPath(); cannot locate the sentry-cli binary.');
   }
@@ -205,6 +254,11 @@ export function uploadArchiveDsyms(
   // SENTRY_AUTH_TOKEN still exercises every local assertion.
   const archiveDsyms = collectArchiveDsyms(options.archivePath ?? DEFAULT_ARCHIVE_PATH);
   const uploadEnvironment = createSentryUploadEnvironment(options.environment ?? process.env);
+  const expectedIds =
+    (dependencies.verifyUuids ?? verifyArchiveUuids)(
+      resolve(options.archivePath ?? DEFAULT_ARCHIVE_PATH),
+      archiveDsyms,
+    ) ?? [];
   const executablePath = (dependencies.resolveSentryCli ?? resolveSentryCli)(mobileDir);
 
   console.log(
@@ -214,13 +268,23 @@ export function uploadArchiveDsyms(
 
   const spawnSentryCli: SpawnSentryCli =
     dependencies.spawnSentryCli ?? ((executable, args, spawnOptions) => spawnSync(executable, args, spawnOptions));
-  const uploadResult = spawnSentryCli(executablePath, ['debug-files', 'upload', archiveDsyms.dsymsDir], {
-    cwd: mobileDir,
-    env: uploadEnvironment,
-    encoding: 'utf8',
-    timeout: UPLOAD_TIMEOUT_MS,
-    maxBuffer: UPLOAD_MAX_BUFFER_BYTES,
-  });
+  const uploadResult = spawnSentryCli(
+    executablePath,
+    [
+      'debug-files',
+      'upload',
+      '--wait',
+      ...(expectedIds.length ? ['--require-all', ...expectedIds.flatMap((debugId) => ['--id', debugId])] : []),
+      archiveDsyms.dsymsDir,
+    ],
+    {
+      cwd: mobileDir,
+      env: uploadEnvironment,
+      encoding: 'utf8',
+      timeout: UPLOAD_TIMEOUT_MS,
+      maxBuffer: UPLOAD_MAX_BUFFER_BYTES,
+    },
+  );
   if (uploadResult.error) {
     const { code } = uploadResult.error as NodeJS.ErrnoException;
     throw new Error(
@@ -266,6 +330,9 @@ export function uploadArchiveDsyms(
     `[mobile:upload-dsyms] sentry-cli found ${summary.found} debug information file(s), uploaded ${summary.uploaded} ` +
       `missing (${summary.debugCompanions} debug companion). Zero uploaded means Sentry already had them.`,
   );
+  const receiptDir = join(mobileDir, 'diagnostic-artifacts', 'ios-native');
+  mkdirSync(receiptDir, { recursive: true });
+  writeFileSync(join(receiptDir, 'accepted.json'), JSON.stringify({ accepted: true, debugIds: expectedIds }));
   return { ...summary, archiveDsyms };
 }
 

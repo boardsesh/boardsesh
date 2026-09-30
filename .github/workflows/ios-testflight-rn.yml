@@ -506,24 +506,32 @@ jobs:
           </plist>
           PLIST
 
-      # The @sentry/react-native build phases upload the JS source maps during
-      # `xcodebuild archive`. Without a token the upload errors and fails the
-      # archive (sentry-xcode.sh exits non-zero), so gate it: only enable the
-      # upload when SENTRY_AUTH_TOKEN is present, otherwise skip it and keep the
-      # build green. SENTRY_DISABLE_AUTO_UPLOAD is read by both phases, and by
-      # the post-archive dSYM upload at the end of this job — the phases run too
-      # early to see the real dSYMs (see that step's comment / #4202).
+      # Native bundling emits maps; explicit post-archive uploads validate the
+      # embedded bundle and wait for Sentry processing before TestFlight.
       - name: Configure Sentry source map upload
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
         run: |
           if [ -n "$SENTRY_AUTH_TOKEN" ]; then
-            echo "SENTRY_DISABLE_AUTO_UPLOAD=false" >> "$GITHUB_ENV"
-            echo "Sentry auth token present — source maps upload during the archive, dSYMs after it."
+            echo "SENTRY_DISABLE_AUTO_UPLOAD=true" >> "$GITHUB_ENV"
+            echo "Sentry auth token present — explicit diagnostics uploads gate TestFlight."
           else
             echo "SENTRY_DISABLE_AUTO_UPLOAD=true" >> "$GITHUB_ENV"
-            echo "::warning::SENTRY_AUTH_TOKEN not set — skipping Sentry source map upload."
+            echo "::error::SENTRY_AUTH_TOKEN is required for release diagnostics."
+            exit 1
           fi
+
+      - name: Install Rust for owned renderer symbols
+        uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+
+      - name: Cache renderer compilation
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: packages/board-renderer -> target
+          shared-key: native-debug-v1
+
+      - name: Rebuild renderer with DWARF before archive
+        run: bash scripts/build-native-renderer.sh ios
 
       - name: Archive
         env:
@@ -531,6 +539,8 @@ jobs:
           # SENTRY_DISABLE_AUTO_UPLOAD gate above (via $GITHUB_ENV) decides whether
           # the upload actually runs.
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SOURCEMAP_FILE: ${{ github.workspace }}/packages/mobile/ios/build/main.jsbundle.map
+          COMPOSE_SOURCEMAP_PATH: ${{ github.workspace }}/scripts/mobile-compose-sourcemaps.cjs
         run: |
           xcodebuild archive \
             -workspace "$WORKSPACE_PATH" \
@@ -584,11 +594,30 @@ jobs:
       # fingerprint tag makes the next push skip the native build, so the missing
       # dSYMs never get a second chance. Here, a failure ships nothing and pushes
       # no tag, so the next push simply builds and uploads again.
+      - name: Validate and upload embedded iOS source maps
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+        run: |
+          set -euo pipefail
+          bundle_path="$ARCHIVE_PATH/Products/Applications/Boardsesh.app/main.jsbundle"
+          vp exec tsx scripts/mobile-upload-embedded-sourcemaps.ts ios "$bundle_path" packages/mobile/ios/build/main.jsbundle.map
+
       - name: Upload iOS dSYMs to Sentry
-        if: env.SENTRY_DISABLE_AUTO_UPLOAD == 'false'
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
         run: vp run mobile:upload-dsyms -- --archive "$ARCHIVE_PATH"
+
+      - name: Retain iOS diagnostic artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-diagnostics-${{ github.sha }}
+          retention-days: 30
+          path: |
+            packages/mobile/ios/build/Boardsesh.xcarchive/dSYMs/
+            packages/mobile/ios/build/**/*.map
+            packages/mobile/ios/build/**/main.jsbundle
+            packages/mobile/diagnostic-artifacts/ios-native/
 
       - name: Export archive (uploads to TestFlight)
         id: testflight_upload

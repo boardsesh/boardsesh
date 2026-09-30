@@ -1218,6 +1218,18 @@ export default defineConfig({
         command: 'tsx scripts/mobile-upload-sourcemaps.ts',
         cache: false,
       },
+      'mobile:ota-retry': {
+        command: 'tsx scripts/mobile-ota-retry.ts',
+        cache: false,
+      },
+      'mobile:diagnostics-audit': {
+        command: 'tsx scripts/mobile-diagnostics-audit.ts',
+        cache: false,
+      },
+      'mobile:upload-android-symbols': {
+        command: 'tsx scripts/mobile-upload-android-symbols.ts',
+        cache: false,
+      },
       'mobile:upload-dsyms': {
         command: 'tsx scripts/mobile-upload-dsyms.ts',
         cache: false,

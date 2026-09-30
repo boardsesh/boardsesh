@@ -12,6 +12,26 @@ export type AppFeedbackBoardName = string;
  * server. Every field is optional — anonymous submissions from outside a board
  * route may have only `url` and `userAgent`.
  */
+/** Private, best-effort telemetry correlation. Never mirrored to public issues. */
+export type FeedbackDiagnosticsInput = {
+  schemaVersion?: number | null;
+  reportId?: string | null;
+  launchId?: string | null;
+  previousLaunchId?: string | null;
+  nativeStartupId?: string | null;
+  lastUserOperationId?: string | null;
+  posthogDistinctId?: string | null;
+  posthogSessionId?: string | null;
+  easClientId?: string | null;
+  otaUpdateId?: string | null;
+  otaBranch?: string | null;
+  otaRuntimeVersion?: string | null;
+  previousLaunchCrashed?: boolean | null;
+  otaIsEmbedded?: boolean | null;
+};
+
+export type FeedbackDiagnostics = FeedbackDiagnosticsInput;
+
 export type FeedbackContextInput = {
   climbUuid?: string | null;
   climbName?: string | null;
@@ -20,6 +40,7 @@ export type FeedbackContextInput = {
   sessionName?: string | null;
   url?: string | null;
   userAgent?: string | null;
+  diagnostics?: FeedbackDiagnosticsInput | null;
 };
 
 export type SubmitAppFeedbackInput = {
@@ -81,6 +102,7 @@ export type AppFeedbackContext = {
   sessionName?: string | null;
   url?: string | null;
   userAgent?: string | null;
+  diagnostics?: FeedbackDiagnosticsInput | null;
 };
 
 /** A feedback row enriched for the admin dashboard. */

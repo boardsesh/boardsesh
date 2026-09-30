@@ -1,5 +1,8 @@
 // @vitest-environment jsdom
 import { it, expect, vi, beforeEach } from 'vitest';
+vi.mock('../../../lib/analytics', () => ({ track: vi.fn() }));
+vi.mock('../../../lib/error-reporting', () => ({ addErrorBreadcrumb: vi.fn() }));
+vi.mock('expo-crypto', () => ({ randomUUID: () => 'report-test-id' }));
 import { render, renderHook, fireEvent, act } from '@testing-library/react';
 import { createElement, createRef, useSyncExternalStore, Profiler, useState, type ReactNode } from 'react';
 import type { ManagedSheetHandle } from '../../../providers/sheet-presentation-provider';
@@ -179,6 +182,8 @@ vi.mock('@expo/ui/community/bottom-sheet', () => ({
 
 import { FeedbackSheet } from '../FeedbackSheet';
 import { useSubmitMobileAppFeedback } from '../../../lib/feedback/use-submit-app-feedback';
+import { track } from '../../../lib/analytics';
+import { setDiagnosticIdentityReader, setDiagnosticSink } from '../../../lib/mobile-diagnostics';
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
@@ -337,4 +342,71 @@ it('refuses submission before metadata is mounted instead of filing stale contex
     ).rejects.toThrow('Feedback metadata is not ready');
   });
   expect(request).not.toHaveBeenCalled();
+});
+
+it('files feedback and closes the sheet when optional telemetry fails', async () => {
+  setDiagnosticSink(() => {
+    throw new Error('Sentry unavailable');
+  });
+  setDiagnosticIdentityReader(() => {
+    throw new Error('PostHog unavailable');
+  });
+  vi.mocked(track).mockImplementationOnce(() => {
+    throw new Error('Analytics unavailable');
+  });
+  try {
+    const { getByPlaceholderText, container } = mountFeedback(true);
+    fireEvent.change(getByPlaceholderText('feedbackForm.bugPlaceholder'), {
+      target: { value: 'Feedback must survive an unavailable telemetry SDK' },
+    });
+    fireEvent.click(container.querySelector('[data-button="feedbackDialog.submitBug"]')!);
+    await vi.waitFor(() => expect(closeRequested).toHaveBeenCalledTimes(1));
+    expect(request.mock.calls[0][1]).toMatchObject({
+      input: {
+        comment: 'Feedback must survive an unavailable telemetry SDK',
+        context: { diagnostics: { schemaVersion: 1, reportId: 'report-test-id' } },
+      },
+    });
+    expect(showToast).toHaveBeenCalledWith('feedbackDialog.successBug', 'success');
+  } finally {
+    setDiagnosticSink(undefined);
+    setDiagnosticIdentityReader(undefined);
+    vi.mocked(track).mockReset();
+  }
+});
+
+it('keeps the supplied report snapshot frozen when identity fields arrive between retries', async () => {
+  const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+  const readerRef = {
+    current: () => ({ activeBoard: null, currentClimbQueueItem: null, sessionId: null, pathname: '/climbs' }),
+  };
+  const { result } = renderHook(() => useSubmitMobileAppFeedback(readerRef), {
+    wrapper: ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    ),
+  });
+  const frozen = { schemaVersion: 1, reportId: 'stable-report', launchId: 'original-runtime' };
+  const payload = {
+    source: 'drawer-bug' as const,
+    rating: null,
+    comment: 'Retry snapshot',
+    contactConsent: false,
+    screenshotKeys: null,
+    diagnostics: frozen,
+  };
+  request.mockRejectedValueOnce(new Error('offline'));
+  await act(async () => {
+    await expect(result.current.mutateAsync(payload)).rejects.toThrow('offline');
+  });
+  setDiagnosticIdentityReader(() => ({ posthogDistinctId: 'late-identity', previousLaunchCrashed: true }));
+  try {
+    await act(async () => {
+      await result.current.mutateAsync(payload);
+    });
+    for (const [, variables] of request.mock.calls) {
+      expect(variables.input.context.diagnostics).toEqual(frozen);
+    }
+  } finally {
+    setDiagnosticIdentityReader(undefined);
+  }
 });

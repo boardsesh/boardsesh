@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 3.22)
+project(boardsesh_diagnostics)
+add_library(boardsesh_diagnostics SHARED diagnostics.cpp)
+target_compile_options(boardsesh_diagnostics PRIVATE "-g")
+target_link_options(boardsesh_diagnostics PRIVATE "-Wl,--build-id=sha1" "-Wl,-z,max-page-size=16384")

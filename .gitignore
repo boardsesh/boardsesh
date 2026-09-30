@@ -199,3 +199,7 @@ garmin/**/*.iq.debug.xml
 garmin/developer_key
 garmin/developer_key.der
 garmin/developer_key.pem
+
+# Private crash diagnostics and unstripped owned native symbols.
+packages/mobile/diagnostic-artifacts/
+packages/mobile/modules/**/android/symbols/

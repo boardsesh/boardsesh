@@ -1,5 +1,7 @@
 import type { ComponentType } from 'react';
 import * as Sentry from '@sentry/react-native';
+import { nativeMobileDiagnostics } from '../../modules/mobile-diagnostics/src';
+import { setDiagnosticSink } from './mobile-diagnostics';
 import { installGlobalErrorCapture } from './global-error-capture';
 import { resolveAppEnvironment } from './app-environment';
 import type { InterruptedLiveActivityIntentDiagnostic } from './live-activity/live-activity-plugin';
@@ -27,6 +29,11 @@ const sentryDsn = process.env.EXPO_PUBLIC_SENTRY_DSN;
  * (TestFlight / internal) and production builds are both `!__DEV__`.
  */
 export const isSentryEnabled = !!sentryDsn && !__DEV__;
+
+// Contexts → mobile_diagnostics → completed/active → operation → attributes.
+// The SDK's default depth of 3 replaces operations with "[Object]" on JS errors.
+// The recorder independently caps this context at 32 KB.
+export const MOBILE_DIAGNOSTICS_NORMALIZE_DEPTH = 6;
 
 // @expo/ui's Android bottom sheet fires `sheetRef.partialExpand()` / `expand()`
 // fire-and-forget inside `snapToIndex` (community/bottom-sheet/BottomSheet.android.tsx).
@@ -119,6 +126,14 @@ if (isSentryEnabled) {
     // can't fill, and the reason Sentry is back. attachStacktrace gives
     // captureMessage calls a stack too.
     enableNativeCrashHandling: true,
+    // A native capability, rather than OTA config, preserves older binary initialization.
+    autoInitializeNativeSdk: nativeMobileDiagnostics?.nativeInitVersion !== 1,
+    enableNdk: true,
+    enableNdkScopeSync: true,
+    enableTombstone: true,
+    enableHistoricalTombstoneReporting: false,
+    maxBreadcrumbs: 100,
+    normalizeDepth: MOBILE_DIAGNOSTICS_NORMALIZE_DEPTH,
     attachStacktrace: true,
     // App-hang / ANR tracking. This is what catches the freezes users actually
     // report in the wild (e.g. Galaxy S24 / Pixel 10) with a JS stack pinned to
@@ -141,6 +156,22 @@ if (isSentryEnabled) {
     // uploaded artifacts and break symbolication.
   });
 }
+
+// Keep bounded operation snapshots in the native-synchronized global scope. A
+// sink failure is contained here and by the recorder; diagnostics cannot fail a flow.
+setDiagnosticSink((snapshot, breadcrumb) => {
+  if (!isSentryEnabled) return;
+  try {
+    const { breadcrumbs: _breadcrumbs, ...context } = snapshot;
+    Sentry.setContext('mobile_diagnostics', context);
+    if (snapshot.launch.launchId) Sentry.setTag('launch_id', snapshot.launch.launchId);
+    if (nativeMobileDiagnostics?.nativeStartupId)
+      Sentry.setTag('native_startup_id', nativeMobileDiagnostics.nativeStartupId);
+    if (breadcrumb) Sentry.addBreadcrumb(breadcrumb);
+  } catch {
+    /* Capture remains best effort, including native bridge teardown. */
+  }
+});
 
 // Sentry tags must be primitives; coerce non-scalar values to a readable string
 // rather than dropping them so triage data survives. Objects/arrays would
@@ -370,10 +401,16 @@ const BLE_DIAGNOSTIC_TAG_KEYS = [
   'ble_max_without_response',
   'ble_connect_origin',
   'ble_relight_suppressed',
+  'ble_mtu',
+  'ble_chunk_size',
+  'ble_supports_with_response',
 ] as const;
 
 export type BleConnectionDiagnostics = {
   characteristicProperties?: number;
+  negotiatedMtu?: number;
+  chunkSize?: number;
+  supportsWriteWithResponse?: boolean;
   supportsWriteWithoutResponse?: boolean;
   // Mirrors NativeBleConnectedDevice.chosenWriteType so a new write-type string
   // is caught at this boundary rather than silently widened.
@@ -405,6 +442,10 @@ export function applyBleDiagnosticsToScope(scope: TagScope, diagnostics: BleConn
     for (const key of BLE_DIAGNOSTIC_TAG_KEYS) scope.setTag(key, undefined);
     return;
   }
+  if (diagnostics.negotiatedMtu !== undefined) scope.setTag('ble_mtu', diagnostics.negotiatedMtu);
+  if (diagnostics.chunkSize !== undefined) scope.setTag('ble_chunk_size', diagnostics.chunkSize);
+  if (diagnostics.supportsWriteWithResponse !== undefined)
+    scope.setTag('ble_supports_with_response', String(diagnostics.supportsWriteWithResponse));
   if (diagnostics.chosenWriteType !== undefined) scope.setTag('ble_chosen_write_type', diagnostics.chosenWriteType);
   // Sentry stores/queries tag values as strings; stringify the boolean so a
   // filter reads `true`/`false` rather than a coerced primitive.
@@ -510,6 +551,33 @@ export function flushSentry(): Promise<boolean> {
 export function nativeSentryCrash(): void {
   if (!isSentryEnabled) return;
   Sentry.nativeCrash();
+}
+
+/** Filter deliberate crashes by source/test_run_id without changing crash grouping. */
+export function setSentryDiagnosticTestContext(kind: string, testRunId: string): void {
+  if (!isSentryEnabled) return;
+  try {
+    Sentry.setTag('source', 'sentry-test');
+    Sentry.setTag('sentry_test_kind', kind);
+    Sentry.setTag('test_run_id', testRunId);
+  } catch {
+    /* Diagnostic controls remain best effort. */
+  }
+}
+
+export function canNativeAbortSentryCrash(): boolean {
+  return (
+    isSentryEnabled &&
+    nativeMobileDiagnostics?.nativeInitVersion === 1 &&
+    typeof nativeMobileDiagnostics.crashNativeAbort === 'function'
+  );
+}
+
+/** Real libc abort, distinct from Sentry.nativeCrash's Java exception on Android. */
+export function nativeAbortSentryCrash(): boolean {
+  if (!canNativeAbortSentryCrash()) return false;
+  nativeMobileDiagnostics?.crashNativeAbort?.();
+  return true;
 }
 
 // Wrap the RN global error handler regardless of whether Sentry is enabled: the

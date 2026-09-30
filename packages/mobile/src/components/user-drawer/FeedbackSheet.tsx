@@ -1,3 +1,6 @@
+import type { FeedbackDiagnosticsInput } from '@boardsesh/shared-schema';
+import { getFeedbackDiagnostics } from '../../lib/mobile-diagnostics';
+import { randomUUID } from 'expo-crypto';
 import { memo, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { BottomSheetTextInput } from '@expo/ui/community/bottom-sheet';
@@ -63,6 +66,8 @@ export const FeedbackSheet = memo(function FeedbackSheet({
   const [isUploading, setIsUploading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const submittingRef = useRef(false);
+  const reportIdRef = useRef<string | null>(null);
+  const diagnosticsRef = useRef<FeedbackDiagnosticsInput | null>(null);
 
   const isBugReport = mode === 'bug';
   // The upload endpoint needs a bearer token, so a signed-out reporter gets the
@@ -76,6 +81,8 @@ export const FeedbackSheet = memo(function FeedbackSheet({
   const inputPlaceholder = isBugReport ? t('feedbackForm.bugPlaceholder') : t('feedbackForm.ratingPlaceholder');
 
   useEffect(() => {
+    reportIdRef.current = null;
+    diagnosticsRef.current = null;
     setSelectedRating(null);
     setComment('');
     setCaptureBleDiag(false);
@@ -92,6 +99,22 @@ export const FeedbackSheet = memo(function FeedbackSheet({
 
   const handleSubmit = async () => {
     if (!canSubmit || submittingRef.current) return;
+    if (!reportIdRef.current) {
+      try {
+        reportIdRef.current = randomUUID();
+      } catch {
+        reportIdRef.current = `feedback-${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`;
+      }
+    }
+    const reportId = reportIdRef.current;
+    if (!diagnosticsRef.current) {
+      try {
+        diagnosticsRef.current = { ...getFeedbackDiagnostics(), schemaVersion: 1, reportId };
+      } catch {
+        diagnosticsRef.current = { schemaVersion: 1, reportId };
+      }
+    }
+    const diagnostics = diagnosticsRef.current;
     submittingRef.current = true;
     setIsSubmitting(true);
     try {
@@ -111,24 +134,21 @@ export const FeedbackSheet = memo(function FeedbackSheet({
       }
 
       try {
-        // Fire the opt-in Bluetooth scan-recon alongside the report. It scans
-        // (no connect) and ships each in-range board's raw advertisement payload
-        // to PostHog so we can find where bare-name boxes stash their serial. The
-        // correlation id groups this one scan's events; joining to the specific bug
-        // report is by person + timestamp (the report goes to the backend, not
-        // PostHog). Runs independently of the sheet lifecycle; never blocks the
-        // submit or surfaces its own errors.
+        // The optional scan and persisted report share one private correlation ID.
+        // Retries keep it, and scan failures never block the report.
         if (isBugReport && captureBleDiag) {
-          const reconCorrelationId = `bug-${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`;
-          void runBleAdvertisementRecon(reconCorrelationId).catch(() => {});
+          void runBleAdvertisementRecon(reportId).catch(() => {});
         }
         await mutateAsync({
+          diagnostics,
           source: isBugReport ? 'drawer-bug' : 'drawer-feedback',
           rating: isBugReport ? null : selectedRating,
           comment: trimmedComment.length > 0 ? trimmedComment : null,
           contactConsent: isBugReport ? contactConsent : null,
           screenshotKeys: screenshotKeys.length > 0 ? screenshotKeys : null,
         });
+        reportIdRef.current = null;
+        diagnosticsRef.current = null;
         onClose();
         showToast(isBugReport ? t('feedbackDialog.successBug') : t('feedbackDialog.successRating'), 'success');
         setSelectedRating(null);

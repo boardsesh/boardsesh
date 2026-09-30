@@ -114,7 +114,7 @@ describe('mobile publish argument routing', () => {
     expect(args).toContain('pr-staging');
   });
 
-  it('keeps the EAS preview command arguments unchanged', () => {
+  it('requires EAS to publish an already validated export', () => {
     const args = buildEasUpdateArgs('fix-branch', 'preview message', 'all');
 
     expect(args).toEqual([
@@ -127,6 +127,9 @@ describe('mobile publish argument routing', () => {
       '--platform',
       'all',
       '--non-interactive',
+      '--skip-bundler',
+      '--input-dir',
+      'dist',
     ]);
     // `eas update` has no --upload-rate; passing one would abort the EAS path.
     expect(args).not.toContain('--upload-rate');

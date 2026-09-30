@@ -2,6 +2,7 @@ import { PostHog, type PostHogOptions } from 'posthog-react-native';
 import { getAnalyticsBootstrapId } from './analytics-bootstrap-id';
 import { resolveAnalyticsUserAgent } from './analytics-user-agent';
 import { resolveAppEnvironment } from './app-environment';
+import { getDiagnosticAnalyticsProperties, setDiagnosticIdentityReader } from './mobile-diagnostics';
 
 // Registers the User-Agent as a super property on every event: the static,
 // non-bot app constant on native, the real browser UA in the Expo browser app
@@ -79,6 +80,9 @@ let initAttempted = false;
 export function buildPostHogOptions(postHogHost: string, bootstrapDistinctId: string | null): PostHogOptions {
   return {
     host: postHogHost,
+    // Compute from the current runtime, overriding persisted startup properties
+    // before the first capture after an OTA reload or analytics reset.
+    customAppProperties: (properties) => ({ ...properties, ...getDiagnosticAnalyticsProperties() }),
     bootstrap: bootstrapDistinctId ? { distinctId: bootstrapDistinctId, isIdentifiedId: false } : undefined,
     // The app already emits explicit $screen events plus reviewed product
     // events. SDK lifecycle autocapture adds high-volume foreground/background
@@ -110,6 +114,10 @@ export function getPostHogClient(): PostHog | null {
   // screen/action events start flowing.
   const bootstrapDistinctId = getAnalyticsBootstrapId();
   client = new PostHog(apiKey, buildPostHogOptions(host, bootstrapDistinctId));
+  setDiagnosticIdentityReader(() => ({
+    posthogDistinctId: client?.getDistinctId() ?? null,
+    posthogSessionId: client?.getSessionId() || null,
+  }));
   registerAppSuperProperties(client);
   return client;
 }

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+vi.mock('expo-crypto', () => ({ randomUUID: () => 'report-test-id' }));
 import { render, fireEvent } from '@testing-library/react';
 import { createElement, createRef, type ReactNode } from 'react';
 import type { ManagedSheetHandle } from '../../../providers/sheet-presentation-provider';
@@ -315,4 +316,23 @@ describe('FeedbackSheet screenshots', () => {
     );
     expect(picker(container)?.getAttribute('data-screenshot-picker')).toBe('file:///shot-0.jpg');
   });
+});
+
+it('reuses the report ID and diagnostics snapshot after a failed submission', async () => {
+  feedbackMutation.mutateAsync.mockReset().mockRejectedValueOnce(new Error('offline')).mockResolvedValue(true);
+  const sheetRef = createRef<ManagedSheetHandle>();
+  const { container, getByPlaceholderText } = render(
+    <FeedbackSheet sheetRef={sheetRef} visible onClose={() => {}} mode="bug" />,
+  );
+  fireEvent.change(getByPlaceholderText('feedbackForm.bugPlaceholder'), {
+    target: { value: 'the board disconnects on start' },
+  });
+  const submit = container.querySelector('[data-button="feedbackDialog.submitBug"]')!;
+  fireEvent.click(submit);
+  await vi.waitFor(() => expect(showToast).toHaveBeenCalledWith('feedbackDialog.errorRating', 'error'));
+  fireEvent.click(submit);
+  await vi.waitFor(() => expect(feedbackMutation.mutateAsync).toHaveBeenCalledTimes(2));
+  const firstDiagnostics = feedbackMutation.mutateAsync.mock.calls[0][0].diagnostics;
+  expect(firstDiagnostics.reportId).toBe('report-test-id');
+  expect(feedbackMutation.mutateAsync.mock.calls[1][0].diagnostics).toEqual(firstDiagnostics);
 });
