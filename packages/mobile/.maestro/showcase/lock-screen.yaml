@@ -16,6 +16,11 @@ name: showcase take - the Live Activity in the Dynamic Island
 # writes the rects in the take registry (lock-next, lock-relight, lock-mirror,
 # measured on a recorded frame of the expanded island) from that moment on.
 #
+# The home screen behind the island is empty: home-screen-clean.yaml cleared
+# it earlier in the run, so Home shows only the dark wallpaper.
+#
+# Marks (work/marks/lock-screen.json): home, island-expanded, next-tapped.
+#
 # Coordinates (iPhone 16 Pro Max portrait):
 #   50%,3%   the Dynamic Island (long press expands it)
 #   73%,13%  Next, right end of the expanded island's control row
@@ -28,6 +33,7 @@ name: showcase take - the Live Activity in the Dynamic Island
     optional: true
 
 - pressKey: home
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/home')}
 - extendedWaitUntil:
     visible: 'zzz-showcase-pause'
     timeout: 1500
@@ -43,6 +49,7 @@ name: showcase take - the Live Activity in the Dynamic Island
 
 - tapOn:
     point: '73%,13%'
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/next-tapped')}
 - extendedWaitUntil:
     visible: 'zzz-showcase-pause'
     timeout: 3000

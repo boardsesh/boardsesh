@@ -21,6 +21,8 @@ name: showcase take - a workout with a rest timer
 # No scrolling: a tap right after a scroll lands mid-bounce and misses, and a
 # scroll collapses the tab bar, which moves Start.
 #
+# Marks (work/marks/workouts.json): pyramid-picked, rest-armed, rest-pill, started.
+#
 # Coordinates (iPhone 16 Pro Max portrait), top of the page, now-playing bar up:
 #   94%,70%             the third workout tile (Pyramid), half off the right edge
 #   82%,39%             the rest timer switch
@@ -38,6 +40,7 @@ name: showcase take - a workout with a rest timer
 # Pyramid.
 - tapOn:
     point: '94%,70%'
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/pyramid-picked')}
 - extendedWaitUntil:
     visible: 'zzz-showcase-pause'
     timeout: 1000
@@ -47,6 +50,7 @@ name: showcase take - a workout with a rest timer
 - tapOn:
     point: '82%,39%'
 - waitForAnimationToEnd
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/rest-armed')}
 - extendedWaitUntil:
     visible: 'zzz-showcase-pause'
     timeout: 600
@@ -55,6 +59,7 @@ name: showcase take - a workout with a rest timer
     point: '72%,58%'
 - tapOn:
     point: '82%,46%'
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/rest-pill')}
 - extendedWaitUntil:
     visible: 'zzz-showcase-pause'
     timeout: 1200
@@ -64,6 +69,7 @@ name: showcase take - a workout with a rest timer
 - tapOn:
     point: '84%,76%'
 - waitForAnimationToEnd
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/started')}
 - extendedWaitUntil:
     visible: 'zzz-showcase-pause'
     timeout: 3000

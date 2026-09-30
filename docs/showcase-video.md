@@ -149,18 +149,35 @@ Ctrl-C, and a take that finds a session restored on launch ends it first.
 ### The lock-screen take (the Dynamic Island)
 
 A private session on the Tension wall with two more climbs queued and the fake
-board connected, then Home: the Live Activity sits in the island; a long
-press expands it (climb, grade, "2 of 4", Prev / relight / Mirror / Next), and
+board connected, then Home, onto an empty home screen (dark wallpaper only):
+the Live Activity sits in the island; a long press expands it (climb, grade, "2 of 4", Prev / relight / Mirror / Next), and
 Next changes the climb from outside the app. The simulator is set to dark
 appearance so the wallpaper behind the island is dark.
 
-Three things make that work on a simulator:
+The empty home screen is made once per run by `home-screen-clean.yaml` (the
+take's `deviceSetupFlows`, after the install). It first sets Settings > Home
+Screen & App Library to "App Library Only", so apps installed later (Maestro
+reinstalls its runner on every run) stay off the home screen; then it takes
+every widget, app,
+folder and dock icon off the home screen of the dedicated "Boardsesh Showcase"
+simulator, Boardsesh and Maestro's own runner included ("Remove from Home
+Screen" only; everything stays installed and in the App Library, and
+`simctl launch` still opens Boardsesh). It is idempotent, so an empty screen
+costs one lookup.
+
+Three things make the Live Activity work on a simulator:
 
 - **The Live Activity starts only with the push entitlement.** It is requested
   with `pushType: .token`, and ActivityKit refuses that without
   `aps-environment` (`LA_START_FAILED … ActivityInput error 0`). The screenshot
   simulator build carries it (`scripts/screenshot-sim.entitlements`), together
-  with the team-prefixed keychain group the native shared keychain uses. A
+  with the team-prefixed keychain group the native shared keychain uses.
+  That group hardcodes the team ID (`9L3HKPZBH3`): a simulator build has no
+  provisioning profile to expand `$(AppIdentifierPrefix)` in entitlements,
+  while the app's Info.plist (`BoardseshKeychainAccessGroup`) gets it from the
+  project's team. The recorder checks the two agree before any take and, for a
+  run with the island take, stops with the fix if the team ID ever changes;
+  the scripts tests hold the file to `appleTeamId` in `app.config.ts`. A
   dev-client built before that change needs a rebuild:
   `vp run mobile:build-sim-app -- --app-out packages/mobile/.app-cache`.
 - **Screenshot builds drive the island's Next locally.** In a party session the
@@ -201,6 +218,34 @@ timed wait cannot line them up. The flows `GET` the recorder's local server
 (`/mark/<name>`, `/set/<name>`, `/signal/<name>`) with Maestro's JavaScript
 `http.get`. The same `/mark/flow-start` request, the first step of every take's
 flow, tells the recorder exactly where to cut the head.
+
+### Marks: when things happen
+
+Besides footage and anchors, every take writes
+`.boardsesh/showcase-video/work/marks/<take>.json` (`ShowcaseMarksFile` in
+`contract.ts`): `{ "takeId", "marks": { "<name>": <seconds> } }`, seconds from
+the start of the trimmed footage, sorted by time. Place cuts and callouts on
+these instead of hand-read frame numbers; a re-record moves them with the
+footage.
+
+The flows raise them on the recorder's signal server
+(`- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/<name>')}`) right after
+the step's action, so a mark is the moment the action was sent; allow a few
+frames for the app to draw it.
+
+| Take | Marks |
+| --- | --- |
+| `light` | `bulb-tapped`, `next-1`, `next-2` |
+| `boards-*` | none (held still) |
+| `wall` | `sheet-open`, `history-shown` |
+| `crew` | `invite-closed`, `queue-open`, `crew-added` (the second phone's swipe), `row-landed` (derived: the new row's anchor first logged), `play-next-menu` |
+| `workouts` | `pyramid-picked`, `rest-armed`, `rest-pill`, `started` |
+| `lock-screen` | `home`, `island-expanded`, `next-tapped` |
+| `log` | `scrolled`, `filter-kilter`, `filter-tension` |
+
+A mark the flow never reached is simply absent. To add one, raise it in the
+flow and list it in the flow header and this table; a mark derived from an
+anchor goes in the take's `anchorMarks`.
 
 ### What the anchors files do and do not say
 

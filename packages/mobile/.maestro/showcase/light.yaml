@@ -24,6 +24,8 @@ name: showcase take - light the wall
 #   87%,84%             the bulb, right end of the action row under the board
 #   85%,42% -> 18%,42%  a right-to-left drag across the board = next climb
 #
+# Marks (work/marks/light.json): bulb-tapped, next-1, next-2.
+#
 # Percentages must be WHOLE NUMBERS. Maestro has no `sleep`: a pause is an
 # optional wait for text that is never on screen.
 
@@ -39,6 +41,7 @@ name: showcase take - light the wall
 # Put it on the wall.
 - tapOn:
     point: '87%,84%'
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/bulb-tapped')}
 - extendedWaitUntil:
     visible: 'zzz-showcase-pause'
     timeout: 1200
@@ -49,6 +52,7 @@ name: showcase take - light the wall
     start: '85%,42%'
     end: '18%,42%'
     duration: 400
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/next-1')}
 - extendedWaitUntil:
     visible: 'zzz-showcase-pause'
     timeout: 1200
@@ -59,6 +63,7 @@ name: showcase take - light the wall
     start: '85%,42%'
     end: '18%,42%'
     duration: 400
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/next-2')}
 - extendedWaitUntil:
     visible: 'zzz-showcase-pause'
     timeout: 1800

@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { SHOWCASE_TAKE_IDS, type ShowcaseAnchorsFile } from '../lib/showcase-video/contract';
+import { SHOWCASE_TAKE_IDS, type ShowcaseAnchorsFile, type ShowcaseMarksFile } from '../lib/showcase-video/contract';
 import {
   BLANK_FRAME_MAX_STDEV,
   REFERENCE_MAX_DIFF_RATIO,
@@ -10,9 +10,11 @@ import {
   anchorTapValues,
   buildAnchorsFile,
   buildFootageFrameArgs,
+  buildMarksFile,
   checkTake,
   countHomeReady,
   findBoardHandoffProblem,
+  findKeychainTeamProblem,
   differingPixelRatio,
   findBoardSlotProblem,
   isBlankFrame,
@@ -288,6 +290,58 @@ describe('findBoardSlotProblem', () => {
   });
 });
 
+describe('buildMarksFile', () => {
+  it('turns flow marks and anchor-derived marks into seconds from the trimmed start', () => {
+    const file = buildMarksFile({
+      takeId: 'crew',
+      marks: new Map([
+        ['flow-start', 7000],
+        ['secondary-ready', 500],
+        ['queue-open', 11_500],
+        ['crew-added', 12_000],
+        ['after-the-end', 90_000],
+      ]),
+      arrivals: [
+        ...anchorArrivalsFromChunk(anchorLine('queue-row-avatar', 1), 0),
+        ...anchorArrivalsFromChunk(anchorLine('queue-row-avatar', 2), 13_250),
+      ],
+      anchorMarks: { 'row-landed': 'queue-row-avatar' },
+      recordStartMs: 1000,
+      trimSeconds: 6,
+      durationSeconds: 20,
+    });
+    expect(file).toEqual<ShowcaseMarksFile>({
+      takeId: 'crew',
+      marks: { 'queue-open': 4.5, 'crew-added': 5, 'row-landed': 6.25 },
+    });
+    expect(Object.keys(file.marks)).toEqual(['queue-open', 'crew-added', 'row-landed']);
+  });
+});
+
+describe('findKeychainTeamProblem', () => {
+  const entitlements =
+    '<array><string>group.com.boardsesh.app</string><string>9L3HKPZBH3.group.com.boardsesh.app</string></array>';
+
+  it('passes when the app and the sim entitlements share the team prefix, or the app predates the key', () => {
+    expect(findKeychainTeamProblem('9L3HKPZBH3.group.com.boardsesh.app', entitlements, 'e.plist')).toBeNull();
+    expect(findKeychainTeamProblem(null, entitlements, 'e.plist')).toBeNull();
+  });
+
+  it('holds for the committed sim entitlements and the project team ID', () => {
+    const file = readFileSync(new URL('../screenshot-sim.entitlements', import.meta.url), 'utf8');
+    const appConfig = readFileSync(new URL('../../packages/mobile/app.config.ts', import.meta.url), 'utf8');
+    const team = /appleTeamId: '([A-Z0-9]{10})'/.exec(appConfig)?.[1];
+    expect(team).toBeTruthy();
+    expect(findKeychainTeamProblem(`${team}.group.com.boardsesh.app`, file, 'screenshot-sim.entitlements')).toBeNull();
+  });
+
+  it('names both groups and the fix when the team changed', () => {
+    expect(findKeychainTeamProblem('ABCDE12345.group.com.boardsesh.app', entitlements, 'e.plist')).toMatch(
+      /ABCDE12345\.group\.com\.boardsesh\.app.*e\.plist lists 9L3HKPZBH3\.group\.com\.boardsesh\.app.*rebuild/,
+    );
+  });
+});
+
 describe('findBoardHandoffProblem', () => {
   it('passes a resolved board link and names a failed or missing one', () => {
     const resolved =
@@ -379,9 +433,17 @@ describe('take registry', () => {
     expect(expectedAnchorsFor('boards-tension')).toEqual([]);
   });
 
+  it('raises at least one moment mark in every take that moves', () => {
+    for (const take of SHOWCASE_TAKES.filter((candidate) => candidate.flow !== 'boards.yaml')) {
+      const marks = readFileSync(showcaseFlowPath(take.flow), 'utf8').match(/'\/mark\/[a-z0-9-]+'/g) ?? [];
+      expect(marks.length, take.id).toBeGreaterThan(1);
+    }
+  });
+
   it('points at flows that exist, each opening with the flow-start mark', () => {
     for (const take of SHOWCASE_TAKES) {
       const flows = [
+        ...take.deviceSetupFlows,
         ...(take.privateSession ? ['session-private.yaml'] : []),
         ...take.setupFlows,
         take.flow,

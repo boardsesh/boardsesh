@@ -15,6 +15,8 @@ name: showcase take - what is on the wall
 # The board sheet is global: it stays up over other tabs until it is closed,
 # which is why every take starts from a relaunch.
 #
+# Marks (work/marks/wall.json): sheet-open, history-shown.
+#
 # Coordinates (iPhone 16 Pro Max portrait):
 #   91%,10%            the board button (grid glyph), top right of the Climbs chrome
 #   50%,50% -> 50%,12% drag the sheet up to its full detent
@@ -29,6 +31,7 @@ name: showcase take - what is on the wall
 - tapOn:
     point: '91%,10%'
 - waitForAnimationToEnd
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/sheet-open')}
 
 # What is on the wall now.
 - extendedWaitUntil:
@@ -42,6 +45,7 @@ name: showcase take - what is on the wall
     end: '50%,12%'
     duration: 900
 - waitForAnimationToEnd
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/history-shown')}
 - extendedWaitUntil:
     visible: 'zzz-showcase-pause'
     timeout: 2500

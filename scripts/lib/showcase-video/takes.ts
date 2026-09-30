@@ -119,6 +119,16 @@ export type ShowcaseTake = Readonly<{
   teardownFlows: readonly string[];
   /** Why the take cannot be recorded on a backend; the recorder skips it and says so. */
   unavailable: Readonly<Partial<Record<ShowcaseBackend, string>>>;
+  /**
+   * Marks the recorder derives from an anchor's first sample during the take
+   * (mark name -> anchor), beside the ones the flows raise themselves.
+   */
+  anchorMarks: Readonly<Record<string, ShowcaseAnchorName>>;
+  /**
+   * Flows run ONCE per run on the primary simulator, before any take, to set
+   * the device up (the island take's empty home screen).
+   */
+  deviceSetupFlows: readonly string[];
 }>;
 
 const isAppAnchor = (name: string): name is ShowcaseAnchorName =>
@@ -148,11 +158,20 @@ type TakeInput = Omit<
   | 'staticAnchors'
   | 'privateSession'
   | 'unavailable'
+  | 'anchorMarks'
+  | 'deviceSetupFlows'
 > &
   Partial<
     Pick<
       ShowcaseTake,
-      'secondary' | 'setupFlows' | 'teardownFlows' | 'staticAnchors' | 'privateSession' | 'unavailable'
+      | 'secondary'
+      | 'setupFlows'
+      | 'teardownFlows'
+      | 'staticAnchors'
+      | 'privateSession'
+      | 'unavailable'
+      | 'anchorMarks'
+      | 'deviceSetupFlows'
     >
   > & { extraAnchors?: readonly ShowcaseAnchorName[] };
 
@@ -163,6 +182,8 @@ function take({ extraAnchors, ...entry }: TakeInput): ShowcaseTake {
     setupFlows: [],
     staticAnchors: [],
     unavailable: {},
+    anchorMarks: {},
+    deviceSetupFlows: [],
     ...entry,
     privateSession,
     teardownFlows: entry.teardownFlows ?? (privateSession ? ['session-end.yaml'] : []),
@@ -237,6 +258,7 @@ export const SHOWCASE_TAKES: readonly ShowcaseTake[] = [
     privateSession: true,
     secondary: { joinFlow: 'crew-join.yaml', flow: 'crew-secondary.yaml' },
     setupFlows: ['crew-start.yaml'],
+    anchorMarks: { 'row-landed': 'queue-row-avatar' },
   }),
   take({
     id: 'workouts',
@@ -258,6 +280,7 @@ export const SHOWCASE_TAKES: readonly ShowcaseTake[] = [
     board: { slot: 1, kind: 'tension' },
     privateSession: true,
     setupFlows: ['lock-screen-setup.yaml', SHOWCASE_RELAUNCH_STEP, 'lock-screen-arm.yaml'],
+    deviceSetupFlows: ['home-screen-clean.yaml'],
     // Measured on a recorded frame of the expanded island (Tension: bulb, mirror, Next).
     staticAnchors: [
       { name: 'lock-relight', rect: { x: 176, y: 105, width: 36, height: 36 }, fromMark: 'island-expanded' },
