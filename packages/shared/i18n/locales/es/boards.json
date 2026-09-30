@@ -769,68 +769,54 @@
     "errorGeneric": "Algo salió mal. Inténtalo de nuevo."
   },
   "sprayEditor": {
-    "tools": {
-      "label": "Qué hace tu dedo",
-      "pan": "Desplazar",
-      "add": "Añadir",
-      "move": "Mover",
-      "draw": "Dibujar"
-    },
-    "size": {
-      "s": "S",
-      "m": "M",
-      "l": "L",
-      "xl": "XL"
-    },
-    "threshold": {
-      "label": "Umbral de confianza",
-      "value": "Mostrando hallazgos por encima del {{percent}} %"
-    },
-    "counts": {
-      "alive_one": "{{count}} presa",
-      "alive_other": "{{count}} presas",
-      "pending": "{{value}} por revisar",
-      "hidden": "{{value}} ocultas",
-      "unsaved": "{{value}} sin guardar"
-    },
-    "actions": {
-      "merge": "Fusionar",
-      "delete": "Eliminar",
+    "bar": {
+      "holds_one": "{{count}} presa",
+      "holds_other": "{{count}} presas",
+      "maybes_one": "{{count}} dudosa",
+      "maybes_other": "{{count}} dudosas",
+      "withMaybes": "{{holds}} · {{maybes}}",
       "undo": "Deshacer",
-      "redo": "Rehacer",
-      "accept": "Conservar",
-      "reject": "Descartar",
-      "acceptAll": "Conservar todas",
-      "save": "Guardar el muro"
+      "menuHint": "Abre las opciones para todas tus presas"
     },
-    "status": {
-      "readOnly": "Este muro no es tuyo, no puedes editarlo.",
-      "pan": "Arrastra para mover la foto. Toca una presa para elegirla.",
-      "add": "Toca el muro vacío para crear una presa, o dibuja alrededor de una.",
-      "move": "Arrastra una presa hasta donde está de verdad.",
-      "draw": "Elige una presa y dibuja su contorno.",
-      "oneSelected": "Presa n.º {{id}} elegida.",
-      "twoSelected": "Dos elegidas. Fusionar las convierte en una.",
-      "oneSelectedNew": "Tu presa nueva está seleccionada.",
-      "manySelected": "{{value}} presas seleccionadas. Al eliminar se quitan todas."
+    "menu": {
+      "keepMaybes": "Conservar todas las dudosas",
+      "hideMaybes": "Ocultar dudosas",
+      "showMaybes": "Mostrar dudosas",
+      "startOver": "Empezar de nuevo",
+      "close": "Cerrar"
     },
+    "startOver": {
+      "title": "¿Empezar de nuevo?",
+      "body": "Todas las presas vuelven a como estaban al abrir el muro. Puedes deshacerlo.",
+      "confirm": "Empezar de nuevo",
+      "cancel": "Seguir editando"
+    },
+    "chips": {
+      "smaller": "Más pequeña",
+      "bigger": "Más grande",
+      "trace": "Repasar",
+      "join": "Unir",
+      "remove": "Quitar"
+    },
+    "banner": {
+      "trace": "Dibuja con un dedo alrededor de la presa",
+      "join": "Toca la presa con la que unirla",
+      "cancel": "Cancelar"
+    },
+    "a11y": {
+      "wall": "La foto de tu muro con sus presas",
+      "wallHint": "Toca un anillo para activarlo o desactivarlo. Toca el muro vacío para añadir una presa. Mantén pulsado un anillo para ajustarlo."
+    },
+    "readOnly": "No puedes editar este muro.",
     "errors": {
-      "nothingToMove": "Elige primero una presa y luego arrástrala.",
-      "pickOneToRedraw": "Elige una sola presa y dibuja su contorno.",
-      "mergeNeedsTwo": "Elige dos presas para fusionarlas.",
-      "tooManyHolds": "En un muro caben hasta {{max}} presas. Descarta algunas y vuelve a guardar.",
-      "saveFailed": "No se pudo guardar el muro.",
+      "tooManyHolds": "Has llegado al límite de {{max}} presas. Desactiva algunas para añadir más.",
+      "saveFailed": "No se pudieron guardar tus presas. Inténtalo de nuevo.",
       "strokeNotClosed": "Ese trazo no rodea la presa. Dibuja la vuelta entera a su alrededor.",
       "strokeTooBig": "Ese trazo es mucho más grande que una presa. Amplía y repasa la presa misma.",
       "strokeTooDetailed": "Ese trazo tiene demasiado detalle para guardarlo. Repasa el contorno de una sola pasada.",
       "strokeTooShort": "Ese trazo es demasiado corto. Dibuja un bucle completo alrededor de la presa.",
-      "allHoldsOffWall": "Esas presas caen fuera del muro. Vuelve a colocarlas sobre la foto y guarda otra vez.",
-      "someHoldsOffWall_one": "{{count}} presa cayó fuera del muro y no se guardó.",
-      "someHoldsOffWall_other": "{{count}} presas cayeron fuera del muro y no se guardaron."
-    },
-    "toast": {
-      "saved_one": "{{count}} presa guardada",
-      "saved_other": "{{count}} presas guardadas"
+      "someHoldsOffWall_one": "{{count}} presa cae fuera del muro. Devuélvela a la foto o desactívala.",
+      "someHoldsOffWall_other": "{{count}} presas caen fuera del muro. Devuélvelas a la foto o desactívalas."
     },
     "empty": {
       "noPhoto": "Este muro todavía no tiene foto que editar."
@@ -886,17 +872,17 @@
       "title": "Buscando presas"
     },
     "review": {
-      "found": "{{value}} presas por revisar",
-      "nothingFound": "No se encontró nada. Dibuja tú las presas.",
-      "manualOnly": "Esta versión no puede sugerir presas. Dibújalas tú.",
-      "detectionFailed": "La búsqueda de presas falló. Dibújalas tú.",
-      "done": "Listo"
+      "publish": "Publicar muro",
+      "nothingFound": "No se encontraron presas. Toca el muro para añadirlas.",
+      "detectionFailed": "Esta vez no pudimos encontrar presas. Toca el muro para añadirlas.",
+      "manualOnly": "Toca el muro para añadir tus presas.",
+      "retry": "Reintentar"
     },
     "publish": {
       "title": "Añádelo a tus plafones",
-      "body": "Tus presas están guardadas. Publica el muro y ya puedes empezar a equipar.",
-      "cta": "Añadir este muro",
-      "failed": "No se pudo publicar el muro."
+      "working": "Publicando tu muro…",
+      "failed": "No se pudo publicar el muro.",
+      "retry": "Reintentar"
     },
     "done": {
       "body": "Preparando tu muro…"
@@ -905,7 +891,10 @@
       "title": "¿Dejar este muro por ahora?",
       "body": "Tu muro y su foto están guardados. Retómalo donde lo dejaste.",
       "stay": "Seguir",
-      "go": "Salir"
+      "go": "Salir",
+      "unsavedTitle": "¿Salir sin publicar?",
+      "unsavedBody": "Tus cambios en las presas no se guardarán. El muro y su foto siguen guardados.",
+      "discard": "Salir igualmente"
     },
     "resume": {
       "checking": "Buscando un muro que empezaste…",

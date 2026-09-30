@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MAX_RING_COORDINATE, pointInRing, type RingPoint } from '@boardsesh/board-art-geometry/ring';
 import {
-  classifyStroke,
   convexHull,
   defaultHoldRadius,
   holdAtPoint,
@@ -12,10 +11,19 @@ import {
   mergeHoldGeometry,
   polygonCentroidAndArea,
   radiusForRing,
+  SIZE_PRESETS,
+  stepHoldSize,
   toRingPoints,
   type HoldGeometry,
 } from '../spray-hold-tools';
-import { radiusRingToBoardPx } from '../stroke';
+import {
+  fallbackRadiusAt,
+  flattenHitHolds,
+  holdIdAtPoint,
+  landsOnSelected,
+  screenToBoard,
+} from '../spray-gesture-math';
+import { radiusRingToBoardPx, screenToBoardPoint } from '../stroke';
 
 /** A closed-ish freehand circle, as a finger would draw it. */
 function circleStroke(cx: number, cy: number, radius: number, samples = 40): RingPoint[] {
@@ -24,40 +32,6 @@ function circleStroke(cx: number, cy: number, radius: number, samples = 40): Rin
     return [cx + Math.cos(angle) * radius, cy + Math.sin(angle) * radius] as RingPoint;
   });
 }
-
-describe('classifyStroke', () => {
-  it('reads a stroke that stayed put as a tap, at the centre of where it wandered', () => {
-    const gesture = classifyStroke(
-      [
-        [100, 100],
-        [101, 102],
-        [99, 101],
-      ],
-      20,
-    );
-    expect(gesture).toEqual({ kind: 'tap', x: 100, y: 101 });
-  });
-
-  it('reads a loop as a drag, not a tap, even though it ends where it started', () => {
-    const gesture = classifyStroke(circleStroke(200, 200, 25), 20);
-    expect(gesture?.kind).toBe('drag');
-  });
-
-  it('scales the tap window with the hold radius in play', () => {
-    const wander: RingPoint[] = [
-      [0, 0],
-      [8, 0],
-    ];
-    // On a wall whose holds are 60 px across, an 8 px wobble is a tap...
-    expect(classifyStroke(wander, 60)?.kind).toBe('tap');
-    // ...and on one whose holds are 10 px across it is a deliberate drag.
-    expect(classifyStroke(wander, 10)?.kind).toBe('drag');
-  });
-
-  it('answers null for an empty stroke rather than inventing a point', () => {
-    expect(classifyStroke([], 20)).toBeNull();
-  });
-});
 
 describe('polygonCentroidAndArea', () => {
   it('finds the centre and area of a square', () => {
@@ -251,15 +225,95 @@ describe('holdAtPoint', () => {
   const holds = [
     { id: 1, cx: 100, cy: 100, r: 20, outline: null },
     { id: 2, cx: 110, cy: 100, r: 5, outline: null },
+    { id: 3, cx: 300, cy: 100, r: 4, outline: null },
   ];
 
-  it('finds the nearest centre when two holds overlap', () => {
-    expect(holdAtPoint(holds, 110, 100)?.id).toBe(2);
-    expect(holdAtPoint(holds, 95, 100)?.id).toBe(1);
+  it('gives an overlapping tap to the SMALLEST hold that contains it', () => {
+    // Inside both circles: the crimp wins, wherever the centres are.
+    expect(holdAtPoint(holds, 108, 100)?.id).toBe(2);
+    expect(holdAtPoint(holds, 106, 100)?.id).toBe(2);
+    // Inside the jug only.
+    expect(holdAtPoint(holds, 90, 100)?.id).toBe(1);
+  });
+
+  it('falls back to the nearest centre within 1.4r when nothing contains the tap', () => {
+    expect(holdAtPoint(holds, 305, 100)?.id).toBe(3);
+    expect(holdAtPoint(holds, 306, 100)).toBeNull();
+  });
+
+  it('widens the grab area to a fingertip on screen, which shrinks as you zoom in', () => {
+    // A 1000 px photo drawn 250 px wide: 4 board px per render px.
+    const atRest = fallbackRadiusAt(4, 1);
+    const zoomed = fallbackRadiusAt(4, 4);
+    expect(atRest).toBe(88);
+    expect(zoomed).toBe(22);
+    expect(holdAtPoint(holds, 360, 100, atRest)?.id).toBe(3);
+    expect(holdAtPoint(holds, 360, 100, zoomed)).toBeNull();
+    expect(holdAtPoint(holds, 320, 100, zoomed)?.id).toBe(3);
   });
 
   it('answers null on bare wall', () => {
-    expect(holdAtPoint(holds, 400, 400)).toBeNull();
+    expect(holdAtPoint(holds, 800, 800)).toBeNull();
+  });
+});
+
+describe('holdIdAtPoint (the UI-thread twin)', () => {
+  const holds = [
+    { id: 1, cx: 100, cy: 100, r: 20, outline: null },
+    { id: -2, cx: 110, cy: 100, r: 5, outline: null },
+    { id: 3, cx: 300, cy: 100, r: 4, outline: null },
+  ];
+  const flat = flattenHitHolds(holds);
+
+  it.each([
+    [108, 100, 0],
+    [90, 100, 0],
+    [305, 100, 0],
+    [360, 100, 88],
+    [360, 100, 22],
+    [800, 800, 0],
+  ])('agrees with holdAtPoint at (%d, %d) with fallback %d', (x, y, fallback) => {
+    expect(holdIdAtPoint(flat, x, y, fallback)).toBe(holdAtPoint(holds, x, y, fallback)?.id ?? 0);
+  });
+
+  it('says whether a touch lands on the selection, a fingertip wide at least', () => {
+    expect(landsOnSelected([5, 100, 100, 4], 110, 100, 12)).toBe(true);
+    expect(landsOnSelected([5, 100, 100, 4], 120, 100, 12)).toBe(false);
+    expect(landsOnSelected([], 100, 100, 12)).toBe(false);
+  });
+
+  it('inverts the board transform exactly as the stroke chain does', () => {
+    const transform = { scale: 2.5, translateX: 40, translateY: -30, containerWidth: 300, containerHeight: 400 };
+    const expected = screenToBoardPoint(210, 90, transform, 900, 300);
+    const actual = screenToBoard(210, 90, 2.5, 40, -30, 300, 400, 3);
+    expect(actual.x).toBeCloseTo(expected[0]);
+    expect(actual.y).toBeCloseTo(expected[1]);
+  });
+});
+
+describe('stepHoldSize', () => {
+  const median = 10;
+  const radii = SIZE_PRESETS.map((preset) => preset.scale * median);
+
+  it('walks the preset ladder one step at a time', () => {
+    expect(stepHoldSize(radii[1], median, 1)).toBeCloseTo(radii[2]);
+    expect(stepHoldSize(radii[2], median, -1)).toBeCloseTo(radii[1]);
+  });
+
+  it('stops at both ends', () => {
+    expect(stepHoldSize(radii[radii.length - 1], median, 1)).toBeNull();
+    expect(stepHoldSize(radii[0], median, -1)).toBeNull();
+  });
+
+  it('steps a between-presets hold to the next preset PAST it, never backwards', () => {
+    // 1.2x the median sits between M (1x) and L (1.45x).
+    expect(stepHoldSize(12, median, 1)).toBeCloseTo(radii[2]);
+    expect(stepHoldSize(12, median, -1)).toBeCloseTo(radii[1]);
+  });
+
+  it('refuses nonsense rather than inventing a size', () => {
+    expect(stepHoldSize(10, 0, 1)).toBeNull();
+    expect(stepHoldSize(0, 10, 1)).toBeNull();
   });
 });
 

@@ -269,7 +269,8 @@ model.** On `1.jpg`'s first tile, 280 of 300 query boxes differ by more than
 the whole-photo detection count moves from 44 to 49. Dynamic
 int8 quantisation puts a build-specific QGemm kernel in the hot path. The app's
 runtime will not reproduce the harness's numbers hold for hold either, which is
-one more reason the score threshold is a slider rather than a shipped constant.
+one more reason the editor's confidence cutoffs (below) are coarse bands rather
+than a tuned threshold.
 
 ## Adding a wall
 
@@ -291,7 +292,7 @@ would leave first-run open.
 | `anchors` | Optional, Skip by default. Four draggable handles; a quad that crosses itself is refused client-side, because the server's fallback for a degenerate quad is the identity matrix. |
 | `upload` | `createSprayWall`, then the multipart POST, then `createSprayWallVersion`. |
 | `detect` | Request or resume a server-owned recognition job. New walls can enter manual editing while queued; published reset versions remain unchanged until review and confirmation. |
-| `review` → `publish` | `SprayHoldEditorScreen`, then `publishSprayWallVersion`, `invalidateSprayWallRenderData`, and the board bind. |
+| `review` → `publish` | `SprayHoldEditorScreen`. Its one button, "Publish wall", commits the holds (`REVIEW_COMMITTED`); the publish step then runs by itself once — `publishSprayWallVersion`, `invalidateSprayWallRenderData`, and the board bind — and only stops to show an error with Try again. |
 
 Three rules in that flow are not obvious from the API and are easy to undo:
 
@@ -661,8 +662,12 @@ editor that writes them"; what belongs here is what it means for a wall.
 
 `SprayHoldEditorScreen` is the entry point, and its props are the contract:
 `wallUuid`, `layoutId`, the draft's `versionId` AND its `versionNumber`,
-`viewerCanEdit`, and an optional `candidates` list. SW-09 hosts it as the review
-step of `/boards/spray/new`; SW-11 wires the owner's later entry points.
+`viewerCanEdit`, an optional `candidates` list, the `primaryLabel` of its one
+button, an optional `notice` for an empty wall, and two callbacks:
+`onCommitted` (every hold is on the draft, with the count) and `onDirtyChange`
+(which the host's leave guard reads before `confirmDiscardSprayEdits`). SW-09
+hosts it as the review step of `/boards/spray/new`; SW-11 wires the owner's
+later entry points.
 
 Both version fields are needed, and the reason is the one bug this screen could
 not survive. The mutations take the `id`; `sprayWallRenderData(uuid, version)`
@@ -707,23 +712,38 @@ What the editor does with a wall is decided by this document rather than by tast
 - **It edits THE draft.** One draft per wall, so there is no version to choose:
   the `versionId` handed in is the open one, and publishing or discarding are the
   two ways out (see "One open draft per wall").
-- **Review controls only ever reach candidates.** Keep and Drop act on the
-  selected holds whose review state is `pending`, never on the selection as a
-  whole — a review control that reached a persisted hold would take it off the
-  wall.
+- **Rings are holds, and a tap switches one off or on.** There are no finger
+  modes. A tap on a ring toggles it, a tap on bare wall adds a hold at the
+  wall's median size, a long press picks a ring up for the chip bar (Smaller,
+  Bigger, Trace, Join, Remove) and the same touch can carry on into a move, and
+  two fingers always zoom. Trace and Join are one-shot tools with a banner and a
+  Cancel. The gesture surface (`SprayEditGestureOverlay`) hit-tests on the UI
+  thread only to decide whether a long press has a ring under it; every tap is
+  resolved in JS by `holdAtPoint` (smallest containing hold first, then the
+  nearest centre within `max(1.4r, 22 pt on screen)`).
 - **Provenance survives a round trip.** The render payload carries each stored
   hold's `source` and `confidence`, the registry carries them into photo space,
   and the seed reads them back; without that, an accepted detector hold is
   re-submitted as MANUAL the first time it is nudged, overwriting what the wall
   records about where its holds came from.
-- **A candidate is drawn and never written.** Detector output arrives as
-  `source: AUTO` holds with a confidence, and Save skips every one nobody has
-  ruled on. A confidence slider hides the ones below its cut-off and "Keep all"
-  takes the rest; a rejected candidate is simply deleted, because it never became
-  a hold. Accepting is what marks it for the upsert — so a candidate cannot
-  become a hold on somebody's wall as a side effect of saving something else.
+- **Confidence sets the starting state, not a slider.** A find at or above
+  `SPRAY_ON_CUTOFF` (0.45) opens ON; between `SPRAY_MAYBE_FLOOR` (0.25) and the
+  cutoff it opens as a dashed amber MAYBE that is drawn but not written; below
+  the floor the seed drops it. Both constants live in `spray-hold-tools.ts`
+  with their provenance: no eval curve for the deployed seg model reaches 0.8
+  precision, so they are a starting point to re-derive once one does. Tapping a
+  confident find switches it OFF (a faint dotted ghost, never written); tapping
+  a maybe or a ghost switches it ON. A stored hold switched off is queued for
+  `removeSprayWallHolds`, and switching it back takes it off the queue.
+- **One pure step builds the commit.** `prepareCommit` accepts the confident
+  finds and builds the write plan in one go, and is idempotent: run on its own
+  output it hands back the same state and plan, and after `MARK_SAVED` a second
+  run has nothing left to upsert — so a double press cannot write a hold twice.
+  The screen still refuses a second press while one is in flight.
 - **A save clears the dirty flags of the holds it actually wrote**
-  (`MARK_SAVED` takes the ids), rather than waiting for the refetch. Until they
+  (`MARK_SAVED` takes the ids), rather than waiting for the refetch, and drops
+  the undo history — a snapshot from before the write still holds those finds
+  as unwritten, and undoing into it would let the next commit write them again. Until they
   are clear, a second press of Save re-sends holds the server has already applied
   — and a correction re-sent names an id the resolver has just superseded, which
   fails the whole batch. Named rather than "everything", because a plan can

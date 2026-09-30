@@ -14,18 +14,45 @@
  */
 
 import { MAX_RING_COORDINATE, type RingPoint } from '@boardsesh/board-art-geometry/ring';
-import type { BoardHoldTarget } from '../../lib/create-board-holds';
 import { buildOutlineRing, radiusRingToBoardPx, type StrokeRejection } from './stroke';
 
 /**
- * How far (in board px) a stroke may wander and still count as a tap rather than
- * a drag, as a fraction of the hold radius in play.
+ * Detector confidence at or above which a candidate opens ON — drawn as a solid
+ * ring and written on Publish unless the climber switches it off.
  *
- * Quoted against the radius rather than in absolute pixels because a wall photo
- * is anywhere from 1000 to 4000 px wide: a fixed 10 px is a firm tap on one and
- * a deliberate drag on another.
+ * A STARTING POINT, not a measured optimum. The plan was to pick the lowest cut
+ * that reaches 0.8 precision on the deployed segmentation model
+ * (`2026-09-18-seg`), but no threshold curve for that model is checked in. The
+ * nearest evidence is the 2026-09-15 full box-model run
+ * (`ml/holds/results/full-run-2026-09-15-m5max/{nano-untiled-1024,medium-untiled-1280}/eval-tune-*.json`),
+ * whose precision tops out at 0.766 at a 0.70 threshold — so no cut on those
+ * curves reaches 0.8, and a cut that high would switch off roughly 40% of real
+ * holds. At 0.40–0.50 the same curves read 0.64–0.69 precision at 0.62–0.67
+ * recall, which is the trade this screen is built for: switching a wrong ring
+ * off is one tap, finding and adding a missed hold is a hunt. Re-derive both
+ * numbers once a seg eval curve lands in `ml/holds/results/`.
  */
-export const TAP_EXTENT_RADII = 0.35;
+export const SPRAY_ON_CUTOFF = 0.45;
+
+/**
+ * Candidates between this and {@link SPRAY_ON_CUTOFF} open as MAYBES: a dashed
+ * amber ring that is drawn but not written until the climber taps it on.
+ * Anything below is never shown at all. Same provenance as the ON cutoff.
+ */
+export const SPRAY_MAYBE_FLOOR = 0.25;
+
+/**
+ * The smallest a hold's grab area gets on SCREEN, in points, before it is
+ * converted to board px at the current zoom. A fingertip is ~44 pt across, so
+ * half of that is the radius a tap can reasonably be expected to land within.
+ */
+export const HIT_FALLBACK_SCREEN_PT = 22;
+
+/**
+ * How far past its own radius a hold still claims a tap that landed on bare
+ * wall, as a multiple of that radius.
+ */
+export const HIT_RADIUS_MULTIPLE = 1.4;
 
 /**
  * Radius a hold gets when there is nothing to take a median from — the very
@@ -37,8 +64,8 @@ export const TAP_EXTENT_RADII = 0.35;
 export const DEFAULT_RADIUS_FRACTION_OF_WIDTH = 0.02;
 
 /**
- * The four sizes the toolbar offers, as multiples of the wall's own median hold
- * radius. A wall's holds are all roughly one size, so "medium" IS the median and
+ * The four sizes Smaller and Bigger step through, as multiples of the wall's own
+ * median hold radius. A wall's holds are all roughly one size, so "medium" IS the median and
  * the others are the jug / crimp spread around it.
  */
 export const SIZE_PRESETS = [
@@ -48,17 +75,8 @@ export const SIZE_PRESETS = [
   { key: 'XL', scale: 2.1 },
 ] as const;
 
-export type SizePresetKey = (typeof SIZE_PRESETS)[number]['key'];
-
 /** Smallest radius a hold may be left at, in board px. Below this it is not a tap target. */
 export const MIN_HOLD_RADIUS_BOARD_PX = 2;
-
-/** What one finished stroke was, once its board points are in. */
-export type StrokeGesture =
-  /** The finger went down and came up in the same place. */
-  | { kind: 'tap'; x: number; y: number }
-  /** It travelled. Carries the whole trail, because "draw an outline" needs it. */
-  | { kind: 'drag'; fromX: number; fromY: number; toX: number; toY: number; points: RingPoint[] };
 
 /** A hold as the editor holds it, before anything knows whether it is stored. */
 export type HoldGeometry = {
@@ -78,37 +96,6 @@ export function toRingPoints(flat: readonly number[]): RingPoint[] {
     points.push([flat[index], flat[index + 1]]);
   }
   return points;
-}
-
-/**
- * Tap or drag?
- *
- * Measured on the stroke's bounding box, not on start-to-end distance: a loop
- * drawn around a hold ends roughly where it began, and judging it by its
- * endpoints alone would call every traced outline a tap.
- */
-export function classifyStroke(points: RingPoint[], radiusInPlay: number): StrokeGesture | null {
-  if (points.length === 0) return null;
-  const [firstX, firstY] = points[0];
-  const [lastX, lastY] = points[points.length - 1];
-
-  let minX = firstX;
-  let maxX = firstX;
-  let minY = firstY;
-  let maxY = firstY;
-  for (const [x, y] of points) {
-    if (x < minX) minX = x;
-    if (x > maxX) maxX = x;
-    if (y < minY) minY = y;
-    if (y > maxY) maxY = y;
-  }
-
-  const extent = Math.hypot(maxX - minX, maxY - minY);
-  const tapExtent = Math.max(MIN_HOLD_RADIUS_BOARD_PX, radiusInPlay * TAP_EXTENT_RADII);
-  if (extent <= tapExtent) {
-    return { kind: 'tap', x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
-  }
-  return { kind: 'drag', fromX: firstX, fromY: firstY, toX: lastX, toY: lastY, points };
 }
 
 /** Signed shoelace area and centroid of a polygon. Zero area falls back to the vertex mean. */
@@ -268,28 +255,63 @@ export function mergeHoldGeometry(first: HoldGeometry, second: HoldGeometry): Ho
   return { cx, cy, r, outline: result.ok ? result.outline : null };
 }
 
-/** The hold under a point, or null. Nearest centre wins a tie, so overlapping holds are reachable. */
+/**
+ * The hold a tap at (x, y) means, or null for bare wall.
+ *
+ * Two passes, in order:
+ *
+ *  1. The SMALLEST hold whose own radius contains the point. On a busy wall a
+ *     crimp often sits inside the circle of the jug beside it, and "nearest
+ *     centre" would hand the tap to whichever centre happened to be closer —
+ *     which makes the crimp unreachable from half its own area.
+ *  2. Otherwise the nearest centre within `max(1.4r, fallback)`. The fallback
+ *     is {@link HIT_FALLBACK_SCREEN_PT} converted to board px at the current
+ *     zoom by the caller, so a tiny hold is still a fingertip wide on screen at
+ *     1x, and the grab area shrinks back to the hold itself as you zoom in.
+ */
 export function holdAtPoint<T extends HoldGeometry & { id: number }>(
   holds: readonly T[],
   x: number,
   y: number,
+  fallbackRadius = 0,
 ): T | null {
-  let best: T | null = null;
-  let bestDistance = Infinity;
+  let smallestContaining: T | null = null;
+  let nearest: T | null = null;
+  let nearestDistance = Infinity;
   for (const hold of holds) {
     const distance = Math.hypot(x - hold.cx, y - hold.cy);
-    // A generous grab radius: on a phone the finger is wider than the hold, and
-    // missing a hold costs a second tap while grabbing the wrong one costs an undo.
-    if (distance > hold.r * 1.4) continue;
-    if (distance < bestDistance) {
-      bestDistance = distance;
-      best = hold;
+    if (distance <= hold.r) {
+      if (!smallestContaining || hold.r < smallestContaining.r) smallestContaining = hold;
+      continue;
+    }
+    if (smallestContaining) continue;
+    if (distance > Math.max(hold.r * HIT_RADIUS_MULTIPLE, fallbackRadius)) continue;
+    if (distance < nearestDistance) {
+      nearestDistance = distance;
+      nearest = hold;
     }
   }
-  return best;
+  return smallestContaining ?? nearest;
 }
 
-/** A hold target for the board's own tap layer. */
-export function toBoardHoldTarget(hold: HoldGeometry & { id: number }): BoardHoldTarget {
-  return { id: hold.id, cx: hold.cx, cy: hold.cy, r: hold.r };
+/**
+ * The next size preset up or down from a hold's current radius, or null at the
+ * end of the ladder.
+ *
+ * Measured against the wall's median radius, because that is what the presets
+ * are multiples of. A hold that sits between two presets (a traced one, or one
+ * the detector sized) steps to the next preset strictly past it rather than to
+ * the nearest, so "Bigger" never makes a hold smaller.
+ */
+export function stepHoldSize(radius: number, medianRadius: number, direction: 1 | -1): number | null {
+  if (!(medianRadius > 0) || !(radius > 0)) return null;
+  const current = radius / medianRadius;
+  // Two percent of slack, so a hold sitting exactly on a preset is read as ON it.
+  const slack = 0.02;
+  const ladder = direction === 1 ? SIZE_PRESETS : [...SIZE_PRESETS].reverse();
+  for (const preset of ladder) {
+    const beyond = direction === 1 ? preset.scale > current * (1 + slack) : preset.scale < current * (1 - slack);
+    if (beyond) return Math.max(MIN_HOLD_RADIUS_BOARD_PX, medianRadius * preset.scale);
+  }
+  return null;
 }

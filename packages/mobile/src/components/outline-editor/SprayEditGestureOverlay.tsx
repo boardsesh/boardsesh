@@ -1,0 +1,388 @@
+import React, { useEffect, useMemo, useRef, type MutableRefObject } from 'react';
+import { StyleSheet, View } from 'react-native';
+import { Gesture, GestureDetector, type GestureType } from 'react-native-gesture-handler';
+import { runOnJS, useSharedValue, type SharedValue } from 'react-native-reanimated';
+import { fallbackRadiusAt, holdIdAtPoint, landsOnSelected, screenToBoard } from './spray-gesture-math';
+
+/**
+ * Tap window, matching the board's own hold taps (`use-zoomed-hold-tap-gesture`)
+ * so a tap on this editor feels like a tap on every other board.
+ */
+const TAP_MAX_DURATION_MS = 300;
+const TAP_MAX_DISTANCE_PX = 15;
+/** How long a finger rests on a ring before it is picked up. */
+const PICK_UP_MIN_DURATION_MS = 400;
+/** How far a finger may wander before a pick-up is abandoned. RNGH's own long-press default. */
+const PICK_UP_MAX_DISTANCE_PX = 10;
+/** How far a picked-up ring's finger moves before the drag takes over. Under the board pan's 8 px. */
+const PICK_UP_DRAG_SLOP_PX = 4;
+
+type SprayEditGestureOverlayProps = {
+  /** The board's live zoom transform, from `FilterBoardTransformContext`. */
+  scaleSV: SharedValue<number>;
+  translateXSV: SharedValue<number>;
+  translateYSV: SharedValue<number>;
+  containerWidthSV: SharedValue<number>;
+  containerHeightSV: SharedValue<number>;
+  isPinchingSV: SharedValue<boolean>;
+  /** Declared as a relation, never composed — see `FilterBoardTransformContext.pinchGesture`. */
+  pinchRef: MutableRefObject<GestureType | undefined>;
+  /** Board px per render px. */
+  boardScale: number;
+  /** Every ring a long press can pick up, as `[id, cx, cy, r, ...]` in board px. */
+  hitHoldsSV: SharedValue<number[]>;
+  /** The selected hold as `[id, cx, cy, r]`, or empty. Written by the screen AND by a pick-up. */
+  selectedHoldSV: SharedValue<number[]>;
+  /** The live move preview, in board px. `SelectedHoldOverlay` draws it. */
+  dragOffsetXSV: SharedValue<number>;
+  dragOffsetYSV: SharedValue<number>;
+  /** False while Join is waiting for its second hold: taps still count, drags and pick-ups do not. */
+  canMove: boolean;
+  /** Read by a screen reader for the whole wall — the rings are one drawing, not one view each. */
+  accessibilityLabel: string;
+  accessibilityHint: string;
+  /** A tap at a board point; `zoom` is the board scale at the time, for the hit-test fallback. */
+  onTap: (boardX: number, boardY: number, zoom: number) => void;
+  /** A long press landed on this ring. */
+  onPickUp: (holdId: number) => void;
+  /** A drag of this ring ended this far from where it started, in board px. */
+  onMoveEnd: (holdId: number, deltaX: number, deltaY: number) => void;
+};
+
+/**
+ * The hold editor's one gesture surface: tap, pick up, and move.
+ *
+ * Three gestures race on one full-bleed view, all of them single-finger and all
+ * of them `simultaneousWithExternalGesture(pinchRef)` so a pinch always zooms —
+ * two fingers never edit. Each also bails on `isPinchingSV`, because being
+ * simultaneous with the pinch means the pinch no longer fails them.
+ *
+ * - **Tap** (≤ 300 ms, ≤ 15 px): handed to JS as a board point; the screen's
+ *   tested hit test decides what it meant.
+ * - **Pick up** (a 400 ms rest on a ring): refuses at touch-down when no ring is
+ *   under the finger, so a long press on bare wall is not held against a pan.
+ *   On activation it selects that ring and arms the drag, so the same touch can
+ *   carry straight on into a move.
+ * - **Drag** (`manualActivation`): claims the touch AT TOUCH-DOWN when it lands
+ *   on the selected ring — which is what beats the zoomed board's own one-finger
+ *   pan to it — and otherwise waits for a pick-up, failing as soon as the
+ *   finger wanders without one so the board's pan (when zoomed) takes over. A
+ *   drag that barely moved is a tap on the selected ring, and is reported as one.
+ *
+ * Mounted through `renderAboveBoard`, so while zoomed it is a child of the
+ * board's pan overlay and a touch this surface declines falls through to that
+ * pan; at rest there is no pan and a one-finger drag off the selection simply
+ * does nothing.
+ *
+ * The move preview runs entirely on the UI thread through the shared values
+ * above. `runOnJS` fires only when a gesture starts or ends — never per frame.
+ */
+export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverlay({
+  scaleSV,
+  translateXSV,
+  translateYSV,
+  containerWidthSV,
+  containerHeightSV,
+  isPinchingSV,
+  pinchRef,
+  boardScale,
+  hitHoldsSV,
+  selectedHoldSV,
+  dragOffsetXSV,
+  dragOffsetYSV,
+  canMove,
+  accessibilityLabel,
+  accessibilityHint,
+  onTap,
+  onPickUp,
+  onMoveEnd,
+}: SprayEditGestureOverlayProps) {
+  // Mirrored into shared values rather than captured: a captured value would be
+  // a gesture dependency, and rebuilding a live RNGH gesture mid-session has
+  // wedged iOS before (see use-zoom-pan-gesture).
+  const boardScaleSV = useSharedValue(boardScale);
+  const canMoveSV = useSharedValue(canMove);
+  useEffect(() => {
+    boardScaleSV.value = boardScale;
+  }, [boardScale, boardScaleSV]);
+  useEffect(() => {
+    canMoveSV.value = canMove;
+  }, [canMove, canMoveSV]);
+
+  /** The ring a long press is resting on, from touch-down; 0 for none. */
+  const pickUpIdSV = useSharedValue(0);
+  /** The long press fired during this touch. */
+  const pickedUpSV = useSharedValue(false);
+  /** The ring the drag is moving; 0 until it activates. */
+  const dragIdSV = useSharedValue(0);
+  /** The drag claimed the touch because it started on the selection. */
+  const startedOnSelectionSV = useSharedValue(false);
+  /** A second finger landed mid-drag: throw the move away. */
+  const dragAbandonedSV = useSharedValue(false);
+  const touchStartXSV = useSharedValue(0);
+  const touchStartYSV = useSharedValue(0);
+  const touchStartMsSV = useSharedValue(0);
+  const dragActiveSV = useSharedValue(false);
+
+  const callbacksRef = useRef({ onTap, onPickUp, onMoveEnd });
+  callbacksRef.current = { onTap, onPickUp, onMoveEnd };
+  // Captured once by the gesture memo — only close over the stable ref.
+  const handleTap = (boardX: number, boardY: number, zoom: number) => callbacksRef.current.onTap(boardX, boardY, zoom);
+  const handlePickUp = (holdId: number) => callbacksRef.current.onPickUp(holdId);
+  const handleMoveEnd = (holdId: number, deltaX: number, deltaY: number) =>
+    callbacksRef.current.onMoveEnd(holdId, deltaX, deltaY);
+
+  const gesture = useMemo(() => {
+    const tap = Gesture.Tap()
+      .maxDuration(TAP_MAX_DURATION_MS)
+      .maxDistance(TAP_MAX_DISTANCE_PX)
+      .onStart((event) => {
+        'worklet';
+        if (isPinchingSV.value) return;
+        const point = screenToBoard(
+          event.x,
+          event.y,
+          scaleSV.value,
+          translateXSV.value,
+          translateYSV.value,
+          containerWidthSV.value,
+          containerHeightSV.value,
+          boardScaleSV.value,
+        );
+        runOnJS(handleTap)(point.x, point.y, scaleSV.value);
+      });
+
+    const pickUp = Gesture.LongPress()
+      .minDuration(PICK_UP_MIN_DURATION_MS)
+      .maxDistance(PICK_UP_MAX_DISTANCE_PX)
+      .onTouchesDown((event, manager) => {
+        'worklet';
+        pickedUpSV.value = false;
+        pickUpIdSV.value = 0;
+        const touch = event.allTouches[0];
+        // Not `isPinchingSV` here: it is cleared by the pinch's own touch-down for
+        // a fresh single finger, which may run after this one.
+        if (!canMoveSV.value || event.numberOfTouches > 1 || !touch) {
+          manager.fail();
+          return;
+        }
+        const point = screenToBoard(
+          touch.x,
+          touch.y,
+          scaleSV.value,
+          translateXSV.value,
+          translateYSV.value,
+          containerWidthSV.value,
+          containerHeightSV.value,
+          boardScaleSV.value,
+        );
+        const holdId = holdIdAtPoint(
+          hitHoldsSV.value,
+          point.x,
+          point.y,
+          fallbackRadiusAt(boardScaleSV.value, scaleSV.value),
+        );
+        // Bare wall: nothing to pick up, so step aside at once rather than sit on
+        // the touch for 400 ms and then steal it from the board's pan.
+        if (holdId === 0) {
+          manager.fail();
+          return;
+        }
+        pickUpIdSV.value = holdId;
+      })
+      .onStart(() => {
+        'worklet';
+        const holdId = pickUpIdSV.value;
+        if (holdId === 0 || isPinchingSV.value) return;
+        const flat = hitHoldsSV.value;
+        for (let index = 0; index + 3 < flat.length; index += 4) {
+          if (flat[index] !== holdId) continue;
+          // Written here as well as by the screen, so a move that starts before
+          // JS has re-rendered the selection still drags from the right place.
+          selectedHoldSV.value = [holdId, flat[index + 1], flat[index + 2], flat[index + 3]];
+          dragOffsetXSV.value = 0;
+          dragOffsetYSV.value = 0;
+          break;
+        }
+        pickedUpSV.value = true;
+        runOnJS(handlePickUp)(holdId);
+      });
+
+    const drag = Gesture.Pan()
+      .manualActivation(true)
+      .onTouchesDown((event, manager) => {
+        'worklet';
+        if (dragActiveSV.value) {
+          // A second finger mid-drag is the start of a pinch. The pinch has it;
+          // this move is abandoned rather than committed at a centroid nobody
+          // meant.
+          if (event.numberOfTouches > 1) {
+            dragAbandonedSV.value = true;
+            dragOffsetXSV.value = 0;
+            dragOffsetYSV.value = 0;
+            manager.end();
+          }
+          return;
+        }
+        const touch = event.allTouches[0];
+        // Not `isPinchingSV` here: it is cleared by the pinch's own touch-down for
+        // a fresh single finger, which may run after this one.
+        if (!canMoveSV.value || event.numberOfTouches > 1 || !touch) {
+          manager.fail();
+          return;
+        }
+        dragIdSV.value = 0;
+        dragAbandonedSV.value = false;
+        startedOnSelectionSV.value = false;
+        touchStartXSV.value = touch.x;
+        touchStartYSV.value = touch.y;
+        touchStartMsSV.value = Date.now();
+        const point = screenToBoard(
+          touch.x,
+          touch.y,
+          scaleSV.value,
+          translateXSV.value,
+          translateYSV.value,
+          containerWidthSV.value,
+          containerHeightSV.value,
+          boardScaleSV.value,
+        );
+        const selected = selectedHoldSV.value;
+        if (landsOnSelected(selected, point.x, point.y, fallbackRadiusAt(boardScaleSV.value, scaleSV.value))) {
+          startedOnSelectionSV.value = true;
+          dragIdSV.value = selected[0];
+          dragActiveSV.value = true;
+          manager.activate();
+        }
+      })
+      .onTouchesMove((event, manager) => {
+        'worklet';
+        if (dragActiveSV.value) return;
+        const touch = event.allTouches[0];
+        if (!touch) return;
+        const moved = Math.hypot(touch.x - touchStartXSV.value, touch.y - touchStartYSV.value);
+        if (pickedUpSV.value && pickUpIdSV.value !== 0) {
+          if (moved < PICK_UP_DRAG_SLOP_PX) return;
+          dragIdSV.value = pickUpIdSV.value;
+          dragActiveSV.value = true;
+          manager.activate();
+          return;
+        }
+        // Wandering with nothing picked up is a pan (zoomed) or nothing (at
+        // rest). Either way it is not this gesture's.
+        if (moved > PICK_UP_MAX_DISTANCE_PX) manager.fail();
+      })
+      .onTouchesUp((_event, manager) => {
+        'worklet';
+        // A touch that never became a drag ends here, rather than leaving the pan
+        // sitting in BEGAN.
+        if (!dragActiveSV.value) manager.fail();
+      })
+      .onUpdate((event) => {
+        'worklet';
+        if (dragAbandonedSV.value || isPinchingSV.value) return;
+        const scale = scaleSV.value;
+        dragOffsetXSV.value = (event.translationX / scale) * boardScaleSV.value;
+        dragOffsetYSV.value = (event.translationY / scale) * boardScaleSV.value;
+      })
+      .onEnd((event) => {
+        'worklet';
+        const holdId = dragIdSV.value;
+        if (dragAbandonedSV.value || isPinchingSV.value || holdId === 0) {
+          dragOffsetXSV.value = 0;
+          dragOffsetYSV.value = 0;
+          return;
+        }
+        const moved = Math.hypot(event.translationX, event.translationY);
+        if (moved < TAP_MAX_DISTANCE_PX) {
+          dragOffsetXSV.value = 0;
+          dragOffsetYSV.value = 0;
+          // Claimed at touch-down, so the Tap in this race never saw it: a quick
+          // still touch on the selected ring is reported as the tap it was.
+          if (startedOnSelectionSV.value && Date.now() - touchStartMsSV.value <= TAP_MAX_DURATION_MS) {
+            const point = screenToBoard(
+              touchStartXSV.value,
+              touchStartYSV.value,
+              scaleSV.value,
+              translateXSV.value,
+              translateYSV.value,
+              containerWidthSV.value,
+              containerHeightSV.value,
+              boardScaleSV.value,
+            );
+            runOnJS(handleTap)(point.x, point.y, scaleSV.value);
+          }
+          return;
+        }
+        const deltaX = dragOffsetXSV.value;
+        const deltaY = dragOffsetYSV.value;
+        // Fold the offset into the preview's base in the same UI frame, so the
+        // ring stays exactly where the finger left it while JS commits the move.
+        const selected = selectedHoldSV.value;
+        if (selected.length >= 4 && selected[0] === holdId) {
+          selectedHoldSV.value = [holdId, selected[1] + deltaX, selected[2] + deltaY, selected[3]];
+        }
+        dragOffsetXSV.value = 0;
+        dragOffsetYSV.value = 0;
+        runOnJS(handleMoveEnd)(holdId, deltaX, deltaY);
+      })
+      .onFinalize(() => {
+        'worklet';
+        dragActiveSV.value = false;
+        dragIdSV.value = 0;
+        pickedUpSV.value = false;
+        pickUpIdSV.value = 0;
+      });
+
+    // Relations on the board's pinch, never compositions of it, so a two-finger
+    // zoom recognises while a finger sits here without this detector claiming
+    // the pinch's handler tag.
+    tap.simultaneousWithExternalGesture(pinchRef);
+    pickUp.simultaneousWithExternalGesture(pinchRef);
+    drag.simultaneousWithExternalGesture(pinchRef);
+
+    // The pick-up and the drag run together — the drag has to be tracking the
+    // touch when the pick-up fires so the same finger can carry on into a move.
+    // Both race the tap: a tap wins a quick still touch, and either of the other
+    // two activating cancels it.
+    return Gesture.Race(Gesture.Simultaneous(pickUp, drag), tap);
+    // handleTap/handlePickUp/handleMoveEnd are intentionally not deps — captured
+    // once and read render-scoped values through callbacksRef.
+  }, [
+    scaleSV,
+    translateXSV,
+    translateYSV,
+    containerWidthSV,
+    containerHeightSV,
+    isPinchingSV,
+    pinchRef,
+    boardScaleSV,
+    canMoveSV,
+    hitHoldsSV,
+    selectedHoldSV,
+    dragOffsetXSV,
+    dragOffsetYSV,
+    pickUpIdSV,
+    pickedUpSV,
+    dragIdSV,
+    startedOnSelectionSV,
+    dragAbandonedSV,
+    touchStartXSV,
+    touchStartYSV,
+    touchStartMsSV,
+    dragActiveSV,
+  ]);
+
+  return (
+    <GestureDetector gesture={gesture}>
+      <View
+        collapsable={false}
+        style={StyleSheet.absoluteFill}
+        accessible
+        accessibilityRole="image"
+        accessibilityLabel={accessibilityLabel}
+        accessibilityHint={accessibilityHint}
+      />
+    </GestureDetector>
+  );
+});

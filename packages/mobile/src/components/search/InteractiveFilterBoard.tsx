@@ -6,7 +6,7 @@ import React, {
   type ReactNode,
   type RefObject,
 } from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, { type SharedValue } from 'react-native-reanimated';
 import { GestureDetector, type GestureType } from 'react-native-gesture-handler';
 import type { BoardName, HoldsFilter } from '@boardsesh/shared-schema';
@@ -42,6 +42,13 @@ export type FilterBoardTransformContext = {
   pinchRef: MutableRefObject<GestureType | undefined>;
   /** Live zoom scale, so an overlay can convert screen-pixel deltas to board px. */
   scaleSV: SharedValue<number>;
+  /**
+   * True while a two-finger pinch is in progress (see `useZoomPanGesture`). An
+   * overlay whose own gestures are `simultaneousWithExternalGesture(pinchRef)`
+   * is not failed by the pinch, so it bails on this instead of editing under a
+   * zooming hand.
+   */
+  isPinchingSV: SharedValue<boolean>;
   /**
    * The rest of the live zoom transform. Together with `scaleSV` and the
    * container size these are everything needed to invert the board's transform
@@ -110,6 +117,12 @@ type InteractiveFilterBoardProps = {
    * it, and a declarative prop equal to its previous value would not.
    */
   controlRef?: RefObject<FilterBoardControls | null>;
+  /**
+   * Where the zoomed-in reset control sits. Defaults to bottom-right, the corner
+   * every other board uses; a screen with its own floating chrome along the
+   * bottom edge moves it out of the way.
+   */
+  resetZoomStyle?: StyleProp<ViewStyle>;
 };
 
 /** What {@link InteractiveFilterBoard} exposes through `controlRef`. */
@@ -150,6 +163,7 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
   renderInTransform,
   renderAboveBoard,
   controlRef,
+  resetZoomStyle,
 }: InteractiveFilterBoardProps) {
   // Shared with the rest/zoom tap overlays so they mark themselves simultaneous
   // with the pinch — same Android pinch-stall fix as the create board (a finger
@@ -181,6 +195,7 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
       pinchGesture,
       pinchRef,
       scaleSV,
+      isPinchingSV,
       translateXSV,
       translateYSV,
       containerWidthSV,
@@ -188,7 +203,17 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
       renderWidth,
       renderHeight,
     }),
-    [pinchGesture, scaleSV, translateXSV, translateYSV, containerWidthSV, containerHeightSV, renderWidth, renderHeight],
+    [
+      pinchGesture,
+      scaleSV,
+      isPinchingSV,
+      translateXSV,
+      translateYSV,
+      containerWidthSV,
+      containerHeightSV,
+      renderWidth,
+      renderHeight,
+    ],
   );
 
   useImperativeHandle(controlRef, () => ({ zoomTo, resetZoom }), [zoomTo, resetZoom]);
@@ -311,7 +336,7 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
                     own taps: it sits in the corner the panning thumb rests in,
                     and as a sibling above the overlay it would be a dead zone
                     for panning. */}
-                <ResetZoomButton visible onPress={resetZoom} style={styles.resetZoom} />
+                <ResetZoomButton visible onPress={resetZoom} style={resetZoomStyle ?? styles.resetZoom} />
               </View>
             </GestureDetector>
           ) : null}

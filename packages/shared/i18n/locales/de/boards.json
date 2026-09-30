@@ -769,68 +769,54 @@
     "errorGeneric": "Da ging etwas schief. Versuch es nochmal."
   },
   "sprayEditor": {
-    "tools": {
-      "label": "Was dein Finger macht",
-      "pan": "Schwenken",
-      "add": "Hinzufügen",
-      "move": "Verschieben",
-      "draw": "Zeichnen"
-    },
-    "size": {
-      "s": "S",
-      "m": "M",
-      "l": "L",
-      "xl": "XL"
-    },
-    "threshold": {
-      "label": "Konfidenz-Schwelle",
-      "value": "Zeigt Funde über {{percent}} %"
-    },
-    "counts": {
-      "alive_one": "{{count}} Griff",
-      "alive_other": "{{count}} Griffe",
-      "pending": "{{value}} zu prüfen",
-      "hidden": "{{value}} ausgeblendet",
-      "unsaved": "{{value}} nicht gespeichert"
-    },
-    "actions": {
-      "merge": "Zusammenführen",
-      "delete": "Löschen",
+    "bar": {
+      "holds_one": "{{count}} Griff",
+      "holds_other": "{{count}} Griffe",
+      "maybes_one": "{{count}} unsicherer",
+      "maybes_other": "{{count}} unsichere",
+      "withMaybes": "{{holds}} · {{maybes}}",
       "undo": "Rückgängig",
-      "redo": "Wiederherstellen",
-      "accept": "Behalten",
-      "reject": "Verwerfen",
-      "acceptAll": "Alle behalten",
-      "save": "Wand speichern"
+      "menuHint": "Öffnet Optionen für alle deine Griffe"
     },
-    "status": {
-      "readOnly": "Diese Wand gehört dir nicht, du kannst sie nicht bearbeiten.",
-      "pan": "Zieh, um das Foto zu bewegen. Tippe einen Griff an, um ihn zu wählen.",
-      "add": "Tippe auf nackte Wand für einen Griff, oder zeichne um einen herum.",
-      "move": "Zieh einen Griff dahin, wo er wirklich ist.",
-      "draw": "Wähle einen Griff und zeichne seine Kante nach.",
-      "oneSelected": "Griff Nr. {{id}} ist gewählt.",
-      "twoSelected": "Zwei gewählt. Zusammenführen macht einen daraus.",
-      "oneSelectedNew": "Dein neuer Griff ist ausgewählt.",
-      "manySelected": "{{value}} Griffe ausgewählt. Löschen entfernt sie alle."
+    "menu": {
+      "keepMaybes": "Alle unsicheren behalten",
+      "hideMaybes": "Unsichere ausblenden",
+      "showMaybes": "Unsichere einblenden",
+      "startOver": "Neu anfangen",
+      "close": "Schließen"
     },
+    "startOver": {
+      "title": "Neu anfangen?",
+      "body": "Alle Griffe kommen zurück in den Zustand beim Öffnen der Wand. Du kannst das rückgängig machen.",
+      "confirm": "Neu anfangen",
+      "cancel": "Weiter bearbeiten"
+    },
+    "chips": {
+      "smaller": "Kleiner",
+      "bigger": "Größer",
+      "trace": "Nachzeichnen",
+      "join": "Verbinden",
+      "remove": "Entfernen"
+    },
+    "banner": {
+      "trace": "Zeichne mit einem Finger um den Griff",
+      "join": "Tippe auf den Griff, mit dem er verbunden wird",
+      "cancel": "Abbrechen"
+    },
+    "a11y": {
+      "wall": "Das Foto deiner Wand mit ihren Griffen",
+      "wallHint": "Tippe auf einen Ring, um ihn an- oder auszuschalten. Tippe auf freie Wand, um einen Griff hinzuzufügen. Halte einen Ring gedrückt, um ihn anzupassen."
+    },
+    "readOnly": "Du kannst diese Wand nicht bearbeiten.",
     "errors": {
-      "nothingToMove": "Wähle erst einen Griff, dann zieh ihn.",
-      "pickOneToRedraw": "Wähle genau einen Griff und zeichne seine Kante nach.",
-      "mergeNeedsTwo": "Wähle zwei Griffe, um sie zusammenzuführen.",
-      "tooManyHolds": "Eine Wand trägt bis zu {{max}} Griffe. Verwirf ein paar und speichere erneut.",
-      "saveFailed": "Die Wand konnte nicht gespeichert werden.",
+      "tooManyHolds": "Das ist das Limit von {{max}} Griffen. Schalte ein paar aus, um mehr hinzuzufügen.",
+      "saveFailed": "Deine Griffe konnten nicht gespeichert werden. Versuch es noch mal.",
       "strokeNotClosed": "Diese Schlaufe verfehlt den Griff. Zeichne einmal ganz herum.",
       "strokeTooBig": "Diese Schlaufe ist viel größer als ein Griff. Zoom hinein und fahre den Griff selbst nach.",
       "strokeTooDetailed": "Dieser Strich hat zu viele Details zum Speichern. Fahre die Kante in einem Zug nach.",
       "strokeTooShort": "Dieser Strich ist zu kurz. Zeichne eine ganze Schlaufe um den Griff.",
-      "allHoldsOffWall": "Diese Griffe liegen außerhalb der Wand. Schieb sie zurück aufs Foto und speichere erneut.",
-      "someHoldsOffWall_one": "{{count}} Griff lag außerhalb der Wand und wurde nicht gespeichert.",
-      "someHoldsOffWall_other": "{{count}} Griffe lagen außerhalb der Wand und wurden nicht gespeichert."
-    },
-    "toast": {
-      "saved_one": "{{count}} Griff gespeichert",
-      "saved_other": "{{count}} Griffe gespeichert"
+      "someHoldsOffWall_one": "{{count}} Griff liegt außerhalb der Wand. Schieb ihn zurück aufs Foto oder schalte ihn aus.",
+      "someHoldsOffWall_other": "{{count}} Griffe liegen außerhalb der Wand. Schieb sie zurück aufs Foto oder schalte sie aus."
     },
     "empty": {
       "noPhoto": "Diese Wand hat noch kein Foto zum Bearbeiten."
@@ -886,17 +872,17 @@
       "title": "Suche nach Griffen"
     },
     "review": {
-      "found": "{{value}} Griffe zum Prüfen",
-      "nothingFound": "Nichts gefunden. Zeichne die Griffe selbst.",
-      "manualOnly": "Diese Version kann keine Griffe vorschlagen. Zeichne sie selbst.",
-      "detectionFailed": "Die Griffsuche ist schiefgegangen. Zeichne sie selbst.",
-      "done": "Fertig"
+      "publish": "Wand veröffentlichen",
+      "nothingFound": "Keine Griffe gefunden. Tippe auf die Wand, um sie hinzuzufügen.",
+      "detectionFailed": "Die Griffsuche hat diesmal nicht geklappt. Tippe auf die Wand, um Griffe hinzuzufügen.",
+      "manualOnly": "Tippe auf die Wand, um deine Griffe hinzuzufügen.",
+      "retry": "Erneut versuchen"
     },
     "publish": {
       "title": "Ab zu deinen Boards",
-      "body": "Deine Griffe sind gespeichert. Veröffentliche die Wand und du kannst schrauben.",
-      "cta": "Diese Wand hinzufügen",
-      "failed": "Die Wand konnte nicht veröffentlicht werden."
+      "working": "Deine Wand wird veröffentlicht…",
+      "failed": "Die Wand konnte nicht veröffentlicht werden.",
+      "retry": "Erneut versuchen"
     },
     "done": {
       "body": "Deine Wand wird eingerichtet…"
@@ -905,7 +891,10 @@
       "title": "Diese Wand erstmal liegen lassen?",
       "body": "Deine Wand und ihr Foto sind gespeichert. Mach weiter, wo du aufgehört hast.",
       "stay": "Weitermachen",
-      "go": "Verlassen"
+      "go": "Verlassen",
+      "unsavedTitle": "Ohne Veröffentlichen verlassen?",
+      "unsavedBody": "Deine Änderungen an den Griffen gehen verloren. Die Wand und ihr Foto bleiben gespeichert.",
+      "discard": "Trotzdem verlassen"
     },
     "resume": {
       "checking": "Suche nach einer angefangenen Wand…",

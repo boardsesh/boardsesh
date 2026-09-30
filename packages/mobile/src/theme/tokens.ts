@@ -108,6 +108,14 @@ export const opacity = {
 export const overlays = {
   scrim: 'rgba(0, 0, 0, 0.6)',
   onScrim: '#FFFFFF',
+  /**
+   * A light dim laid over a photograph, under whatever is drawn on top of it
+   * (the spray editor's rings), so a busy multicoloured wall recedes and the
+   * marks read. `photoDimFocused` is the same dim doubled, for while one mark
+   * is picked out.
+   */
+  photoDim: 'rgba(0, 0, 0, 0.15)',
+  photoDimFocused: 'rgba(0, 0, 0, 0.3)',
 } as const;
 
 /** Shared bottom-sheet handle and background styles used by QueueSheet, AngleSelectorSheet, and PlayDrawer. */
