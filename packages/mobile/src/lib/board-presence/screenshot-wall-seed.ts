@@ -153,7 +153,12 @@ function recordScreenshotWallReport(item: ClimbQueueItemInput, angle: number | n
   refreshSeed();
 }
 
-/** Tests only: forget everything published and reported. */
+/**
+ * Tests only: forget everything published and reported. Not part of the seed's
+ * API; app code publishes with `publishScreenshotWallClimbs` and never resets.
+ *
+ * @internal
+ */
 export function _resetScreenshotWallSeedForTests(): void {
   publishedClimbs = [];
   reportedClimbs = [];

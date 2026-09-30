@@ -1,4 +1,3 @@
-import Module from 'node:module';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // All mock state lives inside vi.hoisted so it's initialized before the
@@ -28,6 +27,11 @@ vi.mock('react-native', () => ({
 }));
 
 vi.mock('../adapter', () => ({ RNBleAdapter: harness.RNBleAdapter }));
+// The loader `require`s the fake adapter behind the env gate so Metro drops it
+// from normal builds; vitest can't intercept that CommonJS call, so the loader
+// is mocked and each test says what it hands back.
+const fakeLoader = vi.hoisted(() => ({ load: vi.fn() }));
+vi.mock('../screenshot-fake-adapter-loader', () => ({ loadScreenshotFakeAdapter: fakeLoader.load }));
 vi.mock('../native-ios-adapter', () => ({
   NativeIosBleAdapter: harness.NativeIosBleAdapter,
   nativeBleSupportsConnectionAdoption: vi.fn(() => false),
@@ -49,9 +53,7 @@ import {
   isNativeIosBleAdapter,
   subscribeNativeBleConnected,
 } from '../adapter-factory';
-import * as screenshotFakeAdapterModule from '../screenshot-fake-adapter';
-
-const { ScreenshotFakeBleAdapter } = screenshotFakeAdapterModule;
+import { ScreenshotFakeBleAdapter } from '../screenshot-fake-adapter';
 
 const noopPicker = () => Promise.resolve('');
 
@@ -149,27 +151,12 @@ describe('isNativeIosBleAdapter', () => {
 });
 
 describe('screenshot fake-Bluetooth gate', () => {
-  // The factory `require`s the fake adapter inside its gated branch so Metro
-  // drops the module from normal builds. Under vitest that call reaches Node's
-  // CommonJS loader, which can't resolve an extensionless `.ts` path; hand it
-  // the module this file already imported (the same class, so instanceof holds).
-  // Every other request goes to the real loader.
-  type RequireFn = typeof Module.prototype.require;
-  const realRequire = Object.getOwnPropertyDescriptor(Module.prototype, 'require')?.value as RequireFn;
-  const requireSpy = vi.fn();
   beforeEach(() => {
-    requireSpy.mockClear();
-    Module.prototype.require = function (this: Module, id: string) {
-      if (id === './screenshot-fake-adapter') {
-        requireSpy(id);
-        return screenshotFakeAdapterModule;
-      }
-      return realRequire.call(this, id);
-    } as RequireFn;
+    fakeLoader.load.mockReset();
+    fakeLoader.load.mockReturnValue(ScreenshotFakeBleAdapter);
   });
 
   afterEach(() => {
-    Module.prototype.require = realRequire;
     vi.unstubAllEnvs();
   });
 
@@ -195,7 +182,7 @@ describe('screenshot fake-Bluetooth gate', () => {
     expect(iosAdapter).not.toBeInstanceOf(ScreenshotFakeBleAdapter);
     expect(androidAdapter).not.toBeInstanceOf(ScreenshotFakeBleAdapter);
     // The fake module is only loaded inside the gated branch.
-    expect(requireSpy).not.toHaveBeenCalled();
+    expect(fakeLoader.load).not.toHaveBeenCalled();
     expect(NativeIosBleAdapter).toHaveBeenCalledTimes(1);
     expect(RNBleAdapter).toHaveBeenCalledTimes(1);
   });
@@ -213,8 +200,20 @@ describe('screenshot fake-Bluetooth gate', () => {
     expect(iosAdapter).toBeInstanceOf(ScreenshotFakeBleAdapter);
     expect(androidAdapter).toBeInstanceOf(ScreenshotFakeBleAdapter);
     expect(isNativeIosBleAdapter(iosAdapter)).toBe(false);
+    expect(fakeLoader.load).toHaveBeenCalledTimes(2);
     expect(NativeIosBleAdapter).not.toHaveBeenCalled();
     expect(RNBleAdapter).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the real adapters if the fake adapter could not be loaded', () => {
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_FAKE_BLE', '1');
+    fakeLoader.load.mockReturnValue(null);
+    platformMock.OS = 'ios';
+    harness.module.boardBleNative = { _placeholder: true };
+
+    expect(createBluetoothAdapter(noopPicker, 'aurora')).not.toBeInstanceOf(ScreenshotFakeBleAdapter);
+    expect(NativeIosBleAdapter).toHaveBeenCalledTimes(1);
   });
 
   it('turns native connection adoption off only when both flags are 1', async () => {

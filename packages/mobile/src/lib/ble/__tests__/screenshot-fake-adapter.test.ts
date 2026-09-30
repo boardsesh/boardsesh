@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { parseApiLevel, parseBoardTypeFromDeviceName, parseSerialNumber } from '@boardsesh/ble-protocol';
+import {
+  isMoonboardDeviceName,
+  isWoodsDeviceName,
+  parseApiLevel,
+  parseBoardTypeFromDeviceName,
+  parseSerialNumber,
+} from '@boardsesh/ble-protocol';
 
 const mockBleManager = vi.hoisted(() => ({
   state: vi.fn(async () => 'Unsupported'),
@@ -84,6 +90,13 @@ describe('screenshotFakeDeviceName', () => {
     expect(screenshotFakeDeviceName('aurora', 'kilter')).toBe('Kilter Board@3');
   });
 
+  it('names a Woods board the way the Woods name matcher recognises', () => {
+    const deviceName = screenshotFakeDeviceName('moonboard', 'woods');
+    expect(deviceName).toBe('Woods Board');
+    expect(isWoodsDeviceName(deviceName)).toBe(true);
+    expect(isMoonboardDeviceName(deviceName)).toBe(false);
+  });
+
   it('names a MoonBoard with its advertised prefix', () => {
     expect(screenshotFakeDeviceName('moonboard', 'moonboard')).toBe('MoonBoard');
     expect(screenshotFakeDeviceName('moonboard')).toBe('MoonBoard');
@@ -102,5 +115,20 @@ describe('waitForBlePoweredOn under fake Bluetooth', () => {
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_FAKE_BLE', '1');
     expect(await waitForBlePoweredOn()).toBe(true);
     expect(mockBleManager.state).not.toHaveBeenCalled();
+  });
+});
+
+describe('loadScreenshotFakeAdapter', () => {
+  // With the flags on it `require`s the adapter, which vitest can't intercept
+  // (the factory tests mock the loader for that half). Off, it must not load it.
+  it.each([
+    ['neither flag', undefined, undefined],
+    ['screenshot mode alone', '1', undefined],
+    ['fake BLE without screenshot mode', undefined, '1'],
+  ])('returns null with %s', async (_label, screenshotMode, fakeBle) => {
+    if (screenshotMode !== undefined) vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', screenshotMode);
+    if (fakeBle !== undefined) vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_FAKE_BLE', fakeBle);
+    const { loadScreenshotFakeAdapter } = await import('../screenshot-fake-adapter-loader');
+    expect(loadScreenshotFakeAdapter()).toBeNull();
   });
 });

@@ -6,7 +6,7 @@ import {
 } from '../../../modules/live-activity/src/index';
 import { RNBleAdapter } from './adapter';
 import { NativeIosBleAdapter, nativeBleSupportsBoard, nativeBleSupportsConnectionAdoption } from './native-ios-adapter';
-import type { ScreenshotFakeBleAdapter } from './screenshot-fake-adapter';
+import { loadScreenshotFakeAdapter } from './screenshot-fake-adapter-loader';
 import type { BleAdapterOptions, BluetoothAdapter, BoardScanFamily, DevicePickerFn } from './types';
 
 // Returns the BluetoothAdapter implementation appropriate for the current
@@ -30,21 +30,17 @@ import type { BleAdapterOptions, BluetoothAdapter, BoardScanFamily, DevicePicker
 // A screenshot build with EXPO_PUBLIC_SCREENSHOT_FAKE_BLE=1 gets a fake adapter
 // that connects to a pretend board, because the simulator has no Bluetooth (see
 // screenshot-fake-adapter.ts). The raw env comparison is inlined on purpose so
-// the branch folds away in every other build (see ../screenshot-mode.ts), and the
-// module is required inside it (only its type is imported above) so Metro drops
-// the fake adapter from those builds along with the branch.
+// the branch folds away in every other build (see ../screenshot-mode.ts); the
+// loader requires the fake adapter behind the same gate, so Metro drops that
+// module from those builds too (see screenshot-fake-adapter-loader.ts).
 export function createBluetoothAdapter(
   devicePicker: DevicePickerFn,
   scanFamily: BoardScanFamily,
   options?: BleAdapterOptions,
 ): BluetoothAdapter {
   if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' && process.env.EXPO_PUBLIC_SCREENSHOT_FAKE_BLE === '1') {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    // oxlint-disable-next-line import/no-commonjs
-    const fakeAdapterModule = require('./screenshot-fake-adapter') as {
-      ScreenshotFakeBleAdapter: typeof ScreenshotFakeBleAdapter;
-    };
-    return new fakeAdapterModule.ScreenshotFakeBleAdapter(scanFamily, options);
+    const FakeAdapter = loadScreenshotFakeAdapter();
+    if (FakeAdapter) return new FakeAdapter(scanFamily, options);
   }
   const nativeCanServe = !options?.preferWriteWithResponse || nativeBleSupportsBoard(options.boardName);
   if (Platform.OS === 'ios' && boardBleNative && nativeCanServe) {
