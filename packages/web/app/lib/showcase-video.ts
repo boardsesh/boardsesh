@@ -56,12 +56,12 @@ export function showcaseVideoJsonLd(): Record<string, unknown> {
   return {
     '@context': 'https://schema.org',
     '@type': 'VideoObject',
-    name: 'Boardsesh in 40 seconds',
+    name: 'Boardsesh in under a minute',
     description:
       'Light a Kilter board from your phone, switch between boards, run a shared crew queue and log a send in Boardsesh.',
     thumbnailUrl: toAbsolute(poster),
     uploadDate: '2026-09-30T00:00:00+10:00',
-    duration: 'PT41.6S',
+    duration: 'PT56.8S',
     contentUrl: toAbsolute(mp4),
   };
 }

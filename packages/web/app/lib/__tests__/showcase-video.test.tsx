@@ -18,7 +18,7 @@ describe('showcase video', () => {
     expect(showcaseVideoJsonLd()).toMatchObject({
       '@type': 'VideoObject',
       uploadDate: '2026-09-30T00:00:00+10:00',
-      duration: 'PT41.6S',
+      duration: 'PT56.8S',
       thumbnailUrl: 'https://www.boardsesh.com/images/home/showcase-hero-9x16.webp',
       contentUrl: 'https://www.boardsesh.com/videos/home/showcase-9x16-lite.mp4',
     });
