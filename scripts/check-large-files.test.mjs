@@ -12,6 +12,14 @@ void test('allowlistEntryFor matches allowlisted prefixes', () => {
   assert.ok(allowlistEntryFor('design/velvet-send-design-tokens-v1.png'));
 });
 
+void test('allowlistEntryFor covers exactly the four showcase video files', () => {
+  for (const name of ['showcase.webm', 'showcase.mp4', 'showcase-9x16.webm', 'showcase-9x16.mp4']) {
+    assert.ok(allowlistEntryFor(`packages/web/public/videos/home/${name}`), name);
+  }
+  assert.equal(allowlistEntryFor('packages/web/public/videos/home/other.mp4'), undefined);
+  assert.equal(allowlistEntryFor('packages/web/public/videos/help/showcase.mp4'), undefined);
+});
+
 void test('allowlistEntryFor returns undefined for non-allowlisted paths', () => {
   assert.equal(allowlistEntryFor('packages/web/public/huge.png'), undefined);
   assert.equal(allowlistEntryFor('docs/diagram.png'), undefined);

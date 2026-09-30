@@ -19,10 +19,13 @@ import {
   SHOWCASE_PERSPECTIVE,
   SHOWCASE_PLACEHOLDER_TAKES,
   SHOWCASE_POSES,
+  SHOWCASE_LIGHT_ROLE_COLORS,
   SHOWCASE_STAGE_COPY,
+  SHOWCASE_STAGE_LIGHT,
+  SHOWCASE_WEB_BITRATE_KBPS,
   SHOWCASE_WEB_MAX_BYTES,
   anchorOnScreen,
-  assignLeaderGutters,
+  boardTakeLabel,
   buildMasterArgs,
   buildMezzanineArgs,
   buildPlaceholderFootageArgs,
@@ -30,26 +33,35 @@ import {
   buildWebmPassArgs,
   calloutSlots,
   classifyGlowPixel,
+  contrastRatio,
   countWords,
   detectLitHolds,
+  expectedWebBytes,
   footageFrameIndex,
   layoutPortraitPills,
   layoutSceneCallouts,
   orderHoldsForClimb,
   parseHeadline,
   parseRenderArgs,
+  pileupArrivalFrames,
   placeholderAnchorsFile,
+  placeholderCardSvg,
+  planBoards,
+  planLeaders,
+  prepareAnchorsFile,
   projectPhonePoint,
   readingBudgetReport,
   resolveSceneCallouts,
+  sceneCalloutCopy,
   screenToCanvas,
   showcaseOutputs,
   stillFramesForScene,
-  webBitrateKbps,
   webCutSeconds,
+  workoutTickFrames,
   type ShowcaseCopy,
 } from '../lib/showcase-video/render';
 import { SHOWCASE_SCENES, SHOWCASE_TOTAL_FRAMES } from '../lib/showcase-video/timeline';
+import type { ShowcaseTakeId } from '../lib/showcase-video/contract';
 
 const copy = JSON.parse(readFileSync(SHOWCASE_STAGE_COPY, 'utf8')) as ShowcaseCopy;
 const sceneOf = (id: string) => {
@@ -119,7 +131,7 @@ describe('anchors', () => {
       source: { kind: 'still', file: 'queue.webp' },
       anchors: { 'play-next': { x: 10, y: 400, width: 300, height: 80 } },
     });
-    const { callouts, warnings } = resolveSceneCallouts(crew, file, copy.crew.callouts);
+    const { callouts, warnings } = resolveSceneCallouts(crew, file, sceneCalloutCopy(copy, 'crew'));
     expect(callouts).toEqual(['play-next']);
     expect(warnings).toHaveLength(2);
     expect(warnings.join('\n')).toMatch(/invite-qr/);
@@ -134,7 +146,7 @@ describe('anchors', () => {
         'board-surface': { x: 20, y: 200, width: 400, height: 500 },
       },
     });
-    const { callouts, warnings } = resolveSceneCallouts(light, file, copy.light.callouts);
+    const { callouts, warnings } = resolveSceneCallouts(light, file, sceneCalloutCopy(copy, 'light'));
     expect(callouts).toEqual(['board-surface']);
     expect(warnings[0]).toMatch(/off screen/);
   });
@@ -148,53 +160,80 @@ describe('anchors', () => {
 });
 
 describe('callout layout', () => {
-  it('uses the storyboard pill slots', () => {
+  const rect = (x: number, y: number, width: number, height: number) => ({ x, y, width, height });
+
+  it('uses the storyboard pill slots, sliding them down for boxes low on the screen', () => {
     expect(calloutSlots(2)).toEqual([420, 660]);
     expect(calloutSlots(3)).toEqual([360, 540, 720]);
     expect(calloutSlots(0)).toEqual([]);
+    expect(calloutSlots(3, 300)).toEqual([360, 540, 720]);
+    expect(calloutSlots(3, 900)).toEqual([540, 720, 900]);
   });
 
   it('staggers leader gutters so stacked leaders never overlap', () => {
-    const starts = [
-      { x: 960, y: 290 },
-      { x: 1280, y: 370 },
-      { x: 1290, y: 480 },
-    ];
-    const gutters = assignLeaderGutters(starts, [360, 540, 720]);
-    expect(new Set(gutters).size).toBe(3);
-    // The lower leaders drop further left of the upper ones, or their verticals would share x.
-    expect(gutters[2]).toBeLessThan(gutters[1]);
-    gutters.forEach((gutter) => expect(gutter).toBeLessThanOrEqual(1340));
+    const plans = planLeaders([rect(900, 270, 60, 40), rect(1260, 350, 30, 40), rect(890, 440, 400, 80)]);
+    expect(plans.every((plan) => plan.exit === 'side')).toBe(true);
+    expect(new Set(plans.map((plan) => plan.gutterX)).size).toBe(3);
+    plans.forEach((plan) => expect(plan.gutterX).toBeLessThanOrEqual(1340));
+    expect(plans.map((plan) => plan.slotY)).toEqual([360, 540, 720]);
   });
 
   it('keeps a lone leader on the nominal gutter', () => {
-    expect(assignLeaderGutters([{ x: 1200, y: 500 }], [540])).toEqual([1340]);
+    expect(planLeaders([rect(1100, 480, 100, 40)])[0]).toMatchObject({ exit: 'side', gutterX: 1340, slotY: 540 });
+  });
+
+  it('sends a row of buttons up on risers instead of through each other', () => {
+    // The lock screen's Live Activity row, in callout order: next (right), relight (left), mirror.
+    const row = [rect(1210, 820, 90, 60), rect(1080, 820, 60, 60), rect(1145, 820, 60, 60)];
+    const plans = planLeaders(row);
+    // The rightmost button has a clear run to the gutter; the other two rise.
+    expect(plans.map((plan) => plan.exit)).toEqual(['side', 'top', 'top']);
+    // The leftmost riser takes the highest lane, so the risers never cross.
+    expect(plans[1].laneY).toBeLessThan(plans[2].laneY);
+    expect(plans[2].laneY).toBeLessThan(820);
   });
 
   it('alternates 9:16 pills left and right and keeps same-side pills apart', () => {
-    const pills = layoutPortraitPills(
-      [
-        { x: 300, y: 800, width: 40, height: 40 },
-        { x: 700, y: 820, width: 40, height: 40 },
-        { x: 300, y: 830, width: 40, height: 40 },
-      ],
-      1920,
-    );
+    const pills = layoutPortraitPills([rect(300, 800, 40, 40), rect(700, 820, 40, 40), rect(300, 830, 40, 40)], {
+      width: 1080,
+      height: 1920,
+    });
     expect(pills.map((pill) => pill.side)).toEqual(['left', 'right', 'left']);
     expect(pills[2].y - pills[0].y).toBeGreaterThanOrEqual(76);
+    expect(pills.every((pill) => pill.exit === 'side')).toBe(true);
+  });
+
+  it('stacks a 9:16 pill above a row of boxes when neither side is clear', () => {
+    const pills = layoutPortraitPills([rect(460, 1000, 60, 60), rect(530, 1000, 60, 60), rect(600, 1000, 60, 60)], {
+      width: 1080,
+      height: 1920,
+    });
+    expect(pills[0]).toMatchObject({ side: 'left', exit: 'side' });
+    expect(pills[1].exit).toBe('top');
+    expect(pills[1].y).toBeLessThan(1000);
+    expect(pills[2]).toMatchObject({ side: 'right', exit: 'side' });
   });
 
   it('lays out every placeholder callout in both formats', () => {
     for (const format of ['16x9', '9x16'] as const) {
-      for (const sceneId of ['light', 'crew'] as const) {
-        const scene = sceneOf(sceneId);
+      for (const scene of SHOWCASE_SCENES) {
+        if (scene.callouts.length === 0) continue;
         const take = scene.takes[0];
         const file = placeholderAnchorsFile(take, SHOWCASE_PLACEHOLDER_TAKES[take]);
-        const callouts = layoutSceneCallouts(format, scene.callouts, file, copy[sceneId].callouts);
+        const labels = sceneCalloutCopy(copy, scene.id);
+        const callouts = layoutSceneCallouts(format, scene.callouts, file, labels);
         expect(callouts.map((callout) => callout.role)).toEqual(['start', 'hand', 'finish'].slice(0, callouts.length));
-        callouts.forEach((callout) => expect(callout.label).toBe(copy[sceneId].callouts[callout.name]));
+        callouts.forEach((callout) => expect(callout.label).toBe(labels[callout.name]));
       }
     }
+  });
+
+  it('darkens the role hues on lavender scenes to at least 3:1', () => {
+    for (const color of Object.values(SHOWCASE_LIGHT_ROLE_COLORS)) {
+      expect(contrastRatio(color, SHOWCASE_STAGE_LIGHT), color).toBeGreaterThanOrEqual(3);
+    }
+    // The LED hues they replace would not pass.
+    expect(contrastRatio('#4DF5FD', SHOWCASE_STAGE_LIGHT)).toBeLessThan(3);
   });
 });
 
@@ -225,8 +264,7 @@ describe('reading budget', () => {
 
   it('has copy for every callout the storyboard asks for', () => {
     for (const scene of SHOWCASE_SCENES) {
-      if (scene.id !== 'light' && scene.id !== 'crew') continue;
-      for (const name of scene.callouts) expect(copy[scene.id].callouts[name]).toBeTruthy();
+      for (const name of scene.callouts) expect(sceneCalloutCopy(copy, scene.id)[name], name).toBeTruthy();
     }
   });
 });
@@ -317,12 +355,12 @@ describe('encoding', () => {
     expect(outputs.masterStill.endsWith('/out/brag.jpg')).toBe(true);
   });
 
-  it('targets a bitrate that lands the web cut under the 1.8 MB gate', () => {
+  it('targets a bitrate that leaves the web cut well under its 4 MB gate', () => {
     const seconds = webCutSeconds();
     expect(seconds).toBeCloseTo((SHOWCASE_TOTAL_FRAMES - 1) / 30);
-    const kbps = webBitrateKbps(SHOWCASE_WEB_MAX_BYTES, seconds);
-    expect((kbps * 1000 * seconds) / 8).toBeLessThan(SHOWCASE_WEB_MAX_BYTES);
-    expect(SHOWCASE_WEB_MAX_BYTES).toBeLessThan(2_000_000);
+    expect(SHOWCASE_WEB_MAX_BYTES).toBe(4_000_000);
+    // Two-pass rate control lands within a few per cent; keep 20% for container and overshoot.
+    expect(expectedWebBytes(SHOWCASE_WEB_BITRATE_KBPS, seconds)).toBeLessThan(SHOWCASE_WEB_MAX_BYTES * 0.8);
   });
 
   it('downscales the 2x screenshots with lanczos into a near-lossless RGB mezzanine', () => {
@@ -412,6 +450,8 @@ describe('CLI', () => {
     expect(() => parseRenderArgs(['--from-frame', '-2'])).toThrow();
     expect(() => parseRenderArgs(['--from-frame', '9999'])).toThrow();
     expect(() => parseRenderArgs(['--wat'])).toThrow(/Unknown option/);
+    expect(parseRenderArgs(['--frame', '264', '--format', '16x9'])).toMatchObject({ frame: 264, stills: false });
+    expect(parseRenderArgs([]).frame).toBeNull();
   });
 });
 
@@ -427,5 +467,100 @@ describe('stage motion helpers', () => {
   it('mixes the backgrounds in OKLab, landing exactly on both ends', () => {
     expect(mixOklab('#110A20', '#F4F1FB', 0)).toBe('rgb(17 10 32)');
     expect(mixOklab('#110A20', '#F4F1FB', 1)).toBe('rgb(244 241 251)');
+  });
+});
+
+describe('boards pile-up', () => {
+  const boards = sceneOf('boards');
+
+  it('lands every recorded board, the persistent Tension phone in the middle of the final row', () => {
+    const plan = planBoards(boards.takes, new Set(boards.takes));
+    expect(plan.arrival).toEqual(boards.takes);
+    expect(plan.main).toBe('boards-tension');
+    expect(plan.neatCount).toBe(3);
+    expect(plan.final).toHaveLength(8);
+    expect(plan.final.slice(3, 5)).toEqual(['boards-tension', 'boards-soill']);
+    expect(plan.labels['boards-soill']).toBe('So iLL');
+    expect(boardTakeLabel('boards-moonboard')).toBe('MoonBoard');
+  });
+
+  it('carries on with whichever boards were recorded', () => {
+    const recorded = new Set<ShowcaseTakeId>(['boards-kilter', 'boards-moonboard', 'boards-decoy']);
+    const plan = planBoards(boards.takes, recorded);
+    expect(plan.arrival).toEqual(['boards-kilter', 'boards-moonboard', 'boards-decoy']);
+    // No Tension: the first neat arrival becomes the persistent phone.
+    expect(plan.main).toBe('boards-kilter');
+    expect(plan.arrivalFrames).toHaveLength(3);
+    expect(() => planBoards(boards.takes, new Set())).toThrow(/at least one board/);
+  });
+
+  it('brings the neat three in with the scene change and the rest in fast, the last after a beat', () => {
+    const frames = pileupArrivalFrames(8, 3, 1);
+    expect(frames.slice(0, 3)).toEqual([-2, -4, 3]);
+    expect(frames.slice(3, 7)).toEqual([40, 46, 52, 58]);
+    // The squeeze waits one gap plus a pause.
+    expect(frames[7]).toBe(69);
+    // Everyone is in well before the headline starts leaving.
+    expect(Math.max(...frames)).toBeLessThan(
+      boards.endFrame - boards.startFrame - SHOWCASE_CHOREO.wordsOutFromEnd - 30,
+    );
+  });
+
+  it('lists every take in the scene arrival order the timeline declares', () => {
+    expect(new Set(planBoards(boards.takes, new Set(boards.takes)).final)).toEqual(new Set(boards.takes));
+  });
+});
+
+describe('workouts checklist', () => {
+  it('ticks the pyramid in order and rests after the top set', () => {
+    const grades = copy.workouts.rows.map((row) => row.grade);
+    expect(grades).toEqual(['V2', 'V4', 'V5', 'V6', 'V5', 'V4']);
+    const { ticks, restRow, restStart, restEnd } = workoutTickFrames(grades);
+    expect(restRow).toBe(4);
+    ticks.slice(1).forEach((tick, index) => expect(tick).toBeGreaterThan(ticks[index]));
+    // The rest countdown runs between the top set's tick and the next row's.
+    expect(restStart).toBeGreaterThan(ticks[3]);
+    expect(restEnd).toBeLessThanOrEqual(ticks[4]);
+    const workouts = sceneOf('workouts');
+    const settleEnd = workouts.endFrame - workouts.startFrame - SHOWCASE_CHOREO.settleEndFromEnd;
+    expect(ticks[ticks.length - 1]).toBeLessThan(settleEnd - 20);
+    expect(copy.workouts.restCountdown[0]).toBe(copy.workouts.rows[3].rest);
+  });
+});
+
+describe('anchor preparation', () => {
+  it('sorts samples and grows header-only anchors over the list below', () => {
+    const prepared = prepareAnchorsFile({
+      takeId: 'wall',
+      screen: { width: 440, height: 956 },
+      anchors: {
+        'wall-history': [
+          { t: 2, x: 8, y: 400, width: 424, height: 24 },
+          { t: 0, x: 8, y: 800, width: 424, height: 24 },
+        ],
+        'now-on-wall': [{ t: 0, x: 132, y: 81, width: 230, height: 35 }],
+      },
+    });
+    const history = prepared.anchors['wall-history'] ?? [];
+    expect(history.map((sample) => sample.t)).toEqual([0, 2]);
+    // Clamped to 24 pt above the bottom of the screen...
+    expect(history[0].y + history[0].height).toBe(956 - 24);
+    // ...otherwise 300 pt taller.
+    expect(history[1].height).toBe(324);
+    expect(prepared.anchors['now-on-wall']?.[0].height).toBe(35);
+  });
+});
+
+describe('placeholder cards', () => {
+  it('draws the lock screen with the buttons its static anchors point at, escaped', () => {
+    const take = SHOWCASE_PLACEHOLDER_TAKES['lock-screen'];
+    if (take.source.kind !== 'card') throw new Error('lock-screen placeholder should be a card');
+    const svg = placeholderCardSvg(take.source.card);
+    expect(svg).toContain('9:41');
+    expect(svg).toContain('>Next<');
+    for (const name of ['lock-next', 'lock-relight', 'lock-mirror'] as const) {
+      expect(anchorOnScreen(take.anchors[name] ?? null, PLACEHOLDER_SCREEN), name).toBe(true);
+    }
+    expect(placeholderCardSvg({ ...take.source.card, title: 'A & <B>' })).toContain('A &amp; &lt;B&gt;');
   });
 });
