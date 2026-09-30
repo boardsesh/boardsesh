@@ -143,6 +143,12 @@ current-catalog publication. Inventory and verify modes never run the publisher.
 its source comes from the existing Tigris `STATIC_ASSETS_*` Production secrets. Once those secrets move to R2, it
 refuses to treat them as the legacy source. Retain the Tigris credentials securely for local verification and rollback.
 
+Read-only does not mean metadata-only: `--verify-only` downloads every historical source object from Tigris and its
+matching destination object from R2 to recompute both SHA-256 hashes. Each run transfers approximately twice the
+total historical source bytes and can incur Tigris egress charges. Use inventory mode for listing without object
+downloads; reserve full verification for the pre-cutover gate and integrity checks. Historical objects include
+hashes outside the current catalog, so the current catalog size is not a verification cost estimate.
+
 User media and private exports already use R2. The remaining storage cutovers are tracked separately:
 [OTA #5848](https://github.com/boardsesh/boardsesh/issues/5848) and
 [board snapshots #5912](https://github.com/boardsesh/boardsesh/issues/5912).

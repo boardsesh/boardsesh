@@ -8,7 +8,7 @@ import {
   type AssetStore,
   type StoredAsset,
 } from './static-asset-migration';
-import { assertMigrationEndpoints, boundedAssetBody } from '../migrate-static-assets';
+import { assertMigrationEndpoints, boundedAssetBody, migrationErrorMessage } from '../migrate-static-assets';
 
 const contents = Buffer.from('historical asset no longer in the current catalog');
 const key = `static/v1/${createHash('sha256').update(contents).digest('hex')}.webp`;
@@ -41,6 +41,19 @@ function memoryStore(initial: Record<string, Uint8Array> = {}) {
 }
 
 describe('historical immutable assets migration', () => {
+  it.each([
+    `Missing buffered source asset: ${key}`,
+    `Asset GET is not a readable stream: ${key}`,
+    'Asset listing contains an object without a key',
+  ])('preserves actionable internal diagnostics: %s', (message) => {
+    expect(migrationErrorMessage(new Error(message))).toBe(message);
+  });
+  it('hides unknown SDK errors and limits internal diagnostic length', () => {
+    const genericMessage = 'Storage request failed; check credentials, endpoint, and connectivity';
+    expect(migrationErrorMessage(new Error('Request failed: Authorization=secret'))).toBe(genericMessage);
+    expect(migrationErrorMessage({ request: { authorization: 'secret' } })).toBe(genericMessage);
+    expect(migrationErrorMessage(new Error(`Unknown immutable asset key: ${'a'.repeat(300)}`))).toHaveLength(240);
+  });
   it('defaults to dry run and rejects ambiguous or unknown flags', () => {
     expect(parseMigrationMode([])).toBe('dry-run');
     expect(parseMigrationMode(['--', '--dry-run'])).toBe('dry-run');

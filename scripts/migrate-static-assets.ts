@@ -184,17 +184,19 @@ export function assertMigrationEndpoints(legacyEndpoint: string, r2Endpoint: str
   }
 }
 
+export function migrationErrorMessage(error: unknown): string {
+  // SDK errors can contain signed request details; diagnostics never print credentials.
+  return error instanceof Error &&
+    /^(Missing required|Missing buffered source asset:|Supported flags|Choose exactly|Unknown immutable|Duplicate asset|Incomplete asset|Invalid or oversized|Asset body|Asset GET is not a readable stream:|Asset listing contains an object without a key$|Corrupt immutable|Missing historical|Source asset|Destination asset|Historical asset|Conditional-write|Empty historical|Destination must|Historical migration)/.test(
+      error.message,
+    )
+    ? error.message.slice(0, 240)
+    : 'Storage request failed; check credentials, endpoint, and connectivity';
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch((error: unknown) => {
-    // SDK errors can contain signed request details; diagnostics never print credentials.
-    const message =
-      error instanceof Error &&
-      /^(Missing required|Supported flags|Choose exactly|Unknown immutable|Duplicate asset|Incomplete asset|Invalid or oversized|Asset body|Corrupt immutable|Missing historical|Source asset|Destination asset|Historical asset|Conditional-write|Empty historical|Destination must|Historical migration)/.test(
-        error.message,
-      )
-        ? error.message.slice(0, 240)
-        : 'Storage request failed; check credentials, endpoint, and connectivity';
-    console.error(`Static asset migration failed: ${message}`);
+    console.error(`Static asset migration failed: ${migrationErrorMessage(error)}`);
     process.exitCode = 1;
   });
 }

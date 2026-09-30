@@ -43,7 +43,7 @@ export async function inventoryAssets(store: AssetStore): Promise<string[]> {
   const keys = new Set<string>();
   const seenTokens = new Set<string>();
   let token: string | undefined;
-  do {
+  while (true) {
     const page = await store.list(token);
     for (const key of page.keys) {
       if (key === 'static/v1/manifest.json') continue;
@@ -57,7 +57,7 @@ export async function inventoryAssets(store: AssetStore): Promise<string[]> {
     }
     token = page.nextToken;
     seenTokens.add(token);
-  } while (token !== undefined);
+  }
   return [...keys].sort();
 }
 

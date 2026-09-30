@@ -22,6 +22,25 @@ const workflow = parse(readFileSync('.github/workflows/bootstrap-r2-static-asset
 const bootstrap = workflow.jobs.bootstrap;
 
 describe('static asset bootstrap trust boundary', () => {
+  it('validates both credential sets before checkout or dependency installation', () => {
+    const validation = bootstrap.steps[0];
+    expect(validation.name).toBe('Validate migration credentials');
+    for (const secret of [
+      'STATIC_ASSETS_S3_BUCKET_NAME',
+      'STATIC_ASSETS_AWS_ENDPOINT_URL',
+      'STATIC_ASSETS_AWS_REGION',
+      'STATIC_ASSETS_AWS_ACCESS_KEY_ID',
+      'STATIC_ASSETS_AWS_SECRET_ACCESS_KEY',
+      'STATIC_ASSETS_R2_AWS_ENDPOINT_URL',
+      'STATIC_ASSETS_R2_AWS_ACCESS_KEY_ID',
+      'STATIC_ASSETS_R2_AWS_SECRET_ACCESS_KEY',
+    ]) {
+      expect(validation.env?.[secret]).toBe(`\${{ secrets.${secret} }}`);
+      expect(validation.run).toContain(secret);
+    }
+    expect(validation.run).toContain('Missing Production secret: $required_name');
+    expect(validation.run).not.toContain('echo "${!required_name}"');
+  });
   it('keeps production credentials on main and defaults to read-only inventory', () => {
     expect(bootstrap.if).toBe("github.ref == 'refs/heads/main'");
     expect(workflow.on.workflow_dispatch.inputs.mode.default).toBe('inventory');

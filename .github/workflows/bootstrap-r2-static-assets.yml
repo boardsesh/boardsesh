@@ -26,13 +26,18 @@ jobs:
     timeout-minutes: 30
     environment: Production
     steps:
-      - name: Validate R2 credentials
+      - name: Validate migration credentials
         env:
+          STATIC_ASSETS_S3_BUCKET_NAME: ${{ secrets.STATIC_ASSETS_S3_BUCKET_NAME }}
+          STATIC_ASSETS_AWS_ENDPOINT_URL: ${{ secrets.STATIC_ASSETS_AWS_ENDPOINT_URL }}
+          STATIC_ASSETS_AWS_REGION: ${{ secrets.STATIC_ASSETS_AWS_REGION }}
+          STATIC_ASSETS_AWS_ACCESS_KEY_ID: ${{ secrets.STATIC_ASSETS_AWS_ACCESS_KEY_ID }}
+          STATIC_ASSETS_AWS_SECRET_ACCESS_KEY: ${{ secrets.STATIC_ASSETS_AWS_SECRET_ACCESS_KEY }}
           STATIC_ASSETS_R2_AWS_ENDPOINT_URL: ${{ secrets.STATIC_ASSETS_R2_AWS_ENDPOINT_URL }}
           STATIC_ASSETS_R2_AWS_ACCESS_KEY_ID: ${{ secrets.STATIC_ASSETS_R2_AWS_ACCESS_KEY_ID }}
           STATIC_ASSETS_R2_AWS_SECRET_ACCESS_KEY: ${{ secrets.STATIC_ASSETS_R2_AWS_SECRET_ACCESS_KEY }}
         run: |
-          for required_name in STATIC_ASSETS_R2_AWS_ENDPOINT_URL STATIC_ASSETS_R2_AWS_ACCESS_KEY_ID STATIC_ASSETS_R2_AWS_SECRET_ACCESS_KEY; do
+          for required_name in STATIC_ASSETS_S3_BUCKET_NAME STATIC_ASSETS_AWS_ENDPOINT_URL STATIC_ASSETS_AWS_REGION STATIC_ASSETS_AWS_ACCESS_KEY_ID STATIC_ASSETS_AWS_SECRET_ACCESS_KEY STATIC_ASSETS_R2_AWS_ENDPOINT_URL STATIC_ASSETS_R2_AWS_ACCESS_KEY_ID STATIC_ASSETS_R2_AWS_SECRET_ACCESS_KEY; do
             if [ -z "${!required_name}" ]; then
               echo "::error::Missing Production secret: $required_name"
               exit 1
