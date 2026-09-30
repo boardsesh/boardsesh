@@ -36,6 +36,8 @@ import {
   appPreviewProblems,
   parseStreamProbe,
   resolveTargetNames,
+  assertTargetLength,
+  selectTargets,
   targetFrames,
   targetOutputs,
   targetSeconds,
@@ -168,7 +170,47 @@ describe('the homepage target', () => {
   });
 });
 
+describe('which targets a render covers', () => {
+  const flags = { targets: [] as string[], formats: ['16x9', '9x16'] as const, skipWeb: false, donationLine: true };
+  const names = (selection: ReturnType<typeof selectTargets>) => selection.picks.map(({ target }) => target.name);
+
+  it('renders the default pair, every rendition', () => {
+    const selection = selectTargets(flags);
+    expect(names(selection)).toEqual(['homepage', 'social']);
+    expect(selection.picks[1].renditions.map((rendition) => rendition.id)).toEqual(['16x9', '9x16']);
+    expect(selection.notes).toEqual([]);
+  });
+
+  it('fails when a flag would drop a target the command names', () => {
+    expect(() => selectTargets({ ...flags, targets: ['homepage'], skipWeb: true, donationLine: false })).toThrow(
+      /--target homepage can't render with --no-donation-line/,
+    );
+    expect(() => selectTargets({ ...flags, targets: ['homepage'], skipWeb: true })).toThrow(/--skip-web/);
+    expect(() => selectTargets({ ...flags, targets: ['reel'], formats: ['16x9'] })).toThrow(
+      /--target reel has no 16x9 rendition \(it renders 9x16\)/,
+    );
+    expect(() => selectTargets({ ...flags, targets: ['play-promo'], formats: ['9x16'] })).toThrow(/play-promo/);
+  });
+
+  it('leaves out a default or all target with a note, not in silence', () => {
+    const skipped = selectTargets({ ...flags, skipWeb: true, donationLine: false });
+    expect(names(skipped)).toEqual(['social']);
+    expect(skipped.notes).toEqual(['homepage left out (--no-donation-line: its files always carry the donation line)']);
+    const portrait = selectTargets({ ...flags, targets: ['all'], formats: ['9x16'] });
+    expect(names(portrait)).toEqual(['homepage', 'social', 'reel', 'app-store']);
+    expect(portrait.notes).toEqual(['play-promo left out (--format 9x16; it renders 16x9)']);
+  });
+});
+
 describe('durations', () => {
+  it('holds motion and full-bleed cuts to the same window, both ends', () => {
+    const reel = SHOWCASE_TARGETS.reel;
+    expect(() => assertTargetLength(reel, 921)).not.toThrow();
+    expect(() => assertTargetLength(reel, reel.maxSeconds * 30 + 1)).toThrow(/outside its 20–32 s window/);
+    expect(() => assertTargetLength(reel, reel.minSeconds * 30 - 1)).toThrow(/outside/);
+    expect(() => assertTargetLength(SHOWCASE_TARGETS['app-store'], 14 * 30)).toThrow(/15–30 s/);
+  });
+
   it('keeps every target within its cap, with every take and without the island', () => {
     const all = new Set(SHOWCASE_TAKE_IDS);
     const noIsland = new Set(SHOWCASE_TAKE_IDS.filter((takeId) => takeId !== 'lock-screen'));

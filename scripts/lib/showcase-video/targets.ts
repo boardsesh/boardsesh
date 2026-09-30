@@ -449,6 +449,62 @@ export function resolveTargetNames(values: readonly string[]): ShowcaseTargetNam
   return SHOWCASE_TARGET_NAMES.filter((name) => values.includes(name));
 }
 
+export type TargetSelection = Readonly<{
+  picks: ReadonlyArray<Readonly<{ target: ShowcaseTarget; renditions: readonly ShowcaseRendition[] }>>;
+  /** What the flags left out, one line each, for the log. */
+  notes: readonly string[];
+}>;
+
+/**
+ * The targets and renditions a render covers. A flag that would leave out a
+ * target the command names on purpose fails instead of skipping it quietly:
+ * `--skip-web` or `--no-donation-line` with `--target homepage`, or a
+ * `--format` that none of a named target's renditions has. Targets that come
+ * from the default pair or `all` are left out with a note.
+ */
+export function selectTargets(
+  args: Readonly<{
+    targets: readonly string[];
+    formats: readonly ShowcaseFormat[];
+    skipWeb: boolean;
+    donationLine: boolean;
+  }>,
+): TargetSelection {
+  const named = new Set(args.targets);
+  const notes: string[] = [];
+  const picks: TargetSelection['picks'][number][] = [];
+  for (const name of resolveTargetNames(args.targets)) {
+    const target = SHOWCASE_TARGETS[name];
+    if (target.writesPublic && args.skipWeb) {
+      const flag = args.donationLine ? '--skip-web' : '--no-donation-line';
+      const reason = args.donationLine ? 'leaves out the web files' : 'its files always carry the donation line';
+      if (named.has(name)) throw new Error(`--target ${name} can't render with ${flag}: ${reason}`);
+      notes.push(`${name} left out (${flag}: ${reason})`);
+      continue;
+    }
+    const renditions = target.renditions.filter((rendition) => args.formats.includes(rendition.format));
+    if (renditions.length === 0) {
+      const has = target.renditions.map((rendition) => rendition.format).join(', ');
+      if (named.has(name))
+        throw new Error(`--target ${name} has no ${args.formats.join('/')} rendition (it renders ${has})`);
+      notes.push(`${name} left out (--format ${args.formats.join('/')}; it renders ${has})`);
+      continue;
+    }
+    picks.push({ target, renditions });
+  }
+  return { picks, notes };
+}
+
+/** A cut's length against its target's window; throws outside it. The same check for motion and full-bleed cuts. */
+export function assertTargetLength(target: ShowcaseTarget, frames: number): void {
+  const seconds = frames / SHOWCASE_FPS;
+  if (seconds < target.minSeconds || seconds > target.maxSeconds) {
+    throw new Error(
+      `${target.name} runs ${seconds.toFixed(1)} s, outside its ${target.minSeconds}–${target.maxSeconds} s window`,
+    );
+  }
+}
+
 // --- checks ---------------------------------------------------------------------------------
 
 /** A piece of text on a rendered frame, in canvas px (the stage's `textBoxes()`). */

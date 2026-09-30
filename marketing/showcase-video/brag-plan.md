@@ -131,7 +131,8 @@ docs/showcase-video.md "Targets"): `social` writes the full-quality masters
 `out/reel/`, `out/app-store/` and `out/play/`; `homepage` writes the hero's
 `showcase-9x16-lite.{webm,mp4}` in
 `packages/web/public/videos/home/` and `showcase-hero-9x16.webp` in
-`packages/web/public/images/home/`. Each web file must stay under 1.9 MB
-(`SHOWCASE_WEB_MAX_BYTES`), below `scripts/check-large-files.mjs`'s 2 MB, so
-none needs an allowlist entry. After a render, run
+`packages/web/public/images/home/`. The webm must stay under 1.75 MB and the
+mp4 under 1.9 MB (`SHOWCASE_WEB_LITE`), inside the 1.9 MB hard gate
+(`SHOWCASE_WEB_MAX_BYTES`) and below `scripts/check-large-files.mjs`'s 2 MB, so
+neither needs an allowlist entry. After a render, run
 `vp run generate:static-assets` and commit the files with the catalog.

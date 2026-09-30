@@ -140,12 +140,13 @@ import {
 } from '../../../scripts/lib/showcase-video/render';
 import { FFMPEG_BIN, FFPROBE_BIN, HELP_CLIP_POSTER_ENCODE } from '../../../scripts/lib/help-clips';
 import {
-  SHOWCASE_TARGETS,
   SHOWCASE_TARGET_NAMES,
   appPreviewProblems,
+  assertTargetLength,
   parseStreamProbe,
-  resolveTargetNames,
+  selectTargets,
   textOutsideSafeArea,
+  type TargetSelection,
   type ProbedMedia,
   type ShowcaseDeliverable,
   type ShowcaseRendition,
@@ -567,16 +568,17 @@ function prepareCut(footage: Footage, target: ShowcaseTarget, donationLine: bool
   }
   const boardsScene = SHOWCASE_SCENES.find((scene) => scene.id === 'boards') as ShowcaseScene;
   const boards = planBoards(boardsScene.takes, new Set(Object.keys(footage.takes) as ShowcaseTakeId[]));
+  if (timeline.scenes.some((scene) => scene.id === 'boards')) {
+    log(
+      `${target.name} boards: ${boards.arrival.length} phones (${boards.arrival.map((takeId) => boards.labels[takeId]).join(', ')})`,
+    );
+  }
   const budget = readingBudgetReport(copy, timeline.scenes, edits);
   log(`${target.name} reading budget:\n${formatReadingBudgetTable(budget)}`);
   for (const report of budget.filter((candidate) => !readingBudgetMet(candidate))) {
     warn(`${target.name}: reading budget short in "${report.sceneId}"`);
   }
-  if (timeline.totalFrames / SHOWCASE_FPS > target.maxSeconds) {
-    throw new Error(
-      `${target.name} runs ${timeline.totalFrames / SHOWCASE_FPS} s, over its ${target.maxSeconds} s cap`,
-    );
-  }
+  assertTargetLength(target, timeline.totalFrames);
   return { copy, takes, anchors: footage.anchors, holds: footage.holds, callouts, boards, edits, timeline };
 }
 
@@ -676,9 +678,7 @@ function fullBleedData(footage: Footage, target: ShowcaseTarget, rendition: Show
   }
   const seconds = frame / SHOWCASE_FPS;
   log(`${target.name}: ${clips.length} clips, ${frame} frames (${seconds.toFixed(1)} s)`);
-  if (seconds < target.minSeconds || seconds > target.maxSeconds) {
-    throw new Error(`${target.name} runs ${seconds} s, outside ${target.minSeconds}–${target.maxSeconds} s`);
-  }
+  assertTargetLength(target, frame);
   const data: FullBleedStageData = {
     width: rendition.size.width,
     height: rendition.size.height,
@@ -716,12 +716,10 @@ const shortHash = (value: unknown) => createHash('sha1').update(JSON.stringify(v
  * same frames (homepage and social 9:16) share one cut, so the browser runs
  * once for both.
  */
-async function planCuts(footage: Footage, targets: readonly ShowcaseTarget[], args: RenderArgs): Promise<Cut[]> {
+async function planCuts(footage: Footage, picks: TargetSelection['picks'], args: RenderArgs): Promise<Cut[]> {
   const cuts = new Map<string, Cut>();
-  for (const target of targets) {
+  for (const { target, renditions } of picks) {
     const donationLine = target.donationLine && args.donationLine;
-    const renditions = target.renditions.filter((rendition) => args.formats.includes(rendition.format));
-    if (renditions.length === 0) continue;
     const prepared = target.layout === 'motion' ? prepareCut(footage, target, donationLine) : null;
     for (const rendition of renditions) {
       const data = prepared
@@ -857,6 +855,7 @@ function cutStills(cut: Cut): ReadonlyArray<Readonly<{ group: string; frames: St
 
 async function renderStills(cut: Cut, measure: boolean): Promise<void> {
   mkdirSync(cut.stillsDir, { recursive: true });
+  log(`stills for ${cut.label} → ${relative(REPO_ROOT, cut.stillsDir)}/`);
   const { browser, page, client } = await openStage(cut);
   const scale = Math.min(960 / cut.size.width, 768 / cut.size.height);
   const cell = {
@@ -919,6 +918,7 @@ function failOnViolations(cut: Cut, violations: readonly string[]): void {
 async function renderSingleFrame(cut: Cut, frame: number): Promise<void> {
   if (frame >= cut.totalFrames) throw new Error(`--frame must be below ${cut.totalFrames} for ${cut.label}`);
   mkdirSync(cut.stillsDir, { recursive: true });
+  log(`frame ${frame} of ${cut.label} → ${relative(REPO_ROOT, cut.stillsDir)}/`);
   const { width, height } = cut.size;
   const { browser, page, client } = await openStage(cut);
   try {
@@ -1140,34 +1140,21 @@ function removeIntermediates(mezzanine: string, passLog: string): void {
   log(`removed intermediates for ${relative(REPO_ROOT, mezzanine)}`);
 }
 
-/** The targets to render: `--target`, less the homepage when `--skip-web` or `--no-donation-line` says so. */
-function chosenTargets(args: RenderArgs): ShowcaseTarget[] {
-  const names = resolveTargetNames(args.targets);
-  const targets = names.map((name) => SHOWCASE_TARGETS[name]);
-  if (!args.skipWeb) return targets;
-  if (names.includes('homepage')) {
-    warn(
-      args.donationLine
-        ? 'homepage skipped (--skip-web)'
-        : 'homepage skipped: its files always carry the donation line (--no-donation-line)',
-    );
-  }
-  return targets.filter((target) => !target.writesPublic);
-}
-
 async function main(): Promise<void> {
   const args = parseRenderArgs(process.argv.slice(2));
   if (args.help) {
     console.log(USAGE);
     return;
   }
-  const targets = chosenTargets(args);
-  log(`targets: ${targets.map((target) => target.name).join(', ') || 'none'}`);
+  const { picks, notes } = selectTargets(args);
+  notes.forEach(warn);
+  if (picks.length === 0) throw new Error('Nothing to render: the flags left out every target');
+  log(`targets: ${picks.map(({ target }) => target.name).join(', ')}`);
   mkdirSync(SHOWCASE_FRAMES_DIR, { recursive: true });
   if (args.placeholderFootage) await buildPlaceholderFootage();
   writeTokens();
   const footage = await loadFootage(args.placeholderFootage);
-  const cuts = await planCuts(footage, targets, args);
+  const cuts = await planCuts(footage, picks, args);
   for (const cut of cuts) {
     log(
       `cut ${cut.label}: ${cut.size.width}x${cut.size.height}, ${cut.totalFrames} frames, for ${cut.uses.map(({ target, rendition }) => `${target.name}/${rendition.id}`).join(' + ')}`,

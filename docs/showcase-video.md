@@ -296,7 +296,8 @@ defined without it (`donationLine: false`) and their outros are 129 frames, the
 length the shorter outro's reading budget needs. `homepage` and `social` keep it.
 
 `--no-donation-line` still works as an override: it drops the line from every
-target it renders and leaves out `homepage`, whose files always keep it.
+target it renders and leaves out `homepage`, whose files always keep it (with a
+warning; asking for `--target homepage` with it fails instead).
 
 ## Targets
 
@@ -321,7 +322,8 @@ change the hero.
 `out/` is `.boardsesh/showcase-video/out/` (gitignored). Only the `homepage`
 files are committed. `homepage` and `social` 9:16 render the same frames, so
 the browser runs once for both. `--format 16x9|9x16` keeps only the renditions
-of one format; `--stills`, `--measure` and `--frame` work per target and write
+of one format (a named target with no rendition in it fails; a default or
+`all` target is left out with a warning); `--stills`, `--measure` and `--frame` work per target and write
 under `out/stills/<target>/`.
 
 **Motion vs full-bleed.** `motion` is the stage in `index.html`: the phone
