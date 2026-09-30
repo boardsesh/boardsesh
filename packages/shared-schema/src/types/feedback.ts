@@ -30,6 +30,7 @@ export type FeedbackDiagnosticsInput = {
   otaIsEmbedded?: boolean | null;
 };
 
+/** Same nullable wire fields, readable only in private admin feedback queries. */
 export type FeedbackDiagnostics = FeedbackDiagnosticsInput;
 
 export type FeedbackContextInput = {
