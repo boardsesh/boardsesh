@@ -741,9 +741,13 @@ What the editor does with a wall is decided by this document rather than by tast
   While add mode is on the + becomes a check, and the check and the banner's
   Done both leave it. It is the one tool that is a mode rather than one-shot: it
   stays on until Done, so several missed holds go in one go. In add mode no
-  touch selects, toggles or picks up a ring, and pinch still zooms and pans.
+  touch selects, toggles or picks up a ring. Because Draw takes every
+  one-finger touch, the editor passes `pinchPans` to `InteractiveFilterBoard`:
+  two fingers pan as well as zoom, so a climber can move across a zoomed wall
+  without leaving add mode. Every other board keeps the pinch as zoom only.
   Undo removes the last corner while an outline is in progress, then falls back
-  to the reducer undo (the last added hold).
+  to the reducer undo (the last added hold), and never brings back a selection
+  in add mode. Publish is disabled while corners are placed but not closed.
 - **Add mode has two shapes, Draw and Corners.** A Draw | Corners segmented
   control on the banner picks one and is remembered per device in AsyncStorage
   (`boardsesh_spray_editor_add_shape`, default Draw).
@@ -754,15 +758,21 @@ What the editor does with a wall is decided by this document rather than by tast
     pinch zooms (Trace works the same way); a Pencil stroke still ignores a
     resting palm.
   - Corners: each tap places a corner, with a live preview drawn on the UI
-    thread so corners never round-trip through React per frame. Tapping within
-    22 pt of the first corner once there are 3, or pressing the Finish chip,
-    closes the outline. `holdFromPolygon` keeps the corners exactly, with no
+    thread so corners never round-trip through React per frame. The corners
+    live in one shared value, and the corner count React shows is derived from
+    it. Tapping the first corner once there are 3, or pressing the Finish chip,
+    closes the outline. The close target is 11 pt, capped at 35% of the
+    outline's own size (`CORNERS_CLOSE_EXTENT_FRACTION`); without the cap the
+    fourth corner of a small hold at 1× landed inside the target and closed a
+    triangle. The closing tap empties the corners on the UI thread before JS
+    hears of it, so a quick second tap cannot add the same hold twice. `holdFromPolygon` keeps the corners exactly, with no
     stroke sampling, no loop-closing trim and no simplification. It refuses
     fewer than 3 corners or zero area, more than the ring contract's cap
     (`POLYGON_MAX_VERTICES`), crossing sides (`self-overlap`), and a shape whose
     centre falls outside it. A refused outline keeps its corners so they can be
-    fixed. Done closes a valid outline before leaving; one that cannot close is
-    discarded and its error stays on the banner.
+    fixed, with Corners-specific copy (`errors.cornersCross`,
+    `cornersTooFew`, `cornersHollow`). Done closes a valid outline before
+    leaving; one that cannot close keeps add mode on with its error.
 - **The spray editor zooms to 8x, every other board to 4x.** The editor passes
   `maxScale={SPRAY_EDITOR_MAX_SCALE}` (8) to `InteractiveFilterBoard`, which
   hands it to `useZoomPanGesture`. Everything else keeps `MAX_SCALE = 4` from

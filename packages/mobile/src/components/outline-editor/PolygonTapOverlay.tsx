@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, type MutableRefObject } from 'react'
 import { StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector, type GestureType } from 'react-native-gesture-handler';
 import { runOnJS, useSharedValue, type SharedValue } from 'react-native-reanimated';
-import { HIT_FALLBACK_SCREEN_PT } from './spray-hold-tools';
+import { CORNERS_CLOSE_EXTENT_FRACTION, CORNERS_CLOSE_TARGET_PT } from './spray-hold-tools';
 
 /**
  * How close to the first corner, in SCREEN points, a tap has to land to close
@@ -10,7 +10,6 @@ import { HIT_FALLBACK_SCREEN_PT } from './spray-hold-tools';
  * converted to board px at the live zoom so it stays a fingertip wide however
  * far in the climber has zoomed.
  */
-const CLOSE_TARGET_SCREEN_PT = HIT_FALLBACK_SCREEN_PT;
 
 /** Longest a press can last and still read as a tap, in ms. Past it, the board's pan owns the touch. */
 const TAP_MAX_DURATION_MS = 300;
@@ -45,9 +44,13 @@ type PolygonTapOverlayProps = {
   maxVertices: number;
   /** Fired after each corner is added, with the new corner count. */
   onVertexCountChange: (count: number) => void;
+  /** Fired when a tap is refused because the outline already has `maxVertices` corners. */
+  onVertexLimit: () => void;
   /**
    * Fired when a tap lands on the first corner of a polygon with at least three.
    * Hands back the corners in board px, flat — NOT including the closing tap.
+   * `verticesSV` is already empty by then, so a second quick tap cannot close
+   * the same outline twice; the handler puts the corners back if it refuses them.
    */
   onClose: (vertices: number[]) => void;
 };
@@ -83,6 +86,7 @@ export const PolygonTapOverlay = React.memo(function PolygonTapOverlay({
   pinchRef,
   maxVertices,
   onVertexCountChange,
+  onVertexLimit,
   onClose,
 }: PolygonTapOverlayProps) {
   // Mirrored into shared values rather than captured: a captured number would
@@ -97,10 +101,11 @@ export const PolygonTapOverlay = React.memo(function PolygonTapOverlay({
     maxVerticesSV.value = maxVertices;
   }, [maxVertices, maxVerticesSV]);
 
-  const callbacksRef = useRef({ onVertexCountChange, onClose });
-  callbacksRef.current = { onVertexCountChange, onClose };
+  const callbacksRef = useRef({ onVertexCountChange, onVertexLimit, onClose });
+  callbacksRef.current = { onVertexCountChange, onVertexLimit, onClose };
   // Captured once by the gesture memo — only closes over the stable ref.
   const handleVertexCountChange = (count: number) => callbacksRef.current.onVertexCountChange(count);
+  const handleVertexLimit = () => callbacksRef.current.onVertexLimit();
   const handleClose = (vertices: number[]) => callbacksRef.current.onClose(vertices);
 
   const gesture = useMemo(() => {
@@ -126,16 +131,32 @@ export const PolygonTapOverlay = React.memo(function PolygonTapOverlay({
         const current = verticesSV.value;
         const count = current.length / 2;
         if (count >= 3) {
-          // Screen points → board px at the live zoom.
-          const closeRadius = (CLOSE_TARGET_SCREEN_PT * boardScaleSV.value) / scale;
+          // Screen points → board px at the live zoom, capped by the outline's
+          // own size so a small hold's next corner is not read as closing it.
+          // Inlined twin of the preview's target in SprayHoldSvgLayer.
+          let farthestSquared = 0;
+          for (let index = 2; index < current.length; index += 2) {
+            const spanX = current[index] - current[0];
+            const spanY = current[index + 1] - current[1];
+            farthestSquared = Math.max(farthestSquared, spanX * spanX + spanY * spanY);
+          }
+          const closeRadius = Math.min(
+            (CORNERS_CLOSE_TARGET_PT * boardScaleSV.value) / scale,
+            CORNERS_CLOSE_EXTENT_FRACTION * Math.sqrt(farthestSquared),
+          );
           const deltaX = boardX - current[0];
           const deltaY = boardY - current[1];
           if (deltaX * deltaX + deltaY * deltaY <= closeRadius * closeRadius) {
+            // Emptied here, on the UI thread, before JS hears of it.
+            verticesSV.value = [];
             runOnJS(handleClose)(current);
             return;
           }
         }
-        if (count >= maxVerticesSV.value) return;
+        if (count >= maxVerticesSV.value) {
+          runOnJS(handleVertexLimit)();
+          return;
+        }
         verticesSV.value = [...current, boardX, boardY];
         runOnJS(handleVertexCountChange)(count + 1);
       });

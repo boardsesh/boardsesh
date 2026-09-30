@@ -55,6 +55,8 @@ type SprayEditorBottomBarProps = {
   locked: boolean;
   primaryLabel: string;
   primaryLoading: boolean;
+  /** A Corners outline is half placed: Finish or undo it before publishing. */
+  primaryBlocked: boolean;
   /** The holds are saved: the capsule turns into a checkmark for the hand-over. */
   celebrating: boolean;
   bottomInset: number;
@@ -92,6 +94,7 @@ export const SprayEditorBottomBar = React.memo(function SprayEditorBottomBar({
   locked,
   primaryLabel,
   primaryLoading,
+  primaryBlocked,
   celebrating,
   bottomInset,
   onUndo,
@@ -240,7 +243,7 @@ export const SprayEditorBottomBar = React.memo(function SprayEditorBottomBar({
           size="large"
           onPress={onPrimary}
           loading={primaryLoading}
-          disabled={locked || counts.on === 0}
+          disabled={locked || primaryBlocked || counts.on === 0}
           minHeight={SPRAY_BAR_HEIGHT}
         />
       </View>

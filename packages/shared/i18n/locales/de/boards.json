@@ -850,7 +850,9 @@
       "strokeTooShort": "Dieser Strich ist zu kurz. Zeichne eine ganze Schlaufe um den Griff.",
       "someHoldsOffWall_one": "{{count}} Griff liegt außerhalb der Wand. Schieb ihn zurück aufs Foto oder schalte ihn aus.",
       "someHoldsOffWall_other": "{{count}} Griffe liegen außerhalb der Wand. Schieb sie zurück aufs Foto oder schalte sie aus.",
-      "cornersCross": "Zwei Seiten kreuzen sich. Tippe die Ecken der Reihe nach um den Griff."
+      "cornersCross": "Zwei Seiten kreuzen sich. Tippe die Ecken der Reihe nach um den Griff.",
+      "cornersTooFew": "Tippe mindestens 3 Ecken um den Griff.",
+      "cornersHollow": "Diese Form ist zu hohl. Tippe die Ecken am Außenrand des Griffs."
     },
     "empty": {
       "noPhoto": "Diese Wand hat noch kein Foto zum Bearbeiten."

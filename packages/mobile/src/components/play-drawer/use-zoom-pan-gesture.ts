@@ -50,6 +50,12 @@ type UseZoomPanGestureOptions = {
    * never rebuilds the gesture objects. `zoomTo` does not clamp against it — its
    * caller pre-clamps (see `zoomTargetForHold`'s own `maxScale`). */
   maxScale?: number;
+  /** The pinch also pans: the board follows the two fingers' midpoint as it
+   * moves, not just their spread. Off by default, where the one-finger zoomed
+   * pan does the moving. The spray hold editor turns it on because its draw
+   * tools take every one-finger touch, so two fingers are the only way to move
+   * across a zoomed wall mid-edit. Mirrored into a shared value like `maxScale`. */
+  pinchPans?: boolean;
 };
 
 type UseZoomPanGestureReturn = {
@@ -150,6 +156,7 @@ export function useZoomPanGesture({
   scrollRef,
   pinchRef,
   maxScale = MAX_SCALE,
+  pinchPans = false,
 }: UseZoomPanGestureOptions): UseZoomPanGestureReturn {
   const scale = useSharedValue(MIN_SCALE);
   const translateX = useSharedValue(0);
@@ -175,6 +182,10 @@ export function useZoomPanGesture({
   const containerWidthSV = useSharedValue(containerWidth);
   const containerHeightSV = useSharedValue(containerHeight);
   const maxScaleSV = useSharedValue(maxScale);
+  const pinchPansSV = useSharedValue(pinchPans);
+  useEffect(() => {
+    pinchPansSV.value = pinchPans;
+  }, [pinchPans, pinchPansSV]);
   useEffect(() => {
     enabledSV.value = enabled;
   }, [enabled, enabledSV]);
@@ -267,8 +278,12 @@ export function useZoomPanGesture({
         // Inlined from computeFocalPinchTranslation in @boardsesh/play-view
         // — keep in sync. Direct call from worklet across module boundaries
         // isn't reliable; the shared function exists for unit tests + spec.
-        const newTranslateX = focalOffsetX * (1 - scaleDelta) + scaleDelta * savedTranslateX.value;
-        const newTranslateY = focalOffsetY * (1 - scaleDelta) + scaleDelta * savedTranslateY.value;
+        // With `pinchPans`, the midpoint's travel since the pinch began is added
+        // on top, so the point under the fingers stays under them as they move.
+        const panX = pinchPansSV.value ? event.focalX - pinchFocalX.value : 0;
+        const panY = pinchPansSV.value ? event.focalY - pinchFocalY.value : 0;
+        const newTranslateX = focalOffsetX * (1 - scaleDelta) + scaleDelta * savedTranslateX.value + panX;
+        const newTranslateY = focalOffsetY * (1 - scaleDelta) + scaleDelta * savedTranslateY.value + panY;
 
         const clamped = clampTranslation(
           newTranslateX,
@@ -371,6 +386,7 @@ export function useZoomPanGesture({
     containerWidthSV,
     containerHeightSV,
     maxScaleSV,
+    pinchPansSV,
     updateZoomState,
     scrollRef,
     pinchRef,

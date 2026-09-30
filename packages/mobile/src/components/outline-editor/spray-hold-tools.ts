@@ -199,6 +199,19 @@ export function holdFromStroke(points: RingPoint[]): HoldFromStrokeResult {
  * repeats the first — it never appends one — so a polygon of this many corners
  * stores as exactly this many points and still fits.
  */
+/**
+ * How close to the first corner, in screen points, a tap closes a Corners
+ * outline — the ring drawn round that corner.
+ */
+export const CORNERS_CLOSE_TARGET_PT = 11;
+
+/**
+ * The close target never reaches past this fraction of the outline's own size
+ * (the farthest corner from the first). Without it, the fourth corner of a small
+ * hold at 1× — 16pt across — lands inside an 11pt target and closes a triangle.
+ */
+export const CORNERS_CLOSE_EXTENT_FRACTION = 0.35;
+
 export const POLYGON_MAX_VERTICES = Math.floor(MAX_RING_NUMBERS / 2);
 
 /**

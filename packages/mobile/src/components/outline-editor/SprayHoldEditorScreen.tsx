@@ -10,6 +10,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   ReduceMotion,
   runOnJS,
+  useAnimatedReaction,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
@@ -270,6 +271,16 @@ export function SprayHoldEditorScreen({
   const cornersSV = useSharedValue<number[]>(NO_POINTS);
   // Add mode's Draw always takes a finger, whatever the target's default.
   const addDrawSV = useSharedValue(true);
+  // The corners are written on the UI thread (a tap, a close) and on JS (undo,
+  // a refused close putting them back). The count is read from the one place
+  // they live, so the two can never disagree.
+  useAnimatedReaction(
+    () => Math.floor(cornersSV.value.length / 2),
+    (count, previous) => {
+      if (count !== previous) runOnJS(setCornerCount)(count);
+    },
+    [cornersSV],
+  );
   // The wall target draws with a finger — there is no Pencil in a garage.
   const fingerDrawSV = useSharedValue(capabilities.fingerDrawDefault);
   const hitHoldsSV = useSharedValue<number[]>(NO_POINTS);
@@ -714,7 +725,6 @@ export function SprayHoldEditorScreen({
 
   const clearCorners = useCallback(() => {
     cornersSV.value = NO_POINTS;
-    setCornerCount(0);
   }, [cornersSV]);
 
   /** One hand-added hold, with the cap check every add shares. False when the cap refused it. */
@@ -733,38 +743,64 @@ export function SprayHoldEditorScreen({
     [refuseOverCap, pulseSpotlight, recordHint],
   );
 
-  /** Closes the Corners outline. Keeps the corners on a refusal, so one crossed side costs one undo. */
+  /**
+   * Closes a Corners outline the caller has already taken off `cornersSV`.
+   * A refusal puts the corners back, so one crossed side costs one undo rather
+   * than the whole outline. True when the hold went on the wall.
+   */
   const closeCorners = useCallback(
     (cornerBoardPoints: number[]) => {
-      if (!canEditRef.current) return;
+      const restore = () => {
+        cornersSV.value = cornerBoardPoints;
+      };
+      if (!canEditRef.current) {
+        restore();
+        return false;
+      }
       const outlined = holdFromPolygon(toRingPoints(cornerBoardPoints));
       if (!outlined.ok) {
         hapticWarning();
-        setErrorText(rejectionMessage(outlined.reason, t));
-        return;
+        setErrorText(cornersRejectionMessage(outlined.reason, t));
+        restore();
+        return false;
       }
       setErrorText(null);
-      if (addHold(outlined.hold)) clearCorners();
+      if (addHold(outlined.hold)) return true;
+      restore();
+      return false;
     },
-    [addHold, clearCorners, t],
+    [addHold, cornersSV, t],
   );
 
-  const handleFinishCorners = useCallback(() => closeCorners(cornersSV.value), [closeCorners, cornersSV]);
+  /** Takes the corners off the UI thread, the same hand-off the first-corner tap makes, then closes them. */
+  const takeAndCloseCorners = useCallback(() => {
+    const corners = cornersSV.value;
+    cornersSV.value = NO_POINTS;
+    return closeCorners(corners);
+  }, [closeCorners, cornersSV]);
 
-  const handleCornerCountChange = useCallback((count: number) => {
+  const handleFinishCorners = useCallback(() => {
+    takeAndCloseCorners();
+  }, [takeAndCloseCorners]);
+
+  const handleCornerAdded = useCallback(() => {
     setErrorText(null);
     hapticSelection();
-    setCornerCount(count);
+  }, []);
+
+  const handleCornerLimit = useCallback(() => {
+    hapticWarning();
   }, []);
 
   const leaveAddMode = useCallback(() => {
     // Done means done: an outline with enough corners is kept rather than
-    // thrown away. One that cannot close leaves its error on the banner.
-    if (cornersSV.value.length >= 6) closeCorners(cornersSV.value);
+    // thrown away. One that cannot close stays on screen with its error, in
+    // add mode, so the climber can fix it or undo it.
+    if (cornersSV.value.length >= 6 && !takeAndCloseCorners()) return;
     clearCorners();
     draftPointsSV.value = NO_POINTS;
     setTool('edit');
-  }, [closeCorners, clearCorners, cornersSV, draftPointsSV]);
+  }, [takeAndCloseCorners, clearCorners, cornersSV, draftPointsSV]);
 
   const handleToggleAddMode = useCallback(() => {
     if (toolRef.current === 'add') {
@@ -860,7 +896,6 @@ export function SprayHoldEditorScreen({
     const corners = cornersSV.value;
     if (toolRef.current === 'add' && corners.length >= 2) {
       cornersSV.value = corners.slice(0, -2);
-      setCornerCount(corners.length / 2 - 1);
       return;
     }
     // Worked out before the dispatch, from the snapshot the undo is about to
@@ -869,6 +904,9 @@ export function SprayHoldEditorScreen({
     const restoring = current.past[current.past.length - 1];
     const reverted = restoring ? revertedHold(current.holds, restoring.holds) : null;
     dispatch({ type: 'UNDO' });
+    // A snapshot from before add mode carries its selection; nothing is picked
+    // up while adding.
+    if (toolRef.current === 'add') dispatch({ type: 'SELECT', id: null });
     if (reverted) pulseSpotlight('undo', reverted);
   }, [pulseSpotlight, cornersSV]);
 
@@ -1290,7 +1328,8 @@ export function SprayHoldEditorScreen({
             boardScale={boardScale}
             pinchRef={context.pinchRef}
             maxVertices={POLYGON_MAX_VERTICES}
-            onVertexCountChange={handleCornerCountChange}
+            onVertexCountChange={handleCornerAdded}
+            onVertexLimit={handleCornerLimit}
             onClose={closeCorners}
           />
         );
@@ -1375,7 +1414,8 @@ export function SprayHoldEditorScreen({
       handleStrokeEnd,
       handleStrokeCancel,
       handleAddStrokeEnd,
-      handleCornerCountChange,
+      handleCornerAdded,
+      handleCornerLimit,
       closeCorners,
       handleTap,
       handlePickUp,
@@ -1458,6 +1498,7 @@ export function SprayHoldEditorScreen({
             renderAboveBoard={renderAboveBoard}
             resetZoomStyle={RESET_ZOOM_STYLE}
             maxScale={SPRAY_EDITOR_MAX_SCALE}
+            pinchPans
           />
         </View>
       ) : null}
@@ -1519,6 +1560,7 @@ export function SprayHoldEditorScreen({
         canReviewMaybes={capabilities.canReviewCandidates}
         canUndo={state.past.length > 0 || (tool === 'add' && cornerCount > 0)}
         adding={tool === 'add'}
+        primaryBlocked={cornerCount > 0}
         locked={!canEdit}
         primaryLabel={primaryLabel}
         primaryLoading={committing}
@@ -1613,8 +1655,15 @@ function strokeExtent(flatPoints: number[]): number {
   return Math.max(maxX - minX, maxY - minY);
 }
 
-function rejectionMessage(reason: StrokeRejection, t: Translate): string {
+/** Why a Corners outline would not close. Worded for tapped corners, not a drawn loop. */
+function cornersRejectionMessage(reason: StrokeRejection, t: Translate): string {
   if (reason === 'self-overlap') return t('sprayEditor.errors.cornersCross');
+  if (reason === 'centre-outside') return t('sprayEditor.errors.cornersHollow');
+  if (reason === 'too-few-points') return t('sprayEditor.errors.cornersTooFew');
+  return rejectionMessage(reason, t);
+}
+
+function rejectionMessage(reason: StrokeRejection, t: Translate): string {
   if (reason === 'centre-outside') return t('sprayEditor.errors.strokeNotClosed');
   if (reason === 'out-of-bounds') return t('sprayEditor.errors.strokeTooBig');
   if (reason === 'too-complex') return t('sprayEditor.errors.strokeTooDetailed');

@@ -13,6 +13,7 @@ import { overlays } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
 import { holdRole, type SprayEditorHold } from './spray-hold-editor-reducer';
 import { holdPathData } from './spray-hold-path';
+import { CORNERS_CLOSE_EXTENT_FRACTION, CORNERS_CLOSE_TARGET_PT } from './spray-hold-tools';
 
 const AnimatedPath = Animated.createAnimatedComponent(Path);
 const AnimatedG = Animated.createAnimatedComponent(G);
@@ -64,7 +65,7 @@ export const RING = {
   /** The Corners tool's placed-corner dots, as a radius. */
   cornerDotRadius: 3.5,
   /** The ring round the first corner once the polygon can close, as a radius. */
-  closeTargetRadius: 11,
+  closeTargetRadius: CORNERS_CLOSE_TARGET_PT,
   /** The not-yet-committed closing edge, last corner back to the first. */
   closingDash: [6, 4],
 } as const;
@@ -177,6 +178,7 @@ export const SprayHoldSvgLayer = React.memo(function SprayHoldSvgLayer({
   // Plain numbers for the worklet to capture, rather than the RING object.
   const dotRadius = RING.cornerDotRadius * boardPxPerPoint;
   const targetRadius = RING.closeTargetRadius * boardPxPerPoint;
+  const closeExtentFraction = CORNERS_CLOSE_EXTENT_FRACTION;
   const fallbackPolygonSV = useSharedValue<number[]>([]);
   const cornersSV = polygonSV ?? fallbackPolygonSV;
   // Every Corners sub-path in one worklet pass per change, on the UI thread —
@@ -202,10 +204,18 @@ export const SprayHoldSvgLayer = React.memo(function SprayHoldSvgLayer({
     let target = '';
     if (count >= 3) {
       closing = `M${corners[count * 2 - 2]} ${corners[count * 2 - 1]}L${corners[0]} ${corners[1]}`;
-      target = `M${corners[0] - targetRadius} ${corners[1]}a${targetRadius} ${targetRadius} 0 1 0 ${targetRadius * 2} 0a${targetRadius} ${targetRadius} 0 1 0 ${-targetRadius * 2} 0Z`;
+      // Drawn exactly as big as PolygonTapOverlay's close radius — see there.
+      let farthestSquared = 0;
+      for (let index = 2; index < count * 2; index += 2) {
+        const spanX = corners[index] - corners[0];
+        const spanY = corners[index + 1] - corners[1];
+        farthestSquared = Math.max(farthestSquared, spanX * spanX + spanY * spanY);
+      }
+      const radius = Math.min(targetRadius, closeExtentFraction * Math.sqrt(farthestSquared));
+      target = `M${corners[0] - radius} ${corners[1]}a${radius} ${radius} 0 1 0 ${radius * 2} 0a${radius} ${radius} 0 1 0 ${-radius * 2} 0Z`;
     }
     return { edges, closing, dots, target };
-  }, [cornersSV, dotRadius, targetRadius]);
+  }, [cornersSV, dotRadius, targetRadius, closeExtentFraction]);
   const cornerEdgesProps = useAnimatedProps(() => ({ d: cornerPaths.value.edges }));
   const cornerClosingProps = useAnimatedProps(() => ({ d: cornerPaths.value.closing }));
   const cornerDotsProps = useAnimatedProps(() => ({ d: cornerPaths.value.dots }));
