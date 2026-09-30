@@ -1,6 +1,6 @@
 # Homepage showcase video: plan
 
-A 38.2 s (1145 frames), 1920x1080, 30 fps motion-graphics cut for the
+A 38.2 s (1145 frames; 34.0 s without the island scene), 1920x1080, 30 fps motion-graphics cut for the
 homepage hero, plus a 9:16 version for stories. Built the brag-slim way:
 every frame is a pure function of its number, so any frame renders the same
 on any run.
@@ -30,9 +30,14 @@ on any run.
 | 4   | wall        | 330–486   | dark       | See what's on the _wall._           | Callouts "Board history", "On the wall now", "Lit on this wall" (the history box grows down over the list)                                               |
 | 5   | crew        | 486–614   | lavender   | Your crew. One _queue._             | Callouts "Scan to join", "Who queued it", "Play next" in the light-scene hues                                                                             |
 | 6   | workouts    | 614–776   | dark       | Give your session a _plan._         | Tilted phone; a pyramid checklist (V2 warm-up → V6 top → V4) ticks every 12 frames, with a rest countdown after the top set                              |
-| 7   | lock-screen | 776–902   | lavender   | Change climbs without _unlocking._  | Lock-screen phone; callouts "Next", "Relight wall", "Mirror climb" (risers from the button row)                                                         |
+| 7   | lock-screen | 776–902   | lavender   | Control the wall from the _island._ | Home screen with the Live Activity in the Dynamic Island; the phone zooms onto the expanded island; callouts "Next", "Reconnect board", "Mirror climb"  |
 | 8   | log         | 902–1016  | dark       | Remember every _send._              | Callouts "Every board", "Activity"                                                                                                                        |
 | 9   | outro       | 1016–1145 | dark       | Less phone. More _wall._            | Mark, `boardsesh` wordmark, dots line drawn by the spark, "Free, no ads. iOS & Android." pill; loop closer                                                |
+
+The island scene needs a Live Activity, which the simulator may refuse to
+start. Without the `lock-screen` take the scene is dropped, the cut closes up
+to 1019 frames (34.0 s) and backgrounds re-alternate (log turns lavender), so
+the render degrades with a warning instead of failing.
 
 Scene lengths meet the reading budget: 0.3 s per visible word between the
 first word landing and the exit starting, counting every board label and
@@ -52,14 +57,23 @@ holds them.
   `#F4F1FB`) on a white pill with a hairline border; dark scenes keep the LED
   hues with a glow.
 - A callout whose sideways leader would cut through another callout's box
-  leaves from the box top instead (the lock screen's button row).
+  leaves from the box top instead (the island's button row). In 9:16, when the
+  zoomed phone leaves no room at the sides, pills stack below the boxes.
+- Callouts are sized for a phone: 84 px pills with 36 px labels in 16:9
+  (7.3 CSS px when the cut plays 390 px wide), 72 px pills with 32 px labels in
+  9:16 (11.6 CSS px), 4 px leaders. `calloutLabelCssPx` computes it.
+- Every board phone shows a real lit board: a recording, a store screenshot, or
+  (placeholder only) the board's most popular climb drawn by the public
+  `/render/board`. A board with none of those sits out the pile-up; no board is
+  ever a generated card.
 - One amber element per scene at most (the spark, or the workouts rest ring).
 - Nothing enters over the headline: a dark phone crossing dark ink hides it.
 - Frame 0 is the settled poster. The last 24 frames blur the outro out, grow
   the hook's rings back out of the outro dots and blur the hook headline in, so
   the web cut (frames 1..1144) loops without a seam.
 - A missing board take is skipped with a warning; the pile-up uses the boards
-  that were recorded. Any other missing take stops the render.
+  that were recorded. A missing island take drops that scene. Any other
+  missing take stops the render.
 
 ## Commands
 

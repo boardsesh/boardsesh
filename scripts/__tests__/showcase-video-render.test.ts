@@ -24,7 +24,14 @@ import {
   SHOWCASE_STAGE_LIGHT,
   SHOWCASE_WEB_BITRATE_KBPS,
   SHOWCASE_WEB_MAX_BYTES,
+  SHOWCASE_CALLOUT_LAYOUT,
+  SHOWCASE_SCENE_STAGING,
   anchorOnScreen,
+  buildBoardRenderUrl,
+  buildClimbSearchRequest,
+  calloutLabelCssPx,
+  calloutTime,
+  pickPlaceholderClimb,
   boardTakeLabel,
   buildMasterArgs,
   buildMezzanineArgs,
@@ -221,7 +228,7 @@ describe('callout layout', () => {
         const take = scene.takes[0];
         const file = placeholderAnchorsFile(take, SHOWCASE_PLACEHOLDER_TAKES[take]);
         const labels = sceneCalloutCopy(copy, scene.id);
-        const callouts = layoutSceneCallouts(format, scene.callouts, file, labels);
+        const callouts = layoutSceneCallouts(format, scene.id, scene.callouts, file, labels);
         expect(callouts.map((callout) => callout.role)).toEqual(['start', 'hand', 'finish'].slice(0, callouts.length));
         callouts.forEach((callout) => expect(callout.label).toBe(labels[callout.name]));
       }
@@ -552,15 +559,105 @@ describe('anchor preparation', () => {
 });
 
 describe('placeholder cards', () => {
-  it('draws the lock screen with the buttons its static anchors point at, escaped', () => {
+  it('draws the island with the buttons its static anchors point at, escaped', () => {
     const take = SHOWCASE_PLACEHOLDER_TAKES['lock-screen'];
     if (take.source.kind !== 'card') throw new Error('lock-screen placeholder should be a card');
     const svg = placeholderCardSvg(take.source.card);
-    expect(svg).toContain('9:41');
+    expect(svg).toContain('Boardsesh session');
     expect(svg).toContain('>Next<');
     for (const name of ['lock-next', 'lock-relight', 'lock-mirror'] as const) {
       expect(anchorOnScreen(take.anchors[name] ?? null, PLACEHOLDER_SCREEN), name).toBe(true);
     }
     expect(placeholderCardSvg({ ...take.source.card, title: 'A & <B>' })).toContain('A &amp; &lt;B&gt;');
+  });
+});
+
+describe('board placeholders', () => {
+  it('never gives a board phone a generated card: every one is a recording, a store still or a real render', () => {
+    for (const takeId of sceneOf('boards').takes) {
+      expect(SHOWCASE_PLACEHOLDER_TAKES[takeId].source.kind, takeId).not.toBe('card');
+    }
+    expect(SHOWCASE_PLACEHOLDER_TAKES['boards-woods'].source.kind).toBe('render');
+  });
+
+  it('asks the public API for the most popular climbs on the board config', () => {
+    const board = { boardName: 'woods', layoutId: 1, sizeId: 2, setIds: [1], angle: 40 };
+    const request = buildClimbSearchRequest(board);
+    expect(request.url).toBe('https://ws.boardsesh.com/graphql');
+    const body = JSON.parse(request.body) as { variables: { i: Record<string, unknown> } };
+    expect(body.variables.i).toMatchObject({
+      boardName: 'woods',
+      layoutId: 1,
+      sizeId: 2,
+      setIds: '1',
+      sortBy: 'popular',
+    });
+    const url = new URL(buildBoardRenderUrl(board, 'p1r12p2r13'));
+    expect(url.pathname).toBe('/render/board');
+    expect(url.searchParams.get('frames')).toBe('p1r12p2r13');
+    expect(url.searchParams.get('render_mode')).toBe('aura');
+    expect(url.searchParams.get('field_color')).toBe('#181225');
+  });
+
+  it('picks a graded climb whose name fits the header', () => {
+    const climb = (name: string, difficulty: string) => ({ name, difficulty, frames: 'p1r1', setter_username: 'x' });
+    expect(
+      pickPlaceholderClimb([
+        climb('Ungraded', ''),
+        climb('A name far too long for the header', '6a/V3'),
+        climb(' Iceman ', '6a/V3'),
+      ]),
+    ).toEqual({ name: 'Iceman', grade: 'V3', setter: 'x', frames: 'p1r1' });
+    expect(pickPlaceholderClimb([climb('Font only', '6a')])).toBeNull();
+  });
+});
+
+describe('island scene', () => {
+  it('zooms onto the island and lays its callouts out at the zoomed pose, after the zoom settles', () => {
+    const staging = SHOWCASE_SCENE_STAGING['lock-screen'];
+    if (!staging) throw new Error('island staging missing');
+    expect(staging.zoomPose).toBe('ISLAND');
+    expect(calloutTime('lock-screen')).toBeGreaterThan(calloutTime('crew'));
+    expect(copy['lock-screen'].callouts).toMatchObject({ 'lock-relight': 'Reconnect board' });
+    expect(copy['lock-screen'].headline).not.toMatch(/unlock/i);
+  });
+
+  it('drops 9:16 pills below the boxes when the zoomed phone leaves no room at the sides', () => {
+    const phone = { x: 200, y: 500, width: 680, height: 1400 };
+    const pills = layoutPortraitPills(
+      [
+        { x: 600, y: 700, width: 120, height: 60 },
+        { x: 380, y: 700, width: 60, height: 60 },
+        { x: 450, y: 700, width: 60, height: 60 },
+      ],
+      { width: 1080, height: 1920 },
+      phone,
+    );
+    expect(pills.map((pill) => pill.exit)).toEqual(['bottom', 'bottom', 'bottom']);
+    expect(pills.map((pill) => pill.side)).toEqual(['right', 'left', 'left']);
+    // Left side: the box nearest the left edge gets the nearest pill, so the risers never cross.
+    expect(pills[1].y).toBeLessThan(pills[2].y);
+    expect(pills[0].y).toBe(pills[1].y);
+    pills.forEach((pill) => expect(pill.y).toBeGreaterThan(760));
+  });
+});
+
+describe('callout legibility', () => {
+  it('renders labels at a readable size when the cut plays 390 CSS px wide', () => {
+    expect(calloutLabelCssPx('16x9')).toBeGreaterThanOrEqual(7);
+    expect(calloutLabelCssPx('9x16')).toBeGreaterThanOrEqual(11);
+    expect(calloutLabelCssPx('16x9')).toBeCloseTo(7.3, 1);
+    expect(calloutLabelCssPx('9x16')).toBeCloseTo(11.6, 1);
+  });
+
+  it('keeps every 16:9 pill column clear of the phone and every 9:16 pill inside the canvas', () => {
+    const calloutPose = SHOWCASE_POSES['16x9'].CALLOUT;
+    expect(SHOWCASE_CALLOUT_LAYOUT.gutterX).toBeGreaterThan(calloutPose.cx + 214 * calloutPose.scale);
+    const portrait = SHOWCASE_POSES['9x16'].CALLOUT;
+    const sideRoom = 540 - 214 * portrait.scale;
+    // A side pill may overlap the rim and bezel (13 px), never the screen.
+    expect(
+      SHOWCASE_CALLOUT_LAYOUT.portraitPillInset + SHOWCASE_CALLOUT_LAYOUT.portraitPillWidth - sideRoom,
+    ).toBeLessThanOrEqual(13 * portrait.scale + 1);
   });
 });

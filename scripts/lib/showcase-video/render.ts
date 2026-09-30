@@ -101,7 +101,8 @@ export type ShowcasePoseName =
   | 'BOARDS_MID'
   | 'BOARDS_LEFT'
   | 'BOARDS_RIGHT'
-  | 'OFF_BOTTOM';
+  | 'OFF_BOTTOM'
+  | 'ISLAND';
 
 const pose = (cx: number, cy: number, scale = 1, rx = 0, ry = 0, rz = 0): ShowcasePose => ({
   cx,
@@ -122,18 +123,39 @@ export const SHOWCASE_POSES: Record<ShowcaseFormat, Record<ShowcasePoseName, Sho
     BOARDS_LEFT: pose(580, 730, 0.78),
     BOARDS_RIGHT: pose(1340, 730, 0.78),
     OFF_BOTTOM: pose(960, 1760, 0.78),
+    // Zoomed on the top of the phone, so the expanded Dynamic Island's buttons
+    // read at phone size; the rest of the phone runs off the bottom.
+    ISLAND: pose(1060, 705, 1.3),
   },
   '9x16': {
     OFF_RIGHT: pose(1560, 1300, 1.22, 4, -28, 6),
-    // Body ~1100 px tall, centred low.
-    CALLOUT: pose(540, 1230, 1.22),
+    // Below the headline, narrow enough (407 px) to leave each side room for a
+    // readable pill.
+    CALLOUT: pose(540, 1190, 0.95),
     HERO_TILT: pose(640, 1400, 1.02, 4, 14, -2),
     BOARDS_MID: pose(540, 1250, 0.95),
     BOARDS_LEFT: pose(300, 1330, 0.82, 0, 0, -9),
     BOARDS_RIGHT: pose(780, 1330, 0.82, 0, 0, 9),
     OFF_BOTTOM: pose(540, 2700, 0.95),
+    ISLAND: pose(540, 1197, 1.55),
   },
 };
+
+/**
+ * Scenes that move the phone after it lands. The island scene zooms onto the
+ * expanded Dynamic Island once the footage has opened it, and its callouts wait
+ * for the zoom to settle. Callout layout uses `zoomPose` for these scenes.
+ */
+export type SceneStaging = Readonly<{ zoomPose: ShowcasePoseName; zoomAt: number; calloutDelay: number }>;
+export const SHOWCASE_SCENE_STAGING: Partial<Record<ShowcaseScene['id'], SceneStaging>> = {
+  'lock-screen': { zoomPose: 'ISLAND', zoomAt: 12, calloutDelay: 16 },
+};
+
+/** Take time (seconds) at which a scene's callouts land and are laid out. */
+export function calloutTime(sceneId: ShowcaseScene['id']): number {
+  const delay = SHOWCASE_SCENE_STAGING[sceneId]?.calloutDelay ?? 0;
+  return (SHOWCASE_TAKE_LEAD_FRAMES + SHOWCASE_CHOREO.calloutStart + delay) / SHOWCASE_FPS;
+}
 
 export type CanvasRect = Readonly<{ x: number; y: number; width: number; height: number }>;
 export type CanvasPoint = Readonly<{ x: number; y: number }>;
@@ -436,18 +458,33 @@ export function contrastRatio(first: string, second: string): number {
   return (lighter + 0.05) / (darker + 0.05);
 }
 
+/**
+ * Callout geometry. Sized to be read on a phone: the 16:9 cut shown 390 CSS px
+ * wide scales by 390/1920, so the 36 px label renders at 7.3 px; the 9:16 cut
+ * scales by 390/1080, so its 32 px label renders at 11.6 px (`calloutLabelCssPx`).
+ */
 export const SHOWCASE_CALLOUT_LAYOUT = {
   boxPadding: 8,
   gutterX: 1340,
   /** Spacing between leader verticals when two would otherwise share the gutter. */
-  gutterPitch: 18,
+  gutterPitch: 20,
   pillX: 1400,
-  pillHeight: 60,
+  pillHeight: 84,
+  labelSize: 36,
   /** 9:16: pills sit this far in from the canvas edge. */
-  portraitPillInset: 22,
-  portraitPillWidth: 250,
-  portraitMinGap: 76,
+  portraitPillInset: 14,
+  portraitPillWidth: 336,
+  portraitPillHeight: 72,
+  portraitLabelSize: 32,
+  portraitMinGap: 88,
 } as const;
+
+/** CSS px a callout label renders at when the video plays `viewerWidth` CSS px wide. */
+export function calloutLabelCssPx(format: ShowcaseFormat, viewerWidth = 390): number {
+  const { labelSize, portraitLabelSize } = SHOWCASE_CALLOUT_LAYOUT;
+  const size = format === '16x9' ? labelSize : portraitLabelSize;
+  return (size * viewerWidth) / SHOWCASE_CANVAS[format].width;
+}
 
 /**
  * Pill slots for a scene. When the boxes sit low on the screen (the lock
@@ -468,7 +505,7 @@ type Segment = Readonly<{ x1: number; y1: number; x2: number; y2: number }>;
  * when running sideways would cut through another callout's box (a row of
  * buttons, like the lock screen's).
  */
-export type LeaderExit = 'side' | 'top';
+export type LeaderExit = 'side' | 'top' | 'bottom';
 
 /** The 16:9 leader, as the stage draws it: box → gutter → pill slot → pill. */
 export function leaderPoints(
@@ -611,13 +648,18 @@ export type PortraitPill = Readonly<{ side: 'left' | 'right'; y: number; exit: L
 
 /**
  * 9:16 callouts: pills alternate left/right beside the phone on short leaders,
- * each level with its box where possible, nudged apart on the same side. A box
- * that cannot reach either side without crossing another box gets its pill
- * stacked above the boxes instead, on a riser from its top.
+ * each level with its box where possible, nudged apart on the same side.
+ *
+ * A side only counts when the pill fits between the canvas edge and the phone
+ * (it may overlap the rim, not the screen) and its run does not cross another
+ * box. With no side clear, the pill stacks above the boxes on a riser from the
+ * box top; with no side roomy at all (the zoomed island), the pills stack below
+ * the boxes, over the screen under them, on risers from the box bottoms.
  */
 export function layoutPortraitPills(
   boxes: readonly CanvasRect[],
   canvas: Readonly<{ width: number; height: number }>,
+  phone: CanvasRect | null = null,
   layout: Readonly<{
     portraitPillInset: number;
     portraitPillWidth: number;
@@ -627,19 +669,41 @@ export function layoutPortraitPills(
   const { portraitPillInset: inset, portraitPillWidth: width, portraitMinGap: minGap } = layout;
   const leftEdge = inset + width;
   const rightEdge = canvas.width - inset - width;
+  const rimAllowance = 24;
+  const roomy = (side: 'left' | 'right') =>
+    !phone ||
+    (side === 'left' ? leftEdge <= phone.x + rimAllowance : rightEdge >= phone.x + phone.width - rimAllowance);
   const clear = (index: number, side: 'left' | 'right') => {
     const box = boxes[index];
     const y = box.y + box.height / 2;
     const [from, to] = side === 'left' ? [box.x, leftEdge] : [box.x + box.width, rightEdge];
-    return !boxes.some((other, otherIndex) => otherIndex !== index && runHitsBox(from, to, y, other));
+    return roomy(side) && !boxes.some((other, otherIndex) => otherIndex !== index && runHitsBox(from, to, y, other));
   };
   const topOfAll = Math.min(...boxes.map((box) => box.y));
+  const bottomOfAll = Math.max(...boxes.map((box) => box.y + box.height));
+  const centreX = (box: CanvasRect) => box.x + box.width / 2;
+  const dropSide = (box: CanvasRect): 'left' | 'right' => (centreX(box) < canvas.width / 2 ? 'left' : 'right');
+  // Dropped pills stack down each side, the box nearest that edge first, so no
+  // riser crosses another pill's run.
+  const dropOrder = (index: number) => {
+    const box = boxes[index];
+    const side = dropSide(box);
+    return boxes
+      .filter((other) => dropSide(other) === side)
+      .map(centreX)
+      .sort((a, b) => (side === 'left' ? a - b : b - a))
+      .indexOf(centreX(box));
+  };
   const placed: PortraitPill[] = [];
   let risers = 0;
   boxes.forEach((box, index) => {
     const preferred = index % 2 === 0 ? 'left' : 'right';
     const other = preferred === 'left' ? 'right' : 'left';
     const side = clear(index, preferred) ? preferred : clear(index, other) ? other : null;
+    if (!side && !roomy('left') && !roomy('right')) {
+      placed.push({ side: dropSide(box), y: bottomOfAll + 64 + minGap * dropOrder(index), exit: 'bottom' });
+      return;
+    }
     if (!side) {
       const riserSide = box.x + box.width / 2 < canvas.width / 2 ? 'left' : 'right';
       placed.push({ side: riserSide, y: topOfAll - 56 - minGap * risers, exit: 'top' });
@@ -825,6 +889,7 @@ export type ShowcaseStageData = Readonly<{
   boards: StageBoards;
   workout: ReturnType<typeof workoutTickFrames>;
   workoutBeats: typeof SHOWCASE_WORKOUT_BEATS;
+  staging: typeof SHOWCASE_SCENE_STAGING;
   /** Light-scene callout hues; dark scenes use the tokens' LED hues. */
   lightRoles: Record<CalloutRole, string>;
   /** Lit holds of the light take's first frame, in screen points. */
@@ -850,7 +915,7 @@ export function resolveSceneCallouts(
   const callouts: ShowcaseCalloutName[] = [];
   const warnings: string[] = [];
   const take = scene.takes[0];
-  const t = (SHOWCASE_TAKE_LEAD_FRAMES + SHOWCASE_CHOREO.calloutStart) / SHOWCASE_FPS;
+  const t = calloutTime(scene.id);
   for (const name of scene.callouts) {
     const samples = anchorsFile?.anchors[name];
     const rect = samples ? anchorAt(samples, t) : null;
@@ -867,13 +932,14 @@ export function resolveSceneCallouts(
 /** Pill slots and leader gutters for a scene's callouts, from where the anchors sit when the callouts land. */
 export function layoutSceneCallouts(
   format: ShowcaseFormat,
+  sceneId: ShowcaseScene['id'],
   names: readonly ShowcaseCalloutName[],
   anchorsFile: ShowcaseAnchorsFile,
   labels: CalloutCopy,
 ): StageCallout[] {
   const canvas = SHOWCASE_CANVAS[format];
-  const calloutPose = SHOWCASE_POSES[format].CALLOUT;
-  const t = (SHOWCASE_TAKE_LEAD_FRAMES + SHOWCASE_CHOREO.calloutStart) / SHOWCASE_FPS;
+  const calloutPose = SHOWCASE_POSES[format][SHOWCASE_SCENE_STAGING[sceneId]?.zoomPose ?? 'CALLOUT'];
+  const t = calloutTime(sceneId);
   const boxes = names.map((name) => {
     const rect = anchorAt(anchorsFile.anchors[name] ?? [], t);
     if (!rect) throw new Error(`Anchor ${name} has no samples`);
@@ -898,7 +964,14 @@ export function layoutSceneCallouts(
       ...plans[index],
     }));
   }
-  const pills = layoutPortraitPills(padded, canvas);
+  const { width: phoneWidth, height: phoneHeight } = SHOWCASE_PHONE;
+  const phone = {
+    x: calloutPose.cx - (phoneWidth / 2) * calloutPose.scale,
+    y: calloutPose.cy - (phoneHeight / 2) * calloutPose.scale,
+    width: phoneWidth * calloutPose.scale,
+    height: phoneHeight * calloutPose.scale,
+  };
+  const pills = layoutPortraitPills(padded, canvas, phone);
   return names.map((name, index) => ({
     name,
     label: labels[name] ?? name,
@@ -1304,17 +1377,16 @@ export const PLACEHOLDER_SCREEN = { width: 440, height: 956 } as const;
 
 /**
  * A generated stand-in screen: a flat card with a title and, optionally, the
- * boxes a static anchor points at. Used where no committed recording exists.
+ * boxes a static anchor points at. Only the lock screen uses one: a board phone
+ * never shows a card (see `PlaceholderBoardRender`).
  */
 export type PlaceholderCard = Readonly<{
   background: string;
   ink: string;
   title: string;
   subtitle: string;
-  /** Labelled boxes, in screen points. */
+  /** Labelled buttons, in screen points, drawn inside an expanded Dynamic Island. */
   boxes?: ReadonlyArray<Readonly<{ label: string; rect: ShowcaseAnchorRect }>>;
-  /** A large clock, for the lock screen. */
-  clock?: string;
 }>;
 
 export type PlaceholderSource =
@@ -1322,29 +1394,138 @@ export type PlaceholderSource =
   /** One frame of a help clip, held for the whole take. */
   | Readonly<{ kind: 'frame'; file: string; at: number }>
   | Readonly<{ kind: 'still'; file: string }>
-  | Readonly<{ kind: 'card'; card: PlaceholderCard }>;
+  | Readonly<{ kind: 'card'; card: PlaceholderCard }>
+  | Readonly<{ kind: 'render'; board: PlaceholderBoardRender }>;
+
+/**
+ * A board phone with no committed recording: a real climb on that board, drawn
+ * by the backend's public board renderer (`GET /render/board`, the image the
+ * climb page and the apps use), laid into an app-like screen. The climb is the
+ * most popular one on the board's default preview config (the one the backend
+ * warms at boot), fetched from the public GraphQL `searchClimbs`.
+ */
+export type PlaceholderBoardRender = Readonly<{
+  boardName: string;
+  layoutId: number;
+  sizeId: number;
+  setIds: readonly number[];
+  angle: number;
+}>;
+
+export const SHOWCASE_BOARDSESH_API = 'https://ws.boardsesh.com';
+
+/** The `searchClimbs` request for a board's most popular climbs. */
+export function buildClimbSearchRequest(board: PlaceholderBoardRender): { url: string; body: string } {
+  const query =
+    'query($i: ClimbSearchInput!){ searchClimbs(input:$i){ climbs { uuid name difficulty frames setter_username } } }';
+  const input = {
+    boardName: board.boardName,
+    layoutId: board.layoutId,
+    sizeId: board.sizeId,
+    setIds: board.setIds.join(','),
+    angle: board.angle,
+    pageSize: 20,
+    sortBy: 'popular',
+  };
+  return { url: `${SHOWCASE_BOARDSESH_API}/graphql`, body: JSON.stringify({ query, variables: { i: input } }) };
+}
+
+export type PlaceholderClimb = Readonly<{ name: string; grade: string; setter: string; frames: string }>;
+
+/**
+ * The climb to show: the most popular one with a grade and a name that fits
+ * the header. `difficulty` reads like `6a/V3`; the screen shows the V grade.
+ */
+export function pickPlaceholderClimb(
+  climbs: ReadonlyArray<Readonly<{ name: string; difficulty: string; frames: string; setter_username: string }>>,
+): PlaceholderClimb | null {
+  for (const climb of climbs) {
+    const name = climb.name.trim();
+    const grade = climb.difficulty
+      .split('/')
+      .find((part) => /^V\d/.test(part.trim()))
+      ?.trim();
+    if (!grade || !name || name.length > 18 || !climb.frames) continue;
+    return { name, grade, setter: climb.setter_username, frames: climb.frames };
+  }
+  return null;
+}
+
+/** The public board image for a climb: Aura drawing on the app's dark play field. */
+export function buildBoardRenderUrl(board: PlaceholderBoardRender, frames: string): string {
+  const params = new URLSearchParams({
+    board_name: board.boardName,
+    layout_id: String(board.layoutId),
+    size_id: String(board.sizeId),
+    set_ids: board.setIds.join(','),
+    frames,
+    format: 'png',
+    include_background: '1',
+    color_scheme: 'dark',
+    render_mode: 'aura',
+    field_color: '#181225',
+  });
+  return `${SHOWCASE_BOARDSESH_API}/render/board?${params.toString()}`;
+}
+
+/**
+ * The app-like screen a board render sits in, at the store-screenshot size:
+ * a status bar, the climb's name, grade and setter as the play view shows them,
+ * and the board fitted below. Returns the SVG for everything but the board and
+ * where the board goes.
+ */
+export function renderedBoardScreen(
+  climb: PlaceholderClimb,
+  boardSize: Readonly<{ width: number; height: number }>,
+): { svg: string; board: { left: number; top: number; width: number; height: number } } {
+  const { width, height } = PLACEHOLDER_CARD_SIZE;
+  const maxWidth = width - 40;
+  const maxHeight = 1060;
+  const scale = Math.min(maxWidth / boardSize.width, maxHeight / boardSize.height);
+  const boardWidth = Math.round(boardSize.width * scale);
+  const boardHeight = Math.round(boardSize.height * scale);
+  const board = { left: Math.round((width - boardWidth) / 2), top: 330, width: boardWidth, height: boardHeight };
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" font-family="Helvetica, Arial, sans-serif">` +
+    `<rect width="100%" height="100%" fill="#0B0910"/>` +
+    `<text x="96" y="92" font-size="30" font-weight="700" fill="#FFFFFF">09:41</text>` +
+    `<rect x="258" y="56" width="220" height="62" rx="31" fill="#000000"/>` +
+    `<rect x="338" y="150" width="60" height="8" rx="4" fill="#FFFFFF" fill-opacity="0.25"/>` +
+    `<text x="${width / 2}" y="238" font-size="38" font-weight="700" text-anchor="middle" fill="#FFFFFF">${escapeXml(climb.name)}</text>` +
+    `<text x="${width / 2}" y="282" font-size="25" text-anchor="middle" fill="#FFFFFF" fill-opacity="0.55">${escapeXml(climb.setter)}</text>` +
+    `<text x="${width - 36}" y="238" font-size="38" font-weight="800" text-anchor="end" fill="#FF5026">${escapeXml(climb.grade)}</text>` +
+    `<rect x="24" y="1484" width="${width - 48}" height="72" rx="24" fill="#FFFFFF" fill-opacity="0.08"/>` +
+    `<text x="56" y="1530" font-size="26" font-weight="600" fill="#FFFFFF">Logbook</text>` +
+    `</svg>`;
+  return { svg, board };
+}
 
 export type PlaceholderTake = Readonly<{
   source: PlaceholderSource;
   anchors: Partial<Record<ShowcaseCalloutName, ShowcaseAnchorRect>>;
 }>;
 
-const boardCard = (title: string): PlaceholderSource => ({
-  kind: 'card',
-  card: { background: '#15101E', ink: '#F5F2FB', title, subtitle: 'Placeholder until this board is recorded' },
+/** A board config with plenty of popular climbs (the backend's boot-warmed preview config, bar Decoy). */
+const boardRender = (boardName: string, layoutId: number, sizeId: number, setIds: number[]): PlaceholderSource => ({
+  kind: 'render',
+  board: { boardName, layoutId, sizeId, setIds, angle: 40 },
 });
 
-/** Where the lock-screen placeholder draws its Live Activity buttons (points). */
-const LOCK_BUTTONS = {
-  'lock-relight': { x: 150, y: 780, width: 52, height: 52 },
-  'lock-mirror': { x: 214, y: 780, width: 52, height: 52 },
-  'lock-next': { x: 300, y: 780, width: 108, height: 52 },
+/**
+ * Where the island placeholder draws the expanded Live Activity's buttons
+ * (points). The take id is still `lock-screen`; the scene now shows the
+ * Dynamic Island.
+ */
+const ISLAND_BUTTONS = {
+  'lock-relight': { x: 150, y: 134, width: 52, height: 48 },
+  'lock-mirror': { x: 214, y: 134, width: 52, height: 48 },
+  'lock-next': { x: 300, y: 134, width: 108, height: 48 },
 } as const satisfies Record<string, ShowcaseAnchorRect>;
 
 /**
  * Stand-in footage until the recorder lands real takes: committed help clips
- * (real app recordings), store screenshots, and plain generated cards where
- * neither exists. Anchor rects are hand-measured on those sources in points.
+ * (real app recordings), store screenshots, real board renders for the boards
+ * with neither, and a plain card for the lock screen. Anchor rects are hand-measured on those sources in points.
  * Where the source has no such control (`invite-qr` on the queue still, the
  * activity calendar on the profile still) the anchor borrows a nearby element
  * so the callout layout can still be judged.
@@ -1360,11 +1541,20 @@ export const SHOWCASE_PLACEHOLDER_TAKES: Record<ShowcaseTakeId, PlaceholderTake>
   'boards-kilter': { source: { kind: 'still', file: 'kilter.webp' }, anchors: {} },
   'boards-tension': { source: { kind: 'still', file: 'tension.webp' }, anchors: {} },
   'boards-moonboard': { source: { kind: 'still', file: 'moonboard.webp' }, anchors: {} },
-  'boards-woods': { source: boardCard('Woods'), anchors: {} },
-  'boards-decoy': { source: boardCard('Decoy'), anchors: {} },
-  'boards-touchstone': { source: boardCard('Touchstone'), anchors: {} },
-  'boards-grasshopper': { source: boardCard('Grasshopper'), anchors: {} },
-  'boards-soill': { source: boardCard('So iLL'), anchors: {} },
+  'boards-woods': { source: boardRender('woods', 1, 2, [1]), anchors: {} },
+  // Decoy's full-size layout draws only with its whole hold-set list (2–20).
+  'boards-decoy': {
+    source: boardRender(
+      'decoy',
+      2,
+      1,
+      Array.from({ length: 19 }, (_, index) => index + 2),
+    ),
+    anchors: {},
+  },
+  'boards-touchstone': { source: boardRender('touchstone', 1, 1, [1]), anchors: {} },
+  'boards-grasshopper': { source: boardRender('grasshopper', 1, 4, [1, 2]), anchors: {} },
+  'boards-soill': { source: boardRender('soill', 1, 1, [1]), anchors: {} },
   wall: {
     source: { kind: 'still', file: 'wall-status.webp' },
     anchors: {
@@ -1394,17 +1584,16 @@ export const SHOWCASE_PLACEHOLDER_TAKES: Record<ShowcaseTakeId, PlaceholderTake>
       card: {
         background: '#E9E3F7',
         ink: '#16111F',
-        title: 'Lock screen',
+        title: 'Dynamic Island',
         subtitle: 'Placeholder until this take is recorded',
-        clock: '9:41',
         boxes: [
-          { label: 'bulb', rect: LOCK_BUTTONS['lock-relight'] },
-          { label: 'mirror', rect: LOCK_BUTTONS['lock-mirror'] },
-          { label: 'Next', rect: LOCK_BUTTONS['lock-next'] },
+          { label: 'bulb', rect: ISLAND_BUTTONS['lock-relight'] },
+          { label: 'mirror', rect: ISLAND_BUTTONS['lock-mirror'] },
+          { label: 'Next', rect: ISLAND_BUTTONS['lock-next'] },
         ],
       },
     },
-    anchors: { ...LOCK_BUTTONS },
+    anchors: { ...ISLAND_BUTTONS },
   },
   log: {
     source: { kind: 'still', file: 'profile-overview.webp' },
@@ -1426,35 +1615,33 @@ export function placeholderCardSvg(card: PlaceholderCard): string {
   const { width, height } = PLACEHOLDER_CARD_SIZE;
   const scale = width / PLACEHOLDER_SCREEN.width;
   const px = (value: number) => (value * scale).toFixed(1);
+  // The expanded island: white controls on black, across the top of the screen.
   const boxes = (card.boxes ?? [])
     .map(
       ({ label, rect }) =>
-        `<rect x="${px(rect.x)}" y="${px(rect.y)}" width="${px(rect.width)}" height="${px(rect.height)}" rx="${px(rect.height / 2)}" fill="${card.ink}" fill-opacity="0.1" stroke="${card.ink}" stroke-opacity="0.35" stroke-width="3"/>` +
-        `<text x="${px(rect.x + rect.width / 2)}" y="${px(rect.y + rect.height / 2 + 6)}" font-size="${px(16)}" text-anchor="middle" fill="${card.ink}">${escapeXml(label)}</text>`,
+        `<rect x="${px(rect.x)}" y="${px(rect.y)}" width="${px(rect.width)}" height="${px(rect.height)}" rx="${px(rect.height / 2)}" fill="#FFFFFF" fill-opacity="0.16" stroke="#FFFFFF" stroke-opacity="0.4" stroke-width="3"/>` +
+        `<text x="${px(rect.x + rect.width / 2)}" y="${px(rect.y + rect.height / 2 + 6)}" font-size="${px(16)}" text-anchor="middle" fill="#FFFFFF">${escapeXml(label)}</text>`,
     )
     .join('');
-  const panel = card.boxes?.length
-    ? `<rect x="${px(16)}" y="${px(700)}" width="${px(408)}" height="${px(150)}" rx="${px(28)}" fill="${card.ink}" fill-opacity="0.06"/>` +
-      `<text x="${px(36)}" y="${px(742)}" font-size="${px(20)}" font-weight="700" fill="${card.ink}">Boardsesh session</text>`
-    : '';
-  const clock = card.clock
-    ? `<text x="${width / 2}" y="${px(210)}" font-size="${px(96)}" font-weight="700" text-anchor="middle" fill="${card.ink}">${escapeXml(card.clock)}</text>`
+  const island = card.boxes?.length
+    ? `<rect x="${px(10)}" y="${px(10)}" width="${px(420)}" height="${px(188)}" rx="${px(46)}" fill="#000000"/>` +
+      `<text x="${px(34)}" y="${px(58)}" font-size="${px(19)}" font-weight="700" fill="#FFFFFF">Boardsesh session</text>` +
+      `<text x="${px(34)}" y="${px(90)}" font-size="${px(16)}" fill="#FFFFFF" fill-opacity="0.6">On the wall</text>`
     : '';
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" font-family="Helvetica, Arial, sans-serif">` +
     `<rect width="100%" height="100%" fill="${card.background}"/>` +
-    clock +
-    `<text x="${width / 2}" y="${px(card.clock ? 300 : 440)}" font-size="${px(34)}" font-weight="700" text-anchor="middle" fill="${card.ink}">${escapeXml(card.title)}</text>` +
-    `<text x="${width / 2}" y="${px(card.clock ? 332 : 474)}" font-size="${px(15)}" text-anchor="middle" fill="${card.ink}" fill-opacity="0.6">${escapeXml(card.subtitle)}</text>` +
-    panel +
+    `<text x="${width / 2}" y="${px(440)}" font-size="${px(34)}" font-weight="700" text-anchor="middle" fill="${card.ink}">${escapeXml(card.title)}</text>` +
+    `<text x="${width / 2}" y="${px(474)}" font-size="${px(15)}" text-anchor="middle" fill="${card.ink}" fill-opacity="0.6">${escapeXml(card.subtitle)}</text>` +
+    island +
     boxes +
     `</svg>`
   );
 }
 
 /**
- * ffmpeg for one placeholder take. `cardImage` is the rasterised card for a
- * `card` source (the renderer draws it with Sharp first).
+ * ffmpeg for one placeholder take. `cardImage` is the rasterised screen for a
+ * `card` or `render` source (the renderer draws it with Sharp first).
  */
 export function buildPlaceholderFootageArgs(
   takeId: ShowcaseTakeId,
@@ -1473,7 +1660,7 @@ export function buildPlaceholderFootageArgs(
     hold = 'trim=end_frame=1,loop=loop=-1:size=1:start=0,setpts=N/30/TB,';
   } else if (source.kind === 'still') input = ['-loop', '1', '-i', resolve(SHOWCASE_STORE_STILL_DIR, source.file)];
   else {
-    if (!cardImage) throw new Error(`Take "${takeId}" is a card placeholder; rasterise it first`);
+    if (!cardImage) throw new Error(`Take "${takeId}" is a generated placeholder; rasterise it first`);
     input = ['-loop', '1', '-i', cardImage];
   }
   return [

@@ -467,6 +467,9 @@ export function init(input) {
   for (const scene of data.scenes.slice(1)) {
     if (scene.id === 'boards') ui.mainKeys.push(...boardKeys.get(data.boards.main));
     else ui.mainKeys.push({ frame: release(scene), pose: poses[SCENE_POSE[scene.id]] });
+    // A staged scene (the island) zooms in once its footage has opened the island.
+    const staging = data.staging[scene.id];
+    if (staging) ui.mainKeys.push({ frame: scene.startFrame + staging.zoomAt, pose: poses[staging.zoomPose] });
   }
   sortKeys(ui.mainKeys);
 
@@ -512,7 +515,7 @@ export function init(input) {
       const group = svg('g', { class: `callout ${tone}`, 'data-role': callout.role }, ui.callouts);
       const box = svg('rect', { class: 'callout-box', rx: 14, pathLength: 1 }, group);
       const leader = svg('path', { class: 'callout-leader', pathLength: 1 }, group);
-      const dot = svg('circle', { r: 3 }, group);
+      const dot = svg('circle', { r: 4 }, group);
       const pill = el(
         'div',
         {
@@ -779,7 +782,7 @@ function renderCallouts(frame, sceneIndex, mainPose) {
         setVars(item.pill, { o: 0 });
         return;
       }
-      const start = choreo.calloutStart + choreo.calloutStagger * index;
+      const start = choreo.calloutStart + (data.staging[sceneId]?.calloutDelay ?? 0) + choreo.calloutStagger * index;
       const boxAmount = easeOut(progress(local, start, choreo.boxFrames)) * (1 - retract);
       const leaderAmount = easeInOut(progress(local, start + choreo.leaderDelay, choreo.leaderFrames)) * (1 - retract);
       const pillStart = start + choreo.pillDelay;
@@ -826,9 +829,10 @@ function renderCallouts(frame, sceneIndex, mainPose) {
         const leftSide = item.callout.side === 'left';
         const pillEdge = leftSide ? inset + width : data.width - inset - width;
         pillX = leftSide ? inset : pillEdge;
-        if (exit === 'top') {
+        if (exit === 'top' || exit === 'bottom') {
+          const fromY = exit === 'top' ? box.y : box.y + box.height;
           points = [
-            { x: centreX, y: box.y },
+            { x: centreX, y: fromY },
             { x: centreX, y: slotY },
             { x: pillEdge, y: slotY },
           ];

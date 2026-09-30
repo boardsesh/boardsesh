@@ -377,12 +377,18 @@ svg.layer {
 
 /* --- callouts -------------------------------------------------------------------- */
 
+/*
+ * Sized for a phone: the 16:9 cut plays ~390 CSS px wide, a fifth of its
+ * size, so labels are 36 px (7.3 px there) and strokes 4 px. 9:16 plays at
+ * 0.36x: 32 px labels (11.6 px). render.ts SHOWCASE_CALLOUT_LAYOUT keeps the
+ * same numbers for the layout.
+ */
 .callout-box {
-  stroke-width: 3;
+  stroke-width: 4;
 }
 .callout-leader {
   fill: none;
-  stroke-width: 3;
+  stroke-width: 4;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -419,19 +425,20 @@ svg.layer {
   filter: drop-shadow(0 2px 5px color-mix(in srgb, var(--role) 30%, transparent));
 }
 .pill {
+  --pill-h: 84px;
   position: absolute;
   left: calc(var(--px) * 1px);
-  top: calc(var(--py) * 1px - 30px);
-  height: 60px;
+  top: calc(var(--py) * 1px - var(--pill-h) / 2);
+  height: var(--pill-h);
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 0 28px 0 22px;
-  border-radius: 30px;
+  gap: 18px;
+  padding: 0 36px 0 28px;
+  border-radius: calc(var(--pill-h) / 2);
   background: #fff;
   color: var(--ink-on-light);
   font-weight: 700;
-  font-size: 24px;
+  font-size: 36px;
   letter-spacing: -0.01em;
   white-space: nowrap;
   box-shadow:
@@ -450,8 +457,8 @@ svg.layer {
   filter: none;
 }
 .pill .dot {
-  width: 14px;
-  height: 14px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   background: var(--role);
   box-shadow:
@@ -462,14 +469,20 @@ svg.layer {
 .pill.tone-light .dot {
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--role) 16%, transparent);
 }
-.pill[data-side='left'] {
-  width: 250px;
+.pill[data-portrait='true'] {
+  --pill-h: 72px;
+  width: 336px;
   justify-content: center;
-  transform-origin: 100% 50%;
+  gap: 14px;
+  padding: 0 20px;
+  font-size: 32px;
 }
-.pill[data-side='right'][data-portrait='true'] {
-  width: 250px;
-  justify-content: center;
+.pill[data-portrait='true'] .dot {
+  width: 18px;
+  height: 18px;
+}
+.pill[data-side='left'] {
+  transform-origin: 100% 50%;
 }
 
 /* --- workouts checklist (dark scene) --------------------------------------------------- */

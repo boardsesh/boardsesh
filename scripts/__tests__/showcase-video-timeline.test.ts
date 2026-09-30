@@ -4,9 +4,11 @@ import {
   DEFAULT_TAKE_SECONDS,
   SHOWCASE_OPTIONAL_TAKES,
   SHOWCASE_POSTER_FRAME,
+  SHOWCASE_SKIPPABLE_SCENES,
   SHOWCASE_SCENES,
   SHOWCASE_TOTAL_FRAMES,
   requiredTakeSeconds,
+  resolveTimeline,
 } from '../lib/showcase-video/timeline';
 
 describe('showcase timeline', () => {
@@ -50,9 +52,34 @@ describe('showcase timeline', () => {
     for (const scene of SHOWCASE_SCENES) expect(scene.callouts.length).toBeLessThanOrEqual(3);
   });
 
-  it('lets only board phones go missing', () => {
-    expect(SHOWCASE_OPTIONAL_TAKES.every((takeId) => takeId.startsWith('boards-'))).toBe(true);
-    expect(SHOWCASE_OPTIONAL_TAKES).toHaveLength(8);
+  it('lets only board phones and the island take go missing', () => {
+    expect(SHOWCASE_OPTIONAL_TAKES.filter((takeId) => !takeId.startsWith('boards-'))).toEqual(['lock-screen']);
+    expect(SHOWCASE_OPTIONAL_TAKES).toHaveLength(9);
+    expect(SHOWCASE_SKIPPABLE_SCENES).toEqual(['lock-screen']);
+  });
+
+  it('is the full storyboard when every take is there', () => {
+    const timeline = resolveTimeline(new Set(SHOWCASE_TAKE_IDS));
+    expect(timeline.scenes).toEqual(SHOWCASE_SCENES);
+    expect(timeline.totalFrames).toBe(SHOWCASE_TOTAL_FRAMES);
+    expect(timeline.skipped).toEqual([]);
+  });
+
+  it('drops the island scene without its take, closes up, and still alternates backgrounds (~34 s)', () => {
+    const timeline = resolveTimeline(new Set(SHOWCASE_TAKE_IDS.filter((takeId) => takeId !== 'lock-screen')));
+    expect(timeline.skipped).toEqual(['lock-screen']);
+    expect(timeline.scenes.map((scene) => scene.id)).not.toContain('lock-screen');
+    expect(timeline.totalFrames / 30).toBeGreaterThan(33);
+    expect(timeline.totalFrames / 30).toBeLessThan(35);
+    timeline.scenes.forEach((scene, index) => {
+      if (index > 0) expect(scene.startFrame).toBe(timeline.scenes[index - 1].endFrame);
+    });
+    const sameBackground = timeline.scenes.slice(1).flatMap((scene, index) => {
+      const previous = timeline.scenes[index];
+      return scene.background === previous.background ? [`${previous.id}→${scene.id}`] : [];
+    });
+    expect(sameBackground).toEqual(['hook→light']);
+    expect(timeline.scenes.find((scene) => scene.id === 'log')?.background).toBe('light');
   });
 
   it('asks each take for its scene plus a second either side', () => {

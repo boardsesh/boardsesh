@@ -1,10 +1,17 @@
 {
-  "hook": { "headline": "Your board.\nLit from your *phone.*" },
+  "hook": {
+    "headline": "Your board.\nLit from your *phone.*"
+  },
   "light": {
     "headline": "Swipe, and the\nwall *follows.*",
-    "callouts": { "wall-pill": "On the wall", "board-surface": "Swipe for next" }
+    "callouts": {
+      "wall-pill": "On the wall",
+      "board-surface": "Swipe for next"
+    }
   },
-  "boards": { "headline": "Every board.\nOne *app.*" },
+  "boards": {
+    "headline": "Every board.\nOne *app.*"
+  },
   "wall": {
     "headline": "See what's on\nthe *wall.*",
     "callouts": {
@@ -15,17 +22,45 @@
   },
   "crew": {
     "headline": "Your crew.\nOne *queue.*",
-    "callouts": { "invite-qr": "Scan to join", "queue-row-avatar": "Who queued it", "play-next": "Play next" }
+    "callouts": {
+      "invite-qr": "Scan to join",
+      "queue-row-avatar": "Who queued it",
+      "play-next": "Play next"
+    }
   },
   "workouts": {
     "headline": "Give your\nsession a *plan.*",
     "rows": [
-      { "name": "Warm-up", "grade": "V2", "rest": "1:30" },
-      { "name": "Build", "grade": "V4", "rest": "2:00" },
-      { "name": "Build", "grade": "V5", "rest": "2:30" },
-      { "name": "Top", "grade": "V6", "rest": "3:00" },
-      { "name": "Down", "grade": "V5", "rest": "2:30" },
-      { "name": "Down", "grade": "V4", "rest": "2:00" }
+      {
+        "name": "Warm-up",
+        "grade": "V2",
+        "rest": "1:30"
+      },
+      {
+        "name": "Build",
+        "grade": "V4",
+        "rest": "2:00"
+      },
+      {
+        "name": "Build",
+        "grade": "V5",
+        "rest": "2:30"
+      },
+      {
+        "name": "Top",
+        "grade": "V6",
+        "rest": "3:00"
+      },
+      {
+        "name": "Down",
+        "grade": "V5",
+        "rest": "2:30"
+      },
+      {
+        "name": "Down",
+        "grade": "V4",
+        "rest": "2:00"
+      }
     ],
     "restLabel": "Rest",
     "restCountdown": [
@@ -45,12 +80,19 @@
     ]
   },
   "lock-screen": {
-    "headline": "Change climbs\nwithout\n*unlocking.*",
-    "callouts": { "lock-next": "Next", "lock-relight": "Relight wall", "lock-mirror": "Mirror climb" }
+    "headline": "Control the\nwall from\nthe *island.*",
+    "callouts": {
+      "lock-next": "Next",
+      "lock-relight": "Reconnect board",
+      "lock-mirror": "Mirror climb"
+    }
   },
   "log": {
     "headline": "Remember\nevery *send.*",
-    "callouts": { "profile-board-filter": "Every board", "activity-calendar": "Activity" }
+    "callouts": {
+      "profile-board-filter": "Every board",
+      "activity-calendar": "Activity"
+    }
   },
   "outro": {
     "wordmark": "boardsesh",

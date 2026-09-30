@@ -79,6 +79,8 @@ export const SHOWCASE_SCENES: readonly ShowcaseScene[] = [
     callouts: ['invite-qr', 'queue-row-avatar', 'play-next'],
   },
   { id: 'workouts', startFrame: 614, endFrame: 776, background: 'dark', takes: ['workouts'], callouts: [] },
+  // The Dynamic Island scene. Id and take keep their lock-screen names so the
+  // recorder and the anchors contract stay put.
   {
     id: 'lock-screen',
     startFrame: 776,
@@ -104,12 +106,51 @@ export const SHOWCASE_TOTAL_FRAMES = SHOWCASE_SCENES[SHOWCASE_SCENES.length - 1]
 export const SHOWCASE_POSTER_FRAME = 0;
 
 /**
- * Takes a scene can do without: any board phone. The recorder may skip a board
- * type it cannot reach, and the pile-up then uses however many arrived (at
- * least one).
+ * Scenes the cut can do without. The island scene needs a Live Activity, which
+ * the simulator may refuse to start; without its take the scene is dropped and
+ * the rest close up.
  */
-export const SHOWCASE_OPTIONAL_TAKES: readonly ShowcaseTakeId[] =
-  SHOWCASE_SCENES.find((scene) => scene.id === 'boards')?.takes ?? [];
+export const SHOWCASE_SKIPPABLE_SCENES: readonly ShowcaseSceneId[] = ['lock-screen'];
+
+/**
+ * Takes the render can do without: any board phone (the pile-up uses however
+ * many arrived, at least one) and the takes of a skippable scene.
+ */
+export const SHOWCASE_OPTIONAL_TAKES: readonly ShowcaseTakeId[] = SHOWCASE_SCENES.filter(
+  (scene) => scene.id === 'boards' || SHOWCASE_SKIPPABLE_SCENES.includes(scene.id),
+).flatMap((scene) => scene.takes);
+
+export type ShowcaseTimeline = Readonly<{
+  scenes: readonly ShowcaseScene[];
+  totalFrames: number;
+  skipped: readonly ShowcaseSceneId[];
+}>;
+
+/**
+ * The cut for the footage at hand: a skippable scene whose takes are missing is
+ * dropped, the scenes after it move up, and backgrounds are re-alternated from
+ * the boards scene on (hook and light stay dark for the match cut, the outro
+ * stays dark for the loop), so dropping a scene never puts two busy scenes on
+ * one background. With every take present this is `SHOWCASE_SCENES` exactly.
+ */
+export function resolveTimeline(available: ReadonlySet<ShowcaseTakeId>): ShowcaseTimeline {
+  const skipped: ShowcaseSceneId[] = [];
+  const kept = SHOWCASE_SCENES.filter((scene) => {
+    const missing = SHOWCASE_SKIPPABLE_SCENES.includes(scene.id) && scene.takes.some((take) => !available.has(take));
+    if (missing) skipped.push(scene.id);
+    return !missing;
+  });
+  let frame = 0;
+  const scenes = kept.map((scene, index): ShowcaseScene => {
+    const length = scene.endFrame - scene.startFrame;
+    const background =
+      index < 2 || index === kept.length - 1 ? scene.background : (index - 2) % 2 === 0 ? 'light' : 'dark';
+    const moved = { ...scene, startFrame: frame, endFrame: frame + length, background };
+    frame += length;
+    return moved;
+  });
+  return { scenes, totalFrames: frame, skipped };
+}
 
 /** Footage asked of a take no scene uses (every take has a scene in this cut). */
 export const DEFAULT_TAKE_SECONDS = 6;
