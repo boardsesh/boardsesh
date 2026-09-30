@@ -179,25 +179,30 @@ describe('generated export retention', () => {
 
   it('refuses malformed successful reads instead of clearing unknown lifecycle rules', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    for (const result of [
-      { rules: null },
-      { rules: [{}] },
-      { rules: [{ id: 'legacy', enabled: true, conditions: null }] },
-      { rules: [{ id: 'legacy', enabled: true, conditions: { prefix: null } }] },
+    for (const { result, expectedWarning } of [
+      { result: { rules: null }, expectedWarning: 'returned a non-array rules value' },
+      {
+        result: { rules: [{}] },
+        expectedWarning: 'returned malformed rule #0 (id: undefined, enabled: undefined, prefix: undefined)',
+      },
+      {
+        result: { rules: [{ id: 'legacy', enabled: true, conditions: null }] },
+        expectedWarning: 'returned malformed rule #0 (id: string, enabled: boolean, prefix: undefined)',
+      },
+      {
+        result: { rules: [{ id: 'legacy', enabled: true, conditions: { prefix: null } }] },
+        expectedWarning: 'returned malformed rule #0 (id: string, enabled: boolean, prefix: object)',
+      },
     ]) {
+      warn.mockClear();
       const fetchMock = vi.fn().mockResolvedValue(envelope(result));
       vi.stubGlobal('fetch', fetchMock);
       await expect(
         applyR2LifecycleRule('test-token', 'test-account', privateBucket.name, USER_EXPORT_LIFECYCLE_RULE),
       ).rejects.toThrow('refusing to replace');
       expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledWith(`[cf-apply] R2 lifecycle GET for ${privateBucket.name} ${expectedWarning}`);
     }
-    expect(warn).toHaveBeenCalledWith(
-      `[cf-apply] R2 lifecycle GET for ${privateBucket.name} returned a non-array rules value`,
-    );
-    expect(warn).toHaveBeenCalledWith(
-      `[cf-apply] R2 lifecycle GET for ${privateBucket.name} returned malformed rule #0` +
-        ' (id: undefined, enabled: undefined, prefix: undefined)',
-    );
   });
 });

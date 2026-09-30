@@ -413,23 +413,27 @@ async function fetchR2LifecycleRules(
       console.warn(`[cf-apply] R2 lifecycle GET for ${bucketName} returned a non-array rules value`);
       return null;
     }
-    const rules = response.rules.map(normalizeR2LifecycleRule);
-    const invalidIndex = rules.findIndex((rule) => rule === null);
-    if (invalidIndex !== -1) {
-      const invalidRule = response.rules[invalidIndex];
-      const fields = typeof invalidRule === 'object' && invalidRule !== null ? invalidRule : null;
-      const conditions = fields && 'conditions' in fields ? fields.conditions : undefined;
-      const prefix =
-        typeof conditions === 'object' && conditions !== null && 'prefix' in conditions ? conditions.prefix : undefined;
-      console.warn(
-        `[cf-apply] R2 lifecycle GET for ${bucketName} returned malformed rule #${invalidIndex}` +
-          ` (id: ${typeof (fields && 'id' in fields ? fields.id : undefined)},` +
-          ` enabled: ${typeof (fields && 'enabled' in fields ? fields.enabled : undefined)},` +
-          ` prefix: ${typeof prefix})`,
-      );
-      return null;
+    const rules: R2LifecycleRule[] = [];
+    for (const [index, rawRule] of response.rules.entries()) {
+      const rule = normalizeR2LifecycleRule(rawRule);
+      if (!rule) {
+        const fields = typeof rawRule === 'object' && rawRule !== null ? rawRule : null;
+        const conditions = fields && 'conditions' in fields ? fields.conditions : undefined;
+        const prefix =
+          typeof conditions === 'object' && conditions !== null && 'prefix' in conditions
+            ? conditions.prefix
+            : undefined;
+        console.warn(
+          `[cf-apply] R2 lifecycle GET for ${bucketName} returned malformed rule #${index}` +
+            ` (id: ${typeof (fields && 'id' in fields ? fields.id : undefined)},` +
+            ` enabled: ${typeof (fields && 'enabled' in fields ? fields.enabled : undefined)},` +
+            ` prefix: ${typeof prefix})`,
+        );
+        return null;
+      }
+      rules.push(rule);
     }
-    return rules.filter((rule): rule is R2LifecycleRule => rule !== null);
+    return rules;
   } catch (error) {
     if (isNotFoundError(error)) return [];
     if (isAuthorizationError(error)) {
