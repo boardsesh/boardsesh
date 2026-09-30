@@ -143,6 +143,8 @@ export const iconMap = {
 
   // Status
   info: { ios: 'info.circle', android: 'information-outline' },
+  // The spray editor's replay-the-hints button.
+  help: { ios: 'questionmark', android: 'help' },
   warning: { ios: 'exclamationmark.triangle', android: 'alert-outline' },
   error: { ios: 'xmark.circle', android: 'alert-circle-outline' },
   success: { ios: 'checkmark.circle', android: 'check-circle-outline' },

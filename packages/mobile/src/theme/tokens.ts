@@ -116,6 +116,8 @@ export const overlays = {
    */
   photoDim: 'rgba(0, 0, 0, 0.15)',
   photoDimFocused: 'rgba(0, 0, 0, 0.3)',
+  /** The heavier dim under the spray scan band, while the photo waits on the detector. */
+  photoDimScan: 'rgba(0, 0, 0, 0.4)',
 } as const;
 
 /** Shared bottom-sheet handle and background styles used by QueueSheet, AngleSelectorSheet, and PlayDrawer. */

@@ -5,6 +5,9 @@ import {
   hasUnfinishedWall,
   initialAddWallState,
   isBusy,
+  leaveCheckpoint,
+  leaveDecision,
+  leaveStillApplies,
   leavingKeepsDraft,
   shouldConfirmLeave,
   type AddWallAction,
@@ -456,5 +459,61 @@ describe('shouldConfirmLeave', () => {
       atReview(),
     );
     expect(shouldConfirmLeave(published)).toBe(false);
+  });
+});
+
+const EDITOR_IDLE = { dirty: false, handingOver: false };
+const EDITOR_DIRTY = { dirty: true, handingOver: false };
+const EDITOR_HANDING_OVER = { dirty: false, handingOver: true };
+
+describe('leaveDecision', () => {
+  it('swallows every way out while the editor saves or plays its publish moment', () => {
+    expect(leaveDecision(atReview(), EDITOR_HANDING_OVER)).toBe('block');
+    // The save is still in flight, so the editor is still dirty too: no discard dialog.
+    expect(leaveDecision(atReview(), { dirty: true, handingOver: true })).toBe('block');
+  });
+
+  it('asks about unwritten hold changes on the review step', () => {
+    expect(leaveDecision(atReview(), EDITOR_DIRTY)).toBe('confirmDiscard');
+  });
+
+  it('asks the generic question once the editor has nothing unsaved', () => {
+    expect(leaveDecision(atReview(), EDITOR_IDLE)).toBe('confirm');
+  });
+
+  it('only blocks on the review step: a stale flag cannot trap the climber elsewhere', () => {
+    const publishing = run([{ type: 'REVIEW_COMMITTED', holdCount: 3 }, { type: 'PUBLISH_STARTED' }], atReview());
+    expect(leaveDecision(publishing, EDITOR_HANDING_OVER)).toBe('confirm');
+    expect(leaveDecision(fresh(), EDITOR_HANDING_OVER)).toBe('leave');
+  });
+});
+
+describe('leaveStillApplies', () => {
+  it('lets a Leave through when nothing moved under the dialog', () => {
+    const state = atReview();
+    expect(leaveStillApplies(leaveCheckpoint(state), state, EDITOR_IDLE)).toBe(true);
+  });
+
+  it('drops a Leave pressed after the editor handed over to the publish step', () => {
+    const asked = leaveCheckpoint(atReview());
+    const handedOver = run([{ type: 'REVIEW_COMMITTED', holdCount: 3 }], atReview());
+    expect(leaveStillApplies(asked, handedOver, EDITOR_IDLE)).toBe(false);
+  });
+
+  it('drops a Leave pressed after the auto-publish started', () => {
+    const committed = run([{ type: 'REVIEW_COMMITTED', holdCount: 3 }], atReview());
+    const asked = leaveCheckpoint(committed);
+    const publishing = run([{ type: 'PUBLISH_STARTED' }], committed);
+    expect(leaveStillApplies(asked, publishing, EDITOR_IDLE)).toBe(false);
+  });
+
+  it('drops a Leave pressed once the editor starts handing over', () => {
+    const state = atReview();
+    expect(leaveStillApplies(leaveCheckpoint(state), state, EDITOR_HANDING_OVER)).toBe(false);
+  });
+
+  it('keeps a Leave the climber agreed to mid-publish', () => {
+    const publishing = run([{ type: 'REVIEW_COMMITTED', holdCount: 3 }, { type: 'PUBLISH_STARTED' }], atReview());
+    expect(leaveStillApplies(leaveCheckpoint(publishing), publishing, EDITOR_IDLE)).toBe(true);
   });
 });

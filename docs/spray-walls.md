@@ -291,7 +291,7 @@ would leave first-run open.
 | `photo` | Library pick; the camera button only on a binary at or past the version that shipped the usage description. Compressed to a 2048 px JPEG, which bakes the EXIF orientation into the pixels. |
 | `anchors` | Optional, Skip by default. Four draggable handles; a quad that crosses itself is refused client-side, because the server's fallback for a degenerate quad is the identity matrix. |
 | `upload` | `createSprayWall`, then the multipart POST, then `createSprayWallVersion`. |
-| `detect` | Request or resume a server-owned recognition job. New walls can enter manual editing while queued; published reset versions remain unchanged until review and confirmation. |
+| `detect` | Request or resume a server-owned recognition job. New walls can enter manual editing while queued ("Mark holds myself"); published reset versions remain unchanged until review and confirmation. With the photo still on the phone the step is full-screen (`SprayScanPhoto`): the photo sits exactly where the editor will put it (`fitSprayPhoto`), dimmed, with a violet band looping down it and a glass status card. A run resumed without the file, and the reset flow, keep the plain spinner. |
 | `review` → `publish` | `SprayHoldEditorScreen`. Its one button, "Publish wall", commits the holds (`REVIEW_COMMITTED`); the publish step then runs by itself once — `publishSprayWallVersion`, `invalidateSprayWallRenderData`, and the board bind — and only stops to show an error with Try again. |
 
 Three rules in that flow are not obvious from the API and are easy to undo:
@@ -732,6 +732,35 @@ What the editor does with a wall is decided by this document rather than by tast
   held to the hold cap like an add. To a screen reader the wall is one image
   labelled with the counts, and activating it does nothing: the bar and the chip
   bar are the accessible path.
+- **Motion is whole-layer or one spotlight, never per hold.** After a fresh
+  scan (`revealOnMount`) the ring layer is revealed by a 700 ms top-to-bottom
+  clip of one wrapper view, with the scan band riding its edge, then the maybes
+  fade in (one SVG group's opacity) and a success buzz closes it; a resumed
+  draft opens without it. The board, the bars and the "?" take no touch until
+  the reveal ends, so a tap cannot land on a ring that is not drawn yet. A
+  toggled, added or undone hold is marked by `SprayHoldSpotlight`, one small
+  box at that hold that springs, ripples or pulses violet; a ring switched off
+  pops in the OFF ghost's dotted style, never as a solid ON ring. Publishing
+  sweeps the ON rings violet (`SprayPublishSweep`) and turns the count capsule
+  into a checkmark, and `onCommitted` fires once that has played, about 700 ms
+  later. From the press until then `onHandoverChange(true)` tells the host, and
+  the wizard swallows every back gesture without a dialog (`leaveDecision` in
+  `add-wall-machine.ts`): the dirty flag is already clear, so the generic
+  "draft kept" question would otherwise appear, and either answer would race
+  the hand-over. A Leave pressed on an older dialog is re-checked when pressed
+  (`leaveStillApplies`) and dropped if publishing began under it. A screen
+  reader hears each hint as it appears, the counts when the reveal ends,
+  "Holds saved", then "Publishing your wall…". Every frame is a UI-thread transform,
+  opacity or clip height; the ring SVG never re-renders for an animation. With
+  Reduce Motion the reveal is a 150 ms fade, taps change the rings with no
+  extra motion, the undo halo is a static 300 ms highlight, the count only
+  crossfades, and publishing shows the checkmark alone.
+- **Three first-run hints, one at a time** (`use-spray-editor-hints.ts`): tap
+  to switch a ring, then (only with maybes on the wall) tap a dashed maybe to
+  keep it, then after three edits press and hold to fix a ring. Each is marked
+  seen when the climber does the thing or closes it, never just for showing;
+  the top-right "?" replays all three for the session. None show in screenshot
+  mode or on a read-only wall.
 - **Provenance survives a round trip.** The render payload carries each stored
   hold's `source` and `confidence`, the registry carries them into photo space,
   and the seed reads them back; without that, an accepted detector hold is

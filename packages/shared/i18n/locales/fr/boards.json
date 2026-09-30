@@ -6,7 +6,7 @@
     "failed": "La recherche des prises n'a pas abouti. Ta photo est enregistrée.",
     "resumeHint": "Tu peux quitter et reprendre plus tard. Ton mur publié reste inchangé.",
     "retry": "Réessayer",
-    "manual": "Placer les prises à la main",
+    "manual": "Marquer les prises à la main",
     "resume": "Reprendre cette réinitialisation"
   },
   "mobile": {
@@ -776,7 +776,8 @@
       "maybes_other": "{{count}} incertaines",
       "withMaybes": "{{holds}} · {{maybes}}",
       "undo": "Annuler",
-      "menuHint": "Ouvre les options pour toutes tes prises"
+      "menuHint": "Ouvre les options pour toutes tes prises",
+      "saved": "Prises enregistrées"
     },
     "menu": {
       "keepMaybes": "Garder toutes les incertaines",
@@ -792,9 +793,9 @@
       "cancel": "Continuer à modifier"
     },
     "chips": {
-      "smaller": "Plus petite",
-      "bigger": "Plus grande",
-      "trace": "Détourer",
+      "smaller": "Réduire",
+      "bigger": "Agrandir",
+      "trace": "Tracer",
       "join": "Réunir",
       "remove": "Retirer"
     },
@@ -802,6 +803,13 @@
       "trace": "Dessine le tour de la prise avec un doigt",
       "join": "Touche la prise à réunir avec celle-ci",
       "cancel": "Annuler"
+    },
+    "hints": {
+      "toggle": "Touche un cercle pour le désactiver. Touche le mur vide pour ajouter une prise.",
+      "maybe": "Les cercles en pointillés sont des prises incertaines. Touche l'un d'eux pour garder la prise.",
+      "longPress": "Appuie longuement sur un cercle pour corriger sa taille, sa place ou sa forme.",
+      "dismiss": "Masquer l'astuce",
+      "replay": "Voir les astuces"
     },
     "a11y": {
       "wall": "Photo de ton mur : {{summary}}",
@@ -819,11 +827,12 @@
         "bigger": "Rendre plus grande",
         "remove": "Retirer",
         "addHold": "Ajouter une prise au centre de la vue"
-      }
+      },
+      "revealed": "Prises trouvées : {{summary}}"
     },
     "readOnly": "Ce mur n'est pas le tien, tu ne peux pas le modifier.",
     "errors": {
-      "tooManyHolds": "Tu as atteint la limite de {{max}} prises. Désactives-en quelques-unes pour en ajouter d'autres.",
+      "tooManyHolds": "Tu as atteint la limite de {{max}} prises. Désactive quelques prises pour en ajouter d'autres.",
       "saveFailed": "Impossible d'enregistrer tes prises. Réessaie.",
       "strokeNotClosed": "Cette boucle rate la prise. Dessine tout le tour.",
       "strokeTooBig": "Cette boucle est bien plus grande qu'une prise. Zoome et suis le contour de la prise elle-même.",
@@ -885,6 +894,12 @@
     "detect": {
       "title": "Recherche des prises"
     },
+    "scan": {
+      "queued": "En file d'attente…",
+      "running": "Recherche des prises…",
+      "slow": "Les murs très chargés prennent un peu plus de temps",
+      "resumeHint": "Tu peux quitter et reprendre plus tard."
+    },
     "review": {
       "publish": "Publier le mur",
       "nothingFound": "Aucune prise repérée. Touche le mur pour les ajouter.",
@@ -907,7 +922,7 @@
       "stay": "Continuer",
       "go": "Quitter",
       "unsavedTitle": "Quitter sans publier ?",
-      "unsavedBody": "Tes modifications de prises seront perdues. Le mur et sa photo restent enregistrés.",
+      "unsavedBody": "Tes modifications sur les prises seront perdues. Le mur et sa photo restent enregistrés.",
       "discard": "Quitter quand même"
     },
     "resume": {

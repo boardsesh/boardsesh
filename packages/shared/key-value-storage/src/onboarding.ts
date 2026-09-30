@@ -33,6 +33,13 @@ export const ONBOARDING_TIP_QUICKACTIONS_KEY = 'onboarding_tip_quickactions_seen
 // the tab bar's search-role magnifier (#5654): shown the first time another tab
 // is open, pointing back to the magnifier. Written as soon as it shows.
 export const ONBOARDING_TIP_CLIMBS_TAB_KEY = 'onboarding_tip_climbs_tab_seen';
+// The spray-wall hold editor's three first-run hints, each marked seen when the
+// climber does the thing it teaches (or closes it), never merely on showing:
+// switching a ring off or on, keeping a dashed maybe, and pressing and holding
+// a ring to fix it.
+export const ONBOARDING_TIP_SPRAY_TOGGLE_KEY = 'onboarding_tip_spray_toggle_seen';
+export const ONBOARDING_TIP_SPRAY_MAYBE_KEY = 'onboarding_tip_spray_maybe_seen';
+export const ONBOARDING_TIP_SPRAY_LONG_PRESS_KEY = 'onboarding_tip_spray_long_press_seen';
 
 // Dismissal of the "your board account isn't linked" card on the empty Progress /
 // Logbook tabs. Not a tip: an empty logbook with no linked account is a standing

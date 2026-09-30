@@ -217,7 +217,8 @@ across light/dark — these are for chips/buttons over arbitrary content (board 
 need stable contrast regardless of the user's scheme. `photoDim` (`rgba(0,0,0,0.15)`) and
 `photoDimFocused` (`rgba(0,0,0,0.3)`) are the light dims laid over a photograph under marks drawn on it (the
 spray-wall hold editor's rings), so a busy wall recedes; the focused one is for while one mark is
-picked out.
+picked out. `photoDimScan` (`0.4`) is the heavier dim under the spray scan step's band,
+while the photo waits on the detector.
 
 ---
 

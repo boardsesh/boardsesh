@@ -1,7 +1,8 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import { Alert, StyleSheet, View } from 'react-native';
+import Animated, { ZoomIn } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
-import { Text } from '../Text';
+import { Icon } from '../Icon';
 import { Button } from '../Button';
 import { GlassIconButton } from '../GlassIconButton';
 import { GlassSurface } from '../GlassSurface';
@@ -9,13 +10,23 @@ import { PressableSurface } from '../PressableSurface';
 import { useTheme } from '../../providers/theme-provider';
 import { borderRadius, spacing } from '../../theme/tokens';
 import { glassSize } from '../../theme/layout';
-import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
 import type { SprayEditorCounts } from './spray-hold-editor-reducer';
+import { SPRAY_BAR_GUTTER, SPRAY_BAR_HEIGHT } from './spray-photo-frame';
+import { SprayCountCrossfade } from './SprayCountCrossfade';
+import { springs } from '../../theme/animations';
 
 type Translate = (key: string, options?: Record<string, unknown>) => string;
 
 /** Diameter of the dashed dot that ties the capsule's maybe line to the dashed rings. */
 const MAYBE_DOT_SIZE = 8;
+/** The checkmark the capsule turns into once the holds are saved. */
+const CHECK_SIZE = 26;
+// Built-in, so Reduce Motion (the system setting) skips it: the checkmark
+// simply appears.
+const CHECK_ENTERING = ZoomIn.springify()
+  .damping(springs.bouncy.damping)
+  .stiffness(springs.bouncy.stiffness)
+  .mass(springs.bouncy.mass);
 
 /**
  * The wall's numbers as one line — "212 holds · 38 maybes", or just the holds
@@ -31,11 +42,6 @@ export function sprayCountSummary(t: Translate, counts: SprayEditorCounts, showM
   });
 }
 
-/** Height of the bar's tallest member. The screen reserves this plus the gutter below it. */
-export const SPRAY_BAR_HEIGHT = glassSize.standard;
-/** Gap between the bar and the bottom safe area. */
-export const SPRAY_BAR_GUTTER = spacing[2];
-
 type SprayEditorBottomBarProps = {
   counts: SprayEditorCounts;
   /** Maybes are currently drawn. Drives the Hide / Show row. */
@@ -47,6 +53,8 @@ type SprayEditorBottomBarProps = {
   locked: boolean;
   primaryLabel: string;
   primaryLoading: boolean;
+  /** The holds are saved: the capsule turns into a checkmark for the hand-over. */
+  celebrating: boolean;
   bottomInset: number;
   onUndo: () => void;
   onKeepMaybes: () => void;
@@ -73,6 +81,7 @@ export const SprayEditorBottomBar = React.memo(function SprayEditorBottomBar({
   locked,
   primaryLabel,
   primaryLoading,
+  celebrating,
   bottomInset,
   onUndo,
   onKeepMaybes,
@@ -86,7 +95,7 @@ export const SprayEditorBottomBar = React.memo(function SprayEditorBottomBar({
 
   const holdsLabel = t('sprayEditor.bar.holds', { count: counts.on });
   const maybesLabel = counts.maybes > 0 && showMaybes ? t('sprayEditor.bar.maybes', { count: counts.maybes }) : null;
-  const countLabel = sprayCountSummary(t, counts, showMaybes);
+  const countLabel = celebrating ? t('sprayEditor.bar.saved') : sprayCountSummary(t, counts, showMaybes);
 
   const toggleMenu = useCallback(() => setMenuOpen((open) => !open), []);
   const closeMenu = useCallback(() => setMenuOpen(false), []);
@@ -170,31 +179,35 @@ export const SprayEditorBottomBar = React.memo(function SprayEditorBottomBar({
             style={StyleSheet.absoluteFill}
             pointerEvents="none"
           />
-          {/* Two short lines rather than one long one, so the capsule never
-              truncates beside Undo and the primary button on a 375pt phone. */}
-          <Text
-            variant={maybesLabel ? 'subheadline' : 'headline'}
-            color={systemColors.label}
-            numberOfLines={1}
-            maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-            style={[styles.capsuleText, styles.holdsText]}
-          >
-            {holdsLabel}
-          </Text>
-          {maybesLabel ? (
-            <View style={styles.maybeRow}>
-              <View style={[styles.maybeDot, { borderColor: brandColors.accent }]} />
-              <Text
-                variant="caption2"
-                color={systemColors.secondaryLabel}
-                numberOfLines={1}
-                maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-                style={styles.capsuleText}
-              >
-                {maybesLabel}
-              </Text>
-            </View>
-          ) : null}
+          {celebrating ? (
+            <Animated.View entering={CHECK_ENTERING} style={styles.check}>
+              <Icon name="checkmark.circle.fill" size={CHECK_SIZE} color={brandColors.primary} />
+            </Animated.View>
+          ) : (
+            <>
+              {/* Two short lines rather than one long one, so the capsule never
+                  truncates beside Undo and the primary button on a 375pt phone. */}
+              <SprayCountCrossfade
+                text={holdsLabel}
+                value={counts.on}
+                variant={maybesLabel ? 'subheadline' : 'headline'}
+                color={systemColors.label}
+                style={[styles.capsuleText, styles.holdsText]}
+              />
+              {maybesLabel ? (
+                <View style={styles.maybeRow}>
+                  <View style={[styles.maybeDot, { borderColor: brandColors.accent }]} />
+                  <SprayCountCrossfade
+                    text={maybesLabel}
+                    value={counts.maybes}
+                    variant="caption2"
+                    color={systemColors.secondaryLabel}
+                    style={styles.capsuleText}
+                  />
+                </View>
+              ) : null}
+            </>
+          )}
         </PressableSurface>
 
         <Button
@@ -238,6 +251,9 @@ const styles = StyleSheet.create({
   },
   holdsText: {
     fontWeight: '600',
+  },
+  check: {
+    alignSelf: 'center',
   },
   maybeRow: {
     flexDirection: 'row',

@@ -6,7 +6,7 @@
     "failed": "No pudimos terminar de buscar las presas. Tu foto está guardada.",
     "resumeHint": "Puedes salir y continuar más tarde. Tu muro publicado no cambia.",
     "retry": "Intentar de nuevo",
-    "manual": "Colocar las presas a mano",
+    "manual": "Marcar las presas a mano",
     "resume": "Continuar este reseteo"
   },
   "mobile": {
@@ -776,7 +776,8 @@
       "maybes_other": "{{count}} dudosas",
       "withMaybes": "{{holds}} · {{maybes}}",
       "undo": "Deshacer",
-      "menuHint": "Abre las opciones para todas tus presas"
+      "menuHint": "Abre las opciones para todas tus presas",
+      "saved": "Presas guardadas"
     },
     "menu": {
       "keepMaybes": "Conservar todas las dudosas",
@@ -792,9 +793,9 @@
       "cancel": "Seguir editando"
     },
     "chips": {
-      "smaller": "Más pequeña",
-      "bigger": "Más grande",
-      "trace": "Repasar",
+      "smaller": "Reducir",
+      "bigger": "Agrandar",
+      "trace": "Trazar",
       "join": "Unir",
       "remove": "Quitar"
     },
@@ -802,6 +803,13 @@
       "trace": "Dibuja con un dedo alrededor de la presa",
       "join": "Toca la presa con la que unirla",
       "cancel": "Cancelar"
+    },
+    "hints": {
+      "toggle": "Toca un círculo para desactivarlo. Toca el muro vacío para añadir una presa.",
+      "maybe": "Los círculos discontinuos son presas dudosas. Toca una para conservarla.",
+      "longPress": "Mantén pulsado un círculo para ajustar su tamaño, su posición o su forma.",
+      "dismiss": "Ocultar consejo",
+      "replay": "Ver consejos"
     },
     "a11y": {
       "wall": "Foto de tu muro: {{summary}}",
@@ -819,7 +827,8 @@
         "bigger": "Hacer más grande",
         "remove": "Quitar",
         "addHold": "Añadir una presa en el centro de la vista"
-      }
+      },
+      "revealed": "Presas encontradas: {{summary}}"
     },
     "readOnly": "No puedes editar este muro.",
     "errors": {
@@ -884,6 +893,12 @@
     },
     "detect": {
       "title": "Buscando presas"
+    },
+    "scan": {
+      "queued": "Esperando turno…",
+      "running": "Buscando presas…",
+      "slow": "Los muros con muchas presas tardan un poco más",
+      "resumeHint": "Puedes salir y continuar más tarde."
     },
     "review": {
       "publish": "Publicar muro",
