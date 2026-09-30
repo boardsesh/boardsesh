@@ -1,0 +1,106 @@
+appId: com.apple.springboard
+name: showcase setup - lock-screen, an empty home screen
+---
+# Device setup for take: lock-screen (primary phone, NOT recorded; the take
+# registry's `deviceSetupFlows`, run once per recorder run before any take,
+# AFTER the app is installed)
+#
+# The island take films the home screen behind the Dynamic Island. A fresh
+# install drops Boardsesh (and Maestro's own test runner, "maestro-driver-iOS")
+# onto the first home page, among the stock widgets and apps. This empties the
+# home screen and the dock ("Remove from Home Screen" only: every app stays
+# installed and in the App Library, and `simctl launch` still opens Boardsesh),
+# so the take shows nothing but the dark wallpaper behind the island.
+#
+# Idempotent: the loop runs only while something is on the page, so an empty
+# page costs one lookup.
+#
+# How: a long press on empty wallpaper (50%,60%) enters jiggle mode, where every
+# widget and app wears a "−" badge. The FIRST item's badge sits at 9%,10%
+# whether it is a widget or an app; removing it reflows the rest, so the loop
+# removes the first item until the page is empty. A folder has no badge (the
+# tap opens it), so its apps come out from inside (first app's badge at
+# 20%,34%) and it disappears when empty. The dock's first badge is at 32%,89%
+# with two icons and 43%,89% with one. SpringBoard's labels and alerts are in
+# Maestro's accessibility tree, so the checks and confirmations match by text.
+# In jiggle mode the labels drop out of the tree, so every round starts from
+# the plain page: two presses of Home always land on page 1.
+
+# First, keep new apps off the home screen for good (Settings > Home Screen &
+# App Library > Newly Downloaded Apps: App Library Only). Maestro reinstalls
+# its own runner on later runs; without this it lands on the page again.
+- launchApp:
+    appId: com.apple.Preferences
+    stopApp: true
+- scrollUntilVisible:
+    element:
+      text: 'Home Screen.*'
+    direction: DOWN
+    timeout: 20000
+- tapOn: 'Home Screen.*'
+- tapOn: 'App Library Only'
+- waitForAnimationToEnd
+- stopApp: com.apple.Preferences
+
+- pressKey: home
+- pressKey: home
+- waitForAnimationToEnd
+
+- repeat:
+    times: 30
+    while:
+      visible: '(Maps|Calendar|Photos|Reminders|News|Health|Wallet|Settings|Fitness|Watch|Contacts|Files|Preview|Utilities|Boardsesh|maestro).*'
+    commands:
+      - pressKey: home
+      - pressKey: home
+      - waitForAnimationToEnd
+      - longPressOn:
+          point: '50%,60%'
+      - tapOn:
+          point: '9%,10%'
+      - runFlow:
+          when:
+            notVisible: 'Remove.*'
+          commands:
+            - tapOn:
+                point: '20%,34%'
+      - tapOn:
+          text: 'Remove App|Remove Widget|Remove'
+          optional: true
+      - tapOn:
+          text: 'Remove from Home Screen'
+          optional: true
+      - waitForAnimationToEnd
+
+- repeat:
+    times: 2
+    while:
+      visible: 'Safari|Messages'
+    commands:
+      - pressKey: home
+      - pressKey: home
+      - waitForAnimationToEnd
+      - longPressOn:
+          point: '50%,60%'
+      - runFlow:
+          when:
+            visible: 'Safari'
+          commands:
+            - tapOn:
+                point: '32%,89%'
+      - runFlow:
+          when:
+            notVisible: 'Safari'
+          commands:
+            - tapOn:
+                point: '43%,89%'
+      - tapOn:
+          text: 'Remove App'
+          optional: true
+      - tapOn:
+          text: 'Remove from Home Screen'
+          optional: true
+      - waitForAnimationToEnd
+
+- pressKey: home
+- pressKey: home

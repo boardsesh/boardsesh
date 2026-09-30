@@ -27,6 +27,7 @@
     "lib/help-shots.ts",
     "lib/showcase-video/**/*.ts",
     "showcase-video-*.ts",
+    "../packages/web/scripts/render-showcase-video.ts",
     "__tests__/showcase-video*.test.ts",
     "__tests__/help-shots.test.ts",
     "discord-feedback-scan.ts",

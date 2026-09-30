@@ -1,0 +1,36 @@
+appId: com.boardsesh.app
+name: showcase teardown - end the live session
+---
+# Teardown for every take that starts a live session: crew, workouts,
+# lock-screen (primary phone, NOT recorded)
+#
+# Ends the live session the take began, for everyone in it, so nothing
+# is left running on the account. The recorder runs this after the take and on
+# an abort (Ctrl-C included) whenever a session was started, always on a freshly
+# relaunched app (so no sheet covers Stop; the app restores the session), and
+# then checks the app logged the session ending.
+#
+# Coordinates (iPhone 16 Pro Max portrait):
+#   88%,9%   Stop, top right of the in-session Record tab
+#   72%,83%  "End session" in the confirmation sheet
+
+- openLink: com.boardsesh.app://home
+- tapOn:
+    text: 'Open'
+    optional: true
+- waitForAnimationToEnd
+- openLink: com.boardsesh.app://record
+- tapOn:
+    text: 'Open'
+    optional: true
+- waitForAnimationToEnd
+
+- tapOn:
+    point: '88%,9%'
+- waitForAnimationToEnd
+- tapOn:
+    point: '72%,83%'
+- extendedWaitUntil:
+    visible: 'zzz-showcase-pause'
+    timeout: 4000
+    optional: true

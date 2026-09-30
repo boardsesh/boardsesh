@@ -28,6 +28,7 @@ export const SHOWCASE_WORK_ROOT = resolve(REPO_ROOT, '.boardsesh/showcase-video'
 export const SHOWCASE_RAW_DIR = resolve(SHOWCASE_WORK_ROOT, 'work/raw');
 export const SHOWCASE_FOOTAGE_DIR = resolve(SHOWCASE_WORK_ROOT, 'work/footage');
 export const SHOWCASE_ANCHORS_DIR = resolve(SHOWCASE_WORK_ROOT, 'work/anchors');
+export const SHOWCASE_MARKS_DIR = resolve(SHOWCASE_WORK_ROOT, 'work/marks');
 export const SHOWCASE_OUT_DIR = resolve(SHOWCASE_WORK_ROOT, 'out');
 
 /** Shipped web encodes and posters (committed, uploaded by the static-asset sync). */
@@ -126,6 +127,22 @@ export type ShowcaseAnchorsFile = Readonly<{
   /** Screen size in points (e.g. 440x956 on an iPhone 16 Pro Max), to map points onto footage. */
   screen: Readonly<{ width: number; height: number }>;
   anchors: Partial<Record<ShowcaseCalloutName, readonly ShowcaseAnchorSample[]>>;
+}>;
+
+/**
+ * `work/marks/<takeId>.json`, written by the recorder, read by the renderer:
+ * the moments a take's flow reached a step (the bulb tap, the island opening,
+ * Next), in seconds from the start of the TRIMMED footage, so the renderer
+ * can place cuts and callouts on events instead of hand-read frame numbers.
+ * The flows raise them on the recorder's signal server as `/mark/<name>`
+ * right after the step's action; each take's flow header lists its marks, and
+ * docs/showcase-video.md collects them. A mark the flow never reached is
+ * absent. Marks the recorder derives itself (from an anchor's first sample)
+ * are listed in docs/showcase-video.md too.
+ */
+export type ShowcaseMarksFile = Readonly<{
+  takeId: ShowcaseTakeId;
+  marks: Readonly<Record<string, number>>;
 }>;
 
 /** Samples in ascending `t`, the order `anchorAt` needs. Returns a new array; stable for equal `t`. */

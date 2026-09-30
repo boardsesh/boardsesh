@@ -1,0 +1,89 @@
+{
+  "hook": {
+    "headline": "Your board.\nLit from your *phone.*"
+  },
+  "light": {
+    "headline": "Swipe, and the\nwall *follows.*",
+    "callouts": {
+      "wall-pill": "On the wall",
+      "board-surface": "Swipe for next"
+    }
+  },
+  "boards": {
+    "headline": "Every board.\nOne *app.*"
+  },
+  "wall": {
+    "headline": "See what's on\nthe *wall.*",
+    "callouts": {
+      "board-history-button": "Board history",
+      "now-on-wall": "On the wall now",
+      "wall-history": "Lit on this wall"
+    }
+  },
+  "crew": {
+    "headline": "Your crew.\nOne *queue.*",
+    "callouts": {
+      "invite-qr": "Scan to join",
+      "queue-row-avatar": "Who queued it",
+      "play-next": "Play next"
+    }
+  },
+  "workouts": {
+    "headline": "Give your\nsession a *plan.*",
+    "rows": [
+      {
+        "name": "Warm-up",
+        "grade": "V2",
+        "rest": "0:30"
+      },
+      {
+        "name": "Build",
+        "grade": "V4",
+        "rest": "0:30"
+      },
+      {
+        "name": "Build",
+        "grade": "V5",
+        "rest": "0:30"
+      },
+      {
+        "name": "Top",
+        "grade": "V6",
+        "rest": "0:30"
+      },
+      {
+        "name": "Down",
+        "grade": "V5",
+        "rest": "0:30"
+      },
+      {
+        "name": "Down",
+        "grade": "V4",
+        "rest": "0:30"
+      }
+    ],
+    "restLabel": "Rest",
+    "restCountdown": ["0:29", "0:28"]
+  },
+  "lock-screen": {
+    "headline": "Control the\nwall from\nthe *island.*",
+    "callouts": {
+      "lock-next": "Next",
+      "lock-relight": "Reconnect board",
+      "lock-mirror": "Mirror climb"
+    }
+  },
+  "log": {
+    "headline": "Remember\nevery *send.*",
+    "callouts": {
+      "profile-board-filter": "Every board",
+      "activity-calendar": "Activity"
+    }
+  },
+  "outro": {
+    "wordmark": "boardsesh",
+    "tagline": "Less phone. More *wall.*",
+    "pill": "Free, no ads. iOS & Android.",
+    "donation": "Paid for by the climbers who use it."
+  }
+}

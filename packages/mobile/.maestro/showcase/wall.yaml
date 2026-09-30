@@ -1,0 +1,52 @@
+appId: com.boardsesh.app
+name: showcase take - what is on the wall
+---
+# Take: wall -> .boardsesh/showcase-video/work/footage/wall/ (homepage showcase, scene "wall")
+#
+# Records: the Climbs tab, then a tap on the board button in the top chrome;
+# the board sheet rises with the climb on the wall now (the hero), the wall's
+# stats, and, once the sheet is dragged up, "Lit on this wall": the climbs lit
+# before it, each with who lit it. Callouts: board-history-button, now-on-wall,
+# wall-history.
+#
+# The recorder opens ://climbs on a freshly launched app BEFORE recording; the
+# wall is SCREENSHOT_BOARDS[0], activated on boot, with the seeded wall history.
+#
+# The board sheet is global: it stays up over other tabs until it is closed,
+# which is why every take starts from a relaunch.
+#
+# Marks (work/marks/wall.json): sheet-open, history-shown.
+#
+# Coordinates (iPhone 16 Pro Max portrait):
+#   91%,10%            the board button (grid glyph), top right of the Climbs chrome
+#   50%,50% -> 50%,12% drag the sheet up to its full detent
+
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/flow-start')}
+
+- extendedWaitUntil:
+    visible: 'zzz-showcase-pause'
+    timeout: 1200
+    optional: true
+
+- tapOn:
+    point: '91%,10%'
+- waitForAnimationToEnd
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/sheet-open')}
+
+# What is on the wall now.
+- extendedWaitUntil:
+    visible: 'zzz-showcase-pause'
+    timeout: 1800
+    optional: true
+
+# Up to the history.
+- swipe:
+    start: '50%,50%'
+    end: '50%,12%'
+    duration: 900
+- waitForAnimationToEnd
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/history-shown')}
+- extendedWaitUntil:
+    visible: 'zzz-showcase-pause'
+    timeout: 2500
+    optional: true

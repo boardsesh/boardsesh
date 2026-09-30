@@ -1,0 +1,762 @@
+/*
+ * Showcase stage. Everything that moves reads a CSS custom property that
+ * timeline.mjs sets per frame: no transitions, no animations, no clocks.
+ * Colours come from tokens.css (generated from @boardsesh/velvet-tokens and
+ * @boardsesh/board-constants by the renderer); the fallbacks are the same hexes.
+ */
+
+@font-face {
+  font-family: 'Inter Tight';
+  src: url('fonts/InterTight-latin-var.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Instrument Serif';
+  src: url('fonts/InstrumentSerif-Italic-latin.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Geist Mono';
+  src: url('fonts/GeistMono-latin-var.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: block;
+}
+
+:root {
+  --stage-dark: var(--token-stage-dark, #110a20);
+  --stage-light: var(--token-stage-light, #f4f1fb);
+  --ink-on-dark: var(--token-ink-dark, #f5f2fb);
+  --ink-on-light: var(--token-ink-light, #16111f);
+  --sub-on-dark: var(--token-sub-dark, #a9a2b6);
+  --sub-on-light: var(--token-sub-light, #5b5563);
+  --accent-on-dark: var(--token-accent-dark, #a78bfa);
+  --accent-on-light: var(--token-accent-light, #6d28d9);
+  --amber: var(--token-amber, #ff8a3d);
+  --glow-dark: var(--token-glow-dark, #7c3aed);
+  --glow-light: #c4b5fd;
+  --role-start: var(--token-role-start, #00ff00);
+  --role-hand: var(--token-role-hand, #4df5fd);
+  --role-finish: var(--token-role-finish, #ff00ff);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: #000;
+  overflow: hidden;
+}
+
+#stage {
+  --w: 1920;
+  --h: 1080;
+  --light-mix: 0;
+  position: relative;
+  width: calc(var(--w) * 1px);
+  height: calc(var(--h) * 1px);
+  overflow: hidden;
+  font-family: 'Inter Tight', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: geometricPrecision;
+  font-kerning: normal;
+}
+#stage[data-format='9x16'] {
+  --w: 1080;
+  --h: 1920;
+}
+
+.bg,
+.layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.bg {
+  /* The new scene's colour, revealed as a circle from the phone (timeline.mjs). */
+  background: radial-gradient(
+    circle at var(--bg-x, 50%) var(--bg-y, 50%),
+    var(--bg-to, var(--stage-dark)) var(--bg-r, 200vmax),
+    var(--bg-from, var(--stage-dark)) calc(var(--bg-r, 200vmax) + 1.5px)
+  );
+}
+svg.layer {
+  overflow: visible;
+}
+
+/*
+ * Stacking: background, glow and the motif's grid sit at the bottom; phones
+ * (z 2 up, later board arrivals on top) above their shadows; everything drawn
+ * over the footage above the phones.
+ */
+.phones {
+  z-index: 5;
+  perspective: 2200px;
+  perspective-origin: 50% 50%;
+}
+.phone-shadow {
+  z-index: 1;
+}
+.motif-front {
+  z-index: 30;
+}
+#callouts {
+  z-index: 31;
+}
+#pills {
+  z-index: 32;
+}
+#text {
+  z-index: 33;
+}
+#measure {
+  z-index: 34;
+}
+.grain {
+  z-index: 35;
+}
+
+/* --- glow behind the phone ------------------------------------------------ */
+
+.glow {
+  position: absolute;
+  left: calc(var(--gx, 960) * 1px);
+  top: calc(var(--gy, 540) * 1px);
+  width: 1000px;
+  height: 1180px;
+  margin: -590px 0 0 -500px;
+  border-radius: 50%;
+  transform: scale(var(--gs, 1));
+  will-change: transform, opacity;
+}
+.glow-dark {
+  opacity: calc((1 - var(--light-mix)) * var(--gstrength, 1));
+  background: radial-gradient(
+    ellipse at center,
+    color-mix(in srgb, var(--glow-dark) 30%, transparent),
+    color-mix(in srgb, var(--glow-dark) 10%, transparent) 48%,
+    transparent 72%
+  );
+}
+.glow-light {
+  opacity: calc(var(--light-mix) * var(--gstrength, 1));
+  background: radial-gradient(
+    ellipse at center,
+    color-mix(in srgb, var(--glow-light) 45%, transparent),
+    transparent 70%
+  );
+}
+
+/* --- grain ------------------------------------------------------------------ */
+
+.grain {
+  will-change: opacity;
+}
+.grain-dark {
+  mix-blend-mode: soft-light;
+  opacity: calc((1 - var(--light-mix)) * 0.05);
+}
+.grain-light {
+  mix-blend-mode: multiply;
+  opacity: calc(var(--light-mix) * 0.04);
+}
+
+/* --- motif ------------------------------------------------------------------- */
+
+.motif-back {
+  opacity: var(--motif-o, 1);
+}
+#grid {
+  opacity: var(--grid-o, 1);
+}
+#motifLine {
+  opacity: var(--line-o, 1);
+}
+.ring .ring-halo {
+  opacity: var(--halo, 0.5);
+}
+
+/* --- phone (CSS-drawn iPhone 16 Pro Max) ------------------------------------- */
+
+.phone-rig {
+  --cx: 2350;
+  --cy: 560;
+  --s: 1;
+  --rx: 0;
+  --ry: 0;
+  --rz: 0;
+  position: absolute;
+  left: calc(var(--cx) * 1px - 214px);
+  top: calc(var(--cy) * 1px - 450px);
+  width: 428px;
+  height: 900px;
+  transform: scale(var(--s)) rotateX(calc(var(--rx) * 1deg)) rotateY(calc(var(--ry) * 1deg))
+    rotateZ(calc(var(--rz) * 1deg));
+  transform-origin: 50% 50%;
+  will-change: transform;
+  z-index: var(--z, 2);
+}
+.phone-body {
+  position: absolute;
+  inset: 0;
+  border-radius: 70px;
+  padding: 3px;
+  background: linear-gradient(145deg, #d9d7d2 0%, #8f8d88 18%, #b9b7b1 36%, #6f6d69 55%, #c9c7c1 78%, #7d7b76 100%);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.35),
+    0 0 0 1px rgba(0, 0, 0, 0.55);
+}
+.bezel {
+  position: absolute;
+  inset: 3px;
+  border-radius: 67px;
+  background: #050407;
+  padding: 10px;
+}
+.screen {
+  position: relative;
+  width: 402px;
+  height: 874px;
+  border-radius: 57px;
+  overflow: hidden;
+  background: #050407;
+  /* Keeps the rounded clip exact under 3D transforms. */
+  isolation: isolate;
+}
+.screen img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  opacity: var(--footage-o, 1);
+}
+.screen .gloss {
+  position: absolute;
+  inset: 0;
+  border-radius: 57px;
+  background: linear-gradient(125deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0) 38%);
+  pointer-events: none;
+}
+.island {
+  position: absolute;
+  top: 11px;
+  left: 50%;
+  width: 114px;
+  height: 34px;
+  margin-left: -57px;
+  border-radius: 17px;
+  background: #000;
+}
+.island::after {
+  content: '';
+  position: absolute;
+  right: 22px;
+  top: 11px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 40%, #2a2f45 0%, #0b0c12 60%);
+}
+.phone-btn {
+  position: absolute;
+  width: 4px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #6f6d69, #c9c7c1 50%, #7d7b76);
+}
+.phone-btn.left {
+  left: -3px;
+}
+.phone-btn.right {
+  right: -3px;
+}
+.phone-shadow {
+  position: absolute;
+  left: calc(var(--cx, -1000) * 1px - 190px);
+  top: calc(var(--cy, -1000) * 1px - 30px);
+  width: 380px;
+  height: 60px;
+  border-radius: 50%;
+  background: radial-gradient(ellipse at center, rgba(8, 4, 16, 0.5) 0%, rgba(8, 4, 16, 0) 70%);
+  filter: blur(14px);
+  opacity: var(--shadow-o, 1);
+  transform: scale(var(--s, 1));
+}
+
+/* --- headlines ------------------------------------------------------------------ */
+
+.headline {
+  position: absolute;
+  left: 144px;
+  top: 50%;
+  width: 660px;
+  transform: translateY(-50%);
+  font-weight: 800;
+  font-size: 104px;
+  line-height: 0.98;
+  letter-spacing: -0.04em;
+  color: var(--ink);
+  opacity: var(--on, 0);
+}
+.headline .line {
+  display: block;
+  white-space: nowrap;
+}
+.w {
+  display: inline-block;
+  opacity: var(--o, 0);
+  filter: blur(calc(var(--b, 0) * 1px));
+  transform: translateY(calc(var(--y, 0) * 1px));
+  will-change: transform, opacity, filter;
+}
+.w.accent {
+  font-family: 'Instrument Serif', serif;
+  font-style: italic;
+  font-weight: 400;
+  font-size: 120px;
+  letter-spacing: -0.01em;
+  color: var(--accent);
+  padding-right: 0.06em;
+}
+.on-dark {
+  --ink: var(--ink-on-dark);
+  --sub: var(--sub-on-dark);
+  --accent: var(--accent-on-dark);
+}
+.on-light {
+  --ink: var(--ink-on-light);
+  --sub: var(--sub-on-light);
+  --accent: var(--accent-on-light);
+}
+
+.headline[data-scene='boards'] {
+  left: 0;
+  width: 100%;
+  top: 92px;
+  transform: none;
+  text-align: center;
+}
+.headline[data-scene='boards'] .line {
+  display: inline;
+}
+.headline[data-scene='workouts'] {
+  top: 150px;
+  transform: none;
+}
+
+/* --- boards labels -------------------------------------------------------------- */
+
+.board-label {
+  position: absolute;
+  left: calc(var(--lx) * 1px);
+  top: calc(var(--ly) * 1px);
+  transform: translate(-50%, calc(var(--y, 0) * 1px));
+  font-weight: 700;
+  font-size: 26px;
+  letter-spacing: -0.01em;
+  color: var(--sub-on-light);
+  opacity: var(--o, 0);
+  filter: blur(calc(var(--b, 0) * 1px));
+  white-space: nowrap;
+}
+/* 9:16 stacks two rows of phones, so a label can sit over the row behind: give it a chip. */
+#stage[data-format='9x16'] .board-label {
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: color-mix(in srgb, #fff 88%, transparent);
+  box-shadow: 0 4px 14px rgba(40, 20, 80, 0.12);
+  color: var(--ink-on-light);
+  font-size: 24px;
+}
+
+/* --- callouts -------------------------------------------------------------------- */
+
+/*
+ * Sized for a phone: the 16:9 cut plays ~390 CSS px wide, a fifth of its
+ * size, so labels are 36 px (7.3 px there) and strokes 4 px. 9:16 plays at
+ * 0.36x: 32 px labels (11.6 px). render.ts SHOWCASE_CALLOUT_LAYOUT keeps the
+ * same numbers for the layout.
+ */
+.callout-box {
+  stroke-width: 4;
+}
+.callout-leader {
+  fill: none;
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.callout[data-role='start'] {
+  --role: var(--role-start);
+}
+.callout[data-role='hand'] {
+  --role: var(--role-hand);
+}
+.callout[data-role='finish'] {
+  --role: var(--role-finish);
+}
+.callout {
+  color: var(--role);
+  fill: currentColor;
+  stroke: currentColor;
+  filter: drop-shadow(0 0 7px color-mix(in srgb, var(--role) 70%, transparent));
+}
+/*
+ * Lavender scenes: the LED hues vanish on #F4F1FB, so the same roles draw a
+ * step darker (each >= 3:1 on the background), with a soft shadow in place of
+ * the glow and a bordered pill.
+ */
+.callout.tone-light[data-role='start'] {
+  --role: var(--role-start-light, #047857);
+}
+.callout.tone-light[data-role='hand'] {
+  --role: var(--role-hand-light, #0e7490);
+}
+.callout.tone-light[data-role='finish'] {
+  --role: var(--role-finish-light, #a21caf);
+}
+.callout.tone-light {
+  filter: drop-shadow(0 2px 5px color-mix(in srgb, var(--role) 30%, transparent));
+}
+.pill {
+  --pill-h: 84px;
+  position: absolute;
+  left: calc(var(--px) * 1px);
+  top: calc(var(--py) * 1px - var(--pill-h) / 2);
+  height: var(--pill-h);
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 0 36px 0 28px;
+  border-radius: calc(var(--pill-h) / 2);
+  background: #fff;
+  color: var(--ink-on-light);
+  font-weight: 700;
+  font-size: 36px;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  box-shadow:
+    0 14px 34px rgba(5, 2, 12, 0.45),
+    0 2px 6px rgba(5, 2, 12, 0.3);
+  opacity: var(--o, 0);
+  transform: scale(var(--k, 0.9));
+  transform-origin: 0 50%;
+  will-change: transform, opacity;
+}
+.pill.tone-light {
+  border: 1.5px solid rgba(22, 17, 31, 0.12);
+  box-shadow:
+    0 10px 26px rgba(40, 20, 80, 0.14),
+    0 1px 3px rgba(40, 20, 80, 0.12);
+  filter: none;
+}
+.pill .dot {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--role);
+  box-shadow:
+    0 0 0 3px rgba(22, 17, 31, 0.1),
+    0 0 10px color-mix(in srgb, var(--role) 80%, transparent);
+  flex: none;
+}
+.pill.tone-light .dot {
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--role) 16%, transparent);
+}
+.pill[data-portrait='true'] {
+  --pill-h: 72px;
+  width: 336px;
+  justify-content: center;
+  gap: 14px;
+  padding: 0 20px;
+  font-size: 32px;
+}
+.pill[data-portrait='true'] .dot {
+  width: 18px;
+  height: 18px;
+}
+.pill[data-side='left'] {
+  transform-origin: 100% 50%;
+}
+
+/* --- workouts checklist (dark scene) --------------------------------------------------- */
+
+.checklist {
+  position: absolute;
+  left: 144px;
+  top: 404px;
+  width: 700px;
+  opacity: var(--on, 0);
+}
+.row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 70px;
+  gap: 18px;
+  padding: 0 14px;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--ink) calc(var(--hi, 0) * 7%), transparent);
+  opacity: var(--o, 0);
+  filter: blur(calc(var(--b, 0) * 1px));
+  transform: translateX(calc(var(--x, 0) * 1px));
+}
+.check {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  flex: none;
+}
+.check svg {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+}
+.check .ring {
+  fill: none;
+  stroke: color-mix(in srgb, var(--ink) 30%, transparent);
+  stroke-width: 2.5;
+}
+.check .fill {
+  fill: var(--glow-dark);
+}
+.check .tick {
+  fill: none;
+  stroke: #fff;
+  stroke-width: 3.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.row .chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 58px;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 10px;
+  background: var(--chip-bg);
+  color: var(--chip-ink);
+  font-weight: 800;
+  font-size: 22px;
+  letter-spacing: -0.01em;
+  flex: none;
+}
+.row .name {
+  font-weight: 700;
+  font-size: 38px;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.row .rest {
+  position: relative;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 190px;
+  height: 44px;
+}
+.row .time {
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-weight: 500;
+  font-size: 24px;
+  color: var(--sub);
+  opacity: var(--time-o, 1);
+}
+.rest-timer {
+  position: absolute;
+  right: 0;
+  top: 0;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 16px 0 10px;
+  border-radius: 22px;
+  background: color-mix(in srgb, var(--amber) 16%, transparent);
+  color: var(--ink);
+  opacity: var(--timer-o, 0);
+}
+.rest-timer svg {
+  overflow: visible;
+  transform: rotate(-90deg);
+}
+.rest-track {
+  fill: none;
+  stroke: color-mix(in srgb, var(--amber) 30%, transparent);
+  stroke-width: 3.5;
+}
+.rest-ring {
+  fill: none;
+  stroke: var(--amber);
+  stroke-width: 3.5;
+  stroke-linecap: round;
+}
+.rest-label {
+  font-weight: 700;
+  font-size: 22px;
+}
+.rest-digits {
+  position: relative;
+  width: 70px;
+  height: 30px;
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-weight: 500;
+  font-size: 24px;
+}
+.rest-digits .digit {
+  position: absolute;
+  inset: 0;
+  line-height: 30px;
+  opacity: var(--digit-on, 0);
+}
+.progress {
+  position: relative;
+  height: 4px;
+  margin: 16px 14px 0 68px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--ink) 12%, transparent);
+  opacity: var(--track-o, 0);
+}
+.progress .fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: calc(var(--p, 0) * 100%);
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+/* --- outro ------------------------------------------------------------------------------ */
+
+.outro {
+  position: absolute;
+  inset: 0;
+  opacity: var(--on, 0);
+}
+.outro-el {
+  position: absolute;
+  left: 50%;
+  top: calc(var(--top) * 1px);
+  transform: translate(-50%, calc(var(--y, 0) * 1px)) scale(var(--k, 1));
+  opacity: var(--o, 0);
+  filter: blur(calc(var(--b, 0) * 1px));
+  white-space: nowrap;
+  will-change: transform, opacity, filter;
+}
+.outro .mark {
+  width: 168px;
+  height: 168px;
+  display: block;
+}
+.outro .wordmark {
+  font-weight: 800;
+  font-size: 168px;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--ink-on-dark);
+}
+.outro .tagline {
+  font-weight: 800;
+  font-size: 76px;
+  line-height: 1;
+  letter-spacing: -0.035em;
+  color: var(--ink-on-dark);
+}
+.outro .tagline .w.accent {
+  font-size: 88px;
+}
+.outro .store-pill {
+  padding: 14px 30px;
+  border-radius: 999px;
+  border: 2px solid color-mix(in srgb, var(--ink-on-dark) 32%, transparent);
+  color: var(--ink-on-dark);
+  font-weight: 600;
+  font-size: 28px;
+  letter-spacing: -0.005em;
+}
+.outro .donation-line {
+  color: color-mix(in srgb, var(--ink-on-dark) 80%, transparent);
+  font-weight: 500;
+  font-size: 28px;
+  letter-spacing: -0.005em;
+}
+#outroDots .zig {
+  fill: none;
+  stroke: url(#lineGradientOutro);
+  stroke-width: 5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* --- measure overlay ---------------------------------------------------------------------- */
+
+.measure rect {
+  fill: rgba(255, 60, 60, 0.12);
+  stroke: #ff3c3c;
+  stroke-width: 2;
+  stroke-dasharray: 6 4;
+}
+.measure text {
+  fill: #ff3c3c;
+  font:
+    700 16px 'Geist Mono',
+    monospace;
+}
+.measure .cross {
+  stroke: #ffe14d;
+  stroke-width: 2;
+}
+
+/* --- 9:16 --------------------------------------------------------------------------------- */
+
+#stage[data-format='9x16'] .headline {
+  left: 96px;
+  top: 180px;
+  width: 888px;
+  transform: none;
+  font-size: 88px;
+}
+#stage[data-format='9x16'] .w.accent {
+  font-size: 102px;
+}
+#stage[data-format='9x16'] .headline[data-scene='boards'] {
+  left: 0;
+  width: 100%;
+  top: 180px;
+}
+#stage[data-format='9x16'] .headline[data-scene='boards'] .line {
+  display: block;
+}
+#stage[data-format='9x16'] .headline[data-scene='workouts'] {
+  top: 180px;
+}
+#stage[data-format='9x16'] .checklist {
+  left: 96px;
+  top: 440px;
+  width: 888px;
+}
+#stage[data-format='9x16'] .outro .wordmark {
+  font-size: 150px;
+}
+#stage[data-format='9x16'] .outro .tagline {
+  font-size: 70px;
+}
+#stage[data-format='9x16'] .outro .donation-line {
+  font-size: 32px;
+}
+#stage[data-format='9x16'] .outro .tagline .w.accent {
+  font-size: 80px;
+}

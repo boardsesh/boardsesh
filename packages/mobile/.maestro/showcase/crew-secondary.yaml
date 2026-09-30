@@ -1,0 +1,39 @@
+appId: com.boardsesh.app
+name: showcase take - crew, the second phone adds a climb
+---
+# Take: crew, SECONDARY phone (not recorded)
+#
+# Signed in as the second account, already joined to the primary's session
+# (crew-join.yaml) and sitting on the Climbs tab. The recorder starts this flow
+# BEFORE it starts recording the primary and waits for its `secondary-ready`
+# mark, so Maestro's 4-7 s attach is spent before the take instead of inside it.
+#
+# It then polls the recorder's signal server until crew.yaml raises `crew-add`
+# (the primary's queue sheet is open), and swipes one climb row left-to-right,
+# which adds it to the session queue. The primary films the row arriving.
+#
+# Coordinates (iPhone 16 Pro Max portrait):
+#   15%,35% -> 85%,35%  a left-to-right swipe on the SECOND climb row (the first
+#                       is the climb already playing)
+
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/secondary-ready')}
+- evalScript: ${output.crewAdd = 'wait'}
+
+# Up to ~2 minutes; the recorder fails the take long before that.
+- repeat:
+    times: 120
+    while:
+      true: ${output.crewAdd != 'go'}
+    commands:
+      - evalScript: ${output.crewAdd = http.get(SHOWCASE_SIGNAL_URL + '/signal/crew-add').body.trim()}
+      - extendedWaitUntil:
+          visible: 'zzz-showcase-pause'
+          timeout: 200
+          optional: true
+
+- swipe:
+    start: '15%,35%'
+    end: '85%,35%'
+    duration: 600
+- waitForAnimationToEnd
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/crew-added')}
