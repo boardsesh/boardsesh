@@ -1,12 +1,13 @@
 {
   "sprayDetection": {
-    "queued": "Your photo is queued for hold recognition.",
-    "running": "Finding holds in your photo…",
+    "queued": "Getting in line…",
+    "running": "Looking for holds…",
+    "slow": "Busy walls take a little longer",
     "connection": "Can't reach your recognition job. Try again when you're connected.",
     "failed": "We couldn't finish finding holds. Your photo is saved.",
     "resumeHint": "You can leave and resume later. Your published wall stays unchanged.",
     "retry": "Try again",
-    "manual": "Place holds myself",
+    "manual": "Mark holds myself",
     "resume": "Resume this reset"
   },
   "mobile": {
@@ -776,7 +777,8 @@
       "maybes_other": "{{count}} maybes",
       "withMaybes": "{{holds}} · {{maybes}}",
       "undo": "Undo",
-      "menuHint": "Opens options for all your holds"
+      "menuHint": "Opens options for all your holds",
+      "saved": "Holds saved"
     },
     "menu": {
       "keepMaybes": "Keep all maybes",
@@ -802,6 +804,13 @@
       "trace": "Draw round the hold with one finger",
       "join": "Tap the hold to join it with",
       "cancel": "Cancel"
+    },
+    "hints": {
+      "toggle": "Tap a ring to switch it off. Tap bare wall to add a hold.",
+      "maybe": "Dashed rings are maybes. Tap one to keep it.",
+      "longPress": "Press and hold a ring to fix its size, spot or shape.",
+      "dismiss": "Hide tip",
+      "replay": "Show tips"
     },
     "a11y": {
       "wall": "Your wall photo: {{summary}}",

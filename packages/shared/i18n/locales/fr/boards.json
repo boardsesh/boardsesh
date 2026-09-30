@@ -1,12 +1,13 @@
 {
   "sprayDetection": {
-    "queued": "Ta photo attend la reconnaissance des prises.",
-    "running": "Recherche des prises sur ta photo…",
+    "queued": "En file d'attente…",
+    "running": "Recherche des prises…",
+    "slow": "Les murs très chargés prennent un peu plus de temps",
     "connection": "La reconnaissance est inaccessible. Réessaie une fois connecté·e.",
     "failed": "La recherche des prises n'a pas abouti. Ta photo est enregistrée.",
     "resumeHint": "Tu peux quitter et reprendre plus tard. Ton mur publié reste inchangé.",
     "retry": "Réessayer",
-    "manual": "Placer les prises à la main",
+    "manual": "Marquer les prises moi-même",
     "resume": "Reprendre cette réinitialisation"
   },
   "mobile": {
@@ -776,7 +777,8 @@
       "maybes_other": "{{count}} incertaines",
       "withMaybes": "{{holds}} · {{maybes}}",
       "undo": "Annuler",
-      "menuHint": "Ouvre les options pour toutes tes prises"
+      "menuHint": "Ouvre les options pour toutes tes prises",
+      "saved": "Prises enregistrées"
     },
     "menu": {
       "keepMaybes": "Garder toutes les incertaines",
@@ -802,6 +804,13 @@
       "trace": "Dessine le tour de la prise avec un doigt",
       "join": "Touche la prise à réunir avec celle-ci",
       "cancel": "Annuler"
+    },
+    "hints": {
+      "toggle": "Touche un cercle pour le désactiver. Touche le mur vide pour ajouter une prise.",
+      "maybe": "Les cercles en pointillés sont des prises incertaines. Touches-en une pour la garder.",
+      "longPress": "Appuie longuement sur un cercle pour corriger sa taille, sa place ou sa forme.",
+      "dismiss": "Masquer l'astuce",
+      "replay": "Voir les astuces"
     },
     "a11y": {
       "wall": "Photo de ton mur : {{summary}}",

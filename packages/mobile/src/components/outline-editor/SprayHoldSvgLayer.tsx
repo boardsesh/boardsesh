@@ -1,13 +1,14 @@
 import React, { useMemo, useState } from 'react';
 import { StyleSheet } from 'react-native';
 import Animated, { runOnJS, useAnimatedProps, useAnimatedReaction, type SharedValue } from 'react-native-reanimated';
-import Svg, { Path } from 'react-native-svg';
+import Svg, { G, Path } from 'react-native-svg';
 import { overlays } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
 import { holdRole, type SprayEditorHold } from './spray-hold-editor-reducer';
 import { holdPathData } from './spray-hold-path';
 
 const AnimatedPath = Animated.createAnimatedComponent(Path);
+const AnimatedG = Animated.createAnimatedComponent(G);
 
 /**
  * The zoom levels the ring strokes are re-thickened at.
@@ -66,6 +67,11 @@ type SprayHoldSvgLayerProps = {
    * the ghost marks where the hold came from.
    */
   selectedId: number | null;
+  /**
+   * The maybes' opacity, 0–1. The reveal fades them in after the ON rings have
+   * swept in; one group's opacity on the UI thread, never a re-render.
+   */
+  maybeOpacitySV: SharedValue<number>;
   /** The live stroke in board px, written by `DrawStrokeOverlay` during Trace. */
   draftPointsSV: SharedValue<number[]>;
   /** The board's live zoom, from `FilterBoardTransformContext`. */
@@ -82,7 +88,7 @@ type SprayHoldSvgLayerProps = {
  * Concatenated by ROLE rather than per hold, exactly as `OutlineSvgLayer` does
  * and for the same reason: a wall may carry 1500 holds, and one `<Path>` each
  * would be 1500 native views to mount and diff on a phone. Three roles, two of
- * them doubled for the halo, plus the live Trace stroke is six nodes however big
+ * them doubled for the halo, plus the live Trace stroke is eight nodes however big
  * the wall is. Each hold's path string is built only when the holds change; a
  * selection only re-joins the buckets, moving the selected hold into the OFF
  * bucket as a ghost while `SelectedHoldOverlay` draws its ring.
@@ -94,6 +100,7 @@ export const SprayHoldSvgLayer = React.memo(function SprayHoldSvgLayer({
   holds,
   showMaybes,
   selectedId,
+  maybeOpacitySV,
   draftPointsSV,
   scaleSV,
   boardWidth,
@@ -153,6 +160,8 @@ export const SprayHoldSvgLayer = React.memo(function SprayHoldSvgLayer({
     return { d: path };
   });
 
+  const maybeGroupProps = useAnimatedProps(() => ({ opacity: maybeOpacitySV.value }));
+
   if (renderWidth <= 0 || renderHeight <= 0) return null;
 
   const maybePath = showMaybes ? buckets.maybe : '';
@@ -175,22 +184,24 @@ export const SprayHoldSvgLayer = React.memo(function SprayHoldSvgLayer({
         strokeLinecap="round"
         vectorEffect="non-scaling-stroke"
       />
-      <Path
-        d={maybePath}
-        fill="none"
-        stroke={overlays.scrim}
-        strokeWidth={stroke.maybeHalo}
-        strokeDasharray={stroke.maybeDash}
-        vectorEffect="non-scaling-stroke"
-      />
-      <Path
-        d={maybePath}
-        fill="none"
-        stroke={brandColors.accent}
-        strokeWidth={stroke.maybe}
-        strokeDasharray={stroke.maybeDash}
-        vectorEffect="non-scaling-stroke"
-      />
+      <AnimatedG animatedProps={maybeGroupProps}>
+        <Path
+          d={maybePath}
+          fill="none"
+          stroke={overlays.scrim}
+          strokeWidth={stroke.maybeHalo}
+          strokeDasharray={stroke.maybeDash}
+          vectorEffect="non-scaling-stroke"
+        />
+        <Path
+          d={maybePath}
+          fill="none"
+          stroke={brandColors.accent}
+          strokeWidth={stroke.maybe}
+          strokeDasharray={stroke.maybeDash}
+          vectorEffect="non-scaling-stroke"
+        />
+      </AnimatedG>
       <Path
         d={buckets.on}
         fill="none"

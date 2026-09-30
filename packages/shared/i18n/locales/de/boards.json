@@ -1,12 +1,13 @@
 {
   "sprayDetection": {
-    "queued": "Dein Foto wartet auf die Grifferkennung.",
-    "running": "Griffe auf deinem Foto werden gesucht…",
+    "queued": "In der Warteschlange…",
+    "running": "Suche nach Griffen…",
+    "slow": "Volle Wände dauern etwas länger",
     "connection": "Die Grifferkennung ist nicht erreichbar. Versuch es mit Verbindung erneut.",
     "failed": "Die Grifferkennung konnte nicht abgeschlossen werden. Dein Foto ist gespeichert.",
     "resumeHint": "Du kannst später weitermachen. Deine veröffentlichte Wand bleibt unverändert.",
     "retry": "Erneut versuchen",
-    "manual": "Griffe selbst platzieren",
+    "manual": "Griffe selbst markieren",
     "resume": "Dieses Zurücksetzen fortsetzen"
   },
   "mobile": {
@@ -776,7 +777,8 @@
       "maybes_other": "{{count}} unsichere",
       "withMaybes": "{{holds}} · {{maybes}}",
       "undo": "Rückgängig",
-      "menuHint": "Öffnet Optionen für alle deine Griffe"
+      "menuHint": "Öffnet Optionen für alle deine Griffe",
+      "saved": "Griffe gespeichert"
     },
     "menu": {
       "keepMaybes": "Alle unsicheren behalten",
@@ -802,6 +804,13 @@
       "trace": "Zeichne mit einem Finger um den Griff",
       "join": "Tippe auf den Griff, mit dem er verbunden wird",
       "cancel": "Abbrechen"
+    },
+    "hints": {
+      "toggle": "Tippe auf einen Kreis, um ihn auszuschalten. Tippe auf freie Wand, um einen Griff hinzuzufügen.",
+      "maybe": "Gestrichelte Kreise sind unsichere Griffe. Tippe auf einen, um ihn zu behalten.",
+      "longPress": "Halte einen Kreis gedrückt, um Größe, Position oder Form anzupassen.",
+      "dismiss": "Tipp ausblenden",
+      "replay": "Tipps zeigen"
     },
     "a11y": {
       "wall": "Foto deiner Wand: {{summary}}",

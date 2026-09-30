@@ -7,16 +7,25 @@ import {
   type LayoutChangeEvent,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useSharedValue } from 'react-native-reanimated';
+import Animated, {
+  runOnJS,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
 import { MAX_HOLDS_PER_WALL } from '@boardsesh/board-config';
 import { Text } from '../Text';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { InteractiveFilterBoard, type FilterBoardTransformContext } from '../search/InteractiveFilterBoard';
+import { GlassIconButton } from '../GlassIconButton';
+import { OnboardingTipBanner } from '../onboarding/OnboardingTipBanner';
 import { useTheme } from '../../providers/theme-provider';
 import { overlays, spacing } from '../../theme/tokens';
 import { glassSize } from '../../theme/layout';
-import { hapticLight, hapticMedium, hapticSelection, hapticWarning } from '../../lib/haptics';
+import { timingFor } from '../../theme/motion-config';
+import { hapticLight, hapticMedium, hapticSelection, hapticSuccess, hapticWarning } from '../../lib/haptics';
 import { extractGraphqlMessage } from '../../lib/graphql/extract-error-message';
 import { SPRAY_CAP_VALUES } from '../../lib/spray/spray-cap-copy';
 import type { BoardHoldTarget } from '../../lib/create-board-holds';
@@ -27,9 +36,15 @@ import { DrawStrokeOverlay } from './DrawStrokeOverlay';
 import { SprayHoldSvgLayer } from './SprayHoldSvgLayer';
 import { SelectedHoldOverlay } from './SelectedHoldOverlay';
 import { SprayEditGestureOverlay, type SprayWallAccessibility } from './SprayEditGestureOverlay';
-import { SprayEditorBottomBar, SPRAY_BAR_GUTTER, SPRAY_BAR_HEIGHT, sprayCountSummary } from './SprayEditorBottomBar';
+import { SprayEditorBottomBar, sprayCountSummary } from './SprayEditorBottomBar';
 import { SprayHoldChipBar } from './SprayHoldChipBar';
 import { SprayEditorBanner } from './SprayEditorBanner';
+import { SprayScanBand, SCAN_BAND_HEIGHT } from './SprayScanBand';
+import { SprayHoldSpotlight } from './SprayHoldSpotlight';
+import { SprayPublishSweep, PUBLISH_SWEEP_MS } from './SprayPublishSweep';
+import { fitSprayPhoto, SPRAY_BAR_GUTTER, SPRAY_BAR_HEIGHT } from './spray-photo-frame';
+import { revertedHold, type SpraySpotlightKind, type SpraySpotlightPulse } from './spray-spotlight';
+import { useSprayEditorHints, type SprayHintId } from './use-spray-editor-hints';
 import { renderToBoardScale, type StrokeRejection } from './stroke';
 import { planHasWork, prepareCommit } from './spray-hold-writes';
 import {
@@ -40,6 +55,7 @@ import {
   sprayEditorSeedKey,
 } from './spray-hold-seed';
 import type { SprayHoldCandidate, SprayHoldSaveSummary } from './spray-hold-editor-types';
+import type { HoldGeometry } from './spray-hold-tools';
 import { editorTargetCapabilities, type SprayWallEditorTarget } from './editor-target';
 import { fallbackRadiusAt, flattenHitHolds } from './spray-gesture-math';
 import {
@@ -62,12 +78,19 @@ import {
   toRingPoints,
 } from './spray-hold-tools';
 
-/**
- * Vertical room kept free under the photo for the floating bottom bar: the bar,
- * the gutter under it and a matching gap above it. The safe-area inset is added
- * on top.
- */
-const BAR_RESERVE = SPRAY_BAR_HEIGHT + SPRAY_BAR_GUTTER * 3;
+/** The ring reveal's sweep down the wall, after a fresh scan. */
+const REVEAL_MS = 700;
+/** The maybes' fade once the ON rings are in. */
+const MAYBE_FADE_MS = 250;
+/** The whole reveal, when Reduce Motion turns it into a fade. */
+const REVEAL_FADE_MS = 150;
+/** How long the publish moment plays before the editor hands over. */
+const CELEBRATION_MS = PUBLISH_SWEEP_MS + 250;
+/** The same, with Reduce Motion: long enough to read the checkmark. */
+const CELEBRATION_REDUCED_MS = 450;
+
+/** Screenshot captures never show a hint over the wall. */
+const SCREENSHOT_MODE = process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1';
 
 const NO_POINTS: number[] = [];
 const NO_HOLD_TARGETS: BoardHoldTarget[] = [];
@@ -127,6 +150,12 @@ export type SprayHoldEditorScreenProps = {
   viewerCanEdit: boolean;
   /** Detector output. Omit for the manual-only, zero-detection flow. */
   candidates?: readonly SprayHoldCandidate[];
+  /**
+   * The rings have just been found: sweep them in from the top on first show,
+   * then fade the maybes in. Only after a fresh scan. A resumed draft opens
+   * with its holds already there.
+   */
+  revealOnMount?: boolean;
   /** The bottom bar's one filled button — "Publish wall" on the add-a-wall flow. */
   primaryLabel: string;
   /** Shown over an empty wall: why there are no rings, and optionally a way to try again. */
@@ -169,12 +198,14 @@ export function SprayHoldEditorScreen({
   versionNumber,
   viewerCanEdit,
   candidates,
+  revealOnMount = false,
   primaryLabel,
   notice,
   onCommitted,
   onDirtyChange,
 }: SprayHoldEditorScreenProps) {
-  const { systemColors } = useTheme();
+  const { systemColors, motion } = useTheme();
+  const reduceMotion = useReducedMotion();
   const { t } = useTranslation('boards');
   const insets = useSafeAreaInsets();
 
@@ -198,6 +229,12 @@ export function SprayHoldEditorScreen({
   const [joinCursorId, setJoinCursorId] = useState<number | null>(null);
   const [area, setArea] = useState({ width: 0, height: 0 });
   const [state, dispatch] = useReducer(sprayEditorReducer, undefined, () => initialSprayEditorState());
+  /** The first seed has run, so "no holds" now means no holds rather than not loaded yet. */
+  const [seeded, setSeeded] = useState(false);
+  const [revealDone, setRevealDone] = useState(!revealOnMount);
+  const [spotlight, setSpotlight] = useState<SpraySpotlightPulse | null>(null);
+  /** The holds are saved and the publish moment is playing, just before the hand-over. */
+  const [celebrating, setCelebrating] = useState(false);
 
   const draftPointsSV = useSharedValue<number[]>(NO_POINTS);
   // The wall target draws with a finger — there is no Pencil in a garage.
@@ -207,8 +244,28 @@ export function SprayHoldEditorScreen({
   const dragOffsetXSV = useSharedValue(0);
   const dragOffsetYSV = useSharedValue(0);
   const dragHoldIdSV = useSharedValue(0);
-  /** A commit is in flight. A ref as well as the mutation's flag, so a double press is refused synchronously. */
+  /** The reveal's progress: the ring layer's clip height, or its opacity with Reduce Motion. */
+  const revealSV = useSharedValue(revealOnMount ? 0 : 1);
+  const maybeRevealSV = useSharedValue(revealOnMount ? 0 : 1);
+  const revealStartedRef = useRef(false);
+  const spotlightKeyRef = useRef(0);
+  /**
+   * A commit is in flight, or its publish moment is still playing. A ref as well
+   * as the mutation's flag, so a double press is refused synchronously.
+   */
   const committingRef = useRef(false);
+  const handoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onCommittedRef = useRef(onCommitted);
+  onCommittedRef.current = onCommitted;
+  const reduceMotionRef = useRef(reduceMotion);
+  reduceMotionRef.current = reduceMotion;
+
+  useEffect(
+    () => () => {
+      if (handoverTimerRef.current != null) clearTimeout(handoverTimerRef.current);
+    },
+    [],
+  );
 
   useEffect(() => {
     fingerDrawSV.value = capabilities.fingerDrawDefault;
@@ -268,6 +325,7 @@ export function SprayHoldEditorScreen({
     const seed = buildEditorSeed(wall, candidates ?? [], seedIncludesCandidates(reason), carryOver);
     seedHoldsRef.current = seed;
     dispatch({ type: 'LOAD', holds: seed });
+    setSeeded(true);
   }, [wall, seedKey, candidates]);
 
   const handleAreaLayout = useCallback((event: LayoutChangeEvent) => {
@@ -278,16 +336,21 @@ export function SprayHoldEditorScreen({
   // Full width, fitted to the height the bottom bar leaves free. `slotHeight` is
   // that free height: the photo is centred in it, so a landscape wall sits in
   // the middle of the screen rather than pinned to the top over a black void.
-  const boardRender = useMemo(() => {
-    if (!wall || area.width <= 0) return { width: 0, height: 0, slotHeight: 0 };
-    const boardAspect = wall.photoWidth / wall.photoHeight;
-    const availableWidth = area.width;
-    const availableHeight = Math.max(200, area.height - insets.bottom - BAR_RESERVE);
-    if (availableWidth / availableHeight > boardAspect) {
-      return { width: availableHeight * boardAspect, height: availableHeight, slotHeight: availableHeight };
-    }
-    return { width: availableWidth, height: availableWidth / boardAspect, slotHeight: availableHeight };
-  }, [wall, area.width, area.height, insets.bottom]);
+  // The scan step fits its photo the same way, so the rings land where the
+  // scan band was.
+  const photoWidth = wall?.photoWidth ?? 0;
+  const photoHeight = wall?.photoHeight ?? 0;
+  const boardRender = useMemo(
+    () =>
+      fitSprayPhoto({
+        areaWidth: area.width,
+        areaHeight: area.height,
+        bottomInset: insets.bottom,
+        photoWidth,
+        photoHeight,
+      }),
+    [area.width, area.height, insets.bottom, photoWidth, photoHeight],
+  );
 
   const boardScale = renderToBoardScale(wall?.photoWidth ?? 0, boardRender.width);
 
@@ -359,11 +422,70 @@ export function SprayHoldEditorScreen({
   const announceNextRef = useRef(false);
 
   const committing = saveHolds.isPending;
-  const canEdit = viewerCanEdit && !committing;
+  const canEdit = viewerCanEdit && !committing && !celebrating;
   const canEditRef = useRef(canEdit);
   canEditRef.current = canEdit;
   const toolRef = useRef(tool);
   toolRef.current = tool;
+
+  const hints = useSprayEditorHints({
+    enabled: viewerCanEdit && !SCREENSHOT_MODE,
+    hasMaybes: showMaybes && counts.maybes > 0,
+  });
+  const recordHint = hints.record;
+
+  // The reveal, once per mount and only after a fresh scan: the ring layer's
+  // clip grows from the top of the photo to the bottom on the UI thread, the
+  // maybes fade in after it, and one success buzz closes it. Waits for the first
+  // seed and a laid-out board, so it plays over rings that are really there.
+  const holdCount = allEditorHolds.length;
+  useEffect(() => {
+    if (!revealOnMount || revealStartedRef.current || !seeded || boardRender.height <= 0) return;
+    revealStartedRef.current = true;
+    if (holdCount === 0) {
+      revealSV.value = 1;
+      maybeRevealSV.value = 1;
+      setRevealDone(true);
+      return;
+    }
+    const finish = () => {
+      hapticSuccess();
+      setRevealDone(true);
+    };
+    if (reduceMotion) {
+      maybeRevealSV.value = withTiming(1, { duration: REVEAL_FADE_MS });
+      revealSV.value = withTiming(1, { duration: REVEAL_FADE_MS }, (finished) => {
+        if (finished) runOnJS(finish)();
+      });
+      return;
+    }
+    revealSV.value = withTiming(1, { ...timingFor(motion.emphasized), duration: REVEAL_MS }, (finished) => {
+      if (!finished) return;
+      maybeRevealSV.value = withTiming(1, { duration: MAYBE_FADE_MS });
+      runOnJS(finish)();
+    });
+  }, [revealOnMount, seeded, boardRender.height, holdCount, reduceMotion, motion.emphasized, revealSV, maybeRevealSV]);
+
+  const renderHeight = boardRender.height;
+  const revealClipStyle = useAnimatedStyle(() => {
+    if (reduceMotion) return { height: renderHeight, opacity: revealSV.value };
+    return { height: revealSV.value * renderHeight, opacity: 1 };
+  }, [reduceMotion, renderHeight]);
+  // The scan band rides the reveal's leading edge, so the scan step's sweep
+  // reads as turning into the rings.
+  const revealBandStyle = useAnimatedStyle(() => {
+    const progress = revealSV.value;
+    return {
+      opacity: progress > 0 && progress < 1 ? 1 : 0,
+      transform: [{ translateY: progress * renderHeight - SCAN_BAND_HEIGHT }],
+    };
+  }, [renderHeight]);
+
+  /** Mark one hold with the spotlight. A fresh key every time, so a repeat still plays. */
+  const pulseSpotlight = useCallback((kind: SpraySpotlightKind, hold: HoldGeometry) => {
+    spotlightKeyRef.current += 1;
+    setSpotlight({ key: spotlightKeyRef.current, kind, hold });
+  }, []);
 
   // A one-shot tool needs its hold. An undo that took the selection away ends it.
   useEffect(() => {
@@ -401,9 +523,11 @@ export function SprayHoldEditorScreen({
       if (turningOn) hapticLight();
       else hapticSelection();
       dispatch({ type: 'TOGGLE_HOLD', id: hold.id });
+      pulseSpotlight('toggle', hold);
+      recordHint(holdRole(hold) === 'maybe' ? 'maybe' : 'toggle');
       return true;
     },
-    [refuseOverCap],
+    [refuseOverCap, pulseSpotlight, recordHint],
   );
 
   const handleTap = useCallback(
@@ -426,6 +550,7 @@ export function SprayHoldEditorScreen({
         if (hit && current.selectedId != null && hit.id !== current.selectedId) {
           hapticMedium();
           dispatch({ type: 'MERGE', ids: [current.selectedId, hit.id] });
+          recordHint('edit');
           setTool('edit');
         }
         return;
@@ -451,29 +576,37 @@ export function SprayHoldEditorScreen({
         return;
       }
       hapticMedium();
-      dispatch({ type: 'ADD_HOLD', geometry: holdFromTap(boardX, boardY, medianRadiusRef.current) });
+      const geometry = holdFromTap(boardX, boardY, medianRadiusRef.current);
+      dispatch({ type: 'ADD_HOLD', geometry });
+      pulseSpotlight('add', geometry);
+      recordHint('add');
     },
-    [boardScale, refuseOverCap, toggleHold],
+    [boardScale, refuseOverCap, toggleHold, pulseSpotlight, recordHint],
   );
 
-  const handlePickUp = useCallback((holdId: number) => {
-    if (!canEditRef.current || toolRef.current !== 'edit') return;
-    setErrorText(null);
-    hapticSelection();
-    dispatch({ type: 'SELECT', id: holdId });
-  }, []);
+  const handlePickUp = useCallback(
+    (holdId: number) => {
+      if (!canEditRef.current || toolRef.current !== 'edit') return;
+      setErrorText(null);
+      hapticSelection();
+      dispatch({ type: 'SELECT', id: holdId });
+      recordHint('longPress');
+    },
+    [recordHint],
+  );
 
   const handleMoveEnd = useCallback(
     (holdId: number, deltaX: number, deltaY: number) => {
       const hold = stateRef.current.holds[holdId];
       if (canEditRef.current && hold && !editWouldPassCap(hold)) {
         dispatch({ type: 'MOVE_HOLD', id: holdId, cx: hold.cx + deltaX, cy: hold.cy + deltaY });
+        recordHint('edit');
       }
       // Always, so the preview re-syncs to the reducer's answer — including a
       // refused move, which snaps back.
       setMoveRevision((revision) => revision + 1);
     },
-    [editWouldPassCap],
+    [editWouldPassCap, recordHint],
   );
 
   const shrinkTo = selectedHold ? stepHoldSize(selectedHold.r, medianRadius, -1) : null;
@@ -483,13 +616,15 @@ export function SprayHoldEditorScreen({
     if (!canEdit || !selectedHold || shrinkTo == null || editWouldPassCap(selectedHold)) return;
     hapticSelection();
     dispatch({ type: 'RESIZE_HOLD', id: selectedHold.id, r: shrinkTo });
-  }, [canEdit, selectedHold, shrinkTo, editWouldPassCap]);
+    recordHint('edit');
+  }, [canEdit, selectedHold, shrinkTo, editWouldPassCap, recordHint]);
 
   const handleGrow = useCallback(() => {
     if (!canEdit || !selectedHold || growTo == null || editWouldPassCap(selectedHold)) return;
     hapticSelection();
     dispatch({ type: 'RESIZE_HOLD', id: selectedHold.id, r: growTo });
-  }, [canEdit, selectedHold, growTo, editWouldPassCap]);
+    recordHint('edit');
+  }, [canEdit, selectedHold, growTo, editWouldPassCap, recordHint]);
 
   const handleStartTrace = useCallback(() => {
     setErrorText(null);
@@ -513,7 +648,8 @@ export function SprayHoldEditorScreen({
     if (!canEdit || state.selectedId == null) return;
     hapticSelection();
     dispatch({ type: 'DELETE', id: state.selectedId });
-  }, [canEdit, state.selectedId]);
+    recordHint('edit');
+  }, [canEdit, state.selectedId, recordHint]);
 
   const handleStrokeStart = useCallback(() => setErrorText(null), []);
   const handleStrokeCancel = useCallback(() => {
@@ -541,16 +677,23 @@ export function SprayHoldEditorScreen({
       }
       hapticMedium();
       dispatch({ type: 'SET_OUTLINE', id: targetId, geometry: drawn.hold });
+      recordHint('edit');
       setTool('edit');
     },
-    [draftPointsSV, editWouldPassCap, t],
+    [draftPointsSV, editWouldPassCap, t, recordHint],
   );
 
   const handleUndo = useCallback(() => {
     setErrorText(null);
     hapticSelection();
+    // Worked out before the dispatch, from the snapshot the undo is about to
+    // restore: the hold it changes gets the violet halo.
+    const current = stateRef.current;
+    const restoring = current.past[current.past.length - 1];
+    const reverted = restoring ? revertedHold(current.holds, restoring.holds) : null;
     dispatch({ type: 'UNDO' });
-  }, []);
+    if (reverted) pulseSpotlight('undo', reverted);
+  }, [pulseSpotlight]);
 
   const handleKeepMaybes = useCallback(() => {
     if (!canEditRef.current) return;
@@ -578,6 +721,27 @@ export function SprayHoldEditorScreen({
     dispatch({ type: 'START_OVER', holds: seedHoldsRef.current });
   }, []);
 
+  /**
+   * The holds are on the draft: play the publish moment, then hand over. The
+   * hand-over waits for it because the host moves on (the wizard swaps this
+   * screen for its publish step) the moment `onCommitted` fires. `committingRef`
+   * stays set until then, so the button cannot start a second commit.
+   */
+  const celebrateThenHandOver = useCallback((summary: SprayHoldSaveSummary) => {
+    committingRef.current = true;
+    hapticSuccess();
+    setCelebrating(true);
+    handoverTimerRef.current = setTimeout(
+      () => {
+        handoverTimerRef.current = null;
+        committingRef.current = false;
+        setCelebrating(false);
+        onCommittedRef.current?.(summary);
+      },
+      reduceMotionRef.current ? CELEBRATION_REDUCED_MS : CELEBRATION_MS,
+    );
+  }, []);
+
   const handlePrimary = useCallback(() => {
     if (!viewerCanEdit || homography == null || committingRef.current) return;
     const { state: prepared, plan } = prepareCommit(stateRef.current, homography);
@@ -602,7 +766,7 @@ export function SprayHoldEditorScreen({
     dispatch({ type: 'ACCEPT_DEFAULTS' });
     if (!planHasWork(plan)) {
       // A resumed draft with nothing changed: every hold is already on it.
-      onCommitted?.({ written: 0, removed: 0, holdCount });
+      celebrateThenHandOver({ written: 0, removed: 0, holdCount });
       return;
     }
 
@@ -629,12 +793,11 @@ export function SprayHoldEditorScreen({
       },
       {
         onSuccess: (result) => {
-          committingRef.current = false;
           // Clear the dirty flags NOW rather than waiting for the refetch, so a
           // retry can never re-send holds the server already has.
           dispatch({ type: 'MARK_SAVED', writtenIds: plan.writtenIds });
           awaitingSavedPayloadRef.current = true;
-          onCommitted?.({ ...result, holdCount });
+          celebrateThenHandOver({ ...result, holdCount });
         },
         onError: (error: unknown) => {
           committingRef.current = false;
@@ -643,7 +806,17 @@ export function SprayHoldEditorScreen({
         },
       },
     );
-  }, [viewerCanEdit, homography, refuseOverCap, saveHolds, wallUuid, versionNumber, versionId, onCommitted, t]);
+  }, [
+    viewerCanEdit,
+    homography,
+    refuseOverCap,
+    saveHolds,
+    wallUuid,
+    versionNumber,
+    versionId,
+    celebrateThenHandOver,
+    t,
+  ]);
 
   /**
    * A screen reader's swipe up (`1`) or down (`-1`). Outside Join it selects the
@@ -685,6 +858,7 @@ export function SprayHoldEditorScreen({
       hapticMedium();
       announceNextRef.current = true;
       dispatch({ type: 'MERGE', ids: [current.selectedId, targetId] });
+      recordHint('edit');
       setJoinCursorId(null);
       setTool('edit');
       return;
@@ -695,7 +869,7 @@ export function SprayHoldEditorScreen({
     setErrorText(null);
     announceNextRef.current = true;
     toggleHold(hold);
-  }, [toggleHold]);
+  }, [toggleHold, recordHint]);
 
   /**
    * "Add a hold here" for a screen reader, which has no finger to say where:
@@ -725,10 +899,13 @@ export function SprayHoldEditorScreen({
       // ADD_HOLD takes the next local id; selecting it straight after puts the
       // new ring under the chip bar and the cursor.
       const newId = stateRef.current.nextLocalId;
-      dispatch({ type: 'ADD_HOLD', geometry: holdFromTap(boardX, boardY, medianRadiusRef.current) });
+      const geometry = holdFromTap(boardX, boardY, medianRadiusRef.current);
+      dispatch({ type: 'ADD_HOLD', geometry });
       dispatch({ type: 'SELECT', id: newId });
+      pulseSpotlight('add', geometry);
+      recordHint('add');
     },
-    [refuseOverCap, toggleHold],
+    [refuseOverCap, toggleHold, pulseSpotlight, recordHint],
   );
 
   const handleWallAccessibilityAction = useCallback(
@@ -825,16 +1002,43 @@ export function SprayHoldEditorScreen({
               { backgroundColor: selectedHold ? overlays.photoDimFocused : overlays.photoDim },
             ]}
           />
-          <SprayHoldSvgLayer
-            holds={allEditorHolds}
-            showMaybes={showMaybes}
-            selectedId={selectedHold?.id ?? null}
-            draftPointsSV={draftPointsSV}
+          {/* The reveal clips this box, never the SVG inside it: the ring layer
+              renders once at full size and only the clip's height animates. */}
+          <Animated.View
+            pointerEvents="none"
+            style={[styles.revealClip, { width: boardRender.width }, revealClipStyle]}
+          >
+            <View style={{ width: boardRender.width, height: boardRender.height }}>
+              <SprayHoldSvgLayer
+                holds={allEditorHolds}
+                showMaybes={showMaybes}
+                selectedId={selectedHold?.id ?? null}
+                maybeOpacitySV={maybeRevealSV}
+                draftPointsSV={draftPointsSV}
+                scaleSV={context.scaleSV}
+                boardWidth={wall.photoWidth}
+                boardHeight={wall.photoHeight}
+                renderWidth={boardRender.width}
+                renderHeight={boardRender.height}
+              />
+            </View>
+          </Animated.View>
+          {revealOnMount && !revealDone && !reduceMotion ? <SprayScanBand style={revealBandStyle} /> : null}
+          {celebrating && !reduceMotion ? (
+            <SprayPublishSweep
+              holds={allEditorHolds}
+              scaleSV={context.scaleSV}
+              boardWidth={wall.photoWidth}
+              boardHeight={wall.photoHeight}
+              renderWidth={boardRender.width}
+              renderHeight={boardRender.height}
+            />
+          ) : null}
+          <SprayHoldSpotlight
+            pulse={spotlight}
+            reduceMotion={reduceMotion}
             scaleSV={context.scaleSV}
-            boardWidth={wall.photoWidth}
-            boardHeight={wall.photoHeight}
-            renderWidth={boardRender.width}
-            renderHeight={boardRender.height}
+            boardScale={boardScale}
           />
           <SelectedHoldOverlay
             hold={selectedHold}
@@ -853,6 +1057,14 @@ export function SprayHoldEditorScreen({
       selectedHold,
       allEditorHolds,
       showMaybes,
+      maybeRevealSV,
+      revealClipStyle,
+      revealBandStyle,
+      revealOnMount,
+      revealDone,
+      reduceMotion,
+      celebrating,
+      spotlight,
       draftPointsSV,
       boardRender.width,
       boardRender.height,
@@ -959,6 +1171,9 @@ export function SprayHoldEditorScreen({
     onCancel: handleCancelTool,
     t,
   });
+  // A hint only when nothing more urgent is on the line, the rings have finished
+  // arriving, and the climber is free to act on it.
+  const hint = hints.hint && revealDone && !banner && tool === 'edit' && canEdit ? hints.hint : null;
 
   return (
     <View style={[styles.container, { backgroundColor: systemColors.background }]} onLayout={handleAreaLayout}>
@@ -987,6 +1202,31 @@ export function SprayHoldEditorScreen({
         </View>
       ) : null}
 
+      {hint ? (
+        <View pointerEvents="box-none" style={styles.bannerSlot}>
+          <OnboardingTipBanner
+            solid
+            text={hintText(hint, t)}
+            dismissLabel={t('sprayEditor.hints.dismiss')}
+            onDismiss={() => hints.dismiss(hint)}
+          />
+        </View>
+      ) : null}
+
+      {viewerCanEdit && !SCREENSHOT_MODE ? (
+        <View style={styles.helpSlot}>
+          <GlassIconButton
+            iconName="help"
+            iconColor={systemColors.label}
+            fallbackColor={systemColors.fill}
+            size={glassSize.capsule}
+            onPress={hints.replay}
+            disabled={!canEdit}
+            accessibilityLabel={t('sprayEditor.hints.replay')}
+          />
+        </View>
+      ) : null}
+
       {selectedHold && tool === 'edit' && canEdit ? (
         <SprayHoldChipBar
           bottom={insets.bottom + SPRAY_BAR_GUTTER * 2 + SPRAY_BAR_HEIGHT}
@@ -1008,6 +1248,7 @@ export function SprayHoldEditorScreen({
         locked={!canEdit}
         primaryLabel={primaryLabel}
         primaryLoading={committing}
+        celebrating={celebrating}
         bottomInset={insets.bottom}
         onUndo={handleUndo}
         onKeepMaybes={handleKeepMaybes}
@@ -1066,6 +1307,12 @@ function bannerFor({
   return null;
 }
 
+function hintText(id: SprayHintId, t: Translate): string {
+  if (id === 'maybe') return t('sprayEditor.hints.maybe');
+  if (id === 'longPress') return t('sprayEditor.hints.longPress');
+  return t('sprayEditor.hints.toggle');
+}
+
 function rejectionMessage(reason: StrokeRejection, t: Translate): string {
   if (reason === 'centre-outside') return t('sprayEditor.errors.strokeNotClosed');
   if (reason === 'out-of-bounds') return t('sprayEditor.errors.strokeTooBig');
@@ -1096,11 +1343,23 @@ const styles = StyleSheet.create({
   centeredText: {
     textAlign: 'center',
   },
-  // Below the top-left reset-zoom control, so the two never overlap.
+  // Below the top-left reset-zoom control and the top-right "?", so none of
+  // them overlap.
   bannerSlot: {
     position: 'absolute',
-    top: spacing[2] * 2 + glassSize.mini,
+    top: spacing[2] * 2 + glassSize.capsule,
     left: spacing[4],
     right: spacing[4],
+  },
+  helpSlot: {
+    position: 'absolute',
+    top: spacing[2],
+    right: spacing[2],
+  },
+  revealClip: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    overflow: 'hidden',
   },
 });

@@ -657,9 +657,29 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
     [state.detection.outcome, t, retryDetection],
   );
 
+  // The rings sweep in only when a scan has just found some. A resumed draft's
+  // stored holds, or an empty or failed scan, open without the show.
+  const revealRings = state.detection.outcome === 'done' && state.detection.candidates.length > 0;
+
   // ============================================
   // Render
   // ============================================
+
+  // With the photo on this phone, the scan is a full-screen surface too: the
+  // photo full-bleed where the editor will put it, so the rings land on the very
+  // pixels the scan band was sweeping. A run resumed without the file keeps the
+  // plain spinner inside the stepper below.
+  if (state.step === 'detect' && state.draft && state.photo) {
+    return (
+      <SprayDetectionStep
+        wallUuid={state.draft.wallUuid}
+        versionId={state.draft.versionId}
+        photo={state.photo}
+        onComplete={detectionCompleted}
+        onManual={useManualEditor}
+      />
+    );
+  }
 
   // The editor is its own full-screen surface with its own floating bar and its
   // own Publish button. It gets the whole screen rather than being boxed into
@@ -674,6 +694,7 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
         versionNumber={state.draft.versionNumber}
         viewerCanEdit={state.draft.viewerCanEdit}
         candidates={state.detection.candidates}
+        revealOnMount={revealRings}
         primaryLabel={t('sprayWizard.review.publish')}
         notice={reviewNotice}
         onCommitted={onHoldsCommitted}
