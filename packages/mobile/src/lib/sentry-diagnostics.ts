@@ -10,12 +10,20 @@ export function scheduleUncaughtSentryTestError(): void {
 }
 
 /** Unique run IDs correlate tester events without changing issue grouping. */
-export function beginSentryDiagnosticTest(kind: 'handled' | 'uncaught-js' | 'java-exception' | 'native-abort'): string {
+export function createSentryDiagnosticTestRunId(): string {
+  return `test-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+}
+
+export function beginSentryDiagnosticTest(
+  kind: 'handled' | 'uncaught-js' | 'java-exception' | 'native-abort',
+  preparedRunId?: string,
+): string {
   const operation = beginDiagnosticOperation('navigation', 'sentry-test', {
     userInitiated: true,
     attributes: { kind },
   });
-  operation.step('trigger', { testRunId: operation.id, kind });
+  const testRunId = preparedRunId ?? operation.id;
+  operation.step('trigger', { testRunId, kind });
   if (kind === 'handled') operation.finish('success');
-  return operation.id;
+  return testRunId;
 }

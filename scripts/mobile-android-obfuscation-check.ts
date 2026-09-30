@@ -67,8 +67,8 @@ export const NAME_INVARIANTS: { className: string; why: string }[] = [
     why: '@sentry/react-native compares this name as a string; a rename silently stops time-to-initial-display instrumentation',
   },
   {
-    className: 'com.swmansion.rnscreens.events.ScreenAppearEvent',
-    why: 'the second string @sentry/react-native compares in RNSentryReactFragmentLifecycleTracer; with-android-minify.js keeps it, and only this entry proves that rule reached R8 — the ScreenStackFragment invariant above passes while this one is silently renamed',
+    className: 'com.boardsesh.diagnostics.MobileDiagnosticsModule',
+    why: 'libboardsesh_diagnostics.so exports Java_com_boardsesh_diagnostics_MobileDiagnosticsModule_nativeAbort; renaming the class breaks the native crash tester with UnsatisfiedLinkError',
   },
 ];
 
@@ -87,6 +87,8 @@ export interface MappingStats {
   fraction: number;
   /** Original -> obfuscated, for the invariant lookups. */
   renames: Map<string, string>;
+  /** Original class + method -> obfuscated method, for the tester JNI contract. */
+  memberRenames: Map<string, string>;
   /** Kept-heaviest packages first — names the culprit when the fraction drops. */
   byPackage: PackageStat[];
 }
@@ -97,12 +99,17 @@ export interface MappingStats {
  */
 export function parseMapping(contents: string): MappingStats {
   const renames = new Map<string, string>();
+  const memberRenames = new Map<string, string>();
+  let currentClass: string | undefined;
   const packages = new Map<string, PackageStat>();
   let total = 0;
   let renamed = 0;
 
   for (const line of contents.split('\n')) {
-    if (line.length === 0 || line.startsWith('#') || line.startsWith(' ') || line.startsWith('\t')) {
+    if (line.length === 0 || line.startsWith('#')) continue;
+    if (line.startsWith(' ') || line.startsWith('\t')) {
+      const member = /^\s+(?:\d+:\d+:)?\S+\s+([\w$]+)\([^)]*\)(?::\d+(?::\d+)?)?\s+->\s+([\w$]+)$/.exec(line.trimEnd());
+      if (currentClass && member) memberRenames.set(`${currentClass}.${member[1]}`, member[2]);
       continue;
     }
     const match = CLASS_LINE.exec(line.trimEnd());
@@ -112,6 +119,7 @@ export function parseMapping(contents: string): MappingStats {
     if (original === undefined || obfuscated === undefined) continue;
 
     total += 1;
+    currentClass = original;
     renames.set(original, obfuscated);
 
     const wasRenamed = original !== obfuscated;
@@ -130,7 +138,7 @@ export function parseMapping(contents: string): MappingStats {
   const keptCount = (stat: PackageStat) => stat.total - stat.renamed;
   const byPackage = [...packages.values()].sort((a, b) => keptCount(b) - keptCount(a));
 
-  return { total, renamed, fraction: total === 0 ? 0 : renamed / total, renames, byPackage };
+  return { total, renamed, fraction: total === 0 ? 0 : renamed / total, renames, memberRenames, byPackage };
 }
 
 export interface ObfuscationVerdict {
@@ -167,6 +175,14 @@ export function verifyObfuscation(stats: MappingStats, { minFraction, minClasses
     return null;
   }).filter((entry) => entry !== null);
 
+  const testerMethod = 'com.boardsesh.diagnostics.MobileDiagnosticsModule.nativeAbort';
+  const abortMethodName = stats.memberRenames.get(testerMethod);
+  if (abortMethodName !== 'nativeAbort')
+    broken.push({
+      className: testerMethod,
+      why: 'The tester JNI export resolves nativeAbort by its exact method name; keeping only its class cannot prevent UnsatisfiedLinkError.',
+      became: abortMethodName === undefined ? 'absent from the mapping (shrunk away)' : `renamed to ${abortMethodName}`,
+    });
   if (broken.length > 0) {
     const detail = broken.map(({ className, why, became }) => `  - ${className}: ${became}\n      ${why}`).join('\n');
     return {

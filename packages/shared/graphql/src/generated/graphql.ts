@@ -2211,6 +2211,11 @@ export type FavoritesCount = {
   count: Scalars['Int']['output'];
 };
 
+/**
+ * Free-form debug context attached to a feedback submission. Stored as jsonb.
+ * Every field is optional — anonymous submissions made outside a board route
+ * may carry only `url` / `userAgent`.
+ */
 export type FeedbackContextInput = {
   climbName?: InputMaybe<Scalars['String']['input']>;
   climbUuid?: InputMaybe<Scalars['String']['input']>;
@@ -2241,9 +2246,8 @@ export type FeedbackDiagnostics = {
 };
 
 /**
- * Free-form debug context attached to a feedback submission. Stored as jsonb.
- * Every field is optional — anonymous submissions made outside a board route
- * may carry only `url` / `userAgent`.
+ * Private, best-effort telemetry identifiers for feedback investigation.
+ * Available only through the authenticated admin dashboard.
  */
 export type FeedbackDiagnosticsInput = {
   easClientId?: InputMaybe<Scalars['String']['input']>;
