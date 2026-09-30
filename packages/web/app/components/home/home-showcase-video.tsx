@@ -191,7 +191,9 @@ export default function HomeShowcaseVideo() {
     { id: 'log', headline: t('home.showcase.scenes.log') },
     { id: 'outro', headline: t('home.showcase.scenes.outro') },
   ];
-  const idleWaitingForPlay = holdsAutoplay && !isShowingVideo && videoPaused;
+  // Autoplay held back by the reader's settings and autoplay refused by the
+  // browser look the same: the poster stays and a big play button starts it.
+  const idleWaitingForPlay = (holdsAutoplay || autoplayRefused) && !isShowingVideo && videoPaused;
 
   return (
     <Box component="figure" className={styles.figure}>
@@ -206,19 +208,19 @@ export default function HomeShowcaseVideo() {
       <video
         ref={videoRef}
         className={styles.video}
-        data-active={isShowingVideo || autoplayRefused ? 'true' : 'false'}
+        data-active={isShowingVideo ? 'true' : 'false'}
         aria-label={t('home.showcase.videoLabel')}
         muted
         loop
         playsInline
         preload="none"
-        controls={autoplayRefused}
       >
         {t('home.showcase.unsupported')}
       </video>
-      {/* Deliberately coexists with the native controls that appear when the
-          browser refuses autoplay: iOS only accepts play() inside a user gesture,
-          and this button is the gesture path we control (handleToggle). */}
+      {/* One control set for every path: no native controls, even when the
+          browser refuses autoplay. The video stays hidden until a frame plays,
+          and this button starts it inside the click, which iOS requires
+          (handleToggle). */}
       <IconButton
         className={idleWaitingForPlay ? styles.toggleCentered : styles.toggle}
         size={idleWaitingForPlay ? 'large' : 'small'}

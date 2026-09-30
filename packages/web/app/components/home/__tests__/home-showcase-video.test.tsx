@@ -185,6 +185,26 @@ describe('HomeShowcaseVideo', () => {
     expect(playSpy).toHaveBeenCalledTimes(2);
   });
 
+  it('treats refused autoplay like data saver: poster stays, big play button, one play() per click', async () => {
+    playSpy.mockRejectedValueOnce(new DOMException('blocked', 'NotAllowedError'));
+    render(<HomeShowcaseVideo />);
+    runIdleCallbacks();
+    scrollIntoView(true);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(playSpy).toHaveBeenCalledTimes(1);
+
+    expect(getVideo().hasAttribute('controls')).toBe(false);
+    expect(getVideo().getAttribute('data-active')).toBe('false');
+    expect(document.querySelector('img')).toBeTruthy();
+    const playButton = screen.getByRole('button', { name: tFromCatalog('marketing', 'home.showcase.play') });
+    expect(playButton.className).toMatch(/toggleCentered/);
+
+    fireEvent.click(playButton);
+    expect(playSpy).toHaveBeenCalledTimes(2);
+  });
+
   it('releases the deferred load when the reader presses play before the page is idle', () => {
     render(<HomeShowcaseVideo />);
     scrollIntoView(true);

@@ -1,11 +1,10 @@
-/* The hero video card: 9:16, as wide as fits beside the hero copy without the
-   card outgrowing the viewport height (header and 120px of breathing room). */
+/* The hero video card, 9:16. Mobile-first: the phone layout is the default. */
 .figure {
   position: relative;
   isolation: isolate;
-  width: min(400px, calc((100dvh - var(--global-header-height) - 120px) * 9 / 16));
+  width: min(100%, calc(70svh * 9 / 16));
   aspect-ratio: 9 / 16;
-  margin: 0;
+  margin: 0 auto;
   overflow: hidden;
   border: 1px solid var(--separator);
   border-radius: var(--border-radius-xl);
@@ -93,11 +92,14 @@
   list-style: none;
 }
 
-/* Phone: the hero copy comes first and the card sits directly below it at full
-   content width, capped so it never takes more than 70% of the screen height. */
-@media (max-width: 760px) {
+/* Desktop (761px and up, the complement of the phone breakpoint): the card sits
+   beside the hero copy, as wide as fits without outgrowing the viewport height
+   (header and 120px of breathing room). Below that the phone layout above holds:
+   the copy comes first and the card sits directly below at full content width,
+   capped at 70% of the screen height. */
+@media (min-width: 761px) {
   .figure {
-    width: min(100%, calc(70svh * 9 / 16));
-    margin-inline: auto;
+    width: min(400px, calc((100dvh - var(--global-header-height) - 120px) * 9 / 16));
+    margin: 0;
   }
 }
