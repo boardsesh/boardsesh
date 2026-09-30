@@ -63,6 +63,29 @@ export type CreatedIssue = {
 // move to the shared package.
 export { redactSensitiveText };
 
+// The public mirror has an explicit field allowlist. New private context fields
+// cannot become public merely by spreading or serializing a feedback context.
+type PublicFeedbackContext = Pick<
+  FeedbackContextInput,
+  'climbUuid' | 'climbName' | 'difficulty' | 'sessionId' | 'sessionName' | 'url' | 'userAgent'
+>;
+type PublicFeedbackIssuePayload = Omit<FeedbackIssuePayload, 'context'> & {
+  context?: PublicFeedbackContext | null;
+};
+
+function publicFeedbackContext(context: FeedbackContextInput | null | undefined): PublicFeedbackContext | null {
+  if (!context) return null;
+  return {
+    climbUuid: context.climbUuid,
+    climbName: context.climbName,
+    difficulty: context.difficulty,
+    sessionId: context.sessionId,
+    sessionName: context.sessionName,
+    url: context.url,
+    userAgent: context.userAgent,
+  };
+}
+
 function formatBoard(payload: FeedbackIssuePayload): string | null {
   if (!payload.boardName) return null;
   const parts: string[] = [payload.boardName];
@@ -96,7 +119,7 @@ function buildTitle(redactedComment: string): string {
   return base.length <= TITLE_LIMIT ? base : `${base.slice(0, TITLE_LIMIT - 3).trimEnd()}...`;
 }
 
-function buildMetadataTable(payload: FeedbackIssuePayload): string {
+function buildMetadataTable(payload: PublicFeedbackIssuePayload): string {
   const rows: Array<[string, string | null]> = [
     ['Platform', payload.platform],
     ['App version', payload.appVersion ?? null],
@@ -144,7 +167,7 @@ export function buildFeedbackIssue(payload: FeedbackIssuePayload): FeedbackIssue
     '',
     redactedComment || '_No comment provided._',
     '',
-    buildMetadataTable(payload),
+    buildMetadataTable({ ...payload, context: publicFeedbackContext(payload.context) }),
     ...screenshotMarkdownSection(payload.screenshotUrls ?? []),
     '',
     buildContactLine(payload),
