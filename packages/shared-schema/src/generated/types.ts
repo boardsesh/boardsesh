@@ -210,6 +210,7 @@ export type AppFeedbackContext = {
   __typename?: 'AppFeedbackContext';
   climbName?: Maybe<Scalars['String']['output']>;
   climbUuid?: Maybe<Scalars['String']['output']>;
+  /** Private identifiers. Any resolver returning this context must require admin access. */
   diagnostics?: Maybe<FeedbackDiagnostics>;
   difficulty?: Maybe<Scalars['String']['output']>;
   sessionId?: Maybe<Scalars['String']['output']>;

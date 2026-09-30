@@ -7,11 +7,6 @@ export type AppFeedbackSource = 'prompt' | 'drawer-feedback' | 'shake-bug' | 'dr
  */
 export type AppFeedbackBoardName = string;
 
-/**
- * Free-form context attached to feedback for debugging. Stored as jsonb on the
- * server. Every field is optional — anonymous submissions from outside a board
- * route may have only `url` and `userAgent`.
- */
 /** Private, best-effort telemetry correlation. Never mirrored to public issues. */
 export type FeedbackDiagnosticsInput = {
   schemaVersion?: number | null;
@@ -33,6 +28,11 @@ export type FeedbackDiagnosticsInput = {
 /** Same nullable wire fields, readable only in private admin feedback queries. */
 export type FeedbackDiagnostics = FeedbackDiagnosticsInput;
 
+/**
+ * Free-form context attached to feedback for debugging. Stored as jsonb on the
+ * server. Every field is optional — anonymous submissions from outside a board
+ * route may have only `url` and `userAgent`.
+ */
 export type FeedbackContextInput = {
   climbUuid?: string | null;
   climbName?: string | null;
@@ -103,7 +103,7 @@ export type AppFeedbackContext = {
   sessionName?: string | null;
   url?: string | null;
   userAgent?: string | null;
-  diagnostics?: FeedbackDiagnosticsInput | null;
+  diagnostics?: FeedbackDiagnostics | null;
 };
 
 /** A feedback row enriched for the admin dashboard. */
