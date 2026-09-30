@@ -28,6 +28,7 @@ import { track } from '@/app/lib/analytics';
 import { APP_INSTALL_CLICK_EVENT, buildAppInstallClickProperties } from '@/app/lib/app-install-event';
 import { useInstallPlatform } from '@/app/hooks/use-install-platform';
 import OnboardingCard from '@/app/components/home/onboarding-card';
+import HomeShowcaseVideo from '@/app/components/home/home-showcase-video';
 import styles from './home-page-content.module.css';
 import { sectionHeadingTypeClassName } from '@/app/components/ui/page-shell';
 
@@ -228,6 +229,8 @@ export default function HomePageContent({
             <MarketingPreviewSwitch />
           </Box>
         </Box>
+
+        <HomeShowcaseVideo />
 
         {featureStrip}
         <PopularBoardRail boards={initialBoards ?? []} />

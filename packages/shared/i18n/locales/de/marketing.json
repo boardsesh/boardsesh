@@ -113,6 +113,19 @@
     "recentBeta": {
       "title": "Frische Beta"
     },
+    "showcase": {
+      "title": "Sieh es an der Wand",
+      "lead": "Zwanzig Sekunden: Boulder beleuchten, eine Queue teilen und Begehungen loggen.",
+      "videoLabel": "Boardsesh in zwanzig Sekunden: einen Boulder am Board beleuchten, Boards wechseln, eine Queue teilen und Begehungen loggen",
+      "scenes": {
+        "hook": "Dein Board. Vom Handy beleuchtet.",
+        "light": "Wische, und die Wand folgt.",
+        "boards": "Jedes Board. Eine App.",
+        "crew": "Deine Crew. Eine Queue.",
+        "log": "Jede Begehung im Blick.",
+        "outro": "Weniger Handy. Mehr Wand."
+      }
+    },
     "features": {
       "title": "Board-Abend, geregelt",
       "lead": "Vom ersten Boulder bis zur letzten Begehung bleibt eure Session zusammen.",

@@ -113,6 +113,19 @@
     "recentBeta": {
       "title": "Beta fraîche"
     },
+    "showcase": {
+      "title": "Vois-le sur le mur",
+      "lead": "Vingt secondes pour allumer des blocs, partager une file et noter tes croix.",
+      "videoLabel": "Boardsesh en vingt secondes : allumer un bloc, changer de board, partager une file et noter ses croix",
+      "scenes": {
+        "hook": "Ta board. Allumée depuis ton téléphone.",
+        "light": "Balaie, et le mur suit.",
+        "boards": "Toutes les boards. Une seule appli.",
+        "crew": "Ta bande. Une seule file.",
+        "log": "Garde la trace de chaque croix.",
+        "outro": "Moins de téléphone. Plus de mur."
+      }
+    },
     "features": {
       "title": "La soirée board, réglée",
       "lead": "Du premier bloc à la dernière croix, partage toute la séance.",

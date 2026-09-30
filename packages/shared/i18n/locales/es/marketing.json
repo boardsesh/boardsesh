@@ -113,6 +113,19 @@
     "recentBeta": {
       "title": "Beta fresca"
     },
+    "showcase": {
+      "title": "Míralo en el plafón",
+      "lead": "Veinte segundos encendiendo bloques, compartiendo una cola y registrando encadenes.",
+      "videoLabel": "Boardsesh en veinte segundos: encender un bloque, cambiar de plafón, compartir una cola y registrar encadenes",
+      "scenes": {
+        "hook": "Tu plafón. Encendido desde el móvil.",
+        "light": "Desliza y el plafón te sigue.",
+        "boards": "Todos los plafones. Una app.",
+        "crew": "Tu grupo. Una cola.",
+        "log": "Recuerda cada encadene.",
+        "outro": "Menos móvil. Más plafón."
+      }
+    },
     "features": {
       "title": "Noche de plafón, resuelta",
       "lead": "Del primer bloque al último encadene, comparte toda la sesión.",

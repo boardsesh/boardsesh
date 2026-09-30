@@ -58,6 +58,11 @@ vi.mock('next-auth/react', () => ({
   useSession: () => ({ data: null, status: 'unauthenticated' }),
 }));
 
+// jsdom has neither matchMedia nor a playable <video>; the hook has its own suite.
+vi.mock('@/app/hooks/use-autoplay-video', () => ({
+  useAutoplayVideo: () => ({ videoRef: { current: null }, showsControls: false }),
+}));
+
 vi.mock('@/app/components/beta-videos/home-recent-beta-section', () => ({
   default: () => null,
 }));
@@ -124,6 +129,17 @@ describe('HomePageContent', () => {
     expect(screen.getByAltText(resolveMarketingKey('home.hero.playShotAlt'))).toBeTruthy();
     expect(screen.getByAltText(resolveMarketingKey('home.hero.tensionShotAlt'))).toBeTruthy();
     expect(screen.getByAltText(resolveMarketingKey('home.hero.moonboardShotAlt'))).toBeTruthy();
+  });
+
+  it('places the showcase video between the hero and the feature strip', () => {
+    render(<HomePageContent featureStrip={<section data-testid="features" />} />);
+    const showcaseHeading = screen.getByRole('heading', { name: resolveMarketingKey('home.showcase.title') });
+    const heroHeading = screen.getByRole('heading', { level: 1 });
+    const featureSection = screen.getByTestId('features');
+    expect(heroHeading.compareDocumentPosition(showcaseHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(showcaseHeading.compareDocumentPosition(featureSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByLabelText(resolveMarketingKey('home.showcase.videoLabel'))).toBeTruthy();
+    expect(screen.getByText(resolveMarketingKey('home.showcase.scenes.crew'))).toBeTruthy();
   });
 
   describe('hero install CTA', () => {

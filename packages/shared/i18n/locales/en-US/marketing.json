@@ -113,6 +113,19 @@
     "recentBeta": {
       "title": "Fresh beta"
     },
+    "showcase": {
+      "title": "See it on the wall",
+      "lead": "Twenty seconds of lighting climbs, sharing a queue and logging sends.",
+      "videoLabel": "Boardsesh in twenty seconds: lighting a climb, switching boards, sharing a queue and logging sends",
+      "scenes": {
+        "hook": "Your board. Lit from your phone.",
+        "light": "Swipe, and the wall follows.",
+        "boards": "Every board. One app.",
+        "crew": "Your crew. One queue.",
+        "log": "Remember every send.",
+        "outro": "Less phone. More wall."
+      }
+    },
     "features": {
       "title": "Board night, sorted",
       "lead": "From the first climb to the last send, keep the whole session together.",
