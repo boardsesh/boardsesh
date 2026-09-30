@@ -60,7 +60,13 @@ vi.mock('next-auth/react', () => ({
 
 // jsdom has neither matchMedia nor a playable <video>; the hook has its own suite.
 vi.mock('@/app/hooks/use-autoplay-video', () => ({
-  useAutoplayVideo: () => ({ videoRef: { current: null }, showsControls: false }),
+  useAutoplayVideo: () => ({
+    videoRef: { current: null },
+    showsControls: false,
+    isPlaying: false,
+    userPaused: false,
+    toggleUserPaused: () => undefined,
+  }),
 }));
 
 vi.mock('@/app/components/beta-videos/home-recent-beta-section', () => ({
@@ -105,6 +111,7 @@ function setUserAgent(ua: string) {
 
 describe('HomePageContent', () => {
   let openSpy: ReturnType<typeof vi.spyOn>;
+  let loadSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -112,9 +119,17 @@ describe('HomePageContent', () => {
     mockIsCapacitorWebView.mockReturnValue(false);
     mockWaitForCapacitor.mockResolvedValue(false);
     openSpy = vi.spyOn(window, 'open').mockReturnValue(null);
+    // The showcase picks its video source from matchMedia; jsdom has neither that nor load().
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })),
+    );
+    loadSpy = vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => undefined);
   });
 
   afterEach(() => {
+    vi.unstubAllGlobals();
+    loadSpy.mockRestore();
     openSpy.mockRestore();
     setUserAgent(ORIGINAL_UA);
   });
@@ -139,7 +154,10 @@ describe('HomePageContent', () => {
     expect(heroHeading.compareDocumentPosition(showcaseHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(showcaseHeading.compareDocumentPosition(featureSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getByLabelText(resolveMarketingKey('home.showcase.videoLabel'))).toBeTruthy();
-    expect(screen.getByText(resolveMarketingKey('home.showcase.scenes.crew'))).toBeTruthy();
+    for (const scene of ['hook', 'light', 'boards', 'crew', 'log', 'outro']) {
+      expect(screen.getByText(resolveMarketingKey(`home.showcase.scenes.${scene}`))).toBeTruthy();
+    }
+    expect(screen.getByRole('button', { name: resolveMarketingKey('home.showcase.pause') })).toBeTruthy();
   });
 
   describe('hero install CTA', () => {

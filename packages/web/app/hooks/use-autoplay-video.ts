@@ -27,12 +27,19 @@ function usePrefersReducedMotion(): boolean | null {
 type UseAutoplayVideoOptions = {
   /** Margin around the viewport inside which the video counts as "near". */
   rootMargin?: string;
+  /** Share of the video that must be visible to count as in view. */
+  threshold?: number;
 };
 
 type UseAutoplayVideoResult = {
   videoRef: React.RefObject<HTMLVideoElement | null>;
   /** True for reduced-motion readers and when the browser refused autoplay. */
   showsControls: boolean;
+  /** True once the video has actually started producing frames. */
+  isPlaying: boolean;
+  /** True after the reader pressed pause; scrolling never restarts the video then. */
+  userPaused: boolean;
+  toggleUserPaused: () => void;
 };
 
 /**
@@ -43,12 +50,18 @@ type UseAutoplayVideoResult = {
  * viewport and pauses when it scrolls away. Reduced-motion readers never get
  * autoplay, and a refused `play()` (battery saver, a browser wanting a gesture
  * first) reveals the same native controls, so the video is never a dead rectangle.
+ * A reader who pauses by hand stays paused (WCAG 2.2.2) until they press play.
  */
-export function useAutoplayVideo({ rootMargin = '200px 0px' }: UseAutoplayVideoOptions = {}): UseAutoplayVideoResult {
+export function useAutoplayVideo({
+  rootMargin = '200px 0px',
+  threshold,
+}: UseAutoplayVideoOptions = {}): UseAutoplayVideoResult {
   const videoRef = React.useRef<HTMLVideoElement>(null);
   const prefersReducedMotion = usePrefersReducedMotion();
   const [autoplayRefused, setAutoplayRefused] = React.useState(false);
   const [inView, setInView] = React.useState(false);
+  const [userPaused, setUserPaused] = React.useState(false);
+  const [isPlaying, setIsPlaying] = React.useState(false);
 
   React.useEffect(() => {
     const video = videoRef.current;
@@ -61,21 +74,37 @@ export function useAutoplayVideo({ rootMargin = '200px 0px' }: UseAutoplayVideoO
       (entries) => {
         for (const entry of entries) setInView(entry.isIntersecting);
       },
-      { rootMargin },
+      { rootMargin, threshold },
     );
     observer.observe(video);
     return () => observer.disconnect();
-  }, [rootMargin]);
+  }, [rootMargin, threshold]);
+
+  React.useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const markPlaying = () => setIsPlaying(true);
+    video.addEventListener('playing', markPlaying);
+    return () => video.removeEventListener('playing', markPlaying);
+  }, []);
 
   React.useEffect(() => {
     const video = videoRef.current;
     if (!video || prefersReducedMotion === null) return;
-    if (prefersReducedMotion || !inView) {
+    if (prefersReducedMotion || !inView || userPaused) {
       video.pause();
       return;
     }
     void video.play().catch(() => setAutoplayRefused(true));
-  }, [prefersReducedMotion, inView]);
+  }, [prefersReducedMotion, inView, userPaused]);
 
-  return { videoRef, showsControls: prefersReducedMotion === true || autoplayRefused };
+  const toggleUserPaused = React.useCallback(() => setUserPaused((paused) => !paused), []);
+
+  return {
+    videoRef,
+    showsControls: prefersReducedMotion === true || autoplayRefused,
+    isPlaying,
+    userPaused,
+    toggleUserPaused,
+  };
 }

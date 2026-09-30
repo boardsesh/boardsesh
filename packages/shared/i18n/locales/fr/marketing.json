@@ -121,10 +121,14 @@
         "hook": "Ta board. Allumée depuis ton téléphone.",
         "light": "Balaie, et le mur suit.",
         "boards": "Toutes les boards. Une seule appli.",
-        "crew": "Ta bande. Une seule file.",
+        "crew": "Ton crew. Une seule file.",
         "log": "Garde la trace de chaque croix.",
         "outro": "Moins de téléphone. Plus de mur."
-      }
+      },
+      "playHint": "Appuie sur lecture pour le voir.",
+      "unsupported": "Ton navigateur ne peut pas lire cette vidéo.",
+      "pause": "Mettre la vidéo en pause",
+      "play": "Lancer la vidéo"
     },
     "features": {
       "title": "La soirée board, réglée",

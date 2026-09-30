@@ -5,6 +5,7 @@
 /* One rounded card, the same border and radius as the other homepage cards. */
 .figure {
   position: relative;
+  isolation: isolate;
   width: 100%;
   max-width: 1200px;
   margin: 0;
@@ -28,6 +29,16 @@
   object-fit: cover;
 }
 
+.video {
+  opacity: 0;
+}
+
+/* Stays invisible until the first frame is playing, so Safari never flashes a
+   black rectangle over the poster. */
+.video[data-active='true'] {
+  opacity: 1;
+}
+
 .poster img {
   display: block;
   width: 100%;
@@ -35,11 +46,26 @@
   object-fit: cover;
 }
 
-/* Only rendered when the reader has asked for reduced motion, or autoplay was refused. */
+.toggle {
+  position: absolute;
+  right: var(--spacing-3);
+  bottom: var(--spacing-3);
+  z-index: 1;
+  background: var(--semantic-surface);
+  border: 1px solid var(--separator);
+}
+
+/* Explains the native controls. Always in the layout (hidden, not removed) so
+   it appearing does not push the page down. */
 .hint {
+  min-height: 1.5em;
   margin-top: var(--spacing-2);
   color: var(--neutral-500);
   line-height: 1.5;
+}
+
+.hintHidden {
+  visibility: hidden;
 }
 
 .sceneList {
@@ -52,6 +78,12 @@
   clip-path: inset(50%);
   white-space: nowrap;
   border: 0;
+  list-style: none;
+}
+
+.sceneList ul {
+  margin: 0;
+  padding: 0;
   list-style: none;
 }
 

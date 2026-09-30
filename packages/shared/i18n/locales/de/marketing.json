@@ -115,16 +115,20 @@
     },
     "showcase": {
       "title": "Sieh es an der Wand",
-      "lead": "Zwanzig Sekunden: Boulder beleuchten, eine Queue teilen und Begehungen loggen.",
-      "videoLabel": "Boardsesh in zwanzig Sekunden: einen Boulder am Board beleuchten, Boards wechseln, eine Queue teilen und Begehungen loggen",
+      "lead": "Zwanzig Sekunden: Boulder am Board beleuchten, eine Warteschlange teilen und Begehungen eintragen.",
+      "videoLabel": "Boardsesh in zwanzig Sekunden: einen Boulder am Board beleuchten, Boards wechseln, eine Warteschlange teilen und Begehungen eintragen",
       "scenes": {
         "hook": "Dein Board. Vom Handy beleuchtet.",
-        "light": "Wische, und die Wand folgt.",
+        "light": "Wische, und das Board folgt.",
         "boards": "Jedes Board. Eine App.",
-        "crew": "Deine Crew. Eine Queue.",
+        "crew": "Deine Crew. Eine Warteschlange.",
         "log": "Jede Begehung im Blick.",
         "outro": "Weniger Handy. Mehr Wand."
-      }
+      },
+      "playHint": "Tippe auf Play, um es zu sehen.",
+      "unsupported": "Dein Browser kann dieses Video nicht abspielen.",
+      "pause": "Video pausieren",
+      "play": "Video abspielen"
     },
     "features": {
       "title": "Board-Abend, geregelt",

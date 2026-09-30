@@ -124,7 +124,11 @@
         "crew": "Tu grupo. Una cola.",
         "log": "Recuerda cada encadene.",
         "outro": "Menos móvil. Más plafón."
-      }
+      },
+      "playHint": "Pulsa reproducir para verlo.",
+      "unsupported": "Tu navegador no puede reproducir este vídeo.",
+      "pause": "Pausar el vídeo",
+      "play": "Reproducir el vídeo"
     },
     "features": {
       "title": "Noche de plafón, resuelta",
