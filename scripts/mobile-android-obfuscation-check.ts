@@ -35,7 +35,7 @@
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { appendFileSync, existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const REPO_ROOT = resolve(fileURLToPath(import.meta.url), '../..');
@@ -150,9 +150,14 @@ export interface VerifyOptions {
   minFraction: number;
   /** A mapping this small is truncated or empty; it cannot pass at 100%. */
   minClasses: number;
+  /** AGP's sibling seeds.txt records kept native members omitted from mapping.txt. */
+  seedsContents?: string;
 }
 
-export function verifyObfuscation(stats: MappingStats, { minFraction, minClasses }: VerifyOptions): ObfuscationVerdict {
+export function verifyObfuscation(
+  stats: MappingStats,
+  { minFraction, minClasses, seedsContents }: VerifyOptions,
+): ObfuscationVerdict {
   if (stats.total < minClasses) {
     return {
       ok: false,
@@ -177,11 +182,21 @@ export function verifyObfuscation(stats: MappingStats, { minFraction, minClasses
 
   const testerMethod = 'com.boardsesh.diagnostics.MobileDiagnosticsModule.nativeAbort';
   const abortMethodName = stats.memberRenames.get(testerMethod);
-  if (abortMethodName !== 'nativeAbort')
+  // R8 can omit unchanged native methods from its line mapping. Its seeds output
+  // still lists the exact kept signature; do not infer shrinking from absence.
+  // An explicit rename always fails, even if a seeds file claims it was kept.
+  const abortKept =
+    seedsContents
+      ?.split(/\r?\n/)
+      .some((line) => line === 'com.boardsesh.diagnostics.MobileDiagnosticsModule: void nativeAbort()') ?? false;
+  if (abortMethodName !== 'nativeAbort' && !(abortMethodName === undefined && abortKept))
     broken.push({
       className: testerMethod,
       why: 'The tester JNI export resolves nativeAbort by its exact method name; keeping only its class cannot prevent UnsatisfiedLinkError.',
-      became: abortMethodName === undefined ? 'absent from the mapping (shrunk away)' : `renamed to ${abortMethodName}`,
+      became:
+        abortMethodName === undefined
+          ? 'absent from the mapping and exact keep evidence in seeds.txt'
+          : `renamed to ${abortMethodName}`,
     });
   if (broken.length > 0) {
     const detail = broken.map(({ className, why, became }) => `  - ${className}: ${became}\n      ${why}`).join('\n');
@@ -301,7 +316,9 @@ export function main(argv: string[] = process.argv.slice(2)): number {
 
   const mappingContents = readFileSync(mappingPath, 'utf-8');
   const stats = parseMapping(mappingContents);
-  const verdict = verifyObfuscation(stats, { minFraction, minClasses: 2000 });
+  const seedsPath = join(dirname(mappingPath), 'seeds.txt');
+  const seedsContents = existsSync(seedsPath) ? readFileSync(seedsPath, 'utf-8') : undefined;
+  const verdict = verifyObfuscation(stats, { minFraction, minClasses: 2000, seedsContents });
 
   console[verdict.ok ? 'log' : 'error'](`[mobile-android-obfuscation] ${verdict.message}`);
 
