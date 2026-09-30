@@ -179,7 +179,12 @@ describe('generated export retention', () => {
 
   it('refuses malformed successful reads instead of clearing unknown lifecycle rules', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    for (const result of [{ rules: null }, { rules: [{}] }]) {
+    for (const result of [
+      { rules: null },
+      { rules: [{}] },
+      { rules: [{ id: 'legacy', enabled: true, conditions: null }] },
+      { rules: [{ id: 'legacy', enabled: true, conditions: { prefix: null } }] },
+    ]) {
       const fetchMock = vi.fn().mockResolvedValue(envelope(result));
       vi.stubGlobal('fetch', fetchMock);
       await expect(

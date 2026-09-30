@@ -429,7 +429,7 @@ async function fetchR2LifecycleRules(
       );
       return null;
     }
-    return rules as R2LifecycleRule[];
+    return rules.filter((rule): rule is R2LifecycleRule => rule !== null);
   } catch (error) {
     if (isNotFoundError(error)) return [];
     if (isAuthorizationError(error)) {
