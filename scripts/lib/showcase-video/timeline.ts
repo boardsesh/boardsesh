@@ -40,15 +40,15 @@ export const SHOWCASE_SCENES: readonly ShowcaseScene[] = [
   {
     id: 'light',
     startFrame: 72,
-    endFrame: 192,
+    endFrame: 204,
     background: 'dark',
     takes: ['light'],
     callouts: ['wall-pill', 'board-surface'],
   },
   {
     id: 'boards',
-    startFrame: 192,
-    endFrame: 330,
+    startFrame: 204,
+    endFrame: 342,
     background: 'light',
     takes: [
       'boards-kilter',
@@ -64,40 +64,40 @@ export const SHOWCASE_SCENES: readonly ShowcaseScene[] = [
   },
   {
     id: 'wall',
-    startFrame: 330,
-    endFrame: 486,
+    startFrame: 342,
+    endFrame: 507,
     background: 'dark',
     takes: ['wall'],
     callouts: ['board-history-button', 'now-on-wall', 'wall-history'],
   },
   {
     id: 'crew',
-    startFrame: 486,
-    endFrame: 614,
+    startFrame: 507,
+    endFrame: 681,
     background: 'light',
     takes: ['crew'],
     callouts: ['invite-qr', 'queue-row-avatar', 'play-next'],
   },
-  { id: 'workouts', startFrame: 614, endFrame: 776, background: 'dark', takes: ['workouts'], callouts: [] },
+  { id: 'workouts', startFrame: 681, endFrame: 843, background: 'dark', takes: ['workouts'], callouts: [] },
   // The Dynamic Island scene. Id and take keep their lock-screen names so the
   // recorder and the anchors contract stay put.
   {
     id: 'lock-screen',
-    startFrame: 776,
-    endFrame: 902,
+    startFrame: 843,
+    endFrame: 969,
     background: 'light',
     takes: ['lock-screen'],
     callouts: ['lock-next', 'lock-relight', 'lock-mirror'],
   },
   {
     id: 'log',
-    startFrame: 902,
-    endFrame: 1016,
+    startFrame: 969,
+    endFrame: 1119,
     background: 'dark',
     takes: ['log'],
     callouts: ['profile-board-filter', 'activity-calendar'],
   },
-  { id: 'outro', startFrame: 1016, endFrame: 1145, background: 'dark', takes: [], callouts: [] },
+  { id: 'outro', startFrame: 1119, endFrame: 1248, background: 'dark', takes: [], callouts: [] },
 ];
 
 export const SHOWCASE_TOTAL_FRAMES = SHOWCASE_SCENES[SHOWCASE_SCENES.length - 1].endFrame;

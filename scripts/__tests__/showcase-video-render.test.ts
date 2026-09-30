@@ -30,7 +30,13 @@ import {
   buildBoardRenderUrl,
   buildClimbSearchRequest,
   calloutLabelCssPx,
-  calloutTime,
+  calloutTimings,
+  footageAt,
+  localAtFootage,
+  applyAnchorShifts,
+  segmentsLength,
+  takeSegments,
+  SHOWCASE_TAKE_EDITS,
   pickPlaceholderClimb,
   boardTakeLabel,
   buildMasterArgs,
@@ -161,11 +167,12 @@ describe('anchors', () => {
     expect(warnings[0]).toMatch(/off screen/);
   });
 
-  it('lines footage up one second ahead of its scene and clamps at the ends', () => {
-    const light = sceneOf('light');
-    expect(footageFrameIndex(light, light.startFrame, 200)).toBe(30);
-    expect(footageFrameIndex(light, 0, 200)).toBe(0);
-    expect(footageFrameIndex(light, 10_000, 200)).toBe(199);
+  it('plays a take without an edit from one second in, and clamps at the ends', () => {
+    const boards = sceneOf('boards');
+    expect(takeSegments('boards-woods', boards)).toEqual([[30, 30 + boards.endFrame - boards.startFrame]]);
+    expect(footageFrameIndex(boards, boards.startFrame, 400)).toBe(30);
+    expect(footageFrameIndex(boards, 0, 400)).toBe(0);
+    expect(footageFrameIndex(boards, 10_000, 400)).toBe(399);
   });
 });
 
@@ -231,7 +238,7 @@ describe('callout layout', () => {
         const take = scene.takes[0];
         const file = placeholderAnchorsFile(take, SHOWCASE_PLACEHOLDER_TAKES[take]);
         const labels = sceneCalloutCopy(copy, scene.id);
-        const callouts = layoutSceneCallouts(format, scene.id, scene.callouts, file, labels);
+        const callouts = layoutSceneCallouts(format, scene, scene.callouts, file, labels);
         expect(callouts.map((callout) => callout.role)).toEqual(['start', 'hand', 'finish'].slice(0, callouts.length));
         callouts.forEach((callout) => expect(callout.label).toBe(labels[callout.name]));
       }
@@ -436,7 +443,10 @@ describe('placeholder footage', () => {
   it('extracts enough 800 px frames for the take, holding a short clip on its last frame', () => {
     const args = buildPlaceholderFootageArgs('light', SHOWCASE_PLACEHOLDER_TAKES.light, '/f/light');
     expect(args[args.indexOf('-vf') + 1]).toMatch(/^fps=30,scale=800:-2:flags=lanczos,tpad=stop_mode=clone/);
-    expect(args[args.indexOf('-frames:v') + 1]).toBe(String(Math.ceil(((192 - 72) / 30 + 2) * 30)));
+    const light = sceneOf('light');
+    expect(args[args.indexOf('-frames:v') + 1]).toBe(
+      String(Math.ceil(((light.endFrame - light.startFrame) / 30 + 2) * 30)),
+    );
     expect(args[args.length - 1]).toBe('/f/light/%05d.jpg');
     const still = buildPlaceholderFootageArgs('boards-kilter', SHOWCASE_PLACEHOLDER_TAKES['boards-kilter'], '/f/k');
     expect(still.slice(0, 6)).toContain('-loop');
@@ -533,24 +543,28 @@ describe('workouts checklist', () => {
     expect(restEnd).toBeLessThanOrEqual(ticks[4]);
     const workouts = sceneOf('workouts');
     const settleEnd = workouts.endFrame - workouts.startFrame - SHOWCASE_CHOREO.settleEndFromEnd;
-    expect(ticks[ticks.length - 1]).toBeLessThan(settleEnd - 20);
-    expect(copy.workouts.restCountdown[0]).toBe(copy.workouts.rows[3].rest);
+    expect(ticks[ticks.length - 1] + 8).toBeLessThan(settleEnd);
+    // Every rest is the footage's fixed 0:30 window.
+    expect(new Set(copy.workouts.rows.map((row) => row.rest))).toEqual(new Set(['0:30']));
   });
 });
 
 describe('anchor preparation', () => {
   it('sorts samples and grows header-only anchors over the list below', () => {
-    const prepared = prepareAnchorsFile({
-      takeId: 'wall',
-      screen: { width: 440, height: 956 },
-      anchors: {
-        'wall-history': [
-          { t: 2, x: 8, y: 400, width: 424, height: 24 },
-          { t: 0, x: 8, y: 800, width: 424, height: 24 },
-        ],
-        'now-on-wall': [{ t: 0, x: 132, y: 81, width: 230, height: 35 }],
+    const prepared = prepareAnchorsFile(
+      {
+        takeId: 'wall',
+        screen: { width: 440, height: 956 },
+        anchors: {
+          'wall-history': [
+            { t: 2, x: 8, y: 400, width: 424, height: 24 },
+            { t: 0, x: 8, y: 800, width: 424, height: 24 },
+          ],
+          'now-on-wall': [{ t: 0, x: 132, y: 81, width: 230, height: 35 }],
+        },
       },
-    });
+      {},
+    );
     const history = prepared.anchors['wall-history'] ?? [];
     expect(history.map((sample) => sample.t)).toEqual([0, 2]);
     // Clamped to 24 pt above the bottom of the screen...
@@ -650,7 +664,9 @@ describe('island scene', () => {
     const staging = SHOWCASE_SCENE_STAGING['lock-screen'];
     if (!staging) throw new Error('island staging missing');
     expect(staging.zoomPose).toBe('ISLAND');
-    expect(calloutTime('lock-screen')).toBeGreaterThan(calloutTime('crew'));
+    const island = sceneOf('lock-screen');
+    const timings = calloutTimings(island, 'lock-screen', island.callouts);
+    expect(timings['lock-next']?.enter).toBeGreaterThan(SHOWCASE_CHOREO.calloutStart + staging.calloutDelay - 1);
     expect(copy['lock-screen'].callouts).toMatchObject({ 'lock-relight': 'Reconnect board' });
     expect(copy['lock-screen'].headline).not.toMatch(/unlock/i);
   });
@@ -692,5 +708,67 @@ describe('callout legibility', () => {
     expect(
       SHOWCASE_CALLOUT_LAYOUT.portraitPillInset + SHOWCASE_CALLOUT_LAYOUT.portraitPillWidth - sideRoom,
     ).toBeLessThanOrEqual(13 * portrait.scale + 1);
+  });
+});
+
+describe('the edit', () => {
+  it('fills every scene exactly with footage, and every callout window sits in a range the scene plays', () => {
+    for (const [takeId, edit] of Object.entries(SHOWCASE_TAKE_EDITS)) {
+      const scene = SHOWCASE_SCENES.find((candidate) => candidate.takes.includes(takeId as never));
+      if (!scene || !edit) throw new Error(`no scene for ${takeId}`);
+      expect(segmentsLength(edit.segments), takeId).toBe(scene.endFrame - scene.startFrame);
+      for (const [from, to] of edit.segments) expect(to, takeId).toBeGreaterThan(from);
+      for (const [name, window] of Object.entries(edit.callouts ?? {})) {
+        expect(scene.callouts, `${takeId}/${name}`).toContain(name);
+        expect(localAtFootage(edit.segments, window[0]), `${takeId}/${name}`).not.toBeNull();
+      }
+    }
+  });
+
+  it('maps scene frames to footage across hard cuts, and back', () => {
+    const segments = [
+      [10, 20],
+      [100, 110],
+    ] as const;
+    expect(footageAt(segments, 0, 500)).toBe(10);
+    expect(footageAt(segments, 9, 500)).toBe(19);
+    expect(footageAt(segments, 10, 500)).toBe(100);
+    expect(footageAt(segments, -5, 500)).toBe(5);
+    expect(footageAt(segments, 25, 500)).toBe(115);
+    expect(footageAt(segments, 25, 112)).toBe(111);
+    expect(localAtFootage(segments, 105)).toBe(15);
+    expect(localAtFootage(segments, 50)).toBeNull();
+  });
+
+  it('moves sheet- and scroll-measured anchors piecewise, keeping the original times', () => {
+    const shifted = applyAnchorShifts(
+      [
+        { t: 2.7, x: 0, y: 28, width: 440, height: 112 },
+        { t: 2.9, x: 0, y: 72, width: 440, height: 112 },
+      ],
+      [
+        { from: 0, dy: 462 },
+        { from: 240, dy: 145 },
+      ],
+    );
+    expect(shifted.map((sample) => [sample.t, sample.y])).toEqual([
+      [0, 490],
+      [2.7, 490],
+      [2.9, 534],
+      [8, 217],
+    ]);
+  });
+
+  it('gives windowed callouts their own entrance and exit', () => {
+    const crew = sceneOf('crew');
+    const timings = calloutTimings(crew, 'crew', crew.callouts);
+    const enters = crew.callouts.map((name) => timings[name]?.enter ?? -1);
+    expect(enters[1]).toBeGreaterThan(enters[0]);
+    expect(enters[2]).toBeGreaterThan(enters[1]);
+    for (const name of crew.callouts) {
+      const timing = timings[name];
+      if (!timing) throw new Error(name);
+      expect(timing.exit - timing.enter, name).toBeGreaterThanOrEqual(26);
+    }
   });
 });

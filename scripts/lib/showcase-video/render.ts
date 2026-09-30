@@ -151,12 +151,6 @@ export const SHOWCASE_SCENE_STAGING: Partial<Record<ShowcaseScene['id'], SceneSt
   'lock-screen': { zoomPose: 'ISLAND', zoomAt: 12, calloutDelay: 16 },
 };
 
-/** Take time (seconds) at which a scene's callouts land and are laid out. */
-export function calloutTime(sceneId: ShowcaseScene['id']): number {
-  const delay = SHOWCASE_SCENE_STAGING[sceneId]?.calloutDelay ?? 0;
-  return (SHOWCASE_TAKE_LEAD_FRAMES + SHOWCASE_CHOREO.calloutStart + delay) / SHOWCASE_FPS;
-}
-
 export type CanvasRect = Readonly<{ x: number; y: number; width: number; height: number }>;
 export type CanvasPoint = Readonly<{ x: number; y: number }>;
 
@@ -253,14 +247,19 @@ export const SHOWCASE_ANCHOR_EXTEND_DOWN: Partial<Record<ShowcaseCalloutName, nu
 
 /**
  * An anchors file as the stage should read it: every list sorted by `t` (what
- * `anchorAt` needs; see `sortAnchorSamples`) and the header-only anchors grown
+ * `anchorAt` needs; see `sortAnchorSamples`), moved by the take's sheet and
+ * scroll corrections (`SHOWCASE_TAKE_EDITS`), and the header-only anchors grown
  * over the content they introduce. Run once on load, never per frame.
  */
-export function prepareAnchorsFile(file: ShowcaseAnchorsFile): ShowcaseAnchorsFile {
+export function prepareAnchorsFile(
+  file: ShowcaseAnchorsFile,
+  shifts: Partial<Record<ShowcaseCalloutName, readonly AnchorShift[]>> = SHOWCASE_TAKE_EDITS[file.takeId]
+    ?.anchorShifts ?? {},
+): ShowcaseAnchorsFile {
   const anchors: Partial<Record<ShowcaseCalloutName, ShowcaseAnchorSample[]>> = {};
   for (const [name, samples] of Object.entries(file.anchors) as [ShowcaseCalloutName, ShowcaseAnchorSample[]][]) {
     const extend = SHOWCASE_ANCHOR_EXTEND_DOWN[name] ?? 0;
-    anchors[name] = sortAnchorSamples(samples).map((sample) => ({
+    anchors[name] = applyAnchorShifts(sortAnchorSamples(samples), shifts[name] ?? []).map((sample) => ({
       ...sample,
       height: Math.max(sample.height, Math.min(sample.height + extend, file.screen.height - 24 - sample.y)),
     }));
@@ -277,8 +276,231 @@ export function prepareAnchorsFile(file: ShowcaseAnchorsFile): ShowcaseAnchorsFi
 export const SHOWCASE_TAKE_LEAD_FRAMES = SHOWCASE_FPS;
 
 export function footageFrameIndex(scene: ShowcaseScene, frame: number, frameCount: number): number {
-  const index = frame - scene.startFrame + SHOWCASE_TAKE_LEAD_FRAMES;
-  return Math.max(0, Math.min(frameCount - 1, index));
+  return footageAt(takeSegments(scene.takes[0], scene), frame - scene.startFrame, frameCount);
+}
+
+// --- the edit: which footage each scene shows ---------------------------------
+
+/** Footage frames `[from, to)` of a take, 0-based (frame 0 is `00001.jpg`). */
+export type FootageRange = readonly [number, number];
+
+/** A vertical correction for an anchor, in points, from footage frame `from` on. */
+export type AnchorShift = Readonly<{ from: number; dy: number }>;
+
+/**
+ * How a scene cuts its take: the footage ranges it plays back to back (a hard
+ * cut between ranges, never a dissolve), when each callout may be up, and the
+ * anchor corrections the recording needs. Every number here was read off the
+ * recorded frames and checked with `--measure`; re-check after a re-record.
+ */
+export type TakeEdit = Readonly<{
+  /** Played in order; their lengths sum to the scene's length. */
+  segments: readonly FootageRange[];
+  /**
+   * Footage frames each callout's target is on screen and still. A callout
+   * enters when its window starts (not before the scene's first words) and
+   * retracts when it ends, so a scene can point at three moments in turn.
+   */
+  callouts?: Partial<Record<ShowcaseCalloutName, FootageRange>>;
+  /**
+   * Anchors the app measures in a native sheet's own window (y from the sheet's
+   * top) or before a scroll (they re-log on layout, not on scroll). Piecewise
+   * `dy`, keyed by footage frame; see docs/showcase-video.md.
+   */
+  anchorShifts?: Partial<Record<ShowcaseCalloutName, readonly AnchorShift[]>>;
+  /**
+   * The rest pill the footage shows: `[footage frame, value]` from that frame on.
+   * The workouts checklist's countdown reads the same value on the same frame.
+   */
+  restPill?: readonly (readonly [number, string])[];
+}>;
+
+/**
+ * The edit, per take. A take without an entry plays from one second in, for
+ * its scene's length (the boards). Frames are footage frames at 30 fps.
+ */
+export const SHOWCASE_TAKE_EDITS: Partial<Record<ShowcaseTakeId, TakeEdit>> = {
+  // The bulb lights at frame 88 (local 18, as the callouts land); the first
+  // swipe to the next climb runs 168–180.
+  light: { segments: [[70, 202]] },
+  // Board-button tap at ~93, sheet at its middle detent from ~120; the drag up
+  // to "Lit on this wall" settles by ~250.
+  wall: {
+    segments: [
+      [48, 168],
+      [255, 300],
+    ],
+    callouts: {
+      'board-history-button': [48, 94],
+      'now-on-wall': [120, 168],
+      'wall-history': [255, 300],
+    },
+    anchorShifts: {
+      // The wall sheet's top: 462 pt at its middle detent, 145 pt once dragged up.
+      'now-on-wall': [
+        { from: 0, dy: 462 },
+        { from: 240, dy: 145 },
+      ],
+      'wall-history': [
+        { from: 0, dy: 462 },
+        { from: 240, dy: 145 },
+      ],
+    },
+  },
+  // The invite QR (0–56), the second phone's row landing with its avatar
+  // (~324), the long-press menu's "Play next" (from ~440).
+  crew: {
+    segments: [
+      [0, 56],
+      [296, 366],
+      [440, 488],
+    ],
+    callouts: {
+      'invite-qr': [0, 56],
+      'queue-row-avatar': [324, 366],
+      'play-next': [440, 488],
+    },
+    anchorShifts: {
+      // The invite sheet's top, and the queue sheet's top at its detent.
+      'invite-qr': [{ from: 0, dy: 405 }],
+      'queue-row-avatar': [{ from: 0, dy: 322 }],
+    },
+  },
+  // Pyramid picked (the target-grade row appears at ~60), then the fixed-window
+  // rest pill counting down from 0:29 (306). The checklist's rest countdown
+  // starts on that frame (`SHOWCASE_WORKOUT_BEATS.restStart`, local 64) and
+  // reads `restPill`, so both show the same value.
+  workouts: {
+    segments: [
+      [30, 90],
+      [304, 406],
+    ],
+    restPill: [
+      [306, '0:29'],
+      [314, '0:28'],
+      [346, '0:27'],
+      [376, '0:26'],
+      [406, '0:25'],
+    ],
+  },
+  // The island is expanded on "Masquerade · 2 of 4" from ~90; Next is pressed
+  // at ~248 and the island shows "Putty · 3 of 4" from ~280.
+  'lock-screen': { segments: [[200, 326]] },
+  // The calendar for all boards (after the scroll), then the Filters sheet with
+  // Kilter picked, Done (~270), and the calendar redrawn for Kilter (~276).
+  log: {
+    segments: [
+      [90, 141],
+      [230, 329],
+    ],
+    callouts: {
+      'profile-board-filter': [90, 141],
+      'activity-calendar': [276, 329],
+    },
+    anchorShifts: {
+      // Both logged before the scroll (~70–80) moved the page up 338 pt. The
+      // Kilter view (Done at ~270) drops the records card's footnote, which
+      // lifts the calendar another 77 pt.
+      'profile-board-filter': [{ from: 80, dy: -338 }],
+      'activity-calendar': [
+        { from: 80, dy: -338 },
+        { from: 270, dy: -415 },
+      ],
+    },
+  },
+};
+
+/** The footage ranges a scene plays for a take: its edit, or one second in for the scene's length. */
+export function takeSegments(takeId: ShowcaseTakeId, scene: ShowcaseScene): readonly FootageRange[] {
+  const edit = SHOWCASE_TAKE_EDITS[takeId];
+  if (edit) return edit.segments;
+  return [[SHOWCASE_TAKE_LEAD_FRAMES, SHOWCASE_TAKE_LEAD_FRAMES + scene.endFrame - scene.startFrame]];
+}
+
+/**
+ * Footage frame at a scene-local frame. Before the scene (the phone arriving)
+ * it runs up to the first range; after it, on from the last. Clamped to the take.
+ */
+export function footageAt(segments: readonly FootageRange[], local: number, frameCount: number): number {
+  const clamp = (value: number) => Math.max(0, Math.min(frameCount - 1, value));
+  if (local < 0 || segments.length === 0) return clamp((segments[0]?.[0] ?? 0) + local);
+  let offset = 0;
+  for (const [from, to] of segments) {
+    if (local < offset + to - from) return clamp(from + local - offset);
+    offset += to - from;
+  }
+  const [, lastTo] = segments[segments.length - 1];
+  return clamp(lastTo + local - offset);
+}
+
+/** Scene-local frame at which footage frame `footage` plays, or null when the edit skips it. */
+export function localAtFootage(segments: readonly FootageRange[], footage: number): number | null {
+  let offset = 0;
+  for (const [from, to] of segments) {
+    if (footage >= from && footage < to) return offset + footage - from;
+    offset += to - from;
+  }
+  return null;
+}
+
+export const segmentsLength = (segments: readonly FootageRange[]): number =>
+  segments.reduce((sum, [from, to]) => sum + to - from, 0);
+
+/**
+ * Samples with piecewise shifts applied: a sample at every original and shift
+ * time, each the rect in force then, moved by the shift in force then.
+ */
+export function applyAnchorShifts(
+  samples: readonly ShowcaseAnchorSample[],
+  shifts: readonly AnchorShift[],
+): ShowcaseAnchorSample[] {
+  if (shifts.length === 0 || samples.length === 0) return samples.slice();
+  const sorted = sortAnchorSamples(samples);
+  const times = [
+    ...new Set([...sorted.map((sample) => sample.t), ...shifts.map((shift) => shift.from / SHOWCASE_FPS)]),
+  ].sort((a, b) => a - b);
+  return times.map((t) => {
+    const rect = anchorAt(sorted, t) as ShowcaseAnchorRect;
+    const shift = shifts.filter((candidate) => candidate.from / SHOWCASE_FPS <= t + 1e-9).at(-1);
+    return { ...rect, t, y: rect.y + (shift?.dy ?? 0) };
+  });
+}
+
+export type CalloutTiming = Readonly<{ enter: number; exit: number; at: number }>;
+
+/**
+ * When each callout is up, in scene-local frames, and the footage time (s) its
+ * anchor is laid out at. Without a window: the template's staggered entrance.
+ * With one: in as the window opens (not before local 8), out as it closes.
+ */
+export function calloutTimings(
+  scene: ShowcaseScene,
+  takeId: ShowcaseTakeId,
+  names: readonly ShowcaseCalloutName[],
+): Partial<Record<ShowcaseCalloutName, CalloutTiming>> {
+  const edit = SHOWCASE_TAKE_EDITS[takeId];
+  const segments = takeSegments(takeId, scene);
+  const length = scene.endFrame - scene.startFrame;
+  const lastExit = length - SHOWCASE_CHOREO.calloutsOutEndFromEnd;
+  const delay = SHOWCASE_SCENE_STAGING[scene.id]?.calloutDelay ?? 0;
+  const timings: Partial<Record<ShowcaseCalloutName, CalloutTiming>> = {};
+  names.forEach((name, index) => {
+    const window = edit?.callouts?.[name];
+    const windowStart = window ? localAtFootage(segments, window[0]) : null;
+    if (window && windowStart !== null) {
+      const windowEnd = windowStart + window[1] - window[0];
+      const enter = Math.max(windowStart + 4, 8);
+      timings[name] = {
+        enter,
+        exit: Math.min(windowEnd, lastExit),
+        at: footageAt(segments, enter + 10, Number.MAX_SAFE_INTEGER) / SHOWCASE_FPS,
+      };
+      return;
+    }
+    const enter = SHOWCASE_CHOREO.calloutStart + delay + SHOWCASE_CHOREO.calloutStagger * index;
+    timings[name] = { enter, exit: lastExit, at: footageAt(segments, enter, Number.MAX_SAFE_INTEGER) / SHOWCASE_FPS };
+  });
+  return timings;
 }
 
 // --- choreography and the reading budget ----------------------------------
@@ -836,11 +1058,16 @@ export type StageCallout = Readonly<{
   /** Side exit, or a riser from the box top (to `laneY` in 16:9, to the pill in 9:16). */
   exit: LeaderExit;
   laneY: number;
+  /** Scene-local frames the callout draws in and has retracted by. */
+  enter: number;
+  leave: number;
 }>;
 
 export type StageTake = Readonly<{
   frameUrlBase: string;
   frameCount: number;
+  /** Footage ranges the take's scene plays (`takeSegments`). */
+  segments: readonly FootageRange[];
   screen: Readonly<{ width: number; height: number }>;
   anchors: Partial<Record<ShowcaseCalloutName, readonly ShowcaseAnchorSample[]>>;
 }>;
@@ -890,6 +1117,8 @@ export type ShowcaseStageData = Readonly<{
   workout: ReturnType<typeof workoutTickFrames>;
   workoutBeats: typeof SHOWCASE_WORKOUT_BEATS;
   staging: typeof SHOWCASE_SCENE_STAGING;
+  /** The workouts footage's rest pill, for the checklist countdown (`TakeEdit.restPill`). */
+  restPill: readonly (readonly [number, string])[];
   /** Light-scene callout hues; dark scenes use the tokens' LED hues. */
   lightRoles: Record<CalloutRole, string>;
   /** Lit holds of the light take's first frame, in screen points. */
@@ -899,7 +1128,6 @@ export type ShowcaseStageData = Readonly<{
   /** The two backgrounds the stage tweens between, in OKLab. */
   palette: Readonly<{ stageDark: string; stageLight: string }>;
   markUrl: string;
-  leadFrames: number;
 }>;
 
 /**
@@ -915,10 +1143,10 @@ export function resolveSceneCallouts(
   const callouts: ShowcaseCalloutName[] = [];
   const warnings: string[] = [];
   const take = scene.takes[0];
-  const t = calloutTime(scene.id);
+  const timings = calloutTimings(scene, take, scene.callouts);
   for (const name of scene.callouts) {
     const samples = anchorsFile?.anchors[name];
-    const rect = samples ? anchorAt(samples, t) : null;
+    const rect = samples ? anchorAt(samples, timings[name]?.at ?? 0) : null;
     if (!labels[name]) warnings.push(`${scene.id}: no copy for callout "${name}"; skipped`);
     else if (!anchorsFile || !rect)
       warnings.push(`${scene.id}: take "${take}" never reports anchor "${name}"; skipped`);
@@ -932,16 +1160,21 @@ export function resolveSceneCallouts(
 /** Pill slots and leader gutters for a scene's callouts, from where the anchors sit when the callouts land. */
 export function layoutSceneCallouts(
   format: ShowcaseFormat,
-  sceneId: ShowcaseScene['id'],
+  scene: ShowcaseScene,
   names: readonly ShowcaseCalloutName[],
   anchorsFile: ShowcaseAnchorsFile,
   labels: CalloutCopy,
 ): StageCallout[] {
   const canvas = SHOWCASE_CANVAS[format];
-  const calloutPose = SHOWCASE_POSES[format][SHOWCASE_SCENE_STAGING[sceneId]?.zoomPose ?? 'CALLOUT'];
-  const t = calloutTime(sceneId);
+  const calloutPose = SHOWCASE_POSES[format][SHOWCASE_SCENE_STAGING[scene.id]?.zoomPose ?? 'CALLOUT'];
+  const timings = calloutTimings(scene, scene.takes[0], names);
+  const timing = (name: ShowcaseCalloutName) => {
+    const found = timings[name];
+    if (!found) throw new Error(`No timing for callout ${name}`);
+    return found;
+  };
   const boxes = names.map((name) => {
-    const rect = anchorAt(anchorsFile.anchors[name] ?? [], t);
+    const rect = anchorAt(anchorsFile.anchors[name] ?? [], timing(name).at);
     if (!rect) throw new Error(`Anchor ${name} has no samples`);
     return screenToCanvas(rect, anchorsFile.screen, calloutPose, canvas);
   });
@@ -962,6 +1195,8 @@ export function layoutSceneCallouts(
       role: roles[index],
       side: 'right',
       ...plans[index],
+      enter: timing(name).enter,
+      leave: timing(name).exit,
     }));
   }
   const { width: phoneWidth, height: phoneHeight } = SHOWCASE_PHONE;
@@ -981,6 +1216,8 @@ export function layoutSceneCallouts(
     side: pills[index].side,
     exit: pills[index].exit,
     laneY: 0,
+    enter: timing(name).enter,
+    leave: timing(name).exit,
   }));
 }
 
@@ -1027,10 +1264,12 @@ export function pileupArrivalFrames(arrivalCount: number, neatCount: number, mai
 export const SHOWCASE_WORKOUT_BEATS = {
   rowsIn: 18,
   rowStagger: 4,
-  firstTick: 34,
-  tickGap: 12,
-  restStart: 76,
-  restFrames: 26,
+  firstTick: 28,
+  tickGap: 10,
+  /** Local frame the rest countdown starts: the frame the footage's rest pill reads 0:29. */
+  restStart: 64,
+  /** Two seconds of the countdown, one value a second. */
+  restFrames: 60,
 } as const;
 
 /** Tick frame per row; the rest countdown runs after the hardest row and delays the rows after it. */
@@ -1043,7 +1282,7 @@ export function workoutTickFrames(grades: readonly string[]): {
   const value = (grade: string) => Number.parseInt(grade.replace(/[^0-9]/g, ''), 10) || 0;
   const top = grades.reduce((best, grade, index) => (value(grade) > value(grades[best]) ? index : best), 0);
   const { firstTick, tickGap, restFrames } = SHOWCASE_WORKOUT_BEATS;
-  const restStart = firstTick + top * tickGap + 6;
+  const restStart = Math.max(firstTick + top * tickGap + 6, SHOWCASE_WORKOUT_BEATS.restStart);
   const ticks = grades.map((_, index) => firstTick + index * tickGap + (index > top ? restFrames - tickGap + 6 : 0));
   return { ticks, restRow: Math.min(top + 1, grades.length - 1), restStart, restEnd: restStart + restFrames };
 }
@@ -1092,7 +1331,12 @@ export type StillFrame = Readonly<{ frame: number; label: string }>;
  * Frames for one scene's contact sheet: its settled frame first, then the
  * entrance, the mid-transitions either side, and for the outro the loop seam.
  */
-export function stillFramesForScene(scene: ShowcaseScene, totalFrames = SHOWCASE_TOTAL_FRAMES): StillFrame[] {
+export function stillFramesForScene(
+  scene: ShowcaseScene,
+  totalFrames = SHOWCASE_TOTAL_FRAMES,
+  /** Callouts with their own window: one still each, once its pill has landed. */
+  callouts: ReadonlyArray<Readonly<{ name: string; enter: number; leave: number }>> = [],
+): StillFrame[] {
   const length = scene.endFrame - scene.startFrame;
   const settled =
     scene.id === 'hook'
@@ -1123,6 +1367,14 @@ export function stillFramesForScene(scene: ShowcaseScene, totalFrames = SHOWCASE
   if (scene.id === 'outro') {
     frames.splice(4, 2, { frame: totalFrames - 12, label: 'closer -12' }, { frame: totalFrames - 1, label: 'last' });
     frames.push({ frame: 0, label: 'frame 0' });
+  }
+  const windowed = callouts.filter(
+    (callout) =>
+      callout.enter > SHOWCASE_CHOREO.calloutStart + SHOWCASE_CHOREO.calloutStagger * 2 || callout.enter < 12,
+  );
+  for (const callout of windowed) {
+    const local = Math.min(callout.enter + 24, callout.leave - 7);
+    frames.push({ frame: scene.startFrame + local, label: callout.name });
   }
   const unique = new Map<number, StillFrame>();
   for (const still of frames) if (!unique.has(still.frame)) unique.set(still.frame, still);

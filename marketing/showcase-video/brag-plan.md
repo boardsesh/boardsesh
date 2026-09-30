@@ -1,6 +1,6 @@
 # Homepage showcase video: plan
 
-A 38.2 s (1145 frames; 34.0 s without the island scene), 1920x1080, 30 fps motion-graphics cut for the
+A 41.6 s (1248 frames; 37.4 s without the island scene), 1920x1080, 30 fps motion-graphics cut for the
 homepage hero, plus a 9:16 version for stories. Built the brag-slim way:
 every frame is a pure function of its number, so any frame renders the same
 on any run.
@@ -22,27 +22,32 @@ on any run.
 
 ## Storyboard (frames at 30 fps)
 
-| #   | Scene       | Frames    | Background | Copy                                | On screen                                                                                                                                                 |
-| --- | ----------- | --------- | ---------- | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | hook        | 0–72      | dark       | Your board. Lit from your _phone._  | Dot grid + the light take's lit holds as rings on a Catmull-Rom line; amber spark runs start→finish (12–48)                                               |
-| 2   | light       | 72–192    | dark       | Swipe, and the wall _follows._      | Phone springs in; rings land on the footage's holds (match cut); callouts "On the wall", "Swipe for next"                                                |
-| 3   | boards      | 192–330   | lavender   | Every board. One _app._             | Kilter, Tension, MoonBoard rise neatly; Woods, Decoy, Touchstone, Grasshopper crowd in from the sides; So iLL pops up into the middle and jostles its neighbours |
-| 4   | wall        | 330–486   | dark       | See what's on the _wall._           | Callouts "Board history", "On the wall now", "Lit on this wall" (the history box grows down over the list)                                               |
-| 5   | crew        | 486–614   | lavender   | Your crew. One _queue._             | Callouts "Scan to join", "Who queued it", "Play next" in the light-scene hues                                                                             |
-| 6   | workouts    | 614–776   | dark       | Give your session a _plan._         | Tilted phone; a pyramid checklist (V2 warm-up → V6 top → V4) ticks every 12 frames, with a rest countdown after the top set                              |
-| 7   | lock-screen | 776–902   | lavender   | Control the wall from the _island._ | Home screen with the Live Activity in the Dynamic Island; the phone zooms onto the expanded island; callouts "Next", "Reconnect board", "Mirror climb"  |
-| 8   | log         | 902–1016  | dark       | Remember every _send._              | Callouts "Every board", "Activity"                                                                                                                        |
-| 9   | outro       | 1016–1145 | dark       | Less phone. More _wall._            | Mark, `boardsesh` wordmark, dots line drawn by the spark, "Free, no ads. iOS & Android." pill; loop closer                                                |
+| #   | Scene       | Frames    | Background | Copy                                | On screen (footage frames of the take)                                                                                           |
+| --- | ----------- | --------- | ---------- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | hook        | 0–72      | dark       | Your board. Lit from your _phone._  | Dot grid + the light take's lit holds as rings on a line; amber spark runs start→finish (12–48)                                  |
+| 2   | light       | 72–204    | dark       | Swipe, and the wall _follows._      | Rings land on the footage's holds; the bulb lights (88), then the swipe to the next climb; "On the wall", "Swipe for next"      |
+| 3   | boards      | 204–342   | lavender   | Every board. One _app._             | Kilter, Tension, MoonBoard rise; Woods, Decoy, Touchstone, Grasshopper crowd in; So iLL pops up into the middle                  |
+| 4   | wall        | 342–507   | dark       | See what's on the _wall._           | Board button tap (48–168, "Board history" then "On the wall now"), cut to the sheet dragged up (255–300, "Lit on this wall")      |
+| 5   | crew        | 507–681   | lavender   | Your crew. One _queue._             | Invite QR (0–56), the second phone's row with its avatar (296–366), the long-press "Play next" (440–488)                         |
+| 6   | workouts    | 681–843   | dark       | Give your session a _plan._         | Pyramid picked (30–90), cut to the rest pill counting (304–406); the checklist ticks V2 → V6 → V4 and its countdown reads the pill |
+| 7   | lock-screen | 843–969   | lavender   | Control the wall from the _island._ | The real Dynamic Island: "Masquerade · 2 of 4 · V3", Next tapped, "Putty · 3 of 4 · V2" (200–326); zoomed onto the island       |
+| 8   | log         | 969–1119  | dark       | Remember every _send._              | "Every board" filter (90–141), cut to Kilter picked and the calendar redrawn (230–329, "Activity")                              |
+| 9   | outro       | 1119–1248 | dark       | Less phone. More _wall._            | Mark, `boardsesh` wordmark, dots line drawn by the spark, "Free, no ads. iOS & Android." pill; loop closer                       |
 
-The island scene shows only the recorder's footage of the real Live Activity:
-the Dynamic Island expanded over a climb playing in the dark app, then Next
-changing the climb. `--placeholder-footage` draws a stand-in island (mirroring
-`ClimbSessionLiveActivity.swift`: board thumbnail, climb name, "N of M · 40°",
-grade, Prev / bulb / mirror / Next) over two real Kilter renders, tagged
+`SHOWCASE_TAKE_EDITS` in `scripts/lib/showcase-video/render.ts` holds these
+footage ranges (hard cuts between them), each callout's window, and the anchor
+corrections the recording needs: anchors inside a native sheet are measured
+from the sheet's top (wall sheet 462 pt, 145 pt dragged up; invite sheet 405;
+queue sheet 322), and the log take's anchors keep their pre-scroll `y` (−338 pt,
+−415 once the Kilter view drops a footnote). Every value was read off the
+recorded frames and checked with `--measure`; re-check them after a re-record.
+
+The island scene shows only the recorder's footage of the real Live Activity.
+`--placeholder-footage` draws a stand-in island for layout work (tagged
 PLACEHOLDER ISLAND and marked on disk, so a render without that flag never
-shows it. Without a recorded `lock-screen` take the scene is dropped, the cut closes up
-to 1019 frames (34.0 s) and backgrounds re-alternate (log turns lavender), so
-the render degrades with a warning instead of failing.
+shows it) and never overwrites a recorded take. Without a recorded
+`lock-screen` take the scene is dropped, the cut closes up to 1122 frames
+(37.4 s) and backgrounds re-alternate (log turns lavender).
 
 Scene lengths meet the reading budget: 0.3 s per visible word between the
 first word landing and the exit starting, counting every board label and
@@ -77,7 +82,7 @@ holds them.
 - Nothing enters over the headline: a dark phone crossing dark ink hides it.
 - Frame 0 is the settled poster. The last 24 frames blur the outro out, grow
   the hook's rings back out of the outro dots and blur the hook headline in, so
-  the web cut (frames 1..1144) loops without a seam.
+  the web cut (frames 1..1247) loops without a seam.
 - A missing board take is skipped with a warning; the pile-up uses the boards
   that were recorded. A missing island take drops that scene. Any other
   missing take stops the render.
@@ -85,8 +90,9 @@ holds them.
 ## Commands
 
 ```sh
-vp run video:render -- --placeholder-footage --stills   # stand-in footage + contact sheets
-vp run video:render -- --stills --measure               # anchor boxes over the footage
+vp run video:render -- --stills                         # contact sheets from the recorded takes
+vp run video:render -- --stills --measure               # anchor boxes over the footage (check after a re-record)
+vp run video:render -- --placeholder-footage --stills   # stand-ins for takes not recorded yet
 vp run video:render -- --frame 264 --format 16x9        # one full-size frame
 vp run video:render                                      # both formats, all deliverables
 vp run video:render -- --format 16x9 --from-frame 400   # quick preview from a frame

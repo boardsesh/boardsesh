@@ -65,12 +65,12 @@ describe('showcase timeline', () => {
     expect(timeline.skipped).toEqual([]);
   });
 
-  it('drops the island scene without its take, closes up, and still alternates backgrounds (~34 s)', () => {
+  it('drops the island scene without its take, closes up, and still alternates backgrounds (~37 s)', () => {
     const timeline = resolveTimeline(new Set(SHOWCASE_TAKE_IDS.filter((takeId) => takeId !== 'lock-screen')));
     expect(timeline.skipped).toEqual(['lock-screen']);
     expect(timeline.scenes.map((scene) => scene.id)).not.toContain('lock-screen');
-    expect(timeline.totalFrames / 30).toBeGreaterThan(33);
-    expect(timeline.totalFrames / 30).toBeLessThan(35);
+    expect(timeline.totalFrames).toBe(SHOWCASE_TOTAL_FRAMES - 126);
+    expect(timeline.totalFrames / 30).toBeGreaterThan(36);
     timeline.scenes.forEach((scene, index) => {
       if (index > 0) expect(scene.startFrame).toBe(timeline.scenes[index - 1].endFrame);
     });

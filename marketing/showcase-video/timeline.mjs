@@ -558,7 +558,9 @@ export function init(input) {
       const ring = svg('circle', { class: 'rest-ring', cx: 14, cy: 14, r: 11, pathLength: 1 }, ringSvg);
       el('span', { class: 'rest-label', text: workouts.restLabel }, pill);
       const digits = el('span', { class: 'rest-digits' }, pill);
-      const values = workouts.restCountdown.map((value) => el('span', { class: 'digit', text: value }, digits));
+      // The footage's own pill values when the edit has them, else the copy's.
+      const labels = data.restPill.length ? data.restPill.map(([, value]) => value) : workouts.restCountdown;
+      const values = labels.map((value) => el('span', { class: 'digit', text: value }, digits));
       timer = { pill, ring, values };
     }
     return { node, fill, tick, time, timer };
@@ -696,8 +698,25 @@ function mainTake(sceneIndex) {
   return null;
 }
 
+/**
+ * The footage frame a scene shows at `frame`: its take's ranges played back to
+ * back (render.ts `footageAt`; the render test holds the two together). Before
+ * the scene the footage runs up to the first range, after it on from the last.
+ */
+export function footageAt(segments, local, frameCount) {
+  const limit = (value) => clamp(value, 0, frameCount - 1);
+  if (local < 0 || segments.length === 0) return limit((segments[0]?.[0] ?? 0) + local);
+  let offset = 0;
+  for (const [from, to] of segments) {
+    if (local < offset + to - from) return limit(from + local - offset);
+    offset += to - from;
+  }
+  const lastTo = segments[segments.length - 1][1];
+  return limit(lastTo + local - offset);
+}
+
 function footageIndex(take, scene, frame) {
-  return clamp(frame - scene.startFrame + data.leadFrames, 0, take.frameCount - 1);
+  return footageAt(take.segments, frame - scene.startFrame, take.frameCount);
 }
 
 const frameUrl = (take, index) => `${take.frameUrlBase}${String(index + 1).padStart(5, '0')}.jpg`;
@@ -769,20 +788,20 @@ function renderCallouts(frame, sceneIndex, mainPose) {
       continue;
     }
     const local = frame - scene.startFrame;
-    const length = sceneLength(scene);
     const take = data.takes[scene.takes[0]];
     const time = footageIndex(take, scene, frame) / data.fps;
-    const retract = easeInOut(
-      progress(local, length - choreo.calloutsOutFromEnd, choreo.calloutsOutFromEnd - choreo.calloutsOutEndFromEnd),
-    );
-    items.forEach((item, index) => {
+    const retractFrames = choreo.calloutsOutFromEnd - choreo.calloutsOutEndFromEnd;
+    items.forEach((item) => {
+      // Each callout has its own window (render.ts calloutTimings): in at
+      // `enter`, fully retracted by `leave`.
+      const retract = easeInOut(progress(local, item.callout.leave - retractFrames, retractFrames));
       const rect = anchorAt(take.anchors[item.callout.name], time);
       if (!rect) {
         setAttrs(item.group, { visibility: 'hidden' });
         setVars(item.pill, { o: 0 });
         return;
       }
-      const start = choreo.calloutStart + (data.staging[sceneId]?.calloutDelay ?? 0) + choreo.calloutStagger * index;
+      const start = item.callout.enter;
       const boxAmount = easeOut(progress(local, start, choreo.boxFrames)) * (1 - retract);
       const leaderAmount = easeInOut(progress(local, start + choreo.leaderDelay, choreo.leaderFrames)) * (1 - retract);
       const pillStart = start + choreo.pillDelay;
@@ -920,11 +939,22 @@ function renderWorkouts(frame) {
     if (!row.timer) return;
     // The rest countdown replaces this row's rest time between the top set and this row's tick.
     const shown = easeOut(progress(local, beats.restStart, 6)) * (1 - easeIn(progress(local, beats.restEnd, 5)));
-    const run = progress(local, beats.restStart + 2, beats.restEnd - beats.restStart - 4);
+    // One value a second, in step with the footage's rest pill; the ring drains a 30 s rest.
+    const elapsed = clamp((local - beats.restStart) / data.fps, 0, (beats.restEnd - beats.restStart) / data.fps);
+    let step = Math.min(row.timer.values.length - 1, Math.floor(elapsed + 1e-6));
+    if (data.restPill.length) {
+      // In step with the footage: the value its rest pill shows on this frame.
+      const footage = footageIndex(data.takes[scene.takes[0]], scene, frame);
+      step = Math.max(
+        0,
+        data.restPill.findLastIndex(([from]) => from <= footage),
+      );
+    }
+    const seconds = Number.parseInt(String(row.timer.values[step].textContent).split(':')[1] ?? '0', 10);
+    const run = 1 - seconds / 30;
     setVars(row.timer.pill, { 'timer-o': shown });
     setVars(row.time, { 'time-o': 1 - shown });
-    setAttrs(row.timer.ring, { 'stroke-dasharray': `${(1 - run).toFixed(4)} 1`, opacity: run < 0.999 ? 1 : 0 });
-    const step = Math.min(row.timer.values.length - 1, Math.floor(run * (row.timer.values.length - 1) + 1e-6));
+    setAttrs(row.timer.ring, { 'stroke-dasharray': `${(1 - run).toFixed(4)} 1`, opacity: 1 });
     row.timer.values.forEach((value, valueIndex) => setVars(value, { 'digit-on': valueIndex === step ? 1 : 0 }));
   });
   const lastRowIn = data.workoutBeats.rowsIn + data.workoutBeats.rowStagger * (ui.rows.length - 1);

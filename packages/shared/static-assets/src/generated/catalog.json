@@ -164,6 +164,8 @@
   "/images/help/playlist-detail.webp": "static/v1/27e58132e15b5a29b2c5369de0640948a948475718d605ebc6421b2c1b184012.webp",
   "/images/help/session-detail.webp": "static/v1/8c3130d05a583e099e2a4eb4305391c5da0dd3c53b237746106ea75b6446a7e5.webp",
   "/images/help/setters.webp": "static/v1/65fbbf8332dd0f897afb67e937f4b2a0cd2ff7b91b4d5eaf9c2d332ae48bf8ab.webp",
+  "/images/home/showcase-poster-9x16.webp": "static/v1/67b2fb427eb7544bf3439f36bb508f4a4d00a63057f8161062b9ab986643bd3d.webp",
+  "/images/home/showcase-poster.webp": "static/v1/de49c449f007f7584212de513477d5ea32996ba93804dd6598f97eabafdc7dee.webp",
   "/images/kilter/product_sizes_layouts_sets/15_5_24.webp": "static/v1/f5b8e20a0888a4c8649be51611426518c2eff7cd39b3b206c4113a0fea2673d4.webp",
   "/images/kilter/product_sizes_layouts_sets/36-1.webp": "static/v1/8d58e55281aeefc89e973f164b20f5c55ea0afff0734b852c90b740575838a5b.webp",
   "/images/kilter/product_sizes_layouts_sets/38-1.webp": "static/v1/a56ba044f548d913eee80e4889b8dc8e0da70a0b1e4ae839264178f3cedcbc41.webp",
@@ -419,5 +421,9 @@
   "/videos/help/swipe-row-queue-playlist.mp4": "static/v1/c9d1c746da46db0b3df986c11a3cd37af239e77ac2262fad96bb77e2ed5e4c41.mp4",
   "/videos/help/swipe-row-queue-playlist.webm": "static/v1/026306a8d37a0a9f886114bf984447d6b86b2664232250248640a580c2ddce51.webm",
   "/videos/help/zone-filter-drag.mp4": "static/v1/b52fd295a0575e1ba838d4e67824b20dcb49f2b064c41a20e90bbe1a89451d1c.mp4",
-  "/videos/help/zone-filter-drag.webm": "static/v1/0f1a0e92774a4531c5c0f7a125b351a825492240c30b497a880dbcef463d4a2f.webm"
+  "/videos/help/zone-filter-drag.webm": "static/v1/0f1a0e92774a4531c5c0f7a125b351a825492240c30b497a880dbcef463d4a2f.webm",
+  "/videos/home/showcase-9x16.mp4": "static/v1/5ff825697429a9771bc1f2d061d34e674a04bc31b86553ecc0d0e573f832b2cc.mp4",
+  "/videos/home/showcase-9x16.webm": "static/v1/f66cae229c65443d4cbf4bbc2bd55d3d26c5bf167df28dd1b6075e86c4c42875.webm",
+  "/videos/home/showcase.mp4": "static/v1/f263160fc2c77dc26e24f18708dfc23ca4ebaa56a78e42c5fd3cd73485cf206f.mp4",
+  "/videos/home/showcase.webm": "static/v1/8889cfc0514cb016119d573ab09eba90849a69c87bf4869dee1a7a9a1baf5d7f.webm"
 }

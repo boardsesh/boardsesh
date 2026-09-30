@@ -216,6 +216,11 @@ flow, tells the recorder exactly where to cut the head.
   `profile-board-filter` and `activity-calendar` still carry their pre-scroll
   `y`.
 
+The renderer corrects both per take in `SHOWCASE_TAKE_EDITS`
+(`scripts/lib/showcase-video/render.ts`), next to each scene's footage ranges
+and callout windows. After a re-record, check every callout with
+`vp run video:render -- --stills --measure` and adjust the numbers there.
+
 ## Adding or changing a take
 
 1. Add the id to `SHOWCASE_TAKE_IDS` in `contract.ts` and give a scene in
