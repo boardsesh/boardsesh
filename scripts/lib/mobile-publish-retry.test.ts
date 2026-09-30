@@ -267,7 +267,7 @@ function invocation() {
   return {
     platform: 'ios' as const,
     command: 'vp',
-    args: ['dlx', 'eoas@3.1.2', 'publish'],
+    args: ['dlx', 'eoas@3.2.5', 'publish'],
     cwd: '/repo/packages/mobile',
     env: {} as NodeJS.ProcessEnv,
   };
