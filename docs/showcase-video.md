@@ -33,9 +33,9 @@ the moment the app changes.
 
 The default backend is **prod**, for real content. Two accounts sign in:
 
-| Phone | Account | Where the password comes from |
+| Phone | Account | Env vars |
 | --- | --- | --- |
-| Primary (recorded) | `test@boardsesh.com`, the App Store account | `SCREENSHOT_USER_PASSWORD` |
+| Primary (recorded) | `test@boardsesh.com`, the App Store account | `SCREENSHOT_USER_PASSWORD`; `SCREENSHOT_USER_EMAIL` overrides the email (default `test@boardsesh.com`) |
 | Secondary (crew take only) | Marco's own account | `SHOWCASE_SECONDARY_EMAIL`, `SHOWCASE_SECONDARY_PASSWORD` |
 
 The recorder reads these from the environment, and from `--env-file`
