@@ -8,6 +8,7 @@ import { useTheme } from '../../providers/theme-provider';
 import { blendOpaque } from '../../theme/colors';
 import { borderRadius, spacing } from '../../theme/tokens';
 import { nowDate } from '../../lib/clock';
+import { useShowcaseAnchor } from '../../lib/showcase-anchor';
 
 const ROWS = 7;
 const CELL_GAP = 3;
@@ -95,10 +96,15 @@ export function ActivityHeatmap({ heatmap }: ActivityHeatmapProps) {
   // Current-day ring: inset by half its stroke so it sits inside the cell.
   const ringWidth = Math.max(1.5, cell * 0.12);
 
-  const onLayout = (event: LayoutChangeEvent) => setWidth(event.nativeEvent.layout.width);
+  const calendarAnchor = useShowcaseAnchor('activity-calendar');
+  const onLayout = (event: LayoutChangeEvent) => {
+    setWidth(event.nativeEvent.layout.width);
+    calendarAnchor.onLayout?.(event);
+  };
 
   return (
     <View
+      ref={calendarAnchor.ref}
       onLayout={onLayout}
       accessibilityRole="image"
       accessibilityLabel={t('stats.calendarAria', { days: totals.activeDays, count: totals.totalClimbs })}

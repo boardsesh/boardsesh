@@ -98,6 +98,47 @@ in slot order (`[0]` boots active, `[1]` is the second board-view shot). Each en
 a board's own name or its layout name, ignoring case, spacing and punctuation. Defaults live
 in `packages/mobile/src/lib/screenshot-mode.ts`.
 
+### Fake Bluetooth and showcase anchors
+
+Two screenshot-mode switches exist for the homepage showcase video. The recorder and
+renderer are documented in `docs/showcase-video.md`, which lands with the recorder PR; until
+that merges, `scripts/lib/showcase-video/contract.ts` is the reference.
+
+- `EXPO_PUBLIC_SCREENSHOT_FAKE_BLE=1` (honoured only with `EXPO_PUBLIC_SCREENSHOT_MODE=1`)
+  makes the app act as if a real board were in range, since the simulator has no Bluetooth.
+  Tapping the lightbulb connects straight away with no device picker, to a board named like
+  a real controller (`Kilter Board@3`, `Tension Board@3`, `MoonBoard`, `Woods Board`). Frame
+  writes succeed without leaving the phone. The radio, permission and quickstart-scan checks
+  stand down, and the screenshot presence seed lights each reported climb, so the play
+  view's wall pill reads "On the wall" and stays lit through swipes. The pill shows the
+  driver's avatar in that state; "On the wall" is its accessibility label. The adapter is
+  `packages/mobile/src/lib/ble/screenshot-fake-adapter.ts`.
+- Showcase anchors need only screenshot mode. Views the video points callouts at log where
+  they sit on screen through Metro:
+  `[showcase-anchor] {"name":"wall-pill","x":24,"y":118,"width":132,"height":32}`, in
+  `measureInWindow` points. Each logs on layout and again 250 ms and 700 ms later, so a
+  sheet that springs in still reports where it settled, and a repeat of the same rect is
+  skipped. The names:
+  - `wall-pill`, `board-surface`: the play view's wall-state pill and board.
+  - `invite-qr`: the QR code in the session invite sheet.
+  - `queue-row-avatar`: the added-by avatar on the first upcoming queue row only.
+  - `play-next`: the Play next row in the long-press climb menu.
+  - `profile-board-filter`: the Progress tab's Filter button.
+  - `board-history-button`: the board glyph at the top right of the Climbs list (liquid
+    glass chrome only), which opens the board sheet.
+  - `now-on-wall`, `wall-history`: that sheet's lit-climb hero and its "Lit on this wall"
+    header. Only the sheet reports them, never the iPad column or the Wall tab.
+  - `workout-type`: the selected tile in the Session tab's workout shelf.
+  - `rest-timer`: the rest timer's on/off row.
+  - `activity-calendar`: the Progress tab's activity calendar grid.
+
+  The Live Activity buttons (`lock-next`, `lock-relight`, `lock-mirror`) can't log from a
+  widget, so the recorder authors those rects itself. The hook is
+  `packages/mobile/src/lib/showcase-anchor.ts`; the contract it must match is
+  `scripts/lib/showcase-video/contract.ts`.
+
+Every gate inlines the raw `process.env` comparison, so both fold away in normal builds.
+
 `run` resets the simulator keychain by default (the shared `group.com.boardsesh.app` keychain
 survives an app uninstall, so a stale token would auth against the wrong backend). Pass
 `--keep-keychain` to preserve a manual login — note the reset is device-wide.

@@ -67,6 +67,11 @@ export async function requestBleRuntimePermissions(options: BleRuntimePermission
 export async function requestBleRuntimePermissionStatus({
   requestNotificationPermission = false,
 }: BleRuntimePermissionOptions = {}): Promise<BleRuntimePermissionStatus> {
+  // The fake-Bluetooth screenshot build has nothing to ask permission for.
+  if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' && process.env.EXPO_PUBLIC_SCREENSHOT_FAKE_BLE === '1') {
+    return 'granted';
+  }
+
   if (Platform.OS === 'ios') {
     // iOS handles BLE permissions via Info.plist entries; the system prompts
     // automatically on first scan. No runtime permission request needed, and

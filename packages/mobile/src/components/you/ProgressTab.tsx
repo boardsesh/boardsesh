@@ -27,6 +27,7 @@ import { getCachedNumberFormat } from '../../lib/intl-formatter-cache';
 import { ONBOARDING_TIP_RECORD_KEY } from '@boardsesh/key-value-storage';
 import { spacing } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
+import { ShowcaseAnchorView } from '../../lib/showcase-anchor';
 
 type YouData = ReturnType<typeof useYouProfileData>;
 type ProgressTabProps = {
@@ -224,22 +225,24 @@ export const ProgressTab = memo(function ProgressTab({
                   {isOwnProfile ? t('stats.progress.title') : t('stats.progress.publicTitle')}
                 </Text>
                 {onOpenFilters ? (
-                  <PressableSurface
-                    testID="profile-progress-filter"
-                    onPress={onOpenFilters}
-                    feedback="opacity"
-                    accessibilityLabel={t('stats.progress.filters')}
-                    style={styles.filterAction}
-                  >
-                    <Icon
-                      name="filter"
-                      size={20}
-                      color={data.hasActiveFilters ? brandColors.primary : systemColors.label}
-                    />
-                    <Text variant="footnote" color={brandColors.primary}>
-                      {tYou('mobile.filter.title')}
-                    </Text>
-                  </PressableSurface>
+                  <ShowcaseAnchorView name="profile-board-filter">
+                    <PressableSurface
+                      testID="profile-progress-filter"
+                      onPress={onOpenFilters}
+                      feedback="opacity"
+                      accessibilityLabel={t('stats.progress.filters')}
+                      style={styles.filterAction}
+                    >
+                      <Icon
+                        name="filter"
+                        size={20}
+                        color={data.hasActiveFilters ? brandColors.primary : systemColors.label}
+                      />
+                      <Text variant="footnote" color={brandColors.primary}>
+                        {tYou('mobile.filter.title')}
+                      </Text>
+                    </PressableSurface>
+                  </ShowcaseAnchorView>
                 ) : null}
               </View>
               <Text variant="footnote" color={systemColors.secondaryLabel}>
