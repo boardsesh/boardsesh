@@ -66,7 +66,7 @@ vi.mock('@/app/hooks/use-autoplay-video', () => ({
     showsControls: false,
     prefersReducedMotion: false,
     autoplayRefused: false,
-    isPlaying: false,
+    isShowingVideo: false,
     userPaused: false,
     toggleUserPaused: () => undefined,
   }),

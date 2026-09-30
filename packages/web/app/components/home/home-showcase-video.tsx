@@ -89,13 +89,12 @@ export default function HomeShowcaseVideo() {
   // The hook needs to know whether autoplay is allowed before it may touch the
   // video, so `enabled` follows the two values read below.
   const [autoplayAllowed, setAutoplayAllowed] = React.useState(false);
-  const { videoRef, prefersReducedMotion, autoplayRefused, isPlaying, userPaused, toggleUserPaused } = useAutoplayVideo(
-    {
+  const { videoRef, prefersReducedMotion, autoplayRefused, isShowingVideo, userPaused, toggleUserPaused } =
+    useAutoplayVideo({
       rootMargin: '0px',
       threshold: 0.1,
       enabled: autoplayAllowed && sourceReady,
-    },
-  );
+    });
 
   React.useEffect(() => {
     setDataSaver(readsDataSaver());
@@ -192,7 +191,7 @@ export default function HomeShowcaseVideo() {
     { id: 'log', headline: t('home.showcase.scenes.log') },
     { id: 'outro', headline: t('home.showcase.scenes.outro') },
   ];
-  const idleWaitingForPlay = holdsAutoplay && !isPlaying && videoPaused;
+  const idleWaitingForPlay = holdsAutoplay && !isShowingVideo && videoPaused;
 
   return (
     <Box component="figure" className={styles.figure}>
@@ -207,7 +206,7 @@ export default function HomeShowcaseVideo() {
       <video
         ref={videoRef}
         className={styles.video}
-        data-active={isPlaying || autoplayRefused ? 'true' : 'false'}
+        data-active={isShowingVideo || autoplayRefused ? 'true' : 'false'}
         aria-label={t('home.showcase.videoLabel')}
         muted
         loop

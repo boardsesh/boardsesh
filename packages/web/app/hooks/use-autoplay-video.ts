@@ -44,8 +44,12 @@ type UseAutoplayVideoResult = {
   prefersReducedMotion: boolean | null;
   /** True when the browser rejected `play()`. */
   autoplayRefused: boolean;
-  /** True once the video has actually started producing frames. */
-  isPlaying: boolean;
+  /**
+   * True once the video has produced a frame, and stays true across pauses so a
+   * paused reader keeps seeing the frame they stopped on. False again only when
+   * the source is dropped ('emptied') or fails ('error').
+   */
+  isShowingVideo: boolean;
   /** True after the reader pressed pause; scrolling never restarts the video then. */
   userPaused: boolean;
   toggleUserPaused: () => void;
@@ -71,7 +75,7 @@ export function useAutoplayVideo({
   const [autoplayRefused, setAutoplayRefused] = React.useState(false);
   const [inView, setInView] = React.useState(false);
   const [userPaused, setUserPaused] = React.useState(false);
-  const [isPlaying, setIsPlaying] = React.useState(false);
+  const [isShowingVideo, setIsShowingVideo] = React.useState(false);
 
   React.useEffect(() => {
     const video = videoRef.current;
@@ -93,19 +97,18 @@ export function useAutoplayVideo({
   React.useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
-    const markPlaying = () => setIsPlaying(true);
-    // Not 'ended': a looping video never fires it. 'emptied' and 'error' cover a
-    // source swap or failure, where the last frame is gone.
-    const markStopped = () => setIsPlaying(false);
+    const markPlaying = () => setIsShowingVideo(true);
+    // Not 'pause' (the paused frame should stay visible) and not 'ended' (a
+    // looping video never fires it). 'emptied' and 'error' cover a source swap
+    // or failure, where the frame is gone and the poster must show again.
+    const markGone = () => setIsShowingVideo(false);
     video.addEventListener('playing', markPlaying);
-    video.addEventListener('pause', markStopped);
-    video.addEventListener('emptied', markStopped);
-    video.addEventListener('error', markStopped);
+    video.addEventListener('emptied', markGone);
+    video.addEventListener('error', markGone);
     return () => {
       video.removeEventListener('playing', markPlaying);
-      video.removeEventListener('pause', markStopped);
-      video.removeEventListener('emptied', markStopped);
-      video.removeEventListener('error', markStopped);
+      video.removeEventListener('emptied', markGone);
+      video.removeEventListener('error', markGone);
     };
   }, []);
 
@@ -126,7 +129,7 @@ export function useAutoplayVideo({
     showsControls: prefersReducedMotion === true || autoplayRefused,
     prefersReducedMotion,
     autoplayRefused,
-    isPlaying,
+    isShowingVideo,
     userPaused,
     toggleUserPaused,
   };

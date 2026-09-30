@@ -30,14 +30,14 @@ function stubReducedMotion(matches: boolean) {
 }
 
 function Harness({ rootMargin, threshold, enabled }: { rootMargin?: string; threshold?: number; enabled?: boolean }) {
-  const { videoRef, showsControls, userPaused, isPlaying, toggleUserPaused } = useAutoplayVideo({
+  const { videoRef, showsControls, userPaused, isShowingVideo, toggleUserPaused } = useAutoplayVideo({
     rootMargin,
     threshold,
     enabled,
   });
   return (
     <div>
-      <video ref={videoRef} data-testid="video" controls={showsControls} data-playing={isPlaying} muted />
+      <video ref={videoRef} data-testid="video" controls={showsControls} data-showing={isShowingVideo} muted />
       <button onClick={toggleUserPaused}>{userPaused ? 'resume' : 'pause'}</button>
     </div>
   );
@@ -166,23 +166,30 @@ describe('useAutoplayVideo', () => {
 
   it('reports playing once the video fires its playing event', () => {
     render(<Harness />);
-    expect(screen.getByTestId('video').getAttribute('data-playing')).toBe('false');
+    expect(screen.getByTestId('video').getAttribute('data-showing')).toBe('false');
 
     fireEvent(screen.getByTestId('video'), new Event('playing'));
-    expect(screen.getByTestId('video').getAttribute('data-playing')).toBe('true');
+    expect(screen.getByTestId('video').getAttribute('data-showing')).toBe('true');
   });
 
-  it.each(['pause', 'emptied', 'error'])('stops reporting playing after %s', (eventName) => {
+  it.each(['emptied', 'error'])('reveals the poster again after %s', (eventName) => {
     render(<Harness />);
     fireEvent(screen.getByTestId('video'), new Event('playing'));
     fireEvent(screen.getByTestId('video'), new Event(eventName));
-    expect(screen.getByTestId('video').getAttribute('data-playing')).toBe('false');
+    expect(screen.getByTestId('video').getAttribute('data-showing')).toBe('false');
+  });
+
+  it('keeps showing the paused frame after pause', () => {
+    render(<Harness />);
+    fireEvent(screen.getByTestId('video'), new Event('playing'));
+    fireEvent(screen.getByTestId('video'), new Event('pause'));
+    expect(screen.getByTestId('video').getAttribute('data-showing')).toBe('true');
   });
 
   it('keeps reporting playing after ended, since the video loops', () => {
     render(<Harness />);
     fireEvent(screen.getByTestId('video'), new Event('playing'));
     fireEvent(screen.getByTestId('video'), new Event('ended'));
-    expect(screen.getByTestId('video').getAttribute('data-playing')).toBe('true');
+    expect(screen.getByTestId('video').getAttribute('data-showing')).toBe('true');
   });
 });
