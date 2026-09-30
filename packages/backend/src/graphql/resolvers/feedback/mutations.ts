@@ -177,10 +177,11 @@ export const feedbackMutations = {
 function normalizeContext(input: FeedbackContextInput | null | undefined): FeedbackContext | null {
   if (!input) return null;
   const out: FeedbackContext = {};
-  for (const [k, v] of Object.entries(input) as Array<[Exclude<keyof FeedbackContext, 'diagnostics'>, unknown]>) {
-    if (typeof v === 'string' && v.length > 0) {
-      out[k] = v;
-    }
+  // Only known scalar leaves enter JSONB. Nested diagnostics are normalized separately.
+  const scalarKeys = ['climbUuid', 'climbName', 'difficulty', 'sessionId', 'sessionName', 'url', 'userAgent'] as const;
+  for (const contextKey of scalarKeys) {
+    const contextValue = input[contextKey];
+    if (typeof contextValue === 'string' && contextValue.length > 0) out[contextKey] = contextValue;
   }
   if (input.diagnostics) {
     const diagnostics = Object.fromEntries(Object.entries(input.diagnostics).filter(([, entry]) => entry != null));
