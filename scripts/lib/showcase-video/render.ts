@@ -7,7 +7,6 @@ import {
   SHOWCASE_OUT_DIR,
   SHOWCASE_STAGE_DIR,
   SHOWCASE_WEB_POSTER_DIR,
-  SHOWCASE_WEB_VIDEO_DIR,
   SHOWCASE_WORK_ROOT,
   anchorAt,
   sortAnchorSamples,
@@ -43,6 +42,8 @@ export const SHOWCASE_CANVAS: Record<ShowcaseFormat, Readonly<{ width: number; h
 export const SHOWCASE_DEVICE_SCALE = 2;
 
 export const SHOWCASE_STAGE_HTML = resolve(SHOWCASE_STAGE_DIR, 'index.html');
+/** The full-bleed page (store previews): footage filling the frame under caption bars. */
+export const SHOWCASE_FULL_BLEED_HTML = resolve(SHOWCASE_STAGE_DIR, 'full-bleed.html');
 export const SHOWCASE_STAGE_COPY = resolve(SHOWCASE_STAGE_DIR, 'copy.en-US.json');
 export const SHOWCASE_STAGE_HOLDS = resolve(SHOWCASE_STAGE_DIR, 'holds.json');
 export const SHOWCASE_STAGE_TOKENS = resolve(SHOWCASE_STAGE_DIR, 'tokens.css');
@@ -50,35 +51,15 @@ export const SHOWCASE_SHARE_COPY = resolve(SHOWCASE_STAGE_DIR, 'share-copy.txt')
 export const SHOWCASE_FRAMES_DIR = resolve(SHOWCASE_WORK_ROOT, 'work/frames');
 export const SHOWCASE_STILLS_DIR = resolve(SHOWCASE_OUT_DIR, 'stills');
 
-export type ShowcaseOutputs = Readonly<{
-  /** Near-lossless 1x RGB intermediate every encode reads from. */
-  mezzanine: string;
-  /** Full-quality masters for social and ads; frame 0 is the hook. */
-  master: string;
-  masterStill: string;
-  shareCopy: string;
-  /**
-   * 9:16 only: the homepage hero, the only web outputs. The lite encode and its
-   * poster (the web poster frame) ship from `packages/web/public`.
-   */
-  heroPoster: string | null;
-  liteWebm: string | null;
-  liteMp4: string | null;
-  passLog: string;
-}>;
-
-export function showcaseOutputs(format: ShowcaseFormat): ShowcaseOutputs {
-  const suffix = format === '16x9' ? '' : `-${format}`;
-  const portrait = format === '9x16';
+/**
+ * The intermediates of one cut: the near-lossless 1x RGB mezzanine every
+ * encode of that cut reads, and the two-pass logs. Deliverable paths live on
+ * the render targets (`targets.ts`).
+ */
+export function cutIntermediates(cutKey: string): Readonly<{ mezzanine: string; passLog: string }> {
   return {
-    mezzanine: resolve(SHOWCASE_FRAMES_DIR, `showcase${suffix}.mkv`),
-    master: resolve(SHOWCASE_OUT_DIR, `brag${suffix}.mp4`),
-    masterStill: resolve(SHOWCASE_OUT_DIR, `brag${suffix}.jpg`),
-    shareCopy: resolve(SHOWCASE_OUT_DIR, 'share-copy.txt'),
-    heroPoster: portrait ? resolve(SHOWCASE_WEB_POSTER_DIR, 'showcase-hero-9x16.webp') : null,
-    liteWebm: portrait ? resolve(SHOWCASE_WEB_VIDEO_DIR, 'showcase-9x16-lite.webm') : null,
-    liteMp4: portrait ? resolve(SHOWCASE_WEB_VIDEO_DIR, 'showcase-9x16-lite.mp4') : null,
-    passLog: resolve(SHOWCASE_FRAMES_DIR, `showcase${suffix}-pass`),
+    mezzanine: resolve(SHOWCASE_FRAMES_DIR, `cut-${cutKey}.mkv`),
+    passLog: resolve(SHOWCASE_FRAMES_DIR, `cut-${cutKey}-pass`),
   };
 }
 
@@ -710,6 +691,8 @@ export type ShowcaseCopy = Readonly<{
     }>;
   'lock-screen': SceneCopy;
   log: SceneCopy;
+  /** The full-bleed App Preview's caption bars, keyed by `ShowcaseClip.caption`: one line, five words at most. */
+  appStore: Readonly<{ captions: Readonly<Record<string, string>> }>;
   outro: Readonly<{
     wordmark: string;
     tagline: string;
@@ -983,6 +966,9 @@ export const SHOWCASE_CALLOUT_LAYOUT = {
   portraitMinGap: 88,
 } as const;
 
+/** A callout layout: `SHOWCASE_CALLOUT_LAYOUT`'s fields, any values (a safe-area stage moves the pills in). */
+export type CalloutLayout = Readonly<Record<keyof typeof SHOWCASE_CALLOUT_LAYOUT, number>>;
+
 /** CSS px a callout label renders at when the video plays `viewerWidth` CSS px wide. */
 export function calloutLabelCssPx(format: ShowcaseFormat, viewerWidth = 390): number {
   const { labelSize, portraitLabelSize } = SHOWCASE_CALLOUT_LAYOUT;
@@ -1169,8 +1155,13 @@ export function layoutPortraitPills(
     portraitPillWidth: number;
     portraitMinGap: number;
   }> = SHOWCASE_CALLOUT_LAYOUT,
+  /** Pill centres stay between these (a safe area's text band); default the canvas less a gap. */
+  band: Readonly<{ top: number; bottom: number }> | null = null,
 ): PortraitPill[] {
   const { portraitPillInset: inset, portraitPillWidth: width, portraitMinGap: minGap } = layout;
+  const lowest = band ? band.top : minGap;
+  const highest = band ? band.bottom : canvas.height - minGap;
+  const within = (y: number) => Math.max(lowest, Math.min(highest, y));
   const leftEdge = inset + width;
   const rightEdge = canvas.width - inset - width;
   const rimAllowance = 24;
@@ -1205,12 +1196,12 @@ export function layoutPortraitPills(
     const other = preferred === 'left' ? 'right' : 'left';
     const side = clear(index, preferred) ? preferred : clear(index, other) ? other : null;
     if (!side && !roomy('left') && !roomy('right')) {
-      placed.push({ side: dropSide(box), y: bottomOfAll + 64 + minGap * dropOrder(index), exit: 'bottom' });
+      placed.push({ side: dropSide(box), y: within(bottomOfAll + 64 + minGap * dropOrder(index)), exit: 'bottom' });
       return;
     }
     if (!side) {
       const riserSide = box.x + box.width / 2 < canvas.width / 2 ? 'left' : 'right';
-      placed.push({ side: riserSide, y: topOfAll - 56 - minGap * risers, exit: 'top' });
+      placed.push({ side: riserSide, y: within(topOfAll - 56 - minGap * risers), exit: 'top' });
       risers += 1;
       return;
     }
@@ -1218,7 +1209,7 @@ export function layoutPortraitPills(
     for (const pill of placed) {
       if (pill.side === side && Math.abs(pill.y - y) < minGap) y = pill.y + minGap;
     }
-    placed.push({ side, y: Math.max(minGap, Math.min(canvas.height - minGap, y)), exit: 'side' });
+    placed.push({ side, y: within(y), exit: 'side' });
   });
   return placed;
 }
@@ -1354,6 +1345,58 @@ export type StageTake = Readonly<{
   anchors: Partial<Record<ShowcaseCalloutName, readonly ShowcaseAnchorSample[]>>;
 }>;
 
+// --- full-bleed (App Preview) ------------------------------------------------------
+
+/** The caption bar of the full-bleed layout, in px at the rendition size (886 wide for iPhone). */
+export const SHOWCASE_CAPTION_BAR = {
+  inset: 24,
+  height: 112,
+  radius: 28,
+  fontSize: 50,
+  /** Frames: the bar slides in from the clip's start, and is out by its end. */
+  inFrom: 4,
+  inFrames: 10,
+  outFrames: 8,
+  maxWords: 5,
+} as const;
+
+/** Frames a caption is fully in and still: from the end of its entrance to the start of its exit. */
+export const captionReadingFrames = (clipFrames: number): number =>
+  clipFrames - SHOWCASE_CAPTION_BAR.inFrom - SHOWCASE_CAPTION_BAR.inFrames - SHOWCASE_CAPTION_BAR.outFrames;
+
+export type FullBleedClipData = Readonly<{
+  startFrame: number;
+  endFrame: number;
+  take: Readonly<{ frameUrlBase: string; frameCount: number; segments: readonly FootageRange[] }>;
+  caption: string;
+  captionTop: number;
+}>;
+
+/** What full-bleed.html needs: the frame size, the clips back to back, the bar. */
+export type FullBleedStageData = Readonly<{
+  width: number;
+  height: number;
+  fps: number;
+  totalFrames: number;
+  measure: boolean;
+  clips: readonly FullBleedClipData[];
+  bar: typeof SHOWCASE_CAPTION_BAR;
+}>;
+
+/** Contact-sheet frames for a full-bleed cut: each clip's start, its caption settled, and its last frame. */
+export function fullBleedStillFrames(
+  clips: readonly Pick<FullBleedClipData, 'startFrame' | 'endFrame' | 'caption'>[],
+): StillFrame[] {
+  return clips.flatMap((clip, index) => [
+    { frame: clip.startFrame + 2, label: `${index + 1} in` },
+    {
+      frame: clip.startFrame + SHOWCASE_CAPTION_BAR.inFrom + SHOWCASE_CAPTION_BAR.inFrames + 12,
+      label: `${index + 1} ${clip.caption}`,
+    },
+    { frame: clip.endFrame - 1, label: `${index + 1} last` },
+  ]);
+}
+
 /**
  * The boards pile-up: which phones arrive, in what order, and where they end
  * up left to right. Only takes with footage are listed.
@@ -1381,9 +1424,13 @@ export type ShowcaseStageData = Readonly<{
   perspective: number;
   measure: boolean;
   choreo: typeof SHOWCASE_CHOREO;
-  layout: typeof SHOWCASE_CALLOUT_LAYOUT;
+  layout: CalloutLayout;
   phone: typeof SHOWCASE_PHONE;
   poses: Record<ShowcasePoseName, ShowcasePose>;
+  /** 9:16 headline top (px); the checklist follows it. */
+  headlineTop: number;
+  /** Margins that must stay free of text, drawn by `--measure`; null for none. */
+  safeArea: Readonly<{ top: number; bottom: number; left: number; right: number }> | null;
   scenes: ReadonlyArray<
     Readonly<{
       id: ShowcaseScene['id'];
@@ -1441,6 +1488,24 @@ export function resolveSceneCallouts(
 }
 
 /** Pill slots and leader gutters for a scene's callouts, from where the anchors sit when the callouts land. */
+/**
+ * The stage a cut is laid out on: poses, callout layout and the text band. A
+ * render target's rendition supplies it (`targets.ts`); the default is the
+ * homepage / social stage for the format.
+ */
+export type CalloutStage = Readonly<{
+  poses: Record<ShowcasePoseName, ShowcasePose>;
+  layout: CalloutLayout;
+  /** 9:16 pill centres stay inside this band (a safe area), or anywhere on the canvas. */
+  band: Readonly<{ top: number; bottom: number }> | null;
+}>;
+
+export const defaultCalloutStage = (format: ShowcaseFormat): CalloutStage => ({
+  poses: SHOWCASE_POSES[format],
+  layout: SHOWCASE_CALLOUT_LAYOUT,
+  band: null,
+});
+
 export function layoutSceneCallouts(
   format: ShowcaseFormat,
   scene: ShowcaseScene,
@@ -1448,9 +1513,10 @@ export function layoutSceneCallouts(
   anchorsFile: ShowcaseAnchorsFile,
   labels: CalloutCopy,
   edit?: ResolvedTakeEdit,
+  stage: CalloutStage = defaultCalloutStage(format),
 ): StageCallout[] {
   const canvas = SHOWCASE_CANVAS[format];
-  const calloutPose = SHOWCASE_POSES[format][SHOWCASE_SCENE_STAGING[scene.id]?.zoomPose ?? 'CALLOUT'];
+  const calloutPose = stage.poses[SHOWCASE_SCENE_STAGING[scene.id]?.zoomPose ?? 'CALLOUT'];
   const timings = calloutTimings(scene, names, edit);
   const timing = (name: ShowcaseCalloutName) => {
     const found = timings[name];
@@ -1490,7 +1556,7 @@ export function layoutSceneCallouts(
     width: phoneWidth * calloutPose.scale,
     height: phoneHeight * calloutPose.scale,
   };
-  const pills = layoutPortraitPills(padded, canvas, phone);
+  const pills = layoutPortraitPills(padded, canvas, phone, stage.layout, stage.band);
   return names.map((name, index) => ({
     name,
     label: labels[name] ?? name,
@@ -1764,8 +1830,8 @@ const toBt709 = (size?: Readonly<{ width: number; height: number }>): string =>
  */
 export const SHOWCASE_MEZZANINE_CRF = 6;
 
-export function buildMezzanineArgs(format: ShowcaseFormat, output: string): string[] {
-  const { width, height } = SHOWCASE_CANVAS[format];
+export function buildMezzanineArgs(size: Readonly<{ width: number; height: number }>, output: string): string[] {
+  const { width, height } = size;
   return [
     '-y',
     '-loglevel',
@@ -1792,15 +1858,45 @@ export function buildMezzanineArgs(format: ShowcaseFormat, output: string): stri
   ];
 }
 
-/** `out/brag.mp4`: frame 0 is the settled poster, no audio (the soundtrack is muxed later). */
-export function buildMasterArgs(input: string, output: string): string[] {
+/** A render target's audio: none, or a silent stereo AAC track some platforms insist on. */
+export type MasterAudio =
+  | Readonly<{ kind: 'none' }>
+  | Readonly<{ kind: 'silent-aac'; kbps: number; sampleRate: number }>;
+
+/** ffmpeg inputs and outputs for the audio: `-an`, or a silent stereo track mapped beside the video. */
+function audioArgs(audio: MasterAudio): { inputs: string[]; outputs: string[] } {
+  if (audio.kind === 'none') return { inputs: [], outputs: ['-an'] };
+  return {
+    inputs: ['-f', 'lavfi', '-i', `anullsrc=channel_layout=stereo:sample_rate=${audio.sampleRate}`],
+    outputs: [
+      '-map',
+      '0:v:0',
+      '-map',
+      '1:a:0',
+      '-c:a',
+      'aac',
+      '-b:a',
+      `${audio.kbps}k`,
+      '-ac',
+      '2',
+      '-ar',
+      String(audio.sampleRate),
+      '-shortest',
+    ],
+  };
+}
+
+/** A crf 18 master: frame 0 is the settled poster. Without audio unless the target asks for a silent track. */
+export function buildMasterArgs(input: string, output: string, audio: MasterAudio = { kind: 'none' }): string[] {
+  const sound = audioArgs(audio);
   return [
     '-y',
     '-loglevel',
     'error',
     '-i',
     input,
-    '-an',
+    ...sound.inputs,
+    ...sound.outputs,
     '-vf',
     toBt709(),
     '-c:v',
@@ -1817,6 +1913,65 @@ export function buildMasterArgs(input: string, output: string): string[] {
     '-movflags',
     '+faststart',
     output,
+  ];
+}
+
+/**
+ * An Apple App Preview: H.264 High profile level 4.0, constant bitrate inside
+ * Apple's 10–12 Mbps window, 30 fps progressive, BT.709, with the stereo AAC
+ * track Apple requires (silent here). Spec: docs/showcase-video.md, "Targets".
+ */
+export function buildAppPreviewArgs(input: string, output: string, videoKbps: number, audio: MasterAudio): string[] {
+  const sound = audioArgs(audio);
+  return [
+    '-y',
+    '-loglevel',
+    'error',
+    '-i',
+    input,
+    ...sound.inputs,
+    ...sound.outputs,
+    '-vf',
+    toBt709(),
+    '-r',
+    String(SHOWCASE_FPS),
+    '-c:v',
+    'libx264',
+    '-preset',
+    'slow',
+    '-profile:v',
+    'high',
+    '-level:v',
+    '4.0',
+    '-b:v',
+    `${videoKbps}k`,
+    '-minrate',
+    `${videoKbps}k`,
+    '-maxrate',
+    `${videoKbps}k`,
+    '-bufsize',
+    `${videoKbps * 2}k`,
+    '-x264-params',
+    'nal-hrd=cbr:force-cfr=1',
+    '-pix_fmt',
+    'yuv420p',
+    ...BT709,
+    '-movflags',
+    '+faststart',
+    output,
+  ];
+}
+
+/** ffprobe: the streams of an encode, as JSON (codec, size, frame rate, audio layout, duration). */
+export function buildStreamProbeArgs(file: string): string[] {
+  return [
+    '-v',
+    'error',
+    '-show_entries',
+    'stream=codec_type,codec_name,profile,level,width,height,avg_frame_rate,channels,sample_rate,bit_rate:format=duration,size,bit_rate',
+    '-of',
+    'json',
+    file,
   ];
 }
 
@@ -2350,12 +2505,14 @@ export type RenderArgs = Readonly<{
   measure: boolean;
   fromFrame: number;
   formats: readonly ShowcaseFormat[];
+  /** `--target` values as given (targets.ts `resolveTargetNames` checks them); empty for the default pair. */
+  targets: readonly string[];
   placeholderFootage: boolean;
   skipWeb: boolean;
   /**
-   * The outro's donation line (default on). `--no-donation-line` renders the
-   * cut for a store preview or an install ad, and skips the web encodes so the
-   * homepage files keep the line.
+   * False with `--no-donation-line`: drops the outro's donation line from every
+   * target that has one, overriding the target's own setting, and skips the
+   * homepage (whose files always keep the line).
    */
   donationLine: boolean;
   help: boolean;
@@ -2376,6 +2533,7 @@ export function parseRenderArgs(argv: readonly string[]): RenderArgs {
   let measure = false;
   let fromFrame = 0;
   let formats: ShowcaseFormat[] = [...SHOWCASE_FORMATS];
+  const targets: string[] = [];
   let placeholderFootage = false;
   let skipWeb = false;
   let donationLine = true;
@@ -2386,6 +2544,7 @@ export function parseRenderArgs(argv: readonly string[]): RenderArgs {
     measure,
     fromFrame,
     formats,
+    targets,
     placeholderFootage,
     skipWeb: skipWeb || !donationLine,
     donationLine,
@@ -2404,7 +2563,8 @@ export function parseRenderArgs(argv: readonly string[]): RenderArgs {
       argument === '--from-frame' ||
       argument === '--format' ||
       argument === '--frame' ||
-      argument === '--poster-frame'
+      argument === '--poster-frame' ||
+      argument === '--target'
     ) {
       const value = argv[index + 1];
       if (!value || value.startsWith('--')) throw new Error(`${argument} needs a value`);
@@ -2412,6 +2572,7 @@ export function parseRenderArgs(argv: readonly string[]): RenderArgs {
       if (argument === '--from-frame') fromFrame = parseFrameNumber(argument, value);
       else if (argument === '--frame') frame = parseFrameNumber(argument, value);
       else if (argument === '--poster-frame') posterFrame = parseFrameNumber(argument, value);
+      else if (argument === '--target') targets.push(...value.split(','));
       else {
         if (!(SHOWCASE_FORMATS as readonly string[]).includes(value)) {
           throw new Error(`--format must be one of ${SHOWCASE_FORMATS.join(', ')}`);

@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Boardsesh full-bleed stage</title>
+    <!--
+      The full-bleed layout for store previews (Apple App Previews): the
+      recorded app footage fills the frame, with one-line caption bars and no
+      phone mockup, callouts or motion-graphic scenes. Rendered frame by frame
+      by packages/web/scripts/render-showcase-video.ts through
+      window.showcaseInit(data) and window.renderAt(frame), like index.html.
+    -->
+    <link rel="stylesheet" href="tokens.css" />
+    <style>
+      @font-face {
+        font-family: 'Inter Tight';
+        src: url('fonts/InterTight-latin-var.woff2') format('woff2');
+        font-weight: 100 900;
+        font-style: normal;
+        font-display: block;
+      }
+      @font-face {
+        font-family: 'Instrument Serif';
+        src: url('fonts/InstrumentSerif-Italic-latin.woff2') format('woff2');
+        font-weight: 400;
+        font-style: italic;
+        font-display: block;
+      }
+      @font-face {
+        font-family: 'Geist Mono';
+        src: url('fonts/GeistMono-latin-var.woff2') format('woff2');
+        font-weight: 100 900;
+        font-style: normal;
+        font-display: block;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: #000;
+        overflow: hidden;
+      }
+      #stage {
+        position: relative;
+        overflow: hidden;
+        background: var(--token-stage-dark, #110a20);
+        font-family: 'Inter Tight', system-ui, sans-serif;
+      }
+      #stage .footage {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+      }
+      #stage .caption {
+        position: absolute;
+        left: calc(var(--inset) * 1px);
+        right: calc(var(--inset) * 1px);
+        top: calc(var(--top) * 1px);
+        height: calc(var(--height) * 1px);
+        border-radius: calc(var(--radius) * 1px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: color-mix(in srgb, var(--token-stage-dark, #110a20) 96%, transparent);
+        border: 2px solid color-mix(in srgb, var(--token-accent-dark, #a78bfa) 45%, transparent);
+        box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
+        color: var(--token-ink-dark, #f5f2fb);
+        font-weight: 800;
+        font-size: calc(var(--size) * 1px);
+        letter-spacing: -0.03em;
+        white-space: nowrap;
+        opacity: var(--o, 0);
+        transform: translateY(calc(var(--y, 0) * 1px));
+      }
+    </style>
+  </head>
+  <body>
+    <div id="stage"></div>
+    <script type="module">
+      import { init, renderAt, textBoxes, visibleImages } from './full-bleed.mjs';
+      window.showcaseInit = init;
+      window.renderAt = renderAt;
+      window.visibleImages = visibleImages;
+      window.textBoxes = textBoxes;
+      window.showcaseStageLoaded = true;
+    </script>
+  </body>
+</html>

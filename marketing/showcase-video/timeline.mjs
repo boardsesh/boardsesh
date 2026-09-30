@@ -426,6 +426,8 @@ export function init(input) {
     'role-start-light': data.lightRoles.start,
     'role-hand-light': data.lightRoles.hand,
     'role-finish-light': data.lightRoles.finish,
+    // 9:16 headline top: 180 on the homepage stage, lower inside a safe area.
+    'headline-top': data.headlineTop,
   });
 
   for (const layer of stage.querySelectorAll('svg.layer')) {
@@ -657,6 +659,21 @@ export function init(input) {
   });
 
   // Measure overlay.
+  if (data.measure && data.safeArea) {
+    // The text band a safe area leaves: every word must stay inside it.
+    const { top, bottom, left, right } = data.safeArea;
+    svg(
+      'rect',
+      {
+        class: 'safe-area',
+        x: left,
+        y: top,
+        width: data.width - left - right,
+        height: data.height - top - bottom,
+      },
+      ui.measure,
+    );
+  }
   ui.measureItems = [];
   if (data.measure) {
     for (const [takeId, take] of Object.entries(data.takes)) {
@@ -861,7 +878,9 @@ function renderBoards(frame, boardPoses) {
   const scene = sceneById('boards');
   const local = frame - scene.startFrame;
   const on = frame >= scene.startFrame - 2 && frame < scene.endFrame + 4;
-  const out = wordsOut(scene, local);
+  // Inside a safe area the labels are gone before the phones sink (L-16), so
+  // no label rides a phone down into the margin.
+  const out = data.safeArea ? easeIn(progress(local, sceneLength(scene) - 20, 4)) : wordsOut(scene, local);
   data.boards.arrival.forEach((takeId, arrivalIndex) => {
     const label = ui.boardLabels.get(takeId);
     const pose = boardPoses.get(takeId);
@@ -883,6 +902,11 @@ function renderBoards(frame, boardPoses) {
 
 function renderWorkouts(frame) {
   const scene = sceneById('workouts');
+  // A target can cut without the workouts scene.
+  if (!scene) {
+    setVars(ui.checklist, { on: 0 });
+    return;
+  }
   const local = frame - scene.startFrame;
   const on = frame >= scene.startFrame && frame < scene.endFrame;
   setVars(ui.checklist, { on: on ? 1 : 0 });
@@ -1139,4 +1163,38 @@ export function renderAt(frame) {
 /** The footage images the current frame shows, so the renderer can await their decode. */
 export function visibleImages() {
   return [...visible, ...(data && ui.outroMark ? [ui.outroMark] : [])];
+}
+
+/** Opacity as painted: the element's own times every ancestor's up to the stage. */
+function paintedOpacity(node) {
+  let opacity = 1;
+  for (let current = node; current && current !== ui.stage; current = current.parentElement) {
+    opacity *= Number.parseFloat(getComputedStyle(current).opacity);
+  }
+  return opacity;
+}
+
+/**
+ * Every piece of text on screen at the current frame, as canvas rects: the
+ * headline and tagline words, callout pills, board labels, checklist rows and
+ * the outro's lines. The renderer holds a safe-area target's text to its band.
+ */
+export function textBoxes() {
+  const selectors = [
+    '.headline .w',
+    '.outro .w',
+    '.outro-el:not(.tagline):not(.mark)',
+    '.pill',
+    '.board-label',
+    '.checklist .row',
+  ];
+  const boxes = [];
+  for (const node of ui.stage.querySelectorAll(selectors.join(','))) {
+    if (paintedOpacity(node) < 0.05) continue;
+    const rect = node.getBoundingClientRect();
+    if (rect.width < 1 || rect.height < 1) continue;
+    const label = (node.textContent ?? '').trim().slice(0, 32) || node.className;
+    boxes.push({ label, x: rect.x, y: rect.y, width: rect.width, height: rect.height });
+  }
+  return boxes;
 }

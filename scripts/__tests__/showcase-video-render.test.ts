@@ -81,18 +81,26 @@ import {
   SHOWCASE_CALLOUT_SETTLE_FRAMES,
   SHOWCASE_MAX_TAIL_HOLD_FRAMES,
   withoutDonationLine,
+  captionReadingFrames,
+  readingBudgetFrames,
+  SHOWCASE_CAPTION_BAR,
   type ResolvedTakeEdit,
   type TakeEdit,
   resolveSceneCallouts,
   sceneCalloutCopy,
   screenToCanvas,
-  showcaseOutputs,
   stillFramesForScene,
   webCutSeconds,
   workoutTickFrames,
   type ShowcaseCopy,
 } from '../lib/showcase-video/render';
-import { SHOWCASE_SCENES, SHOWCASE_TOTAL_FRAMES } from '../lib/showcase-video/timeline';
+import { SHOWCASE_TARGETS, SHOWCASE_TARGET_NAMES } from '../lib/showcase-video/targets';
+import {
+  SHOWCASE_SCENES,
+  SHOWCASE_TOTAL_FRAMES,
+  resolveTimeline,
+  type ShowcaseScene,
+} from '../lib/showcase-video/timeline';
 import type { ShowcaseTakeId } from '../lib/showcase-video/contract';
 
 /** The marks of the recording the edit was tuned on (work/marks/*.json), seconds. */
@@ -340,6 +348,50 @@ describe('donation line', () => {
   });
 });
 
+describe('every render target on the recorded takes', () => {
+  const available = new Set(SHOWCASE_TAKE_IDS);
+  const editsFor = (scenes: readonly ShowcaseScene[]) => {
+    const edits: Partial<Record<ShowcaseTakeId, ResolvedTakeEdit>> = {};
+    for (const scene of scenes) {
+      for (const takeId of scene.takes) {
+        const edit = SHOWCASE_TAKE_EDITS[takeId];
+        const marks = RECORDED_MARKS[takeId];
+        const frames = RECORDED_FRAMES[takeId];
+        if (!edit || !marks || !frames) continue;
+        edits[takeId] = resolveTakeEdit(takeId, edit, marks, scene.endFrame - scene.startFrame, frames);
+      }
+    }
+    return edits;
+  };
+
+  it('meets the reading budget in every motion target, callouts included, at its own scene lengths', () => {
+    for (const name of SHOWCASE_TARGET_NAMES) {
+      const target = SHOWCASE_TARGETS[name];
+      if (target.layout !== 'motion') continue;
+      const timeline = resolveTimeline(available, target.scenes);
+      const targetCopy = target.donationLine ? copy : withoutDonationLine(copy);
+      for (const report of readingBudgetReport(targetCopy, timeline.scenes, editsFor(timeline.scenes))) {
+        expect(readingBudgetMet(report), `${name}/${report.sceneId}\n${formatReadingBudgetTable([report])}`).toBe(true);
+      }
+    }
+  });
+
+  it('cuts every App Preview clip inside its take, with time to read its caption', () => {
+    const target = SHOWCASE_TARGETS['app-store'];
+    for (const clip of target.clips) {
+      const marks = RECORDED_MARKS[clip.take];
+      const frames = RECORDED_FRAMES[clip.take];
+      if (!marks || !frames) throw new Error(`no recording for ${clip.take}`);
+      const edit = resolveTakeEdit(clip.take, { segments: clip.segments }, marks, clip.frames, frames);
+      expect(edit.warnings, clip.take).toEqual([]);
+      expect(segmentsLength(edit.segments), clip.take).toBe(clip.frames);
+      const words = countWords(copy.appStore.captions[clip.caption]);
+      expect(words, clip.caption).toBeLessThanOrEqual(SHOWCASE_CAPTION_BAR.maxWords);
+      expect(captionReadingFrames(clip.frames), clip.caption).toBeGreaterThanOrEqual(readingBudgetFrames(words) + 30);
+    }
+  });
+});
+
 describe('reading budget', () => {
   it('counts words, not punctuation', () => {
     expect(countWords('Free, no ads. iOS & Android.')).toBe(5);
@@ -493,26 +545,6 @@ describe('stills', () => {
 });
 
 describe('encoding', () => {
-  const outputs = showcaseOutputs('16x9');
-
-  it('ships only the 9:16 lite hero and its poster to the web; the masters stay in out/', () => {
-    const portrait = showcaseOutputs('9x16');
-    expect(portrait.liteWebm).toBe(`${SHOWCASE_WEB_VIDEO_DIR}/showcase-9x16-lite.webm`);
-    expect(portrait.liteMp4).toBe(`${SHOWCASE_WEB_VIDEO_DIR}/showcase-9x16-lite.mp4`);
-    expect(portrait.heroPoster).toBe(`${SHOWCASE_WEB_POSTER_DIR}/showcase-hero-9x16.webp`);
-    expect(outputs.liteWebm).toBeNull();
-    expect(outputs.heroPoster).toBeNull();
-    const webPaths = Object.values({ ...outputs, ...portrait }).filter(
-      (path): path is string =>
-        typeof path === 'string' &&
-        (path.startsWith(SHOWCASE_WEB_VIDEO_DIR) || path.startsWith(SHOWCASE_WEB_POSTER_DIR)),
-    );
-    expect(new Set(webPaths)).toEqual(new Set([portrait.liteWebm, portrait.liteMp4, portrait.heroPoster]));
-    expect(outputs.master.endsWith('/out/brag.mp4')).toBe(true);
-    expect(portrait.master.endsWith('/out/brag-9x16.mp4')).toBe(true);
-    expect(outputs.masterStill.endsWith('/out/brag.jpg')).toBe(true);
-  });
-
   it('keeps every web file under check-large-files without an allowlist entry', () => {
     expect(SHOWCASE_WEB_MAX_BYTES).toBe(1_900_000);
     expect(SHOWCASE_WEB_LITE.maxWebmBytes).toBeLessThanOrEqual(SHOWCASE_WEB_MAX_BYTES);
@@ -521,11 +553,12 @@ describe('encoding', () => {
   });
 
   it('downscales the 2x screenshots with lanczos into a near-lossless RGB mezzanine', () => {
-    const args = buildMezzanineArgs('16x9', '/w/m.mkv');
+    const args = buildMezzanineArgs({ width: 1920, height: 1080 }, '/w/m.mkv');
     expect(args).toContain('image2pipe');
     expect(args[args.indexOf('-vf') + 1]).toBe('scale=1920:1080:flags=lanczos');
     expect(args[args.indexOf('-c:v', args.indexOf('-vf')) + 1]).toBe('libx264rgb');
-    expect(buildMezzanineArgs('9x16', '/w/m.mkv')).toContain('scale=1080:1920:flags=lanczos');
+    expect(buildMezzanineArgs({ width: 1080, height: 1920 }, '/w/m.mkv')).toContain('scale=1080:1920:flags=lanczos');
+    expect(buildMezzanineArgs({ width: 886, height: 1920 }, '/w/m.mkv')).toContain('scale=886:1920:flags=lanczos');
   });
 
   it('encodes brag.mp4 as crf 18 yuv420p BT.709 with faststart and no audio', () => {
@@ -1052,11 +1085,14 @@ describe('web posters and the lite encode', () => {
     expect(SHOWCASE_WEB_POSTER_FRAME).toBeLessThan(light.endFrame - SHOWCASE_CHOREO.settleEndFromEnd);
     expect(parseRenderArgs([]).posterFrame).toBe(SHOWCASE_WEB_POSTER_FRAME);
     expect(parseRenderArgs(['--poster-frame', '105']).posterFrame).toBe(105);
-    const portrait = showcaseOutputs('9x16');
-    expect(portrait.heroPoster?.endsWith('/images/home/showcase-hero-9x16.webp')).toBe(true);
-    expect(portrait.liteWebm?.endsWith('/videos/home/showcase-9x16-lite.webm')).toBe(true);
-    expect(portrait.liteMp4?.endsWith('/videos/home/showcase-9x16-lite.mp4')).toBe(true);
-    expect(showcaseOutputs('16x9').liteWebm).toBeNull();
+    const [homepage] = SHOWCASE_TARGETS.homepage.renditions;
+    expect(homepage.deliverable).toMatchObject({
+      kind: 'web-lite',
+      poster: `${SHOWCASE_WEB_POSTER_DIR}/showcase-hero-9x16.webp`,
+      webm: `${SHOWCASE_WEB_VIDEO_DIR}/showcase-9x16-lite.webm`,
+      mp4: `${SHOWCASE_WEB_VIDEO_DIR}/showcase-9x16-lite.mp4`,
+      posterFrame: SHOWCASE_WEB_POSTER_FRAME,
+    });
   });
 
   it('sizes the lite encode to its caps', () => {
