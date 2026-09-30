@@ -506,3 +506,306 @@ async function publishToSelfHostedBranch(
       'vp',
       ['exec', 'expo', 'export', '--platform', requestedPlatform, '--output-dir', outputDir, '--dump-sourcemap'],
       { cwd: MOBILE_DIR, env: environment, stdio: 'inherit' },
+    );
+    if (exported.status !== 0) throw new Error(`${requestedPlatform} Expo export failed.`);
+    const config = execFileSync('vp', ['exec', 'expo', 'config', '--type', 'public', '--json'], {
+      cwd: MOBILE_DIR,
+      env: environment,
+      encoding: 'utf8',
+      maxBuffer: 16 * 1024 * 1024,
+    });
+    writeFileSync(join(outputDir, 'expoConfig.json'), config);
+    // Retain each platform independently: exporting Android replaces dist.
+    const receiptDir = join(MOBILE_DIR, 'diagnostic-artifacts', requestedPlatform);
+    mkdirSync(receiptDir, { recursive: true });
+    const { cpSync } = await import('node:fs');
+    cpSync(outputDir, join(receiptDir, 'export'), { recursive: true });
+    const artifacts = validateSourceMapOutput(MOBILE_DIR, outputDir, requestedPlatform);
+    const bundleSha256 = createHash('sha256').update(readFileSync(artifacts[0].bundlePath)).digest('hex');
+    writeFileSync(
+      join(receiptDir, 'receipt.json'),
+      JSON.stringify(
+        {
+          commitHash,
+          platform: requestedPlatform,
+          runtimeVersion,
+          branch: branchName,
+          message: updateMessage,
+          bundleSha256,
+          fileHashes: hashSourceMapExport(outputDir),
+          debugIds: artifacts.map((artifact) => artifact.debugId),
+          mapsAccepted: false,
+        },
+        null,
+        2,
+      ),
+    );
+    uploadMobileSourceMaps({ platform: requestedPlatform, outputDir, environment });
+    const receiptPath = join(receiptDir, 'receipt.json');
+    const acceptedReceipt = JSON.parse(readFileSync(receiptPath, 'utf8')) as Record<string, unknown>;
+    writeFileSync(receiptPath, JSON.stringify({ ...acceptedReceipt, mapsAccepted: true }, null, 2));
+    const result = await publishArchivedOta({
+      exportDir: outputDir,
+      platform: requestedPlatform,
+      bundleSha256,
+      runtimeVersion,
+      branch: branchName,
+      commitHash,
+      message: updateMessage,
+      manifestUrl: serverUrl,
+      token: process.env.EOO_TOKEN ?? '',
+    });
+    return {
+      platform: requestedPlatform,
+      success: true,
+      attempts: 1,
+      failureKind: null,
+      noChange: result === 'no-change',
+    };
+  });
+  console.log('');
+  console.log(`[mobile:publish] Platform results: ${outcomes.map(summarizePlatformOutcome).join(', ')}`);
+  if (outcomes.some((outcome) => !outcome.success)) {
+    console.error('[mobile:publish] One or more platform publishes failed; successful platforms were not rolled back.');
+    return 1;
+  }
+
+  // Only now, with every requested platform reporting success, is it worth asking
+  // whether the server agrees. A failed publish has its own louder verdict above.
+  for (const outcome of outcomes) {
+    const passed = await previewBranchPassesSurfabilityCheck(branchName, outcome, serverUrl, {
+      runtimeVersion: runtimeVersionFor(outcome.platform),
+    });
+    if (!passed) return 1;
+  }
+
+  if (previewReceiptPath) {
+    const target = platforms[0];
+    const runtimeVersion = runtimeVersionFor(target);
+    if (!runtimeVersion) throw new Error('Cannot attest preview without the publisher runtime version.');
+    const commitHash = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: ROOT_DIR, encoding: 'utf8' }).trim();
+    await recordPreviewPlatformReceipt({
+      platform: target,
+      runtimeVersion,
+      branch: branchName,
+      commitHash,
+      exportDir: resolve(MOBILE_DIR, 'dist'),
+      manifestUrl: serverUrl,
+      outPath: previewReceiptPath,
+    });
+  }
+  for (const line of selfHostedPublishSuccessMessages(branchName)) console.log(line);
+  return 0;
+}
+
+/**
+ * The last word on a preview publish: does a device on this fingerprint get
+ * offered the branch?
+ *
+ * A confirmed absent branch fails a deduplicated publish. A reported new upload
+ * or an inconclusive probe retains the upload result with a diagnostic warning.
+ */
+export async function verifyPreviewBranchIsSurfable(
+  branchName: string,
+  outcome: PlatformPublishOutcome,
+  serverUrl: string,
+  options: SurfabilityProbeOptions = {},
+): Promise<boolean> {
+  const platform = outcome.platform;
+  const result = await isPreviewBranchSurfable(branchName, platform, serverUrl, options);
+  if (result === null) return true;
+
+  if (result.kind === 'surfable') {
+    const waited = result.attempts === 1 ? '' : ` after ${result.attempts} probes`;
+    console.log(
+      `[mobile:publish] ${platform}: "${branchName}" is offered to this runtimeVersion${waited} (${result.detail}).`,
+    );
+    return true;
+  }
+
+  if (result.kind === 'cannot-check') {
+    console.warn(
+      `[mobile:publish] ${platform}: could not check whether "${branchName}" is surfable (${result.detail}).`,
+    );
+    return true;
+  }
+
+  // Two independent signals are required to fail, and the probe is only one.
+  // A fresh update was definitely created ("Update ready for <platform>"), so the
+  // branch HAS it and a probe that disagrees is far more likely to be measuring the
+  // wrong thing — a stale or mis-resolved runtimeVersion — than to have found a real
+  // hole. Failing on the probe alone is how run 34796068541 red-X'd a perfectly good
+  // publish. `no-change` is the other signal: nothing was created, so "not listed"
+  // means there is genuinely nothing on the branch for this platform. That pairing is
+  // the #5417 signature exactly.
+  const fatal = outcome.noChange;
+  const say = fatal ? console.error : console.warn;
+  say(
+    `[mobile:publish] ${platform}: the publish reported ${fatal ? 'no-change' : 'success'} but "${branchName}" ` +
+      `is NOT offered to runtimeVersion ${options.runtimeVersion ?? '(unknown)'} (${result.detail}).`,
+  );
+  say(
+    `[mobile:publish] ${fatal ? `Nothing would load in the in-app picker on ${platform}.` : 'A fresh update WAS created, so this is more likely a probe reading the wrong runtimeVersion.'} ` +
+      `Diagnose with: vp run mobile:ota-surf-doctor -- --platform ${platform} --runtime-version ${options.runtimeVersion ?? '<hash>'}`,
+  );
+  return !fatal;
+}
+
+export function selfHostedPublishSuccessMessages(branchName: string): string[] {
+  const published = `[mobile:publish] Published every requested platform to self-hosted branch "${branchName}".`;
+  if (branchName === 'production') {
+    return [published, '[mobile:publish] Production builds receive it on their next update check.'];
+  }
+  return [published, `[mobile:publish] Select "${branchName}" in xprem Branch Surfing to load this preview.`];
+}
+
+export function selfHostedPublishModeLabel(branchName: string): string {
+  return branchName === 'production' ? 'production (self-hosted expo-open-ota)' : 'preview (self-hosted expo-open-ota)';
+}
+
+export function parseArgs(args: string[]): {
+  branch: string | null;
+  message: string | null;
+  platform: string;
+  channel: string | null;
+} {
+  let branch: string | null = null;
+  let message: string | null = null;
+  let platform = 'all';
+  let channel: string | null = null;
+
+  for (let index = 0; index < args.length; index++) {
+    const argument = args[index];
+    if (argument === '--') continue;
+
+    if (argument === '--branch' || argument === '-b') {
+      branch = args[++index] ?? null;
+      continue;
+    }
+    if (argument.startsWith('--branch=')) {
+      branch = argument.slice('--branch='.length);
+      continue;
+    }
+
+    if (argument === '--channel' || argument === '-c') {
+      channel = args[++index] ?? null;
+      continue;
+    }
+    if (argument.startsWith('--channel=')) {
+      channel = argument.slice('--channel='.length);
+      continue;
+    }
+
+    if (argument === '--message' || argument === '-m') {
+      message = args[++index] ?? null;
+      continue;
+    }
+    if (argument.startsWith('--message=')) {
+      message = argument.slice('--message='.length);
+      continue;
+    }
+
+    if (argument === '--platform' || argument === '-p') {
+      platform = args[++index] ?? 'all';
+      continue;
+    }
+    if (argument.startsWith('--platform=')) {
+      platform = argument.slice('--platform='.length);
+      continue;
+    }
+  }
+
+  return { branch, message, platform, channel };
+}
+
+const VALID_PLATFORMS = ['ios', 'android', 'all'] as const;
+
+export function buildEasUpdateArgs(sanitizedBranch: string, updateMessage: string, platform: string): string[] {
+  return [
+    'eas-cli@16',
+    'update',
+    '--branch',
+    sanitizedBranch,
+    ...messageArgs(updateMessage),
+    '--platform',
+    platform,
+    '--non-interactive',
+    '--skip-bundler',
+    '--input-dir',
+    'dist',
+  ];
+}
+
+export async function main(args: string[] = process.argv.slice(2)): Promise<number> {
+  const { branch: explicitBranch, message: explicitMessage, platform, channel: selfHostedBranch } = parseArgs(args);
+
+  if (!VALID_PLATFORMS.includes(platform as (typeof VALID_PLATFORMS)[number])) {
+    console.error(`[mobile:publish] Invalid platform "${platform}". Must be one of: ${VALID_PLATFORMS.join(', ')}`);
+    return 1;
+  }
+
+  // Self-hosted path: the legacy wrapper flag is still named --channel for CLI
+  // compatibility, but its value is passed only as the eoas branch selector.
+  if (selfHostedBranch) {
+    return publishToSelfHostedBranch(selfHostedBranch, platform, explicitMessage);
+  }
+
+  const branchName = explicitBranch ?? resolveCurrentBranchName();
+  if (!branchName) {
+    console.error('[mobile:publish] Could not determine branch name. Use --branch <name> or run from a git branch.');
+    return 1;
+  }
+
+  const sanitizedBranch = branchName.replace(/[^a-zA-Z0-9._-]/g, '-');
+  const updateMessage = resolveUpdateMessage(explicitMessage);
+
+  console.log(`[mobile:publish] Branch:   ${sanitizedBranch}`);
+  console.log(`[mobile:publish] Message:  ${updateMessage || '(none — eoas will use the commit body)'}`);
+  console.log(`[mobile:publish] Platform: ${platform}`);
+  console.log('');
+
+  createSentryUploadEnvironment(process.env);
+  for (const target of requestedSelfHostedPlatforms(platform)) {
+    const outputDir = join(MOBILE_DIR, 'dist');
+    const exported = spawnSync(
+      'vp',
+      ['exec', 'expo', 'export', '--platform', target, '--output-dir', outputDir, '--dump-sourcemap'],
+      {
+        cwd: MOBILE_DIR,
+        stdio: 'inherit',
+        env: process.env,
+      },
+    );
+    if (exported.status !== 0) throw new Error(`${target} Expo export failed.`);
+    // EAS must upload the same export whose maps have finished processing.
+    uploadMobileSourceMaps({ platform: target, outputDir });
+    const easArgs = buildEasUpdateArgs(sanitizedBranch, updateMessage, target);
+    const result = spawnSync('vp', ['dlx', ...easArgs], {
+      cwd: MOBILE_DIR,
+      stdio: 'inherit',
+      env: process.env,
+    });
+    if (result.status !== 0) return result.status ?? 1;
+  }
+
+  console.log('');
+  console.log(`[mobile:publish] Published to branch "${sanitizedBranch}".`);
+  console.log(`[mobile:publish] Testers on the "preview" build will receive this update.`);
+  console.log('');
+  console.log(`[mobile:publish] To point a preview build at this branch:`);
+  console.log(`  vp dlx eas-cli@16 channel:edit preview --branch ${sanitizedBranch}`);
+  return 0;
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  void main()
+    .then((exitCode) => {
+      process.exitCode = exitCode;
+    })
+    .catch(() => {
+      // Keep this generic: an unexpected error can contain child argv, env, or
+      // server output that must not be echoed as a captured diagnostic.
+      console.error('[mobile:publish] Unexpected publish failure.');
+      process.exitCode = 1;
+    });
+}
