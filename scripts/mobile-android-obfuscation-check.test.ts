@@ -175,6 +175,47 @@ describe('verifyObfuscation', () => {
     expect(verdict.message).toContain('MobileDiagnosticsModule.nativeAbort');
   });
 
+  it('accepts the release artifact shape: omitted native mapping with exact AGP keep evidence', () => {
+    const artifactMapping = mapping([...INVARIANT_ENTRIES, ...renamedFiller(7)]).replace(
+      '    void nativeAbort() -> nativeAbort',
+      '    1:4:void access$nativeAbort(com.boardsesh.diagnostics.MobileDiagnosticsModule):8:8 -> a',
+    );
+    expect(
+      verifyObfuscation(parseMapping(artifactMapping), {
+        ...OPTIONS,
+        seedsContents:
+          'com.boardsesh.diagnostics.MobileDiagnosticsModule\r\ncom.boardsesh.diagnostics.MobileDiagnosticsModule: void nativeAbort()\r\n',
+      }).ok,
+    ).toBe(true);
+  });
+
+  it.each([
+    'com.other.MobileDiagnosticsModule: void nativeAbort()',
+    'com.boardsesh.diagnostics.MobileDiagnosticsModule: void nativeAbort(int)',
+    'com.boardsesh.diagnostics.MobileDiagnosticsModule: int nativeAbort()',
+    'com.boardsesh.diagnostics.MobileDiagnosticsModule: void access$nativeAbort()',
+    'com.boardsesh.diagnostics.MobileDiagnosticsModule',
+  ])('rejects omitted native mapping with mismatched keep evidence: %s', (seedsContents) => {
+    const omitted = mapping([...INVARIANT_ENTRIES, ...renamedFiller(7)]).replace(
+      '    void nativeAbort() -> nativeAbort',
+      '',
+    );
+    expect(verifyObfuscation(parseMapping(omitted), { ...OPTIONS, seedsContents }).ok).toBe(false);
+  });
+
+  it('rejects explicit native method renames despite exact keep evidence', () => {
+    const renamed = mapping([...INVARIANT_ENTRIES, ...renamedFiller(7)]).replace(
+      'void nativeAbort() -> nativeAbort',
+      'void nativeAbort() -> a',
+    );
+    expect(
+      verifyObfuscation(parseMapping(renamed), {
+        ...OPTIONS,
+        seedsContents: 'com.boardsesh.diagnostics.MobileDiagnosticsModule: void nativeAbort()',
+      }).ok,
+    ).toBe(false);
+  });
+
   it('fails when a broad keep rule collapses the renamed fraction', () => {
     const kept = Array.from(
       { length: 7 },
