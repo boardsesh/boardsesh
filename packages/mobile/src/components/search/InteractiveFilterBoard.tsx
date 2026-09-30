@@ -123,6 +123,14 @@ type InteractiveFilterBoardProps = {
    * bottom edge moves it out of the way.
    */
   resetZoomStyle?: StyleProp<ViewStyle>;
+  /**
+   * Deepest pinch zoom. Defaults to the 4× every board uses; the spray hold
+   * editor passes `SPRAY_EDITOR_MAX_SCALE` so small holds beside big ones can be
+   * framed. Changing it does not rebuild the board's gestures.
+   */
+  maxScale?: number;
+  /** Two fingers pan as well as zoom. See `useZoomPanGesture`'s `pinchPans`. */
+  pinchPans?: boolean;
 };
 
 /** What {@link InteractiveFilterBoard} exposes through `controlRef`. */
@@ -164,6 +172,8 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
   renderAboveBoard,
   controlRef,
   resetZoomStyle,
+  maxScale,
+  pinchPans,
 }: InteractiveFilterBoardProps) {
   // Shared with the rest/zoom tap overlays so they mark themselves simultaneous
   // with the pinch — same Android pinch-stall fix as the create board (a finger
@@ -188,6 +198,8 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
     containerHeight: renderHeight,
     panActivationOffset: PAN_ACTIVATION_OFFSET,
     pinchRef,
+    maxScale,
+    pinchPans,
   });
 
   const transformContext = useMemo<FilterBoardTransformContext>(

@@ -49,14 +49,20 @@ type SprayEditorBottomBarProps = {
   /** The target reviews detector finds at all. False drops the two maybe rows. */
   canReviewMaybes: boolean;
   canUndo: boolean;
+  /** Add mode is on: the + turns into a check that leaves it, like the banner's Done. */
+  adding: boolean;
   /** Read-only, or a commit is in flight: every control is disabled. */
   locked: boolean;
   primaryLabel: string;
   primaryLoading: boolean;
+  /** A Corners outline is half placed: Finish or undo it before publishing. */
+  primaryBlocked: boolean;
   /** The holds are saved: the capsule turns into a checkmark for the hand-over. */
   celebrating: boolean;
   bottomInset: number;
   onUndo: () => void;
+  /** Enter add mode (outline the holds the scan missed), or leave it while `adding`. */
+  onAdd: () => void;
   onKeepMaybes: () => void;
   onToggleMaybes: () => void;
   onStartOver: () => void;
@@ -64,11 +70,17 @@ type SprayEditorBottomBarProps = {
 };
 
 /**
- * The editor's floating bottom bar: Undo, the count capsule, and the one button
- * that saves and publishes.
+ * The editor's floating bottom bar: Undo, the count capsule, Add, and the one
+ * button that saves and publishes.
+ *
+ * Add is the one tool with its own button, because it is the one a climber goes
+ * looking for: every scan misses a few small holds, and a tap on bare wall next
+ * to a ring switches the ring rather than adding. It is a glass + rather than a
+ * labelled button so the row still fits a 375pt phone beside a long German
+ * Publish label.
  *
  * The capsule is the only place the wall's numbers are said, and it doubles as
- * the menu for the three wall-wide actions — so the bar stays three controls
+ * the menu for the three wall-wide actions — so the bar stays four controls
  * however much the editor can do. The menu is an inline glass card rather than
  * a native sheet, because a sheet would cover the very board the climber is
  * deciding about.
@@ -78,12 +90,15 @@ export const SprayEditorBottomBar = React.memo(function SprayEditorBottomBar({
   showMaybes,
   canReviewMaybes,
   canUndo,
+  adding,
   locked,
   primaryLabel,
   primaryLoading,
+  primaryBlocked,
   celebrating,
   bottomInset,
   onUndo,
+  onAdd,
   onKeepMaybes,
   onToggleMaybes,
   onStartOver,
@@ -210,13 +225,25 @@ export const SprayEditorBottomBar = React.memo(function SprayEditorBottomBar({
           )}
         </PressableSurface>
 
+        <GlassIconButton
+          iconName="plus"
+          secondaryIconName="check.small"
+          active={adding}
+          iconColor={adding ? brandColors.primary : systemColors.label}
+          fallbackColor={systemColors.fill}
+          size={SPRAY_BAR_HEIGHT}
+          onPress={onAdd}
+          disabled={locked}
+          accessibilityLabel={adding ? t('sprayEditor.banner.done') : t('sprayEditor.bar.addA11y')}
+        />
+
         <Button
           title={primaryLabel}
           variant="filled"
           size="large"
           onPress={onPrimary}
           loading={primaryLoading}
-          disabled={locked || counts.on === 0}
+          disabled={locked || primaryBlocked || counts.on === 0}
           minHeight={SPRAY_BAR_HEIGHT}
         />
       </View>

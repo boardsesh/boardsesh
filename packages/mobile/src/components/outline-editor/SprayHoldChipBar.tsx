@@ -72,6 +72,29 @@ export const SprayHoldChipBar = React.memo(function SprayHoldChipBar({
   );
 });
 
+type SprayCornersChipBarProps = {
+  bottom: number;
+  onFinish: () => void;
+};
+
+/**
+ * Finish, docked where the hold chips sit, while a Corners outline has enough
+ * corners to close. Tapping the first corner closes it too; this is the way to
+ * close it when the first corner is off screen at 8×.
+ */
+export const SprayCornersChipBar = React.memo(function SprayCornersChipBar({
+  bottom,
+  onFinish,
+}: SprayCornersChipBarProps) {
+  const { t } = useTranslation('boards');
+  const { brandColors } = useTheme();
+  return (
+    <View pointerEvents="box-none" style={[styles.root, { bottom }]}>
+      <SprayHoldChip label={t('sprayEditor.chips.finish')} color={brandColors.primary} onPress={onFinish} />
+    </View>
+  );
+});
+
 type SprayHoldChipProps = {
   label: string;
   color: ColorValue;

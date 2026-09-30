@@ -74,13 +74,20 @@ type DrawStrokeOverlayProps = {
  * overlay's view (see `renderAboveBoard` in InteractiveFilterBoard): RNGH offers
  * a declined touch to ancestors, never to siblings drawn underneath.
  *
- * There is deliberately no `maxPointers(1)`. A palm resting on the glass is
- * normal Apple Pencil posture, and capping the pointer count would cancel the
- * stroke the moment it landed. Once a stroke is live, later touches are ignored
- * outright rather than allowed to start or fail one. The cost is that Pan
- * reports the CENTROID of all active pointers, so a palm iPadOS fails to reject
- * can drag the sampled point — a real-device QA item, not something a simulator
- * can show.
+ * A second touch means different things depending on what started the stroke.
+ *
+ *  - STYLUS: ignored outright. A palm resting on the glass is normal Apple
+ *    Pencil posture, so there is deliberately no `maxPointers(1)` — capping the
+ *    pointer count would cancel the stroke the moment the palm landed. The cost
+ *    is that Pan reports the CENTROID of all active pointers, so a palm iPadOS
+ *    fails to reject can drag the sampled point — a real-device QA item, not
+ *    something a simulator can show.
+ *  - FINGER (finger-draw on): the stroke is abandoned. A second finger is a
+ *    pinch far more often than a palm, and because this pan activates on
+ *    touch-down, the first finger has already started a stroke by the time the
+ *    second lands. So the live points are cleared, the pan fails (onStrokeCancel,
+ *    never onStrokeEnd), and the board's pinch — already a simultaneous relation
+ *    — zooms. Two fingers landing together never start a stroke at all.
  *
  * Samples are converted to board px on the UI thread — the worklet twin of
  * `screenToBoardPoint` in `stroke.ts`, inlined because reanimated can't reliably
@@ -88,7 +95,7 @@ type DrawStrokeOverlayProps = {
  * Absolute event coordinates, never `translationX/Y`: a delta would accumulate
  * the zoom scale twice.
  *
- * `runOnJS` fires at most three times per stroke (start, end, cancel) — never
+ * `runOnJS` fires at most twice per stroke (start, then end or cancel) — never
  * per frame.
  */
 export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
@@ -112,6 +119,12 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
   // True between activation and finalize. Lives on the UI thread because the
   // activation worklet has to read it on the very next touch-down.
   const isDrawingSV = useSharedValue(false);
+  // Whether the live stroke was started by a stylus — the answer to what a
+  // second touch means (see the component doc).
+  const strokeIsStylusSV = useSharedValue(false);
+  // Set when a finger stroke is dropped for a pinch, so a pan that RNGH still
+  // reports as a success cannot commit the cleared stroke.
+  const abandonedSV = useSharedValue(false);
   useEffect(() => {
     boardScaleSV.value = boardScale;
   }, [boardScale, boardScaleSV]);
@@ -129,11 +142,23 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
       .manualActivation(true)
       .onTouchesDown((event, manager) => {
         'worklet';
-        // A stroke is already live: a second touch (typically the palm) must
-        // neither restart nor fail it.
-        if (isDrawingSV.value) return;
-        if (event.pointerType === STYLUS_POINTER_TYPE || fingerDrawSV.value) {
+        if (isDrawingSV.value) {
+          // A stylus stroke is live: a second touch (typically the palm) must
+          // neither restart nor fail it.
+          if (strokeIsStylusSV.value) return;
+          // A finger stroke is live and another finger landed: that's a pinch.
+          // Drop the stroke and step aside for the board's zoom.
+          abandonedSV.value = true;
+          pointsSV.value = [];
+          manager.fail();
+          return;
+        }
+        const isStylus = event.pointerType === STYLUS_POINTER_TYPE;
+        // Two fingers at once are a pinch from the start, not a stroke.
+        if (isStylus || (fingerDrawSV.value && event.numberOfTouches < 2)) {
           isDrawingSV.value = true;
+          strokeIsStylusSV.value = isStylus;
+          abandonedSV.value = false;
           manager.activate();
           return;
         }
@@ -170,13 +195,15 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
       })
       .onEnd((_event, success) => {
         'worklet';
-        if (!success) return;
+        if (!success || abandonedSV.value) return;
         runOnJS(handleEnd)(pointsSV.value);
       })
       .onFinalize((_event, success) => {
         'worklet';
         isDrawingSV.value = false;
-        if (success) return;
+        const abandoned = abandonedSV.value;
+        abandonedSV.value = false;
+        if (success && !abandoned) return;
         runOnJS(handleCancel)();
       });
 
@@ -197,6 +224,8 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
     containerHeightSV,
     boardScaleSV,
     isDrawingSV,
+    strokeIsStylusSV,
+    abandonedSV,
     pinchRef,
   ]);
 

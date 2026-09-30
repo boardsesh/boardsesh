@@ -777,7 +777,8 @@
       "withMaybes": "{{holds}} · {{maybes}}",
       "undo": "Undo",
       "menuHint": "Opens options for all your holds",
-      "saved": "Holds saved"
+      "saved": "Holds saved",
+      "addA11y": "Add missing holds"
     },
     "menu": {
       "keepMaybes": "Keep all maybes",
@@ -797,12 +798,21 @@
       "bigger": "Bigger",
       "trace": "Trace",
       "join": "Join",
-      "remove": "Remove"
+      "remove": "Remove",
+      "finish": "Finish"
     },
     "banner": {
       "trace": "Draw round the hold with one finger",
       "join": "Tap the hold to join it with",
-      "cancel": "Cancel"
+      "cancel": "Cancel",
+      "addDraw": "Draw round a missing hold, or tap to drop a circle",
+      "addCorners": "Tap round the corners of a missing hold",
+      "done": "Done"
+    },
+    "addShape": {
+      "label": "How to outline a hold",
+      "draw": "Draw",
+      "corners": "Corners"
     },
     "hints": {
       "toggle": "Tap a ring to switch it off. Tap bare wall to add a hold.",
@@ -839,7 +849,10 @@
       "strokeTooDetailed": "That stroke has too much detail to store. Trace the edge in one pass.",
       "strokeTooShort": "That stroke is too short. Draw a full loop round the hold.",
       "someHoldsOffWall_one": "{{count}} hold lands off the wall. Move it back onto the photo or switch it off.",
-      "someHoldsOffWall_other": "{{count}} holds land off the wall. Move them back onto the photo or switch them off."
+      "someHoldsOffWall_other": "{{count}} holds land off the wall. Move them back onto the photo or switch them off.",
+      "cornersCross": "Two sides cross. Tap the corners in order round the hold.",
+      "cornersTooFew": "Those corners are too close together or in a line. Tap at least 3 round the hold.",
+      "cornersHollow": "That shape is too hollow. Tap the corners round the outside of the hold."
     },
     "empty": {
       "noPhoto": "This wall has no photo to edit yet."

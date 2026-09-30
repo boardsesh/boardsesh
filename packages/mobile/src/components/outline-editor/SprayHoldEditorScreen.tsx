@@ -10,6 +10,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   ReduceMotion,
   runOnJS,
+  useAnimatedReaction,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
@@ -33,17 +34,20 @@ import type { BoardHoldTarget } from '../../lib/create-board-holds';
 import { getSprayWall, SPRAY_BOARD_NAME, subscribeToSprayWalls } from '../../lib/spray/spray-wall-registry';
 import { useSprayWallDraft } from '../../lib/spray/use-spray-wall-draft';
 import { useSaveSprayHolds } from '../../lib/spray/use-spray-hold-writes';
+import { SegmentedControl } from '../SegmentedControl';
 import { DrawStrokeOverlay } from './DrawStrokeOverlay';
+import { PolygonTapOverlay } from './PolygonTapOverlay';
 import { SprayHoldSvgLayer } from './SprayHoldSvgLayer';
 import { SelectedHoldOverlay } from './SelectedHoldOverlay';
 import { SprayEditGestureOverlay, type SprayWallAccessibility } from './SprayEditGestureOverlay';
 import { SprayEditorBottomBar, sprayCountSummary } from './SprayEditorBottomBar';
-import { SprayHoldChipBar } from './SprayHoldChipBar';
+import { SprayCornersChipBar, SprayHoldChipBar } from './SprayHoldChipBar';
 import { SprayEditorBanner } from './SprayEditorBanner';
 import { SprayScanBand, SCAN_BAND_HEIGHT } from './SprayScanBand';
 import { SprayHoldSpotlight } from './SprayHoldSpotlight';
 import { SprayPublishSweep, PUBLISH_SWEEP_MS } from './SprayPublishSweep';
-import { fitSprayPhoto, SPRAY_BAR_GUTTER, SPRAY_BAR_HEIGHT } from './spray-photo-frame';
+import { fitSprayPhoto, SPRAY_BAR_GUTTER, SPRAY_BAR_HEIGHT, SPRAY_EDITOR_MAX_SCALE } from './spray-photo-frame';
+import { useSprayAddShape, type SprayAddShape } from './use-spray-add-shape';
 import { revertedHold, type SpraySpotlightKind, type SpraySpotlightPulse } from './spray-spotlight';
 import { useSprayEditorHints, type SprayHintId } from './use-spray-editor-hints';
 import { renderToBoardScale, type StrokeRejection } from './stroke';
@@ -73,9 +77,12 @@ import { readingCursorPosition, readingOrderIndex, sprayHoldReadingOrder, stepRe
 import {
   defaultHoldRadius,
   holdAtPoint,
+  holdFromPolygon,
   holdFromStroke,
   holdFromTap,
+  POLYGON_MAX_VERTICES,
   stepHoldSize,
+  strokeExtent,
   toRingPoints,
 } from './spray-hold-tools';
 
@@ -106,6 +113,15 @@ const WALL_A11Y_ACTIONS: readonly AccessibilityActionInfo[] = [
   { name: 'activate' },
 ];
 
+/**
+ * A Draw stroke that stays inside this many screen points is a tap: it drops a
+ * circle at the median hold size rather than failing as a stroke too short.
+ */
+const ADD_TAP_SLOP_PT = 10;
+
+/** Corners an outline needs before it can close. */
+const MIN_CORNERS = 3;
+
 /** Where the zoomed-in reset control sits: top-left, clear of the chip bar and the bottom bar. */
 const RESET_ZOOM_STYLE = { left: spacing[2], top: spacing[2] };
 
@@ -121,8 +137,12 @@ export type { SprayHoldCandidate, SprayHoldSaveSummary };
  * `edit` is the resting state: taps switch rings, long presses pick them up.
  * `trace` and `join` are one-shot tools a selected hold starts, each with its
  * own banner and a Cancel — never modes a climber has to remember to leave.
+ * `add` is the exception, and is a mode on purpose: the scan misses holds in
+ * handfuls, so it stays on until Done, and while it is on a touch never
+ * switches or picks up a ring — which is what makes a missed hold squeezed
+ * between two rings reachable at all.
  */
-type EditorTool = 'edit' | 'trace' | 'join';
+type EditorTool = 'edit' | 'trace' | 'join' | 'add';
 
 /** A line pinned to the top of the photo when the wall has nothing on it yet. */
 export type SprayEditorNotice = {
@@ -247,7 +267,24 @@ export function SprayHoldEditorScreen({
   /** The holds are saved and the publish moment is playing, just before the hand-over. */
   const [celebrating, setCelebrating] = useState(false);
 
+  const [addShape, pickAddShape] = useSprayAddShape();
+  /** Corners placed so far in Corners mode. The corners themselves live on the UI thread in `cornersSV`. */
+  const [cornerCount, setCornerCount] = useState(0);
+
   const draftPointsSV = useSharedValue<number[]>(NO_POINTS);
+  const cornersSV = useSharedValue<number[]>(NO_POINTS);
+  // Add mode's Draw always takes a finger, whatever the target's default.
+  const addDrawSV = useSharedValue(true);
+  // The corners are written on the UI thread (a tap, a close) and on JS (undo,
+  // a refused close putting them back). The count is read from the one place
+  // they live, so the two can never disagree.
+  useAnimatedReaction(
+    () => Math.floor(cornersSV.value.length / 2),
+    (count, previous) => {
+      if (count !== previous) runOnJS(setCornerCount)(count);
+    },
+    [cornersSV],
+  );
   // The wall target draws with a finger — there is no Pencil in a garage.
   const fingerDrawSV = useSharedValue(capabilities.fingerDrawDefault);
   const hitHoldsSV = useSharedValue<number[]>(NO_POINTS);
@@ -533,8 +570,9 @@ export function SprayHoldEditorScreen({
   }, []);
 
   // A one-shot tool needs its hold. An undo that took the selection away ends it.
+  // Add mode has no hold of its own, so it is left alone.
   useEffect(() => {
-    if (tool !== 'edit' && selectedHold == null) setTool('edit');
+    if ((tool === 'trace' || tool === 'join') && selectedHold == null) setTool('edit');
   }, [tool, selectedHold]);
 
   /** The cap said out loud, with its number, from the constant the server refuses on. */
@@ -689,6 +727,131 @@ export function SprayHoldEditorScreen({
     setTool('edit');
   }, [draftPointsSV]);
 
+  const clearCorners = useCallback(() => {
+    cornersSV.value = NO_POINTS;
+  }, [cornersSV]);
+
+  /** One hand-added hold, with the cap check every add shares. False when the cap refused it. */
+  const addHold = useCallback(
+    (geometry: HoldGeometry) => {
+      if (countsRef.current.on >= MAX_HOLDS_PER_WALL) {
+        refuseOverCap();
+        return false;
+      }
+      hapticMedium();
+      dispatch({ type: 'ADD_HOLD', geometry });
+      pulseSpotlight('add', geometry);
+      recordHint('add');
+      return true;
+    },
+    [refuseOverCap, pulseSpotlight, recordHint],
+  );
+
+  /**
+   * Closes a Corners outline the caller has already taken off `cornersSV`.
+   * A refusal puts the corners back, so one crossed side costs one undo rather
+   * than the whole outline. True when the hold went on the wall.
+   */
+  const closeCorners = useCallback(
+    (cornerBoardPoints: number[]) => {
+      // Only onto an empty board: a corner tapped while JS was deciding starts
+      // the climber's next attempt, and wins over the refused one.
+      const restore = () => {
+        if (cornersSV.value.length === 0) cornersSV.value = cornerBoardPoints;
+      };
+      if (!canEditRef.current) {
+        restore();
+        return false;
+      }
+      const outlined = holdFromPolygon(toRingPoints(cornerBoardPoints));
+      if (!outlined.ok) {
+        hapticWarning();
+        setErrorText(cornersRejectionMessage(outlined.reason, t));
+        restore();
+        return false;
+      }
+      setErrorText(null);
+      if (addHold(outlined.hold)) return true;
+      restore();
+      return false;
+    },
+    [addHold, cornersSV, t],
+  );
+
+  /** Takes the corners off the UI thread, the same hand-off the first-corner tap makes, then closes them. */
+  const takeAndCloseCorners = useCallback(() => {
+    const corners = cornersSV.value;
+    cornersSV.value = NO_POINTS;
+    return closeCorners(corners);
+  }, [closeCorners, cornersSV]);
+
+  const handleCornerAdded = useCallback(() => {
+    setErrorText(null);
+    hapticSelection();
+  }, []);
+
+  const handleCornerLimit = useCallback(() => {
+    hapticWarning();
+  }, []);
+
+  const leaveAddMode = useCallback(() => {
+    // Done means done: an outline with enough corners is kept rather than
+    // thrown away. One that cannot close stays on screen with its error, in
+    // add mode, so the climber can fix it or undo it.
+    if (cornersSV.value.length / 2 >= MIN_CORNERS && !takeAndCloseCorners()) return;
+    clearCorners();
+    draftPointsSV.value = NO_POINTS;
+    setTool('edit');
+  }, [takeAndCloseCorners, clearCorners, cornersSV, draftPointsSV]);
+
+  const handleToggleAddMode = useCallback(() => {
+    if (toolRef.current === 'add') {
+      leaveAddMode();
+      return;
+    }
+    setErrorText(null);
+    setJoinCursorId(null);
+    draftPointsSV.value = NO_POINTS;
+    clearCorners();
+    // Nothing is picked up while adding, so nothing stays picked up either.
+    dispatch({ type: 'SELECT', id: null });
+    hapticSelection();
+    setTool('add');
+  }, [leaveAddMode, clearCorners, draftPointsSV]);
+
+  const handleAddShapeChange = useCallback(
+    (shape: SprayAddShape) => {
+      setErrorText(null);
+      clearCorners();
+      draftPointsSV.value = NO_POINTS;
+      pickAddShape(shape);
+    },
+    [clearCorners, draftPointsSV, pickAddShape],
+  );
+
+  /** A Draw stroke in add mode: a new hold round it, or a circle when it was really a tap. */
+  const handleAddStrokeEnd = useCallback(
+    (strokeBoardPoints: number[], zoom: number) => {
+      draftPointsSV.value = NO_POINTS;
+      if (!canEditRef.current || strokeBoardPoints.length < 2) return;
+      const tapSlop = (ADD_TAP_SLOP_PT * boardScale) / Math.max(1, zoom);
+      if (strokeExtent(strokeBoardPoints) <= tapSlop) {
+        setErrorText(null);
+        addHold(holdFromTap(strokeBoardPoints[0], strokeBoardPoints[1], medianRadiusRef.current));
+        return;
+      }
+      const drawn = holdFromStroke(toRingPoints(strokeBoardPoints));
+      if (!drawn.ok) {
+        hapticWarning();
+        setErrorText(rejectionMessage(drawn.reason, t));
+        return;
+      }
+      setErrorText(null);
+      addHold(drawn.hold);
+    },
+    [draftPointsSV, boardScale, addHold, t],
+  );
+
   const handleRemove = useCallback(() => {
     if (!canEdit || state.selectedId == null) return;
     hapticSelection();
@@ -731,14 +894,23 @@ export function SprayHoldEditorScreen({
   const handleUndo = useCallback(() => {
     setErrorText(null);
     hapticSelection();
+    // A Corners outline in progress gives back its last corner before any hold.
+    const corners = cornersSV.value;
+    if (toolRef.current === 'add' && corners.length >= 2) {
+      cornersSV.value = corners.slice(0, -2);
+      return;
+    }
     // Worked out before the dispatch, from the snapshot the undo is about to
     // restore: the hold it changes gets the violet halo.
     const current = stateRef.current;
     const restoring = current.past[current.past.length - 1];
     const reverted = restoring ? revertedHold(current.holds, restoring.holds) : null;
     dispatch({ type: 'UNDO' });
+    // A snapshot from before add mode carries its selection; nothing is picked
+    // up while adding.
+    if (toolRef.current === 'add') dispatch({ type: 'SELECT', id: null });
     if (reverted) pulseSpotlight('undo', reverted);
-  }, [pulseSpotlight]);
+  }, [pulseSpotlight, cornersSV]);
 
   const handleKeepMaybes = useCallback(() => {
     if (!canEditRef.current) return;
@@ -764,10 +936,11 @@ export function SprayHoldEditorScreen({
   const handleStartOver = useCallback(() => {
     if (!canEditRef.current) return;
     setErrorText(null);
+    clearCorners();
     setTool('edit');
     setShowMaybes(true);
     dispatch({ type: 'START_OVER', holds: seedHoldsRef.current });
-  }, []);
+  }, [clearCorners]);
 
   /**
    * The holds are on the draft: play the publish moment, then hand over. The
@@ -815,6 +988,7 @@ export function SprayHoldEditorScreen({
     }
 
     setErrorText(null);
+    clearCorners();
     setTool('edit');
     // `prepareCommit` already applied ACCEPT_DEFAULTS to build the plan; this
     // brings React state to the same place. Idempotent, so a repeat is harmless.
@@ -871,6 +1045,7 @@ export function SprayHoldEditorScreen({
     versionId,
     celebrateThenHandOver,
     setHandingOver,
+    clearCorners,
     t,
   ]);
 
@@ -1074,6 +1249,7 @@ export function SprayHoldEditorScreen({
                 selectedId={selectedHold?.id ?? null}
                 maybeOpacitySV={maybeRevealSV}
                 draftPointsSV={draftPointsSV}
+                polygonSV={cornersSV}
                 scaleSV={context.scaleSV}
                 boardWidth={wall.photoWidth}
                 boardHeight={wall.photoHeight}
@@ -1126,6 +1302,7 @@ export function SprayHoldEditorScreen({
       celebrating,
       spotlight,
       draftPointsSV,
+      cornersSV,
       boardRender.width,
       boardRender.height,
       moveRevision,
@@ -1141,6 +1318,43 @@ export function SprayHoldEditorScreen({
     (context: FilterBoardTransformContext) => {
       // Read-only: zoom and pan, and nothing that could change the wall.
       if (!viewerCanEdit) return null;
+      if (tool === 'add' && addShape === 'corners') {
+        return (
+          <PolygonTapOverlay
+            verticesSV={cornersSV}
+            scaleSV={context.scaleSV}
+            translateXSV={context.translateXSV}
+            translateYSV={context.translateYSV}
+            containerWidthSV={context.containerWidthSV}
+            containerHeightSV={context.containerHeightSV}
+            boardScale={boardScale}
+            pinchRef={context.pinchRef}
+            maxVertices={POLYGON_MAX_VERTICES}
+            onVertexAdded={handleCornerAdded}
+            onVertexLimit={handleCornerLimit}
+            onClose={closeCorners}
+          />
+        );
+      }
+      if (tool === 'add') {
+        const { scaleSV } = context;
+        return (
+          <DrawStrokeOverlay
+            pointsSV={draftPointsSV}
+            fingerDrawSV={addDrawSV}
+            scaleSV={scaleSV}
+            translateXSV={context.translateXSV}
+            translateYSV={context.translateYSV}
+            containerWidthSV={context.containerWidthSV}
+            containerHeightSV={context.containerHeightSV}
+            boardScale={boardScale}
+            pinchRef={context.pinchRef}
+            onStrokeStart={handleStrokeStart}
+            onStrokeEnd={(strokeBoardPoints) => handleAddStrokeEnd(strokeBoardPoints, scaleSV.value)}
+            onStrokeCancel={handleStrokeCancel}
+          />
+        );
+      }
       if (tool === 'trace') {
         return (
           <DrawStrokeOverlay
@@ -1185,8 +1399,11 @@ export function SprayHoldEditorScreen({
     [
       viewerCanEdit,
       tool,
+      addShape,
       canEdit,
       draftPointsSV,
+      cornersSV,
+      addDrawSV,
       fingerDrawSV,
       boardScale,
       hitHoldsSV,
@@ -1198,6 +1415,10 @@ export function SprayHoldEditorScreen({
       handleStrokeStart,
       handleStrokeEnd,
       handleStrokeCancel,
+      handleAddStrokeEnd,
+      handleCornerAdded,
+      handleCornerLimit,
+      closeCorners,
       handleTap,
       handlePickUp,
       handleMoveEnd,
@@ -1205,14 +1426,32 @@ export function SprayHoldEditorScreen({
   );
 
   const wallIsEmpty = counts.on + counts.maybes + counts.off === 0;
+  const addShapeOptions = useMemo(
+    () => [
+      { key: 'draw' as const, label: t('sprayEditor.addShape.draw') },
+      { key: 'corners' as const, label: t('sprayEditor.addShape.corners') },
+    ],
+    [t],
+  );
   const banner = bannerFor({
     tool,
+    addShape,
     errorText,
     viewerCanEdit,
     notice: wallIsEmpty ? notice : undefined,
     onCancel: handleCancelTool,
+    onDone: leaveAddMode,
     t,
   });
+  const bannerAccessory =
+    tool === 'add' ? (
+      <SegmentedControl
+        options={addShapeOptions}
+        selectedKey={addShape}
+        onSelect={handleAddShapeChange}
+        accessibilityLabel={t('sprayEditor.addShape.label')}
+      />
+    ) : null;
   const boardShowing = !isLoading && wall != null && !isUnavailable && homography != null;
   // A hint only when nothing more urgent is on the line, the rings have finished
   // arriving, and the climber is free to act on it.
@@ -1260,13 +1499,15 @@ export function SprayHoldEditorScreen({
             renderInTransform={renderInTransform}
             renderAboveBoard={renderAboveBoard}
             resetZoomStyle={RESET_ZOOM_STYLE}
+            maxScale={SPRAY_EDITOR_MAX_SCALE}
+            pinchPans
           />
         </View>
       ) : null}
 
       {banner ? (
         <View pointerEvents="box-none" style={styles.bannerSlot}>
-          <SprayEditorBanner {...banner} />
+          <SprayEditorBanner {...banner} accessory={bannerAccessory} />
         </View>
       ) : null}
 
@@ -1308,17 +1549,27 @@ export function SprayHoldEditorScreen({
         />
       ) : null}
 
+      {tool === 'add' && addShape === 'corners' && cornerCount >= MIN_CORNERS && canEdit ? (
+        <SprayCornersChipBar
+          bottom={insets.bottom + SPRAY_BAR_GUTTER * 2 + SPRAY_BAR_HEIGHT}
+          onFinish={takeAndCloseCorners}
+        />
+      ) : null}
+
       <SprayEditorBottomBar
         counts={counts}
         showMaybes={showMaybes}
         canReviewMaybes={capabilities.canReviewCandidates}
-        canUndo={state.past.length > 0}
+        canUndo={state.past.length > 0 || (tool === 'add' && cornerCount > 0)}
+        adding={tool === 'add'}
+        primaryBlocked={cornerCount > 0}
         locked={!canEdit}
         primaryLabel={primaryLabel}
         primaryLoading={committing}
         celebrating={celebrating}
         bottomInset={insets.bottom}
         onUndo={handleUndo}
+        onAdd={handleToggleAddMode}
         onKeepMaybes={handleKeepMaybes}
         onToggleMaybes={handleToggleMaybes}
         onStartOver={handleStartOver}
@@ -1348,19 +1599,29 @@ function roleLabel(role: SprayHoldRole, t: Translate): string {
 /** The one line at the top of the photo, most urgent first: the active tool, an error, read-only, the empty wall. */
 function bannerFor({
   tool,
+  addShape,
   errorText,
   viewerCanEdit,
   notice,
   onCancel,
+  onDone,
   t,
 }: {
   tool: EditorTool;
+  addShape: SprayAddShape;
   errorText: string | null;
   viewerCanEdit: boolean;
   notice: SprayEditorNotice | undefined;
   onCancel: () => void;
+  onDone: () => void;
   t: Translate;
 }): { message: string; actionLabel?: string; onAction?: () => void; tone?: 'info' | 'error' } | null {
+  if (tool === 'add') {
+    const done = t('sprayEditor.banner.done');
+    if (errorText) return { message: errorText, actionLabel: done, onAction: onDone, tone: 'error' };
+    const message = addShape === 'corners' ? t('sprayEditor.banner.addCorners') : t('sprayEditor.banner.addDraw');
+    return { message, actionLabel: done, onAction: onDone };
+  }
   if (tool === 'trace') {
     return errorText
       ? { message: errorText, actionLabel: t('sprayEditor.banner.cancel'), onAction: onCancel, tone: 'error' }
@@ -1379,6 +1640,14 @@ function hintText(id: SprayHintId, t: Translate): string {
   if (id === 'maybe') return t('sprayEditor.hints.maybe');
   if (id === 'longPress') return t('sprayEditor.hints.longPress');
   return t('sprayEditor.hints.toggle');
+}
+
+/** Why a Corners outline would not close. Worded for tapped corners, not a drawn loop. */
+function cornersRejectionMessage(reason: StrokeRejection, t: Translate): string {
+  if (reason === 'self-overlap') return t('sprayEditor.errors.cornersCross');
+  if (reason === 'centre-outside') return t('sprayEditor.errors.cornersHollow');
+  if (reason === 'too-few-points') return t('sprayEditor.errors.cornersTooFew');
+  return rejectionMessage(reason, t);
 }
 
 function rejectionMessage(reason: StrokeRejection, t: Translate): string {

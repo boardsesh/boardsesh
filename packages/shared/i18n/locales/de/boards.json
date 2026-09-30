@@ -777,7 +777,8 @@
       "withMaybes": "{{holds}} · {{maybes}}",
       "undo": "Rückgängig",
       "menuHint": "Öffnet Optionen für alle deine Griffe",
-      "saved": "Griffe gespeichert"
+      "saved": "Griffe gespeichert",
+      "addA11y": "Fehlende Griffe hinzufügen"
     },
     "menu": {
       "keepMaybes": "Alle unsicheren behalten",
@@ -797,12 +798,21 @@
       "bigger": "Größer",
       "trace": "Umranden",
       "join": "Verbinden",
-      "remove": "Entfernen"
+      "remove": "Entfernen",
+      "finish": "Abschließen"
     },
     "banner": {
       "trace": "Zeichne mit einem Finger um den Griff",
       "join": "Tippe auf den Griff, mit dem er verbunden wird",
-      "cancel": "Abbrechen"
+      "cancel": "Abbrechen",
+      "addDraw": "Zeichne um einen fehlenden Griff oder tippe, um einen Kreis zu setzen",
+      "addCorners": "Tippe auf die Ecken um einen fehlenden Griff",
+      "done": "Fertig"
+    },
+    "addShape": {
+      "label": "So umrandest du einen Griff",
+      "draw": "Zeichnen",
+      "corners": "Ecken"
     },
     "hints": {
       "toggle": "Tippe auf einen Kreis, um ihn auszuschalten. Tippe auf freie Wand, um einen Griff hinzuzufügen.",
@@ -839,7 +849,10 @@
       "strokeTooDetailed": "Dieser Strich hat zu viele Details zum Speichern. Fahre die Kante in einem Zug nach.",
       "strokeTooShort": "Dieser Strich ist zu kurz. Zeichne eine ganze Schlaufe um den Griff.",
       "someHoldsOffWall_one": "{{count}} Griff liegt außerhalb der Wand. Schieb ihn zurück aufs Foto oder schalte ihn aus.",
-      "someHoldsOffWall_other": "{{count}} Griffe liegen außerhalb der Wand. Schieb sie zurück aufs Foto oder schalte sie aus."
+      "someHoldsOffWall_other": "{{count}} Griffe liegen außerhalb der Wand. Schieb sie zurück aufs Foto oder schalte sie aus.",
+      "cornersCross": "Zwei Seiten kreuzen sich. Tippe die Ecken der Reihe nach um den Griff.",
+      "cornersTooFew": "Diese Ecken liegen zu nah beieinander oder auf einer Linie. Tippe mindestens 3 um den Griff.",
+      "cornersHollow": "Diese Form ist zu hohl. Tippe die Ecken am Außenrand des Griffs."
     },
     "empty": {
       "noPhoto": "Diese Wand hat noch kein Foto zum Bearbeiten."

@@ -13,6 +13,13 @@ export const SPRAY_BAR_GUTTER = spacing[2];
  */
 export const SPRAY_BAR_RESERVE = SPRAY_BAR_HEIGHT + SPRAY_BAR_GUTTER * 3;
 
+/**
+ * Deepest pinch zoom in the spray hold editor. Small holds tucked beside big ones
+ * need more than the climb view's 4×; the photo is 2048 px on its long side, so
+ * past about 8× there is no more detail to see.
+ */
+export const SPRAY_EDITOR_MAX_SCALE = 8;
+
 /** The shortest the photo slot is ever made, however little room the screen leaves. */
 const MIN_SLOT_HEIGHT = 200;
 

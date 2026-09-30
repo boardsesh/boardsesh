@@ -44,6 +44,18 @@ type UseZoomPanGestureOptions = {
    * the ancestor pinch can't acquire both — pinch-to-zoom stalls on Android.
    * The play-drawer board has no per-hold detectors, so it leaves this unset. */
   pinchRef?: MutableRefObject<GestureType | undefined>;
+  /** Deepest zoom a pinch may reach. Defaults to `MAX_SCALE` (4×), which every
+   * board uses; the spray hold editor raises it so small holds tucked beside big
+   * ones can be framed. Read on the UI thread from a shared value, so changing it
+   * never rebuilds the gesture objects. `zoomTo` does not clamp against it — its
+   * caller pre-clamps (see `zoomTargetForHold`'s own `maxScale`). */
+  maxScale?: number;
+  /** The pinch also pans: the board follows the two fingers' midpoint as it
+   * moves, not just their spread. Off by default, where the one-finger zoomed
+   * pan does the moving. The spray hold editor turns it on because its draw
+   * tools take every one-finger touch, so two fingers are the only way to move
+   * across a zoomed wall mid-edit. Mirrored into a shared value like `maxScale`. */
+  pinchPans?: boolean;
 };
 
 type UseZoomPanGestureReturn = {
@@ -126,6 +138,16 @@ function clampTranslation(
   };
 }
 
+/**
+ * The scale a pinch lands on: the gesture's raw scale held inside
+ * [minScale, maxScale]. A worklet so the pinch's onUpdate can call it on the UI
+ * thread; exported so the clamp itself is unit-testable.
+ */
+export function clampPinchScale(scale: number, minScale: number, maxScale: number): number {
+  'worklet';
+  return Math.max(minScale, Math.min(maxScale, scale));
+}
+
 export function useZoomPanGesture({
   enabled = true,
   containerWidth,
@@ -133,6 +155,8 @@ export function useZoomPanGesture({
   panActivationOffset,
   scrollRef,
   pinchRef,
+  maxScale = MAX_SCALE,
+  pinchPans = false,
 }: UseZoomPanGestureOptions): UseZoomPanGestureReturn {
   const scale = useSharedValue(MIN_SCALE);
   const translateX = useSharedValue(0);
@@ -144,6 +168,11 @@ export function useZoomPanGesture({
 
   const pinchFocalX = useSharedValue(0);
   const pinchFocalY = useSharedValue(0);
+  // `pinchPans` only: the pointer count and the gesture's own scale at the last
+  // rebase. A finger lifting or landing mid-pinch moves the focal point to a new
+  // midpoint in one frame; rebasing there keeps the board from lurching.
+  const pinchPointers = useSharedValue(0);
+  const pinchScaleBase = useSharedValue(1);
 
   // Mirror JS values onto the UI thread so worklets can gate without putting
   // them in gesture useMemo deps — recomposing gestures mid-session left
@@ -157,6 +186,11 @@ export function useZoomPanGesture({
   const enabledSV = useSharedValue(enabled);
   const containerWidthSV = useSharedValue(containerWidth);
   const containerHeightSV = useSharedValue(containerHeight);
+  const maxScaleSV = useSharedValue(maxScale);
+  const pinchPansSV = useSharedValue(pinchPans);
+  useEffect(() => {
+    pinchPansSV.value = pinchPans;
+  }, [pinchPans, pinchPansSV]);
   useEffect(() => {
     enabledSV.value = enabled;
   }, [enabled, enabledSV]);
@@ -166,6 +200,9 @@ export function useZoomPanGesture({
   useEffect(() => {
     containerHeightSV.value = containerHeight;
   }, [containerHeight, containerHeightSV]);
+  useEffect(() => {
+    maxScaleSV.value = maxScale;
+  }, [maxScale, maxScaleSV]);
 
   const [isZoomed, setIsZoomed] = useState(false);
   // JS mirror of "2+ fingers down" — see isPinching in the return type. Tracked
@@ -234,11 +271,27 @@ export function useZoomPanGesture({
         savedTranslateY.value = translateY.value;
         pinchFocalX.value = event.focalX;
         pinchFocalY.value = event.focalY;
+        pinchPointers.value = event.numberOfPointers;
+        pinchScaleBase.value = 1;
       })
       .onUpdate((event) => {
         'worklet';
         if (!enabledSV.value) return;
-        const newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, savedScale.value * event.scale));
+        if (pinchPansSV.value && event.numberOfPointers !== pinchPointers.value) {
+          savedScale.value = scale.value;
+          savedTranslateX.value = translateX.value;
+          savedTranslateY.value = translateY.value;
+          pinchFocalX.value = event.focalX;
+          pinchFocalY.value = event.focalY;
+          pinchPointers.value = event.numberOfPointers;
+          pinchScaleBase.value = event.scale > 0 ? event.scale : 1;
+          return;
+        }
+        const newScale = clampPinchScale(
+          (savedScale.value * event.scale) / pinchScaleBase.value,
+          MIN_SCALE,
+          maxScaleSV.value,
+        );
 
         const focalOffsetX = pinchFocalX.value - containerWidthSV.value / 2;
         const focalOffsetY = pinchFocalY.value - containerHeightSV.value / 2;
@@ -246,8 +299,12 @@ export function useZoomPanGesture({
         // Inlined from computeFocalPinchTranslation in @boardsesh/play-view
         // — keep in sync. Direct call from worklet across module boundaries
         // isn't reliable; the shared function exists for unit tests + spec.
-        const newTranslateX = focalOffsetX * (1 - scaleDelta) + scaleDelta * savedTranslateX.value;
-        const newTranslateY = focalOffsetY * (1 - scaleDelta) + scaleDelta * savedTranslateY.value;
+        // With `pinchPans`, the midpoint's travel since the pinch began is added
+        // on top, so the point under the fingers stays under them as they move.
+        const panX = pinchPansSV.value ? event.focalX - pinchFocalX.value : 0;
+        const panY = pinchPansSV.value ? event.focalY - pinchFocalY.value : 0;
+        const newTranslateX = focalOffsetX * (1 - scaleDelta) + scaleDelta * savedTranslateX.value + panX;
+        const newTranslateY = focalOffsetY * (1 - scaleDelta) + scaleDelta * savedTranslateY.value + panY;
 
         const clamped = clampTranslation(
           newTranslateX,
@@ -342,6 +399,8 @@ export function useZoomPanGesture({
     savedTranslateY,
     pinchFocalX,
     pinchFocalY,
+    pinchPointers,
+    pinchScaleBase,
     isZoomedSV,
     isPinchingSV,
     isPinchingMirrorSV,
@@ -349,6 +408,8 @@ export function useZoomPanGesture({
     enabledSV,
     containerWidthSV,
     containerHeightSV,
+    maxScaleSV,
+    pinchPansSV,
     updateZoomState,
     scrollRef,
     pinchRef,
