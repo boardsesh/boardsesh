@@ -173,6 +173,21 @@ describe('generated export retention', () => {
     });
   });
 
+  it('blocks a legacy bucket-wide deletion rule that overlaps exports', async () => {
+    const legacyDeletionRule = {
+      id: 'delete-all-objects',
+      enabled: true,
+      deleteObjectsTransition: { condition: { type: 'Age', maxAge: 86_400 } },
+    };
+    const fetchMock = vi.fn().mockResolvedValue(envelope({ rules: [legacyDeletionRule] }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      applyR2LifecycleRule('test-token', 'test-account', privateBucket.name, USER_EXPORT_LIFECYCLE_RULE),
+    ).rejects.toThrow('overlaps');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('never replaces lifecycle rules after an authorization failure', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ success: false }), { status: 403 }));
     vi.stubGlobal('fetch', fetchMock);
