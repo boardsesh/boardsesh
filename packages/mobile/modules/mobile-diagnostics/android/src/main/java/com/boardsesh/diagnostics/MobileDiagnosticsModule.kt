@@ -18,11 +18,12 @@ class MobileDiagnosticsModule : Module() {
                 "previousNativeStartupId" to if (markerDurable) preferences?.getString("previousStartupId", null) else null)
         }
         Function("crashNativeAbort") {
-            val context = appContext.reactContext ?: return@Function
+            val context = appContext.reactContext ?: return@Function null
             // JS also checks Sentry enablement and tester access. Native Debug is always safe.
-            if (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) return@Function
+            if (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) return@Function null
             System.loadLibrary("boardsesh_diagnostics")
             nativeAbort()
+            null
         }
     }
 }
