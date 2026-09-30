@@ -41,6 +41,7 @@ import { useEffectiveSurfaceMode } from '../../hooks/use-effective-surface-mode'
 import { useClimbActions, type ClimbActionId, type ClimbActionItem } from './use-climb-actions';
 import type { DismissSurfaceAndWait } from '../create-climb/use-create-climb-navigation';
 import { fitBoardArt, computeReactionBoardMaxSize } from './board-art-fit';
+import { ShowcaseAnchorView } from '../../lib/showcase-anchor';
 
 // Log a tick / Add to playlist / Share get pulled out of the scrollable list into a
 // fixed horizontal button row at the top of the card — the most-reached actions,
@@ -585,13 +586,14 @@ export function ClimbReactionMenu({
                         a scrolling list fight the bottom fade. Icons at 24 to match
                         the primary row above. */}
                     {listActions.map((action) => (
-                      <ListRow
-                        key={action.id}
-                        title={action.title}
-                        leading={<Icon name={action.icon} size={24} color={action.color} />}
-                        onPress={action.run}
-                        showSeparator={false}
-                      />
+                      <ShowcaseAnchorView key={action.id} name="play-next" enabled={action.id === 'playNext'}>
+                        <ListRow
+                          title={action.title}
+                          leading={<Icon name={action.icon} size={24} color={action.color} />}
+                          onPress={action.run}
+                          showSeparator={false}
+                        />
+                      </ShowcaseAnchorView>
                     ))}
                   </ScrollView>
                   {/* Bottom-edge fade cueing "more below" — only when the list is clipped.

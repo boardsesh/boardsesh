@@ -318,6 +318,24 @@ describe('useBoardScan', () => {
 
     expect(mockBleManager.stopDeviceScan).toHaveBeenCalled();
   });
+
+  it('finishes empty without touching the radio in a fake-Bluetooth screenshot build', async () => {
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_FAKE_BLE', '1');
+    try {
+      const { result } = renderHook(() => useBoardScan());
+      await act(async () => {
+        await result.current.start();
+      });
+
+      expect(result.current.status).toBe('done');
+      expect(result.current.serials).toEqual([]);
+      expect(mockBleManager.state).not.toHaveBeenCalled();
+      expect(mockBleManager.startDeviceScan).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
 });
 
 // #5654: the quickstart said "Turn on Bluetooth to scan" for every stop, and ran

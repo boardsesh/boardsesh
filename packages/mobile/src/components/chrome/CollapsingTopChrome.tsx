@@ -12,6 +12,7 @@ import { Icon } from '../Icon';
 import { GlassSurface } from '../GlassSurface';
 import { BoardToolbarAction } from './BoardToolbarAction';
 import { BoardSwitcherButton } from './BoardSwitcherButton';
+import { ShowcaseAnchorView } from '../../lib/showcase-anchor';
 import { GlassActionToolbar, GlassToolbarAction, TOP_ACTION_SIZE } from './GlassActionToolbar';
 import { AngleToolbarAction } from './AngleToolbarAction';
 import { LightbulbToolbarAction } from './LightbulbToolbarAction';
@@ -57,6 +58,9 @@ type CollapsingTopChromeProps = {
   /** Suppress the bluetooth lightbulb in the right toolbar — e.g. the active-session
    *  header, which keeps only the stop control on the right. */
   hideLight?: boolean;
+  /** Report the board glyph to the showcase-video recorder (screenshot mode). Only
+   *  the Climbs chrome sets it, so one tab logs the `board-history-button` rect. */
+  anchorBoardButton?: boolean;
   /** Extra controls rendered below the islands row (e.g. the Climbs search row).
    *  Discover passes none. Measured into the reported chrome height. */
   children?: ReactNode;
@@ -91,6 +95,7 @@ export function CollapsingTopChrome({
   leadingAction,
   leadingActionCount,
   hideLight = false,
+  anchorBoardButton = false,
   children,
 }: CollapsingTopChromeProps) {
   const { systemColors, variant } = useTheme();
@@ -207,11 +212,13 @@ export function CollapsingTopChrome({
         />
         <AngleToolbarAction />
         {activeBoard ? (
-          <BoardToolbarAction
-            onPress={onOpenBoardSwitcher}
-            accessibilityHint={boardPillAccessibilityHint}
-            badge={boardBadge}
-          />
+          <ShowcaseAnchorView name="board-history-button" enabled={anchorBoardButton}>
+            <BoardToolbarAction
+              onPress={onOpenBoardSwitcher}
+              accessibilityHint={boardPillAccessibilityHint}
+              badge={boardBadge}
+            />
+          </ShowcaseAnchorView>
         ) : null}
         {bluetooth && !hideLight ? <LightbulbToolbarAction /> : null}
         {trailingAction}

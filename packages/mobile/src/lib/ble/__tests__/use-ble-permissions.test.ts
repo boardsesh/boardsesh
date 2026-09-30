@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   reactNativePermissionHarness,
   resetReactNativePermissionHarness,
@@ -251,5 +251,29 @@ describe('requestOptionalNotificationPermission', () => {
     reactNativePermissionHarness.permissionsAndroid.request.mockRejectedValue(new Error('no activity'));
 
     await expect(requestOptionalNotificationPermission()).resolves.toBeUndefined();
+  });
+});
+
+describe('requestBleRuntimePermissionStatus under fake Bluetooth', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetReactNativePermissionHarness();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('still asks Android when only the fake-Bluetooth flag is set', async () => {
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_FAKE_BLE', '1');
+    await requestBleRuntimePermissionStatus();
+    expect(reactNativePermissionHarness.permissionsAndroid.requestMultiple).toHaveBeenCalled();
+  });
+
+  it('grants without a system dialog when both screenshot flags are 1', async () => {
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_FAKE_BLE', '1');
+    expect(await requestBleRuntimePermissionStatus()).toBe('granted');
+    expect(reactNativePermissionHarness.permissionsAndroid.requestMultiple).not.toHaveBeenCalled();
   });
 });

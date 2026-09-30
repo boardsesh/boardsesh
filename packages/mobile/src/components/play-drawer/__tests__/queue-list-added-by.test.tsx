@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ClimbQueueItem } from '@boardsesh/queue';
 
 // Wiring guard for #4672. `QueueItemRow` renders in THREE places inside
@@ -140,10 +140,10 @@ function makeItem(uuid: string): ClimbQueueItem {
 
 const queue = [makeItem('a'), makeItem('b'), makeItem('c')];
 
-function renderList() {
+function renderList(items: ClimbQueueItem[] = queue) {
   return render(
     <QueueList
-      queue={queue}
+      queue={items}
       currentItemUuid="b"
       board={board}
       isEditMode={false}
@@ -247,5 +247,45 @@ describe('QueueList added-by wiring', () => {
       expect(props.showAddedBy).toBe(true);
       expect(props.viewerUserId).toBe('me');
     }
+  });
+});
+
+// The showcase video's `queue-row-avatar` callout needs exactly one row to report
+// its avatar, and a shipped build must hand every row the same constant `false`
+// so a queue advance never re-renders a row over the anchor prop.
+describe('QueueList showcase avatar anchor', () => {
+  const longQueue = [makeItem('a'), makeItem('b'), makeItem('c'), makeItem('d'), makeItem('e')];
+
+  beforeEach(() => {
+    capturedRows.props = [];
+    session.set({ sessionId: 'session-1', profile: { id: 'me' } });
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('anchors only the first upcoming row in screenshot mode', () => {
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
+    renderList(longQueue);
+
+    // History (a), current (b), future (c, d, e).
+    expect(capturedRows.props).toHaveLength(5);
+    expect(capturedRows.props.map((props) => props.showcaseAvatarAnchor)).toEqual([
+      undefined,
+      undefined,
+      true,
+      false,
+      false,
+    ]);
+    expect((capturedRows.props[2].item as ClimbQueueItem).uuid).toBe('c');
+  });
+
+  it('anchors no row outside screenshot mode', () => {
+    renderList(longQueue);
+
+    expect(capturedRows.props).toHaveLength(5);
+    expect(capturedRows.props.every((props) => !props.showcaseAvatarAnchor)).toBe(true);
+    expect(capturedRows.props.slice(2).map((props) => props.showcaseAvatarAnchor)).toEqual([false, false, false]);
   });
 });
