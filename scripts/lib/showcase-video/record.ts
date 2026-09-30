@@ -383,6 +383,32 @@ export function anchorTapValues(
   };
 }
 
+/**
+ * scripts/screenshot-sim.entitlements names the team-prefixed keychain group
+ * literally (a simulator build has no provisioning profile to expand
+ * `$(AppIdentifierPrefix)` in entitlements), while the app's Info.plist gets
+ * the prefix from the project's DEVELOPMENT_TEAM. If the team ever changes,
+ * the two drift apart and every shared-keychain write fails, which breaks the
+ * island take's Next. `null` when they agree, or when the app predates the key.
+ */
+export function findKeychainTeamProblem(
+  appKeychainGroup: string | null,
+  entitlementsXml: string,
+  entitlementsPath: string,
+): string | null {
+  if (!appKeychainGroup) return null;
+  const listed = [...entitlementsXml.matchAll(/<string>([A-Z0-9]{10}\.group\.com\.boardsesh\.app)<\/string>/g)].map(
+    (match) => match[1],
+  );
+  if (listed.includes(appKeychainGroup)) return null;
+  return (
+    `The dev-client's keychain group is ${appKeychainGroup} (its BoardseshKeychainAccessGroup), but ` +
+    `${entitlementsPath} lists ${listed.join(', ') || 'no team-prefixed group'}. The team ID changed: put ` +
+    `${appKeychainGroup} in that file's keychain-access-groups and rebuild the app ` +
+    '(vp run mobile:build-sim-app -- --app-out packages/mobile/.app-cache), or the Live Activity cannot use the shared keychain.'
+  );
+}
+
 /** Signal-server marks that are recorder plumbing, not moments in the footage. */
 const PLUMBING_MARKS = new Set([FLOW_START_MARK, 'secondary-ready']);
 

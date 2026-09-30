@@ -171,7 +171,13 @@ Three things make the Live Activity work on a simulator:
   with `pushType: .token`, and ActivityKit refuses that without
   `aps-environment` (`LA_START_FAILED … ActivityInput error 0`). The screenshot
   simulator build carries it (`scripts/screenshot-sim.entitlements`), together
-  with the team-prefixed keychain group the native shared keychain uses. A
+  with the team-prefixed keychain group the native shared keychain uses.
+  That group hardcodes the team ID (`9L3HKPZBH3`): a simulator build has no
+  provisioning profile to expand `$(AppIdentifierPrefix)` in entitlements,
+  while the app's Info.plist (`BoardseshKeychainAccessGroup`) gets it from the
+  project's team. The recorder checks the two agree before any take and, for a
+  run with the island take, stops with the fix if the team ID ever changes;
+  the scripts tests hold the file to `appleTeamId` in `app.config.ts`. A
   dev-client built before that change needs a rebuild:
   `vp run mobile:build-sim-app -- --app-out packages/mobile/.app-cache`.
 - **Screenshot builds drive the island's Next locally.** In a party session the

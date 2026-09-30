@@ -77,6 +77,7 @@ import {
   countHomeReady,
   differingPixelRatio,
   findBoardHandoffProblem,
+  findKeychainTeamProblem,
   findBoardSlotProblem,
   isBlankFrame,
   isRecordingStartedLine,
@@ -122,6 +123,8 @@ const FLOW_SCRATCH_DIR = resolve(WORK_DIR, 'flows');
 const SECONDARY_APP_DIR = resolve(WORK_DIR, 'secondary-app');
 const SECONDARY_METRO_TMP = resolve(WORK_DIR, 'secondary-metro-tmp');
 const REFERENCE_DIR = resolve(SHOWCASE_STAGE_DIR, 'reference');
+/** The screenshot simulator build's entitlements (see scripts/mobile-build-sim-app.ts). */
+const SIM_ENTITLEMENTS = resolve(ROOT_DIR, 'scripts', 'screenshot-sim.entitlements');
 const JDK_HOME = join(homedir(), '.cache', 'boardsesh', 'jdk-21');
 const MAESTRO_BIN_DIR = join(homedir(), '.maestro', 'bin');
 
@@ -196,8 +199,9 @@ function toolEnv(): NodeJS.ProcessEnv {
   return env;
 }
 
+/** On PATH? `which` with an argument array, so no name is ever shell-interpolated. */
 function commandExists(command: string, env: NodeJS.ProcessEnv = toolEnv()): boolean {
-  return spawnSync('sh', ['-c', `command -v ${command}`], { env, stdio: 'ignore' }).status === 0;
+  return spawnSync('which', [command], { env, stdio: 'ignore' }).status === 0;
 }
 
 function simctl(
@@ -207,6 +211,11 @@ function simctl(
   guardSimulatorCommand('xcrun', ['simctl', ...args], ROOT_DIR);
   const result = spawnSync('xcrun', ['simctl', ...args], { encoding: 'utf8', env, maxBuffer: 16 * 1024 * 1024 });
   return { status: result.status ?? 1, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
+}
+
+function readPlistString(plistPath: string, key: string): string | null {
+  const result = spawnSync('plutil', ['-extract', key, 'raw', '-o', '-', plistPath], { encoding: 'utf8' });
+  return result.status === 0 ? result.stdout.trim() : null;
 }
 
 function portInUse(port: number): boolean {
@@ -835,6 +844,8 @@ type RunContext = {
   primary: Phone;
   secondary: Phone | null;
   signal: SignalServer;
+  /** Whether a take left a live session running on the account that the teardown must end. */
+  session: { open: boolean; cleanupRegistered: boolean };
 };
 
 /** The flow that switches "Show this session live" off before a session take starts one. */
@@ -842,15 +853,12 @@ const SESSION_PRIVATE_FLOW = 'session-private.yaml';
 /** The flows that end a live session (the crew teardown). */
 const SESSION_END_FLOWS = ['session-end.yaml'] as const;
 
-/** Whether a take left a live session running on the account that the teardown must end. */
-let sessionOpen = false;
-let sessionCleanupRegistered = false;
-
 function noteSessionStarted(context: RunContext, logText: string): void {
-  if (!sessionStarted(logText) || sessionOpen) return;
-  sessionOpen = true;
-  if (!sessionCleanupRegistered) {
-    sessionCleanupRegistered = true;
+  const { session } = context;
+  if (!sessionStarted(logText) || session.open) return;
+  session.open = true;
+  if (!session.cleanupRegistered) {
+    session.cleanupRegistered = true;
     onCleanup('end the live session', () => endSession(context, 'teardown'));
   }
 }
@@ -874,9 +882,9 @@ async function recordTake(context: RunContext, take: ShowcaseTake): Promise<Take
     // An earlier run died before its teardown; end that session first, or the
     // Record tab opens in-session and the setup flows tap the wrong things.
     console.warn(`${LOG} [${take.id}] ending session ${leftover} left over from an earlier run...`);
-    sessionOpen = true;
+    context.session.open = true;
     await endSession(context, take.id);
-    if (sessionOpen) {
+    if (context.session.open) {
       return failed(take, [
         `[${take.id}] a session left over from an earlier run (${leftover}) would not end; run --end-session ${leftover}`,
       ]);
@@ -982,7 +990,7 @@ async function recordTake(context: RunContext, take: ShowcaseTake): Promise<Take
   // The workouts take starts its session on camera.
   noteSessionStarted(context, window.text);
   const marks = new Map(signal.marks);
-  if (sessionOpen) await endSession(context, take.id);
+  if (context.session.open) await endSession(context, take.id);
 
   return processTake({
     take,
@@ -999,7 +1007,7 @@ async function recordTake(context: RunContext, take: ShowcaseTake): Promise<Take
 
 /** End the live session a take started. Relaunches first so no open sheet swallows the Stop tap. */
 async function endSession(context: RunContext, label: string): Promise<void> {
-  if (!sessionOpen) return;
+  if (!context.session.open) return;
   // The app restores the session on launch, so the Record tab comes back in-session.
   await relaunch(context.primary);
   const window = new LogWindow(context.primary.metroLog);
@@ -1010,7 +1018,7 @@ async function endSession(context: RunContext, label: string): Promise<void> {
     await sleep(500);
   }
   if (window.text.includes('[analytics] Session Ended')) {
-    sessionOpen = false;
+    context.session.open = false;
     console.log(`${LOG} [${label}] live session ended.`);
   } else {
     console.warn(
@@ -1050,7 +1058,7 @@ async function endStraySession(context: RunContext, sessionId: string): Promise<
         `(screen: ${relative(ROOT_DIR, screenshot)}).`,
     );
   }
-  sessionOpen = true;
+  context.session.open = true;
   await endSession(context, 'end-session');
 }
 
@@ -1070,7 +1078,7 @@ async function prepareCrew(context: RunContext, take: ShowcaseTake): Promise<{ u
   noteSessionStarted(context, window.text);
   const invite = simctl(['pbpaste', primary.device.udid]).stdout;
   const sessionId = parseSessionIdFromInviteUrl(invite);
-  if (!sessionOpen || !sessionId) {
+  if (!context.session.open || !sessionId) {
     return (
       `[${take.id}] the session did not start or its invite link was not copied (clipboard: ` +
       `${invite.trim() ? 'no session link' : 'empty'}). Check the Start / Invite / Copy link points in ${startFlow}.`
@@ -1366,6 +1374,16 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     const cachedApp = resolve(MOBILE_DIR, '.app-cache', 'Boardsesh.app');
     const requestedApp = args.appPath ? resolve(args.appPath) : existsSync(cachedApp) ? cachedApp : null;
     const appPath = resolveAppPath(screenshotOptions(args, requestedApp));
+    const keychainProblem = findKeychainTeamProblem(
+      readPlistString(resolve(appPath, 'Info.plist'), 'BoardseshKeychainAccessGroup'),
+      readFileSync(SIM_ENTITLEMENTS, 'utf8'),
+      relative(ROOT_DIR, SIM_ENTITLEMENTS),
+    );
+    if (keychainProblem) {
+      // Only the island take reads the shared keychain; the rest are unaffected.
+      if (takes.some((take) => take.id === 'lock-screen')) throw new Error(keychainProblem);
+      console.warn(`${LOG} ${keychainProblem}`);
+    }
     const primary = await preparePhone(
       'primary',
       appPath,
@@ -1396,7 +1414,13 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
       });
     }
 
-    const context: RunContext = { args, primary, secondary, signal };
+    const context: RunContext = {
+      args,
+      primary,
+      secondary,
+      signal,
+      session: { open: false, cleanupRegistered: false },
+    };
     for (const flow of new Set(takes.flatMap((take) => take.deviceSetupFlows))) {
       console.log(`${LOG} device setup: ${flow}`);
       const status = await runFlow(context, flow, 'device-setup');
@@ -1406,7 +1430,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     if (args.endSession) {
       await endStraySession(context, args.endSession);
       await teardown();
-      return sessionOpen ? 1 : 0;
+      return context.session.open ? 1 : 0;
     }
     for (const take of takes) {
       try {

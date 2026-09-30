@@ -14,6 +14,7 @@ import {
   checkTake,
   countHomeReady,
   findBoardHandoffProblem,
+  findKeychainTeamProblem,
   differingPixelRatio,
   findBoardSlotProblem,
   isBlankFrame,
@@ -314,6 +315,30 @@ describe('buildMarksFile', () => {
       marks: { 'queue-open': 4.5, 'crew-added': 5, 'row-landed': 6.25 },
     });
     expect(Object.keys(file.marks)).toEqual(['queue-open', 'crew-added', 'row-landed']);
+  });
+});
+
+describe('findKeychainTeamProblem', () => {
+  const entitlements =
+    '<array><string>group.com.boardsesh.app</string><string>9L3HKPZBH3.group.com.boardsesh.app</string></array>';
+
+  it('passes when the app and the sim entitlements share the team prefix, or the app predates the key', () => {
+    expect(findKeychainTeamProblem('9L3HKPZBH3.group.com.boardsesh.app', entitlements, 'e.plist')).toBeNull();
+    expect(findKeychainTeamProblem(null, entitlements, 'e.plist')).toBeNull();
+  });
+
+  it('holds for the committed sim entitlements and the project team ID', () => {
+    const file = readFileSync(new URL('../screenshot-sim.entitlements', import.meta.url), 'utf8');
+    const appConfig = readFileSync(new URL('../../packages/mobile/app.config.ts', import.meta.url), 'utf8');
+    const team = /appleTeamId: '([A-Z0-9]{10})'/.exec(appConfig)?.[1];
+    expect(team).toBeTruthy();
+    expect(findKeychainTeamProblem(`${team}.group.com.boardsesh.app`, file, 'screenshot-sim.entitlements')).toBeNull();
+  });
+
+  it('names both groups and the fix when the team changed', () => {
+    expect(findKeychainTeamProblem('ABCDE12345.group.com.boardsesh.app', entitlements, 'e.plist')).toMatch(
+      /ABCDE12345\.group\.com\.boardsesh\.app.*e\.plist lists 9L3HKPZBH3\.group\.com\.boardsesh\.app.*rebuild/,
+    );
   });
 });
 
