@@ -98,6 +98,8 @@ export function buildSprayHoldWritePlan(state: SprayEditorState, homography: rea
   // is on the wall.
   let aliveAfterSave = 0;
   const removeIds = [...state.removedIds];
+  // Membership check for the loop below; a wall carries up to 1500 holds.
+  const queuedRemovals = new Set(removeIds);
 
   for (const hold of allHolds(state)) {
     // A find awaiting a verdict is not work in progress — it is a proposal.
@@ -107,7 +109,10 @@ export function buildSprayHoldWritePlan(state: SprayEditorState, homography: rea
       // Switched off. A stored one comes off the draft — the toggle already
       // queued it, and this makes sure no path can leave one both OFF on screen
       // and alive on the wall. A local one simply never goes out.
-      if (hold.id > 0 && !removeIds.includes(hold.id)) removeIds.push(hold.id);
+      if (hold.id > 0 && !queuedRemovals.has(hold.id)) {
+        queuedRemovals.add(hold.id);
+        removeIds.push(hold.id);
+      }
       continue;
     }
 
