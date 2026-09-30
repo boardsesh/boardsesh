@@ -130,7 +130,7 @@ describe('sprayEditorSeedKey', () => {
 describe('buildEditorSeed', () => {
   const candidates: SprayHoldCandidate[] = [
     { cx: 5, cy: 5, r: 9, confidence: 0.9 },
-    { cx: 6, cy: 6, r: 9, confidence: 0.3 },
+    { cx: 6, cy: 6, r: 9, confidence: 0.65 },
   ];
 
   it('seeds stored holds clean, accepted and by their server ids', () => {

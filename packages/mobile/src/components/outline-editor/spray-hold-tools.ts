@@ -20,26 +20,32 @@ import { buildOutlineRing, radiusRingToBoardPx, type StrokeRejection } from './s
  * Detector confidence at or above which a candidate opens ON — drawn as a solid
  * ring and written on Publish unless the climber switches it off.
  *
- * A STARTING POINT, not a measured optimum. The plan was to pick the lowest cut
- * that reaches 0.8 precision on the deployed segmentation model
- * (`2026-09-18-seg`), but no threshold curve for that model is checked in. The
- * nearest evidence is the 2026-09-15 full box-model run
- * (`ml/holds/results/full-run-2026-09-15-m5max/{nano-untiled-1024,medium-untiled-1280}/eval-tune-*.json`),
- * whose precision tops out at 0.766 at a 0.70 threshold — so no cut on those
- * curves reaches 0.8, and a cut that high would switch off roughly 40% of real
- * holds. At 0.40–0.50 the same curves read 0.64–0.69 precision at 0.62–0.67
- * recall, which is the trade this screen is built for: switching a wrong ring
- * off is one tap, finding and adding a missed hold is a hunt. Re-derive both
- * numbers once a seg eval curve lands in `ml/holds/results/`.
+ * The band this cut sits in is set by the WORKER, not by the app: the hold
+ * detector keeps only detections at or above its manifest's
+ * `thresholds.default`, which is 0.6 for `2026-09-18-seg` (`detect()` in
+ * `packages/hold-detector/src/detect.ts` falls back to it and
+ * `inference-thread.ts` passes no override). Every candidate this screen ever
+ * sees therefore scores 0.6–1.0, and a cut below 0.6 would make every find ON
+ * and the maybe state unreachable.
+ *
+ * 0.75 splits that band where the old editor already drew its dashed
+ * "low confidence" rings. On a 240-hold validation spray wall
+ * (`roboflow-1class/valid/IMG_8992`) the deployed model returned 224 finds,
+ * median 0.84; this cut opens 189 of them ON and 35 as maybes. No precision
+ * curve for the seg model is checked in yet — re-derive this once one lands in
+ * `ml/holds/results/`, and lower the worker's threshold if more maybes are wanted.
  */
-export const SPRAY_ON_CUTOFF = 0.45;
+export const SPRAY_ON_CUTOFF = 0.75;
 
 /**
  * Candidates between this and {@link SPRAY_ON_CUTOFF} open as MAYBES: a dashed
  * amber ring that is drawn but not written until the climber taps it on.
- * Anything below is never shown at all. Same provenance as the ON cutoff.
+ * Anything below is never shown at all.
+ *
+ * Matches the worker's own 0.6 floor, so today every candidate it sends is
+ * shown; the floor only bites if a future model ships a lower default.
  */
-export const SPRAY_MAYBE_FLOOR = 0.25;
+export const SPRAY_MAYBE_FLOOR = 0.6;
 
 /**
  * The smallest a hold's grab area gets on SCREEN, in points, before it is

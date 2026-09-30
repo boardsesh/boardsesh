@@ -727,11 +727,14 @@ What the editor does with a wall is decided by this document rather than by tast
   re-submitted as MANUAL the first time it is nudged, overwriting what the wall
   records about where its holds came from.
 - **Confidence sets the starting state, not a slider.** A find at or above
-  `SPRAY_ON_CUTOFF` (0.45) opens ON; between `SPRAY_MAYBE_FLOOR` (0.25) and the
+  `SPRAY_ON_CUTOFF` (0.75) opens ON; between `SPRAY_MAYBE_FLOOR` (0.6) and the
   cutoff it opens as a dashed amber MAYBE that is drawn but not written; below
-  the floor the seed drops it. Both constants live in `spray-hold-tools.ts`
-  with their provenance: no eval curve for the deployed seg model reaches 0.8
-  precision, so they are a starting point to re-derive once one does. Tapping a
+  the floor the seed drops it. The worker only sends finds at or above its
+  manifest's `thresholds.default` (0.6 for `2026-09-18-seg`), so the app works
+  inside a 0.6–1.0 band; a cutoff under 0.6 would make every find ON. Both
+  constants live in `spray-hold-tools.ts` with their provenance (on a 240-hold
+  validation wall: 224 finds, 189 ON, 35 maybes); re-derive them once a seg
+  precision curve is checked in. Tapping a
   confident find switches it OFF (a faint dotted ghost, never written); tapping
   a maybe or a ghost switches it ON. A stored hold switched off is queued for
   `removeSprayWallHolds`, and switching it back takes it off the queue.
