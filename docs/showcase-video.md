@@ -346,3 +346,21 @@ Each failure names the take. The fixes:
 | `scripts/lib/showcase-video/takes.ts` | The take registry. |
 | `packages/mobile/.maestro/showcase/` | One flow per take, plus the crew setup/teardown flows. |
 | `.boardsesh/showcase-video/work/` | Footage, anchors, raw recordings, logs (gitignored). |
+
+## Web delivery
+
+How the rendered files reach the homepage (`packages/web/app/components/home/home-showcase-video.tsx`).
+
+**English only.** The headlines are burned into the pixels, so es, fr and de keep the three-phone stack and the iOS/Android toggle in the hero. On the English page the toggle moves into the feature strip. The scene headlines also render as a visually hidden `<figcaption>` for screen readers and crawlers.
+
+**The poster is the page's main paint.** The card is a plain `<img>` with `width`/`height` (720 x 1280), `fetchPriority="high"` and no `decoding="async"`, and the component calls `preload(poster, { as: 'image', fetchPriority: 'high' })` so the hint is in the server HTML. The `<video>` has no `poster` attribute: it sits on top of the image in the same box at opacity 0, and turns visible on its `playing` event. The video can never be bigger than the poster.
+
+**The video loads late.** Nothing is requested until the window `load` event has fired and `requestIdleCallback` has run (3 s timeout, 200 ms timer where the API is missing). Then the component sets `src` (webm if `canPlayType('video/webm')`, else mp4) and `preload='auto'`, and the hook plays it. The IntersectionObserver (`rootMargin: 0px`, `threshold: 0.1`) only pauses it offscreen and resumes it. In autoplay mode the hook's effect is the single caller of `play()`/`pause()`; the pause button just flips `userPaused`, so a reader's pause survives scrolling.
+
+**Data saver and reduced motion.** If `navigator.connection.saveData` is set or the reader prefers reduced motion, the poster stays and a centred play button appears. Nothing is fetched until they press it, and the press calls `play()` itself so iOS accepts it inside the click. If the browser refuses autoplay, native controls appear.
+
+**Files.** One cut serves every viewport: `showcase-9x16-lite.webm` and `.mp4` (720 x 1280, `SHOWCASE_WEB_LITE` in `scripts/lib/showcase-video/render.ts`), plus `showcase-hero-9x16.webp`. Caps: webm 1,300,000 bytes, mp4 1,900,000 bytes; the renderer fails the encode over its cap. The cut is rotated to start on the poster frame (`SHOWCASE_WEB_POSTER_FRAME`), so the first video frame equals the poster and nothing jumps when playback starts.
+
+**Analytics.** `Showcase Video Progress` fires once per quartile per page view with `{ quartile: 25 | 50 | 75 | 100, placement: 'hero', cut: '9x16-lite', autoplayed }`. `autoplayed` is false when the reader pressed play. Quartile 100 fires at 97% of the duration, because a looping video may never report its exact end.
+
+**SEO.** `page.tsx` renders `VideoObject` JSON-LD next to the site JSON-LD, English only. Its `duration` (`PT41.6S`) must equal `SHOWCASE_TOTAL_FRAMES / SHOWCASE_FPS`. It is a literal in `packages/web/app/lib/showcase-video.ts` because the timeline module pulls in Node imports a client bundle can't take; `lib/__tests__/showcase-video.test.tsx` fails when they drift. After changing the timeline, update the literal and bump `/` in the sitemap static entries.

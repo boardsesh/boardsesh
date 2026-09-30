@@ -156,19 +156,30 @@ export default function HomeShowcaseVideo() {
     };
   }, [videoRef]);
 
-  const handleToggle = () => {
+  // Exactly one path calls play() or pause() per press. In autoplay mode the
+  // hook's effect is the only controller, so the press just flips state (or, the
+  // first time, releases the deferred load). Where autoplay is held back (data
+  // saver, reduced motion) or the browser refused it, the hook is not in charge
+  // and the press starts the video itself, inside the click gesture iOS needs.
+  const handleToggle = React.useCallback(() => {
     const video = videoRef.current;
     if (!video) return;
     if (video.paused) {
       startedByReader.current = true;
-      ensureSource(video);
-      if (autoplayAllowed && userPaused) toggleUserPaused();
-      void video.play().catch(() => undefined);
+      if (autoplayAllowed && !sourceReady) {
+        setSourceReady(true);
+      } else if (autoplayAllowed && userPaused) {
+        toggleUserPaused();
+      } else {
+        ensureSource(video);
+        void video.play().catch(() => undefined);
+      }
+    } else if (autoplayAllowed) {
+      toggleUserPaused();
     } else {
-      if (autoplayAllowed && !userPaused) toggleUserPaused();
       video.pause();
     }
-  };
+  }, [videoRef, autoplayAllowed, sourceReady, userPaused, toggleUserPaused, ensureSource]);
 
   const scenes = [
     { id: 'hook', headline: t('home.showcase.scenes.hook') },

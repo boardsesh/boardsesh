@@ -18,6 +18,7 @@ let observerCallback: ObserverCallback | null = null;
 let idleCallbacks: (() => void)[] = [];
 let reducedMotion = false;
 let playSpy: ReturnType<typeof vi.spyOn>;
+let pauseSpy: ReturnType<typeof vi.spyOn>;
 let canPlayTypeSpy: ReturnType<typeof vi.spyOn>;
 
 function getVideo(): HTMLVideoElement {
@@ -51,7 +52,7 @@ describe('HomeShowcaseVideo', () => {
     reducedMotion = false;
     mockTrack.mockReset();
     playSpy = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
-    vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
+    pauseSpy = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
     canPlayTypeSpy = vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('maybe');
     vi.spyOn(document, 'readyState', 'get').mockReturnValue('complete');
     vi.stubGlobal(
@@ -164,16 +165,32 @@ describe('HomeShowcaseVideo', () => {
     expect(playSpy).toHaveBeenCalledTimes(1);
   });
 
-  it('offers a pause control once the video is playing', () => {
+  it('pauses and resumes through the hook with exactly one play() call per resume', () => {
     render(<HomeShowcaseVideo />);
     runIdleCallbacks();
     scrollIntoView(true);
+    expect(playSpy).toHaveBeenCalledTimes(1);
+
+    const setPaused = (value: boolean) => Object.defineProperty(getVideo(), 'paused', { value, configurable: true });
     fireEvent(getVideo(), new Event('play'));
-    Object.defineProperty(getVideo(), 'paused', { value: false, configurable: true });
+    setPaused(false);
 
     fireEvent.click(screen.getByRole('button', { name: tFromCatalog('marketing', 'home.showcase.pause') }));
+    expect(pauseSpy).toHaveBeenCalled();
+    setPaused(true);
     fireEvent(getVideo(), new Event('pause'));
-    expect(screen.getByRole('button', { name: tFromCatalog('marketing', 'home.showcase.play') })).toBeTruthy();
+    expect(playSpy).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole('button', { name: tFromCatalog('marketing', 'home.showcase.play') }));
+    expect(playSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('releases the deferred load when the reader presses play before the page is idle', () => {
+    render(<HomeShowcaseVideo />);
+    scrollIntoView(true);
+    fireEvent.click(screen.getByRole('button', { name: tFromCatalog('marketing', 'home.showcase.play') }));
+    expect(getVideo().getAttribute('src')).toBe('/videos/home/showcase-9x16-lite.webm');
+    expect(playSpy).toHaveBeenCalledTimes(1);
   });
 
   it('reports each quartile once, flagged as autoplayed', () => {
