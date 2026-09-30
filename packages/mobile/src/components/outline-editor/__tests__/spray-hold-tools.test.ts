@@ -24,6 +24,7 @@ import {
   stepHoldSize,
   toRingPoints,
   type HoldGeometry,
+  strokeExtent,
 } from '../spray-hold-tools';
 import {
   fallbackRadiusAt,
@@ -507,5 +508,17 @@ describe('toRingPoints', () => {
       [1, 2],
       [3, 4],
     ]);
+  });
+});
+
+describe('strokeExtent', () => {
+  it('is zero with no points and for a single point', () => {
+    expect(strokeExtent([])).toBe(0);
+    expect(strokeExtent([12, 30])).toBe(0);
+  });
+
+  it('is the wider side of the bounding box', () => {
+    expect(strokeExtent([0, 0, 4, 1, 2, 9])).toBe(9);
+    expect(strokeExtent([10, 5, -6, 7])).toBe(16);
   });
 });

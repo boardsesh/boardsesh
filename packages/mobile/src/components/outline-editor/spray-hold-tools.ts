@@ -520,3 +520,19 @@ export function stepHoldSize(radius: number, medianRadius: number, direction: 1 
   }
   return null;
 }
+
+/** The widest side of a flat point list's bounding box, in board px. Zero with no points. */
+export function strokeExtent(flatPoints: readonly number[]): number {
+  if (flatPoints.length < 2) return 0;
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (let index = 0; index + 1 < flatPoints.length; index += 2) {
+    minX = Math.min(minX, flatPoints[index]);
+    maxX = Math.max(maxX, flatPoints[index]);
+    minY = Math.min(minY, flatPoints[index + 1]);
+    maxY = Math.max(maxY, flatPoints[index + 1]);
+  }
+  return Math.max(maxX - minX, maxY - minY);
+}

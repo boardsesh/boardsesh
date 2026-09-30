@@ -82,6 +82,7 @@ import {
   holdFromTap,
   POLYGON_MAX_VERTICES,
   stepHoldSize,
+  strokeExtent,
   toRingPoints,
 } from './spray-hold-tools';
 
@@ -783,10 +784,6 @@ export function SprayHoldEditorScreen({
     cornersSV.value = NO_POINTS;
     return closeCorners(corners);
   }, [closeCorners, cornersSV]);
-
-  const handleFinishCorners = useCallback(() => {
-    takeAndCloseCorners();
-  }, [takeAndCloseCorners]);
 
   const handleCornerAdded = useCallback(() => {
     setErrorText(null);
@@ -1555,7 +1552,7 @@ export function SprayHoldEditorScreen({
       {tool === 'add' && addShape === 'corners' && cornerCount >= MIN_CORNERS && canEdit ? (
         <SprayCornersChipBar
           bottom={insets.bottom + SPRAY_BAR_GUTTER * 2 + SPRAY_BAR_HEIGHT}
-          onFinish={handleFinishCorners}
+          onFinish={takeAndCloseCorners}
         />
       ) : null}
 
@@ -1643,21 +1640,6 @@ function hintText(id: SprayHintId, t: Translate): string {
   if (id === 'maybe') return t('sprayEditor.hints.maybe');
   if (id === 'longPress') return t('sprayEditor.hints.longPress');
   return t('sprayEditor.hints.toggle');
-}
-
-/** The widest side of a stroke's bounding box, in board px. */
-function strokeExtent(flatPoints: number[]): number {
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
-  for (let index = 0; index + 1 < flatPoints.length; index += 2) {
-    minX = Math.min(minX, flatPoints[index]);
-    maxX = Math.max(maxX, flatPoints[index]);
-    minY = Math.min(minY, flatPoints[index + 1]);
-    maxY = Math.max(maxY, flatPoints[index + 1]);
-  }
-  return Math.max(maxX - minX, maxY - minY);
 }
 
 /** Why a Corners outline would not close. Worded for tapped corners, not a drawn loop. */
