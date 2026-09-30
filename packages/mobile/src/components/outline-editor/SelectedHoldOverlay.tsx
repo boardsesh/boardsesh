@@ -30,6 +30,8 @@ type SelectedHoldOverlayProps = {
   selectedHoldSV: SharedValue<number[]>;
   dragOffsetXSV: SharedValue<number>;
   dragOffsetYSV: SharedValue<number>;
+  /** The hold a drag is moving right now, 0 when none. Owned by the gesture overlay. */
+  dragHoldIdSV: SharedValue<number>;
   scaleSV: SharedValue<number>;
   /** Board px per render px. */
   boardScale: number;
@@ -56,6 +58,7 @@ export const SelectedHoldOverlay = React.memo(function SelectedHoldOverlay({
   selectedHoldSV,
   dragOffsetXSV,
   dragOffsetYSV,
+  dragHoldIdSV,
   scaleSV,
   boardScale,
 }: SelectedHoldOverlayProps) {
@@ -67,9 +70,14 @@ export const SelectedHoldOverlay = React.memo(function SelectedHoldOverlay({
   // path at the old base would jump.
   useLayoutEffect(() => {
     selectedHoldSV.value = hold ? [hold.id, hold.cx, hold.cy, hold.r] : [];
+    // A long press selects AND starts the drag, and the finger can be moving
+    // before JS renders that selection. Zeroing the offset then would snap the
+    // ring back under a finger that is still carrying it, so a drag of this
+    // same hold keeps its offset; the drag's own end folds it in.
+    if (hold && dragHoldIdSV.value === hold.id) return;
     dragOffsetXSV.value = 0;
     dragOffsetYSV.value = 0;
-  }, [hold, revision, selectedHoldSV, dragOffsetXSV, dragOffsetYSV]);
+  }, [hold, revision, selectedHoldSV, dragOffsetXSV, dragOffsetYSV, dragHoldIdSV]);
 
   const shape = useMemo(() => {
     if (!hold) return null;

@@ -804,8 +804,7 @@
       "cancel": "Cancelar"
     },
     "a11y": {
-      "wall": "La foto de tu muro con sus presas",
-      "wallHint": "Toca un anillo para activarlo o desactivarlo. Toca el muro vacío para añadir una presa. Mantén pulsado un anillo para ajustarlo."
+      "wall": "Foto de tu muro: {{summary}}"
     },
     "readOnly": "No puedes editar este muro.",
     "errors": {

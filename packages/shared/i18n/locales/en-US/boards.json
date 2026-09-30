@@ -804,8 +804,7 @@
       "cancel": "Cancel"
     },
     "a11y": {
-      "wall": "Your wall photo with its holds",
-      "wallHint": "Tap a ring to switch it off or on. Tap bare wall to add a hold. Press and hold a ring to fix it."
+      "wall": "Your wall photo: {{summary}}"
     },
     "readOnly": "This wall isn't yours to edit.",
     "errors": {

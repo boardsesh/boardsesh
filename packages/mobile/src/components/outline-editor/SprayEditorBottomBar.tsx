@@ -9,7 +9,27 @@ import { PressableSurface } from '../PressableSurface';
 import { useTheme } from '../../providers/theme-provider';
 import { borderRadius, spacing } from '../../theme/tokens';
 import { glassSize } from '../../theme/layout';
+import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
 import type { SprayEditorCounts } from './spray-hold-editor-reducer';
+
+type Translate = (key: string, options?: Record<string, unknown>) => string;
+
+/** Diameter of the dashed dot that ties the capsule's maybe line to the dashed rings. */
+const MAYBE_DOT_SIZE = 8;
+
+/**
+ * The wall's numbers as one line — "212 holds · 38 maybes", or just the holds
+ * while there are no maybes on screen. What a screen reader hears for the
+ * capsule and for the wall itself.
+ */
+export function sprayCountSummary(t: Translate, counts: SprayEditorCounts, showMaybes: boolean): string {
+  const holdsLabel = t('sprayEditor.bar.holds', { count: counts.on });
+  if (counts.maybes === 0 || !showMaybes) return holdsLabel;
+  return t('sprayEditor.bar.withMaybes', {
+    holds: holdsLabel,
+    maybes: t('sprayEditor.bar.maybes', { count: counts.maybes }),
+  });
+}
 
 /** Height of the bar's tallest member. The screen reserves this plus the gutter below it. */
 export const SPRAY_BAR_HEIGHT = glassSize.standard;
@@ -61,17 +81,12 @@ export const SprayEditorBottomBar = React.memo(function SprayEditorBottomBar({
   onPrimary,
 }: SprayEditorBottomBarProps) {
   const { t } = useTranslation('boards');
-  const { systemColors } = useTheme();
+  const { systemColors, brandColors } = useTheme();
   const [menuOpen, setMenuOpen] = useState(false);
 
   const holdsLabel = t('sprayEditor.bar.holds', { count: counts.on });
-  const countLabel =
-    counts.maybes > 0 && showMaybes
-      ? t('sprayEditor.bar.withMaybes', {
-          holds: holdsLabel,
-          maybes: t('sprayEditor.bar.maybes', { count: counts.maybes }),
-        })
-      : holdsLabel;
+  const maybesLabel = counts.maybes > 0 && showMaybes ? t('sprayEditor.bar.maybes', { count: counts.maybes }) : null;
+  const countLabel = sprayCountSummary(t, counts, showMaybes);
 
   const toggleMenu = useCallback(() => setMenuOpen((open) => !open), []);
   const closeMenu = useCallback(() => setMenuOpen(false), []);
@@ -155,9 +170,31 @@ export const SprayEditorBottomBar = React.memo(function SprayEditorBottomBar({
             style={StyleSheet.absoluteFill}
             pointerEvents="none"
           />
-          <Text variant="subheadline" color={systemColors.label} numberOfLines={1} style={styles.capsuleText}>
-            {countLabel}
+          {/* Two short lines rather than one long one, so the capsule never
+              truncates beside Undo and the primary button on a 375pt phone. */}
+          <Text
+            variant={maybesLabel ? 'subheadline' : 'headline'}
+            color={systemColors.label}
+            numberOfLines={1}
+            maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+            style={[styles.capsuleText, styles.holdsText]}
+          >
+            {holdsLabel}
           </Text>
+          {maybesLabel ? (
+            <View style={styles.maybeRow}>
+              <View style={[styles.maybeDot, { borderColor: brandColors.accent }]} />
+              <Text
+                variant="caption2"
+                color={systemColors.secondaryLabel}
+                numberOfLines={1}
+                maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+                style={styles.capsuleText}
+              >
+                {maybesLabel}
+              </Text>
+            </View>
+          ) : null}
         </PressableSurface>
 
         <Button
@@ -197,6 +234,23 @@ const styles = StyleSheet.create({
   },
   capsuleText: {
     textAlign: 'center',
+    fontVariant: ['tabular-nums'],
+  },
+  holdsText: {
+    fontWeight: '600',
+  },
+  maybeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing[1],
+  },
+  maybeDot: {
+    width: MAYBE_DOT_SIZE,
+    height: MAYBE_DOT_SIZE,
+    borderRadius: MAYBE_DOT_SIZE / 2,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
   },
   menu: {
     alignSelf: 'center',

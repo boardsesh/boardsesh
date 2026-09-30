@@ -14,9 +14,9 @@ import {
 /**
  * Role colours for the compare view.
  *
- * Fixed rather than theme-derived, for the same reason `SPRAY_EDITOR_COLORS` is:
- * these strokes sit over an arbitrary photograph of somebody's garage, so they
- * are chosen against wood and plastic rather than against the app's surfaces.
+ * Fixed rather than theme-derived: these strokes sit over an arbitrary
+ * photograph of somebody's garage, so they are chosen against wood and plastic
+ * rather than against the app's surfaces.
  * Velvet Send dresses every pixel of the chrome around the board — this is the
  * board.
  *

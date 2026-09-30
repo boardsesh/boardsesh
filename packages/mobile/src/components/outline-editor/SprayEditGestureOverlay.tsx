@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, type MutableRefObject } from 'react'
 import { StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector, type GestureType } from 'react-native-gesture-handler';
 import { runOnJS, useSharedValue, type SharedValue } from 'react-native-reanimated';
-import { fallbackRadiusAt, holdIdAtPoint, landsOnSelected, screenToBoard } from './spray-gesture-math';
+import { fallbackRadiusAt, holdIdAtPoint, screenToBoard, selectedDragIdAt } from './spray-gesture-math';
 
 /**
  * Tap window, matching the board's own hold taps (`use-zoomed-hold-tap-gesture`)
@@ -36,11 +36,22 @@ type SprayEditGestureOverlayProps = {
   /** The live move preview, in board px. `SelectedHoldOverlay` draws it. */
   dragOffsetXSV: SharedValue<number>;
   dragOffsetYSV: SharedValue<number>;
+  /**
+   * The hold a drag is moving right now, 0 when none. Written only here; read by
+   * `SelectedHoldOverlay` so a selection that lands mid-drag does not zero the
+   * live offset under the finger.
+   */
+  dragHoldIdSV: SharedValue<number>;
   /** False while Join is waiting for its second hold: taps still count, drags and pick-ups do not. */
   canMove: boolean;
-  /** Read by a screen reader for the whole wall — the rings are one drawing, not one view each. */
+  /**
+   * Read by a screen reader for the whole wall — the rings are one drawing, not
+   * one view each. The wall is announced as an image and does nothing when
+   * activated: a VoiceOver double tap would otherwise land as a real tap in the
+   * middle of the photo and switch a hold. The bar and the chip bar are the
+   * accessible way to change the wall.
+   */
   accessibilityLabel: string;
-  accessibilityHint: string;
   /** A tap at a board point; `zoom` is the board scale at the time, for the hit-test fallback. */
   onTap: (boardX: number, boardY: number, zoom: number) => void;
   /** A long press landed on this ring. */
@@ -64,7 +75,8 @@ type SprayEditGestureOverlayProps = {
  *   On activation it selects that ring and arms the drag, so the same touch can
  *   carry straight on into a move.
  * - **Drag** (`manualActivation`): claims the touch AT TOUCH-DOWN when it lands
- *   on the selected ring — which is what beats the zoomed board's own one-finger
+ *   on the selected ring by the full hit test (a neighbour inside a big
+ *   selection's grab radius is the neighbour's touch) — which is what beats the zoomed board's own one-finger
  *   pan to it — and otherwise waits for a pick-up, failing as soon as the
  *   finger wanders without one so the board's pan (when zoomed) takes over. A
  *   drag that barely moved is a tap on the selected ring, and is reported as one.
@@ -77,6 +89,13 @@ type SprayEditGestureOverlayProps = {
  * The move preview runs entirely on the UI thread through the shared values
  * above. `runOnJS` fires only when a gesture starts or ends — never per frame.
  */
+/**
+ * Handles VoiceOver's activate on the wall so iOS does not fall back to sending
+ * a synthetic touch to the view's centre, which the tap gesture would read as
+ * an edit.
+ */
+function swallowAccessibilityTap() {}
+
 export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverlay({
   scaleSV,
   translateXSV,
@@ -90,9 +109,9 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
   selectedHoldSV,
   dragOffsetXSV,
   dragOffsetYSV,
+  dragHoldIdSV,
   canMove,
   accessibilityLabel,
-  accessibilityHint,
   onTap,
   onPickUp,
   onMoveEnd,
@@ -113,8 +132,6 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
   const pickUpIdSV = useSharedValue(0);
   /** The long press fired during this touch. */
   const pickedUpSV = useSharedValue(false);
-  /** The ring the drag is moving; 0 until it activates. */
-  const dragIdSV = useSharedValue(0);
   /** The drag claimed the touch because it started on the selection. */
   const startedOnSelectionSV = useSharedValue(false);
   /** A second finger landed mid-drag: throw the move away. */
@@ -136,6 +153,14 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
     const tap = Gesture.Tap()
       .maxDuration(TAP_MAX_DURATION_MS)
       .maxDistance(TAP_MAX_DISTANCE_PX)
+      .onTouchesDown((event, manager) => {
+        'worklet';
+        // Every finger on the board lands on this full-bleed view, so the tap can
+        // see a second one itself: that is a pinch starting, never an edit. Its
+        // own count, not only the pinch's shared flag, so a tap can never be
+        // swallowed by a flag another handler failed to clear.
+        if (event.numberOfTouches > 1) manager.fail();
+      })
       .onStart((event) => {
         'worklet';
         if (isPinchingSV.value) return;
@@ -194,6 +219,10 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
         'worklet';
         const holdId = pickUpIdSV.value;
         if (holdId === 0 || isPinchingSV.value) return;
+        // The drag already claimed this touch for the selected hold: picking up
+        // a different ring now would select one hold while the drag moves the
+        // other. The touch stays the drag's.
+        if (dragActiveSV.value && dragHoldIdSV.value !== holdId) return;
         const flat = hitHoldsSV.value;
         for (let index = 0; index + 3 < flat.length; index += 4) {
           if (flat[index] !== holdId) continue;
@@ -231,7 +260,7 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
           manager.fail();
           return;
         }
-        dragIdSV.value = 0;
+        dragHoldIdSV.value = 0;
         dragAbandonedSV.value = false;
         startedOnSelectionSV.value = false;
         touchStartXSV.value = touch.x;
@@ -247,10 +276,18 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
           containerHeightSV.value,
           boardScaleSV.value,
         );
-        const selected = selectedHoldSV.value;
-        if (landsOnSelected(selected, point.x, point.y, fallbackRadiusAt(boardScaleSV.value, scaleSV.value))) {
+        // Claimed at touch-down only when the finger is ON the selected hold by
+        // the same hit test a tap uses — see `selectedDragIdAt`.
+        const claimedId = selectedDragIdAt(
+          hitHoldsSV.value,
+          selectedHoldSV.value,
+          point.x,
+          point.y,
+          fallbackRadiusAt(boardScaleSV.value, scaleSV.value),
+        );
+        if (claimedId !== 0) {
           startedOnSelectionSV.value = true;
-          dragIdSV.value = selected[0];
+          dragHoldIdSV.value = claimedId;
           dragActiveSV.value = true;
           manager.activate();
         }
@@ -263,7 +300,7 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
         const moved = Math.hypot(touch.x - touchStartXSV.value, touch.y - touchStartYSV.value);
         if (pickedUpSV.value && pickUpIdSV.value !== 0) {
           if (moved < PICK_UP_DRAG_SLOP_PX) return;
-          dragIdSV.value = pickUpIdSV.value;
+          dragHoldIdSV.value = pickUpIdSV.value;
           dragActiveSV.value = true;
           manager.activate();
           return;
@@ -287,7 +324,7 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
       })
       .onEnd((event) => {
         'worklet';
-        const holdId = dragIdSV.value;
+        const holdId = dragHoldIdSV.value;
         if (dragAbandonedSV.value || isPinchingSV.value || holdId === 0) {
           dragOffsetXSV.value = 0;
           dragOffsetYSV.value = 0;
@@ -329,7 +366,7 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
       .onFinalize(() => {
         'worklet';
         dragActiveSV.value = false;
-        dragIdSV.value = 0;
+        dragHoldIdSV.value = 0;
         pickedUpSV.value = false;
         pickUpIdSV.value = 0;
       });
@@ -364,7 +401,7 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
     dragOffsetYSV,
     pickUpIdSV,
     pickedUpSV,
-    dragIdSV,
+    dragHoldIdSV,
     startedOnSelectionSV,
     dragAbandonedSV,
     touchStartXSV,
@@ -381,7 +418,7 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
         accessible
         accessibilityRole="image"
         accessibilityLabel={accessibilityLabel}
-        accessibilityHint={accessibilityHint}
+        onAccessibilityTap={swallowAccessibilityTap}
       />
     </GestureDetector>
   );

@@ -38,7 +38,6 @@ import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { iosSystemColors } from '../../theme/ios-colors';
-import { track } from '../../lib/analytics';
 import { hapticSelection } from '../../lib/haptics';
 import { reportError } from '../../lib/error-reporting';
 import { extractGraphqlMessage } from '../../lib/graphql/extract-error-message';
@@ -64,7 +63,11 @@ import {
   type ResetReviewState,
 } from './reset-review-machine';
 
-/** Vertical space the chrome around the board needs — see `SprayHoldEditorScreen`. */
+/**
+ * Vertical space the compare view's own chrome, above and below the board,
+ * takes away from the photo. The hold editor no longer budgets this
+ * way — it fits the photo to the space its floating bar leaves free.
+ */
 const CHROME_BUDGET = 400;
 
 export type SprayResetCompareScreenProps = {

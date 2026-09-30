@@ -20,7 +20,7 @@ import {
   fallbackRadiusAt,
   flattenHitHolds,
   holdIdAtPoint,
-  landsOnSelected,
+  selectedDragIdAt,
   screenToBoard,
 } from '../spray-gesture-math';
 import { radiusRingToBoardPx, screenToBoardPoint } from '../stroke';
@@ -276,10 +276,36 @@ describe('holdIdAtPoint (the UI-thread twin)', () => {
     expect(holdIdAtPoint(flat, x, y, fallback)).toBe(holdAtPoint(holds, x, y, fallback)?.id ?? 0);
   });
 
-  it('says whether a touch lands on the selection, a fingertip wide at least', () => {
-    expect(landsOnSelected([5, 100, 100, 4], 110, 100, 12)).toBe(true);
-    expect(landsOnSelected([5, 100, 100, 4], 120, 100, 12)).toBe(false);
-    expect(landsOnSelected([], 100, 100, 12)).toBe(false);
+  it('lets a live hold stand in for its stale entry in the list', () => {
+    // Hold 3 has been dragged to (500, 100) and the list has not caught up.
+    expect(holdIdAtPoint(flat, 500, 100, 12, [3, 500, 100, 4])).toBe(3);
+    expect(holdIdAtPoint(flat, 300, 100, 12, [3, 500, 100, 4])).toBe(0);
+    // A live hold missing from the list entirely still counts.
+    expect(holdIdAtPoint([], 10, 10, 12, [7, 10, 10, 4])).toBe(7);
+  });
+
+  describe('selectedDragIdAt', () => {
+    it('claims a touch on the selection, a fingertip wide at least', () => {
+      expect(selectedDragIdAt(flattenHitHolds([holds[2]]), [3, 300, 100, 4], 310, 100, 12)).toBe(3);
+      expect(selectedDragIdAt(flattenHitHolds([holds[2]]), [3, 300, 100, 4], 320, 100, 12)).toBe(0);
+      expect(selectedDragIdAt(flat, [], 100, 100, 12)).toBe(0);
+    });
+
+    it('never claims a drag of the selection for a touch on a neighbour inside its grab radius', () => {
+      // Hold 1 (r 20) is selected; the finger lands on hold -2, which sits
+      // inside 1's radius. The touch is -2's, so no drag of 1 is claimed.
+      expect(selectedDragIdAt(flat, [1, 100, 100, 20], 110, 100, 12)).toBe(0);
+      // Off the neighbour, the same big selection still claims.
+      expect(selectedDragIdAt(flat, [1, 100, 100, 20], 90, 100, 12)).toBe(1);
+    });
+
+    it('claims the small selection even when a big neighbour contains the touch', () => {
+      expect(selectedDragIdAt(flat, [-2, 110, 100, 5], 111, 100, 12)).toBe(-2);
+    });
+
+    it('uses the live position of a selection that has just been moved', () => {
+      expect(selectedDragIdAt(flat, [3, 500, 100, 4], 501, 100, 12)).toBe(3);
+    });
   });
 
   it('inverts the board transform exactly as the stroke chain does', () => {

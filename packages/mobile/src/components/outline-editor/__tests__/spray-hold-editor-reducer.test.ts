@@ -287,16 +287,32 @@ describe('sprayEditorReducer', () => {
   });
 
   describe('dirty', () => {
-    it('is clean on a fresh load, even with confident finds that will be written', () => {
-      expect(isDirty(loaded([candidate(-1, CONFIDENT), candidate(-2, UNSURE)]))).toBe(false);
+    it('is dirty on a fresh detection load, because nothing re-detects the confident finds', () => {
+      const state = loaded([candidate(-1, CONFIDENT), candidate(-2, UNSURE)]);
+      expect(editorCounts(state)).toMatchObject({ unsavedFinds: 1 });
+      expect(isDirty(state)).toBe(true);
+    });
+
+    it('is clean on a load with only maybes or stored holds', () => {
+      expect(isDirty(loaded([candidate(-2, UNSURE)]))).toBe(false);
+      expect(isDirty(loaded([storedHold(1), storedHold(2)]))).toBe(false);
     });
 
     it('is dirty after any decision, including one that writes nothing', () => {
-      expect(isDirty(run(loaded([candidate(-1, CONFIDENT)]), { type: 'TOGGLE_HOLD', id: -1 }))).toBe(true);
+      expect(isDirty(run(loaded([storedHold(1)]), { type: 'TOGGLE_HOLD', id: 1 }))).toBe(true);
     });
 
     it('is clean again once the decision is undone', () => {
-      const state = run(loaded([candidate(-1, CONFIDENT)]), { type: 'TOGGLE_HOLD', id: -1 }, { type: 'UNDO' });
+      const state = run(loaded([storedHold(1)]), { type: 'TOGGLE_HOLD', id: 1 }, { type: 'UNDO' });
+      expect(isDirty(state)).toBe(false);
+    });
+
+    it('is clean once the finds are saved', () => {
+      const state = run(
+        loaded([candidate(-1, CONFIDENT)]),
+        { type: 'ACCEPT_DEFAULTS' },
+        { type: 'MARK_SAVED', writtenIds: [-1] },
+      );
       expect(isDirty(state)).toBe(false);
     });
   });

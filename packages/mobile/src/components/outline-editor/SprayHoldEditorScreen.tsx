@@ -21,7 +21,7 @@ import { DrawStrokeOverlay } from './DrawStrokeOverlay';
 import { SprayHoldSvgLayer } from './SprayHoldSvgLayer';
 import { SelectedHoldOverlay } from './SelectedHoldOverlay';
 import { SprayEditGestureOverlay } from './SprayEditGestureOverlay';
-import { SprayEditorBottomBar, SPRAY_BAR_GUTTER, SPRAY_BAR_HEIGHT } from './SprayEditorBottomBar';
+import { SprayEditorBottomBar, SPRAY_BAR_GUTTER, SPRAY_BAR_HEIGHT, sprayCountSummary } from './SprayEditorBottomBar';
 import { SprayHoldChipBar } from './SprayHoldChipBar';
 import { SprayEditorBanner } from './SprayEditorBanner';
 import { renderToBoardScale, type StrokeRejection } from './stroke';
@@ -64,6 +64,7 @@ const BAR_RESERVE = SPRAY_BAR_HEIGHT + SPRAY_BAR_GUTTER * 3;
 const NO_POINTS: number[] = [];
 const NO_HOLD_TARGETS: BoardHoldTarget[] = [];
 const NO_SELECTION: number[] = [];
+const NO_EDITOR_HOLDS: SprayEditorHold[] = [];
 
 /** Where the zoomed-in reset control sits: top-left, clear of the chip bar and the bottom bar. */
 const RESET_ZOOM_STYLE = { left: spacing[2], top: spacing[2] };
@@ -183,6 +184,7 @@ export function SprayHoldEditorScreen({
   const selectedHoldSV = useSharedValue<number[]>(NO_SELECTION);
   const dragOffsetXSV = useSharedValue(0);
   const dragOffsetYSV = useSharedValue(0);
+  const dragHoldIdSV = useSharedValue(0);
   /** A commit is in flight. A ref as well as the mutation's flag, so a double press is refused synchronously. */
   const committingRef = useRef(false);
 
@@ -251,16 +253,18 @@ export function SprayHoldEditorScreen({
     setArea((previous) => (previous.width === width && previous.height === height ? previous : { width, height }));
   }, []);
 
-  // Full width, fitted to the height the bottom bar leaves free.
+  // Full width, fitted to the height the bottom bar leaves free. `slotHeight` is
+  // that free height: the photo is centred in it, so a landscape wall sits in
+  // the middle of the screen rather than pinned to the top over a black void.
   const boardRender = useMemo(() => {
-    if (!wall || area.width <= 0) return { width: 0, height: 0 };
+    if (!wall || area.width <= 0) return { width: 0, height: 0, slotHeight: 0 };
     const boardAspect = wall.photoWidth / wall.photoHeight;
     const availableWidth = area.width;
     const availableHeight = Math.max(200, area.height - insets.bottom - BAR_RESERVE);
     if (availableWidth / availableHeight > boardAspect) {
-      return { width: availableHeight * boardAspect, height: availableHeight };
+      return { width: availableHeight * boardAspect, height: availableHeight, slotHeight: availableHeight };
     }
-    return { width: availableWidth, height: availableWidth / boardAspect };
+    return { width: availableWidth, height: availableWidth / boardAspect, slotHeight: availableHeight };
   }, [wall, area.width, area.height, insets.bottom]);
 
   const boardScale = renderToBoardScale(wall?.photoWidth ?? 0, boardRender.width);
@@ -276,12 +280,20 @@ export function SprayHoldEditorScreen({
   );
   const visibleHoldsRef = useRef(visibleHolds);
   visibleHoldsRef.current = visibleHolds;
+  /** The maybes a tap cannot see while they are hidden — see `handleTap`. */
+  const hiddenMaybes = useMemo(
+    () => (showMaybes ? NO_EDITOR_HOLDS : allEditorHolds.filter((hold) => holdRole(hold) === 'maybe')),
+    [allEditorHolds, showMaybes],
+  );
+  const hiddenMaybesRef = useRef(hiddenMaybes);
+  hiddenMaybesRef.current = hiddenMaybes;
 
   const counts = useMemo(() => countEditorHolds(state.holds, state.removedIds.length), [state.holds, state.removedIds]);
   const countsRef = useRef(counts);
   countsRef.current = counts;
 
   const dirty = editorIsDirty(state, counts);
+  const wallLabel = t('sprayEditor.a11y.wall', { summary: sprayCountSummary(t, counts, showMaybes) });
   const onDirtyChangeRef = useRef(onDirtyChange);
   onDirtyChangeRef.current = onDirtyChange;
   useEffect(() => {
@@ -326,12 +338,33 @@ export function SprayHoldEditorScreen({
     setErrorText(t('sprayEditor.errors.tooManyHolds', { max: SPRAY_CAP_VALUES.holds }));
   }, [t]);
 
+  /**
+   * Moving, resizing or tracing a ring switches it ON (the reducer's `touched`),
+   * so an edit to an OFF ring or a maybe is an add as far as the cap goes.
+   * Refuses — and says why — when that add would pass the cap.
+   */
+  const editWouldPassCap = useCallback(
+    (hold: SprayEditorHold) => {
+      if (holdRole(hold) === 'on' || countsRef.current.on < MAX_HOLDS_PER_WALL) return false;
+      refuseOverCap();
+      return true;
+    },
+    [refuseOverCap],
+  );
+
   const handleTap = useCallback(
     (boardX: number, boardY: number, zoom: number) => {
       if (!canEditRef.current) return;
       setErrorText(null);
       const current = stateRef.current;
-      const hit = holdAtPoint(visibleHoldsRef.current, boardX, boardY, fallbackRadiusAt(boardScale, zoom));
+      const fallbackRadius = fallbackRadiusAt(boardScale, zoom);
+      // A hidden maybe is still a hold under the finger. Adding a hand-drawn
+      // ring on top of it would put a duplicate on the wall, so a tap there is
+      // read as a tap on the maybe — which turns it ON, and ON rings are drawn
+      // whether maybes are shown or not.
+      const hit =
+        holdAtPoint(visibleHoldsRef.current, boardX, boardY, fallbackRadius) ??
+        holdAtPoint(hiddenMaybesRef.current, boardX, boardY, fallbackRadius);
 
       if (toolRef.current === 'join') {
         // Join waits for the second hold and nothing else: bare wall or the
@@ -383,30 +416,33 @@ export function SprayHoldEditorScreen({
     dispatch({ type: 'SELECT', id: holdId });
   }, []);
 
-  const handleMoveEnd = useCallback((holdId: number, deltaX: number, deltaY: number) => {
-    const hold = stateRef.current.holds[holdId];
-    if (canEditRef.current && hold) {
-      dispatch({ type: 'MOVE_HOLD', id: holdId, cx: hold.cx + deltaX, cy: hold.cy + deltaY });
-    }
-    // Always, so the preview re-syncs to the reducer's answer — including a
-    // refused move, which snaps back.
-    setMoveRevision((revision) => revision + 1);
-  }, []);
+  const handleMoveEnd = useCallback(
+    (holdId: number, deltaX: number, deltaY: number) => {
+      const hold = stateRef.current.holds[holdId];
+      if (canEditRef.current && hold && !editWouldPassCap(hold)) {
+        dispatch({ type: 'MOVE_HOLD', id: holdId, cx: hold.cx + deltaX, cy: hold.cy + deltaY });
+      }
+      // Always, so the preview re-syncs to the reducer's answer — including a
+      // refused move, which snaps back.
+      setMoveRevision((revision) => revision + 1);
+    },
+    [editWouldPassCap],
+  );
 
   const shrinkTo = selectedHold ? stepHoldSize(selectedHold.r, medianRadius, -1) : null;
   const growTo = selectedHold ? stepHoldSize(selectedHold.r, medianRadius, 1) : null;
 
   const handleShrink = useCallback(() => {
-    if (!canEdit || !selectedHold || shrinkTo == null) return;
+    if (!canEdit || !selectedHold || shrinkTo == null || editWouldPassCap(selectedHold)) return;
     hapticSelection();
     dispatch({ type: 'RESIZE_HOLD', id: selectedHold.id, r: shrinkTo });
-  }, [canEdit, selectedHold, shrinkTo]);
+  }, [canEdit, selectedHold, shrinkTo, editWouldPassCap]);
 
   const handleGrow = useCallback(() => {
-    if (!canEdit || !selectedHold || growTo == null) return;
+    if (!canEdit || !selectedHold || growTo == null || editWouldPassCap(selectedHold)) return;
     hapticSelection();
     dispatch({ type: 'RESIZE_HOLD', id: selectedHold.id, r: growTo });
-  }, [canEdit, selectedHold, growTo]);
+  }, [canEdit, selectedHold, growTo, editWouldPassCap]);
 
   const handleStartTrace = useCallback(() => {
     setErrorText(null);
@@ -440,6 +476,12 @@ export function SprayHoldEditorScreen({
       draftPointsSV.value = NO_POINTS;
       const targetId = stateRef.current.selectedId;
       if (!canEditRef.current || targetId == null) return;
+      const target = stateRef.current.holds[targetId];
+      if (!target) return;
+      if (editWouldPassCap(target)) {
+        setTool('edit');
+        return;
+      }
       const drawn = holdFromStroke(toRingPoints(strokeBoardPoints));
       if (!drawn.ok) {
         // Stays in Trace: one missed loop should cost one more loop, not a trip
@@ -452,7 +494,7 @@ export function SprayHoldEditorScreen({
       dispatch({ type: 'SET_OUTLINE', id: targetId, geometry: drawn.hold });
       setTool('edit');
     },
-    [draftPointsSV, t],
+    [draftPointsSV, editWouldPassCap, t],
   );
 
   const handleUndo = useCallback(() => {
@@ -525,7 +567,14 @@ export function SprayHoldEditorScreen({
         plan,
         // Fired between the two calls. If the upsert then fails, the removals
         // have still landed, and re-sending them on a retry would be refused.
-        onRemoved: () => dispatch({ type: 'MARK_REMOVED' }),
+        onRemoved: () => {
+          // Gone from the server, so gone from "Start over" too: bringing one
+          // back ON would name a removed id and the next upsert would refuse the
+          // whole batch.
+          const removed = new Set(plan.removeIds);
+          seedHoldsRef.current = seedHoldsRef.current.filter((hold) => !removed.has(hold.id));
+          dispatch({ type: 'MARK_REMOVED' });
+        },
       },
       {
         onSuccess: (result) => {
@@ -574,6 +623,7 @@ export function SprayHoldEditorScreen({
             selectedHoldSV={selectedHoldSV}
             dragOffsetXSV={dragOffsetXSV}
             dragOffsetYSV={dragOffsetYSV}
+            dragHoldIdSV={dragHoldIdSV}
             scaleSV={context.scaleSV}
             boardScale={boardScale}
           />
@@ -591,6 +641,7 @@ export function SprayHoldEditorScreen({
       selectedHoldSV,
       dragOffsetXSV,
       dragOffsetYSV,
+      dragHoldIdSV,
       boardScale,
     ],
   );
@@ -631,9 +682,9 @@ export function SprayHoldEditorScreen({
           selectedHoldSV={selectedHoldSV}
           dragOffsetXSV={dragOffsetXSV}
           dragOffsetYSV={dragOffsetYSV}
+          dragHoldIdSV={dragHoldIdSV}
           canMove={tool === 'edit' && canEdit}
-          accessibilityLabel={t('sprayEditor.a11y.wall')}
-          accessibilityHint={t('sprayEditor.a11y.wallHint')}
+          accessibilityLabel={wallLabel}
           onTap={handleTap}
           onPickUp={handlePickUp}
           onMoveEnd={handleMoveEnd}
@@ -651,13 +702,14 @@ export function SprayHoldEditorScreen({
       selectedHoldSV,
       dragOffsetXSV,
       dragOffsetYSV,
+      dragHoldIdSV,
+      wallLabel,
       handleStrokeStart,
       handleStrokeEnd,
       handleStrokeCancel,
       handleTap,
       handlePickUp,
       handleMoveEnd,
-      t,
     ],
   );
 
@@ -692,20 +744,22 @@ export function SprayHoldEditorScreen({
   return (
     <View style={[styles.container, { backgroundColor: systemColors.background }]} onLayout={handleAreaLayout}>
       {boardRender.width > 0 ? (
-        <InteractiveFilterBoard
-          boardName={SPRAY_BOARD_NAME}
-          layoutId={layoutId}
-          sizeId={layoutId}
-          setIds=""
-          boardWidth={wall.photoWidth}
-          boardHeight={wall.photoHeight}
-          holdTargets={NO_HOLD_TARGETS}
-          renderWidth={boardRender.width}
-          renderHeight={boardRender.height}
-          renderInTransform={renderInTransform}
-          renderAboveBoard={renderAboveBoard}
-          resetZoomStyle={RESET_ZOOM_STYLE}
-        />
+        <View style={[styles.boardSlot, { height: boardRender.slotHeight }]}>
+          <InteractiveFilterBoard
+            boardName={SPRAY_BOARD_NAME}
+            layoutId={layoutId}
+            sizeId={layoutId}
+            setIds=""
+            boardWidth={wall.photoWidth}
+            boardHeight={wall.photoHeight}
+            holdTargets={NO_HOLD_TARGETS}
+            renderWidth={boardRender.width}
+            renderHeight={boardRender.height}
+            renderInTransform={renderInTransform}
+            renderAboveBoard={renderAboveBoard}
+            resetZoomStyle={RESET_ZOOM_STYLE}
+          />
+        </View>
       ) : null}
 
       {banner ? (
@@ -793,6 +847,11 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     alignItems: 'center',
+  },
+  boardSlot: {
+    alignSelf: 'stretch',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   centered: {
     flex: 1,

@@ -665,7 +665,10 @@ editor that writes them"; what belongs here is what it means for a wall.
 `viewerCanEdit`, an optional `candidates` list, the `primaryLabel` of its one
 button, an optional `notice` for an empty wall, and two callbacks:
 `onCommitted` (every hold is on the draft, with the count) and `onDirtyChange`
-(which the host's leave guard reads before `confirmDiscardSprayEdits`). SW-09
+(which the host's leave guard reads before `confirmDiscardSprayEdits`). Dirty
+includes confident finds nobody has touched yet: they are ON and unsaved, and a
+resumed draft never re-runs detection, so leaving straight after detection
+asks first. SW-09
 hosts it as the review step of `/boards/spray/new`; SW-11 wires the owner's
 later entry points.
 
@@ -718,9 +721,17 @@ What the editor does with a wall is decided by this document rather than by tast
   Bigger, Trace, Join, Remove) and the same touch can carry on into a move, and
   two fingers always zoom. Trace and Join are one-shot tools with a banner and a
   Cancel. The gesture surface (`SprayEditGestureOverlay`) hit-tests on the UI
-  thread only to decide whether a long press has a ring under it; every tap is
+  thread only to decide whether a long press has a ring under it, and whether a
+  touch-down claims a drag of the selected ring — which it does only when the
+  full hit test at that point names the selection, so a touch on a neighbour
+  inside a big selection's grab radius never moves the selection. Every tap is
   resolved in JS by `holdAtPoint` (smallest containing hold first, then the
-  nearest centre within `max(1.4r, 22 pt on screen)`).
+  nearest centre within `max(1.4r, 22 pt on screen)`). With maybes hidden, a tap
+  on a hidden maybe switches it ON rather than adding a duplicate on top of it.
+  Moving, resizing or tracing an OFF ring or a maybe switches it ON, so each is
+  held to the hold cap like an add. To a screen reader the wall is one image
+  labelled with the counts, and activating it does nothing: the bar and the chip
+  bar are the accessible path.
 - **Provenance survives a round trip.** The render payload carries each stored
   hold's `source` and `confidence`, the registry carries them into photo space,
   and the seed reads them back; without that, an accepted detector hold is

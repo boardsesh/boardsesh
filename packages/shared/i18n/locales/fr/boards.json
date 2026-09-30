@@ -804,8 +804,7 @@
       "cancel": "Annuler"
     },
     "a11y": {
-      "wall": "La photo de ton mur avec ses prises",
-      "wallHint": "Touche un anneau pour l'activer ou le désactiver. Touche le mur nu pour ajouter une prise. Appuie longuement sur un anneau pour l'ajuster."
+      "wall": "Photo de ton mur : {{summary}}"
     },
     "readOnly": "Ce mur n'est pas le tien, tu ne peux pas le modifier.",
     "errors": {

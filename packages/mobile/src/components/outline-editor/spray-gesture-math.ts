@@ -62,20 +62,37 @@ export function flattenHitHolds(holds: readonly (HoldGeometry & { id: number })[
  * The UI-thread twin of `holdAtPoint` (smallest containing hold first, then the
  * nearest centre within `max(1.4r, fallback)`), over the flat list. 0 is safe as
  * "none": stored ids are positive and local ones negative.
+ *
+ * `live`, when given as `[id, cx, cy, r]`, stands in for that hold's entry in
+ * the list — the selected hold's preview can be a frame ahead of the list the
+ * screen last mirrored (a move folds into it before JS re-renders).
  */
-export function holdIdAtPoint(flat: readonly number[], x: number, y: number, fallbackRadius: number): number {
+export function holdIdAtPoint(
+  flat: readonly number[],
+  x: number,
+  y: number,
+  fallbackRadius: number,
+  live?: readonly number[],
+): number {
   'worklet';
+  const liveId = live !== undefined && live.length >= HIT_STRIDE ? live[0] : 0;
   let containingId = 0;
   let containingRadius = Infinity;
   let nearestId = 0;
   let nearestDistance = Infinity;
-  for (let index = 0; index + HIT_STRIDE - 1 < flat.length; index += HIT_STRIDE) {
-    const radius = flat[index + 3];
-    const distance = Math.hypot(x - flat[index + 1], y - flat[index + 2]);
+  // Index -HIT_STRIDE is the live hold (when there is one); the rest is the list.
+  for (let index = liveId !== 0 ? -HIT_STRIDE : 0; index + HIT_STRIDE - 1 < flat.length; index += HIT_STRIDE) {
+    // Read the live hold from its own array, never from `flat`.
+    const source = index < 0 && live !== undefined ? live : flat;
+    const offset = index < 0 ? 0 : index;
+    const id = source[offset];
+    if (source === flat && id === liveId) continue;
+    const radius = source[offset + 3];
+    const distance = Math.hypot(x - source[offset + 1], y - source[offset + 2]);
     if (distance <= radius) {
       if (radius < containingRadius) {
         containingRadius = radius;
-        containingId = flat[index];
+        containingId = id;
       }
       continue;
     }
@@ -83,21 +100,32 @@ export function holdIdAtPoint(flat: readonly number[], x: number, y: number, fal
     if (distance > Math.max(radius * HIT_RADIUS_MULTIPLE, fallbackRadius)) continue;
     if (distance < nearestDistance) {
       nearestDistance = distance;
-      nearestId = flat[index];
+      nearestId = id;
     }
   }
   return containingId !== 0 ? containingId : nearestId;
 }
 
 /**
- * Does a touch at a board point land on the selected hold (`[id, cx, cy, r]`)?
+ * The selected hold's id when a touch at this board point should DRAG it, or 0.
  *
- * Generous on purpose — the hold's own radius or a fingertip, whichever is
- * bigger — because this only decides whether a DRAG moves the hold. A touch
- * that turns out to be a tap is still resolved by the full hit test.
+ * The touch has to land within the selected hold's grab radius (its own radius
+ * or a fingertip, whichever is bigger) AND the full hit test at that point has
+ * to name the selected hold. The second half is what stops a touch on a
+ * neighbour that happens to sit inside a big selection's grab radius from
+ * claiming a drag of the selection: that touch belongs to the neighbour — a
+ * tap toggles it, a long press picks it up — and a drag started there must
+ * never move a hold the finger is not on.
  */
-export function landsOnSelected(selected: readonly number[], x: number, y: number, fallbackRadius: number): boolean {
+export function selectedDragIdAt(
+  flat: readonly number[],
+  selected: readonly number[],
+  x: number,
+  y: number,
+  fallbackRadius: number,
+): number {
   'worklet';
-  if (selected.length < HIT_STRIDE) return false;
-  return Math.hypot(x - selected[1], y - selected[2]) <= Math.max(selected[3], fallbackRadius);
+  if (selected.length < HIT_STRIDE) return 0;
+  if (Math.hypot(x - selected[1], y - selected[2]) > Math.max(selected[3], fallbackRadius)) return 0;
+  return holdIdAtPoint(flat, x, y, fallbackRadius, selected) === selected[0] ? selected[0] : 0;
 }

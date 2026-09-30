@@ -804,8 +804,7 @@
       "cancel": "Abbrechen"
     },
     "a11y": {
-      "wall": "Das Foto deiner Wand mit ihren Griffen",
-      "wallHint": "Tippe auf einen Ring, um ihn an- oder auszuschalten. Tippe auf freie Wand, um einen Griff hinzuzufügen. Halte einen Ring gedrückt, um ihn anzupassen."
+      "wall": "Foto deiner Wand: {{summary}}"
     },
     "readOnly": "Du kannst diese Wand nicht bearbeiten.",
     "errors": {

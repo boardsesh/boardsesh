@@ -442,6 +442,12 @@ export type SprayEditorCounts = {
   off: number;
   /** Accepted holds queued for `upsertSprayWallHolds`. */
   unsavedWrites: number;
+  /**
+   * Confident detector finds still pending: ON on screen, written by the next
+   * commit, and on no server yet. Leaving loses them — a resumed draft does not
+   * re-run detection.
+   */
+  unsavedFinds: number;
   /** Holds queued for `removeSprayWallHolds`. */
   unsavedRemovals: number;
 };
@@ -461,18 +467,20 @@ export function countEditorHolds(
   let maybes = 0;
   let off = 0;
   let unsavedWrites = 0;
+  let unsavedFinds = 0;
   for (const hold of Object.values(holds)) {
     const role = holdRole(hold);
     if (role === 'on') {
       on += 1;
       if (hold.review === 'accepted' && hold.dirty) unsavedWrites += 1;
+      else if (hold.review === 'pending') unsavedFinds += 1;
     } else if (role === 'maybe') {
       maybes += 1;
     } else {
       off += 1;
     }
   }
-  return { on, maybes, off, unsavedWrites, unsavedRemovals: removedCount };
+  return { on, maybes, off, unsavedWrites, unsavedFinds, unsavedRemovals: removedCount };
 }
 
 /** {@link countEditorHolds} against a whole state. */
@@ -485,8 +493,9 @@ export function editorCounts(state: SprayEditorState): SprayEditorCounts {
  *
  * Any undoable step counts, not just dirty holds: switching a confident find
  * off writes nothing and dirties nothing, but it is still a decision that
- * leaving would lose.
+ * leaving would lose. So do confident finds nobody has touched: they are ON
+ * and unsaved, and nothing re-detects them when the draft is resumed.
  */
 export function editorIsDirty(state: SprayEditorState, counts: SprayEditorCounts): boolean {
-  return state.past.length > 0 || counts.unsavedWrites > 0 || counts.unsavedRemovals > 0;
+  return state.past.length > 0 || counts.unsavedWrites > 0 || counts.unsavedFinds > 0 || counts.unsavedRemovals > 0;
 }
