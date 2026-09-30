@@ -1,0 +1,23 @@
+appId: com.boardsesh.app
+name: showcase setup - crew, session hidden
+---
+# Setup for take: crew (primary phone, NOT recorded)
+#
+# Turns "Show this session live" OFF on the Record tab before the session
+# starts, so the recording never shows up in anyone's "Climbing now" rail or a
+# board's queue preview. The switch starts ON on every launch (PreSessionView
+# holds it in component state), so one tap always means OFF.
+#
+# The recorder checks the app logged `Session Visibility Changed
+# {"isPublic": false, "phase": "pre_session"}` before it runs crew-start.yaml;
+# without that line it refuses to start a session.
+#
+# The recorder opens ://record on a freshly launched app with no session running
+# before this flow, so the pre-session view is up.
+#
+# Coordinates (iPhone 16 Pro Max portrait):
+#   85%,52%  the "Show this session live" switch
+
+- tapOn:
+    point: '85%,52%'
+- waitForAnimationToEnd
