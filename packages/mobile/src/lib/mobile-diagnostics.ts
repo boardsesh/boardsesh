@@ -121,6 +121,9 @@ function mergeAttributes(existing: DiagnosticAttributes, incoming?: DiagnosticAt
   const latest = sanitizeAttributes(incoming);
   // Reserve bounded space for the latest phase/failure evidence. Invalid or
   // private incoming fields cannot displace previously accepted attributes.
+  // The first latest spread fixes key insertion order before the size cap.
+  // Overwriting an existing key does not move it; the final spread only makes
+  // the latest values win. Reversing the first two spreads loses that priority.
   return sanitizeAttributes({ ...latest, ...existing, ...latest });
 }
 
@@ -361,6 +364,11 @@ export function diagnosticErrorAttributes(error: unknown): DiagnosticAttributes 
   return attributes;
 }
 
+/**
+ * Settles an operation on every returned/rejected promise. A flow callback may
+ * finish early with a more specific outcome; finish is idempotent, so this
+ * fallback cannot replace that outcome or emit a second completion.
+ */
 export async function runDiagnosticOperation<T>(
   flow: DiagnosticFlow,
   name: string,

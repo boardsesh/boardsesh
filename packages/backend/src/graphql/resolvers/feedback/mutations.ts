@@ -177,7 +177,8 @@ export const feedbackMutations = {
 function normalizeContext(input: FeedbackContextInput | null | undefined): FeedbackContext | null {
   if (!input) return null;
   const out: FeedbackContext = {};
-  // Only known scalar leaves enter JSONB. Nested diagnostics are normalized separately.
+  // Keep this scalar allowlist in sync with FeedbackContextInputSchema in
+  // validation/schemas/feedback.ts when adding fields; diagnostics stay separate.
   const scalarKeys = ['climbUuid', 'climbName', 'difficulty', 'sessionId', 'sessionName', 'url', 'userAgent'] as const;
   for (const contextKey of scalarKeys) {
     const contextValue = input[contextKey];

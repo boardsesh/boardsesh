@@ -210,6 +210,29 @@ describe('with-android-minify', () => {
       );
     });
 
+    it('keeps the no-argument native abort function compatible with Expo nullable results', () => {
+      const builder = readFileSync(
+        join(
+          MOBILE_ROOT,
+          'node_modules/expo-modules-core/android/src/main/java/expo/modules/kotlin/objects/ObjectDefinitionBuilder.kt',
+        ),
+        'utf8',
+      );
+      expect(builder).toMatch(/@JvmName\("FunctionWithoutArgs"\)[\s\S]*?crossinline body: \(\) -> Any\?/);
+      const moduleSource = readFileSync(
+        join(
+          MOBILE_ROOT,
+          'modules/mobile-diagnostics/android/src/main/java/com/boardsesh/diagnostics/MobileDiagnosticsModule.kt',
+        ),
+        'utf8',
+      );
+      const abortBody = moduleSource.slice(moduleSource.indexOf('Function("crashNativeAbort")'));
+      // Both safety guards must return a nullable result, rather than Unit.
+      expect(abortBody.match(/return@Function null/g)).toHaveLength(2);
+      expect(abortBody).not.toMatch(/return@Function\s*(?:\n|$)/);
+      expect(abortBody).toMatch(/nativeAbort\(\)\s+null\s*}/);
+    });
+
     // Breaks on a @sentry/react-native bump — which is the point: that bump is
     // exactly when these name-based contracts might need to change.
     it('pins the class names @sentry/react-native still compares as strings', () => {
