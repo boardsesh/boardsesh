@@ -804,7 +804,22 @@
       "cancel": "Annuler"
     },
     "a11y": {
-      "wall": "Photo de ton mur : {{summary}}"
+      "wall": "Photo de ton mur : {{summary}}",
+      "holdValue": "Prise {{position}} sur {{total}}, {{role}}",
+      "noHold": "Aucune prise choisie",
+      "hint": "Balaie vers le haut ou le bas pour parcourir les prises. Touche deux fois pour en activer ou désactiver une.",
+      "joinHint": "Balaie vers le haut ou le bas jusqu'à la prise à réunir, puis touche deux fois.",
+      "role": {
+        "on": "activée",
+        "maybe": "incertaine",
+        "off": "désactivée"
+      },
+      "actions": {
+        "smaller": "Rendre plus petite",
+        "bigger": "Rendre plus grande",
+        "remove": "Retirer",
+        "addHold": "Ajouter une prise au centre de la vue"
+      }
     },
     "readOnly": "Ce mur n'est pas le tien, tu ne peux pas le modifier.",
     "errors": {

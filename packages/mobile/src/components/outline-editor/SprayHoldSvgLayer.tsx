@@ -59,6 +59,13 @@ type SprayHoldSvgLayerProps = {
   holds: readonly SprayEditorHold[];
   /** Draw the maybes at all. Off while the climber has hidden them. */
   showMaybes: boolean;
+  /**
+   * The hold `SelectedHoldOverlay` is drawing, or null. Drawn here only as the
+   * faint OFF ghost, so the ring the overlay moves is the one ring at full
+   * strength: at rest the overlay's ring sits over the ghost, and during a drag
+   * the ghost marks where the hold came from.
+   */
+  selectedId: number | null;
   /** The live stroke in board px, written by `DrawStrokeOverlay` during Trace. */
   draftPointsSV: SharedValue<number[]>;
   /** The board's live zoom, from `FilterBoardTransformContext`. */
@@ -76,8 +83,9 @@ type SprayHoldSvgLayerProps = {
  * and for the same reason: a wall may carry 1500 holds, and one `<Path>` each
  * would be 1500 native views to mount and diff on a phone. Three roles, two of
  * them doubled for the halo, plus the live Trace stroke is six nodes however big
- * the wall is, and each bucket rebuilds only when the holds do — never on a
- * selection, which `SelectedHoldOverlay` draws on its own.
+ * the wall is. Each hold's path string is built only when the holds change; a
+ * selection only re-joins the buckets, moving the selected hold into the OFF
+ * bucket as a ghost while `SelectedHoldOverlay` draws its ring.
  *
  * Coordinates are BOARD px — which on a wall are the photograph's own pixels —
  * mapped to the rendered box by the `viewBox`.
@@ -85,6 +93,7 @@ type SprayHoldSvgLayerProps = {
 export const SprayHoldSvgLayer = React.memo(function SprayHoldSvgLayer({
   holds,
   showMaybes,
+  selectedId,
   draftPointsSV,
   scaleSV,
   boardWidth,
@@ -95,19 +104,26 @@ export const SprayHoldSvgLayer = React.memo(function SprayHoldSvgLayer({
   const { brandColors } = useTheme();
   const zoomStep = useZoomStrokeStep(scaleSV);
 
+  // The expensive half — one path string per hold — keyed on the holds alone,
+  // so a selection on a 1500-hold wall only re-joins strings.
+  const holdPaths = useMemo(
+    () => holds.map((hold) => ({ id: hold.id, role: holdRole(hold), path: holdPathData(hold) })),
+    [holds],
+  );
+
   const buckets = useMemo(() => {
     const on: string[] = [];
     const maybe: string[] = [];
     const off: string[] = [];
-    for (const hold of holds) {
-      const role = holdRole(hold);
-      const path = holdPathData(hold);
-      if (role === 'on') on.push(path);
-      else if (role === 'maybe') maybe.push(path);
-      else off.push(path);
+    for (const { id, role, path } of holdPaths) {
+      // The selected hold is a ghost whatever its role: its real ring is the
+      // overlay's, and drawing both would show two rings mid-drag.
+      if (id === selectedId || role === 'off') off.push(path);
+      else if (role === 'on') on.push(path);
+      else maybe.push(path);
     }
     return { on: on.join(''), maybe: maybe.join(''), off: off.join('') };
-  }, [holds]);
+  }, [holdPaths, selectedId]);
 
   // Arrays and widths memoised on the step, so a render that did not move the
   // zoom hands react-native-svg the same prop identities to diff.

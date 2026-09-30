@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useRef, type MutableRefObject } from 'react';
-import { StyleSheet, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, type MutableRefObject } from 'react';
+import { StyleSheet, View, type AccessibilityActionEvent, type AccessibilityActionInfo } from 'react-native';
 import { Gesture, GestureDetector, type GestureType } from 'react-native-gesture-handler';
 import { runOnJS, useSharedValue, type SharedValue } from 'react-native-reanimated';
 import { fallbackRadiusAt, holdIdAtPoint, screenToBoard, selectedDragIdAt } from './spray-gesture-math';
@@ -16,6 +16,23 @@ const PICK_UP_MIN_DURATION_MS = 400;
 const PICK_UP_MAX_DISTANCE_PX = 10;
 /** How far a picked-up ring's finger moves before the drag takes over. Under the board pan's 8 px. */
 const PICK_UP_DRAG_SLOP_PX = 4;
+
+/** What a screen reader hears, and can do, on the wall. Memoise it: the overlay is `React.memo`'d. */
+export type SprayWallAccessibility = {
+  /** The wall and its counts. */
+  label: string;
+  /** The cursor's hold — "Hold 12 of 213, on" — or that there is none. */
+  value: string;
+  hint: string;
+  /** `increment`, `decrement`, `activate` and the named hold actions. */
+  actions: readonly AccessibilityActionInfo[];
+  /**
+   * An action fired. `viewCentreX/Y` is the middle of the visible board in board
+   * px, for an action that needs a place and has no finger to give one.
+   * `activate` is routed here from both platforms' double tap.
+   */
+  onAction: (actionName: string, viewCentreX: number, viewCentreY: number) => void;
+};
 
 type SprayEditGestureOverlayProps = {
   /** The board's live zoom transform, from `FilterBoardTransformContext`. */
@@ -45,13 +62,12 @@ type SprayEditGestureOverlayProps = {
   /** False while Join is waiting for its second hold: taps still count, drags and pick-ups do not. */
   canMove: boolean;
   /**
-   * Read by a screen reader for the whole wall — the rings are one drawing, not
-   * one view each. The wall is announced as an image and does nothing when
-   * activated: a VoiceOver double tap would otherwise land as a real tap in the
-   * middle of the photo and switch a hold. The bar and the chip bar are the
-   * accessible way to change the wall.
+   * The screen-reader path. The rings are one drawing, not one view each, so the
+   * wall is ONE adjustable element: swipe up / down walks a cursor through the
+   * holds (the screen selects each, which brings up the chip bar), a double tap
+   * switches the cursor's hold, and the named actions mirror the chips.
    */
-  accessibilityLabel: string;
+  accessibility: SprayWallAccessibility;
   /** A tap at a board point; `zoom` is the board scale at the time, for the hit-test fallback. */
   onTap: (boardX: number, boardY: number, zoom: number) => void;
   /** A long press landed on this ring. */
@@ -89,13 +105,6 @@ type SprayEditGestureOverlayProps = {
  * The move preview runs entirely on the UI thread through the shared values
  * above. `runOnJS` fires only when a gesture starts or ends — never per frame.
  */
-/**
- * Handles VoiceOver's activate on the wall so iOS does not fall back to sending
- * a synthetic touch to the view's centre, which the tap gesture would read as
- * an edit.
- */
-function swallowAccessibilityTap() {}
-
 export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverlay({
   scaleSV,
   translateXSV,
@@ -111,7 +120,7 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
   dragOffsetYSV,
   dragHoldIdSV,
   canMove,
-  accessibilityLabel,
+  accessibility,
   onTap,
   onPickUp,
   onMoveEnd,
@@ -141,8 +150,8 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
   const touchStartMsSV = useSharedValue(0);
   const dragActiveSV = useSharedValue(false);
 
-  const callbacksRef = useRef({ onTap, onPickUp, onMoveEnd });
-  callbacksRef.current = { onTap, onPickUp, onMoveEnd };
+  const callbacksRef = useRef({ onTap, onPickUp, onMoveEnd, onAccessibilityAction: accessibility.onAction });
+  callbacksRef.current = { onTap, onPickUp, onMoveEnd, onAccessibilityAction: accessibility.onAction };
   // Captured once by the gesture memo — only close over the stable ref.
   const handleTap = (boardX: number, boardY: number, zoom: number) => callbacksRef.current.onTap(boardX, boardY, zoom);
   const handlePickUp = (holdId: number) => callbacksRef.current.onPickUp(holdId);
@@ -410,15 +419,49 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
     dragActiveSV,
   ]);
 
+  const fireAccessibilityAction = useCallback(
+    (actionName: string) => {
+      const containerWidth = containerWidthSV.value;
+      const containerHeight = containerHeightSV.value;
+      const centre = screenToBoard(
+        containerWidth / 2,
+        containerHeight / 2,
+        scaleSV.value,
+        translateXSV.value,
+        translateYSV.value,
+        containerWidth,
+        containerHeight,
+        boardScaleSV.value,
+      );
+      callbacksRef.current.onAccessibilityAction(actionName, centre.x, centre.y);
+    },
+    [containerWidthSV, containerHeightSV, scaleSV, translateXSV, translateYSV, boardScaleSV],
+  );
+  const handleAccessibilityAction = useCallback(
+    (event: AccessibilityActionEvent) => fireAccessibilityAction(event.nativeEvent.actionName),
+    [fireAccessibilityAction],
+  );
+  // iOS on Fabric sends a VoiceOver double tap to `onAccessibilityTap` only,
+  // never as the `activate` action; Android sends it as the action. Both land on
+  // the screen's `activate`, which acts on the cursor's hold and nothing else.
+  // Handling it at all is what stops iOS falling back to a synthetic touch at
+  // the view's centre — which the tap gesture would read as an edit to
+  // whichever hold happens to sit there.
+  const handleAccessibilityTap = useCallback(() => fireAccessibilityAction('activate'), [fireAccessibilityAction]);
+
   return (
     <GestureDetector gesture={gesture}>
       <View
         collapsable={false}
         style={StyleSheet.absoluteFill}
         accessible
-        accessibilityRole="image"
-        accessibilityLabel={accessibilityLabel}
-        onAccessibilityTap={swallowAccessibilityTap}
+        accessibilityRole="adjustable"
+        accessibilityLabel={accessibility.label}
+        accessibilityValue={{ text: accessibility.value }}
+        accessibilityHint={accessibility.hint}
+        accessibilityActions={accessibility.actions}
+        onAccessibilityAction={handleAccessibilityAction}
+        onAccessibilityTap={handleAccessibilityTap}
       />
     </GestureDetector>
   );

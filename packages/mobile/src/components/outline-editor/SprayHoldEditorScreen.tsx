@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from 'react';
-import { StyleSheet, View, type LayoutChangeEvent } from 'react-native';
+import {
+  AccessibilityInfo,
+  StyleSheet,
+  View,
+  type AccessibilityActionInfo,
+  type LayoutChangeEvent,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSharedValue } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
@@ -20,7 +26,7 @@ import { useSaveSprayHolds } from '../../lib/spray/use-spray-hold-writes';
 import { DrawStrokeOverlay } from './DrawStrokeOverlay';
 import { SprayHoldSvgLayer } from './SprayHoldSvgLayer';
 import { SelectedHoldOverlay } from './SelectedHoldOverlay';
-import { SprayEditGestureOverlay } from './SprayEditGestureOverlay';
+import { SprayEditGestureOverlay, type SprayWallAccessibility } from './SprayEditGestureOverlay';
 import { SprayEditorBottomBar, SPRAY_BAR_GUTTER, SPRAY_BAR_HEIGHT, sprayCountSummary } from './SprayEditorBottomBar';
 import { SprayHoldChipBar } from './SprayHoldChipBar';
 import { SprayEditorBanner } from './SprayEditorBanner';
@@ -44,7 +50,9 @@ import {
   initialSprayEditorState,
   sprayEditorReducer,
   type SprayEditorHold,
+  type SprayHoldRole,
 } from './spray-hold-editor-reducer';
+import { readingCursorPosition, readingOrderIndex, sprayHoldReadingOrder, stepReadingCursor } from './spray-hold-a11y';
 import {
   defaultHoldRadius,
   holdAtPoint,
@@ -65,6 +73,14 @@ const NO_POINTS: number[] = [];
 const NO_HOLD_TARGETS: BoardHoldTarget[] = [];
 const NO_SELECTION: number[] = [];
 const NO_EDITOR_HOLDS: SprayEditorHold[] = [];
+const NO_READING_ORDER: number[] = [];
+
+/** The screen-reader actions the wall always has. See `SprayWallAccessibility`. */
+const WALL_A11Y_ACTIONS: readonly AccessibilityActionInfo[] = [
+  { name: 'increment' },
+  { name: 'decrement' },
+  { name: 'activate' },
+];
 
 /** Where the zoomed-in reset control sits: top-left, clear of the chip bar and the bottom bar. */
 const RESET_ZOOM_STYLE = { left: spacing[2], top: spacing[2] };
@@ -174,6 +190,12 @@ export function SprayHoldEditorScreen({
   const [errorText, setErrorText] = useState<string | null>(null);
   const [showMaybes, setShowMaybes] = useState(true);
   const [moveRevision, setMoveRevision] = useState(0);
+  /**
+   * Where a screen reader's swipes have got to while Join waits for its second
+   * hold. Outside Join the cursor IS the selection, so it needs no state of its
+   * own; inside Join the selection has to stay put on the first hold.
+   */
+  const [joinCursorId, setJoinCursorId] = useState<number | null>(null);
   const [area, setArea] = useState({ width: 0, height: 0 });
   const [state, dispatch] = useReducer(sprayEditorReducer, undefined, () => initialSprayEditorState());
 
@@ -320,6 +342,22 @@ export function SprayHoldEditorScreen({
 
   const selectedHold = state.selectedId != null ? (state.holds[state.selectedId] ?? null) : null;
 
+  // The screen reader's walk: every tappable ring in reading order. Only built
+  // for a viewer who can edit — nobody else gets the gesture surface it drives.
+  const readingOrder = useMemo(
+    () => (viewerCanEdit ? sprayHoldReadingOrder(visibleHolds, medianRadius) : NO_READING_ORDER),
+    [viewerCanEdit, visibleHolds, medianRadius],
+  );
+  const readingIndex = useMemo(() => readingOrderIndex(readingOrder), [readingOrder]);
+  const readingOrderRef = useRef(readingOrder);
+  readingOrderRef.current = readingOrder;
+  const readingIndexRef = useRef(readingIndex);
+  readingIndexRef.current = readingIndex;
+  const joinCursorIdRef = useRef(joinCursorId);
+  joinCursorIdRef.current = joinCursorId;
+  /** The next change to the wall's spoken value (or an error) is read out — set by actions a swipe did not start. */
+  const announceNextRef = useRef(false);
+
   const committing = saveHolds.isPending;
   const canEdit = viewerCanEdit && !committing;
   const canEditRef = useRef(canEdit);
@@ -347,6 +385,22 @@ export function SprayHoldEditorScreen({
     (hold: SprayEditorHold) => {
       if (holdRole(hold) === 'on' || countsRef.current.on < MAX_HOLDS_PER_WALL) return false;
       refuseOverCap();
+      return true;
+    },
+    [refuseOverCap],
+  );
+
+  /** A ring switched ON or OFF, with the cap check a tap and a screen reader share. False when the cap refused it. */
+  const toggleHold = useCallback(
+    (hold: SprayEditorHold) => {
+      const turningOn = holdRole(hold) !== 'on';
+      if (turningOn && countsRef.current.on >= MAX_HOLDS_PER_WALL) {
+        refuseOverCap();
+        return false;
+      }
+      if (turningOn) hapticLight();
+      else hapticSelection();
+      dispatch({ type: 'TOGGLE_HOLD', id: hold.id });
       return true;
     },
     [refuseOverCap],
@@ -388,14 +442,7 @@ export function SprayHoldEditorScreen({
       }
 
       if (hit) {
-        const turningOn = holdRole(hit) !== 'on';
-        if (turningOn && countsRef.current.on >= MAX_HOLDS_PER_WALL) {
-          refuseOverCap();
-          return;
-        }
-        if (turningOn) hapticLight();
-        else hapticSelection();
-        dispatch({ type: 'TOGGLE_HOLD', id: hit.id });
+        toggleHold(hit);
         return;
       }
 
@@ -406,7 +453,7 @@ export function SprayHoldEditorScreen({
       hapticMedium();
       dispatch({ type: 'ADD_HOLD', geometry: holdFromTap(boardX, boardY, medianRadiusRef.current) });
     },
-    [boardScale, refuseOverCap],
+    [boardScale, refuseOverCap, toggleHold],
   );
 
   const handlePickUp = useCallback((holdId: number) => {
@@ -451,12 +498,14 @@ export function SprayHoldEditorScreen({
 
   const handleStartJoin = useCallback(() => {
     setErrorText(null);
+    setJoinCursorId(null);
     setTool('join');
   }, []);
 
   const handleCancelTool = useCallback(() => {
     draftPointsSV.value = NO_POINTS;
     setErrorText(null);
+    setJoinCursorId(null);
     setTool('edit');
   }, [draftPointsSV]);
 
@@ -596,6 +645,173 @@ export function SprayHoldEditorScreen({
     );
   }, [viewerCanEdit, homography, refuseOverCap, saveHolds, wallUuid, versionNumber, versionId, onCommitted, t]);
 
+  /**
+   * A screen reader's swipe up (`1`) or down (`-1`). Outside Join it selects the
+   * next ring in reading order, which is what brings up the chip bar; inside
+   * Join it only moves the cursor, skipping the hold being joined.
+   */
+  const stepWallCursor = useCallback((delta: 1 | -1) => {
+    announceNextRef.current = false;
+    if (!canEditRef.current) return;
+    const order = readingOrderRef.current;
+    const indexById = readingIndexRef.current;
+    if (toolRef.current === 'join') {
+      const selectedId = stateRef.current.selectedId;
+      let next = stepReadingCursor(order, indexById, joinCursorIdRef.current, delta);
+      if (next != null && next === selectedId && order.length > 1) {
+        next = stepReadingCursor(order, indexById, next, delta);
+      }
+      setJoinCursorId(next);
+      return;
+    }
+    if (toolRef.current !== 'edit') return;
+    const next = stepReadingCursor(order, indexById, stateRef.current.selectedId, delta);
+    if (next == null) return;
+    setErrorText(null);
+    dispatch({ type: 'SELECT', id: next });
+  }, []);
+
+  /**
+   * A screen reader's double tap: acts on the cursor's hold and nothing else, and
+   * does nothing with no cursor — never on whatever sits under the view's centre.
+   */
+  const activateWallCursor = useCallback(() => {
+    if (!canEditRef.current) return;
+    const current = stateRef.current;
+    const onWalk = (id: number | null): id is number => id != null && readingIndexRef.current.has(id);
+    if (toolRef.current === 'join') {
+      const targetId = joinCursorIdRef.current;
+      if (!onWalk(targetId) || current.selectedId == null || targetId === current.selectedId) return;
+      hapticMedium();
+      announceNextRef.current = true;
+      dispatch({ type: 'MERGE', ids: [current.selectedId, targetId] });
+      setJoinCursorId(null);
+      setTool('edit');
+      return;
+    }
+    if (toolRef.current !== 'edit' || !onWalk(current.selectedId)) return;
+    const hold = current.holds[current.selectedId];
+    if (!hold) return;
+    setErrorText(null);
+    announceNextRef.current = true;
+    toggleHold(hold);
+  }, [toggleHold]);
+
+  /**
+   * "Add a hold here" for a screen reader, which has no finger to say where:
+   * the middle of whatever part of the wall is on screen. A ring already there
+   * is picked instead of stacking a duplicate on it — switched on first if it is
+   * a hidden maybe, just as a tap would.
+   */
+  const addHoldAtViewCentre = useCallback(
+    (boardX: number, boardY: number) => {
+      if (!canEditRef.current || toolRef.current !== 'edit') return;
+      setErrorText(null);
+      announceNextRef.current = true;
+      const visibleHit = holdAtPoint(visibleHoldsRef.current, boardX, boardY);
+      const hiddenHit = visibleHit ? null : holdAtPoint(hiddenMaybesRef.current, boardX, boardY);
+      if (hiddenHit && !toggleHold(hiddenHit)) return;
+      const hit = visibleHit ?? hiddenHit;
+      if (hit) {
+        hapticSelection();
+        dispatch({ type: 'SELECT', id: hit.id });
+        return;
+      }
+      if (countsRef.current.on >= MAX_HOLDS_PER_WALL) {
+        refuseOverCap();
+        return;
+      }
+      hapticMedium();
+      // ADD_HOLD takes the next local id; selecting it straight after puts the
+      // new ring under the chip bar and the cursor.
+      const newId = stateRef.current.nextLocalId;
+      dispatch({ type: 'ADD_HOLD', geometry: holdFromTap(boardX, boardY, medianRadiusRef.current) });
+      dispatch({ type: 'SELECT', id: newId });
+    },
+    [refuseOverCap, toggleHold],
+  );
+
+  const handleWallAccessibilityAction = useCallback(
+    (actionName: string, viewCentreX: number, viewCentreY: number) => {
+      switch (actionName) {
+        case 'increment':
+          stepWallCursor(1);
+          return;
+        case 'decrement':
+          stepWallCursor(-1);
+          return;
+        case 'activate':
+          activateWallCursor();
+          return;
+        case WALL_ACTION.shrink:
+          handleShrink();
+          return;
+        case WALL_ACTION.grow:
+          handleGrow();
+          return;
+        case WALL_ACTION.remove:
+          announceNextRef.current = true;
+          handleRemove();
+          return;
+        case WALL_ACTION.addHold:
+          addHoldAtViewCentre(viewCentreX, viewCentreY);
+          return;
+        default:
+          return;
+      }
+    },
+    [stepWallCursor, activateWallCursor, handleShrink, handleGrow, handleRemove, addHoldAtViewCentre],
+  );
+
+  const cursorId = tool === 'join' ? joinCursorId : state.selectedId;
+  const cursorPosition = readingCursorPosition(readingIndex, cursorId);
+  const cursorHold = cursorPosition && cursorId != null ? (state.holds[cursorId] ?? null) : null;
+  const wallValue =
+    cursorPosition && cursorHold
+      ? t('sprayEditor.a11y.holdValue', {
+          position: cursorPosition.position,
+          total: cursorPosition.total,
+          role: roleLabel(holdRole(cursorHold), t),
+        })
+      : t('sprayEditor.a11y.noHold');
+  const wallHint = tool === 'join' ? t('sprayEditor.a11y.joinHint') : t('sprayEditor.a11y.hint');
+  const holdToolsOpen = tool === 'edit' && canEdit;
+  const hasSelection = selectedHold != null;
+  const canShrinkSelected = shrinkTo != null;
+  const canGrowSelected = growTo != null;
+
+  const wallActions = useMemo<readonly AccessibilityActionInfo[]>(() => {
+    if (!holdToolsOpen) return WALL_A11Y_ACTIONS;
+    const actions: AccessibilityActionInfo[] = [...WALL_A11Y_ACTIONS];
+    if (hasSelection) {
+      if (canShrinkSelected) actions.push({ name: WALL_ACTION.shrink, label: t('sprayEditor.a11y.actions.smaller') });
+      if (canGrowSelected) actions.push({ name: WALL_ACTION.grow, label: t('sprayEditor.a11y.actions.bigger') });
+      actions.push({ name: WALL_ACTION.remove, label: t('sprayEditor.a11y.actions.remove') });
+    }
+    actions.push({ name: WALL_ACTION.addHold, label: t('sprayEditor.a11y.actions.addHold') });
+    return actions;
+  }, [holdToolsOpen, hasSelection, canShrinkSelected, canGrowSelected, t]);
+
+  const wallAccessibility = useMemo<SprayWallAccessibility>(
+    () => ({
+      label: wallLabel,
+      value: wallValue,
+      hint: wallHint,
+      actions: wallActions,
+      onAction: handleWallAccessibilityAction,
+    }),
+    [wallLabel, wallValue, wallHint, wallActions, handleWallAccessibilityAction],
+  );
+
+  // A swipe's new value is read out by the adjustable element itself. A double
+  // tap or a named action is not, so its outcome — or the error that refused
+  // it — is announced once it has rendered.
+  useEffect(() => {
+    if (!announceNextRef.current) return;
+    announceNextRef.current = false;
+    AccessibilityInfo.announceForAccessibility(errorText ?? wallValue);
+  }, [wallValue, errorText]);
+
   const renderInTransform = useCallback(
     (context: FilterBoardTransformContext) =>
       wall ? (
@@ -612,6 +828,7 @@ export function SprayHoldEditorScreen({
           <SprayHoldSvgLayer
             holds={allEditorHolds}
             showMaybes={showMaybes}
+            selectedId={selectedHold?.id ?? null}
             draftPointsSV={draftPointsSV}
             scaleSV={context.scaleSV}
             boardWidth={wall.photoWidth}
@@ -686,7 +903,7 @@ export function SprayHoldEditorScreen({
           dragOffsetYSV={dragOffsetYSV}
           dragHoldIdSV={dragHoldIdSV}
           canMove={tool === 'edit' && canEdit}
-          accessibilityLabel={wallLabel}
+          accessibility={wallAccessibility}
           onTap={handleTap}
           onPickUp={handlePickUp}
           onMoveEnd={handleMoveEnd}
@@ -705,7 +922,7 @@ export function SprayHoldEditorScreen({
       dragOffsetXSV,
       dragOffsetYSV,
       dragHoldIdSV,
-      wallLabel,
+      wallAccessibility,
       handleStrokeStart,
       handleStrokeEnd,
       handleStrokeCancel,
@@ -803,6 +1020,21 @@ export function SprayHoldEditorScreen({
 }
 
 type Translate = (key: string, options?: Record<string, unknown>) => string;
+
+/** The named screen-reader actions on the wall, mirroring the chip bar. */
+const WALL_ACTION = {
+  shrink: 'shrink',
+  grow: 'grow',
+  remove: 'remove',
+  addHold: 'addHold',
+} as const;
+
+/** A ring's state as a screen reader says it. Literal keys, so the catalogue checks can see them. */
+function roleLabel(role: SprayHoldRole, t: Translate): string {
+  if (role === 'on') return t('sprayEditor.a11y.role.on');
+  if (role === 'maybe') return t('sprayEditor.a11y.role.maybe');
+  return t('sprayEditor.a11y.role.off');
+}
 
 /** The one line at the top of the photo, most urgent first: the active tool, an error, read-only, the empty wall. */
 function bannerFor({

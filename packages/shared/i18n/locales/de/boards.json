@@ -804,7 +804,22 @@
       "cancel": "Abbrechen"
     },
     "a11y": {
-      "wall": "Foto deiner Wand: {{summary}}"
+      "wall": "Foto deiner Wand: {{summary}}",
+      "holdValue": "Griff {{position}} von {{total}}, {{role}}",
+      "noHold": "Kein Griff ausgewählt",
+      "hint": "Wisch nach oben oder unten, um durch die Griffe zu gehen. Tippe doppelt, um einen an- oder auszuschalten.",
+      "joinHint": "Wisch nach oben oder unten zu dem Griff, mit dem er verbunden wird, und tippe dann doppelt.",
+      "role": {
+        "on": "an",
+        "maybe": "unsicher",
+        "off": "aus"
+      },
+      "actions": {
+        "smaller": "Kleiner machen",
+        "bigger": "Größer machen",
+        "remove": "Entfernen",
+        "addHold": "Griff in der Mitte der Ansicht hinzufügen"
+      }
     },
     "readOnly": "Du kannst diese Wand nicht bearbeiten.",
     "errors": {

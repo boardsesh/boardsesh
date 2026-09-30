@@ -804,7 +804,22 @@
       "cancel": "Cancel"
     },
     "a11y": {
-      "wall": "Your wall photo: {{summary}}"
+      "wall": "Your wall photo: {{summary}}",
+      "holdValue": "Hold {{position}} of {{total}}, {{role}}",
+      "noHold": "No hold picked",
+      "hint": "Swipe up or down to move through the holds. Double-tap to switch one on or off.",
+      "joinHint": "Swipe up or down to the hold to join with, then double-tap.",
+      "role": {
+        "on": "on",
+        "maybe": "maybe",
+        "off": "off"
+      },
+      "actions": {
+        "smaller": "Make smaller",
+        "bigger": "Make bigger",
+        "remove": "Remove",
+        "addHold": "Add a hold in the middle of the view"
+      }
     },
     "readOnly": "This wall isn't yours to edit.",
     "errors": {

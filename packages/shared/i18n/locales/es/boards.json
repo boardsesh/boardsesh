@@ -804,7 +804,22 @@
       "cancel": "Cancelar"
     },
     "a11y": {
-      "wall": "Foto de tu muro: {{summary}}"
+      "wall": "Foto de tu muro: {{summary}}",
+      "holdValue": "Presa {{position}} de {{total}}, {{role}}",
+      "noHold": "Ninguna presa elegida",
+      "hint": "Desliza hacia arriba o abajo para recorrer las presas. Toca dos veces para activar o desactivar una.",
+      "joinHint": "Desliza hacia arriba o abajo hasta la presa con la que unirla y toca dos veces.",
+      "role": {
+        "on": "activa",
+        "maybe": "dudosa",
+        "off": "desactivada"
+      },
+      "actions": {
+        "smaller": "Hacer más pequeña",
+        "bigger": "Hacer más grande",
+        "remove": "Quitar",
+        "addHold": "Añadir una presa en el centro de la vista"
+      }
     },
     "readOnly": "No puedes editar este muro.",
     "errors": {

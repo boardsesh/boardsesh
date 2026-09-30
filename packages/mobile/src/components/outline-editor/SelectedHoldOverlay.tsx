@@ -51,6 +51,10 @@ type SelectedHoldOverlayProps = {
  *
  * Lives inside the board's zoom transform (`renderInTransform`), so it tracks
  * the photo at any zoom for free.
+ *
+ * While this is mounted, `SprayHoldSvgLayer` draws the same hold only as a faint
+ * OFF ghost (its `selectedId`), so this is the one full-strength ring: over the
+ * ghost at rest, away from it mid-drag, and over it again once the move lands.
  */
 export const SelectedHoldOverlay = React.memo(function SelectedHoldOverlay({
   hold,
