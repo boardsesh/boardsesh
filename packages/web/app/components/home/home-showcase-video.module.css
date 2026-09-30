@@ -33,25 +33,46 @@
   opacity: 1;
 }
 
-.toggle {
+/* Both toggles are doubled with .figure: MUI's own button styles (position:
+   relative, transparent background) are injected after this stylesheet and win
+   a single-class tie, which pushed the button to the top-left as a faint notch.
+   The fixed dark scrim (--overlay-dark) plus a white icon stays legible over the
+   dark and the lavender scenes alike, in either colour mode. */
+.figure .toggle,
+.figure .toggleCentered {
   position: absolute;
+  z-index: 1;
+  min-width: 44px;
+  min-height: 44px;
+  color: var(--color-on-primary);
+  background: var(--overlay-dark);
+}
+
+.figure .toggle:hover,
+.figure .toggleCentered:hover {
+  background: var(--overlay-dark);
+}
+
+.figure .toggle:focus-visible,
+.figure .toggleCentered:focus-visible {
+  outline: 3px solid var(--color-on-primary);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 7px var(--overlay-dark);
+}
+
+.figure .toggle {
   right: var(--spacing-3);
   bottom: var(--spacing-3);
-  z-index: 1;
-  background: var(--semantic-surface);
-  border: 1px solid var(--separator);
 }
 
 /* Poster with nothing playing (data saver, reduced motion): the play button is
-   the call to action, so it sits in the middle. */
-.toggleCentered {
-  position: absolute;
+   the call to action, so it sits in the middle and is larger. */
+.figure .toggleCentered {
   top: 50%;
   left: 50%;
-  z-index: 1;
+  min-width: 64px;
+  min-height: 64px;
   transform: translate(-50%, -50%);
-  background: var(--semantic-surface);
-  border: 1px solid var(--separator);
 }
 
 .sceneList {

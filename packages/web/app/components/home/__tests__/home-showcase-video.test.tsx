@@ -91,6 +91,26 @@ describe('HomeShowcaseVideo', () => {
     expect(getVideo().getAttribute('preload')).toBe('none');
   });
 
+  it('keeps the poster visible and the video hidden until it is playing', () => {
+    render(<HomeShowcaseVideo />);
+    runIdleCallbacks();
+    scrollIntoView(true);
+    const poster = document.querySelector('img');
+    expect(poster).toBeTruthy();
+    expect(poster?.hasAttribute('hidden')).toBe(false);
+    expect(getVideo().hasAttribute('poster')).toBe(false);
+    expect(getVideo().getAttribute('data-active')).toBe('false');
+
+    fireEvent(getVideo(), new Event('playing'));
+    expect(getVideo().getAttribute('data-active')).toBe('true');
+  });
+
+  it('renders the pause toggle with the scrim-backed toggle style', () => {
+    render(<HomeShowcaseVideo />);
+    const toggle = screen.getByRole('button', { name: tFromCatalog('marketing', 'home.showcase.play') });
+    expect(toggle.className).toMatch(/toggle/);
+  });
+
   it('lists all nine scene headlines in a hidden caption', () => {
     render(<HomeShowcaseVideo />);
     const items = document.querySelectorAll('figcaption li');
