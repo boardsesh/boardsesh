@@ -27,6 +27,7 @@ import {
   restoredSessionId,
   sessionStarted,
   sessionVisibilityIsOff,
+  splitCompleteLines,
   type TakeCheckInput,
 } from '../lib/showcase-video/record';
 import {
@@ -197,6 +198,39 @@ describe('logs', () => {
     expect(restoredSessionId(none)).toBeNull();
     expect(restoredSessionId(`${none}\n${some}`)).toBe('667186b5-f0e5-4f56-92bf-8646f87d3f81');
     expect(restoredSessionId(`${some}\n${none}`)).toBeNull();
+  });
+});
+
+describe('splitCompleteLines', () => {
+  it('holds a line split across two chunks until its newline arrives', () => {
+    const line = anchorLine('queue-row-avatar', 42);
+    const cut = 30;
+    const first = splitCompleteLines(Buffer.alloc(0), Buffer.from(`noise\n${line.slice(0, cut)}`));
+    expect(first.lines).toEqual(['noise']);
+    expect(anchorArrivalsFromChunk(first.lines.join('\n'), 0)).toEqual([]);
+    const second = splitCompleteLines(first.rest, Buffer.from(`${line.slice(cut)}\n`));
+    expect(second.lines).toEqual([line]);
+    expect(second.rest.length).toBe(0);
+    expect(anchorArrivalsFromChunk(second.lines.join('\n'), 0).map((arrival) => arrival.line.name)).toEqual([
+      'queue-row-avatar',
+    ]);
+  });
+
+  it('keeps a multi-byte UTF-8 character split between chunks intact', () => {
+    const bytes = Buffer.from('Crew “Putty” sent it\n', 'utf8');
+    const cut = bytes.indexOf(0xe2) + 1;
+    const first = splitCompleteLines(Buffer.alloc(0), bytes.subarray(0, cut));
+    expect(first.lines).toEqual([]);
+    const second = splitCompleteLines(first.rest, bytes.subarray(cut));
+    expect(second.lines).toEqual(['Crew “Putty” sent it']);
+  });
+
+  it('strips CRLF line endings and carries the unterminated tail', () => {
+    const line = anchorLine('wall-pill', 7);
+    const { lines, rest } = splitCompleteLines(Buffer.alloc(0), Buffer.from(`${line}\r\nnext\r\npart`));
+    expect(lines).toEqual([line, 'next']);
+    expect(rest.toString('utf8')).toBe('part');
+    expect(anchorArrivalsFromChunk(lines.join('\n'), 0)).toHaveLength(1);
   });
 });
 

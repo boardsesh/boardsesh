@@ -89,6 +89,7 @@ import {
   restoredSessionId,
   sessionStarted,
   sessionVisibilityIsOff,
+  splitCompleteLines,
   type AnchorArrival,
   type ShowcaseBackend,
   type ShowcaseDevice,
@@ -244,12 +245,18 @@ function stopGroup(child: ChildProcess): void {
   }
 }
 
-/** Reads what a growing log file gained since the last read. */
+/**
+ * Reads the complete lines a growing log file gained since the last read.
+ * An unterminated tail stays buffered until its newline arrives, so a line
+ * Metro or tee flushed across two reads is returned once, whole.
+ */
 class LogTail {
   private offset = 0;
+  private pending: Buffer = Buffer.alloc(0);
   constructor(private readonly path: string) {}
   skipToEnd(): void {
     this.offset = existsSync(this.path) ? statSync(this.path).size : 0;
+    this.pending = Buffer.alloc(0);
   }
   read(): string {
     if (!existsSync(this.path)) return '';
@@ -263,7 +270,9 @@ class LogTail {
       closeSync(handle);
     }
     this.offset = size;
-    return buffer.toString('utf8');
+    const { lines, rest } = splitCompleteLines(this.pending, buffer);
+    this.pending = rest;
+    return lines.length === 0 ? '' : `${lines.join('\n')}\n`;
   }
 }
 

@@ -298,6 +298,24 @@ export function countHomeReady(logText: string): number {
   return logText.split('$screen /home').length - 1;
 }
 
+/**
+ * Splits log bytes into the complete (newline-terminated) lines and the
+ * unterminated tail. A writer can flush half a line, or half a UTF-8
+ * character, between two reads; the tail is carried into the next call so
+ * neither fragment is parsed on its own. A trailing `\r` (CRLF) is dropped.
+ */
+export function splitCompleteLines(pending: Buffer, chunk: Buffer): { lines: string[]; rest: Buffer } {
+  const bytes = pending.length === 0 ? chunk : Buffer.concat([pending, chunk]);
+  const lastNewline = bytes.lastIndexOf(0x0a);
+  if (lastNewline === -1) return { lines: [], rest: bytes };
+  const lines = bytes
+    .subarray(0, lastNewline)
+    .toString('utf8')
+    .split('\n')
+    .map((line) => (line.endsWith('\r') ? line.slice(0, -1) : line));
+  return { lines, rest: Buffer.from(bytes.subarray(lastNewline + 1)) };
+}
+
 export type AnchorArrival = Readonly<{ line: ShowcaseAnchorLogLine; atMs: number }>;
 
 /** Anchor lines out of a chunk of Metro output, each stamped with when the chunk arrived. */

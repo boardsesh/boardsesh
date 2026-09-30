@@ -563,45 +563,51 @@ function stageData(format: ShowcaseFormat, prepared: Prepared, measure: boolean)
 
 async function openStage(format: ShowcaseFormat, data: ShowcaseStageData) {
   const browser = await chromium.launch({ args: ['--allow-file-access-from-files', '--font-render-hinting=none'] });
-  const { width, height } = SHOWCASE_CANVAS[format];
-  const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: SHOWCASE_DEVICE_SCALE });
-  const errors: string[] = [];
-  page.on('pageerror', (error) => errors.push(error.message));
-  page.on('console', (message) => {
-    if (message.type() === 'error') errors.push(message.text());
-  });
-  await page.goto(pathToFileURL(SHOWCASE_STAGE_HTML).href, { waitUntil: 'load' });
-  await page.waitForFunction(
-    () => (window as unknown as { showcaseStageLoaded?: boolean }).showcaseStageLoaded === true,
-    null,
-    {
-      timeout: 10_000,
-    },
-  );
-  await page.evaluate(
-    (input) => {
-      (window as unknown as { showcaseInit: (value: unknown) => void }).showcaseInit(input);
-    },
-    data as unknown as Record<string, unknown>,
-  );
-  const fonts = await page.evaluate(async () => {
-    await Promise.all([
-      document.fonts.load('800 104px "Inter Tight"'),
-      document.fonts.load('700 24px "Inter Tight"'),
-      document.fonts.load('italic 400 120px "Instrument Serif"'),
-      document.fonts.load('500 24px "Geist Mono"'),
-    ]);
-    await document.fonts.ready;
-    return [...document.fonts].map((face) => ({ family: face.family.replace(/"/g, ''), status: face.status }));
-  });
-  for (const family of ['Inter Tight', 'Instrument Serif', 'Geist Mono']) {
-    if (!fonts.some((face) => face.family === family && face.status === 'loaded')) {
-      throw new Error(`Font "${family}" did not load: ${JSON.stringify(fonts)}`);
+  // Anything after launch can throw; close the browser so no orphan Chromium keeps the process alive.
+  try {
+    const { width, height } = SHOWCASE_CANVAS[format];
+    const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: SHOWCASE_DEVICE_SCALE });
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    page.on('console', (message) => {
+      if (message.type() === 'error') errors.push(message.text());
+    });
+    await page.goto(pathToFileURL(SHOWCASE_STAGE_HTML).href, { waitUntil: 'load' });
+    await page.waitForFunction(
+      () => (window as unknown as { showcaseStageLoaded?: boolean }).showcaseStageLoaded === true,
+      null,
+      {
+        timeout: 10_000,
+      },
+    );
+    await page.evaluate(
+      (input) => {
+        (window as unknown as { showcaseInit: (value: unknown) => void }).showcaseInit(input);
+      },
+      data as unknown as Record<string, unknown>,
+    );
+    const fonts = await page.evaluate(async () => {
+      await Promise.all([
+        document.fonts.load('800 104px "Inter Tight"'),
+        document.fonts.load('700 24px "Inter Tight"'),
+        document.fonts.load('italic 400 120px "Instrument Serif"'),
+        document.fonts.load('500 24px "Geist Mono"'),
+      ]);
+      await document.fonts.ready;
+      return [...document.fonts].map((face) => ({ family: face.family.replace(/"/g, ''), status: face.status }));
+    });
+    for (const family of ['Inter Tight', 'Instrument Serif', 'Geist Mono']) {
+      if (!fonts.some((face) => face.family === family && face.status === 'loaded')) {
+        throw new Error(`Font "${family}" did not load: ${JSON.stringify(fonts)}`);
+      }
     }
+    if (errors.length > 0) throw new Error(`Stage errors:\n${errors.join('\n')}`);
+    const client = await page.context().newCDPSession(page);
+    return { browser, page, client, errors };
+  } catch (error) {
+    await browser.close();
+    throw error;
   }
-  if (errors.length > 0) throw new Error(`Stage errors:\n${errors.join('\n')}`);
-  const client = await page.context().newCDPSession(page);
-  return { browser, page, client, errors };
 }
 
 async function renderFrame(page: Page, frame: number): Promise<void> {
