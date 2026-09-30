@@ -737,7 +737,7 @@ importers:
         specifier: 57.0.1
         version: 57.0.1(expo@57.0.18)
       expo-eas-client:
-        specifier: ~57.0.2
+        specifier: 57.0.2
         version: 57.0.2
       expo-file-system:
         specifier: 57.0.6
