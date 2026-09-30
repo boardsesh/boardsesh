@@ -7,6 +7,7 @@ import {
   SHOWCASE_DEFAULT_BOARDS,
   SHOWCASE_DEFAULT_ENV_FILE,
   anchorArrivalsFromChunk,
+  anchorTapValues,
   buildAnchorsFile,
   buildFootageFrameArgs,
   checkTake,
@@ -158,6 +159,10 @@ describe('logs', () => {
     expect(parseSignalRequest('/set/crew-add')).toEqual({ kind: 'set', name: 'crew-add' });
     expect(parseSignalRequest('/signal/crew-add?x=1')).toEqual({ kind: 'signal', name: 'crew-add' });
     expect(parseSignalRequest('/signal/../etc')).toEqual({ kind: 'unknown' });
+    expect(parseSignalRequest('/value/anchor-queue-row-avatar-y')).toEqual({
+      kind: 'value',
+      name: 'anchor-queue-row-avatar-y',
+    });
     expect(parseSignalRequest('/drop/all')).toEqual({ kind: 'unknown' });
   });
 
@@ -245,6 +250,22 @@ describe('buildAnchorsFile', () => {
     expect(
       anchorArrivalsFromChunk(' LOG  [showcase-anchor] {"name":"nope","x":1,"y":1,"width":1,"height":1}', 5),
     ).toEqual([]);
+  });
+});
+
+describe('anchorTapValues', () => {
+  it('publishes the anchor centre as whole screen percentages, clamped on screen', () => {
+    const screen = { width: 440, height: 956 };
+    expect(anchorTapValues({ name: 'queue-row-avatar', x: 380, y: 680, width: 24, height: 24 }, screen)).toEqual({
+      'anchor-queue-row-avatar-x': '89',
+      'anchor-queue-row-avatar-y': '72',
+      'anchor-queue-row-avatar-cy': '692',
+    });
+    expect(anchorTapValues({ name: 'play-next', x: -50, y: 2000, width: 10, height: 10 }, screen)).toEqual({
+      'anchor-play-next-x': '1',
+      'anchor-play-next-y': '99',
+      'anchor-play-next-cy': '2005',
+    });
   });
 });
 

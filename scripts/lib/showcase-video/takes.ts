@@ -219,7 +219,9 @@ export const SHOWCASE_TAKES: readonly ShowcaseTake[] = [
   take({
     id: 'wall',
     summary: 'Climbs tab: tap the board button; the sheet shows what is on the wall now and what was lit before.',
-    primeLinks: ['home', 'climbs'],
+    // screenshotBoardIndex=0 is a no-op switch that makes the app log which wall
+    // slot 0 resolved to, for the wall check.
+    primeLinks: ['home', 'climbs?screenshotBoardIndex=0'],
     flow: 'wall.yaml',
     trimSeconds: 6,
     board: { slot: 0, kind: 'kilter' },

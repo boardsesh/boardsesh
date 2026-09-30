@@ -278,14 +278,17 @@ export function resolveTrimSeconds(
  *   GET /mark/<name>    records when a flow reached a step (the recorder reads it back)
  *   GET /set/<name>     raises a signal another device's flow is waiting on
  *   GET /signal/<name>  "go" once raised, "wait" before
+ *   GET /value/<name>   a value the recorder published, "" before (see anchorTapValues)
  * Names are lowercase words and dashes, so a URL can never smuggle anything else.
  */
-export type SignalRequest = Readonly<{ kind: 'mark' | 'set' | 'signal'; name: string }> | Readonly<{ kind: 'unknown' }>;
+export type SignalRequest =
+  | Readonly<{ kind: 'mark' | 'set' | 'signal' | 'value'; name: string }>
+  | Readonly<{ kind: 'unknown' }>;
 
 export function parseSignalRequest(url: string): SignalRequest {
-  const match = /^\/(mark|set|signal)\/([a-z0-9-]{1,64})\/?$/.exec(url.split('?')[0]);
+  const match = /^\/(mark|set|signal|value)\/([a-z0-9-]{1,64})\/?$/.exec(url.split('?')[0]);
   if (!match) return { kind: 'unknown' };
-  return { kind: match[1] as 'mark' | 'set' | 'signal', name: match[2] };
+  return { kind: match[1] as 'mark' | 'set' | 'signal' | 'value', name: match[2] };
 }
 
 /** How many times the app has reached home in this Metro log. */
@@ -353,6 +356,29 @@ export function buildAnchorsFile(
     anchors[staticAnchor.name] = [{ t: Math.max(0, Math.round(rawT * 1000) / 1000), ...staticAnchor.rect }];
   }
   return { takeId: options.takeId, screen: options.screen, anchors };
+}
+
+/**
+ * Where an anchor sits, as the whole-number screen percentages a Maestro
+ * `point:` takes, published on the signal server as `anchor-<name>-x` / `-y`.
+ * A flow reads them to tap something whose place depends on data: the crew
+ * take long-presses the queue row the second phone just added, and that row
+ * sits lower when the queue has history.
+ */
+export function anchorTapValues(
+  line: ShowcaseAnchorLogLine,
+  screen: Readonly<{ width: number; height: number }>,
+): Record<string, string> {
+  const x = Math.round(((line.x + line.width / 2) / screen.width) * 100);
+  const y = Math.round(((line.y + line.height / 2) / screen.height) * 100);
+  const clamp = (percent: number): string => String(Math.min(99, Math.max(1, percent)));
+  return {
+    [`anchor-${line.name}-x`]: clamp(x),
+    [`anchor-${line.name}-y`]: clamp(y),
+    // The raw centre in points, for an anchor measured inside a sheet's own
+    // window (its y is relative to the sheet, so the flow adds the sheet's top).
+    [`anchor-${line.name}-cy`]: String(Math.round(line.y + line.height / 2)),
+  };
 }
 
 /**

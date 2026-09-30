@@ -68,6 +68,7 @@ import {
   SHOWCASE_DEFAULT_BOARDS,
   SHOWCASE_DEVICES,
   anchorArrivalsFromChunk,
+  anchorTapValues,
   buildAnchorsFile,
   buildFootageFrameArgs,
   checkTake,
@@ -276,6 +277,7 @@ class LogWindow {
 type SignalServer = Readonly<{
   url: string;
   marks: Map<string, number>;
+  values: Map<string, string>;
   raise(name: string): void;
   reset(): void;
   close(): Promise<void>;
@@ -283,6 +285,7 @@ type SignalServer = Readonly<{
 
 async function startSignalServer(): Promise<SignalServer> {
   const marks = new Map<string, number>();
+  const values = new Map<string, string>();
   const raised = new Set<string>();
   const server: Server = createServer((request, response) => {
     const parsed = parseSignalRequest(request.url ?? '');
@@ -294,6 +297,10 @@ async function startSignalServer(): Promise<SignalServer> {
     }
     if (parsed.kind === 'mark') marks.set(parsed.name, Date.now());
     if (parsed.kind === 'set') raised.add(parsed.name);
+    if (parsed.kind === 'value') {
+      response.end(values.get(parsed.name) ?? '');
+      return;
+    }
     response.end(parsed.kind === 'signal' ? (raised.has(parsed.name) ? 'go' : 'wait') : 'ok');
   });
   server.listen(0, '127.0.0.1');
@@ -302,9 +309,11 @@ async function startSignalServer(): Promise<SignalServer> {
   return {
     url: `http://127.0.0.1:${port}`,
     marks,
+    values,
     raise: (name) => raised.add(name),
     reset: () => {
       marks.clear();
+      values.clear();
       raised.clear();
     },
     close: () => new Promise((resolvePromise) => server.close(() => resolvePromise())),
@@ -917,7 +926,13 @@ async function recordTake(context: RunContext, take: ShowcaseTake): Promise<Take
   const arrivals: AnchorArrival[] = [...anchorArrivalsFromChunk(window.text, 0)];
   const recording = startRecording(primary.device.udid, rawFile);
   const poll = setInterval(() => {
-    arrivals.push(...anchorArrivalsFromChunk(window.pull(), Date.now()));
+    const fresh = anchorArrivalsFromChunk(window.pull(), Date.now());
+    arrivals.push(...fresh);
+    for (const arrival of fresh) {
+      for (const [name, value] of Object.entries(anchorTapValues(arrival.line, SHOWCASE_DEVICES.primary.screen))) {
+        signal.values.set(name, value);
+      }
+    }
   }, 100);
   let recordStartMs = 0;
   let stoppedAtMs = 0;

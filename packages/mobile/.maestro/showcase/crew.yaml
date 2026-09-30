@@ -28,7 +28,7 @@ name: showcase take - a friend adds a climb
 #   50%,47% -> 50%,95%  drag the invite sheet down to close it
 #   40%,88%             the now-playing bar above the tab bar -> play view
 #   91%,90%             the queue button, bottom right of the play view
-#   50%,60%             the first row after the playing climb in the queue sheet
+#   50%,<y>%            the second phone's new row, y from the recorder (see below)
 #   50%,7%              the backdrop above the reaction menu
 
 - evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/flow-start')}
@@ -60,9 +60,15 @@ name: showcase take - a friend adds a climb
     timeout: 5000
     optional: true
 
-# Long press the new row: the reaction menu, with "Play next".
+# Long press the new row: the reaction menu, with "Play next". Where the row
+# lands depends on how much history the queue shows above it (60% with none,
+# 73% under one history row), so this reads the row's `queue-row-avatar`
+# anchor, which the recorder publishes as `anchor-queue-row-avatar-cy` (centre,
+# points). The anchor is measured inside the queue sheet's own window, whose
+# top sits 322 pt down the 956 pt screen at this detent, hence the offset.
+- evalScript: ${output.rowY = Math.round((Number(http.get(SHOWCASE_SIGNAL_URL + '/value/anchor-queue-row-avatar-cy').body.trim() || '252') + 322) / 956 * 100)}
 - longPressOn:
-    point: '50%,60%'
+    point: '50%,${output.rowY}%'
 - extendedWaitUntil:
     visible: 'zzz-showcase-pause'
     timeout: 2000
