@@ -548,6 +548,8 @@ export function SprayHoldEditorScreen({
 
     setErrorText(null);
     setTool('edit');
+    // `prepareCommit` already applied ACCEPT_DEFAULTS to build the plan; this
+    // brings React state to the same place. Idempotent, so a repeat is harmless.
     dispatch({ type: 'ACCEPT_DEFAULTS' });
     if (!planHasWork(plan)) {
       // A resumed draft with nothing changed: every hold is already on it.
