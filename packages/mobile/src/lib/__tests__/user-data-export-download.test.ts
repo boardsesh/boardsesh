@@ -414,6 +414,24 @@ describe('native export download and sharing', () => {
     changeAppState('active');
     expect(mocks.files.size).toBe(0);
   });
+  it('preserves a download failure and reports failed cleanup without private details', async () => {
+    mocks.download.mockImplementation(async (destination) => {
+      writeDownloadedFile(destination, 12);
+      throw new Error('Download failed: https://private.test/history.json?signature=private-secret');
+    });
+    mocks.deleteFailures.set(`${CACHE_DIRECTORY}/operation-1`, 1);
+    await expect(nativeDownloads.openUserDataExportDownload(exportRequest())).rejects.toMatchObject({
+      reason: 'download_failed',
+    });
+    expect(mocks.reportError).toHaveBeenCalledOnce();
+    const reported: unknown = mocks.reportError.mock.calls[0][0];
+    expect(reported).toMatchObject({ reason: 'cleanup_failed' });
+    expect(String(reported)).not.toContain('private-secret');
+    expect(reported).not.toHaveProperty('cause');
+    expect(mocks.files.size).toBe(1);
+    changeAppState('active');
+    expect(mocks.files.size).toBe(0);
+  });
 });
 
 describe('Android receiver file lifetime', () => {

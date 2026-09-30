@@ -77,7 +77,7 @@ function subscribeLifecycle(): void {
   lifecycleSubscribed = true;
   subscribeAuthCredentialGenerationChanges((generation) => {
     for (const operation of operations) {
-      if (operation.credentialGeneration === generation) continue;
+      if (operation.credentialGeneration >= generation) continue;
       operation.controller.abort();
       if (!removeOperation(operation)) reportCleanupFailure();
     }
@@ -146,6 +146,8 @@ export async function openUserDataExportDownload(request: UserDataExportDownload
     requireCurrentExport(request);
     if (!(await sharing.isAvailableAsync())) throw new UserDataExportActionError('sharing_unavailable');
   } catch {
+    // Account changes take precedence over unavailable native modules. Recheck
+    // after either await so cancellation remains silent in the caller.
     requireCurrentExport(request);
     throw new UserDataExportActionError('sharing_unavailable');
   }
@@ -220,8 +222,11 @@ export async function openUserDataExportDownload(request: UserDataExportDownload
       // Android's chooser can resolve before the receiver has opened its URI.
       // Keep the file while away, plus a foreground grace period on return.
       scheduleAndroidCleanup(operation);
-    } else if (!removeOperation(operation) && failure === null) {
-      failure = new UserDataExportActionError('cleanup_failed');
+    } else if (!removeOperation(operation)) {
+      // Preserve the original action failure while reporting the cleanup failure
+      // separately. The owned directory stays registered for foreground retry.
+      if (failure === null) failure = new UserDataExportActionError('cleanup_failed');
+      else reportCleanupFailure();
     }
   }
   if (failure) throw failure;

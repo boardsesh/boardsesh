@@ -169,6 +169,9 @@ function AccountUserDataExportScreen({ userId }: { userId: string }) {
           case 'offline':
             setActionError('offline');
             return;
+          case 'browser_failed':
+            setActionError('download');
+            return;
           case 'download_failed':
             setActionError('native_download');
             return;
