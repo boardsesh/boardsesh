@@ -9,9 +9,9 @@ name: showcase take - a friend adds a climb
 # so the reaction menu shows "Play next". Callouts on this take: invite-qr,
 # queue-row-avatar, play-next.
 #
-# Before recording, the recorder has started a hidden session (crew-private.yaml,
+# Before recording, the recorder has started a hidden session (session-private.yaml,
 # crew-start.yaml), left the invite sheet open, and sent the second phone into
-# the session. After recording it ends the session (crew-end.yaml), also on an
+# the session. After recording it ends the session (session-end.yaml), also on an
 # abort.
 #
 # The two phones meet through the recorder's signal server: this flow raises

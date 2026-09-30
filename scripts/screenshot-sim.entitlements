@@ -13,10 +13,17 @@
 
     These are literal values (no profile-dependent prefix). The simulator doesn't
     enforce the team-id prefix on keychain access groups, so this is enough for
-    SecureStore to work. Only the keychain + app-group keys are needed for the
-    screenshot flow; push/associated-domains/healthkit aren't exercised on the sim.
+    SecureStore to work. associated-domains/healthkit aren't exercised on the sim.
+
+    aps-environment IS needed: the Live Activity is requested with
+    `pushType: .token` (LiveActivityManager.swift), and ActivityKit refuses that
+    request outright ("ActivityInput error 0", logged as LA_START_FAILED) when the
+    app has no push entitlement. The homepage showcase video films that Live
+    Activity on the simulator's lock screen.
   -->
   <dict>
+    <key>aps-environment</key>
+    <string>development</string>
     <key>com.apple.security.application-groups</key>
     <array>
       <string>group.com.boardsesh.app</string>
@@ -24,6 +31,16 @@
     <key>keychain-access-groups</key>
     <array>
       <string>group.com.boardsesh.app</string>
+      <!--
+        The team-prefixed group the native Live Activity code actually uses:
+        SharedKeychain.swift reads it from Info.plist's BoardseshKeychainAccessGroup
+        ($(AppIdentifierPrefix)group.com.boardsesh.app, which DOES expand in a
+        sim build because the project sets DEVELOPMENT_TEAM). Without it every
+        SharedKeychain write fails, so the Live Activity's push token and the
+        auth token never reach the widget, and its Next/Prev buttons are
+        "rejected by server" before any request is sent.
+      -->
+      <string>9L3HKPZBH3.group.com.boardsesh.app</string>
     </array>
   </dict>
 </plist>

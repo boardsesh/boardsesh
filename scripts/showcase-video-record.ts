@@ -73,6 +73,7 @@ import {
   checkTake,
   countHomeReady,
   differingPixelRatio,
+  findBoardHandoffProblem,
   findBoardSlotProblem,
   isBlankFrame,
   isRecordingStartedLine,
@@ -90,7 +91,9 @@ import {
   type ShowcaseRecordArgs,
 } from './lib/showcase-video/record';
 import {
+  SHOWCASE_BOARD_CONFIG_LINKS,
   SHOWCASE_TAKES,
+  isShowcaseFlow,
   assertShowcaseTakesComplete,
   showcaseFlowPath,
   type ShowcaseTake,
@@ -577,6 +580,9 @@ async function preparePhone(
   console.log(`${LOG} ${role}: ${device.name} (${device.udid})`);
   bootDevice(device);
   applyCleanStatusBar(device.udid);
+  // Dark system appearance: the lock-screen take films the home screen behind
+  // the Dynamic Island, and the dark wallpaper keeps it from reading as a white flash.
+  simctl(['ui', device.udid, 'appearance', 'dark']);
   onCleanup(`${role} simulator`, () => {
     clearStatusBar(device.udid);
     simctl(['shutdown', device.udid]);
@@ -702,7 +708,7 @@ async function processTake(
     rawFile: string;
     recordStartMs: number;
     stoppedAtMs: number;
-    flowStartMs: number | null;
+    marks: ReadonlyMap<string, number>;
     arrivals: readonly AnchorArrival[];
     logText: string;
     extraProblems: readonly string[];
@@ -711,7 +717,7 @@ async function processTake(
   const { take, args } = options;
   const trimSeconds = resolveTrimSeconds({
     recordStartMs: options.recordStartMs,
-    flowStartMs: options.flowStartMs,
+    flowStartMs: options.marks.get(FLOW_START_MARK) ?? null,
     fallbackSeconds: take.trimSeconds,
   });
   const durationSeconds = Math.floor(((options.stoppedAtMs - options.recordStartMs) / 1000 - trimSeconds) * 30) / 30;
@@ -731,15 +737,10 @@ async function processTake(
   // Raw takes run 5-50 MB each; keep them only on request (the frames are the product).
   if (!args.keepRaw) rmSync(options.rawFile, { force: true });
   if (ffmpeg.status !== 0) {
-    return {
-      takeId: take.id,
-      problems: [
-        ...options.extraProblems,
-        `[${take.id}] ffmpeg could not extract frames from ${options.rawFile}: ${ffmpeg.stderr.trim()}`,
-      ],
-      frames: 0,
-      seconds: 0,
-    };
+    return failed(take, [
+      ...options.extraProblems,
+      `[${take.id}] ffmpeg could not extract frames from ${options.rawFile}: ${ffmpeg.stderr.trim()}`,
+    ]);
   }
   const frames = readdirSync(footageDir).filter((file) => file.endsWith('.jpg')).length;
   const seconds = frames / 30;
@@ -747,6 +748,10 @@ async function processTake(
   const firstFrameBlank = frames > 0 ? isBlankFrame(await frameStdevs(firstFrame)) : true;
   const referenceDiffRatio = frames > 0 ? await referenceDiff(take.id, firstFrame) : null;
 
+  const staticAnchors = take.staticAnchors.flatMap((staticAnchor) => {
+    const markMs = options.marks.get(staticAnchor.fromMark);
+    return markMs === undefined ? [] : [{ ...staticAnchor, markMs }];
+  });
   const anchors: ShowcaseAnchorsFile = buildAnchorsFile({
     takeId: take.id,
     arrivals: options.arrivals,
@@ -754,21 +759,30 @@ async function processTake(
     trimSeconds,
     durationSeconds: seconds,
     screen: SHOWCASE_DEVICES.primary.screen,
+    staticAnchors,
   });
   mkdirSync(SHOWCASE_ANCHORS_DIR, { recursive: true });
   writeFileSync(resolve(SHOWCASE_ANCHORS_DIR, `${take.id}.json`), `${JSON.stringify(anchors, null, 2)}\n`);
+
+  let boardProblem: string | null = null;
+  if (take.board?.slot !== undefined && take.board.slot !== null) {
+    boardProblem = findBoardSlotProblem(options.logText, take.board.slot, take.board.kind);
+  } else if (take.board) {
+    const link = SHOWCASE_BOARD_CONFIG_LINKS[take.board.kind] ?? take.board.kind;
+    boardProblem = findBoardHandoffProblem(options.logText, link);
+  }
 
   const problems = [
     ...options.extraProblems,
     ...checkTake({
       takeId: take.id,
-      expectedAnchors: take.expectedAnchors,
+      expectedAnchors: [...take.expectedAnchors, ...take.staticAnchors.map((staticAnchor) => staticAnchor.name)],
       anchors,
       footageSeconds: seconds,
       minSeconds: take.minSeconds,
       firstFrameBlank,
       referenceDiffRatio,
-      boardProblem: take.board ? findBoardSlotProblem(options.logText, take.board.slot, take.board.kind) : null,
+      boardProblem,
       skipAnchorCheck: args.skipAnchorCheck,
     }),
   ];
@@ -778,6 +792,13 @@ async function processTake(
   );
   return { takeId: take.id, problems, frames, seconds };
 }
+
+const failed = (take: ShowcaseTake, problems: string[]): TakeResult => ({
+  takeId: take.id,
+  problems,
+  frames: 0,
+  seconds: 0,
+});
 
 // ---------------------------------------------------------------------------
 // Takes
@@ -789,27 +810,49 @@ type RunContext = {
   signal: SignalServer;
 };
 
+/** The flow that switches "Show this session live" off before a session take starts one. */
+const SESSION_PRIVATE_FLOW = 'session-private.yaml';
+/** The flows that end a live session (the crew teardown). */
+const SESSION_END_FLOWS = ['session-end.yaml'] as const;
+
+/** Whether a take left a live session running on the account that the teardown must end. */
+let sessionOpen = false;
+let sessionCleanupRegistered = false;
+
+function noteSessionStarted(context: RunContext, logText: string): void {
+  if (!sessionStarted(logText) || sessionOpen) return;
+  sessionOpen = true;
+  if (!sessionCleanupRegistered) {
+    sessionCleanupRegistered = true;
+    onCleanup('end the live session', () => endSession(context, 'teardown'));
+  }
+}
+
+async function runFlow(context: RunContext, flow: string, label: string): Promise<number> {
+  return runMaestro({
+    udid: context.primary.device.udid,
+    flowFile: showcaseFlowPath(flow),
+    label,
+    signalUrl: context.signal.url,
+  });
+}
+
 async function recordTake(context: RunContext, take: ShowcaseTake): Promise<TakeResult> {
   const { primary, signal } = context;
   console.log(`\n${LOG} === ${take.id}: ${take.summary}`);
   signal.reset();
   let window = await relaunch(primary);
-  const leftover = take.teardownFlows.length > 0 ? restoredSessionId(window.text) : null;
+  const leftover = take.privateSession ? restoredSessionId(window.text) : null;
   if (leftover) {
     // An earlier run died before its teardown; end that session first, or the
     // Record tab opens in-session and the setup flows tap the wrong things.
     console.warn(`${LOG} [${take.id}] ending session ${leftover} left over from an earlier run...`);
-    crewSessionOpen = true;
-    await runTeardownFlows(context, take);
-    if (crewSessionOpen) {
-      return {
-        takeId: take.id,
-        problems: [
-          `[${take.id}] a session left over from an earlier run (${leftover}) would not end; end it in the app`,
-        ],
-        frames: 0,
-        seconds: 0,
-      };
+    sessionOpen = true;
+    await endSession(context, take.id);
+    if (sessionOpen) {
+      return failed(take, [
+        `[${take.id}] a session left over from an earlier run (${leftover}) would not end; run --end-session ${leftover}`,
+      ]);
     }
     window = await relaunch(primary);
   }
@@ -819,20 +862,26 @@ async function recordTake(context: RunContext, take: ShowcaseTake): Promise<Take
     label: `${take.id}-prime`,
     signalUrl: signal.url,
   });
-  if (primeStatus !== 0) {
-    return {
-      takeId: take.id,
-      problems: [`[${take.id}] could not open its deep links (Maestro exit ${primeStatus})`],
-      frames: 0,
-      seconds: 0,
-    };
+  if (primeStatus !== 0)
+    return failed(take, [`[${take.id}] could not open its deep links (Maestro exit ${primeStatus})`]);
+
+  if (take.privateSession) {
+    await runFlow(context, SESSION_PRIVATE_FLOW, `${take.id}-private`);
+    await sleep(1000);
+    window.pull();
+    if (!sessionVisibilityIsOff(window.text)) {
+      return failed(take, [
+        `[${take.id}] "Show this session live" was not switched off, so no session was started. ` +
+          `Check the switch's point in ${SESSION_PRIVATE_FLOW}, and that no session is running on the account.`,
+      ]);
+    }
   }
 
   let secondaryRun: Promise<number> | null = null;
   let secondaryChild: ChildProcess | null = null;
   if (take.secondary) {
     const prepared = await prepareCrew(context, take);
-    if (typeof prepared === 'string') return { takeId: take.id, problems: [prepared], frames: 0, seconds: 0 };
+    if (typeof prepared === 'string') return failed(take, [prepared]);
     secondaryRun = runMaestro({
       udid: prepared.udid,
       flowFile: showcaseFlowPath(take.secondary.flow),
@@ -845,12 +894,18 @@ async function recordTake(context: RunContext, take: ShowcaseTake): Promise<Take
     const readyBy = Date.now() + 60_000;
     while (!signal.marks.has('secondary-ready') && Date.now() < readyBy) await sleep(250);
     if (!signal.marks.has('secondary-ready')) {
-      return {
-        takeId: take.id,
-        problems: [`[${take.id}] the second phone's flow never started (no secondary-ready mark within 60s)`],
-        frames: 0,
-        seconds: 0,
-      };
+      return failed(take, [`[${take.id}] the second phone's flow never started (no secondary-ready mark within 60s)`]);
+    }
+  } else {
+    for (const flow of take.setupFlows) {
+      if (!isShowcaseFlow(flow)) {
+        await relaunch(primary);
+        continue;
+      }
+      const status = await runFlow(context, flow, `${take.id}-setup`);
+      window.pull();
+      noteSessionStarted(context, window.text);
+      if (status !== 0) return failed(take, [`[${take.id}] setup flow ${flow} failed (Maestro exit ${status})`]);
     }
   }
 
@@ -869,12 +924,7 @@ async function recordTake(context: RunContext, take: ShowcaseTake): Promise<Take
   const extraProblems: string[] = [];
   try {
     recordStartMs = await recording.startedAt;
-    const flowStatus = await runMaestro({
-      udid: primary.device.udid,
-      flowFile: showcaseFlowPath(take.flow),
-      label: take.id,
-      signalUrl: signal.url,
-    });
+    const flowStatus = await runFlow(context, take.flow, take.id);
     if (flowStatus !== 0) {
       extraProblems.push(
         `[${take.id}] its flow ${take.flow} failed (Maestro exit ${flowStatus}); see ${relative(ROOT_DIR, LOG_DIR)}/maestro`,
@@ -896,7 +946,10 @@ async function recordTake(context: RunContext, take: ShowcaseTake): Promise<Take
     clearInterval(poll);
     arrivals.push(...anchorArrivalsFromChunk(window.pull(), Date.now()));
   }
-  if (take.teardownFlows.length > 0) await runTeardownFlows(context, take);
+  // The workouts take starts its session on camera.
+  noteSessionStarted(context, window.text);
+  const marks = new Map(signal.marks);
+  if (sessionOpen) await endSession(context, take.id);
 
   return processTake({
     take,
@@ -904,55 +957,44 @@ async function recordTake(context: RunContext, take: ShowcaseTake): Promise<Take
     rawFile,
     recordStartMs,
     stoppedAtMs,
-    flowStartMs: signal.marks.get(FLOW_START_MARK) ?? null,
+    marks,
     arrivals,
     logText: window.text,
     extraProblems,
   });
 }
 
-let crewSessionOpen = false;
-
-async function runTeardownFlows(context: RunContext, take: ShowcaseTake): Promise<void> {
-  if (!crewSessionOpen) return;
-  // Relaunch first: a sheet left open by an aborted take (the invite sheet,
-  // the queue) would swallow the Stop tap. The app restores the session on
-  // launch, so the Record tab comes back in-session.
+/** End the live session a take started. Relaunches first so no open sheet swallows the Stop tap. */
+async function endSession(context: RunContext, label: string): Promise<void> {
+  if (!sessionOpen) return;
+  // The app restores the session on launch, so the Record tab comes back in-session.
   await relaunch(context.primary);
   const window = new LogWindow(context.primary.metroLog);
-  for (const flow of take.teardownFlows) {
-    await runMaestro({
-      udid: context.primary.device.udid,
-      flowFile: showcaseFlowPath(flow),
-      label: `${take.id}-teardown`,
-      signalUrl: context.signal.url,
-    });
-  }
+  for (const flow of SESSION_END_FLOWS) await runFlow(context, flow, `${label}-end-session`);
   const endedBy = Date.now() + 10_000;
   while (!window.text.includes('[analytics] Session Ended') && Date.now() < endedBy) {
     window.pull();
     await sleep(500);
   }
   if (window.text.includes('[analytics] Session Ended')) {
-    crewSessionOpen = false;
-    console.log(`${LOG} [${take.id}] live session ended.`);
+    sessionOpen = false;
+    console.log(`${LOG} [${label}] live session ended.`);
   } else {
     console.warn(
-      `${LOG} [${take.id}] could not confirm the live session ended. End it by hand: ` +
-        `Session tab -> Stop -> End session on "${SHOWCASE_DEVICES.primary.name}".`,
+      `${LOG} [${label}] could not confirm the live session ended; teardown retries once on exit, ` +
+        `or run: vp run video:record -- --end-session <id>`,
     );
   }
 }
 
 /**
- * `--end-session <id>`: end a crew session a crashed run left running. A fresh
+ * `--end-session <id>`: end a session a crashed run left running. A fresh
  * install forgets which session the app was in, so rejoin it by link first (the
- * primary account created it, so the server lets it end it), then run the crew
- * teardown.
+ * primary account created it, so the server lets it end it), then end it.
  */
 async function endStraySession(context: RunContext, sessionId: string): Promise<void> {
-  const crew = SHOWCASE_TAKES.find((take) => take.teardownFlows.length > 0 && take.secondary);
-  if (!crew?.secondary) throw new Error('No take in the registry knows how to end a session');
+  const crew = SHOWCASE_TAKES.find((take) => take.secondary);
+  if (!crew?.secondary) throw new Error('No take in the registry knows how to join a session');
   const { primary, signal } = context;
   const window = await relaunch(primary);
   await runMaestro({
@@ -961,12 +1003,7 @@ async function endStraySession(context: RunContext, sessionId: string): Promise<
     label: 'end-session-link',
     signalUrl: signal.url,
   });
-  await runMaestro({
-    udid: primary.device.udid,
-    flowFile: showcaseFlowPath(crew.secondary.joinFlow),
-    label: 'end-session-join',
-    signalUrl: signal.url,
-  });
+  await runFlow(context, crew.secondary.joinFlow, 'end-session-join');
   const joinedBy = Date.now() + 15_000;
   while (!window.text.includes('[analytics] Session Joined') && Date.now() < joinedBy) {
     window.pull();
@@ -976,53 +1013,31 @@ async function endStraySession(context: RunContext, sessionId: string): Promise<
     const screenshot = resolve(LOG_DIR, 'end-session.png');
     simctl(['io', primary.device.udid, 'screenshot', screenshot]);
     throw new Error(
-      `Could not rejoin session ${sessionId}: already ended, or the Join point moved ` +
+      `Could not rejoin session ${sessionId}: already ended ("Session not found"), or the Join point moved ` +
         `(screen: ${relative(ROOT_DIR, screenshot)}).`,
     );
   }
-  crewSessionOpen = true;
-  await runTeardownFlows(context, crew);
+  sessionOpen = true;
+  await endSession(context, 'end-session');
 }
 
 /**
- * Crew setup: a hidden session on the primary, its id from the copied invite
- * link, and the second phone joined and on Climbs. Returns the secondary's
- * UDID, or the problem.
+ * Crew setup (after the private-session switch): start the session and copy
+ * its invite link on the primary, then join the second phone and park it on
+ * Climbs. Returns the secondary's UDID, or the problem.
  */
 async function prepareCrew(context: RunContext, take: ShowcaseTake): Promise<{ udid: string } | string> {
   const { primary, secondary, signal } = context;
   if (!secondary || !take.secondary) return `[${take.id}] needs the second phone, which was not set up`;
-  const [privateFlow, startFlow] = take.setupFlows;
+  const [startFlow] = take.setupFlows;
   const window = new LogWindow(primary.metroLog);
-  await runMaestro({
-    udid: primary.device.udid,
-    flowFile: showcaseFlowPath(privateFlow),
-    label: `${take.id}-private`,
-    signalUrl: signal.url,
-  });
-  await sleep(1000);
-  window.pull();
-  if (!sessionVisibilityIsOff(window.text)) {
-    return (
-      `[${take.id}] "Show this session live" was not switched off before Start, so no session was started. ` +
-      `Check the switch's point in ${privateFlow}, and that no session is already running on the account.`
-    );
-  }
   simctl(['pbcopy', primary.device.udid], process.env);
-  await runMaestro({
-    udid: primary.device.udid,
-    flowFile: showcaseFlowPath(startFlow),
-    label: `${take.id}-start`,
-    signalUrl: signal.url,
-  });
+  await runFlow(context, startFlow, `${take.id}-start`);
   window.pull();
-  if (sessionStarted(window.text)) {
-    crewSessionOpen = true;
-    onCleanup('end the crew live session', () => runTeardownFlows(context, take));
-  }
+  noteSessionStarted(context, window.text);
   const invite = simctl(['pbpaste', primary.device.udid]).stdout;
   const sessionId = parseSessionIdFromInviteUrl(invite);
-  if (!crewSessionOpen || !sessionId) {
+  if (!sessionOpen || !sessionId) {
     return (
       `[${take.id}] the session did not start or its invite link was not copied (clipboard: ` +
       `${invite.trim() ? 'no session link' : 'empty'}). Check the Start / Invite / Copy link points in ${startFlow}.`
@@ -1231,16 +1246,18 @@ function printPlan(args: ShowcaseRecordArgs, takes: readonly ShowcaseTake[], env
   );
   for (const take of takes) {
     const flows = [
+      ...(take.privateSession ? [SESSION_PRIVATE_FLOW] : []),
       ...take.setupFlows,
       take.flow,
       ...(take.secondary ? [take.secondary.joinFlow, take.secondary.flow] : []),
       ...take.teardownFlows,
     ];
-    const missing = flows.filter((flow) => !existsSync(showcaseFlowPath(flow)));
+    const missing = flows.filter((flow) => isShowcaseFlow(flow) && !existsSync(showcaseFlowPath(flow)));
     console.log(
       `${LOG} ${take.id.padEnd(17)} ${take.minSeconds.toFixed(1)}s min | links ${take.primeLinks.join(' -> ')} | ` +
         `flows ${flows.join(', ')}${missing.length ? ` | MISSING ${missing.join(', ')}` : ''}` +
-        `${take.expectedAnchors.length ? ` | anchors ${take.expectedAnchors.join(', ')}` : ''}`,
+        `${take.expectedAnchors.length ? ` | anchors ${take.expectedAnchors.join(', ')}` : ''}` +
+        `${take.staticAnchors.length ? ` | static ${take.staticAnchors.map((anchor) => anchor.name).join(', ')}` : ''}`,
     );
   }
   console.log(
@@ -1272,7 +1289,12 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     return 1;
   }
   const selected = args.only ?? SHOWCASE_TAKE_IDS;
-  const takes = SHOWCASE_TAKES.filter((take) => selected.includes(take.id));
+  const wanted = SHOWCASE_TAKES.filter((take) => selected.includes(take.id));
+  const takes = wanted.filter((take) => !take.unavailable[args.backend]);
+  for (const take of wanted) {
+    const reason = take.unavailable[args.backend];
+    if (reason) console.warn(`${LOG} skipping ${take.id} on ${args.backend}: ${reason}`);
+  }
   const envFileFound = loadEnvFile(args.envFile);
   printPlan(args, takes, envFileFound);
   if (args.dryRun) return 0;
@@ -1306,7 +1328,10 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
           `localhost:${PRIMARY_METRO_PORT}, so stop that one first.`,
       );
     }
-    const appPath = resolveAppPath(screenshotOptions(args, args.appPath ? resolve(args.appPath) : null));
+    // --app-path, else the cached dev-client, else build one (~30 min, once).
+    const cachedApp = resolve(MOBILE_DIR, '.app-cache', 'Boardsesh.app');
+    const requestedApp = args.appPath ? resolve(args.appPath) : existsSync(cachedApp) ? cachedApp : null;
+    const appPath = resolveAppPath(screenshotOptions(args, requestedApp));
     const primary = await preparePhone(
       'primary',
       appPath,
@@ -1341,7 +1366,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     if (args.endSession) {
       await endStraySession(context, args.endSession);
       await teardown();
-      return crewSessionOpen ? 1 : 0;
+      return sessionOpen ? 1 : 0;
     }
     for (const take of takes) {
       try {

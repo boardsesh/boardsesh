@@ -127,7 +127,7 @@ so this needs a live backend.
 
 1. Primary: switches "Show this session live" off (the recorder refuses to go
    on unless the app logged that), starts the session, opens the invite sheet
-   and taps Copy link (`crew-private.yaml`, `crew-start.yaml`).
+   and taps Copy link (`session-private.yaml`, `crew-start.yaml`).
 2. The recorder reads the link with `xcrun simctl pbpaste`, and sends the second
    phone to `com.boardsesh.app://join/<id>`, where `crew-join.yaml` taps Join.
 3. The second phone starts `crew-secondary.yaml`, which polls the recorder's
@@ -136,7 +136,7 @@ so this needs a live backend.
    the second phone swipes a climb into the queue and its row lands on the
    primary with the second account's avatar. A long press on it shows
    "Play next".
-5. `crew-end.yaml` ends the session, after a relaunch so no sheet swallows the
+5. `session-end.yaml` ends the session, after a relaunch so no sheet swallows the
    Stop tap. It also runs on a failure or Ctrl-C, and a crew take that finds a
    session restored on launch ends it before starting its own.
 
@@ -178,7 +178,7 @@ Each failure names the take. The fixes:
 | `wrong wall: slot N landed on a non-<kind> wall` | The name matched a different board type. | Put a wall of that type in that slot. |
 | `never logged anchor(s) ...` | The flow never reached the screen, or the bundle lacks the anchor hooks. | Check the flow's coordinates against a screenshot; `--skip-anchor-check` only while the hooks are missing. |
 | `its flow ... failed (Maestro exit N)` | A Maestro step failed. | Read `work/logs/maestro/<run>/console.log`. |
-| `"Show this session live" was not switched off` | The switch tap missed, or a session was already running. | End any running session on the account; check the point in `crew-private.yaml`. |
+| `"Show this session live" was not switched off` | The switch tap missed, or a session was already running. | End any running session on the account; check the point in `session-private.yaml`. |
 | `could not confirm the live session ended` | The end tap missed or the backend refused. Teardown retries once on exit. | `vp run video:record -- --end-session <id>` with the id from `hidden session <id> started`. "Session not found" there means the backend already closed it. |
 | `never reached home` | Sign-in failed or the bundle did not load. | Read `work/logs/metro-<phone>.log`: a wrong password shows as `auto sign-in FAILED`. |
 | `Port 8081 is taken` | Another Metro is running. | Stop it; the dev-client only loads from 8081. |

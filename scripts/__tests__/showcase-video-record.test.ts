@@ -11,6 +11,7 @@ import {
   buildFootageFrameArgs,
   checkTake,
   countHomeReady,
+  findBoardHandoffProblem,
   differingPixelRatio,
   findBoardSlotProblem,
   isBlankFrame,
@@ -26,9 +27,12 @@ import {
   type TakeCheckInput,
 } from '../lib/showcase-video/record';
 import {
+  SHOWCASE_BOARD_CONFIG_LINKS,
+  SHOWCASE_BOARD_SLOTS,
   SHOWCASE_TAKES,
   assertShowcaseTakesComplete,
   expectedAnchorsFor,
+  isShowcaseFlow,
   showcaseFlowPath,
 } from '../lib/showcase-video/takes';
 import { requiredTakeSeconds } from '../lib/showcase-video/timeline';
@@ -221,6 +225,22 @@ describe('buildAnchorsFile', () => {
     });
   });
 
+  it('writes recorder-authored static anchors from their mark on', () => {
+    const file = buildAnchorsFile({
+      takeId: 'lock-screen',
+      arrivals: [],
+      recordStartMs: 1000,
+      trimSeconds: 5,
+      durationSeconds: 10,
+      screen,
+      staticAnchors: [
+        { name: 'lock-next', rect: { x: 1, y: 2, width: 3, height: 4 }, fromMark: 'island-expanded', markMs: 9500 },
+        { name: 'lock-mirror', rect: { x: 1, y: 2, width: 3, height: 4 }, fromMark: 'island-expanded', markMs: 99_000 },
+      ],
+    });
+    expect(file.anchors).toEqual({ 'lock-next': [{ t: 3.5, x: 1, y: 2, width: 3, height: 4 }] });
+  });
+
   it('ignores lines that are not anchors', () => {
     expect(
       anchorArrivalsFromChunk(' LOG  [showcase-anchor] {"name":"nope","x":1,"y":1,"width":1,"height":1}', 5),
@@ -244,6 +264,17 @@ describe('findBoardSlotProblem', () => {
     ].join('\n');
     expect(findBoardSlotProblem(miss, 2, 'moonboard')).toMatch(/matched no wall \(board roster: "HQ"/);
     expect(findBoardSlotProblem('', 0, 'kilter')).toMatch(/never resolved board slot 0/);
+  });
+});
+
+describe('findBoardHandoffProblem', () => {
+  it('passes a resolved board link and names a failed or missing one', () => {
+    const resolved =
+      ' INFO  [analytics] Board Route Handoff {"kind": "list", "source": "deep_link", "status": "resolved"}';
+    const missing = ' INFO  [analytics] Board Route Handoff {"kind": "list", "status": "not_found"}';
+    expect(findBoardHandoffProblem(resolved, 'soill/1/2/1/40/list')).toBeNull();
+    expect(findBoardHandoffProblem(`${resolved}\n${missing}`, 'soill/1/2/1/40/list')).toMatch(/did not resolve/);
+    expect(findBoardHandoffProblem('', 'soill/1/2/1/40/list')).toMatch(/never handled/);
   });
 });
 
@@ -320,6 +351,9 @@ describe('take registry', () => {
     for (const take of SHOWCASE_TAKES) expect(take.minSeconds).toBe(requiredTakeSeconds(take.id));
     expect(expectedAnchorsFor('light')).toEqual(['wall-pill', 'board-surface']);
     expect(expectedAnchorsFor('crew')).toEqual(['invite-qr', 'queue-row-avatar', 'play-next']);
+    // Recorder-authored island buttons are not app anchors.
+    expect(expectedAnchorsFor('lock-screen')).toEqual([]);
+    expect(expectedAnchorsFor('log')).toEqual(['profile-board-filter', 'activity-calendar']);
     // Three phones in one scene: nothing to call out on any one of them.
     expect(expectedAnchorsFor('boards-tension')).toEqual([]);
   });
@@ -327,26 +361,45 @@ describe('take registry', () => {
   it('points at flows that exist, each opening with the flow-start mark', () => {
     for (const take of SHOWCASE_TAKES) {
       const flows = [
+        ...(take.privateSession ? ['session-private.yaml'] : []),
         ...take.setupFlows,
         take.flow,
         ...take.teardownFlows,
         ...(take.secondary ? [take.secondary.joinFlow, take.secondary.flow] : []),
       ];
-      for (const flow of flows) expect(existsSync(showcaseFlowPath(flow)), flow).toBe(true);
+      for (const flow of flows.filter(isShowcaseFlow)) expect(existsSync(showcaseFlowPath(flow)), flow).toBe(true);
       expect(readFileSync(showcaseFlowPath(take.flow), 'utf8')).toContain("'/mark/flow-start'");
     }
   });
 
   it('keeps every flow percentage a whole number', () => {
     for (const take of SHOWCASE_TAKES) {
-      const flows = [take.flow, ...take.setupFlows, ...take.teardownFlows];
+      const flows = [take.flow, ...take.setupFlows, ...take.teardownFlows].filter(isShowcaseFlow);
       for (const flow of flows) {
         expect(readFileSync(showcaseFlowPath(flow), 'utf8'), flow).not.toMatch(/\d+\.\d+%/);
       }
     }
   });
 
-  it('has a default wall list per backend with one wall per board slot', () => {
-    for (const boards of Object.values(SHOWCASE_DEFAULT_BOARDS)) expect(boards.split('|')).toHaveLength(3);
+  it('names a wall for every board slot on prod, and marks the rest unavailable locally', () => {
+    expect(SHOWCASE_DEFAULT_BOARDS.prod.split('|')).toHaveLength(SHOWCASE_BOARD_SLOTS.length);
+    const localSlots = SHOWCASE_DEFAULT_BOARDS.local.split('|').length;
+    for (const take of SHOWCASE_TAKES) {
+      const slot = take.board?.slot;
+      if (typeof slot === 'number' && slot >= localSlots) expect(take.unavailable.local, take.id).toBeTruthy();
+    }
+  });
+
+  it('ends every session it starts, and reaches every board type', () => {
+    for (const take of SHOWCASE_TAKES) {
+      if (take.privateSession) expect(take.teardownFlows).toEqual(['session-end.yaml']);
+    }
+    const kinds = SHOWCASE_TAKES.filter((take) => take.id.startsWith('boards-')).map((take) => take.board?.kind);
+    expect(new Set(kinds).size).toBe(8);
+    for (const take of SHOWCASE_TAKES.filter((candidate) => candidate.board?.slot === null)) {
+      const kind = take.board?.kind;
+      expect(kind && SHOWCASE_BOARD_CONFIG_LINKS[kind], take.id).toBeTruthy();
+      expect(take.primeLinks).toContain(kind ? SHOWCASE_BOARD_CONFIG_LINKS[kind] : '');
+    }
   });
 });

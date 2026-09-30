@@ -1,0 +1,49 @@
+appId: com.boardsesh.app
+name: showcase take - the Live Activity in the Dynamic Island
+---
+# Take: lock-screen -> .boardsesh/showcase-video/work/footage/lock-screen/ (homepage showcase, scene "lock-screen")
+#
+# The id says lock screen; the take shows the Dynamic Island (Marco's call): the
+# simulator cannot be locked headlessly, and the island sells the same thing.
+#
+# Records: the play view with the climb on the wall, then the home screen with
+# the compact Live Activity in the island, a long press that expands it (climb,
+# "1 of 3", Prev / relight / Mirror / Next), and a tap on Next: the climb
+# changes without opening the app.
+#
+# The island's buttons live in SpringBoard, outside the app, so they cannot log
+# anchors. This flow raises the `island-expanded` mark instead, and the recorder
+# writes the rects in the take registry (lock-next, lock-relight, lock-mirror,
+# measured on a recorded frame of the expanded island) from that moment on.
+#
+# Coordinates (iPhone 16 Pro Max portrait):
+#   50%,3%   the Dynamic Island (long press expands it)
+#   73%,13%  Next, right end of the expanded island's control row
+
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/flow-start')}
+
+- extendedWaitUntil:
+    visible: 'zzz-showcase-pause'
+    timeout: 1000
+    optional: true
+
+- pressKey: home
+- extendedWaitUntil:
+    visible: 'zzz-showcase-pause'
+    timeout: 1500
+    optional: true
+
+- longPressOn:
+    point: '50%,3%'
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/island-expanded')}
+- extendedWaitUntil:
+    visible: 'zzz-showcase-pause'
+    timeout: 1500
+    optional: true
+
+- tapOn:
+    point: '73%,13%'
+- extendedWaitUntil:
+    visible: 'zzz-showcase-pause'
+    timeout: 3000
+    optional: true

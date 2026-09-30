@@ -7,12 +7,15 @@ import {
   SHOWCASE_TAKE_IDS,
   parseShowcaseAnchorLine,
   type ShowcaseAnchorLogLine,
-  type ShowcaseAnchorName,
   type ShowcaseAnchorSample,
   type ShowcaseAnchorsFile,
+  type ShowcaseCalloutName,
   type ShowcaseTakeId,
+  sortAnchorSamples,
 } from './contract';
-import type { ShowcaseBoardKind } from './takes';
+import type { ShowcaseBackend, ShowcaseBoardKind, ShowcaseStaticAnchor } from './takes';
+
+export type { ShowcaseBackend } from './takes';
 
 /**
  * The recorder's pure half: argument parsing, ffmpeg argument vectors, log
@@ -20,8 +23,6 @@ import type { ShowcaseBoardKind } from './takes';
  * `scripts/__tests__/showcase-video-record.test.ts`; the orchestrator
  * (`scripts/showcase-video-record.ts`) owns every process and file.
  */
-
-export type ShowcaseBackend = 'prod' | 'local';
 
 export type ShowcaseDevice = Readonly<{
   name: string;
@@ -39,8 +40,8 @@ export const SHOWCASE_DEVICES: Readonly<Record<'primary' | 'secondary', Showcase
 };
 
 /**
- * The walls the three board takes sit on, in slot order (kilter, tension,
- * moonboard). Each entry matches a board's name or layout name on the signed-in
+ * The walls the board takes sit on, in `SHOWCASE_BOARD_SLOTS` order (kilter,
+ * tension, moonboard, woods, decoy, grasshopper). Each entry matches a board's name or layout name on the signed-in
  * account (see packages/mobile/src/lib/screenshot-board-selection.ts). Prod is
  * the App Store account's walls (the Kilter is Marco's own board, the App Store
  * hero wall); local is the seeded dev DB's, plus the MoonBoard the recorder
@@ -48,7 +49,7 @@ export const SHOWCASE_DEVICES: Readonly<Record<'primary' | 'secondary', Showcase
  * the account's roster in the message.
  */
 export const SHOWCASE_DEFAULT_BOARDS: Readonly<Record<ShowcaseBackend, string>> = {
-  prod: "Marco's Board|High Point Climbing Orlando|MoonBoard 2016",
+  prod: "Marco's Board|High Point Climbing Orlando|MoonBoard 2016|Woods Original|Decoy Dungeon|Grasshopper",
   local: 'The Proj Wall|The Slab Lab|MoonBoard 2016',
 };
 
@@ -321,9 +322,11 @@ export function buildAnchorsFile(
     trimSeconds: number;
     durationSeconds: number;
     screen: Readonly<{ width: number; height: number }>;
+    /** Recorder-authored rects, each on screen from its mark onward (ms, same clock as arrivals). */
+    staticAnchors?: readonly (ShowcaseStaticAnchor & Readonly<{ markMs: number }>)[];
   }>,
 ): ShowcaseAnchorsFile {
-  const anchors: Partial<Record<ShowcaseAnchorName, ShowcaseAnchorSample[]>> = {};
+  const anchors: Partial<Record<ShowcaseCalloutName, ShowcaseAnchorSample[]>> = {};
   const ordered = [...options.arrivals].sort((left, right) => left.atMs - right.atMs);
   for (const name of SHOWCASE_ANCHOR_NAMES) {
     const own = ordered.filter((arrival) => arrival.line.name === name);
@@ -342,9 +345,29 @@ export function buildAnchorsFile(
       if (previous && sameRect(previous, sample)) continue;
       samples.push(sample);
     }
-    if (samples.length > 0) anchors[name] = samples;
+    if (samples.length > 0) anchors[name] = sortAnchorSamples(samples);
+  }
+  for (const staticAnchor of options.staticAnchors ?? []) {
+    const rawT = (staticAnchor.markMs - options.recordStartMs) / 1000 - options.trimSeconds;
+    if (rawT > options.durationSeconds) continue;
+    anchors[staticAnchor.name] = [{ t: Math.max(0, Math.round(rawT * 1000) / 1000), ...staticAnchor.rect }];
   }
   return { takeId: options.takeId, screen: options.screen, anchors };
+}
+
+/**
+ * A board config opened by deep link (`touchstone/1/1/1/40/list`) has no
+ * screenshot slot to check; its `Board Route Handoff` event says whether the
+ * app actually adopted it. `null` when the last handoff resolved.
+ */
+export function findBoardHandoffProblem(logText: string, link: string): string | null {
+  const handoffs = logText.split('\n').filter((line) => line.includes('Board Route Handoff'));
+  const last = handoffs[handoffs.length - 1];
+  if (!last) return `the app never handled the board link ${link}; check the link in SHOWCASE_BOARD_CONFIG_LINKS`;
+  if (!/"status":\s*"resolved"/.test(last)) {
+    return `the board link ${link} did not resolve (${last.slice(last.indexOf('{')).trim()}); the account or the config is wrong`;
+  }
+  return null;
 }
 
 /**
@@ -454,7 +477,7 @@ export const REFERENCE_MAX_DIFF_RATIO = 0.35;
 
 export type TakeCheckInput = Readonly<{
   takeId: ShowcaseTakeId;
-  expectedAnchors: readonly ShowcaseAnchorName[];
+  expectedAnchors: readonly ShowcaseCalloutName[];
   anchors: ShowcaseAnchorsFile;
   footageSeconds: number;
   minSeconds: number;
