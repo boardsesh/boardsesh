@@ -210,6 +210,17 @@
       "updateFailed": "No se pudo actualizar el estado",
       "emailCopied": "Correo copiado",
       "copyFailed": "No se pudo copiar"
+    },
+    "diagnostics": {
+      "title": "Diagnóstico privado",
+      "context": "Contexto de telemetría",
+      "copy": "Copiar diagnóstico",
+      "copied": "Diagnóstico copiado",
+      "sentryQuery": "Consulta de inicio en Sentry",
+      "previousSentryQuery": "Consulta del inicio anterior en Sentry",
+      "posthogQuery": "Filtro de identidad en PostHog",
+      "observeQuery": "Filtro de dispositivo en Observe",
+      "openSentry": "Buscar este inicio en Sentry"
     }
   },
   "retention": {

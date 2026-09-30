@@ -2914,3 +2914,25 @@ Keep all legacy objects and credentials during the retention period;
 see [the R2 reader acceptance PR](https://github.com/boardsesh/boardsesh/pull/5989) and issue #5912. An already
 published R2 update requires reverse copy and complete verification before an OTA
 storage rollback; changing only the endpoint is insufficient.
+## Diagnostic publication gate
+
+A self-hosted publish now exports once with source maps, validates each bundle's
+Debug ID against its map, and waits for Sentry map acceptance before acquiring
+the publication lease. It publishes the same exported bytes using the archived
+protocol uploader; the pinned eoas CLI has no skip-export option. Production,
+staging, and trusted previews share this gate. Existing schema compatibility,
+native fingerprint, signing, trust, and concurrency checks remain required.
+
+Failed uploads/publication retain private diagnostic artifacts for 30 days.
+`vp run mobile:ota-retry --
+packages/mobile/diagnostic-artifacts/ios/receipt.json` verifies the archived
+hashes and Debug IDs, retries acceptance, and publishes the archive without
+running Metro again. Keep receipts and artifacts private and untracked. A retry
+preserves its original branch, runtime, commit, and message. Do not rebuild an
+archive and assume its maps describe previously exported bytes.
+
+Native SDK/capture changes alter the native runtime and require store binaries.
+Older release backports retain the audited Sentry 7.11 uploader; new binaries
+use SDK 8.28. Neither path may publish when required artifacts are missing or
+uploads fail. Deploy the feedback GraphQL SDL before clients adding diagnostic
+fields; the nullable JSONB fields themselves require no database migration.

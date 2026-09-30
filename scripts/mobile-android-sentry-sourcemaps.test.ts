@@ -5,21 +5,8 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-// Guards issue #4101: Android release builds shipped with NO Sentry source
-// maps because SENTRY_DISABLE_AUTO_UPLOAD was hardcoded 'true' unconditionally
-// on the Gradle-embedded sentry.gradle upload task, with no fallback — every
-// Android JS error then merged into one unsymbolicated Sentry issue.
-//
-// The fix keeps the Gradle-embedded task disabled (re-enabling it can't be
-// verified via a feature-branch workflow_dispatch first — the Production
-// GitHub environment's deployment-branch policy only allows `main` — and a
-// build failure there would take down the whole Android release, not just
-// symbolication) and instead adds a decoupled, continue-on-error step that
-// uploads the same Gradle-generated JS bundle/sourcemap explicitly via
-// sentry-cli, so a Sentry-side failure can never block shipping the release.
-// This test fails the build if either regresses: the Gradle-embedded task
-// silently re-enabling without having been verified, or the decoupled upload
-// step disappearing / losing its non-blocking guarantee.
+// Native releases upload explicitly after packaging and fail closed when
+// exact bundle maps or owned native symbols cannot be processed.
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const WORKFLOW_PATH = resolve(REPO_ROOT, '.github/workflows/android-apk-rn.yml');
@@ -36,14 +23,12 @@ describe('Android RN release: Sentry source map upload (#4101)', () => {
     expect(workflow).toMatch(/echo "SENTRY_DISABLE_AUTO_UPLOAD=true" >> "\$GITHUB_ENV"/);
   });
 
-  it('adds a decoupled, continue-on-error Sentry source map upload step', () => {
+  it('requires the explicit source-map upload before releasing', () => {
     const workflow = readAndroidWorkflow();
     expect(workflow).toMatch(/- name: Upload Sentry source maps/);
     const uploadStepIndex = workflow.indexOf('- name: Upload Sentry source maps');
     const uploadStepBlock = workflow.slice(uploadStepIndex, uploadStepIndex + 2000);
-    // Must never block the release: it runs after the APK is already built and
-    // verified, and a Sentry-side failure must not fail the job.
-    expect(uploadStepBlock).toMatch(/continue-on-error:\s*true/);
+    expect(uploadStepBlock).not.toMatch(/continue-on-error:\s*true/);
     expect(uploadStepBlock).toMatch(/if:\s*env\.SENTRY_UPLOAD_ENABLED == 'true'/);
   });
 
@@ -51,18 +36,13 @@ describe('Android RN release: Sentry source map upload (#4101)', () => {
     const workflow = readAndroidWorkflow();
     expect(workflow).toMatch(/if \[ -n "\$SENTRY_AUTH_TOKEN" \]; then/);
     expect(workflow).toMatch(/echo "SENTRY_UPLOAD_ENABLED=true" >> "\$GITHUB_ENV"/);
-    expect(workflow).toMatch(/echo "SENTRY_UPLOAD_ENABLED=false" >> "\$GITHUB_ENV"/);
+    expect(workflow).toContain('SENTRY_AUTH_TOKEN is required for release diagnostics.');
     const occurrences = workflow.match(/SENTRY_AUTH_TOKEN:\s*\$\{\{\s*secrets\.SENTRY_AUTH_TOKEN\s*\}\}/g) ?? [];
-    // Once in the gate step, once in the source-map upload, once in the R8
-    // mapping upload. Pinned as an exact count so a fourth consumer of the token
-    // has to be a deliberate edit here rather than an unnoticed widening.
-    expect(occurrences.length).toBe(3);
+    // Configuration, APK maps, R8 mapping, AAB maps and native symbols.
+    expect(occurrences.length).toBe(5);
   });
 
-  // R8 obfuscates Java/Kotlin names, so without this upload every native Android
-  // frame in Sentry reads as `a.b.c`. Play is unaffected (AGP embeds the mapping
-  // in the AAB), which is why this step is allowed to fail the same way the
-  // source-map upload is.
+  // R8 mappings and JS maps must both be accepted before store publication.
   describe('R8 mapping upload', () => {
     it('uploads the mapping under the UUID the binary carries', () => {
       const workflow = readAndroidWorkflow();
@@ -85,11 +65,13 @@ describe('Android RN release: Sentry source map upload (#4101)', () => {
       expect(mint).toBeLessThan(prebuild);
     });
 
-    it('never blocks the release on a Sentry failure', () => {
+    it('blocks the release when the R8 mapping upload fails', () => {
       const workflow = readAndroidWorkflow();
-      const step = workflow.slice(workflow.indexOf('- name: Upload Sentry ProGuard mapping'));
+      const start = workflow.indexOf('- name: Upload Sentry ProGuard mapping');
+      const step = workflow.slice(start, workflow.indexOf('      - name:', start + 1));
 
-      expect(step).toMatch(/continue-on-error:\s*true/);
+      expect(step).not.toMatch(/continue-on-error:\s*true/);
+      expect(start).toBeLessThan(workflow.indexOf('id: play_upload'));
       expect(step).toMatch(/if:\s*env\.SENTRY_UPLOAD_ENABLED == 'true'/);
     });
 
@@ -111,16 +93,15 @@ describe('Android RN release: Sentry source map upload (#4101)', () => {
     expect(workflow).toMatch(/copy-debugid\.js/);
   });
 
-  it('uploads via sentry-cli with a release/dist convention matching runtime auto-detection', () => {
-    // src/lib/sentry.ts intentionally leaves release/dist unset so the native
-    // SDK auto-detects them from the installed build's applicationId/versionName
-    // /versionCode — the uploaded artifacts must be tagged with the exact same
-    // convention (sentry.gradle's own defaultReleaseName format) or events never
-    // resolve to these source maps.
+  it('uploads actual packaged bundles by matching Debug ID and waits strictly', () => {
     const workflow = readAndroidWorkflow();
-    expect(workflow).toMatch(/sentry-cli react-native gradle/);
-    expect(workflow).toMatch(/--release "com\.boardsesh\.app@\$\{BOARDSESH_MOBILE_VERSION\}\+\$\{VERSION_CODE\}"/);
-    expect(workflow).toMatch(/--dist "\$\{VERSION_CODE\}"/);
+    expect(workflow).toContain('unzip -p "$apk_path" assets/index.android.bundle');
+    expect(workflow).toContain('unzip -p "$aab_path" base/assets/index.android.bundle');
+    expect(workflow).toContain('cmp "$bundle_path" "$packaged_bundle"');
+    expect(workflow).toContain('mobile-upload-embedded-sourcemaps.ts');
+    const uploader = readFileSync(resolve(REPO_ROOT, 'scripts/mobile-upload-sourcemaps.ts'), 'utf8');
+    expect(uploader).toContain("'--wait'");
+    expect(uploader).toContain("'--strict'");
   });
 
   it('keeps runtime Sentry (EXPO_PUBLIC_SENTRY_DSN) enabled regardless of the upload gate', () => {

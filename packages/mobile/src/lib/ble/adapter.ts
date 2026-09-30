@@ -1,3 +1,5 @@
+import type { BleConnectionDiagnostics } from '../sentry';
+import type { DiagnosticAttributes } from '../mobile-diagnostics';
 import { type Device, type Characteristic, type BleError } from 'react-native-ble-plx';
 import {
   UART_SERVICE_UUID,
@@ -72,13 +74,39 @@ export class RNBleAdapter implements BluetoothAdapter {
   // Board-level demand for acknowledged writes (see BleAdapterOptions). Fixed
   // for the adapter's lifetime — the board it was built for doesn't change.
   private readonly preferWriteWithResponse: boolean;
+  private readonly onDiagnosticPhase?: BleAdapterOptions['onDiagnosticPhase'];
 
   constructor(
     private readonly devicePicker: DevicePickerFn,
     private readonly scanFamily: BoardScanFamily = 'aurora',
     options?: BleAdapterOptions,
   ) {
+    this.onDiagnosticPhase = options?.onDiagnosticPhase;
     this.preferWriteWithResponse = options?.preferWriteWithResponse ?? false;
+  }
+
+  private diagnosticPhase(phase: string, attributes?: DiagnosticAttributes): void {
+    try {
+      this.onDiagnosticPhase?.(phase, attributes);
+    } catch {
+      /* No transport side effects. */
+    }
+  }
+
+  async getConnectionDiagnostics(): Promise<BleConnectionDiagnostics | null> {
+    const characteristic = this.writeCharacteristic;
+    if (!this.connectedDevice || !characteristic) return null;
+    const usesWithoutResponse =
+      !this.preferWriteWithResponse &&
+      (this.scanFamily !== 'moonboard' || (characteristic.isWritableWithoutResponse ?? true));
+    return {
+      chosenWriteType: usesWithoutResponse ? 'withoutResponse' : 'withResponse',
+      supportsWriteWithoutResponse: characteristic.isWritableWithoutResponse,
+      supportsWriteWithResponse: characteristic.isWritableWithResponse,
+      negotiatedMtu: this.negotiatedMtu,
+      chunkSize:
+        this.scanFamily === 'moonboard' ? MAX_BLUETOOTH_MESSAGE_SIZE : effectiveChunkSizeForMtu(this.negotiatedMtu),
+    };
   }
 
   async isAvailable(): Promise<boolean> {
@@ -132,6 +160,7 @@ export class RNBleAdapter implements BluetoothAdapter {
 
     // The picker opens at the tap for every connect: in `searching` with a saved
     // board, straight into the list without one.
+    this.diagnosticPhase('picker-present');
     this.devicePicker(
       (onUpdate, onScanStopped, listeners) => {
         updateListener = onUpdate;
@@ -171,6 +200,7 @@ export class RNBleAdapter implements BluetoothAdapter {
       // actively in the foreground and merges ADV + SCAN_RSP before filtering, so
       // the native iOS path keeps its service filter on purpose.
       // High-power scan options (LowLatency on Android) — see scan-options.ts.
+      this.diagnosticPhase('scan-start');
       void bleManager.startDeviceScan(null, HIGH_POWER_BOARD_SCAN_OPTIONS, (scanError, scannedDevice) => {
         if (scanError) {
           void bleManager.stopDeviceScan();
@@ -243,6 +273,7 @@ export class RNBleAdapter implements BluetoothAdapter {
       }, SCAN_TIMEOUT_MS);
 
       selectedDeviceId = await selectionPromise;
+      this.diagnosticPhase('picker-selected', { devicesFound: devices.size });
     } finally {
       // A late advert after a cancel or a pick must not auto-select.
       autoSelecting = false;
@@ -263,6 +294,7 @@ export class RNBleAdapter implements BluetoothAdapter {
       }
     }
 
+    this.diagnosticPhase('native-connect');
     let connectionTimeoutId: ReturnType<typeof setTimeout> | null = null;
     const connected = await Promise.race([
       bleManager.connectToDevice(selectedDeviceId),
@@ -285,6 +317,7 @@ export class RNBleAdapter implements BluetoothAdapter {
     // fewer GATT ops we throw at it, the better.
     // `||` (not `??`) is deliberate: ble-plx types mtu as number, so the only
     // bad runtime values are falsy ones (0/NaN), which must also fall back.
+    this.diagnosticPhase('mtu-request');
     if (this.scanFamily === 'moonboard') {
       this.negotiatedMtu = DEFAULT_ATT_MTU;
     } else {
@@ -297,6 +330,7 @@ export class RNBleAdapter implements BluetoothAdapter {
       }
     }
 
+    this.diagnosticPhase('service-discovery', { mtu: this.negotiatedMtu });
     const deviceWithServices = await connected.discoverAllServicesAndCharacteristics();
 
     // Newer controllers expose the write characteristic on the Nordic UART
@@ -322,6 +356,7 @@ export class RNBleAdapter implements BluetoothAdapter {
 
     this.connectedDevice = deviceWithServices;
     this.writeCharacteristic = writeCharacteristic;
+    this.diagnosticPhase('transport-ready', { mtu: this.negotiatedMtu });
 
     this.disconnectSubscription = bleManager.onDeviceDisconnected(selectedDeviceId, (error, _device) => {
       this.connectedDevice = null;

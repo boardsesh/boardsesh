@@ -16,6 +16,7 @@ import {
   isPosthogFlagBagCurrent,
   subscribePosthogFlagAuthority,
 } from './posthog-flag-authority';
+import { getDiagnosticAnalyticsProperties } from './mobile-diagnostics';
 
 // `sendEvent: false` suppresses the SDK's `$feature_flag_called` capture. Verified
 // in @posthog/core 1.46.1 (shared by posthog-react-native and posthog-js-lite):
@@ -279,7 +280,9 @@ const analytics = createAnalytics(() => (isProductAnalyticsGranted() ? getClient
   onDebug: __DEV__ ? (name, properties) => console.info('[analytics]', name, properties ?? {}) : undefined,
 });
 
-export const { track, capture, setPersonProperties } = analytics;
+export const { capture, setPersonProperties } = analytics;
+export const track: typeof analytics.track = (name, properties, options) =>
+  analytics.track(name, { ...properties, ...getDiagnosticAnalyticsProperties() }, options);
 export const identify: typeof analytics.identify = (distinctId, properties) => {
   const forwarded = analytics.identify(distinctId, properties);
   if (forwarded) notifyAnalyticsIdentityChanged();

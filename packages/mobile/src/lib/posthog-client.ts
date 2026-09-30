@@ -26,6 +26,7 @@ import {
   setPosthogFlagAuthority,
   ownedPosthogFlagDetails,
 } from './posthog-flag-authority';
+import { getDiagnosticAnalyticsProperties, setDiagnosticIdentityReader } from './mobile-diagnostics';
 
 // Registers the User-Agent as a super property on every event: the static,
 // non-bot app constant on native, the real browser UA in the Expo browser app
@@ -235,6 +236,8 @@ export function buildPostHogOptions(postHogHost: string): PostHogOptions {
     // It does not mark anyone identified: an anonymous person made this way
     // still merges into an account on sign-in.
     personProfiles: 'always',
+    // These properties are attached only to a consent-authorized SDK client.
+    customAppProperties: (properties) => ({ ...properties, ...getDiagnosticAnalyticsProperties() }),
     // The app already emits explicit $screen events plus reviewed product
     // events. SDK lifecycle autocapture adds high-volume foreground/background
     // noise and does not help answer product or BLE reliability questions.
@@ -313,6 +316,12 @@ export async function initializePosthogClient(): Promise<void> {
   await applyNativeReplayPrivacy(granted, apiKey);
   if (!isAnalyticsGranted(getConsentSnapshot().record)) await persistence.setGranted(false);
   client = new ConsentPostHog(apiKey, { ...buildPostHogOptions(host), customStorage: persistence.storage });
+  // Account/session IDs belong only in explicitly submitted feedback while
+  // analytics consent is current, never in the independent Sentry launch sink.
+  setDiagnosticIdentityReader(() => ({
+    posthogDistinctId: isProductAnalyticsGranted() ? (client?.getDistinctId() ?? null) : null,
+    posthogSessionId: isProductAnalyticsGranted() ? (client?.getSessionId() || null) : null,
+  }));
   await client.ready();
   await applyPosthogConsent();
   registerAppSuperProperties(client);

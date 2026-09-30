@@ -61,6 +61,22 @@ export const ADMIN_APP_FEEDBACK = gql`
           sessionName
           url
           userAgent
+          diagnostics {
+            schemaVersion
+            reportId
+            launchId
+            previousLaunchId
+            nativeStartupId
+            lastUserOperationId
+            posthogDistinctId
+            posthogSessionId
+            easClientId
+            otaUpdateId
+            otaBranch
+            otaRuntimeVersion
+            previousLaunchCrashed
+            otaIsEmbedded
+          }
         }
         screenshotUrls
       }
@@ -107,6 +123,22 @@ export const UPDATE_APP_FEEDBACK_STATUS = gql`
         sessionName
         url
         userAgent
+        diagnostics {
+          schemaVersion
+          reportId
+          launchId
+          previousLaunchId
+          nativeStartupId
+          lastUserOperationId
+          posthogDistinctId
+          posthogSessionId
+          easClientId
+          otaUpdateId
+          otaBranch
+          otaRuntimeVersion
+          previousLaunchCrashed
+          otaIsEmbedded
+        }
       }
     }
   }

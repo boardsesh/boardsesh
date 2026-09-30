@@ -97,6 +97,17 @@
       "updateFailed": "Der Status ließ sich nicht ändern",
       "emailCopied": "E-Mail kopiert",
       "copyFailed": "Kopieren fehlgeschlagen"
+    },
+    "diagnostics": {
+      "title": "Private Diagnosedaten",
+      "context": "Telemetriekontext",
+      "copy": "Diagnosedaten kopieren",
+      "copied": "Diagnosedaten kopiert",
+      "sentryQuery": "Sentry-Startabfrage",
+      "previousSentryQuery": "Vorherige Sentry-Startabfrage",
+      "posthogQuery": "PostHog-Identitätsfilter",
+      "observeQuery": "Observe-Gerätefilter",
+      "openSentry": "Diesen Start in Sentry suchen"
     }
   },
   "retention": {

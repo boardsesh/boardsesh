@@ -1,3 +1,4 @@
+import type { FeedbackDiagnosticsInput } from '@boardsesh/shared-schema';
 import { pgTable, text, integer, timestamp, bigserial, index, jsonb, boolean, pgEnum } from 'drizzle-orm/pg-core';
 import { users } from '../auth/users';
 
@@ -9,6 +10,7 @@ export type FeedbackContext = {
   sessionName?: string;
   url?: string;
   userAgent?: string;
+  diagnostics?: FeedbackDiagnosticsInput;
 };
 
 /**

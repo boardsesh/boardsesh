@@ -1,6 +1,9 @@
 package com.boardsesh.boardrenderer
 
 import android.graphics.Bitmap
+import io.sentry.Breadcrumb
+import io.sentry.Sentry
+import java.util.UUID
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import java.io.File
@@ -113,9 +116,13 @@ class BoardRendererModule : Module() {
             outputFile.delete()
         }
 
-        val renderResult = BoardRendererBridge.render(configJson)
-            ?: throw Exception("Rust render failed")
-
+        val nativeOperationId = UUID.randomUUID().toString()
+        nativeRenderBreadcrumb("execute", nativeOperationId)
+        val renderResult = try {
+            BoardRendererBridge.render(configJson) ?: throw Exception("Rust render failed")
+        } finally {
+            nativeRenderBreadcrumb("complete", nativeOperationId)
+        }
         val width = renderResult.width
         val height = renderResult.height
         val rgbaData = renderResult.data
@@ -194,6 +201,36 @@ class BoardRendererModule : Module() {
         AsyncFunction("renderHoldsOverlayWithMarkers") { configJson: String, cacheKey: String ->
             renderOverlay(configJson, cacheKey)
         }.runOnQueue(renderScope)
+    }
+
+    private val nativeRenderOperations = linkedMapOf<String, Map<String, Any>>()
+    private var lastNativeBreadcrumbAtMs = 0L
+    private var breadcrumbOperationId = ""
+
+    @Synchronized
+    private fun nativeRenderBreadcrumb(phase: String, operationId: String) {
+        try {
+            val fields = mapOf<String, Any>("operationId" to operationId, "phase" to phase, "threadId" to Thread.currentThread().id)
+            if (phase == "execute") {
+                nativeRenderOperations[operationId] = fields
+                while (nativeRenderOperations.size > 4) nativeRenderOperations.remove(nativeRenderOperations.keys.first())
+            } else nativeRenderOperations.remove(operationId)
+            val snapshot = mapOf<String, Any>("active" to nativeRenderOperations.values.toList(), "lastOperation" to fields)
+            Sentry.configureScope { scope -> scope.setContexts("native_renderer", snapshot) }
+            // Aggregate thumbnail bursts, while retaining every active native call in scope.
+            val now = android.os.SystemClock.elapsedRealtime()
+            if (phase == "execute") {
+                if (now - lastNativeBreadcrumbAtMs < 5_000) return
+                lastNativeBreadcrumbAtMs = now
+                breadcrumbOperationId = operationId
+            } else if (breadcrumbOperationId != operationId) return
+            val breadcrumb = Breadcrumb()
+            breadcrumb.category = "mobile.render.native"
+            breadcrumb.message = phase
+            breadcrumb.setData("operationId", operationId)
+            breadcrumb.setData("threadId", Thread.currentThread().id)
+            Sentry.addBreadcrumb(breadcrumb)
+        } catch (_: Exception) { /* Diagnostics never fail rendering. */ }
     }
 
     private companion object {

@@ -228,3 +228,26 @@ describe('createFeedbackGithubIssue', () => {
     expect((outcome as { cause: Error }).cause).toBeInstanceOf(Error);
   });
 });
+
+it('never mirrors private telemetry identifiers to public issues', () => {
+  const draft = buildFeedbackIssue(
+    bugPayload({
+      context: {
+        diagnostics: {
+          schemaVersion: 1,
+          reportId: 'private-report-id',
+          launchId: 'private-launch-id',
+          previousLaunchId: 'private-previous-id',
+          nativeStartupId: 'private-native-id',
+          posthogDistinctId: 'private-person-id',
+          posthogSessionId: 'private-session-id',
+          easClientId: 'private-device-id',
+          lastUserOperationId: 'private-operation-id',
+        },
+      },
+    }),
+  );
+  expect(draft).not.toBeNull();
+  expect(serialize(draft)).not.toContain('private-');
+  expect(serialize(draft)).not.toContain('diagnostics');
+});

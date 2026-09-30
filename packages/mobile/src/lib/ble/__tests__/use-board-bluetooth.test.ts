@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { Alert } from 'react-native';
+import { getDiagnosticSnapshot, initializeMobileDiagnostics } from '../../mobile-diagnostics';
 import type { HoldPlacement } from '../../../components/board-renderer/types';
 import {
   reactNativePermissionHarness,
@@ -203,7 +204,9 @@ function makePlacement(id: number, mirroredHoldId: number | null): HoldPlacement
   return { id, mirroredHoldId, cx: 0, cy: 0, r: 10 };
 }
 
-type FakeAdapterOverrides = Partial<Record<'isAvailable' | 'requestAndConnect' | 'disconnect' | 'write', unknown>>;
+type FakeAdapterOverrides = Partial<
+  Record<'isAvailable' | 'requestAndConnect' | 'disconnect' | 'write' | 'getConnectionDiagnostics', unknown>
+>;
 
 /**
  * A `write` spy typed with the adapter's real signature, so a test can decode the
@@ -236,6 +239,48 @@ describe('useBoardBluetooth', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it('uses the active Android adapter diagnostics before the first write', async () => {
+    const getConnectionDiagnostics = vi.fn().mockResolvedValue({
+      negotiatedMtu: 247,
+      chunkSize: 244,
+      chosenWriteType: 'withoutResponse',
+      supportsWriteWithoutResponse: true,
+    });
+    const fakeAdapter = makeFakeAdapter({ getConnectionDiagnostics });
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+    initializeMobileDiagnostics({ launchId: 'android-test-launch' });
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+    await act(async () => {
+      await result.current.connect();
+    });
+    expect(getConnectionDiagnostics).toHaveBeenCalledOnce();
+    const snapshot = getDiagnosticSnapshot();
+    expect(snapshot.completed.ble).toMatchObject({
+      name: 'connect',
+      outcome: 'success',
+      attributes: { mtu: 247, chunkSize: 244, writeType: 'withoutResponse' },
+    });
+    expect(snapshot.active).toEqual([]);
+  });
+
+  it('finishes the diagnostic operation when the picker is cancelled', async () => {
+    initializeMobileDiagnostics({ launchId: 'cancel-test-launch' });
+    const fakeAdapter = makeFakeAdapter({
+      requestAndConnect: vi.fn().mockRejectedValue(new Error('Device selection cancelled')),
+    });
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+    await act(async () => {
+      await result.current.connect();
+    });
+    expect(getDiagnosticSnapshot().completed.ble).toMatchObject({ name: 'connect', outcome: 'cancelled' });
+    expect(getDiagnosticSnapshot().active).toEqual([]);
   });
 
   it('shows permission copy and stops before adapter availability when Android BLE permission is denied', async () => {
@@ -324,6 +369,7 @@ describe('useBoardBluetooth', () => {
     expect(secondConnectResult).toBe(false);
     expect(createBluetoothAdapter).toHaveBeenCalledTimes(1);
     expect(createBluetoothAdapter).toHaveBeenCalledWith(expect.any(Function), 'moonboard', {
+      onDiagnosticPhase: expect.any(Function),
       preferWriteWithResponse: false,
       boardName: 'moonboard',
     });
@@ -353,6 +399,7 @@ describe('useBoardBluetooth', () => {
     });
 
     expect(createBluetoothAdapter).toHaveBeenCalledWith(expect.any(Function), 'aurora', {
+      onDiagnosticPhase: expect.any(Function),
       preferWriteWithResponse: false,
       boardName: 'kilter',
     });
@@ -1439,6 +1486,7 @@ describe('useBoardBluetooth', () => {
     });
 
     expect(createBluetoothAdapter).toHaveBeenCalledWith(expect.any(Function), 'moonboard', {
+      onDiagnosticPhase: expect.any(Function),
       preferWriteWithResponse: true,
       boardName: 'woods',
     });
@@ -1592,6 +1640,7 @@ describe('useBoardBluetooth', () => {
     });
 
     expect(createBluetoothAdapter).toHaveBeenCalledWith(expect.any(Function), 'moonboard', {
+      onDiagnosticPhase: expect.any(Function),
       preferWriteWithResponse: true,
       boardName: 'woods',
     });

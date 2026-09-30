@@ -164,6 +164,38 @@ describe('RNBleAdapter', () => {
     mockBleManager.onStateChange.mockReturnValue({ remove: vi.fn() });
   });
 
+  it('captures Android connection transport before the first write and clears on disconnect', async () => {
+    const { adapter } = setupWriteDiagnosticsAdapter('aurora', vi.fn().mockResolvedValue({ mtu: 247 }));
+    expect(await adapter.getConnectionDiagnostics()).toBeNull();
+    await adapter.requestAndConnect();
+    expect(await adapter.getConnectionDiagnostics()).toMatchObject({
+      chosenWriteType: 'withoutResponse',
+      supportsWriteWithoutResponse: true,
+      negotiatedMtu: 247,
+      chunkSize: 244,
+    });
+    await adapter.disconnect();
+    expect(await adapter.getConnectionDiagnostics()).toBeNull();
+  });
+
+  it('reports acknowledged board preference and survives a throwing diagnostic callback', async () => {
+    const { adapter, writeWithResponseFn } = setupWriteDiagnosticsAdapter(
+      'aurora',
+      vi.fn().mockResolvedValue({ mtu: 247 }),
+      undefined,
+      {
+        preferWriteWithResponse: true,
+        onDiagnosticPhase: () => {
+          throw new Error('telemetry unavailable');
+        },
+      },
+    );
+    await adapter.requestAndConnect();
+    expect(await adapter.getConnectionDiagnostics()).toMatchObject({ chosenWriteType: 'withResponse' });
+    await adapter.write(new Uint8Array([1, 2]));
+    expect(writeWithResponseFn).toHaveBeenCalledOnce();
+  });
+
   describe('isAvailable', () => {
     it('returns true when bluetooth state is PoweredOn', async () => {
       mockBleManager.state.mockResolvedValue(State.PoweredOn);

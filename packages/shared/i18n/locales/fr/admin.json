@@ -97,6 +97,17 @@
       "updateFailed": "Impossible de mettre à jour le statut",
       "emailCopied": "E-mail copié",
       "copyFailed": "Impossible de copier"
+    },
+    "diagnostics": {
+      "title": "Diagnostic privé",
+      "context": "Contexte de télémétrie",
+      "copy": "Copier le diagnostic",
+      "copied": "Diagnostic copié",
+      "sentryQuery": "Recherche du démarrage dans Sentry",
+      "previousSentryQuery": "Recherche du démarrage précédent dans Sentry",
+      "posthogQuery": "Filtre d’identité PostHog",
+      "observeQuery": "Filtre d’appareil Observe",
+      "openSentry": "Rechercher ce démarrage dans Sentry"
     }
   },
   "retention": {

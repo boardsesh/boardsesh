@@ -1,3 +1,5 @@
+import { runAuthDiagnostic } from './auth-diagnostics';
+import type { DiagnosticOperation } from './mobile-diagnostics';
 import { deduplicatedRefresh } from './auth-interceptor';
 import { BackendUnavailableError } from './connectivity/backend-unavailable-error';
 import { getConnectivitySnapshot } from './connectivity/connectivity-store';
@@ -46,11 +48,12 @@ function authenticatedSession(token: string, generation: number, degraded?: Auth
 }
 
 /** Resolve the native mobile JWT session, refreshing it when necessary. */
-export async function resolveAuthSession(): Promise<AuthSessionResult> {
+async function resolveAuthSessionInternal(operation: DiagnosticOperation): Promise<AuthSessionResult> {
   const credentialGeneration = captureAuthCredentialGeneration();
   let currentToken: string | null;
 
   try {
+    operation.step('credential_read');
     currentToken = await getAuthToken();
   } catch (error) {
     return isAuthCredentialGenerationCurrent(credentialGeneration)
@@ -63,6 +66,7 @@ export async function resolveAuthSession(): Promise<AuthSessionResult> {
 
   let tokenExpiringSoon: boolean;
   try {
+    operation.step('expiry_read');
     tokenExpiringSoon = await isTokenExpiringSoon();
   } catch (error) {
     return authenticatedSession(currentToken, credentialGeneration, { stage: 'expiry-read', error });
@@ -91,6 +95,7 @@ export async function resolveAuthSession(): Promise<AuthSessionResult> {
     // which collapses rejected and unavailable into the same `false`). A
     // server-rejected refresh token is a real logout; a transient network or
     // keychain failure preserves the already-established local session.
+    operation.step('refresh');
     refreshResult = await deduplicatedRefresh();
   } catch (error) {
     if (!isAuthCredentialGenerationCurrent(credentialGeneration)) return { status: 'superseded' };
@@ -118,6 +123,7 @@ export async function resolveAuthSession(): Promise<AuthSessionResult> {
 
   let refreshedToken: string | null;
   try {
+    operation.step('refreshed_credential_read');
     refreshedToken = await getAuthToken();
   } catch (error) {
     return authenticatedSession(currentToken, credentialGeneration, { stage: 'refreshed-token-read', error });
@@ -131,4 +137,11 @@ export async function resolveAuthSession(): Promise<AuthSessionResult> {
     });
   }
   return authenticatedSession(refreshedToken, credentialGeneration);
+}
+
+export function resolveAuthSession(): Promise<AuthSessionResult> {
+  return runAuthDiagnostic('session.restore', resolveAuthSessionInternal, (result) => ({
+    outcome: result.status === 'superseded' ? 'superseded' : result.status === 'unavailable' ? 'failure' : 'success',
+    attributes: { status: result.status, degraded: result.status === 'authenticated' && Boolean(result.degraded) },
+  }));
 }

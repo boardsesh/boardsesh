@@ -842,6 +842,10 @@ final class BoardBleDisconnectTests: XCTestCase {
     }
 
     func testStaleDidConnectUnderActiveBarrierStillIssuesConcreteCancel() {
+        var connectedDiagnostics = 0
+        manager.testHooks.observeNativeDiagnostics { phase, _ in
+            if phase == "connected" { connectedDiagnostics += 1 }
+        }
         let peripheral = FakeWritablePeripheral()
         var firstConnectError: Error?
         var disconnectEventCount = 0
@@ -869,6 +873,7 @@ final class BoardBleDisconnectTests: XCTestCase {
         // must go out even though this UUID's barrier is already registered —
         // skipping it left the connection blocking the wall.
         manager.testHooks.fireDidConnect(peripheral: peripheral)
+        XCTAssertEqual(connectedDiagnostics, 0)
         XCTAssertEqual(cancelledPeripheralIds, [peripheral.identifier, peripheral.identifier])
         // No second barrier: the existing one still owns the terminal callback.
         XCTAssertEqual(scheduler.oneShots(label: "managerCancellationBarrierWatchdog").count, 1)

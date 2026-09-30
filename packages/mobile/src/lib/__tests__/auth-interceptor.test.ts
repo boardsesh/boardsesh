@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 
+// Reporting is an injected native seam, not part of interceptor behavior.
+vi.mock('../error-reporting', () => ({ reportError: vi.fn(), reportHandledError: vi.fn() }));
+
 // ── Mock expo-secure-store ──────────────────────────────────────────────
 // auth-store imports expo-secure-store, which doesn't exist in Node.
 vi.mock('expo-secure-store', () => ({

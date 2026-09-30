@@ -3,8 +3,14 @@ import { Redirect } from 'expo-router';
 import { ActivityIndicator, Alert, StyleSheet, View } from 'react-native';
 import { reportError } from '../lib/error-reporting';
 import { hapticError, hapticLight } from '../lib/haptics';
-import { isSentryEnabled, nativeSentryCrash } from '../lib/sentry';
-import { scheduleUncaughtSentryTestError } from '../lib/sentry-diagnostics';
+import {
+  isSentryEnabled,
+  nativeSentryCrash,
+  nativeAbortSentryCrash,
+  canNativeAbortSentryCrash,
+  setSentryDiagnosticTestContext,
+} from '../lib/sentry';
+import { scheduleUncaughtSentryTestError, beginSentryDiagnosticTest } from '../lib/sentry-diagnostics';
 import { useProfile } from '../lib/graphql/hooks';
 import { useConfirm } from '../providers/dialog-provider';
 import { useTheme } from '../providers/theme-provider';
@@ -19,8 +25,9 @@ export function SentryDiagnosticsScreen() {
 
   const sendHandledEvent = useCallback(() => {
     hapticLight();
+    const testRunId = beginSentryDiagnosticTest('handled');
     reportError(new Error('Sentry test event (handled) — diagnostics'), {
-      tags: { source: 'sentry-test', kind: 'handled' },
+      tags: { source: 'sentry-test', kind: 'handled', testRunId },
     });
     Alert.alert(
       // i18n-ignore-next-line — tester-only screen
@@ -35,6 +42,7 @@ export function SentryDiagnosticsScreen() {
 
   const throwUncaughtError = useCallback(() => {
     hapticError();
+    setSentryDiagnosticTestContext('uncaught-js', beginSentryDiagnosticTest('uncaught-js'));
     scheduleUncaughtSentryTestError();
   }, []);
 
@@ -52,7 +60,29 @@ export function SentryDiagnosticsScreen() {
     });
     if (!confirmed) return;
     hapticError();
+    setSentryDiagnosticTestContext('java-exception', beginSentryDiagnosticTest('java-exception'));
     nativeSentryCrash();
+  }, [confirm]);
+
+  const triggerNativeAbort = useCallback(async () => {
+    const confirmed = await confirm({
+      // i18n-ignore-next-line — tester-only screen
+      title: 'Force a C/C++ abort?',
+      // i18n-ignore-next-line — tester-only screen
+      message: 'The app crashes immediately. Reopen it to upload the native backtrace and tombstone.',
+      // i18n-ignore-next-line — tester-only screen
+      confirmLabel: 'Crash',
+      // i18n-ignore-next-line — tester-only screen
+      cancelLabel: 'Cancel',
+    });
+    if (!confirmed) return;
+    if (!canNativeAbortSentryCrash()) {
+      // i18n-ignore-next-line — tester-only screen
+      Alert.alert('Native abort unavailable', 'Install a release binary with native diagnostics and Sentry enabled.');
+      return;
+    }
+    setSentryDiagnosticTestContext('native-abort', beginSentryDiagnosticTest('native-abort'));
+    nativeAbortSentryCrash();
   }, [confirm]);
 
   const model = useMemo<SwitcherFormModel>(
@@ -91,15 +121,23 @@ export function SentryDiagnosticsScreen() {
               kind: 'action',
               key: 'native',
               // i18n-ignore-next-line — tester-only screen
-              label: 'Native crash',
+              label: 'Java / Objective-C exception',
               icon: 'flame',
               onPress: () => void triggerNativeCrash(),
+            },
+            {
+              kind: 'action',
+              key: 'native-abort',
+              // i18n-ignore-next-line — tester-only screen
+              label: 'C/C++ abort (SIGABRT)',
+              icon: 'flame',
+              onPress: () => void triggerNativeAbort(),
             },
           ],
         },
       ],
     }),
-    [sendHandledEvent, throwUncaughtError, triggerNativeCrash],
+    [sendHandledEvent, throwUncaughtError, triggerNativeCrash, triggerNativeAbort],
   );
 
   if (!__DEV__) {
