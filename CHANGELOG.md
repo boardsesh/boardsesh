@@ -4,6 +4,12 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-09-29
+
+### Fixed
+
+- Fixed: the lightbulb button in Create a climb now opens the Bluetooth device picker again. ([#5872](https://github.com/boardsesh/boardsesh/pull/5872))
+
 ## 2026-09-28
 
 ### New

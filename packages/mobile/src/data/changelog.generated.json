@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-28T11:57:08.575Z",
+  "generatedAt": "2026-09-29T12:32:27.671Z",
   "entries": [
+    {
+      "prNumber": 5872,
+      "category": "fixed",
+      "title": "Fixed: the lightbulb button in Create a climb now opens the Bluetooth device picker again.",
+      "mergedAt": "2026-09-29T11:33:30Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5872"
+    },
     {
       "prNumber": 5879,
       "category": "new",
