@@ -126,6 +126,53 @@ describe('generated export retention', () => {
     expect(warn).not.toHaveBeenCalled();
   });
 
+  it('preserves a bucket-wide multipart rule whose legacy response omits conditions', async () => {
+    const legacyMultipartRule = {
+      id: 'abort-incomplete-multipart-uploads',
+      enabled: true,
+      abortMultipartUploadsTransition: { condition: { type: 'Age', maxAge: 604_800 } },
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(envelope({ rules: [legacyMultipartRule] }))
+      .mockResolvedValueOnce(envelope({}));
+    vi.stubGlobal('fetch', fetchMock);
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await applyR2LifecycleRule('test-token', 'test-account', privateBucket.name, USER_EXPORT_LIFECYCLE_RULE);
+
+    expect(fetchMock.mock.calls[1][1]).toMatchObject({
+      method: 'PUT',
+      body: JSON.stringify({
+        rules: [{ ...legacyMultipartRule, conditions: { prefix: '' } }, USER_EXPORT_LIFECYCLE_RULE],
+      }),
+    });
+  });
+
+  it('preserves other condition fields when a legacy rule omits only the prefix', async () => {
+    const legacyRule = {
+      id: 'abort-incomplete-multipart-uploads',
+      enabled: true,
+      conditions: { futureCondition: 'keep-me' },
+      abortMultipartUploadsTransition: { condition: { type: 'Age', maxAge: 604_800 } },
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(envelope({ rules: [legacyRule] }))
+      .mockResolvedValueOnce(envelope({}));
+    vi.stubGlobal('fetch', fetchMock);
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await applyR2LifecycleRule('test-token', 'test-account', privateBucket.name, USER_EXPORT_LIFECYCLE_RULE);
+
+    expect(fetchMock.mock.calls[1][1]).toMatchObject({
+      method: 'PUT',
+      body: JSON.stringify({
+        rules: [{ ...legacyRule, conditions: { ...legacyRule.conditions, prefix: '' } }, USER_EXPORT_LIFECYCLE_RULE],
+      }),
+    });
+  });
+
   it('never replaces lifecycle rules after an authorization failure', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ success: false }), { status: 403 }));
     vi.stubGlobal('fetch', fetchMock);
@@ -156,19 +203,30 @@ describe('generated export retention', () => {
 
   it('refuses malformed successful reads instead of clearing unknown lifecycle rules', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    for (const result of [{ rules: null }, { rules: [{}] }]) {
+    for (const { result, expectedWarning } of [
+      { result: { rules: null }, expectedWarning: 'returned a non-array rules value' },
+      {
+        result: { rules: [{}] },
+        expectedWarning: 'returned malformed rule #0 (id: undefined, enabled: undefined, prefix: undefined)',
+      },
+      {
+        result: { rules: [{ id: 'legacy', enabled: true, conditions: null }] },
+        expectedWarning: 'returned malformed rule #0 (id: string, enabled: boolean, prefix: undefined)',
+      },
+      {
+        result: { rules: [{ id: 'legacy', enabled: true, conditions: { prefix: null } }] },
+        expectedWarning: 'returned malformed rule #0 (id: string, enabled: boolean, prefix: object)',
+      },
+    ]) {
+      warn.mockClear();
       const fetchMock = vi.fn().mockResolvedValue(envelope(result));
       vi.stubGlobal('fetch', fetchMock);
       await expect(
         applyR2LifecycleRule('test-token', 'test-account', privateBucket.name, USER_EXPORT_LIFECYCLE_RULE),
       ).rejects.toThrow('refusing to replace');
       expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledWith(`[cf-apply] R2 lifecycle GET for ${privateBucket.name} ${expectedWarning}`);
     }
-    expect(warn).toHaveBeenCalledWith(
-      `[cf-apply] R2 lifecycle GET for ${privateBucket.name} returned a non-array rules value`,
-    );
-    expect(warn).toHaveBeenCalledWith(
-      `[cf-apply] R2 lifecycle GET for ${privateBucket.name} returned a malformed rule`,
-    );
   });
 });
