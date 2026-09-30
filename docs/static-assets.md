@@ -149,6 +149,11 @@ total historical source bytes and can incur Tigris egress charges. Use inventory
 downloads; reserve full verification for the pre-cutover gate and integrity checks. Historical objects include
 hashes outside the current catalog, so the current catalog size is not a verification cost estimate.
 
+The JSON summary reports `sourceObjects` (historical source inventory), `missingObjects` (destination gaps at the
+start of the run), and `copiedObjects` (successful uploads performed by this run). A concurrent writer returning
+412 is verified but not counted as copied. `copiedObjects` is not the total number of objects present in R2;
+rerunning a completed migration reports zero copies even though every historical object has been verified.
+
 User media and private exports already use R2. The remaining storage cutovers are tracked separately:
 [OTA #5848](https://github.com/boardsesh/boardsesh/issues/5848) and
 [board snapshots #5912](https://github.com/boardsesh/boardsesh/issues/5912).
