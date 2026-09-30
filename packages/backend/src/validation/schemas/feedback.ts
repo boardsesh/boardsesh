@@ -49,6 +49,8 @@ const FeedbackDiagnosticsInputSchema = z.object({
   otaIsEmbedded: bestEffort(z.boolean()),
 });
 
+// New scalar context fields must also be added to normalizeContext
+// in graphql/resolvers/feedback/mutations.ts so they are persisted.
 const FeedbackContextInputSchema = z.object({
   climbUuid: bestEffort(z.string().max(64)),
   climbName: bestEffort(z.string().max(200)),
