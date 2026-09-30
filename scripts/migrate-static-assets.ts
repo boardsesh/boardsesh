@@ -1,12 +1,7 @@
 import { pathToFileURL } from 'node:url';
 import { Readable } from 'node:stream';
 import { GetObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
-import {
-  migrateStaticAssets,
-  parseMigrationMode,
-  type AssetMetadata,
-  type AssetStore,
-} from './lib/static-asset-migration';
+import { migrateStaticAssets, parseMigrationMode, type AssetStore } from './lib/static-asset-migration';
 import { createRequestStartLimiter } from './lib/static-asset-upload';
 
 function requiredEnvironment(name: string): string {
@@ -93,7 +88,7 @@ export function createAssetStore(client: S3Client, bucket: string): AssetStore {
         throw error;
       }
     },
-    async put(key, contents, metadata: AssetMetadata, checksum) {
+    async put(key, contents, metadata, checksum) {
       await beforeRequest();
       await client.send(
         new PutObjectCommand({

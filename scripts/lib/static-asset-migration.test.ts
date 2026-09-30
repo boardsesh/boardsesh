@@ -129,11 +129,12 @@ describe('historical immutable assets migration', () => {
       'metadata mismatch',
     );
   });
-  it('fails missing verify-only objects without writing', async () => {
+  it('rejects verify-only with an empty destination and a non-empty source before object I/O', async () => {
+    const source = memoryStore({ [key]: contents });
     const destination = memoryStore();
-    await expect(migrateStaticAssets(memoryStore({ [key]: contents }), destination, 'verify-only')).rejects.toThrow(
-      'Missing historical assets',
-    );
+    await expect(migrateStaticAssets(source, destination, 'verify-only')).rejects.toThrow('Missing historical assets');
+    expect(source.get).not.toHaveBeenCalled();
+    expect(destination.get).not.toHaveBeenCalled();
     expect(destination.put).not.toHaveBeenCalled();
   });
   it.each([false, true])('verifies a raced conditional-write object (corrupt=%s)', async (corrupt) => {
