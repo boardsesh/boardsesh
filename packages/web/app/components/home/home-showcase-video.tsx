@@ -217,6 +217,9 @@ export default function HomeShowcaseVideo() {
       >
         {t('home.showcase.unsupported')}
       </video>
+      {/* Deliberately coexists with the native controls that appear when the
+          browser refuses autoplay: iOS only accepts play() inside a user gesture,
+          and this button is the gesture path we control (handleToggle). */}
       <IconButton
         className={idleWaitingForPlay ? styles.toggleCentered : styles.toggle}
         size={idleWaitingForPlay ? 'large' : 'small'}

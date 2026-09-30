@@ -171,4 +171,18 @@ describe('useAutoplayVideo', () => {
     fireEvent(screen.getByTestId('video'), new Event('playing'));
     expect(screen.getByTestId('video').getAttribute('data-playing')).toBe('true');
   });
+
+  it.each(['pause', 'emptied', 'error'])('stops reporting playing after %s', (eventName) => {
+    render(<Harness />);
+    fireEvent(screen.getByTestId('video'), new Event('playing'));
+    fireEvent(screen.getByTestId('video'), new Event(eventName));
+    expect(screen.getByTestId('video').getAttribute('data-playing')).toBe('false');
+  });
+
+  it('keeps reporting playing after ended, since the video loops', () => {
+    render(<Harness />);
+    fireEvent(screen.getByTestId('video'), new Event('playing'));
+    fireEvent(screen.getByTestId('video'), new Event('ended'));
+    expect(screen.getByTestId('video').getAttribute('data-playing')).toBe('true');
+  });
 });

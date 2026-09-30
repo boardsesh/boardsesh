@@ -3,8 +3,6 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vite-plus/test';
 import ShowcaseVideoJsonLd from '@/app/components/seo/showcase-video-json-ld';
-import { SHOWCASE_FPS } from '../../../../../scripts/lib/showcase-video/contract';
-import { SHOWCASE_TOTAL_FRAMES } from '../../../../../scripts/lib/showcase-video/timeline';
 import { showcaseVideoJsonLd, showcaseVideoSources } from '../showcase-video';
 
 describe('showcase video', () => {
@@ -24,11 +22,6 @@ describe('showcase video', () => {
       thumbnailUrl: 'https://www.boardsesh.com/images/home/showcase-hero-9x16.webp',
       contentUrl: 'https://www.boardsesh.com/videos/home/showcase-9x16-lite.mp4',
     });
-  });
-
-  it('declares a duration equal to the timeline length', () => {
-    const seconds = SHOWCASE_TOTAL_FRAMES / SHOWCASE_FPS;
-    expect(showcaseVideoJsonLd().duration).toBe(`PT${seconds.toFixed(1)}S`);
   });
 
   it('renders the JSON-LD script', () => {

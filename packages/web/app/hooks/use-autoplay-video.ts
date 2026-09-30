@@ -94,8 +94,19 @@ export function useAutoplayVideo({
     const video = videoRef.current;
     if (!video) return;
     const markPlaying = () => setIsPlaying(true);
+    // Not 'ended': a looping video never fires it. 'emptied' and 'error' cover a
+    // source swap or failure, where the last frame is gone.
+    const markStopped = () => setIsPlaying(false);
     video.addEventListener('playing', markPlaying);
-    return () => video.removeEventListener('playing', markPlaying);
+    video.addEventListener('pause', markStopped);
+    video.addEventListener('emptied', markStopped);
+    video.addEventListener('error', markStopped);
+    return () => {
+      video.removeEventListener('playing', markPlaying);
+      video.removeEventListener('pause', markStopped);
+      video.removeEventListener('emptied', markStopped);
+      video.removeEventListener('error', markStopped);
+    };
   }, []);
 
   React.useEffect(() => {
