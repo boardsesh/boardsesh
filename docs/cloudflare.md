@@ -27,6 +27,8 @@ instead of detaching a hostname during a routine converge. Buckets are created w
 The private user bucket owns lifecycle rule `boardsesh-user-data-exports-14d`:
 objects under `user-data-exports/` expire after 14 days. The tool preserves every
 other lifecycle rule and refuses unreadable policies or conflicting ownership.
+A successful lifecycle read with no `rules` field means an empty policy; denied
+reads, explicit `null`, and malformed rules remain blocked and are logged.
 A newly created bucket needs a second converge to install retention. See
 [user-data-exports.md](./user-data-exports.md) for rollout and access expiry.
 
