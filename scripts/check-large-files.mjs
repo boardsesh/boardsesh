@@ -52,26 +52,6 @@ export const ALLOWLIST = [
     prefix: 'design/',
     reason: 'Design-system reference renders',
   },
-  // The homepage showcase video, one entry per file so nothing else under
-  // videos/home rides along. ~38 s of motion graphics lands at 2.5–3 MB per
-  // file; `vp run video:render` fails any encode over its own 4 MB gate
-  // (SHOWCASE_WEB_MAX_BYTES in scripts/lib/showcase-video/render.ts).
-  {
-    prefix: 'packages/web/public/videos/home/showcase.webm',
-    reason: 'Homepage showcase video (VP9), capped at 4 MB by video:render',
-  },
-  {
-    prefix: 'packages/web/public/videos/home/showcase.mp4',
-    reason: 'Homepage showcase video (H.264), capped at 4 MB by video:render',
-  },
-  {
-    prefix: 'packages/web/public/videos/home/showcase-9x16.webm',
-    reason: 'Homepage showcase video, 9:16 (VP9), capped at 4 MB by video:render',
-  },
-  {
-    prefix: 'packages/web/public/videos/home/showcase-9x16.mp4',
-    reason: 'Homepage showcase video, 9:16 (H.264), capped at 4 MB by video:render',
-  },
 ];
 
 export function allowlistEntryFor(filePath) {

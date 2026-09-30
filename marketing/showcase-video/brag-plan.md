@@ -61,11 +61,12 @@ holds them.
   phone (L−4..L+6), never an OKLab crossfade: a crossfade passes through a
   flat mid-grey that reads as a dropped frame when the phone stands still. The
   renderer fails on any frame whose luma is a flat fill (`isFlatFrame`).
-- Web posters (`showcase-poster*.webp`, `showcase-hero-9x16.webp`) come from
-  frame 132, the light scene settled (`SHOWCASE_WEB_POSTER_FRAME`,
-  `--poster-frame`); `brag.mp4` and `brag.jpg` keep frame 0, the hook.
-- `showcase-9x16-lite.{webm,mp4}` is the phone encode: 720x1280, bitrates
-  sized to ≤ 1.3 MB (VP9) and ≤ 1.9 MB (H.264).
+- The homepage hero is the only web output: `showcase-9x16-lite.{webm,mp4}`
+  (720x1280, bitrates sized to ≤ 1.3 MB VP9 and ≤ 1.9 MB H.264) and its poster
+  `showcase-hero-9x16.webp`. Both open on frame 132, the light scene settled
+  (`SHOWCASE_WEB_POSTER_FRAME`, `--poster-frame`): the web encodes play the
+  loop rotated, 132..1247 then 0..131, which is as seamless as the loop.
+  `brag.mp4` and `brag.jpg` keep frame 0, the hook, for social.
 - Footage cuts hard at scene boundaries; only the phones move across a
   background change (L−4..L+6). New text starts at L+6.
 - Backgrounds alternate from the boards scene on. The two dark→dark joins are
@@ -91,7 +92,7 @@ holds them.
 - Nothing enters over the headline: a dark phone crossing dark ink hides it.
 - Frame 0 is the settled poster. The last 24 frames blur the outro out, grow
   the hook's rings back out of the outro dots and blur the hook headline in, so
-  the web cut (frames 1..1247) loops without a seam.
+  the loop (and the rotated web cut) has no seam.
 - A missing board take is skipped with a warning; the pile-up uses the boards
   that were recorded. A missing island take drops that scene. Any other
   missing take stops the render.
@@ -107,8 +108,11 @@ vp run video:render                                      # both formats, all del
 vp run video:render -- --format 16x9 --from-frame 400   # quick preview from a frame
 ```
 
-Outputs: `.boardsesh/showcase-video/out/brag.mp4` (+ `brag.jpg`,
-`share-copy.txt`, `stills/`), the web cut in `packages/web/public/videos/home/`
-and posters in `packages/web/public/images/home/`. The web cut is encoded at
-580 kbit/s (the quality of the first 22 s cut); each file must stay under 4 MB,
-and the four files are allowlisted in `scripts/check-large-files.mjs`.
+Outputs: the full-quality masters for social and ads,
+`.boardsesh/showcase-video/out/brag.mp4` and `brag-9x16.mp4` (+ `brag*.jpg`,
+`share-copy.txt`, `stills/`); the hero's `showcase-9x16-lite.{webm,mp4}` in
+`packages/web/public/videos/home/` and `showcase-hero-9x16.webp` in
+`packages/web/public/images/home/`. Each web file must stay under 1.9 MB
+(`SHOWCASE_WEB_MAX_BYTES`), below `scripts/check-large-files.mjs`'s 2 MB, so
+none needs an allowlist entry. After a render, run
+`vp run generate:static-assets` and commit the files with the catalog.

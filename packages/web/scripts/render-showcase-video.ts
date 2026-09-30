@@ -73,12 +73,10 @@ import {
   SHOWCASE_STAGE_HTML,
   SHOWCASE_STAGE_TOKENS,
   SHOWCASE_STILLS_DIR,
-  SHOWCASE_WEB_BITRATE_KBPS,
   SHOWCASE_WEB_LITE,
   SHOWCASE_WEB_POSTER_FRAME,
   isFlatFrame,
   webBitrateFor,
-  SHOWCASE_WEB_FALLBACK_MP4,
   SHOWCASE_WEB_MAX_BYTES,
   SHOWCASE_WORKOUT_BEATS,
   SHOWCASE_SCENE_STAGING,
@@ -140,14 +138,14 @@ Renders the homepage showcase video from marketing/showcase-video/.
 
   --stills               Contact sheets only (settled + mid-transition frames per scene)
                          → ${relative(REPO_ROOT, SHOWCASE_STILLS_DIR)}/
-  --poster-frame <n>     Frame for the web posters (default ${SHOWCASE_WEB_POSTER_FRAME}; brag.jpg stays frame 0)
+  --poster-frame <n>     Frame the web cut opens on and its poster shows (default ${SHOWCASE_WEB_POSTER_FRAME}; brag.* keep frame 0)
   --frame <n>            One frame as a full-size PNG → ${relative(REPO_ROOT, SHOWCASE_STILLS_DIR)}/
   --measure              Draw every anchor box over the footage (debug; never ships)
   --from-frame <n>       Start at frame n (writes a preview, skips the web encodes)
   --format 16x9|9x16     One format only (default: both)
   --placeholder-footage  Rebuild stand-in footage + anchors from the committed help
                          clips, store screenshots and generated cards before rendering
-  --skip-web             Stop after brag.mp4 / brag.jpg (no web encodes or posters)
+  --skip-web             Stop after brag.mp4 / brag.jpg (no lite hero encode or poster)
   --help                 Show this message`;
 
 const log = (message: string) => console.log(`[video:render] ${message}`);
@@ -718,6 +716,10 @@ async function frameDifference(first: Buffer, second: Buffer): Promise<number> {
 
 const kb = (bytes: number) => `${(bytes / 1000).toFixed(0)} kB`;
 
+/**
+ * The web outputs, 9:16 only: the lite encode for the homepage hero, rotated
+ * to open on the poster frame, and that frame as its poster.
+ */
 async function encodeWeb(
   format: ShowcaseFormat,
   mezzanine: string,
@@ -725,68 +727,35 @@ async function encodeWeb(
   posterFrame: number,
 ): Promise<void> {
   const outputs = showcaseOutputs(format);
-  mkdirSync(dirname(outputs.webWebm), { recursive: true });
-  const bitrateKbps = SHOWCASE_WEB_BITRATE_KBPS;
-  log(`${format}: web cut ${webCutSeconds(totalFrames).toFixed(1)} s at ${bitrateKbps} kbit/s`);
-
-  const webm = { input: mezzanine, output: outputs.webWebm, bitrateKbps, passLog: outputs.passLog };
-  await execFileAsync(FFMPEG_BIN, buildWebmPassArgs(webm, 1));
-  await execFileAsync(FFMPEG_BIN, buildWebmPassArgs(webm, 2));
-  const webmBytes = statSync(outputs.webWebm).size;
-  log(`${relative(REPO_ROOT, outputs.webWebm)}: ${kb(webmBytes)} at ${bitrateKbps} kbit/s`);
-  if (webmBytes > SHOWCASE_WEB_MAX_BYTES)
-    throw new Error(`${outputs.webWebm} is ${webmBytes} bytes, over ${SHOWCASE_WEB_MAX_BYTES}`);
-
-  const mp4 = { input: mezzanine, output: outputs.webMp4, bitrateKbps, passLog: outputs.passLog };
-  await execFileAsync(FFMPEG_BIN, buildWebMp4PassArgs(mp4, 1));
-  await execFileAsync(FFMPEG_BIN, buildWebMp4PassArgs(mp4, 2));
-  let mp4Bytes = statSync(outputs.webMp4).size;
-  if (mp4Bytes > SHOWCASE_WEB_MAX_BYTES) {
-    const size =
-      format === '16x9'
-        ? SHOWCASE_WEB_FALLBACK_MP4
-        : { width: SHOWCASE_WEB_FALLBACK_MP4.height, height: SHOWCASE_WEB_FALLBACK_MP4.width };
-    warn(
-      `${relative(REPO_ROOT, outputs.webMp4)} came out at ${kb(mp4Bytes)}; re-encoding at ${size.width}x${size.height}`,
-    );
-    await execFileAsync(FFMPEG_BIN, buildWebMp4PassArgs({ ...mp4, size }, 1));
-    await execFileAsync(FFMPEG_BIN, buildWebMp4PassArgs({ ...mp4, size }, 2));
-    mp4Bytes = statSync(outputs.webMp4).size;
-  }
-  log(`${relative(REPO_ROOT, outputs.webMp4)}: ${kb(mp4Bytes)} at ${bitrateKbps} kbit/s`);
-  if (mp4Bytes > SHOWCASE_WEB_MAX_BYTES)
-    throw new Error(`${outputs.webMp4} is ${mp4Bytes} bytes, over ${SHOWCASE_WEB_MAX_BYTES}`);
-
+  if (!outputs.liteWebm || !outputs.liteMp4 || !outputs.heroPoster) return;
+  mkdirSync(dirname(outputs.liteWebm), { recursive: true });
   const seconds = webCutSeconds(totalFrames);
-  if (outputs.liteWebm && outputs.liteMp4) {
-    const { size, maxWebmBytes, maxMp4Bytes } = SHOWCASE_WEB_LITE;
-    const lite = [
-      { output: outputs.liteWebm, max: maxWebmBytes, build: buildWebmPassArgs },
-      { output: outputs.liteMp4, max: maxMp4Bytes, build: buildWebMp4PassArgs },
-    ];
-    for (const { output, max, build } of lite) {
-      const encode = {
-        input: mezzanine,
-        output,
-        size,
-        bitrateKbps: webBitrateFor(max, seconds),
-        passLog: `${outputs.passLog}-lite`,
-      };
-      await execFileAsync(FFMPEG_BIN, build(encode, 1));
-      await execFileAsync(FFMPEG_BIN, build(encode, 2));
-      const bytes = statSync(output).size;
-      log(`${relative(REPO_ROOT, output)}: ${kb(bytes)} at ${encode.bitrateKbps} kbit/s, ${size.width}x${size.height}`);
-      if (bytes > max) throw new Error(`${output} is ${bytes} bytes, over ${max}`);
-    }
+  const { size, maxWebmBytes, maxMp4Bytes } = SHOWCASE_WEB_LITE;
+  const lite = [
+    { output: outputs.liteWebm, max: maxWebmBytes, build: buildWebmPassArgs },
+    { output: outputs.liteMp4, max: maxMp4Bytes, build: buildWebMp4PassArgs },
+  ];
+  for (const { output, max, build } of lite) {
+    const encode = {
+      input: mezzanine,
+      output,
+      size,
+      startFrame: posterFrame,
+      bitrateKbps: webBitrateFor(max, seconds),
+      passLog: `${outputs.passLog}-lite`,
+    };
+    await execFileAsync(FFMPEG_BIN, build(encode, 1));
+    await execFileAsync(FFMPEG_BIN, build(encode, 2));
+    const bytes = statSync(output).size;
+    log(`${relative(REPO_ROOT, output)}: ${kb(bytes)} at ${encode.bitrateKbps} kbit/s, from frame ${posterFrame}`);
+    if (bytes > Math.min(max, SHOWCASE_WEB_MAX_BYTES)) throw new Error(`${output} is ${bytes} bytes, over ${max}`);
   }
 
-  mkdirSync(dirname(outputs.poster), { recursive: true });
-  const poster = await framePng(mezzanine, posterFrame);
-  for (const path of [outputs.poster, outputs.heroPoster]) {
-    if (!path) continue;
-    await sharp(poster).webp(HELP_CLIP_POSTER_ENCODE).toFile(path);
-    log(`${relative(REPO_ROOT, path)}: ${kb(statSync(path).size)} (frame ${posterFrame})`);
-  }
+  mkdirSync(dirname(outputs.heroPoster), { recursive: true });
+  await sharp(await framePng(mezzanine, posterFrame))
+    .webp(HELP_CLIP_POSTER_ENCODE)
+    .toFile(outputs.heroPoster);
+  log(`${relative(REPO_ROOT, outputs.heroPoster)}: ${kb(statSync(outputs.heroPoster).size)} (frame ${posterFrame})`);
 }
 
 async function renderVideo(format: ShowcaseFormat, data: ShowcaseStageData, args: RenderArgs): Promise<void> {

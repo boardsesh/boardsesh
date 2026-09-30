@@ -23,7 +23,6 @@ import {
   SHOWCASE_LIGHT_ROLE_COLORS,
   SHOWCASE_STAGE_COPY,
   SHOWCASE_STAGE_LIGHT,
-  SHOWCASE_WEB_BITRATE_KBPS,
   SHOWCASE_WEB_MAX_BYTES,
   SHOWCASE_CALLOUT_LAYOUT,
   SHOWCASE_SCENE_STAGING,
@@ -31,6 +30,7 @@ import {
   SHOWCASE_WEB_POSTER_FRAME,
   isFlatFrame,
   webBitrateFor,
+  webRotation,
   anchorOnScreen,
   buildBoardRenderUrl,
   buildClimbSearchRequest,
@@ -54,7 +54,6 @@ import {
   contrastRatio,
   countWords,
   detectLitHolds,
-  expectedWebBytes,
   footageFrameIndex,
   layoutPortraitPills,
   layoutSceneCallouts,
@@ -367,22 +366,29 @@ describe('stills', () => {
 describe('encoding', () => {
   const outputs = showcaseOutputs('16x9');
 
-  it('writes the web cut where the static-asset catalog looks', () => {
-    expect(outputs.webWebm).toBe(`${SHOWCASE_WEB_VIDEO_DIR}/showcase.webm`);
-    expect(outputs.webMp4).toBe(`${SHOWCASE_WEB_VIDEO_DIR}/showcase.mp4`);
-    expect(outputs.poster).toBe(`${SHOWCASE_WEB_POSTER_DIR}/showcase-poster.webp`);
-    expect(showcaseOutputs('9x16').webWebm).toBe(`${SHOWCASE_WEB_VIDEO_DIR}/showcase-9x16.webm`);
-    expect(showcaseOutputs('9x16').poster).toBe(`${SHOWCASE_WEB_POSTER_DIR}/showcase-poster-9x16.webp`);
+  it('ships only the 9:16 lite hero and its poster to the web; the masters stay in out/', () => {
+    const portrait = showcaseOutputs('9x16');
+    expect(portrait.liteWebm).toBe(`${SHOWCASE_WEB_VIDEO_DIR}/showcase-9x16-lite.webm`);
+    expect(portrait.liteMp4).toBe(`${SHOWCASE_WEB_VIDEO_DIR}/showcase-9x16-lite.mp4`);
+    expect(portrait.heroPoster).toBe(`${SHOWCASE_WEB_POSTER_DIR}/showcase-hero-9x16.webp`);
+    expect(outputs.liteWebm).toBeNull();
+    expect(outputs.heroPoster).toBeNull();
+    const webPaths = Object.values({ ...outputs, ...portrait }).filter(
+      (path): path is string =>
+        typeof path === 'string' &&
+        (path.startsWith(SHOWCASE_WEB_VIDEO_DIR) || path.startsWith(SHOWCASE_WEB_POSTER_DIR)),
+    );
+    expect(new Set(webPaths)).toEqual(new Set([portrait.liteWebm, portrait.liteMp4, portrait.heroPoster]));
     expect(outputs.master.endsWith('/out/brag.mp4')).toBe(true);
+    expect(portrait.master.endsWith('/out/brag-9x16.mp4')).toBe(true);
     expect(outputs.masterStill.endsWith('/out/brag.jpg')).toBe(true);
   });
 
-  it('targets a bitrate that leaves the web cut well under its 4 MB gate', () => {
-    const seconds = webCutSeconds();
-    expect(seconds).toBeCloseTo((SHOWCASE_TOTAL_FRAMES - 1) / 30);
-    expect(SHOWCASE_WEB_MAX_BYTES).toBe(4_000_000);
-    // Two-pass rate control lands within a few per cent; keep 20% for container and overshoot.
-    expect(expectedWebBytes(SHOWCASE_WEB_BITRATE_KBPS, seconds)).toBeLessThan(SHOWCASE_WEB_MAX_BYTES * 0.8);
+  it('keeps every web file under check-large-files without an allowlist entry', () => {
+    expect(SHOWCASE_WEB_MAX_BYTES).toBe(1_900_000);
+    expect(SHOWCASE_WEB_LITE.maxWebmBytes).toBeLessThanOrEqual(SHOWCASE_WEB_MAX_BYTES);
+    expect(SHOWCASE_WEB_LITE.maxMp4Bytes).toBeLessThanOrEqual(SHOWCASE_WEB_MAX_BYTES);
+    expect(webCutSeconds()).toBeCloseTo(SHOWCASE_TOTAL_FRAMES / 30);
   });
 
   it('downscales the 2x screenshots with lanczos into a near-lossless RGB mezzanine', () => {
@@ -402,12 +408,12 @@ describe('encoding', () => {
     expect(args[args.indexOf('-color_trc') + 1]).toBe('bt709');
     expect(args[args.indexOf('-movflags') + 1]).toBe('+faststart');
     expect(args).toContain('-an');
-    // The master keeps frame 0; only the web cut drops it.
+    // The master opens on the hook; only the web cut is rotated.
     expect(args.join(' ')).not.toMatch(/trim=/);
   });
 
-  it('encodes the webm as two-pass VP9 with row-mt, from frame 1', () => {
-    const encode = { input: '/w/m.mkv', output: '/o/s.webm', bitrateKbps: 600, passLog: '/w/pass' };
+  it('encodes the webm as two-pass VP9 with row-mt, rotated to open on the poster frame', () => {
+    const encode = { input: '/w/m.mkv', output: '/o/s.webm', bitrateKbps: 600, passLog: '/w/pass', startFrame: 132 };
     const first = buildWebmPassArgs(encode, 1);
     const second = buildWebmPassArgs(encode, 2);
     expect(first[first.indexOf('-c:v') + 1]).toBe('libvpx-vp9');
@@ -418,19 +424,27 @@ describe('encoding', () => {
     expect(second[second.indexOf('-b:v') + 1]).toBe('600k');
     expect(second[second.indexOf('-row-mt') + 1]).toBe('1');
     expect(second).toContain('-an');
-    expect(second[second.indexOf('-vf') + 1]).toMatch(/^trim=start_frame=1,/);
+    const graph = second[second.indexOf('-filter_complex') + 1];
+    expect(graph).toContain('trim=start_frame=132');
+    expect(graph).toContain('trim=end_frame=132');
+    expect(graph).toMatch(/\[a\]\[b\]concat=n=2:v=1:a=0/);
+    expect(second[second.indexOf('-map') + 1]).toBe('[out]');
+    expect(second).not.toContain('-vf');
   });
 
-  it('encodes the mp4 as H.264 with faststart, BT.709, and an optional 720p fallback', () => {
-    const encode = { input: '/w/m.mkv', output: '/o/s.mp4', bitrateKbps: 600, passLog: '/w/pass' };
+  it('plays the loop unrotated from frame 0', () => {
+    expect(webRotation(0)).toEqual(['-vf', 'scale=out_color_matrix=bt709:out_range=tv,format=yuv420p']);
+  });
+
+  it('encodes the mp4 as H.264 with faststart and BT.709, scaled for the lite size', () => {
+    const encode = { input: '/w/m.mkv', output: '/o/s.mp4', bitrateKbps: 600, passLog: '/w/pass', startFrame: 132 };
     const second = buildWebMp4PassArgs(encode, 2);
     expect(second[second.indexOf('-c:v') + 1]).toBe('libx264');
     expect(second[second.indexOf('-movflags') + 1]).toBe('+faststart');
     expect(second[second.indexOf('-colorspace') + 1]).toBe('bt709');
     expect(second).toContain('-an');
-    expect(second[second.indexOf('-vf') + 1]).not.toMatch(/1280/);
-    const fallback = buildWebMp4PassArgs({ ...encode, size: { width: 1280, height: 720 } }, 2);
-    expect(fallback[fallback.indexOf('-vf') + 1]).toMatch(/scale=1280:720:flags=lanczos/);
+    const lite = buildWebMp4PassArgs({ ...encode, size: { width: 720, height: 1280 } }, 2);
+    expect(lite[lite.indexOf('-filter_complex') + 1]).toMatch(/scale=720:1280:flags=lanczos/);
   });
 });
 
@@ -812,7 +826,7 @@ describe('no flat frames', () => {
 });
 
 describe('web posters and the lite encode', () => {
-  it('takes the web posters from the settled light scene, not the hook', () => {
+  it('opens the web cut and its poster on the settled light scene, not the hook', () => {
     const light = sceneOf('light');
     expect(SHOWCASE_WEB_POSTER_FRAME).toBeGreaterThan(light.startFrame + 40);
     expect(SHOWCASE_WEB_POSTER_FRAME).toBeLessThan(light.endFrame - SHOWCASE_CHOREO.settleEndFromEnd);

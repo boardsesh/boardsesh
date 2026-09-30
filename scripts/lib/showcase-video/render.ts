@@ -53,15 +53,15 @@ export const SHOWCASE_STILLS_DIR = resolve(SHOWCASE_OUT_DIR, 'stills');
 export type ShowcaseOutputs = Readonly<{
   /** Near-lossless 1x RGB intermediate every encode reads from. */
   mezzanine: string;
+  /** Full-quality masters for social and ads; frame 0 is the hook. */
   master: string;
   masterStill: string;
   shareCopy: string;
-  webWebm: string;
-  webMp4: string;
-  poster: string;
-  /** 9:16 only: the homepage hero's poster, from the web poster frame. */
+  /**
+   * 9:16 only: the homepage hero, the only web outputs. The lite encode and its
+   * poster (the web poster frame) ship from `packages/web/public`.
+   */
   heroPoster: string | null;
-  /** 9:16 only: the lighter phone encode (`SHOWCASE_WEB_LITE`). */
   liteWebm: string | null;
   liteMp4: string | null;
   passLog: string;
@@ -69,17 +69,15 @@ export type ShowcaseOutputs = Readonly<{
 
 export function showcaseOutputs(format: ShowcaseFormat): ShowcaseOutputs {
   const suffix = format === '16x9' ? '' : `-${format}`;
+  const portrait = format === '9x16';
   return {
     mezzanine: resolve(SHOWCASE_FRAMES_DIR, `showcase${suffix}.mkv`),
     master: resolve(SHOWCASE_OUT_DIR, `brag${suffix}.mp4`),
     masterStill: resolve(SHOWCASE_OUT_DIR, `brag${suffix}.jpg`),
     shareCopy: resolve(SHOWCASE_OUT_DIR, 'share-copy.txt'),
-    webWebm: resolve(SHOWCASE_WEB_VIDEO_DIR, `showcase${suffix}.webm`),
-    webMp4: resolve(SHOWCASE_WEB_VIDEO_DIR, `showcase${suffix}.mp4`),
-    poster: resolve(SHOWCASE_WEB_POSTER_DIR, `showcase-poster${suffix}.webp`),
-    heroPoster: format === '9x16' ? resolve(SHOWCASE_WEB_POSTER_DIR, 'showcase-hero-9x16.webp') : null,
-    liteWebm: format === '9x16' ? resolve(SHOWCASE_WEB_VIDEO_DIR, 'showcase-9x16-lite.webm') : null,
-    liteMp4: format === '9x16' ? resolve(SHOWCASE_WEB_VIDEO_DIR, 'showcase-9x16-lite.mp4') : null,
+    heroPoster: portrait ? resolve(SHOWCASE_WEB_POSTER_DIR, 'showcase-hero-9x16.webp') : null,
+    liteWebm: portrait ? resolve(SHOWCASE_WEB_VIDEO_DIR, 'showcase-9x16-lite.webm') : null,
+    liteMp4: portrait ? resolve(SHOWCASE_WEB_VIDEO_DIR, 'showcase-9x16-lite.mp4') : null,
     passLog: resolve(SHOWCASE_FRAMES_DIR, `showcase${suffix}-pass`),
   };
 }
@@ -1392,22 +1390,17 @@ export function stillFramesForScene(
 // --- encoding ------------------------------------------------------------------------
 
 /**
- * Hard gate per web file. The four files are allowlisted in
- * `scripts/check-large-files.mjs` (whose own limit is 2 MB), so this is the
- * only ceiling they have.
+ * Hard gate per web file, under `scripts/check-large-files.mjs`'s 2 MB so the
+ * shipped files need no allowlist entry.
  */
-export const SHOWCASE_WEB_MAX_BYTES = 4_000_000;
-/**
- * Target bitrate for the web cut: the visual quality the 22 s cut shipped at
- * (1.4–1.6 MB), kept for the longer cut rather than spending the whole budget.
- */
-export const SHOWCASE_WEB_BITRATE_KBPS = 580;
+export const SHOWCASE_WEB_MAX_BYTES = 1_900_000;
 
 /**
- * The frame the WEB posters come from (`showcase-poster*.webp` and
- * `showcase-hero-9x16.webp`): the light scene settled, "Swipe, and the wall
- * follows." over the lit phone with both callouts up. `brag.mp4` and `brag.jpg`
- * keep frame 0, the hook, for social. `--poster-frame` overrides it.
+ * The frame the web cut starts on and its poster (`showcase-hero-9x16.webp`)
+ * shows: the light scene settled, "Swipe, and the wall follows." over the lit
+ * phone with both callouts up. The web encodes play the loop rotated to start
+ * here (`webRotation`); `brag.mp4` and `brag.jpg` keep frame 0, the hook, for
+ * social. `--poster-frame` overrides it.
  */
 export const SHOWCASE_WEB_POSTER_FRAME = 132;
 
@@ -1441,15 +1434,26 @@ export function isFlatFrame(luma: ArrayLike<number>, threshold = 3): boolean {
   return Math.sqrt(variance / luma.length) < threshold;
 }
 export const SHOWCASE_MASTER_CRF = 18;
-/** The web cut drops frame 0 (the poster, which the page shows before playback) and loops 1..end. */
-export const SHOWCASE_WEB_FIRST_FRAME = 1;
-export const SHOWCASE_WEB_FALLBACK_MP4 = { width: 1280, height: 720 } as const;
 
-export const webCutSeconds = (totalFrames = SHOWCASE_TOTAL_FRAMES): number =>
-  (totalFrames - SHOWCASE_WEB_FIRST_FRAME) / SHOWCASE_FPS;
+/** The web cut plays every frame of the loop, rotated to start on the poster frame. */
+export const webCutSeconds = (totalFrames = SHOWCASE_TOTAL_FRAMES): number => totalFrames / SHOWCASE_FPS;
 
-/** Bytes an encode at `kbps` for `seconds` should come to, before container overhead. */
-export const expectedWebBytes = (kbps: number, seconds: number): number => (kbps * 1000 * seconds) / 8;
+/**
+ * The web cut's filter graph: frames `start..end` then `0..start-1`, so it opens
+ * on its poster. The loop is seamless (the closer leads back into frame 0), so
+ * the rotated loop is too; the new seam falls mid-scene between two
+ * consecutive frames.
+ */
+export function webRotation(start: number, size?: Readonly<{ width: number; height: number }>): string[] {
+  if (start <= 0) return ['-vf', toBt709(size)];
+  return [
+    '-filter_complex',
+    `[0:v]split[head][tail];[head]trim=start_frame=${start},setpts=PTS-STARTPTS[a];` +
+      `[tail]trim=end_frame=${start},setpts=PTS-STARTPTS[b];[a][b]concat=n=2:v=1:a=0,${toBt709(size)}[out]`,
+    '-map',
+    '[out]',
+  ];
+}
 
 const BT709 = [
   '-colorspace',
@@ -1538,19 +1542,21 @@ export function buildMasterArgs(input: string, output: string): string[] {
   ];
 }
 
-/** Drops the poster frame from the web cut. */
-const webTrim = `trim=start_frame=${SHOWCASE_WEB_FIRST_FRAME},setpts=PTS-STARTPTS`;
-
 export type WebEncode = Readonly<{
   input: string;
   output: string;
   bitrateKbps: number;
   passLog: string;
+  /** The frame the rotated loop starts on (the poster frame). */
+  startFrame: number;
   size?: Readonly<{ width: number; height: number }>;
 }>;
 
 /** VP9 two-pass at a target bitrate. Pass 1 writes only the log. */
-export function buildWebmPassArgs({ input, output, bitrateKbps, passLog, size }: WebEncode, pass: 1 | 2): string[] {
+export function buildWebmPassArgs(
+  { input, output, bitrateKbps, passLog, size, startFrame }: WebEncode,
+  pass: 1 | 2,
+): string[] {
   return [
     '-y',
     '-loglevel',
@@ -1558,8 +1564,7 @@ export function buildWebmPassArgs({ input, output, bitrateKbps, passLog, size }:
     '-i',
     input,
     '-an',
-    '-vf',
-    `${webTrim},${toBt709(size)}`,
+    ...webRotation(startFrame, size),
     '-c:v',
     'libvpx-vp9',
     '-b:v',
@@ -1594,7 +1599,10 @@ export function buildWebmPassArgs({ input, output, bitrateKbps, passLog, size }:
 }
 
 /** H.264 two-pass at a target bitrate, `+faststart` so it plays while loading. */
-export function buildWebMp4PassArgs({ input, output, bitrateKbps, passLog, size }: WebEncode, pass: 1 | 2): string[] {
+export function buildWebMp4PassArgs(
+  { input, output, bitrateKbps, passLog, size, startFrame }: WebEncode,
+  pass: 1 | 2,
+): string[] {
   return [
     '-y',
     '-loglevel',
@@ -1602,8 +1610,7 @@ export function buildWebMp4PassArgs({ input, output, bitrateKbps, passLog, size 
     '-i',
     input,
     '-an',
-    '-vf',
-    `${webTrim},${toBt709(size)}`,
+    ...webRotation(startFrame, size),
     '-c:v',
     'libx264',
     '-preset',
