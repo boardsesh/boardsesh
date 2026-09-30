@@ -777,7 +777,8 @@
       "withMaybes": "{{holds}} · {{maybes}}",
       "undo": "Annuler",
       "menuHint": "Ouvre les options pour toutes tes prises",
-      "saved": "Prises enregistrées"
+      "saved": "Prises enregistrées",
+      "addA11y": "Ajouter les prises manquantes"
     },
     "menu": {
       "keepMaybes": "Garder toutes les incertaines",
@@ -797,12 +798,21 @@
       "bigger": "Agrandir",
       "trace": "Tracer",
       "join": "Réunir",
-      "remove": "Retirer"
+      "remove": "Retirer",
+      "finish": "Terminer"
     },
     "banner": {
       "trace": "Dessine le tour de la prise avec un doigt",
       "join": "Touche la prise à réunir avec celle-ci",
-      "cancel": "Annuler"
+      "cancel": "Annuler",
+      "addDraw": "Dessine le tour d'une prise manquante, ou touche pour poser un cercle",
+      "addCorners": "Touche les coins autour d'une prise manquante",
+      "done": "Terminé"
+    },
+    "addShape": {
+      "label": "Comment délimiter une prise",
+      "draw": "Dessiner",
+      "corners": "Coins"
     },
     "hints": {
       "toggle": "Touche un cercle pour le désactiver. Touche le mur vide pour ajouter une prise.",
@@ -839,7 +849,8 @@
       "strokeTooDetailed": "Ce tracé a trop de détails pour être enregistré. Suis le contour d'un seul geste.",
       "strokeTooShort": "Ce tracé est trop court. Dessine une boucle complète autour de la prise.",
       "someHoldsOffWall_one": "{{count}} prise tombe en dehors du mur. Remets-la sur la photo ou désactive-la.",
-      "someHoldsOffWall_other": "{{count}} prises tombent en dehors du mur. Remets-les sur la photo ou désactive-les."
+      "someHoldsOffWall_other": "{{count}} prises tombent en dehors du mur. Remets-les sur la photo ou désactive-les.",
+      "cornersCross": "Deux côtés se croisent. Touche les coins dans l'ordre autour de la prise."
     },
     "empty": {
       "noPhoto": "Ce mur n'a pas encore de photo à modifier."

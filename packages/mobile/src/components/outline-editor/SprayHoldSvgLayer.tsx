@@ -1,6 +1,13 @@
 import React, { useMemo, useState } from 'react';
 import { StyleSheet } from 'react-native';
-import Animated, { runOnJS, useAnimatedProps, useAnimatedReaction, type SharedValue } from 'react-native-reanimated';
+import Animated, {
+  runOnJS,
+  useAnimatedProps,
+  useAnimatedReaction,
+  useDerivedValue,
+  useSharedValue,
+  type SharedValue,
+} from 'react-native-reanimated';
 import Svg, { G, Path } from 'react-native-svg';
 import { overlays } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
@@ -16,12 +23,13 @@ const AnimatedG = Animated.createAnimatedComponent(G);
  * The rings live inside the board's zoom transform, and a reanimated `scale`
  * magnifies a stroke exactly as it magnifies the photo — `vectorEffect` cancels
  * the SVG's own viewBox scale, not a transform applied to the view around it. So
- * every stroke width is divided by the current zoom. Snapped to five steps
- * rather than tracked live so a pinch re-renders the layer at most four times
- * instead of every frame; between steps a ring runs at most 1.5x its intended
- * weight, which is not something a thumb on a photo can see.
+ * every stroke width is divided by the current zoom. Snapped to seven steps
+ * rather than tracked live so a pinch across the editor's whole 1x–8x range
+ * re-renders the layer at most six times instead of every frame; between steps
+ * a ring runs at most 1.5x its intended weight, which is not something a thumb
+ * on a photo can see.
  */
-export const ZOOM_STROKE_STEPS = [1, 1.5, 2, 3, 4] as const;
+export const ZOOM_STROKE_STEPS = [1, 1.5, 2, 3, 4, 6, 8] as const;
 
 /** The step a live zoom scale snaps to. Worklet-callable. */
 export function zoomStrokeStep(scale: number): number {
@@ -53,6 +61,12 @@ export const RING = {
   draftWidth: 2.5,
   maybeDash: [5, 4],
   offDash: [1, 4],
+  /** The Corners tool's placed-corner dots, as a radius. */
+  cornerDotRadius: 3.5,
+  /** The ring round the first corner once the polygon can close, as a radius. */
+  closeTargetRadius: 11,
+  /** The not-yet-committed closing edge, last corner back to the first. */
+  closingDash: [6, 4],
 } as const;
 
 type SprayHoldSvgLayerProps = {
@@ -74,6 +88,11 @@ type SprayHoldSvgLayerProps = {
   maybeOpacitySV: SharedValue<number>;
   /** The live stroke in board px, written by `DrawStrokeOverlay` during Trace. */
   draftPointsSV: SharedValue<number[]>;
+  /**
+   * The Corners tool's placed corners in board px, flat `[x0, y0, ...]`, written
+   * by `PolygonTapOverlay`. Omitted, the corners preview is not mounted at all.
+   */
+  polygonSV?: SharedValue<number[]>;
   /** The board's live zoom, from `FilterBoardTransformContext`. */
   scaleSV: SharedValue<number>;
   boardWidth: number;
@@ -89,7 +108,7 @@ type SprayHoldSvgLayerProps = {
  * and for the same reason: a wall may carry 1500 holds, and one `<Path>` each
  * would be 1500 native views to mount and diff on a phone. Three roles, two of
  * them doubled for the halo, plus the live Trace stroke is eight nodes however big
- * the wall is. Each hold's path string is built only when the holds change; a
+ * the wall is; the Corners preview adds seven more only while it is mounted. Each hold's path string is built only when the holds change; a
  * selection only re-joins the buckets, moving the selected hold into the OFF
  * bucket as a ghost while `SelectedHoldOverlay` draws its ring.
  *
@@ -102,6 +121,7 @@ export const SprayHoldSvgLayer = React.memo(function SprayHoldSvgLayer({
   selectedId,
   maybeOpacitySV,
   draftPointsSV,
+  polygonSV,
   scaleSV,
   boardWidth,
   boardHeight,
@@ -146,8 +166,50 @@ export const SprayHoldSvgLayer = React.memo(function SprayHoldSvgLayer({
       draftHalo: scaled(RING.draftWidth + RING.haloExtra),
       maybeDash: RING.maybeDash.map(scaled),
       offDash: RING.offDash.map(scaled),
+      closingDash: RING.closingDash.map(scaled),
     };
   }, [zoomStep]);
+
+  // Dot and target radii are GEOMETRY, not stroke, so vectorEffect does nothing
+  // for them: convert points to board px through the viewBox (board px per
+  // render px) and the zoom, snapped like every width above.
+  const boardPxPerPoint = renderWidth > 0 ? boardWidth / renderWidth / zoomStep : 0;
+  // Plain numbers for the worklet to capture, rather than the RING object.
+  const dotRadius = RING.cornerDotRadius * boardPxPerPoint;
+  const targetRadius = RING.closeTargetRadius * boardPxPerPoint;
+  const fallbackPolygonSV = useSharedValue<number[]>([]);
+  const cornersSV = polygonSV ?? fallbackPolygonSV;
+  // Every Corners sub-path in one worklet pass per change, on the UI thread —
+  // the four animated props below only read their own string out of it.
+  const cornerPaths = useDerivedValue(() => {
+    'worklet';
+    const corners = cornersSV.value;
+    const count = Math.floor(corners.length / 2);
+    if (count === 0) return { edges: '', closing: '', dots: '', target: '' };
+    let edges = '';
+    if (count >= 2) {
+      edges = `M${corners[0]} ${corners[1]}`;
+      for (let index = 2; index < count * 2; index += 2) {
+        edges += `L${corners[index]} ${corners[index + 1]}`;
+      }
+    }
+    let dots = '';
+    for (let index = 0; index < count * 2; index += 2) {
+      const left = corners[index] - dotRadius;
+      dots += `M${left} ${corners[index + 1]}a${dotRadius} ${dotRadius} 0 1 0 ${dotRadius * 2} 0a${dotRadius} ${dotRadius} 0 1 0 ${-dotRadius * 2} 0Z`;
+    }
+    let closing = '';
+    let target = '';
+    if (count >= 3) {
+      closing = `M${corners[count * 2 - 2]} ${corners[count * 2 - 1]}L${corners[0]} ${corners[1]}`;
+      target = `M${corners[0] - targetRadius} ${corners[1]}a${targetRadius} ${targetRadius} 0 1 0 ${targetRadius * 2} 0a${targetRadius} ${targetRadius} 0 1 0 ${-targetRadius * 2} 0Z`;
+    }
+    return { edges, closing, dots, target };
+  }, [cornersSV, dotRadius, targetRadius]);
+  const cornerEdgesProps = useAnimatedProps(() => ({ d: cornerPaths.value.edges }));
+  const cornerClosingProps = useAnimatedProps(() => ({ d: cornerPaths.value.closing }));
+  const cornerDotsProps = useAnimatedProps(() => ({ d: cornerPaths.value.dots }));
+  const cornerTargetProps = useAnimatedProps(() => ({ d: cornerPaths.value.target }));
 
   const draftProps = useAnimatedProps(() => {
     'worklet';
@@ -234,6 +296,66 @@ export const SprayHoldSvgLayer = React.memo(function SprayHoldSvgLayer({
         strokeLinejoin="round"
         vectorEffect="non-scaling-stroke"
       />
+      {polygonSV ? (
+        <>
+          <AnimatedPath
+            animatedProps={cornerEdgesProps}
+            fill="none"
+            stroke={overlays.scrim}
+            strokeWidth={stroke.draftHalo}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            vectorEffect="non-scaling-stroke"
+          />
+          <AnimatedPath
+            animatedProps={cornerEdgesProps}
+            fill="none"
+            stroke={overlays.onScrim}
+            strokeWidth={stroke.draft}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            vectorEffect="non-scaling-stroke"
+          />
+          <AnimatedPath
+            animatedProps={cornerClosingProps}
+            fill="none"
+            stroke={overlays.scrim}
+            strokeWidth={stroke.draftHalo}
+            strokeDasharray={stroke.closingDash}
+            vectorEffect="non-scaling-stroke"
+          />
+          <AnimatedPath
+            animatedProps={cornerClosingProps}
+            fill="none"
+            stroke={overlays.onScrim}
+            strokeWidth={stroke.draft}
+            strokeDasharray={stroke.closingDash}
+            strokeLinecap="round"
+            vectorEffect="non-scaling-stroke"
+          />
+          <AnimatedPath
+            animatedProps={cornerTargetProps}
+            fill="none"
+            stroke={overlays.scrim}
+            strokeWidth={stroke.onHalo}
+            vectorEffect="non-scaling-stroke"
+          />
+          <AnimatedPath
+            animatedProps={cornerTargetProps}
+            fill="none"
+            stroke={brandColors.accent}
+            strokeWidth={stroke.on}
+            vectorEffect="non-scaling-stroke"
+          />
+          <AnimatedPath
+            animatedProps={cornerDotsProps}
+            fill={overlays.onScrim}
+            stroke={overlays.scrim}
+            strokeWidth={stroke.off}
+            vectorEffect="non-scaling-stroke"
+          />
+        </>
+      ) : null}
     </Svg>
   );
 });
@@ -241,7 +363,7 @@ export const SprayHoldSvgLayer = React.memo(function SprayHoldSvgLayer({
 /**
  * The live zoom, snapped to {@link ZOOM_STROKE_STEPS}, as React state.
  *
- * `runOnJS` fires only when the snapped step changes — at most four times per
+ * `runOnJS` fires only when the snapped step changes — at most six times per
  * pinch — never per frame.
  */
 export function useZoomStrokeStep(scaleSV: SharedValue<number>): number {

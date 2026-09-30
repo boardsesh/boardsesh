@@ -715,12 +715,12 @@ What the editor does with a wall is decided by this document rather than by tast
 - **It edits THE draft.** One draft per wall, so there is no version to choose:
   the `versionId` handed in is the open one, and publishing or discarding are the
   two ways out (see "One open draft per wall").
-- **Rings are holds, and a tap switches one off or on.** There are no finger
-  modes. A tap on a ring toggles it, a tap on bare wall adds a hold at the
+- **Rings are holds, and a tap switches one off or on.** At rest there are no
+  finger modes. A tap on a ring toggles it, a tap on bare wall adds a hold at the
   wall's median size, a long press picks a ring up for the chip bar (Smaller,
   Bigger, Trace, Join, Remove) and the same touch can carry on into a move, and
   two fingers always zoom. Trace and Join are one-shot tools with a banner and a
-  Cancel. The gesture surface (`SprayEditGestureOverlay`) hit-tests on the UI
+  Cancel. The one mode is add mode, below. The gesture surface (`SprayEditGestureOverlay`) hit-tests on the UI
   thread only to decide whether a long press has a ring under it, and whether a
   touch-down claims a drag of the selected ring — which it does only when the
   full hit test at that point names the selection, so a touch on a neighbour
@@ -731,7 +731,47 @@ What the editor does with a wall is decided by this document rather than by tast
   Moving, resizing or tracing an OFF ring or a maybe switches it ON, so each is
   held to the hold cap like an add. To a screen reader the wall is one image
   labelled with the counts, and activating it does nothing: the bar and the chip
-  bar are the accessible path.
+  bar are the accessible path. The wall also keeps its "Add a hold in the middle
+  of the view" action in the resting editor. Add mode itself is a touch tool.
+- **Add mode is for the holds detection missed** (#5906). At rest, a tap on bare
+  wall adds a circle only when no ring is within the hit radius above, and on a
+  dense wall that radius covers most bare wall. A glass + in the bottom bar,
+  between the count capsule and Publish, turns add mode on. It is an icon, not
+  a label, so the row still fits a 375 pt phone with the German Publish label.
+  While add mode is on the + becomes a check, and the check and the banner's
+  Done both leave it. It is the one tool that is a mode rather than one-shot: it
+  stays on until Done, so several missed holds go in one go. In add mode no
+  touch selects, toggles or picks up a ring, and pinch still zooms and pans.
+  Undo removes the last corner while an outline is in progress, then falls back
+  to the reducer undo (the last added hold).
+- **Add mode has two shapes, Draw and Corners.** A Draw | Corners segmented
+  control on the banner picks one and is remembered per device in AsyncStorage
+  (`boardsesh_spray_editor_add_shape`, default Draw).
+  - Draw: one finger drags round the hold, and the stroke goes through the same
+    `holdFromStroke` then `buildOutlineRing` chain as Trace. A stroke that stays
+    within 10 screen pt is a tap and drops a circle at the median radius. If a
+    second finger lands during a finger stroke, the stroke is dropped and the
+    pinch zooms (Trace works the same way); a Pencil stroke still ignores a
+    resting palm.
+  - Corners: each tap places a corner, with a live preview drawn on the UI
+    thread so corners never round-trip through React per frame. Tapping within
+    22 pt of the first corner once there are 3, or pressing the Finish chip,
+    closes the outline. `holdFromPolygon` keeps the corners exactly, with no
+    stroke sampling, no loop-closing trim and no simplification. It refuses
+    fewer than 3 corners or zero area, more than the ring contract's cap
+    (`POLYGON_MAX_VERTICES`), crossing sides (`self-overlap`), and a shape whose
+    centre falls outside it. A refused outline keeps its corners so they can be
+    fixed. Done closes a valid outline before leaving; one that cannot close is
+    discarded and its error stays on the banner.
+- **The spray editor zooms to 8x, every other board to 4x.** The editor passes
+  `maxScale={SPRAY_EDITOR_MAX_SCALE}` (8) to `InteractiveFilterBoard`, which
+  hands it to `useZoomPanGesture`. Everything else keeps `MAX_SCALE = 4` from
+  `@boardsesh/play-view`: climb view, search, zone, the catalogue outline
+  editor, reset compare and web. Ring strokes snap through zoom steps 1, 1.5, 2,
+  3, 4, 6 and 8 so they stay thin. The photo is already the stored 2048 px
+  long-side original (the only other copy is a 280 px thumbnail), so at 8x a
+  phone shows roughly 190 photo px across and looks soft. Storing a larger
+  original is a follow-up.
 - **Motion is whole-layer or one spotlight, never per hold.** After a fresh
   scan (`revealOnMount`) the ring layer is revealed by a 700 ms top-to-bottom
   clip of one wrapper view, with the scan band riding its edge, then the maybes

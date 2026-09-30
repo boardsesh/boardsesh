@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   MIN_SCALE,
   MAX_SCALE,
@@ -6,6 +6,13 @@ import {
   clampTranslation,
   computeFocalPinchTranslation,
 } from '@boardsesh/play-view';
+
+// The hook module imports reanimated and RNGH at load time; neither runs under
+// vitest's node env. clampPinchScale is a pure worklet, so empty stubs suffice.
+vi.mock('react-native-reanimated', () => ({}));
+vi.mock('react-native-gesture-handler', () => ({ Gesture: {} }));
+
+import { clampPinchScale } from '../use-zoom-pan-gesture';
 
 describe('clampTranslation', () => {
   const containerWidth = 400;
@@ -79,6 +86,27 @@ describe('zoom constants', () => {
   it('ZOOM_THRESHOLD is between MIN_SCALE and MAX_SCALE', () => {
     expect(ZOOM_THRESHOLD).toBeGreaterThan(MIN_SCALE);
     expect(ZOOM_THRESHOLD).toBeLessThan(MAX_SCALE);
+  });
+});
+
+describe('clampPinchScale', () => {
+  it('passes a scale inside the range through untouched', () => {
+    expect(clampPinchScale(2.5, MIN_SCALE, MAX_SCALE)).toBe(2.5);
+  });
+
+  it('holds the default range at 4x', () => {
+    expect(clampPinchScale(6, MIN_SCALE, MAX_SCALE)).toBe(4);
+  });
+
+  it('honours a raised max, so the spray editor can reach 8x', () => {
+    expect(clampPinchScale(6, MIN_SCALE, 8)).toBe(6);
+    expect(clampPinchScale(8, MIN_SCALE, 8)).toBe(8);
+    expect(clampPinchScale(12, MIN_SCALE, 8)).toBe(8);
+  });
+
+  it('never lets a pinch-out go below the min', () => {
+    expect(clampPinchScale(0.4, MIN_SCALE, 8)).toBe(MIN_SCALE);
+    expect(clampPinchScale(0.4, MIN_SCALE, MAX_SCALE)).toBe(MIN_SCALE);
   });
 });
 

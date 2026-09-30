@@ -79,6 +79,21 @@ describe('sprayEditorReducer', () => {
     expect(twice.holds[-6]).toBeDefined();
   });
 
+  it('UNDO after a run of ADD_HOLDs takes the holds back one at a time, newest first', () => {
+    const outline = [1, 0, 0, 1, -1, 0, 1, 0];
+    const added = run(
+      loaded([storedHold(1)]),
+      { type: 'ADD_HOLD', geometry: { cx: 1, cy: 2, r: 3, outline: null } },
+      { type: 'ADD_HOLD', geometry: { cx: 4, cy: 5, r: 6, outline } },
+    );
+    const once = sprayEditorReducer(added, { type: 'UNDO' });
+    expect(once.holds[-2]).toBeUndefined();
+    expect(once.holds[-1]).toBeDefined();
+    const twice = sprayEditorReducer(once, { type: 'UNDO' });
+    expect(twice.holds[-1]).toBeUndefined();
+    expect(allHolds(twice).map((hold) => hold.id)).toEqual([1]);
+  });
+
   describe('TOGGLE_HOLD', () => {
     it('switches a confident find OFF, writes nothing, and undoes back ON', () => {
       const state = run(loaded([candidate(-1, CONFIDENT)]), { type: 'TOGGLE_HOLD', id: -1 });

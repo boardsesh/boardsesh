@@ -777,7 +777,8 @@
       "withMaybes": "{{holds}} · {{maybes}}",
       "undo": "Deshacer",
       "menuHint": "Abre las opciones para todas tus presas",
-      "saved": "Presas guardadas"
+      "saved": "Presas guardadas",
+      "addA11y": "Añadir presas que faltan"
     },
     "menu": {
       "keepMaybes": "Conservar todas las dudosas",
@@ -797,12 +798,21 @@
       "bigger": "Agrandar",
       "trace": "Trazar",
       "join": "Unir",
-      "remove": "Quitar"
+      "remove": "Quitar",
+      "finish": "Terminar"
     },
     "banner": {
       "trace": "Dibuja con un dedo alrededor de la presa",
       "join": "Toca la presa con la que unirla",
-      "cancel": "Cancelar"
+      "cancel": "Cancelar",
+      "addDraw": "Dibuja alrededor de una presa que falta, o toca para poner un círculo",
+      "addCorners": "Toca las esquinas alrededor de una presa que falta",
+      "done": "Listo"
+    },
+    "addShape": {
+      "label": "Cómo perfilar una presa",
+      "draw": "Dibujar",
+      "corners": "Esquinas"
     },
     "hints": {
       "toggle": "Toca un círculo para desactivarlo. Toca el muro vacío para añadir una presa.",
@@ -839,7 +849,8 @@
       "strokeTooDetailed": "Ese trazo tiene demasiado detalle para guardarlo. Repasa el contorno de una sola pasada.",
       "strokeTooShort": "Ese trazo es demasiado corto. Dibuja un bucle completo alrededor de la presa.",
       "someHoldsOffWall_one": "{{count}} presa cae fuera del muro. Devuélvela a la foto o desactívala.",
-      "someHoldsOffWall_other": "{{count}} presas caen fuera del muro. Devuélvelas a la foto o desactívalas."
+      "someHoldsOffWall_other": "{{count}} presas caen fuera del muro. Devuélvelas a la foto o desactívalas.",
+      "cornersCross": "Dos lados se cruzan. Toca las esquinas en orden alrededor de la presa."
     },
     "empty": {
       "noPhoto": "Este muro todavía no tiene foto que editar."

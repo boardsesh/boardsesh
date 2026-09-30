@@ -13,8 +13,24 @@
  * only way to catch that is a test that never mounts a board.
  */
 
-import { MAX_RING_COORDINATE, type RingPoint } from '@boardsesh/board-art-geometry/ring';
-import { buildOutlineRing, radiusRingToBoardPx, type StrokeRejection } from './stroke';
+import {
+  MAX_RING_COORDINATE,
+  MAX_RING_NUMBERS,
+  MIN_RING_NUMBERS,
+  closeRing,
+  isValidOutlineRing,
+  roundRing,
+  type RingPoint,
+} from '@boardsesh/board-art-geometry/ring';
+import {
+  OUTLINE_DECIMALS,
+  boardRingToRadiusUnits,
+  buildOutlineRing,
+  flattenRing,
+  radiusRingToBoardPx,
+  ringCoversCentre,
+  type StrokeRejection,
+} from './stroke';
 
 /**
  * Detector confidence at or above which a candidate opens ON — drawn as a solid
@@ -173,6 +189,176 @@ export function holdFromStroke(points: RingPoint[]): HoldFromStrokeResult {
   const result = buildOutlineRing(points, { id: 0, cx, cy, r });
   if (!result.ok) return result;
   return { ok: true, hold: { cx, cy, r, outline: result.outline } };
+}
+
+/**
+ * Most corners a tapped-out polygon may have: one stored ring's worth.
+ *
+ * Derived from the shared ring contract (`MAX_RING_NUMBERS`, two numbers a
+ * point) rather than restated. `closeRing` only ever DROPS a trailing point that
+ * repeats the first — it never appends one — so a polygon of this many corners
+ * stores as exactly this many points and still fits.
+ */
+export const POLYGON_MAX_VERTICES = Math.floor(MAX_RING_NUMBERS / 2);
+
+/**
+ * Two corners closer than this, in board px, are one corner tapped twice. Far
+ * below anything a fingertip places on purpose, even at the editor's deepest zoom.
+ */
+export const POLYGON_DUPLICATE_BOARD_PX = 0.5;
+
+/**
+ * A polygon enclosing less than this, in square board px, has no inside — its
+ * corners are collinear, or as near as floating point gets.
+ */
+export const POLYGON_MIN_AREA_BOARD_PX2 = 1;
+
+/** Twice the signed area of triangle (origin, from, to); its sign is the turn direction. */
+function turn(origin: RingPoint, from: RingPoint, to: RingPoint): number {
+  return (from[0] - origin[0]) * (to[1] - origin[1]) - (from[1] - origin[1]) * (to[0] - origin[0]);
+}
+
+/** Does `point`, already known to be collinear with the segment, sit within its bounding box? */
+function onSegment(start: RingPoint, end: RingPoint, point: RingPoint): boolean {
+  return (
+    Math.min(start[0], end[0]) <= point[0] &&
+    point[0] <= Math.max(start[0], end[0]) &&
+    Math.min(start[1], end[1]) <= point[1] &&
+    point[1] <= Math.max(start[1], end[1])
+  );
+}
+
+/** Closed-segment intersection: touching at a point or overlapping along a line both count. */
+function segmentsIntersect(firstStart: RingPoint, firstEnd: RingPoint, secondStart: RingPoint, secondEnd: RingPoint) {
+  const turnA = turn(firstStart, firstEnd, secondStart);
+  const turnB = turn(firstStart, firstEnd, secondEnd);
+  const turnC = turn(secondStart, secondEnd, firstStart);
+  const turnD = turn(secondStart, secondEnd, firstEnd);
+  if (
+    ((turnA > 0 && turnB < 0) || (turnA < 0 && turnB > 0)) &&
+    ((turnC > 0 && turnD < 0) || (turnC < 0 && turnD > 0))
+  ) {
+    return true;
+  }
+  if (turnA === 0 && onSegment(firstStart, firstEnd, secondStart)) return true;
+  if (turnB === 0 && onSegment(firstStart, firstEnd, secondEnd)) return true;
+  if (turnC === 0 && onSegment(secondStart, secondEnd, firstStart)) return true;
+  if (turnD === 0 && onSegment(secondStart, secondEnd, firstEnd)) return true;
+  return false;
+}
+
+/**
+ * Do these corners all sit within {@link POLYGON_DUPLICATE_BOARD_PX} of one
+ * line? Measured against the line from the first corner to the corner farthest
+ * from it, so the answer doesn't depend on which two corners happen to be close.
+ */
+function cornersAreCollinear(points: RingPoint[]): boolean {
+  const origin = points[0];
+  let farthest = origin;
+  let farthestDistance = 0;
+  for (const point of points) {
+    const distance = Math.hypot(point[0] - origin[0], point[1] - origin[1]);
+    if (distance > farthestDistance) {
+      farthestDistance = distance;
+      farthest = point;
+    }
+  }
+  if (farthestDistance === 0) return true;
+  for (const point of points) {
+    if (Math.abs(turn(origin, farthest, point)) / farthestDistance > POLYGON_DUPLICATE_BOARD_PX) return false;
+  }
+  return true;
+}
+
+/**
+ * Is this implicitly-closed polygon anything but simple?
+ *
+ * Two kinds of failure: any two NON-adjacent edges meeting at all, and two
+ * adjacent edges folding straight back over each other (a spike, whose shared
+ * corner has a zero-area turn and the next edge running backwards). O(n²) on at
+ * most {@link POLYGON_MAX_VERTICES} corners — about eleven thousand pair tests,
+ * once, on commit.
+ */
+export function polygonSelfOverlaps(points: RingPoint[]): boolean {
+  const count = points.length;
+  if (count < 3) return false;
+  for (let first = 0; first < count; first += 1) {
+    const firstStart = points[first];
+    const firstEnd = points[(first + 1) % count];
+    const following = points[(first + 2) % count];
+    // Adjacent pair (first, first + 1): only a fold-back can overlap them.
+    const foldX = (firstEnd[0] - firstStart[0]) * (following[0] - firstEnd[0]);
+    const foldY = (firstEnd[1] - firstStart[1]) * (following[1] - firstEnd[1]);
+    if (turn(firstStart, firstEnd, following) === 0 && foldX + foldY < 0) return true;
+    for (let second = first + 2; second < count; second += 1) {
+      // The closing edge (count - 1) shares corner 0 with edge 0.
+      if (first === 0 && second === count - 1) continue;
+      if (segmentsIntersect(firstStart, firstEnd, points[second], points[(second + 1) % count])) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Tapped-out corners → a whole hold: centre, radius and silhouette.
+ *
+ * The sibling of {@link holdFromStroke} with the opposite attitude to the input.
+ * A freehand stroke is a noisy trace, so it is sampled, loop-closed and
+ * decimated; a polygon is a handful of corners the climber placed one at a time
+ * on a zoomed photo, and every one of them is meant. So nothing here moves or
+ * drops a corner except an exact-enough repeat (a double tap, or a closing tap
+ * that landed back on the first corner) — no stroke dedupe, no loop closing, no
+ * Douglas-Peucker. What stays shared is the tail every stored ring goes through:
+ * radius units, round-before-close in the backend's order, the shared contract,
+ * and the centre-cover gate.
+ *
+ * Crossing edges are refused as `'self-overlap'` rather than repaired: there is
+ * no one right polygon for a bow-tie, and guessing would store a shape the
+ * climber never drew.
+ */
+export function holdFromPolygon(vertices: RingPoint[]): HoldFromStrokeResult {
+  const duplicateSquared = POLYGON_DUPLICATE_BOARD_PX * POLYGON_DUPLICATE_BOARD_PX;
+  const isDuplicate = (left: RingPoint, right: RingPoint) => {
+    const deltaX = left[0] - right[0];
+    const deltaY = left[1] - right[1];
+    return deltaX * deltaX + deltaY * deltaY < duplicateSquared;
+  };
+
+  const corners: RingPoint[] = [];
+  for (const vertex of vertices) {
+    const previous = corners[corners.length - 1];
+    if (previous && isDuplicate(previous, vertex)) continue;
+    corners.push(vertex);
+  }
+  // A trailing corner on top of the first is the ring closing itself — stored
+  // rings are implicitly closed, so it would only add a zero-length edge.
+  while (corners.length > 1 && isDuplicate(corners[corners.length - 1], corners[0])) corners.pop();
+
+  // Corners on one line are too few for a hold however many there are — checked
+  // before the overlap test, which would otherwise read the line doubling back
+  // on itself as a fold.
+  if (corners.length < 3 || cornersAreCollinear(corners)) return { ok: false, reason: 'too-few-points' };
+  if (corners.length > POLYGON_MAX_VERTICES) return { ok: false, reason: 'too-complex' };
+  // Before the area test: a symmetric bow-tie's two lobes cancel to zero signed
+  // area, and "too few corners" would send the climber the wrong way.
+  if (polygonSelfOverlaps(corners)) return { ok: false, reason: 'self-overlap' };
+  const { cx, cy, area } = polygonCentroidAndArea(corners);
+  if (!(area >= POLYGON_MIN_AREA_BOARD_PX2)) return { ok: false, reason: 'too-few-points' };
+
+  const r = radiusForRing(corners, cx, cy, area);
+  if (!Number.isFinite(cx) || !Number.isFinite(cy) || !Number.isFinite(r)) {
+    return { ok: false, reason: 'out-of-bounds' };
+  }
+
+  // Round, THEN close — the backend's order; see `buildOutlineRing`.
+  const radiusRing = closeRing(
+    roundRing(boardRingToRadiusUnits(flattenRing(corners), { id: 0, cx, cy, r }), OUTLINE_DECIMALS),
+  );
+  if (radiusRing.length < MIN_RING_NUMBERS) return { ok: false, reason: 'too-few-points' };
+  if (!isValidOutlineRing(radiusRing)) return { ok: false, reason: 'out-of-bounds' };
+  if (!ringCoversCentre(radiusRing)) return { ok: false, reason: 'centre-outside' };
+
+  return { ok: true, hold: { cx, cy, r, outline: radiusRing } };
 }
 
 /** A hold placed by a tap: a plain circle, which is what the renderer draws for a null outline. */

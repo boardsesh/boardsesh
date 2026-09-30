@@ -44,6 +44,12 @@ type UseZoomPanGestureOptions = {
    * the ancestor pinch can't acquire both — pinch-to-zoom stalls on Android.
    * The play-drawer board has no per-hold detectors, so it leaves this unset. */
   pinchRef?: MutableRefObject<GestureType | undefined>;
+  /** Deepest zoom a pinch may reach. Defaults to `MAX_SCALE` (4×), which every
+   * board uses; the spray hold editor raises it so small holds tucked beside big
+   * ones can be framed. Read on the UI thread from a shared value, so changing it
+   * never rebuilds the gesture objects. `zoomTo` does not clamp against it — its
+   * caller pre-clamps (see `zoomTargetForHold`'s own `maxScale`). */
+  maxScale?: number;
 };
 
 type UseZoomPanGestureReturn = {
@@ -126,6 +132,16 @@ function clampTranslation(
   };
 }
 
+/**
+ * The scale a pinch lands on: the gesture's raw scale held inside
+ * [minScale, maxScale]. A worklet so the pinch's onUpdate can call it on the UI
+ * thread; exported so the clamp itself is unit-testable.
+ */
+export function clampPinchScale(scale: number, minScale: number, maxScale: number): number {
+  'worklet';
+  return Math.max(minScale, Math.min(maxScale, scale));
+}
+
 export function useZoomPanGesture({
   enabled = true,
   containerWidth,
@@ -133,6 +149,7 @@ export function useZoomPanGesture({
   panActivationOffset,
   scrollRef,
   pinchRef,
+  maxScale = MAX_SCALE,
 }: UseZoomPanGestureOptions): UseZoomPanGestureReturn {
   const scale = useSharedValue(MIN_SCALE);
   const translateX = useSharedValue(0);
@@ -157,6 +174,7 @@ export function useZoomPanGesture({
   const enabledSV = useSharedValue(enabled);
   const containerWidthSV = useSharedValue(containerWidth);
   const containerHeightSV = useSharedValue(containerHeight);
+  const maxScaleSV = useSharedValue(maxScale);
   useEffect(() => {
     enabledSV.value = enabled;
   }, [enabled, enabledSV]);
@@ -166,6 +184,9 @@ export function useZoomPanGesture({
   useEffect(() => {
     containerHeightSV.value = containerHeight;
   }, [containerHeight, containerHeightSV]);
+  useEffect(() => {
+    maxScaleSV.value = maxScale;
+  }, [maxScale, maxScaleSV]);
 
   const [isZoomed, setIsZoomed] = useState(false);
   // JS mirror of "2+ fingers down" — see isPinching in the return type. Tracked
@@ -238,7 +259,7 @@ export function useZoomPanGesture({
       .onUpdate((event) => {
         'worklet';
         if (!enabledSV.value) return;
-        const newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, savedScale.value * event.scale));
+        const newScale = clampPinchScale(savedScale.value * event.scale, MIN_SCALE, maxScaleSV.value);
 
         const focalOffsetX = pinchFocalX.value - containerWidthSV.value / 2;
         const focalOffsetY = pinchFocalY.value - containerHeightSV.value / 2;
@@ -349,6 +370,7 @@ export function useZoomPanGesture({
     enabledSV,
     containerWidthSV,
     containerHeightSV,
+    maxScaleSV,
     updateZoomState,
     scrollRef,
     pinchRef,

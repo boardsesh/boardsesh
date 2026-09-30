@@ -1,15 +1,24 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_RING_COORDINATE, pointInRing, type RingPoint } from '@boardsesh/board-art-geometry/ring';
+import {
+  MAX_RING_COORDINATE,
+  MAX_RING_NUMBERS,
+  isValidOutlineRing,
+  pointInRing,
+  type RingPoint,
+} from '@boardsesh/board-art-geometry/ring';
 import {
   convexHull,
   defaultHoldRadius,
   holdAtPoint,
   holdBoundaryPoints,
+  holdFromPolygon,
   holdFromStroke,
   holdFromTap,
   MIN_HOLD_RADIUS_BOARD_PX,
   mergeHoldGeometry,
+  POLYGON_MAX_VERTICES,
   polygonCentroidAndArea,
+  polygonSelfOverlaps,
   radiusForRing,
   SIZE_PRESETS,
   stepHoldSize,
@@ -121,6 +130,155 @@ describe('holdFromStroke', () => {
       [1, 1],
     ]);
     expect(result).toEqual({ ok: false, reason: 'too-few-points' });
+  });
+});
+
+describe('holdFromPolygon', () => {
+  const square: RingPoint[] = [
+    [100, 100],
+    [140, 100],
+    [140, 140],
+    [100, 140],
+  ];
+
+  it('turns four corners into a hold centred in the square with a storable ring', () => {
+    const result = holdFromPolygon(square);
+    expect(result.ok).toBe(true);
+    if (!result.ok || !result.hold.outline) throw new Error('expected a traced hold');
+    expect(result.hold.cx).toBeCloseTo(120);
+    expect(result.hold.cy).toBeCloseTo(120);
+    expect(result.hold.outline).toHaveLength(8);
+    expect(isValidOutlineRing(result.hold.outline)).toBe(true);
+    // The ring walks back to the exact corners the climber tapped.
+    const boardRing = radiusRingToBoardPx(result.hold.outline, { id: 0, ...result.hold });
+    expect(boardRing[0]).toBeCloseTo(100, 2);
+    expect(boardRing[1]).toBeCloseTo(100, 2);
+    expect(boardRing[4]).toBeCloseTo(140, 2);
+    expect(boardRing[5]).toBeCloseTo(140, 2);
+  });
+
+  it('refuses two corners', () => {
+    expect(
+      holdFromPolygon([
+        [0, 0],
+        [10, 10],
+      ]),
+    ).toEqual({ ok: false, reason: 'too-few-points' });
+  });
+
+  it('refuses three corners on one line, which enclose nothing', () => {
+    expect(
+      holdFromPolygon([
+        [0, 0],
+        [10, 10],
+        [20, 20],
+      ]),
+    ).toEqual({ ok: false, reason: 'too-few-points' });
+  });
+
+  it('refuses a bow-tie whose edges cross', () => {
+    expect(
+      holdFromPolygon([
+        [0, 0],
+        [40, 40],
+        [40, 0],
+        [0, 40],
+      ]),
+    ).toEqual({ ok: false, reason: 'self-overlap' });
+  });
+
+  it('refuses one corner more than a stored ring can hold', () => {
+    expect(POLYGON_MAX_VERTICES * 2).toBe(MAX_RING_NUMBERS);
+    const tooMany = circleStroke(500, 500, 200, POLYGON_MAX_VERTICES + 1);
+    expect(holdFromPolygon(tooMany)).toEqual({ ok: false, reason: 'too-complex' });
+  });
+
+  it('accepts exactly the cap', () => {
+    const result = holdFromPolygon(circleStroke(500, 500, 200, POLYGON_MAX_VERTICES));
+    expect(result.ok).toBe(true);
+    if (!result.ok || !result.hold.outline) throw new Error('expected a traced hold');
+    expect(result.hold.outline).toHaveLength(MAX_RING_NUMBERS);
+  });
+
+  it('refuses a deep C whose centre falls in the open mouth', () => {
+    // Outer 100x100, a 80x60 bite out of the right side. The centroid lands at
+    // x ~41, about 21 board px (0.5 radii) into the mouth.
+    const letterC: RingPoint[] = [
+      [0, 0],
+      [100, 0],
+      [100, 20],
+      [20, 20],
+      [20, 80],
+      [100, 80],
+      [100, 100],
+      [0, 100],
+    ];
+    expect(holdFromPolygon(letterC)).toEqual({ ok: false, reason: 'centre-outside' });
+  });
+
+  it('drops a closing corner that repeats the first', () => {
+    const result = holdFromPolygon([...square, [100.2, 100.1]]);
+    expect(result.ok).toBe(true);
+    if (!result.ok || !result.hold.outline) throw new Error('expected a traced hold');
+    expect(result.hold.outline).toHaveLength(8);
+  });
+
+  it('drops a corner tapped twice in a row', () => {
+    const result = holdFromPolygon([square[0], square[1], [140.1, 100.2], square[2], square[3]]);
+    expect(result.ok).toBe(true);
+    if (!result.ok || !result.hold.outline) throw new Error('expected a traced hold');
+    expect(result.hold.outline).toHaveLength(8);
+  });
+
+  it('keeps every corner, even one a stroke simplifier would have dropped', () => {
+    // 0.3 px off the bottom edge: far inside the 1.6 px Douglas-Peucker tolerance.
+    const result = holdFromPolygon([
+      [0, 0],
+      [50, 0.3],
+      [100, 0],
+      [100, 100],
+      [0, 100],
+    ]);
+    expect(result.ok).toBe(true);
+    if (!result.ok || !result.hold.outline) throw new Error('expected a traced hold');
+    expect(result.hold.outline).toHaveLength(10);
+  });
+});
+
+describe('polygonSelfOverlaps', () => {
+  it('passes a simple concave polygon', () => {
+    expect(
+      polygonSelfOverlaps([
+        [0, 0],
+        [20, 0],
+        [10, 5],
+        [20, 20],
+        [0, 20],
+      ]),
+    ).toBe(false);
+  });
+
+  it('catches a corner that lands on a non-adjacent edge', () => {
+    expect(
+      polygonSelfOverlaps([
+        [0, 0],
+        [20, 0],
+        [20, 20],
+        [10, 0],
+        [0, 20],
+      ]),
+    ).toBe(true);
+  });
+
+  it('catches an edge that folds straight back over the one before it', () => {
+    expect(
+      polygonSelfOverlaps([
+        [0, 0],
+        [20, 0],
+        [10, 0],
+        [10, 20],
+      ]),
+    ).toBe(true);
   });
 });
 
