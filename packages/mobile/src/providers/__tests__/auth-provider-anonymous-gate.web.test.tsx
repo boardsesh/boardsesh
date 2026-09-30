@@ -42,6 +42,8 @@ const consumeFreshOAuthPendingMock = vi.hoisted(() => vi.fn());
 const consumeWebOAuthReturnProviderMock = vi.hoisted(() => vi.fn());
 const trackMock = vi.hoisted(() => vi.fn());
 
+vi.mock('../../lib/user-data-export-download', () => import('../../lib/user-data-export-download.web'));
+
 // expo-router and react-native both reach for the native runtime; stub the
 // thin surface AuthProvider consumes. `useSegments` returning `[]` keeps the
 // provider out of its `<Redirect>` branches so the child tree renders and the

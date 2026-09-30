@@ -36,6 +36,10 @@ const linkEmptyDismissalMocks = vi.hoisted(() => ({
   resume: vi.fn(),
   suspend: vi.fn(),
 }));
+const clearUserDataExportDownloadsMock = vi.hoisted(() => vi.fn(async () => {}));
+vi.mock('../../lib/user-data-export-download', () => ({
+  clearUserDataExportDownloads: clearUserDataExportDownloadsMock,
+}));
 
 // expo-router and react-native both reach for the native runtime; stub the
 // thin surface AuthProvider consumes. `useSegments` returning `[]` keeps the
@@ -1393,6 +1397,7 @@ describe('AuthProvider sign-out offline data wipe', () => {
   });
 
   it('keeps the downloaded catalogs when checkAuth finds the session expired', async () => {
+    clearUserDataExportDownloadsMock.mockClear();
     const result = await renderSignedIn();
 
     deduplicatedRefreshMock.mockResolvedValue({ status: 'rejected', generation: 1 });
@@ -1402,6 +1407,7 @@ describe('AuthProvider sign-out offline data wipe', () => {
     });
 
     expect(clearUserDataMock).toHaveBeenCalled();
+    expect(clearUserDataExportDownloadsMock).toHaveBeenCalledWith(1);
     expect(purgeLocalDataForSignOutMock).not.toHaveBeenCalled();
   });
 
@@ -2027,6 +2033,7 @@ describe('AuthProvider.checkAuth signed-out cleanup', () => {
   // stored board. The heavy in-memory cleanup stays gated behind the
   // authenticated transition (nothing to wipe on a cold start).
   it('clears persisted board/session on a signed-out cold start (relaunch guard)', async () => {
+    clearUserDataExportDownloadsMock.mockClear();
     getAuthTokenMock.mockResolvedValue(null);
 
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -2041,6 +2048,7 @@ describe('AuthProvider.checkAuth signed-out cleanup', () => {
 
     await waitFor(() => expect(clearStoredActiveBoardMock).toHaveBeenCalledTimes(1));
     expect(clearStoredSessionIdMock).toHaveBeenCalledTimes(1);
+    expect(clearUserDataExportDownloadsMock).toHaveBeenCalledWith(1);
     expect(resetHttpClientMock).not.toHaveBeenCalled();
     expect(disposeWsClientMock).not.toHaveBeenCalled();
   });

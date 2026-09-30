@@ -15,6 +15,7 @@ import '../src/lib/analytics-bootstrap';
 // this cannot become a hook or an effect. See observe-bootstrap.ts.
 import '../src/lib/observe-bootstrap';
 import { markStartup } from '../src/lib/profiling/startup-profile';
+import { initializeUserDataExportDownloads } from '../src/lib/user-data-export-download';
 import { useCallback, useEffect, useLayoutEffect, useRef, useMemo, useState, type ReactNode } from 'react';
 import { LogBox, Pressable, StyleSheet, View } from 'react-native';
 // Navigation theme comes from expo-router's vendored React Navigation. Expo
@@ -537,6 +538,10 @@ function ObserveRuntimeConfigSync(): null {
 function RootLayout() {
   const [authReady, setAuthReady] = useState(false);
   const [fontsReady, setFontsReady] = useState(false);
+
+  useEffect(() => {
+    void initializeUserDataExportDownloads().catch(reportError);
+  }, []);
 
   // Flush decoded board-art bitmaps on background / memory warning (#3479).
   useImageCacheMemoryManagement();

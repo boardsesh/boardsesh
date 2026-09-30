@@ -30,6 +30,7 @@ import { getHttpClient, resetHttpClient } from '../lib/graphql/client';
 import { disposeWsClient } from '../lib/graphql/ws-client';
 import { setOfflineMode } from '../lib/connectivity/connectivity-store';
 import { clearStoredSessionId } from '../lib/session-store';
+import { clearUserDataExportDownloads } from '../lib/user-data-export-download';
 import { clearStoredQueueSnapshot } from '../lib/queue-snapshot-store';
 import { clearFirstBoardPickerShowCount } from '../lib/onboarding/first-board-picker-store';
 import { clearAllCreateClimbDrafts } from '../lib/create-climb-draft-store';
@@ -189,33 +190,37 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
   // These are the only sign-out leftovers that can carry a previous user across
   // a cold start on a shared device, so a signed-out checkAuth clears them even
   // when there's no live in-session cache to wipe (see handleSignedOutTransition).
-  const clearPersistedUserStores = useCallback((owner?: UserStorageOwner | null) => {
-    // This is the shared confirmed account boundary for manual/forced sign-out,
-    // expiry, remote sign-out, and authenticated identity changes. Invalidate
-    // cached tombstone checks before the coordinated clear synchronously bumps
-    // the active-board write generation, so neither validation nor storage
-    // state can leak into the next account.
-    resetActiveBoardSelfHealValidationCache();
-    // Stop an account A dismissal click from writing after this account boundary
-    // has removed the shared key. The clear is queued behind any pre-existing
-    // write and is awaited before account B is published.
-    suspendLinkEmptyDismissalWrites();
-    return Promise.allSettled([
-      clearStoredSessionId(owner),
-      clearStoredActiveBoardCoordinated(owner),
-      clearStoredQueueSnapshot(owner),
-      // How many times the launch gate opened the first-board picker (#5654).
-      // Keyed by account already; cleared here too so a shared phone never
-      // carries one climber's first-run state into the next session.
-      clearFirstBoardPickerShowCount(),
-      clearLinkEmptyPromptDismissal(),
-      // Create-climb and session-recap drafts are wiped for account
-      // isolation only on web (the new surface). Native sign-out keeps its
-      // origin behavior and leaves these drafts intact, so shipping this via
-      // OTA doesn't change what a native sign-out touches.
-      ...(Platform.OS === 'web' ? [clearAllCreateClimbDrafts(owner), clearSessionCommentDraft(owner)] : []),
-    ]);
-  }, []);
+  const clearPersistedUserStores = useCallback(
+    (owner: UserStorageOwner | null | undefined, exportCredentialGeneration: number) => {
+      // This is the shared confirmed account boundary for manual/forced sign-out,
+      // expiry, remote sign-out, and authenticated identity changes. Invalidate
+      // cached tombstone checks before the coordinated clear synchronously bumps
+      // the active-board write generation, so neither validation nor storage
+      // state can leak into the next account.
+      resetActiveBoardSelfHealValidationCache();
+      // Stop an account A dismissal click from writing after this account boundary
+      // has removed the shared key. The clear is queued behind any pre-existing
+      // write and is awaited before account B is published.
+      suspendLinkEmptyDismissalWrites();
+      return Promise.allSettled([
+        clearUserDataExportDownloads(exportCredentialGeneration),
+        clearStoredSessionId(owner),
+        clearStoredActiveBoardCoordinated(owner),
+        clearStoredQueueSnapshot(owner),
+        // How many times the launch gate opened the first-board picker (#5654).
+        // Keyed by account already; cleared here too so a shared phone never
+        // carries one climber's first-run state into the next session.
+        clearFirstBoardPickerShowCount(),
+        clearLinkEmptyPromptDismissal(),
+        // Create-climb and session-recap drafts are wiped for account
+        // isolation only on web (the new surface). Native sign-out keeps its
+        // origin behavior and leaves these drafts intact, so shipping this via
+        // OTA doesn't change what a native sign-out touches.
+        ...(Platform.OS === 'web' ? [clearAllCreateClimbDrafts(owner), clearSessionCommentDraft(owner)] : []),
+      ]);
+    },
+    [],
+  );
 
   const drainLocalMutationQueueBestEffort = useCallback(async () => {
     const localDb = getDatabaseHandle();
@@ -322,6 +327,7 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       // longer be joined to the account that lost the writes. Sitting in
       // runSignedOutCleanup rather than in the manual signOut covers all three
       // paths — manual, forced 401, and proactive expiry.
+      const exportCredentialGeneration = captureAuthCredentialGeneration();
       const localDb = getDatabaseHandle();
       if (localDb) await reportOutboxDiscardedOnSignOut(localDb);
       resetOfflineUsageSignal();
@@ -329,7 +335,7 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       if (Platform.OS === 'web') await waitForCleanupPhase(stopTokenCleanup);
       else await stopTokenCleanup;
       if (!isAuthTransitionCurrent(transitionEpoch)) return false;
-      const persistedStoreCleanup = clearPersistedUserStores(storageOwner);
+      const persistedStoreCleanup = clearPersistedUserStores(storageOwner, exportCredentialGeneration);
       if (Platform.OS === 'web') await waitForCleanupPhase(persistedStoreCleanup);
       else await persistedStoreCleanup;
       if (!isAuthTransitionCurrent(transitionEpoch)) return false;
@@ -408,6 +414,7 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
     ): Promise<boolean> => {
       if (!isAuthTransitionCurrent(transitionEpoch)) return false;
       updateNativeSessionDegraded(false);
+      const exportCredentialGeneration = captureAuthCredentialGeneration();
       const previousStorageOwner = Platform.OS === 'web' ? authenticatedStorageOwnerRef.current : undefined;
       if (Platform.OS === 'web' && !forceFullCleanup && anonymousSessionIsolatedRef.current) {
         authStateRef.current = { ...authStateRef.current, isAuthenticated: false };
@@ -435,7 +442,7 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       } else {
         if (!isAuthTransitionCurrent(transitionEpoch)) return false;
         resetAnalyticsForSignedOutTransition();
-        const persistedStoreCleanup = clearPersistedUserStores(previousStorageOwner);
+        const persistedStoreCleanup = clearPersistedUserStores(previousStorageOwner, exportCredentialGeneration);
         if (Platform.OS === 'web') await waitForCleanupPhase(persistedStoreCleanup);
         else await persistedStoreCleanup;
         completed = isAuthTransitionCurrent(transitionEpoch);
