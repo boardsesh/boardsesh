@@ -14,6 +14,7 @@ import {
   easeIn,
   easeInOut,
   easeOut,
+  footageAt,
   lengthNearest,
   lerp,
   pointAtLength,
@@ -31,14 +32,23 @@ const LAYOUT = {
     motif: { cx: 1430, cy: 540, maxWidth: 660, maxHeight: 700 },
     grid: { cx: 1430, cy: 540, rx: 600, ry: 560 },
     glow: { hook: [1430, 540, 1.0, 0.55], boards: [960, 720, 2.1, 1], outro: [960, 470, 1.15, 0.6] },
-    outro: { mark: 150, wordmark: 338, dots: 566, tagline: 646, pill: 790, dotsHalfWidth: 300, zig: 16 },
+    outro: { mark: 150, wordmark: 338, dots: 566, tagline: 646, pill: 790, donation: 880, dotsHalfWidth: 300, zig: 16 },
     boardLabelGap: 30,
   },
   '9x16': {
     motif: { cx: 540, cy: 1200, maxWidth: 760, maxHeight: 900 },
     grid: { cx: 540, cy: 1200, rx: 620, ry: 760 },
     glow: { hook: [540, 1200, 1.2, 0.55], boards: [540, 1220, 1.5, 1], outro: [540, 860, 1.1, 0.6] },
-    outro: { mark: 470, wordmark: 668, dots: 862, tagline: 940, pill: 1086, dotsHalfWidth: 260, zig: 16 },
+    outro: {
+      mark: 470,
+      wordmark: 668,
+      dots: 862,
+      tagline: 940,
+      pill: 1086,
+      donation: 1180,
+      dotsHalfWidth: 260,
+      zig: 16,
+    },
     boardLabelGap: 22,
   },
 };
@@ -604,6 +614,10 @@ export function init(input) {
   const tagline = place(el('div', { class: 'tagline on-dark' }, outro), layout.outro.tagline);
   ui.outroTagline = { container: tagline, ...buildWords(tagline, data.copy.outro.tagline) };
   ui.outroPill = place(el('div', { class: 'store-pill', text: data.copy.outro.pill }, outro), layout.outro.pill);
+  // Left out of store and install-ad cuts (`--no-donation-line`), which must not mention donations.
+  ui.outroDonation = data.copy.outro.donation
+    ? place(el('div', { class: 'donation-line', text: data.copy.outro.donation }, outro), layout.outro.donation)
+    : null;
   const dotsSvg = svg('svg', { class: 'layer', id: 'outroDots', viewBox: `0 0 ${data.width} ${data.height}` }, outro);
   const defs = svg('defs', {}, dotsSvg);
   const outroGradient = svg('linearGradient', { id: 'lineGradientOutro', gradientUnits: 'userSpaceOnUse' }, defs);
@@ -669,23 +683,6 @@ function mainTake(sceneIndex) {
   const next = data.scenes[sceneIndex + 1];
   if (next && next.takes.length) return { takeId: pick(next), scene: next };
   return null;
-}
-
-/**
- * The footage frame a scene shows at `frame`: its take's ranges played back to
- * back (render.ts `footageAt`; the render test holds the two together). Before
- * the scene the footage runs up to the first range, after it on from the last.
- */
-export function footageAt(segments, local, frameCount) {
-  const limit = (value) => clamp(value, 0, frameCount - 1);
-  if (local < 0 || segments.length === 0) return limit((segments[0]?.[0] ?? 0) + local);
-  let offset = 0;
-  for (const [from, to] of segments) {
-    if (local < offset + to - from) return limit(from + local - offset);
-    offset += to - from;
-  }
-  const lastTo = segments[segments.length - 1][1];
-  return limit(lastTo + local - offset);
 }
 
 function footageIndex(take, scene, frame) {
@@ -955,6 +952,7 @@ function renderOutro(frame) {
   applyWords(ui.outroTagline, local, out, { firstWord: 34 });
   setVars(ui.outroTagline.container, { o: 1 });
   reveal(ui.outroPill, 50, 16, 12, 16);
+  if (ui.outroDonation) reveal(ui.outroDonation, 62, 16, 12, 12);
 
   // The spark draws the dots line left to right.
   const sparkAmount = easeInOut(progress(local, 16, 24));

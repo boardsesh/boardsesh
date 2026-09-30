@@ -687,6 +687,12 @@ svg.layer {
   font-size: 28px;
   letter-spacing: -0.005em;
 }
+.outro .donation-line {
+  color: color-mix(in srgb, var(--ink-on-dark) 80%, transparent);
+  font-weight: 500;
+  font-size: 28px;
+  letter-spacing: -0.005em;
+}
 #outroDots .zig {
   fill: none;
   stroke: url(#lineGradientOutro);
@@ -747,6 +753,9 @@ svg.layer {
 }
 #stage[data-format='9x16'] .outro .tagline {
   font-size: 70px;
+}
+#stage[data-format='9x16'] .outro .donation-line {
+  font-size: 32px;
 }
 #stage[data-format='9x16'] .outro .tagline .w.accent {
   font-size: 80px;

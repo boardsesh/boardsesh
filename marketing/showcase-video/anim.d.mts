@@ -43,3 +43,8 @@ export function backgroundAt(
   out: number,
 ): StageBackground;
 export function orthoPath(points: readonly Point[], radius?: number): string;
+export function footageAt(
+  segments: ReadonlyArray<readonly [number, number, number?]>,
+  local: number,
+  frameCount: number,
+): number;

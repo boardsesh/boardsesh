@@ -21,10 +21,10 @@ describe('showcase timeline', () => {
     expect(SHOWCASE_TOTAL_FRAMES).toBe(SHOWCASE_SCENES[SHOWCASE_SCENES.length - 1].endFrame);
   });
 
-  it('runs 36–42 seconds (1080–1260 frames at 30 fps)', () => {
+  it('runs 50–60 seconds (1500–1800 frames at 30 fps; 60 s is the hard cap)', () => {
     expect(SHOWCASE_FPS).toBe(30);
-    expect(SHOWCASE_TOTAL_FRAMES).toBeGreaterThanOrEqual(1080);
-    expect(SHOWCASE_TOTAL_FRAMES).toBeLessThanOrEqual(1260);
+    expect(SHOWCASE_TOTAL_FRAMES).toBeGreaterThanOrEqual(1500);
+    expect(SHOWCASE_TOTAL_FRAMES).toBeLessThanOrEqual(1800);
   });
 
   it('bakes the poster in as frame 0', () => {
@@ -65,14 +65,14 @@ describe('showcase timeline', () => {
     expect(timeline.skipped).toEqual([]);
   });
 
-  it('drops the island scene without its take, closes up, and still alternates backgrounds (~37 s)', () => {
+  it('drops the island scene without its take, closes up, and still alternates backgrounds (~49 s)', () => {
     const timeline = resolveTimeline(new Set(SHOWCASE_TAKE_IDS.filter((takeId) => takeId !== 'lock-screen')));
     expect(timeline.skipped).toEqual(['lock-screen']);
     expect(timeline.scenes.map((scene) => scene.id)).not.toContain('lock-screen');
     const island = SHOWCASE_SCENES.find((scene) => scene.id === 'lock-screen');
     if (!island) throw new Error('island scene missing');
     expect(timeline.totalFrames).toBe(SHOWCASE_TOTAL_FRAMES - (island.endFrame - island.startFrame));
-    expect(timeline.totalFrames / 30).toBeGreaterThan(36);
+    expect(timeline.totalFrames / 30).toBeGreaterThan(45);
     timeline.scenes.forEach((scene, index) => {
       if (index > 0) expect(scene.startFrame).toBe(timeline.scenes[index - 1].endFrame);
     });

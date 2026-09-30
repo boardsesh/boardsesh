@@ -2,7 +2,9 @@ import { SHOWCASE_FPS, type ShowcaseCalloutName, type ShowcaseTakeId } from './c
 
 /**
  * The storyboard, in frames at 30 fps. Scenes are back to back with no gaps;
- * `showcase-video-timeline.test` holds that and the 36–42 s runtime.
+ * `showcase-video-timeline.test` holds that and the 50–60 s runtime. Callout
+ * scenes are as long as their callouts' reading time needs (render.ts
+ * `readingBudgetReport`); the rest keep the rhythm.
  *
  * Backgrounds alternate from the boards scene on, so two busy layouts never
  * meet on the same background. The two dark→dark joins are deliberate: hook →
@@ -40,15 +42,15 @@ export const SHOWCASE_SCENES: readonly ShowcaseScene[] = [
   {
     id: 'light',
     startFrame: 72,
-    endFrame: 204,
+    endFrame: 252,
     background: 'dark',
     takes: ['light'],
     callouts: ['wall-pill', 'board-surface'],
   },
   {
     id: 'boards',
-    startFrame: 204,
-    endFrame: 342,
+    startFrame: 252,
+    endFrame: 396,
     background: 'light',
     takes: [
       'boards-kilter',
@@ -64,40 +66,40 @@ export const SHOWCASE_SCENES: readonly ShowcaseScene[] = [
   },
   {
     id: 'wall',
-    startFrame: 342,
-    endFrame: 507,
+    startFrame: 396,
+    endFrame: 666,
     background: 'dark',
     takes: ['wall'],
     callouts: ['board-history-button', 'now-on-wall', 'wall-history'],
   },
   {
     id: 'crew',
-    startFrame: 507,
-    endFrame: 657,
+    startFrame: 666,
+    endFrame: 948,
     background: 'light',
     takes: ['crew'],
     callouts: ['invite-qr', 'queue-row-avatar', 'play-next'],
   },
-  { id: 'workouts', startFrame: 657, endFrame: 819, background: 'dark', takes: ['workouts'], callouts: [] },
+  { id: 'workouts', startFrame: 948, endFrame: 1116, background: 'dark', takes: ['workouts'], callouts: [] },
   // The Dynamic Island scene. Id and take keep their lock-screen names so the
   // recorder and the anchors contract stay put.
   {
     id: 'lock-screen',
-    startFrame: 819,
-    endFrame: 969,
+    startFrame: 1116,
+    endFrame: 1296,
     background: 'light',
     takes: ['lock-screen'],
     callouts: ['lock-next', 'lock-relight', 'lock-mirror'],
   },
   {
     id: 'log',
-    startFrame: 969,
-    endFrame: 1119,
+    startFrame: 1296,
+    endFrame: 1512,
     background: 'dark',
     takes: ['log'],
     callouts: ['profile-board-filter', 'activity-calendar'],
   },
-  { id: 'outro', startFrame: 1119, endFrame: 1248, background: 'dark', takes: [], callouts: [] },
+  { id: 'outro', startFrame: 1512, endFrame: 1704, background: 'dark', takes: [], callouts: [] },
 ];
 
 export const SHOWCASE_TOTAL_FRAMES = SHOWCASE_SCENES[SHOWCASE_SCENES.length - 1].endFrame;

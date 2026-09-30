@@ -295,3 +295,24 @@ export function orthoPath(points, radius = 10) {
   const last = clean[clean.length - 1];
   return `${path} L${last.x.toFixed(2)} ${last.y.toFixed(2)}`;
 }
+
+/**
+ * The footage frame a scene shows at scene-local frame `local`: its take's
+ * ranges `[from, to, hold?]` played back to back, each holding its last frame
+ * for `hold` frames after it plays. Before the scene the footage runs up to the
+ * first range; after it, on from the last (or still held, when the last range
+ * holds). Clamped to the take. render.ts `footageAt` is the Node copy; the
+ * render test holds the two together.
+ */
+export function footageAt(segments, local, frameCount) {
+  const limit = (value) => clamp(value, 0, frameCount - 1);
+  if (local < 0 || segments.length === 0) return limit((segments[0]?.[0] ?? 0) + local);
+  let offset = 0;
+  for (const [from, to, hold = 0] of segments) {
+    const length = to - from + hold;
+    if (local < offset + length) return limit(Math.min(from + local - offset, to - 1));
+    offset += length;
+  }
+  const [, lastTo, lastHold = 0] = segments[segments.length - 1];
+  return limit(lastHold > 0 ? lastTo - 1 : lastTo + local - offset);
+}

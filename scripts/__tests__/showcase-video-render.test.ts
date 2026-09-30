@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   anchorAt as stageAnchorAt,
   backgroundAt,
+  footageAt as stageFootageAt,
   orthoPath,
   mixOklab,
   projectPoint as stageProjectPoint,
@@ -74,6 +75,14 @@ import {
   prepareAnchorsFile,
   projectPhonePoint,
   readingBudgetReport,
+  readingBudgetMet,
+  formatReadingBudgetTable,
+  calloutReadingFrames,
+  SHOWCASE_CALLOUT_SETTLE_FRAMES,
+  SHOWCASE_MAX_TAIL_HOLD_FRAMES,
+  withoutDonationLine,
+  type ResolvedTakeEdit,
+  type TakeEdit,
   resolveSceneCallouts,
   sceneCalloutCopy,
   screenToCanvas,
@@ -304,16 +313,90 @@ describe('callout layout', () => {
   });
 });
 
+describe('donation line', () => {
+  it("says who pays for Boardsesh in the homepage's words, and never claims tax relief or perks", () => {
+    const marketing = JSON.parse(
+      readFileSync(new URL('../../packages/shared/i18n/locales/en-US/marketing.json', import.meta.url), 'utf8'),
+    ) as unknown;
+    const proofNoCount = JSON.stringify(marketing).match(/"proofNoCount":"([^"]+)"/)?.[1] ?? '';
+    const donation = copy.outro.donation ?? '';
+    expect(donation).toBe('Paid for by the climbers who use it.');
+    expect(proofNoCount.toLowerCase()).toContain(donation.replace(/\.$/, '').toLowerCase());
+    expect(donation).not.toMatch(/tax|deduct|perk|reward/i);
+    expect(copy.outro.pill).toContain('iOS & Android');
+  });
+
+  it('is on by default; --no-donation-line drops it and skips the web encodes', () => {
+    expect(parseRenderArgs([])).toMatchObject({ donationLine: true, skipWeb: false });
+    expect(parseRenderArgs(['--no-donation-line'])).toMatchObject({ donationLine: false, skipWeb: true });
+    const storeCopy = withoutDonationLine(copy);
+    expect(storeCopy.outro.donation).toBeUndefined();
+    expect(storeCopy.outro.pill).toBe(copy.outro.pill);
+    const outro = sceneOf('outro');
+    const [withLine] = readingBudgetReport(copy, [outro]);
+    const [without] = readingBudgetReport(storeCopy, [outro]);
+    expect(withLine.headlineWords - without.headlineWords).toBe(8);
+    expect(readingBudgetMet(withLine)).toBe(true);
+  });
+});
+
 describe('reading budget', () => {
   it('counts words, not punctuation', () => {
     expect(countWords('Free, no ads. iOS & Android.')).toBe(5);
     expect(countWords('Your board.\nLit from your *phone.*'.replace(/\*/g, ''))).toBe(6);
   });
 
-  it('gives every scene at least 0.3 s per visible word', () => {
-    for (const report of readingBudgetReport(copy)) {
+  const recordedEdits = Object.fromEntries(
+    (Object.keys(SHOWCASE_TAKE_EDITS) as ShowcaseTakeId[]).map((takeId) => [takeId, resolvedEdit(takeId)]),
+  ) as Partial<Record<ShowcaseTakeId, ResolvedTakeEdit>>;
+
+  it('gives every scene at least 0.3 s per visible word, headline and callouts together', () => {
+    const reports = readingBudgetReport(copy, SHOWCASE_SCENES, recordedEdits);
+    console.info(`reading budget (recorded marks):\n${formatReadingBudgetTable(reports)}`);
+    for (const report of reports) {
+      expect(report.words, report.sceneId).toBe(report.headlineWords + report.calloutWords);
       expect(report.haveFrames, `${report.sceneId}: ${report.words} words`).toBeGreaterThanOrEqual(report.needFrames);
     }
+    const wall = reports.find((report) => report.sceneId === 'wall');
+    expect(wall).toMatchObject({ headlineWords: 5, calloutWords: 10, words: 15 });
+  });
+
+  it('keeps every callout fully settled for max(1.6 s, 0.45 s a word) before anything exits', () => {
+    expect(calloutReadingFrames(2)).toBe(48);
+    expect(calloutReadingFrames(5)).toBe(68);
+    expect(SHOWCASE_CALLOUT_SETTLE_FRAMES).toBe(20);
+    for (const report of readingBudgetReport(copy, SHOWCASE_SCENES, recordedEdits)) {
+      const scene = sceneOf(report.sceneId);
+      expect(
+        report.callouts.map((callout) => callout.name),
+        report.sceneId,
+      ).toEqual(scene.callouts);
+      for (const callout of report.callouts) {
+        const label = `${report.sceneId}/${callout.name}: settled ${callout.settledFrames} of ${callout.needFrames}`;
+        expect(callout.settledFrames, label).toBeGreaterThanOrEqual(callout.needFrames);
+        expect(readingBudgetMet(report), report.sceneId).toBe(true);
+      }
+    }
+  });
+
+  it('staggers callout entrances at least half a second apart', () => {
+    expect(SHOWCASE_CHOREO.calloutStagger).toBeGreaterThanOrEqual(15);
+    for (const report of readingBudgetReport(copy, SHOWCASE_SCENES, recordedEdits)) {
+      report.callouts.slice(1).forEach((callout, index) => {
+        expect(
+          callout.enter - report.callouts[index].enter,
+          `${report.sceneId}/${callout.name}`,
+        ).toBeGreaterThanOrEqual(15);
+      });
+    }
+  });
+
+  it('flags a callout that leaves before it has been read', () => {
+    const light = sceneOf('light');
+    const short = { ...light, endFrame: light.startFrame + 90 };
+    const [report] = readingBudgetReport(copy, [short]);
+    expect(readingBudgetMet(report)).toBe(false);
+    expect(formatReadingBudgetTable([report])).toContain('SHORT');
   });
 
   it('parses the accent word and forced line breaks', () => {
@@ -809,7 +892,7 @@ describe('the edit', () => {
     expect(late.segments.map(([from, to]) => [from - 60, to - 60])).toEqual(early.segments);
     // Expanded island first, then the cut to Next and ~2.5 s of the new climb.
     expect(early.segments[0][0]).toBe(300 - 9);
-    expect(early.segments[1]).toEqual([390 - 36, 390 - 36 + length - 39]);
+    expect(early.segments[1]).toEqual([390 - 36, 390 - 36 + length - 45]);
     expect(early.segments[1][1] - 390).toBeGreaterThanOrEqual(75);
   });
 
@@ -839,6 +922,46 @@ describe('the edit', () => {
     expect(workouts.restPill.map(([, value]) => value)).toEqual(['0:29', '0:28', '0:26', '0:25']);
     const first = workouts.restPill[0][0];
     expect(localAtFootage(workouts.segments, first)).not.toBeNull();
+  });
+
+  it("holds a range's last frame for its hold, in both the Node and the stage copy", () => {
+    const segments = [
+      [10, 20, 5],
+      [100, 110],
+    ] as const;
+    expect(segmentsLength(segments)).toBe(25);
+    expect(footageAt(segments, 9, 500)).toBe(19);
+    expect(footageAt(segments, 12, 500)).toBe(19);
+    expect(footageAt(segments, 14, 500)).toBe(19);
+    expect(footageAt(segments, 15, 500)).toBe(100);
+    expect(localAtFootage(segments, 105)).toBe(20);
+    const held = [[400, 418, 12]] as const;
+    expect(footageAt(held, 40, 418)).toBe(417);
+    for (const ranges of [segments, held, [[10, 20]] as const]) {
+      for (let local = -12; local < 60; local += 1) {
+        expect(stageFootageAt(ranges, local, 418), `local ${local}`).toBe(footageAt(ranges, local, 418));
+      }
+    }
+  });
+
+  it('holds the last frame when a scene runs a little past its take, and still fails a long overrun', () => {
+    const edit: TakeEdit = { segments: [{ mark: 'start', from: 0 }] };
+    const short = resolveTakeEdit('light', edit, { start: 5 }, 120, 150 + 100);
+    expect(short.segments).toEqual([[150, 250, 20]]);
+    expect(short.warnings[0]).toMatch(/ends 20 frames before its scene/);
+    expect(() => resolveTakeEdit('light', edit, { start: 5 }, 120 + SHOWCASE_MAX_TAIL_HOLD_FRAMES, 150 + 100)).toThrow(
+      /runs off its 250 footage frames/,
+    );
+    const hold: TakeEdit = {
+      segments: [
+        { mark: 'start', from: 0, to: 1, hold: 0.5 },
+        { mark: 'start', from: 2 },
+      ],
+    };
+    expect(resolveTakeEdit('light', hold, { start: 5 }, 90, 400).segments).toEqual([
+      [150, 180, 15],
+      [210, 255],
+    ]);
   });
 
   it('maps scene frames to footage across hard cuts, and back', () => {

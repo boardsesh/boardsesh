@@ -1,6 +1,6 @@
 # Homepage showcase video: plan
 
-A 41.6 s (1248 frames; 37.4 s without the island scene), 1920x1080, 30 fps motion-graphics cut for the
+A 56.8 s (1704 frames; 50.8 s without the island scene), 1920x1080, 30 fps motion-graphics cut for the
 homepage hero, plus a 9:16 version for stories. Built the brag-slim way:
 every frame is a pure function of its number, so any frame renders the same
 on any run.
@@ -25,14 +25,14 @@ on any run.
 | #   | Scene       | Frames    | Background | Copy                                | On screen (cut on the take's marks)                                                                                          |
 | --- | ----------- | --------- | ---------- | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | 1   | hook        | 0–72      | dark       | Your board. Lit from your _phone._  | Dot grid + the light take's lit holds as rings on a line; amber spark runs start→finish (12–48)                              |
-| 2   | light       | 72–204    | dark       | Swipe, and the wall _follows._      | From `bulb-tapped`: the bulb lights, then `next-1`'s swipe; "On the wall", "Swipe for next"                                 |
-| 3   | boards      | 204–342   | lavender   | Every board. One _app._             | Kilter, Tension, MoonBoard rise; Woods, Decoy, Touchstone, Grasshopper crowd in; So iLL pops up into the middle              |
-| 4   | wall        | 342–507   | dark       | See what's on the _wall._           | The board-button tap up to `sheet-open` ("Board history", "On the wall now"), cut to `history-shown` ("Lit on this wall")    |
-| 5   | crew        | 507–657   | lavender   | Your crew. One _queue._             | The invite QR (before `invite-closed`), the row landing (`row-landed`, "Who queued it"), the long-press menu ("Play next")   |
-| 6   | workouts    | 657–819   | dark       | Give your session a _plan._         | `pyramid-picked`, cut to the rest pill counting after `rest-armed`; the checklist ticks V2 → V6 → V4 and reads the pill     |
-| 7   | lock-screen | 819–969   | lavender   | Control the wall from the _island._ | The real Dynamic Island: `island-expanded` on "Masquerade", cut to `next-tapped` and ~2.5 s of "Putty"; zoomed on the island |
-| 8   | log         | 969–1119  | dark       | Remember every _send._              | The "Every board" filter after `scrolled`, cut to Kilter picked (`filter-kilter`) and the calendar redrawn ("Activity")     |
-| 9   | outro       | 1119–1248 | dark       | Less phone. More _wall._            | Mark, `boardsesh` wordmark, dots line drawn by the spark, "Free, no ads. iOS & Android." pill; loop closer                   |
+| 2   | light       | 72–252    | dark       | Swipe, and the wall _follows._      | From `bulb-tapped`: the bulb lights, then two swipes (`next-1`, `next-2`); "On the wall", "Swipe for next"                              |
+| 3   | boards      | 252–396   | lavender   | Every board. One _app._             | Kilter, Tension, MoonBoard rise; Woods, Decoy, Touchstone, Grasshopper crowd in; So iLL pops up into the middle              |
+| 4   | wall        | 396–666   | dark       | See what's on the _wall._           | The board-button tap up to `sheet-open` ("Board history", "On the wall now"), cut to `history-shown` ("Lit on this wall")    |
+| 5   | crew        | 666–948   | lavender   | Your crew. One _queue._             | The invite QR (before `invite-closed`), the row landing (`row-landed`, "Who queued it"), the long-press menu ("Play next")   |
+| 6   | workouts    | 948–1116  | dark       | Give your session a _plan._         | `pyramid-picked`, cut to the rest pill counting after `rest-armed`; the checklist ticks V2 → V6 → V4 and reads the pill     |
+| 7   | lock-screen | 1116–1296 | lavender   | Control the wall from the _island._ | The real Dynamic Island: `island-expanded` on "Masquerade", cut to `next-tapped` and ~2.5 s of "Putty"; zoomed on the island |
+| 8   | log         | 1296–1512 | dark       | Remember every _send._              | The "Every board" filter after `scrolled`, cut to Kilter picked (`filter-kilter`) and the calendar redrawn ("Activity")     |
+| 9   | outro       | 1512–1704 | dark       | Less phone. More _wall._            | Mark, `boardsesh` wordmark, dots line drawn by the spark, "Free, no ads. iOS & Android." pill, "Paid for by the climbers who use it." under it; loop closer|
 
 `SHOWCASE_TAKE_EDITS` in `scripts/lib/showcase-video/render.ts` holds the
 footage each scene plays, each callout's window and the anchor corrections, all
@@ -47,13 +47,25 @@ The island scene shows only the recorder's footage of the real Live Activity.
 `--placeholder-footage` draws a stand-in island for layout work (tagged
 PLACEHOLDER ISLAND and marked on disk, so a render without that flag never
 shows it) and never overwrites a recorded take. Without a recorded
-`lock-screen` take the scene is dropped, the cut closes up to 1098 frames
-(36.6 s) and backgrounds re-alternate (log turns lavender).
+`lock-screen` take the scene is dropped, the cut closes up to 1524 frames
+(50.8 s) and backgrounds re-alternate (log turns lavender).
 
-Scene lengths meet the reading budget: 0.3 s per visible word between the
-first word landing and the exit starting, counting every board label and
-callout. `readingBudgetReport` prints the numbers on every render and a test
-holds them.
+Scene lengths meet the reading budget. A scene needs 0.3 s per visible word
+(headline, board labels, workout rows and every callout label together)
+between the first word landing and the exit starting. Each callout needs to sit
+fully settled (box, leader and pill all in) for max(1.6 s, 0.45 s a word)
+before it or anything else in the scene exits, and callouts enter at least
+0.5 s apart. The callout scenes (light, wall, crew, island, log) are as long as
+that needs; the others keep the rhythm. Where the app moves on before a callout
+has been read, the edit holds a still frame (`hold` in `SHOWCASE_TAKE_EDITS`:
+0.3 s on the invite QR, 1.2 s on the log's progress page). `readingBudgetReport`
+prints a table (headline words, callout words, settled and required seconds,
+per scene and per callout) on every render, and a test holds it.
+
+The outro's "Paid for by the climbers who use it." is the homepage's
+`proofNoCount` wording and never claims tax relief or perks. Store previews and
+install ads must not mention donations: `--no-donation-line` renders without
+it (and skips the web encodes, so the homepage keeps it).
 
 ## Rules the stage keeps
 
@@ -63,10 +75,10 @@ holds them.
   flat mid-grey that reads as a dropped frame when the phone stands still. The
   renderer fails on any frame whose luma is a flat fill (`isFlatFrame`).
 - The homepage hero is the only web output: `showcase-9x16-lite.{webm,mp4}`
-  (720x1280, bitrates sized to ≤ 1.3 MB VP9 and ≤ 1.9 MB H.264) and its poster
-  `showcase-hero-9x16.webp`. Both open on frame 132, the light scene settled
+  (720x1280, bitrates sized to ≤ 1.75 MB VP9 and ≤ 1.9 MB H.264) and its poster
+  `showcase-hero-9x16.webp`. Both open on frame 142, the light scene settled
   (`SHOWCASE_WEB_POSTER_FRAME`, `--poster-frame`): the web encodes play the
-  loop rotated, 132..1247 then 0..131, which is as seamless as the loop.
+  loop rotated, 142..1703 then 0..141, which is as seamless as the loop.
   `brag.mp4` and `brag.jpg` keep frame 0, the hook, for social.
 - Footage cuts hard at scene boundaries; only the phones move across a
   background change (L−4..L+6). New text starts at L+6.
@@ -107,6 +119,7 @@ vp run video:render -- --placeholder-footage --stills   # stand-ins for takes no
 vp run video:render -- --frame 264 --format 16x9        # one full-size frame
 vp run video:render                                      # both formats, all deliverables
 vp run video:render -- --format 16x9 --from-frame 400   # quick preview from a frame
+vp run video:render -- --no-donation-line               # store preview / install-ad cut (no web encodes)
 ```
 
 Outputs: the full-quality masters for social and ads,

@@ -291,19 +291,34 @@ export function footageFrameIndex(
 
 // --- the edit: which footage each scene shows ---------------------------------
 
-/** Footage frames `[from, to)` of a take, 0-based (frame 0 is `00001.jpg`). */
-export type FootageRange = readonly [number, number];
+/**
+ * Footage frames `[from, to)` of a take, 0-based (frame 0 is `00001.jpg`),
+ * then `hold` frames of its last frame. A still phone screen held for a second
+ * reads as the climber pausing, which gives a callout time to be read.
+ */
+export type FootageRange = readonly [from: number, to: number, hold?: number];
+
+/** Scene frames a range fills: what it plays plus what it holds. */
+export const rangeLength = ([from, to, hold = 0]: FootageRange): number => to - from + hold;
+
+/**
+ * The longest a scene's last segment may run past its take, held on the last
+ * frame instead of failing the render (1.5 s).
+ */
+export const SHOWCASE_MAX_TAIL_HOLD_FRAMES = 45;
 
 /** A moment in a take: `at` seconds after (or before, when negative) one of its marks. */
 export type MarkTime = Readonly<{ mark: string; at: number }>;
 
 /**
  * A stretch of a take relative to a mark, in seconds: `mark + from` up to
- * `mark + to`. A scene's last segment leaves `to` out and runs until the scene
- * is full. Lengths are counted from `to - from`, not from the mark, so a
- * re-recorded mark moves a segment without changing the cut's timing.
+ * `mark + to`, then `hold` seconds on its last frame. A scene's last segment
+ * leaves `to` out and runs until the scene is full. Lengths are counted from
+ * `to - from`, not from the mark, so a re-recorded mark moves a segment without
+ * changing the cut's timing. Hold only where the screen is still: a held frame
+ * of a moving screen reads as a freeze.
  */
-export type MarkSpan = Readonly<{ mark: string; from: number; to?: number }>;
+export type MarkSpan = Readonly<{ mark: string; from: number; to?: number; hold?: number }>;
 
 /** A vertical correction for an anchor, in points, from a moment on (`from: null` is the whole take). */
 export type AnchorShift = Readonly<{ from: MarkTime | null; dy: number }>;
@@ -339,6 +354,8 @@ export type ResolvedTakeEdit = Readonly<{
   callouts: Partial<Record<ShowcaseCalloutName, FootageRange>>;
   anchorShifts: Partial<Record<ShowcaseCalloutName, ReadonlyArray<Readonly<{ from: number; dy: number }>>>>;
   restPill: readonly (readonly [number, string])[];
+  /** What the resolve had to bend: a last segment that ran off its footage and now holds. */
+  warnings: readonly string[];
 }>;
 
 /**
@@ -354,13 +371,14 @@ export const SHOWCASE_TAKE_EDITS: Partial<Record<ShowcaseTakeId, TakeEdit>> = {
   // detent; cut to the sheet dragged up on "Lit on this wall".
   wall: {
     segments: [
-      { mark: 'sheet-open', from: -3.8, to: 0.2 },
+      { mark: 'sheet-open', from: -5.4, to: 0.5 },
       { mark: 'history-shown', from: -0.5 },
     ],
     callouts: {
-      'board-history-button': { mark: 'sheet-open', from: -3.8, to: -2.8 },
-      'now-on-wall': { mark: 'sheet-open', from: -2.4, to: 0.2 },
-      'wall-history': { mark: 'history-shown', from: -0.5, to: 1.0 },
+      // The list is still until the sheet starts up, 2.6 s before `sheet-open`.
+      'board-history-button': { mark: 'sheet-open', from: -5.4, to: -2.6 },
+      'now-on-wall': { mark: 'sheet-open', from: -2.4, to: 0.5 },
+      'wall-history': { mark: 'history-shown', from: -0.5, to: 2.3 },
     },
     anchorShifts: {
       // The wall sheet's top: 462 pt at its middle detent, 145 pt dragged up.
@@ -378,14 +396,16 @@ export const SHOWCASE_TAKE_EDITS: Partial<Record<ShowcaseTakeId, TakeEdit>> = {
   // long-press menu's "Play next".
   crew: {
     segments: [
-      { mark: 'invite-closed', from: -4.5, to: -3.0 },
-      { mark: 'row-landed', from: -0.8, to: 1.2 },
+      // The invite sheet starts down about 1.8 s before `invite-closed`; the
+      // QR holds its last still frame until the callout has been read.
+      { mark: 'invite-closed', from: -4.55, to: -2.05, hold: 0.3 },
+      { mark: 'row-landed', from: -0.6, to: 2.9 },
       { mark: 'play-next-menu', from: -2.6 },
     ],
     callouts: {
-      'invite-qr': { mark: 'invite-closed', from: -4.5, to: -3.0 },
-      'queue-row-avatar': { mark: 'row-landed', from: 0.1, to: 1.2 },
-      'play-next': { mark: 'play-next-menu', from: -2.5, to: -1.0 },
+      'invite-qr': { mark: 'invite-closed', from: -4.55, to: -2.05, hold: 0.3 },
+      'queue-row-avatar': { mark: 'row-landed', from: 0.1, to: 2.9 },
+      'play-next': { mark: 'play-next-menu', from: -2.5, to: 0.3 },
     },
     anchorShifts: {
       // The invite sheet's top, and the queue sheet's top at its detent.
@@ -412,7 +432,7 @@ export const SHOWCASE_TAKE_EDITS: Partial<Record<ShowcaseTakeId, TakeEdit>> = {
   // and about 2.5 s of the island on "Putty".
   'lock-screen': {
     segments: [
-      { mark: 'island-expanded', from: -0.3, to: 1.0 },
+      { mark: 'island-expanded', from: -0.3, to: 1.2 },
       { mark: 'next-tapped', from: -1.2 },
     ],
   },
@@ -420,12 +440,14 @@ export const SHOWCASE_TAKE_EDITS: Partial<Record<ShowcaseTakeId, TakeEdit>> = {
   // picked, Done, and the calendar redrawn for Kilter.
   log: {
     segments: [
-      { mark: 'scrolled', from: -1.2, to: 0.5 },
-      { mark: 'filter-kilter', from: -2.8 },
+      // The page is still for 1.9 s after the scroll; its last still frame
+      // holds while "Every board" is read, then the Filters sheet cuts in.
+      { mark: 'scrolled', from: -1.0, to: 0.6, hold: 1.2 },
+      { mark: 'filter-kilter', from: -2.2 },
     ],
     callouts: {
-      'profile-board-filter': { mark: 'scrolled', from: -1.2, to: 0.5 },
-      'activity-calendar': { mark: 'filter-kilter', from: -0.9, to: 0.5 },
+      'profile-board-filter': { mark: 'scrolled', from: -1.0, to: 0.6, hold: 1.2 },
+      'activity-calendar': { mark: 'filter-kilter', from: -0.9, to: 1.9 },
     },
     anchorShifts: {
       // Both logged before the scroll, which moved the page up 338 pt. The
@@ -474,24 +496,34 @@ export function resolveTakeEdit(
   const frameAt = (time: MarkTime) => Math.round(marks[time.mark] * SHOWCASE_FPS) + Math.round(time.at * SHOWCASE_FPS);
   const span = (value: MarkSpan, fill?: number): FootageRange => {
     const start = frameAt({ mark: value.mark, at: value.from });
-    const length = value.to === undefined ? (fill ?? 0) : Math.round((value.to - value.from) * SHOWCASE_FPS);
-    return [start, start + length];
+    const hold = Math.round((value.hold ?? 0) * SHOWCASE_FPS);
+    const length = value.to === undefined ? (fill ?? 0) - hold : Math.round((value.to - value.from) * SHOWCASE_FPS);
+    return hold > 0 ? [start, start + length, hold] : [start, start + length];
   };
   const segments: FootageRange[] = [];
   edit.segments.forEach((value, index) => {
-    const used = segments.reduce((sum, [from, to]) => sum + to - from, 0);
+    const used = segmentsLength(segments);
     const last = index === edit.segments.length - 1;
     segments.push(span(value, last ? sceneLength - used : undefined));
   });
-  const total = segments.reduce((sum, [from, to]) => sum + to - from, 0);
+  const total = segmentsLength(segments);
   if (total !== sceneLength) {
     throw new Error(`Take "${takeId}": the edit plays ${total} frames, the scene needs ${sceneLength}`);
   }
-  for (const [from, to] of segments) {
+  const warnings: string[] = [];
+  segments.forEach(([from, to, hold = 0], index) => {
+    const overrun = to - frameCount;
+    const last = index === segments.length - 1;
+    // The scene's tail past the take: hold the last frame, briefly, rather than fail.
+    if (last && overrun > 0 && overrun <= SHOWCASE_MAX_TAIL_HOLD_FRAMES && from >= 0 && from < frameCount - 1) {
+      segments[index] = [from, frameCount, hold + overrun];
+      warnings.push(`take "${takeId}" ends ${overrun} frames before its scene does; holding its last frame`);
+      return;
+    }
     if (from < 0 || to > frameCount || to <= from) {
       throw new Error(`Take "${takeId}": segment ${from}..${to} runs off its ${frameCount} footage frames`);
     }
-  }
+  });
   const callouts: Partial<Record<ShowcaseCalloutName, FootageRange>> = {};
   for (const [name, value] of Object.entries(edit.callouts ?? {}) as [ShowcaseCalloutName, MarkSpan][]) {
     callouts[name] = span(value);
@@ -501,7 +533,7 @@ export function resolveTakeEdit(
     anchorShifts[name] = shifts.map((shift) => ({ from: shift.from ? frameAt(shift.from) : 0, dy: shift.dy }));
   }
   const restPill = (edit.restPill ?? []).map((step) => [frameAt(step.at), step.value] as const);
-  return { segments, callouts, anchorShifts, restPill };
+  return { segments, callouts, anchorShifts, restPill, warnings };
 }
 
 /** The footage ranges a scene plays: its resolved edit, or one second in for the scene's length. */
@@ -512,32 +544,36 @@ export function takeSegments(scene: ShowcaseScene, edit?: ResolvedTakeEdit): rea
 
 /**
  * Footage frame at a scene-local frame. Before the scene (the phone arriving)
- * it runs up to the first range; after it, on from the last. Clamped to the take.
+ * it runs up to the first range; after it, on from the last, or still held
+ * when the last range holds. Clamped to the take. `anim.mjs` `footageAt` is
+ * the stage's copy; the render test holds the two together.
  */
 export function footageAt(segments: readonly FootageRange[], local: number, frameCount: number): number {
   const clamp = (value: number) => Math.max(0, Math.min(frameCount - 1, value));
   if (local < 0 || segments.length === 0) return clamp((segments[0]?.[0] ?? 0) + local);
   let offset = 0;
-  for (const [from, to] of segments) {
-    if (local < offset + to - from) return clamp(from + local - offset);
-    offset += to - from;
+  for (const range of segments) {
+    const [from, to] = range;
+    if (local < offset + rangeLength(range)) return clamp(Math.min(from + local - offset, to - 1));
+    offset += rangeLength(range);
   }
-  const [, lastTo] = segments[segments.length - 1];
-  return clamp(lastTo + local - offset);
+  const [, lastTo, lastHold = 0] = segments[segments.length - 1];
+  return clamp(lastHold > 0 ? lastTo - 1 : lastTo + local - offset);
 }
 
-/** Scene-local frame at which footage frame `footage` plays, or null when the edit skips it. */
+/** Scene-local frame at which footage frame `footage` first plays, or null when the edit skips it. */
 export function localAtFootage(segments: readonly FootageRange[], footage: number): number | null {
   let offset = 0;
-  for (const [from, to] of segments) {
+  for (const range of segments) {
+    const [from, to] = range;
     if (footage >= from && footage < to) return offset + footage - from;
-    offset += to - from;
+    offset += rangeLength(range);
   }
   return null;
 }
 
 export const segmentsLength = (segments: readonly FootageRange[]): number =>
-  segments.reduce((sum, [from, to]) => sum + to - from, 0);
+  segments.reduce((sum, range) => sum + rangeLength(range), 0);
 
 /**
  * Samples with piecewise shifts applied: a sample at every original and shift
@@ -581,7 +617,7 @@ export function calloutTimings(
     const window = edit?.callouts[name];
     const windowStart = window ? localAtFootage(segments, window[0]) : null;
     if (window && windowStart !== null) {
-      const windowEnd = windowStart + window[1] - window[0];
+      const windowEnd = windowStart + rangeLength(window);
       const enter = Math.max(windowStart + 4, 8);
       timings[name] = {
         enter,
@@ -606,7 +642,8 @@ export const SHOWCASE_CHOREO = {
   accentDelay: 4,
   accentFrames: 18,
   calloutStart: 18,
-  calloutStagger: 8,
+  /** Half a second between callout entrances. */
+  calloutStagger: 15,
   boxFrames: 8,
   leaderDelay: 6,
   leaderFrames: 10,
@@ -624,6 +661,28 @@ export const SHOWCASE_CHOREO = {
 } as const;
 
 export const SHOWCASE_SECONDS_PER_WORD = 0.3;
+
+/**
+ * A callout stays fully settled (box, leader and pill all in) for at least
+ * max(1.6 s, 0.45 s a word) before it or anything else in its scene exits.
+ */
+export const SHOWCASE_CALLOUT_MIN_SECONDS = 1.6;
+export const SHOWCASE_CALLOUT_SECONDS_PER_WORD = 0.45;
+
+/** Frames from a callout's `enter` until its box, leader and pill are all in (stage `renderCallouts`). */
+export const SHOWCASE_CALLOUT_SETTLE_FRAMES = Math.max(
+  SHOWCASE_CHOREO.boxFrames,
+  SHOWCASE_CHOREO.leaderDelay + SHOWCASE_CHOREO.leaderFrames,
+  SHOWCASE_CHOREO.pillDelay + 6,
+);
+
+/** Frames a callout's retract takes; it starts this long before the callout's `exit`. */
+export const SHOWCASE_CALLOUT_RETRACT_FRAMES =
+  SHOWCASE_CHOREO.calloutsOutFromEnd - SHOWCASE_CHOREO.calloutsOutEndFromEnd;
+
+export function calloutReadingFrames(words: number): number {
+  return Math.ceil(Math.max(SHOWCASE_CALLOUT_MIN_SECONDS, words * SHOWCASE_CALLOUT_SECONDS_PER_WORD) * SHOWCASE_FPS);
+}
 
 /** Words a viewer has to read: runs of letters or digits, so "&" and "·" are free. */
 export function countWords(text: string): number {
@@ -651,8 +710,24 @@ export type ShowcaseCopy = Readonly<{
     }>;
   'lock-screen': SceneCopy;
   log: SceneCopy;
-  outro: Readonly<{ wordmark: string; tagline: string; pill: string }>;
+  outro: Readonly<{
+    wordmark: string;
+    tagline: string;
+    pill: string;
+    /**
+     * The small line under the pill: who pays for Boardsesh, worded as the
+     * homepage's `proofNoCount`. Never a tax or perk claim. Store previews and
+     * install ads must not mention donations, so `--no-donation-line` drops it.
+     */
+    donation?: string;
+  }>;
 }>;
+
+/** The copy for a cut without the donation line (`--no-donation-line`): store previews, install ads. */
+export function withoutDonationLine(copy: ShowcaseCopy): ShowcaseCopy {
+  const { donation: _dropped, ...outro } = copy.outro;
+  return { ...copy, outro };
+}
 
 /** `boards-soill` → "So iLL", from the one brand-name map the apps use. */
 export function boardTakeLabel(takeId: ShowcaseTakeId): string {
@@ -673,7 +748,14 @@ export function sceneVisibleText(
   callouts: readonly ShowcaseCalloutName[] = scene.callouts,
   boardTakes: readonly ShowcaseTakeId[] = scene.takes,
 ): string[] {
-  if (scene.id === 'outro') return [copy.outro.wordmark, copy.outro.tagline, copy.outro.pill];
+  if (scene.id === 'outro') {
+    return [
+      copy.outro.wordmark,
+      copy.outro.tagline,
+      copy.outro.pill,
+      ...(copy.outro.donation ? [copy.outro.donation] : []),
+    ];
+  }
   const labels = sceneCalloutCopy(copy, scene.id);
   const text = [copy[scene.id].headline, ...callouts.map((name) => labels[name] ?? '')];
   if (scene.id === 'boards') text.push(...boardTakes.map(boardTakeLabel));
@@ -698,29 +780,136 @@ export function readingBudgetFrames(words: number): number {
   return Math.ceil(words * SHOWCASE_SECONDS_PER_WORD * SHOWCASE_FPS);
 }
 
+export type CalloutReadingReport = Readonly<{
+  name: ShowcaseCalloutName;
+  words: number;
+  /** Scene-local frames: in, fully settled, and when it (or the scene's text) starts out. */
+  enter: number;
+  settledFrom: number;
+  settledUntil: number;
+  settledFrames: number;
+  needFrames: number;
+}>;
+
 export type ReadingBudgetReport = Readonly<{
   sceneId: ShowcaseScene['id'];
+  /** Words outside the callouts: the headline, plus the boards' names, the workout rows, the end card. */
+  headlineWords: number;
+  calloutWords: number;
   words: number;
   needFrames: number;
   haveFrames: number;
+  callouts: readonly CalloutReadingReport[];
 }>;
 
+/**
+ * Per callout: how long it sits fully settled, from its box, leader and pill
+ * being in until its own retract or the scene's words going out, whichever is
+ * first; and how long its words need.
+ */
+export function calloutReadingReports(
+  scene: ShowcaseScene,
+  labels: CalloutCopy,
+  edit?: ResolvedTakeEdit,
+  names: readonly ShowcaseCalloutName[] = scene.callouts,
+): CalloutReadingReport[] {
+  const length = scene.endFrame - scene.startFrame;
+  const timings = calloutTimings(scene, names, edit);
+  return names.flatMap((name) => {
+    const timing = timings[name];
+    if (!timing) return [];
+    const words = countWords(labels[name] ?? '');
+    const settledFrom = timing.enter + SHOWCASE_CALLOUT_SETTLE_FRAMES;
+    const settledUntil = Math.min(
+      timing.exit - SHOWCASE_CALLOUT_RETRACT_FRAMES,
+      length - SHOWCASE_CHOREO.wordsOutFromEnd,
+    );
+    return [
+      {
+        name,
+        words,
+        enter: timing.enter,
+        settledFrom,
+        settledUntil,
+        settledFrames: settledUntil - settledFrom,
+        needFrames: calloutReadingFrames(words),
+      },
+    ];
+  });
+}
+
+/**
+ * The reading budget, per scene: the scene's words (headline plus every
+ * callout label) against the time its text is still, and each callout's
+ * settled time against its own need. `edits` are the resolved take edits, so
+ * windowed callouts are measured on the cut the render plays.
+ */
 export function readingBudgetReport(
   copy: ShowcaseCopy,
   scenes: readonly ShowcaseScene[] = SHOWCASE_SCENES,
+  edits: Partial<Record<ShowcaseTakeId, ResolvedTakeEdit>> = {},
 ): ReadingBudgetReport[] {
+  const wordsIn = (texts: readonly string[]) =>
+    texts.map((text) => countWords(text.replace(/\*/g, ''))).reduce((sum, count) => sum + count, 0);
   return scenes.map((scene) => {
     // Every board phone and every callout present: the worst case.
-    const words = sceneVisibleText(scene, copy)
-      .map((text) => countWords(text.replace(/\*/g, '')))
-      .reduce((sum, count) => sum + count, 0);
+    const words = wordsIn(sceneVisibleText(scene, copy));
+    const labels = sceneCalloutCopy(copy, scene.id);
+    const calloutWords = wordsIn(scene.callouts.map((name) => labels[name] ?? ''));
     return {
       sceneId: scene.id,
+      headlineWords: words - calloutWords,
+      calloutWords,
       words,
       needFrames: readingBudgetFrames(words),
       haveFrames: readingWindowFrames(scene),
+      callouts: calloutReadingReports(scene, labels, scene.takes[0] ? edits[scene.takes[0]] : undefined),
     };
   });
+}
+
+/** Whether a scene and all its callouts meet the budget. */
+export const readingBudgetMet = (report: ReadingBudgetReport): boolean =>
+  report.haveFrames >= report.needFrames &&
+  report.callouts.every((callout) => callout.settledFrames >= callout.needFrames);
+
+/**
+ * The budget as a plain-text table: one row per scene (headline words, callout
+ * words, seconds the text is settled, seconds it needs), then one row per
+ * callout (its words, seconds fully settled, seconds it needs).
+ */
+export function formatReadingBudgetTable(reports: readonly ReadingBudgetReport[]): string {
+  const seconds = (frames: number) => (frames / SHOWCASE_FPS).toFixed(2);
+  const rows: string[][] = [['scene / callout', 'headline words', 'callout words', 'settled s', 'required s', '']];
+  for (const report of reports) {
+    rows.push([
+      report.sceneId,
+      String(report.headlineWords),
+      String(report.calloutWords),
+      seconds(report.haveFrames),
+      seconds(report.needFrames),
+      report.haveFrames >= report.needFrames ? 'ok' : 'SHORT',
+    ]);
+    for (const callout of report.callouts) {
+      rows.push([
+        `  ${callout.name}`,
+        '',
+        String(callout.words),
+        seconds(callout.settledFrames),
+        seconds(callout.needFrames),
+        callout.settledFrames >= callout.needFrames ? 'ok' : 'SHORT',
+      ]);
+    }
+  }
+  const widths = rows[0].map((_, column) => Math.max(...rows.map((row) => row[column].length)));
+  return rows
+    .map((row) =>
+      row
+        .map((cell, column) => (column === 0 ? cell.padEnd(widths[column]) : cell.padStart(widths[column])))
+        .join('  ')
+        .trimEnd(),
+    )
+    .join('\n');
 }
 
 // --- headline parsing ------------------------------------------------------
@@ -1433,7 +1622,7 @@ export type StillFrame = Readonly<{ frame: number; label: string }>;
 export function stillFramesForScene(
   scene: ShowcaseScene,
   totalFrames = SHOWCASE_TOTAL_FRAMES,
-  /** Callouts with their own window: one still each, once its pill has landed. */
+  /** Every callout: one still each, once its pill has landed. */
   callouts: ReadonlyArray<Readonly<{ name: string; enter: number; leave: number }>> = [],
 ): StillFrame[] {
   const length = scene.endFrame - scene.startFrame;
@@ -1467,11 +1656,7 @@ export function stillFramesForScene(
     frames.splice(4, 2, { frame: totalFrames - 12, label: 'closer -12' }, { frame: totalFrames - 1, label: 'last' });
     frames.push({ frame: 0, label: 'frame 0' });
   }
-  const windowed = callouts.filter(
-    (callout) =>
-      callout.enter > SHOWCASE_CHOREO.calloutStart + SHOWCASE_CHOREO.calloutStagger * 2 || callout.enter < 12,
-  );
-  for (const callout of windowed) {
+  for (const callout of callouts) {
     const local = Math.min(callout.enter + 24, callout.leave - 7);
     frames.push({ frame: scene.startFrame + local, label: callout.name });
   }
@@ -1495,7 +1680,7 @@ export const SHOWCASE_WEB_MAX_BYTES = 1_900_000;
  * here (`webRotation`); `brag.mp4` and `brag.jpg` keep frame 0, the hook, for
  * social. `--poster-frame` overrides it.
  */
-export const SHOWCASE_WEB_POSTER_FRAME = 132;
+export const SHOWCASE_WEB_POSTER_FRAME = 142;
 
 /**
  * The lighter 9:16 encode for phones: 720x1280, a bitrate that lands each file
@@ -1503,7 +1688,7 @@ export const SHOWCASE_WEB_POSTER_FRAME = 132;
  */
 export const SHOWCASE_WEB_LITE = {
   size: { width: 720, height: 1280 },
-  maxWebmBytes: 1_300_000,
+  maxWebmBytes: 1_750_000,
   maxMp4Bytes: 1_900_000,
 } as const;
 
@@ -2167,6 +2352,12 @@ export type RenderArgs = Readonly<{
   formats: readonly ShowcaseFormat[];
   placeholderFootage: boolean;
   skipWeb: boolean;
+  /**
+   * The outro's donation line (default on). `--no-donation-line` renders the
+   * cut for a store preview or an install ad, and skips the web encodes so the
+   * homepage files keep the line.
+   */
+  donationLine: boolean;
   help: boolean;
 }>;
 
@@ -2187,6 +2378,7 @@ export function parseRenderArgs(argv: readonly string[]): RenderArgs {
   let formats: ShowcaseFormat[] = [...SHOWCASE_FORMATS];
   let placeholderFootage = false;
   let skipWeb = false;
+  let donationLine = true;
   const result = (help: boolean): RenderArgs => ({
     stills,
     posterFrame,
@@ -2195,7 +2387,8 @@ export function parseRenderArgs(argv: readonly string[]): RenderArgs {
     fromFrame,
     formats,
     placeholderFootage,
-    skipWeb,
+    skipWeb: skipWeb || !donationLine,
+    donationLine,
     help,
   });
   for (let index = 0; index < argv.length; index += 1) {
@@ -2206,6 +2399,7 @@ export function parseRenderArgs(argv: readonly string[]): RenderArgs {
     else if (argument === '--measure') measure = true;
     else if (argument === '--placeholder-footage') placeholderFootage = true;
     else if (argument === '--skip-web') skipWeb = true;
+    else if (argument === '--no-donation-line') donationLine = false;
     else if (
       argument === '--from-frame' ||
       argument === '--format' ||

@@ -267,8 +267,38 @@ and callout windows. Every time there is an offset from one of the take's
 marks (a scroll correction applies from `scrolled`, the wall sheet's drag from
 `history-shown`), so a re-record needs no edits. A render stops, naming the
 take and the marks, when a mark the edit reads is missing or a segment runs
-off the footage; `vp run video:render -- --stills --measure` shows every
-callout box over the recorded frames when you want to look.
+off the footage. The one exception is a scene's last segment running up to
+1.5 s past the end of its take: the render holds the last frame and warns
+instead. A segment can also hold its last frame on purpose (`hold`, in
+seconds) where the screen is still, which is how a callout gets its reading
+time when the app moves on sooner. `vp run video:render -- --stills --measure`
+shows every callout box over the recorded frames when you want to look.
+
+### Reading time
+
+Every render prints the reading budget as a table: per scene, the headline
+words, the callout words, how long the text is settled and how long it needs
+(0.3 s a word, headline and callouts together); per callout, how long it sits
+fully settled (box, leader and pill all in, until it or the scene's text starts
+out) against max(1.6 s, 0.45 s a word). Callout entrances are at least 0.5 s
+apart. `showcase-video-render.test` holds all of it on the recorded marks, so a
+change to a scene's length, an edit window or the copy that leaves a callout
+unread fails the tests before it reaches a render.
+
+### The donation line
+
+The outro's small line under the store pill, "Paid for by the climbers who use
+it." (`copy.en-US.json` `outro.donation`), uses the homepage's `proofNoCount`
+wording. It never claims tax relief or perks. Store listings must never mention
+donations, so an App Store preview or an app-install ad cut renders without it:
+
+```sh
+vp run video:render -- --no-donation-line
+```
+
+The flag drops the line (and its words from the outro's reading budget) and
+skips the web encodes, so the homepage files always keep it. Everything else,
+including the outro's length and the loop closer, stays the same.
 
 ## Adding or changing a take
 

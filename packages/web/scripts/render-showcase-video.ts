@@ -104,6 +104,9 @@ import {
   planBoards,
   prepareAnchorsFile,
   readingBudgetReport,
+  readingBudgetMet,
+  formatReadingBudgetTable,
+  withoutDonationLine,
   renderedBoardScreen,
   sceneCalloutCopy,
   resolveSceneCallouts,
@@ -151,6 +154,8 @@ Renders the homepage showcase video from marketing/showcase-video/.
   --placeholder-footage  Rebuild stand-in footage + anchors from the committed help
                          clips, store screenshots and generated cards before rendering
   --skip-web             Stop after brag.mp4 / brag.jpg (no lite hero encode or poster)
+  --no-donation-line     Leave "Paid for by the climbers who use it." out of the outro,
+                         for store previews and install ads (implies --skip-web)
   --help                 Show this message`;
 
 const log = (message: string) => console.log(`[video:render] ${message}`);
@@ -325,7 +330,9 @@ function readEdit(takeId: ShowcaseTakeId, frameCount: number): ResolvedTakeEdit 
   if (file.takeId !== takeId || typeof file.marks !== 'object')
     throw new Error(`${path} is not a marks file for "${takeId}"`);
   const scene = sceneOfTake(takeId);
-  return resolveTakeEdit(takeId, edit, file.marks, scene.endFrame - scene.startFrame, frameCount);
+  const resolved = resolveTakeEdit(takeId, edit, file.marks, scene.endFrame - scene.startFrame, frameCount);
+  resolved.warnings.forEach(warn);
+  return resolved;
 }
 
 function readAnchors(takeId: ShowcaseTakeId, edit: ResolvedTakeEdit | undefined): ShowcaseAnchorsFile {
@@ -469,8 +476,10 @@ type Prepared = Readonly<{
   timeline: ShowcaseTimeline;
 }>;
 
-async function prepare(allowDrawnPlaceholders: boolean): Promise<Prepared> {
-  const copy = JSON.parse(readFileSync(SHOWCASE_STAGE_COPY, 'utf8')) as ShowcaseCopy;
+async function prepare(allowDrawnPlaceholders: boolean, donationLine: boolean): Promise<Prepared> {
+  const stageCopy = JSON.parse(readFileSync(SHOWCASE_STAGE_COPY, 'utf8')) as ShowcaseCopy;
+  const copy = donationLine ? stageCopy : withoutDonationLine(stageCopy);
+  if (!donationLine) log('outro: no donation line (store / install-ad cut); web encodes skipped');
   const { takes, anchors, edits } = loadTakes(allowDrawnPlaceholders);
   const light = takes.light;
   const lightAnchors = anchors.light;
@@ -496,10 +505,10 @@ async function prepare(allowDrawnPlaceholders: boolean): Promise<Prepared> {
   const boardsScene = SHOWCASE_SCENES.find((scene) => scene.id === 'boards') as ShowcaseScene;
   const boards = planBoards(boardsScene.takes, new Set(Object.keys(takes) as ShowcaseTakeId[]));
   log(`boards: ${boards.arrival.length} phones (${boards.arrival.map((takeId) => boards.labels[takeId]).join(', ')})`);
-  for (const report of readingBudgetReport(copy, timeline.scenes)) {
-    const line = `${report.sceneId}: ${report.words} words need ${report.needFrames} frames, have ${report.haveFrames}`;
-    if (report.haveFrames < report.needFrames) warn(`reading budget short: ${line}`);
-    else log(`reading budget ok: ${line}`);
+  const budget = readingBudgetReport(copy, timeline.scenes, edits);
+  log(`reading budget:\n${formatReadingBudgetTable(budget)}`);
+  for (const report of budget.filter((candidate) => !readingBudgetMet(candidate))) {
+    warn(`reading budget short in "${report.sceneId}"`);
   }
   return { copy, takes, anchors, holds, callouts, boards, edits, timeline };
 }
@@ -879,7 +888,7 @@ async function main(): Promise<void> {
   mkdirSync(SHOWCASE_FRAMES_DIR, { recursive: true });
   if (args.placeholderFootage) await buildPlaceholderFootage();
   writeTokens();
-  const prepared = await prepare(args.placeholderFootage);
+  const prepared = await prepare(args.placeholderFootage, args.donationLine);
   for (const format of args.formats) {
     const data = stageData(format, prepared, args.measure);
     if (args.frame !== null) await renderSingleFrame(format, data, args.frame);
