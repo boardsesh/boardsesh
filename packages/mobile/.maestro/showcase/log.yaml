@@ -12,6 +12,8 @@ name: showcase take - the logbook fills itself
 # The recorder opens ://profile on a freshly launched app BEFORE recording, so
 # this flow opens on the top of the Progress tab.
 #
+# Marks (work/marks/log.json): scrolled, filter-kilter, filter-tension.
+#
 # Coordinates (iPhone 16 Pro Max portrait), measured on the recorded frames:
 #   50%,80% -> 50%,40%  a slow drag up: "Your progress" lands at ~28%
 #   90%,28%             "Filters", right of the "Your progress" title
@@ -35,6 +37,7 @@ name: showcase take - the logbook fills itself
     end: '50%,40%'
     duration: 1800
 - waitForAnimationToEnd
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/scrolled')}
 
 # Kilter.
 - tapOn:
@@ -45,6 +48,7 @@ name: showcase take - the logbook fills itself
 - tapOn:
     point: '12%,89%'
 - waitForAnimationToEnd
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/filter-kilter')}
 - extendedWaitUntil:
     visible: 'zzz-showcase-pause'
     timeout: 1200
@@ -59,6 +63,7 @@ name: showcase take - the logbook fills itself
 - tapOn:
     point: '12%,89%'
 - waitForAnimationToEnd
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/filter-tension')}
 - extendedWaitUntil:
     visible: 'zzz-showcase-pause'
     timeout: 1800

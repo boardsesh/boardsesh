@@ -24,6 +24,9 @@ name: showcase take - a friend adds a climb
 # `play-next` only for a climb that is not the one playing, which is why the
 # long press lands on the new row, not the current one.
 #
+# Marks (work/marks/crew.json): invite-closed, queue-open, crew-added (the
+# second phone's swipe), row-landed (the row's anchor first logged), play-next-menu.
+#
 # Coordinates (iPhone 16 Pro Max portrait):
 #   50%,47% -> 50%,95%  drag the invite sheet down to close it
 #   40%,88%             the now-playing bar above the tab bar -> play view
@@ -44,6 +47,7 @@ name: showcase take - a friend adds a climb
     end: '50%,95%'
     duration: 400
 - waitForAnimationToEnd
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/invite-closed')}
 
 - tapOn:
     point: '40%,88%'
@@ -52,6 +56,7 @@ name: showcase take - a friend adds a climb
 - tapOn:
     point: '91%,90%'
 - waitForAnimationToEnd
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/queue-open')}
 
 # Queue sheet is up: tell the second phone to add its climb, and watch it land.
 - evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/set/crew-add')}
@@ -69,6 +74,7 @@ name: showcase take - a friend adds a climb
 - evalScript: ${output.rowY = Math.round((Number(http.get(SHOWCASE_SIGNAL_URL + '/value/anchor-queue-row-avatar-cy').body.trim() || '252') + 322) / 956 * 100)}
 - longPressOn:
     point: '50%,${output.rowY}%'
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/play-next-menu')}
 - extendedWaitUntil:
     visible: 'zzz-showcase-pause'
     timeout: 2000

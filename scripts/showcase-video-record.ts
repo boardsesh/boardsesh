@@ -54,6 +54,7 @@ import { guardSimulatorCommand } from './lib/ios-simulator-lease';
 import { DEFAULT_SCREENSHOT_FIXTURES_DIR } from './lib/screenshot-fixtures';
 import {
   SHOWCASE_ANCHORS_DIR,
+  SHOWCASE_MARKS_DIR,
   SHOWCASE_FOOTAGE_DIR,
   SHOWCASE_RAW_DIR,
   SHOWCASE_STAGE_DIR,
@@ -71,6 +72,7 @@ import {
   anchorTapValues,
   buildAnchorsFile,
   buildFootageFrameArgs,
+  buildMarksFile,
   checkTake,
   countHomeReady,
   differingPixelRatio,
@@ -772,6 +774,17 @@ async function processTake(
   });
   mkdirSync(SHOWCASE_ANCHORS_DIR, { recursive: true });
   writeFileSync(resolve(SHOWCASE_ANCHORS_DIR, `${take.id}.json`), `${JSON.stringify(anchors, null, 2)}\n`);
+  const marksFile = buildMarksFile({
+    takeId: take.id,
+    marks: options.marks,
+    arrivals: options.arrivals,
+    anchorMarks: take.anchorMarks,
+    recordStartMs: options.recordStartMs,
+    trimSeconds,
+    durationSeconds: seconds,
+  });
+  mkdirSync(SHOWCASE_MARKS_DIR, { recursive: true });
+  writeFileSync(resolve(SHOWCASE_MARKS_DIR, `${take.id}.json`), `${JSON.stringify(marksFile, null, 2)}\n`);
 
   let boardProblem: string | null = null;
   if (take.board?.slot !== undefined && take.board.slot !== null) {
@@ -797,7 +810,12 @@ async function processTake(
   ];
   console.log(
     `${LOG} [${take.id}] trim ${trimSeconds.toFixed(2)}s -> ${frames} frames (${seconds.toFixed(2)}s), ` +
-      `anchors: ${Object.keys(anchors.anchors).join(', ') || 'none'}`,
+      `anchors: ${Object.keys(anchors.anchors).join(', ') || 'none'}; ` +
+      `marks: ${
+        Object.entries(marksFile.marks)
+          .map(([name, at]) => `${name}@${at}s`)
+          .join(', ') || 'none'
+      }`,
   );
   return { takeId: take.id, problems, frames, seconds };
 }
@@ -1261,6 +1279,7 @@ function printPlan(args: ShowcaseRecordArgs, takes: readonly ShowcaseTake[], env
   );
   for (const take of takes) {
     const flows = [
+      ...take.deviceSetupFlows,
       ...(take.privateSession ? [SESSION_PRIVATE_FLOW] : []),
       ...take.setupFlows,
       take.flow,
@@ -1378,6 +1397,12 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     }
 
     const context: RunContext = { args, primary, secondary, signal };
+    for (const flow of new Set(takes.flatMap((take) => take.deviceSetupFlows))) {
+      console.log(`${LOG} device setup: ${flow}`);
+      const status = await runFlow(context, flow, 'device-setup');
+      if (status !== 0)
+        console.warn(`${LOG} device setup ${flow} exited ${status}; the takes that need it may show it.`);
+    }
     if (args.endSession) {
       await endStraySession(context, args.endSession);
       await teardown();

@@ -7,9 +7,11 @@ import {
   SHOWCASE_TAKE_IDS,
   parseShowcaseAnchorLine,
   type ShowcaseAnchorLogLine,
+  type ShowcaseAnchorName,
   type ShowcaseAnchorSample,
   type ShowcaseAnchorsFile,
   type ShowcaseCalloutName,
+  type ShowcaseMarksFile,
   type ShowcaseTakeId,
   sortAnchorSamples,
 } from './contract';
@@ -379,6 +381,48 @@ export function anchorTapValues(
     // window (its y is relative to the sheet, so the flow adds the sheet's top).
     [`anchor-${line.name}-cy`]: String(Math.round(line.y + line.height / 2)),
   };
+}
+
+/** Signal-server marks that are recorder plumbing, not moments in the footage. */
+const PLUMBING_MARKS = new Set([FLOW_START_MARK, 'secondary-ready']);
+
+/**
+ * The marks file for one take: every mark the flows raised while recording
+ * (the second phone's too), plus marks derived from the FIRST sample of an
+ * anchor logged during the take (`anchorMarks`: mark name -> anchor name, e.g.
+ * the crew row landing), each in seconds from the trimmed start. Plumbing
+ * marks and marks outside the footage are left out.
+ */
+export function buildMarksFile(
+  options: Readonly<{
+    takeId: ShowcaseTakeId;
+    marks: ReadonlyMap<string, number>;
+    arrivals: readonly AnchorArrival[];
+    anchorMarks: Readonly<Record<string, ShowcaseAnchorName>>;
+    recordStartMs: number;
+    trimSeconds: number;
+    durationSeconds: number;
+  }>,
+): ShowcaseMarksFile {
+  const toSeconds = (atMs: number): number =>
+    Math.round(((atMs - options.recordStartMs) / 1000 - options.trimSeconds) * 1000) / 1000;
+  const entries: [string, number][] = [];
+  for (const [name, atMs] of options.marks) {
+    if (!PLUMBING_MARKS.has(name)) entries.push([name, toSeconds(atMs)]);
+  }
+  const trimmedStartMs = options.recordStartMs + options.trimSeconds * 1000;
+  for (const [markName, anchorName] of Object.entries(options.anchorMarks)) {
+    const first = options.arrivals
+      .filter((arrival) => arrival.line.name === anchorName && arrival.atMs >= trimmedStartMs)
+      .sort((left, right) => left.atMs - right.atMs)[0];
+    if (first) entries.push([markName, toSeconds(first.atMs)]);
+  }
+  const marks = Object.fromEntries(
+    entries
+      .filter(([, seconds]) => seconds >= 0 && seconds <= options.durationSeconds)
+      .sort(([, left], [, right]) => left - right),
+  );
+  return { takeId: options.takeId, marks };
 }
 
 /**
