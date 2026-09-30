@@ -192,14 +192,6 @@ export function holdFromStroke(points: RingPoint[]): HoldFromStrokeResult {
 }
 
 /**
- * Most corners a tapped-out polygon may have: one stored ring's worth.
- *
- * Derived from the shared ring contract (`MAX_RING_NUMBERS`, two numbers a
- * point) rather than restated. `closeRing` only ever DROPS a trailing point that
- * repeats the first — it never appends one — so a polygon of this many corners
- * stores as exactly this many points and still fits.
- */
-/**
  * How close to the first corner, in screen points, a tap closes a Corners
  * outline — the ring drawn round that corner.
  */
@@ -212,6 +204,14 @@ export const CORNERS_CLOSE_TARGET_PT = 11;
  */
 export const CORNERS_CLOSE_EXTENT_FRACTION = 0.35;
 
+/**
+ * Most corners a tapped-out polygon may have: one stored ring's worth.
+ *
+ * Derived from the shared ring contract (`MAX_RING_NUMBERS`, two numbers a
+ * point) rather than restated. `closeRing` only ever DROPS a trailing point that
+ * repeats the first — it never appends one — so a polygon of this many corners
+ * stores as exactly this many points and still fits.
+ */
 export const POLYGON_MAX_VERTICES = Math.floor(MAX_RING_NUMBERS / 2);
 
 /**

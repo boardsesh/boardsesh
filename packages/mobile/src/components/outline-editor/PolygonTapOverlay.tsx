@@ -174,7 +174,7 @@ export const PolygonTapOverlay = React.memo(function PolygonTapOverlay({
     // A RELATION on the board's pinch, not a composition of it.
     tap.simultaneousWithExternalGesture(pinchRef);
     return tap;
-    // handleVertexCountChange/handleClose are intentionally not deps — they're
+    // handleVertexCountChange/handleVertexLimit/handleClose are intentionally not deps — they're
     // captured once and read render-scoped values through callbacksRef.
   }, [
     verticesSV,

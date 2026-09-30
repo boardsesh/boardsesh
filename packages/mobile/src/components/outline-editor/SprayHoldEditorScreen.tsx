@@ -118,6 +118,9 @@ const WALL_A11Y_ACTIONS: readonly AccessibilityActionInfo[] = [
  */
 const ADD_TAP_SLOP_PT = 10;
 
+/** Corners an outline needs before it can close. */
+const MIN_CORNERS = 3;
+
 /** Where the zoomed-in reset control sits: top-left, clear of the chip bar and the bottom bar. */
 const RESET_ZOOM_STYLE = { left: spacing[2], top: spacing[2] };
 
@@ -798,7 +801,7 @@ export function SprayHoldEditorScreen({
     // Done means done: an outline with enough corners is kept rather than
     // thrown away. One that cannot close stays on screen with its error, in
     // add mode, so the climber can fix it or undo it.
-    if (cornersSV.value.length >= 6 && !takeAndCloseCorners()) return;
+    if (cornersSV.value.length / 2 >= MIN_CORNERS && !takeAndCloseCorners()) return;
     clearCorners();
     draftPointsSV.value = NO_POINTS;
     setTool('edit');
@@ -1549,7 +1552,7 @@ export function SprayHoldEditorScreen({
         />
       ) : null}
 
-      {tool === 'add' && addShape === 'corners' && cornerCount >= 3 && canEdit ? (
+      {tool === 'add' && addShape === 'corners' && cornerCount >= MIN_CORNERS && canEdit ? (
         <SprayCornersChipBar
           bottom={insets.bottom + SPRAY_BAR_GUTTER * 2 + SPRAY_BAR_HEIGHT}
           onFinish={handleFinishCorners}
