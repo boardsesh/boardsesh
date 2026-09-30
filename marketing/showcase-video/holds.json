@@ -1,0 +1,15 @@
+{
+  "//": "Fallback motif holds, used when lit-hold detection finds fewer than three in the light take's first frame. Screen points (440x956), traced from the committed preview-browsing help clip: Lightest Pair of Shorts on a Kilter.",
+  "holds": [
+    { "x": 304.9, "y": 521.9, "role": "start" },
+    { "x": 362.9, "y": 466.3, "role": "start" },
+    { "x": 246.3, "y": 465.1, "role": "hand" },
+    { "x": 276.2, "y": 379.6, "role": "hand" },
+    { "x": 218.2, "y": 322.8, "role": "hand" },
+    { "x": 160.2, "y": 321.6, "role": "hand" },
+    { "x": 104.6, "y": 321.6, "role": "hand" },
+    { "x": 104.6, "y": 261.9, "role": "hand" },
+    { "x": 74.7, "y": 203.3, "role": "finish" },
+    { "x": 132.7, "y": 206.3, "role": "finish" }
+  ]
+}

@@ -1,0 +1,603 @@
+/*
+ * Showcase stage. Everything that moves reads a CSS custom property that
+ * timeline.mjs sets per frame: no transitions, no animations, no clocks.
+ * Colours come from tokens.css (generated from @boardsesh/velvet-tokens and
+ * @boardsesh/board-constants by the renderer); the fallbacks are the same hexes.
+ */
+
+@font-face {
+  font-family: 'Inter Tight';
+  src: url('fonts/InterTight-latin-var.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Instrument Serif';
+  src: url('fonts/InstrumentSerif-Italic-latin.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Geist Mono';
+  src: url('fonts/GeistMono-latin-var.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: block;
+}
+
+:root {
+  --stage-dark: var(--token-stage-dark, #110a20);
+  --stage-light: var(--token-stage-light, #f4f1fb);
+  --ink-on-dark: var(--token-ink-dark, #f5f2fb);
+  --ink-on-light: var(--token-ink-light, #16111f);
+  --sub-on-dark: var(--token-sub-dark, #a9a2b6);
+  --sub-on-light: var(--token-sub-light, #5b5563);
+  --accent-on-dark: var(--token-accent-dark, #a78bfa);
+  --accent-on-light: var(--token-accent-light, #6d28d9);
+  --amber: var(--token-amber, #ff8a3d);
+  --glow-dark: var(--token-glow-dark, #7c3aed);
+  --glow-light: #c4b5fd;
+  --role-start: var(--token-role-start, #00ff00);
+  --role-hand: var(--token-role-hand, #4df5fd);
+  --role-finish: var(--token-role-finish, #ff00ff);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: #000;
+  overflow: hidden;
+}
+
+#stage {
+  --w: 1920;
+  --h: 1080;
+  --light-mix: 0;
+  position: relative;
+  width: calc(var(--w) * 1px);
+  height: calc(var(--h) * 1px);
+  overflow: hidden;
+  perspective: 2200px;
+  perspective-origin: 50% 50%;
+  font-family: 'Inter Tight', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: geometricPrecision;
+  font-kerning: normal;
+}
+#stage[data-format='9x16'] {
+  --w: 1080;
+  --h: 1920;
+}
+
+.bg,
+.layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.bg {
+  background: var(--bg, var(--stage-dark));
+}
+svg.layer {
+  overflow: visible;
+}
+
+/* --- glow behind the phone ------------------------------------------------ */
+
+.glow {
+  position: absolute;
+  left: calc(var(--gx, 960) * 1px);
+  top: calc(var(--gy, 540) * 1px);
+  width: 1000px;
+  height: 1180px;
+  margin: -590px 0 0 -500px;
+  border-radius: 50%;
+  transform: scale(var(--gs, 1));
+  will-change: transform, opacity;
+}
+.glow-dark {
+  opacity: calc((1 - var(--light-mix)) * var(--gstrength, 1));
+  background: radial-gradient(
+    ellipse at center,
+    color-mix(in srgb, var(--glow-dark) 30%, transparent),
+    color-mix(in srgb, var(--glow-dark) 10%, transparent) 48%,
+    transparent 72%
+  );
+}
+.glow-light {
+  opacity: calc(var(--light-mix) * var(--gstrength, 1));
+  background: radial-gradient(
+    ellipse at center,
+    color-mix(in srgb, var(--glow-light) 45%, transparent),
+    transparent 70%
+  );
+}
+
+/* --- grain ------------------------------------------------------------------ */
+
+.grain {
+  will-change: opacity;
+}
+.grain-dark {
+  mix-blend-mode: soft-light;
+  opacity: calc((1 - var(--light-mix)) * 0.05);
+}
+.grain-light {
+  mix-blend-mode: multiply;
+  opacity: calc(var(--light-mix) * 0.04);
+}
+
+/* --- motif ------------------------------------------------------------------- */
+
+.motif-back {
+  opacity: var(--motif-o, 1);
+}
+#grid {
+  opacity: var(--grid-o, 1);
+}
+#motifLine {
+  opacity: var(--line-o, 1);
+}
+.ring .ring-halo {
+  opacity: var(--halo, 0.5);
+}
+
+/* --- phone (CSS-drawn iPhone 16 Pro Max) ------------------------------------- */
+
+.phone-rig {
+  --cx: 2350;
+  --cy: 560;
+  --s: 1;
+  --rx: 0;
+  --ry: 0;
+  --rz: 0;
+  position: absolute;
+  left: calc(var(--cx) * 1px - 214px);
+  top: calc(var(--cy) * 1px - 450px);
+  width: 428px;
+  height: 900px;
+  transform: scale(var(--s)) rotateX(calc(var(--rx) * 1deg)) rotateY(calc(var(--ry) * 1deg))
+    rotateZ(calc(var(--rz) * 1deg));
+  transform-origin: 50% 50%;
+  will-change: transform;
+}
+.phone-body {
+  position: absolute;
+  inset: 0;
+  border-radius: 70px;
+  padding: 3px;
+  background: linear-gradient(145deg, #d9d7d2 0%, #8f8d88 18%, #b9b7b1 36%, #6f6d69 55%, #c9c7c1 78%, #7d7b76 100%);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.35),
+    0 0 0 1px rgba(0, 0, 0, 0.55);
+}
+.bezel {
+  position: absolute;
+  inset: 3px;
+  border-radius: 67px;
+  background: #050407;
+  padding: 10px;
+}
+.screen {
+  position: relative;
+  width: 402px;
+  height: 874px;
+  border-radius: 57px;
+  overflow: hidden;
+  background: #050407;
+  /* Keeps the rounded clip exact under 3D transforms. */
+  isolation: isolate;
+}
+.screen img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  opacity: var(--footage-o, 1);
+}
+.screen .gloss {
+  position: absolute;
+  inset: 0;
+  border-radius: 57px;
+  background: linear-gradient(125deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0) 38%);
+  pointer-events: none;
+}
+.island {
+  position: absolute;
+  top: 11px;
+  left: 50%;
+  width: 114px;
+  height: 34px;
+  margin-left: -57px;
+  border-radius: 17px;
+  background: #000;
+}
+.island::after {
+  content: '';
+  position: absolute;
+  right: 22px;
+  top: 11px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 40%, #2a2f45 0%, #0b0c12 60%);
+}
+.phone-btn {
+  position: absolute;
+  width: 4px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #6f6d69, #c9c7c1 50%, #7d7b76);
+}
+.phone-btn.left {
+  left: -3px;
+}
+.phone-btn.right {
+  right: -3px;
+}
+.phone-shadow {
+  position: absolute;
+  left: calc(var(--cx, -1000) * 1px - 190px);
+  top: calc(var(--cy, -1000) * 1px - 30px);
+  width: 380px;
+  height: 60px;
+  border-radius: 50%;
+  background: radial-gradient(ellipse at center, rgba(8, 4, 16, 0.5) 0%, rgba(8, 4, 16, 0) 70%);
+  filter: blur(14px);
+  opacity: var(--shadow-o, 1);
+  transform: scale(var(--s, 1));
+}
+
+/* --- headlines ------------------------------------------------------------------ */
+
+.headline {
+  position: absolute;
+  left: 144px;
+  top: 50%;
+  width: 660px;
+  transform: translateY(-50%);
+  font-weight: 800;
+  font-size: 104px;
+  line-height: 0.98;
+  letter-spacing: -0.04em;
+  color: var(--ink);
+  opacity: var(--on, 0);
+}
+.headline .line {
+  display: block;
+  white-space: nowrap;
+}
+.w {
+  display: inline-block;
+  opacity: var(--o, 0);
+  filter: blur(calc(var(--b, 0) * 1px));
+  transform: translateY(calc(var(--y, 0) * 1px));
+  will-change: transform, opacity, filter;
+}
+.w.accent {
+  font-family: 'Instrument Serif', serif;
+  font-style: italic;
+  font-weight: 400;
+  font-size: 120px;
+  letter-spacing: -0.01em;
+  color: var(--accent);
+  padding-right: 0.06em;
+}
+.on-dark {
+  --ink: var(--ink-on-dark);
+  --sub: var(--sub-on-dark);
+  --accent: var(--accent-on-dark);
+}
+.on-light {
+  --ink: var(--ink-on-light);
+  --sub: var(--sub-on-light);
+  --accent: var(--accent-on-light);
+}
+
+.headline[data-scene='boards'] {
+  left: 0;
+  width: 100%;
+  top: 92px;
+  transform: none;
+  text-align: center;
+}
+.headline[data-scene='boards'] .line {
+  display: inline;
+}
+.headline[data-scene='log'] {
+  top: 236px;
+  transform: none;
+}
+
+/* --- boards labels -------------------------------------------------------------- */
+
+.board-label {
+  position: absolute;
+  left: calc(var(--lx) * 1px);
+  top: calc(var(--ly) * 1px);
+  transform: translate(-50%, calc(var(--y, 0) * 1px));
+  font-weight: 700;
+  font-size: 26px;
+  letter-spacing: -0.01em;
+  color: var(--sub-on-light);
+  opacity: var(--o, 0);
+  filter: blur(calc(var(--b, 0) * 1px));
+  white-space: nowrap;
+}
+
+/* --- callouts -------------------------------------------------------------------- */
+
+.callout-box {
+  stroke-width: 3;
+}
+.callout-leader {
+  fill: none;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.callout[data-role='start'] {
+  --role: var(--role-start);
+}
+.callout[data-role='hand'] {
+  --role: var(--role-hand);
+}
+.callout[data-role='finish'] {
+  --role: var(--role-finish);
+}
+.callout {
+  color: var(--role);
+  fill: currentColor;
+  stroke: currentColor;
+  filter: drop-shadow(0 0 7px color-mix(in srgb, var(--role) 70%, transparent));
+}
+.pill {
+  position: absolute;
+  left: calc(var(--px) * 1px);
+  top: calc(var(--py) * 1px - 30px);
+  height: 60px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 28px 0 22px;
+  border-radius: 30px;
+  background: #fff;
+  color: var(--ink-on-light);
+  font-weight: 700;
+  font-size: 24px;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  box-shadow:
+    0 14px 34px rgba(5, 2, 12, 0.45),
+    0 2px 6px rgba(5, 2, 12, 0.3);
+  opacity: var(--o, 0);
+  transform: scale(var(--k, 0.9));
+  transform-origin: 0 50%;
+  will-change: transform, opacity;
+}
+.pill .dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--role);
+  box-shadow:
+    0 0 0 3px rgba(22, 17, 31, 0.1),
+    0 0 10px color-mix(in srgb, var(--role) 80%, transparent);
+  flex: none;
+}
+.pill[data-side='left'] {
+  width: 250px;
+  justify-content: center;
+  transform-origin: 100% 50%;
+}
+.pill[data-side='right'][data-portrait='true'] {
+  width: 250px;
+  justify-content: center;
+}
+
+/* --- log checklist --------------------------------------------------------------------- */
+
+.checklist {
+  position: absolute;
+  left: 144px;
+  top: 494px;
+  width: 780px;
+  opacity: var(--on, 0);
+}
+.row {
+  display: flex;
+  align-items: center;
+  height: 84px;
+  gap: 18px;
+  opacity: var(--o, 0);
+  filter: blur(calc(var(--b, 0) * 1px));
+  transform: translateX(calc(var(--x, 0) * 1px));
+}
+.check {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  flex: none;
+}
+.check svg {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+}
+.check .ring {
+  fill: none;
+  stroke: color-mix(in srgb, var(--ink-on-light) 28%, transparent);
+  stroke-width: 2.5;
+}
+.check .fill {
+  fill: var(--accent-on-light);
+}
+.check .tick {
+  fill: none;
+  stroke: #fff;
+  stroke-width: 3.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.row .name {
+  font-weight: 700;
+  font-size: 36px;
+  letter-spacing: -0.02em;
+  color: var(--ink-on-light);
+  white-space: nowrap;
+}
+.row .chip {
+  display: inline-flex;
+  align-items: center;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 10px;
+  background: var(--chip-bg);
+  color: var(--chip-ink);
+  font-weight: 800;
+  font-size: 22px;
+  letter-spacing: -0.01em;
+  flex: none;
+}
+.row .time {
+  margin-left: auto;
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-weight: 500;
+  font-size: 24px;
+  color: var(--sub-on-light);
+}
+.progress {
+  position: relative;
+  height: 4px;
+  margin: 18px 0 0 54px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--ink-on-light) 10%, transparent);
+  opacity: var(--track-o, 0);
+}
+.progress .fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: calc(var(--p, 0) * 100%);
+  border-radius: 2px;
+  background: var(--amber);
+}
+
+/* --- outro ------------------------------------------------------------------------------ */
+
+.outro {
+  position: absolute;
+  inset: 0;
+  opacity: var(--on, 0);
+}
+.outro-el {
+  position: absolute;
+  left: 50%;
+  top: calc(var(--top) * 1px);
+  transform: translate(-50%, calc(var(--y, 0) * 1px)) scale(var(--k, 1));
+  opacity: var(--o, 0);
+  filter: blur(calc(var(--b, 0) * 1px));
+  white-space: nowrap;
+  will-change: transform, opacity, filter;
+}
+.outro .mark {
+  width: 168px;
+  height: 168px;
+  display: block;
+}
+.outro .wordmark {
+  font-weight: 800;
+  font-size: 168px;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--ink-on-dark);
+}
+.outro .tagline {
+  font-weight: 800;
+  font-size: 76px;
+  line-height: 1;
+  letter-spacing: -0.035em;
+  color: var(--ink-on-dark);
+}
+.outro .tagline .w.accent {
+  font-size: 88px;
+}
+.outro .store-pill {
+  padding: 14px 30px;
+  border-radius: 999px;
+  border: 2px solid color-mix(in srgb, var(--ink-on-dark) 32%, transparent);
+  color: var(--ink-on-dark);
+  font-weight: 600;
+  font-size: 28px;
+  letter-spacing: -0.005em;
+}
+#outroDots .zig {
+  fill: none;
+  stroke: url(#lineGradientOutro);
+  stroke-width: 5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* --- measure overlay ---------------------------------------------------------------------- */
+
+.measure rect {
+  fill: rgba(255, 60, 60, 0.12);
+  stroke: #ff3c3c;
+  stroke-width: 2;
+  stroke-dasharray: 6 4;
+}
+.measure text {
+  fill: #ff3c3c;
+  font:
+    700 16px 'Geist Mono',
+    monospace;
+}
+.measure .cross {
+  stroke: #ffe14d;
+  stroke-width: 2;
+}
+
+/* --- 9:16 --------------------------------------------------------------------------------- */
+
+#stage[data-format='9x16'] .headline {
+  left: 96px;
+  top: 180px;
+  width: 888px;
+  transform: none;
+  font-size: 88px;
+}
+#stage[data-format='9x16'] .w.accent {
+  font-size: 102px;
+}
+#stage[data-format='9x16'] .headline[data-scene='boards'] {
+  left: 0;
+  width: 100%;
+  top: 180px;
+}
+#stage[data-format='9x16'] .headline[data-scene='boards'] .line {
+  display: block;
+}
+#stage[data-format='9x16'] .checklist {
+  left: 96px;
+  top: 452px;
+  width: 888px;
+}
+#stage[data-format='9x16'] .outro .wordmark {
+  font-size: 150px;
+}
+#stage[data-format='9x16'] .outro .tagline {
+  font-size: 70px;
+}
+#stage[data-format='9x16'] .outro .tagline .w.accent {
+  font-size: 80px;
+}

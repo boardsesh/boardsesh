@@ -39,13 +39,13 @@ export const SHOWCASE_SCENES: readonly ShowcaseScene[] = [
   {
     id: 'crew',
     startFrame: 282,
-    endFrame: 402,
+    endFrame: 410,
     background: 'dark',
     takes: ['crew'],
     callouts: ['invite-qr', 'queue-row-avatar', 'play-next'],
   },
-  { id: 'log', startFrame: 402, endFrame: 507, background: 'light', takes: ['log'], callouts: [] },
-  { id: 'outro', startFrame: 507, endFrame: 657, background: 'dark', takes: [], callouts: [] },
+  { id: 'log', startFrame: 410, endFrame: 528, background: 'light', takes: ['log'], callouts: [] },
+  { id: 'outro', startFrame: 528, endFrame: 657, background: 'dark', takes: [], callouts: [] },
 ];
 
 export const SHOWCASE_TOTAL_FRAMES = SHOWCASE_SCENES[SHOWCASE_SCENES.length - 1].endFrame;
