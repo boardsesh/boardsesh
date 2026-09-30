@@ -749,7 +749,10 @@ export function SprayHoldEditorScreen({
     }
     hapticLight();
     dispatch({ type: 'KEEP_MAYBES' });
-  }, [refuseOverCap]);
+    // Keeping them all is the lesson the maybe hint teaches, done in bulk, so it
+    // counts as using it: otherwise the hint comes back on the next wall.
+    if (maybes > 0) recordHint('maybe');
+  }, [refuseOverCap, recordHint]);
 
   const handleToggleMaybes = useCallback(() => {
     const selected = stateRef.current.selectedId != null ? stateRef.current.holds[stateRef.current.selectedId] : null;
