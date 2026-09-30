@@ -109,7 +109,11 @@ export function ScreenshotBoardAutoActivator(): null {
     if (!activeBoard || !seedClimbs || seedClimbs.length === 0) return;
     // Logged for the same Metro-tee debuggability as the activation above.
     console.log(`[screenshot] wall seed published from auto-activator (${seedClimbs.length} climbs)`);
-    publishScreenshotWallClimbs(buildScreenshotWallSeed(seedClimbs, activeBoard.angle ?? null, activeBoard), null);
+    publishScreenshotWallClimbs(
+      buildScreenshotWallSeed(seedClimbs, activeBoard.angle ?? null, activeBoard),
+      null,
+      activeBoard.uuid,
+    );
   }, [wallSeedSearch, activeBoard]);
 
   return null;

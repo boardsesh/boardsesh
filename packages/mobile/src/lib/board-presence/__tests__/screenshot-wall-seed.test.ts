@@ -250,6 +250,51 @@ describe('screenshot-wall-seed', () => {
     ]);
   });
 
+  it("drops the old wall's reports when the capture switches boards, and lights the new board", async () => {
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_FAKE_BLE', '1');
+    const client = createScreenshotBoardPresenceClient();
+    const kilterClimb = makeClimb({ climbUuid: 'kilter-seeded', seq: 100 });
+    publishScreenshotWallClimbs([kilterClimb], null, 'kilter-board');
+    const events: BoardPresenceEvent[] = [];
+    client.subscribeNowPlaying(SCREENSHOT_SEED_BOARD_ID, (event) => events.push(event));
+    await client.reportClimb(SCREENSHOT_SEED_BOARD_ID, makeQueueItem('kilter-report'), 40);
+    const reportSeq = (events.at(-1) as { climb: BoardPresenceClimb }).climb.seq;
+
+    // Same board again (the Climbs screen mounting): the report stays lit.
+    publishScreenshotWallClimbs([kilterClimb], null, 'kilter-board');
+    expect((events.at(-1) as { climb: BoardPresenceClimb }).climb.climbUuid).toBe('kilter-report');
+
+    // Another board: its own climbs only, numbered above the old wall's so the
+    // reducer takes the new lit climb instead of dropping it as stale.
+    publishScreenshotWallClimbs(
+      [makeClimb({ climbUuid: 'tension-seeded', seq: 100, frames: 'p9r1' })],
+      null,
+      'tension-board',
+    );
+    const lit = (events.at(-1) as { climb: BoardPresenceClimb }).climb;
+    expect(lit.climbUuid).toBe('tension-seeded');
+    expect(lit.frames).toBe('p9r1');
+    expect(lit.seq).toBeGreaterThan(reportSeq);
+    expect((await client.fetchRecentClimbs(SCREENSHOT_SEED_BOARD_ID)).map((climb) => climb.climbUuid)).toEqual([
+      'tension-seeded',
+    ]);
+
+    // A report on the new board still counts up from there.
+    await client.reportClimb(SCREENSHOT_SEED_BOARD_ID, makeQueueItem('tension-report'), 40);
+    const next = (events.at(-1) as { climb: BoardPresenceClimb }).climb;
+    expect(next.climbUuid).toBe('tension-report');
+    expect(next.seq).toBeGreaterThan(lit.seq);
+  });
+
+  it('keeps the published numbering on a first publish with a board key', () => {
+    const client = createScreenshotBoardPresenceClient();
+    const events: BoardPresenceEvent[] = [];
+    publishScreenshotWallClimbs([makeClimb({ climbUuid: 'first', seq: 100 })], null, 'kilter-board');
+    client.subscribeNowPlaying(SCREENSHOT_SEED_BOARD_ID, (event) => events.push(event));
+    expect((events.at(-1) as { climb: BoardPresenceClimb }).climb.seq).toBe(100);
+  });
+
   it('emits nothing when the seed is empty', () => {
     const client = createScreenshotBoardPresenceClient();
     const events: BoardPresenceEvent[] = [];
