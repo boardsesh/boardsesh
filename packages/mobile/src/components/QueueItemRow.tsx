@@ -26,6 +26,7 @@ import { hapticSelection, hapticMedium } from '../lib/haptics';
 import type { QueueDragControls } from './play-drawer/use-queue-drag';
 import { rowReorderShift } from './play-drawer/queue-drag-math';
 import { ACTIVATE_ACCESSIBILITY_ACTIONS, rowAccessibilityActionsWith } from '../lib/row-accessibility-actions';
+import { useShowcaseAnchor } from '../lib/showcase-anchor';
 
 // The tick button is nested inside the row's `accessible` container, so it needs
 // both its own props (TalkBack focuses it) and a labelled custom action published
@@ -78,6 +79,8 @@ type QueueItemRowProps = {
   showAddedBy?: boolean;
   /** The viewer's own party-profile id; their own adds render no avatar. */
   viewerUserId?: string | null;
+  /** Report this row's added-by avatar to the showcase recorder (screenshot mode; one row per list). */
+  showcaseAvatarAnchor?: boolean;
 };
 
 function PositionIndicator({
@@ -132,6 +135,7 @@ function QueueItemRowComponent({
   isDraggable = false,
   showAddedBy = false,
   viewerUserId = null,
+  showcaseAvatarAnchor = false,
 }: QueueItemRowProps) {
   const { systemColors, brandColors } = useTheme();
   const { t } = useTranslation('session');
@@ -440,6 +444,7 @@ function QueueItemRowComponent({
   // Only the glyph goes: the accessibility label has no width budget, and a
   // VoiceOver user needs to know whose climb they are about to bulk-delete.
   const showAddedByAvatar = addedBy != null && !isEditMode;
+  const avatarAnchor = useShowcaseAnchor('queue-row-avatar', showcaseAvatarAnchor);
 
   // A plain const, deliberately NOT a useMemo: `rowAccessibilityActions` above is
   // memoized because a test asserts its identity across re-renders, but a string
@@ -511,6 +516,7 @@ function QueueItemRowComponent({
             accessibilityElementsHidden
             importantForAccessibility="no-hide-descendants"
             style={styles.addedByAvatar}
+            {...avatarAnchor}
           >
             <BoardDriverAvatar uri={addedBy.avatarUrl} name={addedBy.name} size={20} status="none" />
           </View>
