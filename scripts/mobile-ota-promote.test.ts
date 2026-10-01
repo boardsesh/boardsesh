@@ -1,3 +1,4 @@
+import { hashSourceMapExport } from './mobile-upload-sourcemaps';
 import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -8,6 +9,7 @@ import {
   parseCaptureArgs,
   parseStageReceipt,
   promoteArchivedOta,
+  publishArchivedOta,
   validateExport,
 } from './mobile-ota-promote';
 
@@ -66,8 +68,12 @@ function stageFixture() {
       commitHash: COMMIT,
       message: 'Test staged release',
       platforms: {
-        ios: { runtimeVersion: RUNTIME, bundleSha256: hashes.ios },
-        android: { runtimeVersion: RUNTIME, bundleSha256: hashes.android },
+        ios: { runtimeVersion: RUNTIME, bundleSha256: hashes.ios, fileHashes: hashSourceMapExport(join(root, 'ios')) },
+        android: {
+          runtimeVersion: RUNTIME,
+          bundleSha256: hashes.android,
+          fileHashes: hashSourceMapExport(join(root, 'android')),
+        },
       },
       baselineProductionUpdateIds: BASELINE_IDS,
     }),
@@ -456,6 +462,9 @@ describe('exact-byte production promotion', () => {
     };
     androidMetadata.fileMetadata.android.assets[0].ext = 'xml';
     writeFileSync(androidMetadataPath, JSON.stringify(androidMetadata));
+    const receipt = parseStageReceipt(JSON.parse(readFileSync(fixture.receiptPath, 'utf8')));
+    receipt.platforms.android.fileHashes = hashSourceMapExport(fixture.androidExport);
+    writeFileSync(fixture.receiptPath, JSON.stringify(receipt));
     const server = fetchServer(fixture);
     const assetPath = `assets/${EXPORT_ASSET_HASH}`;
     const assetFetch = vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
@@ -669,5 +678,69 @@ describe('exact-byte production promotion', () => {
     expect(
       server.calls.some((call) => call.url.searchParams.get('platform') === 'android' && call.init.method === 'PUT'),
     ).toBe(false);
+  });
+});
+
+describe('archived OTA publication', () => {
+  it('uses the target branch route and uploads the exact archived bytes', async () => {
+    const fixture = stageFixture();
+    const received: Array<{ url: URL; init: RequestInit }> = [];
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const url = requestUrl(input);
+      received.push({ url, init });
+      if (url.pathname.endsWith('/requestUploadUrl/pr-5885'))
+        return Response.json({
+          updateId: 101,
+          uploadRequests: [
+            {
+              requestUploadUrl: 'https://bucket.example/bundle',
+              fileName: 'main.hbc',
+              filePath: '_expo/static/js/ios/main.hbc',
+            },
+          ],
+        });
+      return new Response('', { status: 200 });
+    });
+    await expect(
+      publishArchivedOta({
+        exportDir: fixture.iosExport,
+        platform: 'ios',
+        bundleSha256: fixture.hashes.ios,
+        runtimeVersion: RUNTIME,
+        branch: 'pr-5885',
+        commitHash: COMMIT,
+        message: 'test',
+        manifestUrl: 'https://updates.example/manifest',
+        token: 'secret',
+        fetchImpl,
+      }),
+    ).resolves.toBe('published');
+    expect(received[0].url.pathname).toContain('/requestUploadUrl/pr-5885');
+    expect(received.at(-1)?.url.pathname).toContain('/markUpdateAsUploaded/pr-5885');
+    const upload = received.find((call) => call.init.method === 'PUT');
+    expect(Buffer.from(upload?.init.body as Buffer)).toEqual(
+      readFileSync(join(fixture.iosExport, '_expo/static/js/ios/main.hbc')),
+    );
+    expect(new Headers(upload?.init.headers).has('Authorization')).toBe(false);
+  });
+  it('refuses a changed bundle before contacting any server', async () => {
+    const fixture = stageFixture();
+    const fetchImpl = vi.fn();
+    writeFileSync(join(fixture.iosExport, '_expo/static/js/ios/main.hbc'), 'changed');
+    await expect(
+      publishArchivedOta({
+        exportDir: fixture.iosExport,
+        platform: 'ios',
+        bundleSha256: fixture.hashes.ios,
+        runtimeVersion: RUNTIME,
+        branch: 'pr-staging',
+        commitHash: COMMIT,
+        message: '',
+        manifestUrl: 'https://updates.example/manifest',
+        token: 'secret',
+        fetchImpl,
+      }),
+    ).rejects.toThrow('SHA-256');
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 });

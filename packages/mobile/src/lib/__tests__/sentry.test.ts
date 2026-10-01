@@ -1,12 +1,16 @@
 import { describe, it, expect, vi } from 'vitest';
+import { createRequire } from 'node:module';
 import type { ComponentType } from 'react';
 import type { InterruptedLiveActivityIntentDiagnostic } from '../../../modules/live-activity/src/index';
+import { createDiagnosticRecorder } from '../mobile-diagnostics';
 
 // Spy on the SDK so we can assert the disabled-build contract. Under vitest
 // `__DEV__` is true (vite.config define) and no DSN is set, so `isSentryEnabled`
 // is false for the whole suite — exactly the dev / no-DSN / test build path,
 // which must stay a silent no-op (never construct, send, or wrap). vi.mock takes
 // precedence over the vite alias stub so we can assert the spies are untouched.
+vi.mock('../../../modules/mobile-diagnostics/src', () => ({ nativeMobileDiagnostics: null }));
+
 vi.mock('@sentry/react-native', () => ({
   init: vi.fn(),
   withScope: vi.fn(),
@@ -35,7 +39,27 @@ import {
   isSentryEnabled,
   toSentryTag,
   LIVE_ACTIVITY_INTENT_INTERRUPTED_FINGERPRINT,
+  MOBILE_DIAGNOSTICS_NORMALIZE_DEPTH,
 } from '../sentry';
+
+it('retains active and completed operation details through the installed SDK normalization', () => {
+  // Resolve the RN SDK's actual core dependency without loading React Native in Node.
+  const requireFromTest = createRequire(import.meta.url);
+  const requireFromSentry = createRequire(requireFromTest.resolve('@sentry/react-native/package.json'));
+  const { normalize } = requireFromSentry('@sentry/core') as {
+    normalize: (input: unknown, depth: number) => unknown;
+  };
+  const recorder = createDiagnosticRecorder();
+  recorder.initialize({ launchId: 'launch-test', nativeStartupId: 'process-test' });
+  const connection = recorder.begin('ble', 'connect');
+  connection.step('first-write', { mtu: 247, chunkSize: 180 });
+  const auth = recorder.begin('auth', 'refresh', { parentId: connection.id });
+  auth.finish('failure', { status: 401 });
+  const { breadcrumbs: _breadcrumbs, ...context } = recorder.snapshot();
+  const contexts = { mobile_diagnostics: context };
+
+  expect(normalize(contexts, MOBILE_DIAGNOSTICS_NORMALIZE_DEPTH)).toEqual(contexts);
+});
 
 describe('isSentryEnabled', () => {
   it('is false in dev / test (no DSN + __DEV__)', () => {
@@ -243,7 +267,7 @@ describe('applyBleDiagnosticsToScope', () => {
   it('clears every BLE tag (sets undefined) when given null', () => {
     const scope = makeScope();
     applyBleDiagnosticsToScope(scope, null);
-    expect(scope.setTag).toHaveBeenCalledTimes(7);
+    expect(scope.setTag).toHaveBeenCalledTimes(10);
     for (const key of [
       'ble_chosen_write_type',
       'ble_supports_without_response',
@@ -252,6 +276,9 @@ describe('applyBleDiagnosticsToScope', () => {
       'ble_max_without_response',
       'ble_connect_origin',
       'ble_relight_suppressed',
+      'ble_mtu',
+      'ble_chunk_size',
+      'ble_supports_with_response',
     ]) {
       expect(scope.setTag).toHaveBeenCalledWith(key, undefined);
     }

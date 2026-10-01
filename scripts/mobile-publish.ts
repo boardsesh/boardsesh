@@ -23,18 +23,24 @@
  */
 
 import { execFileSync, spawnSync } from 'node:child_process';
-import { resolve, dirname } from 'node:path';
+import { resolve, dirname, join } from 'node:path';
+import { createHash } from 'node:crypto';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  uploadMobileSourceMaps,
+  createSentryUploadEnvironment,
+  validateSourceMapOutput,
+  hashSourceMapExport,
+} from './mobile-upload-sourcemaps';
+import { publishArchivedOta } from './mobile-ota-promote';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { EOAS_PACKAGE_SPEC, SELF_HOSTED_UPLOAD_RATE_PER_SECOND } from './lib/eoas';
 import {
   publishPlatformsSequentially,
-  publishSelfHostedPlatformWithRetry,
   type OtaPublishPlatform,
   type PlatformPublishOutcome,
-  type PublishConfirmation,
 } from './lib/mobile-publish-retry';
 import {
-  SURFABILITY_CONFIRM_DELAYS_MS,
   SURFABILITY_PROBE_DELAYS_MS,
   findSurfableBranch,
   probeBranchList,
@@ -473,41 +479,83 @@ async function publishToSelfHostedBranch(
     return runtimeVersions.get(target) ?? null;
   };
 
-  // Checks branch availability after a finalize 524. Same probe
-  // as the post-publish verification below, so the two can never disagree; null
-  // (nothing to probe with) reads as "not confirmed" and the ordinary ladder runs.
-  const confirmPublished: PublishConfirmation = async (confirmedPlatform) => {
-    const result = await isPreviewBranchSurfable(branchName, confirmedPlatform, serverUrl, {
-      runtimeVersion: runtimeVersionFor(confirmedPlatform),
-      // The short schedule checks branch availability, not this attempt's bundle
-      // identity. The retry ladder is behind it, so a wrong "no" costs one more attempt
-      // rather than a red X. The full propagation-tolerant schedule would spend a
-      // large share of the ~2.5-minute re-export it exists to avoid.
-      delaysMs: SURFABILITY_CONFIRM_DELAYS_MS,
+  // A token failure must precede the export and every publication request.
+  createSentryUploadEnvironment(process.env);
+  if (!shouldAllowDirtyTree()) {
+    const trackedChanges = execFileSync('git', ['status', '--porcelain', '--untracked-files=no'], {
+      cwd: ROOT_DIR,
+      encoding: 'utf8',
     });
-    return result?.kind === 'surfable';
-  };
-
+    if (trackedChanges.trim()) throw new Error('Refusing an OTA export from a dirty tracked working tree.');
+  }
+  const commitHash = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: ROOT_DIR, encoding: 'utf8' }).trim();
   const platforms = requestedSelfHostedPlatforms(platform);
   const outcomes = await publishPlatformsSequentially(platforms, async (requestedPlatform) => {
-    const eoasArgs = buildSelfHostedEoasArgs(branchName, requestedPlatform, updateMessage, {
-      allowDirtyTree: shouldAllowDirtyTree(),
-    });
-    console.log('');
-    console.log(`[mobile:publish] Running ${requestedPlatform}: vp dlx ${eoasArgs.join(' ')}`);
-    console.log('');
-    return publishSelfHostedPlatformWithRetry(
-      {
-        platform: requestedPlatform,
-        command: 'vp',
-        args: ['dlx', ...eoasArgs],
-        cwd: MOBILE_DIR,
-        env: platformEnvFor(requestedPlatform),
-      },
-      { confirmPublished },
+    const environment = { ...platformEnvFor(requestedPlatform), EXPO_NO_DOTENV: '1' };
+    const runtimeVersion = resolvePublishedRuntimeVersion(requestedPlatform, environment);
+    if (!runtimeVersion) throw new Error(`Cannot publish ${requestedPlatform} without a stable runtime version.`);
+    const outputDir = join(MOBILE_DIR, 'dist');
+    const exported = spawnSync(
+      'vp',
+      ['exec', 'expo', 'export', '--platform', requestedPlatform, '--output-dir', outputDir, '--dump-sourcemap'],
+      { cwd: MOBILE_DIR, env: environment, stdio: 'inherit' },
     );
+    if (exported.status !== 0) throw new Error(`${requestedPlatform} Expo export failed.`);
+    const config = execFileSync('vp', ['exec', 'expo', 'config', '--type', 'public', '--json'], {
+      cwd: MOBILE_DIR,
+      env: environment,
+      encoding: 'utf8',
+      maxBuffer: 16 * 1024 * 1024,
+    });
+    writeFileSync(join(outputDir, 'expoConfig.json'), config);
+    // Retain each platform independently: exporting Android replaces dist.
+    const receiptDir = join(MOBILE_DIR, 'diagnostic-artifacts', requestedPlatform);
+    mkdirSync(receiptDir, { recursive: true });
+    const { cpSync } = await import('node:fs');
+    cpSync(outputDir, join(receiptDir, 'export'), { recursive: true });
+    const artifacts = validateSourceMapOutput(MOBILE_DIR, outputDir, requestedPlatform);
+    const bundleSha256 = createHash('sha256').update(readFileSync(artifacts[0].bundlePath)).digest('hex');
+    writeFileSync(
+      join(receiptDir, 'receipt.json'),
+      JSON.stringify(
+        {
+          commitHash,
+          platform: requestedPlatform,
+          runtimeVersion,
+          branch: branchName,
+          message: updateMessage,
+          bundleSha256,
+          fileHashes: hashSourceMapExport(outputDir),
+          debugIds: artifacts.map((artifact) => artifact.debugId),
+          mapsAccepted: false,
+        },
+        null,
+        2,
+      ),
+    );
+    uploadMobileSourceMaps({ platform: requestedPlatform, outputDir, environment });
+    const receiptPath = join(receiptDir, 'receipt.json');
+    const acceptedReceipt = JSON.parse(readFileSync(receiptPath, 'utf8')) as Record<string, unknown>;
+    writeFileSync(receiptPath, JSON.stringify({ ...acceptedReceipt, mapsAccepted: true }, null, 2));
+    const result = await publishArchivedOta({
+      exportDir: outputDir,
+      platform: requestedPlatform,
+      bundleSha256,
+      runtimeVersion,
+      branch: branchName,
+      commitHash,
+      message: updateMessage,
+      manifestUrl: serverUrl,
+      token: process.env.EOO_TOKEN ?? '',
+    });
+    return {
+      platform: requestedPlatform,
+      success: true,
+      attempts: 1,
+      failureKind: null,
+      noChange: result === 'no-change',
+    };
   });
-
   console.log('');
   console.log(`[mobile:publish] Platform results: ${outcomes.map(summarizePlatformOutcome).join(', ')}`);
   if (outcomes.some((outcome) => !outcome.success)) {
@@ -660,6 +708,9 @@ export function buildEasUpdateArgs(sanitizedBranch: string, updateMessage: strin
     '--platform',
     platform,
     '--non-interactive',
+    '--skip-bundler',
+    '--input-dir',
+    'dist',
   ];
 }
 
@@ -691,25 +742,28 @@ export async function main(args: string[] = process.argv.slice(2)): Promise<numb
   console.log(`[mobile:publish] Platform: ${platform}`);
   console.log('');
 
-  const easArgs = buildEasUpdateArgs(sanitizedBranch, updateMessage, platform);
-
-  console.log(`[mobile:publish] Running: vp dlx ${easArgs.join(' ')}`);
-  console.log('');
-
-  const result = spawnSync('vp', ['dlx', ...easArgs], {
-    cwd: MOBILE_DIR,
-    stdio: 'inherit',
-    env: { ...process.env, PATH: process.env.PATH },
-  });
-
-  if (result.status !== 0) {
-    console.error('');
-    console.error('[mobile:publish] Update failed.');
-    if (result.status === 1) {
-      console.error('[mobile:publish] Make sure you are logged in: vp dlx eas-cli@16 login');
-      console.error('[mobile:publish] And the project is linked: vp dlx eas-cli@16 init (from packages/mobile/)');
-    }
-    return result.status ?? 1;
+  createSentryUploadEnvironment(process.env);
+  for (const target of requestedSelfHostedPlatforms(platform)) {
+    const outputDir = join(MOBILE_DIR, 'dist');
+    const exported = spawnSync(
+      'vp',
+      ['exec', 'expo', 'export', '--platform', target, '--output-dir', outputDir, '--dump-sourcemap'],
+      {
+        cwd: MOBILE_DIR,
+        stdio: 'inherit',
+        env: process.env,
+      },
+    );
+    if (exported.status !== 0) throw new Error(`${target} Expo export failed.`);
+    // EAS must upload the same export whose maps have finished processing.
+    uploadMobileSourceMaps({ platform: target, outputDir });
+    const easArgs = buildEasUpdateArgs(sanitizedBranch, updateMessage, target);
+    const result = spawnSync('vp', ['dlx', ...easArgs], {
+      cwd: MOBILE_DIR,
+      stdio: 'inherit',
+      env: process.env,
+    });
+    if (result.status !== 0) return result.status ?? 1;
   }
 
   console.log('');

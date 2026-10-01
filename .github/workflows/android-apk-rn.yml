@@ -308,10 +308,8 @@ jobs:
       # assembleRelease/bundleRelease outright,
       # taking down the whole Android release (APK + AAB + Play upload), not
       # just symbolication — too large a blast radius to gamble on a P1 fix's
-      # first real test being a store upload. A decoupled, continue-on-error
-      # step below ("Upload Sentry source maps") uploads the same JS
-      # bundle/sourcemap Gradle already generates, explicitly, so a failure
-      # there can never block shipping the release. Runtime Sentry
+      # first real test being a store upload. Explicit steps below validate
+      # packaged source maps and native symbols before shipping. Runtime Sentry
       # (EXPO_PUBLIC_SENTRY_DSN) is unaffected either way. See #4101.
       - name: Disable Sentry Gradle-embedded source map upload
         env:
@@ -322,7 +320,8 @@ jobs:
             echo "SENTRY_UPLOAD_ENABLED=true" >> "$GITHUB_ENV"
           else
             echo "SENTRY_UPLOAD_ENABLED=false" >> "$GITHUB_ENV"
-            echo "::warning::SENTRY_AUTH_TOKEN not set — skipping Sentry source map upload."
+            echo "::error::SENTRY_AUTH_TOKEN is required for release diagnostics."
+            exit 1
           fi
 
       # The binary embeds the gate's canonical fingerprint via
@@ -409,6 +408,23 @@ jobs:
         run: |
           echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > packages/mobile/android/app/release.keystore
 
+      - name: Install Rust for owned renderer symbols
+        uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+
+      - name: Cache renderer compilation
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: packages/board-renderer -> target
+          shared-key: native-debug-v1
+
+      - name: Rebuild renderer with matching native debug information
+        run: |
+          # Match React Native's configured NDK; never upload symbols from a different build.
+          ndk_version=$(sed -n 's/^ndkVersion = "\(.*\)"/\1/p' packages/mobile/node_modules/react-native/gradle/libs.versions.toml)
+          test -n "$ndk_version"
+          sdkmanager "ndk;$ndk_version"
+          ANDROID_NDK_HOME="$ANDROID_HOME/ndk/$ndk_version" bash scripts/build-native-renderer.sh android
+
       - name: Build signed arm64 release APK
         working-directory: packages/mobile/android
         env:
@@ -470,21 +486,11 @@ jobs:
           "$apksigner" verify --print-certs "$apk"
           cp -f "$apk" "$release_asset"
 
-      # Decoupled from the Gradle build (see "Disable Sentry Gradle-embedded
-      # source map upload" above for why): replicates sentry.gradle's own
-      # sequence by hand — copy the debug ID from Metro's intermediate
-      # ("packager") source map into the final Hermes-composed one (Hermes's
-      # compose-source-maps step doesn't propagate it on its own), then upload
-      # via sentry-cli with the same release/dist convention sentry.gradle uses
-      # (`<applicationId>@<versionName>+<versionCode>` / versionCode), so it
-      # matches what the native Sentry SDK auto-detects at runtime
-      # (src/lib/sentry.ts leaves release/dist unset for exactly this reason).
-      # continue-on-error: a Sentry-side failure (outage, bad token) must never
-      # block shipping the APK/AAB — it already built and verified above.
+      # Preserve Metro's ID in the composed map and compare against packaged
+      # Hermes bytes. Processing failures block every subsequent publication.
       - name: Upload Sentry source maps
         id: sentry_sourcemaps
         if: env.SENTRY_UPLOAD_ENABLED == 'true'
-        continue-on-error: true
         working-directory: packages/mobile
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
@@ -511,66 +517,12 @@ jobs:
 
           node node_modules/@sentry/react-native/scripts/copy-debugid.js "$packager_sourcemap_path" "$sourcemap_path"
 
-          # com.boardsesh.app is hardcoded here (as it is elsewhere in this
-          # workflow) rather than parsed
-          # from a generated file: it must track the production
-          # `androidPackage` in packages/mobile/app.config.ts. sentry.gradle
-          # instead derives it from the Gradle variant, so if android.package
-          # ever changes, update this literal to match or symbolication will
-          # silently break.
-          ./node_modules/.bin/sentry-cli react-native gradle \
-            --bundle "$bundle_path" \
-            --sourcemap "$sourcemap_path" \
-            --release "com.boardsesh.app@${BOARDSESH_MOBILE_VERSION}+${VERSION_CODE}" \
-            --dist "${VERSION_CODE}"
-
-      # Same decoupled, continue-on-error contract as the source-map upload above,
-      # and for the same reason: a Sentry-side failure must never take down a
-      # release that already built and verified. The Gradle-embedded upload stays
-      # off (SENTRY_DISABLE_AUTO_UPLOAD) — this is not it. The Sentry Android
-      # Gradle Plugin, which would normally inject the proguard-uuid and upload
-      # the mapping, has never been applied here; instead the UUID is minted
-      # before prebuild, baked into the manifest by
-      # plugins/with-android-sentry-proguard-uuid.js, and forced onto the upload
-      # with --uuid. Play is unaffected either way: AGP embeds the mapping in the
-      # AAB, so a failure here costs Sentry deobfuscation only, never Play's.
-      - name: Upload Sentry ProGuard mapping
-        id: sentry_mapping
-        if: env.SENTRY_UPLOAD_ENABLED == 'true'
-        continue-on-error: true
-        working-directory: packages/mobile
-        env:
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-          # org/project come from this file, not CLI flags — same as the
-          # source-map step above.
-          SENTRY_PROPERTIES: android/sentry.properties
-        run: |
-          set -euo pipefail
-          mapping=android/app/build/outputs/mapping/release/mapping.txt
-          if [ ! -f "$mapping" ]; then
-            echo "::error::No R8 mapping at $mapping — nothing to symbolicate against."
-            exit 1
-          fi
-          if [ -z "${BOARDSESH_SENTRY_PROGUARD_UUID:-}" ]; then
-            echo "::error::BOARDSESH_SENTRY_PROGUARD_UUID is unset, so the binary carries no proguard-uuid and an uploaded mapping could never be matched to it."
-            exit 1
-          fi
-          # --require-one: without it a moved output path exits 0 having uploaded
-          # nothing, which is the failure this whole step exists to prevent.
-          ./node_modules/.bin/sentry-cli upload-proguard \
-            --uuid "$BOARDSESH_SENTRY_PROGUARD_UUID" \
-            --require-one \
-            "$mapping"
-
-      - name: Warn when the Sentry ProGuard mapping upload fails
-        if: steps.sentry_mapping.outcome == 'failure'
-        run: |
-          echo "::warning::Sentry ProGuard mapping upload failed after the signed APK was built and verified. The release is unaffected, and Google Play still deobfuscates (the mapping ships inside the AAB). Android Java/Kotlin frames in Sentry will read as obfuscated symbols for this build until the mapping is uploaded by hand under UUID ${BOARDSESH_SENTRY_PROGUARD_UUID}."
-
-      - name: Warn when Sentry source map upload fails
-        if: steps.sentry_sourcemaps.outcome == 'failure'
-        run: |
-          echo "::warning::Sentry source map upload failed after the signed APK was built and verified. The release is unaffected; Android JS errors for this build will report unsymbolicated frames until this is investigated. Re-run 'node node_modules/@sentry/react-native/scripts/copy-debugid.js ...' + 'sentry-cli react-native gradle ...' manually from packages/mobile against the retained APK artifact's build outputs if needed."
+          apk_path="$(find android/app/build/outputs/apk/release -maxdepth 1 -name '*.apk' | head -1)"
+          packaged_bundle="${RUNNER_TEMP}/index.android.bundle"
+          unzip -p "$apk_path" assets/index.android.bundle > "$packaged_bundle"
+          cmp "$bundle_path" "$packaged_bundle"
+          cd ../..
+          vp exec tsx scripts/mobile-upload-embedded-sourcemaps.ts android "$packaged_bundle" "packages/mobile/$sourcemap_path"
 
       - name: Upload APK as artifact
         uses: actions/upload-artifact@v4
@@ -600,6 +552,39 @@ jobs:
           SENTRY_DISABLE_AUTO_UPLOAD: 'true'
         run: ./gradlew bundleRelease --no-daemon --console=plain --stacktrace
 
+      - name: Validate and upload AAB embedded source maps
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+        run: |
+          set -euo pipefail
+          aab_path="$(find packages/mobile/android/app/build/outputs/bundle/release -maxdepth 1 -name '*.aab' | head -1)"
+          packaged_bundle="${RUNNER_TEMP}/aab-index.android.bundle"
+          unzip -p "$aab_path" base/assets/index.android.bundle > "$packaged_bundle"
+          map_path=packages/mobile/android/app/build/generated/sourcemaps/react/release/index.android.bundle.map
+          packager_map=packages/mobile/android/app/build/intermediates/sourcemaps/react/release/index.android.bundle.packager.map
+          node packages/mobile/node_modules/@sentry/react-native/scripts/copy-debugid.js "$packager_map" "$map_path"
+          vp exec tsx scripts/mobile-upload-embedded-sourcemaps.ts android "$packaged_bundle" "$map_path"
+
+      - name: Upload Android native symbols
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+        run: vp exec tsx scripts/mobile-upload-android-symbols.ts
+
+      - name: Retain Android diagnostic artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          include-hidden-files: true
+          name: android-diagnostics-${{ github.sha }}
+          retention-days: 30
+          path: |
+            packages/mobile/android/app/build/generated/assets/react/release/
+            packages/mobile/android/app/build/generated/sourcemaps/react/release/
+            packages/mobile/modules/board-renderer/android/symbols/
+            packages/mobile/modules/*/android/.cxx/**/obj/**/*.so
+            packages/mobile/modules/*/android/build/intermediates/cxx/**/obj/**/*.so
+            packages/mobile/diagnostic-artifacts/android-native/
+
       # Block the Play upload if any bundled native lib isn't 16 KB
       # page aligned (Android 15+ / API 35+ requirement). Covers both the sideload
       # APK and the Play AAB, so it checks the board-renderer JNI wrapper + prebuilt
@@ -624,7 +609,7 @@ jobs:
           ./scripts/check-16kb-alignment.sh "${archives[@]}"
 
       # Play deobfuscates from the mapping AGP embeds in the AAB, while Sentry
-      # deobfuscates from the mapping.txt uploaded above. Assert they are the same
+      # deobfuscates from the mapping.txt uploaded next. Assert they are the same
       # bytes: if they diverge, the two systems are symbolicating different builds
       # and neither failure is visible until someone reads a stack trace.
       - name: Verify the AAB carries the same R8 mapping
@@ -633,6 +618,34 @@ jobs:
             --mapping packages/mobile/android/app/build/outputs/mapping/release/mapping.txt \
             --min-renamed-fraction 0.40 \
             --aab packages/mobile/android/app/build/outputs/bundle/release
+
+      # Require the mapping under the UUID embedded before prebuild.
+      - name: Upload Sentry ProGuard mapping
+        id: sentry_mapping
+        if: env.SENTRY_UPLOAD_ENABLED == 'true'
+        working-directory: packages/mobile
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          # org/project come from this file, not CLI flags — same as the
+          # source-map step above.
+          SENTRY_PROPERTIES: android/sentry.properties
+        run: |
+          set -euo pipefail
+          mapping=android/app/build/outputs/mapping/release/mapping.txt
+          if [ ! -f "$mapping" ]; then
+            echo "::error::No R8 mapping at $mapping — nothing to symbolicate against."
+            exit 1
+          fi
+          if [ -z "${BOARDSESH_SENTRY_PROGUARD_UUID:-}" ]; then
+            echo "::error::BOARDSESH_SENTRY_PROGUARD_UUID is unset, so the binary carries no proguard-uuid and an uploaded mapping could never be matched to it."
+            exit 1
+          fi
+          # --require-one: without it a moved output path exits 0 having uploaded
+          # nothing, which is the failure this whole step exists to prevent.
+          ./node_modules/.bin/sentry-cli upload-proguard \
+            --uuid "$BOARDSESH_SENTRY_PROGUARD_UUID" \
+            --require-one \
+            "$mapping"
 
       - name: Upload AAB as artifact
         uses: actions/upload-artifact@v4

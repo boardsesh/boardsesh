@@ -38,6 +38,7 @@ import {
 import { useAppColorScheme } from '../providers/theme-provider';
 import { addErrorBreadcrumb, reportError } from '../lib/error-reporting';
 import { track } from '../lib/analytics';
+import { beginDiagnosticOperation, diagnosticErrorAttributes } from '../lib/mobile-diagnostics';
 import { sweepBoardArtCache } from '../lib/sweep-caches';
 import { measureFreeCacheSpaceBytes } from '../lib/cache-dir-io';
 import {
@@ -2395,6 +2396,12 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
 
     const cachedEntry = getRenderedOverlay(currentCacheKey);
     if (cachedEntry) {
+      if (playSurface) {
+        const cachedDiagnostic = beginDiagnosticOperation('render', 'board.foreground', {
+          attributes: { boardName, layoutId, sizeId, cacheHit: true, foreground: true },
+        });
+        cachedDiagnostic.finish('success');
+      }
       // Sync map already has it — make sure local state reflects that
       // (covers prop changes mid-mount that pick up a previously rendered
       // overlay).
@@ -2497,12 +2504,20 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
         : filledStyle
           ? 'thumbnail'
           : 'full';
+    // Foreground requests only: recycled thumbnails must not flood crash context.
+    const renderDiagnostic = playSurface
+      ? beginDiagnosticOperation('render', 'board.foreground', {
+          attributes: { boardName, layoutId, sizeId, renderMode: renderPriority, foreground: true },
+        })
+      : undefined;
+    renderDiagnostic?.step('queued');
     const renderRequest = requestRender(currentCacheKey, renderPriority, () =>
       getOrStartInflightRender(currentCacheKey, () => {
         const configJson = JSON.stringify({
           ...boardConfig.configBase,
           frames: flatFrames,
         });
+        renderDiagnostic?.step('native_execute');
         return nativeModule.renderHoldsOverlay(configJson, currentCacheKey);
       }),
     );
@@ -2525,6 +2540,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
         // Wall clock, not the request's monotonic wait: it keeps counting while
         // the app is suspended, which is exactly the case being excluded.
         if (Date.now() - stallArmedAtMs > RENDER_STALL_TIMEOUT_MS + RENDER_STALL_TIMER_SLACK_MS) return;
+        renderDiagnostic?.step('stalled', { failureCategory: 'render_stalled' });
         const stall = renderRequest.snapshot();
         // eslint-disable-next-line no-console
         console.warn(
@@ -2542,6 +2558,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
 
     renderRequest.promise
       .then((renderedEntry) => {
+        renderDiagnostic?.finish('success');
         clearRenderStallWatchdog();
         // Discard a stale resolution (props moved on while this render was in
         // flight) — see latestCacheKeyRef. The sync map above still keeps the
@@ -2560,7 +2577,11 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
         // the request was still in the scheduler's queue. Not a failure: the
         // render was never attempted, so nothing below applies. First, before
         // the log line and both telemetry paths.
-        if (isRenderCancelled(error)) return;
+        if (isRenderCancelled(error)) {
+          renderDiagnostic?.finish('cancelled');
+          return;
+        }
+        renderDiagnostic?.finish('failure', diagnosticErrorAttributes(error));
         const message = error instanceof Error ? error.message : String(error);
         // A renderer that cannot honour this config's marker overrides is a
         // designed capability fallback (a native binary that predates marker
@@ -2656,6 +2677,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       // nobody else shares it, the scheduler drops it unasked; a render already
       // inside native finishes and is cached for the next visit regardless.
       renderRequest.release();
+      renderDiagnostic?.finish('cancelled');
       clearRenderStallWatchdog();
       // A retry armed by the run being torn down is stale: the effect is about
       // to run again anyway (a dep changed) or the surface is unmounting. The

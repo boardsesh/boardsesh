@@ -13,15 +13,19 @@ captures errors. Two reasons Sentry owns crashes:
   archive's dSYMs, so both JS and native frames resolve to real file/line instead of
   minified offsets and bare symbol names.
 
-`src/lib/sentry.ts` calls `Sentry.init()` (gated `!!dsn && !__DEV__`, so local Metro
-dev never sends), owns the global `ErrorUtils` handler, and exposes `captureToSentry`
-and `wrapWithSentry`. `app/_layout.tsx` imports it first (init before any other
+The Expo plugin starts native Sentry before React in release binaries; Debug
+builds remain silent. `src/lib/sentry.ts` initializes the JS SDK (gated
+`!!dsn && !__DEV__`) and skips duplicate native initialization only when the
+running binary exposes the versioned `MobileDiagnostics` capability. Older
+binaries keep their existing JS-driven native initialization. It owns the global
+`ErrorUtils` handler and exposes `captureToSentry` and `wrapWithSentry`. `app/_layout.tsx` imports it first (init before any other
 module side-effect) and wraps the root with `wrapWithSentry`.
 
 ## What's automatic
 
-`Sentry.init` installs the JS error integrations (**uncaught exceptions** and
-**unhandled promise rejections**) and the **native** crash handler. The global
+Native startup installs the crash handler before module loading; `Sentry.init`
+installs the JS integrations (**uncaught exceptions** and **unhandled promise
+rejections**). The global
 `ErrorUtils` wrapper (`global-error-capture.ts`) and the Expo Router `ErrorBoundary`
 (`app/_layout.tsx`) both report through `reportError`. Crashes and render errors land
 in Sentry with no extra work.
@@ -83,55 +87,112 @@ so events group in Sentry: `react-query`, `native-auth`, `queue-mutation`,
 
 ## Source maps / symbolication (CI)
 
-Both are gated on `SENTRY_AUTH_TOKEN`; without it the builds stay green and upload
-nothing.
+Publication requires `SENTRY_AUTH_TOKEN`. Missing credentials, absent maps,
+Debug ID mismatches, missing owned native DWARF, or rejected uploads fail the job
+before store submission or OTA publication. RN SDK **8.28.0** and CLI **3.8.0** are
+pinned; anchored release backports retain the separately audited SDK **7.11.0**
+uploader contract.
 
-- **iOS JS source maps** (`ios-testflight-rn.yml`): the `@sentry/react-native` Xcode
-  build phases upload them during `xcodebuild archive`
-  (`SENTRY_DISABLE_AUTO_UPLOAD=false`).
-- **iOS dSYMs** (`ios-testflight-rn.yml`, `Upload iOS dSYMs to Sentry`): a separate
-  step after the archive, running `vp run mobile:upload-dsyms` over
-  `<archive>/dSYMs`. It has to be separate: the Sentry build phase runs inside the
-  app target's build, ~2s before `GenerateDSYMFile` writes `Boardsesh.app.dSYM`, so
-  it only ever finds the stripped executables. Those carry a symbol table (function
-  names) but no DWARF, which is why every native frame read `(<unknown>)` for file
-  and line until #4202. The DWARF for statically linked pods — `libRNScreens.a` and
-  friends — exists _only_ inside the app's dSYM.
-  `scripts/mobile-upload-dsyms.ts` fails the job if that dSYM is missing from the
-  archive, so the regression can't come back quietly.
-- **Android JS source maps**: uploaded on the **OTA** path, not the Gradle one —
-  `mobile-ota-production.yml` runs `mobile:upload-sourcemaps` for Android on every
-  published update. The in-build Gradle task stays off
-  (`SENTRY_DISABLE_AUTO_UPLOAD=true` in `android-apk-rn.yml`) because it calls an API
-  the Gradle version Expo prebuild generates doesn't have. The gap that leaves is the
-  bundle baked into the APK, i.e. JS stacks from a device that hasn't taken its first
-  OTA yet.
-- **Android native symbols**: three different things, don't conflate them.
-  - **Java/Kotlin frames** are obfuscated as of the R8 change, and deobfuscated from the
-    R8 mapping. `android-apk-rn.yml` mints a UUID before `expo prebuild`,
-    `plugins/with-android-sentry-proguard-uuid.js` bakes it into the manifest as
-    `io.sentry.proguard-uuid`, and a decoupled `continue-on-error` step uploads
-    `mapping.txt` under that same UUID with `sentry-cli upload-proguard --uuid`. The
-    Sentry Android Gradle Plugin, which normally does both halves, is deliberately not
-    applied — Sentry stays off the release critical path (see #4101).
-    **An unfamiliar single-letter Android class name in a stack trace means that upload
-    failed, not that the code is unknown.** The run logs a warning when it does.
-  - **`.so` frames**: still nothing to upload, unchanged. Those libraries come from
-    prebuilt React Native / Expo AARs that ship stripped. Native `.so` crashes are
-    captured but not symbolicated.
-  - **Google Play** deobfuscates on its own: AGP embeds the same mapping in the AAB
-    under `BUNDLE-METADATA/com.android.tools.build.obfuscation/proguard.map` and Play
-    ingests it on upload. `vp run check:mobile-android-obfuscation --aab ...` asserts
-    that embedded copy is byte-identical to the one Sentry receives, so the two systems
-    can never be symbolicating different builds.
-  - Not covered: `RNSentryModuleImpl.getProguardUuid()` reads the assets
-    `sentry-debug-meta.properties`, which we do not write. It feeds only the profiling
-    payload's `build_id`, and Android profiling is off, so the gap is inert.
+- JS bundles/maps are checked as pairs and uploaded with CLI `--wait --strict`.
+  Hermes bundles use their Debug ID references. The explicit gate compensates
+  for upstream wrappers that can skip incomplete groups or exit before processing.
+- iOS app and extension executable UUIDs must match their dSYMs, with DWARF
+  present. Static pod symbols live in the app dSYM.
+- Android owns `libboard_renderer_jni.so`, Rust
+  `libboard_renderer_ffi.so`, and tester `libboardsesh_diagnostics.so`. Release builds retain private unstripped ELF files;
+  packaged library build IDs must match files containing DWARF. Third-party
+  stripped AAR libraries cannot be treated as owned source symbols.
+- Native DIF uploads use `--wait` and local identity/DWARF validation. CLI 3.8
+  does not offer `--strict` for that subcommand.
+
+- Android R8 mappings retain the release branch's manifest UUID and upload
+  under that same UUID. The Sentry Android Gradle plugin stays unapplied;
+  explicit upload avoids its incompatible Gradle integration. AGP embeds the
+  same mapping in the AAB for Google Play; the existing obfuscation check still
+  asserts byte identity. This mapping covers Java/Kotlin, separately from ELF
+  symbols. Android profiling remains off; its asset-based build ID is outside
+  crash qualification.
+
+## Operation and report correlation
+
+`src/lib/mobile-diagnostics.ts` is the shared pure recorder. It tracks BLE, auth,
+data, foreground rendering, and navigation operations using begin/step/finish,
+parent operation IDs, durations, and explicit success/failure/cancellation/
+supersession. Concurrent operations remain separate; late callbacks cannot
+replace a newer result. Limits are **16 active operations**, **100 breadcrumbs**,
+one latest completion per flow, and **32 KB UTF-8 context**. Overflow is counted
+without evicting live operations. Attributes are scalar allowlisted fields;
+credentials, query variables, renderer JSON, peripheral addresses, and packets
+are excluded. BLE writes and sync record phase boundaries rather than every
+chunk/progress callback. Background thumbnail work does not create JS render
+operations. Recorder sink/identity failures cannot change app behavior or error
+severity, and do not create duplicate captured exceptions.
+
+Every JS runtime gets a `launchId`. Every new native process gets a
+`nativeStartupId` before React starts; OTA reloads retain that process ID. The
+previous runtime ID is stored privately. `previousLaunchCrashed` is populated
+only from the SDK's confirmed result when the stored runtime belongs to the
+exact preceding native process. A process crashing before JS cannot cause an
+older saved runtime to be labeled crashed;
+missing storage or a same-process OTA reload leaves it unknown. Current running
+OTA fields are read from `expo-updates`, not stale analytics super properties.
+PostHog events carry `launch_id`, `native_startup_id`, `eas_client_id`, and running
+OTA metadata. Observe uses the same EAS client ID. Sentry retains native-synced
+operation context under `mobile_diagnostics` and queryable `launch_id` tags.
+
+Feedback takes a diagnostics snapshot and creates one `reportId` per submission
+attempt. Retries preserve that snapshot and recon ID. Backend leaf validation is
+best effort; malformed optional diagnostics cannot discard valid feedback.
+Diagnostics are nullable typed JSONB, without a database migration. Private
+admin feedback includes copyable IDs and a Sentry launch query. The public
+GitHub mirror uses an explicit allowlist and excludes diagnostics.
+**Deploy the backend SDL before mobile/admin clients request the new fields.**
 
 ## Verifying
 
-`isSentryEnabled = !!dsn && !__DEV__`, so **local Metro dev sends nothing**. Verify on
-a preview / TestFlight / production build — and note that adding the native SDK changed
-the **fingerprint**, so this needs a fresh native build, not an OTA. Trigger the
-failure (a JS error, or `Sentry.nativeCrash()` for the native path), relaunch, and look
-for the event in the `boardsesh` Sentry project filtered by `source`.
+Local Metro sends nothing. Native changes require a fresh release binary; OTA
+alone cannot add the startup handler, native module, or symbols. In the tester
+Sentry screen, **Native abort** invokes owned C/C++ `abort()`; the Java exception
+and uncaught-JS tests are separate. Each test receives a run ID before crashing.
+An unsupported/older binary reports the missing native capability instead of
+pretending its Java exception tested native signal capture.
+
+Qualification requires received events, not just successful upload commands:
+
+1. On Android 12+ crash, relaunch, and check signal, crashing thread, tombstone,
+   debug images, owned source frames, run ID, and prior launch/OTA context.
+2. Repeat on Android below 12 to check the NDK fallback, and on iOS for dSYMs.
+3. Crash offline, restore connectivity, and confirm the next launch uploads it.
+4. Reload to a different OTA and confirm the old crash keeps its original IDs
+   and metadata rather than inheriting the current runtime context.
+5. Save private Sentry event JSON and run `vp run mobile:diagnostics-audit --
+   <event.json> android --require-tombstone` for the Android 12+ tombstone case.
+
+For attachment checks, the private audit JSON can contain `{ "event": ...,
+"attachments": [...] }` from the event and its attachment metadata endpoint.
+Bind qualification to recorded IDs with `--test-run-id`, `--launch-id`,
+`--update-id`, and `--embedded true|false`. These checks catch a crash inheriting
+the new runtime's metadata. Startup markers flush once before native SDK init;
+observable persistence failures leave prior crash attribution unknown. They do
+not guarantee attribution through total storage failure or OS power loss.
+
+The audit is read-only. It cannot prove a release works without actual received
+events. Keep the PR draft until device qualification and the required Astra/Fable
+BLE review are complete. On this change, Linux can validate prebuild output,
+TypeScript, tests, bundles, and pipeline contracts; iOS compilation and native
+crash receipt remain device/release checks.
+
+The owned abort requires `nativeAbortVersion >= 2`, independently of early
+`nativeInitVersion`. The confirmation run ID and current diagnostic snapshot go
+through one synchronous Expo call. Native code validates a 32 KB UTF-8 limit
+before updating scope. Cocoa stamps tags and the dedicated
+`contexts.mobile_diagnostics_native_abort` snapshot synchronously into SentryCrash.
+Android executes direct runtime NativeScope JNI tags, the JSON snapshot in
+`extra.mobile_diagnostics_native_abort`, and libc abort together on Sentry's single-thread
+executor, after earlier scope observers. This avoids React Native's async
+setters and Android's queued NDK observers. A pending job times out after five
+seconds and cannot crash later; once the atomic action starts, the call cannot
+report unavailable while that action still runs. Missing SDK/NDK support or
+preparation failure removes partial test attribution and reports unavailable,
+without a fallback crash. Older binaries
+with only abort capability v1 cannot run this qualification test.

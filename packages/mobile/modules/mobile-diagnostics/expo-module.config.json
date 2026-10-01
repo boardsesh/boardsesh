@@ -1,0 +1,5 @@
+{
+  "platforms": ["android", "ios"],
+  "android": { "modules": ["com.boardsesh.diagnostics.MobileDiagnosticsModule"] },
+  "ios": { "modules": ["MobileDiagnosticsModule"] }
+}

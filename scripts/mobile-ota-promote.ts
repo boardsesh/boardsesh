@@ -14,17 +14,29 @@
  */
 
 import { createHash, randomUUID } from 'node:crypto';
-import { existsSync, lstatSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
+import {
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  existsSync,
+  lstatSync,
+  readFileSync,
+  realpathSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
+import { uploadMobileSourceMaps, assertSourceMapExportHashes } from './mobile-upload-sourcemaps';
+import { SELF_HOSTED_PUBLISH_RETRY_DELAYS_MS } from './lib/mobile-publish-retry';
 
 export type OtaPlatform = 'ios' | 'android';
 
 export interface StageReceipt {
   commitHash: string;
   message: string;
-  platforms: Record<OtaPlatform, { runtimeVersion: string; bundleSha256: string }>;
+  platforms: Record<OtaPlatform, { runtimeVersion: string; bundleSha256: string; fileHashes: Record<string, string> }>;
   baselineProductionUpdateIds: Record<OtaPlatform, string | null>;
 }
 
@@ -103,7 +115,13 @@ export function parseStageReceipt(input: unknown): StageReceipt {
     if (!/^[0-9a-f]{40}$/i.test(runtimeVersion))
       throw new Error(`${platform} runtimeVersion must be a fingerprint SHA.`);
     if (!SHA256.test(bundleSha256)) throw new Error(`${platform} bundleSha256 must be a SHA-256 digest.`);
-    parsedPlatforms[platform] = { runtimeVersion, bundleSha256 };
+    const fileHashes = object(entry.fileHashes, `${platform} complete export hash manifest`);
+    if (
+      !Object.keys(fileHashes).length ||
+      Object.values(fileHashes).some((hash) => typeof hash !== 'string' || !SHA256.test(hash))
+    )
+      throw new Error(`${platform} complete export hash manifest is invalid.`);
+    parsedPlatforms[platform] = { runtimeVersion, bundleSha256, fileHashes: fileHashes as Record<string, string> };
   }
   const baseline = object(raw.baselineProductionUpdateIds, 'Stage baselineProductionUpdateIds');
   const baselineProductionUpdateIds = {} as StageReceipt['baselineProductionUpdateIds'];
@@ -315,8 +333,8 @@ export function uploadServerBase(manifestUrl: string): URL {
   return parsed;
 }
 
-function controlUrl(base: URL, appId: string, action: string): URL {
-  return new URL(`${base.toString().replace(/\/$/, '')}/${appId}/${action}/production`);
+function controlUrl(base: URL, appId: string, action: string, branch = 'production'): URL {
+  return new URL(`${base.toString().replace(/\/$/, '')}/${appId}/${action}/${encodeURIComponent(branch)}`);
 }
 
 function isLocalUpload(target: URL, base: URL, appId: string): boolean {
@@ -625,6 +643,94 @@ async function verifyServedExportWithRetry(
   }
 }
 
+/** Retries network publication using retained bytes; never runs another export. */
+export async function publishArchivedOta(
+  options: Parameters<typeof publishArchivedOtaOnce>[0],
+  dependencies: {
+    sleep?: (milliseconds: number) => Promise<void>;
+    delaysMs?: readonly number[];
+  } = {},
+): Promise<'published' | 'no-change'> {
+  const delays = dependencies.delaysMs ?? SELF_HOSTED_PUBLISH_RETRY_DELAYS_MS;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await publishArchivedOtaOnce(options);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const transient = /failed \((?:429|5\d\d)\)/.test(message) || /fetch failed|ECONNRESET|ETIMEDOUT/.test(message);
+      if (!transient || attempt >= delays.length) throw error;
+      console.warn(`[ota-publish] ${options.platform}: transient publication failure; retrying retained export.`);
+      await (dependencies.sleep ?? sleep)(delays[attempt]);
+    }
+  }
+}
+
+/** Publish an already validated export. Callers must upload its maps before invoking this. */
+async function publishArchivedOtaOnce(options: {
+  exportDir: string;
+  platform: OtaPlatform;
+  bundleSha256: string;
+  runtimeVersion: string;
+  branch: string;
+  commitHash: string;
+  message: string;
+  manifestUrl: string;
+  token: string;
+  fetchImpl?: typeof fetch;
+}): Promise<'published' | 'no-change'> {
+  if (!options.token || !options.runtimeVersion || !COMMIT_SHA.test(options.commitHash))
+    throw new Error('Publication requires a token, runtime version and commit SHA.');
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._/-]*$/.test(options.branch)) throw new Error('Invalid OTA branch.');
+  const archive = validateExport(options.exportDir, options.platform, options.bundleSha256);
+  const base = uploadServerBase(options.manifestUrl);
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const requestUrl = controlUrl(base, archive.appId, 'requestUploadUrl', options.branch);
+  for (const [key, content] of Object.entries({
+    runtimeVersion: options.runtimeVersion,
+    platform: options.platform,
+    branch: options.branch,
+    commitHash: options.commitHash,
+    publishGroup: randomUUID(),
+  }))
+    requestUrl.searchParams.set(key, content);
+  const response = await fetchWithRetry(fetchImpl, requestUrl, {
+    method: 'POST',
+    redirect: 'error',
+    headers: { Authorization: `Bearer ${options.token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      files: buildUploadFiles(archive),
+      ...(options.message ? { message: options.message } : {}),
+    }),
+  });
+  if (response.status === 406) {
+    await response.body?.cancel();
+    return 'no-change';
+  }
+  await requireSuccess(response, `${options.platform} upload request`);
+  const lease = parseUploadLease((await response.json()) as unknown, archive.files, base, archive.appId);
+  let lastUploadStart = 0;
+  await uploadLeaseFiles(lease, archive, base, archive.appId, options.token, fetchImpl, async () => {
+    const remaining = lastUploadStart + 200 - Date.now();
+    if (remaining > 0) await sleep(remaining);
+    lastUploadStart = Date.now();
+  });
+  const finalizeUrl = controlUrl(base, archive.appId, 'markUpdateAsUploaded', options.branch);
+  for (const [key, content] of Object.entries({
+    platform: options.platform,
+    updateId: lease.updateId,
+    runtimeVersion: options.runtimeVersion,
+    branch: options.branch,
+  }))
+    finalizeUrl.searchParams.set(key, content);
+  const finalized = await fetchWithRetry(fetchImpl, finalizeUrl, {
+    method: 'POST',
+    redirect: 'error',
+    headers: { Authorization: `Bearer ${options.token}`, 'Content-Type': 'application/json' },
+  });
+  if (finalized.status !== 406) await requireSuccess(finalized, `${options.platform} finalize`);
+  return 'published';
+}
+
 export async function promoteArchivedOta(options: {
   receiptPath: string;
   iosExport: string;
@@ -640,6 +746,8 @@ export async function promoteArchivedOta(options: {
     ios: validateExport(options.iosExport, 'ios', receipt.platforms.ios.bundleSha256),
     android: validateExport(options.androidExport, 'android', receipt.platforms.android.bundleSha256),
   };
+  assertSourceMapExportHashes(options.iosExport, receipt.platforms.ios.fileHashes);
+  assertSourceMapExportHashes(options.androidExport, receipt.platforms.android.fileHashes);
   if (exports.ios.appId !== exports.android.appId)
     throw new Error('iOS and Android exports have different expo-app-id values.');
   const appId = exports.ios.appId;
@@ -753,6 +861,19 @@ async function main(): Promise<void> {
     return;
   }
   const args = parsePromoteArgs(process.argv.slice(2));
+  // A promotion is a publication too: re-confirm processing for the exact
+  // archived maps before any production upload lease can be requested.
+  const receipt = parseStageReceipt(JSON.parse(readFileSync(args.receipt, 'utf8')) as unknown);
+  assertSourceMapExportHashes(args.iosExport, receipt.platforms.ios.fileHashes);
+  assertSourceMapExportHashes(args.androidExport, receipt.platforms.android.fileHashes);
+  const mobileDir = resolve('packages/mobile');
+  for (const platform of ['ios', 'android'] as const) {
+    const promotionRoot = join(mobileDir, 'diagnostic-artifacts', 'promotion');
+    mkdirSync(promotionRoot, { recursive: true });
+    const outputDir = mkdtempSync(join(promotionRoot, `${platform}-`));
+    cpSync(platform === 'ios' ? args.iosExport : args.androidExport, outputDir, { recursive: true });
+    uploadMobileSourceMaps({ platform, mobileDir, outputDir });
+  }
   await promoteArchivedOta({
     receiptPath: args.receipt,
     iosExport: args.iosExport,

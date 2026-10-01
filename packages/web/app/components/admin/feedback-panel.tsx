@@ -499,6 +499,76 @@ export default function FeedbackPanel() {
                           <DetailRow label={t('feedback.detail.session')} value={report.context?.sessionName} />
                           <DetailRow label={t('feedback.detail.url')} value={report.context?.url} />
                           <DetailRow label={t('feedback.detail.userAgent')} value={report.context?.userAgent} />
+                          {report.context?.diagnostics && (
+                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                              <Typography variant="subtitle2">{t('feedback.diagnostics.title')}</Typography>
+                              <TextField
+                                multiline
+                                fullWidth
+                                size="small"
+                                label={t('feedback.diagnostics.context')}
+                                value={JSON.stringify(report.context.diagnostics, null, 2)}
+                                slotProps={{ input: { readOnly: true } }}
+                              />
+                              <Button
+                                size="small"
+                                startIcon={<ContentCopyIcon />}
+                                onClick={async () => {
+                                  try {
+                                    await navigator.clipboard.writeText(
+                                      JSON.stringify(report.context?.diagnostics, null, 2),
+                                    );
+                                    setSnackbar(t('feedback.diagnostics.copied'));
+                                  } catch {
+                                    setSnackbar(t('feedback.snackbar.copyFailed'));
+                                  }
+                                }}
+                              >
+                                {t('feedback.diagnostics.copy')}
+                              </Button>
+                              {report.context.diagnostics.launchId && (
+                                <TextField
+                                  size="small"
+                                  label={t('feedback.diagnostics.sentryQuery')}
+                                  value={`launch_id:${JSON.stringify(report.context.diagnostics.launchId)}`}
+                                  slotProps={{ input: { readOnly: true } }}
+                                />
+                              )}
+                              {report.context.diagnostics.launchId && (
+                                <MuiLink
+                                  href={`https://boardsesh.sentry.io/issues/?query=${encodeURIComponent(`launch_id:${JSON.stringify(report.context.diagnostics.launchId)}`)}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                >
+                                  {t('feedback.diagnostics.openSentry')}
+                                </MuiLink>
+                              )}
+                              {report.context.diagnostics.previousLaunchId && (
+                                <TextField
+                                  size="small"
+                                  label={t('feedback.diagnostics.previousSentryQuery')}
+                                  value={`launch_id:${JSON.stringify(report.context.diagnostics.previousLaunchId)}`}
+                                  slotProps={{ input: { readOnly: true } }}
+                                />
+                              )}
+                              {report.context.diagnostics.posthogDistinctId && (
+                                <TextField
+                                  size="small"
+                                  label={t('feedback.diagnostics.posthogQuery')}
+                                  value={`distinct_id = '${report.context.diagnostics.posthogDistinctId.replaceAll("'", "''")}'`}
+                                  slotProps={{ input: { readOnly: true } }}
+                                />
+                              )}
+                              {report.context.diagnostics.easClientId && (
+                                <TextField
+                                  size="small"
+                                  label={t('feedback.diagnostics.observeQuery')}
+                                  value={`easClientId=${report.context.diagnostics.easClientId}`}
+                                  slotProps={{ input: { readOnly: true } }}
+                                />
+                              )}
+                            </Box>
+                          )}
                           {report.screenshotUrls.length > 0 && (
                             <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                               <Typography

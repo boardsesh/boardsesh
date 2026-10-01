@@ -1,3 +1,4 @@
+import { runDiagnosticOperation } from '../lib/mobile-diagnostics';
 import { useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
@@ -133,31 +134,38 @@ function runLocalWrite(
   task: (txn: SqlExecutor) => Promise<void>,
   budgetMs?: number,
 ): Promise<void> {
-  return runLocalWriteWithRetry(
-    async (attempt) => {
-      if (__DEV__) {
-        const injectedFault = takeInjectedWriteFault('before-task');
-        if (injectedFault) throw injectedFault;
-      }
-      await db.withExclusiveTransactionAsync(async (txn) => {
-        // Own connection, busy_timeout defaults to 0, and expo's `BEGIN` is
-        // DEFERRED — arm the timeout and take the write lock in one step, or a
-        // held lock fails this offline write instantly (BOARDSESH-AB/AX, #4332).
-        await beginImmediateWrite(
-          txn,
-          attempt === 1 ? OFFLINE_DB_FOREGROUND_WRITE_TIMEOUT_MS : OFFLINE_DB_RETRY_BUSY_TIMEOUT_MS,
-        );
-        await task(txn);
-      });
-      if (__DEV__) {
-        const injectedFault = takeInjectedWriteFault('after-commit');
-        if (injectedFault) throw injectedFault;
-      }
-    },
-    {
-      ...localWriteRetryOptions(tableName, operation),
-      ...(budgetMs === undefined ? {} : { budgetMs }),
-    },
+  return runDiagnosticOperation(
+    'data',
+    'sqlite.write',
+    (diagnostic) =>
+      runLocalWriteWithRetry(
+        async (attempt) => {
+          diagnostic.step('transaction', { attempt });
+          if (__DEV__) {
+            const injectedFault = takeInjectedWriteFault('before-task');
+            if (injectedFault) throw injectedFault;
+          }
+          await db.withExclusiveTransactionAsync(async (txn) => {
+            // Own connection, busy_timeout defaults to 0, and expo's `BEGIN` is
+            // DEFERRED — arm the timeout and take the write lock in one step, or a
+            // held lock fails this offline write instantly (BOARDSESH-AB/AX, #4332).
+            await beginImmediateWrite(
+              txn,
+              attempt === 1 ? OFFLINE_DB_FOREGROUND_WRITE_TIMEOUT_MS : OFFLINE_DB_RETRY_BUSY_TIMEOUT_MS,
+            );
+            await task(txn);
+          });
+          if (__DEV__) {
+            const injectedFault = takeInjectedWriteFault('after-commit');
+            if (injectedFault) throw injectedFault;
+          }
+        },
+        {
+          ...localWriteRetryOptions(tableName, operation),
+          ...(budgetMs === undefined ? {} : { budgetMs }),
+        },
+      ),
+    { table: tableName, kind: operation },
   );
 }
 
@@ -251,14 +259,21 @@ export async function enqueueTickOutboxOnly(
   tickUuid: string,
   budgetMs: number,
 ): Promise<void> {
-  await runLocalWriteWithRetry(
-    async () => {
-      await db.withExclusiveTransactionAsync(async (txn) => {
-        await beginImmediateWrite(txn, OFFLINE_DB_FALLBACK_BUSY_TIMEOUT_MS);
-        await enqueue(txn, 'boardsesh_ticks', 'create', input, tickUuid);
-      });
-    },
-    { ...localWriteRetryOptions('boardsesh_ticks', 'create'), maxAttempts: 2, budgetMs },
+  await runDiagnosticOperation(
+    'data',
+    'sqlite.outbox_fallback',
+    (diagnostic) =>
+      runLocalWriteWithRetry(
+        async (attempt) => {
+          diagnostic.step('transaction', { attempt });
+          await db.withExclusiveTransactionAsync(async (txn) => {
+            await beginImmediateWrite(txn, OFFLINE_DB_FALLBACK_BUSY_TIMEOUT_MS);
+            await enqueue(txn, 'boardsesh_ticks', 'create', input, tickUuid);
+          });
+        },
+        { ...localWriteRetryOptions('boardsesh_ticks', 'create'), maxAttempts: 2, budgetMs },
+      ),
+    { table: 'boardsesh_ticks', kind: 'create' },
   );
   notifyOutboxChanged();
 }

@@ -158,7 +158,8 @@ jobs:
             scripts/lib/eoas.ts \
             scripts/lib/mobile-publish-retry.ts \
             scripts/lib/ota-branch-probe.ts \
-            scripts/mobile-upload-sourcemaps.ts
+            scripts/mobile-upload-sourcemaps.ts \
+            scripts/mobile-ota-promote.ts
           do
             echo "Snapshotting trusted OTA tooling: $source_path"
             if ! git show "$GITHUB_SHA:$source_path" > "$tooling_root/$source_path"; then
@@ -235,7 +236,8 @@ jobs:
           cp "$tooling_root/scripts/lib/mobile-publish-retry.ts" scripts/lib/mobile-publish-retry.ts
           cp "$tooling_root/scripts/lib/ota-branch-probe.ts" scripts/lib/ota-branch-probe.ts
           cp "$tooling_root/scripts/mobile-upload-sourcemaps.ts" scripts/mobile-upload-sourcemaps.ts
-          git add scripts/mobile-publish.ts scripts/lib/eoas.ts scripts/lib/mobile-publish-retry.ts scripts/lib/ota-branch-probe.ts scripts/mobile-upload-sourcemaps.ts
+          cp "$tooling_root/scripts/mobile-ota-promote.ts" scripts/mobile-ota-promote.ts
+          git add scripts/mobile-publish.ts scripts/lib/eoas.ts scripts/lib/mobile-publish-retry.ts scripts/lib/ota-branch-probe.ts scripts/mobile-upload-sourcemaps.ts scripts/mobile-ota-promote.ts
           if ! git diff --cached --quiet; then
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -326,12 +328,21 @@ jobs:
         if: ${{ !inputs.dry_run }}
         env:
           EOO_TOKEN: ${{ secrets.EOO_TOKEN }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           PLATFORM: ${{ matrix.platform }}
           GOOGLE_MAPS_API_KEY: ${{ matrix.platform == 'android' && secrets.GOOGLE_MAPS_API_KEY || '' }}
           VERSION: ${{ inputs.version }}
           FIX_COMMITS: ${{ inputs.fix_commits }}
         run: |
           vp run mobile:publish -- --channel production --platform "$PLATFORM" --message "Backport to v$VERSION ($FIX_COMMITS)"
+
+      - name: Retain OTA diagnostic exports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ota-diagnostics-${{ github.sha }}-${{ github.run_attempt }}-${{ matrix.platform }}
+          retention-days: 30
+          path: packages/mobile/diagnostic-artifacts/
 
       - name: Upload backport OTA source maps to Sentry
         id: upload_sourcemaps

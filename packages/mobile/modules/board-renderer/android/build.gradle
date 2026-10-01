@@ -45,6 +45,9 @@ android {
 }
 
 dependencies {
+  // Version provided by RNSentry 8.28.0 at runtime.
+  compileOnly 'io.sentry:sentry-android:8.57.0'
+
   // JVM unit tests for the cache-dir recovery helper (re-create a reclaimed
   // overlay cache dir, retry the PNG write once). Run via
   // :…:testDebugUnitTest from .github/workflows/android-pr-rn.yml; the repo's

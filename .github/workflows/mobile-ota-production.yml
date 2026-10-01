@@ -489,6 +489,7 @@ jobs:
           # app-scoped EOO_TOKEN. The production channel→branch mapping is a one-time
           # dashboard step, so no admin creds are needed here.
           EOO_TOKEN: ${{ secrets.EOO_TOKEN }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
         # No EXPO_UPDATES_FINGERPRINT_OVERRIDE here: the publish resolves the CURRENT
         # commit's fingerprint (app.config's `fingerprint` policy) and serves the JS
         # under it. That matches the shipped binary — which embeds the same Linux gate
@@ -527,6 +528,7 @@ jobs:
         continue-on-error: true
         env:
           EOO_TOKEN: ${{ secrets.EOO_TOKEN }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           # Must match the Android native prebuild (android-apk-rn.yml) so the
           # resolved android.config.googleMaps block — and the freshly-resolved
           # fingerprint — agree with the binary. (No fingerprint override: see the
@@ -536,6 +538,14 @@ jobs:
           args=(--channel "$OTA_BRANCH" --platform android)
           if [ -n "$INPUT_MESSAGE" ]; then args+=(--message "$INPUT_MESSAGE"); fi
           vp run mobile:publish -- "${args[@]}"
+
+      - name: Retain OTA diagnostic exports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ota-diagnostics-${{ github.sha }}-${{ github.run_attempt }}
+          retention-days: 30
+          path: packages/mobile/diagnostic-artifacts/
 
       - name: Upload Android OTA source maps to Sentry
         id: upload_sourcemaps_android
@@ -563,10 +573,12 @@ jobs:
           android_hash="$(sha256sum "ota-stage/android/$android_bundle" | cut -d' ' -f1)"
           update_message="$INPUT_MESSAGE"
           if [ -z "$update_message" ]; then update_message="$(git log -1 --format=%s "$GITHUB_SHA")"; fi
-          jq -n --slurpfile baseline ota-stage/baseline.json --arg sha "$GITHUB_SHA" --arg message "$update_message" \
+          jq -n --slurpfile baseline ota-stage/baseline.json \
+            --slurpfile ios_receipt packages/mobile/diagnostic-artifacts/ios/receipt.json \
+            --slurpfile android_receipt packages/mobile/diagnostic-artifacts/android/receipt.json --arg sha "$GITHUB_SHA" --arg message "$update_message" \
             --arg ios_runtime "$ios_runtime" --arg android_runtime "$android_runtime" \
             --arg ios_hash "$ios_hash" --arg android_hash "$android_hash" \
-            '{commitHash:$sha,message:$message,baselineProductionUpdateIds:$baseline[0],platforms:{ios:{runtimeVersion:$ios_runtime,bundleSha256:$ios_hash},android:{runtimeVersion:$android_runtime,bundleSha256:$android_hash}}}' \
+            '{commitHash:$sha,message:$message,baselineProductionUpdateIds:$baseline[0],platforms:{ios:{runtimeVersion:$ios_runtime,bundleSha256:$ios_hash,fileHashes:$ios_receipt[0].fileHashes},android:{runtimeVersion:$android_runtime,bundleSha256:$android_hash,fileHashes:$android_receipt[0].fileHashes}}}' \
             > ota-stage/receipt.json
           cp packages/mobile/src/data/changelog.generated.json ota-stage/changelog.generated.json
           cp CHANGELOG.md ota-stage/CHANGELOG.md

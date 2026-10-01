@@ -25,7 +25,9 @@ export function clipFeedbackString(value: string | null | undefined, maxLength: 
 
 function compactFeedbackContext(input: FeedbackContextInput): FeedbackContextInput | null {
   const context: FeedbackContextInput = {};
-  for (const [contextKey, contextValue] of Object.entries(input) as Array<[keyof FeedbackContextInput, unknown]>) {
+  for (const [contextKey, contextValue] of Object.entries(input) as Array<
+    [Exclude<keyof FeedbackContextInput, 'diagnostics'>, unknown]
+  >) {
     if (typeof contextValue === 'string' && contextValue.length > 0) {
       context[contextKey] = contextValue;
     }

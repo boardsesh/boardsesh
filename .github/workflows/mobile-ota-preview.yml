@@ -746,6 +746,7 @@ jobs:
         if: steps.compat.outputs.verdict_ios != 'native-change-required' && steps.eoas_pin.outputs.moved != 'true'
         env:
           EOO_TOKEN: ${{ secrets.EOO_TOKEN }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
         run: vp run mobile:publish -- --channel "$BRANCH" --platform ios
 
       - name: Publish Android OTA
@@ -753,8 +754,17 @@ jobs:
         if: steps.compat.outputs.verdict_android != 'native-change-required' && steps.eoas_pin.outputs.moved != 'true'
         env:
           EOO_TOKEN: ${{ secrets.EOO_TOKEN }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
         run: vp run mobile:publish -- --channel "$BRANCH" --platform android
+
+      - name: Retain OTA diagnostic exports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ota-diagnostics-${{ github.sha }}-${{ github.run_attempt }}
+          retention-days: 30
+          path: packages/mobile/diagnostic-artifacts/
 
       # Record authoritative full-SHA state before this job releases the shared
       # mutation lane. The fork reconciler reads this deployment, never a

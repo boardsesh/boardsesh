@@ -9,6 +9,7 @@
  * artifact first and only then invokes the pinned installed uploader.
  */
 
+import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import {
@@ -18,9 +19,11 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   realpathSync,
   rmSync,
   statSync,
+  writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
@@ -28,7 +31,7 @@ import { fileURLToPath } from 'node:url';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const DEFAULT_MOBILE_DIR = resolve(REPO_ROOT, 'packages', 'mobile');
-const SUPPORTED_SENTRY_REACT_NATIVE_VERSION = '7.11.0';
+const SUPPORTED_SENTRY_REACT_NATIVE_VERSIONS = ['7.11.0', '8.28.0'];
 const VALID_DEBUG_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export type MobilePlatform = 'ios' | 'android';
@@ -38,7 +41,7 @@ type JsonObject = Record<string, unknown>;
 type SpawnUploader = (
   executable: string,
   args: string[],
-  options: { cwd: string; env: NodeJS.ProcessEnv; stdio: 'inherit' },
+  options: { cwd: string; env: NodeJS.ProcessEnv; stdio: 'inherit'; timeout: number },
 ) => { status: number | null; error?: Error };
 
 export interface UploadSourceMapsOptions {
@@ -51,6 +54,7 @@ export interface UploadSourceMapsOptions {
 export interface UploadSourceMapsDependencies {
   resolveUploader?: (mobileDir: string) => string;
   spawnUploader?: SpawnUploader;
+  resolveCli?: (mobileDir: string) => string;
 }
 
 export interface ValidatedSourceMapArtifact {
@@ -297,21 +301,59 @@ export function validateSourceMapOutput(
       const executableLabel = type === 'bundle' ? 'Primary OTA bundle' : 'Metadata-declared executable asset';
       throw new Error(
         `${executableLabel} requires an exact adjacent source map at ${relativeSourceMapPath}. ` +
-          'The installed Sentry 7.11 uploader cannot safely group an independently named map.',
+          'The installed Sentry uploader cannot safely group an independently named map.',
       );
     }
     const sourceMapPath = assertRegularFileWithoutSymbolicLinks(realOutputDir, relativeSourceMapPath, 'Source map');
     if (statSync(sourceMapPath).size === 0) {
       throw new Error(`Source map is empty: ${sourceMapPath}`);
     }
+    const debugId = readDebugId(sourceMapPath);
+    if (!readFileSync(bundlePath).includes(Buffer.from(debugId)))
+      throw new Error(`Bundle has no matching source-map Debug ID: ${relativeBundlePath}.`);
     return {
       bundlePath,
       sourceMapPath,
       relativeBundlePath,
       relativeSourceMapPath,
-      debugId: readDebugId(sourceMapPath),
+      debugId,
     };
   });
+}
+
+/** Inventory every archived byte, including maps, assets and export metadata. */
+export function hashSourceMapExport(outputDir: string): Record<string, string> {
+  const hashes: Record<string, string> = {};
+  const visit = (directory: string): void => {
+    for (const entry of readdirSync(directory, { withFileTypes: true }).sort((left, right) =>
+      left.name.localeCompare(right.name),
+    )) {
+      const filename = join(directory, entry.name);
+      if (entry.isSymbolicLink()) throw new Error('Archived export contains a symbolic link.');
+      if (entry.isDirectory()) visit(filename);
+      else if (entry.isFile())
+        hashes[relative(outputDir, filename).split(sep).join('/')] = createHash('sha256')
+          .update(readFileSync(filename))
+          .digest('hex');
+      else throw new Error('Archived export contains a non-regular entry.');
+    }
+  };
+  visit(outputDir);
+  return hashes;
+}
+export function assertSourceMapExportHashes(outputDir: string, expected: unknown): void {
+  if (
+    !isJsonObject(expected) ||
+    !Object.keys(expected).length ||
+    Object.values(expected).some((hash) => typeof hash !== 'string' || !/^[0-9a-f]{64}$/.test(hash))
+  )
+    throw new Error('Retained receipt has no valid complete export hash manifest.');
+  const actual = hashSourceMapExport(outputDir);
+  if (
+    Object.keys(actual).length !== Object.keys(expected).length ||
+    Object.entries(actual).some(([filename, hash]) => expected[filename] !== hash)
+  )
+    throw new Error('Retained export files differ from publication receipt.');
 }
 
 function stageValidatedArtifacts(artifacts: ValidatedSourceMapArtifact[], stagingDirectory: string): void {
@@ -348,9 +390,9 @@ export function resolveInstalledSentryUploader(mobileDirInput: string): string {
     );
   }
   const sentryPackage = parseJsonObject(sentryPackageJsonPath, '@sentry/react-native package.json');
-  if (sentryPackage.version !== SUPPORTED_SENTRY_REACT_NATIVE_VERSION) {
+  if (!SUPPORTED_SENTRY_REACT_NATIVE_VERSIONS.includes(String(sentryPackage.version))) {
     throw new Error(
-      `Unsupported @sentry/react-native version ${String(sentryPackage.version)}; expected ${SUPPORTED_SENTRY_REACT_NATIVE_VERSION}.`,
+      `Unsupported @sentry/react-native version ${String(sentryPackage.version)}; expected ${SUPPORTED_SENTRY_REACT_NATIVE_VERSIONS.join(' or ')}.`,
     );
   }
   const packageRoot = realpathSync(dirname(sentryPackageJsonPath));
@@ -359,6 +401,17 @@ export function resolveInstalledSentryUploader(mobileDirInput: string): string {
     throw new Error(`Official Sentry Expo source-map uploader is missing: ${uploaderPath}`);
   }
   return existingPathWithin(packageRoot, uploaderPath, 'Official Sentry uploader');
+}
+
+function resolveUploadCli(mobileDir: string): string {
+  const requireFromMobile = createRequire(join(mobileDir, 'package.json'));
+  const cliExport = requireFromMobile('@sentry/cli') as {
+    getPath?: () => string;
+    SentryCli?: { getPath?: () => string };
+  };
+  const getPath = cliExport.getPath ?? cliExport.SentryCli?.getPath;
+  if (!getPath) throw new Error('Installed Sentry CLI has no binary resolver.');
+  return getPath();
 }
 
 /** Shared by the OTA source-map upload and the iOS dSYM upload (mobile-upload-dsyms.ts). */
@@ -388,7 +441,8 @@ export function uploadMobileSourceMaps(
   const outputDir = resolve(options.outputDir ?? join(mobileDir, 'dist'));
   const uploaderEnvironment = createSentryUploadEnvironment(options.environment ?? process.env);
   const validatedArtifacts = validateSourceMapOutput(mobileDir, outputDir, options.platform);
-  const uploaderPath = (dependencies.resolveUploader ?? resolveInstalledSentryUploader)(mobileDir);
+  (dependencies.resolveUploader ?? resolveInstalledSentryUploader)(mobileDir);
+  const cliPath = (dependencies.resolveCli ?? resolveUploadCli)(mobileDir);
   const temporaryRoot = mkdtempSync(join(tmpdir(), 'boardsesh-sentry-upload-'));
   const temporaryWorkingDirectory = join(temporaryRoot, 'cwd');
   const stagingDirectory = join(temporaryRoot, 'artifacts');
@@ -402,19 +456,36 @@ export function uploadMobileSourceMaps(
     stageValidatedArtifacts(validatedArtifacts, stagingDirectory);
     const spawnUploader: SpawnUploader =
       dependencies.spawnUploader ?? ((executable, args, spawnOptions) => spawnSync(executable, args, spawnOptions));
-    // Sentry ships this uploader as a Node/CommonJS entrypoint. GitHub runners
-    // and local vp installs provide Node, so keep the uploader runtime explicit
-    // and identical on both paths.
-    const uploadResult = spawnUploader('node', [uploaderPath, stagingDirectory], {
-      cwd: temporaryWorkingDirectory,
-      env: uploaderEnvironment,
-      stdio: 'inherit',
-    });
-    if (uploadResult.error) {
-      throw new Error(`Could not start the official Sentry uploader: ${uploadResult.error.message}`);
-    }
-    if (uploadResult.status !== 0) {
-      throw new Error(`Official Sentry uploader failed with exit code ${uploadResult.status ?? 'unknown'}.`);
+    // The pinned official uploader defines our grouping contract but cannot
+    // wait for server processing. Invoke the same validated groups with the CLI
+    // directly so accepted-but-unprocessable artifacts cannot pass publication.
+    for (const artifact of validatedArtifacts) {
+      const bundlePath = join(stagingDirectory, artifact.relativeBundlePath);
+      const sourceMapPath = join(stagingDirectory, artifact.relativeSourceMapPath);
+      const sourceMap = parseJsonObject(sourceMapPath, 'Staged source map');
+      sourceMap.debug_id = artifact.debugId;
+      writeFileSync(sourceMapPath, JSON.stringify(sourceMap));
+      const uploadResult = spawnUploader(
+        cliPath,
+        [
+          'sourcemaps',
+          'upload',
+          '--wait',
+          '--strict',
+          ...(bundlePath.endsWith('.hbc') ? ['--debug-id-reference'] : []),
+          bundlePath,
+          sourceMapPath,
+        ],
+        {
+          cwd: temporaryWorkingDirectory,
+          env: uploaderEnvironment,
+          stdio: 'inherit',
+          timeout: 600_000,
+        },
+      );
+      if (uploadResult.error) throw new Error(`Could not start the Sentry CLI uploader: ${uploadResult.error.message}`);
+      if (uploadResult.status !== 0)
+        throw new Error(`Sentry CLI uploader failed with exit code ${uploadResult.status ?? 'unknown'}.`);
     }
   } finally {
     rmSync(temporaryRoot, { recursive: true, force: true });

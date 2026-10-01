@@ -45,6 +45,7 @@ import {
   type RefObject,
 } from 'react';
 import { Platform } from 'react-native';
+import { beginDiagnosticOperation, type DiagnosticOperation } from '../lib/mobile-diagnostics';
 import type { BottomSheetMethods } from '@expo/ui/community/bottom-sheet';
 
 export type PresenterGroup = 'root' | (string & {});
@@ -89,6 +90,7 @@ type Registration = {
 };
 
 type InFlight = {
+  diagnostic: DiagnosticOperation;
   op: 'present' | 'dismiss';
   id: string;
   timer: ReturnType<typeof setTimeout>;
@@ -189,6 +191,7 @@ export function SheetPresentationProvider({ children }: { children: ReactNode })
       const inFlight = state.inFlight;
       if (!inFlight) return;
       clearTimeout(inFlight.timer);
+      inFlight.diagnostic.finish('success', { source: viaCeiling ? 'ceiling' : 'native' });
       state.inFlight = null;
       if (inFlight.op === 'present') {
         state.presentedId = inFlight.id;
@@ -213,10 +216,17 @@ export function SheetPresentationProvider({ children }: { children: ReactNode })
     function startTransition(group: PresenterGroup, op: 'present' | 'dismiss', id: string): void {
       const state = groupState(group);
       const timer = setTimeout(() => onSettle(group, true), SETTLE_MS);
-      state.inFlight = { op, id, timer, expectNative: op === 'dismiss' && Platform.OS === 'ios' };
+      const diagnostic = beginDiagnosticOperation('navigation', `sheet.${op}`, { attributes: { source: group } });
+      diagnostic.step('native_transition');
+      state.inFlight = { op, id, timer, diagnostic, expectNative: op === 'dismiss' && Platform.OS === 'ios' };
       const registration = registrations.current.get(id);
-      if (op === 'present') registration?.present();
-      else registration?.dismiss();
+      try {
+        if (op === 'present') registration?.present();
+        else registration?.dismiss();
+      } catch (error) {
+        diagnostic.finish('failure');
+        throw error;
+      }
     }
 
     function pump(group: PresenterGroup): void {
@@ -283,6 +293,7 @@ export function SheetPresentationProvider({ children }: { children: ReactNode })
           const involved = state.presentedId === reg.id || state.inFlight?.id === reg.id;
           if (state.inFlight?.id === reg.id) {
             clearTimeout(state.inFlight.timer);
+            state.inFlight.diagnostic.finish('cancelled');
             state.inFlight = null;
           }
           desired.current.delete(reg.id);
@@ -297,7 +308,15 @@ export function SheetPresentationProvider({ children }: { children: ReactNode })
             const timer = setTimeout(() => onSettle(reg.group, true), SETTLE_MS);
             // The registration is already gone, so no native onDismiss can match
             // here — the ceiling is the only possible settle; don't warn on it.
-            state.inFlight = { op: 'dismiss', id: reg.id, timer, expectNative: false };
+            state.inFlight = {
+              op: 'dismiss',
+              id: reg.id,
+              timer,
+              expectNative: false,
+              diagnostic: beginDiagnosticOperation('navigation', 'sheet.teardown', {
+                attributes: { source: reg.group },
+              }),
+            };
           } else {
             pump(reg.group);
           }
@@ -371,7 +390,13 @@ export function SheetPresentationProvider({ children }: { children: ReactNode })
           const timer = setTimeout(() => onSettle(group, true), SETTLE_MS);
           // A user pan-down / backdrop tap still fires SwiftUI's onDismiss on iOS,
           // so the native settle is expected to early-resolve this window there.
-          state.inFlight = { op: 'dismiss', id, timer, expectNative: Platform.OS === 'ios' };
+          state.inFlight = {
+            op: 'dismiss',
+            id,
+            timer,
+            expectNative: Platform.OS === 'ios',
+            diagnostic: beginDiagnosticOperation('navigation', 'sheet.dismiss', { attributes: { source: group } }),
+          };
         } else {
           pump(group);
         }

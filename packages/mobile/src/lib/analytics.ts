@@ -7,6 +7,7 @@ import { reregisterOfflineEngineState } from './analytics-offline-engine-state';
 import { reregisterActiveGym } from './analytics-gym';
 import { reregisterLowPowerMode } from './analytics-low-power-mode';
 import { reregisterConnectStepArm } from './analytics-connect-step-arm';
+import { getDiagnosticAnalyticsProperties, updateDiagnosticLaunch } from './mobile-diagnostics';
 
 // `sendEvent: false` suppresses the SDK's `$feature_flag_called` capture. Verified
 // in @posthog/core 1.46.1 (shared by posthog-react-native and posthog-js-lite):
@@ -172,7 +173,23 @@ const analytics = createAnalytics(getClient, {
   onDebug: __DEV__ ? (name, properties) => console.info('[analytics]', name, properties ?? {}) : undefined,
 });
 
-export const { track, identify, setPersonProperties, alias } = analytics;
+export const { setPersonProperties, alias } = analytics;
+export const track: typeof analytics.track = (name, properties, options) => {
+  analytics.track(name, { ...properties, ...getDiagnosticAnalyticsProperties() }, options);
+};
+export const identify: typeof analytics.identify = (distinctId, properties) => {
+  const identified = analytics.identify(distinctId, properties);
+  const client = getClient();
+  try {
+    updateDiagnosticLaunch({
+      posthogDistinctId: client?.getDistinctId() ?? null,
+      posthogSessionId: client?.getSessionId() || null,
+    });
+  } catch {
+    /* Optional correlation cannot make authentication fail. */
+  }
+  return identified;
+};
 
 /**
  * Stamp the board-render A/B state (issue #2202) as PostHog super properties,
@@ -247,6 +264,14 @@ export function reset(): boolean {
     reregisterActiveGym(client);
     reregisterLowPowerMode(client);
     reregisterConnectStepArm(client);
+    try {
+      updateDiagnosticLaunch({
+        posthogDistinctId: client.getDistinctId(),
+        posthogSessionId: client.getSessionId() || null,
+      });
+    } catch {
+      /* Optional correlation cannot make sign-out fail. */
+    }
   }
   return didReset;
 }

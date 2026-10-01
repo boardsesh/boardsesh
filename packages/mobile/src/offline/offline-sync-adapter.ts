@@ -1,3 +1,5 @@
+import { runDiagnosticOperation } from '../lib/mobile-diagnostics';
+import { createSyncDiagnostics } from './sync-diagnostics';
 // Mobile binding of @boardsesh/offline-sync's injected seams. The package is
 // platform-free; this adapter supplies the react-native pieces exactly once:
 //
@@ -685,44 +687,46 @@ export function drainMutationQueue(
   graphqlFetch: GraphQLFetch,
   options?: Partial<DrainOptions>,
 ): Promise<void> {
-  return drainMutationQueueCore(db, queryClient, graphqlFetch, {
-    ...options,
-    isOnline: options?.isOnline ?? isOnline,
-    // A 5xx is not a reason to burn a queued write's retry budget (#4862): the
-    // request was fine, the server was not. The store answers from its backoff
-    // ladder when an outage is already known, so this costs a probe only when
-    // the failure is the first news of one.
-    confirmServerAvailability: options?.confirmServerAvailability ?? confirmBackendAvailability,
-    // A probe that throws is "server down" for the drain's purposes, but never
-    // silently: a probe broken on every call would end every 5xx cycle with no
-    // strike and no operator signal. Warning level — it is handled — tagged so
-    // it can be split from real network noise.
-    onServerAvailabilityProbeError:
-      options?.onServerAvailabilityProbeError ??
-      ((error) =>
-        reportHandledError(error, {
-          level: 'warning',
-          tags: { source: 'offline-sync', kind: 'availability-probe' },
-        })),
-    onMutationStatusError: options?.onMutationStatusError ?? reportMutationStatusListenerFailure,
-    onMutationStatus: (event) => {
-      try {
-        options?.onMutationStatus?.(event);
-      } finally {
-        publishMutationDelivery(event);
-      }
-    },
-    // Composed, not defaulted (unlike the reporters above): telemetry for a
-    // permanently lost write must not be something a call site can opt out of
-    // by passing its own handler.
-    onMutationDeadLettered: (info) => {
-      try {
-        options?.onMutationDeadLettered?.(info);
-      } finally {
-        reportMutationDeadLettered(info);
-      }
-    },
-  });
+  return runDiagnosticOperation('data', 'sync.outbox', async () =>
+    drainMutationQueueCore(db, queryClient, graphqlFetch, {
+      ...options,
+      isOnline: options?.isOnline ?? isOnline,
+      // A 5xx is not a reason to burn a queued write's retry budget (#4862): the
+      // request was fine, the server was not. The store answers from its backoff
+      // ladder when an outage is already known, so this costs a probe only when
+      // the failure is the first news of one.
+      confirmServerAvailability: options?.confirmServerAvailability ?? confirmBackendAvailability,
+      // A probe that throws is "server down" for the drain's purposes, but never
+      // silently: a probe broken on every call would end every 5xx cycle with no
+      // strike and no operator signal. Warning level — it is handled — tagged so
+      // it can be split from real network noise.
+      onServerAvailabilityProbeError:
+        options?.onServerAvailabilityProbeError ??
+        ((error) =>
+          reportHandledError(error, {
+            level: 'warning',
+            tags: { source: 'offline-sync', kind: 'availability-probe' },
+          })),
+      onMutationStatusError: options?.onMutationStatusError ?? reportMutationStatusListenerFailure,
+      onMutationStatus: (event) => {
+        try {
+          options?.onMutationStatus?.(event);
+        } finally {
+          publishMutationDelivery(event);
+        }
+      },
+      // Composed, not defaulted (unlike the reporters above): telemetry for a
+      // permanently lost write must not be something a call site can opt out of
+      // by passing its own handler.
+      onMutationDeadLettered: (info) => {
+        try {
+          options?.onMutationDeadLettered?.(info);
+        } finally {
+          reportMutationDeadLettered(info);
+        }
+      },
+    }),
+  );
 }
 
 // A named bag rather than trailing positionals so callers (and their tests)
@@ -747,28 +751,50 @@ export function startSyncScheduler(
   drainQueue: DrainQueue,
   options?: SyncRunOptions,
 ): () => void {
-  return startSyncSchedulerCore(db, queryClient, graphqlFetch, getEnabledBoards, drainQueue, schedulerTriggers, {
-    isOnline,
-    onProgress: options?.onProgress,
-    onCycleError: warnCycleError,
-    onSchemaDrift: reportSchemaDrift,
-    snapshotSource: options?.snapshotSource,
-    onSnapshotBootstrapError: reportSnapshotBootstrapError,
-    onBootstrapMetadataChanged: options?.onBootstrapMetadataChanged,
-    onScopeDownloadComplete: combinedScopeDownloadCompleteReporter(options?.onScopeDownloadComplete, queryClient),
-    onScopeDownloadStart: reportScopeDownloadStart,
-    onCoverageReset: reportCoverageReset,
-    onCoverageEvaluated: reportCoverageEvaluated,
-    onBootstrapRetryScheduled: reportBootstrapRetryScheduled,
-    onBootstrapPathRecovered: reportBootstrapPathRecovered,
-    // The wall photo is the one asset a row cannot carry; see spray-photo-sink.ts.
-    onDocumentsPulled: sprayWallPhotoSink,
-    onRowsDeleted: sprayWallDeletedSink,
-    isOnUnmeteredNetwork,
-    // The device-derived holds index (similar climbs + hold heatmap on device),
-    // built at the end of each cycle; see hold-index-parser.ts.
-    holdIndex: holdIndexSyncOptions,
-  });
+  const diagnostics = createSyncDiagnostics('sync.cycle');
+  const stop = startSyncSchedulerCore(
+    db,
+    queryClient,
+    graphqlFetch,
+    getEnabledBoards,
+    () => {
+      diagnostics.begin();
+      return drainQueue();
+    },
+    schedulerTriggers,
+    {
+      isOnline,
+      onProgress: (progress) => {
+        diagnostics.progress(progress);
+        options?.onProgress?.(progress);
+      },
+      onCycleError: (error) => {
+        diagnostics.error(error);
+        warnCycleError(error);
+      },
+      onSchemaDrift: reportSchemaDrift,
+      snapshotSource: options?.snapshotSource,
+      onSnapshotBootstrapError: reportSnapshotBootstrapError,
+      onBootstrapMetadataChanged: options?.onBootstrapMetadataChanged,
+      onScopeDownloadComplete: combinedScopeDownloadCompleteReporter(options?.onScopeDownloadComplete, queryClient),
+      onScopeDownloadStart: reportScopeDownloadStart,
+      onCoverageReset: reportCoverageReset,
+      onCoverageEvaluated: reportCoverageEvaluated,
+      onBootstrapRetryScheduled: reportBootstrapRetryScheduled,
+      onBootstrapPathRecovered: reportBootstrapPathRecovered,
+      // The wall photo is the one asset a row cannot carry; see spray-photo-sink.ts.
+      onDocumentsPulled: sprayWallPhotoSink,
+      onRowsDeleted: sprayWallDeletedSink,
+      isOnUnmeteredNetwork,
+      // The device-derived holds index (similar climbs + hold heatmap on device),
+      // built at the end of each cycle; see hold-index-parser.ts.
+      holdIndex: holdIndexSyncOptions,
+    },
+  );
+  return () => {
+    diagnostics.dispose();
+    stop();
+  };
 }
 
 export function triggerSync(
@@ -779,28 +805,45 @@ export function triggerSync(
   drainQueue: DrainQueue,
   options?: SyncRunOptions,
 ): void {
-  triggerSyncCore(db, queryClient, graphqlFetch, getEnabledBoards, drainQueue, {
-    isOnline,
-    onProgress: options?.onProgress,
-    onCycleError: warnCycleError,
-    onSchemaDrift: reportSchemaDrift,
-    snapshotSource: options?.snapshotSource,
-    onSnapshotBootstrapError: reportSnapshotBootstrapError,
-    onBootstrapMetadataChanged: options?.onBootstrapMetadataChanged,
-    onScopeDownloadComplete: combinedScopeDownloadCompleteReporter(options?.onScopeDownloadComplete, queryClient),
-    onScopeDownloadStart: reportScopeDownloadStart,
-    onCoverageReset: reportCoverageReset,
-    onCoverageEvaluated: reportCoverageEvaluated,
-    onBootstrapRetryScheduled: reportBootstrapRetryScheduled,
-    onBootstrapPathRecovered: reportBootstrapPathRecovered,
-    // The wall photo is the one asset a row cannot carry; see spray-photo-sink.ts.
-    onDocumentsPulled: sprayWallPhotoSink,
-    onRowsDeleted: sprayWallDeletedSink,
-    isOnUnmeteredNetwork,
-    // The device-derived holds index (similar climbs + hold heatmap on device),
-    // built at the end of each cycle; see hold-index-parser.ts.
-    holdIndex: holdIndexSyncOptions,
-  });
+  const diagnostics = createSyncDiagnostics('sync.manual');
+  triggerSyncCore(
+    db,
+    queryClient,
+    graphqlFetch,
+    getEnabledBoards,
+    () => {
+      diagnostics.begin();
+      return drainQueue();
+    },
+    {
+      isOnline,
+      onProgress: (progress) => {
+        diagnostics.progress(progress);
+        options?.onProgress?.(progress);
+      },
+      onCycleError: (error) => {
+        diagnostics.error(error);
+        warnCycleError(error);
+      },
+      onSchemaDrift: reportSchemaDrift,
+      snapshotSource: options?.snapshotSource,
+      onSnapshotBootstrapError: reportSnapshotBootstrapError,
+      onBootstrapMetadataChanged: options?.onBootstrapMetadataChanged,
+      onScopeDownloadComplete: combinedScopeDownloadCompleteReporter(options?.onScopeDownloadComplete, queryClient),
+      onScopeDownloadStart: reportScopeDownloadStart,
+      onCoverageReset: reportCoverageReset,
+      onCoverageEvaluated: reportCoverageEvaluated,
+      onBootstrapRetryScheduled: reportBootstrapRetryScheduled,
+      onBootstrapPathRecovered: reportBootstrapPathRecovered,
+      // The wall photo is the one asset a row cannot carry; see spray-photo-sink.ts.
+      onDocumentsPulled: sprayWallPhotoSink,
+      onRowsDeleted: sprayWallDeletedSink,
+      isOnUnmeteredNetwork,
+      // The device-derived holds index (similar climbs + hold heatmap on device),
+      // built at the end of each cycle; see hold-index-parser.ts.
+      holdIndex: holdIndexSyncOptions,
+    },
+  );
 }
 
 export function pullSync(
@@ -809,8 +852,14 @@ export function pullSync(
   graphqlFetch: GraphQLFetch,
   options?: SyncOptions,
 ): Promise<void> {
+  const diagnostics = createSyncDiagnostics('sync.pull');
+  diagnostics.begin('pull');
   return pullSyncCore(db, queryClient, graphqlFetch, {
     ...options,
+    onProgress: (progress) => {
+      diagnostics.progress(progress);
+      options?.onProgress?.(progress);
+    },
     isOnline: options?.isOnline ?? isOnline,
     onSchemaDrift: options?.onSchemaDrift ?? reportSchemaDrift,
     onSnapshotBootstrapError: options?.onSnapshotBootstrapError ?? reportSnapshotBootstrapError,
@@ -827,5 +876,13 @@ export function pullSync(
     // Caller-provided error/drift/coverage reporters keep their existing
     // override semantics; scope completion is the one callback deliberately
     // composed because both telemetry and per-scope UI invalidation are required.
-  });
+  }).then(
+    () => {
+      diagnostics.complete();
+    },
+    (error: unknown) => {
+      diagnostics.error(error);
+      throw error;
+    },
+  );
 }

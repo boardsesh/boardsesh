@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useSegments } from 'expo-router';
 import { trackScreen } from '../../lib/analytics';
 import { normalizeScreenPath } from '../../lib/analytics-screen-path';
+import { beginDiagnosticOperation } from '../../lib/mobile-diagnostics';
 
 // Reports every Expo Router navigation using the route pattern (e.g.
 // /climbs/[climbUuid]) rather than the concrete path, so PostHog sees one screen
@@ -18,6 +19,8 @@ export function AnalyticsScreenTracker(): null {
     const path = normalizeScreenPath(segments);
     if (path === lastPath.current) return;
     lastPath.current = path;
+    const navigation = beginDiagnosticOperation('navigation', 'route', { attributes: { route: path } });
+    navigation.finish('success');
     trackScreen(path);
     // Screenshot mode: tell the capture orchestrator we reached home directly (not
     // via Metro's `$screen /home` log, which intermittently stops forwarding mid-run

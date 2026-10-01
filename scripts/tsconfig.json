@@ -104,6 +104,24 @@
     "__tests__/mobile-screenshots.test.ts",
     "__tests__/mobile-profile-capture.test.ts",
     "__tests__/mobile-android-apk.test.ts",
-    "__tests__/with-android-dev-menu-defaults.test.ts"
+    "__tests__/with-android-dev-menu-defaults.test.ts",
+    "mobile-publish.ts",
+    "mobile-publish.test.ts",
+    "mobile-upload-sourcemaps.ts",
+    "mobile-sourcemaps.test.ts",
+    "mobile-upload-dsyms.ts",
+    "mobile-dsyms.test.ts",
+    "mobile-upload-android-symbols.ts",
+    "mobile-upload-embedded-sourcemaps.ts",
+    "mobile-diagnostics-audit.ts",
+    "mobile-diagnostics-pipeline.test.ts",
+    "mobile-ota-promote.ts",
+    "mobile-ota-promote.test.ts",
+    "mobile-ota-retry.ts",
+    "mobile-ota-retry.test.ts",
+    "mobile-android-sentry-sourcemaps.test.ts",
+    "mobile-ota-publish-workflow.test.ts",
+    "lib/mobile-publish-retry.test.ts",
+    "lib/ota-branch-probe.test.ts"
   ]
 }

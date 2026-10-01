@@ -8,14 +8,17 @@ import {
   type SubmitAppFeedbackMutationResponse,
   type SubmitAppFeedbackMutationVariables,
 } from '@boardsesh/graphql/operations';
-import type { SubmitAppFeedbackInput } from '@boardsesh/shared-schema';
+import type { FeedbackDiagnosticsInput, SubmitAppFeedbackInput } from '@boardsesh/shared-schema';
+import { beginDiagnosticOperation, getFeedbackDiagnostics } from '../mobile-diagnostics';
+import { track } from '../analytics';
+import { addErrorBreadcrumb } from '../error-reporting';
 import { getHttpClient } from '../graphql/client';
 import { buildMobileFeedbackEnrichment } from './feedback-enrichment';
 
 export type MobileSubmitAppFeedbackPayload = Omit<
   SubmitAppFeedbackInput,
   'platform' | 'appVersion' | 'boardName' | 'layoutId' | 'sizeId' | 'setIds' | 'angle' | 'context'
->;
+> & { diagnostics?: FeedbackDiagnosticsInput | null };
 
 /**
  * The platform string every backend report/verdict payload carries. Exported so
@@ -48,12 +51,41 @@ export function useSubmitMobileAppFeedback(readerRef: RefObject<FeedbackMetadata
       // Read at mutation time, after screenshot upload. The bridge stays mounted
       // throughout submission, even if the reporter dismisses the native sheet.
       const enrichment = buildMobileFeedbackEnrichment(readMetadata());
+      let diagnostics: FeedbackDiagnosticsInput | null = payload.diagnostics ?? null;
+      try {
+        // The sheet freezes a complete snapshot per attempt. A retry must not
+        // add late-arriving identity/crash fields from the current runtime.
+        if (payload.diagnostics === undefined) diagnostics = getFeedbackDiagnostics();
+      } catch {
+        // Telemetry must never discard an otherwise valid report.
+      }
+      const { diagnostics: _diagnostics, ...reportPayload } = payload;
+      const operation = beginDiagnosticOperation('data', 'feedback.submit', { attributes: { source: payload.source } });
       return submitMobileAppFeedback({
-        ...payload,
+        ...reportPayload,
         ...enrichment,
+        context: { ...enrichment.context, diagnostics },
         platform: getMobilePlatform(),
         appVersion: getNativeAppVersion(),
-      });
+      }).then(
+        (submitted) => {
+          operation.finish(submitted ? 'success' : 'failure');
+          if (submitted) {
+            try {
+              const correlation = { report_id: diagnostics?.reportId, launch_id: diagnostics?.launchId };
+              track('Feedback Submitted', correlation);
+              addErrorBreadcrumb({ category: 'feedback', message: 'submitted', data: correlation });
+            } catch {
+              // A successfully filed report stays successful if telemetry fails.
+            }
+          }
+          return submitted;
+        },
+        (error: unknown) => {
+          operation.finish('failure');
+          throw error;
+        },
+      );
     },
   });
 }

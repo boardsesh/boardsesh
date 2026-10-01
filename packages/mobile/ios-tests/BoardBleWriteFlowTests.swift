@@ -238,6 +238,30 @@ final class BoardBleWriteFlowTests: XCTestCase {
         }
     }
 
+    func testDiagnosticIdsFollowQueuedWritesRatherThanLatestEnqueue() {
+        let hooks = manager.testHooks
+        let peripheral = FakeWritablePeripheral(canSendDefault: false, maxWriteValueLength: 20)
+        let characteristic = makeCharacteristic(properties: .writeWithoutResponse)
+        var events: [(phase: String, operationId: String)] = []
+        hooks.observeNativeDiagnostics { phase, operationId in events.append((phase, operationId)) }
+        hooks.sync {
+            hooks.setConnection(peripheral: peripheral, characteristic: characteristic)
+            manager.write(data: Data([1])) { _, _ in }
+            manager.write(data: Data([2])) { _, _ in }
+        }
+        let enqueuedIds = hooks.sync { events.filter { $0.phase == "write-request" }.map { $0.operationId } }
+        XCTAssertEqual(enqueuedIds.count, 2)
+        XCTAssertNotEqual(enqueuedIds.first, enqueuedIds.last)
+        peripheral.canSendDefault = true
+        hooks.sync { scheduler.repeatingTimers[0].fire() }
+        fireLatestOneShot(label: "chunkDelay")
+        fireLatestOneShot(label: "chunkDelay")
+        let sentIds = hooks.sync { events.filter { $0.phase == "first-write-without-response" }.map { $0.operationId } }
+        let completedIds = hooks.sync { events.filter { $0.phase == "write-completed" }.map { $0.operationId } }
+        XCTAssertEqual(sentIds, enqueuedIds)
+        XCTAssertEqual(completedIds, enqueuedIds)
+    }
+
     // 1
     func testHappyPathWritesChunksSequentiallyWithChunkDelay() {
         let hooks = manager.testHooks

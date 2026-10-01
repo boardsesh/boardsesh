@@ -1,0 +1,11 @@
+{
+  "name": "@boardsesh/mobile-diagnostics-module",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Release-only native crash verification and startup correlation",
+  "license": "MIT",
+  "main": "src/index.ts",
+  "peerDependencies": {
+    "expo-modules-core": "*"
+  }
+}

@@ -1,3 +1,5 @@
+import { runAuthDiagnostic } from './auth-diagnostics';
+import type { DiagnosticOperation } from './mobile-diagnostics';
 import {
   captureAuthCredentialGeneration,
   getAuthToken,
@@ -35,12 +37,16 @@ function rejectedRefreshResult(generation: number): AuthRefreshResult {
   return isAuthCredentialGenerationCurrent(generation) ? { status: 'rejected', generation } : { status: 'superseded' };
 }
 
-async function refreshTokens(credentialGeneration: number): Promise<AuthRefreshResult> {
+async function refreshTokensInternal(
+  operation: DiagnosticOperation,
+  credentialGeneration: number,
+): Promise<AuthRefreshResult> {
   try {
     // Keep the SecureStore read inside the guarded failure boundary. A locked or
     // temporarily unavailable keychain is no more authoritative than a failed
     // fetch and must resolve as unavailable rather than reject the shared refresh
     // promise (which could otherwise make callers treat the session as absent).
+    operation.step('credential_read');
     const currentRefreshToken = await getRefreshToken();
     if (!isAuthCredentialGenerationCurrent(credentialGeneration)) return { status: 'superseded' };
     if (!currentRefreshToken) return rejectedRefreshResult(credentialGeneration);
@@ -50,6 +56,7 @@ async function refreshTokens(credentialGeneration: number): Promise<AuthRefreshR
     // probing a server that is perfectly fine.
     let response: Response;
     try {
+      operation.step('request');
       response = await fetch(`${BACKEND_URL}/auth/native/refresh`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -68,6 +75,7 @@ async function refreshTokens(credentialGeneration: number): Promise<AuthRefreshR
 
     if (!isAuthCredentialGenerationCurrent(credentialGeneration)) return { status: 'superseded' };
 
+    operation.step('response', { status: response.status });
     if (!response.ok) {
       console.warn(`[Auth] Token refresh failed: HTTP ${response.status}`);
       const refreshError = new Error(`Token refresh failed: HTTP ${response.status}`);
@@ -95,6 +103,7 @@ async function refreshTokens(credentialGeneration: number): Promise<AuthRefreshR
     }
 
     const data = (await response.json()) as { jwt: string; refreshToken: string; expiresAt: string };
+    operation.step('credential_persist');
     const stored = await storeTokensForGeneration(credentialGeneration, data.jwt, data.refreshToken, data.expiresAt);
     return stored ? { status: 'refreshed', generation: credentialGeneration } : { status: 'superseded' };
   } catch (error) {
@@ -114,7 +123,15 @@ export function deduplicatedRefresh(): Promise<AuthRefreshResult> {
   const generation = captureAuthCredentialGeneration();
   if (refresh?.generation === generation) return refresh.promise;
 
-  const promise = refreshTokens(generation).finally(() => {
+  const promise = runAuthDiagnostic(
+    'session.refresh',
+    (operation) => refreshTokensInternal(operation, generation),
+    (result) => ({
+      outcome: result.status === 'superseded' ? 'superseded' : result.status === 'refreshed' ? 'success' : 'failure',
+      attributes: { status: result.status },
+    }),
+    { generation },
+  ).finally(() => {
     if (refresh?.promise === promise) refresh = null;
   });
   refresh = { generation, promise };

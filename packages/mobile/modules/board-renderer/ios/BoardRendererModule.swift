@@ -1,7 +1,44 @@
 import ExpoModulesCore
 import UIKit
+#if canImport(Sentry)
+import Sentry
+#endif
 
 public class BoardRendererModule: Module {
+  private let nativeDiagnosticsLock = NSLock()
+  private var nativeRenderOperations: [String: [String: Any]] = [:]
+  private var lastNativeBreadcrumbAt: TimeInterval = 0
+  private var breadcrumbOperationId = ""
+
+  private func nativeRenderBreadcrumb(_ phase: String, operationId: String) {
+    #if canImport(Sentry)
+    nativeDiagnosticsLock.lock()
+    defer { nativeDiagnosticsLock.unlock() }
+    let fields: [String: Any] = ["operationId": operationId, "phase": phase, "threadId": pthread_mach_thread_np(pthread_self())]
+    if phase == "execute" {
+      nativeRenderOperations[operationId] = fields
+      if nativeRenderOperations.count > 4, let oldest = nativeRenderOperations.keys.sorted().first {
+        nativeRenderOperations.removeValue(forKey: oldest)
+      }
+    } else {
+      nativeRenderOperations.removeValue(forKey: operationId)
+    }
+    let snapshot: [String: Any] = ["active": Array(nativeRenderOperations.values), "lastOperation": fields]
+    SentrySDK.configureScope { $0.setContext(value: snapshot, key: "native_renderer") }
+    // Aggregate thumbnail bursts without dropping active native operation context.
+    let now = ProcessInfo.processInfo.systemUptime
+    if phase == "execute" {
+      if now - lastNativeBreadcrumbAt < 5 { return }
+      lastNativeBreadcrumbAt = now
+      breadcrumbOperationId = operationId
+    } else if breadcrumbOperationId != operationId { return }
+    let breadcrumb = Breadcrumb(level: .info, category: "mobile.render.native")
+    breadcrumb.message = phase
+    breadcrumb.data = ["operationId": operationId, "threadId": pthread_mach_thread_np(pthread_self())]
+    SentrySDK.addBreadcrumb(breadcrumb)
+    #endif
+  }
+
   /// Renders run here, not on expo-modules-core's default `AsyncFunction` queue.
   ///
   /// That default is ONE serial queue shared by every Expo module in the app
@@ -185,6 +222,8 @@ public class BoardRendererModule: Module {
     var outWidth: UInt32 = 0
     var outHeight: UInt32 = 0
 
+    let nativeOperationId = UUID().uuidString
+    nativeRenderBreadcrumb("execute", operationId: nativeOperationId)
     let result = jsonData.withUnsafeBufferPointer { buffer in
       guard let baseAddress = buffer.baseAddress else { return Int32(-1) }
       return board_renderer_render(
@@ -197,6 +236,7 @@ public class BoardRendererModule: Module {
       )
     }
 
+    nativeRenderBreadcrumb("complete", operationId: nativeOperationId)
     guard result == 0, let pixelData = outData else {
       throw NSError(
         domain: "BoardRenderer", code: Int(result),

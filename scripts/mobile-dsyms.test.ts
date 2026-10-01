@@ -155,6 +155,7 @@ describe('uploadArchiveDsyms', () => {
       { archivePath: fixture.archivePath, mobileDir: fixture.mobileDir, environment },
       {
         resolveSentryCli: () => '/fake/sentry-cli',
+        verifyUuids: () => {},
         spawnSentryCli: (executable, args, options) => {
           invocations.push({ executable, args, options });
           return { status: 0, stdout: DEBUG_COMPANIONS_OUTPUT };
@@ -164,7 +165,7 @@ describe('uploadArchiveDsyms', () => {
 
     expect(invocations).toHaveLength(1);
     expect(invocations[0].executable).toBe('/fake/sentry-cli');
-    expect(invocations[0].args).toEqual(['debug-files', 'upload', fixture.dsymsDir]);
+    expect(invocations[0].args).toEqual(['debug-files', 'upload', '--wait', fixture.dsymsDir]);
     expect(invocations[0].options.env).toMatchObject({
       SENTRY_AUTH_TOKEN: 'test-token',
       SENTRY_ORG: 'boardsesh',
@@ -189,6 +190,7 @@ describe('uploadArchiveDsyms', () => {
         { archivePath: fixture.archivePath, mobileDir: fixture.mobileDir, environment },
         {
           resolveSentryCli: () => '/fake/sentry-cli',
+          verifyUuids: () => {},
           spawnSentryCli: () => ({ status: 0, stdout: EXECUTABLES_ONLY_OUTPUT }),
         },
       );
@@ -209,6 +211,7 @@ describe('uploadArchiveDsyms', () => {
         { archivePath: fixture.archivePath, mobileDir: fixture.mobileDir, environment },
         {
           resolveSentryCli: () => '/fake/sentry-cli',
+          verifyUuids: () => {},
           spawnSentryCli: () => ({
             status: 0,
             stdout: [
@@ -236,6 +239,7 @@ describe('uploadArchiveDsyms', () => {
         { archivePath: fixture.archivePath, mobileDir: fixture.mobileDir, environment },
         {
           resolveSentryCli: () => '/fake/sentry-cli',
+          verifyUuids: () => {},
           spawnSentryCli: () => ({
             status: 0,
             stdout: '> Found 4 debug information files\n> Uploaded 0 missing debug information files\n',
@@ -257,6 +261,7 @@ describe('uploadArchiveDsyms', () => {
     expect(() =>
       uploadArchiveDsyms(options, {
         ...dependencies,
+        verifyUuids: () => {},
         spawnSentryCli: () => ({ status: 1, stderr: 'error: API request failed' }),
       }),
     ).toThrow('exit code 1');
@@ -264,6 +269,7 @@ describe('uploadArchiveDsyms', () => {
     expect(() =>
       uploadArchiveDsyms(options, {
         ...dependencies,
+        verifyUuids: () => {},
         spawnSentryCli: () => ({ status: null, error: new Error('ENOENT') }),
       }),
     ).toThrow('Could not run sentry-cli');
@@ -275,6 +281,7 @@ describe('uploadArchiveDsyms', () => {
     expect(() =>
       uploadArchiveDsyms(options, {
         ...dependencies,
+        verifyUuids: () => {},
         spawnSentryCli: () => ({ status: null, error: timeoutError }),
       }),
     ).toThrow('did not finish within 10 minutes');
@@ -282,6 +289,7 @@ describe('uploadArchiveDsyms', () => {
     expect(() =>
       uploadArchiveDsyms(options, {
         ...dependencies,
+        verifyUuids: () => {},
         spawnSentryCli: () => ({ status: 0, stdout: '> Found 0 debug information files\n' }),
       }),
     ).toThrow('found no debug information files');

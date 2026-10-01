@@ -3,13 +3,15 @@
 // worklet-serialization global-error-capture install, which must wrap Sentry's
 // handler, not the other way round.
 import { wrapWithSentry } from '../src/lib/sentry';
-// Import second, still ahead of anything that reaches posthog-client.ts (e.g.
+// Stamp the runtime launch before analytics or application operations begin.
+import '../src/lib/mobile-diagnostics-bootstrap';
+// Import next, still ahead of anything that reaches posthog-client.ts (e.g.
 // AnalyticsProvider below): resolves the party-profile UUID synchronously and
 // stores it for posthog-client.ts to bootstrap the PostHog SDK's anonymous
 // distinct_id with, before the SDK's own module-eval side effect constructs
 // the client and fires its app-lifecycle autocapture. See analytics-bootstrap.ts.
 import '../src/lib/analytics-bootstrap';
-// Import third: calls Observe.configure() at module scope. It MUST have run
+// Import next: calls Observe.configure() at module scope. It MUST have run
 // before the first screen mounts — expo-observe's router integration reads
 // isInitialized() when a screen mounts and throws if it changes afterwards — so
 // this cannot become a hook or an effect. See observe-bootstrap.ts.

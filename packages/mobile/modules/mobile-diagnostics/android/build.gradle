@@ -1,0 +1,16 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+dependencies {
+  // Exact SDK versions supplied by RNSentry 8.28.0; no second runtime copy.
+  compileOnly 'io.sentry:sentry-android:8.57.0'
+  testImplementation 'junit:junit:4.13.2'
+}
+group = 'com.boardsesh'
+version = '0.1.0'
+android {
+  namespace 'com.boardsesh.diagnostics'
+  defaultConfig { minSdk 24; versionCode 1; versionName '0.1.0' }
+  externalNativeBuild { cmake { path 'src/main/cpp/CMakeLists.txt' } }
+}

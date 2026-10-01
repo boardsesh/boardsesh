@@ -1,3 +1,4 @@
+import { beginDiagnosticOperation, type DiagnosticOperation } from '../mobile-diagnostics';
 import { createStartupCollector, type StartupMarkName, type StartupOutcome } from './startup-collector';
 
 export const STARTUP_PROFILING_ENABLED = process.env.EXPO_PUBLIC_PROFILE_STARTUP === '1';
@@ -69,7 +70,20 @@ function scheduleExport(delayMs: number) {
   }, delayMs);
 }
 
+let startupDiagnostic: DiagnosticOperation | undefined;
+const diagnosticMarks = new Set<StartupMarkName>();
 export function markStartup(name: StartupMarkName, outcome?: StartupOutcome): void {
+  // Independent of the opt-in local profiler. Fixed mark names bound volume.
+  if (!diagnosticMarks.has(name)) {
+    diagnosticMarks.add(name);
+    if (!startupDiagnostic) startupDiagnostic = beginDiagnosticOperation('navigation', 'startup.ready');
+    if (name.startsWith('sqlite.deadhandle.')) {
+      // Mid-session recovery belongs to data operations, not initial launch.
+    } else {
+      startupDiagnostic.step(name, outcome ? { status: outcome } : undefined);
+      if (name === 'home.useful.commit') startupDiagnostic.finish(outcome === 'error' ? 'failure' : 'success');
+    }
+  }
   if (!collector.mark(name, outcome)) return;
   if (name === 'home.useful.commit' || name === 'sqlite.recovery.end' || name === 'sqlite.deadhandle.end')
     scheduleExport(1_000);

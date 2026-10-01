@@ -16,6 +16,9 @@ function mapping(entries: [original: string, obfuscated: string][]): string {
     ...entries.flatMap(([original, obfuscated]) => [
       `${original} -> ${obfuscated}:`,
       '    void onCreate(android.os.Bundle) -> a',
+      ...(original === 'com.boardsesh.diagnostics.MobileDiagnosticsModule'
+        ? ['    void nativeAbort() -> nativeAbort']
+        : []),
     ]),
     '',
   ].join('\n');
@@ -90,7 +93,7 @@ function pinnedClassNames(): string[] {
 
 describe('NAME_INVARIANTS', () => {
   // The list and the keep rules are two halves of one contract: a rule with no
-  // invariant is unguarded (this is how ScreenAppearEvent shipped unchecked), and
+  // invariant is unguarded, and
   // an invariant with no rule fails the next release build instead of this test.
   it('has an entry for every class the keep rules pin by name', () => {
     const pinned = pinnedClassNames();
@@ -139,22 +142,78 @@ describe('verifyObfuscation', () => {
     expect(verdict.message).toContain('absent from the mapping');
   });
 
-  // Sentry reads TWO react-native-screens names as strings. The first invariant
-  // covered only ScreenStackFragment, so a mapping that renamed ScreenAppearEvent
-  // and kept the fragment passed while time-to-initial-display went dark.
-  it('fails when only ScreenAppearEvent was renamed', () => {
-    const appearEvent = 'com.swmansion.rnscreens.events.ScreenAppearEvent';
-    const entries = INVARIANT_ENTRIES.map(([className]) =>
-      className === appearEvent
-        ? ([className, 'a.b.d'] as [string, string])
-        : ([className, className] as [string, string]),
+  it.each(['com.swmansion.rnscreens.ScreenStackFragment', 'com.boardsesh.diagnostics.MobileDiagnosticsModule'])(
+    'fails when only %s was renamed',
+    (requiredClass) => {
+      const entries = INVARIANT_ENTRIES.map(
+        ([className]) => [className, className === requiredClass ? 'a.b.d' : className] as [string, string],
+      );
+      const verdict = verifyObfuscation(parseMapping(mapping([...entries, ...renamedFiller(7)])), OPTIONS);
+      expect(verdict.ok).toBe(false);
+      expect(verdict.message).toContain(requiredClass);
+      expect(verdict.message).toContain('renamed to a.b.d');
+    },
+  );
+
+  it('allows the obsolete ScreenAppearEvent name to be obfuscated with SDK 8.28', () => {
+    const entries: [string, string][] = [
+      ...INVARIANT_ENTRIES,
+      ['com.swmansion.rnscreens.events.ScreenAppearEvent', 'a.b.d'],
+      ...renamedFiller(7),
+    ];
+    expect(verifyObfuscation(parseMapping(mapping(entries)), OPTIONS).ok).toBe(true);
+  });
+
+  it.each(['renamed', 'missing'])('rejects a %s nativeAbort method even when the tester class survives', (failure) => {
+    const healthy = mapping([...INVARIANT_ENTRIES, ...renamedFiller(7)]);
+    const changed = healthy.replace(
+      '    void nativeAbort() -> nativeAbort',
+      failure === 'renamed' ? '    void nativeAbort() -> a' : '',
     );
-
-    const verdict = verifyObfuscation(parseMapping(mapping([...entries, ...renamedFiller(7)])), OPTIONS);
-
+    const verdict = verifyObfuscation(parseMapping(changed), OPTIONS);
     expect(verdict.ok).toBe(false);
-    expect(verdict.message).toContain(appearEvent);
-    expect(verdict.message).toContain('renamed to a.b.d');
+    expect(verdict.message).toContain('MobileDiagnosticsModule.nativeAbort');
+  });
+
+  it('accepts the release artifact shape: omitted native mapping with exact AGP keep evidence', () => {
+    const artifactMapping = mapping([...INVARIANT_ENTRIES, ...renamedFiller(7)]).replace(
+      '    void nativeAbort() -> nativeAbort',
+      '    1:4:void access$nativeAbort(com.boardsesh.diagnostics.MobileDiagnosticsModule):8:8 -> a',
+    );
+    expect(
+      verifyObfuscation(parseMapping(artifactMapping), {
+        ...OPTIONS,
+        seedsContents:
+          'com.boardsesh.diagnostics.MobileDiagnosticsModule\r\ncom.boardsesh.diagnostics.MobileDiagnosticsModule: void nativeAbort()\r\n',
+      }).ok,
+    ).toBe(true);
+  });
+
+  it.each([
+    'com.other.MobileDiagnosticsModule: void nativeAbort()',
+    'com.boardsesh.diagnostics.MobileDiagnosticsModule: void nativeAbort(int)',
+    'com.boardsesh.diagnostics.MobileDiagnosticsModule: int nativeAbort()',
+    'com.boardsesh.diagnostics.MobileDiagnosticsModule: void access$nativeAbort()',
+    'com.boardsesh.diagnostics.MobileDiagnosticsModule',
+  ])('rejects omitted native mapping with mismatched keep evidence: %s', (seedsContents) => {
+    const omitted = mapping([...INVARIANT_ENTRIES, ...renamedFiller(7)]).replace(
+      '    void nativeAbort() -> nativeAbort',
+      '',
+    );
+    expect(verifyObfuscation(parseMapping(omitted), { ...OPTIONS, seedsContents }).ok).toBe(false);
+  });
+
+  it('rejects explicit native method renames despite exact keep evidence', () => {
+    const renamed = mapping([...INVARIANT_ENTRIES, ...renamedFiller(7)]).replace(
+      'void nativeAbort() -> nativeAbort',
+      'void nativeAbort() -> a',
+    );
+    expect(
+      verifyObfuscation(parseMapping(renamed), {
+        ...OPTIONS,
+        seedsContents: 'com.boardsesh.diagnostics.MobileDiagnosticsModule: void nativeAbort()',
+      }).ok,
+    ).toBe(false);
   });
 
   it('fails when a broad keep rule collapses the renamed fraction', () => {

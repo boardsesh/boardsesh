@@ -12,3 +12,7 @@ target_link_libraries(board_renderer_jni PRIVATE board_renderer_ffi log)
 # NDK that ships with RN still defaults to 4 KB); mirrors the FFI flag in
 # scripts/build-native-renderer.sh, and is a no-op on 4 KB devices.
 target_link_options(board_renderer_jni PRIVATE "-Wl,-z,max-page-size=16384")
+
+# Retain owned JNI DWARF in CMake outputs; Gradle strips shipped APK copies.
+target_compile_options(board_renderer_jni PRIVATE "-g")
+target_link_options(board_renderer_jni PRIVATE "-Wl,--build-id=sha1")

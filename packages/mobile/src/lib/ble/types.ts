@@ -1,3 +1,6 @@
+import type { BleConnectionDiagnostics } from '../sentry';
+import type { DiagnosticAttributes } from '../mobile-diagnostics';
+
 export type BleConnection = {
   deviceId: string;
   deviceName?: string;
@@ -164,6 +167,8 @@ export type BleConnectDiagnostics = {
 export type BleAdapterOptions = {
   preferWriteWithResponse?: boolean;
   boardName?: string;
+  /** Internal best-effort phase callback; never alters transport behavior. */
+  onDiagnosticPhase?: (phase: string, attributes?: DiagnosticAttributes) => void;
 };
 
 export type BluetoothAdapter = {
@@ -178,6 +183,7 @@ export type BluetoothAdapter = {
   // Transport diagnostics of the adapter's most recently settled write
   // (success or failure), for analytics tagging. Optional: web-era adapters
   // and old binaries don't report any.
+  getConnectionDiagnostics?(): Promise<BleConnectionDiagnostics | null>;
   getLastWriteDiagnostics?(): Promise<BleWriteDiagnostics | null>;
   // Diagnostics of the adapter's most recent failed connect, for tagging a
   // service_missing report. Optional: only native iOS reports it.

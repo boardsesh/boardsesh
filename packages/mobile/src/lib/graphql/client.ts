@@ -5,6 +5,8 @@ import { BackendUnavailableError } from '../connectivity/backend-unavailable-err
 import { getConnectivitySnapshot, reportBackendOutcome } from '../connectivity/connectivity-store';
 import { BACKEND_URL } from '../env';
 import { createAbortError, createGraphqlTimeoutError, isInteractiveRequestDeadlineEnabled } from './request-timeout';
+import { beginDiagnosticOperation, diagnosticErrorAttributes } from '../mobile-diagnostics';
+import { diagnosticGraphqlOperationName } from './request-diagnostics';
 
 // Re-exported so the predicate stays part of this module's public surface even
 // though it lives in a leaf module the query provider can import on its own.
@@ -193,6 +195,9 @@ export async function graphqlFetchGated(
   options: RequestInit = {},
   timeoutMs: number | null = INTERACTIVE_GRAPHQL_REQUEST_TIMEOUT_MS,
 ): Promise<Response> {
+  const diagnostic = beginDiagnosticOperation('data', 'graphql.request', {
+    attributes: { operationName: diagnosticGraphqlOperationName(options.body) },
+  });
   const snapshot = getConnectivitySnapshot();
   if (snapshot.effectiveOffline) {
     // `reason` is non-null whenever `effectiveOffline` is — `deriveReason` in
@@ -202,17 +207,21 @@ export async function graphqlFetchGated(
     if (snapshot.reason === null && __DEV__) {
       console.warn('[connectivity] effectiveOffline with no reason — deriveReason invariant broken');
     }
+    diagnostic.finish('failure', { failureCategory: snapshot.reason ?? 'backend_unreachable' });
     throw new BackendUnavailableError(snapshot.reason ?? 'backend_unreachable');
   }
 
   try {
+    diagnostic.step('request');
     const { response, serverFailure } = await inspectWithTimeout(url, options, timeoutMs);
     // A 4xx, and a 200 carrying ordinary GraphQL errors, are SUCCESSES here: the
     // server answered. Only a 5xx or an INTERNAL_SERVER_ERROR body says the
     // backend itself is in trouble.
     reportBackendOutcome(serverFailure ? { kind: 'failure', status: response.status } : { kind: 'success' });
+    diagnostic.finish(serverFailure ? 'failure' : 'success', { status: response.status });
     return response;
   } catch (error) {
+    diagnostic.finish(options.signal?.aborted ? 'cancelled' : 'failure', diagnosticErrorAttributes(error));
     // A caller that cancelled its own request (a screen unmounting, a superseded
     // search) proves nothing about the server, and counting it would probe the
     // backend every time someone scrolls away from a list.
