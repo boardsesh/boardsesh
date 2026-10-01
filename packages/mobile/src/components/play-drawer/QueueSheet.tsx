@@ -1,5 +1,6 @@
 import { forwardRef, useCallback, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { View, Pressable, Platform, StyleSheet } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { BottomSheetModal } from '@expo/ui/community/bottom-sheet';
 import { useManagedSheet, type DismissAndWaitResult } from '../../providers/sheet-presentation-provider';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -188,21 +189,8 @@ export const QueueSheet = forwardRef<QueueSheetHandle, QueueSheetProps>(function
 
   const viewOnlyMode = queue.length === 0;
 
-  return (
-    <BottomSheetModal
-      ref={sheetRef}
-      index={0}
-      snapPoints={snapPoints}
-      enablePanDownToClose
-      // Freeze the sheet pan while a row is being dragged so scroll-to-expand
-      // never fights the reorder gesture.
-      enableContentPanningGesture={!isDragging}
-      enableHandlePanningGesture={!isDragging}
-      onChange={handleSheetChange}
-      onFullyDismissed={managed.onFullyDismissed}
-      handleIndicatorStyle={sheet.handleStyle}
-      style={styles.sheet}
-    >
+  const sheetContent = (
+    <>
       <QueueSheetHeader
         isEditMode={isEditMode}
         showHistory={showHistory}
@@ -260,11 +248,38 @@ export const QueueSheet = forwardRef<QueueSheetHandle, QueueSheetProps>(function
           </Pressable>
         </View>
       )}
+    </>
+  );
+
+  return (
+    <BottomSheetModal
+      ref={sheetRef}
+      index={0}
+      snapPoints={snapPoints}
+      enablePanDownToClose
+      // Freeze the sheet pan while a row is being dragged so scroll-to-expand
+      // never fights the reorder gesture.
+      enableContentPanningGesture={!isDragging}
+      enableHandlePanningGesture={!isDragging}
+      onChange={handleSheetChange}
+      onFullyDismissed={managed.onFullyDismissed}
+      handleIndicatorStyle={sheet.handleStyle}
+      style={styles.sheet}
+    >
+      {Platform.OS === 'android' ? (
+        // Expo's Android sheet uses a separate dialog window. Its RN content
+        // needs its own gesture root so row recognizers receive
+        // the native pointer stream (#5923).
+        <GestureHandlerRootView style={styles.gestureRoot}>{sheetContent}</GestureHandlerRootView>
+      ) : (
+        sheetContent
+      )}
     </BottomSheetModal>
   );
 });
 
 const styles = StyleSheet.create({
+  gestureRoot: { flex: 1 },
   sheet: {
     ...Platform.select({
       ios: {

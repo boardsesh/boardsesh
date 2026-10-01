@@ -1,0 +1,15 @@
+appId: com.boardsesh.app.dev
+name: Android queue long press opens actions
+---
+# Start with Up next open and a non-current queued climb named QUEUED_CLIMB.
+# Run from both the root queue bar and the player queue button. The existing
+# showcase crew setup provides a real peer-added row; no account data is seeded
+# or deleted by this focused gesture regression.
+- assertVisible: 'Up next'
+- longPressOn:
+    text: '${QUEUED_CLIMB}, position .*'
+- assertVisible: 'Play next'
+- assertVisible: 'Preview'
+# A release must leave the menu open; a later short tap is a separate gesture.
+- waitForAnimationToEnd
+- assertVisible: 'Play next'
