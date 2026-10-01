@@ -75,6 +75,7 @@ function scheduleAndroidCleanup(operation: ExportOperation): void {
 function subscribeLifecycle(): void {
   if (lifecycleSubscribed) return;
   lifecycleSubscribed = true;
+  // Both subscriptions intentionally live for this module's lifetime.
   subscribeAuthCredentialGenerationChanges((generation) => {
     for (const operation of operations) {
       if (operation.credentialGeneration >= generation) continue;
@@ -130,6 +131,8 @@ export async function clearUserDataExportDownloads(departingGeneration: number):
     operation.controller.abort();
     if (!removeOperation(operation)) reportCleanupFailure();
   }
+  // Reuse startup initialization; resweeping here could remove a newer account's
+  // active files. Failed deletions remain registered for foreground retry.
   await initializeUserDataExportDownloads();
 }
 
@@ -141,17 +144,20 @@ export async function openUserDataExportDownload(request: UserDataExportDownload
   await initializeUserDataExportDownloads();
   requireCurrentExport(request);
   let sharing: typeof import('expo-sharing');
+  let sharingAvailable: boolean;
   try {
     sharing = await import('expo-sharing');
     requireCurrentExport(request);
-    if (!(await sharing.isAvailableAsync())) throw new UserDataExportActionError('sharing_unavailable');
-  } catch {
+    sharingAvailable = await sharing.isAvailableAsync();
+  } catch (error) {
     // Account changes take precedence over unavailable native modules. Recheck
     // after either await so cancellation remains silent in the caller.
     requireCurrentExport(request);
+    if (error instanceof UserDataExportActionError) throw error;
     throw new UserDataExportActionError('sharing_unavailable');
   }
   requireCurrentExport(request);
+  if (!sharingAvailable) throw new UserDataExportActionError('sharing_unavailable');
 
   let operation: ExportOperation;
   try {

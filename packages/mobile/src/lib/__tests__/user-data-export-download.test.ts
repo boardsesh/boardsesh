@@ -254,6 +254,14 @@ describe('native export download and sharing', () => {
       expect(mocks.files.size).toBe(0);
     },
   );
+  it('preserves known export errors from the sharing availability check', async () => {
+    const { UserDataExportActionError } = await import('../user-data-export-action');
+    const failure = new UserDataExportActionError('cleanup_failed');
+    mocks.isAvailableAsync.mockRejectedValue(failure);
+    await expect(nativeDownloads.openUserDataExportDownload(exportRequest())).rejects.toBe(failure);
+    expect(mocks.download).not.toHaveBeenCalled();
+    expect(mocks.shareAsync).not.toHaveBeenCalled();
+  });
   it.each(['null', 'empty', 'missing'] as const)('does not share a %s download result', async (result) => {
     mocks.download.mockImplementation(async (destination) => {
       if (result === 'null') return null;
