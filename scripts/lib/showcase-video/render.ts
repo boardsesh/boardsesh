@@ -605,22 +605,24 @@ export const SHOWCASE_ANDROID_TAKE_EDITS: Partial<Record<ShowcaseTakeId, TakeEdi
     },
   },
   // Maestro's two taps between arming the timer and the rest pill take longer
-  // here: the countdown starts 3.27 s after `rest-armed`.
+  // here: the countdown starts 2.36 s after `rest-armed` (1.43 s on iOS). The
+  // gap moves by a second between recordings, so re-read it after a re-record.
   workouts: {
     segments: [
       { mark: 'pyramid-picked', from: -1.9, to: 0.1 },
-      { mark: 'rest-armed', from: 3.2 },
+      { mark: 'rest-armed', from: 2.3 },
     ],
     restPill: [
-      { at: { mark: 'rest-armed', at: 3.27 }, value: '0:29' },
-      { at: { mark: 'rest-armed', at: 3.47 }, value: '0:28' },
-      { at: { mark: 'rest-armed', at: 4.43 }, value: '0:27' },
-      { at: { mark: 'rest-armed', at: 5.43 }, value: '0:26' },
+      { at: { mark: 'rest-armed', at: 2.36 }, value: '0:29' },
+      { at: { mark: 'rest-armed', at: 3.36 }, value: '0:28' },
+      { at: { mark: 'rest-armed', at: 4.36 }, value: '0:27' },
+      { at: { mark: 'rest-armed', at: 5.36 }, value: '0:26' },
     ],
   },
-  // The Filters row moves up 353 dp with the scroll. The calendar re-logs where
-  // it is once the Kilter filter redraws it (1.55 s before `filter-kilter`), so
-  // from there it needs no shift.
+  // The Filters row moves up 353 dp with the scroll. The Kilter view drops the
+  // records card's footnote, which lifts the calendar another 27 dp. (The
+  // calendar re-logs its new place at some point after the filter, at a time
+  // that varies between recordings; this one logged it after the callout.)
   log: {
     segments: SHOWCASE_TAKE_EDITS.log?.segments ?? [],
     callouts: SHOWCASE_TAKE_EDITS.log?.callouts,
@@ -628,7 +630,7 @@ export const SHOWCASE_ANDROID_TAKE_EDITS: Partial<Record<ShowcaseTakeId, TakeEdi
       'profile-board-filter': [{ from: { mark: 'scrolled', at: -1.5 }, dy: -353 }],
       'activity-calendar': [
         { from: { mark: 'scrolled', at: -1.5 }, dy: -353 },
-        { from: { mark: 'filter-kilter', at: -1.55 }, dy: 0 },
+        { from: { mark: 'filter-kilter', at: -1.2 }, dy: -380 },
       ],
     },
   },

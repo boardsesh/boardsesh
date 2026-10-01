@@ -511,12 +511,20 @@ press, `island-expanded` the shade pulled down with the notification expanded,
 `next-tapped` the Next tap), and the recorder writes `lock-next`,
 `lock-relight` and `lock-mirror` for the notification's buttons (Next and
 Relight wall move right when Next adds "Previous", so their rects change at
-`next-tapped`). So Android cuts on the iOS
-`SHOWCASE_TAKE_EDITS` (`SHOWCASE_TAKE_EDITS_BY_PLATFORM.android`). Its anchor
-shifts are iOS points: the sheet tops (wall 462 / 145 pt, invite 405 pt, queue
-322 pt) and the log scroll (338 pt). After the first Android recording, run
-`--platform android --target all --stills --measure` and give Android its own
-entries where a box misses.
+`next-tapped`). `SHOWCASE_ANDROID_TAKE_EDITS` in `render.ts` starts from the
+iOS edit and replaces what the Android recording measured differently:
+
+| Take | Android |
+| --- | --- |
+| `wall` | The sheet opens 1.8 s before `sheet-open` (2.75 s on iOS), so the list is too short for its callout alone: "Board history" stays up over the half-open sheet. Sheet top 510 dp at half height, 101 dp dragged up. |
+| `crew` | The QR still holds 1.1 s. No `play-next` callout. Invite sheet top 510 dp; the queue sheet, dragged to full height, 100 dp. |
+| `workouts` | The rest countdown starts 2.36 s after `rest-armed` (1.43 s on iOS); `restPill` follows it. The gap moved by a second between two recordings, so re-read it after a re-record. |
+| `log` | The scroll moves the Filters row 353 dp, and the Kilter view lifts the calendar 27 dp more. |
+
+`light`, `lock-screen` and the boards cut on the iOS entries. Every number
+was checked with `--platform android --target all --stills --measure`, and
+`showcase-video-android-render.test` holds the reading budget on the Android
+marks, as the iOS test does.
 
 **Trying a layout before the recording lands.** `--work-dir <dir>` reads
 `<dir>/{footage,anchors,marks}` instead. A copy of the iOS takes with the light

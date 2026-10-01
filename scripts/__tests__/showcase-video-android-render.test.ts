@@ -350,20 +350,20 @@ describe('Android copy', () => {
 
 /** The first Android recording's marks and frame counts (work/android/marks, footage). */
 const ANDROID_MARKS: Partial<Record<ShowcaseTakeId, Record<string, number>>> = {
-  light: { 'bulb-tapped': 4.407, 'next-1': 8.003, 'next-2': 12.564 },
+  light: { 'bulb-tapped': 3.783, 'next-1': 7.444, 'next-2': 11.983 },
   wall: { 'sheet-open': 4.122, 'history-shown': 8.228 },
   crew: { 'invite-closed': 4.167, 'queue-open': 12.292, 'row-landed': 14.819, 'crew-added': 15.886 },
-  workouts: { 'pyramid-picked': 2.9, 'rest-armed': 6.401, 'rest-pill': 11.868, started: 20.078 },
+  workouts: { 'pyramid-picked': 2.996, 'rest-armed': 6.669, 'rest-pill': 10.782, started: 17.187 },
   'lock-screen': { home: 2.678, 'island-expanded': 6.096, 'next-tapped': 10.174 },
-  log: { scrolled: 4.573, 'filter-kilter': 9.084, 'filter-tension': 14.733 },
+  log: { scrolled: 4.523, 'filter-kilter': 9.007, 'filter-tension': 15.186 },
 };
 const ANDROID_FRAMES: Partial<Record<ShowcaseTakeId, number>> = {
-  light: 531,
+  light: 514,
   wall: 409,
   crew: 618,
-  workouts: 802,
+  workouts: 702,
   'lock-screen': 481,
-  log: 589,
+  log: 602,
 };
 
 describe('Android cuts', () => {
