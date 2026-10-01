@@ -623,7 +623,12 @@ describe('QueueProvider session update subscription', () => {
     );
     expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('solo-target');
     expect(snapshots.at(-1)?.sessionId).toBeNull();
-    // Shared mutation factory supplies the solo transport no-op; no room is created.
+    // This provider fixture mocks the mutation factory; its transport no-op is tested there.
+    expect(queueMutations.setCurrentClimb).toHaveBeenCalledExactlyOnceWith(
+      makeQueueItem('solo-target'),
+      false,
+      'android-solo',
+    );
     expect(graph.execute).not.toHaveBeenCalled();
   });
 
@@ -632,54 +637,57 @@ describe('QueueProvider session update subscription', () => {
     renderProvider((snapshot) => snapshots.push(snapshot));
     await waitFor(() => expect(snapshots.at(-1)?.sessionId).toBe('session-1'));
     const hydrationCorrelationId = '00000000-0000-4000-8000-000000005922';
-    vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValue(hydrationCorrelationId);
-    const thinItem = makeQueueItem('thin-target');
-    thinItem.climb = { ...thinItem.climb, name: '', frames: '' };
-    act(() => snapshots.at(-1)?.dispatchWidgetNavigation(thinItem, 'android-thin', { sendMutation: true }));
-    expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('thin-target');
-    expect(queueMutations.setCurrentClimb).not.toHaveBeenCalled();
-    const sink = ws.getQueueUpdatesSink();
-    if (!sink) throw new Error('queueUpdates subscription was not opened');
-    act(() =>
-      sink.next({
-        data: {
-          queueUpdates: {
-            __typename: 'FullSync',
-            sequence: 1,
-            state: {
+    const randomUuidSpy = vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValue(hydrationCorrelationId);
+    try {
+      const thinItem = makeQueueItem('thin-target');
+      thinItem.climb = { ...thinItem.climb, name: '', frames: '' };
+      act(() => snapshots.at(-1)?.dispatchWidgetNavigation(thinItem, 'android-thin', { sendMutation: true }));
+      expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('thin-target');
+      expect(queueMutations.setCurrentClimb).not.toHaveBeenCalled();
+      const sink = ws.getQueueUpdatesSink();
+      if (!sink) throw new Error('queueUpdates subscription was not opened');
+      act(() =>
+        sink.next({
+          data: {
+            queueUpdates: {
+              __typename: 'FullSync',
               sequence: 1,
-              stateHash: 'hydrated',
-              queue: [makeQueueItem('thin-target')],
-              currentClimbQueueItem: makeQueueItem('thin-target'),
+              state: {
+                sequence: 1,
+                stateHash: 'hydrated',
+                queue: [makeQueueItem('thin-target')],
+                currentClimbQueueItem: makeQueueItem('thin-target'),
+              },
             },
           },
-        },
-      }),
-    );
-    await waitFor(() => expect(queueMutations.setCurrentClimb).toHaveBeenCalledTimes(1));
-    expect(queueMutations.setCurrentClimb).toHaveBeenCalledWith(
-      expect.objectContaining({ uuid: 'thin-target', climb: expect.objectContaining({ name: 'Climb thin-target' }) }),
-      false,
-      hydrationCorrelationId,
-    );
-    expect(snapshots.at(-1)?.state.pendingCurrentClimbUpdates).toContain(hydrationCorrelationId);
-    act(() =>
-      sink.next({
-        data: {
-          queueUpdates: {
-            __typename: 'CurrentClimbChanged',
-            sequence: 2,
-            stateHash: 'hydration-echo',
-            currentItem: makeQueueItem('thin-target'),
-            clientId: 'client-peer',
-            correlationId: hydrationCorrelationId,
+        }),
+      );
+      await waitFor(() => expect(queueMutations.setCurrentClimb).toHaveBeenCalledTimes(1));
+      expect(queueMutations.setCurrentClimb).toHaveBeenCalledWith(
+        expect.objectContaining({ uuid: 'thin-target', climb: expect.objectContaining({ name: 'Climb thin-target' }) }),
+        false,
+        hydrationCorrelationId,
+      );
+      expect(snapshots.at(-1)?.state.pendingCurrentClimbUpdates).toContain(hydrationCorrelationId);
+      act(() =>
+        sink.next({
+          data: {
+            queueUpdates: {
+              __typename: 'CurrentClimbChanged',
+              sequence: 2,
+              stateHash: 'hydration-echo',
+              currentItem: makeQueueItem('thin-target'),
+              clientId: 'client-peer',
+              correlationId: hydrationCorrelationId,
+            },
           },
-        },
-      }),
-    );
-    expect(snapshots.at(-1)?.state.pendingCurrentClimbUpdates).not.toContain(hydrationCorrelationId);
-    expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('thin-target');
-    vi.mocked(globalThis.crypto.randomUUID).mockRestore();
+        }),
+      );
+      expect(snapshots.at(-1)?.state.pendingCurrentClimbUpdates).not.toContain(hydrationCorrelationId);
+      expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('thin-target');
+    } finally {
+      randomUuidSpy.mockRestore();
+    }
   });
 
   it('waits for JOIN_SESSION before opening queue and session subscriptions', async () => {
