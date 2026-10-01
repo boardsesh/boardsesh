@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
+import type { BoardName } from '@boardsesh/shared-schema';
 import type { LogbookEntry } from '@boardsesh/board-react';
 
 // react-native isn't satisfiable under jsdom; stub the surface the section touches.
@@ -83,7 +84,7 @@ function makeEntry(overrides: Partial<LogbookEntry>): LogbookEntry {
   } as LogbookEntry;
 }
 
-function renderSection(boardName = 'kilter', layoutId = 1) {
+function renderSection(boardName: BoardName = 'kilter', layoutId = 1) {
   return render(
     createElement(LogbookSection, {
       climbUuid: 'climb-1',
@@ -190,7 +191,7 @@ describe('LogbookSection direction capability', () => {
     ['kilter', 1, false],
   ])('gates direction tags for %s layout %s', (boardName, layoutId, expected) => {
     logbookState.logbook = [makeEntry({}), makeEntry({ uuid: 'mirror', is_mirror: true })];
-    renderSection(boardName as string, layoutId as number);
+    renderSection(boardName as BoardName, layoutId as number);
     expect(rows.props).toHaveLength(2);
     expect(rows.props.every((props) => props.showMirrorTag === expected)).toBe(true);
   });

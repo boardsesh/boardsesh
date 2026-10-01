@@ -2121,7 +2121,7 @@ export function PlayDrawer({
                   >
                     <DeferredSections
                       climb={displayedClimb}
-                      boardName={boardName}
+                      boardName={boardName as BoardName}
                       layoutId={layoutId}
                       sizeId={sizeId}
                       setIds={setIds}

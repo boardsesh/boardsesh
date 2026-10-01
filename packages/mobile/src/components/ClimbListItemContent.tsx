@@ -250,27 +250,27 @@ const LostHoldsChip = React.memo(function LostHoldsChip({ count }: { count: numb
 const AscentStatusGlyph = React.memo(function AscentStatusGlyph({
   climbUuid,
   angle,
-  boardName,
-  layoutId,
+  supportsMirroring,
 }: {
   climbUuid: string;
   angle: number;
-  boardName: BoardName;
-  layoutId: number;
+  supportsMirroring: boolean;
 }) {
   const { t } = useTranslation('climbs');
   const { t: tSession } = useTranslation('session');
   const { systemColors } = useTheme();
-  const supportsMirroring = boardSupportsMirroring(boardName, layoutId);
   // Unconditional hooks keep capability changes safe. The nonmirrorable board
   // keeps its existing aggregate glyph; each mirrorable direction is independent.
   const ascentStatus = useAscentStatus(climbUuid, angle, supportsMirroring ? false : undefined);
   const mirrorStatus = useAscentStatus(climbUuid, angle, true);
-  const statusLabels = {
-    flash: t('mobile.climbRow.ascentStatus.flash'),
-    send: t('mobile.climbRow.ascentStatus.send'),
-    attempt: t('mobile.climbRow.ascentStatus.attempt'),
-  };
+  const statusLabels = useMemo(
+    () => ({
+      flash: t('mobile.climbRow.ascentStatus.flash'),
+      send: t('mobile.climbRow.ascentStatus.send'),
+      attempt: t('mobile.climbRow.ascentStatus.attempt'),
+    }),
+    [t],
+  );
 
   if (!supportsMirroring) {
     if (!ascentStatus) return null;
@@ -571,7 +571,7 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
           </Text>
         ) : null}
         {showAscentStatus && supportsMirroring ? (
-          <AscentStatusGlyph climbUuid={climb.uuid} angle={angle} boardName={boardName} layoutId={layoutId} />
+          <AscentStatusGlyph climbUuid={climb.uuid} angle={angle} supportsMirroring={supportsMirroring} />
         ) : null}
         {showPlaylistChips ? <ClimbPlaylistChips climbUuid={climb.uuid} /> : null}
       </View>
@@ -580,7 +580,7 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
       <View style={styles.rightSection}>
         {showFavorite ? <FavoriteGlyph climbUuid={climb.uuid} /> : null}
         {showAscentStatus && !supportsMirroring ? (
-          <AscentStatusGlyph climbUuid={climb.uuid} angle={angle} boardName={boardName} layoutId={layoutId} />
+          <AscentStatusGlyph climbUuid={climb.uuid} angle={angle} supportsMirroring={supportsMirroring} />
         ) : null}
         <LiveClimbGrade
           climb={climb}

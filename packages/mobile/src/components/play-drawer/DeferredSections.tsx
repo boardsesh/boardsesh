@@ -27,7 +27,7 @@ import { BETA_SHELF_SECTION_KEY } from '../../lib/beta-shelf-collapse';
 
 type DeferredSectionsProps = {
   climb: Climb;
-  boardName: string;
+  boardName: BoardName;
   layoutId: number;
   sizeId: number;
   setIds: string;

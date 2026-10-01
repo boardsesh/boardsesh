@@ -15,7 +15,7 @@ import { spacing } from '../../theme/tokens';
 
 type LogbookSectionProps = {
   climbUuid: string;
-  boardName: string;
+  boardName: BoardName;
   layoutId: number;
   userAscents: number | null | undefined;
   userAttempts: number | null | undefined;
@@ -30,7 +30,7 @@ export const LogbookSection = memo(function LogbookSection({
 }: LogbookSectionProps) {
   const { t } = useTranslation('session');
   const { isAuthenticated } = useAuth();
-  const { logbook, isLoading } = useLogbook(boardName as BoardName, [climbUuid]);
+  const { logbook, isLoading } = useLogbook(boardName, [climbUuid]);
   const { data: pendingTicks = 0 } = useLocalPendingTicks(climbUuid, boardName);
 
   const entries = useMemo(
