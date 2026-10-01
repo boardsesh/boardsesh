@@ -1050,7 +1050,9 @@ exclusive transactions until their work and helper-owned cleanup finish.
 `closeAsync()` is single-flight for each JavaScript wrapper: it stops accepting new
 tracked operations, waits for admitted work to drain, then closes that wrapper's
 native reference. Cleanup has no timeout; closing first
-would invalidate the statement it is still finalizing. Cached wrappers retain
+would invalidate the statement it is still finalizing. If a native call never
+settles, restarting the app is the recovery path; this wrapper cannot safely
+force-close a connection while that call still owns it. Cached wrappers retain
 independent close lifetimes, and exclusive-transaction connections use the same drain
 before closing. Existing process-lifetime retention and strong wrapper pinning remain
 necessary for cached native connections. A raw `prepareAsync` call is tracked only

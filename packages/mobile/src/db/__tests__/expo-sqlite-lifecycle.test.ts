@@ -335,6 +335,37 @@ describe('installed expo-sqlite async connection lifetime', () => {
     expect(native.events).toEqual(['BEGIN', 'prepare', 'execute', 'finalize', 'COMMIT', 'close', 'close']);
   });
 
+  it('drains a failing exclusive transaction before closing its parent connection', async () => {
+    const taskError = new Error('database is locked during tick write');
+    const rollbackError = new Error('rollback failed');
+    const nativeCloseError = new Error('native close failed');
+    const native = fixture({ rollbackError, closeError: nativeCloseError });
+    const enteredTask = deferred();
+    const resumeTask = deferred();
+    const transaction = native.database.withExclusiveTransactionAsync(async () => {
+      enteredTask.resolve();
+      await resumeTask.promise;
+      throw taskError;
+    });
+    const observedTransaction = transaction.catch((error: unknown) => error);
+
+    await enteredTask.promise;
+    const closing = native.database.closeAsync();
+    const observedClose = closing.catch((error: unknown) => error);
+    await flushMicrotasks();
+    const closeCallsWhileTaskActive = native.close.mock.calls.length;
+    resumeTask.resolve();
+    const outcome = await observedTransaction;
+    const parentCloseOutcome = await observedClose;
+
+    expect(closeCallsWhileTaskActive).toBe(0);
+    expect(outcome).toBe(taskError);
+    expect(taskError).toMatchObject({ sqliteCleanupErrors: [rollbackError, nativeCloseError] });
+    expect(parentCloseOutcome).toBe(nativeCloseError);
+    expect(native.events).toEqual(['BEGIN', 'ROLLBACK', 'close', 'close']);
+    expect(native.close).toHaveBeenCalledTimes(2);
+  });
+
   it('refuses synchronous close while async cleanup is pending', async () => {
     const native = fixture({ pauseAt: 'finalize' });
     const observedQuery = native.database.runAsync('INSERT INTO ticks DEFAULT VALUES').catch((error: unknown) => error);
