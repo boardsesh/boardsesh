@@ -15,9 +15,12 @@ public class MobileDiagnosticsModule: Module {
     ])
     Function("crashNativeAbort") { (testRunId: String, snapshotJson: String) -> Bool in
       #if DEBUG
-      return false
+      let allowsAbort = false
       #else
-      guard SentrySDK.isEnabled, !testRunId.isEmpty, testRunId.count <= 200,
+      let allowsAbort = true
+      #endif
+      // Keep scope attribution typechecked by Debug CI while refusing its crash.
+      guard allowsAbort, SentrySDK.isEnabled, !testRunId.isEmpty, testRunId.count <= 200,
         let bytes = snapshotJson.data(using: .utf8), bytes.count <= 32768,
         let snapshot = try? JSONSerialization.jsonObject(with: bytes) as? [String: Any]
       else { return false }
@@ -36,7 +39,6 @@ public class MobileDiagnosticsModule: Module {
       }
       boardseshDiagnosticsAbort()
       return true // Unreachable with the real libc abort.
-      #endif
     }
   }
 }
