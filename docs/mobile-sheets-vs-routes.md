@@ -178,6 +178,27 @@ neither failure mode had anything to bite. Adding either one makes the hook load
 with more than one detent should also pass `activeIndex` from the native `onChange`, so the bound
 tracks the resting detent instead of leaving dead space under the footer at the taller one.
 
+**Android gesture roots inside native dialogs.** Expo's Material 3 sheet hosts React Native
+content in a separate dialog window. The app-level `GestureHandlerRootView` does not cover
+that window. A sheet containing RNGH gestures must put a local `GestureHandlerRootView`
+**inside** the native sheet, around its content, with `flex: 1` for bounded sheet content.
+`QueueSheet` does this on Android only (#5923); iOS and web retain their existing hierarchy.
+Keep row gesture composition and refs intact rather than changing tap/hold arbitration.
+
+For #5923, native pointer traces on Android API 36 showed holds entering the Expo dialog
+without reaching the row recognizers. With the local root, the tap failed after 300 ms and
+the 400 ms long press opened actions exactly once for upcoming and history rows. Native QA
+also covered ordinary taps, horizontal swipe actions, edit selection, scrolling and history
+ticks. The focused Maestro regression can run against each queue entry point.
+
+**Existing Android reorder limitation.** Expo's community wrapper accepts
+`enableContentPanningGesture` and `enableHandlePanningGesture` but does not implement them on
+Android. The Material sheet may therefore pan instead of handing drag-handle movement to
+the queue. On the same API 36 cached development binary, native drag attempts failed both
+before and after the local-root correction. The local root restores row recognition; it does
+not implement the native sheet's missing gesture-lock contract. Reorder needs separate host
+work and native QA before claiming that contract works on Android.
+
 ### Routes (`expo-router` `Stack.Screen`)
 
 | `presentation`         | Looks like                                           | Use when                                                                                                                                 | Examples                                                                                                       |
