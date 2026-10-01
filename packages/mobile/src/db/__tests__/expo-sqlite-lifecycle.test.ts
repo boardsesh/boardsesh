@@ -364,6 +364,8 @@ describe('installed expo-sqlite async connection lifetime', () => {
     expect(parentCloseOutcome).toBe(nativeCloseError);
     expect(native.events).toEqual(['BEGIN', 'ROLLBACK', 'close', 'close']);
     expect(native.close).toHaveBeenCalledTimes(2);
+    expect(native.close.mock.contexts[0]).not.toBe(native.database.nativeDatabase);
+    expect(native.close.mock.contexts[1]).toBe(native.database.nativeDatabase);
   });
 
   it('refuses synchronous close while async cleanup is pending', async () => {
