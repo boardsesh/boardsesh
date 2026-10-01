@@ -106,6 +106,7 @@ export function PlaylistShelf<PlaylistItem>({
       ) : (
         <View style={listStyle}>
           <FlashList
+            style={listStyle}
             horizontal
             data={items}
             renderItem={renderItem}

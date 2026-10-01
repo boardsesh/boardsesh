@@ -2,34 +2,49 @@ import { useEffect } from 'react';
 import { useNavigation } from 'expo-router';
 
 /**
- * Pops this tab's own nested stack to its first screen when the tab itself
- * loses focus (switching to another bottom tab), never while navigating
- * deeper within it. Mount from a tab's `_layout.tsx` — that component IS the
- * tab's screen from the parent navigator's view, so `useNavigation()` here is
- * bound to the parent (whichever tab bar renders it), not the nested `Stack`.
- * `@react-navigation/bottom-tabs`'s `popToTopOnBlur` screen option does this
- * for the JS tab bar only — `NativeTabs` (iOS 26) has no equivalent, so this
- * dispatches the same targeted `POP_TO_TOP` by hand over the tab-bar-agnostic
- * core APIs, covering Material, the iPad shell, and NativeTabs from one path.
- *
- * @param tabName the route name this tab is registered under in the parent
- * tab navigator, matching its `Tabs.Screen`/`NativeTabs.Trigger` name.
+ * Reset this tab's nested history only when another tab becomes selected.
+ * Mount from a tab's `_layout.tsx`, where useNavigation refers to the parent
+ * tab navigator. Root modals can blur that screen without changing tabs, so
+ * observe tab state instead of blur (which can precede the tab state update).
+ * This also covers NativeTabs, which has no popToTopOnBlur screen option.
  */
 export function usePopToTopOnTabBlur(tabName: 'profile' | 'discover' | 'climbs'): void {
   const navigation = useNavigation();
 
   useEffect(() => {
-    return navigation.addListener('blur', () => {
-      const parentState = navigation.getState();
+    let previousSelectedKey: string | undefined;
+
+    const handleState = (parentState: ReturnType<typeof navigation.getState> | undefined) => {
       const ownRoute = parentState?.routes?.find((route) => route.name === tabName);
-      if (parentState != null && ownRoute == null && __DEV__) {
-        console.warn(`usePopToTopOnTabBlur: no route named "${tabName}" found in the parent tab navigator.`);
+      const selectedRoute =
+        typeof parentState?.index === 'number' ? parentState.routes?.[parentState.index] : undefined;
+      if (parentState?.type !== 'tab' || ownRoute == null || selectedRoute?.key == null) {
+        // A partial/hydrating snapshot cannot prove that this tab was left.
+        previousSelectedKey = undefined;
+        return;
       }
-      const nestedState = ownRoute?.state;
-      if (nestedState == null || nestedState.type !== 'stack' || typeof nestedState.key !== 'string') return;
-      const topIndex = nestedState.index ?? (nestedState.routes?.length ?? 0) - 1;
-      if (topIndex <= 0) return;
+
+      const leftOwnTab = previousSelectedKey === ownRoute.key && selectedRoute.key !== ownRoute.key;
+      // Update before dispatch: POP_TO_TOP itself emits another state event.
+      previousSelectedKey = selectedRoute.key;
+      if (!leftOwnTab) return;
+
+      const nestedState = ownRoute.state;
+      if (
+        nestedState?.type !== 'stack' ||
+        typeof nestedState.key !== 'string' ||
+        typeof nestedState.index !== 'number' ||
+        nestedState.index <= 0 ||
+        nestedState.routes == null ||
+        nestedState.index >= nestedState.routes.length
+      ) {
+        return;
+      }
       navigation.dispatch({ type: 'POP_TO_TOP', target: nestedState.key });
-    });
+    };
+
+    const unsubscribe = navigation.addListener('state', (event) => handleState(event.data.state));
+    handleState(navigation.getState());
+    return unsubscribe;
   }, [navigation, tabName]);
 }
