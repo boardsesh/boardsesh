@@ -36,6 +36,8 @@ function emitState(state: unknown) {
   cfg.navigation.addListener.mock.calls.find(([type]) => type === 'state')?.[1]({ data: { state } });
 }
 function emitBlur() {
+  // Blur is intentionally inert: these event-order cases protect against
+  // reintroducing a listener that resets history when a modal covers the tab.
   cfg.navigation.addListener.mock.calls.find(([type]) => type === 'blur')?.[1]();
 }
 
@@ -144,10 +146,16 @@ describe('usePopToTopOnTabBlur', () => {
   });
 
   it('unsubscribes the state listener on unmount', () => {
-    const unsubscribe = vi.fn();
-    cfg.navigation.addListener.mockReturnValue(unsubscribe);
+    const listenerUnsubscribes: Array<ReturnType<typeof vi.fn>> = [];
+    cfg.navigation.addListener.mockImplementation(() => {
+      const unsubscribe = vi.fn();
+      listenerUnsubscribes.push(unsubscribe);
+      return unsubscribe;
+    });
     const { unmount } = renderHook(() => usePopToTopOnTabBlur('discover'));
+    expect(cfg.navigation.addListener).toHaveBeenCalledExactlyOnceWith('state', expect.any(Function));
     unmount();
-    expect(unsubscribe).toHaveBeenCalledOnce();
+    expect(listenerUnsubscribes).toHaveLength(1);
+    for (const unsubscribe of listenerUnsubscribes) expect(unsubscribe).toHaveBeenCalledOnce();
   });
 });
