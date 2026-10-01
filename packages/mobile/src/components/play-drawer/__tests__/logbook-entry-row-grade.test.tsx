@@ -69,3 +69,24 @@ describe('LogbookEntryRow grade chip', () => {
     expect(queryByText(/^V\d+$/)).toBeNull();
   });
 });
+
+describe('LogbookEntryRow direction tags', () => {
+  it.each([false, true])('labels direction explicitly (mirrored=%s)', (isMirror) => {
+    const { container } = render(
+      createElement(LogbookEntryRow, {
+        entry: makeEntry({ is_mirror: isMirror }),
+        showMirrorTag: true,
+      }),
+    );
+    expect(container.textContent).toContain(isMirror ? 'mobile.logbook.mirroredTag' : 'mobile.logbook.originalTag');
+  });
+  it('omits direction labels when mirroring is unsupported', () => {
+    const { container } = render(
+      createElement(LogbookEntryRow, {
+        entry: makeEntry({ is_mirror: true }),
+        showMirrorTag: false,
+      }),
+    );
+    expect(container.textContent).not.toMatch(/mobile.logbook.(originalTag|mirroredTag)/);
+  });
+});

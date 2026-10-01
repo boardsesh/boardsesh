@@ -598,6 +598,7 @@
       "share": "Share climb",
       "moreActions": "More actions",
       "projectFallback": "Project",
+      "directionStatus": "{{direction}}: {{status}}",
       "ascentStatus": {
         "flash": "Flashed",
         "send": "Sent",

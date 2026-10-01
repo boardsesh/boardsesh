@@ -200,6 +200,7 @@ export const DeferredSections = memo(function DeferredSections({
           <LogbookSection
             climbUuid={climb.uuid}
             boardName={boardName}
+            layoutId={layoutId}
             userAscents={climb.userAscents}
             userAttempts={climb.userAttempts}
           />

@@ -83,11 +83,12 @@ function makeEntry(overrides: Partial<LogbookEntry>): LogbookEntry {
   } as LogbookEntry;
 }
 
-function renderSection() {
+function renderSection(boardName = 'kilter', layoutId = 1) {
   return render(
     createElement(LogbookSection, {
       climbUuid: 'climb-1',
-      boardName: 'kilter',
+      boardName,
+      layoutId,
       userAscents: null,
       userAttempts: null,
     }),
@@ -177,5 +178,20 @@ describe('LogbookSection — chronological sort (#3569)', () => {
     renderSection();
     const rowUuids = rows.props.map((rowProps) => (rowProps.entry as LogbookEntry).uuid);
     expect(rowUuids).toEqual(['newest', 'middle', 'oldest']);
+  });
+});
+
+describe('LogbookSection direction capability', () => {
+  it.each([
+    ['woods', 1, true],
+    ['decoy', 1, true],
+    ['tension', 10, true],
+    ['tension', 11, false],
+    ['kilter', 1, false],
+  ])('gates direction tags for %s layout %s', (boardName, layoutId, expected) => {
+    logbookState.logbook = [makeEntry({}), makeEntry({ uuid: 'mirror', is_mirror: true })];
+    renderSection(boardName as string, layoutId as number);
+    expect(rows.props).toHaveLength(2);
+    expect(rows.props.every((props) => props.showMirrorTag === expected)).toBe(true);
   });
 });

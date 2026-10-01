@@ -125,10 +125,10 @@ export const LogbookEntryRow = memo(function LogbookEntryRow({
             </Text>
           </View>
         ) : null}
-        {showMirrorTag && entry.is_mirror ? (
+        {showMirrorTag ? (
           <View style={styles.mirrorChip}>
             <Text variant="caption2" color={iosSystemColors.systemGray}>
-              {t('mobile.logbook.mirroredTag')}
+              {entry.is_mirror ? t('mobile.logbook.mirroredTag') : t('mobile.logbook.originalTag')}
             </Text>
           </View>
         ) : null}

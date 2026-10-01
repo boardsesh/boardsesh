@@ -5,6 +5,7 @@ import type { BoardName } from '@boardsesh/shared-schema';
 import { Text } from './Text';
 import { ClimbListThumbnail, THUMBNAIL_WIDTH, THUMBNAIL_HEIGHT } from './ClimbListThumbnail';
 import { formatSends, formatQuality } from '../lib/format-climb-stats';
+import { boardSupportsMirroring } from '@boardsesh/board-config';
 import { useEffectiveClimbStats } from '@boardsesh/board-react';
 import { useDisplayGrade } from '../hooks/use-display-grade';
 import { useGradeFormat } from '../hooks/use-grade-format';
@@ -234,7 +235,7 @@ const LostHoldsChip = React.memo(function LostHoldsChip({ count }: { count: numb
 /**
  * Isolated, memoized ascent-status glyph, subscribed to the logbook via
  * `useAscentStatus` → `BoardProvider`, so a tick write / logbook merge
- * re-renders just this 16px icon. Props are primitives, so `React.memo` skips
+ * re-renders just the status markers. Props are primitives, so `React.memo` skips
  * it on unrelated parent re-renders. Restores the memo boundary the
  * climbs-search redesign removed when it inlined `useAscentStatus` into
  * `ClimbListItemContent`.
@@ -249,29 +250,63 @@ const LostHoldsChip = React.memo(function LostHoldsChip({ count }: { count: numb
 const AscentStatusGlyph = React.memo(function AscentStatusGlyph({
   climbUuid,
   angle,
+  boardName,
+  layoutId,
 }: {
   climbUuid: string;
   angle: number;
+  boardName: BoardName;
+  layoutId: number;
 }) {
   const { t } = useTranslation('climbs');
-  const theme = useTheme();
-  const ascentStatus = useAscentStatus(climbUuid, angle);
+  const { t: tSession } = useTranslation('session');
+  const { systemColors } = useTheme();
+  const supportsMirroring = boardSupportsMirroring(boardName, layoutId);
+  // Unconditional hooks keep capability changes safe. The nonmirrorable board
+  // keeps its existing aggregate glyph; each mirrorable direction is independent.
+  const ascentStatus = useAscentStatus(climbUuid, angle, supportsMirroring ? false : undefined);
+  const mirrorStatus = useAscentStatus(climbUuid, angle, true);
+  const statusLabels = {
+    flash: t('mobile.climbRow.ascentStatus.flash'),
+    send: t('mobile.climbRow.ascentStatus.send'),
+    attempt: t('mobile.climbRow.ascentStatus.attempt'),
+  };
 
-  // Spoken by VoiceOver/TalkBack — the only non-visual signal now colour is gone.
-  // Literal keys (not a dynamic `t(...)`) so the i18n orphan checker sees them.
-  const ascentStatusLabel = useMemo(() => {
-    if (!ascentStatus) return undefined;
-    return {
-      flash: t('mobile.climbRow.ascentStatus.flash'),
-      send: t('mobile.climbRow.ascentStatus.send'),
-      attempt: t('mobile.climbRow.ascentStatus.attempt'),
-    }[ascentStatus];
-  }, [ascentStatus, t]);
+  if (!supportsMirroring) {
+    if (!ascentStatus) return null;
+    return (
+      <View accessibilityRole="image" accessibilityLabel={statusLabels[ascentStatus]}>
+        <Icon name={ASCENT_STATUS_ICON[ascentStatus]} size={16} color={systemColors.secondaryLabel} />
+      </View>
+    );
+  }
 
-  if (!ascentStatus) return null;
+  if (!ascentStatus && !mirrorStatus) return null;
+  const directions = [
+    { status: ascentStatus, label: tSession('mobile.logbook.originalTag') },
+    { status: mirrorStatus, label: tSession('mobile.logbook.mirroredTag') },
+  ];
   return (
-    <View accessibilityRole="image" accessibilityLabel={ascentStatusLabel}>
-      <Icon name={ASCENT_STATUS_ICON[ascentStatus]} size={16} color={theme.systemColors.secondaryLabel} />
+    <View style={styles.directionStatuses}>
+      {directions.map(({ status, label }) =>
+        status ? (
+          <View
+            key={label}
+            accessible
+            accessibilityRole="text"
+            accessibilityLabel={t('mobile.climbRow.directionStatus', {
+              direction: label,
+              status: statusLabels[status],
+            })}
+            style={styles.directionStatus}
+          >
+            <Icon name={ASCENT_STATUS_ICON[status]} size={12} color={systemColors.secondaryLabel} />
+            <Text variant="caption2" color={systemColors.secondaryLabel}>
+              {label}
+            </Text>
+          </View>
+        ) : null,
+      )}
     </View>
   );
 });
@@ -456,6 +491,7 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
   showFavorite = false,
 }: ClimbListItemContentProps) {
   const { t: tSession } = useTranslation('session');
+  const supportsMirroring = boardSupportsMirroring(boardName, layoutId);
 
   const subtitleDetailText = useMemo(() => {
     const parts = subtitleDetailParts?.filter((part) => part.length > 0) ?? [];
@@ -534,13 +570,18 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
             {subtitleDetailText}
           </Text>
         ) : null}
+        {showAscentStatus && supportsMirroring ? (
+          <AscentStatusGlyph climbUuid={climb.uuid} angle={angle} boardName={boardName} layoutId={layoutId} />
+        ) : null}
         {showPlaylistChips ? <ClimbPlaylistChips climbUuid={climb.uuid} /> : null}
       </View>
 
       {/* Right: favourite heart + ascent-status glyph + colorized grade */}
       <View style={styles.rightSection}>
         {showFavorite ? <FavoriteGlyph climbUuid={climb.uuid} /> : null}
-        {showAscentStatus ? <AscentStatusGlyph climbUuid={climb.uuid} angle={angle} /> : null}
+        {showAscentStatus && !supportsMirroring ? (
+          <AscentStatusGlyph climbUuid={climb.uuid} angle={angle} boardName={boardName} layoutId={layoutId} />
+        ) : null}
         <LiveClimbGrade
           climb={climb}
           boardName={boardName}
@@ -593,6 +634,16 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     opacity: 0.6,
+  },
+  // Under the subtitle so explicit direction labels never widen the grade rail.
+  directionStatuses: {
+    gap: 1,
+  },
+  directionStatus: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 3,
   },
   rightSection: {
     flexShrink: 0,

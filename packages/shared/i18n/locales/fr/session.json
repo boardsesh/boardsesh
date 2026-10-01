@@ -188,6 +188,7 @@
       "otherAnglesTriedCount_other": "essayé à {{count}} angles",
       "tries_one": "{{count}} essai",
       "tries_other": "{{count}} essais",
+      "originalTag": "Original",
       "mirroredTag": "Miroir",
       "lifetimeTries_one": "{{count}} essai",
       "lifetimeTries_other": "{{count}} essais",

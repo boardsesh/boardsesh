@@ -598,6 +598,7 @@
       "share": "Boulder teilen",
       "moreActions": "Mehr Aktionen",
       "projectFallback": "Projekt",
+      "directionStatus": "{{direction}}: {{status}}",
       "ascentStatus": {
         "flash": "Geflasht",
         "send": "Getoppt",
