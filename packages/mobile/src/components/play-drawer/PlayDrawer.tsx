@@ -120,6 +120,9 @@ import { track } from '../../lib/analytics';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing, sheetStyles } from '../../theme/tokens';
 
+// Matches DrawerHostProvider's string-backed route/preview configuration and
+// override callback contracts. Keep that existing boundary here; narrowing the
+// whole drawer contract would span its hosts and cross-board preview resolution.
 type BoardConfig = {
   boardName: string;
   layoutId: number;

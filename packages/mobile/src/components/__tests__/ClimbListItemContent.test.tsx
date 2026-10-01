@@ -520,9 +520,12 @@ describe('ClimbListItemContent original and mirror statuses', () => {
     expect(rows[0].querySelector('[data-icon]')?.getAttribute('data-icon')).toBe('tick.outline');
   });
 
-  it('shows both sends as two independent labeled rows', () => {
+  it.each(['woods', 'tension'] as const)('shows both sends independently on %s layout 1', (boardName) => {
     statusLogbook.current = { logbookByClimbAngle: new Map([['c1:40', [tick(), tick({ is_mirror: true })]]]) };
-    const rows = directionRows(renderWoods().container);
+    const { container } = render(
+      <ClimbListItemContent climb={baseClimb} boardName={boardName} layoutId={1} sizeId={2} setIds="1" angle={40} />,
+    );
+    const rows = directionRows(container);
     expect(rows.map((node) => node.textContent)).toEqual(['mobile.logbook.originalTag', 'mobile.logbook.mirroredTag']);
     expect(rows.every((node) => node.getAttribute('aria-label')?.includes('ascentStatus.send'))).toBe(true);
   });

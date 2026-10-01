@@ -283,15 +283,15 @@ const AscentStatusGlyph = React.memo(function AscentStatusGlyph({
 
   if (!ascentStatus && !mirrorStatus) return null;
   const directions = [
-    { status: ascentStatus, label: tSession('mobile.logbook.originalTag') },
-    { status: mirrorStatus, label: tSession('mobile.logbook.mirroredTag') },
+    { direction: 'original', status: ascentStatus, label: tSession('mobile.logbook.originalTag') },
+    { direction: 'mirror', status: mirrorStatus, label: tSession('mobile.logbook.mirroredTag') },
   ];
   return (
     <View style={styles.directionStatuses}>
-      {directions.map(({ status, label }) =>
+      {directions.map(({ direction, status, label }) =>
         status ? (
           <View
-            key={label}
+            key={direction}
             accessible
             accessibilityRole="text"
             accessibilityLabel={t('mobile.climbRow.directionStatus', {
