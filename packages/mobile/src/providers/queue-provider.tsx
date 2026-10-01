@@ -109,6 +109,7 @@ import {
   type QueueActionsContextValue,
   type QueuePlaylistSuggestionContextValue,
   type QueueReorderSource,
+  type WidgetNavigationOptions,
 } from './queue/queue-contexts';
 import {
   createBoardFeedSuggestionSource,
@@ -1830,7 +1831,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // Select the absolute native target so a racing server echo cannot double-step.
   // iOS publishes natively; Android forwards the event for JS to publish.
   const dispatchWidgetNavigation = useCallback(
-    (item: ClimbQueueItem, correlationId: string, options?: { sendMutation?: boolean }) => {
+    (item: ClimbQueueItem, correlationId: string, options?: WidgetNavigationOptions) => {
       if (options?.sendMutation) {
         dispatchSetCurrent(item, false, undefined, undefined, correlationId);
         return;

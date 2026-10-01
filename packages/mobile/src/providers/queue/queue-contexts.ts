@@ -15,6 +15,8 @@ import type { SessionLiveStatsEvent } from '../../lib/graphql/operations';
 /** What triggered a queue reorder — attribution for `SHARED_EVENTS.QueueReordered`. */
 export type QueueReorderSource = 'drag' | 'play-next';
 
+export type WidgetNavigationOptions = { sendMutation?: boolean };
+
 export type StartSessionConfig = {
   name?: string;
   goal?: string;

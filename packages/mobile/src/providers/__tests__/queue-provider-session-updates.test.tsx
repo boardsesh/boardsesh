@@ -594,11 +594,12 @@ describe('QueueProvider session update subscription', () => {
     act(() => fullSync(3, items[1]));
     expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('slot-2');
     expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(items.map((item) => item.uuid));
-    // An event after the echo is an absolute re-selection, never a relative step.
-    act(() => snapshots.at(-1)?.dispatchWidgetNavigation(items[1], 'android-next-2', { sendMutation: true }));
+    // Native can reuse a PendingIntent ID before the notification rebuilds.
+    // Replaying that same ID after the echo still re-selects the absolute item.
+    act(() => snapshots.at(-1)?.dispatchWidgetNavigation(items[1], 'android-next-1', { sendMutation: true }));
     expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('slot-2');
     expect(snapshots.at(-1)?.state.queue).toHaveLength(3);
-    expect(queueMutations.setCurrentClimb).toHaveBeenLastCalledWith(items[1], false, 'android-next-2');
+    expect(queueMutations.setCurrentClimb).toHaveBeenLastCalledWith(items[1], false, 'android-next-1');
   });
 
   it('keeps iOS widget navigation local-only by default', async () => {
@@ -630,6 +631,8 @@ describe('QueueProvider session update subscription', () => {
     const snapshots: Snapshot[] = [];
     renderProvider((snapshot) => snapshots.push(snapshot));
     await waitFor(() => expect(snapshots.at(-1)?.sessionId).toBe('session-1'));
+    const hydrationCorrelationId = '00000000-0000-4000-8000-000000005922';
+    vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValue(hydrationCorrelationId);
     const thinItem = makeQueueItem('thin-target');
     thinItem.climb = { ...thinItem.climb, name: '', frames: '' };
     act(() => snapshots.at(-1)?.dispatchWidgetNavigation(thinItem, 'android-thin', { sendMutation: true }));
@@ -657,8 +660,26 @@ describe('QueueProvider session update subscription', () => {
     expect(queueMutations.setCurrentClimb).toHaveBeenCalledWith(
       expect.objectContaining({ uuid: 'thin-target', climb: expect.objectContaining({ name: 'Climb thin-target' }) }),
       false,
-      expect.any(String),
+      hydrationCorrelationId,
     );
+    expect(snapshots.at(-1)?.state.pendingCurrentClimbUpdates).toContain(hydrationCorrelationId);
+    act(() =>
+      sink.next({
+        data: {
+          queueUpdates: {
+            __typename: 'CurrentClimbChanged',
+            sequence: 2,
+            stateHash: 'hydration-echo',
+            currentItem: makeQueueItem('thin-target'),
+            clientId: 'client-peer',
+            correlationId: hydrationCorrelationId,
+          },
+        },
+      }),
+    );
+    expect(snapshots.at(-1)?.state.pendingCurrentClimbUpdates).not.toContain(hydrationCorrelationId);
+    expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('thin-target');
+    vi.mocked(globalThis.crypto.randomUUID).mockRestore();
   });
 
   it('waits for JOIN_SESSION before opening queue and session subscriptions', async () => {

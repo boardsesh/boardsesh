@@ -33,7 +33,9 @@ The **React Native layer** (`packages/mobile/src/lib/ble/`) owns BLE for the Exp
 Android's notification receiver forwards Next/Previous's absolute queue index and
 correlation ID to JavaScript. `LiveActivityBridge` requests publication through
 QueueProvider's existing optimistic `setCurrentClimb` mutation path, preserving
-the native correlation ID for server echo suppression. iOS remains local-only in
+the native correlation ID for immediate resolved publication and server echo
+suppression. Unresolved targets reuse the existing deferred hydration path: once
+hydrated, a fresh JS correlation ID is dispatched and published together. iOS remains local-only in
 this listener because its App Intent already publishes the server mutation.
 
 Publication happens when the existing JS event executes; this does not add a
