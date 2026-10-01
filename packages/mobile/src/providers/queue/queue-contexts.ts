@@ -101,7 +101,7 @@ type QueueContextValue = {
    * iOS already publishes natively; Android requests the existing JS mutation
    * path with sendMutation. Defaults to local-only to preserve iOS behavior.
    */
-  dispatchWidgetNavigation: (item: ClimbQueueItem, correlationId: string, options?: { sendMutation?: boolean }) => void;
+  dispatchWidgetNavigation: (item: ClimbQueueItem, correlationId: string, options?: WidgetNavigationOptions) => void;
   /** Replace the playlist suggestion source that drives swipe-through climbs. */
   setPlaylistSuggestionSource: (source: PlaylistSuggestionSource | null) => void;
   /** Refresh the suggestion source in place (no-op unless it matches the active one). */
