@@ -28,6 +28,19 @@ The **React Native layer** (`packages/mobile/src/lib/ble/`) owns BLE for the Exp
 3. MoonBoard remains on the existing Capacitor BLE path; the native background BLE path currently targets Aurora boards only
 4. Cross-device repaint when _another_ user navigates: if your phone is suspended, your board stays stale until you unlock the phone. Tracked in issue #2174 (presence/ack design) and ultimately solved by the planned WS-enabled board controller.
 
+## Android notification queue navigation
+
+Android's notification receiver forwards Next/Previous's absolute queue index and
+correlation ID to JavaScript. `LiveActivityBridge` requests publication through
+QueueProvider's existing optimistic `setCurrentClimb` mutation path, preserving
+the native correlation ID for server echo suppression. iOS remains local-only in
+this listener because its App Intent already publishes the server mutation.
+
+Publication happens when the existing JS event executes; this does not add a
+killed-process network path. Native buffered navigation still identifies a queue
+index rather than a session and queue-item UUID, so stale buffered events retain
+the existing identity limitations.
+
 ## Mirroring from the Lock Screen and Android notification
 
 On supported layouts (Tension except layout 11, Decoy, and Woods), the BLE holder

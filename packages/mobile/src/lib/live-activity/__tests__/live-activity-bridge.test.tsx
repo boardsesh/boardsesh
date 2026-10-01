@@ -35,6 +35,8 @@ const queue = vi.hoisted(() => ({
   },
 }));
 
+const platform = vi.hoisted(() => ({ android: true }));
+
 const widget = vi.hoisted(() => ({
   mirrorListener: null as null | ((event: WidgetMirrorEvent) => void),
   pendingMirror: vi.fn(async (): Promise<WidgetMirrorEvent | null> => null),
@@ -172,7 +174,9 @@ vi.mock('../live-activity-plugin', () => ({
       widget.boardControlListener = null;
     };
   },
-  isAndroidSessionPresence: true,
+  get isAndroidSessionPresence() {
+    return platform.android;
+  },
 }));
 
 const climbItem = makeItem(0);
@@ -185,6 +189,7 @@ describe('LiveActivityBridge widget navigation (always-live)', () => {
   const threeItemQueue = [makeItem(0), makeItem(1), makeItem(2)];
 
   beforeEach(() => {
+    platform.android = true;
     queue.sessionId = 'session-1';
     queue.state = { serverSequence: 4, queue: threeItemQueue, currentClimbQueueItem: threeItemQueue[0] };
     queue.dispatchWidgetNavigation.mockClear();
@@ -289,7 +294,9 @@ describe('LiveActivityBridge widget navigation (always-live)', () => {
     // Maps currentIndex → queue[currentIndex] and forwards the correlationId so
     // the racing CurrentClimbChanged echo is suppressed by the reducer.
     expect(queue.dispatchWidgetNavigation).toHaveBeenCalledTimes(1);
-    expect(queue.dispatchWidgetNavigation).toHaveBeenCalledWith(threeItemQueue[1], 'widget-navigate');
+    expect(queue.dispatchWidgetNavigation).toHaveBeenCalledWith(threeItemQueue[1], 'widget-navigate', {
+      sendMutation: true,
+    });
   });
 
   it('does not double-advance: a single tap dispatches exactly one absolute move', () => {
@@ -300,7 +307,29 @@ describe('LiveActivityBridge widget navigation (always-live)', () => {
     });
 
     expect(queue.dispatchWidgetNavigation).toHaveBeenCalledTimes(1);
-    expect(queue.dispatchWidgetNavigation).toHaveBeenCalledWith(threeItemQueue[0], 'widget-navigate');
+    expect(queue.dispatchWidgetNavigation).toHaveBeenCalledWith(threeItemQueue[0], 'widget-navigate', {
+      sendMutation: true,
+    });
+  });
+
+  it('keeps iOS navigation local because its native intent already publishes', () => {
+    platform.android = false;
+    renderBridge();
+    act(() => {
+      widget.listener?.({ action: 'next', currentIndex: 1, correlationId: 'ios-native' });
+    });
+    expect(queue.dispatchWidgetNavigation).toHaveBeenCalledExactlyOnceWith(threeItemQueue[1], 'ios-native');
+  });
+
+  it('uses the absolute target even when the server echo selected it first', () => {
+    queue.state.currentClimbQueueItem = threeItemQueue[1];
+    renderBridge();
+    act(() => {
+      widget.listener?.({ action: 'next', currentIndex: 1, correlationId: 'android-native' });
+    });
+    expect(queue.dispatchWidgetNavigation).toHaveBeenCalledExactlyOnceWith(threeItemQueue[1], 'android-native', {
+      sendMutation: true,
+    });
   });
 
   it('ignores out-of-range indices instead of wrapping or crashing', () => {
@@ -337,7 +366,9 @@ describe('LiveActivityBridge widget navigation (always-live)', () => {
       widget.listener?.({ action: 'next', currentIndex: 1, correlationId: 'widget-navigate' });
     });
 
-    expect(queue.dispatchWidgetNavigation).toHaveBeenCalledWith(threeItemQueue[1], 'widget-navigate');
+    expect(queue.dispatchWidgetNavigation).toHaveBeenCalledWith(threeItemQueue[1], 'widget-navigate', {
+      sendMutation: true,
+    });
     expect(widget.useLiveActivity).toHaveBeenCalledWith(
       expect.objectContaining({
         widgetNavigationAllowed: true,

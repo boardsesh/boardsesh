@@ -154,9 +154,9 @@ export function LiveActivityBridge({ boardName, layoutId, sizeId, setIds }: Live
     androidThumbnailBackgroundPaths: backgroundPaths,
   });
 
-  // Subscribe to widget Next/Previous taps. Native already advanced the shared
-  // index, updated the optimistic Live Activity, and sent the server mutation;
-  // this listener brings the JS reducer in line using the ABSOLUTE index native
+  // Subscribe to widget/notification Next/Previous taps. iOS publishes natively;
+  // Android forwards the event and JS publishes through the queue provider.
+  // This listener selects the ABSOLUTE index native
   // computed (event.currentIndex), not a relative nextClimb()/previousClimb().
   //
   // Why absolute: in a server-authorized session the backend's CurrentClimbChanged
@@ -182,7 +182,11 @@ export function LiveActivityBridge({ boardName, layoutId, sizeId, setIds }: Live
       // momentarily diverged (e.g. a queue edit mid-tap). Drop it rather than
       // crash or wrap around.
       if (event.currentIndex < 0 || event.currentIndex >= queue.length) return;
-      dispatchWidgetNavigationRef.current(queue[event.currentIndex], event.correlationId);
+      if (isAndroidSessionPresence) {
+        dispatchWidgetNavigationRef.current(queue[event.currentIndex], event.correlationId, { sendMutation: true });
+      } else {
+        dispatchWidgetNavigationRef.current(queue[event.currentIndex], event.correlationId);
+      }
     });
     return unsubscribe;
   }, []);
