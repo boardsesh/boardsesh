@@ -307,7 +307,9 @@ fi
 # adds ~1.1 KB and measured 2,058,624, so it moves the ratchet to 2,061,000.
 # Export settings add ~2.7 KB of compressed copy across the four bundled locales.
 # Keep the eager budget bounded while allowing those translations (#5886).
-BOARDSESH_WEB_EAGER_BROTLI_BUDGET="${BOARDSESH_WEB_EAGER_BROTLI_BUDGET:-2065000}"
+# #5851: the current release train plus SQLite helper lifetimes measure 2,067,967
+# bytes. Leave about 2 KB of slack for the local Expo web export.
+BOARDSESH_WEB_EAGER_BROTLI_BUDGET="${BOARDSESH_WEB_EAGER_BROTLI_BUDGET:-2070000}"
 node "$ROOT_DIR/scripts/lib/check-expo-web-eager-budget.mjs" \
   "$OUTPUT_DIR" \
   "$BOARDSESH_WEB_EAGER_BROTLI_BUDGET" \
