@@ -182,7 +182,7 @@ describe('family contracts', () => {
       {
         name: 'kilter-catalog-sync',
         role: 'routine-provider',
-        cron: '23 * * * *',
+        cron: '23 */6 * * *',
         options: {
           expireInSeconds: 3600,
           retryLimit: 1,
