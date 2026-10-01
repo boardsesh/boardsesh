@@ -45,7 +45,12 @@ import { configureMainConnection } from '../src/db/pragmas';
 import { markScopeDownloadComplete } from '../src/sync/checkpoints';
 import { parseSnapshotManifest } from '../src/sync/snapshot-manifest';
 import { ensureHoldIndex, type HoldRowParser } from '../src/holds-index/hold-index';
-import { decodeHoldSetIds, findSimilarClimbCandidates, HOLD_SET_ENTRY_BYTES } from '../src/holds-index/query';
+import {
+  decodeHoldSetIds,
+  decodeSqliteBlobHex,
+  findSimilarClimbCandidates,
+  HOLD_SET_ENTRY_BYTES,
+} from '../src/holds-index/query';
 import { offlineBoardKey, type OfflineBoardScope } from '../src/offline-board-key';
 import { createTestDatabase, type TestSqliteDb } from '../src/testing/sqlite-test-db';
 
@@ -254,13 +259,16 @@ async function main(): Promise<void> {
 
     // The similar-climbs candidate query, for a typical climb and a busy one.
     for (const holdCount of [13, 40]) {
-      const target = await db.getFirstAsync<{ uuid: string; holds: Uint8Array }>(
-        `SELECT hic.uuid, hs.holds FROM board_climb_hold_sets hs JOIN holds_index_climbs hic ON hic.id = hs.climb_id
+      const target = await db.getFirstAsync<{ uuid: string; holds: unknown }>(
+        `SELECT hic.uuid, CASE WHEN typeof(hs.holds) = 'blob' THEN hex(hs.holds) ELSE NULL END AS holds
+         FROM board_climb_hold_sets hs JOIN holds_index_climbs hic ON hic.id = hs.climb_id
          WHERE length(hs.holds) >= ? ORDER BY length(hs.holds), hs.climb_id LIMIT 1`,
         [holdCount * HOLD_SET_ENTRY_BYTES],
       );
       if (!target) continue;
-      const targetHoldIds = [...decodeHoldSetIds(target.holds)];
+      const targetHolds = decodeSqliteBlobHex(target.holds);
+      if (!targetHolds) continue;
+      const targetHoldIds = [...decodeHoldSetIds(targetHolds)];
       const looser = await findSimilarClimbCandidates(db, {
         boardType: layout.board_type,
         layoutId: layout.layout_id,

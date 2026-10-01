@@ -312,7 +312,8 @@ async function readPosting(
   holdId: number,
 ): Promise<Uint8Array | null> {
   const row = await txn.getFirstAsync<{ climb_ids: unknown }>(
-    'SELECT CASE WHEN typeof(climb_ids) = 'blob' THEN hex(climb_ids) ELSE NULL END AS climb_ids FROM board_climb_hold_postings WHERE board_type = ? AND layout_id = ? AND hold_id = ?',
+    `SELECT CASE WHEN typeof(climb_ids) = 'blob' THEN hex(climb_ids) ELSE NULL END AS climb_ids
+     FROM board_climb_hold_postings WHERE board_type = ? AND layout_id = ? AND hold_id = ?`,
     [boardType, layoutId, holdId],
   );
   return decodeSqliteBlobHex(row?.climb_ids);
