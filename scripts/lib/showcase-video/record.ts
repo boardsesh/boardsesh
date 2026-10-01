@@ -3,8 +3,12 @@ import { join } from 'node:path';
 import {
   SHOWCASE_ANCHOR_NAMES,
   SHOWCASE_FOOTAGE_WIDTH,
+  DEFAULT_SHOWCASE_PLATFORM,
   SHOWCASE_FPS,
+  SHOWCASE_PLATFORMS,
   SHOWCASE_TAKE_IDS,
+  isShowcasePlatform,
+  type ShowcasePlatform,
   parseShowcaseAnchorLine,
   type ShowcaseAnchorLogLine,
   type ShowcaseAnchorName,
@@ -59,6 +63,10 @@ export const SHOWCASE_DEFAULT_BOARDS: Readonly<Record<ShowcaseBackend, string>> 
 export const SHOWCASE_DEFAULT_ENV_FILE = join(homedir(), '.config', 'boardsesh', 'showcase-secrets.env');
 
 export type ShowcaseRecordArgs = Readonly<{
+  /** The phone the takes are filmed on (default iOS). */
+  platform: ShowcasePlatform;
+  /** Set the devices up, then hold them (and Metro) until Ctrl-C, recording nothing: for calibrating flows. */
+  hold: boolean;
   only: readonly ShowcaseTakeId[] | null;
   dryRun: boolean;
   keepRaw: boolean;
@@ -89,9 +97,35 @@ function parseTakeIds(raw: string): ShowcaseTakeId[] {
     });
 }
 
+/**
+ * What a run does once its devices are ready: `hold` (calibration: nothing is
+ * recorded and no stray session is ended, even when `--end-session` is also
+ * given), `end-session` (rejoin and end one session), or `record` the takes.
+ */
+export function recordRunMode(
+  args: Readonly<Pick<ShowcaseRecordArgs, 'hold' | 'endSession'>>,
+): 'hold' | 'end-session' | 'record' {
+  if (args.hold) return 'hold';
+  if (args.endSession) return 'end-session';
+  return 'record';
+}
+
+/**
+ * Why the recorder refuses to run off macOS. Android needs macOS too: the
+ * crew take's second participant is an iOS simulator.
+ */
+export function macOsOnlyMessage(platform: ShowcasePlatform): string {
+  return platform === 'android'
+    ? 'The showcase recorder needs macOS on Android too: the crew take films an Android emulator, ' +
+        'but its second participant is an iOS simulator.'
+    : 'The showcase recorder drives iOS simulators: macOS only.';
+}
+
 export function parseRecordArgs(argv: readonly string[]): ShowcaseRecordArgs {
   const args = argv.filter((argument) => argument !== '--');
   let only: ShowcaseTakeId[] | null = null;
+  let platform: ShowcasePlatform = DEFAULT_SHOWCASE_PLATFORM;
+  let hold = false;
   let dryRun = false;
   let keepRaw = false;
   let appPath: string | null = null;
@@ -110,6 +144,18 @@ export function parseRecordArgs(argv: readonly string[]): ShowcaseRecordArgs {
         break;
       case '--dry-run':
         dryRun = true;
+        break;
+      case '--platform': {
+        const chosen = expectValue(flag, value);
+        if (!isShowcasePlatform(chosen)) {
+          throw new Error(`--platform must be one of ${SHOWCASE_PLATFORMS.join(', ')} (got "${chosen}")`);
+        }
+        platform = chosen;
+        index++;
+        break;
+      }
+      case '--hold':
+        hold = true;
         break;
       case '--keep-raw':
         keepRaw = true;
@@ -150,6 +196,8 @@ export function parseRecordArgs(argv: readonly string[]): ShowcaseRecordArgs {
   }
   if (only && only.length === 0) throw new Error('--only needs at least one take');
   return {
+    platform,
+    hold,
     only: only ? [...new Set(only)] : null,
     dryRun,
     keepRaw,
@@ -373,7 +421,9 @@ export function buildAnchorsFile(
   for (const staticAnchor of options.staticAnchors ?? []) {
     const rawT = (staticAnchor.markMs - options.recordStartMs) / 1000 - options.trimSeconds;
     if (rawT > options.durationSeconds) continue;
-    anchors[staticAnchor.name] = [{ t: Math.max(0, Math.round(rawT * 1000) / 1000), ...staticAnchor.rect }];
+    const sample: ShowcaseAnchorSample = { t: Math.max(0, Math.round(rawT * 1000) / 1000), ...staticAnchor.rect };
+    // A name listed twice (a button that moves on a tap) keeps both, in time order.
+    anchors[staticAnchor.name] = sortAnchorSamples([...(anchors[staticAnchor.name] ?? []), sample]);
   }
   return { takeId: options.takeId, screen: options.screen, anchors };
 }

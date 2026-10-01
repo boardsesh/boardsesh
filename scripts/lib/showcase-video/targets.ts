@@ -4,6 +4,7 @@ import {
   SHOWCASE_OUT_DIR,
   SHOWCASE_WEB_POSTER_DIR,
   SHOWCASE_WEB_VIDEO_DIR,
+  type ShowcasePlatform,
   type ShowcaseTakeId,
 } from './contract';
 import {
@@ -24,12 +25,34 @@ import { SHOWCASE_FULL_PLAN, planFrames, type ShowcaseScenePlan } from './timeli
  * video goes. `vp run video:render -- --target <name>` renders one, `--target
  * all` every one, and no `--target` renders `homepage` and `social` (what
  * `vp run video` ships). docs/showcase-video.md ("Targets") has the table.
+ *
+ * These cut the iOS recording. The Android recording has its own registry
+ * (`SHOWCASE_ANDROID_TARGETS`), picked with `--platform android`.
  */
 export const SHOWCASE_TARGET_NAMES = ['homepage', 'social', 'reel', 'app-store', 'play-promo'] as const;
 export type ShowcaseTargetName = (typeof SHOWCASE_TARGET_NAMES)[number];
 
 /** What `vp run video:render` renders without `--target`. */
 export const SHOWCASE_DEFAULT_TARGETS: readonly ShowcaseTargetName[] = ['homepage', 'social'];
+
+/**
+ * The same cuts of the Android recording, less `app-store` (an Apple App
+ * Preview is iOS footage by definition). `--platform android` renders these:
+ * `all` is all four, and no `--target` is `homepage-android` + `social-android`.
+ */
+export const SHOWCASE_ANDROID_TARGET_NAMES = [
+  'homepage-android',
+  'social-android',
+  'reel-android',
+  'play-promo-android',
+] as const;
+export type ShowcaseAndroidTargetName = (typeof SHOWCASE_ANDROID_TARGET_NAMES)[number];
+export const SHOWCASE_ANDROID_DEFAULT_TARGETS: readonly ShowcaseAndroidTargetName[] = [
+  'homepage-android',
+  'social-android',
+];
+
+export type AnyShowcaseTargetName = ShowcaseTargetName | ShowcaseAndroidTargetName;
 
 /**
  * `motion`: the phone-mockup motion design (the stage in index.html).
@@ -117,8 +140,10 @@ export type ShowcaseClip = Readonly<{
   frames: number;
 }>;
 
-export type ShowcaseTarget = Readonly<{
-  name: ShowcaseTargetName;
+export type ShowcaseTarget<Name extends AnyShowcaseTargetName = ShowcaseTargetName> = Readonly<{
+  name: Name;
+  /** Whose recording it cuts. Absent: iOS (every entry of `SHOWCASE_TARGETS`). */
+  platform?: ShowcasePlatform;
   summary: string;
   layout: ShowcaseLayoutStyle;
   /** Motion layout: the storyboard scenes, in order, with any length changes. */
@@ -130,7 +155,7 @@ export type ShowcaseTarget = Readonly<{
   /** The outro's "Paid for by the climbers who use it." Store and ad cuts must not mention donations. */
   donationLine: boolean;
   audio: ShowcaseAudio;
-  /** Only `homepage` may write into packages/web/public. */
+  /** Only `homepage` and `homepage-android` may write into packages/web/public. */
   writesPublic: boolean;
   renditions: readonly ShowcaseRendition[];
 }>;
@@ -415,17 +440,94 @@ export const SHOWCASE_TARGETS: Record<ShowcaseTargetName, ShowcaseTarget> = {
   },
 };
 
+/** A target of either registry. */
+export type AnyShowcaseTarget = ShowcaseTarget<AnyShowcaseTargetName>;
+
+const ANDROID_TAG = 'android';
+const androidOut = (...parts: string[]) => resolve(SHOWCASE_OUT_DIR, ANDROID_TAG, ...parts);
+
+/** An Android master: the iOS one's file name, under `out/android/`. */
+function androidDeliverable(deliverable: ShowcaseDeliverable): ShowcaseDeliverable {
+  if (deliverable.kind === 'web-lite') {
+    // Beside the iOS hero, suffixed: the homepage's web wiring picks one per reader.
+    const suffixed = (path: string) => path.replace(/(\.[a-z0-9]+)$/, `-${ANDROID_TAG}$1`);
+    return {
+      ...deliverable,
+      webm: suffixed(deliverable.webm),
+      mp4: suffixed(deliverable.mp4),
+      poster: suffixed(deliverable.poster),
+    };
+  }
+  const toAndroid = (path: string) => androidOut(path.slice(SHOWCASE_OUT_DIR.length + 1));
+  if (deliverable.kind === 'master') {
+    return {
+      ...deliverable,
+      video: toAndroid(deliverable.video),
+      still: toAndroid(deliverable.still),
+      shareCopy: deliverable.shareCopy ? toAndroid(deliverable.shareCopy) : null,
+    };
+  }
+  throw new Error('An App Preview is iOS footage; there is no Android variant');
+}
+
+/**
+ * The Android variant of an iOS target: the same scenes, stage, length,
+ * donation line and audio, cutting the Android recording, with its files
+ * beside the iOS ones (`-android` in packages/web/public, `out/android/`
+ * otherwise).
+ */
+function androidVariant<Name extends ShowcaseAndroidTargetName>(
+  name: Name,
+  source: ShowcaseTarget,
+  summary: string,
+): ShowcaseTarget<Name> {
+  if (source.layout !== 'motion') throw new Error(`${source.name} has no Android variant`);
+  return {
+    ...source,
+    name,
+    platform: 'android',
+    summary,
+    renditions: source.renditions.map((rendition) => ({
+      ...rendition,
+      deliverable: androidDeliverable(rendition.deliverable),
+    })),
+  };
+}
+
+export const SHOWCASE_ANDROID_TARGETS: { [Name in ShowcaseAndroidTargetName]: ShowcaseTarget<Name> } = {
+  'homepage-android': androidVariant(
+    'homepage-android',
+    SHOWCASE_TARGETS.homepage,
+    'The homepage hero cut from the Android recording: lite 9:16 web encodes and poster, beside the iOS files',
+  ),
+  'social-android': androidVariant(
+    'social-android',
+    SHOWCASE_TARGETS.social,
+    'Full-quality 16:9 and 9:16 social masters of the Android recording',
+  ),
+  'reel-android': androidVariant(
+    'reel-android',
+    SHOWCASE_TARGETS.reel,
+    "The Reels / install-ad cut of the Android recording, text inside Meta's safe zone",
+  ),
+  'play-promo-android': androidVariant(
+    'play-promo-android',
+    SHOWCASE_TARGETS['play-promo'],
+    'The 16:9 Google Play promo cut from the Android recording',
+  ),
+};
+
 /** Frames a target runs with every take present. */
-export function targetFrames(target: ShowcaseTarget): number {
+export function targetFrames(target: AnyShowcaseTarget): number {
   return target.layout === 'full-bleed'
     ? target.clips.reduce((sum, clip) => sum + clip.frames, 0)
     : planFrames(target.scenes);
 }
 
-export const targetSeconds = (target: ShowcaseTarget): number => targetFrames(target) / SHOWCASE_FPS;
+export const targetSeconds = (target: AnyShowcaseTarget): number => targetFrames(target) / SHOWCASE_FPS;
 
 /** Every file a target writes. */
-export function targetOutputs(target: ShowcaseTarget): string[] {
+export function targetOutputs(target: AnyShowcaseTarget): string[] {
   return target.renditions.flatMap(({ deliverable }) => {
     if (deliverable.kind === 'web-lite') return [deliverable.webm, deliverable.mp4, deliverable.poster];
     if (deliverable.kind === 'master')
@@ -434,23 +536,61 @@ export function targetOutputs(target: ShowcaseTarget): string[] {
   });
 }
 
+/** Each platform's registry: every target it has, and what no `--target` renders. */
+const TARGET_REGISTRIES: Readonly<
+  Record<
+    ShowcasePlatform,
+    Readonly<{
+      names: readonly AnyShowcaseTargetName[];
+      defaults: readonly AnyShowcaseTargetName[];
+      targets: Readonly<Record<string, AnyShowcaseTarget>>;
+    }>
+  >
+> = {
+  ios: { names: SHOWCASE_TARGET_NAMES, defaults: SHOWCASE_DEFAULT_TARGETS, targets: SHOWCASE_TARGETS },
+  android: {
+    names: SHOWCASE_ANDROID_TARGET_NAMES,
+    defaults: SHOWCASE_ANDROID_DEFAULT_TARGETS,
+    targets: SHOWCASE_ANDROID_TARGETS,
+  },
+};
+
 /**
- * `--target` values → targets, in registry order. `all` is every target; no
- * value is `SHOWCASE_DEFAULT_TARGETS`.
+ * `--target` values → target names of the `platform` registry (iOS when
+ * absent), in registry order. `all` is every target; no value is the
+ * platform's default pair. A name from the other registry fails with a hint
+ * to add its `--platform`.
  */
-export function resolveTargetNames(values: readonly string[]): ShowcaseTargetName[] {
-  if (values.length === 0) return [...SHOWCASE_DEFAULT_TARGETS];
-  if (values.includes('all')) return [...SHOWCASE_TARGET_NAMES];
+export function resolveTargetNames(
+  values: readonly string[],
+  platform: ShowcasePlatform = 'ios',
+): AnyShowcaseTargetName[] {
+  const { names, defaults } = TARGET_REGISTRIES[platform];
+  if (values.length === 0) return [...defaults];
+  if (values.includes('all')) return [...names];
+  const other = platform === 'ios' ? 'android' : 'ios';
   for (const value of values) {
-    if (!(SHOWCASE_TARGET_NAMES as readonly string[]).includes(value)) {
-      throw new Error(`--target must be one of ${SHOWCASE_TARGET_NAMES.join(', ')}, or all`);
-    }
+    if ((names as readonly string[]).includes(value)) continue;
+    const hint = (TARGET_REGISTRIES[other].names as readonly string[]).includes(value)
+      ? ` ("${value}" cuts the ${other} recording: add --platform ${other})`
+      : '';
+    throw new Error(`--target must be one of ${names.join(', ')}, or all${hint}`);
   }
-  return SHOWCASE_TARGET_NAMES.filter((name) => values.includes(name));
+  return names.filter((name) => values.includes(name));
+}
+
+/**
+ * The targets a render runs: `--platform` picks the registry (iOS
+ * `SHOWCASE_TARGETS`, Android `SHOWCASE_ANDROID_TARGETS`), `--target` the
+ * names in it. `all` and the default never cross platforms.
+ */
+export function resolvePlatformTargets(values: readonly string[], platform: ShowcasePlatform): AnyShowcaseTarget[] {
+  const { targets } = TARGET_REGISTRIES[platform];
+  return resolveTargetNames(values, platform).map((name) => targets[name]);
 }
 
 export type TargetSelection = Readonly<{
-  picks: ReadonlyArray<Readonly<{ target: ShowcaseTarget; renditions: readonly ShowcaseRendition[] }>>;
+  picks: ReadonlyArray<Readonly<{ target: AnyShowcaseTarget; renditions: readonly ShowcaseRendition[] }>>;
   /** What the flags left out, one line each, for the log. */
   notes: readonly string[];
 }>;
@@ -460,7 +600,8 @@ export type TargetSelection = Readonly<{
  * target the command names on purpose fails instead of skipping it quietly:
  * `--skip-web` or `--no-donation-line` with `--target homepage`, or a
  * `--format` that none of a named target's renditions has. Targets that come
- * from the default pair or `all` are left out with a note.
+ * from the default pair or `all` are left out with a note. `platform` picks
+ * the registry (`resolvePlatformTargets`); iOS when absent.
  */
 export function selectTargets(
   args: Readonly<{
@@ -468,13 +609,14 @@ export function selectTargets(
     formats: readonly ShowcaseFormat[];
     skipWeb: boolean;
     donationLine: boolean;
+    platform?: ShowcasePlatform;
   }>,
 ): TargetSelection {
   const named = new Set(args.targets);
   const notes: string[] = [];
   const picks: TargetSelection['picks'][number][] = [];
-  for (const name of resolveTargetNames(args.targets)) {
-    const target = SHOWCASE_TARGETS[name];
+  for (const target of resolvePlatformTargets(args.targets, args.platform ?? 'ios')) {
+    const { name } = target;
     if (target.writesPublic && args.skipWeb) {
       const flag = args.donationLine ? '--skip-web' : '--no-donation-line';
       const reason = args.donationLine ? 'leaves out the web files' : 'its files always carry the donation line';
@@ -496,7 +638,7 @@ export function selectTargets(
 }
 
 /** A cut's length against its target's window; throws outside it. The same check for motion and full-bleed cuts. */
-export function assertTargetLength(target: ShowcaseTarget, frames: number): void {
+export function assertTargetLength(target: AnyShowcaseTarget, frames: number): void {
   const seconds = frames / SHOWCASE_FPS;
   if (seconds < target.minSeconds || seconds > target.maxSeconds) {
     throw new Error(

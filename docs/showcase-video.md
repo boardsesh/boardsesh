@@ -3,7 +3,8 @@
 The homepage showcase video is three pieces that share one contract
 (`scripts/lib/showcase-video/contract.ts`):
 
-1. **`vp run video:record`** (this doc) drives iOS simulators and writes the app
+1. **`vp run video:record`** (this doc) drives iOS simulators (or, with
+   `--platform android`, an Android emulator) and writes the app
    footage: a 30 fps JPEG sequence per take plus where each callout target sat
    on screen.
 2. The mobile app, in screenshot mode, logs those callout positions
@@ -104,6 +105,8 @@ Useful flags:
 | `--env-file <path>` | Where the credentials file is. |
 | `--dry-run` | Print the plan and which credentials are set; touch nothing. |
 | `--end-session <id>` | Record nothing: rejoin that session on the primary and end it (a crashed run's leftover; the crew take logs the id). |
+| `--platform android` | Film on the Android emulator instead (see [Android recording](#android-recording)). |
+| `--hold` | Stop once the phone is ready and wait for Ctrl-C, for calibrating flows by hand. |
 
 Logs: `.boardsesh/showcase-video/work/logs/` (Metro per phone, the backend,
 and every Maestro run's console and debug output).
@@ -370,6 +373,163 @@ renderer probes the encode and fails when it misses any of them:
 The 5.5" slot (1080 x 1920) and iPads (1200 x 1600) are not rendered: an iPhone
 preview at 886 x 1920 covers every current iPhone slot.
 
+## Android recording
+
+```sh
+SCREENSHOT_USER_PASSWORD=... vp run video:record -- --platform android
+```
+
+The same takes, filmed on an Android emulator, into
+`.boardsesh/showcase-video/work/android/{footage,anchors,marks}/`
+(`showcaseWorkDirs('android')` in `contract.ts`). iOS stays the default and
+keeps `work/{footage,anchors,marks}/`. No manual steps:
+
+1. **SDK.** `vp run mobile:android-doctor` once (SDK and JDK 21 under
+   `~/.cache/boardsesh/`). The recorder installs the system image it needs
+   (`android-36;google_apis`, arm64 on Apple silicon, about 1.5 GB) on first
+   use.
+2. **Emulator.** A dedicated AVD, `Boardsesh_Showcase`, created from the
+   `pixel_7` profile with its screen set to a Pixel 9-class 1080 x 2424 at 420
+   dpi, so 411 x 923 dp (`SHOWCASE_ANDROID_DEVICE` in
+   `scripts/lib/showcase-video/android.ts`). `config.ini` is rewritten on every
+   boot, so a hand edit cannot drift it. It boots headless on port 5580
+   (`emulator-5580`), in UTC, cold, with dark system UI. An emulator already
+   running on that port is reused and left running.
+3. **App.** The dev-client APK (`com.boardsesh.app.dev`) from the latest
+   `rn-android-dev-*` release (`scripts/mobile-android-apk.ts`), or
+   `--app-path <apk>`. It is reinstalled every run with notifications allowed.
+   Metro runs on 8081 with the same screenshot and fake-Bluetooth env as iOS;
+   `adb reverse` maps the emulator's `localhost:8081` to it.
+4. **Status bar.** SystemUI demo mode (09:41, full wifi and battery, no mobile
+   signal, no notification icons), and the system's own notifications
+   ("Serial console enabled") snoozed. Both are re-sent before every take:
+   SystemUI drops them while it is still settling after boot, and nothing
+   reports whether they took.
+5. **Recording.** `adb shell screenrecord` at 12 Mbit/s. It stops itself at
+   180 s, so a longer take records in parts that are pulled and joined without
+   re-encoding. Stop is SIGINT to `screenrecord` on the device, which finalises
+   the mp4. From there the pipeline is the iOS one: the same ffmpeg pass to
+   constant 30 fps JPEGs at 800 px wide (800 x 1796), anchors from Metro's log
+   (dp), marks from the signal server.
+
+`--hold` stops after the device is ready (app at home, Metro up) and waits for
+Ctrl-C, for calibrating a flow by hand against the same emulator.
+
+**Flows.** A flow in `packages/mobile/.maestro/showcase/android/` replaces
+the shared flow of the same name on Android (`showcaseFlowPathFor`), so the
+two platforms never share a coordinate. Every flow the Android primary runs has
+an Android file (a test checks this): Material UI puts things elsewhere, and
+Maestro needs the dev-client's package as `appId`. Take-level differences
+(setup flows, static anchors) live in each take's `platforms.android` entry in
+`takes.ts` (`takeForPlatform`).
+
+What changes per take:
+
+| Take | On Android |
+| --- | --- |
+| `light`, `boards-*`, `log`, `workouts` | Same story, own coordinates. The shorter screen keeps the workout preview below the fold. |
+| `wall` | The Climbs header has no board glyph on the right ("+" is a new climb); the sheet opens from the board name ("Marco's Board", the `board-history-button` anchor) at half height. |
+| `crew` | The queue sheet is dragged to full height (history rows can push the new row below the fold at half height), and there is no "Play next" beat (see the app bugs below). The second phone is the iOS simulator, see below. |
+| `lock-screen` | The ongoing "session" notification in the shade instead of the Dynamic Island: Home, a swipe down from the status bar (the notification is expanded as the first one), Next by its label. No relaunch between setup and arm (a relaunch leaves the first climb without its thumbnail) and no home-screen cleanup (the shade covers it). |
+
+**The crew take's second phone is the iOS simulator.** Nothing of the second
+phone is filmed, so its platform does not show, and it reuses the iOS
+`crew-join.yaml` / `crew-secondary.yaml` that already work against prod. A
+second emulator would need its own 4 GB of RAM, a second cold boot (a minute or
+two), and its own calibrated flows. The Android primary cannot hand the invite
+link over by clipboard (`simctl pbpaste` has no emulator twin), so
+`crew-start.yaml` only taps Start, the recorder relaunches the app, reads the
+id from its `[session] restored from store: <id>` log line, and
+`crew-invite.yaml` opens the invite sheet so recording starts on the QR.
+
+**Two app bugs the recording found (not recorder ones).**
+
+1. [#5922](https://github.com/boardsesh/boardsesh/issues/5922): the notification's Next moves the queue on the phone only in a session: on
+   Android nothing sends the server mutation that the iOS widget intent sends
+   (`dispatchWidgetNavigation` in
+   `packages/mobile/src/providers/queue-provider.tsx` assumes native did), so
+   a few seconds later the queue's hash check pulls the server state back and
+   the climb reverts. The take ends before that happens.
+2. [#5923](https://github.com/boardsesh/boardsesh/issues/5923): a long press on a row in the Android queue sheet lands as a tap: the row
+   plays instead of opening the reaction menu. It happens with Maestro's long
+   press and with adb's raw `DOWN` / `UP` 1.2 s apart, so the crew take skips
+   "Play next" on Android. Worth checking on a real phone.
+
+## Android cuts (renderer)
+
+`vp run video:render -- --platform android` cuts the Android recording
+(`vp run video:record -- --platform android`, same take ids) instead of the
+iOS one. The platform decides four things and nothing else:
+
+1. **Footage.** `work/android/{footage,anchors,marks}/` (`showcaseWorkDirs` in
+   `contract.ts`), never `work/footage/`. `--placeholder-footage` builds iOS
+   stand-ins, so the render refuses it with `--platform android`.
+2. **The phone.** A Pixel-style body (`pixelPhone` in `render.ts`) instead of
+   the iPhone 16 Pro Max: the same 900 px height, so every pose, shadow and
+   board label lands where it does on iOS; a 390 x 876 screen, the width taken
+   from the recorded frames' aspect (800 x 1796, the 1080 x 2424 emulator
+   screen); a 3 px matte aluminium band, a 9 px bezel, 48 px outer corners
+   (36 px on the screen against the iPhone's 57); a 12 px punch-hole camera
+   centred 14 px from the top; power button and volume rocker on the right edge
+   only. The stage draws both phones from one set of CSS variables
+   (`data.phone`, `#stage[data-platform]`), so the iOS frames are unchanged.
+3. **Copy.** The `android` block in `copy.en-US.json` overrides single scenes
+   (`copyForPlatform`). Today that is the island scene, which on Android is the
+   "Active climbing session" notification: headline "Control the wall from
+   *notifications.*", and the bulb callout reads "Relight wall", the
+   notification's own label. "Next" and "Mirror climb" are shared.
+4. **Targets.** Android has its own registry (`SHOWCASE_ANDROID_TARGETS` in
+   `targets.ts`), each an iOS target with the same scenes, stage, length,
+   donation line and audio:
+
+| Target | Follows | Size | Length | Writes |
+| --- | --- | --- | --- | --- |
+| `homepage-android` | `homepage` | 1080x1920 → 720x1280 lite | 56.8 s | `packages/web/public/videos/home/showcase-9x16-lite-android.{webm,mp4}`, `public/images/home/showcase-hero-9x16-android.webp` |
+| `social-android` | `social` | 1920x1080 and 1080x1920 | 56.8 s | `out/android/social/brag.mp4`, `brag-9x16.mp4`, `brag*.jpg`, `share-copy.txt` |
+| `reel-android` | `reel` | 1080x1920, safe-area stage | 30.7 s | `out/android/reel/reel-9x16.mp4`, `.jpg` |
+| `play-promo-android` | `play-promo` | 1920x1080 | 40.1 s | `out/android/play/play-16x9.mp4`, `.jpg` |
+
+`app-store` has no Android variant: an App Preview is iOS footage.
+`homepage-android` is the only Android target that writes into
+`packages/web/public`, and the homepage does not load its files yet.
+
+**Which targets run.** `--platform` picks the registry and `--target` names
+targets in it. `all` is every target of that platform, and no `--target` is
+that platform's pair: `homepage` + `social` on iOS (what `vp run video` ships,
+unchanged), `homepage-android` + `social-android` on Android. A name from the
+other registry stops the render and says which `--platform` it needs, so one
+run never mixes the two recordings.
+
+```sh
+vp run video:render -- --platform android                                  # homepage-android + social-android
+vp run video:render -- --platform android --target reel-android,play-promo-android
+vp run video:render -- --platform android --target all --stills --measure  # check every callout box
+```
+
+**The edit.** The Android takes raise the iOS marks (`home` is the Home
+press, `island-expanded` the shade pulled down with the notification expanded,
+`next-tapped` the Next tap), and the recorder writes `lock-next`,
+`lock-relight` and `lock-mirror` for the notification's buttons (Next and
+Relight wall move right when Next adds "Previous", so their rects change at
+`next-tapped`). `SHOWCASE_ANDROID_TAKE_EDITS` in `render.ts` starts from the
+iOS edit and replaces what the Android recording measured differently:
+
+| Take | Android |
+| --- | --- |
+| `wall` | The sheet opens 1.8 s before `sheet-open` (2.75 s on iOS), so the list is too short for its callout alone: "Board history" stays up over the half-open sheet. Sheet top 510 dp at half height, 101 dp dragged up. |
+| `crew` | The QR still holds 1.1 s. No `play-next` callout. Invite sheet top 510 dp; the queue sheet, dragged to full height, 100 dp. |
+| `workouts` | The rest countdown starts 2.36 s after `rest-armed` (1.43 s on iOS); `restPill` follows it. The gap moved by a second between two recordings, so re-read it after a re-record. |
+| `log` | The scroll moves the Filters row 353 dp, and the Kilter view lifts the calendar 27 dp more. |
+
+`light`, `lock-screen` and the boards cut on the iOS entries. Every number
+was checked with `--platform android --target all --stills --measure`, and
+`showcase-video-android-render.test` holds the reading budget on the Android
+marks, as the iOS test does.
+
+**Trying a layout before the recording lands.** `--work-dir <dir>` reads
+`<dir>/{footage,anchors,marks}` instead. A copy of the iOS takes with the light
+take scaled to 800 x 1796 is enough to check the Pixel mockup and the copy.
+
 ## Uploading
 
 Nothing uploads automatically. After `vp run video:render -- --target all`:
@@ -437,8 +597,10 @@ Each failure names the take. The fixes:
 | `scripts/showcase-video-record.ts` | The orchestrator (processes, simulators, files). |
 | `scripts/lib/showcase-video/record.ts` | Pure logic: args, ffmpeg args, anchor stamping, self-check. |
 | `scripts/lib/showcase-video/takes.ts` | The take registry. |
+| `scripts/lib/showcase-video/android.ts` | The emulator spec and the adb / emulator / screenrecord argument vectors. |
 | `packages/mobile/.maestro/showcase/` | One flow per take, plus the crew setup/teardown flows. |
-| `.boardsesh/showcase-video/work/` | Footage, anchors, raw recordings, logs (gitignored). |
+| `packages/mobile/.maestro/showcase/android/` | The Android flows (same names; they replace the shared ones on Android). |
+| `.boardsesh/showcase-video/work/` | Footage, anchors, raw recordings, logs (gitignored). Android's under `work/android/`. |
 
 ## Web delivery
 

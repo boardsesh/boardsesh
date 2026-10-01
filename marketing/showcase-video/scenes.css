@@ -187,7 +187,14 @@ svg.layer {
   opacity: var(--halo, 0.5);
 }
 
-/* --- phone (CSS-drawn iPhone 16 Pro Max) ------------------------------------- */
+/*
+ * --- phone ----------------------------------------------------------------------
+ *
+ * One CSS-drawn body, sized by the stage variables timeline.mjs sets from
+ * render.ts `ShowcasePhone`: the iPhone 16 Pro Max (the fallbacks below) or,
+ * with #stage[data-platform='android'], a Pixel-style body whose screen matches
+ * the Android footage. The rim, bezel and screen corners all follow --phone-r.
+ */
 
 .phone-rig {
   --cx: 2350;
@@ -197,10 +204,10 @@ svg.layer {
   --ry: 0;
   --rz: 0;
   position: absolute;
-  left: calc(var(--cx) * 1px - 214px);
-  top: calc(var(--cy) * 1px - 450px);
-  width: 428px;
-  height: 900px;
+  left: calc(var(--cx) * 1px - var(--phone-w, 428) * 0.5px);
+  top: calc(var(--cy) * 1px - var(--phone-h, 900) * 0.5px);
+  width: calc(var(--phone-w, 428) * 1px);
+  height: calc(var(--phone-h, 900) * 1px);
   transform: scale(var(--s)) rotateX(calc(var(--rx) * 1deg)) rotateY(calc(var(--ry) * 1deg))
     rotateZ(calc(var(--rz) * 1deg));
   transform-origin: 50% 50%;
@@ -210,8 +217,8 @@ svg.layer {
 .phone-body {
   position: absolute;
   inset: 0;
-  border-radius: 70px;
-  padding: 3px;
+  border-radius: calc(var(--phone-r, 70) * 1px);
+  padding: calc(var(--rim, 3) * 1px);
   background: linear-gradient(145deg, #d9d7d2 0%, #8f8d88 18%, #b9b7b1 36%, #6f6d69 55%, #c9c7c1 78%, #7d7b76 100%);
   box-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.35),
@@ -219,16 +226,16 @@ svg.layer {
 }
 .bezel {
   position: absolute;
-  inset: 3px;
-  border-radius: 67px;
+  inset: calc(var(--rim, 3) * 1px);
+  border-radius: calc((var(--phone-r, 70) - var(--rim, 3)) * 1px);
   background: #050407;
-  padding: 10px;
+  padding: calc(var(--bezel, 10) * 1px);
 }
 .screen {
   position: relative;
-  width: 402px;
-  height: 874px;
-  border-radius: 57px;
+  width: calc(var(--screen-w, 402) * 1px);
+  height: calc(var(--screen-h, 874) * 1px);
+  border-radius: calc((var(--phone-r, 70) - var(--rim, 3) - var(--bezel, 10)) * 1px);
   overflow: hidden;
   background: #050407;
   /* Keeps the rounded clip exact under 3D transforms. */
@@ -245,7 +252,7 @@ svg.layer {
 .screen .gloss {
   position: absolute;
   inset: 0;
-  border-radius: 57px;
+  border-radius: calc((var(--phone-r, 70) - var(--rim, 3) - var(--bezel, 10)) * 1px);
   background: linear-gradient(125deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0) 38%);
   pointer-events: none;
 }
@@ -268,6 +275,18 @@ svg.layer {
   height: 12px;
   border-radius: 50%;
   background: radial-gradient(circle at 40% 40%, #2a2f45 0%, #0b0c12 60%);
+}
+/* The Pixel's front camera: a punch-hole centred at the top of the screen. */
+.punch-hole {
+  position: absolute;
+  top: calc(var(--hole-top, 14) * 1px);
+  left: 50%;
+  width: calc(var(--hole-d, 12) * 1px);
+  height: calc(var(--hole-d, 12) * 1px);
+  margin-left: calc(var(--hole-d, 12) * -0.5px);
+  border-radius: 50%;
+  background: radial-gradient(circle at 38% 38%, #2a2f45 0%, #0b0c12 45%, #000 70%);
+  box-shadow: 0 0 0 1.5px rgba(0, 0, 0, 0.9);
 }
 .phone-btn {
   position: absolute;
@@ -292,6 +311,22 @@ svg.layer {
   filter: blur(14px);
   opacity: var(--shadow-o, 1);
   transform: scale(var(--s, 1));
+}
+
+/*
+ * Pixel-style body: a flat, matte aluminium band (Porcelain) instead of the
+ * iPhone's brushed titanium, so the two read apart at a glance.
+ */
+#stage[data-platform='android'] .phone-body {
+  background: linear-gradient(90deg, #b9b4a9 0%, #e7e3da 8%, #d6d1c6 50%, #e7e3da 92%, #b9b4a9 100%);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.45),
+    0 0 0 1px rgba(0, 0, 0, 0.5);
+}
+#stage[data-platform='android'] .phone-btn {
+  width: 4px;
+  border-radius: 1.5px;
+  background: linear-gradient(90deg, #b9b4a9, #e7e3da 50%, #c9c4b9);
 }
 
 /* --- headlines ------------------------------------------------------------------ */

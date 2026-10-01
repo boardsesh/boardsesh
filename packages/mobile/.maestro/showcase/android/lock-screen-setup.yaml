@@ -1,0 +1,33 @@
+appId: com.boardsesh.app.dev
+name: showcase setup - lock-screen, a session on the wall (Android)
+---
+# Setup for take: lock-screen (primary phone, NOT recorded)
+#
+# The Android twin of ../lock-screen-setup.yaml: Start the (already hidden)
+# session on the Tension wall and queue two more climbs, so the session
+# notification has somewhere to go. The recorder then relaunches the app and
+# runs lock-screen-arm.yaml.
+#
+# Coordinates (1080x2424 emulator, 411x923 dp, portrait):
+#   83%,80%             Start (pre-session Record tab); lands on Climbs
+#   15%,44% -> 85%,44%  swipe the 2nd climb row right: add to queue
+#   15%,56% -> 85%,56%  swipe the 3rd climb row right: add to queue
+
+- tapOn:
+    point: '83%,80%'
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: 'zzz-showcase-pause'
+    timeout: 2000
+    optional: true
+
+- swipe:
+    start: '15%,44%'
+    end: '85%,44%'
+    duration: 600
+- waitForAnimationToEnd
+- swipe:
+    start: '15%,56%'
+    end: '85%,56%'
+    duration: 600
+- waitForAnimationToEnd

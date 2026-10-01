@@ -56,6 +56,8 @@ describe('parseRecordArgs', () => {
       envFile: SHOWCASE_DEFAULT_ENV_FILE,
       skipAnchorCheck: false,
       endSession: null,
+      platform: 'ios',
+      hold: false,
     });
   });
 
@@ -79,6 +81,9 @@ describe('parseRecordArgs', () => {
       '--skip-anchor-check',
       '--end-session',
       '667186B5-f0e5-4f56-92bf-8646f87d3f81',
+      '--platform',
+      'android',
+      '--hold',
     ]);
     expect(args).toEqual({
       only: ['crew', 'log'],
@@ -90,6 +95,8 @@ describe('parseRecordArgs', () => {
       envFile: '/tmp/secrets.env',
       skipAnchorCheck: true,
       endSession: '667186b5-f0e5-4f56-92bf-8646f87d3f81',
+      platform: 'android',
+      hold: true,
     });
   });
 
@@ -99,6 +106,7 @@ describe('parseRecordArgs', () => {
     expect(() => parseRecordArgs(['--fast'])).toThrow(/Unknown argument: --fast/);
     expect(() => parseRecordArgs(['--only'])).toThrow(/requires a value/);
     expect(() => parseRecordArgs(['--end-session', 'abc'])).toThrow(/UUID/);
+    expect(() => parseRecordArgs(['--platform', 'windows'])).toThrow(/--platform must be one of ios, android/);
   });
 });
 
@@ -280,6 +288,27 @@ describe('buildAnchorsFile', () => {
       ],
     });
     expect(file.anchors).toEqual({ 'lock-next': [{ t: 3.5, x: 1, y: 2, width: 3, height: 4 }] });
+  });
+
+  it('moves a static anchor listed twice at the later mark', () => {
+    const file = buildAnchorsFile({
+      takeId: 'lock-screen',
+      arrivals: [],
+      recordStartMs: 1000,
+      trimSeconds: 5,
+      durationSeconds: 10,
+      screen,
+      staticAnchors: [
+        { name: 'lock-next', rect: { x: 9, y: 2, width: 3, height: 4 }, fromMark: 'next-tapped', markMs: 12_000 },
+        { name: 'lock-next', rect: { x: 1, y: 2, width: 3, height: 4 }, fromMark: 'island-expanded', markMs: 9500 },
+      ],
+    });
+    expect(file.anchors).toEqual({
+      'lock-next': [
+        { t: 3.5, x: 1, y: 2, width: 3, height: 4 },
+        { t: 6, x: 9, y: 2, width: 3, height: 4 },
+      ],
+    });
   });
 
   it('ignores lines that are not anchors', () => {

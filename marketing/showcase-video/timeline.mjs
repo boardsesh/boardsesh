@@ -138,7 +138,12 @@ function buildWords(container, headline) {
   return { words, regularCount: regular };
 }
 
-/** A phone rig plus its shadow, in the phones layer (which carries the stage perspective). */
+/**
+ * A phone rig plus its shadow, in the phones layer (which carries the stage
+ * perspective). The body is `data.phone` (render.ts `ShowcasePhone`): its
+ * sizes are stage variables (`init`), its camera the iPhone's Dynamic Island
+ * or the Pixel's punch-hole, its side buttons wherever that phone has them.
+ */
 function buildPhone(layer, zIndex) {
   const shadow = el('div', { class: 'phone-shadow' }, layer);
   const rig = el('div', { class: 'phone-rig' }, layer);
@@ -148,15 +153,8 @@ function buildPhone(layer, zIndex) {
   const screen = el('div', { class: 'screen' }, bezel);
   const img = el('img', { alt: '', decoding: 'sync' }, screen);
   el('div', { class: 'gloss' }, screen);
-  el('div', { class: 'island' }, screen);
-  // Action button, volume up/down on the left; side button and Camera Control on the right.
-  for (const [side, top, height] of [
-    ['left', 188, 58],
-    ['left', 268, 92],
-    ['left', 376, 92],
-    ['right', 300, 136],
-    ['right', 588, 84],
-  ]) {
+  el('div', { class: data.phone.camera.kind === 'island' ? 'island' : 'punch-hole' }, screen);
+  for (const { side, top, height } of data.phone.buttons) {
     const button = el('i', { class: `phone-btn ${side}` }, rig);
     button.style.top = `${top}px`;
     button.style.height = `${height}px`;
@@ -416,6 +414,19 @@ export function init(input) {
   layout = LAYOUT[data.format];
   const stage = document.getElementById('stage');
   stage.dataset.format = data.format;
+  // The phone mockup: the iPhone or the Pixel, sized from data.phone.
+  const phone = data.phone;
+  stage.dataset.platform = phone.platform;
+  setVars(stage, {
+    'phone-w': phone.width,
+    'phone-h': phone.height,
+    'screen-w': phone.screenWidth,
+    'screen-h': phone.screenHeight,
+    'phone-r': phone.bodyRadius,
+    rim: phone.rim,
+    bezel: phone.screenInset - phone.rim,
+    ...(phone.camera.kind === 'punch-hole' ? { 'hole-d': phone.camera.diameter, 'hole-top': phone.camera.top } : {}),
+  });
   ui.stage = stage;
   ui.text = document.getElementById('text');
   ui.callouts = document.getElementById('callouts');
@@ -724,7 +735,7 @@ function applyPhone(phone, pose, takeRef, frame, footageOpacity) {
     rz: pose.rz,
     'footage-o': footageOpacity,
   });
-  setVars(shadow, { cx: pose.cx, cy: pose.cy + 452 * pose.scale, s: pose.scale });
+  setVars(shadow, { cx: pose.cx, cy: pose.cy + (data.phone.height / 2 + 2) * pose.scale, s: pose.scale });
   if (!takeRef || !onCanvas(pose)) return;
   const take = data.takes[takeRef.takeId];
   if (!take) return;

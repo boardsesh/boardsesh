@@ -1,20 +1,24 @@
 import { resolve } from 'node:path';
 import {
-  SHOWCASE_ANCHORS_DIR,
-  SHOWCASE_FOOTAGE_DIR,
+  DEFAULT_SHOWCASE_PLATFORM,
   SHOWCASE_FOOTAGE_WIDTH,
+  SHOWCASE_PLATFORMS,
   SHOWCASE_FPS,
   SHOWCASE_OUT_DIR,
   SHOWCASE_STAGE_DIR,
   SHOWCASE_WEB_POSTER_DIR,
   SHOWCASE_WORK_ROOT,
   anchorAt,
+  isShowcasePlatform,
+  showcaseWorkDirs,
   sortAnchorSamples,
   type ShowcaseAnchorRect,
   type ShowcaseAnchorSample,
   type ShowcaseAnchorsFile,
   type ShowcaseCalloutName,
+  type ShowcasePlatform,
   type ShowcaseTakeId,
+  type ShowcaseWorkDirs,
 } from './contract';
 import { HELP_CLIP_VIDEO_DIR } from '../help-clips';
 import { BOARD_TYPE_LABELS } from '../../../packages/board-constants/src/board-type-labels';
@@ -63,20 +67,116 @@ export function cutIntermediates(cutKey: string): Readonly<{ mezzanine: string; 
   };
 }
 
-export const footageTakeDir = (takeId: ShowcaseTakeId): string => resolve(SHOWCASE_FOOTAGE_DIR, takeId);
-export const anchorsFilePath = (takeId: ShowcaseTakeId): string => resolve(SHOWCASE_ANCHORS_DIR, `${takeId}.json`);
+/**
+ * Where a render reads its recording: the platform's work dirs
+ * (`showcaseWorkDirs`: iOS `work/footage`, Android `work/android/footage`),
+ * or `<workDir>/{footage,anchors,marks}` when `--work-dir` points elsewhere
+ * (a scratch copy to try a layout on).
+ */
+export function renderWorkDirs(platform: ShowcasePlatform, workDir: string | null = null): ShowcaseWorkDirs {
+  if (!workDir) return showcaseWorkDirs(platform);
+  const root = resolve(workDir);
+  return {
+    raw: resolve(root, 'raw'),
+    footage: resolve(root, 'footage'),
+    anchors: resolve(root, 'anchors'),
+    marks: resolve(root, 'marks'),
+  };
+}
+
+export const footageTakeDir = (takeId: ShowcaseTakeId, dirs: ShowcaseWorkDirs = showcaseWorkDirs()): string =>
+  resolve(dirs.footage, takeId);
+export const anchorsFilePath = (takeId: ShowcaseTakeId, dirs: ShowcaseWorkDirs = showcaseWorkDirs()): string =>
+  resolve(dirs.anchors, `${takeId}.json`);
+export const marksFilePath = (takeId: ShowcaseTakeId, dirs: ShowcaseWorkDirs = showcaseWorkDirs()): string =>
+  resolve(dirs.marks, `${takeId}.json`);
 
 // --- phone geometry ------------------------------------------------------
 
+/**
+ * A CSS-drawn phone, in unscaled stage pixels. The stage (`timeline.mjs`,
+ * `scenes.css`) draws the body from these numbers, so the iPhone and the Pixel
+ * are one mockup with two sets of measurements, not two stages.
+ */
+export type ShowcasePhone = Readonly<{
+  platform: ShowcasePlatform;
+  width: number;
+  height: number;
+  screenWidth: number;
+  screenHeight: number;
+  /** Rim + bezel, from the phone's outer edge to the screen's. */
+  screenInset: number;
+  /** The metal band; the black bezel is `screenInset - rim`. */
+  rim: number;
+  /** Outer corner radius; the bezel and screen corners follow it inward. */
+  bodyRadius: number;
+  /** The iPhone's Dynamic Island, or the Pixel's centred punch-hole camera. */
+  camera: Readonly<{ kind: 'island' }> | Readonly<{ kind: 'punch-hole'; diameter: number; top: number }>;
+  /** Side buttons: which edge, top and length in px. */
+  buttons: ReadonlyArray<Readonly<{ side: 'left' | 'right'; top: number; height: number }>>;
+}>;
+
 /** CSS-drawn iPhone 16 Pro Max: 3 px titanium rim, 10 px bezel, 402x874 screen. */
-export const SHOWCASE_PHONE = {
+export const SHOWCASE_PHONE: ShowcasePhone = {
+  platform: 'ios',
   width: 428,
   height: 900,
   screenWidth: 402,
   screenHeight: 874,
-  /** Rim + bezel, from the phone's outer edge to the screen's. */
   screenInset: 13,
-} as const;
+  rim: 3,
+  bodyRadius: 70,
+  camera: { kind: 'island' },
+  // Action button, volume up/down on the left; side button and Camera Control on the right.
+  buttons: [
+    { side: 'left', top: 188, height: 58 },
+    { side: 'left', top: 268, height: 92 },
+    { side: 'left', top: 376, height: 92 },
+    { side: 'right', top: 300, height: 136 },
+    { side: 'right', top: 588, height: 84 },
+  ],
+};
+
+/** The Android recording's screen: a Pixel 9-class emulator, 1080x2424 px (412x923 dp at 420 dpi). */
+export const ANDROID_SCREEN_PX = { width: 1080, height: 2424 } as const;
+
+/**
+ * A Pixel-style body for a screen of `screenAspect` (width / height, the
+ * footage's): the iPhone's 900 px height, so every pose, shadow and label gap
+ * holds unchanged, and the width that aspect leaves. A 3 px aluminium band
+ * and a 9 px bezel, squarer corners than the iPhone, a centred punch-hole
+ * camera, and the power button above the volume rocker on the right edge only.
+ */
+export function pixelPhone(screenAspect: number = ANDROID_SCREEN_PX.width / ANDROID_SCREEN_PX.height): ShowcasePhone {
+  if (!(screenAspect > 0.3 && screenAspect < 0.8)) {
+    throw new Error(`A phone screen aspect of ${screenAspect} is not a portrait phone`);
+  }
+  const height = SHOWCASE_PHONE.height;
+  const rim = 3;
+  const screenInset = rim + 9;
+  const screenHeight = height - 2 * screenInset;
+  const screenWidth = Math.round(screenHeight * screenAspect);
+  return {
+    platform: 'android',
+    width: screenWidth + 2 * screenInset,
+    height,
+    screenWidth,
+    screenHeight,
+    screenInset,
+    rim,
+    bodyRadius: 48,
+    camera: { kind: 'punch-hole', diameter: 12, top: 14 },
+    buttons: [
+      { side: 'right', top: 236, height: 70 },
+      { side: 'right', top: 330, height: 150 },
+    ],
+  };
+}
+
+/** The phone a platform's footage is laid into; Android's width follows the footage aspect. */
+export function showcasePhone(platform: ShowcasePlatform, screenAspect?: number): ShowcasePhone {
+  return platform === 'ios' ? SHOWCASE_PHONE : pixelPhone(screenAspect);
+}
 
 export const SHOWCASE_PERSPECTIVE = 2200;
 
@@ -174,8 +274,9 @@ export function projectPhonePoint(
 export function screenPointToPhone(
   point: CanvasPoint,
   screen: Readonly<{ width: number; height: number }>,
+  phone: ShowcasePhone = SHOWCASE_PHONE,
 ): CanvasPoint {
-  const { screenWidth, screenHeight } = SHOWCASE_PHONE;
+  const { screenWidth, screenHeight } = phone;
   return {
     x: -screenWidth / 2 + (point.x * screenWidth) / screen.width,
     y: -screenHeight / 2 + (point.y * screenHeight) / screen.height,
@@ -191,6 +292,7 @@ export function screenToCanvas(
   screen: Readonly<{ width: number; height: number }>,
   phonePose: ShowcasePose,
   canvas: Readonly<{ width: number; height: number }>,
+  phone: ShowcasePhone = SHOWCASE_PHONE,
 ): CanvasRect {
   const corners = [
     { x: rect.x, y: rect.y },
@@ -198,7 +300,7 @@ export function screenToCanvas(
     { x: rect.x, y: rect.y + rect.height },
     { x: rect.x + rect.width, y: rect.y + rect.height },
   ].map((corner) => {
-    const local = screenPointToPhone(corner, screen);
+    const local = screenPointToPhone(corner, screen, phone);
     return projectPhonePoint(phonePose, local.x, local.y, canvas);
   });
   const xs = corners.map((corner) => corner.x);
@@ -441,6 +543,111 @@ export const SHOWCASE_TAKE_EDITS: Partial<Record<ShowcaseTakeId, TakeEdit>> = {
       ],
     },
   },
+};
+
+/**
+ * The Android edit: the iOS one where the footage lines up, and its own entries
+ * where the emulator's timings or sheet tops differ. Measured on the first
+ * Android recording (`work/android/`), the same way as the iOS numbers: a mark
+ * sits after Maestro's wait for the animation, so the offsets before a mark are
+ * shorter here (Maestro returns faster on Android). Sheet tops are dp on the
+ * 411 x 923 dp screen. The island take's marks keep their iOS names (`home` is
+ * the Home press, `island-expanded` the shade pulled down, `next-tapped` the
+ * notification's Next), so it cuts on the iOS entry.
+ */
+export const SHOWCASE_ANDROID_TAKE_EDITS: Partial<Record<ShowcaseTakeId, TakeEdit>> = {
+  ...SHOWCASE_TAKE_EDITS,
+  // The Material header's board name opens the sheet (about 1.8 s before
+  // `sheet-open`) at its half detent, where it rests until the drag 1.8 s
+  // after the mark. The name stays above the half-open sheet, so its callout
+  // may overlap the sheet's: the list alone is too short to read both.
+  wall: {
+    segments: [
+      { mark: 'sheet-open', from: -4.1, to: 1.0 },
+      { mark: 'history-shown', from: -0.5 },
+    ],
+    callouts: {
+      'board-history-button': { mark: 'sheet-open', from: -4.1, to: -0.9 },
+      'now-on-wall': { mark: 'sheet-open', from: -1.8, to: 1.0 },
+      'wall-history': { mark: 'history-shown', from: -0.5, to: 2.3 },
+    },
+    anchorShifts: {
+      // The wall sheet's top: 510 dp at its half detent, 101 dp dragged up.
+      'now-on-wall': [
+        { from: null, dy: 510 },
+        { from: { mark: 'history-shown', at: -0.8 }, dy: 101 },
+      ],
+      'wall-history': [
+        { from: null, dy: 510 },
+        { from: { mark: 'history-shown', at: -0.8 }, dy: 101 },
+      ],
+    },
+  },
+  // The invite QR, then the second phone's row landing with its avatar. No
+  // "Play next": the Android queue sheet takes an injected long press as a tap
+  // (packages/mobile/.maestro/showcase/android/crew.yaml), so the row stays on
+  // screen for the rest of the scene.
+  crew: {
+    segments: [
+      // The QR is still for the first 1.8 s; its last still frame holds.
+      { mark: 'invite-closed', from: -3.9, to: -2.1, hold: 1.1 },
+      { mark: 'row-landed', from: -0.6 },
+    ],
+    callouts: {
+      'invite-qr': { mark: 'invite-closed', from: -3.9, to: -2.1, hold: 1.1 },
+      'queue-row-avatar': { mark: 'row-landed', from: 0.1, to: 4.5 },
+    },
+    anchorShifts: {
+      // The invite sheet's top, and the queue sheet's top once the flow has
+      // dragged it to full height.
+      'invite-qr': [{ from: null, dy: 510 }],
+      'queue-row-avatar': [{ from: null, dy: 100 }],
+    },
+  },
+  // Maestro's two taps between arming the timer and the rest pill take longer
+  // here: the countdown starts 2.36 s after `rest-armed` (1.43 s on iOS). The
+  // gap moves by a second between recordings, so re-read it after a re-record.
+  workouts: {
+    segments: [
+      { mark: 'pyramid-picked', from: -1.9, to: 0.1 },
+      { mark: 'rest-armed', from: 2.3 },
+    ],
+    restPill: [
+      { at: { mark: 'rest-armed', at: 2.36 }, value: '0:29' },
+      { at: { mark: 'rest-armed', at: 3.36 }, value: '0:28' },
+      { at: { mark: 'rest-armed', at: 4.36 }, value: '0:27' },
+      { at: { mark: 'rest-armed', at: 5.36 }, value: '0:26' },
+    ],
+  },
+  // The Filters row moves up 353 dp with the scroll. The Kilter view drops the
+  // records card's footnote, which lifts the calendar another 27 dp. (The
+  // calendar re-logs its new place at some point after the filter, at a time
+  // that varies between recordings; this one logged it after the callout.)
+  log: {
+    // The same cut as iOS (the Android marks land the same screens), written out
+    // so a change to the iOS edit can't silently empty this one.
+    segments: [
+      { mark: 'scrolled', from: -1.0, to: 0.6, hold: 1.2 },
+      { mark: 'filter-kilter', from: -2.2 },
+    ],
+    callouts: {
+      'profile-board-filter': { mark: 'scrolled', from: -1.0, to: 0.6, hold: 1.2 },
+      'activity-calendar': { mark: 'filter-kilter', from: -0.9, to: 1.9 },
+    },
+    anchorShifts: {
+      'profile-board-filter': [{ from: { mark: 'scrolled', at: -1.5 }, dy: -353 }],
+      'activity-calendar': [
+        { from: { mark: 'scrolled', at: -1.5 }, dy: -353 },
+        { from: { mark: 'filter-kilter', at: -1.2 }, dy: -380 },
+      ],
+    },
+  },
+};
+
+/** The edit per platform (`--platform`). */
+export const SHOWCASE_TAKE_EDITS_BY_PLATFORM: Record<ShowcasePlatform, Partial<Record<ShowcaseTakeId, TakeEdit>>> = {
+  ios: SHOWCASE_TAKE_EDITS,
+  android: SHOWCASE_ANDROID_TAKE_EDITS,
 };
 
 /** Every mark an edit reads, so a render can say up front which are missing. */
@@ -693,6 +900,12 @@ export type ShowcaseCopy = Readonly<{
   log: SceneCopy;
   /** The full-bleed App Preview's caption bars, keyed by `ShowcaseClip.caption`: one line, five words at most. */
   appStore: Readonly<{ captions: Readonly<Record<string, string>> }>;
+  /**
+   * Android's differences, scene by scene (`copyForPlatform`): a headline, or
+   * callout labels, that name what the Android recording shows (the session
+   * notification rather than the Dynamic Island). Everything else is shared.
+   */
+  android?: ShowcaseCopyOverride;
   outro: Readonly<{
     wordmark: string;
     tagline: string;
@@ -705,6 +918,38 @@ export type ShowcaseCopy = Readonly<{
     donation?: string;
   }>;
 }>;
+
+/** The scenes whose headline and callouts a platform may override. */
+export type ShowcaseCopySceneId = 'hook' | 'light' | 'boards' | 'wall' | 'crew' | 'workouts' | 'lock-screen' | 'log';
+
+export type ShowcaseCopyOverride = Partial<
+  Record<ShowcaseCopySceneId, Readonly<{ headline?: string; callouts?: CalloutCopy }>>
+>;
+
+/**
+ * The copy a platform's cut shows: the shared copy with that platform's
+ * override block merged over it (headline replaced, callout labels merged),
+ * and the override blocks themselves left out. iOS has no block, so its copy
+ * is the shared copy as it was.
+ */
+export function copyForPlatform(copy: ShowcaseCopy, platform: ShowcasePlatform): ShowcaseCopy {
+  const { android, ...shared } = copy;
+  const override = platform === 'android' ? android : undefined;
+  if (!override) return shared;
+  const merged: Record<string, unknown> = { ...shared };
+  for (const [sceneId, sceneOverride] of Object.entries(override) as [
+    ShowcaseCopySceneId,
+    NonNullable<ShowcaseCopyOverride[ShowcaseCopySceneId]>,
+  ][]) {
+    const base = shared[sceneId];
+    merged[sceneId] = {
+      ...base,
+      ...(sceneOverride.headline ? { headline: sceneOverride.headline } : {}),
+      ...(sceneOverride.callouts ? { callouts: { ...base.callouts, ...sceneOverride.callouts } } : {}),
+    };
+  }
+  return merged as ShowcaseCopy;
+}
 
 /** The copy for a cut without the donation line (`--no-donation-line`): store previews, install ads. */
 export function withoutDonationLine(copy: ShowcaseCopy): ShowcaseCopy {
@@ -1425,7 +1670,7 @@ export type ShowcaseStageData = Readonly<{
   measure: boolean;
   choreo: typeof SHOWCASE_CHOREO;
   layout: CalloutLayout;
-  phone: typeof SHOWCASE_PHONE;
+  phone: ShowcasePhone;
   poses: Record<ShowcasePoseName, ShowcasePose>;
   /** 9:16 headline top (px); the checklist follows it. */
   headlineTop: number;
@@ -1498,6 +1743,8 @@ export type CalloutStage = Readonly<{
   layout: CalloutLayout;
   /** 9:16 pill centres stay inside this band (a safe area), or anywhere on the canvas. */
   band: Readonly<{ top: number; bottom: number }> | null;
+  /** The phone the footage sits in (default the iPhone). */
+  phone?: ShowcasePhone;
 }>;
 
 export const defaultCalloutStage = (format: ShowcaseFormat): CalloutStage => ({
@@ -1516,6 +1763,7 @@ export function layoutSceneCallouts(
   stage: CalloutStage = defaultCalloutStage(format),
 ): StageCallout[] {
   const canvas = SHOWCASE_CANVAS[format];
+  const phoneGeometry = stage.phone ?? SHOWCASE_PHONE;
   const calloutPose = stage.poses[SHOWCASE_SCENE_STAGING[scene.id]?.zoomPose ?? 'CALLOUT'];
   const timings = calloutTimings(scene, names, edit);
   const timing = (name: ShowcaseCalloutName) => {
@@ -1526,7 +1774,7 @@ export function layoutSceneCallouts(
   const boxes = names.map((name) => {
     const rect = anchorAt(anchorsFile.anchors[name] ?? [], timing(name).at);
     if (!rect) throw new Error(`Anchor ${name} has no samples`);
-    return screenToCanvas(rect, anchorsFile.screen, calloutPose, canvas);
+    return screenToCanvas(rect, anchorsFile.screen, calloutPose, canvas, phoneGeometry);
   });
   const roles = names.map((_, index) => CALLOUT_ROLES[Math.min(index, CALLOUT_ROLES.length - 1)]);
   // The boxes as the stage draws them: padded.
@@ -1549,7 +1797,7 @@ export function layoutSceneCallouts(
       leave: timing(name).exit,
     }));
   }
-  const { width: phoneWidth, height: phoneHeight } = SHOWCASE_PHONE;
+  const { width: phoneWidth, height: phoneHeight } = phoneGeometry;
   const phone = {
     x: calloutPose.cx - (phoneWidth / 2) * calloutPose.scale,
     y: calloutPose.cy - (phoneHeight / 2) * calloutPose.scale,
@@ -2515,6 +2763,10 @@ export type RenderArgs = Readonly<{
    * homepage (whose files always keep the line).
    */
   donationLine: boolean;
+  /** Whose recording to cut (`--platform`): its footage, its phone mockup, its copy and its targets. */
+  platform: ShowcasePlatform;
+  /** `--work-dir`: read footage/, anchors/ and marks/ from here instead of the platform's work dir. */
+  workDir: string | null;
   help: boolean;
 }>;
 
@@ -2537,6 +2789,8 @@ export function parseRenderArgs(argv: readonly string[]): RenderArgs {
   let placeholderFootage = false;
   let skipWeb = false;
   let donationLine = true;
+  let platform: ShowcasePlatform = DEFAULT_SHOWCASE_PLATFORM;
+  let workDir: string | null = null;
   const result = (help: boolean): RenderArgs => ({
     stills,
     posterFrame,
@@ -2548,6 +2802,8 @@ export function parseRenderArgs(argv: readonly string[]): RenderArgs {
     placeholderFootage,
     skipWeb: skipWeb || !donationLine,
     donationLine,
+    platform,
+    workDir,
     help,
   });
   for (let index = 0; index < argv.length; index += 1) {
@@ -2564,7 +2820,9 @@ export function parseRenderArgs(argv: readonly string[]): RenderArgs {
       argument === '--format' ||
       argument === '--frame' ||
       argument === '--poster-frame' ||
-      argument === '--target'
+      argument === '--target' ||
+      argument === '--platform' ||
+      argument === '--work-dir'
     ) {
       const value = argv[index + 1];
       if (!value || value.startsWith('--')) throw new Error(`${argument} needs a value`);
@@ -2573,13 +2831,21 @@ export function parseRenderArgs(argv: readonly string[]): RenderArgs {
       else if (argument === '--frame') frame = parseFrameNumber(argument, value);
       else if (argument === '--poster-frame') posterFrame = parseFrameNumber(argument, value);
       else if (argument === '--target') targets.push(...value.split(','));
-      else {
+      else if (argument === '--work-dir') workDir = value;
+      else if (argument === '--platform') {
+        if (!isShowcasePlatform(value)) throw new Error(`--platform must be one of ${SHOWCASE_PLATFORMS.join(', ')}`);
+        platform = value;
+      } else {
         if (!(SHOWCASE_FORMATS as readonly string[]).includes(value)) {
           throw new Error(`--format must be one of ${SHOWCASE_FORMATS.join(', ')}`);
         }
         formats = [value as ShowcaseFormat];
       }
     } else throw new Error(`Unknown option: ${argument}`);
+  }
+  // Placeholders are iOS screens (help clips, App Store stills), written into the footage dir.
+  if (placeholderFootage && platform !== 'ios') {
+    throw new Error('--placeholder-footage builds iOS stand-ins; it cannot be combined with --platform android');
   }
   return result(false);
 }

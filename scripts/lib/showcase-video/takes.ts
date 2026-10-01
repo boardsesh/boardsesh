@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -5,6 +6,7 @@ import {
   SHOWCASE_TAKE_IDS,
   type ShowcaseAnchorName,
   type ShowcaseAnchorRect,
+  type ShowcasePlatform,
   type ShowcaseStaticAnchorName,
   type ShowcaseTakeId,
 } from './contract';
@@ -63,9 +65,12 @@ export const SHOWCASE_RELAUNCH_STEP = '@relaunch';
 /** A lock-screen/island button rect the app cannot log, authored from a measured frame. */
 export type ShowcaseStaticAnchor = Readonly<{
   name: ShowcaseStaticAnchorName;
-  /** Points on the 440x956 iPhone 16 Pro Max screen. */
+  /** Points on the 440x956 iPhone 16 Pro Max screen (dp on the 411x923 Android emulator). */
   rect: ShowcaseAnchorRect;
-  /** The signal-server mark after which the rect is on screen (the flow raises it). */
+  /**
+   * The signal-server mark after which the rect is on screen (the flow raises
+   * it). A name listed twice moves at the later entry's mark.
+   */
   fromMark: string;
 }>;
 
@@ -129,7 +134,32 @@ export type ShowcaseTake = Readonly<{
    * the device up (the island take's empty home screen).
    */
   deviceSetupFlows: readonly string[];
+  /**
+   * What differs when the take is filmed on another platform (see
+   * `takeForPlatform`). Flow FILES need no entry here: a flow with the same
+   * name under `showcase/<platform>/` replaces the shared one automatically
+   * (`showcaseFlowPathFor`).
+   */
+  platforms: Readonly<Partial<Record<Exclude<ShowcasePlatform, 'ios'>, ShowcaseTakePlatformOverride>>>;
 }>;
+
+export type ShowcaseTakePlatformOverride = Readonly<
+  Partial<
+    Pick<
+      ShowcaseTake,
+      | 'summary'
+      | 'primeLinks'
+      | 'setupFlows'
+      | 'teardownFlows'
+      | 'deviceSetupFlows'
+      | 'staticAnchors'
+      | 'expectedAnchors'
+    >
+  > & {
+    /** Why the take cannot be filmed on this platform at all. */
+    unavailable?: string;
+  }
+>;
 
 const isAppAnchor = (name: string): name is ShowcaseAnchorName =>
   (SHOWCASE_ANCHOR_NAMES as readonly string[]).includes(name);
@@ -160,6 +190,7 @@ type TakeInput = Omit<
   | 'unavailable'
   | 'anchorMarks'
   | 'deviceSetupFlows'
+  | 'platforms'
 > &
   Partial<
     Pick<
@@ -172,6 +203,7 @@ type TakeInput = Omit<
       | 'unavailable'
       | 'anchorMarks'
       | 'deviceSetupFlows'
+      | 'platforms'
     >
   > & { extraAnchors?: readonly ShowcaseAnchorName[] };
 
@@ -184,6 +216,7 @@ function take({ extraAnchors, ...entry }: TakeInput): ShowcaseTake {
     unavailable: {},
     anchorMarks: {},
     deviceSetupFlows: [],
+    platforms: {},
     ...entry,
     privateSession,
     teardownFlows: entry.teardownFlows ?? (privateSession ? ['session-end.yaml'] : []),
@@ -259,6 +292,17 @@ export const SHOWCASE_TAKES: readonly ShowcaseTake[] = [
     secondary: { joinFlow: 'crew-join.yaml', flow: 'crew-secondary.yaml' },
     setupFlows: ['crew-start.yaml'],
     anchorMarks: { 'row-landed': 'queue-row-avatar' },
+    platforms: {
+      // No clipboard to read the invite link back from: Start, a relaunch that
+      // logs the session id, then crew-invite.yaml opens the QR.
+      // And no "Play next": an injected long press on the Android queue sheet
+      // lands as a tap, so the reaction menu never opens (android/crew.yaml).
+      android: {
+        summary: 'A private live session: invite QR, a second phone adds a climb, the row lands with their avatar.',
+        setupFlows: ['crew-start.yaml', 'crew-invite.yaml'],
+        expectedAnchors: ['invite-qr', 'queue-row-avatar'],
+      },
+    },
   }),
   take({
     id: 'workouts',
@@ -287,6 +331,25 @@ export const SHOWCASE_TAKES: readonly ShowcaseTake[] = [
       { name: 'lock-mirror', rect: { x: 228, y: 105, width: 36, height: 36 }, fromMark: 'island-expanded' },
       { name: 'lock-next', rect: { x: 300, y: 107, width: 60, height: 32 }, fromMark: 'island-expanded' },
     ],
+    platforms: {
+      android: {
+        summary: 'A live session on the wall; home screen, the shade with the session notification expanded, Next.',
+        // The launcher's home screen stays as it is: the shade covers it.
+        deviceSetupFlows: [],
+        // No relaunch between the two (the iOS one is about APNs tokens): a
+        // relaunch leaves the notification without the first climb's thumbnail.
+        setupFlows: ['lock-screen-setup.yaml', 'lock-screen-arm.yaml'],
+        // Measured on recorded frames of the expanded notification (dp). Next
+        // adds "Previous" on the left, which pushes Relight wall and Next right.
+        staticAnchors: [
+          { name: 'lock-relight', rect: { x: 62, y: 403, width: 84, height: 32 }, fromMark: 'island-expanded' },
+          { name: 'lock-mirror', rect: { x: 339, y: 313, width: 32, height: 32 }, fromMark: 'island-expanded' },
+          { name: 'lock-next', rect: { x: 161, y: 403, width: 42, height: 32 }, fromMark: 'island-expanded' },
+          { name: 'lock-relight', rect: { x: 144, y: 403, width: 84, height: 32 }, fromMark: 'next-tapped' },
+          { name: 'lock-next', rect: { x: 243, y: 403, width: 42, height: 32 }, fromMark: 'next-tapped' },
+        ],
+      },
+    },
   }),
   take({
     id: 'log',
@@ -318,5 +381,39 @@ export function assertShowcaseTakesComplete(takes: readonly ShowcaseTake[] = SHO
 }
 
 export const isShowcaseFlow = (step: string): boolean => step !== SHOWCASE_RELAUNCH_STEP;
+
+/**
+ * A take as filmed on `platform`: the iOS entry with that platform's
+ * overrides laid over it. A platform that cannot film the take marks it
+ * unavailable on every backend, so the recorder skips it with the reason.
+ */
+export function takeForPlatform(take: ShowcaseTake, platform: ShowcasePlatform): ShowcaseTake {
+  if (platform === 'ios') return take;
+  const override = take.platforms[platform];
+  if (!override) return take;
+  const { unavailable, ...fields } = override;
+  return {
+    ...take,
+    ...fields,
+    unavailable: unavailable ? { local: unavailable, prod: unavailable } : take.unavailable,
+  };
+}
+
+/**
+ * The flow file to run on `platform`: `showcase/<platform>/<flow>` when it
+ * exists (coordinates that differ on Material UI), else the shared one.
+ * `exists` is injectable for tests.
+ */
+export function showcaseFlowPathFor(
+  flow: string,
+  platform: ShowcasePlatform,
+  exists: (path: string) => boolean = existsSync,
+): string {
+  if (platform !== 'ios') {
+    const specific = resolve(SHOWCASE_FLOW_DIR, platform, flow);
+    if (exists(specific)) return specific;
+  }
+  return resolve(SHOWCASE_FLOW_DIR, flow);
+}
 
 export const showcaseFlowPath = (flow: string): string => resolve(SHOWCASE_FLOW_DIR, flow);

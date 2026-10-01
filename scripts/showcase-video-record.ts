@@ -46,23 +46,48 @@ import {
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { homedir } from 'node:os';
-import { dirname, join, relative, resolve } from 'node:path';
+import { basename, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import sharp from 'sharp';
 import { resolveMediaBinary } from './lib/help-clips';
 import { guardSimulatorCommand } from './lib/ios-simulator-lease';
 import { DEFAULT_SCREENSHOT_FIXTURES_DIR } from './lib/screenshot-fixtures';
 import {
-  SHOWCASE_ANCHORS_DIR,
-  SHOWCASE_MARKS_DIR,
-  SHOWCASE_FOOTAGE_DIR,
-  SHOWCASE_RAW_DIR,
   SHOWCASE_STAGE_DIR,
   SHOWCASE_TAKE_IDS,
   SHOWCASE_WORK_ROOT,
+  showcaseWorkDirs,
   type ShowcaseAnchorsFile,
+  type ShowcasePlatform,
   type ShowcaseTakeId,
+  type ShowcaseWorkDirs,
 } from './lib/showcase-video/contract';
+import {
+  SHOWCASE_ANDROID_DEVICE,
+  SHOWCASE_ANDROID_PACKAGE,
+  androidDevClientUrl,
+  androidSerial,
+  buildConcatArgs,
+  buildConcatList,
+  buildDemoModeCommands,
+  buildDemoModeExitCommand,
+  buildSnoozeSystemNotificationsArgs,
+  buildEmulatorArgs,
+  buildScreenrecordArgs,
+  isScreenrecordStartedLine,
+  screenrecordRemotePath,
+  showcaseAvdConfig,
+  showcaseSystemImage,
+} from './lib/showcase-video/android';
+import {
+  adbPath,
+  androidEnv,
+  avdmanagerPath,
+  emulatorPath,
+  resolveAndroidHome,
+  sdkmanagerPath,
+} from './lib/android-sdk';
+import { resolveAndroidApk } from './mobile-android-apk';
 import {
   FLOW_START_MARK,
   REFERENCE_CHANNEL_TOLERANCE,
@@ -82,7 +107,9 @@ import {
   isBlankFrame,
   isRecordingStartedLine,
   parseEnvFile,
+  macOsOnlyMessage,
   parseRecordArgs,
+  recordRunMode,
   parseSessionIdFromInviteUrl,
   parseSignalRequest,
   resolveTrimSeconds,
@@ -100,7 +127,8 @@ import {
   SHOWCASE_TAKES,
   isShowcaseFlow,
   assertShowcaseTakesComplete,
-  showcaseFlowPath,
+  showcaseFlowPathFor,
+  takeForPlatform,
   type ShowcaseTake,
 } from './lib/showcase-video/takes';
 import {
@@ -397,17 +425,19 @@ async function runMaestro(
   return code ?? 1;
 }
 
-function writeNavigationFlow(name: string, links: readonly string[], settleMs: number): string {
-  const steps: string[] = [`appId: ${APP_ID}`, '---'];
+function writeNavigationFlow(
+  name: string,
+  links: readonly string[],
+  settleMs: number,
+  platform: ShowcasePlatform = 'ios',
+): string {
+  const steps: string[] = [`appId: ${platform === 'android' ? SHOWCASE_ANDROID_PACKAGE : APP_ID}`, '---'];
   for (const link of links) {
     if (!SAFE_ROUTE.test(link)) throw new Error(`Unsafe deep link in the take registry: ${link}`);
-    steps.push(
-      `- openLink: "${APP_SCHEME}://${link}"`,
-      '- tapOn:',
-      "    text: 'Open'",
-      '    optional: true',
-      '- waitForAnimationToEnd',
-    );
+    steps.push(`- openLink: "${APP_SCHEME}://${link}"`);
+    // iOS asks "Open in 'Boardsesh'?" now and then; Android opens the link directly.
+    if (platform === 'ios') steps.push('- tapOn:', "    text: 'Open'", '    optional: true');
+    steps.push('- waitForAnimationToEnd');
   }
   steps.push(
     '- extendedWaitUntil:',
@@ -462,6 +492,8 @@ function writeSchemePrimeFlow(): string {
 // Devices and Metro
 
 type Phone = {
+  /** iOS simulator (`device.udid` is its UDID) or Android emulator (`device.udid` is its adb serial). */
+  platform: ShowcasePlatform;
   role: 'primary' | 'secondary';
   spec: ShowcaseDevice;
   device: DeviceInfo;
@@ -544,11 +576,11 @@ async function waitForHttp(url: string, timeoutMs: number): Promise<boolean> {
  * Build the bundle the dev-client will ask for before launching it: a cold
  * build (4600+ modules) outlasts the dev-client's load timeout.
  */
-async function prewarmBundle(port: number): Promise<void> {
+async function prewarmBundle(port: number, platform: ShowcasePlatform = 'ios'): Promise<void> {
   for (let attempt = 1; attempt <= 6; attempt++) {
     try {
       const manifest = await fetch(`http://localhost:${port}/`, {
-        headers: { 'expo-platform': 'ios', accept: 'application/expo+json,application/json' },
+        headers: { 'expo-platform': platform, accept: 'application/expo+json,application/json' },
         signal: AbortSignal.timeout(30_000),
       });
       const bundleUrl = ((await manifest.json()) as { launchAsset?: { url?: string } }).launchAsset?.url;
@@ -563,7 +595,7 @@ async function prewarmBundle(port: number): Promise<void> {
     console.log(`${LOG} Metro on ${port} not ready to serve the bundle (attempt ${attempt}/6)...`);
     await sleep(5000);
   }
-  throw new Error(`Metro on ${port} never served the iOS bundle; see ${relative(ROOT_DIR, LOG_DIR)}`);
+  throw new Error(`Metro on ${port} never served the ${platform} bundle; see ${relative(ROOT_DIR, LOG_DIR)}`);
 }
 
 /** A copy of the dev-client whose baked launcher URL points at another Metro port. */
@@ -625,7 +657,7 @@ async function preparePhone(
 
   const metroLog = resolve(LOG_DIR, `metro-${role}.log`);
   console.log(`${LOG} ${role}: starting Metro on ${metroPort} (log ${relative(ROOT_DIR, metroLog)})...`);
-  const phone: Phone = { role, spec, device, appPath, metroPort, metroLog, metro: null };
+  const phone: Phone = { platform: 'ios', role, spec, device, appPath, metroPort, metroLog, metro: null };
   phone.metro = startMetro(metroPort, env, metroLog);
   if (!(await waitForHttp(`http://localhost:${metroPort}/status`, 120_000))) {
     throw new Error(`Metro on ${metroPort} never answered /status; see ${metroLog}`);
@@ -644,6 +676,7 @@ async function preparePhone(
 
 /** Cold-start the app (fresh JS state, so one-shot deep-link params fire again) and wait for home. */
 async function relaunch(phone: Phone): Promise<LogWindow> {
+  if (phone.platform === 'android') return relaunchAndroid(phone);
   const window = new LogWindow(phone.metroLog);
   // A brand-new simulator's first launch can sit on the dev-client launcher
   // ("Searching for development servers") instead of loading the baked URL;
@@ -663,9 +696,203 @@ async function relaunch(phone: Phone): Promise<LogWindow> {
     console.warn(`${LOG} ${phone.role}: app not home after launch ${attempt}/${attempts}.`);
   }
   const screenshot = resolve(LOG_DIR, `${phone.role}-not-home.png`);
-  simctl(['io', phone.device.udid, 'screenshot', screenshot]);
+  deviceScreenshot(phone, screenshot);
   throw new Error(
     `${phone.role} never reached home within ${HOME_READY_TIMEOUT_MS / 1000}s (screen: ${relative(ROOT_DIR, screenshot)}). ` +
+      `Last Metro lines:\n${window.text.split('\n').slice(-25).join('\n')}`,
+  );
+}
+
+/** A still of what the phone shows, for a failure message. */
+function deviceScreenshot(phone: Phone, file: string): void {
+  mkdirSync(dirname(file), { recursive: true });
+  if (phone.platform === 'ios') {
+    simctl(['io', phone.device.udid, 'screenshot', file]);
+    return;
+  }
+  const capture = spawnSync(adbBinary(), ['-s', phone.device.udid, 'exec-out', 'screencap', '-p'], {
+    env: androidEnv(),
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  if (capture.status === 0) writeFileSync(file, capture.stdout);
+}
+
+// ---------------------------------------------------------------------------
+// Android emulator
+
+function adbBinary(): string {
+  return adbPath(resolveAndroidHome());
+}
+
+function adb(args: string[]): { status: number; stdout: string; stderr: string } {
+  const result = spawnSync(adbBinary(), args, { encoding: 'utf8', env: androidEnv(), maxBuffer: 16 * 1024 * 1024 });
+  return { status: result.status ?? 1, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
+}
+
+/**
+ * The dedicated "Boardsesh_Showcase" AVD: created once from the Pixel 7
+ * profile on this host's system image, its screen set to a Pixel 9-class
+ * 1080x2424 (config.ini is rewritten every run, so a hand edit can't drift it).
+ */
+function ensureShowcaseAvd(): void {
+  const home = resolveAndroidHome();
+  const env = androidEnv();
+  const image = showcaseSystemImage(process.arch);
+  const imageDir = resolve(home, ...image.split(';'));
+  if (!existsSync(imageDir)) {
+    console.log(`${LOG} android: installing ${image} (one-time, ~1.5 GB)...`);
+    const installed = spawnSync(sdkmanagerPath(home), [`--sdk_root=${home}`, image], { stdio: 'inherit', env });
+    if (installed.status !== 0)
+      throw new Error(`sdkmanager could not install ${image}; run vp run mobile:android-doctor`);
+  }
+  const avdDir = join(homedir(), '.android', 'avd', `${SHOWCASE_ANDROID_DEVICE.avdName}.avd`);
+  if (!existsSync(avdDir)) {
+    console.log(`${LOG} android: creating AVD ${SHOWCASE_ANDROID_DEVICE.avdName}...`);
+    const created = spawnSync(
+      avdmanagerPath(home),
+      [
+        'create',
+        'avd',
+        '-n',
+        SHOWCASE_ANDROID_DEVICE.avdName,
+        '-k',
+        image,
+        '-d',
+        SHOWCASE_ANDROID_DEVICE.deviceProfile,
+        '--force',
+      ],
+      { input: 'no\n', encoding: 'utf8', env },
+    );
+    if (created.status !== 0) throw new Error(`avdmanager could not create the AVD: ${created.stderr ?? ''}`);
+  }
+  const configPath = join(avdDir, 'config.ini');
+  writeFileSync(configPath, showcaseAvdConfig(readFileSync(configPath, 'utf8')));
+}
+
+async function bootShowcaseEmulator(windowed: boolean): Promise<string> {
+  const serial = androidSerial(SHOWCASE_ANDROID_DEVICE.port);
+  const alreadyUp = adb(['devices'])
+    .stdout.split('\n')
+    .some((line) => line.startsWith(`${serial}\t`));
+  if (!alreadyUp) {
+    ensureShowcaseAvd();
+    const logPath = resolve(LOG_DIR, 'android-emulator.log');
+    mkdirSync(LOG_DIR, { recursive: true });
+    console.log(
+      `${LOG} android: booting ${SHOWCASE_ANDROID_DEVICE.avdName} on ${serial} (log ${relative(ROOT_DIR, logPath)})...`,
+    );
+    const args = buildEmulatorArgs({
+      avdName: SHOWCASE_ANDROID_DEVICE.avdName,
+      port: SHOWCASE_ANDROID_DEVICE.port,
+      windowed,
+    });
+    const command = [emulatorPath(resolveAndroidHome()), ...args].map(shellQuote).join(' ');
+    const emulator = spawnGroup('sh', ['-c', `${command} > ${shellQuote(logPath)} 2>&1`], {
+      cwd: ROOT_DIR,
+      env: androidEnv(),
+    });
+    onCleanup('android emulator', async () => {
+      adb(['-s', serial, 'emu', 'kill']);
+      await sleep(3000);
+      stopGroup(emulator);
+    });
+  }
+  const deadline = Date.now() + 300_000;
+  while (Date.now() < deadline) {
+    if (adb(['-s', serial, 'shell', 'getprop', 'sys.boot_completed']).stdout.trim() === '1') return serial;
+    await sleep(2000);
+  }
+  throw new Error(
+    `The emulator ${serial} did not finish booting in 300s; see ${relative(ROOT_DIR, LOG_DIR)}/android-emulator.log`,
+  );
+}
+
+async function prepareAndroidPhone(
+  args: ShowcaseRecordArgs,
+  metroPort: number,
+  env: NodeJS.ProcessEnv,
+  backendUrl: string | null,
+): Promise<Phone> {
+  const serial = await bootShowcaseEmulator(false);
+  // Dark system UI, which the notification shade the island take films follows.
+  adb(['-s', serial, 'shell', 'cmd', 'uimode', 'night', 'yes']);
+  onCleanup('android demo mode', () => {
+    adb(buildDemoModeExitCommand(serial));
+  });
+  const apk = args.appPath ? resolve(args.appPath) : resolveAndroidApk().apkPath;
+  console.log(`${LOG} android: installing ${apk}...`);
+  adb(['-s', serial, 'uninstall', SHOWCASE_ANDROID_PACKAGE]);
+  const install = adb(['-s', serial, 'install', '-r', '-g', apk]);
+  if (install.status !== 0) throw new Error(`adb install failed: ${install.stderr.trim() || install.stdout.trim()}`);
+  // Notifications allowed without a prompt (the island take films the session notification).
+  adb(['-s', serial, 'shell', 'pm', 'grant', SHOWCASE_ANDROID_PACKAGE, 'android.permission.POST_NOTIFICATIONS']);
+  // The emulator's localhost is its own: map Metro (and a local backend) onto the host's.
+  const ports = [metroPort, ...(backendUrl ? [Number(new URL(backendUrl).port)] : [])];
+  for (const port of ports) {
+    const reverse = adb(['-s', serial, 'reverse', `tcp:${port}`, `tcp:${port}`]);
+    if (reverse.status !== 0) throw new Error(`adb reverse tcp:${port} failed: ${reverse.stderr.trim()}`);
+  }
+
+  const metroLog = resolve(LOG_DIR, 'metro-primary.log');
+  console.log(`${LOG} android: starting Metro on ${metroPort} (log ${relative(ROOT_DIR, metroLog)})...`);
+  const phone: Phone = {
+    platform: 'android',
+    role: 'primary',
+    spec: { name: SHOWCASE_ANDROID_DEVICE.avdName, typeId: '', screen: SHOWCASE_ANDROID_DEVICE.screen },
+    device: { udid: serial, name: SHOWCASE_ANDROID_DEVICE.avdName, state: 'Booted' },
+    appPath: apk,
+    metroPort,
+    metroLog,
+    metro: null,
+  };
+  phone.metro = startMetro(metroPort, env, metroLog);
+  if (!(await waitForHttp(`http://localhost:${metroPort}/status`, 120_000))) {
+    throw new Error(`Metro on ${metroPort} never answered /status; see ${metroLog}`);
+  }
+  await prewarmBundle(metroPort, 'android');
+  await relaunch(phone);
+  cleanAndroidStatusBar(serial);
+  return phone;
+}
+
+/**
+ * A clean status bar (09:41, full bars and battery) and a shade without the
+ * system's own notifications. SystemUI drops a demo-mode broadcast that lands
+ * while it is still settling after boot, and nothing reports whether one took,
+ * so every take re-sends them (idempotent, well under a second).
+ */
+function cleanAndroidStatusBar(serial: string): void {
+  for (const command of buildDemoModeCommands(serial)) adb(command);
+  adb(buildSnoozeSystemNotificationsArgs(serial));
+}
+
+/** Cold-start the dev-client against its Metro and wait for home. */
+async function relaunchAndroid(phone: Phone): Promise<LogWindow> {
+  const window = new LogWindow(phone.metroLog);
+  const attempts = 3;
+  // A take that ends in the notification shade leaves it open over the app,
+  // where it would swallow the next flow's taps (the session-end Stop first).
+  adb(['-s', phone.device.udid, 'shell', 'cmd', 'statusbar', 'collapse']);
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    adb(['-s', phone.device.udid, 'shell', 'am', 'force-stop', SHOWCASE_ANDROID_PACKAGE]);
+    adb([
+      '-s',
+      phone.device.udid,
+      'shell',
+      `am start -a android.intent.action.VIEW -d '${androidDevClientUrl(phone.metroPort)}' ${SHOWCASE_ANDROID_PACKAGE}`,
+    ]);
+    const deadline = Date.now() + HOME_READY_TIMEOUT_MS / attempts;
+    while (Date.now() < deadline) {
+      window.pull();
+      if (countHomeReady(window.text) > 0) return window;
+      await sleep(1000);
+    }
+    console.warn(`${LOG} android: app not home after launch ${attempt}/${attempts}.`);
+  }
+  const screenshot = resolve(LOG_DIR, `${phone.role}-not-home.png`);
+  deviceScreenshot(phone, screenshot);
+  throw new Error(
+    `The Android app never reached home (screen: ${relative(ROOT_DIR, screenshot)}). ` +
       `Last Metro lines:\n${window.text.split('\n').slice(-25).join('\n')}`,
   );
 }
@@ -673,10 +900,15 @@ async function relaunch(phone: Phone): Promise<LogWindow> {
 // ---------------------------------------------------------------------------
 // Recording
 
-type Recording = Readonly<{ child: ChildProcess; startedAt: Promise<number>; file: string }>;
+/** One take being filmed: when frames started, and a stop that leaves `file` finalised on this machine. */
+type Recording = Readonly<{ startedAt: Promise<number>; file: string; stop: () => Promise<number> }>;
 
-function startRecording(udid: string, file: string): Recording {
+function startRecording(phone: Phone, file: string): Recording {
   mkdirSync(dirname(file), { recursive: true });
+  return phone.platform === 'ios' ? startIosRecording(phone.device.udid, file) : startAndroidRecording(phone, file);
+}
+
+function startIosRecording(udid: string, file: string): Recording {
   guardSimulatorCommand('xcrun', ['simctl', 'io', udid], ROOT_DIR);
   const spawnedAt = Date.now();
   const child = spawn('xcrun', ['simctl', 'io', udid, 'recordVideo', '--codec', 'h264', '--force', file], {
@@ -697,21 +929,105 @@ function startRecording(udid: string, file: string): Recording {
     child.stdout?.on('data', watch);
     child.stderr?.on('data', watch);
   });
-  return { child, startedAt, file };
+  // SIGINT is the only stop that finalises the container; anything harder
+  // leaves an unplayable file.
+  const stop = async (): Promise<number> => {
+    const stoppedAt = Date.now();
+    child.kill('SIGINT');
+    const exited = once(child, 'exit');
+    const timeout = sleep(20_000).then(() => 'timeout' as const);
+    if ((await Promise.race([exited, timeout])) === 'timeout') {
+      child.kill('SIGKILL');
+      throw new Error(`recordVideo did not finalise ${file} within 20s`);
+    }
+    liveChildren.delete(child);
+    return stoppedAt;
+  };
+  return { startedAt, file, stop };
 }
 
-/** SIGINT is the only stop that finalises the container; anything harder leaves an unplayable file. */
-async function stopRecording(recording: Recording): Promise<number> {
-  const stoppedAt = Date.now();
-  recording.child.kill('SIGINT');
-  const exited = once(recording.child, 'exit');
-  const timeout = sleep(20_000).then(() => 'timeout' as const);
-  if ((await Promise.race([exited, timeout])) === 'timeout') {
-    recording.child.kill('SIGKILL');
-    throw new Error(`recordVideo did not finalise ${recording.file} within 20s`);
-  }
-  liveChildren.delete(recording.child);
-  return stoppedAt;
+/**
+ * `adb shell screenrecord` stops itself after 180 s, so a longer take records
+ * in parts: when one part ends on the cap, the next starts. Stop sends SIGINT
+ * to screenrecord ON THE DEVICE (killing the local adb client leaves the mp4
+ * without its index), pulls every part and joins them.
+ */
+function startAndroidRecording(phone: Phone, file: string): Recording {
+  const serial = phone.device.udid;
+  const takeKey = basename(file).replace(/\.[a-z0-9]+$/, '');
+  const parts: string[] = [];
+  const state: { current: ChildProcess | null; stopping: boolean; started: boolean } = {
+    current: null,
+    stopping: false,
+    started: false,
+  };
+  let resolveStarted: (atMs: number) => void = () => {};
+  const startedAt = new Promise<number>((resolvePromise) => {
+    resolveStarted = resolvePromise;
+  });
+  const startPart = (): void => {
+    const remote = screenrecordRemotePath(takeKey, parts.length);
+    parts.push(remote);
+    const spawnedAt = Date.now();
+    const child = spawn(adbBinary(), buildScreenrecordArgs(serial, remote), {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: androidEnv(),
+    });
+    state.current = child;
+    liveChildren.add(child);
+    if (!state.started) {
+      const fallback = setTimeout(() => {
+        if (state.started) return;
+        state.started = true;
+        console.warn(`${LOG} screenrecord printed no start line; assuming it started 1s after spawn.`);
+        resolveStarted(spawnedAt + 1000);
+      }, 8000);
+      const watch = (chunk: Buffer): void => {
+        if (!state.started && chunk.toString('utf8').split('\n').some(isScreenrecordStartedLine)) {
+          state.started = true;
+          clearTimeout(fallback);
+          resolveStarted(Date.now());
+        }
+      };
+      child.stdout?.on('data', watch);
+      child.stderr?.on('data', watch);
+    }
+    child.on('exit', () => {
+      liveChildren.delete(child);
+      if (!state.stopping) startPart();
+    });
+  };
+  startPart();
+  const stop = async (): Promise<number> => {
+    const stoppedAt = Date.now();
+    state.stopping = true;
+    adb(['-s', serial, 'shell', 'pkill', '-INT', 'screenrecord']);
+    const running = state.current;
+    if (running && running.exitCode === null) {
+      const exited = once(running, 'exit');
+      const timeout = sleep(20_000).then(() => 'timeout' as const);
+      if ((await Promise.race([exited, timeout])) === 'timeout') running.kill('SIGKILL');
+    }
+    // screenrecord finalises the file a beat after it exits on SIGINT.
+    await sleep(1000);
+    const localParts: string[] = [];
+    for (const [index, remote] of parts.entries()) {
+      const local = parts.length === 1 ? file : `${file}.part${index}.mp4`;
+      const pulled = adb(['-s', serial, 'pull', remote, local]);
+      adb(['-s', serial, 'shell', 'rm', '-f', remote]);
+      if (pulled.status !== 0) throw new Error(`adb pull ${remote} failed: ${pulled.stderr.trim()}`);
+      localParts.push(local);
+    }
+    if (localParts.length > 1) {
+      const listFile = `${file}.parts.txt`;
+      writeFileSync(listFile, buildConcatList(localParts));
+      const joined = spawnSync(resolveMediaBinary('ffmpeg'), buildConcatArgs(listFile, file), { encoding: 'utf8' });
+      for (const part of [...localParts, listFile]) rmSync(part, { force: true });
+      if (joined.status !== 0) throw new Error(`ffmpeg could not join the parts of ${file}: ${joined.stderr.trim()}`);
+    }
+    return stoppedAt;
+  };
+  return { startedAt, file, stop };
 }
 
 type TakeResult = Readonly<{ takeId: ShowcaseTakeId; problems: string[]; frames: number; seconds: number }>;
@@ -741,16 +1057,18 @@ async function processTake(
     arrivals: readonly AnchorArrival[];
     logText: string;
     extraProblems: readonly string[];
+    dirs: ShowcaseWorkDirs;
+    screen: Readonly<{ width: number; height: number }>;
   }>,
 ): Promise<TakeResult> {
-  const { take, args } = options;
+  const { take, args, dirs } = options;
   const trimSeconds = resolveTrimSeconds({
     recordStartMs: options.recordStartMs,
     flowStartMs: options.marks.get(FLOW_START_MARK) ?? null,
     fallbackSeconds: take.trimSeconds,
   });
   const durationSeconds = Math.floor(((options.stoppedAtMs - options.recordStartMs) / 1000 - trimSeconds) * 30) / 30;
-  const footageDir = resolve(SHOWCASE_FOOTAGE_DIR, take.id);
+  const footageDir = resolve(dirs.footage, take.id);
   rmSync(footageDir, { recursive: true, force: true });
   mkdirSync(footageDir, { recursive: true });
   const ffmpeg = spawnSync(
@@ -787,11 +1105,11 @@ async function processTake(
     recordStartMs: options.recordStartMs,
     trimSeconds,
     durationSeconds: seconds,
-    screen: SHOWCASE_DEVICES.primary.screen,
+    screen: options.screen,
     staticAnchors,
   });
-  mkdirSync(SHOWCASE_ANCHORS_DIR, { recursive: true });
-  writeFileSync(resolve(SHOWCASE_ANCHORS_DIR, `${take.id}.json`), `${JSON.stringify(anchors, null, 2)}\n`);
+  mkdirSync(dirs.anchors, { recursive: true });
+  writeFileSync(resolve(dirs.anchors, `${take.id}.json`), `${JSON.stringify(anchors, null, 2)}\n`);
   const marksFile = buildMarksFile({
     takeId: take.id,
     marks: options.marks,
@@ -801,8 +1119,8 @@ async function processTake(
     trimSeconds,
     durationSeconds: seconds,
   });
-  mkdirSync(SHOWCASE_MARKS_DIR, { recursive: true });
-  writeFileSync(resolve(SHOWCASE_MARKS_DIR, `${take.id}.json`), `${JSON.stringify(marksFile, null, 2)}\n`);
+  mkdirSync(dirs.marks, { recursive: true });
+  writeFileSync(resolve(dirs.marks, `${take.id}.json`), `${JSON.stringify(marksFile, null, 2)}\n`);
 
   let boardProblem: string | null = null;
   if (take.board?.slot !== undefined && take.board.slot !== null) {
@@ -850,6 +1168,8 @@ const failed = (take: ShowcaseTake, problems: string[]): TakeResult => ({
 
 type RunContext = {
   args: ShowcaseRecordArgs;
+  /** Where this platform's footage, anchors and marks go. */
+  dirs: ShowcaseWorkDirs;
   primary: Phone;
   secondary: Phone | null;
   signal: SignalServer;
@@ -875,7 +1195,7 @@ function noteSessionStarted(context: RunContext, logText: string): void {
 async function runFlow(context: RunContext, flow: string, label: string): Promise<number> {
   return runMaestro({
     udid: context.primary.device.udid,
-    flowFile: showcaseFlowPath(flow),
+    flowFile: showcaseFlowPathFor(flow, context.primary.platform),
     label,
     signalUrl: context.signal.url,
   });
@@ -886,6 +1206,7 @@ async function recordTake(context: RunContext, take: ShowcaseTake): Promise<Take
   console.log(`\n${LOG} === ${take.id}: ${take.summary}`);
   signal.reset();
   let window = await relaunch(primary);
+  if (primary.platform === 'android') cleanAndroidStatusBar(primary.device.udid);
   const leftover = take.privateSession ? restoredSessionId(window.text) : null;
   if (leftover) {
     // An earlier run died before its teardown; end that session first, or the
@@ -902,7 +1223,7 @@ async function recordTake(context: RunContext, take: ShowcaseTake): Promise<Take
   }
   const primeStatus = await runMaestro({
     udid: primary.device.udid,
-    flowFile: writeNavigationFlow(`prime-${take.id}`, take.primeLinks, 3000),
+    flowFile: writeNavigationFlow(`prime-${take.id}`, take.primeLinks, 3000, primary.platform),
     label: `${take.id}-prime`,
     signalUrl: signal.url,
   });
@@ -928,7 +1249,7 @@ async function recordTake(context: RunContext, take: ShowcaseTake): Promise<Take
     if (typeof prepared === 'string') return failed(take, [prepared]);
     secondaryRun = runMaestro({
       udid: prepared.udid,
-      flowFile: showcaseFlowPath(take.secondary.flow),
+      flowFile: showcaseFlowPathFor(take.secondary.flow, context.secondary?.platform ?? 'ios'),
       label: `${take.id}-secondary`,
       signalUrl: signal.url,
       child: (child) => {
@@ -953,18 +1274,18 @@ async function recordTake(context: RunContext, take: ShowcaseTake): Promise<Take
     }
   }
 
-  const rawFile = resolve(SHOWCASE_RAW_DIR, `${take.id}.mov`);
+  const rawFile = resolve(context.dirs.raw, `${take.id}.${primary.platform === 'ios' ? 'mov' : 'mp4'}`);
   // Anchors logged while the take was being set up (the invite sheet laid out
   // before recording, say) are in force when the footage starts: stamp them
   // "before the start" and buildAnchorsFile pins them to t = 0.
   window.pull();
   const arrivals: AnchorArrival[] = [...anchorArrivalsFromChunk(window.text, 0)];
-  const recording = startRecording(primary.device.udid, rawFile);
+  const recording = startRecording(primary, rawFile);
   const poll = setInterval(() => {
     const fresh = anchorArrivalsFromChunk(window.pull(), Date.now());
     arrivals.push(...fresh);
     for (const arrival of fresh) {
-      for (const [name, value] of Object.entries(anchorTapValues(arrival.line, SHOWCASE_DEVICES.primary.screen))) {
+      for (const [name, value] of Object.entries(anchorTapValues(arrival.line, primary.spec.screen))) {
         signal.values.set(name, value);
       }
     }
@@ -992,7 +1313,7 @@ async function recordTake(context: RunContext, take: ShowcaseTake): Promise<Take
     // A beat of tail so the last pause is not cut by the stop.
     await sleep(500);
   } finally {
-    stoppedAtMs = await stopRecording(recording);
+    stoppedAtMs = await recording.stop();
     clearInterval(poll);
     arrivals.push(...anchorArrivalsFromChunk(window.pull(), Date.now()));
   }
@@ -1011,6 +1332,8 @@ async function recordTake(context: RunContext, take: ShowcaseTake): Promise<Take
     arrivals,
     logText: window.text,
     extraProblems,
+    dirs: context.dirs,
+    screen: primary.spec.screen,
   });
 }
 
@@ -1049,7 +1372,7 @@ async function endStraySession(context: RunContext, sessionId: string): Promise<
   const window = await relaunch(primary);
   await runMaestro({
     udid: primary.device.udid,
-    flowFile: writeNavigationFlow('end-session-link', [`join/${sessionId}`], 1500),
+    flowFile: writeNavigationFlow('end-session-link', [`join/${sessionId}`], 1500, primary.platform),
     label: 'end-session-link',
     signalUrl: signal.url,
   });
@@ -1061,7 +1384,7 @@ async function endStraySession(context: RunContext, sessionId: string): Promise<
   }
   if (!window.text.includes('[analytics] Session Joined')) {
     const screenshot = resolve(LOG_DIR, 'end-session.png');
-    simctl(['io', primary.device.udid, 'screenshot', screenshot]);
+    deviceScreenshot(primary, screenshot);
     throw new Error(
       `Could not rejoin session ${sessionId}: already ended ("Session not found"), or the Join point moved ` +
         `(screen: ${relative(ROOT_DIR, screenshot)}).`,
@@ -1079,26 +1402,45 @@ async function endStraySession(context: RunContext, sessionId: string): Promise<
 async function prepareCrew(context: RunContext, take: ShowcaseTake): Promise<{ udid: string } | string> {
   const { primary, secondary, signal } = context;
   if (!secondary || !take.secondary) return `[${take.id}] needs the second phone, which was not set up`;
-  const [startFlow] = take.setupFlows;
+  const [startFlow, ...inviteFlows] = take.setupFlows;
   const window = new LogWindow(primary.metroLog);
-  simctl(['pbcopy', primary.device.udid], process.env);
-  await runFlow(context, startFlow, `${take.id}-start`);
-  window.pull();
-  noteSessionStarted(context, window.text);
-  const invite = simctl(['pbpaste', primary.device.udid]).stdout;
-  const sessionId = parseSessionIdFromInviteUrl(invite);
-  if (!context.session.open || !sessionId) {
-    return (
-      `[${take.id}] the session did not start or its invite link was not copied (clipboard: ` +
-      `${invite.trim() ? 'no session link' : 'empty'}). Check the Start / Invite / Copy link points in ${startFlow}.`
-    );
+  let sessionId: string | null = null;
+  if (primary.platform === 'ios') {
+    simctl(['pbcopy', primary.device.udid], process.env);
+    await runFlow(context, startFlow, `${take.id}-start`);
+    window.pull();
+    noteSessionStarted(context, window.text);
+    const invite = simctl(['pbpaste', primary.device.udid]).stdout;
+    sessionId = parseSessionIdFromInviteUrl(invite);
+    if (!context.session.open || !sessionId) {
+      return (
+        `[${take.id}] the session did not start or its invite link was not copied (clipboard: ` +
+        `${invite.trim() ? 'no session link' : 'empty'}). Check the Start / Invite / Copy link points in ${startFlow}.`
+      );
+    }
+  } else {
+    // No clipboard to read back on the emulator. A relaunch restores the
+    // session and logs its id; then the remaining setup flows open the invite.
+    await runFlow(context, startFlow, `${take.id}-start`);
+    window.pull();
+    noteSessionStarted(context, window.text);
+    if (!context.session.open) return `[${take.id}] the session did not start; check the Start point in ${startFlow}`;
+    const relaunched = await relaunch(primary);
+    const idBy = Date.now() + 10_000;
+    while (!restoredSessionId(relaunched.text) && Date.now() < idBy) {
+      relaunched.pull();
+      await sleep(250);
+    }
+    sessionId = restoredSessionId(relaunched.text);
+    if (!sessionId) return `[${take.id}] the app did not log the session it restored after a relaunch`;
+    for (const flow of inviteFlows) await runFlow(context, flow, `${take.id}-invite`);
   }
   console.log(`${LOG} [${take.id}] hidden session ${sessionId} started; sending the second phone in.`);
 
   const secondaryWindow = await relaunch(secondary);
   const joinStatus = await runMaestro({
     udid: secondary.device.udid,
-    flowFile: writeNavigationFlow(`${take.id}-join-link`, [`join/${sessionId}`], 1500),
+    flowFile: writeNavigationFlow(`${take.id}-join-link`, [`join/${sessionId}`], 1500, secondary.platform),
     label: `${take.id}-join-link`,
     signalUrl: signal.url,
   });
@@ -1106,7 +1448,7 @@ async function prepareCrew(context: RunContext, take: ShowcaseTake): Promise<{ u
     joinStatus === 0 &&
     (await runMaestro({
       udid: secondary.device.udid,
-      flowFile: showcaseFlowPath(take.secondary.joinFlow),
+      flowFile: showcaseFlowPathFor(take.secondary.joinFlow, secondary.platform),
       label: `${take.id}-join`,
       signalUrl: signal.url,
     })) === 0;
@@ -1128,7 +1470,7 @@ async function prepareCrew(context: RunContext, take: ShowcaseTake): Promise<{ u
   }
   const toClimbs = await runMaestro({
     udid: secondary.device.udid,
-    flowFile: writeNavigationFlow(`${take.id}-secondary-climbs`, ['home', 'climbs'], 2500),
+    flowFile: writeNavigationFlow(`${take.id}-secondary-climbs`, ['home', 'climbs'], 2500, secondary.platform),
     label: `${take.id}-secondary-climbs`,
     signalUrl: signal.url,
   });
@@ -1288,11 +1630,15 @@ function resolveCredentials(
 }
 
 function printPlan(args: ShowcaseRecordArgs, takes: readonly ShowcaseTake[], envFileFound: boolean): void {
-  console.log(`${LOG} backend: ${args.backend}; boards: ${args.boards ?? SHOWCASE_DEFAULT_BOARDS[args.backend]}`);
+  const dirs = showcaseWorkDirs(args.platform);
+  console.log(
+    `${LOG} platform: ${args.platform}; backend: ${args.backend}; boards: ${args.boards ?? SHOWCASE_DEFAULT_BOARDS[args.backend]}`,
+  );
   console.log(`${LOG} env file: ${args.envFile} (${envFileFound ? 'found' : 'not found'})`);
   for (const key of ENV_FILE_KEYS) console.log(`${LOG}   ${key}: ${process.env[key] ? 'set' : 'unset'}`);
+  const primaryName = args.platform === 'android' ? SHOWCASE_ANDROID_DEVICE.avdName : SHOWCASE_DEVICES.primary.name;
   console.log(
-    `${LOG} devices: ${SHOWCASE_DEVICES.primary.name}${takes.some((take) => take.secondary) ? `, ${SHOWCASE_DEVICES.secondary.name}` : ''}`,
+    `${LOG} devices: ${primaryName}${takes.some((take) => take.secondary) ? `, ${SHOWCASE_DEVICES.secondary.name} (iOS)` : ''}`,
   );
   for (const take of takes) {
     const flows = [
@@ -1303,7 +1649,9 @@ function printPlan(args: ShowcaseRecordArgs, takes: readonly ShowcaseTake[], env
       ...(take.secondary ? [take.secondary.joinFlow, take.secondary.flow] : []),
       ...take.teardownFlows,
     ];
-    const missing = flows.filter((flow) => isShowcaseFlow(flow) && !existsSync(showcaseFlowPath(flow)));
+    const missing = flows.filter(
+      (flow) => isShowcaseFlow(flow) && !existsSync(showcaseFlowPathFor(flow, args.platform)),
+    );
     console.log(
       `${LOG} ${take.id.padEnd(17)} ${take.minSeconds.toFixed(1)}s min | links ${take.primeLinks.join(' -> ')} | ` +
         `flows ${flows.join(', ')}${missing.length ? ` | MISSING ${missing.join(', ')}` : ''}` +
@@ -1312,12 +1660,12 @@ function printPlan(args: ShowcaseRecordArgs, takes: readonly ShowcaseTake[], env
     );
   }
   console.log(
-    `${LOG} footage -> ${SHOWCASE_FOOTAGE_DIR}/<take>/%05d.jpg, anchors -> ${SHOWCASE_ANCHORS_DIR}/<take>.json`,
+    `${LOG} footage -> ${dirs.footage}/<take>/%05d.jpg, anchors -> ${dirs.anchors}/<take>.json, marks -> ${dirs.marks}/<take>.json`,
   );
 }
 
-function preflight(): void {
-  if (process.platform !== 'darwin') throw new Error('The showcase recorder drives iOS simulators: macOS only.');
+function preflight(platform: ShowcasePlatform): void {
+  if (process.platform !== 'darwin') throw new Error(macOsOnlyMessage(platform));
   if (!commandExists('xcrun')) throw new Error('xcrun is missing: install Xcode and its command line tools.');
   if (!commandExists('maestro')) {
     throw new Error(
@@ -1340,7 +1688,9 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     return 1;
   }
   const selected = args.only ?? SHOWCASE_TAKE_IDS;
-  const wanted = SHOWCASE_TAKES.filter((take) => selected.includes(take.id));
+  const wanted = SHOWCASE_TAKES.filter((take) => selected.includes(take.id)).map((take) =>
+    takeForPlatform(take, args.platform),
+  );
   const takes = wanted.filter((take) => !take.unavailable[args.backend]);
   for (const take of wanted) {
     const reason = take.unavailable[args.backend];
@@ -1359,7 +1709,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
 
   const results: TakeResult[] = [];
   try {
-    preflight();
+    preflight(args.platform);
     // The recorder picks its own simulators; a selection meant for another tool
     // must not redirect it.
     delete process.env.BOARDSESH_IOS_SIMULATOR_UDID;
@@ -1379,27 +1729,31 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
           `localhost:${PRIMARY_METRO_PORT}, so stop that one first.`,
       );
     }
+    // The iOS dev-client: the primary phone on iOS, and the crew take's second
+    // phone on either platform (see "Android" in docs/showcase-video.md).
+    const needsIosApp = args.platform === 'ios' || Boolean(credentials.secondary);
     // --app-path, else the cached dev-client, else build one (~30 min, once).
     const cachedApp = resolve(MOBILE_DIR, '.app-cache', 'Boardsesh.app');
-    const requestedApp = args.appPath ? resolve(args.appPath) : existsSync(cachedApp) ? cachedApp : null;
-    const appPath = resolveAppPath(screenshotOptions(args, requestedApp));
-    const keychainProblem = findKeychainTeamProblem(
-      readPlistString(resolve(appPath, 'Info.plist'), 'BoardseshKeychainAccessGroup'),
-      readFileSync(SIM_ENTITLEMENTS, 'utf8'),
-      relative(ROOT_DIR, SIM_ENTITLEMENTS),
-    );
-    if (keychainProblem) {
-      // Only the island take reads the shared keychain; the rest are unaffected.
-      if (takes.some((take) => take.id === 'lock-screen')) throw new Error(keychainProblem);
-      console.warn(`${LOG} ${keychainProblem}`);
+    const requestedApp =
+      args.appPath && args.platform === 'ios' ? resolve(args.appPath) : existsSync(cachedApp) ? cachedApp : null;
+    const appPath = needsIosApp ? resolveAppPath(screenshotOptions(args, requestedApp)) : '';
+    if (args.platform === 'ios') {
+      const keychainProblem = findKeychainTeamProblem(
+        readPlistString(resolve(appPath, 'Info.plist'), 'BoardseshKeychainAccessGroup'),
+        readFileSync(SIM_ENTITLEMENTS, 'utf8'),
+        relative(ROOT_DIR, SIM_ENTITLEMENTS),
+      );
+      if (keychainProblem) {
+        // Only the island take reads the shared keychain; the rest are unaffected.
+        if (takes.some((take) => take.id === 'lock-screen')) throw new Error(keychainProblem);
+        console.warn(`${LOG} ${keychainProblem}`);
+      }
     }
-    const primary = await preparePhone(
-      'primary',
-      appPath,
-      PRIMARY_METRO_PORT,
-      metroEnv(args, credentials.primary, backendUrl),
-      signal,
-    );
+    const primaryEnv = metroEnv(args, credentials.primary, backendUrl);
+    const primary =
+      args.platform === 'android'
+        ? await prepareAndroidPhone(args, PRIMARY_METRO_PORT, primaryEnv, backendUrl)
+        : await preparePhone('primary', appPath, PRIMARY_METRO_PORT, primaryEnv, signal);
 
     let secondary: Phone | null = null;
     if (credentials.secondary) {
@@ -1425,6 +1779,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
 
     const context: RunContext = {
       args,
+      dirs: showcaseWorkDirs(args.platform),
       primary,
       secondary,
       signal,
@@ -1436,7 +1791,15 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
       if (status !== 0)
         console.warn(`${LOG} device setup ${flow} exited ${status}; the takes that need it may show it.`);
     }
-    if (args.endSession) {
+    const mode = recordRunMode(args);
+    if (mode === 'hold') {
+      console.log(
+        `${LOG} Holding ${primary.device.name} (${primary.device.udid}) with Metro on ${primary.metroPort}; ` +
+          'calibrate flows, then Ctrl-C to tear down.',
+      );
+      await new Promise<never>(() => {});
+    }
+    if (mode === 'end-session' && args.endSession) {
       await endStraySession(context, args.endSession);
       await teardown();
       return context.session.open ? 1 : 0;
@@ -1472,8 +1835,8 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     for (const problem of problems) console.error(`${LOG}   ${problem}`);
     return 1;
   }
-  console.log(`${LOG} Footage: ${SHOWCASE_FOOTAGE_DIR}`);
-  console.log(`${LOG} Next: vp run video:render`);
+  console.log(`${LOG} Footage: ${showcaseWorkDirs(args.platform).footage}`);
+  console.log(`${LOG} Next: vp run video:render${args.platform === 'ios' ? '' : ` -- --platform ${args.platform}`}`);
   return 0;
 }
 
