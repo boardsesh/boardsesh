@@ -624,8 +624,16 @@ export const SHOWCASE_ANDROID_TAKE_EDITS: Partial<Record<ShowcaseTakeId, TakeEdi
   // calendar re-logs its new place at some point after the filter, at a time
   // that varies between recordings; this one logged it after the callout.)
   log: {
-    segments: SHOWCASE_TAKE_EDITS.log?.segments ?? [],
-    callouts: SHOWCASE_TAKE_EDITS.log?.callouts,
+    // The same cut as iOS (the Android marks land the same screens), written out
+    // so a change to the iOS edit can't silently empty this one.
+    segments: [
+      { mark: 'scrolled', from: -1.0, to: 0.6, hold: 1.2 },
+      { mark: 'filter-kilter', from: -2.2 },
+    ],
+    callouts: {
+      'profile-board-filter': { mark: 'scrolled', from: -1.0, to: 0.6, hold: 1.2 },
+      'activity-calendar': { mark: 'filter-kilter', from: -0.9, to: 1.9 },
+    },
     anchorShifts: {
       'profile-board-filter': [{ from: { mark: 'scrolled', at: -1.5 }, dy: -353 }],
       'activity-calendar': [

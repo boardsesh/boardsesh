@@ -107,7 +107,9 @@ import {
   isBlankFrame,
   isRecordingStartedLine,
   parseEnvFile,
+  macOsOnlyMessage,
   parseRecordArgs,
+  recordRunMode,
   parseSessionIdFromInviteUrl,
   parseSignalRequest,
   resolveTrimSeconds,
@@ -1662,8 +1664,8 @@ function printPlan(args: ShowcaseRecordArgs, takes: readonly ShowcaseTake[], env
   );
 }
 
-function preflight(): void {
-  if (process.platform !== 'darwin') throw new Error('The showcase recorder drives iOS simulators: macOS only.');
+function preflight(platform: ShowcasePlatform): void {
+  if (process.platform !== 'darwin') throw new Error(macOsOnlyMessage(platform));
   if (!commandExists('xcrun')) throw new Error('xcrun is missing: install Xcode and its command line tools.');
   if (!commandExists('maestro')) {
     throw new Error(
@@ -1707,7 +1709,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
 
   const results: TakeResult[] = [];
   try {
-    preflight();
+    preflight(args.platform);
     // The recorder picks its own simulators; a selection meant for another tool
     // must not redirect it.
     delete process.env.BOARDSESH_IOS_SIMULATOR_UDID;
@@ -1789,14 +1791,15 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
       if (status !== 0)
         console.warn(`${LOG} device setup ${flow} exited ${status}; the takes that need it may show it.`);
     }
-    if (args.hold) {
+    const mode = recordRunMode(args);
+    if (mode === 'hold') {
       console.log(
         `${LOG} Holding ${primary.device.name} (${primary.device.udid}) with Metro on ${primary.metroPort}; ` +
           'calibrate flows, then Ctrl-C to tear down.',
       );
       await new Promise<never>(() => {});
     }
-    if (args.endSession) {
+    if (mode === 'end-session' && args.endSession) {
       await endStraySession(context, args.endSession);
       await teardown();
       return context.session.open ? 1 : 0;

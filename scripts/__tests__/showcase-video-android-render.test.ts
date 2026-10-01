@@ -381,6 +381,19 @@ describe('Android cuts', () => {
     return resolved;
   };
 
+  it('gives every recorded Android take an explicit cut, never an empty one', () => {
+    for (const takeId of Object.keys(ANDROID_MARKS) as ShowcaseTakeId[]) {
+      const edit = SHOWCASE_TAKE_EDITS_BY_PLATFORM.android[takeId];
+      expect(edit?.segments.length ?? 0, takeId).toBeGreaterThan(0);
+    }
+    // Written out, not read from the iOS entry, so an iOS change can't empty it.
+    expect(SHOWCASE_TAKE_EDITS_BY_PLATFORM.android.log?.segments).not.toBe(SHOWCASE_TAKE_EDITS.log?.segments);
+    expect(SHOWCASE_TAKE_EDITS_BY_PLATFORM.android.log?.segments.map((span) => span.mark)).toEqual([
+      'scrolled',
+      'filter-kilter',
+    ]);
+  });
+
   it('cuts the island take on the iOS marks, and Android footage on its own edit', () => {
     expect(SHOWCASE_TAKE_EDITS_BY_PLATFORM.ios).toBe(SHOWCASE_TAKE_EDITS);
     expect(SHOWCASE_TAKE_EDITS_BY_PLATFORM.android.wall).not.toBe(SHOWCASE_TAKE_EDITS.wall);

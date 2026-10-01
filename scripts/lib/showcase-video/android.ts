@@ -51,7 +51,7 @@ export function showcaseAvdConfig(configIni: string): string {
     showDeviceFrame: 'no',
   };
   const seen = new Set<string>();
-  const lines = configIni.split('\n').map((line) => {
+  const lines = configIni.split(/\r?\n/).map((line) => {
     const key = line.split('=')[0]?.trim();
     if (key && key in overrides) {
       seen.add(key);

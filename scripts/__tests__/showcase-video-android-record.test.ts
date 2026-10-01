@@ -26,7 +26,7 @@ import {
   showcaseAvdConfig,
   showcaseSystemImage,
 } from '../lib/showcase-video/android';
-import { anchorTapValues } from '../lib/showcase-video/record';
+import { anchorTapValues, macOsOnlyMessage, parseRecordArgs, recordRunMode } from '../lib/showcase-video/record';
 import {
   SHOWCASE_TAKES,
   findShowcaseTake,
@@ -144,6 +144,14 @@ describe('Android emulator', () => {
     expect(showcaseAvdConfig(config)).toBe(config);
   });
 
+  it('reads a config.ini with Windows line endings without doubling its keys', () => {
+    const config = showcaseAvdConfig('hw.lcd.height=2400\r\nhw.keyboard=yes\r\nabi.type=arm64-v8a\r\n');
+    const lines = config.trim().split('\n');
+    expect(lines.filter((line) => line.startsWith('hw.lcd.height='))).toEqual(['hw.lcd.height=2424']);
+    expect(lines.filter((line) => line.startsWith('hw.keyboard='))).toEqual(['hw.keyboard=no']);
+    expect(config).not.toContain('\r');
+  });
+
   it('boots headless in UTC unless asked for a window', () => {
     const args = buildEmulatorArgs({ avdName: 'Boardsesh_Showcase', port: 5580, windowed: false });
     expect(args.slice(0, 6)).toEqual(['-avd', 'Boardsesh_Showcase', '-port', '5580', '-timezone', 'UTC']);
@@ -238,5 +246,30 @@ describe('anchor tap values on the Android screen', () => {
       'anchor-queue-row-avatar-y': '67',
       'anchor-queue-row-avatar-cy': '620',
     });
+  });
+});
+
+describe('--hold', () => {
+  it('parses on either platform', () => {
+    expect(parseRecordArgs(['--hold']).hold).toBe(true);
+    expect(parseRecordArgs(['--platform', 'android', '--hold'])).toMatchObject({ platform: 'android', hold: true });
+    expect(parseRecordArgs([]).hold).toBe(false);
+  });
+
+  it('halts before any take or stray-session end once the devices are ready', () => {
+    const session = '667186b5-f0e5-4f56-92bf-8646f87d3f81';
+    expect(recordRunMode({ hold: true, endSession: null })).toBe('hold');
+    expect(recordRunMode({ hold: true, endSession: session })).toBe('hold');
+    expect(recordRunMode({ hold: false, endSession: session })).toBe('end-session');
+    expect(recordRunMode({ hold: false, endSession: null })).toBe('record');
+    expect(recordRunMode(parseRecordArgs(['--platform', 'android', '--hold']))).toBe('hold');
+  });
+});
+
+describe('off macOS', () => {
+  it('says why each platform still needs a Mac', () => {
+    expect(macOsOnlyMessage('ios')).toMatch(/drives iOS simulators: macOS only/);
+    expect(macOsOnlyMessage('android')).toMatch(/needs macOS on Android too/);
+    expect(macOsOnlyMessage('android')).toMatch(/second participant is an iOS simulator/);
   });
 });

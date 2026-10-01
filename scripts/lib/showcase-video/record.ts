@@ -97,6 +97,30 @@ function parseTakeIds(raw: string): ShowcaseTakeId[] {
     });
 }
 
+/**
+ * What a run does once its devices are ready: `hold` (calibration: nothing is
+ * recorded and no stray session is ended, even when `--end-session` is also
+ * given), `end-session` (rejoin and end one session), or `record` the takes.
+ */
+export function recordRunMode(
+  args: Readonly<Pick<ShowcaseRecordArgs, 'hold' | 'endSession'>>,
+): 'hold' | 'end-session' | 'record' {
+  if (args.hold) return 'hold';
+  if (args.endSession) return 'end-session';
+  return 'record';
+}
+
+/**
+ * Why the recorder refuses to run off macOS. Android needs macOS too: the
+ * crew take's second participant is an iOS simulator.
+ */
+export function macOsOnlyMessage(platform: ShowcasePlatform): string {
+  return platform === 'android'
+    ? 'The showcase recorder needs macOS on Android too: the crew take films an Android emulator, ' +
+        'but its second participant is an iOS simulator.'
+    : 'The showcase recorder drives iOS simulators: macOS only.';
+}
+
 export function parseRecordArgs(argv: readonly string[]): ShowcaseRecordArgs {
   const args = argv.filter((argument) => argument !== '--');
   let only: ShowcaseTakeId[] | null = null;
