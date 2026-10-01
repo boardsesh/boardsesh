@@ -31,6 +31,7 @@ const managedSheet = vi.hoisted(() => ({
 const queueList = vi.hoisted(() => ({ renders: 0, lastQueue: null as ClimbQueueItem[] | null }));
 
 const platform = vi.hoisted(() => ({ os: 'ios' }));
+const gestureRoot = vi.hoisted(() => ({ style: undefined as unknown }));
 
 type ViewProps = { children?: ReactNode; testID?: string; style?: unknown };
 vi.mock('react-native', () => ({
@@ -46,15 +47,10 @@ vi.mock('react-native', () => ({
 }));
 
 vi.mock('react-native-gesture-handler', () => ({
-  GestureHandlerRootView: ({ children, style }: ViewProps) =>
-    createElement(
-      'div',
-      {
-        'data-testid': 'dialog-gesture-root',
-        style,
-      },
-      children,
-    ),
+  GestureHandlerRootView: ({ children, style }: ViewProps) => {
+    gestureRoot.style = style;
+    return createElement('div', { 'data-testid': 'dialog-gesture-root' }, children);
+  },
 }));
 
 vi.mock('@expo/ui/community/bottom-sheet', () => ({
@@ -169,6 +165,7 @@ function renderSheet(handleRef: ReturnType<typeof createRef<QueueSheetHandle>>) 
 describe('QueueSheet freeze contract', () => {
   beforeEach(() => {
     platform.os = 'ios';
+    gestureRoot.style = undefined;
     queueData.current = makeData(['a', 'b']);
     managedSheet.present.mockClear();
     managedSheet.dismiss.mockClear();
@@ -183,7 +180,7 @@ describe('QueueSheet freeze contract', () => {
     const root = getByTestId('dialog-gesture-root');
     expect(getByTestId('sheet').contains(root)).toBe(true);
     expect(root.contains(getByTestId('queue-list'))).toBe(true);
-    expect(root.style.flex).toBe('1 1 0%');
+    expect(gestureRoot.style).toHaveProperty('flex', 1);
   });
 
   it('preserves the iOS sheet content without an extra gesture root', () => {
