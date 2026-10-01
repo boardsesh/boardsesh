@@ -444,13 +444,13 @@ id from its `[session] restored from store: <id>` log line, and
 
 **Two app bugs the recording found (not recorder ones).**
 
-1. The notification's Next moves the queue on the phone only in a session: on
+1. [#5922](https://github.com/boardsesh/boardsesh/issues/5922): the notification's Next moves the queue on the phone only in a session: on
    Android nothing sends the server mutation that the iOS widget intent sends
    (`dispatchWidgetNavigation` in
    `packages/mobile/src/providers/queue-provider.tsx` assumes native did), so
    a few seconds later the queue's hash check pulls the server state back and
    the climb reverts. The take ends before that happens.
-2. A long press on a row in the Android queue sheet lands as a tap: the row
+2. [#5923](https://github.com/boardsesh/boardsesh/issues/5923): a long press on a row in the Android queue sheet lands as a tap: the row
    plays instead of opening the reaction menu. It happens with Maestro's long
    press and with adb's raw `DOWN` / `UP` 1.2 s apart, so the crew take skips
    "Play next" on Android. Worth checking on a real phone.

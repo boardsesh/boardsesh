@@ -46,6 +46,9 @@ type ClimbTopChromeProps = {
   /** Show a brand-coloured dot on the board button — the one-time onboarding cue
    *  pointing a new user at the "now on the wall" sheet. */
   showBoardBadge?: boolean;
+  /** Report the board button to the showcase-video recorder (screenshot mode),
+   *  on both variants: the glass board glyph and the Material board switcher. */
+  anchorBoardButton?: boolean;
   onHeightChange: (height: number) => void;
   searchFieldRef: RefObject<SearchHeaderHandle | null>;
   searchInitialValue: string;
@@ -92,6 +95,7 @@ function ClimbTopChromeComponent({
   onCreate,
   onOpenBoardDetail,
   showBoardBadge = false,
+  anchorBoardButton = false,
   onHeightChange,
   searchFieldRef,
   searchInitialValue,
@@ -192,7 +196,7 @@ function ClimbTopChromeComponent({
             onPress={onOpenBoardDetail}
             accessibilityHint={t('mobile.search.boardSwitcherHint')}
             badge={showBoardBadge}
-            showcaseAnchor
+            showcaseAnchor={anchorBoardButton}
           />
           {canCreate ? (
             <Appbar.Action
@@ -327,7 +331,7 @@ function ClimbTopChromeComponent({
       createAccessibilityLabel={t('mobile.create.fab.ariaLabel')}
       onOpenBoardSwitcher={onOpenBoardDetail}
       boardBadge={showBoardBadge}
-      anchorBoardButton
+      anchorBoardButton={anchorBoardButton}
       onHeightChange={onHeightChange}
       hideLight
     >

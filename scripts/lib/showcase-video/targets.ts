@@ -536,32 +536,44 @@ export function targetOutputs(target: AnyShowcaseTarget): string[] {
   });
 }
 
+/** Each platform's registry: every target it has, and what no `--target` renders. */
+const TARGET_REGISTRIES: Readonly<
+  Record<
+    ShowcasePlatform,
+    Readonly<{
+      names: readonly AnyShowcaseTargetName[];
+      defaults: readonly AnyShowcaseTargetName[];
+      targets: Readonly<Record<string, AnyShowcaseTarget>>;
+    }>
+  >
+> = {
+  ios: { names: SHOWCASE_TARGET_NAMES, defaults: SHOWCASE_DEFAULT_TARGETS, targets: SHOWCASE_TARGETS },
+  android: {
+    names: SHOWCASE_ANDROID_TARGET_NAMES,
+    defaults: SHOWCASE_ANDROID_DEFAULT_TARGETS,
+    targets: SHOWCASE_ANDROID_TARGETS,
+  },
+};
+
 /**
- * `--target` values → targets, in registry order. `all` is every target; no
- * value is `SHOWCASE_DEFAULT_TARGETS`.
+ * `--target` values → target names of the `platform` registry (iOS when
+ * absent), in registry order. `all` is every target; no value is the
+ * platform's default pair. A name from the other registry fails with a hint
+ * to add its `--platform`.
  */
-export function resolveTargetNames(values: readonly string[]): ShowcaseTargetName[] {
-  return resolveNames(values, SHOWCASE_TARGET_NAMES, SHOWCASE_DEFAULT_TARGETS, 'ios');
-}
-
-/** `resolveTargetNames` for the Android registry. */
-export function resolveAndroidTargetNames(values: readonly string[]): ShowcaseAndroidTargetName[] {
-  return resolveNames(values, SHOWCASE_ANDROID_TARGET_NAMES, SHOWCASE_ANDROID_DEFAULT_TARGETS, 'android');
-}
-
-function resolveNames<Name extends AnyShowcaseTargetName>(
+export function resolveTargetNames(
   values: readonly string[],
-  names: readonly Name[],
-  defaults: readonly Name[],
-  platform: ShowcasePlatform,
-): Name[] {
+  platform: ShowcasePlatform = 'ios',
+): AnyShowcaseTargetName[] {
+  const { names, defaults } = TARGET_REGISTRIES[platform];
   if (values.length === 0) return [...defaults];
   if (values.includes('all')) return [...names];
   const other = platform === 'ios' ? 'android' : 'ios';
-  const otherNames: readonly string[] = platform === 'ios' ? SHOWCASE_ANDROID_TARGET_NAMES : SHOWCASE_TARGET_NAMES;
   for (const value of values) {
     if ((names as readonly string[]).includes(value)) continue;
-    const hint = otherNames.includes(value) ? ` ("${value}" cuts the ${other} recording: add --platform ${other})` : '';
+    const hint = (TARGET_REGISTRIES[other].names as readonly string[]).includes(value)
+      ? ` ("${value}" cuts the ${other} recording: add --platform ${other})`
+      : '';
     throw new Error(`--target must be one of ${names.join(', ')}, or all${hint}`);
   }
   return names.filter((name) => values.includes(name));
@@ -573,8 +585,8 @@ function resolveNames<Name extends AnyShowcaseTargetName>(
  * names in it. `all` and the default never cross platforms.
  */
 export function resolvePlatformTargets(values: readonly string[], platform: ShowcasePlatform): AnyShowcaseTarget[] {
-  if (platform === 'android') return resolveAndroidTargetNames(values).map((name) => SHOWCASE_ANDROID_TARGETS[name]);
-  return resolveTargetNames(values).map((name) => SHOWCASE_TARGETS[name]);
+  const { targets } = TARGET_REGISTRIES[platform];
+  return resolveTargetNames(values, platform).map((name) => targets[name]);
 }
 
 export type TargetSelection = Readonly<{

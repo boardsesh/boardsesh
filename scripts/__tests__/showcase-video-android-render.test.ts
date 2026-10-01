@@ -50,8 +50,8 @@ import {
   SHOWCASE_TARGETS,
   SHOWCASE_TARGET_NAMES,
   assertTargetLength,
-  resolveAndroidTargetNames,
   resolvePlatformTargets,
+  resolveTargetNames,
   selectTargets,
   targetFrames,
   targetOutputs,
@@ -201,7 +201,7 @@ describe('the Android target registry', () => {
     expect(names([], 'android')).toEqual(['homepage-android', 'social-android']);
     expect(SHOWCASE_ANDROID_DEFAULT_TARGETS).toEqual(['homepage-android', 'social-android']);
     expect(names(['all'], 'android')).toEqual([...SHOWCASE_ANDROID_TARGET_NAMES]);
-    expect(resolveAndroidTargetNames(['play-promo-android', 'reel-android'])).toEqual([
+    expect(resolveTargetNames(['play-promo-android', 'reel-android'], 'android')).toEqual([
       'reel-android',
       'play-promo-android',
     ]);

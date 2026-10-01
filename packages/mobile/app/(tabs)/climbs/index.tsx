@@ -1995,6 +1995,7 @@ function ClimbListInner() {
         onCreate={handleCreateClimb}
         onOpenBoardDetail={handleOpenBoardDetail}
         showBoardBadge={showRevealTip}
+        anchorBoardButton
         onHeightChange={setSearchBarHeight}
         searchFieldRef={searchHeaderRef}
         searchInitialValue={name}
