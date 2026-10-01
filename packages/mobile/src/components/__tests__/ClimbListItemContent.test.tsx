@@ -530,6 +530,44 @@ describe('ClimbListItemContent original and mirror statuses', () => {
     expect(rows.every((node) => node.getAttribute('aria-label')?.includes('ascentStatus.send'))).toBe(true);
   });
 
+  it('hides both Woods direction statuses while retaining normal climb content', () => {
+    myGradeOverride.current = { status: 'unknown' };
+    statusLogbook.current = {
+      logbookByClimbAngle: new Map([
+        [
+          'c1:40',
+          [tick({ status: 'flash', tries: 1 }), tick({ is_mirror: true, status: 'attempt', is_ascent: false })],
+        ],
+      ]),
+    };
+    const { container, rerender } = renderWoods();
+    expect(directionRows(container)).toHaveLength(2);
+    expect(iconNames(container)).toEqual(expect.arrayContaining(['flash', 'ascent.attempt']));
+
+    rerender(
+      <ClimbListItemContent
+        climb={baseClimb}
+        boardName="woods"
+        layoutId={1}
+        sizeId={2}
+        setIds="1"
+        angle={40}
+        showAscentStatus={false}
+      />,
+    );
+
+    expect(directionRows(container)).toHaveLength(0);
+    expect(container.textContent).not.toContain('mobile.logbook.originalTag');
+    expect(container.textContent).not.toContain('mobile.logbook.mirroredTag');
+    expect(iconNames(container)).not.toContain('flash');
+    expect(iconNames(container)).not.toContain('ascent.attempt');
+    expect(iconNames(container)).not.toContain('tick.outline');
+    expect(container.textContent).toContain(baseClimb.name);
+    expect(gradeNode(container)?.textContent).toBe('V4');
+    expect(container.textContent).toContain('4.5★');
+    expect(container.textContent).toContain('sends');
+  });
+
   it('preserves flash precedence in the original direction and a mirrored try', () => {
     statusLogbook.current = {
       logbookByClimbAngle: new Map([
