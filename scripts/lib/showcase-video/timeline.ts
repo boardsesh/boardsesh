@@ -129,22 +129,50 @@ export type ShowcaseTimeline = Readonly<{
 }>;
 
 /**
- * The cut for the footage at hand: a skippable scene whose takes are missing is
- * dropped, the scenes after it move up, and backgrounds are re-alternated from
- * the boards scene on (hook and light stay dark for the match cut, the outro
- * stays dark for the loop), so dropping a scene never puts two busy scenes on
- * one background. With every take present this is `SHOWCASE_SCENES` exactly.
+ * One scene of a cut: which storyboard scene, in what order, and optionally a
+ * different length (frames) than the storyboard's. A render target
+ * (`targets.ts`) is a list of these.
  */
-export function resolveTimeline(available: ReadonlySet<ShowcaseTakeId>): ShowcaseTimeline {
+export type ShowcaseScenePlan = Readonly<{ id: ShowcaseSceneId; frames?: number }>;
+
+/** The storyboard as a plan: every scene, in order, at its own length. */
+export const SHOWCASE_FULL_PLAN: readonly ShowcaseScenePlan[] = SHOWCASE_SCENES.map((scene) => ({ id: scene.id }));
+
+const storyboardScene = (id: ShowcaseSceneId): ShowcaseScene => {
+  const scene = SHOWCASE_SCENES.find((candidate) => candidate.id === id);
+  if (!scene) throw new Error(`No storyboard scene "${id}"`);
+  return scene;
+};
+
+/** Frames a plan runs with every take present. */
+export const planFrames = (plan: readonly ShowcaseScenePlan[]): number =>
+  plan.reduce((sum, step) => {
+    const scene = storyboardScene(step.id);
+    return sum + (step.frames ?? scene.endFrame - scene.startFrame);
+  }, 0);
+
+/**
+ * The cut for the footage at hand: the plan's scenes in its order and lengths,
+ * less any skippable scene whose takes are missing; the scenes after it move
+ * up, and backgrounds are re-alternated from the third scene on (hook and
+ * light stay dark for the match cut, the last scene keeps its own so the outro
+ * stays dark for the loop), so no two busy scenes share a background. With
+ * every take present and the full plan this is `SHOWCASE_SCENES` exactly.
+ */
+export function resolveTimeline(
+  available: ReadonlySet<ShowcaseTakeId>,
+  plan: readonly ShowcaseScenePlan[] = SHOWCASE_FULL_PLAN,
+): ShowcaseTimeline {
   const skipped: ShowcaseSceneId[] = [];
-  const kept = SHOWCASE_SCENES.filter((scene) => {
+  const planned = plan.map((step) => ({ scene: storyboardScene(step.id), frames: step.frames }));
+  const kept = planned.filter(({ scene }) => {
     const missing = SHOWCASE_SKIPPABLE_SCENES.includes(scene.id) && scene.takes.some((take) => !available.has(take));
     if (missing) skipped.push(scene.id);
     return !missing;
   });
   let frame = 0;
-  const scenes = kept.map((scene, index): ShowcaseScene => {
-    const length = scene.endFrame - scene.startFrame;
+  const scenes = kept.map(({ scene, frames }, index): ShowcaseScene => {
+    const length = frames ?? scene.endFrame - scene.startFrame;
     const background =
       index < 2 || index === kept.length - 1 ? scene.background : (index - 2) % 2 === 0 ? 'light' : 'dark';
     const moved = { ...scene, startFrame: frame, endFrame: frame + length, background };

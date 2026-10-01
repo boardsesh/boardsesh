@@ -64,8 +64,9 @@ per scene and per callout) on every render, and a test holds it.
 
 The outro's "Paid for by the climbers who use it." is the homepage's
 `proofNoCount` wording and never claims tax relief or perks. Store previews and
-install ads must not mention donations: `--no-donation-line` renders without
-it (and skips the web encodes, so the homepage keeps it).
+install ads must not mention donations: the `reel`, `app-store` and
+`play-promo` targets are defined without it, and `--no-donation-line` drops it
+from any target (leaving out `homepage`, which keeps it).
 
 ## Rules the stage keeps
 
@@ -119,14 +120,19 @@ vp run video:render -- --placeholder-footage --stills   # stand-ins for takes no
 vp run video:render -- --frame 264 --format 16x9        # one full-size frame
 vp run video:render                                      # both formats, all deliverables
 vp run video:render -- --format 16x9 --from-frame 400   # quick preview from a frame
-vp run video:render -- --no-donation-line               # store preview / install-ad cut (no web encodes)
+vp run video:render -- --target reel                     # one target (homepage, social, reel, app-store, play-promo)
+vp run video:render -- --target all                      # every target
 ```
 
-Outputs: the full-quality masters for social and ads,
-`.boardsesh/showcase-video/out/brag.mp4` and `brag-9x16.mp4` (+ `brag*.jpg`,
-`share-copy.txt`, `stills/`); the hero's `showcase-9x16-lite.{webm,mp4}` in
+Outputs, per render target (`scripts/lib/showcase-video/targets.ts`,
+docs/showcase-video.md "Targets"): `social` writes the full-quality masters
+`.boardsesh/showcase-video/out/social/brag.mp4` and `brag-9x16.mp4` (+
+`brag*.jpg`, `share-copy.txt`); `reel`, `app-store` and `play-promo` write to
+`out/reel/`, `out/app-store/` and `out/play/`; `homepage` writes the hero's
+`showcase-9x16-lite.{webm,mp4}` in
 `packages/web/public/videos/home/` and `showcase-hero-9x16.webp` in
-`packages/web/public/images/home/`. Each web file must stay under 1.9 MB
-(`SHOWCASE_WEB_MAX_BYTES`), below `scripts/check-large-files.mjs`'s 2 MB, so
-none needs an allowlist entry. After a render, run
+`packages/web/public/images/home/`. The webm must stay under 1.75 MB and the
+mp4 under 1.9 MB (`SHOWCASE_WEB_LITE`), inside the 1.9 MB hard gate
+(`SHOWCASE_WEB_MAX_BYTES`) and below `scripts/check-large-files.mjs`'s 2 MB, so
+neither needs an allowlist entry. After a render, run
 `vp run generate:static-assets` and commit the files with the catalog.

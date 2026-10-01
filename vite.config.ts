@@ -595,7 +595,8 @@ export default defineConfig({
       // writes the footage + anchors under .boardsesh/showcase-video/work
       // (runbook: docs/showcase-video.md); `video:render` renders
       // marketing/showcase-video/ frame by frame in Chromium and encodes
-      // brag.mp4 + the web cut (see its --help). `video` runs both.
+      // its targets: homepage + social by default, `--target all` for the store
+      // and ad cuts (see its --help). `video` runs both.
       'video:record': {
         command: 'tsx scripts/showcase-video-record.ts',
         cache: false,

@@ -715,6 +715,12 @@ svg.layer {
     700 16px 'Geist Mono',
     monospace;
 }
+.measure .safe-area {
+  fill: none;
+  stroke: #ffe14d;
+  stroke-width: 3;
+  stroke-dasharray: 18 10;
+}
 .measure .cross {
   stroke: #ffe14d;
   stroke-width: 2;
@@ -724,7 +730,7 @@ svg.layer {
 
 #stage[data-format='9x16'] .headline {
   left: 96px;
-  top: 180px;
+  top: calc(var(--headline-top, 180) * 1px);
   width: 888px;
   transform: none;
   font-size: 88px;
@@ -735,17 +741,17 @@ svg.layer {
 #stage[data-format='9x16'] .headline[data-scene='boards'] {
   left: 0;
   width: 100%;
-  top: 180px;
+  top: calc(var(--headline-top, 180) * 1px);
 }
 #stage[data-format='9x16'] .headline[data-scene='boards'] .line {
   display: block;
 }
 #stage[data-format='9x16'] .headline[data-scene='workouts'] {
-  top: 180px;
+  top: calc(var(--headline-top, 180) * 1px);
 }
 #stage[data-format='9x16'] .checklist {
   left: 96px;
-  top: 440px;
+  top: calc((var(--headline-top, 180) + 260) * 1px);
   width: 888px;
 }
 #stage[data-format='9x16'] .outro .wordmark {

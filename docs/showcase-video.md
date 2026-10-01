@@ -9,7 +9,8 @@ The homepage showcase video is three pieces that share one contract
 2. The mobile app, in screenshot mode, logs those callout positions
    (`useShowcaseAnchor`) and fakes a Bluetooth board so the bulb lights.
 3. **`vp run video:render`** lays the footage into `marketing/showcase-video/`
-   and encodes the web video.
+   and encodes its targets: the homepage hero, social masters, a Reels / ad
+   cut, an Apple App Preview and a Play promo (see [Targets](#targets)).
 
 `vp run video` runs both. After any native release, or any change to a screen a
 take shows, re-record: the footage is a picture of the app, and it goes stale
@@ -290,15 +291,107 @@ unread fails the tests before it reaches a render.
 The outro's small line under the store pill, "Paid for by the climbers who use
 it." (`copy.en-US.json` `outro.donation`), uses the homepage's `proofNoCount`
 wording. It never claims tax relief or perks. Store listings must never mention
-donations, so an App Store preview or an app-install ad cut renders without it:
+donations, so the store and ad targets (`reel`, `app-store`, `play-promo`) are
+defined without it (`donationLine: false`) and their outros are 129 frames, the
+length the shorter outro's reading budget needs. `homepage` and `social` keep it.
 
-```sh
-vp run video:render -- --no-donation-line
-```
+`--no-donation-line` still works as an override: it drops the line from every
+target it renders and leaves out `homepage`, whose files always keep it (with a
+warning; asking for `--target homepage` with it fails instead).
 
-The flag drops the line (and its words from the outro's reading budget) and
-skips the web encodes, so the homepage files always keep it. Everything else,
-including the outro's length and the loop closer, stays the same.
+## Targets
+
+`vp run video:render -- --target <name>` renders one target from the same
+recorded takes; `--target all` renders every one, and `--target` repeats or
+takes a comma list. With no `--target` it renders `homepage` and `social`,
+which is what `vp run video` ships. The registry is
+`scripts/lib/showcase-video/targets.ts`: per target the layout, size, scenes and
+their order, length cap, donation line, audio, outputs, and whether it may write
+into `packages/web/public` (only `homepage` may). `showcase-video-targets.test`
+holds all of that, and pins `homepage` field for field so a refactor can't
+change the hero.
+
+| Target | Layout | Size | Scenes | Length | Donation line | Audio | Writes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `homepage` | motion | 1080x1920 → 720x1280 lite | all nine | 56.8 s | yes | none | `packages/web/public/videos/home/showcase-9x16-lite.{webm,mp4}`, `public/images/home/showcase-hero-9x16.webp` |
+| `social` | motion | 1920x1080 and 1080x1920 | all nine | 56.8 s | yes | none | `out/social/brag.mp4`, `brag-9x16.mp4`, `brag*.jpg`, `share-copy.txt` |
+| `reel` | motion, safe-area stage | 1080x1920 | hook, light, boards, crew, island, outro | 30.7 s | no | silent stereo AAC | `out/reel/reel-9x16.mp4`, `.jpg` |
+| `app-store` | full-bleed | 886x1920 | five clips: light, wall, crew, island, log | 28.5 s | no | silent stereo AAC, 256 kbit/s | `out/app-store/iphone-6.9.mp4`, `iphone-6.5.mp4` (same file), `iphone-poster.jpg` |
+| `play-promo` | motion | 1920x1080 | hook, light, boards, crew, island, log, outro | 40.1 s | no | silent stereo AAC | `out/play/play-16x9.mp4`, `.jpg` |
+
+`out/` is `.boardsesh/showcase-video/out/` (gitignored). Only the `homepage`
+files are committed. `homepage` and `social` 9:16 render the same frames, so
+the browser runs once for both. `--format 16x9|9x16` keeps only the renditions
+of one format (a named target with no rendition in it fails; a default or
+`all` target is left out with a warning); `--stills`, `--measure` and `--frame` work per target and write
+under `out/stills/<target>/`.
+
+**Motion vs full-bleed.** `motion` is the stage in `index.html`: the phone
+mockup, callouts and motion-graphic scenes. `full-bleed` is `full-bleed.html`:
+the recorded footage fills the frame (800x1738 footage scaled to cover
+886x1920, about 1.1x, 2 px cropped top and bottom) with a one-line caption bar
+(Inter Tight 800, five words at most, `copy.en-US.json` `appStore.captions`) and
+nothing else. Each clip is cut on the take's marks like `SHOWCASE_TAKE_EDITS`.
+The bar sits over the status bar, except on the island clip, where it sits over
+the empty wallpaper below the Dynamic Island. Clips cut hard; a caption fades
+out before its cut, so no transition suggests something the app doesn't do.
+The island clip is the recorded Live Activity as it is.
+
+**The reel's safe area.** Meta's Reels and Stories ads margins at 1080x1920:
+14% top (270 px), 35% bottom (672 px, the caption, CTA and like rail), 6% each
+side (65 px), from Meta's [Reels ad specs](https://www.facebook.com/business/ads-guide/update/image/instagram-reels)
+and [text overlay safe zone](https://www.facebook.com/business/help/980593475366490),
+checked 2026-10-01. These are stricter than the organic Reels overlays (~250 px
+top, ~420 px bottom), so one file serves both. The `safe` stage variant puts
+headlines at 300 px, shrinks the callout phone to 0.76 and lifts it so the
+whole phone sits in the text band (520–1204 px), pulls the pills 72 px in from
+the edges and clamps them inside the band, and fades the board labels before
+the pile sinks. The renderer reads every text element's box from the page
+(`textBoxes()`) on every third frame and on every still, and fails the render
+if any word crosses a margin; `--measure` draws the band as a dashed box.
+
+**Apple's App Preview spec**, from
+[App preview specifications](https://developer.apple.com/help/app-store-connect/reference/app-preview-specifications)
+and [App previews](https://developer.apple.com/app-store/app-previews/), read
+2026-10-01. `APPLE_APP_PREVIEW_SPEC` in `targets.ts` holds the numbers, and the
+renderer probes the encode and fails when it misses any of them:
+
+| Spec | Apple | What we render |
+| --- | --- | --- |
+| iPhone 6.9" and 6.5" portrait (also 6.7", 6.3", 6.1") | 886 x 1920 | 886 x 1920, one file copied to both slots |
+| Length | 15–30 s | 28.5 s |
+| Frame rate | 30 fps max | 30 fps, progressive |
+| Video | H.264 up to High Profile Level 4.0, 10–12 Mbit/s target (or ProRes 422 HQ) | H.264 High 4.0, CBR 11 Mbit/s, `.mp4` |
+| Audio | stereo; H.264 files 256 kbit/s AAC, 44.1 or 48 kHz; all tracks enabled | silent stereo AAC 256 kbit/s, 48 kHz |
+| File size | 500 MB max | about 40 MB |
+| Content | only content from within the app; no people or hands on a device; overlays and captions allowed, legible and on screen long enough to read; no prices or dated references | the recorded app footage only, no device frame; captions of five words or fewer, at least 1 s longer than 0.3 s a word |
+| Poster frame | 5 s by default | `iphone-poster.jpg` is frame 150 (5 s) |
+
+The 5.5" slot (1080 x 1920) and iPads (1200 x 1600) are not rendered: an iPhone
+preview at 886 x 1920 covers every current iPhone slot.
+
+## Uploading
+
+Nothing uploads automatically. After `vp run video:render -- --target all`:
+
+1. **App Store Connect** (app-store). App Store Connect → the app → the version
+   → App Store tab → Previews and Screenshots → iPhone 6.9" Display → drag in
+   `out/app-store/iphone-6.9.mp4`, pick the poster frame, save. Do the same
+   with `iphone-6.5.mp4` if the 6.5" slot is shown separately. Apple processes
+   the preview for up to a day, and it goes live with the next version you
+   submit.
+2. **Google Play** (play-promo). Upload `out/play/play-16x9.mp4` to the
+   Boardsesh YouTube channel as public or unlisted, with ads and end screens
+   off. Then Play Console → Grow users → Store presence → Main store listing →
+   Graphics → Video → paste the YouTube URL, save. The listing shows it once
+   the change is reviewed.
+3. **Meta Ads** (reel). Ads Manager → the campaign's ad → Media → upload
+   `out/reel/reel-9x16.mp4` as a 9:16 Reels / Stories placement. Leave Meta's
+   text overlays and music off; the file already keeps its words inside the
+   safe area. For an organic Reel, post the same file from the Instagram app.
+4. **Social** (social). `out/social/brag.mp4` (16:9) and `brag-9x16.mp4`, with
+   `share-copy.txt`, for posts. They carry the donation line; never use them in
+   a store listing.
 
 ## Adding or changing a take
 
@@ -359,7 +452,7 @@ How the rendered files reach the homepage (`packages/web/app/components/home/hom
 
 **Data saver, reduced motion and refused autoplay.** If `navigator.connection.saveData` is set or the reader prefers reduced motion, the poster stays and a centred play button appears. Nothing is fetched until they press it, and the press calls `play()` itself so iOS accepts it inside the click. A browser that refuses autoplay gets the same treatment: the poster and the centred play button, with no native controls. The small corner toggle pauses and resumes once the video is playing.
 
-**Files.** One cut serves every viewport: `showcase-9x16-lite.webm` and `.mp4` (720 x 1280, `SHOWCASE_WEB_LITE` in `scripts/lib/showcase-video/render.ts`), plus `showcase-hero-9x16.webp`. Caps: webm 1,300,000 bytes, mp4 1,900,000 bytes; the renderer fails the encode over its cap. The cut is rotated to start on the poster frame (`SHOWCASE_WEB_POSTER_FRAME`), so the first video frame equals the poster and nothing jumps when playback starts.
+**Files.** One cut serves every viewport: `showcase-9x16-lite.webm` and `.mp4` (720 x 1280, `SHOWCASE_WEB_LITE` in `scripts/lib/showcase-video/render.ts`, the `homepage` target), plus `showcase-hero-9x16.webp`. Caps: webm 1,750,000 bytes, mp4 1,900,000 bytes; the renderer fails the encode over its cap. The cut is rotated to start on the poster frame (`SHOWCASE_WEB_POSTER_FRAME`), so the first video frame equals the poster and nothing jumps when playback starts.
 
 **Analytics.** `Showcase Video Progress` fires once per quartile per page view with `{ quartile: 25 | 50 | 75 | 100, placement: 'hero', cut: '9x16-lite', autoplayed }`. `autoplayed` is false when the reader pressed play. Quartile 100 fires at 97% of the duration, because a looping video may never report its exact end.
 

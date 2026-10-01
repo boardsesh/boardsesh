@@ -80,6 +80,15 @@
       "activity-calendar": "Activity"
     }
   },
+  "appStore": {
+    "captions": {
+      "light": "Light climbs on your board",
+      "wall": "See what's on the wall",
+      "crew": "Your crew. One queue.",
+      "lock-screen": "Next climb from the island",
+      "log": "Remember every send"
+    }
+  },
   "outro": {
     "wordmark": "boardsesh",
     "tagline": "Less phone. More *wall.*",

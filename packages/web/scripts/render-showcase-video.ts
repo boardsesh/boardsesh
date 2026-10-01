@@ -11,12 +11,13 @@
  * Not a Playwright test project, for the same reason as capture-design-mockups:
  * a file:// page needs no dev server, database or signed-in user.
  *
- * Usage: vp run video:render [-- --stills] [--measure] [--from-frame <n>] [--format 16x9|9x16]
- *                            [--placeholder-footage] [--skip-web]
+ * Usage: vp run video:render [-- --target <name>|all] [--stills] [--measure] [--from-frame <n>]
+ *                            [--format 16x9|9x16] [--placeholder-footage] [--skip-web] [--no-donation-line]
  */
 import { chromium, type Page } from '@playwright/test';
 import sharp from 'sharp';
 import { execFile, spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
   copyFileSync,
   existsSync,
@@ -59,8 +60,7 @@ import {
   type ShowcaseScene,
 } from '../../../scripts/lib/showcase-video/timeline';
 import {
-  SHOWCASE_CALLOUT_LAYOUT,
-  SHOWCASE_CANVAS,
+  SHOWCASE_CAPTION_BAR,
   SHOWCASE_CHOREO,
   SHOWCASE_DEVICE_SCALE,
   SHOWCASE_LIGHT_ROLE_COLORS,
@@ -68,14 +68,14 @@ import {
   SHOWCASE_PERSPECTIVE,
   SHOWCASE_PHONE,
   SHOWCASE_PLACEHOLDER_TAKES,
-  SHOWCASE_POSES,
   SHOWCASE_SHARE_COPY,
   SHOWCASE_STAGE_COPY,
   SHOWCASE_STAGE_HOLDS,
+  SHOWCASE_FULL_BLEED_HTML,
   SHOWCASE_STAGE_HTML,
   SHOWCASE_STAGE_TOKENS,
   SHOWCASE_STILLS_DIR,
-  SHOWCASE_WEB_LITE,
+  SHOWCASE_TAKE_LEAD_FRAMES,
   SHOWCASE_WEB_POSTER_FRAME,
   isFlatFrame,
   webBitrateFor,
@@ -87,9 +87,13 @@ import {
   anchorsFilePath,
   buildBoardRenderUrl,
   buildClimbSearchRequest,
+  buildAppPreviewArgs,
   buildDurationProbeArgs,
   buildFramePngArgs,
   buildMasterArgs,
+  buildStreamProbeArgs,
+  cutIntermediates,
+  fullBleedStillFrames,
   buildMezzanineArgs,
   buildPlaceholderFootageArgs,
   buildWebMp4PassArgs,
@@ -110,7 +114,6 @@ import {
   renderedBoardScreen,
   sceneCalloutCopy,
   resolveSceneCallouts,
-  showcaseOutputs,
   stillFramesForScene,
   webCutSeconds,
   footageAt,
@@ -119,6 +122,9 @@ import {
   resolveTakeEdit,
   type ResolvedTakeEdit,
   workoutTickFrames,
+  type CalloutStage,
+  type FullBleedClipData,
+  type FullBleedStageData,
   type LitHold,
   type PlaceholderBoardRender,
   type PlaceholderClimb,
@@ -126,13 +132,27 @@ import {
   type IslandQueue,
   type RenderArgs,
   type ShowcaseCopy,
-  type ShowcaseFormat,
   type ShowcaseStageData,
+  type StillFrame,
   type StageBoards,
   type StageCallout,
   type StageTake,
 } from '../../../scripts/lib/showcase-video/render';
 import { FFMPEG_BIN, FFPROBE_BIN, HELP_CLIP_POSTER_ENCODE } from '../../../scripts/lib/help-clips';
+import {
+  SHOWCASE_TARGET_NAMES,
+  appPreviewProblems,
+  assertTargetLength,
+  parseStreamProbe,
+  selectTargets,
+  textOutsideSafeArea,
+  type TargetSelection,
+  type ProbedMedia,
+  type ShowcaseDeliverable,
+  type ShowcaseRendition,
+  type ShowcaseTarget,
+  type TextBox,
+} from '../../../scripts/lib/showcase-video/targets';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(SCRIPT_DIR, '../../..');
@@ -142,20 +162,23 @@ const FRAME_BUFFER_MAX_BYTES = 256 * 1024 * 1024;
 
 const USAGE = `Usage: vp run video:render [-- <flags>]
 
-Renders the homepage showcase video from marketing/showcase-video/.
+Renders the showcase video's targets from marketing/showcase-video/ and the recorded takes.
 
+  --target <name>        One target, repeatable or comma-separated: ${SHOWCASE_TARGET_NAMES.join(', ')};
+                         all for every one. Default: homepage + social (what vp run video ships).
+                         Outputs: docs/showcase-video.md, "Targets"
   --stills               Contact sheets only (settled + mid-transition frames per scene)
                          → ${relative(REPO_ROOT, SHOWCASE_STILLS_DIR)}/
   --poster-frame <n>     Frame the web cut opens on and its poster shows (default ${SHOWCASE_WEB_POSTER_FRAME}; brag.* keep frame 0)
   --frame <n>            One frame as a full-size PNG → ${relative(REPO_ROOT, SHOWCASE_STILLS_DIR)}/
   --measure              Draw every anchor box over the footage (debug; never ships)
   --from-frame <n>       Start at frame n (writes a preview, skips the web encodes)
-  --format 16x9|9x16     One format only (default: both)
+  --format 16x9|9x16     Only the renditions of one format (default: all)
   --placeholder-footage  Rebuild stand-in footage + anchors from the committed help
                          clips, store screenshots and generated cards before rendering
-  --skip-web             Stop after brag.mp4 / brag.jpg (no lite hero encode or poster)
-  --no-donation-line     Leave "Paid for by the climbers who use it." out of the outro,
-                         for store previews and install ads (implies --skip-web)
+  --skip-web             Leave out the homepage target (the lite hero encodes and poster)
+  --no-donation-line     Leave "Paid for by the climbers who use it." out of every target's outro
+                         (store and ad targets never have it); leaves out the homepage
   --help                 Show this message`;
 
 const log = (message: string) => console.log(`[video:render] ${message}`);
@@ -311,16 +334,16 @@ function countFrames(dir: string): number {
   return readdirSync(dir).filter((name) => /^\d{5}\.jpg$/.test(name)).length;
 }
 
+const isPlaceholder = (takeId: ShowcaseTakeId) => existsSync(resolve(footageTakeDir(takeId), PLACEHOLDER_MARKER));
+
 /**
- * The take's edit resolved against its recorded marks. A take with no edit
- * (the boards) or a generated placeholder (no marks) plays from one second in.
- * A recorded take whose marks file or needed marks are missing stops the render.
+ * A recorded take's marks (`work/marks/<take>.json`), or null for a generated
+ * placeholder (it has none). A recorded take whose marks file is missing stops
+ * the render.
  */
-function readEdit(takeId: ShowcaseTakeId, frameCount: number): ResolvedTakeEdit | undefined {
-  const edit = SHOWCASE_TAKE_EDITS[takeId];
-  if (!edit) return undefined;
+function readMarks(takeId: ShowcaseTakeId): Record<string, number> | null {
+  if (isPlaceholder(takeId)) return null;
   const path = resolve(SHOWCASE_MARKS_DIR, `${takeId}.json`);
-  if (existsSync(resolve(footageTakeDir(takeId), PLACEHOLDER_MARKER))) return undefined;
   if (!existsSync(path)) {
     throw new Error(
       `Missing marks for take "${takeId}": ${relative(REPO_ROOT, path)}. Re-record it with video:record.`,
@@ -329,8 +352,24 @@ function readEdit(takeId: ShowcaseTakeId, frameCount: number): ResolvedTakeEdit 
   const file = JSON.parse(readFileSync(path, 'utf8')) as ShowcaseMarksFile;
   if (file.takeId !== takeId || typeof file.marks !== 'object')
     throw new Error(`${path} is not a marks file for "${takeId}"`);
-  const scene = sceneOfTake(takeId);
-  const resolved = resolveTakeEdit(takeId, edit, file.marks, scene.endFrame - scene.startFrame, frameCount);
+  return file.marks;
+}
+
+/**
+ * The take's edit resolved against its recorded marks for a scene of
+ * `sceneLength` frames. A take with no edit (the boards) or a generated
+ * placeholder (no marks) plays from one second in. Missing marks stop the render.
+ */
+function readEdit(
+  takeId: ShowcaseTakeId,
+  frameCount: number,
+  sceneLength = sceneOfTake(takeId).endFrame - sceneOfTake(takeId).startFrame,
+): ResolvedTakeEdit | undefined {
+  const edit = SHOWCASE_TAKE_EDITS[takeId];
+  if (!edit) return undefined;
+  const marks = readMarks(takeId);
+  if (!marks) return undefined;
+  const resolved = resolveTakeEdit(takeId, edit, marks, sceneLength, frameCount);
   resolved.warnings.forEach(warn);
   return resolved;
 }
@@ -464,6 +503,15 @@ function gradeColors(): ShowcaseStageData['grades'] {
 
 // --- stage data --------------------------------------------------------------------------------
 
+/** Everything read from disk once per run: footage, anchors, holds, copy. */
+type Footage = Readonly<{
+  copy: ShowcaseCopy;
+  takes: Partial<Record<ShowcaseTakeId, StageTake>>;
+  anchors: Partial<Record<ShowcaseTakeId, ShowcaseAnchorsFile>>;
+  holds: LitHold[];
+}>;
+
+/** One cut of the motion stage: its timeline, the edits at its scene lengths, and what the stage shows. */
 type Prepared = Readonly<{
   copy: ShowcaseCopy;
   takes: Partial<Record<ShowcaseTakeId, StageTake>>;
@@ -476,26 +524,42 @@ type Prepared = Readonly<{
   timeline: ShowcaseTimeline;
 }>;
 
-async function prepare(allowDrawnPlaceholders: boolean, donationLine: boolean): Promise<Prepared> {
-  const stageCopy = JSON.parse(readFileSync(SHOWCASE_STAGE_COPY, 'utf8')) as ShowcaseCopy;
-  const copy = donationLine ? stageCopy : withoutDonationLine(stageCopy);
-  if (!donationLine) log('outro: no donation line (store / install-ad cut); web encodes skipped');
-  const { takes, anchors, edits } = loadTakes(allowDrawnPlaceholders);
+async function loadFootage(allowDrawnPlaceholders: boolean): Promise<Footage> {
+  const copy = JSON.parse(readFileSync(SHOWCASE_STAGE_COPY, 'utf8')) as ShowcaseCopy;
+  const { takes, anchors } = loadTakes(allowDrawnPlaceholders);
   const light = takes.light;
   const lightAnchors = anchors.light;
   if (!light || !lightAnchors) throw new Error('The light take is required');
   const holds = await resolveHolds(light, lightAnchors);
-  const timeline = resolveTimeline(new Set(Object.keys(takes) as ShowcaseTakeId[]));
-  for (const sceneId of timeline.skipped) warn(`scene "${sceneId}" has no footage; the cut runs without it`);
+  return { copy, takes, anchors, holds };
+}
+
+/** The motion cut a target asks for: its scenes and lengths, its copy, the edits resolved at those lengths. */
+function prepareCut(footage: Footage, target: ShowcaseTarget, donationLine: boolean): Prepared {
+  const copy = donationLine ? footage.copy : withoutDonationLine(footage.copy);
+  const timeline = resolveTimeline(new Set(Object.keys(footage.takes) as ShowcaseTakeId[]), target.scenes);
+  for (const sceneId of timeline.skipped)
+    warn(`${target.name}: scene "${sceneId}" has no footage; the cut runs without it`);
   log(
-    `timeline: ${timeline.scenes.length} scenes, ${timeline.totalFrames} frames (${(timeline.totalFrames / SHOWCASE_FPS).toFixed(1)} s)`,
+    `${target.name}: ${timeline.scenes.length} scenes, ${timeline.totalFrames} frames (${(timeline.totalFrames / SHOWCASE_FPS).toFixed(1)} s)`,
   );
+  const edits: Partial<Record<ShowcaseTakeId, ResolvedTakeEdit>> = {};
+  const takes: Partial<Record<ShowcaseTakeId, StageTake>> = { ...footage.takes };
+  for (const scene of timeline.scenes) {
+    for (const takeId of scene.takes) {
+      const take = footage.takes[takeId];
+      if (!take) continue;
+      const edit = readEdit(takeId, take.frameCount, scene.endFrame - scene.startFrame);
+      if (edit) edits[takeId] = edit;
+      takes[takeId] = { ...take, segments: takeSegments(scene, edit) };
+    }
+  }
   const callouts: Prepared['callouts'] = {};
   for (const scene of timeline.scenes) {
     if (scene.callouts.length === 0) continue;
     const resolved = resolveSceneCallouts(
       scene,
-      anchors[scene.takes[0]] ?? null,
+      footage.anchors[scene.takes[0]] ?? null,
       sceneCalloutCopy(copy, scene.id),
       edits[scene.takes[0]],
     );
@@ -503,14 +567,19 @@ async function prepare(allowDrawnPlaceholders: boolean, donationLine: boolean): 
     callouts[scene.id] = resolved.callouts;
   }
   const boardsScene = SHOWCASE_SCENES.find((scene) => scene.id === 'boards') as ShowcaseScene;
-  const boards = planBoards(boardsScene.takes, new Set(Object.keys(takes) as ShowcaseTakeId[]));
-  log(`boards: ${boards.arrival.length} phones (${boards.arrival.map((takeId) => boards.labels[takeId]).join(', ')})`);
-  const budget = readingBudgetReport(copy, timeline.scenes, edits);
-  log(`reading budget:\n${formatReadingBudgetTable(budget)}`);
-  for (const report of budget.filter((candidate) => !readingBudgetMet(candidate))) {
-    warn(`reading budget short in "${report.sceneId}"`);
+  const boards = planBoards(boardsScene.takes, new Set(Object.keys(footage.takes) as ShowcaseTakeId[]));
+  if (timeline.scenes.some((scene) => scene.id === 'boards')) {
+    log(
+      `${target.name} boards: ${boards.arrival.length} phones (${boards.arrival.map((takeId) => boards.labels[takeId]).join(', ')})`,
+    );
   }
-  return { copy, takes, anchors, holds, callouts, boards, edits, timeline };
+  const budget = readingBudgetReport(copy, timeline.scenes, edits);
+  log(`${target.name} reading budget:\n${formatReadingBudgetTable(budget)}`);
+  for (const report of budget.filter((candidate) => !readingBudgetMet(candidate))) {
+    warn(`${target.name}: reading budget short in "${report.sceneId}"`);
+  }
+  assertTargetLength(target, timeline.totalFrames);
+  return { copy, takes, anchors: footage.anchors, holds: footage.holds, callouts, boards, edits, timeline };
 }
 
 /** Scene-local frame the workouts footage's rest pill shows its first value, so the checklist's countdown starts with it. */
@@ -520,8 +589,18 @@ function restFromFootage(prepared: Prepared): number | null {
   return edit && first ? localAtFootage(edit.segments, first[0]) : null;
 }
 
-function stageData(format: ShowcaseFormat, prepared: Prepared, measure: boolean): ShowcaseStageData {
-  const { width, height } = SHOWCASE_CANVAS[format];
+/** Where a safe area lets 9:16 pill centres sit. */
+function pillBand(rendition: ShowcaseRendition): CalloutStage['band'] {
+  const area = rendition.safeArea;
+  if (!area) return null;
+  const half = rendition.stage.callouts.portraitPillHeight / 2 + 6;
+  return { top: area.top + half, bottom: rendition.size.height - area.bottom - half };
+}
+
+function stageData(prepared: Prepared, rendition: ShowcaseRendition, measure: boolean): ShowcaseStageData {
+  const { format, stage } = rendition;
+  const { width, height } = rendition.size;
+  const calloutStage: CalloutStage = { poses: stage.poses, layout: stage.callouts, band: pillBand(rendition) };
   return {
     format,
     width,
@@ -531,9 +610,11 @@ function stageData(format: ShowcaseFormat, prepared: Prepared, measure: boolean)
     perspective: SHOWCASE_PERSPECTIVE,
     measure,
     choreo: SHOWCASE_CHOREO,
-    layout: SHOWCASE_CALLOUT_LAYOUT,
+    layout: stage.callouts,
     phone: SHOWCASE_PHONE,
-    poses: SHOWCASE_POSES[format],
+    poses: stage.poses,
+    headlineTop: stage.headlineTop,
+    safeArea: rendition.safeArea,
     scenes: prepared.timeline.scenes.map((scene) => {
       const names = prepared.callouts[scene.id] ?? [];
       const anchorsFile = prepared.anchors[scene.takes[0]];
@@ -546,6 +627,7 @@ function stageData(format: ShowcaseFormat, prepared: Prepared, measure: boolean)
               anchorsFile,
               sceneCalloutCopy(prepared.copy, scene.id),
               prepared.edits[scene.takes[0]],
+              calloutStage,
             )
           : [];
       return { ...scene, callouts };
@@ -568,20 +650,118 @@ function stageData(format: ShowcaseFormat, prepared: Prepared, measure: boolean)
   };
 }
 
+/** The full-bleed cut: each clip's footage resolved on its marks, under its caption. */
+function fullBleedData(footage: Footage, target: ShowcaseTarget, rendition: ShowcaseRendition, measure: boolean) {
+  let frame = 0;
+  const clips: FullBleedClipData[] = [];
+  for (const clip of target.clips) {
+    const take = footage.takes[clip.take];
+    if (!take) {
+      warn(`${target.name}: no footage for "${clip.take}"; its clip is left out`);
+      continue;
+    }
+    const caption = footage.copy.appStore.captions[clip.caption];
+    if (!caption)
+      throw new Error(`${target.name}: no caption "${clip.caption}" in ${relative(REPO_ROOT, SHOWCASE_STAGE_COPY)}`);
+    const marks = readMarks(clip.take);
+    const segments = marks
+      ? resolveTakeEdit(clip.take, { segments: clip.segments }, marks, clip.frames, take.frameCount).segments
+      : [[SHOWCASE_TAKE_LEAD_FRAMES, SHOWCASE_TAKE_LEAD_FRAMES + clip.frames] as const];
+    clips.push({
+      startFrame: frame,
+      endFrame: frame + clip.frames,
+      take: { frameUrlBase: take.frameUrlBase, frameCount: take.frameCount, segments },
+      caption,
+      captionTop: clip.captionTop,
+    });
+    frame += clip.frames;
+  }
+  const seconds = frame / SHOWCASE_FPS;
+  log(`${target.name}: ${clips.length} clips, ${frame} frames (${seconds.toFixed(1)} s)`);
+  assertTargetLength(target, frame);
+  const data: FullBleedStageData = {
+    width: rendition.size.width,
+    height: rendition.size.height,
+    fps: SHOWCASE_FPS,
+    totalFrames: frame,
+    measure,
+    clips,
+    bar: SHOWCASE_CAPTION_BAR,
+  };
+  return data;
+}
+
+// --- cuts --------------------------------------------------------------------------------------
+
+/** One rendering of a stage: a page, its data, its size, and every target rendition it feeds. */
+type Cut = Readonly<{
+  key: string;
+  /** For logs and stills: the first target and rendition that asked for it. */
+  label: string;
+  stillsDir: string;
+  html: string;
+  size: Readonly<{ width: number; height: number }>;
+  data: ShowcaseStageData | FullBleedStageData;
+  totalFrames: number;
+  safeArea: ShowcaseRendition['safeArea'];
+  /** Motion scenes for the stills (empty for full-bleed, which uses its clips). */
+  timeline: ShowcaseTimeline | null;
+  uses: ReadonlyArray<Readonly<{ target: ShowcaseTarget; rendition: ShowcaseRendition }>>;
+}>;
+
+const shortHash = (value: unknown) => createHash('sha1').update(JSON.stringify(value)).digest('hex').slice(0, 10);
+
+/**
+ * The cuts to render for the chosen targets. Renditions that would render the
+ * same frames (homepage and social 9:16) share one cut, so the browser runs
+ * once for both.
+ */
+async function planCuts(footage: Footage, picks: TargetSelection['picks'], args: RenderArgs): Promise<Cut[]> {
+  const cuts = new Map<string, Cut>();
+  for (const { target, renditions } of picks) {
+    const donationLine = target.donationLine && args.donationLine;
+    const prepared = target.layout === 'motion' ? prepareCut(footage, target, donationLine) : null;
+    for (const rendition of renditions) {
+      const data = prepared
+        ? stageData(prepared, rendition, args.measure)
+        : fullBleedData(footage, target, rendition, args.measure);
+      const key = `${target.layout}-${rendition.id}-${shortHash(data)}`;
+      const existing = cuts.get(key);
+      if (existing) {
+        cuts.set(key, { ...existing, uses: [...existing.uses, { target, rendition }] });
+        continue;
+      }
+      cuts.set(key, {
+        key,
+        label: `${target.name}/${rendition.id}`,
+        stillsDir: resolve(SHOWCASE_STILLS_DIR, target.name),
+        html: target.layout === 'motion' ? SHOWCASE_STAGE_HTML : SHOWCASE_FULL_BLEED_HTML,
+        size: rendition.size,
+        data,
+        totalFrames: data.totalFrames,
+        safeArea: rendition.safeArea,
+        timeline: prepared?.timeline ?? null,
+        uses: [{ target, rendition }],
+      });
+    }
+  }
+  return [...cuts.values()];
+}
+
 // --- browser -----------------------------------------------------------------------------------
 
-async function openStage(format: ShowcaseFormat, data: ShowcaseStageData) {
+async function openStage(cut: Cut) {
   const browser = await chromium.launch({ args: ['--allow-file-access-from-files', '--font-render-hinting=none'] });
   // Anything after launch can throw; close the browser so no orphan Chromium keeps the process alive.
   try {
-    const { width, height } = SHOWCASE_CANVAS[format];
+    const { width, height } = cut.size;
     const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: SHOWCASE_DEVICE_SCALE });
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
     page.on('console', (message) => {
       if (message.type() === 'error') errors.push(message.text());
     });
-    await page.goto(pathToFileURL(SHOWCASE_STAGE_HTML).href, { waitUntil: 'load' });
+    await page.goto(pathToFileURL(cut.html).href, { waitUntil: 'load' });
     await page.waitForFunction(
       () => (window as unknown as { showcaseStageLoaded?: boolean }).showcaseStageLoaded === true,
       null,
@@ -593,7 +773,7 @@ async function openStage(format: ShowcaseFormat, data: ShowcaseStageData) {
       (input) => {
         (window as unknown as { showcaseInit: (value: unknown) => void }).showcaseInit(input);
       },
-      data as unknown as Record<string, unknown>,
+      cut.data as unknown as Record<string, unknown>,
     );
     const fonts = await page.evaluate(async () => {
       await Promise.all([
@@ -648,45 +828,69 @@ async function capture(client: CdpClient): Promise<Buffer> {
   return Buffer.from(data, 'base64');
 }
 
+/** Text on the current frame that crosses the cut's safe area, as readable lines. */
+async function safeAreaViolations(page: Page, cut: Cut, frame: number): Promise<string[]> {
+  if (!cut.safeArea) return [];
+  const boxes = await page.evaluate(() => (window as unknown as { textBoxes: () => TextBox[] }).textBoxes());
+  return textOutsideSafeArea(boxes, cut.size, cut.safeArea).map(
+    (box) =>
+      `frame ${frame}: "${box.label}" at ${Math.round(box.x)},${Math.round(box.y)} ${Math.round(box.width)}x${Math.round(box.height)}`,
+  );
+}
+
 // --- stills --------------------------------------------------------------------------------------
 
-async function renderStills(
-  format: ShowcaseFormat,
-  data: ShowcaseStageData,
-  measure: boolean,
-  timeline: ShowcaseTimeline,
-): Promise<string[]> {
-  mkdirSync(SHOWCASE_STILLS_DIR, { recursive: true });
-  const { browser, page, client } = await openStage(format, data);
-  const written: string[] = [];
-  const cell = format === '16x9' ? { width: 960, height: 540, columns: 2 } : { width: 432, height: 768, columns: 4 };
+function cutStills(cut: Cut): ReadonlyArray<Readonly<{ group: string; frames: StillFrame[] }>> {
+  if (!cut.timeline) {
+    const data = cut.data as FullBleedStageData;
+    return [{ group: 'clips', frames: fullBleedStillFrames(data.clips) }];
+  }
+  const data = cut.data as ShowcaseStageData;
+  const timeline = cut.timeline;
+  return timeline.scenes.map((scene) => {
+    const stageScene = data.scenes.find((candidate) => candidate.id === scene.id);
+    return { group: scene.id, frames: stillFramesForScene(scene, timeline.totalFrames, stageScene?.callouts ?? []) };
+  });
+}
+
+async function renderStills(cut: Cut, measure: boolean): Promise<void> {
+  mkdirSync(cut.stillsDir, { recursive: true });
+  log(`stills for ${cut.label} → ${relative(REPO_ROOT, cut.stillsDir)}/`);
+  const { browser, page, client } = await openStage(cut);
+  const scale = Math.min(960 / cut.size.width, 768 / cut.size.height);
+  const cell = {
+    width: Math.round(cut.size.width * scale),
+    height: Math.round(cut.size.height * scale),
+    columns: cut.size.width > cut.size.height ? 2 : 4,
+  };
+  const violations: string[] = [];
+  const rendition = cut.uses[0].rendition.id;
   try {
-    for (const [sceneIndex, scene] of timeline.scenes.entries()) {
+    for (const [groupIndex, { group, frames }] of cutStills(cut).entries()) {
       const tiles: sharp.OverlayOptions[] = [];
-      const stageScene = data.scenes.find((candidate) => candidate.id === scene.id);
-      const stills = stillFramesForScene(scene, timeline.totalFrames, stageScene?.callouts ?? []);
-      for (const [index, still] of stills.entries()) {
+      for (const [index, still] of frames.entries()) {
         await renderFrame(page, still.frame);
+        violations.push(...(await safeAreaViolations(page, cut, still.frame)));
         const shot = await sharp(await capture(client))
           .resize(cell.width, cell.height, { kernel: 'lanczos3' })
           .toBuffer();
         const label = Buffer.from(
           `<svg width="${cell.width}" height="34"><rect width="100%" height="34" fill="rgba(0,0,0,0.6)"/>` +
             `<text x="10" y="23" font-family="Menlo, monospace" font-size="17" fill="#fff">` +
-            `${scene.id} · frame ${still.frame} · ${still.label}</text></svg>`,
+            `${group} · frame ${still.frame} · ${still.label}</text></svg>`,
         );
         const left = (index % cell.columns) * (cell.width + 8);
         const top = Math.floor(index / cell.columns) * (cell.height + 8);
         tiles.push({ input: shot, left, top }, { input: label, left, top });
       }
-      const rows = Math.ceil(stills.length / cell.columns);
+      const rows = Math.ceil(frames.length / cell.columns);
       const output = resolve(
-        SHOWCASE_STILLS_DIR,
-        `${format}-${String(sceneIndex + 1).padStart(2, '0')}-${scene.id}${measure ? '-measure' : ''}.png`,
+        cut.stillsDir,
+        `${rendition}-${String(groupIndex + 1).padStart(2, '0')}-${group}${measure ? '-measure' : ''}.png`,
       );
       await sharp({
         create: {
-          width: cell.columns * (cell.width + 8) - 8,
+          width: Math.min(frames.length, cell.columns) * (cell.width + 8) - 8,
           height: rows * (cell.height + 8) - 8,
           channels: 3,
           background: '#222',
@@ -695,23 +899,31 @@ async function renderStills(
         .composite(tiles)
         .png()
         .toFile(output);
-      written.push(output);
       log(`stills: ${relative(REPO_ROOT, output)}`);
     }
   } finally {
     await browser.close();
   }
-  return written;
+  failOnViolations(cut, violations);
 }
 
-async function renderSingleFrame(format: ShowcaseFormat, data: ShowcaseStageData, frame: number): Promise<void> {
-  if (frame >= data.totalFrames) throw new Error(`--frame must be below ${data.totalFrames} for this cut`);
-  mkdirSync(SHOWCASE_STILLS_DIR, { recursive: true });
-  const { width, height } = SHOWCASE_CANVAS[format];
-  const { browser, page, client } = await openStage(format, data);
+function failOnViolations(cut: Cut, violations: readonly string[]): void {
+  if (violations.length === 0) {
+    if (cut.safeArea) log(`${cut.label}: every word inside the safe area`);
+    return;
+  }
+  throw new Error(`${cut.label}: text outside the safe area:\n${violations.slice(0, 20).join('\n')}`);
+}
+
+async function renderSingleFrame(cut: Cut, frame: number): Promise<void> {
+  if (frame >= cut.totalFrames) throw new Error(`--frame must be below ${cut.totalFrames} for ${cut.label}`);
+  mkdirSync(cut.stillsDir, { recursive: true });
+  log(`frame ${frame} of ${cut.label} → ${relative(REPO_ROOT, cut.stillsDir)}/`);
+  const { width, height } = cut.size;
+  const { browser, page, client } = await openStage(cut);
   try {
     await renderFrame(page, frame);
-    const output = resolve(SHOWCASE_STILLS_DIR, `${format}-frame-${String(frame).padStart(4, '0')}.png`);
+    const output = resolve(cut.stillsDir, `${cut.uses[0].rendition.id}-frame-${String(frame).padStart(4, '0')}.png`);
     await sharp(await capture(client))
       .resize(width, height, { kernel: 'lanczos3' })
       .png()
@@ -724,9 +936,12 @@ async function renderSingleFrame(format: ShowcaseFormat, data: ShowcaseStageData
 
 // --- full render ------------------------------------------------------------------------------
 
-async function renderMezzanine(format: ShowcaseFormat, data: ShowcaseStageData, fromFrame: number, output: string) {
+/** How often a safe-area cut's text is checked during the full render. */
+const SAFE_AREA_CHECK_EVERY = 3;
+
+async function renderMezzanine(cut: Cut, fromFrame: number, output: string) {
   mkdirSync(dirname(output), { recursive: true });
-  const ffmpeg = spawn(FFMPEG_BIN, buildMezzanineArgs(format, output), { stdio: ['pipe', 'inherit', 'inherit'] });
+  const ffmpeg = spawn(FFMPEG_BIN, buildMezzanineArgs(cut.size, output), { stdio: ['pipe', 'inherit', 'inherit'] });
   const done = new Promise<void>((resolvePromise, reject) => {
     ffmpeg.on('error', reject);
     ffmpeg.on('close', (code) => (code === 0 ? resolvePromise() : reject(new Error(`ffmpeg exited with ${code}`))));
@@ -741,19 +956,21 @@ async function renderMezzanine(format: ShowcaseFormat, data: ShowcaseStageData, 
       else if (ffmpeg.stdin.write(chunk)) resolvePromise();
       else ffmpeg.stdin.once('drain', resolvePromise);
     });
-  const { browser, page, client } = await openStage(format, data);
+  const { browser, page, client } = await openStage(cut);
   const started = Date.now();
+  const violations: string[] = [];
   try {
-    for (let frame = fromFrame; frame < data.totalFrames; frame += 1) {
+    for (let frame = fromFrame; frame < cut.totalFrames; frame += 1) {
       await renderFrame(page, frame);
+      if (frame % SAFE_AREA_CHECK_EVERY === 0) violations.push(...(await safeAreaViolations(page, cut, frame)));
       const png = await capture(client);
       // A flat fill is a render fault (an undecoded screen, a mid-grey crossfade): stop.
       const luma = await sharp(png).resize(48).greyscale().raw().toBuffer();
-      if (isFlatFrame(luma)) throw new Error(`${format}: frame ${frame} is a flat fill`);
+      if (isFlatFrame(luma)) throw new Error(`${cut.label}: frame ${frame} is a flat fill`);
       await write(png);
       if ((frame + 1) % 60 === 0) {
         const rate = (frame + 1 - fromFrame) / ((Date.now() - started) / 1000);
-        log(`${format}: frame ${frame + 1}/${data.totalFrames} (${rate.toFixed(1)} fps)`);
+        log(`${cut.label}: frame ${frame + 1}/${cut.totalFrames} (${rate.toFixed(1)} fps)`);
       }
     }
   } finally {
@@ -761,6 +978,7 @@ async function renderMezzanine(format: ShowcaseFormat, data: ShowcaseStageData, 
     await browser.close();
   }
   await done;
+  failOnViolations(cut, violations);
 }
 
 async function framePng(input: string, frame: number): Promise<Buffer> {
@@ -776,6 +994,11 @@ async function probe(file: string): Promise<string> {
   return stdout.trim().split('\n').join(' ');
 }
 
+async function probeStreams(file: string): Promise<ProbedMedia> {
+  const { stdout } = await execFileAsync(FFPROBE_BIN, buildStreamProbeArgs(file));
+  return parseStreamProbe(stdout);
+}
+
 /** Mean absolute difference (0–255) between two frames: the loop seam check. */
 async function frameDifference(first: Buffer, second: Buffer): Promise<number> {
   const [a, b] = await Promise.all([first, second].map((png) => sharp(png).removeAlpha().raw().toBuffer()));
@@ -786,33 +1009,35 @@ async function frameDifference(first: Buffer, second: Buffer): Promise<number> {
 
 const kb = (bytes: number) => `${(bytes / 1000).toFixed(0)} kB`;
 
+type WebLite = Extract<ShowcaseDeliverable, { kind: 'web-lite' }>;
+type Master = Extract<ShowcaseDeliverable, { kind: 'master' }>;
+type AppPreview = Extract<ShowcaseDeliverable, { kind: 'app-preview' }>;
+
 /**
- * The web outputs, 9:16 only: the lite encode for the homepage hero, rotated
- * to open on the poster frame, and that frame as its poster.
+ * The homepage hero, 9:16 only: the lite encodes, rotated to open on the
+ * poster frame, and that frame as its poster.
  */
 async function encodeWeb(
-  format: ShowcaseFormat,
+  deliverable: WebLite,
   mezzanine: string,
+  passLog: string,
   totalFrames: number,
   posterFrame: number,
 ): Promise<void> {
-  const outputs = showcaseOutputs(format);
-  if (!outputs.liteWebm || !outputs.liteMp4 || !outputs.heroPoster) return;
-  mkdirSync(dirname(outputs.liteWebm), { recursive: true });
+  mkdirSync(dirname(deliverable.webm), { recursive: true });
   const seconds = webCutSeconds(totalFrames);
-  const { size, maxWebmBytes, maxMp4Bytes } = SHOWCASE_WEB_LITE;
   const lite = [
-    { output: outputs.liteWebm, max: maxWebmBytes, build: buildWebmPassArgs },
-    { output: outputs.liteMp4, max: maxMp4Bytes, build: buildWebMp4PassArgs },
+    { output: deliverable.webm, max: deliverable.maxWebmBytes, build: buildWebmPassArgs },
+    { output: deliverable.mp4, max: deliverable.maxMp4Bytes, build: buildWebMp4PassArgs },
   ];
   for (const { output, max, build } of lite) {
     const encode = {
       input: mezzanine,
       output,
-      size,
+      size: deliverable.size,
       startFrame: posterFrame,
       bitrateKbps: webBitrateFor(max, seconds),
-      passLog: `${outputs.passLog}-lite`,
+      passLog: `${passLog}-lite`,
     };
     await execFileAsync(FFMPEG_BIN, build(encode, 1));
     await execFileAsync(FFMPEG_BIN, build(encode, 2));
@@ -821,32 +1046,88 @@ async function encodeWeb(
     if (bytes > Math.min(max, SHOWCASE_WEB_MAX_BYTES)) throw new Error(`${output} is ${bytes} bytes, over ${max}`);
   }
 
-  mkdirSync(dirname(outputs.heroPoster), { recursive: true });
+  mkdirSync(dirname(deliverable.poster), { recursive: true });
   await sharp(await framePng(mezzanine, posterFrame))
     .webp(HELP_CLIP_POSTER_ENCODE)
-    .toFile(outputs.heroPoster);
-  log(`${relative(REPO_ROOT, outputs.heroPoster)}: ${kb(statSync(outputs.heroPoster).size)} (frame ${posterFrame})`);
+    .toFile(deliverable.poster);
+  log(`${relative(REPO_ROOT, deliverable.poster)}: ${kb(statSync(deliverable.poster).size)} (frame ${posterFrame})`);
 }
 
-async function renderVideo(format: ShowcaseFormat, data: ShowcaseStageData, args: RenderArgs): Promise<void> {
-  const outputs = showcaseOutputs(format);
+async function encodeMaster(deliverable: Master, target: ShowcaseTarget, mezzanine: string): Promise<void> {
+  mkdirSync(dirname(deliverable.video), { recursive: true });
+  await execFileAsync(FFMPEG_BIN, buildMasterArgs(mezzanine, deliverable.video, target.audio));
+  log(
+    `${relative(REPO_ROOT, deliverable.video)}: ${kb(statSync(deliverable.video).size)} (${await probe(deliverable.video)})`,
+  );
+  await sharp(await framePng(mezzanine, SHOWCASE_POSTER_FRAME))
+    .jpeg({ quality: 92, mozjpeg: true })
+    .toFile(deliverable.still);
+  if (deliverable.shareCopy) copyFileSync(SHOWCASE_SHARE_COPY, deliverable.shareCopy);
+}
+
+/** The App Preview: one encode, checked against Apple's numbers, copied to each device slot. */
+async function encodeAppPreview(
+  deliverable: AppPreview,
+  target: ShowcaseTarget,
+  rendition: ShowcaseRendition,
+  mezzanine: string,
+): Promise<void> {
+  const [first, ...copies] = deliverable.videos;
+  mkdirSync(dirname(first), { recursive: true });
+  await execFileAsync(FFMPEG_BIN, buildAppPreviewArgs(mezzanine, first, deliverable.videoKbps, target.audio));
+  const media = await probeStreams(first);
+  const problems = appPreviewProblems(media, rendition.size);
+  if (problems.length > 0) throw new Error(`${first} misses Apple's App Preview spec:\n${problems.join('\n')}`);
+  log(
+    `${relative(REPO_ROOT, first)}: ${kb(media.sizeBytes)}, ${media.video?.width}x${media.video?.height} ` +
+      `${media.video?.fps} fps, ${media.durationSeconds.toFixed(2)} s, video ${Math.round((media.video?.kbps ?? 0) / 100) / 10} Mbit/s, ` +
+      `audio ${media.audio?.codec} ${media.audio?.channels} ch ${media.audio?.sampleRate} Hz: meets the App Preview spec`,
+  );
+  for (const copy of copies) {
+    copyFileSync(first, copy);
+    log(`${relative(REPO_ROOT, copy)}: same file (same resolution slot)`);
+  }
+  // App Store Connect's default poster frame is 5 s in.
+  await sharp(await framePng(mezzanine, 5 * SHOWCASE_FPS))
+    .jpeg({ quality: 92, mozjpeg: true })
+    .toFile(deliverable.still);
+}
+
+async function renderCut(cut: Cut, args: RenderArgs): Promise<void> {
+  const intermediates = cutIntermediates(cut.key);
   const preview = args.fromFrame > 0 || args.measure;
   const tag = args.measure ? '-measure' : args.fromFrame > 0 ? `-from-${args.fromFrame}` : '';
-  const mezzanine = outputs.mezzanine.replace(/\.mkv$/, `${tag}.mkv`);
-  const master = outputs.master.replace(/\.mp4$/, `${tag}.mp4`);
+  const mezzanine = intermediates.mezzanine.replace(/\.mkv$/, `${tag}.mkv`);
   try {
-    await renderMezzanine(format, data, args.fromFrame, mezzanine);
-    mkdirSync(SHOWCASE_OUT_DIR, { recursive: true });
-    await execFileAsync(FFMPEG_BIN, buildMasterArgs(mezzanine, master));
-    log(`${relative(REPO_ROOT, master)}: ${kb(statSync(master).size)} (${await probe(master)})`);
-    if (!preview) await finishDeliverables(format, data, mezzanine, args);
+    await renderMezzanine(cut, args.fromFrame, mezzanine);
+    if (preview) {
+      const output = resolve(SHOWCASE_OUT_DIR, 'preview', `${cut.label.replace('/', '-')}${tag}.mp4`);
+      mkdirSync(dirname(output), { recursive: true });
+      await execFileAsync(FFMPEG_BIN, buildMasterArgs(mezzanine, output));
+      log(`${relative(REPO_ROOT, output)}: ${kb(statSync(output).size)} (${await probe(output)})`);
+      return;
+    }
+    if (cut.timeline) {
+      const seam = await frameDifference(
+        await framePng(mezzanine, cut.totalFrames - 1),
+        await framePng(mezzanine, SHOWCASE_POSTER_FRAME),
+      );
+      log(`${cut.label}: loop seam (frame ${cut.totalFrames - 1} vs 0) mean difference ${seam.toFixed(2)}/255`);
+    }
+    for (const { target, rendition } of cut.uses) {
+      const { deliverable } = rendition;
+      if (deliverable.kind === 'web-lite') {
+        await encodeWeb(deliverable, mezzanine, intermediates.passLog, cut.totalFrames, args.posterFrame);
+      } else if (deliverable.kind === 'master') await encodeMaster(deliverable, target, mezzanine);
+      else await encodeAppPreview(deliverable, target, rendition, mezzanine);
+    }
   } finally {
-    removeIntermediates(mezzanine, outputs.passLog);
+    removeIntermediates(mezzanine, intermediates.passLog);
   }
 }
 
 /**
- * The mezzanine (~60–120 MB a format) and the two-pass logs only exist to feed
+ * The mezzanine (~60–120 MB a cut) and the two-pass logs only exist to feed
  * the encodes. Disk is tight, so they go as soon as the encodes are done, or
  * the render fails.
  */
@@ -859,41 +1140,28 @@ function removeIntermediates(mezzanine: string, passLog: string): void {
   log(`removed intermediates for ${relative(REPO_ROOT, mezzanine)}`);
 }
 
-async function finishDeliverables(
-  format: ShowcaseFormat,
-  data: ShowcaseStageData,
-  mezzanine: string,
-  args: RenderArgs,
-): Promise<void> {
-  const outputs = showcaseOutputs(format);
-
-  await sharp(await framePng(mezzanine, SHOWCASE_POSTER_FRAME))
-    .jpeg({ quality: 92, mozjpeg: true })
-    .toFile(outputs.masterStill);
-  copyFileSync(SHOWCASE_SHARE_COPY, outputs.shareCopy);
-  const seam = await frameDifference(
-    await framePng(mezzanine, data.totalFrames - 1),
-    await framePng(mezzanine, SHOWCASE_POSTER_FRAME),
-  );
-  log(`${format}: loop seam (frame ${data.totalFrames - 1} vs 0) mean difference ${seam.toFixed(2)}/255`);
-  if (!args.skipWeb) await encodeWeb(format, mezzanine, data.totalFrames, args.posterFrame);
-}
-
 async function main(): Promise<void> {
   const args = parseRenderArgs(process.argv.slice(2));
   if (args.help) {
     console.log(USAGE);
     return;
   }
+  const { picks, notes } = selectTargets(args);
+  notes.forEach(warn);
+  if (picks.length === 0) throw new Error('Nothing to render: the flags left out every target');
+  log(`targets: ${picks.map(({ target }) => target.name).join(', ')}`);
   mkdirSync(SHOWCASE_FRAMES_DIR, { recursive: true });
   if (args.placeholderFootage) await buildPlaceholderFootage();
   writeTokens();
-  const prepared = await prepare(args.placeholderFootage, args.donationLine);
-  for (const format of args.formats) {
-    const data = stageData(format, prepared, args.measure);
-    if (args.frame !== null) await renderSingleFrame(format, data, args.frame);
-    else if (args.stills) await renderStills(format, data, args.measure, prepared.timeline);
-    else await renderVideo(format, data, args);
+  const footage = await loadFootage(args.placeholderFootage);
+  const cuts = await planCuts(footage, picks, args);
+  for (const cut of cuts) {
+    log(
+      `cut ${cut.label}: ${cut.size.width}x${cut.size.height}, ${cut.totalFrames} frames, for ${cut.uses.map(({ target, rendition }) => `${target.name}/${rendition.id}`).join(' + ')}`,
+    );
+    if (args.frame !== null) await renderSingleFrame(cut, args.frame);
+    else if (args.stills) await renderStills(cut, args.measure);
+    else await renderCut(cut, args);
   }
 }
 
