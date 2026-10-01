@@ -56,7 +56,10 @@ export const kilterCatalogSyncFamily: BackgroundJobFamilyModule<KilterCatalogSyn
   },
   payload: kilterCatalogSyncPayload,
   singletonKey: () => 'kilter',
-  schedules: [{ key: 'hourly', cron: '23 * * * *', fanOut: async () => [{ payload: {} }] }],
+  // Every 6 hours, not hourly: each run streams the full Kilter catalog and
+  // takes ~43 minutes from the homelab while changing almost nothing (#5897),
+  // and the one-at-a-time routine worker runs no user syncs meanwhile.
+  schedules: [{ key: 'every-6h', cron: '23 */6 * * *', fanOut: async () => [{ payload: {} }] }],
   async execute(context) {
     // Loaded here, not at module scope; see loadProviderSyncAdapter.
     const [{ SyncRunner }, { DonorRelinkedError, KilterApiError, isTransientKilterError }] = await Promise.all([

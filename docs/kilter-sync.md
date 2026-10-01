@@ -236,8 +236,9 @@ with that user's token; success and failure both keep the full cooldown from
 the end of the catalog run, and a catalog failure never poisons the user's
 credential.
 
-After the worker cutover the `kilter-catalog-sync` job owns it instead (hourly
-at :23, `SyncRunner.runCatalogSyncJob`): a refresh-grant token from the most
+After the worker cutover the `kilter-catalog-sync` job owns it instead (every 6
+hours at :23, since a full catalog pull takes ~43 minutes from the homelab;
+see #5897, `SyncRunner.runCatalogSyncJob`): a refresh-grant token from the most
 recently successful `active` Kilter credential (else the
 `KILTER_TEST_USERNAME`/`KILTER_TEST_PASSWORD` account), the same slot claimed
 with a 50-minute cooldown measured from the claim (the end-of-run marker is

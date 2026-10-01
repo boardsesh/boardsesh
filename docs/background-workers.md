@@ -693,7 +693,7 @@ Kilter); MoonBoard's credentials are optional.
 | --- | --- | --- | --- |
 | `provider-routine-cycle` | `*/5 * * * *` | `{ provider: 'aurora' }`, `{ provider: 'kilter' }` | Syncs the next due credentials of one provider |
 | `aurora-shared-sync` | `7 * * * *` | one per Aurora board but Kilter, least recently synced first | Shared `/sync`, history snapshot, gym locations, one wall-crawl slice |
-| `kilter-catalog-sync` | `23 * * * *` | one | Kilter catalog, weekly stats repair, weekly history snapshot |
+| `kilter-catalog-sync` | `23 */6 * * *` | one | Kilter catalog, weekly stats repair, weekly history snapshot |
 | `moonboard-locations-sync` | `41 3 * * *` | one | MoonBoard gyms and boards |
 | `climb-stats-self-heal` | `13 * * * *` | one | Re-derives stats rows a dropped or deferred recompute left behind |
 
