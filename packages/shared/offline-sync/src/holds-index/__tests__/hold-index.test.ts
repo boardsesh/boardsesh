@@ -119,6 +119,48 @@ describe('native BLOB read regression', () => {
 });
 
 describe('ensureHoldIndex — first build', () => {
+  it('ignores corrupt sibling hold sets while rebuilding layout postings', async () => {
+    await insertClimb({ uuid: 'valid', seq: 1, frames: 'p1r12' });
+    await insertClimb({ uuid: 'corrupt-sibling', seq: 2, sizes: [8], frames: 'p9r13' });
+    await db.runAsync('INSERT INTO holds_index_climbs (uuid) VALUES (?)', ['corrupt-sibling']);
+    await db.runAsync(
+      `INSERT INTO board_climb_hold_sets (climb_id, holds)
+       SELECT id, '0900000001' FROM holds_index_climbs WHERE uuid = ?`,
+      ['corrupt-sibling'],
+    );
+    const result = await ensureHoldIndex(db, KILTER_12, { parseHoldRows });
+    expect(result.status).toBe('complete');
+    expect(await postingsOf(db, 'kilter', 1)).toEqual(new Map([[1, ['valid']]]));
+  });
+
+  it('rebuilds postings across a 5000-row read boundary with unchanged packed storage', async () => {
+    await db.withExclusiveTransactionAsync(async (txn) => {
+      for (let index = 0; index < 5101; index += 1) {
+        await txn.runAsync(
+          `INSERT INTO board_climbs
+           (uuid, board_type, layout_id, compatible_size_ids, frames, is_listed, is_draft, is_hidden, sync_seq)
+           VALUES (?, 'kilter', 1, '[12]', 'p1r12p2r13', 1, 0, 0, ?)`,
+          [`large-${String(index).padStart(5, '0')}`, index + 1],
+        );
+      }
+    });
+    const first = await ensureHoldIndex(db, KILTER_12, { parseHoldRows, yieldToHost: async () => {} });
+    expect(first).toMatchObject({
+      status: 'complete',
+      climbsProcessed: 5101,
+      holdSetsWritten: 5101,
+      postingsWritten: 2,
+    });
+    await expectPostingsMatchHoldSets(db, 'kilter', 1);
+    const storage = await db.getFirstAsync<{ kind: string; size: number }>(
+      'SELECT typeof(climb_ids) AS kind, length(climb_ids) AS size FROM board_climb_hold_postings WHERE hold_id = 1',
+    );
+    expect(storage).toEqual({ kind: 'blob', size: 5101 * 4 });
+    expect(await watermarkOf(KILTER_12)).toEqual({ syncSeq: 5101, updatedAt: null });
+    const unchanged = await ensureHoldIndex(db, KILTER_12, { parseHoldRows });
+    expect(unchanged).toMatchObject({ status: 'complete', climbsProcessed: 0, holdSetsWritten: 0, postingsWritten: 0 });
+  });
+
   it('indexes listed, published, visible climbs, with roles, and stamps the watermark at MAX(sync_seq)', async () => {
     await insertClimb({ uuid: 'listed', seq: 1, frames: 'p3r15p1r12p2r13p9r99' });
     await insertClimb({ uuid: 'draft', seq: 2, draft: 1 });
@@ -320,6 +362,21 @@ describe('ensureHoldIndex — incremental', () => {
   beforeEach(async () => {
     await insertClimb({ uuid: 'base', seq: 1, frames: 'p1r12p2r13' });
     await ensureHoldIndex(db, KILTER_12, { parseHoldRows });
+  });
+
+  it('rejects corrupt stored hold sets and posting lists when applying new holds', async () => {
+    await db.runAsync('UPDATE board_climb_hold_sets SET holds = 123');
+    await db.runAsync(
+      `INSERT INTO board_climb_hold_postings (board_type, layout_id, hold_id, climb_ids)
+       VALUES ('kilter', 1, 9, '01000000')`,
+    );
+    await insertClimb({ uuid: 'base', seq: 2, frames: 'p9r14' });
+    const result = await ensureHoldIndex(db, KILTER_12, { parseHoldRows });
+    expect(result).toMatchObject({ status: 'complete', holdSetsWritten: 1 });
+    expect(await holdSetOf(db, 'base')).toEqual([[9, HOLD_ROLE.FINISH]]);
+    expect((await postingsOf(db, 'kilter', 1)).get(9)).toEqual(['base']);
+    // Existing corrupt sets cannot tell us which old postings to remove; this
+    // preserves the previous rejection behavior, rather than inventing repair.
   });
 
   it('re-derives an edited climb and moves it between postings', async () => {
