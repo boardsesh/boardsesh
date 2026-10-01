@@ -38,6 +38,7 @@ function emitState(state: unknown) {
 function emitBlur() {
   // Blur is intentionally inert: these event-order cases protect against
   // reintroducing a listener that resets history when a modal covers the tab.
+  expect(cfg.navigation.addListener.mock.calls.filter(([type]) => type === 'blur')).toHaveLength(0);
   cfg.navigation.addListener.mock.calls.find(([type]) => type === 'blur')?.[1]();
 }
 
@@ -112,6 +113,28 @@ describe('usePopToTopOnTabBlur', () => {
     renderHook(() => usePopToTopOnTabBlur('discover'));
     emitState(tabState(1));
     expect(cfg.navigation.dispatch).not.toHaveBeenCalled();
+  });
+
+  it.each(['discover', 'profile', 'climbs'] as const)('targets the departing %s stack', (tabName) => {
+    const selectedTabState = {
+      ...tabState(),
+      routes: [
+        {
+          ...tabState().routes[0],
+          name: tabName,
+          key: `${tabName}-1`,
+          state: { ...tabState().routes[0].state, key: `${tabName}-stack` },
+        },
+        { name: 'other', key: 'other-1' },
+      ],
+    };
+    cfg.navigation.getState.mockReturnValue(selectedTabState);
+    renderHook(() => usePopToTopOnTabBlur(tabName));
+    emitState({ ...selectedTabState, index: 1 });
+    expect(cfg.navigation.dispatch).toHaveBeenCalledExactlyOnceWith({
+      type: 'POP_TO_TOP',
+      target: `${tabName}-stack`,
+    });
   });
 
   it.each([
