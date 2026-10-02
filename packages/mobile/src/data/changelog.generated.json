@@ -1,6 +1,20 @@
 {
-  "generatedAt": "2026-09-30T21:21:05.064Z",
+  "generatedAt": "2026-10-02T13:13:03.510Z",
   "entries": [
+    {
+      "prNumber": 5933,
+      "category": "fixed",
+      "title": "Keep your Android session going while downloaded boards update in the background.",
+      "mergedAt": "2026-10-02T05:33:25Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5933"
+    },
+    {
+      "prNumber": 5930,
+      "category": "fixed",
+      "title": "Hold a climb in Android's queue to open reactions and Play next.",
+      "mergedAt": "2026-10-01T21:37:42Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5930"
+    },
     {
       "prNumber": 5796,
       "category": "fixed",

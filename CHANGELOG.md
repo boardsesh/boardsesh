@@ -4,6 +4,18 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-10-02
+
+### Fixed
+
+- Keep your Android session going while downloaded boards update in the background. ([#5933](https://github.com/boardsesh/boardsesh/pull/5933))
+
+## 2026-10-01
+
+### Fixed
+
+- Hold a climb in Android's queue to open reactions and Play next. ([#5930](https://github.com/boardsesh/boardsesh/pull/5930))
+
 ## 2026-09-30
 
 ### New
