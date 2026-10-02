@@ -137,6 +137,15 @@ const WRITERS: Array<{ name: string; source: string; why: string; exempt?: strin
   { name: 'commitSprayWallVersion', source: SPRAY_WALLS_SOURCE, why: 'the alive-set and draft-status reads decide' },
   { name: 'discardSprayWallVersion', source: SPRAY_WALLS_SOURCE, why: 'the draft-status read decides' },
   { name: 'updateSprayWall', source: SPRAY_WALLS_SOURCE, why: 'the angle rule reads current_version_id' },
+  {
+    name: 'setSprayWallRenderSettings',
+    source: SPRAY_WALLS_SOURCE,
+    why: 'it writes spray_walls.render_settings',
+    // A blind single-column write that decides on no read of wall state, to a
+    // column no hold, version or publish path reads or writes. There is nothing
+    // to order it against; the last call wins, which is what a setting is.
+    exempt: 'it decides on no read and no other writer touches render_settings',
+  },
   { name: 'deleteSprayWall', source: SPRAY_WALLS_SOURCE, why: 'a publish must not land on a wall being deleted' },
   {
     name: 'assertSprayHoldsAreAlive',
