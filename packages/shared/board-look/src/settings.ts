@@ -24,8 +24,14 @@ export type GlowFalloffSetting = 'default' | 'soft' | 'plateau';
  * board's own art against the field (`veilOpacityFor`); the rest are fixed.
  */
 export type VeilSetting = 'auto' | 'off' | 'soft' | 'strong' | 'custom';
-/** What the Aura drawing puts on a lit hold at full size. */
-export type MarkStyleSetting = 'glow' | 'glow-fill' | 'fill';
+/**
+ * What the Aura drawing puts on a lit hold at full size.
+ *
+ * `outline` is the glow plus a solid role-colour stroke on the silhouette edge,
+ * with the hold's own art left visible inside it. It reuses `fillOpacity` as the
+ * stroke's alpha (see `buildAuraRenderFields`) rather than adding a field.
+ */
+export type MarkStyleSetting = 'glow' | 'glow-fill' | 'fill' | 'outline';
 /**
  * The same choice for a list thumbnail, where a bare glow reads faint at
  * ~76px. `fill` renders as `glow-fill`, not a bare fill — the spike's winning
@@ -54,7 +60,11 @@ export type BoardseshRenderSettings = {
   /** `custom` veil only: the wash's alpha. */
   veilOpacity: number;
   markStyle: MarkStyleSetting;
-  /** `fill` / `glow-fill` only: alpha of the role-colour fill. */
+  /**
+   * `fill` / `glow-fill`: alpha of the role-colour fill. `outline`: alpha of the
+   * outline stroke instead — the two marks never draw together, so one field
+   * serves whichever is on.
+   */
   fillOpacity: number;
   /** The soft disc under the glow — the spike's rejected arm, kept as an A/B. */
   softDisc: boolean;
@@ -70,7 +80,7 @@ export type BoardseshRenderSettings = {
 
 export const GLOW_FALLOFF_SETTINGS = ['default', 'soft', 'plateau'] as const;
 export const VEIL_SETTINGS = ['auto', 'off', 'soft', 'strong', 'custom'] as const;
-export const MARK_STYLE_SETTINGS = ['glow', 'glow-fill', 'fill'] as const;
+export const MARK_STYLE_SETTINGS = ['glow', 'glow-fill', 'fill', 'outline'] as const;
 export const THUMBNAIL_STYLE_SETTINGS = ['fill', 'glow'] as const;
 export const HOLD_SHAPE_SETTINGS = ['silhouette', 'circle'] as const;
 

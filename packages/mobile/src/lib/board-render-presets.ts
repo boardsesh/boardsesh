@@ -15,7 +15,13 @@ import {
  * uses — so applying one always lands on an exact, reproducible bundle rather
  * than layering on top of whatever the climber had before.
  */
-export type BoardRenderPresetId = 'aura' | 'aura-bold' | 'aura-subtle' | 'modern-classic' | 'max-contrast';
+export type BoardRenderPresetId =
+  | 'aura'
+  | 'aura-bold'
+  | 'aura-subtle'
+  | 'aura-outline'
+  | 'modern-classic'
+  | 'max-contrast';
 
 export type BoardRenderPreset = {
   id: BoardRenderPresetId;
@@ -52,6 +58,26 @@ export const BOARD_RENDER_PRESET_VALUES = {
     glowReach: 0.8,
     veil: 'soft',
   },
+  /**
+   * A solid role-colour stroke on the traced hold, under the tightest glow the
+   * Glow-reach slider allows — more defined than the soft glow, still Aura.
+   *
+   * - `holdShape: 'silhouette'` is pinned, not inherited: an outline on the
+   *   placement circle is just the classic ring again.
+   * - `glowReach: 0.5` is the slider's floor (`BOARD_RENDER_SETTING_BOUNDS`),
+   *   with the `soft` falloff, so the glow hugs the stroke.
+   * - `fillOpacity` is the STROKE's alpha under `outline` (the fill never draws
+   *   with it), so 0.9 is a near-solid line.
+   * - `veil` is left at the shipped `auto`: the wash is part of what keeps this
+   *   reading as Aura rather than as classic.
+   */
+  'aura-outline': {
+    markStyle: 'outline',
+    holdShape: 'silhouette',
+    glowFalloff: 'soft',
+    glowReach: 0.5,
+    fillOpacity: 0.9,
+  },
   /** Aura's veil and glow, drawn on the placement circle instead of the traced hold. */
   'modern-classic': {
     holdShape: 'circle',
@@ -85,6 +111,11 @@ export const BOARD_RENDER_PRESETS: readonly BoardRenderPreset[] = [
     id: 'aura-subtle',
     labelI18nKey: 'mobile.settings.boardLook.presets.auraSubtle',
     values: { mode: 'aura', boardsesh: boardseshPreset(BOARD_RENDER_PRESET_VALUES['aura-subtle']) },
+  },
+  {
+    id: 'aura-outline',
+    labelI18nKey: 'mobile.settings.boardLook.presets.auraOutline',
+    values: { mode: 'aura', boardsesh: boardseshPreset(BOARD_RENDER_PRESET_VALUES['aura-outline']) },
   },
   {
     id: 'modern-classic',

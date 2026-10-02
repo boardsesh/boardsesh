@@ -170,6 +170,7 @@ export type BoardLookOptionId =
   | 'aura'
   | 'aura-bold'
   | 'aura-subtle'
+  | 'aura-outline'
   | 'modern-classic'
   | 'max-contrast'
   | 'classic'

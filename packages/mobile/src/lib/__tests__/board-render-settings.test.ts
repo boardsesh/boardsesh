@@ -172,6 +172,16 @@ describe('sanitizeBoardRenderSettings', () => {
 
     expect(sanitizeBoardRenderSettings(chosen)).toEqual(chosen);
   });
+
+  it('keeps the outline mark and its stroke alpha through a round-trip', () => {
+    // `outline` must survive the sanitiser, or a climber who picked Aura Outline
+    // would silently land back on the glow. `fillOpacity` is the outline
+    // stroke's alpha, so it must survive unchanged too.
+    const outline = settingsWith({ markStyle: 'outline', fillOpacity: 0.9, glowReach: 0.5, glowFalloff: 'soft' });
+    const sanitized = sanitizeBoardRenderSettings(outline);
+    expect(sanitized).toEqual(outline);
+    expect(sanitizeBoardRenderSettings(JSON.parse(JSON.stringify(sanitized)))).toEqual(outline);
+  });
 });
 
 describe('persistence', () => {
@@ -317,6 +327,13 @@ describe('buildBoardRenderSignature', () => {
     // light-mode overlay reused in dark mode would show an unquieted wall.
     expect(boardseshSignature({}, 0)).toBe('mode-boardsesh.veil-off');
     expect(boardseshSignature({}, 0)).not.toBe(boardseshSignature({}, 0.6));
+  });
+
+  it('gives the outline mark its own cache key', () => {
+    // Without the token an outline render would share a PNG with the glow
+    // render of the same climb, and whichever drew first is what both show.
+    expect(boardseshSignature({ markStyle: 'outline' })).toContain('marks-outline');
+    expect(boardseshSignature({ markStyle: 'outline' })).not.toBe(boardseshSignature({}));
   });
 
   it('is deterministic for the same settings', () => {

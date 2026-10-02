@@ -86,6 +86,26 @@ const AURA_SUBTLE_OPTION: BoardLookOption = {
   requiresBoardseshRenderer: true,
 };
 
+const AURA_OUTLINE_OPTION: BoardLookOption = {
+  id: 'aura-outline',
+  labelI18nKey: 'mobile.settings.boardLook.presets.auraOutline',
+  descriptionI18nKey: 'mobile.settings.boardLook.presets.descriptions.auraOutline',
+  previewSettings: presetValues('aura-outline'),
+  placeholderOverlay: false,
+  requiresBoardseshRenderer: true,
+};
+
+/**
+ * The look a new spray wall starts on.
+ *
+ * Outline, because a spray wall's holds are traced from the climber's own
+ * photo: a solid edge shows exactly which blob was lit, where a soft glow on
+ * a busy home wall blurs into its neighbours. The spray-wall creation step
+ * reads this as its default selection, so the id must stay a real option in
+ * both rails (pinned by a test).
+ */
+export const DEFAULT_SPRAY_WALL_LOOK_OPTION_ID: BoardLookOptionId = AURA_OUTLINE_OPTION.id;
+
 const MODERN_CLASSIC_OPTION: BoardLookOption = {
   id: 'modern-classic',
   labelI18nKey: 'mobile.settings.boardLook.presets.modernClassic',
@@ -151,15 +171,19 @@ const CUSTOM_SETTINGS_OPTION: BoardLookOption = {
  * adjacent.
  *
  * The rail reads as a dimmer switch rather than a menu — Aura, then its quieter
- * variant, then the two looks that draw circles instead of traced holds (Modern
- * Classic keeps the veil, Classic drops it), then the strongest wash. Modern
- * Classic sits immediately before Classic on purpose: a climber who came here
- * for the circles they already know meets the veiled version of them first, and
- * the pair can be compared with one swipe. Custom is last.
+ * variant, then the stroke-forward looks: Aura Outline (a solid edge on the
+ * traced hold), then the two looks that draw circles instead of traced holds
+ * (Modern Classic keeps the veil, Classic drops it), then the strongest wash.
+ * Outline sits with the defined-edge looks rather than the soft Aura variants
+ * because that is what it reads as. Modern Classic sits immediately before
+ * Classic on purpose: a climber who came here for the circles they already know
+ * meets the veiled version of them first, and the pair can be compared with one
+ * swipe. Custom is last.
  */
 export const BOARD_LOOK_ONBOARDING_OPTIONS: readonly BoardLookOption[] = [
   AURA_OPTION,
   AURA_SUBTLE_OPTION,
+  AURA_OUTLINE_OPTION,
   MODERN_CLASSIC_OPTION,
   CLASSIC_OPTION,
   MAX_CONTRAST_OPTION,
@@ -175,6 +199,7 @@ export const BOARD_LOOK_SETTINGS_OPTIONS: readonly BoardLookOption[] = [
   AURA_OPTION,
   AURA_SUBTLE_OPTION,
   AURA_BOLD_OPTION,
+  AURA_OUTLINE_OPTION,
   MODERN_CLASSIC_OPTION,
   CLASSIC_OPTION,
   MAX_CONTRAST_OPTION,
