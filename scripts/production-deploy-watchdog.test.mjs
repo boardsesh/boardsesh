@@ -223,7 +223,7 @@ void test('a quiet tick plans nothing and says so', () => {
     nowMs: NOW,
   });
 
-  assert.deepEqual(plan, { cancel: [], alert: [], redispatch: false, followUp: 'none' });
+  assert.deepEqual(plan, { cancel: [], alert: [], redispatch: false, followUp: 'none', recoveringCancelledRun: false });
   assert.equal(formatSummary(plan), 'no stalled production deploy found');
   assert.equal(formatDiscordContent(plan), '');
 });
@@ -1046,4 +1046,263 @@ void test('multiple cancellation targets share the eight-minute watchdog deadlin
   assert.match(report, /still wedged/);
   assert.doesNotMatch(report, /Stopped run #102|Dispatched a fresh deploy/);
   assert.equal(readFileSync(outputPath, 'utf8'), 'notify=true\n');
+});
+
+void test('a later tick recovers a confirmed cancellation after transient history failure', async () => {
+  const stalled = run({ id: 10, head_sha: HEAD_SHA });
+  let cancelled = false;
+  let tick = 1;
+  const dispatched = [];
+  let historyReads = 0;
+  const github = {
+    listRuns: () => {
+      historyReads += 1;
+      if (tick === 1 && cancelled) throw new Error('HTTP 503: temporary history failure');
+      const runs = [cancelled ? { ...stalled, status: 'completed', conclusion: 'cancelled' } : stalled];
+      if (dispatched.length > 0) {
+        runs.push(
+          run({ id: 11, head_sha: HEAD_SHA, event: 'workflow_dispatch', status: 'completed', conclusion: 'cancelled' }),
+        );
+      }
+      return { runs, recentPageOk: true };
+    },
+    getHeadSha: () => HEAD_SHA,
+    getRun: () => (cancelled ? { ...stalled, status: 'completed', conclusion: 'cancelled' } : stalled),
+    listJobs: () => [{ name: 'sync-static-assets', status: 'queued' }],
+    cancelRun: () => {
+      cancelled = true;
+    },
+    forceCancelRun: () => assert.fail('ordinary cancellation completed'),
+    dispatchRun: (ref) => dispatched.push(ref),
+  };
+  const discordFilePath = join(mkdtempSync(join(tmpdir(), 'boardsesh-watchdog-')), 'discord.txt');
+  const options = {
+    github,
+    headSha: HEAD_SHA,
+    now: () => NOW,
+    runUrlBase: '',
+    discordFilePath,
+    outputPath: '',
+    dryRun: false,
+  };
+  const first = await runCli(options);
+  assert.equal(first.failed, true);
+  assert.deepEqual(dispatched, []);
+  tick = 2;
+  historyReads = 0;
+  const second = await runCli(options);
+  assert.equal(second.failed, false);
+  assert.equal(second.cancel.length, 0);
+  assert.equal(historyReads, 2);
+  assert.deepEqual(dispatched, ['main']);
+  const recoveredReport = readFileSync(discordFilePath, 'utf8');
+  assert.match(recoveredReport, /Dispatched a fresh deploy/);
+  assert.doesNotMatch(recoveredReport, /Stopped run|Could NOT cancel run/);
+  tick = 3;
+  const third = await runCli(options);
+  assert.equal(third.redispatch, false);
+  assert.deepEqual(dispatched, ['main']);
+});
+
+void test('only the latest numeric run ID can trigger deferred cancellation recovery', () => {
+  const cancelled = run({ id: 9, status: 'completed', conclusion: 'cancelled', head_sha: HEAD_SHA });
+  const failed = run({ id: 10, status: 'completed', conclusion: 'failure', head_sha: HEAD_SHA });
+  assert.equal(planWatchdogActions({ runs: [failed, cancelled], headSha: HEAD_SHA, nowMs: NOW }).redispatch, false);
+  assert.equal(planWatchdogActions({ runs: [cancelled, failed], headSha: HEAD_SHA, nowMs: NOW }).redispatch, false);
+  assert.equal(planWatchdogActions({ runs: [cancelled], headSha: HEAD_SHA, nowMs: NOW }).redispatch, true);
+});
+
+void test('deferred cancellation recovery preserves pending successors and deployed heads', () => {
+  const cancelled = run({ id: 10, status: 'completed', conclusion: 'cancelled', head_sha: HEAD_SHA });
+  const pending = run({ id: 11, status: 'pending', head_sha: HEAD_SHA });
+  const deployed = run({ id: 9, status: 'completed', conclusion: 'success', head_sha: HEAD_SHA });
+  assert.equal(planWatchdogActions({ runs: [cancelled, pending], headSha: HEAD_SHA, nowMs: NOW }).redispatch, false);
+  assert.equal(planWatchdogActions({ runs: [cancelled, deployed], headSha: HEAD_SHA, nowMs: NOW }).redispatch, false);
+});
+
+void test('deferred recovery refreshes an advancing main before spending its retry', async () => {
+  const newerHeadSha = '3333333333333333333333333333333333333333';
+  const cancelled = run({ id: 10, head_sha: HEAD_SHA, status: 'completed', conclusion: 'cancelled' });
+  let historyReads = 0;
+  const result = await runCli({
+    github: {
+      listRuns: () => {
+        historyReads += 1;
+        return {
+          runs:
+            historyReads > 1
+              ? [
+                  cancelled,
+                  run({
+                    id: 11,
+                    head_sha: newerHeadSha,
+                    event: 'workflow_dispatch',
+                    status: 'completed',
+                    conclusion: 'failure',
+                  }),
+                ]
+              : [cancelled],
+          recentPageOk: true,
+        };
+      },
+      getHeadSha: () => newerHeadSha,
+      listJobs: () => assert.fail('no live run needs jobs'),
+      cancelRun: () => assert.fail('no live run needs cancellation'),
+      dispatchRun: () => assert.fail('new head has spent its retry'),
+    },
+    headSha: HEAD_SHA,
+    now: () => NOW,
+    runUrlBase: '',
+    discordFilePath: '',
+    outputPath: '',
+    dryRun: false,
+  });
+  assert.equal(historyReads, 2);
+  assert.equal(result.redispatch, false);
+});
+
+void test('deferred recovery stops if refreshed history shows a later failed deploy', async () => {
+  const cancelled = run({ id: 10, head_sha: HEAD_SHA, status: 'completed', conclusion: 'cancelled' });
+  let historyReads = 0;
+  const result = await runCli({
+    github: {
+      listRuns: () => {
+        historyReads += 1;
+        return {
+          runs:
+            historyReads > 1
+              ? [cancelled, run({ id: 11, head_sha: HEAD_SHA, status: 'completed', conclusion: 'failure' })]
+              : [cancelled],
+          recentPageOk: true,
+        };
+      },
+      getHeadSha: () => HEAD_SHA,
+      listJobs: () => assert.fail('no live run needs jobs'),
+      dispatchRun: () => assert.fail('a later failed deploy must not inherit cancellation recovery'),
+    },
+    headSha: HEAD_SHA,
+    now: () => NOW,
+    runUrlBase: '',
+    discordFilePath: '',
+    outputPath: '',
+    dryRun: false,
+  });
+  assert.equal(historyReads, 2);
+  assert.equal(result.redispatch, false);
+});
+
+void test('a recovery-only history failure reports deferred recovery without claiming cancellation', async () => {
+  const cancelled = run({ id: 10, head_sha: HEAD_SHA, status: 'completed', conclusion: 'cancelled' });
+  const workDirectory = mkdtempSync(join(tmpdir(), 'boardsesh-watchdog-'));
+  const discordFilePath = join(workDirectory, 'discord.txt');
+  const outputPath = join(workDirectory, 'github-output.txt');
+  const result = await runCli({
+    github: {
+      listRuns: () => ({ runs: [cancelled], recentPageOk: true }),
+      getHeadSha: () => {
+        throw new Error('HTTP 503: main lookup failed');
+      },
+      dispatchRun: () => assert.fail('unreadable head must not dispatch'),
+    },
+    headSha: HEAD_SHA,
+    now: () => NOW,
+    runUrlBase: '',
+    discordFilePath,
+    outputPath,
+    dryRun: false,
+  });
+  assert.equal(result.failed, true);
+  assert.equal(result.followUp, 'dispatch-deferred');
+  const report = readFileSync(discordFilePath, 'utf8');
+  assert.match(report, /recovery|No deploy was started/);
+  assert.doesNotMatch(report, /Stopped run|Could NOT cancel run|Dispatched a fresh deploy/);
+  assert.equal(readFileSync(outputPath, 'utf8'), 'notify=true\n');
+});
+
+void test('a recovery-only dispatch failure reports deferred recovery', async () => {
+  const cancelled = run({ id: 10, head_sha: HEAD_SHA, status: 'completed', conclusion: 'cancelled' });
+  const discordFilePath = join(mkdtempSync(join(tmpdir(), 'boardsesh-watchdog-')), 'discord.txt');
+  const result = await runCli({
+    github: {
+      listRuns: () => ({ runs: [cancelled], recentPageOk: true }),
+      getHeadSha: () => HEAD_SHA,
+      dispatchRun: () => {
+        throw new Error('HTTP 503: dispatch failed');
+      },
+    },
+    headSha: HEAD_SHA,
+    now: () => NOW,
+    runUrlBase: '',
+    discordFilePath,
+    outputPath: '',
+    dryRun: false,
+  });
+  assert.equal(result.failed, true);
+  assert.equal(result.followUp, 'dispatch-deferred');
+  const report = readFileSync(discordFilePath, 'utf8');
+  assert.match(report, /No (?:replacement )?deploy was started/);
+  assert.doesNotMatch(report, /Stopped run|Could NOT cancel run|Dispatched a fresh deploy/);
+});
+
+void test('a recovery-only spent retry does not repeat intervention notifications', async () => {
+  const manualCancelled = run({
+    id: 10,
+    head_sha: HEAD_SHA,
+    status: 'completed',
+    conclusion: 'cancelled',
+    event: 'workflow_dispatch',
+  });
+  const workDirectory = mkdtempSync(join(tmpdir(), 'boardsesh-watchdog-'));
+  const discordFilePath = join(workDirectory, 'discord.txt');
+  const outputPath = join(workDirectory, 'github-output.txt');
+  for (let tick = 0; tick < 2; tick += 1) {
+    const result = await runCli({
+      github: {
+        listRuns: () => ({ runs: [manualCancelled], recentPageOk: true }),
+        getHeadSha: () => HEAD_SHA,
+        dispatchRun: () => assert.fail('retry already spent'),
+      },
+      headSha: HEAD_SHA,
+      now: () => NOW,
+      runUrlBase: '',
+      discordFilePath,
+      outputPath,
+      dryRun: false,
+    });
+    assert.equal(result.failed, false);
+    assert.equal(result.redispatch, false);
+    assert.equal(result.followUp, 'needs-intervention');
+  }
+  assert.equal(existsSync(discordFilePath), false);
+  assert.equal(readFileSync(outputPath, 'utf8'), 'notify=false\nnotify=false\n');
+});
+
+void test('an empty incomplete refreshed history retains the deferred recovery notification', async () => {
+  const cancelled = run({ id: 10, head_sha: HEAD_SHA, status: 'completed', conclusion: 'cancelled' });
+  let historyReads = 0;
+  const workDirectory = mkdtempSync(join(tmpdir(), 'boardsesh-watchdog-'));
+  const discordFilePath = join(workDirectory, 'discord.txt');
+  const outputPath = join(workDirectory, 'github-output.txt');
+  const result = await runCli({
+    github: {
+      listRuns: () => {
+        historyReads += 1;
+        return historyReads === 1 ? { runs: [cancelled], recentPageOk: true } : { runs: [], recentPageOk: false };
+      },
+      getHeadSha: () => HEAD_SHA,
+      dispatchRun: () => assert.fail('incomplete history must not dispatch'),
+    },
+    headSha: HEAD_SHA,
+    now: () => NOW,
+    runUrlBase: '',
+    discordFilePath,
+    outputPath,
+    dryRun: false,
+  });
+  assert.equal(result.failed, true);
+  assert.equal(readFileSync(outputPath, 'utf8'), 'notify=true\n');
+  assert.equal(result.followUp, 'dispatch-deferred');
+  const report = readFileSync(discordFilePath, 'utf8');
+  assert.match(report, /No (?:replacement )?deploy was started/);
+  assert.doesNotMatch(report, /Stopped run|Could NOT cancel run|Dispatched a fresh deploy/);
 });

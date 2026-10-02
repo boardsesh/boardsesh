@@ -700,6 +700,15 @@ so the wedge ends in a shipped commit; it spends at most one dispatch per head
 SHA, so a gate that stays broken produces one retry and an alert rather than a
 deploy loop.
 
+If the post-cancellation GitHub read or dispatch fails, the next tick re-evaluates
+the latest production run. A completed cancellation with no queued/active
+successor can trigger the same one-time recovery; it is not forgotten simply
+because this tick has no cancellation target. A newer failed or successful run
+supersedes that recovery evidence. This also permits one recovery after an
+operator cancels a push-triggered deploy; cancelling a manual dispatch consumes
+the commit's retry. Recovery-only notifications describe dispatch or deferral,
+not a cancellation performed by the current tick. Retry-spent ticks stay quiet.
+
 Executing runs receive an alert after 150 minutes and cancellation at six hours.
 Both thresholds are evaluated on the next scheduled check; GitHub schedule delays
 can postpone that check. Failed or unconfirmed cancellation fails the watchdog,

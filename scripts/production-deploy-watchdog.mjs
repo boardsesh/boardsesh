@@ -63,6 +63,16 @@ function isHoldingRun(run) {
   return HOLDING_RUN_STATUSES.has(run?.status ?? '');
 }
 
+// GitHub run IDs increase across dispatches. A completed cancellation remains
+// evidence for recovery on later ticks, even after a post-cancel API failure.
+function isLatestRunCancelled(runs) {
+  const latestRun = runs.reduce(
+    (latest, run) => (latest === null || Number(run.id) > Number(latest.id) ? run : latest),
+    null,
+  );
+  return latestRun?.status === 'completed' && latestRun.conclusion === 'cancelled';
+}
+
 function minutesSince(timestamp, nowMs) {
   const parsedMs = Date.parse(timestamp ?? '');
   if (Number.isNaN(parsedMs)) return null;
@@ -194,6 +204,8 @@ function planWatchdogActions({
   }
 
   const cancelledIds = new Set(cancel.map((entry) => String(entry.run.id)));
+  const recoveringCancelledRun = isLatestRunCancelled(candidates);
+  const recoveryNeeded = cancel.length > 0 || recoveringCancelledRun;
   // Anything still holding or queued after the cancels takes over the group, so
   // main ships without our help. `pending` counts here — it is the run we freed.
   const survivorHoldsGroup = candidates.some(
@@ -218,7 +230,7 @@ function planWatchdogActions({
     candidates.some((run) => run?.head_sha === headSha && run?.status === 'completed' && run?.conclusion === 'success');
 
   const redispatch =
-    cancel.length > 0 && !survivorHoldsGroup && !alreadyRetriedHead && !headAlreadyDeployed && headSha !== '';
+    recoveryNeeded && !survivorHoldsGroup && !alreadyRetriedHead && !headAlreadyDeployed && headSha !== '';
 
   // What happens to main AFTER the cancels — the report is only worth anything
   // if it distinguishes these. Freeing the group and then saying "the queued run
@@ -226,14 +238,14 @@ function planWatchdogActions({
   // recovery while production sits idle, which is the exact failure this
   // watchdog exists to end.
   let followUp = 'none';
-  if (cancel.length > 0) {
+  if (recoveryNeeded) {
     if (survivorHoldsGroup) followUp = 'queued-run-takes-over';
     else if (redispatch) followUp = 'redispatched';
     else if (headAlreadyDeployed) followUp = 'head-already-deployed';
     else followUp = 'needs-intervention';
   }
 
-  return { cancel, alert, redispatch, followUp };
+  return { cancel, alert, redispatch, followUp, recoveringCancelledRun };
 }
 
 function describeRun(entry) {
@@ -293,7 +305,14 @@ const FOLLOW_UP_LINES = {
 // Discord content. Mirrors the deploy notifications in production-deploy.yml:
 // URLs wrapped in <…> so Discord drops the inline preview embed.
 function formatDiscordContent(plan, { runUrlBase = '', failedCancelIds = new Set(), followUp = plan.followUp } = {}) {
-  if (plan.cancel.length === 0 && plan.alert.length === 0) return '';
+  if (plan.cancel.length === 0 && plan.alert.length === 0) {
+    // Report a recovery attempt without claiming this tick stopped a run.
+    // Retry-spent ticks stay quiet rather than notifying every 15 minutes.
+    if (plan.recoveringCancelledRun && (followUp === 'redispatched' || followUp === 'dispatch-deferred')) {
+      return `🔁 **Production deploy recovery**\n${FOLLOW_UP_LINES[followUp]}`;
+    }
+    return '';
+  }
 
   const lines = [];
   if (plan.cancel.length > 0) {
@@ -580,10 +599,11 @@ async function runCli({
   plan.cancel = plan.cancel.filter((entry) => !resumedIds.has(String(entry.run.id)));
 
   let historyOk = recentPageOk;
-  if (hadCandidates) {
+  if (hadCandidates || plan.recoveringCancelledRun) {
     try {
       const currentHeadSha = github.getHeadSha ? github.getHeadSha() : headSha;
       const freshHistory = github.listRuns();
+      if (!freshHistory.recentPageOk) throw new Error('incomplete production deploy history');
       historyOk = freshHistory.recentPageOk;
       // Recompute follow-up against real state, without pretending planned
       // cancellations have completed. Pending runs may have changed meanwhile.
@@ -597,14 +617,18 @@ async function runCli({
       const retried = freshHistory.runs.some(
         (run) => run.head_sha === currentHeadSha && run.event === 'workflow_dispatch',
       );
-      plan.redispatch = !survivor && !headDeployed && !retried && currentHeadSha !== '';
-      plan.followUp = survivor
-        ? 'queued-run-takes-over'
-        : headDeployed
-          ? 'head-already-deployed'
-          : plan.redispatch
-            ? 'redispatched'
-            : 'needs-intervention';
+      plan.recoveringCancelledRun = isLatestRunCancelled(freshHistory.runs);
+      const recoveryStillNeeded = hadCandidates || plan.recoveringCancelledRun;
+      plan.redispatch = recoveryStillNeeded && !survivor && !headDeployed && !retried && currentHeadSha !== '';
+      plan.followUp = !recoveryStillNeeded
+        ? 'none'
+        : survivor
+          ? 'queued-run-takes-over'
+          : headDeployed
+            ? 'head-already-deployed'
+            : plan.redispatch
+              ? 'redispatched'
+              : 'needs-intervention';
     } catch (error) {
       historyOk = false;
       console.error(`production-deploy-watchdog: could not refresh run history: ${error.message}`);
