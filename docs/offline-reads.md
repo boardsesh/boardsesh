@@ -136,9 +136,12 @@ reducing a query's batch size alone does not guarantee collection of prior nativ
 Text transport avoids that result-buffer path without a schema or native dependency change.
 
 The local heatmap folds 1,000 climbs per page into one numeric aggregate and yields between
-pages. A captured maximum climb ID bounds the scan; keyset pagination uses the hold-set
-primary key instead of sorting the entire board per page. Pages and decoded hold sets are
-not accumulated. Account changes, scope removal, or index teardown invalidate the in-flight
+pages. One query selects matching numeric climb IDs through the board/filter indexes;
+the fixed candidate list bounds the read during concurrent imports. Each page looks up at
+most 1,000 candidate IDs through the hold-set primary key, so unrelated downloaded boards
+are not scanned and sparse filters do not trigger a global hold-set scan. Only numeric IDs
+and the aggregate are retained between pages; decoded hold sets are not accumulated.
+Account changes, scope removal, or index teardown invalidate the in-flight
 result. Ordinary sync edits are eventually refreshed by the existing scoped invalidation;
 the paged aggregate is not a database snapshot and takes no long write transaction.
 

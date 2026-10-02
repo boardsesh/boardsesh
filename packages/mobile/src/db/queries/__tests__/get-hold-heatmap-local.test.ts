@@ -218,8 +218,13 @@ describe('getHoldHeatmapLocal', () => {
     const getAllAsync = db.getAllAsync.bind(db);
     const pages: number[] = [];
     const plans: string[] = [];
+    const candidatePlans: string[] = [];
     vi.spyOn(db, 'getAllAsync').mockImplementation(async (sql, ...params) => {
       const rows = await getAllAsync(sql, ...params);
+      if (sql.includes('SELECT hs.climb_id') && sql.includes('FROM board_climbs c')) {
+        const plan = await getAllAsync<{ detail: string }>(`EXPLAIN QUERY PLAN ${sql}`, ...params);
+        candidatePlans.push(...plan.map((step) => step.detail));
+      }
       if (sql.includes('AS holds_hex') && sql.includes('CROSS JOIN')) {
         pages.push(rows.length);
         const plan = await getAllAsync<{ detail: string }>(`EXPLAIN QUERY PLAN ${sql}`, ...params);
@@ -228,7 +233,7 @@ describe('getHoldHeatmapLocal', () => {
       }
       return rows;
     });
-    return { pages, plans };
+    return { pages, plans, candidatePlans };
   }
 
   it.each([998, 1001])('folds %i additional climbs across page boundaries without truncation', async (count) => {
@@ -260,7 +265,7 @@ describe('getHoldHeatmapLocal', () => {
     });
   });
 
-  it('finishes at the captured upper bound when another climb arrives between pages', async () => {
+  it('reads only the captured candidates when another climb arrives between pages', async () => {
     await insertManyClimbs(1001);
     let inserted = false;
     observePages(async () => {
@@ -275,6 +280,54 @@ describe('getHoldHeatmapLocal', () => {
     expect(result.climbCount).toBe(1003);
     expect(result.holdStats.some((stat) => stat.holdId === 99)).toBe(false);
     expect(result.holdStats.every((stat) => stat.averageDifficulty === null && stat.totalAscents === 0)).toBe(true);
+  });
+
+  it('finds a small board through its scope index without scanning another downloaded layout', async () => {
+    await insertManyClimbs(3000);
+    await db.runAsync("UPDATE board_climbs SET layout_id = 2 WHERE uuid LIKE 'bulk-%'");
+    const otherScope = { ...SCOPE, layoutId: 2 };
+    await markScopeDownloadComplete(db, offlineBoardKey(otherScope));
+    await ensureHoldIndex(db, otherScope, { parseHoldRows });
+
+    const { pages, plans, candidatePlans } = observePages();
+    const result = await getHoldHeatmapLocalWithCount(rejectBinaryDatabaseResults(db), makeInput());
+    expect(result.climbCount).toBe(2);
+    expect(pages).toEqual([2]);
+    expect(candidatePlans.some((detail) => /SEARCH c USING INDEX idx_climbs_search/.test(detail))).toBe(true);
+    expect(candidatePlans.some((detail) => /SCAN hs/.test(detail))).toBe(false);
+    expect(plans.some((detail) => /SEARCH hs USING INTEGER PRIMARY KEY/.test(detail))).toBe(true);
+  });
+
+  it.each([
+    { minGrade: 16, maxGrade: 16, expectedCount: 1 },
+    { minGrade: 1, maxGrade: 15, expectedCount: 0 },
+  ])('bounds hold reads to sparse filter matches: $expectedCount', async ({ expectedCount, ...filter }) => {
+    await insertManyClimbs(2000);
+    const { pages, plans } = observePages();
+    const result = await getHoldHeatmapLocalWithCount(rejectBinaryDatabaseResults(db), makeInput(filter));
+    expect(result.climbCount).toBe(expectedCount);
+    expect(pages).toEqual(expectedCount ? [expectedCount] : []);
+    expect(plans.every((detail) => !/SCAN hs/.test(detail))).toBe(true);
+  });
+
+  it('continues after an empty candidate page when sync changes matches', async () => {
+    await insertManyClimbs(2001);
+    const getAllAsync = db.getAllAsync.bind(db);
+    vi.spyOn(db, 'getAllAsync').mockImplementation(async (sql, ...params) => {
+      const rows = await getAllAsync(sql, ...params);
+      if (sql.includes('SELECT hs.climb_id') && sql.includes('FROM board_climbs c')) {
+        const candidates = rows as { climb_id: number }[];
+        const firstPageIds = candidates.slice(0, 1000).map((candidate) => candidate.climb_id);
+        await db.runAsync(
+          `UPDATE board_climbs SET is_draft = 1
+           WHERE uuid IN (SELECT uuid FROM holds_index_climbs WHERE id IN (${firstPageIds.map(() => '?').join(',')}))`,
+          firstPageIds,
+        );
+      }
+      return rows;
+    });
+    const result = await getHoldHeatmapLocalWithCount(rejectBinaryDatabaseResults(db), makeInput());
+    expect(result.climbCount).toBe(1003);
   });
 
   it('rejects a result if the account changes after a page', async () => {

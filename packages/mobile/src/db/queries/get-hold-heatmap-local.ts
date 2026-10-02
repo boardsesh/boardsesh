@@ -107,18 +107,29 @@ export async function getHoldHeatmapLocalWithCount(
        ${effectiveStatsSql('display_difficulty', crossAngle)} AS display_difficulty`
     : '';
 
-  // Fix the upper bound so concurrent imports cannot extend this scan forever.
-  const upperBound = await db.getFirstAsync<{ max_id: number | null }>(
-    'SELECT MAX(climb_id) AS max_id FROM board_climb_hold_sets',
-  );
-  const maxClimbId = upperBound?.max_id ?? 0;
+  // Let SQLite choose the board/filter index once, rather than scanning every
+  // downloaded board for each page. Only numeric IDs survive this query; fixing
+  // the candidate set also prevents concurrent imports from extending the read.
+  const readCandidateIds = async (): Promise<number[]> => {
+    const candidates = await db.getAllAsync<{ climb_id: number }>(
+      `SELECT hs.climb_id
+       FROM board_climbs c
+       JOIN holds_index_climbs hic ON hic.uuid = c.uuid
+       JOIN board_climb_hold_sets hs ON hs.climb_id = hic.id
+       ${joinSql}
+       WHERE ${whereSql}`,
+      [...joinBinds, ...whereBinds],
+    );
+    return candidates.map((candidate) => candidate.climb_id);
+  };
+  await assertReadCurrent();
+  const candidateIds = await readCandidateIds();
   const usage = aggregateHoldUsage([]);
   let climbCount = 0;
-  let lastClimbId = 0;
 
-  const foldPage = async (): Promise<number> => {
-    // CROSS JOIN keeps SQLite on the hold-set primary key rather than repeatedly
-    // sorting the whole filtered board for each page. Stats joins are 0/1 rows.
+  const foldPage = async (pageIds: number[]): Promise<void> => {
+    // CROSS JOIN keeps these bounded primary-key lookups first, including when
+    // filters stop matching during sync. Stats joins are 0/1 rows.
     // Text crosses Expo's bridge without one JNI global reference per BLOB.
     const rows = await db.getAllAsync<HoldSetRow>(
       `SELECT hs.climb_id, hex(hs.holds) AS holds_hex${statsColumns}
@@ -126,10 +137,8 @@ export async function getHoldHeatmapLocalWithCount(
        CROSS JOIN holds_index_climbs hic ON hic.id = hs.climb_id
        CROSS JOIN board_climbs c ON c.uuid = hic.uuid
        ${joinSql}
-       WHERE (${whereSql}) AND hs.climb_id > ? AND hs.climb_id <= ?
-       ORDER BY hs.climb_id
-       LIMIT ?`,
-      [...joinBinds, ...whereBinds, lastClimbId, maxClimbId, HOLD_HEATMAP_PAGE_CLIMBS],
+       WHERE (${whereSql}) AND hs.climb_id IN (${pageIds.map(() => '?').join(',')})`,
+      [...joinBinds, ...whereBinds, ...pageIds],
     );
     aggregateHoldUsage(
       (function* decodeRows() {
@@ -146,17 +155,14 @@ export async function getHoldHeatmapLocalWithCount(
       })(),
       usage,
     );
-    if (rows.length > 0) lastClimbId = rows[rows.length - 1].climb_id;
-    return rows.length;
   };
 
   await assertReadCurrent();
-  while (lastClimbId < maxClimbId) {
-    const rowsRead = await foldPage();
+  for (let offset = 0; offset < candidateIds.length; offset += HOLD_HEATMAP_PAGE_CLIMBS) {
+    await foldPage(candidateIds.slice(offset, offset + HOLD_HEATMAP_PAGE_CLIMBS));
     await assertReadCurrent();
-    // foldPage advances the cursor: stop before yielding if it reached the end.
-    if (rowsRead < HOLD_HEATMAP_PAGE_CLIMBS || lastClimbId >= maxClimbId) break;
-    // foldPage has returned, so only numeric aggregates survive this yield.
+    if (offset + HOLD_HEATMAP_PAGE_CLIMBS >= candidateIds.length) break;
+    // Only numeric candidate IDs and aggregates survive this yield.
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
     // Other async database work can run during the yield, including teardown.
     await assertReadCurrent();
