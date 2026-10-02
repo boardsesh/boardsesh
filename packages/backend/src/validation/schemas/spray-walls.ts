@@ -1,6 +1,15 @@
 import { z } from 'zod';
 import { MAX_RING_NUMBERS, MIN_RING_NUMBERS, isValidOutlineRing } from '@boardsesh/board-art-geometry/ring';
 import { MAX_HOLDS_PER_WALL, SPRAY_ANGLES } from '@boardsesh/board-config';
+import {
+  BOARD_RENDER_SETTING_BOUNDS,
+  GLOW_FALLOFF_SETTINGS,
+  HOLD_SHAPE_SETTINGS,
+  MARK_STYLE_SETTINGS,
+  THUMBNAIL_STYLE_SETTINGS,
+  VEIL_SETTINGS,
+  type BoardseshRenderSettings,
+} from '@boardsesh/board-look';
 import { isSolvableAnchorQuad } from '@boardsesh/spray-wall-geometry';
 import { UUIDSchema } from './primitives';
 
@@ -310,10 +319,80 @@ export const UpdateSprayWallInputSchema = z
     'Nothing to update — pass at least one field besides the wall uuid',
   );
 
+// `validateInput` reports messages, not paths, so every message names its field:
+// "Too big: expected number to be <=2" alone does not say which knob was wrong.
+function boundedSetting(name: string, bounds: { readonly min: number; readonly max: number }) {
+  const range = `${name} must be between ${bounds.min} and ${bounds.max}`;
+  return z
+    .number({ error: `${name} must be a number` })
+    .min(bounds.min, range)
+    .max(bounds.max, range);
+}
+
+function optionSetting<const Options extends readonly [string, ...string[]]>(name: string, options: Options) {
+  return z.enum(options, { error: `${name} must be one of ${options.join(', ')}` });
+}
+
+function flagSetting(name: string) {
+  return z.boolean({ error: `${name} must be true or false` });
+}
+
+/**
+ * The full Aura knob bundle, every field required.
+ *
+ * Built from `@boardsesh/board-look`'s own option lists and slider bounds, so a
+ * value the settings screen can produce is always one this accepts, and a knob
+ * added there fails the `satisfies` below until it is added here too. Strict,
+ * because a key this does not know would be stored and handed back to every
+ * client that reads the wall.
+ */
+const BoardseshRenderSettingsSchema = z
+  .object({
+    glowFalloff: optionSetting('glowFalloff', GLOW_FALLOFF_SETTINGS),
+    glowReach: boundedSetting('glowReach', BOARD_RENDER_SETTING_BOUNDS.glowReach),
+    plateauShare: boundedSetting('plateauShare', BOARD_RENDER_SETTING_BOUNDS.plateauShare),
+    veil: optionSetting('veil', VEIL_SETTINGS),
+    veilOpacity: boundedSetting('veilOpacity', BOARD_RENDER_SETTING_BOUNDS.veilOpacity),
+    markStyle: optionSetting('markStyle', MARK_STYLE_SETTINGS),
+    fillOpacity: boundedSetting('fillOpacity', BOARD_RENDER_SETTING_BOUNDS.fillOpacity),
+    softDisc: flagSetting('softDisc'),
+    smallHoldBoost: flagSetting('smallHoldBoost'),
+    ledDots: flagSetting('ledDots'),
+    roleGlyphs: flagSetting('roleGlyphs'),
+    thumbnailStyle: optionSetting('thumbnailStyle', THUMBNAIL_STYLE_SETTINGS),
+    holdShape: optionSetting('holdShape', HOLD_SHAPE_SETTINGS),
+  })
+  .strict() satisfies z.ZodType<BoardseshRenderSettings>;
+
+/**
+ * A wall's stored default look, or null to clear it.
+ *
+ * `mode` is `classic` or `aura` only. Mobile's per-climber preference also has
+ * `default`, which means "use whatever the default is" — and a wall default IS
+ * that default, so storing `default` there would point at itself.
+ */
+export const SprayWallRenderSettingsSchema = z
+  .object({
+    mode: z.enum(['classic', 'aura'], { error: "mode must be 'classic' or 'aura'" }),
+    boardsesh: BoardseshRenderSettingsSchema,
+  })
+  .strict()
+  .nullable();
+
+export const SetSprayWallRenderSettingsInputSchema = z
+  .object({
+    uuid: UUIDSchema,
+    // Required, not optional: null is the explicit "clear the wall default", and
+    // a missing key would be a client that forgot to say which it meant.
+    renderSettings: SprayWallRenderSettingsSchema,
+  })
+  .strict();
+
 export type CreateSprayWallInput = z.infer<typeof CreateSprayWallInputSchema>;
 export type CreateSprayWallVersionInput = z.infer<typeof CreateSprayWallVersionInputSchema>;
 export type SprayWallHoldInput = z.infer<typeof SprayWallHoldInputSchema>;
 export type UpsertSprayWallHoldsInput = z.infer<typeof UpsertSprayWallHoldsInputSchema>;
+export type SetSprayWallRenderSettingsInput = z.infer<typeof SetSprayWallRenderSettingsInputSchema>;
 export type RemoveSprayWallHoldsInput = z.infer<typeof RemoveSprayWallHoldsInputSchema>;
 
 /**

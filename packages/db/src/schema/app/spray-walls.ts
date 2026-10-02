@@ -18,6 +18,7 @@ import {
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import type { SprayDetectionResult } from '@boardsesh/shared-schema';
+import type { BoardseshRenderSettings } from '@boardsesh/board-look';
 import { users } from '../auth/users';
 import { userBoards } from './boards';
 import { boardClimbs } from '../boards/unified';
@@ -89,6 +90,16 @@ export const sprayDetectionStatusEnum = pgEnum('spray_detection_status', [
   'failed',
   'cancelled',
 ]);
+
+/**
+ * A wall's stored default look: the `BoardRenderSettings` shape mobile keeps
+ * per climber, minus its `'default'` mode — a wall default of "use the default"
+ * would be circular, so only an explicit `classic` or `aura` is ever stored.
+ */
+export type SprayWallRenderSettingsValue = {
+  mode: 'classic' | 'aura';
+  boardsesh: BoardseshRenderSettings;
+};
 
 /**
  * One physical wall. Its catalogue identity is `layout_id`; its owner, name,
@@ -176,6 +187,20 @@ export const sprayWalls = pgTable(
      */
     pendingIsPublic: boolean('pending_is_public'),
     pendingIsUnlisted: boolean('pending_is_unlisted'),
+    /**
+     * The wall's own stored default look — a `BoardRenderSettings`-shaped blob
+     * (`{ mode: 'classic' | 'aura', boardsesh: {...} }`) the creator picked in the
+     * add-wall wizard's look step. NULL for a wall created before this shipped, or
+     * one whose creator left it unset — both read as "no wall default", which the
+     * mobile render-settings resolver falls back from to the global default
+     * exactly as it does today.
+     *
+     * Current-state config, not append-only history: unlike `anchors` /
+     * `homography` on `spray_wall_versions`, this has no version-specific meaning —
+     * a reset does not need a new look, so it stays on `spray_walls` beside
+     * `reference_width/height` rather than migrating onto `spray_wall_versions`.
+     */
+    renderSettings: jsonb('render_settings').$type<SprayWallRenderSettingsValue>(),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
     /**

@@ -154,6 +154,16 @@ export const sprayWallsTypeDefs = /* GraphQL */ `
     word would look like data loss.
     """
     hiddenAt: String
+    """
+    The wall's own stored default look, or null when its creator never set one
+    (including every wall created before this field existed). A
+    \`{ mode: 'classic' | 'aura', boardsesh: {...} }\` blob, opaque to the schema
+    and validated server-side — kept as JSON rather than a parallel GraphQL type
+    because the underlying knob set still changes independently. A viewer's own
+    EXPLICIT render-mode choice always overrides this; it only supplies the look
+    for a viewer who has never chosen one.
+    """
+    renderSettings: JSON
   }
 
   """
@@ -259,6 +269,12 @@ export const sprayWallsTypeDefs = /* GraphQL */ `
     rather than cascaded.
     """
     angle: Int
+  }
+
+  input SetSprayWallRenderSettingsInput {
+    uuid: ID!
+    "A { mode, boardsesh } blob, or null to clear the wall's stored default."
+    renderSettings: JSON
   }
 `;
 

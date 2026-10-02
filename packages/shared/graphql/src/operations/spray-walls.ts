@@ -72,6 +72,9 @@ const SPRAY_WALL_FIELDS = `
   # Only ever non-null for the OWNER — a hidden wall does not resolve for anybody
   # else — so a client can render the notice off its presence alone (SW-17).
   hiddenAt
+  # The wall's stored default look, or null. A viewer's explicit render-mode
+  # choice still wins; this only fills in for one who never picked.
+  renderSettings
   board {
     uuid
     slug
@@ -230,6 +233,18 @@ export const CREATE_SPRAY_WALL = gql`
 export const UPDATE_SPRAY_WALL = gql`
   mutation UpdateSprayWall($input: UpdateSprayWallInput!) {
     updateSprayWall(input: $input) {
+      ${SPRAY_WALL_FIELDS}
+    }
+  }
+`;
+
+/**
+ * Store the wall's default look (`{ mode, boardsesh }`), or clear it with
+ * `renderSettings: null`. Same edit gate as `UPDATE_SPRAY_WALL`.
+ */
+export const SET_SPRAY_WALL_RENDER_SETTINGS = gql`
+  mutation SetSprayWallRenderSettings($input: SetSprayWallRenderSettingsInput!) {
+    setSprayWallRenderSettings(input: $input) {
       ${SPRAY_WALL_FIELDS}
     }
   }

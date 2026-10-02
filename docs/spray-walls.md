@@ -385,6 +385,7 @@ Everything a wall needs is in `packages/shared-schema/src/schema/spray-walls.ts`
 | `upsertSprayWallHolds(input)` | Adds or corrects holds on a draft. A hold with no `id` gets a new catalogue id; one with an `id` has its geometry rewritten. |
 | `removeSprayWallHolds(input)` | Takes holds off as of a draft. |
 | `publishSprayWallVersion(input)` | Makes a draft the generation climbers set against. |
+| `setSprayWallRenderSettings(input)` | Stores the wall's default look on `spray_walls.render_settings`, or clears it with `null`. The plain edit gate (below). |
 | `deleteSprayWall(uuid)` | Soft delete. Catalogue rows and climbs stay. |
 | `reportSprayWall(input)` | Report a wall. Any signed-in viewer who can see it, once per wall (SW-17, below). |
 | `setSprayWallHidden(input)` | The admin switch. Community admins only. |
@@ -415,6 +416,23 @@ does say otherwise, the board row starts private: `isPublic` / `isUnlisted` land
 `spray_walls.pending_is_public` / `pending_is_unlisted` and the first publish
 applies them (#5513). A client that sends neither — every binary from before that
 fix sends both false — gets a private wall and nothing pending, as before.
+
+### The wall's default look
+
+`spray_walls.render_settings` is a nullable `jsonb` holding
+`{ mode: 'classic' | 'aura', boardsesh: BoardseshRenderSettings }` — the look the
+creator picked in the add-wall wizard. `SprayWall.renderSettings` returns it on
+every wall read. NULL means "no wall default", which is every wall created before
+the column existed, and the mobile resolver falls back to the global default for
+it. A viewer's own explicit render-mode choice always wins over the wall's.
+
+- **Validated against `@boardsesh/board-look`'s own option lists and slider
+  bounds** (`SetSprayWallRenderSettingsInputSchema`), strict, every knob required.
+  `mode: 'default'` is refused: a wall default of "use the default" points at itself.
+- **On `spray_walls`, not `spray_wall_versions`.** A reset does not need a new look,
+  so it is current-state config like `reference_width/height`.
+- **No wall lock.** No hold, version or publish path reads or writes the column, so
+  there is no concurrent writer to order against; the last call wins.
 
 ### Versions, anchors and the homography
 
