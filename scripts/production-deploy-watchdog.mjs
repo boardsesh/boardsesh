@@ -513,7 +513,7 @@ async function cancelAndConfirm({ github, runId, now = Date.now, sleep = sleepTi
   if (run.status === 'completed') return 'stopped';
   const jobs = github.listJobs(runId);
   if (classifyRun({ run, jobs, nowMs: now() }).action !== 'cancel') {
-    if (jobs === null) throw new Error('could not read complete job list');
+    if (jobs === null) throw new Error('idle cancellation eligibility cannot be confirmed: job list unreadable');
     return 'resumed';
   }
   requireTime();
@@ -578,11 +578,11 @@ async function runCli({
   for (const run of runs) {
     if (isHoldingRun(run)) jobsByRunId[String(run.id)] = github.listJobs(run.id);
   }
-  const plan = planWatchdogActions({ runs, jobsByRunId, headSha, nowMs: nowMs ?? now() });
+  const plannedActions = planWatchdogActions({ runs, jobsByRunId, headSha, nowMs: nowMs ?? now() });
   const failedCancelIds = new Set();
   const resumedIds = new Set();
-  const hadCandidates = plan.cancel.length > 0;
-  for (const entry of plan.cancel) {
+  const hadCandidates = plannedActions.cancel.length > 0;
+  for (const entry of plannedActions.cancel) {
     console.error(`production-deploy-watchdog: ${dryRun ? 'would cancel' : 'cancelling'} ${describeRun(entry)}`);
     if (dryRun) continue;
     try {
@@ -596,7 +596,10 @@ async function runCli({
       console.error(`production-deploy-watchdog: could NOT stop ${describeRun(entry)}: ${error.message}`);
     }
   }
-  plan.cancel = plan.cancel.filter((entry) => !resumedIds.has(String(entry.run.id)));
+  const plan = {
+    ...plannedActions,
+    cancel: plannedActions.cancel.filter((entry) => !resumedIds.has(String(entry.run.id))),
+  };
 
   let historyOk = recentPageOk;
   if (hadCandidates || plan.recoveringCancelledRun) {
@@ -604,7 +607,7 @@ async function runCli({
       const currentHeadSha = github.getHeadSha ? github.getHeadSha() : headSha;
       const freshHistory = github.listRuns();
       if (!freshHistory.recentPageOk) throw new Error('incomplete production deploy history');
-      historyOk = freshHistory.recentPageOk;
+      historyOk = true;
       // Recompute follow-up against real state, without pretending planned
       // cancellations have completed. Pending runs may have changed meanwhile.
       const plannedIds = new Set(plan.cancel.map((entry) => String(entry.run.id)));

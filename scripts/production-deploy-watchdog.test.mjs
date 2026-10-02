@@ -1306,3 +1306,13 @@ void test('an empty incomplete refreshed history retains the deferred recovery n
   assert.match(report, /No (?:replacement )?deploy was started/);
   assert.doesNotMatch(report, /Stopped run|Could NOT cancel run|Dispatched a fresh deploy/);
 });
+
+void test('six-hour cancellation still escalates when job history is unreadable', async () => {
+  const scenario = cancellationScenario({
+    currentRun: run({ status: 'in_progress', run_started_at: minutesAgo(DEFAULT_MAX_RUN_MINUTES + 1) }),
+    currentJobs: null,
+  });
+  assert.equal(await cancelAndConfirm(scenario.options), 'stopped');
+  assert.deepEqual(scenario.calls, ['cancel', 'force']);
+  assert.equal(scenario.clock.now() - NOW, CANCEL_GRACE_MS);
+});
