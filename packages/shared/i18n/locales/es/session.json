@@ -190,6 +190,7 @@
       "pendingSync_other": "{{count}} pendientes de sincronizar",
       "tries_one": "{{count}} intento",
       "tries_other": "{{count}} intentos",
+      "originalTag": "Original",
       "mirroredTag": "Espejo",
       "lifetimeTries_one": "{{count}} intento",
       "lifetimeTries_other": "{{count}} intentos",

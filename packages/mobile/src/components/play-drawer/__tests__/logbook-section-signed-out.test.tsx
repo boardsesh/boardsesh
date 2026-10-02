@@ -45,6 +45,7 @@ describe('LogbookSection for a signed-out reader', () => {
       createElement(LogbookSection, {
         climbUuid: 'climb-1',
         boardName: 'kilter',
+        layoutId: 1,
         userAscents: undefined,
         userAttempts: undefined,
       }),
@@ -64,6 +65,7 @@ describe('LogbookSection for a signed-out reader', () => {
       createElement(LogbookSection, {
         climbUuid: 'climb-1',
         boardName: 'kilter',
+        layoutId: 1,
         userAscents: 3,
         userAttempts: 9,
       }),
@@ -83,6 +85,7 @@ describe('LogbookSection for a signed-out reader', () => {
       createElement(LogbookSection, {
         climbUuid: 'climb-1',
         boardName: 'kilter',
+        layoutId: 1,
         userAscents: 0,
         userAttempts: 0,
       }),

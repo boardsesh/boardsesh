@@ -598,6 +598,7 @@
       "share": "Compartir bloque",
       "moreActions": "Más acciones",
       "projectFallback": "Proyecto",
+      "directionStatus": "{{direction}}: {{status}}",
       "ascentStatus": {
         "flash": "Flasheado",
         "send": "Encadenado",
