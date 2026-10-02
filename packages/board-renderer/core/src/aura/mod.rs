@@ -13,8 +13,8 @@
 //!
 //! What the classic knobs mean here: `shape_size_multiplier` scales the glow's
 //! reach, `stroke_width_multiplier` scales the fill's edge bands, the outline's
-//! stroke and the glyph line width, and `hold_state_map[].shape` is ignored — the silhouette is the
-//! shape, and the glyphs are the accessibility channel that replaces it.
+//! stroke and the glyph line width, and `hold_state_map[].shape` is ignored — the
+//! silhouette is the shape, and the glyphs are the accessibility channel that replaces it.
 
 mod geometry;
 mod glow;

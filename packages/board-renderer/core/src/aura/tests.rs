@@ -491,7 +491,12 @@ fn the_plate_is_opt_out_and_boards_without_one_are_untouched() {
     // a board whose shards DO carry `led_inner` exactly the way the renderer
     // drew it before the plate existed. That is the property the parked build
     // rests on, and it is byte-for-byte.
-    for style in [MarkStyle::Glow, MarkStyle::GlowFill, MarkStyle::Fill] {
+    for style in [
+        MarkStyle::Glow,
+        MarkStyle::GlowFill,
+        MarkStyle::Fill,
+        MarkStyle::Outline,
+    ] {
         let mut plain = config("p1r42");
         plain.mark_style = Some(style);
         let plain_render = render(&plain);
@@ -599,7 +604,12 @@ fn a_plate_too_thin_to_draw_is_rejected_by_every_consumer_together() {
     // dims for and the paint cannot draw is a hold that just went darker.
     // Checked under GlowFill, the thumbnail default, where all three run.
     const HAIRLINE: [f32; 8] = [-0.995, -0.995, 0.995, -0.995, 0.995, 0.995, -0.995, 0.995];
-    for style in [MarkStyle::Glow, MarkStyle::GlowFill, MarkStyle::Fill] {
+    for style in [
+        MarkStyle::Glow,
+        MarkStyle::GlowFill,
+        MarkStyle::Fill,
+        MarkStyle::Outline,
+    ] {
         let mut plain = config("p1r42");
         plain.mark_style = Some(style);
         let mut hairline = config("p1r42");
