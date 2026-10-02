@@ -10,7 +10,8 @@ function assertNoBinaryColumns(row: unknown): void {
 }
 
 function flattenParams(params: (SqlValue | SqlValue[])[]): SqlValue[] {
-  return params.flat();
+  // Mirror SQLite's array and variadic overloads without flattening other shapes.
+  return params.length === 1 && Array.isArray(params[0]) ? params[0] : (params as SqlValue[]);
 }
 
 /** Guard real SQLite results, including getFirstAsync and transaction reads. */

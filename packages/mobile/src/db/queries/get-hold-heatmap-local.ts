@@ -154,9 +154,11 @@ export async function getHoldHeatmapLocalWithCount(
   while (lastClimbId < maxClimbId) {
     const rowsRead = await foldPage();
     await assertReadCurrent();
+    // foldPage advances the cursor: stop before yielding if it reached the end.
     if (rowsRead < HOLD_HEATMAP_PAGE_CLIMBS || lastClimbId >= maxClimbId) break;
     // foldPage has returned, so only numeric aggregates survive this yield.
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    // Other async database work can run during the yield, including teardown.
     await assertReadCurrent();
   }
   return { holdStats: holdUsageToStats(usage), climbCount };

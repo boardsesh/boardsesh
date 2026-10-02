@@ -249,6 +249,17 @@ describe('getHoldHeatmapLocal', () => {
     expect(plans.some((detail) => detail.includes('USE TEMP B-TREE FOR ORDER BY'))).toBe(false);
   });
 
+  it('returns an empty aggregate without reading pages when the index has no hold sets', async () => {
+    await db.runAsync('UPDATE board_climbs SET is_draft = 1, sync_seq = sync_seq + 100');
+    const { pages } = observePages();
+    const result = await getHoldHeatmapLocalWithCount(rejectBinaryDatabaseResults(db), makeInput());
+    expect(result).toEqual({ holdStats: [], climbCount: 0 });
+    expect(pages).toEqual([]);
+    expect(await db.getFirstAsync('SELECT MAX(climb_id) AS max_id FROM board_climb_hold_sets')).toEqual({
+      max_id: null,
+    });
+  });
+
   it('finishes at the captured upper bound when another climb arrives between pages', async () => {
     await insertManyClimbs(1001);
     let inserted = false;
