@@ -505,7 +505,7 @@ async function cancelAndConfirm({ github, runId, now = Date.now, sleep = sleepTi
     if (github.getRun(runId).status === 'completed') return 'stopped';
     // A previous ordinary cancellation may already be pending. A conflict
     // must not prevent escalation forever; other API errors remain failures.
-    const conflict = error.status === 409 || /HTTP\s+409\b/.test(`${error.message}\n${error.stderr ?? ''}`);
+    const conflict = /HTTP\s+409\b/.test(`${error.message}\n${error.stderr ?? ''}`);
     if (!conflict) throw error;
   }
 

@@ -994,3 +994,56 @@ void test('dry run refreshes an advancing main and preserves its spent manual re
   assert.equal(plan.followUp, 'needs-intervention');
   assert.doesNotMatch(formatSummary(plan, { dryRun: true }), /would dispatch/);
 });
+
+void test('multiple cancellation targets share the eight-minute watchdog deadline', async () => {
+  const clock = fakeClock();
+  const mutations = [];
+  const stoppedRunIds = new Set();
+  const stalledRuns = [
+    run({ id: 1, run_number: 101, head_sha: HEAD_SHA }),
+    run({ id: 2, run_number: 102, head_sha: HEAD_SHA }),
+  ];
+  const workDirectory = mkdtempSync(join(tmpdir(), 'boardsesh-watchdog-'));
+  const discordFilePath = join(workDirectory, 'discord.txt');
+  const outputPath = join(workDirectory, 'github-output.txt');
+  const result = await runCli({
+    github: {
+      listRuns: () => ({
+        runs: stalledRuns.map((stalledRun) =>
+          stoppedRunIds.has(stalledRun.id)
+            ? { ...stalledRun, status: 'completed', conclusion: 'cancelled' }
+            : stalledRun,
+        ),
+        recentPageOk: true,
+      }),
+      getRun: (runId) =>
+        stoppedRunIds.has(runId)
+          ? run({ id: runId, status: 'completed', conclusion: 'cancelled' })
+          : run({ id: runId }),
+      listJobs: () => [{ name: 'sync-static-assets', status: 'queued' }],
+      cancelRun: (runId) => mutations.push(`cancel-${runId}`),
+      forceCancelRun: (runId) => {
+        mutations.push(`force-${runId}`);
+        stoppedRunIds.add(runId);
+      },
+      dispatchRun: () => assert.fail('an unfinished cancellation must not spend a retry'),
+    },
+    headSha: HEAD_SHA,
+    ...clock,
+    runUrlBase: '',
+    discordFilePath,
+    outputPath,
+    dryRun: false,
+  });
+  assert.equal(clock.now() - NOW, 8 * 60_000);
+  assert.deepEqual(mutations, ['cancel-1', 'force-1', 'cancel-2']);
+  assert.deepEqual([...stoppedRunIds], [1]);
+  assert.equal(result.failed, true);
+  assert.equal(result.followUp, 'cancel-failed');
+  const report = readFileSync(discordFilePath, 'utf8');
+  assert.match(report, /Stopped run #101/);
+  assert.match(report, /Could NOT cancel run #102/);
+  assert.match(report, /still wedged/);
+  assert.doesNotMatch(report, /Stopped run #102|Dispatched a fresh deploy/);
+  assert.equal(readFileSync(outputPath, 'utf8'), 'notify=true\n');
+});
