@@ -3,8 +3,9 @@
 //
 // production-deploy.yml runs under `concurrency: production-deploy` with
 // `cancel-in-progress: false`, which is right for a deploy that is actually
-// executing — you never want to kill a run mid-migration. But GitHub applies
-// that protection to a run that is doing nothing too: a job parked in the
+// executing. The watchdog still enforces a six-hour ceiling, including during
+// migrations. GitHub applies that protection to a run doing nothing too:
+// a job parked in the
 // `waiting` state on the Production environment gate holds the group exactly
 // like a running one, forever (the environment approval timeout is 30 days).
 //
@@ -19,12 +20,13 @@
 // without making progress:
 //
 //   cancel  — the run has at least one parked job, no job executing, and has
-//             not moved in `stallMinutes`. Cancelling it costs nothing: the
+//             not moved in `stallMinutes`, or has held the group for six hours.
+//             A confirmed cancellation releases the group so the
 //             queued run behind it starts immediately, and detect-changes
 //             baselines off the last SUCCESSFUL deploy, so the surviving run
 //             redeploys everything the cancelled one would have.
 //   alert   — the run is genuinely executing but has been going far longer
-//             than a deploy takes. Never cancelled; a human decides.
+//             than a deploy takes, but has not reached the six-hour ceiling.
 //   none    — healthy, already finished, or `pending` (queued behind the
 //             group). A pending run is the thing we are trying to let through,
 //             so it is never a target.
@@ -37,11 +39,17 @@
 import { execFileSync } from 'node:child_process';
 import { appendFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { setTimeout as sleepTimer } from 'node:timers/promises';
 
 const scriptPath = fileURLToPath(import.meta.url);
 
 const DEFAULT_STALL_MINUTES = 45;
 const DEFAULT_RUNNING_ALERT_MINUTES = 150;
+const DEFAULT_MAX_RUN_MINUTES = 360;
+const CANCEL_GRACE_MS = 5 * 60_000;
+const FORCE_CONFIRM_MS = 60_000;
+const POLL_INTERVAL_MS = 15_000;
+const WATCHDOG_BUDGET_MS = 8 * 60_000;
 
 // Statuses that occupy the concurrency group. `pending` is deliberately absent:
 // that is a run queued BEHIND the group, i.e. the run we are freeing.
@@ -61,11 +69,22 @@ function minutesSince(timestamp, nowMs) {
   return (nowMs - parsedMs) / 60_000;
 }
 
-// How long the run has shown no sign of life. `updated_at` moves whenever a job
-// starts or finishes, so it measures idleness rather than total duration — a
-// long build is busy, not idle.
-function idleMinutes(run, nowMs) {
-  return minutesSince(run?.updated_at ?? run?.run_started_at ?? run?.created_at, nowMs);
+// Cancellation can change updated_at without any job making progress. Queued
+// jobs also receive started_at before a runner exists, so ignore those stamps.
+function idleMinutes(run, jobs, nowMs) {
+  const timestamps = [run?.run_started_at ?? run?.created_at];
+  for (const job of jobs ?? []) {
+    if (
+      (job.status === 'completed' || job.status === 'in_progress') &&
+      job.conclusion !== 'cancelled' &&
+      job.conclusion !== 'skipped'
+    ) {
+      timestamps.push(job.started_at);
+      timestamps.push(job.completed_at);
+    }
+  }
+  const progressTimes = timestamps.map((timestamp) => Date.parse(timestamp ?? '')).filter(Number.isFinite);
+  return progressTimes.length === 0 ? null : (nowMs - Math.max(...progressTimes)) / 60_000;
 }
 
 function ageMinutes(run, nowMs) {
@@ -107,15 +126,24 @@ function classifyRun({
   nowMs,
   stallMinutes = DEFAULT_STALL_MINUTES,
   runningAlertMinutes = DEFAULT_RUNNING_ALERT_MINUTES,
+  maxRunMinutes = DEFAULT_MAX_RUN_MINUTES,
 }) {
   if (!isHoldingRun(run)) return { action: 'none', reason: `status=${run?.status ?? 'unknown'}` };
 
-  const idle = idleMinutes(run, nowMs);
+  const idle = idleMinutes(run, jobs, nowMs);
   const age = ageMinutes(run, nowMs);
 
-  if (isParked(run, jobs)) {
+  if (age !== null && age >= maxRunMinutes) {
+    return {
+      action: 'cancel',
+      reason: `running for ${formatDuration(age)}, at the ${maxRunMinutes}m maximum`,
+      ageMinutes: age,
+    };
+  }
+
+  if (jobs !== null && isParked(run, jobs)) {
     if (idle === null) return { action: 'none', reason: 'unreadable-timestamps' };
-    if (idle <= stallMinutes) {
+    if (idle < stallMinutes) {
       return { action: 'none', reason: `parked ${formatDuration(idle)}, under the ${stallMinutes}m threshold` };
     }
     return {
@@ -146,6 +174,7 @@ function planWatchdogActions({
   nowMs,
   stallMinutes = DEFAULT_STALL_MINUTES,
   runningAlertMinutes = DEFAULT_RUNNING_ALERT_MINUTES,
+  maxRunMinutes = DEFAULT_MAX_RUN_MINUTES,
 }) {
   const candidates = Array.isArray(runs) ? runs : [];
   const cancel = [];
@@ -158,6 +187,7 @@ function planWatchdogActions({
       nowMs,
       stallMinutes,
       runningAlertMinutes,
+      maxRunMinutes,
     });
     if (verdict.action === 'cancel') cancel.push({ run, ...verdict });
     if (verdict.action === 'alert') alert.push({ run, ...verdict });
@@ -213,7 +243,7 @@ function describeRun(entry) {
 }
 
 function formatSummary(plan, { dryRun = false, failedCancelIds = new Set(), dispatched = plan.redispatch } = {}) {
-  const verb = dryRun ? 'would cancel' : 'cancelled';
+  const verb = dryRun ? 'would cancel' : 'stopped';
   const lines = [];
   for (const entry of plan.cancel) {
     const failed = failedCancelIds.has(String(entry.run.id));
@@ -245,14 +275,14 @@ function capDiscordContent(content) {
 }
 
 const FOLLOW_UP_LINES = {
-  'queued-run-takes-over': 'The queued run behind it now has the group and will deploy the latest main.',
+  'queued-run-takes-over': 'A queued or active deploy remains; no replacement was dispatched.',
   redispatched: 'Dispatched a fresh deploy for the current main.',
   'head-already-deployed': 'Nothing is queued, but the current main already deployed successfully — no action needed.',
   // Both of these are decided AFTER the cancels run, so planWatchdogActions
   // never sets them — runCli does, once it knows what actually landed.
   'cancel-failed': 'No deploy was started: a cancel did not land, so the group may still be held. Retrying next tick.',
   'dispatch-deferred':
-    'No deploy was started: the run history could not be read, so the one-retry-per-commit guard could not be checked. Retrying next tick.',
+    'No replacement deploy was started: run history could not be read or dispatch failed. Retrying next tick.',
   // No @here: the webhook post sets allowed_mentions.parse=[], so a ping would
   // render as inert text and read as louder than it is.
   'needs-intervention':
@@ -277,7 +307,7 @@ function formatDiscordContent(plan, { runUrlBase = '', failedCancelIds = new Set
     lines.push(failed.length > 0 ? '⚠️ **Production deploy still wedged**' : '🧹 **Production deploy unwedged**');
     for (const entry of cancelled) {
       const sha = typeof entry.run.head_sha === 'string' ? entry.run.head_sha.slice(0, 7) : 'unknown';
-      lines.push(`• Cancelled run #${entry.run.run_number ?? entry.run.id} (\`${sha}\`) — ${entry.reason}.`);
+      lines.push(`• Stopped run #${entry.run.run_number ?? entry.run.id} (\`${sha}\`) — ${entry.reason}.`);
       if (runUrlBase !== '') lines.push(`  <${runUrlBase}/${entry.run.id}>`);
     }
     // Reported, not omitted: a cancel that did not land may mean the run is
@@ -290,9 +320,7 @@ function formatDiscordContent(plan, { runUrlBase = '', failedCancelIds = new Set
       if (runUrlBase !== '') lines.push(`  <${runUrlBase}/${entry.run.id}>`);
     }
     lines.push(FOLLOW_UP_LINES[followUp] ?? FOLLOW_UP_LINES['needs-intervention']);
-    lines.push(
-      'A run parks like this when the Production environment gate holds a job — check the environment protection rules if it repeats.',
-    );
+    lines.push('Check runner availability and Production environment protection rules if stalls repeat.');
   }
   for (const entry of plan.alert) {
     const sha = typeof entry.run.head_sha === 'string' ? entry.run.head_sha.slice(0, 7) : 'unknown';
@@ -321,15 +349,23 @@ const RUNS_PAGE_SIZE = 30;
 // breaking.
 const HOLDING_QUERY_STATUSES = Object.freeze(['waiting', 'queued', 'requested', 'in_progress', 'pending']);
 
-function createCliGitHub({ repository, workflowFile }) {
-  const ghApi = (args) =>
-    execFileSync('gh', ['api', ...args], {
+function createCliGitHub({ repository, workflowFile, api, now = Date.now }) {
+  let deadlineMs = Infinity;
+  const ghApi = (args) => {
+    const remainingMs = deadlineMs - now();
+    if (remainingMs <= 0) throw new Error('watchdog deadline exceeded');
+    if (api) return api(args);
+    return execFileSync('gh', ['api', ...args], {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
-      timeout: GH_API_TIMEOUT_MS,
+      timeout: Math.max(1, Math.min(GH_API_TIMEOUT_MS, remainingMs)),
     });
+  };
 
   return {
+    setDeadline(nextDeadlineMs) {
+      deadlineMs = nextDeadlineMs;
+    },
     // Two queries, unioned, because a single newest-first page is not enough.
     //
     // Every push that arrives while a run is parked replaces the one pending run
@@ -349,18 +385,20 @@ function createCliGitHub({ repository, workflowFile }) {
         for (const run of runs) if (run?.id !== undefined) byId.set(String(run.id), run);
       };
 
+      let statusQueriesOk = true;
       for (const status of HOLDING_QUERY_STATUSES) {
         try {
           add(this.listRunsByStatus(status));
         } catch {
-          // One status query failing must not blind the others.
+          // Keep discovering candidates, but withhold redispatch on incomplete history.
+          statusQueriesOk = false;
         }
       }
       // Isolated like the status queries — but its loss is not free. The
       // dispatch guards (alreadyRetriedHead, headAlreadyDeployed) read completed
       // runs, which only this page carries, so runCli withholds the dispatch
       // rather than firing one it cannot justify.
-      let recentPageOk = true;
+      let recentPageOk = statusQueriesOk;
       try {
         add(this.listRecentRuns());
       } catch {
@@ -375,7 +413,8 @@ function createCliGitHub({ repository, workflowFile }) {
         `repos/${repository}/actions/workflows/${workflowFile}/runs?branch=main&status=${status}&per_page=${RUNS_PAGE_SIZE}`,
       ]);
       const parsed = JSON.parse(payload);
-      return Array.isArray(parsed?.workflow_runs) ? parsed.workflow_runs : [];
+      if (!Array.isArray(parsed?.workflow_runs)) throw new Error('unreadable workflow history');
+      return parsed.workflow_runs;
     },
     listRecentRuns() {
       const payload = ghApi([
@@ -384,7 +423,8 @@ function createCliGitHub({ repository, workflowFile }) {
         `repos/${repository}/actions/workflows/${workflowFile}/runs?branch=main&per_page=${RUNS_PAGE_SIZE}`,
       ]);
       const parsed = JSON.parse(payload);
-      return Array.isArray(parsed?.workflow_runs) ? parsed.workflow_runs : [];
+      if (!Array.isArray(parsed?.workflow_runs)) throw new Error('unreadable workflow history');
+      return parsed.workflow_runs;
     },
     // Paginated deliberately. A truncated job list is worse than no list: drop
     // the page holding the one `in_progress` job and isParked reads the run as
@@ -401,17 +441,32 @@ function createCliGitHub({ repository, workflowFile }) {
           const parsed = JSON.parse(payload);
           const pageJobs = Array.isArray(parsed?.jobs) ? parsed.jobs : [];
           jobs.push(...pageJobs);
-          const totalCount = Number(parsed?.total_count ?? jobs.length);
-          if (pageJobs.length === 0 || !Number.isFinite(totalCount) || jobs.length >= totalCount) break;
+          const totalCount = parsed?.total_count;
+          if (!Array.isArray(parsed?.jobs) || !Number.isInteger(totalCount) || totalCount < 0) return null;
+          if (jobs.length >= totalCount) return jobs;
+          if (pageJobs.length === 0) return null;
         }
-        return jobs;
+        return null;
       } catch {
-        // A run whose jobs we cannot read falls back to its own status in
-        // isParked. That is safe in both directions: an executing run is not
-        // `waiting`, so it is never cancelled on a missing list, and a `waiting`
-        // run is parked at the gate by GitHub's own definition.
-        return [];
+        // Unknown is distinct from a complete empty list. Idle cancellation
+        // requires complete jobs; the absolute age ceiling still applies.
+        return null;
       }
+    },
+    getHeadSha() {
+      const reference = JSON.parse(ghApi(['--method', 'GET', `repos/${repository}/git/ref/heads/main`]));
+      if (typeof reference?.object?.sha !== 'string' || reference.object.sha === '') {
+        throw new Error('unreadable main head');
+      }
+      return reference.object.sha;
+    },
+    getRun(runId) {
+      const run = JSON.parse(ghApi(['--method', 'GET', `repos/${repository}/actions/runs/${runId}`]));
+      if (run?.id !== runId || typeof run.status !== 'string') throw new Error('unreadable workflow run');
+      return run;
+    },
+    forceCancelRun(runId) {
+      ghApi(['--method', 'POST', `repos/${repository}/actions/runs/${runId}/force-cancel`]);
     },
     cancelRun(runId) {
       ghApi(['--method', 'POST', `repos/${repository}/actions/runs/${runId}/cancel`]);
@@ -428,69 +483,150 @@ function createCliGitHub({ repository, workflowFile }) {
   };
 }
 
-function runCli({ github, headSha, nowMs, runUrlBase, discordFilePath, outputPath, dryRun }) {
+// Both stages require observed completion: a 202 response only acknowledges
+// the request. Recheck eligibility before force-cancelling an idle intervention.
+async function cancelAndConfirm({ github, runId, now = Date.now, sleep = sleepTimer, deadlineMs }) {
+  const requireTime = () => {
+    if (now() >= deadlineMs) throw new Error('watchdog deadline exceeded');
+  };
+  requireTime();
+  let run = github.getRun(runId);
+  if (run.status === 'completed') return 'stopped';
+  const jobs = github.listJobs(runId);
+  if (classifyRun({ run, jobs, nowMs: now() }).action !== 'cancel') {
+    if (jobs === null) throw new Error('could not read complete job list');
+    return 'resumed';
+  }
+  requireTime();
+  try {
+    github.cancelRun(runId);
+  } catch (error) {
+    requireTime();
+    if (github.getRun(runId).status === 'completed') return 'stopped';
+    // A previous ordinary cancellation may already be pending. A conflict
+    // must not prevent escalation forever; other API errors remain failures.
+    const conflict = error.status === 409 || /HTTP\s+409\b/.test(`${error.message}\n${error.stderr ?? ''}`);
+    if (!conflict) throw error;
+  }
+
+  const waitForCompletion = async (durationMs) => {
+    const stageDeadlineMs = Math.min(deadlineMs, now() + durationMs);
+    while (true) {
+      requireTime();
+      run = github.getRun(runId);
+      if (run.status === 'completed') return true;
+      if (now() >= stageDeadlineMs) return false;
+      await sleep(Math.min(POLL_INTERVAL_MS, stageDeadlineMs - now()));
+    }
+  };
+  if (await waitForCompletion(CANCEL_GRACE_MS)) return 'stopped';
+
+  requireTime();
+  run = github.getRun(runId);
+  if (run.status === 'completed') return 'stopped';
+  const freshJobs = github.listJobs(runId);
+  if (classifyRun({ run, jobs: freshJobs, nowMs: now() }).action !== 'cancel') {
+    if (freshJobs === null) throw new Error('could not read complete job list before force cancellation');
+    return 'resumed';
+  }
+  requireTime();
+  try {
+    github.forceCancelRun(runId);
+  } catch (error) {
+    requireTime();
+    if (github.getRun(runId).status === 'completed') return 'stopped';
+    throw error;
+  }
+  if (await waitForCompletion(FORCE_CONFIRM_MS)) return 'stopped';
+  throw new Error('force cancellation did not reach completed status');
+}
+
+async function runCli({
+  github,
+  headSha,
+  nowMs,
+  now = Date.now,
+  sleep = sleepTimer,
+  runUrlBase,
+  discordFilePath,
+  outputPath,
+  dryRun,
+}) {
+  const deadlineMs = now() + WATCHDOG_BUDGET_MS;
+  github.setDeadline?.(deadlineMs);
   const { runs, recentPageOk } = github.listRuns();
   const jobsByRunId = {};
   for (const run of runs) {
     if (isHoldingRun(run)) jobsByRunId[String(run.id)] = github.listJobs(run.id);
   }
-
-  const plan = planWatchdogActions({ runs, jobsByRunId, headSha, nowMs });
-
-  // Each cancel is isolated: two runs can be stalled at once, and a run that
-  // finished between the plan and the call makes GitHub reject the cancel. Left
-  // unguarded, the first such rejection would abort the loop and strand every
-  // later one for another 15 minutes.
-  const cancelFailures = [];
+  const plan = planWatchdogActions({ runs, jobsByRunId, headSha, nowMs: nowMs ?? now() });
   const failedCancelIds = new Set();
+  const resumedIds = new Set();
+  const hadCandidates = plan.cancel.length > 0;
   for (const entry of plan.cancel) {
     console.error(`production-deploy-watchdog: ${dryRun ? 'would cancel' : 'cancelling'} ${describeRun(entry)}`);
     if (dryRun) continue;
     try {
-      github.cancelRun(entry.run.id);
+      const result = await cancelAndConfirm({ github, runId: entry.run.id, now, sleep, deadlineMs });
+      if (result === 'resumed') {
+        resumedIds.add(String(entry.run.id));
+        console.error(`production-deploy-watchdog: run ${entry.run.id} resumed; cancellation escalation withheld`);
+      }
     } catch (error) {
-      cancelFailures.push(entry);
       failedCancelIds.add(String(entry.run.id));
-      console.error(`production-deploy-watchdog: could NOT cancel ${describeRun(entry)}: ${error.message}`);
+      console.error(`production-deploy-watchdog: could NOT stop ${describeRun(entry)}: ${error.message}`);
     }
   }
+  plan.cancel = plan.cancel.filter((entry) => !resumedIds.has(String(entry.run.id)));
 
-  // A failed cancel may mean the group is still held. Dispatching then would
-  // spend this sha's one retry on a run that just queues behind the wedge, so
-  // leave the retry for the next tick, which re-reads the real state.
-  const dispatchBlocked = cancelFailures.length > 0 || !recentPageOk;
-  const dispatched = plan.redispatch && !dispatchBlocked;
-  if (dispatched) {
-    console.error(
-      `production-deploy-watchdog: ${dryRun ? 'would dispatch' : 'dispatching'} a fresh production deploy for main`,
-    );
-    if (!dryRun) github.dispatchRun('main');
-  } else if (plan.redispatch) {
-    console.error(
-      `production-deploy-watchdog: holding the dispatch — ${
-        cancelFailures.length > 0 ? 'a cancel failed, so the group may still be held' : 'the run history was unreadable'
-      }`,
-    );
+  let historyOk = recentPageOk;
+  if (!dryRun && hadCandidates) {
+    try {
+      const currentHeadSha = github.getHeadSha ? github.getHeadSha() : headSha;
+      const freshHistory = github.listRuns();
+      historyOk = freshHistory.recentPageOk;
+      // Recompute follow-up against real state, without pretending planned
+      // cancellations have completed. Pending runs may have changed meanwhile.
+      const survivor = freshHistory.runs.some((run) => isHoldingRun(run) || run.status === 'pending');
+      const headDeployed = freshHistory.runs.some(
+        (run) => run.head_sha === currentHeadSha && run.status === 'completed' && run.conclusion === 'success',
+      );
+      const retried = freshHistory.runs.some(
+        (run) => run.head_sha === currentHeadSha && run.event === 'workflow_dispatch',
+      );
+      plan.redispatch = !survivor && !headDeployed && !retried && currentHeadSha !== '';
+      plan.followUp = survivor
+        ? 'queued-run-takes-over'
+        : headDeployed
+          ? 'head-already-deployed'
+          : plan.redispatch
+            ? 'redispatched'
+            : 'needs-intervention';
+    } catch (error) {
+      historyOk = false;
+      console.error(`production-deploy-watchdog: could not refresh run history: ${error.message}`);
+    }
   }
-
-  // The report must describe what happened, not what was planned: the follow-up
-  // is recomputed here because both of these are only knowable after the calls.
-  let followUp = plan.followUp;
-  if (cancelFailures.length > 0) followUp = 'cancel-failed';
-  else if (plan.redispatch && !dispatched) followUp = 'dispatch-deferred';
+  let dispatched = false;
+  let dispatchFailed = false;
+  if (plan.redispatch && failedCancelIds.size === 0 && historyOk) {
+    try {
+      if (!dryRun) github.dispatchRun('main');
+      dispatched = true;
+    } catch (error) {
+      dispatchFailed = true;
+      console.error(`production-deploy-watchdog: dispatch failed: ${error.message}`);
+    }
+  }
+  if (failedCancelIds.size > 0) plan.followUp = 'cancel-failed';
+  else if (!historyOk || dispatchFailed) plan.followUp = 'dispatch-deferred';
 
   const summary = formatSummary(plan, { dryRun, failedCancelIds, dispatched });
   console.error(`production-deploy-watchdog: ${summary}`);
-
-  // A dry run reports; it never pings Discord about work it did not do. Neither
-  // does a failed cancel: the report names only what actually landed.
-  const discordContent = dryRun ? '' : formatDiscordContent(plan, { runUrlBase, failedCancelIds, followUp });
+  const discordContent = dryRun ? '' : formatDiscordContent(plan, { runUrlBase, failedCancelIds });
   if (discordContent !== '' && discordFilePath) writeFileSync(discordFilePath, discordContent, 'utf8');
-  if (outputPath) {
-    appendFileSync(outputPath, `notify=${discordContent === '' ? 'false' : 'true'}\n`, 'utf8');
-  }
-
-  return plan;
+  if (outputPath) appendFileSync(outputPath, `notify=${discordContent === '' ? 'false' : 'true'}\n`, 'utf8');
+  return { ...plan, failed: !dryRun && (failedCancelIds.size > 0 || !historyOk || dispatchFailed) };
 }
 
 function parseCliArguments(argv) {
@@ -533,11 +669,11 @@ function parseCliArguments(argv) {
 if (process.argv[1] === scriptPath) {
   try {
     const options = parseCliArguments(process.argv.slice(2));
-    runCli({
+    const result = await runCli({
       ...options,
       github: createCliGitHub(options),
-      nowMs: Date.now(),
     });
+    if (result.failed) process.exitCode = 1;
   } catch (error) {
     console.error(`production-deploy-watchdog: ${error.message}`);
     process.exit(1);
@@ -548,6 +684,10 @@ export {
   DISCORD_CONTENT_LIMIT,
   DEFAULT_RUNNING_ALERT_MINUTES,
   DEFAULT_STALL_MINUTES,
+  DEFAULT_MAX_RUN_MINUTES,
+  CANCEL_GRACE_MS,
+  FORCE_CONFIRM_MS,
+  cancelAndConfirm,
   classifyRun,
   createCliGitHub,
   formatDiscordContent,

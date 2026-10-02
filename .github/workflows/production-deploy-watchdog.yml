@@ -10,14 +10,15 @@ name: Production Deploy Watchdog
 # nothing ships. The wedge is silent, too: the parked run never fails, so
 # production-deploy's own notify-failure never fires.
 #
-# This watchdog cancels a run that has held the group without executing
-# anything, which hands the group to the queued run behind it, and says so in
-# Discord. See scripts/production-deploy-watchdog.mjs for the decision rules.
+# Cancel after 45 minutes without job progress, or six hours holding the group
+# even with an executing job. Give ordinary cancellation five minutes, then
+# force-cancel and verify completion before reporting recovery or redispatching.
+# See scripts/production-deploy-watchdog.mjs for the decision rules.
 
 on:
   schedule:
-    # Every 15 minutes: with the script's 45-minute stall threshold, a wedge is
-    # broken within about an hour instead of sitting until someone notices.
+    # Evaluate the 45-minute idle / six-hour active limits every 15 minutes.
+    # GitHub schedule delays can postpone enforcement. Cancellation is verified.
     - cron: '*/15 * * * *'
   workflow_dispatch:
     inputs:
@@ -84,7 +85,7 @@ jobs:
           exit "$watchdog_status"
 
       - name: Notify Discord
-        if: steps.watchdog.outputs.notify == 'true'
+        if: always() && steps.watchdog.outputs.notify == 'true'
         env:
           DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
           DISCORD_FILE: ${{ runner.temp }}/production-deploy-watchdog-discord.txt

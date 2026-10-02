@@ -575,7 +575,8 @@ GitHub-hosted, asserted by test.
 holds the `production-deploy` concurrency group (`cancel-in-progress: false`)
 and every later push queues behind it silently — `notify-failure` never fires
 because nothing failed. `production-deploy-watchdog.yml` cancels a run parked
-that way, but only after 45 minutes and only once per head SHA. Any future
+that way after 45 minutes without job progress, escalating to force cancellation
+when needed. Replacement dispatches are limited to one per head SHA. Any future
 self-hosted destination needs its own health failsafe built on **queued-age**
 (jobs queued longer than N minutes), not on registered-runner counts — an
 on-demand pool legitimately has zero registered runners while idle.
@@ -674,16 +675,37 @@ production deploy and no alert fired.
 ## The watchdog
 
 `production-deploy-watchdog.yml` runs every 15 minutes and cancels a run that
-holds the group without executing anything: at least one parked job, no job
-`in_progress`, and no movement for 45 minutes. Cancelling costs nothing — the
-queued run takes the group immediately and redeploys from the last successful
-baseline. If cancelling empties the group, the watchdog dispatches a fresh run
+holds the group with at least one parked job, no job `in_progress`, and no job
+progress for 45 minutes. Progress means actual job start/completion timestamps;
+queued-job timestamps and run `updated_at` changes caused by cancellation do not
+reset the timer. Incomplete job lists cannot authorize an idle cancellation.
+
+The watchdog also cancels any run holding the group for six hours, including
+runs with executing jobs or migrations. This absolute limit uses the run start
+time, falling back to creation time, and applies even if job lists are unavailable.
+Pending runs queued behind the holder are never cancellation targets.
+
+Ordinary cancellation gets five minutes to finish. If the run still qualifies,
+the watchdog uses GitHub's force-cancel endpoint, which bypasses `always()` job
+conditions, then allows one minute to verify completion. Resumed execution stops
+an idle intervention; the six-hour ceiling still applies. A cancellation request
+being accepted is not reported as recovery: the run must actually reach
+`completed`. Cancellation stages share an eight-minute budget and all API calls
+have bounded timeouts within the watchdog's ten-minute job timeout.
+
+Once completion is confirmed, the queued run can redeploy from the last
+successful baseline. If cancellation empties the group, the watchdog refreshes
+main's head and deployment history and dispatches a fresh run
 so the wedge ends in a shipped commit; it spends at most one dispatch per head
 SHA, so a gate that stays broken produces one retry and an alert rather than a
 deploy loop.
 
-A run that is genuinely executing is never cancelled. Past 150 minutes it gets a
-Discord ping and a human decides.
+Executing runs receive an alert after 150 minutes and cancellation at six hours.
+Both thresholds are evaluated on the next scheduled check; GitHub schedule delays
+can postpone that check. Failed or unconfirmed cancellation fails the watchdog,
+reports the blockage, and withholds redispatch until a later check confirms recovery.
+Failure notifications can run even when the watchdog step fails. The summary and
+notifications only claim a run stopped after completion is observed.
 
 One operator-facing wrinkle: the retry budget cannot tell the watchdog's own
 dispatch from your `gh workflow run production-deploy.yml` on the same commit,
