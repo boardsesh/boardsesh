@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { TestSqliteDb } from '../../testing/sqlite-test-db';
+import { rejectBinaryDatabaseResults } from '../../testing/reject-binary-results';
 import { markScopeDownloadComplete } from '../../sync/checkpoints';
 import { ensureHoldIndex } from '../hold-index';
 import {
@@ -8,6 +9,7 @@ import {
   aggregateHoldUsage,
   decodeHoldSet,
   decodePostings,
+  decodeSqliteBlobHex,
   editPostings,
   encodeHoldSet,
   encodePostings,
@@ -16,6 +18,37 @@ import {
   holdStateToRole,
 } from '../query';
 import { insertClimb, openTestDatabase, parseHoldRows } from './hold-index-fixtures';
+
+describe('decodeSqliteBlobHex', () => {
+  it('decodes every byte, either letter case, and an empty BLOB', () => {
+    const bytes = Uint8Array.from({ length: 256 }, (_, index) => index);
+    const hex = [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+    expect(decodeSqliteBlobHex(hex)).toEqual(bytes);
+    expect(decodeSqliteBlobHex(hex.toUpperCase())).toEqual(bytes);
+    expect(decodeSqliteBlobHex('aAbBcCdDeEfF')).toEqual(new Uint8Array([170, 187, 204, 221, 238, 255]));
+    expect(decodeSqliteBlobHex('')).toEqual(new Uint8Array());
+  });
+
+  it.each([
+    null,
+    undefined,
+    12,
+    new Uint8Array([1]),
+    '0',
+    '001',
+    '0g',
+    'gg',
+    ' 00',
+    '00 ',
+    '0x01',
+    'ff\n',
+    'ff\r',
+    'ff\t',
+    'ffzz',
+  ])('rejects malformed or non-text input %j', (input) => {
+    expect(decodeSqliteBlobHex(input)).toBeNull();
+  });
+});
 
 describe('hold-set encoding', () => {
   it('round-trips, sorted by hold id, first role per hold winning', () => {
@@ -63,6 +96,27 @@ describe('postings encoding', () => {
 });
 
 describe('aggregateHoldUsage', () => {
+  it('folds pages into the same accumulator with correct difficulty counts', () => {
+    const pages = [
+      [{ holds: encodeHoldSet([{ holdId: 1, role: HOLD_ROLE.HAND }]), ascents: 2, difficulty: 10 }],
+      [],
+      [
+        { holds: encodeHoldSet([{ holdId: 1, role: HOLD_ROLE.FOOT }]), ascents: null, difficulty: null },
+        { holds: encodeHoldSet([{ holdId: 1, role: HOLD_ROLE.FINISH }]), ascents: 5, difficulty: 30 },
+      ],
+    ];
+    const usage = aggregateHoldUsage(pages[0]);
+    for (const page of pages.slice(1)) expect(aggregateHoldUsage(page, usage)).toBe(usage);
+    expect(usage).toEqual(aggregateHoldUsage(pages.flat()));
+    expect(usage.get(1)).toEqual({
+      uses: 3,
+      byRole: [0, 1, 1, 1],
+      ascentsSum: 7,
+      difficultySum: 40,
+      difficultyCount: 2,
+    });
+  });
+
   it('counts uses, roles, ascents and difficulty per hold', () => {
     const usage = aggregateHoldUsage([
       {
@@ -229,5 +283,23 @@ describe('findSimilarClimbCandidates', () => {
       [...climbs[0].holds].sort((left, right) => left - right),
     );
     expect(await getHoldSet(db, 'nope')).toBeNull();
+  });
+
+  it('reads hold sets and similar climbs without returning any native BLOB columns', async () => {
+    const guarded = rejectBinaryDatabaseResults(db);
+    const target = climbs[0];
+    expect((await getHoldSet(guarded, target.uuid))?.map((entry) => entry.holdId)).toEqual(
+      [...target.holds].sort((left, right) => left - right),
+    );
+    expect(
+      await findSimilarClimbCandidates(guarded, {
+        boardType: 'kilter',
+        layoutId: 1,
+        targetHoldIds: target.holds,
+        threshold: 0.2,
+        excludeUuid: target.uuid,
+        limit: 1000,
+      }),
+    ).toEqual(bruteForce(target.holds, 0.2, target.uuid));
   });
 });

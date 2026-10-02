@@ -152,19 +152,35 @@ export function editPostings(
   return changed ? encodePostings(merged) : null;
 }
 
-function asBytes(value: unknown): Uint8Array | null {
-  return value instanceof Uint8Array ? value : null;
+/**
+ * Decode SQLite hex(BLOB) text into JS-owned memory. Reading native BLOB columns
+ * allocates JNI-backed buffers on Android that can exhaust its reference table
+ * during large index scans. Keep the stored format and BLOB writes unchanged.
+ */
+export function decodeSqliteBlobHex(input: unknown): Uint8Array | null {
+  if (typeof input !== 'string' || input.length % 2 !== 0 || /[^0-9a-f]/i.test(input)) return null;
+  const bytes = new Uint8Array(input.length / 2);
+  for (let index = 0; index < bytes.length; index += 1) {
+    // Input is already validated. Fold ASCII letter case without allocating a
+    // substring per byte; large postings contain tens of thousands of bytes.
+    const high = input.charCodeAt(index * 2);
+    const low = input.charCodeAt(index * 2 + 1);
+    const highNibble = high <= 57 ? high - 48 : (high | 32) - 87;
+    const lowNibble = low <= 57 ? low - 48 : (low | 32) - 87;
+    bytes[index] = (highNibble << 4) | lowNibble;
+  }
+  return bytes;
 }
 
 /** A climb's indexed holds, or null when the climb is not in the index. */
 export async function getHoldSet(db: SqlExecutor, uuid: string): Promise<HoldSetEntry[] | null> {
   const row = await db.getFirstAsync<{ holds: unknown }>(
-    `SELECT hs.holds FROM holds_index_climbs hic
+    `SELECT hex(hs.holds) AS holds FROM holds_index_climbs hic
      JOIN board_climb_hold_sets hs ON hs.climb_id = hic.id
      WHERE hic.uuid = ?`,
     [uuid],
   );
-  const bytes = asBytes(row?.holds);
+  const bytes = decodeSqliteBlobHex(row?.holds);
   return bytes ? decodeHoldSet(bytes) : null;
 }
 
@@ -210,12 +226,12 @@ export async function findSimilarClimbCandidates(
   for (let start = 0; start < targetHoldIds.length; start += IN_LIST_BATCH) {
     const batch = targetHoldIds.slice(start, start + IN_LIST_BATCH);
     const rows = await db.getAllAsync<{ climb_ids: unknown }>(
-      `SELECT climb_ids FROM board_climb_hold_postings
+      `SELECT hex(climb_ids) AS climb_ids FROM board_climb_hold_postings
        WHERE board_type = ? AND layout_id = ? AND hold_id IN (${batch.map(() => '?').join(', ')})`,
       [params.boardType, params.layoutId, ...batch],
     );
     for (const row of rows) {
-      const bytes = asBytes(row.climb_ids);
+      const bytes = decodeSqliteBlobHex(row.climb_ids);
       if (!bytes || bytes.byteLength === 0) continue;
       const ids = decodePostings(bytes);
       postings.push(ids);
@@ -288,12 +304,13 @@ export type HoldUsage = {
 /**
  * Per-hold usage over a set of climbs — the heatmap's aggregate, done in JS over
  * hold-set blobs instead of a GROUP BY over per-hold rows. Feed it the rows of a
- * query joining the filtered climbs to `board_climb_hold_sets`.
+ * query joining the filtered climbs to `board_climb_hold_sets`. Pass the same
+ * accumulator for successive pages; it is updated in place and returned.
  */
 export function aggregateHoldUsage(
   rows: Iterable<{ holds: Uint8Array; ascents?: number | null; difficulty?: number | null }>,
+  usage: Map<number, HoldUsage> = new Map(),
 ): Map<number, HoldUsage> {
-  const usage = new Map<number, HoldUsage>();
   for (const { holds, ascents, difficulty } of rows) {
     const view = viewOf(holds);
     const count = holdSetSize(holds);

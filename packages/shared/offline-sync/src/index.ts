@@ -134,6 +134,7 @@ export type {
 export {
   ensureHoldIndex,
   isHoldIndexBehind,
+  readHoldIndexGeneration,
   holdIndexKey,
   HOLD_INDEX_KEY_PREFIX,
   HOLD_INDEX_CHUNK_CLIMBS,
@@ -149,6 +150,7 @@ export {
   holdStateToRole,
   encodeHoldSet,
   decodeHoldSet,
+  decodeSqliteBlobHex,
   decodeHoldSetIds,
   holdSetSize,
   encodePostings,

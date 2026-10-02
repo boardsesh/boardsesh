@@ -1,4 +1,5 @@
 export { createTestDatabase, listTables, tableColumns, primaryKeyColumns, type TestSqliteDb } from './sqlite-test-db';
+export { rejectBinarySqlResults, rejectBinaryDatabaseResults } from './reject-binary-results';
 // Test-only state resets for the engine's module-level guards — exported here
 // (not on the main entry) so app code never sees the escape hatches.
 export { __resetDrainerStateForTests } from '../mutation-queue/drainer';
