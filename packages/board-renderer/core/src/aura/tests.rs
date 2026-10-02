@@ -700,6 +700,7 @@ fn mark_styles_differ_and_none_draws_nothing() {
         MarkStyle::GlowFill,
         MarkStyle::Fill,
         MarkStyle::NoMark,
+        MarkStyle::Outline,
     ];
     let renders: Vec<Vec<u8>> = styles
         .iter()
@@ -727,6 +728,140 @@ fn mark_styles_differ_and_none_draws_nothing() {
         alpha(&renders[1], 100, 100) > 0 && alpha(&renders[1], 122, 100) > 0,
         "glow-fill has both"
     );
+}
+
+#[test]
+fn outline_parses_and_is_not_none() {
+    let parsed: RenderConfig = serde_json::from_str(
+        r##"{"board_width":10,"board_height":10,"output_width":10,"frames":"","thumbnail":false,"holds":[],"hold_state_map":{},
+             "render_mode":"aura","mark_style":"outline"}"##,
+    )
+    .unwrap();
+    assert_eq!(parsed.mark_style, Some(MarkStyle::Outline));
+    assert_eq!(effective_mark_style(&parsed), MarkStyle::Outline);
+    let mut thumb = config("p1r42");
+    thumb.thumbnail = true;
+    thumb.mark_style = Some(MarkStyle::Outline);
+    assert_eq!(
+        effective_mark_style(&thumb),
+        MarkStyle::Outline,
+        "an explicit outline is honoured on a thumbnail too; only an unset style defaults"
+    );
+}
+
+#[test]
+fn outline_strokes_the_silhouette_edge_and_leaves_the_hold_centre_clear() {
+    let mut cfg = config("p1r42");
+    cfg.mark_style = Some(MarkStyle::Outline);
+    cfg.fill.opacity = 1.0;
+    let data = render(&cfg);
+    // Square spans 80..120 px, r = 20: stroke 0.12 × 20 = 2.4 px centred on
+    // x = 120, so it covers 118.8..121.2 — pixel 119 inside the edge and pixel
+    // 120 outside it are both fully under the stroke.
+    let stroke_width = super::marks::OUTLINE_WIDTH_FRACTION * 20.0;
+    assert!(
+        stroke_width > 2.0 && stroke_width < 4.0,
+        "the fixture's pixel probes assume a 2..4 px stroke, got {stroke_width}"
+    );
+    for x in [119, 120] {
+        let px = pixel(&data, x, 100);
+        assert_eq!(px, [0, 255, 0, 255], "pure STARTING green at x = {x}");
+    }
+    // The left and top edges too: the stroke follows the whole silhouette.
+    assert_eq!(pixel(&data, 80, 100), [0, 255, 0, 255]);
+    assert_eq!(pixel(&data, 100, 80), [0, 255, 0, 255]);
+    // Inside the ring the hold's own art shows: no fill, unlike `fill`.
+    assert_eq!(alpha(&data, 100, 100), 0, "the hold centre stays clear");
+    assert_eq!(alpha(&data, 110, 100), 0, "and so does the body off-centre");
+    let mut fill = config("p1r42");
+    fill.mark_style = Some(MarkStyle::Fill);
+    assert!(
+        alpha(&render(&fill), 100, 100) > 0,
+        "where fill paints the centre"
+    );
+    // The glow still runs outside the stroke.
+    assert!(alpha(&data, 125, 100) > 0, "glow past the stroke");
+    assert_eq!(alpha(&data, 150, 100), 0, "and nothing past the reach");
+    // Off the edge of the stroke, inward, the alpha drops straight to zero:
+    // the outline never bleeds into the hold body the way a glow would.
+    assert_eq!(alpha(&data, 117, 100), 0);
+}
+
+#[test]
+fn outline_alpha_is_the_fill_opacity_and_the_glow_tightens_with_reach() {
+    let mut cfg = config("p1r42");
+    cfg.mark_style = Some(MarkStyle::Outline);
+    cfg.fill.opacity = 0.5;
+    let half = render(&cfg);
+    assert_eq!(
+        alpha(&half, 119, 100),
+        128,
+        "the stroke's alpha is fill.opacity (0.5), inside the edge where no glow sits under it"
+    );
+    cfg.fill.opacity = 0.0;
+    let mut glow_only = config("p1r42");
+    glow_only.mark_style = Some(MarkStyle::Glow);
+    assert_eq!(
+        render(&cfg),
+        render(&glow_only),
+        "a zero-alpha outline is exactly the glow"
+    );
+
+    // Default reach 14 px: the glow reaches x = 133. At the shipped preset's
+    // floor (reach 0.5) it stops at 7 px, x ≈ 126 — the tight Aura edge.
+    let mut tight = config("p1r42");
+    tight.mark_style = Some(MarkStyle::Outline);
+    tight.glow.reach_scale = 0.5;
+    let tight_data = render(&tight);
+    assert!(
+        alpha(&tight_data, 124, 100) > 0,
+        "the tight glow is still lit"
+    );
+    assert_eq!(alpha(&tight_data, 129, 100), 0, "and ends well short of 14");
+    let wide = render(&{
+        let mut wide = config("p1r42");
+        wide.mark_style = Some(MarkStyle::Outline);
+        wide
+    });
+    assert!(
+        alpha(&wide, 129, 100) > 0,
+        "the default reach still glows there"
+    );
+    assert!(total_alpha(&tight_data) < total_alpha(&wide));
+}
+
+#[test]
+fn outline_follows_the_circle_fallback_and_the_brush_multiplier() {
+    let mut cfg = config("p2r43");
+    cfg.mark_style = Some(MarkStyle::Outline);
+    cfg.fill.opacity = 1.0;
+    let data = render(&cfg);
+    // Circle r = 20 at (300, 100): the stroke straddles x = 320.
+    let edge = pixel(&data, 319, 100);
+    assert_eq!(
+        edge,
+        [0, 255, 255, 255],
+        "pure HAND cyan on the circle edge"
+    );
+    assert_eq!(alpha(&data, 300, 100), 0, "circle centre clear");
+
+    // Twice the brush, twice the stroke: 4.8 px covers 117.6..122.4, so pixel
+    // 118 is fully under it and pixel 117 partly — at 1× both were clear.
+    let mut square = config("p1r42");
+    square.mark_style = Some(MarkStyle::Outline);
+    square.fill.opacity = 1.0;
+    square.stroke_width_multiplier = 2.0;
+    let thick = render(&square);
+    assert_eq!(
+        alpha(&thick, 118, 100),
+        255,
+        "the doubled stroke reaches in"
+    );
+    assert!(
+        alpha(&thick, 117, 100) > 0,
+        "and partly covers the next pixel"
+    );
+    assert_eq!(alpha(&thick, 100, 100), 0);
 }
 
 #[test]

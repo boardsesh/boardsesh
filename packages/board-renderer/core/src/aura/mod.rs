@@ -3,8 +3,8 @@
 //! design passes settled on.
 //!
 //! Layer order, bottom to top: veil → soft disc (off by default) → LED covers
-//! → glow → fill → LED base plate → glyphs → classic above-markers for
-//! auxiliary roles. The classic renderer is untouched; `render_overlay`
+//! → glow → fill or outline → LED base plate → glyphs → classic above-markers
+//! for auxiliary roles. The classic renderer is untouched; `render_overlay`
 //! dispatches here on `render_mode: "aura"`.
 //!
 //! The LED base plate layer only draws on holds whose art has a traced
@@ -12,8 +12,8 @@
 //! the drawing is exactly what it was before that field existed.
 //!
 //! What the classic knobs mean here: `shape_size_multiplier` scales the glow's
-//! reach, `stroke_width_multiplier` scales the fill's edge bands and the glyph
-//! line width, and `hold_state_map[].shape` is ignored — the silhouette is the
+//! reach, `stroke_width_multiplier` scales the fill's edge bands, the outline's
+//! stroke and the glyph line width, and `hold_state_map[].shape` is ignored — the silhouette is the
 //! shape, and the glyphs are the accessibility channel that replaces it.
 
 mod geometry;
@@ -31,7 +31,8 @@ use crate::types::{Color, GlyphMode, HoldData, HoldRenderStyle, MarkStyle, Rende
 use geometry::LitHold;
 use glow::{FalloffLut, falloff_stops, paint_glow};
 use marks::{
-    paint_fill, paint_glyphs, paint_led_base, paint_led_covers, paint_soft_discs, paint_veil,
+    paint_fill, paint_glyphs, paint_led_base, paint_led_covers, paint_outline, paint_soft_discs,
+    paint_veil,
 };
 
 fn clamp_multiplier(value: f32) -> f32 {
@@ -100,8 +101,15 @@ pub fn render(config: &RenderConfig) -> Result<(Vec<u8>, u32, u32), String> {
     }
 
     let mark_style = effective_mark_style(config);
-    let draws_glow = matches!(mark_style, MarkStyle::Glow | MarkStyle::GlowFill);
+    // `outline` keeps the glow and swaps the fill for a stroke. The glow it
+    // keeps is the ordinary one: how tight it sits is whatever reach and
+    // falloff the config carries, so there is no outline-specific glow code.
+    let draws_glow = matches!(
+        mark_style,
+        MarkStyle::Glow | MarkStyle::GlowFill | MarkStyle::Outline
+    );
     let draws_fill = matches!(mark_style, MarkStyle::Fill | MarkStyle::GlowFill);
+    let draws_outline = matches!(mark_style, MarkStyle::Outline);
     // One switch for the whole plate treatment, read by all three consumers.
     // Without it `opacity: 0` stopped the rim being painted but still dimmed
     // the fill under it and still measured the glow off it — a hold left 40%
@@ -167,6 +175,12 @@ pub fn render(config: &RenderConfig) -> Result<(Vec<u8>, u32, u32), String> {
             stroke_width_multiplier,
             interior_scale,
         );
+    } else if draws_outline {
+        // `config.fill.opacity` is the STROKE's alpha here, not a fill's. That
+        // is deliberate, not a crossed wire: outline and fill never draw in
+        // the same render, so the one opacity field serves whichever mark is
+        // on, and the JS side has no second knob to keep in step.
+        paint_outline(&mut pixmap, &lit, &config.fill, stroke_width_multiplier);
     }
     // The LED base plate goes on last of the silhouette layers: it is the mark
     // on an annotated hold, so it sits over the fill it dimmed.
