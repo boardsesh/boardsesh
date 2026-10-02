@@ -948,3 +948,49 @@ void test('normal cancellation 409 for a live queued run still escalates to forc
   assert.deepEqual(scenario.calls, ['cancel', 'force']);
   assert.equal(scenario.clock.now() - NOW, CANCEL_GRACE_MS);
 });
+
+void test('dry run refreshes an advancing main and preserves its spent manual retry', async () => {
+  const newerHeadSha = '3333333333333333333333333333333333333333';
+  const stalled = run({ head_sha: HEAD_SHA });
+  let historyReads = 0;
+  const plan = await runCli({
+    github: {
+      listRuns: () => {
+        historyReads += 1;
+        return {
+          runs:
+            historyReads > 1
+              ? [
+                  stalled,
+                  run({
+                    id: 2,
+                    head_sha: newerHeadSha,
+                    status: 'completed',
+                    conclusion: 'failure',
+                    event: 'workflow_dispatch',
+                  }),
+                ]
+              : [stalled],
+          recentPageOk: true,
+        };
+      },
+      getHeadSha: () => newerHeadSha,
+      listJobs: () => [{ name: 'sync-static-assets', status: 'queued' }],
+      getRun: () => assert.fail('dry run must not initiate cancellation confirmation'),
+      cancelRun: () => assert.fail('dry run must not cancel'),
+      forceCancelRun: () => assert.fail('dry run must not force-cancel'),
+      dispatchRun: () => assert.fail('dry run must not dispatch'),
+    },
+    headSha: HEAD_SHA,
+    now: () => NOW,
+    runUrlBase: '',
+    discordFilePath: '',
+    outputPath: '',
+    dryRun: true,
+  });
+  assert.equal(historyReads, 2);
+  assert.equal(plan.cancel.length, 1);
+  assert.equal(plan.redispatch, false);
+  assert.equal(plan.followUp, 'needs-intervention');
+  assert.doesNotMatch(formatSummary(plan, { dryRun: true }), /would dispatch/);
+});

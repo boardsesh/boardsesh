@@ -580,14 +580,17 @@ async function runCli({
   plan.cancel = plan.cancel.filter((entry) => !resumedIds.has(String(entry.run.id)));
 
   let historyOk = recentPageOk;
-  if (!dryRun && hadCandidates) {
+  if (hadCandidates) {
     try {
       const currentHeadSha = github.getHeadSha ? github.getHeadSha() : headSha;
       const freshHistory = github.listRuns();
       historyOk = freshHistory.recentPageOk;
       // Recompute follow-up against real state, without pretending planned
       // cancellations have completed. Pending runs may have changed meanwhile.
-      const survivor = freshHistory.runs.some((run) => isHoldingRun(run) || run.status === 'pending');
+      const plannedIds = new Set(plan.cancel.map((entry) => String(entry.run.id)));
+      const survivor = freshHistory.runs.some(
+        (run) => !(dryRun && plannedIds.has(String(run.id))) && (isHoldingRun(run) || run.status === 'pending'),
+      );
       const headDeployed = freshHistory.runs.some(
         (run) => run.head_sha === currentHeadSha && run.status === 'completed' && run.conclusion === 'success',
       );
