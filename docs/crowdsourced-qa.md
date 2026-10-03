@@ -321,11 +321,12 @@ Every backend log line for this feature is tagged `[qa]`.
   usually the anonymous 60/hr ceiling on a deploy with no token. It self-heals in 30 seconds once
   GitHub answers.
 - **The label disagrees with the comments.** Expected when a PR has several verdicts: the label is
-  the latest **tester** one filed **against the current head**. A PR whose only verdicts came from
-  non-testers carries comments and no label at all, and so does one whose only tester verdict is
-  unverified (`head_sha IS NULL`) or was filed on an earlier head — check `SELECT verdict, by_tester,
-  head_sha FROM qa_verdicts WHERE pr_number = N ORDER BY created_at DESC` before assuming the mirror
-  failed.
+  the latest **tester** one filed **against the current head**. A PR carries comments and no label
+  when its only verdicts came from non-testers, or when its only tester verdict was filed on an
+  earlier head. It carries neither comment nor label for a tester verdict that is unverified
+  (`head_sha IS NULL`), because that one was never mirrored at all and needs the operator replay
+  above. Check `SELECT verdict, by_tester, head_sha FROM qa_verdicts WHERE pr_number = N ORDER BY
+  created_at DESC` before assuming the mirror failed.
 - **Verdict comment spam.** Filing is open to every signed-in account (only the label is
   tester-gated), so the write surface on the public repo is no longer a curated pool. The limiter is
   10/min per caller (`applyRateLimit(ctx, 10, 'submitQaVerdict')`) and bodies still go through
