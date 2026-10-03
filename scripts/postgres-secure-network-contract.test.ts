@@ -201,7 +201,8 @@ describe('production database network workflow contract', () => {
     expect(dockerfile).toContain(
       'gcr.io/distroless/static-debian13:nonroot@sha256:1c2c046bc09ed40fad370b599a0b1ae7987f55b01e247cf27a7c27cd97e5bbc7',
     );
-    expect(dockerfile).toContain('USER nonroot:nonroot');
+    expect(dockerfile).toContain('USER 0:0');
+    expect(dockerfile).not.toContain('USER nonroot:nonroot');
     expect(dockerfile).toContain('COPY --chown=65532:65532 state/ /var/lib/boardsesh-tsnet/');
   });
 });

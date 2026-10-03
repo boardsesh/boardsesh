@@ -48,6 +48,13 @@ Runtime environment:
 | `FORWARD_SHUTDOWN_GRACE` | `20s` | Shared drain deadline; supported range 1s–60s |
 | `PORT` | `8080` | Railway-private health/metrics listener |
 
+Railway mounts volumes as root. The container starts as root only to make the
+fixed tsnet state directory private and owned by UID/GID 65532; it clears
+supplementary groups and drops to that identity before starting tsnet or opening
+listeners. When started as root, the process refuses an alternate `TS_STATE_DIR`
+so startup cannot chown an operator-selected path. Local non-root runs keep
+their invoking identity.
+
 The session cap deliberately bounds total PostGIS connection pressure across all
 three routes. It does not reserve forensic capacity: a migration using all slots
 will also reject new forensic sessions. Before a maintenance window, size task
@@ -68,8 +75,10 @@ Metrics and operational logs expose route names, counters, and bounded error
 classes only, never private target addresses, credentials, client identities,
 or query text. Readiness checks query current tailnet status with a one-second
 timeout; they do not cache successful status after a disconnection. Shutdown
-withdraws readiness, cancels sessions and closes route listeners before draining
-HTTP requests and proxy work under one shared grace deadline. The project's
+withdraws readiness and closes route listeners, then lets accepted sessions
+finish while HTTP requests and proxy work share one absolute grace deadline.
+At that deadline, remaining sessions are canceled and both database sockets
+close. The project's
 `.railway/railway.ts` entry for `boardsesh-postgres-tailscale-forwarder` sets
 Railway's healthcheck to `/readyz`, a 60-second healthcheck timeout, and a
 65-second draining window. Railway's
@@ -108,9 +117,10 @@ step remains tracked under #5041.
    mutable tag.
 7. Create a persistent Railway volume at `/var/lib/boardsesh-tsnet`, attach the
    service to the same private network as `PostGIS - PROD`, and set the runtime
-   variables above. Review the complete `railway config plan` and resolve every
-   unrelated diff before applying the reviewed IaC settings. Verify `/readyz`
-   plus the 65-second teardown window before database traffic.
+   variables above. Verify a cold-volume start can write tsnet identity as UID
+   65532. Review the complete `railway config plan` and resolve every unrelated
+   diff before applying the reviewed IaC settings. Verify `/readyz` plus the
+   65-second teardown window before database traffic.
 8. Do **not** create a Railway public domain or TCP proxy for the forwarder.
    Confirm the Railway service has no public networking before continuing.
 9. Confirm the tsnet node is non-ephemeral, advertises only the forwarder tag,

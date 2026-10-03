@@ -50,6 +50,13 @@ jobs:
         working-directory: deploy/postgres-tailscale-forwarder
         run: go test -race ./...
 
+      - name: Test root-owned volume bootstrap and privilege drop
+        working-directory: deploy/postgres-tailscale-forwarder
+        run: |
+          go_bin="$(command -v go)"
+          sudo env GOMODCACHE="$(go env GOMODCACHE)" GOPROXY=off GOSUMDB=off \
+            "$go_bin" test -count=1 -run '^TestRoot(OwnedStateDirectoryBecomesWritableByRuntimeIdentity|StartupCannotChownAnOperatorSelectedPath)$' .
+
       - name: Vet forwarder
         working-directory: deploy/postgres-tailscale-forwarder
         run: go vet ./...
@@ -57,7 +64,7 @@ jobs:
       - name: Check workflow and policy contracts
         run: vp test run --project scripts scripts/postgres-secure-network-contract.test.ts --reporter=agent
 
-      - name: Build the non-root image
+      - name: Build the forwarder image
         run: docker build --file deploy/postgres-tailscale-forwarder/Dockerfile deploy/postgres-tailscale-forwarder
 
   publish:

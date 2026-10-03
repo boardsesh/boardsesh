@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"net"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -13,6 +14,7 @@ const (
 	forwarderHostname = "boardsesh-db-forwarder"
 	forwarderTag      = "tag:boardsesh-db-forwarder"
 	targetDNSSuffix   = ".railway.internal"
+	defaultStateDir   = "/var/lib/boardsesh-tsnet"
 )
 
 type routeConfig struct {
@@ -51,11 +53,14 @@ func loadConfig(getenv getenvFunc) (config, error) {
 
 	stateDir := strings.TrimSpace(getenv("TS_STATE_DIR"))
 	if stateDir == "" {
-		stateDir = "/var/lib/boardsesh-tsnet"
+		stateDir = defaultStateDir
 	}
 	stateDir = filepath.Clean(stateDir)
 	if !filepath.IsAbs(stateDir) || stateDir == string(filepath.Separator) {
 		return config{}, fmt.Errorf("TS_STATE_DIR must be an absolute non-root path")
+	}
+	if os.Geteuid() == 0 && stateDir != defaultStateDir {
+		return config{}, fmt.Errorf("root startup may only prepare the fixed tsnet state path %s", defaultStateDir)
 	}
 
 	healthPort, err := parseBoundedInt("PORT", getenv("PORT"), 8080, 1, 65535)

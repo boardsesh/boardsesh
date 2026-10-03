@@ -19,7 +19,9 @@ FROM gcr.io/distroless/static-debian13:nonroot@sha256:1c2c046bc09ed40fad370b599a
 COPY --from=build /out/postgres-tailscale-forwarder /usr/local/bin/postgres-tailscale-forwarder
 COPY --chown=65532:65532 state/ /var/lib/boardsesh-tsnet/
 
-USER nonroot:nonroot
+# Start only long enough for the binary to prepare a mounted state directory,
+# then drop to UID/GID 65532 before Tailscale or network listeners start.
+USER 0:0
 EXPOSE 8080
 VOLUME ["/var/lib/boardsesh-tsnet"]
 ENTRYPOINT ["/usr/local/bin/postgres-tailscale-forwarder"]

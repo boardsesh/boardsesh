@@ -12,6 +12,8 @@ import (
 	"time"
 )
 
+// Dial implementations must return promptly after ctx is canceled so forced
+// shutdown can join every session before closing the tailnet.
 type dialContextFunc func(context.Context, string, string) (net.Conn, error)
 
 type copyResult struct {
@@ -39,20 +41,28 @@ func newForwarder(config config, metrics *forwarderMetrics, logger *log.Logger) 
 	}
 }
 
-// Register the accept loop before spawning it. Shutdown may only wait after
-// every route is started; a late Accept can still register a session until the
-// accept loop returns, even after its listener has been closed.
+// Register the accept loop before spawning it. Shutdown joins accept loops
+// before sessions because Accept may have obtained a connection before
+// cancellation but return after it.
 func (forwarder *forwarder) startServing(ctx context.Context, route routeConfig, listener net.Listener, serveErrors chan<- error) {
+	forwarder.startServingWithContexts(ctx, ctx, route, listener, serveErrors)
+}
+
+func (forwarder *forwarder) startServingWithContexts(admissionContext, sessionContext context.Context, route routeConfig, listener net.Listener, serveErrors chan<- error) {
 	forwarder.acceptLoops.Add(1)
 	go func() {
 		defer forwarder.acceptLoops.Done()
-		if err := forwarder.serve(ctx, route, listener); err != nil {
+		if err := forwarder.serveWithContexts(admissionContext, sessionContext, route, listener); err != nil {
 			serveErrors <- err
 		}
 	}()
 }
 
 func (forwarder *forwarder) serve(ctx context.Context, route routeConfig, listener net.Listener) error {
+	return forwarder.serveWithContexts(ctx, ctx, route, listener)
+}
+
+func (forwarder *forwarder) serveWithContexts(admissionContext, sessionContext context.Context, route routeConfig, listener net.Listener) error {
 	routeMetrics := forwarder.metrics.route(route.Name)
 	if routeMetrics == nil {
 		return fmt.Errorf("metrics are not registered for route %q", route.Name)
@@ -60,10 +70,14 @@ func (forwarder *forwarder) serve(ctx context.Context, route routeConfig, listen
 	for {
 		client, err := listener.Accept()
 		if err != nil {
-			if ctx.Err() != nil || errors.Is(err, net.ErrClosed) {
+			if admissionContext.Err() != nil || errors.Is(err, net.ErrClosed) {
 				return nil
 			}
 			return fmt.Errorf("accept %s route: %w", route.Name, err)
+		}
+		if admissionContext.Err() != nil {
+			_ = client.Close()
+			return nil
 		}
 
 		select {
@@ -77,7 +91,7 @@ func (forwarder *forwarder) serve(ctx context.Context, route routeConfig, listen
 					<-forwarder.sessionCap
 					routeMetrics.activeSessions.Add(-1)
 				}()
-				forwarder.proxy(ctx, route, client, routeMetrics)
+				forwarder.proxy(sessionContext, route, client, routeMetrics)
 			}()
 		default:
 			routeMetrics.rejectionsTotal.Add(1)
@@ -169,15 +183,11 @@ func networkErrorClass(err error) string {
 }
 
 func (forwarder *forwarder) wait(timeout time.Duration) bool {
-	// run cancels the proxy context and closes listeners before waiting. Join
-	// accept loops first so no session Add can race with a zero-count Wait.
-	// Both phases share the same deadline; cancellation releases real sockets.
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 	completed := make(chan struct{})
 	go func() {
-		forwarder.acceptLoops.Wait()
-		forwarder.sessions.Wait()
+		forwarder.waitForDrain()
 		close(completed)
 	}()
 	select {
@@ -186,4 +196,12 @@ func (forwarder *forwarder) wait(timeout time.Duration) bool {
 	case <-timer.C:
 		return false
 	}
+}
+
+func (forwarder *forwarder) waitForDrain() {
+	// Join accept loops before sessions so no session Add can race with a
+	// zero-count Wait. After the deadline, callers use this only to join forced
+	// socket cleanup before closing the tailnet; it does not extend the drain.
+	forwarder.acceptLoops.Wait()
+	forwarder.sessions.Wait()
 }

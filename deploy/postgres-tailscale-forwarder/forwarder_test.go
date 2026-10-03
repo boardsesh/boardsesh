@@ -68,7 +68,7 @@ func TestForwarderCancellationDrainsAnOpenSessionAfterWaitTimeout(t *testing.T) 
 	}
 }
 
-func TestForwarderDrainWaitsForLateAcceptRegistration(t *testing.T) {
+func TestForwarderDrainWaitsForLateAcceptThenRejectsIt(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	route := routeConfig{Name: "primary", TargetAddr: "unused"}
@@ -77,17 +77,13 @@ func TestForwarderDrainWaitsForLateAcceptRegistration(t *testing.T) {
 	client, server := net.Pipe()
 	defer client.Close()
 	listener := &pausedAcceptListener{connection: server, accepted: make(chan struct{}), release: make(chan struct{}), closed: make(chan struct{})}
-	dialStarted := make(chan struct{})
-	releaseDial := make(chan struct{})
-	var releaseDialOnce sync.Once
+	dialStarted := make(chan struct{}, 1)
 	proxy.dial = func(context.Context, string, string) (net.Conn, error) {
-		close(dialStarted)
-		<-releaseDial
-		return nil, context.Canceled
+		dialStarted <- struct{}{}
+		return nil, errors.New("unexpected dial after shutdown")
 	}
 	defer func() {
 		listener.releaseOnce.Do(func() { close(listener.release) })
-		releaseDialOnce.Do(func() { close(releaseDial) })
 		_ = listener.Close()
 	}()
 	proxy.startServing(ctx, route, listener, make(chan error, 1))
@@ -97,23 +93,19 @@ func TestForwarderDrainWaitsForLateAcceptRegistration(t *testing.T) {
 	// Accept has obtained a connection but has not returned it for session
 	// registration. A zero session count must not mean shutdown is complete.
 	if proxy.wait(20 * time.Millisecond) {
-		t.Fatal("drain completed before the accepted connection was registered")
+		t.Fatal("drain completed before the in-progress accept returned")
 	}
 	listener.releaseOnce.Do(func() { close(listener.release) })
+	if !proxy.wait(time.Second) {
+		t.Fatal("accept loop did not finish after shutdown")
+	}
 	select {
 	case <-dialStarted:
-	case <-time.After(time.Second):
-		t.Fatal("late accepted connection was not registered")
-	}
-	if proxy.wait(20 * time.Millisecond) {
-		t.Fatal("drain completed before the late session finished")
-	}
-	releaseDialOnce.Do(func() { close(releaseDial) })
-	if !proxy.wait(time.Second) {
-		t.Fatal("late accepted session did not drain")
+		t.Fatal("late accepted connection started a new upstream session")
+	default:
 	}
 	if metrics.route("primary").activeSessions.Load() != 0 {
-		t.Fatal("drained late session retained capacity")
+		t.Fatal("rejected late accept retained session capacity")
 	}
 }
 

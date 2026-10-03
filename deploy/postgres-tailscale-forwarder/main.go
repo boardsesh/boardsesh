@@ -36,12 +36,18 @@ func run(ctx context.Context, getenv getenvFunc, logger *log.Logger) error {
 	if err != nil {
 		return fmt.Errorf("configuration: %w", err)
 	}
-	if err := os.MkdirAll(config.StateDir, 0o700); err != nil {
-		return fmt.Errorf("create tsnet state directory: %w", err)
+	if err := prepareStateDirectory(config.StateDir); err != nil {
+		return err
 	}
+	if err := dropPrivileges(); err != nil {
+		return err
+	}
+	_ = os.Unsetenv("TS_CLIENT_SECRET")
 
 	metrics := newForwarderMetrics(config.Routes)
 	proxy := newForwarder(config, metrics, logger)
+	sessionContext, cancelSessions := context.WithCancel(context.Background())
+	defer cancelSessions()
 	tailnet := &tsnet.Server{
 		Dir:           config.StateDir,
 		Hostname:      forwarderHostname,
@@ -52,7 +58,6 @@ func run(ctx context.Context, getenv getenvFunc, logger *log.Logger) error {
 			logger.Printf("component=tsnet message=%q", fmt.Sprintf(format, arguments...))
 		},
 	}
-	_ = os.Unsetenv("TS_CLIENT_SECRET")
 	defer tailnet.Close()
 
 	startupContext, cancelStartup := context.WithTimeout(runContext, config.StartupTimeout)
@@ -78,7 +83,7 @@ func run(ctx context.Context, getenv getenvFunc, logger *log.Logger) error {
 			return fmt.Errorf("listen on tailnet route %s: %w", route.Name, err)
 		}
 		listeners = append(listeners, listener)
-		proxy.startServing(runContext, route, listener, serveErrors)
+		proxy.startServingWithContexts(runContext, sessionContext, route, listener, serveErrors)
 		logger.Printf("event=route_listening route=%s tailnet_port=%d", route.Name, route.ListenPort)
 	}
 
@@ -118,15 +123,16 @@ func run(ctx context.Context, getenv getenvFunc, logger *log.Logger) error {
 	case runError = <-serveErrors:
 	}
 
-	shutdownForwarder(cancelRun, listeners, healthServer, proxy, config.ShutdownGrace, logger)
+	shutdownForwarder(cancelRun, cancelSessions, listeners, healthServer, proxy, config.ShutdownGrace, logger)
 	return runError
 }
 
-// Keep run's cancellation, listener closure and drain ordering in one place.
-func shutdownForwarder(cancelRun context.CancelFunc, listeners []net.Listener, healthServer *http.Server, proxy *forwarder, grace time.Duration, logger *log.Logger) {
+// Withdraw readiness and stop admission before allowing active proxy sessions
+// to finish until one deadline. Only sessions still active then are canceled.
+func shutdownForwarder(cancelRun, cancelSessions context.CancelFunc, listeners []net.Listener, healthServer *http.Server, proxy *forwarder, grace time.Duration, logger *log.Logger) {
 	shutdownDeadline := time.Now().Add(grace)
-	cancelRun()
 	proxy.metrics.ready.Store(false)
+	cancelRun()
 	closeListeners(listeners)
 	shutdownContext, cancelShutdown := context.WithDeadline(context.Background(), shutdownDeadline)
 	defer cancelShutdown()
@@ -134,6 +140,8 @@ func shutdownForwarder(cancelRun context.CancelFunc, listeners []net.Listener, h
 		logger.Printf("event=health_shutdown_failed error=%q", err)
 	}
 	if !proxy.wait(time.Until(shutdownDeadline)) {
+		cancelSessions()
+		proxy.waitForDrain()
 		logger.Printf("event=session_drain_timed_out grace=%s", grace)
 	}
 	logger.Printf("event=forwarder_shutdown")
