@@ -26,7 +26,7 @@ affected layout so a bulk gap does not remain in the first-download path.
 
 `.github/workflows/export-board-snapshots.yml` stages the per-layout publisher behind `SNAPSHOT_HOMELAB_EXPORT_ENABLED`:
 
-- Before it is `true`, GitHub runs the full primary export at **07:15 UTC** and bounded gzip scans at **:07, :22, :37, and :52** outside the 07:00 UTC hour. A complete `workflow_dispatch` remains an operator fallback. The full export publishes identity `v1` and live gzip `v1-gzip`; the separate hardware-catalog producer is described below.
+- Before it is `true`, GitHub runs the full primary export at **07:15 UTC** and bounded gzip scans at **:07, :22, :37, and :52** outside the 07:00 UTC hour. The alternative batch-worker schedule uses the same cadence, leaving that hour clear for the full export. A complete `workflow_dispatch` remains an operator fallback. The full export publishes identity `v1` and live gzip `v1-gzip`; the separate hardware-catalog producer is described below.
 - After it is `true`, the homelab standby timers own those per-layout runs. GitHub checks publisher heartbeats at **:12, :27, :42, and :57**. It runs the pinned exporter image against the Railway primary only when refresh is older than 45 minutes or full is older than 30 hours. A missing, malformed, future-dated, mutable-image, or wrong-prefix heartbeat is stale. A full fallback rebuilds both per-layout prefixes.
 - `workflow_dispatch` remains an explicit primary fallback in either mode. With homelab mode enabled it requires the primary fence. GitHub Actions never promotes PostgreSQL.
 
