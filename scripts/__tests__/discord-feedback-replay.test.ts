@@ -1,9 +1,11 @@
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 
 import { describe, expect, it, vi } from 'vitest';
 
-import { bundleDigest } from '../discord-feedback-scan';
+import { bundleDigest, runCli } from '../discord-feedback-scan';
 import {
   GitHubReplayArtifactClient,
   openReplayBatch,
@@ -300,9 +302,14 @@ it('wires producer IDs through whole-run and failed-job replay paths', () => {
   expect(collectUpload?.with?.name).toBe('${{ steps.bundle_name.outputs.name }}');
   expect(collectReplayUpload?.with?.name).toBe('${{ steps.restore.outputs.artifact_name }}');
   expect(previousReplayDownload?.with?.['artifact-ids']).toBe('${{ steps.previous_replay.outputs.artifact_id }}');
+  expect(previousReplayDownload?.with?.['merge-multiple']).toBe(true);
+  expect(previousReplayDownload?.with?.['github-token']).toBeUndefined();
+  expect(previousReplayDownload?.with?.repository).toBeUndefined();
+  expect(previousReplayDownload?.with?.['run-id']).toBeUndefined();
   expect(triage?.if).toContain("needs.collect.outputs.replay_artifact_id == ''");
   expect(triageValidation?.env?.BUNDLE_SHA256).toBe('${{ needs.collect.outputs.bundle_sha256 }}');
   expect(triageBundleDownload?.with?.['artifact-ids']).toBe('${{ needs.collect.outputs.bundle_artifact_id }}');
+  expect(triageBundleDownload?.with?.['merge-multiple']).toBe(true);
   expect(triageReplayUpload?.with?.name).toBe('${{ steps.seal_replay.outputs.artifact_name }}');
   expect(applyProducer?.env?.COLLECT_REPLAY_ID).toBe('${{ needs.collect.outputs.replay_artifact_id }}');
   expect(applyProducer?.env?.COLLECT_REPLAY_NAME).toBe('${{ needs.collect.outputs.replay_artifact_name }}');
@@ -310,9 +317,148 @@ it('wires producer IDs through whole-run and failed-job replay paths', () => {
   expect(applyProducer?.env?.TRIAGE_REPLAY_NAME).toBe('${{ needs.triage.outputs.replay_artifact_name }}');
   expect(applyProducer?.run).toContain('--mode select-replay');
   expect(applyDownload?.with?.['artifact-ids']).toBe('${{ steps.replay_producer.outputs.artifact_id }}');
+  expect(applyDownload?.with?.['merge-multiple']).toBe(true);
+  expect(applyDownload?.with?.['github-token']).toBeUndefined();
+  expect(applyDownload?.with?.repository).toBeUndefined();
+  expect(applyDownload?.with?.['run-id']).toBeUndefined();
+});
+
+it('materializes artifact extraction paths and runs the real validate/restore CLIs', async () => {
+  const workflowText = readFileSync(
+    new URL('../../.github/workflows/discord-feedback-issues.yml', import.meta.url),
+    'utf8',
+  );
+  const workflow = parseYaml(workflowText) as unknown as WorkflowDefinition;
+  const collectSteps = workflow.jobs.collect?.steps ?? [];
+  const triageSteps = workflow.jobs.triage?.steps ?? [];
+  const applySteps = workflow.jobs.apply?.steps ?? [];
+  const previousReplayDownload = collectSteps.find((step) => step.id === 'download_previous_replay');
+  const triageBundleDownload = triageSteps.find((step) => step.uses === 'actions/download-artifact@v4');
+  const applyReplayDownload = applySteps.find((step) => step.id === 'download_replay');
+  if (!previousReplayDownload || !triageBundleDownload || !applyReplayDownload) {
+    throw new Error('Expected one-artifact downloads are missing from the workflow.');
+  }
+
+  const temporaryDirectory = mkdtempSync(join(tmpdir(), 'boardsesh-discord-artifact-layout-'));
+  const serializedBundle = bundleJson();
+  const serializedDecisions = JSON.stringify({ decisions: [decision(1)] });
+  const sealed = sealReplayBatch({
+    runId: RUN_ID,
+    runAttempt: 1,
+    channelId: CHANNEL_ID,
+    triggerMessageId: COMMAND_ID,
+    expectedBundleSha256: bundleDigest(serializedBundle),
+    serializedBundle,
+    serializedDecisions,
+  });
+
+  try {
+    const triagePath = join(temporaryDirectory, 'triage');
+    const triageBundlePath = materializeActionArtifactFile(
+      triageBundleDownload,
+      triagePath,
+      `discord-bundle-${RUN_ID}-attempt-1`,
+      'discord-bundle.json',
+      serializedBundle,
+    );
+    const triageDecisionsPath = join(triagePath, 'discord-decisions.json');
+    writeFileSync(triageDecisionsPath, serializedDecisions);
+    const validateExitCode = await runCli(
+      [
+        '--mode',
+        'validate',
+        '--channel-id',
+        CHANNEL_ID,
+        '--trigger-message-id',
+        COMMAND_ID,
+        '--bundle',
+        triageBundlePath,
+        '--decisions',
+        triageDecisionsPath,
+        '--bundle-sha256',
+        bundleDigest(serializedBundle),
+      ],
+      { NODE_ENV: 'test' },
+      { error: vi.fn(), log: vi.fn(), warn: vi.fn() },
+    );
+    expect(validateExitCode).toBe(0);
+
+    const previousReplayPath = materializeActionArtifactFile(
+      previousReplayDownload,
+      join(temporaryDirectory, 'previous-replay'),
+      sealed.metadata.artifactName,
+      'discord-replay.json',
+      sealed.serializedReplay,
+    );
+    const previousRestore = await restoreReplayFromDownloadedArtifact(
+      previousReplayPath,
+      join(temporaryDirectory, 'collect-restore'),
+    );
+    expect(readFileSync(previousRestore.bundlePath, 'utf8')).toBe(serializedBundle);
+    expect(readFileSync(previousRestore.decisionsPath, 'utf8')).toBe(serializedDecisions);
+
+    const applyReplayPath = materializeActionArtifactFile(
+      applyReplayDownload,
+      join(temporaryDirectory, 'validated-replay'),
+      sealed.metadata.artifactName,
+      'discord-replay.json',
+      sealed.serializedReplay,
+    );
+    const applyRestore = await restoreReplayFromDownloadedArtifact(
+      applyReplayPath,
+      join(temporaryDirectory, 'apply-restore'),
+    );
+    expect(readFileSync(applyRestore.bundlePath, 'utf8')).toBe(serializedBundle);
+    expect(readFileSync(applyRestore.decisionsPath, 'utf8')).toBe(serializedDecisions);
+  } finally {
+    rmSync(temporaryDirectory, { recursive: true, force: true });
+  }
 });
 
 function decisionIndexes(serializedDecisions: string): number[] {
   const parsed = JSON.parse(serializedDecisions) as { decisions: Array<{ issueIndex: number }> };
   return parsed.decisions.map(({ issueIndex }) => issueIndex);
+}
+
+function materializeActionArtifactFile(
+  step: WorkflowStep,
+  downloadPath: string,
+  artifactName: string,
+  fileName: string,
+  contents: string,
+): string {
+  const extractedDirectory = step.with?.['merge-multiple'] === true ? downloadPath : join(downloadPath, artifactName);
+  mkdirSync(extractedDirectory, { recursive: true });
+  writeFileSync(join(extractedDirectory, fileName), contents);
+  return join(downloadPath, fileName);
+}
+
+async function restoreReplayFromDownloadedArtifact(replayPath: string, outputDirectory: string) {
+  mkdirSync(outputDirectory, { recursive: true });
+  const bundlePath = join(outputDirectory, 'discord-bundle.json');
+  const decisionsPath = join(outputDirectory, 'discord-decisions.json');
+  const exitCode = await runCli(
+    [
+      '--mode',
+      'restore-replay',
+      '--run-id',
+      RUN_ID,
+      '--run-attempt',
+      '2',
+      '--channel-id',
+      CHANNEL_ID,
+      '--trigger-message-id',
+      COMMAND_ID,
+      '--replay',
+      replayPath,
+      '--bundle-out',
+      bundlePath,
+      '--decisions-out',
+      decisionsPath,
+    ],
+    { NODE_ENV: 'test' },
+    { error: vi.fn(), log: vi.fn(), warn: vi.fn() },
+  );
+  expect(exitCode).toBe(0);
+  return { bundlePath, decisionsPath };
 }

@@ -433,6 +433,229 @@ function applyDependencies(existingIssue: { number: number; htmlUrl: string } | 
   };
 }
 
+async function restoredApplyFiles() {
+  const temporaryDirectory = mkdtempSync(join(tmpdir(), 'boardsesh-discord-apply-replay-'));
+  const serializedBundle = JSON.stringify(bundle());
+  const serializedDecisions = JSON.stringify({ decisions: [decision()] });
+  const sealed = sealReplayBatch({
+    runId: '1234567890',
+    runAttempt: 1,
+    channelId: bundle().command.channelId,
+    triggerMessageId: COMMAND_ID,
+    expectedBundleSha256: bundleDigest(serializedBundle),
+    serializedBundle,
+    serializedDecisions,
+  });
+  const replayPath = join(temporaryDirectory, 'discord-replay.json');
+  const bundlePath = join(temporaryDirectory, 'discord-bundle.json');
+  const decisionsPath = join(temporaryDirectory, 'discord-decisions.json');
+  writeFileSync(replayPath, sealed.serializedReplay);
+
+  const restoreExitCode = await runCli(
+    [
+      '--mode',
+      'restore-replay',
+      '--run-id',
+      '1234567890',
+      '--run-attempt',
+      '2',
+      '--channel-id',
+      bundle().command.channelId,
+      '--trigger-message-id',
+      COMMAND_ID,
+      '--replay',
+      replayPath,
+      '--bundle-out',
+      bundlePath,
+      '--decisions-out',
+      decisionsPath,
+    ],
+    {},
+    { error: vi.fn(), log: vi.fn(), warn: vi.fn() },
+  );
+  if (restoreExitCode !== 0) throw new Error(`Replay restore failed with exit code ${restoreExitCode}`);
+
+  return { temporaryDirectory, bundlePath, decisionsPath, bundleSha256: sealed.metadata.bundleSha256 };
+}
+
+function applyCliFetchMock(
+  args: {
+    command?: DiscordMessage;
+    commandChannel?: DiscordChannel;
+    commandStatus?: number;
+  } = {},
+) {
+  const requests: Array<{ method: string; url: string; body: string | null }> = [];
+  const fetchMock = vi.fn(async (input: string | URL, init?: RequestInit) => {
+    const url = new URL(String(input));
+    const method = init?.method ?? 'GET';
+    requests.push({ method, url: url.toString(), body: typeof init?.body === 'string' ? init.body : null });
+
+    if (url.origin === 'https://discord.com') {
+      if (url.pathname === '/api/v10/users/@me') return Response.json({ id: BOT_ID });
+      if (url.pathname === `/api/v10/channels/${channel().id}`) {
+        return Response.json(args.commandChannel ?? channel());
+      }
+      if (url.pathname === `/api/v10/channels/${channel().id}/messages/${COMMAND_ID}`) {
+        return Response.json(args.command ?? message(), { status: args.commandStatus ?? 200 });
+      }
+      return new Response(null, { status: 204 });
+    }
+
+    if (url.origin === 'https://api.github.com') {
+      if (url.pathname === '/search/issues') return Response.json({ total_count: 0, items: [] });
+      if (url.pathname === '/repos/boardsesh/boardsesh/issues') {
+        return Response.json(
+          { number: 501, html_url: 'https://github.com/boardsesh/boardsesh/issues/501' },
+          { status: 201 },
+        );
+      }
+      return Response.json({ name: 'mobile' }, { status: 201 });
+    }
+
+    throw new Error(`Unexpected fetch in mocked apply test: ${url.origin}${url.pathname}`);
+  });
+  return { fetchMock, requests };
+}
+
+async function runRestoredApply(args: {
+  files: Awaited<ReturnType<typeof restoredApplyFiles>>;
+  allowedUserIds: string | undefined;
+}) {
+  const logger = { error: vi.fn(), log: vi.fn(), warn: vi.fn() };
+  const exitCode = await runCli(
+    [
+      '--mode',
+      'apply',
+      '--channel-id',
+      bundle().command.channelId,
+      '--trigger-message-id',
+      COMMAND_ID,
+      '--bundle',
+      args.files.bundlePath,
+      '--decisions',
+      args.files.decisionsPath,
+      '--bundle-sha256',
+      args.files.bundleSha256,
+    ],
+    {
+      DISCORD_BOT_TOKEN: 'mock-discord-token',
+      DISCORD_GUILD_ID: GUILD_ID,
+      DISCORD_ISSUE_TRIGGER_USER_IDS: args.allowedUserIds,
+      GITHUB_TOKEN: 'mock-github-token',
+      GITHUB_REPOSITORY: 'boardsesh/boardsesh',
+    },
+    logger,
+  );
+  return { exitCode, logger };
+}
+
+describe('apply CLI authorization for replayed commands', () => {
+  it.each([
+    {
+      reason: 'revoked author',
+      allowedUserIds: USER_ID,
+      expectedError: 'Command author is not in DISCORD_ISSUE_TRIGGER_USER_IDS',
+    },
+    {
+      reason: 'deleted command',
+      allowedUserIds: MAINTAINER_ID,
+      commandStatus: 404,
+      expectedError: 'Discord 404',
+    },
+    {
+      reason: 'wrong guild',
+      allowedUserIds: MAINTAINER_ID,
+      commandChannel: channel({ guild_id: '600000000000000001' }),
+      expectedError: 'outside the configured guild',
+    },
+    {
+      reason: 'mismatched coordinates',
+      allowedUserIds: MAINTAINER_ID,
+      command: message({ channel_id: '600000000000000001' }),
+      expectedError: 'coordinates that do not match',
+    },
+    {
+      reason: 'removed bot mention',
+      allowedUserIds: MAINTAINER_ID,
+      command: message({ mentions: [], content: 'create the issue' }),
+      expectedError: 'does not mention this bot',
+    },
+    {
+      reason: 'changed instruction',
+      allowedUserIds: MAINTAINER_ID,
+      command: message({ content: `<@${BOT_ID}> create a different issue` }),
+      expectedError: 'instruction differs from the validated replay',
+    },
+  ])('does not write when the live command is no longer valid: $reason', async (testCase) => {
+    const files = await restoredApplyFiles();
+    const { fetchMock, requests } = applyCliFetchMock({
+      command: testCase.command,
+      commandChannel: testCase.commandChannel,
+      commandStatus: testCase.commandStatus,
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    try {
+      const result = await runRestoredApply({ files, allowedUserIds: testCase.allowedUserIds });
+      const errors = result.logger.error.mock.calls.map(([entry]) => String(entry)).join('\n');
+
+      expect(result.exitCode).toBe(1);
+      expect(errors).toContain(testCase.expectedError);
+      expect(requests.length).toBeGreaterThan(0);
+      expect(requests.every(({ method, url }) => method === 'GET' && url.startsWith('https://discord.com/'))).toBe(
+        true,
+      );
+    } finally {
+      vi.unstubAllGlobals();
+      rmSync(files.temporaryDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it('fails before any network request when the current maintainer allowlist is empty', async () => {
+    const files = await restoredApplyFiles();
+    const { fetchMock } = applyCliFetchMock();
+    vi.stubGlobal('fetch', fetchMock);
+
+    try {
+      const result = await runRestoredApply({ files, allowedUserIds: '   ' });
+
+      expect(result.exitCode).toBe(1);
+      expect(result.logger.error).toHaveBeenCalledWith('[discord-feedback] DISCORD_ISSUE_TRIGGER_USER_IDS is empty.');
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+      rmSync(files.temporaryDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it('recovers the sealed batch after the current author is reauthorized', async () => {
+    const files = await restoredApplyFiles();
+    const { fetchMock, requests } = applyCliFetchMock();
+    vi.stubGlobal('fetch', fetchMock);
+
+    try {
+      const result = await runRestoredApply({ files, allowedUserIds: MAINTAINER_ID });
+      const firstGitHubWrite = requests.findIndex(
+        ({ method, url }) => url.startsWith('https://api.github.com/') && method !== 'GET',
+      );
+      const finalAuthorizationRead = requests.findIndex(
+        ({ method, url }) =>
+          method === 'GET' && url === `https://discord.com/api/v10/channels/500000000000000001/messages/${COMMAND_ID}`,
+      );
+
+      expect(result.exitCode).toBe(0);
+      expect(firstGitHubWrite).toBeGreaterThan(finalAuthorizationRead);
+      expect(requests.filter(({ method, url }) => method === 'POST' && url.endsWith('/issues'))).toHaveLength(1);
+      expect(requests.some(({ method, url }) => method === 'PUT' && url.includes('/reactions/'))).toBe(true);
+      expect(requests.some(({ method, url }) => method === 'POST' && url.endsWith('/messages'))).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+      rmSync(files.temporaryDirectory, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('applyTriage', () => {
   it('creates every requested issue, then acknowledges once', async () => {
     const deps = applyDependencies();

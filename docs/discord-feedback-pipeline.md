@@ -65,15 +65,16 @@ The workflow uses three data stages plus a failure notifier:
 | --- | --- | --- | --- |
 | `collect` | `discord-feedback` | contents/actions read | Discord bot token on first attempt; workflow token for artifact recovery |
 | `triage` | none | contents/issues read, OIDC | Claude OAuth token |
-| `apply` | `discord-feedback` | contents/actions/issues write | Discord bot token, workflow token |
+| `apply` | `discord-feedback` | contents/issues write | Discord bot token, workflow token |
 | `notify-failure` | `discord-feedback` | contents read | Discord bot token |
 
-The first collect and failure-notification jobs each re-fetch the exact message
-and repeat the guild, coordinates, human author, mention, instruction, and
-maintainer allowlist checks before writing anything. A retry does not recollect
-Discord text. It restores the earlier validated replay artifact instead. A
-rejected collect cannot trigger a reply to an unauthorized target through the
-failure handler. Workflow inputs are not authorization.
+Collect re-fetches the exact command before triage. Apply re-fetches and
+reauthorizes the live command against the current maintainer allowlist before
+any issue or Discord write; failure notification repeats that check too. A
+retry does not recollect Discord text or replace the instruction. It restores
+the earlier validated replay artifact instead. A rejected collect cannot
+trigger a reply to an unauthorized target through the failure handler. Workflow
+inputs are not authorization.
 
 Only `bundle.command.instruction` is an authorized instruction. The selected
 feedback and surrounding conversation remain untrusted public text. The triage
@@ -105,7 +106,9 @@ decision digest and count, and a replay identity tied to the run and command.
 Whole-workflow retries restore that exact artifact and skip collection and model
 triage. Failed-job-only retries consume the artifact ID and name reported by
 the successful producer job. Every upload name includes its run attempt, so
-reruns never overwrite another artifact.
+reruns never overwrite another artifact. Single-artifact downloads merge their
+contents into the consumer's requested directory while retaining the producer
+artifact ID.
 
 If issue creation succeeds for only part of the batch, the next apply uses the
 same original ordered decisions. Existing markers recover completed issues;

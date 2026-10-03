@@ -902,6 +902,10 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv, logger: Log
     logger.error('[discord-feedback] Guild, channel, and trigger message ids must be Discord snowflakes.');
     return 1;
   }
+  if (options.mode === 'apply' && options.allowedUserIds.size === 0) {
+    logger.error('[discord-feedback] DISCORD_ISSUE_TRIGGER_USER_IDS is empty.');
+    return 1;
+  }
   const discord = new DiscordClient({ token: options.discordToken, logger });
 
   if (options.mode === 'notify-failure') {
@@ -963,6 +967,29 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv, logger: Log
     bundle.command.messageId !== options.triggerMessageId
   ) {
     logger.error('[discord-feedback] bundle coordinates do not match the workflow inputs.');
+    return 1;
+  }
+  let authorization: Awaited<ReturnType<typeof authorizeMentionCommand>>;
+  try {
+    authorization = await authorizeMentionCommand(
+      {
+        guildId: options.guildId,
+        channelId: options.channelId,
+        triggerMessageId: options.triggerMessageId,
+        allowedUserIds: options.allowedUserIds,
+      },
+      discord,
+    );
+  } catch (error: unknown) {
+    logger.error(
+      `[discord-feedback] Refusing apply because the live Discord command is no longer authorized: ${error instanceof Error ? error.message : 'unknown authorization error'}`,
+    );
+    return 1;
+  }
+  if (authorization.instruction !== bundle.command.instruction) {
+    logger.error(
+      '[discord-feedback] Refusing apply because the live command instruction differs from the validated replay.',
+    );
     return 1;
   }
   const decisions = JSON.parse(readFileSync(options.decisionsPath, 'utf8')) as unknown;

@@ -113,9 +113,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           artifact-ids: ${{ steps.previous_replay.outputs.artifact_id }}
-          github-token: ${{ github.token }}
-          repository: ${{ github.repository }}
-          run-id: ${{ github.run_id }}
+          merge-multiple: true
           path: ${{ runner.temp }}/previous-replay
 
       - name: Require previous validated replay
@@ -203,6 +201,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           artifact-ids: ${{ needs.collect.outputs.bundle_artifact_id }}
+          merge-multiple: true
           path: ${{ runner.temp }}
 
       - name: Triage with Claude
@@ -283,7 +282,6 @@ jobs:
     permissions:
       # Required to upload screenshots to the discord-attachments release.
       contents: write
-      actions: read
       issues: write
     steps:
       - name: Checkout repository
@@ -324,9 +322,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           artifact-ids: ${{ steps.replay_producer.outputs.artifact_id }}
-          github-token: ${{ github.token }}
-          repository: ${{ github.repository }}
-          run-id: ${{ github.run_id }}
+          merge-multiple: true
           path: ${{ runner.temp }}/validated-replay
 
       - name: Require validated replay download
@@ -363,6 +359,7 @@ jobs:
         env:
           DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
           DISCORD_GUILD_ID: ${{ vars.DISCORD_GUILD_ID }}
+          DISCORD_ISSUE_TRIGGER_USER_IDS: ${{ secrets.DISCORD_ISSUE_TRIGGER_USER_IDS }}
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           BUNDLE_SHA256: ${{ steps.restore_replay.outputs.bundle_sha256 }}
