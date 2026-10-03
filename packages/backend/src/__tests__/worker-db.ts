@@ -30,7 +30,15 @@ export function getWorkerDatabaseName(): string {
 function buildWorkerDatabaseUrl(): string {
   const name = getWorkerDatabaseName();
   const raw = process.env.DATABASE_URL || `postgresql://postgres:postgres@localhost:${PG_PORT}/${WORKER_DB_PREFIX}`;
-  return raw.replace(/\/[^/]+$/, `/${name}`);
+  const workerUrl = new URL(raw);
+  workerUrl.pathname = `/${name}`;
+  // NOTE: the pool deliberately carries no `boardsesh.snapshot_cursor_restore`
+  // option. Enabling it here would switch off migration 0250's cursor-stamping
+  // invariant for every statement in every suite, so the tests would stop
+  // exercising the production trigger path. Seeds that genuinely need historical
+  // cursors scope the escape hatch to their own transaction with
+  // `SET LOCAL` — see helpers/sync-cursor-restore.ts.
+  return workerUrl.toString();
 }
 
 /** Redis ships with 16 logical databases (`databases 16`) unless configured otherwise. */

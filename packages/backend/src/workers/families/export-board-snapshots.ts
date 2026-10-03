@@ -174,7 +174,13 @@ export const exportBoardSnapshotsFamily: BackgroundJobFamilyModule<ExportRequest
   singletonKey: ({ mode }) => mode,
   schedules: [
     { key: 'nightly', cron: '15 7 * * *', fanOut: async () => [{ payload: { mode: 'nightly' } }] },
-    { key: 'live-scan', cron: '7,22,37,52 * * * *', fanOut: async () => [{ payload: { mode: 'live-scan' } }] },
+    // Match the GitHub publisher schedule: keep 07:00 UTC clear for the full
+    // export, then resume bounded scans at 08:07.
+    {
+      key: 'live-scan',
+      cron: '7,22,37,52 0-6,8-23 * * *',
+      fanOut: async () => [{ payload: { mode: 'live-scan' } }],
+    },
   ],
   async execute(context, request) {
     const log: SnapshotExportLogger = logger.child({ family: context.family, runId: context.runId });
@@ -243,6 +249,9 @@ export const exportBoardSnapshotsFamily: BackgroundJobFamilyModule<ExportRequest
           gzip: true,
           keyPrefix: LIVE_SNAPSHOT_KEY_PREFIX,
           refreshThreshold: request.refreshThreshold ?? LIVE_SCAN_REFRESH_THRESHOLD,
+          source: 'primary',
+          fence: false,
+          heartbeat: false,
           ...filters,
         },
         dependencies,
@@ -277,7 +286,15 @@ export const exportBoardSnapshotsFamily: BackgroundJobFamilyModule<ExportRequest
     if (runIdentity) {
       await runPass('identity', true, () =>
         runExportWithOptions(
-          { dryRun: false, gzip: false, keyPrefix: DEFAULT_SNAPSHOT_KEY_PREFIX, ...filters },
+          {
+            dryRun: false,
+            gzip: false,
+            keyPrefix: DEFAULT_SNAPSHOT_KEY_PREFIX,
+            source: 'primary',
+            fence: false,
+            heartbeat: false,
+            ...filters,
+          },
           dependencies,
         ),
       );
@@ -289,6 +306,9 @@ export const exportBoardSnapshotsFamily: BackgroundJobFamilyModule<ExportRequest
           gzip: true,
           keyPrefix: LIVE_SNAPSHOT_KEY_PREFIX,
           refreshThreshold: request.refreshThreshold,
+          source: 'primary',
+          fence: false,
+          heartbeat: false,
           ...filters,
         },
         dependencies,

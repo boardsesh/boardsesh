@@ -25,13 +25,16 @@ import type { ConnectionContext, SyncCursorInput } from '@boardsesh/shared-schem
 import type { QueryInvalidator } from '@boardsesh/offline-sync';
 import { pullSync, runMigrations, TABLE_CONFIGS } from '@boardsesh/offline-sync';
 import { createTestDatabase } from '@boardsesh/offline-sync/testing';
-// createPool is the SAME accessor runExport uses (primary-only: replica
-// commit-order snapshots can omit lower-cursor rows, so the export never reads
-// a replica). It GUARANTEES the drizzle wrapper is constructed before the raw
-// pool is returned (packages/db/src/client/postgres.ts), so the pool used here
-// carries drizzle's transparent timestamp parsers exactly like production.
+// createPool supplies the real worker Postgres connection to this core-level
+// test. The production CLI creates isolated primary/replica pools and declares
+// their observer capability explicitly; parser parity is covered separately by
+// snapshot-replica-fence.test.ts.
+// TODO(#4475 review, finding 9): this golden byte-parity run reads through the
+// drizzle pool while production reads through the isolated single-connection
+// snapshot pool, so a pool-shaped parser difference stays outside the gate.
 import { createPool } from '@boardsesh/db/client';
 import { db } from '../db/client';
+import { seedWithRestoredSyncCursors } from './helpers/sync-cursor-restore';
 import { syncQueries } from '../graphql/resolvers/sync/queries';
 import { toIso } from '../graphql/resolvers/sync/row-normalize';
 import { exportLayoutSnapshot, selectDeletionReplayBoundary } from '../scripts/export-board-snapshots';
@@ -42,6 +45,14 @@ const LAYOUT_ID = 1;
 const SIZE_ID = 5;
 const SCOPE_KEY = `${BOARD_TYPE}:${LAYOUT_ID}:${SIZE_ID}`;
 const BUILT_AT = '2026-06-01T00:00:00.000Z';
+const INCLUDE_ALL_STABLE_BEFORE = '2100-01-01T00:00:00.000Z';
+
+async function primaryStableBefore(seconds: number): Promise<string> {
+  const rows = await db.execute(sql`
+    SELECT ((clock_timestamp() - make_interval(secs => ${seconds})) AT TIME ZONE 'UTC') AS stable_before
+  `);
+  return toIso((rows[0] as { stable_before: unknown }).stable_before);
+}
 
 const CLIMB_COLUMNS = TABLE_CONFIGS.board_climbs.localColumns;
 const STATS_COLUMNS = TABLE_CONFIGS.board_climb_stats.localColumns;
@@ -123,7 +134,11 @@ async function insertClimb(values: {
   const compatible = `{${values.compatibleSizeIds.join(',')}}`;
   const requiredSetIds = values.requiredSetIds == null ? null : `{${values.requiredSetIds.join(',')}}`;
   const characteristics = values.characteristics == null ? null : `{${values.characteristics.join(',')}}`;
-  await db.execute(sql`
+  // Fixed updated_at values are the whole point of these fixtures (watermarks,
+  // stability-window exclusion), so the seed opts into the restore hatch for
+  // its own transaction. Everything else in this file writes through the
+  // production stamping path.
+  await seedWithRestoredSyncCursors(sql`
     INSERT INTO board_climbs
       (uuid, board_type, layout_id, setter_id, name, description, is_draft, is_listed, is_hidden,
        compatible_size_ids, required_set_ids, characteristics, frames, updated_at)
@@ -145,7 +160,7 @@ async function insertStat(values: {
   faAt?: string | null;
   updatedAt: string;
 }): Promise<void> {
-  await db.execute(sql`
+  await seedWithRestoredSyncCursors(sql`
     INSERT INTO board_climb_stats
       (board_type, climb_uuid, angle, display_difficulty, ascensionist_count,
        quality_average, fa_username, fa_at, updated_at)
@@ -169,7 +184,7 @@ async function insertGrade(values: {
 }): Promise<void> {
   // confidence / ascensionist_count / model_version / coeff_version are NOT NULL
   // in board_climb_grades (packages/db/src/schema/app/climb-grades.ts).
-  await db.execute(sql`
+  await seedWithRestoredSyncCursors(sql`
     INSERT INTO board_climb_grades
       (board_type, climb_uuid, angle, local_grade, universal_grade, grade_low, grade_high,
        confidence, ascensionist_count, model_version, coeff_version, computed_at)
@@ -246,12 +261,12 @@ describe('board-snapshot export ↔ live pull parity', () => {
   it('models a long-running delete older than the stability window and fails closed without activity visibility', () => {
     const boundary = selectDeletionReplayBoundary({
       artifactBuiltAt: '2026-06-01T11:59:50.000Z',
+      stableBefore: '2026-06-01T11:59:30.000Z',
       exportTransactionStartedAt: '2026-06-01T12:00:00.000Z',
       // This DELETE began two minutes before the export. Its deleted_at can be
       // older than the ordinary 30-second stability boundary even though its
       // uncommitted row remains visible in the artifact snapshot.
       oldestActiveTransactionStartedAt: '2026-06-01T11:58:00.000Z',
-      stabilityWindowSeconds: 30,
       visibilityEstablished: true,
     });
     expect(boundary).toBe('2026-06-01T11:58:00.000Z');
@@ -259,9 +274,9 @@ describe('board-snapshot export ↔ live pull parity', () => {
     expect(
       selectDeletionReplayBoundary({
         artifactBuiltAt: '2026-06-01T11:59:50.000Z',
+        stableBefore: '2026-06-01T11:59:30.000Z',
         exportTransactionStartedAt: '2026-06-01T12:00:00.000Z',
         oldestActiveTransactionStartedAt: null,
-        stabilityWindowSeconds: 30,
         visibilityEstablished: false,
       }),
     ).toBeNull();
@@ -269,9 +284,9 @@ describe('board-snapshot export ↔ live pull parity', () => {
     expect(
       selectDeletionReplayBoundary({
         artifactBuiltAt: new Date('invalid'),
+        stableBefore: '2026-06-01T11:59:30.000Z',
         exportTransactionStartedAt: '2026-06-01T12:00:00.000Z',
         oldestActiveTransactionStartedAt: null,
-        stabilityWindowSeconds: 30,
         visibilityEstablished: true,
       }),
     ).toBeNull();
@@ -311,11 +326,12 @@ describe('board-snapshot export ↔ live pull parity', () => {
     try {
       const result = await exportLayoutSnapshot({
         sqlClient: createPool(),
+        deletionObserverConnectionAvailable: true,
         boardType: BOARD_TYPE,
         layoutId: LAYOUT_ID,
         filePath,
         builtAt: artifactBuiltAt,
-        stabilityWindowSeconds: 0,
+        stableBefore: artifactBuiltAt,
       });
 
       // The uncommitted DELETE is invisible to the RR snapshot, so the row is
@@ -420,7 +436,7 @@ describe('board-snapshot export ↔ live pull parity', () => {
       layoutId: LAYOUT_ID,
       filePath,
       builtAt: BUILT_AT,
-      stabilityWindowSeconds: 0, // match the resolvers' test window so row sets align
+      stableBefore: INCLUDE_ALL_STABLE_BEFORE,
     });
     const artifactClimbs = readArtifactRows(filePath, 'board_climbs', CLIMB_COLUMNS);
     const artifactStats = readArtifactRows(filePath, 'board_climb_stats', STATS_COLUMNS);
@@ -470,7 +486,7 @@ describe('board-snapshot export ↔ live pull parity', () => {
       layoutId: LAYOUT_ID,
       filePath,
       builtAt: BUILT_AT,
-      stabilityWindowSeconds: 0,
+      stableBefore: INCLUDE_ALL_STABLE_BEFORE,
     });
 
     // Expected watermark = the greatest (updated_at, sync_seq) among the scoped rows.
@@ -517,12 +533,14 @@ describe('board-snapshot export ↔ live pull parity', () => {
       { climbUuid: 'c2', angle: 40, updatedAt: '2026-05-03 00:00:00', syncSeq: 5000 },
       { climbUuid: 'c2', angle: 45, updatedAt: '2026-05-02 23:59:59.999999', syncSeq: 6000 },
     ];
-    for (const statRow of statRows) {
-      await db.execute(sql`
+    await seedWithRestoredSyncCursors(
+      ...statRows.map(
+        (statRow) => sql`
         INSERT INTO board_climb_stats (board_type, climb_uuid, angle, updated_at, sync_seq)
         VALUES (${BOARD_TYPE}, ${statRow.climbUuid}, ${statRow.angle}, ${statRow.updatedAt}::timestamp, ${statRow.syncSeq})
-      `);
-    }
+      `,
+      ),
+    );
 
     const filePath = join(workDir, 'artifact-precision.db');
     const result = await exportLayoutSnapshot({
@@ -531,7 +549,7 @@ describe('board-snapshot export ↔ live pull parity', () => {
       layoutId: LAYOUT_ID,
       filePath,
       builtAt: BUILT_AT,
-      stabilityWindowSeconds: 0,
+      stableBefore: INCLUDE_ALL_STABLE_BEFORE,
     });
 
     const expected = (
@@ -565,38 +583,32 @@ describe('board-snapshot export ↔ live pull parity', () => {
     }
   });
 
-  it('records a deletion replay boundary from the export transaction clock minus the stability window', async () => {
+  it('uses the authoritative run-wide stable_before as the deletion replay boundary', async () => {
     await insertClimb({ uuid: 'c1', compatibleSizeIds: [5], updatedAt: '2026-05-01T00:00:00Z' });
     const stabilityWindowSeconds = 30;
     const beforeRow = (
       await db.execute(sql`
         SELECT
           clock_timestamp() AS built_at,
-          clock_timestamp() - (${stabilityWindowSeconds} * INTERVAL '1 second') AS replay_from
+          clock_timestamp() - (${stabilityWindowSeconds} * INTERVAL '1 second') AS stable_before
       `)
-    )[0] as { built_at: unknown; replay_from: unknown };
+    )[0] as { built_at: unknown; stable_before: unknown };
     const artifactBuiltAt = toIso(beforeRow.built_at);
+    const stableBefore = toIso(beforeRow.stable_before);
 
     const filePath = join(workDir, 'artifact-deletion-replay.db');
     await exportLayoutSnapshot({
       sqlClient: createPool(),
+      deletionObserverConnectionAvailable: true,
       boardType: BOARD_TYPE,
       layoutId: LAYOUT_ID,
       filePath,
       builtAt: artifactBuiltAt,
-      stabilityWindowSeconds,
+      stableBefore,
     });
 
-    const afterRow = (
-      await db.execute(sql`
-        SELECT clock_timestamp() - (${stabilityWindowSeconds} * INTERVAL '1 second') AS replay_from
-      `)
-    )[0] as { replay_from: unknown };
     const deletionMeta = readArtifactMeta(filePath, 'sync_deletions')!;
-    const replayFromMs = Date.parse(String(deletionMeta.watermark_updated_at));
-
-    expect(replayFromMs).toBeGreaterThanOrEqual(Date.parse(toIso(beforeRow.replay_from)));
-    expect(replayFromMs).toBeLessThanOrEqual(Date.parse(toIso(afterRow.replay_from)));
+    expect(Date.parse(String(deletionMeta.watermark_updated_at))).toBe(Date.parse(stableBefore));
     expect(deletionMeta).toMatchObject({
       table_name: 'sync_deletions',
       watermark_sync_seq: '0',
@@ -624,7 +636,7 @@ describe('board-snapshot export ↔ live pull parity', () => {
       layoutId: LAYOUT_ID,
       filePath,
       builtAt: BUILT_AT,
-      stabilityWindowSeconds: 30,
+      stableBefore: await primaryStableBefore(30),
     });
 
     const artifactClimbs = readArtifactRows(filePath, 'board_climbs', ['uuid']);
@@ -690,7 +702,7 @@ describe('board_climb_grades snapshot artifact', () => {
       filePath,
       gradesFilePath,
       builtAt: BUILT_AT,
-      stabilityWindowSeconds: 0,
+      stableBefore: INCLUDE_ALL_STABLE_BEFORE,
     });
     const artifactGrades = readArtifactRows(gradesFilePath, 'board_climb_grades', GRADES_COLUMNS);
 
@@ -716,12 +728,13 @@ describe('board_climb_grades snapshot artifact', () => {
     const filePath = join(workDir, 'artifact.db');
     await exportLayoutSnapshot({
       sqlClient: createPool(),
+      deletionObserverConnectionAvailable: true,
       boardType: BOARD_TYPE,
       layoutId: LAYOUT_ID,
       filePath,
       gradesFilePath: join(workDir, 'artifact-grades.db'),
       builtAt: BUILT_AT,
-      stabilityWindowSeconds: 0,
+      stableBefore: INCLUDE_ALL_STABLE_BEFORE,
     });
 
     expect(readArtifactMetaTableNames(filePath)).toEqual(['board_climb_stats', 'board_climbs', 'sync_deletions']);
@@ -732,29 +745,62 @@ describe('board_climb_grades snapshot artifact', () => {
     expect(readArtifactTableNames(filePath)).not.toContain('sync_deletions');
   });
 
-  it('surfaces a bounded fallback reason when a second observer connection is unavailable', async () => {
+  it('fails closed without inspecting private pool options when observer capacity is not declared', async () => {
     await insertClimb({ uuid: 'c1', compatibleSizeIds: [5], updatedAt: '2026-05-01T00:00:00Z' });
 
     const primaryPool = createPool();
-    const singleConnectionObserverView = new Proxy(primaryPool, {
+    const clientWithoutPublicCapacityMetadata = new Proxy(primaryPool, {
       get(target, property) {
-        if (property === 'options') return { ...target.options, max: 1 };
+        if (property === 'options') throw new Error('private postgres.js options must not be inspected');
         return Reflect.get(target, property, target);
       },
     });
     const filePath = join(workDir, 'observer-fallback-artifact.db');
     const result = await exportLayoutSnapshot({
-      sqlClient: singleConnectionObserverView,
+      sqlClient: clientWithoutPublicCapacityMetadata,
       boardType: BOARD_TYPE,
       layoutId: LAYOUT_ID,
       filePath,
       builtAt: BUILT_AT,
-      stabilityWindowSeconds: 0,
+      stableBefore: INCLUDE_ALL_STABLE_BEFORE,
     });
 
     expect(result.deletionsReplayFrom).toBeNull();
     expect(result.deletionsReplayFallbackReason).toBe('observer-pool-capacity');
     expect(readArtifactMetaTableNames(filePath)).toEqual(['board_climb_stats', 'board_climbs']);
+  });
+
+  it('uses a primary-fenced cutoff without requiring a second reader connection', async () => {
+    await insertClimb({ uuid: 'c1', compatibleSizeIds: [5], updatedAt: '2026-05-01T00:00:00Z' });
+
+    const primaryPool = createPool();
+    const stableBefore = '2026-05-31T23:59:30.000Z';
+    const filePath = join(workDir, 'fenced-boundary-artifact.db');
+    const result = await exportLayoutSnapshot({
+      sqlClient: primaryPool,
+      boardType: BOARD_TYPE,
+      layoutId: LAYOUT_ID,
+      filePath,
+      builtAt: BUILT_AT,
+      stableBefore,
+      stableBeforeIncludesActiveTransactions: true,
+    });
+
+    expect(result.deletionsReplayFrom).toBe(stableBefore);
+    expect(result.deletionsReplayFallbackReason).toBeNull();
+    expect(readArtifactMetaTableNames(filePath)).toEqual(['board_climb_stats', 'board_climbs', 'sync_deletions']);
+
+    const builtAtFirstFilePath = join(workDir, 'fenced-built-at-boundary-artifact.db');
+    const builtAtFirstResult = await exportLayoutSnapshot({
+      sqlClient: primaryPool,
+      boardType: BOARD_TYPE,
+      layoutId: LAYOUT_ID,
+      filePath: builtAtFirstFilePath,
+      builtAt: BUILT_AT,
+      stableBefore: INCLUDE_ALL_STABLE_BEFORE,
+      stableBeforeIncludesActiveTransactions: true,
+    });
+    expect(builtAtFirstResult.deletionsReplayFrom).toBe(BUILT_AT);
   });
 
   it('carries ONLY board_climb_grades and its own one-row snapshot_meta', async () => {
@@ -769,7 +815,7 @@ describe('board_climb_grades snapshot artifact', () => {
       filePath: join(workDir, 'artifact.db'),
       gradesFilePath,
       builtAt: BUILT_AT,
-      stabilityWindowSeconds: 0,
+      stableBefore: INCLUDE_ALL_STABLE_BEFORE,
     });
 
     const tables = readArtifactTableNames(gradesFilePath);
@@ -792,7 +838,7 @@ describe('board_climb_grades snapshot artifact', () => {
       filePath: join(workDir, 'artifact.db'),
       gradesFilePath,
       builtAt: BUILT_AT,
-      stabilityWindowSeconds: 0,
+      stableBefore: INCLUDE_ALL_STABLE_BEFORE,
     });
 
     const latest = (
@@ -827,7 +873,7 @@ describe('board_climb_grades snapshot artifact', () => {
       filePath: join(workDir, 'artifact.db'),
       gradesFilePath,
       builtAt: BUILT_AT,
-      stabilityWindowSeconds: 30,
+      stableBefore: await primaryStableBefore(30),
     });
 
     const angles = readArtifactRows(gradesFilePath, 'board_climb_grades', ['angle']).map((row) => row.angle);
@@ -853,7 +899,7 @@ describe('board_climb_grades snapshot artifact', () => {
       filePath: join(workDir, 'artifact.db'),
       gradesFilePath,
       builtAt: BUILT_AT,
-      stabilityWindowSeconds: 0,
+      stableBefore: INCLUDE_ALL_STABLE_BEFORE,
     });
 
     const uuids = readArtifactRows(gradesFilePath, 'board_climb_grades', ['climb_uuid']).map((row) => row.climb_uuid);
@@ -870,7 +916,7 @@ describe('board_climb_grades snapshot artifact', () => {
       filePath: join(workDir, 'artifact.db'),
       gradesFilePath: join(workDir, 'artifact-grades.db'),
       builtAt: BUILT_AT,
-      stabilityWindowSeconds: 0,
+      stableBefore: INCLUDE_ALL_STABLE_BEFORE,
     });
 
     expect(result.grades).toBeUndefined();
@@ -886,7 +932,7 @@ describe('board_climb_grades snapshot artifact', () => {
       layoutId: LAYOUT_ID,
       filePath: join(workDir, 'artifact.db'),
       builtAt: BUILT_AT,
-      stabilityWindowSeconds: 0,
+      stableBefore: INCLUDE_ALL_STABLE_BEFORE,
     });
 
     expect(result.grades).toBeUndefined();

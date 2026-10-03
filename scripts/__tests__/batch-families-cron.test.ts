@@ -38,7 +38,7 @@ const PINS = [
   {
     family: exportBoardSnapshotsFamily,
     workflow: 'export-board-snapshots.yml',
-    crons: ['15 7 * * *', '7,22,37,52 * * * *'],
+    crons: ['15 7 * * *', '7,22,37,52 0-6,8-23 * * *'],
   },
   {
     family: refreshMoonboardAngleEstimatesFamily,
@@ -52,13 +52,19 @@ const PINS = [
   },
 ] as const;
 
+// This workflow also polls publisher heartbeats; that trigger is not a batch
+// family schedule and must remain independent of the exporter cadence.
+const WORKFLOW_ONLY_CRONS: Record<string, string[]> = {
+  'export-board-snapshots.yml': ['12,27,42,57 * * * *'],
+};
+
 describe('batch family crons', () => {
   it.each(PINS)('$workflow and its family fire at $crons UTC', ({ family, workflow: name, crons }) => {
     const schedules = family.schedules ?? [];
     expect(schedules.map((schedule) => schedule.cron)).toEqual(crons);
     expect(schedules.every((schedule) => (schedule.tz ?? 'UTC') === 'UTC')).toBe(true);
     const { on } = workflow(name);
-    expect(on.schedule?.map((entry) => entry.cron)).toEqual(crons);
+    expect(on.schedule?.map((entry) => entry.cron)).toEqual([...crons, ...(WORKFLOW_ONLY_CRONS[name] ?? [])]);
     // Cutover keeps the manual trigger for backfills and dry runs.
     expect(on).toHaveProperty('workflow_dispatch');
   });
