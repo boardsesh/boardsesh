@@ -228,7 +228,11 @@ describe('per-account board cap on the soft-delete restore path', () => {
 
   it('restores the deleted board when the account has room', async () => {
     await seedBoards(MAX_BOARDS_PER_ACCOUNT - 1);
-    const { uuid: deletedBoardUuid } = await seedBoard({ deleted: true, name: 'Retired wall' });
+    const { uuid: deletedBoardUuid } = await seedBoard({
+      deleted: true,
+      name: 'Retired wall',
+      config: OTHER_CONFIG,
+    });
     resetAllRateLimits();
 
     const restored = await restore(deletedBoardUuid);
