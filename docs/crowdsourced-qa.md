@@ -214,6 +214,15 @@ verdict as a non-tester one with no signal and nothing to repair it from, so the
 the app retries instead. Until a tester weighs in, a PR carries no QA label at all — a non-tester's
 verdict never clears one a tester set.
 
+The label is also scoped to the head the verdict was filed against. The recompute reads rows it did
+not write, so "newest tester verdict" is narrowed to `head_sha = <this head>`: a row filed while
+GitHub was unreachable has `head_sha IS NULL`, which that comparison never matches, so an unverified
+verdict cannot become a merge-gating label on the next verified submission that happens to run the
+recompute. Rows from an earlier head drop out the same way — they are not a verdict on the code this
+label gates. Both stay visible as comments and in the table; only the label is withheld, and the
+recompute says so — `[qa] no tester verdict for #N at verified head <sha>; leaving labels unchanged`
+at debug level, which is how you tell "withheld on purpose" from a mirror that dropped.
+
 The column **defaults to `true`**, which reads backwards until you follow the deploy order.
 Migrations run before the backend deploys, and an Instant Rollback leaves the migrated schema
 serving the old code (`docs/branch-deploys.md`), so in both windows the *previous*, tester-only
@@ -310,9 +319,11 @@ Every backend log line for this feature is tagged `[qa]`.
   usually the anonymous 60/hr ceiling on a deploy with no token. It self-heals in 30 seconds once
   GitHub answers.
 - **The label disagrees with the comments.** Expected when a PR has several verdicts: the label is
-  the latest **tester** one only. A PR whose only verdicts came from non-testers carries comments and
-  no label at all — check `SELECT verdict, by_tester FROM qa_verdicts WHERE pr_number = N ORDER BY
-  created_at DESC` before assuming the mirror failed.
+  the latest **tester** one filed **against the current head**. A PR whose only verdicts came from
+  non-testers carries comments and no label at all, and so does one whose only tester verdict is
+  unverified (`head_sha IS NULL`) or was filed on an earlier head — check `SELECT verdict, by_tester,
+  head_sha FROM qa_verdicts WHERE pr_number = N ORDER BY created_at DESC` before assuming the mirror
+  failed.
 - **Verdict comment spam.** Filing is open to every signed-in account (only the label is
   tester-gated), so the write surface on the public repo is no longer a curated pool. The limiter is
   10/min per caller (`applyRateLimit(ctx, 10, 'submitQaVerdict')`) and bodies still go through
