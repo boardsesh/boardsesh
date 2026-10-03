@@ -461,9 +461,10 @@ export const queriesTypeDefs = /* GraphQL */ `
     sessionGroupedFeed(input: ActivityFeedInput): SessionFeedResult!
 
     """
-    Get full detail for a single explicitly-created session.
+    Get full detail for a session or daily highlight. Pass the feed card's
+    highlightTickUuid to keep a board-scoped daily card's social target stable.
     """
-    sessionDetail(sessionId: ID!): SessionDetail
+    sessionDetail(sessionId: ID!, highlightTickUuid: ID): SessionDetail
 
     """
     Get a feed of newly created climbs for a board type and layout.

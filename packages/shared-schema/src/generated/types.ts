@@ -6318,7 +6318,10 @@ export type Query = {
    * Returns null if session doesn't exist.
    */
   session?: Maybe<Session>;
-  /** Get full detail for a single explicitly-created session. */
+  /**
+   * Get full detail for a session or daily highlight. Pass the feed card's
+   * highlightTickUuid to keep a board-scoped daily card's social target stable.
+   */
   sessionDetail?: Maybe<SessionDetail>;
   /**
    * Get session-grouped activity feed (public, no auth required).
@@ -7061,6 +7064,7 @@ export type QuerySessionArgs = {
 
 /** Root query type for all read operations. */
 export type QuerySessionDetailArgs = {
+  highlightTickUuid?: InputMaybe<Scalars['ID']['input']>;
   sessionId: Scalars['ID']['input'];
 };
 
@@ -8019,6 +8023,8 @@ export type SessionDetail = {
   sessionId: Scalars['ID']['output'];
   sessionName?: Maybe<Scalars['String']['output']>;
   sessionType: Scalars['String']['output'];
+  socialEntityId: Scalars['String']['output'];
+  socialEntityType: SocialEntityType;
   tickCount: Scalars['Int']['output'];
   ticks: Array<SessionDetailTick>;
   totalAttempts: Scalars['Int']['output'];
@@ -15450,6 +15456,8 @@ export type SessionDetailResolvers<
   sessionId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   sessionName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   sessionType?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  socialEntityId?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  socialEntityType?: Resolver<ResolversTypes['SocialEntityType'], ParentType, ContextType>;
   tickCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   ticks?: Resolver<Array<ResolversTypes['SessionDetailTick']>, ParentType, ContextType>;
   totalAttempts?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;

@@ -29,8 +29,15 @@ const CLIMBER_USER_ID = 'sf-board-scope-climber';
 // Logs on board A without ever pressing Start: no session_id on the tick, so the
 // feed can only show it as a daily highlight group (#5567, #5576).
 const SOLO_USER_ID = 'sf-board-scope-solo';
+const PRECISION_USER_ID = 'sf-board-scope-precision';
 const SOLO_DAY = '2026-02-04';
 const SOLO_DAILY_GROUP = `daily:${SOLO_USER_ID}:${SOLO_DAY}`;
+const MICROSECOND_DAILY_GROUP = `daily:${PRECISION_USER_ID}:2026-02-16`;
+const BIGINT_DAILY_GROUP = `daily:${PRECISION_USER_ID}:2026-02-17`;
+const MICROSECOND_NEWER_TICK_UUID = 'sf-tick-precision-microsecond-newer';
+const BIGINT_HIGHER_TICK_UUID = 'sf-tick-precision-bigint-higher';
+const DAILY_BOARD_A_HIGHLIGHT_UUID = 'sf-tick-solo-2';
+const DAILY_BOARD_B_HIGHLIGHT_UUID = 'sf-tick-solo-board-b-harder';
 // 2026-02-06: the climber was ALSO in a session that day, but on board B. That
 // session is not on A's feed, so it must not claim A's climbs for the day.
 const OTHER_BOARD_SESSION_DAY_GROUP = `daily:${SOLO_USER_ID}:2026-02-06`;
@@ -56,6 +63,10 @@ const STRANGER_USER_ID = 'sf-board-scope-stranger';
 // wall is closed to everyone but its owner.
 const PRIVATE_SPRAY_UUID = 'sf-board-scope-spray-private';
 const HIDDEN_SPRAY_UUID = 'sf-board-scope-spray-hidden';
+const PRIVATE_SPRAY_LAYOUT_ID = 990_101;
+const HIDDEN_SPRAY_LAYOUT_ID = 990_102;
+const PRIVATE_SPRAY_CLIMB_UUID = 'sf-board-scope-private-spray-climb';
+const HIDDEN_SPRAY_CLIMB_UUID = 'sf-board-scope-hidden-spray-climb';
 const PRIVATE_SPRAY_DAILY_GROUP = `daily:${OWNER_USER_ID}:2026-02-12`;
 const HIDDEN_SPRAY_DAILY_GROUP = `daily:${OWNER_USER_ID}:2026-02-13`;
 const SESSION_ON_A = 'sf-board-scope-session-a';
@@ -69,7 +80,17 @@ let privateSprayId: number;
 let hiddenSprayId: number;
 
 type SessionFeedResult = {
-  sessions: Array<{ sessionId: string; sessionType: string; tickCount: number }>;
+  sessions: Array<{
+    sessionId: string;
+    sessionType: string;
+    tickCount: number;
+    socialEntityType: 'session' | 'tick';
+    socialEntityId: string;
+    upvotes: number;
+    downvotes: number;
+    voteScore: number;
+    commentCount: number;
+  }>;
   cursor: string | null;
   hasMore: boolean;
 };
@@ -150,28 +171,58 @@ const insertTick = async (params: {
   boardId: number | null;
   climbedAt: string;
   userId?: string;
+  difficulty?: number;
+  id?: string;
+  boardType?: string;
+  climbUuid?: string;
 }) => {
+  if (params.id) {
+    await db.execute(sql`
+      INSERT INTO boardsesh_ticks (id, uuid, user_id, board_type, board_id, climb_uuid, angle, status, attempt_count, difficulty, climbed_at, session_id)
+      VALUES (${params.id}::bigint, ${params.uuid}, ${params.userId ?? CLIMBER_USER_ID}, ${params.boardType ?? 'kilter'}, ${params.boardId}, ${params.climbUuid ?? CLIMB_UUID}, 40, 'send', 1, ${params.difficulty ?? 20}, ${params.climbedAt}, ${params.sessionId})
+    `);
+    return;
+  }
   await db.execute(sql`
     INSERT INTO boardsesh_ticks (uuid, user_id, board_type, board_id, climb_uuid, angle, status, attempt_count, difficulty, climbed_at, session_id)
-    VALUES (${params.uuid}, ${params.userId ?? CLIMBER_USER_ID}, 'kilter', ${params.boardId}, ${CLIMB_UUID}, 40, 'send', 1, 20, ${params.climbedAt}, ${params.sessionId})
+    VALUES (${params.uuid}, ${params.userId ?? CLIMBER_USER_ID}, ${params.boardType ?? 'kilter'}, ${params.boardId}, ${params.climbUuid ?? CLIMB_UUID}, 40, 'send', 1, ${params.difficulty ?? 20}, ${params.climbedAt}, ${params.sessionId})
+  `);
+};
+
+const insertSprayClimb = async (uuid: string, layoutId: number) => {
+  await db.execute(sql`
+    INSERT INTO board_climbs (uuid, board_type, layout_id, setter_username, name, frames, frames_count, is_draft, is_listed, edge_left, edge_right, edge_bottom, edge_top, created_at)
+    VALUES (${uuid}, 'spray', ${layoutId}, 'test-setter', 'Private spray climb', 'p1r1', 1, false, true, 0, 100, 0, 150, '2024-01-01')
+    ON CONFLICT (uuid) DO NOTHING
   `);
 };
 
 const cleanup = async () => {
   await db.execute(
+    sql`DELETE FROM comments WHERE entity_type = 'tick' AND entity_id IN (${DAILY_BOARD_A_HIGHLIGHT_UUID}, ${DAILY_BOARD_B_HIGHLIGHT_UUID})`,
+  );
+  await db.execute(
+    sql`DELETE FROM vote_counts WHERE entity_type = 'tick' AND entity_id IN (${DAILY_BOARD_A_HIGHLIGHT_UUID}, ${DAILY_BOARD_B_HIGHLIGHT_UUID})`,
+  );
+  await db.execute(
     sql`DELETE FROM boardsesh_ticks WHERE session_id IN (${SESSION_ON_A}, ${SESSION_ON_B}, ${SESSION_NULL_BOARD})`,
   );
-  await db.execute(sql`DELETE FROM boardsesh_ticks WHERE user_id IN (${SOLO_USER_ID}, ${OWNER_USER_ID})`);
+  await db.execute(
+    sql`DELETE FROM boardsesh_ticks WHERE user_id IN (${SOLO_USER_ID}, ${PRECISION_USER_ID}, ${OWNER_USER_ID})`,
+  );
   await db.execute(
     sql`DELETE FROM board_sessions WHERE id IN (${SESSION_ON_A}, ${SESSION_ON_B}, ${SESSION_NULL_BOARD})`,
   );
   await db.execute(sql`DELETE FROM board_climbs WHERE uuid = ${CLIMB_UUID}`);
+  await db.execute(
+    sql`DELETE FROM board_climbs WHERE uuid IN (${PRIVATE_SPRAY_CLIMB_UUID}, ${HIDDEN_SPRAY_CLIMB_UUID})`,
+  );
   await db.execute(sql`DELETE FROM spray_walls WHERE board_uuid IN (${PRIVATE_SPRAY_UUID}, ${HIDDEN_SPRAY_UUID})`);
   await db.execute(
     sql`DELETE FROM user_boards WHERE uuid IN (${BOARD_A_UUID}, ${BOARD_B_UUID}, ${PRIVATE_BOARD_UUID}, ${PRIVATE_SPRAY_UUID}, ${HIDDEN_SPRAY_UUID})`,
   );
   await db.execute(
-    sql`DELETE FROM "users" WHERE id IN (${OWNER_USER_ID}, ${CLIMBER_USER_ID}, ${SOLO_USER_ID}, ${STRANGER_USER_ID})`,
+    sql`DELETE FROM "users" WHERE id IN (${OWNER_USER_ID}, ${CLIMBER_USER_ID}, ${SOLO_USER_ID}, ${PRECISION_USER_ID}, ${STRANGER_USER_ID})`,
   );
 };
 
@@ -181,14 +232,23 @@ describe('sessionGroupedFeed — exact board_id scoping (real DB)', () => {
     await insertUser(OWNER_USER_ID);
     await insertUser(CLIMBER_USER_ID);
     await insertUser(SOLO_USER_ID);
+    await insertUser(PRECISION_USER_ID);
     await insertUser(STRANGER_USER_ID);
     await insertClimb();
 
     boardAId = await insertBoard(BOARD_A_UUID, 'board-a', 10, '1,20');
     boardBId = await insertBoard(BOARD_B_UUID, 'board-b', 11, '1,21');
     privateBoardId = await insertBoard(PRIVATE_BOARD_UUID, 'board-private', 12, '1,22', false);
-    privateSprayId = await insertSprayWall(PRIVATE_SPRAY_UUID, 990_101, { isPublic: false, hidden: false });
-    hiddenSprayId = await insertSprayWall(HIDDEN_SPRAY_UUID, 990_102, { isPublic: true, hidden: true });
+    privateSprayId = await insertSprayWall(PRIVATE_SPRAY_UUID, PRIVATE_SPRAY_LAYOUT_ID, {
+      isPublic: false,
+      hidden: false,
+    });
+    hiddenSprayId = await insertSprayWall(HIDDEN_SPRAY_UUID, HIDDEN_SPRAY_LAYOUT_ID, {
+      isPublic: true,
+      hidden: true,
+    });
+    await insertSprayClimb(PRIVATE_SPRAY_CLIMB_UUID, PRIVATE_SPRAY_LAYOUT_ID);
+    await insertSprayClimb(HIDDEN_SPRAY_CLIMB_UUID, HIDDEN_SPRAY_LAYOUT_ID);
 
     // Session A: ticks on board A.
     await insertSession(SESSION_ON_A, boardAId);
@@ -226,12 +286,87 @@ describe('sessionGroupedFeed — exact board_id scoping (real DB)', () => {
       userId: SOLO_USER_ID,
     });
     await insertTick({
-      uuid: 'sf-tick-solo-2',
+      uuid: DAILY_BOARD_A_HIGHLIGHT_UUID,
       sessionId: null,
       boardId: boardAId,
       climbedAt: `${SOLO_DAY} 18:30:00`,
       userId: SOLO_USER_ID,
+      difficulty: 22,
     });
+    // The same climber has a harder sessionless send on board B that day. The
+    // global recap ranks it first, while board A's own feed must target A's
+    // lower tick for votes and comments.
+    await insertTick({
+      uuid: DAILY_BOARD_B_HIGHLIGHT_UUID,
+      sessionId: null,
+      boardId: boardBId,
+      climbedAt: `${SOLO_DAY} 19:00:00`,
+      userId: SOLO_USER_ID,
+      difficulty: 30,
+    });
+
+    // Detail's bare daily route must use PostgreSQL's complete rank keys:
+    // microseconds distinguish the first pair, then bigint IDs distinguish
+    // equal timestamps without a lossy JavaScript Number conversion.
+    await insertTick({
+      id: '9007199254740997',
+      uuid: 'sf-tick-precision-microsecond-older',
+      sessionId: null,
+      boardId: boardBId,
+      climbedAt: '2026-02-16 12:00:00.000001',
+      userId: PRECISION_USER_ID,
+    });
+    await insertTick({
+      id: '9007199254740994',
+      uuid: MICROSECOND_NEWER_TICK_UUID,
+      sessionId: null,
+      boardId: boardBId,
+      climbedAt: '2026-02-16 12:00:00.000002',
+      userId: PRECISION_USER_ID,
+    });
+    await insertTick({
+      id: '9007199254740992',
+      uuid: 'sf-tick-precision-bigint-lower',
+      sessionId: null,
+      boardId: boardBId,
+      climbedAt: '2026-02-17 12:00:00',
+      userId: PRECISION_USER_ID,
+    });
+    await insertTick({
+      id: '9007199254740993',
+      uuid: BIGINT_HIGHER_TICK_UUID,
+      sessionId: null,
+      boardId: boardBId,
+      climbedAt: '2026-02-17 12:00:00',
+      userId: PRECISION_USER_ID,
+    });
+
+    await db.execute(sql`
+      INSERT INTO vote_counts (entity_type, entity_id, upvotes, downvotes, score, hot_score, created_at)
+      VALUES
+        ('tick', ${DAILY_BOARD_A_HIGHLIGHT_UUID}, 3, 1, 2, 0, now()),
+        ('tick', ${DAILY_BOARD_B_HIGHLIGHT_UUID}, 6, 2, 4, 0, now())
+      ON CONFLICT (entity_type, entity_id) DO UPDATE SET
+        upvotes = excluded.upvotes,
+        downvotes = excluded.downvotes,
+        score = excluded.score,
+        hot_score = excluded.hot_score,
+        created_at = excluded.created_at
+    `);
+    await db.execute(sql`
+      INSERT INTO comments (uuid, user_id, entity_type, entity_id, body)
+      VALUES ('sf-board-scope-comment-a', ${SOLO_USER_ID}, 'tick', ${DAILY_BOARD_A_HIGHLIGHT_UUID}, 'Board A comment')
+    `);
+    await db.execute(sql`
+      WITH board_b_parent AS (
+        INSERT INTO comments (uuid, user_id, entity_type, entity_id, body)
+        VALUES ('sf-board-scope-comment-b1', ${SOLO_USER_ID}, 'tick', ${DAILY_BOARD_B_HIGHLIGHT_UUID}, 'Board B comment one')
+        RETURNING id
+      )
+      INSERT INTO comments (uuid, user_id, entity_type, entity_id, parent_comment_id, body)
+      SELECT 'sf-board-scope-comment-b2', ${SOLO_USER_ID}, 'tick', ${DAILY_BOARD_B_HIGHLIGHT_UUID}, id, 'Board B reply'
+      FROM board_b_parent
+    `);
 
     await insertTick({
       uuid: 'sf-tick-solo-second-day',
@@ -296,6 +431,8 @@ describe('sessionGroupedFeed — exact board_id scoping (real DB)', () => {
       boardId: privateSprayId,
       climbedAt: '2026-02-12 19:00:00',
       userId: OWNER_USER_ID,
+      boardType: 'spray',
+      climbUuid: PRIVATE_SPRAY_CLIMB_UUID,
     });
     await insertTick({
       uuid: 'sf-tick-owner-hidden-spray',
@@ -303,6 +440,8 @@ describe('sessionGroupedFeed — exact board_id scoping (real DB)', () => {
       boardId: hiddenSprayId,
       climbedAt: '2026-02-13 19:00:00',
       userId: OWNER_USER_ID,
+      boardType: 'spray',
+      climbUuid: HIDDEN_SPRAY_CLIMB_UUID,
     });
   });
 
@@ -360,12 +499,21 @@ describe('sessionGroupedFeed — exact board_id scoping (real DB)', () => {
       expect(result.sessions.map((session) => session.sessionId)).toContain(SESSION_ON_A);
     });
 
-    it("keeps them off another board's feed", async () => {
+    it('shows a same-day highlight on another board only for that board’s own tick', async () => {
       const result = await callFeed({ boardUuid: BOARD_B_UUID, includeDailyHighlights: true, limit: 50 });
-      const sessionIds = result.sessions.map((session) => session.sessionId);
+      const dailyGroup = result.sessions.find((session) => session.sessionId === SOLO_DAILY_GROUP);
 
-      expect(sessionIds).toContain(SESSION_ON_B);
-      expect(sessionIds).not.toContain(SOLO_DAILY_GROUP);
+      expect(result.sessions.map((session) => session.sessionId)).toContain(SESSION_ON_B);
+      expect(dailyGroup).toMatchObject({
+        sessionType: 'daily_highlight',
+        tickCount: 1,
+        socialEntityType: 'tick',
+        socialEntityId: DAILY_BOARD_B_HIGHLIGHT_UUID,
+        upvotes: 6,
+        downvotes: 2,
+        voteScore: 4,
+        commentCount: 2,
+      });
     });
 
     it('keeps them off the unscoped Everyone feed (#4105 cost guard)', async () => {
@@ -394,6 +542,79 @@ describe('sessionGroupedFeed — exact board_id scoping (real DB)', () => {
       const detail = await sessionFeedQueries.sessionDetail(null, { sessionId: OTHER_BOARD_SESSION_DAY_GROUP });
       expect(detail?.sessionType).toBe('daily_highlight');
       expect(detail?.tickCount).toBe(1);
+    });
+
+    it('keeps board daily-card votes and comments on that card’s selected tick', async () => {
+      const [boardAFeed, boardBFeed] = await Promise.all([
+        callFeed({ boardUuid: BOARD_A_UUID, includeDailyHighlights: true, limit: 50 }),
+        callFeed({ boardUuid: BOARD_B_UUID, includeDailyHighlights: true, limit: 50 }),
+      ]);
+      const boardACard = boardAFeed.sessions.find((session) => session.sessionId === SOLO_DAILY_GROUP);
+      const boardBCard = boardBFeed.sessions.find((session) => session.sessionId === SOLO_DAILY_GROUP);
+
+      expect(boardACard?.socialEntityType).toBe('tick');
+      expect(boardACard?.socialEntityId).toBe(DAILY_BOARD_A_HIGHLIGHT_UUID);
+      expect(boardBCard?.socialEntityType).toBe('tick');
+      expect(boardBCard?.socialEntityId).toBe(DAILY_BOARD_B_HIGHLIGHT_UUID);
+      expect(boardACard?.socialEntityId).not.toBe(boardBCard?.socialEntityId);
+
+      // Opening the unscoped day without a card target still uses the global
+      // hardest tick; each feed card passes its exact board-scoped target.
+      const globalDetail = await sessionFeedQueries.sessionDetail(null, { sessionId: SOLO_DAILY_GROUP });
+      expect(globalDetail?.socialEntityId).toBe(DAILY_BOARD_B_HIGHLIGHT_UUID);
+
+      const boardADetail = await sessionFeedQueries.sessionDetail(null, {
+        sessionId: SOLO_DAILY_GROUP,
+        highlightTickUuid: boardACard?.socialEntityId,
+      });
+      const boardBDetail = await sessionFeedQueries.sessionDetail(null, {
+        sessionId: SOLO_DAILY_GROUP,
+        highlightTickUuid: boardBCard?.socialEntityId,
+      });
+
+      expect(boardADetail?.socialEntityType).toBe('tick');
+      expect(boardADetail?.socialEntityId).toBe(boardACard?.socialEntityId);
+      expect(boardADetail?.upvotes).toBe(boardACard?.upvotes);
+      expect(boardADetail?.downvotes).toBe(boardACard?.downvotes);
+      expect(boardADetail?.voteScore).toBe(boardACard?.voteScore);
+      expect(boardADetail?.commentCount).toBe(boardACard?.commentCount);
+      expect(boardADetail?.commentCount).toBe(1);
+
+      expect(boardBDetail?.socialEntityType).toBe('tick');
+      expect(boardBDetail?.socialEntityId).toBe(boardBCard?.socialEntityId);
+      expect(boardBDetail?.upvotes).toBe(boardBCard?.upvotes);
+      expect(boardBDetail?.downvotes).toBe(boardBCard?.downvotes);
+      expect(boardBDetail?.voteScore).toBe(boardBCard?.voteScore);
+      expect(boardBDetail?.commentCount).toBe(boardBCard?.commentCount);
+      expect(boardBDetail?.commentCount).toBe(2);
+    });
+
+    it('uses exact PostgreSQL timestamp and bigint ordering for bare daily details', async () => {
+      const microsecondDetail = await sessionFeedQueries.sessionDetail(null, { sessionId: MICROSECOND_DAILY_GROUP });
+      const bigintDetail = await sessionFeedQueries.sessionDetail(null, { sessionId: BIGINT_DAILY_GROUP });
+
+      expect(microsecondDetail?.socialEntityId).toBe(MICROSECOND_NEWER_TICK_UUID);
+      expect(bigintDetail?.socialEntityId).toBe(BIGINT_HIGHER_TICK_UUID);
+    });
+
+    it('rejects stale, foreign, and private explicit daily tick targets', async () => {
+      const missingTarget = await sessionFeedQueries.sessionDetail(null, {
+        sessionId: SOLO_DAILY_GROUP,
+        highlightTickUuid: 'sf-tick-deleted-before-open',
+      });
+      const foreignTarget = await sessionFeedQueries.sessionDetail(null, {
+        sessionId: SOLO_DAILY_GROUP,
+        highlightTickUuid: 'sf-tick-owner-private',
+      });
+      const privateTarget = await sessionFeedQueries.sessionDetail(
+        null,
+        { sessionId: PRIVATE_SPRAY_DAILY_GROUP, highlightTickUuid: 'sf-tick-owner-private-spray' },
+        { isAuthenticated: true, userId: STRANGER_USER_ID } as unknown as ConnectionContext,
+      );
+
+      expect(missingTarget).toBeNull();
+      expect(foreignTarget).toBeNull();
+      expect(privateTarget).toBeNull();
     });
 
     it('pages through the same cards, in the same order, one at a time', async () => {

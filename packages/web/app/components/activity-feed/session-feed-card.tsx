@@ -63,6 +63,7 @@ export default function SessionFeedCard({ session }: SessionFeedCardProps) {
 
   const {
     sessionId,
+    sessionType,
     sessionName,
     participants,
     totalSends,
@@ -88,6 +89,10 @@ export default function SessionFeedCard({ session }: SessionFeedCardProps) {
   const isMultiUser = participants.length > 1;
 
   const displayName = sessionName || generateSessionName(firstTickAt, boardTypes);
+  const detailHref =
+    sessionType === 'daily_highlight' && socialEntityType === 'tick'
+      ? `/session/${encodeURIComponent(sessionId)}?highlightTickUuid=${encodeURIComponent(socialEntityId)}`
+      : `/session/${encodeURIComponent(sessionId)}`;
 
   const hardestGradeColor = getGradeColor(hardestGrade);
   const hardestGradeTextColor = getGradeTextColor(hardestGradeColor);
@@ -182,7 +187,7 @@ export default function SessionFeedCard({ session }: SessionFeedCardProps) {
         {/* Clickable body that links to session detail */}
         <Box
           component={LocaleLink}
-          href={`/session/${sessionId}`}
+          href={detailHref}
           sx={{ textDecoration: 'none', color: 'inherit', display: 'block' }}
         >
           {/* Goal */}

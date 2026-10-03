@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import Box from '@mui/material/Box';
 import MuiTypography from '@mui/material/Typography';
@@ -32,11 +33,18 @@ export default function CommentSection({ entityType, entityId, title }: CommentS
   const { t } = useTranslation('common');
   const [refreshKey, setRefreshKey] = useState(0);
   const { data: session } = useSession();
+  const queryClient = useQueryClient();
   const { token, isAuthenticated } = useWsAuthToken();
   const currentUserId = session?.user?.id ?? null;
   const { showMessage } = useSnackbar();
   const wsClientRef = useRef<ReturnType<typeof createGraphQLClient> | null>(null);
   const resolvedTitle = title ?? t('comment.discussionTitle');
+
+  const refreshSessionCounts = useCallback(() => {
+    if (entityType !== 'tick' && entityType !== 'session') return;
+    void queryClient.invalidateQueries({ queryKey: ['sessionDetail'] });
+    void queryClient.invalidateQueries({ queryKey: ['sessionFeed'] });
+  }, [entityType, queryClient]);
 
   // Live comment updates, for the readers who can actually take part.
   //
@@ -66,6 +74,7 @@ export default function CommentSection({ entityType, entityId, title }: CommentS
           if (data?.commentUpdates) {
             // Any comment change triggers a refresh
             setRefreshKey((prev) => prev + 1);
+            refreshSessionCounts();
           }
         },
         error: (err) => {
@@ -82,7 +91,7 @@ export default function CommentSection({ entityType, entityId, title }: CommentS
       void wsClient.dispose();
       wsClientRef.current = null;
     };
-  }, [entityType, entityId, token, isAuthenticated]);
+  }, [entityType, entityId, token, isAuthenticated, refreshSessionCounts]);
 
   const handleAddComment = useCallback(
     async (body: string) => {
@@ -93,12 +102,13 @@ export default function CommentSection({ entityType, entityId, title }: CommentS
           input: { entityType, entityId, body },
         });
         setRefreshKey((prev) => prev + 1);
+        refreshSessionCounts();
       } catch {
         showMessage(t('comment.errors.post'), 'error');
         throw new Error('Failed to post comment');
       }
     },
-    [token, entityType, entityId, showMessage, t],
+    [token, entityType, entityId, refreshSessionCounts, showMessage, t],
   );
 
   return (

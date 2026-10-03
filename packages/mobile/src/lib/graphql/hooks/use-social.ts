@@ -316,6 +316,9 @@ export function useAddComment() {
       void queryClient.invalidateQueries({ queryKey: ['comments', variables.entityType, variables.entityId] });
       void queryClient.invalidateQueries({ queryKey: ['activityFeed'] });
       void queryClient.invalidateQueries({ queryKey: ['sessionGroupedFeed'] });
+      // Session detail owns the authoritative all-comments count (including
+      // replies) for the selected tick or party session.
+      void queryClient.invalidateQueries({ queryKey: ['sessionDetail'] });
     },
   });
 }

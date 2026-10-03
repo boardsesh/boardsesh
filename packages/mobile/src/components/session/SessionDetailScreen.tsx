@@ -35,7 +35,7 @@ const keyExtractor = (tick: SessionDetailTick) => tick.uuid;
  * Liquid Glass BottomAccessory unmounts here.
  */
 export default function SessionDetailScreen() {
-  const { sessionId } = useLocalSearchParams<{ sessionId: string }>();
+  const { sessionId, highlightTickUuid } = useLocalSearchParams<{ sessionId: string; highlightTickUuid?: string }>();
   const { t } = useTranslation('session');
   const { systemColors } = useTheme();
   const navigation = useNavigation();
@@ -47,8 +47,15 @@ export default function SessionDetailScreen() {
   // rendered: UIKit's raw inset for NativeTabs, or the explicit JS bar height.
   const paddingBottom = bottomChrome.floatingControlBottom + spacing[6];
 
-  const { data: session, isPending } = useSessionDetail(sessionId);
-  const { data: voteSummaries } = useBulkVoteSummaries('session', sessionId ? [sessionId] : [], !!sessionId);
+  const { data: session, isPending } = useSessionDetail(sessionId, highlightTickUuid);
+  const socialEntityType = session?.socialEntityType ?? 'session';
+  const socialEntityId = session?.socialEntityId;
+  const socialEntityIds = useMemo(() => (socialEntityId ? [socialEntityId] : []), [socialEntityId]);
+  const { data: voteSummaries } = useBulkVoteSummaries(
+    socialEntityType,
+    socialEntityIds,
+    !!session && !!socialEntityId,
+  );
   // `.at(0)`, not `[0]`: the list is empty until the chunk resolves, and `.at`
   // is the indexed read typed `VoteSummary | undefined` without
   // `noUncheckedIndexedAccess`.
@@ -84,7 +91,10 @@ export default function SessionDetailScreen() {
     commentSheetRef.current?.snapToIndex(0);
   }, []);
 
-  const handleOpenSessionComments = useCallback((id: string) => openComments(id, 'session'), [openComments]);
+  const handleOpenSessionComments = useCallback(
+    (id: string) => openComments(id, socialEntityType),
+    [openComments, socialEntityType],
+  );
 
   const handleTickPress = useCallback(
     (tick: SessionDetailTick) => openClimbInPlayDrawer({ kind: 'tick', tick }, { openPlayDrawer, router }),

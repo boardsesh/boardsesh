@@ -619,7 +619,7 @@ export const sessionFeedQueries = {
    */
   sessionDetail: async (
     _: unknown,
-    { sessionId }: { sessionId: string },
+    { sessionId, highlightTickUuid }: { sessionId: string; highlightTickUuid?: string | null },
     ctx?: ConnectionContext,
   ): Promise<SessionDetail | null> => {
     if (!sessionId) return null;
@@ -729,6 +729,67 @@ export const sessionFeedQueries = {
       .orderBy(desc(dbSchema.boardseshTicks.climbedAt));
 
     if (tickRows.length === 0) return null;
+
+    // Board-scoped feed cards select their own daily highlight. Carry that
+    // exact tick into detail so comments and votes stay on the card's target;
+    // the summary can still show every sessionless tick for that day. Reject a
+    // stale or private target rather than silently showing social data for a
+    // different tick. Bare daily routes use the feed's canonical global rank,
+    // ordered in PostgreSQL so timestamp microseconds and bigint IDs stay exact.
+    let dailyHighlightTick = dailySession
+      ? (tickRows.find((row) => row.tick.uuid === highlightTickUuid)?.tick ?? null)
+      : null;
+    const hasExplicitDailyTarget = highlightTickUuid != null;
+    if (dailySession && hasExplicitDailyTarget && !dailyHighlightTick) return null;
+    if (dailySession && !hasExplicitDailyTarget) {
+      const [rankedDailyTick] = await dbRead
+        .select({ uuid: dbSchema.boardseshTicks.uuid })
+        .from(dbSchema.boardseshTicks)
+        .leftJoin(
+          dbSchema.boardClimbAliases,
+          and(
+            eq(dbSchema.boardseshTicks.climbUuid, dbSchema.boardClimbAliases.aliasUuid),
+            eq(dbSchema.boardseshTicks.boardType, dbSchema.boardClimbAliases.boardType),
+          ),
+        )
+        .leftJoin(
+          dbSchema.boardClimbStats,
+          and(
+            sql`COALESCE(${dbSchema.boardClimbAliases.canonicalUuid}, ${dbSchema.boardseshTicks.climbUuid}) = ${dbSchema.boardClimbStats.climbUuid}`,
+            eq(dbSchema.boardseshTicks.boardType, dbSchema.boardClimbStats.boardType),
+            eq(dbSchema.boardseshTicks.angle, dbSchema.boardClimbStats.angle),
+          ),
+        )
+        .leftJoin(
+          dbSchema.boardClimbs,
+          and(
+            sql`COALESCE(${dbSchema.boardClimbAliases.canonicalUuid}, ${dbSchema.boardseshTicks.climbUuid}) = ${dbSchema.boardClimbs.uuid}`,
+            eq(dbSchema.boardseshTicks.boardType, dbSchema.boardClimbs.boardType),
+          ),
+        )
+        .where(
+          and(
+            tickWhere,
+            sprayClimbVisibilityCondition(
+              { boardType: dbSchema.boardClimbs.boardType, layoutId: dbSchema.boardClimbs.layoutId },
+              ctx?.userId,
+            ),
+          ),
+        )
+        .orderBy(
+          sql`(${dbSchema.boardseshTicks.status} IN ('flash', 'send')) DESC`,
+          desc(
+            sql`COALESCE(${dbSchema.boardseshTicks.difficulty}, ROUND(${dbSchema.boardClimbStats.displayDifficulty})::int, -1)`,
+          ),
+          desc(dbSchema.boardseshTicks.climbedAt),
+          desc(dbSchema.boardseshTicks.id),
+        )
+        .limit(1);
+      dailyHighlightTick = tickRows.find((row) => row.tick.uuid === rankedDailyTick?.uuid)?.tick ?? null;
+      if (!dailyHighlightTick) return null;
+    }
+    const socialEntityType = dailySession ? 'tick' : 'session';
+    const socialEntityId = dailyHighlightTick?.uuid ?? sessionId;
 
     // Batch-fetch tick vote counts
     const tickUuids = tickRows.map((r) => r.tick.uuid);
@@ -927,31 +988,30 @@ export const sessionFeedQueries = {
       .sort((a, b) => (b.effDiff ?? 0) - (a.effDiff ?? 0));
     const hardestGrade = gradesSorted.length > 0 ? gradesSorted[0].effName : null;
 
-    // Vote/comment counts
-    const [voteData] = dailySession
-      ? []
-      : await dbRead
-          .select({
-            upvotes: sql<number>`COALESCE(upvotes, 0)`,
-            downvotes: sql<number>`COALESCE(downvotes, 0)`,
-            score: sql<number>`COALESCE(score, 0)`,
-          })
-          .from(dbSchema.voteCounts)
-          .where(and(sql`${dbSchema.voteCounts.entityType} = 'session'`, eq(dbSchema.voteCounts.entityId, sessionId)))
-          .limit(1);
+    // Party sessions carry social actions on themselves. Daily cards carry
+    // them on the selected tick (board-scoped from the feed, global by default).
+    const [voteData] = await dbRead
+      .select({
+        upvotes: sql<number>`COALESCE(upvotes, 0)`,
+        downvotes: sql<number>`COALESCE(downvotes, 0)`,
+        score: sql<number>`COALESCE(score, 0)`,
+      })
+      .from(dbSchema.voteCounts)
+      .where(
+        and(eq(dbSchema.voteCounts.entityType, socialEntityType), eq(dbSchema.voteCounts.entityId, socialEntityId)),
+      )
+      .limit(1);
 
-    const [commentData] = dailySession
-      ? []
-      : await dbRead
-          .select({ count: drizzleCount() })
-          .from(dbSchema.comments)
-          .where(
-            and(
-              sql`${dbSchema.comments.entityType} = 'session'`,
-              eq(dbSchema.comments.entityId, sessionId),
-              isNull(dbSchema.comments.deletedAt),
-            ),
-          );
+    const [commentData] = await dbRead
+      .select({ count: drizzleCount() })
+      .from(dbSchema.comments)
+      .where(
+        and(
+          eq(dbSchema.comments.entityType, socialEntityType),
+          eq(dbSchema.comments.entityId, socialEntityId),
+          isNull(dbSchema.comments.deletedAt),
+        ),
+      );
 
     // Session metadata
     const sessionName = dailySession ? null : partySession?.name || null;
@@ -986,6 +1046,8 @@ export const sessionFeedQueries = {
       gradeDistribution,
       boardTypes,
       hardestGrade,
+      socialEntityType,
+      socialEntityId,
       firstTickAt,
       lastTickAt,
       durationMinutes,

@@ -38,6 +38,7 @@ import { useDeleteTick } from '@/app/hooks/use-delete-tick';
 type SessionDetailContentProps = {
   session: SessionDetail | null;
   sessionId?: string;
+  highlightTickUuid?: string;
   fallbackBoardDetails?: BoardDetails | null;
   afterParticipants?: React.ReactNode;
   /** Current board angle for display in the board preview */
@@ -294,6 +295,7 @@ function SessionTickItem({
 export default function SessionDetailContent({
   session: initialSession,
   sessionId: sessionIdProp,
+  highlightTickUuid,
   fallbackBoardDetails = null,
   afterParticipants,
   currentAngle: _currentAngle,
@@ -307,6 +309,7 @@ export default function SessionDetailContent({
 
   const { session: hookSession } = useSessionDetail({
     sessionId: sessionIdProp ?? initialSession?.sessionId,
+    highlightTickUuid,
     initialData: initialSession,
   });
 
@@ -336,6 +339,8 @@ export default function SessionDetailContent({
   const upvotes = session?.upvotes ?? 0;
   const downvotes = session?.downvotes ?? 0;
   const commentCount = session?.commentCount ?? 0;
+  const socialEntityType = session?.socialEntityType ?? 'session';
+  const socialEntityId = session?.socialEntityId ?? sessionId;
 
   // Still read: the own-tick delete affordance is gated on it. Owner-only
   // writes (rename, recap) live in the app — see SessionEditSheet.
@@ -386,7 +391,7 @@ export default function SessionDetailContent({
   const effectiveBoardDetails = defaultBoardDetails ?? fallbackBoardDetails;
 
   const handleShare = useCallback(async () => {
-    const shareUrl = `${window.location.origin}/session/${sessionId}`;
+    const shareUrl = `${window.location.origin}${window.location.pathname}${window.location.search}`;
     const name = sessionName || t('detail.shareTitle');
     await shareWithFallback({
       url: shareUrl,
@@ -511,8 +516,8 @@ export default function SessionDetailContent({
         <Box>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
             <VoteButton
-              entityType="session"
-              entityId={sessionId}
+              entityType={socialEntityType}
+              entityId={socialEntityId}
               initialUpvotes={upvotes}
               initialDownvotes={downvotes}
               likeOnly
@@ -536,7 +541,7 @@ export default function SessionDetailContent({
             </IconButton>
           </Box>
           <Collapse in={sessionCommentsOpen} unmountOnExit>
-            <CommentSection entityType="session" entityId={sessionId} title={t('detail.comments')} />
+            <CommentSection entityType={socialEntityType} entityId={socialEntityId} title={t('detail.comments')} />
           </Collapse>
         </Box>
 

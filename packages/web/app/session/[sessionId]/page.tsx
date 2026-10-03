@@ -13,14 +13,16 @@ import I18nProvider from '@/app/components/providers/i18n-provider';
 
 type Props = {
   params: Promise<{ sessionId: string }>;
+  searchParams?: Promise<{ highlightTickUuid?: string | string[] }>;
 };
 
-const fetchSessionDetail = React.cache(async (sessionId: string) => {
+const fetchSessionDetail = React.cache(async (sessionId: string, highlightTickUuid?: string) => {
   const url = getGraphQLHttpUrl();
   const client = new GraphQLClient(url);
   try {
     const data = await client.request<GetSessionDetailQueryResponse>(GET_SESSION_DETAIL, {
       sessionId,
+      ...(highlightTickUuid ? { highlightTickUuid } : {}),
     });
     return data.sessionDetail;
   } catch (err) {
@@ -73,10 +75,15 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   });
 }
 
-export default async function SessionDetailPage({ params }: Props) {
+export default async function SessionDetailPage({ params, searchParams }: Props) {
   const { sessionId: rawSessionId } = await params;
   const sessionId = decodeURIComponent(rawSessionId);
-  const session = await fetchSessionDetail(sessionId);
+  const { highlightTickUuid: requestedHighlightTickUuid } = (await searchParams) ?? {};
+  const highlightTickUuid =
+    typeof requestedHighlightTickUuid === 'string' && requestedHighlightTickUuid.length > 0
+      ? requestedHighlightTickUuid
+      : undefined;
+  const session = await fetchSessionDetail(sessionId, highlightTickUuid);
   const locale = await getLocale();
 
   // `climbs` is seeded alongside `session` because StaticClimbRow's ClimbTitle
@@ -84,7 +91,7 @@ export default async function SessionDetailPage({ params }: Props) {
   // carries raw `card.title.*` keys until the lazy catalog fetch lands.
   return (
     <I18nProvider locale={locale} namespaces={['session', 'climbs']}>
-      <SessionDetailContent session={session} sessionId={sessionId} />
+      <SessionDetailContent session={session} sessionId={sessionId} highlightTickUuid={highlightTickUuid} />
     </I18nProvider>
   );
 }

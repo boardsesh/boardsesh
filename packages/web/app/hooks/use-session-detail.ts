@@ -6,17 +6,26 @@ import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import { GET_SESSION_DETAIL, type GetSessionDetailQueryResponse } from '@boardsesh/graphql/operations/activity-feed';
 import type { SessionDetail } from '@boardsesh/shared-schema';
 
-export const SESSION_DETAIL_QUERY_KEY = (sessionId: string) => ['sessionDetail', sessionId] as const;
+export const SESSION_DETAIL_QUERY_KEY = (sessionId: string, highlightTickUuid?: string) =>
+  highlightTickUuid
+    ? (['sessionDetail', sessionId, highlightTickUuid] as const)
+    : (['sessionDetail', sessionId] as const);
 
 type UseSessionDetailOptions = {
   sessionId?: string;
+  highlightTickUuid?: string;
   initialData?: SessionDetail | null;
   enabled?: boolean;
 };
 
-export function useSessionDetail({ sessionId, initialData, enabled = true }: UseSessionDetailOptions) {
+export function useSessionDetail({
+  sessionId,
+  highlightTickUuid,
+  initialData,
+  enabled = true,
+}: UseSessionDetailOptions) {
   const { token, isAuthenticated } = useWsAuthToken();
-  const queryKey = SESSION_DETAIL_QUERY_KEY(sessionId ?? '');
+  const queryKey = SESSION_DETAIL_QUERY_KEY(sessionId ?? '', highlightTickUuid);
 
   const query = useQuery<SessionDetail | null>({
     queryKey,
@@ -24,6 +33,7 @@ export function useSessionDetail({ sessionId, initialData, enabled = true }: Use
       const client = createGraphQLHttpClient(token);
       const data = await client.request<GetSessionDetailQueryResponse>(GET_SESSION_DETAIL, {
         sessionId,
+        ...(highlightTickUuid ? { highlightTickUuid } : {}),
       });
       return data.sessionDetail;
     },

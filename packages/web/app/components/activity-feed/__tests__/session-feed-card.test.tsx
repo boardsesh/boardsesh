@@ -167,6 +167,22 @@ describe('SessionFeedCard', () => {
     expect(hrefs).toContain('/session/session-1');
   });
 
+  it('preserves a daily highlight tick target in the detail link', () => {
+    render(
+      <SessionFeedCard
+        session={makeSession({
+          sessionType: 'daily_highlight',
+          sessionId: 'daily:user-1:2026-10-03',
+          socialEntityType: 'tick',
+          socialEntityId: 'tick-a',
+        })}
+      />,
+    );
+
+    const detailLink = screen.getAllByRole('link').find((link) => link.getAttribute('href')?.startsWith('/session/'));
+    expect(detailLink?.getAttribute('href')).toBe('/session/daily%3Auser-1%3A2026-10-03?highlightTickUuid=tick-a');
+  });
+
   it('avatar links to user profile', () => {
     render(<SessionFeedCard session={makeSession()} />);
 
