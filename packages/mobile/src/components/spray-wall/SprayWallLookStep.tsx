@@ -13,6 +13,11 @@
 // app default happens to be — the silence a choice step exists to end. The
 // default selection (`DEFAULT_SPRAY_WALL_LOOK_OPTION_ID`) is one tap away, so the
 // step costs a climber who does not care exactly one tap.
+//
+// The one way past without a stored look is a FAILED save. The look is the only
+// thing this step adds; a backend that cannot store it yet (the app and the
+// backend ship on different trains), or a save that keeps failing, must not keep
+// a finished wall from being published.
 
 import { useCallback, useMemo, useState } from 'react';
 import { AccessibilityInfo, StyleSheet, View, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
@@ -29,7 +34,6 @@ import { spacing } from '../../theme/tokens';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { hapticSelection } from '../../lib/haptics';
 import { reportError } from '../../lib/error-reporting';
-import { extractGraphqlMessage } from '../../lib/graphql/extract-error-message';
 import { useEffectiveBoardRenderSettings } from '../../hooks/use-native-climb-render';
 import { useSyntheticSprayWallPreview } from '../../hooks/use-synthetic-spray-wall-preview';
 import {
@@ -114,13 +118,15 @@ export function SprayWallLookStep({ draft, onConfirmed }: SprayWallLookStepProps
     setSaveError(null);
     AccessibilityInfo.announceForAccessibility(t('sprayWizard.look.saving'));
     try {
-      await setRenderSettingsAsync({ uuid: draft.wallUuid, renderSettings });
+      await setRenderSettingsAsync({ layoutId: draft.layoutId, uuid: draft.wallUuid, renderSettings });
       onConfirmed();
     } catch (error) {
       reportError(error);
-      setSaveError(extractGraphqlMessage(error) ?? t('sprayWizard.look.failed'));
+      // Our own words, never the server's: the likeliest failure is a backend
+      // that predates the field, whose message is schema jargon.
+      setSaveError(t('sprayWizard.look.failed'));
     }
-  }, [saving, selectedOption, options, setRenderSettingsAsync, draft.wallUuid, onConfirmed, t]);
+  }, [saving, selectedOption, options, setRenderSettingsAsync, draft.layoutId, draft.wallUuid, onConfirmed, t]);
 
   const selectedLabel = selectedOption ? tCommon(selectedOption.labelI18nKey) : '';
 
@@ -193,6 +199,9 @@ export function SprayWallLookStep({ draft, onConfirmed }: SprayWallLookStepProps
           loading={saving}
           disabled={saving}
         />
+        {saveError ? (
+          <Button title={t('sprayWizard.look.publishWithout')} variant="text" onPress={onConfirmed} disabled={saving} />
+        ) : null}
       </View>
     </View>
   );

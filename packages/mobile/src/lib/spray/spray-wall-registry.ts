@@ -175,9 +175,10 @@ function sameLook(left: SprayWallRenderSettingsValue | null, right: SprayWallRen
  */
 export function registerSprayWall(
   layoutId: number,
-  // `renderSettings` may be left out and reads as "no stored look": every wall
-  // made before the field existed, and every fixture that draws a wall without
-  // caring how it looks.
+  // `renderSettings` left out means "not known by this registration", not "no
+  // look": the render payload does not carry it (the look arrives separately,
+  // through `setSprayWallLook`), so a revalidation must not wipe the look the
+  // same wall already has. A different wall under the layout starts with none.
   wall: Omit<RegisteredSprayWall, 'layoutId' | 'registeredAtMs' | 'renderSettings'> & {
     renderSettings?: SprayWallRenderSettingsValue | null;
   },
@@ -186,12 +187,27 @@ export function registerSprayWall(
   // wall subscribes to it (`sprayBoardRenderDefault`), and a ten-minute
   // revalidation that hands back the same look must not re-resolve every row's
   // render settings for nothing.
-  const previousLook = walls.get(layoutId)?.renderSettings ?? null;
-  const nextLook = wall.renderSettings ?? null;
+  const previous = walls.get(layoutId);
+  const previousLook = previous?.wallUuid === wall.wallUuid ? previous.renderSettings : null;
+  const nextLook = wall.renderSettings === undefined ? previousLook : wall.renderSettings;
   const renderSettings = sameLook(previousLook, nextLook) ? previousLook : nextLook;
   walls.set(layoutId, { ...wall, renderSettings, layoutId, registeredAtMs: now() });
   loadStates.set(layoutId, { state: 'ready', settledAtMs: now() });
   registerRuntimeGeometry(sprayGeometryKey(layoutId), buildWallGeometry(wall.holds));
+  notify();
+}
+
+/**
+ * Set a registered wall's stored look without re-registering it.
+ *
+ * Ignored when no wall is registered under the layout or a different wall is
+ * (the answer is for a wall that has since been replaced), and a no-op when the
+ * look is unchanged, so subscribers only wake for a real change.
+ */
+export function setSprayWallLook(layoutId: number, wallUuid: string, look: SprayWallRenderSettingsValue | null): void {
+  const wall = walls.get(layoutId);
+  if (!wall || wall.wallUuid !== wallUuid || sameLook(wall.renderSettings, look)) return;
+  walls.set(layoutId, { ...wall, renderSettings: look });
   notify();
 }
 

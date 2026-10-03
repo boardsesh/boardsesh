@@ -5,6 +5,7 @@ import {
   getSprayWall,
   listRegisteredSprayWalls,
   registerSprayWall,
+  setSprayWallLook,
   sprayBoardRenderDefault,
   sprayCacheToken,
   sprayGeometryKey,
@@ -215,5 +216,43 @@ describe("a wall's stored look", () => {
     registerSprayWall(LAYOUT_ID, { ...wall(1), renderSettings: OUTLINE_LOOK });
     unregisterSprayWall(LAYOUT_ID);
     expect(sprayBoardRenderDefault('spray', LAYOUT_ID)).toBeNull();
+  });
+
+  it('survives a re-registration that does not say, because the render payload never carries it', () => {
+    registerSprayWall(LAYOUT_ID, { ...wall(1), renderSettings: OUTLINE_LOOK });
+    const first = sprayBoardRenderDefault('spray', LAYOUT_ID);
+    registerSprayWall(LAYOUT_ID, wall(2));
+    expect(sprayBoardRenderDefault('spray', LAYOUT_ID)).toBe(first);
+  });
+
+  it('does not carry over to a different wall under the same layout', () => {
+    registerSprayWall(LAYOUT_ID, { ...wall(1), renderSettings: OUTLINE_LOOK });
+    registerSprayWall(LAYOUT_ID, { ...wall(1), wallUuid: 'another-wall' });
+    expect(sprayBoardRenderDefault('spray', LAYOUT_ID)).toBeNull();
+  });
+
+  it('is set on its own for the wall it belongs to, and wakes subscribers only on a change', () => {
+    registerSprayWall(LAYOUT_ID, wall(1));
+    let wakes = 0;
+    const unsubscribe = subscribeToSprayWalls(() => {
+      wakes += 1;
+    });
+    try {
+      setSprayWallLook(LAYOUT_ID, 'wall-uuid', OUTLINE_LOOK);
+      expect(sprayBoardRenderDefault('spray', LAYOUT_ID)).toEqual(OUTLINE_LOOK);
+      expect(wakes).toBe(1);
+
+      setSprayWallLook(LAYOUT_ID, 'wall-uuid', { ...OUTLINE_LOOK, boardsesh: { ...OUTLINE_LOOK.boardsesh } });
+      expect(wakes).toBe(1);
+
+      // An answer for a wall that has since been replaced, or never registered.
+      setSprayWallLook(LAYOUT_ID, 'another-wall', null);
+      setSprayWallLook(999, 'wall-uuid', OUTLINE_LOOK);
+      expect(sprayBoardRenderDefault('spray', LAYOUT_ID)).toEqual(OUTLINE_LOOK);
+      expect(sprayBoardRenderDefault('spray', 999)).toBeNull();
+      expect(wakes).toBe(1);
+    } finally {
+      unsubscribe();
+    }
   });
 });
