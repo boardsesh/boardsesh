@@ -1,6 +1,21 @@
 {
-  "generatedAt": "2026-10-03T04:15:26.464Z",
+  "generatedAt": "2026-10-03T05:59:06.555Z",
   "entries": [
+    {
+      "prNumber": 4273,
+      "category": "fixed",
+      "title": "Empty beta-thumbnail downloads no longer become blank pictures in the feed.",
+      "mergedAt": "2026-10-03T05:52:21Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4273",
+      "body": "Broken images served through the backend proxy show a fallback instead of an empty image."
+    },
+    {
+      "prNumber": 4094,
+      "category": "fixed",
+      "title": "Playlist sync now explains when another Boardsesh account owns a circuit and shows how to recover.",
+      "mergedAt": "2026-10-03T05:50:08Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4094"
+    },
     {
       "prNumber": 5890,
       "category": "improved",

@@ -14,6 +14,12 @@ A new version shipped to the App Store and Play Store.
 
 - Board images stay put during browser updates, and the app follows light or dark appearance changes more reliably. ([#5890](https://github.com/boardsesh/boardsesh/pull/5890))
 
+### Fixed
+
+- Empty beta-thumbnail downloads no longer become blank pictures in the feed. ([#4273](https://github.com/boardsesh/boardsesh/pull/4273))
+  Broken images served through the backend proxy show a fallback instead of an empty image.
+- Playlist sync now explains when another Boardsesh account owns a circuit and shows how to recover. ([#4094](https://github.com/boardsesh/boardsesh/pull/4094))
+
 ## 2026-10-02
 
 ### Fixed
