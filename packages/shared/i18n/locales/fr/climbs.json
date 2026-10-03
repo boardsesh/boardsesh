@@ -104,7 +104,11 @@
         "title": "Ajouter à la playlist",
         "empty": "Pas encore de playlist",
         "createNew": "Nouvelle playlist",
-        "signInBlurb": "Connectez-vous pour créer et gérer des playlists"
+        "signInBlurb": "Connectez-vous pour créer et gérer des playlists",
+        "membershipUnknown": "L’appartenance à la playlist est inconnue sans le layout de ce board. Les playlists non cochées sont verrouillées.",
+        "membershipChecking": "Vérification de l’appartenance… Les playlists non cochées restent verrouillées pendant le chargement.",
+        "membershipUnavailable": "Impossible de vérifier l’appartenance à la playlist. Les playlists non cochées sont verrouillées.",
+        "angleUnavailable": "L’ajout est désactivé, car l’angle de ce bloc est indisponible."
       },
       "create": {
         "namePlaceholder": "ex. Réglettes dures",
