@@ -13,7 +13,6 @@ import {
 const state = vi.hoisted(() => ({
   authToken: 'session-a' as string | null,
   resolved: true,
-  spray: true,
   moderation: true,
   roles: [{ role: 'admin', boardType: 'spray' }] as { role: string; boardType: string | null }[],
 }));
@@ -23,7 +22,6 @@ vi.mock('../../graphql/use-auth-token', () => ({ useAuthToken: () => ({ data: st
 vi.mock('../../graphql/hooks/use-my-roles', () => ({ useMyRoles: () => state.roles }));
 vi.mock('../../../providers/feature-flags-provider', () => ({
   useFeatureFlagsResolved: () => state.resolved,
-  useSprayWallsEnabled: () => state.spray,
   useClimbModerationEnabled: () => state.moderation,
 }));
 const report = {
@@ -49,14 +47,13 @@ beforeEach(() => {
   Object.assign(state, {
     authToken: 'session-a',
     resolved: true,
-    spray: true,
     moderation: true,
     roles: [{ role: 'admin', boardType: 'spray' }],
   });
   request.mockReset();
 });
 describe('spray moderation access', () => {
-  it.each(['resolved', 'spray', 'moderation'] as const)(
+  it.each(['resolved', 'moderation'] as const)(
     'blocks reporting and admin review when %s is false',
     (flag) => {
       state[flag] = false;

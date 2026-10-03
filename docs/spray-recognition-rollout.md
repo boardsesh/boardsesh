@@ -52,9 +52,13 @@ can be resumed from its stored photo after leaving the app.
    `release/next` and build new binaries without ONNX or the increased-memory
    entitlement. Retain camera permissions. Old binaries can use service jobs;
    the native dependency removal itself cannot be accomplished by OTA.
-5. Complete the gates below and record evidence before each exposure change.
+5. Complete the service gates below and record evidence before worker promotion.
 
-## Release gates (not yet satisfied)
+## Service release gates (not yet satisfied)
+
+Spray-wall creation and reset screens are now enabled by default; the former
+`spray-walls` mobile flag is retired. These gates apply to detection-worker
+promotion and quality verification. Mobile availability does not satisfy them.
 
 Database TLS is a deployment gate for **both** pools (Drizzle/postgres.js and
 pg-boss/node-postgres). The credential URL must use `sslmode=verify-full` and the
@@ -72,11 +76,11 @@ work reports **48.2%**; that is prior evidence, not a new measurement from this
 rollout. Reproduce on the pinned image/model before promotion. Do not substitute
 Python runtime scores: the int8 runtimes have previously differed.
 
-| Stage | Minimum evidence before promotion |
+| Service check | Minimum evidence before promotion |
 | --- | --- |
-| Testers | At least 24 hours; a photographed, reset and climbed real wall; 20 reviewed walls across at least 5 users; uploads ≥95%; count-difference proxy ≤15%. |
-| 10% | At least another 24 hours; at least 10 reset previews; reset applies/previews ≥60%; upload and correction gates still pass; no unresolved worker/auth/privacy errors. |
-| Everyone | Continue monitoring queue age, failures, latency and RSS; roll exposure back on gate regression. |
+| Initial validation | At least 24 hours; a photographed, reset and climbed real wall; 20 reviewed walls across at least 5 users; uploads ≥95%; count-difference proxy ≤15%. |
+| Reset validation | At least another 24 hours; at least 10 reset previews; reset applies/previews ≥60%; upload and correction gates still pass; no unresolved worker/auth/privacy errors. |
+| Ongoing operation | Continue monitoring queue age, failures, latency and RSS; roll the worker back on gate regression. |
 
 Use the existing `SPRAY_ROLLOUT_GATES` definitions. `Spray Holds Reviewed` now
 contains both `candidateCount` and `holdCount`, so the count-difference proxy
@@ -91,8 +95,9 @@ elapsed time alone or fabricated tester events.
 
 ## Rollback
 
-Set `spray-walls` exposure off, or reduce it to testers. Stop the worker or
-restore the last verified image digest; pending jobs and drafts remain durable.
+Stop the worker or restore the last verified image digest; pending jobs and
+drafts remain durable. The retired `spray-walls` flag no longer hides the mobile
+surface; new-wall owners can still choose manual placement.
 Leave published walls, photos, queue tables and detection history intact. The
 DR replica is not promoted or repurposed. Restore primary/storage connectivity,
 then retry failed jobs. An image rollback must retain the job's pinned model;

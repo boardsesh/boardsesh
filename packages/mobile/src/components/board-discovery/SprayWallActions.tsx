@@ -2,7 +2,6 @@ import { memo, useCallback, useMemo } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { UserBoard } from '@boardsesh/shared-schema';
-import { useSprayWallsEnabled } from '../../providers/feature-flags-provider';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { Text } from '../Text';
@@ -23,10 +22,9 @@ export const SprayWallActions = memo(function SprayWallActions({
   onShare,
 }: SprayWallActionsProps) {
   const { t } = useTranslation('boards');
-  const enabled = useSprayWallsEnabled();
   const { systemColors } = useTheme();
-  const maintenanceRows = useMemo(() => (enabled ? sprayDetailRows(board) : []), [board, enabled]);
-  const shareTarget = useMemo(() => (enabled ? sprayShareTarget(board) : null), [board, enabled]);
+  const maintenanceRows = useMemo(() => sprayDetailRows(board), [board]);
+  const shareTarget = useMemo(() => sprayShareTarget(board), [board]);
   const wallUuid = board?.uuid;
   const editHolds = useCallback(() => {
     if (wallUuid) onOpenMaintenance?.(wallUuid, 'editHolds');

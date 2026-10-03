@@ -84,8 +84,7 @@ export default function BoardsLayout() {
       {/* The add-a-wall flow, pushed like the builder above it. A ROUTE and not a
           sheet: two of its steps (the corner markers and the hold editor) are
           full-screen pan-and-pinch surfaces, which `docs/mobile-sheets-vs-routes.md`
-          rule 3 keeps off a sheet's own drag. Flag-gated inside the screen — the
-          route existing is not the same as the feature being reachable. */}
+          rule 3 keeps off a sheet's own drag. */}
       <Stack.Screen name="spray/new" options={{ title: tBoards('sprayWizard.screenTitle') }} />
       <Stack.Screen
         name="spray/holds"

@@ -501,7 +501,7 @@ export const SHARED_EVENTS = {
   // FirstBoardPathChosen: a tap on one of its choices. Props: { path: 'gym' |
   // 'own' | 'scan' | 'gym_map' | 'spray_wall', entry }. 'gym_map' is "Find your
   // gym on the map", offered under At a gym. 'spray_wall' is "Add my spray
-  // wall", offered only on the 'no_board' entry with the spray-walls flag on. A
+  // wall", offered only on the 'no_board' entry. A
   // climber can try several; each tap fires.
   //
   // FirstBoardPickerSkipped: the picker closed with no board bound, which is

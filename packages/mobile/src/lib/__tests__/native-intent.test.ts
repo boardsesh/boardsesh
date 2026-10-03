@@ -32,6 +32,17 @@ describe('redirectSystemPath', () => {
     expect(redirectSystemPath({ path: JOIN_LINK, initial: true })).toBe(JOIN_LINK);
   });
 
+  it.each([
+    ['https://boardsesh.com', true],
+    ['https://boardsesh.com', false],
+    ['https://www.boardsesh.com', true],
+    ['https://www.boardsesh.com', false],
+  ])('preserves an unlisted wall share query from %s (initial=%s)', (origin, initial) => {
+    getShareExtensionKeyMock.mockReturnValue('SHAREKEY');
+    const shareUrl = `${origin}/b/my-wall/40/list?wall=123e4567-e89b-12d3-a456-426614174000`;
+    expect(redirectSystemPath({ path: shareUrl, initial })).toBe(shareUrl);
+  });
+
   it('falls through to the original path (never reroutes) when getShareExtensionKey throws', () => {
     // Off-native (web, tests, module not loaded) getShareExtensionKey can throw.
     getShareExtensionKeyMock.mockImplementation(() => {

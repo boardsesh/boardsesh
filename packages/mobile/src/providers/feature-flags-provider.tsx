@@ -154,13 +154,6 @@ export const FEATURE_FLAG_DEFINITIONS = [
       'Abort interactive GraphQL requests after 20 s so a hung server cannot pin a screen. Kill switch for marginal networks: set to false (sync keeps its own 30 s).',
   },
   {
-    key: 'spray-walls',
-    label: 'Spray walls',
-    defaultEnabled: true,
-    description:
-      'Spray walls are enabled by default. Set this flag to false to disable the picker tile and /boards/spray/* routes remotely; a tester override can still force either choice.',
-  },
-  {
     key: 'donation-links',
     label: 'Donation links',
     policyControlled: true,
@@ -552,18 +545,6 @@ export function usePersonalGradesDefault(): boolean {
  */
 export function useSharedSessionBrowseEnabled(): boolean {
   return useFeatureFlag('shared-session-browse') === true;
-}
-
-/**
- * Gate for the spray-wall front door (epic #5346, SW-09): the picker tile and
- * every `/boards/spray/*` route behind it.
- *
- * Shipped by default. An absent or unresolved flag needs no operator setup;
- * explicit false remains the remote off switch. Route hosts still wait for
- * flag resolution before redirecting so a late answer cannot bounce a deep link.
- */
-export function useSprayWallsEnabled(): boolean {
-  return useFeatureFlag('spray-walls') !== false;
 }
 
 function featureFlagsEqual(leftFlags: FeatureFlags, rightFlags: FeatureFlags): boolean {

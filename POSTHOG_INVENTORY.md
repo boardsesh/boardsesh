@@ -641,7 +641,7 @@ an ordinary pick: no `Onboarding Board Activated`, no reveal banner.
 
 | Event | Properties | Emit site | Volume |
 | --- | --- | --- | --- |
-| `First Board Path Chosen` (changed) | adds `entry` (`launch_gate` = opened by the gate / `no_board` = Climbs' Find my board); `path` gains `spray_wall` ("Add my spray wall", `no_board` entry with the spray-walls flag on) | `use-first-board-picker-tracking.ts` | Unchanged per showing |
+| `First Board Path Chosen` (changed) | adds `entry` (`launch_gate` = opened by the gate / `no_board` = Climbs' Find my board); `path` gains `spray_wall` ("Add my spray wall", `no_board` entry) | `use-first-board-picker-tracking.ts` | Unchanged per showing |
 | `First Board Picker Skipped` (changed) | adds `entry`; `close_button` now also covers the plain Close X on the `no_board` entry | `use-first-board-picker-tracking.ts` | Adds the Climbs showings |
 | `Board Picker Opened` / `Board Picker Selection Completed` (changed) | `source` gains `no_board`, a gym-map pick made from that picker included | `use-board-picker-analytics.ts` (the picker and `/gyms`) | Unchanged (those rows used to read `board_picker`) |
 | `Board Builder Abandoned` | `boardType`, `hadLayout`, `hadSize` (what was selected at the end), `source` (`popular_seed` / `scratch`, as on `Board Created`), `preset` (opened from "My own board", which preselects the board type's most used setup when the popular list carries that type), `openedFrom` (`onboarding` / `no_board` / `board_picker`), `submitAttempted`, `secondsOpen` | `app/boards/create.tsx`, when the builder unmounts without a board created, reused or followed | At most one per builder visit |

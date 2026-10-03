@@ -275,7 +275,7 @@ than a tuned threshold.
 ## Adding a wall
 
 `packages/mobile/app/boards/spray/new.tsx` → `SprayWallWizardScreen` (SW-09,
-#5442). One route, seven steps, behind the mobile flag `spray-walls`.
+#5442). One route, seven steps, available to every climber.
 
 Two front doors open it: the board picker's Spray wall tile, and "Add my spray
 wall" under My own board in the "Where do you climb?" block that Climbs' Find my
@@ -1560,19 +1560,20 @@ Two rules, both enforced by a test in
   is a number, a boolean, or a member of a closed string union, and the test
   reads the payloads back field by field rather than trusting the types.
 
-## Rolling the flag out
+## Availability and detection quality
 
-The mobile `spray-walls` flag now defaults to enabled: no env variable or
-PostHog configuration is needed to see the picker tile and spray-wall routes.
+Spray walls are enabled by default. The picker tile and `/boards/spray/*`
+routes do not depend on PostHog or an enablement environment variable. The old
+`spray-walls` flag and on-device overrides no longer gate these surfaces.
 The additive backend `sourceVersionId` input must be deployed before the mobile
-maintenance route is released. An explicit false remains a remote off switch, and More → Feature Flags
-lets testers override either choice. Existing walls remain stored when the
-surface is disabled.
+maintenance route is released.
 
-Recognition-service exposure still follows the independent observation windows
-and quality gates in [the service rollout runbook](spray-recognition-rollout.md).
-The existing `SPRAY_ROLLOUT_GATES` metrics remain available for monitoring
-upload success, hold corrections and reset commits.
+The detection service has separate deployment and quality checks in
+[the service rollout runbook](spray-recognition-rollout.md). Enabling the mobile
+surface does not certify those checks or deploy a detection worker. The upload
+success, detection correction and reset commit ratios remain available through
+`SPRAY_ROLLOUT_GATES` in `spray-wall-events.ts` for monitoring. The correction
+rate is a proxy, not an F1: equal candidate and saved counts can hide corrections.
 
 ### The one public copy (SW-14)
 
@@ -1677,11 +1678,14 @@ the API is public and a server rule must not rest on a client convention.
 
 A share link is `https://www.boardsesh.com/b/<slug>/<angle>/list`, with
 `?wall=<uuid>` on an unlisted wall. iOS takes it into the app through the
-host-wide `applinks:` entitlement. **Android does not yet**: the intent filters in
-`packages/mobile/app.config.ts` cover `/join`, `/preview` and
-`/auth/reset-password` only, so a `/b/` link opens the website instead. Adding the
-filter moves the native fingerprint, so it rides the next native train rather than
-an OTA (SW-14b).
+host-wide `applinks:` entitlement. Android's verified intent filters in
+`packages/mobile/app.config.ts` include `/b/` for both `www.boardsesh.com` and
+`boardsesh.com`, alongside `/join`, `/preview` and `/auth/reset-password`.
+The native-intent handoff preserves the query string so `useSprayWallFromLink`
+can redeem an unlisted wall's capability through `useLocalSearchParams`.
+
+Adding the filter moves the native fingerprint, so Android needs the new store
+binary from `release/next`; an OTA on an older binary cannot add it (SW-14b).
 
 ## Climb writes on a wall
 

@@ -18,7 +18,6 @@ import { useMyRoles } from '../graphql/hooks/use-my-roles';
 import {
   useClimbModerationEnabled,
   useFeatureFlagsResolved,
-  useSprayWallsEnabled,
 } from '../../providers/feature-flags-provider';
 
 export const SPRAY_REPORTS_QUERY_KEY = ['sprayWallReports'] as const;
@@ -28,9 +27,8 @@ export function useSprayModerationAccess() {
   const { data: authToken } = useAuthToken();
   const roles = useMyRoles();
   const resolved = useFeatureFlagsResolved();
-  const sprayEnabled = useSprayWallsEnabled();
   const moderationEnabled = useClimbModerationEnabled();
-  const canReport = resolved && sprayEnabled && moderationEnabled && !!authToken;
+  const canReport = resolved && moderationEnabled && !!authToken;
   // Opaque per-session identity: bearer credentials must never reach query logs.
   const sessionScope = useMemo(() => (authToken ? ++nextSessionScope : 0), [authToken]);
   return { canReport, canReview: canReport && rolesGrantAdmin(roles, 'spray'), sessionScope };

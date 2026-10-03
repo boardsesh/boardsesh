@@ -25,8 +25,8 @@ type FirstBoardChoiceProps = {
   /** Asks for the boards near the climber again, after `nearby_error`. */
   onRetryNearby: () => void;
   /**
-   * "Add my spray wall", under My own board. Only passed when the spray-walls
-   * flag is on: the builder behind My own board cannot make a spray wall, so
+   * "Add my spray wall", under My own board for the Climbs no-board entry.
+   * The builder behind My own board cannot make a spray wall, so
    * without it a home spray-wall owner with no boards has no way forward here.
    */
   onAddSprayWall?: () => void;
