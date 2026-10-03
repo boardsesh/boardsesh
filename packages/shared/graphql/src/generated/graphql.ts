@@ -1833,11 +1833,13 @@ export type CreateSprayWallInput = {
 };
 
 export type CreateSprayWallVersionInput = {
-  /** The wall's four corners in this photo's pixels, TL/TR/BR/BL, as [[x, y], ...]. Omit to use the photo frame. */
+  /** The wall's four corners in an uploaded photo's pixels, TL/TR/BR/BL, as [[x, y], ...]. When sourceVersionId is supplied, omit this field entirely; explicit null is rejected. */
   anchors?: InputMaybe<Scalars['JSON']['input']>;
   notes?: InputMaybe<Scalars['String']['input']>;
-  /** photoId from POST /api/spray-wall-photos. */
-  photoId: Scalars['ID']['input'];
+  /** photoId from POST /api/spray-wall-photos. Supply exactly one of photoId and sourceVersionId. */
+  photoId?: InputMaybe<Scalars['ID']['input']>;
+  /** Reuse this wall's current published photo and its saved geometry for hold editing. Supply exactly one of photoId and sourceVersionId. */
+  sourceVersionId?: InputMaybe<Scalars['ID']['input']>;
   wallUuid: Scalars['ID']['input'];
 };
 

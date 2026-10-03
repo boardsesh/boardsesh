@@ -452,6 +452,16 @@ STORED object's metadata, never off the request — they define the canonical fr
 and a client that lied about them would put every hold on the wall at the wrong
 place.
 
+For hold edits on the existing photo, supply `sourceVersionId` instead of
+`photoId`. Exactly one is required. The source must be this wall's current
+published version, checked under the same wall lock that enforces one open draft.
+Its photo key, pixel dimensions, anchors and homography are copied exactly;
+anchors must be omitted from the request, including when the source has none.
+This path makes no upload or storage-metadata request and leaves the canonical
+frame unchanged. A missing source photo is refused. Holds are inherited through
+the normal version read, keeping their existing ids until an edit supersedes or
+removes one. Old clients that supply an uploaded `photoId` keep the same behavior.
+
 Version 1 defines the frame: with anchors it is the anchor quad's bounding
 rectangle, without them it is the photo's own pixel box. Later versions **inherit**
 the frame, because every existing hold's coordinates are in it. There are no
