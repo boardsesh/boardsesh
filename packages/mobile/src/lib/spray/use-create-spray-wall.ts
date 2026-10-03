@@ -16,6 +16,7 @@ import {
   GET_MY_SPRAY_WALLS,
   GET_SPRAY_WALL_WITH_VERSIONS,
   PUBLISH_SPRAY_WALL_VERSION,
+  SET_SPRAY_WALL_RENDER_SETTINGS,
   UPDATE_SPRAY_WALL,
 } from '@boardsesh/graphql/operations/spray-walls';
 import type {
@@ -26,6 +27,7 @@ import type {
 } from '@boardsesh/graphql/generated/graphql';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { getHttpClient } from '../graphql/client';
+import type { BoardRenderDefault } from '../board-render-settings';
 
 /** The owner's wall list, invalidated the moment a wall becomes one. */
 export const mySprayWallsQueryKey = ['mySprayWalls'] as const;
@@ -48,6 +50,7 @@ type SprayWallWithVersionsResponse = { sprayWall: CreatedSprayWall | null };
 type CreateVersionResponse = { createSprayWallVersion: SprayWallVersion };
 type PublishResponse = { publishSprayWallVersion: SprayWallVersion };
 type UpdateWallResponse = { updateSprayWall: CreatedSprayWall };
+type SetRenderSettingsResponse = { setSprayWallRenderSettings: SprayWall };
 
 /**
  * Create the wall row, its catalogue layout and its size.
@@ -175,6 +178,26 @@ export function usePublishSprayWallVersion() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: mySprayWallsQueryKey });
+    },
+  });
+}
+
+/**
+ * Store the wall's default look — the one a climber who never picked a render
+ * mode sees on it. The add-a-wall flow's look step writes it once, before the
+ * publish, so the wall's first climbers already get it.
+ *
+ * Idempotent (the last write wins), so a retry after a lost response is safe.
+ * The registry picks the stored look up on the next registration of the wall,
+ * which the publish forces anyway.
+ */
+export function useSetSprayWallRenderSettings() {
+  return useMutation({
+    mutationFn: async (input: { uuid: string; renderSettings: BoardRenderDefault }): Promise<SprayWall> => {
+      const response = await getHttpClient().request<SetRenderSettingsResponse>(SET_SPRAY_WALL_RENDER_SETTINGS, {
+        input,
+      });
+      return response.setSprayWallRenderSettings;
     },
   });
 }

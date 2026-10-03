@@ -914,11 +914,19 @@
       "resumeHint": "Tu peux quitter et reprendre plus tard."
     },
     "review": {
-      "publish": "Publier le mur",
+      "next": "Choisir le rendu",
       "nothingFound": "Aucune prise repérée. Touche le mur pour les ajouter.",
       "detectionFailed": "Impossible de repérer les prises cette fois. Touche le mur pour les ajouter.",
       "manualOnly": "Touche le mur pour ajouter tes prises.",
       "retry": "Réessayer"
+    },
+    "look": {
+      "title": "Comment allumer tes prises ?",
+      "body": "Les grimpeurs qui n'ont pas choisi leur propre rendu verront ton mur comme ça. Les autres gardent le leur.",
+      "loading": "Chargement de ton mur…",
+      "unavailable": "Impossible d'afficher la photo de ton mur ici, mais tu peux quand même choisir un rendu.",
+      "saving": "Enregistrement du rendu…",
+      "failed": "Impossible d'enregistrer le rendu. Réessaie."
     },
     "publish": {
       "title": "Ajoute-le à tes boards",

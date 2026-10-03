@@ -914,11 +914,19 @@
       "resumeHint": "You can leave and resume later."
     },
     "review": {
-      "publish": "Publish wall",
+      "next": "Pick a look",
       "nothingFound": "No holds spotted. Tap the wall to add them.",
       "detectionFailed": "Couldn't spot holds this time. Tap the wall to add them.",
       "manualOnly": "Tap the wall to add your holds.",
       "retry": "Try again"
+    },
+    "look": {
+      "title": "How should your holds light up?",
+      "body": "Climbers who haven't picked a look of their own see your wall like this. Anyone who has keeps theirs.",
+      "loading": "Loading your wall…",
+      "unavailable": "Your wall's photo can't be shown here, but you can still pick a look.",
+      "saving": "Saving your look…",
+      "failed": "Couldn't save the look. Try again."
     },
     "publish": {
       "title": "Put it on your boards",

@@ -177,7 +177,7 @@ export type SprayHoldEditorScreenProps = {
    * with its holds already there.
    */
   revealOnMount?: boolean;
-  /** The bottom bar's one filled button — "Publish wall" on the add-a-wall flow. */
+  /** The bottom bar's one filled button — "Pick a look" on the add-a-wall flow. */
   primaryLabel: string;
   /** Shown over an empty wall: why there are no rings, and optionally a way to try again. */
   notice?: SprayEditorNotice;

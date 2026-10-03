@@ -96,6 +96,43 @@ describe('loadSprayWall', () => {
     expect(getSprayWall(LAYOUT_ID)).toMatchObject({ version: 2, angle: null });
   });
 
+  it("registers the wall's stored look, sanitised, so the render path can fill in for a climber on default", async () => {
+    const payload = renderDataPayload();
+    requestMock.mockResolvedValueOnce({ sprayWallByLayout: { uuid: WALL_UUID } }).mockResolvedValueOnce({
+      sprayWallRenderData: {
+        ...payload.sprayWallRenderData,
+        wall: {
+          uuid: WALL_UUID,
+          board: { angle: 25 },
+          renderSettings: { mode: 'aura', boardsesh: { markStyle: 'outline', glowReach: 40 } },
+        },
+      },
+    });
+
+    await loadSprayWall(fakeQueryClient(), LAYOUT_ID);
+
+    const look = getSprayWall(LAYOUT_ID)?.renderSettings;
+    expect(look?.mode).toBe('aura');
+    expect(look?.boardsesh.markStyle).toBe('outline');
+    // Clamped like a stored preference: an out-of-range knob off the wire must
+    // not reach the renderer as-is.
+    expect(look?.boardsesh.glowReach).toBe(2);
+  });
+
+  it('registers no look for a wall that never stored one, or stored something unusable', async () => {
+    for (const renderSettings of [null, undefined, { mode: 'boardsesh', boardsesh: {} }, 'aura', { mode: 'aura' }]) {
+      clearSprayWallRegistry();
+      const payload = renderDataPayload();
+      requestMock.mockResolvedValueOnce({ sprayWallByLayout: { uuid: WALL_UUID } }).mockResolvedValueOnce({
+        sprayWallRenderData: { ...payload.sprayWallRenderData, wall: { uuid: WALL_UUID, renderSettings } },
+      });
+
+      await loadSprayWall(fakeQueryClient(), LAYOUT_ID);
+
+      expect(getSprayWall(LAYOUT_ID)).toMatchObject({ version: 2, renderSettings: null });
+    }
+  });
+
   it('withdraws a held wall when the layout no longer resolves', async () => {
     registerExistingWall();
     requestMock.mockResolvedValueOnce({ sprayWallByLayout: null });

@@ -30,6 +30,7 @@ import {
   unregisterSprayWall,
 } from './spray-wall-registry';
 import { clearSupersededSprayDrafts } from '../create-climb-draft-store';
+import { sanitizeBoardRenderDefault } from '../board-render-settings';
 import { reportHandledError } from '../error-reporting';
 import { mapCanonicalHoldsToPhoto, type CanonicalSprayHold } from './spray-hold-geometry';
 
@@ -159,6 +160,10 @@ export function registerRenderData(layoutId: number, renderData: SprayWallRender
     photoThumbUrl: renderData.photo.thumbUrl ?? null,
     photoExpiresAt: renderData.photo.expiresAt,
     holds,
+    // A `JSON` scalar off the wire, so it is validated here rather than trusted:
+    // anything that is not a usable look registers as "no stored look", and the
+    // render path falls back to the app default instead of drawing garbage.
+    renderSettings: sanitizeBoardRenderDefault(renderData.wall.renderSettings),
   });
 
   // The create-climb draft slot is keyed on the version, so a reset moves it and

@@ -1,0 +1,231 @@
+// "How should your holds light up?" — the add-a-wall flow's look step.
+//
+// Between the editor's commit and the publish: the holds are on the draft, so
+// this is the first moment the wall can be drawn the way its climbers will see
+// it. The creator swipes the same looks the onboarding board-look step offers,
+// each drawn on THEIR wall with some of its own holds lit, and the pick is stored
+// on the wall (`setSprayWallRenderSettings`) before it publishes. Climbers who
+// never picked a look of their own then see the wall this way; anyone who did
+// keeps theirs (`resolveEffectiveRenderSettings`).
+//
+// Mandatory, like the onboarding step it mirrors: there is no Skip, because
+// skipping would silently store nothing and the wall would draw in whatever the
+// app default happens to be — the silence a choice step exists to end. The
+// default selection (`DEFAULT_SPRAY_WALL_LOOK_OPTION_ID`) is one tap away, so the
+// step costs a climber who does not care exactly one tap.
+
+import { useCallback, useMemo, useState } from 'react';
+import { AccessibilityInfo, StyleSheet, View, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTranslation } from 'react-i18next';
+import { Text } from '../Text';
+import { Button } from '../Button';
+import { ActivityIndicator } from '../ActivityIndicator';
+import { BoardLookCarousel } from '../board-look/BoardLookCarousel';
+import { RailIndexDots } from '../board-look/RailIndexDots';
+import { captionBlockHeight, captionLineHeights, resolveHeroThumb } from '../board-look/board-look-card-metrics';
+import { useTheme } from '../../providers/theme-provider';
+import { spacing } from '../../theme/tokens';
+import { iosSystemColors } from '../../theme/ios-colors';
+import { hapticSelection } from '../../lib/haptics';
+import { reportError } from '../../lib/error-reporting';
+import { extractGraphqlMessage } from '../../lib/graphql/extract-error-message';
+import { useEffectiveBoardRenderSettings } from '../../hooks/use-native-climb-render';
+import { useSyntheticSprayWallPreview } from '../../hooks/use-synthetic-spray-wall-preview';
+import {
+  DEFAULT_SPRAY_WALL_LOOK_OPTION_ID,
+  SPRAY_WALL_LOOK_OPTIONS,
+  boardLookOptionWallDefault,
+  type BoardLookOptionId,
+} from '../../lib/board-render/board-look-options';
+import { useKeepSprayDraftRegistered, useSprayWallDraft } from '../../lib/spray/use-spray-wall-draft';
+import { useSetSprayWallRenderSettings } from '../../lib/spray/use-create-spray-wall';
+import type { CreatedWallDraft } from './add-wall-machine';
+
+type SprayWallLookStepProps = {
+  draft: CreatedWallDraft;
+  /** The look is stored on the wall. The flow moves on to publish. */
+  onConfirmed: () => void;
+};
+
+export function SprayWallLookStep({ draft, onConfirmed }: SprayWallLookStepProps) {
+  const { t } = useTranslation('boards');
+  const { t: tCommon } = useTranslation('common');
+  const { systemColors, textStyles } = useTheme();
+  const insets = useSafeAreaInsets();
+  const { width: windowWidth, fontScale } = useWindowDimensions();
+
+  // The draft back in the registry. The editor's own `useSprayWallDraft`
+  // unregistered it on its way out — its teardown reloads the PUBLISHED wall,
+  // which a wall being created does not have — so the preview below would have
+  // nothing to draw. The second hook holds it there against that reload, which
+  // is async and can land after this screen's own registration.
+  const draftState = useSprayWallDraft(draft.layoutId, draft.wallUuid, draft.versionNumber);
+  useKeepSprayDraftRegistered(draft.layoutId, draft.wallUuid, draft.versionNumber);
+
+  const { status: previewStatus, preview } = useSyntheticSprayWallPreview(draft.layoutId);
+  const { boardseshRendererAvailable } = useEffectiveBoardRenderSettings();
+
+  // A binary that cannot draw Aura would skeleton those cards forever, so they
+  // go (the carousel's own contract). Unanswered (`null`) keeps them: they
+  // skeleton until the probe the carousel kicks off answers.
+  const options = useMemo(
+    () =>
+      boardseshRendererAvailable === false
+        ? SPRAY_WALL_LOOK_OPTIONS.filter((option) => !option.requiresBoardseshRenderer)
+        : SPRAY_WALL_LOOK_OPTIONS,
+    [boardseshRendererAvailable],
+  );
+
+  // Local until Continue: a carousel tap only moves the selection, and the one
+  // write happens on the button.
+  const [selectedId, setSelectedId] = useState<BoardLookOptionId>(DEFAULT_SPRAY_WALL_LOOK_OPTION_ID);
+  const selectedIndex = Math.max(
+    0,
+    options.findIndex((option) => option.id === selectedId),
+  );
+  // Clamped, not trusted: filtering the Aura cards out can leave the selection
+  // naming a card that is no longer offered.
+  const selectedOption = options[selectedIndex] ?? options[0];
+
+  const [railSlotHeight, setRailSlotHeight] = useState(0);
+  const handleRailLayout = useCallback((event: LayoutChangeEvent) => {
+    setRailSlotHeight(event.nativeEvent.layout.height);
+  }, []);
+
+  const previewAspect = preview ? preview.boardWidth / preview.boardHeight : null;
+  const heroThumb = useMemo(() => {
+    if (railSlotHeight <= 0 || previewAspect == null) return null;
+    // No description under a hero card, so nothing to reserve for one.
+    const caption = captionBlockHeight(captionLineHeights('hero', textStyles), fontScale, 0);
+    return resolveHeroThumb({ aspect: previewAspect, windowWidth, heightBudget: railSlotHeight - caption });
+  }, [railSlotHeight, previewAspect, textStyles, fontScale, windowWidth]);
+
+  const setRenderSettings = useSetSprayWallRenderSettings();
+  const setRenderSettingsAsync = setRenderSettings.mutateAsync;
+  const saving = setRenderSettings.isPending;
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  const handleContinue = useCallback(async () => {
+    if (saving || !selectedOption) return;
+    const renderSettings = boardLookOptionWallDefault(selectedOption.id, options);
+    if (!renderSettings) return;
+    hapticSelection();
+    setSaveError(null);
+    AccessibilityInfo.announceForAccessibility(t('sprayWizard.look.saving'));
+    try {
+      await setRenderSettingsAsync({ uuid: draft.wallUuid, renderSettings });
+      onConfirmed();
+    } catch (error) {
+      reportError(error);
+      setSaveError(extractGraphqlMessage(error) ?? t('sprayWizard.look.failed'));
+    }
+  }, [saving, selectedOption, options, setRenderSettingsAsync, draft.wallUuid, onConfirmed, t]);
+
+  const selectedLabel = selectedOption ? tCommon(selectedOption.labelI18nKey) : '';
+
+  return (
+    <View style={styles.root}>
+      <View style={styles.header}>
+        <Text variant="title3">{t('sprayWizard.look.title')}</Text>
+        <Text variant="subheadline" color={systemColors.secondaryLabel}>
+          {t('sprayWizard.look.body')}
+        </Text>
+      </View>
+
+      {/* The rail takes every point the header and footer do not, measured
+          rather than computed — the header grows with the locale and the text
+          size. No ScrollView around it, for the onboarding step's reason: a
+          vertical scroller steals the swipes meant for the rail. */}
+      <View style={styles.railSlot} onLayout={handleRailLayout}>
+        {preview && railSlotHeight > 0 ? (
+          <BoardLookCarousel
+            options={options}
+            selectedId={selectedOption?.id ?? selectedId}
+            onSelect={setSelectedId}
+            preview={preview}
+            boardseshRendererAvailable={boardseshRendererAvailable}
+            heroThumb={heroThumb}
+            windowWidth={windowWidth}
+            // Safe here: a snap only moves local state until Continue.
+            selectOnSnap={heroThumb != null}
+            showDescriptions={false}
+          />
+        ) : (
+          <View style={styles.placeholder}>
+            {draftState.isUnavailable || previewStatus === 'unavailable' ? (
+              <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.centered}>
+                {t('sprayWizard.look.unavailable')}
+              </Text>
+            ) : (
+              <>
+                <ActivityIndicator />
+                <Text variant="subheadline" color={systemColors.secondaryLabel} accessibilityLiveRegion="polite">
+                  {t('sprayWizard.look.loading')}
+                </Text>
+              </>
+            )}
+          </View>
+        )}
+      </View>
+
+      {preview ? <RailIndexDots count={options.length} activeIndex={selectedIndex} /> : null}
+
+      <View
+        style={[styles.footer, { borderTopColor: systemColors.separator, paddingBottom: insets.bottom + spacing[3] }]}
+      >
+        {saveError ? (
+          <Text
+            variant="subheadline"
+            color={iosSystemColors.systemRed}
+            accessibilityLiveRegion="polite"
+            style={styles.centered}
+          >
+            {saveError}
+          </Text>
+        ) : null}
+        <Button
+          title={tCommon('mobile.settings.boardLook.intro.saveNamed', { look: selectedLabel })}
+          variant="filled"
+          size="large"
+          haptic={false}
+          onPress={() => void handleContinue()}
+          loading={saving}
+          disabled={saving}
+        />
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+  },
+  header: {
+    paddingHorizontal: spacing[4],
+    paddingTop: spacing[4],
+    gap: spacing[1],
+    // Yields to the rail on a short screen rather than squeezing it.
+    flexShrink: 1,
+  },
+  railSlot: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingVertical: spacing[4],
+  },
+  placeholder: {
+    alignItems: 'center',
+    gap: spacing[3],
+    paddingHorizontal: spacing[6],
+  },
+  centered: {
+    textAlign: 'center',
+  },
+  footer: {
+    paddingHorizontal: spacing[4],
+    paddingTop: spacing[3],
+    borderTopWidth: StyleSheet.hairlineWidth,
+    gap: spacing[2],
+  },
+});

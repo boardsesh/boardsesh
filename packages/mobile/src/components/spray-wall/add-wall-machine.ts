@@ -34,6 +34,7 @@ export type AddWallStep =
   | 'upload'
   | 'detect'
   | 'review'
+  | 'look'
   | 'publish'
   | 'done';
 
@@ -146,8 +147,10 @@ export type AddWallAction =
   | { type: 'DETECTION_FINISHED'; candidates: readonly SprayHoldCandidate[] }
   | { type: 'DETECTION_UNAVAILABLE' }
   | { type: 'DETECTION_FAILED' }
-  /** The editor saved every hold onto the draft; publishing is all that is left. */
+  /** The editor saved every hold onto the draft; the look is all that is left before publishing. */
   | { type: 'REVIEW_COMMITTED'; holdCount: number }
+  /** The wall's look is stored on the server; publishing is all that is left. */
+  | { type: 'LOOK_CONFIRMED' }
   | { type: 'PUBLISH_STARTED' }
   | { type: 'PUBLISH_FAILED'; message: string }
   | { type: 'PUBLISHED' }
@@ -174,12 +177,14 @@ export function initialAddWallState(): AddWallState {
 /**
  * Where `BACK` goes from each step.
  *
- * `detect`, `review` and `publish` are absent on purpose. By then the wall and
- * its draft version exist on the server and the photo has been adopted; stepping
- * back into `photo` would offer to upload a second photo onto a draft that
- * already has one, which `runUpload` declines outright — so the step would sit
- * there doing nothing at all, which is worse than having no way back. The way out
- * of those three is leaving the flow, which keeps the draft for later.
+ * `detect`, `review`, `look` and `publish` are absent on purpose. By then the
+ * wall and its draft version exist on the server and the photo has been adopted;
+ * stepping back into `photo` would offer to upload a second photo onto a draft
+ * that already has one, which `runUpload` declines outright — so the step would
+ * sit there doing nothing at all, which is worse than having no way back. `look`
+ * cannot step back into `review` either: the holds are already committed, and the
+ * editor would reopen on them with nothing to ask. The way out of those four is
+ * leaving the flow, which keeps the draft for later.
  *
  * `upload` keeps its way back because a draft cannot exist there: the action that
  * creates one is also the action that leaves the step.
@@ -189,6 +194,24 @@ const BACK_TARGET: Partial<Record<AddWallStep, AddWallStep>> = {
   anchors: 'photo',
   upload: 'photo',
 };
+
+/**
+ * Whether the footer's Back LEAVES the flow rather than stepping back inside it.
+ *
+ * `meta` is the first step, so there is nothing behind it. `review`, `look` and
+ * `publish` have no step behind them either — the draft is on the server by
+ * then (see `BACK_TARGET`) — and any state holding a draft is past the point
+ * where stepping back could do anything. Leaving keeps the draft.
+ */
+export function backLeavesFlow(state: AddWallState): boolean {
+  return (
+    state.draft != null ||
+    state.step === 'meta' ||
+    state.step === 'review' ||
+    state.step === 'look' ||
+    state.step === 'publish'
+  );
+}
 
 /**
  * Whether this step is somewhere a climber may leave without losing work they
@@ -441,17 +464,26 @@ export function addWallReducer(state: AddWallState, action: AddWallAction): AddW
       };
 
     case 'REVIEW_COMMITTED':
-      // One button saves and publishes: the editor's commit is the save, and
-      // landing here starts the publish (the screen runs it from an effect).
-      // Refused off the review step, and for an empty wall — publishing a
-      // version with no holds creates a wall that cannot hold a climb.
+      // The editor's commit is the save; the wall's look is the one question
+      // left before publishing. Refused off the review step, and for an empty
+      // wall — publishing a version with no holds creates a wall that cannot
+      // hold a climb, and a look picked over no holds previews nothing.
       if (state.step !== 'review' || !(action.holdCount > 0)) return state;
       return {
         ...state,
-        step: 'publish',
+        step: 'look',
         savedHoldCount: action.holdCount,
         publish: { running: false, error: null },
       };
+
+    case 'LOOK_CONFIRMED':
+      // The look is already stored on the wall by the time this lands (the
+      // screen writes it, then confirms), so landing on `publish` starts the
+      // publish exactly as the editor's commit used to (the screen runs it from
+      // an effect). Refused off the look step: a stray confirm must not skip
+      // the editor's own guard on an empty wall.
+      if (state.step !== 'look') return state;
+      return { ...state, step: 'publish', publish: { running: false, error: null } };
 
     case 'PUBLISH_STARTED':
       return { ...state, step: 'publish', publish: { running: true, error: null } };

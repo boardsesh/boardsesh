@@ -33,10 +33,18 @@
 import { boardArtGeometryKey, registerRuntimeGeometry, unregisterRuntimeGeometry } from '@boardsesh/board-art-geometry';
 import type { BoardArtGeometry } from '@boardsesh/board-art-geometry/types';
 import { spraySizeIdForLayout } from '@boardsesh/board-config';
+import type { BoardRenderDefault } from '../board-render-settings';
 import type { SprayPhotoHold } from './spray-hold-geometry';
 
 /** The one board name a wall is ever registered under. */
 export const SPRAY_BOARD_NAME = 'spray';
+
+/**
+ * A wall's own stored default look, already sanitised
+ * (`sanitizeBoardRenderDefault`). Type-only import: the registry stays free of
+ * the settings store at runtime.
+ */
+export type SprayWallRenderSettingsValue = BoardRenderDefault;
 
 /**
  * One wall at one version, in that version's photo pixels.
@@ -79,6 +87,15 @@ export type RegisteredSprayWall = {
   photoExpiresAt: string;
   /** Alive holds only — `sprayWallRenderData` returns the generation alive AT this version. */
   holds: readonly SprayPhotoHold[];
+  /**
+   * The look the wall's creator picked for it (`SprayWall.renderSettings`), or
+   * `null` when none was stored or the stored value was unusable.
+   *
+   * Only a viewer on `mode: 'default'` ever sees it — an explicit choice of
+   * their own always wins (`resolveEffectiveRenderSettings`). Sanitised on the
+   * way in, so the render path reads it without re-validating.
+   */
+  renderSettings: SprayWallRenderSettingsValue | null;
   /**
    * When this registration was made, for revalidation. Stamped by
    * `registerSprayWall`, never by the caller — a caller-supplied timestamp is a
@@ -142,6 +159,13 @@ function buildWallGeometry(holds: readonly SprayPhotoHold[]): BoardArtGeometry {
   return { outlines, silhouetteLightness: {}, ledBright: {} };
 }
 
+/** Whether two stored looks draw the same. Both are sanitised, so key order is fixed. */
+function sameLook(left: SprayWallRenderSettingsValue | null, right: SprayWallRenderSettingsValue | null): boolean {
+  if (left === right) return true;
+  if (!left || !right) return false;
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
 /**
  * Publish a wall, replacing any earlier version of the same wall.
  *
@@ -151,9 +175,21 @@ function buildWallGeometry(holds: readonly SprayPhotoHold[]): BoardArtGeometry {
  */
 export function registerSprayWall(
   layoutId: number,
-  wall: Omit<RegisteredSprayWall, 'layoutId' | 'registeredAtMs'>,
+  // `renderSettings` may be left out and reads as "no stored look": every wall
+  // made before the field existed, and every fixture that draws a wall without
+  // caring how it looks.
+  wall: Omit<RegisteredSprayWall, 'layoutId' | 'registeredAtMs' | 'renderSettings'> & {
+    renderSettings?: SprayWallRenderSettingsValue | null;
+  },
 ): void {
-  walls.set(layoutId, { ...wall, layoutId, registeredAtMs: now() });
+  // An unchanged look keeps its previous identity. Every board surface on the
+  // wall subscribes to it (`sprayBoardRenderDefault`), and a ten-minute
+  // revalidation that hands back the same look must not re-resolve every row's
+  // render settings for nothing.
+  const previousLook = walls.get(layoutId)?.renderSettings ?? null;
+  const nextLook = wall.renderSettings ?? null;
+  const renderSettings = sameLook(previousLook, nextLook) ? previousLook : nextLook;
+  walls.set(layoutId, { ...wall, renderSettings, layoutId, registeredAtMs: now() });
   loadStates.set(layoutId, { state: 'ready', settledAtMs: now() });
   registerRuntimeGeometry(sprayGeometryKey(layoutId), buildWallGeometry(wall.holds));
   notify();
@@ -162,6 +198,20 @@ export function registerSprayWall(
 /** The wall registered for a layout id, or `null`. O(1); safe on a list row. */
 export function getSprayWall(layoutId: number): RegisteredSprayWall | null {
   return walls.get(layoutId) ?? null;
+}
+
+/**
+ * A board's stored default look: the registered wall's for a spray board,
+ * `null` for every catalogue board (they have none) and for a wall not
+ * registered yet.
+ *
+ * Shaped as a `useSyncExternalStore` snapshot: the same object comes back
+ * until the wall is re-registered, so a subscriber re-renders only when a
+ * registration actually lands.
+ */
+export function sprayBoardRenderDefault(boardName: string, layoutId: number): SprayWallRenderSettingsValue | null {
+  if (boardName !== SPRAY_BOARD_NAME) return null;
+  return walls.get(layoutId)?.renderSettings ?? null;
 }
 
 /** Drop a wall and its runtime geometry, so the render path reports no board rather than a stale one. */
