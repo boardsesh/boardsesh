@@ -187,7 +187,11 @@ describe('updateProfile mutation', () => {
 
   it('persists instagramUrl and clears it with an explicit null', async () => {
     await userMutations.updateProfile({}, { input: { instagramUrl: 'https://instagram.com/climber' } }, makeAuthCtx());
-    expect(txState.insertValues).toEqual({ userId: 'user-1', instagramUrl: 'https://instagram.com/climber' });
+    expect(txState.insertValues).toEqual({
+      userId: 'user-1',
+      instagramUrl: 'https://instagram.com/climber',
+      updatedAt: expect.any(Date),
+    });
     expect(txState.upsertSet).toMatchObject({ instagramUrl: 'https://instagram.com/climber' });
 
     await userMutations.updateProfile({}, { input: { instagramUrl: null } }, makeAuthCtx());

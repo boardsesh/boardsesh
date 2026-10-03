@@ -8,6 +8,7 @@ import { GET_MY_PROFILE, type MyProfile } from '@boardsesh/graphql/operations/ac
 const mocks = vi.hoisted(() => ({
   graphqlRequest: vi.fn(),
   showMessage: vi.fn(),
+  translate: (key: string) => key,
   wsAuthToken: { token: 'ws-token' as string | null, isLoading: false },
   session: {
     status: 'authenticated' as 'authenticated' | 'loading' | 'unauthenticated',
@@ -43,7 +44,7 @@ vi.mock('@/app/lib/i18n/use-locale-router', () => ({
 }));
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en-US' } }),
+  useTranslation: () => ({ t: mocks.translate, i18n: { language: 'en-US' } }),
 }));
 
 vi.mock('@/app/components/account/controllers-section', () => ({ default: () => null }));
