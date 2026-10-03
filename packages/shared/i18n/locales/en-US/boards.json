@@ -254,7 +254,7 @@
       "editGym": "Edit gym",
       "editBoard": "Edit board",
       "updating": "Updating results…",
-      "refreshFailed": "Couldn’t update results. Try again.",
+      "refreshFailed": "Couldn’t update results.",
       "retry": "Try again"
     },
     "myGyms": {

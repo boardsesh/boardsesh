@@ -71,6 +71,8 @@ export function boardSearchRetryDelay(failureCount: number, error: unknown): num
   return rateLimitDelay(error) ?? Math.min(1000 * 2 ** failureCount, 30_000);
 }
 
+// Test isolation only. Development edits intentionally keep the server cooldown;
+// wait for its deadline rather than bypassing backpressure after a hot reload.
 export function resetBoardSearchCooldownForTests(): void {
   cooldownUntil = 0;
 }

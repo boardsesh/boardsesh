@@ -254,7 +254,7 @@
       "editGym": "Editar rocódromo",
       "editBoard": "Editar plafón",
       "updating": "Actualizando resultados…",
-      "refreshFailed": "No se pudieron actualizar los resultados. Inténtalo de nuevo.",
+      "refreshFailed": "No se pudieron actualizar los resultados.",
       "retry": "Intentar de nuevo"
     },
     "myGyms": {

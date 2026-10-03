@@ -254,7 +254,7 @@
       "editGym": "Modifier la salle",
       "editBoard": "Modifier la board",
       "updating": "Actualisation des résultats…",
-      "refreshFailed": "Impossible d’actualiser les résultats. Réessaie.",
+      "refreshFailed": "Impossible d’actualiser les résultats.",
       "retry": "Réessayer"
     },
     "myGyms": {

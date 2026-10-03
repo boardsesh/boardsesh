@@ -254,7 +254,7 @@
       "editGym": "Halle bearbeiten",
       "editBoard": "Board bearbeiten",
       "updating": "Ergebnisse werden aktualisiert…",
-      "refreshFailed": "Die Ergebnisse konnten nicht aktualisiert werden. Versuch es erneut.",
+      "refreshFailed": "Die Ergebnisse konnten nicht aktualisiert werden.",
       "retry": "Erneut versuchen"
     },
     "myGyms": {

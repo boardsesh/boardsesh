@@ -33,6 +33,7 @@ const trackSelectionMock = vi.hoisted(() => vi.fn((): Promise<void> => Promise.r
 const refetchGyms = vi.hoisted(() => vi.fn());
 const refetchBoards = vi.hoisted(() => vi.fn());
 const queryMocks = vi.hoisted(() => ({ gyms: vi.fn(), boards: vi.fn() }));
+const geocodeMock = vi.hoisted(() => vi.fn<(text: string) => Promise<Coords | null>>());
 const captured = vi.hoisted(() => ({
   params: {} as Record<string, string | undefined>,
   activateOptions: null as ActivateOptions | null,
@@ -50,9 +51,28 @@ const captured = vi.hoisted(() => ({
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
   View: ({ children }: Children) => createElement('div', null, children),
-  Pressable: ({ children, onPress }: Children & { onPress?: () => void }) =>
-    createElement('button', { onClick: onPress }, children),
-  TextInput: () => createElement('input'),
+  Pressable: ({
+    children,
+    onPress,
+    accessibilityLabel,
+  }: Children & { onPress?: () => void; accessibilityLabel?: string }) =>
+    createElement('button', { onClick: onPress, 'aria-label': accessibilityLabel }, children),
+  TextInput: ({
+    value,
+    onChangeText,
+    onSubmitEditing,
+  }: {
+    value: string;
+    onChangeText: (text: string) => void;
+    onSubmitEditing: () => void;
+  }) =>
+    createElement('input', {
+      value,
+      onChange: (event: { target: { value: string } }) => onChangeText(event.target.value),
+      onKeyDown: (event: { key: string }) => {
+        if (event.key === 'Enter') onSubmitEditing();
+      },
+    }),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, absoluteFill: {}, hairlineWidth: 1 },
 }));
 vi.mock('expo-router', () => ({
@@ -81,7 +101,7 @@ vi.mock('../../../src/lib/use-device-location', () => ({
   useDeviceLocation: () => ({ status: 'idle', coords: captured.coords, request: vi.fn(() => Promise.resolve()) }),
 }));
 vi.mock('../../../src/lib/use-place-search', () => ({
-  useGeocodePlace: () => ({ geocode: vi.fn(), isGeocoding: false }),
+  useGeocodePlace: () => ({ geocode: geocodeMock, isGeocoding: false }),
 }));
 vi.mock('../../../src/providers/theme-provider', () => ({
   useTheme: () => ({
@@ -126,10 +146,11 @@ vi.mock('../../../src/components/gym-directory/GymListPanel', () => ({
     onPressGym: (gym: Gym) => void;
     filterSlot?: ReactNode;
     placeCaption?: ReactNode;
+    searchSlot?: ReactNode;
   }) => {
     captured.onActivateBoard = props.onActivateBoard;
     captured.onPressGym = props.onPressGym;
-    return createElement('div', null, props.filterSlot, props.placeCaption);
+    return createElement('div', null, props.searchSlot, props.filterSlot, props.placeCaption);
   },
 }));
 vi.mock('../../../src/components/gym-directory/GymLocationPrompt', () => ({ GymLocationPrompt: () => null }));
@@ -265,6 +286,30 @@ describe('discovery search integration', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     captured.coords = madrid;
+  });
+
+  it('discards a geocode response after clearing the search', async () => {
+    let resolveGeocode!: (coords: Coords | null) => void;
+    geocodeMock.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveGeocode = resolve;
+      }),
+    );
+    const screen = render(createElement(GymDiscovery));
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Paris' } });
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+    expect(geocodeMock).toHaveBeenCalledWith('Paris');
+    fireEvent.click(screen.getByRole('button', { name: 'mobile.gyms.clearSearch' }));
+    await act(async () => {
+      resolveGeocode({ latitude: 48.86, longitude: 2.35 });
+    });
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+    expect(screen.getByRole('textbox')).toHaveProperty('value', '');
+    expect(queryMocks.gyms.mock.lastCall?.[0]).toEqual(madrid);
+    expect(queryMocks.boards.mock.lastCall?.[0]).toEqual(madrid);
+    expect(distinctQueries(queryMocks.boards)).toHaveLength(1);
   });
 
   it('commits rapid chips and a pan together after the final 500 ms', () => {
