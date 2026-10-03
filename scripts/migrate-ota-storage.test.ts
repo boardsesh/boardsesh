@@ -2,7 +2,7 @@
 
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { describe, expect, it } from 'vite-plus/test';
+import { describe, expect, it, vi } from 'vite-plus/test';
 import {
   assertCopyPreflight,
   classifyStorageEndpoint,
@@ -13,7 +13,7 @@ import {
   type ObjectFingerprint,
   type ObjectMetadata,
 } from './lib/ota-storage-migration';
-import { fetchRailwayServiceVariables, isNotFoundError, listAllObjects } from './migrate-ota-storage';
+import { fetchRailwayServiceVariables, isNotFoundError, listAllObjects, main } from './migrate-ota-storage';
 
 const EMPTY_METADATA: ObjectMetadata = {
   contentType: null,
@@ -231,6 +231,58 @@ describe('Railway variable reads', () => {
       globalThis.fetch = originalFetch;
     }
   });
+
+  it('masks the private source endpoint before object-store setup in GitHub Actions', async () => {
+    const originalFetch = globalThis.fetch;
+    const originalGithubActions = process.env.GITHUB_ACTIONS;
+    const originalRailwayToken = process.env.RAILWAY_TOKEN;
+    const originalRailwayProjectId = process.env.RAILWAY_PROJECT_ID;
+    const sourceEndpoint = 'https://synthetic-account.tigris.dev';
+    const sourceAccessKeyId = 'source-key-for-redaction-test';
+    const sourceSecretAccessKey = 'source-secret-for-redaction-test';
+    const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    process.env.GITHUB_ACTIONS = 'true';
+    process.env.RAILWAY_TOKEN = 'synthetic-railway-token';
+    process.env.RAILWAY_PROJECT_ID = 'synthetic-project-id';
+    globalThis.fetch = (async (_input, init) => {
+      if (typeof init?.body !== 'string') throw new Error('Expected a JSON request body.');
+      const body = JSON.parse(init.body) as { query: string };
+      const data = body.query.includes('MigrationProject')
+        ? {
+            project: {
+              environments: { edges: [{ node: { id: 'environment', name: 'production' } }] },
+              services: { edges: [{ node: { id: 'ota-service', name: 'boardsesh-ota-v3' } }] },
+            },
+          }
+        : {
+            variables: {
+              AWS_BASE_ENDPOINT: sourceEndpoint,
+              AWS_ACCESS_KEY_ID: sourceAccessKeyId,
+              AWS_SECRET_ACCESS_KEY: sourceSecretAccessKey,
+              S3_BUCKET_NAME: 'unexpected-bucket',
+            },
+          };
+      return new Response(JSON.stringify({ data }), { status: 200 });
+    }) as typeof globalThis.fetch;
+
+    try {
+      await expect(main([])).rejects.toThrow(/expected bucket/);
+      expect(consoleLog.mock.calls.slice(0, 3)).toEqual([
+        [`::add-mask::${sourceEndpoint}`],
+        [`::add-mask::${sourceAccessKeyId}`],
+        [`::add-mask::${sourceSecretAccessKey}`],
+      ]);
+    } finally {
+      consoleLog.mockRestore();
+      globalThis.fetch = originalFetch;
+      if (originalGithubActions === undefined) delete process.env.GITHUB_ACTIONS;
+      else process.env.GITHUB_ACTIONS = originalGithubActions;
+      if (originalRailwayToken === undefined) delete process.env.RAILWAY_TOKEN;
+      else process.env.RAILWAY_TOKEN = originalRailwayToken;
+      if (originalRailwayProjectId === undefined) delete process.env.RAILWAY_PROJECT_ID;
+      else process.env.RAILWAY_PROJECT_ID = originalRailwayProjectId;
+    }
+  });
 });
 
 describe('paginated inventory and no-delete contract', () => {
@@ -268,8 +320,11 @@ describe('paginated inventory and no-delete contract', () => {
   });
 
   it('contains no S3 delete command or Railway mutation', () => {
-    const source = readFileSync(resolve(__dirname, 'migrate-ota-storage.ts'), 'utf8');
-    expect(source).not.toMatch(/DeleteObject|DeleteObjects/);
-    expect(source).not.toMatch(/^\s*mutation\s+[A-Za-z]/m);
+    const implementation = [
+      readFileSync(resolve(__dirname, 'migrate-ota-storage.ts'), 'utf8'),
+      readFileSync(resolve(__dirname, 'lib/ota-storage-migration.ts'), 'utf8'),
+    ].join('\n');
+    expect(implementation).not.toMatch(/DeleteObject|DeleteObjects/);
+    expect(implementation).not.toMatch(/^\s*mutation\s+[A-Za-z]/m);
   });
 });

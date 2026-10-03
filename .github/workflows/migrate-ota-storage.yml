@@ -43,17 +43,27 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          for workflow in \
-            mobile-ota-production.yml \
-            mobile-ota-backport.yml \
-            mobile-ota-preview.yml \
-            mobile-ota-preview-prompt.yml \
-            mobile-ota-preview-sweep.yml; do
+          ota_writer_workflows=(
+            mobile-ota-production.yml
+            mobile-ota-backport.yml
+            mobile-ota-preview.yml
+            mobile-ota-preview-prompt.yml
+            mobile-ota-preview-sweep.yml
+            production-deploy.yml
+          )
+
+          # production-deploy.yml calls mobile-ota-production.yml via workflow_call.
+          # GitHub lists that execution under the caller, not the reusable workflow.
+          for workflow in "${ota_writer_workflows[@]}"; do
             state=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow}" --jq .state)
             if [ "$state" != disabled_manually ]; then
               echo "::error::${workflow} must be disabled manually before copy or verification (state: ${state})."
               exit 1
             fi
+          done
+
+          # Check active writer runs only after every entry point is disabled.
+          for workflow in "${ota_writer_workflows[@]}"; do
             for status in requested waiting pending queued in_progress; do
               active=$(gh api --method GET \
                 "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow}/runs" \

@@ -483,6 +483,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
   const sourceEndpoint = requireRailwayVariable(railwayVariables, 'AWS_BASE_ENDPOINT');
   const sourceAccessKeyId = requireRailwayVariable(railwayVariables, 'AWS_ACCESS_KEY_ID');
   const sourceSecretAccessKey = requireRailwayVariable(railwayVariables, 'AWS_SECRET_ACCESS_KEY');
+  maskForGitHubActions(sourceEndpoint);
   maskForGitHubActions(sourceAccessKeyId);
   maskForGitHubActions(sourceSecretAccessKey);
   const sourceProvider = classifyStorageEndpoint(sourceEndpoint);

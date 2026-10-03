@@ -1113,13 +1113,16 @@ Run the gate in this order:
 1. Dispatch **Migrate OTA Storage to R2** on `main` with `mode=inventory`. It must classify the live endpoint as
    Tigris and list both complete buckets through every pagination token. An unknown endpoint or an R2 live endpoint
    stops the Tigris-copy workflow without writing.
-2. Freeze every OTA writer with `gh workflow disable mobile-ota-production.yml`, then repeat for
-   `mobile-ota-backport.yml`, `mobile-ota-preview.yml`, `mobile-ota-preview-prompt.yml` and
-   `mobile-ota-preview-sweep.yml`. Confirm each is idle with
+2. Freeze every OTA writer: disable `production-deploy.yml` first, then disable
+   `mobile-ota-production.yml`, `mobile-ota-backport.yml`, `mobile-ota-preview.yml`,
+   `mobile-ota-preview-prompt.yml` and `mobile-ota-preview-sweep.yml`. The production deploy workflow can call the
+   production OTA publisher through `workflow_call` and promote its staged update; GitHub records that run under
+   the caller, so the callee's run list alone misses it. Disabling it also pauses web and backend production deploys
+   until it is re-enabled. Confirm all six are idle with
    `gh run list --workflow <file> --status <status>` for `requested`, `waiting`, `pending`, `queued` and `in_progress`.
-   The migration workflow repeats those Actions API checks and refuses copy/verify unless all five are
-   `disabled_manually` with no nonterminal run. Keep them disabled through copy, final verification and the Railway
-   credential rotation; their normal concurrency groups do not exclude one another.
+   The migration workflow first verifies all six are `disabled_manually`, then refuses copy/verify while any has a
+   nonterminal run. Keep all six disabled through copy, final verification and Railway credential rotation; their
+   normal concurrency groups do not exclude one another.
 3. Dispatch the same workflow with `mode=copy` and `ota_publishes_frozen=true`. It refuses destination-only keys
    before its first PUT, recopies only missing or mismatched objects, preserves portable HTTP and user metadata, and
    never deletes. S3 tags, omitted metadata or object-lock/website metadata stop the run because R2 cannot preserve
@@ -1132,9 +1135,11 @@ Run the gate in this order:
    `AWS_SECRET_ACCESS_KEY` together with the scoped R2 values. Do not change `S3_BUCKET_NAME`. This repository does
    not perform that credential rotation.
 6. Verify `/hc` and `/ready`, publish one test update, and install/download it from a production-configured client
-   before unfreezing OTA writers. Re-enable all five files with `gh workflow enable <file>`. Keep the Tigris bucket
-   and its credentials intact as the rollback source. If the migration is abandoned before rotation, re-enable the
-   same five files; no reader or source object changed.
+   before unfreezing OTA writers. Re-enable the five direct publisher files first, then re-enable
+   `production-deploy.yml` with `gh workflow enable <file>` so its caller resumes only after its OTA callee is
+   enabled. Keep the Tigris bucket and its credentials intact as the rollback source. If the migration is abandoned
+   before rotation, re-enable the same five direct publishers, then `production-deploy.yml`; no reader or source
+   object changed.
 
 1. **Storage bucket** — an empty S3-compatible bucket `boardsesh-ota-v3` plus a scoped key. The original setup used
    Tigris (`t3.storage.dev`, region `auto`); the migration target is the private R2 bucket above. Keep it portable

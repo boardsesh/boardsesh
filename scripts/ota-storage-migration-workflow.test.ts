@@ -1,7 +1,9 @@
 /// <reference types="node" />
 
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { parse } from 'yaml';
 import { describe, expect, it } from 'vite-plus/test';
 
@@ -51,11 +53,70 @@ describe('Migrate OTA Storage to R2 workflow', () => {
       'mobile-ota-preview.yml',
       'mobile-ota-preview-prompt.yml',
       'mobile-ota-preview-sweep.yml',
+      'production-deploy.yml',
     ]) {
       expect(apiGuard?.run).toContain(workflowFile);
     }
     expect(apiGuard?.run).toContain('disabled_manually');
     expect(apiGuard?.run).toContain('for status in requested waiting pending queued in_progress');
+    expect(apiGuard?.run).toContain('for workflow in "${ota_writer_workflows[@]}"; do');
+    expect(apiGuard?.run?.match(/for workflow in "\$\{ota_writer_workflows\[@\]\}"; do/g)).toHaveLength(2);
+  });
+
+  it('blocks copy or verification while production-deploy is active and direct OTA writers are idle', () => {
+    const apiGuard = workflow.jobs.migrate.steps.find(({ name }) => name?.includes('writer is disabled'));
+    const guardScript = apiGuard?.run;
+    expect(guardScript).toBeDefined();
+
+    const temporaryDirectory = mkdtempSync(join(tmpdir(), 'ota-writer-freeze-'));
+    const ghMockPath = join(temporaryDirectory, 'gh');
+    const requestLogPath = join(temporaryDirectory, 'requests.log');
+    writeFileSync(
+      ghMockPath,
+      `#!/usr/bin/env node
+const { appendFileSync } = require('node:fs');
+const args = process.argv.slice(2);
+const endpoint = args.find((argument) => argument.includes('/actions/workflows/'));
+if (!endpoint) process.exit(2);
+const endpointPath = endpoint.split('/actions/workflows/')[1] ?? '';
+const runList = endpointPath.endsWith('/runs');
+const workflowFile = (runList ? endpointPath.slice(0, -5) : endpointPath).split('/').pop() ?? '';
+const status = args.find((argument) => argument.startsWith('status='))?.slice('status='.length);
+appendFileSync(process.env.OTA_WRITER_TEST_LOG, workflowFile + '\\t' + (status ?? 'state') + '\\n');
+const activeCaller = runList && workflowFile === 'production-deploy.yml' && status === 'in_progress';
+process.stdout.write(runList ? (activeCaller ? '1' : '0') : 'disabled_manually');
+`,
+    );
+    chmodSync(ghMockPath, 0o755);
+
+    try {
+      const result = spawnSync('bash', ['-e', '-o', 'pipefail', '-c', guardScript ?? ''], {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          PATH: `${temporaryDirectory}:${process.env.PATH ?? ''}`,
+          GITHUB_REPOSITORY: 'boardsesh/boardsesh',
+          GH_TOKEN: 'fixture-token',
+          OTA_WRITER_TEST_LOG: requestLogPath,
+        },
+      });
+      expect(result.status).toBe(1);
+      expect(`${result.stdout}${result.stderr}`).toContain('production-deploy.yml still has 1 in_progress run(s).');
+
+      const requests = readFileSync(requestLogPath, 'utf8');
+      for (const workflowFile of [
+        'mobile-ota-production.yml',
+        'mobile-ota-backport.yml',
+        'mobile-ota-preview.yml',
+        'mobile-ota-preview-prompt.yml',
+        'mobile-ota-preview-sweep.yml',
+      ]) {
+        expect(requests).toContain(`${workflowFile}\tin_progress`);
+      }
+      expect(requests).toContain('production-deploy.yml\tin_progress');
+    } finally {
+      rmSync(temporaryDirectory, { recursive: true, force: true });
+    }
   });
 
   it('exposes credentials only to the migration step under dedicated OTA_R2 names', () => {
