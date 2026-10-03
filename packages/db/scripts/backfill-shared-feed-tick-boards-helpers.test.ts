@@ -12,17 +12,25 @@ const FEED: SharedFeedBoard = { id: 261536, ...CONFIG };
 const CLIMBER = 'climber-1';
 
 function ownedBoard(overrides: Partial<OwnedBoard> = {}): OwnedBoard {
-  return { id: 770338, ownerId: CLIMBER, ...CONFIG, ...overrides };
+  return {
+    id: 770338,
+    ownerId: CLIMBER,
+    ...CONFIG,
+    createdAt: '2025-01-01 00:00:00.000000',
+    deletedAt: null,
+    ...overrides,
+  };
 }
 
 function feedTick(
   uuid: string,
-  overrides: { userId?: string; boardId?: number; sessionBoard?: SharedFeedBoard | null } = {},
+  overrides: { userId?: string; boardId?: number; sessionBoard?: SharedFeedBoard | null; createdAt?: string } = {},
 ) {
   return {
     uuid,
     userId: overrides.userId ?? CLIMBER,
     boardId: overrides.boardId ?? FEED.id,
+    createdAt: overrides.createdAt ?? '2025-01-01 00:00:01.000000',
     sessionBoard: overrides.sessionBoard ?? null,
   };
 }
@@ -76,6 +84,50 @@ void test('leaves a tick on the feed when its climber owns no board of that conf
   assert.deepEqual(plan.moves, []);
   assert.equal(plan.noOwnedBoard, 1);
   assert.equal(plan.ambiguous, 0);
+});
+
+void test('does not move a historical tick to a matching board created after it was recorded', () => {
+  const plan = planSharedFeedTickMoves({
+    feeds: [FEED],
+    ticks: [feedTick('historical', { createdAt: '2025-01-01 00:00:01.000000' })],
+    ownedBoards: [ownedBoard({ createdAt: '2025-01-01 00:00:02.000000' })],
+  });
+
+  assert.deepEqual(plan.moves, []);
+  assert.equal(plan.noOwnedBoard, 1);
+});
+
+void test('uses full timestamp precision when deciding whether a board existed at recording time', () => {
+  const plan = planSharedFeedTickMoves({
+    feeds: [FEED],
+    ticks: [feedTick('microsecond-boundary', { createdAt: '2025-01-01 00:00:01.000001' })],
+    ownedBoards: [ownedBoard({ createdAt: '2025-01-01 00:00:01.000002' })],
+  });
+
+  assert.deepEqual(plan.moves, []);
+  assert.equal(plan.noOwnedBoard, 1);
+});
+
+void test('does not move to a sole historical wall that has since been deleted', () => {
+  const plan = planSharedFeedTickMoves({
+    feeds: [FEED],
+    ticks: [feedTick('deleted-historical-wall')],
+    ownedBoards: [ownedBoard({ deletedAt: '2025-01-01 00:00:02.000000' })],
+  });
+
+  assert.deepEqual(plan.moves, []);
+  assert.equal(plan.noOwnedBoard, 1);
+});
+
+void test('keeps the feed when a later-deleted wall made the historical owner set ambiguous', () => {
+  const plan = planSharedFeedTickMoves({
+    feeds: [FEED],
+    ticks: [feedTick('ambiguous-history')],
+    ownedBoards: [ownedBoard(), ownedBoard({ id: 880001, deletedAt: '2025-01-01 00:00:02.000000' })],
+  });
+
+  assert.deepEqual(plan.moves, []);
+  assert.equal(plan.ambiguous, 1);
 });
 
 void test("never infers another climber's board from ownership alone", () => {

@@ -21,10 +21,12 @@
  *
  * The rule follows saveTick's session-before-owned-board resolution: an active
  * session board with the same full config wins, even when another climber owns
- * it. Otherwise require EXACTLY ONE non-deleted owned board with the same
- * (board_type, layout_id, size_id, normalised set_ids). Without a usable session,
- * two owned same-config boards (#4174) are ambiguous and remain on the feed,
- * as do ticks with no matching owned board.
+ * it. Otherwise require EXACTLY ONE owned board of the same config that
+ * existed when the tick row was recorded. A matching board deleted after that
+ * time still counts toward ambiguity; a unique historical wall that is now
+ * deleted and a newer replacement do not provide a safe destination.
+ * Without a usable session, two matching walls at recording time (#4174)
+ * remain on the feed.
  *
  * Set ids are compared normalised, not as raw strings. `createBoard` stores
  * whatever order it was handed, so a board saved as '25,26,27,24' is the same
@@ -48,11 +50,13 @@
  * A tick already moved off the feed stops matching. Use a new --out path on
  * every run: existing plan/recovery files are never overwritten.
  *
- * The repair updates only Boardsesh board attribution and its `updatedAt`
- * sync timestamp. Aurora IDs and sync markers are retained; this tool does
- * not write to Aurora. The new timestamp may move a tick past an offline-sync
- * client's cursor and cause that row to be delivered again, so schedule any
- * separately authorized production run for low traffic.
+ * The repair updates only Boardsesh board attribution and the tick's offline
+ * sync cursor. For each upstream independently, a row that was clean before
+ * the move keeps that status by advancing its existing marker to the same
+ * transaction timestamp; dirty and never-synced rows keep their markers. This
+ * preserves future Aurora/Kilter edit handling while redelivering board_id to
+ * offline clients. Advancing a clean Kilter marker can defer that tick's
+ * existing 48-hour send-absorption check until a later Kilter re-sync.
  *
  * Forward applies re-read and re-plan their still-source rows in a SERIALIZABLE
  * transaction. If a resolved wall changed, take a fresh dry-run and review its
@@ -62,7 +66,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { resolve } from 'path';
-import { and, eq, inArray, isNull, like } from 'drizzle-orm';
+import { and, eq, inArray, isNull, like, sql } from 'drizzle-orm';
 import { createScriptDb } from './db-connection.js';
 import {
   boardConfigKey,
@@ -132,6 +136,7 @@ export async function loadSharedFeedTicks(db: Pick<ScriptDb, 'select'>, feedIds:
         uuid: boardseshTicks.uuid,
         userId: boardseshTicks.userId,
         boardId: boardseshTicks.boardId,
+        createdAt: sql<string>`${boardseshTicks.createdAt}::text`,
         sessionBoard: {
           id: userBoards.id,
           boardType: userBoards.boardType,
@@ -157,6 +162,7 @@ async function loadTicksByUuid(db: Pick<ScriptDb, 'select'>, uuids: string[]): P
         uuid: boardseshTicks.uuid,
         userId: boardseshTicks.userId,
         boardId: boardseshTicks.boardId,
+        createdAt: sql<string>`${boardseshTicks.createdAt}::text`,
         sessionBoard: {
           id: userBoards.id,
           boardType: userBoards.boardType,
@@ -217,11 +223,11 @@ async function loadOwnedBoards(db: Pick<ScriptDb, 'select'>, ownerIds: string[])
         layoutId: userBoards.layoutId,
         sizeId: userBoards.sizeId,
         setIds: userBoards.setIds,
+        createdAt: sql<string>`${userBoards.createdAt}::text`,
+        deletedAt: sql<string | null>`${userBoards.deletedAt}::text`,
       })
       .from(userBoards)
-      .where(
-        and(inArray(userBoards.ownerId, ownerIds.slice(offset, offset + BATCH_SIZE)), isNull(userBoards.deletedAt)),
-      );
+      .where(inArray(userBoards.ownerId, ownerIds.slice(offset, offset + BATCH_SIZE)));
     boards.push(
       ...rows.map((board) => ({
         id: Number(board.id),
@@ -230,6 +236,8 @@ async function loadOwnedBoards(db: Pick<ScriptDb, 'select'>, ownerIds: string[])
         layoutId: Number(board.layoutId),
         sizeId: Number(board.sizeId),
         setIds: board.setIds,
+        createdAt: board.createdAt,
+        deletedAt: board.deletedAt,
       })),
     );
   }
@@ -303,13 +311,33 @@ async function applyMoveBatchesInTransaction(
     if (group) group.uuids.push(entry.uuid);
     else groups.set(key, { fromBoardId, toBoardId, uuids: [entry.uuid] });
   }
-  const updatedAt = new Date().toISOString();
+  // `updated_at` is the offline client's change cursor, so this attribution
+  // update must advance it. Keep each provider's conflict classification
+  // independently: only a marker that already covered the old row advances;
+  // a pending local edit or a never-synced row retains its original marker.
+  // transaction_timestamp() keeps every batch in this transaction on one clock.
+  const transactionTimestamp = sql`transaction_timestamp()::timestamp`;
   let applied = 0;
   for (const { fromBoardId, toBoardId, uuids } of groups.values()) {
     for (let offset = 0; offset < uuids.length; offset += BATCH_SIZE) {
       const rows = await transaction
         .update(boardseshTicks)
-        .set({ boardId: toBoardId, updatedAt })
+        .set({
+          boardId: toBoardId,
+          updatedAt: sql`GREATEST(${boardseshTicks.updatedAt}, ${transactionTimestamp})`,
+          auroraSyncedAt: sql`CASE
+            WHEN ${boardseshTicks.auroraSyncedAt} IS NOT NULL
+              AND ${boardseshTicks.updatedAt} <= ${boardseshTicks.auroraSyncedAt}
+            THEN GREATEST(${boardseshTicks.auroraSyncedAt}, ${transactionTimestamp})
+            ELSE ${boardseshTicks.auroraSyncedAt}
+          END`,
+          kilterSyncedAt: sql`CASE
+            WHEN ${boardseshTicks.kilterSyncedAt} IS NOT NULL
+              AND ${boardseshTicks.updatedAt} <= ${boardseshTicks.kilterSyncedAt}
+            THEN GREATEST(${boardseshTicks.kilterSyncedAt}, ${transactionTimestamp})
+            ELSE ${boardseshTicks.kilterSyncedAt}
+          END`,
+        })
         .where(
           and(
             inArray(boardseshTicks.uuid, uuids.slice(offset, offset + BATCH_SIZE)),
@@ -472,8 +500,8 @@ async function main() {
       return;
     }
 
-    // Read candidate walls in bounded owner batches, then match in memory so the report can
-    // tell "no board" apart from "two boards and no way to choose".
+    // Read all owner-board history in bounded batches, then match in memory so
+    // the report distinguishes historical ambiguity from no safe destination.
     const ownerIds = [...new Set(ticks.map((tick) => tick.userId))].filter(
       (ownerId) => ownerId !== SYSTEM_BOARD_OWNER_ID,
     );
@@ -501,9 +529,7 @@ async function main() {
     console.log(
       `Ambiguous  ${plan.ambiguous} ticks from ${plan.ambiguousUserIds.size} climbers who own several boards of that config`,
     );
-    console.log(
-      `No board   ${plan.noOwnedBoard} ticks whose climber owns no board of that config (the feed is correct)`,
-    );
+    console.log(`No board   ${plan.noOwnedBoard} ticks with no unique usable owned wall at recording time`);
     console.log('');
 
     if (entries.length === 0) {

@@ -14,8 +14,19 @@ export type BoardConfigRow = {
 };
 
 export type SharedFeedBoard = BoardConfigRow & { id: number };
-export type OwnedBoard = BoardConfigRow & { id: number; ownerId: string };
-export type FeedTick = { uuid: string; userId: string; boardId: number; sessionBoard: SharedFeedBoard | null };
+export type OwnedBoard = BoardConfigRow & {
+  id: number;
+  ownerId: string;
+  createdAt: string;
+  deletedAt: string | null;
+};
+export type FeedTick = {
+  uuid: string;
+  userId: string;
+  boardId: number;
+  createdAt: string;
+  sessionBoard: SharedFeedBoard | null;
+};
 
 export type PlannedMove = { uuid: string; oldBoardId: number; newBoardId: number };
 
@@ -30,7 +41,7 @@ export type MovePlan = {
   /** Ticks left alone because their climber owns several boards of that config. */
   ambiguous: number;
   ambiguousUserIds: Set<string>;
-  /** Ticks left alone because their climber owns no board of that config. */
+  /** Ticks with no unique usable owned wall for their recorded-at time. */
   noOwnedBoard: number;
 };
 
@@ -47,14 +58,35 @@ export function boardConfigKey(board: BoardConfigRow): string {
   return `${board.boardType}|${board.layoutId}|${board.sizeId}|${normaliseSetIds(board.setIds)}`;
 }
 
+/** Normalize PostgreSQL `timestamp` text while retaining its full microsecond precision. */
+function timestampKey(timestamp: string): string | null {
+  const match = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})(?:\.(\d{1,6}))?$/.exec(timestamp.trim());
+  if (!match) return null;
+  return `${match[1]}T${match[2]}.${(match[3] ?? '').padEnd(6, '0')}`;
+}
+
+function existedAt(timestamp: string, recordedAt: string): boolean {
+  const timestampKeyValue = timestampKey(timestamp);
+  const recordedAtKey = timestampKey(recordedAt);
+  return timestampKeyValue !== null && recordedAtKey !== null && timestampKeyValue <= recordedAtKey;
+}
+
+function occurredBefore(timestamp: string, later: string): boolean {
+  const timestampKeyValue = timestampKey(timestamp);
+  const laterKey = timestampKey(later);
+  return timestampKeyValue !== null && laterKey !== null && timestampKeyValue < laterKey;
+}
+
 /**
  * Which ticks can be moved off a per-config shared feed, and why the rest
  * cannot.
  *
  * An active session wall with the feed's full configuration wins, even when
- * another climber owns it. Otherwise require exactly one owned matching wall.
- * Without a usable session, multiple same-config walls (#4174) are ambiguous;
- * no owned match retains the feed. Neither fallback guesses a destination.
+ * another climber owns it. Otherwise count matching boards that existed and
+ * were not yet deleted when the tick row was recorded. Move only when that
+ * historical set has one member and the board is still active now. Deleted
+ * historical candidates still make the set ambiguous; absent, later-created,
+ * or now-deleted sole candidates retain the feed. Neither fallback guesses.
  */
 export function planSharedFeedTickMoves(input: {
   feeds: SharedFeedBoard[];
@@ -63,12 +95,12 @@ export function planSharedFeedTickMoves(input: {
 }): MovePlan {
   const feedConfigById = new Map(input.feeds.map((feed) => [feed.id, boardConfigKey(feed)]));
 
-  const ownedByOwnerConfig = new Map<string, number[]>();
+  const ownedByOwnerConfig = new Map<string, OwnedBoard[]>();
   for (const board of input.ownedBoards) {
     const key = `${board.ownerId}|${boardConfigKey(board)}`;
     const bucket = ownedByOwnerConfig.get(key);
-    if (bucket) bucket.push(board.id);
-    else ownedByOwnerConfig.set(key, [board.id]);
+    if (bucket) bucket.push(board);
+    else ownedByOwnerConfig.set(key, [board]);
   }
 
   const plan: MovePlan = {
@@ -98,18 +130,33 @@ export function planSharedFeedTickMoves(input: {
       continue;
     }
 
-    const candidates = ownedByOwnerConfig.get(`${tick.userId}|${feedConfig}`) ?? [];
-    if (candidates.length === 0) {
+    // Count every matching wall that existed when the tick was recorded, even
+    // if it was deleted later. A replacement created after the tick cannot be
+    // used to infer the wall the climber stood on, and a deleted historical
+    // match still makes a now-single survivor ambiguous.
+    const historicalCandidates = (ownedByOwnerConfig.get(`${tick.userId}|${feedConfig}`) ?? []).filter(
+      (board) =>
+        existedAt(board.createdAt, tick.createdAt) &&
+        (!board.deletedAt || occurredBefore(tick.createdAt, board.deletedAt)),
+    );
+    if (historicalCandidates.length === 0) {
       plan.noOwnedBoard += 1;
       continue;
     }
-    if (candidates.length > 1) {
+    if (historicalCandidates.length > 1) {
       plan.ambiguous += 1;
       plan.ambiguousUserIds.add(tick.userId);
       continue;
     }
+    const candidate = historicalCandidates[0];
+    if (candidate.deletedAt !== null) {
+      // The only historical wall has since been removed, so there is no safe
+      // current destination for the foreign key.
+      plan.noOwnedBoard += 1;
+      continue;
+    }
     plan.movedUserIds.add(tick.userId);
-    plan.moves.push({ uuid: tick.uuid, oldBoardId: tick.boardId, newBoardId: candidates[0] });
+    plan.moves.push({ uuid: tick.uuid, oldBoardId: tick.boardId, newBoardId: candidate.id });
   }
 
   return plan;

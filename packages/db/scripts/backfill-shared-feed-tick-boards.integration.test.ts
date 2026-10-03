@@ -34,7 +34,11 @@ async function withFixture(
           user_id text NOT NULL,
           board_id bigint NOT NULL CHECK (board_id <> 999),
           session_id text,
-          updated_at timestamptz NOT NULL DEFAULT '2020-01-01'
+          created_at timestamp NOT NULL DEFAULT '2020-01-01',
+          updated_at timestamp NOT NULL DEFAULT '2020-01-01',
+          aurora_synced_at timestamp,
+          kilter_synced_at timestamp,
+          comment text NOT NULL DEFAULT ''
         ) ON COMMIT PRESERVE ROWS
       `);
     await db.execute(
@@ -43,7 +47,7 @@ async function withFixture(
     await db.execute(sql`CREATE TEMP TABLE user_boards (
       id bigint PRIMARY KEY, owner_id text NOT NULL, board_type text NOT NULL,
       layout_id integer NOT NULL, size_id integer NOT NULL, set_ids text NOT NULL,
-      slug text NOT NULL DEFAULT '', deleted_at timestamptz
+      slug text NOT NULL DEFAULT '', created_at timestamp NOT NULL DEFAULT '2020-01-01', deleted_at timestamp
     ) ON COMMIT PRESERVE ROWS`);
     await db.execute(
       sql`CREATE TEMP TABLE board_sessions (id text PRIMARY KEY, board_id bigint, created_by_user_id text) ON COMMIT PRESERVE ROWS`,
@@ -98,7 +102,15 @@ async function createForwardPlan(db: FixtureDb, sessionId: string | null = null)
   const plan = planSharedFeedTickMoves({
     feeds: [{ id: 10, ...matchingConfig }],
     ticks,
-    ownedBoards: [{ id: 20, ownerId: 'climber', ...matchingConfig }],
+    ownedBoards: [
+      {
+        id: 20,
+        ownerId: 'climber',
+        ...matchingConfig,
+        createdAt: '2020-01-01 00:00:00.000000',
+        deletedAt: null,
+      },
+    ],
   });
   assert.deepEqual(plan.moves, [{ uuid: 'planned-tick', oldBoardId: 10, newBoardId: 20 }]);
   return { feeds: [{ id: 10, ...matchingConfig }], entries: plan.moves };
@@ -159,6 +171,16 @@ for (const staleCase of [
   {
     name: 'destination reconfiguration',
     change: (db: FixtureDb) => db.execute(sql`UPDATE user_boards SET size_id = 2 WHERE id = 20`),
+  },
+  {
+    name: 'destination created after tick recording',
+    change: (db: FixtureDb) => db.execute(sql`UPDATE user_boards SET created_at = '2021-01-01' WHERE id = 20`),
+  },
+  {
+    name: 'historical second wall deleted after tick recording',
+    change: (db: FixtureDb) =>
+      db.execute(sql`INSERT INTO user_boards (id, owner_id, board_type, layout_id, size_id, set_ids, slug, created_at, deleted_at)
+        VALUES (21, 'climber', 'moonboard', 6, 1, '24,25', 'old-climber-wall', '2019-01-01', '2021-01-01')`),
   },
   {
     name: 'destination owner change',
@@ -248,6 +270,63 @@ void test(
 );
 
 void test(
+  'forward and revert preserve each upstream edit classification while redelivering board attribution',
+  { skip: !databaseUrl },
+  async () => {
+    await withFixture(async (db) => {
+      await db.execute(sql`INSERT INTO user_boards (id, owner_id, board_type, layout_id, size_id, set_ids, slug) VALUES
+        (10, ${sharedFeedOwnerId}, 'moonboard', 6, 1, '24,25', 'presence-moonboard-6-1-24-25'),
+        (20, 'owner', 'moonboard', 6, 1, '24,25', 'owner-wall')`);
+      await db.execute(sql`
+        INSERT INTO boardsesh_ticks (uuid, user_id, board_id, updated_at, aurora_synced_at, kilter_synced_at)
+        VALUES
+          ('clean-both', 'owner', 10, '2020-01-01', '2021-01-01', '2021-01-01'),
+          ('aurora-dirty', 'owner', 10, '2022-01-01', '2021-01-01', '2023-01-01'),
+          ('kilter-dirty', 'owner', 10, '2022-01-01', '2023-01-01', '2021-01-01'),
+          ('never-synced', 'owner', 10, '2020-01-01', NULL, NULL)
+      `);
+      const moves = ['clean-both', 'aurora-dirty', 'kilter-dirty', 'never-synced'].map((uuid) => ({
+        uuid,
+        oldBoardId: 10,
+        newBoardId: 20,
+      }));
+      const plan = { feeds: [{ id: 10, ...matchingConfig }], entries: moves };
+
+      assert.equal(await applyForwardMoveBatches(db, plan), 4);
+      const afterForward = Array.from(
+        await db.execute(sql`SELECT uuid,
+          COALESCE(aurora_synced_at IS NOT NULL AND updated_at > aurora_synced_at, false) AS aurora_dirty,
+          COALESCE(kilter_synced_at IS NOT NULL AND updated_at > kilter_synced_at, false) AS kilter_dirty
+          FROM boardsesh_ticks ORDER BY uuid`),
+      );
+      assert.deepEqual(afterForward, [
+        { uuid: 'aurora-dirty', aurora_dirty: true, kilter_dirty: false },
+        { uuid: 'clean-both', aurora_dirty: false, kilter_dirty: false },
+        { uuid: 'kilter-dirty', aurora_dirty: false, kilter_dirty: true },
+        { uuid: 'never-synced', aurora_dirty: false, kilter_dirty: false },
+      ]);
+
+      // A real content edit after the attribution move must remain pending after revert.
+      await db.execute(sql`UPDATE boardsesh_ticks SET comment = 'new local edit', updated_at = updated_at + interval '1 microsecond'
+        WHERE uuid = 'clean-both'`);
+      assert.equal(await applyRevertMoveBatches(db, moves), 4);
+      const afterRevert = Array.from(
+        await db.execute(sql`SELECT uuid, board_id::integer AS board_id,
+          COALESCE(aurora_synced_at IS NOT NULL AND updated_at > aurora_synced_at, false) AS aurora_dirty,
+          COALESCE(kilter_synced_at IS NOT NULL AND updated_at > kilter_synced_at, false) AS kilter_dirty
+          FROM boardsesh_ticks ORDER BY uuid`),
+      );
+      assert.deepEqual(afterRevert, [
+        { uuid: 'aurora-dirty', board_id: 10, aurora_dirty: true, kilter_dirty: false },
+        { uuid: 'clean-both', board_id: 10, aurora_dirty: true, kilter_dirty: true },
+        { uuid: 'kilter-dirty', board_id: 10, aurora_dirty: false, kilter_dirty: true },
+        { uuid: 'never-synced', board_id: 10, aurora_dirty: false, kilter_dirty: false },
+      ]);
+    });
+  },
+);
+
+void test(
   'guarded forward apply rolls back an earlier batch after a later batch fails',
   { skip: !databaseUrl },
   async () => {
@@ -319,9 +398,9 @@ void test(
         feeds: [{ id: 10, ...config }],
         ticks,
         ownedBoards: [
-          { id: 20, ownerId: 'climber', ...config },
-          { id: 40, ownerId: 'two-walls', ...config },
-          { id: 41, ownerId: 'two-walls', ...config },
+          { id: 20, ownerId: 'climber', ...config, createdAt: '2020-01-01 00:00:00.000000', deletedAt: null },
+          { id: 40, ownerId: 'two-walls', ...config, createdAt: '2020-01-01 00:00:00.000000', deletedAt: null },
+          { id: 41, ownerId: 'two-walls', ...config, createdAt: '2020-01-01 00:00:00.000000', deletedAt: null },
         ],
       });
       assert.equal(plan.sessionMoves, 3);
