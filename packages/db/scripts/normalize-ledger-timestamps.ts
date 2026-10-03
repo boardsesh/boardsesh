@@ -109,20 +109,34 @@ export async function normalizeLedgerTables(
     await tx.unsafe(
       dryRun
         ? 'SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY'
-        : 'SET TRANSACTION ISOLATION LEVEL REPEATABLE READ',
+        : 'SET TRANSACTION ISOLATION LEVEL READ COMMITTED',
     );
 
-    const plans: LedgerTableRepairPlan[] = [];
+    const tablePresence: { table: LedgerTable; present: boolean }[] = [];
     for (const table of orderedTables) {
-      const present = await ledgerTableExists(tx, table);
+      tablePresence.push({ table, present: await ledgerTableExists(tx, table) });
+    }
+
+    // In the writable path, table existence checks above may establish statement
+    // snapshots before a concurrent writer commits. Acquire every lock first,
+    // then read rows with READ COMMITTED so each preflight sees commits that
+    // finished while this transaction waited for its locks. Dry runs intentionally
+    // keep one read-only repeatable snapshot and never wait on ledger writers.
+    if (!dryRun) {
+      for (const { table, present } of tablePresence) {
+        if (present) await tx.unsafe(`LOCK TABLE ${qualify(table)} IN SHARE ROW EXCLUSIVE MODE`);
+      }
+    }
+
+    const plans: LedgerTableRepairPlan[] = [];
+    for (const { table, present } of tablePresence) {
       if (!present) {
         plans.push({ table, present, repairs: [] });
         continue;
       }
 
-      // Prevent rows from changing between preflight, repair, and verification.
-      // The fixed-order lock also makes the two ledger copies one atomic repair.
-      if (!dryRun) await tx.unsafe(`LOCK TABLE ${qualify(table)} IN SHARE ROW EXCLUSIVE MODE`);
+      // All present tables are locked in a fixed order before any row snapshot.
+      // This protects each preflight, repair, and verification through commit.
       const rows = await readLedgerTimestampRows(tx, table);
       try {
         plans.push({ table, present, repairs: planLedgerTimestampRepairs(expected, rows) });

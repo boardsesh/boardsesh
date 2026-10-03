@@ -33,6 +33,7 @@ import {
   normalizeLedgerTable,
   normalizeLedgerTables,
   readLedgerTimestampRows,
+  type LedgerTableRepairPlan,
 } from './normalize-ledger-timestamps.js';
 import {
   DRIZZLE_MIGRATIONS_FOLDER,
@@ -160,6 +161,24 @@ async function withScratchClient<T>(scratchUrl: string, run: (client: postgres.S
   } finally {
     await client.end().catch(() => {});
   }
+}
+
+/** Waits until the named backend is blocked by the test's held relation lock. */
+async function waitForBlockedBackend(
+  observerClient: postgres.Sql,
+  applicationName: string,
+  blockerPid: number,
+): Promise<void> {
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    const blockedBackends = await observerClient.unsafe<{ pid: number }[]>(
+      `SELECT pid FROM pg_stat_activity WHERE application_name = $1 AND $2 = ANY(pg_blocking_pids(pid)) LIMIT 1`,
+      [applicationName, blockerPid],
+    );
+    if (blockedBackends.length > 0) return;
+    await new Promise<void>((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(`Timed out waiting for ${applicationName} to block on PostgreSQL backend ${blockerPid}`);
 }
 
 async function tableExists(scratchUrl: string, tableName: string): Promise<boolean> {
@@ -881,6 +900,132 @@ describe('migration journal verification (#2933)', () => {
       false,
       'the refused normalizer cannot report migration success',
     );
+  });
+
+  void it('preflights rows committed while normalization waits for its ledger locks', async (context) => {
+    const adminUrl = localDatabaseUrl();
+    if (!adminUrl) {
+      context.skip('set DATABASE_URL to a local Postgres to run');
+      return;
+    }
+    const migrationsFolder = makeTempFolder('lock-snapshot-race');
+    const scratchUrl = await createScratchDatabase(adminUrl, 'lock_snapshot_race');
+    writeMigrationsFolder(migrationsFolder, PHASE_ONE);
+    await applyMigrations(scratchUrl, migrationsFolder);
+    const phaseOneExpected = readExpectedMigrations(migrationsFolder);
+    await createLegacyLedger(scratchUrl, phaseOneExpected, BUILD_CLOCK);
+    await withScratchClient(
+      scratchUrl,
+      (client) => client`UPDATE drizzle."__drizzle_migrations" SET created_at = ${BUILD_CLOCK}`,
+    );
+
+    const laterEntry = { tag: '0002_later', when: 4000, sql: 'CREATE TABLE mjv_t_later (id int);' };
+    writeMigrationsFolder(migrationsFolder, [...PHASE_ONE, laterEntry]);
+    const expected = readExpectedMigrations(migrationsFolder);
+    const insertedHash = 'hash-committed-between-existence-check-and-ledger-lock';
+    const normalizerApplicationName = `mjv_lock_race_${process.pid}`;
+    const blockerClient = postgres(scratchUrl, { max: 1 });
+    const observerClient = postgres(adminUrl, { max: 1 });
+    const normalizerClient = postgres(scratchUrl, {
+      max: 1,
+      connection: { application_name: normalizerApplicationName },
+    });
+
+    let signalBlockerLocked!: (pid: number) => void;
+    const blockerLocked = new Promise<number>((resolve) => {
+      signalBlockerLocked = resolve;
+    });
+    let releaseBlocker!: () => void;
+    const waitForInsert = new Promise<void>((resolve) => {
+      releaseBlocker = resolve;
+    });
+
+    const blockerOperation = blockerClient
+      .begin(async (transaction) => {
+        await transaction.unsafe('LOCK TABLE drizzle."__drizzle_migrations" IN ACCESS EXCLUSIVE MODE');
+        const blockerRows = await transaction.unsafe<{ pid: number | string }[]>('SELECT pg_backend_pid() AS pid');
+        const blockerRow = blockerRows[0];
+        assert.ok(blockerRow, 'expected the blocker transaction to expose its backend pid');
+        signalBlockerLocked(Number(blockerRow.pid));
+        await waitForInsert;
+        await transaction.unsafe('INSERT INTO drizzle."__drizzle_migrations" (hash, created_at) VALUES ($1, $2)', [
+          insertedHash,
+          BUILD_CLOCK,
+        ]);
+      })
+      .then(
+        () => ({ kind: 'committed' as const }),
+        (error: unknown) => ({ kind: 'failed' as const, error }),
+      );
+
+    let normalizationPromise: Promise<LedgerTableRepairPlan[]> | undefined;
+    try {
+      const blockerOutcome = await Promise.race([
+        blockerLocked.then((pid) => ({ kind: 'locked' as const, pid })),
+        blockerOperation.then((result) => ({ kind: 'finished' as const, result })),
+      ]);
+      if (blockerOutcome.kind !== 'locked') {
+        if (blockerOutcome.result.kind === 'failed') throw blockerOutcome.result.error;
+        assert.fail('the table-lock transaction finished before acquiring its lock');
+      }
+
+      const currentNormalization = normalizeLedgerTables(
+        normalizerClient,
+        [DRIZZLE_LEDGER_TABLE, LEGACY_LEDGER_TABLE],
+        expected,
+      );
+      normalizationPromise = currentNormalization;
+      void currentNormalization.catch(() => {});
+
+      // The writer holds ACCESS EXCLUSIVE, so this observes the real normalizer
+      // waiting after its existence query and before it can take the first lock.
+      await waitForBlockedBackend(observerClient, normalizerApplicationName, blockerOutcome.pid);
+      releaseBlocker();
+      const writerResult = await blockerOperation;
+      assert.equal(writerResult.kind, 'committed', 'the concurrent row must commit before the normalizer locks');
+
+      await assert.rejects(
+        currentNormalization,
+        (error: unknown) => {
+          assert.ok(error instanceof Error);
+          assert.match(error.message, /unmatched hash/);
+          assert.match(error.message, new RegExp(`hash=${insertedHash}`));
+          assert.match(error.message, /No repairs were written/);
+          return true;
+        },
+        'the post-lock preflight must see and reject the committed row before repairing either copy',
+      );
+
+      const drizzleRows = await withScratchClient(scratchUrl, (client) =>
+        readLedgerTimestampRows(client, DRIZZLE_LEDGER_TABLE),
+      );
+      const legacyRows = await withScratchClient(scratchUrl, (client) =>
+        readLedgerTimestampRows(client, LEGACY_LEDGER_TABLE),
+      );
+      assert.deepEqual(
+        drizzleRows.map((row) => row.createdAt),
+        [BUILD_CLOCK, BUILD_CLOCK, BUILD_CLOCK],
+      );
+      assert.equal(drizzleRows[2]?.hash, insertedHash, 'the concurrent row must remain present and unchanged');
+      assert.deepEqual(
+        legacyRows.map((row) => row.createdAt),
+        [BUILD_CLOCK, BUILD_CLOCK],
+      );
+      assert.equal(
+        await tableExists(scratchUrl, 'mjv_t_later'),
+        false,
+        'a refused normalization must stop before the pending migration can be reported as applied',
+      );
+    } finally {
+      releaseBlocker();
+      await blockerOperation;
+      await normalizationPromise?.catch(() => {});
+      await Promise.all([
+        blockerClient.end().catch(() => {}),
+        observerClient.end().catch(() => {}),
+        normalizerClient.end().catch(() => {}),
+      ]);
+    }
   });
 
   it('rolls back both ledger copies when a write fails midway', async (context) => {
