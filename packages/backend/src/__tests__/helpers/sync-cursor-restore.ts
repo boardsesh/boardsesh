@@ -6,7 +6,7 @@ type TransactionClient = Parameters<Parameters<typeof db.transaction>[0]>[0];
 /**
  * Run a seed inside a transaction that may supply its own sync cursors.
  *
- * Migration 0205 makes the catalog cursors database-owned: BEFORE INSERT
+ * Migration 0250 makes the catalog cursors database-owned: BEFORE INSERT
  * triggers stamp `board_climbs.updated_at`/`sync_seq`,
  * `board_climb_stats.updated_at`/`sync_seq`,
  * `board_climb_grades.computed_at`/`sync_seq` and `sync_deletions.deleted_at`
