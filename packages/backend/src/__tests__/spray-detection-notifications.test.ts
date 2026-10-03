@@ -80,7 +80,10 @@ describe('spray import completion notifications', () => {
     await startJobQueue();
   });
   afterAll(() => stopJobQueue());
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
 
   it('rolls back the result if completion enqueue fails; stale fences never enqueue', async () => {
     const target = await completedWall();
@@ -197,6 +200,53 @@ describe('spray import completion notifications', () => {
         .where(eq(notificationDeliveries.notificationUuid, target.detectionId)),
     ).toHaveLength(1);
   });
+
+  it.each(['deduplicated', 'unavailable'])(
+    'retains registration when catch-up is %s and recovers on refresh',
+    async (mode) => {
+      const previous = await completedWall();
+      const target = await completedWall();
+      const boss = await startJobQueue();
+      const input = {
+        installationId: randomUUID(),
+        token: `ExpoPushToken[${randomUUID()}]`,
+        platform: 'ios',
+        locale: 'en-US',
+      };
+      await notificationDeviceMutations.registerNotificationDevice({}, { input }, previous.ctx);
+      await finishSprayDetection(db, target.detectionId, target.attemptToken, proposal);
+      await notifySprayDetectionCompleted(boss, target.detectionId);
+      const unavailableSend = vi.spyOn(boss, 'send');
+      if (mode === 'deduplicated') unavailableSend.mockResolvedValueOnce(null);
+      else unavailableSend.mockRejectedValueOnce(new Error('queue unavailable'));
+
+      expect(await notificationDeviceMutations.registerNotificationDevice({}, { input }, target.ctx)).toBe(true);
+      expect(unavailableSend).toHaveBeenCalledTimes(1);
+      const [registered] = await db
+        .select()
+        .from(notificationDevices)
+        .where(eq(notificationDevices.installationId, input.installationId));
+      expect(registered).toMatchObject({ userId: target.ctx.userId, token: input.token, active: true });
+      expect(await db.select().from(notifications).where(eq(notifications.uuid, target.detectionId))).toHaveLength(1);
+
+      unavailableSend.mockRestore();
+      const recoveredSend = vi.spyOn(boss, 'send');
+      expect(await notificationDeviceMutations.registerNotificationDevice({}, { input }, target.ctx)).toBe(true);
+      expect(recoveredSend).toHaveBeenCalledWith(
+        SPRAY_DETECTION_COMPLETION_QUEUE,
+        { detectionId: target.detectionId },
+        expect.objectContaining({ retryLimit: 10 }),
+      );
+      await notifySprayDetectionCompleted(boss, target.detectionId);
+      await notifySprayDetectionCompleted(boss, target.detectionId);
+      expect(
+        await db
+          .select()
+          .from(notificationDeliveries)
+          .where(eq(notificationDeliveries.notificationUuid, target.detectionId)),
+      ).toHaveLength(1);
+    },
+  );
 
   it('serializes competing registrations for a token into one active account', async () => {
     const first = await completedWall();

@@ -3,7 +3,8 @@ import { z } from 'zod';
 import { SPRAY_DETECTION_COMPLETION_QUEUE, type ConnectionContext } from '@boardsesh/shared-schema';
 import { notificationDevices, notifications, sprayWallDetections } from '@boardsesh/db/schema';
 import { db } from '../../../db/client';
-import { enqueueOn, requireJobQueue } from '../../../services/job-queue';
+import { requireJobQueue } from '../../../services/job-queue';
+import { logger } from '../../../utils/logger';
 import { NOTIFICATION_DEVICE_TOKEN_LOCK_SEED } from '../../../services/notification-locks';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
 
@@ -44,8 +45,12 @@ export const notificationDeviceMutations = {
           target: notificationDevices.installationId,
           set: { ...device, userId: ctx.userId!, active: true, updatedAt: new Date() },
         });
+    });
+    // Register the device even when replaying an older completion cannot enqueue.
+    // Foreground registration retries catch-up; future completions already see it.
+    try {
       // Catch a model that finished before permission/token registration did.
-      const recent = await transaction
+      const recent = await db
         .select({ detectionId: sprayWallDetections.id })
         .from(sprayWallDetections)
         .innerJoin(notifications, eq(notifications.uuid, sprayWallDetections.id))
@@ -60,14 +65,18 @@ export const notificationDeviceMutations = {
         .orderBy(desc(notifications.createdAt))
         .limit(10);
       for (const detection of recent) {
-        const jobId = await requireJobQueue().send(
+        await requireJobQueue().send(
           SPRAY_DETECTION_COMPLETION_QUEUE,
           { detectionId: detection.detectionId },
-          { db: enqueueOn(transaction), retryLimit: 10, retryDelay: 30, retryBackoff: true },
+          { retryLimit: 10, retryDelay: 30, retryBackoff: true },
         );
-        if (!jobId) throw new Error('COMPLETION_ENQUEUE_FAILED');
+        // Catch-up is optional; a null send result must not undo registration.
       }
-    });
+    } catch {
+      logger.warn('[NotificationDevices] Completion catch-up unavailable; registration saved', {
+        event: 'notification_catchup_unavailable',
+      });
+    }
     return true;
   },
   unregisterNotificationDevice: async (
