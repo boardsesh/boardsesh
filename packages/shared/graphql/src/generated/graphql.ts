@@ -12246,6 +12246,7 @@ export type SessionFeedItemFieldsFragment = {
     isMirror: boolean;
     isBenchmark: boolean;
     isNoMatch: boolean;
+    characteristics?: Array<string> | null;
     comment?: string | null;
     frames?: string | null;
     setterUsername?: string | null;
@@ -12273,6 +12274,7 @@ export type SessionFeedItemFieldsFragment = {
       isMirror: boolean;
       isBenchmark: boolean;
       isNoMatch: boolean;
+      characteristics?: Array<string> | null;
       comment?: string | null;
       frames?: string | null;
       setterUsername?: string | null;
@@ -12367,6 +12369,7 @@ export type GetSessionGroupedFeedQuery = {
         isMirror: boolean;
         isBenchmark: boolean;
         isNoMatch: boolean;
+        characteristics?: Array<string> | null;
         comment?: string | null;
         frames?: string | null;
         setterUsername?: string | null;
@@ -12399,6 +12402,7 @@ export type GetSessionGroupedFeedQuery = {
           isMirror: boolean;
           isBenchmark: boolean;
           isNoMatch: boolean;
+          characteristics?: Array<string> | null;
           comment?: string | null;
           frames?: string | null;
           setterUsername?: string | null;
@@ -12600,6 +12604,7 @@ export type GetCrewFeedQuery = {
               isMirror: boolean;
               isBenchmark: boolean;
               isNoMatch: boolean;
+              characteristics?: Array<string> | null;
               comment?: string | null;
               frames?: string | null;
               setterUsername?: string | null;
@@ -12632,6 +12637,7 @@ export type GetCrewFeedQuery = {
                 isMirror: boolean;
                 isBenchmark: boolean;
                 isNoMatch: boolean;
+                characteristics?: Array<string> | null;
                 comment?: string | null;
                 frames?: string | null;
                 setterUsername?: string | null;
@@ -12725,6 +12731,7 @@ export type GetSessionDetailQuery = {
       isMirror: boolean;
       isBenchmark: boolean;
       isNoMatch: boolean;
+      characteristics?: Array<string> | null;
       comment?: string | null;
       frames?: string | null;
       setterUsername?: string | null;
@@ -16669,6 +16676,7 @@ export const SessionFeedItemFieldsFragmentDoc = {
                 { kind: 'Field', name: { kind: 'Name', value: 'isMirror' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'isBenchmark' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'isNoMatch' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'characteristics' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'comment' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'setterUsername' } },
@@ -16717,6 +16725,7 @@ export const SessionFeedItemFieldsFragmentDoc = {
                       { kind: 'Field', name: { kind: 'Name', value: 'isMirror' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'isBenchmark' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'isNoMatch' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'characteristics' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'comment' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'setterUsername' } },
@@ -17359,6 +17368,7 @@ export const GetSessionGroupedFeedDocument = {
                 { kind: 'Field', name: { kind: 'Name', value: 'isMirror' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'isBenchmark' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'isNoMatch' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'characteristics' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'comment' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'setterUsername' } },
@@ -17407,6 +17417,7 @@ export const GetSessionGroupedFeedDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'isMirror' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'isBenchmark' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'isNoMatch' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'characteristics' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'comment' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'setterUsername' } },
@@ -17643,6 +17654,7 @@ export const GetCrewFeedDocument = {
                 { kind: 'Field', name: { kind: 'Name', value: 'isMirror' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'isBenchmark' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'isNoMatch' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'characteristics' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'comment' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'setterUsername' } },
@@ -17691,6 +17703,7 @@ export const GetCrewFeedDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'isMirror' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'isBenchmark' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'isNoMatch' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'characteristics' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'comment' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'setterUsername' } },
@@ -17883,6 +17896,7 @@ export const GetSessionDetailDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'isMirror' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'isBenchmark' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'isNoMatch' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'characteristics' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'comment' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'setterUsername' } },
