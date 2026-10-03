@@ -96,6 +96,7 @@ packages/web/public/uploads
 
 # generated API documentation
 packages/web/public/openapi.json
+packages/web/public/maplibre/
 
 # static Expo web export served at /app (scripts/build-expo-web-export.sh)
 packages/web/public/app
