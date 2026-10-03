@@ -56,6 +56,16 @@ const boardSheet = vi.hoisted(() => ({
   dismissAndWait: vi.fn(async () => ({ status: 'dismissed' as const })),
 }));
 
+type BoardShareSheetTestProps = {
+  visible: boolean;
+  onDismiss: () => void;
+  onFullyDismissed: () => void;
+  shareUrl: string;
+  wallName: string;
+  visibility: 'public' | 'unlisted';
+};
+const boardShareSheet = vi.hoisted(() => ({ props: null as BoardShareSheetTestProps | null }));
+
 const activeBoard = vi.hoisted(() => {
   const defaultStored = {
     uuid: 'board-1',
@@ -212,7 +222,12 @@ vi.mock('../../components/board-presence/BoardSheet', async () => {
 vi.mock('../../components/board-presence/UndoWallChangeSnackbar', () => ({
   UndoWallChangeSnackbar: () => createElement('div', { 'data-undo-snackbar': 'true' }),
 }));
-vi.mock('../../components/board-discovery/BoardShareSheet', () => ({ BoardShareSheet: () => null }));
+vi.mock('../../components/board-discovery/BoardShareSheet', () => ({
+  BoardShareSheet: (props: BoardShareSheetTestProps) => {
+    boardShareSheet.props = props;
+    return createElement('div', { 'data-board-share-sheet': 'true' });
+  },
+}));
 
 vi.mock('expo-router', () => ({
   router: { push: vi.fn(), navigate: vi.fn(), dismiss: vi.fn() },
@@ -286,7 +301,8 @@ vi.mock('../../lib/boards/use-set-board-angle', () => ({
 // Mocked for the same reason every other data hook here is: the real module
 // reaches the GraphQL client, which pulls `expo-secure-store` at import time and
 // has no Node build. The provider only calls it to fill the spray registry for a
-// spray active board, which none of these cases uses.
+// spray active board. Registry loading is separate from the host action wiring
+// exercised by the spray-wall cases below.
 vi.mock('../../lib/spray/use-spray-wall', () => ({
   useSprayWallLoader: () => {},
   useSprayWall: () => ({ isLoading: false, isUnrenderable: false, loadState: 'idle' }),
@@ -375,6 +391,8 @@ function renderHost(onHost: (host: HostValue) => void, onRoute: (route: RouteVal
 
 beforeEach(() => {
   activeBoard.stored = { ...activeBoard.defaultStored };
+  boardShareSheet.props = null;
+  boardSheet.dismissAndWait.mockReset().mockResolvedValue({ status: 'dismissed' });
   activeBoard.setActiveBoard.mockClear();
   myBoards.boards = [];
   gymRoster.boards = undefined;
@@ -467,10 +485,13 @@ describe('DrawerHostProvider board presence binding', () => {
 });
 
 type BoardSheetTestProps = {
+  activeBoard: UserBoard | null;
   onClimbPress: (action: BoardSheetClimbAction) => void;
   onAddToQueue: (action: BoardSheetClimbAction) => void;
   onOpenPlaylist: (action: BoardSheetClimbAction) => void;
   onOpenActions: (action: BoardSheetClimbAction) => void;
+  onOpenSprayMaintenance: (wallUuid: string, action: 'editHolds' | 'newPhoto') => void;
+  onShareSprayWall: (wallUuid: string) => void;
 };
 
 function getBoardSheetProps(): BoardSheetTestProps {
@@ -707,6 +728,108 @@ describe('DrawerHostProvider board sheet climb actions', () => {
     await expect(dismissSourceSheet()).resolves.toEqual({ status: 'dismissed' });
     expect(boardSheet.dismissAndWait).toHaveBeenCalledTimes(1);
   });
+});
+
+describe('DrawerHostProvider spray-wall sheet wiring', () => {
+  const sprayWall: UserBoard = {
+    ...activeBoard.defaultStored,
+    uuid: '2ad0c896-6d22-47b4-875e-3f2221942d0a',
+    slug: 'garage-wall',
+    name: 'Garage wall',
+    boardType: 'spray',
+    layoutId: 4242,
+    sizeId: 4242,
+    setIds: '4242',
+    canEdit: true,
+    isPublic: false,
+    isUnlisted: true,
+    isAngleAdjustable: false,
+  };
+
+  beforeEach(() => {
+    activeBoard.stored = { ...sprayWall };
+    boardSheet.props = null;
+    boardSheet.present.mockClear();
+  });
+
+  function deferBoardSheetDismiss() {
+    let settle!: (result: { status: 'dismissed' }) => void;
+    const promise = new Promise<{ status: 'dismissed' }>((resolve) => {
+      settle = resolve;
+    });
+    boardSheet.dismissAndWait.mockReturnValueOnce(promise);
+    return settle;
+  }
+
+  it.each([
+    ['editHolds', '/boards/spray/holds'],
+    ['newPhoto', '/boards/spray/reset'],
+  ] as const)('routes the mounted board sheet %s callback after native dismissal', async (action, pathname) => {
+    const hosts: HostValue[] = [];
+    const onHost = (host: HostValue) => hosts.push(host);
+    const { rerender } = renderHost(onHost);
+    await waitFor(() => expect(boardSheet.props).not.toBeNull());
+    expect(getBoardSheetProps().activeBoard).toMatchObject(sprayWall);
+    act(() => hosts.at(-1)?.openBoardSheet());
+    expect(boardSheet.present).toHaveBeenCalledTimes(1);
+
+    const settle = deferBoardSheetDismiss();
+    act(() => getBoardSheetProps().onOpenSprayMaintenance(sprayWall.uuid, action));
+    expect(boardSheet.dismissAndWait).toHaveBeenCalledTimes(1);
+    expect(routerPush).not.toHaveBeenCalled();
+    // An ordinary provider render while the animation is leaving must retain
+    // the handoff wired into the mounted sheet's callback.
+    activeBoard.stored = { ...sprayWall };
+    rerender(createElement(DrawerHostProvider, null, createElement(Probe, { onHost, onRoute: () => {} })));
+    await act(async () => settle({ status: 'dismissed' }));
+
+    expect(routerPush).toHaveBeenCalledExactlyOnceWith(`${pathname}?wallUuid=${sprayWall.uuid}`);
+    expect(activeBoard.setActiveBoard).not.toHaveBeenCalled();
+  });
+
+  it('does not navigate from a received maintenance callback after its host unmounts', async () => {
+    const { unmount } = renderHost(() => {});
+    await waitFor(() => expect(boardSheet.props).not.toBeNull());
+    const settle = deferBoardSheetDismiss();
+    act(() => getBoardSheetProps().onOpenSprayMaintenance(sprayWall.uuid, 'editHolds'));
+    expect(boardSheet.dismissAndWait).toHaveBeenCalledTimes(1);
+    unmount();
+    await act(async () => settle({ status: 'dismissed' }));
+    expect(routerPush).not.toHaveBeenCalled();
+  });
+
+  it.each(['unlisted', 'public'] as const)(
+    'opens the %s share sibling with the selected wall snapshot through closing',
+    async (visibility) => {
+      activeBoard.stored = { ...sprayWall, isPublic: visibility === 'public', isUnlisted: visibility === 'unlisted' };
+      const hosts: HostValue[] = [];
+      const { container } = renderHost((host) => hosts.push(host));
+      await waitFor(() => expect(boardSheet.props).not.toBeNull());
+      act(() => hosts.at(-1)?.openBoardSheet());
+
+      const settle = deferBoardSheetDismiss();
+      act(() => getBoardSheetProps().onShareSprayWall(sprayWall.uuid));
+      expect(boardSheet.dismissAndWait).toHaveBeenCalledTimes(1);
+      expect(boardShareSheet.props).toBeNull();
+      expect(container.querySelector('[data-board-share-sheet]')).toBeNull();
+      await act(async () => settle({ status: 'dismissed' }));
+
+      await waitFor(() => expect(container.querySelector('[data-board-share-sheet]')).not.toBeNull());
+      const shareProps = boardShareSheet.props;
+      if (!shareProps) throw new Error('share sheet was not mounted');
+      expect(shareProps).toMatchObject({ visible: true, wallName: sprayWall.name, visibility });
+      const shareUrl = new URL(shareProps.shareUrl);
+      expect(shareUrl.pathname).toBe(`/b/${sprayWall.slug}/${sprayWall.angle}/list`);
+      expect(shareUrl.searchParams.get('wall')).toBe(visibility === 'unlisted' ? sprayWall.uuid : null);
+      expect(routerPush).not.toHaveBeenCalled();
+
+      act(() => shareProps.onDismiss());
+      expect(boardShareSheet.props).toMatchObject({ ...shareProps, visible: false });
+      expect(container.querySelector('[data-board-share-sheet]')).not.toBeNull();
+      act(() => boardShareSheet.props?.onFullyDismissed());
+      expect(container.querySelector('[data-board-share-sheet]')).toBeNull();
+    },
+  );
 });
 
 describe('DrawerHostProvider queue sheet open / re-open', () => {

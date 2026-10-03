@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { router } from 'expo-router';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { useSprayWallsEnabled } from '../../providers/feature-flags-provider';
@@ -32,7 +32,7 @@ export function useSprayWallSheetActions(board: UserBoard | null, dismissAndWait
   const enabled = useSprayWallsEnabled();
   const boardRef = useRef(board);
   boardRef.current = board;
-  const signature = boardActionSignature(board);
+  const signature = useMemo(() => boardActionSignature(board), [board]);
   const signatureRef = useRef(signature);
   signatureRef.current = signature;
   const enabledRef = useRef(enabled);

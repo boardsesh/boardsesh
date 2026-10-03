@@ -154,6 +154,8 @@ export function SprayWallHoldsScreen({ wallUuid }: { wallUuid: string }) {
     setEditorHandingOver(handingOver);
   }, []);
   const onCommitted = useCallback(() => {
+    // Publish even if this save changes no holds: a resumed draft can already
+    // contain the edits to publish, so save counts do not gate completion.
     editorDirtyRef.current = false;
     setEditorDirty(false);
     void finish();
