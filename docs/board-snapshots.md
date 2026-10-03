@@ -1811,31 +1811,40 @@ This cutover is independently reversible and does not require promoting the stan
 1. Complete the PostgreSQL 18 cutover and verify Railway reports PG18. As the target admin, pre-provision
    `boardsesh_snapshot_fence_owner` and its grants above, plus the narrow coordinator/standby roles. Do not
    attempt migration `0250` on PG16/17; it intentionally blocks the deploy.
-2. Run migrations under the documented restricted migrator/application-owner boundary. Deploy
+2. Before applying `0250`, compare its write-path cost on matched, disposable PostgreSQL 18 databases. Keep
+   one at the current pre-`0250` schema and clone it for a candidate with only `0250` applied. Verify the
+   affected tables have matching indexes and column defaults, seed synthetic multi-thousand-row fixtures,
+   and run the repeatable workloads in `scripts/board-snapshot-write-benchmark/`. Record the server
+   version/settings, migration hash, row and batch counts, and per-path median, p95, range, and relative
+   delta. Review the comparison before applying the migration; there is no fixed latency threshold. Do not
+   use production data or run the benchmark against a shared database. `0250` installs row triggers that
+   stamp climb/stat inserts, grade inserts and updates, and sync-deletion inserts; exporter flags do not
+   disable those triggers.
+3. Run migrations under the documented restricted migrator/application-owner boundary. Deploy
    `0250_board_snapshot_replica_fence`, set `DATABASE_DIRECT_URL`, and run the automated owner/grant audit.
    Keep both repository flags unset.
-3. Set `SNAPSHOT_PRIMARY_FENCE_ENABLED=true`; run one unfiltered manual identity+gzip export. Confirm the
+4. Set `SNAPSHOT_PRIMARY_FENCE_ENABLED=true`; run one unfiltered manual identity+gzip export. Confirm the
    direct session retains the advisory lock through publish and a simultaneous second exporter exits with
    SQLSTATE `55P03` without changing the manifest.
-4. Remove the one-way PG16→PG18 logical-upgrade subscription after its rollback window, then seed the final
+5. Remove the one-way PG16→PG18 logical-upgrade subscription after its rollback window, then seed the final
    PG18 physical standby. Do not reuse a standby which observed logical apply. Confirm streaming/replay
    alerts, then run replica exports under a shadow key prefix for seven days **without `--heartbeat`**.
    This is the required end-to-end `createReplicaSnapshotContext()` acceptance because CI has no physical
    streaming standby. Pause catalog/grade writers for one controlled comparison and compare the primary
    and standby row sets and watermarks at the same fixed cutoff. Also exercise the held-old-transaction
    test against the candidate environment.
-5. Install the digest-pinned systemd timers but leave them disabled. Manually exercise full, threshold
+6. Install the digest-pinned systemd timers but leave them disabled. Manually exercise full, threshold
    no-op, lag-too-high, replay-paused, lost-primary-session, and S3-failure paths. Only successful live
    gzip runs may update the public heartbeat. Every failure must emit no new success heartbeat; failures
-   before the manifest PUT keep the old manifest, while a simulated post-PUT fence loss verifies that the
-   watchdog repairs the manifest without treating the failed run as healthy.
-6. Set `SNAPSHOT_EXPORTER_IMAGE_DIGEST`, enable the homelab timers, and then set
+   before the manifest PUT keep the old manifest, while a simulated post-PUT fence loss verifies that
+   the watchdog repairs the manifest without treating the failed run as healthy.
+7. Set `SNAPSHOT_EXPORTER_IMAGE_DIGEST`, enable the homelab timers, and then set
    `SNAPSHOT_HOMELAB_EXPORT_ENABLED=true`. Confirm GitHub's next watchdog sees both fresh heartbeats and
    performs no primary export.
-7. Stop the homelab timer long enough for the 45-minute gate. Confirm GitHub alerts and performs one
+8. Stop the homelab timer long enough for the 45-minute gate. Confirm GitHub alerts and performs one
    pinned-image primary threshold fallback. Exercise the 30-hour full decision with an isolated test
    heartbeat/base URL rather than withholding production full exports for a day.
-8. Roll back by clearing `SNAPSHOT_HOMELAB_EXPORT_ENABLED`; the original GitHub schedules resume. Leave
+9. Roll back by clearing `SNAPSHOT_HOMELAB_EXPORT_ENABLED`; the original GitHub schedules resume. Leave
    `SNAPSHOT_PRIMARY_FENCE_ENABLED=true` unless the coordinator itself is broken. Do not route mobile
    reads to a shadow prefix and do not automatically fall back from a failing replica run inside the
    homelab timer; the public watchdog is the single fallback authority.
