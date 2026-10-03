@@ -195,6 +195,25 @@ describe('SprayWallHoldsScreen', () => {
     expect(requests.publish).toHaveBeenCalledTimes(1);
   });
 
+  it.each(['fetch failed', 'render unavailable'])(
+    'retries %s after publication without publishing again',
+    async (refreshFailure) => {
+      if (refreshFailure === 'fetch failed') {
+        requests.fetchRender.mockRejectedValueOnce(new Error('offline'));
+      } else {
+        requests.register.mockReturnValueOnce(false);
+      }
+      render(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-1' }));
+      fireEvent.click(await screen.findByTestId('editor'));
+      await screen.findByText('sprayMaintenance.refreshFailed');
+      expect(router.back).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByText('sprayMaintenance.retry'));
+      await waitFor(() => expect(router.back).toHaveBeenCalledTimes(1));
+      expect(requests.fetchRender).toHaveBeenCalledTimes(2);
+      expect(requests.publish).toHaveBeenCalledTimes(1);
+    },
+  );
+
   it('guards dirty native removal and rechecks handover after confirmation', async () => {
     render(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-1' }));
     await screen.findByTestId('editor');

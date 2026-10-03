@@ -15,13 +15,13 @@ export const SPRAY_HOLD_EDITOR_PATH = '/boards/spray/holds';
 export const SPRAY_RESET_PATH = '/boards/spray/reset';
 
 /** `/boards/spray/holds?wallUuid=<uuid>`. */
-export function sprayHoldEditorHref(boardUuid: string): string {
-  return `${SPRAY_HOLD_EDITOR_PATH}?wallUuid=${encodeURIComponent(boardUuid)}`;
+export function sprayHoldEditorHref(wallUuid: string): string {
+  return `${SPRAY_HOLD_EDITOR_PATH}?wallUuid=${encodeURIComponent(wallUuid)}`;
 }
 
 /** `/boards/spray/reset?wallUuid=<uuid>`. */
-export function sprayResetHref(boardUuid: string): string {
-  return `${SPRAY_RESET_PATH}?wallUuid=${encodeURIComponent(boardUuid)}`;
+export function sprayResetHref(wallUuid: string): string {
+  return `${SPRAY_RESET_PATH}?wallUuid=${encodeURIComponent(wallUuid)}`;
 }
 
 /** Accept the old boardUuid spelling for restored navigation and saved links. */

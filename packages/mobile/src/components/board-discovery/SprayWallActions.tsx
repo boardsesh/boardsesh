@@ -44,18 +44,22 @@ export const SprayWallActions = memo(function SprayWallActions({
     <View style={[styles.card, { backgroundColor: systemColors.secondaryBackground }]}>
       {onOpenMaintenance && maintenanceRows.length > 0 ? (
         <>
-          <WallActionRow
-            icon="edit"
-            label={t('mobile.boardDetail.spray.editHolds')}
-            hint={t('mobile.boardDetail.spray.editHoldsHint')}
-            onPress={editHolds}
-          />
-          <WallActionRow
-            icon="camera"
-            label={t('mobile.boardDetail.spray.newPhoto')}
-            hint={t('mobile.boardDetail.spray.newPhotoHint')}
-            onPress={newPhoto}
-          />
+          {maintenanceRows.some((row) => row.key === 'editHolds') ? (
+            <WallActionRow
+              icon="edit"
+              label={t('mobile.boardDetail.spray.editHolds')}
+              hint={t('mobile.boardDetail.spray.editHoldsHint')}
+              onPress={editHolds}
+            />
+          ) : null}
+          {maintenanceRows.some((row) => row.key === 'newPhoto') ? (
+            <WallActionRow
+              icon="camera"
+              label={t('mobile.boardDetail.spray.newPhoto')}
+              hint={t('mobile.boardDetail.spray.newPhotoHint')}
+              onPress={newPhoto}
+            />
+          ) : null}
         </>
       ) : null}
       {onShare && shareTarget ? (
