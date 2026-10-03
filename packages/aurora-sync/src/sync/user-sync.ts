@@ -28,6 +28,7 @@ import { UNIFIED_TABLES } from '../db/table-select';
 import { playlists, playlistClimbs, playlistOwnership } from '@boardsesh/db/schema/app';
 import { formatDbError } from './db-error';
 import { applyAuroraAscents, applyAuroraBids } from './apply-user-logbook';
+import { auroraCircuitAdvisoryLockStatement, normalizeAuroraCircuitItems } from './circuit-arbitration';
 
 const BATCH_SIZE = 100;
 
@@ -138,41 +139,11 @@ type AuroraApiRow = Record<string, string>;
 
 type DrizzleDb = PostgresJsDatabase<Record<string, never>>;
 
-/**
- * Text namespace embedded in the server-side 64-bit advisory-lock hash. There
- * is no playlist row to lock when two users concurrently claim a new circuit,
- * so serializing on (board, circuit uuid) before the fresh ownership read closes
- * that gap across daemon instances. PostgreSQL releases the lock when the
- * surrounding transaction commits or rolls back.
- */
-const AURORA_CIRCUIT_LOCK_KEY_PREFIX = 'boardsesh:aurora-circuit';
-
-/** Pure/testable input to PostgreSQL's `hashtextextended(text, bigint)`. */
-export function getAuroraCircuitAdvisoryLockKey(boardName: AuroraBoardName, circuitUuid: string): string {
-  return `${AURORA_CIRCUIT_LOCK_KEY_PREFIX}|${boardName}|${circuitUuid}`;
-}
-
 type CircuitRefusalStage = 'ownership-check' | 'suppressed-upsert';
 type CircuitRefusalReason = 'foreign' | 'ambiguous' | 'no-owner' | 'own';
 type CircuitPlaylistWriteOutcome = { status: 'written' } | { status: 'refused'; reason: CircuitRefusalReason };
 
 export const CIRCUIT_PLAYLIST_INVARIANT_SKIP_REASON = 'circuit-playlist-invariant:circuits';
-
-/**
- * PostgreSQL rejects one INSERT ... ON CONFLICT batch containing the same
- * conflict key twice (SQLSTATE 21000). Aurora deltas are ordered, so preserve
- * their conventional last-row-wins meaning, then sort the unique rows before
- * either the source upsert or advisory-lock acquisition. The stable order also
- * prevents two multi-circuit transactions from locking source rows or advisory
- * keys in opposite order.
- */
-function normalizeCircuitItems(data: AuroraApiRow[]): AuroraApiRow[] {
-  const lastItemByUuid = new Map<string, AuroraApiRow>();
-  for (const item of data) lastItemByUuid.set(item.uuid, item);
-  return [...lastItemByUuid.values()].sort((left, right) =>
-    left.uuid < right.uuid ? -1 : left.uuid > right.uuid ? 1 : 0,
-  );
-}
 
 function logCircuitRefusal(
   log: (message: string) => void,
@@ -434,7 +405,18 @@ export async function upsertTableData(
 
     case 'circuits': {
       const circuitsSchema = UNIFIED_TABLES.circuits;
-      const circuitItems = normalizeCircuitItems(data);
+      const { items: circuitItems, rejectedCount } = normalizeAuroraCircuitItems(data);
+
+      if (rejectedCount > 0) {
+        logError(
+          JSON.stringify({
+            level: 'error',
+            event: 'aurora_circuit_playlist_malformed_payload',
+            boardType: boardName,
+            rejectedCount,
+          }),
+        );
+      }
 
       return db.transaction(async (transaction): Promise<UpsertResult> => {
         const circuitsTransaction = transaction as unknown as DrizzleDb;
@@ -443,17 +425,12 @@ export async function upsertTableData(
         // rows and playlist rows share the same surrounding transaction, so
         // writing board_circuits first would mix row locks with advisory locks
         // and let two reused outer transactions form a cross-lock deadlock.
-        // UUID sorting in normalizeCircuitItems gives every claimant the same
+        // UUID sorting in normalizeAuroraCircuitItems gives every claimant the same
         // acquisition order. When the caller already supplied a transaction,
         // this callback is a savepoint and the locks remain owned by that outer
         // transaction until it commits or rolls back.
         for (const item of circuitItems) {
-          await circuitsTransaction.execute(
-            // Keep the 64-bit hash inside PostgreSQL. Converting the result to a
-            // JavaScript Number would lose precision above 2^53 and could make
-            // contenders derive different advisory keys.
-            sql`SELECT pg_advisory_xact_lock(hashtextextended(${getAuroraCircuitAdvisoryLockKey(boardName, item.uuid)}, 0::bigint))`,
-          );
+          await circuitsTransaction.execute(auroraCircuitAdvisoryLockStatement(boardName, item.uuid));
         }
 
         await processBatches(circuitItems, BATCH_SIZE, async (batch) => {
@@ -483,9 +460,27 @@ export async function upsertTableData(
             });
         });
 
-        if (!nextAuthUserId) return { synced: data.length, skipped: 0 };
+        if (!nextAuthUserId) {
+          return rejectedCount > 0
+            ? {
+                synced: data.length - rejectedCount,
+                skipped: rejectedCount,
+                skippedReason: CIRCUIT_PLAYLIST_INVARIANT_SKIP_REASON,
+                circuitPlaylistRefusals: { foreign: 0, ambiguous: 0, invariant: rejectedCount },
+              }
+            : { synced: data.length, skipped: 0 };
+        }
 
         const refusalReasonsByCircuitUuid = new Map<string, CircuitRefusalReason>();
+        // One owner query per payload, after every advisory lock and source
+        // write. Compliant writers cannot change these owner sets until this
+        // transaction releases its complete lock set; only the rare SQL-guard
+        // suppression path below needs a second, per-circuit diagnostic read.
+        const ownersByCircuitUuid = await selectUpstreamPlaylistOwners(
+          circuitsTransaction as unknown as OwnerQueryDb,
+          playlists.auroraId,
+          circuitItems.map((item) => item.uuid),
+        );
 
         for (const item of circuitItems) {
           const outcome = await circuitsTransaction.transaction(
@@ -495,9 +490,8 @@ export async function upsertTableData(
               // All server-wide per-(board,circuit) locks were acquired above,
               // before the source upsert. The fresh owner read therefore sees
               // any prior claimant's committed edge under READ COMMITTED.
-              const initialOwnerDecision = await selectCircuitOwnerDecision(
-                tx as unknown as OwnerQueryDb,
-                item.uuid,
+              const initialOwnerDecision = resolveUpstreamPlaylistWrite(
+                ownersByCircuitUuid.get(item.uuid) ?? [],
                 nextAuthUserId,
               );
               if (initialOwnerDecision === 'foreign' || initialOwnerDecision === 'ambiguous') {
@@ -589,20 +583,49 @@ export async function upsertTableData(
               if (item.climbs && Array.isArray(item.climbs)) {
                 await tx.delete(playlistClimbs).where(eq(playlistClimbs.playlistId, playlist.id));
 
+                // Keep the first occurrence by climb UUID before writing. The
+                // unique index ignores angle; the conflict clause also absorbs
+                // an addClimbToPlaylist racing after the delete.
+                const seenClimbUuids = new Set<string>();
+                const climbRows: Array<{
+                  playlistId: typeof playlist.id;
+                  climbUuid: string;
+                  angle: number | null;
+                  position: number;
+                }> = [];
+                let droppedDuplicateClimbs = 0;
                 for (let i = 0; i < item.climbs.length; i++) {
                   const climb = item.climbs[i];
                   const climbUuid = climb.climb_uuid || climb.uuid || climb;
                   const climbAngle = climb.angle ?? null;
                   const climbPosition = climb.position ?? i;
 
-                  if (typeof climbUuid === 'string') {
-                    await tx.insert(playlistClimbs).values({
-                      playlistId: playlist.id,
-                      climbUuid,
-                      angle: climbAngle,
-                      position: climbPosition,
-                    });
+                  if (typeof climbUuid !== 'string') continue;
+                  if (seenClimbUuids.has(climbUuid)) {
+                    droppedDuplicateClimbs++;
+                    continue;
                   }
+                  seenClimbUuids.add(climbUuid);
+                  climbRows.push({
+                    playlistId: playlist.id,
+                    climbUuid,
+                    angle: climbAngle,
+                    position: climbPosition,
+                  });
+                }
+
+                if (droppedDuplicateClimbs > 0) {
+                  log(
+                    `Circuit ${item.uuid}: dropped ${droppedDuplicateClimbs} repeated climb_uuid row(s) — unique_playlist_climb is (playlist_id, climb_uuid) and ignores angle`,
+                  );
+                }
+
+                const CLIMB_INSERT_CHUNK_SIZE = 500;
+                for (let index = 0; index < climbRows.length; index += CLIMB_INSERT_CHUNK_SIZE) {
+                  await tx
+                    .insert(playlistClimbs)
+                    .values(climbRows.slice(index, index + CLIMB_INSERT_CHUNK_SIZE))
+                    .onConflictDoNothing({ target: [playlistClimbs.playlistId, playlistClimbs.climbUuid] });
                 }
               }
 
@@ -616,11 +639,11 @@ export async function upsertTableData(
         }
 
         log(`  Synced ${circuitItems.length - refusalReasonsByCircuitUuid.size} circuits to playlists table`);
-        if (refusalReasonsByCircuitUuid.size > 0) {
+        if (refusalReasonsByCircuitUuid.size > 0 || rejectedCount > 0) {
           const circuitPlaylistRefusals: CircuitPlaylistRefusalSummary = {
             foreign: 0,
             ambiguous: 0,
-            invariant: 0,
+            invariant: rejectedCount,
           };
           for (const reason of refusalReasonsByCircuitUuid.values()) {
             if (reason === 'foreign') circuitPlaylistRefusals.foreign += 1;
@@ -633,8 +656,8 @@ export async function upsertTableData(
           // duplicate UUIDs are applied once, with their last payload row
           // winning. `skipped` and the detailed summary count unique circuits.
           return {
-            synced: data.length,
-            skipped: refusalReasonsByCircuitUuid.size,
+            synced: data.length - rejectedCount,
+            skipped: refusalReasonsByCircuitUuid.size + rejectedCount,
             skippedReason: hasOwnershipConflict
               ? DUPLICATE_CIRCUIT_OWNER_SKIP_REASON
               : CIRCUIT_PLAYLIST_INVARIANT_SKIP_REASON,

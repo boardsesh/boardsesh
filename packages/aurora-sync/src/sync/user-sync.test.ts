@@ -372,6 +372,7 @@ describe('upsertTableData circuits — foreign-owner guard (#3526)', () => {
         { uuid: 42, name: 'numeric' },
       ] as never,
       () => {},
+      undefined,
       (message) => errorLogged.push(message),
     );
 
@@ -692,6 +693,7 @@ describe('upsertTableData circuits — race-guard suppression + owner lookup SQL
       'user-1',
       [circuit('circuit-1', 'Invariant failure')],
       (message) => logged.push(message),
+      undefined,
       (message) => errorLogged.push(message),
     );
 
@@ -748,7 +750,7 @@ describe('upsertTableData circuits — race-guard suppression + owner lookup SQL
       '',
       [circuit('source-only', 'Old name'), malformed, circuit('source-only', 'New name')],
       () => {},
-      () => {},
+      async () => {},
     );
 
     expect(result).toEqual({

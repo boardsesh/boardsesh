@@ -35,16 +35,11 @@ describe('syncUserData diagnostic logging', () => {
     const errorMessages: string[] = [];
 
     await expect(
-      syncUserData(
-        {} as never,
-        'tension',
-        'token',
-        144574,
-        'user-1',
-        ['circuits'],
-        () => {},
-        (message) => errorMessages.push(message),
-      ),
+      syncUserData(fakeDb as never, 'tension', 'token', 144574, 'user-1', {
+        tables: ['circuits'],
+        log: () => {},
+        logError: (message) => errorMessages.push(message),
+      }),
     ).resolves.toMatchObject({ circuits: { synced: 0, skipped: 1 } });
 
     expect(errorMessages).toHaveLength(1);
