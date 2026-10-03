@@ -45,10 +45,27 @@ describe('origin header transform', () => {
     );
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0][1].method).toBe('GET');
+    expect(String(fetchMock.mock.calls[0][0])).toContain('/zones/2ffcc52b2e8c604fd85b9faa8efc18bf/');
+  });
+  it('rejects a malformed zone override before making an API request', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(
+      applyOriginRule(
+        {
+          CLOUDFLARE_API_TOKEN: 'token',
+          CLOUDFLARE_ZONE_ID: 'not-a-zone-id',
+          WEB_ORIGIN_VERIFY_SECRET: secret,
+        },
+        false,
+      ),
+    ).rejects.toThrow('CLOUDFLARE_ZONE_ID must contain exactly 32 hexadecimal characters');
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 
 it('updates only the owned rule and verifies it without replacing the ruleset', async () => {
+  const zoneId = 'a'.repeat(32);
   const foreign = { id: 'foreign', description: 'unrelated transform' };
   const fetchMock = vi
     .fn()
@@ -66,9 +83,17 @@ it('updates only the owned rule and verifies it without replacing the ruleset', 
       }),
     );
   vi.stubGlobal('fetch', fetchMock);
-  expect(await applyOriginRule({ CLOUDFLARE_API_TOKEN: 'token', WEB_ORIGIN_VERIFY_SECRET: secret }, true)).toBe(
-    'Applied and verified origin header rule',
-  );
+  expect(
+    await applyOriginRule(
+      { CLOUDFLARE_API_TOKEN: 'token', CLOUDFLARE_ZONE_ID: ` ${zoneId} `, WEB_ORIGIN_VERIFY_SECRET: secret },
+      true,
+    ),
+  ).toBe('Applied and verified origin header rule');
+  expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual([
+    `https://api.cloudflare.com/client/v4/zones/${zoneId}/rulesets/phases/http_request_late_transform/entrypoint`,
+    `https://api.cloudflare.com/client/v4/zones/${zoneId}/rulesets/ruleset/rules/owned`,
+    `https://api.cloudflare.com/client/v4/zones/${zoneId}/rulesets/phases/http_request_late_transform/entrypoint`,
+  ]);
   expect(fetchMock.mock.calls[1][0]).toContain('/rulesets/ruleset/rules/owned');
   expect(fetchMock.mock.calls[1][1].method).toBe('PATCH');
   expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual(originRule(secret));

@@ -37,7 +37,11 @@ Sentry can capture headers before middleware runs. A rejected request gets an em
 3. Run **Cloudflare origin protection** with `apply=false`, then `apply=true`.
    It manages only the www request-header rule, preserves other rules, rejects
    conflicting ownership and verifies its write. The token needs zone transform
-   rules edit access. No credential or rule-body diff is printed.
+   rules edit access. The helper targets the reviewed `boardsesh.com` zone by
+   default. Set the Production environment variable `CLOUDFLARE_ZONE_ID` only
+   when deliberately targeting another reviewed zone; the trimmed value must
+   contain exactly 32 hexadecimal characters. Invalid values stop before any
+   Cloudflare request. No credential or rule-body diff is printed.
 4. Verify www still renders, including with a deliberately incorrect incoming
    header: Cloudflare must overwrite it. Verify the direct Railway smoke with
    the GitHub secret. A unit test also prevents cross-origin redirect leakage.

@@ -1,7 +1,8 @@
 /// <reference types="node" />
 import { pathToFileURL } from 'node:url';
 
-const ZONE_ID = '2ffcc52b2e8c604fd85b9faa8efc18bf';
+const DEFAULT_ZONE_ID = '2ffcc52b2e8c604fd85b9faa8efc18bf';
+const ZONE_ID_PATTERN = /^[a-f0-9]{32}$/i;
 const PHASE = 'http_request_late_transform';
 const MARKER = 'boardsesh:verify-web-origin (managed by scripts/cloudflare-origin-apply.ts)';
 const HEADER = 'x-boardsesh-origin-verify';
@@ -15,6 +16,15 @@ type TransformRule = {
   action_parameters?: { headers?: Record<string, { operation: string; value?: string }> };
 };
 type Ruleset = { id: string; rules?: TransformRule[] };
+
+function resolveZoneId(env: Record<string, string | undefined>): string {
+  const configuredZoneId = env.CLOUDFLARE_ZONE_ID?.trim();
+  const zoneId = configuredZoneId || DEFAULT_ZONE_ID;
+  if (!ZONE_ID_PATTERN.test(zoneId)) {
+    throw new Error('CLOUDFLARE_ZONE_ID must contain exactly 32 hexadecimal characters');
+  }
+  return zoneId.toLowerCase();
+}
 
 export function originRule(secret: string): TransformRule {
   if (!/^[a-f0-9]{64}$/.test(secret)) throw new Error('Origin secret must be 32 random bytes encoded as hex');
@@ -58,12 +68,13 @@ export function planOriginRule(
 export async function applyOriginRule(env: Record<string, string | undefined>, apply: boolean): Promise<string> {
   const token = env.CLOUDFLARE_API_TOKEN;
   const secret = env.WEB_ORIGIN_VERIFY_SECRET ?? '';
+  const zoneId = resolveZoneId(env);
   const desired = originRule(secret);
   if (!token) throw new Error('CLOUDFLARE_API_TOKEN is required');
   async function api<Result>(path: string, method = 'GET', body?: unknown): Promise<Result | null> {
     let response: Response;
     try {
-      response = await fetch(`https://api.cloudflare.com/client/v4/zones/${ZONE_ID}${path}`, {
+      response = await fetch(`https://api.cloudflare.com/client/v4/zones/${zoneId}${path}`, {
         method,
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
