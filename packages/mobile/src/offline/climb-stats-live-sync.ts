@@ -19,15 +19,15 @@
 //   - Refreshes coalesce on a 2 s trailing timer with a 6 s ceiling, and each
 //     cached query is invalidated only when the batch could actually change it.
 //
-// That last rule has two halves, and the split is the point. A stats-dependent
-// FILTER (a grade range, minAscents, minRating…) changes MEMBERSHIP, so it
-// invalidates even for a climb the list has never shown. A SORT only reorders,
-// so a stats sort — `ascents`, the default, included — invalidates only when the
-// climb is on a loaded page. Otherwise the ordinary Climbs tab would refetch
-// every loaded page every few seconds because a stranger logged a send on a
-// climb nobody is looking at. The same rule covers the one cross-angle sort:
-// `popular` orders by `SUM(ascensionist_count)` over every angle, so an event at
-// another angle can move a row it is already showing, and nothing else.
+// That last rule has two halves. A stats-dependent FILTER changes MEMBERSHIP,
+// so it invalidates even when the climb is not in a loaded page. A stats SORT
+// can also change LIMIT/OFFSET membership: an unseen climb can enter the top
+// page and push a cached row onto the next page. Those downloaded lists are
+// invalidated as one coalesced batch, while sort-only counts remain untouched.
+// `popular` spans every angle; explicit cross-angle searches and Woods name
+// searches also read a climb's set-angle row when its browsed-angle row is
+// absent. The writer's pre-read carries the climb's set angle so those fallback
+// refreshes stay specific to rows that can actually affect the cached query.
 //
 // Two source gates keep the network out of it, and they apply to the climb
 // detail exactly as they apply to the lists. A query whose scope this device
@@ -60,7 +60,13 @@ import type { ClimbSearchInput } from '@boardsesh/shared-schema';
 // `normalizeSortBy` is the same rule that turns an absent `sortBy` into
 // `ascents`. A local copy of either would silently drift into refreshing a
 // network-served list, or into missing the default sort.
-import { isOfflineSearchSupported, normalizeSortBy } from '../db/queries/search-climbs-local';
+import {
+  isCrossAngleStats,
+  isDetailCrossAngleStats,
+  isOfflineSearchSupported,
+  normalizeSortBy,
+  parseSetIds,
+} from '../db/queries/search-climbs-local';
 
 /** Quiet period after the last applied write before the list is refreshed. */
 export const CLIMB_STATS_INVALIDATE_TRAILING_MS = 2_000;
@@ -130,13 +136,24 @@ const STATS_DEPENDENT_FILTERS = [
  * list browsing 40°. Every other stats column is read at the browsed angle only.
  */
 const CROSS_ANGLE_SORT = 'popular';
+const STATS_SORT_COLUMNS = new Set(['ascents', 'difficulty', 'quality', CROSS_ANGLE_SORT]);
+
+/** Mirror the local reader's `required_set_ids <@ selected sets` condition. */
+function climbMatchesSetFilter(input: Partial<ClimbSearchInput>, requiredSetIds: number[] | null | undefined): boolean {
+  const selectedSetIds = parseSetIds(input.setIds);
+  if (selectedSetIds.length === 0) return true;
+  if (requiredSetIds === undefined) return false;
+  if (requiredSetIds === null) return input.boardName === 'moonboard';
+  const selectedSetIdSet = new Set(selectedSetIds);
+  return requiredSetIds.every((setId) => selectedSetIdSet.has(setId));
+}
 
 /**
  * Does this search FILTER on climb stats?
  *
  * Only filters, deliberately: a filter decides membership, so it can pull a
- * climb the list has never shown into the result set. A sort cannot — see the
- * header — and is handled by the loaded-page check instead.
+ * climb the list has never shown into the result set. Stats sorts are checked
+ * separately because they can also move an unseen climb across a page boundary.
  *
  * A field counts as set unless it is absent or an explicitly disabled toggle.
  * Zero counts too, though nothing reaches this with a zero today —
@@ -163,6 +180,10 @@ export type FlushedClimbStat = {
   layoutId: number;
   climbUuid: string;
   angle: number;
+  /** The climb's angle in board_climbs, from the writer's SQLite pre-read. */
+  setAngle?: number | null;
+  /** Its required hold sets, from that same pre-read. */
+  requiredSetIds?: number[] | null;
   /** From the write's own pre-read, so the size gate needs no second query. */
   compatibleSizeIds: number[] | null;
 };
@@ -212,9 +233,10 @@ function batchTouchesScope(scope: OfflineBoardScope, batch: readonly FlushedClim
  *
  * An entry has to be the same board and layout, then clear the size gate — a
  * climb that does not fit the browsed size is not in this list's result set at
- * any angle. After that, a stats FILTER at the query's own angle is enough on
- * its own; everything else (a stats sort, a plain value refresh, and the
- * cross-angle `popular` sort) needs the climb to be on a loaded page.
+ * any angle. A different-angle row is relevant only to `popular` (which sums
+ * all angles) or when the search reads the climb's set-angle fallback. Stats
+ * filters can change membership; stats sorts can change a page boundary even
+ * for an unseen UUID; other value refreshes need the climb on a loaded page.
  *
  * `cachedData` is the RAW query data, before any `select` — the infinite list
  * caches `{ pages: [{ searchClimbs: { climbs } }] }`, the single-page list
@@ -232,7 +254,12 @@ export function canStreamChangeList(
   const filterDependent = hasStatsDependentFilter(search);
   // A sort cannot change a total, so the count root ignores it entirely.
   const sortMatters = root !== CLIMB_COUNT_KEY_ROOT;
-  const crossAngleSort = sortMatters && normalizeSortBy(search.sortBy) === CROSS_ANGLE_SORT;
+  const normalizedSort = normalizeSortBy(search.sortBy);
+  const crossAngleSort = sortMatters && normalizedSort === CROSS_ANGLE_SORT;
+  const statsSort = sortMatters && STATS_SORT_COLUMNS.has(normalizedSort);
+  const readsSetAngle =
+    typeof search.boardName === 'string' &&
+    isCrossAngleStats(search as Pick<ClimbSearchInput, 'boardName' | 'crossAngleStats' | 'name'>);
   const sizeScoped = typeof search.boardName === 'string' && isSizeScopedBoard(search.boardName);
 
   // Climbs that clear every gate but still need the loaded pages checked.
@@ -248,11 +275,21 @@ export function canStreamChangeList(
       const { sizeId } = search;
       if (typeof sizeId !== 'number' || !(entry.compatibleSizeIds?.includes(sizeId) ?? false)) continue;
     }
-    if (search.angle !== entry.angle) {
-      if (crossAngleSort) onPageCandidates.add(entry.climbUuid);
+    if (!climbMatchesSetFilter(search, entry.requiredSetIds)) continue;
+    const angleMatches = search.angle === entry.angle;
+    const setAngleFallbackMatches =
+      !angleMatches && readsSetAngle && typeof entry.setAngle === 'number' && entry.setAngle === entry.angle;
+    if (!angleMatches && !setAngleFallbackMatches) {
+      if (crossAngleSort) {
+        if (statsSort) return true;
+        onPageCandidates.add(entry.climbUuid);
+      }
       continue;
     }
     if (filterDependent) return true;
+    // A matching stats row can cross a LIMIT/OFFSET boundary even when it is
+    // absent from every cached page. Coalescing keeps this bounded per batch.
+    if (statsSort) return true;
     onPageCandidates.add(entry.climbUuid);
   }
   if (onPageCandidates.size === 0) return false;
@@ -284,9 +321,15 @@ export function climbDetailMatchesBatch(
 
   return batch.some((entry) => {
     if (entry.climbUuid !== climbUuid) return false;
-    if (typeof angle === 'number' && entry.angle !== angle) return false;
+    const angleMatches = typeof angle !== 'number' || entry.angle === angle;
     if (typeof boardName === 'string' && boardName !== entry.boardType) return false;
     if (typeof layoutId === 'number' && layoutId !== entry.layoutId) return false;
+    if (
+      !angleMatches &&
+      !(typeof boardName === 'string' && isDetailCrossAngleStats(boardName) && entry.setAngle === entry.angle)
+    ) {
+      return false;
+    }
     if (typeof sizeId === 'number') {
       return downloaded.get(offlineBoardKey({ ...entry, sizeId })) === true;
     }
@@ -483,12 +526,20 @@ export function createClimbStatsLiveSync(options: ClimbStatsLiveSyncOptions): Cl
     }, CLIMB_STATS_INVALIDATE_TRAILING_MS);
   }
 
-  function armFlush(event: ClimbStatsWriteThroughInput, layoutId: number, compatibleSizeIds: number[] | null): void {
+  function armFlush(
+    event: ClimbStatsWriteThroughInput,
+    layoutId: number,
+    compatibleSizeIds: number[] | null,
+    setAngle: number | null | undefined,
+    requiredSetIds: number[] | null | undefined,
+  ): void {
     flushedStats.set(pendingKey(event), {
       boardType: event.boardType,
       layoutId,
       climbUuid: event.climbUuid,
       angle: event.angle,
+      setAngle,
+      requiredSetIds,
       compatibleSizeIds,
     });
     armFlushTimers();
@@ -696,7 +747,7 @@ export function createClimbStatsLiveSync(options: ClimbStatsLiveSyncOptions): Cl
         rememberSettledRevision(keys[index] ?? pendingKey(event), event.syncSeq);
       }
       if (result.status !== 'applied' || result.layoutId === null) continue;
-      armFlush(event, result.layoutId, result.compatibleSizeIds);
+      armFlush(event, result.layoutId, result.compatibleSizeIds, result.setAngle, result.requiredSetIds);
     }
     return lockLost;
   }

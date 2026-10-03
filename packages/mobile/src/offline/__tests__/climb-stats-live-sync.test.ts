@@ -61,11 +61,20 @@ function applied(
   compatibleSizeIds: number[] | null = [5, 6],
   layoutId: number | null = 1,
 ): ClimbStatsWriteThroughResult {
-  return { status: 'applied', compatibleSizeIds, layoutId, settledBy: 'write' };
+  return { status: 'applied', compatibleSizeIds, layoutId, setAngle: 40, requiredSetIds: [1], settledBy: 'write' };
 }
 
 function flushed(overrides: Partial<FlushedClimbStat> = {}): FlushedClimbStat {
-  return { boardType: 'kilter', layoutId: 1, climbUuid: 'climb-1', angle: 40, compatibleSizeIds: [5, 6], ...overrides };
+  return {
+    boardType: 'kilter',
+    layoutId: 1,
+    climbUuid: 'climb-1',
+    angle: 40,
+    setAngle: 40,
+    requiredSetIds: [1],
+    compatibleSizeIds: [5, 6],
+    ...overrides,
+  };
 }
 
 /** The batch writer's default: every event applies. */
@@ -762,7 +771,15 @@ describe('createClimbStatsLiveSync — refreshing the browsed list', () => {
     await vi.advanceTimersByTimeAsync(CLIMB_STATS_INVALIDATE_TRAILING_MS);
 
     const roots = invalidateQueries.mock.calls.map((call) => call[0]?.queryKey);
-    expect(roots).toEqual([['searchClimbs'], ['infiniteSearchClimbs'], ['searchClimbsCount'], ['climb']]);
+    expect(roots).toEqual([
+      ['searchClimbs'],
+      ['infiniteSearchClimbs'],
+      ['searchClimbsCount'],
+      ['climb'],
+      ['setterStats'],
+      ['holdHeatmap'],
+      ['climbStatsHistory'],
+    ]);
     for (const call of invalidateQueries.mock.calls) {
       expect(call[0]?.predicate).toBeTypeOf('function');
     }
@@ -779,18 +796,17 @@ describe('createClimbStatsLiveSync — refreshing the browsed list', () => {
   });
 });
 
-describe('createClimbStatsLiveSync — a stats sort only moves rows already on screen', () => {
-  it('leaves the default ascents-sorted list alone for a climb it has never shown', async () => {
-    // This is the ordinary Climbs tab. Invalidating it here would refetch every
-    // loaded page every few seconds because a stranger logged a send.
+describe('createClimbStatsLiveSync — stats sorts can move unseen rows across pages', () => {
+  it('refreshes the default ascents-sorted list when an unseen climb can enter its page window', async () => {
+    // Page zero can gain this climb and push its last row onto page one.
     const defaultSorted = seedInfinitePages({ ...BASE_SEARCH, sortBy: 'ascents' }, [['climb-a'], ['climb-b']]);
     const harness = createHarness();
 
     harness.sync.handleEvent(makeEvent());
     await settleWrites();
-    await vi.advanceTimersByTimeAsync(CLIMB_STATS_INVALIDATE_MAX_WAIT_MS);
+    await vi.advanceTimersByTimeAsync(CLIMB_STATS_INVALIDATE_TRAILING_MS);
 
-    expect(isInvalidated(defaultSorted)).toBe(false);
+    expect(isInvalidated(defaultSorted)).toBe(true);
   });
 
   it('refreshes the same list when the climb is on a deeper loaded page', async () => {
@@ -820,11 +836,12 @@ describe('createClimbStatsLiveSync — a stats sort only moves rows already on s
     expect(isInvalidated(gradeFiltered)).toBe(true);
   });
 
-  it('refreshes a popular-sorted list from another angle only for a climb it shows', async () => {
-    // `popular` sums ascents over every angle, so a 25° send reorders a 40°
-    // list — but only the rows that list is actually rendering.
+  it('refreshes a popular-sorted list from another angle when an unseen climb can enter its window', async () => {
+    // `popular` sums ascents over every angle, so a 25° send can reorder the
+    // whole 40° page window even when that climb is not currently loaded.
     const showsClimb = seedInfiniteList({ ...BASE_SEARCH, sortBy: 'popular' }, ['climb-1']);
     const doesNot = seedInfiniteList({ ...BASE_SEARCH, sortBy: 'popular', setIds: '3,4' }, ['climb-other']);
+    const unseen = seedInfiniteList({ ...BASE_SEARCH, sortBy: 'popular' }, ['climb-a', 'climb-b']);
     const ascentsSorted = seedInfiniteList({ ...BASE_SEARCH, sortBy: 'ascents' }, ['climb-1']);
     const popularCount = seedCount({ ...BASE_SEARCH, sortBy: 'popular' });
     const harness = createHarness();
@@ -835,6 +852,7 @@ describe('createClimbStatsLiveSync — a stats sort only moves rows already on s
 
     expect(isInvalidated(showsClimb)).toBe(true);
     expect(isInvalidated(doesNot)).toBe(false);
+    expect(isInvalidated(unseen)).toBe(true);
     // Per-angle sorts cannot move on another angle's event at all.
     expect(isInvalidated(ascentsSorted)).toBe(false);
     // A sort still cannot change a total, cross-angle or not.

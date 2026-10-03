@@ -69,7 +69,7 @@ export type TableSyncConfig = {
    * landed a newer row that the page would otherwise revert until the next
    * cycle. Other tables do not have a second local writer, but a refresh page
    * can still race a newer ordinary pull. That separate `(updated_at, sync_seq)`
-   * guard lives in the pull client and applies only to refresh pages.
+   * guard lives in `pull-write.ts` and applies only to refresh pages.
    *
    * The comparison is `>=`, not `>`: the pull usually carries the SAME revision
    * the stream did, and that row must still be applied because it fills the

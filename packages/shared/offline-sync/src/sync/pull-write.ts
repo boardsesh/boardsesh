@@ -15,6 +15,7 @@ import {
   OFFLINE_BACKGROUND_WRITE_RETRY_DELAY_MS,
 } from '../db/write-retry';
 import { buildRevisionGuardTail } from './revision-guard-sql';
+import { TABLE_CONFIGS } from './table-config';
 
 // SQLite's default compile-time limit on bound parameters per statement
 // (SQLITE_MAX_VARIABLE_NUMBER's pre-3.32 default, still the safe floor across
@@ -44,8 +45,44 @@ export function buildMultiRowInsertSql(
   const insert = `INSERT OR REPLACE INTO ${tableName} (${columnList}) VALUES ${valuesClause}`;
   if (!preserveNewerRows) return insert;
   const guardTail = buildRevisionGuardTail({ tableName, conflictReference: tableName, columns });
-  if (!guardTail) return insert;
-  return `INSERT INTO ${tableName} (${columnList}) VALUES ${valuesClause} ${guardTail}`;
+  if (guardTail) return `INSERT INTO ${tableName} (${columnList}) VALUES ${valuesClause} ${guardTail}`;
+  // This table's stream writer deliberately stamps updated_at at the epoch;
+  // cursor ordering cannot guard its sync_seq revision if its explicit guard
+  // cannot be built (for example, a legacy statement omits that column).
+  if (tableName === 'board_climb_stats') return insert;
+
+  // Refresh pages can race a newer ordinary pull for any cursor-bearing table.
+  // The stats table has its own second-writer revision guard above; other tables
+  // compare their pull keyset pair `(updated_at, sync_seq)` here.
+  const config = TABLE_CONFIGS[tableName];
+  const cursorColumn = config?.cursorColumn;
+  const revisionColumn = 'sync_seq';
+  if (
+    !config ||
+    !cursorColumn ||
+    !columns.includes(cursorColumn) ||
+    !columns.includes(revisionColumn) ||
+    !config.primaryKeyColumns.every((column) => columns.includes(column))
+  ) {
+    return insert;
+  }
+
+  const assignments = columns
+    .filter((column) => !config.primaryKeyColumns.includes(column))
+    .map((column) => `${column} = excluded.${column}`)
+    .join(', ');
+  if (!assignments) return insert;
+  // ISO timestamps are UTC text, but Postgres may omit trailing fractional
+  // zeros. Normalize both sides so TEXT ordering preserves microseconds.
+  const timestampKey = (column: string) =>
+    `(substr(${column}, 1, 19) || '.' || CASE WHEN substr(${column}, 20, 1) = '.'
+      THEN substr(substr(${column}, 21, length(${column}) - 21) || '000000', 1, 6)
+      ELSE '000000' END)`;
+  return `INSERT INTO ${tableName} (${columnList}) VALUES ${valuesClause}
+    ON CONFLICT (${config.primaryKeyColumns.join(', ')}) DO UPDATE SET ${assignments}
+    WHERE ${tableName}.${cursorColumn} IS NULL
+       OR (${timestampKey(`excluded.${cursorColumn}`)}, excluded.${revisionColumn})
+          >= (${timestampKey(`${tableName}.${cursorColumn}`)}, COALESCE(${tableName}.${revisionColumn}, -1))`;
 }
 
 /**
