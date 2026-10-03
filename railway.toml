@@ -26,7 +26,7 @@ restartPolicyMaxRetries = 5
 # double the backend's Postgres footprint. With the C15 code defaults, its two
 # replicas use 2 x (DB_POOL_MAX 5 + PGBOSS_POOL_SIZE 2) = 14 connections, down
 # from 28. With the web's current explicit DB_POOL_MAX=10, the whole-fleet
-# ceiling is 77 during a drain; it becomes 71 after the separate web cap to 4.
+# ceiling is 79 during a drain; it becomes 73 after the separate web cap to 4.
 # Both fit under the 97 application slots at max_connections=100. PgBouncer
 # remains parked ("PgBouncer: parked" in docs/db-connectivity.md), so these
 # budgets do not depend on it. Draining alone fixes the severed-request case.
