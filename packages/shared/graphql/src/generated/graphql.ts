@@ -2782,6 +2782,7 @@ export type GroupedNotification = {
   gymName?: Maybe<Scalars['String']['output']>;
   /** Whether all notifications in the group are read */
   isRead: Scalars['Boolean']['output'];
+  isSprayReset?: Maybe<Scalars['Boolean']['output']>;
   /** Type of the proposal this notification is about (grade, classic, benchmark, hide) */
   proposalType?: Maybe<ProposalType>;
   /** Proposal UUID (for deep-linking to a specific proposal) */
@@ -2790,6 +2791,9 @@ export type GroupedNotification = {
   proposalValue?: Maybe<Scalars['String']['output']>;
   /** Setter username (for new_climbs_synced notifications) */
   setterUsername?: Maybe<Scalars['String']['output']>;
+  sprayVersionId?: Maybe<Scalars['ID']['output']>;
+  sprayWallName?: Maybe<Scalars['String']['output']>;
+  sprayWallUuid?: Maybe<Scalars['String']['output']>;
   /** ID of the entity named by threadEntityType. */
   threadEntityId?: Maybe<Scalars['String']['output']>;
   /**
@@ -3975,7 +3979,6 @@ export type Mutation = {
    * Returns the number of notifications that were marked as read.
    */
   markGroupNotificationsRead: Scalars['Int']['output'];
-  /** Mark a notification as read. */
   markNotificationRead: Scalars['Boolean']['output'];
   /**
    * Fold one or more duplicate gyms into a canonical survivor (admin only). Every
@@ -4051,6 +4054,8 @@ export type Mutation = {
    */
   registerActivityPushToken: Scalars['Boolean']['output'];
   registerController: ControllerRegistration;
+  /** Mark a notification as read. */
+  registerNotificationDevice: Scalars['Boolean']['output'];
   /** Remove a climb from a playlist. */
   removeClimbFromPlaylist: Scalars['Boolean']['output'];
   /**
@@ -4326,6 +4331,7 @@ export type Mutation = {
    * be used to clear another session's registration.
    */
   unregisterActivityPushToken: Scalars['Boolean']['output'];
+  unregisterNotificationDevice: Scalars['Boolean']['output'];
   /** Unsubscribe from new climbs for a board type and layout. */
   unsubscribeNewClimbs: Scalars['Boolean']['output'];
   /**
@@ -4757,6 +4763,11 @@ export type MutationRegisterControllerArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationRegisterNotificationDeviceArgs = {
+  input: RegisterNotificationDeviceInput;
+};
+
+/** Root mutation type for all write operations. */
 export type MutationRemoveClimbFromPlaylistArgs = {
   input: RemoveClimbFromPlaylistInput;
 };
@@ -5060,6 +5071,11 @@ export type MutationUnregisterActivityPushTokenArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationUnregisterNotificationDeviceArgs = {
+  installationId: Scalars['String']['input'];
+};
+
+/** Root mutation type for all write operations. */
 export type MutationUnsubscribeNewClimbsArgs = {
   input: NewClimbSubscriptionInput;
 };
@@ -5258,12 +5274,16 @@ export type Notification = {
   gymName?: Maybe<Scalars['String']['output']>;
   /** Whether the notification has been read */
   isRead: Scalars['Boolean']['output'];
+  isSprayReset?: Maybe<Scalars['Boolean']['output']>;
   /** Type of the proposal this notification is about (grade, classic, benchmark, hide) */
   proposalType?: Maybe<ProposalType>;
   /** Proposal UUID (for proposal notifications, to deep-link to the specific proposal) */
   proposalUuid?: Maybe<Scalars['String']['output']>;
   /** The proposal's proposedValue, e.g. 'true'/'false' for hide */
   proposalValue?: Maybe<Scalars['String']['output']>;
+  sprayVersionId?: Maybe<Scalars['ID']['output']>;
+  sprayWallName?: Maybe<Scalars['String']['output']>;
+  sprayWallUuid?: Maybe<Scalars['String']['output']>;
   /** Type of notification */
   type: NotificationType;
   /** Public unique identifier */
@@ -5323,6 +5343,7 @@ export type NotificationType =
   | 'proposal_on_your_climb'
   | 'proposal_rejected'
   | 'proposal_vote'
+  | 'spray_wall_detection_completed'
   | 'vote_on_comment'
   | 'vote_on_tick';
 
@@ -6446,6 +6467,7 @@ export type Query = {
   sprayWallByLayout?: Maybe<SprayWall>;
   sprayWallDetection?: Maybe<SprayWallDetection>;
   sprayWallDetectionForVersion?: Maybe<SprayWallDetection>;
+  sprayWallImportProgress: Array<SprayWallImportProgress>;
   /**
    * Everything needed to render a wall at one version: the photo, the homography
    * and the holds alive at that version. Omit `version` for the published one.
@@ -7194,6 +7216,11 @@ export type QuerySprayWallDetectionForVersionArgs = {
 };
 
 /** Root query type for all read operations. */
+export type QuerySprayWallImportProgressArgs = {
+  wallUuids: Array<Scalars['ID']['input']>;
+};
+
+/** Root query type for all read operations. */
 export type QuerySprayWallRenderDataArgs = {
   uuid: Scalars['ID']['input'];
   version?: InputMaybe<Scalars['Int']['input']>;
@@ -7561,6 +7588,13 @@ export type RegisterControllerInput = {
   name?: InputMaybe<Scalars['String']['input']>;
   setIds: Scalars['String']['input'];
   sizeId: Scalars['Int']['input'];
+};
+
+export type RegisterNotificationDeviceInput = {
+  installationId: Scalars['String']['input'];
+  locale: Scalars['String']['input'];
+  platform: Scalars['String']['input'];
+  token: Scalars['String']['input'];
 };
 
 /** Input for removing a climb from a playlist. */
@@ -8979,7 +9013,9 @@ export type SprayWallDetection = {
   finishedAt?: Maybe<Scalars['String']['output']>;
   id: Scalars['ID']['output'];
   modelVersion: Scalars['String']['output'];
+  queuePosition?: Maybe<Scalars['Int']['output']>;
   result?: Maybe<SprayDetectionResult>;
+  retryAt?: Maybe<Scalars['String']['output']>;
   status: Scalars['String']['output'];
   versionId: Scalars['ID']['output'];
   wallUuid: Scalars['ID']['output'];
@@ -9057,6 +9093,17 @@ export type SprayWallHoldInput = {
   outline?: InputMaybe<Array<Scalars['Float']['input']>>;
   r: Scalars['Int']['input'];
   source?: InputMaybe<SprayHoldSource>;
+};
+
+export type SprayWallImportProgress = {
+  __typename?: 'SprayWallImportProgress';
+  detectionId?: Maybe<Scalars['ID']['output']>;
+  isReset: Scalars['Boolean']['output'];
+  queuePosition?: Maybe<Scalars['Int']['output']>;
+  retryAt?: Maybe<Scalars['String']['output']>;
+  stage: Scalars['String']['output'];
+  versionId?: Maybe<Scalars['ID']['output']>;
+  wallUuid: Scalars['ID']['output'];
 };
 
 /** Keep this hold, optionally refreshing its silhouette from the new photo. */
@@ -10050,6 +10097,7 @@ export type UserBoard = {
   sizeName?: Maybe<Scalars['String']['output']>;
   /** URL slug for this board */
   slug: Scalars['String']['output'];
+  sprayImport?: Maybe<SprayWallImportProgress>;
   /** Paired Rogue Fitness timer's advertised BLE name */
   timerName?: Maybe<Scalars['String']['output']>;
   /** Total ascents on this board */
@@ -12024,6 +12072,10 @@ export type GetNotificationsQuery = {
       proposalUuid?: string | null;
       proposalType?: ProposalType | null;
       proposalValue?: string | null;
+      sprayWallName?: string | null;
+      sprayWallUuid?: string | null;
+      sprayVersionId?: string | null;
+      isSprayReset?: boolean | null;
       isRead: boolean;
       createdAt: string;
     }>;
@@ -12064,6 +12116,10 @@ export type GetGroupedNotificationsQuery = {
       proposalValue?: string | null;
       setterUsername?: string | null;
       gymName?: string | null;
+      sprayWallName?: string | null;
+      sprayWallUuid?: string | null;
+      sprayVersionId?: string | null;
+      isSprayReset?: boolean | null;
       isRead: boolean;
       createdAt: string;
       actors: Array<{
@@ -13665,6 +13721,8 @@ export type SprayDetectionFieldsFragment = {
   modelVersion: string;
   error?: string | null;
   createdAt: string;
+  queuePosition?: number | null;
+  retryAt?: string | null;
   finishedAt?: string | null;
   result?: {
     __typename?: 'SprayDetectionResult';
@@ -13697,6 +13755,8 @@ export type SprayDetectionQuery = {
     modelVersion: string;
     error?: string | null;
     createdAt: string;
+    queuePosition?: number | null;
+    retryAt?: string | null;
     finishedAt?: string | null;
     result?: {
       __typename?: 'SprayDetectionResult';
@@ -13729,6 +13789,8 @@ export type RequestSprayDetectionMutation = {
     modelVersion: string;
     error?: string | null;
     createdAt: string;
+    queuePosition?: number | null;
+    retryAt?: string | null;
     finishedAt?: string | null;
     result?: {
       __typename?: 'SprayDetectionResult';
@@ -13761,6 +13823,8 @@ export type RetrySprayDetectionMutation = {
     modelVersion: string;
     error?: string | null;
     createdAt: string;
+    queuePosition?: number | null;
+    retryAt?: string | null;
     finishedAt?: string | null;
     result?: {
       __typename?: 'SprayDetectionResult';
@@ -13776,6 +13840,24 @@ export type RetrySprayDetectionMutation = {
       }>;
     } | null;
   };
+};
+
+export type SprayWallImportProgressQueryVariables = Exact<{
+  wallUuids: Array<Scalars['ID']['input']> | Scalars['ID']['input'];
+}>;
+
+export type SprayWallImportProgressQuery = {
+  __typename?: 'Query';
+  sprayWallImportProgress: Array<{
+    __typename?: 'SprayWallImportProgress';
+    wallUuid: string;
+    versionId?: string | null;
+    detectionId?: string | null;
+    stage: string;
+    queuePosition?: number | null;
+    retryAt?: string | null;
+    isReset: boolean;
+  }>;
 };
 
 export type GetTicksQueryVariables = Exact<{
@@ -14601,6 +14683,8 @@ export const SprayDetectionFieldsFragmentDoc = {
           { kind: 'Field', name: { kind: 'Name', value: 'modelVersion' } },
           { kind: 'Field', name: { kind: 'Name', value: 'error' } },
           { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'queuePosition' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'retryAt' } },
           { kind: 'Field', name: { kind: 'Name', value: 'finishedAt' } },
           {
             kind: 'Field',
@@ -18365,6 +18449,10 @@ export const GetNotificationsDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'proposalUuid' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'proposalType' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'proposalValue' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'sprayWallName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'sprayWallUuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'sprayVersionId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'isSprayReset' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'isRead' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
                     ],
@@ -18459,6 +18547,10 @@ export const GetGroupedNotificationsDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'proposalValue' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'setterUsername' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'gymName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'sprayWallName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'sprayWallUuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'sprayVersionId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'isSprayReset' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'isRead' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
                     ],
@@ -22375,6 +22467,8 @@ export const SprayDetectionDocument = {
           { kind: 'Field', name: { kind: 'Name', value: 'modelVersion' } },
           { kind: 'Field', name: { kind: 'Name', value: 'error' } },
           { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'queuePosition' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'retryAt' } },
           { kind: 'Field', name: { kind: 'Name', value: 'finishedAt' } },
           {
             kind: 'Field',
@@ -22458,6 +22552,8 @@ export const RequestSprayDetectionDocument = {
           { kind: 'Field', name: { kind: 'Name', value: 'modelVersion' } },
           { kind: 'Field', name: { kind: 'Name', value: 'error' } },
           { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'queuePosition' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'retryAt' } },
           { kind: 'Field', name: { kind: 'Name', value: 'finishedAt' } },
           {
             kind: 'Field',
@@ -22538,6 +22634,8 @@ export const RetrySprayDetectionDocument = {
           { kind: 'Field', name: { kind: 'Name', value: 'modelVersion' } },
           { kind: 'Field', name: { kind: 'Name', value: 'error' } },
           { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'queuePosition' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'retryAt' } },
           { kind: 'Field', name: { kind: 'Name', value: 'finishedAt' } },
           {
             kind: 'Field',
@@ -22569,6 +22667,57 @@ export const RetrySprayDetectionDocument = {
     },
   ],
 } as unknown as DocumentNode<RetrySprayDetectionMutation, RetrySprayDetectionMutationVariables>;
+export const SprayWallImportProgressDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'SprayWallImportProgress' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'wallUuids' } },
+          type: {
+            kind: 'NonNullType',
+            type: {
+              kind: 'ListType',
+              type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+            },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'sprayWallImportProgress' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'wallUuids' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'wallUuids' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'wallUuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'versionId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'detectionId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'stage' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'queuePosition' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'retryAt' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'isReset' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<SprayWallImportProgressQuery, SprayWallImportProgressQueryVariables>;
 export const GetTicksDocument = {
   kind: 'Document',
   definitions: [

@@ -1,4 +1,11 @@
 export const notificationsTypeDefs = /* GraphQL */ `
+  input RegisterNotificationDeviceInput {
+    installationId: String!
+    token: String!
+    platform: String!
+    locale: String!
+  }
+
   # ============================================
   # Notification Types
   # ============================================
@@ -19,6 +26,7 @@ export const notificationsTypeDefs = /* GraphQL */ `
     new_climbs_synced
     gym_claim_approved
     proposal_on_your_climb
+    spray_wall_detection_completed
   }
 
   """
@@ -55,6 +63,10 @@ export const notificationsTypeDefs = /* GraphQL */ `
     proposalValue: String
     "Gym name (for gym_claim_approved notifications)"
     gymName: String
+    sprayWallName: String
+    sprayWallUuid: String
+    sprayVersionId: ID
+    isSprayReset: Boolean
     "Whether the notification has been read"
     isRead: Boolean!
     "When the notification was created (ISO 8601)"
@@ -152,6 +164,10 @@ export const notificationsTypeDefs = /* GraphQL */ `
     setterUsername: String
     "Gym name (for gym_claim_approved notifications)"
     gymName: String
+    sprayWallName: String
+    sprayWallUuid: String
+    sprayVersionId: ID
+    isSprayReset: Boolean
     "Whether all notifications in the group are read"
     isRead: Boolean!
     "When the most recent notification was created"

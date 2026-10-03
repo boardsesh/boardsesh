@@ -63,7 +63,8 @@ export function userBoardToItem(
     isActive: activeUuid != null && board.uuid === activeUuid,
     isViewerOwner: currentUserId === undefined ? undefined : boardIsOwnedBy(board, currentUserId),
     isPinned: isPinnedOverride ?? board.isPinnedByMe ?? false,
-    offlineState,
+    offlineState: board.sprayImport && !board.sprayImport.isReset ? undefined : offlineState,
+    sprayImport: board.sprayImport,
   };
 }
 
@@ -87,6 +88,7 @@ export type UserBoardItemsOptions = {
   pinnedOverrides?: ReadonlyMap<string, boolean>;
   /** See `userBoardToItem`. */
   labelOptions?: BoardLabelOptions;
+  importStatusStale?: boolean;
 };
 
 /**
@@ -95,7 +97,7 @@ export type UserBoardItemsOptions = {
  * the user is looking at, and runs here — at the list level — never per row.
  */
 export function userBoardsToItems(boards: UserBoard[], options: UserBoardItemsOptions = {}): DiscoveryBoardItem[] {
-  const { activeUuid, offlineStateFor, currentUserId, pinnedOverrides, labelOptions } = options;
+  const { activeUuid, offlineStateFor, currentUserId, pinnedOverrides, labelOptions, importStatusStale } = options;
   // Only boards that actually render take part: a board dropped for an
   // unsupported type must not push its neighbour into a disambiguation the user
   // can see no reason for.
@@ -109,7 +111,7 @@ export function userBoardsToItems(boards: UserBoard[], options: UserBoardItemsOp
       pinnedOverrides?.get(board.uuid),
       labelOptions,
     );
-    if (item !== null) rendered.push({ item, board });
+    if (item !== null) rendered.push({ item: { ...item, importStatusStale }, board });
   }
   const subtitles = disambiguateBoardSubtitles(
     rendered.map((entry) => entry.board),

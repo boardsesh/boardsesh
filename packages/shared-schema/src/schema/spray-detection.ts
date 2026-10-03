@@ -20,13 +20,25 @@ export const sprayDetectionTypeDefs = /* GraphQL */ `
     result: SprayDetectionResult
     error: String
     createdAt: String!
+    queuePosition: Int
+    retryAt: String
     finishedAt: String
+  }
+  type SprayWallImportProgress {
+    wallUuid: ID!
+    versionId: ID
+    detectionId: ID
+    stage: String!
+    queuePosition: Int
+    retryAt: String
+    isReset: Boolean!
   }
   input RequestSprayWallDetectionInput {
     wallUuid: ID!
     versionId: ID!
   }
   extend type Query {
+    sprayWallImportProgress(wallUuids: [ID!]!): [SprayWallImportProgress!]!
     sprayWallDetection(id: ID!): SprayWallDetection
     sprayWallDetectionForVersion(wallUuid: ID!, versionId: ID!): SprayWallDetection
   }

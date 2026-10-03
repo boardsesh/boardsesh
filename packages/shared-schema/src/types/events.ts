@@ -173,6 +173,8 @@ export type ConnectionContext = {
   participantId?: string;
   userId?: string;
   isAuthenticated?: boolean;
+  /** Verified bearer expiry in epoch milliseconds; never supplied by the client. */
+  credentialExpiresAt?: number;
   // Set only by HTTP cron bearer authentication; never grants user access.
   isCronAuthenticated?: boolean;
   // Client IP for rate limiting anonymous callers on both transports: HTTP

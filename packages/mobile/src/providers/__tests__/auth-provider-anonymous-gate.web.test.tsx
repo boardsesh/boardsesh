@@ -338,6 +338,8 @@ vi.mock('../../offline/offline-usage-signal', () => ({
 }));
 
 const stopTokenManagementMock = vi.fn(async () => {});
+vi.mock('../../notifications/device-registration', () => ({ deactivateNotificationDevice: vi.fn(async () => {}) }));
+
 vi.mock('../../notifications', () => ({
   stopTokenManagement: (_unregister: unknown) => stopTokenManagementMock(),
 }));

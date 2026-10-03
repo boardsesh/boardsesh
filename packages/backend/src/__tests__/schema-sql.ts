@@ -6,6 +6,18 @@
 import { readFileSync } from 'node:fs';
 
 // Exercise the generated migration instead of maintaining a second detection schema.
+const notificationDeviceSchema = readFileSync(
+  new URL('../../../db/drizzle/0251_safe_moon_knight.sql', import.meta.url),
+  'utf8',
+)
+  .split('--> statement-breakpoint')
+  .filter((statement) => !statement.trim().startsWith('ALTER TYPE'))
+  .join('\n');
+const notificationDeviceExpirySchema = readFileSync(
+  new URL('../../../db/drizzle/0252_cloudy_venus.sql', import.meta.url),
+  'utf8',
+);
+// Notification types are text in this fixture; use the generated table/FK DDL.
 const detectionSchema = readFileSync(
   new URL('../../../db/drizzle/0234_shallow_the_phantom.sql', import.meta.url),
   'utf8',
@@ -1138,6 +1150,11 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
     "created_at" timestamp DEFAULT now() NOT NULL
   );
   CREATE INDEX IF NOT EXISTS "notifications_recipient_created_at_idx" ON "notifications" ("recipient_id", "created_at");
+  DROP TABLE IF EXISTS "notification_deliveries";
+  DROP TABLE IF EXISTS "notification_devices";
+  ${notificationDeviceSchema}
+  ${notificationDeviceExpirySchema}
+
 
   -- Beta links the session feed INNER-joins for featured-beta enrichment. Empty
   -- in tests (no featured beta), but the relation must exist so the query plans.

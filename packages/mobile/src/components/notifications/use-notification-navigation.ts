@@ -8,6 +8,7 @@ import { useDrawerHost } from '../../providers/drawer-host-provider';
 import { useClimbModerationEnabled } from '../../providers/feature-flags-provider';
 import { openClimbInPlayDrawer } from '../../lib/open-climb-in-play-drawer';
 import { defaultAngle } from '../../lib/boards/default-angle';
+import { sprayImportRoute } from '../../lib/spray/spray-import-progress';
 import { notificationClimbRender } from './notification-climb-render';
 import { notificationToClimb } from './notification-to-climb';
 
@@ -99,6 +100,25 @@ export function useNotificationNavigation(openCommentThread: OpenCommentThread) 
           pathname: '/users/connections',
           params: { mode: 'newFollowers', entityId: notification.entityId ?? '' },
         });
+        return;
+      }
+
+      if (notification.type === 'spray_wall_detection_completed') {
+        if (
+          notification.sprayWallUuid &&
+          notification.sprayVersionId &&
+          typeof notification.isSprayReset === 'boolean'
+        ) {
+          router.push(
+            sprayImportRoute({
+              wallUuid: notification.sprayWallUuid,
+              versionId: notification.sprayVersionId,
+              isReset: notification.isSprayReset,
+            }),
+          );
+        } else {
+          router.push('/boards');
+        }
         return;
       }
 

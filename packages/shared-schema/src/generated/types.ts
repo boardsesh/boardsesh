@@ -2785,6 +2785,7 @@ export type GroupedNotification = {
   gymName?: Maybe<Scalars['String']['output']>;
   /** Whether all notifications in the group are read */
   isRead: Scalars['Boolean']['output'];
+  isSprayReset?: Maybe<Scalars['Boolean']['output']>;
   /** Type of the proposal this notification is about (grade, classic, benchmark, hide) */
   proposalType?: Maybe<ProposalType>;
   /** Proposal UUID (for deep-linking to a specific proposal) */
@@ -2793,6 +2794,9 @@ export type GroupedNotification = {
   proposalValue?: Maybe<Scalars['String']['output']>;
   /** Setter username (for new_climbs_synced notifications) */
   setterUsername?: Maybe<Scalars['String']['output']>;
+  sprayVersionId?: Maybe<Scalars['ID']['output']>;
+  sprayWallName?: Maybe<Scalars['String']['output']>;
+  sprayWallUuid?: Maybe<Scalars['String']['output']>;
   /** ID of the entity named by threadEntityType. */
   threadEntityId?: Maybe<Scalars['String']['output']>;
   /**
@@ -3978,7 +3982,6 @@ export type Mutation = {
    * Returns the number of notifications that were marked as read.
    */
   markGroupNotificationsRead: Scalars['Int']['output'];
-  /** Mark a notification as read. */
   markNotificationRead: Scalars['Boolean']['output'];
   /**
    * Fold one or more duplicate gyms into a canonical survivor (admin only). Every
@@ -4054,6 +4057,8 @@ export type Mutation = {
    */
   registerActivityPushToken: Scalars['Boolean']['output'];
   registerController: ControllerRegistration;
+  /** Mark a notification as read. */
+  registerNotificationDevice: Scalars['Boolean']['output'];
   /** Remove a climb from a playlist. */
   removeClimbFromPlaylist: Scalars['Boolean']['output'];
   /**
@@ -4329,6 +4334,7 @@ export type Mutation = {
    * be used to clear another session's registration.
    */
   unregisterActivityPushToken: Scalars['Boolean']['output'];
+  unregisterNotificationDevice: Scalars['Boolean']['output'];
   /** Unsubscribe from new climbs for a board type and layout. */
   unsubscribeNewClimbs: Scalars['Boolean']['output'];
   /**
@@ -4760,6 +4766,11 @@ export type MutationRegisterControllerArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationRegisterNotificationDeviceArgs = {
+  input: RegisterNotificationDeviceInput;
+};
+
+/** Root mutation type for all write operations. */
 export type MutationRemoveClimbFromPlaylistArgs = {
   input: RemoveClimbFromPlaylistInput;
 };
@@ -5063,6 +5074,11 @@ export type MutationUnregisterActivityPushTokenArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationUnregisterNotificationDeviceArgs = {
+  installationId: Scalars['String']['input'];
+};
+
+/** Root mutation type for all write operations. */
 export type MutationUnsubscribeNewClimbsArgs = {
   input: NewClimbSubscriptionInput;
 };
@@ -5261,12 +5277,16 @@ export type Notification = {
   gymName?: Maybe<Scalars['String']['output']>;
   /** Whether the notification has been read */
   isRead: Scalars['Boolean']['output'];
+  isSprayReset?: Maybe<Scalars['Boolean']['output']>;
   /** Type of the proposal this notification is about (grade, classic, benchmark, hide) */
   proposalType?: Maybe<ProposalType>;
   /** Proposal UUID (for proposal notifications, to deep-link to the specific proposal) */
   proposalUuid?: Maybe<Scalars['String']['output']>;
   /** The proposal's proposedValue, e.g. 'true'/'false' for hide */
   proposalValue?: Maybe<Scalars['String']['output']>;
+  sprayVersionId?: Maybe<Scalars['ID']['output']>;
+  sprayWallName?: Maybe<Scalars['String']['output']>;
+  sprayWallUuid?: Maybe<Scalars['String']['output']>;
   /** Type of notification */
   type: NotificationType;
   /** Public unique identifier */
@@ -5326,6 +5346,7 @@ export type NotificationType =
   | 'proposal_on_your_climb'
   | 'proposal_rejected'
   | 'proposal_vote'
+  | 'spray_wall_detection_completed'
   | 'vote_on_comment'
   | 'vote_on_tick';
 
@@ -6449,6 +6470,7 @@ export type Query = {
   sprayWallByLayout?: Maybe<SprayWall>;
   sprayWallDetection?: Maybe<SprayWallDetection>;
   sprayWallDetectionForVersion?: Maybe<SprayWallDetection>;
+  sprayWallImportProgress: Array<SprayWallImportProgress>;
   /**
    * Everything needed to render a wall at one version: the photo, the homography
    * and the holds alive at that version. Omit `version` for the published one.
@@ -7197,6 +7219,11 @@ export type QuerySprayWallDetectionForVersionArgs = {
 };
 
 /** Root query type for all read operations. */
+export type QuerySprayWallImportProgressArgs = {
+  wallUuids: Array<Scalars['ID']['input']>;
+};
+
+/** Root query type for all read operations. */
 export type QuerySprayWallRenderDataArgs = {
   uuid: Scalars['ID']['input'];
   version?: InputMaybe<Scalars['Int']['input']>;
@@ -7564,6 +7591,13 @@ export type RegisterControllerInput = {
   name?: InputMaybe<Scalars['String']['input']>;
   setIds: Scalars['String']['input'];
   sizeId: Scalars['Int']['input'];
+};
+
+export type RegisterNotificationDeviceInput = {
+  installationId: Scalars['String']['input'];
+  locale: Scalars['String']['input'];
+  platform: Scalars['String']['input'];
+  token: Scalars['String']['input'];
 };
 
 /** Input for removing a climb from a playlist. */
@@ -8982,7 +9016,9 @@ export type SprayWallDetection = {
   finishedAt?: Maybe<Scalars['String']['output']>;
   id: Scalars['ID']['output'];
   modelVersion: Scalars['String']['output'];
+  queuePosition?: Maybe<Scalars['Int']['output']>;
   result?: Maybe<SprayDetectionResult>;
+  retryAt?: Maybe<Scalars['String']['output']>;
   status: Scalars['String']['output'];
   versionId: Scalars['ID']['output'];
   wallUuid: Scalars['ID']['output'];
@@ -9060,6 +9096,17 @@ export type SprayWallHoldInput = {
   outline?: InputMaybe<Array<Scalars['Float']['input']>>;
   r: Scalars['Int']['input'];
   source?: InputMaybe<SprayHoldSource>;
+};
+
+export type SprayWallImportProgress = {
+  __typename?: 'SprayWallImportProgress';
+  detectionId?: Maybe<Scalars['ID']['output']>;
+  isReset: Scalars['Boolean']['output'];
+  queuePosition?: Maybe<Scalars['Int']['output']>;
+  retryAt?: Maybe<Scalars['String']['output']>;
+  stage: Scalars['String']['output'];
+  versionId?: Maybe<Scalars['ID']['output']>;
+  wallUuid: Scalars['ID']['output'];
 };
 
 /** Keep this hold, optionally refreshing its silhouette from the new photo. */
@@ -10053,6 +10100,7 @@ export type UserBoard = {
   sizeName?: Maybe<Scalars['String']['output']>;
   /** URL slug for this board */
   slug: Scalars['String']['output'];
+  sprayImport?: Maybe<SprayWallImportProgress>;
   /** Paired Rogue Fitness timer's advertised BLE name */
   timerName?: Maybe<Scalars['String']['output']>;
   /** Total ascents on this board */
@@ -10706,6 +10754,7 @@ export type ResolversTypes = ResolversObject<{
   RecordBoardOpenedInput: RecordBoardOpenedInput;
   RecordBoardSerialInput: RecordBoardSerialInput;
   RegisterControllerInput: RegisterControllerInput;
+  RegisterNotificationDeviceInput: RegisterNotificationDeviceInput;
   RemoveClimbFromPlaylistInput: RemoveClimbFromPlaylistInput;
   RemoveFavoriteInput: RemoveFavoriteInput;
   RemoveGymMemberInput: RemoveGymMemberInput;
@@ -10798,6 +10847,7 @@ export type ResolversTypes = ResolversObject<{
   SprayWallDetectionInput: SprayWallDetectionInput;
   SprayWallHold: ResolverTypeWrapper<SprayWallHold>;
   SprayWallHoldInput: SprayWallHoldInput;
+  SprayWallImportProgress: ResolverTypeWrapper<SprayWallImportProgress>;
   SprayWallKeptDecisionInput: SprayWallKeptDecisionInput;
   SprayWallModerationResult: ResolverTypeWrapper<SprayWallModerationResult>;
   SprayWallMoveSuggestion: ResolverTypeWrapper<SprayWallMoveSuggestion>;
@@ -11152,6 +11202,7 @@ export type ResolversParentTypes = ResolversObject<{
   RecordBoardOpenedInput: RecordBoardOpenedInput;
   RecordBoardSerialInput: RecordBoardSerialInput;
   RegisterControllerInput: RegisterControllerInput;
+  RegisterNotificationDeviceInput: RegisterNotificationDeviceInput;
   RemoveClimbFromPlaylistInput: RemoveClimbFromPlaylistInput;
   RemoveFavoriteInput: RemoveFavoriteInput;
   RemoveGymMemberInput: RemoveGymMemberInput;
@@ -11235,6 +11286,7 @@ export type ResolversParentTypes = ResolversObject<{
   SprayWallDetectionInput: SprayWallDetectionInput;
   SprayWallHold: SprayWallHold;
   SprayWallHoldInput: SprayWallHoldInput;
+  SprayWallImportProgress: SprayWallImportProgress;
   SprayWallKeptDecisionInput: SprayWallKeptDecisionInput;
   SprayWallModerationResult: SprayWallModerationResult;
   SprayWallMoveSuggestion: SprayWallMoveSuggestion;
@@ -12645,10 +12697,14 @@ export type GroupedNotificationResolvers<
   entityType?: Resolver<Maybe<ResolversTypes['SocialEntityType']>, ParentType, ContextType>;
   gymName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   isRead?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  isSprayReset?: Resolver<Maybe<ResolversTypes['Boolean']>, ParentType, ContextType>;
   proposalType?: Resolver<Maybe<ResolversTypes['ProposalType']>, ParentType, ContextType>;
   proposalUuid?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   proposalValue?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   setterUsername?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  sprayVersionId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
+  sprayWallName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  sprayWallUuid?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   threadEntityId?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   threadEntityType?: Resolver<Maybe<ResolversTypes['SocialEntityType']>, ParentType, ContextType>;
   type?: Resolver<ResolversTypes['NotificationType'], ParentType, ContextType>;
@@ -13603,6 +13659,12 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationRegisterControllerArgs, 'input'>
   >;
+  registerNotificationDevice?: Resolver<
+    ResolversTypes['Boolean'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationRegisterNotificationDeviceArgs, 'input'>
+  >;
   removeClimbFromPlaylist?: Resolver<
     ResolversTypes['Boolean'],
     ParentType,
@@ -13932,6 +13994,12 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationUnregisterActivityPushTokenArgs, 'sessionId' | 'token'>
   >;
+  unregisterNotificationDevice?: Resolver<
+    ResolversTypes['Boolean'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationUnregisterNotificationDeviceArgs, 'installationId'>
+  >;
   unsubscribeNewClimbs?: Resolver<
     ResolversTypes['Boolean'],
     ParentType,
@@ -14105,9 +14173,13 @@ export type NotificationResolvers<
   entityType?: Resolver<Maybe<ResolversTypes['SocialEntityType']>, ParentType, ContextType>;
   gymName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   isRead?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  isSprayReset?: Resolver<Maybe<ResolversTypes['Boolean']>, ParentType, ContextType>;
   proposalType?: Resolver<Maybe<ResolversTypes['ProposalType']>, ParentType, ContextType>;
   proposalUuid?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   proposalValue?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  sprayVersionId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
+  sprayWallName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  sprayWallUuid?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   type?: Resolver<ResolversTypes['NotificationType'], ParentType, ContextType>;
   uuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
@@ -15090,6 +15162,12 @@ export type QueryResolvers<
     ContextType,
     RequireFields<QuerySprayWallDetectionForVersionArgs, 'versionId' | 'wallUuid'>
   >;
+  sprayWallImportProgress?: Resolver<
+    Array<ResolversTypes['SprayWallImportProgress']>,
+    ParentType,
+    ContextType,
+    RequireFields<QuerySprayWallImportProgressArgs, 'wallUuids'>
+  >;
   sprayWallRenderData?: Resolver<
     Maybe<ResolversTypes['SprayWallRenderData']>,
     ParentType,
@@ -16069,7 +16147,9 @@ export type SprayWallDetectionResolvers<
   finishedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   modelVersion?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  queuePosition?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   result?: Resolver<Maybe<ResolversTypes['SprayDetectionResult']>, ParentType, ContextType>;
+  retryAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   status?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   versionId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   wallUuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
@@ -16090,6 +16170,20 @@ export type SprayWallHoldResolvers<
   r?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   removedVersion?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   source?: Resolver<ResolversTypes['SprayHoldSource'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type SprayWallImportProgressResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['SprayWallImportProgress'] = ResolversParentTypes['SprayWallImportProgress'],
+> = ResolversObject<{
+  detectionId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
+  isReset?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  queuePosition?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  retryAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  stage?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  versionId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
+  wallUuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -16478,6 +16572,7 @@ export type UserBoardResolvers<
   sizeId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   sizeName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   slug?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  sprayImport?: Resolver<Maybe<ResolversTypes['SprayWallImportProgress']>, ParentType, ContextType>;
   timerName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   totalAscents?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   uniqueClimbers?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
@@ -16868,6 +16963,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   SprayWall?: SprayWallResolvers<ContextType>;
   SprayWallDetection?: SprayWallDetectionResolvers<ContextType>;
   SprayWallHold?: SprayWallHoldResolvers<ContextType>;
+  SprayWallImportProgress?: SprayWallImportProgressResolvers<ContextType>;
   SprayWallModerationResult?: SprayWallModerationResultResolvers<ContextType>;
   SprayWallMoveSuggestion?: SprayWallMoveSuggestionResolvers<ContextType>;
   SprayWallPhoto?: SprayWallPhotoResolvers<ContextType>;

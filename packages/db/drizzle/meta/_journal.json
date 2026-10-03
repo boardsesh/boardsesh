@@ -1758,6 +1758,20 @@
       "when": 1791020572955,
       "tag": "0250_climb_revisions",
       "breakpoints": true
+    },
+    {
+      "idx": 251,
+      "version": "7",
+      "when": 1791026138684,
+      "tag": "0251_safe_moon_knight",
+      "breakpoints": true
+    },
+    {
+      "idx": 252,
+      "version": "7",
+      "when": 1791026268144,
+      "tag": "0252_cloudy_venus",
+      "breakpoints": true
     }
   ]
 }

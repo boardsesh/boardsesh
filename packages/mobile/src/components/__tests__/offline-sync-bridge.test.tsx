@@ -2,6 +2,17 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, render, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+const useNotificationUpdatesMock = vi.hoisted(() => vi.fn());
+vi.mock('../../notifications/use-notification-updates', async () => {
+  const { useEffect } = await import('react');
+  return {
+    useNotificationUpdates: (authenticated: boolean, accountId: string | null) => {
+      useEffect(() => {
+        useNotificationUpdatesMock(authenticated, accountId);
+      }, [authenticated, accountId]);
+    },
+  };
+});
 const loadFollowedAuthorsMock = vi.hoisted(() =>
   vi.fn(async (_userId: string) => ({ setterUsernames: [], users: [] })),
 );
@@ -112,11 +123,6 @@ vi.mock('../../offline/outbox-telemetry', () => ({
 // react-native-mmkv (its react-native Flow entry breaks Rolldown's scan).
 vi.mock('../../settings', () => ({
   getSetting: vi.fn(() => []),
-}));
-
-const setupNotificationHandlersMock = vi.fn(() => vi.fn());
-vi.mock('../../notifications', () => ({
-  setupNotificationHandlers: (...args: unknown[]) => setupNotificationHandlersMock(...(args as [])),
 }));
 
 vi.mock('../../lib/graphql/client', () => ({
@@ -304,7 +310,7 @@ describe('OfflineSyncBridge — local user-data owner stamp', () => {
     isAuthenticated = false;
     storedUserId = undefined;
     render(<Harness flags={FLAG_ON} queryClient={makeQueryClient()} />);
-    await waitFor(() => expect(setupNotificationHandlersMock).toHaveBeenCalled());
+    await waitFor(() => expect(useNotificationUpdatesMock).toHaveBeenCalled());
     expect(assertLocalUserDataOwnerMock).not.toHaveBeenCalled();
     expect(stampLocalUserIdMock).not.toHaveBeenCalled();
   });
@@ -326,7 +332,7 @@ describe('OfflineSyncBridge — baked-on native engine', () => {
 
   it('sets up notification handlers', async () => {
     render(<Harness flags={FLAG_ON} queryClient={makeQueryClient()} />);
-    await waitFor(() => expect(setupNotificationHandlersMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(useNotificationUpdatesMock).toHaveBeenCalledTimes(1));
   });
 
   it('stops the scheduler on unmount', async () => {
@@ -385,7 +391,7 @@ describe('OfflineSyncBridge — auth gating', () => {
     render(<Harness flags={FLAG_ON} queryClient={makeQueryClient()} />);
     // Notifications and background tracking still set up — they are
     // auth-independent effects.
-    await waitFor(() => expect(setupNotificationHandlersMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(useNotificationUpdatesMock).toHaveBeenCalledTimes(1));
     expect(startBackgroundTrackingMock).toHaveBeenCalledTimes(1);
     expect(startSyncSchedulerMock).not.toHaveBeenCalled();
     expect(getPendingCountMock).not.toHaveBeenCalled();
@@ -443,7 +449,7 @@ describe('OfflineSyncBridge — outbox backlog gauge', () => {
     // all rather than the backlog it could not read.
     setSchemaReady(false);
     render(<Harness flags={FLAG_ON} queryClient={makeQueryClient()} />);
-    await waitFor(() => expect(setupNotificationHandlersMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(useNotificationUpdatesMock).toHaveBeenCalledTimes(1));
     expect(recoverAndReportOutboxOnceMock).not.toHaveBeenCalled();
 
     act(() => setSchemaReady(true));
@@ -485,14 +491,14 @@ describe('OfflineSyncBridge — schema readiness gating', () => {
 
     // Notifications are readiness-independent, so waiting on them proves the effects
     // have flushed rather than merely not run yet.
-    await waitFor(() => expect(setupNotificationHandlersMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(useNotificationUpdatesMock).toHaveBeenCalledTimes(1));
     expect(startSyncSchedulerMock).not.toHaveBeenCalled();
   });
 
   it('starts the scheduler exactly once when readiness lands late', async () => {
     setSchemaReady(false);
     render(<Harness flags={FLAG_ON} queryClient={makeQueryClient()} />);
-    await waitFor(() => expect(setupNotificationHandlersMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(useNotificationUpdatesMock).toHaveBeenCalledTimes(1));
 
     // A retry won seconds after launch.
     act(() => setSchemaReady(true));

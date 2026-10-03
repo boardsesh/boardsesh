@@ -9,7 +9,9 @@ import {
 } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
-import type { BoardName } from '@boardsesh/shared-schema';
+import { useRouter } from 'expo-router';
+import { sprayImportCopy, sprayImportRoute } from '../../lib/spray/spray-import-progress';
+import type { BoardName, SprayWallImportProgress } from '@boardsesh/shared-schema';
 import { getBoardRenderData } from '../../lib/board-details';
 import { useSprayWallToken } from '../../lib/spray/use-spray-wall-token';
 import { hapticHeavy, hapticLight } from '../../lib/haptics';
@@ -63,6 +65,8 @@ export type DiscoveryBoardItem = {
    * be downloaded as a board (popular configs — see `popularConfigToItem`).
    */
   offlineState?: BoardDownloadState;
+  sprayImport?: SprayWallImportProgress | null;
+  importStatusStale?: boolean;
 };
 
 export const DISCOVERY_CARD_WIDTH = 168;
@@ -92,6 +96,7 @@ const BOARD_ACTION_NAME = 'boardAction';
 const DOWNLOAD_ACTION_NAME = 'download';
 const PIN_ACTION_NAME = 'pin';
 const DETAILS_ACTION_NAME = 'details';
+const IMPORT_ACTION_NAME = 'import';
 
 /** Distance badge copy: metres under 1km, one-decimal km above. */
 function formatDistance(meters: number): string {
@@ -169,6 +174,13 @@ export const BoardDiscoveryCard = memo(function BoardDiscoveryCard({
   pinLabel,
 }: BoardDiscoveryCardProps) {
   const { t } = useTranslation('boards');
+  const router = useRouter();
+  const importCopy = item.sprayImport ? sprayImportCopy(item.sprayImport, item.importStatusStale) : null;
+  const importLabel = importCopy ? t(importCopy.textI18nKey, importCopy.params) : null;
+  const importActionLabel = item.sprayImport?.stage === 'ready' ? t('sprayImport.review') : t('sprayImport.open');
+  const handleOpenImport = useCallback(() => {
+    if (item.sprayImport) router.push(sprayImportRoute(item.sprayImport));
+  }, [item.sprayImport, router]);
   const { systemColors, brandColors, radii } = useTheme();
   const scale = useSharedValue(1);
 
@@ -205,7 +217,11 @@ export const BoardDiscoveryCard = memo(function BoardDiscoveryCard({
   const showEditBadge = !isEditing && action === 'edit' && onAction !== undefined;
   const showFollowingBadge = !isEditing && action === 'unfollow';
   const showEditAction = isEditing && (action === 'delete' || action === 'unfollow') && onAction !== undefined;
-  const canOpenDetails = !isEditing && item.boardName === 'spray' && onDetails !== undefined;
+  const canOpenDetails =
+    !isEditing &&
+    item.boardName === 'spray' &&
+    onDetails !== undefined &&
+    (!item.sprayImport || item.sprayImport.isReset);
   const detailsLabel = t('mobile.boardDetail.detailsAria', { name: item.title });
   const handleDetails = useCallback(() => onDetails?.(item), [onDetails, item]);
   const canDownload = item.offlineState === 'off' && onDownload !== undefined;
@@ -251,8 +267,21 @@ export const BoardDiscoveryCard = memo(function BoardDiscoveryCard({
     if (canDownload && downloadLabel !== undefined) nested.push({ name: DOWNLOAD_ACTION_NAME, label: downloadLabel });
     if (canPin && pinLabel !== undefined) nested.push({ name: PIN_ACTION_NAME, label: pinLabel });
     if (canOpenDetails) nested.push({ name: DETAILS_ACTION_NAME, label: detailsLabel });
+    if (item.sprayImport?.isReset && !isEditing) nested.push({ name: IMPORT_ACTION_NAME, label: importActionLabel });
     return nested.length > 0 ? rowAccessibilityActionsWith(...nested) : ACTIVATE_ACCESSIBILITY_ACTIONS;
-  }, [hasBoardAction, actionLabel, canDownload, downloadLabel, canPin, pinLabel, canOpenDetails, detailsLabel]);
+  }, [
+    hasBoardAction,
+    actionLabel,
+    canDownload,
+    downloadLabel,
+    canPin,
+    pinLabel,
+    canOpenDetails,
+    detailsLabel,
+    item.sprayImport?.isReset,
+    isEditing,
+    importActionLabel,
+  ]);
 
   const handleAccessibilityAction = useCallback(
     (event: AccessibilityActionEvent) => {
@@ -264,6 +293,7 @@ export const BoardDiscoveryCard = memo(function BoardDiscoveryCard({
       if (actionName === DOWNLOAD_ACTION_NAME) handleDownload();
       if (actionName === PIN_ACTION_NAME) handleTogglePin();
       if (actionName === DETAILS_ACTION_NAME && canOpenDetails) handleDetails();
+      if (actionName === IMPORT_ACTION_NAME) handleOpenImport();
     },
     [
       isEditing,
@@ -275,6 +305,7 @@ export const BoardDiscoveryCard = memo(function BoardDiscoveryCard({
       handleTogglePin,
       canOpenDetails,
       handleDetails,
+      handleOpenImport,
     ],
   );
 
@@ -296,6 +327,7 @@ export const BoardDiscoveryCard = memo(function BoardDiscoveryCard({
     item.isActive ? activeLabel : null,
     ownershipLabel,
     pinnedLabel,
+    importLabel,
   ]
     .filter((part): part is string => typeof part === 'string' && part.length > 0)
     .join(', ');
@@ -460,6 +492,24 @@ export const BoardDiscoveryCard = memo(function BoardDiscoveryCard({
         >
           <Text variant="subheadline" color={brandColors.primary}>
             {t('mobile.boardDetail.details')}
+          </Text>
+        </PressableSurface>
+      ) : null}
+
+      {importLabel ? (
+        <Text variant="caption1" color={brandColors.primary} accessibilityLiveRegion="polite">
+          {importLabel}
+        </Text>
+      ) : null}
+      {item.sprayImport?.isReset && !isEditing ? (
+        <PressableSurface
+          onPress={handleOpenImport}
+          accessibilityRole="button"
+          accessibilityLabel={importActionLabel}
+          feedback="opacity"
+        >
+          <Text variant="caption1" color={brandColors.primary}>
+            {importActionLabel}
           </Text>
         </PressableSurface>
       ) : null}

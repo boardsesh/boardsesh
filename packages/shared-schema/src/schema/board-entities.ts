@@ -58,6 +58,7 @@ export const boardEntitiesTypeDefs = /* GraphQL */ `
   A named physical board installation (board type + layout + size + hold sets).
   """
   type UserBoard {
+    sprayImport: SprayWallImportProgress
     "Unique identifier"
     uuid: ID!
     "URL slug for this board"

@@ -1,0 +1,1 @@
+ALTER TABLE "notification_devices" ADD COLUMN "expires_at" timestamp with time zone DEFAULT now() NOT NULL;

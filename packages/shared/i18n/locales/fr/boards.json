@@ -7,7 +7,10 @@
     "resumeHint": "Tu peux quitter et reprendre plus tard. Ton mur publié reste inchangé.",
     "retry": "Réessayer",
     "manual": "Marquer les prises à la main",
-    "resume": "Reprendre cette réinitialisation"
+    "resume": "Reprendre cette réinitialisation",
+    "queuePosition": "Ta photo est en position {{position}} dans la file de reconnaissance.",
+    "retrying": "Ta photo est enregistrée. La reconnaissance réessaiera bientôt.",
+    "notifyHint": "Nous te préviendrons quand ta photo sera prête à vérifier."
   },
   "mobile": {
     "edit": {
@@ -1094,5 +1097,18 @@
     },
     "reportCount_one": "{{count}} signalement",
     "reportCount_other": "{{count}} signalements"
+  },
+  "sprayImport": {
+    "draft": "Brouillon",
+    "queued": "Importation · En attente",
+    "queuePosition": "Importation · N° {{position}} dans la file",
+    "running": "Importation",
+    "ready": "Prêt à vérifier",
+    "failed": "L’importation a échoué",
+    "retrying": "Importation · En attente d’un nouvel essai",
+    "offline": "Importation · Connecte-toi pour voir la progression",
+    "open": "Vérifier l’importation",
+    "review": "Vérifier les prises",
+    "unavailable": "Cette importation n’est plus disponible. Ouvre Mes murs pour continuer."
   }
 }

@@ -145,6 +145,10 @@ vi.mock('@shopify/flash-list', () => ({
     ),
 }));
 
+vi.mock('../../../src/lib/spray/use-spray-import-progress', () => ({
+  useSprayImportProgress: (boards: unknown[]) => ({ boards, stale: false }),
+}));
+
 vi.mock('expo-router', () => ({
   useRouter: () => routerMock,
 }));

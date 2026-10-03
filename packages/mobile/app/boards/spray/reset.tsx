@@ -6,8 +6,14 @@ import { SprayWallResetScreen } from '../../../src/components/spray-wall/SprayWa
 import { readSprayWallUuid } from '../../../src/lib/spray/spray-routes';
 
 export default function ResetSprayWall() {
-  const params = useLocalSearchParams<{ wallUuid?: string | string[]; boardUuid?: string | string[] }>();
+  const params = useLocalSearchParams<{
+    wallUuid?: string | string[];
+    boardUuid?: string | string[];
+    versionId?: string | string[];
+  }>();
   const wallUuid = readSprayWallUuid(params);
+  const versionId = typeof params.versionId === 'string' ? params.versionId : params.versionId?.[0];
   if (!wallUuid) return <Redirect href="/boards" />;
-  return <SprayWallResetScreen wallUuid={wallUuid} />;
+
+  return <SprayWallResetScreen wallUuid={wallUuid} versionId={versionId} />;
 }

@@ -31,7 +31,7 @@ export function SprayDetectionStep({
   onManual?: () => void;
 }) {
   const { t } = useTranslation('boards');
-  const { query, retry } = useSprayDetection(wallUuid, versionId);
+  const { query, retry, offline } = useSprayDetection(wallUuid, versionId);
   const delivered = useRef<string | null>(null);
   const detection = query.data;
   useEffect(() => {
@@ -48,7 +48,7 @@ export function SprayDetectionStep({
   }, [detection, onComplete]);
 
   const failed = detection?.status === 'failed' || detection?.status === 'cancelled';
-  const unreachable = query.isError || retry.isError;
+  const unreachable = offline || query.isError || retry.isError;
   const running = detection?.status === 'running';
   // The full-screen scan is the add-a-wall flow's alone, with its own short
   // lines. The spinner below is also the reset flow's, and keeps the wording
@@ -57,13 +57,17 @@ export function SprayDetectionStep({
     ? t('sprayDetection.connection')
     : failed
       ? t('sprayDetection.failed')
-      : photo
-        ? running
-          ? t('sprayWizard.scan.running')
-          : t('sprayWizard.scan.queued')
-        : running
-          ? t('sprayDetection.running')
-          : t('sprayDetection.queued');
+      : !running && detection?.retryAt
+        ? t('sprayDetection.retrying')
+        : !running && detection?.queuePosition != null
+          ? t('sprayDetection.queuePosition', { position: detection.queuePosition })
+          : photo
+            ? running
+              ? t('sprayWizard.scan.running')
+              : t('sprayWizard.scan.queued')
+            : running
+              ? t('sprayDetection.running')
+              : t('sprayDetection.queued');
 
   // Restarted by every retry, so a second attempt gets its own eight seconds.
   const [slowEpoch, setSlowEpoch] = useState(0);
@@ -87,7 +91,7 @@ export function SprayDetectionStep({
         photo={photo}
         message={message}
         detail={slow && !stopped ? t('sprayWizard.scan.slow') : null}
-        resumeHint={t('sprayWizard.scan.resumeHint')}
+        resumeHint={`${t('sprayWizard.scan.resumeHint')} ${t('sprayDetection.notifyHint')}`}
         failed={stopped}
         retry={{ label: t('sprayDetection.retry'), onPress: handleRetry, disabled: retry.isPending }}
         manual={onManual ? { label: t('sprayDetection.manual'), onPress: onManual } : undefined}
@@ -101,6 +105,7 @@ export function SprayDetectionStep({
       {!failed && !query.isError ? <ActivityIndicator /> : null}
       <Text>{message}</Text>
       <Text>{t('sprayDetection.resumeHint')}</Text>
+      <Text>{t('sprayDetection.notifyHint')}</Text>
       {failed || unreachable ? (
         <Button title={t('sprayDetection.retry')} disabled={retry.isPending} onPress={handleRetry} />
       ) : null}

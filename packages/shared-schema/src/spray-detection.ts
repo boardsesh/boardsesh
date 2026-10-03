@@ -1,5 +1,18 @@
 /** The server and homelab worker share this versioned, photo-pixel contract. */
 export const SPRAY_DETECTION_QUEUE = 'spray-wall-detection';
+export const SPRAY_DETECTION_COMPLETION_QUEUE = 'spray-wall-detection-completed';
+export interface SprayDetectionCompletionJob {
+  detectionId: string;
+}
+export interface SprayWallImportProgress {
+  wallUuid: string;
+  versionId: string | null;
+  detectionId: string | null;
+  stage: 'draft' | 'queued' | 'running' | 'ready' | 'failed';
+  queuePosition: number | null;
+  retryAt: string | null;
+  isReset: boolean;
+}
 export const SPRAY_WALL_WRITE_LOCK_NAMESPACE = 0x53505259;
 export const SPRAY_DETECTION_DEAD_QUEUE = 'spray-wall-detection-failed';
 export const SPRAY_DETECTION_RECONCILE_QUEUE = 'spray-wall-detection-reconcile';
@@ -34,6 +47,8 @@ export interface SprayDetectionView {
   error: string | null;
   createdAt: string;
   finishedAt: string | null;
+  queuePosition?: number | null;
+  retryAt?: string | null;
 }
 
 export const SPRAY_DETECTION_JOB_OPTIONS = {

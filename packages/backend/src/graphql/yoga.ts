@@ -80,6 +80,7 @@ export async function buildHttpConnectionContext({
     transport: 'http' as const,
     sessionId: undefined,
     userId: authResult?.userId,
+    credentialExpiresAt: authResult?.credentialExpiresAt,
     isAuthenticated: authResult !== null,
     isCronAuthenticated,
     clientIp,
