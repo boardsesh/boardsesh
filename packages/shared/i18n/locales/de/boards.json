@@ -227,7 +227,10 @@
         "shareLink": "Link teilen",
         "shareLinkPublicHint": "Jede*r kann dieses Board öffnen.",
         "shareLinkUnlistedHint": "Nur die Leute, denen du den Link schickst."
-      }
+      },
+      "details": "Details",
+      "detailsAria": "Details für {{name}} öffnen",
+      "activeSprayDetails": "{{name}} · Wanddetails"
     },
     "disambiguation": {
       "title": "An welchem Board bist du?",
@@ -1042,5 +1045,33 @@
   "sprayHidden": {
     "body": "Jemand hat sie gemeldet und wir haben sie für alle anderen ausgeblendet. Für dich ist sie weiter da, und gelöscht wurde nichts.",
     "title": "Diese Wand ist ausgeblendet"
+  },
+  "sprayModeration": {
+    "reportTitle": "Wand melden",
+    "reportHint": "Diese Wand zur Prüfung durch Admins melden",
+    "submit": "Meldung abschicken",
+    "reported": "Danke. Deine Meldung wartet auf Prüfung.",
+    "reportOffline": "Verbinde dich mit dem Internet, um die Meldung abzuschicken.",
+    "reportError": "Deine Meldung wurde nicht abgeschickt. Versuch es erneut.",
+    "queueTitle": "Spraywall-Meldungen",
+    "hide": "Wand ausblenden",
+    "unhide": "Wand einblenden",
+    "keepVisible": "Sichtbar lassen",
+    "hidden": "Ausgeblendet",
+    "photoLabel": "Foto von {{wall}}",
+    "noPhoto": "Kein Foto verfügbar",
+    "review": "Wand prüfen",
+    "reviewError": "Die Entscheidung wurde nicht gespeichert. Versuch es erneut.",
+    "unavailable": "Die Spraywall-Moderation ist für dieses Konto gerade nicht verfügbar.",
+    "loadError": "Die Meldungen konnten nicht geladen werden.",
+    "empty": "Keine Wände warten auf Prüfung.",
+    "reasons": {
+      "inappropriate": "Unangemessenes Foto oder unangemessener Name",
+      "notAWall": "Keine Kletterwand",
+      "personalInfo": "Persönliche Informationen im Foto",
+      "other": "Sonstiges"
+    },
+    "reportCount_one": "{{count}} Meldung",
+    "reportCount_other": "{{count}} Meldungen"
   }
 }

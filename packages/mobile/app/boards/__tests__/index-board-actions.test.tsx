@@ -17,6 +17,7 @@ type CarouselItem = { key: string; title: string; isViewerOwner?: boolean; isPin
 type CarouselProps = {
   items: CarouselItem[];
   onSelect: (item: CarouselItem) => void;
+  onDetails?: (item: CarouselItem) => void;
   actionFor?: (item: CarouselItem) => string | null;
   actionLabelFor?: (item: CarouselItem) => string;
   onAction?: (item: CarouselItem) => void;
@@ -42,6 +43,13 @@ const confirmMock = vi.hoisted(() => vi.fn().mockResolvedValue(true));
 const forgetOfflineBoardMock = vi.hoisted(() => vi.fn());
 // The last props the carousel was handed, so ownership can be asserted on the
 // ITEMS (stamped once at list build) rather than inferred from what rendered.
+type DetailProps = {
+  board: UserBoard | null;
+  visible: boolean;
+  onClose: () => void;
+  onSetActive: (board: UserBoard) => void;
+};
+const detailProps = vi.hoisted(() => ({ last: null as DetailProps | null }));
 const carouselProps = vi.hoisted(() => ({ last: null as CarouselProps | null }));
 const trackMock = vi.hoisted(() => vi.fn());
 // The Bluetooth quickstart sheet's props, so a scan pick can be driven directly.
@@ -275,6 +283,13 @@ vi.mock('../../../src/components/board-discovery/BluetoothQuickstartSheet', () =
 vi.mock('../../../src/components/board-discovery/FirstBoardChoice', () => ({ FirstBoardChoice: () => null }));
 // Captures the props rather than rendering a card, so the item flags and the
 // resolved per-card action are both assertable.
+vi.mock('../../../src/components/board-discovery/BoardDetailSheet', () => ({
+  BoardDetailSheet: (props: DetailProps) => {
+    detailProps.last = props;
+    return null;
+  },
+}));
+
 vi.mock('../../../src/components/board-discovery/BoardCarousel', () => ({
   BoardCarousel: (props: CarouselProps) => {
     carouselProps.last = props;
@@ -305,6 +320,8 @@ beforeEach(() => {
   unfollowBoardMock.mockResolvedValue(undefined);
   confirmMock.mockResolvedValue(true);
   carouselProps.last = null;
+  detailProps.last = null;
+  flagState.sprayWalls = false;
   bluetoothSheetProps.last = null;
   state.source = undefined;
   state.profile = { id: 'me' };
@@ -743,5 +760,47 @@ describe('where a pick came from', () => {
       pathname: '/gyms',
       params: { returnTo: '/(tabs)/climbs', source: 'onboarding', from: 'picker' },
     });
+  });
+});
+
+describe('spray-wall detail sheet reachability', () => {
+  it('opens a saved wall without activating it', () => {
+    flagState.sprayWalls = true;
+    const wall = board({ uuid: 'spray-wall', name: 'Garage wall', boardType: 'spray' });
+    state.myBoards = [wall];
+    render(createElement(BoardSelection));
+    const carousel = carouselProps.last!;
+    act(() => carousel.onDetails?.(carousel.items[0]));
+    expect(detailProps.last?.visible).toBe(true);
+    expect(detailProps.last?.board?.uuid).toBe(wall.uuid);
+    expect(setActiveBoardMock).not.toHaveBeenCalled();
+    act(() => detailProps.last?.onClose());
+    expect(detailProps.last?.visible).toBe(false);
+  });
+
+  it('opens an active share-link wall absent from saved and nearby lists', () => {
+    flagState.sprayWalls = true;
+    state.myBoards = [];
+    state.nearbyBoards = [];
+    const wall = board({ uuid: 'shared-wall', name: 'Shared wall', boardType: 'spray' });
+    state.activeBoard = wall;
+    render(createElement(BoardSelection));
+    fireEvent.click(screen.getByText('mobile.boardDetail.activeSprayDetails'));
+    expect(detailProps.last?.board?.uuid).toBe(wall.uuid);
+    expect(detailProps.last?.visible).toBe(true);
+    expect(setActiveBoardMock).not.toHaveBeenCalled();
+  });
+
+  it('closes an open detail sheet when the remote off switch resolves', () => {
+    flagState.sprayWalls = true;
+    const wall = board({ uuid: 'spray-wall', name: 'Garage wall', boardType: 'spray' });
+    state.myBoards = [wall];
+    const mounted = render(createElement(BoardSelection));
+    const carousel = carouselProps.last!;
+    act(() => carousel.onDetails?.(carousel.items[0]));
+    flagState.sprayWalls = false;
+    mounted.rerender(createElement(BoardSelection));
+    expect(detailProps.last?.visible).toBe(false);
+    expect(carouselProps.last?.onDetails).toBeUndefined();
   });
 });

@@ -1086,12 +1086,9 @@ reasons that both have to be fixed before the flag flips (#5491):
    `/boards/spray/reset` is SW-13 — and Expo Router sends a prefix-less miss to
    `+not-found`, which redirects to Home. A row that lands somewhere wrong is
    worse than no row.
-2. **`BoardDetailSheet` is not mounted by anything.** The live board sheet is
-   `board-presence/BoardSheet`, hosted by `drawer-host-provider`;
-   `BoardDetailSheet` has no production importer at all. So these rows — and
-   SW-14's `BoardShareSheet`, whose only mount is that same file — are
-   unreachable regardless of the flag. Whatever wires them up has to put them on
-   the sheet climbers actually open.
+2. The hold-editor route still needs the follow-up wiring in #5491.
+   `BoardDetailSheet` is now mounted by the Boards picker for sharing and
+   reporting, independently of the dormant owner-maintenance rows.
 
 ## Resets
 
@@ -1413,7 +1410,7 @@ switch.
 | `reportSprayWall(input)` | Any signed-in climber who can SEE the wall — owner, gym member, or anybody on a public or unlisted one — once per wall. Delegates to `viewerCanSeeSprayWall` rather than restating the rule, because restating it is how the gym-member path got dropped the first time. Writes one `spray_wall_reports` row; a second report from the same climber answers `ALREADY_REPORTED` and writes nothing. |
 | `spray_wall_reports` | `(wall_id, reporter_id)` unique, a closed-set `reason`, and `reviewed_at` / `reviewed_by`. No free-text field anywhere in the path. |
 | `setSprayWallHidden(input)` | Community admins (`spray`-scoped or global). Stamps or clears `spray_walls.hidden_at` / `hidden_by` and marks every pending report on the wall reviewed. |
-| `sprayWallReports(uuid)` | The pending queue, newest first, excluding walls the owner has since deleted — those are no longer work. Admins only. There is no admin ROUTE yet (#5501). |
+| `sprayWallReports(uuid)` | The pending queue, newest first, excluding walls the owner has since deleted — those are no longer work. Admins only. Each report carries `wallName` and a nullable `photo` preview behind private-bucket presigned URLs. The admin route groups reports by wall. |
 | `SprayWall.hiddenAt` | Non-null only for the owner, because a hidden wall does not resolve for anybody else. The mobile banner renders off its presence. |
 
 **What hidden means: exactly what private means, for everybody but the owner.**
@@ -1446,12 +1443,24 @@ rows are served straight out of that table and would outlive the gate. Unhiding
 does NOT put them back: a feed is a record of what happened when, and
 re-announcing week-old climbs would be a lie. Everything else comes back.
 
-Reporting is API-only today: there is no report button in the app and no admin
-console route. Both are **SW-17b (#5501)**, split out because a report row belongs
-in `BoardDetailSheet`, which SW-11's stack is rewriting — landing one there from
-this stack would have been a guaranteed conflict for no gain, since the admin path
-needs the mutation either way. Until then the mutation is what an admin or a
-support reply drives.
+The Boards picker mounts `BoardDetailSheet` through a Details action on each
+spray-wall card, plus the active wall's Details control. The active control
+also covers an unlisted wall opened through a share link that is not in the
+climber's saved list. Any signed-in viewer can choose Report wall and one of
+the four fixed reasons; edit permission is not required, and there is no
+free-text field. `CREATED` and `ALREADY_REPORTED` both confirm quietly.
+
+Settings → Moderation → Spray-wall reports opens `/moderation/spray-walls`,
+a root-stack modal available to global or spray-scoped community admins. The
+queue groups pending reports by wall and shows its name, current photograph
+(or latest draft for an unpublished wall), and reasons. Hide wall and Keep
+visible/Unhide both call `setSprayWallHidden`, which reviews every pending
+report for the wall. General wall visibility rules are unchanged: privileged
+photo previews are produced only inside the admin-authorized queue query.
+
+Reporting and review both read `climb-moderation-kill`; they wait for flag
+resolution before accepting actions. Signed preview URLs remain in memory,
+are refreshed when expired, and never enter persistent storage.
 
 ## Retention: what happens to a deleted wall's photographs
 
@@ -1545,31 +1554,16 @@ Two rules, both enforced by a test in
 
 ## Rolling the flag out
 
-The whole surface is behind the mobile flag `spray-walls`
-(`docs/feature-flags.md` → "Mobile flags"). A POSITIVE rollout flag: unresolved
-reads as off, so the tile never flickers in for the first frames of a cold open.
+The mobile `spray-walls` flag now defaults to enabled: no env variable or
+PostHog configuration is needed to see the picker tile and spray-wall routes.
+An explicit false remains a remote off switch, and More → Feature Flags
+lets testers override either choice. Existing walls remain stored when the
+surface is disabled.
 
-Three steps, each gated on a number rather than on a feeling:
-
-The service rollout additionally requires 24-hour observation windows, 20
-reviewed walls from five users before 10%, and ten reset previews before
-everyone. The complete, current gates are in
-[the service rollout runbook](spray-recognition-rollout.md).
-
-| Step | Audience | Gate before moving on |
-| --- | --- | --- |
-| 1 | Testers only (the on-device override, More → Feature Flags) | At least one wall photographed, reset and set on, end to end, on a real wall. |
-| 2 | 10 % | `SPRAY_ROLLOUT_GATES.detectionCorrectionRate` ≤ 0.15 over `Spray Holds Reviewed` where `hadCandidates` is true, and `Spray Wall Upload Finished` `outcome: 'ok'` ≥ 0.95. |
-| 3 | Everyone | `SPRAY_ROLLOUT_GATES.resetCommitRate` ≥ 0.6 — applied ÷ previewed. An owner who previews a reset and never applies it has been shown something they do not believe. |
-
-Both ratios are functions in `spray-wall-events.ts` rather than prose in a
-dashboard description, so the number in this doc and the number in the code
-cannot drift. The correction rate is a PROXY, not an F1: the detections are not
-stored, so a correction and a delete-plus-add are indistinguishable. It moves in
-the right direction, which is what a rollout gate needs.
-
-Step back at any point by setting the flag false — nothing the flag gates writes
-anything a rollback has to undo, and a wall already created stays created.
+Recognition-service exposure still follows the independent observation windows
+and quality gates in [the service rollout runbook](spray-recognition-rollout.md).
+The existing `SPRAY_ROLLOUT_GATES` metrics remain available for monitoring
+upload success, hold corrections and reset commits.
 
 ### The one public copy (SW-14)
 

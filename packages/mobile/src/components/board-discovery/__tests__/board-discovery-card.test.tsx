@@ -754,3 +754,45 @@ describe('BoardDiscoveryCard accessibility', () => {
     expect(cardRootProps.accessibilityActions[0]).toBe(cardRootProps.accessibilityActions[1]);
   });
 });
+
+describe('spray wall Details action', () => {
+  it('opens details without activating the wall, including through accessibility actions', () => {
+    const wall = { ...item, key: 'wall-uuid', boardName: 'spray' as const };
+    const onPress = vi.fn();
+    const onDetails = vi.fn();
+    const { container } = render(createElement(BoardDiscoveryCard, { item: wall, onPress, onDetails }));
+    const details = container.querySelector('[data-testid="edit-action"]');
+    expect(details).not.toBeNull();
+    fireEvent.click(details!);
+    expect(onDetails).toHaveBeenCalledWith(wall);
+    expect(onPress).not.toHaveBeenCalled();
+    const actions = (cardRootProps.last?.accessibilityActions ?? []) as Array<{ name: string }>;
+    expect(actions.some((action) => action.name === 'details')).toBe(true);
+    const activate = cardRootProps.last?.onAccessibilityAction as (event: {
+      nativeEvent: { actionName: string };
+    }) => void;
+    activate({ nativeEvent: { actionName: 'details' } });
+    expect(onDetails).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not offer details on a catalogue board or during edit mode', () => {
+    const onDetails = vi.fn();
+    const catalogue = render(createElement(BoardDiscoveryCard, { item, onPress: vi.fn(), onDetails }));
+    expect(catalogue.container.querySelector('[data-testid="edit-action"]')).toBeNull();
+    catalogue.unmount();
+    const editing = render(
+      createElement(BoardDiscoveryCard, {
+        item: { ...item, boardName: 'spray' as const },
+        onPress: vi.fn(),
+        onDetails,
+        isEditing: true,
+      }),
+    );
+    expect(editing.container.querySelector('[data-testid="edit-action"]')).toBeNull();
+    expect(
+      ((cardRootProps.last?.accessibilityActions ?? []) as Array<{ name: string }>).some(
+        (action) => action.name === 'details',
+      ),
+    ).toBe(false);
+  });
+});

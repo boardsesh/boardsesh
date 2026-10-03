@@ -7,6 +7,7 @@ import { BoardDiscoveryCard, DISCOVERY_CARD_WIDTH, type DiscoveryBoardItem } fro
 type BoardCarouselProps = {
   items: DiscoveryBoardItem[];
   onSelect: (item: DiscoveryBoardItem) => void;
+  onDetails?: (item: DiscoveryBoardItem) => void;
   /** See BoardDiscoveryCard — only the user's own boards carousel passes one. */
   onDownload?: (item: DiscoveryBoardItem) => void;
   /** Per-item accessibility label for the download glyph. Memoize it. */
@@ -53,6 +54,7 @@ type BoardCarouselProps = {
 export function BoardCarousel({
   items,
   onSelect,
+  onDetails,
   onDownload,
   downloadLabelFor,
   actionFor,
@@ -73,7 +75,11 @@ export function BoardCarousel({
   // that has to invalidate the cells too or the pill lingers on recycled cards.
   // One object per distinct combination rather than per render.
   const canPin = onTogglePin !== undefined;
-  const extraData = useMemo(() => ({ isEditing, pendingActionKey, canPin }), [isEditing, pendingActionKey, canPin]);
+  const canOpenDetails = onDetails !== undefined;
+  const extraData = useMemo(
+    () => ({ isEditing, pendingActionKey, canPin, canOpenDetails }),
+    [isEditing, pendingActionKey, canPin, canOpenDetails],
+  );
 
   const renderItem = useCallback(
     ({ item }: { item: DiscoveryBoardItem }) => {
@@ -82,6 +88,7 @@ export function BoardCarousel({
         <BoardDiscoveryCard
           item={item}
           onPress={onSelect}
+          onDetails={onDetails}
           onDownload={onDownload}
           downloadLabel={downloadLabelFor?.(item)}
           action={action}
@@ -99,6 +106,7 @@ export function BoardCarousel({
     },
     [
       onSelect,
+      onDetails,
       onDownload,
       downloadLabelFor,
       actionFor,

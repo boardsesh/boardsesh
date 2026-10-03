@@ -233,6 +233,8 @@ vi.mock('../../../src/components/board-discovery/BoardModeCard', () => ({
 vi.mock('../../../src/components/board-discovery/BluetoothQuickstartSheet', () => ({
   BluetoothQuickstartSheet: () => null,
 }));
+vi.mock('../../../src/components/board-discovery/BoardDetailSheet', () => ({ BoardDetailSheet: () => null }));
+
 vi.mock('../../../src/components/board-discovery/BoardCarousel', () => ({
   BoardCarousel: (props: { items: CarouselItem[]; onSelect: (item: CarouselItem) => void }) => {
     carouselProps.last = props;

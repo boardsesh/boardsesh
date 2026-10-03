@@ -227,7 +227,10 @@
         "shareLink": "Share link",
         "shareLinkPublicHint": "Anyone can open this wall.",
         "shareLinkUnlistedHint": "Only the climbers you send it to."
-      }
+      },
+      "details": "Details",
+      "detailsAria": "Open details for {{name}}",
+      "activeSprayDetails": "{{name}} · wall details"
     },
     "disambiguation": {
       "title": "Which board are you on?",
@@ -1042,5 +1045,33 @@
   "sprayHidden": {
     "body": "Someone reported it and we took it out of everyone else’s view. It’s still here for you, and nothing on it was deleted.",
     "title": "This wall is hidden"
+  },
+  "sprayModeration": {
+    "reportTitle": "Report wall",
+    "reportHint": "Flag this wall for admin review",
+    "submit": "Submit report",
+    "reported": "Thanks. Your report is in the review queue.",
+    "reportOffline": "Connect to the internet to submit your report.",
+    "reportError": "Your report didn’t go through. Try again.",
+    "queueTitle": "Spray-wall reports",
+    "hide": "Hide wall",
+    "unhide": "Unhide wall",
+    "keepVisible": "Keep visible",
+    "hidden": "Hidden",
+    "photoLabel": "Photo of {{wall}}",
+    "noPhoto": "No photo available",
+    "review": "Review wall",
+    "reviewError": "The decision didn’t save. Try again.",
+    "unavailable": "Spray-wall moderation is unavailable for this account right now.",
+    "loadError": "Couldn’t load wall reports.",
+    "empty": "No walls waiting for review.",
+    "reasons": {
+      "inappropriate": "Inappropriate photo or name",
+      "notAWall": "Not a climbing wall",
+      "personalInfo": "Personal information in the photo",
+      "other": "Other"
+    },
+    "reportCount_one": "{{count}} report",
+    "reportCount_other": "{{count}} reports"
   }
 }

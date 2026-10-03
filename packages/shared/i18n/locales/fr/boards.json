@@ -227,7 +227,10 @@
         "shareLink": "Partager le lien",
         "shareLinkPublicHint": "N'importe qui peut ouvrir ce mur.",
         "shareLinkUnlistedHint": "Seulement les grimpeurs à qui tu l’envoies."
-      }
+      },
+      "details": "Détails",
+      "detailsAria": "Ouvrir les détails de {{name}}",
+      "activeSprayDetails": "{{name}} · détails du mur"
     },
     "disambiguation": {
       "title": "Sur quel mur es-tu ?",
@@ -1042,5 +1045,33 @@
   "sprayHidden": {
     "body": "Quelqu’un l’a signalé et on l’a retiré de la vue des autres. Pour toi il est toujours là, et rien n’a été supprimé.",
     "title": "Ce mur est masqué"
+  },
+  "sprayModeration": {
+    "reportTitle": "Signaler le mur",
+    "reportHint": "Signaler ce mur pour une vérification administrative",
+    "submit": "Envoyer le signalement",
+    "reported": "Merci. Ton signalement est en attente de vérification.",
+    "reportOffline": "Connecte-toi à internet pour envoyer ton signalement.",
+    "reportError": "Ton signalement n’a pas été envoyé. Réessaie.",
+    "queueTitle": "Signalements de murs spray",
+    "hide": "Masquer le mur",
+    "unhide": "Afficher le mur",
+    "keepVisible": "Garder visible",
+    "hidden": "Masqué",
+    "photoLabel": "Photo de {{wall}}",
+    "noPhoto": "Aucune photo disponible",
+    "review": "Vérifier le mur",
+    "reviewError": "La décision n’a pas été enregistrée. Réessaie.",
+    "unavailable": "La modération des murs spray est indisponible pour ce compte actuellement.",
+    "loadError": "Impossible de charger les signalements.",
+    "empty": "Aucun mur en attente de vérification.",
+    "reasons": {
+      "inappropriate": "Photo ou nom inapproprié",
+      "notAWall": "Ce n’est pas un mur d’escalade",
+      "personalInfo": "Informations personnelles sur la photo",
+      "other": "Autre"
+    },
+    "reportCount_one": "{{count}} signalement",
+    "reportCount_other": "{{count}} signalements"
   }
 }

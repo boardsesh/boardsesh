@@ -24,6 +24,7 @@ import { Text } from '../../src/components/Text';
 import { Icon } from '../../src/components/Icon';
 import { Button } from '../../src/components/Button';
 import { ActivityIndicator } from '../../src/components/ActivityIndicator';
+import { BoardDetailSheet } from '../../src/components/board-discovery/BoardDetailSheet';
 import { BoardCarousel } from '../../src/components/board-discovery/BoardCarousel';
 import { BoardModeCard, type ModeCardState } from '../../src/components/board-discovery/BoardModeCard';
 import { BluetoothQuickstartSheet } from '../../src/components/board-discovery/BluetoothQuickstartSheet';
@@ -134,6 +135,13 @@ export default function BoardSelection() {
   // `presentation: 'modal'` route, so it cannot survive a dismiss: every one of
   // the twelve places that open this picker gets it switched off.
   const [isEditingBoards, setIsEditingBoards] = useState(false);
+  const sprayWallsEnabled = useSprayWallsEnabled();
+  const [detailBoard, setDetailBoard] = useState<UserBoard | null>(null);
+  const detailPickSource = useRef<BoardPickSource>('your_boards');
+  const closeBoardDetails = useCallback(() => setDetailBoard(null), []);
+  useEffect(() => {
+    if (!isAuthenticated || !sprayWallsEnabled) closeBoardDetails();
+  }, [isAuthenticated, sprayWallsEnabled, closeBoardDetails]);
 
   // Pins the climber toggled since this modal opened, so the glyph flips under
   // the finger without waiting for a refetch. Deliberately does NOT reorder: the
@@ -318,10 +326,49 @@ export default function BoardSelection() {
   const onSelectMyBoard = useCallback((item: DiscoveryBoardItem) => activateItem(item, 'your_boards'), [activateItem]);
   const onSelectNearbyBoard = useCallback((item: DiscoveryBoardItem) => activateItem(item, 'nearby'), [activateItem]);
   const onSelectOfflineBoard = useCallback((item: DiscoveryBoardItem) => activateItem(item, 'offline'), [activateItem]);
+  const detailBoardsByUuid = useMemo(() => {
+    const boards = new Map<string, UserBoard>();
+    for (const board of myBoards) boards.set(board.uuid, board);
+    for (const board of nearby?.boards ?? []) boards.set(board.uuid, board);
+    if (activeBoard) boards.set(activeBoard.uuid, activeBoard);
+    return boards;
+  }, [myBoards, nearby?.boards, activeBoard]);
+  const openBoardDetails = useCallback(
+    (item: DiscoveryBoardItem, pickSource: BoardPickSource) => {
+      const board = detailBoardsByUuid.get(item.key);
+      if (!board || !sprayWallsEnabled) return;
+      detailPickSource.current = pickSource;
+      setDetailBoard(board);
+    },
+    [detailBoardsByUuid, sprayWallsEnabled],
+  );
+  const onMyBoardDetails = useCallback(
+    (item: DiscoveryBoardItem) => openBoardDetails(item, 'your_boards'),
+    [openBoardDetails],
+  );
+  const onNearbyBoardDetails = useCallback(
+    (item: DiscoveryBoardItem) => openBoardDetails(item, 'nearby'),
+    [openBoardDetails],
+  );
+  const onActiveBoardDetails = useCallback(() => {
+    if (activeBoard && sprayWallsEnabled) setDetailBoard(activeBoard);
+  }, [activeBoard, sprayWallsEnabled]);
+  const onSetActiveFromDetails = useCallback(
+    (board: UserBoard) => {
+      closeBoardDetails();
+      void activateBoard(board, { pickSource: detailPickSource.current });
+    },
+    [activateBoard, closeBoardDetails],
+  );
+
   const nearbySection =
     nearbyItems.length > 0 ? (
       <Section title={t('mobile.discovery.nearbyTitle')}>
-        <BoardCarousel items={nearbyItems} onSelect={onSelectNearbyBoard} />
+        <BoardCarousel
+          items={nearbyItems}
+          onSelect={onSelectNearbyBoard}
+          onDetails={sprayWallsEnabled ? onNearbyBoardDetails : undefined}
+        />
       </Section>
     ) : null;
   // Tap-to-download, scoped to boards the user owns or follows. Gated on the
@@ -562,6 +609,7 @@ export default function BoardSelection() {
         <BoardCarousel
           items={myBoardItems}
           onSelect={onSelectMyBoardCard}
+          onDetails={sprayWallsEnabled ? onMyBoardDetails : undefined}
           onDownload={offlineDownloadsEnabled ? onDownloadMyBoard : undefined}
           downloadLabelFor={downloadLabelFor}
           actionFor={canEditBoards ? myBoardActionFor : undefined}
@@ -622,10 +670,7 @@ export default function BoardSelection() {
     router.push({ pathname: '/boards/create', params: { returnTo: boardReturnTo, source } });
   }, [router, boardReturnTo, source]);
 
-  // The wall front door (epic #5346, SW-09). Flag-gated, and unresolved reads as
-  // off, so the tile never flickers into the row for the first frames of a cold
-  // open on a fleet the feature is dark for.
-  const sprayWallsEnabled = useSprayWallsEnabled();
+  // Spray walls ship enabled; an explicit remote false removes the front door.
   const onModeAddWall = useCallback(() => {
     router.push({ pathname: '/boards/spray/new', params: { returnTo: boardReturnTo } });
   }, [router, boardReturnTo]);
@@ -835,6 +880,14 @@ export default function BoardSelection() {
         contentContainerStyle={[styles.container, { paddingBottom: scrollBottomPadding }]}
         showsVerticalScrollIndicator={false}
       >
+        {sprayWallsEnabled && activeBoard?.boardType === 'spray' ? (
+          <Pressable onPress={onActiveBoardDetails} accessibilityRole="button" style={styles.manageRow}>
+            <Text variant="body" color={brandColors.primary} style={styles.manageRowLabel}>
+              {t('mobile.boardDetail.activeSprayDetails', { name: activeBoard.name })}
+            </Text>
+            <Icon name="chevron.right" size={14} color={systemColors.tertiaryLabel} />
+          </Pressable>
+        ) : null}
         {showFirstBoardChoice ? (
           <>
             <FirstBoardChoice
@@ -926,6 +979,13 @@ export default function BoardSelection() {
           </>
         )}
       </ScrollView>
+
+      <BoardDetailSheet
+        board={detailBoard}
+        visible={detailBoard !== null}
+        onClose={closeBoardDetails}
+        onSetActive={onSetActiveFromDetails}
+      />
 
       <BluetoothQuickstartSheet
         ref={bluetoothSheetRef}

@@ -3,10 +3,8 @@
 // The gate on the whole spray-wall front door (epic #5346, SW-09).
 //
 // Its own file rather than a case in `feature-flags-provider.test.tsx` because
-// what is being pinned is not "the provider reads flags" — that is already
-// covered — but the DIRECTION of one flag. A positive rollout flag that resolves
-// asynchronously has to read as OFF while it is unresolved, or a dark feature
-// appears for the first frames of every cold open on a fleet it is dark for.
+// The shipped default needs no remote setup, while explicit false still takes
+// down the spray-wall front door.
 
 import { describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
@@ -44,22 +42,21 @@ describe('useSprayWallsEnabled', () => {
     expect(FEATURE_FLAG_DEFINITIONS.some((definition) => definition.key === 'spray-walls')).toBe(true);
   });
 
-  it('is off while the flag is unresolved', () => {
-    expect(renderGate().current).toBe(false);
+  it('is enabled while unresolved or absent', () => {
+    expect(renderGate().current).toBe(true);
+    expect(renderGate({}).current).toBe(true);
   });
 
   it('is off when PostHog explicitly says false', () => {
     expect(renderGate({ 'spray-walls': false }).current).toBe(false);
   });
 
-  it('is off for a value that is not exactly true', () => {
-    // A multivariate answer, or a stringly "true" from a misconfigured flag, is
-    // not a rollout of this feature.
-    expect(renderGate({ 'spray-walls': 'true' }).current).toBe(false);
-    expect(renderGate({ 'spray-walls': '' }).current).toBe(false);
+  it('keeps the shipped default for values that are not booleans', () => {
+    expect(renderGate({ 'spray-walls': 'true' }).current).toBe(true);
+    expect(renderGate({ 'spray-walls': '' }).current).toBe(true);
   });
 
-  it('is on only for a true boolean', () => {
+  it('is on for a true boolean', () => {
     expect(renderGate({ 'spray-walls': true }).current).toBe(true);
   });
 });
