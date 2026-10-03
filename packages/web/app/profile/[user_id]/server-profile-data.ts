@@ -18,34 +18,28 @@ type GetPublicProfileResponse = {
  * pass. `email` is the caller's job: it comes from the NextAuth session when
  * someone views their own profile, never from this public query.
  *
- * A backend blip returns null the same way a missing user does. The caller
- * turns that into a 404, which is the pre-existing behaviour for an
- * unreachable profile and keeps a transient outage from 500ing an indexable
- * page.
+ * Only an explicit `publicProfile: null` means that the profile is missing.
+ * Transport and backend errors must propagate so a temporary outage does not
+ * turn a real profile URL into a misleading 404.
  */
 export async function getProfileData(userId: string, authToken?: string): Promise<UserProfile | null> {
-  try {
-    const response = await executeAuthenticatedGraphQL<GetPublicProfileResponse>(
-      GET_PUBLIC_PROFILE,
-      { userId },
-      authToken,
-    );
+  const response = await executeAuthenticatedGraphQL<GetPublicProfileResponse>(
+    GET_PUBLIC_PROFILE,
+    { userId },
+    authToken,
+  );
 
-    const publicProfile = response.publicProfile;
-    if (!publicProfile) return null;
+  const publicProfile = response.publicProfile;
+  if (!publicProfile) return null;
 
-    return {
-      id: publicProfile.id,
-      email: undefined,
-      displayName: publicProfile.displayName ?? null,
-      avatarUrl: publicProfile.avatarUrl ?? null,
-      instagramUrl: publicProfile.instagramUrl ?? null,
-      followerCount: publicProfile.followerCount ?? 0,
-      followingCount: publicProfile.followingCount ?? 0,
-      isFollowedByMe: publicProfile.isFollowedByMe ?? false,
-    };
-  } catch (error) {
-    console.error('getProfileData failed:', error);
-    return null;
-  }
+  return {
+    id: publicProfile.id,
+    email: undefined,
+    displayName: publicProfile.displayName ?? null,
+    avatarUrl: publicProfile.avatarUrl ?? null,
+    instagramUrl: publicProfile.instagramUrl ?? null,
+    followerCount: publicProfile.followerCount ?? 0,
+    followingCount: publicProfile.followingCount ?? 0,
+    isFollowedByMe: publicProfile.isFollowedByMe ?? false,
+  };
 }

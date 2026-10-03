@@ -63,6 +63,12 @@ class ProfileNotFoundError extends Error {
   }
 }
 
+class ProfileAuthUnavailableError extends Error {
+  constructor() {
+    super('Profile query requires a settled viewer session');
+  }
+}
+
 // Brief freshness window so consumers with SSR-seeded `initialData` (tagged
 // with `initialDataUpdatedAt: Date.now()`) don't fire a redundant network
 // request the moment they mount — `refetchOnMount` defaults to `true` for
@@ -76,8 +82,8 @@ const PROFILE_STALE_TIME_MS = 30 * 1000;
 const PROFILE_GC_TIME_MS = PERSIST_MAX_AGE_MS;
 
 export function useProfileData(userId: string, initialData?: InitialData) {
-  const { data: session } = useSession();
-  const { token: authToken, isLoading: authTokenLoading } = useWsAuthToken();
+  const { data: session, status: sessionStatus } = useSession();
+  const { token: authToken } = useWsAuthToken();
   const { showMessage } = useSnackbar();
   const { gradeFormat } = useGradeFormat();
   const queryClient = useQueryClient();
@@ -104,9 +110,19 @@ export function useProfileData(userId: string, initialData?: InitialData) {
   const isOwnProfile = session?.user?.id ? session.user.id === userId : (initialData?.initialIsOwnProfile ?? false);
 
   const profileInitial = initialData?.initialProfile;
+  const profileQueryKey = ['userProfile', userId] as const;
   const profileQuery = useQuery<UserProfile>({
-    queryKey: ['userProfile', userId],
+    queryKey: profileQueryKey,
     queryFn: async () => {
+      // `enabled` prevents normal automatic fetches, but explicit refetches
+      // can still invoke a disabled query. Preserve SSR/cache data and refuse
+      // to send a signed-in request anonymously if ws-auth exhausted retries.
+      if (sessionStatus === 'loading' || (sessionStatus === 'authenticated' && !authToken)) {
+        const cachedProfile = queryClient.getQueryData<UserProfile>(profileQueryKey) ?? profileInitial;
+        if (cachedProfile) return cachedProfile;
+        throw new ProfileAuthUnavailableError();
+      }
+
       // Authenticated on purpose: `isFollowedByMe` is resolved from the bearer
       // token. Firing this anonymously would come back false and stomp the
       // SSR-seeded "Following" state on every refetch.
@@ -127,13 +143,18 @@ export function useProfileData(userId: string, initialData?: InitialData) {
         isFollowedByMe: publicProfile.isFollowedByMe ?? false,
       } satisfies UserProfile;
     },
-    // Wait for ws-auth to settle. Racing it would send the request with no
-    // bearer token and resolve isFollowedByMe as false for a signed-in viewer.
-    enabled: !initialData?.initialNotFound && !authTokenLoading,
+    // A confirmed anonymous visitor can read public profile data. A signed-in
+    // viewer needs the token because Following is personalized; session loading
+    // also waits so its eventual authenticated state cannot race anonymously.
+    enabled:
+      !initialData?.initialNotFound &&
+      sessionStatus !== 'loading' &&
+      (sessionStatus === 'unauthenticated' || Boolean(authToken)),
     staleTime: PROFILE_STALE_TIME_MS,
     gcTime: PROFILE_GC_TIME_MS,
     refetchOnMount: profileInitial ? true : 'always',
-    retry: (failureCount, error) => !(error instanceof ProfileNotFoundError) && failureCount < 3,
+    retry: (failureCount, error) =>
+      !(error instanceof ProfileNotFoundError || error instanceof ProfileAuthUnavailableError) && failureCount < 3,
     initialData: profileInitial,
     initialDataUpdatedAt: profileInitial ? Date.now() : undefined,
     meta: { persist: isOwnProfile },
@@ -145,6 +166,7 @@ export function useProfileData(userId: string, initialData?: InitialData) {
   useEffect(() => {
     if (!profileError) return;
     if (profileError instanceof ProfileNotFoundError) return;
+    if (profileError instanceof ProfileAuthUnavailableError) return;
     if (isAbortError(profileError)) return;
     console.error('Failed to fetch profile:', profileError);
     showMessage('Failed to load profile data', 'error');

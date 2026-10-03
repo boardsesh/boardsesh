@@ -15,6 +15,8 @@ import {
 } from '@boardsesh/graphql/operations';
 import { useProfileData } from '../use-profile-data';
 
+const mockWsAuthState = vi.hoisted(() => ({ token: 'ws-token' as string | null, isLoading: false }));
+
 vi.mock('next-auth/react', () => ({
   useSession: vi.fn(),
 }));
@@ -28,7 +30,12 @@ vi.mock('@/app/hooks/use-grade-format', () => ({
 }));
 
 vi.mock('@/app/hooks/use-ws-auth-token', () => ({
-  useWsAuthToken: vi.fn(() => ({ token: 'ws-token', isAuthenticated: true, isLoading: false, error: null })),
+  useWsAuthToken: vi.fn(() => ({
+    token: mockWsAuthState.token,
+    isAuthenticated: !!mockWsAuthState.token,
+    isLoading: mockWsAuthState.isLoading,
+    error: null,
+  })),
 }));
 
 const mockRequest = vi.fn();
@@ -59,6 +66,8 @@ function renderProfileDataHook<T>(callback: () => T, options?: { isRestoring?: b
 describe('useProfileData', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockWsAuthState.token = 'ws-token';
+    mockWsAuthState.isLoading = false;
     mockUseSession.mockReturnValue({
       status: 'authenticated',
       data: { user: { id: 'user-1' }, expires: '' },
@@ -211,6 +220,81 @@ describe('useProfileData', () => {
     expect(result.current.statisticsSummary.totalAscents).toBe(1);
     expect(result.current.hardestSend).toMatchObject({ label: 'V6', status: 'send' });
     expect(result.current.percentile).toMatchObject({ percentile: 90, totalActiveUsers: 10 });
+  });
+
+  it('keeps the SSR Following state when an authenticated viewer has no ws token', async () => {
+    mockWsAuthState.token = null;
+    mockWsAuthState.isLoading = false;
+    const initialProfile = {
+      id: 'user-1',
+      email: undefined,
+      displayName: 'SSR User',
+      avatarUrl: null,
+      instagramUrl: null,
+      followerCount: 4,
+      followingCount: 2,
+      isFollowedByMe: true,
+    };
+    const { result, queryClient } = renderProfileDataHook(() =>
+      useProfileData('user-1', { initialProfile, initialIsOwnProfile: false }),
+    );
+
+    expect(result.current.profile?.isFollowedByMe).toBe(true);
+    const profileQuery = queryClient.getQueryCache().find({ queryKey: ['userProfile', 'user-1'] });
+    expect(profileQuery).toBeDefined();
+
+    // Calling Query.fetch directly models refetch paths that bypass enabled.
+    await act(async () => {
+      await profileQuery?.fetch();
+    });
+
+    expect(mockRequest.mock.calls.filter((call) => call[0] === GET_PUBLIC_PROFILE)).toHaveLength(0);
+    expect(result.current.profile?.isFollowedByMe).toBe(true);
+  });
+
+  it('allows a confirmed anonymous viewer to fetch a public profile', async () => {
+    mockWsAuthState.token = null;
+    mockUseSession.mockReturnValue({
+      status: 'unauthenticated',
+      data: null,
+      update: vi.fn(),
+    });
+    mockRequest.mockImplementation(async (query: unknown) => {
+      if (query === GET_PUBLIC_PROFILE) {
+        return {
+          publicProfile: {
+            id: 'user-1',
+            displayName: 'Public User',
+            avatarUrl: null,
+            instagramUrl: null,
+            followerCount: 1,
+            followingCount: 3,
+            isFollowedByMe: false,
+          },
+        };
+      }
+      return {};
+    });
+
+    const { result } = renderProfileDataHook(() => useProfileData('user-1'));
+    await waitFor(() => expect(result.current.profile?.displayName).toBe('Public User'));
+    expect(mockRequest).toHaveBeenCalledWith(GET_PUBLIC_PROFILE, { userId: 'user-1' });
+  });
+
+  it('does not fetch the profile while the NextAuth session is loading', async () => {
+    mockWsAuthState.token = null;
+    mockUseSession.mockReturnValue({
+      status: 'loading',
+      data: null,
+      update: vi.fn(),
+    });
+
+    renderProfileDataHook(() => useProfileData('user-1'));
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(mockRequest.mock.calls.filter((call) => call[0] === GET_PUBLIC_PROFILE)).toHaveLength(0);
   });
 
   it('recomputes hardest grades when filtering to a single board', async () => {

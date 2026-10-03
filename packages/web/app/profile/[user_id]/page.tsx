@@ -119,11 +119,7 @@ export default async function ProfilePage({ params }: PageProps) {
     <I18nProvider locale={locale} namespaces={['profile', 'feed']}>
       {/* Success path only — the notFound() above and the metadata catch branch
           are both `noindex, follow`, and neither reaches here. */}
-      <ProfileJsonLd
-        userId={user_id}
-        displayName={initialProfile.profile?.displayName || initialProfile.name || null}
-        locale={locale}
-      />
+      <ProfileJsonLd userId={user_id} displayName={initialProfile.displayName || null} locale={locale} />
       <ProfilePageContent
         userId={user_id}
         initialProfile={initialProfile}
