@@ -71,7 +71,7 @@ vi.mock('../utils/redis-rate-limiter', () => ({
 }));
 
 const { db } = await import('../db/client');
-const { sprayWallMutations } = await import('../graphql/resolvers/board/spray-walls');
+const { sprayWallMutations, lockWallForWrite } = await import('../graphql/resolvers/board/spray-walls');
 const { climbMutations } = await import('../graphql/resolvers/climbs/mutations');
 const { climbQueries } = await import('../graphql/resolvers/climbs/queries');
 const { sprayWallPhotoKey } = await import('../handlers/spray-wall-photos');
@@ -532,6 +532,74 @@ describe('what updateClimb records', () => {
   });
 });
 
+describe('an edit decided on a climb another edit has since changed', () => {
+  it('is refused with CLIMB_EDIT_CONFLICT, and leaves the frames and the hold rows agreeing', async () => {
+    // The wall owner and the setter both open the climb with frames F0. The
+    // owner's edit lands first and moves the holds to F1. The setter's save
+    // carries the F0 it loaded plus a rename: decided on the row it read, that is
+    // "frames unchanged", so it would write F0 back and skip the hold rewrite,
+    // leaving `frames` and `board_climb_holds` describing two different climbs.
+    const { wall, holdIds } = await createPublishedWall({ isPublic: true });
+    const framesAsLoaded = framesFor(holdIds);
+    const framesAfterOwnerEdit = framesFor([holdIds[0], holdIds[2]]);
+    const climbUuid = await saveSprayClimb(wall, holdIds, {}, SETTER);
+    const [wallRow] = (await db.execute(
+      sql`SELECT id FROM spray_walls WHERE layout_id = ${wall.layoutId}`,
+    )) as unknown as Array<{ id: string | number }>;
+
+    let lockHeld: () => void = () => undefined;
+    const lockIsHeld = new Promise<void>((resolve) => {
+      lockHeld = resolve;
+    });
+    let letTheOwnerCommit: () => void = () => undefined;
+    const ownerMayCommit = new Promise<void>((resolve) => {
+      letTheOwnerCommit = resolve;
+    });
+
+    // The owner's edit, as a transaction that holds the wall lock the way
+    // `updateClimb` does, writes what it writes, and commits on cue.
+    const ownerEdit = db.transaction(async (tx) => {
+      await lockWallForWrite(tx, Number(wallRow.id));
+      lockHeld();
+      await ownerMayCommit;
+      await tx.execute(sql`UPDATE board_climbs SET frames = ${framesAfterOwnerEdit} WHERE uuid = ${climbUuid}`);
+      await tx.execute(sql`
+        DELETE FROM board_climb_holds WHERE climb_uuid = ${climbUuid} AND hold_id = ${holdIds[1]}
+      `);
+    });
+
+    await lockIsHeld;
+    // Loads the climb (frames F0), then queues behind the wall lock.
+    const setterEdit = editSpray(climbUuid, { name: 'Renamed', frames: framesAsLoaded }, SETTER);
+    const setterOutcome = setterEdit.then(
+      () => ({ refusedWith: null as unknown }),
+      (error: unknown) => ({ refusedWith: error }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    letTheOwnerCommit();
+    await ownerEdit;
+
+    const { refusedWith } = await setterOutcome;
+    expect(refusedWith).toMatchObject({ extensions: { code: 'CLIMB_EDIT_CONFLICT' } });
+
+    // Nothing of the refused edit landed: the owner's frames stand, the hold rows
+    // still match them, and no revision was written for an edit that did not happen.
+    const [climb] = (await db.execute(
+      sql`SELECT name, frames FROM board_climbs WHERE uuid = ${climbUuid}`,
+    )) as unknown as Array<{ name: string; frames: string }>;
+    expect(climb).toEqual({ name: 'Original name', frames: framesAfterOwnerEdit });
+    const holdRows = (await db.execute(
+      sql`SELECT hold_id FROM board_climb_holds WHERE climb_uuid = ${climbUuid} ORDER BY hold_id`,
+    )) as unknown as Array<{ hold_id: number }>;
+    expect([...holdRows].map((row) => Number(row.hold_id))).toEqual([holdIds[0], holdIds[2]]);
+    expect(await revisionsOf(climbUuid)).toEqual([]);
+
+    // Reloaded, the same rename goes through.
+    await editSpray(climbUuid, { name: 'Renamed' }, SETTER);
+    expect((await revisionsOf(climbUuid)).map((revision) => revision.changes)).toEqual([[], ['name']]);
+  });
+});
+
 describe('climbRevisions', () => {
   it('answers newest first, with the top row current and the editors named', async () => {
     const { wall, holdIds } = await createPublishedWall({ isPublic: true });
@@ -630,5 +698,67 @@ describe('climbRevisions', () => {
       [1, 'Kilter original', null],
     ]);
     expect(revisions[1].createdAt).toBe(publishedAt);
+  });
+  it('answers `editor: null` once the editor’s account is gone, and keeps the revision', async () => {
+    const { wall, holdIds } = await createPublishedWall({ isPublic: true });
+    const climbUuid = await saveSprayClimb(wall, holdIds, {}, SETTER);
+    await editSpray(climbUuid, { name: 'Setter rename' }, SETTER);
+    await editSpray(climbUuid, { name: 'Owner rename' }, OWNER);
+
+    await db.execute(sql`DELETE FROM users WHERE id = ${SETTER}`);
+
+    const revisions = await readRevisions('spray', climbUuid, STRANGER);
+    expect(
+      revisions.map((revision) => [
+        revision.revisionNumber,
+        revision.name,
+        revision.editor?.id ?? null,
+        revision.editedBySetter,
+      ]),
+    ).toEqual([
+      [3, 'Owner rename', OWNER, false],
+      // The deleted setter's two rows: still there, with nobody to name. Not
+      // "edited by the setter" either, since there is no setter left to match.
+      [2, 'Setter rename', null, false],
+      [1, 'Original name', null, false],
+    ]);
+  });
+
+  it('treats a hidden wall as the owner’s alone, a gym admin included', async () => {
+    // An admin of the wall's gym can edit the wall, so normally its climbs too.
+    // Hiding a wall takes it away from everyone but its owner, and that has to
+    // cover both halves: editing a climb, and reading its history.
+    const { wall, holdIds } = await createPublishedWall({ isPublic: true });
+    const climbUuid = await saveSprayClimb(wall, holdIds, {}, SETTER);
+    const gymUuid = uuidv4();
+    const [gym] = (await db.execute(sql`
+      INSERT INTO gyms (uuid, name, slug, owner_id, is_public, created_at, updated_at)
+      VALUES (${gymUuid}, 'Spray Gym', ${gymUuid}, ${OWNER}, true, now(), now())
+      RETURNING id
+    `)) as unknown as Array<{ id: number }>;
+    await db.execute(sql`
+      INSERT INTO gym_members (gym_id, user_id, role, created_at) VALUES (${gym.id}, ${STRANGER}, 'admin', now())
+    `);
+    await db.execute(sql`UPDATE user_boards SET gym_id = ${gym.id} WHERE uuid = ${wall.uuid}`);
+
+    // Before the wall is hidden the gym admin can do both.
+    await editSpray(climbUuid, { name: 'Fixed by the gym admin' }, STRANGER);
+    expect(await readRevisions('spray', climbUuid, STRANGER)).toHaveLength(2);
+
+    await db.execute(sql`UPDATE spray_walls SET hidden_at = now() WHERE board_uuid = ${wall.uuid}`);
+
+    await expect(editSpray(climbUuid, { name: 'Edited while hidden' }, STRANGER)).rejects.toThrow(
+      'You can only update your own climbs',
+    );
+    expect(await readRevisions('spray', climbUuid, STRANGER)).toEqual([]);
+    expect(await readRevisions('spray', climbUuid, null)).toEqual([]);
+
+    // The owner still sees and edits it.
+    await editSpray(climbUuid, { name: 'Edited by the owner' }, OWNER);
+    expect((await readRevisions('spray', climbUuid, OWNER)).map((revision) => revision.name)).toEqual([
+      'Edited by the owner',
+      'Fixed by the gym admin',
+      'Original name',
+    ]);
   });
 });

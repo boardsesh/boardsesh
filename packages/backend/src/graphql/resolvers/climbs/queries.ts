@@ -684,7 +684,10 @@ export const climbQueries = {
 
     if (
       isSprayBoardType(boardType) &&
-      !(await sprayClimbUuidIsReadable(climbUuid, ctx?.isAuthenticated ? (ctx.userId ?? null) : null))
+      // On the primary, like the climb read above. The rule answers "visible" for
+      // a climb row it cannot find, so asking the replica about a climb the
+      // primary has only just been given would wave a private wall through.
+      !(await sprayClimbUuidIsReadable(climbUuid, ctx?.isAuthenticated ? (ctx.userId ?? null) : null, db))
     ) {
       return [];
     }

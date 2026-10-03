@@ -123,6 +123,68 @@ export async function lockClimbForRevision(
 }
 
 /**
+ * `extensions.code` on the refusal `updateClimb` gives when the climb changed
+ * between the resolver loading it and the transaction locking it. Clients match
+ * on this, never on the message. The right response is to reload the climb and
+ * let the climber redo the edit.
+ */
+export const CLIMB_EDIT_CONFLICT_ERROR_CODE = 'CLIMB_EDIT_CONFLICT';
+
+/** The columns of the pre-transaction row that `updateClimb`'s decisions are computed from. */
+export type ClimbEditDecisionInputs = {
+  isDraft: boolean | null | undefined;
+  frames: string | null | undefined;
+  framesCount: number | null | undefined;
+  angle: number | null | undefined;
+  characteristics: readonly string[] | null | undefined;
+  description: string | null | undefined;
+};
+
+/**
+ * Whether the row `updateClimb` loaded BEFORE its transaction still describes
+ * the climb, in every column its decisions were computed from.
+ *
+ * `updateClimb` decides a lot before it opens its transaction, off that first
+ * read: whether the holds changed (and so whether to rewrite `board_climb_holds`,
+ * the fingerprint and the lost-hold count), the next rule set, and whether and on
+ * what signature to run the duplicate gate. With two possible editors on a spray
+ * wall, another edit can commit in between, and every one of those decisions is
+ * then about a climb that no longer exists. The worst case writes the old frames
+ * back while skipping the hold rewrite, leaving `frames` and `board_climb_holds`
+ * describing two different climbs.
+ *
+ * Refusing is the fix, rather than recomputing from the locked row, because of
+ * the lock order. The duplicate-gate lock is keyed on the hold and rule signature
+ * and has to be taken BEFORE the wall lock and the row lock. Recomputing after
+ * the row lock would mean taking a second gate lock while holding the row, which
+ * is the reverse order and a deadlock between two edits. A refusal needs no new
+ * lock and cannot write anything wrong.
+ *
+ * Only decision inputs are compared. The name and the frames pace are written
+ * straight from the request and feed no decision, so a concurrent rename does not
+ * refuse an edit. The description is compared only on the Aurora boards, the one
+ * place it can carry a rule (the "No match" prefix); elsewhere it is prose.
+ */
+export function climbEditDecisionsAreStale(
+  boardType: BoardName,
+  loaded: ClimbEditDecisionInputs,
+  locked: ClimbRevisionState,
+): boolean {
+  const sameRules = (left: readonly string[] | null | undefined, right: readonly string[] | null | undefined) => {
+    if (left == null || right == null) return left == null && right == null;
+    return left.length === right.length && left.every((token, index) => token === right[index]);
+  };
+  return (
+    (loaded.isDraft === true) !== locked.isDraft ||
+    (loaded.frames ?? null) !== (locked.frames ?? null) ||
+    (loaded.framesCount ?? 1) !== (locked.framesCount ?? 1) ||
+    (loaded.angle ?? null) !== (locked.angle ?? null) ||
+    !sameRules(loaded.characteristics, locked.characteristics) ||
+    (usesAuroraNoMatchDescription(boardType) && (loaded.description ?? '') !== (locked.description ?? ''))
+  );
+}
+
+/**
  * What changed between two states of one climb.
  *
  * Compared on what a climber would call different, not on bytes:

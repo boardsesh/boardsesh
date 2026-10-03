@@ -6,7 +6,7 @@ const { mockDb, mockPublishSocialEvent, insertCalls, lockedClimb, mockRecordClim
   const insertCalls: Array<{ table: unknown; values: unknown }> = [];
   // What `lockClimbForRevision` answers: the draft flag of the climb row the test
   // last scripted. See the `climb-revisions` mock below.
-  const lockedClimb: { current: { isDraft: boolean } | null } = { current: null };
+  const lockedClimb: { current: Record<string, unknown> | null } = { current: null };
   const mockRecordClimbRevision = vi.fn().mockResolvedValue(undefined);
 
   const mockDb = {
@@ -25,14 +25,21 @@ const { mockDb, mockPublishSocialEvent, insertCalls, lockedClimb, mockRecordClim
 
 // Revision history re-reads the climb row under a lock and writes its own rows,
 // inside the transaction. Both would eat entries off the `mockDb.select` queue the
-// tests below script call by call, so the module is stubbed here and exercised
-// against a real database in climb-revisions.test.ts. The lock answers with the
-// draft flag of the row the test scripted (captured in `createMockChain`), which
-// is what `updateClimb` compares against the row it loaded.
-vi.mock('../graphql/resolvers/climbs/climb-revisions', () => ({
-  lockClimbForRevision: vi.fn(async () => lockedClimb.current),
-  recordClimbRevision: mockRecordClimbRevision,
-}));
+// tests below script call by call, so those two functions are stubbed here and
+// exercised against a real database in climb-revisions.test.ts. The lock answers
+// with the row the test scripted (captured in `createMockChain`), i.e. "nothing
+// changed since you loaded it", unless a test sets `lockedClimb.current` itself.
+// The staleness check and the error code stay real.
+vi.mock('../graphql/resolvers/climbs/climb-revisions', async () => {
+  const actual = await vi.importActual<typeof import('../graphql/resolvers/climbs/climb-revisions')>(
+    '../graphql/resolvers/climbs/climb-revisions',
+  );
+  return {
+    ...actual,
+    lockClimbForRevision: vi.fn(async () => lockedClimb.current),
+    recordClimbRevision: mockRecordClimbRevision,
+  };
+});
 
 vi.mock('../db/client', () => ({
   db: mockDb,
@@ -98,7 +105,7 @@ function createMockChain(resolveValue: unknown = [], onValues?: (values: unknown
   // stubbed row lock should report back.
   const [firstRow] = Array.isArray(resolveValue) ? (resolveValue as unknown[]) : [];
   if (firstRow && typeof firstRow === 'object' && 'uuid' in firstRow && 'isDraft' in firstRow) {
-    lockedClimb.current = { isDraft: (firstRow as { isDraft: unknown }).isDraft === true };
+    lockedClimb.current = { ...firstRow, isDraft: (firstRow as { isDraft: unknown }).isDraft === true };
   }
 
   chain.then = (resolve: (value: unknown) => unknown) => Promise.resolve(resolveValue).then(resolve);
@@ -1223,16 +1230,98 @@ describe('climb mutations', () => {
       expect(mockRecordClimbRevision).not.toHaveBeenCalled();
     });
 
+    const conflict = { extensions: { code: 'CLIMB_EDIT_CONFLICT' } };
+
     it('refuses an edit when the climb was published or deleted while it was being edited', async () => {
       scriptPublishedClimb({ isDraft: true, publishedAt: null });
-      lockedClimb.current = { isDraft: false };
-      await expect(rename()).rejects.toThrow(/changed while you were editing/);
+      lockedClimb.current = { ...lockedClimb.current, isDraft: false };
+      await expect(rename()).rejects.toMatchObject(conflict);
 
       scriptPublishedClimb({ isDraft: true, publishedAt: null });
       lockedClimb.current = null;
       await expect(rename()).rejects.toThrow('Climb not found');
 
       expect(mockDb.update).not.toHaveBeenCalled();
+      expect(mockRecordClimbRevision).not.toHaveBeenCalled();
+    });
+
+    it('refuses an edit decided on frames, rules, an angle or a description that another edit has since replaced', async () => {
+      // Each of these is a column the resolver decided from before its
+      // transaction: whether to rewrite the holds, what the rule set becomes,
+      // what the duplicate gate checked. The canonical case is the first: the
+      // request carries the frames it loaded plus a rename, so it would put the
+      // OLD frames back and skip the hold rewrite.
+      const landedMeanwhile: Array<Record<string, unknown>> = [
+        { frames: 'p1117r12p1141r15' },
+        { framesCount: 2 },
+        { angle: 40 },
+        { characteristics: ['any_feet'] },
+        { description: 'No match\nSit start' },
+      ];
+      for (const change of landedMeanwhile) {
+        scriptPublishedClimb();
+        lockedClimb.current = { ...lockedClimb.current, ...change };
+        await expect(
+          climbMutations.updateClimb(
+            {},
+            { input: { boardType: 'kilter', uuid: 'climb-1', name: 'Renamed', frames: 'p1117r12p1140r15' } },
+            makeCtx(),
+          ),
+        ).rejects.toMatchObject(conflict);
+      }
+
+      expect(mockDb.update).not.toHaveBeenCalled();
+      expect(mockRecordClimbRevision).not.toHaveBeenCalled();
+    });
+
+    it('does not refuse over a concurrent rename, which no decision depends on', async () => {
+      scriptPublishedClimb();
+      lockedClimb.current = { ...lockedClimb.current, name: 'Renamed by someone else', framesPace: 400 };
+
+      await climbMutations.updateClimb(
+        {},
+        { input: { boardType: 'kilter', uuid: 'climb-1', description: 'Sit start' } },
+        makeCtx(),
+      );
+
+      expect(mockDb.update).toHaveBeenCalledTimes(1);
+    });
+
+    it('answers a publish that already landed as a success, without writing or announcing again', async () => {
+      const publishedAt = new Date(Date.now() - 1000).toISOString();
+      scriptPublishedClimb({ isDraft: true, publishedAt: null, name: 'Draft name' });
+      // The duplicate gate runs before the row lock, and finds nothing.
+      mockDb.execute.mockResolvedValueOnce([]);
+      // What the first, identical publish left behind.
+      lockedClimb.current = { ...lockedClimb.current, isDraft: false, publishedAt, name: 'Published name' };
+
+      const result = await climbMutations.updateClimb(
+        {},
+        { input: { boardType: 'kilter', uuid: 'climb-1', isDraft: false, name: 'Published name' } },
+        makeCtx(),
+      );
+
+      expect(result).toMatchObject({ uuid: 'climb-1', isDraft: false, publishedAt });
+      expect(mockDb.update).not.toHaveBeenCalled();
+      expect(insertCalls).toEqual([]);
+      expect(mockRecordClimbRevision).not.toHaveBeenCalled();
+      expect(mockPublishSocialEvent).not.toHaveBeenCalled();
+    });
+
+    it('still refuses a second publish that would write something different', async () => {
+      scriptPublishedClimb({ isDraft: true, publishedAt: null, name: 'Draft name' });
+      mockDb.execute.mockResolvedValueOnce([]);
+      lockedClimb.current = { ...lockedClimb.current, isDraft: false, publishedAt: new Date().toISOString() };
+
+      await expect(
+        climbMutations.updateClimb(
+          {},
+          { input: { boardType: 'kilter', uuid: 'climb-1', isDraft: false, name: 'A different name' } },
+          makeCtx(),
+        ),
+      ).rejects.toMatchObject(conflict);
+      expect(mockDb.update).not.toHaveBeenCalled();
+      expect(mockPublishSocialEvent).not.toHaveBeenCalled();
     });
   });
 

@@ -25,7 +25,12 @@ import { notifyClimbRevalidated } from '../../../lib/web-revalidate';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
 import { requireAdminOrLeader } from '../social/roles';
 import { canEditBoard } from '../social/boards';
-import { lockClimbForRevision, recordClimbRevision } from './climb-revisions';
+import {
+  CLIMB_EDIT_CONFLICT_ERROR_CODE,
+  climbEditDecisionsAreStale,
+  lockClimbForRevision,
+  recordClimbRevision,
+} from './climb-revisions';
 import { deleteClimbDependentRows } from './climb-cleanup';
 import {
   SPRAY_CLIMB_CODES,
@@ -1051,7 +1056,7 @@ export const climbMutations = {
       !nextIsDraft && (transitioningToPublished || framesChanged || rulesChanged) && nextFramesCount === 1;
     const gateSignature = shouldGate ? buildHoldSignature(nextHoldEntries) : '';
 
-    await db.transaction(async (tx) => {
+    const outcome = await db.transaction(async (tx): Promise<{ alreadyPublishedAt: string | null } | null> => {
       if (shouldGate) {
         await acquireDuplicateGateLock(tx, boardType, existing.layoutId, gateSignature, {
           ruleSignature: nextRuleSignature,
@@ -1102,11 +1107,42 @@ export const climbMutations = {
         throw new Error('Climb not found');
       }
       // Everything decided above (who may edit, whether this publishes, whether
-      // the window applies) was decided for the draft state `existing` had. If a
-      // publish landed in between, those decisions are for a climb that no longer
-      // exists, and writing `isDraft` from them could un-publish it.
-      if (beforeEdit.isDraft !== currentlyDraft) {
-        throw new Error('This climb changed while you were editing it. Reload it and try again.');
+      // the holds or the rules changed, what the duplicate gate checked) was
+      // decided for the row `existing` held. If another edit committed in
+      // between, those decisions are for a climb that no longer exists: writing
+      // from them could un-publish it, or put old frames back without rewriting
+      // `board_climb_holds`. See `climbEditDecisionsAreStale` for why this is a
+      // refusal and not a recompute.
+      if (climbEditDecisionsAreStale(boardType, existing, beforeEdit)) {
+        // One case is not a conflict: the SAME publish, sent twice (a double tap,
+        // or a retry after a lost response). The first one already landed, so
+        // the row now holds exactly what this request would write. Answer it as
+        // the success it is and write nothing, so there is no second
+        // `climb.created` and `published_at` does not move.
+        //
+        // "The same" is checked field by field against the locked row, for every
+        // field the request carries. Anything that differs falls through to the
+        // refusal. Only the setter can be here: a draft is refused to everyone
+        // else before the transaction opens.
+        const replaysLandedPublish =
+          transitioningToPublished &&
+          !beforeEdit.isDraft &&
+          (validated.name === undefined || validated.name === (beforeEdit.name ?? '')) &&
+          (validated.description === undefined || nextDescription === (beforeEdit.description ?? '')) &&
+          (validated.frames === undefined || validated.frames === (beforeEdit.frames ?? '')) &&
+          (validated.angle === undefined || validated.angle === beforeEdit.angle) &&
+          (validated.framesCount === undefined || validated.framesCount === (beforeEdit.framesCount ?? 1)) &&
+          (validated.framesPace === undefined || validated.framesPace === (beforeEdit.framesPace ?? 0)) &&
+          (!characteristicsChanged ||
+            buildStoredRuleSignature(boardType, storedCharacteristics, nextDescription) ===
+              buildStoredRuleSignature(boardType, beforeEdit.characteristics, beforeEdit.description)) &&
+          (sprayGradeToSeed === null || sprayGradeToSeed === beforeEdit.difficultyId);
+        if (replaysLandedPublish) {
+          return { alreadyPublishedAt: beforeEdit.publishedAt };
+        }
+        throw new GraphQLError('This climb changed while you were editing it. Reload it and try again.', {
+          extensions: { code: CLIMB_EDIT_CONFLICT_ERROR_CODE },
+        });
       }
 
       // Build the update set from provided fields only.
@@ -1278,7 +1314,19 @@ export const climbMutations = {
         editorId: ctx.userId!,
         sprayTarget,
       });
+      return null;
     });
+
+    // A replayed publish: the first one did the work, announced the climb and
+    // busted the cache. Hand back the state it left.
+    if (outcome) {
+      return {
+        uuid: validated.uuid,
+        createdAt: existing.createdAt,
+        publishedAt: outcome.alreadyPublishedAt,
+        isDraft: false,
+      };
+    }
 
     // Tell the web app to drop the cached climb-view render so the edit
     // shows up immediately instead of waiting for the 1h TTL.
