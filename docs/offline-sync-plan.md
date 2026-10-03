@@ -1060,6 +1060,34 @@ until preparation returns: prepared-statement lifetimes, sessions, and backup
 operations remain the caller's responsibility. Finish their work and release their
 resources before closing the database.
 
+**Synchronous teardown audit.** There are no production `closeSync()` calls in
+`packages/mobile/`; the only calls are in the installed-patch lifecycle tests,
+which exercise successful closes and assert guard errors. `SQLiteProvider` uses `closeAsync()` in
+its effect teardown, and the dev lock holder awaits `closeAsync()` after its
+transaction finishes. The patch deliberately rejects `closeSync()` while async
+work is active or the wrapper is closing/closed. Future synchronous cleanup must
+start an observed `closeAsync()` instead of assuming `closeSync()` cannot throw.
+
+**Foreground/background ownership.** The shared offline-sync package accepts an
+injected database; it never opens or closes one. Mobile AppState listeners only
+set the background guard and trigger foreground sync. They neither close the
+provider's wrapper nor await a close promise. Provider cleanup retracts the
+published handle synchronously without awaiting the drain. A remount publishes a
+new wrapper through `useOfflineDatabase()`, and the bridge's database dependency
+stops the old scheduler and starts its replacement. Scheduler teardown removes
+listeners, retry alarms, and its queued follow-up; it does not await SQLite close.
+
+Strong pinning intentionally keeps old cached wrappers reachable across these
+transitions, including a wrapper whose close is stalled. That protects the shared
+Android native binding from garbage collection; it does **not** publish the old
+wrapper again or make the replacement wait for its close promise. The dedicated
+retention wrapper is never queried or closed. Exclusive-transaction wrappers
+(`useNewConnection: true`) are not pinned. If an admitted sync operation itself
+never settles, the shared scheduler's single-flight cycle can also remain active
+and defer replacement/foreground runs indefinitely. A new wrapper cannot repair
+frozen native I/O; restart remains the recovery path. No timeout force-closes or
+clears that latch while the old operation can still write.
+
 Each convenience-query statement is finalized once. SQLite frees the statement even
 when `sqlite3_finalize` reports a non-success result, so both Android and iOS mark the
 native statement finalized before throwing that error. If execution or reading
