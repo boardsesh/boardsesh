@@ -2,12 +2,13 @@
 //
 // The join screen's board resolution, end to end from the Join tap: the real
 // `resolveBoardForSession` + `createBoardOrAdoptDuplicate` wired to mocked
-// GraphQL. What's pinned here is the three ways the old one-page/`?? []`
-// resolution went wrong (#4409):
-//   1. a matching board past the first `myBoards` page is REUSED, not duplicated;
+// GraphQL. `fetchAllMyBoards` supplies its fully-collected result here; its
+// pagination loop has separate tests in the GraphQL hook suite. What's pinned
+// here is the three ways the old one-page/`?? []` resolution went wrong (#4409):
+//   1. a matching board in the complete owned-board list is REUSED, not duplicated;
 //   2. a BOARD_DUPLICATE_CONFIG rejection is adopted into the board it names;
 //   3. an offline walk surfaces an offline message instead of hanging.
-import { act, render, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { UserBoard } from '@boardsesh/shared-schema';
@@ -37,9 +38,6 @@ const preview = vi.hoisted(() => ({
   refetch: vi.fn(),
 }));
 
-// Captures the confirmation card's Join button (the first one rendered).
-const buttons = vi.hoisted(() => ({ joinPress: null as (() => void) | null }));
-
 vi.mock('../../../src/lib/analytics', () => ({ track: vi.fn() }));
 
 vi.mock('react-native', () => ({
@@ -56,10 +54,8 @@ vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => k
 vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0 }) }));
 
 vi.mock('../../../src/components/Button', () => ({
-  Button: ({ onPress }: { onPress?: () => void }) => {
-    if (buttons.joinPress === null && onPress) buttons.joinPress = onPress;
-    return createElement('button');
-  },
+  Button: ({ title, onPress }: { title?: string; onPress?: () => void }) =>
+    createElement('button', { 'aria-label': title, onClick: onPress }, title),
 }));
 vi.mock('../../../src/components/Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
@@ -120,16 +116,15 @@ function duplicateRejection(existingBoardUuid: string) {
 }
 
 async function pressJoin() {
-  render(createElement(JoinSessionScreen));
-  expect(buttons.joinPress).not.toBeNull();
+  const rendered = render(createElement(JoinSessionScreen));
+  const joinButton = rendered.getByRole('button', { name: 'mobileJoin.join' });
   await act(async () => {
-    buttons.joinPress?.();
+    fireEvent.click(joinButton);
   });
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
-  buttons.joinPress = null;
   preview.data.boardPath = SESSION_BOARD_PATH;
   fetchAllMyBoards.mockResolvedValue([]);
   fetchBoardBySlug.mockResolvedValue(null);
@@ -138,10 +133,9 @@ beforeEach(() => {
 });
 
 describe('JoinSessionScreen board resolution', () => {
-  // The headline bug: `useMyBoards` served 20 boards and the join treated that
-  // page as the whole rack, so a joiner whose board sorted onto page two minted a
-  // duplicate. The full walk is what makes the match findable.
-  it('reuses a matching board from past the first myBoards page', async () => {
+  // The mocked boundary supplies a completed walk with 20 earlier rows;
+  // actual page requests are pinned in fetch-all-my-boards.test.ts.
+  it('reuses a matching board from the completed owned-list walk', async () => {
     const matching = board({ uuid: 'page-two-uuid' });
     const firstPage = Array.from({ length: 20 }, (_, index) => board({ uuid: `other-${index}`, sizeId: 99 }));
     fetchAllMyBoards.mockResolvedValue([...firstPage, matching]);
