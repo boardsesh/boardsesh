@@ -1266,7 +1266,10 @@ describe('social board update catalog gate', () => {
       .update(dbSchema.userBoards)
       .set({ locationName: activeLocationName })
       .where(eq(dbSchema.userBoards.id, activeBoard.id));
-    return { deleted: { ...deletedBoard, deletedAt, locationName: deletedLocationName }, active: activeBoard };
+    return {
+      deleted: { ...deletedBoard, deletedAt, locationName: deletedLocationName },
+      active: { ...activeBoard, locationName: activeLocationName },
+    };
   }
 
   it('restores the same config at a different physical location', async () => {
