@@ -27,7 +27,7 @@ import {
 } from '../../../validation/schemas';
 import { generateUniqueGymSlug, requireBoardGymLinkAccess, userCanEditGym } from './gyms';
 import { resolveAutoGymForBoard } from './gym-matching';
-import { findBlockingDuplicate, type BoardLocation } from './board-duplicates';
+import { canonicalSetIdMembership, findBlockingDuplicate, type BoardLocation } from './board-duplicates';
 import { assertBoardCapNotReached } from './board-limits';
 import { syncLocationGeography } from './location-geography';
 import { getUserCommunityRoles, hasAdminOrLeader, rolesGrantAdminOrLeader } from './roles';
@@ -1990,18 +1990,19 @@ export const socialBoardMutations = {
       await assertBoardCapNotReached(board.ownerId);
     }
 
-    // Config field changes (layoutId, sizeId, setIds). Authorized editors may
-    // change these even when the board has logged climbs — a config change
-    // reflects a real physical reconfiguration. Old boardsesh_ticks rows are
-    // left untouched: they keep referencing the climbs/config they were logged
-    // against. We do not delete, move, or modify any tick rows here.
-    const hasConfigChange =
-      validatedInput.layoutId !== undefined ||
-      validatedInput.sizeId !== undefined ||
-      validatedInput.setIds !== undefined;
+    // Editors submit the whole config tuple, including for metadata-only
+    // saves. Compare its effective meaning with the stored tuple instead of
+    // treating field presence as a physical reconfiguration. Stored malformed
+    // CSV intentionally has no canonical form, so it cannot bypass catalog
+    // validation when a config value is submitted.
     const newLayoutId = validatedInput.layoutId ?? board.layoutId;
     const newSizeId = validatedInput.sizeId ?? board.sizeId;
     const newSetIds = validatedInput.setIds ?? board.setIds;
+    const hasConfigChange =
+      (validatedInput.layoutId !== undefined && newLayoutId !== board.layoutId) ||
+      (validatedInput.sizeId !== undefined && newSizeId !== board.sizeId) ||
+      (validatedInput.setIds !== undefined &&
+        canonicalSetIdMembership(newSetIds) !== canonicalSetIdMembership(board.setIds));
 
     if (hasConfigChange) {
       await assertKnownBoardConfig(board.boardType, newLayoutId, newSizeId, newSetIds);
@@ -2070,70 +2071,62 @@ export const socialBoardMutations = {
     if (validatedInput.serialNumber !== undefined) updateValues.serialNumber = validatedInput.serialNumber;
     if (validatedInput.timerName !== undefined) updateValues.timerName = validatedInput.timerName;
 
-    if (hasConfigChange) {
-      // The clients resend layout/size/setIds on every edit whenever the config
-      // section is unlocked, so `hasConfigChange` says "config fields were
-      // present", not "the config moved". Compare the effective values —
-      // set ids normalised, since the stored order is whatever the board was
-      // created with — and skip the guard when nothing actually changed.
-      // Without this skip, an owner of two same-config boards could never save
-      // ANY edit to either one: renaming a board would be rejected for
-      // colliding with its sibling.
-      const configActuallyChanged =
-        newLayoutId !== board.layoutId ||
-        newSizeId !== board.sizeId ||
-        normaliseSetIds(newSetIds) !== normaliseSetIds(board.setIds);
+    // The config the row carries once this save lands: submitted values only
+    // reach it on a real change, so an unchanged save keeps the stored
+    // (possibly legacy-formatted) text.
+    const resultingLayoutId = hasConfigChange ? newLayoutId : board.layoutId;
+    const resultingSizeId = hasConfigChange ? newSizeId : board.sizeId;
+    const resultingSetIds = hasConfigChange ? newSetIds : board.setIds;
 
-      // Keyed off the board's OWNER, not the caller — a moderator or gym admin
-      // may be editing someone else's board. The system catalog owner is exempt:
-      // many gyms legitimately share one config there, and blocking that would
-      // break the catalog fixes moderation exists for.
-      if (configActuallyChanged && board.ownerId !== SYSTEM_BOARD_OWNER_ID) {
-        if (validatedInput.allowDuplicateConfig) {
-          // Same trail as createBoard: this is the one path that lets an edit
-          // land on a config the owner already has at the same place, so record
-          // that a human confirmed it rather than leaving it indistinguishable
-          // from a script setting the flag on every call.
-          logger.info('updateBoard: duplicate-config guard bypassed by explicit confirmation', {
-            userId,
-            boardId: board.id,
-            ownerId: board.ownerId,
-            boardType: board.boardType,
-            layoutId: newLayoutId,
-            sizeId: newSizeId,
-          });
-        } else {
-          // Probe with the POST-update location, so an edit that moves this
-          // board onto a sibling's site is caught and one that moves it away is
-          // allowed. A location-only edit is deliberately NOT guarded at all
-          // (it never reaches here): as with createBoard after #4166, we block
-          // the accident of re-submitting a wall, not every way two rows can end
-          // up looking alike.
-          const existing = await findOwnedBlockingDuplicate({
-            ownerId: board.ownerId,
-            boardType: board.boardType,
-            layoutId: newLayoutId,
-            sizeId: newSizeId,
-            excludeBoardId: board.id,
-            incoming: {
-              setIds: newSetIds,
-              locationName:
-                validatedInput.locationName !== undefined ? validatedInput.locationName : board.locationName,
-              latitude: validatedInput.latitude !== undefined ? validatedInput.latitude : board.latitude,
-              longitude: validatedInput.longitude !== undefined ? validatedInput.longitude : board.longitude,
-            },
-          });
+    // A restore also makes this row active again, so check it even when its
+    // stored config is unchanged. Ordinary metadata saves do not probe sibling
+    // boards; only an effective config change or restore can create a duplicate.
+    const shouldCheckDuplicate = hasConfigChange || board.deletedAt != null;
 
-          if (existing) {
-            // The colliding board belongs to this board's OWNER. A gym admin or
-            // community moderator editing someone else's board gets the bare
-            // rejection code — enough to render "this config is taken", nothing
-            // that names or locates a board they have no read access to.
-            throw duplicateBoardConfigError(existing, { includeIdentity: board.ownerId === userId });
-          }
+    // Keyed off the board's OWNER, not the caller — a moderator or gym admin may
+    // be editing someone else's board. The system catalog owner is exempt:
+    // many gyms legitimately share one config there.
+    if (shouldCheckDuplicate && board.ownerId !== SYSTEM_BOARD_OWNER_ID) {
+      if (validatedInput.allowDuplicateConfig) {
+        // Same trail as createBoard: a human explicitly confirmed this
+        // same-config board at the same place.
+        logger.info('updateBoard: duplicate-config guard bypassed by explicit confirmation', {
+          userId,
+          boardId: board.id,
+          ownerId: board.ownerId,
+          boardType: board.boardType,
+          layoutId: resultingLayoutId,
+          sizeId: resultingSizeId,
+        });
+      } else {
+        // Use the effective config and resulting location, matching createBoard:
+        // the same setup at another physical wall is allowed, while a restore
+        // at the same place returns the normal structured duplicate response.
+        const existing = await findOwnedBlockingDuplicate({
+          ownerId: board.ownerId,
+          boardType: board.boardType,
+          layoutId: resultingLayoutId,
+          sizeId: resultingSizeId,
+          excludeBoardId: board.id,
+          incoming: {
+            setIds: resultingSetIds,
+            locationName: validatedInput.locationName !== undefined ? validatedInput.locationName : board.locationName,
+            latitude: validatedInput.latitude !== undefined ? validatedInput.latitude : board.latitude,
+            longitude: validatedInput.longitude !== undefined ? validatedInput.longitude : board.longitude,
+          },
+        });
+
+        if (existing) {
+          // The colliding board belongs to this board's OWNER. A gym admin or
+          // community moderator editing someone else's board gets the bare
+          // rejection code — enough to render "this config is taken", nothing
+          // that names or locates a board they have no read access to.
+          throw duplicateBoardConfigError(existing, { includeIdentity: board.ownerId === userId });
         }
       }
+    }
 
+    if (hasConfigChange) {
       if (validatedInput.layoutId !== undefined) updateValues.layoutId = validatedInput.layoutId;
       if (validatedInput.sizeId !== undefined) updateValues.sizeId = validatedInput.sizeId;
       if (validatedInput.setIds !== undefined) updateValues.setIds = validatedInput.setIds;

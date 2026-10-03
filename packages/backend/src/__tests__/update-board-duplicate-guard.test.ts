@@ -72,6 +72,40 @@ async function storedConfig(boardUuid: string): Promise<{ setIds: string; layout
   return { setIds: row.set_ids, layoutId: Number(row.layout_id), name: row.name };
 }
 
+async function storedDeletedAt(boardUuid: string): Promise<Date | null> {
+  const result = await db.execute(sql`SELECT deleted_at FROM user_boards WHERE uuid = ${boardUuid}`);
+  const row = Array.from(result as Iterable<{ deleted_at: Date | null }>)[0];
+  return row.deleted_at;
+}
+
+async function createSoftDeletedTwin(args: {
+  archivedSetIds: string;
+  activeSetIds?: string;
+  archivedLocationName?: string;
+  activeLocationName?: string;
+}): Promise<{ active: BoardRow; archived: BoardRow }> {
+  const active = await createBoard({
+    name: 'Active MoonBoard wall',
+    ...(args.activeLocationName === undefined ? {} : { locationName: args.activeLocationName }),
+  });
+  const archived = await createBoard({
+    name: 'Archived MoonBoard wall',
+    allowDuplicateConfig: true,
+    ...(args.archivedLocationName === undefined ? {} : { locationName: args.archivedLocationName }),
+  });
+
+  if (args.activeSetIds !== undefined) {
+    await db.execute(sql`UPDATE user_boards SET set_ids = ${args.activeSetIds} WHERE uuid = ${active.uuid}`);
+  }
+  await db.execute(sql`
+    UPDATE user_boards
+    SET set_ids = ${args.archivedSetIds}, deleted_at = now()
+    WHERE uuid = ${archived.uuid}
+  `);
+
+  return { active, archived };
+}
+
 /**
  * The thrown GraphQLError's extensions, or null when the call succeeded.
  * Anything that is NOT a duplicate rejection is rethrown — an unrelated failure
@@ -176,6 +210,78 @@ describe('updateBoard duplicate-config guard', () => {
 
     expect(extensions).not.toBeNull();
     expect(await storedConfig(edited.uuid)).toMatchObject({ setIds: STARTING.setIds });
+  });
+
+  it.each([
+    {
+      description: 'the archived row has leading-zero IDs',
+      archivedSetIds: '005,006,007',
+    },
+    {
+      description: 'the active candidate has leading-zero IDs',
+      archivedSetIds: STARTING.setIds,
+      activeSetIds: '005,006,007',
+    },
+    {
+      description: 'the archived row is reordered, repeated, and whitespace-padded',
+      archivedSetIds: ' 007,005,6,7,5 ',
+    },
+  ])('blocks a real MoonBoard 2024 restore when $description', async ({ archivedSetIds, activeSetIds }) => {
+    const boards = await createSoftDeletedTwin({ archivedSetIds, activeSetIds });
+
+    const duplicate = await captureDuplicate(
+      updateBoard({ boardUuid: boards.archived.uuid, name: 'Must remain archived' }),
+    );
+
+    expect(duplicate?.existingBoardUuid).toBe(boards.active.uuid);
+    expect(await storedConfig(boards.archived.uuid)).toMatchObject({ setIds: archivedSetIds });
+    expect(await storedDeletedAt(boards.archived.uuid)).not.toBeNull();
+  });
+
+  it('allows a zero-padded legacy restore at a different physical location', async () => {
+    const boards = await createSoftDeletedTwin({
+      archivedSetIds: '005,006,007',
+      activeSetIds: STARTING.setIds,
+      archivedLocationName: 'Old gym',
+      activeLocationName: 'Another gym',
+    });
+
+    const restored = await updateBoard({ boardUuid: boards.archived.uuid, name: 'Restored at the old gym' });
+
+    expect(restored.setIds).toBe('005,006,007');
+    expect(await storedConfig(boards.archived.uuid)).toMatchObject({ setIds: '005,006,007' });
+    expect(await storedDeletedAt(boards.archived.uuid)).toBeNull();
+  });
+
+  it('allows a zero-padded same-place restore after explicit duplicate confirmation', async () => {
+    const boards = await createSoftDeletedTwin({ archivedSetIds: '005,006,007' });
+
+    const restored = await updateBoard({
+      boardUuid: boards.archived.uuid,
+      name: 'Confirmed second wall',
+      allowDuplicateConfig: true,
+    });
+
+    expect(restored.setIds).toBe('005,006,007');
+    expect(await storedDeletedAt(boards.archived.uuid)).toBeNull();
+  });
+
+  it('ignores malformed candidates but still rejects an unknown submitted set', async () => {
+    const boards = await createSoftDeletedTwin({
+      archivedSetIds: STARTING.setIds,
+      activeSetIds: '5,not-a-set,6,7',
+    });
+
+    await expect(updateBoard({ boardUuid: boards.archived.uuid, setIds: '5,6,7,999999' })).rejects.toMatchObject({
+      extensions: { code: 'UNKNOWN_BOARD_CONFIG' },
+    });
+    expect(await storedDeletedAt(boards.archived.uuid)).not.toBeNull();
+
+    const restored = await updateBoard({ boardUuid: boards.archived.uuid, name: 'Valid legacy config restored' });
+
+    expect(restored.setIds).toBe(STARTING.setIds);
+    expect(await storedConfig(boards.active.uuid)).toMatchObject({ setIds: '5,not-a-set,6,7' });
+    expect(await storedDeletedAt(boards.archived.uuid)).toBeNull();
   });
 
   // The next two cases run on named-but-uncoordinated boards, the shape most

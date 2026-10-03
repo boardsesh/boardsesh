@@ -114,6 +114,26 @@ describe('findBlockingDuplicate', () => {
     expect(findBlockingDuplicate(candidates, { ...GYM_A, setIds: '24,25,26' })).toBe(candidates[0]);
   });
 
+  it.each([
+    { description: 'the stored candidate is zero-padded', candidateSetIds: '005,006,007', incomingSetIds: '5,6,7' },
+    { description: 'the incoming legacy row is zero-padded', candidateSetIds: '5,6,7', incomingSetIds: '007,005,006' },
+    {
+      description: 'legacy order, duplicates, and token whitespace differ',
+      candidateSetIds: '5,6,7',
+      incomingSetIds: ' 007, 005,6,7,5 ',
+    },
+  ])('matches canonical decimal membership when $description', ({ candidateSetIds, incomingSetIds }) => {
+    const candidates = [{ ...GYM_A, setIds: candidateSetIds }];
+    expect(findBlockingDuplicate(candidates, { ...GYM_A, setIds: incomingSetIds })).toBe(candidates[0]);
+  });
+
+  it('does not match malformed memberships, including two that both lack a canonical key', () => {
+    const malformedCandidate = { ...GYM_A, setIds: '5,not-a-set,6,7' };
+
+    expect(findBlockingDuplicate([malformedCandidate], { ...GYM_A, setIds: '5,6,7' })).toBeUndefined();
+    expect(findBlockingDuplicate([malformedCandidate], { ...GYM_A, setIds: '5,not-a-set,6,7' })).toBeUndefined();
+  });
+
   it('does not block a different set of holds at the same place', () => {
     const candidates = [{ ...GYM_A, setIds: '24,25' }];
     expect(findBlockingDuplicate(candidates, { ...GYM_A, setIds: '24,25,26' })).toBeUndefined();
