@@ -22,6 +22,7 @@ import {
   filterClimberLogs,
   followingSectionCount,
   groupClimberLogs,
+  otherAnglesNoticeCount,
   rankClimberLogGroups,
   type ClimberLogFilters,
   type ClimberLogListItem,
@@ -175,8 +176,8 @@ export function ClimberLogsSheet({ visible, climb, boardName, angle, onClose, on
   const items = useMemo(() => {
     const groups = rankClimberLogGroups(groupClimberLogs(filterClimberLogs(logs ?? [], angle, filters), angle));
     const notices: ClimberLogNotice[] = [];
-    const elsewhere = counts ? counts.climbers - counts.climbersAtAngle : 0;
-    if (filters.angleOnly && elsewhere > 0) notices.push({ notice: 'otherAngles', count: elsewhere });
+    const elsewhere = otherAnglesNoticeCount(counts, filters);
+    if (elsewhere > 0) notices.push({ notice: 'otherAngles', count: elsewhere });
     if (hasMore && groups.length > 0) notices.push({ notice: 'capped', count: 0 });
     return buildClimberLogListItems(
       [{ id: 'following', groups, count: followingSectionCount(counts, filters) }],

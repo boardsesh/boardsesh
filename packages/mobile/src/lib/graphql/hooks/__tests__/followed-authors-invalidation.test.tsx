@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
-import { useFollowedAuthors, useToggleAuthorFollow } from '../use-followed-authors';
+import { useFollowedAuthors, useFollowedAuthorsSnapshot, useToggleAuthorFollow } from '../use-followed-authors';
 
 const request = vi.hoisted(() => vi.fn());
 const offline = vi.hoisted(() => ({ enabled: false, removedUserIds: [] as string[] }));
@@ -76,6 +76,37 @@ describe('followed author invalidation', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['searchClimbs'] });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['crewFeed'] });
+  });
+
+  describe('the read-only snapshot the play drawer mounts', () => {
+    it('reads cached authors without a request, however old they are', async () => {
+      const { client, invalidate, wrapper } = createHarness();
+      client.setQueryData(['followedAuthors', 'viewer'], authors, { updatedAt: Date.now() - 3_600_000 });
+      const { result, rerender } = renderHook(
+        ({ loadWhenMissing }) => useFollowedAuthorsSnapshot({ loadWhenMissing }),
+        { wrapper, initialProps: { loadWhenMissing: false } },
+      );
+      rerender({ loadWhenMissing: true });
+      await act(async () => {});
+
+      expect(result.current.data).toEqual(authors);
+      expect(request).not.toHaveBeenCalled();
+      expect(invalidate).not.toHaveBeenCalled();
+    });
+
+    it('loads a missing answer only once the caller says so', async () => {
+      const { wrapper } = createHarness();
+      const { result, rerender } = renderHook(
+        ({ loadWhenMissing }) => useFollowedAuthorsSnapshot({ loadWhenMissing }),
+        { wrapper, initialProps: { loadWhenMissing: false } },
+      );
+      await act(async () => {});
+      expect(request).not.toHaveBeenCalled();
+
+      rerender({ loadWhenMissing: true });
+      await waitFor(() => expect(result.current.data).toEqual(authors));
+      expect(request).toHaveBeenCalledTimes(1);
+    });
   });
 
   // The play drawer's "Climber logs" card shows the logs of whoever you follow,

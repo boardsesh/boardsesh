@@ -82,6 +82,7 @@ import { AngleSelectorSheet } from './AngleSelectorSheet';
 import { ClimbActionsSheet } from '../ClimbActionsSheet';
 import { AddBetaVideoSheet } from '../AddBetaVideoSheet';
 import { ClimberLogsSheet } from './ClimberLogsSheet';
+import { usePushAfterPlayerDismiss } from './use-push-after-player-dismiss';
 import { ReportClimbSheet } from '../report-climb/ReportClimbSheet';
 import { BleControlSheetHost } from '../ble/BleControlSheetHost';
 import { RestTimerPillHost } from '../queue-control/RestTimerPillHost';
@@ -1638,19 +1639,25 @@ export function PlayDrawer({
 
   // Climber logs card: "See all logs" opens the virtualised list; a row opens
   // that climber's profile; the empty states lead to climber search. Both routes
-  // sit on the root stack, so they push over the `/play` modal.
+  // are plain cards on the root stack, and on iOS a card pushed while the
+  // `/play` modal is up lands beneath it (docs/mobile-sheets-vs-routes.md), so
+  // they leave through `usePushAfterPlayerDismiss`.
   const handleOpenClimberLogs = useCallback(() => {
     setClimberLogsClimbUuid(displayedClimbUuid ?? null);
   }, [displayedClimbUuid]);
   const handleCloseClimberLogs = useCallback(() => {
     setClimberLogsClimbUuid(null);
   }, []);
-  const handleOpenClimberProfile = useCallback((userId: string) => {
-    router.push({ pathname: '/users/[userId]', params: { userId } });
-  }, []);
+  const pushAfterPlayerDismiss = usePushAfterPlayerDismiss(dismissPlayerAndWait);
+  const handleOpenClimberProfile = useCallback(
+    (userId: string) => {
+      pushAfterPlayerDismiss(() => router.push({ pathname: '/users/[userId]', params: { userId } }));
+    },
+    [pushAfterPlayerDismiss],
+  );
   const handleFindClimbers = useCallback(() => {
-    router.push('/users/search');
-  }, []);
+    pushAfterPlayerDismiss(() => router.push('/users/search'));
+  }, [pushAfterPlayerDismiss]);
 
   const handleOpenActions = useCallback(() => {
     // iOS: open the floating reaction menu (over the drawer) instead of the in-drawer

@@ -22,7 +22,7 @@ import { useAuth } from '../../providers/auth-provider';
 import { useBoardseshGradeEnabled } from '../../providers/feature-flags-provider';
 import { useTheme } from '../../providers/theme-provider';
 import { useBoardseshGrade, useClimbStatsHistory, useFollowingClimbLogs } from '../../lib/graphql/hooks';
-import { useFollowedAuthors } from '../../lib/graphql/hooks/use-followed-authors';
+import { useFollowedAuthorsSnapshot } from '../../lib/graphql/hooks/use-followed-authors';
 import { useGradeFormat } from '../../hooks/use-grade-format';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { useDeferredAfterInteractions } from '../../hooks/use-deferred-after-interactions';
@@ -130,8 +130,14 @@ export const DeferredSections = memo(function DeferredSections({
   // them, but only once the open animation has settled, the climber has stayed
   // on the climb for a moment (a fast queue swipe sends nothing) and the phone's
   // own followed-authors snapshot says there is someone to ask about. An account
-  // that follows nobody never sends this request.
-  const { data: followedAuthors, isError: followedAuthorsFailed } = useFollowedAuthors();
+  // that follows nobody never sends this request. The snapshot is only read
+  // here: the root sync bridge keeps it fresh, so opening the drawer costs no
+  // followed-authors request and no SQLite write. A missing one loads behind
+  // the same settle gate.
+  const settled = useClimbSettled(enabled, climb.uuid);
+  const { data: followedAuthors, isError: followedAuthorsFailed } = useFollowedAuthorsSnapshot({
+    loadWhenMissing: isAuthenticated && settled,
+  });
   const followState: 'none' | 'some' | 'unknown' | 'none-yet' = followedAuthors
     ? followedAuthors.users.length > 0
       ? 'some'
@@ -139,7 +145,6 @@ export const DeferredSections = memo(function DeferredSections({
     : followedAuthorsFailed
       ? 'unknown'
       : 'none-yet';
-  const settled = useClimbSettled(enabled, climb.uuid);
   const { data: crewLogs } = useFollowingClimbLogs(boardName, climb.uuid, {
     enabled: isAuthenticated && settled && (followState === 'some' || followState === 'unknown'),
   });

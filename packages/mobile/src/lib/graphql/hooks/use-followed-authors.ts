@@ -115,6 +115,34 @@ export function useFollowedAuthors() {
   return { ...query, setterNames, userIds };
 }
 
+/**
+ * Reads the followed-authors answer the app already holds, for a surface that
+ * opens often (the play drawer). It never refetches an answer that exists:
+ * `OfflineSyncBridge` keeps the root observer mounted, and that one owns the
+ * refresh, the SQLite snapshot write and the feed invalidation. Mounting
+ * `useFollowedAuthors` here instead would send the query, and take the exclusive
+ * write lock, on every open more than a minute after the last sync.
+ *
+ * `loadWhenMissing` lets the caller pick the moment for the one case with no
+ * answer at all (a failed first sync, or the browser build, which has no
+ * bridge).
+ */
+export function useFollowedAuthorsSnapshot({ loadWhenMissing }: { loadWhenMissing: boolean }) {
+  const { userId } = useStoredUserId(true);
+  return useQuery({
+    queryKey: ['followedAuthors', userId],
+    queryFn: () => loadFollowedAuthors(userId!),
+    enabled: !!userId && loadWhenMissing,
+    networkMode: 'always',
+    // An answer in the cache is never stale to this observer, so neither
+    // mounting nor `loadWhenMissing` turning on refetches it.
+    staleTime: Infinity,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
+}
+
 export function useToggleAuthorFollow() {
   const queryClient = useQueryClient();
   const { userId } = useStoredUserId(true);

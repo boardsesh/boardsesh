@@ -31,6 +31,7 @@ const followedAuthors = vi.hoisted(() => ({
     data: { users: Array<{ userId: string }> } | undefined;
     isError: boolean;
   },
+  calls: [] as Array<{ loadWhenMissing: boolean }>,
 }));
 
 vi.mock('react-native', () => ({
@@ -159,7 +160,10 @@ vi.mock('../../../hooks/use-climb-settled', () => ({
 }));
 
 vi.mock('../../../lib/graphql/hooks/use-followed-authors', () => ({
-  useFollowedAuthors: () => followedAuthors.result,
+  useFollowedAuthorsSnapshot: (options: { loadWhenMissing: boolean }) => {
+    followedAuthors.calls.push(options);
+    return followedAuthors.result;
+  },
 }));
 
 vi.mock('../../../hooks/use-grade-format', () => ({
@@ -221,6 +225,7 @@ describe('DeferredSections', () => {
     crewQuery.calls = [];
     crewQuery.data = undefined;
     followedAuthors.result = { data: undefined, isError: false };
+    followedAuthors.calls = [];
     climberLogsSection.props = null;
   });
 
@@ -384,6 +389,25 @@ describe('DeferredSections', () => {
       expect(crewQuery.calls.at(-1)?.enabled).toBe(true);
       // The card itself still waits for the scroll gate like every below-fold section.
       expect(screen.queryByTestId('climber-logs')).toBeNull();
+    });
+
+    it('only reads the follow snapshot, and holds a missing one back until the climb has settled', () => {
+      auth.isAuthenticated = true;
+      crewQuery.settled = false;
+      const view = renderSections({ contentEnabled: false });
+      expect(followedAuthors.calls.at(-1)).toEqual({ loadWhenMissing: false });
+      view.unmount();
+
+      crewQuery.settled = true;
+      renderSections({ contentEnabled: false });
+      expect(followedAuthors.calls.at(-1)).toEqual({ loadWhenMissing: true });
+    });
+
+    it('never loads the follow snapshot for a signed-out visitor', () => {
+      crewQuery.settled = true;
+      renderSections({ contentEnabled: true });
+
+      expect(followedAuthors.calls.every((call) => !call.loadWhenMissing)).toBe(true);
     });
 
     it('neither asks nor shows the card while the follow snapshot is still loading', () => {

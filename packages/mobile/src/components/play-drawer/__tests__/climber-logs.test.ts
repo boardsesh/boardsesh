@@ -8,6 +8,7 @@ import {
   filterClimberLogs,
   followingSectionCount,
   groupClimberLogs,
+  otherAnglesNoticeCount,
   rankClimberLogGroups,
   takeInlineGroups,
   tallyGivenGrades,
@@ -330,6 +331,32 @@ describe('followingSectionCount', () => {
     expect(followingSectionCount(counts, { ...NO_FILTERS, withNotes: true })).toBeNull();
     expect(followingSectionCount(counts, { angleOnly: true, withNotes: true, sendsOnly: true })).toBeNull();
     expect(followingSectionCount(null, NO_FILTERS)).toBeNull();
+  });
+});
+
+describe('otherAnglesNoticeCount', () => {
+  const counts = { climbers: 5, senders: 2, climbersAtAngle: 2, sendersAtAngle: 2 };
+  const angleOnly = { ...NO_FILTERS, angleOnly: true };
+
+  it('counts the climbers who only logged at other angles', () => {
+    expect(otherAnglesNoticeCount(counts, angleOnly)).toBe(3);
+  });
+
+  it('counts only senders elsewhere while "sends only" is on', () => {
+    // Both senders sent at the board angle, so turning the angle chip off adds no row.
+    expect(otherAnglesNoticeCount(counts, { ...angleOnly, sendsOnly: true })).toBe(0);
+    expect(otherAnglesNoticeCount({ ...counts, senders: 4 }, { ...angleOnly, sendsOnly: true })).toBe(2);
+  });
+
+  it('has nothing to offer while "with notes" is on, the server has no count for it', () => {
+    expect(otherAnglesNoticeCount(counts, { ...angleOnly, withNotes: true })).toBe(0);
+    expect(otherAnglesNoticeCount(counts, { angleOnly: true, withNotes: true, sendsOnly: true })).toBe(0);
+  });
+
+  it('is zero with the angle chip off, without counts, and never negative', () => {
+    expect(otherAnglesNoticeCount(counts, NO_FILTERS)).toBe(0);
+    expect(otherAnglesNoticeCount(null, angleOnly)).toBe(0);
+    expect(otherAnglesNoticeCount({ ...counts, climbers: 1 }, angleOnly)).toBe(0);
   });
 });
 

@@ -252,3 +252,19 @@ export function followingSectionCount(counts: CrewCounts | null, filters: Climbe
   if (filters.sendsOnly) return filters.angleOnly ? counts.sendersAtAngle : counts.senders;
   return filters.angleOnly ? counts.climbersAtAngle : counts.climbers;
 }
+
+/**
+ * How many more climbers turning "this angle only" off would add, under the
+ * other chips. Each side of the subtraction counts a climber once, so the
+ * difference is exactly the climbers whose matching logs all sit at other
+ * angles. Zero means there is nothing to offer, and "with notes" always answers
+ * zero: the server has no count for it, and a number that a tap does not
+ * deliver is worse than no notice.
+ */
+export function otherAnglesNoticeCount(counts: CrewCounts | null, filters: ClimberLogFilters): number {
+  if (!counts || !filters.angleOnly || filters.withNotes) return 0;
+  const elsewhere = filters.sendsOnly
+    ? counts.senders - counts.sendersAtAngle
+    : counts.climbers - counts.climbersAtAngle;
+  return Math.max(0, elsewhere);
+}

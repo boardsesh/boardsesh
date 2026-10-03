@@ -289,6 +289,48 @@ describe('ClimberLogsSheet', () => {
     expect(view.container.textContent).toContain('mobile.climberLogs.sectionFollowingCount:{"count":5}');
   });
 
+  it('keeps the other-angles number true to the other chips', () => {
+    // Five followed climbers logged it, two at 40°, and both senders sent at 40°.
+    setLoaded(
+      [
+        log({ userId: 'mika', angle: 40, status: 'send', comment: 'drop knee' }),
+        log({ userId: 'jonas', angle: 40, status: 'send' }),
+        log({ userId: 'priya', angle: 20, status: 'attempt' }),
+      ],
+      { climberCount: 5, senderCount: 2, byAngle: [{ angle: 40, climberCount: 2, senderCount: 2 }] },
+    );
+    const view = renderSheet();
+    expect(view.container.textContent).toContain('mobile.climberLogs.otherAngles:{"count":3}');
+
+    // Nobody sent it anywhere else, so there is nothing more to offer.
+    fireEvent.click(chip(view, 'mobile.climberLogs.filterSendsOnly'));
+    expect(view.container.textContent).toContain('mobile.climberLogs.sectionFollowingAtAngle:{"count":2,"angle":40}');
+    expect(view.container.textContent).not.toContain('mobile.climberLogs.otherAngles');
+
+    // The server has no count for notes, so that chip drops the notice too.
+    fireEvent.click(chip(view, 'mobile.climberLogs.filterSendsOnly'));
+    fireEvent.click(chip(view, 'mobile.climberLogs.filterWithNotes'));
+    expect(rowUsers(view)).toEqual(['mika']);
+    expect(view.container.textContent).not.toContain('mobile.climberLogs.otherAngles');
+  });
+
+  it('counts only the senders elsewhere while "Sends only" is on', () => {
+    setLoaded(
+      [log({ userId: 'mika', angle: 40, status: 'send' }), log({ userId: 'jonas', angle: 45, status: 'send' })],
+      {
+        climberCount: 5,
+        senderCount: 2,
+        byAngle: [{ angle: 40, climberCount: 2, senderCount: 1 }],
+      },
+    );
+    const view = renderSheet();
+
+    fireEvent.click(chip(view, 'mobile.climberLogs.filterSendsOnly'));
+    fireEvent.click(view.getByText('mobile.climberLogs.otherAngles:{"count":1}'));
+
+    expect(rowUsers(view).toSorted()).toEqual(['jonas', 'mika']);
+  });
+
   it('says the list is cut at the latest 100 logs and hides the earlier-log lines', () => {
     setLoaded(
       [log({ userId: 'mika' }), log({ userId: 'mika' })],
