@@ -57,28 +57,26 @@ One job body, `runRefreshClimbNeighbors` in
 `packages/db/src/jobs/refresh-climb-neighbors.ts` (`@boardsesh/db/jobs`), with
 two callers:
 
-- **Today's owner: the workflow.** `.github/workflows/refresh-climb-neighbors.yml`
-  runs the CLI `packages/db/scripts/refresh-climb-neighbors.ts` at 06:45 UTC
-  against Production, one matrix job per board (every board but spray, pinned
-  to `CLIMB_NEIGHBOR_BOARDS` by `climb-neighbors-workflow.test.ts`). Each job
-  has a 350-minute timeout, 4 GB of heap and its own concurrency group, so a
-  newer run never cancels a running build. GitHub keeps only one pending job
-  per group, so at most one run waits behind a long build (a later one
-  replaces it). A dispatch picks one board or `all` from a fixed list. Run
-  locally over several boards, the CLI takes the cheapest boards first.
-- **Next owner: the `refresh-climb-neighbors` batch family**
+- **Today's owner: the `refresh-climb-neighbors` batch family**
   (`packages/backend/src/workers/families/refresh-climb-neighbors.ts`,
   docs/background-workers.md "Batch families"). Its `nightly` schedule
-  (`45 6 * * *` UTC, pinned to the workflow's cron by
-  `scripts/__tests__/batch-families-cron.test.ts`) fans out one job per board,
-  cheapest first (`orderBoardsByClimbCount`), and the batch worker runs them one
-  at a time. Payload `{ board, full?, dryRun?, refillGaps? }` (the fan-out
-  sets `refillGaps` once per night, true on Sundays UTC; unset means no scan), one dedup key per
-  board, a 6-hour lease, two retries. It runs only once
-  `BATCH_FAMILIES_ENABLED` names it; the workflow keeps its schedule until the
-  cutover PR removes it. **That PR lands the same day the family is enabled**:
-  both crons are `45 6 * * *`, and only GitHub's lateness keeps the two runs
-  apart (see "Don't run two at once" below).
+  (`45 6 * * *` UTC, pinned by `scripts/__tests__/batch-families-cron.test.ts`)
+  fans out one job per board, cheapest first (`orderBoardsByClimbCount`), and
+  the batch worker runs them one at a time. Payload
+  `{ board, full?, dryRun?, refillGaps? }` (the fan-out sets `refillGaps` once
+  per night, true on Sundays UTC; unset means no scan), one dedup key per
+  board, a 6-hour lease, two retries. The cutover deleted the workflow's
+  `schedule:`; only the family fires at 06:45 UTC now.
+- **Manual path: the workflow.** `.github/workflows/refresh-climb-neighbors.yml`
+  runs the CLI `packages/db/scripts/refresh-climb-neighbors.ts` against
+  Production on dispatch only, one matrix job per board (every board but
+  spray, pinned to `CLIMB_NEIGHBOR_BOARDS` by
+  `climb-neighbors-workflow.test.ts`). Each job has a 350-minute timeout,
+  4 GB of heap and its own concurrency group, so a newer run never cancels a
+  running build. GitHub keeps only one pending job per group, so at most one
+  run waits behind a long build (a later one replaces it). A dispatch picks
+  one board or `all` from a fixed list. Run locally over several boards, the
+  CLI takes the cheapest boards first.
 
 Every write goes through the caller's `transact`: the CLI's is a plain
 transaction, the family's is the worker's attempt fence, so a chunk commits
@@ -200,9 +198,9 @@ row short, a gap only the weekly scan finds.
 
 ## Runbook
 
-The workflow owns the schedule until the cutover PR; the family commands
-below work as soon as the batch worker runs this image, enabled or not. Family
-runs are enqueued on the batch host with
+The family owns the nightly schedule; the workflow is dispatch-only. The
+family commands below work as soon as the batch worker runs this image,
+enabled or not. Family runs are enqueued on the batch host with
 `node --import tsx packages/backend/src/workers/operator.ts enqueue refresh-climb-neighbors '<payload>'`
 (docs/background-workers.md, "Operator runs").
 
@@ -227,9 +225,10 @@ runs are enqueued on the batch host with
   error); check the worker log for the board and group it reached.
 - **Don't run two at once on one board.** The workflow's per-board
   concurrency group and the family's per-board dedup key each prevent it on
-  their own side, not across the two, and both fire at 06:45 UTC: remove the
-  workflow's `schedule:` the day the family is enabled, and don't dispatch the
-  workflow for a board while its family job runs. What an overlap does:
+  their own side, not across the two. The workflow's `schedule:` is gone (the
+  cutover removed it), so the remaining overlap risk is a manual dispatch:
+  don't dispatch the workflow for a board while its family job runs. What an
+  overlap does:
   - two runs writing the same list: the second writer fails on the list's
     primary key (the family retries; the workflow job goes red);
   - the watermark is never corrupted, but it can move backwards when the

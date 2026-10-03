@@ -185,9 +185,9 @@ implements the job side of #5622.
 | `live-scan` | `7,22,37,52 * * * *` | `{ "mode": "live-scan" }` | gzip `v1-gzip` with `--refresh-threshold 500` |
 
 The payload also takes `board`, `layout` (needs `board`), `refreshThreshold` and, on the nightly only,
-`gzipOnly`. They narrow a run the way the workflow's dispatch inputs do: a threshold skips the identity
-and catalogue passes, and a board or layout skips the catalogue. There is no dry run and no storage
-target; the R2 rehearsal (`storage_target: r2`) stays a `workflow_dispatch` of the workflow.
+`gzipOnly`. They narrow a run the way the retired workflow's dispatch inputs did: a threshold skips the
+identity and catalogue passes, and a board or layout skips the catalogue. There is no dry run and no
+storage target; the gated R2 rehearsal stays the workflow's only `workflow_dispatch`.
 
 - **One publisher at a time.** Each mode has its own singleton key (`nightly`, `live-scan`) on the
   stately batch queue, which holds one running and one queued job per key. A scan that fires while the
@@ -481,8 +481,8 @@ in the confirm dialog, so it never reaches the UI.
 `uncompressedBytes` is **optional and additive** — no `format_version` bump, since an old client simply
 ignores the key. Every entry published before the field existed omits it, and the merge path carries those
 entries through untouched, so a reader must handle `undefined`. It only starts appearing on the first
-export run after the field ships: the nightly runs at 07:15 UTC, or dispatch
-`.github/workflows/export-board-snapshots.yml` manually to fill it in sooner.
+export run after the field ships: the nightly runs at 07:15 UTC, or enqueue the
+worker's nightly export (Ops runbook, "Manual export") to fill it in sooner.
 
 ### Grades artifact (issue #4310)
 
@@ -1244,7 +1244,7 @@ in-memory map loses exactly that one. `unknown` is an explicit, expected value.
 For a complete isolated R2 rehearsal only: trigger `.github/workflows/export-board-snapshots.yml` via
 `workflow_dispatch` after its producer-target gate is configured. Ordinary exports run on the worker.
 
-From the batch worker host, once the family owns the schedule (worker environment plus
+From the batch worker host, which owns the schedule (worker environment plus
 `WORKER_OPERATOR_ENABLED=true`):
 
 ```sh
@@ -1504,8 +1504,9 @@ geometry. Consequences, in order of who notices:
   first automated signal.
 
 The artifact is immutable and content-addressed, and the manifest is only rewritten on success, so a
-failed pass leaves the previous artifact serving. Recovery is a re-dispatch: it is one whole-catalogue
-build with no incremental state, so re-running it is always safe and always sufficient. There is no
+failed pass leaves the previous artifact serving. Recovery is a re-enqueue of the worker nightly: the
+catalogue is one whole-catalogue build with no incremental state, so re-running it is always safe and
+always sufficient. There is no
 partial-catalogue mode to get stuck in — the export either publishes a complete artifact or leaves
 the last one in place.
 
@@ -1559,8 +1560,8 @@ old schema as stale without waiting for 500 rows, so the fleet's gzip artifacts 
 best-effort scan (scheduled every 15 minutes); the identity rollback catches up in the 07:15 nightly.
 During that window, freshly-enabled scopes on the new client fall back to the paged crawl (a permanent
 miss, no attempt burned, always correct) rather than importing a stale artifact — see the `schema_version`
-semantics above. A manual `workflow_dispatch` starts the rebuild without waiting for the next scheduled
-scan if a release needs it sooner.
+semantics above. Enqueueing the worker's `live-scan` mode (Ops runbook, "Manual export") starts the
+rebuild without waiting for the next scheduled scan if a release needs it sooner.
 
 ### Deferred: correlated-EXISTS cost on the fallback path
 

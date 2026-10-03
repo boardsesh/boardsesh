@@ -9,7 +9,9 @@ batch families, PR-B2 the two weekly MoonBoard estimate families and PR-B3
 the similar-climbs refresh (below); each stays off until
 `BATCH_FAMILIES_ENABLED` names it. Snapshot publishing completed its ownership cutover
 on September 30 (#5912); its Actions schedules are retired and only a gated R2 rehearsal remains.
-Other family workflows keep running until their own cutover. PR-2 adds the first-link and "Sync now" provider
+The four nightly refresh families cut over in #5939: their workflows lost `schedule:` and stay
+dispatchable for backfills and dry runs. The two weekly MoonBoard estimate workflows keep their
+schedules until their own cutover. PR-2 adds the first-link and "Sync now" provider
 syncs; PR-3 the routine provider cycle, the board-wide catalog and location
 syncs, and the stats self-heal (see "Routine provider sync"). The Aurora and
 Kilter daemons keep owning routine syncs until the documented cutover.
@@ -270,8 +272,10 @@ listed (see "Provider sync families").
 
 ## Batch families
 
-Seven scheduled data jobs that run on GitHub Actions (two of them weekly) can
-also run on the batch worker, once `BATCH_FAMILIES_ENABLED` names them. The job
+Seven scheduled data jobs that ran on GitHub Actions (two of them weekly) run
+on the batch worker once `BATCH_FAMILIES_ENABLED` names them; five have cut
+over (snapshot export plus the four nightly refreshes), leaving the two weekly
+MoonBoard estimate workflows on Actions schedules until their own cutover. The job
 bodies live in `packages/db/src/jobs/` (package export `@boardsesh/db/jobs`)
 and take `{ db, signal, transact, log, ...params }`: `db` for reads, `transact`
 for every write batch, and they throw instead of exiting. The CLIs in
