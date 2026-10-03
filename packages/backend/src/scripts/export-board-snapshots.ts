@@ -2075,9 +2075,9 @@ function parseKeyPrefix(raw: string | undefined): string {
 
 function parseLayoutFilter(raw: string | undefined): number {
   const layoutId = Number(raw);
-  if (!Number.isInteger(layoutId)) {
+  if (!Number.isSafeInteger(layoutId)) {
     // A NaN filter would silently match nothing and export zero layouts.
-    throw new Error(`--layout expects an integer layout id, got ${JSON.stringify(raw)}`);
+    throw new Error(`--layout expects a safe integer layout id, got ${JSON.stringify(raw)}`);
   }
   return layoutId;
 }

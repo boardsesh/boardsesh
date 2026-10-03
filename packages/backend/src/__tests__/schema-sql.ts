@@ -2050,7 +2050,7 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
     NEW.sync_seq = nextval('public.board_climbs_sync_seq_seq');
     RETURN NEW;
   END;
-  $$ LANGUAGE plpgsql SET search_path = pg_catalog;
+  $$ LANGUAGE plpgsql SET search_path = public, pg_catalog;
 
   CREATE OR REPLACE FUNCTION public.set_board_climb_stats_sync_fields() RETURNS TRIGGER AS $$
   BEGIN
@@ -2058,7 +2058,7 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
     NEW.sync_seq = nextval('public.board_climb_stats_sync_seq_seq');
     RETURN NEW;
   END;
-  $$ LANGUAGE plpgsql SET search_path = pg_catalog;
+  $$ LANGUAGE plpgsql SET search_path = public, pg_catalog;
 
   CREATE OR REPLACE FUNCTION ops.set_board_climbs_insert_sync_fields() RETURNS TRIGGER AS $$
   DECLARE
