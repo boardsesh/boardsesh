@@ -240,10 +240,10 @@ export const qaMutations = {
           });
         }
 
-        // Latest TESTER verdict wins — but "latest" is whatever the table says,
-        // not whatever this job is carrying. Two verdicts filed seconds apart run
-        // independent side effects that can finish in either order, so an older
-        // approval could otherwise stamp qa-approved over a newer decline.
+        // Latest TESTER verdict for this verified head wins — not whatever this
+        // job is carrying. A null-head row was never verified, and a verdict
+        // from an earlier head must not move the current PR label. Two verdicts
+        // on the same head can still race, so read the newest matching row here.
         //
         // Restricted to `by_tester` because the label gates a merge on a PUBLIC
         // repo: anyone signed in can file a verdict and have it posted as a
@@ -252,7 +252,13 @@ export const qaMutations = {
         const [newestTesterVerdict] = await db
           .select({ verdict: dbSchema.qaVerdicts.verdict })
           .from(dbSchema.qaVerdicts)
-          .where(and(eq(dbSchema.qaVerdicts.prNumber, row.prNumber), eq(dbSchema.qaVerdicts.byTester, true)))
+          .where(
+            and(
+              eq(dbSchema.qaVerdicts.prNumber, row.prNumber),
+              eq(dbSchema.qaVerdicts.byTester, true),
+              eq(dbSchema.qaVerdicts.headSha, verifiedPullRequest.headSha),
+            ),
+          )
           .orderBy(desc(dbSchema.qaVerdicts.createdAt), desc(dbSchema.qaVerdicts.id))
           .limit(1);
         if (newestTesterVerdict) {
@@ -267,6 +273,11 @@ export const qaMutations = {
               outcome: labelled,
             });
           }
+        } else {
+          logger.debug(
+            `[qa] no tester verdict for #${row.prNumber} at verified head ${verifiedPullRequest.headSha}; ` +
+              'leaving labels unchanged',
+          );
         }
       } catch (error) {
         logger.error('[qa] verdict mirror side-effect failed:', error);
