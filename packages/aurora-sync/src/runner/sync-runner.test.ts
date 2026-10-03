@@ -14,6 +14,7 @@ import {
 } from './sync-runner';
 import type { AuroraBoardName } from '../api/types';
 import type { AuroraLocationBoardName } from '../sync/locations-sync';
+import type { SyncUserDataOptions } from '../sync/user-sync';
 import type { CredentialRecord, SyncErrorContext } from './types';
 
 type SyncRunnerPrivates = {
@@ -349,11 +350,17 @@ describe('SyncRunner login failure handling', () => {
         _token: unknown,
         _auroraUserId: unknown,
         _userId: unknown,
-        _tables: unknown,
-        _log: unknown,
-        logError: (message: string) => void,
+        options: SyncUserDataOptions,
       ) => {
-        logError('{"event":"aurora_circuit_playlist_malformed_payload","rejectedCount":1}');
+        expect(options.logError).toEqual(expect.any(Function));
+        options.logError?.(
+          JSON.stringify({
+            level: 'error',
+            event: 'aurora_circuit_playlist_malformed_payload',
+            boardType: 'decoy',
+            rejectedCount: 1,
+          }),
+        );
         return {};
       },
     );
@@ -361,7 +368,12 @@ describe('SyncRunner login failure handling', () => {
     await runnerPrivates.syncSingleCredential(createCredential({ syncStatus: 'active', consecutiveFailures: 3 }));
 
     expect(observedErrors).toHaveLength(1);
-    expect(observedErrors[0]?.error.message).toContain('aurora_circuit_playlist_malformed_payload');
+    expect(JSON.parse(observedErrors[0]?.error.message ?? 'null')).toEqual({
+      level: 'error',
+      event: 'aurora_circuit_playlist_malformed_payload',
+      boardType: 'decoy',
+      rejectedCount: 1,
+    });
     expect(observedErrors[0]?.context).toEqual({
       userId: 'user-123',
       board: 'decoy',
