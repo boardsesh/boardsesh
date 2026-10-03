@@ -374,7 +374,10 @@ validates each bundle/map pair and map Debug ID. Public-folder JavaScript is not
 metadata and is ignored. Only validated pairs are copied into an isolated working directory for
 the installed official Expo uploader, whose recursive scan cannot see other files in `dist`.
 SDK 8.24.0 delegates to `@sentry/expo-upload-sourcemaps`; both audited versions use the same exact
-bundle/map pairing and Debug ID contract. Sentry matches the running
+bundle/map pairing and Debug ID contract. SDK 8.24's native build phases also resolve their own
+CLI dependency. The native dependency check follows that resolution instead of requiring it to
+match the direct CLI used by the standalone dSYM uploader; both existing dependency pins stay
+unchanged. Sentry matches the running
 OTA bundle to its map by Debug ID. It deliberately receives no synthetic release or dist, so the
 SDK's native release/dist continue to describe the installed store binary.
 
