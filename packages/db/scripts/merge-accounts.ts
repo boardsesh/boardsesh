@@ -178,7 +178,7 @@ const DEDUPE_REPOINTS: Array<{
     otherCols: ['board_type', 'layout_id', 'size_id', 'hold_id'],
   },
   { table: 'new_climb_subscriptions', column: 'user_id', otherCols: ['board_type', 'layout_id'] },
-  { table: 'user_board_serials', column: 'user_id', otherCols: ['serial_number'] },
+  { table: 'user_board_serials', column: 'user_id', otherCols: ['board_name', 'serial_number'] },
   // One row per viewer and board. The collision merge below retains the
   // canonical account's pin choice while combining board-open recency.
   { table: 'user_board_activity', column: 'user_id', otherCols: ['board_uuid'] },
@@ -546,6 +546,45 @@ async function mergeLoserIntoWinner(commandDb: ExecuteDb, winnerId: string, lose
     );
   }
 
+  // The same controller may have been recorded under both accounts. Keep the
+  // latest observed configuration and its board link, while retaining the
+  // oldest creation time and the freshest known protocol level.
+  await execute(
+    commandDb,
+    sql`
+      UPDATE user_board_serials AS winner_row
+         SET layout_id = CASE WHEN loser_row.updated_at > winner_row.updated_at THEN loser_row.layout_id ELSE winner_row.layout_id END,
+             size_id = CASE WHEN loser_row.updated_at > winner_row.updated_at THEN loser_row.size_id ELSE winner_row.size_id END,
+             set_ids = CASE WHEN loser_row.updated_at > winner_row.updated_at THEN loser_row.set_ids ELSE winner_row.set_ids END,
+             api_level = CASE
+               WHEN loser_row.updated_at > winner_row.updated_at THEN COALESCE(loser_row.api_level, winner_row.api_level)
+               ELSE COALESCE(winner_row.api_level, loser_row.api_level)
+             END,
+             board_uuid = CASE
+               WHEN loser_row.updated_at > winner_row.updated_at THEN COALESCE(loser_row.board_uuid, winner_row.board_uuid)
+               ELSE COALESCE(winner_row.board_uuid, loser_row.board_uuid)
+             END,
+             created_at = LEAST(winner_row.created_at, loser_row.created_at),
+             updated_at = GREATEST(winner_row.updated_at, loser_row.updated_at)
+        FROM user_board_serials AS loser_row
+       WHERE winner_row.user_id = ${winnerId}
+         AND loser_row.user_id = ${loserId}
+         AND winner_row.board_name = loser_row.board_name
+         AND winner_row.serial_number = loser_row.serial_number
+    `,
+  );
+  await execute(
+    commandDb,
+    sql`
+      DELETE FROM user_board_serials AS loser_row
+       USING user_board_serials AS winner_row
+       WHERE loser_row.user_id = ${loserId}
+         AND winner_row.user_id = ${winnerId}
+         AND winner_row.board_name = loser_row.board_name
+         AND winner_row.serial_number = loser_row.serial_number
+    `,
+  );
+
   // For a board opened on both accounts, retain the latest use time while the
   // canonical account's pin/unpin choice remains authoritative. Non-colliding
   // activity rows have already moved in the generic dedupe pass.
@@ -631,35 +670,14 @@ async function mergeLoserIntoWinner(commandDb: ExecuteDb, winnerId: string, lose
     `,
   );
 
-  // user_boards: partial uniques on (owner, board config) and (owner, serial),
-  // both only over active (deleted_at IS NULL) non-system rows. Move a loser
-  // board unless an active winner board already occupies the same config or
-  // serial; colliding loser boards cascade away with the loser.
+  // Same-config boards may represent distinct physical walls. A preflight
+  // rejects only real active serial collisions; every other board must survive.
   await execute(
     commandDb,
     sql`
-      UPDATE user_boards AS target
+      UPDATE user_boards
          SET owner_id = ${winnerId}, updated_at = NOW()
-       WHERE target.owner_id = ${loserId}
-         AND NOT EXISTS (
-           SELECT 1 FROM user_boards AS winner_row
-            WHERE winner_row.owner_id = ${winnerId}
-              AND winner_row.deleted_at IS NULL
-              AND target.deleted_at IS NULL
-              AND winner_row.board_type = target.board_type
-              AND winner_row.layout_id = target.layout_id
-              AND winner_row.size_id = target.size_id
-              AND winner_row.set_ids = target.set_ids
-         )
-         AND NOT EXISTS (
-           SELECT 1 FROM user_boards AS winner_row
-            WHERE winner_row.owner_id = ${winnerId}
-              AND winner_row.deleted_at IS NULL
-              AND target.deleted_at IS NULL
-              AND target.serial_number IS NOT NULL
-              AND target.serial_number <> ''
-              AND winner_row.serial_number = target.serial_number
-         )
+       WHERE owner_id = ${loserId}
     `,
   );
 
@@ -743,10 +761,50 @@ async function reconcileWinnerFields(commandDb: ExecuteDb, duplicateSet: Duplica
   );
 }
 
+type UserBoardSerialConflict = {
+  boardType: string;
+  serialNumber: string;
+  boardUuids: string;
+};
+
+async function assertNoUserBoardSerialConflicts(commandDb: ExecuteDb, userIds: string[]): Promise<void> {
+  const conflicts = await executeRows<UserBoardSerialConflict>(
+    commandDb,
+    sql`
+      SELECT board_type AS "boardType",
+             serial_number AS "serialNumber",
+             string_agg(uuid, ', ' ORDER BY owner_id, uuid) AS "boardUuids"
+        FROM user_boards
+       WHERE owner_id IN (${sqlIdList(userIds)})
+         AND owner_id <> '00000000-0000-0000-0000-000000000000'
+         AND deleted_at IS NULL
+         AND serial_number IS NOT NULL
+         AND serial_number <> ''
+       GROUP BY board_type, serial_number
+      HAVING count(*) > 1
+       ORDER BY board_type, serial_number
+    `,
+  );
+
+  if (conflicts.length > 0) {
+    const details = conflicts
+      .map(({ boardType, serialNumber, boardUuids }) => `${boardType} ${serialNumber}: boards ${boardUuids}`)
+      .join('; ');
+    throw new Error(
+      `Cannot merge accounts with active physical boards sharing a board type and serial number: ${details}. ` +
+        'Resolve each physical-board identity first; no account rows were changed.',
+    );
+  }
+}
+
 async function mergeSet(commandDb: ExecuteDb, duplicateSet: DuplicateSet): Promise<void> {
   const winnerId = duplicateSet.winner.id;
   const loserIds = duplicateSet.losers.map((loser) => loser.id);
   const allIds = duplicateSet.members.map((member) => member.id);
+
+  // Match the exact partial unique index on user_boards. Distinct physical
+  // boards are never inferred to be duplicates from their configuration.
+  await assertNoUserBoardSerialConflicts(commandDb, allIds);
 
   // Remove every follow edge whose endpoints are both inside the set, so no
   // repoint can produce a (winner, winner) self-follow.
