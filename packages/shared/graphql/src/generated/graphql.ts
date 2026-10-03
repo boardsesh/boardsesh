@@ -8431,7 +8431,14 @@ export type SetSprayWallHiddenInput = {
 };
 
 export type SetSprayWallRenderSettingsInput = {
-  /** A { mode, boardsesh } blob, or null to clear the wall's stored default. */
+  /**
+   * Required: always send the key. A { mode, boardsesh } blob sets the wall's
+   * stored default; an explicit null clears it. Omitting the key is rejected
+   * rather than read as "leave it alone" — this mutation only ever sets or clears.
+   *
+   * Declared nullable (not JSON!) because a non-null scalar could not carry the
+   * null that clears it.
+   */
   renderSettings?: InputMaybe<Scalars['JSON']['input']>;
   uuid: Scalars['ID']['input'];
 };
