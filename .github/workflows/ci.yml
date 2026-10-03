@@ -416,6 +416,7 @@ jobs:
               - 'packages/db/docker/bootstrap-pg18-development-roles.sql'
               - 'packages/db/src/schema/**'
               - 'scripts/check-db-migrations.ts'
+              - 'scripts/__tests__/ci-db-migrations-workflow.test.ts'
               - 'scripts/board-snapshot-migration-pg18.test.sh'
               - 'scripts/dev-db-up.sh'
               - 'scripts/lib/drizzle-migrations.ts'
@@ -978,9 +979,10 @@ jobs:
     if: needs.changes.outputs.dbMigrations == 'true' || needs.changes.outputs.rootCi == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # A stock Postgres is enough: the journal<->ledger test builds its own
-    # throwaway migrations folder and database, so it needs no board data and
-    # never pulls the (large) boardsesh-dev-db image.
+    # Keep the primary PostgreSQL 17 service for existing journal, MoonBoard,
+    # and serial-plan checks. The replica-fence migration smoke gets a separate
+    # stock PostgreSQL 18 service; neither service needs board data or pulls the
+    # (large) boardsesh-dev-db image.
     services:
       postgres:
         image: postgres:17
@@ -1000,6 +1002,19 @@ jobs:
           --health-interval 2s
           --health-timeout 5s
           --health-retries 25
+      postgres18:
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 25
     steps:
       - uses: actions/checkout@v6
         with:
@@ -1011,6 +1026,8 @@ jobs:
           cache: ${{ runner.environment == 'github-hosted' }}
       - name: Install dependencies
         run: vp install --frozen-lockfile
+      - name: Check database service wiring
+        run: vp test run --project scripts scripts/__tests__/ci-db-migrations-workflow.test.ts --reporter=agent
       - name: Validate the migration folder
         run: |
           git fetch --no-tags --depth=1 origin main
@@ -1019,7 +1036,7 @@ jobs:
       # is renumbered at merge time and a hardcoded number rots the moment it is.
       - name: Run the board snapshot replica-fence migration through the superuser and restricted PG18 apply paths
         env:
-          SNAPSHOT_MIGRATION_PG18_DB_URL: postgres://postgres:postgres@localhost:5432/postgres
+          SNAPSHOT_MIGRATION_PG18_DB_URL: postgres://postgres:postgres@localhost:5433/postgres
           SNAPSHOT_MIGRATION_PG18_ALLOW_LOCAL_ADMIN: '1'
         run: bash scripts/board-snapshot-migration-pg18.test.sh
       # Guards the failure mode check:db-migrations cannot see: a migration
@@ -1052,9 +1069,10 @@ jobs:
       # A trigger function with no pinned search_path cannot resolve an
       # unqualified type or table while pg_restore holds search_path at '',
       # which aborts a --data-only restore on the first affected table with zero
-      # rows loaded (#4699). Textual, because this job's service is a stock
-      # postgres:17 with no PostGIS and cannot apply the full migration chain. The
-      # catalog counterpart runs in test-dev-db via scripts/dev-db-image-smoke.sh.
+      # rows loaded (#4699). Textual, because the primary service is stock
+      # postgres:17 with no PostGIS and cannot apply the full migration chain;
+      # the separate PG18 service runs only the snapshot-fence migration smoke.
+      # The catalog counterpart runs in test-dev-db via scripts/dev-db-image-smoke.sh.
       - name: Every trigger function pins search_path
         run: vp test run --project scripts scripts/__tests__/db-trigger-search-path.test.ts
       # #5352: `ALTER DATABASE ... SET max_parallel_workers_per_gather = 0` needs
