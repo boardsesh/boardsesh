@@ -427,7 +427,7 @@
       "retry": "Réessayer",
       "empty": "Aucun coût à afficher pour l'instant.",
       "perMonthLabel": "Par mois",
-      "headline": "Ce que coûte le fonctionnement de Boardsesh chaque mois.",
+      "headline": "Ce que coûte le fonctionnement de Boardsesh chaque mois, en dollars américains.",
       "overTimeTitle": "Coûts dans le temps",
       "byCategoryTitle": "Ce mois-ci, par catégorie",
       "categoryHosting": "Hébergement",

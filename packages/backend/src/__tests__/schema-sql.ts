@@ -1395,7 +1395,8 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
     "note" text,
     "created_by" text REFERENCES "users"("id") ON DELETE SET NULL,
     "created_at" timestamp DEFAULT now() NOT NULL,
-    "updated_at" timestamp DEFAULT now() NOT NULL
+    "updated_at" timestamp DEFAULT now() NOT NULL,
+    CONSTRAINT "cost_entries_currency_usd_check" CHECK ("currency" = 'USD')
   );
   CREATE INDEX IF NOT EXISTS "cost_entries_start_month_idx" ON "cost_entries" ("start_month");
 

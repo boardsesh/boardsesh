@@ -11,7 +11,8 @@ CREATE TABLE "cost_entries" (
 	"note" text,
 	"created_by" text,
 	"created_at" timestamp DEFAULT now() NOT NULL,
-	"updated_at" timestamp DEFAULT now() NOT NULL
+	"updated_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "cost_entries_currency_usd_check" CHECK ("cost_entries"."currency" = 'USD')
 );
 --> statement-breakpoint
 ALTER TABLE "cost_entries" ADD CONSTRAINT "cost_entries_created_by_users_id_fk" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint

@@ -585,7 +585,7 @@
       "retry": "Erneut versuchen",
       "empty": "Noch keine Kosten verfügbar.",
       "perMonthLabel": "Pro Monat",
-      "headline": "Das kostet der Betrieb von Boardsesh pro Monat.",
+      "headline": "Das kostet der Betrieb von Boardsesh pro Monat in US-Dollar.",
       "overTimeTitle": "Kosten im Zeitverlauf",
       "byCategoryTitle": "Dieser Monat nach Kategorie",
       "categoryHosting": "Hosting",

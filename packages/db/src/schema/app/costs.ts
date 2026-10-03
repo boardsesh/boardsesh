@@ -1,4 +1,5 @@
-import { pgTable, text, integer, timestamp, bigserial, index, pgEnum } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
+import { pgTable, text, integer, timestamp, bigserial, index, pgEnum, check } from 'drizzle-orm/pg-core';
 import { users } from '../auth/users';
 
 /**
@@ -52,6 +53,9 @@ export const costEntries = pgTable(
   },
   (table) => ({
     startMonthIdx: index('cost_entries_start_month_idx').on(table.startMonth),
+    // drizzle-kit 0.31 does not reliably diff object-form checks; preserve this
+    // constraint in future generated migrations (see docs/db-migrations.md).
+    currencyUsdCheck: check('cost_entries_currency_usd_check', sql`${table.currency} = 'USD'`),
   }),
 );
 

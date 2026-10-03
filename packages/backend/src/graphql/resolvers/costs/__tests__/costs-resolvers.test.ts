@@ -101,6 +101,21 @@ describe('costEntries admin query', () => {
 });
 
 describe('cost input validation', () => {
+  it('rejects a non-USD row at the database boundary', async () => {
+    // db.execute wraps driver constraint details, so assert the insert itself is rejected.
+    // The otherwise-identical USD row succeeds first to rule out unrelated SQL errors.
+    await db.execute(sql`
+      INSERT INTO cost_entries (kind, category, label, amount_cents, currency, start_month)
+      VALUES ('recurring', 'hosting', 'Vercel', 2000, 'USD', '2020-01')
+    `);
+    await expect(
+      db.execute(sql`
+        INSERT INTO cost_entries (kind, category, label, amount_cents, currency, start_month)
+        VALUES ('recurring', 'hosting', 'Vercel', 2000, 'EUR', '2020-01')
+      `),
+    ).rejects.toThrow();
+  });
+
   it('normalizes USD and rejects other currencies on create and update', async () => {
     const created = await costMutations.createCostEntry(
       null,

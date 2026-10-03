@@ -7,6 +7,10 @@
     "retention": {
       "title": "Retention",
       "description": "Cohort retention dashboard"
+    },
+    "costs": {
+      "title": "Running costs | Boardsesh",
+      "description": "Monthly hosting and tooling costs behind Boardsesh."
     }
   },
   "title": "Admin Panel",
@@ -476,7 +480,8 @@
       "endMonth": "End month",
       "note": "Note (optional)",
       "cancel": "Cancel",
-      "save": "Save"
+      "save": "Save",
+      "currencyHelp": "All costs are entered in USD."
     },
     "delete": {
       "title": "Delete this cost?",

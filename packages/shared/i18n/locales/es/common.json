@@ -699,7 +699,7 @@
       "retry": "Reintentar",
       "empty": "Aún no hay costes que mostrar.",
       "perMonthLabel": "Al mes",
-      "headline": "Lo que cuesta mantener Boardsesh cada mes.",
+      "headline": "Lo que cuesta mantener Boardsesh cada mes, en dólares estadounidenses.",
       "overTimeTitle": "Costes a lo largo del tiempo",
       "byCategoryTitle": "Este mes, por categoría",
       "categoryHosting": "Alojamiento",

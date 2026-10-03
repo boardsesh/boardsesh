@@ -35,6 +35,9 @@ export const privateSponsorCount: number = data.privateSponsorCount;
 /** The OTA server behind our releases — Mercure Technologies gave us an enterprise license. */
 export const XPREM_URL = 'https://github.com/mercuretechnologies/xprem';
 
+/** The public page where climbers can help cover Boardsesh's running costs. */
+export const SPONSORS_URL = 'https://github.com/sponsors/boardsesh';
+
 // Personal thanks — kept as data so the screen renders the names directly.
 // Gabby leads the crew; Scout gets her own easter-egg page.
 export const friends = ['Gabby', 'Caz', 'Josh', 'Pete', 'Nic', 'Jess', 'Roxy'] as const;

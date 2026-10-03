@@ -7,6 +7,10 @@
     "retention": {
       "title": "Retención",
       "description": "Panel de retención por cohortes"
+    },
+    "costs": {
+      "title": "Costes de funcionamiento | Boardsesh",
+      "description": "Costes mensuales de alojamiento y herramientas para mantener Boardsesh."
     }
   },
   "title": "Panel de admin",
@@ -476,7 +480,8 @@
       "endMonth": "Mes de fin",
       "note": "Nota (opcional)",
       "cancel": "Cancelar",
-      "save": "Guardar"
+      "save": "Guardar",
+      "currencyHelp": "Todos los costes se introducen en USD."
     },
     "delete": {
       "title": "¿Eliminar este coste?",

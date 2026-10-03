@@ -24,6 +24,7 @@ import TextField from '@mui/material/TextField';
 import Select from '@mui/material/Select';
 import MenuItem from '@mui/material/MenuItem';
 import FormControl from '@mui/material/FormControl';
+import FormHelperText from '@mui/material/FormHelperText';
 import InputLabel from '@mui/material/InputLabel';
 import CircularProgress from '@mui/material/CircularProgress';
 import Snackbar from '@mui/material/Snackbar';
@@ -55,10 +56,7 @@ import type { CostEntry, CostEntryKind, CostCategory, CreateCostEntryInput } fro
 const MONTH_FORMAT = 'YYYY-MM';
 const KIND_OPTIONS: CostEntryKind[] = ['recurring', 'incidental'];
 const CATEGORY_OPTIONS: CostCategory[] = ['hosting', 'ai', 'domain', 'other'];
-// USD only: every Boardsesh bill is billed in USD, and the public rollup sums a
-// single currency. Offering other currencies here would let a mixed-currency
-// entry silently corrupt the "$X/month" transparency figure. Widen this (and the
-// rollup) together if we ever take on a non-USD bill.
+// The API and database both enforce USD because the public rollup sums one currency.
 const CURRENCY_OPTIONS = ['USD'];
 const DEFAULT_CURRENCY = 'USD';
 const MAX_AMOUNT_DOLLARS = 1_000_000;
@@ -427,6 +425,7 @@ export default function CostsPanel() {
                     </MenuItem>
                   ))}
                 </Select>
+                <FormHelperText>{t('costs.dialog.currencyHelp')}</FormHelperText>
               </FormControl>
             </Box>
             <DatePicker

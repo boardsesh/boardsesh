@@ -427,7 +427,7 @@
       "retry": "Try again",
       "empty": "No costs to show yet.",
       "perMonthLabel": "Per month",
-      "headline": "What it costs to run Boardsesh each month.",
+      "headline": "What it costs to run Boardsesh each month, in US dollars.",
       "overTimeTitle": "Cost over time",
       "byCategoryTitle": "This month, by category",
       "categoryHosting": "Hosting",

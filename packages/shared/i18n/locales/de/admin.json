@@ -7,6 +7,10 @@
     "retention": {
       "title": "Retention",
       "description": "Dashboard zur Kohorten-Retention"
+    },
+    "costs": {
+      "title": "Laufende Kosten | Boardsesh",
+      "description": "Monatliche Hosting- und Toolkosten für den Betrieb von Boardsesh."
     }
   },
   "title": "Admin-Panel",
@@ -476,7 +480,8 @@
       "endMonth": "Endmonat",
       "note": "Notiz (optional)",
       "cancel": "Abbrechen",
-      "save": "Speichern"
+      "save": "Speichern",
+      "currencyHelp": "Alle Kosten werden in USD erfasst."
     },
     "delete": {
       "title": "Diese Kostenposition löschen?",

@@ -1,5 +1,5 @@
 {
-  "id": "0840fb3e-10e4-4290-9003-874106fc23df",
+  "id": "7448b8c4-8801-4387-9efa-13b20b833586",
   "prevId": "2549351c-c794-4065-8150-e613a25e9714",
   "version": "7",
   "dialect": "postgresql",
@@ -11887,7 +11887,12 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "cost_entries_currency_usd_check": {
+          "name": "cost_entries_currency_usd_check",
+          "value": "\"cost_entries\".\"currency\" = 'USD'"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.user_climb_percentiles": {

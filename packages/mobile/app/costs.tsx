@@ -184,7 +184,7 @@ export default function CostsScreen() {
   const formatDollars = useCallback((dollars: number) => currencyFormatter.format(dollars), [currencyFormatter]);
 
   const months = report?.months ?? [];
-  const hasData = months.length > 0 && months.some((entry) => entry.totalCents > 0);
+  const hasData = months.some((entry) => entry.totalCents > 0);
 
   const chartPoints = useMemo<CostPoint[]>(() => {
     if (months.length < 2) return [];
