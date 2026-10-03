@@ -48,7 +48,7 @@ export const GET_BOARD_DISCOVERY = gql`
 export type GetBoardDiscoveryQueryResponse = { boardDiscovery: BoardDiscoveryBoard[] };
 export type GetBoardDiscoveryQueryVariables = { input?: BoardDiscoveryInput };
 
-const BOARD_FIELDS = `
+export const BOARD_FIELDS = `
   uuid
   slug
   ownerId

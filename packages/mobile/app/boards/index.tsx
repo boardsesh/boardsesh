@@ -363,11 +363,7 @@ export default function BoardSelection() {
   const nearbySection =
     nearbyItems.length > 0 ? (
       <Section title={t('mobile.discovery.nearbyTitle')}>
-        <BoardCarousel
-          items={nearbyItems}
-          onSelect={onSelectNearbyBoard}
-          onDetails={onNearbyBoardDetails}
-        />
+        <BoardCarousel items={nearbyItems} onSelect={onSelectNearbyBoard} onDetails={onNearbyBoardDetails} />
       </Section>
     ) : null;
   // Tap-to-download, scoped to boards the user owns or follows. Gated on the

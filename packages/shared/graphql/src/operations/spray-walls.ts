@@ -1,4 +1,5 @@
 import { gql } from 'graphql-request';
+import { BOARD_FIELDS } from './boards';
 import type { SprayWallPhoto, SprayWallReportReason } from '../generated/graphql';
 
 export type { SprayWallReportReason } from '../generated/graphql';
@@ -104,6 +105,18 @@ export const GET_SPRAY_WALL = gql`
   query GetSprayWall($uuid: ID!) {
     sprayWall(uuid: $uuid) {
       ${SPRAY_WALL_FIELDS}
+    }
+  }
+`;
+
+/** Resolve a shared wall and the complete board entity needed for route adoption. */
+export const GET_SPRAY_WALL_FOR_LINK = gql`
+  query GetSprayWallForLink($uuid: ID!) {
+    sprayWall(uuid: $uuid) {
+      ${SPRAY_WALL_FIELDS}
+      board {
+        ${BOARD_FIELDS}
+      }
     }
   }
 `;

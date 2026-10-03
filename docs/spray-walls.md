@@ -1681,8 +1681,13 @@ A share link is `https://www.boardsesh.com/b/<slug>/<angle>/list`, with
 host-wide `applinks:` entitlement. Android's verified intent filters in
 `packages/mobile/app.config.ts` include `/b/` for both `www.boardsesh.com` and
 `boardsesh.com`, alongside `/join`, `/preview` and `/auth/reset-password`.
-The native-intent handoff preserves the query string so `useSprayWallFromLink`
-can redeem an unlisted wall's capability through `useLocalSearchParams`.
+The native-intent handoff preserves the query string through
+`useLocalSearchParams`. Board adoption awaits `sprayWall(uuid)` with the
+complete board fields, then checks the returned wall UUID and board slug against
+the link before adopting it or seeding the rendering cache. This lets a recipient
+who neither owns the wall nor belongs to its gym open an unlisted share without
+the enumerable `boardBySlug` lookup. Denied or mismatched capabilities never
+fall back to a stored board or populate the public slug cache.
 
 Adding the filter moves the native fingerprint, so Android needs the new store
 binary from `release/next`; an OTA on an older binary cannot add it (SW-14b).

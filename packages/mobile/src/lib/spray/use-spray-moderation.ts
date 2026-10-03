@@ -15,10 +15,7 @@ import {
 import { getHttpClient } from '../graphql/client';
 import { useAuthToken } from '../graphql/use-auth-token';
 import { useMyRoles } from '../graphql/hooks/use-my-roles';
-import {
-  useClimbModerationEnabled,
-  useFeatureFlagsResolved,
-} from '../../providers/feature-flags-provider';
+import { useClimbModerationEnabled, useFeatureFlagsResolved } from '../../providers/feature-flags-provider';
 
 export const SPRAY_REPORTS_QUERY_KEY = ['sprayWallReports'] as const;
 let nextSessionScope = 0;

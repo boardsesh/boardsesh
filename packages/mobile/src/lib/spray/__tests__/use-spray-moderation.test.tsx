@@ -53,14 +53,11 @@ beforeEach(() => {
   request.mockReset();
 });
 describe('spray moderation access', () => {
-  it.each(['resolved', 'moderation'] as const)(
-    'blocks reporting and admin review when %s is false',
-    (flag) => {
-      state[flag] = false;
-      const { result } = renderHook(useSprayModerationAccess);
-      expect(result.current).toMatchObject({ canReport: false, canReview: false });
-    },
-  );
+  it.each(['resolved', 'moderation'] as const)('blocks reporting and admin review when %s is false', (flag) => {
+    state[flag] = false;
+    const { result } = renderHook(useSprayModerationAccess);
+    expect(result.current).toMatchObject({ canReport: false, canReview: false });
+  });
   it('lets signed-in non-editors report but rejects leader access to review', () => {
     state.roles = [{ role: 'community_leader', boardType: 'spray' }];
     const { result } = renderHook(useSprayModerationAccess);

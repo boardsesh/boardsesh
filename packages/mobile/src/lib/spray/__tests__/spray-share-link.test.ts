@@ -1,12 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { QueryClient } from '@tanstack/react-query';
+import { parse, validate, buildSchema } from 'graphql';
+import { typeDefs } from '@boardsesh/shared-schema';
+import { GET_SPRAY_WALL_FOR_LINK } from '@boardsesh/graphql/operations/spray-walls';
 
-const request = vi.fn();
-vi.mock('../../graphql/client', () => ({
-  getHttpClient: () => ({ request }),
+const request = vi.hoisted(() => vi.fn());
+const credentials = vi.hoisted(() => ({ generation: 0 }));
+vi.mock('../../graphql/client', () => ({ getHttpClient: () => ({ request }) }));
+vi.mock('../../auth-store', () => ({
+  captureAuthCredentialGeneration: () => credentials.generation,
+  isAuthCredentialGenerationCurrent: (generation: number) => generation === credentials.generation,
 }));
 
-import { adoptSprayWallFromLink, sprayWallByLayoutQueryKey } from '../spray-wall-loader';
+import { fetchSprayWallBoardFromLink } from '../spray-wall-link-board';
+import { sprayWallByLayoutQueryKey } from '../spray-wall-loader';
 import { isWallUuidParam } from '../use-spray-wall-link';
 import {
   clearSprayWallRegistry,
@@ -16,6 +23,12 @@ import {
 } from '../spray-wall-registry';
 
 const WALL_UUID = '11111111-2222-3333-4444-555555555555';
+const WALL_SLUG = 'crew-wall';
+const wall = {
+  uuid: WALL_UUID,
+  layoutId: 4242,
+  board: { uuid: WALL_UUID, slug: WALL_SLUG, boardType: 'spray', layoutId: 4242, isOwned: false, canEdit: false },
+};
 
 function makeQueryClient() {
   return new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -23,52 +36,81 @@ function makeQueryClient() {
 
 beforeEach(() => {
   request.mockReset();
+  credentials.generation = 0;
   clearSprayWallRegistry();
+  setSprayWallLoader(null);
 });
 
-describe('adoptSprayWallFromLink', () => {
-  it('seeds the by-layout cache so a later reader never asks the refusing query', async () => {
-    const wall = { uuid: WALL_UUID, layoutId: 4242 };
+describe('shared-wall capability resolution', () => {
+  it('returns the authorized board and seeds only its render identity', async () => {
     request.mockResolvedValue({ sprayWall: wall });
     const queryClient = makeQueryClient();
-
-    await expect(adoptSprayWallFromLink(queryClient, WALL_UUID)).resolves.toBe(4242);
-
+    await expect(fetchSprayWallBoardFromLink(queryClient, WALL_UUID, WALL_SLUG)).resolves.toEqual(wall.board);
     expect(queryClient.getQueryData(sprayWallByLayoutQueryKey(4242))).toEqual({ sprayWallByLayout: wall });
-    expect(request).toHaveBeenCalledTimes(1);
-    expect(request.mock.calls[0][1]).toEqual({ uuid: WALL_UUID });
+    expect(queryClient.getQueryCache().findAll({ queryKey: ['boardBySlug'] })).toHaveLength(0);
+    expect(request).toHaveBeenCalledWith(GET_SPRAY_WALL_FOR_LINK, { uuid: WALL_UUID });
   });
 
-  // The race this exists for: the handoff navigates while adoption is in flight,
-  // so `ensureSprayWallLoaded` can resolve `sprayWallByLayout` to null first —
-  // correctly, for a non-member — and leave the registry `unavailable` behind a
-  // 30-second cooldown that nothing would re-ask past. Adoption therefore has to
-  // kick the registry itself, past both the cooldown and the stale window.
-  it('forces a registration after seeding, so a lost race still draws the wall', async () => {
-    const wall = { uuid: WALL_UUID, layoutId: 4242 };
+  it('forces registration after authorization when a render lookup failed earlier', async () => {
     request.mockResolvedValue({ sprayWall: wall });
-    const queryClient = makeQueryClient();
     const loader = vi.fn(async () => {});
     setSprayWallLoader(loader);
-
-    // The handoff got there first and the wall is sitting in its failure cooldown.
     unregisterSprayWall(4242);
     expect(getSprayWallLoadState(4242)).toBe('unavailable');
-
-    await adoptSprayWallFromLink(queryClient, WALL_UUID);
-
+    await fetchSprayWallBoardFromLink(makeQueryClient(), WALL_UUID, WALL_SLUG);
     expect(loader).toHaveBeenCalledWith(4242, { force: true });
   });
 
-  it('returns null and writes nothing when the wall does not resolve', async () => {
+  it.each(['private', 'hidden', 'deleted'])('rejects a server-denied %s wall without writes', async () => {
     request.mockResolvedValue({ sprayWall: null });
     const queryClient = makeQueryClient();
+    await expect(fetchSprayWallBoardFromLink(queryClient, WALL_UUID, WALL_SLUG)).resolves.toBeNull();
+    expect(queryClient.getQueryCache().getAll()).toHaveLength(0);
+  });
 
-    await expect(adoptSprayWallFromLink(queryClient, WALL_UUID)).resolves.toBeNull();
+  it.each([
+    { uuid: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee' },
+    { slug: 'another-wall' },
+    { boardType: 'kilter' },
+    { layoutId: 99 },
+  ])('does not hydrate art for a mismatched board: %j', async (mismatch) => {
+    request.mockResolvedValue({ sprayWall: { ...wall, board: { ...wall.board, ...mismatch } } });
+    const queryClient = makeQueryClient();
+    const loader = vi.fn(async () => {});
+    setSprayWallLoader(loader);
+    await expect(fetchSprayWallBoardFromLink(queryClient, WALL_UUID, WALL_SLUG)).resolves.toBeNull();
+    expect(queryClient.getQueryCache().getAll()).toHaveLength(0);
+    expect(loader).not.toHaveBeenCalled();
+  });
 
-    // Nothing at all in the by-layout cache — not an entry holding null, which a
-    // later `fetchSprayWallUuid` would read as "this wall is gone" and stop asking.
-    expect(queryClient.getQueryCache().findAll({ queryKey: ['sprayWallByLayout'] })).toHaveLength(0);
+  it('rejects a response naming a different capability UUID', async () => {
+    request.mockResolvedValue({ sprayWall: { ...wall, uuid: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee' } });
+    const queryClient = makeQueryClient();
+    await expect(fetchSprayWallBoardFromLink(queryClient, WALL_UUID, WALL_SLUG)).resolves.toBeNull();
+    expect(queryClient.getQueryCache().getAll()).toHaveLength(0);
+  });
+
+  it('rechecks access despite a cached wall that has become private or hidden', async () => {
+    const queryClient = makeQueryClient();
+    queryClient.setQueryData(['sprayWall', WALL_UUID], { sprayWall: wall });
+    request.mockResolvedValue({ sprayWall: null });
+    await expect(fetchSprayWallBoardFromLink(queryClient, WALL_UUID, WALL_SLUG)).resolves.toBeNull();
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(queryClient.getQueryData(sprayWallByLayoutQueryKey(4242))).toBeUndefined();
+  });
+
+  it('discards a response that completes after credentials changed', async () => {
+    request.mockImplementation(async () => {
+      credentials.generation += 1;
+      return { sprayWall: wall };
+    });
+    const queryClient = makeQueryClient();
+    await expect(fetchSprayWallBoardFromLink(queryClient, WALL_UUID, WALL_SLUG)).resolves.toBeNull();
+    expect(queryClient.getQueryCache().getAll()).toHaveLength(0);
+  });
+
+  it('selects a complete board with an operation accepted by the server schema', () => {
+    expect(validate(buildSchema(typeDefs.join('\n')), parse(GET_SPRAY_WALL_FOR_LINK))).toEqual([]);
   });
 });
 

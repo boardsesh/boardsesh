@@ -58,6 +58,7 @@ const bluetoothSheetProps = vi.hoisted(() => ({
 }));
 
 const state = vi.hoisted(() => ({
+  isAuthenticated: true,
   source: undefined as string | undefined,
   profile: { id: 'me' } as { id: string } | undefined,
   storedUserId: undefined as string | undefined,
@@ -210,7 +211,7 @@ vi.mock('../../../src/lib/onboarding/link-step-answered', () => ({
   hasAnsweredLinkStep: vi.fn(async () => false),
 }));
 vi.mock('../../../src/providers/auth-provider', () => ({
-  useAuth: () => ({ isAuthenticated: true, refreshAuthState: vi.fn() }),
+  useAuth: () => ({ isAuthenticated: state.isAuthenticated, refreshAuthState: vi.fn() }),
 }));
 vi.mock('../../../src/providers/toast-provider', () => ({ useToast: () => toastMock }));
 vi.mock('../../../src/providers/dialog-provider', () => ({ useConfirm: () => confirmMock }));
@@ -316,7 +317,7 @@ beforeEach(() => {
   confirmMock.mockResolvedValue(true);
   carouselProps.last = null;
   detailProps.last = null;
-  flagState.sprayWalls = false;
+  state.isAuthenticated = true;
   bluetoothSheetProps.last = null;
   state.source = undefined;
   state.profile = { id: 'me' };
@@ -753,7 +754,6 @@ describe('where a pick came from', () => {
 
 describe('spray-wall detail sheet reachability', () => {
   it('opens a saved wall without activating it', () => {
-    flagState.sprayWalls = true;
     const wall = board({ uuid: 'spray-wall', name: 'Garage wall', boardType: 'spray' });
     state.myBoards = [wall];
     render(createElement(BoardSelection));
@@ -767,7 +767,6 @@ describe('spray-wall detail sheet reachability', () => {
   });
 
   it('opens an active share-link wall absent from saved and nearby lists', () => {
-    flagState.sprayWalls = true;
     state.myBoards = [];
     state.nearbyBoards = [];
     const wall = board({ uuid: 'shared-wall', name: 'Shared wall', boardType: 'spray' });
@@ -779,16 +778,17 @@ describe('spray-wall detail sheet reachability', () => {
     expect(setActiveBoardMock).not.toHaveBeenCalled();
   });
 
-  it('closes an open detail sheet when the remote off switch resolves', () => {
-    flagState.sprayWalls = true;
+  it('closes an open detail sheet when the account signs out', () => {
     const wall = board({ uuid: 'spray-wall', name: 'Garage wall', boardType: 'spray' });
     state.myBoards = [wall];
     const mounted = render(createElement(BoardSelection));
     const carousel = carouselProps.last!;
     act(() => carousel.onDetails?.(carousel.items[0]));
-    flagState.sprayWalls = false;
+    state.isAuthenticated = false;
+    mounted.rerender(createElement(BoardSelection));
+    state.isAuthenticated = true;
     mounted.rerender(createElement(BoardSelection));
     expect(detailProps.last?.visible).toBe(false);
-    expect(carouselProps.last?.onDetails).toBeUndefined();
+    expect(detailProps.last?.board).toBeNull();
   });
 });
