@@ -118,6 +118,14 @@ export type ClimbStatsWriteThroughResult = {
    */
   layoutId: number | null;
   /**
+   * The local climb's set angle (`board_climbs.angle`). A cross-angle reader
+   * uses this row only when the browsed-angle row is absent, so consumers can
+   * invalidate that fallback without refreshing unrelated climbs.
+   */
+  setAngle?: number | null;
+  /** The local climb's required hold sets, used to avoid unrelated list refreshes. */
+  requiredSetIds?: number[] | null;
+  /**
    * Which half of the write decided this result.
    *
    * `pre_read` means the autocommit read answered it: the revision was
@@ -225,6 +233,8 @@ type PreparedWrite =
       revision: number;
       compatibleSizeIds: number[] | null;
       layoutId: number | null;
+      setAngle: number | null;
+      requiredSetIds: number[] | null;
       event: ClimbStatsWriteThroughInput;
     };
 
@@ -239,6 +249,8 @@ type PreReadRow = {
   uuid: string;
   layout_id: number | null;
   compatible_size_ids: string | null;
+  set_angle: number | null;
+  required_set_ids: string | null;
   angle: number | null;
   sync_seq: number | null;
 };
@@ -246,7 +258,15 @@ type PreReadRow = {
 /** What one pre-read pass learned about the climbs a batch names. */
 type PreReadIndex = {
   /** Present iff the climb has a local `board_climbs` row. */
-  climbs: Map<string, { layoutId: number | null; compatibleSizeIds: number[] | null }>;
+  climbs: Map<
+    string,
+    {
+      layoutId: number | null;
+      compatibleSizeIds: number[] | null;
+      setAngle: number | null;
+      requiredSetIds: number[] | null;
+    }
+  >;
   /** `board_type|uuid|angle` -> the local `board_climb_stats.sync_seq`. */
   revisions: Map<string, number>;
 };
@@ -257,6 +277,19 @@ function climbKey(boardType: string, climbUuid: string): string {
 
 function revisionKey(boardType: string, climbUuid: string, angle: number): string {
   return `${boardType}|${climbUuid}|${angle}`;
+}
+
+function parseRequiredSetIds(raw: string | null): number[] | null {
+  if (raw === null) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed) || parsed.some((setId) => typeof setId !== 'number' || !Number.isFinite(setId))) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -297,6 +330,7 @@ async function preReadBatch(
       const placeholders = chunk.map(() => '?').join(', ');
       const rows = await db.getAllAsync<PreReadRow>(
         `SELECT c.uuid AS uuid, c.layout_id AS layout_id, c.compatible_size_ids AS compatible_size_ids,
+                c.angle AS set_angle, c.required_set_ids AS required_set_ids,
                 s.angle AS angle, s.sync_seq AS sync_seq
          FROM board_climbs c
          LEFT JOIN board_climb_stats s
@@ -309,6 +343,8 @@ async function preReadBatch(
           index.climbs.set(climbKey(boardType, row.uuid), {
             layoutId: typeof row.layout_id === 'number' && Number.isFinite(row.layout_id) ? row.layout_id : null,
             compatibleSizeIds: parseCompatibleSizeIds(row.compatible_size_ids),
+            setAngle: typeof row.set_angle === 'number' && Number.isFinite(row.set_angle) ? row.set_angle : null,
+            requiredSetIds: parseRequiredSetIds(row.required_set_ids),
           });
         }
         if (row.angle === null || row.sync_seq === null) continue;
@@ -350,6 +386,8 @@ function classifyEvent(event: ClimbStatsWriteThroughInput, index: PreReadIndex):
         status: 'stale',
         compatibleSizeIds: climb.compatibleSizeIds,
         layoutId: climb.layoutId,
+        setAngle: climb.setAngle,
+        requiredSetIds: climb.requiredSetIds,
         settledBy: 'pre_read',
       },
     };
@@ -360,6 +398,8 @@ function classifyEvent(event: ClimbStatsWriteThroughInput, index: PreReadIndex):
     revision,
     compatibleSizeIds: climb.compatibleSizeIds,
     layoutId: climb.layoutId,
+    setAngle: climb.setAngle,
+    requiredSetIds: climb.requiredSetIds,
     event,
   };
 }
@@ -410,6 +450,8 @@ export async function writeClimbStatsEvents(
         status: 'invalid_revision',
         compatibleSizeIds: null,
         layoutId: null,
+        setAngle: null,
+        requiredSetIds: null,
         settledBy: 'pre_read',
       };
       continue;
@@ -439,6 +481,8 @@ export async function writeClimbStatsEvents(
         status: 'lock_lost',
         compatibleSizeIds: null,
         layoutId: null,
+        setAngle: null,
+        requiredSetIds: null,
         settledBy: 'pre_read',
         ...results[position],
       }));
@@ -463,6 +507,8 @@ export async function writeClimbStatsEvents(
           status: 'lock_lost',
           compatibleSizeIds: prepared.compatibleSizeIds,
           layoutId: prepared.layoutId,
+          setAngle: prepared.setAngle,
+          requiredSetIds: prepared.requiredSetIds,
           settledBy: 'write',
         };
       }
@@ -473,6 +519,8 @@ export async function writeClimbStatsEvents(
         status: (changesByIndex.get(index) ?? 0) > 0 ? 'applied' : 'stale',
         compatibleSizeIds: prepared.compatibleSizeIds,
         layoutId: prepared.layoutId,
+        setAngle: prepared.setAngle,
+        requiredSetIds: prepared.requiredSetIds,
         // A `stale` from HERE is not the pre-read's: the upsert's WHERE EXISTS
         // can have failed because the climb vanished after the pre-read, so
         // there may be no row at all.
@@ -482,7 +530,15 @@ export async function writeClimbStatsEvents(
   }
 
   return results.map(
-    (result) => result ?? { status: 'stale', compatibleSizeIds: null, layoutId: null, settledBy: 'write' },
+    (result) =>
+      result ?? {
+        status: 'stale',
+        compatibleSizeIds: null,
+        layoutId: null,
+        setAngle: null,
+        requiredSetIds: null,
+        settledBy: 'write',
+      },
   );
 }
 

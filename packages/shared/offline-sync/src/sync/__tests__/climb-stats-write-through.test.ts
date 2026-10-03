@@ -146,7 +146,14 @@ describe('writeClimbStatsEvent — inserting a row the pull has not seen', () =>
 
     // layoutId is the climb's OWN board_climbs.layout_id, never the event's —
     // the caller gates list refreshes on it.
-    expect(result).toEqual({ status: 'applied', compatibleSizeIds: [5, 6], layoutId: 1, settledBy: 'write' });
+    expect(result).toEqual({
+      status: 'applied',
+      compatibleSizeIds: [5, 6],
+      layoutId: 1,
+      setAngle: null,
+      requiredSetIds: null,
+      settledBy: 'write',
+    });
     const row = await readStatsRow();
     expect(row).toMatchObject({
       display_difficulty: 17,
@@ -273,6 +280,8 @@ describe('writeClimbStatsEvent — the revision gate', () => {
       status: 'invalid_revision',
       compatibleSizeIds: null,
       layoutId: null,
+      setAngle: null,
+      requiredSetIds: null,
       settledBy: 'pre_read',
     });
     expect(reads).not.toHaveBeenCalled();
@@ -379,7 +388,14 @@ describe('writeClimbStatsEvent — the write connection', () => {
 
     const result = await writeClimbStatsEvent(lockedDb, makeEvent());
 
-    expect(result).toEqual({ status: 'lock_lost', compatibleSizeIds: [5, 6], layoutId: 1, settledBy: 'write' });
+    expect(result).toEqual({
+      status: 'lock_lost',
+      compatibleSizeIds: [5, 6],
+      layoutId: 1,
+      setAngle: null,
+      requiredSetIds: null,
+      settledBy: 'write',
+    });
   });
 
   it('drops the event when the database was closed underneath it', async () => {

@@ -268,16 +268,21 @@ describe('buildMultiRowInsertSql — the revision guard', () => {
       'DO UPDATE SET ascensionist_count = excluded.ascensionist_count, updated_at = excluded.updated_at, ' +
         'sync_seq = excluded.sync_seq',
     );
-    // The cursor timestamp and revision preserve the same ordering as the pull
-    // page; equality still applies the columns written only by the pull.
-    expect(sql).toContain('WHERE board_climb_stats.updated_at IS NULL');
+    // The stream stamps updated_at to the epoch, so only its monotonic sync_seq
+    // can stop a later pull cursor from overwriting a newer live revision.
+    expect(sql).toContain('WHERE excluded.sync_seq >= COALESCE(board_climb_stats.sync_seq, -1)');
     expect(sql).toContain('excluded.sync_seq');
     expect(sql).toContain('COALESCE(board_climb_stats.sync_seq, -1)');
   });
 
   it('falls back to the plain form when the page carries no revision column', () => {
     // Nothing to compare against, so the guard would be invalid SQL.
-    const sql = buildMultiRowInsertSql('board_climb_stats', ['board_type', 'climb_uuid', 'angle', 'updated_at'], 1, true);
+    const sql = buildMultiRowInsertSql(
+      'board_climb_stats',
+      ['board_type', 'climb_uuid', 'angle', 'updated_at'],
+      1,
+      true,
+    );
     expect(sql).toContain('INSERT OR REPLACE INTO board_climb_stats');
   });
 

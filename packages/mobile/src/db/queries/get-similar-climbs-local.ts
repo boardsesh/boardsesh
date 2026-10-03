@@ -15,13 +15,14 @@
 import {
   findSimilarClimbCandidates,
   getHoldSet,
+  parseCompatibleSizeIds,
   type HoldRowParser,
   type OfflineDatabase,
   type SimilarClimbCandidate,
 } from '@boardsesh/offline-sync';
 import type { SimilarClimb } from '@boardsesh/shared-schema';
 import { getGradeLabel } from '../../lib/grade-label';
-import { parseCharacteristics, parseCompatibleSizeIds } from './search-climbs-local';
+import { parseCharacteristics } from './search-climbs-local';
 
 export const DEFAULT_SIMILAR_THRESHOLD = 0.5;
 export const DEFAULT_SIMILAR_LIMIT = 12;
