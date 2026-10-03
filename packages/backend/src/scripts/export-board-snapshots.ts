@@ -509,6 +509,24 @@ export function reservedSnapshotClient(reservedClient: ReservedSql): Sql {
   });
 }
 
+/**
+ * Run the read-only coordinator role audit on its reserved session. The transaction
+ * timeout bounds the catalog inspection; errors and cancellations roll back before
+ * the caller attempts to acquire the session-level publication fence.
+ */
+export async function runPrimaryFenceAudit<T>(coordinator: ReservedSql, readAudit: () => Promise<T>): Promise<T> {
+  await coordinator.unsafe('BEGIN READ ONLY');
+  try {
+    await coordinator.unsafe("SET LOCAL statement_timeout = '10s'");
+    const result = await readAudit();
+    await coordinator.unsafe('COMMIT');
+    return result;
+  } catch (error) {
+    await coordinator.unsafe('ROLLBACK').catch(() => {});
+    throw error;
+  }
+}
+
 function fenceRowFrom(rows: readonly unknown[], description: string): FenceRow {
   const row = rows[0] as FenceRow | undefined;
   if (!row?.stable_before || !row.target_lsn) {
@@ -771,7 +789,8 @@ type PrimaryFenceContractRow = {
 // times — migration 0250, the development bootstrap SQL, this assertion, and the
 // backend global-setup fixture — with no parity test tying them together.
 async function assertPrimaryFenceContract(coordinator: ReservedSql): Promise<void> {
-  const rows = await coordinator.unsafe(`
+  const rows = await runPrimaryFenceAudit(coordinator, () =>
+    coordinator.unsafe(`
     WITH fence_owner AS (
       SELECT * FROM pg_roles WHERE rolname = 'boardsesh_snapshot_fence_owner'
     ), application_owner AS (
@@ -953,7 +972,8 @@ async function assertPrimaryFenceContract(coordinator: ReservedSql): Promise<voi
           AND acl.grantee = 0
           AND acl.privilege_type = 'EXECUTE'
       ) AS public_execute_revoked
-  `);
+    `),
+  );
   const contract = rows[0] as unknown as PrimaryFenceContractRow | undefined;
   const failedChecks = contract
     ? Object.entries(contract)
@@ -992,6 +1012,9 @@ async function acquirePrimaryFence(): Promise<PrimaryFenceHandle> {
   let lockMayBeHeld = false;
   try {
     coordinator = await coordinatorPool.reserve();
+    // The bounded read-only role audit commits before this session acquires its
+    // advisory publication fence. If the audit errors or times out, it rolls back
+    // and this acquire call is never reached.
     await assertPrimaryFenceContract(coordinator);
     const fenceRows = await coordinator.unsafe(
       `SELECT stable_before, target_lsn::text, primary_system_identifier, primary_timeline_id
@@ -2544,6 +2567,9 @@ export async function runExportWithOptions(
             ),
           );
         } else {
+          // exportLayoutSnapshot's REPEATABLE READ transaction has committed
+          // before this check. In a fenced run, both it and this post-snapshot
+          // identity/fence read use the same reserved reader session.
           await databaseContext.assertPublishFence();
           const uploaded = await uploadToS3(
             'snapshots',
