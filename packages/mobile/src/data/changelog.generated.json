@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-10-02T13:13:03.510Z",
+  "generatedAt": "2026-10-03T02:04:50.036Z",
   "entries": [
+    {
+      "prNumber": 5926,
+      "category": "fixed",
+      "title": "See which Woods climbs you've sent original, mirrored, or both.",
+      "mergedAt": "2026-10-02T13:14:28Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5926"
+    },
     {
       "prNumber": 5933,
       "category": "fixed",
@@ -5997,6 +6004,32 @@
     }
   ],
   "nativeReleases": [
+    {
+      "kind": "native-release",
+      "date": "2026-10-03T10:21:59+10:00",
+      "sha": "a764bec577539ce131c13f21840fd60f3dc83176",
+      "platforms": [
+        "android",
+        "ios"
+      ],
+      "fingerprints": {
+        "android": "0e07e7911472cd5b61b77ca4a4ab303abe389d5a",
+        "ios": "a7cb366b87a0a4697211b6eb5cdb3ade3a320c01"
+      }
+    },
+    {
+      "kind": "native-release",
+      "date": "2026-10-03T00:35:35Z",
+      "sha": "a764a0d6b3d5b56973bf35dc639bc29da3022a8a",
+      "platforms": [
+        "android",
+        "ios"
+      ],
+      "fingerprints": {
+        "android": "a4b68dea749f9548adc0fc8a4bf905233aa30a1d",
+        "ios": "9232857c8e1b859e61de9457e4a39db44d0a7b5c"
+      }
+    },
     {
       "kind": "native-release",
       "date": "2026-09-22T18:21:48+10:00",

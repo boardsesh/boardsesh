@@ -4,10 +4,17 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-10-03
+
+### App update
+
+A new version shipped to the App Store and Play Store.
+
 ## 2026-10-02
 
 ### Fixed
 
+- See which Woods climbs you've sent original, mirrored, or both. ([#5926](https://github.com/boardsesh/boardsesh/pull/5926))
 - Keep your Android session going while downloaded boards update in the background. ([#5933](https://github.com/boardsesh/boardsesh/pull/5933))
 
 ## 2026-10-01
