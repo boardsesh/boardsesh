@@ -19,15 +19,15 @@
  *
  * Two properties of the real data shape the API:
  *
- *  - **The key is `hash`, not `created_at`.** The `boardsesh-dev-db` image
- *    bulk-loads its ledger with synthetic timestamps (34 distinct `created_at`
- *    values are duplicated, one of them 13 times), so 180 of 188 journal entries
- *    have no `created_at`-matching row there. Hashes survive the bulk load:
- *    187 of 188 match. Matching on `created_at` would false-positive on
- *    essentially every local and CI database.
- *  - **Missing-only, never extra.** Ledger rows whose hash matches no journal
- *    entry are legitimate renumber residue (two exist on the local dev DB right
- *    now). Failing on those would block deploys for a non-problem.
+ *  - **The key is `hash`, not `created_at`.** Older `boardsesh-dev-db` image
+ *    releases stamped ledger rows with synthetic build timestamps, so most rows
+ *    had no `created_at`-matching journal entry. Hashes survive that load;
+ *    matching on `created_at` would false-positive on those persistent volumes.
+ *  - **The verification gate is missing-only.** `findUnappliedMigrations`
+ *    ignores ledger rows whose hash matches no journal entry, because they do
+ *    not prove a journal migration is missing. The timestamp normalizer is
+ *    stricter: it cannot safely assign timestamps to an unknown or excess row,
+ *    so it refuses to write until an owner reconciles that residue.
  *
  * Callers get the hashes from drizzle's own exported `readMigrationFiles`
  * (`drizzle-orm/migrator`) rather than re-deriving sha256, so the hash can't
@@ -71,15 +71,12 @@ export interface LedgerTimestampRepair {
  * Ledger rows whose `created_at` is not the journal `when` drizzle would have
  * written, paired with the value they should carry.
  *
- * Why any row is ever wrong: the `boardsesh-dev-db` image applies the journal in
- * a psql loop and stamps each ledger row with the image's *build* wall clock
- * instead of the entry's `when`. That makes the ledger's high-water mark a build
- * timestamp, so drizzle's applier skips every journal entry whose `when` predates
- * the image build and which the image did not itself apply — a branch's migration
- * generated before that build — permanently, and `VERIFY_MIGRATION_JOURNAL=1`
- * reports it as a genuine gap. Rewriting `created_at` to `when` writes the value
- * drizzle itself writes, so this is a no-op on any drizzle-managed database and a
- * repair only where something else did the stamping.
+ * Older `boardsesh-dev-db` image releases stamped each ledger row with the
+ * image's *build* wall clock instead of the entry's `when`. That made drizzle's
+ * applier skip branch migrations below the mark; current image builds use the
+ * exact-time helper in `packages/db/docker/apply-drizzle-migrations.sh`. This
+ * planner repairs only persistent volumes created by older images. Rewriting
+ * `created_at` to `when` writes the value drizzle itself uses.
  *
  * Pairing is positional within a hash, not a `Map<hash, when>` lookup:
  * byte-identical `.sql` files share a hash (see the `0177_illegal_omega_red`
@@ -88,9 +85,12 @@ export interface LedgerTimestampRepair {
  * order — the order they were inserted) pairs with the k-th journal entry bearing
  * hash H.
  *
- * Ledger rows whose hash matches no journal entry are left alone, the same rule
- * `findUnappliedMigrations` applies in the other direction: those are renumber
- * residue, and inventing a timestamp for them would be a guess.
+ * Ledger rows whose hash matches no journal entry, and excess copies of a hash,
+ * are never rewritten: their migration identity is unknown or removed. Since
+ * the normalizer cannot establish a safe `when` for them, it fails closed on
+ * any such residue before proposing writes. Matched rows are also checked
+ * against the resulting high-water mark so no unapplied migration can remain
+ * skipped after normalization.
  */
 export function planLedgerTimestampRepairs(
   expected: readonly ExpectedMigrationWithWhen[],
@@ -108,16 +108,102 @@ export function planLedgerTimestampRepairs(
 
   const nextIndexByHash = new Map<string, number>();
   const repairs: LedgerTimestampRepair[] = [];
+  const pairedEntryById = new Map<number, ExpectedMigrationWithWhen>();
+  const residueKindById = new Map<number, 'unmatched hash' | 'excess duplicate hash'>();
   for (const row of [...ledgerRows].sort((left, right) => left.id - right.id)) {
     const entries = entriesByHash.get(row.hash);
-    if (!entries) continue;
+    if (!entries) {
+      residueKindById.set(row.id, 'unmatched hash');
+      continue;
+    }
     const nextIndex = nextIndexByHash.get(row.hash) ?? 0;
     const entry = entries[nextIndex];
-    if (!entry) continue;
+    if (!entry) {
+      residueKindById.set(row.id, 'excess duplicate hash');
+      continue;
+    }
     nextIndexByHash.set(row.hash, nextIndex + 1);
+    pairedEntryById.set(row.id, entry);
     if (row.createdAt === entry.when) continue;
     repairs.push({ id: row.id, tag: entry.tag, from: row.createdAt, to: entry.when });
   }
+
+  const projectedRows = ledgerRows.map((row) => ({
+    ...row,
+    createdAt: pairedEntryById.get(row.id)?.when ?? row.createdAt,
+    pairedTag: pairedEntryById.get(row.id)?.tag,
+  }));
+  const resultingHighWater = projectedRows.reduce<number | null>(
+    (maximum, row) => (maximum === null ? row.createdAt : Math.max(maximum, row.createdAt)),
+    null,
+  );
+  const newestJournalWhen = expected.reduce<number | null>(
+    (maximum, migration) => (maximum === null ? migration.when : Math.max(maximum, migration.when)),
+    null,
+  );
+  const latestWhenBlockers = projectedRows.filter(
+    (row) => newestJournalWhen === null || row.createdAt > newestJournalWhen,
+  );
+  const unappliedTags = new Set(
+    findUnappliedMigrations(
+      expected,
+      ledgerRows.map((row) => row.hash),
+    ),
+  );
+  const blockedMigrations = expected.filter(
+    (migration) =>
+      unappliedTags.has(migration.tag) && resultingHighWater !== null && migration.when <= resultingHighWater,
+  );
+
+  if (residueKindById.size > 0 || latestWhenBlockers.length > 0 || blockedMigrations.length > 0) {
+    const firstBlockedWhen = blockedMigrations.reduce<number | null>(
+      (minimum, migration) => (minimum === null ? migration.when : Math.min(minimum, migration.when)),
+      null,
+    );
+    const blockingRows = projectedRows.filter(
+      (row) =>
+        residueKindById.has(row.id) ||
+        latestWhenBlockers.some((blocker) => blocker.id === row.id) ||
+        (firstBlockedWhen !== null && row.createdAt >= firstBlockedWhen),
+    );
+    const reasons: string[] = [];
+    if (residueKindById.size > 0) {
+      reasons.push(`${residueKindById.size} ledger row(s) cannot be paired one-to-one with the current journal`);
+    }
+    if (newestJournalWhen === null && resultingHighWater !== null) {
+      reasons.push('the journal is empty but the ledger contains rows');
+    } else if (newestJournalWhen !== null && resultingHighWater !== null && resultingHighWater > newestJournalWhen) {
+      reasons.push(
+        `the resulting high-water mark ${resultingHighWater} exceeds newest journal when ${newestJournalWhen}`,
+      );
+    }
+    if (blockedMigrations.length > 0) {
+      reasons.push(
+        `unapplied migrations would still be skipped: ${blockedMigrations
+          .map((migration) => `${migration.tag} (when ${migration.when})`)
+          .join(', ')}`,
+      );
+    }
+    const rowDetails = blockingRows
+      .sort((left, right) => left.id - right.id)
+      .map(
+        (row) =>
+          `id=${row.id} hash=${row.hash} created_at=${row.createdAt}` +
+          (residueKindById.has(row.id)
+            ? ` ${residueKindById.get(row.id)}`
+            : row.pairedTag
+              ? ` journal=${row.pairedTag}`
+              : ' unmatched-or-excess'),
+      )
+      .join('; ');
+    throw new Error(
+      `Refusing migration ledger timestamp normalization: ${reasons.join('; ')}. ` +
+        `Blocking ledger rows: ${rowDetails}. Inspect these IDs and hashes against the current journal and ` +
+        `database history, then reconcile with the database owner before retrying. This command will not ` +
+        `invent timestamps or delete ledger rows. No repairs were written.`,
+    );
+  }
+
   return repairs;
 }
 

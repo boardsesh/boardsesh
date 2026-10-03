@@ -2,18 +2,13 @@
  * Repairs `created_at` in drizzle's applied-migration ledger so every row
  * carries its journal entry's `when` — the value drizzle itself writes.
  *
- * Why this exists (#4211): the `boardsesh-dev-db` image applies the journal in a
- * psql loop and stamps both ledger tables with the image's *build* wall clock
- * (`$(date +%s)000`). Drizzle's applier is a single high-water mark — it reads
+ * Why this exists (#4211): older `boardsesh-dev-db` images stamped both ledger
+ * tables with the image's *build* wall clock instead of each journal entry's
+ * `when`. Drizzle's applier is a single high-water mark — it reads
  * `max(created_at)` once and applies only entries whose `when` is strictly
- * greater — so that build timestamp becomes the mark, and every journal entry
- * whose `when` predates the image build but which the image did not itself apply
- * is skipped. Concretely, that is a branch's migration generated before the
- * image was built: on the e2e jobs, which run `:latest`, most open PRs. (Not the
- * newest migrations — a `when` later than the build clock still applies, which
- * is why the bug reads as intermittent.) `vp run db:migrate` reports success,
- * the table never appears, and `VERIFY_MIGRATION_JOURNAL=1` (correctly) calls it
- * a gap. The mark only ever moves up, so the skip is permanent.
+ * greater — so an old volume can permanently skip a branch migration generated
+ * before that image was built. The current image helper writes each exact
+ * journal `when`; this repairs persistent volumes created by older images.
  *
  * `Dockerfile.dev-db` now stamps `when`, but that only helps images built after
  * this lands: CI pins a digest and developers keep a persistent `db_data`
@@ -62,11 +57,20 @@ function qualify(table: LedgerTable): string {
   return `"${table.schema}"."${table.table}"`;
 }
 
-/** Postgres client surface this module needs. Narrow on purpose so tests can pass a scratch client. */
-export type LedgerClient = Pick<postgres.Sql, 'unsafe' | 'begin'>;
+/** Read surface shared by the database client and its transaction callback. */
+type LedgerQueryClient = Pick<postgres.Sql, 'unsafe'>;
+
+/** Top-level client adds `begin` so the two-table repair stays atomic. */
+export type LedgerClient = LedgerQueryClient & Pick<postgres.Sql, 'begin'>;
+
+export interface LedgerTableRepairPlan {
+  table: LedgerTable;
+  present: boolean;
+  repairs: LedgerTimestampRepair[];
+}
 
 /** False when the table does not exist — an older image has no `drizzle` schema at all. */
-export async function ledgerTableExists(client: LedgerClient, table: LedgerTable): Promise<boolean> {
+export async function ledgerTableExists(client: LedgerQueryClient, table: LedgerTable): Promise<boolean> {
   const rows = await client.unsafe<{ present: string | null }[]>('SELECT to_regclass($1)::text AS present', [
     `${table.schema}.${table.table}`,
   ]);
@@ -77,7 +81,10 @@ export async function ledgerTableExists(client: LedgerClient, table: LedgerTable
  * `id`-ordered ledger rows. `created_at` is a bigint, which postgres.js hands
  * back as a string, so it is converted here rather than in the pure planner.
  */
-export async function readLedgerTimestampRows(client: LedgerClient, table: LedgerTable): Promise<LedgerTimestampRow[]> {
+export async function readLedgerTimestampRows(
+  client: LedgerQueryClient,
+  table: LedgerTable,
+): Promise<LedgerTimestampRow[]> {
   const rows = await client.unsafe<{ id: number; hash: string; created_at: string | number | null }[]>(
     `SELECT id, hash, created_at FROM ${qualify(table)} ORDER BY id`,
   );
@@ -85,42 +92,97 @@ export async function readLedgerTimestampRows(client: LedgerClient, table: Ledge
 }
 
 /**
- * Applies the whole plan in one transaction: a half-repaired ledger has a
- * high-water mark nobody predicted, which is the failure mode this fixes.
+ * Plans both ledger copies before any write, then applies and verifies the full
+ * result in one transaction. A blocker in either copy therefore leaves both
+ * copies untouched and stops the caller before it can invoke the migrator.
  */
-export async function applyLedgerTimestampRepairs(
+export async function normalizeLedgerTables(
   client: LedgerClient,
-  table: LedgerTable,
-  repairs: readonly LedgerTimestampRepair[],
-): Promise<void> {
-  if (repairs.length === 0) return;
-  await client.begin(async (tx) => {
-    for (const repair of repairs) {
-      await tx.unsafe(`UPDATE ${qualify(table)} SET created_at = $1 WHERE id = $2`, [repair.to, repair.id]);
+  tables: readonly LedgerTable[],
+  expected: readonly ExpectedMigrationWithWhen[],
+  options: { dryRun?: boolean } = {},
+): Promise<LedgerTableRepairPlan[]> {
+  const dryRun = options.dryRun ?? false;
+  const orderedTables = [...tables].sort((left, right) => qualify(left).localeCompare(qualify(right)));
+
+  return client.begin(async (tx) => {
+    await tx.unsafe(
+      dryRun
+        ? 'SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY'
+        : 'SET TRANSACTION ISOLATION LEVEL REPEATABLE READ',
+    );
+
+    const plans: LedgerTableRepairPlan[] = [];
+    for (const table of orderedTables) {
+      const present = await ledgerTableExists(tx, table);
+      if (!present) {
+        plans.push({ table, present, repairs: [] });
+        continue;
+      }
+
+      // Prevent rows from changing between preflight, repair, and verification.
+      // The fixed-order lock also makes the two ledger copies one atomic repair.
+      if (!dryRun) await tx.unsafe(`LOCK TABLE ${qualify(table)} IN SHARE ROW EXCLUSIVE MODE`);
+      const rows = await readLedgerTimestampRows(tx, table);
+      try {
+        plans.push({ table, present, repairs: planLedgerTimestampRepairs(expected, rows) });
+      } catch (error) {
+        const details = error instanceof Error ? error.message : String(error);
+        throw new Error(`Refusing to normalize ${qualify(table)}: ${details}`);
+      }
     }
+
+    if (dryRun) return plans;
+
+    for (const plan of plans) {
+      if (!plan.present) continue;
+      for (const repair of plan.repairs) {
+        await tx.unsafe(`UPDATE ${qualify(plan.table)} SET created_at = $1 WHERE id = $2`, [repair.to, repair.id]);
+      }
+    }
+
+    // Validate every resulting row while the locks are held. If an update was
+    // incomplete or the remaining high-water mark could still skip a migration,
+    // throwing here rolls both table copies back together.
+    for (const plan of plans) {
+      if (!plan.present) continue;
+      let remainingRepairs: LedgerTimestampRepair[];
+      try {
+        remainingRepairs = planLedgerTimestampRepairs(expected, await readLedgerTimestampRows(tx, plan.table));
+      } catch (error) {
+        const details = error instanceof Error ? error.message : String(error);
+        throw new Error(`Post-repair validation failed for ${qualify(plan.table)}: ${details}`);
+      }
+      if (remainingRepairs.length > 0) {
+        throw new Error(
+          `Post-repair validation failed for ${qualify(plan.table)}: ${remainingRepairs.length} timestamp ` +
+            'repair(s) remain inside the transaction.',
+        );
+      }
+    }
+
+    return plans;
   });
 }
 
-/**
- * Plan-and-apply for one table. Returns the plan (empty when the table is
- * absent or already correct) so callers can report it.
- */
+/** Plan-and-apply for one table; absent tables remain a quiet no-op. */
 export async function normalizeLedgerTable(
   client: LedgerClient,
   table: LedgerTable,
   expected: readonly ExpectedMigrationWithWhen[],
   options: { dryRun?: boolean } = {},
 ): Promise<LedgerTimestampRepair[]> {
-  if (!(await ledgerTableExists(client, table))) return [];
-  const repairs = planLedgerTimestampRepairs(expected, await readLedgerTimestampRows(client, table));
-  if (!options.dryRun) {
-    await applyLedgerTimestampRepairs(client, table, repairs);
-  }
-  return repairs;
+  const [plan] = await normalizeLedgerTables(client, [table], expected, options);
+  return plan?.repairs ?? [];
 }
 
-function reportTable(table: LedgerTable, repairs: readonly LedgerTimestampRepair[], dryRun: boolean): void {
+function reportTable(plan: LedgerTableRepairPlan, dryRun: boolean): void {
+  const { table, repairs } = plan;
   const qualified = `${table.schema}.${table.table}`;
+  if (!plan.present) {
+    console.info(`   ${qualified}: absent; no rows to repair.`);
+    return;
+  }
   if (repairs.length === 0) {
     console.info(`   ${qualified}: already carries the journal's timestamps.`);
     return;
@@ -153,12 +215,11 @@ async function normalizeLedgerTimestamps(argv: readonly string[]): Promise<void>
   const client = postgres(databaseUrl, { max: 1 });
   try {
     const expected = readExpectedMigrations();
-    let repairedRows = 0;
-    for (const table of [DRIZZLE_LEDGER_TABLE, LEGACY_LEDGER_TABLE]) {
-      const repairs = await normalizeLedgerTable(client, table, expected, { dryRun });
-      repairedRows += repairs.length;
-      reportTable(table, repairs, dryRun);
-    }
+    const plans = await normalizeLedgerTables(client, [DRIZZLE_LEDGER_TABLE, LEGACY_LEDGER_TABLE], expected, {
+      dryRun,
+    });
+    const repairedRows = plans.reduce((count, plan) => count + plan.repairs.length, 0);
+    for (const plan of plans) reportTable(plan, dryRun);
     console.info(
       repairedRows === 0
         ? '✅ Nothing to repair — every ledger row already carries its journal `when`.'

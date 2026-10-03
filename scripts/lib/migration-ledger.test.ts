@@ -120,14 +120,70 @@ describe('planLedgerTimestampRepairs', () => {
     ]);
   });
 
-  it('leaves a ledger row whose hash is in no journal entry alone', () => {
-    // Renumber residue. Inventing a timestamp for it would be a guess.
-    const expected = journal(['0000_a', 1000]);
+  it('refuses an unmatched row even when its timestamp looks harmless', () => {
+    // The normalizer cannot prove which removed migration this row represents,
+    // so it must not report a successful repair based on a guessed history.
+    const expected = journal(['0000_a', 1000], ['0001_new', 2000]);
     const rows: LedgerTimestampRow[] = [
       { id: 1, hash: 'hash-of-0000_a', createdAt: BUILD_CLOCK },
-      { id: 2, hash: 'hash-of-a-renumbered-away-migration', createdAt: BUILD_CLOCK },
+      { id: 2, hash: 'hash-of-a-renumbered-away-migration', createdAt: 900 },
     ];
-    expect(planLedgerTimestampRepairs(expected, rows)).toEqual([{ id: 1, tag: '0000_a', from: BUILD_CLOCK, to: 1000 }]);
+    expect(() => planLedgerTimestampRepairs(expected, rows)).toThrow(
+      /cannot be paired one-to-one.*id=2 hash=hash-of-a-renumbered-away-migration created_at=900 unmatched hash.*No repairs were written/,
+    );
+  });
+
+  it('refuses an excess duplicate-hash row even when its timestamp looks harmless', () => {
+    const duplicateHash = 'identical-sql-body';
+    const expected: ExpectedMigrationWithWhen[] = [
+      { tag: '0000_original', hash: duplicateHash, when: 1000 },
+      { tag: '0001_copy', hash: duplicateHash, when: 2000 },
+    ];
+    const rows: LedgerTimestampRow[] = [
+      { id: 1, hash: duplicateHash, createdAt: 1000 },
+      { id: 2, hash: duplicateHash, createdAt: 2000 },
+      { id: 3, hash: duplicateHash, createdAt: 900 },
+    ];
+    expect(() => planLedgerTimestampRepairs(expected, rows)).toThrow(
+      /cannot be paired one-to-one.*id=3 hash=identical-sql-body created_at=900 excess duplicate hash.*No repairs were written/,
+    );
+  });
+
+  it('refuses an unmatched row that would preserve the old build high-water mark', () => {
+    const expected = journal(['0000_a', 1000], ['0001_new', 2000]);
+    const rows: LedgerTimestampRow[] = [
+      { id: 1, hash: 'hash-of-0000_a', createdAt: BUILD_CLOCK },
+      { id: 2, hash: 'hash-of-unrecognized', createdAt: BUILD_CLOCK },
+    ];
+
+    expect(() => planLedgerTimestampRepairs(expected, rows)).toThrow(
+      /unapplied migrations would still be skipped: 0001_new \(when 2000\).*id=2 hash=hash-of-unrecognized.*No repairs were written/,
+    );
+  });
+
+  it('refuses an excess duplicate-hash row that would preserve the old high-water mark', () => {
+    const duplicateHash = 'identical-sql-body';
+    const expected: ExpectedMigrationWithWhen[] = [
+      { tag: '0000_original', hash: duplicateHash, when: 1000 },
+      { tag: '0001_copy', hash: duplicateHash, when: 2000 },
+    ];
+    const rows: LedgerTimestampRow[] = [1, 2, 3].map((id) => ({ id, hash: duplicateHash, createdAt: BUILD_CLOCK }));
+
+    expect(() => planLedgerTimestampRepairs(expected, rows)).toThrow(
+      /id=3 hash=identical-sql-body created_at=1800000000000 excess duplicate hash.*No repairs were written/,
+    );
+  });
+
+  it('refuses residue that would skip a migration at the same timestamp as the high-water mark', () => {
+    const expected = journal(['0000_a', 1000], ['0001_new', 2000]);
+    const rows: LedgerTimestampRow[] = [
+      { id: 1, hash: 'hash-of-0000_a', createdAt: BUILD_CLOCK },
+      { id: 2, hash: 'hash-of-a-renumbered-away-migration', createdAt: 2000 },
+    ];
+
+    expect(() => planLedgerTimestampRepairs(expected, rows)).toThrow(
+      /0001_new \(when 2000\).*id=2 hash=hash-of-a-renumbered-away-migration.*No repairs were written/,
+    );
   });
 
   it('repairs only the rows a short ledger actually has', () => {
@@ -138,15 +194,22 @@ describe('planLedgerTimestampRepairs', () => {
     expect(planLedgerTimestampRepairs(expected, rows).map((repair) => repair.tag)).toEqual(['0000_a', '0001_b']);
   });
 
-  it('repairs a duplicate-hash row only as far as the journal has entries for it', () => {
-    // Three rows, two entries: the third is residue of a copy that was removed.
+  it('refuses excess duplicate-hash rows instead of partially normalizing them', () => {
+    // Three rows, two entries: the third may belong to a removed copy, but the
+    // current journal cannot prove its identity or timestamp.
     const duplicateHash = 'identical-sql-body';
     const expected: ExpectedMigrationWithWhen[] = [
       { tag: '0000_original', hash: duplicateHash, when: 1000 },
       { tag: '0001_copy', hash: duplicateHash, when: 2000 },
     ];
-    const rows: LedgerTimestampRow[] = [1, 2, 3].map((id) => ({ id, hash: duplicateHash, createdAt: BUILD_CLOCK }));
-    expect(planLedgerTimestampRepairs(expected, rows).map((repair) => repair.id)).toEqual([1, 2]);
+    const rows: LedgerTimestampRow[] = [
+      { id: 1, hash: duplicateHash, createdAt: BUILD_CLOCK },
+      { id: 2, hash: duplicateHash, createdAt: BUILD_CLOCK },
+      { id: 3, hash: duplicateHash, createdAt: 900 },
+    ];
+    expect(() => planLedgerTimestampRepairs(expected, rows)).toThrow(
+      /id=3 hash=identical-sql-body created_at=900 excess duplicate hash.*No repairs were written/,
+    );
   });
 });
 

@@ -103,6 +103,17 @@ describe('dev-db-up.sh ledger normalisation target', () => {
   });
 });
 
+describe('remote dev-db discovery ledger notice', () => {
+  it('warns that normalization is skipped before trying pending migrations', () => {
+    const discoverySource = readFileSync('scripts/dev-db-discover.ts', 'utf8');
+    const warningIndex = discoverySource.indexOf('Automatic migration-ledger timestamp normalization is skipped');
+    const migrateIndex = discoverySource.indexOf('await runPendingMigrations(selection.connectionString)');
+
+    expect(warningIndex).toBeGreaterThan(-1);
+    expect(migrateIndex).toBeGreaterThan(warningIndex);
+  });
+});
+
 /**
  * The repair has to be wired into *every* CI job that boots the image and then
  * applies migrations — three of them today, and the next one is easy to add

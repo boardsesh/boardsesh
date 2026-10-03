@@ -1456,11 +1456,9 @@ jobs:
           cache: ${{ runner.environment == 'github-hosted' }}
       - name: Install dependencies
         run: vp install --frozen-lockfile
-      # The pinned image's ledger was stamped with the image build clock, not
-      # each journal entry's `when` (#4211). That mark only moves up, so without
-      # this repair the next step silently skips any journal entry whose `when`
-      # predates the pinned image's build — including a PR's own migration when
-      # the branch is older than the pin. Must stay ahead of db:migrate.
+      # This pinned image predates the exact-time loader in #4474, so an existing
+      # ledger can still carry its build-clock high-water mark (#4211). Repair it
+      # before db:migrate so a branch migration below that mark is not skipped.
       - name: Normalize the dev-db image migration ledger
         env:
           DATABASE_URL: postgres://postgres:password@localhost:5432/main
