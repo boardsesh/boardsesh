@@ -156,8 +156,8 @@ export function LiveActivityBridge({ boardName, layoutId, sizeId, setIds }: Live
 
   // Subscribe to widget/notification Next/Previous taps. iOS publishes natively;
   // Android forwards the event and JS publishes through the queue provider.
-  // This listener selects the ABSOLUTE index native
-  // computed (event.currentIndex), not a relative nextClimb()/previousClimb().
+  // This listener selects the ABSOLUTE index computed by native (`event.currentIndex`),
+  // not a relative `nextClimb()`/`previousClimb()` step.
   //
   // Why absolute: in a server-authorized session the backend's CurrentClimbChanged
   // broadcast (correlationId 'widget-navigate') often reaches JS before this

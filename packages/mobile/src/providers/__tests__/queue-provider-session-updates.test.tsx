@@ -623,7 +623,7 @@ describe('QueueProvider session update subscription', () => {
     );
     expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('solo-target');
     expect(snapshots.at(-1)?.sessionId).toBeNull();
-    // This provider fixture mocks the mutation factory; its transport no-op is tested there.
+    // This provider fixture mocks the mutation factory; its no-session no-op is tested separately.
     expect(queueMutations.setCurrentClimb).toHaveBeenCalledExactlyOnceWith(
       makeQueueItem('solo-target'),
       false,
