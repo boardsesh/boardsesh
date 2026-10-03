@@ -1037,11 +1037,13 @@ local read (#5366). A chain that runs out of superseded refunds after a successf
 attempt ends with nothing published and reports under its own
 `kind: 'sqlite-init-superseded'`, kept out of the `sqlite-init` aggregate because no
 lock was contended in that failure. A retry chain that exhausts its attempt window
-always reports under `kind: 'sqlite-init'`, including when its final failed attempt
-overlapped a remount. The string `superseded` tag separates that remount-tangled
-final attempt (`'true'`) from a final attempt on the current connection (`'false'`);
-use it together with `retryable` to distinguish lock contention from a closed-handle
-artefact after the restart refunds are spent.
+reports genuine lock failures under `kind: 'sqlite-init'`, including when its final
+attempt overlapped a remount; `superseded: 'true'` keeps that real contention visible.
+If the final error instead comes from a closed handle that was superseded, the chain
+rechecks connection identity after journal-mode read-back and reports a synthetic
+`kind: 'sqlite-init-superseded'` event. It does not send the stale closed-handle error
+through dead-handle recovery, so a healthy remount cannot be cleared or charged a
+recovery attempt by an obsolete failure.
 
 The retraction hung off the provider (`DatabaseHandleLifecycle`) does NOT beat the
 close: expo-sqlite enters `closeAsync()` synchronously from the parent's cleanup, which
