@@ -3,9 +3,9 @@ name: Refresh Recommendations
 # Nightly: recompute setter popularity, mine PostHog "Climb Sent to Board
 # Success" into per-climb send stats, and regenerate the public per-board cohort
 # playlists. Idempotent — safe to re-run.
+# Scheduled runs moved to the homelab batch worker (pg-boss family, #5800);
+# this workflow is manual-only for backfills and dry runs.
 on:
-  schedule:
-    - cron: '0 6 * * *' # 06:00 UTC daily (off-peak)
   workflow_dispatch:
 
 concurrency:

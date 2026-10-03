@@ -8,8 +8,13 @@ import { parse } from 'yaml';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const workflow = parse(readFileSync(resolve(REPO_ROOT, '.github/workflows/export-board-snapshots.yml'), 'utf8')) as {
+  on: {
+    schedule?: unknown;
+    workflow_dispatch: { inputs: { storage_target: { options: string[]; default: string } } };
+  };
   jobs: {
     export: {
+      if?: string;
       env: Record<string, string>;
       steps: { name?: string; uses?: string; env?: Record<string, string>; run?: string; 'timeout-minutes'?: number }[];
     };
@@ -19,6 +24,16 @@ const workflow = parse(readFileSync(resolve(REPO_ROOT, '.github/workflows/export
 const exportJob = workflow.jobs.export;
 
 describe('snapshot export workflow', () => {
+  // The batch worker owns the Tigris prefixes (#5800). A second publisher on a
+  // prefix drops the other's manifest entries, so only the R2 rehearsal may run.
+  it('never publishes to Tigris: no schedule, and dispatch is R2 only', () => {
+    expect(workflow.on).not.toHaveProperty('schedule');
+    expect(workflow.on.workflow_dispatch.inputs.storage_target.options).toEqual(['r2']);
+    expect(workflow.on.workflow_dispatch.inputs.storage_target.default).toBe('r2');
+    expect(Object.keys(workflow.jobs)).toEqual(['export']);
+    expect(exportJob.if).toBe("${{ inputs.storage_target == 'r2' }}");
+  });
+
   it('pins setup-vp to the reviewed bootstrap version', () => {
     const setup = exportJob.steps.find((step) => step.uses?.startsWith('voidzero-dev/setup-vp@'));
     expect(setup?.uses).toBe('voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb');

@@ -6,9 +6,9 @@ name: Refresh Hold Features
 # system user. Idempotent (every write is an upsert). Runs at 06:15 UTC, between
 # the recommendations refresh (06:00) and the grade refresh (06:30) that will
 # eventually consume the content_prior these features feed.
+# Scheduled runs moved to the homelab batch worker (pg-boss family, #5800);
+# this workflow is manual-only for backfills and dry runs.
 on:
-  schedule:
-    - cron: '15 6 * * *' # 06:15 UTC daily (off-peak)
   workflow_dispatch:
     inputs:
       board:
