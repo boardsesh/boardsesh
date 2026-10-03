@@ -203,8 +203,6 @@
       "lifetimeSends_other": "{{count}} sends",
       "lifetimeRecap": "{{tries}} {{sessions}}",
       "lifetimeRecapWithSends": "{{tries}} {{sessions}} · {{sends}}",
-      "starsA11y_one": "{{count}} star",
-      "starsA11y_other": "{{count}} stars",
       "signedOut": "Sign in to see your tries on this climb."
     },
     "climberLogs": {
@@ -231,7 +229,8 @@
       "earlierDetail": "{{logs}} · {{tries}} over {{days}}",
       "earlierDays_one": "{{count}} day",
       "earlierDays_other": "{{count}} days",
-      "earlierShort": "+{{count}} earlier",
+      "earlierShort_one": "+{{count}} earlier",
+      "earlierShort_other": "+{{count}} earlier",
       "earlierA11y": "{{name}}, {{logs}}",
       "foldSends_one": "{{count}} more send in 1 try",
       "foldSends_other": "{{count}} more sends in 1 try",

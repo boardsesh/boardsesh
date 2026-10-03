@@ -203,8 +203,6 @@
       "lifetimeRecapWithSends": "{{tries}} {{sessions}} · {{sends}}",
       "pendingSync_one": "{{count}} en attente de synchronisation",
       "pendingSync_other": "{{count}} en attente de synchronisation",
-      "starsA11y_one": "{{count}} étoile",
-      "starsA11y_other": "{{count}} étoiles",
       "signedOut": "Connecte-toi pour voir tes essais sur ce bloc."
     },
     "climberLogs": {
@@ -231,7 +229,8 @@
       "earlierDetail": "{{logs}} · {{tries}} sur {{days}}",
       "earlierDays_one": "{{count}} jour",
       "earlierDays_other": "{{count}} jours",
-      "earlierShort": "+{{count}} plus anciennes",
+      "earlierShort_one": "+{{count}} plus ancienne",
+      "earlierShort_other": "+{{count}} plus anciennes",
       "earlierA11y": "{{name}}, {{logs}}",
       "foldSends_one": "{{count}} autre croix en 1 essai",
       "foldSends_other": "{{count}} autres croix en 1 essai",
