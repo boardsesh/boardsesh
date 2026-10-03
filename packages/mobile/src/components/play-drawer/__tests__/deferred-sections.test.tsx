@@ -63,8 +63,12 @@ vi.mock('../BetaVideosSection', () => ({
   BetaVideosSection: () => createElement('div', { 'data-testid': 'beta-videos' }),
 }));
 
+const logbookSection = vi.hoisted(() => ({ props: null as Record<string, unknown> | null }));
 vi.mock('../LogbookSection', () => ({
-  LogbookSection: () => createElement('div', { 'data-testid': 'logbook' }),
+  LogbookSection: (props: Record<string, unknown>) => {
+    logbookSection.props = props;
+    return createElement('div', { 'data-testid': 'logbook' });
+  },
 }));
 
 vi.mock('../CommunitySection', () => ({
@@ -105,7 +109,14 @@ const climb = {
   ascensionist_count: 0,
 } as Climb;
 
-function renderSections(options: { enabled?: boolean; contentEnabled?: boolean; description?: string | null } = {}) {
+function renderSections(
+  options: {
+    enabled?: boolean;
+    contentEnabled?: boolean;
+    description?: string | null;
+    onOpenFullLogbook?: () => void;
+  } = {},
+) {
   return render(
     <DeferredSections
       climb={options.description === undefined ? climb : ({ ...climb, description: options.description } as Climb)}
@@ -117,6 +128,7 @@ function renderSections(options: { enabled?: boolean; contentEnabled?: boolean; 
       enabled={options.enabled ?? true}
       contentEnabled={options.contentEnabled ?? false}
       onSimilarClimbPress={vi.fn()}
+      onOpenFullLogbook={options.onOpenFullLogbook}
     />,
   );
 }
@@ -128,6 +140,14 @@ describe('DeferredSections', () => {
     flags.boardseshGrade = false;
     boardseshGradeQuery.calls = [];
     boardseshGradeQuery.data = undefined;
+    logbookSection.props = null;
+  });
+
+  it('hands the Logbook card the board angle and the full-logbook opener', () => {
+    const onOpenFullLogbook = vi.fn();
+    renderSections({ onOpenFullLogbook });
+
+    expect(logbookSection.props).toMatchObject({ climbUuid: 'climb-1', angle: 40, onOpenFullLogbook });
   });
 
   it('keeps the Logbook eager (the scroll hint) while heavier sections wait for scroll and interaction readiness', () => {

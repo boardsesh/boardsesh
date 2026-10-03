@@ -24,7 +24,22 @@ vi.mock('../../Icon', () => ({ Icon: () => createElement('i', null) }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../LogbookEntryRow', () => ({ LogbookEntryRow: () => createElement('div', null) }));
 
-const logbookState = vi.hoisted(() => ({ logbook: [] as unknown[], isLoading: false }));
+vi.mock('../../PressableSurface', () => ({ PressableSurface: () => null }));
+vi.mock('../../../providers/theme-provider', () => ({
+  useTheme: () => ({ colorScheme: 'light', brandColors: {}, systemColors: {} }),
+}));
+vi.mock('../../../hooks/use-grade-format', () => ({
+  useGradeFormat: () => ({ formatGradeByDifficultyId: () => null }),
+}));
+vi.mock('../../../lib/connectivity/use-connectivity', () => ({ useConnectivityField: () => false }));
+
+// `fetchedUuids` holds the climb for the signed-in case: a member's empty
+// state only shows once their (empty) history has actually been fetched.
+const logbookState = vi.hoisted(() => ({
+  logbook: [] as unknown[],
+  fetchedUuids: new Set<string>(['climb-1']) as ReadonlySet<string>,
+  error: null,
+}));
 vi.mock('@boardsesh/board-react', () => ({ useLogbook: () => logbookState }));
 vi.mock('../../../hooks/use-local-ticks', () => ({ useLocalPendingTicks: () => ({ data: 0 }) }));
 
@@ -35,7 +50,6 @@ import { LogbookSection } from '../LogbookSection';
 
 beforeEach(() => {
   logbookState.logbook = [];
-  logbookState.isLoading = false;
   authState.current = { isAuthenticated: false };
 });
 
@@ -46,6 +60,7 @@ describe('LogbookSection for a signed-out reader', () => {
         climbUuid: 'climb-1',
         boardName: 'kilter',
         layoutId: 1,
+        angle: 40,
         userAscents: undefined,
         userAttempts: undefined,
       }),
@@ -66,6 +81,7 @@ describe('LogbookSection for a signed-out reader', () => {
         climbUuid: 'climb-1',
         boardName: 'kilter',
         layoutId: 1,
+        angle: 40,
         userAscents: 3,
         userAttempts: 9,
       }),
@@ -86,6 +102,7 @@ describe('LogbookSection for a signed-out reader', () => {
         climbUuid: 'climb-1',
         boardName: 'kilter',
         layoutId: 1,
+        angle: 40,
         userAscents: 0,
         userAttempts: 0,
       }),

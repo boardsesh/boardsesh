@@ -29,8 +29,8 @@ vi.mock('../../Text', () => ({
 }));
 vi.mock('../../Icon', () => ({ Icon: () => createElement('i', null) }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
-vi.mock('../../../lib/ascent-status-utils', () => ({
-  normalizeAscentStatus: ({ status }: { status?: string }) => status ?? 'send',
+vi.mock('../../../providers/theme-provider', () => ({
+  useTheme: () => ({ colorScheme: 'light', brandColors: {}, systemColors: {} }),
 }));
 vi.mock('@boardsesh/board-constants/grade-colors', () => ({
   getGradeColor: () => '#abcdef',
@@ -41,6 +41,8 @@ vi.mock('../../../hooks/use-grade-format', () => ({
     formatGradeByDifficultyId: (id: number | null | undefined) => (id == null ? null : `V${id}`),
   }),
 }));
+// The row now prints the time of day only (the session tile above it names the
+// day), so hour and minute are the whole assertion.
 // Stand-in for the real Intl formatter that reads the Date's LOCAL getters
 // directly. This keeps the assertion decoupled from host ICU locale/format
 // quirks (see the "never pass locale: undefined" convention documented in
@@ -49,10 +51,14 @@ vi.mock('../../../hooks/use-grade-format', () => ({
 // while still exercising exactly what this suite cares about: does the row
 // build a `Date` whose LOCAL wall-clock matches the tick's true local time,
 // rather than the raw stored UTC digits.
+const formatter = vi.hoisted(() => ({ options: [] as Intl.DateTimeFormatOptions[] }));
 vi.mock('../../../lib/intl-formatter-cache', () => ({
-  getCachedDateTimeFormat: () => ({
-    format: (date: Date) => `${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')}`,
-  }),
+  getCachedDateTimeFormat: (_locale: unknown, options: Intl.DateTimeFormatOptions) => {
+    formatter.options.push(options);
+    return {
+      format: (date: Date) => `${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')}`,
+    };
+  },
 }));
 
 import { LogbookEntryRow } from '../LogbookEntryRow';
@@ -92,6 +98,11 @@ describe('LogbookEntryRow climbed-at display (#3569)', () => {
       }),
     );
     expect(getByText('8:14')).toBeTruthy();
+  });
+
+  it('asks for the time of day only: the session tile above names the day', () => {
+    render(createElement(LogbookEntryRow, { entry: makeEntry({}), showMirrorTag: false }));
+    expect(formatter.options.at(-1)).toEqual({ hour: 'numeric', minute: '2-digit' });
   });
 
   it('round-trips a wall-clock time derived independently of any hardcoded offset', () => {

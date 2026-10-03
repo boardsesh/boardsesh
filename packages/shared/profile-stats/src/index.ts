@@ -39,4 +39,16 @@ export {
   type AngleLifetimeStats,
   type AngleEntriesSection,
 } from './angle-lifetime';
+export {
+  deriveClimbLedger,
+  DEFAULT_MAX_MARKS_PER_SESSION,
+  type ClimbLedger,
+  type ClimbVerdict,
+  type DeriveClimbLedgerOptions,
+  type LedgerAngleSection,
+  type LedgerSession,
+  type LedgerStatus,
+  type LedgerTotals,
+  type LedgerTryMark,
+} from './climb-ledger';
 export { deriveProfileViewModel, type DeriveProfileViewModelInput, type ProfileViewModel } from './derive-view-model';
