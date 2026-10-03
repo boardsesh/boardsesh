@@ -1,7 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_HOLDS_PER_WALL, MAX_SPRAY_WALLS_PER_USER, MAX_VERSIONS_PER_WALL } from '@boardsesh/board-config';
+import {
+  MAX_HOLDS_PER_WALL,
+  MAX_REVISIONS_PER_CLIMB,
+  MAX_SPRAY_WALLS_PER_USER,
+  MAX_VERSIONS_PER_WALL,
+} from '@boardsesh/board-config';
+import climbsCatalog from '@boardsesh/i18n/locales/en-US/climbs.json';
 import boardsCatalog from '@boardsesh/i18n/locales/en-US/boards.json';
-import { SPRAY_CAP_CODES, SPRAY_CAP_VALUES, sprayCapFromErrorCode, sprayCapMessage } from '../spray-cap-copy';
+import {
+  CLIMB_REVISION_CAP,
+  SPRAY_CAP_CODES,
+  SPRAY_CAP_VALUES,
+  climbRevisionCapNote,
+  sprayCapFromErrorCode,
+  sprayCapMessage,
+} from '../spray-cap-copy';
 
 /**
  * The caps, as the climber reads them.
@@ -75,5 +88,24 @@ describe('spray cap copy', () => {
     // And no placeholder survived: a sentence that still reads "{{max}}" is a
     // call site that forgot the values object, which the checks above would miss.
     for (const [key, value] of Object.entries(rendered)) expect(value, key).not.toContain('{{');
+  });
+});
+
+describe('climb revision cap copy (#5955)', () => {
+  it('says the cap with the number board-config enforces, never one typed into the catalog', () => {
+    const template = climbsCatalog.mobile.revisions.capNote;
+    expect(template).toContain('{{max}}');
+    expect(template).not.toMatch(/\d/);
+
+    let asked: { key: string; max: number } | null = null;
+    const note = climbRevisionCapNote((key, values) => {
+      asked = { key, max: values.max };
+      return render(template, values);
+    });
+
+    expect(asked).toEqual({ key: 'mobile.revisions.capNote', max: MAX_REVISIONS_PER_CLIMB });
+    expect(note).toContain(String(MAX_REVISIONS_PER_CLIMB));
+    expect(note).not.toContain('{{');
+    expect(CLIMB_REVISION_CAP).toBe(MAX_REVISIONS_PER_CLIMB);
   });
 });

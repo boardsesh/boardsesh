@@ -224,13 +224,20 @@ export async function sprayBoardRowIsReadable(
  * survives. Answers true for every non-spray climb, so a call site needs no
  * board-type branch — and the caller must answer an unreadable climb with its
  * own EMPTY PAGE, never an error.
+ *
+ * `executor` defaults to the read replica. A caller that has just read the climb
+ * row from the PRIMARY must pass the primary here too. The rule answers "visible"
+ * when there is no climb row, so a climb the primary has and the replica does not
+ * have yet (created inside the replication lag) would otherwise pass for a
+ * reference to nothing and open up whatever the caller reads next.
  */
 export async function sprayClimbUuidIsReadable(
   climbUuid: string,
   viewerUserId: string | null | undefined,
+  executor: Pick<typeof dbRead, 'execute'> = dbRead,
 ): Promise<boolean> {
   const rows = rowsFromResult<{ visible: boolean }>(
-    await dbRead.execute(
+    await executor.execute(
       sql`SELECT ${sprayReferenceVisibilityCondition(
         { boardType: sql`'spray'`, climbUuid: sql`${climbUuid}` },
         viewerUserId ?? null,

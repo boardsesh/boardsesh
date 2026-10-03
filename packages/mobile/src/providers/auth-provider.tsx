@@ -45,6 +45,7 @@ import {
 } from '../lib/onboarding/onboarding-storage';
 import { clearUserData, purgeLocalDataForSignOut, getDatabaseHandle } from '../db';
 import { clearStoredSprayPhotos } from '../lib/spray/spray-photo-store';
+import { dropSprayWallViewerAccess, refreshSprayWallViewerAccess } from '../lib/spray/spray-wall-loader';
 import { resetSyncStatus } from '../sync/sync-status';
 import { setSetting, clearOfflineBoards } from '../settings';
 import { getOutboxSummary, setSigningOut } from '@boardsesh/offline-sync';
@@ -117,6 +118,37 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
   const queryClient = useQueryClient();
   const authStateRef = useRef({ isAuthenticated: false, isLoading: true });
   authStateRef.current = { isAuthenticated, isLoading };
+  // Whether a spray wall may be edited is an answer about one account, kept in
+  // a module-level registry that outlives every sign-out. It is disowned HERE,
+  // on any change of the resolved auth state, because this provider is the one
+  // component that stays mounted across it: everything below is swapped for a
+  // redirect or the splash, so a hook down there never sees a "before" (which
+  // is exactly how the first version of this, in the drawer host, never fired).
+  // The first resolved value is the launch session, not a change.
+  //
+  // The two edges are not symmetric. Signing IN re-reads every wall, under the
+  // new token. Going signed-OUT only drops the answer and fetches nothing: not
+  // every such flip is a sign-out (a native keychain that fails for a moment
+  // flips here with no cleanup), and a request sent then carries no token, so a
+  // private wall would resolve null and be withdrawn from the live player. A
+  // real sign-out's re-read is the cleanup's (`runSignedOutCleanup`), after the
+  // client is reset. When that cleanup already ran for this flip, the drop here
+  // is skipped, so the read it started is not disowned and sent twice.
+  const resolvedAuthForSprayRef = useRef<boolean | null>(null);
+  const sprayAccessResetByCleanupRef = useRef(false);
+  useEffect(() => {
+    if (isLoading) return;
+    const previous = resolvedAuthForSprayRef.current;
+    resolvedAuthForSprayRef.current = isAuthenticated;
+    // Consumed on every resolved pass, changed or not, so a cleanup that was
+    // not followed by a flip (one account replacing another on web) cannot
+    // leave the flag up to swallow a later, unrelated drop.
+    const cleanupAlreadyReset = sprayAccessResetByCleanupRef.current;
+    sprayAccessResetByCleanupRef.current = false;
+    if (previous === null || previous === isAuthenticated) return;
+    if (isAuthenticated) refreshSprayWallViewerAccess();
+    else if (!cleanupAlreadyReset) dropSprayWallViewerAccess();
+  }, [isAuthenticated, isLoading]);
   const authTransitionEpochRef = useRef(0);
   const authTransitionQueueRef = useRef<Promise<void>>(Promise.resolve());
   const anonymousSessionIsolatedRef = useRef(false);
@@ -388,6 +420,14 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       // would otherwise paper over the cross-user leak. Doing this at the auth
       // boundary keeps the rest of the hooks simple.
       queryClient.clear();
+      // The spray registry is module state, so `clear()` does not reach it, and
+      // it holds one per-account answer: whether the viewer can edit each wall.
+      // After the client reset above, so the re-read is the next viewer's.
+      // Flagged while the effect below has not yet seen the signed-out flip, so
+      // that when it does it will not disown this read; when the flip came
+      // first there is nothing left for the effect to skip.
+      if (resolvedAuthForSprayRef.current === true) sprayAccessResetByCleanupRef.current = true;
+      refreshSprayWallViewerAccess();
       return true;
     },
     [clearPersistedUserStores, clearLocalOfflineUserData, isAuthTransitionCurrent, queryClient],

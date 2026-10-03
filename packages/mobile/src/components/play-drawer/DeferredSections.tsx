@@ -16,6 +16,7 @@ import { buildBoardseshGradeView, buildBoardseshGradeSummary } from './boardsesh
 import { buildAngleGradeBars } from './community-utils';
 import { BetaVideosSection } from './BetaVideosSection';
 import { SetterNotesSection } from './SetterNotesSection';
+import { RevisionsSection } from './RevisionsSection';
 import { useAuth } from '../../providers/auth-provider';
 import { useBoardseshGradeEnabled } from '../../providers/feature-flags-provider';
 import { useTheme } from '../../providers/theme-provider';
@@ -47,6 +48,9 @@ type DeferredSectionsProps = {
   /** Opens the "share your beta" sheet. Rendered as the Beta Videos header "+" for
    *  signed-in users; absent (undefined) hides it. */
   onAddBetaVideo?: () => void;
+  /** Opens one earlier version of the climb in the play drawer's own in-tree
+   *  sheet. Absent leaves the edit history as a plain, untappable list. */
+  onOpenRevision?: (revisionNumber: number) => void;
 };
 
 /**
@@ -68,6 +72,7 @@ export const DeferredSections = memo(function DeferredSections({
   onLogbookSectionLayout,
   onLogbookToggle,
   onAddBetaVideo,
+  onOpenRevision,
 }: DeferredSectionsProps) {
   const { t } = useTranslation('session');
   const { t: tClimbs } = useTranslation('climbs');
@@ -262,6 +267,10 @@ export const DeferredSections = memo(function DeferredSections({
               isHidden={climb.is_hidden === true}
             />
           </CollapsibleSection>
+
+          {/* How the climb has changed since it was published. Renders nothing
+              unless it has been edited, which is most climbs. */}
+          <RevisionsSection climbUuid={climb.uuid} boardName={boardName} onOpenRevision={onOpenRevision} />
 
           <CollapsibleSection title={t('mobile.similarClimbs.title')} persistKey="similarClimbs">
             <SimilarClimbsSection

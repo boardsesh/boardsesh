@@ -25,6 +25,10 @@ const board = vi.hoisted(() => ({
   isDuplicateClimbError: vi.fn((_err: unknown) => false),
 }));
 const toast = vi.hoisted(() => ({ showToast: vi.fn() }));
+const cache = vi.hoisted(() => ({ invalidateQueries: vi.fn() }));
+const draftStore = vi.hoisted(() => ({ clearDraft: vi.fn(async () => {}) }));
+/** The climb `useClimb` answers with when the editor is opened on an existing one. */
+const edit = vi.hoisted(() => ({ climb: undefined as Record<string, unknown> | undefined }));
 const queue = vi.hoisted(() => ({ setCurrentClimb: vi.fn() }));
 const router = vi.hoisted(() => ({ push: vi.fn() }));
 
@@ -63,7 +67,7 @@ vi.mock('expo-crypto', () => ({ randomUUID: cryptoMock.randomUUID }));
 vi.mock('expo-router', () => ({ useRouter: () => router }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('@tanstack/react-query', () => ({
-  useQueryClient: () => ({ invalidateQueries: vi.fn() }),
+  useQueryClient: () => ({ invalidateQueries: cache.invalidateQueries }),
 }));
 // Partial: the controller now reads @boardsesh/board-config too, which imports
 // this package for real (SUPPORTED_BOARDS). A total mock breaks that import.
@@ -94,7 +98,7 @@ vi.mock('../../../providers/auth-provider', () => ({
 }));
 vi.mock('../../../lib/graphql/hooks', () => ({
   useProfile: () => ({ data: { id: 'user-1', displayName: 'Tester' } }),
-  useClimb: () => ({ data: undefined }),
+  useClimb: () => ({ data: edit.climb }),
 }));
 vi.mock('../../../providers/queue-provider', () => ({
   useQueueActions: () => ({ setCurrentClimb: queue.setCurrentClimb }),
@@ -109,7 +113,7 @@ vi.mock('../../../providers/toast-provider', () => ({
 vi.mock('../../../lib/create-climb-draft-store', () => ({
   loadDraft: vi.fn(async () => null),
   saveDraft: vi.fn(async () => {}),
-  clearDraft: vi.fn(async () => {}),
+  clearDraft: draftStore.clearDraft,
   createClimbDraftKey: () => 'draft-key',
   createClimbEditDraftKey: (boardType: string, uuid: string) => `edit:${boardType}:${uuid}`,
   createClimbForkDraftKey: (boardKey: string) => `fork:${boardKey}`,
@@ -147,6 +151,9 @@ beforeEach(() => {
   board.saveClimb.mockReset();
   board.updateClimb.mockReset();
   createClimb.frameCount = 1;
+  edit.climb = undefined;
+  cache.invalidateQueries.mockClear();
+  draftStore.clearDraft.mockClear();
 });
 
 describe('create-climb queue hand-off carries board identity', () => {
@@ -280,6 +287,191 @@ describe('create-climb queue hand-off carries board identity', () => {
 // The creator wrote `frames_pace: 0` on every save, so a published route always
 // played at the 750ms default however the setter set the transport — the speed
 // control authored nothing. These pin the value actually reaching the wire.
+describe('editing a climb somebody else set (#5955)', () => {
+  // A wall owner fixing a start hold has not taken the climb. The server never
+  // rewrites `user_id` / `setter_username` on an update, so the queue row the
+  // editor builds must not either: with the saver's id on it, the play drawer
+  // would credit the wall owner and offer the real setter nothing.
+  const someoneElsesClimb = {
+    uuid: 'climb-9',
+    name: 'Left Arete',
+    frames: 'p1r12p2r13p3r14',
+    description: '',
+    difficulty: null,
+    userId: 'setter-1',
+    setter_username: 'Original Setter',
+    is_draft: false,
+    published_at: '2020-01-01T00:00:00.000Z',
+    created_at: '2020-01-01T00:00:00.000Z',
+  };
+
+  it('queues the edited climb under its original setter, not the editor', () => {
+    edit.climb = someoneElsesClimb;
+    const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard, editClimbUuid: 'climb-9' }));
+
+    act(() => result.current.handleSetActive());
+
+    const { climb } = lastQueuedItem();
+    expect(climb.userId).toBe('setter-1');
+    expect(climb.setter_username).toBe('Original Setter');
+  });
+
+  it('keeps the original setter on the row a save syncs into the queue', async () => {
+    edit.climb = someoneElsesClimb;
+    board.updateClimb.mockResolvedValue({
+      uuid: 'climb-9',
+      createdAt: '2020-01-01T00:00:00.000Z',
+      publishedAt: '2020-01-01T00:00:00.000Z',
+      isDraft: false,
+    });
+    const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard, editClimbUuid: 'climb-9' }));
+
+    await act(async () => {
+      await result.current.handleSave();
+    });
+
+    expect(board.updateClimb).toHaveBeenCalledTimes(1);
+    expect(board.saveClimb).not.toHaveBeenCalled();
+    const { climb } = lastQueuedItem();
+    expect(climb.uuid).toBe('climb-9');
+    expect(climb.userId).toBe('setter-1');
+    expect(climb.setter_username).toBe('Original Setter');
+  });
+
+  it("says in the climber's language that a spray edit was not allowed", async () => {
+    // The client gate ran on a stale read of who can edit the wall. Nothing is
+    // lost and the reason is on screen, translated. The server's own sentence
+    // is never shown.
+    // A spray climb publishes with its setter's grade, so the edit carries one.
+    edit.climb = { ...someoneElsesClimb, difficulty: '6a/V3' };
+    board.updateClimb.mockRejectedValue({
+      response: {
+        errors: [{ message: 'You can only update your own climbs', extensions: { code: 'CLIMB_EDIT_NOT_ALLOWED' } }],
+      },
+    });
+    const sprayBoard = { boardName: 'spray' as const, layoutId: 4200, sizeId: 4200, setIds: '1', angle: 40 };
+    const { result } = renderHook(() => useCreateClimbScreen({ board: sprayBoard, editClimbUuid: 'climb-9' }));
+
+    await act(async () => {
+      await result.current.handleSave();
+    });
+
+    expect(toast.showToast).toHaveBeenCalledTimes(1);
+    expect(toast.showToast).toHaveBeenCalledWith('createClimbForm.alerts.editNotAllowed', 'error');
+    expect(draftStore.clearDraft).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['CLIMB_EDIT_WINDOW_EXPIRED', 'createClimbForm.alerts.editWindowExpired'],
+    ['CLIMB_NOT_EDITABLE', 'createClimbForm.alerts.editNotEditable'],
+  ])('translates %s on a catalogue board', async (code, key) => {
+    edit.climb = someoneElsesClimb;
+    board.updateClimb.mockRejectedValue({ extensions: { code }, message: 'server prose' });
+    const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard, editClimbUuid: 'climb-9' }));
+
+    await act(async () => {
+      await result.current.handleSave();
+    });
+
+    expect(toast.showToast).toHaveBeenCalledWith(key, 'error');
+  });
+
+  it('never shows server prose: a failure with no known code gets the generic line, on spray too', async () => {
+    edit.climb = { ...someoneElsesClimb, difficulty: '6a/V3' };
+    board.updateClimb.mockRejectedValue({
+      response: { errors: [{ message: 'Some new refusal', extensions: { code: 'SOMETHING_NEWER' } }] },
+    });
+    const sprayBoard = { boardName: 'spray' as const, layoutId: 4200, sizeId: 4200, setIds: '1', angle: 40 };
+    const { result } = renderHook(() => useCreateClimbScreen({ board: sprayBoard, editClimbUuid: 'climb-9' }));
+
+    await act(async () => {
+      await result.current.handleSave();
+    });
+
+    expect(toast.showToast).toHaveBeenCalledWith('createClimbForm.alerts.saveFailedFallback', 'error');
+  });
+
+  it('says somebody else changed the climb when the server reports an edit conflict', async () => {
+    // Two editors, one climb: the save was decided on a row the other edit has
+    // replaced. One translated line, no second attempt, and the work stays put.
+    edit.climb = { ...someoneElsesClimb, difficulty: '6a/V3' };
+    board.updateClimb.mockRejectedValue({
+      extensions: { code: 'CLIMB_EDIT_CONFLICT' },
+      message: 'This climb changed while you were editing it. Reload it and try again.',
+    });
+    const sprayBoard = { boardName: 'spray' as const, layoutId: 4200, sizeId: 4200, setIds: '1', angle: 40 };
+    const { result } = renderHook(() => useCreateClimbScreen({ board: sprayBoard, editClimbUuid: 'climb-9' }));
+    act(() => result.current.setName('Left Arete, fixed'));
+
+    await act(async () => {
+      await result.current.handleSave();
+    });
+
+    expect(toast.showToast).toHaveBeenCalledTimes(1);
+    expect(toast.showToast).toHaveBeenCalledWith('createClimbForm.alerts.editConflict', 'error');
+    expect(board.updateClimb).toHaveBeenCalledTimes(1);
+    expect(board.saveClimb).not.toHaveBeenCalled();
+    expect(queue.setCurrentClimb).not.toHaveBeenCalled();
+    // The working copy is still what the climber typed.
+    expect(result.current.name).toBe('Left Arete, fixed');
+    expect(draftStore.clearDraft).not.toHaveBeenCalled();
+  });
+
+  it('recognises the conflict code on a raw GraphQL response too, on any board', async () => {
+    edit.climb = someoneElsesClimb;
+    board.updateClimb.mockRejectedValue({
+      response: { errors: [{ message: 'changed', extensions: { code: 'CLIMB_EDIT_CONFLICT' } }] },
+    });
+    const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard, editClimbUuid: 'climb-9' }));
+
+    await act(async () => {
+      await result.current.handleSave();
+    });
+
+    expect(toast.showToast).toHaveBeenCalledWith('createClimbForm.alerts.editConflict', 'error');
+  });
+
+  it('keeps the generic failure line for a refusal from a server that predates the codes', async () => {
+    edit.climb = someoneElsesClimb;
+    board.updateClimb.mockRejectedValue({ response: { errors: [{ message: 'The 24 hour edit window has expired' }] } });
+    const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard, editClimbUuid: 'climb-9' }));
+
+    await act(async () => {
+      await result.current.handleSave();
+    });
+
+    expect(toast.showToast).toHaveBeenCalledWith('createClimbForm.alerts.saveFailedFallback', 'error');
+  });
+
+  it('refreshes the edit history of the climb it saved, and no other', async () => {
+    edit.climb = someoneElsesClimb;
+    board.updateClimb.mockResolvedValue({
+      uuid: 'climb-9',
+      createdAt: '2020-01-01T00:00:00.000Z',
+      publishedAt: '2020-01-01T00:00:00.000Z',
+      isDraft: false,
+    });
+    const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard, editClimbUuid: 'climb-9' }));
+
+    await act(async () => {
+      await result.current.handleSave();
+    });
+
+    const revisionInvalidations = cache.invalidateQueries.mock.calls
+      .map(([filter]) => (filter as { queryKey: unknown[] }).queryKey)
+      .filter((queryKey) => queryKey[0] === 'climbRevisions');
+    expect(revisionInvalidations).toEqual([['climbRevisions', 'kilter', 'climb-9']]);
+  });
+
+  it('still gives a brand-new climb to the climber making it', () => {
+    const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard }));
+
+    act(() => result.current.handleSetActive());
+
+    expect(lastQueuedItem().climb.userId).toBe('user-1');
+  });
+});
+
 describe('authored pace reaches the queue and the server', () => {
   it('publishes the pace the setter dialled on a route', async () => {
     createClimb.frameCount = 3;

@@ -25,6 +25,7 @@ import {
   invalidateSprayWallRenderData,
   registerRenderData,
 } from '../../lib/spray/spray-wall-loader';
+import { sprayWallViewerGeneration } from '../../lib/spray/spray-wall-registry';
 import {
   prepareSprayHoldDraft,
   publishSprayHoldDraft,
@@ -122,14 +123,19 @@ export function SprayWallHoldsScreen({ wallUuid }: { wallUuid: string }) {
       if (!mountedRef.current) return;
       setStatus('refreshing');
       await invalidateSprayWallRenderData(queryClient, prepared.wallUuid, prepared.layoutId);
-      const publishedRenderData = await fetchSprayWallRenderData(queryClient, prepared.wallUuid);
+      // Noted before the fetch: the payload says whether THIS account can edit
+      // the wall, and a registration that cannot say whose answer it holds is
+      // registered as "cannot edit", which would take Edit off the owner's own
+      // climbs for the rest of the revalidation window.
+      const viewerGeneration = sprayWallViewerGeneration();
+      const publishedRenderData = await fetchSprayWallRenderData(queryClient, prepared.wallUuid, viewerGeneration);
       // Publishing preserves the draft's number. A later published version is
       // also valid if another editor publishes while this reload is in flight.
       if (
         !publishedRenderData ||
         publishedRenderData.wall.uuid !== prepared.wallUuid ||
         publishedRenderData.versionNumber < prepared.versionNumber ||
-        !registerRenderData(prepared.layoutId, publishedRenderData)
+        !registerRenderData(prepared.layoutId, publishedRenderData, undefined, viewerGeneration)
       ) {
         throw new Error('Published wall refresh was unavailable');
       }

@@ -221,7 +221,11 @@
       "publishDuplicateNamed": "Dieses Griff-Muster passt zu „{{name}}“. Schalte auf Entwurf, um ihn ohne Veröffentlichung zu speichern, oder ändere einen Griff.",
       "publishDuplicateUnnamed": "Dieses Griff-Muster passt zu einem bestehenden Boulder. Schalte auf Entwurf, um ihn ohne Veröffentlichung zu speichern, oder ändere einen Griff.",
       "viewMatchingClimb": "Passenden Boulder ansehen",
-      "saveFailedFallback": "Boulder konnte nicht gespeichert werden. Versuch es nochmal."
+      "saveFailedFallback": "Boulder konnte nicht gespeichert werden. Versuch es nochmal.",
+      "editConflict": "Jemand hat diesen Boulder gerade geändert. Öffne ihn neu, um den aktuellen Stand zu sehen.",
+      "editNotAllowed": "Du kannst diesen Boulder nicht bearbeiten. Das können nur Routenbauer*in und alle, die die Wand verwalten.",
+      "editWindowExpired": "Dieser Boulder wurde vor mehr als 24 Stunden veröffentlicht und lässt sich nicht mehr bearbeiten.",
+      "editNotEditable": "Dieser Boulder lässt sich nicht mehr bearbeiten."
     },
     "fields": {
       "description": "Beschreibung (optional)"
@@ -838,6 +842,42 @@
     },
     "setterNotes": {
       "title": "Notizen vom Routenbau"
+    },
+    "revisions": {
+      "title": "Änderungsverlauf",
+      "summary_one": "Einmal bearbeitet",
+      "summary_other": "{{count}}-mal bearbeitet",
+      "current": "Aktuell",
+      "tagSetter": "Routenbauer*in",
+      "tagWallEditor": "Wand-Bearbeiter*in",
+      "deletedEditor": "Gelöschtes Konto",
+      "published": "Erstmals veröffentlicht",
+      "edited": "Bearbeitet",
+      "changed": "Geändert: {{changes}}",
+      "changes": {
+        "name": "Name",
+        "description": "Notizen",
+        "holds": "Griffe",
+        "grade": "Grad",
+        "angle": "Winkel",
+        "rules": "Regeln"
+      },
+      "showAll": "Alle {{count}} zeigen",
+      "capNote": "Nur die erste Version und die neuesten Änderungen bleiben erhalten, insgesamt {{max}} Versionen.",
+      "rowLabel": "{{date}}, {{editor}}. Diese Version ansehen.",
+      "sheet": {
+        "title": "Version vom {{date}}",
+        "by": "{{editor}} · {{role}}",
+        "readOnly": "Eine frühere Version. Du kannst sie ansehen, aber nicht in die Warteschlange legen oder beleuchten.",
+        "noGrade": "Kein Grad",
+        "angle": "{{angle}}°",
+        "older": "Älter",
+        "newer": "Neuer",
+        "position": "{{position}} von {{total}}",
+        "photoUnavailable": "Das Foto dieser Wand ist nicht mehr verfügbar",
+        "boardUnavailable": "Dieses Board lässt sich gerade nicht darstellen",
+        "boardLabel": "Die Griffe dieser Version"
+      }
     },
     "heatmap": {
       "toggle": "Heatmap",

@@ -763,7 +763,7 @@
         "favorite": "Toggle favorite is the heart. Hearted climbs fill Liked Climbs.",
         "editEntry": "Edit logbook entry, when you came from your logbook.",
         "betaVideo": "Add beta video, when signed in.",
-        "edit": "Edit climb, for your own climbs as a draft or within 24 hours of publishing.",
+        "edit": "Edit climb, for your own climbs as a draft or within 24 hours of publishing. Spray wall climbs have no time limit.",
         "remix": "Remix this climb starts a new climb from these holds.",
         "openInAurora": "Open in Aurora app, for Tension and other Aurora boards. Kilter has none.",
         "report": "Report climb, when signed in and moderation is on."

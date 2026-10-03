@@ -5,6 +5,7 @@ import { renderHook, waitFor, act } from '@testing-library/react';
 // The loader module reaches the GraphQL client, which pulls react-native's Flow
 // source at import time. This suite drives the registry's loader seam directly,
 // so the real one is not needed — only its shape.
+vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => ({}) }));
 vi.mock('../spray-wall-loader', () => ({
   installSprayWallLoader: () => () => {},
   sprayWallByLayoutQueryKey: (layoutId: number | null) => ['sprayWallByLayout', layoutId],
@@ -13,9 +14,15 @@ vi.mock('../spray-wall-loader', () => ({
   RENDER_DATA_STALE_TIME_MS: 10 * 60 * 1000,
 }));
 
-import { clearSprayWallRegistry, registerSprayWall, setSprayWallLoader } from '../spray-wall-registry';
+import {
+  clearSprayWallRegistry,
+  registerSprayWall,
+  resetSprayWallViewerAccess,
+  setSprayWallLoader,
+  sprayWallViewerGeneration,
+} from '../spray-wall-registry';
 import type { SprayPhotoHold } from '../spray-hold-geometry';
-import { useSprayWall } from '../use-spray-wall';
+import { useSprayWall, useSprayWallViewerCanEdit } from '../use-spray-wall';
 
 // `useSprayWall` no longer owns a query — the fetching lives in
 // `spray-wall-loader.ts` so hook-less resolvers share it — so what is left to
@@ -122,5 +129,78 @@ describe('useSprayWall', () => {
     // The registry is session state, not screen state.
     const { result: second } = renderHook(() => useSprayWall(LAYOUT_ID));
     expect(second.current.loadState).toBe('ready');
+  });
+});
+
+describe('useSprayWallViewerCanEdit', () => {
+  it('follows the registered wall, and re-renders when the answer changes', () => {
+    const { result } = renderHook(() => useSprayWallViewerCanEdit('spray', LAYOUT_ID));
+    expect(result.current).toBe(false);
+
+    act(() =>
+      registerSprayWall(LAYOUT_ID, {
+        ...wallPayload(1),
+        viewerAccess: { canEdit: true, generation: sprayWallViewerGeneration() },
+      }),
+    );
+    expect(result.current).toBe(true);
+
+    // A revalidation that no longer grants it: Edit goes away without a reload.
+    act(() => registerSprayWall(LAYOUT_ID, wallPayload(1)));
+    expect(result.current).toBe(false);
+  });
+
+  it('is false on a catalogue board that shares a layout id with a wall', () => {
+    registerSprayWall(LAYOUT_ID, {
+      ...wallPayload(1),
+      viewerAccess: { canEdit: true, generation: sprayWallViewerGeneration() },
+    });
+    const { result } = renderHook(() => useSprayWallViewerCanEdit('kilter', LAYOUT_ID));
+    expect(result.current).toBe(false);
+  });
+
+  it('asks for the wall, which is what re-reads a stale registration', () => {
+    const loader = vi.fn(async () => {});
+    setSprayWallLoader(loader);
+    renderHook(() => useSprayWallViewerCanEdit('spray', LAYOUT_ID));
+    expect(loader).toHaveBeenCalledWith(LAYOUT_ID);
+  });
+});
+
+// The hook that reads the answer is mounted in the app tree, which is REPLACED
+// on every auth change. So the account-change case is modelled the way it
+// happens: the consumer unmounts, the account changes while nothing is mounted,
+// and a fresh consumer mounts with no memory of the old one.
+describe('useSprayWallViewerCanEdit across an account change', () => {
+  it('reads "cannot edit" in a freshly mounted tree after the account changed', () => {
+    registerSprayWall(LAYOUT_ID, {
+      ...wallPayload(1),
+      viewerAccess: { canEdit: true, generation: sprayWallViewerGeneration() },
+    });
+    const first = renderHook(() => useSprayWallViewerCanEdit('spray', LAYOUT_ID));
+    expect(first.result.current).toBe(true);
+
+    first.unmount();
+    resetSprayWallViewerAccess();
+
+    const loader = vi.fn(async () => {});
+    setSprayWallLoader(loader);
+    const second = renderHook(() => useSprayWallViewerCanEdit('spray', LAYOUT_ID));
+    expect(second.result.current).toBe(false);
+    // And it goes back to the server at once instead of trusting a registration
+    // made minutes ago for somebody else.
+    expect(loader).toHaveBeenCalledWith(LAYOUT_ID);
+  });
+
+  it('stays "cannot edit" when the old account\'s answer lands after the swap', () => {
+    const fetchedUnder = sprayWallViewerGeneration();
+    resetSprayWallViewerAccess();
+    const { result } = renderHook(() => useSprayWallViewerCanEdit('spray', LAYOUT_ID));
+
+    act(() =>
+      registerSprayWall(LAYOUT_ID, { ...wallPayload(1), viewerAccess: { canEdit: true, generation: fetchedUnder } }),
+    );
+
+    expect(result.current).toBe(false);
   });
 });

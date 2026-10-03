@@ -1256,6 +1256,9 @@ export function useBetaLinks(boardType: string, climbUuid: string, enabled = tru
   });
 }
 
+export { useClimbRevisions, type ClimbRevisionRow } from './use-climb-revisions';
+export { CLIMB_REVISIONS_QUERY_KEY, climbRevisionsQueryKey } from './climb-revisions-query-key';
+
 const USER_BETA_LINKS_PAGE_SIZE = 20;
 
 export type UseUserBetaLinksResult = {

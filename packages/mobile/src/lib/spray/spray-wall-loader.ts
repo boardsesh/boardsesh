@@ -26,9 +26,11 @@ import {
   REGISTERED_WALL_REVALIDATE_MS,
   refreshSprayWall,
   registerSprayWall,
+  resetSprayWallViewerAccess,
   setSprayWallLoader,
   setSprayWallLook,
   sprayCacheToken,
+  sprayWallViewerGeneration,
   unregisterSprayWall,
   type SprayWallRenderSettingsValue,
 } from './spray-wall-registry';
@@ -42,6 +44,21 @@ type SprayWallRenderDataResponse = { sprayWallRenderData: SprayWallRenderData | 
 
 export const sprayWallByLayoutQueryKey = (layoutId: number | null) => ['sprayWallByLayout', layoutId] as const;
 export const sprayWallRenderDataQueryKey = (wallUuid: string | null) => ['sprayWallRenderData', wallUuid] as const;
+
+/**
+ * The key the PUBLISHED render payload is cached under: the prefix above, plus
+ * the viewer generation it was fetched under.
+ *
+ * The third segment is an object, never a bare number. The hold editor caches a
+ * DRAFT version under `['sprayWallRenderData', wallUuid, versionNumber]`
+ * (`sprayWallDraftQueryKey`), and a generation is a small integer too: as a
+ * number, generation 1 and draft version 1 would be one cache entry with two
+ * different query functions, and each would overwrite the other's payload. An
+ * object can never equal a number, and the `[key, wallUuid]` prefix still
+ * invalidates both.
+ */
+export const sprayWallPublishedRenderDataQueryKey = (wallUuid: string, viewerGeneration: number) =>
+  [...sprayWallRenderDataQueryKey(wallUuid), { viewerGeneration }] as const;
 
 /**
  * A wall's uuid is immutable, so this is cached for the session and never
@@ -66,7 +83,7 @@ export const WALL_IDENTITY_STALE_TIME_MS = 60 * 60 * 1000;
  */
 export const RENDER_DATA_STALE_TIME_MS = REGISTERED_WALL_REVALIDATE_MS;
 
-function toCanonicalHolds(renderData: SprayWallRenderData): CanonicalSprayHold[] {
+export function toCanonicalHolds(renderData: Pick<SprayWallRenderData, 'holds'>): CanonicalSprayHold[] {
   return renderData.holds.map((hold) => ({
     id: hold.id,
     cx: hold.cx,
@@ -92,7 +109,9 @@ function toCanonicalHolds(renderData: SprayWallRenderData): CanonicalSprayHold[]
  * wall whose photo will not say how big it is cannot be drawn, and the render
  * path's placeholder is the honest answer.
  */
-function photoDimensions(renderData: SprayWallRenderData): { width: number; height: number } | null {
+export function photoDimensions(
+  renderData: Pick<SprayWallRenderData, 'photo'>,
+): { width: number; height: number } | null {
   const { width, height } = renderData.photo;
   if (typeof width !== 'number' || typeof height !== 'number') return null;
   if (!(width > 0) || !(height > 0)) return null;
@@ -149,6 +168,10 @@ export function registerRenderData(
   layoutId: number,
   renderData: SprayWallRenderData,
   look?: SprayWallRenderSettingsValue | null,
+  // The viewer generation `renderData` was fetched under, read before the
+  // request went out. Left out, the wall registers as "viewer cannot edit": a
+  // caller that cannot say whose answer this is does not get to show Edit.
+  fetchedUnderViewerGeneration?: number,
 ): boolean {
   const dimensions = photoDimensions(renderData);
   const canonicalHolds = toCanonicalHolds(renderData);
@@ -175,6 +198,12 @@ export function registerRenderData(
     photoExpiresAt: renderData.photo.expiresAt,
     holds,
     renderSettings: look,
+    // Strictly `true`: a payload from a backend that predates the field, or a
+    // cached one missing it, must read as "cannot edit".
+    viewerAccess:
+      fetchedUnderViewerGeneration === undefined
+        ? undefined
+        : { canEdit: renderData.wall.viewerCanEdit === true, generation: fetchedUnderViewerGeneration },
   });
   if (look === undefined) void loadSprayWallLook(layoutId, renderData.wall.uuid);
 
@@ -300,10 +329,16 @@ export function fetchSprayWallUuid(queryClient: QueryClient, layoutId: number): 
 export function fetchSprayWallRenderData(
   queryClient: QueryClient,
   wallUuid: string,
+  // Part of the KEY, not only a stamp. The payload carries `viewerCanEdit`,
+  // which is one account's answer, so a request still in flight for the last
+  // account must not be the one a caller under the new account is handed
+  // (React Query shares an in-flight fetch between callers of one key), and a
+  // payload cached for the last account must not be read back as fresh.
+  viewerGeneration: number = sprayWallViewerGeneration(),
 ): Promise<SprayWallRenderData | null> {
   return queryClient
     .fetchQuery({
-      queryKey: sprayWallRenderDataQueryKey(wallUuid),
+      queryKey: sprayWallPublishedRenderDataQueryKey(wallUuid, viewerGeneration),
       queryFn: () =>
         getHttpClient().request<SprayWallRenderDataResponse>(GET_SPRAY_WALL_RENDER_DATA, { uuid: wallUuid }),
       staleTime: RENDER_DATA_STALE_TIME_MS,
@@ -337,12 +372,22 @@ export async function loadSprayWall(
     await queryClient.invalidateQueries({ queryKey: sprayWallRenderDataQueryKey(wallUuid) });
   }
 
-  const renderDataRead = fetchSprayWallRenderData(queryClient, wallUuid);
+  // Noted before the request leaves. If the account changes while it is out,
+  // the answer's `viewerCanEdit` belongs to somebody else: ask once more under
+  // the account that is here now. A second change in the same breath is left to
+  // the registry, which registers the wall as "cannot edit" and stale.
+  let viewerGeneration = sprayWallViewerGeneration();
+  let renderDataRead = fetchSprayWallRenderData(queryClient, wallUuid, viewerGeneration);
   // Alongside the render data, not after it: a wall registered without its look
   // draws in the viewer's settings, then draws again when the look lands, which
   // on a cold start doubles every spray surface's renders. Never rejects.
   const lookRead = fetchSprayWallLook(wallUuid);
-  const renderData = await renderDataRead;
+  let renderData = await renderDataRead;
+  if (viewerGeneration !== sprayWallViewerGeneration()) {
+    viewerGeneration = sprayWallViewerGeneration();
+    renderDataRead = fetchSprayWallRenderData(queryClient, wallUuid, viewerGeneration);
+    renderData = await renderDataRead;
+  }
   if (!renderData) {
     // The wall exists but has nothing renderable: deleted between the two reads,
     // visibility revoked, the published version's photo gone. A wall we already
@@ -353,7 +398,7 @@ export async function loadSprayWall(
     unregisterSprayWall(layoutId);
     return;
   }
-  registerRenderData(layoutId, renderData, await lookRead);
+  registerRenderData(layoutId, renderData, await lookRead, viewerGeneration);
 }
 
 /**
@@ -378,6 +423,39 @@ export async function invalidateSprayWallRenderData(
 ): Promise<void> {
   await queryClient.invalidateQueries({ queryKey: sprayWallRenderDataQueryKey(wallUuid) });
   refreshSprayWall(layoutId);
+}
+
+/**
+ * The signed-in account changed: disown what the last account could edit, and
+ * re-read each wall in hand.
+ *
+ * Called by the auth provider (the one component that survives a sign-out), on
+ * every change of who is signed in. Synchronous on purpose: by the time it
+ * returns, no wall says the viewer can edit it and no request in flight can say
+ * so later (`resetSprayWallViewerAccess`). The refetch that follows is a
+ * courtesy. A wall with a load already in flight is skipped by
+ * `refreshSprayWall`; that load re-asks by itself when it sees the generation
+ * moved (`loadSprayWall`), and failing that the wall is stamped stale, so the
+ * next surface to ask for it fetches.
+ */
+export function refreshSprayWallViewerAccess(): void {
+  for (const layoutId of resetSprayWallViewerAccess()) refreshSprayWall(layoutId);
+}
+
+/**
+ * The account went away, and nothing is known yet about what replaces it.
+ *
+ * Drops `viewerCanEdit` everywhere and disowns requests in flight, exactly as
+ * above, but fetches NOTHING and leaves the registrations fresh so nothing else
+ * fetches either. A native keychain that fails for a moment flips the app to
+ * signed-out without any cleanup, and requests sent in that state carry no
+ * token (`authenticatedFetch` only sets the header when it reads one). A
+ * private wall asked for like that resolves null and would be withdrawn from
+ * under the live player. The refetch waits for `refreshSprayWallViewerAccess`,
+ * on sign-in or after the signed-out cleanup.
+ */
+export function dropSprayWallViewerAccess(): void {
+  resetSprayWallViewerAccess({ markStale: false });
 }
 
 /**

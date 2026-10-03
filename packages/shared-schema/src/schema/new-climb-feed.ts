@@ -155,9 +155,12 @@ export const newClimbFeedTypeDefs = /* GraphQL */ `
   }
 
   """
-  Input for updating an existing climb. Only the climb's owner can update
-  the row, and only while it is still a draft OR within 24 hours of its
-  first publish.
+  Input for updating an existing climb.
+
+  A draft can be updated by its setter at any time. A published climb can be
+  updated by its setter within 24 hours of its first publish, except on a spray
+  wall, where the setter and anyone who can edit the wall can update it with no
+  time limit. Every edit to a published climb is kept (see climbRevisions).
   """
   input UpdateClimbInput {
     uuid: ID!

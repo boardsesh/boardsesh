@@ -12,10 +12,23 @@ const reportHandledErrorMock = vi.hoisted(() => vi.fn());
 const invalidateQueriesMock = vi.hoisted(() => vi.fn(async () => {}));
 vi.mock('../../error-reporting', () => ({ reportHandledError: reportHandledErrorMock }));
 
-const { clearSprayWallRegistry, getSprayWall, registerSprayWall, subscribeToSprayWalls } =
-  await import('../spray-wall-registry');
-const { LOOK_RETRY_AFTER_FAILURE_MS, clearSprayWallLooks, loadSprayWall, primeSprayWallLook } =
-  await import('../spray-wall-loader');
+const {
+  clearSprayWallRegistry,
+  getSprayWall,
+  registerSprayWall,
+  resetSprayWallViewerAccess,
+  setSprayWallLoader,
+  sprayWallViewerGeneration,
+  subscribeToSprayWalls,
+} = await import('../spray-wall-registry');
+const {
+  LOOK_RETRY_AFTER_FAILURE_MS,
+  clearSprayWallLooks,
+  dropSprayWallViewerAccess,
+  loadSprayWall,
+  primeSprayWallLook,
+  refreshSprayWallViewerAccess,
+} = await import('../spray-wall-loader');
 const sprayOperations = await import('@boardsesh/graphql/operations/spray-walls');
 
 const LAYOUT_ID = 4200;
@@ -99,6 +112,215 @@ describe('loadSprayWall', () => {
     // The wall's own fixed angle, which is what every climb set on it publishes at
     // (SW-10) — `assertSprayAngleMatchesWall` rejects any other outright.
     expect(getSprayWall(LAYOUT_ID)?.angle).toBe(25);
+  });
+
+  it('registers whether the viewer can edit the wall, and only on a literal true', async () => {
+    requestMock
+      .mockResolvedValueOnce({ sprayWallByLayout: { uuid: WALL_UUID } })
+      .mockResolvedValueOnce(
+        renderDataPayload({ wall: { uuid: WALL_UUID, board: { angle: 25 }, viewerCanEdit: true } }),
+      );
+    await loadSprayWall(fakeQueryClient(), LAYOUT_ID);
+    expect(getSprayWall(LAYOUT_ID)?.viewerCanEdit).toBe(true);
+
+    // A payload without the field (an older backend) must read as "cannot edit",
+    // and must not inherit the previous registration's answer.
+    requestMock
+      .mockResolvedValueOnce({ sprayWallByLayout: { uuid: WALL_UUID } })
+      .mockResolvedValueOnce(renderDataPayload());
+    await loadSprayWall(fakeQueryClient(), LAYOUT_ID);
+    expect(getSprayWall(LAYOUT_ID)?.viewerCanEdit).toBe(false);
+  });
+
+  it('forgets who could edit on an account change, at once', () => {
+    registerSprayWall(LAYOUT_ID, {
+      ...existingWall(),
+      viewerAccess: { canEdit: true, generation: sprayWallViewerGeneration() },
+    });
+    const before = sprayWallViewerGeneration();
+
+    // Synchronous: by the time the auth provider's call returns, nothing says
+    // the viewer can edit.
+    refreshSprayWallViewerAccess();
+
+    expect(getSprayWall(LAYOUT_ID)?.viewerCanEdit).toBe(false);
+    expect(getSprayWall(LAYOUT_ID)?.version).toBe(1);
+    expect(sprayWallViewerGeneration()).toBe(before + 1);
+  });
+
+  it('refetches each wall in hand for the new account', async () => {
+    registerSprayWall(LAYOUT_ID, {
+      ...existingWall(),
+      viewerAccess: { canEdit: false, generation: sprayWallViewerGeneration() },
+    });
+    const queryClient = fakeQueryClient();
+    setSprayWallLoader((layoutId, options) => loadSprayWall(queryClient, layoutId, options));
+    requestMock.mockImplementation(async (operation: unknown) => {
+      if (operation === sprayOperations.GET_SPRAY_WALL_BY_LAYOUT) return { sprayWallByLayout: { uuid: WALL_UUID } };
+      if (operation === sprayOperations.GET_SPRAY_WALL_RENDER_DATA) {
+        return renderDataPayload({ wall: { uuid: WALL_UUID, board: { angle: 25 }, viewerCanEdit: true } });
+      }
+      return { sprayWall: null };
+    });
+
+    refreshSprayWallViewerAccess();
+    expect(getSprayWall(LAYOUT_ID)?.viewerCanEdit).toBe(false);
+
+    await vi.waitFor(() => expect(getSprayWall(LAYOUT_ID)?.viewerCanEdit).toBe(true));
+    expect(getSprayWall(LAYOUT_ID)?.version).toBe(2);
+  });
+
+  it('asks again when the account changes while the request is out, and believes only the second answer', async () => {
+    // The request leaves under account A. A signs out mid-flight. A's payload
+    // says "can edit"; the next viewer's says "cannot".
+    let renderDataRequests = 0;
+    requestMock.mockImplementation(async (operation: unknown) => {
+      if (operation === sprayOperations.GET_SPRAY_WALL_BY_LAYOUT) return { sprayWallByLayout: { uuid: WALL_UUID } };
+      if (operation === sprayOperations.GET_SPRAY_WALL_RENDER_DATA) {
+        renderDataRequests += 1;
+        if (renderDataRequests === 1) {
+          resetSprayWallViewerAccess();
+          return renderDataPayload({ wall: { uuid: WALL_UUID, board: { angle: 25 }, viewerCanEdit: true } });
+        }
+        return renderDataPayload({ wall: { uuid: WALL_UUID, board: { angle: 25 }, viewerCanEdit: false } });
+      }
+      return { sprayWall: null };
+    });
+
+    await loadSprayWall(fakeQueryClient(), LAYOUT_ID);
+
+    expect(renderDataRequests).toBe(2);
+    expect(getSprayWall(LAYOUT_ID)?.viewerCanEdit).toBe(false);
+    // Fetched under the account that is here now, so it is fresh, not stale.
+    expect(getSprayWall(LAYOUT_ID)?.registeredAtMs).toBeGreaterThan(0);
+  });
+
+  it('never registers "can edit" from an answer that keeps losing the race', async () => {
+    // The account changes during BOTH requests. The loader stops at two; the
+    // registry refuses the stale answer and marks the wall for a refetch.
+    requestMock.mockImplementation(async (operation: unknown) => {
+      if (operation === sprayOperations.GET_SPRAY_WALL_BY_LAYOUT) return { sprayWallByLayout: { uuid: WALL_UUID } };
+      if (operation === sprayOperations.GET_SPRAY_WALL_RENDER_DATA) {
+        resetSprayWallViewerAccess();
+        return renderDataPayload({ wall: { uuid: WALL_UUID, board: { angle: 25 }, viewerCanEdit: true } });
+      }
+      return { sprayWall: null };
+    });
+
+    await loadSprayWall(fakeQueryClient(), LAYOUT_ID);
+
+    expect(getSprayWall(LAYOUT_ID)?.version).toBe(2);
+    expect(getSprayWall(LAYOUT_ID)?.viewerCanEdit).toBe(false);
+    expect(getSprayWall(LAYOUT_ID)?.registeredAtMs).toBe(0);
+  });
+
+  it('keys the render payload on the viewer generation, so two accounts never share a request or a cache entry', async () => {
+    const keys: unknown[][] = [];
+    const queryClient = {
+      fetchQuery: ({ queryKey, queryFn }: { queryKey: unknown[]; queryFn: () => Promise<unknown> }) => {
+        keys.push(queryKey);
+        return queryFn();
+      },
+      invalidateQueries: invalidateQueriesMock,
+    } as unknown as Parameters<typeof loadSprayWall>[0];
+    requestMock.mockImplementation(async (operation: unknown) =>
+      operation === sprayOperations.GET_SPRAY_WALL_BY_LAYOUT
+        ? { sprayWallByLayout: { uuid: WALL_UUID } }
+        : operation === sprayOperations.GET_SPRAY_WALL_RENDER_DATA
+          ? renderDataPayload()
+          : { sprayWall: null },
+    );
+
+    await loadSprayWall(queryClient, LAYOUT_ID);
+    resetSprayWallViewerAccess();
+    await loadSprayWall(queryClient, LAYOUT_ID);
+
+    const renderKeys = keys.filter((key) => key[0] === 'sprayWallRenderData');
+    expect(renderKeys).toHaveLength(2);
+    expect(renderKeys[0].slice(0, 2)).toEqual(['sprayWallRenderData', WALL_UUID]);
+    expect(renderKeys[0]).not.toEqual(renderKeys[1]);
+  });
+
+  it('never shares a cache entry with a draft version of the same wall', async () => {
+    // The hold editor caches a DRAFT under ['sprayWallRenderData', uuid, versionNumber].
+    // A viewer generation is a small integer too. As a bare number, generation 1
+    // and draft version 1 were one entry with two query functions: the loader's
+    // null overwrote the draft (a first wall read "unavailable" in the editor),
+    // or its refetch replaced the draft payload mid-edit.
+    const { sprayWallDraftQueryKey } = await import('../use-spray-wall-draft');
+    const { sprayWallPublishedRenderDataQueryKey, sprayWallRenderDataQueryKey } = await import('../spray-wall-loader');
+    const hash = (key: readonly unknown[]) => JSON.stringify(key);
+
+    for (let generation = 0; generation <= 60; generation += 1) {
+      const publishedKey = sprayWallPublishedRenderDataQueryKey(WALL_UUID, generation);
+      for (let version = 0; version <= 60; version += 1) {
+        expect(hash(publishedKey)).not.toBe(hash(sprayWallDraftQueryKey(WALL_UUID, version)));
+      }
+      // Structurally distinct, not merely unequal today: the segment is not a
+      // number or a numeric string, so no draft version can ever match it.
+      expect(typeof publishedKey[2]).toBe('object');
+      // And the shared prefix still reaches it, which every invalidation uses.
+      expect(publishedKey.slice(0, 2)).toEqual([...sprayWallRenderDataQueryKey(WALL_UUID)]);
+    }
+  });
+
+  it('is the key the loader actually fetches under', async () => {
+    const keys: unknown[][] = [];
+    const queryClient = {
+      fetchQuery: ({ queryKey, queryFn }: { queryKey: unknown[]; queryFn: () => Promise<unknown> }) => {
+        keys.push(queryKey);
+        return queryFn();
+      },
+      invalidateQueries: invalidateQueriesMock,
+    } as unknown as Parameters<typeof loadSprayWall>[0];
+    requestMock.mockImplementation(async (operation: unknown) =>
+      operation === sprayOperations.GET_SPRAY_WALL_BY_LAYOUT
+        ? { sprayWallByLayout: { uuid: WALL_UUID } }
+        : operation === sprayOperations.GET_SPRAY_WALL_RENDER_DATA
+          ? renderDataPayload()
+          : { sprayWall: null },
+    );
+    const { sprayWallPublishedRenderDataQueryKey } = await import('../spray-wall-loader');
+    resetSprayWallViewerAccess();
+
+    await loadSprayWall(queryClient, LAYOUT_ID);
+
+    expect(keys.find((key) => key[0] === 'sprayWallRenderData')).toEqual([
+      ...sprayWallPublishedRenderDataQueryKey(WALL_UUID, sprayWallViewerGeneration()),
+    ]);
+  });
+
+  it('drops who could edit without fetching or inviting a fetch, when the account just went away', () => {
+    // A native keychain that fails for a moment flips the app to signed-out.
+    // A request sent now has no token, and a private wall would resolve null
+    // and be withdrawn from the live player.
+    registerSprayWall(LAYOUT_ID, {
+      ...existingWall(),
+      viewerAccess: { canEdit: true, generation: sprayWallViewerGeneration() },
+    });
+    const registeredAt = getSprayWall(LAYOUT_ID)?.registeredAtMs;
+    const before = sprayWallViewerGeneration();
+    const loader = vi.fn(async () => {});
+    setSprayWallLoader(loader);
+
+    dropSprayWallViewerAccess();
+
+    expect(getSprayWall(LAYOUT_ID)?.viewerCanEdit).toBe(false);
+    expect(sprayWallViewerGeneration()).toBe(before + 1);
+    expect(loader).not.toHaveBeenCalled();
+    expect(requestMock).not.toHaveBeenCalled();
+    // Still fresh: a surface that asks for the wall is not sent to the network.
+    expect(getSprayWall(LAYOUT_ID)?.registeredAtMs).toBe(registeredAt);
+  });
+
+  it('registers "cannot edit" for a payload nobody can vouch for', async () => {
+    // The wall editor's draft registers render data it fetched itself, with no
+    // viewer generation. That draws the wall and says nothing about Edit.
+    const { registerRenderData } = await import('../spray-wall-loader');
+    const payload = renderDataPayload({ wall: { uuid: WALL_UUID, board: { angle: 25 }, viewerCanEdit: true } });
+    registerRenderData(LAYOUT_ID, payload.sprayWallRenderData as never, null);
+    expect(getSprayWall(LAYOUT_ID)?.version).toBe(2);
+    expect(getSprayWall(LAYOUT_ID)?.viewerCanEdit).toBe(false);
   });
 
   it('registers a wall whose payload will not say its angle', async () => {

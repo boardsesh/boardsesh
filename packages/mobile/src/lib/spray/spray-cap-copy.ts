@@ -1,4 +1,9 @@
-import { MAX_HOLDS_PER_WALL, MAX_SPRAY_WALLS_PER_USER, MAX_VERSIONS_PER_WALL } from '@boardsesh/board-config';
+import {
+  MAX_HOLDS_PER_WALL,
+  MAX_REVISIONS_PER_CLIMB,
+  MAX_SPRAY_WALLS_PER_USER,
+  MAX_VERSIONS_PER_WALL,
+} from '@boardsesh/board-config';
 
 /**
  * The caps, as copy, at the three points they bite.
@@ -56,6 +61,20 @@ export function sprayCapMessage(kind: SprayCapKind, t: SprayCapTranslator): stri
     case 'versions':
       return t('sprayCaps.versions', { max: MAX_VERSIONS_PER_WALL });
   }
+}
+
+/**
+ * How many rows a climb's edit history can hold (#5955).
+ *
+ * Not a `SprayCapKind`: nothing is ever refused for it. Past the cap the server
+ * drops the oldest edit and keeps the original, so this is only ever said as a
+ * note under a full history, and it bounds how many rows "Show all" can reveal.
+ */
+export const CLIMB_REVISION_CAP = MAX_REVISIONS_PER_CLIMB;
+
+/** The note under a climb's edit history once it is full, with the number the server enforces. */
+export function climbRevisionCapNote(t: SprayCapTranslator): string {
+  return t('mobile.revisions.capNote', { max: MAX_REVISIONS_PER_CLIMB });
 }
 
 /**

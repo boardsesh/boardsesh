@@ -1273,6 +1273,54 @@ export type ClimbQueueItemInput = {
 };
 
 /**
+ * One state a published climb has been in: the climb as it stood after an edit.
+ *
+ * The highest-numbered revision is always the climb as it is now. Revision 1 is
+ * the climb as it was first published. A climb nobody has edited has no
+ * revisions at all. Numbers are not always consecutive: past 50 revisions the
+ * oldest edits are dropped (revision 1 is always kept).
+ *
+ * Read-only. A revision cannot be restored, queued or lit up.
+ */
+export type ClimbRevision = {
+  __typename?: 'ClimbRevision';
+  angle?: Maybe<Scalars['Int']['output']>;
+  /**
+   * What this revision changed against the one before it: any of name,
+   * description, holds, grade, angle, rules. Empty for revision 1.
+   */
+  changes: Array<Scalars['String']['output']>;
+  /** When the edit was made. For revision 1, when the climb was published. */
+  createdAt: Scalars['String']['output'];
+  description?: Maybe<Scalars['String']['output']>;
+  /** The setter grade at this revision. Spray walls only; null on every other board. */
+  difficultyId?: Maybe<Scalars['Int']['output']>;
+  /** True when the editor is the climb's setter, false for a spray wall's editor. */
+  editedBySetter: Scalars['Boolean']['output'];
+  /** Who made the edit. Null when that account has since been deleted. */
+  editor?: Maybe<ClimbRevisionEditor>;
+  frames?: Maybe<Scalars['String']['output']>;
+  /** True for the newest revision, which matches the live climb. */
+  isCurrent: Scalars['Boolean']['output'];
+  name?: Maybe<Scalars['String']['output']>;
+  revisionNumber: Scalars['Int']['output'];
+  /**
+   * Spray walls only: the wall version (photo) this revision was drawn on, to pass
+   * as sprayWallRenderData's version. Null on every other board, and on a first
+   * revision whose version could not be worked out.
+   */
+  sprayWallVersionNumber?: Maybe<Scalars['Int']['output']>;
+};
+
+/** Who made an edit to a climb. */
+export type ClimbRevisionEditor = {
+  __typename?: 'ClimbRevisionEditor';
+  avatarUrl?: Maybe<Scalars['String']['output']>;
+  displayName?: Maybe<Scalars['String']['output']>;
+  id: Scalars['ID']['output'];
+};
+
+/**
  * Input parameters for searching climbs.
  * Supports filtering, sorting, and pagination.
  */
@@ -5962,6 +6010,13 @@ export type Query = {
   /** Get proposals for a specific climb. */
   climbProposals: ProposalConnection;
   /**
+   * The edit history of a published climb, newest first. At most 50 rows.
+   *
+   * Empty for a climb nobody has edited, for a draft, and for a spray climb on a
+   * wall the caller cannot see.
+   */
+  climbRevisions: Array<ClimbRevision>;
+  /**
    * Get current per-angle statistics for a climb from the live stats table.
    * Returns one entry for each angle the climb has been logged at.
    */
@@ -6719,6 +6774,12 @@ export type QueryClimbCommunityStatusArgs = {
 /** Root query type for all read operations. */
 export type QueryClimbProposalsArgs = {
   input: GetClimbProposalsInput;
+};
+
+/** Root query type for all read operations. */
+export type QueryClimbRevisionsArgs = {
+  boardType: Scalars['String']['input'];
+  climbUuid: Scalars['String']['input'];
 };
 
 /** Root query type for all read operations. */
@@ -9678,9 +9739,12 @@ export type UpdateBoardInput = {
 };
 
 /**
- * Input for updating an existing climb. Only the climb's owner can update
- * the row, and only while it is still a draft OR within 24 hours of its
- * first publish.
+ * Input for updating an existing climb.
+ *
+ * A draft can be updated by its setter at any time. A published climb can be
+ * updated by its setter within 24 hours of its first publish, except on a spray
+ * wall, where the setter and anyone who can edit the wall can update it with no
+ * time limit. Every edit to a published climb is kept (see climbRevisions).
  */
 export type UpdateClimbInput = {
   angle?: InputMaybe<Scalars['Int']['input']>;
@@ -10403,6 +10467,8 @@ export type ResolversTypes = ResolversObject<{
   ClimbPlaylistMembership: ResolverTypeWrapper<ClimbPlaylistMembership>;
   ClimbQueueItem: ResolverTypeWrapper<ClimbQueueItem>;
   ClimbQueueItemInput: ClimbQueueItemInput;
+  ClimbRevision: ResolverTypeWrapper<ClimbRevision>;
+  ClimbRevisionEditor: ResolverTypeWrapper<ClimbRevisionEditor>;
   ClimbSearchInput: ClimbSearchInput;
   ClimbSearchResult: ResolverTypeWrapper<ClimbSearchResult>;
   ClimbStatsEvent: ResolverTypeWrapper<ClimbStatsEvent>;
@@ -10871,6 +10937,8 @@ export type ResolversParentTypes = ResolversObject<{
   ClimbPlaylistMembership: ClimbPlaylistMembership;
   ClimbQueueItem: ClimbQueueItem;
   ClimbQueueItemInput: ClimbQueueItemInput;
+  ClimbRevision: ClimbRevision;
+  ClimbRevisionEditor: ClimbRevisionEditor;
   ClimbSearchInput: ClimbSearchInput;
   ClimbSearchResult: ClimbSearchResult;
   ClimbStatsEvent: ClimbStatsEvent;
@@ -11904,6 +11972,35 @@ export type ClimbQueueItemResolvers<
   suggested?: Resolver<Maybe<ResolversTypes['Boolean']>, ParentType, ContextType>;
   tickedBy?: Resolver<Maybe<Array<ResolversTypes['String']>>, ParentType, ContextType>;
   uuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type ClimbRevisionResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['ClimbRevision'] = ResolversParentTypes['ClimbRevision'],
+> = ResolversObject<{
+  angle?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  changes?: Resolver<Array<ResolversTypes['String']>, ParentType, ContextType>;
+  createdAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  description?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  difficultyId?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  editedBySetter?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  editor?: Resolver<Maybe<ResolversTypes['ClimbRevisionEditor']>, ParentType, ContextType>;
+  frames?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  isCurrent?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  name?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  revisionNumber?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  sprayWallVersionNumber?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type ClimbRevisionEditorResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['ClimbRevisionEditor'] = ResolversParentTypes['ClimbRevisionEditor'],
+> = ResolversObject<{
+  avatarUrl?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  displayName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -14531,6 +14628,12 @@ export type QueryResolvers<
     ContextType,
     RequireFields<QueryClimbProposalsArgs, 'input'>
   >;
+  climbRevisions?: Resolver<
+    Array<ResolversTypes['ClimbRevision']>,
+    ParentType,
+    ContextType,
+    RequireFields<QueryClimbRevisionsArgs, 'boardType' | 'climbUuid'>
+  >;
   climbStatsForAngles?: Resolver<
     Array<ResolversTypes['ClimbStatsForAngle']>,
     ParentType,
@@ -16581,6 +16684,8 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   ClimbMirrored?: ClimbMirroredResolvers<ContextType>;
   ClimbPlaylistMembership?: ClimbPlaylistMembershipResolvers<ContextType>;
   ClimbQueueItem?: ClimbQueueItemResolvers<ContextType>;
+  ClimbRevision?: ClimbRevisionResolvers<ContextType>;
+  ClimbRevisionEditor?: ClimbRevisionEditorResolvers<ContextType>;
   ClimbSearchResult?: ClimbSearchResultResolvers<ContextType>;
   ClimbStatsEvent?: ClimbStatsEventResolvers<ContextType>;
   ClimbStatsForAngle?: ClimbStatsForAngleResolvers<ContextType>;

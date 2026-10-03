@@ -1270,6 +1270,54 @@ export type ClimbQueueItemInput = {
 };
 
 /**
+ * One state a published climb has been in: the climb as it stood after an edit.
+ *
+ * The highest-numbered revision is always the climb as it is now. Revision 1 is
+ * the climb as it was first published. A climb nobody has edited has no
+ * revisions at all. Numbers are not always consecutive: past 50 revisions the
+ * oldest edits are dropped (revision 1 is always kept).
+ *
+ * Read-only. A revision cannot be restored, queued or lit up.
+ */
+export type ClimbRevision = {
+  __typename?: 'ClimbRevision';
+  angle?: Maybe<Scalars['Int']['output']>;
+  /**
+   * What this revision changed against the one before it: any of name,
+   * description, holds, grade, angle, rules. Empty for revision 1.
+   */
+  changes: Array<Scalars['String']['output']>;
+  /** When the edit was made. For revision 1, when the climb was published. */
+  createdAt: Scalars['String']['output'];
+  description?: Maybe<Scalars['String']['output']>;
+  /** The setter grade at this revision. Spray walls only; null on every other board. */
+  difficultyId?: Maybe<Scalars['Int']['output']>;
+  /** True when the editor is the climb's setter, false for a spray wall's editor. */
+  editedBySetter: Scalars['Boolean']['output'];
+  /** Who made the edit. Null when that account has since been deleted. */
+  editor?: Maybe<ClimbRevisionEditor>;
+  frames?: Maybe<Scalars['String']['output']>;
+  /** True for the newest revision, which matches the live climb. */
+  isCurrent: Scalars['Boolean']['output'];
+  name?: Maybe<Scalars['String']['output']>;
+  revisionNumber: Scalars['Int']['output'];
+  /**
+   * Spray walls only: the wall version (photo) this revision was drawn on, to pass
+   * as sprayWallRenderData's version. Null on every other board, and on a first
+   * revision whose version could not be worked out.
+   */
+  sprayWallVersionNumber?: Maybe<Scalars['Int']['output']>;
+};
+
+/** Who made an edit to a climb. */
+export type ClimbRevisionEditor = {
+  __typename?: 'ClimbRevisionEditor';
+  avatarUrl?: Maybe<Scalars['String']['output']>;
+  displayName?: Maybe<Scalars['String']['output']>;
+  id: Scalars['ID']['output'];
+};
+
+/**
  * Input parameters for searching climbs.
  * Supports filtering, sorting, and pagination.
  */
@@ -5959,6 +6007,13 @@ export type Query = {
   /** Get proposals for a specific climb. */
   climbProposals: ProposalConnection;
   /**
+   * The edit history of a published climb, newest first. At most 50 rows.
+   *
+   * Empty for a climb nobody has edited, for a draft, and for a spray climb on a
+   * wall the caller cannot see.
+   */
+  climbRevisions: Array<ClimbRevision>;
+  /**
    * Get current per-angle statistics for a climb from the live stats table.
    * Returns one entry for each angle the climb has been logged at.
    */
@@ -6716,6 +6771,12 @@ export type QueryClimbCommunityStatusArgs = {
 /** Root query type for all read operations. */
 export type QueryClimbProposalsArgs = {
   input: GetClimbProposalsInput;
+};
+
+/** Root query type for all read operations. */
+export type QueryClimbRevisionsArgs = {
+  boardType: Scalars['String']['input'];
+  climbUuid: Scalars['String']['input'];
 };
 
 /** Root query type for all read operations. */
@@ -9675,9 +9736,12 @@ export type UpdateBoardInput = {
 };
 
 /**
- * Input for updating an existing climb. Only the climb's owner can update
- * the row, and only while it is still a draft OR within 24 hours of its
- * first publish.
+ * Input for updating an existing climb.
+ *
+ * A draft can be updated by its setter at any time. A published climb can be
+ * updated by its setter within 24 hours of its first publish, except on a spray
+ * wall, where the setter and anyone who can edit the wall can update it with no
+ * time limit. Every edit to a published climb is kept (see climbRevisions).
  */
 export type UpdateClimbInput = {
   angle?: InputMaybe<Scalars['Int']['input']>;
@@ -11041,6 +11105,35 @@ export type BoardseshGradesForAnglesQuery = {
     ascensionistCount: number;
     modelVersion: string;
     computedAt: string;
+  }>;
+};
+
+export type GetClimbRevisionsQueryVariables = Exact<{
+  boardType: Scalars['String']['input'];
+  climbUuid: Scalars['String']['input'];
+}>;
+
+export type GetClimbRevisionsQuery = {
+  __typename?: 'Query';
+  climbRevisions: Array<{
+    __typename?: 'ClimbRevision';
+    revisionNumber: number;
+    isCurrent: boolean;
+    createdAt: string;
+    name?: string | null;
+    description?: string | null;
+    frames?: string | null;
+    angle?: number | null;
+    difficultyId?: number | null;
+    changes: Array<string>;
+    editedBySetter: boolean;
+    sprayWallVersionNumber?: number | null;
+    editor?: {
+      __typename?: 'ClimbRevisionEditor';
+      id: string;
+      displayName?: string | null;
+      avatarUrl?: string | null;
+    } | null;
   }>;
 };
 
@@ -15981,6 +16074,77 @@ export const BoardseshGradesForAnglesDocument = {
     },
   ],
 } as unknown as DocumentNode<BoardseshGradesForAnglesQuery, BoardseshGradesForAnglesQueryVariables>;
+export const GetClimbRevisionsDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetClimbRevisions' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'boardType' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'String' } } },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'climbUuid' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'String' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'climbRevisions' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'boardType' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'boardType' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'climbUuid' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'climbUuid' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'revisionNumber' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'isCurrent' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'name' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'description' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'difficultyId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'changes' } },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'editor' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'displayName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'avatarUrl' } },
+                    ],
+                  },
+                },
+                { kind: 'Field', name: { kind: 'Name', value: 'editedBySetter' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'sprayWallVersionNumber' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetClimbRevisionsQuery, GetClimbRevisionsQueryVariables>;
 export const ClimbStatsForAnglesDocument = {
   kind: 'Document',
   definitions: [

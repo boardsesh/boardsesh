@@ -8,6 +8,9 @@ export {
   EDIT_WINDOW_MS,
   computeCanUpdate,
   computeEditLocked,
+  canEditClimb,
   buildInitialFrames,
   type SavedClimbSnapshot,
+  type EditableClimb,
+  type CanEditClimbInput,
 } from './helpers';

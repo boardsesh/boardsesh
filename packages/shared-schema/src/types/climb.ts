@@ -51,7 +51,8 @@ export type Climb = {
   is_hidden?: boolean | null;
   // ISO timestamp of when the climb was first published (transitioned out of
   // draft). Null while the climb is still a draft. Used by the create form
-  // to enforce the 24h post-publish edit window.
+  // to enforce the 24h post-publish edit window (catalogue boards only; a
+  // spray climb has no window).
   published_at?: string | null;
   // ISO timestamp of when the climb row was created.
   created_at?: string | null;
@@ -384,9 +385,10 @@ export type SaveClimbResult = {
 };
 
 /**
- * Input for updating an existing climb. Only the climb's owner can update
- * it, and only while the climb is still a draft OR within 24 hours of its
- * first publish. The backend enforces both rules.
+ * Input for updating an existing climb. A draft can be updated by its setter at
+ * any time. A published climb can be updated by its setter within 24 hours of
+ * its first publish, except on a spray wall, where the setter and anyone who can
+ * edit the wall can update it with no time limit. The backend enforces all of it.
  */
 export type UpdateClimbInput = {
   uuid: string;
