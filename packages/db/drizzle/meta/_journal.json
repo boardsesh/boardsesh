@@ -1744,6 +1744,13 @@
       "when": 1790749715921,
       "tag": "0248_spray_wall_pending_visibility",
       "breakpoints": true
+    },
+    {
+      "idx": 249,
+      "version": "7",
+      "when": 1790980220712,
+      "tag": "0249_adds_spray_wall_render_settings",
+      "breakpoints": true
     }
   ]
 }

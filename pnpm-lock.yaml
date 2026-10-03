@@ -402,6 +402,9 @@ importers:
       '@boardsesh/board-constants':
         specifier: workspace:*
         version: link:../board-constants
+      '@boardsesh/board-look':
+        specifier: workspace:*
+        version: link:../shared/board-look
       '@boardsesh/climb-filters':
         specifier: workspace:*
         version: link:../shared/climb-filters

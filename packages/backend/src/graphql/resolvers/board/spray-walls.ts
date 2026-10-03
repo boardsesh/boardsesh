@@ -71,6 +71,7 @@ import {
   ProposeSprayWallResetInputSchema,
   PublishSprayWallVersionInputSchema,
   RemoveSprayWallHoldsInputSchema,
+  SetSprayWallRenderSettingsInputSchema,
   UpdateSprayWallInputSchema,
   SPRAY_VERSION_STATUS_WIRE_NAME,
   UpsertSprayWallHoldsInputSchema,
@@ -516,6 +517,7 @@ async function toGraphQLWall(
     // Only ever non-null for the owner: `loadVisibleWall` refuses a hidden wall to
     // everybody else, so nobody else can reach this field to read it.
     hiddenAt: wall.hiddenAt ? wall.hiddenAt.toISOString() : null,
+    renderSettings: wall.renderSettings ?? null,
   };
 }
 
@@ -2178,6 +2180,38 @@ export const sprayWallMutations = {
       layoutId: wall.layoutId,
       userId: ctx.userId,
       fields: Object.keys(updates),
+    });
+
+    const reloaded = await loadWall('uuid', validated.uuid);
+    if (!reloaded) throw notFoundError();
+    return toGraphQLWall(reloaded, ctx.userId, true);
+  },
+
+  /**
+   * Store or clear the wall's default look.
+   *
+   * The plain `requireBoardEditAccess` gate and nothing stricter: unlike
+   * visibility, a stored look decides nothing about who sees the wall. No wall
+   * lock either — `render_settings` is touched by no other writer (holds,
+   * versions and publish never read or write it), so there is no concurrent
+   * write to order this against; the last call wins, which is what a setting is.
+   */
+  setSprayWallRenderSettings: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
+    requireAuthenticated(ctx);
+    await applyRateLimit(ctx, WALL_MUTATION_RATE_LIMIT, 'setSprayWallRenderSettings');
+
+    const validated = validateInput(SetSprayWallRenderSettingsInputSchema, input, 'input');
+    const { wall } = await loadEditableWall(ctx, validated.uuid);
+
+    await db
+      .update(dbSchema.sprayWalls)
+      .set({ renderSettings: validated.renderSettings, updatedAt: new Date() })
+      .where(eq(dbSchema.sprayWalls.id, wall.id));
+
+    logger.info('Spray wall render settings updated', {
+      layoutId: wall.layoutId,
+      userId: ctx.userId,
+      mode: validated.renderSettings?.mode ?? null,
     });
 
     const reloaded = await loadWall('uuid', validated.uuid);

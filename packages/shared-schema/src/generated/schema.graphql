@@ -5976,6 +5976,16 @@ type SprayWall {
   word would look like data loss.
   """
   hiddenAt: String
+  """
+  The wall's own stored default look, or null when its creator never set one
+  (including every wall created before this field existed). A
+  `{ mode: 'classic' | 'aura', boardsesh: {...} }` blob, opaque to the schema
+  and validated server-side — kept as JSON rather than a parallel GraphQL type
+  because the underlying knob set still changes independently. A viewer's own
+  EXPLICIT render-mode choice always overrides this; it only supplies the look
+  for a viewer who has never chosen one.
+  """
+  renderSettings: JSON
 }
 
 """
@@ -6081,6 +6091,12 @@ input UpdateSprayWallInput {
   rather than cascaded.
   """
   angle: Int
+}
+
+input SetSprayWallRenderSettingsInput {
+  uuid: ID!
+  "A { mode, boardsesh } blob, or null to clear the wall's stored default."
+  renderSettings: JSON
 }
 
 type SprayDetectionCandidate {
@@ -8147,6 +8163,15 @@ type Mutation {
   default, because a wall is somebody's home — could never be shown to anybody.
   """
   updateSprayWall(input: UpdateSprayWallInput!): SprayWall!
+
+  """
+  Store the wall's default look — the one a climber who has never picked a
+  render mode sees — or clear it with `renderSettings: null`. Same edit gate as
+  `updateSprayWall`: the owner, a gym owner/admin, or a community leader on a
+  public wall. The blob is validated against the board-look knob set; `mode`
+  must be `classic` or `aura`.
+  """
+  setSprayWallRenderSettings(input: SetSprayWallRenderSettingsInput!): SprayWall!
 
   """
   Attach a photo to the wall as a new DRAFT version, and compute its

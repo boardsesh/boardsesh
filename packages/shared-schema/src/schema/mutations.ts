@@ -675,6 +675,15 @@ export const mutationsTypeDefs = /* GraphQL */ `
     updateSprayWall(input: UpdateSprayWallInput!): SprayWall!
 
     """
+    Store the wall's default look — the one a climber who has never picked a
+    render mode sees — or clear it with \`renderSettings: null\`. Same edit gate as
+    \`updateSprayWall\`: the owner, a gym owner/admin, or a community leader on a
+    public wall. The blob is validated against the board-look knob set; \`mode\`
+    must be \`classic\` or \`aura\`.
+    """
+    setSprayWallRenderSettings(input: SetSprayWallRenderSettingsInput!): SprayWall!
+
+    """
     Attach a photo to the wall as a new DRAFT version, and compute its
     photo→canonical homography from the anchors by 4-point DLT.
 

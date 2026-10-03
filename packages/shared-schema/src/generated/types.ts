@@ -4223,6 +4223,14 @@ export type Mutation = {
    * photographs, the holds and every climb set on the wall stay where they are.
    */
   setSprayWallHidden: SprayWallModerationResult;
+  /**
+   * Store the wall's default look — the one a climber who has never picked a
+   * render mode sees — or clear it with `renderSettings: null`. Same edit gate as
+   * `updateSprayWall`: the owner, a gym owner/admin, or a community leader on a
+   * public wall. The blob is validated against the board-look knob set; `mode`
+   * must be `classic` or `aura`.
+   */
+  setSprayWallRenderSettings: SprayWall;
   /** Setter override: directly set community status for your own climb. */
   setterOverrideCommunityStatus: ClimbCommunityStatus;
   /**
@@ -4927,6 +4935,11 @@ export type MutationSetSessionHealthKitWorkoutIdArgs = {
 /** Root mutation type for all write operations. */
 export type MutationSetSprayWallHiddenArgs = {
   input: SetSprayWallHiddenInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationSetSprayWallRenderSettingsArgs = {
+  input: SetSprayWallRenderSettingsInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -8420,6 +8433,12 @@ export type SetSprayWallHiddenInput = {
   uuid: Scalars['ID']['input'];
 };
 
+export type SetSprayWallRenderSettingsInput = {
+  /** A { mode, boardsesh } blob, or null to clear the wall's stored default. */
+  renderSettings?: InputMaybe<Scalars['JSON']['input']>;
+  uuid: Scalars['ID']['input'];
+};
+
 /** A climb created by a setter, for display on profile pages. */
 export type SetterClimb = {
   __typename?: 'SetterClimb';
@@ -8855,6 +8874,16 @@ export type SprayWall = {
   referenceHeight?: Maybe<Scalars['Int']['output']>;
   /** The canonical frame in pixels, derived from the version-1 photo. Null until the first photo lands. */
   referenceWidth?: Maybe<Scalars['Int']['output']>;
+  /**
+   * The wall's own stored default look, or null when its creator never set one
+   * (including every wall created before this field existed). A
+   * `{ mode: 'classic' | 'aura', boardsesh: {...} }` blob, opaque to the schema
+   * and validated server-side — kept as JSON rather than a parallel GraphQL type
+   * because the underlying knob set still changes independently. A viewer's own
+   * EXPLICIT render-mode choice always overrides this; it only supplies the look
+   * for a viewer who has never chosen one.
+   */
+  renderSettings?: Maybe<Scalars['JSON']['output']>;
   /** Always equal to layoutId. Returned so a client never has to know the equality. */
   sizeId: Scalars['Int']['output'];
   uuid: Scalars['ID']['output'];
@@ -10670,6 +10699,7 @@ export type ResolversTypes = ResolversObject<{
   SessionUser: ResolverTypeWrapper<SessionUser>;
   SetCommunitySettingInput: SetCommunitySettingInput;
   SetSprayWallHiddenInput: SetSprayWallHiddenInput;
+  SetSprayWallRenderSettingsInput: SetSprayWallRenderSettingsInput;
   SetterClimb: ResolverTypeWrapper<SetterClimb>;
   SetterClimbsConnection: ResolverTypeWrapper<SetterClimbsConnection>;
   SetterClimbsFullInput: SetterClimbsFullInput;
@@ -11108,6 +11138,7 @@ export type ResolversParentTypes = ResolversObject<{
   SessionUser: SessionUser;
   SetCommunitySettingInput: SetCommunitySettingInput;
   SetSprayWallHiddenInput: SetSprayWallHiddenInput;
+  SetSprayWallRenderSettingsInput: SetSprayWallRenderSettingsInput;
   SetterClimb: SetterClimb;
   SetterClimbsConnection: SetterClimbsConnection;
   SetterClimbsFullInput: SetterClimbsFullInput;
@@ -13711,6 +13742,12 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationSetSprayWallHiddenArgs, 'input'>
   >;
+  setSprayWallRenderSettings?: Resolver<
+    ResolversTypes['SprayWall'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationSetSprayWallRenderSettingsArgs, 'input'>
+  >;
   setterOverrideCommunityStatus?: Resolver<
     ResolversTypes['ClimbCommunityStatus'],
     ParentType,
@@ -15909,6 +15946,7 @@ export type SprayWallResolvers<
   publicPhotoUrl?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   referenceHeight?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   referenceWidth?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  renderSettings?: Resolver<Maybe<ResolversTypes['JSON']>, ParentType, ContextType>;
   sizeId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   uuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   versions?: Resolver<Array<ResolversTypes['SprayWallVersion']>, ParentType, ContextType>;

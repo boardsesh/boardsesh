@@ -2876,6 +2876,150 @@ describe('updateSprayWall', () => {
   });
 });
 
+describe('setSprayWallRenderSettings', () => {
+  /** A full, valid Aura knob bundle — the shape mobile's settings screen writes. */
+  const AURA_LOOK = {
+    mode: 'aura',
+    boardsesh: {
+      glowFalloff: 'plateau',
+      glowReach: 1.4,
+      plateauShare: 0.5,
+      veil: 'custom',
+      veilOpacity: 0.45,
+      markStyle: 'glow-fill',
+      fillOpacity: 0.6,
+      softDisc: false,
+      smallHoldBoost: true,
+      ledDots: true,
+      roleGlyphs: false,
+      thumbnailStyle: 'fill',
+      holdShape: 'silhouette',
+    },
+  } as const;
+
+  type WallWithLook = { renderSettings: unknown };
+
+  const setLook = (uuid: string, renderSettings: unknown, userId: string) =>
+    sprayWallMutations.setSprayWallRenderSettings(
+      {},
+      { input: { uuid, renderSettings } },
+      ctxFor(userId),
+    ) as Promise<WallWithLook>;
+
+  it('reads null on a wall that never stored a look', async () => {
+    const { wall } = await createPublishedWall(OWNER);
+    const read = (await sprayWallQueries.sprayWall({}, { uuid: wall.uuid }, ctxFor(OWNER))) as WallWithLook;
+    expect(read.renderSettings).toBeNull();
+  });
+
+  it('lets the owner store a look, and returns it through every wall read', async () => {
+    const { wall } = await createPublishedWall(OWNER);
+
+    const returned = await setLook(wall.uuid, AURA_LOOK, OWNER);
+    expect(returned.renderSettings).toEqual(AURA_LOOK);
+
+    const byUuid = (await sprayWallQueries.sprayWall({}, { uuid: wall.uuid }, ctxFor(OWNER))) as WallWithLook;
+    expect(byUuid.renderSettings).toEqual(AURA_LOOK);
+
+    const byLayout = (await sprayWallQueries.sprayWallByLayout(
+      {},
+      { layoutId: wall.layoutId },
+      ctxFor(OWNER),
+    )) as WallWithLook;
+    expect(byLayout.renderSettings).toEqual(AURA_LOOK);
+
+    const renderData = (await sprayWallQueries.sprayWallRenderData(
+      {},
+      { uuid: wall.uuid, version: 1 },
+      ctxFor(OWNER),
+    )) as { wall: WallWithLook };
+    expect(renderData.wall.renderSettings).toEqual(AURA_LOOK);
+  });
+
+  it('lets the owner clear the look with null', async () => {
+    const { wall } = await createPublishedWall(OWNER);
+    await setLook(wall.uuid, AURA_LOOK, OWNER);
+
+    const cleared = await setLook(wall.uuid, null, OWNER);
+    expect(cleared.renderSettings).toBeNull();
+
+    const [row] = (await db.execute(
+      sql`SELECT render_settings FROM spray_walls WHERE layout_id = ${wall.layoutId}`,
+    )) as unknown as Array<{ render_settings: unknown }>;
+    expect(row.render_settings).toBeNull();
+  });
+
+  it('lets a gym ADMIN store a look — the same edit gate as updateSprayWall', async () => {
+    const { wall } = await createPublishedWall(OWNER);
+    const gymUuid = uuidv4();
+    await db.execute(sql`
+      INSERT INTO gyms (uuid, name, slug, owner_id, is_public, created_at, updated_at)
+      VALUES (${gymUuid}, 'Spray Gym', ${gymUuid}, ${OWNER}, true, now(), now())
+    `);
+    const [gym] = (await db.execute(sql`SELECT id FROM gyms WHERE uuid = ${gymUuid}`)) as unknown as Array<{
+      id: number;
+    }>;
+    await db.execute(sql`
+      INSERT INTO gym_members (gym_id, user_id, role, created_at)
+      VALUES (${gym.id}, ${STRANGER}, 'admin', now()), (${gym.id}, ${GYM_EDITOR}, 'editor', now())
+    `);
+    await db.execute(sql`UPDATE user_boards SET gym_id = ${gym.id} WHERE uuid = ${wall.uuid}`);
+
+    const classicLook = { ...AURA_LOOK, mode: 'classic' };
+    const returned = await setLook(wall.uuid, classicLook, STRANGER);
+    expect(returned.renderSettings).toEqual(classicLook);
+
+    // A gym editor can edit the gym's page, not its walls.
+    await expect(setLook(wall.uuid, AURA_LOOK, GYM_EDITOR)).rejects.toThrow(/not authorized/i);
+  });
+
+  it('refuses a stranger and leaves the stored look alone', async () => {
+    const { wall } = await createPublishedWall(OWNER, { isPublic: true });
+    await setLook(wall.uuid, AURA_LOOK, OWNER);
+
+    await expect(setLook(wall.uuid, null, OUTSIDER)).rejects.toThrow(/not authorized/i);
+
+    const read = (await sprayWallQueries.sprayWall({}, { uuid: wall.uuid }, ctxFor(OWNER))) as WallWithLook;
+    expect(read.renderSettings).toEqual(AURA_LOOK);
+  });
+
+  it('refuses an anonymous caller', async () => {
+    const { wall } = await createPublishedWall(OWNER);
+    await expect(
+      sprayWallMutations.setSprayWallRenderSettings(
+        {},
+        { input: { uuid: wall.uuid, renderSettings: AURA_LOOK } },
+        ctxFor(null),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('refuses mode \'default\' — a wall default of "use the default" points at itself', async () => {
+    const { wall } = await createPublishedWall(OWNER);
+    await expect(setLook(wall.uuid, { ...AURA_LOOK, mode: 'default' }, OWNER)).rejects.toThrow(/mode/);
+  });
+
+  it('refuses an out-of-bounds knob, an unknown option, a missing field and an unknown key', async () => {
+    const { wall } = await createPublishedWall(OWNER);
+    const withKnob = (patch: Record<string, unknown>) => ({
+      ...AURA_LOOK,
+      boardsesh: { ...AURA_LOOK.boardsesh, ...patch },
+    });
+
+    await expect(setLook(wall.uuid, withKnob({ glowReach: 99 }), OWNER)).rejects.toThrow(/glowReach/);
+    await expect(setLook(wall.uuid, withKnob({ fillOpacity: 0.1 }), OWNER)).rejects.toThrow(/fillOpacity/);
+    await expect(setLook(wall.uuid, withKnob({ veil: 'blinding' }), OWNER)).rejects.toThrow(/veil/);
+    await expect(setLook(wall.uuid, withKnob({ sparkle: true }), OWNER)).rejects.toThrow(/sparkle/);
+
+    const { holdShape: _dropped, ...missingHoldShape } = AURA_LOOK.boardsesh;
+    await expect(setLook(wall.uuid, { ...AURA_LOOK, boardsesh: missingHoldShape }, OWNER)).rejects.toThrow(/holdShape/);
+
+    // Nothing above reached the row.
+    const read = (await sprayWallQueries.sprayWall({}, { uuid: wall.uuid }, ctxFor(OWNER))) as WallWithLook;
+    expect(read.renderSettings).toBeNull();
+  });
+});
+
 describe('the wall angle is fixed', () => {
   it('refuses a climb at an angle the wall is not set at', async () => {
     // Nothing downstream would complain — `board_climbs.angle` takes what it is
