@@ -1,5 +1,5 @@
 /**
- * The standing inventory oracle for issue #1889 (REST surface audit: 38
+ * The standing inventory oracle for issue #1889 (REST surface audit: 36
  * routes classified after the board renderer moved to Railway in #4715, the
  * Railway healthcheck route landed in #3798, and the hold-heatmap route and
  * its prewarm cron were retired).
@@ -62,7 +62,7 @@ const VERDICTS: Record<string, Verdict> = {
   // so a transient blip can't fail a deploy or start a restart loop. ---
   'app/api/health/route.ts': 'keep-external',
 
-  // --- /api/internal/* (15) ---
+  // --- /api/internal/* (13) ---
   // Party-session / kiosk auth bridge — never delete.
   'app/api/internal/ws-auth/route.ts': 'keep-external',
   // No web consumer, but no production surface either (404s outside
@@ -88,12 +88,9 @@ const VERDICTS: Record<string, Verdict> = {
   'app/api/internal/controllers/route.ts': 'keep-caller',
   'app/api/internal/set-password/route.ts': 'keep-caller',
   'app/api/internal/join/[sessionId]/route.ts': 'keep-caller',
-  // GET only, and the caller is /settings. The caller-less PUT that used to sit
-  // beside it is deleted (#4662): it was never published in the OpenAPI
-  // document, so it had no third-party contract to wind down the way the Aurora
-  // proxies did.
-  'app/api/internal/profile/route.ts': 'keep-caller',
-  'app/api/internal/profile/[userId]/route.ts': 'keep-caller',
+  // `/profile` and `/profile/[userId]` were retired in #1884 in favor of the
+  // GraphQL profile queries/mutation. The separate profile-percentiles cron
+  // above remains a live route.
   'app/api/internal/feature-flags/route.ts': 'keep-caller',
 
   // --- /api/og/* (5) ---
@@ -251,6 +248,6 @@ describe('REST surface inventory (issue #1889)', () => {
   it('counts exactly the audited surface', () => {
     // Guards the headline number in issue #1889 itself — a change here means
     // the issue body needs a fresh audit pass, not a quiet reclassification.
-    expect(derived.size).toBe(38);
+    expect(derived.size).toBe(36);
   });
 });
