@@ -55,7 +55,6 @@ export const SprayWallActions = memo(function SprayWallActions({
             label={t('mobile.boardDetail.spray.newPhoto')}
             hint={t('mobile.boardDetail.spray.newPhotoHint')}
             onPress={newPhoto}
-            separator
           />
         </>
       ) : null}
