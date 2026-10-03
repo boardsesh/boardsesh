@@ -147,6 +147,10 @@ export const LogbookSection = memo(function LogbookSection({
     const showMirrorTag = boardSupportsMirroring(boardName, layoutId);
     const { inline, hiddenSessions, hasHiddenEntries } = takeInlineSessions(ledger.angles);
     const somethingHidden = hiddenSessions > 0 || hasHiddenEntries;
+    const seeFullLabel =
+      hiddenSessions > 0
+        ? t('mobile.logbook.seeFullLogbook', { count: hiddenSessions })
+        : t('mobile.logbook.seeFullLogbookPlain');
 
     return (
       <View style={styles.container}>
@@ -175,12 +179,11 @@ export const LogbookSection = memo(function LogbookSection({
             onPress={onOpenFullLogbook}
             feedback="opacity"
             accessibilityRole="button"
+            accessibilityLabel={seeFullLabel}
             style={[styles.seeAll, { borderTopColor: systemColors.separator }]}
           >
             <Text variant="subheadline" color={systemColors.accent} style={styles.seeAllLabel}>
-              {hiddenSessions > 0
-                ? t('mobile.logbook.seeFullLogbook', { count: hiddenSessions })
-                : t('mobile.logbook.seeFullLogbookPlain')}
+              {seeFullLabel}
             </Text>
             <Icon name="chevron.right" size={16} color={systemColors.accent} />
           </PressableSurface>

@@ -69,6 +69,29 @@ describe('deriveClimbLedger: marks and tries', () => {
   });
 });
 
+describe('deriveClimbLedger: session outcome', () => {
+  const flash = at('2026-06-01 09:00', { status: 'flash' });
+  const repeat = at('2026-06-01 18:00', { status: 'send', tries: 2 });
+  const burn = at('2026-06-01 20:00', { tries: 3 });
+
+  it('is the best result of the day, whichever order the logs came in', () => {
+    for (const entries of [
+      [flash, repeat, burn],
+      [burn, repeat, flash],
+    ]) {
+      const [session] = deriveClimbLedger(entries, { currentAngle: 40 }).angles[0].sessions;
+      expect(session.outcome).toBe('flash');
+      // The marks still show every try in the order it happened.
+      expect(session.marks).toEqual(['flash', 'fall', 'send', 'fall', 'fall', 'fall']);
+    }
+  });
+
+  it('is a send when the day has a send and attempts but no flash', () => {
+    const [session] = deriveClimbLedger([repeat, burn], { currentAngle: 40 }).angles[0].sessions;
+    expect(session.outcome).toBe('send');
+  });
+});
+
 describe('deriveClimbLedger: status source', () => {
   it('reads status only through statusOf', () => {
     const untyped = entry({ status: undefined, tries: 2 });

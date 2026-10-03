@@ -24,6 +24,10 @@ export type LedgerSession<T> = {
   marks: LedgerTryMark[];
   /** Falls dropped from `marks` to honour the cap. Still counted in `totalTries`. */
   overflowTries: number;
+  /**
+   * The best thing that happened that day, whatever order it was logged in:
+   * a flash outranks a send, a send outranks an attempt.
+   */
   outcome: LedgerStatus;
 };
 
