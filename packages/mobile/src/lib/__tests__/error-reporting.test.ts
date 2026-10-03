@@ -172,7 +172,7 @@ describe('reportHandledError', () => {
 
   it('breadcrumbs discovery throttles once without leaking request context or reporting', () => {
     const observeReport = vi.fn();
-    setObserveRuntime({ configure: vi.fn(), reportError: observeReport });
+    setObserveRuntime({ configure: vi.fn(), dispatchEvents: vi.fn(async () => undefined), reportError: observeReport });
     const rateLimited = Object.assign(new Error('Request including private coordinates'), {
       response: {
         errors: [{ extensions: { code: 'RATE_LIMITED', operation: 'searchBoards', retryAfterSeconds: 11 } }],
@@ -457,7 +457,7 @@ describe('Observe forwarding', () => {
   });
 
   function registerObserve(reportError_ = vi.fn()) {
-    setObserveRuntime({ configure: vi.fn(), reportError: reportError_ });
+    setObserveRuntime({ configure: vi.fn(), dispatchEvents: vi.fn(async () => undefined), reportError: reportError_ });
     return reportError_;
   }
 
@@ -510,6 +510,7 @@ describe('Observe forwarding', () => {
     // able to lose the actual error.
     setObserveRuntime({
       configure: vi.fn(),
+      dispatchEvents: vi.fn(async () => undefined),
       reportError: () => {
         throw new Error('native module exploded');
       },

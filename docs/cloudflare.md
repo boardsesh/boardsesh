@@ -39,16 +39,36 @@ A newly created bucket needs a second converge to install retention. See
 R2 is **account**-scoped, unlike everything else here, so managing it needs two things the zone work does not:
 
 - `CLOUDFLARE_ACCOUNT_ID` in the environment. Without it, R2 is skipped with a notice.
-- `Zone.Transform Rules Edit` on `CLOUDFLARE_API_TOKEN`, for the assets CORS
+- `Zone.Transform Rules Edit` on `CLOUDFLARE_API_TOKEN`, for the Observe country
+  request-header rule (`http_request_late_transform`) and assets CORS
   response-header rule (`http_response_headers_transform`). Without it the
   earlier phases still apply and this one 403s — the same partial-convergence
   shape as the WAF and rate-limit phases. **Editing a token replaces all of its
   policies, so re-add every existing scope in the same edit.**
 - `Account.Workers R2 Storage:Edit` on `CLOUDFLARE_API_TOKEN`. Without it, the R2 read fails authorization and is skipped with a warning — the zone config still applies.
 
-Both degrade to "skip and say so" rather than failing, so the secret and the scope can be added in either order without a window where production deploys break. Attaching a custom domain needs **both** the R2 scope and zone access, because the call takes a `zoneId`: an R2-only token can create the bucket but cannot resolve the zone.
+R2 degrades to "skip and say so" when the account id or storage scope is absent.
+The transform scope is required because Observe country attribution depends on
+the request-header rule. Attaching a custom domain needs **both** the R2 scope
+and zone access, because the call takes a `zoneId`: an R2-only token can create
+the bucket but cannot resolve the zone.
 
 > **Editing the token replaces ALL of its policies.** Re-add every existing scope in the same edit — the `Zone.*` list above and `Account.Cloudflare Pages Edit`. A rotation that granted only the zone scopes is what took `app.boardsesh.com` off the deploy train on 2026-08-25, and it presents as `Authentication error [code: 10000]` while `wrangler whoami` still succeeds.
+
+## Observe country header
+
+The `http_request_late_transform` phase carries one host-scoped rule for
+`updates.boardsesh.com`. It overwrites `X-Geo-Country` with Cloudflare's
+`ip.src.country` value before the request reaches xprem. Transform Rules and
+the country field are available on the zone's Free plan, so this needs no
+GeoIP provider account or database download.
+
+Railway pins xprem to this one header with `TRUST_GEOIP_HEADERS=true` and
+`GEOIP_HEADER_COUNTRY=X-Geo-Country`. Apply Cloudflare first, then Railway; the
+reverse order creates a window where clients can supply the trusted field.
+The generated Railway origin remains public, so a direct caller can still forge
+country telemetry. Treat it only as aggregate Observe metadata, never as an
+authorization or compliance input.
 
 ## assets.boardsesh.com DNS-only Tigris domain
 
