@@ -27,4 +27,5 @@ export const SERIAL_TEST_FILES = [
   'src/__tests__/provider-sync-control.test.ts',
   'src/__tests__/user-data-export-jobs.test.ts',
   'src/__tests__/spray-detection.test.ts',
+  'src/__tests__/spray-detection-notifications.test.ts',
 ];
