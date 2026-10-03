@@ -1565,8 +1565,9 @@ Two rules, both enforced by a test in
 Spray walls are enabled by default. The picker tile and `/boards/spray/*`
 routes do not depend on PostHog or an enablement environment variable. The old
 `spray-walls` flag and on-device overrides no longer gate these surfaces.
-The additive backend `sourceVersionId` input must be deployed before the mobile
-maintenance route is released.
+Maintenance requires the additive backend `sourceVersionId` input. Deploy that
+backend contract before shipping a mobile build
+with maintenance; this deployment order is independent of wall availability.
 
 The detection service has separate deployment and quality checks in
 [the service rollout runbook](spray-recognition-rollout.md). Enabling the mobile

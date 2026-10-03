@@ -267,7 +267,7 @@ function useAdoptedBoard(
   const boardPath = enabled && target && !waitingForAuth ? toBoardPath(target) : null;
   // Capability changes on the same slug are separate resolutions. A denied or
   // pending earlier link must not keep the next link's answer out of the route.
-  const resolutionKey = boardPath && wallUuid ? `${boardPath}?wall=${wallUuid}` : boardPath;
+  const resolutionKey = boardPath ? JSON.stringify([boardPath, wallUuid ?? null]) : null;
   const resolvedPathRef = useRef<string | null>(null);
 
   // Only a resolve that finished for THIS path may be read; see AdoptedBoardState.

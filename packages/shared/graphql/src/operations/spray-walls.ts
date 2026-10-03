@@ -64,7 +64,7 @@ const SPRAY_WALL_HOLD_FIELDS = `
  * carry fifty versions, each of which costs two presigned signatures to build.
  * Ask for the history with `SPRAY_WALL_WITH_VERSIONS` on the screen that shows it.
  */
-const SPRAY_WALL_FIELDS = `
+const SPRAY_WALL_ENTITY_FIELDS = `
   uuid
   layoutId
   sizeId
@@ -77,6 +77,13 @@ const SPRAY_WALL_FIELDS = `
   # else — so a client can render the notice off its presence alone (SW-17).
   hiddenAt
   # The wall's stored look is deliberately absent: see GET_SPRAY_WALL_LOOK.
+  currentVersion {
+    ${SPRAY_WALL_VERSION_FIELDS}
+  }
+`;
+
+const SPRAY_WALL_FIELDS = `
+  ${SPRAY_WALL_ENTITY_FIELDS}
   board {
     uuid
     slug
@@ -96,9 +103,6 @@ const SPRAY_WALL_FIELDS = `
     gymName
     canEdit
   }
-  currentVersion {
-    ${SPRAY_WALL_VERSION_FIELDS}
-  }
 `;
 
 export const GET_SPRAY_WALL = gql`
@@ -113,7 +117,7 @@ export const GET_SPRAY_WALL = gql`
 export const GET_SPRAY_WALL_FOR_LINK = gql`
   query GetSprayWallForLink($uuid: ID!) {
     sprayWall(uuid: $uuid) {
-      ${SPRAY_WALL_FIELDS}
+      ${SPRAY_WALL_ENTITY_FIELDS}
       board {
         ${BOARD_FIELDS}
       }
