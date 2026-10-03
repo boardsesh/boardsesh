@@ -61,6 +61,7 @@ describe('serving beta-link thumbnails stored in S3', () => {
       const response = await fetch(`${baseUrl}${THUMBNAIL_PATH}${query}`);
       expect(response.status).toBe(404);
       expect(response.headers.get('cache-control')).toBe('no-store');
+      expect(response.headers.get('x-content-type-options')).toBe('nosniff');
       expect(getFromS3Mock).not.toHaveBeenCalled();
     } finally {
       await closeServer(server);
@@ -82,6 +83,7 @@ describe('serving beta-link thumbnails stored in S3', () => {
 
       expect(response.status).toBe(404);
       expect(response.headers.get('cache-control')).toBe('no-store');
+      expect(response.headers.get('x-content-type-options')).toBe('nosniff');
     } finally {
       await closeServer(server);
     }
@@ -107,6 +109,7 @@ describe('serving beta-link thumbnails stored in S3', () => {
 
       expect(response.status).toBe(404);
       expect(response.headers.get('cache-control')).toBe('no-store');
+      expect(response.headers.get('x-content-type-options')).toBe('nosniff');
       // The empty original must never be written back as a cached variant.
       expect(uploadToS3Mock).not.toHaveBeenCalled();
     } finally {
@@ -134,6 +137,7 @@ describe('serving beta-link thumbnails stored in S3', () => {
         const response = await fetch(`${baseUrl}${THUMBNAIL_PATH}?size=280`);
         expect(response.status).toBe(404);
         expect(response.headers.get('cache-control')).toBe('no-store');
+        expect(response.headers.get('x-content-type-options')).toBe('nosniff');
         expect(cachedStream.destroyed).toBe(true);
         expect(uploadToS3Mock).not.toHaveBeenCalled();
       } finally {
@@ -161,6 +165,7 @@ describe('serving beta-link thumbnails stored in S3', () => {
     try {
       const response = await fetch(`${baseUrl}${THUMBNAIL_PATH}?size=280`);
       expect(response.status).toBe(200);
+      expect(response.headers.get('x-content-type-options')).toBe('nosniff');
       const responseBytes = Buffer.from(await response.arrayBuffer());
       expect(responseBytes.length).toBeGreaterThan(0);
       expect(await sharp(responseBytes).metadata()).toMatchObject({ width: 280, height: 280, format: 'jpeg' });
@@ -187,6 +192,7 @@ describe('serving beta-link thumbnails stored in S3', () => {
 
       expect(response.status).toBe(200);
       expect(response.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
+      expect(response.headers.get('x-content-type-options')).toBe('nosniff');
       expect(Buffer.from(await response.arrayBuffer())).toEqual(JPEG_BYTES);
     } finally {
       await closeServer(server);

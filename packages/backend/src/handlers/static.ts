@@ -412,6 +412,7 @@ export async function handleStaticBetaThumbnail(
   size: AllowedImageSize | null = null,
 ): Promise<void> {
   if (!applyCorsHeaders(req, res)) return;
+  res.setHeader('X-Content-Type-Options', 'nosniff');
 
   if (!BETA_THUMBNAIL_PLATFORMS.has(platform) || !BETA_THUMBNAIL_FILENAME.test(fileName)) {
     res.writeHead(400, { 'Content-Type': 'application/json' });
