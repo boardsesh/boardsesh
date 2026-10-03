@@ -2,8 +2,12 @@ import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { climbMutations } from '../graphql/resolvers/climbs/mutations';
 
-const { mockDb, mockPublishSocialEvent, insertCalls } = vi.hoisted(() => {
+const { mockDb, mockPublishSocialEvent, insertCalls, lockedClimb, mockRecordClimbRevision } = vi.hoisted(() => {
   const insertCalls: Array<{ table: unknown; values: unknown }> = [];
+  // What `lockClimbForRevision` answers: the draft flag of the climb row the test
+  // last scripted. See the `climb-revisions` mock below.
+  const lockedClimb: { current: { isDraft: boolean } | null } = { current: null };
+  const mockRecordClimbRevision = vi.fn().mockResolvedValue(undefined);
 
   const mockDb = {
     select: vi.fn(),
@@ -16,8 +20,19 @@ const { mockDb, mockPublishSocialEvent, insertCalls } = vi.hoisted(() => {
 
   const mockPublishSocialEvent = vi.fn().mockResolvedValue(undefined);
 
-  return { mockDb, mockPublishSocialEvent, insertCalls };
+  return { mockDb, mockPublishSocialEvent, insertCalls, lockedClimb, mockRecordClimbRevision };
 });
+
+// Revision history re-reads the climb row under a lock and writes its own rows,
+// inside the transaction. Both would eat entries off the `mockDb.select` queue the
+// tests below script call by call, so the module is stubbed here and exercised
+// against a real database in climb-revisions.test.ts. The lock answers with the
+// draft flag of the row the test scripted (captured in `createMockChain`), which
+// is what `updateClimb` compares against the row it loaded.
+vi.mock('../graphql/resolvers/climbs/climb-revisions', () => ({
+  lockClimbForRevision: vi.fn(async () => lockedClimb.current),
+  recordClimbRevision: mockRecordClimbRevision,
+}));
 
 vi.mock('../db/client', () => ({
   db: mockDb,
@@ -79,6 +94,13 @@ function createMockChain(resolveValue: unknown = [], onValues?: (values: unknown
     'onConflictDoUpdate',
   ];
 
+  // A scripted climb row (the only rows here carrying both keys) is what the
+  // stubbed row lock should report back.
+  const [firstRow] = Array.isArray(resolveValue) ? (resolveValue as unknown[]) : [];
+  if (firstRow && typeof firstRow === 'object' && 'uuid' in firstRow && 'isDraft' in firstRow) {
+    lockedClimb.current = { isDraft: (firstRow as { isDraft: unknown }).isDraft === true };
+  }
+
   chain.then = (resolve: (value: unknown) => unknown) => Promise.resolve(resolveValue).then(resolve);
 
   for (const method of methods) {
@@ -103,6 +125,7 @@ describe('climb mutations', () => {
     mockDb.execute.mockReset();
     mockDb.select.mockReset();
     insertCalls.length = 0;
+    lockedClimb.current = null;
     mockDb.transaction.mockImplementation(async (callback: (tx: typeof mockDb) => Promise<unknown>) =>
       callback(mockDb),
     );
@@ -1117,6 +1140,100 @@ describe('climb mutations', () => {
     ).resolves.toBeDefined();
 
     expect(updateSet?.characteristics).toEqual(['no_match']);
+  });
+
+  // The catalogue-board edit rule, which #5955 leaves exactly as it was: the
+  // setter only, and a published climb only within 24 hours of its publish. The
+  // spray half of the rule needs a real wall and lives in spray-wall-api.test.ts.
+  describe('updateClimb edit rule on a catalogue board', () => {
+    const HOUR_MS = 60 * 60 * 1000;
+
+    function scriptPublishedClimb(overrides: Record<string, unknown> = {}) {
+      mockDb.select.mockReturnValueOnce(
+        createMockChain([
+          {
+            uuid: 'climb-1',
+            userId: 'user-123',
+            isDraft: false,
+            publishedAt: new Date(Date.now() - HOUR_MS).toISOString(),
+            createdAt: '2026-05-14T20:00:00.000Z',
+            angle: 35,
+            layoutId: 8,
+            frames: 'p1117r12p1140r15',
+            framesCount: 1,
+            setterUsername: 'Alice Setter',
+            characteristics: null,
+            description: '',
+            compatibleSizeIds: null,
+            ...overrides,
+          },
+        ]),
+      );
+      mockDb.update = vi.fn().mockReturnValue(createMockChain(undefined));
+    }
+
+    const rename = (ctx = makeCtx()) =>
+      climbMutations.updateClimb({}, { input: { boardType: 'kilter', uuid: 'climb-1', name: 'Renamed' } }, ctx);
+
+    it('lets the setter edit a published climb inside the 24 hour window, and records the edit', async () => {
+      scriptPublishedClimb();
+
+      await rename();
+
+      expect(mockDb.update).toHaveBeenCalledTimes(1);
+      expect(mockRecordClimbRevision).toHaveBeenCalledTimes(1);
+      expect(mockRecordClimbRevision.mock.calls[0][1]).toMatchObject({
+        boardType: 'kilter',
+        climbUuid: 'climb-1',
+        editorId: 'user-123',
+        sprayTarget: null,
+      });
+    });
+
+    it('still refuses the setter once the 24 hour window has passed', async () => {
+      scriptPublishedClimb({ publishedAt: new Date(Date.now() - 25 * HOUR_MS).toISOString() });
+
+      await expect(rename()).rejects.toThrow('The 24 hour edit window has expired');
+
+      expect(mockDb.transaction).not.toHaveBeenCalled();
+      expect(mockDb.update).not.toHaveBeenCalled();
+      expect(mockRecordClimbRevision).not.toHaveBeenCalled();
+    });
+
+    it('still refuses a published climb with no publish time', async () => {
+      scriptPublishedClimb({ publishedAt: null });
+
+      await expect(rename()).rejects.toThrow('This climb can no longer be edited');
+      expect(mockDb.update).not.toHaveBeenCalled();
+    });
+
+    it('still refuses anyone but the setter, inside the window or not', async () => {
+      scriptPublishedClimb();
+      await expect(rename(makeCtx({ userId: 'someone-else' }))).rejects.toThrow('You can only update your own climbs');
+
+      scriptPublishedClimb({ isDraft: true, publishedAt: null });
+      await expect(rename(makeCtx({ userId: 'someone-else' }))).rejects.toThrow('You can only update your own climbs');
+
+      // An Aurora-synced climb has no Boardsesh setter at all.
+      scriptPublishedClimb({ userId: null });
+      await expect(rename()).rejects.toThrow('You can only update your own climbs');
+
+      expect(mockDb.transaction).not.toHaveBeenCalled();
+      expect(mockDb.update).not.toHaveBeenCalled();
+      expect(mockRecordClimbRevision).not.toHaveBeenCalled();
+    });
+
+    it('refuses an edit when the climb was published or deleted while it was being edited', async () => {
+      scriptPublishedClimb({ isDraft: true, publishedAt: null });
+      lockedClimb.current = { isDraft: false };
+      await expect(rename()).rejects.toThrow(/changed while you were editing/);
+
+      scriptPublishedClimb({ isDraft: true, publishedAt: null });
+      lockedClimb.current = null;
+      await expect(rename()).rejects.toThrow('Climb not found');
+
+      expect(mockDb.update).not.toHaveBeenCalled();
+    });
   });
 
   it('throws when publishing a draft without an angle', async () => {

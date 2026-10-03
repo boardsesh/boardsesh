@@ -90,6 +90,13 @@ export type SprayClimbTarget = {
    * just taken out of.
    */
   publishesFeedEvents: boolean;
+  /**
+   * The wall's `user_boards` row, as the lookup already joined it.
+   *
+   * Carried so `updateClimb` can ask `canEditBoard` whether a caller who is not
+   * the climb's setter may still edit it, without a second query (#5955).
+   */
+  board: typeof dbSchema.userBoards.$inferSelect;
 };
 
 /**
@@ -115,6 +122,29 @@ export async function requireVisibleSprayWall(
   userId: string,
   presentedWallUuid?: string | null,
 ): Promise<SprayClimbTarget> {
+  const target = await findVisibleSprayWall(layoutId, userId, presentedWallUuid);
+  if (!target) {
+    throw new GraphQLError('That spray wall could not be found', {
+      extensions: { code: SPRAY_CLIMB_CODES.wallNotFound },
+    });
+  }
+  return target;
+}
+
+/**
+ * `requireVisibleSprayWall` without the throw: null for a wall that does not
+ * exist or that the caller cannot see.
+ *
+ * For `updateClimb`'s edit gate. A caller who is not the climb's setter has to be
+ * refused with the SAME message whether the wall is invisible to them, visible
+ * but not theirs to edit, or the climb is a draft. A "wall not found" for one of
+ * those and "not your climb" for another would tell a stranger which it was.
+ */
+export async function findVisibleSprayWall(
+  layoutId: number,
+  userId: string,
+  presentedWallUuid?: string | null,
+): Promise<SprayClimbTarget | null> {
   const [row] = await db
     .select({
       wall: dbSchema.sprayWalls,
@@ -135,11 +165,7 @@ export async function requireVisibleSprayWall(
     )
     .limit(1);
 
-  if (!row || !(await viewerCanWriteSprayClimbs(row.wall, row.board, userId, presentedWallUuid))) {
-    throw new GraphQLError('That spray wall could not be found', {
-      extensions: { code: SPRAY_CLIMB_CODES.wallNotFound },
-    });
-  }
+  if (!row || !(await viewerCanWriteSprayClimbs(row.wall, row.board, userId, presentedWallUuid))) return null;
 
   return {
     wallId: row.wall.id,
@@ -149,6 +175,7 @@ export async function requireVisibleSprayWall(
     angle: Number(row.board.angle),
     publishedVersionNumber: row.publishedVersionNumber ?? null,
     publishesFeedEvents: row.board.isPublic && row.wall.hiddenAt == null,
+    board: row.board,
   };
 }
 

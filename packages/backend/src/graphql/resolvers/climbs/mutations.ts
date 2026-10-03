@@ -24,6 +24,8 @@ import { publishSocialEvent } from '../../../events';
 import { notifyClimbRevalidated } from '../../../lib/web-revalidate';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
 import { requireAdminOrLeader } from '../social/roles';
+import { canEditBoard } from '../social/boards';
+import { lockClimbForRevision, recordClimbRevision } from './climb-revisions';
 import { deleteClimbDependentRows } from './climb-cleanup';
 import {
   SPRAY_CLIMB_CODES,
@@ -33,6 +35,7 @@ import {
   populateSprayClimbColumns,
   assertSprayGradeOnPublish,
   assertSprayHoldsAreAlive,
+  findVisibleSprayWall,
   isSprayBoard,
   requireVisibleSprayWall,
   sprayWallMayAnnounceUnderLock,
@@ -68,6 +71,23 @@ import {
   SaveMoonBoardClimbInputSchema,
   UpdateClimbInputSchema,
 } from '../../../validation/schemas';
+
+/** How long a published climb stays editable on the boards that have a window. */
+const CLIMB_EDIT_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Whether a published climb on this board stops being editable after
+ * `CLIMB_EDIT_WINDOW_MS`.
+ *
+ * Every board but spray. A catalogue board is shared by everyone who owns one, so
+ * a published climb is something other people have already sent and logged, and
+ * it has to hold still. A spray wall is one physical wall whose holds move, so
+ * its climbs need fixing for as long as the wall exists (#5955); every edit is
+ * kept as a revision instead.
+ */
+export function climbEditWindowApplies(boardType: string): boolean {
+  return !isSprayBoard(boardType);
+}
 
 type SaveClimbArgs = { input: unknown };
 type DeleteDraftClimbArgs = { uuid: unknown; boardType: unknown };
@@ -674,12 +694,27 @@ export const climbMutations = {
   },
 
   /**
-   * Update an existing climb in-place. Enforces ownership and a 24h edit
-   * window on published climbs. Drafts can be edited indefinitely.
+   * Update an existing climb in-place.
    *
-   * A climb can transition from draft → published via `isDraft: false` —
-   * that sets `publishedAt` to now and starts the 24h clock. The reverse
-   * transition is not allowed (can't un-publish).
+   * Who may edit, and for how long:
+   *
+   *  - a draft: its setter, indefinitely, on every board;
+   *  - a published climb on a catalogue board: its setter, within 24 hours of the
+   *    first publish;
+   *  - a published climb on a spray wall: its setter, or anyone who can edit the
+   *    wall (`canEditBoard`: the wall owner, the owner or an admin of its gym, a
+   *    community admin on a public wall), with no time limit.
+   *
+   * An edit never changes who the setter is. `user_id` and `setter_username` are
+   * not in the update set, so a wall owner fixing somebody's climb leaves it
+   * theirs.
+   *
+   * A climb can transition from draft → published via `isDraft: false`, which
+   * sets `publishedAt` to now (and, on a catalogue board, starts the 24h clock).
+   * The reverse transition is not allowed (can't un-publish).
+   *
+   * Every edit to a published climb that changes something is kept as a row in
+   * `board_climb_revisions` — see `./climb-revisions.ts`.
    */
   updateClimb: async (
     _: unknown,
@@ -730,20 +765,45 @@ export const climbMutations = {
       throw new Error('Climb not found');
     }
 
-    if (existing.userId !== ctx.userId!) {
+    const currentlyDraft = existing.isDraft === true;
+    const callerIsSetter = existing.userId !== null && existing.userId === ctx.userId;
+
+    // Spray: the wall is resolved BEFORE the ownership check, because on a wall
+    // the answer to "may this caller edit?" depends on it.
+    //
+    // The setter gets the same view-access resolve `saveClimb` does. It has to run
+    // even on a metadata-only edit: the wall may have been deleted since the climb
+    // was set, and an edit to a climb on a wall the caller can no longer see is not
+    // an edit they should be making.
+    //
+    // Anyone else gets through only on a PUBLISHED climb, on a wall they can both
+    // see and edit. A draft stays the setter's alone: publishing somebody else's
+    // draft would announce a climb under the wrong name. All three ways of failing
+    // (wall not visible, wall not theirs to edit, climb is a draft) fall through
+    // to the one refusal below, so the message cannot tell a stranger which it
+    // was, or that the wall exists.
+    let sprayTarget: SprayClimbTarget | null = null;
+    if (isSprayBoard(boardType)) {
+      if (callerIsSetter) {
+        sprayTarget = await requireVisibleSprayWall(existing.layoutId, ctx.userId!, validated.sprayWallUuid);
+      } else if (!currentlyDraft) {
+        const visibleWall = await findVisibleSprayWall(existing.layoutId, ctx.userId!, validated.sprayWallUuid);
+        if (visibleWall && (await canEditBoard(ctx.userId!, visibleWall.board))) sprayTarget = visibleWall;
+      }
+    }
+
+    if (!callerIsSetter && !sprayTarget) {
       throw new Error('You can only update your own climbs');
     }
 
-    const EDIT_WINDOW_MS = 24 * 60 * 60 * 1000;
-    const currentlyDraft = existing.isDraft === true;
-
-    if (!currentlyDraft) {
-      // Non-draft: only editable within 24h of the first publish.
+    if (!currentlyDraft && climbEditWindowApplies(boardType)) {
+      // Published, on a board with a window: only editable within 24h of the
+      // first publish.
       if (!existing.publishedAt) {
         throw new Error('This climb can no longer be edited');
       }
       const publishedMs = Date.parse(existing.publishedAt);
-      if (!Number.isFinite(publishedMs) || Date.now() - publishedMs > EDIT_WINDOW_MS) {
+      if (!Number.isFinite(publishedMs) || Date.now() - publishedMs > CLIMB_EDIT_WINDOW_MS) {
         throw new Error('The 24 hour edit window has expired');
       }
     }
@@ -759,15 +819,10 @@ export const climbMutations = {
       nextIsDraft = existing.isDraft ?? false;
     }
 
+    // Only ever true for the setter: a draft is refused to everyone else above.
+    // The `climb.created` event at the bottom leans on that when it names the
+    // caller as the actor.
     const transitioningToPublished = currentlyDraft && validated.isDraft === false;
-
-    // Spray: the same view-access resolve `saveClimb` does. It has to run even on
-    // a metadata-only edit — the wall may have been deleted since the climb was
-    // set, and an edit to a climb on a wall the caller can no longer see is not an
-    // edit they should be making.
-    const sprayTarget: SprayClimbTarget | null = isSprayBoard(boardType)
-      ? await requireVisibleSprayWall(existing.layoutId, ctx.userId!, validated.sprayWallUuid)
-      : null;
 
     const now = new Date().toISOString();
     const nextPublishedAt = transitioningToPublished ? now : existing.publishedAt;
@@ -831,13 +886,16 @@ export const climbMutations = {
     //
     // `saveClimb` seeds the setter's grade and the transition re-seeds it, but
     // neither covers what the editor's picker actually offers most of the time:
-    // reopening a climb inside the edit window and moving the grade. Without this
-    // the mutation returned success, the client showed a "published" toast and
-    // updated its saved baseline, and the stats row kept the old grade — the
-    // climb re-read as whatever it was graded the first time.
+    // reopening a published climb and moving the grade. Without this the mutation
+    // returned success, the client showed a "published" toast and updated its
+    // saved baseline, and the stats row kept the old grade — the climb re-read as
+    // whatever it was graded the first time.
     //
-    // No extra authorization: `updateClimb` has already refused anyone but
-    // `existing.userId`, and on a spray wall the owner of the climb IS its setter.
+    // No extra authorization: the gate above has already let through only the
+    // setter or someone who can edit the wall, and both may regrade. The caller
+    // is NOT always the setter here, so nothing below may write the caller's
+    // identity: the grade goes on the climb's stats row, and `fa_username` stays
+    // `existing.setterUsername`.
     if (sprayTarget && sprayGradeToSeed === null && validated.userGrade != null) {
       sprayGradeToSeed = await resolveDifficultyId(boardType, validated.userGrade);
       if (sprayGradeToSeed === null) {
@@ -1034,6 +1092,23 @@ export const climbMutations = {
         sprayMayAnnounce = await sprayWallMayAnnounceUnderLock(tx, sprayTarget.wallId);
       }
 
+      // Lock the row and read it as it stands NOW. After the wall lock, never
+      // before it (see `lockClimbForRevision`). This read, not `existing`, is the
+      // "before" side of the revision: `existing` was loaded outside the
+      // transaction, and with more than one possible editor on a spray wall
+      // another edit may have landed since.
+      const beforeEdit = await lockClimbForRevision(tx, boardType, validated.uuid);
+      if (!beforeEdit) {
+        throw new Error('Climb not found');
+      }
+      // Everything decided above (who may edit, whether this publishes, whether
+      // the window applies) was decided for the draft state `existing` had. If a
+      // publish landed in between, those decisions are for a climb that no longer
+      // exists, and writing `isDraft` from them could un-publish it.
+      if (beforeEdit.isDraft !== currentlyDraft) {
+        throw new Error('This climb changed while you were editing it. Reload it and try again.');
+      }
+
       // Build the update set from provided fields only.
       const updateSet: Record<string, unknown> = {
         isDraft: nextIsDraft,
@@ -1193,6 +1268,16 @@ export const climbMutations = {
             ],
           });
       }
+
+      // Last, so it reads the row and the stats row this edit just wrote. The
+      // editor is the CALLER, who on a spray wall may not be the setter.
+      await recordClimbRevision(tx, {
+        boardType,
+        climbUuid: validated.uuid,
+        before: beforeEdit,
+        editorId: ctx.userId!,
+        sprayTarget,
+      });
     });
 
     // Tell the web app to drop the cached climb-view render so the edit
@@ -1202,12 +1287,15 @@ export const climbMutations = {
     // On a draft → published transition, announce the new climb so follower
     // feeds pick it up, the same way saveClimb does.
     // Public walls only — see the note on `saveClimb`'s event.
+    //
+    // The actor is the caller, which is right because only the setter can publish
+    // a draft (see `transitioningToPublished`). A wall editor never reaches this.
     if (transitioningToPublished && (!sprayTarget || sprayMayAnnounce)) {
-      const { displayName, name, avatarUrl } = await getUserProfile(ctx.userId);
+      const { displayName, name, avatarUrl } = await getUserProfile(ctx.userId!);
       const preferredSetter = displayName || name || null;
       await publishSocialEvent({
         type: 'climb.created',
-        actorId: ctx.userId,
+        actorId: ctx.userId!,
         entityType: 'climb',
         entityId: validated.uuid,
         timestamp: Date.now(),
