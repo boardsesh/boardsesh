@@ -332,8 +332,11 @@ export const boardClimbs = pgTable(
     hiddenAt: timestamp('hidden_at'),
     createdAt: text('created_at'),
     // Timestamp of the first non-draft save. Null while the climb is still a
-    // draft. Used by the create-climb form to gate the post-publish edit window
-    // (users can continue tweaking a published climb for 24h).
+    // draft. An edit never moves it. On the catalogue boards it gates the
+    // post-publish edit window (the setter can keep tweaking a published climb
+    // for 24h). A spray wall has no window: the setter, or anyone who can edit
+    // the wall, can edit a published climb at any time. Either way each edit is
+    // kept in `board_climb_revisions`, whose revision 1 is dated to this.
     publishedAt: text('published_at'),
     synced: boolean('synced').default(true).notNull(),
     syncError: text('sync_error'),

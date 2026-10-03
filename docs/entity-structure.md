@@ -253,6 +253,7 @@ shape only.
 | `spray_wall_versions` | One photograph of the wall. Version 1 is the first photo; every reset adds another. Carries the photo key, the four corner anchors and the photo→canonical homography. A version NEVER creates a new layout or size. |
 | `spray_wall_holds` | One hold across its whole life, keyed `(wall_id, hold_id)` where `hold_id` is the wall's `board_placements` id AND its `board_holes` id. `installed_version_id` / `removed_version_id` are a range, so the table is append-only apart from stamping a removal. |
 | `spray_climb_lineage` | Which climb a remix was rebuilt from, and on which version of the wall. |
+| `board_climb_revisions` | One state a published climb has been in: the climb as it stood after an edit. Every board, not only spray; defined in `app/climb-revisions.ts`. On spray it names the wall version the revision was drawn on. Capped at 50 per climb. See [Climb revisions](./spray-walls.md#climb-revisions). |
 | `spray_wall_reports` | One climber's report of one wall, `(wall_id, reporter_id)` unique. The whole moderation queue: a wall photograph's safety question has one right answer, so there is nothing for the `climb_proposals` vote machinery to decide. |
 
 **Relationships:**
