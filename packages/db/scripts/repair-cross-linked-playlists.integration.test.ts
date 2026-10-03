@@ -463,7 +463,7 @@ void describe('repair-cross-linked-playlists local database behavior', () => {
     }
   });
 
-  void it('audits cross-linked board accounts without changing credential or mapping rows', async (testContext) => {
+  void it('reports only multiple live board-account claims without changing credential or mapping rows', async (testContext) => {
     const databaseUrl = repairTestDatabaseUrl();
     if (!databaseUrl) {
       testContext.skip('set REPAIR_CROSS_LINKED_PLAYLISTS_DB_URL to a local migrated database');
@@ -475,21 +475,35 @@ void describe('repair-cross-linked-playlists local database behavior', () => {
       await assert.rejects(
         db.transaction(async (transaction) => {
           await transaction.execute(sql`CREATE TEMP TABLE aurora_credentials (
-        user_id text, board_type text, aurora_user_id integer
+        user_id text, board_type text, aurora_user_id integer, sync_status text NOT NULL
       ) ON COMMIT DROP`);
           await transaction.execute(sql`CREATE TEMP TABLE user_board_mappings (
         user_id text, board_type text, board_user_id integer, board_user_id_text text
       ) ON COMMIT DROP`);
           await transaction.execute(sql`INSERT INTO aurora_credentials VALUES
-        ('user-b', 'kilter', 321), ('user-a', 'kilter', 321),
-        ('single', 'kilter', 111), ('other-board', 'tension', 321),
-        ('missing-a', 'kilter', NULL), ('missing-b', 'kilter', NULL)
+        ('aurora-old', 'kilter', 321, 'expired'), ('aurora-current', 'kilter', 321, 'active'),
+        ('aurora-live-a', 'kilter', 444, 'active'), ('aurora-live-b', 'kilter', 444, 'error'),
+        ('single', 'kilter', 111, 'active'), ('other-board', 'tension', 321, 'active'),
+        ('user-a', 'tension', NULL, 'active'), ('user-b', 'tension', NULL, 'active'),
+        ('map-live-a', 'kilter', NULL, 'active'), ('map-live-b', 'kilter', NULL, 'pending'),
+        ('numeric-owner', 'kilter', NULL, 'active'), ('text-owner', 'kilter', NULL, 'active'),
+        ('subject-single', 'kilter', NULL, 'active'), ('board-kilter', 'kilter', NULL, 'active'),
+        ('board-tension', 'tension', NULL, 'active'),
+        ('mapping-old', 'kilter', NULL, 'expired'), ('mapping-current', 'kilter', NULL, 'active'),
+        ('orphan-live', 'kilter', NULL, 'active'),
+        ('missing-a', 'kilter', NULL, 'active'), ('missing-b', 'kilter', NULL, 'active')
       `);
           await transaction.execute(sql`INSERT INTO user_board_mappings VALUES
         ('user-b', 'tension', 55, NULL), ('user-a', 'tension', 55, NULL),
-        ('user-b', 'kilter', 55, 'subject-uuid'), ('user-a', 'kilter', 66, 'subject-uuid'),
-        ('user-d', 'kilter', 100, NULL), ('user-c', 'kilter', NULL, '100'),
-        ('single', 'kilter', NULL, 'other-subject'), ('other-board', 'woods', 55, NULL),
+        ('map-live-a', 'kilter', 55, 'subject-uuid'), ('map-live-b', 'kilter', 66, 'subject-uuid'),
+        ('numeric-owner', 'kilter', 100, NULL), ('text-owner', 'kilter', NULL, '100'),
+        ('subject-single', 'kilter', NULL, 'other-subject'),
+        ('board-kilter', 'kilter', 55, 'board-separated'),
+        ('board-tension', 'tension', 55, 'board-separated'),
+        ('mapping-old', 'kilter', NULL, 'reowned-subject'),
+        ('mapping-current', 'kilter', NULL, 'reowned-subject'),
+        ('orphan-historical', 'kilter', NULL, 'orphan-subject'),
+        ('orphan-live', 'kilter', NULL, 'orphan-subject'),
         ('missing-a', 'kilter', NULL, NULL), ('missing-b', 'kilter', NULL, NULL)
       `);
           const credentialsBefore = Array.from(
@@ -508,20 +522,20 @@ void describe('repair-cross-linked-playlists local database behavior', () => {
             {
               source: 'aurora_credentials',
               boardType: 'kilter',
-              boardAccountKey: '321',
-              userIds: ['user-a', 'user-b'],
+              boardAccountKey: '444',
+              userIds: ['aurora-live-a', 'aurora-live-b'],
             },
             {
               source: 'user_board_mappings',
               boardType: 'kilter',
               boardAccountKey: '100',
-              userIds: ['user-c', 'user-d'],
+              userIds: ['numeric-owner', 'text-owner'],
             },
             {
               source: 'user_board_mappings',
               boardType: 'kilter',
               boardAccountKey: 'subject-uuid',
-              userIds: ['user-a', 'user-b'],
+              userIds: ['map-live-a', 'map-live-b'],
             },
             {
               source: 'user_board_mappings',

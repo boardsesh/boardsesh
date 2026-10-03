@@ -38,10 +38,11 @@ vp run db:repair-cross-linked-playlists -- --playlist-ids 12,34
 ```
 
 Omitting `--playlist-ids` audits all multi-owner playlists. The board-account report
-always scans cross-linked credentials/mappings and is informational; the playlist
-filter does not constrain that report. Store output privately with the reviewed
-commit, target and options. The preview is a maximum before locked drift checks,
-not a promise of the number of writes.
+always scans for accounts with multiple current, credential-backed owners and is
+informational; expired claims and mappings without a matching credential are
+excluded, and the playlist filter does not constrain that report. Store output
+privately with the reviewed commit, target and options. The preview is a maximum
+before locked drift checks, not a promise of the number of writes.
 
 | Classification | Meaning and default action |
 | --- | --- |

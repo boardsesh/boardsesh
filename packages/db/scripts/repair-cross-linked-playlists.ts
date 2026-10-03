@@ -39,7 +39,7 @@
  * (A `--` separator before the flags also works — `vp` forwards it to the script
  * verbatim and parseArgs skips it — but it isn't needed.)
  */
-import { and, eq, inArray, isNotNull, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, ne, or, sql } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import { pathToFileURL } from 'node:url';
 import { createScriptDb, describeDatabaseHost, getScriptDatabaseUrl } from './db-connection.js';
@@ -372,10 +372,12 @@ export async function loadAdopterAttachments(
 }
 
 /**
- * Board accounts (Aurora numeric ids and Kilter subject strings) that resolve to
- * more than one Boardsesh user. This is the upstream cause of the circuits-side
- * cross-links, and repairing it means moving ticks and credentials — out of
- * scope here, so it is audited and handed to merge-accounts.ts (#3278).
+ * Board accounts (Aurora numeric ids and Kilter subject strings) with more than
+ * one current, credential-backed Boardsesh owner. Expired claims and orphaned
+ * mappings are excluded, matching the account-link conflict guards. This is the
+ * upstream cause of the circuits-side cross-links, and repairing it means moving
+ * ticks and credentials — out of scope here, so it is audited and handed to
+ * merge-accounts.ts (#3278).
  */
 export async function loadCrossLinkedBoardAccounts(commandDb: DrizzleDb): Promise<CrossLinkedBoardAccount[]> {
   const credentialRows = await commandDb
@@ -385,7 +387,7 @@ export async function loadCrossLinkedBoardAccounts(commandDb: DrizzleDb): Promis
       userIds: sql<string[]>`array_agg(distinct ${auroraCredentials.userId})`,
     })
     .from(auroraCredentials)
-    .where(isNotNull(auroraCredentials.auroraUserId))
+    .where(and(isNotNull(auroraCredentials.auroraUserId), ne(auroraCredentials.syncStatus, 'expired')))
     .groupBy(auroraCredentials.boardType, auroraCredentials.auroraUserId)
     .having(sql`count(distinct ${auroraCredentials.userId}) > 1`);
 
@@ -397,7 +399,19 @@ export async function loadCrossLinkedBoardAccounts(commandDb: DrizzleDb): Promis
       userIds: sql<string[]>`array_agg(distinct ${userBoardMappings.userId})`,
     })
     .from(userBoardMappings)
-    .where(or(isNotNull(userBoardMappings.boardUserId), isNotNull(userBoardMappings.boardUserIdText)))
+    .innerJoin(
+      auroraCredentials,
+      and(
+        eq(auroraCredentials.userId, userBoardMappings.userId),
+        eq(auroraCredentials.boardType, userBoardMappings.boardType),
+      ),
+    )
+    .where(
+      and(
+        or(isNotNull(userBoardMappings.boardUserId), isNotNull(userBoardMappings.boardUserIdText)),
+        ne(auroraCredentials.syncStatus, 'expired'),
+      ),
+    )
     .groupBy(userBoardMappings.boardType, mappingAccountKey)
     .having(sql`count(distinct ${userBoardMappings.userId}) > 1`);
 
