@@ -102,8 +102,8 @@ pub fn render(config: &RenderConfig) -> Result<(Vec<u8>, u32, u32), String> {
 
     let mark_style = effective_mark_style(config);
     // `outline` keeps the glow and swaps the fill for a stroke. The glow it
-    // keeps is the ordinary one: how tight it sits is whatever reach and
-    // falloff the config carries, so there is no outline-specific glow code.
+    // keeps is the ordinary one, with one difference: no hold's reach exceeds
+    // what a median-sized hold gets (see `median_hold_radius_px`).
     let draws_glow = matches!(
         mark_style,
         MarkStyle::Glow | MarkStyle::GlowFill | MarkStyle::Outline
@@ -133,9 +133,24 @@ pub fn render(config: &RenderConfig) -> Result<(Vec<u8>, u32, u32), String> {
             config.glow_falloff,
             config.glow.plateau_share,
         ));
+        // Outline only: a hold bigger than the board's median gets the reach
+        // a median-sized hold would. Reach is linear in the hold's radius, so
+        // scaling by `median / r` is that reach; smaller holds are untouched.
+        // Every other mark style keeps each hold's own reach.
+        let outline_cap_r_px = if draws_outline {
+            geometry::median_hold_radius_px(&config.holds, scale_x)
+        } else {
+            None
+        };
         let reaches: Vec<f32> = lit
             .iter()
-            .map(|hold| hold.reach_px(&config.glow, shape_size_multiplier))
+            .map(|hold| {
+                let reach = hold.reach_px(&config.glow, shape_size_multiplier);
+                match outline_cap_r_px {
+                    Some(cap_r_px) if hold.r_px > cap_r_px => reach * (cap_r_px / hold.r_px),
+                    _ => reach,
+                }
+            })
             .collect();
         // The union of every unlit traced silhouette, built only when the
         // light-spill effect will read it.
