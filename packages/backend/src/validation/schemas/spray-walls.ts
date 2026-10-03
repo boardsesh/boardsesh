@@ -121,12 +121,21 @@ export const CreateSprayWallInputSchema = z.object({
   // never taken from a client. See docs/spray-walls.md.
 });
 
-export const CreateSprayWallVersionInputSchema = z.object({
-  wallUuid: UUIDSchema,
-  photoId: UUIDSchema,
-  anchors: SprayAnchorsSchema.optional().nullable(),
-  notes: z.string().max(1000).optional().nullable(),
-});
+export const CreateSprayWallVersionInputSchema = z
+  .object({
+    wallUuid: UUIDSchema,
+    photoId: UUIDSchema.optional().nullable(),
+    sourceVersionId: BigIntIdSchema.optional().nullable(),
+    anchors: SprayAnchorsSchema.optional().nullable(),
+    notes: z.string().max(1000).optional().nullable(),
+  })
+  .refine((input) => (input.photoId != null) !== (input.sourceVersionId != null), {
+    message: 'Choose either an uploaded photo or the current published version',
+  })
+  .refine((input) => input.sourceVersionId == null || input.anchors === undefined, {
+    message: 'A reused photo keeps its saved corners; omit anchors',
+    path: ['anchors'],
+  });
 
 export const SprayWallHoldInputSchema = z.object({
   // Present = correct an existing hold's geometry; absent = allocate a new

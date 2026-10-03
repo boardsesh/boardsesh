@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { v4 as uuidv4 } from 'uuid';
-import { sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
+import { sprayWallHolds, sprayWallVersions, sprayWalls } from '@boardsesh/db/schema';
 import type { ClimbSearchInput, ConnectionContext } from '@boardsesh/shared-schema';
 
 /**
@@ -2617,65 +2618,74 @@ describe('a private wall\u2019s climbs are not readable through the climb API', 
 });
 
 describe('a published generation is immutable', () => {
-  it('turns a correction to an INHERITED hold into a removal plus a new hold', async () => {
-    // `spray_wall_holds` is the geometry every climb on the published wall renders
-    // from. Editing an inherited hold in place would move it under all of them —
-    // before this draft is published, and even if it never is.
-    const { wall, holdIds } = await createPublishedWall(OWNER);
-    const inherited = holdIds[0];
+  it.each(['uploadedPhoto', 'publishedPhoto'])(
+    'turns a correction to an inherited hold into a removal plus a new hold (%s)',
+    async (photoSource) => {
+      // `spray_wall_holds` is the geometry every climb on the published wall renders
+      // from. Editing an inherited hold in place would move it under all of them —
+      // before this draft is published, and even if it never is.
+      const { wall, versionId, holdIds } = await createPublishedWall(OWNER);
+      const inherited = holdIds[0];
 
-    const [before] = (await db.execute(sql`
+      const [before] = (await db.execute(sql`
       SELECT cx, cy, r FROM spray_wall_holds
       WHERE wall_id = (SELECT id FROM spray_walls WHERE layout_id = ${wall.layoutId}) AND hold_id = ${inherited}
     `)) as unknown as Array<{ cx: number; cy: number; r: number }>;
 
-    const photoId = registerUploadedPhoto(wall.uuid);
-    const draft = (await sprayWallMutations.createSprayWallVersion(
-      {},
-      { input: { wallUuid: wall.uuid, photoId, anchors: ANCHORS } },
-      ctxFor(OWNER),
-    )) as { id: string };
-
-    const written = (await sprayWallMutations.upsertSprayWallHolds(
-      {},
-      {
-        input: {
-          wallUuid: wall.uuid,
-          versionId: draft.id,
-          holds: [{ id: inherited, cx: before.cx + 37, cy: before.cy + 41, r: before.r + 3 }],
+      const draft = (await sprayWallMutations.createSprayWallVersion(
+        {},
+        {
+          input: {
+            wallUuid: wall.uuid,
+            ...(photoSource === 'uploadedPhoto'
+              ? { photoId: registerUploadedPhoto(wall.uuid), anchors: ANCHORS }
+              : { sourceVersionId: versionId }),
+          },
         },
-      },
-      ctxFor(OWNER),
-    )) as Array<{ id: number; cx: number; cy: number; movedFromHoldId: number | null; installedVersion: number }>;
+        ctxFor(OWNER),
+      )) as { id: string };
 
-    // The caller gets the SUCCESSOR, not the id it sent — the id it sent is history
-    // as of this draft.
-    expect(written).toHaveLength(1);
-    expect(written[0].id).not.toBe(inherited);
-    expect(written[0].cx).toBe(before.cx + 37);
-    expect(written[0].movedFromHoldId).toBe(inherited);
-    expect(written[0].installedVersion).toBe(2);
+      const written = (await sprayWallMutations.upsertSprayWallHolds(
+        {},
+        {
+          input: {
+            wallUuid: wall.uuid,
+            versionId: draft.id,
+            holds: [{ id: inherited, cx: before.cx + 37, cy: before.cy + 41, r: before.r + 3 }],
+          },
+        },
+        ctxFor(OWNER),
+      )) as Array<{ id: number; cx: number; cy: number; movedFromHoldId: number | null; installedVersion: number }>;
 
-    // The ORIGINAL row is untouched apart from being stamped removed at the draft.
-    const [original] = (await db.execute(sql`
+      // The caller gets the SUCCESSOR, not the id it sent — the id it sent is history
+      // as of this draft.
+      expect(written).toHaveLength(1);
+      expect(written[0].id).not.toBe(inherited);
+      expect(written[0].cx).toBe(before.cx + 37);
+      expect(written[0].movedFromHoldId).toBe(inherited);
+      expect(written[0].installedVersion).toBe(2);
+
+      // The ORIGINAL row is untouched apart from being stamped removed at the draft.
+      const [original] = (await db.execute(sql`
       SELECT cx, cy, r, removed_version_id FROM spray_wall_holds
       WHERE wall_id = (SELECT id FROM spray_walls WHERE layout_id = ${wall.layoutId}) AND hold_id = ${inherited}
     `)) as unknown as Array<{ cx: number; cy: number; r: number; removed_version_id: number | null }>;
-    expect(original.cx).toBe(before.cx);
-    expect(original.cy).toBe(before.cy);
-    expect(original.r).toBe(before.r);
-    expect(Number(original.removed_version_id)).toBe(Number(draft.id));
+      expect(original.cx).toBe(before.cx);
+      expect(original.cy).toBe(before.cy);
+      expect(original.r).toBe(before.r);
+      expect(Number(original.removed_version_id)).toBe(Number(draft.id));
 
-    // And the PUBLISHED wall still renders the old geometry, because version 1 is
-    // what climbers are looking at until the draft publishes.
-    const published = (await sprayWallQueries.sprayWallRenderData({}, { uuid: wall.uuid }, ctxFor(OWNER))) as {
-      versionNumber: number;
-      holds: Array<{ id: number; cx: number }>;
-    };
-    expect(published.versionNumber).toBe(1);
-    expect(published.holds.find((hold) => hold.id === inherited)!.cx).toBe(before.cx);
-    expect(published.holds.map((hold) => hold.id)).not.toContain(written[0].id);
-  });
+      // And the PUBLISHED wall still renders the old geometry, because version 1 is
+      // what climbers are looking at until the draft publishes.
+      const published = (await sprayWallQueries.sprayWallRenderData({}, { uuid: wall.uuid }, ctxFor(OWNER))) as {
+        versionNumber: number;
+        holds: Array<{ id: number; cx: number }>;
+      };
+      expect(published.versionNumber).toBe(1);
+      expect(published.holds.find((hold) => hold.id === inherited)!.cx).toBe(before.cx);
+      expect(published.holds.map((hold) => hold.id)).not.toContain(written[0].id);
+    },
+  );
 
   it('edits a hold the SAME draft drew, in place', async () => {
     // Guards the guard: a rule that superseded everything would make the editor
@@ -2719,65 +2729,74 @@ describe('a published generation is immutable', () => {
 });
 
 describe('publishing re-materialises climb integrity', () => {
-  it('sets missing_hold_count on every climb that lost a hold', async () => {
-    // A publish is the moment a removal becomes real. Without the recompute a climb
-    // that just lost two holds reads 0 everywhere — badge, Intact / Lost holds
-    // filter, remix prompt and the offline mirror all say it is fine.
-    const { wall, holdIds } = await createPublishedWall(OWNER);
+  it.each(['uploadedPhoto', 'publishedPhoto'])(
+    'sets missing_hold_count on every climb that lost a hold (%s)',
+    async (photoSource) => {
+      // A publish is the moment a removal becomes real. Without the recompute a climb
+      // that just lost two holds reads 0 everywhere — badge, Intact / Lost holds
+      // filter, remix prompt and the offline mirror all say it is fine.
+      const { wall, versionId, holdIds } = await createPublishedWall(OWNER);
 
-    const saveClimbOn = async (name: string, holds: number[]) =>
-      (await climbMutations.saveClimb(
+      const saveClimbOn = async (name: string, holds: number[]) =>
+        (await climbMutations.saveClimb(
+          {},
+          {
+            input: {
+              boardType: 'spray',
+              layoutId: wall.layoutId,
+              name,
+              isDraft: false,
+              frames: framesFor(holds),
+              angle: 40,
+              userGrade: '6b/V4',
+            },
+          },
+          ctxFor(OWNER),
+        )) as { uuid: string };
+
+      // Two climbs share the doomed hold; a third avoids it.
+      const first = await saveClimbOn('Shares the doomed hold', [holdIds[0], holdIds[1]]);
+      const second = await saveClimbOn('Also shares it', [holdIds[1], holdIds[2]]);
+      const untouched = await saveClimbOn('Avoids it', [holdIds[0], holdIds[2]]);
+
+      const missingFor = async (uuid: string) => {
+        const [row] = (await db.execute(
+          sql`SELECT missing_hold_count FROM board_climbs WHERE uuid = ${uuid}`,
+        )) as unknown as Array<{ missing_hold_count: number | null }>;
+        return row.missing_hold_count;
+      };
+
+      expect(await missingFor(first.uuid)).toBe(0);
+
+      const reset = (await sprayWallMutations.createSprayWallVersion(
         {},
         {
           input: {
-            boardType: 'spray',
-            layoutId: wall.layoutId,
-            name,
-            isDraft: false,
-            frames: framesFor(holds),
-            angle: 40,
-            userGrade: '6b/V4',
+            wallUuid: wall.uuid,
+            ...(photoSource === 'uploadedPhoto'
+              ? { photoId: registerUploadedPhoto(wall.uuid), anchors: ANCHORS }
+              : { sourceVersionId: versionId }),
           },
         },
         ctxFor(OWNER),
-      )) as { uuid: string };
+      )) as { id: string };
+      await sprayWallMutations.removeSprayWallHolds(
+        {},
+        { input: { wallUuid: wall.uuid, versionId: reset.id, holdIds: [holdIds[1]] } },
+        ctxFor(OWNER),
+      );
 
-    // Two climbs share the doomed hold; a third avoids it.
-    const first = await saveClimbOn('Shares the doomed hold', [holdIds[0], holdIds[1]]);
-    const second = await saveClimbOn('Also shares it', [holdIds[1], holdIds[2]]);
-    const untouched = await saveClimbOn('Avoids it', [holdIds[0], holdIds[2]]);
+      // Still a DRAFT: the removal has not happened as far as anyone is concerned.
+      expect(await missingFor(first.uuid)).toBe(0);
+      expect(await missingFor(second.uuid)).toBe(0);
 
-    const missingFor = async (uuid: string) => {
-      const [row] = (await db.execute(
-        sql`SELECT missing_hold_count FROM board_climbs WHERE uuid = ${uuid}`,
-      )) as unknown as Array<{ missing_hold_count: number | null }>;
-      return row.missing_hold_count;
-    };
+      await sprayWallMutations.publishSprayWallVersion({}, { input: { versionId: reset.id } }, ctxFor(OWNER));
 
-    expect(await missingFor(first.uuid)).toBe(0);
-
-    const photoId = registerUploadedPhoto(wall.uuid);
-    const reset = (await sprayWallMutations.createSprayWallVersion(
-      {},
-      { input: { wallUuid: wall.uuid, photoId, anchors: ANCHORS } },
-      ctxFor(OWNER),
-    )) as { id: string };
-    await sprayWallMutations.removeSprayWallHolds(
-      {},
-      { input: { wallUuid: wall.uuid, versionId: reset.id, holdIds: [holdIds[1]] } },
-      ctxFor(OWNER),
-    );
-
-    // Still a DRAFT: the removal has not happened as far as anyone is concerned.
-    expect(await missingFor(first.uuid)).toBe(0);
-    expect(await missingFor(second.uuid)).toBe(0);
-
-    await sprayWallMutations.publishSprayWallVersion({}, { input: { versionId: reset.id } }, ctxFor(OWNER));
-
-    expect(await missingFor(first.uuid)).toBe(1);
-    expect(await missingFor(second.uuid)).toBe(1);
-    expect(await missingFor(untouched.uuid)).toBe(0);
-  });
+      expect(await missingFor(first.uuid)).toBe(1);
+      expect(await missingFor(second.uuid)).toBe(1);
+      expect(await missingFor(untouched.uuid)).toBe(0);
+    },
+  );
 
   it('counts nothing for a removal an ABANDONED draft made', async () => {
     // The recompute carries the same landed-version bound `aliveHolds` does, or
@@ -4439,6 +4458,255 @@ describe('the wall UUID is a capability for LISTING, not only for setting', () =
 
     // A uuid that names nothing at all is simply ignored.
     expect(await listed(searchInput(privateWall.wall, { sprayWallUuid: uuidv4() }), STRANGER)).toBe(false);
+  });
+});
+
+describe('editing holds on the published photo', () => {
+  it('copies the stored photo geometry and inherits hold ids without storage access', async () => {
+    const { wall, versionId, holdIds } = await createPublishedWall(OWNER);
+    const [source] = await db
+      .select()
+      .from(sprayWallVersions)
+      .where(eq(sprayWallVersions.id, Number(versionId)));
+    const [wallBefore] = await db.select().from(sprayWalls).where(eq(sprayWalls.boardUuid, wall.uuid));
+    const storage = await import('../storage/s3');
+    vi.mocked(storage.getS3ObjectMetadata).mockClear();
+    storedPhotoMetadata.clear();
+
+    const draft = (await sprayWallMutations.createSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, sourceVersionId: versionId, notes: 'Correcting the holds' } },
+      ctxFor(OWNER),
+    )) as { id: string; number: number; status: string };
+    expect(draft).toMatchObject({ number: 2, status: 'DRAFT' });
+    expect(storage.getS3ObjectMetadata).not.toHaveBeenCalled();
+
+    const [storedDraft] = await db
+      .select()
+      .from(sprayWallVersions)
+      .where(eq(sprayWallVersions.id, Number(draft.id)));
+    expect(storedDraft).toMatchObject({
+      photoKey: source.photoKey,
+      photoWidth: source.photoWidth,
+      photoHeight: source.photoHeight,
+      anchors: source.anchors,
+      homography: source.homography,
+      notes: 'Correcting the holds',
+    });
+    const drawn = await db
+      .select()
+      .from(sprayWallHolds)
+      .where(eq(sprayWallHolds.installedVersionId, Number(draft.id)));
+    expect(drawn).toEqual([]);
+    const draftRender = (await sprayWallQueries.sprayWallRenderData(
+      {},
+      { uuid: wall.uuid, version: draft.number },
+      ctxFor(OWNER),
+    )) as { holds: Array<{ id: number }> };
+    expect(draftRender.holds.map((hold) => hold.id).sort((left, right) => left - right)).toEqual(holdIds);
+    const [wallAfter] = await db.select().from(sprayWalls).where(eq(sprayWalls.boardUuid, wall.uuid));
+    expect(wallAfter).toMatchObject({
+      referenceWidth: wallBefore.referenceWidth,
+      referenceHeight: wallBefore.referenceHeight,
+      currentVersionId: wallBefore.currentVersionId,
+      holdCount: wallBefore.holdCount,
+    });
+  });
+
+  it('keeps version-one null anchors and its exact homography without a configured bucket', async () => {
+    const wall = await createWall(OWNER);
+    const photoId = registerUploadedPhoto(wall.uuid);
+    const first = (await sprayWallMutations.createSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, photoId } },
+      ctxFor(OWNER),
+    )) as { id: string };
+    await sprayWallMutations.publishSprayWallVersion({}, { input: { versionId: first.id } }, ctxFor(OWNER));
+    const [source] = await db
+      .select()
+      .from(sprayWallVersions)
+      .where(eq(sprayWallVersions.id, Number(first.id)));
+    expect(source.anchors).toBeNull();
+    const storage = await import('../storage/s3');
+    vi.mocked(storage.isS3Configured).mockReturnValue(false);
+    vi.mocked(storage.getS3ObjectMetadata).mockClear();
+
+    const draft = (await sprayWallMutations.createSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, sourceVersionId: first.id } },
+      ctxFor(OWNER),
+    )) as { id: string; number: number };
+    expect(draft.number).toBe(2);
+    const [stored] = await db
+      .select()
+      .from(sprayWallVersions)
+      .where(eq(sprayWallVersions.id, Number(draft.id)));
+    expect(stored.anchors).toBeNull();
+    expect(stored.homography).toEqual(source.homography);
+    expect(storage.getS3ObjectMetadata).not.toHaveBeenCalled();
+  });
+
+  it('preserves a legacy null homography rather than solving another mapping', async () => {
+    const { wall, versionId } = await createPublishedWall(OWNER);
+    await db
+      .update(sprayWallVersions)
+      .set({ homography: null })
+      .where(eq(sprayWallVersions.id, Number(versionId)));
+    const draft = (await sprayWallMutations.createSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, sourceVersionId: versionId } },
+      ctxFor(OWNER),
+    )) as { id: string };
+    const [stored] = await db
+      .select()
+      .from(sprayWallVersions)
+      .where(eq(sprayWallVersions.id, Number(draft.id)));
+    expect(stored.homography).toBeNull();
+    expect(stored.anchors).toEqual(ANCHORS);
+  });
+
+  it('refuses unauthenticated callers and viewers who cannot edit the wall', async () => {
+    const { wall, versionId } = await createPublishedWall(OWNER);
+    for (const viewer of [null, STRANGER]) {
+      await expect(
+        sprayWallMutations.createSprayWallVersion(
+          {},
+          { input: { wallUuid: wall.uuid, sourceVersionId: versionId } },
+          ctxFor(viewer),
+        ),
+      ).rejects.toThrow();
+    }
+    const drafts = await db
+      .select({ id: sprayWallVersions.id })
+      .from(sprayWallVersions)
+      .innerJoin(sprayWalls, eq(sprayWalls.id, sprayWallVersions.wallId))
+      .where(and(eq(sprayWalls.boardUuid, wall.uuid), eq(sprayWallVersions.status, 'draft')));
+    expect(drafts).toEqual([]);
+  });
+
+  it('refuses a missing, foreign or superseded source version', async () => {
+    const first = await createPublishedWall(OWNER);
+    const foreign = await createPublishedWall(OWNER);
+    const next = (await sprayWallMutations.createSprayWallVersion(
+      {},
+      { input: { wallUuid: first.wall.uuid, sourceVersionId: first.versionId } },
+      ctxFor(OWNER),
+    )) as { id: string };
+    await sprayWallMutations.publishSprayWallVersion({}, { input: { versionId: next.id } }, ctxFor(OWNER));
+
+    for (const sourceVersionId of ['2147483647', foreign.versionId, first.versionId]) {
+      await expect(
+        sprayWallMutations.createSprayWallVersion(
+          {},
+          { input: { wallUuid: first.wall.uuid, sourceVersionId } },
+          ctxFor(OWNER),
+        ),
+      ).rejects.toMatchObject({ extensions: { code: 'SPRAY_WALL_SOURCE_VERSION_NOT_CURRENT' } });
+    }
+    // A legacy row may still say published while the wall points at its successor.
+    await db
+      .update(sprayWallVersions)
+      .set({ status: 'published' })
+      .where(eq(sprayWallVersions.id, Number(first.versionId)));
+    await expect(
+      sprayWallMutations.createSprayWallVersion(
+        {},
+        { input: { wallUuid: first.wall.uuid, sourceVersionId: first.versionId } },
+        ctxFor(OWNER),
+      ),
+    ).rejects.toMatchObject({ extensions: { code: 'SPRAY_WALL_SOURCE_VERSION_NOT_CURRENT' } });
+  });
+
+  it.each([{ photoKey: null }, { photoWidth: null }, { photoHeight: 0 }])(
+    'refuses a source photo missing stored metadata: %j',
+    async (missingPhoto) => {
+      const { wall, versionId } = await createPublishedWall(OWNER);
+      await db
+        .update(sprayWallVersions)
+        .set(missingPhoto)
+        .where(eq(sprayWallVersions.id, Number(versionId)));
+      await expect(
+        sprayWallMutations.createSprayWallVersion(
+          {},
+          { input: { wallUuid: wall.uuid, sourceVersionId: versionId } },
+          ctxFor(OWNER),
+        ),
+      ).rejects.toMatchObject({ extensions: { code: 'SPRAY_WALL_PHOTO_MISSING' } });
+    },
+  );
+
+  it('allows only one draft when two editors reuse the same photo concurrently', async () => {
+    const { wall, versionId } = await createPublishedWall(OWNER);
+    const create = () =>
+      sprayWallMutations.createSprayWallVersion(
+        {},
+        { input: { wallUuid: wall.uuid, sourceVersionId: versionId } },
+        ctxFor(OWNER),
+      );
+    const results = await Promise.allSettled([create(), create()]);
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(results.find((result) => result.status === 'rejected')).toMatchObject({
+      reason: { extensions: { code: 'SPRAY_WALL_DRAFT_ALREADY_OPEN' } },
+    });
+    const drafts = await db
+      .select({ versionNumber: sprayWallVersions.versionNumber })
+      .from(sprayWallVersions)
+      .innerJoin(sprayWalls, eq(sprayWalls.id, sprayWallVersions.wallId))
+      .where(and(eq(sprayWalls.boardUuid, wall.uuid), eq(sprayWallVersions.status, 'draft')));
+    expect(drafts).toHaveLength(1);
+    expect(drafts[0].versionNumber).toBe(2);
+  });
+
+  it('rechecks the published source when another photo publishes while it waits for the lock', async () => {
+    const { wall, versionId } = await createPublishedWall(OWNER);
+    const nextPhoto = registerUploadedPhoto(wall.uuid);
+    const next = (await sprayWallMutations.createSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, photoId: nextPhoto, anchors: ANCHORS } },
+      ctxFor(OWNER),
+    )) as { id: string };
+    const [wallRow] = await db.select().from(sprayWalls).where(eq(sprayWalls.boardUuid, wall.uuid));
+    let releaseLock: () => void = () => {};
+    let announceLock: () => void = () => {};
+    const lockHeld = new Promise<void>((resolve) => {
+      announceLock = resolve;
+    });
+    const mayPublish = new Promise<void>((resolve) => {
+      releaseLock = resolve;
+    });
+    const publish = db.transaction(async (transaction) => {
+      await lockWallForWrite(transaction, wallRow.id);
+      announceLock();
+      await mayPublish;
+      await transaction
+        .update(sprayWallVersions)
+        .set({ status: 'superseded' })
+        .where(eq(sprayWallVersions.id, Number(versionId)));
+      await transaction
+        .update(sprayWallVersions)
+        .set({ status: 'published' })
+        .where(eq(sprayWallVersions.id, Number(next.id)));
+      await transaction
+        .update(sprayWalls)
+        .set({ currentVersionId: Number(next.id) })
+        .where(eq(sprayWalls.id, wallRow.id));
+    });
+    await lockHeld;
+    const create = sprayWallMutations.createSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, sourceVersionId: versionId } },
+      ctxFor(OWNER),
+    );
+    const staleSourceRejected = expect(create).rejects.toMatchObject({
+      extensions: { code: 'SPRAY_WALL_SOURCE_VERSION_NOT_CURRENT' },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    releaseLock();
+    await publish;
+    await staleSourceRejected;
+    const versions = await db.select().from(sprayWallVersions).where(eq(sprayWallVersions.wallId, wallRow.id));
+    expect(versions).toHaveLength(2);
+    expect(versions.some((version) => version.status === 'draft')).toBe(false);
   });
 });
 
