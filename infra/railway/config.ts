@@ -712,8 +712,9 @@ export const desiredRailwayState: RailwayDesiredState = {
         {
           name: 'INTERNAL_SERVICE_SECRET',
           reason:
-            'Must equal the backend service value. Unset or mismatched, SSR GraphQL reads run anonymous and ' +
-            'every climb page shares one 30/min similar-climbs bucket (#5291). See docs/railway.md.',
+            'Must equal the backend service value. Unset or mismatched, SSR reads lose their trusted per-read ' +
+            'identity: anonymous similar-climb requests share a per-IP bucket (600/min for the materialized index, ' +
+            '30/min for the catalog live query). See docs/railway.md.',
         },
       ],
       optionalConstrainedVars: [

@@ -367,9 +367,10 @@ their own rate-limit buckets instead of the anonymous per-IP one (#5291).
 - **Reused cron secret:** the backend denies both service and cron permissions to
   the shared bearer. Railway drift checks report this collision without printing
   either credential.
-- **Unset (or mismatched):** nothing breaks loudly. SSR falls back to the anonymous
-  path, where every climb-page render shares one 30/min `similar-climbs` bucket.
-  That is the #5291 bug: the similar-climbs section becomes unavailable under load.
+- **Unset (or mismatched):** nothing breaks loudly. SSR falls back to anonymous
+  per-IP buckets: 600/min for the materialized index used by ordinary callers,
+  and 30/min for the catalog live query. Crawling many climbs can exhaust the
+  caller's shared bucket instead of using the trusted service's per-read partitions.
 - **Rotate:** set the new value on the backend first, then on web. Between the
   two steps SSR reads run anonymous, which degrades the section but serves the page.
 
@@ -382,9 +383,10 @@ before writing. A mismatched value is blocked and the command exits non-zero.
 
 Before merging the first deployment, provision both copies. Backend code verifies
 this identity only on HTTP requests; it does not grant user or cron permissions.
-Similar-climb reads use a separate 30/minute bucket per board, layout, climb and
-angle in both memory and Redis. Other service reads use a finite per-operation
-fallback. Public requests cannot select these service partitions.
+Trusted similar-climb reads use per-read buckets in both memory and Redis: the
+resolver's normal limit is 600/min for the materialized index and 30/min for the
+catalog live query. Other service reads use a finite per-operation fallback.
+Public requests cannot select these service partitions.
 
 Keep the one-hour web cache, backend Redis cache and three-second SSR deadline.
 After deployment, verify known climb pages contain related-climb anchors in the
