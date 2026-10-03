@@ -32,12 +32,19 @@ function localDatabaseUrl(): string | null {
 const integrationRequired = process.env.REQUIRE_AURORA_CIRCUIT_INTEGRATION === '1';
 const describeIntegration = localDatabaseUrl() || integrationRequired ? describe : describe.skip;
 
-/** Release both claimants only after both outer transactions are open. */
-function createBarrier(participantCount: number): () => Promise<void> {
+/** Release all claimants only after every outer transaction is open. */
+function createBarrier(participantCount: number, timeoutMs = 5_000): () => Promise<void> {
   let arrived = 0;
   let release: (() => void) | undefined;
-  const ready = new Promise<void>((resolve) => {
-    release = resolve;
+  const ready = new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(
+      () => reject(new Error(`Timed out waiting for ${participantCount} cross-writer transactions`)),
+      timeoutMs,
+    );
+    release = () => {
+      clearTimeout(timeout);
+      resolve();
+    };
   });
   return async () => {
     arrived += 1;

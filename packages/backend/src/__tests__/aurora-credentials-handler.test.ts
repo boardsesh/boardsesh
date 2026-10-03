@@ -1,6 +1,7 @@
 import { Readable } from 'node:stream';
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import {
+  AMBIGUOUS_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR,
   DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR,
   FOREIGN_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR,
 } from '@boardsesh/shared-schema/sync-error-codes';
@@ -107,6 +108,35 @@ describe('Aurora credentials REST handler', () => {
         {
           syncError: DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR,
           syncErrorReason: 'foreign',
+        },
+      ],
+    });
+  });
+
+  it('GET preserves the ambiguous ownership reason for current clients', async () => {
+    validateTokenMock.mockResolvedValue({ userId: 'ambiguous-owner-user' });
+    getAuroraCredentialStatusesMock.mockResolvedValue([
+      {
+        boardType: 'tension',
+        auroraUsername: 'climber',
+        auroraUserId: 42,
+        lastSyncAt: '2026-07-31T00:00:00.000Z',
+        syncStatus: 'active',
+        syncError: AMBIGUOUS_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR,
+        createdAt: '2026-01-01T00:00:00.000Z',
+      },
+    ]);
+    const request = makeRequest({ method: 'GET', headers: { authorization: 'Bearer token' } });
+    const response = makeResponse();
+
+    await handlers.handleAuroraCredentials(request as never, response as never);
+
+    expect(response.statusCode).toBe(200);
+    expect(JSON.parse(response.body)).toMatchObject({
+      credentials: [
+        {
+          syncError: DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR,
+          syncErrorReason: 'ambiguous',
         },
       ],
     });

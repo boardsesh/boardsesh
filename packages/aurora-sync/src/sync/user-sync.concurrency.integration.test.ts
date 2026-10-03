@@ -548,4 +548,122 @@ describeIntegration('Aurora circuit ownership arbitration concurrency (#3950)', 
       await client.end();
     }
   }, 20_000);
+
+  it('refuses to overwrite a playlist with multiple owners', async (testContext) => {
+    const databaseUrl = localDatabaseUrl();
+    if (!databaseUrl) {
+      if (integrationRequired) {
+        throw new Error('REQUIRE_AURORA_CIRCUIT_INTEGRATION=1 requires DATABASE_URL to point at local PostgreSQL');
+      }
+      testContext.skip('set DATABASE_URL to a local, migrated PostgreSQL database to run issue #3950 coverage');
+      return;
+    }
+
+    const client = postgres(databaseUrl, { max: 2, prepare: false, idle_timeout: 5, onnotice: () => {} });
+    const db = drizzle(client);
+    const schemaSkipReason = await integrationSchemaSkipReason(client);
+    if (schemaSkipReason) {
+      await client.end();
+      if (integrationRequired) throw new Error(schemaSkipReason);
+      testContext.skip(schemaSkipReason);
+      return;
+    }
+
+    const testTag = randomUUID();
+    const circuitUuid = `issue-3950-ambiguous-${testTag}`;
+    const userIds = [`issue-3950-ambiguous-a-${testTag}`, `issue-3950-ambiguous-b-${testTag}`] as const;
+    const originalClimbUuid = `issue-3950-ambiguous-existing-${testTag}`;
+    const incomingClimbUuid = `issue-3950-ambiguous-incoming-${testTag}`;
+    let insertedUserIds: string[] = [];
+    let auroraUserId: number | undefined;
+    let insertedPlaylistId: bigint | undefined;
+
+    try {
+      const insertedUsers = await db
+        .insert(users)
+        .values(userIds.map((id) => ({ id, email: `${id}@example.invalid` })))
+        .onConflictDoNothing()
+        .returning({ id: users.id });
+      insertedUserIds = insertedUsers.map((row) => row.id);
+      if (insertedUsers.length !== userIds.length) {
+        throw new Error('Could not allocate isolated user fixtures for issue #3950 ambiguous ownership');
+      }
+
+      const candidateBase = 1_800_000_000 + (Number.parseInt(testTag.slice(0, 7), 16) % 100_000_000);
+      for (let attempt = 0; attempt < 20 && auroraUserId === undefined; attempt += 1) {
+        const insertedBoardUsers = await db
+          .insert(boardUsers)
+          .values({
+            boardType: 'tension',
+            id: candidateBase + attempt,
+            username: `issue-3950-ambiguous-${testTag}`,
+          })
+          .onConflictDoNothing()
+          .returning({ id: boardUsers.id });
+        auroraUserId = insertedBoardUsers[0]?.id;
+      }
+      if (auroraUserId === undefined) {
+        throw new Error('Could not allocate isolated board-user fixture for issue #3950 ambiguous ownership');
+      }
+      const claimedAuroraUserId = auroraUserId;
+
+      const [playlist] = await db
+        .insert(playlists)
+        .values({
+          uuid: circuitUuid,
+          boardType: 'tension',
+          layoutId: null,
+          name: 'Original ambiguous playlist',
+          auroraType: 'circuits',
+          auroraId: circuitUuid,
+        })
+        .returning({ id: playlists.id });
+      if (!playlist) throw new Error('Could not create ambiguous playlist fixture');
+      insertedPlaylistId = playlist.id;
+      await db
+        .insert(playlistOwnership)
+        .values(userIds.map((userId) => ({ playlistId: playlist.id, userId, role: 'owner' as const })));
+      await db.insert(playlistClimbs).values({
+        playlistId: playlist.id,
+        climbUuid: originalClimbUuid,
+        angle: null,
+        position: 0,
+      });
+
+      const result = await db.transaction((transaction) =>
+        upsertTableData(
+          transaction as unknown as UpsertDb,
+          'tension',
+          'circuits',
+          claimedAuroraUserId,
+          userIds[0],
+          [circuitRow(circuitUuid, 'Incoming ambiguous playlist', incomingClimbUuid)],
+          () => {},
+        ),
+      );
+
+      expect(result.skipped).toBe(1);
+      expect(result.circuitPlaylistRefusals).toMatchObject({ foreign: 0, ambiguous: 1, invariant: 0 });
+      const [storedPlaylist] = await db
+        .select({ name: playlists.name })
+        .from(playlists)
+        .where(eq(playlists.id, playlist.id));
+      expect(storedPlaylist?.name).toBe('Original ambiguous playlist');
+      const storedClimbs = await db
+        .select({ climbUuid: playlistClimbs.climbUuid })
+        .from(playlistClimbs)
+        .where(eq(playlistClimbs.playlistId, playlist.id));
+      expect(storedClimbs).toEqual([{ climbUuid: originalClimbUuid }]);
+    } finally {
+      if (insertedPlaylistId !== undefined) await db.delete(playlists).where(eq(playlists.id, insertedPlaylistId));
+      await db
+        .delete(boardCircuits)
+        .where(and(eq(boardCircuits.boardType, 'tension'), eq(boardCircuits.uuid, circuitUuid)));
+      if (auroraUserId !== undefined) {
+        await db.delete(boardUsers).where(and(eq(boardUsers.boardType, 'tension'), eq(boardUsers.id, auroraUserId)));
+      }
+      if (insertedUserIds.length > 0) await db.delete(users).where(inArray(users.id, insertedUserIds));
+      await client.end();
+    }
+  }, 20_000);
 });

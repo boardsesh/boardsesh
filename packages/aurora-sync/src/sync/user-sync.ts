@@ -461,6 +461,9 @@ export async function upsertTableData(
         });
 
         if (!nextAuthUserId) {
+          // `synced` is the accepted input-row metric used by table syncs, not
+          // the number of distinct SQL writes. Keep it stable when valid
+          // duplicate circuit UUIDs are collapsed to their last payload row.
           return rejectedCount > 0
             ? {
                 synced: data.length - rejectedCount,
@@ -746,6 +749,7 @@ export type SyncUserDataResult = Record<string, SyncTableResult>;
 export type SyncUserDataOptions = {
   tables?: string[];
   log?: (message: string) => void;
+  /** The daemon runner supplies its structured error logger; direct callers fall back to console.error. */
   logError?: (message: string) => void;
   /**
    * Runs each page's writes in one transaction. Defaults to `db.transaction`.

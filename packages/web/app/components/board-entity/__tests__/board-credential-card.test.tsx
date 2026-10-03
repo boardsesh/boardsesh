@@ -9,7 +9,11 @@
 import { describe, it, expect, vi } from 'vite-plus/test';
 import { fireEvent, render, screen } from '@testing-library/react';
 import React from 'react';
-import { DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR } from '@boardsesh/shared-schema/sync-error-codes';
+import {
+  AMBIGUOUS_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR,
+  DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR,
+  FOREIGN_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR,
+} from '@boardsesh/shared-schema/sync-error-codes';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 import { BoardCredentialCard } from '../board-credential-card';
 import type { AuroraCredentialStatus } from '@/app/lib/aurora-credentials/client';
@@ -89,6 +93,36 @@ describe('BoardCredentialCard', () => {
 
     expect(screen.getByText(tFromCatalog('settings', 'aurora.status.duplicateAccountCircuits'))).toBeTruthy();
     expect(screen.queryByText(DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR)).toBeNull();
+  });
+
+  it('localises precise ownership reasons on the legacy REST wire code', () => {
+    renderCard(credentialWith({ syncError: DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR, syncErrorReason: 'foreign' }));
+
+    expect(screen.getByText(tFromCatalog('settings', 'aurora.status.foreignAccountCircuits'))).toBeTruthy();
+    expect(screen.queryByText(DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR)).toBeNull();
+  });
+
+  it('localises ambiguous ownership on the legacy REST wire code', () => {
+    renderCard(
+      credentialWith({ syncError: DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR, syncErrorReason: 'ambiguous' }),
+    );
+
+    expect(screen.getByText(tFromCatalog('settings', 'aurora.status.ambiguousAccountCircuits'))).toBeTruthy();
+    expect(screen.queryByText(DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR)).toBeNull();
+  });
+
+  it('localises precise stored ownership codes without a wire reason', () => {
+    renderCard(credentialWith({ syncError: FOREIGN_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR }));
+
+    expect(screen.getByText(tFromCatalog('settings', 'aurora.status.foreignAccountCircuits'))).toBeTruthy();
+    expect(screen.queryByText(FOREIGN_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR)).toBeNull();
+  });
+
+  it('localises a precise stored ambiguous code without a wire reason', () => {
+    renderCard(credentialWith({ syncError: AMBIGUOUS_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR }));
+
+    expect(screen.getByText(tFromCatalog('settings', 'aurora.status.ambiguousAccountCircuits'))).toBeTruthy();
+    expect(screen.queryByText(AMBIGUOUS_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR)).toBeNull();
   });
 
   it('renders an unknown sync error verbatim', () => {

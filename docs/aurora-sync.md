@@ -73,6 +73,30 @@ of `none`, `foreign`, or `ambiguous`; mobile and web show distinct localised
 guidance for the two conflict states while continuing to understand the older
 generic stored code.
 
+Every daemon and legacy web circuit writer derives the same advisory-lock key
+from the `boardsesh:aurora-circuit` namespace, board type, and circuit UUID.
+PostgreSQL hashes that text to its 64-bit transaction lock; writers sort all
+circuit UUIDs before acquiring the full lock set. Locks stay held across the
+source-row upsert, ownership read, and playlist write, so overlapping batches
+cannot deadlock by taking the same circuits in different orders.
+
+The `aurora_credentials.sync_error` column keeps the detailed stored state:
+`duplicate-board-account-link:circuits:foreign` or
+`duplicate-board-account-link:circuits:ambiguous`. The REST credentials
+response preserves the older `duplicate-board-account-link:circuits` value in
+`syncError` for clients that predate this protocol and adds
+`syncErrorReason: "foreign"` or `"ambiguous"` for current clients. A client
+should localise only these recognised codes/reasons and render unrelated legacy
+error text verbatim. This lets old and new app versions explain the same
+playlist-only pause during a rolling deployment.
+
+The arbitration integration job uses a fresh, pinned development-database
+container. Its opt-in preparation script adds only the legacy playlist columns
+and indexes absent from that image, verifies their canonical definitions, and
+checks that the Drizzle migration ledger is unchanged. This fixture setup is
+guarded to loopback PostgreSQL and is not a production schema migration or a
+replacement for the migration journal.
+
 ### Logbook writes (`ascents`/`bids`): timezone, claim, soft-delete
 
 Both pull implementations (the daemon `packages/aurora-sync/src/sync/user-sync.ts`
