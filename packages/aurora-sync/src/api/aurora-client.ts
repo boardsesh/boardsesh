@@ -72,7 +72,7 @@ export class AuroraClimbingClient {
         ...fetchOptions,
         headers: {
           ...this.createHeaders(contentType),
-          ...((fetchOptions.headers as Record<string, string> | undefined) ?? {}),
+          ...(fetchOptions.headers as Record<string, string> | undefined),
         },
         signal: callerSignal ? AbortSignal.any([callerSignal, timeoutSignal]) : timeoutSignal,
       });
