@@ -46,6 +46,7 @@ import { BoardRenderUnavailable } from './BoardRenderUnavailable';
 import { PlaybackControls } from '../playback/PlaybackControls';
 import { useMobilePlayback } from './use-mobile-playback';
 import { LivePlayDrawerHeader } from './PlayDrawerHeader';
+import { PlayDrawerStatusBarScrim } from './PlayDrawerStatusBarScrim';
 import { copyClimbName } from './copy-climb-name';
 import { SwipeableHeader } from './SwipeableHeader';
 import { PlayDrawerActionBar } from './PlayDrawerActionBar';
@@ -1756,7 +1757,9 @@ export function PlayDrawer({
   // Named because the wall-state callout needs it too: it hangs off the header's
   // measured bottom edge, and that measurement is relative to the a11y-trap
   // wrapper INSIDE this padding, not to the first screen itself.
-  const firstScreenPaddingTop = isPane && !paneTopInset ? spacing[2] : insets.top + spacing[2];
+  // In the pane a docked WallStrip can already own the top inset.
+  const ownsTopInset = !isPane || paneTopInset;
+  const firstScreenPaddingTop = ownsTopInset ? insets.top + spacing[2] : spacing[2];
 
   // When the user expands the Logbook peek, glide it fully into view. Fires on the
   // section's layout (re-firing as a slow logbook fetch grows it) while armed.
@@ -2141,6 +2144,9 @@ export function PlayDrawer({
                 </>
               )}
             </ScrollView>
+            {ownsTopInset && insets.top > 0 ? (
+              <PlayDrawerStatusBarScrim height={insets.top} scrollY={scrollYSV} />
+            ) : null}
           </Animated.View>
         </GestureDetector>
       )}
