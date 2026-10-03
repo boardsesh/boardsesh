@@ -536,6 +536,9 @@ export const sprayWallModerationTypeDefs = /* GraphQL */ `
   type SprayWallReport {
     id: ID!
     wallUuid: ID!
+    wallName: String!
+    "Admin-only preview, including private and hidden walls; null when unavailable."
+    photo: SprayWallPhoto
     layoutId: Int!
     reason: SprayWallReportReason!
     "Whether the wall is hidden right now."

@@ -1,5 +1,5 @@
 import { GraphQLError } from 'graphql';
-import { and, asc, eq, isNotNull, isNull, lt, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { SPRAY_WALL_PHOTO_RETENTION_DAYS } from '@boardsesh/board-config';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -10,6 +10,7 @@ import { requireAdmin } from '../social/roles';
 import { ReportSprayWallInputSchema, SetSprayWallHiddenInputSchema, UUIDSchema } from '../../../validation/schemas';
 import { deleteFromS3, isS3Configured, listS3Objects } from '../../../storage/s3';
 import {
+  presignVersionPhoto,
   purgeSprayWallFeedItems,
   refreshPublicWallPhoto,
   SPRAY_WALL_CODES,
@@ -433,7 +434,11 @@ export const sprayWallModerationQueries = {
     // A pending report on a wall the owner has since deleted is not work: no
     // surface shows the wall, and hiding it would change nothing. It stays in the
     // table as the record of why, and out of the queue.
-    const conditions = [isNull(dbSchema.sprayWallReports.reviewedAt), isNull(dbSchema.sprayWalls.deletedAt)];
+    const conditions = [
+      isNull(dbSchema.sprayWallReports.reviewedAt),
+      isNull(dbSchema.sprayWalls.deletedAt),
+      isNull(dbSchema.userBoards.deletedAt),
+    ];
     if (uuid !== undefined && uuid !== null) {
       const validatedUuid = validateInput(UUIDSchema, uuid, 'uuid');
       conditions.push(eq(dbSchema.sprayWalls.boardUuid, validatedUuid));
@@ -445,18 +450,81 @@ export const sprayWallModerationQueries = {
         reason: dbSchema.sprayWallReports.reason,
         createdAt: dbSchema.sprayWallReports.createdAt,
         wallUuid: dbSchema.sprayWalls.boardUuid,
+        wallName: dbSchema.userBoards.name,
+        wallId: dbSchema.sprayWalls.id,
+        currentVersionId: dbSchema.sprayWalls.currentVersionId,
         layoutId: dbSchema.sprayWalls.layoutId,
         hiddenAt: dbSchema.sprayWalls.hiddenAt,
       })
       .from(dbSchema.sprayWallReports)
       .innerJoin(dbSchema.sprayWalls, eq(dbSchema.sprayWalls.id, dbSchema.sprayWallReports.wallId))
+      .innerJoin(dbSchema.userBoards, eq(dbSchema.userBoards.uuid, dbSchema.sprayWalls.boardUuid))
       .where(and(...conditions))
       .orderBy(sql`${dbSchema.sprayWallReports.createdAt} DESC`)
       .limit(200);
 
+    if (rows.length === 0) return [];
+
+    // This read is intentionally admin-only rather than a normal wall read:
+    // private and hidden photographs are precisely what the queue must review.
+    // Several reports can share a wall. Their joined wall fields are identical,
+    // so deduplicate by wallId before selecting and signing each preview once.
+    const walls = new Map(rows.map((row) => [row.wallId, row]));
+    const currentVersionIds = [...walls.values()].flatMap((wall) =>
+      wall.currentVersionId == null ? [] : [wall.currentVersionId],
+    );
+    const unpublishedWallIds = [...walls.values()].flatMap((wall) =>
+      wall.currentVersionId == null ? [wall.wallId] : [],
+    );
+    const versions = await db
+      .select()
+      .from(dbSchema.sprayWallVersions)
+      .where(
+        and(
+          inArray(dbSchema.sprayWallVersions.wallId, [...walls.keys()]),
+          or(
+            unpublishedWallIds.length > 0
+              ? and(
+                  inArray(dbSchema.sprayWallVersions.wallId, unpublishedWallIds),
+                  eq(dbSchema.sprayWallVersions.status, 'draft'),
+                )
+              : undefined,
+            currentVersionIds.length > 0 ? inArray(dbSchema.sprayWallVersions.id, currentVersionIds) : undefined,
+          ),
+        ),
+      )
+      .orderBy(desc(dbSchema.sprayWallVersions.versionNumber));
+
+    const selectedVersions = new Map<number, (typeof versions)[number]>();
+    for (const version of versions) {
+      const wall = walls.get(version.wallId)!;
+      if (
+        version.id === wall.currentVersionId ||
+        (wall.currentVersionId == null && version.status === 'draft' && !selectedVersions.has(version.wallId))
+      ) {
+        selectedVersions.set(version.wallId, version);
+      }
+    }
+
+    // One pair of signatures per wall, even if several climbers reported it.
+    const photos = new Map(
+      await Promise.all(
+        [...selectedVersions].map(async ([wallId, version]) => {
+          try {
+            return [wallId, await presignVersionPhoto(version)] as const;
+          } catch (error) {
+            logger.warn('Failed to presign a spray wall moderation preview', { wallId, versionId: version.id }, error);
+            return [wallId, null] as const;
+          }
+        }),
+      ),
+    );
+
     return rows.map((row) => ({
       id: String(row.id),
       wallUuid: row.wallUuid,
+      wallName: row.wallName,
+      photo: photos.get(row.wallId) ?? null,
       layoutId: row.layoutId,
       reason: reportReasonWireName(row.reason),
       hidden: row.hiddenAt != null,

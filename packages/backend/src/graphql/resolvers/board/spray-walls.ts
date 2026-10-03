@@ -346,7 +346,7 @@ export async function loadEditableWall(ctx: ConnectionContext, uuid: string): Pr
  * (or a backend with no private bucket configured) returns null, and the callers
  * decide whether that is a null field or a hard error.
  */
-async function presignVersionPhoto(version: SprayWallVersionRow): Promise<{
+export async function presignVersionPhoto(version: SprayWallVersionRow): Promise<{
   url: string;
   thumbUrl: string | null;
   width: number | null;
