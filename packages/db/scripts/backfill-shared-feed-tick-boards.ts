@@ -101,7 +101,7 @@ export function parseArgs(args: string[]): RepairOptions {
     else if (argument === '--help' || argument === '-h') options.help = true;
     else if (argument === '--revert' || argument === '--out') {
       const filename = args[++index];
-      if (!filename || filename.startsWith('--')) throw new Error(`${argument} requires a filename`);
+      if (!filename || filename.startsWith('-')) throw new Error(`${argument} requires a filename`);
       if (argument === '--revert') options.revertPath = filename;
       else options.outPath = filename;
     } else throw new Error(`Unknown option: ${argument}`);
@@ -315,6 +315,8 @@ async function applyMoveBatchesInTransaction(
   // update must advance it. Keep each provider's conflict classification
   // independently: only a marker that already covered the old row advances;
   // a pending local edit or a never-synced row retains its original marker.
+  // PostgreSQL evaluates every SET expression against the pre-update row, so
+  // these CASE checks still compare the markers with the old `updated_at`.
   // transaction_timestamp() keeps every batch in this transaction on one clock.
   const transactionTimestamp = sql`transaction_timestamp()::timestamp`;
   let applied = 0;

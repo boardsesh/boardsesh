@@ -29,7 +29,7 @@ void test('rejects conflicting modes, unknown flags, and missing filenames', () 
     assert.throws(() => parseArgs(args), /cannot be combined/);
   }
   assert.throws(() => parseArgs(['--aply']), /Unknown option/);
-  for (const args of [['--revert'], ['--out'], ['--out', '--apply']]) {
+  for (const args of [['--revert'], ['--out'], ['--out', '--apply'], ['--out', '-h'], ['--revert', '-x']]) {
     assert.throws(() => parseArgs(args), /requires a filename/);
   }
 });
