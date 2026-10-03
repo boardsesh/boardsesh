@@ -869,6 +869,15 @@ export {
   type ToggleFavoriteMutationResponse,
 } from '@boardsesh/graphql/operations/favorites';
 
+// Climb revision history (#5955): shared with web, re-exported for the same reason.
+export {
+  GET_CLIMB_REVISIONS,
+  type ClimbRevisionChange,
+  type ClimbRevisionRow,
+  type GetClimbRevisionsQueryVariables,
+  type GetClimbRevisionsQueryResponse,
+} from '@boardsesh/graphql/operations/climb-revisions';
+
 // ============================================
 // Queue Mutations
 // ============================================

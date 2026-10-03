@@ -33,6 +33,9 @@ import { track } from '../../lib/analytics';
 import { trackBoardConnectTapped } from '../../lib/analytics-board-connect';
 import { useAuth } from '../../providers/auth-provider';
 import { useProfile, useClimb } from '../../lib/graphql/hooks';
+import { CLIMB_REVISIONS_QUERY_KEY } from '../../lib/graphql/hooks/climb-revisions-query-key';
+import { resolveProvisionalSetter } from './provisional-setter';
+import { extractGraphqlMessage } from '../../lib/graphql/extract-error-message';
 import { useQueueActions } from '../../providers/queue-provider';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
 import { useToast } from '../../providers/toast-provider';
@@ -1352,12 +1355,15 @@ export function useCreateClimbScreen({
       ...(board.boardName === 'woods' ? { compatibleSizeIds: [board.sizeId] } : {}),
       name: name.trim() || t('createClimbForm.draftBadge'),
       frames,
-      setter_username: profile?.displayName ?? '',
-      // Null until the profile query resolves, same as setter_username above, so
+      // The saver's on a new climb, and null until the profile query resolves, so
       // a climb queued during a cold start shows no Edit action until the next
       // save replaces the item. Self-correcting and not worth a queue-item
       // update path; revisit if it shows up in offline-first flows.
-      userId: profile?.id ?? null,
+      //
+      // The ORIGINAL setter's on an edit: a wall owner fixing somebody else's
+      // spray climb has not taken it (#5955), and the server never rewrites
+      // either field on an update.
+      ...resolveProvisionalSetter(isEditing ? editClimb : null, profile),
       description,
       // The wall's own angle on a spray board, the caller's everywhere else —
       // the same value Save writes, so "Set as active" queues the climb at the
@@ -1393,6 +1399,8 @@ export function useCreateClimbScreen({
       anyFeet,
       rulesAlwaysKnown,
       profile,
+      isEditing,
+      editClimb,
       savedClimb,
       board.angle,
       board.boardName,
@@ -1677,6 +1685,8 @@ export function useCreateClimbScreen({
       // An admin's live heatmap counts the new climb at once; a downloaded board
       // catches up when the climb syncs down and the index rebuilds.
       void queryClient.invalidateQueries({ queryKey: ['holdHeatmap'] });
+      // An edit to a published climb wrote a revision; a no-op elsewhere.
+      void queryClient.invalidateQueries({ queryKey: [CLIMB_REVISIONS_QUERY_KEY] });
       setJustSaved(true);
       // Seed the next climb's picker with what this one published at — a session
       // on one wall clusters hard around two or three grades.
@@ -1704,7 +1714,12 @@ export function useCreateClimbScreen({
         // on reading "Saved on this phone" — true, and silent about the account
         // copy never happening. Sticky until the next successful save or an edit.
         setFailedSignature(signatureAtSave);
-        showToast(t('createClimbForm.alerts.saveFailedFallback'), 'error');
+        // An edit on a spray wall says why in the server's own words. The Edit
+        // action is offered on a cached read of who can edit the wall, so the
+        // server's refusal is the one place a climber whose access has changed
+        // finds out, and "Failed to save" would send them round again.
+        const refusal = canUpdate && board.boardName === 'spray' ? extractGraphqlMessage(err) : null;
+        showToast(refusal ?? t('createClimbForm.alerts.saveFailedFallback'), 'error');
       }
     } finally {
       saveInFlightRef.current = false;

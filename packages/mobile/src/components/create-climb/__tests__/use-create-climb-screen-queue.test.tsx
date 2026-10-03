@@ -25,6 +25,8 @@ const board = vi.hoisted(() => ({
   isDuplicateClimbError: vi.fn((_err: unknown) => false),
 }));
 const toast = vi.hoisted(() => ({ showToast: vi.fn() }));
+/** The climb `useClimb` answers with when the editor is opened on an existing one. */
+const edit = vi.hoisted(() => ({ climb: undefined as Record<string, unknown> | undefined }));
 const queue = vi.hoisted(() => ({ setCurrentClimb: vi.fn() }));
 const router = vi.hoisted(() => ({ push: vi.fn() }));
 
@@ -94,7 +96,7 @@ vi.mock('../../../providers/auth-provider', () => ({
 }));
 vi.mock('../../../lib/graphql/hooks', () => ({
   useProfile: () => ({ data: { id: 'user-1', displayName: 'Tester' } }),
-  useClimb: () => ({ data: undefined }),
+  useClimb: () => ({ data: edit.climb }),
 }));
 vi.mock('../../../providers/queue-provider', () => ({
   useQueueActions: () => ({ setCurrentClimb: queue.setCurrentClimb }),
@@ -147,6 +149,7 @@ beforeEach(() => {
   board.saveClimb.mockReset();
   board.updateClimb.mockReset();
   createClimb.frameCount = 1;
+  edit.climb = undefined;
 });
 
 describe('create-climb queue hand-off carries board identity', () => {
@@ -280,6 +283,96 @@ describe('create-climb queue hand-off carries board identity', () => {
 // The creator wrote `frames_pace: 0` on every save, so a published route always
 // played at the 750ms default however the setter set the transport — the speed
 // control authored nothing. These pin the value actually reaching the wire.
+describe('editing a climb somebody else set (#5955)', () => {
+  // A wall owner fixing a start hold has not taken the climb. The server never
+  // rewrites `user_id` / `setter_username` on an update, so the queue row the
+  // editor builds must not either: with the saver's id on it, the play drawer
+  // would credit the wall owner and offer the real setter nothing.
+  const someoneElsesClimb = {
+    uuid: 'climb-9',
+    name: 'Left Arete',
+    frames: 'p1r12p2r13p3r14',
+    description: '',
+    difficulty: null,
+    userId: 'setter-1',
+    setter_username: 'Original Setter',
+    is_draft: false,
+    published_at: '2020-01-01T00:00:00.000Z',
+    created_at: '2020-01-01T00:00:00.000Z',
+  };
+
+  it('queues the edited climb under its original setter, not the editor', () => {
+    edit.climb = someoneElsesClimb;
+    const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard, editClimbUuid: 'climb-9' }));
+
+    act(() => result.current.handleSetActive());
+
+    const { climb } = lastQueuedItem();
+    expect(climb.userId).toBe('setter-1');
+    expect(climb.setter_username).toBe('Original Setter');
+  });
+
+  it('keeps the original setter on the row a save syncs into the queue', async () => {
+    edit.climb = someoneElsesClimb;
+    board.updateClimb.mockResolvedValue({
+      uuid: 'climb-9',
+      createdAt: '2020-01-01T00:00:00.000Z',
+      publishedAt: '2020-01-01T00:00:00.000Z',
+      isDraft: false,
+    });
+    const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard, editClimbUuid: 'climb-9' }));
+
+    await act(async () => {
+      await result.current.handleSave();
+    });
+
+    expect(board.updateClimb).toHaveBeenCalledTimes(1);
+    expect(board.saveClimb).not.toHaveBeenCalled();
+    const { climb } = lastQueuedItem();
+    expect(climb.uuid).toBe('climb-9');
+    expect(climb.userId).toBe('setter-1');
+    expect(climb.setter_username).toBe('Original Setter');
+  });
+
+  it("shows the server's refusal when a spray edit is turned down", async () => {
+    // The client gate ran on a stale read of who can edit the wall. Nothing is
+    // lost and the reason is on screen, not a generic "Failed to save".
+    // A spray climb publishes with its setter's grade, so the edit carries one.
+    edit.climb = { ...someoneElsesClimb, difficulty: '6a/V3' };
+    board.updateClimb.mockRejectedValue({
+      response: { errors: [{ message: 'You can only update your own climbs' }] },
+    });
+    const sprayBoard = { boardName: 'spray' as const, layoutId: 4200, sizeId: 4200, setIds: '1', angle: 40 };
+    const { result } = renderHook(() => useCreateClimbScreen({ board: sprayBoard, editClimbUuid: 'climb-9' }));
+
+    await act(async () => {
+      await result.current.handleSave();
+    });
+
+    expect(toast.showToast).toHaveBeenCalledWith('You can only update your own climbs', 'error');
+  });
+
+  it('keeps the generic failure line for a catalogue board', async () => {
+    edit.climb = someoneElsesClimb;
+    board.updateClimb.mockRejectedValue({ response: { errors: [{ message: 'The 24 hour edit window has expired' }] } });
+    const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard, editClimbUuid: 'climb-9' }));
+
+    await act(async () => {
+      await result.current.handleSave();
+    });
+
+    expect(toast.showToast).toHaveBeenCalledWith('createClimbForm.alerts.saveFailedFallback', 'error');
+  });
+
+  it('still gives a brand-new climb to the climber making it', () => {
+    const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard }));
+
+    act(() => result.current.handleSetActive());
+
+    expect(lastQueuedItem().climb.userId).toBe('user-1');
+  });
+});
+
 describe('authored pace reaches the queue and the server', () => {
   it('publishes the pace the setter dialled on a route', async () => {
     createClimb.frameCount = 3;
