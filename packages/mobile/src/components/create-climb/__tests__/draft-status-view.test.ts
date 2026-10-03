@@ -76,6 +76,45 @@ describe('deriveDraftStatusView', () => {
     });
   });
 
+  it('asks for the grade in the warning tone while Save stays enabled', () => {
+    // Not a blocked publish any more (#5954): the button is live and its tap
+    // opens the grade rail. This line is the passive half of that prompt.
+    expect(deriveDraftStatusView({ ...base, gradeNeededToPublish: true }, identity)).toEqual({
+      text: 'mobile.create.publish.gradeBlocked',
+      tone: 'warning',
+      announce: true,
+    });
+  });
+
+  it('names the holds before the grade when both are missing', () => {
+    expect(deriveDraftStatusView({ ...base, publishBlocked: true, gradeNeededToPublish: true }, identity)?.text).toBe(
+      'mobile.create.publish.blocked',
+    );
+  });
+
+  it('does not call the work a draft while Save is set to publish', () => {
+    // A spray wall opens with the draft switch off, so "Draft saved…" was the
+    // first thing the line said about a climb that was never going to be one.
+    expect(deriveDraftStatusView({ ...base, isDraft: false }, identity)).toEqual({
+      text: 'mobile.create.autosave.onDevicePublish',
+      tone: 'muted',
+      announce: false,
+    });
+    expect(deriveDraftStatusView({ ...base, isDraft: false, hasSavedClimb: true }, identity)).toEqual({
+      text: 'mobile.create.autosave.inAccountPublish',
+      tone: 'muted',
+      announce: true,
+    });
+  });
+
+  it('keeps the draft wording while the switch is on, and when a caller does not say', () => {
+    expect(deriveDraftStatusView({ ...base, isDraft: true }, identity)?.text).toBe('mobile.create.autosave.onDevice');
+    expect(deriveDraftStatusView({ ...base, isDraft: true, hasSavedClimb: true }, identity)?.text).toBe(
+      'mobile.create.autosave.inAccount',
+    );
+    expect(deriveDraftStatusView(base, identity)?.text).toBe('mobile.create.autosave.onDevice');
+  });
+
   it('has no "saving" state — the button already says that', () => {
     // Two "Saving…" strings 20dp apart is noise. Nothing in the input can produce
     // a line other than the six above, so a save in flight leaves the line put.

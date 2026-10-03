@@ -2065,7 +2065,7 @@ holds and `getBoardCapabilities` allows authoring, and SW-07 made both true for 
 wall — so `isAuthorableBoard`
 (`packages/mobile/app/(tabs)/climbs/create.tsx`) already accepts `spray` through
 the capability, the brush bar already offers all four roles (`STATE_TO_PRIMARY_CODE.spray`),
-and start/finish still cap at two each. What is left is four rules a wall answers
+and start/finish still cap at two each. What is left is five rules a wall answers
 differently, and they live as pure functions in
 `packages/mobile/src/components/create-climb/spray-climb-rules.ts`:
 
@@ -2076,8 +2076,13 @@ differently, and they live as pure functions in
    with what `resolveDifficultyId` matches server-side). The pick rides
    `SaveClimbInput.userGrade` / `UpdateClimbInput.userGrade` as the grade NAME
    (`"6c/V5"`), the same string `board_difficulty_grades.boulder_name` stores.
-   `publishBlocked` names the missing grade under the Save button, so a disabled
-   button is never mute. `use-last-used-grade.ts` seeds a FRESH climb's picker
+   A missing grade does not disable Save (#5954). The rail is below the fold, so
+   a dead button up top gave no hint where to look: the status line under Save
+   reads "Pick your grade to publish", and tapping Save sends nothing, bumps
+   `focusGradeSignal`, and `CreateDrawer` opens the sheet and scrolls just far
+   enough to show the rail with its "Needed to publish" subtitle in the warning
+   colour. Save is still disabled while a start or a finish hold is missing
+   (`publishBlocked`). `use-last-used-grade.ts` seeds a FRESH climb's picker
    with what the setter last published on this board — a session on one wall
    clusters hard — and a draft, a fork and an edit all overwrite that seed with
    their own grade.
@@ -2094,6 +2099,18 @@ differently, and they live as pure functions in
    `user_boards` row. There is no angle control in this editor to hide.
 4. **`sprayWallUuid` rides every write**, from the same registry entry — see rule
    1 of "Climb writes on a wall" above for why it is sent unconditionally.
+5. **Save publishes.** `defaultIsDraft` starts the "Save as draft" switch off on a
+   wall and on everywhere else (#5954). A draft is left out of the Climbs list,
+   and on a wall a handful of people share, a climb missing from the list read as
+   a climb that was lost. It is only the switch's starting position: an edit
+   session takes the row's own value, and a restored autosave slot takes the one
+   it stored, so work in progress from before this change still restores as a
+   draft.
+
+Because a draft is not in the Climbs list, every surface that does show one marks
+it with `DraftChip` (`packages/mobile/src/components/DraftChip.tsx`): the climb
+row (list, queue, actions-sheet preview), the play drawer header, and the bottom
+bar's capsule and iOS accessory row.
 
 Everything else is unchanged and deliberately so: the duplicate gate surfaces
 through the existing `isDuplicateClimbError` + `DuplicateBanner` (the server

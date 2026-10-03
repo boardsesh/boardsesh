@@ -88,6 +88,9 @@ vi.mock('../../ClimbAttributeIcons', () => ({
     }),
 }));
 
+// The real chip reads the theme provider, which this suite does not stand up.
+vi.mock('../../DraftChip', () => ({ DraftChip: () => createElement('i', { 'data-chip': 'draft' }) }));
+
 import { PlayDrawerHeader } from '../PlayDrawerHeader';
 
 const { NO_MATCH, CAMPUS, ANY_FEET } = CLIMB_CHARACTERISTICS;

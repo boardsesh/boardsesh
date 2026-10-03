@@ -55,6 +55,7 @@ import { computeRoleCapacity, getNextBrushRole, getPaintRoles, type BrushRole } 
 import {
   authoringAngle,
   defaultAnyFeet,
+  defaultIsDraft,
   hasFootHolds,
   nextAnyFeetForFeetChange,
   requiresSetterGrade,
@@ -430,7 +431,10 @@ export function useCreateClimbScreen({
     if (isForking) return defaultAnyFeet(board.boardName) && !hasFootHolds(initialFrames?.[0] ?? {});
     return defaultAnyFeet(board.boardName);
   });
-  const [isDraft, setIsDraft] = useState(true);
+  // Where "Save as draft" starts. Off on a spray wall, where Save publishes
+  // (#5954); on everywhere else. A restored autosave slot and an edit session
+  // both overwrite this with the value they carry.
+  const [isDraft, setIsDraft] = useState(() => defaultIsDraft(board.boardName));
   // The setter's own grade, as a difficulty id on the shared Boardsesh scale.
   // Only boards with no crowd grade ask for it (`requiresSetterGrade`), and only
   // publishing needs it — a draft may sit ungraded, because the grade is the last
@@ -539,6 +543,10 @@ export function useCreateClimbScreen({
   // "edited since you saved" and "that save failed" stay true without a timer.
   // Inline "Start over?" confirm, rendered as sheet content — see handleNewClimb.
   const [pendingNewClimb, setPendingNewClimb] = useState(false);
+  // Bumped when Save is tapped to publish a climb that still needs the setter's
+  // grade, so the drawer can bring the grade rail into view. Zero means "no
+  // prompt outstanding" — a blank climb resets it.
+  const [focusGradeSignal, setFocusGradeSignal] = useState(0);
   // Bumped once per blank climb that ACTUALLY starts, so chrome can react to a
   // new climb rather than to the intent to start one. `handleNewClimb` only
   // raises the confirmation when there is unsaved work, and that confirmation
@@ -1282,7 +1290,9 @@ export function useCreateClimbScreen({
       // route — the boulder-pays-nothing invariant, broken one climb later.
       setRouteMode(false);
       setFramesPaceMs(DEFAULT_PACE_MS);
-      setIsDraft(true);
+      setIsDraft(defaultIsDraft(board.boardName));
+      // A grade prompt belongs to the climb it was raised for.
+      setFocusGradeSignal(0);
       setSavedClimb(null);
       setPublishDuplicateError(null);
       setSavedSignature(null);
@@ -1347,8 +1357,13 @@ export function useCreateClimbScreen({
   // you just made lands in the queue as if it belonged to nobody, so the play
   // drawer's owner-only Edit action never appears on your own fresh draft —
   // `computeCanUpdate` reads exactly userId + is_draft + published_at.
+  //
+  // `saved` is the row to mirror. It defaults to the tracked one, which is right
+  // for every caller but the save path: there `setSavedClimb` has only just been
+  // called, so the state this closure sees is still the row from BEFORE the save
+  // (null on a first save) and a first publish would queue as a draft.
   const buildProvisionalClimb = useCallback(
-    (uuid: string, frames: string): Climb => ({
+    (uuid: string, frames: string, saved: SavedClimbSnapshot | null = savedClimb): Climb => ({
       uuid,
       boardType: board.boardName,
       layoutId: board.layoutId,
@@ -1379,8 +1394,8 @@ export function useCreateClimbScreen({
       characteristics: buildProvisionalCharacteristics(noMatch, noKickboard, campus, anyFeet, rulesAlwaysKnown),
       // Not-yet-saved climbs are drafts by definition; once saved, mirror the
       // tracked row so a published climb doesn't queue as a draft.
-      is_draft: savedClimb?.isDraft ?? true,
-      published_at: savedClimb?.publishedAt ?? null,
+      is_draft: saved?.isDraft ?? true,
+      published_at: saved?.publishedAt ?? null,
       userAscents: 0,
       userAttempts: 0,
       framesCount: frameCount,
@@ -1419,12 +1434,14 @@ export function useCreateClimbScreen({
   // same-uuid local SET_CURRENT_CLIMB. The live BLE preview keeps the local
   // wall correct; a mobile queue `updateQueueItem` is the follow-up for peers.
   const syncSavedToQueue = useCallback(
-    (uuid: string, framesString: string) => {
+    (saved: SavedClimbSnapshot, framesString: string) => {
       // Same wall hand-off as Set-Active: the auto-sender now lights the whole
       // route. A draft save leaves the drawer open, so without this the creator's
       // debounced preview would snatch the wall straight back to one frame.
       setHandedOff(true);
-      setCurrentClimb(climbToQueueItem(buildProvisionalClimb(uuid, framesString), { uuid }));
+      // The snapshot is passed in rather than read off state — see
+      // `buildProvisionalClimb`.
+      setCurrentClimb(climbToQueueItem(buildProvisionalClimb(saved.uuid, framesString, saved), { uuid: saved.uuid }));
     },
     [buildProvisionalClimb, setCurrentClimb],
   );
@@ -1484,7 +1501,12 @@ export function useCreateClimbScreen({
   // is the last thing a setter decides and a draft has to be leavable without it.
   const showSetterGrade = requiresSetterGrade(board.boardName);
   const setterGradeMissing = showSetterGrade && !isDraft && setterGradeDifficultyId === null;
-  const publishBlocked = !isDraft && hasContent && (!canPublish || setterGradeMissing);
+  // What disables Save: the holds. The missing grade does NOT (#5954) — the grade
+  // rail sits below the fold, so a dead button there reads as a broken editor.
+  // Save stays tappable and the tap takes the setter to the rail instead; see
+  // `handleSave`.
+  const publishBlocked = !isDraft && hasContent && !canPublish;
+  const gradeNeededToPublish = setterGradeMissing && hasContent && canPublish;
   const localPersistenceAvailable = isDraftStorageAvailable();
   const saveFailed = failedSignature !== null && failedSignature === payloadSignature;
 
@@ -1498,7 +1520,8 @@ export function useCreateClimbScreen({
           hasUnsavedEdits,
           saveFailed,
           publishBlocked,
-          publishBlockedByGrade: publishBlocked && setterGradeMissing,
+          gradeNeededToPublish,
+          isDraft,
         },
         t,
       ),
@@ -1509,7 +1532,8 @@ export function useCreateClimbScreen({
       hasUnsavedEdits,
       saveFailed,
       publishBlocked,
-      setterGradeMissing,
+      gradeNeededToPublish,
+      isDraft,
       t,
     ],
   );
@@ -1528,7 +1552,13 @@ export function useCreateClimbScreen({
     if (editLocked) return;
     // Drafts stay cheap; publishing needs a start, a finish, and — on a board with
     // no crowd grade — the setter's own grade.
-    if (isDraft ? !canSave : !canPublish || setterGradeMissing) return;
+    if (isDraft ? !canSave : !canPublish) return;
+    // Nothing is sent without the grade (the server would refuse it anyway). The
+    // tap is answered rather than swallowed: the drawer opens onto the rail.
+    if (setterGradeMissing) {
+      setFocusGradeSignal((value) => value + 1);
+      return;
+    }
     if (name.trim() === '') {
       requestFocusName();
       return;
@@ -1618,7 +1648,7 @@ export function useCreateClimbScreen({
           isDraft: result.isDraft,
           holdCount,
         });
-        syncSavedToQueue(result.uuid, frames);
+        syncSavedToQueue(nextSavedClimb, frames);
       } else {
         const result = await saveClimb({
           layout_id: board.layoutId,
@@ -1650,7 +1680,7 @@ export function useCreateClimbScreen({
           isDraft,
           holdCount,
         });
-        syncSavedToQueue(result.uuid, frames);
+        syncSavedToQueue(nextSavedClimb, frames);
       }
       // ---- What happens to the on-device working copy. ----
       // A draft-Save used to delete it unconditionally, which is what made "Save,
@@ -1902,8 +1932,8 @@ export function useCreateClimbScreen({
     /** The picked grade as a difficulty id on the shared Boardsesh scale, or null. */
     setterGradeDifficultyId,
     setSetterGradeDifficultyId,
-    /** True while publishing is selected and the missing setter grade is what is
-     *  blocking it — the form's subtitle and the status line both say so. */
+    /** True while publishing is selected and the setter grade is still missing —
+     *  the form's subtitle and the status line both say so. Save stays enabled. */
     setterGradeMissing,
     /** Whether this board's climbs can hold more than one frame. Off on Woods,
      *  whose BLE packet builder rejects the comma a second frame introduces. */
@@ -1921,6 +1951,9 @@ export function useCreateClimbScreen({
     publishDuplicateError,
     dismissDuplicateError,
     focusNameSignal,
+    /** Bumped by a Save tap that needs the setter grade first; 0 when none is
+     *  outstanding. The drawer scrolls to the grade rail on a change. */
+    focusGradeSignal,
     // persistence
     draftStatus,
     notifyDraftKeptOnDismiss,

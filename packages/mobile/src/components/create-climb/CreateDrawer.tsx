@@ -337,6 +337,43 @@ export function CreateDrawer({
     indexRef.current = index;
   }, []);
 
+  // ---- Save tapped with no setter grade (#5954). ----
+  // The grade rail is below the fold, so the controller answers that tap with a
+  // signal instead of a save and the drawer brings the rail up: open the sheet,
+  // then scroll just far enough that the rail clears the bottom edge. Not
+  // further — the Save button is the next thing the setter needs, and scrolling
+  // the rail to the top would push it off screen.
+  //
+  // The rail's box comes from the form's own onLayout (y within the form, plus
+  // its height), kept in a ref: nothing here is measured by the peek maths, and
+  // no View in this file gains an onLayout. See the note on the banners below.
+  const setterGradeBoxRef = useRef<{ y: number; height: number } | null>(null);
+  const handleSetterGradeLayout = useCallback((event: LayoutChangeEvent) => {
+    const { y, height } = event.nativeEvent.layout;
+    setterGradeBoxRef.current = { y, height };
+  }, []);
+  const scrollToGradeRef = useRef<() => void>(() => {});
+  scrollToGradeRef.current = () => {
+    sheetRef.current?.snapToIndex(1);
+    const gradeBox = setterGradeBoxRef.current;
+    if (!gradeBox || aboveFoldHeight === 0) return;
+    // Content offset of the rail's bottom edge: the scroll padding, the measured
+    // above-fold blocks, the below-fold padding, then the rail inside the form.
+    const gradeBottom = spacing[2] + aboveFoldHeight + spacing[4] + gradeBox.y + gradeBox.height;
+    // The fully open sheet's viewport. Window-derived on purpose: the scroll
+    // view's own height is still the PEEK height at this point, a frame before
+    // the snap above lands.
+    const openViewportHeight = windowHeight - insets.top - NATIVE_HANDLE_RESERVE;
+    const offset = gradeBottom + spacing[4] + windowInsetBottom - openViewportHeight;
+    scrollRef.current?.scrollTo({ y: Math.max(0, offset), animated: true });
+  };
+  const focusGradeSignal = controller.focusGradeSignal;
+  useEffect(() => {
+    // 0 is "no prompt outstanding" — the first render, and a blank climb's reset.
+    if (!focusGradeSignal) return;
+    scrollToGradeRef.current();
+  }, [focusGradeSignal]);
+
   const snapPoints = useMemo<(number | string)[]>(
     () => (peekHeight > 0 ? [peekHeight, '100%'] : ['80%', '100%']),
     [peekHeight],
@@ -496,6 +533,8 @@ export function CreateDrawer({
               setterGradeDifficultyId={controller.setterGradeDifficultyId}
               onChangeSetterGrade={controller.setSetterGradeDifficultyId}
               setterGradeRequired={controller.setterGradeMissing}
+              setterGradeHighlightSignal={controller.focusGradeSignal}
+              onSetterGradeLayout={handleSetterGradeLayout}
               description={controller.description}
               onChangeDescription={controller.setDescription}
               noMatch={controller.noMatch}

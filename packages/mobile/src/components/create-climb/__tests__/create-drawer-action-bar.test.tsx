@@ -194,6 +194,19 @@ describe('CreateDrawerActionBar', () => {
     expect(container.textContent).toContain('mobile.create.publish.blocked');
   });
 
+  it('keeps Save enabled when the grade is the only thing missing', () => {
+    // #5954: the grade rail is below the fold, so the tap is what takes the
+    // setter to it. The controller reports this state as NOT publish-blocked,
+    // with the grade line as the status.
+    const { save, container } = renderBar(1, {
+      publishBlocked: false,
+      draftStatus: { text: 'mobile.create.publish.gradeBlocked', tone: 'warning', announce: true },
+    });
+
+    expect((save as HTMLButtonElement).disabled).toBe(false);
+    expect(container.textContent).toContain('mobile.create.publish.gradeBlocked');
+  });
+
   it('renders no status TEXT for an empty editor, but still holds the row', () => {
     // The words are absent by design — an empty editor has nothing to report.
     // The ROW is not, and that distinction is load-bearing: the drawer sizes the

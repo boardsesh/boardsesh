@@ -765,6 +765,8 @@
       "autosave": {
         "onDevice": "Brouillon enregistré sur ce téléphone",
         "inAccount": "Brouillon enregistré sur votre compte",
+        "onDevicePublish": "Enregistré sur ce téléphone",
+        "inAccountPublish": "Enregistré sur votre compte",
         "unsyncedEdits": "Les dernières modifications sont uniquement sur ce téléphone",
         "notStored": "Connectez-vous pour garder ce brouillon",
         "saveFailed": "Impossible d'enregistrer sur votre compte. Touchez Enregistrer pour réessayer.",

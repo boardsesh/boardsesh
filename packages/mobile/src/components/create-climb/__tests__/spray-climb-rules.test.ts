@@ -6,6 +6,7 @@ import { getPaintRoles, computeRoleCapacity } from '../brush-roles';
 import {
   authoringAngle,
   defaultAnyFeet,
+  defaultIsDraft,
   hasFootHolds,
   isSprayBoard,
   nextAnyFeetForFeetChange,
@@ -14,7 +15,7 @@ import {
   sprayWallUuidFor,
 } from '../spray-climb-rules';
 
-// The four rules a spray wall answers differently from a catalogue board
+// The five rules a spray wall answers differently from a catalogue board
 // (#5443), plus the two things the editor gets for free and must keep getting:
 // the wall's role set and the start/finish capacities.
 
@@ -82,6 +83,18 @@ describe('the setter grade', () => {
     expect(requiresSetterGrade('spray')).toBe(true);
     for (const boardName of ['kilter', 'tension', 'moonboard', 'woods'] satisfies BoardName[]) {
       expect(requiresSetterGrade(boardName)).toBe(false);
+    }
+  });
+});
+
+describe('where the draft switch starts', () => {
+  it('is off on a spray wall, so Save publishes', () => {
+    expect(defaultIsDraft('spray')).toBe(false);
+  });
+
+  it('stays on for every catalogue board', () => {
+    for (const boardName of ['kilter', 'tension', 'moonboard', 'woods']) {
+      expect(defaultIsDraft(boardName)).toBe(true);
     }
   });
 });

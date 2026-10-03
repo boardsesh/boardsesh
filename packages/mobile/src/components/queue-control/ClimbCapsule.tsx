@@ -15,6 +15,7 @@ import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
 import { useDisplayGrade } from '../../hooks/use-display-grade';
 import { Text } from '../Text';
 import { MarqueeText } from '../MarqueeText';
+import { DraftChip } from '../DraftChip';
 import { useTheme } from '../../providers/theme-provider';
 import { useDrawerHost, type BoardConfig } from '../../providers/drawer-host-provider';
 import { AccessoryBarSurface, type AccessoryBarSurfaceTreatment } from './AccessoryBarSurface';
@@ -48,6 +49,11 @@ function ClimbLabel({ climb, labelColor, formattedGrade, gradeColor, showThumbna
       >
         {climb.name}
       </MarqueeText>
+      {/* A draft is missing from the Climbs list; the bar says why (#5954). The
+          row's `gap` spaces it, and the name beside it absorbs the truncation. */}
+      {climb.is_draft === true ? (
+        <DraftChip maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE} testID="capsule-climb-draft" />
+      ) : null}
       {formattedGrade ? (
         <Text
           variant="headline"
