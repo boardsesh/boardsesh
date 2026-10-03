@@ -35,7 +35,6 @@ vi.mock('react-native', () => ({
       children,
     ),
 }));
-vi.mock('../../Icon', () => ({ Icon: () => null }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('@boardsesh/board-constants/grade-colors', () => ({
   getGradeColor: () => '#abcdef',
@@ -76,7 +75,7 @@ vi.mock('../../DrawerHeader', () => ({
 }));
 vi.mock('../../ClimbAttributeIcons', () => ({ ClimbAttributeIcons: () => createElement('i', null) }));
 // The real Icon pulls in react-native-vector-icons, which this suite's
-// `react-native` stub can't satisfy — and the grade glyphs are not what it tests.
+// `react-native` stub can't satisfy. Keep marker names visible for grade assertions.
 vi.mock('../../Icon', () => ({ Icon: ({ name }: { name: string }) => createElement('i', { 'data-icon': name }) }));
 
 import { PlayDrawerHeader } from '../PlayDrawerHeader';
