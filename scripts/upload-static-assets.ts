@@ -42,6 +42,7 @@ import {
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const PUBLIC_VALIDATION_ATTEMPTS = 6;
 const PUBLIC_VALIDATION_REQUEST_TIMEOUT_MS = 30_000;
+const SIGNED_GET_TIMEOUT_MS = 30_000;
 const MAX_REQUEST_STARTS_PER_SECOND = 5;
 
 function requiredEnvironment(name: string): string {
@@ -133,7 +134,7 @@ export async function validateRemoteAsset(
   if (!response.ChecksumSHA256) {
     console.log(`S3 HEAD checksum missing for ${asset.logicalPath}; hashing signed GET bytes.`);
     await beforeRequest();
-    const signal = AbortSignal.timeout(PUBLIC_VALIDATION_REQUEST_TIMEOUT_MS);
+    const signal = AbortSignal.timeout(SIGNED_GET_TIMEOUT_MS);
     const download = await client.send(new GetObjectCommand({ Bucket: bucket, Key: asset.objectKey }), {
       abortSignal: signal,
     });

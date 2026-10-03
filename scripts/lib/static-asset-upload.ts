@@ -89,6 +89,8 @@ export async function readResponseBodyWithinLimit(
   try {
     while (true) {
       const { done, value: chunk } = await reader.read();
+      // Cancelling a stalled reader resolves its pending read as done. Check
+      // abort first so cancellation cannot masquerade as a complete download.
       signal?.throwIfAborted();
       if (done) break;
       receivedBytes += chunk.byteLength;
