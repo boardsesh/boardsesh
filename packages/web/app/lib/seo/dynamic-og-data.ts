@@ -2,6 +2,7 @@ import 'server-only';
 
 import { cache } from 'react';
 import { sql as drizzleSql } from 'drizzle-orm';
+import { parseBoardPath, parseNamedBoardPath } from '@boardsesh/board-config';
 import { buildBoardRenderUrl } from '@/app/components/board-renderer/util';
 import { boardToRouteParams, resolveBoardBySlug } from '@/app/lib/board-slug-utils';
 import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
@@ -10,6 +11,7 @@ import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
 // READ_REPLICA_URL is unset, so this is safe before a replica exists.
 import { dbzRead as dbz, executeRows, getReadPool, rowsFromResult } from '@/app/lib/db/db';
 import { formatBoardDisplayName } from '@/app/lib/string-utils';
+import { detectLocale } from '@/app/lib/i18n/detect-locale';
 import type { BoardDetails, BoardName, ParsedBoardRouteParameters } from '@/app/lib/types';
 import { parseBoardRouteParamsWithSlugs } from '@/app/lib/url-utils.server';
 import { buildOgVersionToken } from './og';
@@ -183,6 +185,7 @@ export type SessionOgSummary = {
   participantCount: number;
   totalSends: number;
   gradeRows: SessionOgGradeRow[];
+  boardType: BoardName | null;
   boardLabel: string | null;
   boardAngle: number | null;
   boardPreviewPath: string | null;
@@ -247,6 +250,7 @@ function formatBoardLabel(boardDetails: BoardDetails): string {
 }
 
 async function resolveSessionBoardInfo(seed: SessionBoardSeed): Promise<{
+  boardType: BoardName;
   boardLabel: string;
   boardAngle: number | null;
   boardPreviewPath: string;
@@ -258,56 +262,58 @@ async function resolveSessionBoardInfo(seed: SessionBoardSeed): Promise<{
 
   try {
     let parsedParams: ParsedBoardRouteParameters | null = null;
-    let boardAngle = seed.boardAngle != null ? Number(seed.boardAngle) : null;
-
-    if (seed.boardType && seed.layoutId != null && seed.sizeId != null) {
-      const parsedSetIds = parseSetIdString(seed.setIds);
-      if (parsedSetIds.length > 0) {
-        parsedParams = {
-          board_name: seed.boardType as BoardName,
-          layout_id: Number(seed.layoutId),
-          size_id: Number(seed.sizeId),
-          set_ids: parsedSetIds,
-          angle: boardAngle ?? 0,
-        };
-      }
-    }
-
+    let boardAngle: number | null = null;
     const pathname = extractPathname(rawBoardPath);
 
-    if (!parsedParams && pathname.startsWith('/b/')) {
-      const parts = pathname.split('/').filter(Boolean);
-      const boardSlug = seed.boardSlug?.trim() || parts[1] || '';
-      const pathAngle = parts[2] ? Number(parts[2]) : Number.NaN;
+    const namedBoardPath = parseNamedBoardPath(pathname);
+    if (namedBoardPath) {
+      const { slug: boardSlug, angle: pathAngle } = namedBoardPath;
+      if (pathAngle !== null && Number.isFinite(pathAngle)) boardAngle = pathAngle;
 
-      if (!Number.isNaN(pathAngle)) {
-        boardAngle = pathAngle;
+      // A board switch updates board_path without changing the original board_id.
+      if (
+        boardSlug &&
+        boardSlug === seed.boardSlug?.trim() &&
+        seed.boardType &&
+        seed.layoutId != null &&
+        seed.sizeId != null
+      ) {
+        const parsedSetIds = parseSetIdString(seed.setIds);
+        if (parsedSetIds.length > 0) {
+          boardAngle ??= seed.boardAngle;
+          parsedParams = {
+            board_name: seed.boardType as BoardName,
+            layout_id: Number(seed.layoutId),
+            size_id: Number(seed.sizeId),
+            set_ids: parsedSetIds,
+            angle: boardAngle ?? 0,
+          };
+        }
       }
 
-      if (boardSlug) {
+      if (!parsedParams && boardSlug) {
         const board = await resolveBoardBySlug(boardSlug);
         if (board) {
-          if (boardAngle == null || Number.isNaN(boardAngle)) {
-            boardAngle = board.angle;
-          }
+          boardAngle ??= board.angle;
           parsedParams = boardToRouteParams(board, boardAngle ?? board.angle);
         }
       }
     }
 
     if (!parsedParams) {
-      const parts = pathname.split('/').filter(Boolean);
+      const positionalPath = parseBoardPath(pathname);
+      const { strippedPath } = detectLocale(pathname.startsWith('/') ? pathname : `/${pathname}`);
+      const parts = strippedPath.split('/').filter(Boolean);
       if (parts.length >= 4) {
-        const maybeAngle = parts[4] ? Number(parts[4]) : Number.NaN;
-        if (!Number.isNaN(maybeAngle)) {
-          boardAngle = maybeAngle;
-        }
+        const pathAngle = positionalPath ? positionalPath.angle : parts[4] ? Number(parts[4]) : null;
+        if (pathAngle !== null && Number.isFinite(pathAngle)) boardAngle = pathAngle;
 
+        // Readable layout/size slugs still use the server catalogue resolver.
         parsedParams = await parseBoardRouteParamsWithSlugs({
-          board_name: parts[0],
-          layout_id: parts[1],
-          size_id: parts[2],
-          set_ids: parts[3],
+          board_name: positionalPath?.boardName ?? parts[0],
+          layout_id: positionalPath ? String(positionalPath.layoutId) : parts[1],
+          size_id: positionalPath ? String(positionalPath.sizeId) : parts[2],
+          set_ids: positionalPath?.setIds ?? parts[3],
           angle: String(boardAngle ?? 0),
         });
       }
@@ -319,6 +325,7 @@ async function resolveSessionBoardInfo(seed: SessionBoardSeed): Promise<{
 
     const boardDetails = getBoardDetailsForBoard(parsedParams);
     return {
+      boardType: boardDetails.board_name,
       boardLabel: formatBoardLabel(boardDetails),
       boardAngle: boardAngle != null && !Number.isNaN(boardAngle) ? boardAngle : null,
       boardPreviewPath: buildBoardRenderUrl(boardDetails, '', {
@@ -384,6 +391,7 @@ export const getSessionOgSummary = cache(async (sessionId: string): Promise<Sess
       participantCount: 0,
       totalSends: 0,
       gradeRows: [],
+      boardType: null,
       boardLabel: null,
       boardAngle: null,
       boardPreviewPath: null,
@@ -475,6 +483,7 @@ export const getSessionOgSummary = cache(async (sessionId: string): Promise<Sess
     participantCount: Number(participantCountResult[0]?.participant_count || 0),
     totalSends: Number(totalSendsResult[0]?.total_sends || 0),
     gradeRows,
+    boardType: boardInfo?.boardType ?? null,
     boardLabel: boardInfo?.boardLabel || null,
     boardAngle: boardInfo?.boardAngle ?? null,
     boardPreviewPath: boardInfo?.boardPreviewPath || null,
