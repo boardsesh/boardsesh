@@ -1852,16 +1852,22 @@ It is a hint. `updateClimb` decides.
   is what re-reads it.
 - **Account changes.** The registry is module state and outlives a sign-out, and
   the app tree below `AuthProvider` is replaced on every auth change, so the
-  reset lives in `AuthProvider`: an effect on the resolved auth state, and a
-  call beside `queryClient.clear()` in the signed-out cleanup.
-  `refreshSprayWallViewerAccess` sets every wall to "cannot edit" at once and
-  refetches them.
+  reset lives in `AuthProvider`. Signing in, and the signed-out cleanup beside
+  `queryClient.clear()`, call `refreshSprayWallViewerAccess`: every wall reads
+  "cannot edit" at once and is refetched. A flip to signed-out with no cleanup
+  only calls `dropSprayWallViewerAccess`, which fetches nothing. A native
+  keychain failure flips that way, and a request sent then carries no token, so
+  a private wall would resolve null and be withdrawn from the live player.
 - **A request that crosses the account change.** The registry counts account
   changes (`sprayWallViewerGeneration`). A fetch notes the number before it
-  leaves, and it is part of the render-data query key, so two accounts never
-  share a request or a cache entry. A payload that lands under a different
-  number registers the wall but not its `viewerCanEdit`, and is stamped stale.
-  `loadSprayWall` asks once more by itself when it sees the number moved.
+  leaves, and it is part of the published render-data query key, as an object
+  (`{ viewerGeneration }`), so it can never equal the hold editor's draft key,
+  whose third segment is a version number. Two accounts never share a request
+  or a cache entry. A payload that lands under a different number registers the
+  wall but not its `viewerCanEdit`, and is stamped stale. `loadSprayWall` asks
+  once more by itself when it sees the number moved. The hold editor's draft
+  and its publish reload pass the generation they fetched under too, so the
+  owner keeps Edit while and after editing holds.
 - **When the hint is wrong.** A role taken away inside the window still shows
   Edit. The save is refused and nothing is lost. `updateClimb` gives each
   refusal an `extensions.code` (`CLIMB_EDIT_NOT_ALLOWED`,

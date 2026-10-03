@@ -33,7 +33,7 @@ import { track } from '../../lib/analytics';
 import { trackBoardConnectTapped } from '../../lib/analytics-board-connect';
 import { useAuth } from '../../providers/auth-provider';
 import { useProfile, useClimb } from '../../lib/graphql/hooks';
-import { CLIMB_REVISIONS_QUERY_KEY } from '../../lib/graphql/hooks/climb-revisions-query-key';
+import { climbRevisionsQueryKey } from '../../lib/graphql/hooks/climb-revisions-query-key';
 import { resolveProvisionalSetter } from './provisional-setter';
 import { climbEditRefusal, climbEditRefusalMessage } from './climb-edit-refusal';
 import { useQueueActions } from '../../providers/queue-provider';
@@ -1685,8 +1685,13 @@ export function useCreateClimbScreen({
       // An admin's live heatmap counts the new climb at once; a downloaded board
       // catches up when the climb syncs down and the index rebuilds.
       void queryClient.invalidateQueries({ queryKey: ['holdHeatmap'] });
-      // An edit to a published climb wrote a revision; a no-op elsewhere.
-      void queryClient.invalidateQueries({ queryKey: [CLIMB_REVISIONS_QUERY_KEY] });
+      // An edit to a published climb wrote a revision. Only this climb's
+      // history, not every history in the cache.
+      if (nextSavedClimb) {
+        void queryClient.invalidateQueries({
+          queryKey: climbRevisionsQueryKey(board.boardName, nextSavedClimb.uuid),
+        });
+      }
       setJustSaved(true);
       // Seed the next climb's picker with what this one published at — a session
       // on one wall clusters hard around two or three grades.

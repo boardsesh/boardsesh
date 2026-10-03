@@ -24,6 +24,7 @@ const {
 const {
   LOOK_RETRY_AFTER_FAILURE_MS,
   clearSprayWallLooks,
+  dropSprayWallViewerAccess,
   loadSprayWall,
   primeSprayWallLook,
   refreshSprayWallViewerAccess,
@@ -238,6 +239,78 @@ describe('loadSprayWall', () => {
     expect(renderKeys).toHaveLength(2);
     expect(renderKeys[0].slice(0, 2)).toEqual(['sprayWallRenderData', WALL_UUID]);
     expect(renderKeys[0]).not.toEqual(renderKeys[1]);
+  });
+
+  it('never shares a cache entry with a draft version of the same wall', async () => {
+    // The hold editor caches a DRAFT under ['sprayWallRenderData', uuid, versionNumber].
+    // A viewer generation is a small integer too. As a bare number, generation 1
+    // and draft version 1 were one entry with two query functions: the loader's
+    // null overwrote the draft (a first wall read "unavailable" in the editor),
+    // or its refetch replaced the draft payload mid-edit.
+    const { sprayWallDraftQueryKey } = await import('../use-spray-wall-draft');
+    const { sprayWallPublishedRenderDataQueryKey, sprayWallRenderDataQueryKey } = await import('../spray-wall-loader');
+    const hash = (key: readonly unknown[]) => JSON.stringify(key);
+
+    for (let generation = 0; generation <= 60; generation += 1) {
+      const publishedKey = sprayWallPublishedRenderDataQueryKey(WALL_UUID, generation);
+      for (let version = 0; version <= 60; version += 1) {
+        expect(hash(publishedKey)).not.toBe(hash(sprayWallDraftQueryKey(WALL_UUID, version)));
+      }
+      // Structurally distinct, not merely unequal today: the segment is not a
+      // number or a numeric string, so no draft version can ever match it.
+      expect(typeof publishedKey[2]).toBe('object');
+      // And the shared prefix still reaches it, which every invalidation uses.
+      expect(publishedKey.slice(0, 2)).toEqual([...sprayWallRenderDataQueryKey(WALL_UUID)]);
+    }
+  });
+
+  it('is the key the loader actually fetches under', async () => {
+    const keys: unknown[][] = [];
+    const queryClient = {
+      fetchQuery: ({ queryKey, queryFn }: { queryKey: unknown[]; queryFn: () => Promise<unknown> }) => {
+        keys.push(queryKey);
+        return queryFn();
+      },
+      invalidateQueries: invalidateQueriesMock,
+    } as unknown as Parameters<typeof loadSprayWall>[0];
+    requestMock.mockImplementation(async (operation: unknown) =>
+      operation === sprayOperations.GET_SPRAY_WALL_BY_LAYOUT
+        ? { sprayWallByLayout: { uuid: WALL_UUID } }
+        : operation === sprayOperations.GET_SPRAY_WALL_RENDER_DATA
+          ? renderDataPayload()
+          : { sprayWall: null },
+    );
+    const { sprayWallPublishedRenderDataQueryKey } = await import('../spray-wall-loader');
+    resetSprayWallViewerAccess();
+
+    await loadSprayWall(queryClient, LAYOUT_ID);
+
+    expect(keys.find((key) => key[0] === 'sprayWallRenderData')).toEqual([
+      ...sprayWallPublishedRenderDataQueryKey(WALL_UUID, sprayWallViewerGeneration()),
+    ]);
+  });
+
+  it('drops who could edit without fetching or inviting a fetch, when the account just went away', () => {
+    // A native keychain that fails for a moment flips the app to signed-out.
+    // A request sent now has no token, and a private wall would resolve null
+    // and be withdrawn from the live player.
+    registerSprayWall(LAYOUT_ID, {
+      ...existingWall(),
+      viewerAccess: { canEdit: true, generation: sprayWallViewerGeneration() },
+    });
+    const registeredAt = getSprayWall(LAYOUT_ID)?.registeredAtMs;
+    const before = sprayWallViewerGeneration();
+    const loader = vi.fn(async () => {});
+    setSprayWallLoader(loader);
+
+    dropSprayWallViewerAccess();
+
+    expect(getSprayWall(LAYOUT_ID)?.viewerCanEdit).toBe(false);
+    expect(sprayWallViewerGeneration()).toBe(before + 1);
+    expect(loader).not.toHaveBeenCalled();
+    expect(requestMock).not.toHaveBeenCalled();
+    // Still fresh: a surface that asks for the wall is not sent to the network.
+    expect(getSprayWall(LAYOUT_ID)?.registeredAtMs).toBe(registeredAt);
   });
 
   it('registers "cannot edit" for a payload nobody can vouch for', async () => {

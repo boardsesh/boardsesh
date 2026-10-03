@@ -25,6 +25,7 @@ const board = vi.hoisted(() => ({
   isDuplicateClimbError: vi.fn((_err: unknown) => false),
 }));
 const toast = vi.hoisted(() => ({ showToast: vi.fn() }));
+const cache = vi.hoisted(() => ({ invalidateQueries: vi.fn() }));
 const draftStore = vi.hoisted(() => ({ clearDraft: vi.fn(async () => {}) }));
 /** The climb `useClimb` answers with when the editor is opened on an existing one. */
 const edit = vi.hoisted(() => ({ climb: undefined as Record<string, unknown> | undefined }));
@@ -66,7 +67,7 @@ vi.mock('expo-crypto', () => ({ randomUUID: cryptoMock.randomUUID }));
 vi.mock('expo-router', () => ({ useRouter: () => router }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('@tanstack/react-query', () => ({
-  useQueryClient: () => ({ invalidateQueries: vi.fn() }),
+  useQueryClient: () => ({ invalidateQueries: cache.invalidateQueries }),
 }));
 // Partial: the controller now reads @boardsesh/board-config too, which imports
 // this package for real (SUPPORTED_BOARDS). A total mock breaks that import.
@@ -151,6 +152,7 @@ beforeEach(() => {
   board.updateClimb.mockReset();
   createClimb.frameCount = 1;
   edit.climb = undefined;
+  cache.invalidateQueries.mockClear();
   draftStore.clearDraft.mockClear();
 });
 
@@ -439,6 +441,26 @@ describe('editing a climb somebody else set (#5955)', () => {
     });
 
     expect(toast.showToast).toHaveBeenCalledWith('createClimbForm.alerts.saveFailedFallback', 'error');
+  });
+
+  it('refreshes the edit history of the climb it saved, and no other', async () => {
+    edit.climb = someoneElsesClimb;
+    board.updateClimb.mockResolvedValue({
+      uuid: 'climb-9',
+      createdAt: '2020-01-01T00:00:00.000Z',
+      publishedAt: '2020-01-01T00:00:00.000Z',
+      isDraft: false,
+    });
+    const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard, editClimbUuid: 'climb-9' }));
+
+    await act(async () => {
+      await result.current.handleSave();
+    });
+
+    const revisionInvalidations = cache.invalidateQueries.mock.calls
+      .map(([filter]) => (filter as { queryKey: unknown[] }).queryKey)
+      .filter((queryKey) => queryKey[0] === 'climbRevisions');
+    expect(revisionInvalidations).toEqual([['climbRevisions', 'kilter', 'climb-9']]);
   });
 
   it('still gives a brand-new climb to the climber making it', () => {

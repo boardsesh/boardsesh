@@ -184,7 +184,11 @@ describe('SprayWallHoldsScreen', () => {
     expect(router.back).not.toHaveBeenCalled();
     await act(async () => resolveRefresh(publishedRender));
     await waitFor(() => expect(router.back).toHaveBeenCalledTimes(1));
-    expect(requests.register).toHaveBeenCalledWith(42, publishedRender);
+    // The generation is noted before the fetch and handed to both, so the
+    // owner's wall registers as editable by the owner who just published it.
+    const [, , fetchedUnder] = requests.fetchRender.mock.calls[0] as unknown[];
+    expect(typeof fetchedUnder).toBe('number');
+    expect(requests.register).toHaveBeenCalledWith(42, publishedRender, undefined, fetchedUnder);
     expect(guard.enabled).toBe(false);
   });
 

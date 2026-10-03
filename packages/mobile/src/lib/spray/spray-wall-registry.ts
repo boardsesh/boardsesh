@@ -316,12 +316,15 @@ export function sprayWallViewerGeneration(): number {
  * on who is looking, and blanking every board over a sign-in would be a flash
  * for nothing. Returns the layout ids it touched so the caller can refresh them.
  */
-export function resetSprayWallViewerAccess(): number[] {
+export function resetSprayWallViewerAccess({ markStale = true }: { markStale?: boolean } = {}): number[] {
   viewerGeneration += 1;
   if (walls.size === 0) return [];
   const layoutIds: number[] = [];
   for (const [layoutId, wall] of walls) {
-    walls.set(layoutId, { ...wall, viewerCanEdit: false, registeredAtMs: 0 });
+    // `markStale: false` keeps the registration fresh, so no surface is invited
+    // to refetch the wall. For a caller that knows the account is gone but not
+    // that a request sent now would carry a token (`dropSprayWallViewerAccess`).
+    walls.set(layoutId, { ...wall, viewerCanEdit: false, registeredAtMs: markStale ? 0 : wall.registeredAtMs });
     layoutIds.push(layoutId);
   }
   notify();

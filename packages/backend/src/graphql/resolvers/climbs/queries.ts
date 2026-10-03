@@ -660,10 +660,10 @@ export const climbQueries = {
   climbRevisions: async (
     _: unknown,
     { boardType, climbUuid }: { boardType: string; climbUuid: string },
-    ctx?: ConnectionContext,
+    ctx: ConnectionContext,
   ) => {
     // 60/min/identity, the same budget as the other per-climb play-drawer reads.
-    if (ctx) await applyRateLimit(ctx, 60, 'climb-revisions');
+    await applyRateLimit(ctx, 60, 'climb-revisions');
     validateInput(BoardNameSchema, boardType, 'boardType');
     validateInput(ExternalUUIDSchema, climbUuid, 'climbUuid');
 
@@ -687,7 +687,7 @@ export const climbQueries = {
       // On the primary, like the climb read above. The rule answers "visible" for
       // a climb row it cannot find, so asking the replica about a climb the
       // primary has only just been given would wave a private wall through.
-      !(await sprayClimbUuidIsReadable(climbUuid, ctx?.isAuthenticated ? (ctx.userId ?? null) : null, db))
+      !(await sprayClimbUuidIsReadable(climbUuid, ctx.isAuthenticated ? (ctx.userId ?? null) : null, db))
     ) {
       return [];
     }

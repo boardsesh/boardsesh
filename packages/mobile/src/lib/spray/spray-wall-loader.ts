@@ -46,6 +46,21 @@ export const sprayWallByLayoutQueryKey = (layoutId: number | null) => ['sprayWal
 export const sprayWallRenderDataQueryKey = (wallUuid: string | null) => ['sprayWallRenderData', wallUuid] as const;
 
 /**
+ * The key the PUBLISHED render payload is cached under: the prefix above, plus
+ * the viewer generation it was fetched under.
+ *
+ * The third segment is an object, never a bare number. The hold editor caches a
+ * DRAFT version under `['sprayWallRenderData', wallUuid, versionNumber]`
+ * (`sprayWallDraftQueryKey`), and a generation is a small integer too: as a
+ * number, generation 1 and draft version 1 would be one cache entry with two
+ * different query functions, and each would overwrite the other's payload. An
+ * object can never equal a number, and the `[key, wallUuid]` prefix still
+ * invalidates both.
+ */
+export const sprayWallPublishedRenderDataQueryKey = (wallUuid: string, viewerGeneration: number) =>
+  [...sprayWallRenderDataQueryKey(wallUuid), { viewerGeneration }] as const;
+
+/**
  * A wall's uuid is immutable, so this is cached for the session and never
  * refetched on focus. A wall that is deleted resolves null on the next cold
  * start, which is when the board itself disappears from the roster anyway.
@@ -323,7 +338,7 @@ export function fetchSprayWallRenderData(
 ): Promise<SprayWallRenderData | null> {
   return queryClient
     .fetchQuery({
-      queryKey: [...sprayWallRenderDataQueryKey(wallUuid), viewerGeneration] as const,
+      queryKey: sprayWallPublishedRenderDataQueryKey(wallUuid, viewerGeneration),
       queryFn: () =>
         getHttpClient().request<SprayWallRenderDataResponse>(GET_SPRAY_WALL_RENDER_DATA, { uuid: wallUuid }),
       staleTime: RENDER_DATA_STALE_TIME_MS,
@@ -425,6 +440,22 @@ export async function invalidateSprayWallRenderData(
  */
 export function refreshSprayWallViewerAccess(): void {
   for (const layoutId of resetSprayWallViewerAccess()) refreshSprayWall(layoutId);
+}
+
+/**
+ * The account went away, and nothing is known yet about what replaces it.
+ *
+ * Drops `viewerCanEdit` everywhere and disowns requests in flight, exactly as
+ * above, but fetches NOTHING and leaves the registrations fresh so nothing else
+ * fetches either. A native keychain that fails for a moment flips the app to
+ * signed-out without any cleanup, and requests sent in that state carry no
+ * token (`authenticatedFetch` only sets the header when it reads one). A
+ * private wall asked for like that resolves null and would be withdrawn from
+ * under the live player. The refetch waits for `refreshSprayWallViewerAccess`,
+ * on sign-in or after the signed-out cleanup.
+ */
+export function dropSprayWallViewerAccess(): void {
+  resetSprayWallViewerAccess({ markStale: false });
 }
 
 /**

@@ -403,6 +403,7 @@ import {
   clearSprayWallRegistry,
   getSprayWall,
   registerSprayWall,
+  setSprayWallLoader,
   sprayWallViewerCanEdit,
   sprayWallViewerGeneration,
 } from '../../lib/spray/spray-wall-registry';
@@ -979,6 +980,70 @@ describe('AuthProvider and who can edit a spray wall', () => {
     expect(sprayWallViewerGeneration()).toBeGreaterThan(generationBefore);
     expect(sprayWallViewerCanEdit('spray', LAYOUT_ID)).toBe(false);
     expect(getSprayWall(LAYOUT_ID)?.registeredAtMs).toBe(0);
+  });
+
+  it('fetches each wall once on sign-out, under the generation that is still current afterwards', async () => {
+    // The flip to signed-out and the cleanup both touch the registry. If both
+    // bumped the generation around one refetch, that request would be disowned
+    // and sent again: two render-data requests per wall for one sign-out.
+    getAuthTokenMock.mockResolvedValue('jwt-token');
+    const { result } = renderWithTree();
+    await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+    registerEditableWall();
+    const generationsAtFetch: number[] = [];
+    const loader = vi.fn(async () => {
+      generationsAtFetch.push(sprayWallViewerGeneration());
+    });
+    setSprayWallLoader(loader);
+
+    await act(async () => {
+      await result.current.signOut();
+    });
+
+    expect(loader).toHaveBeenCalledTimes(1);
+    expect(loader).toHaveBeenCalledWith(LAYOUT_ID, { force: true });
+    // Nothing moved the generation after the request left, so the real loader
+    // would keep this answer rather than ask again.
+    expect(generationsAtFetch).toEqual([sprayWallViewerGeneration()]);
+    expect(sprayWallViewerCanEdit('spray', LAYOUT_ID)).toBe(false);
+  });
+
+  it('drops Edit but fetches nothing when a keychain failure flips the app to signed-out', async () => {
+    // Native: a token read that throws releases the UI to the login route with
+    // NO sign-out cleanup, and requests sent in that state carry no token. A
+    // private wall fetched then would resolve null and be withdrawn from the
+    // live player. So: forget who could edit, and do not ask.
+    getAuthTokenMock.mockResolvedValue('jwt-token');
+    const { result, tree } = renderWithTree();
+    await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+    registerEditableWall();
+    const registeredAt = getSprayWall(LAYOUT_ID)?.registeredAtMs;
+    const generationBefore = sprayWallViewerGeneration();
+    const loader = vi.fn(async () => {});
+    setSprayWallLoader(loader);
+    const { refreshAuthState } = result.current;
+
+    getAuthTokenMock.mockRejectedValueOnce(new Error('keychain locked'));
+    await act(async () => {
+      await refreshAuthState();
+    });
+
+    // It really was the no-cleanup path: the tree is gone, the caches are not.
+    expect(tree.unmounts).toBe(tree.mounts);
+    expect(clearStoredSessionIdMock).not.toHaveBeenCalled();
+    expect(sprayWallViewerCanEdit('spray', LAYOUT_ID)).toBe(false);
+    expect(sprayWallViewerGeneration()).toBeGreaterThan(generationBefore);
+    expect(loader).not.toHaveBeenCalled();
+    // Still registered, at the same version, and still fresh: no surface that
+    // asks for it is sent to the network without a token.
+    expect(getSprayWall(LAYOUT_ID)).toMatchObject({ version: 3, registeredAtMs: registeredAt });
+
+    // The keychain answers again: now the wall is re-read, once, with a token.
+    await act(async () => {
+      await refreshAuthState();
+    });
+    expect(loader).toHaveBeenCalledTimes(1);
+    expect(loader).toHaveBeenCalledWith(LAYOUT_ID, { force: true });
   });
 
   it('leaves the registry alone at launch and on a re-check of the same session', async () => {

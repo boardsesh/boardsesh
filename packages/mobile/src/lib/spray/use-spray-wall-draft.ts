@@ -37,9 +37,21 @@ import { GET_SPRAY_WALL_RENDER_DATA } from '@boardsesh/graphql/operations/spray-
 import type { SprayWallRenderData } from '@boardsesh/graphql/generated/graphql';
 import { getHttpClient } from '../graphql/client';
 import { invalidateSprayWallRenderData, registerRenderData } from './spray-wall-loader';
-import { getSprayWall, subscribeToSprayWalls } from './spray-wall-registry';
+import { getSprayWall, sprayWallViewerGeneration, subscribeToSprayWalls } from './spray-wall-registry';
 
 type SprayWallRenderDataResponse = { sprayWallRenderData: SprayWallRenderData | null };
+
+/**
+ * The viewer generation each draft payload was fetched under, noted before its
+ * request left. Kept beside the payload rather than in it so the cached shape
+ * stays the server's, and weakly, so it goes when the payload does.
+ *
+ * The payload carries `wall.viewerCanEdit`, and the registry only believes that
+ * from a registration that can say which account it was read for. Without this
+ * the wall's own owner reads as "cannot edit" for as long as the editor's draft
+ * is the registered version.
+ */
+const draftViewerGenerations = new WeakMap<SprayWallRenderData, number>();
 
 export const sprayWallDraftQueryKey = (wallUuid: string | null, versionNumber: number | null) =>
   ['sprayWallRenderData', wallUuid, versionNumber] as const;
@@ -79,11 +91,15 @@ export function useSprayWallDraft(
 ): UseSprayWallDraftResult {
   const query = useQuery({
     queryKey: sprayWallDraftQueryKey(wallUuid, versionNumber),
-    queryFn: () =>
-      getHttpClient().request<SprayWallRenderDataResponse>(GET_SPRAY_WALL_RENDER_DATA, {
+    queryFn: async () => {
+      const viewerGeneration = sprayWallViewerGeneration();
+      const response = await getHttpClient().request<SprayWallRenderDataResponse>(GET_SPRAY_WALL_RENDER_DATA, {
         uuid: wallUuid,
         version: versionNumber,
-      }),
+      });
+      if (response.sprayWallRenderData) draftViewerGenerations.set(response.sprayWallRenderData, viewerGeneration);
+      return response;
+    },
     select: (response) => response.sprayWallRenderData,
     enabled: wallUuid != null && versionNumber != null,
     staleTime: DRAFT_STALE_TIME_MS,
@@ -109,7 +125,10 @@ export function useSprayWallDraft(
     // `registerRenderData` answers false for a payload that cannot be drawn — no
     // readable photo size, or a homography with no inverse — which is exactly
     // the "cannot be edited" the screen shows in words.
-    setVerdict({ payload: renderData, ok: registerRenderData(layoutId, renderData) });
+    setVerdict({
+      payload: renderData,
+      ok: registerRenderData(layoutId, renderData, undefined, draftViewerGenerations.get(renderData)),
+    });
   }, [layoutId, renderData]);
 
   // Captured in a ref so the teardown does not re-run — and therefore does not
@@ -179,6 +198,6 @@ export function useKeepSprayDraftRegistered(
     );
     const payload = cached?.sprayWallRenderData;
     if (!payload) return;
-    registerRenderData(layoutId, payload);
+    registerRenderData(layoutId, payload, undefined, draftViewerGenerations.get(payload));
   }, [layoutId, wallUuid, versionNumber, registeredVersion, queryClient]);
 }
