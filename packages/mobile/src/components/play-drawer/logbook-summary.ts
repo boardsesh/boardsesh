@@ -30,3 +30,29 @@ export function deriveOtherAngleActivity(entries: readonly LogbookEntry[], curre
   }
   return { sentAngles, triedAngles };
 }
+
+/** Sends and attempt rows at one angle — the two counts the collapsed summary leads with. */
+export type AngleTickCounts = {
+  sends: number;
+  attempts: number;
+};
+
+/**
+ * Count a climb's sends and attempt rows at `angle` from its logbook entries
+ * (already filtered to that climb). Same definitions as the denormalised
+ * `userAscents` / `userAttempts` on the climb row — a flash is a send, and an
+ * attempt is one logged row, not its tries — so the summary reads the same
+ * whichever source answers. The climb row's counts are a snapshot from when the
+ * list was fetched; these follow the logbook, so a tick logged from the drawer
+ * shows up on the collapsed header straight away.
+ */
+export function deriveAngleTickCounts(entries: readonly LogbookEntry[], angle: number): AngleTickCounts {
+  let sends = 0;
+  let attempts = 0;
+  for (const entry of entries) {
+    if (entry.angle !== angle) continue;
+    if (entry.status === 'flash' || entry.status === 'send') sends += 1;
+    else if (entry.status === 'attempt') attempts += 1;
+  }
+  return { sends, attempts };
+}

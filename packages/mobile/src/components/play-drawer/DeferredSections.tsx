@@ -5,7 +5,7 @@ import * as Haptics from 'expo-haptics';
 import type { BoardName, Climb } from '@boardsesh/shared-schema';
 import { useLogbook } from '@boardsesh/board-react';
 import { getBoardCapabilities } from '@boardsesh/board-config';
-import { deriveOtherAngleActivity } from './logbook-summary';
+import { deriveAngleTickCounts, deriveOtherAngleActivity } from './logbook-summary';
 import { CollapsibleSection } from '../CollapsibleSection';
 import { Icon } from '../Icon';
 import { LogbookSection } from './LogbookSection';
@@ -101,10 +101,14 @@ export const DeferredSections = memo(function DeferredSections({
   // open), but React Query dedupes it with LogbookSection's identical fetch, so
   // it never doubles up; it stays empty until it lands, and the summary just
   // drops the clause meanwhile.
-  const { logbook } = useLogbook(boardName as BoardName, [climb.uuid]);
-  const otherAngleActivity = useMemo(() => {
+  const { logbook, fetchedUuids } = useLogbook(boardName as BoardName, [climb.uuid]);
+  const logbookFetched = fetchedUuids.has(climb.uuid);
+  const { otherAngleActivity, angleTickCounts } = useMemo(() => {
     const entriesForClimb = logbook.filter((entry) => entry.climb_uuid === climb.uuid);
-    return deriveOtherAngleActivity(entriesForClimb, angle);
+    return {
+      otherAngleActivity: deriveOtherAngleActivity(entriesForClimb, angle),
+      angleTickCounts: deriveAngleTickCounts(entriesForClimb, angle),
+    };
   }, [logbook, climb.uuid, angle]);
 
   // The one-line summary on the collapsed Logbook header — the scroll hint the
@@ -113,13 +117,16 @@ export const DeferredSections = memo(function DeferredSections({
   // and measures instantly. Prefixed with the board's angle, then — once the
   // logbook lands — a concise clause flags other angles the climb was sent or
   // only tried at (a send always leads; 3+ angles collapse to a count).
+  // The denormalised counts are a snapshot from when the list was fetched, so
+  // once the logbook has answered for this climb its own counts take over —
+  // otherwise a tick logged from this drawer leaves the header on "not tried yet".
   const logbookSummary = useMemo(() => {
     // Logged-out visitors have no logbook, so "not tried yet" would be a lie —
     // show no subtitle at all. The section body carries the sign-in line instead
     // (LogbookSection's signed-out branch).
     if (!isAuthenticated) return null;
-    const sends = climb.userAscents ?? 0;
-    const attempts = climb.userAttempts ?? 0;
+    const sends = logbookFetched ? angleTickCounts.sends : (climb.userAscents ?? 0);
+    const attempts = logbookFetched ? angleTickCounts.attempts : (climb.userAttempts ?? 0);
     const sendsLabel = t('mobile.logbook.sendCount', { count: sends });
     const attemptsLabel = t('mobile.logbook.attemptCount', { count: attempts });
     let body: string;
@@ -152,7 +159,16 @@ export const DeferredSections = memo(function DeferredSections({
     const clause = [sentClause, triedClause].filter(Boolean).join(' · ');
 
     return clause ? t('mobile.logbook.summaryWithOtherAngles', { body: line, clause }) : line;
-  }, [isAuthenticated, climb.userAscents, climb.userAttempts, angle, otherAngleActivity, t]);
+  }, [
+    isAuthenticated,
+    logbookFetched,
+    angleTickCounts,
+    climb.userAscents,
+    climb.userAttempts,
+    angle,
+    otherAngleActivity,
+    t,
+  ]);
 
   // Grade shown next to the collapsed Boardsesh grade header. Lifted up here
   // (rather than read from BoardseshGradeSection) because that section
