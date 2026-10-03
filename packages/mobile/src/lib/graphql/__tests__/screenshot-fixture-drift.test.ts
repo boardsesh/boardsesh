@@ -44,6 +44,7 @@ import * as sharedAccount from '@boardsesh/graphql/operations/account';
 import * as sharedUserDataExport from '@boardsesh/graphql/operations/user-data-export';
 import * as sharedActivityFeed from '@boardsesh/graphql/operations/activity-feed';
 import * as sharedBetaLinks from '@boardsesh/graphql/operations/beta-links';
+import * as sharedClimbRevisions from '@boardsesh/graphql/operations/climb-revisions';
 import * as sharedBoardPresence from '@boardsesh/graphql/operations/board-presence';
 import * as sharedBoards from '@boardsesh/graphql/operations/boards';
 import * as sharedFavorites from '@boardsesh/graphql/operations/favorites';
@@ -158,6 +159,7 @@ const SHARED_OPERATION_MODULES: Record<string, Record<string, unknown>> = {
   '@boardsesh/graphql/operations/user-data-export': sharedUserDataExport,
   '@boardsesh/graphql/operations/activity-feed': sharedActivityFeed,
   '@boardsesh/graphql/operations/beta-links': sharedBetaLinks,
+  '@boardsesh/graphql/operations/climb-revisions': sharedClimbRevisions,
   '@boardsesh/graphql/operations/board-presence': sharedBoardPresence,
   '@boardsesh/graphql/operations/boards': sharedBoards,
   '@boardsesh/graphql/operations/favorites': sharedFavorites,

@@ -291,7 +291,7 @@ describe('who can edit the wall (#5955)', () => {
       wakes += 1;
     });
     try {
-      expect(resetSprayWallViewerAccess().sort()).toEqual([LAYOUT_ID, 4201]);
+      expect(resetSprayWallViewerAccess().sort((left, right) => left - right)).toEqual([LAYOUT_ID, 4201]);
       expect(wakes).toBe(1);
     } finally {
       unsubscribe();

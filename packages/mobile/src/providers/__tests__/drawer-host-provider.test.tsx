@@ -305,6 +305,7 @@ vi.mock('../../lib/boards/use-set-board-angle', () => ({
 // exercised by the spray-wall cases below.
 vi.mock('../../lib/spray/use-spray-wall', () => ({
   useSprayWallLoader: () => {},
+  useSprayWallViewerAccessReset: () => {},
   useSprayWall: () => ({ isLoading: false, isUnrenderable: false, loadState: 'idle' }),
 }));
 
