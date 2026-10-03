@@ -430,6 +430,15 @@ the column existed, and the mobile resolver falls back to the climber's own look
 for it. On a wall that has one, the wall's look wins over the climber's own,
 unless they turned on "Use my look on spray walls" (More → Board look).
 
+The dimming over unlit holds (the Aura veil) is set by the creator in the same
+step, with a slider under the looks, and stored in the look as `veil: 'custom'`
+plus `veilOpacity` (or `veil: 'off'` at zero). A spray wall cannot use
+`veil: 'auto'`: that sizes the veil from a measured wall brightness, which only
+the catalogue boards have, so on a photo it draws nothing. Until the creator
+touches the slider each look keeps its own dimming, which for Aura Outline is
+none. `withSprayWallDim` applies the value to the options themselves, so the
+previews and the stored bundle cannot disagree.
+
 - **Validated against `@boardsesh/board-look`'s own option lists and slider
   bounds** (`SetSprayWallRenderSettingsInputSchema`), strict, every knob required.
   `mode: 'default'` is refused: a wall default of "use the default" points at itself.

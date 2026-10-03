@@ -927,7 +927,9 @@
       "unavailable": "Das Foto deiner Wand lässt sich hier nicht zeigen, aber du kannst trotzdem einen Look wählen.",
       "saving": "Dein Look wird gespeichert…",
       "failed": "Der Look konnte nicht gespeichert werden. Versuch es noch mal oder veröffentliche trotzdem.",
-      "publishWithout": "Trotzdem veröffentlichen"
+      "publishWithout": "Trotzdem veröffentlichen",
+      "dimTitle": "Rest der Wand abdunkeln",
+      "dimOff": "Aus"
     },
     "publish": {
       "title": "Ab zu deinen Boards",
