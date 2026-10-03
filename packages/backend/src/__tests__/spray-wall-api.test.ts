@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { and, eq, sql } from 'drizzle-orm';
 import { sprayWallHolds, sprayWallVersions, sprayWalls } from '@boardsesh/db/schema';
 import type { ClimbSearchInput, ConnectionContext } from '@boardsesh/shared-schema';
+import { SPRAY_WALL_WRITE_LOCK_NAMESPACE } from '@boardsesh/shared-schema';
 
 /**
  * The spray wall API end to end, against the real database.
@@ -4617,6 +4618,25 @@ describe('editing holds on the published photo', () => {
     ).rejects.toMatchObject({ extensions: { code: 'SPRAY_WALL_SOURCE_VERSION_NOT_CURRENT' } });
   });
 
+  it('refuses a source when the wall has no current published version', async () => {
+    const { wall, versionId } = await createPublishedWall(OWNER);
+    await db.update(sprayWalls).set({ currentVersionId: null }).where(eq(sprayWalls.boardUuid, wall.uuid));
+
+    await expect(
+      sprayWallMutations.createSprayWallVersion(
+        {},
+        { input: { wallUuid: wall.uuid, sourceVersionId: versionId } },
+        ctxFor(OWNER),
+      ),
+    ).rejects.toMatchObject({ extensions: { code: 'SPRAY_WALL_SOURCE_VERSION_NOT_CURRENT' } });
+    const drafts = await db
+      .select({ id: sprayWallVersions.id })
+      .from(sprayWallVersions)
+      .innerJoin(sprayWalls, eq(sprayWalls.id, sprayWallVersions.wallId))
+      .where(and(eq(sprayWalls.boardUuid, wall.uuid), eq(sprayWallVersions.status, 'draft')));
+    expect(drafts).toEqual([]);
+  });
+
   it.each([{ photoKey: null }, { photoWidth: null }, { photoHeight: 0 }])(
     'refuses a source photo missing stored metadata: %j',
     async (missingPhoto) => {
@@ -4700,9 +4720,30 @@ describe('editing holds on the published photo', () => {
     const staleSourceRejected = expect(create).rejects.toMatchObject({
       extensions: { code: 'SPRAY_WALL_SOURCE_VERSION_NOT_CURRENT' },
     });
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    releaseLock();
-    await publish;
+    try {
+      // Wait for PostgreSQL to confirm the create is queued behind this wall's
+      // lock, rather than assuming it reached the lock within a fixed delay.
+      await vi.waitFor(
+        async () => {
+          const [lock] = (await db.execute(sql`
+            SELECT EXISTS (
+              SELECT 1 FROM pg_locks
+              WHERE locktype = 'advisory'
+                AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
+                AND classid = ${SPRAY_WALL_WRITE_LOCK_NAMESPACE}
+                AND objid = ${wallRow.id}
+                AND objsubid = 2
+                AND NOT granted
+            ) AS waiting
+          `)) as unknown as Array<{ waiting: boolean }>;
+          expect(lock.waiting).toBe(true);
+        },
+        { timeout: 5000 },
+      );
+    } finally {
+      releaseLock();
+      await publish;
+    }
     await staleSourceRejected;
     const versions = await db.select().from(sprayWallVersions).where(eq(sprayWallVersions.wallId, wallRow.id));
     expect(versions).toHaveLength(2);
