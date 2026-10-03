@@ -7,6 +7,8 @@ import { favoriteQueries } from '../graphql/resolvers/favorites/queries';
 import { favoriteMutations } from '../graphql/resolvers/favorites/mutations';
 import { favoriteClimbsQuery } from '../graphql/resolvers/favorites/favorite-climbs-query';
 import { playlistQueries } from '../graphql/resolvers/playlists/queries';
+import { userMutations } from '../graphql/resolvers/users/mutations';
+import { getPostgresErrorCode } from '../utils/postgres-errors';
 
 // Integration test (real DB) for #2637: favorites are keyed by (user_id,
 // climb_uuid), so a heart survives a board or angle switch instead of being a
@@ -72,6 +74,13 @@ async function favoriteRowCount(climbUuid: string, userId = USER_ID): Promise<nu
   const rows = await db.execute(sql`
     SELECT count(*)::int AS count FROM user_favorites
     WHERE user_id = ${userId} AND climb_uuid = ${climbUuid}
+  `);
+  return Number((rows as unknown as Array<{ count: number }>)[0].count);
+}
+
+async function archivedFavoriteCount(userId: string): Promise<number> {
+  const rows = await db.execute(sql`
+    SELECT count(*)::int AS count FROM user_favorites_dedup_backup_0194 WHERE user_id = ${userId}
   `);
   return Number((rows as unknown as Array<{ count: number }>)[0].count);
 }
@@ -315,5 +324,67 @@ describe('legacy index and offline deletion compatibility', () => {
       { record_id: `kilter:${KILTER_CLIMB}:50`, user_id: USER_ID },
     ]);
     expect(await favoriteRowCount(KILTER_CLIMB)).toBe(0);
+  });
+
+  it('removes only the deleted account’s archived favorites in the same transaction', async () => {
+    await db.execute(sql`
+      INSERT INTO user_favorites (user_id, board_name, climb_uuid, angle)
+      VALUES (${USER_ID}, 'kilter', ${KILTER_CLIMB}, 40)
+    `);
+    await db.execute(sql`
+      INSERT INTO user_favorites_dedup_backup_0194
+        (id, user_id, board_name, climb_uuid, angle, created_at, updated_at)
+      VALUES
+        (9101, ${USER_ID}, 'kilter', ${KILTER_CLIMB}, 40, now(), now()),
+        (9102, ${USER_ID}, 'kilter', ${KILTER_CLIMB}, 50, now(), now()),
+        (9103, ${OTHER_USER_ID}, 'kilter', ${KILTER_CLIMB}, 30, now(), now())
+    `);
+
+    await userMutations.deleteAccount(undefined, { input: { removeSetterName: false } }, ctx(USER_ID));
+
+    expect(await favoriteRowCount(KILTER_CLIMB, USER_ID)).toBe(0);
+    expect(await archivedFavoriteCount(USER_ID)).toBe(0);
+    expect(await archivedFavoriteCount(OTHER_USER_ID)).toBe(1);
+    const deletedUsers = await db.execute(sql`SELECT id FROM users WHERE id = ${USER_ID}`);
+    expect(Array.from(deletedUsers)).toEqual([]);
+  });
+
+  it('restores archive rows when a later account-delete step fails', async () => {
+    await db.execute(sql`
+      INSERT INTO user_favorites_dedup_backup_0194
+        (id, user_id, board_name, climb_uuid, angle, created_at, updated_at)
+      VALUES (9201, ${USER_ID}, 'kilter', ${KILTER_CLIMB}, 40, now(), now())
+    `);
+    await db.execute(sql`
+      CREATE OR REPLACE FUNCTION public.reject_fav_key_account_delete() RETURNS trigger AS $$
+      BEGIN
+        IF OLD.id = 'fav-key-user' THEN
+          RAISE EXCEPTION 'test-only account deletion failure';
+        END IF;
+        RETURN OLD;
+      END;
+      $$ LANGUAGE plpgsql
+    `);
+    await db.execute(sql`
+      CREATE TRIGGER reject_fav_key_account_delete
+      BEFORE DELETE ON users
+      FOR EACH ROW EXECUTE FUNCTION public.reject_fav_key_account_delete()
+    `);
+
+    try {
+      let deletionError: unknown;
+      try {
+        await userMutations.deleteAccount(undefined, { input: { removeSetterName: false } }, ctx(USER_ID));
+      } catch (error) {
+        deletionError = error;
+      }
+      expect(getPostgresErrorCode(deletionError)).toBe('P0001');
+      expect(await archivedFavoriteCount(USER_ID)).toBe(1);
+      const users = await db.execute(sql`SELECT id FROM users WHERE id = ${USER_ID}`);
+      expect(Array.from(users)).toEqual([{ id: USER_ID }]);
+    } finally {
+      await db.execute(sql`DROP TRIGGER IF EXISTS reject_fav_key_account_delete ON users`);
+      await db.execute(sql`DROP FUNCTION IF EXISTS public.reject_fav_key_account_delete()`);
+    }
   });
 });

@@ -1,6 +1,7 @@
-import { eq, and } from 'drizzle-orm';
+import { eq, and, sql } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import * as Sentry from '@sentry/node';
+import { executeFirstRow } from '@boardsesh/db/client';
 import type {
   ConnectionContext,
   UserProfile,
@@ -296,6 +297,20 @@ export const userMutations = {
           .update(dbSchema.boardClimbs)
           .set({ setterUsername: null })
           .where(and(eq(dbSchema.boardClimbs.userId, userId), eq(dbSchema.boardClimbs.isDraft, false)));
+      }
+
+      // This archive intentionally has no user FK: removing a favorite must
+      // retain old angle variants until legacy offline clients receive their
+      // deletion tombstones. Account deletion is different — no client can
+      // continue syncing for a deleted account, so remove its archive rows in
+      // this transaction. The table is absent on databases that have not yet
+      // applied the favorites rekey migration.
+      const favoriteArchive = await executeFirstRow<{ present: boolean }>(
+        tx,
+        sql`SELECT to_regclass('public.user_favorites_dedup_backup_0194') IS NOT NULL AS present`,
+      );
+      if (favoriteArchive?.present) {
+        await tx.execute(sql`DELETE FROM public.user_favorites_dedup_backup_0194 WHERE user_id = ${userId}`);
       }
 
       // Delete the user row — all related tables with onDelete: cascade
