@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-10-03T05:59:06.555Z",
+  "generatedAt": "2026-10-03T06:29:52.137Z",
   "entries": [
+    {
+      "prNumber": 5946,
+      "category": "fixed",
+      "title": "Keep your offline logbook available when storage reconnects during recovery.",
+      "mergedAt": "2026-10-03T06:27:58Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5946"
+    },
     {
       "prNumber": 4273,
       "category": "fixed",
