@@ -12,6 +12,7 @@
 
 import postgres from 'postgres';
 import { schemaSQL } from './schema-sql';
+import { withPostgresDatabaseName } from './postgres-url';
 
 const PG_PORT = 5433;
 const WORKER_DB_PREFIX = 'boardsesh_backend_test';
@@ -39,7 +40,7 @@ function getConfiguredDatabaseUrl(): string {
 }
 
 function getBaseConnection(): string {
-  return getConfiguredDatabaseUrl().replace(/\/[^/]+$/, '/postgres');
+  return withPostgresDatabaseName(getConfiguredDatabaseUrl(), 'postgres');
 }
 
 export function getWorkerDatabaseName(): string {
@@ -50,7 +51,7 @@ export function getWorkerDatabaseName(): string {
 
 function buildWorkerDatabaseUrl(): string {
   const name = getWorkerDatabaseName();
-  return getConfiguredDatabaseUrl().replace(/\/[^/]+$/, `/${name}`);
+  return withPostgresDatabaseName(getConfiguredDatabaseUrl(), name);
 }
 
 /** Redis ships with 16 logical databases (`databases 16`) unless configured otherwise. */
