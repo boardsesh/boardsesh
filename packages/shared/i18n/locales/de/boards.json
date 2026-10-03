@@ -914,11 +914,19 @@
       "resumeHint": "Du kannst später weitermachen."
     },
     "review": {
-      "publish": "Wand veröffentlichen",
+      "next": "Look wählen",
       "nothingFound": "Keine Griffe gefunden. Tippe auf die Wand, um sie hinzuzufügen.",
       "detectionFailed": "Die Griffsuche hat diesmal nicht geklappt. Tippe auf die Wand, um Griffe hinzuzufügen.",
       "manualOnly": "Tippe auf die Wand, um deine Griffe hinzuzufügen.",
       "retry": "Erneut versuchen"
+    },
+    "look": {
+      "title": "Wie sollen deine Griffe leuchten?",
+      "body": "Wer noch keinen eigenen Look gewählt hat, sieht deine Wand so. Wer schon einen hat, behält ihn.",
+      "loading": "Deine Wand wird geladen…",
+      "unavailable": "Das Foto deiner Wand lässt sich hier nicht zeigen, aber du kannst trotzdem einen Look wählen.",
+      "saving": "Dein Look wird gespeichert…",
+      "failed": "Der Look konnte nicht gespeichert werden. Versuch es noch mal."
     },
     "publish": {
       "title": "Ab zu deinen Boards",

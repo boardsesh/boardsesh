@@ -25,7 +25,8 @@ vi.mock('../spray-wall-loader', () => ({
   invalidateSprayWallRenderData: invalidateMock,
 }));
 
-import { useSprayWallDraft } from '../use-spray-wall-draft';
+import { sprayWallDraftQueryKey, useKeepSprayDraftRegistered, useSprayWallDraft } from '../use-spray-wall-draft';
+import { clearSprayWallRegistry, getSprayWall, registerSprayWall, unregisterSprayWall } from '../spray-wall-registry';
 
 const RENDER_DATA = {
   versionNumber: 3,
@@ -128,5 +129,71 @@ describe('useSprayWallDraft', () => {
     const { unmount } = renderHook(() => useSprayWallDraft(4001, null, null), { wrapper });
     unmount();
     expect(invalidateMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('useKeepSprayDraftRegistered', () => {
+  const LAYOUT_ID = 4001;
+
+  function registerDraft(version = 3) {
+    registerSprayWall(LAYOUT_ID, {
+      wallUuid: 'wall-1',
+      angle: 40,
+      version,
+      photoWidth: 900,
+      photoHeight: 1200,
+      photoUrl: 'u',
+      photoThumbUrl: null,
+      photoExpiresAt: 'later',
+      holds: [],
+    });
+    return true;
+  }
+
+  function seededWrapper() {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    queryClient.setQueryData(sprayWallDraftQueryKey('wall-1', 3), { sprayWallRenderData: RENDER_DATA });
+    return function SeededWrapper({ children }: { children: ReactNode }) {
+      return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+    };
+  }
+
+  beforeEach(() => {
+    clearSprayWallRegistry();
+  });
+
+  it('puts the draft back when the editor’s teardown reload takes it out', async () => {
+    // The race the look step lives with: the editor's teardown forces a reload
+    // of the PUBLISHED wall, which a wall being created does not have, and that
+    // reload unregisters the wall after the next screen registered the draft.
+    registerRenderDataMock.mockImplementation(() => registerDraft());
+    registerDraft();
+    renderHook(() => useKeepSprayDraftRegistered(LAYOUT_ID, 'wall-1', 3), { wrapper: seededWrapper() });
+    expect(registerRenderDataMock).not.toHaveBeenCalled();
+
+    unregisterSprayWall(LAYOUT_ID);
+
+    await waitFor(() => expect(registerRenderDataMock).toHaveBeenCalledTimes(1));
+    expect(registerRenderDataMock).toHaveBeenCalledWith(LAYOUT_ID, RENDER_DATA);
+    expect(getSprayWall(LAYOUT_ID)?.version).toBe(3);
+  });
+
+  it('replaces a different version the registry was handed, and then settles', async () => {
+    registerRenderDataMock.mockImplementation(() => registerDraft());
+    registerDraft(2);
+    renderHook(() => useKeepSprayDraftRegistered(LAYOUT_ID, 'wall-1', 3), { wrapper: seededWrapper() });
+
+    await waitFor(() => expect(getSprayWall(LAYOUT_ID)?.version).toBe(3));
+    expect(registerRenderDataMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('does nothing without a cached payload, and does not loop on one the registry refuses', async () => {
+    registerRenderDataMock.mockReturnValue(false);
+    renderHook(() => useKeepSprayDraftRegistered(LAYOUT_ID, 'wall-1', 3), { wrapper: seededWrapper() });
+    await waitFor(() => expect(registerRenderDataMock).toHaveBeenCalledTimes(1));
+
+    registerRenderDataMock.mockClear();
+    renderHook(() => useKeepSprayDraftRegistered(LAYOUT_ID, 'wall-1', 9), { wrapper: seededWrapper() });
+    expect(registerRenderDataMock).not.toHaveBeenCalled();
   });
 });

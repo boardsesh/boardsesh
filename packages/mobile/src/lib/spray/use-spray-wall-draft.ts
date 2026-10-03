@@ -31,12 +31,13 @@
 // invalidates the draft's own key (see `use-spray-hold-writes.ts`) and the
 // published generation waits for the editor to close.
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { GET_SPRAY_WALL_RENDER_DATA } from '@boardsesh/graphql/operations/spray-walls';
 import type { SprayWallRenderData } from '@boardsesh/graphql/generated/graphql';
 import { getHttpClient } from '../graphql/client';
 import { invalidateSprayWallRenderData, registerRenderData } from './spray-wall-loader';
+import { getSprayWall, subscribeToSprayWalls } from './spray-wall-registry';
 
 type SprayWallRenderDataResponse = { sprayWallRenderData: SprayWallRenderData | null };
 
@@ -139,4 +140,44 @@ export function useSprayWallDraft(
     isUnavailable: asked && !query.isPending && !awaitingVerdict && !(verdict?.ok ?? false),
     homography: renderData?.homography ?? null,
   };
+}
+
+/**
+ * Put the draft back in the registry whenever something else takes it out, for
+ * as long as the caller is mounted.
+ *
+ * `useSprayWallDraft` registers a payload once, when it lands. That is enough
+ * for the editor, but not for a screen that mounts right AFTER another
+ * `useSprayWallDraft` instance unmounted: that instance's teardown forces a
+ * reload of the PUBLISHED wall (`invalidateSprayWallRenderData`), and on a wall
+ * that has never been published that reload resolves to nothing and
+ * unregisters it — after this screen's own registration, since it is async. The
+ * draft would vanish from under a screen that is still drawing it.
+ *
+ * Re-registers from the draft query's cached payload, so it costs no request.
+ * Settles as soon as the registry holds the draft's version again: a payload
+ * that cannot be drawn is refused by `registerRenderData`, the registry does not
+ * change, and this does not run again.
+ */
+export function useKeepSprayDraftRegistered(
+  layoutId: number,
+  wallUuid: string | null,
+  versionNumber: number | null,
+): void {
+  const queryClient = useQueryClient();
+  const registeredVersion = useSyncExternalStore(
+    subscribeToSprayWalls,
+    useCallback(() => getSprayWall(layoutId)?.version ?? null, [layoutId]),
+  );
+
+  useEffect(() => {
+    if (wallUuid == null || versionNumber == null) return;
+    if (registeredVersion === versionNumber) return;
+    const cached = queryClient.getQueryData<SprayWallRenderDataResponse>(
+      sprayWallDraftQueryKey(wallUuid, versionNumber),
+    );
+    const payload = cached?.sprayWallRenderData;
+    if (!payload) return;
+    registerRenderData(layoutId, payload);
+  }, [layoutId, wallUuid, versionNumber, registeredVersion, queryClient]);
 }

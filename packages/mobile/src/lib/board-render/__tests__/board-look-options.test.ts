@@ -30,7 +30,9 @@ const {
   BOARD_LOOK_SETTINGS_OPTIONS,
   CLASSIC_PREVIEW_SETTINGS,
   DEFAULT_SPRAY_WALL_LOOK_OPTION_ID,
+  SPRAY_WALL_LOOK_OPTIONS,
   applyBoardLookOption,
+  boardLookOptionWallDefault,
   buildBoardLookPreviewSettings,
   matchingBoardLookOptionId,
 } = await import('../board-look-options');
@@ -109,6 +111,46 @@ describe('the option lists', () => {
   it('marks only Classic as drawable without the Boardsesh renderer', () => {
     const independent = BOARD_LOOK_ONBOARDING_OPTIONS.filter((option) => !option.requiresBoardseshRenderer);
     expect(independent.map((option) => option.id)).toEqual(['classic']);
+  });
+});
+
+describe('the spray-wall look step', () => {
+  it('offers the onboarding looks without Custom, with the wall default among them', () => {
+    expect(SPRAY_WALL_LOOK_OPTIONS.map((option) => option.id)).toEqual([
+      'aura',
+      'aura-subtle',
+      'aura-outline',
+      'modern-classic',
+      'classic',
+      'max-contrast',
+    ]);
+    expect(SPRAY_WALL_LOOK_OPTIONS.some((option) => option.id === DEFAULT_SPRAY_WALL_LOOK_OPTION_ID)).toBe(true);
+  });
+
+  it('stores every card as a concrete mode and the card’s own bundle', () => {
+    for (const option of SPRAY_WALL_LOOK_OPTIONS) {
+      const stored = boardLookOptionWallDefault(option.id);
+      expect(stored).not.toBeNull();
+      expect(['classic', 'aura']).toContain(stored?.mode);
+      expect(stored?.boardsesh).toEqual(option.previewSettings?.boardsesh);
+    }
+    expect(boardLookOptionWallDefault('classic')?.mode).toBe('classic');
+    expect(boardLookOptionWallDefault(DEFAULT_SPRAY_WALL_LOOK_OPTION_ID)).toEqual({
+      mode: 'aura',
+      boardsesh: expect.objectContaining({ markStyle: 'outline', holdShape: 'silhouette' }),
+    });
+  });
+
+  it('has nothing to store for Custom', () => {
+    expect(boardLookOptionWallDefault('custom')).toBeNull();
+    expect(boardLookOptionWallDefault('custom', BOARD_LOOK_SETTINGS_OPTIONS)).toBeNull();
+  });
+
+  it('does not bake the creator’s own role glyphs into the wall look', async () => {
+    // Viewers get THEIR accessibility floor raised onto a wall look when it is
+    // resolved; the stored bundle stays the card's own.
+    await setBoardseshRenderFieldPreference('roleGlyphs', true);
+    expect(boardLookOptionWallDefault(DEFAULT_SPRAY_WALL_LOOK_OPTION_ID)?.boardsesh.roleGlyphs).toBe(false);
   });
 });
 

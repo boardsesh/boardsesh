@@ -31,12 +31,14 @@ const {
   requestedBoardRenderMode,
   resolveEffectiveRenderSettings,
   resolveVeilOpacity,
+  sanitizeBoardRenderDefault,
   sanitizeBoardRenderSettings,
   setBoardRenderModePreference,
   setBoardRenderSettingsPreference,
   setBoardseshRenderFieldPreference,
   resetBoardRenderSettings,
 } = await import('../board-render-settings');
+const { ACCESSIBILITY_OWNED_BOARDSESH_FIELDS } = await import('../board-render-presets');
 
 type BoardseshRenderSettings = typeof DEFAULT_BOARDSESH_RENDER_SETTINGS;
 type BoardRenderSettings = typeof DEFAULT_BOARD_RENDER_SETTINGS;
@@ -270,6 +272,128 @@ describe('resolveEffectiveRenderSettings', () => {
     expect(requestedBoardRenderMode(DEFAULT_BOARD_RENDER_SETTINGS)).toBe('aura');
     expect(requestedBoardRenderMode(settingsWith({}, 'classic'))).toBe('classic');
     expect(requestedBoardRenderMode(settingsWith({}))).toBe('aura');
+  });
+});
+
+describe('a board default (a spray wall’s stored look)', () => {
+  // Off every shipped default on purpose, so a test that silently fell back to
+  // the viewer's own (default) bundle could not pass by coincidence.
+  const wallLook = {
+    mode: 'aura' as const,
+    boardsesh: {
+      ...DEFAULT_BOARDSESH_RENDER_SETTINGS,
+      markStyle: 'outline' as const,
+      glowReach: 0.5,
+      fillOpacity: 0.9,
+    },
+  };
+  const classicWall = { mode: 'classic' as const, boardsesh: DEFAULT_BOARDSESH_RENDER_SETTINGS };
+
+  it("is ignored when the viewer picked a mode — the viewer's whole bundle wins", () => {
+    const viewer = settingsWith({ glowReach: 1.5 }, 'aura');
+    const effective = resolveEffectiveRenderSettings(viewer, true, classicWall);
+    expect(effective.mode).toBe('aura');
+    expect(effective.boardsesh).toBe(viewer.boardsesh);
+    expect(requestedBoardRenderMode(viewer, classicWall)).toBe('aura');
+
+    const classicViewer = settingsWith({}, 'classic');
+    expect(resolveEffectiveRenderSettings(classicViewer, true, wallLook).mode).toBe('classic');
+    expect(requestedBoardRenderMode(classicViewer, wallLook)).toBe('classic');
+  });
+
+  it("supplies both the mode and the knobs to a viewer on 'default'", () => {
+    const effective = resolveEffectiveRenderSettings(DEFAULT_BOARD_RENDER_SETTINGS, true, wallLook);
+    expect(effective.mode).toBe('aura');
+    expect(effective.boardsesh).toEqual(wallLook.boardsesh);
+
+    expect(resolveEffectiveRenderSettings(DEFAULT_BOARD_RENDER_SETTINGS, true, classicWall).mode).toBe('classic');
+    expect(requestedBoardRenderMode(DEFAULT_BOARD_RENDER_SETTINGS, classicWall)).toBe('classic');
+  });
+
+  it('moves the cache signature with the board default, so the two looks never share a PNG', () => {
+    const plain = buildBoardRenderSignature(
+      resolveEffectiveRenderSettings(DEFAULT_BOARD_RENDER_SETTINGS, true),
+      DARK_FIELD,
+      0.6,
+    );
+    const walled = buildBoardRenderSignature(
+      resolveEffectiveRenderSettings(DEFAULT_BOARD_RENDER_SETTINGS, true, wallLook),
+      DARK_FIELD,
+      0.6,
+    );
+    expect(walled).not.toBe(plain);
+    expect(walled).toContain('marks-outline');
+  });
+
+  it('still forces classic when the renderer cannot draw the board default', () => {
+    const effective = resolveEffectiveRenderSettings(DEFAULT_BOARD_RENDER_SETTINGS, false, wallLook);
+    expect(effective.mode).toBe('classic');
+    expect(effective.rendererAvailable).toBe(false);
+  });
+
+  it("keeps a viewer's role glyphs on over a board look that has them off", () => {
+    // The same floor a preset pick respects: glyphs are the only non-colour
+    // channel a colour-blind climber has. The field list is pinned so a new
+    // accessibility-owned field cannot be added to the presets without here.
+    expect(ACCESSIBILITY_OWNED_BOARDSESH_FIELDS).toEqual(['roleGlyphs']);
+    const viewer = { mode: 'default' as const, boardsesh: { ...DEFAULT_BOARDSESH_RENDER_SETTINGS, roleGlyphs: true } };
+    const effective = resolveEffectiveRenderSettings(viewer, true, wallLook);
+    expect(effective.boardsesh.roleGlyphs).toBe(true);
+    expect(effective.boardsesh.markStyle).toBe('outline');
+  });
+
+  it("is today's behaviour when absent", () => {
+    for (const absent of [null, undefined]) {
+      const effective = resolveEffectiveRenderSettings(DEFAULT_BOARD_RENDER_SETTINGS, true, absent);
+      expect(effective).toEqual(resolveEffectiveRenderSettings(DEFAULT_BOARD_RENDER_SETTINGS, true));
+      expect(effective.mode).toBe('aura');
+      expect(requestedBoardRenderMode(DEFAULT_BOARD_RENDER_SETTINGS, absent)).toBe('aura');
+    }
+  });
+
+  it('treats a malformed or legacy board default as absent rather than throwing', () => {
+    const malformed: unknown[] = [
+      { mode: 'boardsesh', boardsesh: DEFAULT_BOARDSESH_RENDER_SETTINGS },
+      { mode: 'default', boardsesh: DEFAULT_BOARDSESH_RENDER_SETTINGS },
+      { mode: 'aura' },
+      { mode: 'classic', boardsesh: 'outline' },
+      { boardsesh: DEFAULT_BOARDSESH_RENDER_SETTINGS },
+      'aura',
+      42,
+      [],
+    ];
+    const baseline = resolveEffectiveRenderSettings(DEFAULT_BOARD_RENDER_SETTINGS, true);
+    for (const value of malformed) {
+      const boardDefault = value as BoardRenderSettings;
+      expect(() => resolveEffectiveRenderSettings(DEFAULT_BOARD_RENDER_SETTINGS, true, boardDefault)).not.toThrow();
+      expect(resolveEffectiveRenderSettings(DEFAULT_BOARD_RENDER_SETTINGS, true, boardDefault)).toEqual(baseline);
+      expect(requestedBoardRenderMode(DEFAULT_BOARD_RENDER_SETTINGS, boardDefault)).toBe('aura');
+    }
+  });
+});
+
+describe('sanitizeBoardRenderDefault', () => {
+  it('keeps a well-formed value, clamping its knobs like a stored preference', () => {
+    const sanitized = sanitizeBoardRenderDefault({
+      mode: 'aura',
+      boardsesh: { ...DEFAULT_BOARDSESH_RENDER_SETTINGS, glowReach: 99, markStyle: 'outline' },
+    });
+    expect(sanitized?.mode).toBe('aura');
+    expect(sanitized?.boardsesh.glowReach).toBe(BOARD_RENDER_SETTING_BOUNDS.glowReach.max);
+    expect(sanitized?.boardsesh.markStyle).toBe('outline');
+  });
+
+  it('fills a partial bundle from the shipped defaults', () => {
+    expect(sanitizeBoardRenderDefault({ mode: 'classic', boardsesh: {} })).toEqual({
+      mode: 'classic',
+      boardsesh: DEFAULT_BOARDSESH_RENDER_SETTINGS,
+    });
+  });
+
+  it('answers null for anything that is not a real default', () => {
+    for (const value of [null, undefined, 'aura', 7, [], {}, { mode: 'default', boardsesh: {} }, { mode: 'aura' }]) {
+      expect(sanitizeBoardRenderDefault(value)).toBeNull();
+    }
   });
 });
 

@@ -1,7 +1,7 @@
 // "Add a spray wall", end to end (epic #5346, SW-09).
 //
 // Name it → photograph it → optionally mark its corners → upload → let the
-// server suggest holds → correct them → publish. One route, not seven: the steps share
+// server suggest holds → correct them → pick how it lights up → publish. One route, not seven: the steps share
 // state that must survive going back (`add-wall-machine.ts` is the transition
 // table), and two of them — the anchors and the hold editor — are full-screen
 // pan-and-pinch surfaces, which `docs/mobile-sheets-vs-routes.md` rule 3 puts on
@@ -79,10 +79,12 @@ import {
 import { uploadSprayWallPhoto } from '../../lib/spray/spray-wall-photo-upload';
 import { wallCreatedEventProperties } from './wall-created-event';
 import { SprayDetectionStep } from './SprayDetectionStep';
+import { SprayWallLookStep } from './SprayWallLookStep';
 import { canPhotographWall } from '../../lib/spray/camera-capability';
 import { pickWallPhotoFromCamera, pickWallPhotoFromLibrary, rescalePoint } from '../../lib/spray/wall-photo';
 import {
   addWallReducer,
+  backLeavesFlow,
   initialAddWallState,
   isBusy,
   leaveCheckpoint,
@@ -110,7 +112,7 @@ const sprayAngles: number[] = [...SPRAY_ANGLE_OPTIONS];
 const MAX_PREVIEW_WIDTH = 520;
 
 /** The steps that get a "step N of M" counter — the ones a climber drives. */
-const COUNTED_STEPS: readonly AddWallStep[] = ['meta', 'photo', 'anchors', 'review', 'publish'];
+const COUNTED_STEPS: readonly AddWallStep[] = ['meta', 'photo', 'anchors', 'review', 'look', 'publish'];
 
 type SprayWallWizardScreenProps = {
   /** Which tab the flow dismisses back to once the wall is bound. */
@@ -496,8 +498,8 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
     if (!draft || !wall || state.publish.running) return;
     dispatch({ type: 'PUBLISH_STARTED' });
     hapticSelection();
-    // The editor just said "Holds saved"; this is the next thing that happens,
-    // and the spinner's own live region only speaks on Android.
+    // The look step just saved; this is the next thing that happens, and the
+    // spinner's own live region only speaks on Android.
     AccessibilityInfo.announceForAccessibility(t('sprayWizard.publish.working'));
     try {
       // Skipped once the version is already published. Publishing and binding
@@ -560,8 +562,8 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
   }, [state, publishVersionAsync, updateVisibilityAsync, queryClient, builder, finish, router, t]);
 
   /**
-   * Publish runs by itself the moment the editor's commit lands — "Publish wall"
-   * is one button, and a second screen asking to publish again would be the
+   * Publish runs by itself the moment the look step confirms — its button is
+   * the last one, and a further screen asking to publish again would be the
    * three-commit flow this replaced. Once per draft: a failure stays on the
    * publish step with its error and Retry, and never re-fires on its own.
    */
@@ -670,9 +672,9 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
 
   const goBack = useCallback(() => {
     if (isBusy(state)) return;
-    // `review` and `publish` have no step behind them — the draft is on the
-    // server by then — so back means leaving, which keeps the draft.
-    if (state.draft || state.step === 'meta' || state.step === 'review' || state.step === 'publish') {
+    // `review`, `look` and `publish` have no step behind them — the draft is on
+    // the server by then — so back means leaving, which keeps the draft.
+    if (backLeavesFlow(state)) {
       leave();
       return;
     }
@@ -692,6 +694,8 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
     },
     [candidateCount],
   );
+
+  const onLookConfirmed = useCallback(() => dispatch({ type: 'LOOK_CONFIRMED' }), []);
 
   const retryDetection = useCallback(() => dispatch({ type: 'DETECTION_STARTED' }), []);
   const reviewNotice = useMemo(
@@ -737,13 +741,20 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
         viewerCanEdit={state.draft.viewerCanEdit}
         candidates={state.detection.candidates}
         revealOnMount={revealRings}
-        primaryLabel={t('sprayWizard.review.publish')}
+        primaryLabel={t('sprayWizard.review.next')}
         notice={reviewNotice}
         onCommitted={onHoldsCommitted}
         onDirtyChange={onEditorDirtyChange}
         onHandoverChange={onEditorHandoverChange}
       />
     );
+  }
+
+  // The wall's look, on its own full-screen surface for the editor's reason: its
+  // rail is a near-full-height horizontal swiper, and the wizard's vertical
+  // scroll view around it would steal the swipes.
+  if (state.step === 'look' && state.draft) {
+    return <SprayWallLookStep draft={state.draft} onConfirmed={onLookConfirmed} />;
   }
 
   const stepIndex = COUNTED_STEPS.indexOf(state.step);

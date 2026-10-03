@@ -292,7 +292,8 @@ would leave first-run open.
 | `anchors` | Optional, Skip by default. Four draggable handles; a quad that crosses itself is refused client-side, because the server's fallback for a degenerate quad is the identity matrix. |
 | `upload` | `createSprayWall`, then the multipart POST, then `createSprayWallVersion`. |
 | `detect` | Request or resume a server-owned recognition job. New walls can enter manual editing while queued ("Mark holds myself"); published reset versions remain unchanged until review and confirmation. With the photo still on the phone the step is full-screen (`SprayScanPhoto`): the photo sits exactly where the editor will put it (`fitSprayPhoto`), dimmed, with a violet band looping down it and a glass status card. A run resumed without the file, and the reset flow, keep the plain spinner. |
-| `review` → `publish` | `SprayHoldEditorScreen`. Its one button, "Publish wall", commits the holds (`REVIEW_COMMITTED`); the publish step then runs by itself once — `publishSprayWallVersion`, `invalidateSprayWallRenderData`, and the board bind — and only stops to show an error with Try again. |
+| `review` | `SprayHoldEditorScreen`. Its one button, "Pick a look", commits the holds (`REVIEW_COMMITTED`) and hands over to the look step. |
+| `look` → `publish` | `SprayWallLookStep`. The onboarding board-look rail without Custom, every card drawn on the creator's own draft with ~12 of its holds lit as a stand-in problem (`samplePreviewHolds`, `useSyntheticSprayWallPreview`). Defaults to `DEFAULT_SPRAY_WALL_LOOK_OPTION_ID` (Aura Outline); no Skip. Its button stores the card's bundle with `setSprayWallRenderSettings`, then `LOOK_CONFIRMED`; the publish step then runs by itself once — `publishSprayWallVersion`, `invalidateSprayWallRenderData`, and the board bind — and only stops to show an error with Try again. Like `review`, it has no step behind it: Back leaves and keeps the draft. |
 
 Three rules in that flow are not obvious from the API and are easy to undo:
 
@@ -932,6 +933,22 @@ the surface remounts. Same for a download that simply failed. The fix is a
 registration epoch subscribed as a background-effect-only dependency; it must not
 reach `buildCacheKey`, or every overlay PNG is orphaned on each ten-minute
 revalidation. Costs nothing before SW-09 makes a wall reachable.
+
+**A wall's own look only fills in for a climber who never chose one.** The loader
+reads `SprayWall.renderSettings` off the render payload, runs it through
+`sanitizeBoardRenderDefault` (a `JSON` scalar promises nothing: an unknown mode or
+a missing knob bundle registers as "no stored look", a present bundle is clamped
+like a stored preference) and registers it with the wall. `useNativeClimbRender`
+subscribes to it through `sprayBoardRenderDefault(boardName, layoutId)` — `null`
+off spray — and hands it to `resolveEffectiveRenderSettings` as a third argument.
+The rule is whole-bundle: a climber on `mode: 'default'` gets the wall's mode AND
+its knobs (with their own Role glyphs kept on, the same floor a preset pick
+respects); a climber with an explicit mode keeps their own bundle and the wall
+look is ignored. The look moves the render signature with it, so the two never
+share a PNG. It has its own subscription rather than riding `sprayCacheToken`,
+because a look stored without a reset does not move the version. The registry
+keeps an unchanged look's identity across re-registrations, so a revalidation
+does not re-resolve every row.
 
 ### Asking is not the same as subscribing (SW-11)
 

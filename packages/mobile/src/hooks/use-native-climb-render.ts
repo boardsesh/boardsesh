@@ -28,7 +28,12 @@ import {
   type BoardArtGeometry,
 } from '@boardsesh/board-art-geometry';
 import { getBoardRenderData } from '../lib/board-details';
-import { ensureSprayWallLoaded, sprayCacheToken, subscribeToSprayWalls } from '../lib/spray/spray-wall-registry';
+import {
+  ensureSprayWallLoaded,
+  sprayBoardRenderDefault,
+  sprayCacheToken,
+  subscribeToSprayWalls,
+} from '../lib/spray/spray-wall-registry';
 import {
   ensureBackgroundsCached,
   tryGetBackgroundPathsSync,
@@ -1943,16 +1948,31 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     getBoardseshSupportRevision,
     getBoardseshSupportRevision,
   );
-  // Two native renders per launch, so only for someone whose settings or
-  // rollout flag ask for the mode.
-  if (requestedBoardRenderMode(boardRenderSettings) === 'aura') {
+  // The board's own stored look — a spray wall's, `null` for every catalogue
+  // board. Only a climber on `mode: 'default'` ever sees it; an explicit choice
+  // (or a preview card's own bundle) wins. Its own subscription rather than a
+  // ride on `sprayVersionToken` below: that token only moves with the wall's
+  // VERSION, and a look stored without a reset would never reach a surface
+  // mounted before it. The registry keeps an unchanged look's identity across
+  // re-registrations, so a revalidation costs no re-resolve.
+  const boardRenderDefault = useSyncExternalStore(
+    subscribeToSprayWalls,
+    useCallback(() => sprayBoardRenderDefault(boardName, layoutId), [boardName, layoutId]),
+  );
+  // Two native renders per launch, so only for someone whose settings — or
+  // whose board's stored look — ask for the mode.
+  if (requestedBoardRenderMode(boardRenderSettings, boardRenderDefault) === 'aura') {
     ensureBoardseshSupportProbed();
   }
 
   const effectiveRenderSettings = useMemo(() => {
     void boardseshSupportTick;
-    return resolveEffectiveRenderSettings(boardRenderSettings, getBoardseshRendererSupport() === true);
-  }, [boardRenderSettings, boardseshSupportTick]);
+    return resolveEffectiveRenderSettings(
+      boardRenderSettings,
+      getBoardseshRendererSupport() === true,
+      boardRenderDefault,
+    );
+  }, [boardRenderSettings, boardseshSupportTick, boardRenderDefault]);
 
   // The play field the veil washes toward. Baked into the PNG, so it is part of
   // the cache key: a light-mode overlay reused in dark mode would show a wall
@@ -3022,10 +3042,13 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
  * Kicks the capability probe on the same terms the render path does, so opening
  * the screen is enough to find out whether the mode is available at all.
  */
-export function useEffectiveBoardRenderSettings(): {
+export function useEffectiveBoardRenderSettings(boardDefault: BoardRenderSettings | null = null): {
   effectiveRenderSettings: EffectiveBoardRenderSettings;
   boardseshRendererAvailable: boolean | null;
 } {
+  // `boardDefault` is a board's own stored look (a spray wall's). Every caller
+  // today describes the climber's OWN preference — the settings screen, the
+  // onboarding gate — so none passes one, and the answer is board-agnostic.
   const { settings } = useBoardRenderSettings();
   const boardseshSupportTick = useSyncExternalStore(
     subscribeToBoardseshSupport,
@@ -3033,12 +3056,12 @@ export function useEffectiveBoardRenderSettings(): {
     getBoardseshSupportRevision,
   );
 
-  if (requestedBoardRenderMode(settings) === 'aura') ensureBoardseshSupportProbed();
+  if (requestedBoardRenderMode(settings, boardDefault) === 'aura') ensureBoardseshSupportProbed();
 
   const effectiveRenderSettings = useMemo(() => {
     void boardseshSupportTick;
-    return resolveEffectiveRenderSettings(settings, getBoardseshRendererSupport() === true);
-  }, [settings, boardseshSupportTick]);
+    return resolveEffectiveRenderSettings(settings, getBoardseshRendererSupport() === true, boardDefault);
+  }, [settings, boardseshSupportTick, boardDefault]);
 
   return { effectiveRenderSettings, boardseshRendererAvailable: getBoardseshRendererSupport() };
 }

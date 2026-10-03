@@ -8,6 +8,7 @@ import {
 import {
   DEFAULT_BOARDSESH_RENDER_SETTINGS,
   setBoardRenderModePreference,
+  type BoardRenderDefault,
   type BoardRenderSettings,
 } from '../board-render-settings';
 
@@ -205,6 +206,38 @@ export const BOARD_LOOK_SETTINGS_OPTIONS: readonly BoardLookOption[] = [
   MAX_CONTRAST_OPTION,
   CUSTOM_SETTINGS_OPTION,
 ];
+
+/**
+ * The looks a spray wall's creator picks between in the add-a-wall flow.
+ *
+ * The onboarding rail without its Custom card: Custom means "go and build your
+ * own in Board look", which is a climber's personal settings screen, not a look
+ * that can be stored on a wall for everyone else.
+ */
+export const SPRAY_WALL_LOOK_OPTIONS: readonly BoardLookOption[] = BOARD_LOOK_ONBOARDING_OPTIONS.filter(
+  (option) => option.id !== 'custom',
+);
+
+/**
+ * The bundle a wall stores when its creator picks a card, or `null` for a card
+ * that has none to store.
+ *
+ * The card's own frozen `previewSettings` — the preset's values verbatim, or the
+ * classic bundle — and deliberately NOT merged with the creator's accessibility
+ * fields the way `applyBoardLookOption` merges them for a climber's own
+ * preference. A wall look is for every other climber on the wall; each of them
+ * gets THEIR accessibility floor raised onto it when it is resolved
+ * (`resolveEffectiveRenderSettings`), so baking the creator's in would only force
+ * role glyphs on climbers who never asked for them.
+ */
+export function boardLookOptionWallDefault(
+  id: BoardLookOptionId,
+  options: readonly BoardLookOption[] = SPRAY_WALL_LOOK_OPTIONS,
+): BoardRenderDefault | null {
+  const settings = options.find((option) => option.id === id)?.previewSettings;
+  if (!settings || settings.mode === 'default') return null;
+  return { mode: settings.mode, boardsesh: settings.boardsesh };
+}
 
 /**
  * Per-card preview settings, with every accessibility-owned field raised to the

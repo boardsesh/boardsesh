@@ -5,6 +5,7 @@ import {
   getSprayWall,
   listRegisteredSprayWalls,
   registerSprayWall,
+  sprayBoardRenderDefault,
   sprayCacheToken,
   sprayGeometryKey,
   subscribeToSprayWalls,
@@ -151,5 +152,68 @@ describe('sprayCacheToken', () => {
     registerSprayWall(LAYOUT_ID, wall(2));
     registerSprayWall(LAYOUT_ID + 1, wall(5));
     expect(sprayCacheToken('spray', LAYOUT_ID)).not.toBe(sprayCacheToken('spray', LAYOUT_ID + 1));
+  });
+});
+
+describe("a wall's stored look", () => {
+  const OUTLINE_LOOK = {
+    mode: 'aura' as const,
+    boardsesh: {
+      glowFalloff: 'soft' as const,
+      glowReach: 0.5,
+      plateauShare: 0.4,
+      veil: 'auto' as const,
+      veilOpacity: 0.3,
+      markStyle: 'outline' as const,
+      fillOpacity: 0.9,
+      softDisc: false,
+      smallHoldBoost: true,
+      ledDots: true,
+      roleGlyphs: false,
+      thumbnailStyle: 'fill' as const,
+      holdShape: 'silhouette' as const,
+    },
+  };
+
+  it('is null for a wall registered without one, and for every catalogue board', () => {
+    registerSprayWall(LAYOUT_ID, wall(1));
+    expect(getSprayWall(LAYOUT_ID)?.renderSettings).toBeNull();
+    expect(sprayBoardRenderDefault('spray', LAYOUT_ID)).toBeNull();
+    expect(sprayBoardRenderDefault('kilter', LAYOUT_ID)).toBeNull();
+    expect(sprayBoardRenderDefault('spray', 999)).toBeNull();
+  });
+
+  it('is handed back for the wall that stored it, and only under the spray board name', () => {
+    registerSprayWall(LAYOUT_ID, { ...wall(1), renderSettings: OUTLINE_LOOK });
+    expect(sprayBoardRenderDefault('spray', LAYOUT_ID)).toEqual(OUTLINE_LOOK);
+    expect(sprayBoardRenderDefault('tension', LAYOUT_ID)).toBeNull();
+  });
+
+  it('keeps its identity across a re-registration that did not change it', () => {
+    // Every board surface on the wall subscribes to this; a ten-minute
+    // revalidation handing back the same look must not wake them all.
+    registerSprayWall(LAYOUT_ID, { ...wall(1), renderSettings: OUTLINE_LOOK });
+    const first = sprayBoardRenderDefault('spray', LAYOUT_ID);
+    registerSprayWall(LAYOUT_ID, {
+      ...wall(1),
+      renderSettings: { ...OUTLINE_LOOK, boardsesh: { ...OUTLINE_LOOK.boardsesh } },
+    });
+    expect(sprayBoardRenderDefault('spray', LAYOUT_ID)).toBe(first);
+  });
+
+  it('moves when the look changes, and goes when it is cleared or the wall is dropped', () => {
+    registerSprayWall(LAYOUT_ID, { ...wall(1), renderSettings: OUTLINE_LOOK });
+    const first = sprayBoardRenderDefault('spray', LAYOUT_ID);
+    const classic = { ...OUTLINE_LOOK, mode: 'classic' as const };
+    registerSprayWall(LAYOUT_ID, { ...wall(1), renderSettings: classic });
+    expect(sprayBoardRenderDefault('spray', LAYOUT_ID)).not.toBe(first);
+    expect(sprayBoardRenderDefault('spray', LAYOUT_ID)?.mode).toBe('classic');
+
+    registerSprayWall(LAYOUT_ID, { ...wall(1), renderSettings: null });
+    expect(sprayBoardRenderDefault('spray', LAYOUT_ID)).toBeNull();
+
+    registerSprayWall(LAYOUT_ID, { ...wall(1), renderSettings: OUTLINE_LOOK });
+    unregisterSprayWall(LAYOUT_ID);
+    expect(sprayBoardRenderDefault('spray', LAYOUT_ID)).toBeNull();
   });
 });
