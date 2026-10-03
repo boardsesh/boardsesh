@@ -12,7 +12,7 @@ import {
 } from 'node:fs';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import sharp from 'sharp';
+import sharp, { type OverlayOptions, type OutputInfo } from 'sharp';
 import { extractScreenshotIsland } from './lib/screenshot-island';
 import { brandColors, brandColorsDark, materialSurfaces } from '../packages/shared/velvet-tokens/src/index';
 import {
@@ -231,7 +231,7 @@ export async function frameComposition(
       { raw: sources[1], left: width * 0.405, top: screenshotTop + height * 0.13, width: width * 0.565 },
     );
   }
-  const layers: sharp.OverlayOptions[] = [
+  const layers: OverlayOptions[] = [
     { input: wordmark.data, left: margin, top },
     { input: headline.data, left: margin, top: headlineTop },
     { input: description.data, left: margin, top: descriptionTop },
@@ -338,7 +338,7 @@ export async function frameShowcaseComposition(
   const copyHeight = wordmark.info.height + headline.info.height + description.info.height + gap * 2;
   if (copyHeight > height * (wide ? 0.82 : 0.33)) throw new Error(`Showcase caption overflows: ${caption.headline}`);
   const copyTop = Math.round(wide ? (height - copyHeight) / 2 : height * 0.047);
-  const layers: sharp.OverlayOptions[] = [
+  const layers: OverlayOptions[] = [
     { input: wordmark.data, left: margin, top: copyTop },
     { input: headline.data, left: margin, top: copyTop + wordmark.info.height + gap },
     { input: description.data, left: margin, top: copyTop + wordmark.info.height + headline.info.height + gap * 2 },
@@ -353,7 +353,7 @@ export async function frameShowcaseComposition(
       };
   const panels: NativePanel[] = [];
   const aspect = sourceSize.height / sourceSize.width;
-  const foreground: sharp.OverlayOptions[] = [];
+  const foreground: OverlayOptions[] = [];
   if (boards) {
     // Lower the portrait foreground phone to expose more lit holds on both sides.
     // Fit its complete native footer even when translated copy makes the stage shorter.
@@ -510,7 +510,7 @@ async function frameLandscape(
   const copyTop = Math.round((height - copyHeight) / 2);
   const headlineTop = copyTop + wordmark.info.height + headlineGap;
   const descriptionTop = headlineTop + headline.info.height + descriptionGap;
-  const layers: sharp.OverlayOptions[] = [
+  const layers: OverlayOptions[] = [
     { input: wordmark.data, left: margin, top: copyTop },
     { input: headline.data, left: margin, top: headlineTop },
     { input: description.data, left: margin, top: descriptionTop },
@@ -588,11 +588,11 @@ interface FramePaint {
   height: number;
   colors: MaterialSurface;
   /** Copy layers, already positioned. Panels are composited over them in order. */
-  layers: sharp.OverlayOptions[];
+  layers: OverlayOptions[];
   panels: readonly NativePanel[];
   unit: number;
   showcase?: boolean;
-  foreground?: sharp.OverlayOptions[];
+  foreground?: OverlayOptions[];
 }
 
 /** The gradient ground plus every native panel, clipped to the canvas. */
@@ -670,7 +670,7 @@ export async function frameDirectory(options: FrameDirectoryOptions): Promise<st
   const staging = mkdtempSync(join(dirname(output), '.framing-'));
   const manifest: PresentationManifest = { version: PRESENTATION_VERSION, locale: options.locale, files: {} };
   try {
-    const thumbnails: Array<{ data: Buffer; info: sharp.OutputInfo }> = [];
+    const thumbnails: Array<{ data: Buffer; info: OutputInfo }> = [];
     for (const recipe of recipes) {
       const name = recipe.output;
       const buffers = recipe.sources.map((source) => capturesByName.get(source)!);
