@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-10-03T09:11:13.932Z",
+  "generatedAt": "2026-10-03T22:08:20.747Z",
   "entries": [
+    {
+      "prNumber": 5963,
+      "category": "fixed",
+      "title": "The Logbook line on a climb updates as soon as you log a tick",
+      "mergedAt": "2026-10-03T22:02:08Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5963",
+      "body": "Scrolling a climb no longer runs text under the clock\nThe Download button under Similar Climbs fits its card"
+    },
     {
       "prNumber": 5948,
       "category": "fixed",
@@ -6040,6 +6048,19 @@
     }
   ],
   "nativeReleases": [
+    {
+      "kind": "native-release",
+      "date": "2026-10-03T21:12:59+10:00",
+      "sha": "6986ca9100c0492586f42f1a88ce3d49b4986f07",
+      "platforms": [
+        "android",
+        "ios"
+      ],
+      "fingerprints": {
+        "android": "04b545294d879a2a9d1fb2ac46a807d3175b39d6",
+        "ios": "c2643067d9b4f56009900f1954305ca73ea799d1"
+      }
+    },
     {
       "kind": "native-release",
       "date": "2026-10-03T16:28:27+10:00",

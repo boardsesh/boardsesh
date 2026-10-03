@@ -1214,6 +1214,74 @@ export type ClimbInput = {
   uuid: Scalars['ID']['input'];
 };
 
+/** One climber's log on a climb, as the public per-climb list returns it. */
+export type ClimbLogItem = {
+  __typename?: 'ClimbLogItem';
+  /** Board angle */
+  angle: Scalars['Int']['output'];
+  /** Number of tries */
+  attemptCount: Scalars['Int']['output'];
+  /** Board type */
+  boardType: Scalars['String']['output'];
+  /** UUID of the climb the log is stored under */
+  climbUuid: Scalars['String']['output'];
+  /** When the climb was logged */
+  climbedAt: Scalars['String']['output'];
+  /** The climber's note, empty when there is none */
+  comment: Scalars['String']['output'];
+  /** Personal grade id, null when none was given */
+  difficulty?: Maybe<Scalars['Int']['output']>;
+  /** Raw quality, or the climber's synced star rating for this climb and angle when the log has none. Sends and flashes only. */
+  effectiveQuality?: Maybe<Scalars['Int']['output']>;
+  /** Whether the climb was mirrored */
+  isMirror: Scalars['Boolean']['output'];
+  /** Star rating given on the log itself */
+  quality?: Maybe<Scalars['Int']['output']>;
+  /** flash, send or attempt */
+  status: Scalars['String']['output'];
+  /** Avatar URL of the user */
+  userAvatarUrl?: Maybe<Scalars['String']['output']>;
+  /** Display name of the user */
+  userDisplayName?: Maybe<Scalars['String']['output']>;
+  /** User who logged it */
+  userId: Scalars['ID']['output'];
+  /** Tick UUID */
+  uuid: Scalars['ID']['output'];
+};
+
+/** Input for one page of everyone's logs on a climb. */
+export type ClimbLogsInput = {
+  /** Only logs at this angle. Omit for every angle. */
+  angle?: InputMaybe<Scalars['Int']['input']>;
+  /** Board type (kilter, tension, moonboard, spray, ...) */
+  boardType: Scalars['String']['input'];
+  /** Climb UUID */
+  climbUuid: Scalars['String']['input'];
+  /** Opaque keyset cursor from the previous page */
+  cursor?: InputMaybe<Scalars['String']['input']>;
+  /** Signed-in callers only: drop the caller's own logs and logs by people they follow. Ignored when anonymous. */
+  excludeFollowed?: InputMaybe<Scalars['Boolean']['input']>;
+  /** One row per climber: their newest log that passes the filters above. */
+  latestPerClimber?: InputMaybe<Scalars['Boolean']['input']>;
+  /** 1 to 50, default 20 */
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  /** Only flashes and sends. */
+  sendsOnly?: InputMaybe<Scalars['Boolean']['input']>;
+  /** Only logs with a non-empty note. */
+  withNotes?: InputMaybe<Scalars['Boolean']['input']>;
+};
+
+/** One page of logs on a climb, newest first. */
+export type ClimbLogsResult = {
+  __typename?: 'ClimbLogsResult';
+  /** Pass back as input.cursor for the next page. Null on the last page. */
+  cursor?: Maybe<Scalars['String']['output']>;
+  /** Whether another page exists */
+  hasMore: Scalars['Boolean']['output'];
+  /** Newest first (climbed at, then id) */
+  items: Array<ClimbLogItem>;
+};
+
 export type ClimbMatchResult = {
   __typename?: 'ClimbMatchResult';
   climbName?: Maybe<Scalars['String']['output']>;
@@ -6000,6 +6068,12 @@ export type Query = {
   climbClassicStatus: ClimbClassicStatus;
   /** Get community status for a specific climb at an angle. */
   climbCommunityStatus: ClimbCommunityStatus;
+  /**
+   * Everyone's logs on a specific climb, one page at a time. Public. Newest
+   * first. A spray climb the caller cannot see answers like a climb nobody
+   * logged.
+   */
+  climbLogs: ClimbLogsResult;
   /** Get proposals for a specific climb. */
   climbProposals: ProposalConnection;
   /**
@@ -6756,6 +6830,11 @@ export type QueryClimbCommunityStatusArgs = {
   angle: Scalars['Int']['input'];
   boardType: Scalars['String']['input'];
   climbUuid: Scalars['String']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QueryClimbLogsArgs = {
+  input: ClimbLogsInput;
 };
 
 /** Root query type for all read operations. */
@@ -10454,6 +10533,9 @@ export type ResolversTypes = ResolversObject<{
   ClimbCommunityStatus: ResolverTypeWrapper<ClimbCommunityStatus>;
   ClimbGradeSource: ClimbGradeSource;
   ClimbInput: ClimbInput;
+  ClimbLogItem: ResolverTypeWrapper<ClimbLogItem>;
+  ClimbLogsInput: ClimbLogsInput;
+  ClimbLogsResult: ResolverTypeWrapper<ClimbLogsResult>;
   ClimbMatchResult: ResolverTypeWrapper<ClimbMatchResult>;
   ClimbMirrored: ResolverTypeWrapper<ClimbMirrored>;
   ClimbPlaylistMembership: ResolverTypeWrapper<ClimbPlaylistMembership>;
@@ -10924,6 +11006,9 @@ export type ResolversParentTypes = ResolversObject<{
   ClimbClassicStatus: ClimbClassicStatus;
   ClimbCommunityStatus: ClimbCommunityStatus;
   ClimbInput: ClimbInput;
+  ClimbLogItem: ClimbLogItem;
+  ClimbLogsInput: ClimbLogsInput;
+  ClimbLogsResult: ClimbLogsResult;
   ClimbMatchResult: ClimbMatchResult;
   ClimbMirrored: ClimbMirrored;
   ClimbPlaylistMembership: ClimbPlaylistMembership;
@@ -11920,6 +12005,38 @@ export type ClimbCommunityStatusResolvers<
   openProposalCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   outlierAnalysis?: Resolver<Maybe<ResolversTypes['OutlierAnalysis']>, ParentType, ContextType>;
   updatedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type ClimbLogItemResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['ClimbLogItem'] = ResolversParentTypes['ClimbLogItem'],
+> = ResolversObject<{
+  angle?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  attemptCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  boardType?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  climbUuid?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  climbedAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  comment?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  difficulty?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  effectiveQuality?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  isMirror?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  quality?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  status?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  userAvatarUrl?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  userDisplayName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  userId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  uuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type ClimbLogsResultResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['ClimbLogsResult'] = ResolversParentTypes['ClimbLogsResult'],
+> = ResolversObject<{
+  cursor?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  hasMore?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  items?: Resolver<Array<ResolversTypes['ClimbLogItem']>, ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -14611,6 +14728,12 @@ export type QueryResolvers<
     ContextType,
     RequireFields<QueryClimbCommunityStatusArgs, 'angle' | 'boardType' | 'climbUuid'>
   >;
+  climbLogs?: Resolver<
+    ResolversTypes['ClimbLogsResult'],
+    ParentType,
+    ContextType,
+    RequireFields<QueryClimbLogsArgs, 'input'>
+  >;
   climbProposals?: Resolver<
     ResolversTypes['ProposalConnection'],
     ParentType,
@@ -16664,6 +16787,8 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   Climb?: ClimbResolvers<ContextType>;
   ClimbClassicStatus?: ClimbClassicStatusResolvers<ContextType>;
   ClimbCommunityStatus?: ClimbCommunityStatusResolvers<ContextType>;
+  ClimbLogItem?: ClimbLogItemResolvers<ContextType>;
+  ClimbLogsResult?: ClimbLogsResultResolvers<ContextType>;
   ClimbMatchResult?: ClimbMatchResultResolvers<ContextType>;
   ClimbMirrored?: ClimbMirroredResolvers<ContextType>;
   ClimbPlaylistMembership?: ClimbPlaylistMembershipResolvers<ContextType>;
