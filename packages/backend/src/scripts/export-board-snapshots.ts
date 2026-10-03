@@ -768,7 +768,7 @@ type PrimaryFenceContractRow = {
 };
 
 // TODO(#4475 review, finding 9): the fence role/grant contract is encoded four
-// times — migration 0205, the development bootstrap SQL, this assertion, and the
+// times — migration 0250, the development bootstrap SQL, this assertion, and the
 // backend global-setup fixture — with no parity test tying them together.
 async function assertPrimaryFenceContract(coordinator: ReservedSql): Promise<void> {
   const rows = await coordinator.unsafe(`
@@ -1273,14 +1273,7 @@ async function hasSmallLayoutDeltaAtThreshold(params: {
        AND ${cursorColumn} < $3::timestamp
        AND (${cursorColumn}, sync_seq) > ($4::timestamp, $5::bigint)
      LIMIT $6`,
-    [
-      pair.boardType,
-      climbUuids,
-      stableBefore,
-      watermark.watermarkUpdatedAt,
-      watermark.watermarkSyncSeq,
-      threshold,
-    ],
+    [pair.boardType, climbUuids, stableBefore, watermark.watermarkUpdatedAt, watermark.watermarkSyncSeq, threshold],
   );
   return rows.length >= threshold;
 }

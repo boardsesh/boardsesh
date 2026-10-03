@@ -33,7 +33,7 @@ function buildWorkerDatabaseUrl(): string {
   const workerUrl = new URL(raw);
   workerUrl.pathname = `/${name}`;
   // NOTE: the pool deliberately carries no `boardsesh.snapshot_cursor_restore`
-  // option. Enabling it here would switch off migration 0205's cursor-stamping
+  // option. Enabling it here would switch off migration 0250's cursor-stamping
   // invariant for every statement in every suite, so the tests would stop
   // exercising the production trigger path. Seeds that genuinely need historical
   // cursors scope the escape hatch to their own transaction with
