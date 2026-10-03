@@ -87,6 +87,13 @@ describe('previewRolesBottomToTop', () => {
     expect(roles.filter((role) => role === 'HAND')).toHaveLength(7);
   });
 
+  it('adds the feet and the second start at their own thresholds', () => {
+    expect(previewRolesBottomToTop(4)).toEqual(['FOOT', 'STARTING', 'HAND', 'FINISH']);
+    expect(previewRolesBottomToTop(5)).toEqual(['FOOT', 'STARTING', 'HAND', 'HAND', 'FINISH']);
+    expect(previewRolesBottomToTop(6)).toEqual(['FOOT', 'STARTING', 'STARTING', 'HAND', 'HAND', 'FINISH']);
+    expect(previewRolesBottomToTop(8).slice(0, 4)).toEqual(['FOOT', 'FOOT', 'STARTING', 'STARTING']);
+  });
+
   it('drops feet before a start or the finish on a small wall', () => {
     expect(previewRolesBottomToTop(3)).toEqual(['STARTING', 'HAND', 'FINISH']);
     expect(previewRolesBottomToTop(2)).toEqual(['STARTING', 'FINISH']);

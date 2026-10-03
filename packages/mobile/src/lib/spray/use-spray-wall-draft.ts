@@ -155,9 +155,10 @@ export function useSprayWallDraft(
  * draft would vanish from under a screen that is still drawing it.
  *
  * Re-registers from the draft query's cached payload, so it costs no request.
- * Settles as soon as the registry holds the draft's version again: a payload
- * that cannot be drawn is refused by `registerRenderData`, the registry does not
- * change, and this does not run again.
+ * Runs only when the registered version of THIS wall changes, and settles as
+ * soon as it is the draft's again. A payload that cannot be drawn is refused by
+ * `registerRenderData`, the registry does not change, and nothing re-runs it
+ * until something else registers or drops the wall.
  */
 export function useKeepSprayDraftRegistered(
   layoutId: number,
