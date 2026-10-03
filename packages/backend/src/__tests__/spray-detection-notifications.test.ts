@@ -16,6 +16,7 @@ import {
   users,
 } from '@boardsesh/db/schema';
 import { finishSprayDetection } from '@boardsesh/db/queries';
+import * as detectionQueries from '@boardsesh/db/queries';
 import { db } from '../db/client';
 import { enqueueOn, startJobQueue, stopJobQueue } from '../services/job-queue';
 import {
@@ -96,6 +97,26 @@ describe('spray import completion notifications', () => {
     enqueue.mockClear();
     expect(await finishSprayDetection(db, target.detectionId, randomUUID(), proposal, enqueue)).toBe(false);
     expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it('skips a completion when its version disappears after the source read', async () => {
+    const target = await completedWall();
+    await finishSprayDetection(db, target.detectionId, target.attemptToken, proposal);
+    const readSource = detectionQueries.readSprayDetection;
+    const sourceRead = vi.spyOn(detectionQueries, 'readSprayDetection').mockImplementationOnce(async (...args) => {
+      const source = await readSource(...args);
+      expect(source?.version.id).toBe(target.versionId);
+      await db.delete(sprayWallVersions).where(eq(sprayWallVersions.id, target.versionId));
+      return source;
+    });
+
+    expect(await completionNotification(target.detectionId)).toBeNull();
+    expect(sourceRead).toHaveBeenCalledOnce();
+    const remainingVersions = await db
+      .select()
+      .from(sprayWallVersions)
+      .where(eq(sprayWallVersions.id, target.versionId));
+    expect(remainingVersions).toHaveLength(0);
   });
 
   it('commits one event and one feed entry, enriched without an actor', async () => {

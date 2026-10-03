@@ -71,6 +71,7 @@ export async function completionNotification(
     .select({ isReset: sprayVersionIsReset(executor, source.wall.id, source.version.versionNumber) })
     .from(sprayWallVersions)
     .where(eq(sprayWallVersions.id, source.version.id));
+  if (!versionKind) return null;
   return {
     recipientId: source.detection.requestedBy,
     notification: {
@@ -142,6 +143,7 @@ export async function notifySprayDetectionCompleted(boss: PgBoss, detectionId: s
         { deliveryId },
         { ...RETRIES, db: enqueueOn(transaction) },
       );
+      // Roll back the feed entry and every delivery together; the completion job retries the atomic enqueue.
       if (!jobId) throw new Error('PUSH_ENQUEUE_FAILED');
     }
   });
