@@ -39,7 +39,7 @@ function deferred(): { promise: Promise<void>; resolve: () => void } {
 
 type Stage = 'prepare' | 'execute' | 'finalize';
 type FixtureOptions = {
-  pauseAt?: Stage;
+  pauseAt?: Stage | 'PRAGMA user_version' | 'serialize' | 'isInTransaction' | 'loadExtension' | 'COMMIT';
   prepareError?: unknown;
   executeError?: unknown;
   readError?: unknown;
@@ -55,7 +55,7 @@ function fixture(options: FixtureOptions = {}) {
   let references = 0;
   let freed = false;
 
-  async function stage(name: Stage): Promise<void> {
+  async function stage(name: string): Promise<void> {
     events.push(name);
     if (options.pauseAt === name) {
       enteredPause.resolve();
@@ -94,13 +94,14 @@ function fixture(options: FixtureOptions = {}) {
     if (options.closeError !== undefined) throw options.closeError;
   });
   const exec = vi.fn(async (source: string): Promise<void> => {
-    events.push(source);
-    if (freed) throw new Error('exec accessed a closed native connection');
+    await stage(source);
     if (source === 'ROLLBACK' && options.rollbackError !== undefined) throw options.rollbackError;
   });
   const closeSync = vi.fn((): void => {
+    events.push('closeSync');
     references -= 1;
     if (references === 0) freed = true;
+    if (options.closeError !== undefined) throw options.closeError;
   });
   class NativeDatabase {
     constructor() {
@@ -110,6 +111,17 @@ function fixture(options: FixtureOptions = {}) {
     closeAsync = close;
     closeSync = closeSync;
     execAsync = exec;
+    async serializeAsync(): Promise<Uint8Array> {
+      await stage('serialize');
+      return new Uint8Array([1, 2, 3]);
+    }
+    async isInTransactionAsync(): Promise<boolean> {
+      await stage('isInTransaction');
+      return false;
+    }
+    async loadExtensionAsync(): Promise<void> {
+      await stage('loadExtension');
+    }
     async prepareAsync(): Promise<void> {
       await stage('prepare');
       if (options.prepareError !== undefined) throw options.prepareError;
@@ -210,6 +222,75 @@ describe('installed expo-sqlite async connection lifetime', () => {
     expect(native.close).toHaveBeenCalledTimes(1);
     await native.database.closeAsync();
     expect(native.close).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    {
+      helper: 'execAsync',
+      pauseAt: 'PRAGMA user_version' as const,
+      invoke: (database: SQLiteDatabase) => database.execAsync('PRAGMA user_version'),
+      result: undefined,
+    },
+    {
+      helper: 'serializeAsync',
+      pauseAt: 'serialize' as const,
+      invoke: (database: SQLiteDatabase) => database.serializeAsync(),
+      result: new Uint8Array([1, 2, 3]),
+    },
+    {
+      helper: 'isInTransactionAsync',
+      pauseAt: 'isInTransaction' as const,
+      invoke: (database: SQLiteDatabase) => database.isInTransactionAsync(),
+      result: false,
+    },
+    {
+      helper: 'loadExtensionAsync',
+      pauseAt: 'loadExtension' as const,
+      invoke: (database: SQLiteDatabase) => database.loadExtensionAsync('/extensions/example'),
+      result: undefined,
+    },
+  ])('drains $helper and rejects new calls when close begins', async ({ pauseAt, invoke, result }) => {
+    const native = fixture({ pauseAt });
+    const observedOperation = invoke(native.database).then(
+      (result) => ({ result }),
+      (error: unknown) => ({ error }),
+    );
+    await native.enteredPause;
+    const closing = native.database.closeAsync();
+    const rejectedOperation = invoke(native.database).catch((error: unknown) => error);
+    await flushMicrotasks();
+    const closeCallsBeforeResume = native.close.mock.calls.length;
+    native.resume();
+    const outcome = await observedOperation;
+    const admissionFailure = await rejectedOperation;
+    await closing;
+
+    expect(closeCallsBeforeResume).toBe(0);
+    expect(outcome).toEqual({ result });
+    expect(String(admissionFailure)).toMatch(/closing|closed/i);
+    expect(native.events).toEqual([pauseAt, 'close']);
+  });
+
+  it.each([false, true])('releases a synchronous close once, including native failure: %s', async (fails) => {
+    const closeError = new Error('native synchronous close failed');
+    const native = fixture(fails ? { closeError } : {});
+    let synchronousFailure: unknown;
+    try {
+      native.database.closeSync();
+    } catch (error) {
+      synchronousFailure = error;
+    }
+
+    expect(synchronousFailure).toBe(fails ? closeError : undefined);
+    const firstAsyncClose = native.database.closeAsync();
+    const secondAsyncClose = native.database.closeAsync();
+    await Promise.all([firstAsyncClose, secondAsyncClose]);
+    expect(firstAsyncClose).toBe(secondAsyncClose);
+    expect(() => native.database.closeSync()).toThrow(/closing|closed/i);
+    await expect(native.database.runAsync('INSERT INTO ticks DEFAULT VALUES')).rejects.toThrow(/closing|closed/i);
+    expect(native.closeSync).toHaveBeenCalledTimes(1);
+    expect(native.close).not.toHaveBeenCalled();
+    expect(native.events).toEqual(['closeSync']);
   });
 
   it('rejects new helpers as soon as close begins', async () => {
@@ -410,9 +491,77 @@ describe('installed expo-sqlite async connection lifetime', () => {
     expect(native.events).toEqual(['BEGIN', 'ROLLBACK', 'close']);
     expect(native.finalize).not.toHaveBeenCalled();
   });
+
+  it('drains an admitted nonexclusive transaction through a successful commit', async () => {
+    const native = fixture({ pauseAt: 'COMMIT' });
+    const enteredTask = deferred();
+    const resumeTask = deferred();
+    const transaction = native.database.withTransactionAsync(async () => {
+      await native.database.runAsync('INSERT INTO ticks DEFAULT VALUES');
+      enteredTask.resolve();
+      await resumeTask.promise;
+    });
+    const observedTransaction = transaction.then(
+      () => 'committed',
+      (error: unknown) => error,
+    );
+    await enteredTask.promise;
+    const closing = native.database.closeAsync();
+    await flushMicrotasks();
+    const closeCallsBeforeCommit = native.close.mock.calls.length;
+    resumeTask.resolve();
+    // A regression that rejects COMMIT admission must fail, rather than leave
+    // this test waiting forever for a native COMMIT that will never be called.
+    const commitReached = await Promise.race([
+      native.enteredPause.then(() => true),
+      observedTransaction.then(() => false),
+    ]);
+    await flushMicrotasks();
+    const closeCallsDuringCommit = native.close.mock.calls.length;
+    native.resume();
+    const outcome = await observedTransaction;
+    await closing;
+
+    expect(closeCallsBeforeCommit).toBe(0);
+    expect(commitReached).toBe(true);
+    expect(closeCallsDuringCommit).toBe(0);
+    expect(outcome).toBe('committed');
+    expect(native.events).toEqual(['BEGIN', 'prepare', 'execute', 'finalize', 'COMMIT', 'close']);
+    expect(native.finalize).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('installed expo-sqlite failure precedence', () => {
+  it.each(['prepare', 'execute'] as const)('drains an iterator that fails during %s', async (failureStage) => {
+    const operationError = new Error(`${failureStage} failed`);
+    const finalizeError = new Error('iterator finalization failed');
+    const native = fixture({
+      pauseAt: failureStage,
+      ...(failureStage === 'prepare' ? { prepareError: operationError } : { executeError: operationError }),
+      finalizeError,
+    });
+    const iterator = native.database.getEachAsync('SELECT id FROM ticks');
+    const observedNext = iterator.next().catch((error: unknown) => error);
+    await native.enteredPause;
+    const closing = native.database.closeAsync();
+    await flushMicrotasks();
+    const closeCallsBeforeFailure = native.close.mock.calls.length;
+    native.resume();
+    const outcome = await observedNext;
+    await closing;
+
+    expect(closeCallsBeforeFailure).toBe(0);
+    expect(outcome).toBe(operationError);
+    expect(native.finalize).toHaveBeenCalledTimes(failureStage === 'prepare' ? 0 : 1);
+    expect(native.events).toEqual(
+      failureStage === 'prepare' ? ['prepare', 'close'] : ['prepare', 'execute', 'finalize', 'close'],
+    );
+    if (failureStage === 'execute') {
+      expect(operationError).toMatchObject({ sqliteCleanupErrors: [finalizeError] });
+    }
+    expect(await iterator.next()).toMatchObject({ done: true });
+  });
+
   it('releases admission after prepare fails without finalizing an unprepared statement', async () => {
     const prepareError = new Error('syntax error in tick write');
     const native = fixture({ prepareError });

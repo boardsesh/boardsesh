@@ -1079,6 +1079,15 @@ Installed-source guards check the source and compiled JavaScript helpers plus th
 native finalize/state/error sequence. The native changes alter the app fingerprint
 and require rebuilt Android and iOS binaries; an OTA alone cannot deliver them.
 
+Automated validation combines installed JavaScript lifecycle tests with
+`scripts/__tests__/expo-sqlite-native-finalize.test.ts`, which compiles Expo's
+vendored SQLite engine using a host C compiler. Real competing connections prove
+that BUSY and constraint failures still destroy finalized statements, and that a
+successful `RETURNING` row can precede a failed commit during finalization. The
+iOS build gate also requires proof that the patched `SQLiteModule.swift` compiled.
+These checks run without a physical device; they do not exercise the Android JNI
+or Swift bridge at runtime or reproduce operating-system lifecycle timing.
+
 ### When the native handle dies under us (#5410)
 
 Everything above is about a connection that is LOCKED, or one the provider CLOSED.
