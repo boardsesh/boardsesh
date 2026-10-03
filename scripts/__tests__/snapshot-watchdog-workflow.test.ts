@@ -88,20 +88,28 @@ describe('snapshot watchdog workflow shell boundaries', () => {
       "snapshotWatchdogWorkflow: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.snapshotWatchdogWorkflow }}",
     );
     expect(ciWorkflowSource).toContain("- '.github/workflows/export-board-snapshots.yml'");
-    const guardJob = mappingBlock(ciWorkflowSource, 'snapshot-watchdog-guards');
-    expect(guardJob).toContain("needs.changes.outputs.snapshotWatchdogWorkflow == 'true'");
-    expect(guardJob).toContain('voidzero-dev/setup-vp@v1');
-    expect(guardJob).toContain("node-version: '22.x'");
-    expect(guardJob).toContain('vp install --frozen-lockfile');
-    expect(guardJob).not.toContain('setup-bun');
-    expect(guardJob).not.toContain('bun install');
-    expect(guardJob).toContain(
+    const guards = mappingBlock(ciWorkflowSource, 'guards');
+    expect(guards).toContain('- name: snapshot-watchdog (workflow contract)');
+    expect(guards).toContain('id: snapshot-watchdog');
+    expect(guards).toContain("needs.changes.outputs.snapshotWatchdogWorkflow == 'true'");
+    expect(guards).toContain('voidzero-dev/setup-vp@v1');
+    expect(guards).toContain("node-version: '22.x'");
+    expect(guards).toContain('vp install --frozen-lockfile');
+    expect(guards).not.toContain('setup-bun');
+    expect(guards).not.toContain('bun install');
+    expect(guards).toContain("- name: rest-surface (REST inventory, OpenAPI spec and this guard's own gate)");
+    expect(ciWorkflowSource).not.toMatch(/^  snapshot-watchdog-guards:/m);
+    expect(ciWorkflowSource).not.toMatch(/^  rest-surface:/m);
+    expect(guards).toContain(
       'vp test run --project scripts scripts/__tests__/snapshot-watchdog-workflow.test.ts --reporter=agent',
     );
-    expect(mappingBlock(ciWorkflowSource, 'dbMigrations')).toContain(
-      "'packages/db/docker/bootstrap-pg18-development-roles.sql'",
-    );
-    expect(mappingBlock(ciWorkflowSource, 'ci-status')).toContain('- snapshot-watchdog-guards');
+    const migrationPaths = mappingBlock(ciWorkflowSource, 'dbMigrations');
+    expect(migrationPaths).toContain("'packages/db/docker/bootstrap-pg18-development-roles.sql'");
+    expect(migrationPaths).toContain("'scripts/board-snapshot-migration-pg18.test.sh'");
+    expect(migrationPaths).toContain("'scripts/dev-db-up.sh'");
+    const requiredJobs = mappingBlock(ciWorkflowSource, 'ci-status');
+    expect(requiredJobs).toContain('- guards');
+    expect(requiredJobs).not.toContain('- snapshot-watchdog-guards');
   });
 
   it('finds run blocks independently of their absolute YAML indentation', () => {
