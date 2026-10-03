@@ -40,7 +40,7 @@
           "aura": "Aura",
           "auraBold": "Aura kräftig",
           "auraSubtle": "Aura dezent",
-          "auraOutline": "Aura Kontur",
+          "auraOutline": "Aura Umriss",
           "modernClassic": "Klassisch modern",
           "maxContrast": "Maximaler Kontrast",
           "descriptions": {
@@ -49,7 +49,7 @@
             "modernClassic": "Die gewohnten Kreise auf gedämpfter Wand.",
             "maxContrast": "Stärkster Schleier und gefüllte Griffe.",
             "auraBold": "Ein breiteres, härteres Leuchten — auch von weitem sichtbar.",
-            "auraOutline": "Eine klare Kontur um jeden Griff, mit engem Leuchten.",
+            "auraOutline": "Ein klarer Umriss um jeden Griff, mit engem Leuchten.",
             "classic": "Die runden Marker, die Boardsesh immer gezeichnet hat.",
             "custom": "Stell dir jeden Teil des Looks selbst ein."
           },
@@ -114,7 +114,7 @@
             "value": "{{value}}%"
           },
           "outlineOpacity": {
-            "title": "Konturstärke"
+            "title": "Umrissstärke"
           },
           "softDisc": {
             "label": "Weiche Scheibe",

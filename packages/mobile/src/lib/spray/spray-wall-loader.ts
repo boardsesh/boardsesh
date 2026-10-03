@@ -137,8 +137,19 @@ function reportDroppedHolds(renderData: SprayWallRenderData, expected: number, m
   });
 }
 
-/** Put one wall's published version in the registry, mapped into its photo's pixels. */
-export function registerRenderData(layoutId: number, renderData: SprayWallRenderData): boolean {
+/**
+ * Put one wall's published version in the registry, mapped into its photo's pixels.
+ *
+ * `look` is the wall's stored look when the caller already has it (`loadSprayWall`
+ * reads it alongside the render data), so the wall registers drawn the right way
+ * once. Left out, the wall registers keeping whatever look it already had and the
+ * look is read in the background.
+ */
+export function registerRenderData(
+  layoutId: number,
+  renderData: SprayWallRenderData,
+  look?: SprayWallRenderSettingsValue | null,
+): boolean {
   const dimensions = photoDimensions(renderData);
   const canonicalHolds = toCanonicalHolds(renderData);
   const holds = mapCanonicalHoldsToPhoto(renderData.homography, canonicalHolds);
@@ -163,10 +174,9 @@ export function registerRenderData(layoutId: number, renderData: SprayWallRender
     photoThumbUrl: renderData.photo.thumbUrl ?? null,
     photoExpiresAt: renderData.photo.expiresAt,
     holds,
+    renderSettings: look,
   });
-  // The look comes on its own request (`GET_SPRAY_WALL_LOOK`) and lands after the
-  // first paint; until then the wall draws in the viewer's own settings.
-  void loadSprayWallLook(layoutId, renderData.wall.uuid);
+  if (look === undefined) void loadSprayWallLook(layoutId, renderData.wall.uuid);
 
   // The create-climb draft slot is keyed on the version, so a reset moves it and
   // leaves the old one holding holds that are no longer on the wall. Nothing else
@@ -180,7 +190,16 @@ export function registerRenderData(layoutId: number, renderData: SprayWallRender
 
 type SprayWallLookResponse = { sprayWall: { uuid: string; renderSettings?: unknown } | null } | undefined;
 
-const looks = new Map<string, { look: SprayWallRenderSettingsValue | null; settledAtMs: number }>();
+/**
+ * How long a FAILED look read stands before the next ask tries again. Short,
+ * because it is usually a dropped connection: a wall opened offline should not
+ * draw without its look for the whole revalidation window once it is back.
+ */
+export const LOOK_RETRY_AFTER_FAILURE_MS = 30 * 1000;
+
+type KnownLook = { look: SprayWallRenderSettingsValue | null; settledAtMs: number; freshForMs: number };
+
+const looks = new Map<string, KnownLook>();
 const looksInFlight = new Map<string, Promise<SprayWallRenderSettingsValue | null>>();
 /**
  * Bumped, per wall, by every write to `looks` that is not a read's answer. A
@@ -203,7 +222,7 @@ let lookEpoch = 0;
  */
 export function fetchSprayWallLook(wallUuid: string): Promise<SprayWallRenderSettingsValue | null> {
   const known = looks.get(wallUuid);
-  if (known && Date.now() - known.settledAtMs < REGISTERED_WALL_REVALIDATE_MS) return Promise.resolve(known.look);
+  if (known && Date.now() - known.settledAtMs < known.freshForMs) return Promise.resolve(known.look);
   const pending = looksInFlight.get(wallUuid);
   if (pending) return pending;
 
@@ -216,14 +235,17 @@ export function fetchSprayWallLook(wallUuid: string): Promise<SprayWallRenderSet
     .then(
       // A `JSON` scalar off the wire, so it is validated rather than trusted:
       // anything that is not a usable look reads as "no stored look".
-      (response) => sanitizeBoardRenderDefault(response?.sprayWall?.renderSettings),
-      () => known?.look ?? null,
+      (response) => ({
+        look: sanitizeBoardRenderDefault(response?.sprayWall?.renderSettings),
+        freshForMs: REGISTERED_WALL_REVALIDATE_MS,
+      }),
+      () => ({ look: known?.look ?? null, freshForMs: LOOK_RETRY_AFTER_FAILURE_MS }),
     )
-    .then((look) => {
+    .then(({ look, freshForMs }) => {
       if ((lookWrites.get(wallUuid) ?? 0) !== writesAtStart || lookEpoch !== epochAtStart) {
         return looks.get(wallUuid)?.look ?? null;
       }
-      looks.set(wallUuid, { look, settledAtMs: Date.now() });
+      looks.set(wallUuid, { look, settledAtMs: Date.now(), freshForMs });
       return look;
     })
     .finally(() => {
@@ -240,17 +262,19 @@ export async function loadSprayWallLook(layoutId: number, wallUuid: string): Pro
 
 /**
  * Record a look this device just stored, so the next read does not wait out the
- * window holding the answer from before the write.
+ * window holding the answer from before the write. Sanitised like a read, so
+ * the registry only ever holds looks in one shape.
  */
 export function primeSprayWallLook(
   layoutId: number,
   wallUuid: string,
   look: SprayWallRenderSettingsValue | null,
 ): void {
+  const clean = look === null ? null : sanitizeBoardRenderDefault(look);
   lookWrites.set(wallUuid, (lookWrites.get(wallUuid) ?? 0) + 1);
   looksInFlight.delete(wallUuid);
-  looks.set(wallUuid, { look, settledAtMs: Date.now() });
-  setSprayWallLook(layoutId, wallUuid, look);
+  looks.set(wallUuid, { look: clean, settledAtMs: Date.now(), freshForMs: REGISTERED_WALL_REVALIDATE_MS });
+  setSprayWallLook(layoutId, wallUuid, clean);
 }
 
 /** Test seam: forget every look this session has read. */
@@ -313,7 +337,12 @@ export async function loadSprayWall(
     await queryClient.invalidateQueries({ queryKey: sprayWallRenderDataQueryKey(wallUuid) });
   }
 
-  const renderData = await fetchSprayWallRenderData(queryClient, wallUuid);
+  const renderDataRead = fetchSprayWallRenderData(queryClient, wallUuid);
+  // Alongside the render data, not after it: a wall registered without its look
+  // draws in the viewer's settings, then draws again when the look lands, which
+  // on a cold start doubles every spray surface's renders. Never rejects.
+  const lookRead = fetchSprayWallLook(wallUuid);
+  const renderData = await renderDataRead;
   if (!renderData) {
     // The wall exists but has nothing renderable: deleted between the two reads,
     // visibility revoked, the published version's photo gone. A wall we already
@@ -324,7 +353,7 @@ export async function loadSprayWall(
     unregisterSprayWall(layoutId);
     return;
   }
-  registerRenderData(layoutId, renderData);
+  registerRenderData(layoutId, renderData, await lookRead);
 }
 
 /**

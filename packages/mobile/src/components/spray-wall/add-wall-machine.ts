@@ -119,6 +119,11 @@ export type AddWallState = {
     error: string | null;
   };
   /**
+   * The look step's save is in flight. Busy like an upload or a publish: its
+   * success moves the flow on to publish, so nothing may leave under it.
+   */
+  lookSaving: boolean;
+  /**
    * How many holds the draft carries: what a resumed draft already had, then
    * what the editor's commit left on it. Display and telemetry only — the
    * editor itself refuses to commit an empty wall.
@@ -149,6 +154,8 @@ export type AddWallAction =
   | { type: 'DETECTION_FAILED' }
   /** The editor saved every hold onto the draft; the look is all that is left before publishing. */
   | { type: 'REVIEW_COMMITTED'; holdCount: number }
+  | { type: 'LOOK_SAVE_STARTED' }
+  | { type: 'LOOK_SAVE_FAILED' }
   /** The wall's look is stored on the server; publishing is all that is left. */
   | { type: 'LOOK_CONFIRMED' }
   | { type: 'PUBLISH_STARTED' }
@@ -170,6 +177,7 @@ export function initialAddWallState(): AddWallState {
     upload: { running: false, progress: null, error: null, attempts: 0 },
     detection: { outcome: 'idle', done: 0, total: 0, candidates: NO_CANDIDATES },
     publish: { running: false, error: null },
+    lookSaving: false,
     savedHoldCount: 0,
   };
 }
@@ -259,7 +267,7 @@ export function shouldConfirmLeave(state: AddWallState): boolean {
 
 /** Whether the flow is mid-request and a back gesture should be declined. */
 export function isBusy(state: AddWallState): boolean {
-  return state.upload.running || state.publish.running;
+  return state.upload.running || state.publish.running || state.lookSaving;
 }
 
 /** What the hold editor knows that the machine does not, read at the moment of leaving. */
@@ -290,6 +298,8 @@ export type LeaveDecision = 'leave' | 'block' | 'confirm' | 'confirmDiscard';
 
 export function leaveDecision(state: AddWallState, editor: EditorLeaveState): LeaveDecision {
   if (state.step === 'review' && editor.handingOver) return 'block';
+  // The look step's save is the same kind of moment: its success publishes.
+  if (state.step === 'look' && state.lookSaving) return 'block';
   if (state.step === 'review' && editor.dirty && !isBusy(state)) return 'confirmDiscard';
   return shouldConfirmLeave(state) ? 'confirm' : 'leave';
 }
@@ -483,10 +493,21 @@ export function addWallReducer(state: AddWallState, action: AddWallAction): AddW
       // an effect). Refused off the look step: a stray confirm must not skip
       // the editor's own guard on an empty wall.
       if (state.step !== 'look') return state;
-      return { ...state, step: 'publish', publish: { running: false, error: null } };
+      return { ...state, step: 'publish', lookSaving: false, publish: { running: false, error: null } };
+
+    case 'LOOK_SAVE_STARTED':
+      if (state.step !== 'look') return state;
+      return { ...state, lookSaving: true };
+
+    case 'LOOK_SAVE_FAILED':
+      return state.lookSaving ? { ...state, lookSaving: false } : state;
 
     case 'PUBLISH_STARTED':
-      return { ...state, step: 'publish', publish: { running: true, error: null } };
+      // Only from the publish step: the look step is the only way in, and a
+      // publish started anywhere else would skip it (and the editor's guard on
+      // an empty wall). The screen's two callers both run on this step.
+      if (state.step !== 'publish') return state;
+      return { ...state, publish: { running: true, error: null } };
 
     case 'PUBLISH_FAILED':
       // Back onto the publish step so the retry is reachable — including when
