@@ -90,7 +90,11 @@ describe('snapshot watchdog workflow shell boundaries', () => {
     expect(ciWorkflowSource).toContain("- '.github/workflows/export-board-snapshots.yml'");
     const guardJob = mappingBlock(ciWorkflowSource, 'snapshot-watchdog-guards');
     expect(guardJob).toContain("needs.changes.outputs.snapshotWatchdogWorkflow == 'true'");
-    expect(guardJob).toContain('bun install --frozen-lockfile');
+    expect(guardJob).toContain('voidzero-dev/setup-vp@v1');
+    expect(guardJob).toContain("node-version: '22.x'");
+    expect(guardJob).toContain('vp install --frozen-lockfile');
+    expect(guardJob).not.toContain('setup-bun');
+    expect(guardJob).not.toContain('bun install');
     expect(guardJob).toContain(
       'vp test run --project scripts scripts/__tests__/snapshot-watchdog-workflow.test.ts --reporter=agent',
     );

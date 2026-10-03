@@ -245,6 +245,9 @@ export const exportBoardSnapshotsFamily: BackgroundJobFamilyModule<ExportRequest
           gzip: true,
           keyPrefix: LIVE_SNAPSHOT_KEY_PREFIX,
           refreshThreshold: request.refreshThreshold ?? LIVE_SCAN_REFRESH_THRESHOLD,
+          source: 'primary',
+          fence: false,
+          heartbeat: false,
           ...filters,
           ...pruneOptions,
         },
@@ -280,7 +283,16 @@ export const exportBoardSnapshotsFamily: BackgroundJobFamilyModule<ExportRequest
     if (runIdentity) {
       await runPass('identity', true, () =>
         runExportWithOptions(
-          { dryRun: false, gzip: false, keyPrefix: DEFAULT_SNAPSHOT_KEY_PREFIX, ...filters, ...pruneOptions },
+          {
+            dryRun: false,
+            gzip: false,
+            keyPrefix: DEFAULT_SNAPSHOT_KEY_PREFIX,
+            source: 'primary',
+            fence: false,
+            heartbeat: false,
+            ...filters,
+            ...pruneOptions,
+          },
           dependencies,
         ),
       );
@@ -292,6 +304,9 @@ export const exportBoardSnapshotsFamily: BackgroundJobFamilyModule<ExportRequest
           gzip: true,
           keyPrefix: LIVE_SNAPSHOT_KEY_PREFIX,
           refreshThreshold: request.refreshThreshold,
+          source: 'primary',
+          fence: false,
+          heartbeat: false,
           ...filters,
           ...pruneOptions,
         },

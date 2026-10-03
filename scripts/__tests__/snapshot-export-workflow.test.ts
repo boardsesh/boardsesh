@@ -26,7 +26,7 @@ describe('snapshot export workflow', () => {
   });
 
   it('passes the public base name the exporter reads for both storage targets', () => {
-    expect(exportJob.env.SNAPSHOT_PUBLIC_BASE_URL).toBe(
+    expect(exportJob.env?.SNAPSHOT_PUBLIC_BASE_URL).toBe(
       "${{ inputs.storage_target == 'r2' && 'https://snapshots.boardsesh.com' || 'https://boardsesh-board-snapshots.t3.tigrisfiles.io' }}",
     );
     expect(exportJob.env).not.toHaveProperty('SNAPSHOTS_PUBLIC_BASE_URL');
@@ -52,7 +52,9 @@ describe('snapshot export workflow', () => {
     const catalogJob = workflow.jobs['homelab-catalog'];
     expect(catalogJob.if).toContain("vars.SNAPSHOT_HOMELAB_EXPORT_ENABLED == 'true'");
     expect(catalogJob.if).toContain("github.event.schedule == '15 7 * * *'");
-    const catalogStep = catalogJob.steps.find((step) => step.name === 'Export board catalogue (gzip → board-snapshots/v1-catalog)');
+    const catalogStep = catalogJob.steps.find(
+      (step) => step.name === 'Export board catalogue (gzip → board-snapshots/v1-catalog)',
+    );
     expect(catalogStep?.run).toBe('node --import tsx src/scripts/export-board-catalog.ts');
     expect(catalogStep?.env).toHaveProperty('DATABASE_URL');
     expect(catalogStep?.env).toHaveProperty('AWS_S3_BUCKET_NAME');

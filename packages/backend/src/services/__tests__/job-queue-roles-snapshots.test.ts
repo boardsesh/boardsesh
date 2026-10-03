@@ -33,7 +33,7 @@ vi.mock('../../storage/s3', () => ({
 
 const { db } = await import('../../db/client');
 const { getFromS3Strict, uploadToS3 } = await import('../../storage/s3');
-const { exportLayoutSnapshot, runExportWithOptions } = await import('../../scripts/export-board-snapshots');
+const { exportLayoutSnapshot, parseArgs, runExportWithOptions } = await import('../../scripts/export-board-snapshots');
 const { catalogColumnsFor, runCatalogExportWithOptions } = await import('../../scripts/export-board-catalog');
 const { exportBoardSnapshotsFamily } = await import('../../workers/families/export-board-snapshots');
 
@@ -44,6 +44,7 @@ const CLIMBS = ['snapshot-grants-a', 'snapshot-grants-b'];
 const LIVE_PREFIX = 'board-snapshots/v1-gzip';
 const LIVE_MANIFEST_KEY = `${LIVE_PREFIX}/manifest.json`;
 const quiet = { info: () => {}, warn: () => {}, error: () => {} };
+const primaryExportDefaults = parseArgs([]);
 
 function uploadedKeys(): string[] {
   return vi.mocked(uploadToS3).mock.calls.map(([, , key]) => key);
@@ -132,12 +133,15 @@ describe('export-board-snapshots under the batch login', () => {
       // role's session, so a worker export must refuse to stamp a boundary...
       const [before] = await restricted`SELECT pg_has_role('pg_read_all_stats', 'USAGE') AS reads_all_stats`;
       expect(before.reads_all_stats).toBe(false);
+      const [blindBoundary] = await restricted`SELECT clock_timestamp() AS stable_before`;
       const blind = await exportLayoutSnapshot({
         sqlClient: restricted,
         boardType: BOARD,
         layoutId: LAYOUT,
         filePath: join(workDir, 'blind.db'),
         builtAt: new Date().toISOString(),
+        stableBefore: new Date(blindBoundary.stable_before as Date).toISOString(),
+        deletionObserverConnectionAvailable: true,
         requireAllRolesVisible: true,
       });
       expect(blind.deletionsReplayFrom).toBeNull();
@@ -145,7 +149,7 @@ describe('export-board-snapshots under the batch login', () => {
       // ...and the live pass then publishes no artifact for the layout.
       await expect(
         runExportWithOptions(
-          { dryRun: false, gzip: true, keyPrefix: LIVE_PREFIX, boardFilter: BOARD, layoutFilter: LAYOUT },
+          { ...primaryExportDefaults, gzip: true, keyPrefix: LIVE_PREFIX, boardFilter: BOARD, layoutFilter: LAYOUT },
           { sqlClient: restricted, log: quiet, requireAllRolesVisible: true },
         ),
       ).rejects.toThrow(/Export failed for 1 layout/);
@@ -177,13 +181,15 @@ describe('export-board-snapshots under the batch login', () => {
         .catch(() => {});
       try {
         const startedAt = await writerStartedAt;
+        const [stableBoundary] = await restricted`SELECT clock_timestamp() AS stable_before`;
         const observed = await exportLayoutSnapshot({
           sqlClient: restricted,
           boardType: BOARD,
           layoutId: LAYOUT,
           filePath: join(workDir, 'observed.db'),
           builtAt: new Date().toISOString(),
-          stabilityWindowSeconds: 0,
+          stableBefore: new Date(stableBoundary.stable_before as Date).toISOString(),
+          deletionObserverConnectionAvailable: true,
           requireAllRolesVisible: true,
         });
         expect(observed.deletionsReplayFallbackReason).toBeNull();
@@ -199,11 +205,17 @@ describe('export-board-snapshots under the batch login', () => {
       vi.clearAllMocks();
       const dependencies = { sqlClient: restricted, log: quiet, requireAllRolesVisible: true };
       await runExportWithOptions(
-        { dryRun: false, gzip: false, keyPrefix: 'board-snapshots/v1', boardFilter: BOARD, layoutFilter: LAYOUT },
+        {
+          ...primaryExportDefaults,
+          gzip: false,
+          keyPrefix: 'board-snapshots/v1',
+          boardFilter: BOARD,
+          layoutFilter: LAYOUT,
+        },
         dependencies,
       );
       await runExportWithOptions(
-        { dryRun: false, gzip: true, keyPrefix: LIVE_PREFIX, boardFilter: BOARD, layoutFilter: LAYOUT },
+        { ...primaryExportDefaults, gzip: true, keyPrefix: LIVE_PREFIX, boardFilter: BOARD, layoutFilter: LAYOUT },
         dependencies,
       );
       expect(uploadedKeys().filter((key) => key.endsWith('manifest.json'))).toEqual([
@@ -227,7 +239,7 @@ describe('export-board-snapshots under the batch login', () => {
       vi.mocked(uploadToS3).mockClear();
       await runExportWithOptions(
         {
-          dryRun: false,
+          ...primaryExportDefaults,
           gzip: true,
           keyPrefix: LIVE_PREFIX,
           refreshThreshold: 1,
