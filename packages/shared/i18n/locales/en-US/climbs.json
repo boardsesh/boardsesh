@@ -221,7 +221,8 @@
       "publishDuplicateNamed": "This hold pattern matches \"{{name}}\". Toggle Draft to save it without publishing, or change a hold.",
       "publishDuplicateUnnamed": "This hold pattern matches an existing climb. Toggle Draft to save it without publishing, or change a hold.",
       "viewMatchingClimb": "View matching climb",
-      "saveFailedFallback": "Failed to save climb. Please try again."
+      "saveFailedFallback": "Failed to save climb. Please try again.",
+      "editConflict": "Someone else just changed this climb. Reopen it to see the latest."
     },
     "fields": {
       "description": "Description (optional)"
@@ -838,6 +839,42 @@
     },
     "setterNotes": {
       "title": "Setter's notes"
+    },
+    "revisions": {
+      "title": "Edit history",
+      "summary_one": "Edited once",
+      "summary_other": "Edited {{count}} times",
+      "current": "Current",
+      "tagSetter": "Setter",
+      "tagWallOwner": "Wall owner",
+      "deletedEditor": "Deleted account",
+      "published": "First published",
+      "edited": "Edited",
+      "changed": "Changed {{changes}}",
+      "changes": {
+        "name": "name",
+        "description": "notes",
+        "holds": "holds",
+        "grade": "grade",
+        "angle": "angle",
+        "rules": "rules"
+      },
+      "showAll": "Show all {{count}}",
+      "capNote": "We keep the first version and the last {{max}} edits.",
+      "rowLabel": "{{date}}, {{editor}}. See this version.",
+      "sheet": {
+        "title": "Version from {{date}}",
+        "by": "{{editor}} · {{role}}",
+        "readOnly": "An earlier version. You can look at it, but not queue it or light it up.",
+        "noGrade": "No grade",
+        "angle": "{{angle}}°",
+        "older": "Older",
+        "newer": "Newer",
+        "position": "{{position}} of {{total}}",
+        "photoUnavailable": "This wall photo is no longer available",
+        "boardUnavailable": "This board can't be drawn right now",
+        "boardLabel": "The holds in this version"
+      }
     },
     "heatmap": {
       "toggle": "Heatmap",

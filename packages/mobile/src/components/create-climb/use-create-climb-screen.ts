@@ -35,6 +35,7 @@ import { useAuth } from '../../providers/auth-provider';
 import { useProfile, useClimb } from '../../lib/graphql/hooks';
 import { CLIMB_REVISIONS_QUERY_KEY } from '../../lib/graphql/hooks/climb-revisions-query-key';
 import { resolveProvisionalSetter } from './provisional-setter';
+import { isClimbEditConflictError } from './climb-edit-conflict';
 import { extractGraphqlMessage } from '../../lib/graphql/extract-error-message';
 import { useQueueActions } from '../../providers/queue-provider';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
@@ -1709,6 +1710,13 @@ export function useCreateClimbScreen({
         // The inline DuplicateBanner already explains this one and offers the
         // match — the status line would just repeat it.
         setPublishDuplicateError(readDuplicateExtensions(err));
+      } else if (isClimbEditConflictError(err)) {
+        // Somebody else saved this climb while it was open here. Not retried:
+        // the retry would be decided on the same stale row. Nothing is thrown
+        // away either. The working copy stays on screen and in the autosave
+        // slot, and the status line stays on "not saved" until they reopen it.
+        setFailedSignature(signatureAtSave);
+        showToast(t('createClimbForm.alerts.editConflict'), 'error');
       } else {
         // The toast is gone in 3s. Without a persistent line the editor would go
         // on reading "Saved on this phone" — true, and silent about the account

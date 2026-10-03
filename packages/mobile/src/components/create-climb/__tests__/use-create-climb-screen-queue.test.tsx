@@ -25,6 +25,7 @@ const board = vi.hoisted(() => ({
   isDuplicateClimbError: vi.fn((_err: unknown) => false),
 }));
 const toast = vi.hoisted(() => ({ showToast: vi.fn() }));
+const draftStore = vi.hoisted(() => ({ clearDraft: vi.fn(async () => {}) }));
 /** The climb `useClimb` answers with when the editor is opened on an existing one. */
 const edit = vi.hoisted(() => ({ climb: undefined as Record<string, unknown> | undefined }));
 const queue = vi.hoisted(() => ({ setCurrentClimb: vi.fn() }));
@@ -111,7 +112,7 @@ vi.mock('../../../providers/toast-provider', () => ({
 vi.mock('../../../lib/create-climb-draft-store', () => ({
   loadDraft: vi.fn(async () => null),
   saveDraft: vi.fn(async () => {}),
-  clearDraft: vi.fn(async () => {}),
+  clearDraft: draftStore.clearDraft,
   createClimbDraftKey: () => 'draft-key',
   createClimbEditDraftKey: (boardType: string, uuid: string) => `edit:${boardType}:${uuid}`,
   createClimbForkDraftKey: (boardKey: string) => `fork:${boardKey}`,
@@ -150,6 +151,7 @@ beforeEach(() => {
   board.updateClimb.mockReset();
   createClimb.frameCount = 1;
   edit.climb = undefined;
+  draftStore.clearDraft.mockClear();
 });
 
 describe('create-climb queue hand-off carries board identity', () => {
@@ -350,6 +352,46 @@ describe('editing a climb somebody else set (#5955)', () => {
     });
 
     expect(toast.showToast).toHaveBeenCalledWith('You can only update your own climbs', 'error');
+  });
+
+  it('says somebody else changed the climb when the server reports an edit conflict', async () => {
+    // Two editors, one climb: the save was decided on a row the other edit has
+    // replaced. One translated line, no second attempt, and the work stays put.
+    edit.climb = { ...someoneElsesClimb, difficulty: '6a/V3' };
+    board.updateClimb.mockRejectedValue({
+      extensions: { code: 'CLIMB_EDIT_CONFLICT' },
+      message: 'This climb changed while you were editing it. Reload it and try again.',
+    });
+    const sprayBoard = { boardName: 'spray' as const, layoutId: 4200, sizeId: 4200, setIds: '1', angle: 40 };
+    const { result } = renderHook(() => useCreateClimbScreen({ board: sprayBoard, editClimbUuid: 'climb-9' }));
+    act(() => result.current.setName('Left Arete, fixed'));
+
+    await act(async () => {
+      await result.current.handleSave();
+    });
+
+    expect(toast.showToast).toHaveBeenCalledTimes(1);
+    expect(toast.showToast).toHaveBeenCalledWith('createClimbForm.alerts.editConflict', 'error');
+    expect(board.updateClimb).toHaveBeenCalledTimes(1);
+    expect(board.saveClimb).not.toHaveBeenCalled();
+    expect(queue.setCurrentClimb).not.toHaveBeenCalled();
+    // The working copy is still what the climber typed.
+    expect(result.current.name).toBe('Left Arete, fixed');
+    expect(draftStore.clearDraft).not.toHaveBeenCalled();
+  });
+
+  it('recognises the conflict code on a raw GraphQL response too, on any board', async () => {
+    edit.climb = someoneElsesClimb;
+    board.updateClimb.mockRejectedValue({
+      response: { errors: [{ message: 'changed', extensions: { code: 'CLIMB_EDIT_CONFLICT' } }] },
+    });
+    const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard, editClimbUuid: 'climb-9' }));
+
+    await act(async () => {
+      await result.current.handleSave();
+    });
+
+    expect(toast.showToast).toHaveBeenCalledWith('createClimbForm.alerts.editConflict', 'error');
   });
 
   it('keeps the generic failure line for a catalogue board', async () => {

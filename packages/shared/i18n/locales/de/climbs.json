@@ -221,7 +221,8 @@
       "publishDuplicateNamed": "Dieses Griff-Muster passt zu „{{name}}“. Schalte auf Entwurf, um ihn ohne Veröffentlichung zu speichern, oder ändere einen Griff.",
       "publishDuplicateUnnamed": "Dieses Griff-Muster passt zu einem bestehenden Boulder. Schalte auf Entwurf, um ihn ohne Veröffentlichung zu speichern, oder ändere einen Griff.",
       "viewMatchingClimb": "Passenden Boulder ansehen",
-      "saveFailedFallback": "Boulder konnte nicht gespeichert werden. Versuch es nochmal."
+      "saveFailedFallback": "Boulder konnte nicht gespeichert werden. Versuch es nochmal.",
+      "editConflict": "Jemand hat diesen Boulder gerade geändert. Öffne ihn neu, um den aktuellen Stand zu sehen."
     },
     "fields": {
       "description": "Beschreibung (optional)"
@@ -838,6 +839,42 @@
     },
     "setterNotes": {
       "title": "Notizen vom Routenbau"
+    },
+    "revisions": {
+      "title": "Änderungsverlauf",
+      "summary_one": "Einmal bearbeitet",
+      "summary_other": "{{count}}-mal bearbeitet",
+      "current": "Aktuell",
+      "tagSetter": "Routenbauer*in",
+      "tagWallOwner": "Wandinhaber*in",
+      "deletedEditor": "Gelöschtes Konto",
+      "published": "Erstmals veröffentlicht",
+      "edited": "Bearbeitet",
+      "changed": "Geändert: {{changes}}",
+      "changes": {
+        "name": "Name",
+        "description": "Notizen",
+        "holds": "Griffe",
+        "grade": "Grad",
+        "angle": "Winkel",
+        "rules": "Regeln"
+      },
+      "showAll": "Alle {{count}} zeigen",
+      "capNote": "Wir behalten die erste Version und die letzten {{max}} Änderungen.",
+      "rowLabel": "{{date}}, {{editor}}. Diese Version ansehen.",
+      "sheet": {
+        "title": "Version vom {{date}}",
+        "by": "{{editor}} · {{role}}",
+        "readOnly": "Eine frühere Version. Du kannst sie ansehen, aber nicht in die Queue legen oder beleuchten.",
+        "noGrade": "Kein Grad",
+        "angle": "{{angle}}°",
+        "older": "Älter",
+        "newer": "Neuer",
+        "position": "{{position}} von {{total}}",
+        "photoUnavailable": "Das Foto dieser Wand ist nicht mehr verfügbar",
+        "boardUnavailable": "Dieses Board lässt sich gerade nicht darstellen",
+        "boardLabel": "Die Griffe dieser Version"
+      }
     },
     "heatmap": {
       "toggle": "Heatmap",
