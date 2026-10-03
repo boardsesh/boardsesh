@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll } from 'vite-plus/test';
 import { randomUUID } from 'node:crypto';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import {
   communityRoles,
   gyms,
@@ -15,6 +15,7 @@ import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
 import { requireBoardEditAccess, socialBoardQueries } from '../graphql/resolvers/social/boards';
 import { sprayWallMutations } from '../graphql/resolvers/board/spray-walls';
+import { sprayDetectionQueries } from '../graphql/resolvers/board/spray-detection';
 
 /**
  * Real-DB coverage for the "Your boards" ordering (issue #4884). The mutation
@@ -324,4 +325,55 @@ describe('transaction-scoped board edit authorization', () => {
       await expect(requireBoardEditAccess(editorContext, privateBoard, transaction)).resolves.toBeUndefined();
     });
   });
+});
+
+describe('spray import progress permission revocation', () => {
+  it.each(['gym admin', 'scoped community leader'] as const)(
+    'omits import progress after revoking %s access in the same session',
+    async (grantKind) => {
+      if (!dbReady) return;
+      const editorId = randomUUID();
+      await insertUser(editorId);
+      const editorContext: ConnectionContext = {
+        connectionId: editorId,
+        userId: editorId,
+        isAuthenticated: true,
+      };
+      const wall = (await sprayWallMutations.createSprayWall(
+        {},
+        { input: { name: 'Revoked import wall', angle: 40 } },
+        ctx,
+      )) as { uuid: string };
+      let revokeGrant: () => Promise<unknown>;
+      if (grantKind === 'gym admin') {
+        const [gym] = await db
+          .insert(gyms)
+          .values({ uuid: randomUUID(), name: 'Revoked import gym', ownerId: USER })
+          .returning();
+        await db.insert(gymMembers).values({ gymId: gym.id, userId: editorId, role: 'admin' });
+        await db.update(userBoards).set({ gymId: gym.id, isPublic: false }).where(eq(userBoards.uuid, wall.uuid));
+        revokeGrant = () =>
+          db.delete(gymMembers).where(and(eq(gymMembers.gymId, gym.id), eq(gymMembers.userId, editorId)));
+      } else {
+        await db.update(userBoards).set({ isPublic: true }).where(eq(userBoards.uuid, wall.uuid));
+        await db.insert(communityRoles).values([
+          { userId: editorId, role: 'community_leader', boardType: 'spray' },
+          { userId: editorId, role: 'community_leader', boardType: 'kilter' },
+        ]);
+        revokeGrant = () =>
+          db
+            .delete(communityRoles)
+            .where(and(eq(communityRoles.userId, editorId), eq(communityRoles.boardType, 'spray')));
+      }
+      const input = { wallUuids: [wall.uuid] };
+      const beforeRevocation = await sprayDetectionQueries.sprayWallImportProgress(null, input, editorContext);
+      expect(beforeRevocation).toMatchObject([{ wallUuid: wall.uuid, stage: 'draft' }]);
+      await revokeGrant();
+      // Reuse the exact context object and connection, as a long-lived client does.
+      expect(await sprayDetectionQueries.sprayWallImportProgress(null, input, editorContext)).toEqual([]);
+      expect(await sprayDetectionQueries.sprayWallImportProgress(null, input, ctx)).toMatchObject([
+        { wallUuid: wall.uuid, stage: 'draft' },
+      ]);
+    },
+  );
 });

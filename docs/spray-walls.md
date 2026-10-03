@@ -297,6 +297,13 @@ best effort. Browsers use the notification feed. Alert/feed taps resume the
 correct draft after authentication, and handle already-published, discarded or
 inaccessible targets without creating another wall.
 
+Delivery rows remain until their source notification, recipient or installation
+is deleted; foreign-key cascades remove the related rows. There is no separate
+age-based delivery cleanup job. Push sending holds the wall validity lock during
+the Expo request (a 15-second timeout), so wall edits can wait behind an in-flight
+delivery. Provider outages can repeat that wait across retries; the lock keeps
+privacy and source changes from racing the outgoing wall details.
+
 The box-model measurements below are historical evidence, not the current
 segmentation service's inference configuration. The native runtime and benchmark
 have been removed; see [native cleanup](spray-recognition-native-cleanup.md).
