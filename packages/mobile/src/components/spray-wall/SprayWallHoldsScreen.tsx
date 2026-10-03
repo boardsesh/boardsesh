@@ -119,6 +119,8 @@ export function SprayWallHoldsScreen({ wallUuid }: { wallUuid: string }) {
       setStatus('refreshing');
       await invalidateSprayWallRenderData(queryClient, prepared.wallUuid, prepared.layoutId);
       const publishedRenderData = await fetchSprayWallRenderData(queryClient, prepared.wallUuid);
+      // Publishing preserves the draft's number. A later published version is
+      // also valid if another editor publishes while this reload is in flight.
       if (
         !publishedRenderData ||
         publishedRenderData.wall.uuid !== prepared.wallUuid ||

@@ -103,6 +103,15 @@ describe('prepareSprayHoldDraft', () => {
       .mockResolvedValueOnce(wall({ viewerCanEdit: false, versions: [draftVersion] }));
     await expect(prepareSprayHoldDraft('wall-1', requests)).rejects.toMatchObject({ reason: 'unavailable' });
   });
+
+  it('preserves the create failure if the recovery read also fails', async () => {
+    const requests = transport();
+    const createFailure = new Error('create failed');
+    requests.createDraft.mockRejectedValue(createFailure);
+    requests.fetchWall.mockResolvedValueOnce(wall()).mockRejectedValueOnce(new Error('recovery offline'));
+    await expect(prepareSprayHoldDraft('wall-1', requests)).rejects.toBe(createFailure);
+    expect(requests.createDraft).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('publishSprayHoldDraft', () => {
@@ -136,6 +145,17 @@ describe('publishSprayHoldDraft', () => {
     requests.fetchWall.mockResolvedValue(wall({ versions: [draftVersion] }));
     requests.publishDraft.mockRejectedValue(failure);
     await expect(publishSprayHoldDraft(preparedDraft, requests)).rejects.toBe(failure);
+    expect(requests.publishDraft).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves the publish failure if the recovery read also fails', async () => {
+    const requests = transport();
+    const publishFailure = new Error('publish failed');
+    requests.publishDraft.mockRejectedValue(publishFailure);
+    requests.fetchWall
+      .mockResolvedValueOnce(wall({ versions: [draftVersion] }))
+      .mockRejectedValueOnce(new Error('recovery offline'));
+    await expect(publishSprayHoldDraft(preparedDraft, requests)).rejects.toBe(publishFailure);
     expect(requests.publishDraft).toHaveBeenCalledTimes(1);
   });
 

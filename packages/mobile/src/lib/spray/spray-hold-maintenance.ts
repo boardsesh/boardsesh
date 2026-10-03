@@ -65,7 +65,13 @@ export async function prepareSprayHoldDraft(
   } catch (createError) {
     // The other device may have won the wall lock, or our response may have
     // disappeared after the insert committed. Either way there is one draft.
-    const latestWall = requireEditableWall(wallUuid, await transport.fetchWall(wallUuid));
+    let latestWallSnapshot: SprayHoldMaintenanceWall | null;
+    try {
+      latestWallSnapshot = await transport.fetchWall(wallUuid);
+    } catch {
+      throw createError;
+    }
+    const latestWall = requireEditableWall(wallUuid, latestWallSnapshot);
     const createdDraft = latestWall.versions?.find((version) => version.status === 'DRAFT');
     if (createdDraft) return prepareTarget(latestWall, createdDraft);
     throw createError;
@@ -92,7 +98,14 @@ export async function publishSprayHoldDraft(
   try {
     await transport.publishDraft(draft.versionId);
   } catch (publishError) {
-    const latestWall = requireEditableWall(draft.wallUuid, await transport.fetchWall(draft.wallUuid));
+    let latestWallSnapshot: SprayHoldMaintenanceWall | null;
+    try {
+      latestWallSnapshot = await transport.fetchWall(draft.wallUuid);
+    } catch {
+      // Recovery is best effort; keep the failure from the requested write.
+      throw publishError;
+    }
+    const latestWall = requireEditableWall(draft.wallUuid, latestWallSnapshot);
     const latestVersion = findPreparedVersion(latestWall, draft);
     if (latestVersion.status !== 'DRAFT') return;
     throw publishError;

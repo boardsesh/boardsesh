@@ -6,9 +6,19 @@ import type { DismissAndWaitResult } from '../../../providers/sheet-presentation
 import { useSprayWallSheetActions } from '../use-spray-wall-sheet-actions';
 
 const navigation = vi.hoisted(() => ({ push: vi.fn() }));
-const flags = vi.hoisted(() => ({ enabled: true }));
+const flags = vi.hoisted((): { enabled: boolean | undefined } => ({ enabled: true }));
 vi.mock('expo-router', () => ({ router: navigation }));
-vi.mock('../../../providers/feature-flags-provider', () => ({ useSprayWallsEnabled: () => flags.enabled }));
+vi.mock('../../../providers/feature-flags-provider', async () => {
+  const featureFlags = await vi.importActual<typeof import('../../../providers/feature-flags-provider')>(
+    '../../../providers/feature-flags-provider',
+  );
+  return {
+    useSprayWallsEnabled: () => {
+      const shippedDefault = featureFlags.useSprayWallsEnabled();
+      return flags.enabled ?? shippedDefault;
+    },
+  };
+});
 
 const wall: UserBoard = {
   uuid: 'wall-1',
@@ -48,6 +58,18 @@ beforeEach(() => {
 });
 
 describe('live spray wall sheet actions', () => {
+  it('keeps an unresolved flag handoff when resolution confirms enabled', async () => {
+    flags.enabled = undefined;
+    const { dismiss, finish } = deferredDismiss();
+    const { result, rerender } = renderHook(() => useSprayWallSheetActions(wall, dismiss));
+    act(() => result.current.openMaintenance(wall.uuid, 'editHolds'));
+    expect(dismiss).toHaveBeenCalledTimes(1);
+    flags.enabled = true;
+    rerender();
+    await act(async () => finish({ status: 'dismissed' }));
+    expect(navigation.push).toHaveBeenCalledExactlyOnceWith('/boards/spray/holds?wallUuid=wall-1');
+  });
+
   it('navigates only after native dismissal settles and ignores duplicate taps', async () => {
     const { dismiss, finish } = deferredDismiss();
     const { result } = renderHook(() => useSprayWallSheetActions(wall, dismiss));
