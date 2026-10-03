@@ -269,7 +269,8 @@ export const SHARED_EVENTS = {
   // clock, so tap-to-picker can be split by step without joining events.
   // Bluetooth Scan Started carries:
   //  - `preScanMs`: from the start of the connect to this event. Covers the
-  //    permission check, `availableMs` and `teardownMs`.
+  //    runtime permission check (including Android system-dialog dwell),
+  //    `availableMs` and `teardownMs`.
   //  - `availableMs`: the adapter availability check alone (on iOS a sync hop
   //    onto the native BLE queue).
   //  - `teardownMs`: disconnecting the previous link alone. Absent when there
@@ -282,8 +283,8 @@ export const SHARED_EVENTS = {
   //    requested, not when it finished sliding in. Absent when no picker opened
   //    (Expo web uses the browser's chooser; a connect that failed before the
   //    scan).
-  //  - `configureMs`: the iOS native config pre-stage alone. Absent off the iOS
-  //    native adapter.
+  //  - `configureMs`: the iOS native config pre-stage attempt alone, including
+  //    time spent on a failed attempt. Absent off the iOS native adapter.
   BluetoothScanStarted: 'Bluetooth Scan Started',
   BluetoothConnectionStolen: 'Bluetooth Connection Stolen',
   // Mobile-only (#5775): a connect was dropped because another was still
