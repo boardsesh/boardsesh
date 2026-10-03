@@ -1270,7 +1270,7 @@ switch.
 | `reportSprayWall(input)` | Any signed-in climber who can SEE the wall — owner, gym member, or anybody on a public or unlisted one — once per wall. Delegates to `viewerCanSeeSprayWall` rather than restating the rule, because restating it is how the gym-member path got dropped the first time. Writes one `spray_wall_reports` row; a second report from the same climber answers `ALREADY_REPORTED` and writes nothing. |
 | `spray_wall_reports` | `(wall_id, reporter_id)` unique, a closed-set `reason`, and `reviewed_at` / `reviewed_by`. No free-text field anywhere in the path. |
 | `setSprayWallHidden(input)` | Community admins (`spray`-scoped or global). Stamps or clears `spray_walls.hidden_at` / `hidden_by` and marks every pending report on the wall reviewed. |
-| `sprayWallReports(uuid)` | The pending queue, newest first, excluding walls the owner has since deleted — those are no longer work. Admins only. There is no admin ROUTE yet (#5501). |
+| `sprayWallReports(uuid)` | Admin-only pending queue, newest first, excluding deleted walls and deleted board rows. Each report includes `wallName` and a nullable `photo` preview, including private and hidden walls. The app review route ships separately in [#5953](https://github.com/boardsesh/boardsesh/pull/5953), targeting `release/next`. |
 | `SprayWall.hiddenAt` | Non-null only for the owner, because a hidden wall does not resolve for anybody else. The mobile banner renders off its presence. |
 
 **What hidden means: exactly what private means, for everybody but the owner.**
@@ -1303,12 +1303,21 @@ rows are served straight out of that table and would outlive the gate. Unhiding
 does NOT put them back: a feed is a record of what happened when, and
 re-announcing week-old climbs would be a lie. Everything else comes back.
 
-Reporting is API-only today: there is no report button in the app and no admin
-console route. Both are **SW-17b (#5501)**, split out because a report row belongs
-in `BoardDetailSheet`, which SW-11's stack is rewriting — landing one there from
-this stack would have been a guaranteed conflict for no gain, since the admin path
-needs the mutation either way. Until then the mutation is what an admin or a
-support reply drives.
+The queue authorizes a `spray`-scoped or global admin before reading or signing
+any preview. It selects the current published version's photo; only a wall
+without a published version falls back to its latest draft. Several reports for
+one wall share one preview and one pair of private-bucket signatures. `photo`
+can be null when there is no version, no configured private bucket, or signing
+fails, so an unavailable preview does not block reviewing the remaining reports.
+Photo URLs expire after 15 minutes: clients must refresh the queue rather than
+persisting its URLs.
+
+**SW-17b (#5501)** supplies the report action in `BoardDetailSheet` and the admin
+review route in companion app PR [#5953](https://github.com/boardsesh/boardsesh/pull/5953),
+targeting `release/next`. Those app changes depend on deploying the queue schema
+and resolver additions from backend PR [#5952](https://github.com/boardsesh/boardsesh/pull/5952)
+on `main` first; this backend PR does not itself ship the app UI or change its
+spray-wall flag default.
 
 ## Retention: what happens to a deleted wall's photographs
 
