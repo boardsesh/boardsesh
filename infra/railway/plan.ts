@@ -984,6 +984,27 @@ export function buildPlan(desired: RailwayDesiredState, live: LiveState, options
     });
   }
 
+  // Matching credentials are one logical write. A member can be blocked by a
+  // separate constraint (for example, the backend SSR key colliding with CRON_SECRET),
+  // so propagate that block to every proposed write in its matching service group.
+  for (const { name, serviceNames } of desired.matchingServiceVars ?? []) {
+    const groupWrites = changes.filter(
+      (change) =>
+        change.resource === 'env-var' &&
+        change.target?.varName === name &&
+        serviceNames.includes(change.target.serviceName),
+    );
+    if (!groupWrites.some((change) => change.blocked)) continue;
+
+    for (const change of groupWrites) {
+      if (change.blocked) continue;
+      change.blocked = true;
+      change.detail =
+        `This ${name} write is blocked because the matching service credential group cannot be applied safely. ` +
+        'Resolve the reported constraint, then apply both service values together.';
+    }
+  }
+
   // A null map means the check was skipped for want of a DSN, which must not read
   // as "retention is fine". The apply layer prints the skip separately.
   if (live.clickhouseTtl !== null) {

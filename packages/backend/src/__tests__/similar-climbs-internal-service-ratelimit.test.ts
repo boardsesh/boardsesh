@@ -5,13 +5,15 @@ import { createServer, type Server } from 'node:http';
 import { resetAllRateLimits } from '../utils/rate-limiter';
 import { applyRateLimit } from '../graphql/resolvers/shared/helpers';
 
-const { redisCounts, redisState, redisEval, validateTokenMock, findSimilarClimbsMock } = vi.hoisted(() => ({
-  redisCounts: new Map<string, number>(),
-  redisState: { connected: true, failing: false },
-  redisEval: vi.fn(),
-  validateTokenMock: vi.fn(),
-  findSimilarClimbsMock: vi.fn(),
-}));
+const { redisCounts, redisState, redisEval, validateTokenMock, findSimilarClimbsMock, materializedClimbsMock } =
+  vi.hoisted(() => ({
+    redisCounts: new Map<string, number>(),
+    redisState: { connected: true, failing: false },
+    redisEval: vi.fn(),
+    validateTokenMock: vi.fn(),
+    findSimilarClimbsMock: vi.fn(),
+    materializedClimbsMock: vi.fn(),
+  }));
 
 vi.mock('../redis/client', () => ({
   redisClientManager: {
@@ -26,6 +28,10 @@ vi.mock('../db/client', () => {
   };
   return { db: database, dbRead: database };
 });
+vi.mock('@boardsesh/db/queries', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@boardsesh/db/queries')>()),
+  getMaterializedSimilarClimbs: materializedClimbsMock,
+}));
 vi.mock('../graphql/resolvers/climbs/similar-climbs-cache', () => ({
   findSimilarClimbsCached: findSimilarClimbsMock,
 }));
@@ -88,6 +94,8 @@ describe('similar-climbs service identity over HTTP', () => {
     );
     findSimilarClimbsMock.mockReset();
     findSimilarClimbsMock.mockResolvedValue([{ uuid: 'related-climb' }]);
+    materializedClimbsMock.mockReset();
+    materializedClimbsMock.mockResolvedValue([{ uuid: 'related-climb' }]);
   });
 
   afterEach(() => {
@@ -124,13 +132,14 @@ describe('similar-climbs service identity over HTTP', () => {
     const results = await Promise.all(Array.from({ length: 400 }, (_, index) => read(`climb-${index}`)));
     results.forEach(expectLoaded);
     expectLoaded(await read('another-visitor'));
-    expect(findSimilarClimbsMock).toHaveBeenCalledTimes(401);
+    expect(materializedClimbsMock).toHaveBeenCalledTimes(401);
     expect(redisCounts.size).toBe(401);
     expect(validateTokenMock).not.toHaveBeenCalled();
   });
 
-  it('blocks request 31 for one climb while allowing another climb and angle', async () => {
-    for (let index = 0; index < 30; index++) expectLoaded(await read('same-climb'));
+  it('blocks request 601 for one climb while allowing another climb and angle', async () => {
+    const requests = await Promise.all(Array.from({ length: 600 }, () => read('same-climb')));
+    requests.forEach(expectLoaded);
     expectLimited(await read('same-climb'));
     expectLoaded(await read('different-climb'));
     expectLoaded(await read('same-climb', `Bearer ${SERVICE_SECRET}`, 0));
@@ -139,29 +148,30 @@ describe('similar-climbs service identity over HTTP', () => {
   it.each(['', 'Bearer incorrect-secret', SERVICE_SECRET])(
     'keeps public or invalid credentials on one IP bucket despite rotating climbs (%s)',
     async (authorization) => {
-      for (let index = 0; index < 30; index++) expectLoaded(await read(`public-${index}`, authorization));
-      expectLimited(await read('public-31', authorization));
+      const requests = await Promise.all(
+        Array.from({ length: 601 }, (_, index) => read(`public-${index}`, authorization)),
+      );
+      expect(requests.filter((result) => !result.errors)).toHaveLength(600);
+      expect(requests.filter((result) => result.errors?.[0].extensions.code === 'RATE_LIMITED')).toHaveLength(1);
       expect(redisCounts.size).toBe(0);
     },
   );
 
-  it('falls back to anonymous limits when the backend secret is absent', async () => {
+  it('does not grant the service identity when the backend secret is absent', async () => {
     vi.stubEnv('INTERNAL_SERVICE_SECRET', '');
-    for (let index = 0; index < 30; index++) expectLoaded(await read(`missing-secret-${index}`));
-    expectLimited(await read('missing-secret-31'));
-  });
-
-  it('falls back to anonymous limits when the service and cron secrets collide', async () => {
-    vi.stubEnv('CRON_SECRET', SERVICE_SECRET);
-    for (let index = 0; index < 30; index++) expectLoaded(await read(`colliding-secret-${index}`));
-    expectLimited(await read('colliding-secret-31'));
+    const context = await buildHttpConnectionContext({
+      request: new Request(graphqlUrl, { headers: { Authorization: `Bearer ${SERVICE_SECRET}` } }),
+    });
+    expect(context).toMatchObject({ isAuthenticated: false, isCronAuthenticated: false, isInternalService: false });
     expect(redisCounts.size).toBe(0);
   });
 
   it('shares the partition ceiling through Redis after local counters reset on another instance', async () => {
-    for (let index = 0; index < 20; index++) expectLoaded(await read('shared-climb'));
+    const firstHalf = await Promise.all(Array.from({ length: 300 }, () => read('shared-climb')));
+    firstHalf.forEach(expectLoaded);
     resetAllRateLimits();
-    for (let index = 0; index < 10; index++) expectLoaded(await read('shared-climb'));
+    const secondHalf = await Promise.all(Array.from({ length: 300 }, () => read('shared-climb')));
+    secondHalf.forEach(expectLoaded);
     expectLimited(await read('shared-climb'));
     expectLoaded(await read('other-instance-climb'));
   });
@@ -171,8 +181,17 @@ describe('similar-climbs service identity over HTTP', () => {
     async (failure) => {
       redisState.connected = failure !== 'disconnected';
       redisState.failing = failure === 'command-failure';
-      for (let index = 0; index < 30; index++) expectLoaded(await read('outage-climb'));
-      expectLimited(await read('outage-climb'));
+      const context = {
+        connectionId: 'http-service-outage',
+        transport: 'http' as const,
+        isInternalService: true,
+      };
+      for (let index = 0; index < 3; index++) {
+        await applyRateLimit(context, 3, 'similar-climbs', { internalServicePartition: 'outage-climb' });
+      }
+      await expect(
+        applyRateLimit(context, 3, 'similar-climbs', { internalServicePartition: 'outage-climb' }),
+      ).rejects.toMatchObject({ extensions: { code: 'RATE_LIMITED' } });
     },
   );
 
