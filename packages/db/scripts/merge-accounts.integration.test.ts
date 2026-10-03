@@ -98,6 +98,7 @@ void describe('merge-accounts apply path', () => {
           const lowerEmail = `${tag}@example.test`;
           const winnerId = `${tag}-winner`;
           const loserId = `${tag}-loser`;
+          const secondLoserId = `${tag}-second-loser`;
           const thirdId = `${tag}-third`;
           const gymUuid = `${tag}-gym`;
           const winnerWallUuid = `${tag}-winner-wall`;
@@ -117,6 +118,7 @@ void describe('merge-accounts apply path', () => {
             VALUES
               (${winnerId}, ${`${tag.toUpperCase()}@Example.test`}, 'Winner', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z'),
               (${loserId}, ${lowerEmail}, 'Loser', NULL, '2026-02-01T00:00:00Z', '2026-03-01T00:00:00Z'),
+              (${secondLoserId}, ${`${tag.toUpperCase()}@example.test`}, 'Second loser', NULL, '2026-03-01T00:00:00Z', '2026-03-01T00:00:00Z'),
               (${thirdId}, ${`third-${tag}@example.test`}, 'Third', NULL, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')
           `);
 
@@ -135,6 +137,20 @@ void describe('merge-accounts apply path', () => {
               (${loserWallUuid}, ${`${tag}-loser-wall`}, ${loserId}, 'kilter', 99103, 99103, '', 'Loser wall', NULL),
               (${winnerKilterSerialWallUuid}, ${`${tag}-winner-kilter-serial`}, ${winnerId}, 'kilter', 99104, 99104, '', 'Kilter serial wall', ${sharedCrossTypeSerial}),
               (${loserTensionSerialWallUuid}, ${`${tag}-loser-tension-serial`}, ${loserId}, 'tension', 99105, 99105, '', 'Tension serial wall', ${sharedCrossTypeSerial})
+          `);
+          await tx.execute(sql`
+            INSERT INTO spray_walls (board_uuid, layout_id)
+            VALUES (${activityOnlyBoardUuid}, 99107), (${loserWallUuid}, 99108)
+          `);
+          await tx.execute(sql`
+            INSERT INTO spray_wall_reports (wall_id, reporter_id, reason, created_at, reviewed_at, reviewed_by)
+            VALUES
+              ((SELECT id FROM spray_walls WHERE board_uuid = ${activityOnlyBoardUuid}), ${winnerId}, 'inappropriate', '2026-01-01T00:00:00Z', '2026-02-01T00:00:00Z', ${thirdId}),
+              ((SELECT id FROM spray_walls WHERE board_uuid = ${activityOnlyBoardUuid}), ${loserId}, 'other', '2026-02-01T00:00:00Z', '2026-03-01T00:00:00Z', ${loserId}),
+              ((SELECT id FROM spray_walls WHERE board_uuid = ${activityOnlyBoardUuid}), ${secondLoserId}, 'not_a_wall', '2026-03-01T00:00:00Z', '2026-04-01T00:00:00Z', ${secondLoserId}),
+              ((SELECT id FROM spray_walls WHERE board_uuid = ${activityOnlyBoardUuid}), NULL, 'personal_info', '2026-01-15T00:00:00Z', NULL, NULL),
+              ((SELECT id FROM spray_walls WHERE board_uuid = ${loserWallUuid}), ${loserId}, 'other', '2026-02-10T00:00:00Z', NULL, NULL),
+              ((SELECT id FROM spray_walls WHERE board_uuid = ${loserWallUuid}), ${secondLoserId}, 'personal_info', '2026-02-11T00:00:00Z', NULL, NULL)
           `);
           await tx.execute(sql`
             INSERT INTO board_climb_events (board_id, board_type, climb_uuid, angle, seq, user_id, confirmed_at)
@@ -329,6 +345,7 @@ void describe('merge-accounts apply path', () => {
           // --- Run the merge through the real apply path ---
           const members = await fetchMembersForEmail(tx, lowerEmail);
           const duplicateSet = buildDuplicateSets(members)[0];
+          assert.equal(duplicateSet.members.length, 3, 'the fixture covers a three-account duplicate set');
           assert.equal(duplicateSet.winner.id, winnerId, 'winner is the account with more ticks');
 
           const result = await applyMerge(tx, duplicateSet);
@@ -341,6 +358,11 @@ void describe('merge-accounts apply path', () => {
             'loser user deleted',
           );
           assert.equal(
+            await countRows(tx, sql`SELECT count(*)::int AS count FROM users WHERE id = ${secondLoserId}`),
+            0,
+            'second duplicate user deleted',
+          );
+          assert.equal(
             await countRows(tx, sql`SELECT count(*)::int AS count FROM users WHERE id = ${winnerId}`),
             1,
             'winner user kept',
@@ -349,6 +371,63 @@ void describe('merge-accounts apply path', () => {
             await countRows(tx, sql`SELECT count(*)::int AS count FROM users WHERE lower(email) = ${lowerEmail}`),
             1,
             'no duplicate remains for the email',
+          );
+
+          const mergedWallReports = await executeRows<{
+            boardUuid: string;
+            reporterId: string | null;
+            reason: string;
+            createdAt: string;
+            reviewedAt: string | null;
+            reviewedBy: string | null;
+          }>(
+            tx,
+            sql`
+              SELECT wall.board_uuid AS "boardUuid", report.reporter_id AS "reporterId", report.reason,
+                     report.created_at::text AS "createdAt", report.reviewed_at::text AS "reviewedAt",
+                     report.reviewed_by AS "reviewedBy"
+                FROM spray_wall_reports AS report
+                JOIN spray_walls AS wall ON wall.id = report.wall_id
+               WHERE wall.board_uuid IN (${activityOnlyBoardUuid}, ${loserWallUuid})
+               ORDER BY wall.board_uuid, report.reporter_id NULLS FIRST
+            `,
+          );
+          assert.deepEqual(
+            mergedWallReports.map((report) => ({
+              boardUuid: report.boardUuid,
+              reporterId: report.reporterId,
+              reason: report.reason,
+              createdAt: new Date(report.createdAt).toISOString(),
+              reviewedAt: report.reviewedAt ? new Date(report.reviewedAt).toISOString() : null,
+              reviewedBy: report.reviewedBy,
+            })),
+            [
+              {
+                boardUuid: activityOnlyBoardUuid,
+                reporterId: null,
+                reason: 'personal_info',
+                createdAt: '2026-01-15T00:00:00.000Z',
+                reviewedAt: null,
+                reviewedBy: null,
+              },
+              {
+                boardUuid: activityOnlyBoardUuid,
+                reporterId: winnerId,
+                reason: 'inappropriate',
+                createdAt: '2026-01-01T00:00:00.000Z',
+                reviewedAt: '2026-04-01T00:00:00.000Z',
+                reviewedBy: winnerId,
+              },
+              {
+                boardUuid: loserWallUuid,
+                reporterId: winnerId,
+                reason: 'other',
+                createdAt: '2026-02-10T00:00:00.000Z',
+                reviewedAt: null,
+                reviewedBy: null,
+              },
+            ],
+            'collisions keep one winner report with earliest time and latest review; anonymous and distinct-wall reports survive',
           );
 
           assert.equal(
@@ -684,6 +763,93 @@ void describe('merge-accounts apply path', () => {
             ),
             1,
             'exactly one pending claim remains on the shared gym (no partial-unique violation)',
+          );
+
+          throw rollbackMarker;
+        });
+      } catch (error: unknown) {
+        if (error !== rollbackMarker) throw error;
+      }
+    } finally {
+      await close();
+    }
+  });
+
+  void it('skips without writes when locked ranking changes the reviewed winner', async (testContext) => {
+    const databaseUrl = mergeTestDatabaseUrl();
+    if (!databaseUrl) {
+      testContext.skip('set MERGE_ACCOUNTS_DB_URL to a migrated writable DB, or run a local DATABASE_URL, to execute');
+      return;
+    }
+
+    const { db, close } = createScriptDb(databaseUrl);
+    try {
+      const unavailable = await skipReason(db);
+      if (unavailable) {
+        testContext.skip(unavailable);
+        return;
+      }
+
+      const rollbackMarker = new Error('rollback winner-change fixture');
+      try {
+        await db.transaction(async (tx) => {
+          const tag = `merge-winner-change-${randomUUID()}`;
+          const lowerEmail = `${tag}@example.test`;
+          const reviewedWinnerId = `${tag}-reviewed-winner`;
+          const newWinnerId = `${tag}-new-winner`;
+
+          await tx.execute(sql`
+            INSERT INTO users (id, email, name, "emailVerified", created_at, updated_at)
+            VALUES
+              (${reviewedWinnerId}, ${`${tag.toUpperCase()}@Example.test`}, 'Reviewed winner', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z'),
+              (${newWinnerId}, ${lowerEmail}, 'New winner', NULL, '2026-02-01T00:00:00Z', '2026-02-01T00:00:00Z')
+          `);
+          await tx.execute(
+            sql`INSERT INTO user_credentials (user_id, password_hash) VALUES (${reviewedWinnerId}, 'fixture-hash')`,
+          );
+          const reviewedSet = buildDuplicateSets(await fetchMembersForEmail(tx, lowerEmail))[0];
+          assert.equal(reviewedSet.winner.id, reviewedWinnerId);
+
+          // Keep membership fixed while changing the ranking inputs. A fresh
+          // dry-run would now choose newWinnerId, so this reviewed winner must
+          // not be silently reversed during apply.
+          await tx.execute(sql`UPDATE users SET "emailVerified" = NULL WHERE id = ${reviewedWinnerId}`);
+          await tx.execute(sql`UPDATE users SET "emailVerified" = '2026-03-01T00:00:00Z' WHERE id = ${newWinnerId}`);
+
+          const result = await applyMerge(tx, reviewedSet);
+          assert.equal(result.merged, false);
+          assert.equal(result.reason, 'winner ranking changed since the dry-run; rerun the dry-run before applying');
+
+          const stillPresentUsers = await executeRows<{ id: string; emailVerified: string | null }>(
+            tx,
+            sql`SELECT id, "emailVerified"::text AS "emailVerified" FROM users WHERE id IN (${reviewedWinnerId}, ${newWinnerId}) ORDER BY id`,
+          );
+          assert.deepEqual(
+            stillPresentUsers.map((user) => ({
+              id: user.id,
+              emailVerified: user.emailVerified ? new Date(user.emailVerified).toISOString() : null,
+            })),
+            [
+              { id: newWinnerId, emailVerified: new Date('2026-03-01T00:00:00.000Z').toISOString() },
+              { id: reviewedWinnerId, emailVerified: null },
+            ],
+            'both identities and their newly ranked state remain unchanged after the skipped apply',
+          );
+          assert.equal(
+            await countRows(
+              tx,
+              sql`SELECT count(*)::int AS count FROM user_credentials WHERE user_id = ${reviewedWinnerId} AND password_hash = 'fixture-hash'`,
+            ),
+            1,
+            'no credential row was repointed during the skipped apply',
+          );
+          assert.equal(
+            await countRows(
+              tx,
+              sql`SELECT count(*)::int AS count FROM user_credentials WHERE user_id = ${newWinnerId} AND password_hash = 'fixture-hash'`,
+            ),
+            0,
+            'the recalculated winner receives no data before a fresh dry-run',
           );
 
           throw rollbackMarker;
