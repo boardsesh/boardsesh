@@ -100,6 +100,12 @@ void describe('merge-accounts apply path', () => {
           const loserId = `${tag}-loser`;
           const thirdId = `${tag}-third`;
           const gymUuid = `${tag}-gym`;
+          const winnerWallUuid = `${tag}-winner-wall`;
+          const loserWallUuid = `${tag}-loser-wall`;
+          const winnerKilterSerialWallUuid = `${tag}-winner-kilter-serial-wall`;
+          const loserTensionSerialWallUuid = `${tag}-loser-tension-serial-wall`;
+          const sharedCrossTypeSerial = `${tag}-cross-type-serial`;
+          const sharedControllerSerial = `${tag}-same-controller`;
           const activityBoardUuid = `${tag}-activity-board`;
           const activityOnlyBoardUuid = `${tag}-activity-only-board`;
           const climbA = `${tag}-climb-a`;
@@ -121,11 +127,40 @@ void describe('merge-accounts apply path', () => {
               (${activityOnlyBoardUuid}, ${`${tag}-activity-only`}, ${thirdId}, 'kilter', 99102, 99102, '', 'Activity-only fixture')
           `);
           await tx.execute(sql`
+            INSERT INTO user_boards (
+              uuid, slug, owner_id, board_type, layout_id, size_id, set_ids, name, serial_number
+            )
+            VALUES
+              (${winnerWallUuid}, ${`${tag}-winner-wall`}, ${winnerId}, 'kilter', 99103, 99103, '', 'Winner wall', NULL),
+              (${loserWallUuid}, ${`${tag}-loser-wall`}, ${loserId}, 'kilter', 99103, 99103, '', 'Loser wall', NULL),
+              (${winnerKilterSerialWallUuid}, ${`${tag}-winner-kilter-serial`}, ${winnerId}, 'kilter', 99104, 99104, '', 'Kilter serial wall', ${sharedCrossTypeSerial}),
+              (${loserTensionSerialWallUuid}, ${`${tag}-loser-tension-serial`}, ${loserId}, 'tension', 99105, 99105, '', 'Tension serial wall', ${sharedCrossTypeSerial})
+          `);
+          await tx.execute(sql`
+            INSERT INTO board_climb_events (board_id, board_type, climb_uuid, angle, seq, user_id, confirmed_at)
+            SELECT id, 'kilter', ${`${tag}-board-history-climb`}, 40, 1, ${loserId}, '2026-03-01T00:00:00Z'
+              FROM user_boards
+             WHERE uuid = ${loserWallUuid}
+          `);
+          await tx.execute(sql`
             INSERT INTO user_board_activity (user_id, board_uuid, last_used_at, pinned_at, created_at, updated_at)
             VALUES
               (${winnerId}, ${activityBoardUuid}, '2026-01-01T00:00:00Z', '2026-01-02T00:00:00Z', '2026-01-01T00:00:00Z', '2026-01-02T00:00:00Z'),
               (${loserId}, ${activityBoardUuid}, '2026-02-01T00:00:00Z', NULL, '2026-01-03T00:00:00Z', '2026-02-01T00:00:00Z'),
               (${loserId}, ${activityOnlyBoardUuid}, '2026-02-02T00:00:00Z', NULL, '2026-02-02T00:00:00Z', '2026-02-02T00:00:00Z')
+          `);
+          await tx.execute(sql`
+            INSERT INTO user_board_serials (
+              user_id, serial_number, board_name, layout_id, size_id, set_ids, api_level, board_uuid,
+              created_at, updated_at
+            )
+            VALUES
+              (${winnerId}, ${sharedControllerSerial}, 'kilter', 99103, 99103, 'winner-config', 2,
+                ${winnerWallUuid}, '2026-01-01T00:00:00Z', '2026-01-02T00:00:00Z'),
+              (${loserId}, ${sharedControllerSerial}, 'kilter', 99106, 99106, 'loser-latest-config', 3,
+                ${loserWallUuid}, '2026-01-03T00:00:00Z', '2026-02-01T00:00:00Z'),
+              (${loserId}, ${sharedControllerSerial}, 'tension', 99105, 99105, 'tension-config', 1,
+                ${loserTensionSerialWallUuid}, '2026-02-01T00:00:00Z', '2026-02-02T00:00:00Z')
           `);
 
           // Winner has more ticks → wins selection. Loser ticks (one with an
@@ -447,6 +482,83 @@ void describe('merge-accounts apply path', () => {
             'non-colliding loser board activity moves to the winner',
           );
 
+          const mergedWalls = await executeRows<{ uuid: string; ownerId: string }>(
+            tx,
+            sql`
+              SELECT uuid, owner_id AS "ownerId"
+                FROM user_boards
+               WHERE uuid IN (${winnerWallUuid}, ${loserWallUuid}, ${winnerKilterSerialWallUuid}, ${loserTensionSerialWallUuid})
+            `,
+          );
+          assert.equal(mergedWalls.length, 4, 'same-config and cross-board-type physical walls all survive');
+          assert.ok(
+            mergedWalls.every((board) => board.ownerId === winnerId),
+            'every loser wall transfers to the winner',
+          );
+          assert.equal(
+            await countRows(
+              tx,
+              sql`
+                SELECT count(*)::int AS count
+                  FROM board_climb_events
+                 WHERE board_id = (SELECT id FROM user_boards WHERE uuid = ${loserWallUuid})
+              `,
+            ),
+            1,
+            'board history remains attached to the transferred physical wall',
+          );
+          const [preservedWallHistory] = await executeRows<{ userId: string | null }>(
+            tx,
+            sql`
+              SELECT user_id AS "userId"
+                FROM board_climb_events
+               WHERE board_id = (SELECT id FROM user_boards WHERE uuid = ${loserWallUuid})
+            `,
+          );
+          assert.equal(
+            preservedWallHistory?.userId,
+            winnerId,
+            'loser attribution follows the merged account without removing wall history',
+          );
+
+          const [mergedController] = await executeRows<{
+            layoutId: number | string;
+            sizeId: number | string;
+            setIds: string;
+            apiLevel: number | null;
+            boardUuid: string | null;
+            createdAt: string;
+            updatedAt: string;
+          }>(
+            tx,
+            sql`
+              SELECT layout_id AS "layoutId", size_id AS "sizeId", set_ids AS "setIds", api_level AS "apiLevel",
+                     board_uuid AS "boardUuid", created_at::text AS "createdAt", updated_at::text AS "updatedAt"
+                FROM user_board_serials
+               WHERE user_id = ${winnerId} AND board_name = 'kilter' AND serial_number = ${sharedControllerSerial}
+            `,
+          );
+          assert.equal(Number(mergedController?.layoutId), 99106, 'same-controller collision keeps the latest config');
+          assert.equal(Number(mergedController?.sizeId), 99106);
+          assert.equal(mergedController?.setIds, 'loser-latest-config');
+          assert.equal(mergedController?.apiLevel, 3);
+          assert.equal(mergedController?.boardUuid, loserWallUuid, 'latest controller row keeps its board link');
+          assert.equal(new Date(mergedController?.createdAt ?? '').toISOString(), '2026-01-01T00:00:00.000Z');
+          assert.equal(new Date(mergedController?.updatedAt ?? '').toISOString(), '2026-02-01T00:00:00.000Z');
+          assert.equal(
+            await countRows(
+              tx,
+              sql`SELECT count(*)::int AS count FROM user_board_serials WHERE user_id = ${winnerId} AND board_name = 'tension' AND serial_number = ${sharedControllerSerial}`,
+            ),
+            1,
+            'the same numeric serial on another board app is preserved separately',
+          );
+          assert.equal(
+            await countRows(tx, sql`SELECT count(*)::int AS count FROM user_board_serials WHERE user_id = ${loserId}`),
+            0,
+            'serial records no longer reference the losing account',
+          );
+
           const providerControls = await executeRows<{
             boardType: string;
             linkGeneration: string;
@@ -572,6 +684,93 @@ void describe('merge-accounts apply path', () => {
             ),
             1,
             'exactly one pending claim remains on the shared gym (no partial-unique violation)',
+          );
+
+          throw rollbackMarker;
+        });
+      } catch (error: unknown) {
+        if (error !== rollbackMarker) throw error;
+      }
+    } finally {
+      await close();
+    }
+  });
+
+  void it('refuses active same-type serial collisions before changing a duplicate set', async (testContext) => {
+    const databaseUrl = mergeTestDatabaseUrl();
+    if (!databaseUrl) {
+      testContext.skip('set MERGE_ACCOUNTS_DB_URL to a migrated writable DB, or run a local DATABASE_URL, to execute');
+      return;
+    }
+
+    const { db, close } = createScriptDb(databaseUrl);
+    try {
+      const unavailable = await skipReason(db);
+      if (unavailable) {
+        testContext.skip(unavailable);
+        return;
+      }
+
+      const rollbackMarker = new Error('rollback serial-conflict fixture');
+      try {
+        await db.transaction(async (tx) => {
+          const tag = `merge-board-conflict-${randomUUID()}`;
+          const lowerEmail = `${tag}@example.test`;
+          const winnerId = `${tag}-winner`;
+          const firstLoserId = `${tag}-loser-a`;
+          const secondLoserId = `${tag}-loser-b`;
+          const firstBoardUuid = `${tag}-kilter-wall-a`;
+          const secondBoardUuid = `${tag}-kilter-wall-b`;
+          const serialNumber = `${tag}-shared-controller`;
+
+          await tx.execute(sql`
+            INSERT INTO users (id, email, name, "emailVerified", created_at, updated_at)
+            VALUES
+              (${winnerId}, ${`${tag.toUpperCase()}@Example.test`}, 'Winner', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z'),
+              (${firstLoserId}, ${lowerEmail}, 'First loser', NULL, '2026-02-01T00:00:00Z', '2026-02-01T00:00:00Z'),
+              (${secondLoserId}, ${lowerEmail}, 'Second loser', NULL, '2026-03-01T00:00:00Z', '2026-03-01T00:00:00Z')
+          `);
+          await tx.execute(sql`
+            INSERT INTO user_boards (uuid, slug, owner_id, board_type, layout_id, size_id, set_ids, name, serial_number)
+            VALUES
+              (${firstBoardUuid}, ${`${tag}-wall-a`}, ${firstLoserId}, 'kilter', 99201, 99201, '', 'Wall A', ${serialNumber}),
+              (${secondBoardUuid}, ${`${tag}-wall-b`}, ${secondLoserId}, 'kilter', 99202, 99202, '', 'Wall B', ${serialNumber})
+          `);
+          await tx.execute(
+            sql`INSERT INTO user_follows (follower_id, following_id) VALUES (${winnerId}, ${firstLoserId})`,
+          );
+
+          const duplicateSet = buildDuplicateSets(await fetchMembersForEmail(tx, lowerEmail))[0];
+          assert.ok(duplicateSet, 'the three case-duplicate accounts form one merge set');
+          let mergeError: unknown;
+          try {
+            await applyMerge(tx, duplicateSet);
+          } catch (error: unknown) {
+            mergeError = error;
+          }
+          assert.ok(mergeError instanceof Error, 'an unresolved physical serial collision aborts the merge');
+          assert.ok(mergeError.message.includes(firstBoardUuid));
+          assert.ok(mergeError.message.includes(secondBoardUuid));
+
+          assert.equal(
+            await countRows(tx, sql`SELECT count(*)::int AS count FROM users WHERE lower(email) = ${lowerEmail}`),
+            3,
+          );
+          assert.equal(
+            await countRows(
+              tx,
+              sql`SELECT count(*)::int AS count FROM user_boards WHERE owner_id IN (${firstLoserId}, ${secondLoserId})`,
+            ),
+            2,
+            'both conflicting physical walls keep their original owners',
+          );
+          assert.equal(
+            await countRows(
+              tx,
+              sql`SELECT count(*)::int AS count FROM user_follows WHERE follower_id = ${winnerId} AND following_id = ${firstLoserId}`,
+            ),
+            1,
+            'the preflight abort runs before any account repoints or edge deletion',
           );
 
           throw rollbackMarker;
