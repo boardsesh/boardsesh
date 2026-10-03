@@ -1,5 +1,7 @@
-import { and, eq, inArray } from 'drizzle-orm';
-import { sprayWallDetections, sprayWalls, userBoards } from '@boardsesh/db/schema';
+import { and, eq, exists, inArray, isNotNull, lt } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
+import { sprayWallDetections, sprayWalls, sprayWallVersions, userBoards } from '@boardsesh/db/schema';
+import type { readSprayDetection } from '@boardsesh/db/queries';
 import { db } from '../../../db/client';
 import { requireBoardEditAccess } from './boards';
 
@@ -12,6 +14,27 @@ type SprayNotificationTarget = {
   isSprayReset?: boolean | null;
 };
 
+/** Publication history keeps the original import kind stable after publishing or resetting. */
+export function sprayVersionIsReset(
+  executor: Parameters<typeof readSprayDetection>[0],
+  wallId: number | typeof sprayWalls.id,
+  versionNumber: number | typeof sprayWallVersions.versionNumber,
+) {
+  const earlierVersion = alias(sprayWallVersions, 'earlier_published_spray_version');
+  return exists(
+    executor
+      .select({ id: earlierVersion.id })
+      .from(earlierVersion)
+      .where(
+        and(
+          eq(earlierVersion.wallId, wallId),
+          lt(earlierVersion.versionNumber, versionNumber),
+          isNotNull(earlierVersion.publishedAt),
+        ),
+      ),
+  ).mapWith(Boolean);
+}
+
 /** Batch the targets; permission checks use the same gate as editing the wall. */
 export async function enrichSprayNotificationTargets(
   targets: SprayNotificationTarget[],
@@ -23,11 +46,13 @@ export async function enrichSprayNotificationTargets(
     .select({
       detectionId: sprayWallDetections.id,
       versionId: sprayWallDetections.versionId,
+      isReset: sprayVersionIsReset(db, sprayWalls.id, sprayWallVersions.versionNumber),
       wall: sprayWalls,
       board: userBoards,
     })
     .from(sprayWallDetections)
     .innerJoin(sprayWalls, eq(sprayWalls.id, sprayWallDetections.wallId))
+    .innerJoin(sprayWallVersions, eq(sprayWallVersions.id, sprayWallDetections.versionId))
     .innerJoin(userBoards, eq(userBoards.uuid, sprayWalls.boardUuid))
     .where(and(inArray(sprayWallDetections.id, ids), eq(sprayWallDetections.requestedBy, recipientId)));
   const sourceById = new Map(sources.map((source) => [source.detectionId, source]));
@@ -45,6 +70,6 @@ export async function enrichSprayNotificationTargets(
     target.sprayWallName = source.board.name;
     target.sprayWallUuid = source.wall.boardUuid;
     target.sprayVersionId = String(source.versionId);
-    target.isSprayReset = source.wall.currentVersionId !== null;
+    target.isSprayReset = source.isReset;
   }
 }

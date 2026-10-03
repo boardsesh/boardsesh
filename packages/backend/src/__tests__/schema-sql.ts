@@ -13,6 +13,10 @@ const notificationDeviceSchema = readFileSync(
   .split('--> statement-breakpoint')
   .filter((statement) => !statement.trim().startsWith('ALTER TYPE'))
   .join('\n');
+const notificationDeviceExpirySchema = readFileSync(
+  new URL('../../../db/drizzle/0252_cloudy_venus.sql', import.meta.url),
+  'utf8',
+);
 // Notification types are text in this fixture; use the generated table/FK DDL.
 const detectionSchema = readFileSync(
   new URL('../../../db/drizzle/0234_shallow_the_phantom.sql', import.meta.url),
@@ -1149,6 +1153,7 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   DROP TABLE IF EXISTS "notification_deliveries";
   DROP TABLE IF EXISTS "notification_devices";
   ${notificationDeviceSchema}
+  ${notificationDeviceExpirySchema}
 
 
   -- Beta links the session feed INNER-joins for featured-beta enrichment. Empty

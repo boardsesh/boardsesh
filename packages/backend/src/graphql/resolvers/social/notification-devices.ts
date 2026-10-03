@@ -1,7 +1,7 @@
 import { and, desc, eq, gt, ne, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { SPRAY_DETECTION_COMPLETION_QUEUE, type ConnectionContext } from '@boardsesh/shared-schema';
-import { notificationDevices, notifications, sprayWallDetections } from '@boardsesh/db/schema';
+import { notificationDevices, sprayWallDetections } from '@boardsesh/db/schema';
 import { db } from '../../../db/client';
 import { requireJobQueue } from '../../../services/job-queue';
 import { logger } from '../../../utils/logger';
@@ -24,6 +24,12 @@ export const notificationDeviceMutations = {
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, 30, 'registerNotificationDevice');
     const device = validateInput(deviceSchema, input, 'input');
+    const now = Date.now();
+    const leaseLimit = now + 24 * 60 * 60_000;
+    const expiresAt = new Date(Math.min(ctx.credentialExpiresAt ?? leaseLimit, leaseLimit));
+    if (!Number.isFinite(expiresAt.getTime()) || expiresAt.getTime() <= now) {
+      requireAuthenticated({ ...ctx, isAuthenticated: false });
+    }
     await db.transaction(async (transaction) => {
       await transaction.execute(
         sql`SELECT pg_advisory_xact_lock(hashtextextended(${device.token}, ${NOTIFICATION_DEVICE_TOKEN_LOCK_SEED}))`,
@@ -40,29 +46,28 @@ export const notificationDeviceMutations = {
         );
       await transaction
         .insert(notificationDevices)
-        .values({ ...device, userId: ctx.userId! })
+        .values({ ...device, userId: ctx.userId!, expiresAt })
         .onConflictDoUpdate({
           target: notificationDevices.installationId,
-          set: { ...device, userId: ctx.userId!, active: true, updatedAt: new Date() },
+          set: { ...device, userId: ctx.userId!, active: true, expiresAt, updatedAt: new Date() },
         });
     });
     // Register the device even when replaying an older completion cannot enqueue.
     // Foreground registration retries catch-up; future completions already see it.
     try {
-      // Catch a model that finished before permission/token registration did.
+      // A completion may have read devices before registration while its feed
+      // insert is still uncommitted. Detection completion is already durable.
       const recent = await db
         .select({ detectionId: sprayWallDetections.id })
         .from(sprayWallDetections)
-        .innerJoin(notifications, eq(notifications.uuid, sprayWallDetections.id))
         .where(
           and(
             eq(sprayWallDetections.requestedBy, ctx.userId!),
             eq(sprayWallDetections.status, 'done'),
-            eq(notifications.recipientId, ctx.userId!),
-            gt(notifications.createdAt, new Date(Date.now() - 24 * 60 * 60_000)),
+            gt(sprayWallDetections.finishedAt, new Date(Date.now() - 24 * 60 * 60_000)),
           ),
         )
-        .orderBy(desc(notifications.createdAt))
+        .orderBy(desc(sprayWallDetections.finishedAt))
         .limit(10);
       for (const detection of recent) {
         await requireJobQueue().send(

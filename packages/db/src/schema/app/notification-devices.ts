@@ -14,6 +14,8 @@ export const notificationDevices = pgTable(
     platform: text('platform').notNull(),
     locale: text('locale').notNull(),
     active: boolean('active').default(true).notNull(),
+    // Existing registrations expire immediately until an authenticated refresh.
+    expiresAt: timestamp('expires_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => ({

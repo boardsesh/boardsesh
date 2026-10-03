@@ -118,12 +118,14 @@ export function setupWebSocketServer(httpServer: HttpServer): {
 
         let isAuthenticated = false;
         let authenticatedUserId: string | undefined;
+        let credentialExpiresAt: number | undefined;
 
         if (token !== null) {
           const authResult = await validateToken(token);
           if (authResult) {
             isAuthenticated = true;
             authenticatedUserId = authResult.userId;
+            credentialExpiresAt = authResult.credentialExpiresAt;
             logger.info(`[Auth] Authenticated user: ${authenticatedUserId}`);
           } else {
             // Existing clients expect an expired optional credential to keep
@@ -165,6 +167,7 @@ export function setupWebSocketServer(httpServer: HttpServer): {
         const context = createContext({
           isAuthenticated,
           userId: authenticatedUserId,
+          credentialExpiresAt,
           controllerId,
           controllerApiKey,
           controllerMac,

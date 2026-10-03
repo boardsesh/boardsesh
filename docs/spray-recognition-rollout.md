@@ -69,7 +69,7 @@ is not proof the phone displayed an alert.
 1. Provision a dedicated `boardsesh_detector` login on the primary. Store its
    password and a new private-bucket read-only R2 token in the Homelab 1Password
    item **Boardsesh hold detector**. Never put credentials in Git or PR bodies.
-2. Apply migration `0251_safe_moon_knight.sql` and any preceding migrations using
+2. Apply migrations through `0252_cloudy_venus.sql` (including `0251_safe_moon_knight.sql`) using
    the existing migration-owner connection with
    `MIGRATION_DETECTOR_ROLE=boardsesh_detector`. The migrator initializes
    pg-boss 12.33.0 and queues under that owner, then grants DML to the runtime

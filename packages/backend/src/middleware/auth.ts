@@ -8,6 +8,7 @@ import { logger } from '../utils/logger';
 export type AuthResult = {
   userId: string;
   isAuthenticated: true;
+  credentialExpiresAt?: number;
 };
 
 export type ControllerAuthResult = {
@@ -89,7 +90,11 @@ export async function validateNextAuthToken(token: string): Promise<AuthResult |
       return null;
     }
 
-    const result: AuthResult = { userId, isAuthenticated: true };
+    const result: AuthResult = {
+      userId,
+      isAuthenticated: true,
+      ...(typeof payload.exp === 'number' ? { credentialExpiresAt: payload.exp * 1000 } : {}),
+    };
     tokenCache.set(token, { result, expiresAt: now + TOKEN_CACHE_TTL_MS });
     return result;
   } catch (error) {
@@ -129,7 +134,11 @@ export async function validateMobileJwt(token: string): Promise<AuthResult | nul
       return null;
     }
 
-    return { userId, isAuthenticated: true };
+    return {
+      userId,
+      isAuthenticated: true,
+      ...(typeof payload.exp === 'number' ? { credentialExpiresAt: payload.exp * 1000 } : {}),
+    };
   } catch (error) {
     if (error instanceof Error) {
       logger.warn('[Auth] Mobile JWT validation failed:', error.message);

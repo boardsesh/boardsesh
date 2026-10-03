@@ -6,7 +6,9 @@ import { EventEmitter } from 'node:events';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Socket } from 'node:net';
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
-import { SignJWT } from 'jose';
+import { decodeJwt, SignJWT } from 'jose';
+import { notificationDevices } from '@boardsesh/db/schema/app';
+import { mobileRefreshTokens } from '@boardsesh/db/schema/auth';
 
 // ---------------------------------------------------------------------------
 // Test secret — must match what verifyTransferToken reads from env
@@ -88,6 +90,11 @@ const {
 } = await import('../handlers/native-auth');
 
 const { validateMobileJwt, validateToken } = await import('../middleware/auth');
+const { db } = await import('../db/client');
+const mockedDatabase = db as unknown as {
+  update: ReturnType<typeof vi.fn>;
+  transaction: ReturnType<typeof vi.fn>;
+};
 
 // ---------------------------------------------------------------------------
 // Transfer token generation helper (mirrors the web-side HMAC signing)
@@ -609,6 +616,9 @@ describe('handleNativeAuthRevoke', () => {
     expect(res.statusCode).toBe(401);
     const body = parseBody(res);
     expect(body.error).toBe('Invalid refresh token');
+    // A consumed secret cannot disable devices registered by a newer login.
+    expect(mockDbUpdateSet).toHaveBeenCalledTimes(1);
+    expect(mockDbUpdateSet).not.toHaveBeenCalledWith(expect.objectContaining({ active: false }));
   });
 
   it('revokes ALL tokens for the user, not just the submitted one', async () => {
@@ -628,12 +638,15 @@ describe('handleNativeAuthRevoke', () => {
 
     expect(res.statusCode).toBe(200);
 
-    // The handler calls db.update() twice:
+    // All account cleanup uses the same transaction:
     // 1. Revoke the submitted token (with returning() to get userId)
     // 2. Revoke ALL remaining tokens for that user (by userId)
-    // mockDbUpdateSet is called for both updates
-    expect(mockDbUpdateSet).toHaveBeenCalledTimes(2);
-    expect(mockDbUpdateWhere).toHaveBeenCalledTimes(2);
+    // 3. Disable account push registrations.
+    expect(mockDbUpdateSet).toHaveBeenCalledTimes(3);
+    expect(mockDbUpdateWhere).toHaveBeenCalledTimes(3);
+    expect(mockDbUpdateSet).toHaveBeenLastCalledWith({ active: false, updatedAt: expect.any(Date) });
+    expect(mockedDatabase.update).not.toHaveBeenCalled();
+    expect(mockedDatabase.transaction).toHaveBeenCalledOnce();
   });
 
   it('is not rate limited (exempt from shared auth rate limiter)', async () => {
@@ -702,9 +715,61 @@ describe('handleNativeAuthRevoke', () => {
     const body = parseBody(res);
     expect(body.revoked).toBe(true);
 
-    // Both update calls happened: one for the submitted token, one for all user tokens
-    expect(mockDbUpdateSet).toHaveBeenCalledTimes(2);
-    expect(mockDbUpdateWhere).toHaveBeenCalledTimes(2);
+    // Token expiry does not prevent push cleanup with the refresh secret.
+    expect(mockDbUpdateSet).toHaveBeenCalledTimes(3);
+    expect(mockDbUpdateWhere).toHaveBeenCalledTimes(3);
+    expect(mockDbUpdateSet).toHaveBeenLastCalledWith({ active: false, updatedAt: expect.any(Date) });
+  });
+
+  it('cleans up push devices with the refresh secret after the bearer expires', async () => {
+    const expiredBearer = await new SignJWT({})
+      .setProtectedHeader({ alg: 'HS256' })
+      .setSubject('user-expired-bearer')
+      .setIssuer('boardsesh')
+      .setAudience('boardsesh-mobile')
+      .setExpirationTime(Math.floor(Date.now() / 1000) - 120)
+      .sign(new TextEncoder().encode(TEST_SECRET));
+    expect(await validateMobileJwt(expiredBearer)).toBeNull();
+    mockDbUpdateReturning.mockResolvedValueOnce([{ userId: 'user-expired-bearer' }]);
+    const req = makeRequest({ method: 'POST', body: { refreshToken: crypto.randomUUID() } });
+    req.headers.authorization = `Bearer ${expiredBearer}`;
+    const res = makeResponse();
+    await handleNativeAuthRevoke(req as unknown as IncomingMessage, res as unknown as ServerResponse);
+    expect(res.statusCode).toBe(200);
+    expect(mockDbUpdateSet).toHaveBeenLastCalledWith({ active: false, updatedAt: expect.any(Date) });
+  });
+
+  it('rolls back the claimed refresh secret when device cleanup fails', async () => {
+    let committedTokenRevocation = false;
+    const updatedTables: unknown[] = [];
+    mockedDatabase.transaction.mockImplementationOnce(async (operation) => {
+      let stagedTokenRevocation = false;
+      const transaction = {
+        update: (table: unknown) => {
+          updatedTables.push(table);
+          return {
+            set: () => ({
+              where: () => {
+                if (table === notificationDevices) throw new Error('device write unavailable');
+                stagedTokenRevocation = true;
+                return { returning: async () => [{ userId: 'user-rollback' }] };
+              },
+            }),
+          };
+        },
+      };
+      // Mimic the database transaction contract: only a fulfilled callback commits.
+      const result = await operation(transaction);
+      committedTokenRevocation = stagedTokenRevocation;
+      return result;
+    });
+    const req = makeRequest({ method: 'POST', body: { refreshToken: crypto.randomUUID() } });
+    const res = makeResponse();
+    await handleNativeAuthRevoke(req as unknown as IncomingMessage, res as unknown as ServerResponse);
+    expect(res.statusCode).toBe(500);
+    expect(updatedTables).toEqual([mobileRefreshTokens, mobileRefreshTokens, notificationDevices]);
+    expect(committedTokenRevocation).toBe(false);
+    expect(mockedDatabase.update).not.toHaveBeenCalled();
   });
 });
 
@@ -741,6 +806,7 @@ describe('validateMobileJwt', () => {
     expect(result).not.toBeNull();
     expect(result?.userId).toBe('test-user');
     expect(result?.isAuthenticated).toBe(true);
+    expect(result?.credentialExpiresAt).toBe(Number(decodeJwt(token).exp) * 1000);
   });
 
   it('returns null for a JWT with wrong issuer', async () => {
@@ -788,6 +854,8 @@ describe('validateToken', () => {
     expect(result).not.toBeNull();
     expect(result?.userId).toBe('test-user');
     expect(result?.isAuthenticated).toBe(true);
+    expect(result?.credentialExpiresAt).toBe(Number(decodeJwt(token).exp) * 1000);
+    expect(await validateToken(token)).toEqual(result);
   });
 
   it('returns null for a token with 2 segments', async () => {

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, gt, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { PgBoss } from 'pg-boss';
 import {
@@ -9,11 +9,18 @@ import {
   type SprayDetectionJob,
 } from '@boardsesh/shared-schema';
 import { readSprayDetection, sprayDetectionSourceIsCurrent } from '@boardsesh/db/queries';
-import { notificationDevices, notificationDeliveries, notifications, userBoards } from '@boardsesh/db/schema';
+import {
+  notificationDevices,
+  notificationDeliveries,
+  notifications,
+  sprayWallVersions,
+  userBoards,
+} from '@boardsesh/db/schema';
 import { db } from '../db/client';
 import { enqueueOn } from './job-queue';
 import { NOTIFICATION_DELIVERY_LOCK_SEED } from './notification-locks';
 import { requireBoardEditAccess } from '../graphql/resolvers/social/boards';
+import { sprayVersionIsReset } from '../graphql/resolvers/social/spray-notification-targets';
 import { pubsub } from '../pubsub';
 import english from '@boardsesh/i18n/locales/en-US/notifications.json';
 import spanish from '@boardsesh/i18n/locales/es/notifications.json';
@@ -60,6 +67,10 @@ export async function completionNotification(
   } catch {
     return null;
   }
+  const [versionKind] = await executor
+    .select({ isReset: sprayVersionIsReset(executor, source.wall.id, source.version.versionNumber) })
+    .from(sprayWallVersions)
+    .where(eq(sprayWallVersions.id, source.version.id));
   return {
     recipientId: source.detection.requestedBy,
     notification: {
@@ -70,7 +81,7 @@ export async function completionNotification(
       sprayWallName: board.name,
       sprayWallUuid: source.wall.boardUuid,
       sprayVersionId: String(source.version.id),
-      isSprayReset: source.wall.currentVersionId !== null,
+      isSprayReset: versionKind.isReset,
       isRead: false,
       createdAt: (source.detection.finishedAt ?? new Date()).toISOString(),
     },
@@ -104,7 +115,13 @@ export async function notifySprayDetectionCompleted(boss: PgBoss, detectionId: s
     const devices = await transaction
       .select()
       .from(notificationDevices)
-      .where(and(eq(notificationDevices.userId, event.recipientId), eq(notificationDevices.active, true)));
+      .where(
+        and(
+          eq(notificationDevices.userId, event.recipientId),
+          eq(notificationDevices.active, true),
+          gt(notificationDevices.expiresAt, new Date()),
+        ),
+      );
     for (const device of devices) {
       const deliveryId = randomUUID();
       const inserted = await transaction
@@ -172,6 +189,7 @@ export async function deliverSprayNotification(boss: PgBoss, deliveryId: string)
           eq(notificationDevices.userId, delivery.recipientId),
           eq(notificationDevices.token, delivery.token),
           eq(notificationDevices.active, true),
+          gt(notificationDevices.expiresAt, new Date()),
         ),
       )
       .limit(1)

@@ -282,7 +282,16 @@ from Live Activity tokens, and stores platform and
 locale. Starting recognition may request notification permission; declining or
 registration failure never blocks the import or its in-app notification.
 Allowed devices refresh registration on sign-in/foreground and deactivate it
-on logout. Per-device delivery records, pg-boss retries, Expo receipt checks and
+on logout. Registrations expire at the earlier of the verified bearer expiry
+and 24 hours after registration. Both queueing and sending reject expired
+registrations; existing rows expire until their next authenticated refresh.
+Full native sign-out retires all account devices in the same transaction as
+refresh-token revocation, even when the access JWT has expired. Offline cleanup
+remains best effort until the registration expires. Catch-up reads completed
+detections directly, so a simultaneous completion with an uncommitted feed row
+cannot hide it. Notification reset targets use earlier published version
+history, keeping initial-import taps correct after publication.
+Per-device delivery records, pg-boss retries, Expo receipt checks and
 invalid-token retirement make delivery recoverable; phone delivery remains
 best effort. Browsers use the notification feed. Alert/feed taps resume the
 correct draft after authentication, and handle already-published, discarded or

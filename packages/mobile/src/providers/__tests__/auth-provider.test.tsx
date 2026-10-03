@@ -2507,8 +2507,11 @@ describe('AuthProvider native degraded sessions', () => {
   it('lets a rejected reconnect refresh run the normal signed-out cleanup', async () => {
     onlineManager.setOnline(false);
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    renderHook(() => useAuth(), { wrapper: createWrapper(queryClient) });
-    await waitFor(() => expect(deduplicatedRefreshMock).toHaveBeenCalledOnce());
+    const { result } = renderHook(() => useAuth(), { wrapper: createWrapper(queryClient) });
+    // Reconnect only after the initial degraded session has been applied.
+    // Starting a refresh does not mean the provider's reconnect gate is ready.
+    await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+    expect(deduplicatedRefreshMock).toHaveBeenCalledOnce();
 
     deduplicatedRefreshMock.mockResolvedValue({ status: 'rejected', generation: 1 });
     act(() => onlineManager.setOnline(true));

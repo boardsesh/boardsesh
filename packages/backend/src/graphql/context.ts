@@ -20,6 +20,7 @@ export type CreateContextOptions = {
   connectionId?: string;
   isAuthenticated?: boolean;
   userId?: string;
+  credentialExpiresAt?: number;
   controllerId?: string;
   controllerApiKey?: string;
   controllerMac?: string;
@@ -37,6 +38,7 @@ export function createContext({
   connectionId,
   isAuthenticated,
   userId,
+  credentialExpiresAt,
   controllerId,
   controllerApiKey,
   controllerMac,
@@ -49,6 +51,7 @@ export function createContext({
     transport: 'ws',
     sessionId: undefined,
     userId: userId,
+    credentialExpiresAt,
     isAuthenticated: isAuthenticated || false,
     controllerId,
     controllerApiKey,

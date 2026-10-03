@@ -201,6 +201,71 @@ describe('spray import completion notifications', () => {
     ).toHaveLength(1);
   });
 
+  it('catches a finished model while the completion feed transaction is uncommitted', async () => {
+    const target = await completedWall();
+    const boss = await startJobQueue();
+    await finishSprayDetection(db, target.detectionId, target.attemptToken, proposal);
+    let allowCompletionCommit!: () => void;
+    let observeDevicesRead!: () => void;
+    const mayCommit = new Promise<void>((resolve) => {
+      allowCompletionCommit = resolve;
+    });
+    const devicesWereRead = new Promise<void>((resolve) => {
+      observeDevicesRead = resolve;
+    });
+    // The worker has already selected zero devices, but its feed insert has not committed.
+    const completion = db.transaction(async (transaction) => {
+      await transaction.insert(notifications).values({
+        uuid: target.detectionId,
+        recipientId: target.ctx.userId!,
+        type: 'spray_wall_detection_completed',
+        entityType: 'board',
+        entityId: target.wallUuid,
+      });
+      expect(
+        await transaction.select().from(notificationDevices).where(eq(notificationDevices.userId, target.ctx.userId!)),
+      ).toHaveLength(0);
+      observeDevicesRead();
+      await mayCommit;
+    });
+    const replay = vi.spyOn(boss, 'send');
+    try {
+      await Promise.race([devicesWereRead, completion]);
+      expect(await db.select().from(notifications).where(eq(notifications.uuid, target.detectionId))).toHaveLength(0);
+      expect(
+        await notificationDeviceMutations.registerNotificationDevice(
+          {},
+          {
+            input: {
+              installationId: randomUUID(),
+              token: `ExpoPushToken[${randomUUID()}]`,
+              platform: 'ios',
+              locale: 'en-US',
+            },
+          },
+          target.ctx,
+        ),
+      ).toBe(true);
+      expect(replay).toHaveBeenCalledWith(
+        SPRAY_DETECTION_COMPLETION_QUEUE,
+        { detectionId: target.detectionId },
+        expect.objectContaining({ retryLimit: 10 }),
+      );
+    } finally {
+      allowCompletionCommit();
+      await completion;
+    }
+    await notifySprayDetectionCompleted(boss, target.detectionId);
+    await notifySprayDetectionCompleted(boss, target.detectionId);
+    expect(await db.select().from(notifications).where(eq(notifications.uuid, target.detectionId))).toHaveLength(1);
+    expect(
+      await db
+        .select()
+        .from(notificationDeliveries)
+        .where(eq(notificationDeliveries.notificationUuid, target.detectionId)),
+    ).toHaveLength(1);
+  });
+
   it.each(['deduplicated', 'unavailable'])(
     'retains registration when catch-up is %s and recovers on refresh',
     async (mode) => {
@@ -247,6 +312,90 @@ describe('spray import completion notifications', () => {
       ).toHaveLength(1);
     },
   );
+
+  it('caps the device lease at the authenticated credential expiry and twenty-four hours', async () => {
+    const target = await completedWall();
+    const input = {
+      installationId: randomUUID(),
+      token: `ExpoPushToken[${randomUUID()}]`,
+      platform: 'ios',
+      locale: 'en-US',
+    };
+    const credentialExpiresAt = Date.now() + 5 * 60_000;
+    await notificationDeviceMutations.registerNotificationDevice({}, { input }, { ...target.ctx, credentialExpiresAt });
+    const [shortLease] = await db
+      .select()
+      .from(notificationDevices)
+      .where(eq(notificationDevices.installationId, input.installationId));
+    expect(shortLease.expiresAt.getTime()).toBe(credentialExpiresAt);
+
+    const beforeRefresh = Date.now();
+    await notificationDeviceMutations.registerNotificationDevice(
+      {},
+      { input },
+      { ...target.ctx, credentialExpiresAt: beforeRefresh + 7 * 24 * 60 * 60_000 },
+    );
+    const [boundedLease] = await db
+      .select()
+      .from(notificationDevices)
+      .where(eq(notificationDevices.installationId, input.installationId));
+    expect(boundedLease.expiresAt.getTime()).toBeGreaterThanOrEqual(beforeRefresh + 24 * 60 * 60_000);
+    expect(boundedLease.expiresAt.getTime()).toBeLessThanOrEqual(Date.now() + 24 * 60 * 60_000);
+
+    await expect(
+      notificationDeviceMutations.registerNotificationDevice(
+        {},
+        { input },
+        { ...target.ctx, credentialExpiresAt: Date.now() - 1 },
+      ),
+    ).rejects.toThrow('Authentication required');
+    const [unchanged] = await db
+      .select()
+      .from(notificationDevices)
+      .where(eq(notificationDevices.installationId, input.installationId));
+    expect(unchanged.expiresAt).toEqual(boundedLease.expiresAt);
+  });
+
+  it.each(['before completion', 'after queue'])('does not deliver an expired device lease %s', async (expiryStage) => {
+    const target = await completedWall();
+    const installationId = randomUUID();
+    await notificationDeviceMutations.registerNotificationDevice(
+      {},
+      { input: { installationId, token: `ExpoPushToken[${randomUUID()}]`, platform: 'ios', locale: 'en-US' } },
+      target.ctx,
+    );
+    await finishSprayDetection(db, target.detectionId, target.attemptToken, proposal);
+    const boss = await startJobQueue();
+    if (expiryStage === 'before completion') {
+      await db
+        .update(notificationDevices)
+        .set({ expiresAt: new Date(Date.now() - 1) })
+        .where(eq(notificationDevices.installationId, installationId));
+    }
+    await notifySprayDetectionCompleted(boss, target.detectionId);
+    const deliveries = await db
+      .select()
+      .from(notificationDeliveries)
+      .where(eq(notificationDeliveries.notificationUuid, target.detectionId));
+    if (expiryStage === 'before completion') {
+      expect(deliveries).toHaveLength(0);
+      return;
+    }
+    expect(deliveries).toHaveLength(1);
+    await db
+      .update(notificationDevices)
+      .set({ expiresAt: new Date(Date.now() - 1) })
+      .where(eq(notificationDevices.installationId, installationId));
+    const transport = vi.fn();
+    vi.stubGlobal('fetch', transport);
+    await deliverSprayNotification(boss, deliveries[0].id);
+    expect(transport).not.toHaveBeenCalled();
+    const [skipped] = await db
+      .select()
+      .from(notificationDeliveries)
+      .where(eq(notificationDeliveries.id, deliveries[0].id));
+    expect(skipped.status).toBe('skipped');
+  });
 
   it('serializes competing registrations for a token into one active account', async () => {
     const first = await completedWall();
