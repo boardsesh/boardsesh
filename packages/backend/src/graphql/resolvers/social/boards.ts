@@ -2165,8 +2165,7 @@ export const socialBoardMutations = {
           excludeBoardId: board.id,
           incoming: {
             setIds: resultingSetIds,
-            locationName:
-              validatedInput.locationName !== undefined ? validatedInput.locationName : board.locationName,
+            locationName: validatedInput.locationName !== undefined ? validatedInput.locationName : board.locationName,
             latitude: validatedInput.latitude !== undefined ? validatedInput.latitude : board.latitude,
             longitude: validatedInput.longitude !== undefined ? validatedInput.longitude : board.longitude,
           },

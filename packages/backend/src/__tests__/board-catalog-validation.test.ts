@@ -1282,10 +1282,7 @@ describe('social board update catalog gate', () => {
       { input: { boardUuid: boards.deleted.uuid, name: 'Restored at the old gym' } },
       authCtx(UPDATE_USER_ID),
     );
-    const [after] = await db
-      .select()
-      .from(dbSchema.userBoards)
-      .where(eq(dbSchema.userBoards.id, boards.deleted.id));
+    const [after] = await db.select().from(dbSchema.userBoards).where(eq(dbSchema.userBoards.id, boards.deleted.id));
 
     expect(updated.name).toBe('Restored at the old gym');
     expect(after.deletedAt).toBeNull();
@@ -1294,7 +1291,7 @@ describe('social board update catalog gate', () => {
 
   it('returns the structured duplicate response for an equivalent same-place config', async () => {
     const deletedAt = new Date('2026-01-01T00:00:00.000Z');
-    const rawDeletedSetIds = ` 0${UNKNOWN_SET_ID}, ${UNKNOWN_SET_ID + 1} `;
+    const rawDeletedSetIds = ` ${UNKNOWN_SET_ID}, ${UNKNOWN_SET_ID + 1} `;
     const boards = await insertSoftDeletedLegacyBoardWithActiveTwin({
       deletedAt,
       deletedLocationName: 'Same gym',
@@ -1330,7 +1327,7 @@ describe('social board update catalog gate', () => {
       deletedAt: new Date('2026-01-01T00:00:00.000Z'),
       deletedLocationName: 'Same gym',
       activeLocationName: 'same gym',
-      deletedSetIds: ` 0${UNKNOWN_SET_ID}, ${UNKNOWN_SET_ID + 1} `,
+      deletedSetIds: ` ${UNKNOWN_SET_ID}, ${UNKNOWN_SET_ID + 1} `,
       activeSetIds: `${UNKNOWN_SET_ID + 1},${UNKNOWN_SET_ID}`,
     });
 
@@ -1349,7 +1346,7 @@ describe('social board update catalog gate', () => {
 
     expect(updated.name).toBe('Confirmed second board');
     expect(after.deletedAt).toBeNull();
-    expect(after.setIds).toBe(` 0${UNKNOWN_SET_ID}, ${UNKNOWN_SET_ID + 1} `);
+    expect(after.setIds).toBe(` ${UNKNOWN_SET_ID}, ${UNKNOWN_SET_ID + 1} `);
   });
 
   it('restores a soft-deleted legacy board when the owner has no active duplicate', async () => {
