@@ -8,6 +8,8 @@ import { useNearbyBoards, useNearbyGyms } from '../../src/lib/graphql/hooks';
 import { useActiveBoard } from '../../src/lib/graphql/use-active-board';
 import { useDeviceLocation, type Coords } from '../../src/lib/use-device-location';
 import { useGeocodePlace } from '../../src/lib/use-place-search';
+import { useDiscoverySearch } from '../../src/lib/use-discovery-search';
+import { useRetainedQueryData } from '../../src/lib/use-retained-query-data';
 import { useTheme } from '../../src/providers/theme-provider';
 import type { ManagedSheetHandle } from '../../src/providers/sheet-presentation-provider';
 import { hapticSelection } from '../../src/lib/haptics';
@@ -42,7 +44,6 @@ import { spacing, borderRadius, shadows } from '../../src/theme/tokens';
 // 50km, so a sub-~4km nudge isn't worth a refetch — and the threshold also
 // absorbs the programmatic camera settle after a place search so it doesn't
 // read as a user pan.
-const REGION_DEBOUNCE_MS = 500;
 const MIN_MOVE_DEG = 0.04;
 
 // The floating close button is a fixed square; it's the only chrome left over the
@@ -124,7 +125,7 @@ export default function GymDiscovery() {
   const [searchLabel, setSearchLabel] = useState<string | null>(null);
 
   // A chosen view (searched or panned) wins; fall back to the device fix.
-  const center = viewCenter ?? location.coords;
+  const center = viewCenter ?? location.coords ?? null;
 
   // Refs mirror state so the stable, debounced region handler reads fresh values
   // without being torn down and rebuilt on every pan.
@@ -135,7 +136,26 @@ export default function GymDiscovery() {
   // The target of the last programmatic camera move (place search / reset). The
   // resulting onCameraMove settle near this point must NOT be read as a user pan.
   const programmaticTargetRef = useRef<Coords | null>(null);
-  const regionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchGenerationRef = useRef(0);
+
+  const resolveCameraCenter = useCallback((next: Coords, current: Coords | null) => {
+    const target = programmaticTargetRef.current;
+    if (target && !movedEnough(next, target)) {
+      programmaticTargetRef.current = null;
+      return current;
+    }
+    if (current && !movedEnough(next, current)) return current;
+    programmaticTargetRef.current = null;
+    setViewCenter(next);
+    setSearchLabel(null);
+    return next;
+  }, []);
+  const {
+    search,
+    isDebouncing,
+    cameraMoved: handleRegionChange,
+    resetSearch,
+  } = useDiscoverySearch(center, appliedFilter, { resolveCameraCenter });
 
   // Ask for location once on mount — the map + nearby queries default to it.
   // Read `request` through a ref so this fires exactly once (the hook is
@@ -148,29 +168,40 @@ export default function GymDiscovery() {
 
   useEffect(
     () => () => {
-      if (regionTimerRef.current) clearTimeout(regionTimerRef.current);
+      searchGenerationRef.current += 1;
     },
     [],
   );
 
-  const { data: gymConnection, isLoading: gymsLoading } = useNearbyGyms(
-    center,
+  const gymQuery = useNearbyGyms(
+    search.center,
     50,
-    appliedFilter.name,
-    appliedFilter.boardTypes,
-    appliedFilter.layoutIds,
-    appliedFilter.sizeIds,
-    appliedFilter.multiBoardTypeOnly,
+    search.filter.name,
+    search.filter.boardTypes,
+    search.filter.layoutIds,
+    search.filter.sizeIds,
+    search.filter.multiBoardTypeOnly,
   );
-  const { data: boardConnection } = useNearbyBoards(
-    center,
+  const boardQuery = useNearbyBoards(
+    search.center,
     50,
-    appliedFilter.name,
+    search.filter.name,
     50,
-    appliedFilter.boardTypes,
-    appliedFilter.layoutIds,
-    appliedFilter.sizeIds,
+    search.filter.boardTypes,
+    search.filter.layoutIds,
+    search.filter.sizeIds,
   );
+  const gymConnection = useRetainedQueryData(gymQuery);
+  const boardConnection = useRetainedQueryData(boardQuery);
+  const gymsLoading = gymQuery.isLoading;
+  const isUpdating = isDebouncing || gymQuery.isFetching || boardQuery.isFetching;
+  const refreshFailed = !isUpdating && (gymQuery.isError || boardQuery.isError);
+  const { refetch: refetchGyms } = gymQuery;
+  const { refetch: refetchBoards } = boardQuery;
+  const retrySearch = useCallback(() => {
+    if (search.center !== null || search.filter.name?.trim()) void refetchGyms();
+    if (search.center !== null) void refetchBoards();
+  }, [refetchGyms, refetchBoards, search.center, search.filter.name]);
 
   const gyms = useMemo(
     () => (gymConnection?.gyms ?? []).filter((gym) => gym.latitude != null && gym.longitude != null),
@@ -184,10 +215,10 @@ export default function GymDiscovery() {
   // two types, so hide the section entirely while it's on.
   const standaloneBoards = useMemo(
     () =>
-      appliedFilter.multiBoardTypeOnly
+      search.filter.multiBoardTypeOnly
         ? []
         : boards.filter((board) => board.gymUuid == null && board.latitude != null && board.longitude != null),
-    [boards, appliedFilter.multiBoardTypeOnly],
+    [boards, search.filter.multiBoardTypeOnly],
   );
 
   // Pre-index a gym's boards ONCE per data change (O(1) per row, never a per-row
@@ -252,26 +283,6 @@ export default function GymDiscovery() {
   const moveCameraTo = useCallback((coords: Coords) => {
     programmaticTargetRef.current = coords;
     mapRef.current?.setCenter(coords);
-  }, []);
-
-  // Debounced: after the map stops moving, decide whether it was a real user pan
-  // (re-query that area) or just the settle from a programmatic move (ignore).
-  const handleRegionChange = useCallback((next: Coords) => {
-    if (regionTimerRef.current) clearTimeout(regionTimerRef.current);
-    regionTimerRef.current = setTimeout(() => {
-      const target = programmaticTargetRef.current;
-      if (target && !movedEnough(next, target)) {
-        programmaticTargetRef.current = null;
-        return; // the camera just settled where we sent it
-      }
-      const effective = viewCenterRef.current ?? locationCoordsRef.current;
-      if (effective && !movedEnough(next, effective)) return; // tiny nudge / mount echo
-      programmaticTargetRef.current = null;
-      // A real pan takes over: this is now where we're browsing, so drop any
-      // "Showing <place>" label and re-query around the new center.
-      setViewCenter(next);
-      setSearchLabel(null);
-    }, REGION_DEBOUNCE_MS);
   }, []);
 
   const activate = useCallback(
@@ -356,27 +367,36 @@ export default function GymDiscovery() {
   // We deliberately don't AND the two — a place name ("Tokyo") would otherwise
   // hide every gym not literally named after it.
   const onSubmitSearch = useCallback(async () => {
+    const generation = ++searchGenerationRef.current;
     const text = inputText.trim();
     setExpandedGymUuid(null);
     setSelectedId(null);
     if (!text) {
       setSearchLabel(null);
       setAppliedFilter(DEFAULT_WALL_FINDER_FILTER);
+      resetSearch({
+        center: viewCenterRef.current ?? locationCoordsRef.current ?? null,
+        filter: DEFAULT_WALL_FINDER_FILTER,
+      });
       return;
     }
     const coords = await geocode(text);
+    if (generation !== searchGenerationRef.current) return;
     if (coords) {
       setViewCenter(coords);
       setSearchLabel(text);
       setAppliedFilter(DEFAULT_WALL_FINDER_FILTER);
+      resetSearch({ center: coords, filter: DEFAULT_WALL_FINDER_FILTER });
       moveCameraTo(coords);
     } else {
       setAppliedFilter({ name: text });
+      resetSearch({ center: viewCenterRef.current ?? locationCoordsRef.current ?? null, filter: { name: text } });
     }
-  }, [inputText, geocode, moveCameraTo]);
+  }, [inputText, geocode, moveCameraTo, resetSearch]);
 
   // Clear everything and snap back to the device location.
   const clearSearch = useCallback(() => {
+    searchGenerationRef.current += 1;
     setInputText('');
     setAppliedFilter(DEFAULT_WALL_FINDER_FILTER);
     setSearchLabel(null);
@@ -384,10 +404,11 @@ export default function GymDiscovery() {
     setExpandedGymUuid(null);
     setSelectedId(null);
     const deviceCoords = locationCoordsRef.current;
+    resetSearch({ center: deviceCoords ?? null, filter: DEFAULT_WALL_FINDER_FILTER });
     if (deviceCoords) moveCameraTo(deviceCoords);
-  }, [moveCameraTo]);
+  }, [moveCameraTo, resetSearch]);
 
-  // Chip toggles apply immediately (they re-query via the hooks' query keys) and
+  // Chip toggles update immediately; the complete search input is debounced and
   // are orthogonal to a place search (a place relocates, it isn't a filter term).
   // The nested-tier clearing (layouts are board-type-scoped, sizes are
   // layout-scoped) lives in the pure helpers so it stays unit-testable.
@@ -488,13 +509,33 @@ export default function GymDiscovery() {
     </View>
   );
 
-  const placeCaption = searchLabel ? (
-    <View style={[styles.placePill, { backgroundColor: systemColors.background }]}>
-      <Text variant="caption1" color={systemColors.secondaryLabel}>
-        {t('mobile.gyms.showingPlace', { place: searchLabel })}
-      </Text>
-    </View>
-  ) : null;
+  const placeCaption =
+    searchLabel || isUpdating || refreshFailed ? (
+      <View style={[styles.placePill, { backgroundColor: systemColors.background }]}>
+        {searchLabel ? (
+          <Text variant="caption1" color={systemColors.secondaryLabel}>
+            {t('mobile.gyms.showingPlace', { place: searchLabel })}
+          </Text>
+        ) : null}
+        {isUpdating ? (
+          <Text variant="caption1" color={systemColors.secondaryLabel} accessibilityLiveRegion="polite">
+            {t('mobile.gyms.updating')}
+          </Text>
+        ) : null}
+        {refreshFailed ? (
+          <>
+            <Text variant="caption1" color={systemColors.secondaryLabel} accessibilityLiveRegion="polite">
+              {t('mobile.gyms.refreshFailed')}
+            </Text>
+            <Pressable onPress={retrySearch} accessibilityRole="button" hitSlop={8}>
+              <Text variant="caption1" color={brandColors.primary}>
+                {t('mobile.gyms.retry')}
+              </Text>
+            </Pressable>
+          </>
+        ) : null}
+      </View>
+    ) : null;
 
   // No place to show yet: prompt for location inside the panel (the header search
   // still works for browsing a typed place without granting it).
