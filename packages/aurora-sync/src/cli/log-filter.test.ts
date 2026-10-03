@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SYNC_DAEMON_DISABLED_MESSAGE } from '@boardsesh/sync-runtime';
-import { isOperatorLogLine, shouldLogAuroraSyncMessage } from './log-filter';
+import { isOperatorLogLine } from './log-filter';
 
 describe('Aurora CLI non-verbose log filter', () => {
   it('prints the daemon-disabled line and existing operator lines', () => {
@@ -16,11 +16,11 @@ describe('Aurora CLI non-verbose log filter', () => {
     '[SyncRunner] CREDENTIAL FLAPPING user-1',
     '[SyncRunner] Sync health: active=1',
   ])('keeps operational warning %s', (message) => {
-    expect(shouldLogAuroraSyncMessage(message)).toBe(true);
+    expect(isOperatorLogLine(message)).toBe(true);
   });
 
   it('drops progress chatter', () => {
     expect(isOperatorLogLine('[SyncRunner] Syncing table climbs page 3')).toBe(false);
-    expect(shouldLogAuroraSyncMessage('Sync attempt 2 for user 144574')).toBe(false);
+    expect(isOperatorLogLine('Sync attempt 2 for user 144574')).toBe(false);
   });
 });

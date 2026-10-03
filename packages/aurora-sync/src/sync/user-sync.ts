@@ -78,6 +78,10 @@ export async function getCircuitPlaylistOwnershipConflictState(
   nextAuthUserId: string,
 ): Promise<CircuitPlaylistOwnershipConflictState> {
   const circuitsSchema = UNIFIED_TABLES.circuits;
+  // The expanded owner set remains account-bounded: board_circuits uses the
+  // (board_type, user_id) index, playlists join through the unique aurora_id
+  // index, and playlist_ownership's unique (playlist_id, user_id) index has
+  // playlist_id as its lookup prefix.
   const ownerRows = await db
     .select({ circuitUuid: circuitsSchema.uuid, ownerUserId: playlistOwnership.userId })
     .from(circuitsSchema)

@@ -25,8 +25,3 @@ const OPERATOR_LOG_FRAGMENTS = [
 export function isOperatorLogLine(message: string): boolean {
   return OPERATOR_LOG_FRAGMENTS.some((fragment) => message.includes(fragment));
 }
-
-/** Kept as a named Aurora-specific seam for the arbitration warning tests. */
-export function shouldLogAuroraSyncMessage(message: string): boolean {
-  return isOperatorLogLine(message);
-}

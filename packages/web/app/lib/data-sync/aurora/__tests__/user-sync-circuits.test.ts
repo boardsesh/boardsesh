@@ -178,6 +178,33 @@ describe('web aurora proxy — circuits foreign-owner guard (#3526)', () => {
     });
   });
 
+  it('logs a suppressed own-owner contradiction separately from a no-owner race', async () => {
+    const error = vi.fn();
+    const { db, insertsInto } = createDbShim({
+      ownerResults: [
+        [{ upstreamId: 'circuit-1', ownerUserId: 'user-1' }],
+        [{ upstreamId: 'circuit-1', ownerUserId: 'user-1' }],
+      ],
+      returning: [],
+    });
+
+    await upsertTableData(db as never, 'tension', 'circuits', 144574, 'user-1', [circuit] as never, {
+      warn: vi.fn(),
+      error,
+    });
+
+    expect(insertsInto(playlistOwnership)).toHaveLength(0);
+    expect(JSON.parse(error.mock.calls[0]?.[0] ?? '{}')).toEqual({
+      level: 'error',
+      event: 'aurora_circuit_playlist_suppressed_own_contradiction',
+      boardType: 'tension',
+      circuitUuid: 'circuit-1',
+      syncingUserId: 'user-1',
+      stage: 'suppressed-upsert',
+      reason: 'own',
+    });
+  });
+
   it('re-reads and reports a foreign owner when the SQL guard suppresses the upsert', async () => {
     const warn = vi.fn();
     const { db, calls, insertsInto } = createDbShim({

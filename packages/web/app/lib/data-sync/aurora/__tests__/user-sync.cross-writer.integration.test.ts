@@ -9,7 +9,9 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import { boardCircuits, boardUsers, playlistClimbs, playlistOwnership, playlists, users } from '@boardsesh/db/schema';
-import { upsertTableData as daemonUpsertTableData } from '@boardsesh/aurora-sync/sync';
+// Import the daemon writer implementation directly for this cross-package
+// integration test without adding a test seam to the package's public barrel.
+import { upsertTableData as daemonUpsertTableData } from '../../../../../../aurora-sync/src/sync/user-sync';
 
 vi.mock('server-only', () => ({}));
 vi.mock('@/app/lib/db/db', () => ({ getDb: () => ({}) }));

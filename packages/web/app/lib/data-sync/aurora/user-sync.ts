@@ -51,6 +51,21 @@ function logCircuitPlaylistRefusal(
     reason: input.reason,
   });
 
+  if (input.stage === 'suppressed-upsert' && input.reason === 'own') {
+    logger.error(
+      JSON.stringify({
+        level: 'error',
+        event: 'aurora_circuit_playlist_suppressed_own_contradiction',
+        boardType: input.boardName,
+        circuitUuid: input.circuitUuid,
+        syncingUserId: input.syncingUserId,
+        stage: input.stage,
+        reason: input.reason,
+      }),
+    );
+    return;
+  }
+
   if (input.reason === 'foreign' || input.reason === 'ambiguous') {
     logger.warn(
       `${upstreamPlaylistSkipLogLine({
