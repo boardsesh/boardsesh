@@ -28,7 +28,7 @@ Wrapped in `VoteSummaryProvider` for bulk vote state hydration (max 100 tick UUI
 
 **Component:** `CrewLogbookView`
 
-Shows ascents from followed users on the same climb. Uses `GET_FOLLOWING_CLIMB_ASCENTS` query. Each entry rendered as `LogbookEntryCard` with user info (avatar, name). Empty states: sign-in prompt, load error, "No crew ascents yet".
+Shows logs from followed users on the same climb. Uses `GET_FOLLOWING_CLIMB_ASCENTS` query, which returns the 100 newest logs (`items`, newest first, every angle, attempts included), `hasMore`, and a `summary` (`climberCount`, `senderCount`, and the same pair per angle in `byAngle`) that is not bound by the 100-row cap. Take header counts from `summary`, never from `items.length`. Show `effectiveQuality` (the tick's own stars, or the climber's synced rating for that climb and angle; sends and flashes only). Logs on a spray wall the viewer cannot see are left out of both the list and the counts. Each entry rendered as `LogbookEntryCard` with user info (avatar, name). Empty states: sign-in prompt, load error, "No crew ascents yet".
 
 ### 12.3 Logging an Ascent (Tick)
 
@@ -102,6 +102,6 @@ Swipeable cards with:
 - `updateTick` / `useUpdateTick` -- Updates an existing tick (quality, grade, attempts, comment).
 - `deleteTick` / `DELETE_TICK` -- Deletes a tick.
 - `attachBetaLink` -- Attaches a beta video URL to a tick.
-- `followingClimbAscents` / `GET_FOLLOWING_CLIMB_ASCENTS` -- Ascents from followed users on a specific climb.
+- `followingClimbAscents` / `GET_FOLLOWING_CLIMB_ASCENTS` -- The 100 newest logs from followed users on a specific climb, plus `hasMore` and a `summary` of climber and sender counts (overall and per angle) that covers all of them. Signed-in only, 120 requests a minute.
 
 ---

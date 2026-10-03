@@ -6,6 +6,7 @@ import type {
   UnifiedSearchConnection,
   FollowingAscentFeedItem,
   FollowingAscentsFeedResult,
+  FollowingClimbAscentsSummary,
   SetterProfile,
   Climb,
 } from '@boardsesh/shared-schema';
@@ -275,11 +276,23 @@ export const GET_FOLLOWING_CLIMB_ASCENTS = gql`
         status
         attemptCount
         quality
+        effectiveQuality
+        difficulty
         comment
         climbedAt
         upvotes
         downvotes
         commentCount
+      }
+      hasMore
+      summary {
+        climberCount
+        senderCount
+        byAngle {
+          angle
+          climberCount
+          senderCount
+        }
       }
     }
   }
@@ -306,6 +319,8 @@ export type FollowingClimbAscentItem = Pick<
   | 'status'
   | 'attemptCount'
   | 'quality'
+  | 'effectiveQuality'
+  | 'difficulty'
   | 'comment'
   | 'climbedAt'
   | 'upvotes'
@@ -314,7 +329,11 @@ export type FollowingClimbAscentItem = Pick<
 >;
 
 export type GetFollowingClimbAscentsQueryResponse = {
-  followingClimbAscents: { items: FollowingClimbAscentItem[] };
+  followingClimbAscents: {
+    items: FollowingClimbAscentItem[];
+    hasMore: boolean;
+    summary: FollowingClimbAscentsSummary;
+  };
 };
 
 // ============================================

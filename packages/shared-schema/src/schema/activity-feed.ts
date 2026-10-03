@@ -294,6 +294,8 @@ export const activityFeedTypeDefs = /* GraphQL */ `
     attemptCount: Int!
     "Quality rating"
     quality: Int
+    "Raw quality, or the climber's synced star rating for this climb and angle when the tick has none. Sends and flashes only. Null if the resolver doesn't compute it."
+    effectiveQuality: Int
     "Difficulty rating"
     difficulty: Int
     "Human-readable difficulty name"
@@ -347,18 +349,47 @@ export const activityFeedTypeDefs = /* GraphQL */ `
   Input for fetching followed users' ticks on a specific climb.
   """
   input FollowingClimbAscentsInput {
-    "Board type (kilter, tension, moonboard)"
+    "Board type (kilter, tension, moonboard, spray, ...)"
     boardType: String!
     "Climb UUID"
     climbUuid: String!
   }
 
   """
-  Unpaginated result: all ticks from followed users for a given climb.
+  How many followed climbers logged a climb at one angle.
+  """
+  type FollowingClimbAscentsAngleCount {
+    "Board angle"
+    angle: Int!
+    "Followed climbers with at least one log at this angle, any status"
+    climberCount: Int!
+    "Followed climbers with at least one flash or send at this angle"
+    senderCount: Int!
+  }
+
+  """
+  Counts over every log from followed climbers on a climb. Not bound by the
+  100-row cap on the list.
+  """
+  type FollowingClimbAscentsSummary {
+    "Followed climbers with at least one log, any angle, any status"
+    climberCount: Int!
+    "Followed climbers with at least one flash or send, any angle"
+    senderCount: Int!
+    "One entry per angle that has a log, ascending. Angles with none are absent."
+    byAngle: [FollowingClimbAscentsAngleCount!]!
+  }
+
+  """
+  The 100 most recent logs, plus counts that cover all of them
   """
   type FollowingClimbAscentsResult {
-    "List of feed items"
+    "Newest first, one row per log, every angle, attempts included. At most 100."
     items: [FollowingAscentFeedItem!]!
+    "Whether more than 100 logs exist. There is no way to page to them."
+    hasMore: Boolean!
+    "Counts across all logs, including the ones past the cap"
+    summary: FollowingClimbAscentsSummary!
   }
 
   # ============================================

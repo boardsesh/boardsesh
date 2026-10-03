@@ -603,7 +603,7 @@ a climb and never join `board_climbs` at all:
 
 | Shape | Where | Used by |
 | --- | --- | --- |
-| `sprayReferenceVisibilityCondition({ boardType, climbUuid }, userId)` | in the WHERE, over the referencing table | the smart-playlist ref queries, `browseProposals`, `globalCommentFeed`, `userProfileStats` |
+| `sprayReferenceVisibilityCondition({ boardType, climbUuid }, userId)` | in the WHERE, over the referencing table | the smart-playlist ref queries, `browseProposals`, `globalCommentFeed`, `userProfileStats`, `followingClimbAscents` |
 | `sprayClimbUuidIsReadable(climbUuid, userId)` | before the query | `comments`, `climbProposals` — the uuid-keyed threads |
 
 It is phrased "there is **no INVISIBLE** spray climb behind this reference"
@@ -612,6 +612,18 @@ survives; and because it starts from the reference, it works in a query that
 never mentions `board_climbs` — `userProfileStats` shares one condition list
 across three aggregates, one of which selects distinct climb uuids straight off
 `boardsesh_ticks`.
+
+`followingClimbAscents` (the play drawer's "Climber logs") takes the predicate
+from `climbLogConditions` in
+`packages/backend/src/graphql/resolvers/social/climb-log-query.ts`, which is the
+one array both its list query and its count query spread. That is deliberate: a
+count without the predicate would tell a follower that people log on a wall they
+cannot see. A climb on a hidden wall answers exactly like a climb nobody has
+logged (empty list, zero counts, no error). Because this is the reference form,
+a spray tick whose `board_climbs` row is missing is returned; that is safe only
+while deleting a wall stays a soft delete that keeps its climbs (the retention
+section says it always will be). Any new per-climb log reader imports `climbLogConditions` rather
+than writing its own.
 
 Pick by what the query HAS, not by taste:
 

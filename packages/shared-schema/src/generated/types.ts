@@ -2337,6 +2337,8 @@ export type FollowingAscentFeedItem = {
   difficultyName?: Maybe<Scalars['String']['output']>;
   /** Number of downvotes on this tick. Null if the resolver doesn't compute it. */
   downvotes?: Maybe<Scalars['Int']['output']>;
+  /** Raw quality, or the climber's synced star rating for this climb and angle when the tick has none. Sends and flashes only. Null if the resolver doesn't compute it. */
+  effectiveQuality?: Maybe<Scalars['Int']['output']>;
   /** Encoded hold frames for thumbnail display */
   frames?: Maybe<Scalars['String']['output']>;
   /** Whether this is a benchmark climb */
@@ -2384,19 +2386,48 @@ export type FollowingAscentsFeedResult = {
   totalCount: Scalars['Int']['output'];
 };
 
+/** How many followed climbers logged a climb at one angle. */
+export type FollowingClimbAscentsAngleCount = {
+  __typename?: 'FollowingClimbAscentsAngleCount';
+  /** Board angle */
+  angle: Scalars['Int']['output'];
+  /** Followed climbers with at least one log at this angle, any status */
+  climberCount: Scalars['Int']['output'];
+  /** Followed climbers with at least one flash or send at this angle */
+  senderCount: Scalars['Int']['output'];
+};
+
 /** Input for fetching followed users' ticks on a specific climb. */
 export type FollowingClimbAscentsInput = {
-  /** Board type (kilter, tension, moonboard) */
+  /** Board type (kilter, tension, moonboard, spray, ...) */
   boardType: Scalars['String']['input'];
   /** Climb UUID */
   climbUuid: Scalars['String']['input'];
 };
 
-/** Unpaginated result: all ticks from followed users for a given climb. */
+/** The 100 most recent logs, plus counts that cover all of them */
 export type FollowingClimbAscentsResult = {
   __typename?: 'FollowingClimbAscentsResult';
-  /** List of feed items */
+  /** Whether more than 100 logs exist. There is no way to page to them. */
+  hasMore: Scalars['Boolean']['output'];
+  /** Newest first, one row per log, every angle, attempts included. At most 100. */
   items: Array<FollowingAscentFeedItem>;
+  /** Counts across all logs, including the ones past the cap */
+  summary: FollowingClimbAscentsSummary;
+};
+
+/**
+ * Counts over every log from followed climbers on a climb. Not bound by the
+ * 100-row cap on the list.
+ */
+export type FollowingClimbAscentsSummary = {
+  __typename?: 'FollowingClimbAscentsSummary';
+  /** One entry per angle that has a log, ascending. Angles with none are absent. */
+  byAngle: Array<FollowingClimbAscentsAngleCount>;
+  /** Followed climbers with at least one log, any angle, any status */
+  climberCount: Scalars['Int']['output'];
+  /** Followed climbers with at least one flash or send, any angle */
+  senderCount: Scalars['Int']['output'];
 };
 
 export type FreezeClimbInput = {
@@ -6053,8 +6084,9 @@ export type Query = {
    */
   followingAscentsFeed: FollowingAscentsFeedResult;
   /**
-   * Get ticks from followed users for a specific climb.
-   * Requires authentication.
+   * Logs from followed users on a specific climb: the 100 newest, plus
+   * counts that cover all of them. A spray climb the caller cannot see
+   * answers like a climb nobody logged. Requires authentication.
    */
   followingClimbAscents: FollowingClimbAscentsResult;
   /**
@@ -10499,8 +10531,10 @@ export type ResolversTypes = ResolversObject<{
   FollowingAscentFeedItem: ResolverTypeWrapper<FollowingAscentFeedItem>;
   FollowingAscentsFeedInput: FollowingAscentsFeedInput;
   FollowingAscentsFeedResult: ResolverTypeWrapper<FollowingAscentsFeedResult>;
+  FollowingClimbAscentsAngleCount: ResolverTypeWrapper<FollowingClimbAscentsAngleCount>;
   FollowingClimbAscentsInput: FollowingClimbAscentsInput;
   FollowingClimbAscentsResult: ResolverTypeWrapper<FollowingClimbAscentsResult>;
+  FollowingClimbAscentsSummary: ResolverTypeWrapper<FollowingClimbAscentsSummary>;
   FreezeClimbInput: FreezeClimbInput;
   FrozenLocationSyncEntitiesInput: FrozenLocationSyncEntitiesInput;
   FrozenLocationSyncEntity: ResolverTypeWrapper<FrozenLocationSyncEntity>;
@@ -10962,8 +10996,10 @@ export type ResolversParentTypes = ResolversObject<{
   FollowingAscentFeedItem: FollowingAscentFeedItem;
   FollowingAscentsFeedInput: FollowingAscentsFeedInput;
   FollowingAscentsFeedResult: FollowingAscentsFeedResult;
+  FollowingClimbAscentsAngleCount: FollowingClimbAscentsAngleCount;
   FollowingClimbAscentsInput: FollowingClimbAscentsInput;
   FollowingClimbAscentsResult: FollowingClimbAscentsResult;
+  FollowingClimbAscentsSummary: FollowingClimbAscentsSummary;
   FreezeClimbInput: FreezeClimbInput;
   FrozenLocationSyncEntitiesInput: FrozenLocationSyncEntitiesInput;
   FrozenLocationSyncEntity: FrozenLocationSyncEntity;
@@ -12418,6 +12454,7 @@ export type FollowingAscentFeedItemResolvers<
   difficulty?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   difficultyName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   downvotes?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  effectiveQuality?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   frames?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   isBenchmark?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   isMirror?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
@@ -12445,12 +12482,36 @@ export type FollowingAscentsFeedResultResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type FollowingClimbAscentsAngleCountResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['FollowingClimbAscentsAngleCount'] =
+    ResolversParentTypes['FollowingClimbAscentsAngleCount'],
+> = ResolversObject<{
+  angle?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  climberCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  senderCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type FollowingClimbAscentsResultResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['FollowingClimbAscentsResult'] =
     ResolversParentTypes['FollowingClimbAscentsResult'],
 > = ResolversObject<{
+  hasMore?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   items?: Resolver<Array<ResolversTypes['FollowingAscentFeedItem']>, ParentType, ContextType>;
+  summary?: Resolver<ResolversTypes['FollowingClimbAscentsSummary'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type FollowingClimbAscentsSummaryResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['FollowingClimbAscentsSummary'] =
+    ResolversParentTypes['FollowingClimbAscentsSummary'],
+> = ResolversObject<{
+  byAngle?: Resolver<Array<ResolversTypes['FollowingClimbAscentsAngleCount']>, ParentType, ContextType>;
+  climberCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  senderCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -16642,7 +16703,9 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   FollowedBoardAccount?: FollowedBoardAccountResolvers<ContextType>;
   FollowingAscentFeedItem?: FollowingAscentFeedItemResolvers<ContextType>;
   FollowingAscentsFeedResult?: FollowingAscentsFeedResultResolvers<ContextType>;
+  FollowingClimbAscentsAngleCount?: FollowingClimbAscentsAngleCountResolvers<ContextType>;
   FollowingClimbAscentsResult?: FollowingClimbAscentsResultResolvers<ContextType>;
+  FollowingClimbAscentsSummary?: FollowingClimbAscentsSummaryResolvers<ContextType>;
   FrozenLocationSyncEntity?: FrozenLocationSyncEntityResolvers<ContextType>;
   FrozenLocationSyncEntityConnection?: FrozenLocationSyncEntityConnectionResolvers<ContextType>;
   FullSync?: FullSyncResolvers<ContextType>;
