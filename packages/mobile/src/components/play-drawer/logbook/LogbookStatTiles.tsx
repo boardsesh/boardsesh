@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import type { LedgerTotals } from '@boardsesh/profile-stats';
 import { Text } from '../../Text';
 import { GradePill } from '../../ascent-marks';
+import { useGradeFormat } from '../../../hooks/use-grade-format';
 import { useTheme } from '../../../providers/theme-provider';
 import { spacing, borderRadius } from '../../../theme/tokens';
 
@@ -58,6 +59,9 @@ export const LogbookStatTiles = memo(function LogbookStatTiles({ totals, boardAn
   const sessionsLabel = t('mobile.logbook.statSessions');
   const sendsLabel = t('mobile.logbook.statSends');
   const gradeLabel = t('mobile.logbook.statGrade');
+  // The tile is one accessibility element, so the grade the pill draws has to
+  // be in its label or VoiceOver reads "Your grade" and stops.
+  const { formatGradeByDifficultyId } = useGradeFormat();
 
   return (
     <View style={styles.container}>
@@ -83,7 +87,10 @@ export const LogbookStatTiles = memo(function LogbookStatTiles({ totals, boardAn
             </Text>
           </StatTile>
         ) : (
-          <StatTile label={gradeLabel} accessibilityLabel={gradeLabel}>
+          <StatTile
+            label={gradeLabel}
+            accessibilityLabel={`${gradeLabel}: ${formatGradeByDifficultyId(totals.personalGrade) ?? ''}`}
+          >
             <GradePill difficultyId={totals.personalGrade} />
           </StatTile>
         )}
