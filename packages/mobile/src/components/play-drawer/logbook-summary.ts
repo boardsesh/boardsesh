@@ -39,12 +39,11 @@ export type AngleTickCounts = {
 
 /**
  * Count a climb's sends and attempt rows at `angle` from its logbook entries
- * (already filtered to that climb). Same definitions as the denormalised
- * `userAscents` / `userAttempts` on the climb row — a flash is a send, and an
- * attempt is one logged row, not its tries — so the summary reads the same
- * whichever source answers. The climb row's counts are a snapshot from when the
- * list was fetched; these follow the logbook, so a tick logged from the drawer
- * shows up on the collapsed header straight away.
+ * (already filtered to that climb). A flash is a send, and an attempt is one
+ * logged row, not its tries — the same units as the denormalised
+ * `userAscents` / `userAttempts` on the climb row, though not always the same
+ * rows: the logbook drops Aurora twin duplicates and has no outbox ticks. These
+ * follow the logbook, so a tick logged from the drawer is counted straight away.
  */
 export function deriveAngleTickCounts(entries: readonly LogbookEntry[], angle: number): AngleTickCounts {
   let sends = 0;
