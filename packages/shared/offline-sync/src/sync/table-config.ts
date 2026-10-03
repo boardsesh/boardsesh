@@ -57,6 +57,22 @@ export type TableSyncConfig = {
    * carried, and the strict `>` delta pull never revisits them.
    */
   cursorColumn: string;
+  /**
+   * Revision column used by a table-specific guard in `pull-write.ts`. For
+   * `board_climb_stats`, the guard compares `sync_seq` alone: its live
+   * `climbStatsUpdated` writer stamps `updated_at` at the epoch, so including
+   * the cursor timestamp could let a stale pull row overwrite a newer stream
+   * revision.
+   *
+   * Set only for tables with a second local writer. Refresh pages for other
+   * cursor-bearing tables use the separate `(updated_at, sync_seq)` guard in
+   * `pull-write.ts` when they race a newer ordinary pull.
+   *
+   * The comparison is `>=`, not `>`: the pull usually carries the same revision
+   * as the stream and still needs to fill columns the stream leaves alone
+   * (`updated_at`, `benchmark_difficulty`, and the `fa_*` pair).
+   */
+  revisionColumn?: string;
 };
 
 type TableSyncDefinition = Omit<TableSyncConfig, 'invalidateKeys'>;
@@ -208,6 +224,9 @@ const TABLE_SYNC_DEFINITIONS: Record<string, TableSyncDefinition> = {
   board_climb_stats: {
     queryName: 'syncClimbStats',
     cursorColumn: UPDATED_AT_CURSOR,
+    // The one table the live stream also writes, so the pull must not be able
+    // to walk a newer local row backwards. See `revisionColumn` above.
+    revisionColumn: 'sync_seq',
     operationKey: 'SYNC_CLIMB_STATS',
     isPerBoard: true,
     primaryKeyColumns: ['board_type', 'climb_uuid', 'angle'],
