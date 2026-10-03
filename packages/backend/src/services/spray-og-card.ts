@@ -55,6 +55,8 @@ export type SprayOgWallRow = {
   layoutId: number;
   wallName: string;
   isPublic: boolean;
+  /** Set when an admin has hidden the wall (SW-17). A hidden wall gets no card. */
+  hiddenAt: Date | null;
   publicPhotoKey: string | null;
   currentVersionId: number | null;
 };
@@ -313,6 +315,11 @@ export async function renderSprayOgCard(
   // capability at all, so "hard to guess" would be the whole access control.
   if (wall.isPublic !== true) return { kind: 'not-found' };
 
+  // 2b. Hidden by an admin. Hidden means private for everybody but the owner,
+  // and a crawler is never the owner, so the answer is the private wall's
+  // answer: the same not-found, before a photo URL is even derived.
+  if (wall.hiddenAt !== null) return { kind: 'not-found' };
+
   // 3. A wall nobody has published has no photograph any climber has seen.
   if (wall.currentVersionId === null) return { kind: 'not-found' };
 
@@ -494,6 +501,7 @@ export function createSprayOgCardDeps(): SprayOgCardDeps {
           layoutId: sprayWalls.layoutId,
           wallName: userBoards.name,
           isPublic: userBoards.isPublic,
+          hiddenAt: sprayWalls.hiddenAt,
           publicPhotoKey: sprayWalls.publicPhotoKey,
           currentVersionId: sprayWalls.currentVersionId,
         })
