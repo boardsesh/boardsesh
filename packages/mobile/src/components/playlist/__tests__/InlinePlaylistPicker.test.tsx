@@ -173,11 +173,16 @@ function NameInput(props: { value?: string; onChangeText?: (text: string) => voi
   });
 }
 
-function renderPicker(onBack?: () => void, onDetachedFailure?: (message: string) => void, climbOverride?: Climb) {
+function renderPicker(
+  onBack?: () => void,
+  onDetachedFailure?: (message: string) => void,
+  climbOverride?: Climb,
+  angle = 40,
+) {
   return render(
     <InlinePlaylistPicker
       climb={climbOverride ?? climb}
-      angle={40}
+      angle={angle}
       boardName="kilter"
       layoutId={1}
       TextInputComponent={NameInput as never}
@@ -314,10 +319,10 @@ describe('InlinePlaylistPicker', () => {
   });
 
   it('creates a new playlist on the climbs board, not the host board', async () => {
-    const tensionClimb = { ...climb, boardType: 'tension', layoutId: 10 } as Climb;
+    const tensionClimb = { ...climb, boardType: 'tension', layoutId: 10, angle: 35 } as Climb;
     const created = { ...basePlaylist, id: 'p-new', uuid: 'p-new', name: 'Tension proj', boardType: 'tension' };
     playlistContext.createPlaylist.mockResolvedValueOnce(created);
-    const { getByLabelText } = renderPicker(undefined, undefined, tensionClimb);
+    const { getByLabelText } = renderPicker(undefined, undefined, tensionClimb, 35);
 
     fireEvent.click(getByLabelText('actions.playlist.popover.createNew'));
     fireEvent.change(getByLabelText('name-input'), { target: { value: 'Tension proj' } });
@@ -328,6 +333,9 @@ describe('InlinePlaylistPicker', () => {
         boardType: 'tension',
         layoutId: 10,
       });
+    });
+    await waitFor(() => {
+      expect(playlistContext.addToPlaylist).toHaveBeenCalledWith('p-new', 'climb-1', 35);
     });
   });
 
@@ -429,6 +437,28 @@ describe('InlinePlaylistPicker', () => {
     expect(playlistContext.removeFromPlaylist).not.toHaveBeenCalled();
     expect(queryClientMock.setQueryData).toHaveBeenCalledWith(['playlistsForClimb', 'kilter', 1, 'climb-1'], ['p-1']);
     expect(membershipStore.setMembershipForClimb).toHaveBeenCalledWith('climb-1', ['p-1']);
+  });
+
+  it('saves the preview angle when adding a cross-board climb to an existing playlist', async () => {
+    const tensionClimb = { ...climb, boardType: 'tension', layoutId: 10, angle: 35 } as Climb;
+    playlistContext.playlists = [
+      {
+        ...basePlaylist,
+        id: 'p-tension',
+        uuid: 'p-tension',
+        name: 'Tension projects',
+        boardType: 'tension',
+        layoutId: 10,
+      },
+    ];
+    const { getByLabelText } = renderPicker(undefined, undefined, tensionClimb, 35);
+
+    fireEvent.click(getByLabelText('Tension projects'));
+
+    await waitFor(() => {
+      expect(playlistContext.addToPlaylist).toHaveBeenCalledWith('p-tension', 'climb-1', 35);
+    });
+    expect(playlistContext.addToPlaylist).toHaveBeenCalledTimes(1);
   });
 
   it('removes the climb when tapping a member row', async () => {
