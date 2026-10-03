@@ -4,7 +4,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import {
+  CANCEL_GRACE_MS,
+  DEFAULT_MAX_RUN_MINUTES,
   DEFAULT_STALL_MINUTES,
+  FORCE_CONFIRM_MS,
+  cancelAndConfirm,
+  createCliGitHub,
   DISCORD_CONTENT_LIMIT,
   classifyRun,
   formatDiscordContent,
@@ -61,7 +66,7 @@ void test('cancels a run parked past the stall threshold even after some jobs co
 
 void test('leaves a parked run alone until it crosses the stall threshold', () => {
   const verdict = classifyRun({
-    run: run({ updated_at: minutesAgo(DEFAULT_STALL_MINUTES - 5) }),
+    run: run({ run_started_at: minutesAgo(DEFAULT_STALL_MINUTES - 5) }),
     jobs: [{ name: 'check-rollback', status: 'queued' }],
     nowMs: NOW,
   });
@@ -69,7 +74,7 @@ void test('leaves a parked run alone until it crosses the stall threshold', () =
   assert.equal(verdict.action, 'none');
 });
 
-void test('never cancels a run with a job actually executing, however long it has run', () => {
+void test('cancels an executing run after the six-hour maximum', () => {
   const verdict = classifyRun({
     run: run({ status: 'in_progress', run_started_at: minutesAgo(60 * 24), updated_at: minutesAgo(60 * 24) }),
     jobs: [
@@ -79,7 +84,7 @@ void test('never cancels a run with a job actually executing, however long it ha
     nowMs: NOW,
   });
 
-  assert.equal(verdict.action, 'alert');
+  assert.equal(verdict.action, 'cancel');
 });
 
 void test('a busy deploy inside the alert window needs no action', () => {
@@ -218,7 +223,7 @@ void test('a quiet tick plans nothing and says so', () => {
     nowMs: NOW,
   });
 
-  assert.deepEqual(plan, { cancel: [], alert: [], redispatch: false, followUp: 'none' });
+  assert.deepEqual(plan, { cancel: [], alert: [], redispatch: false, followUp: 'none', recoveringCancelledRun: false });
   assert.equal(formatSummary(plan), 'no stalled production deploy found');
   assert.equal(formatDiscordContent(plan), '');
 });
@@ -259,7 +264,7 @@ void test('a freed group with a queued successor reports the successor, not a di
   });
 
   assert.equal(plan.followUp, 'queued-run-takes-over');
-  assert.match(formatDiscordContent(plan), /queued run behind it/);
+  assert.match(formatDiscordContent(plan), /queued or active deploy remains/);
 });
 
 void test('a head that already deployed is not an intervention', () => {
@@ -289,7 +294,7 @@ void test('the Discord message names the run, the cause and the gate to check', 
   assert.match(content, /#1337/);
   assert.match(content, /2222222/);
   assert.match(content, /parked for 1h 30m/);
-  assert.match(content, /Production environment gate/);
+  assert.match(content, /Production environment protection rules/);
   assert.match(content, /<https:\/\/example\.test\/actions\/runs\/42>/);
 });
 
@@ -311,12 +316,12 @@ void test('a Discord message never exceeds the limit that would make the post fa
   assert.match(content, /truncated/);
 });
 
-void test('one cancel that fails does not strand the others', () => {
+void test('one cancel that fails does not strand the others', async () => {
   const cancelled = [];
   const dispatched = [];
   const discordFilePath = join(mkdtempSync(join(tmpdir(), 'boardsesh-watchdog-')), 'discord.txt');
 
-  runCli({
+  const result = await runCli({
     github: {
       listRuns: () => ({
         runs: [
@@ -326,21 +331,24 @@ void test('one cancel that fails does not strand the others', () => {
         recentPageOk: true,
       }),
       listJobs: () => [{ name: 'check-rollback', status: 'waiting' }],
+      getRun: (runId) => run({ id: runId, status: cancelled.includes(runId) ? 'completed' : 'waiting' }),
       cancelRun: (runId) => {
-        // GitHub rejects a cancel for a run that finished in the meantime.
-        if (runId === 1) throw new Error('HTTP 409: cannot cancel a completed run');
+        // A rejected API request must not prevent the next run's cancellation.
+        if (runId === 1) throw new Error('HTTP 403: cancellation denied');
         cancelled.push(runId);
       },
       dispatchRun: (ref) => dispatched.push(ref),
     },
     headSha: HEAD_SHA,
     nowMs: NOW,
+    now: () => NOW,
     runUrlBase: '',
     discordFilePath,
     outputPath: '',
     dryRun: false,
   });
 
+  assert.equal(result.failed, true);
   // The second cancel still happened...
   assert.deepEqual(cancelled, [2]);
   // ...and the retry is left for the next tick, since the group may still be held.
@@ -358,18 +366,20 @@ void test('one cancel that fails does not strand the others', () => {
   assert.doesNotMatch(content, /unwedged/);
 });
 
-void test('an unreadable run history withholds the dispatch and says why', () => {
+void test('an unreadable run history withholds the dispatch and says why', async () => {
   const dispatched = [];
 
-  runCli({
+  await runCli({
     github: {
       listRuns: () => ({ runs: [run({ id: 1, status: 'waiting', head_sha: HEAD_SHA })], recentPageOk: false }),
       listJobs: () => [{ name: 'check-rollback', status: 'waiting' }],
+      getRun: () => run({ status: 'completed' }),
       cancelRun: () => {},
       dispatchRun: (ref) => dispatched.push(ref),
     },
     headSha: HEAD_SHA,
     nowMs: NOW,
+    now: () => NOW,
     runUrlBase: '',
     discordFilePath: '',
     outputPath: '',
@@ -400,20 +410,25 @@ void test('the report never claims a cancel that did not land', () => {
   assert.match(formatSummary(plan, { failedCancelIds }), /could NOT cancel/);
 });
 
-void test('the CLI cancels, redispatches and reports through one pass', () => {
+void test('the CLI cancels, redispatches and reports through one pass', async () => {
   const cancelled = [];
   const dispatched = [];
   const stalled = run({ id: 7, status: 'waiting', head_sha: HEAD_SHA });
 
-  const plan = runCli({
+  const plan = await runCli({
     github: {
-      listRuns: () => ({ runs: [stalled], recentPageOk: true }),
+      listRuns: () => ({
+        runs: [cancelled.length ? { ...stalled, status: 'completed', conclusion: 'cancelled' } : stalled],
+        recentPageOk: true,
+      }),
+      getRun: () => (cancelled.length ? { ...stalled, status: 'completed' } : stalled),
       listJobs: () => [{ name: 'check-rollback', status: 'waiting' }],
       cancelRun: (runId) => cancelled.push(runId),
       dispatchRun: (ref) => dispatched.push(ref),
     },
     headSha: HEAD_SHA,
     nowMs: NOW,
+    now: () => NOW,
     runUrlBase: '',
     discordFilePath: '',
     outputPath: '',
@@ -425,14 +440,14 @@ void test('the CLI cancels, redispatches and reports through one pass', () => {
   assert.equal(plan.cancel.length, 1);
 });
 
-void test('a dry run reports the same plan without touching anything', () => {
+void test('a dry run reports the same plan without touching anything', async () => {
   const cancelled = [];
   const dispatched = [];
   const workDirectory = mkdtempSync(join(tmpdir(), 'boardsesh-watchdog-'));
   const discordFilePath = join(workDirectory, 'discord.txt');
   const outputPath = join(workDirectory, 'github-output.txt');
 
-  const plan = runCli({
+  const plan = await runCli({
     github: {
       listRuns: () => ({ runs: [run({ id: 7, status: 'waiting', head_sha: HEAD_SHA })], recentPageOk: true }),
       listJobs: () => [{ name: 'check-rollback', status: 'waiting' }],
@@ -441,6 +456,7 @@ void test('a dry run reports the same plan without touching anything', () => {
     },
     headSha: HEAD_SHA,
     nowMs: NOW,
+    now: () => NOW,
     runUrlBase: '',
     discordFilePath,
     outputPath,
@@ -457,10 +473,10 @@ void test('a dry run reports the same plan without touching anything', () => {
   assert.equal(readFileSync(outputPath, 'utf8'), 'notify=false\n');
 });
 
-void test('only holding runs cost a jobs lookup', () => {
+void test('only holding runs cost a jobs lookup', async () => {
   const lookedUp = [];
 
-  runCli({
+  await runCli({
     github: {
       listRuns: () => ({
         runs: [
@@ -479,6 +495,7 @@ void test('only holding runs cost a jobs lookup', () => {
     },
     headSha: HEAD_SHA,
     nowMs: NOW,
+    now: () => NOW,
     runUrlBase: '',
     discordFilePath: '',
     outputPath: '',
@@ -486,4 +503,816 @@ void test('only holding runs cost a jobs lookup', () => {
   });
 
   assert.deepEqual(lookedUp, [3]);
+});
+
+function fakeClock() {
+  let currentMs = NOW;
+  return {
+    now: () => currentMs,
+    sleep: async (milliseconds) => {
+      currentMs += milliseconds;
+    },
+  };
+}
+
+function cancellationScenario({
+  currentRun = run(),
+  currentJobs = [{ name: 'sync-static-assets', status: 'queued' }],
+} = {}) {
+  const clock = fakeClock();
+  const calls = [];
+  let observedRun = currentRun;
+  let observedJobs = currentJobs;
+  const github = {
+    getRun: () => observedRun,
+    listJobs: () => observedJobs,
+    cancelRun: () => calls.push('cancel'),
+    forceCancelRun: () => {
+      calls.push('force');
+      observedRun = { ...observedRun, status: 'completed', conclusion: 'cancelled' };
+    },
+  };
+  return {
+    clock,
+    calls,
+    github,
+    setRun: (nextRun) => {
+      observedRun = nextRun;
+    },
+    setJobs: (nextJobs) => {
+      observedJobs = nextJobs;
+    },
+    options: { github, ...clock, runId: currentRun.id, deadlineMs: NOW + 8 * 60_000 },
+  };
+}
+
+void test('idle cancellation starts at 45 minutes without job activity', () => {
+  for (const [idle, expected] of [
+    [44.999, 'none'],
+    [45, 'cancel'],
+    [45.001, 'cancel'],
+  ]) {
+    const verdict = classifyRun({
+      run: run(),
+      jobs: [
+        { name: 'build', status: 'completed', started_at: minutesAgo(60), completed_at: minutesAgo(idle) },
+        { name: 'sync-static-assets', status: 'queued' },
+      ],
+      nowMs: NOW,
+    });
+    assert.equal(verdict.action, expected, `idle=${idle}`);
+  }
+});
+
+void test('cancellation metadata does not reset the idle timer', () => {
+  const verdict = classifyRun({
+    run: run({ updated_at: minutesAgo(1) }),
+    jobs: [
+      { name: 'build', status: 'completed', started_at: minutesAgo(80), completed_at: minutesAgo(60) },
+      { name: 'sync-static-assets', status: 'queued' },
+    ],
+    nowMs: NOW,
+  });
+  assert.equal(verdict.action, 'cancel');
+});
+
+void test('active migration has a six-hour cancellation ceiling', () => {
+  for (const [age, expected] of [
+    [DEFAULT_MAX_RUN_MINUTES - 0.001, 'alert'],
+    [DEFAULT_MAX_RUN_MINUTES, 'cancel'],
+    [DEFAULT_MAX_RUN_MINUTES + 0.001, 'cancel'],
+  ]) {
+    assert.equal(
+      classifyRun({
+        run: run({ status: 'in_progress', run_started_at: minutesAgo(age) }),
+        jobs: [{ name: 'migrate', status: 'in_progress', started_at: minutesAgo(1) }],
+        nowMs: NOW,
+      }).action,
+      expected,
+      `age=${age}`,
+    );
+  }
+});
+
+void test('accepted cancellation stuck queued is force-cancelled after five minutes', async () => {
+  const scenario = cancellationScenario();
+  assert.equal(await cancelAndConfirm(scenario.options), 'stopped');
+  assert.deepEqual(scenario.calls, ['cancel', 'force']);
+  assert.equal(scenario.clock.now() - NOW, CANCEL_GRACE_MS);
+});
+
+void test('normal cancellation confirms completion without force cancellation', async () => {
+  const scenario = cancellationScenario();
+  scenario.github.cancelRun = () => {
+    scenario.calls.push('cancel');
+    scenario.setRun(run({ status: 'completed', conclusion: 'cancelled' }));
+  };
+  assert.equal(await cancelAndConfirm(scenario.options), 'stopped');
+  assert.deepEqual(scenario.calls, ['cancel']);
+  assert.ok(scenario.clock.now() - NOW < CANCEL_GRACE_MS);
+});
+
+void test('completion before requesting cancellation makes no mutation', async () => {
+  const scenario = cancellationScenario({ currentRun: run({ status: 'completed', conclusion: 'success' }) });
+  assert.equal(await cancelAndConfirm(scenario.options), 'stopped');
+  assert.deepEqual(scenario.calls, []);
+});
+
+void test('resumed work before the cancellation request is preserved', async () => {
+  const scenario = cancellationScenario({
+    currentRun: run({ status: 'in_progress' }),
+    currentJobs: [{ name: 'build', status: 'in_progress', started_at: minutesAgo(1) }],
+  });
+  assert.equal(await cancelAndConfirm(scenario.options), 'resumed');
+  assert.deepEqual(scenario.calls, []);
+});
+
+void test('job activity resuming during cancellation prevents force cancellation', async () => {
+  const scenario = cancellationScenario();
+  scenario.github.cancelRun = () => {
+    scenario.calls.push('cancel');
+    scenario.setRun(run({ status: 'in_progress' }));
+    scenario.setJobs([{ name: 'build', status: 'in_progress', started_at: new Date(NOW).toISOString() }]);
+  };
+  assert.equal(await cancelAndConfirm(scenario.options), 'resumed');
+  assert.deepEqual(scenario.calls, ['cancel']);
+});
+
+void test('recent completed job activity prevents force cancellation too', async () => {
+  const scenario = cancellationScenario();
+  scenario.github.cancelRun = () => {
+    scenario.calls.push('cancel');
+    scenario.setJobs([
+      { name: 'build', status: 'completed', completed_at: new Date(NOW).toISOString() },
+      { name: 'sync-static-assets', status: 'queued' },
+    ]);
+  };
+  assert.equal(await cancelAndConfirm(scenario.options), 'resumed');
+  assert.deepEqual(scenario.calls, ['cancel']);
+});
+
+void test('six-hour ceiling still forces cancellation of an active migration', async () => {
+  const scenario = cancellationScenario({
+    currentRun: run({ status: 'in_progress', run_started_at: minutesAgo(DEFAULT_MAX_RUN_MINUTES + 1) }),
+    currentJobs: [{ name: 'migrate', status: 'in_progress', started_at: minutesAgo(1) }],
+  });
+  assert.equal(await cancelAndConfirm(scenario.options), 'stopped');
+  assert.deepEqual(scenario.calls, ['cancel', 'force']);
+});
+
+void test('409 cancellation race is successful only when run completion is confirmed', async () => {
+  const scenario = cancellationScenario();
+  scenario.github.cancelRun = () => {
+    scenario.setRun(run({ status: 'completed', conclusion: 'success' }));
+    throw new Error('HTTP 409: cannot cancel a completed run');
+  };
+  assert.equal(await cancelAndConfirm(scenario.options), 'stopped');
+  assert.deepEqual(scenario.calls, []);
+});
+
+void test('rejected cancellation of a live run reports failure', async () => {
+  const scenario = cancellationScenario();
+  scenario.github.cancelRun = () => {
+    throw new Error('HTTP 403: cancellation denied');
+  };
+  await assert.rejects(cancelAndConfirm(scenario.options), /403/);
+  assert.deepEqual(scenario.calls, []);
+});
+
+void test('unconfirmed force cancellation fails within the confirmation window', async () => {
+  const scenario = cancellationScenario();
+  scenario.github.forceCancelRun = () => scenario.calls.push('force');
+  await assert.rejects(cancelAndConfirm(scenario.options), /confirm|stopp|complet/i);
+  assert.deepEqual(scenario.calls, ['cancel', 'force']);
+  assert.equal(scenario.clock.now() - NOW, CANCEL_GRACE_MS + FORCE_CONFIRM_MS);
+});
+
+void test('the global deadline bounds a cancellation pass', async () => {
+  const scenario = cancellationScenario();
+  scenario.options.deadlineMs = NOW + 30_000;
+  scenario.github.forceCancelRun = () => scenario.calls.push('force');
+  await assert.rejects(cancelAndConfirm(scenario.options), /deadline|time|budget/i);
+  assert.ok(scenario.clock.now() - NOW <= 30_000);
+});
+
+void test('cancelled jobs do not count as resumed deployment activity', async () => {
+  const scenario = cancellationScenario();
+  scenario.github.cancelRun = () => {
+    scenario.calls.push('cancel');
+    scenario.setJobs([
+      { name: 'build', status: 'completed', conclusion: 'cancelled', completed_at: new Date(NOW).toISOString() },
+      { name: 'sync-static-assets', status: 'queued' },
+    ]);
+  };
+  assert.equal(await cancelAndConfirm(scenario.options), 'stopped');
+  assert.deepEqual(scenario.calls, ['cancel', 'force']);
+});
+
+void test('an incomplete job list cannot justify idle cancellation', () => {
+  assert.equal(classifyRun({ run: run(), jobs: null, nowMs: NOW }).action, 'none');
+});
+
+void test('a truncated job list is rejected rather than appearing idle', () => {
+  const github = createCliGitHub({
+    repository: 'example/repository',
+    workflowFile: 'production-deploy.yml',
+    api: () => JSON.stringify({ total_count: 501, jobs: Array.from({ length: 100 }, () => ({ status: 'queued' })) }),
+  });
+  assert.equal(github.listJobs(1), null);
+});
+
+void test('an empty page before total_count is exhausted is rejected', () => {
+  let requests = 0;
+  const github = createCliGitHub({
+    repository: 'example/repository',
+    workflowFile: 'production-deploy.yml',
+    api: () => {
+      requests += 1;
+      return JSON.stringify({ total_count: 2, jobs: requests === 1 ? [{ status: 'queued' }] : [] });
+    },
+  });
+  assert.equal(github.listJobs(1), null);
+});
+
+void test('an incomplete job list during confirmation prevents force cancellation', async () => {
+  const scenario = cancellationScenario();
+  scenario.github.cancelRun = () => {
+    scenario.calls.push('cancel');
+    scenario.github.listJobs = () => null;
+  };
+  await assert.rejects(cancelAndConfirm(scenario.options), /job|confirm|eligib|unread/i);
+  assert.deepEqual(scenario.calls, ['cancel']);
+});
+
+void test('refreshing deployment history preserves a successor that appeared during cancellation', async () => {
+  const cancelled = [];
+  const dispatched = [];
+  const stalled = run({ id: 7, status: 'waiting', head_sha: HEAD_SHA });
+  const successor = run({ id: 8, status: 'pending', head_sha: HEAD_SHA });
+  const plan = await runCli({
+    github: {
+      listRuns: () => ({
+        runs: cancelled.length ? [{ ...stalled, status: 'completed', conclusion: 'cancelled' }, successor] : [stalled],
+        recentPageOk: true,
+      }),
+      getRun: () => (cancelled.length ? { ...stalled, status: 'completed' } : stalled),
+      listJobs: () => [{ name: 'sync-static-assets', status: 'queued' }],
+      cancelRun: (runId) => cancelled.push(runId),
+      dispatchRun: (ref) => dispatched.push(ref),
+    },
+    headSha: HEAD_SHA,
+    nowMs: NOW,
+    now: () => NOW,
+    runUrlBase: '',
+    discordFilePath: '',
+    outputPath: '',
+    dryRun: false,
+  });
+  assert.deepEqual(cancelled, [7]);
+  assert.deepEqual(dispatched, []);
+  assert.equal(plan.followUp, 'queued-run-takes-over');
+});
+
+void test('failed status queries mark run history incomplete for redispatch', () => {
+  const github = createCliGitHub({
+    repository: 'example/repository',
+    workflowFile: 'production-deploy.yml',
+    api: (argumentsList) => {
+      const endpoint = argumentsList.find((argument) => argument.startsWith('repos/'));
+      if (endpoint.includes('status=pending')) throw new Error('HTTP 503');
+      return JSON.stringify({ workflow_runs: [] });
+    },
+  });
+  const history = github.listRuns();
+  assert.equal(history.recentPageOk, false);
+});
+
+void test('unconfirmed force cancellation blocks retry and emits a failure report', async () => {
+  const scenario = cancellationScenario();
+  scenario.github.forceCancelRun = () => scenario.calls.push('force');
+  scenario.github.listRuns = () => ({ runs: [run({ head_sha: HEAD_SHA })], recentPageOk: true });
+  scenario.github.dispatchRun = () => assert.fail('unconfirmed cancellation must not dispatch');
+  const workDirectory = mkdtempSync(join(tmpdir(), 'boardsesh-watchdog-'));
+  const discordFilePath = join(workDirectory, 'discord.txt');
+  const outputPath = join(workDirectory, 'github-output.txt');
+  const result = await runCli({
+    github: scenario.github,
+    headSha: HEAD_SHA,
+    ...scenario.clock,
+    runUrlBase: '',
+    discordFilePath,
+    outputPath,
+    dryRun: false,
+  });
+  assert.equal(result.failed, true);
+  assert.deepEqual(scenario.calls, ['cancel', 'force']);
+  const report = readFileSync(discordFilePath, 'utf8');
+  assert.match(report, /still wedged/);
+  assert.doesNotMatch(report, /Stopped run|Dispatched a fresh deploy/);
+  assert.equal(readFileSync(outputPath, 'utf8'), 'notify=true\n');
+});
+
+void test('a sole idle target resuming before cancellation does not spend a retry', async () => {
+  const mutations = [];
+  const plan = await runCli({
+    github: {
+      listRuns: () => ({ runs: [run({ head_sha: HEAD_SHA })], recentPageOk: true }),
+      listJobs: () => [{ name: 'sync-static-assets', status: 'queued' }],
+      getRun: () => run({ status: 'in_progress', run_started_at: minutesAgo(1), head_sha: HEAD_SHA }),
+      cancelRun: () => mutations.push('cancel'),
+      forceCancelRun: () => mutations.push('force'),
+      dispatchRun: () => mutations.push('dispatch'),
+    },
+    headSha: HEAD_SHA,
+    now: () => NOW,
+    runUrlBase: '',
+    discordFilePath: '',
+    outputPath: '',
+    dryRun: false,
+  });
+  assert.deepEqual(mutations, []);
+  assert.equal(plan.redispatch, false);
+});
+
+void test('malformed run history withholds redispatch', () => {
+  const github = createCliGitHub({
+    repository: 'example/repository',
+    workflowFile: 'production-deploy.yml',
+    api: () => JSON.stringify({ message: 'unexpected response' }),
+  });
+  assert.equal(github.listRuns().recentPageOk, false);
+});
+
+void test('cancelling a queued job does not turn its recent start timestamp into progress', async () => {
+  const recentTimestamp = new Date(NOW).toISOString();
+  const scenario = cancellationScenario({
+    currentJobs: [
+      { name: 'build', status: 'queued', started_at: recentTimestamp },
+      { name: 'sync-static-assets', status: 'queued' },
+    ],
+  });
+  scenario.github.cancelRun = () => {
+    scenario.calls.push('cancel');
+    scenario.setJobs([
+      {
+        name: 'build',
+        status: 'completed',
+        conclusion: 'cancelled',
+        started_at: recentTimestamp,
+        completed_at: recentTimestamp,
+      },
+      { name: 'sync-static-assets', status: 'queued' },
+    ]);
+  };
+  assert.equal(await cancelAndConfirm(scenario.options), 'stopped');
+  assert.deepEqual(scenario.calls, ['cancel', 'force']);
+  assert.equal(scenario.clock.now() - NOW, CANCEL_GRACE_MS);
+});
+
+void test('main advancing during cancellation uses the new heads retry history', async () => {
+  const newerHeadSha = '3333333333333333333333333333333333333333';
+  const stopped = [];
+  const stalled = run({ head_sha: HEAD_SHA });
+  const plan = await runCli({
+    github: {
+      listRuns: () => ({
+        runs: stopped.length
+          ? [
+              { ...stalled, status: 'completed', conclusion: 'cancelled' },
+              run({
+                id: 2,
+                head_sha: newerHeadSha,
+                status: 'completed',
+                conclusion: 'failure',
+                event: 'workflow_dispatch',
+              }),
+            ]
+          : [stalled],
+        recentPageOk: true,
+      }),
+      getHeadSha: () => newerHeadSha,
+      getRun: () => (stopped.length ? { ...stalled, status: 'completed' } : stalled),
+      listJobs: () => [{ name: 'sync-static-assets', status: 'queued' }],
+      cancelRun: (runId) => stopped.push(runId),
+      dispatchRun: () => assert.fail('the newer commit has already spent its retry'),
+    },
+    headSha: HEAD_SHA,
+    now: () => NOW,
+    runUrlBase: '',
+    discordFilePath: '',
+    outputPath: '',
+    dryRun: false,
+  });
+  assert.deepEqual(stopped, [1]);
+  assert.equal(plan.redispatch, false);
+  assert.equal(plan.followUp, 'needs-intervention');
+});
+
+void test('GitHub adapter reads runs and calls distinct normal and force cancellation endpoints', () => {
+  const requests = [];
+  const github = createCliGitHub({
+    repository: 'example/repository',
+    workflowFile: 'production-deploy.yml',
+    api: (argumentsList) => {
+      requests.push(argumentsList);
+      return JSON.stringify(run({ id: 42 }));
+    },
+  });
+  assert.equal(github.getRun(42).id, 42);
+  github.cancelRun(42);
+  github.forceCancelRun(42);
+  assert.deepEqual(requests, [
+    ['--method', 'GET', 'repos/example/repository/actions/runs/42'],
+    ['--method', 'POST', 'repos/example/repository/actions/runs/42/cancel'],
+    ['--method', 'POST', 'repos/example/repository/actions/runs/42/force-cancel'],
+  ]);
+});
+
+void test('the workflow bounds watchdog runtime and sends failure notifications', () => {
+  const workflow = readFileSync(
+    new URL('../.github/workflows/production-deploy-watchdog.yml', import.meta.url),
+    'utf8',
+  );
+  assert.match(workflow, /^    timeout-minutes: 10$/m);
+  assert.match(workflow, /^        if: always\(\) && steps\.watchdog\.outputs\.notify == 'true'$/m);
+  assert.match(workflow, /exit "\$watchdog_status"/);
+});
+
+void test('normal cancellation 409 for a live queued run still escalates to force cancellation', async () => {
+  const scenario = cancellationScenario();
+  scenario.github.cancelRun = () => {
+    scenario.calls.push('cancel');
+    throw new Error('HTTP 409: workflow run cannot be cancelled');
+  };
+  assert.equal(await cancelAndConfirm(scenario.options), 'stopped');
+  assert.deepEqual(scenario.calls, ['cancel', 'force']);
+  assert.equal(scenario.clock.now() - NOW, CANCEL_GRACE_MS);
+});
+
+void test('dry run refreshes an advancing main and preserves its spent manual retry', async () => {
+  const newerHeadSha = '3333333333333333333333333333333333333333';
+  const stalled = run({ head_sha: HEAD_SHA });
+  let historyReads = 0;
+  const plan = await runCli({
+    github: {
+      listRuns: () => {
+        historyReads += 1;
+        return {
+          runs:
+            historyReads > 1
+              ? [
+                  stalled,
+                  run({
+                    id: 2,
+                    head_sha: newerHeadSha,
+                    status: 'completed',
+                    conclusion: 'failure',
+                    event: 'workflow_dispatch',
+                  }),
+                ]
+              : [stalled],
+          recentPageOk: true,
+        };
+      },
+      getHeadSha: () => newerHeadSha,
+      listJobs: () => [{ name: 'sync-static-assets', status: 'queued' }],
+      getRun: () => assert.fail('dry run must not initiate cancellation confirmation'),
+      cancelRun: () => assert.fail('dry run must not cancel'),
+      forceCancelRun: () => assert.fail('dry run must not force-cancel'),
+      dispatchRun: () => assert.fail('dry run must not dispatch'),
+    },
+    headSha: HEAD_SHA,
+    now: () => NOW,
+    runUrlBase: '',
+    discordFilePath: '',
+    outputPath: '',
+    dryRun: true,
+  });
+  assert.equal(historyReads, 2);
+  assert.equal(plan.cancel.length, 1);
+  assert.equal(plan.redispatch, false);
+  assert.equal(plan.followUp, 'needs-intervention');
+  assert.doesNotMatch(formatSummary(plan, { dryRun: true }), /would dispatch/);
+});
+
+void test('multiple cancellation targets share the eight-minute watchdog deadline', async () => {
+  const clock = fakeClock();
+  const mutations = [];
+  const stoppedRunIds = new Set();
+  const stalledRuns = [
+    run({ id: 1, run_number: 101, head_sha: HEAD_SHA }),
+    run({ id: 2, run_number: 102, head_sha: HEAD_SHA }),
+  ];
+  const workDirectory = mkdtempSync(join(tmpdir(), 'boardsesh-watchdog-'));
+  const discordFilePath = join(workDirectory, 'discord.txt');
+  const outputPath = join(workDirectory, 'github-output.txt');
+  const result = await runCli({
+    github: {
+      listRuns: () => ({
+        runs: stalledRuns.map((stalledRun) =>
+          stoppedRunIds.has(stalledRun.id)
+            ? { ...stalledRun, status: 'completed', conclusion: 'cancelled' }
+            : stalledRun,
+        ),
+        recentPageOk: true,
+      }),
+      getRun: (runId) =>
+        stoppedRunIds.has(runId)
+          ? run({ id: runId, status: 'completed', conclusion: 'cancelled' })
+          : run({ id: runId }),
+      listJobs: () => [{ name: 'sync-static-assets', status: 'queued' }],
+      cancelRun: (runId) => mutations.push(`cancel-${runId}`),
+      forceCancelRun: (runId) => {
+        mutations.push(`force-${runId}`);
+        stoppedRunIds.add(runId);
+      },
+      dispatchRun: () => assert.fail('an unfinished cancellation must not spend a retry'),
+    },
+    headSha: HEAD_SHA,
+    ...clock,
+    runUrlBase: '',
+    discordFilePath,
+    outputPath,
+    dryRun: false,
+  });
+  assert.equal(clock.now() - NOW, 8 * 60_000);
+  assert.deepEqual(mutations, ['cancel-1', 'force-1', 'cancel-2']);
+  assert.deepEqual([...stoppedRunIds], [1]);
+  assert.equal(result.failed, true);
+  assert.equal(result.followUp, 'cancel-failed');
+  const report = readFileSync(discordFilePath, 'utf8');
+  assert.match(report, /Stopped run #101/);
+  assert.match(report, /Could NOT cancel run #102/);
+  assert.match(report, /still wedged/);
+  assert.doesNotMatch(report, /Stopped run #102|Dispatched a fresh deploy/);
+  assert.equal(readFileSync(outputPath, 'utf8'), 'notify=true\n');
+});
+
+void test('a later tick recovers a confirmed cancellation after transient history failure', async () => {
+  const stalled = run({ id: 10, head_sha: HEAD_SHA });
+  let cancelled = false;
+  let tick = 1;
+  const dispatched = [];
+  let historyReads = 0;
+  const github = {
+    listRuns: () => {
+      historyReads += 1;
+      if (tick === 1 && cancelled) throw new Error('HTTP 503: temporary history failure');
+      const runs = [cancelled ? { ...stalled, status: 'completed', conclusion: 'cancelled' } : stalled];
+      if (dispatched.length > 0) {
+        runs.push(
+          run({ id: 11, head_sha: HEAD_SHA, event: 'workflow_dispatch', status: 'completed', conclusion: 'cancelled' }),
+        );
+      }
+      return { runs, recentPageOk: true };
+    },
+    getHeadSha: () => HEAD_SHA,
+    getRun: () => (cancelled ? { ...stalled, status: 'completed', conclusion: 'cancelled' } : stalled),
+    listJobs: () => [{ name: 'sync-static-assets', status: 'queued' }],
+    cancelRun: () => {
+      cancelled = true;
+    },
+    forceCancelRun: () => assert.fail('ordinary cancellation completed'),
+    dispatchRun: (ref) => dispatched.push(ref),
+  };
+  const discordFilePath = join(mkdtempSync(join(tmpdir(), 'boardsesh-watchdog-')), 'discord.txt');
+  const options = {
+    github,
+    headSha: HEAD_SHA,
+    now: () => NOW,
+    runUrlBase: '',
+    discordFilePath,
+    outputPath: '',
+    dryRun: false,
+  };
+  const first = await runCli(options);
+  assert.equal(first.failed, true);
+  assert.deepEqual(dispatched, []);
+  tick = 2;
+  historyReads = 0;
+  const second = await runCli(options);
+  assert.equal(second.failed, false);
+  assert.equal(second.cancel.length, 0);
+  assert.equal(historyReads, 2);
+  assert.deepEqual(dispatched, ['main']);
+  const recoveredReport = readFileSync(discordFilePath, 'utf8');
+  assert.match(recoveredReport, /Dispatched a fresh deploy/);
+  assert.doesNotMatch(recoveredReport, /Stopped run|Could NOT cancel run/);
+  tick = 3;
+  const third = await runCli(options);
+  assert.equal(third.redispatch, false);
+  assert.deepEqual(dispatched, ['main']);
+});
+
+void test('only the latest numeric run ID can trigger deferred cancellation recovery', () => {
+  const cancelled = run({ id: 9, status: 'completed', conclusion: 'cancelled', head_sha: HEAD_SHA });
+  const failed = run({ id: 10, status: 'completed', conclusion: 'failure', head_sha: HEAD_SHA });
+  assert.equal(planWatchdogActions({ runs: [failed, cancelled], headSha: HEAD_SHA, nowMs: NOW }).redispatch, false);
+  assert.equal(planWatchdogActions({ runs: [cancelled, failed], headSha: HEAD_SHA, nowMs: NOW }).redispatch, false);
+  assert.equal(planWatchdogActions({ runs: [cancelled], headSha: HEAD_SHA, nowMs: NOW }).redispatch, true);
+});
+
+void test('deferred cancellation recovery preserves pending successors and deployed heads', () => {
+  const cancelled = run({ id: 10, status: 'completed', conclusion: 'cancelled', head_sha: HEAD_SHA });
+  const pending = run({ id: 11, status: 'pending', head_sha: HEAD_SHA });
+  const deployed = run({ id: 9, status: 'completed', conclusion: 'success', head_sha: HEAD_SHA });
+  assert.equal(planWatchdogActions({ runs: [cancelled, pending], headSha: HEAD_SHA, nowMs: NOW }).redispatch, false);
+  assert.equal(planWatchdogActions({ runs: [cancelled, deployed], headSha: HEAD_SHA, nowMs: NOW }).redispatch, false);
+});
+
+void test('deferred recovery refreshes an advancing main before spending its retry', async () => {
+  const newerHeadSha = '3333333333333333333333333333333333333333';
+  const cancelled = run({ id: 10, head_sha: HEAD_SHA, status: 'completed', conclusion: 'cancelled' });
+  let historyReads = 0;
+  const result = await runCli({
+    github: {
+      listRuns: () => {
+        historyReads += 1;
+        return {
+          runs:
+            historyReads > 1
+              ? [
+                  cancelled,
+                  run({
+                    id: 11,
+                    head_sha: newerHeadSha,
+                    event: 'workflow_dispatch',
+                    status: 'completed',
+                    conclusion: 'failure',
+                  }),
+                ]
+              : [cancelled],
+          recentPageOk: true,
+        };
+      },
+      getHeadSha: () => newerHeadSha,
+      listJobs: () => assert.fail('no live run needs jobs'),
+      cancelRun: () => assert.fail('no live run needs cancellation'),
+      dispatchRun: () => assert.fail('new head has spent its retry'),
+    },
+    headSha: HEAD_SHA,
+    now: () => NOW,
+    runUrlBase: '',
+    discordFilePath: '',
+    outputPath: '',
+    dryRun: false,
+  });
+  assert.equal(historyReads, 2);
+  assert.equal(result.redispatch, false);
+});
+
+void test('deferred recovery stops if refreshed history shows a later failed deploy', async () => {
+  const cancelled = run({ id: 10, head_sha: HEAD_SHA, status: 'completed', conclusion: 'cancelled' });
+  let historyReads = 0;
+  const result = await runCli({
+    github: {
+      listRuns: () => {
+        historyReads += 1;
+        return {
+          runs:
+            historyReads > 1
+              ? [cancelled, run({ id: 11, head_sha: HEAD_SHA, status: 'completed', conclusion: 'failure' })]
+              : [cancelled],
+          recentPageOk: true,
+        };
+      },
+      getHeadSha: () => HEAD_SHA,
+      listJobs: () => assert.fail('no live run needs jobs'),
+      dispatchRun: () => assert.fail('a later failed deploy must not inherit cancellation recovery'),
+    },
+    headSha: HEAD_SHA,
+    now: () => NOW,
+    runUrlBase: '',
+    discordFilePath: '',
+    outputPath: '',
+    dryRun: false,
+  });
+  assert.equal(historyReads, 2);
+  assert.equal(result.redispatch, false);
+});
+
+void test('a recovery-only history failure reports deferred recovery without claiming cancellation', async () => {
+  const cancelled = run({ id: 10, head_sha: HEAD_SHA, status: 'completed', conclusion: 'cancelled' });
+  const workDirectory = mkdtempSync(join(tmpdir(), 'boardsesh-watchdog-'));
+  const discordFilePath = join(workDirectory, 'discord.txt');
+  const outputPath = join(workDirectory, 'github-output.txt');
+  const result = await runCli({
+    github: {
+      listRuns: () => ({ runs: [cancelled], recentPageOk: true }),
+      getHeadSha: () => {
+        throw new Error('HTTP 503: main lookup failed');
+      },
+      dispatchRun: () => assert.fail('unreadable head must not dispatch'),
+    },
+    headSha: HEAD_SHA,
+    now: () => NOW,
+    runUrlBase: '',
+    discordFilePath,
+    outputPath,
+    dryRun: false,
+  });
+  assert.equal(result.failed, true);
+  assert.equal(result.followUp, 'dispatch-deferred');
+  const report = readFileSync(discordFilePath, 'utf8');
+  assert.match(report, /recovery|No deploy was started/);
+  assert.doesNotMatch(report, /Stopped run|Could NOT cancel run|Dispatched a fresh deploy/);
+  assert.equal(readFileSync(outputPath, 'utf8'), 'notify=true\n');
+});
+
+void test('a recovery-only dispatch failure reports deferred recovery', async () => {
+  const cancelled = run({ id: 10, head_sha: HEAD_SHA, status: 'completed', conclusion: 'cancelled' });
+  const discordFilePath = join(mkdtempSync(join(tmpdir(), 'boardsesh-watchdog-')), 'discord.txt');
+  const result = await runCli({
+    github: {
+      listRuns: () => ({ runs: [cancelled], recentPageOk: true }),
+      getHeadSha: () => HEAD_SHA,
+      dispatchRun: () => {
+        throw new Error('HTTP 503: dispatch failed');
+      },
+    },
+    headSha: HEAD_SHA,
+    now: () => NOW,
+    runUrlBase: '',
+    discordFilePath,
+    outputPath: '',
+    dryRun: false,
+  });
+  assert.equal(result.failed, true);
+  assert.equal(result.followUp, 'dispatch-deferred');
+  const report = readFileSync(discordFilePath, 'utf8');
+  assert.match(report, /No (?:replacement )?deploy was started/);
+  assert.doesNotMatch(report, /Stopped run|Could NOT cancel run|Dispatched a fresh deploy/);
+});
+
+void test('a recovery-only spent retry does not repeat intervention notifications', async () => {
+  const manualCancelled = run({
+    id: 10,
+    head_sha: HEAD_SHA,
+    status: 'completed',
+    conclusion: 'cancelled',
+    event: 'workflow_dispatch',
+  });
+  const workDirectory = mkdtempSync(join(tmpdir(), 'boardsesh-watchdog-'));
+  const discordFilePath = join(workDirectory, 'discord.txt');
+  const outputPath = join(workDirectory, 'github-output.txt');
+  for (let tick = 0; tick < 2; tick += 1) {
+    const result = await runCli({
+      github: {
+        listRuns: () => ({ runs: [manualCancelled], recentPageOk: true }),
+        getHeadSha: () => HEAD_SHA,
+        dispatchRun: () => assert.fail('retry already spent'),
+      },
+      headSha: HEAD_SHA,
+      now: () => NOW,
+      runUrlBase: '',
+      discordFilePath,
+      outputPath,
+      dryRun: false,
+    });
+    assert.equal(result.failed, false);
+    assert.equal(result.redispatch, false);
+    assert.equal(result.followUp, 'needs-intervention');
+  }
+  assert.equal(existsSync(discordFilePath), false);
+  assert.equal(readFileSync(outputPath, 'utf8'), 'notify=false\nnotify=false\n');
+});
+
+void test('an empty incomplete refreshed history retains the deferred recovery notification', async () => {
+  const cancelled = run({ id: 10, head_sha: HEAD_SHA, status: 'completed', conclusion: 'cancelled' });
+  let historyReads = 0;
+  const workDirectory = mkdtempSync(join(tmpdir(), 'boardsesh-watchdog-'));
+  const discordFilePath = join(workDirectory, 'discord.txt');
+  const outputPath = join(workDirectory, 'github-output.txt');
+  const result = await runCli({
+    github: {
+      listRuns: () => {
+        historyReads += 1;
+        return historyReads === 1 ? { runs: [cancelled], recentPageOk: true } : { runs: [], recentPageOk: false };
+      },
+      getHeadSha: () => HEAD_SHA,
+      dispatchRun: () => assert.fail('incomplete history must not dispatch'),
+    },
+    headSha: HEAD_SHA,
+    now: () => NOW,
+    runUrlBase: '',
+    discordFilePath,
+    outputPath,
+    dryRun: false,
+  });
+  assert.equal(result.failed, true);
+  assert.equal(readFileSync(outputPath, 'utf8'), 'notify=true\n');
+  assert.equal(result.followUp, 'dispatch-deferred');
+  const report = readFileSync(discordFilePath, 'utf8');
+  assert.match(report, /No (?:replacement )?deploy was started/);
+  assert.doesNotMatch(report, /Stopped run|Could NOT cancel run|Dispatched a fresh deploy/);
+});
+
+void test('six-hour cancellation still escalates when job history is unreadable', async () => {
+  const scenario = cancellationScenario({
+    currentRun: run({ status: 'in_progress', run_started_at: minutesAgo(DEFAULT_MAX_RUN_MINUTES + 1) }),
+    currentJobs: null,
+  });
+  assert.equal(await cancelAndConfirm(scenario.options), 'stopped');
+  assert.deepEqual(scenario.calls, ['cancel', 'force']);
+  assert.equal(scenario.clock.now() - NOW, CANCEL_GRACE_MS);
 });
