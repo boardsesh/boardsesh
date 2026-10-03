@@ -3,16 +3,13 @@ import type { LogbookEntry } from './types';
 
 /**
  * The climber's whole history on ONE climb, shaped for the play drawer's
- * Logbook card: a one-line verdict, four totals, then one section per angle
- * holding one tile per session with a mark for every try.
+ * Logbook card: a one-line verdict, the totals behind the line under it, then
+ * one section per angle holding that angle's days, each with its own logs.
  *
  * A session is a distinct LOCAL calendar day, the same convention
  * `deriveAngleLifetimeStats` uses.
  */
 export type LedgerStatus = 'flash' | 'send' | 'attempt';
-
-/** One try. A fall is a try that did not top out. */
-export type LedgerTryMark = 'fall' | 'send' | 'flash';
 
 export type LedgerSession<T> = {
   /** Local `YYYY-MM-DD`. */
@@ -20,15 +17,6 @@ export type LedgerSession<T> = {
   /** Newest first. */
   entries: T[];
   totalTries: number;
-  /** Oldest first, so the send lands at the end of the row it was earned in. */
-  marks: LedgerTryMark[];
-  /** Falls dropped from `marks` to honour the cap. Still counted in `totalTries`. */
-  overflowTries: number;
-  /**
-   * The best thing that happened that day, whatever order it was logged in:
-   * a flash outranks a send, a send outranks an attempt.
-   */
-  outcome: LedgerStatus;
 };
 
 export type LedgerAngleSection<T> = {
@@ -67,9 +55,6 @@ export type ClimbLedger<T> = {
   angles: LedgerAngleSection<T>[];
 };
 
-/** Fall marks kept per session. Send and flash marks are never dropped. */
-export const DEFAULT_MAX_MARKS_PER_SESSION = 40;
-
 export type DeriveClimbLedgerOptions<T> = {
   currentAngle: number;
   /**
@@ -78,7 +63,6 @@ export type DeriveClimbLedgerOptions<T> = {
    * own normaliser so the ledger and the rows under it can never disagree.
    */
   statusOf?: (entry: T) => LedgerStatus;
-  maxMarksPerSession?: number;
 };
 
 function defaultStatusOf(entry: LogbookEntry): LedgerStatus {
@@ -89,53 +73,19 @@ function isSent(status: LedgerStatus): boolean {
   return status === 'flash' || status === 'send';
 }
 
-// A flash is one try whatever the row's `tries` says, so the marks and the
-// tries number always agree. Imported ticks can carry zero tries: floor at 1.
+// A flash is one try whatever the row's `tries` says. Imported ticks can carry
+// zero tries: floor at 1.
 function triesOf(status: LedgerStatus, tries: number): number {
   return status === 'flash' ? 1 : Math.max(1, tries);
 }
 
 type Resolved<T> = { entry: T; status: LedgerStatus; tries: number; timeMs: number; dayKey: string };
 
-function buildSession<T>(dayKey: string, chronological: Resolved<T>[], maxMarks: number): LedgerSession<T> {
-  const marks: LedgerTryMark[] = [];
-  let totalTries = 0;
-  let outcome: LedgerStatus = 'attempt';
-  for (const { status, tries } of chronological) {
-    totalTries += tries;
-    if (status === 'flash') {
-      marks.push('flash');
-      outcome = 'flash';
-      continue;
-    }
-    const falls = status === 'send' ? tries - 1 : tries;
-    for (let fall = 0; fall < falls; fall += 1) marks.push('fall');
-    if (status === 'send') {
-      marks.push('send');
-      if (outcome === 'attempt') outcome = 'send';
-    }
-  }
-
-  // Trim the OLDEST falls only. A send early in a long day keeps its mark.
-  const fallCount = marks.reduce((count, mark) => (mark === 'fall' ? count + 1 : count), 0);
-  const overflowTries = Math.max(0, fallCount - Math.max(0, maxMarks));
-  let toDrop = overflowTries;
-  const keptMarks =
-    toDrop === 0
-      ? marks
-      : marks.filter((mark) => {
-          if (mark !== 'fall' || toDrop === 0) return true;
-          toDrop -= 1;
-          return false;
-        });
-
+function buildSession<T>(dayKey: string, chronological: Resolved<T>[]): LedgerSession<T> {
   return {
     dayKey,
     entries: chronological.map((resolved) => resolved.entry).reverse(),
-    totalTries,
-    marks: keptMarks,
-    overflowTries,
-    outcome,
+    totalTries: chronological.reduce((sum, resolved) => sum + resolved.tries, 0),
   };
 }
 
@@ -165,7 +115,7 @@ export function deriveClimbLedger<T extends LogbookEntry>(
   entries: readonly T[],
   options: DeriveClimbLedgerOptions<T>,
 ): ClimbLedger<T> {
-  const { currentAngle, statusOf = defaultStatusOf, maxMarksPerSession = DEFAULT_MAX_MARKS_PER_SESSION } = options;
+  const { currentAngle, statusOf = defaultStatusOf } = options;
 
   const chronological: Resolved<T>[] = entries
     .map((entry) => {
@@ -211,7 +161,7 @@ export function deriveClimbLedger<T extends LogbookEntry>(
             climbedAt: firstSent.entry.climbed_at,
           }
         : null,
-      sessions: dayKeys.map((dayKey) => buildSession(dayKey, byDay.get(dayKey) ?? [], maxMarksPerSession)).reverse(),
+      sessions: dayKeys.map((dayKey) => buildSession(dayKey, byDay.get(dayKey) ?? [])).reverse(),
     });
   }
 

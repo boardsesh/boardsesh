@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
-import { DEFAULT_MAX_MARKS_PER_SESSION, deriveClimbLedger, type LedgerAngleSection } from '../climb-ledger';
+import { deriveClimbLedger, type LedgerAngleSection } from '../climb-ledger';
 import type { LogbookEntry } from '../types';
 
 dayjs.extend(utc);
@@ -23,7 +23,7 @@ const entry = (overrides: Partial<LogbookEntry>): LogbookEntry => ({
 const at = (localWallClock: string, overrides: Partial<LogbookEntry> = {}) =>
   entry({ climbed_at: storedUtcFromLocal(localWallClock), ...overrides });
 
-describe('deriveClimbLedger: marks and tries', () => {
+describe('deriveClimbLedger: tries', () => {
   it('gives an untried verdict, zero totals and no angles for no entries', () => {
     expect(deriveClimbLedger([], { currentAngle: 40 })).toEqual({
       verdict: { kind: 'untried' },
@@ -32,23 +32,15 @@ describe('deriveClimbLedger: marks and tries', () => {
     });
   });
 
-  it('draws a send of 3 as fall, fall, send', () => {
+  it('counts a send of 3 as three tries', () => {
     const [section] = deriveClimbLedger([entry({ status: 'send', tries: 3 })], { currentAngle: 40 }).angles;
-    expect(section.sessions[0].marks).toEqual(['fall', 'fall', 'send']);
     expect(section.sessions[0].totalTries).toBe(3);
-    expect(section.sessions[0].outcome).toBe('send');
+    expect(Object.keys(section.sessions[0]).sort()).toEqual(['dayKey', 'entries', 'totalTries']);
   });
 
-  it('draws an attempt of 4 as four falls', () => {
-    const [section] = deriveClimbLedger([entry({ tries: 4 })], { currentAngle: 40 }).angles;
-    expect(section.sessions[0].marks).toEqual(['fall', 'fall', 'fall', 'fall']);
-    expect(section.sessions[0].outcome).toBe('attempt');
-  });
-
-  it('counts a flash as one try and one mark whatever its tries field says', () => {
+  it('counts a flash as one try whatever its tries field says', () => {
     const ledger = deriveClimbLedger([entry({ status: 'flash', tries: 3 })], { currentAngle: 40 });
-    expect(ledger.angles[0].sessions[0].marks).toEqual(['flash']);
-    expect(ledger.angles[0].sessions[0].outcome).toBe('flash');
+    expect(ledger.angles[0].sessions[0].totalTries).toBe(1);
     expect(ledger.angles[0].totalTries).toBe(1);
     expect(ledger.totals.tries).toBe(1);
   });
@@ -56,39 +48,16 @@ describe('deriveClimbLedger: marks and tries', () => {
   it('floors a zero-try tick at one', () => {
     const ledger = deriveClimbLedger([entry({ tries: 0 }), entry({ status: 'send', tries: 0 })], { currentAngle: 40 });
     expect(ledger.totals.tries).toBe(2);
-    expect(ledger.angles[0].sessions[0].marks).toEqual(['fall', 'send']);
+    expect(ledger.angles[0].sessions[0].totalTries).toBe(2);
   });
 
-  it('lays a day out oldest try first, with the day’s entries newest first', () => {
+  it('sums a day’s tries and lists its entries newest first', () => {
     const morning = at('2026-06-01 09:00', { tries: 2 });
     const evening = at('2026-06-01 18:00', { status: 'send', tries: 2 });
     const [section] = deriveClimbLedger([evening, morning], { currentAngle: 40 }).angles;
     expect(section.sessions).toHaveLength(1);
-    expect(section.sessions[0].marks).toEqual(['fall', 'fall', 'fall', 'send']);
+    expect(section.sessions[0].totalTries).toBe(4);
     expect(section.sessions[0].entries).toEqual([evening, morning]);
-  });
-});
-
-describe('deriveClimbLedger: session outcome', () => {
-  const flash = at('2026-06-01 09:00', { status: 'flash' });
-  const repeat = at('2026-06-01 18:00', { status: 'send', tries: 2 });
-  const burn = at('2026-06-01 20:00', { tries: 3 });
-
-  it('is the best result of the day, whichever order the logs came in', () => {
-    for (const entries of [
-      [flash, repeat, burn],
-      [burn, repeat, flash],
-    ]) {
-      const [session] = deriveClimbLedger(entries, { currentAngle: 40 }).angles[0].sessions;
-      expect(session.outcome).toBe('flash');
-      // The marks still show every try in the order it happened.
-      expect(session.marks).toEqual(['flash', 'fall', 'send', 'fall', 'fall', 'fall']);
-    }
-  });
-
-  it('is a send when the day has a send and attempts but no flash', () => {
-    const [session] = deriveClimbLedger([repeat, burn], { currentAngle: 40 }).angles[0].sessions;
-    expect(session.outcome).toBe('send');
   });
 });
 
@@ -97,7 +66,6 @@ describe('deriveClimbLedger: status source', () => {
     const untyped = entry({ status: undefined, tries: 2 });
     const ledger = deriveClimbLedger([untyped], { currentAngle: 40, statusOf: () => 'send' });
     expect(ledger.angles[0].sendCount).toBe(1);
-    expect(ledger.angles[0].sessions[0].marks).toEqual(['fall', 'send']);
     expect(ledger.verdict).toEqual({ kind: 'send', angle: 40, climbedAt: untyped.climbed_at });
   });
 
@@ -105,31 +73,6 @@ describe('deriveClimbLedger: status source', () => {
     const ledger = deriveClimbLedger([entry({ status: undefined, tries: 2 })], { currentAngle: 40 });
     expect(ledger.angles[0].sendCount).toBe(0);
     expect(ledger.verdict.kind).toBe('attempt');
-  });
-});
-
-describe('deriveClimbLedger: mark trimming', () => {
-  it('drops the oldest falls only and keeps an early send', () => {
-    const ledger = deriveClimbLedger(
-      [at('2026-06-01 09:00', { status: 'send', tries: 2 }), at('2026-06-01 15:00', { tries: 60 })],
-      { currentAngle: 40 },
-    );
-    const [session] = ledger.angles[0].sessions;
-    expect(session.totalTries).toBe(62);
-    expect(session.overflowTries).toBe(61 - DEFAULT_MAX_MARKS_PER_SESSION);
-    expect(session.marks.filter((mark) => mark === 'send')).toHaveLength(1);
-    expect(session.marks.filter((mark) => mark === 'fall')).toHaveLength(DEFAULT_MAX_MARKS_PER_SESSION);
-    // The fall before the early send was the oldest, so it went first.
-    expect(session.marks[0]).toBe('send');
-    expect(session.marks.length).toBeLessThanOrEqual(DEFAULT_MAX_MARKS_PER_SESSION + 1);
-  });
-
-  it('honours a custom cap and reports no overflow under it', () => {
-    const capped = deriveClimbLedger([entry({ tries: 5 })], { currentAngle: 40, maxMarksPerSession: 3 });
-    expect(capped.angles[0].sessions[0].marks).toHaveLength(3);
-    expect(capped.angles[0].sessions[0].overflowTries).toBe(2);
-    const roomy = deriveClimbLedger([entry({ tries: 5 })], { currentAngle: 40 });
-    expect(roomy.angles[0].sessions[0].overflowTries).toBe(0);
   });
 });
 
