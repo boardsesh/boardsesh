@@ -50,6 +50,7 @@ const recorded = vi.hoisted(() => ({
   wallPill: [] as Props[],
   wallCallout: [] as Props[],
   deferredSections: [] as Props[],
+  revisionSheet: [] as Props[],
   favoriteStatus: [] as Props[],
   navigationBoardConfigs: [] as unknown[],
   browseFrame: 0,
@@ -263,6 +264,12 @@ vi.mock('../../create-climb/use-create-climb-navigation', () => ({
   useCreateClimbNavigation: () => ({ openRemix: vi.fn(), openEdit: vi.fn(), resetActionGuard: vi.fn() }),
 }));
 vi.mock('../../AddBetaVideoSheet', () => ({ AddBetaVideoSheet: () => null }));
+vi.mock('../ClimbRevisionSheet', () => ({
+  ClimbRevisionSheet: (props: Props) => {
+    recorded.revisionSheet.push(props);
+    return createElement('div', { 'data-testid': 'revision-sheet' });
+  },
+}));
 vi.mock('../../report-climb/ReportClimbSheet', () => ({ ReportClimbSheet: () => null }));
 vi.mock('../../ble/BleControlSheetHost', () => ({ BleControlSheetHost: () => null }));
 vi.mock('../../queue-control/RestTimerPillHost', () => ({ RestTimerPillHost: () => null }));
@@ -404,6 +411,7 @@ beforeEach(() => {
   recorded.wallPill = [];
   recorded.wallCallout = [];
   recorded.deferredSections = [];
+  recorded.revisionSheet = [];
   recorded.favoriteStatus = [];
   recorded.navigationBoardConfigs = [];
   recorded.browseFrame = 0;
@@ -1548,5 +1556,61 @@ describe('PlayDrawer — which board forward navigation is scanned against', () 
     } finally {
       activeBoard.current = { boardType: 'tension', layoutId: 8, sizeId: 20, setIds: '3', angle: 40 };
     }
+  });
+});
+
+// The edit history's rows open one earlier version of the climb. That sheet has
+// to be the drawer's OWN, mounted in its tree: a root-level sheet presents
+// behind the `/play` modal (#3505 is the same lesson, learnt on the beta sheet).
+describe('PlayDrawer — the climb revision sheet (#5955)', () => {
+  function lastOpenRevision(): (revisionNumber: number) => void {
+    const props = recorded.deferredSections.at(-1);
+    if (!props) throw new Error('DeferredSections never rendered');
+    return props.onOpenRevision as (revisionNumber: number) => void;
+  }
+
+  it('is not mounted until a row is tapped', () => {
+    renderDrawer('member');
+    expect(recorded.revisionSheet).toHaveLength(0);
+    expect(typeof lastOpenRevision()).toBe('function');
+  });
+
+  it('opens in-tree on the tapped revision, pinned to the climb and board it was opened on', () => {
+    renderDrawer('member');
+
+    act(() => lastOpenRevision()(3));
+
+    const sheet = recorded.revisionSheet.at(-1);
+    expect(sheet).toMatchObject({ visible: true, revisionNumber: 3 });
+    expect((sheet?.climb as Climb).uuid).toBe(CLIMB.uuid);
+    const sections = recorded.deferredSections.at(-1);
+    expect(sheet).toMatchObject({
+      boardName: sections?.boardName,
+      layoutId: sections?.layoutId,
+      sizeId: sections?.sizeId,
+      setIds: sections?.setIds,
+    });
+  });
+
+  it("closes from the sheet's own onClose, and opens again on another revision", () => {
+    // `useMountedOnFirstOpen` is stubbed to plain `open` here, so a closed sheet
+    // is simply gone from the tree.
+    const { container } = renderDrawer('member');
+    const sheetNode = () => container.querySelector('[data-testid="revision-sheet"]');
+    act(() => lastOpenRevision()(3));
+    expect(sheetNode()).not.toBeNull();
+
+    act(() => (recorded.revisionSheet.at(-1)?.onClose as () => void)());
+    expect(sheetNode()).toBeNull();
+
+    act(() => lastOpenRevision()(1));
+    expect(recorded.revisionSheet.at(-1)).toMatchObject({ visible: true, revisionNumber: 1 });
+  });
+
+  it('never reaches the queue', () => {
+    renderDrawer('member');
+    act(() => lastOpenRevision()(2));
+    expect(queueActions.addToQueue).not.toHaveBeenCalled();
+    expect(queueActions.setCurrentClimb).not.toHaveBeenCalled();
   });
 });

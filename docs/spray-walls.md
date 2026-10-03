@@ -1829,6 +1829,36 @@ Not changed: a climb that has lost holds to a reset still cannot be saved until
 the edit moves it onto holds that are on the wall (`assertSprayHoldsAreAlive`
 runs on every spray edit). An edit never moves `published_at`.
 
+### The Edit action in the app
+
+The app offers Edit from one shared rule, `canEditClimb` in
+`@boardsesh/create-climb-react`, used by both menus (`ClimbActionsSheet` and
+`use-climb-actions.ts`). It is the table above plus the catalogue rule (setter
+only, 24 hours).
+
+It is a hint. `updateClimb` decides.
+
+- **Where "can edit the wall" comes from.** `RegisteredSprayWall.viewerCanEdit`
+  in the spray registry, filled from `sprayWallRenderData.wall.viewerCanEdit`.
+  Only a literal `true` counts, and a re-registration never inherits the last
+  answer.
+- **How stale it can be.** Ten minutes, the registry's revalidation window.
+  `useSprayWallViewerCanEdit` asks for the wall each time a menu mounts, which
+  is what re-reads it.
+- **Account changes.** The registry outlives a sign-out. On sign-in and
+  sign-out `useSprayWallViewerAccessReset` sets every wall to "cannot edit" at
+  once, then refetches them. A wall owner's Edit never shows for the next
+  person on the phone.
+- **When the hint is wrong.** A role taken away inside the window still shows
+  Edit. The save is refused, nothing is lost, and the editor shows the server's
+  reason in a toast (spray only; other boards keep the generic line).
+- **Two saves crossing.** `CLIMB_EDIT_CONFLICT` shows "Someone else just changed
+  this climb. Reopen it to see the latest." There is no retry, and the working
+  copy stays on screen and in the autosave slot.
+- **The setter stays the setter in the queue too.** The queue row the editor
+  builds after a save takes `userId` and `setter_username` from the climb being
+  edited (`resolveProvisionalSetter`), not from whoever saved.
+
 ## Climb revisions
 
 Unlimited edits mean a climb you sent last month may not be the climb that is
@@ -1936,8 +1966,45 @@ field is proven to show the owner the history and a stranger nothing.
 Revisions are read-only. There is no restore, and an old revision cannot be
 queued or lit up.
 
+### In the app
+
+The play drawer shows an **Edit history** section (`RevisionsSection`) after
+Community and before Similar climbs. It renders nothing unless the query has two
+or more rows, so most climbs never show it. Loading, failed and offline also
+render nothing. It is collapsed by default and its summary counts edits from the
+newest revision number, so pruned edits still count.
+
+Five rows show inline and "Show all" reveals the rest, up to
+`MAX_REVISIONS_PER_CLIMB`. A full history carries a one-line note with that
+number, read through `spray-cap-copy.ts`.
+
+A row opens `ClimbRevisionSheet`: board, name, grade (spray only), notes, date,
+editor, and Older / Newer. It is mounted inside `PlayDrawer` and opened by a
+handler the drawer owns, because a root sheet presents behind the `/play` modal.
+The file imports nothing from the queue, Bluetooth or the editor.
+
+The board is drawn one of two ways (`pickRevisionBoardPath`):
+
+| Revision | Drawn by |
+| --- | --- |
+| Any catalogue board | `BoardImageNative`, with the revision's frames |
+| Spray, same wall version as the registered wall | `BoardImageNative` |
+| Spray, a different wall version | `SprayRevisionBoard` |
+| Spray, no wall version on record | Nothing. One line: "This wall photo is no longer available" |
+
+`SprayRevisionBoard` fetches `sprayWallRenderData(uuid, version)` itself, under
+its own query key, and **never writes the spray registry**. The registry holds
+one version per wall and the play drawer under the sheet draws from it, so
+registering an old version would swap the photo and holds under the live player.
+It draws the photo with `expo-image` (memory cache only, the URL is a 15 minute
+signature) and the holds as rings in one SVG layer.
+
+With no connection the sheet and the old-version board show the offline placard,
+never "photo no longer available".
+
 ### Known limits
 
+- The old-photo preview draws plain rings, not the wall's stored look.
 - No history for edits made before this shipped.
 - The data export does not include revisions.
 - Deleting a climb deletes its revisions (the foreign key cascades).

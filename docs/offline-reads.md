@@ -61,6 +61,7 @@ These have "now" semantics or are unbounded, so a stale copy is worse than an ho
 | `['crewFeed', viewerId]`                                                               | Neither                     | Viewer-scoped live feed; no persisted cache                        |
 | `['searchUsers', …]`, `['gymMembers', …]`, `['comments', …]`, `['bulkVoteSummaries', …]` | Neither                     | Unbounded or live                                                  |
 | `['nearbyBoards']`, `['nearbyGyms']`, `['betaLinkPreview', …]`                           | Neither                     | Location/link-scoped, useless stale                                |
+| `['climbRevisions', board, uuid]`, `['sprayWallRevisionRenderData', wall, version]`      | Neither                     | Edit history (#5955). The play-drawer section renders nothing offline; the revision sheet and its old-wall-photo board show the placard |
 | `['activeBoard']`                                                                        | Neither (already persisted) | AsyncStorage-backed in `use-active-board.ts` — do not double-store |
 
 ## The auth-scoping contract
