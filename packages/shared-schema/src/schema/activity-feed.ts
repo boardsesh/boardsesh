@@ -137,6 +137,8 @@ export const activityFeedTypeDefs = /* GraphQL */ `
     isBenchmark: Boolean!
     "Whether matching is disallowed on this climb"
     isNoMatch: Boolean!
+    "Structured climb characteristics (e.g. 'no_match', 'method_footless'). Decode with @boardsesh/shared-schema helpers (isNoMatch / getMoonBoardMethod)."
+    characteristics: [String!]
     "Comment"
     comment: String!
     "When climbed (ISO 8601)"
@@ -188,6 +190,8 @@ export const activityFeedTypeDefs = /* GraphQL */ `
     isBenchmark: Boolean!
     "Whether matching is disallowed on this climb"
     isNoMatch: Boolean!
+    "Structured climb characteristics (e.g. 'no_match', 'method_footless'). Decode with @boardsesh/shared-schema helpers (isNoMatch / getMoonBoardMethod)."
+    characteristics: [String!]
     "Date of the attempts (YYYY-MM-DD)"
     date: String!
     "Number of flash sends"
@@ -540,6 +544,8 @@ export const activityFeedTypeDefs = /* GraphQL */ `
     isMirror: Boolean!
     isBenchmark: Boolean!
     isNoMatch: Boolean!
+    "Structured climb characteristics (e.g. 'no_match', 'method_footless'). Decode with @boardsesh/shared-schema helpers (isNoMatch / getMoonBoardMethod)."
+    characteristics: [String!]
     comment: String
     frames: String
     setterUsername: String
@@ -619,6 +625,8 @@ export const activityFeedTypeDefs = /* GraphQL */ `
     isMirror: Boolean!
     isBenchmark: Boolean!
     isNoMatch: Boolean!
+    "Structured climb characteristics (e.g. 'no_match', 'method_footless'). Decode with @boardsesh/shared-schema helpers (isNoMatch / getMoonBoardMethod)."
+    characteristics: [String!]
     comment: String
     frames: String
     setterUsername: String

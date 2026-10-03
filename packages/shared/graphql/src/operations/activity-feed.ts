@@ -107,6 +107,7 @@ const SESSION_FEED_ITEM_FIELDS = gql`
       isMirror
       isBenchmark
       isNoMatch
+      characteristics
       comment
       frames
       setterUsername
@@ -136,6 +137,7 @@ const SESSION_FEED_ITEM_FIELDS = gql`
         isMirror
         isBenchmark
         isNoMatch
+        characteristics
         comment
         frames
         setterUsername
@@ -300,6 +302,7 @@ export const GET_SESSION_DETAIL = gql`
         isMirror
         isBenchmark
         isNoMatch
+        characteristics
         comment
         frames
         setterUsername
