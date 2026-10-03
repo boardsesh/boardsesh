@@ -159,6 +159,16 @@ describe('publishSprayHoldDraft', () => {
     expect(requests.publishDraft).toHaveBeenCalledTimes(1);
   });
 
+  it('reports revoked access when recovery finds a published but no longer editable wall', async () => {
+    const requests = transport();
+    requests.publishDraft.mockRejectedValue(new Error('lost publish response'));
+    requests.fetchWall
+      .mockResolvedValueOnce(wall({ versions: [draftVersion] }))
+      .mockResolvedValueOnce(wall({ viewerCanEdit: false, versions: [{ ...draftVersion, status: 'PUBLISHED' }] }));
+    await expect(publishSprayHoldDraft(preparedDraft, requests)).rejects.toMatchObject({ reason: 'unavailable' });
+    expect(requests.publishDraft).toHaveBeenCalledTimes(1);
+  });
+
   it.each([
     wall({ versions: [] }),
     wall({ versions: [{ ...draftVersion, number: 3 }] }),

@@ -105,6 +105,8 @@ export async function publishSprayHoldDraft(
       // Recovery is best effort; keep the failure from the requested write.
       throw publishError;
     }
+    // A successful recovery read can reveal revoked access. Report that current
+    // access failure even if publication landed; future retries must stay gated.
     const latestWall = requireEditableWall(draft.wallUuid, latestWallSnapshot);
     const latestVersion = findPreparedVersion(latestWall, draft);
     if (latestVersion.status !== 'DRAFT') return;
