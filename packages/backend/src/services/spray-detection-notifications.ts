@@ -195,7 +195,7 @@ export async function deliverSprayNotification(boss: PgBoss, deliveryId: string)
       .limit(1)
       .for('update');
     const event = await completionNotification(delivery.notificationUuid, transaction);
-    const setStatus = (status: string, ticketId?: string | null) =>
+    const setStatus = (status: 'pending' | 'receipt' | 'done' | 'skipped', ticketId?: string | null) =>
       transaction
         .update(notificationDeliveries)
         .set({ status, ...(ticketId !== undefined ? { ticketId } : {}), updatedAt: new Date() })

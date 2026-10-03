@@ -302,7 +302,13 @@ is deleted; foreign-key cascades remove the related rows. There is no separate
 age-based delivery cleanup job. Push sending holds the wall validity lock during
 the Expo request (a 15-second timeout), so wall edits can wait behind an in-flight
 delivery. Provider outages can repeat that wait across retries; the lock keeps
-privacy and source changes from racing the outgoing wall details.
+privacy and source changes from racing the outgoing wall details. Push delivery
+runs with local concurrency one, so it reserves at most one Drizzle connection
+per backend process during the request. The backend pool defaults to ten
+connections (`DB_POOL_MAX`, minimum two). Deployment sizing must leave room for
+ordinary API traffic in each pool and account for every replica against the
+shared database connection limit; this bound does not guarantee capacity under
+other workloads.
 
 The box-model measurements below are historical evidence, not the current
 segmentation service's inference configuration. The native runtime and benchmark
