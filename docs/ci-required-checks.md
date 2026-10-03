@@ -150,16 +150,15 @@ existing ruleset.
    gh api repos/boardsesh/boardsesh/rulesets --jq '.[] | "\(.id) \(.name) \(.enforcement)"'
    ```
 
-Ruleset bypass is explicit: repository administrators are subject to this rule,
-even though classic protection has `enforce_admins: false`. Administrators cannot
-merge or push an unverified commit to `main` without changing the ruleset.
+The original bot-only creation payload would require administrators to pass
+`ci-status`. The live ruleset now grants repository administrators an `always`
+bypass, so an administrator can manually merge without changing repository
+settings. Follow the readiness policy above before exercising that authority.
 
-For an incident, first find its id with
-`gh api repos/boardsesh/boardsesh/rulesets --jq '.[] | {id,name,enforcement}'`.
-An administrator can temporarily disable the rule with
-`gh api --method PUT repos/boardsesh/boardsesh/rulesets/<id> -f enforcement=disabled`.
-Restore `enforcement=active` after recovery. Removing the ruleset altogether uses
-`gh api --method DELETE repos/boardsesh/boardsesh/rulesets/<id>`.
+For an incident, an administrator can use the existing bypass for a manual
+recovery merge; disabling or deleting the ruleset is not the routine recovery
+path. Either action changes repository policy and requires a separate explicit
+policy decision.
 
 ## When a PR's checks go missing anyway
 
