@@ -1318,10 +1318,11 @@ they do not share a query builder:
 10. the climb sitemap's wall source, `buildPublicSprayWallQuery` in
     `packages/web/app/lib/seo/sitemap/spray-wall-configs.ts`. The sitemap's climb
     query carries number 4 as well, so this one is the first gate, not the only one;
-11. `assertSprayBoardIsReadable` / `assertSprayBoardIdIsReadable` in
-    `spray-read-access.ts`, the by-layout rule for the board-presence reads keyed
-    on a numeric board id: history, recent climbs, presence stats,
-    `boardConnection` and `boardQueuePreview` (query and subscription).
+11. `assertSprayBoardIsReadable` in `spray-read-access.ts`, the by-layout rule
+    for history, recent climbs and presence stats, and
+    `requireReadablePresenceBoard` in `board-presence/shared.ts`, which loads
+    a numeric board id once and applies that same rule to `boardConnection`
+    and `boardQueuePreview` (query and subscription).
 
 Hiding does NOT delete the wall's `media` copy. Nothing in Boardsesh hands its URL
 out once the wall is hidden, but a URL somebody already copied keeps working for as
