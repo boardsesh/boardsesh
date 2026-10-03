@@ -100,7 +100,7 @@ async function dropStaleWorkerDatabases(): Promise<void> {
 }
 
 // TODO(#4475 review, finding 9): fourth copy of the fence role/grant contract
-// (migration 0205, the development bootstrap SQL, assertPrimaryFenceContract,
+// (migration 0250, the development bootstrap SQL, assertPrimaryFenceContract,
 // and this fixture) with no parity test tying them together.
 async function ensureSnapshotFenceOwnerRole(): Promise<void> {
   const adminClient = postgres(baseConnectionString, { max: 1, onnotice: () => {} });
