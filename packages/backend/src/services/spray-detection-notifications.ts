@@ -46,7 +46,7 @@ export function sprayCompletionCopy(locale: string, wallName: string): { title: 
 export async function completionNotification(
   detectionId: string,
   executor: Parameters<typeof readSprayDetection>[0] = db,
-): Promise<{ recipientId: string; notification: Notification } | null> {
+): Promise<{ recipientId: string; notification: Notification & { sprayWallName: string } } | null> {
   const source = await readSprayDetection(executor, detectionId);
   if (
     !source ||
@@ -197,7 +197,7 @@ export async function deliverSprayNotification(boss: PgBoss, deliveryId: string)
       .limit(1)
       .for('update');
     const event = await completionNotification(delivery.notificationUuid, transaction);
-    const setStatus = (status: 'pending' | 'receipt' | 'done' | 'skipped', ticketId?: string | null) =>
+    const setStatus = (status: typeof notificationDeliveries.$inferSelect.status, ticketId?: string | null) =>
       transaction
         .update(notificationDeliveries)
         .set({ status, ...(ticketId !== undefined ? { ticketId } : {}), updatedAt: new Date() })
@@ -213,7 +213,7 @@ export async function deliverSprayNotification(boss: PgBoss, deliveryId: string)
       : await expoPost('send', {
           to: delivery.token,
           sound: 'default',
-          ...sprayCompletionCopy(delivery.locale, event.notification.sprayWallName!),
+          ...sprayCompletionCopy(delivery.locale, event.notification.sprayWallName),
           data: {
             type: 'spray_wall_detection_completed',
             notificationUuid: delivery.notificationUuid,

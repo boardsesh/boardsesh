@@ -40,7 +40,7 @@ export const notificationDeliveries = pgTable(
       .references(() => users.id, { onDelete: 'cascade' }),
     token: text('token').notNull(),
     locale: text('locale').notNull(),
-    status: text('status').default('pending').notNull(),
+    status: text('status').$type<'pending' | 'receipt' | 'done' | 'skipped'>().default('pending').notNull(),
     ticketId: text('ticket_id'),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
