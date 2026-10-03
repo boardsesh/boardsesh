@@ -180,7 +180,11 @@ export function InlinePlaylistPicker({
     () => ['playlistsForClimb', climbBoardScope.boardType, climbBoardScope.layoutId, climb.uuid] as const,
     [climbBoardScope, climb.uuid],
   );
-  const { data: memberUuids } = useQuery({
+  const {
+    data: memberUuids,
+    isError: membershipQueryFailed,
+    isLoading: membershipQueryLoading,
+  } = useQuery({
     queryKey: membershipKey,
     queryFn: async (): Promise<string[]> => {
       // Guarded by `enabled` below; the check is here to keep the non-null
@@ -212,6 +216,29 @@ export function InlinePlaylistPicker({
   // confirms. The list itself never waits on this fetch — no membership spinner.
   const seededMembers = useClimbPlaylistMemberships(climb.uuid);
   const members = useMemo(() => new Set(memberUuids ?? seededMembers), [memberUuids, seededMembers]);
+
+  // A climb previewed from another board may not carry a layout, so the host
+  // config's angle belongs to the wrong board. Use the climb's browsed angle in
+  // that one case; otherwise keep the captured active/preview angle supplied by
+  // the host. Never send a non-finite angle to an add mutation.
+  const targetAngle = scopeLayoutId === null && climbBoardScope.boardType !== boardName ? climb.angle : angle;
+  const mutationAngle = Number.isFinite(targetAngle) ? targetAngle : null;
+
+  // The opt-in membership store has no way to distinguish "not fetched" from
+  // "fetched and empty". A positive row is still useful proof that the climb
+  // belongs there (so the climber can remove it); an unchecked row is actionable
+  // only after the exact board+layout query has returned, including an empty
+  // result. This prevents an unknown membership from looking like an add toggle.
+  const membershipStatusMessage =
+    memberUuids !== undefined
+      ? null
+      : scopeLayoutId === null
+        ? t('actions.playlist.popover.membershipUnknown')
+        : membershipQueryFailed
+          ? t('actions.playlist.popover.membershipUnavailable')
+          : membershipQueryLoading
+            ? t('actions.playlist.popover.membershipChecking')
+            : null;
 
   const [error, setError] = useState<string | null>(null);
 
@@ -289,21 +316,29 @@ export function InlinePlaylistPicker({
   const handleToggle = useCallback(
     async (playlist: Playlist) => {
       if (togglingRef.current.has(playlist.uuid)) return;
+      const knownMember = members.has(playlist.uuid);
+      const membershipIsKnown = memberUuids !== undefined || seededMembers.has(playlist.uuid);
+      if (!membershipIsKnown && !knownMember) return;
+      if (!knownMember && mutationAngle === null) return;
       togglingRef.current.add(playlist.uuid);
       try {
         await queryClient.cancelQueries({ queryKey: membershipKey });
         const before = queryClient.getQueryData<string[]>(membershipKey) ?? [...members];
         const willBeMember = !before.includes(playlist.uuid);
+        let runToggle: () => Promise<void>;
+        if (willBeMember) {
+          const addAngle = mutationAngle;
+          if (addAngle === null) return;
+          runToggle = () => addToPlaylist(playlist.uuid, climb.uuid, addAngle);
+        } else {
+          runToggle = () => removeFromPlaylist(playlist.uuid, climb.uuid);
+        }
         setError(null);
         writeMembership(willBeMember ? [...before, playlist.uuid] : before.filter((uuid) => uuid !== playlist.uuid));
         try {
-          if (willBeMember) {
-            // The backend resolvers key on playlists.uuid, so the uuid (not the
-            // bigserial id) goes on the wire.
-            await addToPlaylist(playlist.uuid, climb.uuid, angle);
-          } else {
-            await removeFromPlaylist(playlist.uuid, climb.uuid);
-          }
+          // The backend resolvers key on playlists.uuid, so the uuid (not the
+          // bigserial id) goes on the wire.
+          await runToggle();
         } catch (toggleError) {
           // Undo ONLY this row's change against the current cache — not a stale
           // snapshot — so a sibling toggle that succeeded meanwhile is preserved.
@@ -338,6 +373,9 @@ export function InlinePlaylistPicker({
       queryClient,
       membershipKey,
       members,
+      memberUuids,
+      seededMembers,
+      mutationAngle,
       writeMembership,
       addToPlaylist,
       removeFromPlaylist,
@@ -408,6 +446,10 @@ export function InlinePlaylistPicker({
       setCreateError(t('actions.playlist.toast.createFailed'));
       return;
     }
+    if (mutationAngle === null) {
+      setCreateError(t('actions.playlist.popover.angleUnavailable'));
+      return;
+    }
     // No length check needed: the input caps at NAME_MAX (maxLength) and trim only
     // shortens, so the name can't exceed it.
     const requestId = (createRequestIdRef.current += 1);
@@ -450,7 +492,7 @@ export function InlinePlaylistPicker({
     setCreateOpen(false);
     resetCreate();
     try {
-      await addToPlaylist(created.uuid, climb.uuid, angle);
+      await addToPlaylist(created.uuid, climb.uuid, mutationAngle);
       if (!isCurrent()) return;
       // Cancel any in-flight membership fetch (it was sent before this playlist
       // existed) so it can't overwrite the new checkmark, then optimistically add.
@@ -489,7 +531,7 @@ export function InlinePlaylistPicker({
     scopeLayoutId,
     addToPlaylist,
     climb.uuid,
-    angle,
+    mutationAngle,
     resetCreate,
     queryClient,
     membershipKey,
@@ -520,20 +562,30 @@ export function InlinePlaylistPicker({
     ({ item, index }) => {
       const accent = normalizePlaylistColor(item.color) ?? brandColors.primary;
       const member = members.has(item.uuid);
+      const membershipIsKnown = memberUuids !== undefined || seededMembers.has(item.uuid);
+      const canToggle = (membershipIsKnown || member) && (member || mutationAngle !== null);
       return (
         <ListRow
           title={item.name}
           subtitle={t('multiboardList.count', { count: item.climbCount })}
           leading={<Icon name="playlist" size={22} color={accent} />}
           trailing={member ? <Icon name="check.small" size={18} color={brandColors.primary} /> : undefined}
-          onPress={() => void handleToggle(item)}
+          onPress={canToggle ? () => void handleToggle(item) : undefined}
           accessibilityLabel={item.name}
-          accessibilityHint={member ? t('actions.playlist.toast.removed') : t('actions.playlist.toast.added')}
+          accessibilityHint={
+            !canToggle
+              ? membershipIsKnown
+                ? t('actions.playlist.popover.angleUnavailable')
+                : t('actions.playlist.popover.membershipUnknown')
+              : member
+                ? t('actions.playlist.toast.removed')
+                : t('actions.playlist.toast.added')
+          }
           showSeparator={index < sortedPlaylists.length - 1}
         />
       );
     },
-    [sortedPlaylists, members, handleToggle, brandColors, t],
+    [sortedPlaylists, members, memberUuids, seededMembers, mutationAngle, handleToggle, brandColors, t],
   );
 
   return (
@@ -559,7 +611,7 @@ export function InlinePlaylistPicker({
             pinned to a real board+layout, and inventing the host's would create
             one this climb (and every other climb on its board) can never be
             added to. Existing playlists on the board are still listed below. */}
-        {isAuthenticated && !createOpen && scopeLayoutId !== null ? (
+        {isAuthenticated && !createOpen && scopeLayoutId !== null && mutationAngle !== null ? (
           <Pressable
             onPress={handleOpenCreate}
             accessibilityRole="button"
@@ -704,10 +756,24 @@ export function InlinePlaylistPicker({
           bounces={false}
           style={scrollMaxHeight != null ? { maxHeight: scrollMaxHeight } : undefined}
           ListHeaderComponent={
-            error ? (
-              <Text variant="footnote" color={iosSystemColors.systemRed} style={styles.errorText}>
-                {error}
-              </Text>
+            membershipStatusMessage || mutationAngle === null || error ? (
+              <View style={styles.statusMessages}>
+                {membershipStatusMessage ? (
+                  <Text variant="footnote" color={iosSystemColors.systemGray} style={styles.errorText}>
+                    {membershipStatusMessage}
+                  </Text>
+                ) : null}
+                {mutationAngle === null ? (
+                  <Text variant="footnote" color={iosSystemColors.systemGray} style={styles.errorText}>
+                    {t('actions.playlist.popover.angleUnavailable')}
+                  </Text>
+                ) : null}
+                {error ? (
+                  <Text variant="footnote" color={iosSystemColors.systemRed} style={styles.errorText}>
+                    {error}
+                  </Text>
+                ) : null}
+              </View>
             ) : null
           }
           ListEmptyComponent={
@@ -828,5 +894,8 @@ const styles = StyleSheet.create({
   errorText: {
     paddingHorizontal: spacing[4],
     paddingBottom: spacing[2],
+  },
+  statusMessages: {
+    paddingTop: spacing[2],
   },
 });
