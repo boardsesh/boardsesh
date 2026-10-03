@@ -156,6 +156,8 @@ jobs:
               # editing only their logic must still trigger that job.
               - 'scripts/mobile-fingerprint-inputs-check.ts'
               - 'scripts/mobile-patches-check.ts'
+              - 'scripts/__tests__/expo-sqlite-native-finalize.test.ts'
+              - 'scripts/__tests__/fixtures/expo-sqlite-native-finalize.c'
             # Renderer-agnostic packages imported by @boardsesh/mobile. Keep
             # this separate from sharedDeps: that backend-facing filter also
             # contains packages/db and every sync service, which made an
@@ -555,6 +557,13 @@ jobs:
       # patched source is actually present on this cheap Linux runner.
       - name: Check native patches are applied
         run: vp run check:mobile-patches
+      # These suites read installed SQLite and the C fixture through fs, so
+      # --changed cannot select them from a patch-only or fixture-only diff.
+      - name: Test installed SQLite lifetimes and native finalization
+        run: >-
+          vp test run --project mobile --project scripts
+          packages/mobile/src/db/__tests__/expo-sqlite-lifecycle.test.ts
+          scripts/__tests__/expo-sqlite-native-finalize.test.ts --reporter=agent
       # The resolver can return a valid fingerprint even when a source is silently
       # absent/null. Assert the four autolinking configs, every discovered native
       # module dir, the fingerprint config, and root patch bodies all contribute.

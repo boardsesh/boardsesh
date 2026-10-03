@@ -13,6 +13,7 @@
     "types": ["node"]
   },
   "include": [
+    "__tests__/expo-sqlite-native-finalize.test.ts",
     "publish-design-previews.ts",
     "lib/design-previews.ts",
     "__tests__/design-previews.test.ts",

@@ -183,6 +183,8 @@ jobs:
       # source because it depends on ExpoModulesCore (precompiled_modules.rb
       # propagates `dependency_unavailable`), so assert its patched file as well:
       # if that cascade ever stops, the #3928 patch goes dead again silently.
+      # ExpoSQLite depends on the same cascade: #5851 must compile its patched
+      # finalizer instead of linking an upstream prebuilt module.
       # Match a `SwiftCompile normal <arch> ... <full path>` line. Swift batch mode
       # may log a file only inside a batched "Compiling\ A.swift,\ B.swift <paths>"
       # line (ExpoModulesCore's Exception.swift does), so anchor on the package
@@ -202,6 +204,7 @@ jobs:
           check 'RNScreens RNSScrollViewFinder.mm' 'RNSScrollViewFinder'
           check 'ExpoModulesCore Exception.swift' 'SwiftCompile normal [a-z0-9_]+ .*/expo-modules-core/ios/Core/Exceptions/Exception\.swift'
           check 'ExpoImage ImageView.swift' 'SwiftCompile normal [a-z0-9_]+ .*/expo-image/ios/ImageView\.swift'
+          check 'ExpoSQLite SQLiteModule.swift' 'SwiftCompile normal [a-z0-9_]+ .*/expo-sqlite/ios/SQLiteModule\.swift'
           exit $status
 
       # #5293: React Native core is the prebuilt React.xcframework here, so a

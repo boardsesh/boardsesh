@@ -49,6 +49,7 @@ overrides:
   react-native-screens: 4.26.2
 
 patchedDependencies:
+  expo-sqlite@57.0.2: patches/expo-sqlite@57.0.2.patch
   'postgres@3.4.9': packages/db/patches/postgres@3.4.9.patch
   'react-native-ble-plx@3.5.1': patches/react-native-ble-plx@3.5.1.patch
   '@expo/fingerprint@0.20.11': patches/@expo__fingerprint@0.20.11.patch
