@@ -109,6 +109,18 @@ describe('shared-wall capability resolution', () => {
     expect(queryClient.getQueryCache().getAll()).toHaveLength(0);
   });
 
+  it('propagates a network rejection without seeding cache or registering art', async () => {
+    request.mockRejectedValue(new TypeError('Network request failed'));
+    const queryClient = makeQueryClient();
+    const loader = vi.fn(async () => {});
+    setSprayWallLoader(loader);
+    await expect(fetchSprayWallBoardFromLink(queryClient, WALL_UUID, WALL_SLUG)).rejects.toThrow(
+      'Network request failed',
+    );
+    expect(queryClient.getQueryCache().getAll()).toHaveLength(0);
+    expect(loader).not.toHaveBeenCalled();
+  });
+
   it('selects a complete board with an operation accepted by the server schema', () => {
     expect(validate(buildSchema(typeDefs.join('\n')), parse(GET_SPRAY_WALL_FOR_LINK))).toEqual([]);
   });

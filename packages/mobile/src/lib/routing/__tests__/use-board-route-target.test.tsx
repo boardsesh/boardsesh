@@ -277,6 +277,47 @@ describe('useBoardRouteTarget', () => {
     expect(fetchBoardBySlug).not.toHaveBeenCalled();
   });
 
+  it.each([true, false])(
+    'heals a rejected capability after reconnecting (initially online: %s)',
+    async (initiallyOnline) => {
+      useRealResolver();
+      connectivity.isOnline = initiallyOnline;
+      const wallBoard = board({ uuid: WALL_UUID, slug: 'unlisted-wall', boardType: 'spray', angle: 25 });
+      getStoredActiveBoard.mockResolvedValue(wallBoard);
+      getOfflineBoards.mockReturnValue([wallBoard]);
+      fetchSprayWallBoardFromLink.mockRejectedValueOnce(new TypeError('Network request failed'));
+      const { container } = render(
+        createElement(Harness, {
+          target: { kind: 'slug-list', slug: 'unlisted-wall', angle: null },
+          wallUuid: WALL_UUID,
+        }),
+      );
+
+      await waitFor(() => expect(statusOf(container)).toBe('not-found'));
+      expect(fetchSprayWallBoardFromLink).toHaveBeenCalledTimes(1);
+      expect(setActiveBoard).not.toHaveBeenCalled();
+      expect(router.replace).not.toHaveBeenCalled();
+      expect(getStoredActiveBoard).not.toHaveBeenCalled();
+      expect(getOfflineBoards).not.toHaveBeenCalled();
+      expect(fetchBoardBySlug).not.toHaveBeenCalled();
+      expect(fetchAllMyBoards).not.toHaveBeenCalled();
+      expect(createBoardMutateAsync).not.toHaveBeenCalled();
+
+      if (initiallyOnline) {
+        act(() => {
+          connectivity.isOnline = false;
+          for (const listener of connectivity.listeners) listener(false);
+        });
+      }
+      fetchSprayWallBoardFromLink.mockResolvedValue(wallBoard);
+      act(() => connectivity.goOnline());
+      await waitFor(() => expect(setActiveBoard).toHaveBeenCalledWith(wallBoard));
+      await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/(tabs)/climbs'));
+      expect(fetchSprayWallBoardFromLink).toHaveBeenCalledTimes(2);
+      expect(fetchSprayWallBoardFromLink).toHaveBeenLastCalledWith(routeQueryClient, WALL_UUID, 'unlisted-wall');
+    },
+  );
+
   it('retries the same slug when a different wall capability arrives', async () => {
     useRealResolver();
     const target: BoardRouteTarget = { kind: 'slug-list', slug: 'unlisted-wall', angle: null };

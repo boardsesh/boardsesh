@@ -1690,6 +1690,16 @@ who neither owns the wall nor belongs to its gym open an unlisted share without
 the enumerable `boardBySlug` lookup. Denied or mismatched capabilities never
 fall back to a stored board or populate the public slug cache.
 
+`SprayWall.uuid` is the owning `UserBoard.uuid`: the backend resolves UUID
+lookups through `spray_walls.board_uuid` and returns `board.uuid`. The numeric
+`spray_walls.id` stays internal. Native adoption checks both UUID fields against
+the capability to prevent adopting a different board from the response.
+
+Capability links require a fresh network authorization, including previously
+opened links. Offline opens show not found without adopting cached wall content;
+reconnecting retries the lookup automatically. This keeps revoked shares from
+reopening a wall through stale cached permissions.
+
 Adding the filter moves the native fingerprint, so Android needs the new store
 binary from `release/next`; an OTA on an older binary cannot add it (SW-14b).
 

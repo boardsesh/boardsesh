@@ -25,6 +25,7 @@ export async function fetchSprayWallBoardFromLink(
   );
   if (!isAuthCredentialGenerationCurrent(credentialGeneration)) return null;
   const wall = response.sprayWall;
+  // GraphQL SprayWall.uuid is its owning UserBoard.uuid; the database wall id is numeric.
   if (
     !wall ||
     wall.uuid.toLowerCase() !== wallUuid.toLowerCase() ||
