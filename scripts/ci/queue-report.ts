@@ -7,7 +7,8 @@
  *     [--workflows ci.yml,production-deploy.yml] [--per-workflow 40] [--json]
  *
  * For each workflow it samples up to --per-workflow completed runs created in
- * the last --days days, fetches their jobs through `gh api`, and reports:
+ * the last --days days, fetches their jobs through `gh api`, and reports. The
+ * per-workflow count must be positive, defaults to 40, and is capped at 100.
  *
  *   queue    = job.started_at - job.created_at    (waiting for a free runner slot)
  *   duration = job.completed_at - job.started_at  (runner time actually used)
@@ -114,7 +115,8 @@ function parseArgs(argv: string[]): Options {
       case '--help':
       case '-h':
         process.stdout.write(
-          'Usage: vp exec tsx scripts/ci/queue-report.ts [--days N] [--repo owner/name] [--workflows a.yml,b.yml] [--per-workflow N] [--json]\n',
+          'Usage: vp exec tsx scripts/ci/queue-report.ts [--days N] [--repo owner/name] [--workflows a.yml,b.yml] [--per-workflow N] [--json]\n' +
+            '  --per-workflow N: positive integer, default 40, maximum 100 (larger values are capped)\n',
         );
         process.exit(0);
         break;
