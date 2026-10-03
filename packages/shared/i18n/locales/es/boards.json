@@ -227,7 +227,10 @@
         "shareLink": "Compartir enlace",
         "shareLinkPublicHint": "Cualquiera puede abrir este plafón.",
         "shareLinkUnlistedHint": "Solo quien reciba el enlace."
-      }
+      },
+      "details": "Detalles",
+      "detailsAria": "Abrir los detalles de {{name}}",
+      "activeSprayDetails": "{{name}} · detalles del plafón"
     },
     "disambiguation": {
       "title": "¿En qué plafón estás?",
@@ -1042,5 +1045,33 @@
   "sprayHidden": {
     "body": "Alguien lo reportó y lo hemos quitado de la vista de los demás. Para ti sigue aquí, y no se ha borrado nada.",
     "title": "Este muro está oculto"
+  },
+  "sprayModeration": {
+    "reportTitle": "Denunciar muro",
+    "reportHint": "Marcar este muro para revisión administrativa",
+    "submit": "Enviar denuncia",
+    "reported": "Gracias. Tu denuncia está pendiente de revisión.",
+    "reportOffline": "Conéctate a internet para enviar tu denuncia.",
+    "reportError": "No se pudo enviar tu denuncia. Inténtalo de nuevo.",
+    "queueTitle": "Denuncias de muros spray",
+    "hide": "Ocultar muro",
+    "unhide": "Mostrar muro",
+    "keepVisible": "Mantener visible",
+    "hidden": "Oculto",
+    "photoLabel": "Foto de {{wall}}",
+    "noPhoto": "No hay foto disponible",
+    "review": "Revisar muro",
+    "reviewError": "No se guardó la decisión. Inténtalo de nuevo.",
+    "unavailable": "La moderación de muros spray no está disponible para esta cuenta ahora.",
+    "loadError": "No se pudieron cargar las denuncias.",
+    "empty": "No hay muros pendientes de revisión.",
+    "reasons": {
+      "inappropriate": "Foto o nombre inapropiado",
+      "notAWall": "No es un muro de escalada",
+      "personalInfo": "Información personal en la foto",
+      "other": "Otro"
+    },
+    "reportCount_one": "{{count}} denuncia",
+    "reportCount_other": "{{count}} denuncias"
   }
 }

@@ -240,6 +240,8 @@ vi.mock('../../../src/components/Button', () => ({
 vi.mock('../../../src/components/ActivityIndicator', () => ({
   ActivityIndicator: () => createElement('div', { 'data-testid': 'spinner' }),
 }));
+vi.mock('../../../src/components/board-discovery/BoardDetailSheet', () => ({ BoardDetailSheet: () => null }));
+
 vi.mock('../../../src/components/board-discovery/BoardCarousel', () => ({
   BoardCarousel: ({
     items,

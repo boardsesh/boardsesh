@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { View, Pressable, StyleSheet, type ColorValue } from 'react-native';
-import BottomSheet from '@expo/ui/community/bottom-sheet';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
+import { toBoardName } from '@boardsesh/board-config';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { Sheet } from '../Sheet';
 import { Text } from '../Text';
@@ -16,6 +16,8 @@ import { getBoardDetailFields, isActiveBoard } from './board-detail-fields';
 import { sprayDetailRows, sprayShareTarget, type SprayDetailRow, type SprayShareTarget } from './spray-detail-rows';
 import { SPRAY_DETAIL_ROWS_ENABLED } from '../../lib/spray/spray-routes';
 import { BoardShareSheet } from './BoardShareSheet';
+import { ReportSprayWallSheet } from '../spray-wall/ReportSprayWallSheet';
+import { useSprayModerationAccess } from '../../lib/spray/use-spray-moderation';
 
 type BoardDetailSheetProps = {
   board: UserBoard | null;
@@ -29,7 +31,12 @@ export function BoardDetailSheet({ board, visible, onClose, onSetActive }: Board
   const { t } = useTranslation('boards');
   const { data: activeBoard } = useActiveBoard();
   const router = useRouter();
-  const sheetRef = useRef<BottomSheet>(null);
+  const { canReport } = useSprayModerationAccess();
+  const [reportTarget, setReportTarget] = useState<{ uuid: string; name: string } | null>(null);
+  const closeReport = useCallback(() => setReportTarget(null), []);
+  const openReport = useCallback(() => {
+    if (board && canReport) setReportTarget({ uuid: board.uuid, name: board.name });
+  }, [board, canReport]);
 
   // Empty for every board that is not a spray wall the viewer may edit, which is
   // what keeps this a no-op on the eight catalogue boards — and empty for ALL of
@@ -41,9 +48,11 @@ export function BoardDetailSheet({ board, visible, onClose, onSetActive }: Board
   // resolves for nobody, so the row is absent rather than disabled. The edit
   // screen is where a wall is made shareable.
   const shareTarget = useMemo(() => sprayShareTarget(board), [board]);
-  const [shareOpen, setShareOpen] = useState(false);
-  const openShare = useCallback(() => setShareOpen(true), []);
-  const closeShare = useCallback(() => setShareOpen(false), []);
+  const [shareSnapshot, setShareSnapshot] = useState<{ target: SprayShareTarget; wallName: string } | null>(null);
+  const openShare = useCallback(() => {
+    if (board && shareTarget) setShareSnapshot({ target: shareTarget, wallName: board.name });
+  }, [board, shareTarget]);
+  const closeShare = useCallback(() => setShareSnapshot(null), []);
 
   // Close first, then navigate: the sheet is always mounted and these rows push a
   // full route, so leaving it open would stack a screen under an open sheet.
@@ -54,17 +63,6 @@ export function BoardDetailSheet({ board, visible, onClose, onSetActive }: Board
     },
     [onClose, router],
   );
-
-  // Always-mounted sheet: open/close imperatively off the visible+board state.
-  // Selecting a different board while the sheet is open re-runs snapToIndex(0)
-  // (board is a dep) — harmless; the sheet no-ops if already at that stop.
-  useEffect(() => {
-    if (visible && board) {
-      sheetRef.current?.snapToIndex(0);
-    } else {
-      sheetRef.current?.close();
-    }
-  }, [visible, board]);
 
   const footer = board ? (
     isActiveBoard(board, activeBoard?.uuid) ? (
@@ -82,7 +80,7 @@ export function BoardDetailSheet({ board, visible, onClose, onSetActive }: Board
   return (
     <>
       <Sheet
-        ref={sheetRef}
+        visible={visible && !!board}
         snapPoints={['55%', '90%']}
         onClose={onClose}
         scrollable
@@ -98,18 +96,23 @@ export function BoardDetailSheet({ board, visible, onClose, onSetActive }: Board
             onOpenWallRow={openWallRow}
             shareTarget={shareTarget}
             onOpenShare={openShare}
+            canReport={canReport && toBoardName(board.boardType) === 'spray'}
+            onOpenReport={openReport}
           />
         ) : null}
       </Sheet>
+      {reportTarget ? (
+        <ReportSprayWallSheet wallUuid={reportTarget.uuid} wallName={reportTarget.name} onClose={closeReport} />
+      ) : null}
       {/* A sibling of the detail sheet, not a child: it is its own native sheet,
         and the coordinator serialises the two presentations. */}
-      {shareOpen && board && shareTarget ? (
+      {shareSnapshot ? (
         <BoardShareSheet
           visible
           onDismiss={closeShare}
-          shareUrl={shareTarget.url}
-          wallName={board.name}
-          visibility={shareTarget.visibility}
+          shareUrl={shareSnapshot.target.url}
+          wallName={shareSnapshot.wallName}
+          visibility={shareSnapshot.target.visibility}
         />
       ) : null}
     </>
@@ -127,6 +130,8 @@ function BoardDetailBody({
   onOpenWallRow,
   shareTarget,
   onOpenShare,
+  canReport,
+  onOpenReport,
 }: {
   board: UserBoard;
   systemColors: SystemColors;
@@ -135,6 +140,8 @@ function BoardDetailBody({
   onOpenWallRow: (href: string) => void;
   shareTarget: SprayShareTarget | null;
   onOpenShare: () => void;
+  canReport: boolean;
+  onOpenReport: () => void;
 }) {
   const { subLocation, setNames, sizeText } = getBoardDetailFields(board);
 
@@ -211,6 +218,19 @@ function BoardDetailBody({
         </View>
       ) : null}
 
+      {canReport ? (
+        <View style={[styles.wallRows, { backgroundColor: systemColors.tertiaryBackground }]}>
+          <WallRow
+            icon="warning"
+            label={t('sprayModeration.reportTitle')}
+            hint={t('sprayModeration.reportHint')}
+            showSeparator={false}
+            systemColors={systemColors}
+            onPress={onOpenReport}
+          />
+        </View>
+      ) : null}
+
       {wallRows.length > 0 ? (
         <View style={[styles.wallRows, { backgroundColor: systemColors.tertiaryBackground }]}>
           {wallRows.map((row, index) => (
@@ -246,7 +266,7 @@ function WallRow({
   systemColors,
   onPress,
 }: {
-  icon: SprayDetailRow['icon'];
+  icon: Parameters<typeof Icon>[0]['name'];
   label: string;
   hint: string;
   showSeparator: boolean;

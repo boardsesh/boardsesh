@@ -97,6 +97,8 @@ vi.mock('../../../lib/graphql/hooks/use-browse-proposals', () => ({
   },
 }));
 
+vi.mock('../../../lib/spray/use-spray-moderation', () => ({ useSprayModerationAccess: () => ({ canReview: false }) }));
+
 vi.mock('../../../providers/feature-flags-provider', () => ({
   useClimbModerationEnabled: () => state.moderationEnabled,
 }));
