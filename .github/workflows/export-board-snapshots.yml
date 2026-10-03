@@ -17,21 +17,20 @@ name: Export Board Snapshots
 # Each prefix is a self-contained, single-encoding manifest; the export merges
 # and prunes strictly within the prefix it targets. A later cleanup drops the
 # identity pass and deletes the v1 prefix.
+#
+# The batch worker's export-board-snapshots family owns the Tigris prefixes
+# (#5800): the nightly and the 15-minute live scan run there, never here. Two
+# publishers on one prefix drop each other's manifest entries, so this
+# workflow is a manual R2 rehearsal only (docs/board-snapshots.md, "Cutover").
 on:
-  schedule:
-    - cron: '15 7 * * *' # 07:15 UTC daily (off-peak; distinct from the 06:00/06:30 refresh crons)
-    # Offset from :00/:15/:30/:45 to reduce GitHub schedule congestion. This
-    # refreshes only the live gzip prefix; the identity rollback stays nightly.
-    - cron: '7,22,37,52 * * * *'
   workflow_dispatch:
     inputs:
       storage_target:
         description: 'Storage destination. R2 is for a complete migration rehearsal only.'
         type: choice
         options:
-          - tigris
           - r2
-        default: tigris
+        default: r2
       gzip_only:
         description: 'Skip the identity (v1) pass; only refresh the gzip (v1-gzip) artifacts'
         type: boolean
@@ -55,6 +54,8 @@ concurrency:
 
 jobs:
   export:
+    # Tigris belongs to the batch worker; only the R2 rehearsal may run here.
+    if: ${{ inputs.storage_target == 'r2' }}
     runs-on: ubuntu-latest
     # The nightly does two sequential read-only passes (identity + gzip); live
     # scans do bounded probes and, normally, no export. 45m covers a bulk refresh.
