@@ -1,4 +1,3 @@
-import { normaliseSetIds } from '@boardsesh/board-config';
 import { distanceMeters } from '@boardsesh/db/queries';
 
 // ============================================
@@ -35,6 +34,58 @@ export type BoardLocation = {
   longitude: number | null;
   locationName: string | null;
 };
+
+function isAsciiWhitespace(character: string): boolean {
+  return character === ' ' || character === '\t' || character === '\n' || character === '\r' || character === '\f';
+}
+
+/**
+ * Canonical decimal set membership for comparing persisted board configs.
+ * Stored rows can predate input validation, so normalize decimal tokens without
+ * converting arbitrarily long values through Number or BigInt. Preserve the
+ * original database text; this key is only for equality checks.
+ *
+ * Whitespace around a token is tolerated for legacy rows, but whitespace inside
+ * a token, empty tokens, and non-decimal members have no canonical membership.
+ */
+export function canonicalSetIdMembership(setIds: string): string | undefined {
+  const normalizedSetIds = new Set<string>();
+  let tokenStart = 0;
+
+  for (let index = 0; index <= setIds.length; index += 1) {
+    if (index < setIds.length && setIds[index] !== ',') continue;
+
+    let tokenBegin = tokenStart;
+    let tokenEnd = index;
+    while (tokenBegin < tokenEnd && isAsciiWhitespace(setIds[tokenBegin])) tokenBegin += 1;
+    while (tokenEnd > tokenBegin && isAsciiWhitespace(setIds[tokenEnd - 1])) tokenEnd -= 1;
+
+    if (tokenBegin === tokenEnd) return undefined;
+
+    let firstSignificantDigit = tokenBegin;
+    for (let digitIndex = tokenBegin; digitIndex < tokenEnd; digitIndex += 1) {
+      const character = setIds[digitIndex];
+      if (character < '0' || character > '9') return undefined;
+      if (character === '0' && firstSignificantDigit === digitIndex && digitIndex < tokenEnd - 1) {
+        firstSignificantDigit += 1;
+      }
+    }
+
+    normalizedSetIds.add(setIds.slice(firstSignificantDigit, tokenEnd));
+    tokenStart = index + 1;
+  }
+
+  return [...normalizedSetIds]
+    .sort((firstSetId, secondSetId) => {
+      // Leading zeros are already stripped, so length then lexical order is numeric order without BigInt.
+      const lengthDifference = firstSetId.length - secondSetId.length;
+      if (lengthDifference !== 0) return lengthDifference;
+      if (firstSetId < secondSetId) return -1;
+      if (firstSetId > secondSetId) return 1;
+      return 0;
+    })
+    .join(',');
+}
 
 function hasCoordinates(location: BoardLocation): boolean {
   return location.latitude != null && location.longitude != null;
@@ -88,10 +139,9 @@ export function isSameBoardLocation(first: BoardLocation, second: BoardLocation)
  *
  * Callers pass candidates already narrowed in SQL to the same owner, board type,
  * layout and size. Set-id equality is decided HERE rather than in the query,
- * because the stored value is whatever order the board was created with:
- * `'25,26,27,24'` and `'24,25,26,27'` are the same physical board, but a SQL
- * `eq()` calls them different. `normaliseSetIds` is the same helper the mobile
- * builder uses, so both ends now agree.
+ * because persisted text can be reordered or legacy-padded. Compare canonical
+ * decimal membership on both sides, and never match malformed values just
+ * because both lack a canonical key. Raw stored set IDs are not rewritten.
  *
  * Angle is deliberately not compared — one wall runs at many angles, so it can
  * never distinguish two boards.
@@ -100,8 +150,15 @@ export function findBlockingDuplicate<Candidate extends BoardLocation & { setIds
   candidates: Candidate[],
   incoming: BoardLocation & { setIds: string },
 ): Candidate | undefined {
-  const incomingSetIds = normaliseSetIds(incoming.setIds);
-  return candidates.find(
-    (candidate) => normaliseSetIds(candidate.setIds) === incomingSetIds && isSameBoardLocation(candidate, incoming),
-  );
+  const incomingSetMembership = canonicalSetIdMembership(incoming.setIds);
+  if (incomingSetMembership === undefined) return undefined;
+
+  return candidates.find((candidate) => {
+    const candidateSetMembership = canonicalSetIdMembership(candidate.setIds);
+    return (
+      candidateSetMembership !== undefined &&
+      candidateSetMembership === incomingSetMembership &&
+      isSameBoardLocation(candidate, incoming)
+    );
+  });
 }
