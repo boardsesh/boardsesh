@@ -182,13 +182,14 @@ describe('BoardLookStep', () => {
     });
   });
 
-  it('offers six looks and no per-card sentences', () => {
-    // The order the product asks for, and the reason there is room for six: the
-    // caption under each board is its name, nothing more.
+  it('offers seven looks and no per-card sentences', () => {
+    // The order the product asks for, and the reason there is room for seven:
+    // the caption under each board is its name, nothing more.
     renderStep();
     expect(carouselCtrl.optionIds).toEqual([
       'aura',
       'aura-subtle',
+      'aura-outline',
       'modern-classic',
       'classic',
       'max-contrast',

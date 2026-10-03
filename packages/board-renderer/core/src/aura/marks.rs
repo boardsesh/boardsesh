@@ -253,6 +253,57 @@ pub fn paint_fill(
     }
 }
 
+/// The outline's stroke width as a fraction of the hold's radius, before the
+/// climber's brush multiplier.
+///
+/// A visual-tuning number, not an architectural one: 0.12 is a starting point
+/// to be checked against a real rendered board and a photo of the wall, and
+/// it is free to move. It is relative to the hold (like every other Aura
+/// width) rather than a fixed view-box width like classic's ring, because a
+/// fixed width reads as a hairline on a jug and swallows a crimp. Rust-only on
+/// purpose — the JS side has no knob for it.
+pub const OUTLINE_WIDTH_FRACTION: f32 = 0.12;
+
+/// Narrowest stroke the outline will draw, in output pixels, so a small hold
+/// at a small output size keeps a visible line rather than an anti-aliased
+/// smudge.
+const OUTLINE_MIN_WIDTH_PX: f32 = 1.0;
+
+/// The outline mark: each lit silhouette stroked in its role colour, interior
+/// left alone, so the hold's own art shows through the ring.
+///
+/// The stroke is centred on the silhouette edge, so half of it sits on the
+/// hold and half on the innermost pixels of the glow — which is what makes the
+/// edge read as solid rather than as the start of a fade. `edge_scale` is the
+/// user's brush multiplier, the same one the fill's bands and the glyphs take.
+///
+/// `fill.opacity` is the STROKE's alpha in this mode. Reusing the fill's field
+/// is safe because outline and fill are mutually exclusive mark styles: no
+/// render ever reads it for both, so the one setting means "how strong is the
+/// mark" whichever mark is on.
+pub fn paint_outline(pixmap: &mut Pixmap, lit: &[LitHold], fill: &FillTuning, edge_scale: f32) {
+    if !positive(fill.opacity) {
+        return;
+    }
+    let mut paint = Paint {
+        anti_alias: true,
+        ..Paint::default()
+    };
+    let mut stroke = Stroke {
+        line_join: LineJoin::Round,
+        ..Stroke::default()
+    };
+    for hold in lit {
+        let width = OUTLINE_WIDTH_FRACTION * hold.r_px * edge_scale;
+        if !positive(width) {
+            continue;
+        }
+        stroke.width = width.max(OUTLINE_MIN_WIDTH_PX);
+        solid(&mut paint, hold.color, fill.opacity);
+        pixmap.stroke_path(&hold.path, &paint, &stroke, Transform::identity(), None);
+    }
+}
+
 /// The LED base plate: the ring between the silhouette and the hold proper,
 /// lit in the role colour at close to full strength. This is the mark on a
 /// board whose art has been annotated — the part a real LED shines through —

@@ -311,6 +311,7 @@
           "aura": "Aura",
           "auraBold": "Aura intensa",
           "auraSubtle": "Aura sutil",
+          "auraOutline": "Aura contorno",
           "modernClassic": "Clásico moderno",
           "maxContrast": "Máximo contraste",
           "descriptions": {
@@ -319,6 +320,7 @@
             "modernClassic": "Los círculos de siempre, sobre un muro atenuado.",
             "maxContrast": "El lavado más fuerte y presas rellenas.",
             "auraBold": "Un brillo más amplio y duro que se ve desde lejos.",
+            "auraOutline": "Un contorno sólido en cada presa, con un brillo ceñido.",
             "classic": "Los marcadores circulares de siempre.",
             "custom": "Ajusta cada parte del aspecto a tu gusto."
           },
@@ -374,12 +376,16 @@
             "options": {
               "glow": "Resplandor",
               "glowFill": "Resplandor + relleno",
-              "fill": "Relleno"
+              "fill": "Relleno",
+              "outline": "Contorno"
             }
           },
           "fillOpacity": {
             "title": "Intensidad del relleno",
             "value": "{{value}}%"
+          },
+          "outlineOpacity": {
+            "title": "Intensidad del contorno"
           },
           "softDisc": {
             "label": "Disco suave",

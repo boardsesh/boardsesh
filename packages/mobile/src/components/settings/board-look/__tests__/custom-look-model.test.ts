@@ -69,6 +69,27 @@ describe('buildCustomLookModel — the other conditional sliders', () => {
       );
     }
   });
+
+  it('relabels the strength slider as the outline’s under the outline mark', () => {
+    // Same `fillOpacity` field — it is the stroke's alpha under `outline` — so
+    // the row key stays put and only the label tells the climber what it moves.
+    const outline = makeInput({ boardsesh: { ...DEFAULT_BOARDSESH_RENDER_SETTINGS, markStyle: 'outline' } });
+    const row = findRow(outline, 'fillOpacity') as MoreSliderRow | undefined;
+    expect(row?.label).toBe('mobile.settings.boardLook.marks.outlineOpacity.title');
+
+    const fill = makeInput({ boardsesh: { ...DEFAULT_BOARDSESH_RENDER_SETTINGS, markStyle: 'fill' } });
+    expect((findRow(fill, 'fillOpacity') as MoreSliderRow | undefined)?.label).toBe(
+      'mobile.settings.boardLook.marks.fillOpacity.title',
+    );
+  });
+
+  it('offers Outline as a mark style', () => {
+    const row = findRow(makeInput(), 'markStyle') as MoreSegmentedRow | undefined;
+    expect(row?.options.map((option) => option.key)).toContain('outline');
+    expect(row?.options.find((option) => option.key === 'outline')?.label).toBe(
+      'mobile.settings.boardLook.marks.style.options.outline',
+    );
+  });
 });
 
 describe('buildCustomLookModel — the drag/commit split', () => {

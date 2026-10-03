@@ -29,6 +29,7 @@ const {
   BOARD_LOOK_ONBOARDING_OPTIONS,
   BOARD_LOOK_SETTINGS_OPTIONS,
   CLASSIC_PREVIEW_SETTINGS,
+  DEFAULT_SPRAY_WALL_LOOK_OPTION_ID,
   applyBoardLookOption,
   buildBoardLookPreviewSettings,
   matchingBoardLookOptionId,
@@ -48,10 +49,12 @@ describe('the option lists', () => {
   it('offers the onboarding step the product order, with the two circle looks adjacent', () => {
     // Modern Classic sits immediately before Classic: a climber who came for
     // the circles they already know meets the veiled version of them first, and
-    // the pair can be compared with one swipe.
+    // the pair can be compared with one swipe. Aura Outline leads that
+    // stroke-forward group rather than sitting with the soft Aura variants.
     expect(BOARD_LOOK_ONBOARDING_OPTIONS.map((option) => option.id)).toEqual([
       'aura',
       'aura-subtle',
+      'aura-outline',
       'modern-classic',
       'classic',
       'max-contrast',
@@ -64,11 +67,30 @@ describe('the option lists', () => {
       'aura',
       'aura-subtle',
       'aura-bold',
+      'aura-outline',
       'modern-classic',
       'classic',
       'max-contrast',
       'custom',
     ]);
+  });
+
+  it('names Aura Outline as the spray-wall default, and it is a real card in both rails', () => {
+    // The spray-wall creation step reads this as its default selection: an id
+    // that is not offered would open that step with nothing selected.
+    expect(DEFAULT_SPRAY_WALL_LOOK_OPTION_ID).toBe('aura-outline');
+    for (const options of [BOARD_LOOK_ONBOARDING_OPTIONS, BOARD_LOOK_SETTINGS_OPTIONS]) {
+      const option = options.find((entry) => entry.id === DEFAULT_SPRAY_WALL_LOOK_OPTION_ID);
+      expect(option).toBeDefined();
+      expect(option?.previewSettings?.boardsesh.markStyle).toBe('outline');
+      expect(option?.requiresBoardseshRenderer).toBe(true);
+    }
+  });
+
+  it('gives Aura Outline its own label and description keys', () => {
+    const outline = BOARD_LOOK_SETTINGS_OPTIONS.find((option) => option.id === 'aura-outline')!;
+    expect(outline.labelI18nKey).toBe('mobile.settings.boardLook.presets.auraOutline');
+    expect(outline.descriptionI18nKey).toBe('mobile.settings.boardLook.presets.descriptions.auraOutline');
   });
 
   it('previews Custom as the Aura Bold bundle under a question mark in onboarding', () => {
@@ -189,6 +211,16 @@ describe('applyBoardLookOption', () => {
     expect(settings.mode).toBe('aura');
     expect(settings.boardsesh.glowReach).toBe(0.8);
     expect(matchingBoardLookOptionId(settings)).toBe('aura-subtle');
+  });
+
+  it('applies Aura Outline and reads it back as the Outline card', async () => {
+    await applyBoardLookOption('aura-outline');
+
+    const settings = await loadBoardRenderSettings();
+    expect(settings.mode).toBe('aura');
+    expect(settings.boardsesh.markStyle).toBe('outline');
+    expect(settings.boardsesh.holdShape).toBe('silhouette');
+    expect(matchingBoardLookOptionId(settings)).toBe('aura-outline');
   });
 });
 
