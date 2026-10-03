@@ -937,6 +937,16 @@ produced it — the per-update comparison neither PostHog nor Sentry can express
   fingerprint. Only binaries built after it shipped report at all — an older store build stays
   silent however long it runs.
 
+The `expo-observe` and `expo-app-metrics` entries in `expo.autolinking.buildFromSource`
+bypass their bundled Maven dependencies on the missing `expo-updates-interface` 57.0.2
+artifact, using the autolinked 57.0.1 project instead. Remove each source-build entry only
+when every Maven artifact referenced by that module is available and both native builds
+pass. Observe also references `expo-eas-client` 57.0.4, whose Android Gradle config sets
+`canBePublished false`; publishing the interface artifact alone does not resolve that
+dependency. Recheck the upstream POMs and publication settings before removing either
+entry. The interface pin's separate removal condition remains in `pnpm-workspace.yaml`
+(#5867).
+
 Where the rows land, and what they cost to keep: `docs/railway.md`.
 
 ## Health monitoring & rollback

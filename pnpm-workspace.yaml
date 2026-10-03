@@ -47,6 +47,7 @@ overrides:
   # expo-app-metrics 57.0.21 asks for 57.0.2, whose Android Maven artifact was
   # not published. Its Android sources are identical to the autolinked 57.0.1.
   # Remove when expo-updates-interface >=57.0.2 publishes that Maven artifact (#5867).
+  # Source-build removal conditions: docs/mobile-ota-updates.md, expo-observe section.
   expo-updates-interface: 57.0.1
   # Remove only when an upstream release passes the disconnect/recovery tests (#5299).
   postgres: 3.4.9
