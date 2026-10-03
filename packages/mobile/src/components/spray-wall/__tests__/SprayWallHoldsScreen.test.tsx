@@ -131,19 +131,33 @@ beforeEach(() => {
 });
 
 describe('SprayWallHoldsScreen', () => {
-  it('uses friendly copy for an older backend schema and can retry after it catches up', async () => {
-    const schemaMessage = 'Field "sourceVersionId" is not defined by type "CreateSprayWallVersionInput".';
+  it('preserves coded backend guidance for a wall version limit', async () => {
+    const guidance = 'This wall has reached its version limit.';
     requests.prepare.mockRejectedValueOnce({
-      response: { errors: [{ message: schemaMessage, extensions: { code: 'GRAPHQL_VALIDATION_FAILED' } }] },
+      response: { errors: [{ message: guidance, extensions: { code: 'SPRAY_WALL_VERSION_LIMIT_REACHED' } }] },
     });
     render(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-1' }));
-    await screen.findByText('sprayMaintenance.temporarilyUnavailable');
-    expect(screen.queryByText(schemaMessage)).toBeNull();
-    fireEvent.click(screen.getByText('sprayMaintenance.retry'));
-    await screen.findByTestId('editor');
-    expect(requests.prepare).toHaveBeenCalledTimes(2);
+    await screen.findByText(guidance);
+    expect(screen.queryByText('sprayMaintenance.temporarilyUnavailable')).toBeNull();
     expect(requests.publish).not.toHaveBeenCalled();
   });
+
+  it.each([{ code: 'GRAPHQL_VALIDATION_FAILED' }, undefined])(
+    'uses friendly copy for an older backend schema and can retry after it catches up (%j)',
+    async (extensions) => {
+      const schemaMessage = 'Field "sourceVersionId" is not defined by type "CreateSprayWallVersionInput".';
+      requests.prepare.mockRejectedValueOnce({
+        response: { errors: [{ message: schemaMessage, extensions }] },
+      });
+      render(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-1' }));
+      await screen.findByText('sprayMaintenance.temporarilyUnavailable');
+      expect(screen.queryByText(schemaMessage)).toBeNull();
+      fireEvent.click(screen.getByText('sprayMaintenance.retry'));
+      await screen.findByTestId('editor');
+      expect(requests.prepare).toHaveBeenCalledTimes(2);
+      expect(requests.publish).not.toHaveBeenCalled();
+    },
+  );
 
   it('opens the fresh prepared draft and keeps the route wall fixed across param updates', async () => {
     const { rerender } = render(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-1' }));

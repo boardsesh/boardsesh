@@ -13,7 +13,11 @@ import { SprayHoldEditorScreen, confirmDiscardSprayEdits } from '../outline-edit
 import { useTheme } from '../../providers/theme-provider';
 import { spacing } from '../../theme/tokens';
 import { getHttpClient } from '../../lib/graphql/client';
-import { extractGraphqlMessage, isGraphqlValidationFailedError } from '../../lib/graphql/extract-error-message';
+import {
+  extractGraphqlCode,
+  extractGraphqlMessage,
+  isGraphqlValidationFailedError,
+} from '../../lib/graphql/extract-error-message';
 import { fetchSprayWallVersions, mySprayWallsQueryKey } from '../../lib/spray/use-create-spray-wall';
 import { sprayWallWithVersionsQueryKey } from '../../lib/spray/use-spray-wall-reset';
 import {
@@ -204,6 +208,11 @@ export function SprayWallHoldsScreen({ wallUuid }: { wallUuid: string }) {
     );
   }
 
+  const graphqlMessage = extractGraphqlMessage(failure);
+  // Yoga input-coercion errors have no code and can include request variables.
+  // Only coded backend guidance is suitable for displaying verbatim.
+  const schemaOrUncodedError =
+    isGraphqlValidationFailedError(failure) || (graphqlMessage !== null && extractGraphqlCode(failure) === null);
   const failureText =
     failure instanceof SprayHoldMaintenanceError
       ? failure.reason === 'unavailable'
@@ -211,9 +220,9 @@ export function SprayWallHoldsScreen({ wallUuid }: { wallUuid: string }) {
         : failure.reason === 'nothingPublished'
           ? t('sprayMaintenance.nothingPublished')
           : t('sprayMaintenance.draftUnavailable')
-      : isGraphqlValidationFailedError(failure)
+      : schemaOrUncodedError
         ? t('sprayMaintenance.temporarilyUnavailable')
-        : (extractGraphqlMessage(failure) ??
+        : (graphqlMessage ??
           (draft
             ? publishedRef.current
               ? t('sprayMaintenance.refreshFailed')
