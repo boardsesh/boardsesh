@@ -219,9 +219,11 @@ not write, so "newest tester verdict" is narrowed to `head_sha = <this head>`: a
 GitHub was unreachable has `head_sha IS NULL`, which that comparison never matches, so an unverified
 verdict cannot become a merge-gating label on the next verified submission that happens to run the
 recompute. Rows from an earlier head drop out the same way — they are not a verdict on the code this
-label gates. Both stay visible as comments and in the table; only the label is withheld, and the
-recompute says so — `[qa] no tester verdict for #N at verified head <sha>; leaving labels unchanged`
-at debug level, which is how you tell "withheld on purpose" from a mirror that dropped.
+label gates. Every verdict stays in the database; an unverified row is not mirrored to a comment
+until an operator replays it after checking the PR and head. Any comment already posted remains
+visible. The recompute says the label is withheld — `[qa] no tester verdict for #N at verified head
+<sha>; leaving labels unchanged` at debug level — which is how you tell "withheld on purpose" from
+a mirror that dropped.
 
 The column **defaults to `true`**, which reads backwards until you follow the deploy order.
 Migrations run before the backend deploys, and an Instant Rollback leaves the migrated schema
