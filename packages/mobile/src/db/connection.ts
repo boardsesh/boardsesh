@@ -25,6 +25,7 @@ import {
   purgeNamespaceForScopeKey,
   scopeSyncMetaKeys,
   offlineBoardKey,
+  isDeadDatabaseHandleError,
 } from '@boardsesh/offline-sync';
 import { spraySizeIdForLayout } from '@boardsesh/board-config';
 import { SPRAY_PHOTO_PENDING_PREFIX } from '../offline/spray-photo-retry';
@@ -597,26 +598,49 @@ function beginInitialization(db: SQLiteDatabase): Promise<void> {
         // final attempt reports, so a retried-and-recovered launch stays quiet (it
         // fires the recovery event above instead).
         //
-        // A superseded final attempt is reported too, rather than dropped. What
-        // normally lands here is a chain that spent its WHOLE budget on genuine lock
-        // failures with a remount arriving during the last one — a real exhausted
-        // window, and swallowing it hid exactly the failure #4314 measures. The
-        // `superseded` tag keeps the two populations separable in Sentry rather than
-        // merging them: filter `superseded:false` for the clean lock signal, and
-        // `superseded:true` for the remount-tangled tail, which can also carry a
-        // closed-handle artefact once the refunds above run out. String-valued
-        // because Sentry tag values are strings.
-        reportError(outcome.error, {
-          tags: {
-            source: 'offline-sync',
-            kind: 'sqlite-init',
-            phase: outcome.phase,
-            sqlite_code: outcome.sqliteCode,
-            journal_mode: await readJournalMode(target),
-            superseded: superseded ? 'true' : 'false',
-          },
-          extra: { attempts, retryable: outcome.retryable, elapsedMs: Date.now() - startedAt },
-        });
+        // A superseded final attempt is not automatically dropped: it can be genuine
+        // lock exhaustion with a remount arriving during the last attempt, and
+        // swallowing that would hide exactly the failure #4314 measures. Preserve
+        // that original error under `kind: 'sqlite-init'` with `superseded: 'true'`.
+        // If it is instead a closed-handle lifecycle artifact, the identity check
+        // after journal-mode read-back below reports it separately without invoking
+        // dead-handle recovery.
+        const journalMode = await readJournalMode(target);
+        // A remount can publish a healthy connection while the diagnostic read above
+        // is pending. Re-check identity at the point of reporting: sending an old
+        // closed-handle error through reportError would synchronously clear the new
+        // handle and start a second recovery chain. Keep real lock exhaustion on the
+        // sqlite-init path, but make a superseded lifecycle artifact telemetry-only.
+        const supersededAtReport =
+          (latestDatabase !== null && latestDatabase !== target) ||
+          (databaseHandle !== null && databaseHandle !== target);
+        const reportExtra = { attempts, retryable: outcome.retryable, elapsedMs: Date.now() - startedAt };
+        if (supersededAtReport && isDeadDatabaseHandleError(outcome.error)) {
+          const failureMessage = outcome.error instanceof Error ? outcome.error.message : String(outcome.error);
+          reportError(new Error('SQLite initialization failed on a superseded closed connection'), {
+            tags: {
+              source: 'offline-sync',
+              kind: 'sqlite-init-superseded',
+              phase: outcome.phase,
+              sqlite_code: outcome.sqliteCode,
+              journal_mode: journalMode,
+              superseded: 'true',
+            },
+            extra: { ...reportExtra, failureMessage },
+          });
+        } else {
+          reportError(outcome.error, {
+            tags: {
+              source: 'offline-sync',
+              kind: 'sqlite-init',
+              phase: outcome.phase,
+              sqlite_code: outcome.sqliteCode,
+              journal_mode: journalMode,
+              superseded: supersededAtReport ? 'true' : 'false',
+            },
+            extra: reportExtra,
+          });
+        }
         // Last thing before the chain stops, and after the awaited read-back above, so
         // a remount landing during it is accounted for: nothing that survives this
         // return may point at a connection `SQLiteProvider` has closed (#5366).
