@@ -17,7 +17,7 @@ import { randomUUID } from 'expo-crypto';
 import * as WebBrowser from 'expo-web-browser';
 import type { AuroraBoardName, Climb } from '@boardsesh/shared-schema';
 import { getBoardCapabilities, toAuroraBoardName } from '@boardsesh/board-config';
-import { computeCanUpdate, type SavedClimbSnapshot } from '@boardsesh/create-climb-react';
+import { canEditClimb } from '@boardsesh/create-climb-react';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import type { IconName } from '../icon-map';
 import { useCreateClimbNavigation, type DismissSurfaceAndWait } from '../create-climb/use-create-climb-navigation';
@@ -29,6 +29,7 @@ import { useTheme } from '../../providers/theme-provider';
 import { useClimbModerationEnabled } from '../../providers/feature-flags-provider';
 import { useShareClimb } from '../../hooks/use-share-climb';
 import { track } from '../../lib/analytics';
+import { useSprayWallViewerCanEdit } from '../../lib/spray/use-spray-wall';
 
 export type ClimbActionId =
   | 'preview'
@@ -158,6 +159,7 @@ export function useClimbActions({
 }: UseClimbActionsArgs): ClimbActionItem[] {
   const { t } = useTranslation('climbs');
   const { openRemix, openEdit } = useCreateClimbNavigation({ dismissSourceSheet, dismissPlayerAndWait });
+  const viewerCanEditWall = useSprayWallViewerCanEdit(boardConfig?.boardName, boardConfig?.layoutId ?? null);
   const { actionColors } = useTheme();
   const { addToQueue, playNext } = useQueueActions();
   // The active session, so a tick logged from a climb-actions sheet lands on it.
@@ -216,21 +218,12 @@ export function useClimbActions({
     const auroraBoardName = getBoardCapabilities(boardName).auroraAppLink ? toAuroraBoardName(boardName) : null;
     const auroraAppUrl = auroraBoardName ? buildAuroraAppUrl(auroraBoardName, climb.uuid) : null;
 
-    // Edit is owner-only, and only while the climb is still a draft OR within 24h of
-    // first publish (the backend enforces the same window). `userId` is null for
-    // Aurora-synced climbs that predate Boardsesh accounts.
-    const canEdit = (() => {
-      if (!getBoardCapabilities(boardName).climbCreation) return false;
-      if (!currentUserId || !climb.userId || climb.userId !== currentUserId) return false;
-      const snapshot: SavedClimbSnapshot = {
-        uuid: climb.uuid,
-        boardType: boardName,
-        createdAt: climb.created_at ?? null,
-        publishedAt: climb.published_at ?? null,
-        isDraft: climb.is_draft ?? false,
-      };
-      return computeCanUpdate(snapshot, boardName);
-    })();
+    // Who may edit is one shared rule (`canEditClimb`): the setter, for 24h after
+    // publish on a catalogue board and always on a spray wall, plus anyone who can
+    // edit the wall on a published spray climb. A hint only; the server decides.
+    const canEdit =
+      getBoardCapabilities(boardName).climbCreation &&
+      canEditClimb({ climb, boardType: boardName, currentUserId, viewerCanEditWall });
 
     const items: ClimbActionItem[] = [];
 
@@ -490,6 +483,7 @@ export function useClimbActions({
     queueItemUuid,
     activeClimbUuid,
     currentUserId,
+    viewerCanEditWall,
     isAuthenticated,
     onEditEntry,
     onSelectPlaylist,

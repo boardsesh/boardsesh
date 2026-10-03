@@ -26,6 +26,7 @@ import {
   REGISTERED_WALL_REVALIDATE_MS,
   refreshSprayWall,
   registerSprayWall,
+  resetSprayWallViewerAccess,
   setSprayWallLoader,
   setSprayWallLook,
   sprayCacheToken,
@@ -66,7 +67,7 @@ export const WALL_IDENTITY_STALE_TIME_MS = 60 * 60 * 1000;
  */
 export const RENDER_DATA_STALE_TIME_MS = REGISTERED_WALL_REVALIDATE_MS;
 
-function toCanonicalHolds(renderData: SprayWallRenderData): CanonicalSprayHold[] {
+export function toCanonicalHolds(renderData: Pick<SprayWallRenderData, 'holds'>): CanonicalSprayHold[] {
   return renderData.holds.map((hold) => ({
     id: hold.id,
     cx: hold.cx,
@@ -92,7 +93,9 @@ function toCanonicalHolds(renderData: SprayWallRenderData): CanonicalSprayHold[]
  * wall whose photo will not say how big it is cannot be drawn, and the render
  * path's placeholder is the honest answer.
  */
-function photoDimensions(renderData: SprayWallRenderData): { width: number; height: number } | null {
+export function photoDimensions(
+  renderData: Pick<SprayWallRenderData, 'photo'>,
+): { width: number; height: number } | null {
   const { width, height } = renderData.photo;
   if (typeof width !== 'number' || typeof height !== 'number') return null;
   if (!(width > 0) || !(height > 0)) return null;
@@ -175,6 +178,9 @@ export function registerRenderData(
     photoExpiresAt: renderData.photo.expiresAt,
     holds,
     renderSettings: look,
+    // Strictly `true`: a payload from a backend that predates the field, or a
+    // cached one missing it, must read as "cannot edit".
+    viewerCanEdit: renderData.wall.viewerCanEdit === true,
   });
   if (look === undefined) void loadSprayWallLook(layoutId, renderData.wall.uuid);
 
@@ -378,6 +384,22 @@ export async function invalidateSprayWallRenderData(
 ): Promise<void> {
   await queryClient.invalidateQueries({ queryKey: sprayWallRenderDataQueryKey(wallUuid) });
   refreshSprayWall(layoutId);
+}
+
+/**
+ * The signed-in account changed: re-read who can edit each wall in hand.
+ *
+ * `viewerCanEdit` is the one per-viewer field the registry keeps, and the render
+ * payload it rides on is cached for ten minutes. So the cached payloads are
+ * dropped and each registered wall is fetched again; until that lands every wall
+ * reads as "cannot edit", which hides an Edit action rather than showing one that
+ * belongs to somebody else. The server refuses a save it does not allow either way.
+ */
+export async function refreshSprayWallViewerAccess(queryClient: QueryClient): Promise<void> {
+  const layoutIds = resetSprayWallViewerAccess();
+  if (layoutIds.length === 0) return;
+  await queryClient.invalidateQueries({ queryKey: ['sprayWallRenderData'] });
+  for (const layoutId of layoutIds) refreshSprayWall(layoutId);
 }
 
 /**

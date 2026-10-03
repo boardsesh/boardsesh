@@ -17,15 +17,16 @@
 // copy on disk is keyed on `(layoutId, version)` instead — see
 // `spray-photo-cache.ts`.
 
-import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   ensureSprayWallLoaded,
   getSprayWallLoadState,
+  sprayWallViewerCanEdit,
   subscribeToSprayWalls,
   type SprayWallLoadState,
 } from './spray-wall-registry';
-import { installSprayWallLoader } from './spray-wall-loader';
+import { installSprayWallLoader, refreshSprayWallViewerAccess } from './spray-wall-loader';
 
 export {
   sprayWallByLayoutQueryKey,
@@ -44,6 +45,52 @@ export {
 export function useSprayWallLoader(): void {
   const queryClient = useQueryClient();
   useEffect(() => installSprayWallLoader(queryClient), [queryClient]);
+}
+
+/**
+ * Re-read every registered wall's `viewerCanEdit` when the account changes.
+ *
+ * Takes the auth state as arguments rather than reading it, so this file keeps
+ * no dependency on the auth provider. `authResolved` is false while the stored
+ * session is still being read at launch: the first resolved value is the
+ * session the walls were already fetched under, not a change, and refetching
+ * every wall on every cold start would be a request for nothing.
+ */
+export function useSprayWallViewerAccessReset(isAuthenticated: boolean, authResolved: boolean): void {
+  const queryClient = useQueryClient();
+  const lastResolved = useRef<boolean | null>(null);
+  useEffect(() => {
+    if (!authResolved) return;
+    const previous = lastResolved.current;
+    lastResolved.current = isAuthenticated;
+    if (previous === null || previous === isAuthenticated) return;
+    void refreshSprayWallViewerAccess(queryClient).catch(() => {
+      // Offline. Every wall already reads as "cannot edit" and is marked stale,
+      // so the next ask for it tries again.
+    });
+  }, [isAuthenticated, authResolved, queryClient]);
+}
+
+/**
+ * Whether the viewer can edit the wall behind a board config. `false` on every
+ * catalogue board, and until the wall has registered.
+ *
+ * Asks for the wall too, so a registration past its revalidation window is
+ * re-read: this is what bounds how stale the answer can get. Safe per row: one
+ * Map lookup, and at most one in-flight fetch per wall.
+ */
+export function useSprayWallViewerCanEdit(boardName: string | null | undefined, layoutId: number | null): boolean {
+  const sprayLayoutId = boardName === 'spray' ? layoutId : null;
+  useEffect(() => {
+    if (sprayLayoutId != null) ensureSprayWallLoaded(sprayLayoutId);
+  }, [sprayLayoutId]);
+  return useSyncExternalStore(
+    subscribeToSprayWalls,
+    useCallback(
+      () => (sprayLayoutId == null ? false : sprayWallViewerCanEdit('spray', sprayLayoutId)),
+      [sprayLayoutId],
+    ),
+  );
 }
 
 export type UseSprayWallResult = {

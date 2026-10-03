@@ -5,8 +5,11 @@ import { renderHook, waitFor, act } from '@testing-library/react';
 // The loader module reaches the GraphQL client, which pulls react-native's Flow
 // source at import time. This suite drives the registry's loader seam directly,
 // so the real one is not needed — only its shape.
+const loaderMock = vi.hoisted(() => ({ refreshSprayWallViewerAccess: vi.fn(async () => {}) }));
+vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => ({}) }));
 vi.mock('../spray-wall-loader', () => ({
   installSprayWallLoader: () => () => {},
+  refreshSprayWallViewerAccess: loaderMock.refreshSprayWallViewerAccess,
   sprayWallByLayoutQueryKey: (layoutId: number | null) => ['sprayWallByLayout', layoutId],
   sprayWallRenderDataQueryKey: (wallUuid: string | null) => ['sprayWallRenderData', wallUuid],
   WALL_IDENTITY_STALE_TIME_MS: 60 * 60 * 1000,
@@ -15,7 +18,7 @@ vi.mock('../spray-wall-loader', () => ({
 
 import { clearSprayWallRegistry, registerSprayWall, setSprayWallLoader } from '../spray-wall-registry';
 import type { SprayPhotoHold } from '../spray-hold-geometry';
-import { useSprayWall } from '../use-spray-wall';
+import { useSprayWall, useSprayWallViewerAccessReset, useSprayWallViewerCanEdit } from '../use-spray-wall';
 
 // `useSprayWall` no longer owns a query — the fetching lives in
 // `spray-wall-loader.ts` so hook-less resolvers share it — so what is left to
@@ -41,6 +44,7 @@ function wallPayload(version: number) {
 
 beforeEach(() => {
   clearSprayWallRegistry();
+  loaderMock.refreshSprayWallViewerAccess.mockClear();
 });
 
 afterEach(() => {
@@ -122,5 +126,61 @@ describe('useSprayWall', () => {
     // The registry is session state, not screen state.
     const { result: second } = renderHook(() => useSprayWall(LAYOUT_ID));
     expect(second.current.loadState).toBe('ready');
+  });
+});
+
+describe('useSprayWallViewerCanEdit', () => {
+  it('follows the registered wall, and re-renders when the answer changes', () => {
+    const { result } = renderHook(() => useSprayWallViewerCanEdit('spray', LAYOUT_ID));
+    expect(result.current).toBe(false);
+
+    act(() => registerSprayWall(LAYOUT_ID, { ...wallPayload(1), viewerCanEdit: true }));
+    expect(result.current).toBe(true);
+
+    // A revalidation that no longer grants it: Edit goes away without a reload.
+    act(() => registerSprayWall(LAYOUT_ID, wallPayload(1)));
+    expect(result.current).toBe(false);
+  });
+
+  it('is false on a catalogue board that shares a layout id with a wall', () => {
+    registerSprayWall(LAYOUT_ID, { ...wallPayload(1), viewerCanEdit: true });
+    const { result } = renderHook(() => useSprayWallViewerCanEdit('kilter', LAYOUT_ID));
+    expect(result.current).toBe(false);
+  });
+
+  it('asks for the wall, which is what re-reads a stale registration', () => {
+    const loader = vi.fn(async () => {});
+    setSprayWallLoader(loader);
+    renderHook(() => useSprayWallViewerCanEdit('spray', LAYOUT_ID));
+    expect(loader).toHaveBeenCalledWith(LAYOUT_ID);
+  });
+});
+
+describe('useSprayWallViewerAccessReset', () => {
+  const render = (initial: { isAuthenticated: boolean; authResolved: boolean }) =>
+    renderHook(({ isAuthenticated, authResolved }) => useSprayWallViewerAccessReset(isAuthenticated, authResolved), {
+      initialProps: initial,
+    });
+
+  it('does not refetch on launch, when the stored session resolves', () => {
+    const { rerender } = render({ isAuthenticated: false, authResolved: false });
+    rerender({ isAuthenticated: true, authResolved: true });
+    expect(loaderMock.refreshSprayWallViewerAccess).not.toHaveBeenCalled();
+  });
+
+  it('re-reads who can edit on sign-out and again on sign-in', () => {
+    const { rerender } = render({ isAuthenticated: true, authResolved: true });
+    rerender({ isAuthenticated: false, authResolved: true });
+    expect(loaderMock.refreshSprayWallViewerAccess).toHaveBeenCalledTimes(1);
+    rerender({ isAuthenticated: true, authResolved: true });
+    expect(loaderMock.refreshSprayWallViewerAccess).toHaveBeenCalledTimes(2);
+  });
+
+  it('waits out a transition that is still resolving', () => {
+    const { rerender } = render({ isAuthenticated: true, authResolved: true });
+    rerender({ isAuthenticated: false, authResolved: false });
+    expect(loaderMock.refreshSprayWallViewerAccess).not.toHaveBeenCalled();
+    rerender({ isAuthenticated: false, authResolved: true });
+    expect(loaderMock.refreshSprayWallViewerAccess).toHaveBeenCalledTimes(1);
   });
 });

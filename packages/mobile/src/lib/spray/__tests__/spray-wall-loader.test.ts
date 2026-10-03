@@ -14,8 +14,13 @@ vi.mock('../../error-reporting', () => ({ reportHandledError: reportHandledError
 
 const { clearSprayWallRegistry, getSprayWall, registerSprayWall, subscribeToSprayWalls } =
   await import('../spray-wall-registry');
-const { LOOK_RETRY_AFTER_FAILURE_MS, clearSprayWallLooks, loadSprayWall, primeSprayWallLook } =
-  await import('../spray-wall-loader');
+const {
+  LOOK_RETRY_AFTER_FAILURE_MS,
+  clearSprayWallLooks,
+  loadSprayWall,
+  primeSprayWallLook,
+  refreshSprayWallViewerAccess,
+} = await import('../spray-wall-loader');
 const sprayOperations = await import('@boardsesh/graphql/operations/spray-walls');
 
 const LAYOUT_ID = 4200;
@@ -99,6 +104,39 @@ describe('loadSprayWall', () => {
     // The wall's own fixed angle, which is what every climb set on it publishes at
     // (SW-10) — `assertSprayAngleMatchesWall` rejects any other outright.
     expect(getSprayWall(LAYOUT_ID)?.angle).toBe(25);
+  });
+
+  it('registers whether the viewer can edit the wall, and only on a literal true', async () => {
+    requestMock
+      .mockResolvedValueOnce({ sprayWallByLayout: { uuid: WALL_UUID } })
+      .mockResolvedValueOnce(
+        renderDataPayload({ wall: { uuid: WALL_UUID, board: { angle: 25 }, viewerCanEdit: true } }),
+      );
+    await loadSprayWall(fakeQueryClient(), LAYOUT_ID);
+    expect(getSprayWall(LAYOUT_ID)?.viewerCanEdit).toBe(true);
+
+    // A payload without the field (an older backend) must read as "cannot edit",
+    // and must not inherit the previous registration's answer.
+    requestMock
+      .mockResolvedValueOnce({ sprayWallByLayout: { uuid: WALL_UUID } })
+      .mockResolvedValueOnce(renderDataPayload());
+    await loadSprayWall(fakeQueryClient(), LAYOUT_ID);
+    expect(getSprayWall(LAYOUT_ID)?.viewerCanEdit).toBe(false);
+  });
+
+  it('forgets who could edit on an account change and drops the cached payloads', async () => {
+    registerSprayWall(LAYOUT_ID, { ...existingWall(), viewerCanEdit: true });
+
+    await refreshSprayWallViewerAccess(fakeQueryClient());
+
+    expect(getSprayWall(LAYOUT_ID)?.viewerCanEdit).toBe(false);
+    expect(getSprayWall(LAYOUT_ID)?.version).toBe(1);
+    expect(invalidateQueriesMock).toHaveBeenCalledWith({ queryKey: ['sprayWallRenderData'] });
+  });
+
+  it('does nothing on an account change when no wall is held', async () => {
+    await refreshSprayWallViewerAccess(fakeQueryClient());
+    expect(invalidateQueriesMock).not.toHaveBeenCalled();
   });
 
   it('registers a wall whose payload will not say its angle', async () => {

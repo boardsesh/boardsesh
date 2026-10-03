@@ -97,6 +97,19 @@ export type RegisteredSprayWall = {
    */
   renderSettings: SprayWallRenderSettingsValue | null;
   /**
+   * Whether the signed-in viewer can edit this wall (`SprayWall.viewerCanEdit`):
+   * its owner, an owner or admin of its gym, a community admin on a public wall.
+   *
+   * Read by one thing, the Edit action on a published climb somebody else set
+   * (`canEditClimb`). It is a HINT about what the server will allow, not a
+   * permission: `updateClimb` checks `canEditBoard` itself on every save. It can
+   * be ten minutes behind a role change (the revalidation window), and it is
+   * dropped to `false` for every wall the moment the account changes
+   * (`resetSprayWallViewerAccess`), so one climber's access is never shown to
+   * the next one on a shared phone.
+   */
+  viewerCanEdit: boolean;
+  /**
    * When this registration was made, for revalidation. Stamped by
    * `registerSprayWall`, never by the caller — a caller-supplied timestamp is a
    * caller that can accidentally pin a wall as fresh forever.
@@ -179,8 +192,13 @@ export function registerSprayWall(
   // look": the render payload does not carry it (the look arrives separately,
   // through `setSprayWallLook`), so a revalidation must not wipe the look the
   // same wall already has. A different wall under the layout starts with none.
-  wall: Omit<RegisteredSprayWall, 'layoutId' | 'registeredAtMs' | 'renderSettings'> & {
+  //
+  // `viewerCanEdit` left out means `false`. Never carried over from the previous
+  // registration: an answer that does not say the viewer may edit must not keep
+  // an Edit action on screen.
+  wall: Omit<RegisteredSprayWall, 'layoutId' | 'registeredAtMs' | 'renderSettings' | 'viewerCanEdit'> & {
     renderSettings?: SprayWallRenderSettingsValue | null;
+    viewerCanEdit?: boolean;
   },
 ): void {
   // An unchanged look keeps its previous identity. Every board surface on the
@@ -191,7 +209,13 @@ export function registerSprayWall(
   const previousLook = previous?.wallUuid === wall.wallUuid ? previous.renderSettings : null;
   const nextLook = wall.renderSettings === undefined ? previousLook : wall.renderSettings;
   const renderSettings = sameLook(previousLook, nextLook) ? previousLook : nextLook;
-  walls.set(layoutId, { ...wall, renderSettings, layoutId, registeredAtMs: now() });
+  walls.set(layoutId, {
+    ...wall,
+    renderSettings,
+    viewerCanEdit: wall.viewerCanEdit === true,
+    layoutId,
+    registeredAtMs: now(),
+  });
   loadStates.set(layoutId, { state: 'ready', settledAtMs: now() });
   registerRuntimeGeometry(sprayGeometryKey(layoutId), buildWallGeometry(wall.holds));
   notify();
@@ -228,6 +252,42 @@ export function getSprayWall(layoutId: number): RegisteredSprayWall | null {
 export function sprayBoardRenderDefault(boardName: string, layoutId: number): SprayWallRenderSettingsValue | null {
   if (boardName !== SPRAY_BOARD_NAME) return null;
   return walls.get(layoutId)?.renderSettings ?? null;
+}
+
+/**
+ * Whether the viewer can edit the wall a board config points at. `false` for
+ * every catalogue board and for a wall that is not registered.
+ *
+ * A boolean, so it is safe as a `useSyncExternalStore` snapshot as it stands.
+ */
+export function sprayWallViewerCanEdit(boardName: string, layoutId: number): boolean {
+  if (boardName !== SPRAY_BOARD_NAME) return false;
+  return walls.get(layoutId)?.viewerCanEdit === true;
+}
+
+/**
+ * Forget what the previous account could edit. Called when the signed-in
+ * account changes, in either direction.
+ *
+ * Two things, and both matter. `viewerCanEdit` drops to `false` at once, so a
+ * wall owner signing out does not leave Edit on screen for whoever picks the
+ * phone up next. And every wall's registration is marked stale, so the next ask
+ * goes back to the server and a climber who has just signed IN gets their own
+ * answer rather than the anonymous `false` for the rest of the window.
+ *
+ * The walls themselves stay registered: the photo and the holds do not depend
+ * on who is looking, and blanking every board over a sign-in would be a flash
+ * for nothing. Returns the layout ids it touched so the caller can refresh them.
+ */
+export function resetSprayWallViewerAccess(): number[] {
+  if (walls.size === 0) return [];
+  const layoutIds: number[] = [];
+  for (const [layoutId, wall] of walls) {
+    walls.set(layoutId, { ...wall, viewerCanEdit: false, registeredAtMs: 0 });
+    layoutIds.push(layoutId);
+  }
+  notify();
+  return layoutIds;
 }
 
 /** Drop a wall and its runtime geometry, so the render path reports no board rather than a stale one. */

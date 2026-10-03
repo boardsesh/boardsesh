@@ -5,10 +5,12 @@ import {
   getSprayWall,
   listRegisteredSprayWalls,
   registerSprayWall,
+  resetSprayWallViewerAccess,
   setSprayWallLook,
   sprayBoardRenderDefault,
   sprayCacheToken,
   sprayGeometryKey,
+  sprayWallViewerCanEdit,
   subscribeToSprayWalls,
   unregisterSprayWall,
 } from '../spray-wall-registry';
@@ -251,6 +253,67 @@ describe("a wall's stored look", () => {
       expect(sprayBoardRenderDefault('spray', LAYOUT_ID)).toEqual(OUTLINE_LOOK);
       expect(sprayBoardRenderDefault('spray', 999)).toBeNull();
       expect(wakes).toBe(1);
+    } finally {
+      unsubscribe();
+    }
+  });
+});
+
+describe('who can edit the wall (#5955)', () => {
+  it('is false unless the registration says the viewer can edit', () => {
+    registerSprayWall(LAYOUT_ID, wall(1));
+    expect(getSprayWall(LAYOUT_ID)?.viewerCanEdit).toBe(false);
+    expect(sprayWallViewerCanEdit('spray', LAYOUT_ID)).toBe(false);
+
+    registerSprayWall(LAYOUT_ID, { ...wall(1), viewerCanEdit: true });
+    expect(sprayWallViewerCanEdit('spray', LAYOUT_ID)).toBe(true);
+  });
+
+  it('is never carried over from the previous registration', () => {
+    // A revalidation that no longer says "can edit" is a role that was taken
+    // away. Keeping the old answer would leave Edit on screen.
+    registerSprayWall(LAYOUT_ID, { ...wall(1), viewerCanEdit: true });
+    registerSprayWall(LAYOUT_ID, wall(1));
+    expect(sprayWallViewerCanEdit('spray', LAYOUT_ID)).toBe(false);
+  });
+
+  it('is false for a catalogue board and for a wall nobody registered', () => {
+    registerSprayWall(LAYOUT_ID, { ...wall(1), viewerCanEdit: true });
+    expect(sprayWallViewerCanEdit('kilter', LAYOUT_ID)).toBe(false);
+    expect(sprayWallViewerCanEdit('spray', 999)).toBe(false);
+  });
+
+  it('drops every wall to "cannot edit" on an account change, and keeps the wall drawable', () => {
+    registerSprayWall(LAYOUT_ID, { ...wall(3), viewerCanEdit: true });
+    registerSprayWall(4201, { ...wall(1), wallUuid: 'other-wall', viewerCanEdit: true });
+    let wakes = 0;
+    const unsubscribe = subscribeToSprayWalls(() => {
+      wakes += 1;
+    });
+    try {
+      expect(resetSprayWallViewerAccess().sort()).toEqual([LAYOUT_ID, 4201]);
+      expect(wakes).toBe(1);
+    } finally {
+      unsubscribe();
+    }
+
+    expect(sprayWallViewerCanEdit('spray', LAYOUT_ID)).toBe(false);
+    expect(sprayWallViewerCanEdit('spray', 4201)).toBe(false);
+    // Still registered at the same version: nothing on screen goes blank.
+    expect(getSprayWall(LAYOUT_ID)).toMatchObject({ version: 3, photoWidth: 1200 });
+    expect(sprayCacheToken('spray', LAYOUT_ID)).toBe('-sv3');
+    // Marked stale, so the next ask goes back to the server for this account.
+    expect(getSprayWall(LAYOUT_ID)?.registeredAtMs).toBe(0);
+  });
+
+  it('wakes nobody when there is nothing registered', () => {
+    let wakes = 0;
+    const unsubscribe = subscribeToSprayWalls(() => {
+      wakes += 1;
+    });
+    try {
+      expect(resetSprayWallViewerAccess()).toEqual([]);
+      expect(wakes).toBe(0);
     } finally {
       unsubscribe();
     }
