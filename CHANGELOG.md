@@ -10,6 +10,10 @@ manual changes). See docs/mobile-ota-updates.md.
 
 A new version shipped to the App Store and Play Store.
 
+### Improved
+
+- Board images stay put during browser updates, and the app follows light or dark appearance changes more reliably. ([#5890](https://github.com/boardsesh/boardsesh/pull/5890))
+
 ## 2026-10-02
 
 ### Fixed

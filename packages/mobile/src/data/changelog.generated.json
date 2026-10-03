@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-10-03T02:04:50.036Z",
+  "generatedAt": "2026-10-03T04:15:26.464Z",
   "entries": [
+    {
+      "prNumber": 5890,
+      "category": "improved",
+      "title": "Board images stay put during browser updates, and the app follows light or dark appearance changes more reliably.",
+      "mergedAt": "2026-10-03T04:11:24Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5890"
+    },
     {
       "prNumber": 5926,
       "category": "fixed",
