@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-10-03T06:29:52.137Z",
+  "generatedAt": "2026-10-03T09:11:13.932Z",
   "entries": [
+    {
+      "prNumber": 5948,
+      "category": "fixed",
+      "title": "Find gyms and boards without losing your results when searches need to wait.",
+      "mergedAt": "2026-10-03T09:00:51Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5948"
+    },
     {
       "prNumber": 5946,
       "category": "fixed",
@@ -6033,6 +6040,32 @@
     }
   ],
   "nativeReleases": [
+    {
+      "kind": "native-release",
+      "date": "2026-10-03T16:28:27+10:00",
+      "sha": "2d4bd8028c64d33bb9e85dfb5f30a9cdd06f5881",
+      "platforms": [
+        "android",
+        "ios"
+      ],
+      "fingerprints": {
+        "android": "118c3d383482b5e290c4d0082e07fdd26e5e4708",
+        "ios": "56532eb8f1c08d3d6de24d61300cc9748921c013"
+      }
+    },
+    {
+      "kind": "native-release",
+      "date": "2026-10-03T16:20:09+10:00",
+      "sha": "511c8fac8b719fdcf6dbaf7b93c4890ea1e2505b",
+      "platforms": [
+        "android",
+        "ios"
+      ],
+      "fingerprints": {
+        "android": "1814fef8f491e75ddc1d2e348a91ab644a8d4cc8",
+        "ios": "a4fc5a88a0cef2ce6b4a4ea3ee11b5c12af21530"
+      }
+    },
     {
       "kind": "native-release",
       "date": "2026-10-03T10:21:59+10:00",

@@ -16,6 +16,7 @@ A new version shipped to the App Store and Play Store.
 
 ### Fixed
 
+- Find gyms and boards without losing your results when searches need to wait. ([#5948](https://github.com/boardsesh/boardsesh/pull/5948))
 - Keep your offline logbook available when storage reconnects during recovery. ([#5946](https://github.com/boardsesh/boardsesh/pull/5946))
 - Empty beta-thumbnail downloads no longer become blank pictures in the feed. ([#4273](https://github.com/boardsesh/boardsesh/pull/4273))
   Broken images served through the backend proxy show a fallback instead of an empty image.
