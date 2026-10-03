@@ -172,6 +172,14 @@ async function cacheRemoteThumbnail(key: string, sourceUrl: string, kind: ImageH
       logger.warn(`[BetaLinks] thumbnail body exceeded ${MAX_THUMBNAIL_BYTES} bytes; aborted`);
       return null;
     }
+    if (buffer.length === 0) {
+      // A CDN can answer `200 image/jpeg` with nothing in it. Storing that
+      // gives us a zero-byte object that serves as a "successful" empty image
+      // — and thumbnail keys are immutable with a one-year cache, so it would
+      // never repair itself. Fall back to no cached thumbnail instead.
+      logger.warn('[BetaLinks] thumbnail body was empty; not caching');
+      return null;
+    }
     // The public media bucket cannot resize on demand. Publish the size used
     // by web and mobile before returning a URL that can enter the beta feed.
     await writeImageVariants(
