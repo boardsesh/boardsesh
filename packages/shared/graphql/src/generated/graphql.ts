@@ -9119,7 +9119,10 @@ export type SprayWallReport = {
   hidden: Scalars['Boolean']['output'];
   id: Scalars['ID']['output'];
   layoutId: Scalars['Int']['output'];
+  /** Admin-only preview, including private and hidden walls; null when unavailable. */
+  photo?: Maybe<SprayWallPhoto>;
   reason: SprayWallReportReason;
+  wallName: Scalars['String']['output'];
   wallUuid: Scalars['ID']['output'];
 };
 

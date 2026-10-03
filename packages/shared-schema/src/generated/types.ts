@@ -9122,7 +9122,10 @@ export type SprayWallReport = {
   hidden: Scalars['Boolean']['output'];
   id: Scalars['ID']['output'];
   layoutId: Scalars['Int']['output'];
+  /** Admin-only preview, including private and hidden walls; null when unavailable. */
+  photo?: Maybe<SprayWallPhoto>;
   reason: SprayWallReportReason;
+  wallName: Scalars['String']['output'];
   wallUuid: Scalars['ID']['output'];
 };
 
@@ -16079,7 +16082,9 @@ export type SprayWallReportResolvers<
   hidden?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   layoutId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  photo?: Resolver<Maybe<ResolversTypes['SprayWallPhoto']>, ParentType, ContextType>;
   reason?: Resolver<ResolversTypes['SprayWallReportReason'], ParentType, ContextType>;
+  wallName?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   wallUuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
