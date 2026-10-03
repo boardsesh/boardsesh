@@ -613,7 +613,7 @@ a climb and never join `board_climbs` at all:
 
 | Shape | Where | Used by |
 | --- | --- | --- |
-| `sprayReferenceVisibilityCondition({ boardType, climbUuid }, userId)` | in the WHERE, over the referencing table | the smart-playlist ref queries, `browseProposals`, `globalCommentFeed`, `userProfileStats`, `followingClimbAscents` |
+| `sprayReferenceVisibilityCondition({ boardType, climbUuid }, userId)` | in the WHERE, over the referencing table | the smart-playlist ref queries, `browseProposals`, `globalCommentFeed`, `userProfileStats`, `followingClimbAscents`, `climbLogs` |
 | `sprayClimbUuidIsReadable(climbUuid, userId)` | before the query | `comments`, `climbProposals` — the uuid-keyed threads |
 
 It is phrased "there is **no INVISIBLE** spray climb behind this reference"
@@ -630,6 +630,16 @@ one array both its list query and its count query spread. That is deliberate: a
 count without the predicate would tell a follower that people log on a wall they
 cannot see. A climb on a hidden wall answers exactly like a climb nobody has
 logged (empty list, zero counts, no error).
+
+`climbLogs` (the "Everyone" section of the same list) is the PUBLIC sibling: no
+sign-in needed, and the caller names the climb. It spreads the same
+`climbLogConditions` array, and on its one-row-per-climber path the array sits
+inside the window's own WHERE, so a hidden log can neither be returned nor be
+the row that represents a climber. The viewer id handed to the predicate is null
+unless the request is authenticated. A wall the caller cannot see, an unknown
+climb and a board-type mismatch all return the same empty page. It has no row in
+the sweep's allow-list: `spray-visibility-sweep.test.ts` enumerates it like any
+other reader, and `climb-logs.test.ts` runs each wall state against both paths.
 
 The reference form alone is not enough there. It passes a spray tick whose
 `board_climbs` row is missing, for every viewer, and a climb row does go missing:

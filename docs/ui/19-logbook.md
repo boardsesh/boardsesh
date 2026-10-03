@@ -103,5 +103,6 @@ Swipeable cards with:
 - `deleteTick` / `DELETE_TICK` -- Deletes a tick.
 - `attachBetaLink` -- Attaches a beta video URL to a tick.
 - `followingClimbAscents` / `GET_FOLLOWING_CLIMB_ASCENTS` -- The 100 newest logs from followed users on a specific climb, plus `hasMore` and a `summary` of climber and sender counts (overall and per angle) that covers all of them. Signed-in only, 120 requests a minute.
+- `climbLogs` / `GET_CLIMB_LOGS` -- Everyone's logs on a specific climb, newest first, 1 to 50 per page with a keyset cursor. Optional filters: angle, notes only, sends only, one row per climber, and (signed in) leaving out your own logs and the people you follow. Public, 60 requests a minute.
 
 ---

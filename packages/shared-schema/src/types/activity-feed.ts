@@ -181,6 +181,45 @@ export type FollowingClimbAscentsResult = {
   summary: FollowingClimbAscentsSummary;
 };
 
+export type ClimbLogsInput = {
+  boardType: string;
+  climbUuid: string;
+  /** Only logs at this angle. Left out means every angle. */
+  angle?: number | null;
+  withNotes?: boolean | null;
+  sendsOnly?: boolean | null;
+  /** Signed-in callers only: drops their own logs and logs by people they follow. */
+  excludeFollowed?: boolean | null;
+  /** One row per climber: their newest log that passes the other filters. */
+  latestPerClimber?: boolean | null;
+  limit?: number | null;
+  cursor?: string | null;
+};
+
+export type ClimbLogItem = {
+  uuid: string;
+  userId: string;
+  userDisplayName?: string | null;
+  userAvatarUrl?: string | null;
+  climbUuid: string;
+  boardType: string;
+  angle: number;
+  isMirror: boolean;
+  status: string;
+  attemptCount: number;
+  quality?: number | null;
+  effectiveQuality?: number | null;
+  difficulty?: number | null;
+  comment: string;
+  climbedAt: string;
+};
+
+export type ClimbLogsResult = {
+  items: ClimbLogItem[];
+  cursor?: string | null;
+  hasMore: boolean;
+};
+
 export type ActivityFeedItemType = 'ascent' | 'new_climb' | 'comment' | 'proposal_approved' | 'session_summary';
 
 export type ActivityFeedItem = {

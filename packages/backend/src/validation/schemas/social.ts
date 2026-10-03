@@ -102,6 +102,24 @@ export const FollowingClimbAscentsInputSchema = z.object({
 });
 
 /**
+ * Per-climb logs input validation schema.
+ *
+ * `angle` is any integer on purpose: an angle no board has is an empty page,
+ * not a validation error.
+ */
+export const ClimbLogsInputSchema = z.object({
+  boardType: BoardNameSchema,
+  climbUuid: z.string().min(1, 'Climb UUID cannot be empty').max(100),
+  angle: z.number().int().optional().nullable(),
+  withNotes: z.boolean().optional().nullable(),
+  sendsOnly: z.boolean().optional().nullable(),
+  excludeFollowed: z.boolean().optional().nullable(),
+  latestPerClimber: z.boolean().optional().nullable(),
+  limit: z.number().int().min(1).max(50).optional().default(20),
+  cursor: z.string().max(512).optional().nullable(),
+});
+
+/**
  * New climb feed schemas
  */
 export const NewClimbSubscriptionInputSchema = z.object({
