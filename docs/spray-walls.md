@@ -2081,8 +2081,11 @@ differently, and they live as pure functions in
    reads "Pick your grade to publish", and tapping Save sends nothing, bumps
    `focusGradeSignal`, and `CreateDrawer` opens the sheet and scrolls just far
    enough to show the rail with its "Needed to publish" subtitle in the warning
-   colour. Save is still disabled while a start or a finish hold is missing
-   (`publishBlocked`). `use-last-used-grade.ts` seeds a FRESH climb's picker
+   colour. The prompt clears when a grade is picked, when the draft switch goes
+   on, and when a new climb starts. Save is still disabled while a start or a
+   finish hold is missing (`publishBlocked`). Both publish hints give their line
+   to the hold heatmap's legend while the heat is on (`yieldsToHeatmap`), since
+   on a wall one of them is up for most of an ordinary session. `use-last-used-grade.ts` seeds a FRESH climb's picker
    with what the setter last published on this board — a session on one wall
    clusters hard — and a draft, a fork and an edit all overwrite that seed with
    their own grade.
@@ -2106,6 +2109,15 @@ differently, and they live as pure functions in
    session takes the row's own value, and a restored autosave slot takes the one
    it stored, so work in progress from before this change still restores as a
    draft.
+
+A second save of the same climb (a draft published, a rename) refreshes every
+copy already in the queue through the queue reducer's local-only
+`REFRESH_AUTHORED_CLIMB`. `setCurrentClimb` cannot: its same-uuid branch keeps
+the current item on purpose, and it never rewrites a slot already queued. Only
+the authored fields move (name, holds, description, rules, pace, draft state);
+the queued copy's grade and send counts stay. A party peer's own queue slot is
+not rewritten; they get the new payload for the current climb from the
+`CurrentClimbChanged` broadcast.
 
 Because a draft is not in the Climbs list, every surface that does show one marks
 it with `DraftChip` (`packages/mobile/src/components/DraftChip.tsx`): the climb

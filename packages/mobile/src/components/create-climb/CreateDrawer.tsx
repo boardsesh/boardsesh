@@ -346,20 +346,39 @@ export function CreateDrawer({
   //
   // The rail's box comes from the form's own onLayout (y within the form, plus
   // its height), kept in a ref: nothing here is measured by the peek maths, and
-  // no View in this file gains an onLayout. See the note on the banners below.
+  // no View in this file gains an onLayout.
   const setterGradeBoxRef = useRef<{ y: number; height: number } | null>(null);
   const handleSetterGradeLayout = useCallback((event: LayoutChangeEvent) => {
     const { y, height } = event.nativeEvent.layout;
     setterGradeBoxRef.current = { y, height };
   }, []);
+  // The two transient banners sit between the measured blocks and are measured
+  // by neither, so they are not in `aboveFoldHeight` — but they do push the rail
+  // down. Each reports its own footprint (its root's onLayout, inside the banner
+  // component, so still no measured View here), kept in refs and only counted
+  // while that banner is actually mounted: an unmount fires no layout event.
+  const confirmBannerFootprintRef = useRef(0);
+  const duplicateBannerFootprintRef = useRef(0);
+  const handleConfirmBannerFootprint = useCallback((height: number) => {
+    confirmBannerFootprintRef.current = height;
+  }, []);
+  const handleDuplicateBannerFootprint = useCallback((height: number) => {
+    duplicateBannerFootprintRef.current = height;
+  }, []);
+  const confirmBannerShown = controller.pendingNewClimb;
+  const duplicateBannerShown = controller.publishDuplicateError != null;
   const scrollToGradeRef = useRef<() => void>(() => {});
   scrollToGradeRef.current = () => {
     sheetRef.current?.snapToIndex(1);
     const gradeBox = setterGradeBoxRef.current;
     if (!gradeBox || aboveFoldHeight === 0) return;
+    const bannersHeight =
+      (confirmBannerShown ? confirmBannerFootprintRef.current : 0) +
+      (duplicateBannerShown ? duplicateBannerFootprintRef.current : 0);
     // Content offset of the rail's bottom edge: the scroll padding, the measured
-    // above-fold blocks, the below-fold padding, then the rail inside the form.
-    const gradeBottom = spacing[2] + aboveFoldHeight + spacing[4] + gradeBox.y + gradeBox.height;
+    // above-fold blocks, any banner between them, the below-fold padding, then
+    // the rail inside the form.
+    const gradeBottom = spacing[2] + aboveFoldHeight + bannersHeight + spacing[4] + gradeBox.y + gradeBox.height;
     // The fully open sheet's viewport. Window-derived on purpose: the scroll
     // view's own height is still the PEEK height at this point, a frame before
     // the snap above lands.
@@ -449,6 +468,7 @@ export function CreateDrawer({
               cancelLabel={t('createClimbForm.dismiss')}
               onConfirm={controller.confirmNewClimb}
               onCancel={controller.cancelNewClimb}
+              onFootprint={handleConfirmBannerFootprint}
             />
           ) : null}
 
@@ -464,6 +484,7 @@ export function CreateDrawer({
                   : undefined
               }
               onDismiss={controller.dismissDuplicateError}
+              onFootprint={handleDuplicateBannerFootprint}
             />
           ) : null}
 

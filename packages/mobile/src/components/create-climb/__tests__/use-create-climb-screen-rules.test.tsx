@@ -28,7 +28,7 @@ const graphql = vi.hoisted(() => ({
   climbFailed: false,
 }));
 const boardActions = vi.hoisted(() => ({ saveClimb: vi.fn(), updateClimb: vi.fn() }));
-const queue = vi.hoisted(() => ({ setCurrentClimb: vi.fn() }));
+const queue = vi.hoisted(() => ({ setCurrentClimb: vi.fn(), refreshAuthoredClimb: vi.fn() }));
 const draftStore = vi.hoisted(() => ({
   loadDraft: vi.fn(async () => null as null | Record<string, unknown>),
   saveDraft: vi.fn(async () => {}),
@@ -91,7 +91,10 @@ vi.mock('../../../lib/graphql/hooks', () => ({
   useClimb: () => ({ data: graphql.climb, isError: graphql.climbFailed }),
 }));
 vi.mock('../../../providers/queue-provider', () => ({
-  useQueueActions: () => ({ setCurrentClimb: queue.setCurrentClimb }),
+  useQueueActions: () => ({
+    setCurrentClimb: queue.setCurrentClimb,
+    refreshAuthoredClimb: queue.refreshAuthoredClimb,
+  }),
 }));
 vi.mock('../../../providers/bluetooth-provider', () => ({ useOptionalBluetoothContext: () => ble.context }));
 vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));

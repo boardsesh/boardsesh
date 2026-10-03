@@ -293,7 +293,7 @@ export function useCreateClimbScreen({
   const { isAuthenticated, saveClimb, updateClimb } = useBoardActions();
   const auth = useAuth();
   const { data: profile } = useProfile();
-  const { setCurrentClimb } = useQueueActions();
+  const { setCurrentClimb, refreshAuthoredClimb } = useQueueActions();
   const bluetooth = useOptionalBluetoothContext();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
@@ -1429,10 +1429,10 @@ export function useCreateClimbScreen({
 
   // Push the freshly saved climb into the queue as the current climb so the
   // board (and any connected BLE wall) reflects what was just published.
-  // Known limitation: re-saving a climb that is ALREADY the active queue item
-  // won't refresh its frames via the queue — the reducer short-circuits a
-  // same-uuid local SET_CURRENT_CLIMB. The live BLE preview keeps the local
-  // wall correct; a mobile queue `updateQueueItem` is the follow-up for peers.
+  // Known limitation, peers only: a party peer's copy of a slot that is already
+  // in THEIR queue is not rewritten by a re-save. They get the new payload for
+  // the current climb from the CurrentClimbChanged broadcast; a mobile queue
+  // `updateQueueItem` mutation is the follow-up for the rest.
   const syncSavedToQueue = useCallback(
     (saved: SavedClimbSnapshot, framesString: string) => {
       // Same wall hand-off as Set-Active: the auto-sender now lights the whole
@@ -1441,9 +1441,28 @@ export function useCreateClimbScreen({
       setHandedOff(true);
       // The snapshot is passed in rather than read off state — see
       // `buildProvisionalClimb`.
-      setCurrentClimb(climbToQueueItem(buildProvisionalClimb(saved.uuid, framesString, saved), { uuid: saved.uuid }));
+      const climb = buildProvisionalClimb(saved.uuid, framesString, saved);
+      setCurrentClimb(climbToQueueItem(climb, { uuid: saved.uuid }));
+      // `setCurrentClimb` leaves an item that is ALREADY current untouched (the
+      // queue reducer's deliberate same-uuid short-circuit) and never rewrites a
+      // slot already in the queue. So a second save of the same climb — a draft
+      // published, a rename — left the bottom bar and the play drawer showing
+      // the copy from the first save, Draft chip included. Only what this editor
+      // authors is refreshed: a queued copy's grade and send counts are not this
+      // editor's to overwrite with its placeholders.
+      refreshAuthoredClimb(saved.uuid, {
+        name: climb.name,
+        frames: climb.frames,
+        description: climb.description,
+        is_draft: climb.is_draft,
+        published_at: climb.published_at,
+        is_no_match: climb.is_no_match,
+        characteristics: climb.characteristics,
+        framesCount: climb.framesCount,
+        framesPace: climb.framesPace,
+      });
     },
-    [buildProvisionalClimb, setCurrentClimb],
+    [buildProvisionalClimb, setCurrentClimb, refreshAuthoredClimb],
   );
 
   // ---- Set Active: build a minimal Climb and push to the queue. ----
@@ -1540,6 +1559,14 @@ export function useCreateClimbScreen({
 
   // Signal the screen should focus the header name field (e.g. on a save with
   // no name yet). The name input lives in the drawer header, not a settings sheet.
+  // The prompt is answered the moment the grade stops being what is missing: a
+  // grade was picked, or the draft switch went on. Without this the signal stayed
+  // raised, and flipping the switch back brought the warning colour with it,
+  // with no Save tap behind it.
+  useEffect(() => {
+    if (!setterGradeMissing) setFocusGradeSignal(0);
+  }, [setterGradeMissing]);
+
   const [focusNameSignal, setFocusNameSignal] = useState(0);
   const requestFocusName = useCallback(() => setFocusNameSignal((value) => value + 1), []);
 

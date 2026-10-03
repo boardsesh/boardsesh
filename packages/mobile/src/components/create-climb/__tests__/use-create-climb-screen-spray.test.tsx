@@ -20,7 +20,7 @@ const boardActions = vi.hoisted(() => ({ saveClimb: vi.fn(), updateClimb: vi.fn(
 const forkSeed = vi.hoisted(() => ({ frame: {} as Record<number, { state: string }> }));
 /** What the stubbed `createClimbDraftKey` folds in, standing in for the registry. */
 const sprayToken = vi.hoisted(() => ({ current: '' }));
-const queue = vi.hoisted(() => ({ setCurrentClimb: vi.fn() }));
+const queue = vi.hoisted(() => ({ setCurrentClimb: vi.fn(), refreshAuthoredClimb: vi.fn() }));
 const draftStore = vi.hoisted(() => ({
   loadDraft: vi.fn(async () => null as null | Record<string, unknown>),
   // Typed with its real arity so a test can read the slot key off the call.
@@ -86,7 +86,10 @@ vi.mock('../../../lib/graphql/hooks', () => ({
   useClimb: () => ({ data: graphql.climb, isError: graphql.climbFailed }),
 }));
 vi.mock('../../../providers/queue-provider', () => ({
-  useQueueActions: () => ({ setCurrentClimb: queue.setCurrentClimb }),
+  useQueueActions: () => ({
+    setCurrentClimb: queue.setCurrentClimb,
+    refreshAuthoredClimb: queue.refreshAuthoredClimb,
+  }),
 }));
 vi.mock('../../../providers/bluetooth-provider', () => ({ useOptionalBluetoothContext: () => ble.context }));
 vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
@@ -201,6 +204,7 @@ describe('the setter grade gates a publish', () => {
       text: 'mobile.create.publish.gradeBlocked',
       tone: 'warning',
       announce: true,
+      yieldsToHeatmap: true,
     });
   });
 
@@ -250,6 +254,39 @@ describe('the setter grade gates a publish', () => {
     } finally {
       createClimb.canPublish = true;
     }
+  });
+
+  it('drops the prompt once a grade is picked, so unpicking it does not bring the warning back', async () => {
+    const { result } = renderHook(() => useCreateClimbScreen({ board: SPRAY_BOARD }));
+
+    await act(async () => {
+      await result.current.handleSave();
+    });
+    expect(result.current.focusGradeSignal).toBe(1);
+
+    act(() => result.current.setSetterGradeDifficultyId(SIX_C_DIFFICULTY_ID));
+    await waitFor(() => expect(result.current.focusGradeSignal).toBe(0));
+
+    // The grade goes missing again with no Save tap behind it: no prompt.
+    act(() => result.current.setSetterGradeDifficultyId(null));
+    expect(result.current.setterGradeMissing).toBe(true);
+    expect(result.current.focusGradeSignal).toBe(0);
+  });
+
+  it('drops the prompt when the draft switch goes on, and keeps it down when it goes off again', async () => {
+    const { result } = renderHook(() => useCreateClimbScreen({ board: SPRAY_BOARD }));
+
+    await act(async () => {
+      await result.current.handleSave();
+    });
+    expect(result.current.focusGradeSignal).toBe(1);
+
+    act(() => result.current.setIsDraft(true));
+    await waitFor(() => expect(result.current.focusGradeSignal).toBe(0));
+
+    act(() => result.current.setIsDraft(false));
+    expect(result.current.setterGradeMissing).toBe(true);
+    expect(result.current.focusGradeSignal).toBe(0);
   });
 
   it('drops an outstanding grade prompt when a new climb starts', async () => {
@@ -698,5 +735,67 @@ describe('the queue item after a save', () => {
 
     const queued = queue.setCurrentClimb.mock.calls.at(-1)?.[0] as { climb: Record<string, unknown> };
     expect(queued.climb.is_draft).toBe(true);
+  });
+});
+
+// `defaultIsDraft` is only where the switch STARTS on a fresh climb. Work that
+// already has an answer keeps it (#5954): a phone copy from before the change
+// was a draft and must restore as one, and an edit takes the row's own state.
+describe('the publish default never overrules a climb that already has an answer', () => {
+  const storedSlot = (isDraft: boolean) => ({
+    holdsJson: '{}',
+    framesJson: '[{}]',
+    name: 'Left half-finished',
+    description: '',
+    isDraft,
+  });
+  const serverRow = (isDraft: boolean) => ({
+    uuid: 'climb-9',
+    name: 'On the server',
+    description: '',
+    frames: 'p1r1p2r3',
+    is_draft: isDraft,
+    created_at: null,
+    published_at: isDraft ? null : '2026-10-01T10:00:00.000Z',
+  });
+
+  it('restores a phone copy saved as a draft as a draft', async () => {
+    draftStore.loadDraft.mockResolvedValue(storedSlot(true));
+    const { result } = renderHook(() => useCreateClimbScreen({ board: SPRAY_BOARD }));
+
+    await waitFor(() => expect(result.current.name).toBe('Left half-finished'));
+    expect(result.current.isDraft).toBe(true);
+  });
+
+  it('restores a phone copy saved for publishing as publish', async () => {
+    draftStore.loadDraft.mockResolvedValue(storedSlot(false));
+    const { result } = renderHook(() => useCreateClimbScreen({ board: SPRAY_BOARD }));
+
+    await waitFor(() => expect(result.current.name).toBe('Left half-finished'));
+    expect(result.current.isDraft).toBe(false);
+  });
+
+  it('opens a server draft for editing as a draft', async () => {
+    graphql.climb = serverRow(true);
+    const { result } = renderHook(() => useCreateClimbScreen({ board: SPRAY_BOARD, editClimbUuid: 'climb-9' }));
+
+    await waitFor(() => expect(result.current.name).toBe('On the server'));
+    expect(result.current.isDraft).toBe(true);
+  });
+
+  it('opens a published climb for editing as published', async () => {
+    graphql.climb = serverRow(false);
+    const { result } = renderHook(() => useCreateClimbScreen({ board: SPRAY_BOARD, editClimbUuid: 'climb-9' }));
+
+    await waitFor(() => expect(result.current.name).toBe('On the server'));
+    expect(result.current.isDraft).toBe(false);
+  });
+
+  it('opens a published Kilter climb for editing as published too, over the draft default', async () => {
+    graphql.climb = { ...serverRow(false), frames: 'p1r12p2r14' };
+    const { result } = renderHook(() => useCreateClimbScreen({ board: KILTER_BOARD, editClimbUuid: 'climb-9' }));
+
+    await waitFor(() => expect(result.current.name).toBe('On the server'));
+    expect(result.current.isDraft).toBe(false);
   });
 });

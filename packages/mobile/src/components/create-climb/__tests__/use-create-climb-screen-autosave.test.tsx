@@ -118,7 +118,7 @@ vi.mock('../../../lib/graphql/hooks', () => ({
   useClimb: () => ({ data: graphql.climb, isError: graphql.climbFailed }),
 }));
 vi.mock('../../../providers/queue-provider', () => ({
-  useQueueActions: () => ({ setCurrentClimb: vi.fn() }),
+  useQueueActions: () => ({ setCurrentClimb: vi.fn(), refreshAuthoredClimb: vi.fn() }),
 }));
 vi.mock('../../../providers/bluetooth-provider', () => ({
   useOptionalBluetoothContext: () => null,
@@ -703,6 +703,7 @@ describe('useCreateClimbScreen autosave flush', () => {
       text: 'mobile.create.publish.blocked',
       tone: 'warning',
       announce: true,
+      yieldsToHeatmap: true,
     });
 
     await act(async () => {

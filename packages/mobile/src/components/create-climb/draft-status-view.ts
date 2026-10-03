@@ -19,6 +19,15 @@ export type DraftStatusView = {
    * The row's live region is `none`; this drives a rate-limited announcement.
    */
   announce: boolean;
+  /**
+   * True for a warning that only says what a PUBLISH still needs (a start and a
+   * finish, or the setter grade). It describes ordinary work in progress rather
+   * than something that went wrong, so it gives its line box up to the hold
+   * heatmap's legend while the heat is on. On a spray wall, where Save publishes
+   * by default, one of these is up from the first hold until the climb is
+   * complete — which is exactly when the heatmap is in use.
+   */
+  yieldsToHeatmap?: boolean;
 };
 
 export type DraftStatusState = {
@@ -81,11 +90,17 @@ export function deriveDraftStatusView(state: DraftStatusState, t: TranslateDraft
       text: t('mobile.create.publish.blocked'),
       tone: 'warning',
       announce: true,
+      yieldsToHeatmap: true,
     };
   }
 
   if (state.gradeNeededToPublish) {
-    return { text: t('mobile.create.publish.gradeBlocked'), tone: 'warning', announce: true };
+    return {
+      text: t('mobile.create.publish.gradeBlocked'),
+      tone: 'warning',
+      announce: true,
+      yieldsToHeatmap: true,
+    };
   }
 
   const savingAsDraft = state.isDraft ?? true;

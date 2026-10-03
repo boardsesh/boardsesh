@@ -73,6 +73,7 @@ describe('deriveDraftStatusView', () => {
       text: 'mobile.create.publish.blocked',
       tone: 'warning',
       announce: true,
+      yieldsToHeatmap: true,
     });
   });
 
@@ -83,6 +84,7 @@ describe('deriveDraftStatusView', () => {
       text: 'mobile.create.publish.gradeBlocked',
       tone: 'warning',
       announce: true,
+      yieldsToHeatmap: true,
     });
   });
 
@@ -113,6 +115,18 @@ describe('deriveDraftStatusView', () => {
       'mobile.create.autosave.inAccount',
     );
     expect(deriveDraftStatusView(base, identity)?.text).toBe('mobile.create.autosave.onDevice');
+  });
+
+  it('lets only the publish hints give their line to the heatmap', () => {
+    // "What a publish still needs" is ordinary work in progress. A failed save
+    // and "nothing is being stored" are not, and keep the line.
+    const yields = (state: DraftStatusState) => deriveDraftStatusView(state, identity)?.yieldsToHeatmap === true;
+    expect(yields({ ...base, publishBlocked: true })).toBe(true);
+    expect(yields({ ...base, gradeNeededToPublish: true })).toBe(true);
+    expect(yields({ ...base, saveFailed: true })).toBe(false);
+    expect(yields({ ...base, localPersistenceAvailable: false })).toBe(false);
+    // A failed save still outranks a publish hint that is also true.
+    expect(yields({ ...base, saveFailed: true, publishBlocked: true })).toBe(false);
   });
 
   it('has no "saving" state — the button already says that', () => {

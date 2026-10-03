@@ -99,6 +99,21 @@ export type SetCurrentClimbOptions = {
 };
 
 /**
+ * The fields of a climb its setter can change by saving it again in the editor.
+ * `REFRESH_AUTHORED_CLIMB` patches these onto every copy of the climb already in
+ * the queue. Deliberately not the whole `Climb`: the editor's copy carries
+ * placeholder grade and send counts, and writing those over a queued climb would
+ * blank the grade it was fetched with. Keyed by `climb.uuid`.
+ */
+export type ClimbAuthoredPatch = Pick<Climb, 'name' | 'frames'> &
+  Partial<
+    Pick<
+      Climb,
+      'description' | 'is_draft' | 'published_at' | 'is_no_match' | 'characteristics' | 'framesCount' | 'framesPace'
+    >
+  >;
+
+/**
  * Per-climb grade fields that change when the board angle changes. A climb's
  * difficulty/quality/sends are angle-specific (stored per-angle server-side),
  * but a `Climb` carries a single set baked in for the angle it was fetched at.
@@ -189,4 +204,5 @@ type QueueActionPayload<TSearchParams extends QueueSearchParams> =
   | { type: 'CLEANUP_PENDING_UPDATES_BATCH'; payload: { correlationIds: string[] } }
   | { type: 'CLEAR_RESYNC_FLAG' }
   | { type: 'REGRADE_CLIMBS'; payload: { grades: Record<string, ClimbRegradePatch> } }
+  | { type: 'REFRESH_AUTHORED_CLIMB'; payload: { climbUuid: string; patch: ClimbAuthoredPatch } }
   | { type: 'CLEAR_QUEUE' };

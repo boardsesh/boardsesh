@@ -85,8 +85,20 @@ vi.mock('../CreateDrawerForm', () => ({
   },
 }));
 vi.mock('../OpenDraftsSection', () => ({ OpenDraftsSection: () => createElement('div', { 'data-node': 'drafts' }) }));
-vi.mock('../InlineConfirmBanner', () => ({ InlineConfirmBanner: () => null }));
-vi.mock('../DuplicateBanner', () => ({ DuplicateBanner: () => null }));
+// The real banners report the space they take (their own root's onLayout, top
+// margin included). Stand-ins do the same with fixed numbers.
+const CONFIRM_BANNER_FOOTPRINT = 96;
+const DUPLICATE_BANNER_FOOTPRINT = 70;
+function footprintBanner(footprint: number) {
+  return function BannerMock({ onFootprint }: { onFootprint?: (height: number) => void }) {
+    useEffect(() => {
+      onFootprint?.(footprint);
+    }, [onFootprint]);
+    return createElement('div', { 'data-node': 'banner' });
+  };
+}
+vi.mock('../InlineConfirmBanner', () => ({ InlineConfirmBanner: footprintBanner(96) }));
+vi.mock('../DuplicateBanner', () => ({ DuplicateBanner: footprintBanner(70) }));
 vi.mock('../CreateRoutePlaybackSlot', () => ({
   CreateRoutePlaybackSlot: () => createElement('div', { 'data-node': 'route-slot' }),
 }));
@@ -98,7 +110,7 @@ const boardHolds = { holdTargets: [], boardWidth: 650, boardHeight: 1000 };
 
 type Controller = Parameters<typeof CreateDrawer>[0]['controller'];
 
-function makeController(focusGradeSignal: number): Controller {
+function makeController(focusGradeSignal: number, overrides: Record<string, unknown> = {}): Controller {
   return {
     name: '',
     setName: vi.fn(),
@@ -122,13 +134,14 @@ function makeController(focusGradeSignal: number): Controller {
     pendingNewClimb: false,
     publishDuplicateError: null,
     isDraft: false,
+    ...overrides,
   } as unknown as Controller;
 }
 
-function drawerElement(focusGradeSignal: number) {
+function drawerElement(focusGradeSignal: number, overrides: Record<string, unknown> = {}) {
   return createElement(CreateDrawer, {
     board,
-    controller: makeController(focusGradeSignal),
+    controller: makeController(focusGradeSignal, overrides),
     boardHolds,
     onLongPressHold: vi.fn(),
     subSheetOpen: false,
@@ -162,6 +175,37 @@ describe('CreateDrawer grade prompt', () => {
     // 852. Clearance: 16 + the 48 bottom inset. 808 + 64 - 852 = 20.
     expect(scroll.scrollTo).toHaveBeenCalledTimes(1);
     expect(scroll.scrollTo).toHaveBeenCalledWith({ y: 20, animated: true });
+  });
+
+  it('counts a banner sitting between the header and the board', () => {
+    // The banners are measured by neither above-fold block, so they are not in
+    // the peek height — but they push the rail down by their own height.
+    const withConfirm = { pendingNewClimb: true };
+    const { rerender } = render(drawerElement(0, withConfirm));
+    rerender(drawerElement(1, withConfirm));
+    expect(scroll.scrollTo).toHaveBeenLastCalledWith({ y: 20 + CONFIRM_BANNER_FOOTPRINT, animated: true });
+  });
+
+  it('counts both banners when both are up', () => {
+    const both = {
+      pendingNewClimb: true,
+      publishDuplicateError: { existingClimbName: 'Twin', existingClimbUuid: null },
+    };
+    const { rerender } = render(drawerElement(0, both));
+    rerender(drawerElement(1, both));
+    expect(scroll.scrollTo).toHaveBeenLastCalledWith({
+      y: 20 + CONFIRM_BANNER_FOOTPRINT + DUPLICATE_BANNER_FOOTPRINT,
+      animated: true,
+    });
+  });
+
+  it('stops counting a banner once it is gone', () => {
+    // An unmount fires no layout event, so the last footprint is still in the
+    // ref. It must only count while the banner is on screen.
+    const { rerender } = render(drawerElement(0, { pendingNewClimb: true }));
+    rerender(drawerElement(0, { pendingNewClimb: false }));
+    rerender(drawerElement(1, { pendingNewClimb: false }));
+    expect(scroll.scrollTo).toHaveBeenLastCalledWith({ y: 20, animated: true });
   });
 
   it('answers every further tap, not only the first', () => {
