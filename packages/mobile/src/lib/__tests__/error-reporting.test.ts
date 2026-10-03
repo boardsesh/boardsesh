@@ -172,7 +172,7 @@ describe('reportHandledError', () => {
 
   it('breadcrumbs discovery throttles once without leaking request context or reporting', () => {
     const observeReport = vi.fn();
-    setObserveRuntime({ configure: vi.fn(), reportError: observeReport });
+    setObserveRuntime({ configure: vi.fn(), dispatchEvents: vi.fn(async () => undefined), reportError: observeReport });
     const rateLimited = Object.assign(new Error('Request including private coordinates'), {
       response: {
         errors: [{ extensions: { code: 'RATE_LIMITED', operation: 'searchBoards', retryAfterSeconds: 11 } }],
