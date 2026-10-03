@@ -37,7 +37,7 @@ import WarningAmberOutlined from '@mui/icons-material/WarningAmberOutlined';
 import WarningOutlined from '@mui/icons-material/WarningOutlined';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
-import { DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR } from '@boardsesh/shared-schema/sync-error-codes';
+import { circuitPlaylistSyncWarningKind } from '@boardsesh/shared-schema/sync-error-codes';
 import { boardTypeLabel } from '@boardsesh/board-constants';
 import { ConfirmPopover } from '@/app/components/ui/confirm-popover';
 import type { AuroraCredentialStatus } from '@/app/lib/aurora-credentials/client';
@@ -119,6 +119,9 @@ export function BoardCredentialCard({
   userEmail,
 }: BoardCredentialCardProps) {
   const { t } = useTranslation('settings');
+  const syncWarningKind = credential?.syncError
+    ? circuitPlaylistSyncWarningKind(credential.syncError, credential.syncErrorReason)
+    : null;
   const boardName = boardTypeLabel(boardType);
   const totalUnsynced = unsyncedCounts.ascents + unsyncedCounts.climbs;
   const isExpired = credential?.syncStatus === 'expired';
@@ -233,18 +236,14 @@ export function BoardCredentialCard({
           </div>
           {credential.syncError && (
             <div className={styles.errorRow}>
-              {/* Known codes get localised copy and a warning tone — the account is
-                  syncing, only its playlist mirror is paused (#3526). Anything else
-                  is legacy free text from an older path: render it verbatim rather
-                  than swallow it. */}
-              <Typography
-                variant="body2"
-                component="span"
-                color={credential.syncError === DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR ? 'warning.main' : 'error'}
-              >
-                {credential.syncError === DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR
-                  ? t('aurora.status.duplicateAccountCircuits')
-                  : credential.syncError}
+              <Typography variant="body2" component="span" color={syncWarningKind ? 'warning.main' : 'error'}>
+                {syncWarningKind === 'foreign'
+                  ? t('aurora.status.foreignAccountCircuits')
+                  : syncWarningKind === 'ambiguous'
+                    ? t('aurora.status.ambiguousAccountCircuits')
+                    : syncWarningKind === 'legacy'
+                      ? t('aurora.status.duplicateAccountCircuits')
+                      : credential.syncError}
               </Typography>
             </div>
           )}

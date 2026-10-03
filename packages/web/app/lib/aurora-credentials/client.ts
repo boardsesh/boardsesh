@@ -1,5 +1,6 @@
 import { getBackendHttpUrl } from '@/app/lib/backend-url';
 import type { AuroraBoardName } from '@boardsesh/shared-schema';
+import type { CircuitPlaylistSyncErrorReason } from '@boardsesh/shared-schema/sync-error-codes';
 
 export type AuroraCredentialStatus = {
   boardType: string;
@@ -8,6 +9,7 @@ export type AuroraCredentialStatus = {
   lastSyncAt: string | null;
   syncStatus: string;
   syncError: string | null;
+  syncErrorReason?: CircuitPlaylistSyncErrorReason;
   createdAt: string;
 };
 
