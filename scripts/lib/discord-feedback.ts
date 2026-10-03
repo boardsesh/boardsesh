@@ -45,6 +45,7 @@ export type DiscordChannel = {
   type?: number;
   guild_id?: string;
   parent_id?: string | null;
+  thread_metadata?: Record<string, unknown> | null;
 };
 
 export type CommandSourceKind = 'thread' | 'reply' | 'channel-context';

@@ -214,6 +214,99 @@ describe('collectMentionCommand', () => {
   });
 
   it.each([
+    { label: 'forum', threadType: 11, parentType: 15 },
+    { label: 'media', threadType: 11, parentType: 16 },
+    { label: 'message-derived public text', threadType: 11, parentType: 0 },
+    { label: 'announcement', threadType: 10, parentType: 5 },
+    { label: 'private thread with a non-text parent', threadType: 12, parentType: 15 },
+  ] as const)(
+    'refuses surviving discussion as the starter when exact $label lookup fails',
+    async ({ threadType, parentType }) => {
+      const threadId = '600000000000000001';
+      const parentId = '500000000000000001';
+      const command = message({ id: COMMAND_ID, channel_id: threadId });
+      const survivingDiscussion = message({
+        id: '610000000000000001',
+        channel_id: threadId,
+        content: 'This later discussion is not the original report.',
+        author: { id: USER_ID },
+        mentions: [],
+      });
+      const getMessage = vi.fn(async (channelId: string, messageId: string) => {
+        if (channelId === threadId && messageId === COMMAND_ID) return command;
+        throw new Error('Exact associated starter is unavailable');
+      });
+      const listMessagesBefore = vi.fn(async () => []);
+      const discordSource = source({
+        getChannel: vi.fn(async (channelId) =>
+          channelId === threadId
+            ? channel({ id: threadId, type: threadType, parent_id: parentId })
+            : channel({ id: parentId, type: parentType }),
+        ),
+        getMessage,
+        listRecentMessages: vi.fn(async () => [survivingDiscussion, command]),
+        listMessagesBefore,
+      });
+
+      await expect(
+        collectMentionCommand({ ...options, channelId: threadId }, { source: discordSource }),
+      ).rejects.toThrow(/Could not retrieve the required starter.*refusing to use surviving discussion history/i);
+      expect(getMessage).toHaveBeenCalledWith(parentId, threadId);
+      expect(getMessage).toHaveBeenCalledWith(threadId, threadId);
+      expect(listMessagesBefore).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    { label: 'unknown channel type', type: 17, thread_metadata: {} },
+    { label: 'missing channel type', type: undefined, thread_metadata: undefined },
+  ])('refuses a channel with an $label instead of inferring a starter', async ({ type, thread_metadata }) => {
+    const threadId = '600000000000000001';
+    const command = message({ id: COMMAND_ID, channel_id: threadId });
+    const listRecentMessages = vi.fn(async () => []);
+    const discordSource = source({
+      getChannel: vi.fn(async () => channel({ id: threadId, type, parent_id: '500000000000000001', thread_metadata })),
+      getMessage: vi.fn(async () => command),
+      listRecentMessages,
+    });
+
+    await expect(collectMentionCommand({ ...options, channelId: threadId }, { source: discordSource })).rejects.toThrow(
+      /unsupported type (17|unknown).*refusing to infer a report source/i,
+    );
+    expect(listRecentMessages).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      label: 'a parent in another guild',
+      parent: channel({ id: '500000000000000001', guild_id: '110000000000000001' }),
+    },
+    { label: 'a mismatched parent response', parent: channel({ id: '510000000000000001' }) },
+  ])('refuses private history fallback for $label', async ({ parent }) => {
+    const threadId = '600000000000000001';
+    const parentId = '500000000000000001';
+    const command = message({ id: COMMAND_ID, channel_id: threadId });
+    const listMessagesBefore = vi.fn(async () => []);
+    const discordSource = source({
+      getChannel: vi.fn(async (channelId) =>
+        channelId === threadId ? channel({ id: threadId, type: 12, parent_id: parentId }) : parent,
+      ),
+      getMessage: vi.fn(async (channelId, messageId) =>
+        channelId === threadId && messageId === COMMAND_ID
+          ? command
+          : Promise.reject(new Error('No associated message')),
+      ),
+      listRecentMessages: vi.fn(async () => [message({ id: '610000000000000001', channel_id: threadId }), command]),
+      listMessagesBefore,
+    });
+
+    await expect(collectMentionCommand({ ...options, channelId: threadId }, { source: discordSource })).rejects.toThrow(
+      /parent (is outside the configured guild|channel)/i,
+    );
+    expect(listMessagesBefore).not.toHaveBeenCalled();
+  });
+
+  it.each([
     ['forum post', 11, 15, false],
     ['forum post with a reply', 11, 15, true],
     ['private thread', 12, 0, false],
@@ -268,69 +361,72 @@ describe('collectMentionCommand', () => {
   );
 
   it.each([
-    { label: 'forum', threadType: 11, starterHasThreadId: true },
-    { label: 'message-less private', threadType: 12, starterHasThreadId: false },
-  ] as const)('loads the original report for a long $label thread', async ({ threadType, starterHasThreadId }) => {
-    const threadId = '600000000000000001';
-    const parentId = '500000000000000001';
-    const starter = message({
-      id: starterHasThreadId ? threadId : '610000000000000001',
-      channel_id: threadId,
-      content: 'The original report is older than the recent message window.',
-      author: { id: USER_ID },
-      mentions: [],
-    });
-    const command = message({
-      id: COMMAND_ID,
-      channel_id: threadId,
-      content: `<@${BOT_ID}> split this report into two issues`,
-    });
-    const olderDiscussion = Array.from({ length: 220 }, (_, index) =>
-      message({
-        id: `71${String(index).padStart(16, '0')}`,
+    { label: 'forum', threadType: 11, parentType: 15, starterHasThreadId: true },
+    { label: 'message-less private', threadType: 12, parentType: 0, starterHasThreadId: false },
+  ] as const)(
+    'loads the original report for a long $label thread',
+    async ({ threadType, parentType, starterHasThreadId }) => {
+      const threadId = '600000000000000001';
+      const parentId = '500000000000000001';
+      const starter = message({
+        id: starterHasThreadId ? threadId : '610000000000000001',
         channel_id: threadId,
-        content: `Later discussion ${index}`,
-        timestamp: `2026-09-03T01:${String(Math.floor(index / 60)).padStart(2, '0')}:${String(index % 60).padStart(2, '0')}.000Z`,
+        content: 'The original report is older than the recent message window.',
         author: { id: USER_ID },
         mentions: [],
-      }),
-    );
-    const completeHistory = [starter, ...olderDiscussion, command];
-    const recentWindow = completeHistory.slice(-100);
-    const getMessage = vi.fn(async (requestedChannelId: string, messageId: string) => {
-      if (requestedChannelId === threadId && messageId === COMMAND_ID) return command;
-      if (requestedChannelId === parentId && messageId === threadId) {
-        throw new Error('Starter is not in the parent message collection');
-      }
-      if (requestedChannelId === threadId && messageId === threadId && starterHasThreadId) return starter;
-      throw new Error('Unexpected Discord message lookup');
-    });
-    const listMessagesBefore = vi.fn(async (_channelId: string, beforeMessageId: string, limit: number) => {
-      const beforeIndex = completeHistory.findIndex(({ id }) => id === beforeMessageId);
-      if (beforeIndex < 0) throw new Error('Unknown history cursor');
-      return completeHistory.slice(Math.max(0, beforeIndex - limit), beforeIndex);
-    });
-    const discordSource = source({
-      getChannel: vi.fn(async (channelId) =>
-        channelId === threadId
-          ? channel({ id: threadId, type: threadType, parent_id: parentId })
-          : channel({ id: parentId, type: 15 }),
-      ),
-      getMessage,
-      listRecentMessages: vi.fn(async () => recentWindow),
-      listMessagesBefore,
-    });
+      });
+      const command = message({
+        id: COMMAND_ID,
+        channel_id: threadId,
+        content: `<@${BOT_ID}> split this report into two issues`,
+      });
+      const olderDiscussion = Array.from({ length: 220 }, (_, index) =>
+        message({
+          id: `71${String(index).padStart(16, '0')}`,
+          channel_id: threadId,
+          content: `Later discussion ${index}`,
+          timestamp: `2026-09-03T01:${String(Math.floor(index / 60)).padStart(2, '0')}:${String(index % 60).padStart(2, '0')}.000Z`,
+          author: { id: USER_ID },
+          mentions: [],
+        }),
+      );
+      const completeHistory = [starter, ...olderDiscussion, command];
+      const recentWindow = completeHistory.slice(-100);
+      const getMessage = vi.fn(async (requestedChannelId: string, messageId: string) => {
+        if (requestedChannelId === threadId && messageId === COMMAND_ID) return command;
+        if (requestedChannelId === parentId && messageId === threadId) {
+          throw new Error('Starter is not in the parent message collection');
+        }
+        if (requestedChannelId === threadId && messageId === threadId && starterHasThreadId) return starter;
+        throw new Error('Unexpected Discord message lookup');
+      });
+      const listMessagesBefore = vi.fn(async (_channelId: string, beforeMessageId: string, limit: number) => {
+        const beforeIndex = completeHistory.findIndex(({ id }) => id === beforeMessageId);
+        if (beforeIndex < 0) throw new Error('Unknown history cursor');
+        return completeHistory.slice(Math.max(0, beforeIndex - limit), beforeIndex);
+      });
+      const discordSource = source({
+        getChannel: vi.fn(async (channelId) =>
+          channelId === threadId
+            ? channel({ id: threadId, type: threadType, parent_id: parentId })
+            : channel({ id: parentId, type: parentType }),
+        ),
+        getMessage,
+        listRecentMessages: vi.fn(async () => recentWindow),
+        listMessagesBefore,
+      });
 
-    const result = await collectMentionCommand({ ...options, channelId: threadId }, { source: discordSource });
+      const result = await collectMentionCommand({ ...options, channelId: threadId }, { source: discordSource });
 
-    expect(getMessage).toHaveBeenCalledWith(threadId, threadId);
-    expect(result.source.messageId).toBe(starter.id);
-    expect(result.source.content).toBe('The original report is older than the recent message window.');
-    expect(result.source.context).toHaveLength(50);
-    expect(result.source.context[0]?.content).toBe('Later discussion 170');
-    expect(result.source.context.at(-1)?.content).toBe('Later discussion 219');
-    expect(listMessagesBefore).toHaveBeenCalledTimes(starterHasThreadId ? 0 : 2);
-  });
+      expect(getMessage).toHaveBeenCalledWith(threadId, threadId);
+      expect(result.source.messageId).toBe(starter.id);
+      expect(result.source.content).toBe('The original report is older than the recent message window.');
+      expect(result.source.context).toHaveLength(50);
+      expect(result.source.context[0]?.content).toBe('Later discussion 170');
+      expect(result.source.context.at(-1)?.content).toBe('Later discussion 219');
+      expect(listMessagesBefore).toHaveBeenCalledTimes(starterHasThreadId ? 0 : 2);
+    },
+  );
 
   it('refuses to substitute a recent message when the thread starter cannot be retrieved', async () => {
     const threadId = '600000000000000001';
@@ -379,6 +475,7 @@ describe('collectMentionCommand', () => {
       content: 'Automated thread starter',
       author: { id: BOT_ID, bot: true },
     });
+    const listMessagesBefore = vi.fn(async () => []);
     const discordSource = source({
       getChannel: vi.fn(async (channelId) =>
         channelId === threadId
@@ -393,13 +490,13 @@ describe('collectMentionCommand', () => {
       listRecentMessages: vi.fn(async () => [
         message({ id: '620000000000000001', channel_id: threadId, content: 'Later human discussion' }),
       ]),
-      listMessagesBefore: vi.fn(async () => []),
+      listMessagesBefore,
     });
 
     await expect(collectMentionCommand({ ...options, channelId: threadId }, { source: discordSource })).rejects.toThrow(
       /starter was not sent by a human.*refusing to select a later message/i,
     );
-    expect(discordSource.listMessagesBefore).not.toHaveBeenCalled();
+    expect(listMessagesBefore).not.toHaveBeenCalled();
   });
 
   it('fails closed when a message-less private thread exceeds the complete-history bound', async () => {

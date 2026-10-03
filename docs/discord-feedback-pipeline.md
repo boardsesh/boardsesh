@@ -30,12 +30,14 @@ Bots, webhooks, system messages, and the issue bot itself are excluded. At most
 four image attachments are copied from the selected context. The collected JSON
 contains pseudonymous reporter references, never Discord user names or raw user
 IDs. The collector retrieves the exact thread starter from its parent or thread
-channel. For a private thread created without an associated message, it pages
-backward through up to 1,000 messages and uses the first human message only once
-a short page proves history is complete. If it cannot prove completeness,
-collection fails closed instead of treating a later message as the report. A
-known non-human thread starter is also rejected rather than replaced by later
-discussion.
+channel. Forum, media, public, and announcement threads require that associated
+starter; if it cannot be retrieved exactly, the collector refuses to treat
+surviving discussion as the report. History fallback is limited to a verified
+`PRIVATE_THREAD` in the configured guild under its matching `GUILD_TEXT` parent.
+For that message-less shape, it pages backward through up to 1,000 messages and
+uses the first human message only once a short page proves history is complete.
+Inaccessible or overlong history, a mismatched parent, an unknown thread type,
+or a known non-human starter fails closed.
 
 ## Runtime path
 

@@ -55,6 +55,7 @@ const THREAD_CONTEXT_LIMIT = 50;
 const THREAD_HISTORY_PAGE_SIZE = 100;
 const MAX_THREAD_HISTORY_MESSAGES = 1000;
 const MAX_THREAD_HISTORY_PAGES = MAX_THREAD_HISTORY_MESSAGES / THREAD_HISTORY_PAGE_SIZE + 1;
+const SUPPORTED_DISCORD_CHANNEL_TYPES: ReadonlySet<number> = new Set([0, 1, 2, 3, 4, 5, 10, 11, 12, 13, 14, 15, 16]);
 const CHANNEL_CONTEXT_LIMIT = 10;
 const CHANNEL_CONTEXT_LOOKBACK_MS = 30 * 60 * 1000;
 
@@ -564,15 +565,32 @@ export async function collectMentionCommand(
     options,
     deps.source,
   );
+  const isKnownThread = THREAD_CHANNEL_TYPES.has(commandChannel.type ?? -1);
+  if (!SUPPORTED_DISCORD_CHANNEL_TYPES.has(commandChannel.type ?? -1)) {
+    throw new Error(
+      `Discord channel ${commandChannel.id} has unsupported type ${commandChannel.type ?? 'unknown'}; refusing to infer a report source.`,
+    );
+  }
+  if (commandChannel.thread_metadata != null && !isKnownThread) {
+    throw new Error(
+      `Discord thread ${commandChannel.id} has unsupported channel type ${commandChannel.type ?? 'unknown'}; refusing to infer a starter.`,
+    );
+  }
 
   let source: CollectedSource;
   let sourceKind: CollectBundle['command']['sourceKind'];
-  if (THREAD_CHANNEL_TYPES.has(commandChannel.type ?? -1)) {
+  if (isKnownThread) {
     if (!commandChannel.parent_id) throw new Error('Discord thread has no parent channel');
     const [parentChannel, rawThreadMessages] = await Promise.all([
       deps.source.getChannel(commandChannel.parent_id),
       deps.source.listRecentMessages(commandChannel.id, 100),
     ]);
+    if (parentChannel.id !== commandChannel.parent_id) {
+      throw new Error(`Discord thread ${commandChannel.id} returned a mismatched parent channel`);
+    }
+    if (parentChannel.guild_id !== options.guildId) {
+      throw new Error(`Discord thread ${commandChannel.id} parent is outside the configured guild`);
+    }
     // Message-derived and forum thread starters can live in the parent or thread
     // channel. Resolve that exact message before considering history fallback;
     // a private thread created without a message has no associated starter.
@@ -595,6 +613,17 @@ export async function collectMentionCommand(
       );
     }
     if (!starter) {
+      const isVerifiedMessageLessPrivateThread =
+        commandChannel.type === 12 &&
+        commandChannel.guild_id === options.guildId &&
+        parentChannel.type === 0 &&
+        parentChannel.guild_id === options.guildId &&
+        parentChannel.id === commandChannel.parent_id;
+      if (!isVerifiedMessageLessPrivateThread) {
+        throw new Error(
+          `Could not retrieve the required starter for Discord thread ${commandChannel.id}; refusing to use surviving discussion history. Check bot access and retry.`,
+        );
+      }
       const completeHistory = await readCompleteThreadHistory(deps.source, commandChannel.id, rawThreadMessages);
       starter = humanMessages(completeHistory, selfUserId)[0];
     }
