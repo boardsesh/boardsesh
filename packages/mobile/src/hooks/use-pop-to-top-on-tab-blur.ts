@@ -13,17 +13,32 @@ export function usePopToTopOnTabBlur(tabName: 'profile' | 'discover' | 'climbs')
 
   useEffect(() => {
     let previousSelectedKey: string | undefined;
+    let warnedMissingTabRoute = false;
 
     const handleState = (parentState: ReturnType<typeof navigation.getState> | undefined) => {
-      const ownRoute = parentState?.routes?.find((route) => route.name === tabName);
-      const selectedRoute =
-        typeof parentState?.index === 'number' ? parentState.routes?.[parentState.index] : undefined;
-      if (parentState?.type !== 'tab' || ownRoute == null || selectedRoute?.key == null) {
+      if (
+        parentState?.type !== 'tab' ||
+        parentState.stale !== false ||
+        parentState.routes == null ||
+        typeof parentState.index !== 'number' ||
+        parentState.routes[parentState.index]?.key == null
+      ) {
         // A partial/hydrating snapshot cannot prove that this tab was left.
         previousSelectedKey = undefined;
         return;
       }
 
+      const ownRoute = parentState.routes.find((route) => route.name === tabName);
+      if (ownRoute == null) {
+        if (__DEV__ && !warnedMissingTabRoute) {
+          console.warn(`[usePopToTopOnTabBlur] Tab route "${tabName}" was not found in the parent tab navigator.`);
+          warnedMissingTabRoute = true;
+        }
+        previousSelectedKey = undefined;
+        return;
+      }
+
+      const selectedRoute = parentState.routes[parentState.index];
       const leftOwnTab = previousSelectedKey === ownRoute.key && selectedRoute.key !== ownRoute.key;
       // Update before dispatch: POP_TO_TOP itself emits another state event.
       previousSelectedKey = selectedRoute.key;

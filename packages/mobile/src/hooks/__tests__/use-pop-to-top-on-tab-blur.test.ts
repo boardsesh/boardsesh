@@ -10,23 +10,24 @@ vi.mock('expo-router', () => ({ useNavigation: () => cfg.navigation }));
 
 import { usePopToTopOnTabBlur } from '../use-pop-to-top-on-tab-blur';
 
-function tabState(index = 0, nestedIndex = 1) {
+function tabState(index = 0, nestedIndex = 1, firstTabName = 'discover', secondTabName = 'climbs') {
   return {
+    stale: false,
     type: 'tab',
     key: 'tabs-1',
     index,
     routes: [
       {
-        name: 'discover',
-        key: 'discover-1',
+        name: firstTabName,
+        key: `${firstTabName}-1`,
         state: {
           type: 'stack',
-          key: 'discover-stack',
+          key: `${firstTabName}-stack`,
           index: nestedIndex,
           routes: [{ name: 'index' }, { name: 'playlist' }],
         },
       },
-      { name: 'climbs', key: 'climbs-1' },
+      { name: secondTabName, key: `${secondTabName}-1` },
     ],
   };
 }
@@ -35,11 +36,8 @@ function emitState(state: unknown) {
   cfg.navigation.getState.mockReturnValue(state);
   cfg.navigation.addListener.mock.calls.find(([type]) => type === 'state')?.[1]({ data: { state } });
 }
-function emitBlur() {
-  // Blur is intentionally inert: these event-order cases protect against
-  // reintroducing a listener that resets history when a modal covers the tab.
+function expectNoBlurListener() {
   expect(cfg.navigation.addListener.mock.calls.filter(([type]) => type === 'blur')).toHaveLength(0);
-  cfg.navigation.addListener.mock.calls.find(([type]) => type === 'blur')?.[1]();
 }
 
 const expectedPop = { type: 'POP_TO_TOP', target: 'discover-stack' };
@@ -51,35 +49,32 @@ describe('usePopToTopOnTabBlur', () => {
     cfg.navigation.dispatch.mockReset();
   });
 
-  it.each(['blur-first', 'state-first'])('resets once on a real tab departure (%s)', (ordering) => {
+  it('resets once on a real tab departure and ignores repeated state events', () => {
     renderHook(() => usePopToTopOnTabBlur('discover'));
-    if (ordering === 'blur-first') emitBlur();
     emitState(tabState(1));
-    if (ordering === 'state-first') emitBlur();
+    emitState(tabState(1, 0));
     emitState(tabState(1, 0));
     expect(cfg.navigation.dispatch).toHaveBeenCalledExactlyOnceWith(expectedPop);
   });
 
-  it('preserves a playlist while a player covers, blurs, and uncovers its tab', () => {
+  it('preserves a playlist when the parent tab selection is unchanged', () => {
     renderHook(() => usePopToTopOnTabBlur('discover'));
-    emitBlur();
+    expectNoBlurListener();
     emitState(tabState());
     emitState(tabState());
     expect(cfg.navigation.dispatch).not.toHaveBeenCalled();
   });
 
-  it('preserves history on nested navigation and a cancelled tab gesture', () => {
+  it('preserves history on nested navigation without a parent tab departure', () => {
     renderHook(() => usePopToTopOnTabBlur('discover'));
     emitState(tabState(0, 0));
     emitState(tabState());
-    emitBlur();
     emitState(tabState());
     expect(cfg.navigation.dispatch).not.toHaveBeenCalled();
   });
 
-  it('resets on a programmatic tab departure while the player remains open', () => {
+  it('resets on a programmatic parent tab selection change', () => {
     renderHook(() => usePopToTopOnTabBlur('discover'));
-    emitBlur();
     emitState(tabState());
     emitState(tabState(1));
     expect(cfg.navigation.dispatch).toHaveBeenCalledExactlyOnceWith(expectedPop);
@@ -116,18 +111,7 @@ describe('usePopToTopOnTabBlur', () => {
   });
 
   it.each(['discover', 'profile', 'climbs'] as const)('targets the departing %s stack', (tabName) => {
-    const selectedTabState = {
-      ...tabState(),
-      routes: [
-        {
-          ...tabState().routes[0],
-          name: tabName,
-          key: `${tabName}-1`,
-          state: { ...tabState().routes[0].state, key: `${tabName}-stack` },
-        },
-        { name: 'other', key: 'other-1' },
-      ],
-    };
+    const selectedTabState = tabState(0, 1, tabName, 'other');
     cfg.navigation.getState.mockReturnValue(selectedTabState);
     renderHook(() => usePopToTopOnTabBlur(tabName));
     emitState({ ...selectedTabState, index: 1 });
@@ -149,6 +133,28 @@ describe('usePopToTopOnTabBlur', () => {
     emitState(partialState);
     emitState(tabState(1));
     expect(cfg.navigation.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('warns once when a complete tab state omits this tab route', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    renderHook(() => usePopToTopOnTabBlur('discover'));
+    const missingRouteState = tabState(0, 1, 'profile', 'climbs');
+    emitState(missingRouteState);
+    emitState(missingRouteState);
+    expect(warn).toHaveBeenCalledExactlyOnceWith(
+      '[usePopToTopOnTabBlur] Tab route "discover" was not found in the parent tab navigator.',
+    );
+    expect(cfg.navigation.dispatch).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('does not warn when a partial tab state omits this tab route', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    renderHook(() => usePopToTopOnTabBlur('discover'));
+    emitState({ type: 'tab', index: 0, routes: [{ name: 'climbs', key: 'climbs-1' }] });
+    expect(warn).not.toHaveBeenCalled();
+    expect(cfg.navigation.dispatch).not.toHaveBeenCalled();
+    warn.mockRestore();
   });
 
   it.each([
