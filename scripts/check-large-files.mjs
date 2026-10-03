@@ -8,9 +8,9 @@
  * dead branches were pruned, this guard keeps binary churn (committed
  * screenshots, build outputs, vendored binaries) from quietly creeping back in.
  *
- * Enforcement is the `large-files` CI job (see .github/workflows/ci.yml), not
- * the local pre-commit hook — the check is repo/diff-scoped, not per-file like
- * `vp check`. Run it locally with `vp run check:large-files` before pushing.
+ * Enforcement is the `large-files` step of the `guards` CI job (see
+ * .github/workflows/ci.yml), not the local pre-commit hook — the check is
+ * repo/diff-scoped, not per-file like `vp check`. Run it locally with `vp run check:large-files` before pushing.
  *
  * Modes:
  *   (default)   Diff against a base ref and check only Added/Modified/Renamed

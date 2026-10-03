@@ -158,7 +158,7 @@ describe('reportHandledError', () => {
         errors: [
           {
             message: 'Rate limit exceeded. Try again in 7 seconds.',
-            extensions: { code: 'RATE_LIMITED', operation: 'searchBoards', retryAfterSeconds: 7 },
+            extensions: { code: 'RATE_LIMITED', operation: 'createSession', retryAfterSeconds: 7 },
           },
         ],
       },
@@ -168,6 +168,65 @@ describe('reportHandledError', () => {
       level: 'warning',
       tags: { source: 'react-query', kind: 'query', rate_limited: true },
     });
+  });
+
+  it('breadcrumbs discovery throttles once without leaking request context or reporting', () => {
+    const observeReport = vi.fn();
+    setObserveRuntime({ configure: vi.fn(), dispatchEvents: vi.fn(async () => undefined), reportError: observeReport });
+    const rateLimited = Object.assign(new Error('Request including private coordinates'), {
+      response: {
+        errors: [{ extensions: { code: 'RATE_LIMITED', operation: 'searchBoards', retryAfterSeconds: 11 } }],
+      },
+      request: { variables: { latitude: 40, longitude: -3 } },
+    });
+    reportHandledError(rateLimited, { tags: { source: 'board-search' }, extra: { latitude: 40 } });
+    reportHandledError(rateLimited, { tags: { source: 'react-query' } });
+    expect(mockedAddBreadcrumbToSentry).toHaveBeenCalledTimes(1);
+    expect(mockedAddBreadcrumbToSentry).toHaveBeenCalledWith({
+      category: 'graphql',
+      message: 'board discovery throttled',
+      level: 'info',
+      data: { operation: 'searchBoards', retryAfterSeconds: 11, source: 'board-search' },
+    });
+    expect(mockedCaptureToSentry).not.toHaveBeenCalled();
+    expect(observeReport).not.toHaveBeenCalled();
+    reportError(rateLimited);
+    expect(mockedCaptureToSentry).toHaveBeenCalledWith(rateLimited, undefined);
+    expect(observeReport).toHaveBeenCalledWith(rateLimited);
+    resetObserveRuntimeForTests();
+  });
+
+  it('excludes malformed breadcrumb sources and retry delays', () => {
+    reportHandledError(
+      { extensions: { code: 'RATE_LIMITED', operation: 'searchBoards', retryAfterSeconds: Infinity } },
+      {
+        tags: { source: { latitude: 40 } },
+      },
+    );
+    expect(mockedAddBreadcrumbToSentry).toHaveBeenCalledWith({
+      category: 'graphql',
+      message: 'board discovery throttled',
+      level: 'info',
+      data: { operation: 'searchBoards', retryAfterSeconds: null, source: null },
+    });
+    expect(mockedCaptureToSentry).not.toHaveBeenCalled();
+  });
+
+  it('keeps reporting resolver failures accompanying a discovery throttle', () => {
+    const mixedError = {
+      response: {
+        errors: [
+          { extensions: { code: 'RATE_LIMITED', operation: 'searchBoards', retryAfterSeconds: 11 } },
+          { extensions: { code: 'INTERNAL_SERVER_ERROR' }, message: 'Gym query failed' },
+        ],
+      },
+    };
+    reportHandledError(mixedError);
+    expect(mockedCaptureToSentry).toHaveBeenCalledWith(mixedError, {
+      level: 'warning',
+      tags: { rate_limited: true },
+    });
+    expect(mockedAddBreadcrumbToSentry).not.toHaveBeenCalled();
   });
 
   it('reports a GRAPHQL_VALIDATION_FAILED rejection as a warning fingerprinted by its message (#5370)', () => {
@@ -398,7 +457,7 @@ describe('Observe forwarding', () => {
   });
 
   function registerObserve(reportError_ = vi.fn()) {
-    setObserveRuntime({ configure: vi.fn(), reportError: reportError_ });
+    setObserveRuntime({ configure: vi.fn(), dispatchEvents: vi.fn(async () => undefined), reportError: reportError_ });
     return reportError_;
   }
 
@@ -451,6 +510,7 @@ describe('Observe forwarding', () => {
     // able to lose the actual error.
     setObserveRuntime({
       configure: vi.fn(),
+      dispatchEvents: vi.fn(async () => undefined),
       reportError: () => {
         throw new Error('native module exploded');
       },

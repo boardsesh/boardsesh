@@ -38,6 +38,7 @@ import { socialFollowQueries, socialFollowMutations } from './social/follows';
 import { socialSearchQueries } from './social/search';
 import { setterFollowQueries, setterFollowMutations } from './social/setter-follows';
 import { socialFeedQueries } from './social/feed';
+import { climbLogsQueries } from './social/climb-logs';
 import { activityFeedQueries } from './social/activity-feed';
 import { sessionFeedQueries } from './social/session-feed';
 import { followedAuthorQueries } from './social/followed-authors';
@@ -109,6 +110,7 @@ export const resolvers = {
     ...socialSearchQueries,
     ...setterFollowQueries,
     ...socialFeedQueries,
+    ...climbLogsQueries,
     ...socialCommentQueries,
     ...socialVoteQueries,
     ...socialBoardQueries,

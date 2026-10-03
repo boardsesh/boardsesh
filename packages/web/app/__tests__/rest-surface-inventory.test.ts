@@ -23,8 +23,8 @@
  *
  * This file reads the API tree with readdirSync at run time, so nothing
  * relates it to a route-file diff in test-default's `--changed` run. It is
- * run unfiltered by the `rest-surface` job in .github/workflows/ci.yml —
- * without that job the guarantees above only hold post-merge on main.
+ * run unfiltered by the `rest-surface` step of the `guards` job in
+ * .github/workflows/ci.yml — without that step the guarantees above only hold post-merge on main.
  *
  * `keep-external` = published surface with no in-repo runtime caller by
  * design (an ESP32 firmware target, a documented `/api/v1/*` route, a

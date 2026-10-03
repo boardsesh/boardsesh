@@ -1,15 +1,25 @@
 import { eq, and, desc, inArray, sql } from 'drizzle-orm';
+import type { GraphQLResolveInfo } from 'graphql';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
-import { requireAuthenticated, validateInput } from '../shared/helpers';
+import { requireAuthenticated, applyRateLimit, validateInput, resolveClimbNoMatch } from '../shared/helpers';
 import {
   difficultyNameWithFallbackExpr,
   consensusGradeTable,
   consensusGradeJoinCondition,
   tickCommentCountExpr,
+  boardClimbRatingsJoinCondition,
 } from '../shared/sql-expressions';
+import { selectedFieldNames, isFieldSelected } from '../shared/selected-fields';
+import {
+  climbLogConditions,
+  climbLogBaseSelection,
+  resolveClimbLogUuid,
+  sentStatusCondition,
+  toClimbLogBase,
+} from './climb-log-query';
 import { FollowingAscentsFeedInputSchema, FollowingClimbAscentsInputSchema } from '../../../validation/schemas';
 import { logger } from '../../../utils/logger';
 
@@ -292,43 +302,67 @@ export const socialFeedQueries = {
   },
 
   /**
-   * Get ticks from followed users for a specific climb
-   * Requires authentication
+   * Logs from followed users on one climb: the 100 newest, plus counts that
+   * cover all of them. Requires authentication.
+   *
+   * Every answer that has nothing to show is the same answer. Following nobody,
+   * nobody followed having logged it, and a spray climb on a wall the viewer
+   * cannot see all return empty items and zero counts, never an error, so a
+   * private wall's logs are not observable through the shape of the response.
    */
   followingClimbAscents: async (
     _: unknown,
     { input }: { input: { boardType: string; climbUuid: string } },
     ctx: ConnectionContext,
+    info?: GraphQLResolveInfo,
   ) => {
     requireAuthenticated(ctx);
     const myUserId = ctx.userId!;
+    // The play drawer asks once per climb the climber settles on, so this has
+    // to leave room for swiping through a queue.
+    await applyRateLimit(ctx, 120, 'followingClimbAscents');
 
     const validatedInput = validateInput(FollowingClimbAscentsInputSchema, input, 'input');
 
-    // Cap results to avoid runaway payloads on highly-trafficked climbs.
-    // The UI is a collapsed list — 100 recent ticks is plenty.
+    // Cap results to avoid runaway payloads on highly-trafficked climbs. The
+    // rows are the newest logs across everyone followed; `summary` is what
+    // counts climbers, because it is not bound by this cap.
     const MAX_ITEMS = 100;
 
+    const followedByMe = and(
+      eq(dbSchema.userFollows.followingId, dbSchema.boardseshTicks.userId),
+      eq(dbSchema.userFollows.followerId, myUserId),
+    );
+
+    // A direct call (no resolve info) gets the summary; a document that did not
+    // select it skips the aggregate and gets no `summary` key at all.
+    const wantsSummary = isFieldSelected(selectedFieldNames(info), 'summary');
+
     try {
-      const results = await db
+      // The climb's canonical uuid, so logs stored under a uuid that was
+      // deduplicated into this climb are found too.
+      const canonicalClimbUuid = await resolveClimbLogUuid(validatedInput.boardType, validatedInput.climbUuid);
+
+      // One conditions array for the rows AND the counts: board, climb, Aurora's
+      // duplicate rows, spray-wall visibility. See climb-log-query.ts.
+      const conditions = climbLogConditions({
+        boardType: validatedInput.boardType,
+        canonicalClimbUuid,
+        viewerUserId: myUserId,
+      });
+
+      const itemsQuery = db
         .select({
-          tick: dbSchema.boardseshTicks,
-          userName: dbSchema.users.name,
-          userImage: dbSchema.users.image,
-          userDisplayName: dbSchema.userProfiles.displayName,
-          userAvatarUrl: dbSchema.userProfiles.avatarUrl,
+          ...climbLogBaseSelection,
+          climbName: dbSchema.boardClimbs.name,
+          climbCharacteristics: dbSchema.boardClimbs.characteristics,
+          climbDescription: dbSchema.boardClimbs.description,
           upvotes: dbSchema.voteCounts.upvotes,
           downvotes: dbSchema.voteCounts.downvotes,
           commentCount: tickCommentCountExpr,
         })
         .from(dbSchema.boardseshTicks)
-        .innerJoin(
-          dbSchema.userFollows,
-          and(
-            eq(dbSchema.userFollows.followingId, dbSchema.boardseshTicks.userId),
-            eq(dbSchema.userFollows.followerId, myUserId),
-          ),
-        )
+        .innerJoin(dbSchema.userFollows, followedByMe)
         .innerJoin(dbSchema.users, eq(dbSchema.boardseshTicks.userId, dbSchema.users.id))
         .leftJoin(dbSchema.userProfiles, eq(dbSchema.boardseshTicks.userId, dbSchema.userProfiles.userId))
         .leftJoin(
@@ -338,39 +372,76 @@ export const socialFeedQueries = {
             eq(dbSchema.voteCounts.entityId, dbSchema.boardseshTicks.uuid),
           ),
         )
-        .where(
+        // Synced-rating fallback for quality — see boardClimbRatingsJoinCondition.
+        .leftJoin(dbSchema.boardClimbRatings, boardClimbRatingsJoinCondition)
+        // Joined on the canonical uuid, not the tick's own: a log stored under
+        // a retired uuid has no climb row of its own, and every row here is the
+        // same climb. `uuid` is the primary key, so this never multiplies rows.
+        // LEFT, so a climb the catalogue does not have still comes back as
+        // "Unknown Climb". (Spray is never alias-expanded, so there the
+        // canonical IS the tick's own uuid, the one the privacy predicates check.)
+        .leftJoin(
+          dbSchema.boardClimbs,
           and(
-            eq(dbSchema.boardseshTicks.boardType, validatedInput.boardType),
-            eq(dbSchema.boardseshTicks.climbUuid, validatedInput.climbUuid),
+            eq(dbSchema.boardClimbs.uuid, canonicalClimbUuid),
+            eq(dbSchema.boardClimbs.boardType, dbSchema.boardseshTicks.boardType),
           ),
         )
-        .orderBy(desc(dbSchema.boardseshTicks.climbedAt))
-        .limit(MAX_ITEMS);
+        .where(and(...conditions))
+        // `id` breaks ties so two logs with the same timestamp keep one order.
+        .orderBy(desc(dbSchema.boardseshTicks.climbedAt), desc(dbSchema.boardseshTicks.id))
+        .limit(MAX_ITEMS + 1);
 
-      const items = results.map(
-        ({ tick, userName, userImage, userDisplayName, userAvatarUrl, upvotes, downvotes, commentCount }) => ({
-          uuid: tick.uuid,
-          userId: tick.userId,
-          userDisplayName: userDisplayName || userName || undefined,
-          userAvatarUrl: userAvatarUrl || userImage || undefined,
-          climbUuid: tick.climbUuid,
-          boardType: tick.boardType,
-          angle: tick.angle,
-          isMirror: tick.isMirror ?? false,
-          status: tick.status,
-          attemptCount: tick.attemptCount,
-          quality: tick.quality,
-          difficulty: tick.difficulty,
-          isBenchmark: tick.isBenchmark ?? false,
-          comment: tick.comment || '',
-          climbedAt: tick.climbedAt,
-          upvotes: Number(upvotes ?? 0),
-          downvotes: Number(downvotes ?? 0),
-          commentCount: Number(commentCount ?? 0),
-        }),
-      );
+      // Totals and per-angle counts in one statement. The empty grouping set is
+      // the top-level pair and yields a row even when nothing matches; the
+      // angle set yields one row per angle that has a log.
+      const summaryQuery = wantsSummary
+        ? db
+            .select({
+              angle: dbSchema.boardseshTicks.angle,
+              isTotal: sql<number>`grouping(${dbSchema.boardseshTicks.angle})::int`,
+              climberCount: sql<number>`count(distinct ${dbSchema.boardseshTicks.userId})::int`,
+              senderCount: sql<number>`count(distinct ${dbSchema.boardseshTicks.userId}) filter (where ${sentStatusCondition()})::int`,
+            })
+            .from(dbSchema.boardseshTicks)
+            .innerJoin(dbSchema.userFollows, followedByMe)
+            .where(and(...conditions))
+            .groupBy(sql`grouping sets ((), (${dbSchema.boardseshTicks.angle}))`)
+        : null;
 
-      return { items };
+      const [rows, summaryRows] = await Promise.all([itemsQuery, summaryQuery]);
+
+      const hasMore = rows.length > MAX_ITEMS;
+      const items = (hasMore ? rows.slice(0, MAX_ITEMS) : rows).map((row) => ({
+        ...toClimbLogBase(row),
+        climbName: row.climbName || 'Unknown Climb',
+        isNoMatch: resolveClimbNoMatch(row.tick.boardType, row.climbCharacteristics, row.climbDescription),
+        upvotes: Number(row.upvotes ?? 0),
+        downvotes: Number(row.downvotes ?? 0),
+        commentCount: Number(row.commentCount ?? 0),
+      }));
+
+      if (!summaryRows) return { items, hasMore };
+
+      const total = summaryRows.find((row) => Number(row.isTotal) === 1);
+      const byAngle = summaryRows
+        .filter((row) => Number(row.isTotal) !== 1)
+        .map((row) => ({
+          angle: row.angle,
+          climberCount: Number(row.climberCount),
+          senderCount: Number(row.senderCount),
+        }))
+        .sort((first, second) => first.angle - second.angle);
+
+      return {
+        items,
+        hasMore,
+        summary: {
+          climberCount: Number(total?.climberCount ?? 0),
+          senderCount: Number(total?.senderCount ?? 0),
+          byAngle,
+        },
+      };
     } catch (err) {
       logger.error('[followingClimbAscents] DB error:', err);
       throw err;

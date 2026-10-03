@@ -452,6 +452,16 @@ STORED object's metadata, never off the request — they define the canonical fr
 and a client that lied about them would put every hold on the wall at the wrong
 place.
 
+For hold edits on the existing photo, supply `sourceVersionId` instead of
+`photoId`. Exactly one is required. The source must be this wall's current
+published version, checked under the same wall lock that enforces one open draft.
+Its photo key, pixel dimensions, anchors and homography are copied exactly;
+anchors must be omitted from the request, including when the source has none.
+This path makes no upload or storage-metadata request and leaves the canonical
+frame unchanged. A missing source photo is refused. Holds are inherited through
+the normal version read, keeping their existing ids until an edit supersedes or
+removes one. Old clients that supply an uploaded `photoId` keep the same behavior.
+
 Version 1 defines the frame: with anchors it is the anchor quad's bounding
 rectangle, without them it is the photo's own pixel box. Later versions **inherit**
 the frame, because every existing hold's coordinates are in it. There are no
@@ -603,7 +613,7 @@ a climb and never join `board_climbs` at all:
 
 | Shape | Where | Used by |
 | --- | --- | --- |
-| `sprayReferenceVisibilityCondition({ boardType, climbUuid }, userId)` | in the WHERE, over the referencing table | the smart-playlist ref queries, `browseProposals`, `globalCommentFeed`, `userProfileStats` |
+| `sprayReferenceVisibilityCondition({ boardType, climbUuid }, userId)` | in the WHERE, over the referencing table | the smart-playlist ref queries, `browseProposals`, `globalCommentFeed`, `userProfileStats`, `followingClimbAscents`, `climbLogs` |
 | `sprayClimbUuidIsReadable(climbUuid, userId)` | before the query | `comments`, `climbProposals` — the uuid-keyed threads |
 
 It is phrased "there is **no INVISIBLE** spray climb behind this reference"
@@ -612,6 +622,36 @@ survives; and because it starts from the reference, it works in a query that
 never mentions `board_climbs` — `userProfileStats` shares one condition list
 across three aggregates, one of which selects distinct climb uuids straight off
 `boardsesh_ticks`.
+
+`followingClimbAscents` (the play drawer's "Climber logs") takes the predicate
+from `climbLogConditions` in
+`packages/backend/src/graphql/resolvers/social/climb-log-query.ts`, which is the
+one array both its list query and its count query spread. That is deliberate: a
+count without the predicate would tell a follower that people log on a wall they
+cannot see. A climb on a hidden wall answers exactly like a climb nobody has
+logged (empty list, zero counts, no error).
+
+`climbLogs` (the "Everyone" section of the same list) is the PUBLIC sibling: no
+sign-in needed, and the caller names the climb. It spreads the same
+`climbLogConditions` array, and on its one-row-per-climber path the array sits
+inside the window's own WHERE, so a hidden log can neither be returned nor be
+the row that represents a climber. The viewer id handed to the predicate is null
+unless the request is authenticated. A wall the caller cannot see, an unknown
+climb and a board-type mismatch all return the same empty page. It has no row in
+the sweep's allow-list: `spray-visibility-sweep.test.ts` enumerates it like any
+other reader, and `climb-logs.test.ts` runs each wall state against both paths.
+
+The reference form alone is not enough there. It passes a spray tick whose
+`board_climbs` row is missing, for every viewer, and a climb row does go missing:
+deleting a wall is a soft delete that keeps its climbs, but `deleteDraftClimb`
+and account deletion (which removes the deleted user's drafts) hard-delete the
+climb and leave its ticks. With no climb there is no wall to check, so
+`climbLogConditions` adds a second condition that fails closed: a spray tick is
+returned only when its climb row still exists. Other board types keep the lenient
+behaviour, because an Aurora tick can arrive before its climb. The other readers
+in the table above still use the reference form on its own and have not been
+audited for this case. Any new per-climb log reader imports `climbLogConditions`
+rather than writing its own.
 
 Pick by what the query HAS, not by taste:
 
@@ -1270,7 +1310,7 @@ switch.
 | `reportSprayWall(input)` | Any signed-in climber who can SEE the wall — owner, gym member, or anybody on a public or unlisted one — once per wall. Delegates to `viewerCanSeeSprayWall` rather than restating the rule, because restating it is how the gym-member path got dropped the first time. Writes one `spray_wall_reports` row; a second report from the same climber answers `ALREADY_REPORTED` and writes nothing. |
 | `spray_wall_reports` | `(wall_id, reporter_id)` unique, a closed-set `reason`, and `reviewed_at` / `reviewed_by`. No free-text field anywhere in the path. |
 | `setSprayWallHidden(input)` | Community admins (`spray`-scoped or global). Stamps or clears `spray_walls.hidden_at` / `hidden_by` and marks every pending report on the wall reviewed. |
-| `sprayWallReports(uuid)` | The pending queue, newest first, excluding walls the owner has since deleted — those are no longer work. Admins only. There is no admin ROUTE yet (#5501). |
+| `sprayWallReports(uuid)` | Admin-only pending queue, newest first, excluding deleted walls and deleted board rows. Each report includes `wallName` and a nullable `photo` preview, including private and hidden walls. The app review route ships separately in [#5953](https://github.com/boardsesh/boardsesh/pull/5953), targeting `release/next`. |
 | `SprayWall.hiddenAt` | Non-null only for the owner, because a hidden wall does not resolve for anybody else. The mobile banner renders off its presence. |
 
 **What hidden means: exactly what private means, for everybody but the owner.**
@@ -1335,12 +1375,21 @@ rows are served straight out of that table and would outlive the gate. Unhiding
 does NOT put them back: a feed is a record of what happened when, and
 re-announcing week-old climbs would be a lie. Everything else comes back.
 
-Reporting is API-only today: there is no report button in the app and no admin
-console route. Both are **SW-17b (#5501)**, split out because a report row belongs
-in `BoardDetailSheet`, which SW-11's stack is rewriting — landing one there from
-this stack would have been a guaranteed conflict for no gain, since the admin path
-needs the mutation either way. Until then the mutation is what an admin or a
-support reply drives.
+The queue authorizes a `spray`-scoped or global admin before reading or signing
+any preview. It selects the current published version's photo; only a wall
+without a published version falls back to its latest draft. Several reports for
+one wall share one preview and one pair of private-bucket signatures. `photo`
+can be null when there is no version, no configured private bucket, or signing
+fails, so an unavailable preview does not block reviewing the remaining reports.
+Photo URLs expire after 15 minutes: clients must refresh the queue rather than
+persisting its URLs.
+
+**SW-17b (#5501)** supplies the report action in `BoardDetailSheet` and the admin
+review route in companion app PR [#5953](https://github.com/boardsesh/boardsesh/pull/5953),
+targeting `release/next`. Those app changes depend on deploying the queue schema
+and resolver additions from backend PR [#5952](https://github.com/boardsesh/boardsesh/pull/5952)
+on `main` first; this backend PR does not itself ship the app UI or change its
+spray-wall flag default.
 
 ## Retention: what happens to a deleted wall's photographs
 

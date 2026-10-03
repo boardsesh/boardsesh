@@ -66,7 +66,9 @@ function OfflineNudgeCardComponent({
         {body}
       </Text>
       <Button title={primaryLabel} variant="filled" onPress={onPrimary} style={styles.primary} />
-      {secondaryLabel && onSecondary ? <Button title={secondaryLabel} variant="tonal" onPress={onSecondary} /> : null}
+      {secondaryLabel && onSecondary ? (
+        <Button title={secondaryLabel} variant="tonal" onPress={onSecondary} style={styles.fill} />
+      ) : null}
       {(dismissLabel && onDismiss) || (neverLabel && onNever) ? (
         <View style={styles.dismissRow}>
           {dismissLabel && onDismiss ? (
@@ -96,8 +98,15 @@ const styles = StyleSheet.create({
   title: {
     flexShrink: 1,
   },
+  // The offers fill the card's width. A content-sized button hugs its label, and
+  // a label carrying a board name ("Download Test User's Kilter Homewall 10×12")
+  // is wider than the card, so the pill ran off its right edge.
   primary: {
     marginTop: spacing[2],
+    alignSelf: 'stretch',
+  },
+  fill: {
+    alignSelf: 'stretch',
   },
   dismissRow: {
     flexDirection: 'row',

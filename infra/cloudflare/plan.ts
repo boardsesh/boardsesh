@@ -10,6 +10,7 @@ import {
   CACHE_RULE_PHASE,
   DYNAMIC_REDIRECT_RULE_PHASE,
   RATE_LIMIT_RULE_PHASE,
+  REQUEST_HEADER_RULE_PHASE,
   RESPONSE_HEADER_RULE_PHASE,
   SSL_MODE_STRENGTH,
   WAF_RULE_PHASE,
@@ -23,6 +24,7 @@ import type {
   R2LifecycleRule,
   RateLimitRuleDesired,
   RedirectRuleDesired,
+  RequestHeaderRuleDesired,
   ResponseHeaderRuleDesired,
   SslDesired,
   SslMode,
@@ -35,6 +37,7 @@ export type ManagedRuleDesired =
   | WafRuleDesired
   | RateLimitRuleDesired
   | RedirectRuleDesired
+  | RequestHeaderRuleDesired
   | ResponseHeaderRuleDesired;
 
 /** A DNS record as Cloudflare returns it. Which fields are owned depends on the desired record's management mode. */
@@ -110,6 +113,7 @@ export type ManagedRuleResource =
   | 'waf-rule'
   | 'rate-limit-rule'
   | 'redirect-rule'
+  | 'request-header-rule'
   | 'response-header-rule';
 
 /**
@@ -150,6 +154,7 @@ export interface DesiredRuleSets {
   wafRules: WafRuleDesired[];
   rateLimitRules: RateLimitRuleDesired[];
   redirectRules: RedirectRuleDesired[];
+  requestHeaderRules: RequestHeaderRuleDesired[];
   responseHeaderRules: ResponseHeaderRuleDesired[];
 }
 
@@ -191,14 +196,24 @@ export const MANAGED_RULE_PHASES = [
     optional: false,
   },
   {
+    resource: 'request-header-rule',
+    phase: REQUEST_HEADER_RULE_PHASE,
+    label: 'Request header rule',
+    selectLive: (live) => live.rules['request-header-rule'],
+    selectDesired: (desired) => desired.requestHeaderRules,
+    // Observe country attribution depends on this rule. Missing scope must fail
+    // loudly rather than silently deploying an origin that records no country.
+    optional: false,
+  },
+  {
     resource: 'response-header-rule',
     phase: RESPONSE_HEADER_RULE_PHASE,
     label: 'Response header rule',
     selectLive: (live) => live.rules['response-header-rule'],
     selectDesired: (desired) => desired.responseHeaderRules,
-    // Remove once Zone.Transform Rules Edit is confirmed on the production
-    // token. Until then this phase must not be able to fail a deploy.
-    optional: true,
+    // Confirmed alongside the request-header transform: both phases use the
+    // production token's Zone.Transform Rules Edit scope.
+    optional: false,
   },
 ] as const satisfies readonly ManagedRulePhase[];
 

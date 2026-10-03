@@ -204,9 +204,11 @@ export const sprayWallsTypeDefs = /* GraphQL */ `
 
   input CreateSprayWallVersionInput {
     wallUuid: ID!
-    "photoId from POST /api/spray-wall-photos."
-    photoId: ID!
-    "The wall's four corners in this photo's pixels, TL/TR/BR/BL, as [[x, y], ...]. Omit to use the photo frame."
+    "photoId from POST /api/spray-wall-photos. Supply exactly one of photoId and sourceVersionId."
+    photoId: ID
+    "Reuse this wall's current published photo and its saved geometry for hold editing. Supply exactly one of photoId and sourceVersionId."
+    sourceVersionId: ID
+    "The wall's four corners in an uploaded photo's pixels, TL/TR/BR/BL, as [[x, y], ...]. When sourceVersionId is supplied, omit this field entirely; explicit null is rejected."
     anchors: JSON
     notes: String
   }
@@ -536,6 +538,9 @@ export const sprayWallModerationTypeDefs = /* GraphQL */ `
   type SprayWallReport {
     id: ID!
     wallUuid: ID!
+    wallName: String!
+    "Admin-only preview, including private and hidden walls; null when unavailable."
+    photo: SprayWallPhoto
     layoutId: Int!
     reason: SprayWallReportReason!
     "Whether the wall is hidden right now."

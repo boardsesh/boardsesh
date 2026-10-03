@@ -141,6 +141,7 @@ export const SPRAY_WALL_CODES = {
   anglePublished: 'SPRAY_WALL_ANGLE_PUBLISHED',
   publishWouldGoBackwards: 'SPRAY_WALL_PUBLISH_BACKWARDS',
   draftAlreadyOpen: 'SPRAY_WALL_DRAFT_ALREADY_OPEN',
+  sourceVersionNotCurrent: 'SPRAY_WALL_SOURCE_VERSION_NOT_CURRENT',
   anchorsRequired: 'SPRAY_WALL_ANCHORS_REQUIRED',
   visibilityOwnerOnly: 'SPRAY_WALL_VISIBILITY_OWNER_ONLY',
 } as const;
@@ -346,7 +347,7 @@ export async function loadEditableWall(ctx: ConnectionContext, uuid: string): Pr
  * (or a backend with no private bucket configured) returns null, and the callers
  * decide whether that is a null field or a hard error.
  */
-async function presignVersionPhoto(version: SprayWallVersionRow): Promise<{
+export async function presignVersionPhoto(version: SprayWallVersionRow): Promise<{
   url: string;
   thumbUrl: string | null;
   width: number | null;
@@ -1752,32 +1753,34 @@ export const sprayWallMutations = {
     const validated = validateInput(CreateSprayWallVersionInputSchema, input, 'input');
     const { wall } = await loadEditableWall(ctx, validated.wallUuid);
 
-    if (!isS3Configured('private')) {
-      throw new GraphQLError('Spray wall photos are not configured on this server', {
-        extensions: { code: SPRAY_WALL_CODES.photosNotConfigured },
-      });
-    }
+    let uploadedPhoto: { key: string; width: number; height: number } | null = null;
+    if (validated.photoId != null) {
+      if (!isS3Configured('private')) {
+        throw new GraphQLError('Spray wall photos are not configured on this server', {
+          extensions: { code: SPRAY_WALL_CODES.photosNotConfigured },
+        });
+      }
 
-    // The dimensions come off the STORED object, not the request: they define the
-    // canonical frame on version 1, so a client that lied about them would put
-    // every hold on the wall at the wrong place. Reading them back also proves the
-    // photo actually landed — a `photoId` naming no object is a client sending a
-    // version for an upload that failed.
-    const photoKey = sprayWallPhotoKey(validated.wallUuid, validated.photoId);
-    const stored = await getS3ObjectMetadata('private', photoKey);
-    const photoWidth = Number(stored?.metadata?.[SPRAY_PHOTO_WIDTH_METADATA_KEY]);
-    const photoHeight = Number(stored?.metadata?.[SPRAY_PHOTO_HEIGHT_METADATA_KEY]);
+      // Only a fresh upload needs a storage read. A reused version already has
+      // trusted dimensions and a mapping; reading or recomputing either would
+      // turn an ordinary hold edit into another photo upload.
+      const photoKey = sprayWallPhotoKey(validated.wallUuid, validated.photoId);
+      const stored = await getS3ObjectMetadata('private', photoKey);
+      const photoWidth = Number(stored?.metadata?.[SPRAY_PHOTO_WIDTH_METADATA_KEY]);
+      const photoHeight = Number(stored?.metadata?.[SPRAY_PHOTO_HEIGHT_METADATA_KEY]);
 
-    if (
-      !stored ||
-      !Number.isInteger(photoWidth) ||
-      !Number.isInteger(photoHeight) ||
-      photoWidth <= 0 ||
-      photoHeight <= 0
-    ) {
-      throw new GraphQLError('That photo upload could not be found. Upload the photo again.', {
-        extensions: { code: SPRAY_WALL_CODES.photoMissing },
-      });
+      if (
+        !stored ||
+        !Number.isInteger(photoWidth) ||
+        !Number.isInteger(photoHeight) ||
+        photoWidth <= 0 ||
+        photoHeight <= 0
+      ) {
+        throw new GraphQLError('That photo upload could not be found. Upload the photo again.', {
+          extensions: { code: SPRAY_WALL_CODES.photoMissing },
+        });
+      }
+      uploadedPhoto = { key: photoKey, width: photoWidth, height: photoHeight };
     }
 
     const version = await db.transaction(async (tx) => {
@@ -1845,11 +1848,12 @@ export const sprayWallMutations = {
       const [lockedWall] = await tx
         .select({
           id: dbSchema.sprayWalls.id,
+          currentVersionId: dbSchema.sprayWalls.currentVersionId,
           referenceWidth: dbSchema.sprayWalls.referenceWidth,
           referenceHeight: dbSchema.sprayWalls.referenceHeight,
         })
         .from(dbSchema.sprayWalls)
-        .where(eq(dbSchema.sprayWalls.id, wall.id))
+        .where(and(eq(dbSchema.sprayWalls.id, wall.id), isNull(dbSchema.sprayWalls.deletedAt)))
         .for('update');
       if (!lockedWall) throw notFoundError();
 
@@ -1859,6 +1863,65 @@ export const sprayWallMutations = {
         .where(eq(dbSchema.sprayWallVersions.wallId, wall.id));
 
       const versionNumber = Number(maxNumber ?? 0) + 1;
+
+      if (validated.sourceVersionId != null) {
+        // The source is checked after taking the lock: another device may have
+        // published since the editor fetched its wall. Never reuse a stale or
+        // foreign version, and never copy its geometry onto a newer photo.
+        const [source] = await tx
+          .select()
+          .from(dbSchema.sprayWallVersions)
+          .where(
+            and(
+              eq(dbSchema.sprayWallVersions.id, validated.sourceVersionId),
+              eq(dbSchema.sprayWallVersions.wallId, wall.id),
+              eq(dbSchema.sprayWallVersions.status, 'published'),
+            ),
+          )
+          .limit(1);
+        if (!source || source.id !== lockedWall.currentVersionId) {
+          throw new GraphQLError('That photo is no longer the published wall. Reload the wall and try again.', {
+            extensions: { code: SPRAY_WALL_CODES.sourceVersionNotCurrent },
+          });
+        }
+        if (
+          !source.photoKey ||
+          source.photoWidth == null ||
+          source.photoHeight == null ||
+          !Number.isInteger(source.photoWidth) ||
+          !Number.isInteger(source.photoHeight) ||
+          source.photoWidth <= 0 ||
+          source.photoHeight <= 0
+        ) {
+          throw new GraphQLError('That published photo is unavailable. Add a new photo to edit the wall.', {
+            extensions: { code: SPRAY_WALL_CODES.photoMissing },
+          });
+        }
+
+        const [inserted] = await tx
+          .insert(dbSchema.sprayWallVersions)
+          .values({
+            wallId: wall.id,
+            versionNumber,
+            status: 'draft',
+            photoKey: source.photoKey,
+            photoWidth: source.photoWidth,
+            photoHeight: source.photoHeight,
+            anchors: source.anchors,
+            homography: source.homography,
+            notes: validated.notes ?? null,
+            createdBy: ctx.userId!,
+          })
+          .returning();
+        // No holds are copied: aliveHolds already inherits the published holds
+        // by their existing ids. The canonical frame and catalogue stay put.
+        await tx.update(dbSchema.sprayWalls).set({ updatedAt: new Date() }).where(eq(dbSchema.sprayWalls.id, wall.id));
+        return inserted;
+      }
+
+      // Validation requires exactly one source, so the upload branch has a photo.
+      if (!uploadedPhoto) throw new Error('An uploaded photo is required');
+      const { key: photoKey, width: photoWidth, height: photoHeight } = uploadedPhoto;
 
       // Anchors are optional on version 1 ONLY, and that is not a convenience: on
       // version 1 the photo's own pixel box IS the canonical frame, so the identity

@@ -15,12 +15,16 @@ type GraphqlErrorLike = {
   } | null;
 };
 
+function isGraphqlErrorLike(error: unknown): error is GraphqlErrorLike {
+  return error !== null && typeof error === 'object';
+}
+
 function getGraphqlErrors(error: unknown): GraphqlErrorLike[] {
   if (!error || typeof error !== 'object') return [];
   const response = (error as { response?: { errors?: GraphqlErrorLike[] } }).response;
-  if (Array.isArray(response?.errors)) return response.errors;
+  if (Array.isArray(response?.errors)) return response.errors.filter(isGraphqlErrorLike);
   const graphqlErrors = (error as { graphqlErrors?: GraphqlErrorLike[] }).graphqlErrors;
-  return Array.isArray(graphqlErrors) ? graphqlErrors : [];
+  return Array.isArray(graphqlErrors) ? graphqlErrors.filter(isGraphqlErrorLike) : [];
 }
 
 export function extractGraphqlMessage(error: unknown): string | null {
@@ -41,13 +45,37 @@ export function extractGraphqlCode(error: unknown): string | null {
   return typeof code === 'string' ? code : null;
 }
 
+/** Read structured server backpressure without inspecting messages or request variables. */
+export function readGraphqlRateLimit(error: unknown): {
+  operation: string | null;
+  retryAfterSeconds: number | null;
+} | null {
+  if (!error || typeof error !== 'object') return null;
+  const record = error as {
+    extensions?: GraphqlErrorLike['extensions'];
+    response?: { errors?: unknown };
+    graphqlErrors?: unknown;
+  };
+  const candidates = [
+    record.extensions,
+    ...(Array.isArray(record.response?.errors)
+      ? record.response.errors.filter(isGraphqlErrorLike).map((graphqlError) => graphqlError.extensions)
+      : []),
+    ...(Array.isArray(record.graphqlErrors)
+      ? record.graphqlErrors.filter(isGraphqlErrorLike).map((graphqlError) => graphqlError.extensions)
+      : []),
+  ];
+  const extensions = candidates.find((candidate) => candidate?.code === 'RATE_LIMITED');
+  if (!extensions) return null;
+  const delay = extensions.retryAfterSeconds;
+  return {
+    operation: typeof extensions.operation === 'string' ? extensions.operation : null,
+    retryAfterSeconds: typeof delay === 'number' && Number.isFinite(delay) && delay >= 0 ? delay : null,
+  };
+}
+
 export function isGraphqlRateLimitedError(error: unknown): boolean {
-  if (!error || typeof error !== 'object') return false;
-
-  const directExtensions = (error as { extensions?: GraphqlErrorLike['extensions'] }).extensions;
-  if (directExtensions?.code === 'RATE_LIMITED') return true;
-
-  return getGraphqlErrors(error).some((graphqlError) => graphqlError.extensions?.code === 'RATE_LIMITED');
+  return readGraphqlRateLimit(error) !== null;
 }
 
 const GRAPHQL_VALIDATION_FAILED = 'GRAPHQL_VALIDATION_FAILED';

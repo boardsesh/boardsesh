@@ -244,6 +244,7 @@ vi.mock('../BoardRenderUnavailable', () => ({ BoardRenderUnavailable: () => null
 vi.mock('../../playback/PlaybackControls', () => ({ PlaybackControls: () => null }));
 // Renders its `leading` slot: that is where the wall-state pill lands, so a mock
 // that swallowed it would hide whether PlayDrawer passes one at all.
+vi.mock('../PlayDrawerStatusBarScrim', () => ({ PlayDrawerStatusBarScrim: () => null }));
 vi.mock('../PlayDrawerHeader', () => ({
   LivePlayDrawerHeader: ({ leading }: { leading?: ReactNode }) => createElement('div', null, leading),
 }));

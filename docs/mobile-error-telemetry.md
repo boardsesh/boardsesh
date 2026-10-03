@@ -42,10 +42,12 @@ Rule of thumb: **every catch that handles a user-affecting failure reports it.**
 Use the helpers in `src/lib/error-reporting.ts` (they route to `captureToSentry`):
 
 - `reportHandledError(error, { tags: { source, ... }, extra })` — the default.
-  Drops cancellations (`AbortError` / TanStack `CancelledError`) and downgrades
-  offline/network failures to a `warning` tagged `network: true`, so error
-  tracking stays signal-rich. Use it in catch blocks, GraphQL-WS handlers, and the
-  React Query caches.
+  Drops cancellations (`AbortError` / TanStack `CancelledError`) and leaves
+  breadcrumbs for offline/network failures. Board discovery `searchBoards`
+  throttling also leaves one breadcrumb per error object, containing only the
+  operation, retry delay, and source. Request variables and coordinates stay out
+  of that breadcrumb. Other `RATE_LIMITED` operations remain warnings. Use it in
+  catch blocks, GraphQL-WS handlers, and the React Query caches.
 - `reportError(error, { level, tags, extra })` — raw passthrough. Use only when
   the caller already owns the severity (e.g. auth: a 401 is an `error`, a network
   blip is a `warning`).

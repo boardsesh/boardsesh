@@ -1673,6 +1673,8 @@ type FollowingAscentFeedItem {
   attemptCount: Int!
   "Quality rating"
   quality: Int
+  "Raw quality, or the climber's synced star rating for this climb and angle when the tick has none. Sends and flashes only. Null if the resolver doesn't compute it."
+  effectiveQuality: Int
   "Difficulty rating"
   difficulty: Int
   "Human-readable difficulty name"
@@ -1726,18 +1728,119 @@ type FollowingAscentsFeedResult {
 Input for fetching followed users' ticks on a specific climb.
 """
 input FollowingClimbAscentsInput {
-  "Board type (kilter, tension, moonboard)"
+  "Board type (kilter, tension, moonboard, spray, ...)"
   boardType: String!
   "Climb UUID"
   climbUuid: String!
 }
 
 """
-Unpaginated result: all ticks from followed users for a given climb.
+How many followed climbers logged a climb at one angle.
+"""
+type FollowingClimbAscentsAngleCount {
+  "Board angle"
+  angle: Int!
+  "Followed climbers with at least one log at this angle, any status"
+  climberCount: Int!
+  "Followed climbers with at least one flash or send at this angle"
+  senderCount: Int!
+}
+
+"""
+Counts over every log from followed climbers on a climb. Not bound by the
+100-row cap on the list.
+"""
+type FollowingClimbAscentsSummary {
+  "Followed climbers with at least one log, any angle, any status"
+  climberCount: Int!
+  "Followed climbers with at least one flash or send, any angle"
+  senderCount: Int!
+  "One entry per angle that has a log, ascending. Angles with none are absent."
+  byAngle: [FollowingClimbAscentsAngleCount!]!
+}
+
+"""
+The 100 most recent logs, plus counts that cover all of them
 """
 type FollowingClimbAscentsResult {
-  "List of feed items"
+  "Newest first, one row per log, every angle, attempts included. At most 100."
   items: [FollowingAscentFeedItem!]!
+  "Whether more than 100 logs exist. There is no way to page to them."
+  hasMore: Boolean!
+  "Counts across all logs, including the ones past the cap"
+  summary: FollowingClimbAscentsSummary!
+}
+
+"""
+Input for one page of everyone's logs on a climb.
+"""
+input ClimbLogsInput {
+  "Board type (kilter, tension, moonboard, spray, ...)"
+  boardType: String!
+  "Climb UUID"
+  climbUuid: String!
+  "Only logs at this angle. Omit for every angle."
+  angle: Int
+  "Only logs with a non-empty note."
+  withNotes: Boolean
+  "Only flashes and sends."
+  sendsOnly: Boolean
+  "Signed-in callers only: drop the caller's own logs and logs by people they follow. Ignored when anonymous."
+  excludeFollowed: Boolean
+  "One row per climber: their newest log that passes the filters above."
+  latestPerClimber: Boolean
+  "1 to 50, default 20"
+  limit: Int
+  "Opaque keyset cursor from the previous page"
+  cursor: String
+}
+
+"""
+One climber's log on a climb, as the public per-climb list returns it.
+"""
+type ClimbLogItem {
+  "Tick UUID"
+  uuid: ID!
+  "User who logged it"
+  userId: ID!
+  "Display name of the user"
+  userDisplayName: String
+  "Avatar URL of the user"
+  userAvatarUrl: String
+  "UUID of the climb the log is stored under"
+  climbUuid: String!
+  "Board type"
+  boardType: String!
+  "Board angle"
+  angle: Int!
+  "Whether the climb was mirrored"
+  isMirror: Boolean!
+  "flash, send or attempt"
+  status: String!
+  "Number of tries"
+  attemptCount: Int!
+  "Star rating given on the log itself"
+  quality: Int
+  "Raw quality, or the climber's synced star rating for this climb and angle when the log has none. Sends and flashes only."
+  effectiveQuality: Int
+  "Personal grade id, null when none was given"
+  difficulty: Int
+  "The climber's note, empty when there is none"
+  comment: String!
+  "When the climb was logged"
+  climbedAt: String!
+}
+
+"""
+One page of logs on a climb, newest first.
+"""
+type ClimbLogsResult {
+  "Newest first (climbed at, then id)"
+  items: [ClimbLogItem!]!
+  "Pass back as input.cursor for the next page. Null on the last page."
+  cursor: String
+  "Whether another page exists"
+  hasMore: Boolean!
 }
 
 # ============================================
@@ -6041,9 +6144,11 @@ input CreateSprayWallInput {
 
 input CreateSprayWallVersionInput {
   wallUuid: ID!
-  "photoId from POST /api/spray-wall-photos."
-  photoId: ID!
-  "The wall's four corners in this photo's pixels, TL/TR/BR/BL, as [[x, y], ...]. Omit to use the photo frame."
+  "photoId from POST /api/spray-wall-photos. Supply exactly one of photoId and sourceVersionId."
+  photoId: ID
+  "Reuse this wall's current published photo and its saved geometry for hold editing. Supply exactly one of photoId and sourceVersionId."
+  sourceVersionId: ID
+  "The wall's four corners in an uploaded photo's pixels, TL/TR/BR/BL, as [[x, y], ...]. When sourceVersionId is supplied, omit this field entirely; explicit null is rejected."
   anchors: JSON
   notes: String
 }
@@ -6405,6 +6510,9 @@ type SprayWallModerationResult {
 type SprayWallReport {
   id: ID!
   wallUuid: ID!
+  wallName: String!
+  "Admin-only preview, including private and hidden walls; null when unavailable."
+  photo: SprayWallPhoto
   layoutId: Int!
   reason: SprayWallReportReason!
   "Whether the wall is hidden right now."
@@ -6847,10 +6955,18 @@ type Query {
     @deprecated(reason: "Use activityFeed query instead")
 
   """
-  Get ticks from followed users for a specific climb.
-  Requires authentication.
+  Logs from followed users on a specific climb: the 100 newest, plus
+  counts that cover all of them. A spray climb the caller cannot see
+  answers like a climb nobody logged. Requires authentication.
   """
   followingClimbAscents(input: FollowingClimbAscentsInput!): FollowingClimbAscentsResult!
+
+  """
+  Everyone's logs on a specific climb, one page at a time. Public. Newest
+  first. A spray climb the caller cannot see answers like a climb nobody
+  logged.
+  """
+  climbLogs(input: ClimbLogsInput!): ClimbLogsResult!
 
   """
   Get global activity feed of all recent ascents.

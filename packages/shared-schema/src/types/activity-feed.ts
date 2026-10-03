@@ -64,6 +64,10 @@ export type FollowingAscentFeedItem = {
   status: string;
   attemptCount: number;
   quality?: number;
+  // Raw quality, or the climber's synced star rating for this climb and angle
+  // when the tick has none. Sends and flashes only; null when the resolver
+  // doesn't compute it.
+  effectiveQuality?: number | null;
   difficulty?: number;
   difficultyName?: string;
   isBenchmark: boolean;
@@ -157,8 +161,63 @@ export type FollowingClimbAscentsInput = {
   climbUuid: string;
 };
 
+export type FollowingClimbAscentsAngleCount = {
+  angle: number;
+  climberCount: number;
+  senderCount: number;
+};
+
+export type FollowingClimbAscentsSummary = {
+  climberCount: number;
+  senderCount: number;
+  /** One entry per angle that has a log, ascending. */
+  byAngle: FollowingClimbAscentsAngleCount[];
+};
+
 export type FollowingClimbAscentsResult = {
+  /** The 100 newest logs. Counts come from `summary`, never from this length. */
   items: FollowingAscentFeedItem[];
+  hasMore: boolean;
+  summary: FollowingClimbAscentsSummary;
+};
+
+export type ClimbLogsInput = {
+  boardType: string;
+  climbUuid: string;
+  /** Only logs at this angle. Left out means every angle. */
+  angle?: number | null;
+  withNotes?: boolean | null;
+  sendsOnly?: boolean | null;
+  /** Signed-in callers only: drops their own logs and logs by people they follow. */
+  excludeFollowed?: boolean | null;
+  /** One row per climber: their newest log that passes the other filters. */
+  latestPerClimber?: boolean | null;
+  limit?: number | null;
+  cursor?: string | null;
+};
+
+export type ClimbLogItem = {
+  uuid: string;
+  userId: string;
+  userDisplayName?: string | null;
+  userAvatarUrl?: string | null;
+  climbUuid: string;
+  boardType: string;
+  angle: number;
+  isMirror: boolean;
+  status: string;
+  attemptCount: number;
+  quality?: number | null;
+  effectiveQuality?: number | null;
+  difficulty?: number | null;
+  comment: string;
+  climbedAt: string;
+};
+
+export type ClimbLogsResult = {
+  items: ClimbLogItem[];
+  cursor?: string | null;
+  hasMore: boolean;
 };
 
 export type ActivityFeedItemType = 'ascent' | 'new_climb' | 'comment' | 'proposal_approved' | 'session_summary';
