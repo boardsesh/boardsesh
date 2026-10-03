@@ -98,6 +98,22 @@ type InlinePlaylistPickerProps = {
   onDetachedFailure?: (message: string) => void;
 };
 
+type PlaylistMembershipOverrides = Readonly<Record<string, boolean>>;
+
+const EMPTY_MEMBERSHIP_OVERRIDES: PlaylistMembershipOverrides = {};
+
+function mergeMembershipOverrides(
+  playlistUuids: Iterable<string>,
+  overrides: PlaylistMembershipOverrides,
+): Set<string> {
+  const memberships = new Set(playlistUuids);
+  for (const [playlistUuid, isMember] of Object.entries(overrides)) {
+    if (isMember) memberships.add(playlistUuid);
+    else memberships.delete(playlistUuid);
+  }
+  return memberships;
+}
+
 const playlistKey = (playlist: Playlist) => playlist.id;
 
 /**
@@ -180,6 +196,10 @@ export function InlinePlaylistPicker({
     () => ['playlistsForClimb', climbBoardScope.boardType, climbBoardScope.layoutId, climb.uuid] as const,
     [climbBoardScope, climb.uuid],
   );
+  const membershipOverridesKey = useMemo(
+    () => ['playlistMembershipOverrides', climbBoardScope.boardType, climbBoardScope.layoutId, climb.uuid] as const,
+    [climbBoardScope, climb.uuid],
+  );
   const {
     data: memberUuids,
     isError: membershipQueryFailed,
@@ -211,11 +231,25 @@ export function InlinePlaylistPicker({
     refetchOnReconnect: false,
   });
 
+  // Partial seed data and successful mutations prove membership only for their
+  // own rows. Keep those facts separate from the complete exact-scope query so
+  // removing one seeded playlist cannot make every unchecked sibling actionable.
+  const { data: membershipOverrides = EMPTY_MEMBERSHIP_OVERRIDES } = useQuery<PlaylistMembershipOverrides>({
+    queryKey: membershipOverridesKey,
+    queryFn: async () => EMPTY_MEMBERSHIP_OVERRIDES,
+    initialData: EMPTY_MEMBERSHIP_OVERRIDES,
+    enabled: false,
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+
   // Seed checkmarks from the shared membership store (the climb list populates it
   // when playlist tags are on) so they show instantly; the per-climb query then
   // confirms. The list itself never waits on this fetch — no membership spinner.
   const seededMembers = useClimbPlaylistMemberships(climb.uuid);
-  const members = useMemo(() => new Set(memberUuids ?? seededMembers), [memberUuids, seededMembers]);
+  const members = useMemo(
+    () => mergeMembershipOverrides(memberUuids ?? seededMembers, membershipOverrides),
+    [memberUuids, seededMembers, membershipOverrides],
+  );
 
   // A climb previewed from another board may not carry a layout, so the host
   // config's angle belongs to the wrong board. Use the climb's browsed angle in
@@ -293,14 +327,39 @@ export function InlinePlaylistPicker({
     [playlists, climbBoardScope],
   );
 
-  // Write a membership set to the cache and mirror it into the shared chip store
-  // (so climb-list playlist chips reflect the change without a refetch).
-  const writeMembership = useCallback(
+  // A complete query result can safely replace the shared per-climb set. Clear
+  // partial overrides only when there is something to materialize into it.
+  const writeAuthoritativeMembership = useCallback(
     (nextUuids: string[]) => {
       queryClient.setQueryData<string[]>(membershipKey, nextUuids);
       playlistMembershipStore.setMembershipForClimb(climb.uuid, nextUuids);
+      const currentOverrides =
+        queryClient.getQueryData<PlaylistMembershipOverrides>(membershipOverridesKey) ?? EMPTY_MEMBERSHIP_OVERRIDES;
+      if (Object.keys(currentOverrides).length > 0) {
+        queryClient.setQueryData<PlaylistMembershipOverrides>(membershipOverridesKey, EMPTY_MEMBERSHIP_OVERRIDES);
+      }
     },
-    [queryClient, membershipKey, climb.uuid],
+    [queryClient, membershipKey, membershipOverridesKey, climb.uuid],
+  );
+
+  // A partial update changes only one proven row in both stores. Read the live
+  // chip set rather than a render snapshot so overlapping row mutations retain
+  // each other's changes.
+  const writePartialMembership = useCallback(
+    (playlistUuid: string, isMember: boolean) => {
+      const currentOverrides =
+        queryClient.getQueryData<PlaylistMembershipOverrides>(membershipOverridesKey) ?? EMPTY_MEMBERSHIP_OVERRIDES;
+      queryClient.setQueryData<PlaylistMembershipOverrides>(membershipOverridesKey, {
+        ...currentOverrides,
+        [playlistUuid]: isMember,
+      });
+
+      const nextStoreMembers = new Set(playlistMembershipStore.getMembershipsForClimb(climb.uuid));
+      if (isMember) nextStoreMembers.add(playlistUuid);
+      else nextStoreMembers.delete(playlistUuid);
+      playlistMembershipStore.setMembershipForClimb(climb.uuid, [...nextStoreMembers]);
+    },
+    [queryClient, membershipOverridesKey, climb.uuid],
   );
 
   // Serialize toggles per playlist: a row stays tappable while its mutation is in
@@ -310,21 +369,33 @@ export function InlinePlaylistPicker({
   const togglingRef = useRef<Set<string>>(new Set());
 
   // Toggle one playlist's membership. Reads and writes are surgical — computed
-  // against the *latest* cache each time — so overlapping toggles of DIFFERENT rows
-  // never clobber each other. Rows are tappable before the membership fetch
-  // resolves, so cancel it first: a late response must not overwrite the checkmark.
+  // against the latest complete cache, per-row overrides and shared set — so
+  // overlapping toggles of different rows never claim certainty for a sibling.
   const handleToggle = useCallback(
     async (playlist: Playlist) => {
       if (togglingRef.current.has(playlist.uuid)) return;
-      const knownMember = members.has(playlist.uuid);
-      const membershipIsKnown = memberUuids !== undefined || seededMembers.has(playlist.uuid);
-      if (!membershipIsKnown && !knownMember) return;
-      if (!knownMember && mutationAngle === null) return;
+      const knownFromRender =
+        memberUuids !== undefined ||
+        Object.hasOwn(membershipOverrides, playlist.uuid) ||
+        seededMembers.has(playlist.uuid);
+      if (!knownFromRender) return;
       togglingRef.current.add(playlist.uuid);
       try {
-        await queryClient.cancelQueries({ queryKey: membershipKey });
-        const before = queryClient.getQueryData<string[]>(membershipKey) ?? [...members];
-        const willBeMember = !before.includes(playlist.uuid);
+        await queryClient.cancelQueries({ queryKey: membershipKey, exact: true });
+        const authoritativeBefore = queryClient.getQueryData<string[]>(membershipKey);
+        const overridesBefore =
+          queryClient.getQueryData<PlaylistMembershipOverrides>(membershipOverridesKey) ?? EMPTY_MEMBERSHIP_OVERRIDES;
+        const currentSeededMembers = playlistMembershipStore.getMembershipsForClimb(climb.uuid);
+        const before = mergeMembershipOverrides(authoritativeBefore ?? currentSeededMembers, overridesBefore);
+        const knownAtMutation =
+          authoritativeBefore !== undefined ||
+          Object.hasOwn(overridesBefore, playlist.uuid) ||
+          currentSeededMembers.has(playlist.uuid);
+        if (!knownAtMutation) return;
+
+        const wasMember = before.has(playlist.uuid);
+        const willBeMember = !wasMember;
+        if (willBeMember && mutationAngle === null) return;
         let runToggle: () => Promise<void>;
         if (willBeMember) {
           const addAngle = mutationAngle;
@@ -334,18 +405,43 @@ export function InlinePlaylistPicker({
           runToggle = () => removeFromPlaylist(playlist.uuid, climb.uuid);
         }
         setError(null);
-        writeMembership(willBeMember ? [...before, playlist.uuid] : before.filter((uuid) => uuid !== playlist.uuid));
+        if (authoritativeBefore !== undefined) {
+          const nextMemberships = new Set(before);
+          if (willBeMember) nextMemberships.add(playlist.uuid);
+          else nextMemberships.delete(playlist.uuid);
+          writeAuthoritativeMembership([...nextMemberships]);
+        } else {
+          writePartialMembership(playlist.uuid, willBeMember);
+        }
         try {
           // The backend resolvers key on playlists.uuid, so the uuid (not the
           // bigserial id) goes on the wire.
           await runToggle();
         } catch (toggleError) {
-          // Undo ONLY this row's change against the current cache — not a stale
-          // snapshot — so a sibling toggle that succeeded meanwhile is preserved.
-          const current = queryClient.getQueryData<string[]>(membershipKey) ?? [];
-          writeMembership(
-            willBeMember ? current.filter((uuid) => uuid !== playlist.uuid) : [...new Set([...current, playlist.uuid])],
-          );
+          // Restore only this row against current state. A failed partial update
+          // must not erase a successful sibling override or make it actionable.
+          const currentAuthoritative = queryClient.getQueryData<string[]>(membershipKey);
+          const currentOverrides =
+            queryClient.getQueryData<PlaylistMembershipOverrides>(membershipOverridesKey) ?? EMPTY_MEMBERSHIP_OVERRIDES;
+          if (currentAuthoritative !== undefined) {
+            const restored = mergeMembershipOverrides(currentAuthoritative, currentOverrides);
+            if (wasMember) restored.add(playlist.uuid);
+            else restored.delete(playlist.uuid);
+            writeAuthoritativeMembership([...restored]);
+          } else {
+            const restoredOverrides = { ...currentOverrides };
+            if (Object.hasOwn(overridesBefore, playlist.uuid)) {
+              restoredOverrides[playlist.uuid] = overridesBefore[playlist.uuid];
+            } else {
+              delete restoredOverrides[playlist.uuid];
+            }
+            queryClient.setQueryData<PlaylistMembershipOverrides>(membershipOverridesKey, restoredOverrides);
+
+            const restoredStoreMembers = new Set(playlistMembershipStore.getMembershipsForClimb(climb.uuid));
+            if (wasMember) restoredStoreMembers.add(playlist.uuid);
+            else restoredStoreMembers.delete(playlist.uuid);
+            playlistMembershipStore.setMembershipForClimb(climb.uuid, [...restoredStoreMembers]);
+          }
           surfaceFailure(
             t(willBeMember ? 'actions.playlist.toast.addFailed' : 'actions.playlist.toast.removeFailed'),
             t(willBeMember ? 'actions.playlist.toast.addFailedNamed' : 'actions.playlist.toast.removeFailedNamed', {
@@ -372,15 +468,16 @@ export function InlinePlaylistPicker({
     [
       queryClient,
       membershipKey,
-      members,
+      membershipOverridesKey,
+      membershipOverrides,
       memberUuids,
       seededMembers,
       mutationAngle,
-      writeMembership,
+      writeAuthoritativeMembership,
+      writePartialMembership,
       addToPlaylist,
       removeFromPlaylist,
       climb.uuid,
-      angle,
       surfaceFailure,
       t,
     ],
@@ -495,10 +592,19 @@ export function InlinePlaylistPicker({
       await addToPlaylist(created.uuid, climb.uuid, mutationAngle);
       if (!isCurrent()) return;
       // Cancel any in-flight membership fetch (it was sent before this playlist
-      // existed) so it can't overwrite the new checkmark, then optimistically add.
-      await queryClient.cancelQueries({ queryKey: membershipKey });
-      const current = queryClient.getQueryData<string[]>(membershipKey) ?? [...members];
-      writeMembership([...new Set([...current, created.uuid])]);
+      // existed) so it can't overwrite the new checkmark. If there is no complete
+      // result yet, record certainty only for this newly created row.
+      await queryClient.cancelQueries({ queryKey: membershipKey, exact: true });
+      const authoritativeBefore = queryClient.getQueryData<string[]>(membershipKey);
+      const currentOverrides =
+        queryClient.getQueryData<PlaylistMembershipOverrides>(membershipOverridesKey) ?? EMPTY_MEMBERSHIP_OVERRIDES;
+      if (authoritativeBefore !== undefined) {
+        const nextMemberships = mergeMembershipOverrides(authoritativeBefore, currentOverrides);
+        nextMemberships.add(created.uuid);
+        writeAuthoritativeMembership([...nextMemberships]);
+      } else {
+        writePartialMembership(created.uuid, true);
+      }
     } catch (addError) {
       // Not gated on isCurrent(). The token goes stale two ways here and both
       // want the message shown: the picker went away (so `surfaceFailure` routes
@@ -535,8 +641,9 @@ export function InlinePlaylistPicker({
     resetCreate,
     queryClient,
     membershipKey,
-    members,
-    writeMembership,
+    membershipOverridesKey,
+    writeAuthoritativeMembership,
+    writePartialMembership,
     surfaceFailure,
     t,
   ]);
@@ -562,7 +669,8 @@ export function InlinePlaylistPicker({
     ({ item, index }) => {
       const accent = normalizePlaylistColor(item.color) ?? brandColors.primary;
       const member = members.has(item.uuid);
-      const membershipIsKnown = memberUuids !== undefined || seededMembers.has(item.uuid);
+      const membershipIsKnown =
+        memberUuids !== undefined || Object.hasOwn(membershipOverrides, item.uuid) || seededMembers.has(item.uuid);
       const canToggle = (membershipIsKnown || member) && (member || mutationAngle !== null);
       return (
         <ListRow
@@ -585,7 +693,17 @@ export function InlinePlaylistPicker({
         />
       );
     },
-    [sortedPlaylists, members, memberUuids, seededMembers, mutationAngle, handleToggle, brandColors, t],
+    [
+      sortedPlaylists,
+      members,
+      memberUuids,
+      membershipOverrides,
+      seededMembers,
+      mutationAngle,
+      handleToggle,
+      brandColors,
+      t,
+    ],
   );
 
   return (
