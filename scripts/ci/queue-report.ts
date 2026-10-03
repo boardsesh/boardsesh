@@ -13,10 +13,11 @@
  *   queue    = job.started_at - job.created_at    (waiting for a free runner slot)
  *   duration = job.completed_at - job.started_at  (runner time actually used)
  *
- * Only jobs that concluded success / failure / cancelled count as "ran"; skipped
- * jobs are counted in their own column and carry no timings. Matrix legs share a
- * row: ` (1, 2)`-style suffixes are stripped. All numbers are minutes. totalMin is
- * the summed duration (roughly the runner minutes the job used).
+ * Only jobs that concluded success / failure / cancelled / timed_out count as
+ * "ran"; skipped jobs are counted in their own column and carry no timings.
+ * Matrix legs share a row: ` (1, 2)`-style suffixes are stripped. All numbers
+ * are minutes. totalMin is the summed duration (roughly the runner minutes the
+ * job used).
  *
  * Baseline, 2026-09-18..25, on the Free plan's 20 concurrent job slots:
  * ci.yml jobs median queue 0.6 min, p90 10.9, max 36; production-deploy max
@@ -24,6 +25,7 @@
  * upgrade (60 slots) and compare against those.
  */
 import { execFileSync } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
 
 const DEFAULT_WORKFLOWS = [
   'ci.yml',
@@ -33,7 +35,7 @@ const DEFAULT_WORKFLOWS = [
   'ios-rn-ci.yml',
   'android-pr-rn.yml',
 ];
-const RAN_CONCLUSIONS = new Set(['success', 'failure', 'cancelled']);
+const RAN_CONCLUSIONS = new Set(['success', 'failure', 'cancelled', 'timed_out']);
 
 interface Options {
   days: number;
@@ -172,7 +174,7 @@ function baseJobName(name: string): string {
   return name.replace(/\s*\([^()]*\)\s*$/, '').trim() || name;
 }
 
-function collectWorkflow(options: Options, workflow: string, sinceDate: string): JobSample[] {
+export function collectWorkflow(options: Options, workflow: string, sinceDate: string): JobSample[] {
   const query = `per_page=${options.perWorkflow}&status=completed&created=${encodeURIComponent(`>=${sinceDate}`)}`;
   const idsOutput = ghApi(`repos/${options.repo}/actions/workflows/${workflow}/runs?${query}`, '.workflow_runs[].id');
   const runIds = idsOutput
@@ -221,7 +223,7 @@ function percentile(sorted: number[], fraction: number): number {
   return sorted[lower] + (sorted[upper] - sorted[lower]) * (position - lower);
 }
 
-function summarise(key: string, samples: JobSample[]): StatsRow {
+export function summarise(key: string, samples: JobSample[]): StatsRow {
   const ran = samples.filter((sample) => !sample.skipped);
   const queues = ran.map((sample) => sample.queueMinutes).sort((a, b) => a - b);
   const durations = ran.map((sample) => sample.durationMinutes).sort((a, b) => a - b);
@@ -326,4 +328,6 @@ function main(): void {
   process.stdout.write(`${sections.join('\n\n')}\n`);
 }
 
-main();
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main();
+}
