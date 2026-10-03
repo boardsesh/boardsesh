@@ -69,22 +69,22 @@ classes only, never private target addresses, credentials, client identities,
 or query text. Readiness checks query current tailnet status with a one-second
 timeout; they do not cache successful status after a disconnection. Shutdown
 withdraws readiness, cancels sessions and closes route listeners before draining
-HTTP requests and proxy work under one shared grace deadline. The service's
-checked-in `deploy/postgres-tailscale-forwarder/railway.toml` sets an unquoted
-`drainingSeconds = 65`, exceeding every supported grace value. Railway's
+HTTP requests and proxy work under one shared grace deadline. The project's
+`.railway/railway.ts` entry for `boardsesh-postgres-tailscale-forwarder` sets
+Railway's healthcheck to `/readyz`, a 60-second healthcheck timeout, and a
+65-second draining window. Railway's
 [SIGTERM-to-SIGKILL window](https://docs.railway.com/deployments/deployment-teardown#draining-time)
 must not expire before the process can finish that drain.
 
 Railway [deprecated Config as Code](https://docs.railway.com/config-as-code):
 TOML remains supported only for services already configured to use it, until
-December 1, 2026. New services cannot opt in. This runbook proposes a staged
-forwarder; it does not establish that an existing service has legacy-config
-eligibility. The TOML records the reviewed health/draining values, not a working
-new-service provisioning path. Before creating or activating a new service,
-operators must supply a reviewed supported configuration (Railway recommends
-`.railway/railway.ts`) and verify `/readyz` plus the 65-second teardown window
-are applied. That provisioning prerequisite remains open under #5041; no live
-service settings were inspected or changed in this refresh.
+December 1, 2026. New services cannot opt in. The repository's project-wide
+`.railway/railway.ts` now records the forwarder's supported health and teardown
+settings while retaining every resource imported from the current project. It
+does not declare an image source or provision a live service. A read-only plan
+shows the forwarder as the only planned resource change; it was not applied.
+No production settings were changed. The actual application and verification
+step remains tracked under #5041.
 
 ## Provision without replacing live policy
 
@@ -107,11 +107,10 @@ service settings were inspected or changed in this refresh.
    provenance, then configure Railway to pull the immutable digest, never a
    mutable tag.
 7. Create a persistent Railway volume at `/var/lib/boardsesh-tsnet`, attach the
-   service to the same private network as `PostGIS - PROD`, set the runtime
-   variables above, and satisfy the supported-configuration prerequisite above.
-   Use the TOML only for an existing legacy-enabled service before its cutoff;
-   a new service needs the reviewed replacement configuration. Confirm `/readyz`
-   and the 65-second teardown window are applied before database traffic.
+   service to the same private network as `PostGIS - PROD`, and set the runtime
+   variables above. Review the complete `railway config plan` and resolve every
+   unrelated diff before applying the reviewed IaC settings. Verify `/readyz`
+   plus the 65-second teardown window before database traffic.
 8. Do **not** create a Railway public domain or TCP proxy for the forwarder.
    Confirm the Railway service has no public networking before continuing.
 9. Confirm the tsnet node is non-ephemeral, advertises only the forwarder tag,

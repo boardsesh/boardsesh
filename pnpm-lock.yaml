@@ -79,6 +79,9 @@ importers:
       postgres:
         specifier: 3.4.9
         version: 3.4.9(patch_hash=c9d57c6587ebb9a43c7f01fa63c3950592b1fe72e2e2c56ce93e2bd1ec419fcf)
+      railway:
+        specifier: 3.12.0
+        version: 3.12.0
       semver:
         specifier: ^7.8.5
         version: 7.8.5
@@ -10208,6 +10211,11 @@ packages:
 
   raf-schd@4.0.3:
     resolution: {integrity: sha512-tQkJl2GRWh83ui2DiPTJz9wEiMN20syf+5oKfB03yYP7ioZcJwsIK8FjrtLwH1m7C7e+Tt2yYBlrOpdT+dyeIQ==}
+
+  railway@3.12.0:
+    resolution: {integrity: sha512-a6th+76NE3fZ8QMTOtEIe15sPTjObWOJYx0pCHCR/rd00r++I2rZHLKTn2R1qmPAwvGdAj6vY45GDVJs0AzOXA==}
+    engines: {node: '>=22'}
+    hasBin: true
 
   ramda-adjunct@5.1.0:
     resolution: {integrity: sha512-8qCpl2vZBXEJyNbi4zqcgdfHtcdsWjOGbiNSEnEBrM6Y0OKOT8UxJbIVGm1TIcjaSu2MxaWcgtsNlKlCk7o7qg==}
@@ -21368,6 +21376,12 @@ snapshots:
   quickselect@3.0.0: {}
 
   raf-schd@4.0.3: {}
+
+  railway@3.12.0:
+    dependencies:
+      '@graphql-typed-document-node/core': 3.2.0(graphql@16.14.2)
+      graphql: 16.14.2
+      tsx: 4.23.12
 
   ramda-adjunct@5.1.0(ramda@0.30.1):
     dependencies:

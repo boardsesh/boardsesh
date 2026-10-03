@@ -44,17 +44,23 @@ func TestLoadConfigDefaults(t *testing.T) {
 }
 
 func TestRailwayDrainExceedsSupportedShutdownGrace(t *testing.T) {
-	configFile, err := os.ReadFile("railway.toml")
+	configFile, err := os.ReadFile("../../.railway/railway.ts")
 	if err != nil {
-		t.Fatalf("read railway.toml: %v", err)
+		t.Fatalf("read Railway IaC file: %v", err)
 	}
-	deploySection := regexp.MustCompile(`(?ms)^\[deploy\]\s*\n(.*?)(?:^\[|\z)`).FindSubmatch(configFile)
-	if len(deploySection) != 2 {
-		t.Fatal("railway.toml must declare the deploy section")
+	serviceBlock := regexp.MustCompile(`(?s)service\(['"]boardsesh-postgres-tailscale-forwarder['"],\s*\{(.*?)\n\s*\}\);`).FindSubmatch(configFile)
+	if len(serviceBlock) != 2 {
+		t.Fatal("Railway IaC must declare the forwarder service")
 	}
-	match := regexp.MustCompile(`(?m)^drainingSeconds\s*=\s*([0-9]+)\s*$`).FindSubmatch(deploySection[1])
+	if !regexp.MustCompile(`healthcheck:\s*['"]/readyz['"]`).Match(serviceBlock[1]) {
+		t.Fatal("Railway IaC healthcheck must target /readyz")
+	}
+	if !regexp.MustCompile(`restartPolicyType:\s*['"]ON_FAILURE['"]`).Match(serviceBlock[1]) {
+		t.Fatal("Railway IaC must restart the forwarder after failure")
+	}
+	match := regexp.MustCompile(`(?m)drainingSeconds:\s*([0-9]+)`).FindSubmatch(serviceBlock[1])
 	if len(match) != 2 {
-		t.Fatal("Railway drainingSeconds must be an unquoted integer")
+		t.Fatal("Railway IaC drainingSeconds must be an integer")
 	}
 	drainingSeconds, err := strconv.Atoi(string(match[1]))
 	if err != nil {
@@ -73,6 +79,11 @@ func TestRailwayDrainExceedsSupportedShutdownGrace(t *testing.T) {
 	}
 	if time.Duration(drainingSeconds)*time.Second <= maximum.ShutdownGrace {
 		t.Fatal("Railway must wait beyond the largest supported shutdown grace")
+	}
+	for _, unmanagedField := range []string{"source:", "domains:", "networking:", "volumeMounts:"} {
+		if strings.Contains(string(serviceBlock[1]), unmanagedField) {
+			t.Fatalf("forwarder IaC must leave %s for the later provisioning step", unmanagedField)
+		}
 	}
 	_, err = loadConfig(testEnv(map[string]string{"FORWARD_SHUTDOWN_GRACE": "61s"}))
 	if err == nil || !strings.Contains(err.Error(), "FORWARD_SHUTDOWN_GRACE") {
