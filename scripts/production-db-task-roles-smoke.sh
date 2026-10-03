@@ -15,6 +15,8 @@ readonly CREDENTIALS_FILE="$TASK_TEMP_DIRECTORY/credentials.json"
 readonly PGPASS_FILE="$TASK_TEMP_DIRECTORY/pgpass"
 readonly FIXTURE_SQL="$TASK_TEMP_DIRECTORY/fixture.sql"
 readonly REPORT_FILE="$TASK_TEMP_DIRECTORY/report.txt"
+readonly ROLE_STATE_BEFORE="$TASK_TEMP_DIRECTORY/role-state-before.txt"
+readonly ROLE_STATE_AFTER="$TASK_TEMP_DIRECTORY/role-state-after.txt"
 
 cleanup() {
   docker rm --force "$CONTAINER_NAME" >/dev/null 2>&1 || true
@@ -56,6 +58,37 @@ fi
 
 readonly admin_url="postgresql://postgres:postgres@127.0.0.1:${host_port}/railway"
 export ALLOW_DISPOSABLE_TASK_ROLE_SMOKE='ALLOW_EXACT_LOOPBACK_FIXTURE'
+
+capture_role_change_state() {
+  local state_path="$1"
+  docker exec --interactive "$CONTAINER_NAME" \
+    psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d railway >"$state_path" <<'SQL'
+WITH managed AS (
+  SELECT oid, rolname, rolpassword, rolvaliduntil
+  FROM pg_catalog.pg_authid
+  WHERE rolname IN (
+    'boardsesh_migrator', 'boardsesh_snapshot_exporter', 'boardsesh_climb_grades_refresh',
+    'boardsesh_content_model_refresh', 'boardsesh_hold_features_refresh',
+    'boardsesh_recommendations_refresh')
+), state AS (
+  SELECT pg_catalog.format('role|%s|%s|%s', rolname, coalesce(rolpassword, '<null>'),
+                           coalesce(rolvaliduntil::text, '<null>')) AS item
+  FROM managed
+  UNION ALL
+  SELECT pg_catalog.format('grant|%s|%s', managed.rolname,
+                           pg_catalog.has_table_privilege(managed.rolname, 'public.board_climbs', 'SELECT'))
+  FROM managed
+  UNION ALL
+  SELECT pg_catalog.format('setting|%s|%s|%s', managed.rolname,
+                           coalesce(database.datname, '*'), setting.setting)
+  FROM pg_catalog.pg_db_role_setting AS role_setting
+  JOIN managed ON managed.oid = role_setting.setrole
+  LEFT JOIN pg_catalog.pg_database AS database ON database.oid = role_setting.setdatabase
+  CROSS JOIN LATERAL unnest(role_setting.setconfig) AS setting(setting)
+)
+SELECT item FROM state ORDER BY item;
+SQL
+}
 
 {
   cat <<'SQL'
@@ -146,6 +179,107 @@ if ! ADMIN_DATABASE_URL="$admin_url" \
   cat "$REPORT_FILE" >&2
   fail 'initial task-role apply failed'
 fi
+
+# A post-mutation audit mismatch must abort the transaction, preserving both
+# existing verifiers and grants. Finite VALID UNTIL is safely normalized on a
+# successful retry; settings for another database must instead be reviewed.
+docker exec "$CONTAINER_NAME" \
+  psql -X -v ON_ERROR_STOP=1 -U postgres -d railway \
+  -c "ALTER ROLE boardsesh_migrator VALID UNTIL '2000-01-01 00:00:00+00'; REVOKE SELECT ON TABLE public.board_climbs FROM boardsesh_snapshot_exporter;" >/dev/null
+docker exec --interactive "$CONTAINER_NAME" \
+  psql -X -v ON_ERROR_STOP=1 -U postgres -d railway <<'SQL' >/dev/null
+CREATE SEQUENCE public.task_role_audit_drift_events;
+CREATE FUNCTION public.task_role_inject_audit_drift() RETURNS event_trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+  PERFORM pg_catalog.nextval('public.task_role_audit_drift_events');
+  IF pg_catalog.current_setting('boardsesh.task_role_audit_drift_injected', true) = 'true' THEN
+    RETURN;
+  END IF;
+  PERFORM pg_catalog.set_config('boardsesh.task_role_audit_drift_injected', 'true', true);
+  ALTER ROLE boardsesh_migrator IN DATABASE postgres
+    SET application_name TO 'smoke-uncommitted-role-drift';
+END;
+$$;
+REVOKE ALL ON FUNCTION public.task_role_inject_audit_drift() FROM PUBLIC;
+CREATE EVENT TRIGGER task_role_inject_audit_drift
+  ON ddl_command_end WHEN TAG IN ('GRANT')
+  EXECUTE FUNCTION public.task_role_inject_audit_drift();
+SQL
+sequence_present="$(docker exec "$CONTAINER_NAME" psql -X -Atq -U postgres -d railway -c \
+  "SELECT (pg_catalog.to_regclass('public.task_role_audit_drift_events') IS NOT NULL)::text;")"
+[[ "$sequence_present" == 'true' ]] || {
+  printf 'audit-drift sequence presence query returned: %s\n' "$sequence_present" >&2
+  fail 'audit-drift event counter was not installed'
+}
+capture_role_change_state "$ROLE_STATE_BEFORE"
+if ADMIN_DATABASE_URL="$admin_url" \
+  APPLY_TASK_ROLE_CHANGES='APPLY_EXACT_SIX_TASK_ROLES' \
+  ROLE_CREDENTIALS_FILE="$CREDENTIALS_FILE" \
+  node "$REPOSITORY_ROOT/scripts/production-db-task-roles.mjs" apply >"$REPORT_FILE" 2>&1; then
+  cat "$REPORT_FILE" >&2
+  docker exec "$CONTAINER_NAME" psql -X -Atq -U postgres -d railway -c \
+    "SELECT last_value || '|' || is_called FROM public.task_role_audit_drift_events;" >&2
+  docker exec "$CONTAINER_NAME" psql -X -Atq -U postgres -d railway -c \
+    "SELECT role_row.rolname || '|' || database.datname || '|' || setting.setting FROM pg_catalog.pg_db_role_setting AS role_setting JOIN pg_catalog.pg_roles AS role_row ON role_row.oid = role_setting.setrole JOIN pg_catalog.pg_database AS database ON database.oid = role_setting.setdatabase CROSS JOIN LATERAL unnest(role_setting.setconfig) AS setting(setting) WHERE role_row.rolname = 'boardsesh_migrator';" >&2
+  fail 'apply accepted injected in-transaction audit drift'
+fi
+grep -Fq 'pre-commit role audit failed; transaction rolled back' "$REPORT_FILE" || {
+  cat "$REPORT_FILE" >&2
+  fail 'in-transaction audit did not reject injected drift'
+}
+capture_role_change_state "$ROLE_STATE_AFTER"
+cmp -s "$ROLE_STATE_BEFORE" "$ROLE_STATE_AFTER" || {
+  fail 'failed in-transaction audit changed managed role verifiers, settings, or grants'
+}
+docker exec "$CONTAINER_NAME" \
+  psql -X -v ON_ERROR_STOP=1 -U postgres -d railway \
+  -c 'DROP EVENT TRIGGER task_role_inject_audit_drift; DROP FUNCTION public.task_role_inject_audit_drift();' >/dev/null
+
+# Retry must normalize the expired login and restore the revoked grant, then
+# pass the actual role audit before commit and its observational follow-up.
+ADMIN_DATABASE_URL="$admin_url" \
+APPLY_TASK_ROLE_CHANGES='APPLY_EXACT_SIX_TASK_ROLES' \
+ROLE_CREDENTIALS_FILE="$CREDENTIALS_FILE" \
+  node "$REPOSITORY_ROOT/scripts/production-db-task-roles.mjs" apply >/dev/null
+valid_until="$(docker exec "$CONTAINER_NAME" \
+  psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d railway \
+  -c "SELECT rolvaliduntil::text FROM pg_catalog.pg_authid WHERE rolname = 'boardsesh_migrator';")"
+[[ "$valid_until" == 'infinity' ]] || fail 'successful apply did not normalize VALID UNTIL to infinity'
+if ! docker exec "$CONTAINER_NAME" \
+  psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d railway \
+  -c "SELECT pg_catalog.has_table_privilege('boardsesh_snapshot_exporter', 'public.board_climbs', 'SELECT');" \
+  | grep -Fxq 't'; then
+  fail 'successful retry did not restore the expected snapshot grant'
+fi
+ADMIN_DATABASE_URL="$admin_url" \
+  node "$REPOSITORY_ROOT/scripts/production-db-task-roles.mjs" audit >/dev/null
+
+# A foreign-database setting is an explicit refusal, before any password or
+# grant write; the preflight snapshot must remain byte-identical.
+docker exec "$CONTAINER_NAME" \
+  psql -X -v ON_ERROR_STOP=1 -U postgres -d railway \
+  -c "ALTER ROLE boardsesh_migrator IN DATABASE postgres SET application_name TO 'smoke-foreign-database-setting';" >/dev/null
+capture_role_change_state "$ROLE_STATE_BEFORE"
+if ADMIN_DATABASE_URL="$admin_url" \
+  APPLY_TASK_ROLE_CHANGES='APPLY_EXACT_SIX_TASK_ROLES' \
+  ROLE_CREDENTIALS_FILE="$CREDENTIALS_FILE" \
+  node "$REPOSITORY_ROOT/scripts/production-db-task-roles.mjs" apply >"$REPORT_FILE" 2>&1; then
+  fail 'apply accepted an unreviewed foreign-database role setting'
+fi
+grep -Fq 'managed roles have settings outside railway; review and remove them before apply' "$REPORT_FILE" || {
+  cat "$REPORT_FILE" >&2
+  fail 'foreign-database setting did not trigger the preflight refusal'
+}
+capture_role_change_state "$ROLE_STATE_AFTER"
+cmp -s "$ROLE_STATE_BEFORE" "$ROLE_STATE_AFTER" || {
+  fail 'foreign-database preflight refusal changed managed role verifiers, settings, or grants'
+}
+docker exec "$CONTAINER_NAME" \
+  psql -X -v ON_ERROR_STOP=1 -U postgres -d railway \
+  -c 'ALTER ROLE boardsesh_migrator IN DATABASE postgres RESET application_name;' >/dev/null
+ADMIN_DATABASE_URL="$admin_url" \
+  node "$REPOSITORY_ROOT/scripts/production-db-task-roles.mjs" audit >/dev/null
 
 # The second apply proves idempotency while rotating to the same six passwords.
 ADMIN_DATABASE_URL="$admin_url" \

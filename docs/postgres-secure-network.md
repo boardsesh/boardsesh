@@ -325,9 +325,13 @@ migration-owner default-ACL remediation; `apply` refuses while any such boundary
 diff remains.
 
 After that separate review is complete, apply has a second boundary check inside
-its advisory-locked transaction, rotates all six passwords to client-built SCRAM
-verifiers, prints its pre-apply diff, and fails unless the post-apply diff is
-empty:
+its advisory-locked transaction. Before any password or grant write, it refuses
+managed roles with settings for another database and normalizes each managed
+role to the reviewed no-expiry `VALID UNTIL` contract. It then rotates all six
+passwords to client-built SCRAM verifiers and audits the exact contract before
+the transaction can commit; any mismatch rolls back the password and grant
+changes. A separate post-commit audit is observational only and does not decide
+whether the transaction commits:
 
 ```sh
 export APPLY_TASK_ROLE_CHANGES=APPLY_EXACT_SIX_TASK_ROLES
@@ -461,4 +465,9 @@ all six roles, proves allowed and denied operations, and checks that managed
 ACLs carry no grant options. A competing administrator session proves apply and
 rollback refuse advisory-lock contention without changing roles. The smoke also
 injects an unexpected grant, proves audit and rollback refusal, repairs it, and
-verifies idempotent rollback without losing the owner role or fixture data.
+verifies idempotent rollback without losing the owner role or fixture data. A
+DDL event trigger injects role-setting drift during apply so the in-transaction
+audit must abort; catalog snapshots prove all password verifiers and grants
+remain unchanged. A separate foreign-database setting proves preflight refuses
+before writes, while a retry normalizes an expired `VALID UNTIL` and passes the
+role audit.

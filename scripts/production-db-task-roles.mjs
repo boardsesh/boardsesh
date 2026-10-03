@@ -811,6 +811,21 @@ async function collectSettingKeys(sqlClient) {
   );
 }
 
+async function collectForeignDatabaseRoleSettingRows(sqlClient) {
+  return sqlClient.unsafe(`
+    SELECT DISTINCT role_row.rolname AS role_name,
+           role_setting.setdatabase::text AS database_oid,
+           database.datname AS database_name
+    FROM pg_catalog.pg_db_role_setting AS role_setting
+    JOIN pg_catalog.pg_roles AS role_row ON role_row.oid = role_setting.setrole
+    LEFT JOIN pg_catalog.pg_database AS database ON database.oid = role_setting.setdatabase
+    WHERE role_row.rolname IN (${roleNameListSql()})
+      AND role_setting.setdatabase <> 0
+      AND database.datname IS DISTINCT FROM ${quoteLiteral(PRODUCTION_DATABASE_NAME)}
+    ORDER BY role_name, database_oid
+  `);
+}
+
 async function collectMembershipKeys(sqlClient) {
   const rows = await sqlClient.unsafe(`
     SELECT member_role.rolname AS member_role, granted_role.rolname AS granted_role,
@@ -1028,6 +1043,18 @@ async function assertNoUnsafeExistingRoleState(sqlClient) {
   }
 }
 
+async function assertNoForeignDatabaseRoleSettings(sqlClient) {
+  const rows = await collectForeignDatabaseRoleSettingRows(sqlClient);
+  if (rows.length === 0) return;
+  const settingTargets = rows.map(
+    ({ role_name: roleName, database_name: databaseName, database_oid: databaseOid }) =>
+      `${roleName}@${databaseName ?? `database OID ${databaseOid}`}`,
+  );
+  fail(
+    `managed roles have settings outside ${PRODUCTION_DATABASE_NAME}; review and remove them before apply (${settingTargets.join(', ')})`,
+  );
+}
+
 async function revokeManagedDirectPrivileges(sqlClient) {
   const roleNamesSql = roleNameListSql();
   const statements = await formattedStatements(
@@ -1157,6 +1184,7 @@ async function applyContract(sqlClient, protectedCredentials) {
     if ((await collectClusterWideBoundaryDifferences(transaction)).length > 0) {
       fail('cluster-wide PUBLIC/default ACL prerequisites changed after preflight; refusing apply');
     }
+    await assertNoForeignDatabaseRoleSettings(transaction);
     const relationGaps = await missingRelations(transaction);
     if (relationGaps.length > 0) fail(`required relations are missing: ${relationGaps.join(', ')}`);
     await assertNoUnsafeExistingRoleState(transaction);
@@ -1168,7 +1196,7 @@ async function applyContract(sqlClient, protectedCredentials) {
       );
       if (!existingRole) await transaction.unsafe(`CREATE ROLE ${roleIdentifier}`);
       await transaction.unsafe(
-        `ALTER ROLE ${roleIdentifier} WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT NOREPLICATION NOBYPASSRLS CONNECTION LIMIT ${connectionLimitSql(roleContract.connectionLimit, roleContract.name)}`,
+        `ALTER ROLE ${roleIdentifier} WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT NOREPLICATION NOBYPASSRLS CONNECTION LIMIT ${connectionLimitSql(roleContract.connectionLimit, roleContract.name)} VALID UNTIL 'infinity'`,
       );
       await transaction.unsafe(`ALTER ROLE ${roleIdentifier} RESET ALL`);
       await transaction.unsafe(
@@ -1219,11 +1247,24 @@ async function applyContract(sqlClient, protectedCredentials) {
         `GRANT USAGE ON SEQUENCE ${qualifiedRelationSql(sequenceParts[0], sequenceParts[1])} TO ${quoteIdentifier(roleName)}`,
       );
     }
+
+    const transactionalDifferences = await auditContract(transaction);
+    printDifferences(transactionalDifferences);
+    if (transactionalDifferences.length > 0) {
+      fail('pre-commit role audit failed; transaction rolled back');
+    }
   });
 
-  const differences = await auditContract(sqlClient);
-  printDifferences(differences);
-  if (differences.length > 0) fail('post-apply role audit failed');
+  console.info('Post-commit role audit observation:');
+  try {
+    const observedDifferences = await auditContract(sqlClient);
+    printDifferences(observedDifferences);
+    if (observedDifferences.length > 0) {
+      console.error('post-commit observation found drift after the in-transaction audit passed');
+    }
+  } catch {
+    console.error('post-commit audit observation was unavailable after the in-transaction audit passed');
+  }
 }
 
 async function allManagedRolesAbsent(sqlClient) {
